@@ -7,7 +7,7 @@
 // debugging "what's in the hash" and for the coverage guard's drift output.
 //
 // See scripts/webgl-attest-lib.ts for the basis + algorithm and
-// .myrobots/plans/webgl-attestation-semaphore.md for the full design.
+// .claude/skills/webgl-attest.md for the full design.
 
 import { computeWebglHash, resolveWebglBasis } from './webgl-attest-lib';
 

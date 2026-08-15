@@ -9,8 +9,7 @@
 // WebGL FBO texture output), but the source is a URL chosen from a search
 // instead of a local file.
 //
-// PER-TYPE CORS-FOR-USE (verified 2026-06-14, see
-// .myrobots/plans/archivist-module-2026-06-14.md):
+// PER-TYPE CORS-FOR-USE (verified 2026-06-14):
 //   image → CORS-clean served file → crossorigin=anonymous <img> → UNTAINTED
 //           WebGL texture → real `image` output.
 //   audio → CORS-clean served file → crossorigin=anonymous MediaElementSource

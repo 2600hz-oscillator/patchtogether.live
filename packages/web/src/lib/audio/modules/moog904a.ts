@@ -15,7 +15,7 @@
 // the unpatented textbook TPT/Zavalishin zero-delay-feedback algorithm plus
 // the Huovilainen tanh-per-loop TECHNIQUE. NOT a port of the LGPLv3
 // Huovilainen code, the CC-BY-SA musicdsp model, or any Moog schematic
-// (.myrobots/MOOG/LICENSING.md: permissive / own-code only). The same lib
+// (permissive / own-code only). The same lib
 // is reused by 904B (HPF) + 904C (coupler) in later slices.
 //
 // Inputs:

@@ -2,7 +2,7 @@
 //
 // INWARDS — inward-zooming radial pattern generator (Phase-1 source module).
 //
-// The spec at .myrobots/plans/video-modules-mvp.md §3.1 originally framed
+// The spec at originally framed
 // INWARDS as a webcam source. For the Phase-1 module set we re-purpose the
 // name (per the "8 modules to ship" plan in the agent kickoff): it is now
 // a procedural source that draws concentric rings zooming inward, giving

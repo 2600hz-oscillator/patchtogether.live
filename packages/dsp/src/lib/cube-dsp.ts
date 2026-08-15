@@ -6,7 +6,7 @@
 // FLOOR, WALL, CEILING — and lets you fly an arbitrary planar slice through it;
 // the slice is read out as the played waveform via a SURFACE-HEIGHT SCAN (at
 // each of 256 x-positions the sample = how far the solid material extends along
-// the slice, i.e. the intersection depth). See .myrobots/CUBE/PLAN.md §5 for the
+// the slice, i.e. the intersection depth). for the
 // full math + the locked artistic decisions (§2).
 //
 // This file lives under lib/ for two reasons:

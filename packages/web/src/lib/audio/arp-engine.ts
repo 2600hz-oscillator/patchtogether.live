@@ -14,7 +14,7 @@
 // (the caller drives one `arpAdvance` per transport-projected arp tick).
 //
 // ---------------------------------------------------------------------------
-// CONTRACT (see .myrobots/plans/launchpad-single-rework-2026-07-12.md
+// CONTRACT (
 // "ARP ENGINE CONTRACT"):
 //
 //  • Direction: 'up' | 'down' | 'updown'. up-and-down is an EXCLUSIVE

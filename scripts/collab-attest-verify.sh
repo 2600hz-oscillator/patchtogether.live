@@ -25,7 +25,7 @@
 # CONTENDED than CI's, not strictly superior — a calm local pass can mask an
 # under-load multiplayer race. The NIGHTLY backstop (collab-nightly.yml) runs the
 # FULL real @collab lane on CI to surface contention regressions daily. See
-# .myrobots/plans/collab-attest-2026-06-15.md §caveat.
+# .claude/skills/collab-attest.md.
 #
 # INFORMATIONAL for now: this job is NOT in the required `ci` umbrella's
 # failing-condition set — exactly how webgl-attest started. The owner flips it

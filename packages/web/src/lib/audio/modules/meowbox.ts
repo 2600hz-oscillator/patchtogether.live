@@ -94,7 +94,7 @@ export const meowboxDef: AudioModuleDef = {
     // out-of-scope; the DSP's exp2 mapping is the V/oct standard).
     //
     // morph / decay / level remain CV→AudioParam — cvScale per
-    // .myrobots/plans/cv-range-standard.md so an LFO at ±1 sweeps the
+    // docs/adr/004-cv-range-convention.md so an LFO at ±1 sweeps the
     // full natural range:
     //   morph: linear (0..1).
     //   decay: log    (0.05..2s).

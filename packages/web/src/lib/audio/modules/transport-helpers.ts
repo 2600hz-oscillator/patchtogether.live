@@ -2,8 +2,7 @@
 //
 // Shared transport + quicksave logic used by Sequencer / DRUMSEQZ / SCORE.
 //
-// Spec: .myrobots/plans/sequencer-transport-and-quicksave.md
-//
+////
 // Three concerns live here:
 //
 // 1. **Slot data shape** — every sequencer-style module persists 4 quicksave

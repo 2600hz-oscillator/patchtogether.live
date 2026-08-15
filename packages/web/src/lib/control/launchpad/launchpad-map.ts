@@ -1230,7 +1230,7 @@ export function computeKeysFrame(opts: KeysFrameOpts): LaunchpadFrame {
 // SINGLE-MODE ONLY and PURE — the stateful handlers (view enum, shift latch/
 // hold, tap-to-arm, undo/redo, arp wiring) live in launchpad-control (S2b) and
 // consume these classifiers + frame builders. The PAIR-mode code above is
-// untouched. Design: .myrobots/plans/launchpad-single-rework-2026-07-12.md.
+// untouched.
 //
 // COORDINATES: the right SCENE column is addressed by SCENE INDEX 0..7 =
 // TOP→bottom (scene index i ↔ SCENE_CCS[i] ↔ physical bottom-origin row

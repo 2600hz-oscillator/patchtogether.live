@@ -1,7 +1,7 @@
 // packages/dsp/src/lib/kickdrum-dsp.ts
 //
 // KICK DRUM (id `kickdrum`) — pure DSP core, Phase 1 of the build plan
-// (.myrobots/plans/kick-drum-voice-2026-07-01.md): the SUB + BODY generator
+//: the SUB + BODY generator
 // layers and the strike machinery. Later phases add CLICK, the oversampled
 // DRIVE (via lib/oversample.ts), EQ, TRANSLATE, DYNAMICS, and the stereo
 // crossover — all downstream of the summed layers produced here.

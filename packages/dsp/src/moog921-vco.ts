@@ -6,7 +6,7 @@
 // (.myrobots/MOOG/). The 921 is shared by both systems (listed under
 // SYS55). DSP is OWN CODE — a clean-room polyBLEP oscillator core in
 // ./lib/moog-vco-dsp.ts, not a port of any Moog schematic / copyleft
-// source (.myrobots/MOOG/LICENSING.md: permissive / own-code only).
+// source (permissive / own-code only).
 //
 // The real 921 presents four simultaneous waveform jacks off one common
 // oscillator core (sine / triangle / sawtooth / rectangular w/ variable

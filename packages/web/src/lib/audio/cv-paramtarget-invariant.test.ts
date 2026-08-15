@@ -2,7 +2,7 @@
 //
 // Universal CV-input paramTarget invariant.
 //
-// Rationale (audit issue #G.1, .myrobots/plans/test-coverage-audit.md):
+// Rationale (audit issue #G.1):
 // every Phase-1 video module declares CV inputs whose port id matches a
 // param id, but only LINES + INWARDS used to declare the matching
 // `paramTarget: <id>`. The runtime CV bridge (PatchEngine.addEdge)

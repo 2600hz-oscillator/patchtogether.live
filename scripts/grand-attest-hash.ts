@@ -8,7 +8,7 @@
 // debugging "what's in the hash".
 //
 // See scripts/grand-attest-lib.ts for the basis + algorithm and
-// .myrobots/plans/grand-integration-e2e-art-2026-07-19.md for the full design.
+// .claude/skills/grand-attest.md for the full design.
 
 import { computeGrandHash, resolveGrandBasis } from './grand-attest-lib';
 

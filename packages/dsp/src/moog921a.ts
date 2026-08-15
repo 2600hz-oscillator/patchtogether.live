@@ -19,7 +19,7 @@
 // passthrough.
 //
 // DSP is OWN CODE — clean-room CV math, not a port of any Moog schematic /
-// copyleft source (.myrobots/MOOG/LICENSING.md: permissive / own-code only).
+// copyleft source (permissive / own-code only).
 //
 // IMPORTANT: this file does NOT `export` anything at the top level —
 // top-level exports leak into the bundled dist/<name>.js + break the ART

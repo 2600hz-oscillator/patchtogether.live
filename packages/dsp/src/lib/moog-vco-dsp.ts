@@ -2,7 +2,7 @@
 //
 // Shared Moog-VCO oscillator core. OWN CODE — a clean-room polyBLEP
 // oscillator written for this project; it is NOT a port of any Moog
-// schematic or copyleft DSP source (per .myrobots/MOOG/LICENSING.md:
+// schematic or copyleft DSP source (
 // permissive / own-code DSP only). The 921 VCO worklet (../moog921-vco.ts)
 // is the first consumer; later Moog slices that need a VCO (e.g. the 901
 // family) can adopt the same core.

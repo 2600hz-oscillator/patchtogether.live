@@ -90,7 +90,7 @@ const baseDef: AudioModuleDef = {
     // gate (the prose below already speaks rising-edge/clock/reset/sync).
     { id: 'clock', type: 'gate', edge: 'trigger' },
     // CV → AudioParam routing with cvScale per
-    // .myrobots/plans/cv-range-standard.md.
+    // docs/adr/004-cv-range-convention.md.
     // rate: log (0.01..100Hz spans ~13 octaves; cv=±1 = ±~6.5 octaves).
     // shape: linear (0..2 morph axis).
     { id: 'rate',  type: 'cv', paramTarget: 'rate',  cvScale: { mode: 'log' } },

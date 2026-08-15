@@ -17,7 +17,7 @@ export type Domain = StandardDomain | (string & {});
 // ---------------- Cable types (D6, D7, D18) ----------------
 // `polyPitchGate` is the Stage-1 polyphony cable (10 audio channels packed
 // (p0,g0,p1,g1,...,p4,g4) — 5 voice pairs). See packages/web/src/lib/audio/poly.ts
-// and .myrobots/plans/dx7-and-polyphony.md §5 for the architecture.
+// and for the architecture.
 //
 // Video-domain cable types (Phase 0):
 //   keys       — single-channel still mono image (no time axis)
@@ -191,7 +191,7 @@ export type ModuleType = CoreModuleType | (string & {});
 // ---------------- Port + parameter schemas ----------------
 
 /**
- * CV-input scaling hint (see .myrobots/plans/cv-range-standard.md).
+ * CV-input scaling hint (see docs/adr/004-cv-range-convention.md).
  *
  * Project convention: the `cv` cable type carries a bipolar -1..+1
  * "modulation" signal where ±1 should sweep the target param through its

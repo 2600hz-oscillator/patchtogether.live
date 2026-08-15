@@ -7,7 +7,7 @@
 // in an OfflineAudioContext at the resulting frequency, render 1 second, FFT,
 // assert the dominant bin matches the expected frequency to within ±0.5 Hz.
 //
-// Five reference pitches per the spec (.myrobots/plans/sequencer-cartesian-note-entry.md):
+// Five reference pitches per the spec:
 //
 //   note  | MIDI | expected Hz
 //   ------+------+--------------

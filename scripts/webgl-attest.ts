@@ -23,7 +23,7 @@
 // expected set for every pass, writes ci-webgl-attest/<hash>.json with the
 // metadata + per-suite measured summary. On ANY failure/flake/shortfall: writes
 // nothing, exits non-zero. Does NOT auto-commit (the commit is the contributor's
-// explicit act). See .myrobots/plans/webgl-attestation-semaphore.md §5.
+// explicit act). See .claude/skills/webgl-attest.md.
 
 import { execFileSync, execSync, spawn } from 'node:child_process';
 import { readFileSync, writeFileSync, mkdtempSync, existsSync, rmSync, readdirSync } from 'node:fs';

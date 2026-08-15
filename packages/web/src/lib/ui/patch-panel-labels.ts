@@ -14,7 +14,7 @@
 //  2. Bucket ports by cable type for the auto-grouping panel layout
 //     (Gates → Pitches → CV → Audio → Poly).
 //
-// The verbose-label rule from .myrobots/plans/ui-patch-panel-refactor.md:
+// The verbose-label rule:
 // full word default, with hardware-convention abbreviations like FM, PW,
 // L, R left as-is.
 

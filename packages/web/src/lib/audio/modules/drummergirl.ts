@@ -45,7 +45,7 @@ export const drummergirlDef: AudioModuleDef = {
   // factory defaults on load, so no migration callback (or version bump) is needed.
   inputs: [
     { id: 'gate',   type: 'gate', edge: 'gate' },
-    // CV scaling per .myrobots/plans/cv-range-standard.md.
+    // CV scaling per docs/adr/004-cv-range-convention.md.
     // pitch: linear (-36..+36 semi; cv=±1 sweeps ±36 semi from knob center).
     // tone/shape: linear (already 0..1 native).
     // volume: linear (0..2; cv=±1 sweeps ±1.0 from knob).

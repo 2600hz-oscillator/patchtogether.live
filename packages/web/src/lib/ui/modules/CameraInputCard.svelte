@@ -4,8 +4,7 @@
   // Owns: getUserMedia + enumerateDevices + the live <video> element +
   // permission state machine. Hands the <video> element off to the
   // engine module's runtime via attachExternalSource so the WebGL2
-  // sampler reads from it directly (single source of truth — see
-  // .myrobots/plans/module-camera-input.md §7).
+  // sampler reads from it directly (single source of truth).
   //
   // State scopes:
   //   - `state` (idle, requesting, streaming, ...): per-tab. Lives in
@@ -565,7 +564,7 @@
       <!-- Local-only hint. The captured stream stays inside this browser
            tab — collaborators see only a presence badge, not the pixels.
            Multiplayer streaming (WebRTC + SFU) is deferred to a future
-           phase; see .myrobots/plans/module-camera-input.md. -->
+           phase. -->
       {#if camState === 'streaming'}
         <div class="local-only-hint" data-testid="camera-local-only-hint">
           Local only — others won't see your camera stream

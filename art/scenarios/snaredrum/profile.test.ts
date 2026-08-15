@@ -1,7 +1,7 @@
 // art/scenarios/snaredrum/profile.test.ts
 //
 // AUDIO PROFILE for SNARE DRUM (id `snaredrum` — the deep stereo snare voice +
-// polyphonic two-hand drumroll, design .myrobots/snare-drum-module-design.md).
+// polyphonic two-hand drumroll, design).
 // Ships with the module per the audio-profile gate (#999): every new audio def
 // lands with ≥1 committed baseline.
 //

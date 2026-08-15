@@ -15,7 +15,7 @@
 //
 // DSP: own-code exponential-segment contour generator
 // (packages/dsp/src/moog911.ts) — permissive, not a port of any Moog
-// schematic or copyleft source (.myrobots/MOOG/LICENSING.md). Loosely
+// schematic or copyleft source. Loosely
 // modelled on the repo's `adsr` (gate-driven, unipolar 0..1, +inverted tap)
 // but with the 911's T1→peak / T2→Esus / T3 contour, not A-D-S-R.
 //

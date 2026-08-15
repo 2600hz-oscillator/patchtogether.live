@@ -1,7 +1,7 @@
 // packages/web/src/lib/graph/schema-cleanup-roundtrip-golden.test.ts
 //
 // PART A #1 of the schema/persistence cleanup — the "NEW patches round-trip
-// IDENTICALLY" GOLDEN. See .myrobots/schema_cleanup_proposal_260606.md §5.2
+// IDENTICALLY" GOLDEN.
 // ("New-patch round-trips identically") + §6 Phase 0 ("Establish the regression
 // net, ship first, no removals").
 //

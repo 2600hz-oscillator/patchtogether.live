@@ -8,7 +8,7 @@
 #   HASH=$(bash scripts/grand-attest-hash.sh)          # the hash
 #   bash scripts/grand-attest-hash.sh --list           # the basis file set
 #
-# See .myrobots/plans/grand-integration-e2e-art-2026-07-19.md.
+# See .claude/skills/grand-attest.md.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

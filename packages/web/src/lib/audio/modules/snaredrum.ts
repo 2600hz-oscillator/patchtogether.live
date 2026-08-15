@@ -1,7 +1,7 @@
 // packages/web/src/lib/audio/modules/snaredrum.ts
 //
 // SNARE DRUM — deep, flexible stereo snare VOICE with a POLYPHONIC two-hand
-// DRUMROLL (design + build spec: .myrobots/snare-drum-module-design.md). Mate to
+// DRUMROLL. Mate to
 // KICK DRUM; it clones that template (state-object DSP, sr-calibrated decay,
 // seeded xorshift, per-channel tanh ceiling, mono-safe M/S, stereo audio_l /
 // audio_r fanned through a ChannelSplitter) and adds one new thing: a true

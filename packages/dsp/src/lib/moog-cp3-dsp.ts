@@ -2,7 +2,7 @@
 //
 // MOOG CP3 / CP3A CONSOLE PANEL (mixer) — pure DSP core.
 //
-// Own-code (permissive, .myrobots/MOOG/LICENSING.md) — a forked, expanded
+// Own-code (permissive,) — a forked, expanded
 // version of the repo's `mixer`: a 4×1 summing mixer that additionally
 // provides the CP3's distinctive features:
 //
@@ -21,8 +21,7 @@
 // math is polarity- and DC-transparent).
 //
 // This module is shared by BOTH the Moog System 55 and System 35 consoles
-// (registered under SYS55, the shared bucket, per the resolved Q4 decision
-// in .myrobots/MOOG/PLAN.md).
+// (registered under SYS55, the shared bucket, per the resolved Q4 decision).
 //
 // All functions are pure + sample-rate-agnostic so the worklet, the unit
 // tests, and node-side ART can reuse the exact same math.

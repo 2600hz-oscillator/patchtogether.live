@@ -239,6 +239,50 @@ describe('agent context files describe the real tree', () => {
     ).toEqual([]);
   });
 
+
+  it('NO tracked file cites a `.myrobots` record that is not there — tree-wide (#1562)', () => {
+    // The leg above covers the STANDING docs; this one covers EVERYTHING ELSE
+    // — the 2026-08 janitorial sweeps left 59 dead `.myrobots` pointers in
+    // CODE COMMENTS, and the doc-surface gate was structurally blind to them
+    // by design. A dead pointer costs an agent a file read and a "where is
+    // this?" detour, and silently implies the rationale still exists.
+    //
+    // Two named exemptions, each the gate-fixture class: this file and
+    // docs-only-gate.test.ts hold `.myrobots/<x>.md` STRING LITERALS as their
+    // own positive/negative controls — a fixture that must NOT resolve is the
+    // point of a fixture. Exempted by exact path, never by pattern, so a new
+    // dead pointer anywhere else — including a new test file's fixtures —
+    // reddens and must either resolve or join this list with its why.
+    const FIXTURE_FILES = new Set(['scripts/agent-context.test.ts', 'scripts/docs-only-gate.test.ts']);
+    const tracked = execFileSync('git', ['ls-files'], { cwd: REPO_ROOT, encoding: 'utf8' })
+      .split('\n')
+      .filter((p) => p && !p.startsWith('.myrobots/') && !FIXTURE_FILES.has(p));
+    const dangling: string[] = [];
+    for (const rel of tracked) {
+      let text: string;
+      try {
+        text = readFileSync(join(REPO_ROOT, rel), 'utf8');
+      } catch {
+        continue; // binary or unreadable — a .myrobots path cannot hide there as prose
+      }
+      for (const cited of citedMyrobotsPaths(text)) {
+        if (!existsSync(join(REPO_ROOT, cited))) dangling.push(`${rel} → ${cited}`);
+      }
+    }
+    // Non-vacuity: the scan must have SEEN a live citation somewhere — the
+    // repo legitimately cites session records from newer session records.
+    expect(
+      tracked.length,
+      'the tracked-file reader returned nothing — it read the wrong tree',
+    ).toBeGreaterThan(0);
+    expect(
+      dangling,
+      'a tracked file cites a `.myrobots` record that is not there (#1562: 59 of these ' +
+        'were left by the janitorial sweeps). Re-point at the durable home (ADR/skill) or ' +
+        'drop the pointer so the prose still reads — never restore the deleted record.',
+    ).toEqual([]);
+  });
+
   it('`.myrobots` carries no secret topology', () => {
     const records = myrobotsRecords();
     // Non-vacuity WITHOUT a count: an empty read would make the scan silent.

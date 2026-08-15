@@ -8,7 +8,7 @@
 // the snapshot changed.
 //
 // This file targets gaps called out in
-// .myrobots/plans/test-coverage-audit.md §I (FILTER, DESTROY,
+// (FILTER, DESTROY,
 // AUDIO-OUT). They share the same harness, so we keep them in one
 // file rather than scattering one-test specs across the suite.
 //

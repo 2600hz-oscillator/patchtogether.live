@@ -181,7 +181,7 @@ export const swolevcoDef: AudioModuleDef = {
     { id: 'pitch',     type: 'pitch' },
     { id: 'mod_pitch', type: 'pitch' },
     { id: 'fm',        type: 'audio' },
-    // CV scaling per .myrobots/plans/cv-range-standard.md (LFO ±1 sweeps
+    // CV scaling per docs/adr/004-cv-range-convention.md (LFO ±1 sweeps
     // each param's full natural range centered on the knob).
     { id: 'timbre',    type: 'cv', paramTarget: 'timbre',   cvScale: { mode: 'linear' } },
     { id: 'symmetry',  type: 'cv', paramTarget: 'symmetry', cvScale: { mode: 'linear' } },

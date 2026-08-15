@@ -9,7 +9,7 @@
 // before any minifier sees them; the inlined .toString() bodies then
 // reference renamed identifiers that Faust's template doesn't redeclare,
 // and the worklet throws `xs is not defined` inside AudioWorkletGlobalScope.
-// (See .myrobots/plans/minification-fix.md for the long story — esbuild
+// ( for the long story — esbuild
 // keepNames and terser keep_classnames both proved insufficient because
 // the rename happens in Rollup's bundling step.)
 //

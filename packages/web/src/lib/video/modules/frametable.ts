@@ -40,7 +40,6 @@
 // construction, so DOC edits cost nothing. Look-affecting new
 // shader — do NOT auto-merge (held for owner visual preview).
 //
-// Design + research: .myrobots/plans/frametable-2026-07-19.md
 
 import type { VideoModuleDef } from '$lib/video/module-registry';
 import type { VideoNodeHandle, VideoNodeSurface } from '$lib/video/engine';

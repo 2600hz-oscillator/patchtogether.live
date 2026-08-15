@@ -1,7 +1,7 @@
 // packages/web/src/lib/audio/modules/clip-record.ts
 //
 // PURE note-RECORD write helpers for the dual-Launchpad KEYS/record mode
-// (design: .myrobots/plans/clip-record-note-mode-2026-07-01.md, Phase 1). These
+// (, Phase 1). These
 // are placement-free + engine-free: given a TARGET STEP they mutate a
 // NoteClipRecord functionally (callers apply the result via the in-place Y.Doc
 // discipline, one transact per discrete note-event — never per frame). Distinct

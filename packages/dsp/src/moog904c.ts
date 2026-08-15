@@ -35,7 +35,7 @@
 // (./lib/moog-ladder-dsp.ts) — the SAME clean-room TPT/Zavalishin
 // zero-delay-feedback ladder the 904A (lp4 tap) + 904B (hpDerive tap) use.
 // Permissive / own-code, NOT a port of the LGPLv3 Huovilainen code, the
-// CC-BY-SA musicdsp model, or any Moog schematic (.myrobots/MOOG/LICENSING.md).
+// CC-BY-SA musicdsp model, or any Moog schematic.
 //
 // IMPORTANT: this file does NOT `export` anything at the top level —
 // top-level exports leak into the bundled dist/<name>.js + break the ART

@@ -3,7 +3,7 @@
 // Pin the CV-scaling math: at cv=-1 the param hits its (clamped) min, at
 // cv=0 the knob position passes through unchanged, and at cv=+1 the param
 // hits its (clamped) max. This is the "LFO sweeps full range" guarantee
-// that the standard (.myrobots/plans/cv-range-standard.md) requires.
+// that the standard (docs/adr/004-cv-range-convention.md) requires.
 
 import { describe, it, expect } from 'vitest';
 import { scaleCv, scaleCvDelta, buildCvCurve, sampleCvCurve, CURVE_LEN } from './cv-scale';

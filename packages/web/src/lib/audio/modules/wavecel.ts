@@ -128,7 +128,7 @@ export const wavecelDef: AudioModuleDef = {
   inputs: [
     { id: 'pitch',     type: 'pitch' },
     { id: 'fm',        type: 'audio' },
-    // CV → AudioParam routings per .myrobots/plans/cv-range-standard.md:
+    // CV → AudioParam routings per docs/adr/004-cv-range-convention.md:
     //   morph (0..1) + fold (0..1) are linear; spread (1..5) is also linear
     //   so fractional CV smoothly cross-fades adjacent taps (discrete would
     //   click at integer crossings).

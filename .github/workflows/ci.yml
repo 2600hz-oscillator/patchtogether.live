@@ -5,7 +5,7 @@ name: CI
 # the project's Flox environment so the toolchain (Node 22.22.2, Faust 2.85.5,
 # esbuild, go-task, git-lfs, gh) matches what developers run locally.
 #
-# Job shape (as of 2026-05-24, post-MED-1 from .myrobots/plans/ci-build-wall-time-reduction.md):
+# Job shape (as of 2026-05-24, post-MED-1):
 #
 #   typecheck       ~30 s  | independent setup
 #   unit            ~90 s  | independent setup (server + web vitest)
@@ -2274,7 +2274,7 @@ jobs:
 
   # -----------------------------------------------------------------------
   # collab-attest — the LOCAL-RELAY @collab attestation VERIFY gate (the collab
-  # analogue of webgl-attest; see .myrobots/plans/collab-attest-2026-06-15.md +
+  # analogue of webgl-attest; see .claude/skills/collab-attest.md +
   # ci-collab-attest/README.md). Recomputes the deterministic @collab content-
   # hash (scripts/collab-attest-hash.sh) and checks ci-collab-attest/<hash>.json
   # exists. The attestation was produced by the owner's local FRESH-dedicated-
@@ -2349,7 +2349,7 @@ jobs:
   # -----------------------------------------------------------------------
   # grand-attest — the LOCAL-GPU GRAND-INTEGRATION attestation VERIFY gate (the
   # third sibling of webgl-attest + collab-attest; see
-  # .myrobots/plans/grand-integration-e2e-art-2026-07-19.md + ci-grand-attest/
+  # .claude/skills/grand-attest.md + ci-grand-attest/
   # README.md). Recomputes the deterministic grand content-hash
   # (scripts/grand-attest-hash.sh) and checks ci-grand-attest/<hash>.json exists.
   # The attestation was produced by the owner's local `task grand:attest` run on a
@@ -2556,8 +2556,8 @@ jobs:
     # umbrella WAIT (the umbrella is `if: always()` and gates via the env+if
     # block, not via needs) — exactly how the per-PR collab/behavioral lanes sit
     # un-gated. collab-attest was armed 2026-06-20 (the final @collab de-flake
-    # step) mirroring webgl-attest. See .myrobots/plans/webgl-attestation-semaphore.md
-    # §7 + .myrobots/plans/collab-attest-2026-06-15.md.
+    # step) mirroring webgl-attest. See .claude/skills/webgl-attest.md
+    # §7 + .claude/skills/collab-attest.md.
     # grand-attest is added to `needs:` (so the umbrella WAITS on it + logs its
     # result) but is INFORMATIONAL — $GRAND_ATTEST is deliberately NOT in the
     # failing `if` below, exactly how webgl-attest + collab-attest started. The

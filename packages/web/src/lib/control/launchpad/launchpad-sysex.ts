@@ -11,8 +11,7 @@
 //
 // SCOPE (foundation phase): the byte layer ONLY. The 8×8 placement adapter
 // (`launchpad-map.ts`), the stateful binding, the pairing handshake, and the
-// Web-MIDI singleton are LATER phases that build on this — see the proposal
-// (.myrobots/plans/clip-launcher-launchpad/launchpad-mk3-proposal.md §9).
+// Web-MIDI singleton are LATER phases that build on this.
 //
 // HARDWARE REFERENCE — every number below is from the Novation **Launchpad Mini
 // MK3 Programmer's Reference Manual** (cross-checked with the lpminimk3 +

@@ -71,7 +71,7 @@ export const qbrtDef: AudioModuleDef = {
     { id: 'L',         type: 'audio' },
     { id: 'R',         type: 'audio' },
     { id: 'ping',      type: 'gate', edge: 'trigger' },
-    // CV scaling per .myrobots/plans/cv-range-standard.md — LFO ±1 sweeps
+    // CV scaling per docs/adr/004-cv-range-convention.md — LFO ±1 sweeps
     // the param's full musical range centered on the knob.
     //
     // cutoff: log scaling (20Hz..20kHz spans 10 octaves; cv=±1 = ±5 octaves).

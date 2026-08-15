@@ -2,7 +2,7 @@
 //
 // Shared resolver + content-hash for the @collab local-attestation "semaphore".
 // The COLLAB analogue of scripts/webgl-attest-lib.ts — see
-// .myrobots/plans/collab-attest-2026-06-15.md (the design, the basis, the
+// .claude/skills/collab-attest.md (the design, the basis, the
 // honor-system framing) and ci-collab-attest/README.md.
 //
 // Imported by BOTH:
