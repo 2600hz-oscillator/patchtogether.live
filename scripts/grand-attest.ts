@@ -22,11 +22,12 @@
 
 import { execFileSync, execSync } from 'node:child_process';
 import { readFileSync, writeFileSync, mkdtempSync, existsSync, rmSync, readdirSync } from 'node:fs';
-import { tmpdir, hostname, release, arch, cpus, loadavg } from 'node:os';
+import { tmpdir, hostname, release, arch } from 'node:os';
 import { join } from 'node:path';
 
 import { REPO_ROOT, GRAND_GREP, computeGrandHash } from './grand-attest-lib';
 import { bootOwnAppServer, assertServerIsThisWorktree, type OwnAppServer } from './worktree-identity';
+import { preflightSolo, type CoTenantProfile } from './attest-preflight';
 
 const REPEAT = Math.max(1, parseInt(process.env.REPEAT || '1', 10) || 1);
 const DRY = process.argv.includes('--dry-run'); // verify the mechanism w/o the long real run
@@ -60,47 +61,6 @@ interface PwSuite {
 // transient class — lifted from webgl-attest's preflightSolo). Override on a
 // dedicated/trusted runner with GRAND_ATTEST_ALLOW_BUSY=1.
 // ---------------------------------------------------------------------------
-function preflightSolo(): void {
-  if (process.env.GRAND_ATTEST_ALLOW_BUSY === '1') {
-    console.log('Pre-flight: GRAND_ATTEST_ALLOW_BUSY=1 — skipping the quiet-machine guard.');
-    return;
-  }
-  const ncpu = cpus().length || 1;
-  const load1 = loadavg()[0] ?? 0;
-  const COTENANT_CPU_MIN = Math.max(1, parseFloat(process.env.GRAND_ATTEST_BUSY_CPU || '25') || 25);
-  const COTENANT_RE = /Google Chrome|Microsoft Edge|Safari|Chromium|firefox|Brave|Electron|Patchtogether\.app|Spotify/i;
-  let cotenants: string[] = [];
-  try {
-    cotenants = execSync('ps -A -o %cpu=,comm=', { encoding: 'utf8' })
-      .split('\n')
-      .map((l) => l.trim())
-      .filter(Boolean)
-      .map((l) => {
-        const i = l.indexOf(' ');
-        return { cpu: parseFloat(l.slice(0, i)) || 0, name: l.slice(i + 1) };
-      })
-      .filter((p) => p.cpu >= COTENANT_CPU_MIN && COTENANT_RE.test(p.name))
-      .sort((a, b) => b.cpu - a.cpu)
-      .map((p) => `${p.cpu.toFixed(0)}% ${p.name.split('/').pop()}`);
-  } catch {
-    /* ps unavailable → fall back to load only */
-  }
-  const loadBusy = load1 > ncpu * 0.5;
-  if (cotenants.length === 0 && !loadBusy) {
-    console.log(`Pre-flight: machine looks quiet (load(1m)=${load1.toFixed(2)} on ${ncpu} cores). Proceeding.`);
-    return;
-  }
-  console.error('────────────────────────────────────────────────────────────');
-  console.error('grand:attest PRE-FLIGHT — machine is NOT quiet; REFUSING to run.');
-  if (cotenants.length) console.error(`  GPU co-tenants: ${cotenants.join('  ·  ')}`);
-  console.error(`  load(1m)=${load1.toFixed(2)} on ${ncpu} cores${loadBusy ? '  (HIGH)' : ''}`);
-  console.error('  The heavy attest needs the GPU + CPU quiet — synesthesia (WebGL)');
-  console.error('  + recorderbox (H.264) + the audio graph are timing-sensitive.');
-  console.error('  → Quit heavy browsers / native GL apps, then re-run.');
-  console.error('  → Override (dedicated/trusted runner only): GRAND_ATTEST_ALLOW_BUSY=1');
-  console.error('────────────────────────────────────────────────────────────');
-  process.exit(2);
-}
 
 /** Probe the real ANGLE renderer via a one-shot headless WebGL context and abort
  *  if it reports SwiftShader (lifted from webgl-attest). */
@@ -299,8 +259,20 @@ async function main() {
     console.error('E2E_SWIFTSHADER=1 is set — a SwiftShader attestation would be a lie. Unset it and run on the real GPU.');
     process.exit(2);
   }
-  // (1b) Refuse a contended machine.
-  if (!DRY) preflightSolo();
+  // (1b) Refuse a contended machine — sampled ACROSS a window, never at one
+  // instant (#1331). This used to be a SECOND copy of the guard carrying an
+  // OLDER co-tenant regex (brand-only: no Discord / Slack / generic
+  // "Helper (Renderer)"), i.e. blind to the exact 42.9% Electron renderer
+  // webgl-cotenancy.ts was fixed for. One module now, one match list.
+  let preflight: CoTenantProfile | null = null;
+  if (!DRY) {
+    preflight = preflightSolo({
+      label: 'grand:attest',
+      allowBusyEnv: 'GRAND_ATTEST_ALLOW_BUSY',
+      busyCpuEnv: 'GRAND_ATTEST_BUSY_CPU',
+      leaked: [],
+    });
+  }
 
   // (2) Compute the content hash up front.
   const hash = computeGrandHash();
@@ -357,6 +329,17 @@ async function main() {
     playwrightVersion: playwrightVersion(),
     os: `${process.platform} ${release()} (${arch()})`,
     machineClass: 'local-trusted-gpu-workstation', // was hostname()
+    // HOW QUIET THE MACHINE WAS (#1331) — see webgl-attest for the rationale.
+    preflight: preflight
+      ? {
+          samples: preflight.samples,
+          windowMs: preflight.windowMs,
+          maxForeignCpu: preflight.maxForeignCpu,
+          thresholdCpu: preflight.thresholdCpu,
+          load1: preflight.load1,
+          cores: preflight.cores,
+        }
+      : undefined,
     gpu: renderer,
     // The attest booted + identity-verified its OWN app server (#1597).
     appServer: ownServer

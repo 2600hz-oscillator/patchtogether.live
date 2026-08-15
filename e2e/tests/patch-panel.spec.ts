@@ -36,6 +36,99 @@ async function drill(page: Page, nodeId: string, nav: 'inputs' | 'outputs') {
   await chrome(page, nodeId).locator(`[data-testid="patch-panel-nav"][data-nav="${nav}"]`).click();
 }
 
+/** Card + chrome edges, all read inside ONE page-side layout pass. */
+interface AnchorSample {
+  mounted: boolean;
+  side: string;
+  cardLeft: number;
+  cardRight: number;
+  menuLeft: number;
+  menuRight: number;
+  /** |menu.left − card.left| in CSS px — the LEFT-trigger contract. */
+  leftDelta: number;
+  /** |menu.right − card.right| in CSS px — the RIGHT-trigger contract. */
+  rightDelta: number;
+}
+
+const EMPTY_ANCHOR: AnchorSample = {
+  mounted: false, side: '', cardLeft: NaN, cardRight: NaN,
+  menuLeft: NaN, menuRight: NaN, leftDelta: NaN, rightDelta: NaN,
+};
+
+/** Units + both rects, so a red run is diagnosable from the message alone. */
+function describeAnchor(s: AnchorSample): string {
+  return (
+    `side=${s.side} card=[${Math.round(s.cardLeft)}..${Math.round(s.cardRight)}] ` +
+    `menu=[${Math.round(s.menuLeft)}..${Math.round(s.menuRight)}] ` +
+    `leftDelta=${Math.round(s.leftDelta)} rightDelta=${Math.round(s.rightDelta)} (CSS px)`
+  );
+}
+
+/** Sample the card + chrome rects together. Both rects come from the SAME
+ *  layout, unlike two `boundingBox()` round trips. */
+async function readDeltas(page: Page, nodeId: string): Promise<AnchorSample> {
+  return await page.evaluate((id) => {
+    const c = document.querySelector(`[data-patch-panel-chrome="${id}"]`) as HTMLElement | null;
+    const card = document.querySelector(`.svelte-flow__node[data-id="${id}"]`) as HTMLElement | null;
+    if (!c || !card) {
+      return { mounted: false, side: '', cardLeft: NaN, cardRight: NaN,
+        menuLeft: NaN, menuRight: NaN, leftDelta: NaN, rightDelta: NaN };
+    }
+    const cr = card.getBoundingClientRect();
+    const mr = c.getBoundingClientRect();
+    return {
+      mounted: true,
+      side: c.getAttribute('data-anchor-side') ?? '',
+      cardLeft: cr.left, cardRight: cr.right,
+      menuLeft: mr.left, menuRight: mr.right,
+      leftDelta: Math.abs(mr.left - cr.left),
+      rightDelta: Math.abs(mr.right - cr.right),
+    };
+  }, nodeId);
+}
+
+/**
+ * Click a trigger IN THE PAGE and sample the chrome's anchor in the SAME task,
+ * i.e. on the first frame the chrome exists. Nothing crosses the Playwright
+ * protocol boundary inside the window under test, so the measurement is
+ * frame-exact and does not depend on the renderer's frame rate — the property
+ * a `boundingBox()` round trip does not have (#1647, #1569).
+ */
+async function openInPageAndSampleFirstFrame(
+  page: Page,
+  nodeId: string,
+  side: 'left' | 'right',
+): Promise<AnchorSample> {
+  const testid = side === 'left' ? 'patch-trigger' : 'patch-trigger-right';
+  const sample = await page.evaluate(
+    async ({ id, tid }) => {
+      const btn = document.querySelector(
+        `.svelte-flow__node[data-id="${id}"] [data-testid="${tid}"]`,
+      ) as HTMLElement | null;
+      if (!btn) return null;
+      btn.click();
+      // Let Svelte flush the DOM creation, then read — still before any
+      // animation frame has been given the chance to reposition anything.
+      await new Promise<void>((r) => queueMicrotask(() => r()));
+      const c = document.querySelector(`[data-patch-panel-chrome="${id}"]`) as HTMLElement | null;
+      const card = document.querySelector(`.svelte-flow__node[data-id="${id}"]`) as HTMLElement | null;
+      if (!c || !card) return null;
+      const cr = card.getBoundingClientRect();
+      const mr = c.getBoundingClientRect();
+      return {
+        mounted: true,
+        side: c.getAttribute('data-anchor-side') ?? '',
+        cardLeft: cr.left, cardRight: cr.right,
+        menuLeft: mr.left, menuRight: mr.right,
+        leftDelta: Math.abs(mr.left - cr.left),
+        rightDelta: Math.abs(mr.right - cr.right),
+      };
+    },
+    { id: nodeId, tid: testid },
+  );
+  return sample ?? EMPTY_ANCHOR;
+}
+
 test.describe('PatchPanel: redesigned menu', () => {
   test('ADSR default state hides jacks; click-open + drill shows verbose labels', async ({ page, rack }) => {
     await spawnPatch(page, [{ id: 'adsr', type: 'adsr', position: { x: 200, y: 200 } }]);
@@ -113,28 +206,71 @@ test.describe('PatchPanel: redesigned menu', () => {
   test('edge-alignment: left trigger anchors menu left; right trigger anchors menu right', async ({ page, rack }) => {
     await spawnPatch(page, [{ id: 'adsr', type: 'adsr', position: { x: 200, y: 160 } }]);
 
-    const cardLoc = page.locator('.svelte-flow__node[data-id="adsr"]');
-
-    // Left trigger → menu LEFT edge ≈ card LEFT edge.
+    // ── Settled contract, measured in ONE layout pass and auto-retried ──────
+    //
+    // ⚠ The two `boundingBox()` calls this replaced were TWO Playwright round
+    // trips, i.e. the card and the menu were measured at two different
+    // moments, and each was a ONE-SHOT read with no retry. `readDeltas` takes
+    // both rects inside a single page-side layout, and `expect.poll` retries
+    // on the visible subject, so neither edge can be read from a layout the
+    // other was not read from.
     await openFrom(page, 'adsr', 'left');
-    let card = await cardLoc.boundingBox();
-    let menu = await chrome(page, 'adsr').boundingBox();
-    expect(card && menu).toBeTruthy();
-    if (!card || !menu) return;
-    expect(Math.abs(menu.x - card.x)).toBeLessThanOrEqual(4);
+    await expect
+      .poll(async () => (await readDeltas(page, 'adsr')).leftDelta, {
+        message: 'LEFT trigger: menu LEFT edge aligns to card LEFT edge (CSS px)',
+      })
+      .toBeLessThanOrEqual(4);
     await page.mouse.click(8, 8);
     await expect(chrome(page, 'adsr')).toHaveCount(0);
 
-    // Right trigger → menu RIGHT edge ≈ card RIGHT edge (never spills past).
     await openFrom(page, 'adsr', 'right');
-    card = await cardLoc.boundingBox();
-    menu = await chrome(page, 'adsr').boundingBox();
-    expect(card && menu).toBeTruthy();
-    if (!card || !menu) return;
-    const cardRight = card.x + card.width;
-    const menuRight = menu.x + menu.width;
-    expect(Math.abs(menuRight - cardRight)).toBeLessThanOrEqual(4);
-    expect(menuRight).toBeLessThanOrEqual(cardRight + 1);
+    await expect
+      .poll(async () => (await readDeltas(page, 'adsr')).rightDelta, {
+        message: 'RIGHT trigger: menu RIGHT edge aligns to card RIGHT edge (CSS px)',
+      })
+      .toBeLessThanOrEqual(4);
+    const settled = await readDeltas(page, 'adsr');
+    expect(
+      settled.menuRight,
+      `menu must never spill PAST the anchored card edge — ${describeAnchor(settled)}`,
+    ).toBeLessThanOrEqual(settled.cardRight + 1);
+    await page.mouse.click(8, 8);
+    await expect(chrome(page, 'adsr')).toHaveCount(0);
+
+    // ── PERMANENT LEG (#1647): the FIRST painted frame is already aligned ───
+    //
+    // The settled assertions above are auto-retrying, so on their own they are
+    // BLIND to the defect that produced the 1/25 CI flake: the portaled chrome
+    // used to render at the PREVIOUS open's coordinates and only jump to the
+    // right anchor on the first rAF. `chromePos` outlives a close (only the
+    // `{#if open}` block unmounts), `data-anchor-side` and `aria-hidden` are
+    // already correct in that frame, and the window is RENDERER-SCALED — ~16 ms
+    // at 60 fps, ~126 ms under SwiftShader's 7.9 fps — which is exactly why a
+    // Playwright round trip landed inside it on CI and never locally.
+    //
+    // Measured on origin/main before the fix, open LEFT → close → open RIGHT:
+    //   first frame  menuRight=659  cardRight=945  delta=286   <-- the CI value
+    //   +1 frame     menuRight=945  cardRight=945  delta=0
+    //
+    // So this leg asserts the frame the settled poll cannot see. The click is
+    // dispatched IN THE PAGE and the rect sampled in the same task, so no
+    // Playwright round trip happens inside the window under test — the
+    // measurement is frame-exact and renderer-independent by construction.
+    for (const side of ['left', 'right'] as const) {
+      const first = await openInPageAndSampleFirstFrame(page, 'adsr', side);
+      expect(
+        first.mounted,
+        `the chrome must be in the DOM in the same task as the ${side} trigger click`,
+      ).toBe(true);
+      expect(first.side, `chrome anchors to the ${side} side`).toBe(side);
+      expect(
+        side === 'left' ? first.leftDelta : first.rightDelta,
+        `#1647 — the FIRST frame the chrome exists must ALREADY be edge-aligned, ` +
+          `not one frame behind at the previous open's anchor. ${describeAnchor(first)}`,
+      ).toBeLessThanOrEqual(4);
+      await page.mouse.click(8, 8);
+      await expect(chrome(page, 'adsr')).toHaveCount(0);
+    }
   });
 
   test('cables visually anchor at the affordance corner when the menu is closed', async ({ page, rack }) => {

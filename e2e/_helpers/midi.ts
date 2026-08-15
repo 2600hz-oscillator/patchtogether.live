@@ -360,28 +360,37 @@ export async function readCapturedCcs(
     }));
 }
 
-/** Burst N clock pulses spaced `intervalMs` apart.
+/** Burst N clock pulses spaced `intervalMs` apart. Returns the ACTUAL
+ *  `performance.now()` timestamp (ms) of each pulse, recorded in-page
+ *  immediately before the synchronous dispatch — so within microseconds of
+ *  the `deps.now()` the clock source stamps on arrival.
  *
  *  Math: midi-clock-source.ts smoothes the per-pulse interval, then computes
  *      quarterMs = pulsePeriodMs * 24
  *      bpm      = 60000 / quarterMs = 2500 / pulsePeriodMs
  *  So intervalMs = 25 → 100 BPM, intervalMs = 50 → 50 BPM, etc.
  *
- *  The source uses one-pole smoothing with α=0.25, so several pulses are
- *  needed for the derived BPM to settle. ~24 pulses (one quarter note) is
- *  enough; tests should send more to be robust against timer jitter. */
+ *  ⚠ `intervalMs` is a setTimeout REQUEST, not a delivery guarantee — on a
+ *  loaded runner the real spacing runs long (measured 57–58 ms for a 50 ms
+ *  request on CI, i.e. ~43 BPM where 50 was "sent"). A caller asserting on
+ *  the derived tempo must therefore derive its EXPECTATION from the returned
+ *  timestamps (same clock as the subject), never from `intervalMs`. */
 export async function sendClockBurst(
   page: Page,
   count: number,
   intervalMs: number,
-): Promise<void> {
-  await page.evaluate(
+): Promise<number[]> {
+  return await page.evaluate(
     ({ count, intervalMs }) => {
       const w = window as unknown as { __mockMidi: { clock(): void } };
-      return new Promise<void>((resolve) => {
+      return new Promise<number[]>((resolve) => {
+        const sentAtMs: number[] = [];
         let i = 0;
         function tick() {
-          if (i >= count) { resolve(); return; }
+          if (i >= count) { resolve(sentAtMs); return; }
+          // Record BEFORE the dispatch: __mockMidi.clock() invokes the app's
+          // onmidimessage handler synchronously, which stamps deps.now().
+          sentAtMs.push(performance.now());
           w.__mockMidi.clock();
           i++;
           setTimeout(tick, intervalMs);
@@ -391,4 +400,26 @@ export async function sendClockBurst(
     },
     { count, intervalMs },
   );
+}
+
+/** Replay midi-clock-source.ts's EXACT derivation (one-pole α=0.25 over the
+ *  inter-pulse intervals, 24 ppqn, 10–300 BPM validity clamp) over a burst's
+ *  actual send timestamps. This is the same-clock EXPECTATION for what
+ *  `getBpm()` must return after that burst — renderer- and load-independent
+ *  by construction, because both sides observe the identical arrival times. */
+export function replayDerivedBpm(sentAtMs: number[]): number | null {
+  const MIDI_PPQN = 24;
+  const MIN_BPM = 10;
+  const MAX_BPM = 300;
+  let pulsePeriodMs: number | null = null;
+  let bpm: number | null = null;
+  for (let i = 1; i < sentAtMs.length; i++) {
+    const dt = sentAtMs[i]! - sentAtMs[i - 1]!;
+    if (dt > 0) {
+      pulsePeriodMs = pulsePeriodMs === null ? dt : pulsePeriodMs + (dt - pulsePeriodMs) * 0.25;
+      const derived = 60000 / (pulsePeriodMs * MIDI_PPQN);
+      if (derived >= MIN_BPM && derived <= MAX_BPM) bpm = derived;
+    }
+  }
+  return bpm;
 }

@@ -512,7 +512,13 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // differ between idle/streaming/no-inputs states. Functional coverage
   // is e2e/tests/audio-in.spec.ts (chromium-audio-in project, fake-mic
   // injected); unit tests cover the def shape + device-picker helpers.
-  audioIn: 'card state depends on getUserMedia permission + audioinput presence (varies across CI runners); e2e/tests/audio-in.spec.ts + devices.test.ts + audioin.test.ts provide coverage',
+  // ⚠ The third file this reason used to name — an `audioin` unit test —
+  // HAS NEVER EXISTED (#1524). No gate could see that: every check over this record reads
+  // the key + the reason's LENGTH, never the filesystem. `devices.test.ts`
+  // covers the device-picker helpers for real; the def-shape half is covered by
+  // modules-card-map.test.ts, which is what now stands in the reason.
+  // `scripts/exemption-coverage-anchors.test.ts` makes this class un-writable.
+  audioIn: 'card state depends on getUserMedia permission + audioinput presence (varies across CI runners); e2e/tests/audio-in.spec.ts + devices.test.ts + modules-card-map.test.ts provide coverage',
   // GROUP is a Phase-1 collapse-N-modules container with no engine
   // binding. A bare GROUP! has no exposed ports → its visual surface
   // is just the card chrome + label, which carries no module-specific
@@ -672,7 +678,7 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // ACIDWARP — 320×240 plasma with rotating palette + auto scene cycler.
   // Both rotation and scene-advance are time-driven; deterministic capture
   // is impossible without freezing the engine clock. Pattern/palette unit
-  // coverage in acidwarp-patterns.test.ts; integration coverage via E2E.
+  // coverage in acidwarp.test.ts (generatePattern + buildPalette/rotatePalette); integration coverage via E2E.
   acidwarp: 'animated palette rotation + auto scene cycler defeats deterministic capture; unit + E2E provide coverage',
   // TEMPEST (P1) — additive-line vector well; the live preview is an animated GL
   // render (claw/CV-driven, later enemies). Geometry is unit-tested GL-free

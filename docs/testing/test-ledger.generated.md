@@ -22,8 +22,8 @@ number — a line number is invalidated by any edit above it:
 - `typecheck + unit + ART + E2E`  (ci.yml job `ci`)
 - `vrt-strict (visual regression — strict subset)`  (ci.yml job `vrt-strict`)
 
-Jobs gated THROUGH the `ci` umbrella (a failure of any blocks merge) — 11:
-- `actionlint`, `art`, `behavioral-smoke`, `build`, `build-web`, `dsp-build`, `e2e`, `typecheck`, `unit`, `webgl-attest`, `webgl-smoke`
+Jobs gated THROUGH the `ci` umbrella (a failure of any blocks merge) — 12:
+- `actionlint`, `art`, `behavioral-smoke`, `build`, `build-web`, `dsp-build`, `e2e`, `lint`, `typecheck`, `unit`, `webgl-attest`, `webgl-smoke`
 
 ## Bucket 1 — hard skips / quarantines (6)
 
@@ -115,7 +115,7 @@ those at spec granularity and the lane audit checks the realized string.
 - `e2e/tests/multi-video-playback.spec.ts:439` — decode-capacity probe — excluded from the heavy WebGL attest gate (ceiling-marginal)
 - `e2e/tests/new-rack-return-to-last.spec.ts:108` — IndexedDB unavailable — scratch replica cannot persist
 - `e2e/tests/new-rack-return-to-last.spec.ts:158` — IndexedDB unavailable — scratch replica cannot persist
-- `e2e/tests/patch-load-leak.spec.ts:277` — DOM retention is not measurable under vite dev — HMR retains destroyed component instances by design
+- `e2e/tests/patch-load-leak.spec.ts:309` — DOM retention is not measurable under vite dev — HMR retains destroyed component instances by design
 - `e2e/tests/peertube.spec.ts:326` — (dynamic: ``renderer could not decode the AVC/AAC HLS clip (state=${state})``)
 - `e2e/tests/per-module-per-port-inputs.spec.ts:113` — DOOM WASM/WAD not built — see static/doom/DOWNLOAD_INSTRUCTIONS.md
 - `e2e/tests/per-module.spec.ts:233` — DOOM WASM not built — run `bash packages/web/native/build-doom-wasm.sh`
@@ -146,8 +146,23 @@ sweep still carries dedicated coverage (a bespoke spec / unit core / ART). These
 are DELIBERATE — but per repo doctrine the **behavioral** exemptions are ALSO
 tracked-to-zero backlog (reconcile = fix or delete); see the roadmap.
 
+**Split by SUBJECT (#1524)** — what the sweep gates decides the disposition,
+so the split is per LIST and derived, never a field typed onto 370 entries:
+
+| subject | exemptions | disposition |
+| --- | ---: | --- |
+| `legacy-card` | 81 | LEGACY-RETIRING — the subject is a `?shell=legacy` card — deleted by LEG-08 (#1519, the 195-card fleet); replacement visual coverage is LEG-06 (#1517), whose delete-on-migrate policy says in as many words: do NOT backfill "baseline pending" exemptions. Paying one of these is work that will be deleted. |
+| `engine` | 289 | LIVE — the subject is the audio/video graph — survives the legacy deletion. CAPABILITY where the environment genuinely cannot supply the input (derived below where the artifact allows); otherwise payable debt, and payable debt is PAID rather than listed. |
+
+Of the `engine` population, **14** are DERIVED CAPABILITY: the module is in
+`DOM_SOURCE_LANE_TYPES` (`packages/web/src/lib/ui/workflow/dom-source-modules.ts`),
+i.e. its engine source is created and attached by a MOUNTED CARD, which does not
+exist under the bare `spawnPatch` these sweeps use — so both arms read silence by
+construction. LEG-02 (#1511, node-owned media lifecycle) is what makes them
+payable. Membership is read off that set, so it moves without an edit here.
+
 ### `EXEMPT_FROM_VRT` (81) — modules skipped from the per-card VRT sweep
-<sub>e2e/vrt/vrt-exemptions.ts</sub>
+<sub>e2e/vrt/vrt-exemptions.ts · subject: `legacy-card`</sub>
 - `4plexvid` — VRT baseline pending
 - `acidwarp` — animated palette rotation + auto scene cycler defeats deterministic capture
 - `analogLogicMaths` — VRT baseline pending
@@ -231,7 +246,8 @@ tracked-to-zero backlog (reconcile = fix or delete); see the roadmap.
 - `writeseq` — VRT baseline pending
 
 ### `BEHAVIORAL_MODULE_EXEMPT` (77) — whole-module skips of the behavioral CONTROL→PATCHED delta sweep
-<sub>e2e/tests/per-module-per-port-behavioral.spec.ts</sub>
+<sub>e2e/tests/per-module-per-port-behavioral.spec.ts · subject: `engine`</sub>
+<sub>derived capability (DOM_SOURCE_LANE_TYPES): `archivist`, `cameraInput`, `frametable`, `peertube`, `tvLibrarian`, `videobox`, `videocube`, `videovarispeed`</sub>
 - `4plexvid` — multiplex selector with per-input → per-output isolation
 - `archivist` — idle until an archive.org item loads (external network)
 - `b3ntb0x` — animated NTSC composite with a ±580 per-frame variance floor that swamps every input in the 5-snapshot window (bend_a…
@@ -311,7 +327,7 @@ tracked-to-zero backlog (reconcile = fix or delete); see the roadmap.
 - `wavesculpt` — multi-voice cluster
 
 ### `BEHAVIORAL_SWEEP_EXEMPT` (104) — per-PORT skips of the behavioral delta sweep (module still enrolled)
-<sub>e2e/tests/per-module-per-port-behavioral.spec.ts</sub>
+<sub>e2e/tests/per-module-per-port-behavioral.spec.ts · subject: `engine`</sub>
 - `acidwarp.scene_cv` — infrequent scene transitions may not land inside the 1.5s window
 - `acidwarp.speed_cv` — palette-rotation RATE of an already-full-screen high-variance plasma
 - `adsr.attack` — fast default attack masks CV modulation in scope window
@@ -418,12 +434,13 @@ tracked-to-zero backlog (reconcile = fix or delete); see the roadmap.
 - `writeseq.reset_cv` — reset_cv snaps the playhead to step 0 silently (same class as sequencer.reset_cv)
 
 ### `SKIP_SPAWN` (2) — modules skipped from the per-module-per-port spawn (handle/emit/drive) sweep
-<sub>e2e/tests/_per-module-per-port-shared.ts</sub>
+<sub>e2e/tests/_per-module-per-port-shared.ts · subject: `engine`</sub>
 - `cadillac` — overlay sprite, not a flow card (zero ports)
 - `group` — requires data.children
 
 ### `EXEMPT_OUTPUT_EMIT_MODULES` (41) — whole-module output-emit exemptions (asset/ROM/press-driven)
-<sub>e2e/tests/_per-module-per-port-shared.ts</sub>
+<sub>e2e/tests/_per-module-per-port-shared.ts · subject: `engine`</sub>
+<sub>derived capability (DOM_SOURCE_LANE_TYPES): `archivist`, `peertube`, `tvLibrarian`, `videobox`, `videocube`, `videovarispeed`</sub>
 - `archivist` — all outputs (image/video/audio/gates/playhead) are idle until an archive.org item loads (external network)
 - `audioIn` — requires live mic input
 - `blood` — boot cost, not data: the bundled shareware IS committed + materialized on CI (docs/adr/007-game-asset-distribution.md…
@@ -467,7 +484,7 @@ tracked-to-zero backlog (reconcile = fix or delete); see the roadmap.
 - `videovarispeed` — needs decoded video file + varispeed scrubber
 
 ### `EXEMPT_OUTPUT_EMIT` (63) — per-PORT output-emit exemptions (module's other outputs DO emit)
-<sub>e2e/tests/_per-module-per-port-shared.ts</sub>
+<sub>e2e/tests/_per-module-per-port-shared.ts · subject: `engine`</sub>
 - `buggles.burst` — gate fires at burst-rate (~0.5 Hz)
 - `buggles.clock` — gate fires at burst-rate (~0.5 Hz)
 - `doom.audio_l` — WASM init + first SFX outside test budget
@@ -533,7 +550,7 @@ tracked-to-zero backlog (reconcile = fix or delete); see the roadmap.
 - `timelorde.1/8` — period 1.6 s @ test BPM 300
 
 ### `EXEMPT_INPUT_DRIVE` (2) — per-PORT input-drive exemptions (gameplay-deep / asset-gated inputs)
-<sub>e2e/tests/_per-module-per-port-shared.ts</sub>
+<sub>e2e/tests/_per-module-per-port-shared.ts · subject: `engine`</sub>
 - `toybox.inA` — video input only drives output when a layer selects it as its source
 - `toybox.inB` — video input only drives output when a layer selects it as its source
 

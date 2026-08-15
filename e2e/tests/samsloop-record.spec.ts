@@ -84,7 +84,15 @@ test.describe('SAMSLOOP audio-input record', () => {
     const ctxRate = await readContextSampleRate(page);
     expect(ctxRate, 'audio engine must be up before REC').toBeGreaterThan(0);
 
-    // Start recording.
+    // Start recording. ⚠ #1569: `heldFrom` must be stamped BEFORE the click
+    // that starts the recorder — it used to be stamped after the STOP-label +
+    // three disabled-state polls below, so on a loaded runner the recorder had
+    // already captured a few hundred ms that the window never counted (CI:
+    // stored 1160 ms vs a 943 ms window — the excess IS those polls' round
+    // trips). Stamping outside both clicks makes [heldFrom, heldMs] a strict
+    // OUTER bracket of the recorded span, so the ×1.2 upper band is
+    // structurally sound instead of a bet on poll latency.
+    const heldFrom = Date.now();
     await rec.click();
     await expect(rec).toContainText('STOP', { timeout: 3000 });
     // Settings buttons get disabled while recording.
@@ -92,14 +100,15 @@ test.describe('SAMSLOOP audio-input record', () => {
     await expect(page.locator('[data-testid="samsloop-bits-16"]')).toBeDisabled();
     await expect(page.locator('[data-testid="samsloop-rate-48k"]')).toBeDisabled();
 
-    // Capture ~700 ms of noise.
-    const heldFrom = Date.now();
+    // Capture ~700 ms of noise (the polls above are also inside the bracket —
+    // the recorder is live during them, and that is now counted, not leaked).
     await page.waitForTimeout(700);
 
-    // Stop recording.
+    // Stop recording — the bracket closes when the stopping click resolves;
+    // the label read-back below is OUTSIDE it (the recorder is already off).
     await rec.click();
-    await expect(rec).toContainText('REC');
     const heldMs = Date.now() - heldFrom;
+    await expect(rec).toContainText('REC');
 
     // Settings re-enable.
     await expect(page.locator('[data-testid="samsloop-chan-stereo"]')).toBeEnabled();
