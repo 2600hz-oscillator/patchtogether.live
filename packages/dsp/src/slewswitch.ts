@@ -137,6 +137,18 @@ class SlewSwitchProcessor extends AudioWorkletProcessor {
     const xfadeT = Math.max(0.001, parameters.xfadeTime[0]!);
     const xfadeStep = (1 / sr) / xfadeT;
 
+    // LENGTH is live, and `advance()` is the ONLY thing that folds curIdx back
+    // into range (`% length`) — so turning LENGTH DOWN while the sequence sits
+    // above the new top left a stale selection standing until the next clock.
+    // Measured before this clamp (#1524): on step 4 with LENGTH 4 → 2,
+    // `step_idx` emitted **+5.0** against a declared ±1 CV range, and
+    // `switched` kept playing channel 4 — a channel LENGTH had just excluded.
+    // Fold to the highest ACTIVE channel: shortening the lap should pull the
+    // selection in, not park it outside. Regression: slewswitch.test.ts,
+    // 'LENGTH turned DOWN below the current step'.
+    if (this.curIdx >= len) this.curIdx = len - 1;
+    if (this.prevIdx >= len) this.prevIdx = len - 1;
+
     for (let i = 0; i < N; i++) {
       const x1 = in1 ? in1[i]! : 0;
       const x2 = in2 ? in2[i]! : 0;

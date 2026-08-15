@@ -1,4 +1,4 @@
-// e2e/tests/per-module-per-port.spec.ts
+// e2e/tests/_per-module-per-port-shared.ts
 //
 // Per-module per-port coverage sweep — the regression net for the class
 // of bugs where a module silently loses an I/O port and no test fires.
@@ -196,7 +196,7 @@ export const EXEMPT_OUTPUT_EMIT_MODULES: Record<string, string> = {
   // channel selected → hls.js attached); the generic sweep brings up no network
   // stream (and we never hit live famelack/streams in CI). Same shape as
   // videobox. Pure data/geo cores are unit-tested + e2e mocks the dataset+HLS.
-  tvLibrarian:    'needs a live tuned HLS stream for any output; no network stream in the sweep (mirrors videobox); covered by tv-librarian-data/geo.test.ts + network-mocked tv-librarian e2e',
+  tvLibrarian:    'needs a live tuned HLS stream for any output; no network stream in the sweep (mirrors videobox); covered by tv-librarian-data.test.ts + tv-librarian-geo.test.ts + network-mocked tv-librarian e2e',
   // PEERTUBE — every output (video/audio_l/audio_r + loaded/ended/playing gates +
   // playhead CV) needs a video resolved + attached (search → pick → HLS via
   // hls.js); the generic sweep resolves no network stream (and we never hit live
