@@ -10,6 +10,8 @@
 // hash stays put. Keep it that way: put face/shell fixtures in THIS file.
 
 import { STRICT_FACES } from '../../packages/web/src/lib/ui/workflow/strict-faces';
+import { getModuleDef } from '../../packages/web/src/lib/audio/module-registry';
+import { domainClassForDef } from '../../packages/web/src/lib/ui/workflow/module-shell-model';
 
 /**
  * A still-UN-MIGRATED audio module — the fixture for every legacy-fallback test
@@ -34,14 +36,48 @@ import { STRICT_FACES } from '../../packages/web/src/lib/ui/workflow/strict-face
  * that can never be picked, which is how a self-healing fixture quietly stops
  * being readable.
  */
-const UNMIGRATED_CANDIDATES = ['noise', 'attenumix', 'gatemaiden'] as const;
+// `destroy` is the working pick: 3 params, audio in AND out, cheap to mount.
+// Deliberately NOT `audioIn` (needs getUserMedia — capability-dependent on CI)
+// and NOT `twotracks` (a two-reel tape emulator; it mounts, but the bridge test
+// timed out at 30 s on `boundingBox` waiting for it, and this fixture's whole
+// contract is "simple, stable, cheap-to-mount"). `gatemaiden` is kept in the
+// list on purpose: the predicate below now REJECTS it out loud, which is the
+// documentation.
+const UNMIGRATED_CANDIDATES = ['noise', 'attenumix', 'destroy', 'gatemaiden'] as const;
 
+/**
+ * ⚠ "AUDIO" HERE MEANS THE FACEPLATE'S CLASS, NOT THE DEF'S `domain` FIELD, and
+ * the two disagree. The bridge specs assert `.faceplate.audio`, which
+ * `DockFullView` derives via `domainClassForDef` — i.e. from the module's CABLE
+ * types, not its declared domain. `gatemaiden` is `domain: 'audio'` with GATE
+ * ports, so it renders `.faceplate.gate`: it satisfied the comment's stated
+ * requirement and still could not satisfy the assertion.
+ *
+ * That stayed invisible while `attenumix` was the pick and surfaced the moment
+ * attenumix was promoted — a fixture that heals itself into an INVALID pick is
+ * worse than one that rots loudly, so the requirement is now CHECKED with the
+ * same predicate the assertion depends on instead of being described in prose.
+ */
 export const UNMIGRATED_AUDIO_MODULE: string = (() => {
-  const pick = UNMIGRATED_CANDIDATES.find((t) => !STRICT_FACES.has(t));
+  const rejected: string[] = [];
+  const pick = UNMIGRATED_CANDIDATES.find((t) => {
+    if (STRICT_FACES.has(t)) {
+      rejected.push(`${t}: promoted (in STRICT_FACES)`);
+      return false;
+    }
+    const cls = domainClassForDef(getModuleDef(t));
+    if (cls !== 'audio') {
+      rejected.push(`${t}: renders .faceplate.${cls}, not .faceplate.audio`);
+      return false;
+    }
+    return true;
+  });
   if (!pick) {
     throw new Error(
-      'every UNMIGRATED_CANDIDATES module is now in STRICT_FACES — add another ' +
-        'un-migrated audio module to the list in e2e/tests/_face-fixtures.ts',
+      'no UNMIGRATED_CANDIDATES module can serve as the legacy-fallback fixture. ' +
+        'Add another module that is BOTH un-promoted AND renders .faceplate.audio ' +
+        `(domainClassForDef === 'audio') in e2e/tests/_face-fixtures.ts.\n  ` +
+        rejected.join('\n  '),
     );
   }
   return pick;
