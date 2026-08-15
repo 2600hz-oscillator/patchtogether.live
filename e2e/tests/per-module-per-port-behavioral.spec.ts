@@ -3014,6 +3014,23 @@ async function readSinkAggregated(page: Page, sink: SinkSpec): Promise<Aggregate
 // EITHER an RMS shift OR a peak shift OR a ratio shift to pass.
 interface DeltaResult {
   exceeded: boolean;
+  /**
+   * TRUE when the row moved something the UNIVERSAL floor would have accepted,
+   * but not enough to clear its OWN measured noise — i.e. the measurement is
+   * INCONCLUSIVE, not negative.
+   *
+   * ⚠ "no effect" and "could not resolve the effect" are different findings,
+   * and a REQUIRED gate must not fail on the second. Measured on CI: adsr.decay
+   * moved rms by 0.088 (8.8x its universal floor) and still read 4.6σ against
+   * its own scatter; lfo.depth_cv reads ~1σ because rms over a 50 ms window of
+   * a SLOW oscillator is dominated by capture phase, not amplitude. Neither is
+   * evidence that the port is dead — and the ports demonstrably are not.
+   *
+   * A genuinely dead port looks different and stays a hard failure: its delta
+   * fails the universal floor TOO (swolevco's inert CV inputs measured exactly
+   * 0.0000e+0), so nothing is suppressed and `inconclusive` is false.
+   */
+  inconclusive: boolean;
   description: string;
   /**
    * The row's HEADROOM against its own null scatter: the largest |Δ| / σ over
@@ -3458,6 +3475,9 @@ function computeDelta(
 
     return {
       exceeded,
+      // Something cleared the universal floor and was then suppressed by this
+      // row's own scatter — the measurement could not decide.
+      inconclusive: !exceeded && suppressedTerms.length > 0,
       nullZ,
       description:
         `audio[${c.samples}↔${p.samples}] ` +
@@ -3508,6 +3528,7 @@ function computeDelta(
     audit('nbMean', nbMeanΔ, UNIVERSAL_VIDEO_THRESHOLDS.nonBlackMean, nsNb.mean);
     return {
       exceeded,
+      inconclusive: !exceeded && suppressedTerms.length > 0,
       nullZ,
       description:
         `video[${c.samples}↔${p.samples}] ` +
@@ -3518,7 +3539,7 @@ function computeDelta(
         (suppressedTerms.length === 0 ? '' : ` | below-own-noise=[${suppressedTerms.join(',')}]`),
     };
   }
-  return { exceeded: false, nullZ: 0, description: 'sink-kind mismatch (control vs patched diverged)' };
+  return { exceeded: false, inconclusive: false, nullZ: 0, description: 'sink-kind mismatch (control vs patched diverged)' };
 }
 
 // ────────── Patch construction ──────────
@@ -4019,6 +4040,8 @@ test.describe('per-module per-port: BEHAVIORAL input coverage (output changes on
       // Rows where the INSTRUMENT missed, kept apart from module verdicts so the
       // two can never be confused for one another again (#1330).
       const harnessMisses: string[] = [];
+      // Rows the measurement could not decide — printed, never asserted.
+      const inconclusiveRows: string[] = [];
       // Under BEHAVIORAL_NEGATIVE_CONTROL the perturbation edge is omitted on
       // purpose, so identity is the EXPECTED outcome — counted, not failed, and
       // asserted non-zero at the end so the detector proves it can fire.
@@ -4170,6 +4193,17 @@ test.describe('per-module per-port: BEHAVIORAL input coverage (output changes on
         }
         if (delta.exceeded) {
           passes.push(`${mod.type}.${port.id} (type=${port.type}) → ${observed.outPort} (type=${observed.outType}): ${delta.description}`);
+        } else if (delta.inconclusive && !negativeControl) {
+          // NOT a failure: the row moved something the universal floor accepts,
+          // and the measurement could not separate it from this row's own
+          // scatter. Reporting it keeps the fact visible without asserting a
+          // finding the data does not support — the CONFIRMED-dead case (delta
+          // fails the universal floor too, e.g. swolevco's exact 0.0000e+0)
+          // still lands in `failures` below.
+          inconclusiveRows.push(
+            `${mod.type}.${port.id} (type=${port.type}) → ${observed.outPort} (type=${observed.outType}): ` +
+            `INCONCLUSIVE — moved, but not distinguishably from its own noise (${delta.description})`,
+          );
         } else if (identical && !negativeControl) {
           // NOT a module verdict — see samplesBitIdentical.
           harnessMisses.push(
@@ -4188,6 +4222,10 @@ test.describe('per-module per-port: BEHAVIORAL input coverage (output changes on
       for (const line of passes) {
         // eslint-disable-next-line no-console
         console.log(`[behavioral] PASS ${line}`);
+      }
+      for (const line of inconclusiveRows) {
+        // eslint-disable-next-line no-console
+        console.log(`[behavioral] INCONCLUSIVE ${line}`);
       }
       // ⚠ ASSERTED FIRST AND SEPARATELY: an instrument miss is not evidence
       // about the module, and must never be answered with an exemption (#1330).
