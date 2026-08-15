@@ -69,18 +69,36 @@
 // treating a docs-only commit as a fully-green deploy candidate.
 //
 // Scope note: `**/*.md` / `.myrobots/**` / `LICENSE` feed nothing in the build
-// or the test suites (verified by grep — every reference is a source comment).
-// The one exception, `docs/testing/test-ledger.generated.md`, is a GENERATED
-// golden asserted by scripts/test-ledger.test.ts; a hand-edit to it alone is
-// ungated — but that is a PRE-EXISTING consequence of ci.yml's paths-ignore,
-// unchanged by this workflow, and the next code PR's `unit` lane catches it.
+// or the test suites (verified by grep — every reference is a source comment)
+// EXCEPT the generated goldens negated below.
+//
+// ⚠ THE "NEXT CODE PR CATCHES IT" ARGUMENT WAS TESTED IN THE FIELD AND LOST.
+// This note used to accept the gap for `test-ledger.generated.md` on exactly
+// that reasoning. On 2026-08-15 a SECOND golden joined the class
+// (`face-migration.generated.md`) and the failure mode played out in full:
+// two face PRs each regenerated it from the same base, wrote the same value,
+// AUTO-MERGED CLEANLY, and left `main` red on `face-migration-inventory` —
+// and then the docs-only fix (#1675) ALSO skipped CI, so the repair itself was
+// never verified by the lane it repaired. "Ungated but self-healing" turns out
+// to mean "red main for hours, and a fix nobody ran the test on".
+//
+// A generated golden asserted by a test is a TEST INPUT, not prose. Both are
+// now negated out of the doc path-set, so touching one runs CI like any other
+// code change. `.md` is still the right filter for everything else.
 
 /**
  * The doc path-set. MUST stay byte-identical to ci.yml's `paths-ignore` on both
  * `push` and `pull_request` (docs-only-gate.test.ts fails the build otherwise) —
  * that identity is what makes the two workflows exact complements.
  */
-export const DOCS_PATTERNS = ['**/*.md', '.myrobots/**', 'LICENSE'];
+export const DOCS_PATTERNS = [
+  '**/*.md',
+  // Negations MUST follow the pattern they negate — GitHub evaluates in order.
+  '!docs/testing/test-ledger.generated.md',
+  '!docs/design/face-migration.generated.md',
+  '.myrobots/**',
+  'LICENSE',
+];
 
 /**
  * The status contexts required by ruleset 16042163. Byte-identical to the
