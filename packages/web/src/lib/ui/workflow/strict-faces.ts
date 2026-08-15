@@ -632,6 +632,75 @@
 // panels in a faceplate PR for one module. Deliberately NOT stating how many:
 // that is a population count, it goes stale the moment #1468 lands a partial,
 // and `grep -l "kind: 'signal-flow'"` answers it against the tree.
+// FACE BATCH 6 · sidecar (2026-08-14) — the stereo sidechain DUCKER, the first
+// entry of the resumed queue, and the entry whose argument is that A MODULE CAN
+// BE ENTIRELY CORRECT AND STILL BE UNREADABLE FROM ITS OWN CONTROLS.
+//
+// The audit found no dead control, no unexposed DSP capability and no
+// card/def range disagreement. What it found is that FOUR of the nine faders
+// print a number that is not the answer, and in each case the knob is not
+// merely incomplete but INVARIANT to the thing that decides it:
+//
+//   · THRESHOLD IS NINE dB FROM WHERE DUCKING ACTUALLY STARTS, for two
+//     independent reasons it cannot show. The detector is a stereo-linked sum
+//     of rectifiers (`|aL| + |aR|`), so a mono main normalled to both channels
+//     reads exactly 20·log10(2) = 6.0206 dB above its own peak — measured at
+//     three amplitudes, the offset is that value every time — and the soft KNEE
+//     opens `knee/2` BELOW the threshold (onset −17.99 / −19.49 / −20.99 /
+//     −23.99 / −29.99 dB at knee 0 / 3 / 6 / 12 / 24, i.e. `threshold − knee/2`
+//     to the hundredth). The dial says −18.00 in all of them.
+//   · RATIO IS BLIND TO THRESHOLD, and the dial is badly non-linear in its own
+//     top half: 0 / −12.010 / −18.015 / −21.018 / −22.820 dB at 1 / 2 / 4 / 8 /
+//     20 against a full-scale mono main, so the last two thirds of the travel
+//     buy under 2 dB.
+//   · INPUT LVL AND MAKEUP ARE THE SAME DIMENSION, EXACTLY. `compressor-dsp`
+//     step 9 multiplies the sidechain by both and `duckLin` is computed from
+//     the MAIN pair alone, so the ordering is irrelevant: `inLvl 2 / makeup 0`,
+//     `inLvl 1 / makeup 6.0206` and `inLvl 0.5 / makeup 12.0412` render
+//     bit-identically. Neither readback can print the sidechain's real gain,
+//     and at `inputLevel` 0 the path is silent whatever MAKEUP says.
+//   · ENVMAG PRINTS 1.00 WHETHER ENV IS DEAD OR OVERSHOOTING. It is
+//     audio-invariant (bit-identical output RMS at 0 / 0.5 / 1 / 2 — which is
+//     why it is ranked LAST of nine), and its output is unclamped, so ENV
+//     passes 1.0 whenever the reduction passes 24 dB. Measured 1.6889–1.7044 at
+//     the DEFAULT envMag of 1.
+//
+// ⚠ THE MOST IMPORTANT FACT ABOUT THE MODULE IS ONE THE FACEPLATE IS
+// STRUCTURALLY UNABLE TO STATE, and it is recorded here rather than faked.
+// Measured: with the SIDECHAIN pair unpatched the output is BIT-IDENTICAL with
+// every one of the nine controls at either extreme (0.003926950, 0.007853659,
+// 0.011779882, 0.015705380 in both; peak 0.500000000 in both) — the box is a
+// wire and the whole panel is inert. With the MAIN pair unpatched the reduction
+// is exactly 0.000000 and six of the nine are inert. A `FaceReadoutValue` is
+// `(read) => string` over PARAMS and can never observe a cable, so this went
+// into `docs` (where right-click → annotate reads it) and NOT into a readout
+// that would have had to guess. The readouts instead name their operating point
+// in their own labels — `@ FS` is a full-scale mono main.
+//
+// ⚠ THREE DOCUMENTATION DEFECTS FIXED INLINE, all measured, none of them audio:
+// `makeup` was documented as "a fixed OUTPUT gain … to bring the overall level
+// back up" and provably is not (output bit-identical at 0 / 12 / 24 dB with the
+// SC unpatched — it gains the ducked sidechain only); the ENV overshoot was
+// documented as something that happens above envMag 1 when it happens at any
+// envMag > 0; and `inputLevel` declared `units: '%'` on a 0..2 range — the ONLY
+// such param in the registry, every other `%` param being 0..100 — so a
+// faceplate would have painted `1.00 %` where the module means 100 %. That one
+// is fixed with a `format` rather than by rescaling the range: the worklet's
+// parameterDescriptor is 0..2 and every saved rack holds a 0..2 value, so
+// moving the range would be an audio-affecting migration for a display bug.
+//
+// ⚠ AND ONE DEFECT THE FACE'S OWN ORACLE CAUGHT IN THE FACE ITSELF. Two
+// bit-identical INPUT LVL / MAKEUP states printed `0.0 dB` and `-0.0 dB`,
+// because `fmtDb` branches on `v > 0` and `20·log10(0.5) + 6.0206` evaluates to
+// −2.8e-10. The readout that exists to show the two knobs are interchangeable
+// was printing two different strings for the same state. `snapDb` fixes it and
+// the equivalence is now an assertion rather than a claim.
+//
+// Every number above is RE-DERIVED on every run by sidecar-face-model.test.ts
+// against the shipping `packages/dsp/src/lib/compressor-dsp.ts` — including a
+// negative control on the ORACLE ITSELF (a deliberately mis-scaled knee term
+// must redden the same comparison), so a DSP fix turns a stale faceplate claim
+// red instead of leaving the panel insisting on a repaired defect.
 export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // P1 batch 1 — first 6 module faces
   'adsr',
@@ -703,6 +772,8 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // shadows — and `attenumix-cv-path.test.ts` now asserts both halves of that
   // sentence permanently, including that no attenumix input ever becomes one.
   'attenumix',
+  // FACE BATCH 6 · the stereo sidechain ducker (2026-08-14) — see above.
+  'sidecar',
 ]);
 
 /**

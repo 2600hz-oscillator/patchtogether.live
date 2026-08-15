@@ -174,6 +174,13 @@ import {
   attenumixFaceParams,
   attenumixPeakText,
 } from '$lib/ui/modules/attenumix-face-model';
+import {
+  sidecarDuckText,
+  sidecarEnvText,
+  sidecarFaceParams,
+  sidecarOnsetText,
+  sidecarScGainText,
+} from '$lib/ui/modules/sidecar-face-model';
 
 /** A derived readout: live params in (through the caller's reader, which
  *  already resolves def defaults for untouched params), formatted string out.
@@ -714,6 +721,29 @@ const FACE_READOUT_VALUES: Readonly<Record<string, FaceReadoutValue>> = {
   'attenumix-peak': (read) => attenumixPeakText(attenumixFaceParams(read)),
   'attenumix-drive': (read) => attenumixDriveText(attenumixFaceParams(read)),
   'attenumix-cv-room': (read) => attenumixCvRoomText(attenumixFaceParams(read)),
+  // ── SIDECAR ──────────────────────────────────────────────────────────────
+  // FOUR, on a nine-fader ducker whose every knob prints a number that is not
+  // the answer. The first two are ALSO each other's negative control, which is
+  // the strongest form available: `onset` moves with KNEE and `duck` provably
+  // cannot (a detector at +6.02 dB is past the knee at every width), so a
+  // change that collapsed them into one fact reddens.
+  //
+  // ⚠ `onset` IS NINE dB FROM WHAT THE THRESHOLD DIAL SAYS at the shipped
+  // defaults, and the dial is invariant to BOTH terms: the detector is a
+  // stereo-linked `|aL| + |aR|`, so a mono main reads exactly 20·log10(2)
+  // above its own peak, and the soft knee opens `knee/2` below the threshold.
+  'sidecar-onset': (read) => sidecarOnsetText(sidecarFaceParams(read)),
+  // ⚠ RATIO IS BLIND TO THRESHOLD. `4.00` buys −18.0 dB at threshold −18 and a
+  // different number everywhere else — and the dial's top 60 % buys under 2 dB.
+  'sidecar-duck': (read) => sidecarDuckText(sidecarFaceParams(read)),
+  // ⚠ INPUT LVL AND MAKEUP ARE ONE DIMENSION, measured bit-identical for four
+  // equivalent pairs, so NEITHER readback can print the sidechain's gain — and
+  // only this can print `silent`, the state where MAKEUP has no authority.
+  'sidecar-sc-gain': (read) => sidecarScGainText(sidecarFaceParams(read)),
+  // ⚠ ENVMAG PRINTS 1.00 WHETHER ENV IS A DEAD 0 OR AN UNCLAMPED 1.70. The
+  // output is unclamped and overshoots past 1 whenever the reduction passes
+  // 24 dB — at the DEFAULT envMag, which the def's own prose had wrong.
+  'sidecar-env': (read) => sidecarEnvText(sidecarFaceParams(read)),
 };
 
 /** The derived value for a declared id, or `null` (⇒ the readout prints `—`

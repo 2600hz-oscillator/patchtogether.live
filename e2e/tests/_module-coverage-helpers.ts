@@ -294,8 +294,39 @@ export async function observeScopePeak(
 /** Sink kinds the sweep knows how to fingerprint. */
 export type SinkKind = 'audio' | 'video';
 
-/** Scope snapshots per aggregated audio read. */
-export const AUDIO_CAPTURES = 5;
+/**
+ * Scope snapshots per aggregated audio read.
+ *
+ * ⚠ THIS IS THE SWEEP'S STATISTICAL POWER, not just a loop bound. Since the
+ * floors became per-row and derived (#1337), a row passes only when its delta
+ * clears its OWN measured null scatter — and that scatter is a sampling error
+ * that shrinks as 1/√n. So a REAL effect can read "no observable delta" purely
+ * because five samples cannot resolve it: measured on the required subset,
+ * `filter.res` came back at 4.0σ and `adsr.decay` at 4.7σ against a 5σ bar,
+ * both unquestionably real (resonance changes a filter; decay changes an
+ * envelope).
+ *
+ * Raising it is therefore a POWER decision with a wall-clock price, and the
+ * price is paid per row per arm: `AUDIO_CAPTURE_SPACING_MS + SCOPE_CAPTURE_MS
+ * × RUNNER_FACTOR` (~360 ms on CI) × `SPAWNS_PER_PORT`. The full informational
+ * sweep keeps 5; the small REQUIRED subset overrides upward via
+ * `BEHAVIORAL_AUDIO_CAPTURES` because there it buys resolution cheaply —
+ * measured: 25 rows × 4 extra captures ≈ 72 s on a 4-minute job.
+ *
+ * `perPortBudgetMs()` below reads THIS value, so a raise moves the timeout
+ * budget with it instead of silently eating the headroom.
+ */
+export const AUDIO_CAPTURES = (() => {
+  const raw = process.env.BEHAVIORAL_AUDIO_CAPTURES;
+  if (!raw) return 5;
+  const n = Number.parseInt(raw, 10);
+  // Refuse a typo loudly rather than silently sampling once: a capture count
+  // below 2 makes every derived σ NaN and every row unresolvable.
+  if (!Number.isFinite(n) || n < 2) {
+    throw new Error(`BEHAVIORAL_AUDIO_CAPTURES must be an integer >= 2, got ${JSON.stringify(raw)}`);
+  }
+  return n;
+})();
 /** Wall clock BY DESIGN: an AnalyserNode fills at the sample rate. */
 export const AUDIO_CAPTURE_SPACING_MS = 150;
 

@@ -93,6 +93,7 @@ import { meowboxDef } from '$lib/audio/modules/meowbox';
 import { resofilterDef } from '$lib/audio/modules/resofilter';
 import { ringbackDef } from '$lib/audio/modules/ringback';
 import { ringsDef } from '$lib/audio/modules/rings';
+import { sidecarDef } from '$lib/audio/modules/sidecar';
 import { snaredrumDef } from '$lib/audio/modules/snaredrum';
 import { vcaDef } from '$lib/audio/modules/vca';
 import { warrensspectrumDef } from '$lib/audio/modules/warrensspectrum';
@@ -269,6 +270,13 @@ const RANGE_BOUND_CARDS: Readonly<Record<string, { params: readonly ParamDef[] }
   'ResofilterCard.svelte': resofilterDef,
   'RingbackCard.svelte': ringbackDef,
   'RingsCard.svelte': ringsDef,
+  // FACE BATCH 6. Nine hand-typed min/max pairs, all AGREEING with the def —
+  // which is why binding them is a maintainability fix rather than a bug fix,
+  // and why the card is enrolled here rather than left to the agreement clause
+  // alone. `units` stays hand-typed (i.e. absent), so this is the AnalogVcoCard
+  // shape: range-bound, out of MAPPING_BOUND_CARDS, held to the value-wise
+  // curve-agreement clause below.
+  'SidecarCard.svelte': sidecarDef,
   'SnaredrumCard.svelte': snaredrumDef,
   'VcaCard.svelte': vcaDef,
   'WarrensspectrumCard.svelte': warrensspectrumDef,
@@ -301,6 +309,14 @@ const MAPPING_BOUND_CARDS: readonly string[] = [
   'ResofilterCard.svelte',
   'RingbackCard.svelte',
   'RingsCard.svelte',
+  // FACE BATCH 6. It re-types no `curve` and no `units` — `curve` is bound off
+  // `paramSpec`, and this card has never passed `units` at all, which the
+  // anchor reads (correctly) as "nothing left to drift". ⚠ THAT IS NOT THE SAME
+  // AS PAINTING THE UNITS: `inputLevel` declares `units: '%'` on a 0..2 gain,
+  // so a card that started passing units would print `1.00 %`. The def now
+  // carries the `format` that fixes it; wiring units onto these nine faders is
+  // a visible card change and wants its own owner preview.
+  'SidecarCard.svelte',
   'SnaredrumCard.svelte',
   'VcaCard.svelte',
   'WarrensspectrumCard.svelte',
