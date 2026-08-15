@@ -129,6 +129,22 @@ export const sidecarDef: AudioModuleDef = {
     { id: 'sc_hpf',    label: 'SC HPF',    defaultValue: 20,   min: 20,  max: 1000, curve: 'log',    units: 'Hz' },
   ],
 
+  // THE TRANSFER CURVE — a PF-14 panel cell, and the only non-param control on
+  // this module. It is a PICTURE, not a control: it writes nothing, and its one
+  // affordance (a read cursor) is private component state. It exists because
+  // three of this module's four measured knob/label disagreements are SHAPE
+  // facts — where the bend is and what the two terms of the offset are, how
+  // steep the slope is, and what happens at every main level that is not the
+  // one the readouts are stated at. See `SidecarTransferPanel.svelte`.
+  controlFamilies: [
+    {
+      id: 'sidecar-curve',
+      label: 'Transfer curve — main level in, ducking out',
+      kind: 'cell',
+      testidPrefix: 'sidecar-curve',
+    },
+  ],
+
   // ── THE FACEPLATE (PF-20) ─────────────────────────────────────────────────
   //
   // WHAT SIDECAR IS FOR, musically: it is the rack's PUMP — the one module that
@@ -189,6 +205,14 @@ export const sidecarDef: AudioModuleDef = {
       'inputLevel',
       'attack',
       'knee',
+      // 7. THE PICTURE, at the first rank a panel can legally hold (the 'full'
+      //    lane cap is six, and module-face-lint refuses a panel SELECTED at a
+      //    lane tier). Ranks 1-6 are untouched, so no lane tier moves — this is
+      //    purely a dock gain, which is what a 340 px transfer curve should be.
+      //    It is NOT `hero.cell`: a hero cell MOVES its key into the hero slot
+      //    and suppresses the shell glyph at the dock, which would demote the
+      //    THRESHOLD dial this picture exists to explain and drop the meter.
+      'sidecar-curve-{n}',
       'sc_hpf',
       'makeup',
       'envMag',
@@ -199,7 +223,17 @@ export const sidecarDef: AudioModuleDef = {
     // ducked audio AND the two CV envelopes — `envMag` is here because ENV /
     // ENV INV are outputs, not because it is a level).
     pages: [
-      { id: 'detect', label: 'detect', controls: ['threshold', 'knee', 'sc_hpf'] },
+      // The curve belongs HERE and not in a fourth band of its own. It draws
+      // the DETECTION decision — the axis is MAIN dBFS and the two ticks are
+      // this band's own `threshold` and `knee` — and a page costs an ~81 px
+      // header on a dock that folds at 720p, for one cell. It leads the band
+      // because `heroFacePlan` MOVES `threshold` into the hero, so what remains
+      // beside it is the two refinements the picture is showing the effect of.
+      // ⚠ A panel is a WIDE cell (dock-row-plan `cellWidthClass`), so this band
+      // now takes a ROW OF ITS OWN and `duck` + `output` pack together — the
+      // dock goes from one packed row to two. That is the visible cost of the
+      // picture and it is deliberate.
+      { id: 'detect', label: 'detect', controls: ['sidecar-curve-{n}', 'threshold', 'knee', 'sc_hpf'] },
       { id: 'duck', label: 'duck', controls: ['ratio', 'attack', 'release'] },
       { id: 'output', label: 'output', controls: ['inputLevel', 'makeup', 'envMag'] },
     ],
@@ -233,12 +267,17 @@ export const sidecarDef: AudioModuleDef = {
       // out of the `detect` band (heroFacePlan), leaving knee + sc_hpf there —
       // still two controls, so the band keeps its header.
       control: 'threshold',
-      // NO `cell`. A transfer-curve picture is the obvious hero and it is a
-      // CONTRACT change (a `controlFamilies` entry -> a contract-lock line -> a
-      // `docs.controls` blob for STRICT_DOCS completeness), so it is queued as
-      // its own PR rather than folded into a face wave. Rank 7 is reachable
-      // here — nine keys — so it can be a real hero cell when it lands, not the
-      // sidebar consolation meowbox and noise had to take.
+      // STILL NO `cell`, now that the transfer-curve picture has actually
+      // landed (queue Q1b) — and the reason changed from "it is not built yet"
+      // to a measured trade. `hero.cell` MOVES its key out of its band into the
+      // hero slot AND SUPPRESSES the shell glyph at the dock (`graph/types.ts`
+      // ModuleFaceHero). Promoting the curve would therefore cost this face the
+      // THRESHOLD dial in the hero — the one control the picture exists to
+      // explain — and the output meter with it. So the curve ranks 7 and paints
+      // in the `detect` band, which is a dock-only gain that takes nothing
+      // away. (It COULD have been the hero: nine other keys means rank 7 is
+      // reachable here, unlike meowbox and noise, which had to take the sidebar
+      // consolation. Reachable is not the same as right.)
       readouts: [
         // FOUR derived values, each negative-controlled PERMANENTLY on the
         // input a knob readback is blind to (sidecar-face-model.test.ts), and
@@ -277,7 +316,7 @@ export const sidecarDef: AudioModuleDef = {
       env_inv_out: "The inverted ducking envelope (1 − ENV), also un-clamped (can go negative when ENV exceeds 1). Patch it into a downstream VCA's strength to make that VCA CLOSE while this ducker is reducing.",
     },
     controls: {
-      threshold: "Where the gain computer's knee is centred (-60 to 0 dB, default -18): lower it to duck on quieter hits, raise it so only loud transients pump the sidechain. ⚠ It is NOT the MAIN level at which ducking starts, for two reasons the dial cannot show. The detector is a stereo-linked sum of rectifiers (|L| + |R|), so a mono trigger normalled to both channels reads 6.02 dB above its own peak; and the soft KNEE opens half its width BELOW this value. At the shipped defaults ducking begins at a main peak of -27.0 dBFS. The faceplate's ONSET readout prints that number; the THR CV input adds to this one.",
+      threshold: "Where the gain computer's knee is centred (-60 to 0 dB, default -18): lower it to duck on quieter hits, raise it so only loud transients pump the sidechain. ⚠ It is NOT the MAIN level at which ducking starts, for two reasons the dial cannot show. The detector is a stereo-linked sum of rectifiers (|L| + |R|), so a mono trigger normalled to both channels reads 6.02 dB above its own peak; and the soft KNEE opens half its width BELOW this value. At the shipped defaults ducking begins at a main peak of -27.0 dBFS. The faceplate's ONSET readout prints that number; the THR CV input adds to this one. ⚠ AND THE TOP OF THE DIAL DOES NOT MEAN 'ONLY DUCK ON PEAKS'. Because those two offsets are subtracted rather than added, the onset can never be closer to full scale than -6.02 dBFS — at ANY setting of this knob and the KNEE, including 0 dB with a hard knee. Wind THRESHOLD to the top and a mono main is still ducked from -6 dBFS upward; there is no setting that leaves a hot mono trigger alone. The faceplate's transfer curve shows it as a tick that never reaches the right-hand edge of the plot.",
       ratio: "How hard the sidechain is pushed down once over threshold (1:1 to 20:1, default 4): higher ratios duck more aggressively. The dial is very non-linear in its own top half — at a full-scale mono trigger and the default threshold the reduction runs 0 / -12.0 / -18.0 / -21.0 / -22.8 dB at 1 / 2 / 4 / 8 / 20, so the last two thirds of the travel buy under 2 dB. What a given setting is worth also depends on the THRESHOLD, which is why the faceplate prints the reduction rather than the ratio.",
       attack: "How fast the duck clamps down after the main fires (0.1 to 200 ms, log, default 10): short for a snappy pump, longer for a gentler dip.",
       release: "How fast the sidechain springs back up after the main passes (1 to 2000 ms, log, default 100): this sets the 'breath' / pumping speed.",
@@ -286,6 +325,7 @@ export const sidecarDef: AudioModuleDef = {
       inputLevel: "Input gain on the SIDECHAIN signal (0 to 200%, default 100%): boost a quiet pad into the mix or trim a loud one. At 0 the sidechain path is bit-exactly silent and MAKEUP has no authority at all — it and MAKEUP are the SAME dimension in different units (see MAKEUP), so the sidechain's real gain is this knob in dB PLUS makeup. The LVL CV input adds to this.",
       makeup: "Extra gain in dB on the DUCKED SIDECHAIN (0 to 24, default 0). ⚠ It is NOT an output gain: measured with the sidechain unpatched, the output is bit-identical at 0, 12 and 24 dB, because the MAIN passthrough never passes through it. It multiplies the same signal INPUT LVL does — 20·log10(INPUT LVL) + MAKEUP is the sidechain's total gain, and the two knobs are exactly interchangeable (INPUT LVL 2 / MAKEUP 0 renders bit-identically to INPUT LVL 1 / MAKEUP 6.02). Unlike INPUT LVL it takes no CV.",
       sc_hpf: "A high-pass on the DETECTOR signal only (20 to 1000 Hz, log, default 20 = effectively off): raise it so the detector keys on the main's punch rather than its low end, preventing bass from over-triggering the duck. It does not filter the audio you hear.",
+      'sidecar-curve-{n}': "THE TRANSFER CURVE — the faceplate's picture of the gain computer, and the thing about this module that no number can say. It plots how much the sidechain is pushed down (down the axis, 0 to -48 dB) against the MAIN peak level that is doing the pushing (across the axis, -60 to 0 dBFS — the number on your meter, not the detector's). Two vertical ticks mark the two halves of this module's central confusion: the dashed one is where the THRESHOLD dial's own number lands once the `|L|+|R|` detector sum is taken off it, and the solid one is where ducking actually begins, another half-knee to the left. The dial reads -18 dB at the shipped defaults and the bend is at -27. The slope to the right of the bend is the RATIO, which is where you can see that its top two thirds buy under 2 dB. Point anywhere on the plot to move the read cursor: the caption under it reports the reduction, the sidechain's resulting output gain and the ENV output AT THAT LEVEL, which is the same set of answers the readout row gives for a full-scale main. It is read-only — nothing on it edits the patch — and the cursor is yours alone: it is not shared with the rackspace and not saved with the patch.",
     },
   },
 

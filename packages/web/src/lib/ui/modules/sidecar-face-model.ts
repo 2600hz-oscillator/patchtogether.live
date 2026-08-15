@@ -37,18 +37,39 @@
 // of the live params.
 
 import { fmtDb } from '$lib/audio/modules/kickdrum-format';
+// ⚠ THE SHIPPING GAIN COMPUTER ITSELF — IMPORTED, NEVER MIRRORED. Until the
+// transfer-curve panel landed this file carried its own three-region copy of
+// `computeGainDb` and a whole-control-space sweep asserting the copy agreed.
+// That is a gate over a divergence that should not be representable, and a
+// PICTURE makes it worse than a number: a readout that is 0.1 dB stale is
+// wrong once, a curve that draws a different law is wrong at every x. The knee
+// / ratio / slope arithmetic now exists in exactly one place — `packages/dsp/
+// src/lib/compressor-dsp.ts`, the file the worklet is built from — and the
+// faceplate, the readouts and the panel are all consumers of it.
+//
+// RELATIVE path, not the `@patchtogether.live/dsp/src/...` alias, for the
+// reason `resofilter-face-model.ts` and `warrensspectrum.ts` both document: a
+// worktree may not symlink the workspace package under node_modules, and the TS
+// path-alias rules do not reliably resolve TS source out of there.
+import {
+  computeGainDb,
+  envOut,
+  DB_PER_LOG2,
+  ENV_SCALE_DB,
+} from '../../../../../dsp/src/lib/compressor-dsp';
 
-// ── THE MIRRORED DSP CONSTANTS ──────────────────────────────────────────────
+// ── THE DSP CONSTANTS, RE-EXPORTED UNDER THIS FACE'S NAMES ──────────────────
 
-/** `20·log10(2)` — `compressor-dsp.ts` `DB_PER_LOG2`. It appears here TWICE
- *  over, and the two uses are unrelated: it is the log2→dB bridge inside the
- *  gain computer, AND it is exactly the offset a stereo-linked sum of
- *  rectifiers adds to a mono main (`|a| + |a| = 2|a|`). */
-export const SIDECAR_DB_PER_LOG2 = 20 * Math.log10(2);
+/** `20·log10(2)` — `compressor-dsp.ts` `DB_PER_LOG2`, re-exported rather than
+ *  restated. It appears in this module TWICE over and the two uses are
+ *  unrelated: it is the log2→dB bridge inside the gain computer, AND it is
+ *  exactly the offset a stereo-linked sum of rectifiers adds to a mono main
+ *  (`|a| + |a| = 2|a|`) — see `SIDECAR_MONO_SUM_OFFSET_DB`. */
+export const SIDECAR_DB_PER_LOG2 = DB_PER_LOG2;
 
 /** `compressor-dsp.ts` `ENV_SCALE_DB` — the reduction at which ENV reaches 1.0
  *  when `envMag` is 1. NOT a knob; a documented constant. */
-export const SIDECAR_ENV_SCALE_DB = 24;
+export const SIDECAR_ENV_SCALE_DB = ENV_SCALE_DB;
 
 /**
  * The detector reading, in dB, that every "at reference" readout is stated AT:
@@ -63,6 +84,19 @@ export const SIDECAR_ENV_SCALE_DB = 24;
  * ONE named operating point instead of a number that silently assumes another.
  */
 export const SIDECAR_REFERENCE_DETECTOR_DB = SIDECAR_DB_PER_LOG2 * Math.log2(2);
+
+/**
+ * The SAME operating point, one conversion earlier: the MAIN peak level, in
+ * dBFS, that `@ FS` names. The panel plots against MAIN dBFS (the number on the
+ * player's meter) and its cursor RESTS here, so the picture and the readout row
+ * state the same answer until the player asks a different question.
+ *
+ * ⚠ Written independently of `SIDECAR_REFERENCE_DETECTOR_DB` rather than
+ * derived from it, and the test asserts `sidecarDetectorDb(this)` IS that —
+ * which is a real leg, because the two are the readout row's claim and the
+ * panel's claim about the same point and nothing else forces them to agree.
+ */
+export const SIDECAR_REFERENCE_MAIN_DBFS = 0;
 
 /** The `|aL| + |aR|` offset a MONO main incurs, in dB. Identical in value to
  *  `SIDECAR_DB_PER_LOG2` and named separately because it is a different fact —
@@ -135,22 +169,20 @@ export function sidecarFaceParams(
 // ── THE GAIN COMPUTER, MIRRORED ─────────────────────────────────────────────
 
 /**
- * The static soft-knee gain computer, in dB in and dB out — the same three
- * regions as `compressor-dsp.ts` `computeGainDb` (GMR 2012 eq 4), expressed
- * against a DETECTOR level in dB rather than in log2.
+ * The static soft-knee gain computer (GMR 2012 eq 4), expressed against a
+ * DETECTOR level in dB rather than in log2.
+ *
+ * ⚠ IT IS THE SHIPPING FUNCTION, not a re-statement of it. The whole body is
+ * the unit conversion the worklet does one line earlier (`compressor-dsp.ts`
+ * step 4 takes `log2(mag)`; step 5 hands it to `computeGainDb`, which
+ * immediately multiplies back by `DB_PER_LOG2`). Everything this face and its
+ * panel claim about the knee, the slope and the three regions is therefore a
+ * claim about the code the audio actually runs through.
  *
  * Returns the gain to APPLY (≤ 0; more negative = more ducking).
  */
 export function sidecarGainDb(detectorDb: number, p: SidecarFaceParams): number {
-  const slope = 1 - 1 / Math.max(1, p.ratio);
-  const halfKn = p.knee * 0.5;
-  if (p.knee <= 0 || detectorDb <= p.threshold - halfKn) {
-    if (detectorDb <= p.threshold) return 0;
-    return -slope * (detectorDb - p.threshold);
-  }
-  if (detectorDb >= p.threshold + halfKn) return -slope * (detectorDb - p.threshold);
-  const t = detectorDb - p.threshold + halfKn;
-  return (-slope * (t * t)) / (2 * p.knee);
+  return computeGainDb(detectorDb / DB_PER_LOG2, p.threshold, p.knee, p.ratio);
 }
 
 // ── 1. ONSET — where ducking begins, in MAIN dBFS ───────────────────────────
@@ -198,12 +230,32 @@ export function sidecarOnsetText(p: SidecarFaceParams): string {
  * readouts, each invariant to what the other reports.
  */
 export function sidecarDuckDb(p: SidecarFaceParams): number {
-  return sidecarGainDb(SIDECAR_REFERENCE_DETECTOR_DB, p);
+  return sidecarDuckDbAt(p, SIDECAR_REFERENCE_MAIN_DBFS);
 }
 
 /** `-18.0 dB` at the shipped defaults; `none` at ratio 1. */
 export function sidecarDuckText(p: SidecarFaceParams): string {
-  const v = sidecarDuckDb(p);
+  return sidecarDuckTextAt(p, SIDECAR_REFERENCE_MAIN_DBFS);
+}
+
+/** What the `|aL| + |aR|` detector reads, in dB, for a MONO main whose own peak
+ *  is `mainDbfs`. THE WHOLE PANEL IS DRAWN AGAINST `mainDbfs`, because that is
+ *  the number on the player's meter; the detector's is not on any surface. */
+export function sidecarDetectorDb(mainDbfs: number): number {
+  return mainDbfs + SIDECAR_MONO_SUM_OFFSET_DB;
+}
+
+/** The reduction, in dB, at an arbitrary MAIN peak level. `sidecarDuckDb` is
+ *  this at the reference; the panel plots it across the whole window. */
+export function sidecarDuckDbAt(p: SidecarFaceParams, mainDbfs: number): number {
+  return sidecarGainDb(sidecarDetectorDb(mainDbfs), p);
+}
+
+/** ONE vocabulary for the reduction, at the reference and under the cursor
+ *  alike — `none` and `—` mean the same thing in both places because they are
+ *  the same function. */
+export function sidecarDuckTextAt(p: SidecarFaceParams, mainDbfs: number): string {
+  const v = sidecarDuckDbAt(p, mainDbfs);
   if (!Number.isFinite(v)) return '—';
   if (v > -0.05) return 'none';
   return fmtDb(snapDb(v));
@@ -249,7 +301,16 @@ export function sidecarScGainText(p: SidecarFaceParams): string {
  * a CV output that overshoots the ±1 every consumer expects).
  */
 export function sidecarEnvAtRef(p: SidecarFaceParams): number {
-  return (-sidecarDuckDb(p) / SIDECAR_ENV_SCALE_DB) * Math.max(0, p.envMag);
+  return sidecarEnvAt(p, SIDECAR_REFERENCE_MAIN_DBFS);
+}
+
+/** ENV at an arbitrary MAIN peak level — the SHIPPING `envOut`, not a copy of
+ *  its formula, for the same reason `sidecarGainDb` is the shipping computer.
+ *  `envMag` is floored at 0 here and not in the DSP because a NEGATIVE envMag
+ *  is unreachable through the 0..2 ParamDef and a face must be TOTAL over the
+ *  hostile reader anyway. */
+export function sidecarEnvAt(p: SidecarFaceParams, mainDbfs: number): number {
+  return envOut(sidecarDuckDbAt(p, mainDbfs), Math.max(0, p.envMag));
 }
 
 /**
@@ -262,8 +323,182 @@ export function sidecarEnvAtRef(p: SidecarFaceParams): number {
  * an ordinary setting. The condition is *reduction > 24 dB*, at any envMag > 0.
  */
 export function sidecarEnvText(p: SidecarFaceParams): string {
+  return sidecarEnvTextAt(p, SIDECAR_REFERENCE_MAIN_DBFS);
+}
+
+/** ONE vocabulary for ENV, at the reference and under the cursor alike — so
+ *  `off` and ` over` cannot come to mean two different things on two surfaces
+ *  of the same faceplate. */
+export function sidecarEnvTextAt(p: SidecarFaceParams, mainDbfs: number): string {
   if (!(p.envMag > 0)) return 'off';
-  const v = sidecarEnvAtRef(p);
+  const v = sidecarEnvAt(p, mainDbfs);
   if (!Number.isFinite(v)) return '—';
   return v > 1 ? `${v.toFixed(2)} over` : v.toFixed(2);
+}
+
+// ── 5. THE TRANSFER CURVE — the PANEL's model ───────────────────────────────
+//
+// WHY A PICTURE AT ALL, on a face that already prints four derived numbers.
+// The readouts each answer ONE question at ONE operating point, because that is
+// all a `(read) => string` can honestly do. The audit that produced them
+// (#1657) found four knobs printing a number that is not the answer, and three
+// of the four disagreements are SHAPE facts a single value cannot carry:
+//
+//   · WHERE the bend is. `onset` prints -27.0 dB and `threshold` prints -18.00.
+//     A tick at each, on an axis calibrated in MAIN dBFS, shows the gap AND
+//     splits it into its two independent terms — the dial's mark sits at
+//     `threshold - 6.02` (the `|aL|+|aR|` sum) and the bend starts another
+//     `knee/2` to the left. Two numbers cannot say which of them moved.
+//   · HOW STEEP it is. `duck @ FS` prints one reduction at one level. The
+//     RATIO's whole non-linearity — 0 / -12.0 / -18.0 / -21.0 / -22.8 dB at
+//     1 / 2 / 4 / 8 / 20 — is a slope, and a slope is a picture.
+//   · WHAT HAPPENS BETWEEN. Everything at a main level other than full scale,
+//     which is every real kick. The cursor is the readouts' own question asked
+//     at a level the player chooses, printed in the readouts' own vocabulary.
+//
+// ⚠ EVERY VALUE BELOW COMES FROM `sidecarGainDb` / `envOut`, i.e. from
+// `compressor-dsp.ts`. THE PANEL RE-TYPES NO DSP ARITHMETIC — a curve that
+// draws a different law than the module applies is worse than no curve,
+// because it is wrong at every x instead of at one, and it looks authoritative.
+// `sidecar-face-model.test.ts` guards that at the SOURCE level as well as by
+// value, since no runtime gate can see a second copy that happens to agree
+// today.
+
+/** The panel's x window, in MAIN peak dBFS — the module's own `threshold`
+ *  range, so the curve covers exactly the levels the dial can be set to.
+ *  ⚠ A LAYOUT/PHYSICAL constant (the plotted domain), not a population. */
+export const SIDECAR_CURVE_MAIN_MIN_DBFS = -60;
+export const SIDECAR_CURVE_MAIN_MAX_DBFS = SIDECAR_REFERENCE_MAIN_DBFS;
+
+/**
+ * The panel's y window: reduction, 0 dB at the top down to this floor.
+ *
+ * ⚠ FIXED, NOT AUTO-SCALED, and that is the whole reason the picture is worth
+ * looking at twice. An auto-scaled y axis slides under the curve as you turn
+ * RATIO, so the trace barely moves and the knob reads as if it does nothing; a
+ * fixed window makes the slope change visible, which is the finding. The cost
+ * is that the deepest settings run off the bottom — `sidecarCurvePoints`
+ * reports `clipped` so the panel can say so rather than draw a flat floor and
+ * let it read as a limit the module actually has.
+ */
+export const SIDECAR_CURVE_DUCK_FLOOR_DB = -48;
+
+/** One plotted sample of the transfer curve. */
+export interface SidecarCurvePoint {
+  /** MAIN peak level, dBFS. */
+  mainDbfs: number;
+  /** Reduction applied to the SC path at that level, dB (≤ 0). */
+  duckDb: number;
+  /** `duckDb` clamped into the drawn window — what the polyline uses. */
+  plotDb: number;
+}
+
+export interface SidecarCurve {
+  points: SidecarCurvePoint[];
+  /** True when any sample is deeper than the drawn floor. */
+  clipped: boolean;
+}
+
+/**
+ * `columns + 1` evenly spaced samples of the static gain computer across the
+ * window. Pure and total: a hostile param set produces a finite `plotDb` at
+ * every x, because a NaN in a polyline takes the whole SVG down mid-drag.
+ */
+export function sidecarCurvePoints(p: SidecarFaceParams, columns: number): SidecarCurve {
+  const n = Math.max(1, Math.floor(columns));
+  const span = SIDECAR_CURVE_MAIN_MAX_DBFS - SIDECAR_CURVE_MAIN_MIN_DBFS;
+  const points: SidecarCurvePoint[] = [];
+  let clipped = false;
+  for (let i = 0; i <= n; i++) {
+    const mainDbfs = SIDECAR_CURVE_MAIN_MIN_DBFS + (span * i) / n;
+    const raw = sidecarDuckDbAt(p, mainDbfs);
+    const duckDb = Number.isFinite(raw) ? raw : 0;
+    if (duckDb < SIDECAR_CURVE_DUCK_FLOOR_DB) clipped = true;
+    points.push({
+      mainDbfs,
+      duckDb,
+      plotDb: Math.min(0, Math.max(SIDECAR_CURVE_DUCK_FLOOR_DB, duckDb)),
+    });
+  }
+  return { points, clipped };
+}
+
+/**
+ * Where the THRESHOLD DIAL's own number lands on a MAIN-dBFS axis:
+ * `threshold - 6.02`, because the detector is a SUM of two rectifiers and a
+ * mono main is normalled to both.
+ *
+ * ⚠ THIS IS NOT WHERE DUCKING STARTS and the panel draws both marks precisely
+ * so that is visible. `null` when the mark falls outside the drawn window,
+ * which is honest: a tick clamped to the edge would claim a position it does
+ * not have.
+ */
+export function sidecarThresholdMarkDbfs(p: SidecarFaceParams): number | null {
+  return inWindow(p.threshold - SIDECAR_MONO_SUM_OFFSET_DB);
+}
+
+/**
+ * Where ducking actually begins, on the same axis — `sidecarOnsetDbfs`, the
+ * value the ONSET readout prints, so the tick and the number cannot disagree.
+ *
+ * `null` at ratio 1 (nothing ducks at any level, which is what `sidecarOnsetText`
+ * prints as `never`) and `null` off-window.
+ */
+export function sidecarOnsetMarkDbfs(p: SidecarFaceParams): number | null {
+  if (!(p.ratio > 1)) return null;
+  return inWindow(sidecarOnsetDbfs(p));
+}
+
+function inWindow(v: number): number | null {
+  if (!Number.isFinite(v)) return null;
+  return v >= SIDECAR_CURVE_MAIN_MIN_DBFS && v <= SIDECAR_CURVE_MAIN_MAX_DBFS ? v : null;
+}
+
+/** The SC path's output gain at a given MAIN level: its resting gain plus
+ *  whatever the main is taking off it. `-Infinity` at INPUT LVL 0. */
+export function sidecarScOutDbAt(p: SidecarFaceParams, mainDbfs: number): number {
+  return sidecarScGainDb(p) + sidecarDuckDbAt(p, mainDbfs);
+}
+
+/** …in the `sc gain` readout's vocabulary, so `silent` still means the enabler
+ *  state and nothing else. */
+export function sidecarScOutTextAt(p: SidecarFaceParams, mainDbfs: number): string {
+  const v = sidecarScOutDbAt(p, mainDbfs);
+  if (v === Number.NEGATIVE_INFINITY) return 'silent';
+  return Number.isFinite(v) ? fmtDb(snapDb(v)) : '—';
+}
+
+/** Clamp a cursor position into the drawn window. */
+export function sidecarClampMainDbfs(mainDbfs: number): number {
+  if (!Number.isFinite(mainDbfs)) return SIDECAR_CURVE_MAIN_MAX_DBFS;
+  return Math.min(SIDECAR_CURVE_MAIN_MAX_DBFS, Math.max(SIDECAR_CURVE_MAIN_MIN_DBFS, mainDbfs));
+}
+
+/**
+ * The cursor line — the readout row's own questions, asked at the level under
+ * the pointer and answered in the readout row's own vocabularies.
+ *
+ * ⚠ IT IS NOT A SECOND, DIFFERENTLY-CALIBRATED SET OF NUMBERS. At the resting
+ * cursor (`SIDECAR_REFERENCE_MAIN_DBFS`) `duck` and `env` are
+ * character-for-character the `duck @ FS` and `env @ FS` readouts above them —
+ * asserted permanently, because a panel that quietly used a different reference
+ * than the readouts it sits under would be two answers to one question with
+ * nothing on the faceplate to say which is meant.
+ *
+ * ⚠ `sc out` is DELIBERATELY the one field that is NOT a readout repeated. The
+ * `sc gain` readout is the sidechain's RESTING gain (`20·log10(inLvl) + makeup`,
+ * the one-dimension pair); this is that gain WITH the duck applied, i.e. what
+ * the ducked signal is actually worth at this main level. Their difference IS
+ * `duck`, which is why both belong on the panel: turn MAKEUP and every cursor
+ * reading slides by the same dB at every x, which is the one-dimension finding
+ * as a behaviour rather than as a sentence.
+ */
+export function sidecarCursorText(p: SidecarFaceParams, mainDbfs: number): string {
+  const m = sidecarClampMainDbfs(mainDbfs);
+  return [
+    `main ${fmtDb(snapDb(m))}`,
+    `duck ${sidecarDuckTextAt(p, m)}`,
+    `sc out ${sidecarScOutTextAt(p, m)}`,
+    `env ${sidecarEnvTextAt(p, m)}`,
+  ].join(' · ');
 }
