@@ -649,8 +649,9 @@ jobs:
       - run: flox activate -- task setup
       # The @smoke specs call loadManifest() (e2e/tests/_registry.ts), which
       # reads the gitignored/generated e2e/.generated/registry-manifest.json.
-      # That file is normally produced by `task test` (which this deploy-time
-      # smoke job skips), so emit it explicitly before running the specs —
+      # That file is produced ONLY by the explicit generate step below (#1526 —
+      # it used to fall out of `task test` as a side effect), so emit it
+      # before running the specs —
       # otherwise loadManifest() throws and the smoke gate goes red even when
       # the deploy itself succeeded. Self-contained; only needs deps that
       # `task setup` already installed. (Fixes #101.)

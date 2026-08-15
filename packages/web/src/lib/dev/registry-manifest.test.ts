@@ -1,32 +1,63 @@
 // packages/web/src/lib/dev/registry-manifest.test.ts
 //
-// Manifest emitter — the foundation of the registry-driven test layer.
+// The registry-manifest GATE. Not the emitter — that is `registry-manifest.ts`,
+// a plain module (#1526).
 //
-// Why this lives in `packages/web/src/lib/dev/`:
+// Why the registry projection is exercised here at all:
 //   * vitest in this workspace already imports the three module-registry
 //     barrels (audio / video / meta) in countless unit tests; running
 //     the registry projection here is essentially free.
 //   * Test-load-time iteration over a registry is the unit-test pass's
 //     superpower. Playwright can't `await` at file load — but it CAN
-//     `readFileSync` a JSON dump. So we treat the manifest as the seam:
-//     `task test` emits it, downstream `task e2e` + `task vrt` specs
-//     consume it via `e2e/tests/_registry.ts`.
+//     `readFileSync` a JSON dump. So the manifest is the seam:
+//     `task test:emit-manifest` (alias `manifest:emit`) emits it, downstream
+//     `task e2e` + `task vrt` consume it via `e2e/tests/_registry.ts`.
 //   * The alternative — duplicating the registry list in 3-4 hardcoded
 //     allowlists across spec files — is what got the codebase to
 //     21/74 (28%) drift in `io-spec-consistency.MODULE_TYPES` + 27/74
 //     (36%) drift in `modules.spec.ts:MODULES` before this slice
 //     landed.
 //
-// Output: e2e/.generated/registry-manifest.json (gitignored), refreshed
-// every `task test` run. CI's `task ci` chain runs `task test` before
-// `task e2e` / `task vrt`, so the manifest is always fresh when the
-// downstream Playwright specs read it.
+// ⚠ THIS FILE NO LONGER WRITES THE MANIFEST as a side effect of `task test`.
+// It used to: `it('emits the manifest JSON to disk')` did mkdirSync +
+// writeFileSync unconditionally, which made the unit lane mutate the tree and
+// hid the generation step from the task graph. The write now lives in
+// `emitRegistryManifest()` and fires ONLY under `MANIFEST_EMIT=1` — the
+// explicit generate seam, exactly the `DOCS_UPDATE` / `FACE_INVENTORY_UPDATE`
+// accept-loop shape used elsewhere in the repo.
+//
+// What this file gates instead, all of it non-vacuous in a plain `task test`:
+//   1. the registry-wide invariants (unique types, lowercase labels, known
+//      categories, param validity) — unchanged;
+//   2. the BUILDER is deterministic and its bytes are stable;
+//   3. the WRITER is write-if-changed and round-trips — driven against a temp
+//      path, never the real artifact;
+//   4. the SOURCE FINGERPRINT that `e2e/tests/_registry.ts` uses to refuse a
+//      stale manifest actually moves when a def's bytes move (the permanent
+//      negative control — a fingerprint that cannot move is a staleness gate
+//      that cannot fail).
 //
 // Schema is sorted by module type for stable diffs across runs.
 
 import { describe, it, expect } from 'vitest';
-import { mkdirSync, writeFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { resolve } from 'node:path';
+
+import {
+  buildRegistryManifest,
+  emitRegistryManifest,
+  serializeRegistryManifest,
+  MANIFEST_SCHEMA_VERSION,
+  REGISTRY_MANIFEST_PATH,
+} from './registry-manifest';
+import {
+  MANIFEST_BASIS_DIRS,
+  MANIFEST_BASIS_FILES,
+  manifestBasisFiles,
+  manifestSourceFingerprint,
+  REPO_ROOT,
+} from './registry-manifest-basis';
 
 // Pull every barrel — the side-effect import is what triggers the
 // per-domain registerModule() calls. Without these the lists would be
@@ -37,75 +68,8 @@ import '$lib/meta/modules';
 
 import { getAllModuleSpecs } from './module-specs';
 
-interface ManifestPortEntry {
-  id: string;
-  type: string;
-  // schemaVersion-2 enrichment (all optional — emitted only when set).
-  paramTarget?: string;
-  cvScale?: { mode: string; depth?: number };
-  accepts?: string[];
-  edge?: 'trigger' | 'gate';
-  adoptsUpstreamFrom?: string;
-}
-
-interface ManifestParamEntry {
-  id: string;
-  label: string;
-  defaultValue: number;
-  min: number;
-  max: number;
-  curve: string;
-  units?: string;
-}
-
-interface ManifestEntry {
-  type: string;
-  label: string;
-  domain: string;
-  category: string;
-  inputs: ManifestPortEntry[];
-  outputs: ManifestPortEntry[];
-  // schemaVersion-2 enrichment — full ParamDef surface + stereo pairs, so
-  // the docs I/O section + io-explain read the SINGLE source of truth.
-  params: ManifestParamEntry[];
-  stereoPairs?: [string, string][];
-  hasAudioOutput: boolean;
-  hasCvOutput: boolean;
-  hasGateOutput: boolean;
-  hasVideoOutput: boolean;
-}
-
-interface Manifest {
-  /** Schema version. Bump when the entry shape changes — downstream
-   *  Playwright fixture refuses to load a manifest whose version it
-   *  doesn't recognise (fail-fast over silent skew). schemaVersion 2
-   *  (this slice) carries the full PortDef + ParamDef + stereoPairs per
-   *  module for the docs-overhaul auto I/O section. */
-  schemaVersion: 2;
-  /** ISO 8601 timestamp the manifest was emitted. Stable across runs
-   *  is not the point — debuggability is: when CI flags a downstream
-   *  drift, the timestamp lets you confirm which test invocation
-   *  produced this manifest. */
-  generatedAt: string;
-  /** Sorted by module type. */
-  modules: ManifestEntry[];
-}
-
-/** Resolve the manifest path from the repo root. vitest's cwd is
- *  packages/web; the manifest lives at the repo's e2e/.generated/
- *  so all e2e specs can read it via a relative path. Five `..` hops:
- *  packages/web/src/lib/dev/ → repo root. Then `e2e/.generated/`. */
-function manifestPath(): string {
-  return resolve(import.meta.dirname, '../../../../..', 'e2e/.generated/registry-manifest.json');
-}
-
-describe('registry manifest emitter', () => {
+describe('registry manifest gate', () => {
   const specs = getAllModuleSpecs();
-  const manifest: Manifest = {
-    schemaVersion: 2,
-    generatedAt: new Date().toISOString(),
-    modules: specs,
-  };
 
   it('every barrel registered at least one module', () => {
     // 74 was the count at the time this slice landed (55 audio + 17
@@ -220,18 +184,195 @@ describe('registry manifest emitter', () => {
     expect(offenders, `param validity:\n  ${offenders.join('\n  ')}`).toEqual([]);
   });
 
-  it('emits the manifest JSON to disk', () => {
-    const path = manifestPath();
-    mkdirSync(dirname(path), { recursive: true });
-    // Pretty-printed so a diff is reviewable in PR if anyone happens
-    // to check in the generated file. The committed `.gitignore`
-    // entry should prevent that — but defensive pretty-printing
-    // costs nothing.
-    writeFileSync(path, JSON.stringify(manifest, null, 2) + '\n', 'utf8');
-    // Sanity: subsequent read returns parsable JSON with the schema
-    // we just wrote.
-    const written = JSON.parse(JSON.stringify(manifest));
-    expect(written.schemaVersion).toBe(2);
-    expect(written.modules.length).toBe(specs.length);
+  // ---------------------------------------------------------------------
+  // The BUILDER — pure over the registry.
+  // ---------------------------------------------------------------------
+
+  it('the builder is deterministic: two independent reads serialize byte-identically', () => {
+    // Fixed fingerprint on both sides so this measures the REGISTRY read, not
+    // the fs read. (The fingerprint's own determinism is gated below.)
+    const a = serializeRegistryManifest(buildRegistryManifest('FIXED'));
+    const b = serializeRegistryManifest(buildRegistryManifest('FIXED'));
+    expect(a).toBe(b);
+    // Negative control for THIS assertion: a different fingerprint must move
+    // the bytes, or the comparison above is over a constant.
+    expect(serializeRegistryManifest(buildRegistryManifest('OTHER'))).not.toBe(a);
+  });
+
+  it('the built manifest carries the schema version and every registered module', () => {
+    const m = buildRegistryManifest('FIXED');
+    expect(m.schemaVersion).toBe(MANIFEST_SCHEMA_VERSION);
+    expect(m.modules.length).toBe(specs.length);
+    expect(m.modules.map((x) => x.type)).toEqual(specs.map((x) => x.type));
+  });
+
+  // ---------------------------------------------------------------------
+  // The WRITER — driven against a TEMP path. The real artifact is written
+  // ONLY by the `MANIFEST_EMIT=1` seam at the bottom of this file, so a plain
+  // `task test` leaves the working tree alone.
+  // ---------------------------------------------------------------------
+
+  it('the writer round-trips and is write-if-changed (no needless mtime churn)', () => {
+    const dir = mkdtempSync(resolve(tmpdir(), 'registry-manifest-'));
+    try {
+      const path = resolve(dir, 'nested/registry-manifest.json');
+      const manifest = buildRegistryManifest('FIXED');
+
+      const first = emitRegistryManifest(path, manifest);
+      expect(first.changed, 'first emit creates the file').toBe(true);
+      expect(first.modules).toBe(specs.length);
+
+      const onDisk = JSON.parse(readFileSync(path, 'utf8')) as {
+        schemaVersion: number;
+        sourceFingerprint: string;
+        modules: { type: string }[];
+      };
+      expect(onDisk.schemaVersion).toBe(MANIFEST_SCHEMA_VERSION);
+      expect(onDisk.sourceFingerprint).toBe('FIXED');
+      expect(onDisk.modules.map((m) => m.type)).toEqual(specs.map((s) => s.type));
+
+      const mtimeBefore = statSync(path).mtimeMs;
+      const second = emitRegistryManifest(path, manifest);
+      expect(second.changed, 're-emitting identical content is a no-op').toBe(false);
+      expect(statSync(path).mtimeMs, 'unchanged emit must not touch mtime').toBe(mtimeBefore);
+
+      // Negative control: different content DOES rewrite. Without this leg the
+      // `changed === false` assertion above would also pass on a writer that
+      // never writes anything.
+      const third = emitRegistryManifest(path, buildRegistryManifest('MOVED'));
+      expect(third.changed, 'changed content must rewrite').toBe(true);
+      expect(
+        (JSON.parse(readFileSync(path, 'utf8')) as { sourceFingerprint: string })
+          .sourceFingerprint,
+      ).toBe('MOVED');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  // ---------------------------------------------------------------------
+  // The SOURCE FINGERPRINT — what `e2e/tests/_registry.ts` uses to refuse a
+  // stale manifest. A staleness gate whose fingerprint cannot move is a gate
+  // that cannot fail, so the perturbation legs here are PERMANENT.
+  // ---------------------------------------------------------------------
+
+  it('the basis covers every registered module def file and the projection', () => {
+    const files = manifestBasisFiles();
+    // Anchor to the ARTIFACT, not to a count: every hand-named basis entry must
+    // still exist on disk, or the fingerprint is silently hashing less than it
+    // claims. (`manifestBasisFiles` reads them; a missing one throws below.)
+    for (const rel of MANIFEST_BASIS_FILES) {
+      expect(files, `${rel} must be in the basis`).toContain(rel);
+    }
+    // Every basis dir contributed at least its barrel — a dir that silently
+    // resolved to nothing would hash to a stable value forever.
+    for (const dir of MANIFEST_BASIS_DIRS) {
+      expect(files, `${dir}/index.ts must be in the basis`).toContain(`${dir}/index.ts`);
+    }
+    // DERIVED membership: every def file the barrels glob is in the basis.
+    // Asserted as a set difference, never as a population count.
+    const globbed = files.filter((f) => MANIFEST_BASIS_DIRS.some((d) => f.startsWith(`${d}/`)));
+    expect(globbed.every((f) => f.endsWith('.ts') && !f.endsWith('.test.ts'))).toBe(true);
+    expect(globbed.length, 'basis dirs must contribute def files').toBeGreaterThan(
+      specs.length,
+    );
+  });
+
+  it('the fingerprint is stable across calls over the real tree', () => {
+    expect(manifestSourceFingerprint()).toBe(manifestSourceFingerprint());
+  });
+
+  it('PERMANENT CONTROL: perturbing ONE basis file moves the fingerprint', () => {
+    const files = manifestBasisFiles();
+    // Read the tree ONCE; perturb from memory. Re-reading per perturbation is
+    // ~80k syscalls and cost 2.2 s of the unit lane for no extra coverage.
+    const bytes = new Map(files.map((rel) => [rel, readFileSync(resolve(REPO_ROOT, rel))]));
+    const readCached = (rel: string): Buffer => bytes.get(rel) as Buffer;
+
+    const baseline = manifestSourceFingerprint(readCached, files);
+    expect(
+      baseline,
+      'the cached reader must reproduce the real fingerprint, or this control ' +
+        'is measuring a different function than the one _registry.ts calls',
+    ).toBe(manifestSourceFingerprint());
+
+    // Perturb each basis file in turn — ONE byte appended — and require the
+    // fingerprint to move for every one of them. A file that can be edited
+    // without moving the hash is a hole in the staleness gate, and this names
+    // the exact file rather than reporting "some file".
+    const NL = Buffer.from('\n');
+    const blind: string[] = [];
+    for (const target of files) {
+      const moved = manifestSourceFingerprint(
+        (rel) => (rel === target ? Buffer.concat([readCached(rel), NL]) : readCached(rel)),
+        files,
+      );
+      if (moved === baseline) blind.push(target);
+    }
+    expect(
+      blind,
+      'these basis files can change without moving the manifest fingerprint — ' +
+        `the staleness gate in e2e/tests/_registry.ts is blind to them:\n  ${blind.join('\n  ')}`,
+    ).toEqual([]);
+  });
+
+  it('PERMANENT CONTROL: a file DROPPED from the basis moves the fingerprint', () => {
+    const files = manifestBasisFiles();
+    const baseline = manifestSourceFingerprint();
+    // Renaming/removing a def must not read as "unchanged" — the hash covers
+    // the PATH list, not just the concatenated bytes.
+    const withoutOne = files.filter((f) => f !== files[files.length - 1]);
+    expect(manifestSourceFingerprint(undefined, withoutOne)).not.toBe(baseline);
+  });
+
+  // ---------------------------------------------------------------------
+  // The GENERATE seam. This is the ONLY thing in the unit lane that writes to
+  // e2e/.generated/, and it is off unless `task test:emit-manifest` turns it on.
+  // ---------------------------------------------------------------------
+
+  it.runIf(process.env.MANIFEST_EMIT)(
+    '[MANIFEST_EMIT] emits e2e/.generated/registry-manifest.json',
+    () => {
+      const res = emitRegistryManifest();
+      expect(res.path).toBe(REGISTRY_MANIFEST_PATH);
+      expect(res.modules).toBe(specs.length);
+      const written = JSON.parse(readFileSync(res.path, 'utf8')) as {
+        schemaVersion: number;
+        sourceFingerprint: string;
+      };
+      expect(written.schemaVersion).toBe(MANIFEST_SCHEMA_VERSION);
+      // The consumer recomputes exactly this. If it does not match here, every
+      // Playwright spec would refuse to load — fail in the fast lane instead.
+      expect(written.sourceFingerprint).toBe(manifestSourceFingerprint());
+    },
+  );
+
+  it('the unit lane does NOT write the real manifest unless MANIFEST_EMIT is set', () => {
+    // The point of #1526, asserted rather than described. When the emit seam is
+    // OFF, nothing above this line may have touched the artifact.
+    if (process.env.MANIFEST_EMIT) return;
+    let before: string | null = null;
+    try {
+      before = readFileSync(REGISTRY_MANIFEST_PATH, 'utf8');
+    } catch {
+      before = null;
+    }
+    // Re-running every writer-exercising path must still leave it alone: they
+    // all take an explicit path argument, so none of them can reach the real one.
+    const dir = mkdtempSync(resolve(tmpdir(), 'registry-manifest-guard-'));
+    try {
+      emitRegistryManifest(resolve(dir, 'x.json'), buildRegistryManifest('FIXED'));
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+    let after: string | null = null;
+    try {
+      after = readFileSync(REGISTRY_MANIFEST_PATH, 'utf8');
+    } catch {
+      after = null;
+    }
+    expect(after, `${REGISTRY_MANIFEST_PATH} must be untouched by a plain unit run`).toBe(
+      before,
+    );
   });
 });

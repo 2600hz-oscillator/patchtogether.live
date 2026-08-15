@@ -334,9 +334,10 @@ tasks:
     # it has its own vitest.config.ts (node env, no AudioContext/WASM). Older
     # DSP-lib tests still live under web/ via relative import — both run.
     #
-    # Side effect: emits e2e/.generated/registry-manifest.json via
-    # packages/web/src/lib/dev/registry-manifest.test.ts. Downstream
-    # `task e2e` + `task vrt` read it via e2e/tests/_registry.ts.
+    # NO side effects on the working tree (#1526). This used to emit
+    # e2e/.generated/registry-manifest.json as a side effect of a unit test;
+    # generation is now the explicit `task test:emit-manifest` target, which
+    # every lane that READS the manifest declares as a dep.
     #
     # test:present-shell is NOT reached by any `-w` / `--workspaces` form:
     # present-shell is deliberately not an npm workspace, so it has to be named
@@ -426,18 +427,44 @@ tasks:
     # NOTE: config file is NOT named vitest.config.ts on purpose — per-package
     # `vitest run` would auto-discover it and shadow the package's own config,
     # breaking `npm test -w packages/server`. See vitest.scripts.config.ts.
+    #
+    # DEP (#1526): ci-selection-audit.test.ts shells out to `playwright test
+    # --list`, which parses every spec — and the registry-driven specs read
+    # e2e/.generated/registry-manifest.json at parse time. This lane used to
+    # work only because `npm test -w packages/web` ran EARLIER in `task test`
+    # and emitted the manifest as a side effect: an ordering coupling between
+    # two unrelated lanes, invisible in the task graph, and broken the moment
+    # anyone ran `task test:scripts` on a fresh checkout. Declared instead.
+    deps: [test:emit-manifest]
     cmds:
       - npx vitest run --config vitest.scripts.config.ts
 
   test:emit-manifest:
-    desc: Refresh e2e/.generated/registry-manifest.json without running the full unit suite
-    # Standalone target for the case where a contributor adds a new module
-    # and wants the manifest fresh before iterating Playwright specs
-    # locally — avoids the 12s cost of the full `task test` run.
+    aliases: [manifest:emit]
+    desc: |
+      [generate] Emit e2e/.generated/registry-manifest.json — the registry
+      projection every registry-driven Playwright sweep iterates
+      (per-module-per-port, behavioral, vrt.spec). THE ONLY producer.
+      Declared as a dep by every lane that reads it.
+    # #1526: the write used to be a SIDE EFFECT of `task test` — an
+    # `it('emits the manifest JSON to disk')` that ran unconditionally. That
+    # made the unit lane mutate the tree and hid generation from the task
+    # graph. Generation now lives in `src/lib/dev/registry-manifest.ts`
+    # (`emitRegistryManifest`) and the spec only calls it under MANIFEST_EMIT=1
+    # — the same accept-loop shape as DOCS_UPDATE / FACE_INVENTORY_UPDATE.
+    #
+    # It still runs THROUGH vitest, and that is not laziness: the def barrels
+    # resolve worklet `?url` / `.wasm` imports that exist only inside Vite, so
+    # a plain `node --import tsx` cannot read the registry at all (see
+    # scripts/propose-face.ts's header, which parses def SOURCE for exactly
+    # this reason). vitest's fork pool is the only Node context that can. The
+    # `docs:ensure` seam is the same trade.
     #
     # Runs from packages/web so vitest's include glob (`src/**/*.test.ts`
     # relative to the config) resolves the spec file correctly.
     dir: '{{.WEB}}'
+    env:
+      MANIFEST_EMIT: '1'
     cmds:
       - npx vitest run src/lib/dev/registry-manifest.test.ts
 
