@@ -323,6 +323,21 @@ export const FACES = [
   // rack. That is what lets a module with no sound at rest still have a
   // faceplate that says something.
   { type: 'rings', pages: 3 },
+  // THE FACEPLATE QUEUE · Q6 — the 4-channel attenuating mixer.
+  //
+  // `pages` is the POST-hero-split band count. It equals the declared
+  // `face.pages` length here because attenumix's hero promotes NOTHING out of a
+  // band — it is a readouts-only hero (no `cell`, no `control`, no `action`),
+  // which `heroFacePlan` supports on its own — so no band can be emptied and
+  // dropped.
+  //
+  // DETERMINISTIC by construction, like rings and unlike analogVco: this module
+  // carries NO glyph at all (`primaryAudioOutPortId` resolves `out1`, one of
+  // four channel direct outs, so a meter here would paint a lie — see the
+  // face's own comment), and all three readouts are pure functions of the five
+  // params. Every pixel is identical on a frozen graph, a live graph and a
+  // silent rack.
+  { type: 'attenumix', pages: 2 },
 ] as const;
 
 /** TIGHT per-scene diff budgets (absolute pixels; Playwright takes the MIN of

@@ -168,6 +168,12 @@ import {
   sixstrumStringHz,
 } from '$lib/ui/modules/sixstrum-face-model';
 import { formatVcaGainAtFullCv, vcaFaceParams } from '$lib/audio/vca-gain-model';
+import {
+  attenumixCvRoomText,
+  attenumixDriveText,
+  attenumixFaceParams,
+  attenumixPeakText,
+} from '$lib/ui/modules/attenumix-face-model';
 
 /** A derived readout: live params in (through the caller's reader, which
  *  already resolves def defaults for untouched params), formatted string out.
@@ -684,6 +690,30 @@ const FACE_READOUT_VALUES: Readonly<Record<string, FaceReadoutValue>> = {
   // close the current tuning is to folding its partials back down. No knob.
   'cube-harmonics': (read) => cubeHarmonicsText(cubeFaceParams(read)),
   'cube-fold-drive': (read) => cubeFoldDriveText(cubeFaceParams(read)),
+
+  // ── ATTENUMIX ────────────────────────────────────────────────────────────
+  // Three, and all three are JOINS over five knobs no single readback can
+  // perform. The one that settles the case for them existing: at the shipped
+  // defaults every attenuator is 0, so the mix bus is BIT-EXACTLY SILENT while
+  // the MASTER dial reads a confident `1.00` — unity — and there is no knob on
+  // this module that can say otherwise. `peak` says `muted`.
+  //
+  // `drive` is the same scalar as `peak` seen through the tanh's other side
+  // (peak = tanh(drive)), published as a PAIR on purpose: the soft-clip is
+  // strictly monotone, so one moving while the other does not is a broken
+  // model — the clap-q / clap-bandwidth-hz precedent, where publishing both
+  // makes the instrument its own negative control. MASTER's readback is
+  // INVARIANT to the channel count that decides both (`1.00x` at drive 1.0 and
+  // at drive 4.0, i.e. at -2.2 dB and at -12.0 dB of squash).
+  //
+  // `cv room` is the orthogonal third — MASTER cannot move it at all. This
+  // module's CV law is `att = clamp(knob + cv, 0, 1)`, so a knob parked at
+  // unity is CV-DEAF while the jack still lights and the LFO still runs.
+  // Every one of these blindness legs is permanent in
+  // attenumix-face-model.test.ts.
+  'attenumix-peak': (read) => attenumixPeakText(attenumixFaceParams(read)),
+  'attenumix-drive': (read) => attenumixDriveText(attenumixFaceParams(read)),
+  'attenumix-cv-room': (read) => attenumixCvRoomText(attenumixFaceParams(read)),
 };
 
 /** The derived value for a declared id, or `null` (⇒ the readout prints `—`
