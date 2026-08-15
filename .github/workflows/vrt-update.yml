@@ -19,7 +19,9 @@
 # does NOT count toward a PR's required-status-check gate — see the
 # `revalidate` job below for the full story). We close+reopen the PR so the
 # `reopened` pull_request event re-runs the required checks against the fresh
-# baselines.
+# baselines — and then we CHECK THAT IT WORKED, because measured on 2026-08-15
+# it does not always (2 of 3, #1694). The verification, the retry and the loud
+# failure all live in scripts/vrt-revalidate-gate.mjs.
 #
 # Usage:  gh workflow run vrt-update.yml -f ref=<branch>
 name: VRT update baselines
@@ -68,6 +70,10 @@ jobs:
       # rewrote nothing still SUCCEEDS, so `revalidate` needs this to tell
       # "captured" from "ran and changed nothing" — see the revalidate `if:`.
       pushed: ${{ steps.commit.outputs.pushed }}
+      # The SHA the bot pushed. Reported in the revalidate log and in the
+      # deadlock notice, so a stuck PR names the exact commit that never got a
+      # run instead of leaving someone to reconstruct it from timestamps.
+      sha: ${{ steps.commit.outputs.sha }}
     services:
       postgres:
         image: postgres:17
@@ -91,6 +97,28 @@ jobs:
           ref: ${{ inputs.ref }}
           lfs: true
           persist-credentials: true
+          # ── OPTIONAL: the direct fix for #1694, if the owner wants it ──────
+          # A push made with the default GITHUB_TOKEN fires NO
+          # `pull_request: synchronize` (GitHub's recursion guard), which is the
+          # root of the deadlock. A push made with a PAT or a GitHub App
+          # installation token DOES, so the PR gets a normal CI run with no
+          # close+reopen, no churn and no event-delivery race.
+          #
+          # ⚠ NOTHING IS BROKEN WHEN THE SECRET DOES NOT EXIST. An undefined
+          # secret expands to the empty string, so this falls back to
+          # `github.token` and the workflow behaves exactly as it does today —
+          # the `revalidate` job below is what makes that fallback SAFE rather
+          # than silent. To take the upgrade, add a repo secret
+          # `VRT_BASELINE_PUSH_TOKEN`:
+          #   · fine-grained PAT on this repo — Contents: read+write
+          #     (the push) and Pull requests: read+write (revalidate's fallback)
+          #   · or a GitHub App installation token with the same two scopes
+          #     (preferred: App tokens do not expire out from under the pipeline
+          #     the way a PAT does, and #1694 is exactly what an expiry looks
+          #     like — a silent return to the broken behaviour)
+          # Either way `revalidate` still verifies, so an expired or revoked
+          # token surfaces as a RED run and not as a deadlocked PR.
+          token: ${{ secrets.VRT_BASELINE_PUSH_TOKEN || github.token }}
 
       - name: Install Flox
         uses: flox/install-flox-action@v2
@@ -159,6 +187,34 @@ jobs:
   # (the baselines are already pushed; whoever opens the PR later gets a normal
   # pull_request run).
   #
+  # ── ⚠ …AND THAT FIX IS NOT RELIABLE. IT ALSO REPORTED SUCCESS EITHER WAY ───
+  # #1694. Every dispatch on 2026-08-15 that actually reached the close+reopen:
+  #
+  #     PR #1677  closed 14:06:51.9 → reopened 14:06:53.1 → ci.yml run 14:06:54 ✓
+  #     PR #1689  closed 18:04:18   → reopened 18:04:19   → ci.yml run 18:04:22 ✓
+  #     PR #1692  closed 18:21:51.7 → reopened 18:21:53.3 → NO RUN AT ALL       ✗
+  #
+  # #1692's reopen produced no run of ANY workflow on that branch — not CI, not
+  # Deploy — so it is event delivery, not a path filter, and
+  # `.../actions/runs?head_sha=d2bbfd4c0` returned total_count 0. The PR sat
+  # BLOCKED with one check and zero failures until a human pushed a merge commit
+  # on top. The step below reported SUCCESS for that run, because it never
+  # looked at whether the run it asked for exists.
+  #
+  # So the step is now SELF-VERIFYING: after each re-fire it polls the same
+  # oracle docs-only-gate.yml's guard G2 uses — "did GitHub start a ci.yml run
+  # for this head SHA?" — retries the re-fire while the budget lasts, and FAILS
+  # LOUDLY (red run + a PR comment naming the remedy) when the run never
+  # appears. It never posts a status and never marks anything green: the only
+  # thing that can satisfy a required context here is a real `pull_request` CI
+  # run. Logic + negative controls: scripts/vrt-revalidate-gate{.mjs,.test.ts}.
+  #
+  # ⚠ The oracle filters on `event=pull_request`, where G2 deliberately does
+  # not. There, presence means REFUSE THE BYPASS, so over-counting is safe;
+  # here presence means DECLARE SUCCESS, so the safe direction is the opposite
+  # and a workflow_dispatch run (which does not count toward the gate — #524)
+  # must not be mistaken for one that does.
+  #
   # ── THE `if:` IS STILL LOAD-BEARING, FOR ONE REASON NOW ────────────────
   # A capture that rewrote NOTHING still SUCCEEDS — Playwright only rewrites a
   # snapshot whose comparison FAILS — so `needs: capture` alone would
@@ -182,31 +238,36 @@ jobs:
   # skip propagation over the real YAML.
   # ---------------------------------------------------------------------------
   revalidate:
-    name: re-validate CI on ${{ inputs.ref }} (close+reopen PR)
+    name: re-validate CI on ${{ inputs.ref }} (re-fire + VERIFY)
     runs-on: ubuntu-latest
     needs: capture
     if: ${{ needs.capture.outputs.pushed == 'true' }}
+    # Bounds the failure; the gate is the verdict, never the clock. The loop's
+    # own budget (MAX_REFIRES × POLLS_PER_REFIRE × POLL_INTERVAL_MS, defaults in
+    # scripts/vrt-revalidate-gate.mjs) is well inside this.
+    timeout-minutes: 10
     permissions:
-      pull-requests: write   # close + reopen the PR to re-fire pull_request
+      contents: read         # checkout, for scripts/vrt-revalidate-gate.mjs
+      actions: read          # read: did GitHub start a ci.yml run for this SHA?
+      pull-requests: write   # close + reopen to re-fire; comment on a deadlock
     steps:
-      - name: Close + reopen the PR to re-fire pull_request
+      # Only the one script is needed, so no LFS and no baselines.
+      #
+      # The default ref is `github.sha` — the SAME commit this workflow file was
+      # read from. That is what we want and it is worth stating: `task
+      # vrt:commit` dispatches with `--ref <branch>`, so a branch that predates
+      # #1694 runs its OWN (unverified) workflow with its own absent script,
+      # and a rebased branch runs the new workflow with the new script. The two
+      # can never be mismatched, because they arrive together.
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Re-fire pull_request and VERIFY a ci.yml run exists
         env:
           GH_TOKEN: ${{ github.token }}
           REF: ${{ inputs.ref }}
           REPO: ${{ github.repository }}
-        run: |
-          set -euo pipefail
-          # Find the open PR whose head branch is this ref.
-          PR="$(gh pr list --repo "$REPO" --head "$REF" --state open \
-                  --json number -q '.[0].number')"
-          if [ -z "$PR" ] || [ "$PR" = "null" ]; then
-            echo "No open PR with head '$REF' — nothing to re-validate."
-            echo "Fresh baselines are already pushed; opening a PR for this"
-            echo "branch will trigger a normal pull_request CI run."
-            exit 0
-          fi
-          echo "Re-firing pull_request for PR #$PR (close → reopen)…"
-          gh pr close  "$PR" --repo "$REPO"
-          gh pr reopen "$PR" --repo "$REPO"
-          echo "Reopened PR #$PR — its pull_request CI run now validates the"
-          echo "fresh baselines and counts toward the required-status gate."
+          PUSHED_SHA: ${{ needs.capture.outputs.sha }}
+        run: node scripts/vrt-revalidate-gate.mjs verify
