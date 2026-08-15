@@ -753,15 +753,23 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // reason a screenshot of it cannot be a baseline. Unit suites cover the TS
   // shim (blood-runtime) + the CV-gate scancode map (blood-keys).
   blood: 'live game-loop framebuffer defeats deterministic capture: the bundled shareware boots on CI and the main menu animates by design (engine-clock fix), so successive captures differ by construction — NOT a data-availability exemption (the data is committed; see docs/adr/007-game-asset-distribution.md); unit suites cover blood-runtime shim + blood-keys scancode map',
-  // WARREN'S SPECTRUM (phase 1, 2026-08-02) — inherits the exemption its
-  // `callsine` predecessor carried. The card ships with existing primitives
-  // (2 Fader rows + PatchPanel) because the generic FACEPLATE PLATFORM is
-  // still in flight (#1301, feat/faceplate-platform-v2); the curated dock
-  // face lands ON that platform in a follow-up, which will move the card
-  // face wholesale. Capturing a baseline now would pin a layout we already
-  // know is about to be replaced, on BOTH platforms. Unit (dsp engine
-  // gates) + ART (audio profile) + per-module-per-port cover it meanwhile.
-  warrensspectrum: 'VRT baseline pending: the curated dock FACE lands on the faceplate platform (#1301) in a follow-up and will replace this card layout wholesale — capturing now pins a face we know is changing. Covered by the dsp unit gates, the ART audio profile and the per-port sweep.',
+  // WARREN'S SPECTRUM — ⚠ THE OLD `why` HERE IS SPENT, and rewriting it is
+  // part of face batch 6 rather than a tidy-up. It read "VRT baseline pending:
+  // the curated dock FACE lands on the faceplate platform (#1301) in a
+  // follow-up and will replace this card layout wholesale". #1301 has landed
+  // and that follow-up is this change — so the reason named an event that has
+  // already happened, which is exactly the stale-ledger shape CLAUDE.md refuses
+  // ("a ledger entry naming something that no longer exists is RED").
+  //
+  // The module is now in STRICT_FACES, so what a workflow-mode player actually
+  // operates is the ModuleShell faceplate, and THAT has two committed baselines
+  // (`face-warrensspectrum-compact` / `-dock`, workflow-shell-faces.spec.ts),
+  // which is the same disposition sidecar, rings, marbles and clouds carry.
+  // This entry now covers only the LEGACY card — reachable at `?shell=legacy`
+  // — whose exemption stands on the ordinary grounds: 15 faders, a band strip
+  // and a PatchPanel, no unique visual surface beyond what the faced scenes
+  // already capture.
+  warrensspectrum: 'faced (STRICT_FACES): the operated surface is the ModuleShell faceplate, captured by face-warrensspectrum-{compact,dock}. This entry covers only the LEGACY card (?shell=legacy) — 15 faders + band strip + PatchPanel, no unique visual surface. ART audio profile + dsp unit gates + per-port sweep cover behaviour.',
   // VIDEOBOX — live <video> element + animated drop-target border + a
   // playhead readout that ticks at 100ms. Same rationale as CAMERA: the
   // moving frame defeats single-shot pixel capture. Unit suites cover

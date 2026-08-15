@@ -487,6 +487,26 @@ describe('module-face lint — MOMENTARY pads (face.momentary)', () => {
     'cube:wrap',
     'cube:material',
     'cube:screen_on',
+    // WARREN'S SPECTRUM, 2026-08-15. Two params share the press-pad SHAPE
+    // (`0..1 discrete resting at 0`) by coincidence of arity, and both are
+    // states you set and leave. Both also declare `options`, so the dock paints
+    // them as captioned Segmented pairs rather than anonymous switches — but
+    // the render kind and this classification answer different questions
+    // (paramCellKind's closing note), so they still need acknowledging.
+    //
+    // MODE picks between two DSP CLASSES. `setEngineMode` compares against the
+    // PENDING mode and starts a 6 ms declick ramp on a real change; a momentary
+    // render would fire that ramp twice per press and snap the instrument back
+    // to SPECTRAL on release.
+    'warrensspectrum:engineMode',
+    // FREEZE is level-sensitive by construction and by repo rule: the worklet
+    // reads `parameters.engineFreeze[0] >= 0.5` and ORs it with the `gate`
+    // INPUT PORT, which the def declares `edge: 'gate'` precisely because
+    // CLAUDE.md forbids converting a gate consumer to edge-only. A momentary
+    // render would thaw the analyser the instant the pad was released, i.e.
+    // the module's headline feature could never be held — the `clouds:freeze`
+    // case, reached by the simpler mechanism.
+    'warrensspectrum:engineFreeze',
     // pointerup, the worklet ORs it into the mono gate like tomtom's `strike`,
     // and the def's own doc says "released = note-off (no latch)". It is now
     // declared on `face.momentary`. The cross-check below is what stops that

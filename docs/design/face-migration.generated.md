@@ -175,7 +175,7 @@ author a `face` and rank the controls — no new platform capability.
 | `vdelay` | video | — | — |
 | `vfpgaRunner` | video | — | — |
 | `videoMixer` | video | — | — |
-| `warrensspectrum` | audio | — | — |
+| `warrensspectrum` | audio | done | — |
 | `warrensvisions` | video | — | — |
 | `wavecel` | audio | — | — |
 | `wavesculpt` | audio | — | — |

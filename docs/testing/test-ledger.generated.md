@@ -242,7 +242,7 @@ payable. Membership is read off that set, so it moves without an edit here.
 - `videobox` — live <video> element + ticking playhead readout defeat deterministic capture
 - `videocube` — VRT baseline pending owner look-approval (look-affecting WebGL video CUBE isomorph)
 - `videovarispeed` — live <video> element streamed at varispeed + ticking playhead readout defeat deterministic capture
-- `warrensspectrum` — VRT baseline pending: the curated dock FACE lands on the faceplate platform (#1301) in a follow-up and will replace t…
+- `warrensspectrum` — faced (STRICT_FACES): the operated surface is the ModuleShell faceplate, captured by face-warrensspectrum-{compact,do…
 - `writeseq` — VRT baseline pending
 
 ### `BEHAVIORAL_MODULE_EXEMPT` (77) — whole-module skips of the behavioral CONTROL→PATCHED delta sweep
