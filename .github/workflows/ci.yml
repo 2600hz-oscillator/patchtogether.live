@@ -456,6 +456,86 @@ jobs:
   # merge, with zero branch-ruleset change. Keep it FAST: build only, no
   # preview, no smoke (those live in `task ci:smoke:prod-build`).
   # -----------------------------------------------------------------------
+  cv-param-reach:
+    name: cv-param-reach (every paramTarget input reaches the DSP)
+    needs: dsp-build
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      # ART baselines (art/baselines/**/*.f32) are LFS-tracked. Check out
+      # WITHOUT LFS (lfs:false), then restore the LFS object store from an
+      # actions/cache keyed on the baseline file SHAs and `git lfs pull` — a
+      # cache HIT makes the pull a near-no-op (objects already on disk), a MISS
+      # fetches only the changed objects. This cuts repeated full-payload LFS
+      # downloads (the repo's exhausted-budget root cause) by ~95% while still
+      # giving the test the real float32 buffers (not the ~130-byte pointer
+      # files, which fail with "not a multiple of 4 — truncated or corrupt").
+      - name: Checkout (LFS objects restored from cache below)
+        uses: actions/checkout@v4
+        with:
+          lfs: false
+
+      - name: Install Flox
+        uses: flox/install-flox-action@v2
+
+      - name: Cache npm + Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.npm
+            ~/.cache/ms-playwright
+          key: ${{ runner.os }}-deps-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-deps-
+
+      # Cache the git-LFS object store keyed on the ART baseline file contents
+      # (the pointer files' tracked SHAs change when a baseline is re-pinned).
+      # A HIT restores .git/lfs so `git lfs pull` finds the objects locally and
+      # downloads nothing; a MISS fetches only the changed objects, then this
+      # cache repopulates for the next run.
+      - name: Cache git-LFS objects (ART baselines)
+        uses: actions/cache@v4
+        with:
+          path: .git/lfs
+          key: ${{ runner.os }}-lfs-art-${{ hashFiles('art/baselines/**/*.f32', 'art/baselines/**/*.wav') }}
+          restore-keys: |
+            ${{ runner.os }}-lfs-art-
+
+      - name: Fetch ART LFS objects (no-op on cache hit)
+        run: flox activate -- git lfs pull --include "art/baselines/**"
+
+      # Restore the worklet dist built once by dsp-build, BEFORE `task art`
+      # (whose dsp:build dep then no-ops via the .dsp-srchash status guard).
+      - name: Download DSP dist artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: dsp-dist
+          path: packages/dsp/dist
+
+      - name: Install workspace deps
+        run: flox activate -- task install
+
+      # THE SWEEP LIVES IN ITS OWN JOB ON A MEASUREMENT (#1664/#1661).
+      #
+      # It builds and renders the real factory once PER PORT across ~340
+      # paramTarget ports. Measured 127 s on an idle local box — and on a CI
+      # runner it took the `art` job from its historical 3 min to a hard CANCEL
+      # at that job's 10 min timeout. Folding it into `art` therefore more than
+      # doubled a REQUIRED lane on every PR.
+      #
+      # Splitting it out costs NO merge latency: this runs in parallel and the
+      # critical path is the e2e shard matrix at ~12 min. It still GATES —
+      # wired into the umbrella's needs + env + failing `if`, the same three
+      # edits every gating lane makes — so nothing is weakened, only moved.
+      #
+      # The 25 min timeout is deliberately generous because the true CI cost is
+      # NOT yet known: every attempt to measure it locally ran on a box held at
+      # load 20-50 by sibling agents. The first green run here is the real
+      # measurement; tighten this then, with that number.
+      - name: Run the CV-reach sweep
+        run: flox activate -- npm run art:cv-reach -w art
+
   build:
     name: build (production bundle)
     needs: dsp-build
@@ -2643,7 +2723,7 @@ jobs:
     # scripts/test-ledger.mjs parses the next line; test-ledger.test.ts asserts
     # every name here resolves to a real job, so a stale entry is RED.
     # informational-off-umbrella: collab, collab-attest, grand-attest
-    needs: [actionlint, lint, typecheck, unit, dsp-build, build-web, art, build, e2e, webgl-smoke, webgl-attest, behavioral-smoke]
+    needs: [actionlint, lint, typecheck, unit, dsp-build, build-web, art, cv-param-reach, build, e2e, webgl-smoke, webgl-attest, behavioral-smoke]
     runs-on: ubuntu-latest
     timeout-minutes: 2
 
@@ -2657,6 +2737,7 @@ jobs:
           DSP_BUILD: ${{ needs.dsp-build.result }}
           BUILD_WEB: ${{ needs.build-web.result }}
           ART: ${{ needs.art.result }}
+          CV_PARAM_REACH: ${{ needs.cv-param-reach.result }}
           BUILD: ${{ needs.build.result }}
           E2E: ${{ needs.e2e.result }}
           WEBGL_SMOKE: ${{ needs.webgl-smoke.result }}
@@ -2670,6 +2751,7 @@ jobs:
           echo "dsp-build:     $DSP_BUILD"
           echo "build-web:     $BUILD_WEB"
           echo "art:           $ART"
+          echo "cv-param-reach: $CV_PARAM_REACH"
           echo "build:         $BUILD"
           echo "e2e:           $E2E"
           echo "webgl-smoke:   $WEBGL_SMOKE"
@@ -2729,6 +2811,7 @@ jobs:
              || "$DSP_BUILD" != "success" \
              || "$BUILD_WEB" != "success" \
              || "$ART" != "success" \
+             || "$CV_PARAM_REACH" != "success" \
              || "$BUILD" != "success" \
              || "$E2E" != "success" \
              || "$WEBGL_SMOKE" != "success" \
