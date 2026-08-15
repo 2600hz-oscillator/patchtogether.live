@@ -310,6 +310,41 @@ describe('resolvePushCardControls — tier 2, the curated face', () => {
     expect((defByType('ninelives').params ?? []).map((q) => q.id)).toEqual(['rate', 'shape']);
   });
 
+  it('a PAIR promoted together keeps ONE card law — moog907a + moog914', () => {
+    // The two fixed filter banks, promoted 2026-08-15 (faceplate queue Q12).
+    // Recorded for the same reason as the two legs above, plus one more that is
+    // specific to a PAIR: the whole argument for authoring them together is that
+    // one idea should not produce two layouts, and the Push card is a surface
+    // where that could quietly stop being true.
+    //
+    // What moved, and it is the SAME move on both: the GENERIC tier is
+    // declaration order, which starts `hp` (the 7.5 / 6.6 kHz section) because
+    // the def lists the shelves outside-in. The face ranks by FREQUENCY, so
+    // encoder 1 becomes `lp` and the other seven are unchanged — a one-slot
+    // substitution, not a reshuffle.
+    //
+    // ⚠ AND THE 914 TRUNCATES. It has fourteen sections and the encoder row is
+    // eight, so `band8`…`band12` and `hp` are off the card entirely. That is the
+    // 8-wide window doing its job on a module that genuinely has more controls
+    // than a Push row, not a ranking mistake — and it is stated here so a future
+    // reader does not "fix" it by re-ranking the axis.
+    for (const type of ['moog907a', 'moog914']) {
+      const spec = resolvePushCardControls(defByType(type));
+      expect(spec.source, `${type}: the promotion moves it off the GENERIC tier`).toBe('face');
+      expect(spec.skipped, `${type}: no families and no momentary pads`).toEqual([]);
+      const ids = pushCardParams(spec).map((q) => q.id);
+      expect(ids, `${type}: frequency order, truncated to the encoder row`).toEqual([
+        'lp', 'band1', 'band2', 'band3', 'band4', 'band5', 'band6', 'band7',
+      ]);
+      // The negative control on the claim: declaration order is genuinely
+      // DIFFERENT at slot 1, so this leg would pass vacuously if they agreed.
+      expect(
+        (defByType(type).params ?? []).map((q) => q.id).slice(0, 8),
+        `${type}: what the GENERIC tier produced before the promotion`,
+      ).toEqual(['hp', 'band1', 'band2', 'band3', 'band4', 'band5', 'band6', 'band7']);
+    }
+  });
+
   it('records WHICH keys it skipped, so the card cannot silently shrink', () => {
     // Fixture: a face whose first two ranks are unturnable. Both are named.
     const def = fixture({
