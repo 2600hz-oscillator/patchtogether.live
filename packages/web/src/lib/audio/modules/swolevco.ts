@@ -51,7 +51,11 @@
 //   * 1.0  → square only
 //   * In between, linear blend between adjacent shapes.
 // Implementation: each shape oscillator feeds its own GainNode whose
-// .gain is computed JS-side from `symmetry` and updated via setParam.
+// .gain is driven at AUDIO RATE from the symmetry control signal through
+// a WaveShaper LUT of `symmetryGains` — so knob and CV take the identical
+// path. Same for timbre (× 200 Hz), fold (drive + fixed folder + dry/wet
+// gate) and ratio (track + free-run gate); see the factory. Nothing in
+// this module applies a CV-modulated param from JavaScript.
 //
 // Fold = 0..1, shared helper with WAVVIZ (4x oversample WaveShaperNode
 // with sin foldback curve).
@@ -107,28 +111,61 @@ const TIMBRE_MAX_HZ = 200;
 const VOCT_LUT_LEN = 4097;
 const VOCT_RANGE = 5; // ±5 V
 
-/** Build a curve mapping V/oct (in [-VOCT_RANGE, +VOCT_RANGE]) to Hz
- *  delta (relative to baseHz at 0V). The WaveShaperNode applies this to
- *  any audio-rate signal patched to the pitch input.
+/** Build a curve mapping V/oct (in [-VOCT_RANGE, +VOCT_RANGE]) to a
+ *  frequency MULTIPLIER MINUS ONE — `2^v - 1` — independent of the base
+ *  pitch. The WaveShaperNode applies this to any audio-rate signal patched
+ *  to a pitch input; the module then MULTIPLIES the result by the (audio-
+ *  rate) base-Hz signal and sums it with that same base Hz:
  *
- *  curve[i] = baseHz * (2^v - 1)
- *  where v = (i / (N-1)) * 2 * VOCT_RANGE - VOCT_RANGE.
+ *    finalFreq = baseHz + baseHz × (2^v - 1) = baseHz × 2^v  ✓
  *
- *  At v=0V: curve = 0  (no contribution; baseHz handled separately).
- *  At v=1V: curve = baseHz × 1 = baseHz (one octave up = 2× freq, i.e.
- *           +baseHz Hz of additional frequency).
+ *  curve[i] = 2^v - 1, where v = (i / (N-1)) * 2 * VOCT_RANGE - VOCT_RANGE.
+ *  At v=0V: curve = 0 (no contribution). At v=1V: curve = 1 (one octave up).
  *
- *  The OscillatorNode's intrinsic .frequency is set to baseHz, so:
- *    finalFreq = baseHz + curve(voct) = baseHz × 2^voct  ✓
+ *  **The base pitch used to be BAKED INTO THIS LUT** (`baseHz * (2^v - 1)`),
+ *  which meant every tune / fine / ratio change reassigned a 4097-point
+ *  `WaveShaperNode.curve` on a live node. Factoring the base out makes the
+ *  curve a CONSTANT, assigned exactly once per node, which matters twice:
+ *  a pitch change is now a single `AudioParam` write instead of a table
+ *  rebuild, and `node-web-audio-api` (the ART harness) **refuses a second
+ *  `curve` assignment outright** — `InvalidStateError: cannot assign curve
+ *  twice`, verified still thrown after resetting to null, while real Chrome
+ *  147 allows it. That refusal made this module's entire `setParam` path
+ *  unreachable from ART, which is a large part of why #1661 survived.
  *
  *  Returned as Float32Array on a fresh ArrayBuffer (TS strict typed-array
  *  signature requirement for WaveShaperNode.curve).
  */
-export function buildVoctCurve(baseHz: number): Float32Array<ArrayBuffer> {
+export function buildVoctRatioCurve(): Float32Array<ArrayBuffer> {
   const curve = new Float32Array(new ArrayBuffer(VOCT_LUT_LEN * 4));
   for (let i = 0; i < VOCT_LUT_LEN; i++) {
     const v = (i / (VOCT_LUT_LEN - 1)) * 2 * VOCT_RANGE - VOCT_RANGE;
-    curve[i] = baseHz * (Math.pow(2, v) - 1);
+    curve[i] = Math.pow(2, v) - 1;
+  }
+  return curve;
+}
+
+/** LUT length for every CV→coefficient WaveShaper in this module (the
+ *  shadow-signal mappings for symmetry / fold / ratio).
+ *
+ *  ODD ON PURPOSE, same argument as `VOCT_LUT_LEN`: a WaveShaperNode
+ *  linearly interpolates between `curve[⌊p⌋]` and `curve[⌊p⌋+1]`, so an
+ *  EVEN table has no sample at the centre. Every breakpoint these curves
+ *  turn on — symmetry 0 / 0.5 / 1, ratio 0, fold 0 — must land EXACTLY on
+ *  a sample or the mapping is read as the mean of two neighbours and the
+ *  module's documented anchor values (0.5 = pure triangle, fold 0 =
+ *  identity) stop being exact. `(LEN-1) = 4096 = 2^12` additionally puts
+ *  every dyadic control value (0.5, 0.25, 0.125, …) on a sample. */
+const CV_LUT_LEN = 4097;
+
+/** Sample a pure `(input ∈ [-1,+1]) → coefficient` mapping into a
+ *  WaveShaper LUT. The mappings below are all piecewise-LINEAR with their
+ *  breakpoints on LUT samples, so the node's linear interpolation between
+ *  samples reproduces them EXACTLY rather than approximately. */
+function buildCvCurve(f: (u: number) => number): Float32Array<ArrayBuffer> {
+  const curve = new Float32Array(new ArrayBuffer(CV_LUT_LEN * 4));
+  for (let i = 0; i < CV_LUT_LEN; i++) {
+    curve[i] = f((i / (CV_LUT_LEN - 1)) * 2 - 1);
   }
   return curve;
 }
@@ -159,6 +196,70 @@ export function symmetryGains(symmetry: number): {
 /** Compute the BASE frequency (Hz) from tune (semitones) + fine (cents). */
 export function tuneFineToHz(tuneSt: number, fineCents: number): number {
   return C4_HZ * Math.pow(2, tuneSt / 12 + fineCents / 1200);
+}
+
+/** Top of the `ratio` param's declared range (see `params` below). The
+ *  ratio shadow signal is normalised by this before it indexes a
+ *  WaveShaper (whose input domain is [-1,+1]), and un-normalised by the
+ *  curve — so ratio 0..8 maps onto LUT positions 0.5..1.0. */
+const RATIO_MAX = 8;
+
+/** Fold "k" at fold=1. `buildFoldCurve` folds with `sin(x·π·k)` where
+ *  `k = 1 + fold·4`, so k ∈ [1, 5]. The audio-rate folder below uses a
+ *  FIXED `sin(u·π·FOLD_MAX_K)` shaper and pre-scales its input by `k /
+ *  FOLD_MAX_K`, which composes to exactly `sin(x·π·k)` — the identical
+ *  function, with the fold amount living in a GainNode instead of in a
+ *  rebuilt LUT. */
+const FOLD_MAX_K = 5;
+
+/** Width (in control units) of the transition band a WaveShaper step
+ *  costs. A step encoded in a LUT of `CV_LUT_LEN` samples over [-1,+1]
+ *  cannot be a true discontinuity: the node interpolates linearly across
+ *  the ONE cell that straddles the breakpoint. Both step curves below
+ *  (fold's dry/wet gate, ratio's free-run gate) therefore ramp over a
+ *  single cell rather than switching instantly. Exposed as a named
+ *  constant so the tests can assert *where* that band is instead of
+ *  discovering it. */
+export const CV_STEP_BAND = 2 / (CV_LUT_LEN - 1);
+
+/** Per-shape symmetry crossfade gain as a function of the SHADOW signal
+ *  (the combined knob+CV value carried at audio rate). Identical to
+ *  `symmetryGains` — including its clamp, which a WaveShaper reproduces
+ *  for free by clamping its own input to [-1,+1]. */
+function buildSymmetryCurve(shape: 'saw' | 'triangle' | 'square'): Float32Array<ArrayBuffer> {
+  return buildCvCurve((u) => symmetryGains(u)[shape]);
+}
+
+/** Fold DRIVE: `u → k / FOLD_MAX_K` where `k = 1 + clamp(u,0,1)·4`. */
+function buildFoldDriveCurve(): Float32Array<ArrayBuffer> {
+  return buildCvCurve((u) => (1 + Math.max(0, Math.min(1, u)) * 4) / FOLD_MAX_K);
+}
+
+/** Fold WET gate: 0 at fold ≤ 0, 1 above it. `buildFoldCurve` is
+ *  DISCONTINUOUS at 0 — it returns the identity at exactly 0 and
+ *  `sin(x·π·k)` for anything above — so reproducing it at audio rate needs
+ *  a hard dry/wet switch, not a crossfade. See `CV_STEP_BAND`. */
+function buildFoldWetGateCurve(): Float32Array<ArrayBuffer> {
+  return buildCvCurve((u) => (u > 0 ? 1 : 0));
+}
+
+/** Fold DRY gate — the exact complement of the wet gate, so the two always
+ *  sum to 1 and no fold position can gain- or level-shift the output. */
+function buildFoldDryGateCurve(): Float32Array<ArrayBuffer> {
+  return buildCvCurve((u) => (u > 0 ? 0 : 1));
+}
+
+/** Ratio TRACK: normalised ratio → the ratio itself, floored at 0 (the
+ *  free-run regime contributes through `buildRatioFreeGateCurve` instead).
+ *  Linear above 0, so the node's interpolation is exact there. */
+function buildRatioTrackCurve(): Float32Array<ArrayBuffer> {
+  return buildCvCurve((u) => Math.max(0, u * RATIO_MAX));
+}
+
+/** Ratio FREE-RUN gate: 1 when ratio ≤ 0 (modulator runs at its own
+ *  M.Tune / M.Fine pitch), 0 above. See `CV_STEP_BAND`. */
+function buildRatioFreeGateCurve(): Float32Array<ArrayBuffer> {
+  return buildCvCurve((u) => (u > 0 ? 0 : 1));
 }
 
 // Module-grouping Phase 3A: `vizPassthrough` is available on AudioModuleDef
@@ -254,32 +355,97 @@ export const swolevcoDef: AudioModuleDef = {
       fold:     (initialParams.fold     ?? 0)   as number,
     };
 
+    // ---------------- CV shadows: the combined (knob + CV) value, as a SIGNAL ----------------
+    //
+    // Each of the four CV-modulated scalar knobs (timbre / symmetry / fold /
+    // ratio) is carried through this graph as an audio-rate SIGNAL, not as a
+    // JS number. A ConstantSource pinned at 1.0 feeds a GainNode whose
+    // `.gain` is the AudioParam published on the corresponding input port:
+    //
+    //     shadow output = 1.0 × (knob intrinsic + every connected CV)
+    //                   = the combined value, at audio rate.
+    //
+    // Everything downstream reads that OUTPUT, and that is the whole fix for
+    // #1661. The shadows used to be pinned at offset **0** and connected to
+    // **nothing** — they existed only so the engine's per-param tap analyser
+    // had an AudioParam to observe for the motorized-fader animation, while
+    // `setParam` (the knob path) separately did all the real work. So a
+    // patched cable moved the fader and not one sample of audio: measured
+    // peak |Δsample| of exactly 0.0000e+0 on all four inputs, against
+    // 9.7e-1 … 1.9e0 for the same values applied as a knob. The animating
+    // fader actively told the player it was working.
+    //
+    // Reaching the DSP from a live AudioParam fixes clip automation for free
+    // as well: `AudioEngine.scheduleParam` / `holdParam` prefer
+    // `inputs[paramId].param` over `setParam`, so automating any of these
+    // four was writing to the same dead end.
+    const constantSources: ConstantSourceNode[] = [];
+    function makeConstant(offset: number): ConstantSourceNode {
+      const cs = ctx.createConstantSource();
+      cs.offset.value = offset;
+      cs.start();
+      constantSources.push(cs);
+      return cs;
+    }
+    function makeShadow(initialValue: number): GainNode {
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(initialValue, ctx.currentTime);
+      makeConstant(1).connect(g);
+      return g;
+    }
+    const sTimbre   = makeShadow(initial.timbre);
+    const sSymmetry = makeShadow(initial.symmetry);
+    const sFold     = makeShadow(initial.fold);
+    const sRatio    = makeShadow(initial.ratio);
+
     // ---------------- Primary oscillators (3 shapes) ----------------
     //
     // OscillatorNode primitives (sawtooth/triangle/square/sine) are
     // bandlimited per the W3C spec — Web Audio implementations use BLEP
     // or polynomial-bandlimited tables under the hood. We get aliasing-
     // free shapes for free.
+    //
+    // The base pitch is a SIGNAL (`csBaseHz`) rather than the oscillators'
+    // intrinsic `.frequency`, because the modulator's ratio leg has to
+    // multiply it at audio rate. Every oscillator's intrinsic frequency is
+    // therefore 0 and its pitch arrives entirely through connections, which
+    // Web Audio sums: base + V/oct + timbre FM + external FM.
     const baseHz = tuneFineToHz(initial.tune, initial.fine);
+    const csBaseHz = makeConstant(baseHz);
     function makeOsc(type: OscillatorType): OscillatorNode {
       const o = ctx.createOscillator();
       o.type = type;
-      o.frequency.setValueAtTime(baseHz, ctx.currentTime);
+      o.frequency.setValueAtTime(0, ctx.currentTime);
       o.start();
+      csBaseHz.connect(o.frequency);
       return o;
     }
     const oscSaw = makeOsc('sawtooth');
     const oscTri = makeOsc('triangle');
     const oscSqr = makeOsc('square');
 
-    // Per-shape symmetry crossfade gains.
-    const symGains = symmetryGains(initial.symmetry);
-    const gSaw = ctx.createGain();
-    gSaw.gain.value = symGains.saw;
-    const gTri = ctx.createGain();
-    gTri.gain.value = symGains.triangle;
-    const gSqr = ctx.createGain();
-    gSqr.gain.value = symGains.square;
+    // Per-shape symmetry crossfade gains. Intrinsic 0: each shape's gain
+    // arrives from the symmetry shadow through its own WaveShaper LUT of
+    // `symmetryGains`, so a CV cable crossfades saw→tri→square at audio
+    // rate and a knob move is just a write to the shadow's intrinsic. The
+    // LUT reproduces `symmetryGains` exactly — the mapping is piecewise
+    // linear with breakpoints (0, 0.5, 1) sitting ON LUT samples, and the
+    // node's clamp of its own input to [-1,+1] reproduces the helper's
+    // clamp of `symmetry` to [0,1].
+    function makeShapeGain(shape: 'saw' | 'triangle' | 'square'): GainNode {
+      const g = ctx.createGain();
+      g.gain.value = 0;
+      const ws = ctx.createWaveShaper();
+      ws.curve = buildSymmetryCurve(shape);
+      sSymmetry.connect(ws);
+      ws.connect(g.gain);
+      symmetryShapers.push(ws);
+      return g;
+    }
+    const symmetryShapers: WaveShaperNode[] = [];
+    const gSaw = makeShapeGain('saw');
+    const gTri = makeShapeGain('triangle');
+    const gSqr = makeShapeGain('square');
     oscSaw.connect(gSaw);
     oscTri.connect(gTri);
     oscSqr.connect(gSqr);
@@ -292,28 +458,109 @@ export const swolevcoDef: AudioModuleDef = {
     gSqr.connect(primaryBus);
 
     // ---------------- Wavefolder (post-symmetry) ----------------
-    const folder = ctx.createWaveShaper();
-    folder.oversample = '4x';
-    let currentFold = initial.fold;
-    folder.curve = buildFoldCurve(currentFold);
-    primaryBus.connect(folder);
+    //
+    // `buildFoldCurve` is DISCONTINUOUS at fold=0 — the identity at exactly
+    // 0, `sin(x·π·(1+4·fold))` for anything above it — so the audio-rate
+    // form is a hard dry/wet SWITCH, not a crossfade:
+    //
+    //   dry: primaryBus → foldDry (identity, 4× oversampled) → dryGain
+    //   wet: primaryBus → foldDrive (gain = k/5) → foldWet
+    //                     (fixed `sin(u·π·5)`)          → wetGain
+    //
+    // because `sin(u·π·5)` evaluated at `u = x·k/5` IS `sin(x·π·k)`. The
+    // fold amount has moved out of a rebuilt LUT and into a GainNode, so it
+    // is audio-rate and `.curve` is never touched again after construction.
+    //
+    // `foldDry` keeps the identity curve on a 4×-oversampled WaveShaper —
+    // the same node shape the old rebuilt folder had at fold=0 — rather than
+    // bypassing to a plain wire, so the default (fold=0) output stays
+    // bit-identical: the oversampler's up/downsample filters are not exactly
+    // transparent and skipping them would have been an audible change to
+    // every existing rack. The two gates are exact complements, so no fold
+    // position can level-shift the output.
+    const foldDry = ctx.createWaveShaper();
+    foldDry.oversample = '4x';
+    foldDry.curve = buildFoldCurve(0);
+    const dryGain = ctx.createGain();
+    dryGain.gain.value = 0;
+    primaryBus.connect(foldDry);
+    foldDry.connect(dryGain);
+
+    const foldDrive = ctx.createGain();
+    foldDrive.gain.value = 0;
+    const foldWet = ctx.createWaveShaper();
+    foldWet.oversample = '4x';
+    foldWet.curve = buildCvCurve((u) => Math.sin(u * Math.PI * FOLD_MAX_K));
+    const wetGain = ctx.createGain();
+    wetGain.gain.value = 0;
+    primaryBus.connect(foldDrive);
+    foldDrive.connect(foldWet);
+    foldWet.connect(wetGain);
+
+    function driveFromFold(
+      curve: Float32Array<ArrayBuffer>,
+      target: AudioParam,
+    ): WaveShaperNode {
+      const ws = ctx.createWaveShaper();
+      ws.curve = curve;
+      sFold.connect(ws);
+      ws.connect(target);
+      foldShapers.push(ws);
+      return ws;
+    }
+    const foldShapers: WaveShaperNode[] = [];
+    driveFromFold(buildFoldDriveCurve(),   foldDrive.gain);
+    driveFromFold(buildFoldWetGateCurve(), wetGain.gain);
+    driveFromFold(buildFoldDryGateCurve(), dryGain.gain);
 
     // Output bus (post-fold). This is the `out` port AND the source for
     // the scope analyser AND one of the two summands for sum_out.
     const outBus = ctx.createGain();
     outBus.gain.value = 1;
-    folder.connect(outBus);
+    dryGain.connect(outBus);
+    wetGain.connect(outBus);
 
     // ---------------- Modulator (sine) ----------------
     const modOsc = ctx.createOscillator();
     modOsc.type = 'sine';
-    // Initial modulator frequency: if ratio > 0, modulator = primary × ratio;
-    // if ratio = 0, modulator = its own (mod_tune + mod_fine).
-    const initialModHz = initial.ratio > 0
-      ? baseHz * initial.ratio
-      : tuneFineToHz(initial.mod_tune, initial.mod_fine);
-    modOsc.frequency.setValueAtTime(initialModHz, ctx.currentTime);
+    modOsc.frequency.setValueAtTime(0, ctx.currentTime);
     modOsc.start();
+
+    // The modulator's base frequency, as a SIGNAL summed from two mutually
+    // exclusive legs gated by the ratio shadow — so the mode switch itself
+    // is CV-reachable, not just the ratio value:
+    //
+    //   ratio > 0  →  primary base Hz × ratio   (ratio-locked FM)
+    //   ratio ≤ 0  →  the modulator's own M.Tune / M.Fine pitch (free run)
+    //
+    // The ratio shadow spans the param's 0..8 range, so it is normalised by
+    // RATIO_MAX before indexing a WaveShaper (whose input domain is
+    // [-1,+1]) and un-normalised by the track curve. The two gates cross in
+    // one LUT cell — `CV_STEP_BAND` wide in ratio-normalised units — rather
+    // than switching instantaneously; see that constant.
+    const gRatioNorm = ctx.createGain();
+    gRatioNorm.gain.value = 1 / RATIO_MAX;
+    sRatio.connect(gRatioNorm);
+
+    const wsRatioTrack = ctx.createWaveShaper();
+    wsRatioTrack.curve = buildRatioTrackCurve();
+    gRatioNorm.connect(wsRatioTrack);
+    const gRatioBase = ctx.createGain();
+    gRatioBase.gain.value = baseHz; // re-written by tune / fine
+    wsRatioTrack.connect(gRatioBase);
+
+    const wsRatioFree = ctx.createWaveShaper();
+    wsRatioFree.curve = buildRatioFreeGateCurve();
+    gRatioNorm.connect(wsRatioFree);
+    const gFreeHz = ctx.createGain();
+    gFreeHz.gain.value = tuneFineToHz(initial.mod_tune, initial.mod_fine);
+    wsRatioFree.connect(gFreeHz);
+
+    const modHzBus = ctx.createGain();
+    modHzBus.gain.value = 1;
+    gRatioBase.connect(modHzBus);
+    gFreeHz.connect(modHzBus);
+    modHzBus.connect(modOsc.frequency);
 
     // Modulator output bus (kept as a buffer so we can fan-out to
     // mod_out, sum_out, and the timbre-FM path).
@@ -328,12 +575,22 @@ export const swolevcoDef: AudioModuleDef = {
     // AudioParam, so this is true audio-rate FM with proper sample
     // accuracy. We connect ONCE per primary oscillator (saw/tri/sqr —
     // they all need the same FM input).
+    //
+    // The FM DEPTH is itself audio-rate now: `timbreGain.gain` has an
+    // intrinsic of 0 and is driven entirely by the timbre shadow scaled by
+    // TIMBRE_MAX_HZ, which is exactly what `setParam` used to compute in JS
+    // (`value * TIMBRE_MAX_HZ`). An envelope patched into `timbre` opens the
+    // FM index per sample instead of per knob move.
     const timbreGain = ctx.createGain();
-    timbreGain.gain.setValueAtTime(initial.timbre * TIMBRE_MAX_HZ, ctx.currentTime);
+    timbreGain.gain.value = 0;
     modBus.connect(timbreGain);
     timbreGain.connect(oscSaw.frequency);
     timbreGain.connect(oscTri.frequency);
     timbreGain.connect(oscSqr.frequency);
+    const gTimbreHz = ctx.createGain();
+    gTimbreHz.gain.value = TIMBRE_MAX_HZ;
+    sTimbre.connect(gTimbreHz);
+    gTimbreHz.connect(timbreGain.gain);
 
     // ---------------- External FM input → primary frequency ----------------
     //
@@ -355,11 +612,11 @@ export const swolevcoDef: AudioModuleDef = {
     // primary oscillators' .frequency AudioParams (and to the modulator's
     // when ratio==0; otherwise the modulator tracks the primary).
     //
-    // Note: when `tune`+`fine` change we rebuild the LUT (baseHz changes).
-    // Knob updates are rare relative to audio rate, so the rebuild cost
-    // is irrelevant.
+    // The LUT is BASE-FREE (`2^v - 1`) and the base Hz arrives as a signal
+    // on the multiplier's gain, so a tune/fine change is one AudioParam
+    // write and never a table rebuild. See `buildVoctRatioCurve`.
     const pitchVoctShaper = ctx.createWaveShaper();
-    pitchVoctShaper.curve = buildVoctCurve(baseHz);
+    pitchVoctShaper.curve = buildVoctRatioCurve();
     // WaveShaperNode reads input as [-1, +1] and maps proportionally to the
     // curve's index range. Our curve maps a V/oct input ∈ [-VOCT_RANGE,
     // +VOCT_RANGE] to a Hz delta, so the incoming V/oct CV has to be scaled
@@ -373,22 +630,32 @@ export const swolevcoDef: AudioModuleDef = {
     const pitchScaler = ctx.createGain();
     pitchScaler.gain.value = 1 / VOCT_RANGE;
     pitchScaler.connect(pitchVoctShaper);
-    pitchVoctShaper.connect(oscSaw.frequency);
-    pitchVoctShaper.connect(oscTri.frequency);
-    pitchVoctShaper.connect(oscSqr.frequency);
+    // × base Hz. Intrinsic 0 with the base arriving on the gain param, so
+    // the product is `baseHz × (2^v - 1)` — the Hz delta the LUT used to
+    // carry directly. Summed with `csBaseHz` at the oscillator this is
+    // `baseHz × 2^v`, unchanged.
+    const pitchVoctHz = ctx.createGain();
+    pitchVoctHz.gain.value = 0;
+    pitchVoctShaper.connect(pitchVoctHz);
+    csBaseHz.connect(pitchVoctHz.gain);
+    pitchVoctHz.connect(oscSaw.frequency);
+    pitchVoctHz.connect(oscTri.frequency);
+    pitchVoctHz.connect(oscSqr.frequency);
 
-    // Same for the modulator pitch input — independent V/oct → Hz LUT,
-    // routed to the modulator only when ratio==0 (free-run mode).
-    let modBaseHz = initialModHz;
+    // Same for the modulator pitch input — same base-free LUT, multiplied
+    // by the MODULATOR's base-Hz signal so pitch CV tracks whichever regime
+    // (ratio-locked or free-run) `modHzBus` is currently in. Always
+    // connected: pitch CV always tracks.
     const modPitchVoctShaper = ctx.createWaveShaper();
-    modPitchVoctShaper.curve = buildVoctCurve(modBaseHz);
+    modPitchVoctShaper.curve = buildVoctRatioCurve();
     const modPitchScaler = ctx.createGain();
     modPitchScaler.gain.value = 1 / VOCT_RANGE;
     modPitchScaler.connect(modPitchVoctShaper);
-    // Always connect; when ratio>0 the modulator's frequency is overridden
-    // (we'll set modOsc.frequency directly and the V/oct contribution adds
-    // on top, which is correct: pitch CV always tracks).
-    modPitchVoctShaper.connect(modOsc.frequency);
+    const modPitchVoctHz = ctx.createGain();
+    modPitchVoctHz.gain.value = 0;
+    modPitchVoctShaper.connect(modPitchVoctHz);
+    modHzBus.connect(modPitchVoctHz.gain);
+    modPitchVoctHz.connect(modOsc.frequency);
 
     // ---------------- Sum output bus ----------------
     const sumBus = ctx.createGain();
@@ -402,62 +669,34 @@ export const swolevcoDef: AudioModuleDef = {
     scopeAnalyser.smoothingTimeConstant = 0;
     outBus.connect(scopeAnalyser);
 
-    // ---------------- CV-shadow gains (cv-tap analyser support) ----------------
-    //
-    // For the four scalar CV-modulated knobs (timbre / symmetry / fold /
-    // ratio) the engine's per-param tap analyser needs an AudioParam to
-    // observe modulator activity for the motorized fader rendering. We
-    // expose the underlying gain.gain AudioParam of an internal
-    // ConstantSource → GainNode pair. setParam still owns the actual
-    // application of the value (timbre changes timbreGain.gain; symmetry
-    // re-balances gSaw/gTri/gSqr; fold rebuilds the WaveShaper curve;
-    // ratio recomputes modOsc.frequency).
-    function makeShadow(initialValue: number): GainNode {
-      const g = ctx.createGain();
-      g.gain.setValueAtTime(initialValue, ctx.currentTime);
-      const sink = ctx.createConstantSource();
-      sink.offset.value = 0;
-      sink.start();
-      sink.connect(g);
-      shadowSinks.push(sink);
-      return g;
-    }
-    const shadowSinks: ConstantSourceNode[] = [];
-    const sTimbre   = makeShadow(initial.timbre);
-    const sSymmetry = makeShadow(initial.symmetry);
-    const sFold     = makeShadow(initial.fold);
-    const sRatio    = makeShadow(initial.ratio);
-
-    // Track current param values so setParam handlers can read them when
-    // they need cross-derivations (e.g. ratio change recomputes mod freq
-    // from current baseHz).
+    // Track current KNOB values. These are the intrinsic half of each
+    // param; the combined value the DSP actually hears is intrinsic + CV
+    // and lives in the graph, not here.
     const live: Record<string, number> = { ...initial };
+
+    /** The four CV-modulated params, keyed by id → the shadow whose `.gain`
+     *  is the AudioParam published on the matching input port. `setParam`
+     *  writes the intrinsic; everything else is the graph's job. */
+    const shadowOf: Record<string, GainNode> = {
+      timbre:   sTimbre,
+      symmetry: sSymmetry,
+      fold:     sFold,
+      ratio:    sRatio,
+    };
 
     function recomputePrimaryHz() {
       const bh = tuneFineToHz(live.tune ?? 0, live.fine ?? 0);
-      oscSaw.frequency.setValueAtTime(bh, ctx.currentTime);
-      oscTri.frequency.setValueAtTime(bh, ctx.currentTime);
-      oscSqr.frequency.setValueAtTime(bh, ctx.currentTime);
-      pitchVoctShaper.curve = buildVoctCurve(bh);
-      // If modulator tracks via ratio, recompute its base too.
-      if ((live.ratio ?? 1) > 0) {
-        const mh = bh * (live.ratio ?? 1);
-        modOsc.frequency.setValueAtTime(mh, ctx.currentTime);
-        modBaseHz = mh;
-        modPitchVoctShaper.curve = buildVoctCurve(mh);
-      }
+      csBaseHz.offset.setValueAtTime(bh, ctx.currentTime);
+      // The modulator's ratio-tracked leg SCALES this same base, so a
+      // primary pitch change carries the modulator with it — there is no
+      // separate modulator recompute to forget.
+      gRatioBase.gain.setValueAtTime(bh, ctx.currentTime);
     }
-    function recomputeModHz() {
-      let mh: number;
-      if ((live.ratio ?? 1) > 0) {
-        const bh = tuneFineToHz(live.tune ?? 0, live.fine ?? 0);
-        mh = bh * (live.ratio ?? 1);
-      } else {
-        mh = tuneFineToHz(live.mod_tune ?? 0, live.mod_fine ?? 0);
-      }
-      modOsc.frequency.setValueAtTime(mh, ctx.currentTime);
-      modBaseHz = mh;
-      modPitchVoctShaper.curve = buildVoctCurve(mh);
+    function recomputeModFreeHz() {
+      gFreeHz.gain.setValueAtTime(
+        tuneFineToHz(live.mod_tune ?? 0, live.mod_fine ?? 0),
+        ctx.currentTime,
+      );
     }
 
     return {
@@ -466,9 +705,10 @@ export const swolevcoDef: AudioModuleDef = {
         ['pitch',     { node: pitchScaler,    input: 0 }],
         ['mod_pitch', { node: modPitchScaler, input: 0 }],
         ['fm',        { node: fmIn,               input: 0 }],
-        // CV-modulated params: route to the shadow GainNode whose .gain
-        // is the AudioParam the engine sees. setParam pulls these into
-        // the actual DSP nodes.
+        // CV-modulated params: the port's AudioParam is the shadow's
+        // `.gain`, and the shadow's OUTPUT — intrinsic + every connected
+        // CV — is what the DSP reads. Knob, CV cable and clip automation
+        // therefore land on one summing junction and cannot disagree.
         ['timbre',   { node: sTimbre,   input: 0, param: sTimbre.gain   }],
         ['symmetry', { node: sSymmetry, input: 0, param: sSymmetry.gain }],
         ['fold',     { node: sFold,     input: 0, param: sFold.gain     }],
@@ -492,37 +732,29 @@ export const swolevcoDef: AudioModuleDef = {
           case 'mod_tune':
           case 'mod_fine':
             live[paramId] = value;
-            // Only relevant when ratio==0; the recompute checks.
-            recomputeModHz();
+            // Only audible when ratio ≤ 0; above that the free-run leg is
+            // gated to silence, so writing it unconditionally is harmless
+            // and keeps the value ready for the moment ratio crosses 0.
+            recomputeModFreeHz();
             return;
+          // The four CV-modulated knobs: write the shadow's INTRINSIC and
+          // stop. Every mapping that used to live in this switch (timbre ×
+          // 200 Hz, the symmetry crossfade, the fold curve, the ratio →
+          // modulator frequency) is now a WaveShaper/GainNode chain hanging
+          // off the shadow's OUTPUT, so it applies to knob and CV alike.
           case 'ratio':
-            live.ratio = value;
-            sRatio.gain.setValueAtTime(value, ctx.currentTime);
-            recomputeModHz();
-            return;
           case 'timbre':
-            live.timbre = value;
-            sTimbre.gain.setValueAtTime(value, ctx.currentTime);
-            timbreGain.gain.setValueAtTime(value * TIMBRE_MAX_HZ, ctx.currentTime);
-            return;
-          case 'symmetry': {
-            live.symmetry = value;
-            sSymmetry.gain.setValueAtTime(value, ctx.currentTime);
-            const g = symmetryGains(value);
-            gSaw.gain.setValueAtTime(g.saw, ctx.currentTime);
-            gTri.gain.setValueAtTime(g.triangle, ctx.currentTime);
-            gSqr.gain.setValueAtTime(g.square, ctx.currentTime);
-            return;
-          }
+          case 'symmetry':
           case 'fold':
-            live.fold = value;
-            sFold.gain.setValueAtTime(value, ctx.currentTime);
-            currentFold = value;
-            folder.curve = buildFoldCurve(value);
+            live[paramId] = value;
+            shadowOf[paramId]!.gain.setValueAtTime(value, ctx.currentTime);
             return;
         }
       },
       readParam(paramId) {
+        // The KNOB (intrinsic) position. Modulation is reported separately
+        // by the engine's per-param tap analyser, which observes the CV
+        // side of the same summing junction.
         switch (paramId) {
           case 'tune':     return live.tune;
           case 'fine':     return live.fine;
@@ -531,7 +763,7 @@ export const swolevcoDef: AudioModuleDef = {
           case 'ratio':    return live.ratio;
           case 'timbre':   return live.timbre;
           case 'symmetry': return live.symmetry;
-          case 'fold':     return currentFold;
+          case 'fold':     return live.fold;
         }
         return undefined;
       },
@@ -540,7 +772,10 @@ export const swolevcoDef: AudioModuleDef = {
         try { oscTri.stop(); } catch { /* */ }
         try { oscSqr.stop(); } catch { /* */ }
         try { modOsc.stop(); } catch { /* */ }
-        for (const s of shadowSinks) {
+        // Every ConstantSource this factory started — the four shadow
+        // drivers AND the primary base-Hz source — in one list, so a new
+        // one cannot be added and forgotten.
+        for (const s of constantSources) {
           try { s.stop(); } catch { /* */ }
           s.disconnect();
         }
@@ -551,16 +786,31 @@ export const swolevcoDef: AudioModuleDef = {
         gSaw.disconnect();
         gTri.disconnect();
         gSqr.disconnect();
+        for (const ws of symmetryShapers) ws.disconnect();
         primaryBus.disconnect();
-        folder.disconnect();
+        foldDry.disconnect();
+        foldDrive.disconnect();
+        foldWet.disconnect();
+        dryGain.disconnect();
+        wetGain.disconnect();
+        for (const ws of foldShapers) ws.disconnect();
         outBus.disconnect();
         modBus.disconnect();
+        gRatioNorm.disconnect();
+        wsRatioTrack.disconnect();
+        gRatioBase.disconnect();
+        wsRatioFree.disconnect();
+        gFreeHz.disconnect();
+        modHzBus.disconnect();
         timbreGain.disconnect();
+        gTimbreHz.disconnect();
         fmIn.disconnect();
         pitchScaler.disconnect();
         pitchVoctShaper.disconnect();
+        pitchVoctHz.disconnect();
         modPitchScaler.disconnect();
         modPitchVoctShaper.disconnect();
+        modPitchVoctHz.disconnect();
         sumBus.disconnect();
         scopeAnalyser.disconnect();
         sTimbre.disconnect();

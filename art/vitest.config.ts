@@ -4,7 +4,7 @@
 // Runs in Node with node-web-audio-api shimming OfflineAudioContext.
 // Baselines live in art/baselines/ tracked under git-lfs.
 
-import { defineConfig, type Plugin } from 'vitest/config';
+import { configDefaults, defineConfig, type Plugin } from 'vitest/config';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 
@@ -58,6 +58,23 @@ export default defineConfig({
   },
   test: {
     include: ['scenarios/**/*.test.ts'],
+    // ⚠ THE CV-REACH SWEEP IS NOT PART OF THE BASELINE LANE, and it is excluded
+    // on a MEASUREMENT, not a preference. It builds and renders the real
+    // factory once per port across every declared paramTarget port in the
+    // registry, plus a baseline PAIR per module for its reproducibility leg;
+    // measured 127 s on an idle local box and ~15 min on a CI runner, which
+    // took the `art` job from its historical 3 min to a hard cancel at its
+    // 10 min timeout — i.e. it more than doubled a REQUIRED lane on every PR.
+    //
+    // It still GATES, in its own parallel job (see ci.yml `cv-param-reach`), so
+    // nothing is weakened: the critical path is the e2e shards at ~12 min, so a
+    // parallel 8 min job costs no merge latency. Run it locally with
+    // `npm run art:cv-reach -w art`.
+    // ART_CV_REACH=1 opts the sweep IN (its own CI job, and `npm run
+    // art:cv-reach -w art` locally). Default runs the baseline lane without it.
+    exclude: process.env.ART_CV_REACH === '1'
+      ? [...configDefaults.exclude]
+      : [...configDefaults.exclude, 'scenarios/cv-param-reach/**'],
     testTimeout: 30_000,
     hookTimeout: 30_000,
     pool: 'forks',
