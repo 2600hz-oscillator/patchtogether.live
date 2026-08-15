@@ -467,6 +467,34 @@ export const FACES = [
   // would move it into the class that does. See `buggles-face-model.test.ts`
   // for both halves of the resolution.
   { type: 'buggles', pages: 2 },
+  // THE FACEPLATE QUEUE · Q12 — the two fixed filter banks, as a PAIR.
+  //
+  // `pages: 1` on both, and it is the honest shape rather than an omission:
+  // every control is a level on a fixed section, the only structure is the
+  // frequency axis `face.order` already carries, and a register split fine
+  // enough to be useful would cross DOCK_TAB_MIN_BANDS and turn a graphic EQ
+  // into a tab rail. So both dock scenes render the page-less `__all` band —
+  // fourteen cells for the 914, ten for the 907A, one row each (fader cells are
+  // width-class 'column', so DOCK_ROW_MAX_CONTROLS does not split them into a
+  // second row and the band is never split anyway).
+  //
+  // DETERMINISTIC AT REST, structurally: both are pure BiquadFilterNode +
+  // GainNode fans with NO generator anywhere in them, so an unpatched `audio`
+  // input leaves the summing bus carrying nothing at all — there is no worklet
+  // and no ConstantSource that could produce a floor. Their `meter` glyphs
+  // therefore read zero whether the graph is frozen or running: like sidecar,
+  // warrensspectrum and charlottesEchos they neither exercise nor depend on
+  // #1420's pre-frame freeze, and neither is the analogVco free-running case.
+  //
+  // ⚠ THE GLYPH RESOLVES, and it was established rather than assumed (#1692's
+  // finding was a `meter` that fell through to `{ kind: 'static' }` and painted
+  // twelve segments that could never light). Both defs declare a single output
+  // typed `audio`, so `primaryAudioOutPortId` returns `'audio'` and
+  // `glyphBinding` returns `{ kind: 'live-audio', portId: 'audio' }` — asserted
+  // for both modules, with a negative control, in
+  // moog-filterbank-face-model.test.ts.
+  { type: 'moog907a', pages: 1 },
+  { type: 'moog914', pages: 1 },
 ] as const;
 
 /** TIGHT per-scene diff budgets (absolute pixels; Playwright takes the MIN of

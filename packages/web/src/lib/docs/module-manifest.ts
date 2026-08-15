@@ -1367,6 +1367,19 @@ export function buildModuleManifest(
       // range, curve, units and readout are all authored in one place.
       // Not a ModuleDef.
       if (file.endsWith('-format.ts')) return false;
+      // -labels.ts: a module family's `ParamDef.label` vocabulary — the one
+      // place a control's NAME is built (e.g. moog-filterbank-labels.ts:
+      // `125` / `1.4k` / `LP 100` / `HP 7.5k`, shared by the 907A and 914 defs
+      // and read back by their faceplate model). Same argument as `-format.ts`
+      // one line up: `label` is a ParamDef field, so it is authored beside the
+      // def rather than in the UI layer. Not a ModuleDef.
+      //
+      // ⚠ AND IT IS DELIBERATELY NOT IN packages/dsp/src/lib OR IN THE SHARED
+      // FACTORY, which is where it would otherwise belong: both of those files
+      // are inside the moog907a/moog914 ART audio pin (raw `repoSourceSha`, see
+      // #1699), so a label helper next to the centre table would cost an audio
+      // re-pin for a change that cannot reach a sample.
+      if (file.endsWith('-labels.ts')) return false;
       // Shared transport helpers (PR feat/sequencer-transport-quicksave) —
       // SAVE/LOAD/QUEUE plumbing used by Sequencer / DRUMSEQZ / SCORE.
       // Not a ModuleDef.

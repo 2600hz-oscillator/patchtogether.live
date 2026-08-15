@@ -943,6 +943,41 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // `type: 'audio'`, correctly) and to the one ART leg named for RING, which
   // mirrors the construction at 200 Hz, 667x above the real carrier.
   'buggles',
+  // THE FACEPLATE QUEUE · Q12 — the two fixed filter banks, promoted as a PAIR
+  // (2026-08-15). They share `moog-filterbank-dsp`'s centre grid and
+  // `buildFilterBank`'s wiring verbatim and differ only in which slice they
+  // import, so they share ONE faceplate model
+  // ($lib/ui/modules/moog-filterbank-face-model) and one rank law. Authoring
+  // them separately would have guaranteed two layouts for one idea.
+  //
+  // ⚠ THE CV AUDIT IS VACUOUS HERE BY CONSTRUCTION, AND THAT IS STATED RATHER
+  // THAN RUN AS A NULL SWEEP THAT PASSES. Both defs declare exactly one input
+  // (`audio`, plain audio) and one output; neither declares a `paramTarget`
+  // port, a `cv` port, or an `_cv` stem. The rig that stopped #1661/#1662/#1664
+  // has no port to drive here, so a green `cv-path` sweep on these modules would
+  // report nothing about them. `moog-filterbank-face-model.test.ts` asserts the
+  // ABSENCE directly instead — zero cv-typed ports and zero paramTargets on
+  // either def, in a leg that goes red the day someone adds one without an
+  // audit.
+  //
+  // ⚠ THE RANK IS THE FREQUENCY AXIS, AND THE PREMISE WAS MEASURED. "N identical
+  // band levels have no priority to express" is the spec's claim; per-section
+  // authority (max |ΔdB| of the summed response when one level is driven 0.5→1
+  // and 0.5→0) puts the 914 inside 2.07x across fourteen sections and the 907A
+  // inside 3.54x across ten — and the two banks rank their own sections in
+  // DIFFERENT orders, so an authority rank would have split the pair. See the
+  // face comment on moog914.
+  //
+  // ⚠ WHAT THE AUDIT DID FIND is a VALUE, which is why no gate here could have:
+  // the sections are summed by Web Audio fan-in, i.e. COHERENTLY, and they
+  // overlap. At the shipped 0.5 defaults the 914's twelve band centres span
+  // 7.1 dB and its summed response ripples 20.9 dB; the 907A ripples 17.5 dB and
+  // carries a -21.6 dB null at 209 Hz that the 914 does not have. Both defs
+  // documented that state as "a neutral middle to boost or cut from". The docs
+  // are corrected in this PR and the three hero readouts publish the numbers
+  // live.
+  'moog907a',
+  'moog914',
 ]);
 
 /**

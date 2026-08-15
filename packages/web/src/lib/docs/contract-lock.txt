@@ -2110,6 +2110,7 @@ moog907a param band7 0..1 linear default=0.5
 moog907a param band8 0..1 linear default=0.5
 moog907a param hp 0..1 linear default=0.5
 moog907a param lp 0..1 linear default=0.5
+moog907a face sidebar 0 kind=readouts label=summed level entries=LP 175:value=moog907a-section-lp,250:value=moog907a-section-band1,350:value=moog907a-section-band2,500:value=moog907a-section-band3,700:value=moog907a-section-band4,1k:value=moog907a-section-band5,1.4k:value=moog907a-section-band6,2k:value=moog907a-section-band7,2.8k:value=moog907a-section-band8,HP 6.6k:value=moog907a-section-hp
 moog911 meta domain=audio
 moog911 in esus_cv cv param=esus cvScale=linear
 moog911 in gate gate edge=gate
@@ -2153,6 +2154,7 @@ moog914 param band8 0..1 linear default=0.5
 moog914 param band9 0..1 linear default=0.5
 moog914 param hp 0..1 linear default=0.5
 moog914 param lp 0..1 linear default=0.5
+moog914 face sidebar 0 kind=readouts label=summed level entries=LP 100:value=moog914-section-lp,125:value=moog914-section-band1,175:value=moog914-section-band2,250:value=moog914-section-band3,350:value=moog914-section-band4,500:value=moog914-section-band5,700:value=moog914-section-band6,1k:value=moog914-section-band7,1.4k:value=moog914-section-band8,2k:value=moog914-section-band9,2.8k:value=moog914-section-band10,4k:value=moog914-section-band11,5.6k:value=moog914-section-band12,HP 7.5k:value=moog914-section-hp
 moog921a meta domain=audio
 moog921a in freq_cv pitch param=frequency
 moog921a in width_cv cv param=width

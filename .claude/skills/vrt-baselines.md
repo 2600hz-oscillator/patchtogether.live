@@ -54,6 +54,34 @@ it. If you find a reference to `EXEMPT_BASELINE_PAIRS`, `darwinOnly`,
   VRT gate would not have flagged that swap either. **Treat a green dispatch
   that committed nothing as a RED FLAG, never as "nothing to do", and COUNT the
   files the bot commits against what you predicted.**
+
+  ⚠ **TWO BASELINES CHANGED BY THE SAME EDIT CAN LAND ON OPPOSITE SIDES OF THE
+  BUDGET**, so "did my change move a baseline" has no single answer even for one
+  commit. Measured on the moog fixed-filter-bank pair (#1701): one `ParamDef.label`
+  edit repainted both cards, and against `maxDiffPixelRatio: 0.01` —
+
+      vrt.spec.ts :: moog914 card   (126x565)   FAIL  1011 px  ->  re-captured
+      vrt.spec.ts :: moog907a card  (158x565)   PASS  under    ->  STALE, silent
+
+  — because the changed glyph area (~800 px) sat between the two cards' budgets
+  (~712 and ~893 px). The 914 was re-captured by the dispatch and the 907A was
+  not. **A per-file budget means you must predict per FILE, not per change.**
+  Read the actual `N pixels (ratio …) are different` line out of the failing
+  run rather than estimating: it is printed, and estimating produced the wrong
+  side of the threshold here.
+
+  ⚠ **AND THE `git rm` REDDENS MORE THAN `vrt-meta`.** Deleting one baseline of
+  a `STRICT_VRT_MODULES` module reddens **four legs across three files** —
+  estimated as "one file", then "two", and only correct when walked:
+
+  | file | legs |
+  |---|---|
+  | `packages/web/src/lib/audio/modules/vrt-meta.test.ts` | 2 (registered-module coverage; committed-baseline) |
+  | `scripts/vrt-gallery.test.ts` | 1 (`the baseline tree is READABLE — refusing to pass vacuously`) |
+  | `packages/web/src/lib/ui/vrt-cable-stripe.test.ts` | 1 (the module drops out of the not-token-pinned set) |
+
+  All four name the same module and clear together when the capture writes the
+  file back. Budget for a RED unit lane across that window, and say so on the PR.
 - ⚠ **A `git rm`-ed baseline is SILENTLY RECREATED by the next plain VRT run.**
   `'missing'` *creates* an absent snapshot. The test still fails — *"A snapshot
   doesn't exist …, writing actual"* — so it is loud in the RUN OUTPUT and
