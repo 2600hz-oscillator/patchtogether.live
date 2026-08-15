@@ -167,6 +167,19 @@ const EXEMPT: readonly Exemption[] = [
   })),
 
   // --- 3. Live defects found BY this sweep. Filed; still failing on purpose.
+  //
+  // ⚠ These two were found by this sweep's FIRST CI RUN, on the module cited as
+  // the CORRECT template for the shadow pattern (wavesculpt.ts:1501, referenced
+  // by #1661's fix and by this file's own design notes). Being the reference
+  // implementation is not evidence of correctness.
+  {
+    kind: 'known-defect', module: 'wavesculpt', port: 'morph3_cv', issue: 1680,
+    why: 'Both legs read bit-exactly 0 against a 1.24e-1 baseline: cv Δ=0.0000e+0 AND knob Δ=0.0000e+0. Either the param is inert, or the canonical drive does not put the module in a state where morph3 matters — distinguishing those is part of #1680, and asserting either answer here would be guessing.',
+  },
+  {
+    kind: 'known-defect', module: 'wavesculpt', port: 'scale', issue: 1680,
+    why: 'The INVERSE of #1661: the cable works (cv Δ=3.8759e-2) and the KNOB is dead (knob Δ=0.0000e+0). Something reads the CV-summed value but not the intrinsic setParam writes. This is exactly why the sweep asserts BOTH legs — a one-legged "did the audio change?" check calls this a PASS.',
+  },
   ...(['cursor', 'samplesPerFrame', 'gain', 'wrap'] as const).map((port): Exemption => ({
     kind: 'known-defect', module: 'rasterize', port, issue: 1664,
     why: 'All four ports publish the SAME AudioParam — `inGain.gain`, which is the live in→thru passthrough. A cable into `cursor` therefore multiplies the audio instead of moving the param: measured 3.1e+5 peak against a 5.0e-1 baseline. `setParam` only writes a JS record, so the knob leg moves nothing at all.',
