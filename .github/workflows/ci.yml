@@ -2510,6 +2510,27 @@ jobs:
           --health-retries 10
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/patchtogether_test
+      # STATISTICAL POWER, bought only where it is cheap (#1337).
+      #
+      # Since the floors became per-row and DERIVED, a row passes only when its
+      # delta clears its own measured null scatter — a sampling error that
+      # shrinks as 1/√n. At the sweep's default 5 captures two REAL effects in
+      # this required subset could not be resolved: filter.res read 4.0σ and
+      # adsr.decay 4.7σ against a 5σ bar. Resonance does change a filter and
+      # decay does change an envelope; the instrument was under-powered, not
+      # the modules dead.
+      #
+      # 9 captures tightens the error by √(9/5) = 1.34×, putting those rows at
+      # ~5.4σ and ~6.3σ. MEASURED PRICE: this subset is 25 rows, and each extra
+      # capture costs (150 ms spacing + 35 ms × RUNNER_FACTOR 6) per arm × 2
+      # arms ≈ 0.72 s/row — so 4 extra captures ≈ 72 s on a job that runs ~4
+      # min against a 15 min timeout.
+      #
+      # The FULL sweep (informational, ~100 modules) deliberately stays at 5:
+      # the same raise there is the ~+50% on a 30-50 min lane that is a real
+      # budget decision, recorded in the spec under "WHAT THIS MODEL STILL
+      # CANNOT SEE" rather than absorbed here.
+      BEHAVIORAL_AUDIO_CAPTURES: '9'
     steps:
       - name: Checkout (no LFS — serves the prebuilt bundle)
         uses: actions/checkout@v4
