@@ -123,14 +123,29 @@ export const DOM_SOURCE_LANE_TYPES: ReadonlySet<string> = new Set<string>([
  *                ⚠ THESE TWO DEGRADE, THEY DO NOT GO DARK, and the distinction
  *                is load-bearing rather than a hedge. Both render their picture
  *                inside the MODULE from its own analysers, so an unmounted card
- *                still produces a full, moving, correct trace/raster — it just
- *                draws every display param at its KNOB, ignoring any patched cv
- *                cable. So they are members for the LIFETIME half of this rule
- *                (keep the card alive in the headless host and the cable is
- *                honoured) and NOT for the "renders black" half. A future
- *                reader comparing them against wavesculpt's measured
- *                `nonBlack 0/3072` should expect a normal picture here, not a
- *                black one; that is not this set being wrong.
+ *                still produces a full, moving, correct trace/raster. So they
+ *                are members for the LIFETIME half of this rule (keep the card
+ *                alive in the headless host and the cable is honoured) and NOT
+ *                for the "renders black" half. A future reader comparing them
+ *                against wavesculpt's measured `nonBlack 0/3072` should expect
+ *                a normal picture here, not a black one; that is not this set
+ *                being wrong.
+ *
+ *                ⚠⚠ CORRECTED (#1583 verify pass). This paragraph used to say
+ *                an unmounted card "draws every display param at its KNOB,
+ *                ignoring any patched cv cable". THAT IS NOT WHAT HAPPENS, and
+ *                the error mattered in the direction this epic cares about.
+ *                `$lib/audio/cv-shadow` `read()` returns `combined ??
+ *                knobValue`, and `combined` is cleared ONLY by `set()` — a
+ *                KNOB MOVE. Nothing clears it when the pump stops. So a param
+ *                that was under CV when the card went away LATCHES AT ITS LAST
+ *                MODULATED VALUE indefinitely; it does not fall back to the
+ *                knob. "Degrades to the knob" is a graceful story with a
+ *                self-limiting failure; "latches wherever the LFO happened to
+ *                be" is the stuck-value shape, and it is what ships. The
+ *                picture is still full and moving either way, so the black-vs-
+ *                degrade distinction above stands — only the description of
+ *                the degraded VALUE was wrong.
  *
  *                The durable fix is an engine-side same-domain equivalent of
  *                `addCrossDomainCvBridge`, which would take both out of this
