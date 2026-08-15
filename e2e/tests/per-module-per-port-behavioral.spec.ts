@@ -2706,8 +2706,62 @@ const BEHAVIORAL_OBSERVED_OUTPUT: Record<string, string> = {
   peakstate: 'rgb_out',
 };
 
-function pickObservedOutput(mod: RegistryModule, driver: ModuleDriver): ObservedOutput | null {
-  // Explicit per-module override first — a curated claim beats every heuristic.
+// PER-PORT observed output — for modules where DIFFERENT INPUTS FEED DIFFERENT
+// OUTPUTS, and observing one output makes the others' inputs look dead.
+//
+// `pickObservedOutput` chooses ONE output for the whole module. On a stereo
+// module that is wrong by construction: STEREOVCA's generic pick is `out_l`,
+// so `in_r` and `strength_r` are measured against the LEFT output — which they
+// must not move. Correct channel separation therefore reads as a dead port.
+//
+// This was invisible until the floors became honest (#1337). Before that, both
+// rows PASSED — on the module's own scatter clearing a universal floor, i.e.
+// the right answer for the wrong reason. With the derived floor they read
+// z=1.2σ and z=1.6σ on CI: no effect, correctly measured, wrongly expected.
+//
+// Keyed `<module>.<port>`, with the claim inline, because this is an assertion
+// about the module's routing and has to be checkable. A key naming a port or
+// output that no longer exists THROWS (below) rather than being ignored.
+const BEHAVIORAL_OBSERVED_OUTPUT_BY_PORT: Record<string, { out: string; why: string }> = {
+  'stereovca.in_r': {
+    out: 'out_r',
+    why: 'STEREOVCA is two independent VCA channels sharing a card. The RIGHT input feeds the RIGHT output only; measuring it against out_l asserts crosstalk, which would be the defect.',
+  },
+  'stereovca.strength_r': {
+    out: 'out_r',
+    why: 'Same channel split: strength_r is the RIGHT channel gain. Its effect is on out_r; out_l moving with it would mean the channels are not independent.',
+  },
+};
+
+function pickObservedOutput(
+  mod: RegistryModule,
+  driver: ModuleDriver,
+  portId?: string,
+): ObservedOutput | null {
+  // PER-PORT override outranks the per-module one: it is the more specific
+  // claim, and it exists precisely because the module-wide pick is wrong for
+  // this port.
+  const byPort = portId ? BEHAVIORAL_OBSERVED_OUTPUT_BY_PORT[`${mod.type}.${portId}`] : undefined;
+  if (byPort) {
+    const port = mod.outputs.find((p) => p.id === byPort.out);
+    if (!port) {
+      throw new Error(
+        `BEHAVIORAL_OBSERVED_OUTPUT_BY_PORT['${mod.type}.${portId}'] names output '${byPort.out}', ` +
+          `which is not declared on ${mod.type}. Anchored on purpose: a stale routing claim is a ` +
+          `bug, not a comment.`,
+      );
+    }
+    const sink = pickOutputSink(port.type);
+    if (!sink) {
+      throw new Error(
+        `BEHAVIORAL_OBSERVED_OUTPUT_BY_PORT['${mod.type}.${portId}'] → '${byPort.out}' ` +
+          `(type ${port.type}) has no sink`,
+      );
+    }
+    return { outPort: port.id, outType: port.type, sink };
+  }
+
+  // Explicit per-module override next — a curated claim beats every heuristic.
   const forced = BEHAVIORAL_OBSERVED_OUTPUT[mod.type];
   if (forced) {
     const port = mod.outputs.find((p) => p.id === forced);
@@ -3526,8 +3580,16 @@ function buildContextEdges(
     // Single-audio-input effects (filters/reverbs with one `in`) get exactly the
     // same single-edge behavior as before. Same fan-out shape as the video-context
     // ACIDWARP wiring below.
-    const audioCtxInput = mod.inputs.find((p) => p.type === 'audio' && p.id !== testInputPortId);
-    if (audioCtxInput) {
+    // ⚠ THIS USED TO BE `.find(...)` — ONE input — while the comment above
+    // described the fan-out and even named the failure it prevents. The code
+    // and its own documentation disagreed, and the documentation was right:
+    // measured on STEREOVCA, wiring only `in_l` left `in_r` SILENT, so
+    // `strength_r` (the right channel's gain) had nothing to scale and both
+    // arms read all-zero on `out_r` — which the #1330 discriminator correctly
+    // refused to call "no observable delta", since bit-identical silence is
+    // not evidence about a control.
+    const audioCtxInputs = mod.inputs.filter((p) => p.type === 'audio' && p.id !== testInputPortId);
+    if (audioCtxInputs.length > 0) {
       nodes.push({
         id: 'ctx-noise',
         type: 'noise',
@@ -3535,13 +3597,17 @@ function buildContextEdges(
         domain: 'audio',
         params: { level: 0.4 },
       });
-      edges.push({
-        id: 'e-ctx-noise',
-        from: { nodeId: 'ctx-noise', portId: 'white' },
-        to:   { nodeId: 'sut',       portId: audioCtxInput.id },
-        sourceType: 'audio',
-        targetType: 'audio',
-      });
+      for (const [i, audioCtxInput] of audioCtxInputs.entries()) {
+        edges.push({
+          // Edge ids must stay unique across the fan-out; the first keeps its
+          // historical id so nothing that greps for it moves.
+          id: i === 0 ? 'e-ctx-noise' : `e-ctx-noise-${audioCtxInput.id}`,
+          from: { nodeId: 'ctx-noise', portId: 'white' },
+          to:   { nodeId: 'sut',       portId: audioCtxInput.id },
+          sourceType: 'audio',
+          targetType: 'audio',
+        });
+      }
     }
   }
   if (VIDEO_CONTEXT_CATEGORIES.has(mod.category)) {
@@ -3898,7 +3964,9 @@ test.describe('per-module per-port: BEHAVIORAL input coverage (output changes on
       // spectral baseline) instead of the 60/64/67/72 arpeggio — see
       // BEHAVIORAL_HELD_NOTE_DRIVER + populateAllSequencerSteps.
       const heldNoteDriver = BEHAVIORAL_HELD_NOTE_DRIVER.has(mod.type);
-      const observed = pickObservedOutput(mod, driver);
+      const moduleObserved = pickObservedOutput(mod, driver);
+      // Alias kept for the budget block below, which is per-MODULE by design.
+      const observed = moduleObserved;
 
       // ─── BUDGET ───────────────────────────────────────────────────────
       // Derived from the plan this test will actually execute — the sink kind,
@@ -3959,6 +4027,12 @@ test.describe('per-module per-port: BEHAVIORAL input coverage (output changes on
       let maxNullZ = 0;
 
       for (const port of drivableInputs) {
+        // OBSERVE THE OUTPUT THIS PORT ACTUALLY FEEDS. The module-level pick
+        // above is the default and is right for the common single-output case;
+        // a per-port entry overrides it where inputs route to different
+        // outputs (stereo channels), so correct separation is not measured as
+        // a dead port. Falls back to the module-level pick.
+        const observed = pickObservedOutput(mod, driver, port.id) ?? moduleObserved;
         // Per-port TEST-input source override (e.g. moog911a.trig1 needs a
         // fast LFO square, not the generic 4-Hz sequencer) — falls back to the
         // generic type-appropriate source when no override is registered.
