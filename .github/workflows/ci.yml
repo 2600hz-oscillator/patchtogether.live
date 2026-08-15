@@ -458,6 +458,9 @@ jobs:
   # -----------------------------------------------------------------------
   cv-param-reach:
     name: cv-param-reach (every paramTarget input reaches the DSP)
+    # MAIN-ONLY, by owner ruling (2026-08-15). See the long note on the sweep
+    # step below for the measurement that forced the choice.
+    if: github.event_name == 'push'
     needs: dsp-build
     runs-on: ubuntu-latest
     timeout-minutes: 25
@@ -516,7 +519,7 @@ jobs:
       - name: Install workspace deps
         run: flox activate -- task install
 
-      # THE SWEEP LIVES IN ITS OWN JOB ON A MEASUREMENT (#1664/#1661).
+      # THE SWEEP RUNS ON MAIN ONLY — OWNER RULING, 2026-08-15 (#1664/#1661).
       #
       # It builds and renders the real factory once per port across every
       # declared paramTarget port in the registry, plus a baseline PAIR per
@@ -525,21 +528,32 @@ jobs:
       # a hard CANCEL at that job's 10 min timeout. Folding it into `art`
       # therefore more than doubled a REQUIRED lane on every PR.
       #
-      # Splitting it out costs NO merge latency: this runs in parallel and the
-      # critical path is the e2e shard matrix at ~12 min. It still GATES —
-      # wired into the umbrella's needs + env + failing `if`, the same three
-      # edits every gating lane makes — so nothing is weakened, only moved.
+      # Splitting it into its own job was SUPPOSED to cost no merge latency —
+      # a free parallel lane behind the e2e shard matrix at ~12 min. THAT
+      # ASSUMPTION DID NOT SURVIVE ITS FIRST GREEN RUN. Measured on the green
+      # run: 1008 s of test time, job wall 18m31s, last e2e shard at 16:23:40,
+      # umbrella gated at 16:28:24 — **the job had become the critical path,
+      # for a PR wall-time delta of ≈ +4m45s**, well past the ~2 min that
+      # CLAUDE.md says needs owner sign-off. It was flagged, and the ruling was
+      # to take it OFF the PR lane rather than pay that on every PR.
       #
-      # The 25 min timeout is deliberately generous. The true CI cost is now
-      # MEASURED — 894 s of test time (job wall 16m53s) on run 95025458100 —
-      # but it is not yet a GREEN measurement, and local timings are useless
-      # here: the same sweep took 2235 s on a box held at load 40 by sibling
-      # agents. Tighten this once a green run lands, with that number.
+      # ⚠ SO IT NO LONGER GATES A PR, AND IT IS NOT DECORATION EITHER. On a
+      # push to main a failure here makes the RUN red — a red push run on main
+      # is a P0 by policy — and `daily-prod-deploy.yml`'s `find-green` scans
+      # EVERY job's conclusion on the candidate run (not the run conclusion,
+      # and not just the umbrella), so a red sweep also blocks the nightly
+      # production deploy. That is the enforcement; it is post-merge instead of
+      # pre-merge, which is the cost the ruling accepted.
       #
-      # ⚠ That 894 s is ALSO the number to weigh before adding to this sweep:
-      # it is close enough to the e2e shard matrix (~12 min) that this job can
-      # become the critical path, which is a real PR wall-time delta rather
-      # than the "free parallel lane" the split assumed.
+      # It is deliberately OUT of the umbrella's needs + env + failing `if` —
+      # all three, together, which is what ci-umbrella-parity.test.ts asserts in
+      # both directions. Leaving it in `needs:` with a PR-time `if:` skip would
+      # have been the silent-failure shape: a skipped job's result is `skipped`,
+      # `skipped != success`, so the umbrella would have failed EVERY PR.
+      #
+      # The 25 min timeout is deliberately generous against the measured 1008 s.
+      # ⚠ Local timings are useless for sizing it: the same sweep took 2235 s on
+      # a box held at load 40 by sibling agents.
       - name: Run the CV-reach sweep
         run: flox activate -- npm run art:cv-reach -w art
 
@@ -2730,7 +2744,7 @@ jobs:
     # scripts/test-ledger.mjs parses the next line; test-ledger.test.ts asserts
     # every name here resolves to a real job, so a stale entry is RED.
     # informational-off-umbrella: collab, collab-attest, grand-attest
-    needs: [actionlint, lint, typecheck, unit, dsp-build, build-web, art, cv-param-reach, build, e2e, webgl-smoke, webgl-attest, behavioral-smoke]
+    needs: [actionlint, lint, typecheck, unit, dsp-build, build-web, art, build, e2e, webgl-smoke, webgl-attest, behavioral-smoke]
     runs-on: ubuntu-latest
     timeout-minutes: 2
 
@@ -2744,7 +2758,6 @@ jobs:
           DSP_BUILD: ${{ needs.dsp-build.result }}
           BUILD_WEB: ${{ needs.build-web.result }}
           ART: ${{ needs.art.result }}
-          CV_PARAM_REACH: ${{ needs.cv-param-reach.result }}
           BUILD: ${{ needs.build.result }}
           E2E: ${{ needs.e2e.result }}
           WEBGL_SMOKE: ${{ needs.webgl-smoke.result }}
@@ -2758,7 +2771,6 @@ jobs:
           echo "dsp-build:     $DSP_BUILD"
           echo "build-web:     $BUILD_WEB"
           echo "art:           $ART"
-          echo "cv-param-reach: $CV_PARAM_REACH"
           echo "build:         $BUILD"
           echo "e2e:           $E2E"
           echo "webgl-smoke:   $WEBGL_SMOKE"
@@ -2818,7 +2830,6 @@ jobs:
              || "$DSP_BUILD" != "success" \
              || "$BUILD_WEB" != "success" \
              || "$ART" != "success" \
-             || "$CV_PARAM_REACH" != "success" \
              || "$BUILD" != "success" \
              || "$E2E" != "success" \
              || "$WEBGL_SMOKE" != "success" \

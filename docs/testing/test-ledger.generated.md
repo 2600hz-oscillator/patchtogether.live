@@ -22,8 +22,8 @@ number — a line number is invalidated by any edit above it:
 - `typecheck + unit + ART + E2E`  (ci.yml job `ci`)
 - `vrt-strict (visual regression — strict subset)`  (ci.yml job `vrt-strict`)
 
-Jobs gated THROUGH the `ci` umbrella (a failure of any blocks merge) — 13:
-- `actionlint`, `art`, `behavioral-smoke`, `build`, `build-web`, `cv-param-reach`, `dsp-build`, `e2e`, `lint`, `typecheck`, `unit`, `webgl-attest`, `webgl-smoke`
+Jobs gated THROUGH the `ci` umbrella (a failure of any blocks merge) — 12:
+- `actionlint`, `art`, `behavioral-smoke`, `build`, `build-web`, `dsp-build`, `e2e`, `lint`, `typecheck`, `unit`, `webgl-attest`, `webgl-smoke`
 
 ## Bucket 1 — hard skips / quarantines (6)
 
