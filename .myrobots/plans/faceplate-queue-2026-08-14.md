@@ -978,11 +978,28 @@ list does not contain, and **both out-rank `moog905`**:
   has 2 params and 9 outputs and was promoted *precisely because* the module IS
   its outputs and no dial can print their relation. Read off the def rather than
   the verdict: `SUM = tanh(A′+B′)` and `PRODUCT = tanh(A′·B′)` are
-  **soft-clipped**, so at the shipped defaults (both attenuverters +1) two
-  full-scale inputs give `SUM = tanh(2) = 0.96403` — a **−0.318 dB** clip — and
-  two ±2 sources give `tanh(4) = 0.99933`, which is **−6.02 dB** against the
-  un-clipped sum. Neither `attA` nor `attB` can print a compression that only
-  exists when both are open. **Verdict corrected → Q19.**
+  **soft-clipped**, and the compression is stated against the UN-CLIPPED SUM
+  (the only reference that makes the two rows comparable — see the ⚠ below):
+
+  | inputs, both attenuverters +1 | linear sum | `tanh` | compression |
+  |---|---|---|---|
+  | ±1 each | 2.0000 | 0.964028 | **−6.34 dB** |
+  | ±2 each | 4.0000 | 0.999329 | **−12.05 dB** |
+
+  Neither `attA` nor `attB` can print a compression that only exists when both
+  are open, and it more than doubles across a range of CV a rack produces
+  routinely. **Verdict corrected → Q19.**
+
+  ⚠ **THESE TWO NUMBERS ARE DERIVED FROM THE DEF'S STATED LAW, NOT RENDERED**,
+  and that distinction is load-bearing rather than pedantic: §5.2's whole point
+  is that a spec's arithmetic is a hypothesis. **Measure them against the real
+  worklet before authoring**, exactly as Q15 did. ⚠ And an earlier draft of this
+  paragraph got them WRONG — it quoted `−0.318 dB` and `−6.02 dB`, which are
+  the first row measured against UNITY and the second against nothing
+  consistent. Two rows referred to two different denominators and read as one
+  trend. **A dB figure with an unstated reference is not a measurement**, which
+  is the same lesson §15.10 records for `destroy` and §13 M8's budget records
+  for the model-vs-worklet leg.
 - **`moog923` — 3 params, 1 audio input, 4 audio outputs** (`white`, `pink`,
   `lp`, `hp`). §9 already flagged it honestly (*"MARGINAL-YES, deferred. The
   `moog903a` question (are the tap levels unprintable?) applies"*). The OUTPUT
@@ -1291,11 +1308,17 @@ outputs (`min`, `max`, `diff`, `sum`, `product`).
 **What earns it a face is the `tanh`.** `SUM = tanh(A′+B′)` and
 `PRODUCT = tanh(A′·B′)` are the only two outputs in the `illogic` /
 `analogLogicMaths` pair that are SOFT-CLIPPED, and the clip is a JOIN over both
-attenuverters: at the shipped defaults two full-scale inputs give
-`tanh(2) = 0.96403` (−0.318 dB); two ±2 sources give `tanh(4) = 0.99933`, which
-is **−6.02 dB** against the linear sum. Neither dial can print a compression that
-only exists when both are open. `min`/`max`/`diff` are LINEAR and are the
-readouts' own negative control — they must NOT move when the clip does.
+attenuverters — see the table in §11.1: **−6.34 dB** against the un-clipped sum
+with two full-scale inputs at the shipped defaults, **−12.05 dB** with two ±2
+sources. Neither dial can print a compression that only exists when both are
+open, and it more than doubles across a range of CV a rack produces routinely.
+`min`/`max`/`diff` are LINEAR and are the readouts' own negative control — they
+must NOT move when the clip does.
+
+⚠ **DERIVED FROM THE DECLARED LAW, NOT RENDERED.** Measure both rows against the
+real worklet before authoring (§5.2), and state the dB REFERENCE in the
+assertion message — an earlier draft of this entry quoted two figures against
+two different denominators and they read as one trend.
 
 ⚠ **The `ninelives` lesson is the whole reason this entry exists.** §9's
 rejection sentence — *"the module IS its five outputs, and the rear card renders
@@ -1544,3 +1567,18 @@ is no second copy of a name left to disagree.
     every range agreeing. `card-def-agreement.ts` compares the numbers. **The
     dock renders the DEF's label**, so a face PR that does not bind labels ships
     a rename nobody reviewed.
+
+13. **A dB FIGURE WITH AN UNSTATED REFERENCE IS NOT A MEASUREMENT.** §11.1's
+    first draft quoted `analogLogicMaths`' `tanh` compression as `−0.318 dB` and
+    `−6.02 dB` — the first against UNITY, the second against nothing consistent,
+    and the two read as one trend. Against the un-clipped sum, which is the only
+    reference that makes the rows comparable, they are **−6.34 dB** and
+    **−12.05 dB**. The same failure has three faces in this cohort alone: this
+    one, the ABSOLUTE-vs-RELATIVE budget in §13's model-vs-worklet leg, and
+    `destroy`'s equality-vs-tolerance census in §15.10. **Name the denominator
+    and the unit IN the number**, in a spec exactly as in an assertion message.
+
+14. **A SPEC'S ARITHMETIC IS A HYPOTHESIS UNTIL IT IS RENDERED.** Q15's numbers
+    came off the shipped worklet; Q19's and Q21's partly did not, and Q19's were
+    wrong. Mark which is which — an unmarked derived figure is indistinguishable
+    from a measured one, and the builder inherits it as fact.
