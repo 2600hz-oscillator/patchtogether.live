@@ -27,7 +27,7 @@
 
 import { execFileSync, execSync, spawn } from 'node:child_process';
 import { readFileSync, writeFileSync, mkdtempSync, existsSync, rmSync, readdirSync } from 'node:fs';
-import { tmpdir, hostname, release, arch, cpus, loadavg } from 'node:os';
+import { tmpdir, hostname, release, arch, cpus } from 'node:os';
 import { join } from 'node:path';
 
 import {
@@ -39,14 +39,16 @@ import {
   WEBGL_SERIAL_SPECS,
 } from './webgl-attest-lib';
 import {
-  parsePs,
-  foreignCoTenants,
   formatCoTenants,
   parseListeners,
   leakedServers,
-  type PsRow,
 } from './webgl-cotenancy';
 import { bootOwnAppServer, assertServerIsThisWorktree, type OwnAppServer } from './worktree-identity';
+import {
+  preflightSolo,
+  sampleForeignCoTenants,
+  type CoTenantProfile,
+} from './attest-preflight';
 
 const REPEAT = Math.max(1, parseInt(process.env.REPEAT || '1', 10) || 1);
 const DRY = process.argv.includes('--dry-run'); // verify the mechanism w/o the long real-GPU run
@@ -427,15 +429,6 @@ function attestActor(): string {
 /** One `ps` sample, reduced to co-tenants that are NOT this process's subtree.
  *  Returns [] if ps is unavailable — the caller then has no evidence either way
  *  and must not invent any. */
-function sampleForeignCoTenants(minCpu: number): PsRow[] {
-  let rows: PsRow[];
-  try {
-    rows = parsePs(execSync('ps -A -o %cpu=,pid=,ppid=,comm=', { encoding: 'utf8' }));
-  } catch {
-    return [];
-  }
-  return foreignCoTenants(rows, process.pid, minCpu);
-}
 
 /** Dev servers left listening by a DIFFERENT checkout of this repo. */
 function findLeakedServers() {
@@ -470,54 +463,6 @@ class ContentionAbort extends Error {
   }
 }
 
-function preflightSolo(): void {
-  if (process.env.WEBGL_ATTEST_ALLOW_BUSY === '1') {
-    console.log('Pre-flight: WEBGL_ATTEST_ALLOW_BUSY=1 — skipping the quiet-machine guard.');
-    return;
-  }
-  const ncpu = cpus().length || 1;
-  const load1 = loadavg()[0] ?? 0;
-  // GPU co-tenants (browsers / native GL apps) consuming real CPU at pre-flight
-  // time — before WE spawn any chromium, so anything here is someone else's.
-  // Threshold = a CLEAR heavy contender, not incidental idle: a backgrounded
-  // browser tab idles at ~5-10% CPU and barely touches the GPU (the attest that
-  // false-refused on "9% Microsoft Edge" at load 2.07 — verified harmless),
-  // whereas the runs that actually starved specs had co-tenants at 28-38% AND
-  // load >5. So gate per-process at 25% and let the aggregate load check
-  // (load > cores·0.5) catch broad contention. Override via WEBGL_ATTEST_BUSY_CPU.
-  const COTENANT_CPU_MIN = Math.max(1, parseFloat(process.env.WEBGL_ATTEST_BUSY_CPU || '25') || 25);
-  // The renderer-not-brand matching and the ancestry filter both live in
-  // ./webgl-cotenancy so the MID-RUN watchdog below shares this exact predicate
-  // rather than a re-typed copy of it.
-  const cotenants = formatCoTenants(sampleForeignCoTenants(COTENANT_CPU_MIN));
-  const leaked = findLeakedServers();
-  const loadBusy = load1 > ncpu * 0.5;
-  if (cotenants.length === 0 && leaked.length === 0 && !loadBusy) {
-    console.log(`Pre-flight: machine looks quiet (load(1m)=${load1.toFixed(2)} on ${ncpu} cores). Proceeding.`);
-    return;
-  }
-  console.error('────────────────────────────────────────────────────────────');
-  console.error('webgl:attest PRE-FLIGHT — machine is NOT quiet; REFUSING to run.');
-  if (cotenants.length) console.error(`  GPU co-tenants: ${cotenants.join('  ·  ')}`);
-  if (leaked.length) {
-    // `task worktree:guard` classifies an idle worktree as abandoned and removes
-    // the CHECKOUT, but it never stops a dev server that worktree started. A
-    // leaked vite keeps compiling and serving, which is CPU and (through the
-    // browser that may still be pointed at it) GPU.
-    console.error('  LEAKED dev servers from other checkouts:');
-    for (const s of leaked) console.error(`    pid ${s.pid} on :${s.port} — ${s.cwd}`);
-    console.error('    → stop each from its own worktree: flox activate -- task e2e:stop');
-  }
-  console.error(`  load(1m)=${load1.toFixed(2)} on ${ncpu} cores${loadBusy ? '  (HIGH)' : ''}`);
-  console.error('  The real-GPU attest needs the GPU SOLO. A co-tenant browser or');
-  console.error('  native GL app steals GPU cycles from the attest\'s single ANGLE/');
-  console.error('  Metal context, so a DIFFERENT 1-2 timing-sensitive WebGL specs');
-  console.error('  stall each run — the "transients in different files" false refusal.');
-  console.error('  → Quit heavy browsers / native GL apps, then re-run.');
-  console.error('  → Override (dedicated/trusted runner only): WEBGL_ATTEST_ALLOW_BUSY=1');
-  console.error('────────────────────────────────────────────────────────────');
-  process.exit(2);
-}
 
 // ---------------------------------------------------------------------------
 // main
@@ -541,7 +486,17 @@ async function main() {
     process.exit(2);
   }
   // (1b) Refuse a contended machine (the external-co-tenant transient class).
-  if (!DRY) preflightSolo();
+  // Sampled ACROSS a window, never at one instant (#1331), and the profile is
+  // recorded in the attestation so it says how quiet the machine actually was.
+  let preflight: CoTenantProfile | null = null;
+  if (!DRY) {
+    preflight = preflightSolo({
+      label: 'webgl:attest',
+      allowBusyEnv: 'WEBGL_ATTEST_ALLOW_BUSY',
+      busyCpuEnv: 'WEBGL_ATTEST_BUSY_CPU',
+      leaked: findLeakedServers(),
+    });
+  }
   // Force the real hardware GPU for the probe AND all three Playwright passes.
   // HEADLESS Chromium on macOS defaults to SwiftShader even on a real GPU;
   // E2E_REAL_GPU=1 → playwright.config.ts adds --use-gl=angle --use-angle=metal
@@ -692,6 +647,19 @@ async function main() {
     playwrightVersion: playwrightVersion(),
     os: `${process.platform} ${release()} (${arch()})`,
     machineClass: 'local-trusted-gpu-workstation', // was hostname()
+    // HOW QUIET THE MACHINE WAS (#1331) — sampled across an irregular window
+    // before the run. Recorded so a committed attestation can be argued about
+    // later instead of leaving its contention conditions unknowable.
+    preflight: preflight
+      ? {
+          samples: preflight.samples,
+          windowMs: preflight.windowMs,
+          maxForeignCpu: preflight.maxForeignCpu,
+          thresholdCpu: preflight.thresholdCpu,
+          load1: preflight.load1,
+          cores: preflight.cores,
+        }
+      : undefined,
     gpu: renderer,
     // The attest booted + identity-verified its OWN app server (#1597) — the
     // per-run ephemeral port and the /__worktree identity it re-verified at
