@@ -78,7 +78,14 @@ export const VOCABULARY_DEBT: Readonly<Record<string, readonly string[]>> = {
   'AnalogVcoCard.svelte': ['fine.units', 'tune.units'],
   'B3ntb0xCard.svelte': ['burst_starve.label', 'chroma_leak.label'],
   'BackdraftCard.svelte': ['bezel.label', 'chroma.label', 'darken.label', 'feedback.label', 'lighten.label', 'offsetX.label', 'offsetY.label', 'pixelate.label', 'rotate.label'],
-  'CharlottesEchosCard.svelte': ['feedback.label', 'pitchUp.label'],
+  // ⚠ `CharlottesEchosCard.svelte` USED TO BE HERE (`feedback.label`,
+  // `pitchUp.label`: the card said `Feedback` / `Pitch` where the def said
+  // `Fbk` / `Ptch`). PAID, not deferred, when the module was faced: promotion
+  // makes the DEF's label the one a user reads at the dock, so the two surfaces
+  // would have named the same knob two ways — the divergence stops being a
+  // hazard and becomes visible. The card now binds `label` (and every range,
+  // curve and unit) off `CHARLOTTES_ECHOS_RANGES`, so there is nothing left to
+  // disagree; the def took the card's wording, so no pixels moved.
   'ClapCard.svelte': ['color.label', 'drive.label', 'level.label', 'pulses.label', 'spread.label', 'width.label'],
   'ClipplayerCard.svelte': ['gateLength.label', 'octave.label'],
   'CloudseedCard.svelte': ['cross_seed.label', 'early_diffuse_count.label', 'early_diffuse_delay.label', 'early_diffuse_feedback.label', 'early_diffuse_mod_amt.label', 'early_diffuse_mod_rate.label', 'eq_cutoff.label', 'high_cut.label', 'input_mix.label', 'late_diffuse_delay.label', 'late_diffuse_feedback.label', 'late_diffuse_mod_amt.label', 'late_diffuse_mod_rate.label', 'late_line_mod_amt.label', 'late_line_mod_rate.label', 'low_cut.label', 'tap_count.label', 'tap_decay.label', 'tap_length.label'],

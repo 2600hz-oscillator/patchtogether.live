@@ -370,6 +370,21 @@ export const FACES = [
   // clock and no tap, so the picture is the same on a silent rack and a running
   // one. That is why it needs no mask and no VRT_LIVE_SURFACES entry.
   { type: 'warrensspectrum', pages: 5 },
+  // FACE BATCH 6 · the four-stage destructive echo. `pages: 2` is the POST-hero
+  // split count: two declared pages, and promoting `feedback` into the hero
+  // leaves `the loop` with DECAY + MIX rather than emptying it, so no band is
+  // dropped (heroFacePlan only drops an EMPTIED band — the `noise` case).
+  //
+  // DETERMINISTIC AT REST, and MEASURED rather than assumed: it is an INSERT
+  // with no generator of its own, so with nothing patched into L the worklet
+  // writes bit-exact zeros to both outputs — asserted as `peak |sample| === 0`
+  // on the silent-input leg of art/scenarios/charlottes-echos/cv-path.test.ts,
+  // through the DEF'S OWN FACTORY, which is where the factory's `silenceL`
+  // ConstantSource would show up if it were producing anything. Its `scope`
+  // glyph tap therefore reads zero whether the graph is frozen or running: like
+  // sidecar and warrensspectrum it neither exercises nor depends on #1420's
+  // pre-frame freeze, and it is NOT the analogVco free-running case.
+  { type: 'charlottesEchos', pages: 2 },
 ] as const;
 
 /** TIGHT per-scene diff budgets (absolute pixels; Playwright takes the MIN of
