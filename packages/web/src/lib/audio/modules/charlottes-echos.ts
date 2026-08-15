@@ -186,32 +186,20 @@ export const charlottesEchosDef: AudioModuleDef = {
   // is five Knobs and a PatchPanel and the affordance grep returns nothing), and
   // a picture is a want, not a rescue. Leaving `cell` unset also keeps the
   // `scope` glyph painting at the dock.
+  // ⚠ NO `title`, NO `hint`, NO band hints. Owner ruling 2026-08-11
+  // (marbles / resofilter): a face carries PLAIN LABELS AND VALUES, and the
+  // explanation lives in `docs` for right-click → annotate. `sidecar`,
+  // `warrensspectrum` and `wavetableVco` — the three faces merged since — all
+  // declare none of the three, and the docs above carry every sentence a draft
+  // of this face had put in them.
   face: {
-    title: 'Destructive echo',
-    hint:
-      'Four analog delays in series, each with its own feedback loop and its own in-loop drive. ' +
-      'FEEDBACK and DECAY are not amount controls — their product decides whether the module ever ' +
-      'stops. Two independent mono cascades, one control set.',
-
     order: ['feedback', 'decay', 'delay', 'mix', 'pitchUp'],
 
     pages: [
-      {
-        id: 'tape',
-        label: 'the tape',
-        hint:
-          'DELAY is the time to the FIRST echo, and each of the four stages runs at a quarter of ' +
-          'it. Its bottom 2 ms is a floor. PITCH is a TIME control too: leaving 0 inserts 3 × 15 ms ' +
-          'of grain lag, so the first echo jumps +45 ms and then drifts with the grain.',
-        controls: ['delay', 'pitchUp'],
-      },
+      { id: 'tape', label: 'the tape', controls: ['delay', 'pitchUp'] },
       {
         id: 'loop',
         label: 'the loop',
-        hint:
-          'the in-loop drive has small-signal gain 1 + DECAY × (1+stage) × 0.8, up to 4.2 at the ' +
-          'last stage — so DECAY raises the loop gain while lowering the level. At loop gain 1 the ' +
-          'echoes never stop. MIX is the one control outside all four loops.',
         controls: ['feedback', 'decay', 'mix'],
         clusters: [{ label: 'outside the loop', controls: ['mix'] }],
       },
