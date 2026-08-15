@@ -23,11 +23,35 @@
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
   import OssAttribution from './OssAttribution.svelte';
-  import { cardParams, portsFromDef } from './card-kit';
+  import { cardParams, paramSpec, portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
   const { set, live } = cardParams(sidecarDef, () => id, () => node);
+
+  // RANGE + CURVE COME FROM THE DEF, never re-typed here. This card carried
+  // NINE hand-typed `min`/`max` pairs — the most of any card in its batch —
+  // and they all AGREED, which is exactly why it is worth binding: a card that
+  // restates a range is one edit away from the backdraft class, where the card
+  // writes values the contract forbids and every def-reading gate is blind.
+  //
+  // `units` is deliberately NOT bound (the AnalogVcoCard shape: range-bound,
+  // held to the value-wise curve-agreement clause). Binding it would start
+  // painting unit suffixes on nine faders that have never had them, which is a
+  // look change to a legacy card in a faceplate PR — and `inputLevel`'s `%`
+  // needs its `format` to read correctly (see the def), so the two would have
+  // to land together with an owner preview.
+  const P = {
+    threshold: paramSpec(sidecarDef, 'threshold'),
+    ratio: paramSpec(sidecarDef, 'ratio'),
+    attack: paramSpec(sidecarDef, 'attack'),
+    release: paramSpec(sidecarDef, 'release'),
+    knee: paramSpec(sidecarDef, 'knee'),
+    envMag: paramSpec(sidecarDef, 'envMag'),
+    inputLevel: paramSpec(sidecarDef, 'inputLevel'),
+    makeup: paramSpec(sidecarDef, 'makeup'),
+    sc_hpf: paramSpec(sidecarDef, 'sc_hpf'),
+  };
 
   // Build a defaults map by id so we don't depend on the param order in
   // the def array (defensive against future re-ordering).
@@ -61,17 +85,24 @@
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="fader-row">
-      <Fader value={threshold} min={-60} max={0}    defaultValue={defaults.threshold} label="Thresh" curve="linear" onchange={set('threshold')} moduleId={id} paramId="threshold" readLive={live('threshold')} />
-      <Fader value={ratio}     min={1}   max={20}   defaultValue={defaults.ratio}     label="Ratio"  curve="log"    onchange={set('ratio')}     moduleId={id} paramId="ratio"     readLive={live('ratio')} />
-      <Fader value={knee}      min={0}   max={24}   defaultValue={defaults.knee}      label="Knee"   curve="linear" onchange={set('knee')}      moduleId={id} paramId="knee"      readLive={live('knee')} />
-      <Fader value={makeup}    min={0}   max={24}   defaultValue={defaults.makeup}    label="Makeup" curve="linear" onchange={set('makeup')}    moduleId={id} paramId="makeup"    readLive={live('makeup')} />
+      <Fader value={threshold} min={P.threshold.min} max={P.threshold.max} defaultValue={P.threshold.defaultValue} label="Thresh" curve={P.threshold.curve} onchange={set('threshold')} moduleId={id} paramId="threshold" readLive={live('threshold')} />
+      <Fader value={ratio}     min={P.ratio.min}     max={P.ratio.max}     defaultValue={P.ratio.defaultValue}     label="Ratio"  curve={P.ratio.curve}     onchange={set('ratio')}     moduleId={id} paramId="ratio"     readLive={live('ratio')} />
+      <Fader value={knee}      min={P.knee.min}      max={P.knee.max}      defaultValue={P.knee.defaultValue}      label="Knee"   curve={P.knee.curve}      onchange={set('knee')}      moduleId={id} paramId="knee"      readLive={live('knee')} />
+      <Fader value={makeup}    min={P.makeup.min}    max={P.makeup.max}    defaultValue={P.makeup.defaultValue}    label="Makeup" curve={P.makeup.curve}    onchange={set('makeup')}    moduleId={id} paramId="makeup"    readLive={live('makeup')} />
     </div>
     <div class="fader-row">
-      <Fader value={attack}    min={0.1} max={200}  defaultValue={defaults.attack}    label="Att"    curve="log"    onchange={set('attack')}    moduleId={id} paramId="attack"    readLive={live('attack')} />
-      <Fader value={release}   min={1}   max={2000} defaultValue={defaults.release}   label="Rel"    curve="log"    onchange={set('release')}   moduleId={id} paramId="release"   readLive={live('release')} />
-      <Fader value={envMag}    min={0}   max={2}    defaultValue={defaults.envMag}     label="EnvMag" curve="linear" onchange={set('envMag')}     moduleId={id} paramId="envMag"     readLive={live('envMag')} />
-      <Fader value={inputLvl}  min={0}   max={2}    defaultValue={defaults.inputLevel} label="In Lvl" curve="linear" onchange={set('inputLevel')} moduleId={id} paramId="inputLevel" readLive={live('inputLevel')} />
-      <Fader value={scHpf}     min={20}  max={1000} defaultValue={defaults.sc_hpf}     label="SC HPF" curve="log"    onchange={set('sc_hpf')}     moduleId={id} paramId="sc_hpf"     readLive={live('sc_hpf')} />
+      <Fader value={attack}    min={P.attack.min}     max={P.attack.max}     defaultValue={P.attack.defaultValue}     label="Att"    curve={P.attack.curve}     onchange={set('attack')}    moduleId={id} paramId="attack"    readLive={live('attack')} />
+      <Fader value={release}   min={P.release.min}    max={P.release.max}    defaultValue={P.release.defaultValue}    label="Rel"    curve={P.release.curve}    onchange={set('release')}   moduleId={id} paramId="release"   readLive={live('release')} />
+      <Fader value={envMag}    min={P.envMag.min}     max={P.envMag.max}     defaultValue={P.envMag.defaultValue}     label="EnvMag" curve={P.envMag.curve}     onchange={set('envMag')}     moduleId={id} paramId="envMag"     readLive={live('envMag')} />
+      <!-- ⚠ THE ONE FADER THAT CHANGES WHAT IT PRINTS, and the gate demanded it
+           (card-range-source: "a control whose param declares `format` must
+           pass formatValue — otherwise the card prints one law and the dock
+           prints another"). `inputLevel` is a 0..2 GAIN carrying `units: '%'`,
+           so this readout used to say `1.00` for what the module calls 100 %,
+           and a faceplate reading the ParamDef would have said `1.00 %`. Both
+           surfaces now print `100 %` from the def's own formatter. -->
+      <Fader value={inputLvl}  min={P.inputLevel.min} max={P.inputLevel.max} defaultValue={P.inputLevel.defaultValue} label="In Lvl" curve={P.inputLevel.curve} formatValue={P.inputLevel.format} onchange={set('inputLevel')} moduleId={id} paramId="inputLevel" readLive={live('inputLevel')} />
+      <Fader value={scHpf}     min={P.sc_hpf.min}     max={P.sc_hpf.max}     defaultValue={P.sc_hpf.defaultValue}     label="SC HPF" curve={P.sc_hpf.curve}     onchange={set('sc_hpf')}     moduleId={id} paramId="sc_hpf"     readLive={live('sc_hpf')} />
     </div>
   </PatchPanel>
 

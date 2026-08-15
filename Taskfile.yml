@@ -1236,6 +1236,39 @@ tasks:
     cmds:
       - npm exec -w {{.E2E}} -- playwright test --grep-invert '@collab|@capacity' {{.CLI_ARGS}}
 
+  behavioral:negative-control:
+    desc: |
+      [#1337] Run the behavioral sweep with EVERY PERTURBATION EDGE OMITTED, and
+      assert no row passes. This is the gate that makes the sweep's PASS verdict
+      mean something: with nothing wired to the port under test, a row reporting
+      "this port perturbs the observed output" is a FALSE POSITIVE — it certifies
+      coverage that does not exist, and unlike a red row nobody investigates it.
+
+      GREEN here ⟺ no row can pass without a perturbation edge.
+
+      Not part of `task ci`: it costs a second full pass of the (already ~30-50
+      min) behavioral sweep, so it belongs on demand and on a schedule rather
+      than on every PR. Run it after touching computeDelta, the universal floors,
+      BEHAVIORAL_DELTA_THRESHOLDS, a driver, or a capture window — all four can
+      move a row's null scatter without moving anything the ordinary sweep prints.
+
+      ⚠ Read the RATE, not just the exit code: each module logs
+      `[behavioral][negative-control] <mod>: rows=N falsePasses=N …`.
+
+      Needs a server: `task e2e:serve` first (or drop E2E_SKIP_WEBSERVER).
+      Examples:
+        task behavioral:negative-control
+        task behavioral:negative-control -- --grep 'snaredrum:'
+    deps: [test:emit-manifest]
+    cmds:
+      - bash scripts/dev-server.sh assert-up
+      - |
+        PORT="$(bash scripts/e2e-port.sh)"
+        BEHAVIORAL_NEGATIVE_CONTROL=1 E2E_SKIP_WEBSERVER=1 \
+        E2E_BASE_URL="http://localhost:$PORT" \
+          npm test -w {{.E2E}} -- per-module-per-port-behavioral --workers=1 \
+            --retries=0 --reporter=line {{.CLI_ARGS}}
+
   collab:
     desc: 'Run ONLY the @collab multi-context specs on a DEDICATED runner (off the 8-shard matrix). Modest 2-worker parallelism — far below the 8-shard × 4-worker fan-out that hammered the shared relay (the #97 flake) — keeps the DOOM 2-user gate reliable while finishing within the CI time budget (a single serial worker overran 25 min on 41 specs). The Hocuspocus relay is in-memory so this is cheap.'
     deps: [test:emit-manifest]
