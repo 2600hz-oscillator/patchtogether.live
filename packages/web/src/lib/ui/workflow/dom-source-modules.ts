@@ -113,6 +113,28 @@ export const DOM_SOURCE_LANE_TYPES: ReadonlySet<string> = new Set<string>([
  *                so its audio outs are dead in the common case. Same seam,
  *                same fix; it is a DERIVED member of this set, not a
  *                judgement call (see the gate).
+ *   scope        the card reads `readParam` (the knob PLUS the engine's own
+ *   rasterize    per-port CV tap) and pushes `write(node,'cvCombined')`, which
+ *                is how a SAME-DOMAIN cv cable reaches a DISPLAY param at all:
+ *                `AudioEngine.addEdge` connects to the AudioParam and never
+ *                calls `setParam`, and the per-frame CV bridge exists only on
+ *                the video side (#1664).
+ *
+ *                ⚠ THESE TWO DEGRADE, THEY DO NOT GO DARK, and the distinction
+ *                is load-bearing rather than a hedge. Both render their picture
+ *                inside the MODULE from its own analysers, so an unmounted card
+ *                still produces a full, moving, correct trace/raster — it just
+ *                draws every display param at its KNOB, ignoring any patched cv
+ *                cable. So they are members for the LIFETIME half of this rule
+ *                (keep the card alive in the headless host and the cable is
+ *                honoured) and NOT for the "renders black" half. A future
+ *                reader comparing them against wavesculpt's measured
+ *                `nonBlack 0/3072` should expect a normal picture here, not a
+ *                black one; that is not this set being wrong.
+ *
+ *                The durable fix is an engine-side same-domain equivalent of
+ *                `addCrossDomainCvBridge`, which would take both out of this
+ *                set entirely — the node-lifetime EPIC #1583 is the right home.
  *
  * DERIVED, never hand-maintained: dom-source-modules.test.ts greps every card
  * component for these producer seams and asserts this set is EXACTLY what it
@@ -126,6 +148,8 @@ export const DOM_SOURCE_LANE_TYPES: ReadonlySet<string> = new Set<string>([
  * and none of them is blocked from a face by one.
  */
 export const CARD_PRODUCER_LANE_TYPES: ReadonlySet<string> = new Set<string>([
+  'rasterize',
+  'scope',
   'synesthesia',
   'timelorde',
   'wavesculpt',

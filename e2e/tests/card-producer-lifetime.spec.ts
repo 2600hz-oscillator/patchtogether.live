@@ -260,6 +260,48 @@ async function samplePorts(page: Page, nodeId: string, ports: string[]): Promise
  * the never-mounted and the mounted probe, so the two phases remain the same
  * instrument.
  */
+/**
+ * Wait until pixel COVERAGE has stopped GROWING, then report it.
+ *
+ * WHY, measured (#1664 enrolled RASTERIZE and this fell out): a producer whose
+ * frame FILLS IN over time is not comparable between two phases sampled at
+ * different ages, and phase 2 here is ALWAYS older than phase 1. RASTERIZE
+ * paints `samplesPerFrame` pixels per video frame — 800 into a 640×480 frame,
+ * 0.26 % — so its raster needs hundreds of frames to establish. Sampling both
+ * phases "as soon as the producer registers" therefore compared a 5-frame-old
+ * raster against a several-hundred-frame-old one and read the AGE DIFFERENCE as
+ * a card-mount effect: measured 3 runs of the unchanged subject, never-mounted
+ * `nonBlack=0/3072` vs mounted `64/3072`, failing 1 run in 3.
+ *
+ * Convergence is on the MAXIMUM, not on equality, because most subjects here
+ * are MOVING pictures whose per-frame count never repeats — wavesculpt's ribbon
+ * would never satisfy "unchanged". A monotone fill plateaus; an already-full
+ * moving picture plateaus immediately; a port that shows nothing plateaus at 0.
+ * Bounded, and the bound only shapes the failure: the caller reports what it saw.
+ */
+async function waitForCoverageToSettle(
+  page: Page,
+  nodeId: string,
+  ports: string[],
+): Promise<{ settled: boolean; rounds: number; peak: number }> {
+  const MAX_ROUNDS = 40;
+  const STABLE_ROUNDS = 3;
+  let peak = -1;
+  let stable = 0;
+  for (let round = 1; round <= MAX_ROUNDS; round++) {
+    const samples = await samplePorts(page, nodeId, ports);
+    const now = Math.max(0, ...samples.map((s) => s.nonBlack));
+    if (now > peak) {
+      peak = now;
+      stable = 0;
+    } else {
+      stable += 1;
+      if (stable >= STABLE_ROUNDS) return { settled: true, rounds: round, peak };
+    }
+  }
+  return { settled: false, rounds: MAX_ROUNDS, peak };
+}
+
 async function waitForProducerRegistration(
   page: Page,
   nodeId: string,
@@ -529,6 +571,9 @@ for (const subject of SUBJECTS) {
     // reads "no source" for the whole 5-frame window and calls a loaded
     // machine a regression. Bounded; the failure message carries the wait.
     const neverReady = await waitForProducerRegistration(page, nodeId, videoOuts);
+    // ...and then wait for COVERAGE to establish, so this phase is compared
+    // against phase 2 at the same raster age rather than at a younger one.
+    const neverSettle = await waitForCoverageToSettle(page, nodeId, videoOuts);
     const neverSamples = await samplePorts(page, nodeId, videoOuts);
     const liveNever = livePorts(neverSamples);
 
@@ -551,6 +596,7 @@ for (const subject of SUBJECTS) {
     // meaningful if the probe looked at the same thing twice.
     // Same readiness gate as phase 1 — both phases stay the same instrument.
     await waitForProducerRegistration(page, nodeId, videoOuts);
+    const mountedSettle = await waitForCoverageToSettle(page, nodeId, videoOuts);
     const mountedSamples = await samplePorts(page, nodeId, videoOuts);
     const liveMounted = livePorts(mountedSamples);
 
@@ -562,7 +608,12 @@ for (const subject of SUBJECTS) {
       liveNever,
       `#1587: the ports carrying a picture must be the same whether or not ${type}'s card is ` +
         `mounted.\n  never-mounted: ${digest(neverSamples)} (producer ready=${neverReady.ready} ` +
-        `after ${neverReady.waitedFrames} frames, cap ${SOURCE_READY_CAP_FRAMES})\n  card mounted:  ${digest(mountedSamples)}`,
+        `after ${neverReady.waitedFrames} frames, cap ${SOURCE_READY_CAP_FRAMES}; coverage ` +
+        `settled=${neverSettle.settled} in ${neverSettle.rounds} rounds at peak ${neverSettle.peak})` +
+        `\n  card mounted:  ${digest(mountedSamples)} (coverage settled=${mountedSettle.settled} ` +
+        `in ${mountedSettle.rounds} rounds at peak ${mountedSettle.peak})` +
+        '\n  ⚠ if the two coverage peaks differ but both settled, the pictures genuinely differ; ' +
+        'if either did NOT settle, this comparison is between two moving targets.',
     ).toEqual(liveMounted);
 
     // A subject whose ports show nothing even WITH the card mounted is not
@@ -575,6 +626,34 @@ for (const subject of SUBJECTS) {
       `${type} shows no picture on any video output even with its card mounted, so there is ` +
         `nothing here to lose: ${digest(mountedSamples)}. Its producer lifetime is covered by ` +
         'the headless-mount test above and by dom-source-modules.test.ts.',
+    );
+
+    // ...and a subject whose picture is FROZEN even WITH the card mounted has
+    // no card-driven motion to lose either. "Did it move" is then a property of
+    // the SUBJECT AT REST, not evidence about the producer.
+    //
+    // SCOPE and RASTERIZE are that shape (#1664). They joined this set for the
+    // LIFETIME half of the rule — their card pushes `write(node,'cvCombined')`,
+    // which is the only way a SAME-DOMAIN cv cable reaches a DISPLAY param —
+    // but they render their picture inside the MODULE from its own analysers,
+    // so an idle rack draws a static grid (measured: nonBlack 3072/3072,
+    // 1 distinct signature over 300 frames) whether or not any card exists. The
+    // card only refines WHICH display params that picture is drawn with.
+    //
+    // Measured WHILE MOUNTED, so this cannot be satisfied by the very
+    // regression the movement leg exists to catch: TIMELORDE's stale-bitmap
+    // shape still MOVES when mounted, so it is never skipped here.
+    // ⚠ The residual, stated: a producer that died in BOTH states reads frozen
+    // here and is skipped — the same hole the `liveMounted.length === 0` skip
+    // above already has, and covered by the headless-mount test and by
+    // dom-source-modules.test.ts rather than by this leg.
+    const mountedMotion = await framesToChange(page, nodeId, liveMounted[0]!);
+    test.skip(
+      !mountedMotion.changed,
+      `${type} renders a STATIC picture even with its card mounted on ${liveMounted[0]} ` +
+        `(${fmtChange(mountedMotion)}), so there is no card-driven motion here to lose. ` +
+        'Its producer lifetime is covered by the headless-mount test above and by ' +
+        'dom-source-modules.test.ts.',
     );
 
     // MOVEMENT, on the state that matters. "Not black" alone is not enough for
