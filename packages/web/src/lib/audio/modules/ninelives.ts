@@ -52,23 +52,28 @@ import { createWorkletNode } from '$lib/audio/worklet-guard';
 // not symlink the workspace package under node_modules, and the TS path-alias
 // rules do not reliably resolve TS source out of there.
 //
-// ⚠ IT USED TO BE A SECOND COPY. This file declared `const OUT_COUNT = 9` and a
-// nine-entry `outputs` literal beside it, while `ninelives-dsp.ts` declared
-// `NINE_LIVES_OUTPUT_COUNT = 9` and sized the processor's per-sample loop off
-// THAT. Nothing joined them: if either moved, the def would publish ports the
-// processor never writes (silently dead jacks) or the processor would write to
-// indices the node does not have. Importing the constant makes the disagreement
-// unrepresentable rather than merely tested, and it removes a hand-typed
-// population count (CLAUDE.md).
+// ⚠ IT USED TO BE A SECOND COPY. This file declared `const OUT_COUNT = 9`
+// while `ninelives-dsp.ts` declared `NINE_LIVES_OUTPUT_COUNT = 9` and sized the
+// processor's per-sample loop off THAT. Nothing joined them: if either moved,
+// the factory would build a node with fewer outputs than the processor writes
+// (or more), and no gate anywhere would notice. `OUT_COUNT` — the number the
+// FACTORY sizes the worklet node with — is now the DSP's own constant, and a
+// hand-typed population count is gone.
+//
+// ⚠ THE `outputs` ROSTER BELOW STAYS A LITERAL, deliberately. See the comment
+// on it: `buildModuleManifest` regex-parses the SOURCE of every audio def, so a
+// derived roster empties the module's docs page. The two are joined by an
+// assertion in `ninelives.test.ts` instead.
 import { NINE_LIVES_OUTPUT_COUNT } from '../../../../../dsp/src/lib/ninelives-dsp';
 
 const PROCESSOR_NAME = 'ninelives';
 const OUT_COUNT = NINE_LIVES_OUTPUT_COUNT;
 const loadedContexts = new WeakSet<BaseAudioContext>();
 
-/** The declared tap port ids, in ladder order — `out1` is the fastest rung.
- *  DERIVED from the DSP's ladder length, so the port roster and the processor's
- *  output count cannot disagree. */
+/** The tap port ids, in ladder order — `out1` is the fastest rung. Used ONLY to
+ *  generate the face's sidebar rows (which the manifest parser does not read),
+ *  so the table cannot name a port the ladder does not have. The `outputs`
+ *  roster is asserted equal to this population in `ninelives.test.ts`. */
 const TAP_PORT_IDS: readonly string[] = Array.from(
   { length: OUT_COUNT },
   (_, n) => `out${n + 1}`,
@@ -86,10 +91,37 @@ export const ninelivesDef: AudioModuleDef = {
     // ladder. Flows through the unified `gate` cable (cross-patchable with cv).
     { id: 'reset', type: 'gate', edge: 'trigger' },
   ],
-  // The nine bipolar CV taps, one per ladder rung. Same ids, same types and the
-  // same order the nine-entry literal declared — `contract-lock.txt` is
-  // byte-identical across this change.
-  outputs: TAP_PORT_IDS.map((id) => ({ id, type: 'cv' as const })),
+  // The nine bipolar CV taps, one per ladder rung.
+  //
+  // ⚠ THIS LITERAL CANNOT BE DERIVED, AND THAT IS A PLATFORM CONSTRAINT RATHER
+  // THAN A PREFERENCE. `buildModuleManifest` (module-manifest.ts:1262) reads
+  // `extractArray(src, 'outputs')` — it REGEX-PARSES THE SOURCE TEXT of every
+  // audio def, because it runs at build time over a `?raw` glob and never
+  // imports the registry. This roster was briefly written as
+  // `TAP_PORT_IDS.map(...)`, which is correct TypeScript, produces the
+  // identical def object, and left the parser with an EMPTY match: the
+  // module's entire Inputs & Outputs docs section vanished. Caught by
+  // `module-manifest.test.ts` ("ninelives output ids: expected [] to deeply
+  // equal [ Array(9) ]"), which walks every registered audio def — a real gate
+  // doing exactly its job. Keep the literal.
+  //
+  // The join to the DSP is therefore an ASSERTION rather than a construction:
+  // `ninelives.test.ts` pins this roster against `NINE_LIVES_RATE_MULTIPLIERS`
+  // in BOTH directions, and the ART ladder scenario measures each declared port
+  // through the real factory. `OUT_COUNT` below — the number the FACTORY sizes
+  // the worklet with — is still imported, so the two places that decide "how
+  // many outputs" can only disagree in the direction a test is watching.
+  outputs: [
+    { id: 'out1', type: 'cv' },
+    { id: 'out2', type: 'cv' },
+    { id: 'out3', type: 'cv' },
+    { id: 'out4', type: 'cv' },
+    { id: 'out5', type: 'cv' },
+    { id: 'out6', type: 'cv' },
+    { id: 'out7', type: 'cv' },
+    { id: 'out8', type: 'cv' },
+    { id: 'out9', type: 'cv' },
+  ],
   params: [
     // rate: log (0.01..100Hz), the SAME definition the LFO uses for its rate.
     // (`ninelives.test.ts` asserts the five fields against `lfoDef` rather than
@@ -135,8 +167,16 @@ export const ninelivesDef: AudioModuleDef = {
   // amplitude 1 — which is what the taps actually are.
   face: {
     // 1 — RATE. It moves all nine at once and nothing else on the module
-    // changes a rate. 2 — WAVEFORM, shared by all nine, orthogonal to the
-    // ladder (measured: the rates are bit-identical across the morph).
+    // changes a rate. 2 — WAVEFORM, shared by all nine and ORTHOGONAL to the
+    // ladder: `shape` chooses what is read off the accumulators, never how fast
+    // they advance. Measured on the shipping worklet at two shapes through two
+    // DIFFERENT estimators (saw phase-slope and sine zero-crossing count), so
+    // the claim does not rest on one code path.
+    //
+    // ⚠ RANK 1 EQUALS DECLARATION ORDER HERE, and that is stated rather than
+    // dressed up: the promotion moves the Push 2 card GENERIC → FACE and the
+    // encoders do NOT move. `push-card-schema.test.ts` records it, because
+    // "the card did not move" and "nobody looked" must not be one green.
     order: ['rate', 'shape'],
 
     // PARAM-DERIVED, taps no output. See the ⚠ above.

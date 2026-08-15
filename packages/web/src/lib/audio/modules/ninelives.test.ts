@@ -147,12 +147,18 @@ describe('ninelives factory: worklet wiring', () => {
   });
 
   it('the declared port roster IS the DSP core ladder, both directions', async () => {
-    // The def builds `outputs` from `NINE_LIVES_OUTPUT_COUNT`, so this cannot
-    // fail today by construction — which is the point. It is the leg that would
-    // have caught the state this replaced: `const OUT_COUNT = 9` in the def and
-    // `NINE_LIVES_OUTPUT_COUNT = 9` in the DSP, two unjoined copies where a
-    // disagreement publishes ports the processor never writes (dead jacks) or
-    // drops ports it does. Kept as a permanent statement of the invariant.
+    // ⚠ THIS IS LOAD-BEARING, not a restatement, and it is the leg that has to
+    // carry the invariant BY ASSERTION because it cannot be carried by
+    // construction. The def's `outputs` MUST stay a source-parseable array
+    // literal — `buildModuleManifest` regex-parses the def source, so a derived
+    // roster silently empties the module's docs page (measured: it does, and
+    // `module-manifest.test.ts` is the gate that says so). Meanwhile the
+    // FACTORY sizes the worklet node off `NINE_LIVES_OUTPUT_COUNT`.
+    //
+    // So the two numbers still live in two files. What has changed is that a
+    // disagreement is now RED here instead of silently building a node with
+    // fewer outputs than the processor writes (dead jacks) or more than it
+    // does. Both directions, and no count typed on either side.
     expect(ninelivesDef.outputs.map((o) => o.id)).toEqual(
       NINE_LIVES_RATE_MULTIPLIERS.map((_, n) => `out${n + 1}`),
     );
