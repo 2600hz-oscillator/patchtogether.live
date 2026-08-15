@@ -64,6 +64,8 @@ on:
     branches: [main, first-mvp]
     paths-ignore:
       - '**/*.md'
+      - '!docs/testing/test-ledger.generated.md'
+      - '!docs/design/face-migration.generated.md'
       - '.myrobots/**'
       - 'LICENSE'
   pull_request:
@@ -78,6 +80,8 @@ on:
     branches: [main]
     paths-ignore:
       - '**/*.md'
+      - '!docs/testing/test-ledger.generated.md'
+      - '!docs/design/face-migration.generated.md'
       - '.myrobots/**'
       - 'LICENSE'
   # Manual re-trigger on a branch (operator convenience). NOTE: a

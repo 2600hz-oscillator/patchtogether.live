@@ -46,6 +46,7 @@ import MacrooscillatorHeroPanel from '$lib/ui/modules/MacrooscillatorHeroPanel.s
 import MarblesLoopPanel from '$lib/ui/modules/MarblesLoopPanel.svelte';
 import PentemelodicaVoicesPanel from '$lib/ui/modules/PentemelodicaVoicesPanel.svelte';
 import RingsCombPanel from '$lib/ui/modules/RingsCombPanel.svelte';
+import SidecarTransferPanel from '$lib/ui/modules/SidecarTransferPanel.svelte';
 import WarrensspectrumBankPanel from '$lib/ui/modules/WarrensspectrumBankPanel.svelte';
 import type { FaceControl } from './curated-face';
 import {
@@ -889,6 +890,59 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
         testid: 'pentemelodica-hero-lane-2',
         action: 'click',
         effect: { kind: 'text', testid: 'pentemelodica-hero-detail', expect: 'changed' },
+      },
+    },
+  },
+  sidecar: {
+    // THE STATIC GAIN COMPUTER, as a picture — the follow-up the sidecar face
+    // deferred (queue Q1b), and the one surface on this module that can carry a
+    // SHAPE.
+    //
+    // ⚠ WHY A PANEL AND NOT A FIFTH READOUT. The face already prints four
+    // derived values, and each answers one question at ONE operating point
+    // because `FaceReadoutValue` is `(read) => string`. Three of the audit's
+    // four findings (#1657) are not values:
+    //   · THRESHOLD prints -18.00 dB while ducking begins at -27.02 dBFS, and
+    //     the gap is TWO independent terms — the `|aL|+|aR|` detector sum
+    //     (6.02 dB) and half the knee. `onset` prints their SUM; only two ticks
+    //     on one axis say which of them moved.
+    //   · RATIO's non-linearity is a slope, not a number.
+    //   · Every main level that is not full scale, i.e. every real kick.
+    //
+    // ⚠ NOT PROMOTED TO `hero.cell`, and that is a decision rather than an
+    // oversight. A hero cell MOVES its key into the hero slot and SUPPRESSES
+    // the shell glyph at the dock — so it would demote THRESHOLD (the dial the
+    // picture exists to explain) and drop the output meter. It ranks 7, the
+    // first rank a panel can legally hold, and paints in the `detect` band.
+    //
+    // ⚠ IT EDITS NOTHING — no Knob, no Fader, no `control-<paramId>` testid,
+    // no graph write. The cursor is a private VIEW setting in component state
+    // (the dx7 operator-map rule: a rack-mate reading their own kick's level
+    // must not drag yours, and a patch must not go dirty because someone
+    // looked at it).
+    'sidecar-curve-{n}': {
+      kind: 'panel',
+      label: 'transfer curve',
+      component: SidecarTransferPanel,
+      minWidth: 340,
+      // A `text` probe, and it is the STRONG form available to a read-only
+      // panel rather than a concession. There is no `node.data` key to watch
+      // because there is deliberately nothing written; the alternative weak
+      // form — a revision counter — would pass on a dead cursor that bumped it.
+      // The caption reports the LEVEL under the pointer plus the reduction, the
+      // sidechain's output and ENV at that level, all recomputed through the
+      // shipping gain computer, so a plot that stopped tracking cannot change
+      // it. The witness is a DIFFERENT element than the one driven (shell-cells
+      // refuses `testid === effect.testid`): a control that only relabels
+      // itself is a dead control.
+      //
+      // The cursor RESTS at full scale (the readouts' own `@ FS` reference), so
+      // a click at the plot's centre — which is what the sweep does — lands 30 dB
+      // away from it and the caption cannot fail to move for a rounding reason.
+      probe: {
+        testid: 'sidecar-curve-plot',
+        action: 'click',
+        effect: { kind: 'text', testid: 'sidecar-curve-cursor', expect: 'changed' },
       },
     },
   },
