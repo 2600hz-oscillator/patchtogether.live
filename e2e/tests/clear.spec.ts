@@ -1,6 +1,6 @@
 import { test, expect, loadVoiceDemo, openFileMenu, fileMenuClick } from './_fixtures';
 
-test('clear after voice demo removes all nodes + edges', async ({ page, rack }) => {
+test('clear after voice demo removes all nodes + edges', async ({ page, rackDefault }) => {
   // The voice demo (5 nodes / 6 edges, sequencer auto-playing).
   await loadVoiceDemo(page);
   await expect(page.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 10_000 });

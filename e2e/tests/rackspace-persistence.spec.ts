@@ -43,7 +43,7 @@ async function readNodesSnapshot(page: Page): Promise<Record<string, unknown>> {
   });
 }
 
-test('rackspace-persistence: PICTUREBOX bytes + DX7 SYX + sequencer steps survive export → clear → import', async ({ page, rack }) => {
+test('rackspace-persistence: PICTUREBOX bytes + DX7 SYX + sequencer steps survive export → clear → import', async ({ page, rackDefault }) => {
   // Spawn one of each "asset-bearing" module type. The spawnPatch helper
   // bypasses the palette + per-user cap (single-user dev mode); we set
   // node.data directly afterwards.
