@@ -139,9 +139,18 @@
         const snap = seed
           ? seededSnapshot(seed)
           : (eng.read(node, 'snapshot') as ScopeSnapshot | undefined);
-        // The combined knob + CV values the module's own video-out render
-        // uses. Reading them here is what makes a cable patched into TIME
-        // move the ON-CARD trace and not just the video output (#1664).
+        // PUSH then READ. `eng.readParam` returns the knob PLUS the engine's
+        // own per-port CV tap — the combined value — and costs nothing extra:
+        // the tap already exists for any patched port. Pushing it into the
+        // module means the on-card trace and the module's video-out render
+        // draw the SAME numbers (#1664). With nothing patched there is no tap,
+        // so readParam returns the knob and no render moves.
+        const combined: Record<string, number> = {};
+        for (const p of scopeDef.params) {
+          const v = eng.readParam(node, p.id);
+          if (typeof v === 'number' && Number.isFinite(v)) combined[p.id] = v;
+        }
+        eng.write(node, 'cvCombined', combined);
         const live = eng.read(node, 'drawParams') as Record<string, number> | undefined;
         if (snap) draw(canvasEl, snap, live);
       }

@@ -30,7 +30,11 @@
 //
 //   REACH        a ConstantSource wired the way `AudioEngine.addEdge` wires one
 //                (engine.ts, the `din.param` branch) moves that port's draw
-//                param to knob + cable.
+//                param to knob + cable — through the WHOLE delivery chain the
+//                app uses: cable → the port's own AudioParam AND the per-port
+//                tap analyser `addEdge` tees off it, `readParam`'s
+//                `knob + tap sample` arithmetic, the card's push, and finally
+//                the module's draw record. No step is stubbed.
 //   KNOB         `setParam` at the same effective value lands on the same
 //                number — the two legs meet at ONE junction rather than racing.
 //   NO CROSSTALK  a cable on port P moves ONLY P's draw param. This is the
@@ -64,9 +68,16 @@
 //     enrolled. That hole is why the CONTROLS below are permanent legs rather
 //     than setup: the negative control is a def built the #1664 way, and it must
 //     FAIL the same predicates the real modules pass.
-//  3. THE MAIN-THREAD PATH. `read('drawParams')` is sampled here after
-//     `startRendering()` returns. It does not exercise the rAF loop that calls
-//     it in the browser.
+//  3. THE MAIN-THREAD PATH. The push and `read('drawParams')` happen here after
+//     `startRendering()` returns; the browser does both on a rAF tick. So this
+//     proves the chain COMPUTES the right number, not that a card is ticking.
+//     ⚠ Concretely: a module whose card is unmounted or collapsed has nobody
+//     pushing, and its video-out then renders the KNOB. That is a real gap this
+//     gate cannot see, and it is the price of not owning a per-port analyser.
+//  4. THE ENGINE'S OWN ARITHMETIC. `AudioEngine.readParam` is REPLICATED here
+//     (knob + tap tail) rather than called, because the engine needs a live
+//     AudioContext and a graph. If the engine changed that formula this gate
+//     would keep passing; `engine-cv-scale` / the per-port sweeps own that.
 
 import { describe, expect, it, beforeAll } from 'vitest';
 import { OfflineAudioContext } from 'node-web-audio-api';
@@ -134,7 +145,7 @@ interface LegResult {
 
 interface LegRequest {
   /** Wire a ConstantSource into this port EXACTLY as `addEdge` does. */
-  cv?: { portId: string; value: number };
+  cv?: { portId: string; paramId: string; value: number };
   /** Apply this param by the knob path. */
   knob?: { paramId: string; value: number };
 }
@@ -168,6 +179,13 @@ async function renderLeg(
     src.start(0);
   }
 
+  // The per-port TAP, replicating `AudioEngine.addEdge`: after connecting the
+  // source to the AudioParam it tees the SAME source into an AnalyserNode
+  // (`getOrCreateParamTap`), and `AudioEngine.readParam` returns
+  // `knob intrinsic + that analyser's newest sample`. That tap is the ONLY
+  // audio-rate readback in this design — the module owns none, because an
+  // AnalyserNode costs a permanently retained Blink handler.
+  let tap: AnalyserNode | null = null;
   if (req.cv) {
     const ref = handle.inputs.get(req.cv.portId);
     if (!ref) return null;
@@ -175,8 +193,15 @@ async function renderLeg(
     cs.offset.value = req.cv.value;
     cs.start(0);
     // The engine's own branch: an exposed AudioParam wins, else the node input.
-    if (ref.param) cs.connect(ref.param);
-    else cs.connect(ref.node, 0, ref.input);
+    if (ref.param) {
+      cs.connect(ref.param);
+      tap = ctx.createAnalyser();
+      tap.fftSize = 32;
+      tap.smoothingTimeConstant = 0;
+      cs.connect(tap);
+    } else {
+      cs.connect(ref.node, 0, ref.input);
+    }
   }
   // Before rendering, so the knob is in force for the whole window — the same
   // ordering the engine uses when it seeds a materialised node's params.
@@ -189,6 +214,19 @@ async function renderLeg(
   });
   merger.connect(ctx.destination);
   const rendered = await ctx.startRendering();
+
+  // What a CARD does every frame: read the engine's combined value and push it
+  // into the module. Only the port under test is pushed, so a draw param that
+  // moves without being pushed is two ports sharing one landing pad — the
+  // #1664 aliasing class, caught in VALUES rather than in object identity.
+  if (req.cv && tap) {
+    const tbuf = new Float32Array(new ArrayBuffer(tap.fftSize * 4));
+    tap.getFloatTimeDomainData(tbuf);
+    const knob = handle.readParam?.(req.cv.paramId) ?? 0;
+    handle.write?.('cvCombined', {
+      [req.cv.paramId]: knob + (tbuf[tbuf.length - 1] ?? 0),
+    });
+  }
 
   const draw = handle.read?.('drawParams') as Record<string, number> | undefined;
   return {
@@ -258,24 +296,15 @@ function makeControlDef(type: string, broken: boolean): AudioModuleDef {
       const thru = ctx.createGain();
       thru.gain.value = 1;
 
-      const record: Record<string, number> = { a: 0, b: 0 };
-      const shadows = new Map<
-        string,
-        { gain: GainNode; an: AnalyserNode; buf: Float32Array<ArrayBuffer> }
-      >();
+      /** knob per param, and the pushed combined value when one has arrived. */
+      const knob: Record<string, number> = { a: 0, b: 0 };
+      const combined: Record<string, number | undefined> = {};
+      const pads = new Map<string, GainNode>();
       if (!broken) {
         for (const id of ['a', 'b']) {
           const g = ctx.createGain();
           g.gain.value = 0;
-          const carrier = ctx.createConstantSource();
-          carrier.offset.value = 1;
-          carrier.start();
-          carrier.connect(g);
-          const an = ctx.createAnalyser();
-          an.fftSize = 32;
-          an.smoothingTimeConstant = 0;
-          g.connect(an);
-          shadows.set(id, { gain: g, an, buf: new Float32Array(new ArrayBuffer(an.fftSize * 4)) });
+          pads.set(id, g); // out of the audio path, and NO AnalyserNode
         }
       }
 
@@ -283,9 +312,9 @@ function makeControlDef(type: string, broken: boolean): AudioModuleDef {
         ['in', { node: thru, input: 0 }],
       ]);
       for (const id of ['a', 'b']) {
-        const s = shadows.get(id);
-        inputs.set(id, s
-          ? { node: s.gain, input: 0, param: s.gain.gain }
+        const g = pads.get(id);
+        inputs.set(id, g
+          ? { node: g, input: 0, param: g.gain }
           // The defect: the LIVE passthrough gain, shared by both ports.
           : { node: thru, input: 0, param: thru.gain });
       }
@@ -295,20 +324,28 @@ function makeControlDef(type: string, broken: boolean): AudioModuleDef {
         inputs,
         outputs: new Map([['thru', { node: thru, output: 0 }]]),
         setParam(id: string, v: number) {
-          if (shadows.has(id)) shadows.get(id)!.gain.gain.setValueAtTime(v, ctx.currentTime);
-          else if (id in record) record[id] = v;
+          if (!(id in knob)) return;
+          knob[id] = v;
+          combined[id] = undefined;
+          pads.get(id)?.gain.setValueAtTime(v, ctx.currentTime);
         },
-        readParam(id: string) { return record[id]; },
+        readParam(id: string) { return knob[id]; },
         read(key: string) {
           if (key !== 'drawParams') return undefined;
-          if (broken) return { ...record };
           const out: Record<string, number> = {};
-          for (const [id, s] of shadows) {
-            s.an.getFloatTimeDomainData(s.buf);
-            out[id] = ctx.currentTime <= 0 ? s.gain.gain.value : (s.buf[s.buf.length - 1] ?? 0);
-          }
+          for (const id of ['a', 'b']) out[id] = combined[id] ?? knob[id]!;
           return out;
         },
+        // The BROKEN control deliberately does not implement `write`, because
+        // the #1664 modules had no delivery path at all — that is the defect.
+        ...(broken ? {} : {
+          write(key: string, value: unknown) {
+            if (key !== 'cvCombined' || typeof value !== 'object' || value === null) return;
+            for (const [id, v] of Object.entries(value as Record<string, number>)) {
+              if (id in knob) combined[id] = v;
+            }
+          },
+        }),
         dispose() { /* */ },
       };
     },
@@ -366,7 +403,7 @@ async function measureDef(def: AudioModuleDef): Promise<PortVerdict[]> {
     // The cable SUMS with the knob intrinsic, so the offset that lands the
     // effective value on `want` is `want - default`.
     const cv = await renderLeg(def, outIds, {
-      cv: { portId: port.id, value: want - pd.defaultValue },
+      cv: { portId: port.id, paramId: pd.id, value: want - pd.defaultValue },
     });
     const knob = await renderLeg(def, outIds, { knob: { paramId: pd.id, value: want } });
     if (!cv || !knob) continue;
@@ -517,8 +554,10 @@ describe('CV reach for DISPLAY params — the cable must move the number the mod
     console.log(
       `[cv-display-param-reach] enrolled (DERIVED — every def whose handle answers read('drawParams')): `
       + `${names || '(none)'} | ports measured=${VERDICTS.length} `
-      + '| BLIND TO: whether the PICTURE is right (VRT owns that), modules that apply a JS-consumed '
-      + 'param without publishing drawParams, and the browser rAF path that calls this in production.',
+      + '| BLIND TO: whether the PICTURE is right (VRT owns that); modules that apply a JS-consumed '
+      + 'param without publishing drawParams; the rAF loop that does the push in the browser, so a '
+      + 'card that is unmounted or collapsed leaves its video-out on the KNOB; and the engine\'s own '
+      + 'readParam formula, which is replicated here rather than called.',
     );
   });
 });

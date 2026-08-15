@@ -324,6 +324,17 @@ export const rasterizeDef: AudioModuleDef = {
         }
         return undefined;
       },
+      // The inverse of read('drawParams'). A consumer holding the engine pushes
+      // `PatchEngine.readParam` (the knob PLUS the engine's own per-port CV tap)
+      // back in, so the painter draws the modulated value while this module owns
+      // NO AnalyserNode per port — which is what a permanently retained Blink
+      // AudioHandler per port would have cost. See $lib/audio/cv-shadow.
+      write(key, value) {
+        if (key !== 'cvCombined' || typeof value !== 'object' || value === null) return;
+        for (const [id, v] of Object.entries(value as Record<string, number>)) {
+          shadows[id]?.setCombined(v);
+        }
+      },
       dispose() {
         inGain.disconnect();
         analyser.disconnect();

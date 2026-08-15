@@ -1,132 +1,95 @@
 // packages/web/src/lib/audio/cv-shadow.test.ts
 //
-// The one branch `art/scenarios/cv-display-param-reach` structurally cannot
-// reach. That sweep always renders, so `ctx.currentTime` is always > 0 there
-// and the analyser is always authoritative. The BEFORE-ANY-RENDER branch is
-// the one every card actually starts life in: a browser AudioContext sits at
-// currentTime 0 until the user's first gesture resumes it, and until then the
-// shadow's analyser ring is all zeros — indistinguishable from a genuine zero.
-// If that fallback were wrong, every SCOPE and RASTERIZE would draw with 0 for
-// every parameter until the user clicked something.
+// The landing pad's own contract, at the level ART cannot reach: ART measures a
+// real render, this pins the JS-side value semantics that decide what a card
+// draws before, during and after a cable.
 
 import { describe, expect, it } from 'vitest';
 import { createCvShadow } from './cv-shadow';
 
-/** A context whose analysers report a settable tail sample, and whose clock we
- *  can move across the `currentTime <= 0` boundary by hand. */
-function fakeCtx(): {
-  ctx: BaseAudioContext;
-  advance: (t: number) => void;
-  setTail: (v: number) => void;
-  setState: (s: AudioContextState) => void;
-} {
-  let now = 0;
-  let tail = 0;
-  let state: AudioContextState = 'running';
+/** A context stub with only what the pad touches. Deliberately has NO
+ *  `createAnalyser` and no `createConstantSource`: if either ever comes back,
+ *  this test fails to construct, which is the point — each AnalyserNode costs
+ *  one permanently retained Blink AudioHandler (see the header of
+ *  `cv-shadow.ts` for the measurement) and the pad must never own one. */
+function fakeCtx(): { ctx: BaseAudioContext; disconnects: () => number } {
+  let disconnects = 0;
   const ctx = {
-    get currentTime() { return now; },
-    get state() { return state; },
+    currentTime: 0,
     createGain: () => ({
-      gain: { value: 0, setValueAtTime(v: number) { (this as { value: number }).value = v; } },
-      connect() {}, disconnect() {},
-    }),
-    createConstantSource: () => ({
-      offset: { value: 0 }, start() {}, stop() {}, connect() {}, disconnect() {},
-    }),
-    createAnalyser: () => ({
-      fftSize: 32,
-      smoothingTimeConstant: 0,
-      connect() {}, disconnect() {},
-      getFloatTimeDomainData(buf: Float32Array) {
-        buf.fill(0);
-        buf[buf.length - 1] = tail;
+      gain: {
+        value: 0,
+        setValueAtTime(v: number) { (this as { value: number }).value = v; },
       },
+      connect() {},
+      disconnect() { disconnects += 1; },
     }),
   } as unknown as BaseAudioContext;
-  return {
-    ctx,
-    advance: (t) => { now = t; },
-    setTail: (v) => { tail = v; },
-    setState: (s) => { state = s; },
-  };
+  return { ctx, disconnects: () => disconnects };
 }
 
-describe('createCvShadow — the knob/CV junction for a JS-consumed param', () => {
-  it('reports the KNOB before the context has rendered anything', () => {
+describe('createCvShadow — the knob/CV landing pad for a JS-consumed param', () => {
+  it('reports the KNOB until a consumer supplies the engine-combined value', () => {
     const { ctx } = fakeCtx();
     const s = createCvShadow(ctx, 20);
-    // currentTime is 0: a fresh or never-resumed context. The analyser ring is
-    // all zeros, so trusting it here would draw a timebase of 0 ms.
-    expect(s.read(), 'a never-resumed context must report the knob, not the empty analyser').toBe(20);
+    // Nothing patched ⇒ the engine builds no tap ⇒ readParam returns the knob.
+    // Reading the knob here is therefore the CORRECT answer, not a fallback.
+    expect(s.read()).toBe(20);
+    expect(s.knob()).toBe(20);
   });
 
-  it('follows a knob move before any render', () => {
+  it('publishes the knob as the AudioParam INTRINSIC, which is what the engine sums into', () => {
     const { ctx } = fakeCtx();
     const s = createCvShadow(ctx, 20);
     s.set(120);
+    expect(s.param.value, 'the engine sums each cable on top of this intrinsic').toBe(120);
     expect(s.read()).toBe(120);
-    expect(s.knob()).toBe(120);
   });
 
-  it('switches to the ANALYSER — the combined knob + CV value — once the clock has advanced', () => {
-    const { ctx, advance, setTail } = fakeCtx();
+  it('draws with the COMBINED value once pushed, while readParam still sees only the knob', () => {
+    const { ctx } = fakeCtx();
     const s = createCvShadow(ctx, 20);
-    // The engine has summed a cable into `.gain`, so the shadow's output (and
-    // therefore its analyser) reads knob + cable while `.gain.value` still
-    // reads only the knob. That difference IS the fix for #1664.
-    setTail(95);
-    advance(0.01);
-    expect(s.read(), 'once rendering has happened the analyser is authoritative').toBe(95);
-    expect(s.knob(), 'the knob leg is unchanged — readParam must not double-count the cable').toBe(20);
+    s.setCombined(95); // knob 20 + a cable contributing 75, per AudioEngine.readParam
+    expect(s.read(), 'the draw path uses the combined value').toBe(95);
+    expect(
+      s.knob(),
+      'readParam must report the knob alone — the engine adds the modulator tap on top, ' +
+        'so returning the combined value would double-count the cable',
+    ).toBe(20);
   });
 
-  it('reports a genuine ZERO rather than falling back to a non-zero knob', () => {
-    // The failure mode of the obvious `tail || knob` shorthand: a cable that
-    // drives the value to exactly 0 would read as the knob instead.
-    const { ctx, advance, setTail } = fakeCtx();
+  it('a knob move DROPS the stale combined sample rather than fighting it', () => {
+    // Without this, dragging a fader would visibly snap back to the last pushed
+    // value for one frame before the next push caught up.
+    const { ctx } = fakeCtx();
     const s = createCvShadow(ctx, 20);
-    setTail(0);
-    advance(0.01);
-    expect(s.read(), 'a rendered zero is a real value, not a missing one').toBe(0);
+    s.setCombined(95);
+    s.set(50);
+    expect(s.read()).toBe(50);
+    s.setCombined(130);
+    expect(s.read()).toBe(130);
   });
 
-  it('reports the KNOB while the clock is SUSPENDED, so a fader still moves the picture', () => {
-    // The regression this guards: with the context paused (a VRT freeze, a
-    // rack the user has not started) the analyser ring is stuck on whatever
-    // was last rendered. Trusting it would mean a knob move never reaches the
-    // card at all — and would move every frozen VRT baseline, since those are
-    // captured with the context suspended and drawn from the knob today.
-    const { ctx, advance, setTail, setState } = fakeCtx();
+  it('ignores a non-finite push instead of drawing NaN', () => {
+    const { ctx } = fakeCtx();
     const s = createCvShadow(ctx, 20);
-    setTail(95);
-    advance(0.01);
-    expect(s.read(), 'running: the analyser wins').toBe(95);
-    setState('suspended');
-    expect(s.read(), 'suspended: a frozen ring cannot answer, so report the knob').toBe(20);
-    s.set(120);
-    expect(s.read(), 'and a fader move while suspended must still be visible').toBe(120);
-    setState('running');
-    expect(s.read(), 'resumed: back to the live combined value').toBe(95);
+    s.setCombined(Number.NaN);
+    expect(s.read()).toBe(20);
+    s.setCombined(undefined);
+    expect(s.read()).toBe(20);
   });
 
-  it('still reads the analyser after an offline render, which reports state CLOSED', () => {
-    // OfflineAudioContext is `suspended` before startRendering() and `closed`
-    // after — measured against node-web-audio-api. The suspended guard must
-    // not swallow a completed render, or every ART assertion built on
-    // read('drawParams') would silently read the knob back to itself.
-    const { ctx, advance, setTail, setState } = fakeCtx();
-    const s = createCvShadow(ctx, 20);
-    setTail(95);
-    advance(0.05);
-    setState('closed');
-    expect(s.read()).toBe(95);
-  });
-
-  it('gives every shadow its OWN AudioParam — the #1664 aliasing class', () => {
+  it('gives every pad its OWN AudioParam — the #1664 aliasing class', () => {
     const { ctx } = fakeCtx();
     const a = createCvShadow(ctx, 1);
     const b = createCvShadow(ctx, 1);
     expect(a.param).not.toBe(b.param);
     expect(a.node).not.toBe(b.node);
+  });
+
+  it('disposes its one node', () => {
+    const { ctx, disconnects } = fakeCtx();
+    createCvShadow(ctx, 1).dispose();
+    expect(disconnects()).toBe(1);
   });
 });
