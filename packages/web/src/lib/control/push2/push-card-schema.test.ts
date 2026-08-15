@@ -289,6 +289,27 @@ describe('resolvePushCardControls — tier 2, the curated face', () => {
     ]);
   });
 
+  it('a FIRST PROMOTION can move the TIER and leave the CARD identical — ninelives', () => {
+    // ninelives, promoted 2026-08-15 (faceplate queue Q11). The counterpart to
+    // the leg above, and the reason both are worth having: a promotion moves
+    // the module GENERIC → FACE unconditionally, but whether the ENCODERS move
+    // depends entirely on whether the face's ranking differs from declaration
+    // order. Here it does not — RATE genuinely outranks WAVEFORM (it moves all
+    // nine taps; the morph moves none of them) and the def happens to declare
+    // them in that order too — so the tier is new and the card is unchanged.
+    //
+    // Recorded rather than assumed: without this leg, "the card did not move"
+    // and "nobody looked" are the same green.
+    const spec = resolvePushCardControls(defByType('ninelives'));
+    expect(spec.source, 'the promotion moves it off the GENERIC tier').toBe('face');
+    expect(spec.skipped, 'no families and no momentary pads on this module').toEqual([]);
+    expect(pushCardParams(spec).map((q) => q.id)).toEqual(['rate', 'shape']);
+    // …and the card is identical to what the GENERIC tier produced BECAUSE the
+    // two orders agree, stated directly so a future re-rank cannot slip through
+    // as "the card was always like that".
+    expect((defByType('ninelives').params ?? []).map((q) => q.id)).toEqual(['rate', 'shape']);
+  });
+
   it('records WHICH keys it skipped, so the card cannot silently shrink', () => {
     // Fixture: a face whose first two ranks are unturnable. Both are named.
     const def = fixture({
@@ -330,7 +351,12 @@ describe('resolvePushCardControls — tier 2, the curated face', () => {
 
 describe('resolvePushCardControls — tier 3, the GENERIC card', () => {
   it('AUDIO: declaration order is the ranking', () => {
-    // charlottesEchos carries no face, so it is a real generic-audio card.
+    // DERIVED, not named: the first un-faced audio def with enough params. It
+    // used to be `charlottesEchos` — which now carries a face, so it moved from
+    // this tier to the FACE tier (and its card re-ranked from declaration order
+    // to `face.order`; no `PUSH_CARD_CONTROLS` entry, so that is the intended
+    // effect of promoting it). Naming a module here would have gone stale
+    // silently the moment it was promoted.
     const def = allDefs().find((d) => d.domain === 'audio' && !d.face && (d.params ?? []).length >= 3);
     expect(def, 'expected at least one un-faced audio module').toBeTruthy();
     const spec = resolvePushCardControls(def!, {});

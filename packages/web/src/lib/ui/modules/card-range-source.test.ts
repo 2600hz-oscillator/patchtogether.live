@@ -85,8 +85,10 @@ import { cofefveDelayDef } from '$lib/audio/modules/cofefve';
 import { delayDef } from '$lib/audio/modules/delay';
 import { macrooscillatorDef } from '$lib/audio/modules/macrooscillator';
 import { marblesDef } from '$lib/audio/modules/marbles';
+import { ninelivesDef } from '$lib/audio/modules/ninelives';
 import { noiseDef } from '$lib/audio/modules/noise';
 import { warrensvisionsDef } from '$lib/video/modules/warrensvisions';
+import { charlottesEchosDef } from '$lib/audio/modules/charlottes-echos';
 import { filterDef } from '$lib/audio/modules/filter';
 import { karplusDef } from '$lib/audio/modules/karplus';
 import { meowboxDef } from '$lib/audio/modules/meowbox';
@@ -278,6 +280,14 @@ const RANGE_BOUND_CARDS: Readonly<Record<string, { params: readonly ParamDef[] }
   // shape: range-bound, out of MAPPING_BOUND_CARDS, held to the value-wise
   // curve-agreement clause below.
   'SidecarCard.svelte': sidecarDef,
+  // FACE BATCH 6. Converted with its FACEPLATE, and the label half is the
+  // reason: promotion makes the DEF's label the one a user reads at the dock,
+  // and this card's `Feedback` / `Pitch` disagreed outright with the def's
+  // `Fbk` / `Ptch` (both were in VOCABULARY_DEBT). Binding every prop —
+  // min/max/defaultValue/label/units/curve — off `CHARLOTTES_ECHOS_RANGES`
+  // paid that ledger rather than deferring it, and the def took the card's
+  // wording so no pixels moved.
+  'CharlottesEchosCard.svelte': charlottesEchosDef,
   'SnaredrumCard.svelte': snaredrumDef,
   'VcaCard.svelte': vcaDef,
   'WarrensspectrumCard.svelte': warrensspectrumDef,
@@ -288,6 +298,15 @@ const RANGE_BOUND_CARDS: Readonly<Record<string, { params: readonly ParamDef[] }
   // AND mapping — every Fader reads `P.<id>.{min,max,defaultValue,label,units,
   // curve}` off `paramSpec(wavetableVcoDef, …)`, so it is in both lists.
   'WavetableVcoCard.svelte': wavetableVcoDef,
+  // THE FACEPLATE QUEUE · Q11. Both faders re-typed numbers that AGREED with
+  // the def, so this is a maintainability conversion rather than a bug fix —
+  // but it is done WITH the promotion for the reason the agreement clause
+  // cannot cover: a faced module renders the DOCK straight off the `ParamDef`
+  // and the legacy card off whatever it typed, so from the moment `ninelives`
+  // enters STRICT_FACES a divergence would give one param two travels
+  // depending on which surface you reached it through. Range AND mapping —
+  // `curve` and `units` come off `paramSpec(ninelivesDef, …)` too.
+  'NinelivesCard.svelte': ninelivesDef,
 };
 
 /**
@@ -325,6 +344,12 @@ const MAPPING_BOUND_CARDS: readonly string[] = [
   // carries the `format` that fixes it; wiring units onto these nine faders is
   // a visible card change and wants its own owner preview.
   'SidecarCard.svelte',
+  // FACE BATCH 6. Range AND mapping AND vocabulary: all five Knobs read
+  // `min`/`max`/`defaultValue`/`label`/`units`/`curve` off
+  // `CHARLOTTES_ECHOS_RANGES`, which is the def's own ParamDef objects by
+  // identity (asserted in art/scenarios/charlottes-echos/cv-path.test.ts), so
+  // there is no second copy of any number or name to drift.
+  'CharlottesEchosCard.svelte',
   'SnaredrumCard.svelte',
   'VcaCard.svelte',
   'WarrensspectrumCard.svelte',
@@ -332,6 +357,10 @@ const MAPPING_BOUND_CARDS: readonly string[] = [
   // declares `st` and `fine` declares `¢`, and both now come off the ParamDef
   // rather than being hand-typed beside a `min` that disagreed with it.
   'WavetableVcoCard.svelte',
+  // THE FACEPLATE QUEUE · Q11. `units` is bound rather than merely absent —
+  // `rate` declares `Hz` and it now comes off the ParamDef; `shape` declares
+  // none and the card passes none, which is the same fact stated by omission.
+  'NinelivesCard.svelte',
 ];
 
 /**

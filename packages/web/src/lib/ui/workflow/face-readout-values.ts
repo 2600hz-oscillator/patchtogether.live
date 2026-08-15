@@ -60,6 +60,14 @@ import {
 } from '$lib/ui/modules/clouds-face-model';
 import { noiseFaceParams, noiseTapDbText } from '$lib/ui/modules/noise-face-model';
 import {
+  NINELIVES_TAP_MULTIPLIERS,
+  ninelivesFaceParams,
+  ninelivesFastTapsText,
+  ninelivesLadderSpanText,
+  ninelivesTapPeriodText,
+  ninelivesWaveText,
+} from '$lib/ui/modules/ninelives-face-model';
+import {
   marblesBpmText,
   marblesFaceParams,
   marblesGateWidthText,
@@ -195,6 +203,14 @@ import {
   wsResidualText,
   wsVoiceText,
 } from '$lib/ui/modules/warrensspectrum-face-model';
+import {
+  ceClimbText,
+  ceLoopText,
+  ceMarginText,
+  ceSpacingText,
+  ceTailText,
+  charlottesEchosFaceParams,
+} from '$lib/ui/modules/charlottes-echos-face-model';
 
 /** A derived readout: live params in (through the caller's reader, which
  *  already resolves def defaults for untouched params), formatted string out.
@@ -809,6 +825,82 @@ const FACE_READOUT_VALUES: Readonly<Record<string, FaceReadoutValue>> = {
   // this readout while being structurally unable to move the number, which is
   // what makes the two halves each other's control.
   'warrensspectrum-out': (read) => wsOutText(warrensspectrumFaceParams(read)),
+
+  // ── NINE LIVES ───────────────────────────────────────────────────────────
+  // THREE hero values plus ONE ROW PER TAP, on a module with two params, and
+  // the arithmetic is the whole argument. RATE is a single log fader printing
+  // ONE frequency for NINE outputs whose rates are 6561× apart. `1.00 Hz` on
+  // the dial means, measured through this module's own factory port by port
+  // (art/scenarios/ninelives/ladder.test.ts):
+  //
+  //   out1 1.00 s · out2 3.00 s · out3 9.00 s · out4 27.0 s · out5 1.4 min
+  //   out6 4.1 min · out7 12.2 min · out8 36.5 min · out9 1.8 h
+  //
+  // …and `0.01 Hz` on the same dial means out9 sweeps once every 7.6 DAYS. The
+  // readback is not merely incomplete about that, it is INVARIANT to WHICH tap
+  // is being asked about — the `noise` shape, one fader over unmatched taps.
+  //
+  // `ninelives-ladder-span` prints both ends at once (a span, which one number
+  // cannot be). `ninelives-fast-taps` prints which taps still read as movement,
+  // and it is the one that catches a dial step nobody would look twice at:
+  // 0.02 → 0.016 Hz takes it from `out 1` to `none`. `ninelives-wave` NAMES the
+  // 0..2 morph, and is RATE-invariant while the other two are WAVEFORM-
+  // invariant — so each is the other's negative control on every run
+  // (ninelives-face-model.test.ts).
+  'ninelives-ladder-span': (read) => ninelivesLadderSpanText(ninelivesFaceParams(read)),
+  'ninelives-fast-taps': (read) => ninelivesFastTapsText(ninelivesFaceParams(read)),
+  'ninelives-wave': (read) => ninelivesWaveText(ninelivesFaceParams(read)),
+  // THE TABLE — one entry per rung, GENERATED from the DSP core's own ladder
+  // (`NINE_LIVES_RATE_MULTIPLIERS`), never nine typed lines. The def's sidebar
+  // builds its rows from the same population, so a row and a registration
+  // cannot go out of step and there is no count in either place.
+  ...(Object.fromEntries(
+    NINELIVES_TAP_MULTIPLIERS.map((_, n) => [
+      `ninelives-tap-${n + 1}`,
+      (read: (paramId: string) => number | undefined) =>
+        ninelivesTapPeriodText(n, ninelivesFaceParams(read)),
+    ]),
+  ) as Record<string, FaceReadoutValue>),
+  // ── CHARLOTTE'S ECHOS ────────────────────────────────────────────────────
+  // FIVE, on a five-knob delay, and the reason is that TWO of those knobs are a
+  // STABILITY BOUNDARY wearing the labels of taste controls. The four analog
+  // stages are in SERIES and each carries an in-loop tanh drive whose
+  // small-signal gain is a function of DECAY, so the quantity that decides what
+  // the module does is FEEDBACK × 0.995 × (1 + DECAY × 4 × 0.8) — a PRODUCT. No
+  // single readback can express it: a FEEDBACK readout is blind to DECAY and a
+  // DECAY readout is blind to FEEDBACK, and either one alone prints a confident
+  // number on a patch that will ring forever.
+  //
+  //   tail    the −60 dB tail, or NEVER DECAYS. It runs the actual four-stage
+  //           recurrence rather than a dominant-pole estimate, because at DECAY 0
+  //           the four gains are IDENTICAL and the repeated pole rings far
+  //           longer than one stage would (measured −22.8 dBFS twelve seconds
+  //           after a 60 ms hit at FEEDBACK 0.95, where the one-pole form says
+  //           −156 dB). Its negative control is MIX: 9.8 dB of level, 0.00 s of
+  //           tail — a tail derived from level would track the wrong column.
+  //   climb   (1+PITCH)^6 at the last head, in CENTS. The dial reads `0.10`; the
+  //           interval is +990 ¢. Invariant to every other param, which is what
+  //           separates it from the level readouts either side.
+  //   spacing the EFFECTIVE first echo, in MILLISECONDS (⚠ the param is in
+  //           SECONDS — 1000×). It REFUSES to print a total once PITCH is
+  //           engaged, because the grain offset is +45.000 ms in the limit and
+  //           then anywhere in 16.6–25.2 ms depending on grain phase, which is
+  //           not a function of any parameter.
+  //   loop-gain / margin are the SAME LAW in two units, on purpose: the gain is
+  //           the closed form, the margin is that form expressed in the units of
+  //           the dials you turn. Both are exactly flat in MIX and in DELAY —
+  //           the second one because the boundary is NOT delay-dependent, a
+  //           spec claim this face refuted by measurement.
+  //
+  // All five are negative-controlled in BOTH directions, permanently, in
+  // charlottes-echos-face-model.test.ts; the claims that are about AUDIO are
+  // re-derived from the shipping worklet by
+  // art/scenarios/charlottes-echos/face-law.test.ts.
+  'ce-tail': (read) => ceTailText(charlottesEchosFaceParams(read)),
+  'ce-climb': (read) => ceClimbText(charlottesEchosFaceParams(read)),
+  'ce-spacing': (read) => ceSpacingText(charlottesEchosFaceParams(read)),
+  'ce-loop-gain': (read) => ceLoopText(charlottesEchosFaceParams(read)),
+  'ce-margin': (read) => ceMarginText(charlottesEchosFaceParams(read)),
 };
 
 /** The derived value for a declared id, or `null` (⇒ the readout prints `—`

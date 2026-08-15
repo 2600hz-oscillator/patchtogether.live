@@ -2,7 +2,7 @@
   import type { NodeProps } from '@xyflow/svelte';
   import Knob from '$lib/ui/controls/Knob.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import { charlottesEchosDef } from '$lib/audio/modules/charlottes-echos';
+  import { CHARLOTTES_ECHOS_RANGES, charlottesEchosDef } from '$lib/audio/modules/charlottes-echos';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
   import { cardParams, portsFromDef } from './card-kit';
@@ -11,11 +11,17 @@
   let node = $derived(data?.node as ModuleNode);
   const { set, live } = cardParams(charlottesEchosDef, () => id, () => node);
 
-  let delay    = $derived(node?.params.delay    ?? charlottesEchosDef.params[0]!.defaultValue);
-  let feedback = $derived(node?.params.feedback ?? charlottesEchosDef.params[1]!.defaultValue);
-  let decay    = $derived(node?.params.decay    ?? charlottesEchosDef.params[2]!.defaultValue);
-  let pitchUp  = $derived(node?.params.pitchUp  ?? charlottesEchosDef.params[3]!.defaultValue);
-  let mix      = $derived(node?.params.mix      ?? charlottesEchosDef.params[4]!.defaultValue);
+  // EVERY range, curve, unit, default and label comes off the def — this card
+  // re-types none of them (card-range-source / card-def-agreement). Two of the
+  // labels used to disagree with the def outright and were ledgered as debt;
+  // binding them here is what paid that ledger off.
+  const P = CHARLOTTES_ECHOS_RANGES;
+
+  let delay    = $derived(node?.params.delay    ?? P.delay!.defaultValue);
+  let feedback = $derived(node?.params.feedback ?? P.feedback!.defaultValue);
+  let decay    = $derived(node?.params.decay    ?? P.decay!.defaultValue);
+  let pitchUp  = $derived(node?.params.pitchUp  ?? P.pitchUp!.defaultValue);
+  let mix      = $derived(node?.params.mix      ?? P.mix!.defaultValue);
 
   // Stripe shimmer activates when feedback is high enough that artifacts
   // become audibly compounding.
@@ -32,11 +38,11 @@
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="knob-row">
-      <Knob value={delay}    min={0.001} max={1.5} defaultValue={0.4} label="Delay"    units="s" curve="log"    onchange={set('delay')} moduleId={id} paramId="delay"    readLive={live('delay')} />
-      <Knob value={feedback} min={0}     max={1}   defaultValue={0.5} label="Feedback"           curve="linear" onchange={set('feedback')} moduleId={id} paramId="feedback" readLive={live('feedback')} />
-      <Knob value={decay}    min={0}     max={1}   defaultValue={0.2} label="Decay"              curve="linear" onchange={set('decay')} moduleId={id} paramId="decay"    readLive={live('decay')} />
-      <Knob value={pitchUp}  min={0}     max={0.2} defaultValue={0}   label="Pitch"              curve="linear" onchange={set('pitchUp')} moduleId={id} paramId="pitchUp"  readLive={live('pitchUp')} />
-      <Knob value={mix}      min={0}     max={1}   defaultValue={0.5} label="Mix"                curve="linear" onchange={set('mix')} moduleId={id} paramId="mix"      readLive={live('mix')} />
+      <Knob value={delay}    min={P.delay!.min}    max={P.delay!.max}    defaultValue={P.delay!.defaultValue}    label={P.delay!.label!}    units={P.delay!.units}    curve={P.delay!.curve}    onchange={set('delay')} moduleId={id} paramId="delay"    readLive={live('delay')} />
+      <Knob value={feedback} min={P.feedback!.min} max={P.feedback!.max} defaultValue={P.feedback!.defaultValue} label={P.feedback!.label!} units={P.feedback!.units} curve={P.feedback!.curve} onchange={set('feedback')} moduleId={id} paramId="feedback" readLive={live('feedback')} />
+      <Knob value={decay}    min={P.decay!.min}    max={P.decay!.max}    defaultValue={P.decay!.defaultValue}    label={P.decay!.label!}    units={P.decay!.units}    curve={P.decay!.curve}    onchange={set('decay')} moduleId={id} paramId="decay"    readLive={live('decay')} />
+      <Knob value={pitchUp}  min={P.pitchUp!.min}  max={P.pitchUp!.max}  defaultValue={P.pitchUp!.defaultValue}  label={P.pitchUp!.label!}  units={P.pitchUp!.units}  curve={P.pitchUp!.curve}  onchange={set('pitchUp')} moduleId={id} paramId="pitchUp"  readLive={live('pitchUp')} />
+      <Knob value={mix}      min={P.mix!.min}      max={P.mix!.max}      defaultValue={P.mix!.defaultValue}      label={P.mix!.label!}      units={P.mix!.units}      curve={P.mix!.curve}      onchange={set('mix')} moduleId={id} paramId="mix"      readLive={live('mix')} />
     </div>
   </PatchPanel>
 </div>

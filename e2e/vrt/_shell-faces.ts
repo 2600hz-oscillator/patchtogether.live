@@ -397,6 +397,48 @@ export const FACES = [
   //
   // No mask, like both of them: it is captured strict, glyph included.
   { type: 'wavetableVco', pages: 2 },
+  // THE FACEPLATE QUEUE · Q11 — the ⅓-ladder modulation fan-out.
+  //
+  // `pages: 1` is the POST-hero split count: the face declares NO `pages`, so
+  // its two ranked keys sit in the single unlabelled `__all` band, and the hero
+  // promotes RATE out of it leaving WAVEFORM behind. One key remains, so the
+  // band survives — this is NOT the `noise` case where the only key was
+  // promoted and `heroFacePlan` dropped the emptied band to `pages: 0`.
+  //
+  // ⚠ DETERMINISTIC FOR A REASON WORTH DISTINGUISHING FROM BOTH ESTABLISHED
+  // ONES, and it is neither "silent at rest" (rings, sidecar, warrensspectrum)
+  // nor "free-running and saved by #1420's freeze" (analogVco, macrooscillator,
+  // wavetableVco). This module IS free-running — nine phase accumulators
+  // advance from the moment it spawns, with no gate and no input — but NOTHING
+  // ON THE FACE READS THEM. Its glyph is `waveform`, and with every declared
+  // output typed `cv` there is no audio output for `primaryAudioOutPortId` to
+  // resolve, so `glyphBinding` returns `{ kind: 'wave-morph' }`: a single cycle
+  // of the `shape` morph derived from the DURABLE param, no analyser, no tap,
+  // no rAF. The picture is byte-identical on a frozen graph, a live graph and a
+  // silent rack.
+  //
+  // So this scene neither exercises nor depends on #1420's pre-frame freeze,
+  // and it is NOT a fourth free-running witness for it — the mechanism that
+  // would make it one (a live tap) is exactly the one the face declines to use.
+  // See `ninelives-face-model.test.ts` for both halves of that resolution,
+  // including the negative control that `glyph: 'meter'` here would have
+  // painted a VuMeter with no tap at all (the marbles defect).
+  { type: 'ninelives', pages: 1 },
+  // FACE BATCH 6 · the four-stage destructive echo. `pages: 2` is the POST-hero
+  // split count: two declared pages, and promoting `feedback` into the hero
+  // leaves `the loop` with DECAY + MIX rather than emptying it, so no band is
+  // dropped (heroFacePlan only drops an EMPTIED band — the `noise` case).
+  //
+  // DETERMINISTIC AT REST, and MEASURED rather than assumed: it is an INSERT
+  // with no generator of its own, so with nothing patched into L the worklet
+  // writes bit-exact zeros to both outputs — asserted as `peak |sample| === 0`
+  // on the silent-input leg of art/scenarios/charlottes-echos/cv-path.test.ts,
+  // through the DEF'S OWN FACTORY, which is where the factory's `silenceL`
+  // ConstantSource would show up if it were producing anything. Its `scope`
+  // glyph tap therefore reads zero whether the graph is frozen or running: like
+  // sidecar and warrensspectrum it neither exercises nor depends on #1420's
+  // pre-frame freeze, and it is NOT the analogVco free-running case.
+  { type: 'charlottesEchos', pages: 2 },
 ] as const;
 
 /** TIGHT per-scene diff budgets (absolute pixels; Playwright takes the MIN of

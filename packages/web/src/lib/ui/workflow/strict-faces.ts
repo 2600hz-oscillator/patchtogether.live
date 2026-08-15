@@ -701,6 +701,56 @@
 // negative control on the ORACLE ITSELF (a deliberately mis-scaled knee term
 // must redden the same comparison), so a DSP fix turns a stale faceplate claim
 // red instead of leaving the panel insisting on a repaired defect.
+
+// THE FACEPLATE QUEUE · Q11 — NINE LIVES, the ⅓-ladder modulation fan-out
+// (2026-08-15), and the entry whose whole argument is that A KNOB CAN BE
+// CORRECT AND STILL BE INVARIANT TO THE MODULE.
+//
+// §1 of the queue ranked the pool by PARAM COUNT and this module — 2 params, 1
+// input, 9 outputs — is a rejection on that measure. It is the `noise` case
+// verbatim: one dial, promoted because several stated facts about its taps are
+// unprintable from it. RATE prints ONE frequency for NINE outputs 6561× apart.
+// Measured through THIS module's own factory, port id by port id, at the
+// shipped Rate of 1 Hz: out1 1.00 s, out5 1.4 min, out8 36.5 min, out9 1.8 h —
+// and at the bottom of the dial (0.01 Hz) out9's cycle is 7.6 DAYS.
+//
+// ⚠ THE AUDIT'S SHARPEST FINDING IS ABOUT THE GLYPH, and it is the `noise`
+// lane-meter hazard answered rather than repeated. With nine outputs, ANY
+// analyser-backed glyph reads exactly one of them and paints it as the module.
+// Here `primaryAudioOutPortId` returns NULL — every output is `cv`, so there is
+// no audio output to resolve — which means `glyph: 'meter'` would have given
+// `{ kind: 'static' }`, no tap, and twelve VuMeter segments that can never
+// light: the marbles defect, verbatim, on a module with nine jacks. The face
+// declares `'waveform'` instead, which resolves `{ kind: 'wave-morph' }`: a
+// PARAM-DERIVED single cycle of the `shape` morph, tapping nothing. That is
+// honest here for a module-specific reason — the waveform is genuinely SHARED
+// by all nine taps, so the picture is of every output rather than one of them.
+// Both halves are permanent legs of `ninelives-face-model.test.ts`.
+//
+// ⚠ AND THE ⅓ LADDER RE-MEASURED **TRUE**, which is the result the queue's own
+// warning said not to assume. `art/scenarios/ninelives/ladder.test.ts` drives
+// the shipped worklet through the def's factory in a real OfflineAudioContext
+// and reads each DECLARED port's rate by unwrapped phase slope (a saw at
+// `shape 1` IS the phase, so the same estimator resolves 100 Hz and 0.0152 Hz
+// with one code path — a Goertzel cannot see out9 at all in a 1 s window).
+// Every rung lands within 2.5e-7 relative of `rate × (1/3)^(n-1)`. Before this
+// scenario NOTHING joined the factory's port map to what the processor writes:
+// the module unit test pins the map against its own arithmetic, the DSP unit
+// test indexes a scratch array with no port ids in it, and the ART profile
+// drives the PROCESSOR CLASS with its own `out1..out9` literal.
+//
+// ⚠ TWO THINGS CORRECTED, NEITHER AUDIO. The def, its DSP core header, its
+// `docs` and the module manifest all said out1 is "IDENTICAL to a normal LFO",
+// unqualified. It is bit-identical at the LFO's shipped `depth` default (0.5,
+// where the LFO's own `depth·2` scaling reaches unity) and at NO other depth —
+// NINE LIVES has no depth control, so every tap is a fixed full-scale ±1. Both
+// halves are permanent ART legs. And the def carried `const OUT_COUNT = 9`
+// beside a nine-entry `outputs` literal while `ninelives-dsp.ts` sized the
+// processor's loop off its own `NINE_LIVES_OUTPUT_COUNT` — two unjoined copies
+// of the ladder length, where a disagreement publishes silently dead jacks. The
+// def now imports the DSP constant and derives the roster from it, so the
+// disagreement is unrepresentable rather than merely untested, and the
+// hand-typed count is gone. `contract-lock.txt` is byte-identical across it.
 export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // P1 batch 1 — first 6 module faces
   'adsr',
@@ -821,6 +871,40 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // debt entry is DELETED rather than re-worded, and the card baseline is
   // re-captured by this branch's dispatch.
   'wavetableVco',
+  // THE FACEPLATE QUEUE · Q11 — the ⅓-ladder modulation fan-out (2026-08-15).
+  // See the header note above.
+  'ninelives',
+  // FACE BATCH 6 · the four-stage destructive echo (2026-08-15).
+  //
+  // ⚠ THE FACE EXISTS BECAUSE TWO OF THE FIVE DIALS ARE A STABILITY BOUNDARY
+  // WEARING THE LABELS OF TASTE CONTROLS. The four AnalogDelayCore stages are in
+  // SERIES and each carries an in-loop tanh drive whose small-signal gain is
+  // `1 + DECAY·(1+stage)·0.8` — up to 4.20 at the last stage — and that
+  // multiplies the feedback INSIDE each stage's own loop, so `FEEDBACK_MAX =
+  // 0.995` does not bound it. The module stops decaying at
+  // `FEEDBACK · 0.995 · (1 + DECAY·3.2) = 1`; the shipped default sits at 0.82,
+  // i.e. 0.11 of DECAY or 0.11 of FEEDBACK from a patch that rings forever. The
+  // card said none of it and no gate could: it is a VALUE, and every gate here
+  // reads a DECLARATION.
+  //
+  // ⚠ AND A SPEC CLAIM WAS MEASURED AND REFUTED BEFORE IT WAS SHIPPED. The
+  // batch-6 spec asserted the boundary is a function of DELAY too (a bisected
+  // table sliding 0.318 → 0.208 of DECAY across the travel). That bisection used
+  // a LEVEL threshold over a fixed-length render — an instrument that cannot
+  // separate "does not decay" from "decays slowly", and a longer tape decays
+  // slower in wall-clock time by construction. Under a RATE instrument (dB/s
+  // between two late windows) the boundary is loop gain 1.000 at 0.02 s, 0.15 s,
+  // 0.6 s AND 1.5 s. The `margin` readout is a closed form rather than a 3-D
+  // interpolation over an artifact because of that correction.
+  //
+  // ⚠ AUDITED BEFORE AUTHORING (the #1661/#1662/#1664 class). This module
+  // declares exactly ONE `paramTarget` CV input, and a one-row sweep is where
+  // the audit is cheapest to skip: `art/scenarios/charlottes-echos/cv-path.test.ts`
+  // drives the DEF's OWN FACTORY under node-web-audio-api and asserts not only
+  // that the cable moves the audio but that `CV(+Δ)` and `KNOB(base+Δ)` are the
+  // SAME RENDER TO THE BIT — a live jack wired to the wrong terminal passes the
+  // movement leg and fails that one. It found no defect, which is a result.
+  'charlottesEchos',
 ]);
 
 /**
