@@ -382,6 +382,36 @@ describe('the two banks are ONE face', () => {
     expect([...(moog907aDef.face!.order)]).toEqual([...moogBankOrder(MOOG907A_BANK)]);
   });
 
+  it('pins WHAT THE SHIPPED DEFAULTS PRINT — the numbers the defs and the PR quote', () => {
+    // A golden over a fixture the test itself builds (the def's own defaults),
+    // not a population count. It exists because the comment on each `face` and
+    // the corrected `docs.explanation` both quote these strings, and a claim
+    // that lives only in prose is a claim nobody is checking. If the grid, the
+    // Q, the summing or the formatter changes, this says so in one line.
+    expect({
+      peak: faceReadoutValueFor('moog914-peak')!(readerFor(defaults(MOOG914_BANK))),
+      notch: faceReadoutValueFor('moog914-notch')!(readerFor(defaults(MOOG914_BANK))),
+      tilt: faceReadoutValueFor('moog914-tilt')!(readerFor(defaults(MOOG914_BANK))),
+    }).toEqual({ peak: '1.0k -3.9 dB', notch: '6.5k -24.8 dB', tilt: '+0.8 dB' });
+
+    expect({
+      peak: faceReadoutValueFor('moog907a-peak')!(readerFor(defaults(MOOG907A_BANK))),
+      notch: faceReadoutValueFor('moog907a-notch')!(readerFor(defaults(MOOG907A_BANK))),
+      tilt: faceReadoutValueFor('moog907a-tilt')!(readerFor(defaults(MOOG907A_BANK))),
+    }).toEqual({ peak: '1.4k -4.1 dB', notch: '209 Hz -21.6 dB', tilt: '+5.0 dB' });
+
+    // The 907A's null sits between its 175 Hz low-pass corner and its 250 Hz
+    // first band — a gap the 914's extra 125/175 Hz bands fill, which is why
+    // the 914's deepest hole is up at 6.5 kHz instead. The clearest difference
+    // between the two banks, and readable from neither module's knobs.
+    expect(moogBankNotch(MOOG907A_BANK, defaults(MOOG907A_BANK)).hz).toBeLessThan(
+      MOOG907A_BANK.spec.centers[0]!,
+    );
+    expect(moogBankNotch(MOOG914_BANK, defaults(MOOG914_BANK)).hz).toBeGreaterThan(
+      MOOG914_BANK.spec.centers.at(-1)!,
+    );
+  });
+
   it('the model evaluates at a NOMINAL rate — the 44.1 kHz spread is measured, not shrugged at', () => {
     // `FaceReadoutValue` receives a param reader and nothing else, so the
     // readouts cannot ask the live AudioContext for its sample rate. This pins
