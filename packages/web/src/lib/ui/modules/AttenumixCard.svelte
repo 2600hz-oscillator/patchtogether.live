@@ -12,11 +12,23 @@
   import { attenumixDef } from '$lib/audio/modules/attenumix';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
-  import { cardParams, portsFromDef } from './card-kit';
+  import { cardParams, paramSpec, portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
-  const { defaultFor, paramVal, set, live } = cardParams(attenumixDef, () => id, () => node);
+  const { paramVal, set, live } = cardParams(attenumixDef, () => id, () => node);
+
+  // ── RANGES COME FROM THE DEF, NEVER RE-TYPED ────────────────────────────
+  // The backdraft class (CLAUDE.md): every gate we own reads the DEF, so a card
+  // restating its def's numbers can disagree with it and NOTHING can see that.
+  // It matters more here than usual now that this module is FACED — the dock
+  // full view renders straight off the ParamDef while the legacy card renders
+  // off whatever it typed, so a divergence would be two different travels for
+  // the same knob depending on which surface you reached it through.
+  // Enrolled in RANGE_BOUND_CARDS + MAPPING_BOUND_CARDS
+  // (card-range-source.test.ts) — an unlisted card is one the guard is blind
+  // to, so the enrolment is half the fix.
+  const pMaster = paramSpec(attenumixDef, 'master');
 
 
   // Ports — generated channel-by-channel so source order reads L→R per
@@ -30,7 +42,11 @@
     out1: 'OUT 1', out2: 'OUT 2', out3: 'OUT 3', out4: 'OUT 4',
   });
 
-  const channels = [1, 2, 3, 4] as const;
+  // The channel strips, DERIVED from the def's own attenuator params rather
+  // than written down — so "how many channels" is never a literal anybody has
+  // to keep in step with the def (CLAUDE.md: never hand-type a population
+  // count), and each strip carries its own ParamDef.
+  const channels = attenumixDef.params.filter((p) => /^att\d+$/.test(p.id));
 </script>
 
 <div class="mod-card attenumix-card">
@@ -40,26 +56,26 @@
   <PatchPanel nodeId={id} {inputs} {outputs} panelWidth={300}>
     <div class="body">
       <div class="strips">
-        {#each channels as ch (ch)}
+        {#each channels as p (p.id)}
           <div class="strip">
             <Fader
-              value={paramVal(`att${ch}`, 0)}
-              min={0} max={1} defaultValue={defaultFor(`att${ch}`)}
-              label={`Att ${ch}`}
-              curve="linear"
-              onchange={set(`att${ch}`)} moduleId={id} paramId={`att${ch}`}
-              readLive={live(`att${ch}`)}
+              value={paramVal(p.id, p.defaultValue)}
+              min={p.min} max={p.max} defaultValue={p.defaultValue}
+              label={p.label ?? p.id}
+              curve={p.curve}
+              onchange={set(p.id)} moduleId={id} paramId={p.id}
+              readLive={live(p.id)}
             />
           </div>
         {/each}
         <div class="strip master">
           <Fader
-            value={paramVal('master', 1.0)}
-            min={0} max={2} defaultValue={defaultFor('master')}
-            label="Master"
-            curve="linear"
-            onchange={set('master')} moduleId={id} paramId="master"
-            readLive={live('master')}
+            value={paramVal(pMaster.id, pMaster.defaultValue)}
+            min={pMaster.min} max={pMaster.max} defaultValue={pMaster.defaultValue}
+            label={pMaster.label ?? pMaster.id}
+            curve={pMaster.curve}
+            onchange={set(pMaster.id)} moduleId={id} paramId={pMaster.id}
+            readLive={live(pMaster.id)}
           />
         </div>
       </div>

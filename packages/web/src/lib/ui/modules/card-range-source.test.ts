@@ -75,6 +75,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { stripSourceComments } from '$lib/source-guards/strip-source-comments';
 import { adsrDef } from '$lib/audio/modules/adsr';
+import { attenumixDef } from '$lib/audio/modules/attenumix';
 import { analogVcoDef } from '$lib/audio/modules/analog-vco';
 import { backdraftDef } from '$lib/video/modules/backdraft';
 import { chromaconsoleDef } from '$lib/audio/modules/chromaconsole';
@@ -234,6 +235,13 @@ import type { ParamDef } from '$lib/graph/types';
  */
 const RANGE_BOUND_CARDS: Readonly<Record<string, { params: readonly ParamDef[] }>> = {
   'AdsrCard.svelte': adsrDef,
+  // Converted with its FACEPLATE (queue Q6), which is when the divergence would
+  // have started to cost: a faced module renders the DOCK straight off the
+  // ParamDef and the legacy card off whatever it typed, so the same knob would
+  // have had two travels depending on which surface you reached it through.
+  // Its channel strips are derived from the def's own `att\d+` params, so each
+  // Fader carries its ParamDef and there is no per-channel literal at all.
+  'AttenumixCard.svelte': attenumixDef,
   // ⚠ THESE TWO WERE FOUND BY THE COMMENT FIX, NOT ADDED ALONGSIDE IT. Both
   // were already fully def-bound in source; the artifact anchor could not
   // demand their enrolment because each card's own comment quotes the literals
@@ -273,6 +281,9 @@ const RANGE_BOUND_CARDS: Readonly<Record<string, { params: readonly ParamDef[] }
  */
 const MAPPING_BOUND_CARDS: readonly string[] = [
   'AdsrCard.svelte',
+  // Range AND mapping: every Fader reads min/max/defaultValue/label/curve off
+  // the ParamDef it was derived from, so nothing is restated.
+  'AttenumixCard.svelte',
   // Range AND mapping: every Fader reads `P.<id>.{min,max,curve,units}` off
   // `paramSpec(karplusDef, …)`. See the note in RANGE_BOUND_CARDS for why it
   // was not enrolled until the comment stripper landed.
