@@ -14,9 +14,11 @@
 //            chaotic clock for sequencers / drum triggers.
 //   burst  — clusters of 3-7 closely-spaced triggers fired at probability
 //            burst_probability per woggle event.
-//   ring   — audio-rate output that mixes the smooth voltage with a
-//            sub-harmonic sine via ring modulation. Buchla's signature
-//            "complex random" texture.
+//   ring   — the smooth voltage ring-modulated against a sine
+//            sub-oscillator at rate/4. ⚠ SUB-AUDIO AT EVERY KNOB
+//            POSITION — see BUGGLES_RING_* below. It is declared
+//            `audio` so it patches into the audio path, and it is a
+//            SLOW product there, not a tone.
 //
 // Inputs:
 //   clock_cv      — CV → woggle rate. Sums onto the rate knob value.
@@ -72,6 +74,7 @@
 // arrives (above 0.5), we fire the same woggle-event handler. The
 // internal setTimeout is suppressed while external clock is active.
 
+import { createEdgeCounter } from '$lib/audio/edge-detect';
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
 
@@ -140,6 +143,78 @@ const CLOCK_PULSE_MS = 5;
 const BURST_GAP_MS = 18;     // spacing between burst pulses
 const BURST_PULSE_MS = 4;    // each burst pulse width
 
+// ── The EXTERNAL-CLOCK poller, and the relation the two numbers must satisfy ──
+//
+// ⚠ THESE TWO ARE ONE FACT, NOT TWO SETTINGS. `external_clock` is detected on
+// the MAIN THREAD: a `setInterval` wakes every BUGGLES_EXT_POLL_MS and reads the
+// tap's AnalyserNode ring. A poll can only see the samples that are IN the ring,
+// so the ring must be at least as long as the gap between polls — otherwise the
+// detector inspects a window and then SLEEPS THROUGH the rest of the timeline,
+// and every rising edge that lands in the gap is gone.
+//
+// MEASURED, and it is why this pair is now derived rather than typed apart. The
+// shipped values were `fftSize = 32` (0.667 ms @ 48 kHz) against a 33 ms poll —
+// a 2.0 % duty cycle on the detector. Modelling the shipped algorithm sample by
+// sample over a 5 ms gate train gave a capture ratio of 16.7 % (1 edge in 6),
+// FLAT across 1 / 2 / 4 / 8 / 16 Hz clocks, because the answer is geometric:
+// (pulseWidth + bufferWidth) / pollInterval = (5 + 0.667) / 33. Five of every
+// six external clock pulses were silently dropped at every tempo.
+//
+// The fix is NOT "a bigger fftSize" — a whole-buffer rescan of a 2048-sample
+// ring against a 33 ms tick OVER-counts instead (measured 143.8-150.0 %: the
+// ~9.7 ms overlap re-presents an edge on two consecutive polls, the
+// NUMPAD+/ATLANTIS-CATALYST bug class). It is `$lib/audio/edge-detect`
+// `createEdgeCounter`, which scans only the `ceil(elapsed × sampleRate)` samples
+// that ARRIVED since the previous poll: measured 100.0 % at every rate above.
+// CLAUDE.md requires that seam for exactly this reason; this module predates it.
+//
+// ⚠ THE CEILING THIS LEAVES, stated rather than discovered later: one poll fires
+// at most one woggle event, so external clocks faster than 1 / POLL_MS ≈ 30 Hz
+// COALESCE. That is a property of a main-thread poller, not of the detector, and
+// every clock source in this rack is far below it (a sequencer at 240 bpm is
+// 4 Hz). `buggles.test.ts` pins both the relation and the ceiling.
+export const BUGGLES_EXT_POLL_MS = 33;
+/** ≥ `BUGGLES_EXT_POLL_MS × sampleRate` at 48 kHz (1584 samples) — asserted,
+ *  not assumed, in `buggles.test.ts`. 2048 is the repo's analyser convention. */
+export const BUGGLES_EXT_FFT_SIZE = 2048;
+/** The sample rate the poll/ring relation is asserted at. Not a DSP constant —
+ *  the relation must hold at the rate the browser actually runs. */
+export const BUGGLES_EXT_ASSERT_SAMPLE_RATE = 48000;
+
+// ── The RING carrier, and the claim it does NOT support ──────────────────────
+//
+// ⚠ RING IS SUB-AUDIO AT EVERY KNOB POSITION, AND THE DOCS USED TO SAY THE
+// OPPOSITE. `subOsc.frequency = rateKnobToHz(rate) / BUGGLES_RING_DIVISOR`, and
+// `rateKnobToHz` tops out at 50 Hz, so the carrier's CEILING is 12.5 Hz — below
+// the ~20 Hz floor of hearing. Read off the REAL OscillatorNode this factory
+// constructs (an intercepted `ctx.createOscillator` in an OfflineAudioContext),
+// across the whole travel:
+//
+//   rate 0     → woggle  0.1000 Hz → carrier  0.02500 Hz
+//   rate 0.25  → woggle  0.4729 Hz → carrier  0.11822 Hz
+//   rate 0.4 ▲ → woggle  1.2011 Hz → carrier  0.30028 Hz   (the shipped default)
+//   rate 0.5   → woggle  2.2361 Hz → carrier  0.55902 Hz
+//   rate 0.75  → woggle 10.5737 Hz → carrier  2.64343 Hz
+//   rate 1     → woggle 50.0000 Hz → carrier 12.50000 Hz   (the ceiling)
+//
+// Four places said "audio-rate … patchable straight into the audio path" and one
+// said "fast enough to be audible-rate"; all five were the #1701 class — a false
+// VALUE, not a false structure, so `contract-lock` (which pins `ring` as
+// `type: 'audio'`, correctly) and `module-docs-lint` (which checks the doc
+// EXISTS) were both blind. So was the one ART leg named for RING: it builds a
+// **200 Hz** oscillator to mirror the construction, 667× above the real one, and
+// is therefore invariant to the exact dimension that was wrong.
+//
+// The DSP is UNCHANGED — a saved rack with a RING cable must keep sounding as it
+// does. What changed is the claim. `buggles.test.ts` asserts the ceiling against
+// BUGGLES_AUDIBILITY_FLOOR_HZ over the whole travel, so making RING audible now
+// requires editing the prose in the same diff.
+export const BUGGLES_RING_DIVISOR = 4;
+/** The bottom of human hearing, in Hz. A POLICY threshold on a measured
+ *  quantity (not a population count): the line the RING carrier is asserted to
+ *  stay below at every knob position. */
+export const BUGGLES_AUDIBILITY_FLOOR_HZ = 20;
+
 export const bugglesDef: AudioModuleDef = {
   type: 'buggles',
   palette: { top: 'Audio modules', sub: 'Utility' },
@@ -176,7 +251,7 @@ export const bugglesDef: AudioModuleDef = {
 
   docs: {
     explanation:
-      "A chaotic random-voltage source in the Buchla / Make Noise wogglebug tradition. An internal 'woggle clock' fires at the Rate you set (with Chaos adding timing jitter), and each tick rolls a fresh random voltage that sprays out across five correlated outputs at once: a slowly-slewing SMOOTH voltage, a jumpy sample-and-held STEPPED voltage, a CLOCK gate pulsing on every woggle event, an occasional BURST of clustered triggers, and an audio-rate RING output (the smooth voltage ring-modulated with a sub-oscillator) for Buchla's signature 'complex random' texture. Patch SMOOTH into pitch or filter CV for warbling drift, STEPPED for brittle melodic randomness, CLOCK to clock a sequencer, BURST for stuttered fills, and RING straight to audio. You can also feed it an external clock to lock the chaos to your tempo.",
+      "A chaotic random-voltage source in the Buchla / Make Noise wogglebug tradition. One roll of the dice, five correlated views of it. An internal 'woggle clock' fires at the Rate you set (with Chaos adding timing jitter), and each tick rolls a fresh random voltage that sprays out across five outputs at once: a slowly-slewing SMOOTH voltage, a jumpy sample-and-held STEPPED voltage, a CLOCK gate pulsing on every woggle event, an occasional BURST of clustered triggers, and a RING output that ring-modulates the smooth voltage against a sub-oscillator. Patch SMOOTH into pitch or filter CV for warbling drift, STEPPED for brittle melodic randomness, CLOCK to clock a sequencer, and BURST for stuttered fills — and because all five come from the same roll, everything you patch drifts together. RING is the odd one out: it is typed as audio so it reaches the audio path, but its carrier is a quarter of the woggle rate and therefore SUB-AUDIO at every knob position (0.025 Hz at the bottom of Rate, 12.5 Hz at the top), so it is a slow shuddering product to modulate with, not a tone to listen to. You can also feed it an external clock to lock the chaos to your tempo.",
     inputs: {
       clock_cv: "CV that sums onto the Rate knob, speeding up or slowing the internal woggle clock (sampled at each woggle event rather than continuously).",
       chaos_cv: "CV that sums onto the Chaos knob, modulating how random/jittery the voltages and timing get.",
@@ -187,7 +262,7 @@ export const bugglesDef: AudioModuleDef = {
       stepped: "A sample-and-held random voltage that hard-jumps to a fresh value on every woggle event — brittle, steppy modulation for random melodies or jumpy timbres.",
       clock: "A gate output that pulses (~5 ms) on every woggle event — a chaotic clock you can use to trigger sequencers, envelopes, or drums; its rate and jitter follow Rate + Chaos.",
       burst: "A gate output that, with probability set by the Burst control, fires a cluster of 3–7 closely-spaced trigger pulses on a woggle event — for ratchets, stutters, and fills.",
-      ring: "An audio-rate output: the smooth voltage ring-modulated against a sub-oscillator tracking the woggle rate — the Buchla 'complex random' texture, patchable straight into the audio path.",
+      ring: "The SMOOTH voltage ring-modulated against a sine sub-oscillator running at a quarter of the woggle rate. It is typed as audio so it patches into the audio path, but the carrier is SUB-AUDIO everywhere on the dial — 0.025 Hz at the bottom of Rate, 0.30 Hz where the module spawns, 12.5 Hz flat out — so what comes out is a slow shuddering product, not a tone. Use it as a modulation source with more life than SMOOTH alone, or as the input to something that can hear it; do not expect a Buchla 'complex random' timbre straight into the speakers.",
     },
     controls: {
       rate: "Internal woggle-clock speed (0..1, log-mapped to roughly 0.1–50 Hz): how often new random voltages are rolled. The Clock CV input adds to this.",
@@ -256,15 +331,16 @@ export const bugglesDef: AudioModuleDef = {
 
     // ---------------- Ring output ----------------
     //
-    // ring = smooth × suboscillator. The suboscillator is a slow sine
-    // running at rate/4 — slow enough that the smooth voltage shapes
-    // it visibly, but fast enough to be audible-rate. Implemented via
-    // an OscillatorNode + GainNode multiplier (the audio×param trick:
+    // ring = smooth × suboscillator. The suboscillator is a sine at
+    // rate/BUGGLES_RING_DIVISOR — SUB-AUDIO across the entire knob
+    // travel (0.025 Hz .. 12.5 Hz; see the BUGGLES_RING_* block above,
+    // which carries the measurement). Implemented via an
+    // OscillatorNode + GainNode multiplier (the audio×param trick:
     // gain.value = 0; smooth → gain.gain; oscillator → gain input).
     const subOsc = ctx.createOscillator();
     subOsc.type = 'sine';
     // Initial frequency from the rate knob; updated as rate changes.
-    subOsc.frequency.value = bugglesMath.rateKnobToHz(rateKnob) / 4;
+    subOsc.frequency.value = bugglesMath.rateKnobToHz(rateKnob) / BUGGLES_RING_DIVISOR;
     subOsc.start();
 
     const ringMul = ctx.createGain();
@@ -310,36 +386,32 @@ export const bugglesDef: AudioModuleDef = {
 
     // ---------------- External-clock detection ----------------
     //
-    // When external_clock is patched, an AnalyserNode samples the
-    // incoming gate signal each setInterval tick. A rising-edge
-    // detection (last < 0.5 && current >= 0.5) fires a woggle event
-    // and disables the internal scheduler until the gate input falls
-    // back to silence (no edges for 1 second).
+    // When external_clock is patched, an AnalyserNode taps the incoming
+    // gate and the scheduler's setInterval asks the SHARED windowed
+    // edge counter how many rising edges arrived since the last poll.
+    // Any edge fires a woggle event and suppresses the internal
+    // scheduler until the gate input goes quiet (no edges for 1 second).
+    //
+    // ⚠ `createEdgeCounter`, NOT a hand-rolled buffer scan. See the
+    // BUGGLES_EXT_* block at the top of this file for the measurement:
+    // the hand-rolled version this replaced captured 16.7 % of the
+    // pulses the user sent, at every clock rate.
     const extClockAnalyser = ctx.createAnalyser();
-    extClockAnalyser.fftSize = 32;
+    extClockAnalyser.fftSize = BUGGLES_EXT_FFT_SIZE;
     extClockAnalyser.smoothingTimeConstant = 0;
-    const extClockBuf = new Float32Array(32);
-    let lastExtSample = 0;
+    const extEdges = createEdgeCounter({ ctx, analyser: extClockAnalyser });
     // -Infinity so externalClockActive() returns false until a real edge
     // arrives. (Initial 0 made the helper return true for the first
     // second, which suppressed the internal scheduler reschedule and
     // froze every output at its first-event value.)
     let lastExtEdgeT = -Infinity;
     function checkExternalClock(): boolean {
-      // Reads the most recent 32 samples; returns true if a rising edge
-      // is detected since the last check, false otherwise. Side effect:
-      // updates lastExtSample.
-      extClockAnalyser.getFloatTimeDomainData(extClockBuf);
-      let edge = false;
-      for (let i = 0; i < extClockBuf.length; i++) {
-        const s = extClockBuf[i]!;
-        if (lastExtSample < 0.5 && s >= 0.5) {
-          edge = true;
-          lastExtEdgeT = ctx.currentTime;
-        }
-        lastExtSample = s;
-      }
-      return edge;
+      // ⚠ ONE woggle event per POLL, not per edge — see the coalescing
+      // ceiling in the BUGGLES_EXT_* block. Below ~30 Hz (every clock in
+      // this rack) a poll sees at most one edge, so this IS per-pulse.
+      const edges = extEdges.poll(ctx.currentTime);
+      if (edges > 0) lastExtEdgeT = ctx.currentTime;
+      return edges > 0;
     }
     function externalClockActive(): boolean {
       // Consider external clock "active" if we've seen any edge in the
@@ -396,7 +468,7 @@ export const bugglesDef: AudioModuleDef = {
 
       // 6. Update sub-osc frequency to track the new rate (smoothly).
       subOsc.frequency.cancelScheduledValues(now);
-      subOsc.frequency.linearRampToValueAtTime(rateHz / 4, now + 0.05);
+      subOsc.frequency.linearRampToValueAtTime(rateHz / BUGGLES_RING_DIVISOR, now + 0.05);
 
       // 7. Schedule next internal woggle (if external clock isn't active).
       if (!externalClockActive()) {
@@ -410,9 +482,8 @@ export const bugglesDef: AudioModuleDef = {
     // waiting up to 10 seconds at the lowest rate.
     timer = setTimeout(fireWoggleEvent, 50);
 
-    // External-clock polling: 30Hz check rate. If a rising edge arrives,
-    // fire a woggle event AND clear the internal timer so we don't get
-    // double-triggers.
+    // External-clock polling. If a rising edge arrives, fire a woggle
+    // event AND clear the internal timer so we don't get double-triggers.
     extClockPoller = setInterval(() => {
       if (checkExternalClock()) {
         if (timer !== null) {
@@ -429,7 +500,7 @@ export const bugglesDef: AudioModuleDef = {
         );
         timer = setTimeout(fireWoggleEvent, nextPeriodS * 1000);
       }
-    }, 33);
+    }, BUGGLES_EXT_POLL_MS);
 
     return {
       domain: 'audio',
