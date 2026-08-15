@@ -221,15 +221,6 @@ interface RenderRequest {
   knob?: { paramId: string; value: number };
 }
 
-/** Tear a rendered module down: the def's own `dispose()` (stops oscillators,
- *  drops connections) then the context itself where the runtime offers it.
- *  Both are best-effort — a module that throws on teardown must not turn a
- *  measurement into a factory error. */
-function releaseHandle(handle: { dispose?: () => void }, ctx: unknown): void {
-  try { handle.dispose?.(); } catch { /* teardown is not the subject */ }
-  try { (ctx as { close?: () => unknown }).close?.(); } catch { /* not offline-required */ }
-}
-
 async function renderLeg(
   def: AudioModuleDef,
   outIds: readonly string[],
@@ -282,14 +273,7 @@ async function renderLeg(
     });
     merger.connect(ctx.destination);
     const rendered = await ctx.startRendering();
-    const channels = outIds.map((_, k) => rendered.getChannelData(k).slice());
-    // RELEASE THE RENDER. Each OfflineAudioContext holds native resources and
-    // this sweep builds ~700 of them; leaving the module's oscillators running
-    // and the context open made later modules progressively slower until the
-    // whole hook blew its budget. `dispose()` is the module's own teardown, so
-    // this also exercises it 700 times — free coverage.
-    releaseHandle(handle, ctx);
-    return { ok: true, channels };
+    return { ok: true, channels: outIds.map((_, k) => rendered.getChannelData(k).slice()) };
   } catch (e) {
     return { ok: false, error: String((e as Error)?.message ?? e).slice(0, 140) };
   }
@@ -381,7 +365,6 @@ async function measureDef(def: AudioModuleDef): Promise<{
       if (prior !== undefined) sharedParams.push({ a: prior, b: port.id });
       else seen.set(param, port.id);
     }
-    releaseHandle(handle, ctx);
   } catch { /* covered by the factoryError branch above */ }
 
   const basePeak = peakOf(base);
@@ -458,6 +441,13 @@ let MEASURED: PortMeasurement[] = [];
 let FACTORY_ERRORS = new Map<string, string>();
 let SHARED = new Map<string, { a: string; b: string }[]>();
 let DEFS: AudioModuleDef[] = [];
+/** Per-module wall time, reported (never asserted). A wall-clock number is a
+ *  property of the MACHINE, not of the code — measured on this tree, the same
+ *  unchanged sweep took 127 s on an idle box and 50 min at load average 44,
+ *  and the per-module ordering inverted completely. It is printed to point at
+ *  the expensive modules when someone needs to make this cheaper; anything
+ *  that GATED on it would be a different assertion on every runner. */
+const COST: { module: string; ms: number; ports: number }[] = [];
 
 describe('CV param reach — every declared paramTarget input must move its module', () => {
   beforeAll(async () => {
@@ -467,8 +457,7 @@ describe('CV param reach — every declared paramTarget input must move its modu
     for (const def of DEFS) {
       const t0 = Date.now();
       const r = await measureDef(def);
-      // eslint-disable-next-line no-console
-      console.log(`[cv-param-reach] ${def.type}: ${r.rows.length} port(s) in ${Date.now() - t0}ms${r.factoryError ? ' FACTORY_ERROR ' + r.factoryError : ''}`);
+      COST.push({ module: def.type, ms: Date.now() - t0, ports: r.rows.length });
       if (r.factoryError) FACTORY_ERRORS.set(def.type, r.factoryError);
       if (r.sharedParams.length) SHARED.set(def.type, r.sharedParams);
       MEASURED = MEASURED.concat(r.rows);
@@ -637,9 +626,12 @@ describe('CV param reach — every declared paramTarget input must move its modu
       'declared paramTarget ports that were never measured AND have no named reason',
     ).toEqual([]);
 
+    const slowest = [...COST].sort((a, b) => b.ms - a.ms).slice(0, 5)
+      .map((c) => `${c.module} ${(c.ms / 1000).toFixed(1)}s/${c.ports}p`).join(', ');
     // eslint-disable-next-line no-console
     console.log(
-      `[cv-param-reach] declared=${declared.length} measured=${measuredKeys.size} `
+      `[cv-param-reach] slowest: ${slowest} (wall time — a MACHINE property, never a gate) | `
+      + `declared=${declared.length} measured=${measuredKeys.size} `
       + `unmeasured=${unmeasured.length} (all inside 'harness-cannot-materialize' modules) `
       + `| cv leg via node-input=${viaNodeInput} via param=${MEASURED.length - viaNodeInput} `
       + `| BLIND TO: Faust worklets, non-audio consumers (card/video/MIDI), main-thread pumps, and whether the movement is CORRECT.`,
