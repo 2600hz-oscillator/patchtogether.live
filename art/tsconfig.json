@@ -1,0 +1,37 @@
+{
+  // #1604 (art half; dsp half in the same issue) — the ART workspace typechecks.
+  // Wired into `npm run typecheck` (root --workspaces) via the `typecheck`
+  // script in art/package.json; the workspace-coverage guard
+  // (packages/web/src/lib/ui/workspace-typecheck-guard.test.ts) asserts every
+  // TS-bearing workspace defines that script, so the `--if-present` hole
+  // cannot silently reopen. Config recovered from the #1499 probe (mirrors
+  // e2e/tsconfig.json): types = [node, vite/client, svelte] + $lib paths.
+  "compilerOptions": {
+    "target": "ES2022",
+    // DOM libs: scenarios drive packages/dsp worklet sources and packages/web
+    // model files, which reference MessagePort/AudioContext-shaped types.
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "noEmit": true,
+    // Deps only: skips .d.ts of node_modules. Our own files are fully checked.
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "noUncheckedIndexedAccess": false,
+    // "node" for the vitest/Node runner side; "vite/client" + "svelte" because
+    // cross-imported packages/web model files are compiled under those ambients
+    // in their home workspace (import.meta.env, $state runes in .svelte.ts) —
+    // checking them here without the same ambients would report false errors.
+    "types": ["node", "vite/client", "svelte"],
+    // Scenarios import pure model files from packages/web directly (clip math,
+    // face models, video defs, …). Those files use $lib aliases internally.
+    "paths": {
+      "$lib/*": ["../packages/web/src/lib/*"]
+    }
+  },
+  "include": ["**/*.ts"],
+  "exclude": ["node_modules"]
+}

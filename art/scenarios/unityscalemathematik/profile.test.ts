@@ -43,6 +43,9 @@ const B_ATTEN = -1.0; // inverted (attenuverter)
 async function renderProfile(): Promise<Record<string, Float32Array>> {
   const Proc = await captureWorkletProcessor(
     'unityscalemathematik',
+    // @ts-expect-error TS2306 — import-less worklet entry has no module shape; side-effect
+    // import only, ctor captured via the registerProcessor shim. `export {}` would leak into
+    // dist and break ART's classic-script eval (memory: dsp-worklet-no-top-level-export).
     () => import('../../../packages/dsp/src/unityscalemathematik'),
     SR,
   );

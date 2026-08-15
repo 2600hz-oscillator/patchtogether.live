@@ -48,6 +48,9 @@ let Ctor: WorkletProcessorCtor;
 beforeAll(async () => {
   Ctor = await captureWorkletProcessor(
     'clouds',
+    // @ts-expect-error TS2306 — import-less worklet entry has no module shape; side-effect
+    // import only, ctor captured via the registerProcessor shim. `export {}` would leak into
+    // dist and break ART's classic-script eval (memory: dsp-worklet-no-top-level-export).
     () => import('../../../packages/dsp/src/clouds'),
     SR,
   );

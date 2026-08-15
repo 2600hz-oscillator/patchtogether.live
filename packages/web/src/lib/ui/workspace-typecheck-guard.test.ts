@@ -49,17 +49,11 @@ function repoRoot(): string {
 }
 
 /** Named deny-by-default exemptions. The `why` is load-bearing prose — it
- *  must say what blocks coverage, not that it is blocked. */
-const EXEMPT: ReadonlyArray<{ workspace: string; why: string }> = [
-  {
-    workspace: 'art',
-    why:
-      'ART scenarios import packages/dsp worklet sources directly (side-effect, non-module files), ' +
-      'so art needs its own program config ($lib/vite/svelte ambients + paths) and a residual-error ' +
-      'triage; packages/dsp itself is covered since #1604 (shared worklet-globals.d.ts) — art is the ' +
-      'remaining half of that issue.',
-  },
-];
+ *  must say what blocks coverage, not that it is blocked. EMPTY since #1604
+ *  paid the last entry (dsp, then art): every TS-bearing workspace defines
+ *  `typecheck`. The type and the anchoring test below stay — the next entry
+ *  must arrive with a why, and a stale one still reddens. */
+const EXEMPT: ReadonlyArray<{ workspace: string; why: string }> = [];
 
 interface PkgJson {
   workspaces?: string[];

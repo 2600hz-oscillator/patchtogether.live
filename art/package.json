@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "test": "vitest run --config vitest.config.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
     "art:update": "UPDATE_BASELINES=1 vitest run --config vitest.config.ts",
     "art:listen": "node scripts/listen-diff.mjs"
   },
