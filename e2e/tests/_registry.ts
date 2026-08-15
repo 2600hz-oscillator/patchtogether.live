@@ -4,21 +4,29 @@
 //
 // Why this exists: Playwright resolves `for (const x of X) test(...)`
 // loops at file-parse time, BEFORE the browser is up. We can't
-// `await page.evaluate()` at module load. So the unit-test pass
-// (`packages/web/src/lib/dev/registry-manifest.test.ts`) emits a JSON
-// snapshot of every registered module def to
+// `await page.evaluate()` at module load. So an explicit generate step
+// (`task test:emit-manifest` → `packages/web/src/lib/dev/registry-manifest.ts`)
+// emits a JSON snapshot of every registered module def to
 // `e2e/.generated/registry-manifest.json`, and every Playwright spec
 // that wants to iterate the registry reads that JSON synchronously at
 // file-parse time via this helper.
 //
-// CI ordering: `task ci` chains `task test` (which emits the manifest)
-// before `task e2e` and `task vrt`. Locally, `task test:emit-manifest`
-// runs the same emitter standalone. If the manifest is missing or its
-// schemaVersion is unrecognised, the fixture throws — the per-spec
-// error message tells the developer which command to run.
+// ORDERING: every lane that reads the manifest declares
+// `test:emit-manifest` as a task dep (`task e2e`, `task vrt`, …), and the CI
+// jobs that call playwright directly run it as an explicit step. `task test`
+// deliberately does NOT emit it any more (#1526) — a unit suite that mutates
+// the tree as a side effect made "which lane ran last" decide what e2e tests
+// exist.
+//
+// If the manifest is missing, its schemaVersion is unrecognised, or its
+// recorded source fingerprint does not match this checkout, the fixture
+// THROWS — the per-spec error message names the command to run.
 
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+
+// fs-only, no `$lib` and no def barrel — importable from the Playwright runner.
+import { manifestSourceFingerprint } from '../../packages/web/src/lib/dev/registry-manifest-basis';
 
 export interface RegistryPort {
   id: string;
@@ -62,11 +70,17 @@ export interface RegistryModule {
 
 interface ManifestFile {
   schemaVersion: number;
-  generatedAt: string;
+  /** sha256 over the module-def SOURCE bytes the manifest was built from.
+   *  Recomputed here from disk — see the staleness check in loadManifest. */
+  sourceFingerprint?: string;
   modules: RegistryModule[];
 }
 
 const EXPECTED_SCHEMA = 2;
+
+/** The one command that refreshes the artifact. Named in every failure below
+ *  so the reader never has to guess. */
+const REGEN = 'flox activate -- task test:emit-manifest';
 
 function manifestPath(): string {
   // This file lives at e2e/tests/_registry.ts; the manifest lives at
@@ -81,8 +95,7 @@ function loadManifest(): ManifestFile {
   const path = manifestPath();
   if (!existsSync(path)) {
     throw new Error(
-      `Registry manifest missing at ${path}. Run \`flox activate -- task test:emit-manifest\` ` +
-      `(or \`flox activate -- task test\`, which includes the emitter) to refresh it. ` +
+      `Registry manifest missing at ${path}. Run \`${REGEN}\` to emit it. ` +
       `CI's task chain runs this automatically before \`task e2e\` / \`task vrt\`.`,
     );
   }
@@ -91,11 +104,32 @@ function loadManifest(): ManifestFile {
   if (parsed.schemaVersion !== EXPECTED_SCHEMA) {
     throw new Error(
       `Registry manifest schema mismatch at ${path}: got ${parsed.schemaVersion}, ` +
-      `expected ${EXPECTED_SCHEMA}. Re-run the manifest emitter to regenerate.`,
+      `expected ${EXPECTED_SCHEMA}. Run \`${REGEN}\` to regenerate.`,
     );
   }
   if (!Array.isArray(parsed.modules) || parsed.modules.length === 0) {
     throw new Error(`Registry manifest at ${path} has no modules — emitter is broken`);
+  }
+  // STALENESS (#1526). Until this existed, the ONLY checks were "does the file
+  // exist" and "is it schema 2" — so a manifest emitted on another branch was
+  // consumed silently, and WHICH LANE RAN LAST decided which e2e tests existed.
+  // A missing module is a missing test and a missing test is a green run, so
+  // the failure was invisible by construction.
+  //
+  // We cannot rebuild the manifest here to compare — the Playwright process
+  // cannot import the def barrels (worklet `?url` / `.wasm` resolve only inside
+  // Vite). So the check is over SOURCE BYTES: the emitter recorded the
+  // fingerprint of its inputs, and we recompute it with plain fs.
+  const expected = manifestSourceFingerprint();
+  if (parsed.sourceFingerprint !== expected) {
+    throw new Error(
+      `Registry manifest at ${path} is STALE: it was built from module sources ` +
+      `whose fingerprint was ${parsed.sourceFingerprint ?? '(absent — pre-#1526 manifest)'}, ` +
+      `but this checkout's sources fingerprint to ${expected}. Consuming it would ` +
+      `silently run the wrong set of registry-driven tests (a module missing from ` +
+      `the manifest is a test that never runs, which looks exactly like a pass). ` +
+      `Run \`${REGEN}\`.`,
+    );
   }
   return parsed;
 }
