@@ -32,6 +32,7 @@ for attempt in 1 2 3 4 5 6; do
   sleep 5
 done
 
+# shellcheck disable=SC2016 # why: the single quotes are the POINT — this is a Node program, not shell. `$` inside it belongs to JavaScript, and letting the shell expand it would rewrite the source before node ever sees it.
 printf '%s' "$json" | node -e '
 const me = process.argv[1] || "";
 const all = JSON.parse(require("fs").readFileSync(0, "utf8"));

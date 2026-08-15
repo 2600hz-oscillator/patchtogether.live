@@ -396,29 +396,43 @@ async function sweepCc(page: Page, cc: number, ms: number): Promise<void> {
  *  the test needs it, however slow the machine is — and releases immediately
  *  when done, so the healthy path gets FASTER (it no longer waits out the
  *  ~600 ms remainder of the fixed hold). */
-function holdCcUntilReleased(
+/** ⚠ #1569: the first stop-signal version of this kept the KEEPALIVE on the
+ *  PLAYWRIGHT side — one cross-process round trip per 50 ms beat. The CC-idle
+ *  release (CC_SETTLE_MS = 200) is an IN-PAGE timer, so runner-side load (ten
+ *  parallel CI shards) stretched the injector's beat past 200 ms while the
+ *  settle timer ran on time: the override released mid-window and the "held"
+ *  param followed the envelope again (observed spread 0.63–0.69 vs the 0.08
+ *  band, twice in 25 runs). The keepalive now lives IN THE PAGE, same clock
+ *  domain as the settle timer: while the page runs timers at all, a 50 ms
+ *  beat structurally outpaces a 200 ms settle; if the page's main thread
+ *  stalls, both stall together and the race cannot re-open. */
+async function holdCcUntilReleased(
   page: Page,
   channel: number,
   cc: number,
   value: number,
-): { release: () => Promise<void> } {
-  let hot = true;
-  let failure: unknown;
-  const loop = (async () => {
-    while (hot) {
-      await injectCc(page, channel, cc, value);
-      await page.waitForTimeout(50);
-    }
-  })().catch((e: unknown) => {
-    // The page went away (a failing assertion tore the test down) — remember it
-    // for release(); never leave an unhandled rejection behind.
-    failure = e;
-  });
+): Promise<{ release: () => Promise<void> }> {
+  await page.evaluate(
+    ({ channel, cc, value }) => {
+      const w = globalThis as unknown as {
+        __midiTestInject: (c: number, cc: number, v: number) => boolean;
+        __e2eCcHold?: { stop: () => void };
+      };
+      w.__e2eCcHold?.stop(); // never stack two holds
+      const id = setInterval(() => {
+        w.__midiTestInject(channel, cc, value);
+      }, 50);
+      w.__e2eCcHold = { stop: () => clearInterval(id) };
+    },
+    { channel, cc, value },
+  );
   return {
     release: async () => {
-      hot = false;
-      await loop;
-      if (failure) throw failure;
+      await page.evaluate(() => {
+        const w = globalThis as unknown as { __e2eCcHold?: { stop: () => void } };
+        w.__e2eCcHold?.stop();
+        delete w.__e2eCcHold;
+      });
     },
   };
 }
@@ -752,14 +766,18 @@ test('per-clip automation: a MIDI CC on an automated param suspends only that pa
   // Hold it hot until WE let go (concurrent) — the CC stays active for exactly
   // as long as the sampling below takes, however slow the machine is, so "the
   // override is still held" is structural rather than a wall-clock race.
-  const twist = holdCcUntilReleased(page, 1, 21, 105);
+  const twist = await holdCcUntilReleased(page, 1, 21, 105);
   await expect(page.getByTestId(`clipplayer-auto-override-${CP}`)).toBeVisible();
   await page.waitForTimeout(220);
 
   const vaHeld = await sampleSpread(page, 'va', 'base', 6, 70);
   const vbLive = await sampleSpread(page, 'vb', 'base', 6, 70);
   await twist.release(); // only NOW let the twist stop → the CC stream goes idle
-  expect(vaHeld.spread, 'MIDI-twisted param no longer follows the envelope (held while hot)').toBeLessThan(0.08);
+  expect(
+    vaHeld.spread,
+    `MIDI-twisted param no longer follows the envelope (held while hot) — ` +
+      `sampled vals [${vaHeld.vals.map((v) => v.toFixed(3)).join(', ')}] (units: param value)`,
+  ).toBeLessThan(0.08);
   expect(vaHeld.vals.at(-1) ?? 0, 'held near the CC value, not the envelope').toBeGreaterThan(0.6);
   expect(vbLive.spread, 'the OTHER param keeps playing (per-param suspension)').toBeGreaterThan(0.15);
 

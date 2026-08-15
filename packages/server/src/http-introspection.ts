@@ -368,7 +368,7 @@ export function createIntrospectionExtension(
         // is preceded by a `catch` that does nothing on falsy error — but
         // crucially the catch returns BEFORE the default writeHead. Empty
         // string is falsy and skips the rethrow.)
-        // eslint-disable-next-line @typescript-eslint/no-throw-literal
+        // eslint-disable-next-line @typescript-eslint/only-throw-error -- renamed in typescript-eslint v8; the literal throw is the documented Hocuspocus signal above
         throw '';
       }
       if (path === '/metrics') {
@@ -378,7 +378,7 @@ export function createIntrospectionExtension(
           'Cache-Control': 'no-store',
         });
         payload.response.end(body);
-        // eslint-disable-next-line @typescript-eslint/no-throw-literal
+        // eslint-disable-next-line @typescript-eslint/only-throw-error -- renamed in typescript-eslint v8; the literal throw is the documented Hocuspocus signal above
         throw '';
       }
       // Any other path: do nothing → default 200 OK from Hocuspocus.

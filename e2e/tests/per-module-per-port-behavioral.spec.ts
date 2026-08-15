@@ -2879,6 +2879,45 @@ interface DeltaResult {
   description: string;
 }
 
+/** Diagnostic mode: omit every perturbation edge, so the "patched" arm is the
+ *  control patch run twice. ONE definition — the per-port loop and the
+ *  end-of-test self-validation (#1330) must not read it separately. */
+const NEGATIVE_CONTROL = process.env.BEHAVIORAL_NEGATIVE_CONTROL === '1';
+
+/**
+ * TRUE when the patched capture is BIT-IDENTICAL to the control — every metric's
+ * mean AND its range, to the last bit (#1330).
+ *
+ * ⚠ THIS IS THE INSTRUMENT CHECK, NOT A MODULE VERDICT. The control render here
+ * is deterministic: the same patch measured twice returns summaries that match
+ * to the last printed digit, INCLUDING their dispersion. So a perturbation that
+ * actually landed cannot produce identity — a dead CV still resamples the same
+ * noise and moves a range somewhere. Identity means the patched arm rendered the
+ * CONTROL patch: the perturbation edge never reached the engine before the
+ * capture.
+ *
+ * Before this existed, that case printed `NO observable delta — Δμ 0.000` — the
+ * SAME line a genuinely dead port prints. The natural remedy for that line is
+ * BEHAVIORAL_SWEEP_EXEMPT, which would have permanently blinded the sweep to a
+ * port that works, with a plausible-looking justification (#1330: the affected
+ * port migrated between runs on unchanged code, which no module property can do).
+ */
+function samplesBitIdentical(control: AggregatedSample, patched: AggregatedSample): boolean {
+  if (control.kind !== patched.kind) return false;
+  const pairs: Array<[{ mean: number; range: number }, { mean: number; range: number }]> = [];
+  if (control.kind === 'audio' && control.audio && patched.audio) {
+    const c = control.audio, q = patched.audio;
+    pairs.push([c.rms, q.rms], [c.peak, q.peak], [c.crest, q.crest],
+               [c.zeroCrossings, q.zeroCrossings], [c.spectralCentroid, q.spectralCentroid]);
+  } else if (control.kind === 'video' && control.video && patched.video) {
+    const c = control.video, q = patched.video;
+    pairs.push([c.variance, q.variance], [c.nonBlackFrac, q.nonBlackFrac]);
+  } else {
+    return false;
+  }
+  return pairs.every(([a, b]) => a.mean === b.mean && a.range === b.range);
+}
+
 function computeDelta(
   control: AggregatedSample,
   patched: AggregatedSample,
@@ -3482,6 +3521,13 @@ test.describe('per-module per-port: BEHAVIORAL input coverage (output changes on
       //  goto('/rack?shell=legacy&seed=none') → spawnPatch(patched) → settle → read → compare
       const failures: string[] = [];
       const passes: string[] = [];
+      // Rows where the INSTRUMENT missed, kept apart from module verdicts so the
+      // two can never be confused for one another again (#1330).
+      const harnessMisses: string[] = [];
+      // Under BEHAVIORAL_NEGATIVE_CONTROL the perturbation edge is omitted on
+      // purpose, so identity is the EXPECTED outcome — counted, not failed, and
+      // asserted non-zero at the end so the detector proves it can fire.
+      let ncIdentityHits = 0;
 
       for (const port of drivableInputs) {
         // Per-port TEST-input source override (e.g. moog911a.trig1 needs a
@@ -3574,7 +3620,7 @@ test.describe('per-module per-port: BEHAVIORAL input coverage (output changes on
         //   flox activate -- env BEHAVIORAL_NEGATIVE_CONTROL=1 \
         //     E2E_SKIP_WEBSERVER=1 npx playwright test \
         //     per-module-per-port-behavioral --grep <module> --workers=1
-        const negativeControl = process.env.BEHAVIORAL_NEGATIVE_CONTROL === '1';
+        const negativeControl = NEGATIVE_CONTROL;
         const patchedEdges: SpawnEdge[] = [
           ...controlEdges,
           ...(negativeControl ? [] : [{
@@ -3610,8 +3656,20 @@ test.describe('per-module per-port: BEHAVIORAL input coverage (output changes on
           thresholdsFor(mod.type, port.id),
           decidingMetricsFor(mod.type, port.id),
         );
+        const identical = samplesBitIdentical(controlSample, patchedSample);
+        if (identical && negativeControl) {
+          // Expected here: this arm has no perturbation edge at all.
+          ncIdentityHits++;
+        }
         if (delta.exceeded) {
           passes.push(`${mod.type}.${port.id} (type=${port.type}) → ${observed.outPort} (type=${observed.outType}): ${delta.description}`);
+        } else if (identical && !negativeControl) {
+          // NOT a module verdict — see samplesBitIdentical.
+          harnessMisses.push(
+            `${mod.type}.${port.id} (type=${port.type}) → ${observed.outPort} (type=${observed.outType}): ` +
+            `PERTURBATION DID NOT LAND — the patched capture is bit-identical to the control ` +
+            `INCLUDING dispersion (${delta.description})`,
+          );
         } else {
           failures.push(`${mod.type}.${port.id} (type=${port.type}) → ${observed.outPort} (type=${observed.outType}): NO observable delta — ${delta.description}`);
         }
@@ -3624,6 +3682,30 @@ test.describe('per-module per-port: BEHAVIORAL input coverage (output changes on
         // eslint-disable-next-line no-console
         console.log(`[behavioral] PASS ${line}`);
       }
+      // ⚠ ASSERTED FIRST AND SEPARATELY: an instrument miss is not evidence
+      // about the module, and must never be answered with an exemption (#1330).
+      expect(
+        harnessMisses,
+        `${mod.type}: the HARNESS missed — these rows measured the control patch twice.\n`
+        + `  DO NOT add them to BEHAVIORAL_SWEEP_EXEMPT: that would blind the sweep to ports\n`
+        + `  that work. The perturbation edge did not reach the engine before the capture;\n`
+        + `  re-run, and if it persists the settle budget (SETTLE_MS) is the suspect.\n    `
+        + `${harnessMisses.join('\n    ')}`,
+      ).toEqual([]);
+
+      if (NEGATIVE_CONTROL) {
+        // SELF-VALIDATION: this mode omits every perturbation edge, so it is a
+        // machine for producing bit-identical pairs. Zero hits would mean the
+        // detector above cannot fire (or the render stopped being deterministic)
+        // — either way the harness-miss assertion would be decoration.
+        expect(
+          ncIdentityHits,
+          `${mod.type}: BEHAVIORAL_NEGATIVE_CONTROL=1 omits every perturbation edge, so at least `
+          + `one row must read bit-identical to its control. Zero hits means samplesBitIdentical `
+          + `cannot fire — the #1330 discriminator would be decoration.`,
+        ).toBeGreaterThan(0);
+      }
+
       expect(
         failures,
         `${mod.type}: every drivable input perturbed the observed output\n  Failures:\n    ${failures.join('\n    ')}\n  Total drivable inputs: ${drivableInputs.length} | Passed: ${passes.length}`,

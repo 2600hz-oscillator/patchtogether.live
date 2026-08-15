@@ -45,7 +45,7 @@ async function readGraph(page: Page): Promise<{ nodes: string[]; edges: string[]
   });
 }
 
-test('Clear patch is undoable: Clear empties the rack, undo restores nodes + edge', async ({ page, rack }) => {
+test('Clear patch is undoable: Clear empties the rack, undo restores nodes + edge', async ({ page, rackDefault }) => {
   // 1. Spawn two real-engine modules + a (cv→cv) edge between them. spawnPatch
   //    bootstraps the engine, mutates the graph in one transact, and waits for
   //    both node wrappers to mount in the DOM (bounded mountTimeout).

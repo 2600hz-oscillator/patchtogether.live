@@ -55,7 +55,7 @@ export interface ErrorWatch {
   assertClean(): void;
 }
 
-export const test = base.extend<{ errorWatch: ErrorWatch; rack: void }>({
+export const test = base.extend<{ errorWatch: ErrorWatch; rack: void; rackDefault: void }>({
   errorWatch: async ({ page }, use) => {
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
@@ -88,6 +88,28 @@ export const test = base.extend<{ errorWatch: ErrorWatch; rack: void }>({
   // against the real shell chrome and the seeded pinned + video-zone nodes.
   rack: async ({ page }, use) => {
     await page.goto('/rack?shell=legacy&seed=none');
+    await page.waitForLoadState('networkidle');
+    await use();
+  },
+
+  // The DEFAULT rack — the renderer every user actually gets (#1606).
+  //
+  // Same nav contract as `rack` minus the `?shell=legacy` opt-out: modules
+  // render as ModuleShell FACEPLATE tiles, so a module's own card testids do
+  // NOT exist in the lane. Only a spec that never reads card-internal DOM
+  // (engine seams, shell chrome, shared .svelte-flow__* selectors) may sit on
+  // this fixture — that is the SHELL-READY class from the #1606 sweep.
+  //
+  // ⚠ What a green run here structurally cannot see: the verbatim
+  // *Card.svelte surfaces (`?shell=legacy`). What a green run on `rack`
+  // structurally cannot see: everything the default renderer paints — #1605
+  // is the proof that "state is right" does not transfer. A rack-LEVEL
+  // feature wants BOTH renderers (see flip-rack-rear-view.spec.ts, #1607).
+  //
+  // LEG-04 (#1515) owns the full fixture inversion; when `rack` itself flips,
+  // fold this back in.
+  rackDefault: async ({ page }, use) => {
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
     await use();
   },
