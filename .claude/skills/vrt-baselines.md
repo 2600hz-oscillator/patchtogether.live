@@ -85,6 +85,36 @@ it. If you find a reference to `EXEMPT_BASELINE_PAIRS`, `darwinOnly`,
   confirmed on #524.)
 
 
+### ⚠ The close+reopen re-fire is NOT reliable — and it used to report success anyway
+
+#1694. When the baseline bot's commit is the PR's HEAD and the `reopened` event
+is not delivered, **no `ci.yml` run is ever created for that SHA**: the PR sits
+`BLOCKED` with zero failures, which is #1184's deadlock by a different route.
+Measured over every 2026-08-15 dispatch that reached the close+reopen — #1677 ✓,
+#1689 ✓, #1692 ✗. The step reported SUCCESS all three times because it never
+looked.
+
+It now verifies its own effect (`scripts/vrt-revalidate-gate.mjs`), retries, and
+**fails red with a PR comment** if no run appears. So:
+
+- **A red `revalidate` job means the PR is deadlocked, not that the capture
+  failed.** The baselines are already pushed. The remedy is one commit: push any
+  non-bot commit on top — the `git merge origin/main` the PR owes anyway.
+- **The whole class disappears if the push stops being a `GITHUB_TOKEN` push.**
+  Set the optional repo secret `VRT_BASELINE_PUSH_TOKEN` (fine-grained PAT or
+  App installation token; Contents + Pull requests, read+write) and the push
+  fires `pull_request: synchronize` by itself — no re-fire, no race. Absent, the
+  workflow behaves as before; the verification is what makes that safe.
+
+⚠ **`?head_sha=` MATCHES THE FULL 40-CHAR SHA ONLY.** An abbreviated SHA does
+not error — it returns `total_count: 0`, which reads exactly like "no run
+exists". Measured: `?head_sha=022c6cc23` → 0 and
+`?head_sha=022c6cc23ad64028f5549359f2f65695541e3a25` → 1, for the same commit.
+**Resolve the SHA before you believe the number** (`gh api repos/OWNER/REPO/commits/<short> --jq .sha`,
+or `node scripts/vrt-revalidate-gate.mjs probe --repo OWNER/REPO --sha <any>`,
+which resolves for you).
+
+
 ### A FOOTER can move every dock baseline — the mechanism is HEIGHT, not pixels
 
 Added 2026-08-09 (#1425). A new footer readout re-pinned **133** baselines

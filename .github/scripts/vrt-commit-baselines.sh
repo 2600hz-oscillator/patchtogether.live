@@ -26,6 +26,15 @@ emit_pushed() {
   fi
 }
 
+# The SHA that was pushed. `revalidate` reports it, and names it in the deadlock
+# notice it comments on a stuck PR (#1694) — so "which commit never got a CI
+# run" is stated rather than reconstructed from timestamps.
+emit_sha() {
+  if [ -n "${GITHUB_OUTPUT:-}" ]; then
+    echo "sha=$1" >>"$GITHUB_OUTPUT"
+  fi
+}
+
 git config user.name "vrt-baseline-bot"
 git config user.email "vrt-baseline-bot@users.noreply.github.com"
 
@@ -60,6 +69,8 @@ git rebase "origin/${REF}"
 
 git push origin "HEAD:${REF}"
 # Set only AFTER a successful push (`set -e` aborts above on failure), so
-# `pushed == 'true'` means the branch really moved.
+# `pushed == 'true'` means the branch really moved. The SHA is read AFTER the
+# rebase, so it is the commit that actually landed on the branch.
 emit_pushed true
-echo "Pushed VRT baselines to ${REF}."
+emit_sha "$(git rev-parse HEAD)"
+echo "Pushed VRT baselines to ${REF} as $(git rev-parse HEAD)."

@@ -8,6 +8,15 @@
 // does not fire CI, and a `workflow_dispatch` run does not count toward a
 // required-status gate (confirmed on PR #524).
 //
+// ⚠ AND THE CLOSE+REOPEN ITSELF IS NOT RELIABLE (#1694) — measured 2 of 3 on
+// 2026-08-15, with #1692 left permanently BLOCKED and zero failures to point
+// at. That is a different failure from the one this file models: here the
+// question is WHETHER THE JOB RUNS, there it is whether running it achieved
+// anything. The job now verifies its own effect and fails loudly when the run
+// never appears; that half lives in scripts/vrt-revalidate-gate{.mjs,.test.ts}.
+// Both halves are load-bearing — a verification step that is SKIPPED is exactly
+// as silent as the unverified re-fire was, which is what this file prevents.
+//
 // ── THE HISTORICAL BUG, AND WHY IT CANNOT RECUR ────────────────────────────
 // The workflow used to be a TWO-PLATFORM matrix and `revalidate` shipped as
 // `needs: [linux, darwin]` with NO `if:`. A job with `needs:` and no `if:`
