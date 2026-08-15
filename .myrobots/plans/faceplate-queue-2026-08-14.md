@@ -1582,3 +1582,416 @@ is no second copy of a name left to disagree.
     came off the shipped worklet; Q19's and Q21's partly did not, and Q19's were
     wrong. Mark which is which — an unmarked derived figure is indistinguishable
     from a measured one, and the builder inherits it as fact.
+
+---
+
+## 16. THE DOMAIN THE POOL NEVER LOOKED AT — VIDEO (owner redirect, 2026-08-15) · #1726
+
+**§11's join filtered on `domain === 'audio'`, and §6's did before it.** So did
+§1's. Three cohorts, one filter, never restated as a decision — which is the
+same failure mode as ranking by param count alone, one level up: **a filter
+applied before the check quietly redefines the check's subject** (`blind-gates`,
+and CLAUDE.md's four-green-and-blind gates verbatim).
+
+Re-run WITHOUT the domain filter, same three sources:
+
+```sh
+# generic-face ∩ ¬STRICT_FACES, SPLIT by domain rather than filtered to one
+```
+
+| | audio | video | meta |
+|---|---|---|---|
+| registered modules | 120 | **68** | 8 |
+| `generic-face` disposition | 93 | **47** | 0 |
+| **PROMOTED (`STRICT_FACES`)** | **all of them** | **ZERO** | — |
+| remaining pool | 51 | **47** | 0 |
+
+**Every promoted face is `audio`. Not one video module is faced**, while video
+is a third of the `generic-face` population. State it as a relation, not a
+pair of counts: `STRICT_FACES ∩ {video defs} = ∅`, and it has been ∅ since the
+programme began.
+
+### 16.1 WHY, and both stated reasons are now STALE
+
+§1 wrote the exclusion down, which is the only reason it is recoverable:
+
+> *"Video defs are excluded on purpose: no video def carries a face, the doc
+> `[id]` renderer for them does not exist, and `module-faceplates.md` scopes
+> them out."*
+
+- **"no video def carries a face"** is CIRCULAR — it is the skew, offered as its
+  own justification. This is exactly the shape §10.6 retired for `ninelives`
+  and §11.1 retired for `analogLogicMaths`, and it survived twice as long
+  because it was phrased as a scope note rather than a verdict.
+- **"the doc `[id]` renderer does not exist"** was true and IS NO LONGER.
+  `module-manifest.ts:53` declares `VIDEO_SOURCES` and `buildModuleManifest`
+  takes it as a second parameter (`:1306`), so the manifest carries video defs;
+  `routes/docs/modules/[id]/+page.server.ts`'s `entries()` enumerates
+  `buildModuleManifest().modules` and its `load` finds any of them. **Video
+  modules have doc pages today**, and `backdraft` is already in `STRICT_DOCS`.
+- `module-faceplates.md`'s "What this skill does NOT cover · VIDEO MODULES"
+  cites both of the above and is therefore stale in both halves. It needs the
+  correction folded in with the first video face.
+
+### 16.2 AND THE PLATFORM WAS READY — the finding that costs a spec its main worry
+
+The obvious fear is that a faceplate has nothing to say about a picture. It is
+already answered in the shell, and it was answered deliberately:
+
+```ts
+// ModuleShell.svelte:216-221
+// VIDEO-domain module → the glyph slot shows a LIVE THUMBNAIL of its actual
+// output (the legacy preview seam via VideoTileThumb), never a static trace:
+// a migrated video face gets the same live picture the placeholder tiles do.
+let videoThumb = $derived(hasVideoSurface(def));
+let hasGlyph = $derived(glyphKind !== 'none' || videoThumb);
+```
+
+`hasVideoSurface(def)` is `def.domain === 'video'` (`module-shell-model.ts:177`),
+and the thumb is a 160×120 aspect-fit blit at 15 fps, IntersectionObserver-gated
+(`VIDEO_THUMB_*`). So a video face gets its module's real output in the glyph
+slot for free.
+
+⚠ **AND THE DECLARATION THAT GOES WITH IT IS COUNTER-INTUITIVE, so it must be
+asserted rather than commented.** A video def must declare **`glyph: 'none'`** —
+not because it has no picture, but because `primaryAudioOutPortId` matches
+`type === 'audio'` and a video def has none, so ANY other glyph resolves to
+`{kind:'static'}` and reddens `module-face-lint`'s dead-glyph clause. The live
+picture arrives through `hasGlyph`'s **OR**, from a different seam entirely.
+`'none' + a blank tile` and `'none' + a live video thumb` are indistinguishable
+from the declaration alone: **assert `hasVideoSurface` is what paints it.**
+
+### 16.3 THE VIDEO POOL, by param count
+
+| type | par | disc | in | out | cvT | notes |
+|---|---|---|---|---|---|---|
+| `backdraft` | **37** | 3 | 33 | 1 | **29** | **Q22 — owner pick, IMPLEMENTED, REVIEW-HOLD** |
+| `colourofmagic` | 37 | 22 | 31 | 22 | 15 | five colorspace blocks + 22 taps; already noted in §1's inventory as needing page splitting |
+| `spirographs` | 31 | 4 | 31 | 3 | 31 | every param CV-able, 1:1 |
+| `b3ntb0x` | 22 | 0 | 19 | 1 | 18 | |
+| `quadralogical` | 21 | 4 | 19 | 2 | 15 | |
+| `grainsOfVision` | 20 | 1 | 19 | 2 | 17 | granular video; three chained blocks = natural pages |
+| `bentbox` | 16 | 0 | 15 | 1 | 14 | |
+| `vfpgaRunner` | 16 | 0 | 12 | 2 | 8 | ⚠ THE VFPGA HOST — see the correction below |
+| `mandelbulb` | 13 | 4 | 10 | 2 | 10 | |
+| `ruttetra` | 12 | 0 | 8 | 1 | 7 | |
+| `warrensvisions` | 12 | 4 | 9 | 1 | 8 | already `RANGE_BOUND` + `MAPPING_BOUND` |
+| `mirrorpool` | 11 | 0 | 13 | 1 | 11 | |
+
+**`backdraft` is the fourth-largest `generic-face` candidate in the WHOLE fleet**
+— behind only `mixmstrs` (91, stopped by #1662), `wavesculpt` (79, owner manual
+review) and `colourofmagic` (37, tied on params but with 22 outputs and 22
+discrete switches). It is the largest that is neither blocked nor already
+carved out, in either domain.
+
+⚠ **A CORRECTION TO THE BRIEF THAT SENT ME HERE, recorded because it is the
+§5.2 rule applying to a task description rather than to a spec.** The redirect
+described `backdraft` as *"a VFPGA host … 4 video in, 4 CV in, 4 gate in, 2
+video out, an 8-slot generic param bank `p1..p8` … a loaded `VfpgaSpec`
+(`node.data.vfpga`) selects which subset is ACTIVE"*, and framed the central
+design problem as **a dynamic control set**. Read off `contract-lock.txt` and
+the def itself, that describes **`vfpgaRunner`** (16 params, 12 in = `cv×4 +
+gate×4 + video×4`, **2** video out) — not `backdraft` (37 params, 33 in =
+`cv×29 + video×4`, **1** video out, no `node.data` spec at all).
+
+The line counts in the redirect were right (`backdraft.ts` is 3688,
+`BackdraftCard.svelte` is 1290), which is exactly why the description read as
+authoritative. **Verify an I/O description against `contract-lock.txt` before
+designing against it**; the two modules' design problems have nothing in common.
+The real one is in §17.
+
+---
+
+## 17. Q22 · `backdraft` — the first VIDEO face, and it is NOT a face-sized job
+
+**Issues filed from this audit: #1725** (six dead gate inputs), **#1723** (the
+engine→store reflect dies with the card), **#1722** (docs describe a removed
+display; `tvMode` mode 1 has two names), **#1726** (the video-face platform gap).
+
+**Merit (STOP 1): YES, emphatically.** 37 params, 33 inputs (29 `paramTarget`
+CV + 4 `video`), 1 `video` out — the fourth-largest `generic-face` candidate in
+the fleet and the largest that is neither blocked nor carved out. Two `<XyPad>`
+mounts, three discrete switch banks, six edge-detected gate inputs, a derived TV
+readout, and an owner who says he uses it a lot. Nothing about merit is in
+doubt.
+
+**STOP 2: FAILS TODAY.** And the failure is not a judgement call — it is
+gate-enforced, so it is worth stating exactly.
+
+### 17.1 THE BLOCKER: promotion deletes the ONLY entry point to the output
+
+`BackdraftCard.svelte` no longer carries a picture at all (the 320×240 display
+was removed to buy 6hp→4hp and a taller fader; card header, lines 4/16-24). What
+it carries instead is the **`⛶ OUTPUT` button** (`:696-703`,
+`backdraft-output-menu`) → `VideoCanvasContextMenu` (`:914-929`) → **Full Frame /
+Full Screen / Present / Present All / Stop Present**, over a 0×0
+always-mounted `<canvas>` (`:896-911`) that `requestFullscreen()` and the Present
+popup both blit from.
+
+**That button is the whole feature**, and its own e2e says so:
+`backdraft-full-output.spec.ts:277` — *"there is no in-rack picture to
+right-click — the node menu answers instead"* — and pins that the node menu
+offers **Docs / Duplicate / Delete only**. So:
+
+- today, un-docked in the default shell, backdraft renders a
+  `ModuleShellPlaceholder` (`laneRenderKind`: `!migrated ⇒ 'placeholder'`), and
+  the card is reachable **only through the dock** (or `?shell=legacy`);
+- `DockFullView` swaps the card for `<ModuleShell>` on `migrated()` alone;
+- so **promotion removes the last surface that can open Full Frame, Full Screen
+  or Present.**
+
+There is no cell to build it from. `ParamCellKind` is
+`knob | momentary | toggle | segmented | selector | grid | color | fader | xy`
+(`shell-control-kind.ts:32-41`) — none of them mounts a canvas, and a `custom`
+sidebar panel is explicitly read-only (*"A panel READS; it does not own state"*,
+`sidebar-panels.ts:22-23`).
+
+**The only honest path is `face.extension` with the `fullViewBody` slot — and
+that slot HAS NO RENDER SITE.** `WIRED_SHELL_EXTENSION_SLOTS = ['glyph']`
+(`shell-extensions.ts:87`), and the interface note names the price:
+
+> *"`editorSurface` / `fullViewBody` are the DECLARED contract for the LEG-05
+> bespoke-surface cohort; the first adopter wires the render site in ModuleShell
+> and moves the slot to the wired list IN THE SAME DIFF — shell-extensions.test.ts
+> refuses an extension exporting an unwired slot, so a slot can never silently
+> no-op."*
+
+**So the first video faceplate is definitionally the first `fullViewBody`
+adopter.** That is a platform PR — the seam the bespoke-surface cohort
+(clipplayer, controlSurface, electraControl, launchpadControl, videoOut,
+cameraInput) plugs into — not a face wave. Sized honestly it is: wire the
+`{#if ext?.fullViewBody}` render site in `ModuleShell`, move the slot to the
+wired list, author `$lib/ui/modules/backdraft/shell-extension.ts` carrying the
+output surface + button + menu, and prove the whole
+`backdraft-full-output.spec.ts` suite still passes against the FACE rather than
+the card.
+
+**Recommended split, mirroring Q2's:** land the platform slot + the output
+surface FIRST, as its own reviewed PR with its own e2e; then the face on top of
+it. Authoring the face first produces a module whose output cannot be opened.
+
+### 17.2 THE SECOND STOP-2 ITEM IS ALREADY BROKEN — and that is the finding
+
+`syncFromEngine` (`BackdraftCard.svelte:490-520`) is a per-rAF **engine→store
+reflect** for five params the ENGINE flips by itself on a rising gate edge:
+`mirrorX`, `mirrorY`, `pureGeo` (`:499`), `tvMode` (`:508`), `shape` (`:517`) —
+each a `// guard:allow-raw-write`, deliberately outside undo.
+
+The obvious reading is "promotion kills it". **It is already dead for most
+users**: the card only mounts in the dock, so for anyone who has not docked the
+module, a `mirror_x_gate` / `shape_gate` / `tv_gate` edge flips the picture and
+**never reaches the store** — it does not persist, it does not sync to
+collaborators, and the button's lit state is stale the moment you open the dock.
+
+That is the **card-unmount-kills-node-resources class** (#1531/#1574/#1583) and
+its documented fix applies unchanged: **a NODE-keyed registry, not a card**.
+Filed separately; a face PR neither causes nor cures it, and the fix is the same
+work either way.
+
+### 17.3 THREE DISCRETE PARAMS CARRY NO `options[]` — so a def-driven face renders them as KNOBS
+
+| param | states | where the names live | what a face renders today |
+|---|---|---|---|
+| `shape` | 5 — SQUARE / CIRCLE / PENTAGON / TRIANGLE / OCTAGON | `BACKDRAFT_SHAPES` (`backdraft.ts:294`) | a `0..4` **knob** |
+| `flicker` | 6 — OFF / 6 / 24 / 50 / 60 / 120 Hz | `BACKDRAFT_FLICKER_OPTIONS` (`:306`) | a `0..5` **knob** |
+| `tvMode` | 3 — OFF / (see 17.4) / CRITICAL | `BACKDRAFT_TV_MODE_LABELS` (`:453`) | a `0..2` **knob** |
+
+`ParamDef.options` exists and has precedent in BOTH domains (`cloudseed`,
+`tidyVco`, `filter`, `warrensspectrum`, and the video `warrensvisions`), and
+declaring it turns each into a `segmented`/`selector` cell. **⚠ But `params` is
+in the CONTRACT and, for a VIDEO def, in the WebGL ATTEST BASIS** — unlike
+`face`/`docs`/`controlFamilies`, which the attest normalizer strips. So this fix
+costs `docs:accept` **and a real-GPU re-attest**, which is an owner-machine step.
+Price it before promising it.
+
+### 17.4 DEFECTS FOUND, filed rather than folded in
+
+1. **`tvMode` mode 1 has TWO NAMES, on the same button.** The button prints
+   `TV: VIRTUAL CAMERA` (from `BACKDRAFT_TV_MODE_LABELS`) while the button's own
+   `title` tooltip and the def's `docs` (`:3127`, `:3196`) both call it
+   `PURE TV`. One state, two names, one control.
+2. **`docs.explanation` describes a card that no longer exists.** It still says
+   *"The card carries a small 320×240 DISPLAY centred in a band across the top…
+   The discrete switches flank the display… over a **single row** of labelled
+   fader banks"*. The display was REMOVED, the card is now two rows, and the
+   explanation never mentions the VIRTUAL CAMERA bank at all. This is the #1701
+   class again — a false VALUE in prose, with every gate blind because the
+   declaration is correct — and it is the module's `STRICT_DOCS` text, i.e. the
+   thing right-click → annotate shows a player.
+3. **The engine→store reflect is dead un-docked** (§17.2).
+
+### 17.5 WHAT THE AUDIT FOUND CLEAN — and one of them retires a CLAUDE.md example
+
+- **NO live range divergence, anywhere.** Every Fader range is DERIVED
+  (`pmin()/pmax()/pdef()` read `backdraftDef.params.find(...)` and THROW if
+  absent), so a card/def range disagreement is structurally unrepresentable here.
+- ⚠ **CLAUDE.md's ±0.2-vs-±1 case study IS this module, and it is FIXED.**
+  `card-control-ranges.test.ts:6-11` names it verbatim: *"BACKDRAFT's two camera
+  joysticks were authored with literal `xMin={-1} xMax={1}` while the def
+  constrained those params to ±0.2 (tilt) and ±0.5 (position)."* Both pads now
+  pass `xMin={-BACKDRAFT_CAM_TILT_RANGE}` / `{-BACKDRAFT_CAM_POS_RANGE}` — **the
+  same exported symbols the def itself uses** — and a SOURCE-level regex gate
+  rejects any numeric literal on those props. The card carries the incident in a
+  comment, and a second comment records #1223 trying to re-introduce literals in
+  the `camDist` Fader and the gate catching it. **The rule in CLAUDE.md should
+  keep the case study and stop implying it is live.**
+- **The two pads are `face.xyPads` verbatim**: pad A = `camTiltX`/`camTiltY`,
+  pad B = `camPosX`/`camPosY`, all four continuous and bipolar, so all four
+  satisfy the lint (declared, ranked, non-momentary, continuous, claimed once).
+  The inventory note (`face-migration-inventory.ts:185`) called this correctly,
+  and the `wavesculpt` entry records what happens if it is ignored.
+
+### 17.6 SEVEN PARAMS HAVE NO USER CONTROL — AND COMPLETENESS HAS NO EXEMPTION
+
+`delayClock`, `mirrorXGate`, `mirrorYGate`, `shapeGate`, `pureGeoGate`, `tvGate`
+(synthetic gate params the CV bridges write, edge-detected by the module) and
+`freeze` (a VRT/determinism hook). Every one carries a `docs.controls` entry
+saying "No card knob" / "No card control".
+
+**There is no way to exclude them, and it was checked rather than assumed.**
+`module-face-lint.test.ts:301-331` loops `for (const p of def.params ?? [])`
+with **no filter, no skip-list, no predicate and no per-instance escape**, and
+`ModuleFace` (`graph/types.ts:584-741`) has no `hidden`/`exclude` field —
+its whole surface is `order`, `pages`, `glyph`, `glyphDepthGain`, `extension`,
+`paramCells`, `xyPads`, `momentary`, `rear`, `title`, `hint`, `hero`, `sidebar`.
+`ModuleFaceRear` curates PORTS, not params, so it is not a parking lot either.
+
+And ranking them is not enough: a **second** gate, dock render-plan parity
+(`:334-413`), requires every `ParamDef.id` to render **exactly one interactive
+cell** in the dock full-view — written for the tidyVco control-loss lesson,
+*"a control can be ranked in `face.order` yet still never REACH the user"*.
+
+⚠ **There is NO PRECEDENT to lean on.** No module in `STRICT_FACES` has a param
+without a user control. Every module that does — `grainsOfVision` (`freeze`,
+explicitly *"like BACKDRAFT"*), `gibribbon`, `tvLibrarian`, `vfpgaRunner` — is
+an UNFACED VIDEO module. backdraft would be the first, and the honest reading is
+that **`ModuleFace` needs a way to say "this param has no user control"** before
+any of them can be faced. That is a platform question, not a backdraft one.
+
+⚠ **AND THE SHAPE IS WRONG TOO.** All seven declare `curve: 'linear', min: 0,
+max: 1`, and `looksLikeToggle` is `curve === 'discrete' && min === 0 && max === 1`
+(`group-controls.ts:46-48`) — so they escape the momentary/latching
+classification entirely and would render as **continuous 0..1 rotaries over raw
+gate swings**. The same is true of `mirrorX`, `mirrorY` and `pureGeo`, which ARE
+user toggles: this is the cloudseed precedent verbatim
+(`module-face-lint.test.ts:432-436` — *"they only became visible to this gate
+when their `curve` was corrected `linear` → `discrete`; before that the shell
+painted them as continuous rotaries"*). Correcting those curves is a **`params`
+edit**, which §17.8 prices.
+
+### 17.7 THE SIX GATE INPUTS ARE ALREADY A NAMED, LEDGERED, LIVE DEFECT
+
+The coordinator's brief flagged the #1703 "consumer silently dropping input"
+class. It is not a risk here — **it is already documented as shipped and broken,
+on all six ports**, and the ledger is `trigger-edge-placement.test.ts:431-438`:
+
+```ts
+const KNOWN_REMAINING: readonly string[] = [
+  // BACKDRAFT — 6 raw-passthrough clock/gate ports, all edge-read in draw().
+  'backdraft.delayClock', 'backdraft.mirrorXGate', 'backdraft.mirrorYGate',
+  'backdraft.shapeGate',  'backdraft.pureGeoGate', 'backdraft.tvGate',
+```
+
+The mechanism, from that file's own header (`:23-41`): a rising edge on a
+raw-passthrough input **must** be detected in `setParam`, on the bridge's clock.
+`PatchEngine.installGateDispatch` replays each edge on the ~25 ms scheduler tick
+as `setParam(0); setParam(1); setParam(currentLevel)` **in the same
+millisecond**, so by the time `draw()` runs the param is back to 0 and the
+detector sees `0 → 0 → 0`. In the file's words: *"The consumer is not 'flaky' —
+it is DEAD, deterministically, for every patched trigger. A HELD gate still
+works, which is why they have gone unnoticed."*
+
+backdraft detects all six in `draw()` (`backdraft.ts:3373-3402`) using
+`detectEdge` from `$lib/doom/cv-gate-edge` (rise > 0.6 / fall < 0.4 hysteresis).
+The PRIMITIVE is sanctioned; the PLACEMENT is the defect. The ledger's own note
+says why it was left: *"each needs its own behavioural verification, and
+BACKDRAFT is a look-affecting module under the WebGL attest
+(owner-preview-before-merge)."*
+
+**So MIRROR X/Y, SHAPE, PURE GEO, TV and DELAY CLK do nothing from a clock
+today.** A faceplate that ranks them is a prettier broken module — audit before
+the face, exactly as §5.1 says.
+
+### 17.8 THE ATTEST PRICE, MEASURED — the one piece of GOOD news
+
+| edit to `backdraft.ts` | WebGL attest hash moves? |
+|---|---|
+| add ONLY a top-level `face: {...}` | **NO** |
+| also edit its `docs` strings | **NO** |
+| add `options[]` to a param, or correct a `curve` | **YES** |
+
+`packages/web/src/lib/video/modules/**` IS in the WebGL basis
+(`webgl-attest-lib.ts:237-239` walks the whole `lib/video` tree, `.test.ts`
+excluded). But `HASH_TRANSPARENT_PROPS = ['docs', 'controlFamilies', 'face']`
+(`attest-code-basis.ts:93`) and the normalizer strips them from any MODULE-SCOPE
+def object before hashing (`:215-231`), with a permanent negative control that a
+**nested** `face:` is kept. `module-registry.ts:29-38` already states the
+conclusion for exactly this case.
+
+**So the face itself is free.** Everything §17.3 and §17.6 say is needed to make
+it render correctly — `options[]`, the `curve` corrections — is not, and a
+real-GPU re-attest is an owner-machine step CI cannot perform.
+
+### 17.9 THE VERDICT
+
+**NOT A FACE. It is the first `fullViewBody` adopter, and four platform PRs
+stand between here and a faceplate.** Stated as work, in dependency order:
+
+1. **Fix the six gate placements** (§17.7) — each with its own behavioural
+   verification. Blocks any face, because the face would rank six dead controls.
+2. **Give `ModuleFace` a way to express "no user control"** (§17.6) — or accept
+   seven meaningless cells. Blocks every video face, not just this one.
+3. **Wire the `fullViewBody` slot + author backdraft's shell extension**
+   (§17.1) — the output surface, the OUTPUT button and its menu, plus a
+   node-keyed home for the engine→store reflect (§17.2). Without it, promotion
+   deletes the only way to open Full Frame / Full Screen / Present.
+4. **`options[]` + `curve` corrections** (§17.3, §17.6) — costs a `docs:accept`
+   AND an owner-machine re-attest (§17.8).
+
+Then, and only then, the face — which by comparison is the easy part: 37 ranked
+params, two `face.xyPads` that the card already proves out, ~7 bands (over
+`DOCK_TAB_MIN_BANDS`, so a tab rail), `glyph: 'none'` with the live thumb coming
+from `hasVideoSurface`, and a derived TV readout that is genuinely a
+`FaceReadoutValue` (`backdraftTvFill`/`Depth` are pure functions of params).
+
+**And backdraft is `EXEMPT_FROM_VRT` + `ALLOWED_PERMANENT_EXEMPT` today**
+(`vrt-exemptions.ts:971`, `:1035`) — *"What still blocks promotion is purely
+mechanical: no baseline PNGs"* — while a scene is already registered
+(`vrt-scenes.ts:535-570`, `afterSpawn` writes `freeze` after settle). So the
+face wave also owes it three baselines, not two.
+
+⚠ **This is a STOP-2 REFUSAL, which the skill names as a legitimate, expected
+outcome** — *"If a hit is load-bearing and has no shell representation you can
+build, do not promote."* Every clause above is gate-enforced or ledgered, not a
+judgement call: `shell-extensions.ts:87`, `module-face-lint.test.ts:301`,
+`trigger-edge-placement.test.ts:431`, `webgl-attest-lib.ts:237`,
+`vrt-exemptions.ts:971`. Authoring the face first produces a module that ranks
+six dead controls and cannot open its own output.
+
+### 17.7 AND THE CV AUDIT IS THE WIDEST BLIND SPOT IN THE FLEET
+
+**29 `paramTarget` CV inputs, and nothing in the repo proves ANY of them reaches
+the picture.** `per-module-per-port-behavioral.spec.ts:474` exempts backdraft
+**whole-module**, in its own words:
+
+> *"the HDR feedback-trail `out` has a per-frame luma-variance baseline of ~7700
+> with a HUGE ±4000-6000 per-frame RANGE driven by the ACIDWARP context motion +
+> trail accumulation… Δμvar runs 37→1750 and ΔRvar runs 2.7→4060 with NO
+> correlation to which port is driven, so the variance metric can't attribute a
+> delta to ANY input (the 22 ports all 'passed' once but only on the animation's
+> own noise)."*
+
+`contract-lock` and `module-docs-lint` read the declaration; `cv-scale-registry`
+never renders. So the module with the most CV inputs in the fleet has the least
+CV coverage — and #1664 already found a live CV defect in `rasterize`, a sibling
+video module, in exactly this gap.
+
+⚠ **The exemption's own reasoning names the instrument fix.** It failed because
+it drove a MOVING source (acidwarp) through a per-frame VARIANCE metric with
+three snapshots. The module is deterministic given a fixed source and a fixed
+frame count (`flicker` and the TV noise are both pure functions of the frame
+index `n`), so the instrument that works is: **a STATIC source, a fixed frame
+count reached with `waitFrames`, and a same-frame-index pixel comparison** —
+never a wall-clock wait and never a variance floor. That is a different
+assertion, not a tuned one, and it is the audit's deliverable whatever happens
+to the face.
