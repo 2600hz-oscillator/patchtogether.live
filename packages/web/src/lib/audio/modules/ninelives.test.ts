@@ -16,6 +16,12 @@ import { describe, it, expect, vi } from 'vitest';
 import { ninelivesDef } from './ninelives';
 import { lfoDef } from './lfo';
 import type { ModuleNode } from '$lib/graph/types';
+// The ladder, from the file the worklet is BUILT from — the def's port roster
+// is derived from the same constant, and this asserts the join in both
+// directions rather than restating the length. Relative path for the reason
+// `sidecar-face-model.ts` documents (a worktree may not symlink the workspace
+// package under node_modules).
+import { NINE_LIVES_RATE_MULTIPLIERS } from '../../../../../dsp/src/lib/ninelives-dsp';
 
 // ───────────────────── Layer 1: module-def shape ─────────────────────
 describe('ninelivesDef: module def shape', () => {
@@ -116,14 +122,42 @@ describe('ninelives factory: worklet wiring', () => {
     expect(handle.inputs.size).toBe(1);
   });
 
-  it('maps out1..out9 to worklet outputs 0..8 in order', async () => {
+  it('publishes EXACTLY the declared output ports, at ascending worklet indices', async () => {
     const { handle } = await runFactory();
-    expect(handle.outputs.size).toBe(9);
-    for (let n = 1; n <= 9; n++) {
-      const out = handle.outputs.get(`out${n}`)!;
-      expect(out, `out${n} present`).toBeDefined();
-      expect(out.output).toBe(n - 1);
-    }
+    const declared = ninelivesDef.outputs.map((o) => o.id);
+
+    // DERIVED MEMBERSHIP, both directions — not a size. This used to read
+    // `expect(handle.outputs.size).toBe(9)` plus a `for (n = 1; n <= 9)` loop,
+    // i.e. two hand-typed copies of how many outputs there are (CLAUDE.md).
+    // Asserting the SETS is strictly stronger than asserting the count: it
+    // catches a published port the def never declared, which no size check can.
+    expect([...handle.outputs.keys()].sort()).toEqual([...declared].sort());
+
+    // The index map, keyed by the DEF's declaration order. ⚠ THIS IS THE
+    // FACTORY'S OWN BOOKKEEPING AND NOTHING MORE — it says `out5` is worklet
+    // output 4, and is structurally blind to what the processor WRITES there.
+    // The join between a declared port id and its actual rate on the ⅓ ladder
+    // is art/scenarios/ninelives/ladder.test.ts, which renders the shipped
+    // worklet through this factory and measures each port.
+    declared.forEach((id, n) => {
+      const out = handle.outputs.get(id)!;
+      expect(out, `${id} present`).toBeDefined();
+      expect(out.output, `${id} → worklet output ${n}`).toBe(n);
+    });
+  });
+
+  it('the declared port roster IS the DSP core ladder, both directions', async () => {
+    // The def builds `outputs` from `NINE_LIVES_OUTPUT_COUNT`, so this cannot
+    // fail today by construction — which is the point. It is the leg that would
+    // have caught the state this replaced: `const OUT_COUNT = 9` in the def and
+    // `NINE_LIVES_OUTPUT_COUNT = 9` in the DSP, two unjoined copies where a
+    // disagreement publishes ports the processor never writes (dead jacks) or
+    // drops ports it does. Kept as a permanent statement of the invariant.
+    expect(ninelivesDef.outputs.map((o) => o.id)).toEqual(
+      NINE_LIVES_RATE_MULTIPLIERS.map((_, n) => `out${n + 1}`),
+    );
+    const { handle } = await runFactory();
+    expect(handle.outputs.size).toBe(NINE_LIVES_RATE_MULTIPLIERS.length);
   });
 
   it('seeds params from defaults when node.params is empty', async () => {
