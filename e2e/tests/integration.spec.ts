@@ -34,7 +34,7 @@ import {
 test.describe.configure({ mode: 'parallel' });
 
 function runPair(group: string, patch: PairPatch): void {
-  test(`${group} — ${patch.label}`, async ({ page, rack, errorWatch }) => {
+  test(`${group} — ${patch.label}`, async ({ page, rackDefault, errorWatch }) => {
     await spawnPatch(page, patch.nodes, patch.edges);
 
     // If a sequencer is in the patch, seed playable steps so its gate

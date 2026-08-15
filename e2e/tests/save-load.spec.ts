@@ -26,7 +26,7 @@ interface PatchEnvelope {
   update: string;
 }
 
-test('save-load: round-trip preserves nodes, edges, params, and sequencer step data', async ({ page, rack }) => {
+test('save-load: round-trip preserves nodes, edges, params, and sequencer step data', async ({ page, rackDefault }) => {
   // Build the canonical voice chain (5 nodes, 6 edges, sequencer with steps).
   await spawnPatch(
     page,
@@ -148,7 +148,7 @@ test('save-load: round-trip preserves nodes, edges, params, and sequencer step d
   await expect(page.locator('.svelte-flow__node')).toHaveCount(5);
 });
 
-test('save-load: __persistence.save() emits a valid PatchEnvelope JSON', async ({ page, rack }) => {
+test('save-load: __persistence.save() emits a valid PatchEnvelope JSON', async ({ page, rackDefault }) => {
   await loadVoiceDemo(page);
   await expect(page.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 10_000 });
 
@@ -169,7 +169,7 @@ test('save-load: __persistence.save() emits a valid PatchEnvelope JSON', async (
   expect(env.update).toMatch(/^[A-Za-z0-9+/=]+$/);
 });
 
-test('save-load: __persistence.load() restores the patch from a saved envelope', async ({ page, rack }) => {
+test('save-load: __persistence.load() restores the patch from a saved envelope', async ({ page, rackDefault }) => {
   // Start with a known patch and capture its envelope.
   await loadVoiceDemo(page);
   await expect(page.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 10_000 });
