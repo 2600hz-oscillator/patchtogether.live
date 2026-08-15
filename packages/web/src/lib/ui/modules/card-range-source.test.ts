@@ -78,6 +78,7 @@ import { adsrDef } from '$lib/audio/modules/adsr';
 import { attenumixDef } from '$lib/audio/modules/attenumix';
 import { analogVcoDef } from '$lib/audio/modules/analog-vco';
 import { backdraftDef } from '$lib/video/modules/backdraft';
+import { bugglesDef } from '$lib/audio/modules/buggles';
 import { chromaconsoleDef } from '$lib/audio/modules/chromaconsole';
 import { cubeDef } from '$lib/audio/modules/cube';
 import { cloudsDef } from '$lib/audio/modules/clouds';
@@ -309,6 +310,33 @@ const RANGE_BOUND_CARDS: Readonly<Record<string, { params: readonly ParamDef[] }
   // depending on which surface you reached it through. Range AND mapping —
   // `curve` and `units` come off `paramSpec(ninelivesDef, …)` too.
   'NinelivesCard.svelte': ninelivesDef,
+  // THE FACEPLATE QUEUE · Q13. All five faders re-typed numbers that AGREED
+  // with the def — the audit checked every one — so this is a maintainability
+  // conversion rather than a bug fix, and it is exactly that agreement which
+  // made it safe to do inside the faceplate PR: because the restated values
+  // already matched, binding them is PIXEL-NEUTRAL, and `buggles` is in
+  // `STRICT_VRT_MODULES` so a moved fader handle would have cost a card
+  // re-capture (the WavetableVcoCard case above, where binding `min` moved the
+  // handle from the bottom of its track to the middle). The card scene passed
+  // unchanged in the same local VRT run that reported the two new face scenes
+  // missing, which is the check.
+  //
+  // It is converted WITH the promotion for the reason the agreement clause
+  // cannot cover: from the moment `buggles` enters STRICT_FACES the dock
+  // renders straight off the `ParamDef` while the legacy card renders off
+  // whatever it typed, so any future divergence would give one param two
+  // travels depending on which surface you reached it through.
+  //
+  // The conversion also removed a SECOND hazard the range clause is blind to:
+  // the defaults were read as `bugglesDef.params[0]!.defaultValue` — bound by
+  // POSITION, not by id — so re-ordering `params`, which no gate forbids,
+  // would have silently re-pointed all five.
+  //
+  // Range AND mapping: `curve` comes off `paramSpec(bugglesDef, …)`, and no
+  // buggles param declares `units` at all, so there is nothing to paint and
+  // nothing left to drift (the SidecarCard shape, without Sidecar's caveat —
+  // its `inputLevel` DOES declare `units: '%'`, and none of these five do).
+  'BugglesCard.svelte': bugglesDef,
   // THE FACEPLATE QUEUE · Q12, the fixed-filter-bank PAIR. Enrolled because the
   // property was ALREADY TRUE and nothing was watching it: both cards render
   // `{#each def.params as p}` and pass `min={p.min} max={p.max} label={p.label}`
@@ -376,6 +404,15 @@ const MAPPING_BOUND_CARDS: readonly string[] = [
   // `rate` declares `Hz` and it now comes off the ParamDef; `shape` declares
   // none and the card passes none, which is the same fact stated by omission.
   'NinelivesCard.svelte',
+  // THE FACEPLATE QUEUE · Q13. `curve` is bound off `paramSpec`; `units` is
+  // ABSENT ON BOTH SIDES — no buggles param declares one and the card passes
+  // none — which the anchor reads as "nothing left to drift", correctly and
+  // for the strongest available reason. ⚠ Sidecar's caveat is what makes that
+  // worth stating: it is enrolled on an absent `units` too, but its
+  // `inputLevel` DECLARES `units: '%'` on a 0..2 gain, so a card that started
+  // passing units would print `1.00 %`. Checked here rather than assumed —
+  // the only `units` in `buggles.ts` is the word inside a comment.
+  'BugglesCard.svelte',
   // THE FACEPLATE QUEUE · Q12, the fixed-filter-bank PAIR. `curve` was the ONE
   // remaining literal on either card (`curve="linear"`, agreeing with the def)
   // and now reads `p.curve`; no section on either bank declares `units`, so

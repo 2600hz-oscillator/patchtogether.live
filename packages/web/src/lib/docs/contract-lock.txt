@@ -343,6 +343,7 @@ buggles param chaos 0..1 linear default=0.3
 buggles param level 0..1 linear default=0.7
 buggles param rate 0..1 linear default=0.4
 buggles param smoothness 0..1 linear default=0.5
+buggles face sidebar 0 kind=readouts label=outputs entries=smooth:value=buggles-smooth-glide,stepped:value=buggles-stepped-hold,clock:value=buggles-woggle-hz,burst:value=buggles-burst-rate,ring:value=buggles-ring-hz
 cadillac meta domain=meta maxInstances=1
 cameraInput meta domain=video maxInstances=4
 cameraInput in gain cv param=gain cvScale=linear
