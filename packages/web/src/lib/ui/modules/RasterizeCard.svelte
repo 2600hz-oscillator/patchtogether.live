@@ -49,6 +49,17 @@
     function tick() {
       const eng = engineCtx.get();
       if (eng && node && canvasEl) {
+        // PUSH then READ. `eng.readParam` returns the knob PLUS the engine's
+        // own per-port CV tap — the combined value — and costs nothing extra:
+        // the tap already exists for any patched port. The painter runs inside
+        // read('imageData'), so the push has to land first (#1664). With
+        // nothing patched there is no tap, so this equals the knob.
+        const combined: Record<string, number> = {};
+        for (const p of rasterizeDef.params) {
+          const v = eng.readParam(node, p.id);
+          if (typeof v === 'number' && Number.isFinite(v)) combined[p.id] = v;
+        }
+        eng.write(node, 'cvCombined', combined);
         const img = eng.read(node, 'imageData') as ImageData | undefined;
         if (img) blit(canvasEl, img);
       }

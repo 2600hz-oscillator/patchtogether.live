@@ -44,6 +44,7 @@
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
 import { VIDEO_RES } from '$lib/video/engine';
+import { createCvShadow, type CvShadow } from '$lib/audio/cv-shadow';
 import { RasterPainter, type RasterizeDrawParams } from './rasterize-draw';
 
 export const rasterizeDef: AudioModuleDef = {
@@ -56,12 +57,21 @@ export const rasterizeDef: AudioModuleDef = {
   inputs: [
     // The audio signal to rasterize.
     { id: 'in', type: 'audio' },
-    // CV inputs mirror every param 1:1 (port id == param id) so the
-    // cross-domain CV bridge routes straight into setParam(portId).
-    { id: 'cursor',          type: 'cv', paramTarget: 'cursor' },
-    { id: 'samplesPerFrame', type: 'cv', paramTarget: 'samplesPerFrame' },
-    { id: 'gain',            type: 'cv', paramTarget: 'gain' },
-    { id: 'wrap',            type: 'cv', paramTarget: 'wrap' },
+    // CV inputs mirror every param 1:1 (port id == param id). A
+    // cross-domain cable arrives per video frame through setParam(portId);
+    // a same-domain cable is summed at audio rate into the AudioParam by
+    // AudioEngine.addEdge. The factory's per-port shadows are the one
+    // junction both land on (#1664).
+    // cvScale per ADR-004: ±1 sweeps the param's FULL natural range —
+    // without it a cable moves SCAN by one pixel out of 786 432, which is
+    // not the scrubbing the docs promise. Withheld until now because the
+    // CV landed on a stub AudioParam nobody read. `gain` takes LINEAR
+    // rather than log despite its log curve: its min is 0, and log scaling
+    // needs positive bounds (cv-scale.ts falls back to linear anyway).
+    { id: 'cursor',          type: 'cv', paramTarget: 'cursor',          cvScale: { mode: 'linear' } },
+    { id: 'samplesPerFrame', type: 'cv', paramTarget: 'samplesPerFrame', cvScale: { mode: 'log' } },
+    { id: 'gain',            type: 'cv', paramTarget: 'gain',            cvScale: { mode: 'linear' } },
+    { id: 'wrap',            type: 'cv', paramTarget: 'wrap',            cvScale: { mode: 'discrete' } },
   ],
   outputs: [
     // Audio passthrough so RASTERIZE can sit inline on a signal chain.
@@ -123,15 +133,35 @@ export const rasterizeDef: AudioModuleDef = {
 
     const buf = new Float32Array(analyser.fftSize);
 
-    // Live param cache (single source of truth for both render paths;
-    // see SCOPE for the rationale). setParam updates it; the card mirrors
-    // patch.nodes[].params for its own faders.
-    const params: RasterizeDrawParams = {
-      cursor:          (node.params ?? {}).cursor          ?? 0,
-      samplesPerFrame: (node.params ?? {}).samplesPerFrame ?? 800,
-      gain:            (node.params ?? {}).gain            ?? 1,
-      wrap:            (node.params ?? {}).wrap            ?? 0,
+    // ── CV SHADOWS: where the knob and the cable meet (#1664) ────────
+    // Every raster param is applied in JS by the painter, so none of them
+    // is a Web Audio node's AudioParam. Each therefore gets its OWN
+    // shadow — a ConstantSource(1) → GainNode whose `.gain` is published
+    // as the port's param and whose OUTPUT is the combined (knob + CV)
+    // value, read back per frame. See $lib/audio/cv-shadow.
+    //
+    // What was here before: all four ports published `inGain.gain` — ONE
+    // AudioParam, and the live in→thru passthrough gain at that. So a
+    // cable into SCAN did not move the cursor, it multiplied the audio
+    // (measured 3.146e+5 peak against a 5.0e-1 baseline), and `setParam`
+    // wrote a JS record nothing in the CV path ever reached.
+    const shadows: Record<string, CvShadow> = {
+      cursor:          createCvShadow(ctx, (node.params ?? {}).cursor          ?? 0),
+      samplesPerFrame: createCvShadow(ctx, (node.params ?? {}).samplesPerFrame ?? 800),
+      gain:            createCvShadow(ctx, (node.params ?? {}).gain            ?? 1),
+      wrap:            createCvShadow(ctx, (node.params ?? {}).wrap            ?? 0),
     };
+
+    /** The painter's parameters for THIS frame: knob + CV, sampled once so
+     *  every read inside one paint sees the same instant. */
+    function liveParams(): RasterizeDrawParams {
+      return {
+        cursor:          shadows.cursor!.read(),
+        samplesPerFrame: shadows.samplesPerFrame!.read(),
+        gain:            shadows.gain!.read(),
+        wrap:            shadows.wrap!.read(),
+      };
+    }
 
     // Single painter at the engine's video resolution. The cross-domain
     // bridge's drawFrame() advances it each video frame; the on-card
@@ -143,9 +173,9 @@ export const rasterizeDef: AudioModuleDef = {
      *  analyser's getFloatTimeDomainData returns its whole window; the
      *  TAIL is newest, so we take the last `count` samples as this
      *  frame's run. */
-    function frameRun(): Float32Array {
+    function frameRun(samplesPerFrame: number): Float32Array {
       analyser.getFloatTimeDomainData(buf);
-      const count = Math.max(1, Math.min(buf.length, Math.floor(params.samplesPerFrame)));
+      const count = Math.max(1, Math.min(buf.length, Math.floor(samplesPerFrame)));
       return buf.subarray(buf.length - count);
     }
 
@@ -227,7 +257,8 @@ export const rasterizeDef: AudioModuleDef = {
       // tick coalesces, but genuinely separate frames still advance.
       if (now - lastPaintMs < 8) return;
       lastPaintMs = now;
-      painter.paint(frameRun(), params);
+      const p = liveParams();
+      painter.paint(frameRun(p.samplesPerFrame), p);
     }
 
     // The cross-domain bridge calls this each video frame with its own
@@ -241,14 +272,15 @@ export const rasterizeDef: AudioModuleDef = {
       domain: 'audio',
       inputs: new Map<string, { node: AudioNode; input: number; param?: AudioParam }>([
         ['in', { node: inGain, input: 0 }],
-        // CV inputs live on a stable internal AudioParam (inGain.gain) so
-        // the engine's per-param tap analyser picks them up; the actual
-        // VALUE flows through setParam(portId). We never write to
-        // inGain.gain from setParam — it stays at unity passthrough.
-        ['cursor',          { node: inGain, input: 0, param: inGain.gain }],
-        ['samplesPerFrame', { node: inGain, input: 0, param: inGain.gain }],
-        ['gain',            { node: inGain, input: 0, param: inGain.gain }],
-        ['wrap',            { node: inGain, input: 0, param: inGain.gain }],
+        // One shadow per port — never shared, never in the audio path. The
+        // engine sums each cable into that port's own `.gain`, and the
+        // painter reads the combined value back through the shadow's
+        // analyser. `node` is the shadow too, so even the engine's
+        // no-param fallback branch cannot land a cable on live audio.
+        ['cursor',          { node: shadows.cursor!.node,          input: 0, param: shadows.cursor!.param }],
+        ['samplesPerFrame', { node: shadows.samplesPerFrame!.node, input: 0, param: shadows.samplesPerFrame!.param }],
+        ['gain',            { node: shadows.gain!.node,            input: 0, param: shadows.gain!.param }],
+        ['wrap',            { node: shadows.wrap!.node,            input: 0, param: shadows.wrap!.param }],
       ]),
       outputs: new Map([
         ['thru', { node: inGain, output: 0 }],
@@ -260,19 +292,15 @@ export const rasterizeDef: AudioModuleDef = {
         ['out', { analyser, sampleRate: ctx.sampleRate, drawFrame }],
       ]),
       setParam(paramId, value) {
-        if (paramId === 'cursor') params.cursor = value;
-        else if (paramId === 'samplesPerFrame') params.samplesPerFrame = value;
-        else if (paramId === 'gain') params.gain = value;
-        else if (paramId === 'wrap') params.wrap = value;
+        // A knob move lands on the SAME junction a cable does — the
+        // shadow's `.gain` intrinsic — so the two sum instead of racing.
+        shadows[paramId]?.set(value);
       },
       readParam(paramId) {
-        switch (paramId) {
-          case 'cursor': return params.cursor;
-          case 'samplesPerFrame': return params.samplesPerFrame;
-          case 'gain': return params.gain;
-          case 'wrap': return params.wrap;
-          default: return undefined;
-        }
+        // The knob alone. The engine folds in the modulator tap on top of
+        // this for the motorized fader (see AudioEngine.readParam), so
+        // returning the combined value here would double-count the CV.
+        return shadows[paramId]?.knob();
       },
       read(key) {
         if (key === 'imageData') {
@@ -287,11 +315,30 @@ export const rasterizeDef: AudioModuleDef = {
         if (key === 'cursor') {
           return painter.currentCursor;
         }
+        // The COMBINED (knob + CV) raster params — what the painter is
+        // actually drawing with. Exposed so a card or a test can read the
+        // same truth the frame does, rather than re-deriving it from the
+        // knob (which is blind to every patched cable).
+        if (key === 'drawParams') {
+          return liveParams();
+        }
         return undefined;
+      },
+      // The inverse of read('drawParams'). A consumer holding the engine pushes
+      // `PatchEngine.readParam` (the knob PLUS the engine's own per-port CV tap)
+      // back in, so the painter draws the modulated value while this module owns
+      // NO AnalyserNode per port — which is what a permanently retained Blink
+      // AudioHandler per port would have cost. See $lib/audio/cv-shadow.
+      write(key, value) {
+        if (key !== 'cvCombined' || typeof value !== 'object' || value === null) return;
+        for (const [id, v] of Object.entries(value as Record<string, number>)) {
+          shadows[id]?.setCombined(v);
+        }
       },
       dispose() {
         inGain.disconnect();
         analyser.disconnect();
+        for (const s of Object.values(shadows)) s.dispose();
       },
     };
   },

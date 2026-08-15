@@ -103,23 +103,11 @@ const PASSTHROUGH_BY_DESIGN: Record<string, string[]> = {
   // VCA.cv: audio-rate gain control. base + cvAmount * cv with cvAmount knob
   // already implementing per-edge depth control. Not a CV→AudioParam case.
   vca: ['cv'],
-  // SCOPE has a separate, pre-existing bug: setParam stores into a JS-side
-  // params record but the engine's CV-routing writes to a stub gain1.gain
-  // AudioParam the module never reads. Adding cvScale here would not fix
-  // that bug — it'd modulate the wrong AudioParam. SCOPE's CV→param routing
-  // needs an architectural fix (separate PR — see
-  // docs/adr/004-cv-range-convention.md "Deferred" section).
-  scope: ['timeMs', 'ch1Scale', 'ch1Offset', 'ch1Range', 'ch2Scale', 'ch2Offset', 'ch2Range', 'mode', 'intensity'],
-  // RASTERIZE: same architecture as SCOPE — CV inputs route through the
-  // cross-domain CV bridge's setParam(portId), which writes into a JS-side
-  // params record (read live by the per-frame painter). The `param`
-  // (inGain.gain) on each input is only a stub sink so the engine's
-  // per-param tap analyser fires for motorized faders; the module never
-  // reads it. Interposing a cvScale WaveShaper would scale the wrong
-  // AudioParam and do nothing to the value reaching setParam. The raster
-  // params (cursor px, samples/frame, gain, wrap) are consumed raw by the
-  // mapping math, which is the intended "untamed" behaviour for this module.
-  rasterize: ['cursor', 'samplesPerFrame', 'gain', 'wrap'],
+  // (SCOPE and RASTERIZE were listed here with the architectural defect that
+  //  justified the omission — a shared stub AudioParam nobody read, so
+  //  scaling it would have scaled the wrong thing. #1664 fixed that: each of
+  //  their 13 ports now owns a real shadow AudioParam, so both modules carry
+  //  ordinary cvScale hints and no longer belong in this list.)
   // BUGGLES: clock_cv / chaos_cv have NO paramTarget — they're sampled into
   // a JS shadow on each woggle event (setTimeout-driven), not routed onto
   // an AudioParam. The CV's -1..+1 range is summed onto the rate/chaos

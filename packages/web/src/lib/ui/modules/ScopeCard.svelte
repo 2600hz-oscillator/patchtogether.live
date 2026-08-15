@@ -41,13 +41,15 @@
   let node = $derived(data?.node as ModuleNode);
   const engineCtx = useEngine();
 
-  // Scope params: read from the patch (single source of truth). The
-  // engine's SCOPE handle keeps a parallel cache that drives the video-
-  // bridge's drawFrame; that cache is updated both by the reconciler
-  // (when the user moves a fader → patch.nodes[].params changes) and
-  // by setParam from the cross-domain CV bridge (per-frame writes).
-  // The card reads the patch directly so on-card and bridge renders
-  // converge.
+  // KNOB positions, read from the patch (single source of truth for the
+  // FADERS and the mode toggles — a fader shows where the user put it,
+  // never where a cable has pushed it).
+  //
+  // What the TRACE is drawn with is a different question, and the answer
+  // is `eng.read(node, 'drawParams')` — the module's combined knob + CV
+  // values, the same record its video-out `drawFrame` renders from, so
+  // the on-card picture and the video output cannot disagree (#1664).
+  // These stay as the fallback for when there is no engine yet.
   let timeMs    = $derived(node?.params.timeMs    ?? scopeDef.params[0]!.defaultValue);
   let ch1Scale  = $derived(node?.params.ch1Scale  ?? scopeDef.params[1]!.defaultValue);
   let ch1Offset = $derived(node?.params.ch1Offset ?? scopeDef.params[2]!.defaultValue);
@@ -137,7 +139,20 @@
         const snap = seed
           ? seededSnapshot(seed)
           : (eng.read(node, 'snapshot') as ScopeSnapshot | undefined);
-        if (snap) draw(canvasEl, snap);
+        // PUSH then READ. `eng.readParam` returns the knob PLUS the engine's
+        // own per-port CV tap — the combined value — and costs nothing extra:
+        // the tap already exists for any patched port. Pushing it into the
+        // module means the on-card trace and the module's video-out render
+        // draw the SAME numbers (#1664). With nothing patched there is no tap,
+        // so readParam returns the knob and no render moves.
+        const combined: Record<string, number> = {};
+        for (const p of scopeDef.params) {
+          const v = eng.readParam(node, p.id);
+          if (typeof v === 'number' && Number.isFinite(v)) combined[p.id] = v;
+        }
+        eng.write(node, 'cvCombined', combined);
+        const live = eng.read(node, 'drawParams') as Record<string, number> | undefined;
+        if (snap) draw(canvasEl, snap, live);
       }
     });
     return () => h.stop();
@@ -171,18 +186,25 @@
   );
   let inTune = $derived(pitch.cents !== null && Math.abs(pitch.cents) <= 5);
 
-  function draw(c: HTMLCanvasElement, snap: ScopeSnapshot) {
+  /** `live` is the module's combined (knob + CV) draw record. Every field
+   *  falls back to the knob so the card still renders before the engine
+   *  exists — and with nothing patched the two are the same number. */
+  function draw(c: HTMLCanvasElement, snap: ScopeSnapshot, live?: Record<string, number>) {
     const ctx2d = c.getContext('2d');
     if (!ctx2d) return;
     drawScope(
       ctx2d,
       snap,
       {
-        timeMs,
-        ch1Scale, ch1Offset, ch1Range,
-        ch2Scale, ch2Offset, ch2Range,
-        mode: node?.params.mode ?? 0,
-        intensity,
+        timeMs:    live?.timeMs    ?? timeMs,
+        ch1Scale:  live?.ch1Scale  ?? ch1Scale,
+        ch1Offset: live?.ch1Offset ?? ch1Offset,
+        ch1Range:  live?.ch1Range  ?? ch1Range,
+        ch2Scale:  live?.ch2Scale  ?? ch2Scale,
+        ch2Offset: live?.ch2Offset ?? ch2Offset,
+        ch2Range:  live?.ch2Range  ?? ch2Range,
+        mode:      live?.mode      ?? node?.params.mode ?? 0,
+        intensity: live?.intensity ?? intensity,
         ch1Color, ch2Color,
       },
       c.width,

@@ -2,11 +2,11 @@
   "name": "@patchtogether.live/art",
   "version": "0.0.0",
   "private": true,
-  "description": "Audio Regression Tests — render compiled DSP through OfflineAudioContext-equivalent and compare to .f32 baselines stored in git-lfs (D16, D17, D19).",
+  "description": "Audio Regression Tests \u2014 render compiled DSP through OfflineAudioContext-equivalent and compare to .f32 baselines stored in git-lfs (D16, D17, D19).",
   "type": "module",
   "scripts": {
     "test": "vitest run --config vitest.config.ts",
-    "art:cv-reach": "ART_CV_REACH=1 vitest run --config vitest.config.ts scenarios/cv-param-reach",
+    "art:cv-reach": "ART_CV_REACH=1 vitest run --config vitest.config.ts scenarios/cv-param-reach scenarios/cv-display-param-reach",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "art:update": "UPDATE_BASELINES=1 vitest run --config vitest.config.ts",
     "art:listen": "node scripts/listen-diff.mjs"
