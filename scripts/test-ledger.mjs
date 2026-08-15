@@ -298,6 +298,15 @@ function bucket3() {
   const needs = needsM ? needsM[1].split(',').map((s) => s.trim()).filter(Boolean) : [];
   // Jobs the umbrella aggregate step explicitly labels informational.
   const echoInformational = new Set([...umbrella.text.matchAll(/echo\s+"([a-z0-9-]+):[^"\n]*informational/g)].map((mm) => mm[1]));
+  // Jobs DECLARED informational while deliberately OFF the umbrella (#1505).
+  // The `waitedNotGating` rule below cannot see these by construction — it
+  // describes membership of `needs:`, and these are not in it — so the
+  // declaration is read from the umbrella's own comment. Names are anchored:
+  // test-ledger.test.ts fails on any that no longer resolve to a job.
+  const declaredOffUmbrella = new Set(
+    (/#\s*informational-off-umbrella:\s*([^\n]+)/.exec(umbrella.text)?.[1] ?? '')
+      .split(',').map((x) => x.trim()).filter(Boolean),
+  );
 
   const reasons = new Map();
   const informational = new Set();
@@ -306,11 +315,13 @@ function bucket3() {
     const coe = /^\s{4}continue-on-error:\s*true\s*$/m.test(j.text);
     const waitedNotGating = needs.includes(j.name) && !gatingJobs.includes(j.name);
     const echoed = echoInformational.has(j.name);
-    if (!coe && !waitedNotGating && !echoed) continue;
+    const declared = declaredOffUmbrella.has(j.name);
+    if (!coe && !waitedNotGating && !echoed && !declared) continue;
     const why = [];
     if (coe) why.push('continue-on-error: true');
     if (waitedNotGating) why.push('in umbrella needs+env but absent from the failing `if` (waited-on, non-blocking)');
     else if (echoed) why.push('umbrella aggregate step labels it informational');
+    else if (declared) why.push('declared informational and deliberately OFF the umbrella (reports its own check context)');
     informational.add(j.name);
     reasons.set(j.name, why.join('; '));
   }

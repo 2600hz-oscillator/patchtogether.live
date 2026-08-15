@@ -2597,30 +2597,32 @@ jobs:
   ci:
     name: typecheck + unit + ART + E2E
     if: always()
-    # collab is TEMPORARILY UN-GATED (2026-06-06): it was re-added to this gate
-    # in #559 on the basis of ad-hoc de-flaking + a 3x re-run, but it never went
-    # through the systematic 5x flake-purge the e2e/behavioral lanes did (task
-    # #69). It kept blocking unrelated PRs on residual @collab relay flake. It is
-    # now INFORMATIONAL (runs on every PR, visible, but does NOT block) until the
-    # collab-flake-purge.yml 5x run identifies + quarantines the flaky @collab
-    # tests — then it gets re-gated as a RELIABLE check. Tracked by task #69.
-    # collab is intentionally removed from `needs:` so the umbrella does not even
-    # WAIT on it (keeps merge latency low). merge-reports/behavioral notes below.
-    # webgl-smoke (SwiftShader WebGL floor) + webgl-attest (real-GPU attestation
-    # verify) + collab-attest (local-relay @collab attestation verify) are
-    # REQUIRED — each wired via the SAME THREE edits the semaphore plan calls out
-    # (adversarial-review fix V2): added to `needs:` here, to the aggregate `env:`
-    # below, AND to the failing `if [[ ]]` test. `needs:` ALONE only makes the
-    # umbrella WAIT (the umbrella is `if: always()` and gates via the env+if
-    # block, not via needs) — exactly how the per-PR collab/behavioral lanes sit
-    # un-gated. collab-attest was armed 2026-06-20 (the final @collab de-flake
-    # step) mirroring webgl-attest. See .claude/skills/webgl-attest.md
-    # §7 + .claude/skills/collab-attest.md.
-    # grand-attest is added to `needs:` (so the umbrella WAITS on it + logs its
-    # result) but is INFORMATIONAL — $GRAND_ATTEST is deliberately NOT in the
-    # failing `if` below, exactly how webgl-attest + collab-attest started. The
-    # owner arms it required later by adding $GRAND_ATTEST to the failing test.
-    needs: [actionlint, lint, typecheck, unit, dsp-build, build-web, art, build, e2e, webgl-smoke, webgl-attest, collab-attest, grand-attest, behavioral-smoke]
+    # ONE RULE, MECHANICALLY ENFORCED (#1505): every job in `needs:` below is
+    # tested by the failing `if [[ ]]`, and every job tested there is in
+    # `needs:`. The two lists are asserted IDENTICAL by
+    # scripts/ci-umbrella-parity.test.ts, which parses THIS file — because the
+    # divergence is invisible by inspection and costs real wall-clock:
+    # collab-attest and grand-attest sat in `needs:` (so the umbrella WAITED on
+    # both, on every PR) while the failing test named neither, i.e. they added
+    # latency and asserted nothing. They are now off the umbrella entirely.
+    #
+    # Arming an informational lane therefore means THREE edits together —
+    # `needs:`, the aggregate `env:`, and the failing `if` — and the parity test
+    # refuses any two of the three. `needs:` alone never gated anything: the
+    # umbrella is `if: always()`, so it runs even when a need fails and decides
+    # purely from the env+if block.
+    #
+    # Still INFORMATIONAL, and deliberately NOT on the umbrella. Each reports
+    # its own check context on the PR, so a failure stays visible — it just
+    # does not block, and does not delay the merge. DECLARED here in one
+    # machine-read line because the ledger generator can no longer INFER it:
+    # its old rule was "in needs: but not in the failing if", which stops
+    # describing a job the moment the job leaves `needs:` — the visibility
+    # these lanes have would have silently vanished with this very change.
+    # scripts/test-ledger.mjs parses the next line; test-ledger.test.ts asserts
+    # every name here resolves to a real job, so a stale entry is RED.
+    # informational-off-umbrella: collab, collab-attest, grand-attest
+    needs: [actionlint, lint, typecheck, unit, dsp-build, build-web, art, build, e2e, webgl-smoke, webgl-attest, behavioral-smoke]
     runs-on: ubuntu-latest
     timeout-minutes: 2
 
@@ -2638,8 +2640,6 @@ jobs:
           E2E: ${{ needs.e2e.result }}
           WEBGL_SMOKE: ${{ needs.webgl-smoke.result }}
           WEBGL_ATTEST: ${{ needs.webgl-attest.result }}
-          COLLAB_ATTEST: ${{ needs.collab-attest.result }}
-          GRAND_ATTEST: ${{ needs.grand-attest.result }}
           BEHAVIORAL_SMOKE: ${{ needs.behavioral-smoke.result }}
         run: |
           echo "actionlint:    $ACTIONLINT"
@@ -2653,8 +2653,6 @@ jobs:
           echo "e2e:           $E2E"
           echo "webgl-smoke:   $WEBGL_SMOKE"
           echo "webgl-attest:  $WEBGL_ATTEST"
-          echo "collab-attest: $COLLAB_ATTEST"
-          echo "grand-attest:  $GRAND_ATTEST (informational — not gating yet)"
           echo "behavioral-smoke: $BEHAVIORAL_SMOKE"
           echo "collab:        (informational — see collab job; temporarily un-gated, task #69)"
           # `e2e` is a matrix; its aggregated result is `success` only if all
@@ -2715,33 +2713,30 @@ jobs:
              || "$WEBGL_SMOKE" != "success" \
              || "$WEBGL_ATTEST" != "success" \
              || "$BEHAVIORAL_SMOKE" != "success" ]]; then
-          # collab-attest UN-GATED (2026-06-28): rolled back the #847 gating. It
-          # hinges on a LOCAL relay+DB `task collab:attest` whose flakiest specs
-          # (DOOM-MP lockstep/late-join) fail at retries=0 on anything but the
-          # owner's exact box, and it forces a local re-attest on every collab-
-          # basis change (a merge-blocking treadmill). It now sits INFORMATIONAL
-          # alongside the already-un-gated `collab` lane + `behavioral` (see above),
-          # pending a CI-native re-gate (a thin reliable @collab smoke as a real PR
-          # job — Wave-2). $COLLAB_ATTEST is intentionally NOT in the failing test.
-          # $WEBGL_ATTEST is GATING (re-armed 2026-06-11, Phase 4): the heavy-WebGL
-          # triage campaign is done (#752 green baseline + #753 lean lane) and the
-          # first real-GPU attestation (ci-webgl-attest/<hash>.json) is committed,
-          # so a WebGL-path change without a re-run `task webgl:attest` → hash
-          # mismatch → this fails. webgl-smoke + the coverage guard (in `unit`)
-          # are also gating.
-          # $COLLAB_ATTEST is GATING (armed 2026-06-20, the final step of the
-          # @collab de-flake campaign): the @collab multi-context lane is now a
-          # reliable real green lane (#844) and a fresh local-relay+DB attestation
-          # (ci-collab-attest/<hash>.json) is committed, so a collab/sync/relay-path
-          # change without a re-run `task collab:attest` → hash mismatch → this
-          # fails. Wired exactly like $WEBGL_ATTEST (needs:/env:/if). Like
-          # webgl-attest, graph/sync-layer PRs now owe a collab re-attest (the
-          # accepted treadmill); the nightly backstop (collab-nightly.yml) still
-          # runs the FULL real lane daily for under-load regressions.
-          # `collab` (the per-PR multi-context lane) stays informational here;
-          # behavioral is also INFORMATIONAL (un-gated — the 1x gate flaked on
-          # moog911 on the next PR). Do NOT re-add $BEHAVIORAL here until the lane
-          # is verified 3x-clean (proper flake-purge).
+          # ⚠ This block used to assert BOTH "$COLLAB_ATTEST is intentionally NOT
+          # in the failing test" and, eight lines later, "$COLLAB_ATTEST is
+          # GATING (armed 2026-06-20)". Both cannot be true; the `if` above was
+          # the only honest answer, and a reader had no way to know which
+          # sentence to believe (#1505). What is true, in one place:
+          #
+          #   $WEBGL_ATTEST GATES (re-armed 2026-06-11): a WebGL-path change
+          #   without a re-run `task webgl:attest` → hash mismatch → this fails.
+          #   webgl-smoke and the coverage guard (in `unit`) gate too.
+          #
+          #   collab-attest does NOT gate (un-gated 2026-06-28, rolling back
+          #   #847): it hinges on a LOCAL relay+DB run whose flakiest specs fail
+          #   at retries=0 on anything but the owner's box, and it forced a local
+          #   re-attest on every collab-basis change — a merge-blocking
+          #   treadmill. The nightly backstop (collab-nightly.yml) still runs the
+          #   full real lane daily. Re-gating it means a CI-native replacement
+          #   (a thin reliable @collab smoke as a real PR job).
+          #
+          #   grand-attest does NOT gate (informational since 2026-07-19).
+          #   behavioral does NOT gate — the 1x gate flaked on moog911; do not
+          #   re-add it until the lane is verified 3x-clean.
+          #
+          # Arming any of them = the three edits named above the `needs:` list,
+          # made together; ci-umbrella-parity.test.ts refuses a partial job.
             echo "::error::One or more required CI jobs failed."
             exit 1
           fi

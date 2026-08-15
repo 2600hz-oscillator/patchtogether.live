@@ -566,7 +566,7 @@ not a merge blocker.
 
 - `behavioral-coverage` — continue-on-error: true
 - `collab` — umbrella aggregate step labels it informational
-- `collab-attest` — in umbrella needs+env but absent from the failing `if` (waited-on, non-blocking)
-- `grand-attest` — in umbrella needs+env but absent from the failing `if` (waited-on, non-blocking)
+- `collab-attest` — declared informational and deliberately OFF the umbrella (reports its own check context)
+- `grand-attest` — declared informational and deliberately OFF the umbrella (reports its own check context)
 - `vrt` — continue-on-error: true
 

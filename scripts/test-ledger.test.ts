@@ -122,8 +122,13 @@ describe('CI gating classification (derived from ci.yml)', () => {
     expect(gating.has('webgl-attest')).toBe(true);
   });
 
-  it('collab-attest + grand-attest are waited-on but NON-gating; vrt is informational', () => {
-    // In the umbrella needs+env, but deliberately absent from the failing `if`.
+  it('collab-attest + grand-attest are informational and OFF the umbrella; vrt is informational', () => {
+    // ⚠ THIS TEST USED TO PIN THE DEFECT. It asserted they were "waited-on but
+    // NON-gating" — i.e. it encoded as correct the one state #1505 calls
+    // indefensible: in the umbrella's `needs:` (so every PR waits on them)
+    // while the failing `if` never reads their result. They are now off the
+    // umbrella entirely and report their own check contexts; parity between
+    // `needs:` and the failing `if` is enforced by ci-umbrella-parity.test.ts.
     expect(informational.has('collab-attest')).toBe(true);
     expect(informational.has('grand-attest')).toBe(true);
     expect(gating.has('collab-attest')).toBe(false);
