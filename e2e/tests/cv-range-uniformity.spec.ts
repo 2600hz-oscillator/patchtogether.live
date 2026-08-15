@@ -37,10 +37,36 @@ interface ParamSweep {
   max: number;
   span: number;
   samples: number[];
+  /** How many reads actually returned a number. */
+  polls: number;
+  /** Wall-clock the window really covered, IN THE PAGE. ms. */
+  elapsedMs: number;
 }
 
-/** Sample readParam(nodeId, paramId) over the engine N times at a fixed
- *  interval; return the observed min/max/span (max-min). */
+/**
+ * Sample `readParam(nodeId, paramId)` N times at a fixed interval and return
+ * the observed min/max/span.
+ *
+ * ── the accumulator is INSIDE THE PAGE (#1523 + CLAUDE.md defence #5) ───────
+ *
+ * This was `for (…) { await page.evaluate(read); await page.waitForTimeout(60) }`
+ * — 32 CDP round trips per sweep, on the SAME main thread as the LFO, the audio
+ * graph and the analyser taps it is measuring. Under contention each round trip
+ * costs far more than the interval it is spacing (the shard-1 trace on #1303
+ * measured a single `waitForTimeout(60)` taking 392 ms), so the "1.92 s window"
+ * could become a handful of samples spread over many seconds — and a sweep that
+ * missed both LFO peaks reports a NARROW SPAN, which is indistinguishable from
+ * the modulation bug this file exists to catch.
+ *
+ * One `page.evaluate`; a `setInterval` in the page accumulates. `polls` and
+ * `elapsedMs` come back with the numbers so a failure can say whether the
+ * instrument looked, and how long it really looked for, instead of leaving that
+ * to inference.
+ *
+ * `intervalMs` is a PRODUCT-SIDE quantity here, not a settle: it is the
+ * sampling stride against a running LFO, chosen for phase coverage at the rate
+ * each test sets. See the per-test comments.
+ */
 async function sampleParamSweep(
   page: Page,
   nodeId: string,
@@ -48,36 +74,63 @@ async function sampleParamSweep(
   samples: number,
   intervalMs: number,
 ): Promise<ParamSweep> {
-  const out: number[] = [];
-  for (let i = 0; i < samples; i++) {
-    const v = await page.evaluate(
-      ({ id, pid }) => {
+  const sweep = await page.evaluate(
+    ({ id, pid, n, gap }) =>
+      new Promise<{ samples: number[]; polls: number; elapsedMs: number }>((resolve) => {
         const w = globalThis as unknown as {
           __engine?: () => {
-            readParam: (node: { id: string; type: string; domain: string }, paramId: string) => number | undefined;
+            readParam: (
+              node: { id: string; type: string; domain: string },
+              paramId: string,
+            ) => number | undefined;
           } | null;
           __patch: { nodes: Record<string, { id: string; type: string; domain: string }> };
         };
-        const eng = w.__engine?.();
-        if (!eng) return null;
-        const node = w.__patch.nodes[id];
-        if (!node) return null;
-        const r = eng.readParam(node, pid);
-        return typeof r === 'number' ? r : null;
-      },
-      { id: nodeId, pid: paramId },
+        const out: number[] = [];
+        const started = performance.now();
+        // A bound so a graph that never materialises fails as a timeout with a
+        // readable `polls: 0` rather than hanging: four times the nominal
+        // window, which also absorbs the engine-startup reads that return
+        // undefined before the node exists.
+        const deadline = started + n * gap * 4 + 2000;
+        const timer = setInterval(() => {
+          const eng = w.__engine?.();
+          const node = w.__patch?.nodes?.[id];
+          if (eng && node) {
+            const r = eng.readParam(node, pid);
+            if (typeof r === 'number') out.push(r);
+          }
+          if (out.length >= n || performance.now() > deadline) {
+            clearInterval(timer);
+            resolve({ samples: out, polls: out.length, elapsedMs: performance.now() - started });
+          }
+        }, gap);
+      }),
+    { id: nodeId, pid: paramId, n: samples, gap: intervalMs },
+  );
+
+  // "The instrument never looked" must not be able to print as "the param never
+  // moved" — those need opposite fixes and a span of 0 looks the same either way.
+  if (sweep.polls === 0) {
+    throw new Error(
+      `sampleParamSweep(${nodeId}.${paramId}) read the param ZERO times in ${sweep.elapsedMs.toFixed(0)} ms ` +
+        `(wanted ${samples} samples at ${intervalMs} ms). The engine or the node never materialised — ` +
+        `this is an instrument failure, NOT evidence that the CV range is narrow.`,
     );
-    if (typeof v === 'number') out.push(v);
-    await page.waitForTimeout(intervalMs);
   }
+
   let lo = Infinity;
   let hi = -Infinity;
-  for (const v of out) {
+  for (const v of sweep.samples) {
     if (v < lo) lo = v;
     if (v > hi) hi = v;
   }
-  return { min: lo, max: hi, span: hi - lo, samples: out };
+  return { min: lo, max: hi, span: hi - lo, ...sweep };
 }
+
+/** Uniform failure context: what was seen, how many times, over how long. */
+const seen = (s: ParamSweep): string =>
+  `${s.polls} samples over ${s.elapsedMs.toFixed(0)} ms: ${s.samples.slice(0, 8).map((v) => v.toPrecision(3)).join(', ')}…`;
 
 test('LFO sweeps ADSR attack (log) across multiple orders of magnitude', async ({ page, rack }) => {
   await spawnPatch(
@@ -90,12 +143,13 @@ test('LFO sweeps ADSR attack (log) across multiple orders of magnitude', async (
       { id: 'e1', from: { nodeId: 'lfo', portId: 'phase0' }, to: { nodeId: 'a', portId: 'attack' }, sourceType: 'cv', targetType: 'cv' },
     ],
   );
-  await page.waitForTimeout(400);
-
   // Sample more aggressively to catch LFO peaks: 32 samples × 60ms ≈ 1.92s
   // window. At 4Hz LFO that's ~7.7 cycles, sampled with stride 60ms = 0.24
   // cycles/sample — phase coverage is dense enough to pick up samples within
   // ±0.05 of the peak (sin amplitude ≥ 0.95) at least once across the window.
+  // The stride is a PRODUCT-SIDE interval (the LFO's period), not a settle, and
+  // it is now honoured by a setInterval in the page rather than by 32 round
+  // trips that would each cost more than the stride under load.
   const sweep = await sampleParamSweep(page, 'a', 'attack', 32, 60);
 
   // Param natural range: 0.001..10s. Log-symmetric scaling at knob 0.1:
@@ -103,11 +157,11 @@ test('LFO sweeps ADSR attack (log) across multiple orders of magnitude', async (
   // Observed span should be ≥ ~9s in the worst case.
   expect(
     sweep.span,
-    `ADSR attack sweep span ${sweep.span} (samples ${sweep.samples.slice(0, 8).join(', ')}…)`,
+    `ADSR attack sweep span ${sweep.span} (${seen(sweep)})`,
   ).toBeGreaterThanOrEqual(0.05);
   expect(
     sweep.max,
-    `ADSR attack sweep max ${sweep.max} (samples ${sweep.samples.slice(0, 8).join(', ')}…)`,
+    `ADSR attack sweep max ${sweep.max} (${seen(sweep)})`,
   ).toBeGreaterThanOrEqual(0.5);
 });
 
@@ -122,15 +176,16 @@ test('LFO sweeps QBRT cutoff (log) across multiple octaves', async ({ page, rack
       { id: 'e1', from: { nodeId: 'lfo', portId: 'phase0' }, to: { nodeId: 'qb', portId: 'cutoff' }, sourceType: 'cv', targetType: 'cv' },
     ],
   );
-  await page.waitForTimeout(400);
-
-  const sweep = await sampleParamSweep(page, 'qb', 'cutoff', 16, 110);
+  // No post-spawn settle: the in-page sampler below skips reads until the
+  // engine and the node exist, so "the graph is up" is a predicate it already
+  // enforces rather than a duration this line has to guess.
+  const sweep = await sampleParamSweep(page,'qb', 'cutoff', 16, 110);
   // QBRT cutoff range 20..20000Hz. Log scaling at knob 1000Hz: cv=±1 = ×31.6.
   // Span: 20..20000 (clamp ends), so observed span should be at least 4 octaves.
   const octaves = sweep.max > 0 && sweep.min > 0 ? Math.log2(sweep.max / sweep.min) : 0;
   expect(
     octaves,
-    `QBRT cutoff observed octave span: ${octaves.toFixed(2)} (min=${sweep.min}, max=${sweep.max}, samples ${sweep.samples.slice(0, 5).join(', ')}…)`,
+    `QBRT cutoff observed octave span: ${octaves.toFixed(2)} (min=${sweep.min}, max=${sweep.max}; ${seen(sweep)})`,
   ).toBeGreaterThanOrEqual(2);
 });
 
@@ -145,14 +200,15 @@ test('LFO sweeps DRUMMERGIRL volume (linear 0..2) across full range', async ({ p
       { id: 'e1', from: { nodeId: 'lfo', portId: 'phase0' }, to: { nodeId: 'dg', portId: 'volume' }, sourceType: 'cv', targetType: 'cv' },
     ],
   );
-  await page.waitForTimeout(400);
-
-  const sweep = await sampleParamSweep(page, 'dg', 'volume', 16, 110);
+  // No post-spawn settle: the in-page sampler below skips reads until the
+  // engine and the node exist, so "the graph is up" is a predicate it already
+  // enforces rather than a duration this line has to guess.
+  const sweep = await sampleParamSweep(page,'dg', 'volume', 16, 110);
   // Volume 0..2, knob 1.0, halfSpan 1.0 → cv=±1 sweeps 0..2 fully (span 2).
   // 40% threshold = span ≥ 0.8.
   expect(
     sweep.span,
-    `DRUMMERGIRL volume sweep span ${sweep.span} (samples ${sweep.samples.slice(0, 5).join(', ')}…)`,
+    `DRUMMERGIRL volume sweep span ${sweep.span} (${seen(sweep)})`,
   ).toBeGreaterThanOrEqual(0.8);
 });
 
@@ -167,14 +223,15 @@ test('LFO sweeps MIXMSTRS ch1 EQ low (-12..+12 dB linear) across full range', as
       { id: 'e1', from: { nodeId: 'lfo', portId: 'phase0' }, to: { nodeId: 'mx', portId: 'ch1_low' }, sourceType: 'cv', targetType: 'cv' },
     ],
   );
-  await page.waitForTimeout(400);
-
-  const sweep = await sampleParamSweep(page, 'mx', 'ch1_low', 16, 110);
+  // No post-spawn settle: the in-page sampler below skips reads until the
+  // engine and the node exist, so "the graph is up" is a predicate it already
+  // enforces rather than a duration this line has to guess.
+  const sweep = await sampleParamSweep(page,'mx', 'ch1_low', 16, 110);
   // EQ low -12..+12, knob 0, halfSpan 12 → cv=±1 sweeps full ±12.
   // 40% = span ≥ 9.6 dB.
   expect(
     sweep.span,
-    `MIXMSTRS ch1_low sweep span ${sweep.span} dB (samples ${sweep.samples.slice(0, 5).join(', ')}…)`,
+    `MIXMSTRS ch1_low sweep span ${sweep.span} dB (${seen(sweep)})`,
   ).toBeGreaterThanOrEqual(9);
 });
 
@@ -189,14 +246,15 @@ test('LFO sweeps DESTROY decimate (1..64 linear) across most of range', async ({
       { id: 'e1', from: { nodeId: 'lfo', portId: 'phase0' }, to: { nodeId: 'd', portId: 'decimate' }, sourceType: 'cv', targetType: 'cv' },
     ],
   );
-  await page.waitForTimeout(400);
-
-  const sweep = await sampleParamSweep(page, 'd', 'decimate', 16, 110);
+  // No post-spawn settle: the in-page sampler below skips reads until the
+  // engine and the node exist, so "the graph is up" is a predicate it already
+  // enforces rather than a duration this line has to guess.
+  const sweep = await sampleParamSweep(page,'d', 'decimate', 16, 110);
   // Decimate 1..64, knob 32, halfSpan 31.5 → cv=±1 sweeps 0.5..63.5 → clamp 1..63.
   // 40% threshold = span ≥ 25.
   expect(
     sweep.span,
-    `DESTROY decimate sweep span ${sweep.span} (samples ${sweep.samples.slice(0, 5).join(', ')}…)`,
+    `DESTROY decimate sweep span ${sweep.span} (${seen(sweep)})`,
   ).toBeGreaterThanOrEqual(25);
 });
 
@@ -211,12 +269,13 @@ test('LFO sweeps RINGBACK mix (0..1 linear) across most of range', async ({ page
       { id: 'e1', from: { nodeId: 'lfo', portId: 'phase0' }, to: { nodeId: 'rb', portId: 'mix' }, sourceType: 'cv', targetType: 'cv' },
     ],
   );
-  await page.waitForTimeout(400);
-
-  const sweep = await sampleParamSweep(page, 'rb', 'mix', 16, 110);
+  // No post-spawn settle: the in-page sampler below skips reads until the
+  // engine and the node exist, so "the graph is up" is a predicate it already
+  // enforces rather than a duration this line has to guess.
+  const sweep = await sampleParamSweep(page,'rb', 'mix', 16, 110);
   // Mix 0..1, knob 0.5, halfSpan 0.5 → cv=±1 sweeps 0..1. 40% threshold = span ≥ 0.4.
   expect(
     sweep.span,
-    `RINGBACK mix sweep span ${sweep.span} (samples ${sweep.samples.slice(0, 5).join(', ')}…)`,
+    `RINGBACK mix sweep span ${sweep.span} (${seen(sweep)})`,
   ).toBeGreaterThanOrEqual(0.4);
 });

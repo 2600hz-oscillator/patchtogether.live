@@ -21,6 +21,34 @@ import { readScopeSnapshot, summarize } from './_module-coverage-helpers';
 
 test.describe.configure({ mode: 'parallel' });
 
+/** RMS of the scope's ch1 right now, or NaN when there is no snapshot yet. */
+async function scopeRms(page: import('@playwright/test').Page, scopeId: string): Promise<number> {
+  const snap = await readScopeSnapshot(page, scopeId);
+  return snap ? summarize(snap.ch1).rms : Number.NaN;
+}
+
+/**
+ * Wait until the patch is actually producing audio at `scopeId` (#1523).
+ *
+ * This replaces `waitForTimeout(700…800)` after `spawnPatch` — a guess at how
+ * long an audio graph takes to materialise and fill an analyser. The guess is
+ * the dangerous kind: if it is short, the BASELINE measured next is near-silence
+ * for a reason that has nothing to do with ducking, and the test then compares
+ * two numbers neither of which means what its name says. NaN (no snapshot at
+ * all) fails the comparison, so "the instrument never looked" cannot pass here.
+ */
+async function audioFlowing(
+  page: import('@playwright/test').Page,
+  scopeId: string,
+): Promise<void> {
+  await expect
+    .poll(() => scopeRms(page, scopeId), {
+      timeout: 10_000,
+      message: `${scopeId} never saw signal — the graph did not start (NaN = no scope snapshot at all)`,
+    })
+    .toBeGreaterThan(0.001);
+}
+
 // ────────────────────────────────────────────────────────────────────────────
 // 1. SMOKE — card mounts + audio flows
 // ────────────────────────────────────────────────────────────────────────────
@@ -50,21 +78,26 @@ test('SIDECAR smoke: VCO → SIDECAR → AUDIOOUT — card mounts, no errors', a
   await expect(card).toHaveCount(1);
   await expect(card).toContainText('SIDECAR');
 
-  // Confirm the threshold param round-trips through the AudioParam.
-  await page.waitForTimeout(500);
-  const readable = await page.evaluate(() => {
-    const w = globalThis as unknown as {
-      __engine?: () => {
-        readParam: (n: { id: string; type: string; domain: string }, p: string) => number | undefined;
-      } | null;
-      __patch: { nodes: Record<string, { id: string; type: string; domain: string }> };
-    };
-    const e = w.__engine?.();
-    const n = w.__patch.nodes['a-sc'];
-    if (!e || !n) return null;
-    return e.readParam(n, 'threshold');
-  });
-  expect(readable).toBeCloseTo(-18, 0);
+  // Confirm the threshold param round-trips through the AudioParam. Polling the
+  // read IS the wait: the round trip is what we are waiting for.
+  await expect
+    .poll(
+      () =>
+        page.evaluate(() => {
+          const w = globalThis as unknown as {
+            __engine?: () => {
+              readParam: (n: { id: string; type: string; domain: string }, p: string) => number | undefined;
+            } | null;
+            __patch: { nodes: Record<string, { id: string; type: string; domain: string }> };
+          };
+          const e = w.__engine?.();
+          const n = w.__patch.nodes['a-sc'];
+          if (!e || !n) return null;
+          return e.readParam(n, 'threshold');
+        }),
+      { timeout: 10_000, message: 'SIDECAR threshold (dB) should round-trip through the AudioParam' },
+    )
+    .toBeCloseTo(-18, 0);
 
 });
 
@@ -95,12 +128,10 @@ test('SIDECAR ducker: SC pad is in the mix + dips when the MAIN trigger fires', 
     ],
   );
 
-  await page.waitForTimeout(700);
+  await audioFlowing(page, 'a-scp');
 
   // Baseline: NOISE trigger hot → SC ducked → audio_l_out attenuated.
-  const hotSnap = await readScopeSnapshot(page, 'a-scp');
-  expect(hotSnap).not.toBeNull();
-  const hotRms = summarize(hotSnap!.ch1).rms;
+  const hotRms = await scopeRms(page, 'a-scp');
 
   // Silence the NOISE trigger → release → SC climbs back into the mix.
   await page.evaluate(() => {
@@ -113,17 +144,20 @@ test('SIDECAR ducker: SC pad is in the mix + dips when the MAIN trigger fires', 
       if (n) n.params.level = 0;
     });
   });
-  await page.waitForTimeout(400); // > release time (50 ms) + settle
-
-  const openSnap = await readScopeSnapshot(page, 'a-scp');
-  expect(openSnap).not.toBeNull();
-  const openRms = summarize(openSnap!.ch1).rms;
-
   // Open RMS (SC fully present) must clearly exceed Hot RMS (SC ducked) —
-  // proves BOTH that the SC is in the mix AND that the main ducks it.
-  expect(openRms).toBeGreaterThan(hotRms * 1.15);
+  // proves BOTH that the SC is in the mix AND that the main ducks it. The old
+  // `waitForTimeout(400) // > release time (50 ms) + settle` guessed how long
+  // the release takes on this machine; the ratio it was waiting for is the
+  // assertion, so poll that instead and the release time stops being a number
+  // the test has to know.
+  await expect
+    .poll(() => scopeRms(page, 'a-scp'), {
+      timeout: 10_000,
+      message: `un-ducked RMS should climb past 1.15× the ducked baseline (${hotRms.toFixed(4)})`,
+    })
+    .toBeGreaterThan(hotRms * 1.15);
   // And the SC really is audible when un-ducked (the core bug: it was 0).
-  expect(openRms).toBeGreaterThan(0.05);
+  expect(await scopeRms(page, 'a-scp')).toBeGreaterThan(0.05);
 
 });
 
@@ -163,12 +197,10 @@ test('SIDECAR env_inv_out → STEREOVCA.strength_l ducks a second VCO', async ({
     ],
   );
 
-  await page.waitForTimeout(800);
+  await audioFlowing(page, 'a-scp');
 
   // Hot SC (NOISE loud) → ducking active → STEREOVCA out attenuated.
-  const duckedSnap = await readScopeSnapshot(page, 'a-scp');
-  expect(duckedSnap).not.toBeNull();
-  const duckedRms = summarize(duckedSnap!.ch1).rms;
+  const duckedRms = await scopeRms(page, 'a-scp');
 
   // Silence NOISE → no compression → env_inv_out → 1 → unity gain.
   await page.evaluate(() => {
@@ -181,15 +213,14 @@ test('SIDECAR env_inv_out → STEREOVCA.strength_l ducks a second VCO', async ({
       if (n) n.params.level = 0;
     });
   });
-  await page.waitForTimeout(400);
-
-  const openSnap = await readScopeSnapshot(page, 'a-scp');
-  expect(openSnap).not.toBeNull();
-  const openRms = summarize(openSnap!.ch1).rms;
-
   // openRms should be SIGNIFICANTLY greater than duckedRms. Pin a 1.5x
   // ratio (real-world separation is much larger; 1.5x is a flake-safe
-  // floor).
-  expect(openRms).toBeGreaterThan(duckedRms * 1.5);
+  // floor). Polling for the ratio removes the release-time guess.
+  await expect
+    .poll(() => scopeRms(page, 'a-scp'), {
+      timeout: 10_000,
+      message: `un-ducked RMS should climb past 1.5× the ducked baseline (${duckedRms.toFixed(4)})`,
+    })
+    .toBeGreaterThan(duckedRms * 1.5);
 
 });

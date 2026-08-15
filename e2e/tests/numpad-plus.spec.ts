@@ -27,6 +27,41 @@ async function spawnNumpadPlus(page: Page): Promise<void> {
   await expect(page.locator('[data-testid="numpad-plus-card"]')).toBeVisible();
 }
 
+/**
+ * Several tests flip a mode by writing the param straight into the patch graph
+ * rather than clicking. The write is synchronous; the module's REACTION to it is
+ * not — and #1523's point is that "not synchronous" is not a duration. Each of
+ * those modes has a toggle button that renders `class:on={…}` straight off the
+ * live param, so the card's own rendering is the readiness signal: when the
+ * toggle lights, the module has seen the param. That replaces a
+ * `waitForTimeout(50)` which was a guess that happened to be long enough on the
+ * machine it was written on.
+ *
+ * ⚠ Read the CLASS, not `aria-pressed`: only the POLY button carries that
+ * attribute (OVD does not), and an attribute assertion against a button that
+ * never has it fails as "the param never landed" — a true-looking message for a
+ * completely different fault.
+ */
+const modeArmed = (page: Page, mode: 'overdub' | 'poly') =>
+  expect(
+    page.locator(`[data-testid="numpad-${mode}"]`),
+    `the NUMPAD+ card never lit ${mode} — the param write did not reach the module`,
+  ).toHaveClass(/(^|\s)on(\s|$)/);
+
+/** Step 0 of layer 0, as the module has committed it to node.data. */
+const readStep0 = (page: Page) =>
+  page.evaluate(() => {
+    const w = globalThis as unknown as {
+      __patch: {
+        nodes: Record<
+          string,
+          { data?: { layers?: Array<Array<{ on?: boolean; midi?: number | null; midis?: number[] }>> } }
+        >;
+      };
+    };
+    return w.__patch.nodes.np?.data?.layers?.[0]?.[0] ?? null;
+  });
+
 test.describe('NUMPAD+ module', () => {
   test('spawns + card mounts + no console errors', async ({ page }) => {
     const errs: string[] = [];
@@ -169,33 +204,47 @@ test.describe('NUMPAD+ module', () => {
     await page.evaluate(() => {
       document.dispatchEvent(new KeyboardEvent('keydown', { code: 'Numpad1', key: '1' }));
     });
-    await page.waitForTimeout(250);
 
-    const pitch = await page.evaluate(() => {
-      const w = globalThis as unknown as {
-        __engine?: () => { read: (n: unknown, k: string) => unknown } | null;
-        __patch: { nodes: Record<string, { id: string; type: string; domain: string }> };
-      };
-      const eng = w.__engine?.();
-      const sc = w.__patch.nodes.sc;
-      if (!eng || !sc) return null;
-      const snap = eng.read(sc, 'snapshot') as { ch1?: Float32Array } | null;
-      if (!snap?.ch1) return null;
-      return snap.ch1[snap.ch1.length - 1] ?? null;
-    });
+    const pitchSample = () =>
+      page.evaluate(() => {
+        const w = globalThis as unknown as {
+          __engine?: () => { read: (n: unknown, k: string) => unknown } | null;
+          __patch: { nodes: Record<string, { id: string; type: string; domain: string }> };
+        };
+        const eng = w.__engine?.();
+        const sc = w.__patch.nodes.sc;
+        if (!eng || !sc) return null;
+        const snap = eng.read(sc, 'snapshot') as { ch1?: Float32Array } | null;
+        if (!snap?.ch1) return null;
+        return snap.ch1[snap.ch1.length - 1] ?? null;
+      });
+
+    // C4 = MIDI 60 = 0 V/oct. setTargetAtTime smoothing means the sampled value
+    // converges exponentially toward 0 — assert it lands well within ±0.1 V/oct
+    // (±1.2 semitones). Polling replaces a `waitForTimeout(250)` guess at how
+    // long that convergence takes on this machine.
+    //
+    // A missing snapshot maps to NaN rather than being skipped: the old form
+    // read once, and its `if (pitch !== null)` guard meant a scope that had not
+    // produced a buffer yet silently asserted NOTHING. NaN fails every
+    // comparison, so "the instrument did not look" now keeps polling and then
+    // fails loudly instead of passing.
+    await expect
+      .poll(
+        async () => {
+          const p = await pitchSample();
+          return p === null ? Number.NaN : Math.abs(p);
+        },
+        {
+          timeout: 5_000,
+          message: '|l1_pitch| in V/oct should smooth to ~0 for C4 (NaN = no scope buffer read)',
+        },
+      )
+      .toBeLessThan(0.1);
 
     await page.evaluate(() => {
       document.dispatchEvent(new KeyboardEvent('keyup', { code: 'Numpad1', key: '1' }));
     });
-
-    // C4 = MIDI 60 = 0 V/oct. setTargetAtTime smoothing means the
-    // sampled value should be near 0; the exact value depends on
-    // exponential convergence — assert it's well within ±0.1 (which
-    // would correspond to ±1.2 semitones — much smaller than 1V).
-    expect(pitch, `l1_pitch sample = ${pitch} (expected ~0 for C4)`).not.toBeNull();
-    if (pitch !== null) {
-      expect(Math.abs(pitch)).toBeLessThan(0.1);
-    }
   });
 
   test('OVERDUB writes the pressed note into the active layer step 0 at start of bar', async ({ page }) => {
@@ -209,7 +258,7 @@ test.describe('NUMPAD+ module', () => {
       const np = w.__patch.nodes.np;
       if (np) np.params.overdub = 1;
     });
-    await page.waitForTimeout(50);
+    await modeArmed(page, 'overdub');
 
     // Dispatch keydown directly on the document (capture-phase listener
     // sees it regardless of focused element).
@@ -217,7 +266,13 @@ test.describe('NUMPAD+ module', () => {
       document.dispatchEvent(new KeyboardEvent('keydown', { code: 'Numpad3', key: '3' }));
       document.dispatchEvent(new KeyboardEvent('keyup',   { code: 'Numpad3', key: '3' }));
     });
-    await page.waitForTimeout(150);
+    // The recorded step IS the subject — wait for it, not for 150 ms.
+    await expect
+      .poll(async () => (await readStep0(page))?.on ?? false, {
+        timeout: 5_000,
+        message: 'overdub should write the pressed note into layer 0 / step 0',
+      })
+      .toBe(true);
 
     const debug = await page.evaluate(() => {
       const w = globalThis as unknown as {
@@ -270,19 +325,28 @@ test.describe('NUMPAD+ module', () => {
       const np = w.__patch.nodes.np;
       if (np) np.params.activeLayer = 0;
     });
-    await page.waitForTimeout(150);
 
-    const al = await page.evaluate(() => {
-      const w = globalThis as unknown as {
-        __engine?: () => { read: (n: unknown, k: string) => unknown } | null;
-        __patch: { nodes: Record<string, { id: string; type: string; domain: string }> };
-      };
-      const eng = w.__engine?.();
-      const np = w.__patch.nodes.np;
-      if (!eng || !np) return -1;
-      return eng.read(np, 'activeLayer') as number;
-    });
-    expect(al, `activeLayer via CV = ${al} (expected 3 = L4)`).toBe(3);
+    const activeLayer = () =>
+      page.evaluate(() => {
+        const w = globalThis as unknown as {
+          __engine?: () => { read: (n: unknown, k: string) => unknown } | null;
+          __patch: { nodes: Record<string, { id: string; type: string; domain: string }> };
+        };
+        const eng = w.__engine?.();
+        const np = w.__patch.nodes.np;
+        if (!eng || !np) return -1;
+        return eng.read(np, 'activeLayer') as number;
+      });
+
+    // The CV tap has to be read by the module before it can win over the param;
+    // "has it been read yet" is the question, so ask it repeatedly rather than
+    // sleeping 150 ms and asking once.
+    await expect
+      .poll(activeLayer, {
+        timeout: 5_000,
+        message: 'layer CV 0.75 → round(0.75×4) = 3 (L4) must win over activeLayer=0',
+      })
+      .toBe(3);
   });
 
   // ─── Poly mode ───────────────────────────────────────────────────
@@ -310,7 +374,8 @@ test.describe('NUMPAD+ module', () => {
       const np = w.__patch.nodes.np;
       if (np) { np.params.poly = 1; np.params.overdub = 1; }
     });
-    await page.waitForTimeout(50);
+    await modeArmed(page, 'poly');
+    await modeArmed(page, 'overdub');
 
     // HOLD a 3-note chord (C4/E4/G4 = Numpad1/5/8 at octave 4) — keydowns with
     // no keyup between, so all three are held when the last one captures.
@@ -319,25 +384,28 @@ test.describe('NUMPAD+ module', () => {
       document.dispatchEvent(new KeyboardEvent('keydown', { code: 'Numpad5', key: '5' }));
       document.dispatchEvent(new KeyboardEvent('keydown', { code: 'Numpad8', key: '8' }));
     });
-    await page.waitForTimeout(120);
+    // The capture must have LANDED before the keyup, or the chord is released
+    // out from under it. "It has landed" is observable — three midis on the
+    // step — so wait for that rather than for 120 ms.
+    await expect
+      .poll(async () => (await readStep0(page))?.midis?.length ?? 0, {
+        timeout: 5_000,
+        message: 'all three HELD keys should be captured into the step before release',
+      })
+      .toBe(3);
     await page.evaluate(() => {
       for (const code of ['Numpad1', 'Numpad5', 'Numpad8']) {
         document.dispatchEvent(new KeyboardEvent('keyup', { code, key: '' }));
       }
     });
 
-    const step0 = await page.evaluate(() => {
-      const w = globalThis as unknown as {
-        __patch: { nodes: Record<string, { data?: { layers?: Array<Array<{ on?: boolean; midi?: number | null; midis?: number[] }>> } }> };
-      };
-      return w.__patch.nodes.np?.data?.layers?.[0]?.[0] ?? null;
-    });
-    expect(step0, 'step 0 recorded').not.toBeNull();
-    expect(step0!.on).toBe(true);
+    const recorded = await readStep0(page);
+    expect(recorded, 'step 0 recorded').not.toBeNull();
+    expect(recorded!.on).toBe(true);
     // Up to 5 held notes captured (C4/E4/G4 = 60/64/67), sorted ascending.
-    expect(step0!.midis).toEqual([60, 64, 67]);
+    expect(recorded!.midis).toEqual([60, 64, 67]);
     // Mono out reads `midi` = the LOWEST of the chord.
-    expect(step0!.midi).toBe(60);
+    expect(recorded!.midi).toBe(60);
   });
 
   test('held notes keep their PRESS-TIME octave when the octave changes mid-hold', async ({ page }) => {
@@ -347,7 +415,8 @@ test.describe('NUMPAD+ module', () => {
       const np = w.__patch.nodes.np;
       if (np) { np.params.poly = 1; np.params.overdub = 1; np.params.octave = 4; }
     });
-    await page.waitForTimeout(50);
+    await modeArmed(page, 'poly');
+    await modeArmed(page, 'overdub');
 
     // Hold C at octave 4 (=60), then press the octave-UP key (numpad +) to move
     // to octave 5, then add D (=74) — the still-held C must stay at octave 4.
@@ -356,7 +425,13 @@ test.describe('NUMPAD+ module', () => {
       document.dispatchEvent(new KeyboardEvent('keydown', { code: 'NumpadAdd', key: '+' })); // octave → 5
       document.dispatchEvent(new KeyboardEvent('keydown', { code: 'Numpad3', key: '3' })); // D5 = 74
     });
-    await page.waitForTimeout(120);
+    // Both notes captured before the release — the step's midis are the subject.
+    await expect
+      .poll(async () => (await readStep0(page))?.midis?.length ?? 0, {
+        timeout: 5_000,
+        message: 'both held keys should be captured before release',
+      })
+      .toBe(2);
     await page.evaluate(() => {
       for (const code of ['Numpad1', 'Numpad3']) {
         document.dispatchEvent(new KeyboardEvent('keyup', { code, key: '' }));

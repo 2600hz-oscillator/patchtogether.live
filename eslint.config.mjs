@@ -31,6 +31,8 @@ import ts from 'typescript-eslint';
 import svelte from 'eslint-plugin-svelte';
 import globals from 'globals';
 import { NOT_LINTED } from './scripts/lint/lint-policy.mjs';
+import { localPlugin } from './scripts/lint/rules/wait-for-timeout-needs-why.mjs';
+import { RULE_ID as WAIT_RULE } from './scripts/lint/wait-ledger.mjs';
 
 /**
  * INSTRUMENT CORRECTION — `no-unused-vars` reported two large classes of
@@ -136,5 +138,25 @@ export default ts.config(
     rules: {
       '@typescript-eslint/no-unused-vars': ['error', { ...UNUSED_VARS_OPTIONS, args: 'none' }],
     },
+  },
+
+  {
+    /**
+     * REPO-LOCAL RULE, not an instrument correction and not a staged one
+     * (issue #1523). `waitForTimeout` under `e2e/` is denied unless the call
+     * site names the product-side interval it mirrors; everything else is a
+     * readiness wait and has a frame count or an auto-retrying assertion as its
+     * correct form. Deliberately absent from STAGED_RULES, so it BLOCKS from
+     * the moment it lands — the same call `$LINT` made in #1504, and for the
+     * same reason: a lint signal nobody has to act on is the defect.
+     *
+     * Scoped to `e2e/**` rather than the tree because `waitForTimeout` is a
+     * Playwright API; nothing outside the harness can call it. The gate's
+     * "must be silent" control lints the identical text at a NON-e2e path, so
+     * this scoping is asserted rather than assumed.
+     */
+    files: ['e2e/**/*.ts'],
+    plugins: { local: localPlugin },
+    rules: { [WAIT_RULE]: 'error' },
   },
 );

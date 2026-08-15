@@ -309,6 +309,17 @@ tasks:
     cmds:
       - node scripts/lint/eslint-gate.mjs
 
+  lint:waits:accept:
+    desc: |
+      Regenerate e2e/waitfortimeout-ledger.generated.txt — the outstanding
+      population of the #1523 waitForTimeout burn-down. Run it after converting
+      or annotating waits, then REVIEW THE DIFF: every removed line should be a
+      wait you turned into a frame count, a predicate, or an annotated
+      product-side interval. It REFUSES to add a line, so the artifact can only
+      shrink; a new un-annotated wait is a `task lint` failure, not a ledger entry.
+    cmds:
+      - node scripts/lint/wait-ledger-accept.mjs
+
   lint:shell:
     desc: |
       ShellCheck over every tracked *.sh at the strictest severity. ZERO findings

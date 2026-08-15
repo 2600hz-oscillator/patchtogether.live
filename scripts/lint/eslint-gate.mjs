@@ -45,6 +45,14 @@ import {
   BLIND_SPOTS,
   UNUSED_DISABLE_DIRECTIVE,
 } from './lint-policy.mjs';
+import {
+  RULE_ID as WAIT_RULE,
+  LEDGER_PATH,
+  MARKER,
+  MATCHED,
+  WAIT_BLIND_SPOTS,
+  readLedger,
+} from './wait-ledger.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
@@ -86,6 +94,55 @@ const CONTROLS = [
     name: 'svelte / must be silent',
     filePath: 'packages/web/src/lib/__control__.svelte',
     code: '<script lang="ts">\n  const value = 1;\n</script>\n\n<p>{value}</p>\n',
+    mustBeSilent: true,
+  },
+
+  // ── the #1523 waitForTimeout ratchet, controlled in BOTH directions ──────
+  //
+  // Four cases, because there are four independent ways for this rule to stop
+  // being true and three of them look like a clean tree. They call the rule
+  // itself — the same `hasJustification`, the same key function the ledger is
+  // written with — so a green control is evidence about the code that runs, not
+  // about a second implementation that agrees with it today.
+  {
+    name: 'e2e wait / un-annotated must report',
+    filePath: 'e2e/tests/__control__.spec.ts',
+    code:
+      "import { test } from '@playwright/test';\n\n" +
+      "test('control', async ({ page }) => {\n  await page.waitForTimeout(250);\n});\n",
+    mustReport: WAIT_RULE,
+  },
+  {
+    name: 'e2e wait / annotated must be silent',
+    filePath: 'e2e/tests/__control__.spec.ts',
+    code:
+      "import { test } from '@playwright/test';\n\n" +
+      "test('control', async ({ page }) => {\n" +
+      `  // ${MARKER} mirrors the 250 ms param-commit debounce the store itself defines, so the write has landed.\n` +
+      '  await page.waitForTimeout(250);\n});\n',
+    mustBeSilent: true,
+  },
+  {
+    // The prose floor, not just the marker. Without this, "pacing: yes" passes
+    // and the rule degrades into a magic word — green, and certifying nothing.
+    name: 'e2e wait / annotated but empty why must report',
+    filePath: 'e2e/tests/__control__.spec.ts',
+    code:
+      "import { test } from '@playwright/test';\n\n" +
+      "test('control', async ({ page }) => {\n" +
+      `  // ${MARKER} needed\n` +
+      '  await page.waitForTimeout(250);\n});\n',
+    mustReport: WAIT_RULE,
+  },
+  {
+    // Proves the `files: ['e2e/**/*.ts']` scoping is real. A rule that fired on
+    // everything would pass all three cases above and be telling us nothing
+    // about where it applies.
+    name: 'e2e wait / identical code outside e2e must be silent',
+    filePath: 'packages/web/src/lib/__control__.ts',
+    code:
+      'export async function control(page: { waitForTimeout(ms: number): Promise<void> }): Promise<void> {\n' +
+      '  await page.waitForTimeout(250);\n}\n',
     mustBeSilent: true,
   },
 ];
@@ -247,7 +304,40 @@ async function main() {
     }
   }
 
-  report({ filesLinted, blockingCount, stagedCount, seen, eslint });
+  // ---------------------------------------------------------------------
+  // 5. THE #1523 WAIT LEDGER IS ANCHORED TO THE TREE.
+  //
+  //    The rule above suppresses a site whose key is in the ledger. That makes
+  //    the ledger a claim — "these waits exist and predate the rule" — and a
+  //    claim nothing checks is how a ledger outlives the code it describes
+  //    (CLAUDE.md: "anchor to the ARTIFACT, not the list"). The rule records
+  //    every key it matched as it walks; anything left over named nothing.
+  //
+  //    This is a WHOLE-RUN question a per-file rule cannot answer on its own,
+  //    which is why it is asked here, after `lintFiles`, rather than inside the
+  //    rule.
+  // ---------------------------------------------------------------------
+  const ledger = readLedger(ROOT);
+  if (ledger.size > 0 && MATCHED.size === 0) {
+    fail(
+      `the ${WAIT_RULE} rule matched NOTHING while the ledger is non-empty`,
+      `The rule did not run over e2e/ at all — check the \`files:\` scope in eslint.config.mjs.\n` +
+        `Every other check in this gate passes trivially when the rule is inert, and the tree would look clean.`,
+    );
+  } else {
+    const stale = [...ledger].filter((key) => !MATCHED.has(key)).sort();
+    if (stale.length > 0) {
+      fail(
+        `${stale.length} STALE entry(ies) in ${LEDGER_PATH}`,
+        `${stale.map((k) => `    ${k}`).join('\n')}\n\n` +
+          `Each line above excuses a wait that is no longer there — converted, annotated, renamed, moved to another test, or deleted. ` +
+          `That is the ratchet working: run \`flox activate -- task lint:waits:accept\` to regenerate the ledger, and review the diff. ` +
+          `Accept can only REMOVE entries; it refuses to add one.`,
+      );
+    }
+  }
+
+  report({ filesLinted, blockingCount, stagedCount, seen, eslint, ledger });
 }
 
 /** Run git; return stdout on success, null on non-zero exit. */
@@ -259,7 +349,7 @@ function git(args) {
   }
 }
 
-async function report({ filesLinted, blockingCount, stagedCount, seen, eslint }) {
+async function report({ filesLinted, blockingCount, stagedCount, seen, eslint, ledger }) {
   // Everything printed here is DERIVED. Per CLAUDE.md there is no hand-typed
   // population count anywhere in this gate: the numbers below are computed from
   // the run that just happened, so they cannot go stale or be merged wrongly.
@@ -287,8 +377,12 @@ async function report({ filesLinted, blockingCount, stagedCount, seen, eslint })
     }
   }
   console.log('');
+  console.log(`  #1523 waitForTimeout ratchet — ${WAIT_RULE}`);
+  console.log(`    outstanding pre-rule waits  ${ledger.size} (derived from ${LEDGER_PATH}; shrink-only)`);
+  console.log(`    matched against the tree    ${MATCHED.size} (every entry must name a live site)`);
+  console.log('');
   console.log('  THIS GATE CANNOT SEE:');
-  for (const spot of BLIND_SPOTS) {
+  for (const spot of [...BLIND_SPOTS, ...WAIT_BLIND_SPOTS]) {
     console.log(`    · ${wrap(spot, 4)}`);
   }
   console.log('─────────────────────────────────────────────────────────────');
