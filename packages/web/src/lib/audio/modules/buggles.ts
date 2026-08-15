@@ -39,7 +39,11 @@
 //                       step is a fresh independent uniform value.
 //   smoothness        — 0..1 slew rate on smooth output (higher = slower).
 //   burst_probability — 0..1 chance of a burst on each woggle event.
-//   level             — 0..1 output scaling for ALL five outputs.
+//   level             — 0..1 output scaling for SMOOTH, STEPPED and RING.
+//                       ⚠ NOT all five: the CLOCK and BURST gates bypass it
+//                       by design, so a gate consumer always sees a clean
+//                       0/1 swing. (The header said "ALL five outputs" and
+//                       the factory never did — corrected 2026-08-15.)
 //
 // Implementation: pure-JS ScriptProcessorNode-style via AudioWorklet
 // would be the "right" thing to do for sample-accurate behavior, but
@@ -114,13 +118,23 @@ export const bugglesMath = {
     return base * (1 + jitter);
   },
 
-  /** Roll burst probability. Returns the burst length (3..7) on hit, 0 otherwise. */
+  /** Roll burst probability. Returns the burst length
+   *  (BUGGLES_BURST_MIN_PULSES..BUGGLES_BURST_MAX_PULSES) on hit, 0 otherwise. */
   rollBurst(probability: number, rand: () => number): number {
     const p = Math.max(0, Math.min(1, probability));
     if (rand() >= p) return 0;
-    return 3 + Math.floor(rand() * 5); // 3..7 inclusive
+    return (
+      BUGGLES_BURST_MIN_PULSES +
+      Math.floor(rand() * (BUGGLES_BURST_MAX_PULSES - BUGGLES_BURST_MIN_PULSES + 1))
+    );
   },
 };
+
+/** The rolled cluster length is uniform on [MIN, MAX]. Exported because the
+ *  faceplate's BURST readout has to know the distribution to print a rate, and
+ *  a second copy of "3..7" in the face model is how the two drift. */
+export const BUGGLES_BURST_MIN_PULSES = 3;
+export const BUGGLES_BURST_MAX_PULSES = 7;
 
 function clamp(v: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, v));
@@ -139,9 +153,37 @@ export function bugglesPrng(seed: number): () => number {
   };
 }
 
-const CLOCK_PULSE_MS = 5;
-const BURST_GAP_MS = 18;     // spacing between burst pulses
-const BURST_PULSE_MS = 4;    // each burst pulse width
+/** Gate width of the CLOCK pulse, in ms. */
+export const BUGGLES_CLOCK_PULSE_MS = 5;
+/** Spacing between BURST pulses, in ms. */
+export const BUGGLES_BURST_GAP_MS = 18;
+/** Width of each BURST pulse, in ms. */
+export const BUGGLES_BURST_PULSE_MS = 4;
+
+const CLOCK_PULSE_MS = BUGGLES_CLOCK_PULSE_MS;
+const BURST_GAP_MS = BUGGLES_BURST_GAP_MS;
+const BURST_PULSE_MS = BUGGLES_BURST_PULSE_MS;
+
+// ── BURST TRUNCATION: the cluster is CUT by the next woggle event ────────────
+//
+// ⚠ NOT A DEFECT, BUT IT IS THE READOUT. `fireWoggleEvent` calls
+// `burstSrc.offset.cancelScheduledValues(now)` on EVERY event, so a cluster
+// still in flight is cut off by the next tick. A rolled cluster of L occupies
+// (L-1) x BURST_GAP_MS + BURST_PULSE_MS ms, and the woggle period is 1/rateHz —
+// so above roughly RATE 0.78 the jack stops delivering what was rolled.
+// Measured over the travel (delivered pulses of a rolled L):
+//
+//   rate 0.4 (1.20 Hz,  832.6 ms):  L=3 -> 3   L=5 -> 5   L=7 -> 7
+//   rate 0.6 (4.16 Hz,  240.2 ms):  L=3 -> 3   L=5 -> 5   L=7 -> 7
+//   rate 0.8 (14.4 Hz,   69.3 ms):  L=3 -> 3   L=5 -> 4   L=7 -> 4
+//   rate 0.9 (26.9 Hz,   37.2 ms):  L=3 -> 2   L=5 -> 2   L=7 -> 2
+//   rate 1.0 (50.0 Hz,   20.0 ms):  L=3 -> 1   L=5 -> 1   L=7 -> 1
+//
+// At the top of RATE, "a cluster of 3-7" delivers exactly ONE pulse and BURST
+// is a copy of CLOCK. E[delivered] falls 5.00 -> 3.80 -> 2.00 -> 1.00, so the
+// naive `p x rate x 5` a reader would write is 5x wrong there — which is
+// precisely why the BURST readout is derived. `buggles-face-model.ts` owns the
+// arithmetic and `buggles-face-model.test.ts` negative-controls it on RATE.
 
 // ── The EXTERNAL-CLOCK poller, and the relation the two numbers must satisfy ──
 //
@@ -215,6 +257,29 @@ export const BUGGLES_RING_DIVISOR = 4;
  *  stay below at every knob position. */
 export const BUGGLES_AUDIBILITY_FLOOR_HZ = 20;
 
+/**
+ * ONE ROW PER JACK on the faceplate's output table: the port id, and the
+ * DERIVED number that row prints.
+ *
+ * ⚠ USED ONLY TO GENERATE `face.sidebar`, never `outputs`. The `outputs` roster
+ * stays a LITERAL on purpose — the module-manifest docs parser reads the def's
+ * SOURCE and a `.map()` there leaves it with an empty match (the ninelives
+ * finding). So this is a second declaration of the port ids, and it is ANCHORED
+ * rather than trusted: `buggles-face-model.test.ts` asserts it EQUALS the
+ * declared `outputs` roster in BOTH directions and in order, so a row can never
+ * name a port that does not exist and a jack can never go missing a row.
+ */
+export const BUGGLES_OUTPUT_READOUTS: readonly {
+  readonly port: string;
+  readonly valueId: string;
+}[] = [
+  { port: 'smooth', valueId: 'buggles-smooth-glide' },
+  { port: 'stepped', valueId: 'buggles-stepped-hold' },
+  { port: 'clock', valueId: 'buggles-woggle-hz' },
+  { port: 'burst', valueId: 'buggles-burst-rate' },
+  { port: 'ring', valueId: 'buggles-ring-hz' },
+];
+
 export const bugglesDef: AudioModuleDef = {
   type: 'buggles',
   palette: { top: 'Audio modules', sub: 'Utility' },
@@ -248,6 +313,162 @@ export const bugglesDef: AudioModuleDef = {
     { id: 'burst_probability', label: 'Burst',  defaultValue: 0.2, min: 0, max: 1, curve: 'linear' },
     { id: 'level',             label: 'Level',  defaultValue: 0.7, min: 0, max: 1, curve: 'linear' },
   ],
+
+  // ── THE FACEPLATE (PF-20, queue Q13) ────────────────────────────────────────
+  //
+  // WHAT THIS MODULE IS FOR. BUGGLES is the rack's CHAOS DISTRIBUTOR. Every
+  // other random source here hands you one stream and leaves you to split it:
+  // `noise` is a spectrum, `sample-and-hold` is one S&H, `marbles` is a
+  // QUANTISED random SEQUENCER you steer with a bias and can loop. This one
+  // rolls ONE random decision per woggle tick and sprays FIVE CORRELATED VIEWS
+  // of that same decision at once — the slewed voltage, the hard-stepped
+  // voltage, the tick itself as a gate, an occasional probabilistic ratchet of
+  // that tick, and the slewed voltage ring-modulated. The verb is *set the tick
+  // and let it spray*: you patch RATE and CHAOS, take four or five cables out of
+  // one module, and the whole patch drifts TOGETHER because it all came from the
+  // same roll. It is not a random SEQUENCE (that is marbles); it is a random
+  // FIELD.
+  face: {
+    // THE RANKING, and it would be wrong for a different module. Ranks 1-6 are
+    // the whole lane budget (`faceTierCap`) and this module has five params, so
+    // the plate and the dock both show everything — the ranking's authority is
+    // MINI (1) and COMPACT (3, because this face declares no glyph).
+    //
+    //   1 RATE — the identity, and the only control that reaches ALL FIVE
+    //     JACKS. Measured, per jack, across its travel: SMOOTH's glide 2895 ->
+    //     79 ms (36.5x, at a FIXED smoothness), STEPPED's hold 1/rate, CLOCK's
+    //     period 10 s -> 20 ms, BURST's delivered cluster 5.00 -> 1.00 pulses,
+    //     RING's carrier 0.025 -> 12.5 Hz. Nothing else on the module touches
+    //     more than two.
+    //   2 CHAOS — the second identity, and the thing that makes this a
+    //     WOGGLEbug rather than a slow LFO: it is the only control that changes
+    //     the CHARACTER of the randomness instead of its speed. At 0 the
+    //     stepped output is a bounded +/-0.2 walk on a metronomic period; at 1
+    //     every step is a fresh independent uniform and the period jitters
+    //     +/-50%. Measured >= 4x the per-step variance (the ART divergence leg).
+    //     Ranked below RATE because it is MODAL: at RATE 0 nothing happens
+    //     whatever CHAOS says, while at CHAOS 0 the module still runs.
+    //   3 SMOOTHNESS — reaches two jacks (SMOOTH, and RING through it) and is
+    //     UNCONDITIONALLY applicable, which is what puts it above BURST. It is
+    //     also the shape control on the module's most-patched output: SMOOTH is
+    //     what the per-port driver registry wires by default
+    //     (`_drivers.ts` `buggles: { outputPort: 'smooth' }`) and what both
+    //     CV-source drivers take. Travel: 10 ms -> 1675 ms at the shipped rate.
+    //   4 BURST PROBABILITY — the third idea (probabilistic ratcheting), but
+    //     ENABLER-GATED in two ways at once, which is why it is not rank 3: it
+    //     changes exactly ONE jack, and that jack is silent until a cable lands
+    //     in it. It is also the only STOCHASTIC control — at the shipped 0.2,
+    //     four woggle events in five produce nothing at all on BURST.
+    //   5 LEVEL — the output trim. It is unconditionally applicable, which is
+    //     usually an argument for ranking a trim HIGHER (the wavetableVco FINE
+    //     case), and it is beaten here by a measured fact specific to this
+    //     module: LEVEL scales SMOOTH, STEPPED and RING and DOES NOT REACH
+    //     CLOCK OR BURST — the two gate jacks bypass it by design so a gate
+    //     consumer sees a clean 0/1 swing. So on the patch this module exists
+    //     for (BUGGLES as a chaotic clock) LEVEL is bit-exactly inert, and it
+    //     is the one control that changes no timing and no character on the
+    //     patches where it does anything. Last is the honest rank.
+    //
+    // Read back as a sentence: MINI gives you the TICK; COMPACT adds how random
+    // it is and how lazily SMOOTH follows it; the plate and the dock give you
+    // all five, plus the hero row and the per-jack table.
+    order: ['rate', 'chaos', 'smoothness', 'burst_probability', 'level'],
+
+    // TWO BANDS, split by what the control DECIDES rather than by knob type:
+    // `the roll` is the event (when it happens, how random it is) and
+    // `the jacks` is what leaves the holes once it has happened. That is the
+    // module's own structure — `fireWoggleEvent` picks a value and a period
+    // from RATE + CHAOS, then SMOOTHNESS / BURST / LEVEL decide only how that
+    // one decision is presented at each output.
+    //
+    // ⚠ `order` AND `pages` AGREE HERE, and that is stated rather than dressed
+    // up as a designed tension: priority and signal order genuinely coincide on
+    // a module whose signal order IS "the clock, then the outputs". The
+    // promotion also moves the Push 2 card GENERIC -> FACE with the encoders in
+    // the same positions, and `push-card-schema.test.ts` records that, because
+    // "the card did not move" and "nobody looked" must not be one green.
+    pages: [
+      { id: 'roll', label: 'the roll', controls: ['rate', 'chaos'] },
+      { id: 'jacks', label: 'the jacks', controls: ['smoothness', 'burst_probability', 'level'] },
+    ],
+
+    // ⚠ NO GLYPH, AND THAT IS A MEASUREMENT RATHER THAN AN OMISSION — the
+    // ninelives hazard, answered for a module that has the opposite port shape.
+    //
+    // `glyphBinding` resolves the tap from the def alone, and for ANY glyph
+    // other than 'none' (or 'envelope'/'algorithm', which this module has no
+    // params for) the `if (audioOut) return live-audio` short-circuit fires
+    // first. `primaryAudioOutPortId` is "the FIRST declared `audio` output", and
+    // exactly one of these five jacks is typed `audio`: RING. So a glyph here
+    // would paint RING and call it BUGGLES — one of five outputs, and the one
+    // the player is least likely to be using.
+    //
+    // And it could not even paint that. The shell's tap is
+    // GLYPH_TAP_FFT_SIZE = 2048 samples ~ 42.7 ms; RING's carrier at the shipped
+    // RATE is 0.30028 Hz, a period of 3.330 s. The window is 1.3% of ONE CYCLE.
+    // Even at the top of the dial (12.5 Hz, 80 ms) it is 53% of a cycle — so the
+    // BEST CASE across the entire travel is half a period of a sine whose
+    // amplitude is an unrelated random voltage. The picture is a line that
+    // creeps, at every knob position, and it would resolve LIVE — so no gate
+    // would flag a static fallback and nothing would look wrong.
+    //
+    // Both halves are permanent legs of `buggles-face-model.test.ts`, including
+    // the negative control that a 'scope' glyph on THIS def WOULD resolve
+    // `{ kind: 'live-audio', portId: 'ring' }`, so the 'none' is a decision.
+    // It also buys a cell: `faceTierCap` gives compact 2 WITH a glyph and 3
+    // without, so declining the picture is what puts SMOOTHNESS on the tile.
+    glyph: 'none',
+
+    // THE HERO. RATE is promoted out of `the roll`, not copied — `heroFacePlan`
+    // REMOVES it and the band survives on CHAOS, so the multiset faces-parity
+    // asserts is unchanged and `pages` stays 2 for the VRT roster.
+    //
+    // ⚠ ALL THREE READOUTS ARE DERIVED, and each is blind in a DIFFERENT
+    // direction from the dial nearest it:
+    //   woggle  RATE is a normalised 0..1 dial over a LOG map spanning 500x.
+    //           It reads `0.40`; the clock is 1.20 Hz. No control on this
+    //           module prints a frequency at all.
+    //   glide   THE KICK-DRUM TAIL SHAPE. The nearest knob is SMOOTH and it
+    //           does move when you turn SMOOTH — and it is BLIND TO RATE, which
+    //           changes the answer 36.5x (2895 ms at RATE 0.2, 79 ms at RATE
+    //           0.8, with the SMOOTH dial bit-identical at both).
+    //   burst   RATE, BURST and a TRUNCATION term no naive formula has: the
+    //           cluster is cut by the next woggle event, so the obvious
+    //           `p x rate x 5` says 250/s at RATE 1 where the real answer is
+    //           50/s. See the BURST TRUNCATION block above.
+    hero: {
+      control: 'rate',
+      readouts: [
+        { label: 'woggle', valueId: 'buggles-woggle-hz' },
+        { label: 'glide', valueId: 'buggles-smooth-glide' },
+        { label: 'burst', valueId: 'buggles-burst-rate' },
+      ],
+    },
+
+    // THE OUTPUT TABLE — the answer to "which jack does the picture show" on a
+    // module with five of them: all of them, as numbers, instead of one of them
+    // as a trace. One row per DECLARED jack, GENERATED from
+    // BUGGLES_OUTPUT_READOUTS rather than typed five times, and that roster is
+    // asserted equal to `outputs` in both directions.
+    //
+    // Each row depends on a DIFFERENT subset of the knobs, which is what makes
+    // the table five readouts rather than five views of one: smooth = SMOOTH x
+    // RATE, stepped = RATE x CHAOS, clock = RATE, burst = BURST x RATE x
+    // truncation, ring = RATE / 4. And LEVEL moves NONE of them, permanently
+    // asserted — the one control with no derived consequence, which is the
+    // table's own negative control on every run.
+    sidebar: [
+      {
+        kind: 'readouts',
+        label: 'outputs',
+        entries: BUGGLES_OUTPUT_READOUTS.map((r) => ({ label: r.port, valueId: r.valueId })),
+      },
+    ],
+
+    // No `title`, no `hint`, no band hints — owner ruling 2026-08-11
+    // (marbles / resofilter): plain labels and values on the face; the
+    // explanation lives in `docs`, one right-click away.
+  },
 
   docs: {
     explanation:

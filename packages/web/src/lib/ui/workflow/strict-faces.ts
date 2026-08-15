@@ -905,6 +905,44 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // SAME RENDER TO THE BIT — a live jack wired to the wrong terminal passes the
   // movement leg and fails that one. It found no defect, which is a result.
   'charlottesEchos',
+  // THE FACEPLATE QUEUE · Q13 — BUGGLES, the wogglebug (2026-08-15): the chaos
+  // DISTRIBUTOR, and the entry whose argument is that FIVE JACKS CANNOT BE
+  // SUMMARISED BY A PICTURE OF ONE.
+  //
+  // 5 params, 3 inputs, 5 outputs. It rolls ONE random decision per woggle tick
+  // and sprays five correlated views of it — slewed, stepped, the tick as a
+  // gate, a probabilistic ratchet of that tick, and the slewed voltage
+  // ring-modulated — so the whole patch drifts together because it all came
+  // from the same roll. RATE reaches all five and prints none of them: it is a
+  // normalised 0..1 dial over a LOG map spanning 500x.
+  //
+  // ⚠ THE GLYPH DECISION IS THE ninelives HAZARD WITH THE OPPOSITE PORT SHAPE,
+  // and it is a measurement. ninelives could not resolve a tap at all (every
+  // output `cv`, so `primaryAudioOutPortId` returned NULL). Here exactly one of
+  // five jacks is typed `audio` — RING — so ANY glyph but 'none' resolves
+  // `{ kind: 'live-audio', portId: 'ring' }` and paints one fifth of the module
+  // as the module. And it could not even paint that: the shell's tap is
+  // GLYPH_TAP_FFT_SIZE = 2048 samples ~ 42.7 ms, while RING's carrier at the
+  // shipped RATE is 0.30028 Hz — a 3.330 s period, so the window is 1.3% of ONE
+  // CYCLE, and 53% at the very top of the dial. The picture would be a creeping
+  // line at every knob position, resolving LIVE, so no gate would flag it. The
+  // face declares `glyph: 'none'` and spends the picture's budget on a FIVE-ROW
+  // OUTPUT TABLE instead — one row per declared jack, each depending on a
+  // different subset of the knobs. Both halves are permanent legs of
+  // `buggles-face-model.test.ts`, including the control that 'scope' HERE would
+  // have tapped `ring`, so the 'none' is a decision rather than an omission.
+  //
+  // ⚠ AUDITED BEFORE AUTHORING, and it found TWO live defects — see the
+  // preceding commit. `external_clock` captured 16.7% of the rising edges a
+  // player sent (a 0.667 ms analyser ring against a 33 ms poll), FLAT across
+  // every clock rate, because the answer is geometric; it now uses the shared
+  // windowed `createEdgeCounter` and captures 100.0%. And RING was documented
+  // as "audio-rate ... patchable straight into the audio path" in four places
+  // while its carrier tops out at 12.5 Hz, under the floor of hearing — the
+  // #1701 false-VALUE class, invisible to `contract-lock` (which pins `ring` as
+  // `type: 'audio'`, correctly) and to the one ART leg named for RING, which
+  // mirrors the construction at 200 Hz, 667x above the real carrier.
+  'buggles',
 ]);
 
 /**

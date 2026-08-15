@@ -439,6 +439,34 @@ export const FACES = [
   // sidecar and warrensspectrum it neither exercises nor depends on #1420's
   // pre-frame freeze, and it is NOT the analogVco free-running case.
   { type: 'charlottesEchos', pages: 2 },
+  // THE FACEPLATE QUEUE · Q13 — the wogglebug. `pages: 2` is the POST-hero
+  // split count: two declared pages, and promoting `rate` into the hero leaves
+  // `the roll` holding CHAOS rather than emptying it, so no band is dropped
+  // (heroFacePlan only drops an EMPTIED band — the `noise` case).
+  //
+  // ⚠ DETERMINISTIC FOR THE ninelives REASON, REACHED FROM THE OPPOSITE PORT
+  // SHAPE — which is worth distinguishing from all three established classes.
+  // This module is emphatically FREE-RUNNING: a wall-clock `setTimeout` fires
+  // the first woggle 50 ms after it spawns and every jack moves from then on,
+  // with no gate and no input. It is NOT "silent at rest" (rings, sidecar,
+  // warrensspectrum, charlottesEchos). But it is also NOT the
+  // free-running-and-saved-by-#1420's-freeze class (analogVco,
+  // macrooscillator, wavetableVco), because NOTHING ON THE FACE READS THE
+  // OUTPUTS: the face declares `glyph: 'none'`, so `glyphBinding` returns
+  // `{ kind: 'none' }`, no analyser is ever attached, no rAF runs, and the five
+  // readouts are pure functions of the DURABLE params. The scene is
+  // byte-identical on a frozen graph, a live graph and a silent rack.
+  //
+  // ⚠ AND THE 'none' IS LOAD-BEARING FOR EXACTLY THAT, so do not "add a glyph"
+  // here without re-deriving this paragraph. This def HAS an audio output
+  // (`ring`), so unlike ninelives the resolver WOULD bind live: any glyph but
+  // 'none' resolves `{ kind: 'live-audio', portId: 'ring' }` on a free-running
+  // source, which is the analogVco condition that measured 254/154/315 px
+  // across three captures of one tile before #1420. So this scene neither
+  // exercises nor depends on the pre-frame freeze TODAY, and adding a glyph
+  // would move it into the class that does. See `buggles-face-model.test.ts`
+  // for both halves of the resolution.
+  { type: 'buggles', pages: 2 },
 ] as const;
 
 /** TIGHT per-scene diff budgets (absolute pixels; Playwright takes the MIN of

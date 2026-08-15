@@ -211,6 +211,14 @@ import {
   ceTailText,
   charlottesEchosFaceParams,
 } from '$lib/ui/modules/charlottes-echos-face-model';
+import {
+  bugglesBurstText,
+  bugglesFaceParams,
+  bugglesRingText,
+  bugglesSmoothGlideText,
+  bugglesSteppedHoldText,
+  bugglesWoggleText,
+} from '$lib/ui/modules/buggles-face-model';
 
 /** A derived readout: live params in (through the caller's reader, which
  *  already resolves def defaults for untouched params), formatted string out.
@@ -901,6 +909,50 @@ const FACE_READOUT_VALUES: Readonly<Record<string, FaceReadoutValue>> = {
   'ce-spacing': (read) => ceSpacingText(charlottesEchosFaceParams(read)),
   'ce-loop-gain': (read) => ceLoopText(charlottesEchosFaceParams(read)),
   'ce-margin': (read) => ceMarginText(charlottesEchosFaceParams(read)),
+
+  // ── BUGGLES ──────────────────────────────────────────────────────────────
+  // FIVE — one per JACK — on a five-knob chaos source, and the reason is that
+  // the map from knobs to holes is not one-to-one in EITHER direction. RATE
+  // alone reaches all five outputs and prints none of them: it is a normalised
+  // 0..1 dial over a LOG map spanning 500x, so it reads `0.40` while the clock
+  // runs at 1.20 Hz. Three of the five jacks are then governed by a PRODUCT of
+  // two knobs, and one of them by a product plus a term nothing on the panel
+  // hints at.
+  //
+  //   smooth-glide  THE KICK-DRUM TAIL SHAPE, verbatim. The nearest knob is
+  //                 SMOOTH and it DOES move when you turn SMOOTH — and it is
+  //                 blind to RATE, which changes the answer 36.5x: at a
+  //                 bit-identical SMOOTH 0.5 the glide is 2895 ms at RATE 0.2
+  //                 and 79 ms at RATE 0.8. The `0.01 +` floor is why it is not
+  //                 simply proportional: at SMOOTH 0 it is 10 ms at EVERY rate.
+  //   stepped-hold  RATE *and* CHAOS. The hold is 1/rateHz and CHAOS widens it
+  //                 by +/-50% x chaos — a term a `rate` readback cannot see at
+  //                 all, and the difference between a metronome and a woggle.
+  //   woggle-hz     the log map itself, which is also the CLOCK jack's row.
+  //   burst-rate    RATE, BURST *and* TRUNCATION. `fireWoggleEvent` cancels the
+  //                 burst schedule on every event, so a rolled cluster of 3-7
+  //                 is CUT by the next tick: E[delivered] falls 5.00 -> 3.80 ->
+  //                 2.00 -> 1.00 across the top of the RATE travel, and at
+  //                 RATE 1 "a cluster of 3-7" delivers exactly ONE pulse. The
+  //                 obvious `p x rate x 5` says 250/s there; the real answer is
+  //                 50/s. That 5x is the whole argument for deriving it, and
+  //                 the naive form is kept in the model ONLY so the test can
+  //                 assert the gap rather than describe it.
+  //   ring-hz       the carrier, rate/4, SUB-AUDIO at every knob position
+  //                 (0.025 .. 12.5 Hz against a ~20 Hz floor of hearing). This
+  //                 is the audit's finding put on the panel: four doc strings
+  //                 called RING "audio-rate" for as long as the module existed.
+  //
+  // ⚠ LEVEL MOVES NONE OF THE FIVE, and that is asserted permanently rather
+  // than left implicit — it is the table's own negative control on every run,
+  // in the `clap-q` / `clap-bandwidth-hz` shape. Every OTHER param moves at
+  // least one row, also asserted, so the pair is deny-by-default over the
+  // module's whole param roster (buggles-face-model.test.ts).
+  'buggles-woggle-hz': (read) => bugglesWoggleText(bugglesFaceParams(read)),
+  'buggles-smooth-glide': (read) => bugglesSmoothGlideText(bugglesFaceParams(read)),
+  'buggles-stepped-hold': (read) => bugglesSteppedHoldText(bugglesFaceParams(read)),
+  'buggles-burst-rate': (read) => bugglesBurstText(bugglesFaceParams(read)),
+  'buggles-ring-hz': (read) => bugglesRingText(bugglesFaceParams(read)),
 };
 
 /** The derived value for a declared id, or `null` (⇒ the readout prints `—`
