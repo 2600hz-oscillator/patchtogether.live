@@ -220,6 +220,16 @@ import {
   bugglesWoggleText,
 } from '$lib/ui/modules/buggles-face-model';
 import {
+  SLEW_PARAM_IDS,
+  slewSwitchChannelSettleText,
+  slewSwitchFaceParams,
+  slewSwitchLapText,
+  slewSwitchSettleText,
+  slewSwitchSpreadText,
+  slewSwitchStepIdxText,
+  slewSwitchSwitchedText,
+} from '$lib/ui/modules/slewswitch-face-model';
+import {
   MOOG907A_BANK,
   MOOG914_BANK,
   type MoogBank,
@@ -997,6 +1007,34 @@ const FACE_READOUT_VALUES: Readonly<Record<string, FaceReadoutValue>> = {
   'buggles-stepped-hold': (read) => bugglesSteppedHoldText(bugglesFaceParams(read)),
   'buggles-burst-rate': (read) => bugglesBurstText(bugglesFaceParams(read)),
   'buggles-ring-hz': (read) => bugglesRingText(bugglesFaceParams(read)),
+
+  // ── SLEWSWITCH (queue Q14) ───────────────────────────────────────────────
+  // Three hero rows plus a SEVEN-ROW output table, and the per-channel rows are
+  // GENERATED from `SLEW_PARAM_IDS` — which is itself derived from the def's
+  // `slew<N>` params — so the number of slew channels is never typed here. A
+  // fifth channel registers its own row; a renamed one empties the roster and
+  // reddens the model's non-vacuity leg rather than silently publishing three.
+  //
+  // ⚠ THE TWO SLEW ROWS ARE EACH OTHER'S NEGATIVE CONTROL. `settle` is the
+  // SLOWEST channel's arrival and is invariant to lowering the fastest;
+  // `spread` is the slowest/fastest ratio and is invariant to scaling all four
+  // together. Either one alone would look correct while blind to a whole
+  // dimension of the four dials — the `clap-q` / `clap-bandwidth-hz` shape.
+  // And `xfadeTime` moves NEITHER, nor any out row: it reaches exactly one row
+  // of the ten, which is the table's own negative control on every run
+  // (slewswitch-face-model.test.ts asserts the whole reach matrix).
+  'slewswitch-settle': (read) => slewSwitchSettleText(slewSwitchFaceParams(read)),
+  'slewswitch-spread': (read) => slewSwitchSpreadText(slewSwitchFaceParams(read)),
+  'slewswitch-lap': (read) => slewSwitchLapText(slewSwitchFaceParams(read)),
+  'slewswitch-switched': (read) => slewSwitchSwitchedText(slewSwitchFaceParams(read)),
+  'slewswitch-step-idx': (read) => slewSwitchStepIdxText(slewSwitchFaceParams(read)),
+  ...Object.fromEntries(
+    SLEW_PARAM_IDS.map((id, i) => [
+      `slewswitch-${id}-settle`,
+      (read: (paramId: string) => number | undefined) =>
+        slewSwitchChannelSettleText(slewSwitchFaceParams(read), i),
+    ]),
+  ),
 
   // ── THE MOOG FIXED FILTER BANKS (907A + 914) ─────────────────────────────
   // ONE generator for TWO modules, because they are one design over two slices

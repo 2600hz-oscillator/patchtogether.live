@@ -35,6 +35,42 @@ import workletUrl from '@patchtogether.live/dsp/dist/slewswitch.js?url';
 import { createWorkletNode } from '$lib/audio/worklet-guard';
 const loadedContexts = new WeakSet<BaseAudioContext>();
 
+/**
+ * THE OUTPUT TABLE ROSTER — one row per declared jack, so the face answers
+ * "which of the seven does the picture show" with "all of them, as numbers".
+ *
+ * ⚠ IT LIVES HERE, NOT IN THE FACE MODEL, AND IT IS A LITERAL. The face model
+ * imports this def (it reads the param ranges), so generating the roster there
+ * would close an import cycle; and a `.map()` over the params would put the
+ * port ids behind a call the module-manifest docs parser cannot read — it
+ * matches on the def's SOURCE, and a computed roster leaves it with an empty
+ * match (the ninelives finding). Both reasons point the same way: a literal,
+ * here. Same shape and same argument as `BUGGLES_OUTPUT_READOUTS`.
+ *
+ * ⚠ ANCHORED RATHER THAN TRUSTED. This is a SECOND declaration of the port ids,
+ * so `slewswitch-face-model.test.ts` asserts it EQUALS `outputs` in BOTH
+ * directions and in order: a row can never name a jack that does not exist, and
+ * a jack can never go missing a row. There is no count anywhere in the pair.
+ *
+ * Each row reads a DIFFERENT subset of the dials — see the `sidebar` note on
+ * the face below, where the full reach matrix is described and asserted.
+ */
+export const SLEWSWITCH_OUTPUT_READOUTS: readonly {
+  readonly port: string;
+  readonly valueId: string;
+}[] = [
+  { port: 'out1',     valueId: 'slewswitch-slew1-settle' },
+  { port: 'out2',     valueId: 'slewswitch-slew2-settle' },
+  { port: 'out3',     valueId: 'slewswitch-slew3-settle' },
+  { port: 'out4',     valueId: 'slewswitch-slew4-settle' },
+  { port: 'switched', valueId: 'slewswitch-switched' },
+  { port: 'step_idx', valueId: 'slewswitch-step-idx' },
+  // Deliberately the SAME id the hero's `lap` row prints: the EOC period IS the
+  // lap, and publishing it twice under two names would be two copies of one
+  // derivation (the buggles `woggle` precedent, which shares an id likewise).
+  { port: 'eoc',      valueId: 'slewswitch-lap' },
+];
+
 export const slewSwitchDef: AudioModuleDef = {
   type: 'slewSwitch',
   palette: { top: 'Audio modules', sub: 'Utility' },
@@ -108,6 +144,202 @@ export const slewSwitchDef: AudioModuleDef = {
     },
     { id: 'xfadeTime', label: 'Xfd',   defaultValue: 0.05, min: 0.001, max: 2,   curve: 'log',      units: 's' },
   ],
+
+  face: {
+    // THE RANKING, and it would be wrong for a different module.
+    //
+    // ⚠ THE FOUR SLEW DIALS LOOK INTERCHANGEABLE AND ARE NOT, which is the one
+    // thing that makes this ranking defensible rather than declaration order
+    // with a story attached. `advance()` scans channels 0..length-1, so LENGTH
+    // decides which channels are in the lap at all — and it counts UP from
+    // channel 1. Channel 1 is in the scan at ALL FOUR length settings, channel
+    // 2 at three of them, channel 3 at two, channel 4 only at length 4. RESET
+    // also returns to channel 1, and length 1 HOLDS channel 1. So the channels
+    // carry a real, measured inclusion order and the ranking is that order —
+    // not a coin toss dressed up. (fourplexer's four inputs genuinely ARE
+    // symmetric: it has no LENGTH, so this argument does not transfer, which is
+    // the test of whether it is an argument at all.)
+    //
+    //   1-4 S1..S4 — the slew half. It is UNCONDITIONALLY APPLICABLE: the four
+    //     lag processors run on whatever is patched, with no other cable
+    //     required, and out1..out4 are live regardless of the switch. Each dial
+    //     reaches exactly one channel and nothing else — measured through the
+    //     def's own factory, slew1_cv moves out1 by 1.1156e+0 and out2/out3/out4
+    //     by 0.0000e+0. Ranked above the whole switch half for the reason
+    //     below.
+    //   5 LENGTH — the first switch control, and the most consequential: it is
+    //     the only one that can stop the scan entirely (at 1 the switch holds
+    //     channel 1 and EOC never fires), it decides which channels are in the
+    //     rotation, and it rescales `step_idx` — measured 4 levels at length 4,
+    //     3 at 3, 2 at 2, and a flat 0 at 1.
+    //   6 MODE — the scan PATTERN. Below LENGTH because LENGTH can make MODE
+    //     irrelevant and not the reverse: at length 1 all three modes hold
+    //     channel 1. Measured over 19 clocks at length 4: forward 4 EOC,
+    //     pendulum 3 (period 6, not 4), random 19.
+    //   7 XFADE — last, and it is the only rank here that is about REACH rather
+    //     than importance. It touches ONE of the seven jacks (`switched`), it
+    //     shapes nothing within a channel and nothing about the scan, and it is
+    //     doubly enabler-gated: inert without a clock AND inert at length 1,
+    //     because with nothing to hand off to there is no hand-off to shape.
+    //
+    // ⚠ THE WHOLE SWITCH HALF IS ENABLER-GATED ON A CABLE. `step_clock` is an
+    // external input — this module has no internal clock — so with nothing
+    // patched there, MODE, LENGTH and XFADE change nothing that leaves the box
+    // (the docs say so: "Leave unpatched and the switch holds on its current
+    // channel"). The slew half needs no such cable. That asymmetry is the
+    // argument for ranks 1-4 over 5-7, and it is asserted rather than asserted
+    // about (slewswitch-face-model.test.ts).
+    //
+    // Read back as a sentence: MINI gives you S1, the one channel every LENGTH
+    // setting includes; COMPACT adds S2 and S3 (three cells, because this face
+    // declares no glyph); the six-cell lane plate reaches S4 and LENGTH; and
+    // only the DOCK shows MODE and the crossfade.
+    order: ['slew1', 'slew2', 'slew3', 'slew4', 'length', 'mode', 'xfadeTime'],
+
+    // TWO PAGES, and this is the genuine two-engine split the module is named
+    // for: the slew half acts WITHIN one channel, the switch half acts BETWEEN
+    // channels. Nothing on page 1 changes which channel you hear and nothing on
+    // page 2 changes what any channel does.
+    //
+    // ⚠ `order` AND `pages` PRODUCE THE SAME SEQUENCE HERE, and that is stated
+    // rather than dressed up as a designed tension (the buggles precedent).
+    // Priority and signal order coincide because the module's signal order IS
+    // "condition the four voltages, then scan them" — the same fact that ranks
+    // the unconditional half above the cable-gated one.
+    //
+    // ROW PLAN, predicted from `cellWidthClass`: `switch` carries two
+    // `segmented` cells (LENGTH and MODE both declare an `options` roster) and
+    // segmented is classified WIDE, so that band is SOLO and the two bands take
+    // two rows. That is a consequence of the rosters, not a layout choice — the
+    // classifier reads the same declaration the shell renders from.
+    pages: [
+      { id: 'slew', label: 'slew', controls: ['slew1', 'slew2', 'slew3', 'slew4'] },
+      { id: 'switch', label: 'switch', controls: ['length', 'mode', 'xfadeTime'] },
+    ],
+
+    // ⚠ NO GLYPH, AND IT IS A MEASUREMENT RATHER THAN AN OMISSION — the
+    // ninelives hazard on a module with SEVEN jacks.
+    //
+    // `glyphBinding` resolves the tap from the def alone, and every route ends
+    // in the same place here. `primaryAudioOutPortId` is "the first declared
+    // `audio` output"; this module declares SIX `cv` outputs and ONE `gate`,
+    // and NO `audio` output at all, so it returns NULL — the ninelives case
+    // exactly. With no audio out, the `if (audioOut) return live-audio`
+    // short-circuit never fires, and the remaining branches each need a param
+    // this module does not have: 'envelope' wants attack/decay/sustain/release,
+    // 'algorithm' wants an `algorithm` param, and 'waveform' wants a param
+    // literally named `shape` spanning 0..2 (MODE spans 0..2 and is named
+    // `mode`, so it does not match — and it should not: MODE is a switch, not a
+    // morph). So 'scope', 'meter', 'waveform', 'envelope' and 'algorithm' ALL
+    // resolve `{ kind: 'static' }` — a deterministic fake trace, tapping
+    // nothing, that is not this module. ninelives at least had a `shape` param
+    // to make a `wave-morph` honest; here there is no honest picture available.
+    //
+    // Every branch is a permanent leg of `slewswitch-face-model.test.ts`,
+    // including the control that each candidate glyph WOULD have resolved
+    // `static`, so the 'none' is a decision rather than an omission. It also
+    // buys a cell: `faceTierCap` gives compact 2 WITH a glyph and 3 without, so
+    // declining the picture is what puts S3 on the tile.
+    glyph: 'none',
+
+    // THE HERO IS READOUTS ONLY — no promoted control, the attenumix /
+    // moog907a / moog914 shape, and for their reason. Those three are the other
+    // interchangeable-channel modules in the set, and promoting one of N
+    // identical dials to hero size paints a false claim: it says "this channel
+    // is the big one" when what is actually true is only that it is FIRST.
+    // Channel 1's inclusion argument is enough to rank it; it is not enough to
+    // draw it four times larger than its siblings.
+    //
+    // ⚠ ALL THREE ROWS ARE DERIVED, and the first two are EACH OTHER'S NEGATIVE
+    // CONTROL — the clap-q / clap-bandwidth-hz shape, on the four dials a
+    // single readback cannot summarise:
+    //   settle  THE AUDIT'S FINDING ON THE PANEL (#1712). The slew dials are
+    //           the TAU of a one-pole, not the arrival time: 63.2 % of the way
+    //           at t = tau, and 99 % at ln(100) = 4.605 taus. So S1 reads
+    //           `0.5 s` and the channel arrives in 2.30 s, at every position on
+    //           the dial. It prints the SLOWEST of the four, so raising S3 past
+    //           S1 moves it while an S1 readback does not.
+    //   spread  slowest/fastest across the four — "are these four doing the
+    //           same thing". INVARIANT to scaling all four together, which is
+    //           precisely the dimension `settle` is most sensitive to; and
+    //           `settle` is invariant to lowering the FASTEST channel, which is
+    //           precisely what moves `spread`. Neither alone sees both.
+    //           `all alike` at spawn, which is the shipped state and worth
+    //           saying out loud.
+    //   lap     MODE and LENGTH TOGETHER, and neither dial can print it. The
+    //           pendulum term is 2(length-1) — it walks up and back down
+    //           without repeating either end — which is not a number either
+    //           control suggests. At the shipped length 4: forward 4, pendulum
+    //           6, random every clock, and `held` at length 1 where EOC never
+    //           fires at all because `advance()` returns before it can arm the
+    //           pulse. Measured over 19 clocks: 4 / 3 / 19 EOC pulses.
+    hero: {
+      readouts: [
+        { label: 'settle', valueId: 'slewswitch-settle' },
+        { label: 'spread', valueId: 'slewswitch-spread' },
+        { label: 'lap', valueId: 'slewswitch-lap' },
+      ],
+    },
+
+    // THE OUTPUT TABLE — the answer to "which jack does the picture show" on a
+    // module with SEVEN of them: all of them, as numbers, instead of one of
+    // them as a trace. One row per DECLARED jack, GENERATED from
+    // SLEWSWITCH_OUTPUT_READOUTS rather than typed seven times, and that roster
+    // is asserted equal to `outputs` in both directions and in order.
+    //
+    // Each row reads a DIFFERENT subset of the seven dials, which is what makes
+    // this seven readouts rather than seven views of one: out1..out4 each read
+    // exactly ONE slew dial and no other row reads it; `switched` reads LENGTH
+    // and XFADE; `step_idx` reads LENGTH alone; `eoc` reads MODE and LENGTH.
+    // MODE therefore moves exactly one row and XFADE moves exactly one row —
+    // the whole reach matrix is asserted, both the cells that must move and the
+    // cells that must not.
+    //
+    // ⚠ `eoc` PRINTS THE SAME valueId THE HERO'S `lap` ROW DOES, deliberately.
+    // The EOC period IS the lap; publishing it under two names would be two
+    // copies of one derivation, free to drift. (buggles shares
+    // `buggles-woggle-hz` between its hero and its table for the same reason.)
+    sidebar: [
+      {
+        kind: 'readouts',
+        label: 'outputs',
+        entries: SLEWSWITCH_OUTPUT_READOUTS.map((r) => ({ label: r.port, valueId: r.valueId })),
+      },
+    ],
+
+    // No `title`, no `hint`, no band hints — owner ruling 2026-08-11: plain
+    // labels and values on the face; the explanation lives in `docs`, one
+    // right-click away.
+
+    // REAR CARD — a PROJECTION of `face.pages`, re-derived on paper. The four
+    // `slew<N>_cv` holes have stem `slew<N>`, which ARE params on the `slew`
+    // page, so they land in that band on their own. Everything else is an
+    // orphan — `in1..in4`, `step_clock` and `reset` have no param of that name
+    // — and would all fall together into one leading band, which mixes the two
+    // things a patcher most needs to tell apart here.
+    //
+    // The two curated groups split them by WHAT THE HOLE IS, and the split is
+    // the audit's own finding: `in1..in4` are the SIGNALS being smoothed, not
+    // knob modulators. They publish a raw node input with NO AudioParam behind
+    // them (verified off the live handle, not assumed), which is why they are a
+    // named `PASSTHROUGH_BY_DESIGN` entry in cv-scale-registry while the four
+    // `slew<N>_cv` holes carry `cvScale`. Two jacks that both take a cv cable
+    // and mean completely different things by it.
+    //
+    // ⚠ A CURATED GROUP MUST CLAIM THE LEADING SLOT OR NAME A REAL PAGE — a
+    // third id appends as a STRAY band after every page, where the totality
+    // gate cannot see it (module-face-lint says so by name). So there are
+    // exactly two: `signal` takes the leading slot for the four smoothed
+    // inputs, and the two triggers join the `switch` PAGE band, which is where
+    // they belong anyway — `step_clock` and `reset` are the only two holes that
+    // drive the scan, and the scan's three dials are already that band.
+    rear: {
+      groups: [
+        { id: 'signal', label: 'smoothed, not scaled', ports: ['in1', 'in2', 'in3', 'in4'] },
+        { id: 'switch', label: 'drives the scan', ports: ['step_clock', 'reset'] },
+      ],
+    },
+  },
 
   docs: {
     explanation:

@@ -3031,6 +3031,7 @@ slewSwitch param slew2 0.001..5 log default=0.5 unit=s
 slewSwitch param slew3 0.001..5 log default=0.5 unit=s
 slewSwitch param slew4 0.001..5 log default=0.5 unit=s
 slewSwitch param xfadeTime 0.001..2 log default=0.05 unit=s
+slewSwitch face sidebar 0 kind=readouts label=outputs entries=out1:value=slewswitch-slew1-settle,out2:value=slewswitch-slew2-settle,out3:value=slewswitch-slew3-settle,out4:value=slewswitch-slew4-settle,switched:value=slewswitch-switched,step_idx:value=slewswitch-step-idx,eoc:value=slewswitch-lap
 snaredrum meta domain=audio
 snaredrum in accent_in cv
 snaredrum in body_decay_cv cv param=body_decay cvScale=log
