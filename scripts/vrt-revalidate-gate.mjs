@@ -167,9 +167,11 @@ export async function runVerification({
   let pollsSinceRefire = 0;
   let polls = 0;
   // Bounded by construction: every iteration either terminates or consumes one
-  // unit of the (refire × poll) budget, so this can never spin. The +2 covers
-  // the initial probe and the terminal decision.
-  const hardCap = maxRefires * (pollsPerRefire + 1) + 2;
+  // unit of the (refire × poll) budget, so this can never spin. The worst case
+  // is `maxRefires` × (1 refire + `pollsPerRefire` waits) plus the terminal
+  // decision; `maxRefires + 1` covers the `maxRefires: 0` override, which must
+  // still reach a real `fail` verdict rather than falling out of the loop.
+  const hardCap = (maxRefires + 1) * (pollsPerRefire + 1) + 2;
 
   for (let i = 0; i < hardCap; i++) {
     const p = await probe();
@@ -361,9 +363,17 @@ if (isMain) {
       const prs = JSON.parse(prJson || '[]');
       if (prs.length === 0) return { prNumber: null };
       const headSha = prs[0].headRefOid;
-      const ciRunCount = Number(
-        gh(['api', ciRunsQuery(repo, headSha), '--jq', '.total_count']),
-      );
+      const raw = gh(['api', ciRunsQuery(repo, headSha), '--jq', '.total_count']);
+      const ciRunCount = Number(raw);
+      // A non-numeric answer must THROW, not coerce. `Number('')` is 0, which
+      // reads as "no run exists" — the same false-deadlock class as the short
+      // SHA above, and just as invisible in the output.
+      if (!Number.isFinite(ciRunCount)) {
+        throw new Error(
+          `ci.yml run count for ${headSha} was not a number: '${raw}'. ` +
+            'Refusing to read that as a deadlock.',
+        );
+      }
       return { prNumber: prs[0].number, headSha, ciRunCount };
     };
 

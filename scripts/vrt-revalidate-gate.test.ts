@@ -334,8 +334,23 @@ describe('runVerification: the three traces measured on 2026-08-15', () => {
     const gh = fakeGitHub({ prNumber: 1692, runAppearsAfterRefire: null });
     const r = await runVerification({ ...gh, maxRefires: 3, pollsPerRefire: 6, pollIntervalMs: 0 });
     expect(r.verdict).toBe('deadlocked');
-    // Bounded by maxRefires × (pollsPerRefire + 1) + 2 = 26.
-    expect(gh.calls.probes).toBeLessThanOrEqual(3 * (6 + 1) + 2);
+    // Bounded by (maxRefires + 1) × (pollsPerRefire + 1) + 2.
+    expect(gh.calls.probes).toBeLessThanOrEqual((3 + 1) * (6 + 1) + 2);
+    // ⚠ And it must reach the loop's OWN verdict, never fall out of the bottom.
+    // The trailing `budget-exhausted` return is a bug report about this
+    // arithmetic, so seeing it here would mean the cap is too tight — a real
+    // deadlock would then be reported as an internal error.
+    expect(r.verdict).not.toBe('budget-exhausted');
+  });
+
+  it('a ZERO re-fire budget still reaches a real verdict, not the internal cap', async () => {
+    // The live-testable configuration: it may not touch the PR, and it must
+    // still say "deadlocked" rather than "budget-exhausted".
+    const gh = fakeGitHub({ prNumber: 1692, runAppearsAfterRefire: null });
+    const r = await runVerification({ ...gh, maxRefires: 0, pollsPerRefire: 2, pollIntervalMs: 0 });
+    expect(r.ok).toBe(false);
+    expect(r.verdict).toBe('deadlocked');
+    expect(gh.calls.refires, 'maxRefires: 0 must close nothing').toBe(0);
   });
 });
 
