@@ -23,6 +23,10 @@
 //
 //   baseline  render the def's own factory under an OfflineAudioContext with
 //             canonical drivers on every NON-paramTarget input.
+//   repro     render the baseline A SECOND TIME, unchanged, and require the two
+//             to be bit-identical. This runs FIRST and it is a veto: a module
+//             that cannot render the same twice has no noise floor below the
+//             deltas below, so none of its ports are measured at all. See #1680.
 //   cv leg    the same render plus a ConstantSource wired the way
 //             `AudioEngine.addEdge` wires one (engine.ts ~489): into
 //             `inputs.get(portId).param` when the module publishes one, else
@@ -54,11 +58,12 @@
 //     and a Faust def's factory instantiates one (see the header of
 //     art/setup/faust-offline.ts, which exists precisely because of this).
 //     Their factories throw here, so every paramTarget port on them is
-//     unmeasured — 120 of the 340 declared paramTarget ports in the repo.
-//     That is not a small hole: MIXMSTRS' eight `comp{N}` macro ports are a
-//     CONFIRMED instance of the #1661 shape (filed as #1662) and live inside
-//     it, so the one module already known to be broken is the one this sweep
-//     cannot see.
+//     unmeasured. That is not a small hole — the coverage line at the bottom of
+//     this file prints `declared` / `measured` / `unmeasured` DERIVED from the
+//     run, and the Faust share of it is the largest single reason. MIXMSTRS'
+//     `comp{N}` macro ports are a CONFIRMED instance of the #1661 shape (filed
+//     as #1662) and live inside it, so the one module already known to be
+//     broken is the one this sweep cannot see.
 //     The exemption asserts the factory STILL throws, so the day one of them
 //     becomes materialisable the entry goes red instead of quietly persisting.
 //
@@ -67,13 +72,34 @@
 //     stream is invisible here even when its CV path is perfect. SCOPE's
 //     render params are exactly that shape — which is why their entries
 //     below are about the ALIASING defect and not about the render path.
+//     ⚠ This blind spot is easy to mistake for a defect. WAVESCULPT's `scale`
+//     was filed as "the cable works, the KNOB is dead" (#1680) on a non-zero cv
+//     reading and a zero knob reading. In fact `sScale` is read in exactly one
+//     place — the card-facing `read()` that returns scope traces — so `scale`
+//     has NO audio consumer, the knob leg is correctly wired, and the non-zero
+//     cv number was blind-spot-3 race noise. Before believing a one-legged
+//     result, grep the shadow's consumers.
 //
-//  3. MAIN-THREAD PUMPS, PARTIALLY. A module that samples a shadow analyser
-//     on a `setInterval` tick (the WAVESCULPT pattern) gets NO tick during
-//     `startRendering()` — measured: 0 timer callbacks across a 1 s offline
-//     render. Anything reaching the DSP only through such a pump reads as
-//     inert here. WAVESCULPT itself passes on other paths, so this is a
-//     latent false-negative risk, not a current one.
+//  3. MAIN-THREAD PUMPS — and they make the render NON-REPRODUCIBLE, which is
+//     worse than blindness. A module that pushes state to the DSP from a
+//     `setInterval`/`setTimeout` tick (the WAVESCULPT pattern) DOES get ticks
+//     during `startRendering()`: node-web-audio-api renders off-thread, so the
+//     JS event loop is free for the whole await and the pump fires. Measured on
+//     a 0.35 s render: 3-4 callbacks, landing at `ctx.currentTime` 0.003 /
+//     0.072 / 0.237 — i.e. at a WALL-CLOCK-determined offline time that is
+//     different every run.
+//
+//     ⚠ An earlier revision of this comment claimed "0 timer callbacks across a
+//     1 s offline render". That measurement was wrong, and believing it cost a
+//     REAL two-verdict incident (#1680): the same wavesculpt ports read
+//     `cv Δ=0.0000e+0, knob Δ=0.0000e+0` on one CI run and PASSED on the next
+//     two, from identical sweep code in the identical job.
+//
+//     So the pump is not a false-NEGATIVE risk, it is a COIN FLIP in both
+//     directions, and the only sound response is to refuse to judge such a
+//     module at all. The REPRODUCIBILITY leg below renders each module's
+//     baseline twice and requires the two to be bit-identical before any of its
+//     ports are measured; a module that fails it is skipped and must be NAMED.
 //
 //  4. WHETHER THE MOVEMENT IS *CORRECT*. This asserts reach, not fidelity —
 //     that the cable changes the sound, not that it changes it the right way
@@ -91,8 +117,9 @@ import { vcoTestSignal, gateTrain, triggerTrain, clockTrain, C4_HZ } from '../..
 const SR = 48_000;
 
 /** Render length. Long enough for a delay/reverb tail to reach the output at
- *  the canonical drive, short enough that ~730 renders stay inside the ART
- *  lane's budget. Ports needing a longer window to show a difference land in
+ *  the canonical drive, short enough that the whole sweep (two renders per
+ *  port, plus a baseline pair and an identity build per module) stays inside
+ *  its lane's budget. Ports needing a longer window to show a difference land in
  *  `no-observable-at-canonical-drive` WITH that recorded as their reason —
  *  they are never counted as passing. */
 const DURATION_S = 0.35;
@@ -111,6 +138,11 @@ type Exemption =
   /** The def's factory cannot be materialised in this harness at all, so no
    *  port on it is measured. Evidence re-checked: the factory still throws. */
   | { kind: 'harness-cannot-materialize'; module: string; port: '*'; why: string }
+  /** Two IDENTICAL renders of this module's baseline are not bit-identical, so
+   *  every delta it can produce is a coin flip and NO port on it may be judged.
+   *  Evidence re-checked: the module must still be NAMED here the moment the
+   *  sweep observes it, and the sweep is RED if a module goes racy unnamed. */
+  | { kind: 'render-not-reproducible'; module: string; port: '*'; issue: number; why: string }
   /** The KNOB leg does not move the output either, so the instrument cannot
    *  see this control here and has proved nothing about the cable. Evidence
    *  re-checked: the knob leg still measures exactly 0. */
@@ -166,20 +198,31 @@ const EXEMPT: readonly Exemption[] = [
     why: 'The module renders silence under the canonical drivers (baseline peak 0): a two-deck player with no material loaded.',
   })),
 
-  // --- 3. Live defects found BY this sweep. Filed; still failing on purpose.
+  // --- 3. The render itself is a race, so no delta from these modules means
+  //        anything. See blind spot 3 — each drives the DSP from a main-thread
+  //        pump that fires at wall-clock time during the offline render.
   //
-  // ⚠ These two were found by this sweep's FIRST CI RUN, on the module cited as
-  // the CORRECT template for the shadow pattern (wavesculpt.ts:1501, referenced
-  // by #1661's fix and by this file's own design notes). Being the reference
-  // implementation is not evidence of correctness.
+  // ⚠ THESE THREE REPLACE two `known-defect` entries this file briefly carried
+  // for wavesculpt.morph3_cv and wavesculpt.scale. Those entries recorded a
+  // real reading (`cv Δ=0.0000e+0, knob Δ=0.0000e+0` and `cv Δ=3.8759e-2, knob
+  // Δ=0.0000e+0`) from the sweep's first CI run — and the SAME code on the next
+  // two CI runs made both ports PASS. The readings were noise, so the defect
+  // claims are RETRACTED (#1680): nothing was ever established about those two
+  // ports in either direction.
   {
-    kind: 'known-defect', module: 'wavesculpt', port: 'morph3_cv', issue: 1680,
-    why: 'Both legs read bit-exactly 0 against a 1.24e-1 baseline: cv Δ=0.0000e+0 AND knob Δ=0.0000e+0. Either the param is inert, or the canonical drive does not put the module in a state where morph3 matters — distinguishing those is part of #1680, and asserting either answer here would be guessing.',
+    kind: 'render-not-reproducible', module: 'wavesculpt', port: '*', issue: 1680,
+    why: 'Two identical baseline renders differ every time: measured peak |Δsample| between them ranged 3.9e-3..1.7e-1 against a baseline peak of 1.3e-1..1.7e-1 — and some renders come out bit-exactly SILENT while the next sounds. The `setInterval(tick, ENV_TICK_MS)` pump is what pushes the combined knob+CV shadow values into the worklet params (wavesculpt.ts:1511 is the ONLY writer of engineParams `morph{N}`, and it lives inside tick()), and it fires 3-4 times at wall-clock-determined points inside the render. So BOTH legs of every morph port depend on a wall-clock race, which is exactly the shape #1680 mistook for a defect.',
   },
   {
-    kind: 'known-defect', module: 'wavesculpt', port: 'scale', issue: 1680,
-    why: 'The INVERSE of #1661: the cable works (cv Δ=3.8759e-2) and the KNOB is dead (knob Δ=0.0000e+0). Something reads the CV-summed value but not the intrinsic setParam writes. This is exactly why the sweep asserts BOTH legs — a one-legged "did the audio change?" check calls this a PASS.',
+    kind: 'render-not-reproducible', module: 'cloudseed', port: '*', issue: 1680,
+    why: 'Two identical baseline renders differ on EVERY attempt: measured peak |Δsample| 2.7e-1..4.3e-1 against a baseline peak of 4.0e-1..5.6e-1, i.e. the run-to-run noise is most of the signal. Quiescing the timers registered during the factory does NOT settle it, so the source is not (only) a factory-window pump — that is part of #1680 and not yet established.',
   },
+  {
+    kind: 'render-not-reproducible', module: 'cube', port: '*', issue: 1680,
+    why: 'The render is BISTABLE at full scale: two identical baseline renders are either bit-identical or differ by exactly 1.000e+0, with both outcomes seen repeatedly across the same local sweep. A port delta here is a fair coin, not a measurement. Quiescing the factory-window timers does not settle it either (#1680).',
+  },
+
+  // --- 4. Live defects found BY this sweep. Filed; still failing on purpose.
   ...(['cursor', 'samplesPerFrame', 'gain', 'wrap'] as const).map((port): Exemption => ({
     kind: 'known-defect', module: 'rasterize', port, issue: 1664,
     why: 'All four ports publish the SAME AudioParam — `inGain.gain`, which is the live in→thru passthrough. A cable into `cursor` therefore multiplies the audio instead of moving the param: measured 3.1e+5 peak against a 5.0e-1 baseline. `setParam` only writes a JS record, so the knob leg moves nothing at all.',
@@ -342,10 +385,13 @@ function describeMeasurement(m: PortMeasurement): string {
     + (m.error ? ` — ERROR: ${m.error}` : '');
 }
 
-/** Measure every paramTarget port of one def. Materialises the def once for
- *  the baseline and twice per port. */
+/** Measure every paramTarget port of one def. Materialises the def TWICE for
+ *  the reproducibility leg and twice per port. */
 async function measureDef(def: AudioModuleDef): Promise<{
   factoryError?: string;
+  /** Peak |Δsample| between two IDENTICAL baseline renders. Anything but 0
+   *  means every other number this def can produce is a coin flip. */
+  nullDelta: number;
   sharedParams: { a: string; b: string }[];
   rows: PortMeasurement[];
 }> {
@@ -355,7 +401,16 @@ async function measureDef(def: AudioModuleDef): Promise<{
   const targets = def.inputs.filter((p) => p.paramTarget);
 
   const base = await renderLeg(def, outIds, {});
-  if (!base.ok) return { factoryError: base.error, sharedParams, rows };
+  if (!base.ok) return { factoryError: base.error, nullDelta: 0, sharedParams, rows };
+
+  // REPRODUCIBILITY LEG — the same request, rendered again. This is the
+  // instrument's own negative control and it runs BEFORE anything is measured:
+  // a delta between two identical renders is the noise floor for every delta
+  // below, so a module that fails it cannot be judged at all. Skipping its
+  // ports is not a saving, it is the only honest reading — see blind spot 3
+  // and the #1680 two-verdict incident that produced this leg.
+  const base2 = await renderLeg(def, outIds, {});
+  const nullDelta = base2.ok ? peakDelta(base, base2) : 0;
 
   // ALIASING leg — object identity of the published AudioParams. Cheap,
   // exact, and it catches the class the audio metric can be FOOLED by: two
@@ -379,6 +434,11 @@ async function measureDef(def: AudioModuleDef): Promise<{
       else seen.set(param, port.id);
     }
   } catch { /* covered by the factoryError branch above */ }
+
+  // The aliasing leg above is STRUCTURAL (object identity of the published
+  // AudioParams), so it stays valid even when the render is not — which is why
+  // it runs before this bail-out rather than after.
+  if (nullDelta > 0) return { nullDelta, sharedParams, rows };
 
   const basePeak = peakOf(base);
   for (const port of targets) {
@@ -407,7 +467,7 @@ async function measureDef(def: AudioModuleDef): Promise<{
       error: !cv.ok ? cv.error : !knob.ok ? knob.error : undefined,
     });
   }
-  return { sharedParams, rows };
+  return { nullDelta, sharedParams, rows };
 }
 
 // ---------------------------------------------------------------------------
@@ -415,7 +475,15 @@ async function measureDef(def: AudioModuleDef): Promise<{
 // `measureDef` / `reaches` path as every real module.
 // ---------------------------------------------------------------------------
 
-function makeControlDef(type: string, connectShadow: boolean): AudioModuleDef {
+/** Increments on every materialisation of a `driftPerBuild` control, so two
+ *  renders of the same def cannot agree. */
+let CONTROL_BUILDS = 0;
+
+function makeControlDef(
+  type: string,
+  connectShadow: boolean,
+  driftPerBuild = false,
+): AudioModuleDef {
   return {
     type, domain: 'audio', label: type, category: 'utility',
     palette: { top: 'Utility', sub: 'Utility' },
@@ -424,7 +492,10 @@ function makeControlDef(type: string, connectShadow: boolean): AudioModuleDef {
     params: [{ id: 'amount', label: 'Amount', defaultValue: 0, min: 0, max: 1, curve: 'linear' }],
     async factory(ctx: AudioContext) {
       const carrier = ctx.createConstantSource();
-      carrier.offset.value = 1;
+      // A `driftPerBuild` control emits a DIFFERENT level on every build, which
+      // is the reproducibility leg's negative control: two identical renders of
+      // it must disagree.
+      carrier.offset.value = driftPerBuild ? 1 + 0.25 * (CONTROL_BUILDS++ % 3) : 1;
       carrier.start();
       const shadow = ctx.createGain();
       shadow.gain.value = 0;
@@ -453,6 +524,9 @@ function makeControlDef(type: string, connectShadow: boolean): AudioModuleDef {
 let MEASURED: PortMeasurement[] = [];
 let FACTORY_ERRORS = new Map<string, string>();
 let SHARED = new Map<string, { a: string; b: string }[]>();
+/** module → peak |Δsample| between two identical baseline renders, recorded
+ *  ONLY for the modules where it was non-zero. */
+let NON_REPRODUCIBLE = new Map<string, number>();
 let DEFS: AudioModuleDef[] = [];
 /** Per-module wall time, reported (never asserted). A wall-clock number is a
  *  property of the MACHINE, not of the code — measured on this tree, the same
@@ -472,6 +546,7 @@ describe('CV param reach — every declared paramTarget input must move its modu
       const r = await measureDef(def);
       COST.push({ module: def.type, ms: Date.now() - t0, ports: r.rows.length });
       if (r.factoryError) FACTORY_ERRORS.set(def.type, r.factoryError);
+      if (r.nullDelta > 0) NON_REPRODUCIBLE.set(def.type, r.nullDelta);
       if (r.sharedParams.length) SHARED.set(def.type, r.sharedParams);
       MEASURED = MEASURED.concat(r.rows);
     }
@@ -507,8 +582,40 @@ describe('CV param reach — every declared paramTarget input must move its modu
 
   it('POSITIVE CONTROL (predicate): a shadow WIRED to the output passes `reaches`', async () => {
     const r = await measureDef(makeControlDef('__control_live_shadow', true));
+    expect(r.nullDelta, 'the control itself must render reproducibly').toBe(0);
     expect(r.rows).toHaveLength(1);
     expect(reaches(r.rows[0]!), describeMeasurement(r.rows[0]!)).toBe(true);
+  });
+
+  it('CONTROL (reproducibility leg): a def whose render is not repeatable is REFUSED, not measured', async () => {
+    // The instrument's negative control ON ITSELF, and a permanent leg of the
+    // #1680 incident. Both directions, both through `measureDef`:
+    //   * an ordinary def          → nullDelta 0, its port IS measured;
+    //   * the same def built so each materialisation differs → nullDelta > 0,
+    //     and NOT ONE row is emitted.
+    // Without the second leg, "every module is reproducible" and "this leg
+    // never looked" are indistinguishable from a green run.
+    //
+    // The drift here is per-materialisation rather than wall-clock, on purpose:
+    // it reproduces the PROPERTY the leg exists to catch (two identical renders
+    // disagree) without importing the timing race that would make the control
+    // itself flaky. The real instances are in EXEMPT under
+    // `render-not-reproducible`.
+    const steady = await measureDef(makeControlDef('__control_live_shadow', true));
+    expect(steady.nullDelta).toBe(0);
+    expect(steady.rows).toHaveLength(1);
+
+    // `connectShadow: false` routes the carrier straight to the output, so the
+    // per-build drift is what the BASELINE renders — which is the whole point.
+    const racy = await measureDef(makeControlDef('__control_drifting', false, true));
+    expect(
+      racy.nullDelta,
+      'a non-repeatable render must be CAUGHT (peak |Δsample| between two identical renders, linear amplitude)',
+    ).toBeGreaterThan(0);
+    expect(
+      racy.rows,
+      'and a non-reproducible module must emit NO measurements at all — a coin flip is not a reading',
+    ).toEqual([]);
   });
 
   it('NEGATIVE CONTROL (predicate): a shadow wired to NOTHING fails `reaches`', async () => {
@@ -578,6 +685,23 @@ describe('CV param reach — every declared paramTarget input must move its modu
     expect(thin, 'an exemption without an argument is a skip wearing a costume').toEqual([]);
   });
 
+  it('every module whose render is NOT REPRODUCIBLE is NAMED — deny by default', () => {
+    // The gate that would have caught #1680 the day it was written. A module
+    // that cannot render the same twice produces coin flips, and a coin flip
+    // reads exactly like a finding: wavesculpt.morph3_cv was reported as a
+    // filed defect on the strength of one, and passed on the next two runs.
+    const named = new Set(
+      EXEMPT.filter((e) => e.kind === 'render-not-reproducible').map((e) => e.module),
+    );
+    const unnamed = [...NON_REPRODUCIBLE]
+      .filter(([module]) => !named.has(module))
+      .map(([module, d]) =>
+        `${module}: two IDENTICAL baseline renders differ by ${d.toExponential(4)} `
+        + '(peak |Δsample|, linear amplitude) — every delta this module can produce is noise. '
+        + "Make the render deterministic, or add a NAMED 'render-not-reproducible' exemption.");
+    expect(unnamed, 'modules whose measurements are a coin flip').toEqual([]);
+  });
+
   it("'harness-cannot-materialize' entries still fail to materialize", () => {
     const fixed = EXEMPT
       .filter((e) => e.kind === 'harness-cannot-materialize')
@@ -595,7 +719,7 @@ describe('CV param reach — every declared paramTarget input must move its modu
       .filter((e) => e.kind === 'no-observable-at-canonical-drive')
       .flatMap((e) => {
         const m = byKey.get(`${e.module}.${e.port}`);
-        if (!m) return [`${e.module}.${e.port}: not measured at all — is it behind a factory error?`];
+        if (!m) return [`${e.module}.${e.port}: not measured at all — is it behind a factory error, or did the reproducibility leg veto the module (nullΔ=${NON_REPRODUCIBLE.get(e.module)?.toExponential(4) ?? 'n/a'})?`];
         if (m.knobDelta === 0) return [];
         return [`${e.module}.${e.port}: knob leg now moves (${describeMeasurement(m)}) — this port is measurable, delete its exemption`];
       });
@@ -608,9 +732,15 @@ describe('CV param reach — every declared paramTarget input must move its modu
       .filter((e) => e.kind === 'known-defect')
       .flatMap((e) => {
         const m = byKey.get(`${e.module}.${e.port}`);
-        if (!m) return [`${e.module}.${e.port}: not measured — cannot confirm the defect still stands`];
+        if (!m) return [`${e.module}.${e.port}: not measured — cannot confirm the defect still stands (factory error, or the reproducibility leg vetoed the module: nullΔ=${NON_REPRODUCIBLE.get(e.module)?.toExponential(4) ?? 'n/a'})`];
         if (!reaches(m)) return [];
-        return [`${e.module}.${e.port} (issue #${e.issue}) now PASSES — close the issue and delete this exemption`];
+        // The NUMBERS, not just the verdict: #1680 was two CI runs disagreeing
+        // about these ports, and this message printed neither reading. Anyone
+        // who hits this next must be able to compare deltas from the failure
+        // text alone, without re-running a 15-minute sweep.
+        return [`${e.module}.${e.port} (issue #${e.issue}) now PASSES — ${describeMeasurement(m)}`
+          + ' — if this is stable, close the issue and delete this exemption; if it disagrees with'
+          + ' the reading in the exemption\'s `why`, suspect the INSTRUMENT first (see blind spot 3)'];
       });
     expect(fixed).toEqual([]);
   });
@@ -641,13 +771,27 @@ describe('CV param reach — every declared paramTarget input must move its modu
 
     const slowest = [...COST].sort((a, b) => b.ms - a.ms).slice(0, 5)
       .map((c) => `${c.module} ${(c.ms / 1000).toFixed(1)}s/${c.ports}p`).join(', ');
+    // Derived from the run, never typed: which named reason each unmeasured
+    // port fell under, so a reader of a green run sees the shape of the hole.
+    const excusedBy = (kind: Exemption['kind']) => {
+      const mods = new Set(EXEMPT.filter((e) => e.kind === kind).map((e) => e.module));
+      return unmeasured.filter((k) => mods.has(k.split('.')[0]!)).length;
+    };
+    const racy = [...NON_REPRODUCIBLE]
+      .map(([m, d]) => `${m} nullΔ=${d.toExponential(3)}`).join(', ') || 'none';
     // eslint-disable-next-line no-console
     console.log(
       `[cv-param-reach] slowest: ${slowest} (wall time — a MACHINE property, never a gate) | `
-      + `declared=${declared.length} measured=${measuredKeys.size} `
-      + `unmeasured=${unmeasured.length} (all inside 'harness-cannot-materialize' modules) `
+      + `declared=${declared.length} measured=${measuredKeys.size} unmeasured=${unmeasured.length} `
+      + `(harness-cannot-materialize=${excusedBy('harness-cannot-materialize')}, `
+      + `render-not-reproducible=${excusedBy('render-not-reproducible')}) `
+      + `| NON-REPRODUCIBLE this run: ${racy} `
       + `| cv leg via node-input=${viaNodeInput} via param=${MEASURED.length - viaNodeInput} `
-      + `| BLIND TO: Faust worklets, non-audio consumers (card/video/MIDI), main-thread pumps, and whether the movement is CORRECT.`,
+      + `| BLIND TO: Faust worklets, non-audio consumers (card/video/MIDI), any module whose render `
+      + `is not repeatable (its ports are refused, not judged), and whether the movement is CORRECT. `
+      + `NOTE: a 'render-not-reproducible' entry is anchored one way only — the sweep reddens when a `
+      + `NEW module goes racy, but a named module that BECOMES deterministic is not detected here, `
+      + `because re-measuring a coin flip cannot fail reliably (#1680).`,
     );
   });
 });

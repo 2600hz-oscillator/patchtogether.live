@@ -518,21 +518,28 @@ jobs:
 
       # THE SWEEP LIVES IN ITS OWN JOB ON A MEASUREMENT (#1664/#1661).
       #
-      # It builds and renders the real factory once PER PORT across ~340
-      # paramTarget ports. Measured 127 s on an idle local box — and on a CI
-      # runner it took the `art` job from its historical 3 min to a hard CANCEL
-      # at that job's 10 min timeout. Folding it into `art` therefore more than
-      # doubled a REQUIRED lane on every PR.
+      # It builds and renders the real factory once per port across every
+      # declared paramTarget port in the registry, plus a baseline PAIR per
+      # module for its reproducibility leg. Measured 127 s on an idle local box
+      # — and on a CI runner it took the `art` job from its historical 3 min to
+      # a hard CANCEL at that job's 10 min timeout. Folding it into `art`
+      # therefore more than doubled a REQUIRED lane on every PR.
       #
       # Splitting it out costs NO merge latency: this runs in parallel and the
       # critical path is the e2e shard matrix at ~12 min. It still GATES —
       # wired into the umbrella's needs + env + failing `if`, the same three
       # edits every gating lane makes — so nothing is weakened, only moved.
       #
-      # The 25 min timeout is deliberately generous because the true CI cost is
-      # NOT yet known: every attempt to measure it locally ran on a box held at
-      # load 20-50 by sibling agents. The first green run here is the real
-      # measurement; tighten this then, with that number.
+      # The 25 min timeout is deliberately generous. The true CI cost is now
+      # MEASURED — 894 s of test time (job wall 16m53s) on run 95025458100 —
+      # but it is not yet a GREEN measurement, and local timings are useless
+      # here: the same sweep took 2235 s on a box held at load 40 by sibling
+      # agents. Tighten this once a green run lands, with that number.
+      #
+      # ⚠ That 894 s is ALSO the number to weigh before adding to this sweep:
+      # it is close enough to the e2e shard matrix (~12 min) that this job can
+      # become the critical path, which is a real PR wall-time delta rather
+      # than the "free parallel lane" the split assumed.
       - name: Run the CV-reach sweep
         run: flox activate -- npm run art:cv-reach -w art
 

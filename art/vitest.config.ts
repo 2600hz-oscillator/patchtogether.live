@@ -60,10 +60,11 @@ export default defineConfig({
     include: ['scenarios/**/*.test.ts'],
     // ⚠ THE CV-REACH SWEEP IS NOT PART OF THE BASELINE LANE, and it is excluded
     // on a MEASUREMENT, not a preference. It builds and renders the real
-    // factory once PER PORT across 340 paramTarget ports; measured 127 s on an
-    // idle local box and >7 min on a CI runner, which took the `art` job from
-    // its historical 3 min to a hard cancel at its 10 min timeout — i.e. it
-    // more than doubled a REQUIRED lane on every PR.
+    // factory once per port across every declared paramTarget port in the
+    // registry, plus a baseline PAIR per module for its reproducibility leg;
+    // measured 127 s on an idle local box and ~15 min on a CI runner, which
+    // took the `art` job from its historical 3 min to a hard cancel at its
+    // 10 min timeout — i.e. it more than doubled a REQUIRED lane on every PR.
     //
     // It still GATES, in its own parallel job (see ci.yml `cv-param-reach`), so
     // nothing is weakened: the critical path is the e2e shards at ~12 min, so a
