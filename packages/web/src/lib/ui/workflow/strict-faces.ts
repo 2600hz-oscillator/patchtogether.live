@@ -701,6 +701,56 @@
 // negative control on the ORACLE ITSELF (a deliberately mis-scaled knee term
 // must redden the same comparison), so a DSP fix turns a stale faceplate claim
 // red instead of leaving the panel insisting on a repaired defect.
+
+// THE FACEPLATE QUEUE · Q11 — NINE LIVES, the ⅓-ladder modulation fan-out
+// (2026-08-15), and the entry whose whole argument is that A KNOB CAN BE
+// CORRECT AND STILL BE INVARIANT TO THE MODULE.
+//
+// §1 of the queue ranked the pool by PARAM COUNT and this module — 2 params, 1
+// input, 9 outputs — is a rejection on that measure. It is the `noise` case
+// verbatim: one dial, promoted because several stated facts about its taps are
+// unprintable from it. RATE prints ONE frequency for NINE outputs 6561× apart.
+// Measured through THIS module's own factory, port id by port id, at the
+// shipped Rate of 1 Hz: out1 1.00 s, out5 1.4 min, out8 36.5 min, out9 1.8 h —
+// and at the bottom of the dial (0.01 Hz) out9's cycle is 7.6 DAYS.
+//
+// ⚠ THE AUDIT'S SHARPEST FINDING IS ABOUT THE GLYPH, and it is the `noise`
+// lane-meter hazard answered rather than repeated. With nine outputs, ANY
+// analyser-backed glyph reads exactly one of them and paints it as the module.
+// Here `primaryAudioOutPortId` returns NULL — every output is `cv`, so there is
+// no audio output to resolve — which means `glyph: 'meter'` would have given
+// `{ kind: 'static' }`, no tap, and twelve VuMeter segments that can never
+// light: the marbles defect, verbatim, on a module with nine jacks. The face
+// declares `'waveform'` instead, which resolves `{ kind: 'wave-morph' }`: a
+// PARAM-DERIVED single cycle of the `shape` morph, tapping nothing. That is
+// honest here for a module-specific reason — the waveform is genuinely SHARED
+// by all nine taps, so the picture is of every output rather than one of them.
+// Both halves are permanent legs of `ninelives-face-model.test.ts`.
+//
+// ⚠ AND THE ⅓ LADDER RE-MEASURED **TRUE**, which is the result the queue's own
+// warning said not to assume. `art/scenarios/ninelives/ladder.test.ts` drives
+// the shipped worklet through the def's factory in a real OfflineAudioContext
+// and reads each DECLARED port's rate by unwrapped phase slope (a saw at
+// `shape 1` IS the phase, so the same estimator resolves 100 Hz and 0.0152 Hz
+// with one code path — a Goertzel cannot see out9 at all in a 1 s window).
+// Every rung lands within 2.5e-7 relative of `rate × (1/3)^(n-1)`. Before this
+// scenario NOTHING joined the factory's port map to what the processor writes:
+// the module unit test pins the map against its own arithmetic, the DSP unit
+// test indexes a scratch array with no port ids in it, and the ART profile
+// drives the PROCESSOR CLASS with its own `out1..out9` literal.
+//
+// ⚠ TWO THINGS CORRECTED, NEITHER AUDIO. The def, its DSP core header, its
+// `docs` and the module manifest all said out1 is "IDENTICAL to a normal LFO",
+// unqualified. It is bit-identical at the LFO's shipped `depth` default (0.5,
+// where the LFO's own `depth·2` scaling reaches unity) and at NO other depth —
+// NINE LIVES has no depth control, so every tap is a fixed full-scale ±1. Both
+// halves are permanent ART legs. And the def carried `const OUT_COUNT = 9`
+// beside a nine-entry `outputs` literal while `ninelives-dsp.ts` sized the
+// processor's loop off its own `NINE_LIVES_OUTPUT_COUNT` — two unjoined copies
+// of the ladder length, where a disagreement publishes silently dead jacks. The
+// def now imports the DSP constant and derives the roster from it, so the
+// disagreement is unrepresentable rather than merely untested, and the
+// hand-typed count is gone. `contract-lock.txt` is byte-identical across it.
 export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // P1 batch 1 — first 6 module faces
   'adsr',
@@ -821,6 +871,9 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // debt entry is DELETED rather than re-worded, and the card baseline is
   // re-captured by this branch's dispatch.
   'wavetableVco',
+  // THE FACEPLATE QUEUE · Q11 — the ⅓-ladder modulation fan-out (2026-08-15).
+  // See the header note above.
+  'ninelives',
   // FACE BATCH 6 · the four-stage destructive echo (2026-08-15).
   //
   // ⚠ THE FACE EXISTS BECAUSE TWO OF THE FIVE DIALS ARE A STABILITY BOUNDARY

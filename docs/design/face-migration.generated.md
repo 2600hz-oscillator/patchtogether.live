@@ -128,7 +128,7 @@ author a `face` and rank the controls — no new platform capability.
 | `moog994` | audio | — | — |
 | `moog995` | audio | — | — |
 | `moogCp3` | audio | — | — |
-| `ninelives` | audio | — | — |
+| `ninelives` | audio | done | — |
 | `noise` | audio | done | — |
 | `onetonine` | video | — | — |
 | `outlines` | video | — | — |

@@ -60,6 +60,14 @@ import {
 } from '$lib/ui/modules/clouds-face-model';
 import { noiseFaceParams, noiseTapDbText } from '$lib/ui/modules/noise-face-model';
 import {
+  NINELIVES_TAP_MULTIPLIERS,
+  ninelivesFaceParams,
+  ninelivesFastTapsText,
+  ninelivesLadderSpanText,
+  ninelivesTapPeriodText,
+  ninelivesWaveText,
+} from '$lib/ui/modules/ninelives-face-model';
+import {
   marblesBpmText,
   marblesFaceParams,
   marblesGateWidthText,
@@ -818,6 +826,41 @@ const FACE_READOUT_VALUES: Readonly<Record<string, FaceReadoutValue>> = {
   // what makes the two halves each other's control.
   'warrensspectrum-out': (read) => wsOutText(warrensspectrumFaceParams(read)),
 
+  // ── NINE LIVES ───────────────────────────────────────────────────────────
+  // THREE hero values plus ONE ROW PER TAP, on a module with two params, and
+  // the arithmetic is the whole argument. RATE is a single log fader printing
+  // ONE frequency for NINE outputs whose rates are 6561× apart. `1.00 Hz` on
+  // the dial means, measured through this module's own factory port by port
+  // (art/scenarios/ninelives/ladder.test.ts):
+  //
+  //   out1 1.00 s · out2 3.00 s · out3 9.00 s · out4 27.0 s · out5 1.4 min
+  //   out6 4.1 min · out7 12.2 min · out8 36.5 min · out9 1.8 h
+  //
+  // …and `0.01 Hz` on the same dial means out9 sweeps once every 7.6 DAYS. The
+  // readback is not merely incomplete about that, it is INVARIANT to WHICH tap
+  // is being asked about — the `noise` shape, one fader over unmatched taps.
+  //
+  // `ninelives-ladder-span` prints both ends at once (a span, which one number
+  // cannot be). `ninelives-fast-taps` prints which taps still read as movement,
+  // and it is the one that catches a dial step nobody would look twice at:
+  // 0.02 → 0.016 Hz takes it from `out 1` to `none`. `ninelives-wave` NAMES the
+  // 0..2 morph, and is RATE-invariant while the other two are WAVEFORM-
+  // invariant — so each is the other's negative control on every run
+  // (ninelives-face-model.test.ts).
+  'ninelives-ladder-span': (read) => ninelivesLadderSpanText(ninelivesFaceParams(read)),
+  'ninelives-fast-taps': (read) => ninelivesFastTapsText(ninelivesFaceParams(read)),
+  'ninelives-wave': (read) => ninelivesWaveText(ninelivesFaceParams(read)),
+  // THE TABLE — one entry per rung, GENERATED from the DSP core's own ladder
+  // (`NINE_LIVES_RATE_MULTIPLIERS`), never nine typed lines. The def's sidebar
+  // builds its rows from the same population, so a row and a registration
+  // cannot go out of step and there is no count in either place.
+  ...(Object.fromEntries(
+    NINELIVES_TAP_MULTIPLIERS.map((_, n) => [
+      `ninelives-tap-${n + 1}`,
+      (read: (paramId: string) => number | undefined) =>
+        ninelivesTapPeriodText(n, ninelivesFaceParams(read)),
+    ]),
+  ) as Record<string, FaceReadoutValue>),
   // ── CHARLOTTE'S ECHOS ────────────────────────────────────────────────────
   // FIVE, on a five-knob delay, and the reason is that TWO of those knobs are a
   // STABILITY BOUNDARY wearing the labels of taste controls. The four analog

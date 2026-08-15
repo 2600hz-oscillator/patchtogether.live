@@ -360,8 +360,6 @@ e2e/tests/snh-hold.spec.ts :: setup :: waitForTimeout(600) #1
 e2e/tests/soak.spec.ts :: soak: voice patch produces finite, in-range audio over 30s :: waitForTimeout(POLL_INTERVAL_MS) #1
 e2e/tests/stereo-autowire.spec.ts :: an only-L and an only-R cable from DIFFERENT sources coexist on one input :: waitForTimeout(300) #1
 e2e/tests/sticky-note.spec.ts :: sticky reconcile: no console errors when spawning a sticky-only patch :: waitForTimeout(150) #1
-e2e/tests/swolevco.spec.ts :: SWOLEVCO ratio knob change updates the rendered scope content :: waitForTimeout(700) #1
-e2e/tests/swolevco.spec.ts :: SWOLEVCO ratio knob change updates the rendered scope content :: waitForTimeout(700) #2
 e2e/tests/tempo-stability.spec.ts :: tempo-stability: ${} drops the past-due backlog under a stall > lookahead, never bunches (#229/#224) :: waitForTimeout(400) #1
 e2e/tests/tempo-stability.spec.ts :: tempo-stability: ${} drops the past-due backlog under a stall > lookahead, never bunches (#229/#224) :: waitForTimeout(500) #1
 e2e/tests/tempo-stability.spec.ts :: tempo-stability: ${} drops the past-due backlog under a stall > lookahead, never bunches (#229/#224) :: waitForTimeout(600) #1

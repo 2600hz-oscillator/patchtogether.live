@@ -2380,6 +2380,7 @@ ninelives out out8 cv
 ninelives out out9 cv
 ninelives param rate 0.01..100 log default=1 unit=Hz
 ninelives param shape 0..2 linear default=0
+ninelives face sidebar 0 kind=readouts label=cycle time entries=out 1:value=ninelives-tap-1,out 2:value=ninelives-tap-2,out 3:value=ninelives-tap-3,out 4:value=ninelives-tap-4,out 5:value=ninelives-tap-5,out 6:value=ninelives-tap-6,out 7:value=ninelives-tap-7,out 8:value=ninelives-tap-8,out 9:value=ninelives-tap-9
 noise meta domain=audio
 noise out brown audio
 noise out pink audio
