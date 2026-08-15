@@ -85,6 +85,8 @@ import { cofefveDelayDef } from '$lib/audio/modules/cofefve';
 import { delayDef } from '$lib/audio/modules/delay';
 import { macrooscillatorDef } from '$lib/audio/modules/macrooscillator';
 import { marblesDef } from '$lib/audio/modules/marbles';
+import { moog907aDef } from '$lib/audio/modules/moog907a';
+import { moog914Def } from '$lib/audio/modules/moog914';
 import { ninelivesDef } from '$lib/audio/modules/ninelives';
 import { noiseDef } from '$lib/audio/modules/noise';
 import { warrensvisionsDef } from '$lib/video/modules/warrensvisions';
@@ -307,6 +309,19 @@ const RANGE_BOUND_CARDS: Readonly<Record<string, { params: readonly ParamDef[] }
   // depending on which surface you reached it through. Range AND mapping —
   // `curve` and `units` come off `paramSpec(ninelivesDef, …)` too.
   'NinelivesCard.svelte': ninelivesDef,
+  // THE FACEPLATE QUEUE · Q12, the fixed-filter-bank PAIR. Enrolled because the
+  // property was ALREADY TRUE and nothing was watching it: both cards render
+  // `{#each def.params as p}` and pass `min={p.min} max={p.max} label={p.label}`
+  // straight through, so the backdraft class is structurally unrepresentable
+  // here — and `card-def-agreement` is BLIND to exactly that, by its own stated
+  // scope ("a prop whose value is an EXPRESSION rather than a literal"). An
+  // incidental fact and a gated one look identical until someone re-types a
+  // number; this is what makes the difference visible.
+  //
+  // The last literal was `curve="linear"`, now `curve={p.curve}`, so both are
+  // MAPPING-bound too. Neither def declares `units`, so there is none to bind.
+  'Moog907aCard.svelte': moog907aDef,
+  'Moog914Card.svelte': moog914Def,
 };
 
 /**
@@ -361,6 +376,14 @@ const MAPPING_BOUND_CARDS: readonly string[] = [
   // `rate` declares `Hz` and it now comes off the ParamDef; `shape` declares
   // none and the card passes none, which is the same fact stated by omission.
   'NinelivesCard.svelte',
+  // THE FACEPLATE QUEUE · Q12, the fixed-filter-bank PAIR. `curve` was the ONE
+  // remaining literal on either card (`curve="linear"`, agreeing with the def)
+  // and now reads `p.curve`; no section on either bank declares `units`, so
+  // there is none to bind and the cards pass none — the same fact stated by
+  // omission. Every other prop was already def-derived, because both cards
+  // iterate the def's own `params` array rather than listing controls.
+  'Moog907aCard.svelte',
+  'Moog914Card.svelte',
 ];
 
 /**
