@@ -188,6 +188,7 @@ while IFS= read -r pr; do
 
   # Classify → "<rank>\t<icon>\t<counts>"
   cls="$(
+    # shellcheck disable=SC2016 # why: the single quotes are the POINT — this is a Node program, not shell. `$` inside it belongs to JavaScript, and letting the shell expand it would rewrite the source before node ever sees it.
     printf '%s' "$rollup" | node -e '
       let d = {};
       try { d = JSON.parse(require("fs").readFileSync(0, "utf8")); } catch {}
