@@ -99,6 +99,7 @@ import { resofilterDef } from '$lib/audio/modules/resofilter';
 import { ringbackDef } from '$lib/audio/modules/ringback';
 import { ringsDef } from '$lib/audio/modules/rings';
 import { sidecarDef } from '$lib/audio/modules/sidecar';
+import { slewSwitchDef } from '$lib/audio/modules/slewswitch';
 import { snaredrumDef } from '$lib/audio/modules/snaredrum';
 import { vcaDef } from '$lib/audio/modules/vca';
 import { warrensspectrumDef } from '$lib/audio/modules/warrensspectrum';
@@ -291,6 +292,17 @@ const RANGE_BOUND_CARDS: Readonly<Record<string, { params: readonly ParamDef[] }
   // paid that ledger rather than deferring it, and the def took the card's
   // wording so no pixels moved.
   'CharlottesEchosCard.svelte': charlottesEchosDef,
+  // THE FACEPLATE QUEUE · Q14. Enrolled with its faceplate, and the divergence
+  // it paid was a LABEL rather than a range: the four slew faders printed
+  // `Slew 1`..`Slew 4` where the def declares `S1`..`S4`, and the dock renders
+  // the DEF'S label — so promoting would have renamed all four controls out
+  // from under anyone who had learned the card (the `Feedback`/`Fbk` shape,
+  // #1689). The ranges agreed already; they were re-typed rather than wrong,
+  // which is the state before the analogVco backdraft, not after it. The
+  // mode/length DETENT NAMES were the third copy — hardcoded in card markup
+  // the shell cannot read — and are now a `ParamDef.options` roster this card
+  // renders rather than restates.
+  'SlewSwitchCard.svelte': slewSwitchDef,
   'SnaredrumCard.svelte': snaredrumDef,
   'VcaCard.svelte': vcaDef,
   'WarrensspectrumCard.svelte': warrensspectrumDef,
@@ -393,6 +405,11 @@ const MAPPING_BOUND_CARDS: readonly string[] = [
   // identity (asserted in art/scenarios/charlottes-echos/cv-path.test.ts), so
   // there is no second copy of any number or name to drift.
   'CharlottesEchosCard.svelte',
+  // THE FACEPLATE QUEUE · Q14. Mapping too: all five Faders read `curve` off
+  // the ParamDef (`log` on every one of them), and `units` is bound rather than
+  // merely absent — all four slew params and `xfadeTime` declare `units: 's'`,
+  // which this card never printed at all before binding.
+  'SlewSwitchCard.svelte',
   'SnaredrumCard.svelte',
   'VcaCard.svelte',
   'WarrensspectrumCard.svelte',

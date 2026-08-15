@@ -69,8 +69,43 @@ export const slewSwitchDef: AudioModuleDef = {
     { id: 'slew2',     label: 'S2',    defaultValue: 0.5,  min: 0.001, max: 5,   curve: 'log',      units: 's' },
     { id: 'slew3',     label: 'S3',    defaultValue: 0.5,  min: 0.001, max: 5,   curve: 'log',      units: 's' },
     { id: 'slew4',     label: 'S4',    defaultValue: 0.5,  min: 0.001, max: 5,   curve: 'log',      units: 's' },
-    { id: 'mode',      label: 'Mode',  defaultValue: 0,    min: 0,     max: 2,   curve: 'discrete' },
-    { id: 'length',    label: 'Len',   defaultValue: 4,    min: 1,     max: 4,   curve: 'discrete' },
+    // ⚠ THE TWO ROSTERS ARE THE STOP-2 ANSWER, not decoration (PF-1). Both of
+    // these are cycling BUTTONS on the legacy card, and their captions
+    // (`['→ FWD', '⇄ PND', '? RND']`, `LEN n`) were hardcoded in card markup
+    // the migrated shell cannot see. `ParamDef.options` is the documented cure
+    // for exactly that — "the mode 0/1/2 → LP/HP/BP mapping the legacy cards
+    // hardcoded in their own markup and the migrated shell had no way to see,
+    // so a filter's type read as a rotary printing 0.00". Without these,
+    // promoting this module would have replaced three NAMED scan patterns with
+    // an unlabelled 0..2 dial.
+    //
+    // VERIFIED AT THE CONSUMER rather than assumed (CLAUDE.md: "before fixing a
+    // declaration to satisfy a gate, check the consumer reads it"):
+    // `paramCellKind` returns 'segmented' for a roster of <= 6 at the DOCK tier
+    // and 'knob' at every lane tier, and ModuleShell's `segmented` branch
+    // renders `<Segmented segments={pd.options ?? []}>`. So these paint, and
+    // they paint only where there is room.
+    //
+    // Cosmetic, NOT contract: `contract-signature.ts` projects only
+    // id/min/max/curve/defaultValue/units, so naming a value cannot move
+    // contract-lock.txt. Confirmed — `task docs:check` is unchanged by this.
+    {
+      id: 'mode', label: 'Mode', defaultValue: 0, min: 0, max: 2, curve: 'discrete',
+      options: [
+        { value: 0, label: 'FWD', title: 'Forward — 0→1→2→3→0…, wrapping at the top' },
+        { value: 1, label: 'PND', title: 'Pendulum (ping-pong) — 0→1→2→3→2→1→0…, turning around at both ends' },
+        { value: 2, label: 'RND', title: 'Random — a fresh channel on every clock, never repeating the previous one' },
+      ],
+    },
+    {
+      id: 'length', label: 'Len', defaultValue: 4, min: 1, max: 4, curve: 'discrete',
+      options: [
+        { value: 1, label: '1', title: 'Hold channel 1 — the switch stops scanning' },
+        { value: 2, label: '2', title: 'Scan channels 1–2' },
+        { value: 3, label: '3', title: 'Scan channels 1–3' },
+        { value: 4, label: '4', title: 'Scan all four channels' },
+      ],
+    },
     { id: 'xfadeTime', label: 'Xfd',   defaultValue: 0.05, min: 0.001, max: 2,   curve: 'log',      units: 's' },
   ],
 
