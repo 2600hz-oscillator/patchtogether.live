@@ -22,6 +22,7 @@
 import { describe, it, expect } from 'vitest';
 import { moog914Def } from './moog914';
 import {
+  FILTERBANK_907A_CENTERS,
   FILTERBANK_914_CENTERS,
   FILTERBANK_Q,
   bandParamId,
@@ -37,12 +38,30 @@ describe('moog914Def: module def shape', () => {
   it('exposes params hp, band1..bandN, lp — N from the SHARED 914 centers', () => {
     const ids = moog914Def.params.map((p) => p.id);
     expect(ids).toEqual(ALL_PARAM_IDS);
-    // The band count is exactly the shared lib's center count (12 for 914 —
-    // the EXTENDED bank, vs the 907A's 8).
     expect(BAND_IDS.length).toBe(N);
-    expect(N).toBe(12);
   });
 
+  // ⚠ THIS REPLACES `expect(N).toBe(12)` — a hand-typed population count, which
+  // CLAUDE.md forbids outright and which the 2026-08-12 Phase-3 sweep claims not
+  // to exist. It did, here and in the 907A test. It is not maintained into a new
+  // number: the thing it was actually protecting is the RELATION between the two
+  // banks ("the 914 is the EXTENDED one"), and a relation is expressible without
+  // counting anything.
+  it('the 914 grid is the SUPERSET: the 907A centers are a contiguous window of it', () => {
+    const start = FILTERBANK_914_CENTERS.indexOf(FILTERBANK_907A_CENTERS[0]!);
+    expect(start, '907A base is on the 914 grid').toBeGreaterThanOrEqual(0);
+    expect(
+      FILTERBANK_914_CENTERS.slice(start, start + FILTERBANK_907A_CENTERS.length),
+      'the 907A grid is a CONTIGUOUS window of the 914 grid — the two banks share ' +
+        'one series and differ only by which slice they import',
+    ).toEqual([...FILTERBANK_907A_CENTERS]);
+    // …and the 914 is the strictly wider one, on BOTH ends.
+    expect(start, '914 extends BELOW the 907A base').toBeGreaterThan(0);
+    expect(
+      FILTERBANK_914_CENTERS.length,
+      '914 extends ABOVE the 907A top',
+    ).toBeGreaterThan(start + FILTERBANK_907A_CENTERS.length);
+  });
 });
 
 // ───────────────────── Layer 2: factory wiring ─────────────────────
