@@ -47,6 +47,7 @@ import { test as base, expect, type Page } from '@playwright/test';
 // type re-exported so the fixture module is a one-stop import (#1499).
 export type { Page };
 import { waitForMounted } from './_helpers';
+import { applySetupCredit } from './_setup-credit';
 
 export interface ErrorWatch {
   /** Live list of collected page/console errors (push-ordered). */
@@ -86,9 +87,12 @@ export const test = base.extend<{ errorWatch: ErrorWatch; rack: void; rackDefaul
   // overlay, no pinned singletons, an empty graph and xyflow's 0.5 zoom floor.
   // `?shell=legacy` keeps the CARDS and nothing else — every spec here now runs
   // against the real shell chrome and the seeded pinned + video-zone nodes.
-  rack: async ({ page }, use) => {
+  rack: async ({ page }, use, testInfo) => {
+    const t0 = Date.now();
     await page.goto('/rack?shell=legacy&seed=none');
     await page.waitForLoadState('networkidle');
+    // The nav is SETUP, not assertion — see creditSetupBudget (#1648).
+    applySetupCredit(testInfo, Date.now() - t0,'rack fixture nav');
     await use();
   },
 
@@ -108,14 +112,42 @@ export const test = base.extend<{ errorWatch: ErrorWatch; rack: void; rackDefaul
   //
   // LEG-04 (#1515) owns the full fixture inversion; when `rack` itself flips,
   // fold this back in.
-  rackDefault: async ({ page }, use) => {
+  rackDefault: async ({ page }, use, testInfo) => {
+    const t0 = Date.now();
     await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
+    applySetupCredit(testInfo, Date.now() - t0,'rackDefault fixture nav');
     await use();
   },
 });
 
 export { expect };
+
+/**
+ * Credit measured SETUP wall-time back to the running test's timeout, so the
+ * ASSERT phase gets the budget it declares regardless of how long booting the
+ * engine and arranging the patch happened to take on a loaded runner (#1648).
+ *
+ * Call it at the arrange/act boundary, with a timestamp taken at the start of
+ * the arrange phase:
+ *
+ *     const t0 = Date.now();
+ *     await spawnPatch(page, [ ... ]);      // engine boot: 0.1 s .. 24.6 s
+ *     creditSetupBudget(t0, 'spawnPatch');  // ← the assertions start fresh
+ *
+ * The mechanism, the two measured CI traces behind it, and the argument for why
+ * it is NOT bound-widening (and cannot mask a hang or a slow-setup regression)
+ * live on `applySetupCredit` in `./_setup-credit`, next to its negative control.
+ *
+ * ⚠ DELIBERATELY OPT-IN, and deliberately NOT in `_helpers.ts`. The natural home
+ * for the systemic version is `spawnPatch` itself — that is where the engine
+ * boot happens — but `e2e/tests/_helpers.ts` is in the COLLAB-ATTEST BASIS
+ * (`scripts/collab-attest-lib.ts`), so hoisting it there forces a collab
+ * re-attest. That is a reasonable follow-up; it is not a flake fix.
+ */
+export function creditSetupBudget(startedAtMs: number, label: string): number {
+  return applySetupCredit(test.info(), Date.now() - startedAtMs, label);
+}
 
 /** The node ids the voice demo writes. Deliberately NOT exported — no spec
  *  needs them today, and this repo prunes unreferenced exports (see the

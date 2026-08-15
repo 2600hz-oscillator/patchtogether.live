@@ -7,7 +7,7 @@
 // click-to-open + negative-space-click-close on the (body-portaled) menu
 // chrome, plus the io-spec handle-in-DOM parity.
 
-import { test, expect } from './_fixtures';
+import { test, expect, creditSetupBudget } from './_fixtures';
 import { type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 
@@ -17,7 +17,15 @@ function chrome(page: Page, nodeId: string) {
 
 test.describe('PatchPanel: click-open / outside-click-close', () => {
   test('click opens the menu; hover alone does not; outside-click closes', async ({ page, rack }) => {
+    // ARRANGE. Charged to SETUP, not to this test's assertion budget (#1648):
+    // on run 31821939046 `spawnPatch`'s `await __ensureEngine()` alone took
+    // 24.61 s of the 30 s budget, and the test died on the next step — a
+    // `mouse.move`, which is one CDP call and was simply the first thing to ask
+    // for time that no longer existed. The four gestures below need seconds,
+    // not tens of seconds; what varies by 250x on a loaded shard is the boot.
+    const setupAt = Date.now();
     await spawnPatch(page, [{ id: 'adsr', type: 'adsr', position: { x: 200, y: 200 } }]);
+    creditSetupBudget(setupAt, 'spawnPatch (engine boot)');
 
     const trigger = page.locator(
       `.svelte-flow__node[data-id="adsr"] [data-testid="patch-trigger"]`,
@@ -47,9 +55,11 @@ test.describe('PatchPanel: click-open / outside-click-close', () => {
   }: {
     page: Page;
   }) => {
+    const setupAt = Date.now();
     await page.goto('/rack?shell=legacy&seed=none');
     await page.waitForLoadState('networkidle');
     await spawnPatch(page, [{ id: 'adsr', type: 'adsr', position: { x: 200, y: 200 } }]);
+    creditSetupBudget(setupAt, 'nav + spawnPatch (engine boot)'); // #1648
     await expect(chrome(page, 'adsr')).toHaveCount(0);
     const handleIds = await page
       .locator('.svelte-flow__node[data-id="adsr"] .svelte-flow__handle[data-handleid]')

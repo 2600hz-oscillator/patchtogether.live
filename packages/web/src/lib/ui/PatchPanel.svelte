@@ -691,6 +691,32 @@
       return;
     }
     menu = openFromTrigger(side);
+    // ⚠ POSITION BEFORE THE FIRST PAINT (#1647). `chromePos` is component state
+    // that OUTLIVES a close — only the `{#if open}` block unmounts — so a
+    // reopen renders the portaled chrome at the PREVIOUS open's coordinates
+    // until something recomputes. The rAF loop below used to be that
+    // something, which left the menu painted at the wrong anchor for exactly
+    // ONE animation frame on every open-from-the-other-trigger.
+    //
+    // MEASURED, deterministically (in-page click, rect sampled per rAF; ADSR
+    // card, open LEFT → close → open RIGHT):
+    //   after the Svelte DOM flush  style.left=379px  menuRight=659  cardRight=945  delta=286
+    //   +1 animation frame          style.left=665px  menuRight=945  cardRight=945  delta=0
+    // `data-anchor-side` and `aria-hidden` are ALREADY correct in that frame —
+    // only the coordinates lag, which is why it reads as "the menu opened on
+    // the wrong side" rather than "the menu did not open".
+    //
+    // The window is RENDERER-SCALED, not fixed: ~16 ms at 60 fps, ~126 ms under
+    // SwiftShader's 7.9 fps. That is the whole reason it was a 1/25 CI-only
+    // flake that never reproduced by hand (#1569).
+    //
+    // Computing it here — synchronously, while the reducer has already flipped
+    // `open` true and `menu.side` to the new side, but before Svelte creates
+    // the chrome element — means the FIRST rendered frame is already aligned.
+    // `chromeEl` is still the old/null node at this point, so the width falls
+    // back to `panelWidth`, which is exactly what the chrome's `style:width`
+    // will be; the rAF loop below then keeps it glued during pan/scroll.
+    recomputeChromePos();
   }
 
   function closeMenu() {
@@ -871,6 +897,15 @@
   $effect(() => {
     if (!open) return;
     void view; // re-measure on view swap (overlay-replace changes height)
+    // Recompute ONCE synchronously before scheduling the loop (#1647). The
+    // primary guard is the call in `openMenu()` (which runs before the chrome
+    // element even exists, so it cannot depend on flush ordering); this covers
+    // every OTHER path that opens or re-views the chrome — `openFromJack`, a
+    // drill that changes the menu height — with the same "no stale painted
+    // frame" property, and is the one that now has a real `chromeEl` to
+    // measure. Scheduling the FIRST recompute inside the rAF, as this used to,
+    // is what left the menu painted a frame behind.
+    recomputeChromePos();
     let raf = 0;
     const tick = () => {
       recomputeChromePos();
