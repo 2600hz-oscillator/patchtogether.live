@@ -40,6 +40,22 @@
 // row came back 0.0000e+0 on BOTH legs — a false null the per-input KNOB
 // control caught immediately. `basePatch()` keeps every channel audible.
 //
+// NEGATIVE-CONTROLLED IN BOTH DIRECTIONS, by forcing `ch1_volume` broken in the
+// factory two different ways and confirming which leg reddens each time:
+//
+//  A. published on a NON-worklet node (`{ node: deadGain, param: deadGain.gain }`)
+//     → SCOPE reddens (`ch1_volume` joins the excluded set) and the automation
+//       leg reddens (0.0000e+0 vs knob 1.6946e-1). The CV sweep stays green —
+//       because the defect REMOVED its own subject from the sweep's filter.
+//       That is precisely why SCOPE exists and why it is asserted both ways.
+//  B. kept ON the worklet node but pointed at a dead param
+//     (`{ node: f, param: deadGain.gain }`) → the CV sweep reddens naming
+//       `ch1_volume 0.8→0 0.0000e+0` while every other row prints a live value,
+//       and SCOPE correctly stays green.
+//
+// So an input cannot be made CV-dead without reddening at least one leg, and the
+// SCOPE leg is the permanent one that keeps the sweep's filter honest.
+//
 // Every driver here is deterministic and nothing is pinned, so this scenario
 // needs no baseline and no `.sha` — it is an assertion scenario like
 // prefader-sends.test.ts.
