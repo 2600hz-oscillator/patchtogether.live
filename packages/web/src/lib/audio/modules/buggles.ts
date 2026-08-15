@@ -468,6 +468,30 @@ export const bugglesDef: AudioModuleDef = {
     // No `title`, no `hint`, no band hints — owner ruling 2026-08-11
     // (marbles / resofilter): plain labels and values on the face; the
     // explanation lives in `docs`, one right-click away.
+
+    // REAR CARD. Re-derived on paper, and the DERIVED answer SPLITS THE TWO CV
+    // SIBLINGS: `chaos_cv`'s stem is `chaos`, which IS a param, so it lands in
+    // the `roll` page band — while `clock_cv`'s stem is `clock`, which is an
+    // OUTPUT id and not a param, so it is an orphan and falls to the leading
+    // band with `external_clock`. Two jacks that are the same kind of thing, on
+    // two different bands, for a reason that is an artefact of naming.
+    //
+    // The curated group puts all three back together and names them for what
+    // they actually ARE, which is the one fact a patcher needs here: NONE of
+    // them is a `paramTarget`. There is no AudioParam behind any of these
+    // holes — the woggle scheduler SAMPLES each one (the two CVs once per
+    // woggle event, the clock once per 33 ms poll) and adds it to a plain JS
+    // shadow. That is why `cv-scale-registry` exempts `clock_cv`/`chaos_cv`,
+    // and it is the difference between "this CV displaces a knob smoothly" and
+    // "this CV is read at the instant the dice are rolled".
+    //
+    // `signal` claims the LEADING slot and does not collide with either page id
+    // (`roll` / `jacks`). No `audioRate` list: nothing here is read per sample.
+    rear: {
+      groups: [
+        { id: 'signal', label: 'sampled, not routed', ports: ['clock_cv', 'chaos_cv', 'external_clock'] },
+      ],
+    },
   },
 
   docs: {
