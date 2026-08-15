@@ -489,3 +489,382 @@ each had to learn the hard way:
    `face-sidecar-compact.png` (4 626 B) and `face-sidecar-dock.png` (54 129 B)
    in `__screenshots__/`, untracked. They were deleted, not committed — linux CI
    is the only baseline author. `git status` for PNGs after every VRT run.
+
+---
+
+# COHORT 2 — appended 2026-08-15
+
+The set has MOVED since §1 was written: **35 promoted**, not 32 (`attenumix`,
+`sidecar`, `warrensspectrum` landed). Most of the original Q2–Q8 is blocked or
+extension-class, so the pool was re-derived from scratch rather than re-ordered.
+
+## 6. THE RE-DERIVED POOL (2026-08-15, `origin/main` @ `01b46c83`)
+
+The join is `generic-face ∩ audio ∩ ¬STRICT_FACES`, three sources, none of them
+this file:
+
+```sh
+# contract-lock × face-migration-inventory × STRICT_FACES
+#   contract-lock.txt          -> domain / param count / discrete / in / out /
+#                                 paramTarget-input count / controlFamilies
+#   face-migration-inventory.ts-> disposition (SOURCE, not the generated md)
+#   strict-faces.ts            -> the promoted set
+# prints: type par disc in out cvT fam portKinds
+```
+
+**58 candidates.** The re-derivation is itself the negative control on §1: it
+reproduced every module §1 named, and it surfaced two §1 missed (`ninelives`,
+`destroy`) because §1 ranked by param count alone and both are small-param
+modules whose value is in their OUTPUTS.
+
+The head of the pool, by param count:
+
+| type | par | disc | in | out | cvT | fam | disposition here |
+|---|---|---|---|---|---|---|---|
+| `mixmstrs` | 91 | 10 | 111 | 6 | 91 | 0 | Q7 — stopped by #1662 |
+| `wavesculpt` | 79 | 12 | 26 | 7 | 11 | 1 | owner manual review (§4) |
+| `moog960` | 36 | 11 | 3 | 4 | 0 | 0 | needs a STEP-GRID cell |
+| `foxy` | 33 | 6 | 5 | 5 | 3 | 0 | extension-class (video out) |
+| `synesthesia` | 22 | 4 | 4 | 48 | 0 | 0 | extension-class (video out) |
+| `moog984` | 16 | 0 | 4 | 4 | 0 | 0 | needs a MATRIX cell |
+| `moog914` | 14 | 0 | 1 | 1 | 0 | 0 | **Q12** |
+| `moog907a` | 10 | 0 | 1 | 1 | 0 | 0 | **Q12** (paired) |
+| `wavecel` | 10 | 0 | 7 | 4 | 3 | 4 | extension-class (poly + video) |
+| `scope` | 9 | 3 | 11 | 3 | 9 | 0 | Q4 — extension-class |
+| `swolevco` | 8 | 0 | 7 | 4 | 4 | 0 | Q5 — unblocked by #1669 |
+| `slewSwitch` | 7 | 2 | 10 | 7 | 4 | 0 | **Q14** |
+| `treeohvox` | 7 | 0 | 10 | 1 | 7 | 0 | Q3 — blocked by #1658 |
+| `featurecv` | 6 | 1 | 1 | 4 | 0 | 0 | next-after |
+| `moog921Vco` | 6 | 0 | 8 | 4 | 5 | 0 | the System-55 BANK batch |
+| `timelorde` | 6 | 4 | 5 | 14 | 0 | 0 | Q2 — extension-class |
+| `wavetableVco` | 5 | 0 | 8 | 1 | 5 | 0 | **Q9 — IMPLEMENTED** |
+| `charlottesEchos` | 5 | 0 | 3 | 2 | 1 | 0 | **Q10** |
+| `buggles` | 5 | 0 | 3 | 5 | 0 | 0 | **Q13** |
+| `ninelives` | 2 | 0 | 1 | 9 | 0 | 0 | **Q11** |
+
+## 7. THE COHORT
+
+### Q9 · `wavetableVco` — the timbre-sweep oscillator  ⟵ IMPLEMENTED (this branch)
+
+**Status: promoted.** Face authored, `STRICT_FACES` entry added, two derived
+readouts registered, the card converted to `paramSpec` and the standing
+`OPERATIONAL_DEBT` entry DRAINED, VRT roster entry added, capture dispatched.
+
+**What it is FOR, musically.** WAVETABLE VCO is the rack's TIMBRE-SWEEP
+oscillator. Every other VCO here decides its shape before the note — tidyVco's
+four fixed jacks, analogVco's morph crossfade, macrooscillator's fourteen
+engines. This one reads a 16-frame single-cycle table that runs saw → square →
+triangle → sine, and WAVE scans it *while it sounds*. The verb is *sweep the
+shape*: park an LFO or an envelope on WAVE POSITION and the harmonics thin out
+over the note instead of being chosen ahead of it. It is not a wavetable LOADER
+(that is WAVECEL) — the table is fixed and WAVE only scans it.
+
+**Merit (STOP 1): YES.** 5 params, 8 inputs (5 of them `paramTarget` CV), 1
+output — and two quantities that matter to a player and that NO knob readback
+can print (§8, M4/M5).
+
+**STOP 2 (`grep` over `WavetableVcoCard.svelte`, 45 lines): CLEAN.** Zero
+`<button>`, zero `<select>`, zero `<input>`, no `node.data`, no `write(`. Five
+`Fader`s and a `PatchPanel`. Every affordance is a `ParamDef`.
+
+**Ranking** (measurements in §8):
+
+| rank | key | why it is here and not lower |
+|---|---|---|
+| 1 | `wavePos` | the module's IDENTITY — the only control that changes the timbre, and the only thing its VCO siblings cannot do. Measured: frame 0 (saw) → frame 15 (sine) is a peak \|Δ\| of 9.9937e-1, a full-scale change |
+| 2 | `tune` | the pitch. ±36 st, 1.4999 peak Δ per octave |
+| 3 | `fine` | ±1 semitone of trim — 1/72 of TUNE's travel, but UNCONDITIONALLY applicable, which is what puts it above the two depths |
+| 4 | `fmAmount` | the second identity (DX-style metallic tones) — but INERT until a cable lands in `fm`. Measured bit-exactly 0.0000e+0 with nothing patched |
+| 5 | `pmAmount` | same enabler-gated shape, ranked below FM because it never moves the pitch at all — it offsets the READ phase only |
+
+Tier ladder as a sentence: *mini shows WAVE; compact adds TUNE beside the scope
+glyph; the six-cell lane plate and the dock both show all five, so the ranking's
+whole authority is at the top two.*
+
+**Pages (FUNCTION / signal order — deliberately disagreeing with `order`), and
+the split is DSP-derived, not a habit:**
+
+1. `pitch` — everything that lands in the ONE exponent
+   (`semitones = pitch*12 + tune + fine/100 + fmAmount*fm*12`, the worklet's own
+   line): `tune`, `fine`, `fmAmount`.
+2. `wave` — everything that touches the READOUT and not the frequency: `wavePos`
+   picks the frame, `pmAmount` offsets the read phase while the accumulator is
+   left alone: `wavePos`, `pmAmount`.
+
+That is the same teaching `analogVco`'s face carries, and it is measured here
+rather than inherited: a DC on `fm` at depth 1 moves C4 to 523.25 Hz, a DC on
+`pm` at depth 1 leaves the period bit-exactly alone (§8 M6). Filing FM under
+"modulation" beside PM would put the module's most pitch-shifting control in
+the band that claims not to touch pitch.
+
+Two bands, both survive the hero promotion (`wave` still holds `pmAmount`), so
+the VRT roster entry is `pages: 2`.
+
+**Hero:** `hero.control: 'wavePos'` — the identity dial at hero size — with the
+two derived readouts as the row below it. `glyph: 'scope'`, the analogVco
+precedent: this is the SECOND free-running entry in the VRT faces roster, and the
+scene machinery's `freezeAudioContext` is what makes that deterministic (measured
+0 px across two independent boots for analogVco, `_shell-faces.ts`).
+
+**No `face.title`, no `face.hint`, no band hints, no sidebar.** Owner ruling
+2026-08-11: plain labels and values.
+
+**Derived readouts** — two, each negative-controlled on a DIFFERENT blind input:
+
+| valueId | what it says | which knob is BLIND to it |
+|---|---|---|
+| `wavetablevco-knob-hz` | the sounding pitch from the knobs alone | TUNE — blind to FINE, and neither prints Hz or the C4 anchor |
+| `wavetablevco-fm-span` | FM's reach in cents AND the asymmetric Hz swing | FM AMT — blind to TUNE (the Hz swing doubles per octave); TUNE — blind to FM AMT; and a knob readback swings through zero on the SIGN while the span must not move |
+
+**Risk: LOW-MEDIUM.** Free-running, so the compact scene's glyph depends on
+#1420's audio freeze — the same dependency analogVco already carries and the
+same machinery. No card producer, no video, no `node.data`.
+
+### Q10 · `charlottesEchos` — the destructive multi-head stereo delay
+
+**Merit: YES.** 5 params (`delay`, `feedback`, `decay`, `pitchUp`, `mix`), 3
+inputs, 2 outputs. The last unfaced time-based effect of consequence —
+`delay`, `cofefve`, `cloudseed` and `reverb` are all promoted.
+
+**STOP 2: to run** — the card was not read in this session.
+
+**ONE CV input only** (`delay`, log-scaled), so the CV audit is a one-row table
+and cheap. Its factory carries a deliberate asymmetry worth checking during the
+audit: a `silenceL` ConstantSource pinned to input 0 ONLY, because putting one on
+input 1 defeats the DSP's `inputs[1] ?? inputs[0]` mono normal
+(`mono-normal-not-defeated.test.ts` already pins that — do not "fix" it).
+
+**The readout story is the four-stage cascade.** `feedback` is fed to EVERY
+stage and compounds, `decay` tapers each later stage AND adds in-loop drive plus
+HF loss, and `pitchUp` transposes each successive stage by a compounding ratio.
+So the tail length is a function of `feedback` AND `decay` together — a
+`feedback` readback is blind to `decay` and vice versa — and the total pitch
+climb by the fourth head is a function of `pitchUp` that no 0..0.2 dial prints.
+Measure both against the real `charlottes-echos` worklet before ranking; §5.2
+applies (every face in batches 3–5 found its own spec wrong somewhere).
+
+### Q11 · `ninelives` — the nine-tap LFO ladder
+
+**MISSED BY §1's ORDERING, and it is the sharpest small module in the pool.**
+2 params, 1 input, 9 outputs. §1 ranked by param count, and on that measure this
+is a rejection; on merit it is the `noise` case exactly — `noise` has ONE param
+and was promoted because THREE stated facts about its taps were unprintable.
+
+**Merit: YES, on the readouts.** The def already states the ladder:
+`out_n = rate · (1/3)^(n-1)`, so out9 is `rate/6561` ≈ 0.0001524× — a number no
+RATE knob can print, on a module whose whole point is the nine simultaneous
+rates. Nine derived readouts (or a small table) are the face; the RATE dial is
+one of them and is blind to all nine.
+
+⚠ Verify before authoring: read the tap rates off the FACTORY, not off the
+description. This is the exact shape of the `noise` lane-meter finding (the meter
+resolved `primaryAudioOutPortId` = the FIRST output, not the one the player
+hears) — with nine outputs, whatever the glyph taps is one of nine and the face
+must say WHICH.
+
+### Q12 · `moog914` + `moog907a` — the two fixed filter banks, as a PAIR
+
+**Merit: YES.** 14 and 10 params, 1 input and 1 output each, and — the reason
+they are one entry — they SHARE the `moog-filterbank` centre-frequency lib. A
+face for one is a face for both, and authoring them separately guarantees two
+different layouts for one idea.
+
+**The interchangeable-knob problem, with an answer.** Like `attenumix` and
+`bluebox`, a rank over N identical band levels has no priority to express. Unlike
+those, these bands have an INTRINSIC ORDER and an intrinsic LABEL: the centre
+frequency. Rank by frequency, low → high, with the HP and LP cells at the ends,
+and the prefix each cell paints is the Hz — information no level knob carries.
+
+**ZERO CV inputs on both** (`cvT = 0`), so the CV audit that stopped three of the
+last three modules is vacuous here by construction — state that as the finding
+rather than running a null sweep and calling it a pass.
+
+**Risk: LOW.** Audio-only, no video, no free-running source, no `node.data`.
+
+### Q13 · `buggles` — the wogglebug
+
+**Merit: YES.** 5 params, 3 inputs, 5 outputs (SMOOTH / STEPPED / CLOCK / BURST /
+RING). A clean-room Buchla/Make Noise chaotic voltage source; `marbles` is the
+faced sibling, so the house style already exists.
+
+**The readout story is the BURST probability and the RING product.** BURST emits
+probabilistic clusters of 3–7 triggers and RING is `smooth × stepped` — neither
+is a knob. And like `ninelives`, the glyph taps ONE of five outputs: say which.
+
+⚠ `art/scenarios/buggles/` already exists — read what is pinned there before
+measuring anything, and by WHICH hash function.
+
+### Q14 · `slewSwitch` — quad slew + sequential switch
+
+**Merit: YES.** 7 params, 10 inputs, 7 outputs. Two ideas in one box (four
+independent slew limiters, 1 ms–5 s, CV-controllable; a `step_clock`-advanced
+4→1 switch), which is a genuine two-page face rather than one list.
+
+**4 `paramTarget` CV inputs — run the audit rig.** This is the shape that was
+defective three times running.
+
+⚠ Note the registry: `slewSwitch.in1..in4` are listed in `PASSTHROUGH_BY_DESIGN`
+as raw SIGNAL inputs (the things being slewed), NOT knob modulators. So the audit
+has two terminal shapes exactly like `wavetableVco` did — derive the terminal off
+the live handle, never assume it.
+
+**Next after this cohort, in order:** `featurecv` (6 params, audio→CV feature
+extractor with real derived ranges) · `unityscalemathematik` (5, the `k=1..3`
+curve morph is a derived response no dial prints) · `illogic` (4 params, 10
+derived logic outputs) · `destroy` (3, but the decimator's effective sample rate
+and bit depth are unprintable) · `moog905` (3, spring reverb).
+
+## 8. `wavetableVco` — THE AUDIT, MEASURED
+
+Run against the REAL shipped worklet (`packages/dsp/dist/wavetable-vco.js`) in
+`node-web-audio-api`, driven through the def's OWN factory — not a pure-TS
+mirror, so the publish-an-AudioParam seam that broke #1661/#1662 exists in the
+harness. SR 48 000, 0.25 s renders, metric = peak |Δsample| in LINEAR amplitude
+over a settled window. Every number is reproduced on every run by
+`art/scenarios/wavetable-vco/cv-path.test.ts`.
+
+**M1 — ALL FIVE `paramTarget` INPUTS REACH THE AUDIO, on BOTH paths.** The
+finding the last three audits did not get to have:
+
+| input | param | base → target | KNOB peak \|Δ\| | CV peak \|Δ\| |
+|---|---|---|---|---|
+| `wavePos` | `wavePos` | 0 → 1 | 9.9937e-1 | 9.9937e-1 |
+| `tune` | `tune` | 0 → 12 | 1.4999e+0 | 1.4999e+0 |
+| `fine` | `fine` | 0 → 100 | 1.9943e+0 | 1.9943e+0 |
+| `fmAmount` | `fmAmount` | 0 → 1 | 1.9769e+0 | 1.9769e+0 |
+| `pmAmount` | `pmAmount` | 0 → 1 | 1.9883e+0 | 1.9883e+0 |
+
+The two columns agree to every printed digit on every row, which is the strong
+form: the CV terminal is not merely alive, it is the SAME terminal the knob
+writes.
+
+**M2 — THE MODULE HAS TWO TERMINAL SHAPES, and the sweep derives which.**
+`tune`/`fine`/`fmAmount`/`pmAmount` publish an AudioParam (`din.param`, so
+`AudioEngine.addEdge` takes the `connect(din.param)` branch). `wavePos` publishes
+NO param — it is consumed audio-rate at worklet input 2 (`wp = wpKnob + wpCv`,
+clamped 0..1) and is a named `PASSTHROUGH_BY_DESIGN` entry. A sweep that assumed
+one shape would either throw or silently skip a row; this one reads the terminal
+off the live handle and asserts the partition is exactly `{4 params, 1 port}`.
+
+**M3 — THE TWO DEPTH CONTROLS ARE ENABLER-GATED, bit-exactly.** With nothing
+patched into `fm` / `pm`, `fmAmount = 1` and `pmAmount = 1` each move the output
+by exactly `0.0000e+0`. Not a defect — it is what a depth control IS — but it is
+why both are ranked below `fine`, and it is asserted permanently so the base
+patch's own assumption cannot rot. At depth 0 the modulators are equally
+invisible (`0.0000e+0`), which is what makes them a legitimate part of the
+control render.
+
+**M4 — THE SOUNDING PITCH IS TWO PARAMS AND A HIDDEN ANCHOR.**
+`f = 261.626 · 2^((tune + fine/100)/12)`, confirmed against the render at eight
+points; every deviation is zero-crossing quantisation (`SR/period` is integral),
+e.g. tune 0 / fine 0 → 262.295 Hz measured vs 261.626 formula (period 183.47 →
+183 samples). tune −36 / fine −100 → 30.868 Hz measured, 30.868 formula, exact.
+Neither knob prints Hz, neither knob prints the C4 reference, and a `tune`
+readback does not budge when FINE moves the pitch a full semitone.
+
+**M5 — FM IS EXPONENTIAL, SO ITS Hz SWING IS ASYMMETRIC AND SCALES WITH PITCH.**
+Measured with a DC on `fm` and no other modulator:
+
+| fmAmount | +1 V | −1 V | up Δ | down Δ |
+|---|---|---|---|---|
+| 0 | 262.30 Hz | 262.30 Hz | 0 | 0 |
+| 0.25 | 311.69 | 220.18 | +50.06 | −41.44 |
+| 0.5 | 369.23 | 185.33 | +107.60 | −76.30 |
+| 1 | 521.74 | 130.79 | +260.11 | −130.84 |
+
+Formula `up = f0·(2^a − 1)`, `down = f0·(1 − 2^−a)` reproduces every row. And at
+`tune +12` the same `fmAmount = 1` gives +520.23 / −260.96 Hz — the swing DOUBLES
+with the fundamental while the FM AMT dial does not move. That is the readout.
+
+**M6 — PM DOES NOT MOVE THE PITCH; FM DOES. The instrument's own negative
+control.** `pma * pm` is added to the READ phase (`p = this.phase + pma*pm`)
+while the accumulator advances on `freq/sr` alone, so a DC phase offset shifts
+where the table is read and leaves the period untouched. This is why the two
+depths are in DIFFERENT bands.
+
+**M7 — DEFECT (live, ledgered): THE CARD REACHES HALF THE FM/PM CONTRACT.**
+`WavetableVcoCard.svelte` passed `min={0}` on `fmAmount` and `pmAmount` where the
+def declares `min: -1`. The negative half — the documented polarity inversion,
+"negative values invert the modulator's polarity" — was UNREACHABLE from the
+card while the def-driven dock face reaches all of it. This is the `analogVco`
+backdraft class verbatim, and it was already carried as a NAMED
+`OPERATIONAL_DEBT` entry whose stated release condition was *"this rides a PR
+that also carries the `vrt-update.yml` dispatch"*. A face PR is that PR, so it is
+paid here: the card is converted to `paramSpec` (one copy of every number),
+enrolled in `RANGE_BOUND_CARDS`, and the debt entry is DELETED rather than
+re-worded.
+
+**M8 — DEFECT (doc): the `PASSTHROUGH_BY_DESIGN` note contradicts the def.**
+`cv-scale-registry.test.ts` says *"wavetableVco.wavePos: audio-rate input (no
+paramTarget)"*. The def has declared `paramTarget: 'wavePos'` all along — the
+exemption is correct, its stated REASON is not, and the correct reason (it is not
+summed onto an AudioParam, so `cvScale` has nothing to scale) is the one the def's
+own comment already gives. Corrected in place.
+
+### What the audit did NOT find
+
+No dead CV input, no dead knob, no unexposed DSP capability, no range
+disagreement other than M7, and no defect in the authored docs (the `explanation`
+correctly calls the FM exponential and not through-zero, and correctly says a
+negative depth inverts the modulator). `wavetableVco` is a correct module with
+one live card/def divergence and one wrong comment.
+
+## 9. VERDICTS RECORDED — additions to §4
+
+Applying STOP 1 to the pool members §1 did not reach. **"NO FACE ON MERIT" is a
+complete answer**; so is "not a merit rejection — it needs a platform cell".
+
+| module | params | verdict |
+|---|---|---|
+| `analogLogicMaths` | 2 | NO FACE ON MERIT. Attenuverter + logic: the module IS its five outputs, and the rear card renders those without a face. |
+| `cvBuddy` | 2 | NO FACE ON MERIT. |
+| `cvBuddyMini` | 2 | NO FACE ON MERIT. |
+| `moog992` | 4 | NO FACE ON MERIT. A passive CV panel — four attenuators into a summing bus; the `moog994` argument (the module is its jack field, which is the REAR) applies with knobs attached. |
+| `moog993` | 3 | NO FACE ON MERIT. A passive routing patch-bay; three ROUTE switches ARE the module. |
+| `moog995` | 3 | NO FACE ON MERIT. Three independent passive attenuators — three interchangeable knobs with nothing to rank and nothing derived. |
+| `fourplexer` | 4 | NO FACE ON MERIT. Four discrete selectors; the routing is the module, and it is legible on the rear. |
+| `moog902` · `moog904a` · `moog904c` · `moog911a` · `moog921a` | 3 each | NO FACE ON MERIT INDIVIDUALLY — but see the BANK note below. |
+| `moog905` | 3 | MARGINAL-YES, deferred. A spring reverb with a real derived quantity (the dispersion chirp) but only three dials; queue it behind Q14. |
+| `moog923` | 3 | MARGINAL-YES, deferred. Noise + two filter taps; the `moog903a` question (are the tap levels unprintable?) applies and is a one-hour measurement. |
+| `destroy` | 3 | MARGINAL-YES, deferred. The decimator's EFFECTIVE sample rate and bit depth are genuinely unprintable by a 0..1 dial — that is a readout, and it is the whole face. |
+| `illogic` | 4 | MARGINAL-YES, deferred. Four attenuverters, ten outputs of derived logic. |
+
+**NOT merit rejections — blocked on a platform cell, each named:**
+
+| module | what it needs | why a generic face is a LOOK LOSS |
+|---|---|---|
+| `moog960` | a STEP-GRID cell | 3 rows × 8 steps = 24 step pots. A face is a 36-item ranked list of things that are a GRID; the grid is the instrument. |
+| `moog984` | a MATRIX cell | 16 cross-points addressed as `m_ij`. Ranking them linearly destroys the only structure they have. |
+| `dockscope` | a registered PANEL | 3 params, ZERO outputs — a terminal visualiser. The module IS its trace. |
+| `rasterize` | a registered PANEL / extension | the module IS the picture, and #1664 already found a live CV defect in it. |
+| `foxy` · `synesthesia` | `face.extension` | audio-domain defs with VIDEO outputs; a generic face silently drops the picture, which is the `scope` (Q4) argument. |
+| `wavecel` | `face.extension` + poly | `polyPitchGate` + `mono-video` + FOUR `controlFamilies`. Also a poly module, so it owes the REAL-source-chain e2e. |
+
+**The moogafakkin SYSTEM-55 BANK — a batch, not a queue position.**
+`moog921Vco` (6) · `moog921a` (3) · `moog921b` (5) · `moogCp3` (5) · `moog911`
+(4) · `moog902` (3) · `moog904a/b/c` (3) form one instrument. Their cards already
+share the beige MoogPanel house look, and their faces should share a house
+LAYOUT for the same reason — authoring them one at a time guarantees nine
+different answers to the same question. Treat as one batch after the cohort
+above, and note `moog921b` reads `freq_bus`/`width_bus` from a `moog921a` rather
+than carrying its own 1V/oct jack, so the pair's faces have to agree.
+
+## 10. WHAT COHORT 2 ADDS TO §5
+
+6. **RE-DERIVE THE POOL, DO NOT RE-ORDER THE LIST.** §1's ordering was by param
+   count, and that ordering alone hid `ninelives` — 2 params, 9 outputs, and the
+   `noise` merit argument verbatim. A module's face value lives in what it
+   PUBLISHES as much as in what it exposes; sort by both.
+
+7. **A "known-answer" ledger entry can name the PR that pays it.** The
+   `OPERATIONAL_DEBT` entry for `WavetableVcoCard` did — *"rides a PR that also
+   carries the `vrt-update.yml` dispatch"* — and a face PR is definitionally
+   that PR. Before authoring a face, grep the debt/exemption lists for the module
+   you are about to touch: you may already be holding the release condition.
+
+8. **A CV audit that finds NOTHING is still the deliverable.** Three of three
+   audited modules were defective; the fourth was clean, and the clean result is
+   only worth anything because the instrument carried its positive controls
+   (MECH, MECH-WORKLET, and a per-input KNOB leg) into the permanent test. A
+   green sweep with no controls is indistinguishable from a sweep that measured
+   nothing.
