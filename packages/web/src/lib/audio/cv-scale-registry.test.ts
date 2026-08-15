@@ -36,7 +36,15 @@ const PASSTHROUGH_BY_DESIGN: Record<string, string[]> = {
   moog962: ['in1', 'in2', 'in3'],
   // filter.dsp: cutoffCv → pow(2, 5*cv) ±5 octaves; resCv: additive clamp.
   filter: ['cutoff', 'res'],
-  // wavetableVco.wavePos: audio-rate input (no paramTarget); not subject to scaling.
+  // wavetableVco.wavePos: ⚠ THE STATED REASON WAS WRONG UNTIL 2026-08-15 — it
+  // read "audio-rate input (no paramTarget)", and the def has declared
+  // `paramTarget: 'wavePos'` all along. The EXEMPTION is right; the reason is
+  // that the port is not summed onto an AudioParam, so `cvScale` would have
+  // nothing to scale: the handle publishes `{ node, input: 2 }` with NO `param`,
+  // and the worklet does `wp = wpKnob + wpCv` per sample, clamped 0..1 (so a ±1
+  // CV sweeps the whole table from the knob's position). Verified live —
+  // `art/scenarios/wavetable-vco/cv-path.test.ts` derives the terminal off the
+  // handle and asserts this is the module's ONLY port-terminal paramTarget.
   wavetableVco: ['wavePos'],
   // moog921Vco.width_cv: same shape as wavetableVco.wavePos — the worklet
   // sums the WIDTH knob + this CV per-sample (audio-rate), NOT through the

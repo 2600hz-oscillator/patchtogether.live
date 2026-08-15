@@ -634,6 +634,13 @@ audit: a `silenceL` ConstantSource pinned to input 0 ONLY, because putting one o
 input 1 defeats the DSP's `inputs[1] ?? inputs[0]` mono normal
 (`mono-normal-not-defeated.test.ts` already pins that — do not "fix" it).
 
+⚠ **IT IS ALSO THE PUSH GATE'S GENERIC-TIER FIXTURE.**
+`push-card-schema.test.ts` tier 3 opens with *"charlottesEchos carries no face,
+so it is a real generic-audio card"* — promoting it silently retires that leg's
+subject. Move the fixture to another face-less audio module in the SAME commit,
+or the tier-3 test starts asserting the FACE tier while still claiming to prove
+declaration order.
+
 **The readout story is the four-stage cascade.** `feedback` is fed to EVERY
 stage and compounds, `decay` tapers each later stage AND adds in-loop drive plus
 HF loss, and `pitchUp` transposes each successive stage by a compounding ratio.

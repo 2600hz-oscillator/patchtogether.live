@@ -117,6 +117,133 @@ export const wavetableVcoDef: AudioModuleDef = {
     { id: 'pmAmount', label: 'PM',   defaultValue: 0,   min: -1,   max: 1,   curve: 'linear' },
   ],
 
+  // ── THE FACEPLATE (PF-20) ───────────────────────────────────────────────────
+  //
+  // WHAT THIS MODULE IS FOR. Every other VCO in the rack decides its shape
+  // BEFORE the note — tidyVco's four fixed jacks, analogVco's morph crossfade,
+  // macrooscillator's fourteen engines. This one reads a 16-frame single-cycle
+  // table that runs saw → square → triangle → sine and WAVE scans it WHILE IT
+  // SOUNDS. The verb is *sweep the shape*: park an LFO or an envelope on WAVE
+  // POSITION and the harmonics thin out over the note instead of being chosen
+  // ahead of it. It is not a wavetable LOADER (that is WAVECEL) — the table is
+  // fixed and WAVE only scans it.
+  face: {
+    // RANKS 1-6 ARE THE ENTIRE LANE BUDGET and this module has five keys, so the
+    // plate and the dock both show everything: the ranking's whole authority is
+    // at the top two, which is what mini (1) and compact (2 beside a glyph)
+    // actually paint.
+    //
+    // Measurements are art/scenarios/wavetable-vco/cv-path.test.ts, peak
+    // |Δsample| in LINEAR amplitude against the def's own spawn defaults.
+    order: [
+      // 1 — THE IDENTITY. The only control that changes the TIMBRE at all, and
+      // the only thing this module does that its VCO siblings cannot. Frame 0
+      // (saw) → frame 15 (sine) is a peak |Δ| of 9.9937e-1, a full-scale change.
+      // It also ships at 0, the very bottom of the table, so a fresh module is a
+      // plain saw and the whole point of it is one knob-turn away.
+      'wavePos',
+      // 2 — the pitch. 1.4999e+0 per octave.
+      'tune',
+      // 3 — ±1 semitone of trim: 1/72 of TUNE's travel, and ranked ABOVE the two
+      // depths for one measured reason — it is UNCONDITIONALLY applicable and
+      // they are not (see 4).
+      'fine',
+      // 4 — the second identity (audio-rate exponential FM, DX-style metallic
+      // tones), but INERT until a cable lands in `fm`: measured bit-exactly
+      // 0.0000e+0 at depth 1 with nothing patched. An enabler-gated control
+      // cannot outrank one that always works.
+      'fmAmount',
+      // 5 — same enabler shape, ranked below FM because it never moves the pitch
+      // AT ALL: `pma * pm` is added to the READ phase while the accumulator
+      // advances on `freq/sr` alone, so a held offset shifts where the table is
+      // read and leaves the period untouched.
+      'pmAmount',
+    ],
+
+    // TWO bands, and the split is the WORKLET'S OWN ARITHMETIC rather than a
+    // knob-versus-modulation habit. `semitones = pitch*12 + tune + fine/100 +
+    // fma*fm*12` — FM lands in the SAME exponent as TUNE and FINE, so it is a
+    // pitch control; PM does not appear in that expression at all. Filing the
+    // two depths together under "modulation" would put the module's most
+    // pitch-shifting control in the band that claims not to touch pitch.
+    //
+    // Measured, not inherited: a DC on `fm` at depth 1 moves C4 to 521.74 Hz; a
+    // DC on `pm` at any depth leaves the period alone.
+    //
+    // `order` and `pages` DISAGREE on purpose. WAVE is rank 1 and sits in the
+    // SECOND band, because priority and signal order genuinely differ here: the
+    // frequency is decided before the table is read.
+    pages: [
+      { id: 'pitch', label: 'pitch', controls: ['tune', 'fine', 'fmAmount'] },
+      { id: 'wave', label: 'wave', controls: ['wavePos', 'pmAmount'] },
+    ],
+
+    // ⚠ A FREE-RUNNING ENTRY IN THE VRT FACES ROSTER — the third, after
+    // analogVco and macrooscillator. This module sounds the instant it spawns:
+    // three of the four worklet inputs may be empty and the phase accumulator
+    // still advances on `freq / sampleRate`. So its glyph tap is a MOVING trace,
+    // the condition that measured 254/154/315 px across three captures of the
+    // same analogVco tile before #1420. `_shell-faces.ts`'s
+    // `freezeAudioContext` is what makes it deterministic. The glyph is kept
+    // because on a WAVETABLE oscillator the trace IS the readout of the control
+    // the hero promotes: it draws the frame WAVE is currently sitting on.
+    glyph: 'scope',
+
+    // THE HERO. WAVE is PROMOTED out of band 2, not copied — `heroFacePlan`
+    // removes it and the band survives on `pmAmount`, so the multiset
+    // faces-parity asserts is unchanged and `pages` stays 2 for the VRT roster.
+    //
+    // ⚠ BOTH READOUTS ARE DERIVED, and each is derived because the nearest knob
+    // is BLIND to something that genuinely changes the answer:
+    //
+    //   knob pitch — TWO params, not one. Move FINE alone and a `tune` readback
+    //     does not budge while the sounding pitch moves a full semitone
+    //     (261.6 → 277.2 Hz). Neither dial prints Hz and neither prints the C4
+    //     anchor the worklet hides in `261.626 * 2^(semitones/12)`. ⚠ THE LABEL
+    //     SAYS `knob` DELIBERATELY: a FaceReadoutValue sees durable params only,
+    //     so it is blind to the `pitch` jack and to CV on tune/fine — captioning
+    //     it `pitch` while a sequencer drives the module two octaves away would
+    //     be a lie the platform would happily paint.
+    //   fm span — invariant to the FM DIAL in one direction and to TUNE in the
+    //     other. Flip fmAmount's SIGN and a knob readback swings through zero
+    //     while the span must NOT move (a negative depth inverts the MODULATOR,
+    //     not the direction); move TUNE and the dial does not twitch while the
+    //     Hz swing doubles per octave (+260/−131 Hz at C4 becomes +520/−261 an
+    //     octave up). And it prints the ASYMMETRY, which is the one fact about
+    //     exponential FM that no symmetric ± dial can express.
+    hero: {
+      control: 'wavePos',
+      readouts: [
+        { label: 'knob pitch', valueId: 'wavetablevco-knob-hz' },
+        { label: 'fm span', valueId: 'wavetablevco-fm-span' },
+      ],
+    },
+
+    // No `title`, no `hint`, no band hints, no sidebar — owner ruling
+    // 2026-08-11 (marbles / resofilter): plain labels and values on the face;
+    // the explanation lives in `docs` for right-click → annotate.
+
+    // REAR CARD. Derivation is already total: the three audio-rate ports head
+    // the leading band, the four CV holes whose stems match a param land in
+    // their page bands. Only two things are curated.
+    //
+    // The leading band's derived label is `voice`, which says nothing a patcher
+    // can act on. These three are the ports the PROCESSOR reads per sample —
+    // `inputs[0..3]` in the worklet's own `process()` — as opposed to the CV
+    // jacks, which displace a knob through an a-rate AudioParam. That
+    // distinction IS the band, so the band is named for it.
+    //
+    // audioRate: FOUR, and `wavePos` is in the list even though it is a `cv`
+    // port, because it is the one CV jack the worklet reads per sample off a
+    // node INPUT (`wp = wpKnob + wpCv`, worklet input 2) rather than through the
+    // AudioParam path. That is the same fact `PASSTHROUGH_BY_DESIGN` records,
+    // stated where a patcher can see it.
+    rear: {
+      groups: [{ id: 'voice', label: 'core inputs', ports: ['pitch', 'fm', 'pm'] }],
+      audioRate: ['pitch', 'fm', 'pm', 'wavePos'],
+    },
+  },
+
   docs: {
     explanation: "A single-cycle wavetable oscillator. Instead of one fixed shape, it reads from a built-in 16-frame table that morphs continuously saw → square → triangle → sine, and the WAVE control scans across those frames so you can sweep the timbre in real time (or modulate the scan with CV for a moving, evolving tone). Pitch is 1V/oct (0V = C4) trimmed by TUNE (coarse semitones) and FINE (cents). On top of the basic oscillator it has two audio-rate modulation inputs that make it sound complex or metallic: an FM input (frequency modulation, scaled by the FM AMT control) and a PM input (phase modulation, scaled by PM AMT). The table is the fixed shape set shipped with the module — there is no per-frame selector or upload here (use WAVECEL or WAVVIZ for custom wavetables); WAVE only scans the table that's already loaded.",
     inputs: {
