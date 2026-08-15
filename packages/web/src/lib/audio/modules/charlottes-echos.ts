@@ -219,7 +219,8 @@ export const charlottesEchosDef: AudioModuleDef = {
         //   tail    is a join over FEEDBACK, DECAY *and* DELAY. A FEEDBACK
         //           readback is blind to DECAY (0.2 → 0.35 turns a 1.9 s tail
         //           into a drone with FEEDBACK untouched) and vice versa, and
-        //           DELAY changes the answer 30× with the loop gain unmoved.
+        //           DELAY changes the answer 76× across its travel with the
+        //           loop gain bit-identical.
         //   climb   is the interval no 0..0.2 dial prints: (1+PITCH)^6 by the
         //           last head — +990 ¢ at PITCH 0.1.
         //   spacing is the EFFECTIVE first echo. A `paramId: 'delay'` readout
