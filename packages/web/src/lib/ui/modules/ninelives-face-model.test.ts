@@ -36,6 +36,7 @@ import {
   primaryAudioOutPortId,
 } from '$lib/ui/workflow/shell-glyph-live';
 import { faceReadoutValueFor } from '$lib/ui/workflow/face-readout-values';
+import { isUsableReadout, readoutText } from '$lib/ui/workflow/dock-faceplate-model';
 import { STRICT_FACES } from '$lib/ui/workflow/strict-faces';
 import { NINE_LIVES_RATE_MULTIPLIERS } from '../../../../../dsp/src/lib/ninelives-dsp';
 import {
@@ -133,6 +134,42 @@ describe('ninelives face model / the RATE readback is invariant to WHICH tap', (
     const span = ninelivesTapPeriodS(NINELIVES_TAP_MULTIPLIERS.length - 1, p) /
       ninelivesTapPeriodS(0, p);
     expect(Math.round(span)).toBe(6561);
+  });
+
+  it('EVERY declared readout PAINTS a value through the shell’s own resolver, not `—`', () => {
+    // ⚠ THE LEG THAT CATCHES A REGISTRATION THAT IS PRESENT BUT WRONG.
+    // `readoutText` (dock-faceplate-model.ts) prints `'—'` for an unresolvable
+    // id AND swallows a throw into the same `'—'`, deliberately: a faceplate
+    // must keep rendering. So a mis-registered or throwing readout is
+    // INVISIBLE at the pixel lane — the e2e sidebar sweep asserts a block
+    // "renders a BODY, not just a header", which a column of nine em-dashes
+    // satisfies. This walks the def's OWN declarations through the SAME
+    // function the shell calls and requires a real value.
+    const read = reader({ ...DEFAULTS });
+    const declared = [
+      ...(ninelivesDef.face?.hero?.readouts ?? []),
+      ...(ninelivesDef.face?.sidebar ?? []).flatMap((b) =>
+        b.kind === 'readouts' ? [...b.entries] : [],
+      ),
+    ];
+    // Non-vacuity: the walk must actually find the hero row AND every tap row.
+    expect(declared.length).toBe(
+      (ninelivesDef.face?.hero?.readouts ?? []).length + NINELIVES_TAP_MULTIPLIERS.length,
+    );
+    for (const r of declared) {
+      expect(isUsableReadout(r), `${r.label}: exactly one of paramId/valueId/text`).toBe(true);
+      const printed = readoutText(r, ninelivesDef.params, read);
+      expect(printed, `${r.label} must paint a value, not the unresolvable placeholder`).not.toBe(
+        '—',
+      );
+      expect(printed.length, `${r.label} must not paint an empty string`).toBeGreaterThan(0);
+    }
+    // NEGATIVE CONTROL on this very leg: the same resolver DOES return `—` for
+    // an id nobody registered, so a green above is a fact about the readouts
+    // rather than about a resolver that never says no.
+    expect(readoutText({ label: 'x', valueId: 'ninelives-tap-0' }, ninelivesDef.params, read)).toBe(
+      '—',
+    );
   });
 
   it('every registered readout id resolves, and the table covers every declared tap', () => {
