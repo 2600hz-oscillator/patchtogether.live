@@ -589,10 +589,14 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // viz), so VRT adds little; unit tests cover the DSP core. Promote +
   // capture baselines in a follow-up PR.
   marbles: 'VRT baseline pending; standard fader card; unit tests cover the DSP core.',
-  // ATTENUMIX simple mixer: VRT baseline pending; ART + unit + E2E cover it.
-  // 4 attenuator faders + master + standard PatchPanel — no unique visual
-  // surface; baseline can be promoted in a follow-up.
-  attenumix: 'VRT baseline pending; ART + unit + E2E provide coverage',
+  // ATTENUMIX simple mixer: 4 attenuator faders + master + standard PatchPanel
+  // — no unique visual surface on the LEGACY card. ⚠ This entry is now ONLY
+  // about the `?shell=legacy` card: attenumix entered STRICT_FACES with the
+  // faceplate queue's Q6, so the surface real users operate is the FACEPLATE,
+  // and `face-attenumix-compact` / `face-attenumix-dock` ARE captured by the
+  // linux job like every other face scene (the rings precedent, three entries
+  // above). The pixel surface the module actually presents is covered.
+  attenumix: 'VRT baseline pending for the legacy card; the FACEPLATE is baselined (face-attenumix-compact/dock). ART + unit + E2E cover the module.',
   // SIDECAR stereo sidechain compressor: VRT baseline pending; standard
   // 8-knob fader card + standard PatchPanel — no unique visual surface
   // beyond what RESOFILTER / ATTENUMIX already exercise. ART + unit +

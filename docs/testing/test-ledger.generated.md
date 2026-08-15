@@ -167,7 +167,7 @@ payable. Membership is read off that set, so it moves without an edit here.
 - `acidwarp` — animated palette rotation + auto scene cycler defeats deterministic capture
 - `analogLogicMaths` — VRT baseline pending
 - `archivist` — live external archive.org source + live <video>/<audio> + ticking playhead defeat deterministic capture
-- `attenumix` — VRT baseline pending
+- `attenumix` — VRT baseline pending for the legacy card
 - `audioIn` — card state depends on getUserMedia permission + audioinput presence (varies across CI runners)
 - `b3ntb0x` — animated NTSC composite simulation (per-line sync drift + frame persistence) defeats deterministic capture
 - `backdraft` — BOTH original reasons are gone — the card is a fixed 4hp×3u tier (corner-resize retired) and its in-rack feedback DIS…
