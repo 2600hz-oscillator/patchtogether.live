@@ -366,6 +366,159 @@ export const warrensspectrumDef: AudioModuleDef = {
     },
   ],
 
+  // ── THE CURATED FACEPLATE (PF-20) ────────────────────────────────────────
+  //
+  // WHAT THIS MODULE IS FOR, musically, in one paragraph — every rank below
+  // descends from it. Warren's Spectrum is the rack's RE-BUILDER: you play it
+  // something and it hands back a SYNTHESIZED copy of what it heard. Nothing
+  // else here does that. A vocoder imposes one signal's envelope on another; a
+  // filter subtracts; a granular chops and replays the recording itself. This
+  // one ANALYSES and RE-SYNTHESIZES, so what comes back is an instrument: it
+  // transposes cleanly, thins to a bare fundamental, morphs from sine to
+  // square, snaps onto a harmonic comb, or freezes into a drone. The verb is
+  // *patch a sound in, then decide how much of what it heard survives.*
+  //
+  // THE RANKING ARGUMENT, and it is one this module's siblings could not make:
+  // there are TWO DSP CLASSES behind MODE, and FIVE of the thirteen dials
+  // describe peak-tracking machinery MASSPASS does not have while a sixth
+  // describes a bank SPECTRAL does not have. So the ladder is drawn on
+  // UNCONDITIONAL APPLICABILITY: ranks 1-6 are EXACTLY the controls that are
+  // live in both engines, and every mode-scoped control is demoted below them
+  // regardless of how much authority it has in its own engine. `spectralLock`
+  // moves the output more than `spectralShape` does (measured 8.2960e-1 vs
+  // 5.9738e-1, art/scenarios/warrensspectrum/cv-path.test.ts) and still ranks
+  // below it, because half the time it does nothing at all.
+  //
+  // Tier ladder as a sentence: *mini shows MODE — the one control that decides
+  // what every other control means; compact adds PARTIALS; the six-cell lane
+  // plate is the module in both engines (mode · partials · shape · slice ·
+  // freeze · center); and the dock adds the two engines' private machinery,
+  // the filterbank and the output trims.*
+  //
+  // ⚠ NO `hero.cell`. The filterbank is the obvious picture and it is BYPASSED
+  // AT SPAWN (`resynthLevel` defaults to 0, divergence 4), so promoting it to
+  // the hero slot would put an inert surface where the module's identity
+  // belongs — the inertness-at-spawn check, doing real work. It ranks after
+  // its own enabler instead.
+  face: {
+    order: [
+      // 1-6: LIVE IN BOTH ENGINES. This is the whole lane budget.
+      // Selects between two DSP CLASSES and re-defines five other controls.
+      'engineMode',
+      // The module's verb. Bank size in SPECTRAL, the active-band limiter in
+      // MASSPASS — one knob, two meanings, and the CPU dial in both.
+      'spectralPartials',
+      // The voice waveform. The two engines render through the SAME shared
+      // morph function, so this is the one timbre control that means exactly
+      // the same thing whichever is selected.
+      'spectralShape',
+      // The rhythmic axis: the re-analysis period in SPECTRAL, the whole
+      // sample-and-hold stepping in MASSPASS.
+      'spectralSlice',
+      // The module's one GESTURE, and the only control with a cable of its own
+      // (the `gate` port ORs with it).
+      'engineFreeze',
+      // Transposition. Largest measured authority of any control here
+      // (1.2228e+0) and honoured in both engines, unlike upstream.
+      'spectralCenter',
+      // 7+: MODE-SCOPED, so dock-only however much they do.
+      // SPECTRAL's signature — the plugin's own header calls the residual the
+      // "#1 fix for the vocaler/robot vibe".
+      'spectralResidual',
+      'spectralLock',
+      // MASSPASS's identity control and its CPU dial (99 bands costs ~6x 16).
+      'spectralBandCount',
+      'spectralFloor',
+      'spectralStab',
+      'spectralSlew',
+      // The bank's ENABLER, ranked immediately above the bank: at 0 the eight
+      // SVFs are not merely quiet, `finishSample` returns before them.
+      'resynthLevel',
+      'ws-filterbank-{n}',
+      'inputMix',
+      'gain',
+    ],
+
+    // BY FUNCTION, in the DSP's own signal order — and DELIBERATELY DISAGREEING
+    // with `order` in four places, because priority and signal flow genuinely
+    // differ here:
+    //   * `spectralBandCount` is rank 9 and sits in the FIRST band: it is part
+    //     of choosing the engine, not part of tuning one.
+    //   * `spectralLock` is rank 8 and sits with three lower-ranked controls,
+    //     because LOCK is a property of the peak TRACKER, not of the voice.
+    //   * `spectralCenter` is rank 6 and sits in `resynth`, because transposition
+    //     is applied to the rendered bank, after everything else.
+    //   * `resynthLevel` is rank 13 and HEADS the output band, because the rest
+    //     of that band is inaudible until it moves.
+    // The last band is `finishSample`'s own sequence (wet -> bank -> mix ->
+    // gain), which is why the trims are not a page of their own.
+    pages: [
+      { id: 'engine', label: 'engine', controls: ['engineMode', 'spectralPartials', 'spectralBandCount'] },
+      { id: 'analysis', label: 'analysis', controls: ['spectralFloor', 'spectralStab', 'spectralLock', 'spectralSlew'] },
+      // ⚠ `resynth`, NOT `voice`. `rearFieldPlan` names the LEADING rear band
+      // `voice` whenever the module's plain input ports carry gate/pitch drive
+      // — which these do (`pitch` + `gate`) — so a page called `voice` would put
+      // two adjacent bands with the same heading on the rear card, one of them
+      // the jack field and the other three CV holes. `resynth` is also the
+      // DSP's own word for this bus (`resynthBuf_` upstream, `resynthLevel`
+      // here) and what the `out` readout prints for that path.
+      { id: 'resynth', label: 'resynth', controls: ['spectralShape', 'spectralResidual', 'spectralCenter'] },
+      { id: 'time', label: 'time', controls: ['spectralSlice', 'engineFreeze'] },
+      { id: 'output', label: 'output', controls: ['resynthLevel', 'ws-filterbank-{n}', 'inputMix', 'gain'] },
+    ],
+
+    // A live tap on the output. UNLIT on a silent rack, which is correct AND
+    // deterministic here rather than merely hoped: this is an EFFECT, and with
+    // nothing patched into `audio_in` the output is bit-exactly zero (measured,
+    // art/scenarios/warrensspectrum/cv-path.test.ts). No free-running voice, so
+    // no analogVco-class VRT instability.
+    glyph: 'meter',
+
+    // A FADER where the control is a LEVEL or a THRESHOLD you mix between; a
+    // KNOB where it is a morph, a time or a pitch. The card draws all fifteen
+    // as faders, but that is a 360 px card-layout constraint (seven controls in
+    // one row) and not a claim about the controls — and `fader` is
+    // discrete-never, so the three rostered switches could not take it anyway.
+    paramCells: {
+      spectralResidual: 'fader',
+      spectralFloor: 'fader',
+      resynthLevel: 'fader',
+      inputMix: 'fader',
+      gain: 'fader',
+    },
+
+    hero: {
+      // The module's VERB, not its rank-1 switch: PARTIALS is what a player
+      // reaches for once the engine is chosen, it is live in both engines, and
+      // it is the dial whose READING most needs the row beneath it — in
+      // MASSPASS the same knob is re-clamped to the band count, so `64` can
+      // mean 16. It MOVES out of the `engine` band, leaving MODE + BANDS there
+      // (still two controls, so the band keeps its header).
+      control: 'spectralPartials',
+      // NO `cell` — see the note above the face: the bank is inert at spawn.
+      readouts: [
+        // FOUR derived values, each negative-controlled PERMANENTLY on the
+        // input a knob readback is blind to
+        // (`warrensspectrum-face-model.test.ts`), and each other's controls
+        // where the arithmetic allows it.
+        //
+        // `spectralPartials` prints 64 in SPECTRAL, in MASSPASS at 99 bands and
+        // in MASSPASS at 16 bands — where the answer is 16.
+        { label: 'voices', valueId: 'warrensspectrum-voices' },
+        // `spectralResidual` prints 0.50 at PARTIALS 1, where the residual is
+        // bit-exactly absent (the cbrt((n-1)/47) factor is 0), and at PARTIALS
+        // 64, where it is fully 0.50.
+        { label: 'residual', valueId: 'warrensspectrum-residual' },
+        // `spectralStab` prints 3 whether that costs 20 ms or 400 ms; the birth
+        // ramp is counted in COMMITS, so its duration is SLICE-scaled.
+        { label: 'fade in', valueId: 'warrensspectrum-fade-in' },
+        // `gain` prints 0.0 dB while INPUT MIX 1 leaves the module +6.02 dB
+        // hot; BANK WET moves the PATH half and cannot move the number.
+        { label: 'out', valueId: 'warrensspectrum-out' },
+      ],
+    },
+  },
+
   docs: {
     explanation:
       "A resynthesizer with TWO different engines behind one MODE switch — a port of the Warren's Spectrum VST. MODE picks between them and they are separate DSP code, not two settings of one algorithm. MASSPASS is the other engine: it never runs an FFT at all, instead splitting the input across 16 to 99 log-spaced bandpass filters from 50 Hz to 12 kHz and letting each band report its own level (a 3 ms / 80 ms envelope follower) and its own pitch (a smoothed zero-crossing rate). Those per-band readings are sampled and HELD at the SLICE interval, and each band's oscillator runs on the held values — that sample-and-hold is the engine's signature stepping, and it makes SLICE far more dramatic here than in SPECTRAL. Only the loudest PARTIALS-many bands sound; the rest keep tracking and keep their phase advancing so nothing pops when they return. It is coarser and more vocoder-like than SPECTRAL, and at low band counts it is also cheaper, because there is no FFT and no partial matcher. BANDS sets the count and is a timbre control, not a level one (the bank is normalised by 1/sqrt(N)). SHAPE, SLICE, FREEZE, CENTER and the V/oct input all work in both modes; LOCK, RESIDUAL, FLOOR, STABILITY and SLEW are SPECTRAL-only, because they describe peak-tracking machinery MASSPASS does not have. Switching modes is click-free: the output dips to silence for about 6 ms and returns on the new engine. The default engine is SPECTRAL, described next.\n\nA spectral-analysis resynthesizer — a port of the SPECTRAL engine of the Warren's Spectrum VST. It listens to whatever audio you patch into AUDIO IN, runs a rolling 2048-point FFT, finds the loudest sinusoidal peaks, tracks them from frame to frame, and rebuilds the sound as a bank of up to 256 oscillators. Crucially it ALSO rebuilds the part a partial tracker normally throws away: the energy left over after the peaks are claimed is measured in 16 log-spaced bands and replayed as filtered noise (the SMS \"residual\"). That residual is what keeps breath, air and sibilance in the sound — the plugin's own source calls it the number-one fix for the vocoder/robot vibe — so at RESIDUAL 0 an \"sss\" vanishes and at RESIDUAL 2 it comes back. Because the rebuild is an oscillator bank you can transpose it cleanly (CENTER, or a V/oct cable), thin it out (PARTIALS), recolour every partial from sine through saw to square (SHAPE), snap the partials onto a harmonic series (LOCK), smear it in time (SLEW), change how often it re-analyses (SLICE), or hold the current spectrum forever (FREEZE). It is an EFFECT, not a synth: with nothing patched into AUDIO IN it is silent. It is also mono and monophonic — N voices means N instances.",

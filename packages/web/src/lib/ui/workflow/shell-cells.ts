@@ -46,6 +46,7 @@ import MacrooscillatorHeroPanel from '$lib/ui/modules/MacrooscillatorHeroPanel.s
 import MarblesLoopPanel from '$lib/ui/modules/MarblesLoopPanel.svelte';
 import PentemelodicaVoicesPanel from '$lib/ui/modules/PentemelodicaVoicesPanel.svelte';
 import RingsCombPanel from '$lib/ui/modules/RingsCombPanel.svelte';
+import WarrensspectrumBankPanel from '$lib/ui/modules/WarrensspectrumBankPanel.svelte';
 import type { FaceControl } from './curated-face';
 import {
   DX7_SYX_ACCEPT,
@@ -925,6 +926,54 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
       title: 'Audition: strum all six strings once (identical to a strum1 rising edge)',
       onFire: (nodeId) => { fireManualStrike(nodeId); },
       probe: { effect: { kind: 'audition', seam: 'manual-strike' } },
+    },
+  },
+  warrensspectrum: {
+    // THE 8-BAND FILTERBANK — and on this module the panel is not an
+    // enrichment, it is the PRECONDITION for promoting the face at all.
+    //
+    // The bank's forty values (8 bands × cutoff/res/type/pan/send) live in
+    // `node.data.wsBands`, deliberately NOT as ParamDefs: forty params would be
+    // forty doc blobs and forty face cells, and the module's own plan calls one
+    // addressable strip "the only honest way to fit this module". The
+    // consequence is that the bank has exactly ONE editor — and until this cell
+    // existed that editor was `WarrensspectrumCard.svelte`, which
+    // `migrated(type)` removes from the lane AND the dock. Promoting without it
+    // would have made the filterbank unreachable, which is the samsloop
+    // failure with a live bank instead of an absent sample.
+    //
+    // ⚠ A PANEL, NOT A SELECTOR OR A GRID, because the thing being edited is a
+    // PICTURE: eight bars whose height is each band's send into the main bus,
+    // whose position is its cutoff, and whose collective pan is the ONLY stage
+    // in the whole chain that makes a stereo image (`WsFilterBank.setPan` —
+    // everything ahead of it, both engines included, is mono). No shared
+    // primitive says that.
+    //
+    // ⚠ NOT the hero. `resynthLevel` — the bank's crossfade — defaults to 0
+    // (divergence 4: adding the bank must not re-voice a rack saved before it
+    // existed), so at spawn `finishSample` returns before the eight SVFs are
+    // touched. A hero cell that is inert the moment the module appears is the
+    // inertness-at-spawn refusal; it ranks immediately after its own enabler
+    // instead.
+    'ws-filterbank-{n}': {
+      kind: 'panel',
+      label: 'filterbank',
+      component: WarrensspectrumBankPanel,
+      minWidth: 380,
+      // A `data` probe, not `data-rev` — the strong form. `wsBands` carries its
+      // own revision counter (`wsBandsRev`, which the factory polls), so the
+      // weak probe was available and is deliberately not used: a dead fader
+      // that bumped the counter without editing a band would pass it. Dragging
+      // the SEND fader must move band 1's actual send value.
+      //
+      // Band 1 is the panel's selection at mount (selection is component state,
+      // the dx7 rule), so the probe addresses the band the faders are wired to
+      // without the sweep having to click first.
+      probe: {
+        testid: 'ws-bank-fader-send',
+        action: 'drag',
+        effect: { kind: 'data', key: 'wsBands[0].send', expect: 'changed' },
+      },
     },
   },
 };

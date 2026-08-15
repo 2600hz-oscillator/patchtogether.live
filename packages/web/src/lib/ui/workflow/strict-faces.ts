@@ -752,6 +752,22 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   'rings',
   // FACE BATCH 6 · the stereo sidechain ducker (2026-08-14) — see above.
   'sidecar',
+  // FACE BATCH 6 · the two-engine spectral resynthesizer (2026-08-15).
+  //
+  // ⚠ THE PROMOTION IS GATED ON A PANEL, not on the face. This module's
+  // 8-band FILTERBANK is `node.data`, not ParamDefs, and before this batch its
+  // ONLY editor was `WarrensspectrumCard.svelte` — which promotion removes
+  // from both surfaces. Shipping the face without `WarrensspectrumBankPanel`
+  // would have made the bank unreachable: the samsloop failure, on a module
+  // that has a live bank rather than an absent sample. The panel is registered
+  // as the `ws-filterbank-{n}` shell cell and carries a `data` probe on
+  // `wsBands[0].send`, so a dead editor is red rather than merely invisible.
+  //
+  // ⚠ AND THE AUDIT CAME FIRST. All six declared `paramTarget` CV inputs were
+  // verified LIVE through the CV path — not the knob path — before a line of
+  // face was written (`art/scenarios/warrensspectrum/cv-path.test.ts`), because
+  // the two modules audited before it were both defective (#1661, #1662).
+  'warrensspectrum',
 ]);
 
 /**

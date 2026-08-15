@@ -335,6 +335,26 @@ export const FACES = [
   // whether the graph is frozen or running. It therefore neither exercises nor
   // depends on #1420's pre-frame freeze — the mixer / reverb / clouds property.
   { type: 'sidecar', pages: 3 },
+  // FACE BATCH 6 · the two-engine spectral resynthesizer. `pages: 5` is the
+  // POST-hero split count: five declared pages, and promoting `spectralPartials`
+  // into the hero leaves `engine` with MODE + BANDS rather than emptying it, so
+  // no band is dropped (heroFacePlan only drops an EMPTIED band — the `noise`
+  // case). Five is also comfortably under DOCK_TAB_MIN_BANDS, so this face
+  // packs rows rather than growing a tab rail.
+  //
+  // DETERMINISTIC AT REST, and MEASURED rather than assumed: it is an EFFECT,
+  // so with nothing patched into `audio_in` the worklet writes bit-exact zeros
+  // to both channels (art/scenarios/warrensspectrum/cv-path.test.ts asserts
+  // `peak |sample| === 0` on the silent-input leg), and the `meter` glyph tap
+  // therefore reads zero whether the graph is frozen or running. Like sidecar
+  // it neither exercises nor depends on #1420's pre-frame freeze.
+  //
+  // ⚠ ITS DOCK SCENE CARRIES A PANEL, which is new for this roster's tail: the
+  // `ws-filterbank-{n}` cell paints eight bars whose heights come from the
+  // SAVED band table, not from an analyser — pure geometry off `node.data`, no
+  // clock and no tap, so the picture is the same on a silent rack and a running
+  // one. That is why it needs no mask and no VRT_LIVE_SURFACES entry.
+  { type: 'warrensspectrum', pages: 5 },
 ] as const;
 
 /** TIGHT per-scene diff budgets (absolute pixels; Playwright takes the MIN of
