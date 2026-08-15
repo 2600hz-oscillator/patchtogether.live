@@ -348,6 +348,124 @@ describe('slewSwitch LENGTH is live — shortening the lap pulls the selection I
   });
 });
 
+// ── layer 4: the crossfade LAW (#1711) ──
+
+/** Peak EXCURSION of `xs` outside the closed interval [lo, hi], in CV units.
+ *  0 = the trajectory stayed between the two endpoint levels. This is the ONE
+ *  predicate both the assertions and the negative controls below call, so a
+ *  green run cannot mean "the metric is blind" — the controls drive the same
+ *  function with a known-bad and a known-good trajectory. */
+function peakExcursion(xs: ArrayLike<number>, lo: number, hi: number): number {
+  let worst = 0;
+  for (let i = 0; i < xs.length; i++) {
+    const v = xs[i]!;
+    worst = Math.max(worst, v > hi ? v - hi : lo - v);
+  }
+  return Math.max(0, worst);
+}
+
+/** The two candidate crossfade laws, sampled over one fade, as the negative
+ *  controls call them. `x` is the fade progress 0..1. */
+const EQUAL_GAIN = (x: number, from: number, to: number) => (1 - x) * from + x * to;
+const EQUAL_POWER = (x: number, from: number, to: number) =>
+  Math.cos(x * 0.5 * Math.PI) * from + Math.sin(x * 0.5 * Math.PI) * to;
+
+function lawTrajectory(law: (x: number, a: number, b: number) => number, from: number, to: number) {
+  const out = new Float64Array(1001);
+  for (let k = 0; k <= 1000; k++) out[k] = law(k / 1000, from, to);
+  return out;
+}
+
+describe('slewSwitch: the crossfade is EQUAL-GAIN, because these are CV levels', () => {
+  // THE DEFECT THIS PINS (#1711). `switched` faded with an equal-POWER cos/sin
+  // pair — correct for uncorrelated AUDIO, wrong for CV. Two CV levels are
+  // perfectly correlated, so cos+sin peaks at √2 instead of holding the level.
+  // Measured on the shipped worklet before the fix, all four channels at the
+  // SAME value and xfadeTime at its 0.05 s default: 1.00 → 1.414214, 0.50 →
+  // 0.707107, 0.25 → 0.353553 — a flat +41.42 % at every level. The module's
+  // own docs promised the opposite ("so the hand-off is glitch-free"), and the
+  // crossfade was the only thing on the module producing a voltage neither
+  // input ever carried.
+  //
+  // ⚠ NOTHING SAW IT, and the reason is the observation WINDOW, not the metric.
+  // art/scenarios/slew-switch/profile.test.ts asserts `switched` from
+  // `k*SEGMENT + XFADE + 0.02 s` onward — the settled tail, with the fade
+  // excluded by construction. The tests above sample at `b*BLOCK-1` with the
+  // harness default xfadeTime 0.001 s, by which point the fade is long over.
+
+  it('two channels at the SAME level hand off FLAT — no overshoot at any level', async () => {
+    for (const V of [1, 0.5, 0.25]) {
+      // xfade 0.05 s = 2400 samples; the clock at block 4 (sample 512) leaves
+      // the whole fade inside a 24-block (3072-sample) run.
+      const r = await run({
+        levels: [V, V, V, V], clockAt: [4 * BLOCK], xfadeTime: 0.05, blocks: 24,
+      });
+      const over = peakExcursion(r.switched, 0, V);
+      expect(over, `level ${V}: peak excursion above the held level (CV units) — equal-power would give ${(V * (Math.SQRT2 - 1)).toFixed(6)}`)
+        .toBeLessThanOrEqual(1e-6);
+    }
+  });
+
+  it('a hand-off between DIFFERENT levels stays BETWEEN them and never reverses', async () => {
+    // ch1 = 0.2 → ch2 = 0.4. Equal-power peaked at 0.4472 (+11.80 % past the
+    // target) and then came back DOWN; equal-gain is monotone.
+    const r = await run({
+      levels: [0.2, 0.4, 0.6, 0.8], clockAt: [4 * BLOCK], xfadeTime: 0.05, blocks: 24,
+    });
+    const fadeFrom = 4 * BLOCK;
+    const fadeTo = fadeFrom + Math.round(0.05 * SR);
+    const fade = Array.from(r.switched.slice(fadeFrom, fadeTo));
+    expect(peakExcursion(fade, 0.2, 0.4), 'excursion outside [0.2, 0.4] during the fade (CV units)')
+      .toBeLessThanOrEqual(1e-6);
+    let reversals = 0;
+    for (let i = 1; i < fade.length; i++) if (fade[i]! < fade[i - 1]! - 1e-7) reversals++;
+    expect(reversals, 'samples where a 0.2→0.4 hand-off moved BACKWARD').toBe(0);
+  });
+
+  it('NEGATIVE CONTROL — the same predicate REJECTS equal-power and ACCEPTS equal-gain', () => {
+    // Without this leg a green run above is indistinguishable from a metric
+    // that cannot move. Both laws are driven through `peakExcursion`, the same
+    // function the assertions call, on the same endpoints.
+    const equalLevel = { from: 0.5, to: 0.5 };
+    const power = lawTrajectory(EQUAL_POWER, equalLevel.from, equalLevel.to);
+    const gain = lawTrajectory(EQUAL_GAIN, equalLevel.from, equalLevel.to);
+    expect(peakExcursion(power, 0, 0.5), 'equal-POWER on two equal levels must OVERSHOOT (the shipped defect)')
+      .toBeGreaterThan(0.2);
+    expect(peakExcursion(power, 0, 0.5) / 0.5, 'and by exactly √2 − 1')
+      .toBeCloseTo(Math.SQRT2 - 1, 6);
+    expect(peakExcursion(gain, 0, 0.5), 'equal-GAIN on two equal levels must be flat')
+      .toBeLessThanOrEqual(1e-12);
+  });
+
+  it('the SHIPPED law is equal-gain to the sample, not merely non-overshooting', () => {
+    // The strong form: "did not overshoot" also passes a fade that snaps
+    // instantly, or one that stalls. This pins the trajectory itself.
+    const from = 0.2, to = 0.8;
+    const gain = lawTrajectory(EQUAL_GAIN, from, to);
+    for (const [k, want] of [[250, 0.35], [500, 0.5], [750, 0.65]] as const) {
+      expect(gain[k]!, `equal-gain at ${k / 10}% of the fade`).toBeCloseTo(want, 12);
+    }
+  });
+
+  it('XFADE TIME is live — a longer setting takes proportionally longer to arrive', async () => {
+    // The only param with no coverage before this file's crossfade block, and
+    // the one that decides how long the hand-off above lasts.
+    const arrival = async (xfadeTime: number) => {
+      const r = await run({
+        levels: [0, 1, 0, 0], clockAt: [4 * BLOCK], xfadeTime, blocks: 64,
+      });
+      for (let i = 4 * BLOCK; i < r.switched.length; i++) {
+        if (r.switched[i]! >= 0.99) return (i - 4 * BLOCK) / SR;
+      }
+      return Infinity;
+    };
+    const fast = await arrival(0.005);
+    const slow = await arrival(0.05);
+    expect(slow, `arrival at xfade 0.05 s (${slow.toFixed(4)} s) vs 0.005 s (${fast.toFixed(4)} s)`)
+      .toBeGreaterThan(fast * 5);
+  });
+});
+
 describe('slewSwitch step_idx readout', () => {
   it('spans −1..+1 across the lap and stays inside that range while clocked', async () => {
     const clocks = [2, 4, 6].map((b) => b * BLOCK);

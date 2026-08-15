@@ -21,7 +21,9 @@
 //   1  out2       (slewed cv2)
 //   2  out3       (slewed cv3)
 //   3  out4       (slewed cv4)
-//   4  switched   (currently-selected slewed channel, equal-power xfade)
+//   4  switched   (currently-selected slewed channel, equal-GAIN xfade — see
+//                  the crossfade block in process(): equal-POWER overshot a
+//                  correlated CV hand-off by 41.4 %, #1711)
 //   5  step_idx   (-1..+1 quantized to 4 levels — for downstream display)
 //   6  eoc        (gate pulse on wrap step3 → step0)
 //
@@ -47,7 +49,7 @@ class SlewSwitchProcessor extends AudioWorkletProcessor {
 
   // Per-channel smoothed state.
   private y = [0, 0, 0, 0];
-  // Current + previous selection (drives the equal-power crossfade).
+  // Current + previous selection (drives the equal-gain crossfade).
   private curIdx = 0;
   private prevIdx = 0;
   // 0..1 fade progress from prevIdx → curIdx (1 = settled on curIdx).
@@ -189,10 +191,31 @@ class SlewSwitchProcessor extends AudioWorkletProcessor {
         this.xfade = Math.min(1, this.xfade + xfadeStep);
       }
 
-      // Equal-power crossfade (cos/sin pair, sums to 1.0 power-wise).
-      const a = Math.cos(this.xfade * 0.5 * Math.PI);
-      const b = Math.sin(this.xfade * 0.5 * Math.PI);
-      swOut[i] = a * this.y[this.prevIdx]! + b * this.y[this.curIdx]!;
+      // EQUAL-GAIN (linear) crossfade — the CV law, and NOT the audio one.
+      //
+      // This was an equal-power cos/sin pair, which is correct for UNCORRELATED
+      // AUDIO (two incoherent sources sum in power, so a linear fade dips ~3 dB
+      // at the midpoint and cos/sin holds it flat). Every port on this module is
+      // typed `cv` and every documented use is a CV one — portamento for pitch,
+      // envelope rounding, smoothing a steppy CV — and two CV levels are
+      // perfectly CORRELATED, so cos+sin does not hold the level, it PEAKS at
+      // √2 (#1711).
+      //
+      // MEASURED on the shipped worklet at the default xfadeTime 0.05 s, all
+      // four channels held at the SAME level (a hand-off that must be a no-op):
+      // level 1.00 → peak 1.414214, 0.50 → 0.707107, 0.25 → 0.353553. A flat
+      // +41.42 % at every level, which is exactly √2. Between DIFFERENT levels
+      // (0.2 → 0.4) it overshot to 0.4472 (+11.80 % past the target) and came
+      // back DOWN — a non-monotone hand-off, on the one output whose whole job
+      // is to hand off cleanly. With `switched` driving a 1 V/oct input that is
+      // a ~5 semitone pitch blip on every step, including steps between two
+      // channels holding the same note.
+      //
+      // `1 - x` and `x` sum to exactly 1, so equal levels hand off FLAT and any
+      // pair interpolates monotonically between the endpoints. Regressions:
+      // slewswitch.test.ts, 'the crossfade is EQUAL-GAIN'.
+      const b = this.xfade;
+      swOut[i] = (1 - b) * this.y[this.prevIdx]! + b * this.y[this.curIdx]!;
 
       // Step index as -1..+1 (4 quantized levels at 0/-0.333/+0.333/+1
       // ... using a simple `(idx / (len-1)) * 2 - 1` mapping).
