@@ -538,7 +538,7 @@ The head of the pool, by param count:
 | `moog921Vco` | 6 | 0 | 8 | 4 | 5 | 0 | the System-55 BANK batch |
 | `timelorde` | 6 | 4 | 5 | 14 | 0 | 0 | Q2 — extension-class |
 | `wavetableVco` | 5 | 0 | 8 | 1 | 5 | 0 | **Q9 — IMPLEMENTED** |
-| `charlottesEchos` | 5 | 0 | 3 | 2 | 1 | 0 | **Q10** |
+| `charlottesEchos` | 5 | 0 | 3 | 2 | 1 | 0 | **Q10 — IMPLEMENTED** |
 | `buggles` | 5 | 0 | 3 | 5 | 0 | 0 | **Q13** |
 | `ninelives` | 2 | 0 | 1 | 9 | 0 | 0 | **Q11** |
 
@@ -620,7 +620,39 @@ scene machinery's `freezeAudioContext` is what makes that deterministic (measure
 #1420's audio freeze — the same dependency analogVco already carries and the
 same machinery. No card producer, no video, no `node.data`.
 
-### Q10 · `charlottesEchos` — the destructive multi-head stereo delay
+### Q10 · `charlottesEchos` — the destructive multi-head stereo delay  ⟵ IMPLEMENTED (#1688 / PR #1689)
+
+> **WHAT THE MEASUREMENT CORRECTED, recorded here because §5.2 predicted it and
+> the correction is the valuable half.**
+>
+> 1. **The batch-6 spec's `delay`-dependent stability boundary is an INSTRUMENT
+>    ARTIFACT.** §3-B of `face-specs-batch-6-charlottes-echos.md` bisects the
+>    boundary with a LEVEL threshold over a fixed-length render ("is the last 2 s
+>    of a 12 s render above −100 dBFS") and reports it sliding from `DECAY 0.3184`
+>    at 20 ms to `0.2079` at 600 ms. That metric cannot separate "does not decay"
+>    from "decays slowly", and a longer tape decays slower per second by
+>    construction (the round trip is `DELAY/4`). Swept further the same instrument
+>    reports ~0.0001 at `delay 1.5 s` — "any DECAY sustains", the tell. Under
+>    **dB per ROUND TRIP** (delay-invariant) the loss is −0.99 / −1.00 dB/rt at
+>    0.15 s and 0.6 s against a predicted −0.959: the boundary is loop gain
+>    **1.000 at every DELAY**, and DELAY moves the RATE. The spec's `ce-margin`
+>    3-D interpolation became a closed form. Both instruments now run on the same
+>    six renders as a permanent leg of `art/scenarios/charlottes-echos/face-law.test.ts`.
+> 2. **The push-gate fixture warning above was based on a stale COMMENT, not on
+>    the code.** `push-card-schema.test.ts` tier 3 already DERIVES its subject
+>    (`allDefs().find(d => !d.face && …)`) and asserts non-vacuity, so promoting
+>    this module just moves the `find` to another face-less def. Only the comment
+>    naming `charlottesEchos` was stale; it now says why naming a module there
+>    goes stale silently.
+> 3. **The DSP mono normal cannot be asserted through the def's factory under
+>    `node-web-audio-api`** — the host zero-fills an unconnected worklet input, so
+>    the `??` fallback never fires (measured `max|L−R| = 9.011e-1`, against
+>    `0.0000e+0` in a real browser). That leg is a SCOPE assertion naming
+>    `mono-normal-not-defeated.test.ts` and `stereo-mono-normal.spec.ts` as the
+>    owners, so a green ART run is never mistaken for coverage of the normal.
+> 4. **The audit found no CV defect** — and the strong leg says so: `CV(+Δ)` and
+>    `KNOB(base+Δ)` are the same render to the bit (`0.0000e+0`), which is the
+>    claim "the cable moved the audio" cannot make.
 
 **Merit: YES.** 5 params (`delay`, `feedback`, `decay`, `pitchUp`, `mix`), 3
 inputs, 2 outputs. The last unfaced time-based effect of consequence —

@@ -351,7 +351,12 @@ describe('resolvePushCardControls — tier 2, the curated face', () => {
 
 describe('resolvePushCardControls — tier 3, the GENERIC card', () => {
   it('AUDIO: declaration order is the ranking', () => {
-    // charlottesEchos carries no face, so it is a real generic-audio card.
+    // DERIVED, not named: the first un-faced audio def with enough params. It
+    // used to be `charlottesEchos` — which now carries a face, so it moved from
+    // this tier to the FACE tier (and its card re-ranked from declaration order
+    // to `face.order`; no `PUSH_CARD_CONTROLS` entry, so that is the intended
+    // effect of promoting it). Naming a module here would have gone stale
+    // silently the moment it was promoted.
     const def = allDefs().find((d) => d.domain === 'audio' && !d.face && (d.params ?? []).length >= 3);
     expect(def, 'expected at least one un-faced audio module').toBeTruthy();
     const spec = resolvePushCardControls(def!, {});

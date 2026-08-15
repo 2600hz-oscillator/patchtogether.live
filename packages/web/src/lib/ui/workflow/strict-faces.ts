@@ -874,6 +874,37 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // THE FACEPLATE QUEUE · Q11 — the ⅓-ladder modulation fan-out (2026-08-15).
   // See the header note above.
   'ninelives',
+  // FACE BATCH 6 · the four-stage destructive echo (2026-08-15).
+  //
+  // ⚠ THE FACE EXISTS BECAUSE TWO OF THE FIVE DIALS ARE A STABILITY BOUNDARY
+  // WEARING THE LABELS OF TASTE CONTROLS. The four AnalogDelayCore stages are in
+  // SERIES and each carries an in-loop tanh drive whose small-signal gain is
+  // `1 + DECAY·(1+stage)·0.8` — up to 4.20 at the last stage — and that
+  // multiplies the feedback INSIDE each stage's own loop, so `FEEDBACK_MAX =
+  // 0.995` does not bound it. The module stops decaying at
+  // `FEEDBACK · 0.995 · (1 + DECAY·3.2) = 1`; the shipped default sits at 0.82,
+  // i.e. 0.11 of DECAY or 0.11 of FEEDBACK from a patch that rings forever. The
+  // card said none of it and no gate could: it is a VALUE, and every gate here
+  // reads a DECLARATION.
+  //
+  // ⚠ AND A SPEC CLAIM WAS MEASURED AND REFUTED BEFORE IT WAS SHIPPED. The
+  // batch-6 spec asserted the boundary is a function of DELAY too (a bisected
+  // table sliding 0.318 → 0.208 of DECAY across the travel). That bisection used
+  // a LEVEL threshold over a fixed-length render — an instrument that cannot
+  // separate "does not decay" from "decays slowly", and a longer tape decays
+  // slower in wall-clock time by construction. Under a RATE instrument (dB/s
+  // between two late windows) the boundary is loop gain 1.000 at 0.02 s, 0.15 s,
+  // 0.6 s AND 1.5 s. The `margin` readout is a closed form rather than a 3-D
+  // interpolation over an artifact because of that correction.
+  //
+  // ⚠ AUDITED BEFORE AUTHORING (the #1661/#1662/#1664 class). This module
+  // declares exactly ONE `paramTarget` CV input, and a one-row sweep is where
+  // the audit is cheapest to skip: `art/scenarios/charlottes-echos/cv-path.test.ts`
+  // drives the DEF's OWN FACTORY under node-web-audio-api and asserts not only
+  // that the cable moves the audio but that `CV(+Δ)` and `KNOB(base+Δ)` are the
+  // SAME RENDER TO THE BIT — a live jack wired to the wrong terminal passes the
+  // movement leg and fails that one. It found no defect, which is a result.
+  'charlottesEchos',
 ]);
 
 /**

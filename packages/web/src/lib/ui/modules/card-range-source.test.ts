@@ -88,6 +88,7 @@ import { marblesDef } from '$lib/audio/modules/marbles';
 import { ninelivesDef } from '$lib/audio/modules/ninelives';
 import { noiseDef } from '$lib/audio/modules/noise';
 import { warrensvisionsDef } from '$lib/video/modules/warrensvisions';
+import { charlottesEchosDef } from '$lib/audio/modules/charlottes-echos';
 import { filterDef } from '$lib/audio/modules/filter';
 import { karplusDef } from '$lib/audio/modules/karplus';
 import { meowboxDef } from '$lib/audio/modules/meowbox';
@@ -279,6 +280,14 @@ const RANGE_BOUND_CARDS: Readonly<Record<string, { params: readonly ParamDef[] }
   // shape: range-bound, out of MAPPING_BOUND_CARDS, held to the value-wise
   // curve-agreement clause below.
   'SidecarCard.svelte': sidecarDef,
+  // FACE BATCH 6. Converted with its FACEPLATE, and the label half is the
+  // reason: promotion makes the DEF's label the one a user reads at the dock,
+  // and this card's `Feedback` / `Pitch` disagreed outright with the def's
+  // `Fbk` / `Ptch` (both were in VOCABULARY_DEBT). Binding every prop —
+  // min/max/defaultValue/label/units/curve — off `CHARLOTTES_ECHOS_RANGES`
+  // paid that ledger rather than deferring it, and the def took the card's
+  // wording so no pixels moved.
+  'CharlottesEchosCard.svelte': charlottesEchosDef,
   'SnaredrumCard.svelte': snaredrumDef,
   'VcaCard.svelte': vcaDef,
   'WarrensspectrumCard.svelte': warrensspectrumDef,
@@ -335,6 +344,12 @@ const MAPPING_BOUND_CARDS: readonly string[] = [
   // carries the `format` that fixes it; wiring units onto these nine faders is
   // a visible card change and wants its own owner preview.
   'SidecarCard.svelte',
+  // FACE BATCH 6. Range AND mapping AND vocabulary: all five Knobs read
+  // `min`/`max`/`defaultValue`/`label`/`units`/`curve` off
+  // `CHARLOTTES_ECHOS_RANGES`, which is the def's own ParamDef objects by
+  // identity (asserted in art/scenarios/charlottes-echos/cv-path.test.ts), so
+  // there is no second copy of any number or name to drift.
+  'CharlottesEchosCard.svelte',
   'SnaredrumCard.svelte',
   'VcaCard.svelte',
   'WarrensspectrumCard.svelte',

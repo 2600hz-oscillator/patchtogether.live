@@ -395,6 +395,8 @@ charlottesEchos param feedback 0..1 linear default=0.5
 charlottesEchos param mix 0..1 linear default=0.5
 charlottesEchos param pitchUp 0..0.2 linear default=0
 charlottesEchos stereo L+R
+charlottesEchos face sidebar 0 kind=readouts label=the loop entries=stage 4 gain:value=ce-loop-gain,margin:value=ce-margin,stereo:text
+charlottesEchos face sidebar 1 kind=presets label=openers entries=slap,dub,shimmer,drone
 chroma meta domain=video
 chroma in hue cv param=hue cvScale=linear
 chroma in in video
