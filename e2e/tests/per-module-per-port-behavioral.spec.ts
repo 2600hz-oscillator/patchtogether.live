@@ -36,8 +36,26 @@
 //   real perturbations. The delta is the OR of MANY metrics: any
 //   single feature mean-shift OR range-expansion (a modulator widens
 //   the patched output's per-snapshot variance) counts as proof. See
-//   `computeDelta` for the calibrated thresholds — each one is sized
-//   2-3x above the observed unperturbed-jitter floor.
+//   `computeDelta` for the thresholds.
+//
+//   ⚠ A FLOOR IS NOT ONE NUMBER (#1337). Each metric carries a universal
+//   floor AND a floor DERIVED IN-RUN from that row's own control-vs-
+//   patched scatter, and the delta must clear both:
+//
+//       max(universal floor, 3σ of the row's own sampling error)
+//
+//   A universal floor is one number for ~100 modules, and it cannot be a
+//   floor for a quantity whose null scatter varies by three orders of
+//   magnitude between them. Measured: `snaredrum` passed 24 of its 26
+//   ports with NOTHING WIRED, because a drum voice re-struck by a
+//   free-running sequencer scatters its own spectral centroid ±4000 Hz
+//   against a 30 Hz `centMean` floor. The derived floor is a MAX, so it
+//   can only make the gate stricter — no row that fails today can start
+//   passing because of it. See the DERIVED FLOORS block in `computeDelta`.
+//
+//   PROVE IT, don't trust it: `task behavioral:negative-control` re-runs
+//   the whole sweep with every perturbation edge omitted and asserts NO
+//   ROW PASSES.
 //
 // What's exempt:
 //   * Inputs whose downstream effect is only observable via gameplay /
@@ -2409,17 +2427,28 @@ const BEHAVIORAL_PORT_PARAMS: Record<string, Record<string, number>> = {
 //
 // This map lets a SPECIFIC port (or whole module) override ONLY the floors that
 // matter for it — sized to THAT port's measured unperturbed-jitter floor — WITHOUT
-// touching the universal floor every other module relies on. Two legitimate
-// directions, both honest:
+// touching the universal floor every other module relies on.
+//
+// ⚠ SCOPE, since #1337: this table now has ONE legitimate direction, not two.
 //
 //   • TIGHTEN a floor (lower it) ONLY when the port's control-run jitter on that
 //     metric is provably small (measure it 3× first): a real-but-small signal
 //     then registers without lowering the bar for unrelated modules. Pair every
 //     tightened floor with the measured control jitter in the comment so the
-//     margin is auditable.
-//   • RAISE a floor when a noisy output's intrinsic jitter is what's tripping the
-//     universal floor (so a no-delta port stops passing on noise) — pair it with
-//     a different, port-appropriate metric that DOES carry the real signal.
+//     margin is auditable. ⚠ A tightened floor can no longer reach BELOW the
+//     row's own measured null scatter — the DERIVED FLOORS block near
+//     `computeDelta` takes a MAX against it — so an entry here that tries to
+//     rescue a signal genuinely buried in the jitter now simply has no effect
+//     rather than shipping a flake. That is deliberate.
+//
+//   • RAISING a floor is NO LONGER A THING YOU DO HERE, and a new entry that
+//     does it is a bug. "A noisy output's intrinsic jitter trips the universal
+//     floor, so a no-delta port passes on noise" was the entire failure mode
+//     #1337 fixed systemically: every row now measures its own null scatter in
+//     the same run it is judged in and raises its own floors to match. A
+//     hand-typed raise is a per-module population of measured numbers that goes
+//     stale the moment the module's params, driver or capture window change —
+//     which is exactly how snaredrum came to pass 24 of 26 ports on nothing.
 //
 // NEVER tighten a floor to rescue a port whose measured signal genuinely sits in
 // the jitter (that ships a flake — exactly what quarantined the subtle-CV class).
@@ -2448,6 +2477,11 @@ interface AudioThresholds {
   centMean: number;
   centRange: number;
 }
+// ⚠ THESE ARE ONLY HALF OF EACH FLOOR. Every value below is a LOWER BOUND that
+// `computeDelta` raises to the row's own measured null scatter — see the DERIVED
+// FLOORS block there (#1337). Lowering one here therefore cannot make the sweep
+// pass a row whose delta sits inside its own noise, and raising one to silence a
+// noisy module is the hand-tuning that block exists to replace.
 const UNIVERSAL_AUDIO_THRESHOLDS: AudioThresholds = {
   rmsMean: 0.01,
   rmsRange: 0.02,
@@ -2459,6 +2493,15 @@ const UNIVERSAL_AUDIO_THRESHOLDS: AudioThresholds = {
   centMean: 30,
   centRange: 60,
 };
+/** The VIDEO branch's equivalents. They used to be three literals inline in
+ *  `computeDelta`; a floor that lives at its use-site cannot be compared against
+ *  the audio ones, and #1337 found them failing the same way. Same role, same
+ *  place, same derived-floor treatment. */
+const UNIVERSAL_VIDEO_THRESHOLDS = {
+  varMean: 5,
+  varRange: 10,
+  nonBlackMean: 0.01,
+} as const;
 const BEHAVIORAL_DELTA_THRESHOLDS: Record<string, Partial<AudioThresholds>> = {
   // (See the note above for the intended shape:
   //   'somemod.subtle_cv': { rmsMean: 0.004, rmsRange: 0.008 },  // ctrl jitter ±0.002, measured 3×
@@ -2498,6 +2541,20 @@ function thresholdsFor(modType: string, portId: string): AudioThresholds {
 //   **If a port's own CONTROL-vs-CONTROL scatter on some metric is LARGER than
 //   that metric's floor, the metric can fire with no module involvement at all.**
 //   OR-ed together, enough such metrics make the row pass mostly by chance.
+//
+// ⚠ SINCE #1337 THAT SENTENCE DESCRIBES A CONDITION THE HARNESS NOW ENFORCES
+// ITSELF. Every metric's effective floor is `max(universal, 3σ of the row's own
+// measured null scatter)` — see the DERIVED FLOORS block near `computeDelta` —
+// so a metric whose scatter exceeds its floor no longer decides anything; it
+// raises its own floor out of its own noise instead. The table below is
+// therefore no longer the DEFENCE against noise-decided rows, and a new entry
+// added for that reason is treating a symptom that is already handled.
+//
+// What an entry here is still good for: a port where a metric is not noisy but
+// is IRRELEVANT — it carries no information about this port either way, and
+// naming the two metrics that do carry the signal makes a red row diagnosable.
+// resofilter.reso_cv below is exactly that case, and its numbers are left intact
+// as the worked example of how to measure before adding one.
 //
 // Measured on `resofilter.reso_cv` (5 control spawns, identical patch, local):
 //
@@ -2775,38 +2832,61 @@ function fingerprint(samples: ArrayLike<number>, sampleRate: number): AudioFinge
  *  the initial settle, the SUT is observed for ~1500ms — long enough
  *  for BUGGLES at rate=0.7 (~10 Hz) to traverse most of its ±5V range.
  */
+/**
+ * One metric's summary over the N snapshots of ONE arm.
+ *
+ * ⚠ `sd` and `n` are not decoration — they are what makes a PASS mean something.
+ * `mean` and `range` alone describe WHERE the arm landed; only the arm's own
+ * dispersion says how far it could have landed by chance with nothing wired.
+ * See `nullNoise` / DERIVED FLOORS for how they are consumed (#1337).
+ */
+interface Dispersion {
+  mean: number;
+  range: number;
+  /** Sample standard deviation (n−1) across the arm's snapshots. */
+  sd: number;
+  /** Snapshot count this arm actually captured (AUDIO_CAPTURES / VIDEO_CAPTURES). */
+  n: number;
+}
+
+/** mean / range / sample-sd of one metric across one arm's snapshots. */
+function disperse(vals: number[]): Dispersion {
+  if (vals.length === 0) return { mean: 0, range: 0, sd: 0, n: 0 };
+  const n = vals.length;
+  const mean = vals.reduce((s, v) => s + v, 0) / n;
+  const range = Math.max(...vals) - Math.min(...vals);
+  // n−1 (Bessel): this is an ESTIMATE of the population scatter, and it is used
+  // as a floor — biasing it low would loosen the gate.
+  const sd = n < 2 ? 0 : Math.sqrt(vals.reduce((s, v) => s + (v - mean) ** 2, 0) / (n - 1));
+  return { mean, range, sd, n };
+}
+
 interface AggregatedSample {
   kind: 'audio' | 'video';
   audio?: {
-    rms: { mean: number; range: number };
-    peak: { mean: number; range: number };
-    crest: { mean: number; range: number };
-    zeroCrossings: { mean: number; range: number };
-    spectralCentroid: { mean: number; range: number };
+    rms: Dispersion;
+    peak: Dispersion;
+    crest: Dispersion;
+    zeroCrossings: Dispersion;
+    spectralCentroid: Dispersion;
     samples: number;
   };
   video?: {
-    variance: { mean: number; range: number };
-    nonBlackFrac: { mean: number; range: number };
+    variance: Dispersion;
+    nonBlackFrac: Dispersion;
     samples: number;
   };
 }
 
 function aggregateAudio(samples: AudioFingerprint[]): AggregatedSample {
-  const meanRange = (vals: number[]) => {
-    if (vals.length === 0) return { mean: 0, range: 0 };
-    const mean = vals.reduce((s, v) => s + v, 0) / vals.length;
-    const max = Math.max(...vals), min = Math.min(...vals);
-    return { mean, range: max - min };
-  };
   return {
     kind: 'audio',
     audio: {
-      rms: meanRange(samples.map((s) => s.rms)),
-      peak: meanRange(samples.map((s) => s.peak)),
-      crest: meanRange(samples.map((s) => s.crest)),
-      zeroCrossings: meanRange(samples.map((s) => s.zeroCrossings)),
-      spectralCentroid: meanRange(samples.map((s) => s.spectralCentroid)),
+      rms: disperse(samples.map((s) => s.rms)),
+      peak: disperse(samples.map((s) => s.peak)),
+      crest: disperse(samples.map((s) => s.crest)),
+      zeroCrossings: disperse(samples.map((s) => s.zeroCrossings)),
+      spectralCentroid: disperse(samples.map((s) => s.spectralCentroid)),
       samples: samples.length,
     },
   };
@@ -2854,16 +2934,11 @@ async function readSinkAggregated(page: Page, sink: SinkSpec): Promise<Aggregate
     );
   }
 
-  const meanRange = (vals: number[]) => {
-    if (vals.length === 0) return { mean: 0, range: 0 };
-    const mean = vals.reduce((s, v) => s + v, 0) / vals.length;
-    return { mean, range: Math.max(...vals) - Math.min(...vals) };
-  };
   return {
     kind: 'video',
     video: {
-      variance: meanRange(cap.samples.map((v) => v.variance)),
-      nonBlackFrac: meanRange(cap.samples.map((v) => v.nonBlackFrac)),
+      variance: disperse(cap.samples.map((v) => v.variance)),
+      nonBlackFrac: disperse(cap.samples.map((v) => v.nonBlackFrac)),
       samples: cap.samples.length,
     },
   };
@@ -2877,6 +2952,19 @@ async function readSinkAggregated(page: Page, sink: SinkSpec): Promise<Aggregate
 interface DeltaResult {
   exceeded: boolean;
   description: string;
+  /**
+   * The row's HEADROOM against its own null scatter: the largest |Δ| / σ over
+   * the absolute terms, counting ONLY terms that cleared their universal floor
+   * and have a non-degenerate σ — i.e. exactly the terms the derived floor has
+   * to suppress. Under BEHAVIORAL_NEGATIVE_CONTROL nothing is wired, so this is
+   * a pure draw from the null and the sweep's largest observed value is the
+   * empirical calibration of NULL_NOISE_SIGMAS. 0 when no term is at risk.
+   *
+   * This is what makes the σ multiplier a MEASUREMENT rather than a guess: the
+   * gate reports how close it came to failing, so the next person can re-take
+   * the calibration instead of re-deriving it by hand-editing this file.
+   */
+  nullZ: number;
 }
 
 /** Diagnostic mode: omit every perturbation edge, so the "patched" arm is the
@@ -2904,7 +2992,7 @@ const NEGATIVE_CONTROL = process.env.BEHAVIORAL_NEGATIVE_CONTROL === '1';
  */
 function samplesBitIdentical(control: AggregatedSample, patched: AggregatedSample): boolean {
   if (control.kind !== patched.kind) return false;
-  const pairs: Array<[{ mean: number; range: number }, { mean: number; range: number }]> = [];
+  const pairs: Array<[Dispersion, Dispersion]> = [];
   if (control.kind === 'audio' && control.audio && patched.audio) {
     const c = control.audio, q = patched.audio;
     pairs.push([c.rms, q.rms], [c.peak, q.peak], [c.crest, q.crest],
@@ -2916,6 +3004,237 @@ function samplesBitIdentical(control: AggregatedSample, patched: AggregatedSampl
     return false;
   }
   return pairs.every(([a, b]) => a.mean === b.mean && a.range === b.range);
+}
+
+// ────────── PERMANENT negative control ON THE DISCRIMINATOR ITSELF ──────────
+//
+// #1330 proved `samplesBitIdentical` could fire by asserting, under
+// BEHAVIORAL_NEGATIVE_CONTROL, that each module scored at least one bit-identical
+// row. That is the right instinct in the wrong place, and #1337 measured it
+// failing: `analogVco` scored 1 identical row on one negative-control run and 0
+// on the next, on unchanged code.
+//
+// Nothing about the DETECTOR changed between those runs — what changed is the
+// MODULE. analogVco is a free-running oscillator, so two spawns start at
+// different phases and their fingerprints differ in the last bits; whether any
+// row lands exactly identical is a property of the module's determinism, not of
+// the predicate. Asserting it per-module therefore (a) flaked, and (b) threw
+// BEFORE the negative-control gate below could be evaluated — a flaky
+// self-check that blocks the real check is strictly worse than no self-check.
+//
+// So the proof moves here, where it is deterministic and where it runs on EVERY
+// invocation rather than only under the diagnostic env var. Both directions, as
+// a permanent leg (CLAUDE.md: negative-control the instrument in BOTH
+// directions, and call the SAME predicate the check calls) — the per-module
+// count is still REPORTED in the sweep's negative-control log line, it is just
+// no longer load-bearing.
+test('samplesBitIdentical: fires on an identical pair, refuses a one-bit-perturbed one', () => {
+  const fp = (rms: number): AudioFingerprint => ({
+    rms, peak: rms * 2, crest: 2, zeroCrossings: 100, spectralCentroid: 440, totalSamples: 1024,
+  });
+  const audioArm = (last: number) => aggregateAudio([fp(0.1), fp(0.2), fp(last)]);
+
+  // POSITIVE leg — the case the harness-miss detector exists to catch.
+  expect(
+    samplesBitIdentical(audioArm(0.3), audioArm(0.3)),
+    'two identical audio arms must read bit-identical, or the #1330 harness-miss '
+    + 'detector can never fire and its assertion is decoration',
+  ).toBe(true);
+
+  // NEGATIVE leg — one snapshot perturbed far below any threshold in this file.
+  // If this ever returns true the predicate has become a rounding comparison and
+  // would swallow a real perturbation as "the edge never landed".
+  expect(
+    samplesBitIdentical(audioArm(0.3), audioArm(0.3 + 1e-12)),
+    'a 1e-12 perturbation in ONE snapshot must break bit-identity',
+  ).toBe(false);
+
+  // The video branch has its own pair list; cover both kinds and the
+  // kind-mismatch guard, since a silent `false` there would read as a module
+  // verdict rather than a shape error.
+  const videoArm = (last: number): AggregatedSample => ({
+    kind: 'video',
+    video: {
+      variance: disperse([10, 20, last]),
+      nonBlackFrac: disperse([0.5, 0.5, 0.5]),
+      samples: 3,
+    },
+  });
+  expect(samplesBitIdentical(videoArm(30), videoArm(30)), 'identical video arms').toBe(true);
+  expect(samplesBitIdentical(videoArm(30), videoArm(30.0000001)), 'perturbed video arm').toBe(false);
+  expect(
+    samplesBitIdentical(audioArm(0.3), videoArm(30)),
+    'an audio arm and a video arm are not comparable and must never read identical',
+  ).toBe(false);
+});
+
+// ────────── DERIVED FLOORS: a floor must sit above the ROW'S OWN noise ──────────
+//
+// #1337. The universal floors above are ONE number per metric for ~100 modules,
+// and a fixed number cannot be a floor for a quantity whose own scatter varies by
+// three orders of magnitude between modules. Measured under
+// BEHAVIORAL_NEGATIVE_CONTROL=1 (which omits every perturbation edge, so BOTH
+// arms are the control patch and every printed Δ is the instrument's own scatter):
+//
+//   module      family              drivable   rows that PASSED with NOTHING wired
+//   ─────────   ─────────────────   ────────   ───────────────────────────────────
+//   analogVco   steady oscillator      4          0
+//   colorizer   video effect           4          2
+//   snaredrum   percussive voice      26         24
+//
+// The universal floors are not "slightly loose" — they are calibrated for the
+// DETERMINISTIC class (analogVco: its control render repeats to the last bit, so
+// any floor at all works) and are meaningless for the STOCHASTIC class. snaredrum
+// is a drum voice re-struck by a free-running 4 Hz sequencer: its control's own
+// spectral centroid scatters ±4000 Hz across the five snapshots, against a
+// `centMean` floor of 30 Hz and a `centRange` floor of 60 Hz. Those two floors
+// cannot fail to fire. 24 of 26 ports were certified "this port perturbs the
+// observed output" while measuring nothing but strike-to-strike variance.
+//
+// A false PASS is strictly worse than a red row: the behavioral lane is
+// informational, so a red row is investigated and a false green is not — it
+// silently certifies coverage that does not exist, and would keep certifying it
+// if the CV were cut.
+//
+// THE FIX IS THE SHAPE, NOT THE NUMBERS. Every arm already reports five snapshots,
+// so each row can measure its OWN null scatter in the same run it is judged in —
+// no per-module table, nothing to hand-author, nothing to go stale. Each metric's
+// effective floor becomes
+//
+//     max(universal floor, NULL_NOISE_SIGMAS × the row's own sampling error)
+//
+// i.e. a delta must clear BOTH the absolute floor AND the row's own noise. It is a
+// MAX, so this can only ever make the gate stricter: no row that fails today can
+// start passing because of it.
+//
+// ⚠ Why the two families take their σ from different arms — this is the one
+// subtle part, and getting it backwards makes the range terms self-defeating:
+//
+//   • MEAN terms use the WELCH standard error of the difference of means, from
+//     BOTH arms. Standard two-sample practice, and it does not fight itself: a
+//     perturbation that shifts the mean shifts it against both arms' scatter.
+//
+//   • RANGE / range-RATIO terms take σ from the CONTROL ARM ONLY. These terms
+//     exist to catch a modulator WIDENING the patched arm's dispersion — so the
+//     patched arm's sd is the SIGNAL, and folding it into the noise estimate
+//     would cancel exactly what is being detected (a modulator that inflates the
+//     range 2.3× also inflates a both-arms noise estimate, and the term could
+//     never fire). The control arm is the null hypothesis — "the patched arm is
+//     the control arm re-run" — and under that null both arms share one σ, so
+//     control-anchoring is unbiased where it matters: under negative control.
+//
+// ⚠ WHY 5σ AND NOT 3σ — this number was MEASURED, and the first value failed.
+//
+// At 3σ the negative control read 0, 0, then 1 false pass over three consecutive
+// runs of snaredrum on unchanged code. That is not bad luck, it is arithmetic:
+// the pass predicate is an OR over THIRTEEN terms evaluated on 26 rows, so a
+// per-term 3σ tail of ~0.0027 gets ~234 chances per module and yields ~0.6
+// expected false passes per run. A per-TERM significance is not a per-ROW one,
+// and a per-row one is not a per-SWEEP one — the OR is a multiple-comparisons
+// problem and the multiplier has to pay for it (the Bonferroni shape: with M
+// terms OR-ed, per-term α must be α/M).
+//
+// The full sweep is ~100 modules and well over a thousand rows, and this gate is
+// only worth having if it is green when the calibration is sound — so the target
+// is ≪1 expected false pass across the WHOLE sweep, not per module. 5σ buys that
+// with room for the tails being heavier than normal (σ is estimated from FIVE
+// snapshots, so the true null is Student-t-ish, not Gaussian).
+//
+// MEASURED, both directions, 3 consecutive negative-control runs (local, 1
+// worker), reading the `maxNullZ` each module now reports:
+//
+//   NULL  (nothing wired)   analogVco 0.00 0.00 0.00 | colorizer 0.29 0.20 0.39
+//                           snaredrum 2.97 4.49 2.36        ← 26 rows × ~9 terms
+//   REAL  (deciding rows)   analogVco.pitch 3.8 · snaredrum.choke_in 7.0 ·
+//                           snaredrum.gate_in 8.4 · colorizer.in 23.8 ·
+//                           snaredrum.trigger_in 86.7 · analogVco.sync 392.9
+//
+// Note what the two columns show: only the STOCHASTIC class produces at-risk
+// draws at all (analogVco reads 0.00 — its deltas never even reach a universal
+// floor), so raising this multiplier costs sensitivity ONLY on the modules whose
+// rows were least trustworthy to begin with. That asymmetry is why it is set
+// generously.
+//
+// ⚠ AND WHERE THE HEADROOM ACTUALLY IS — 4.49σ null against a 7.0σ weakest true
+// effect is a factor of 1.6, not a comfortable gap. 5σ is chosen to sit inside
+// it; 7σ would start cutting genuine rows (choke_in). Two consequences, stated
+// so they are not rediscovered:
+//   • This was calibrated on 102 rows. The FULL sweep is well over a thousand,
+//     and the maximum of more draws is larger — expect sweep-wide null maxima
+//     above these. If `maxNullZ` lands near 5 on a full run, this multiplier is
+//     under-sized for the sweep and must go up.
+//   • The right response to a false pass is this multiplier plus the measurement
+//     that justified it — NEVER an exemption, and never a per-module floor.
+//
+// ⚠ THIS IS A POLICY CONSTANT ON A DERIVED MEASUREMENT, and it is checkable
+// rather than asserted: every negative-control row reports its own |Δ|/σ, and
+// each module logs the largest one as `maxNullZ`. Do NOT tune it to rescue one
+// module's row.
+//
+// ────────── WHAT THIS MODEL STILL CANNOT SEE ──────────
+//
+// State the gate's scope inside the gate. σ here is estimated from the FIVE
+// SNAPSHOTS OF ONE SPAWN, so it captures within-run scatter and is blind to
+// BETWEEN-SPAWN scatter — and the two arms ARE separate spawns (fresh page,
+// fresh AudioContext, fresh engine).
+//
+// For the MEAN family that gap is small and the model holds: across every
+// negative-control row measured, no mean term exceeded 2.2σ.
+//
+// For the RANGE family it does NOT hold, and this is the source of every
+// residual false pass measured (3 of 143 rows: clap.accent_in 6.5σ,
+// resofilter.cutoff_cv 5.3σ, vca.cv 7.4σ). The model treats the two arms as
+// sharing one σ and prices only the RANGE STATISTIC's sampling error at that
+// fixed σ — but σ ITSELF varies spawn to spawn, and with five snapshots it
+// varies enormously. Measured, both arms unwired and identical:
+//
+//   vca.cv          spectral-centroid range  501 → 2379   (4.7×)
+//   clap.accent_in  crest range             0.41 → 1.59   (3.9×)
+//
+// Comparing two dispersions from 5 samples each is an F(4,4) problem, and
+// F(4,4) is so wide that a 4-5× ratio is an ordinary draw. So a range-expansion
+// term cannot be made both sensitive and safe at this sample size, and raising
+// NULL_NOISE_SIGMAS cannot fix it: the null reaches 7.4σ while the weakest
+// genuine effect measured sits at 7.0σ — the distributions OVERLAP.
+//
+// ⚠ AND THE OBVIOUS "FIX" IS WRONG, measured in both directions. Anchoring the
+// range σ to max(control, patched) DOES suppress all three residuals — and it
+// also kills analogVco.tune (zc range 1 → 19, a real LFO sweep), because the
+// patched arm's dispersion is the signal. That is not a trade worth making
+// silently, which is why the control-anchoring above stands.
+//
+// THE REAL FIX needs more data per row, not a different constant: either raise
+// AUDIO_CAPTURES / VIDEO_CAPTURES, or spawn the CONTROL TWICE and measure the
+// dispersion's own spawn-to-spawn variability directly. Both cost behavioral-lane
+// wall time (a second control spawn is ~+50 % on a ~30-50 min lane), so both need
+// owner sign-off on the CI budget before anyone implements one.
+const NULL_NOISE_SIGMAS = 5;
+
+/**
+ * SD of the RANGE statistic of n samples, in units of σ (the control-chart d3).
+ * d3 sits in 0.79–0.89 for every n from 2 to 10, so ONE constant covers every
+ * capture this harness can produce (AUDIO_CAPTURES=5 → 0.864, VIDEO_CAPTURES=3 →
+ * 0.888, and a short capture cannot fall outside the band). The band's TOP is
+ * used deliberately: this value scales a FLOOR, so erring high errs strict.
+ */
+const RANGE_STAT_SD_OVER_SIGMA = 0.89;
+
+/** The row's own sampling error, per metric family — the null scatter a delta
+ *  must beat before it counts as evidence about the module. */
+interface NullNoise {
+  /** SE of the difference of the two arms' MEANS (Welch, both arms). */
+  mean: number;
+  /** SE of the difference of the two arms' RANGES (control-anchored). */
+  range: number;
+}
+
+function nullNoise(c: Dispersion, p: Dispersion): NullNoise {
+  const varOver = (d: Dispersion) => (d.n > 1 ? (d.sd * d.sd) / d.n : 0);
+  return {
+    mean: Math.sqrt(varOver(c) + varOver(p)),
+    // Two independent range draws from the control's σ; √2 for the difference.
+    range: RANGE_STAT_SD_OVER_SIGMA * c.sd * Math.SQRT2,
+  };
 }
 
 function computeDelta(
@@ -2971,31 +3290,101 @@ function computeDelta(
     // per-module entry in BEHAVIORAL_DELTA_THRESHOLDS overrides only the
     // floors that need recalibrating for that specific port.
     const t = thresholds;
+
+    // The row's OWN null scatter, per metric, measured from this run's snapshots
+    // (#1337). `floorMean` / `floorRange` are what every term below is actually
+    // compared against: the universal floor RAISED to the row's own noise where
+    // that noise is the larger of the two.
+    const nsRms = nullNoise(c.rms, p.rms);
+    const nsPeak = nullNoise(c.peak, p.peak);
+    const nsCrest = nullNoise(c.crest, p.crest);
+    const nsZc = nullNoise(c.zeroCrossings, p.zeroCrossings);
+    const nsCent = nullNoise(c.spectralCentroid, p.spectralCentroid);
+    const floorMean = (universal: number, ns: NullNoise) =>
+      Math.max(universal, NULL_NOISE_SIGMAS * ns.mean);
+    const floorRange = (universal: number, ns: NullNoise) =>
+      Math.max(universal, NULL_NOISE_SIGMAS * ns.range);
+
+    const fRmsMean = floorMean(t.rmsMean, nsRms);
+    const fRmsRange = floorRange(t.rmsRange, nsRms);
+    const fPeakMean = floorMean(t.peakMean, nsPeak);
+    const fCrestMean = floorMean(t.crestMean, nsCrest);
+    const fCrestRange = floorRange(t.crestRange, nsCrest);
+    const fZcMean = floorMean(t.zcMean, nsZc);
+    const fZcRange = floorRange(t.zcRange, nsZc);
+    const fCentMean = floorMean(t.centMean, nsCent);
+    const fCentRange = floorRange(t.centRange, nsCent);
+
     // Each term evaluated independently, then OR-ed over the DECIDING set. With
     // the default `ALL_DECIDING_METRICS` this is exactly the OR it replaced,
     // term for term; a per-port entry in BEHAVIORAL_DECIDING_METRICS narrows the
     // set for that row alone (see the table there for why a row would need it).
+    //
+    // ⚠ The four RATIO terms carry the derived floor as an extra CONJUNCT rather
+    // than replacing their own gate. A ratio is scale-free, so on a metric whose
+    // own scatter is ±95 % of its mean (snaredrum's centroid) `centMeanRatio >
+    // 1.15` is a coin flip that the ratio's own guards cannot see — they bound
+    // the metric's MAGNITUDE, never its NOISE. Requiring the underlying absolute
+    // difference to also clear the row's null scatter is what makes the ratio a
+    // statement about the module.
     const fired: Record<DecidingMetric, boolean> = {
-      rmsMean: rmsMeanΔ > t.rmsMean,
-      rmsRange: rmsRangeΔ > t.rmsRange,
-      peakMean: peakMeanΔ > t.peakMean,
-      crestMean: crestMeanΔ > t.crestMean,
-      crestRange: crestRangeΔ > t.crestRange,
-      zcMean: zcMeanΔ > t.zcMean,
-      zcRange: zcRangeΔ > t.zcRange,
-      centMean: centMeanΔ > t.centMean,
-      centRange: centRangeΔ > t.centRange,
+      rmsMean: rmsMeanΔ > fRmsMean,
+      rmsRange: rmsRangeΔ > fRmsRange,
+      peakMean: peakMeanΔ > fPeakMean,
+      crestMean: crestMeanΔ > fCrestMean,
+      crestRange: crestRangeΔ > fCrestRange,
+      zcMean: zcMeanΔ > fZcMean,
+      zcRange: zcRangeΔ > fZcRange,
+      centMean: centMeanΔ > fCentMean,
+      centRange: centRangeΔ > fCentRange,
       centMeanRatio:
-        centMeanRatio > 1.15 && Math.max(c.spectralCentroid.mean, p.spectralCentroid.mean) > 50,
+        centMeanRatio > 1.15 && Math.max(c.spectralCentroid.mean, p.spectralCentroid.mean) > 50
+        && centMeanΔ > NULL_NOISE_SIGMAS * nsCent.mean,
       // Range-ratio gates: control's range must be small enough that
       // expansion is meaningful, and patched's range must clear an
       // absolute floor (so 0.0001 → 0.0005 doesn't trigger).
-      zcRangeRatio: zcRangeRatio > 4 && Math.max(c.zeroCrossings.range, p.zeroCrossings.range) > 5,
+      zcRangeRatio: zcRangeRatio > 4 && Math.max(c.zeroCrossings.range, p.zeroCrossings.range) > 5
+        && zcRangeΔ > NULL_NOISE_SIGMAS * nsZc.range,
       centRangeRatio:
-        centRangeRatio > 4 && Math.max(c.spectralCentroid.range, p.spectralCentroid.range) > 30,
-      rmsRangeRatio: rmsRangeRatio > 4 && Math.max(c.rms.range, p.rms.range) > 0.01,
+        centRangeRatio > 4 && Math.max(c.spectralCentroid.range, p.spectralCentroid.range) > 30
+        && centRangeΔ > NULL_NOISE_SIGMAS * nsCent.range,
+      rmsRangeRatio: rmsRangeRatio > 4 && Math.max(c.rms.range, p.rms.range) > 0.01
+        && rmsRangeΔ > NULL_NOISE_SIGMAS * nsRms.range,
     };
     const exceeded = deciding.some((m) => fired[m]);
+
+    // AUDIT TRAIL: terms that cleared the UNIVERSAL floor but not this row's own
+    // noise. This is the line that explains a row which used to pass and no
+    // longer does — without it the change reads as "the sweep got stricter for
+    // no stated reason", and the per-module tables this replaces were authored
+    // by hand precisely because the harness printed no such measurement (#1337).
+    const suppressedTerms: string[] = [];
+    let nullZ = 0;
+    // A term only counts toward the headroom if the universal floor would have
+    // let it through (σ is what has to stop it) and σ is non-degenerate (a
+    // perfectly steady control gives σ=0, where the universal floor IS the gate
+    // and a ratio to zero would be meaningless rather than alarming).
+    const audit = (name: string, d: number, universal: number, sigma: number) => {
+      if (d <= universal) return;
+      if (sigma > 0) nullZ = Math.max(nullZ, d / sigma);
+      if (d <= Math.max(universal, NULL_NOISE_SIGMAS * sigma)) {
+        suppressedTerms.push(
+          `${name}(Δ${d.toPrecision(3)}=${(sigma > 0 ? d / sigma : Infinity).toFixed(1)}σ≤${NULL_NOISE_SIGMAS}σ)`,
+        );
+      }
+    };
+    audit('rmsMean', rmsMeanΔ, t.rmsMean, nsRms.mean);
+    audit('peakMean', peakMeanΔ, t.peakMean, nsPeak.mean);
+    audit('crestMean', crestMeanΔ, t.crestMean, nsCrest.mean);
+    audit('zcMean', zcMeanΔ, t.zcMean, nsZc.mean);
+    audit('centMean', centMeanΔ, t.centMean, nsCent.mean);
+    audit('rmsRange', rmsRangeΔ, t.rmsRange, nsRms.range);
+    audit('crestRange', crestRangeΔ, t.crestRange, nsCrest.range);
+    audit('zcRange', zcRangeΔ, t.zcRange, nsZc.range);
+    audit('centRange', centRangeΔ, t.centRange, nsCent.range);
+    const suppressed = suppressedTerms.length === 0
+      ? ''
+      : ` | below-own-noise=[${suppressedTerms.join(',')}]`;
     // A restricted row PRINTS its restriction — a red run has to be diagnosable
     // without reading this file, and "which metrics were even allowed to decide"
     // is the first thing you need.
@@ -3006,6 +3395,7 @@ function computeDelta(
 
     return {
       exceeded,
+      nullZ,
       description:
         `audio[${c.samples}↔${p.samples}] ` +
         `C(rms=${c.rms.mean.toFixed(3)}±${c.rms.range.toFixed(3)} ` +
@@ -3018,7 +3408,7 @@ function computeDelta(
         `crest=${p.crest.mean.toFixed(2)}±${p.crest.range.toFixed(2)}) ` +
         `| Δμ(rms=${rmsMeanΔ.toFixed(3)} peak=${peakMeanΔ.toFixed(3)} zc=${zcMeanΔ.toFixed(0)} cent=${centMeanΔ.toFixed(0)}Hz crest=${crestMeanΔ.toFixed(2)}) ` +
         `Δr(rms=${rmsRangeΔ.toFixed(3)} zc=${zcRangeΔ.toFixed(0)} cent=${centRangeΔ.toFixed(0)}Hz)` +
-        restricted,
+        ` | z=${nullZ.toFixed(1)}σ` + restricted + suppressed,
     };
   }
   if (control.kind === 'video' && patched.kind === 'video') {
@@ -3027,17 +3417,45 @@ function computeDelta(
     const varMeanΔ = Math.abs(p.variance.mean - c.variance.mean);
     const varRangeΔ = Math.abs(p.variance.range - c.variance.range);
     const nbMeanΔ = Math.abs(p.nonBlackFrac.mean - c.nonBlackFrac.mean);
-    const exceeded = varMeanΔ > 5 || varRangeΔ > 10 || nbMeanΔ > 0.01;
+    // Same derived floors as the audio branch (#1337), and video needed them
+    // just as badly: under BEHAVIORAL_NEGATIVE_CONTROL, `colorizer` passed 2 of
+    // its 4 ports with nothing wired — Δμvar 30.5 against the flat floor of 5,
+    // while the control arm's OWN per-frame variance ranged ±281 in the same
+    // three frames. The video floors are the last hardcoded numbers in this
+    // function, so they are named here rather than left inline.
+    const nsVar = nullNoise(c.variance, p.variance);
+    const nsNb = nullNoise(c.nonBlackFrac, p.nonBlackFrac);
+    const fVarMean = Math.max(UNIVERSAL_VIDEO_THRESHOLDS.varMean, NULL_NOISE_SIGMAS * nsVar.mean);
+    const fVarRange = Math.max(UNIVERSAL_VIDEO_THRESHOLDS.varRange, NULL_NOISE_SIGMAS * nsVar.range);
+    const fNbMean = Math.max(UNIVERSAL_VIDEO_THRESHOLDS.nonBlackMean, NULL_NOISE_SIGMAS * nsNb.mean);
+    const exceeded = varMeanΔ > fVarMean || varRangeΔ > fVarRange || nbMeanΔ > fNbMean;
+    const suppressedTerms: string[] = [];
+    let nullZ = 0;
+    const audit = (name: string, d: number, universal: number, sigma: number) => {
+      if (d <= universal) return;
+      if (sigma > 0) nullZ = Math.max(nullZ, d / sigma);
+      if (d <= Math.max(universal, NULL_NOISE_SIGMAS * sigma)) {
+        suppressedTerms.push(
+          `${name}(Δ${d.toPrecision(3)}=${(sigma > 0 ? d / sigma : Infinity).toFixed(1)}σ≤${NULL_NOISE_SIGMAS}σ)`,
+        );
+      }
+    };
+    audit('varMean', varMeanΔ, UNIVERSAL_VIDEO_THRESHOLDS.varMean, nsVar.mean);
+    audit('varRange', varRangeΔ, UNIVERSAL_VIDEO_THRESHOLDS.varRange, nsVar.range);
+    audit('nbMean', nbMeanΔ, UNIVERSAL_VIDEO_THRESHOLDS.nonBlackMean, nsNb.mean);
     return {
       exceeded,
+      nullZ,
       description:
         `video[${c.samples}↔${p.samples}] ` +
         `C(var=${c.variance.mean.toFixed(1)}±${c.variance.range.toFixed(1)} nb=${c.nonBlackFrac.mean.toFixed(4)}) ` +
         `P(var=${p.variance.mean.toFixed(1)}±${p.variance.range.toFixed(1)} nb=${p.nonBlackFrac.mean.toFixed(4)}) ` +
-        `| Δμvar=${varMeanΔ.toFixed(2)} ΔRvar=${varRangeΔ.toFixed(2)} Δμnb=${nbMeanΔ.toFixed(4)}`,
+        `| Δμvar=${varMeanΔ.toFixed(2)} ΔRvar=${varRangeΔ.toFixed(2)} Δμnb=${nbMeanΔ.toFixed(4)}` +
+        ` | z=${nullZ.toFixed(1)}σ` +
+        (suppressedTerms.length === 0 ? '' : ` | below-own-noise=[${suppressedTerms.join(',')}]`),
     };
   }
-  return { exceeded: false, description: 'sink-kind mismatch (control vs patched diverged)' };
+  return { exceeded: false, nullZ: 0, description: 'sink-kind mismatch (control vs patched diverged)' };
 }
 
 // ────────── Patch construction ──────────
@@ -3528,6 +3946,8 @@ test.describe('per-module per-port: BEHAVIORAL input coverage (output changes on
       // purpose, so identity is the EXPECTED outcome — counted, not failed, and
       // asserted non-zero at the end so the detector proves it can fire.
       let ncIdentityHits = 0;
+      // Largest |Δ|/σ observed on any at-risk term across this module's rows.
+      let maxNullZ = 0;
 
       for (const port of drivableInputs) {
         // Per-port TEST-input source override (e.g. moog911a.trig1 needs a
@@ -3656,6 +4076,10 @@ test.describe('per-module per-port: BEHAVIORAL input coverage (output changes on
           thresholdsFor(mod.type, port.id),
           decidingMetricsFor(mod.type, port.id),
         );
+        // Largest |Δ|/σ any at-risk term reached on this module. Under negative
+        // control it is a pure null draw, so the module's max IS the measured
+        // headroom of NULL_NOISE_SIGMAS (see its comment).
+        maxNullZ = Math.max(maxNullZ, delta.nullZ);
         const identical = samplesBitIdentical(controlSample, patchedSample);
         if (identical && negativeControl) {
           // Expected here: this arm has no perturbation edge at all.
@@ -3694,22 +4118,73 @@ test.describe('per-module per-port: BEHAVIORAL input coverage (output changes on
       ).toEqual([]);
 
       if (NEGATIVE_CONTROL) {
-        // SELF-VALIDATION: this mode omits every perturbation edge, so it is a
-        // machine for producing bit-identical pairs. Zero hits would mean the
-        // detector above cannot fire (or the render stopped being deterministic)
-        // — either way the harness-miss assertion would be decoration.
+        // One greppable line per module, so the false-positive RATE is a
+        // measurement anyone can re-take rather than a number in a PR body.
+        // eslint-disable-next-line no-console
+        console.log(
+          `[behavioral][negative-control] ${mod.type}: rows=${drivableInputs.length} `
+          + `falsePasses=${passes.length} noDelta=${failures.length} bitIdentical=${ncIdentityHits} `
+          + `maxNullZ=${maxNullZ.toFixed(2)}σ (floor ${NULL_NOISE_SIGMAS}σ)`,
+        );
+        // The no-delta rows are the CORRECT answer in this mode, so they are not
+        // asserted — but they carry the `below-own-noise=[…]` audit trail, which
+        // is the only place the derived floor's MARGIN is visible (how close the
+        // null scatter came to clearing its floor). Print them, or the gate is
+        // green with nothing to inspect and the next person re-derives it by
+        // hand-editing this file — the exact hole #1337 was filed about.
+        for (const line of failures) {
+          // eslint-disable-next-line no-console
+          console.log(`[behavioral][negative-control] null ${line}`);
+        }
+
+        // SELF-VALIDATION of the #1330 discriminator has MOVED — see the
+        // permanent two-direction negative control next to `samplesBitIdentical`.
+        // It used to be asserted here as `ncIdentityHits > 0` per module, which
+        // measured the MODULE's determinism rather than the predicate's ability
+        // to fire: analogVco scored 1 then 0 on consecutive negative-control runs
+        // of unchanged code, and the throw pre-empted the gate below. The count
+        // stays in the log line above as a diagnostic; it no longer gates.
+
+        // ⚠ THE #1337 GATE. Under negative control there is no perturbation edge
+        // in the graph, so NO row can have evidence that its port did anything.
+        // Every PASS here is a false positive by construction — the sweep
+        // certifying coverage of a port it never stimulated.
+        //
+        // This mode used to be a DIAGNOSTIC that was red by design: it asserted
+        // `failures` empty, which under negative control is every row, so its
+        // output could not distinguish "the calibration is sound" from "the
+        // module is broken" — you had to read the pass count out of a failure
+        // message by hand. Inverted here, the mode becomes a check that can
+        // GATE: green ⟺ no row can pass without a perturbation edge.
+        //
+        // `failures` is deliberately NOT asserted below in this mode: a row
+        // reporting "no observable delta" when nothing was wired is the CORRECT
+        // answer, not a defect.
         expect(
-          ncIdentityHits,
-          `${mod.type}: BEHAVIORAL_NEGATIVE_CONTROL=1 omits every perturbation edge, so at least `
-          + `one row must read bit-identical to its control. Zero hits means samplesBitIdentical `
-          + `cannot fire — the #1330 discriminator would be decoration.`,
-        ).toBeGreaterThan(0);
+          passes,
+          `${mod.type}: ${passes.length} of ${drivableInputs.length} rows reported "this port `
+          + `perturbs the observed output" with NO PERTURBATION EDGE WIRED (#1337).\n`
+          + `  Each line below is a FALSE POSITIVE: the row's delta cleared its floors on the\n`
+          + `  module's own run-to-run scatter. The fix is NEVER an exemption (that blinds the\n`
+          + `  sweep to a port that may work) and never a hand-tuned per-module floor — it is\n`
+          + `  that the metric which fired has a null scatter larger than its floor.\n`
+          + `  READ maxNullZ ON THE LINE ABOVE: it is the largest |Δ|/σ this module reached.\n`
+          + `  If it is at or past NULL_NOISE_SIGMAS (${NULL_NOISE_SIGMAS}), the multiplier is under-sized for the\n`
+          + `  sweep's row count and THAT is the fix — raise it and record the measurement.\n`
+          + `  "below-own-noise=[…]" on the neighbouring rows shows the derived floor working.\n`
+          + `  ⚠ A row decided by a RANGE term (rms/crest/zc/centRange, or a *RangeRatio) is\n`
+          + `  the KNOWN residual, not a new defect — see "WHAT THIS MODEL STILL CANNOT SEE"\n`
+          + `  by NULL_NOISE_SIGMAS. It needs more samples per row, not a bigger multiplier.\n    `
+          + `${passes.join('\n    ')}`,
+        ).toEqual([]);
       }
 
-      expect(
-        failures,
-        `${mod.type}: every drivable input perturbed the observed output\n  Failures:\n    ${failures.join('\n    ')}\n  Total drivable inputs: ${drivableInputs.length} | Passed: ${passes.length}`,
-      ).toEqual([]);
+      if (!NEGATIVE_CONTROL) {
+        expect(
+          failures,
+          `${mod.type}: every drivable input perturbed the observed output\n  Failures:\n    ${failures.join('\n    ')}\n  Total drivable inputs: ${drivableInputs.length} | Passed: ${passes.length}`,
+        ).toEqual([]);
+      }
 
       expect(
         errors.significant(),
