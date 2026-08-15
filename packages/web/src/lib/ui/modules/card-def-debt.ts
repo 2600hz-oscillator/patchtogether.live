@@ -55,19 +55,26 @@ export const OPERATIONAL_DEBT: Readonly<Record<string, readonly string[]>> = {
   'Moog921bCard.svelte': ['range.curve'],
   'PeakstateCard.svelte': ['complexity.curve'],
 
-  // ── The analogVco bug, on its twin ────────────────────────────────────────
-  // Identical to the `AnalogVcoCard` defect fixed in the PR that added this
-  // gate: the def declares `fmAmount`/`pmAmount` as `min: -1`, the card passes
-  // `min={0}`, so the knob reaches half the contract while the def-driven dock
-  // face reaches all of it. The FIX IS THE SAME ONE LINE.
+  // ── The analogVco bug, on its twin: PAID 2026-08-15 (#1681), entry DELETED ─
+  // `WavetableVcoCard.svelte: ['fmAmount.min', 'pmAmount.min']` lived here.
+  // The def declares both as `min: -1`, the card passed `min={0}`, so the
+  // documented polarity inversion was unreachable from the card while the
+  // def-driven dock face reached all of it.
   //
-  // It is deferred because `wavetableVco` is in `STRICT_VRT_MODULES` and
-  // `analogVco` is not: binding `min` to the def moves the fader handle for
-  // value 0 from the bottom of the track to its middle, which re-captures a
-  // REQUIRED baseline on BOTH platforms. Per CLAUDE.md a drain without its
-  // re-capture ships a red lane, so this rides a PR that also carries the
-  // `vrt-update.yml` dispatch.
-  'WavetableVcoCard.svelte': ['fmAmount.min', 'pmAmount.min'],
+  // The entry named its own release condition — `wavetableVco` is in
+  // `STRICT_VRT_MODULES`, binding `min` moves the fader handle for value 0 from
+  // the bottom of the track to its middle, and a drain without its re-capture
+  // ships a red lane, "so this rides a PR that also carries the
+  // `vrt-update.yml` dispatch". The Q9 FACEPLATE PR is definitionally that PR,
+  // so it was paid there rather than deferred again: the card is now
+  // `paramSpec`-bound end to end and enrolled in `RANGE_BOUND_CARDS` +
+  // `MAPPING_BOUND_CARDS`, which is a STRONGER property than the agreement this
+  // entry was suppressing — it cannot re-type the number at all.
+  //
+  // ⚠ NO REPLACEMENT COUNTER, deliberately (CLAUDE.md: when debt is paid,
+  // delete the mechanism, do not leave a ratchet behind). What still guards it
+  // is the unconditional `unledgered(...) === []` assertion in
+  // `card-def-agreement.test.ts` — the same predicate, with one fewer exemption.
 };
 
 /** `cardBasename` → `<paramId>.<field>` pairs that disagree on a VOCABULARY

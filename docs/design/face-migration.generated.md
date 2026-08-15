@@ -179,7 +179,7 @@ author a `face` and rank the controls — no new platform capability.
 | `warrensvisions` | video | — | — |
 | `wavecel` | audio | — | — |
 | `wavesculpt` | audio | — | — |
-| `wavetableVco` | audio | — | — |
+| `wavetableVco` | audio | done | — |
 
 ## `blocked`
 

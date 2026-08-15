@@ -370,6 +370,33 @@ export const FACES = [
   // clock and no tap, so the picture is the same on a silent rack and a running
   // one. That is why it needs no mask and no VRT_LIVE_SURFACES entry.
   { type: 'warrensspectrum', pages: 5 },
+  // THE FACEPLATE QUEUE · Q9 — the timbre-sweep oscillator. `pages: 2` is the
+  // POST-hero split count: two declared pages, and promoting `wavePos` into the
+  // hero leaves `wave` holding `pmAmount` rather than emptying it, so no band is
+  // dropped (heroFacePlan only drops an EMPTIED band — the `noise` case).
+  //
+  // ⚠ THE THIRD FREE-RUNNING ENTRY, after analogVco and macrooscillator, and
+  // therefore the third scene that EXERCISES #1420's pre-frame freeze rather
+  // than being indifferent to it. It sounds the instant it spawns: `factory`
+  // posts the table and the worklet's phase accumulator advances on
+  // `freq / sampleRate` with no gate, no note and no input required — three of
+  // its four worklet inputs can be empty and it still runs. Its `scope` glyph
+  // is a live analyser tap on `audio`, so without the freeze it would draw a
+  // moving trace, which is exactly the condition that measured 254/154/315 px
+  // on analogVco before #1420.
+  //
+  // ⚠ WHAT IT IS *NOT*: a fourth independent witness. analogVco fails a
+  // mis-ordered freeze at a hard, repeatable 337 px and macrooscillator fails
+  // it INTERMITTENTLY (0/0/192/173 over four boot pairs) — that pair is what
+  // establishes the failure mode is module-dependent, and this entry has not
+  // been probed with `AUDIT_NO_FREEZE=1` / `PROBE_FREEZE_LATE=1` at all. It is
+  // enrolled as an ordinary strict scene that happens to depend on the freeze;
+  // do not cite it as coverage for the ORDERING regression until someone runs
+  // `vrt-face-audio-probe` against it and writes the numbers here, and do not
+  // retire either of the two witnesses on the strength of it.
+  //
+  // No mask, like both of them: it is captured strict, glyph included.
+  { type: 'wavetableVco', pages: 2 },
   // FACE BATCH 6 · the four-stage destructive echo. `pages: 2` is the POST-hero
   // split count: two declared pages, and promoting `feedback` into the hero
   // leaves `the loop` with DECAY + MIX rather than emptying it, so no band is

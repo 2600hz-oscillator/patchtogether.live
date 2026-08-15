@@ -98,6 +98,7 @@ import { sidecarDef } from '$lib/audio/modules/sidecar';
 import { snaredrumDef } from '$lib/audio/modules/snaredrum';
 import { vcaDef } from '$lib/audio/modules/vca';
 import { warrensspectrumDef } from '$lib/audio/modules/warrensspectrum';
+import { wavetableVcoDef } from '$lib/audio/modules/wavetable-vco';
 import type { ParamDef } from '$lib/graph/types';
 
 /**
@@ -289,6 +290,13 @@ const RANGE_BOUND_CARDS: Readonly<Record<string, { params: readonly ParamDef[] }
   'SnaredrumCard.svelte': snaredrumDef,
   'VcaCard.svelte': vcaDef,
   'WarrensspectrumCard.svelte': warrensspectrumDef,
+  // THE FACEPLATE QUEUE · Q9. Enrolled while PAYING a live `OPERATIONAL_DEBT`
+  // entry rather than while tidying: this card passed `min={0}` on `fmAmount`
+  // and `pmAmount` against a def declaring `-1`, so binding it is a BUG FIX and
+  // the enrolment is what stops the number from being re-typed at all. Range
+  // AND mapping — every Fader reads `P.<id>.{min,max,defaultValue,label,units,
+  // curve}` off `paramSpec(wavetableVcoDef, …)`, so it is in both lists.
+  'WavetableVcoCard.svelte': wavetableVcoDef,
 };
 
 /**
@@ -335,6 +343,10 @@ const MAPPING_BOUND_CARDS: readonly string[] = [
   'SnaredrumCard.svelte',
   'VcaCard.svelte',
   'WarrensspectrumCard.svelte',
+  // THE FACEPLATE QUEUE · Q9. `units` is bound too, not merely absent: `tune`
+  // declares `st` and `fine` declares `¢`, and both now come off the ParamDef
+  // rather than being hand-typed beside a `min` that disagreed with it.
+  'WavetableVcoCard.svelte',
 ];
 
 /**

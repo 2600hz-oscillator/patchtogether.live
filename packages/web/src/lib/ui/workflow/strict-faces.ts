@@ -790,6 +790,37 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // face was written (`art/scenarios/warrensspectrum/cv-path.test.ts`), because
   // the two modules audited before it were both defective (#1661, #1662).
   'warrensspectrum',
+  // THE FACEPLATE QUEUE · Q9 — the timbre-sweep oscillator (2026-08-15).
+  //
+  // A free-running voice — the third in the roster, after analogVco and
+  // macrooscillator. Everything the header note above says about #1420 applies
+  // here and is the reason this is not a repeat of the analogVco drop:
+  // `bootWithFace` suspends the graph before the tile is framed, so a live
+  // `scope` glyph reads zeros like every struck sibling. The glyph is kept — on
+  // a WAVETABLE oscillator the trace is the readout of the control the hero
+  // promotes. It is NOT a third freeze-ORDERING witness; see the roster entry
+  // in `_shell-faces.ts` for what has and has not been probed.
+  //
+  // ⚠ THE AUDIT CAME FIRST, and for once it found nothing: all five declared
+  // `paramTarget` CV inputs move the audio through the CV path
+  // (`art/scenarios/wavetable-vco/cv-path.test.ts`), and the KNOB and CV legs
+  // agree to every printed digit on every row — the strong form, since it says
+  // the CV terminal is the SAME terminal the knob writes, not merely a live
+  // one. That result is only worth anything because the sweep carries its
+  // positive controls (a GainNode leg, a worklet-AudioParam leg, and a per-input
+  // knob leg) permanently; a green sweep with no controls is indistinguishable
+  // from a sweep that measured nothing.
+  //
+  // ⚠ IT DID FIND A LIVE CARD/DEF DIVERGENCE, and this PR is what pays it.
+  // `WavetableVcoCard` passed `min={0}` on `fmAmount`/`pmAmount` where the def
+  // declares `-1` — the analogVco backdraft class, so the documented polarity
+  // inversion was unreachable from the card while the def-driven dock face
+  // reaches all of it. It sat in `OPERATIONAL_DEBT` with a stated release
+  // condition ("rides a PR that also carries the vrt-update.yml dispatch"), and
+  // a face PR is definitionally that PR: the card is now `paramSpec`-bound, the
+  // debt entry is DELETED rather than re-worded, and the card baseline is
+  // re-captured by this branch's dispatch.
+  'wavetableVco',
   // FACE BATCH 6 · the four-stage destructive echo (2026-08-15).
   //
   // ⚠ THE FACE EXISTS BECAUSE TWO OF THE FIVE DIALS ARE A STABILITY BOUNDARY
