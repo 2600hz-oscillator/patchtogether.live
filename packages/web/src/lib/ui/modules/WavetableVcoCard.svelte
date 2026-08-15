@@ -1,21 +1,41 @@
 <script lang="ts">
+  // #1681. ⚠ EVERY RANGE, CURVE, UNIT AND LABEL IS BOUND TO THE DEF (`paramSpec`),
+  // NEVER RE-TYPED. This card is the reason that rule has teeth: it shipped
+  // `min={0}` on `fmAmount` and `pmAmount` where the def declares `min: -1`, so
+  // the documented polarity inversion ("negative values invert the modulator's
+  // polarity") was UNREACHABLE from the card while the def-driven dock face
+  // reached all of it — one param, two travels, depending on which surface you
+  // touched. That is the `analogVco` backdraft class verbatim, and it was
+  // invisible to `contract-lock`, `module-docs-lint` and every range assertion,
+  // because they all read the DEF.
+  //
+  // It was carried as a NAMED `OPERATIONAL_DEBT` entry deferred until "a PR
+  // that also carries the vrt-update.yml dispatch", because binding `min` moves
+  // the fader handle for value 0 from the bottom of the track to its middle and
+  // this module is in `STRICT_VRT_MODULES`. The faceplate PR is that PR: the
+  // ledger entry is deleted, the card is enrolled in RANGE_BOUND_CARDS +
+  // MAPPING_BOUND_CARDS, and the baseline is re-captured by the same dispatch
+  // that authors the two new face scenes.
   import type { NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import { wavetableVcoDef } from '$lib/audio/modules/wavetable-vco';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
-  import { cardParams, portsFromDef } from './card-kit';
+  import { cardParams, paramSpec, portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
-  const { set, live } = cardParams(wavetableVcoDef, () => id, () => node);
+  const { paramVal, set, live } = cardParams(wavetableVcoDef, () => id, () => node);
 
-  let tune     = $derived(node?.params.tune     ?? wavetableVcoDef.params.find((p) => p.id === 'tune')!.defaultValue);
-  let fine     = $derived(node?.params.fine     ?? wavetableVcoDef.params.find((p) => p.id === 'fine')!.defaultValue);
-  let wavePos  = $derived(node?.params.wavePos  ?? wavetableVcoDef.params.find((p) => p.id === 'wavePos')!.defaultValue);
-  let fmAmount = $derived(node?.params.fmAmount ?? wavetableVcoDef.params.find((p) => p.id === 'fmAmount')!.defaultValue);
-  let pmAmount = $derived(node?.params.pmAmount ?? wavetableVcoDef.params.find((p) => p.id === 'pmAmount')!.defaultValue);
+  /** THE ONE COPY of every number, curve, unit and label this card paints. */
+  const P = {
+    tune:     paramSpec(wavetableVcoDef, 'tune'),
+    fine:     paramSpec(wavetableVcoDef, 'fine'),
+    wavePos:  paramSpec(wavetableVcoDef, 'wavePos'),
+    fmAmount: paramSpec(wavetableVcoDef, 'fmAmount'),
+    pmAmount: paramSpec(wavetableVcoDef, 'pmAmount'),
+  };
 
 
   const inputs = portsFromDef(wavetableVcoDef.inputs, {
@@ -30,11 +50,11 @@
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="fader-row">
-      <Fader value={tune}     min={-36} max={36}   defaultValue={0} label="Tune" units="st" curve="linear" onchange={set('tune')} moduleId={id} paramId="tune"     readLive={live('tune')} />
-      <Fader value={fine}     min={-100} max={100} defaultValue={0} label="Fine" units="¢"  curve="linear" onchange={set('fine')} moduleId={id} paramId="fine"     readLive={live('fine')} />
-      <Fader value={wavePos}  min={0}   max={1}    defaultValue={0} label="Wave"            curve="linear" onchange={set('wavePos')} moduleId={id} paramId="wavePos"  readLive={live('wavePos')} />
-      <Fader value={fmAmount} min={0}   max={1}    defaultValue={0} label="FM"              curve="linear" onchange={set('fmAmount')} moduleId={id} paramId="fmAmount" readLive={live('fmAmount')} />
-      <Fader value={pmAmount} min={0}   max={1}    defaultValue={0} label="PM"              curve="linear" onchange={set('pmAmount')} moduleId={id} paramId="pmAmount" readLive={live('pmAmount')} />
+      <Fader value={paramVal('tune')} min={P.tune.min} max={P.tune.max} defaultValue={P.tune.defaultValue} label={P.tune.label} units={P.tune.units} curve={P.tune.curve} onchange={set('tune')} moduleId={id} paramId="tune" readLive={live('tune')} />
+      <Fader value={paramVal('fine')} min={P.fine.min} max={P.fine.max} defaultValue={P.fine.defaultValue} label={P.fine.label} units={P.fine.units} curve={P.fine.curve} onchange={set('fine')} moduleId={id} paramId="fine" readLive={live('fine')} />
+      <Fader value={paramVal('wavePos')} min={P.wavePos.min} max={P.wavePos.max} defaultValue={P.wavePos.defaultValue} label={P.wavePos.label} units={P.wavePos.units} curve={P.wavePos.curve} onchange={set('wavePos')} moduleId={id} paramId="wavePos" readLive={live('wavePos')} />
+      <Fader value={paramVal('fmAmount')} min={P.fmAmount.min} max={P.fmAmount.max} defaultValue={P.fmAmount.defaultValue} label={P.fmAmount.label} units={P.fmAmount.units} curve={P.fmAmount.curve} onchange={set('fmAmount')} moduleId={id} paramId="fmAmount" readLive={live('fmAmount')} />
+      <Fader value={paramVal('pmAmount')} min={P.pmAmount.min} max={P.pmAmount.max} defaultValue={P.pmAmount.defaultValue} label={P.pmAmount.label} units={P.pmAmount.units} curve={P.pmAmount.curve} onchange={set('pmAmount')} moduleId={id} paramId="pmAmount" readLive={live('pmAmount')} />
     </div>
   </PatchPanel>
 </div>

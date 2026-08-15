@@ -43,6 +43,13 @@ import {
   vcoPwAuthority,
 } from '$lib/ui/modules/analog-vco-face-model';
 import {
+  fmtWtHz,
+  wtFaceParams,
+  wtFmSpanCents,
+  wtFmSpanHz,
+  wtKnobHz,
+} from '$lib/ui/modules/wavetable-vco-face-model';
+import {
   cloudsCoherenceText,
   cloudsFaceParams,
   cloudsFullLevelText,
@@ -220,6 +227,31 @@ const FACE_READOUT_VALUES: Readonly<Record<string, FaceReadoutValue>> = {
   },
   'analogvco-pw-authority': (read) => `${Math.round(vcoPwAuthority(vcoFaceParams(read)) * 100)} %`,
   'analogvco-alias-harmonic': (read) => `h${vcoFirstAliasedHarmonic(vcoFaceParams(read))}`,
+
+  // ── WAVETABLE VCO ────────────────────────────────────────────────────────
+  // The same two QUESTIONS as analogVco's first two, deliberately NOT the same
+  // FUNCTIONS: that module is compiled Faust and this one is a hand-written TS
+  // worklet, authored independently and pinned by different source greps. They
+  // agree on `261.626` today; sharing the model would make a change to
+  // `analog-vco.dsp` silently move THIS module's printed numbers with no gate
+  // joining the two. See the header of `wavetable-vco-face-model.ts`.
+  //
+  // `knob pitch` is TWO params: move FINE alone and a `tune` readback does not
+  // budge while the pitch moves a full semitone (261.6 → 277.2 Hz), and neither
+  // dial prints Hz or the C4 anchor. `fm span` is invariant to the FM DIAL in
+  // one direction (its SIGN inverts the modulator, so the span must NOT move
+  // through zero) and to TUNE in the other (the Hz swing DOUBLES per octave:
+  // +260/−131 Hz at C4 becomes +520/−261 an octave up) — and it prints the
+  // ASYMMETRY, the one fact about exponential FM a symmetric ± dial cannot say.
+  'wavetablevco-knob-hz': (read) => fmtWtHz(wtKnobHz(wtFaceParams(read))),
+  'wavetablevco-fm-span': (read) => {
+    const p = wtFaceParams(read);
+    // At depth 0 the FM input is ignored entirely (`fma * fm` is exactly 0), so
+    // `±0 ¢ · +0.0 Hz / −0.0 Hz` would be four numbers dressing up one word.
+    if (Math.abs(p.fmAmount) < 1e-6) return 'off';
+    const { up, down } = wtFmSpanHz(p);
+    return `±${Math.round(wtFmSpanCents(p))} ¢ · +${fmtWtHz(up)} / −${fmtWtHz(down)}`;
+  },
 
   // ── MACROOSCILLATOR ──────────────────────────────────────────────────────
   // NINE derived values, and the reason is one sentence: three of this

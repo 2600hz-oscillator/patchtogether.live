@@ -2948,6 +2948,7 @@ sidecar param threshold -60..0 linear default=-18 unit=dB
 sidecar stereo audio_l_in+audio_r_in
 sidecar stereo audio_l_out+audio_r_out
 sidecar stereo sc_l_in+sc_r_in
+sidecar family sidecar-curve kind=cell prefix=sidecar-curve
 sixstrum meta domain=audio
 sixstrum in accent cv
 sixstrum in body_cv cv param=body cvScale=linear
@@ -3423,6 +3424,7 @@ treeohvox param envelope 0..1 linear default=0.5
 treeohvox param resonance 0..1 linear default=0.5
 treeohvox param tune -12..12 linear default=0 unit=st
 treeohvox param waveform 0..1 linear default=0
+treeohvox family treeohvox-gate kind=other prefix=treeohvox-gate
 tvLibrarian meta domain=video
 tvLibrarian in next gate param=cv_next edge=trigger
 tvLibrarian in random gate param=cv_random edge=trigger
