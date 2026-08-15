@@ -256,6 +256,229 @@ function disabledInventory(files) {
   return items;
 }
 
+// ───────────────────────── runtime skip inventory ─────────────────────────
+//
+// Every SITE in a spec tree that can yield a runtime-SKIPPED row in a merged
+// Playwright report (#1502). This is deliberately WIDER than disabledInventory:
+// the ledger's "disabled" filter excludes in-body runtime guards because they
+// are env gates rather than author disables — but at REPORT time both produce
+// `status: 'skipped'` rows, and the skip-reason budget gates those rows. The
+// inventory is the STATIC side of that gate's two-direction anchor.
+//
+// Site kinds:
+//   runtime-guard  in-body `test.skip(cond, reason?)` / `test.fixme(cond, …)`
+//                  (first arg not a string literal — same discriminator as
+//                  countTests, so the two views cannot disagree)
+//   declaration    `test.skip('title', …)` / `test.fixme('title', …)` with a
+//                  STATIC title. Reported skipped with an annotation that only
+//                  carries a description when the site passes a details object
+//                  (`{ annotation: { type, description } }`).
+//   placeholder    loop-generated `test.fixme(`${…} [SKIPPED|EXEMPT: …]`, …)`
+//                  exemption rows — governed by the exemption maps + ledger,
+//                  NOT by the skip budget (stated where the budget is checked).
+//
+// Reason classification (`reasonKind`):
+//   literal   a statically extractable string ('…' / "…" / `…` without ${},
+//             including `'a' + 'b'` concatenations) — text is the joined value
+//   dynamic   an expression (variable, call, template with ${}) — present but
+//             not statically resolvable; text is the raw source expression
+//   none      NO reason anywhere: a bare `test.skip()` / `test.skip(cond)` /
+//             a declaration without a details-object description. These are
+//             the anonymous rows the audit exists to eliminate.
+
+/** String-aware balanced-paren scan: the argument text of a call whose `(` is
+ *  at src[openIdx]. Tracks quote state (' " `), escapes, and nesting so a
+ *  paren inside a reason string cannot end the scan early. Capped so a
+ *  pathological unterminated call cannot walk the whole file. */
+function callArgsText(src, openIdx, cap = 4000) {
+  let depth = 0;
+  let quote = null;
+  let out = '';
+  const end = Math.min(src.length, openIdx + cap);
+  for (let i = openIdx; i < end; i++) {
+    const ch = src[i];
+    if (quote) {
+      if (ch === '\\') { out += ch + (src[i + 1] ?? ''); i++; continue; }
+      if (ch === quote) quote = null;
+      out += ch;
+      continue;
+    }
+    if (ch === "'" || ch === '"' || ch === '`') { quote = ch; out += ch; continue; }
+    if (ch === '(' || ch === '[' || ch === '{') depth++;
+    else if (ch === ')' || ch === ']' || ch === '}') {
+      depth--;
+      if (depth === 0) return out.slice(1); // drop the opening '('
+    }
+    out += ch;
+  }
+  return out.slice(1); // unterminated within cap — best effort
+}
+
+/** Split an argument list at TOP-LEVEL commas (string- and bracket-aware). */
+function splitTopLevelArgs(args) {
+  const parts = [];
+  let depth = 0;
+  let quote = null;
+  let cur = '';
+  for (let i = 0; i < args.length; i++) {
+    const ch = args[i];
+    if (quote) {
+      if (ch === '\\') { cur += ch + (args[i + 1] ?? ''); i++; continue; }
+      if (ch === quote) quote = null;
+      cur += ch;
+      continue;
+    }
+    if (ch === "'" || ch === '"' || ch === '`') { quote = ch; cur += ch; continue; }
+    if (ch === '(' || ch === '[' || ch === '{') depth++;
+    else if (ch === ')' || ch === ']' || ch === '}') depth--;
+    if (ch === ',' && depth === 0) { parts.push(cur); cur = ''; continue; }
+    cur += ch;
+  }
+  if (cur.trim().length) parts.push(cur);
+  return parts;
+}
+
+/** Classify one reason-position argument expression. */
+function classifyReasonExpr(expr) {
+  const t = (expr ?? '').trim();
+  if (!t) return { reasonKind: 'none', reason: '' };
+  // A pure literal, or a `+`-concatenation of pure literals.
+  const LITERAL = /^(['"])(?:[^\\]|\\.)*?\1$|^`[^`$]*`$/;
+  const parts = splitPlusTopLevel(t);
+  if (parts.every((p) => LITERAL.test(p.trim()))) {
+    const text = parts.map((p) => p.trim().slice(1, -1)).join('');
+    return { reasonKind: 'literal', reason: text };
+  }
+  return { reasonKind: 'dynamic', reason: t.replace(/\s+/g, ' ') };
+}
+
+/** Split at top-level `+` (for 'a' + 'b' reason concatenations). */
+function splitPlusTopLevel(expr) {
+  const parts = [];
+  let depth = 0;
+  let quote = null;
+  let cur = '';
+  for (let i = 0; i < expr.length; i++) {
+    const ch = expr[i];
+    if (quote) {
+      if (ch === '\\') { cur += ch + (expr[i + 1] ?? ''); i++; continue; }
+      if (ch === quote) quote = null;
+      cur += ch;
+      continue;
+    }
+    if (ch === "'" || ch === '"' || ch === '`') { quote = ch; cur += ch; continue; }
+    if (ch === '(' || ch === '[' || ch === '{') depth++;
+    else if (ch === ')' || ch === ']' || ch === '}') depth--;
+    if (ch === '+' && depth === 0) { parts.push(cur); cur = ''; continue; }
+    cur += ch;
+  }
+  if (cur.trim().length) parts.push(cur);
+  return parts;
+}
+
+/** Pull a `description:` out of a details-object argument. A literal string
+ *  is fully resolvable; any other expression (e.g. a reason imported from a
+ *  QUARANTINE map — modules.spec.ts derives the description from the map so
+ *  the reason has ONE source) is present-but-dynamic. */
+function detailsDescription(objText) {
+  const lit = /description\s*:\s*(['"`])((?:[^\\]|\\.)*?)\1/.exec(objText);
+  if (lit) return { reasonKind: 'literal', reason: lit[2] };
+  const dyn = /description\s*:\s*([^,}\n]+)/.exec(objText);
+  if (dyn) return { reasonKind: 'dynamic', reason: dyn[1].trim() };
+  return null;
+}
+
+/** Blank out comments OFFSET-PRESERVINGLY (each comment char → space, newlines
+ *  kept) so locate() indexes stay valid. A char-walking scanner, not a regex —
+ *  string safety is a property of the parser, so `'https://x'` survives and a
+ *  `test.skip()` QUOTED IN PROSE does not become a phantom site (it did:
+ *  doom-audio-output.spec.ts:19 is a comment and read as a reasonless guard
+ *  before this pass existed). */
+function blankComments(src) {
+  let out = '';
+  let quote = null;
+  for (let i = 0; i < src.length; i++) {
+    const ch = src[i];
+    if (quote) {
+      if (ch === '\\') { out += ch + (src[i + 1] ?? ''); i++; continue; }
+      if (ch === quote || (quote === '`' && ch === '`')) quote = null;
+      out += ch;
+      continue;
+    }
+    if (ch === "'" || ch === '"' || ch === '`') { quote = ch; out += ch; continue; }
+    if (ch === '/' && src[i + 1] === '/') {
+      while (i < src.length && src[i] !== '\n') { out += ' '; i++; }
+      out += i < src.length ? '\n' : '';
+      continue;
+    }
+    if (ch === '/' && src[i + 1] === '*') {
+      while (i < src.length && !(src[i] === '*' && src[i + 1] === '/')) {
+        out += src[i] === '\n' ? '\n' : ' ';
+        i++;
+      }
+      out += '  '; // the closing */
+      i++;
+      continue;
+    }
+    out += ch;
+  }
+  return out;
+}
+
+/** The runtime-skip site inventory for a set of spec files. */
+export function runtimeSkipInventory(files) {
+  const items = [];
+  for (const file of files) {
+    const src = blankComments(readFileSync(file, 'utf8'));
+    const lineStart = lineStarts(src);
+    let m;
+    CALL_RE.lastIndex = 0;
+    while ((m = CALL_RE.exec(src)) !== null) {
+      const [, fn, mod, open] = m;
+      if (mod !== 'skip' && mod !== 'fixme') continue;
+      const loc = locate(file, m.index, lineStart);
+      const openIdx = src.indexOf('(', m.index);
+      const args = splitTopLevelArgs(callArgsText(src, openIdx));
+      const firstArgIsString = open === "'" || open === '"' || open === '`';
+
+      if (fn === 'describe' || firstArgIsString) {
+        // Declaration-level (or whole-describe) disable. Its report row only
+        // carries a reason when a details object supplies one.
+        const title = (args[0] ?? '').trim();
+        const isPlaceholder = /\[(SKIPPED|EXEMPT):/.test(title);
+        // Only read a description out of a DETAILS OBJECT (second arg starting
+        // `{`) — never out of the test body, where a `description:` property in
+        // page code would read as a false reason.
+        const secondArg = (args[1] ?? '').trim();
+        const desc = secondArg.startsWith('{') ? detailsDescription(secondArg) : null;
+        items.push({
+          loc,
+          file: relative(ROOT, file),
+          kind: isPlaceholder ? 'placeholder' : 'declaration',
+          modifier: `${fn}.${mod}`,
+          reasonKind: isPlaceholder
+            ? 'literal' // the reason rides in the title marker itself
+            : (desc?.reasonKind ?? 'none'),
+          reason: isPlaceholder ? title : (desc?.reason ?? ''),
+        });
+        continue;
+      }
+
+      // In-body runtime guard: `test.skip(cond, reason?)` — reason is arg 2.
+      // A bare `test.skip()` has zero args and is reasonless by construction.
+      const reasonArg = args.length >= 2 ? args[1] : '';
+      items.push({
+        loc,
+        file: relative(ROOT, file),
+        kind: 'runtime-guard',
+        modifier: `${fn}.${mod}`,
+        ...classifyReasonExpr(reasonArg),
+      });
+    }
+  }
+  return items;
+}
+
 function lineStarts(src) {
   const starts = [0];
   for (let i = 0; i < src.length; i++) {

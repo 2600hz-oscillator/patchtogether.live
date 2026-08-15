@@ -51,21 +51,6 @@
 
 import { Envelope } from './lib/adsr-env';
 
-declare const sampleRate: number;
-declare class AudioWorkletProcessor {
-  port: MessagePort;
-  constructor(options?: { processorOptions?: unknown });
-  process?(
-    inputs: Float32Array[][],
-    outputs: Float32Array[][],
-    parameters: Record<string, Float32Array>
-  ): boolean;
-}
-declare function registerProcessor(
-  name: string,
-  ctor: typeof AudioWorkletProcessor
-): void;
-
 const TWO_PI = Math.PI * 2;
 const NUM_VOICES = 5;
 const NUM_OPS = 6;

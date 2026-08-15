@@ -86,11 +86,14 @@ export function moduleIdFromTitle(title) {
 }
 
 /**
- * Classify a single Playwright spec as passed | failed | skipped.
+ * Classify a single Playwright spec as passed | failed | skipped | flaky.
  * Playwright per-test `status` ∈ 'skipped' | 'expected' | 'unexpected' |
- * 'flaky'. A spec that passed on retry ('flaky') is NOT a failure. We fall back
- * to the spec-level `ok` boolean when a report omits per-test statuses.
- * @returns {'passed'|'failed'|'skipped'}
+ * 'flaky'. A spec that passed only on retry is 'flaky' — its OWN class, never
+ * mapped to 'passed' (#1502: that mapping certified recovered flakes as green
+ * in the summary, the outputs AND the last-green baseline, so nobody was ever
+ * told). We fall back to the spec-level `ok` boolean when a report omits
+ * per-test statuses.
+ * @returns {'passed'|'failed'|'skipped'|'flaky'}
  */
 export function specOutcome(spec) {
   const tests = spec?.tests ?? [];
@@ -100,22 +103,28 @@ export function specOutcome(spec) {
   }
   if (statuses.every((s) => s === 'skipped')) return 'skipped';
   if (statuses.some((s) => s === 'unexpected')) return 'failed';
-  return 'passed'; // 'expected' or 'flaky' (recovered on retry)
+  if (statuses.some((s) => s === 'flaky')) return 'flaky';
+  return 'passed';
 }
 
 /**
  * Parse a Playwright JSON report into the behavioral pass/fail picture.
  * Only specs whose title carries {@link BEHAVIORAL_TITLE_MARK} count. Skipped
  * rows (test.fixme exemptions) are excluded from BOTH the passed and failed
- * sets — they aren't evidence either way.
+ * sets — they aren't evidence either way. FLAKY rows (passed only on retry)
+ * are their own set: not certified green, not screamed about — surfaced
+ * (#1502). They do not trip the watchdog (the e2e report-audit lane owns
+ * flake surfacing/arming, #1569), but they no longer masquerade as passes in
+ * the summary or the outputs.
  * @returns {{ passed: boolean, total: number,
  *             passedModules: string[], failedModules: string[],
- *             skippedModules: string[] }}
+ *             skippedModules: string[], flakyModules: string[] }}
  */
 export function parseBehavioralReport(report) {
   const passed = new Set();
   const failed = new Set();
   const skipped = new Set();
+  const flaky = new Set();
   for (const spec of collectSpecs(report)) {
     const title = spec?.title;
     if (typeof title !== 'string' || !title.includes(BEHAVIORAL_TITLE_MARK)) continue;
@@ -124,18 +133,21 @@ export function parseBehavioralReport(report) {
     const outcome = specOutcome(spec);
     if (outcome === 'failed') failed.add(id);
     else if (outcome === 'skipped') skipped.add(id);
+    else if (outcome === 'flaky') flaky.add(id);
     else passed.add(id);
   }
   // A module that has BOTH a passing and a failing row (shouldn't happen — one
   // row per module — but be defensive) is treated as FAILED: any failure wins.
-  for (const id of failed) passed.delete(id);
+  for (const id of failed) { passed.delete(id); flaky.delete(id); }
+  for (const id of flaky) passed.delete(id); // flaky beats a clean sibling row
   const sortu = (s) => [...s].sort();
   return {
     passed: failed.size === 0,
-    total: passed.size + failed.size,
+    total: passed.size + failed.size + flaky.size,
     passedModules: sortu(passed),
     failedModules: sortu(failed),
     skippedModules: sortu(skipped),
+    flakyModules: sortu(flaky),
   };
 }
 
@@ -263,6 +275,8 @@ function cmdAggregate(args) {
     behavioral_total: behavioral.total,
     failed_modules: behavioral.failedModules,
     passed_modules: behavioral.passedModules,
+    // Surfaced, not screamed: a module that passed only on retry (#1502).
+    flaky_modules: behavioral.flakyModules,
     candidate_newly_failing: candidates,
     baseline_present: baseline != null,
     collab,
@@ -273,6 +287,8 @@ function cmdAggregate(args) {
     behavioral_passed: String(behavioral.passed),
     failed_count: String(behavioral.failedModules.length),
     failed_modules: behavioral.failedModules.join(' '),
+    flaky_count: String(behavioral.flakyModules.length),
+    flaky_modules: behavioral.flakyModules.join(' '),
     candidate_count: String(candidates.length),
     candidate_modules: candidates.join(' '),
     candidate_grep: buildGrep(candidates),
@@ -308,12 +324,18 @@ function cmdSnapshot(args) {
   const out = {
     sha: args.sha === true || !args.sha ? null : args.sha,
     updatedAt: new Date().toISOString(),
-    passing: behavioral.passedModules,
+    // BASELINE semantics, decided deliberately (#1502): a flaky-at-baseline
+    // module still counts as WAS-GREEN, so a later hard failure of it is news
+    // (diffNewlyFailing keys on `passing`). Excluding flaky here would MUTE
+    // those regressions — the opposite of surfacing. The `flaky` field makes
+    // the distinction inspectable rather than re-hiding it in `passing`.
+    passing: [...new Set([...behavioral.passedModules, ...behavioral.flakyModules])].sort(),
     failing: behavioral.failedModules,
+    flaky: behavioral.flakyModules,
   };
   const dest = args.out === true || !args.out ? 'ci/behavioral-last-green.json' : args.out;
   writeFileSync(dest, JSON.stringify(out, null, 2) + '\n');
-  console.log(`[behavioral-watchdog] wrote baseline → ${dest} (${out.passing.length} green, ${out.failing.length} red)`);
+  console.log(`[behavioral-watchdog] wrote baseline → ${dest} (${out.passing.length} green — of which ${out.flaky.length} flaky-on-this-run, ${out.failing.length} red)`);
   return 0;
 }
 

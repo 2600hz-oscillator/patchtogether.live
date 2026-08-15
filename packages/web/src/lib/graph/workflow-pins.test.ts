@@ -289,19 +289,20 @@ describe('isRackFlipKey — the rack/dock flip shortcut', () => {
     expect(isRackFlipKey({ key: RACK_FLIP_KEY.toUpperCase() })).toBe(true);
   });
 
-  it('TAB IS NOT A FLIP — bare, or under ANY modifier combination', () => {
-    // The regression leg for #1508. Bare Tab is the one that mattered (Shift-
-    // Tab was already exempt), but the predicate must reject the whole family
-    // so no future edit can re-hijack traversal through a side door.
-    const flipping = [{}, ...modifierCombos()]
-      .map((mods) => ({ key: 'Tab', ...mods }))
+  it('BARE TAB IS THE FLIP — and `f` is not (owner ruling #1629)', () => {
+    // The regression leg for #1629, the inverse of the short-lived #1508
+    // rebind: the flip gesture is bare Tab, and the letter key that briefly
+    // replaced it must never silently come back as a second binding.
+    expect(isRackFlipKey({ key: 'Tab' }), 'bare Tab is the rack-flip shortcut').toBe(true);
+    const letterFlips = [{}, ...modifierCombos()]
+      .map((mods) => ({ key: 'f', ...mods }))
       .filter((e) => isRackFlipKey(e));
-    expect(flipping, 'Tab must never be read as the rack-flip shortcut').toEqual([]);
+    expect(letterFlips, '`f` must never be read as the rack-flip shortcut').toEqual([]);
   });
 
   it('every modifier combination on the flip key itself is rejected', () => {
-    // Cmd/Ctrl-F is the browser find bar; Alt-F opens a browser menu on
-    // Windows/Linux; Shift-F is a capital letter someone is typing.
+    // Shift-Tab is the one keyboard traversal deliberately kept native;
+    // Cmd/Ctrl/Alt-Tab belong to the OS (app switcher, browser tab cycling).
     const leaks = modifierCombos()
       .map((mods) => ({ key: RACK_FLIP_KEY, ...mods }))
       .filter((e) => isRackFlipKey(e));

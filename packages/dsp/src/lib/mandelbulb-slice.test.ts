@@ -116,7 +116,8 @@ describe('mbSampleSlice — FIXED-SIZE under camera zoom/orbit (the headline gua
     // Spread in arbitrary "camera-like" extra fields — they are not read.
     const polluted = mbSampleSlice({
       ...BASE,
-      // @ts-expect-error — these are NOT MbSliceParams fields; they must be ignored.
+      // NOT MbSliceParams fields — the `as` cast smuggles them past the
+      // compiler on purpose; the assertion below proves they are not read.
       zoom: 3, rotate_x: 2.0, rotate_y: -1.5, hue: 0.9, eyeDist: 0.4,
     } as MbSliceParams);
     for (let i = 0; i < ref.length; i++) expect(polluted[i]).toBe(ref[i]);

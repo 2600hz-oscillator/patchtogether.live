@@ -332,14 +332,6 @@ export class RingsSympatheticStrings {
   }
 }
 
-declare const sampleRate: number;
-declare class AudioWorkletProcessor {
-  constructor(options?: unknown);
-  readonly port: MessagePort;
-  process(inputs: Float32Array[][], outputs: Float32Array[][], parameters: Record<string, Float32Array>): boolean;
-}
-declare function registerProcessor(name: string, ctor: new (options?: unknown) => AudioWorkletProcessor): void;
-
 class RingsProcessor extends AudioWorkletProcessor {
   static get parameterDescriptors() {
     return [
@@ -359,7 +351,7 @@ class RingsProcessor extends AudioWorkletProcessor {
   private lastStrum = 0;
   private cfgCounter = 0;
 
-  constructor(options?: unknown) { super(options); }
+  constructor(options?: { processorOptions?: unknown }) { super(options); }
 
   process(
     inputs: Float32Array[][],

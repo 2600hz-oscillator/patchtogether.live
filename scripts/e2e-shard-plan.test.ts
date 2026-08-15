@@ -211,7 +211,7 @@ describe('contention is DERIVED AT PLAN TIME, never a committed snapshot (#1600)
 
   it('does NOT classify DOM-only specs — over-breadth displaces the cost packing', () => {
     const map = scanContention();
-    for (const f of ['flip-rack-rear-view.spec.ts', 'tab-focus-traversal.spec.ts', 'unpatch-patch-point.spec.ts']) {
+    for (const f of ['flip-rack-rear-view.spec.ts', 'workflow-rear-card.spec.ts', 'unpatch-patch-point.spec.ts']) {
       expect(map[f], `${f} is a DOM spec; if it now genuinely uses media, update this example`).toBeUndefined();
     }
   });

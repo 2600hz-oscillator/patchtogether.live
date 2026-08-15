@@ -49,23 +49,11 @@ function repoRoot(): string {
 }
 
 /** Named deny-by-default exemptions. The `why` is load-bearing prose — it
- *  must say what blocks coverage, not that it is blocked. */
-const EXEMPT: ReadonlyArray<{ workspace: string; why: string }> = [
-  {
-    workspace: 'packages/dsp',
-    why:
-      'AudioWorklet sources each declare their own ambient AudioWorkletProcessor/sampleRate ' +
-      'globals; compiled as ONE tsc program those per-file declares collide (TS2300/TS2451). ' +
-      'Coverage needs a shared worklet ambient d.ts design first — tracked as the #1499 follow-up.',
-  },
-  {
-    workspace: 'art',
-    why:
-      'ART scenarios import packages/dsp worklet sources directly (side-effect, non-module files), ' +
-      'so art inherits the same worklet ambient-typing blocker as packages/dsp; 19 real errors remain ' +
-      'once $lib/vite/svelte ambients are supplied — tracked as the #1499 follow-up.',
-  },
-];
+ *  must say what blocks coverage, not that it is blocked. EMPTY since #1604
+ *  paid the last entry (dsp, then art): every TS-bearing workspace defines
+ *  `typecheck`. The type and the anchoring test below stay — the next entry
+ *  must arrive with a why, and a stale one still reddens. */
+const EXEMPT: ReadonlyArray<{ workspace: string; why: string }> = [];
 
 interface PkgJson {
   workspaces?: string[];

@@ -37,15 +37,107 @@ guards (`test.skip(cond, …)`) are env gates, not disables, and are excluded.
 - `packages/web/src/lib/audio/modules/treeohvox-parity.test.ts:29` — describe.skip — Open303 binary parity (run manually)
 
 ### e2e — declaration-level disables (3)
-- `e2e/tests/edges.spec.ts:135` — test.fixme — raising THICKNESS increases edge pixels
-- `e2e/tests/in-card-title.spec.ts:106` — test.fixme — rename in A appears in B inside the in-card title (peer Yjs sync)
-- `e2e/tests/recorderbox.spec.ts:491` — test.fixme — RECORDERBOX records a real VCO + ACIDWARP into a crash-recoverable MP4
+- `e2e/tests/edges.spec.ts:139` — test.fixme — raising THICKNESS increases edge pixels
+- `e2e/tests/in-card-title.spec.ts:109` — test.fixme — rename in A appears in B inside the in-card title (peer Yjs sync)
+- `e2e/tests/recorderbox.spec.ts:494` — test.fixme — RECORDERBOX records a real VCO + ACIDWARP into a crash-recoverable MP4
 
 ### art — declaration-level disables (0)
 _none_
 
 ### spawn-smoke QUARANTINE map (e2e/tests/modules.spec.ts) — 1
 - `toybox` — task #102: SwiftShader software-renderer timeout (heavy WebGL)
+
+## Runtime skips — in-body env gates (79)
+
+`test.skip(cond, reason)` guards that skip AT RUNTIME when an environment
+capability is missing (DB, asset, renderer, hardware). NOT disables — the test
+runs wherever the capability exists — but each produces a `skipped` row a green
+lane would otherwise hide, so the merged-report audits in ci.yml surface every
+row and enforce the deny-by-default per-lane budget in
+`scripts/e2e-skip-budget.mjs`: a reasonless or unknown-reason skip reds the
+audit. Both directions are anchored by `scripts/e2e-skip-budget.test.ts`.
+A reason shown as `(dynamic)` is computed at runtime; the budget test anchors
+those at spec granularity and the lane audit checks the realized string.
+
+- `e2e/tests/auth-routes.spec.ts:120` — live-deploy only (E2E_BASE_URL must be a remote host)
+- `e2e/tests/auth-routes.spec.ts:130` — tier has no DATABASE_URL configured — nothing to reach
+- `e2e/tests/blood-audio-output.spec.ts:106` — BLOOD runtime/extras unavailable (prod-preview)
+- `e2e/tests/blood-audio-output.spec.ts:192` — BLOOD engine did not reach ready (renderer/heap-sensitive on CI)
+- `e2e/tests/blood-audio-output.spec.ts:206` — BLOOD runtime unavailable (prod-preview)
+- `e2e/tests/blood-audio-output.spec.ts:92` — BLOOD engine did not reach ready (renderer/heap-sensitive on CI)
+- `e2e/tests/blood-ingame.spec.ts:140` — runtime/extras unavailable
+- `e2e/tests/blood-ingame.spec.ts:61` — BLOOD engine did not reach ready (heap/renderer-sensitive)
+- `e2e/tests/blood-keyboard.spec.ts:136` — engine not ready
+- `e2e/tests/blood-keyboard.spec.ts:138` — extras unavailable
+- `e2e/tests/blood-keyboard.spec.ts:166` — engine not ready
+- `e2e/tests/blood-keyboard.spec.ts:87` — BLOOD engine did not reach ready (renderer/heap-sensitive on CI)
+- `e2e/tests/blood-keyboard.spec.ts:89` — e2e hooks / runtime extras unavailable (prod-preview)
+- `e2e/tests/card-producer-lifetime.spec.ts:573` — (dynamic: ``${type} shows no picture on any video output even with its card mounted, so there is ` + `nothing here to lose: ${di…`)
+- `e2e/tests/collapse-keeps-playing.spec.ts:437` — (dynamic: ``${type} is not a local-file player (no file input and/or no transport) — its unmount path is gated by card-media-lif…`)
+- `e2e/tests/doom-aspect.spec.ts:256` — DOOM WASM not built
+- `e2e/tests/doom-aspect.spec.ts:258` — DOOM1.WAD missing
+- `e2e/tests/doom-aspect.spec.ts:57` — (dynamic: ``DOOM WASM not built (status ${wasmShim.status()}).`)
+- `e2e/tests/doom-aspect.spec.ts:67` — (dynamic: ``DOOM1.WAD not on dev server (status ${wadResp.status()}).``)
+- `e2e/tests/doom-audio-output.spec.ts:156` — DOOM WASM and/or DOOM1.WAD not present locally — run `bash packages/web/native/build-doom-wasm.sh` + drop DOOM1.WAD i…
+- `e2e/tests/doom-audio-output.spec.ts:292` — DOOM WASM and/or DOOM1.WAD not present locally — run `bash packages/web/native/build-doom-wasm.sh` + drop DOOM1.WAD i…
+- `e2e/tests/doom-cheat-gates.spec.ts:142` — DOOM WASM and/or DOOM1.WAD not present locally — run `bash packages/web/native/build-doom-wasm.sh` + drop DOOM1.WAD i…
+- `e2e/tests/doom-cheat-gates.spec.ts:221` — DOOM WASM and/or DOOM1.WAD not present locally — run `bash packages/web/native/build-doom-wasm.sh` + drop DOOM1.WAD i…
+- `e2e/tests/doom-controls.spec.ts:156` — (dynamic: `skip`)
+- `e2e/tests/doom-controls.spec.ts:212` — (dynamic: `skip`)
+- `e2e/tests/doom-controls.spec.ts:325` — (dynamic: `skip`)
+- `e2e/tests/doom-identity-crossview.spec.ts:202` — @collab — runs on the dedicated COLLAB_JOB lane, not the sharded matrix
+- `e2e/tests/doom-identity-crossview.spec.ts:209` — (dynamic: `assets.reason`)
+- `e2e/tests/doom-identity-crossview.spec.ts:215` — DOOM runtime failed to load on A within 25s
+- `e2e/tests/doom-keyboard-routing.spec.ts:285` — (dynamic: `skip`)
+- `e2e/tests/doom-keyboard-routing.spec.ts:62` — (dynamic: `skip`)
+- `e2e/tests/doom-late-join.spec.ts:192` — @collab — runs on the dedicated COLLAB_JOB lane, not the sharded matrix
+- `e2e/tests/doom-late-join.spec.ts:201` — (dynamic: `assets.reason`)
+- `e2e/tests/doom-late-join.spec.ts:207` — DOOM runtime failed to load on A within 25s
+- `e2e/tests/doom-launch.spec.ts:264` — @collab — runs on the dedicated COLLAB_JOB lane, not the sharded matrix
+- `e2e/tests/doom-launch.spec.ts:274` — (dynamic: `assets.reason`)
+- `e2e/tests/doom-mp-latejoin-freeze.spec.ts:230` — DOOM WASM / WAD missing — run build-doom-wasm.sh + fetch DOOM1.WAD
+- `e2e/tests/doom-mp-lockstep-sharedstate.spec.ts:386` — DOOM WASM / WAD missing — run build-doom-wasm.sh + fetch DOOM1.WAD
+- `e2e/tests/doom-mp-lockstep-sharedstate.spec.ts:642` — DOOM WASM / WAD missing — run build-doom-wasm.sh + fetch DOOM1.WAD
+- `e2e/tests/doom-mp-real.spec.ts:292` — DOOM WASM / WAD missing — run `bash packages/web/native/build-doom-wasm.sh` + fetch DOOM1.WAD
+- `e2e/tests/doom-mp-real.spec.ts:736` — DOOM WASM / WAD missing
+- `e2e/tests/doom-mp-real.spec.ts:815` — DOOM WASM / WAD missing
+- `e2e/tests/doom-multiplayer.spec.ts:158` — @collab — runs on the dedicated COLLAB_JOB lane, not the sharded matrix
+- `e2e/tests/doom-multiplayer.spec.ts:168` — (dynamic: `assets.reason`)
+- `e2e/tests/doom-multiplayer.spec.ts:173` — DOOM runtime failed to load on host within 20s
+- `e2e/tests/doom-per-type-death-gates.spec.ts:138` — DOOM WASM not built — run `bash packages/web/native/build-doom-wasm.sh`
+- `e2e/tests/dx7.spec.ts:383` — IndexedDB unavailable — the scratch replica cannot persist
+- `e2e/tests/es9-hardware.spec.ts:29` — hardware-in-the-loop: needs a real ES-9 + es9-bridge on ws://127.0.0.1:9209 (opt in with ES9_HW=1)
+- `e2e/tests/grand-integration.attest.spec.ts:310` — heavy local attest — runs only via `task grand:attest` (GRAND_ATTEST=1) on a trusted GPU machine
+- `e2e/tests/in-card-title.spec.ts:143` — @collab in-card-title rename-sync needs the relay + DB — runs on the dedicated COLLAB_JOB lane, not the sharded matrix
+- `e2e/tests/login-smoke.spec.ts:30` — E2E_CLERK_TEST_EMAIL / E2E_CLERK_TEST_PASSWORD not set — real sign-in smoke skipped.
+- `e2e/tests/milkdrop-render-smoke.spec.ts:65` — WebGL2 unsupported in this runtime — MILKDROP cannot render
+- `e2e/tests/multi-video-playback.spec.ts:428` — scale run is heavy for CI software-GL runners
+- `e2e/tests/multi-video-playback.spec.ts:439` — decode-capacity probe — excluded from the heavy WebGL attest gate (ceiling-marginal)
+- `e2e/tests/new-rack-return-to-last.spec.ts:108` — IndexedDB unavailable — scratch replica cannot persist
+- `e2e/tests/new-rack-return-to-last.spec.ts:158` — IndexedDB unavailable — scratch replica cannot persist
+- `e2e/tests/patch-load-leak.spec.ts:277` — DOM retention is not measurable under vite dev — HMR retains destroyed component instances by design
+- `e2e/tests/peertube.spec.ts:326` — (dynamic: ``renderer could not decode the AVC/AAC HLS clip (state=${state})``)
+- `e2e/tests/per-module-per-port-inputs.spec.ts:113` — DOOM WASM/WAD not built — see static/doom/DOWNLOAD_INSTRUCTIONS.md
+- `e2e/tests/per-module.spec.ts:233` — DOOM WASM not built — run `bash packages/web/native/build-doom-wasm.sh`
+- `e2e/tests/per-module.spec.ts:243` — DOOM1.WAD missing — see static/doom/DOWNLOAD_INSTRUCTIONS.md
+- `e2e/tests/picturebox-gif.spec.ts:89` — WebCodecs ImageDecoder(image/gif) unavailable — app degrades to a static first frame here
+- `e2e/tests/recording-survives-card-collapse.spec.ts:126` — #1574: no real H.264 encoder in this runtime — no recording can start
+- `e2e/tests/recording-survives-card-collapse.spec.ts:216` — #1574: negative control — no real H.264 encoder in this runtime
+- `e2e/tests/samsloop-memory-bench.spec.ts:53` — set E2E_RUN_MEM_BENCH=1 to run
+- `e2e/tests/scratch-persist-video-live.spec.ts:142` — IndexedDB unavailable — scratch replica cannot persist
+- `e2e/tests/scratch-persist.spec.ts:134` — IndexedDB unavailable — scratch replica cannot persist
+- `e2e/tests/scratch-persist.spec.ts:176` — IndexedDB unavailable — scratch replica cannot persist
+- `e2e/tests/scratch-persist.spec.ts:256` — IndexedDB unavailable — scratch replica cannot persist
+- `e2e/tests/sequencer-transport.spec.ts:782` — @collab POLYSEQZ slot-sync needs the relay + DB — runs on the dedicated COLLAB_JOB lane, not the sharded matrix
+- `e2e/tests/tv-librarian-audio.spec.ts:189` — (dynamic: ``renderer could not decode the AVC/AAC HLS clip (state=${state})``)
+- `e2e/tests/vfpga-p2-cells.spec.ts:102` — no WebGL2 context available in this runner
+- `e2e/tests/vfpga-patchpanel-presets.spec.ts:124` — WebGL2 not available in this runtime
+- `e2e/tests/wavesculpt.spec.ts:269` — no usable GL pixel read on this renderer
+- `e2e/tests/wavesculpt.spec.ts:358` — no usable GL pixel read on this renderer
+- `e2e/tests/wavesculpt.spec.ts:443` — no usable GL pixel read on this renderer
+- `e2e/tests/wavesculpt.spec.ts:718` — no usable GL pixel read on this renderer
+- `e2e/tests/workflow-shell-video.spec.ts:645` — no videoinput device in this runtime — device-list assert not applicable
+- `e2e/tests/workflow-video-zone-defaults.spec.ts:141` — IndexedDB unavailable — scratch replica cannot persist the latch
 
 ## Bucket 2 — coverage exemptions (370)
 

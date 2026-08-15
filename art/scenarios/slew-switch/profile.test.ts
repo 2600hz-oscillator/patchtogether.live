@@ -64,6 +64,9 @@ const SLEW = [0.02, 0.2, 0.05, 0.3] as const;
 async function renderProfile(): Promise<Record<string, Float32Array>> {
   const Proc = await captureWorkletProcessor(
     'slewswitch',
+    // @ts-expect-error TS2306 — import-less worklet entry has no module shape; side-effect
+    // import only, ctor captured via the registerProcessor shim. `export {}` would leak into
+    // dist and break ART's classic-script eval (memory: dsp-worklet-no-top-level-export).
     () => import('../../../packages/dsp/src/slewswitch'),
     SR,
   );

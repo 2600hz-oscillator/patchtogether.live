@@ -34,7 +34,14 @@ const strengthSlow = vcoTestSignal({ totalS: DURATION_S, shape: 'sine', freqHz: 
 const strengthAudio = vcoTestSignal({ totalS: DURATION_S, shape: 'sine', freqHz: RING_HZ, amp: 1.0 });
 
 async function renderProfile(): Promise<Record<string, Float32Array>> {
-  const Proc = await captureWorkletProcessor('stereovca', () => import('../../../packages/dsp/src/stereovca'), SR);
+  const Proc = await captureWorkletProcessor(
+    'stereovca',
+    // @ts-expect-error TS2306 — import-less worklet entry has no module shape; side-effect
+    // import only, ctor captured via the registerProcessor shim. `export {}` would leak into
+    // dist and break ART's classic-script eval (memory: dsp-worklet-no-top-level-export).
+    () => import('../../../packages/dsp/src/stereovca'),
+    SR,
+  );
   const proc = new Proc();
   return renderWorklet(proc, {
     totalSamples: Math.round(SR * DURATION_S),

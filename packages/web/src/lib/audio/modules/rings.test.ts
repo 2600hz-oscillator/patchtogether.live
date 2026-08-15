@@ -27,8 +27,12 @@ const DSP_RINGS = resolve(HERE, '../../../../../dsp/src/rings.ts');
 
 function algorithmBody(src: string): string {
   const start = src.search(/const _?MODAL_MAX_PARTIALS/);
-  const endMarker = src.includes('declare const sampleRate')
-    ? 'declare const sampleRate'
+  // End of the algorithm region, per side. The DSP file's region ends where
+  // its worklet PROCESSOR class begins (the per-file `declare const
+  // sampleRate` that used to sit there was deleted by #1604's shared worklet
+  // ambient); the mirror's ends at its exported params interface.
+  const endMarker = src.includes('class RingsProcessor')
+    ? 'class RingsProcessor'
     : 'export interface RingsParams';
   const end = src.indexOf(endMarker);
   if (start < 0 || end < 0) throw new Error('rings mirror-parity: could not locate the algorithm region');

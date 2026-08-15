@@ -103,7 +103,20 @@ test.describe('@collab', () => {
   // regressions. Task #101 owns the actual fix: root-cause the
   // relay-contention timeout + add a regression test, THEN un-fixme. Do NOT
   // just bump the timeout (already at 120s).
-  test.fixme('rename in A appears in B inside the in-card title (peer Yjs sync)', async ({
+  // The details-object annotation puts the quarantine reason on the report row
+  // itself — a bare `test.fixme(title, fn)` is an anonymous skip to the
+  // merged-report audit (#1502).
+  test.fixme(
+    'rename in A appears in B inside the in-card title (peer Yjs sync)',
+    {
+      annotation: {
+        type: 'fixme',
+        description:
+          'task #101: quarantined — relay-contention timeout on the @collab lane; '
+          + 'root-cause the A→relay→B propagation stall, add a regression test, then un-fixme',
+      },
+    },
+    async ({
     browser,
   }) => {
     // The full 2-context relay flow (2× goto + attachProvider relay-connect +

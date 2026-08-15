@@ -305,3 +305,94 @@ describe('determinism', () => {
     expect(a).toBe(b);
   });
 });
+
+// ── runtimeSkipInventory (#1502) — the static half of the skip budget ───────
+//
+// Wider than disabledInventory ON PURPOSE: in-body runtime guards are env
+// gates, not disables, but at REPORT time both produce `skipped` rows, and the
+// per-lane budget (scripts/e2e-skip-budget.mjs) gates those rows. These
+// fixtures pin the classification the budget's two-direction anchor rests on.
+describe('runtimeSkipInventory — site + reason classification', () => {
+  const inv = (name: string, body: string) => {
+    const f = spec(name, body);
+    return (recon as unknown as { runtimeSkipInventory: (files: string[]) => {
+      loc: string; kind: string; modifier: string; reasonKind: string; reason: string;
+    }[] }).runtimeSkipInventory([f]);
+  };
+
+  it('classifies an in-body guard with a literal reason (concatenations joined)', () => {
+    const items = inv('rg-lit.spec.ts', `
+      test('gated', () => {
+        test.skip(!!process.env.CI, 'needs a DB — ' + 'set DATABASE_URL');
+      });
+    `);
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({
+      kind: 'runtime-guard',
+      modifier: 'test.skip',
+      reasonKind: 'literal',
+      reason: 'needs a DB — set DATABASE_URL',
+    });
+  });
+
+  it('classifies a variable / interpolated reason as dynamic — present but not resolvable', () => {
+    const items = inv('rg-dyn.spec.ts', `
+      test('gated', () => {
+        test.skip(true, assets.reason);
+        test.skip(true, \`state=\${state}\`);
+      });
+    `);
+    expect(items.map((i) => i.reasonKind)).toEqual(['dynamic', 'dynamic']);
+  });
+
+  it('classifies a BARE test.skip() / test.skip(cond) as reasonless — the anonymous class', () => {
+    const items = inv('rg-none.spec.ts', `
+      test('gated', () => {
+        test.skip();
+        test.skip(!ok);
+      });
+    `);
+    expect(items.map((i) => i.reasonKind)).toEqual(['none', 'none']);
+  });
+
+  it('reads a declaration fixme details-object description (literal AND derived)', () => {
+    const items = inv('decl.spec.ts', `
+      test.fixme('quarantined a', { annotation: { type: 'fixme', description: 'task #9: why' } }, () => {});
+      test.fixme('quarantined b', { annotation: { type: 'fixme', description: mapReason } }, () => {});
+      test.fixme('quarantined c', () => {});
+    `);
+    expect(items.map((i) => [i.kind, i.reasonKind])).toEqual([
+      ['declaration', 'literal'],
+      ['declaration', 'dynamic'],
+      ['declaration', 'none'],
+    ]);
+    expect(items[0]!.reason).toBe('task #9: why');
+  });
+
+  it('classifies [SKIPPED:]-marker titles as placeholders (exemption-map governance, out of budget scope)', () => {
+    const items = inv('ph.spec.ts', `
+      test.fixme(\`\${title} [SKIPPED: exempt — see map]\`, () => {});
+    `);
+    expect(items).toHaveLength(1);
+    expect(items[0]!.kind).toBe('placeholder');
+  });
+
+  it('does NOT invent a site from a test.skip() quoted in a COMMENT (the doom-audio-output:19 phantom)', () => {
+    const items = inv('comment.spec.ts', `
+      // Either missing → test.skip() with a clear reason. CI builds both.
+      /* and a block one: test.skip(true, 'nope') */
+      test('real', () => {});
+    `);
+    expect(items).toEqual([]);
+  });
+
+  it('does not let a description-shaped property in the TEST BODY read as a reason', () => {
+    const items = inv('body-desc.spec.ts', `
+      test.fixme('quarantined', async ({ page }) => {
+        await page.fill('#x', JSON.stringify({ description: 'not a skip reason' }));
+      });
+    `);
+    expect(items).toHaveLength(1);
+    expect(items[0]!.reasonKind).toBe('none');
+  });
+});

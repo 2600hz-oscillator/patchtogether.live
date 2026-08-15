@@ -119,7 +119,14 @@ function source(durationS: number): Float32Array {
   return buf;
 }
 
-function makeEngine(overrides: Partial<typeof DEFAULTS> = {}): WarrensSpectrumEngine {
+/** Per-key overrides for makeEngine/renderProfile. DEFAULTS is `as const`, so
+ *  its properties carry LITERAL types (`residual: 0.5`) — `Partial<typeof
+ *  DEFAULTS>` would only re-admit the default itself (`renderProfile({
+ *  residual: 0 })` is TS2322 "0 is not assignable to 0.5"). An override is any
+ *  number; only the KEYS come from DEFAULTS. */
+type EngineOverrides = { [K in keyof typeof DEFAULTS]?: number };
+
+function makeEngine(overrides: EngineOverrides = {}): WarrensSpectrumEngine {
   const o = { ...DEFAULTS, ...overrides };
   const e = new WarrensSpectrumEngine(SR);
   e.setPartials(o.partials);
@@ -136,7 +143,7 @@ function makeEngine(overrides: Partial<typeof DEFAULTS> = {}): WarrensSpectrumEn
 
 /** Steady render at the module's declared defaults, overridable. */
 function renderProfile(
-  overrides: Partial<typeof DEFAULTS> = {},
+  overrides: EngineOverrides = {},
   durationS = DURATION_S,
 ): Record<string, Float32Array> {
   const input = source(durationS);

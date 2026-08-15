@@ -55,18 +55,6 @@
 //     grains read from the actually-filled portion rather than reading
 //     pre-warmup zeros.
 
-declare const sampleRate: number;
-declare class AudioWorkletProcessor {
-  port: MessagePort;
-  constructor(options?: { processorOptions?: unknown });
-  process?(
-    inputs: Float32Array[][],
-    outputs: Float32Array[][],
-    parameters: Record<string, Float32Array>,
-  ): boolean;
-}
-declare function registerProcessor(name: string, ctor: typeof AudioWorkletProcessor): void;
-
 const BUFFER_SECONDS = 2.0;
 const MAX_GRAINS = 24;
 

@@ -35,7 +35,7 @@
   //
   // The built-in CLIP PLAYER (`pinned-clipplayer`) is one of these panes too
   // (owner 2026-07-26: `c` = expand): a real node with a real def, so it takes
-  // the un-migrated branch below (verbatim ClipplayerCard) and the flip key (F) flips it to
+  // the un-migrated branch below (verbatim ClipplayerCard) and the flip key (Tab) flips it to
   // its def-driven RearCard jack field like any other un-migrated occupant.
 
   import './_dock-faceplate.css';
@@ -78,7 +78,7 @@
     onUndock?: () => void;
     /** REAR CARD (rear-card-spec.md): TRUE flips this pane to the flip-side
      *  patch field. Canvas feeds dockStore.fullViewFlipped — the view-global
-     *  flip-key (F) flip seam — so with the 50/50 split BOTH panes flip together; the
+     *  flip-key (Tab) flip seam — so with the 50/50 split BOTH panes flip together; the
      *  per-pane surface is this prop + the `data-flipped` attr. */
     flipped?: boolean;
   }
@@ -253,7 +253,7 @@
       <div class="faceplate-scroll">
         <div class="faceplate-body">
           {#if flipped && def}
-            <!-- REAR CARD (flip key, F): the flip-side patch field replaces the
+            <!-- REAR CARD (flip key, Tab): the flip-side patch field replaces the
                  tab-rail + control page — patch points only, zero UI controls.
                  The front stays MOUNTED (hidden below) so flipping back never
                  reboots the occupant (scroll/knob state, video previews). -->

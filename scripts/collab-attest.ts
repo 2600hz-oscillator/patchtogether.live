@@ -605,7 +605,11 @@ async function main() {
   } finally {
     if (appServer) {
       console.log('Tearing down the attest-owned app preview server…');
-      appServer.stop();
+      // AWAIT the child's actual exit (#1630): fire-and-forget stop() lets
+      // the child briefly outlive the task, and an interrupted run then
+      // leaves vite/workerd orphans that later pre-flights read as leaked
+      // servers. stopAndWait guarantees the port is free before we return.
+      await appServer.stopAndWait();
     }
     if (relay && !relay.killed) {
       console.log('Tearing down the dedicated relay…');

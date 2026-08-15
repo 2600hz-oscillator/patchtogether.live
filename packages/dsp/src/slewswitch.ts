@@ -28,21 +28,6 @@
 // Mode: 0=forward (0→1→2→3→0…), 1=pendulum (0→1→2→3→2→1→0…), 2=random
 // (uniform pick over 0..length-1, excluding the current index).
 
-declare const sampleRate: number;
-declare class AudioWorkletProcessor {
-  port: MessagePort;
-  constructor(options?: { processorOptions?: unknown });
-  process?(
-    inputs: Float32Array[][],
-    outputs: Float32Array[][],
-    parameters: Record<string, Float32Array>
-  ): boolean;
-}
-declare function registerProcessor(
-  name: string,
-  ctor: typeof AudioWorkletProcessor
-): void;
-
 const EOC_PULSE_S = 0.005; // 5 ms gate pulse on wrap
 
 class SlewSwitchProcessor extends AudioWorkletProcessor {

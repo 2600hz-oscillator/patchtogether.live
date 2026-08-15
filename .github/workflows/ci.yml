@@ -1181,15 +1181,39 @@ jobs:
       # it, exit 0 with it on a clean one), so the day it is armed is not the
       # day it is first exercised. Add `--fail-on-flaky` to the node line below
       # once the remaining tail is drained.
-      - name: Audit merged report for flaky + skipped
+      #
+      # `--lane e2e` ALSO arms the deny-by-default SKIP-REASON BUDGET
+      # (scripts/e2e-skip-budget.mjs): a runtime skip that is reasonless, or
+      # whose (spec, reason) matches no NAMED budget entry for this lane, exits
+      # non-zero. This job is NOT in the `ci` umbrella's needs/if, so a budget
+      # red is VISIBLE (red job + ::error:: + step summary) but NON-BLOCKING —
+      # the staging the issue asks for. Do not add this job to the umbrella to
+      # "promote" it; arming is a separate decision, like --fail-on-flaky.
+      - name: Audit merged report for flaky + skipped (lane e2e skip budget)
         if: always()
         run: |
           flox activate -- npx --workspace e2e playwright merge-reports \
             --reporter json \
             ./all-blob-reports > merged-report.json
-          flox activate -- node scripts/e2e-report-audit.mjs merged-report.json
+          flox activate -- node scripts/e2e-report-audit.mjs merged-report.json \
+            --lane e2e --json-out e2e-report-audit.json
+
+      # The machine-readable audit (rows + classifications + budget verdicts) —
+      # uploaded even when the audit step above exits non-zero, so a red audit
+      # is inspectable without re-merging blobs locally (#1502).
+      - name: Upload report-audit artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-report-audit
+          path: e2e-report-audit.json
+          retention-days: 30
+          if-no-files-found: warn
 
       - name: Upload merged HTML report
+        # always(): the HTML report must survive a red audit step above — it is
+        # the drill-down for exactly that red.
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report
@@ -1655,7 +1679,35 @@ jobs:
             --reporter html \
             ./all-behavioral-blob-reports
 
+      # SURFACE FLAKY + RUNTIME-SKIPPED TESTS (#1502) — behavioral lane.
+      # The e2e `merge-reports` job audits only the e2e shards; the behavioral
+      # sweep's flakes and runtime skips were invisible to any gate (the shards
+      # are continue-on-error, so even a FAILURE reports success). Same script,
+      # `--lane behavioral` budget: today that lane's only legitimate skips are
+      # the [SKIPPED:]-marker exemption placeholders, so ANY non-placeholder
+      # skip here is a budget red. This job is not in the `ci` umbrella —
+      # visible, not blocking.
+      - name: Audit merged behavioral report for flaky + skipped (skip budget)
+        if: always()
+        run: |
+          flox activate -- npx --workspace e2e playwright merge-reports \
+            --reporter json \
+            ./all-behavioral-blob-reports > behavioral-merged-report.json
+          flox activate -- node scripts/e2e-report-audit.mjs behavioral-merged-report.json \
+            --lane behavioral --json-out behavioral-report-audit.json
+
+      - name: Upload behavioral report-audit artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: behavioral-report-audit
+          path: behavioral-report-audit.json
+          retention-days: 30
+          if-no-files-found: warn
+
       - name: Upload merged behavioral HTML report
+        # always(): keep the HTML drill-down even when the audit step reds.
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           # `playwright merge-reports --reporter html` writes to

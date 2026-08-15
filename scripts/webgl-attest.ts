@@ -728,6 +728,14 @@ async function main() {
     console.log(`Pruned ${superseded.length} superseded attestation(s) — ci-webgl-attest/ now holds only the live hash.`);
   }
   console.log(`Now:  git add -A ci-webgl-attest/  and commit it with your PR.`);
+
+  // TEARDOWN ON THE SUCCESS PATH (#1630). The refusal paths process.exit(),
+  // which fires the sync stop() exit hook — but a NORMAL return relies on the
+  // event loop draining, and the un-torn-down server child KEEPS IT ALIVE:
+  // the task then wedges after minting (measured: 8+ min post-write) and an
+  // impatient operator's kill leaves vite/workerd ORPHANS. Await the child's
+  // actual exit so the port is free before the task returns.
+  await ownServer?.stopAndWait();
 }
 
 function pick(r: PassResult) {

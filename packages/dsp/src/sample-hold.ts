@@ -33,21 +33,6 @@
 
 import { quantizeVoltage, GATE_THRESHOLD } from './lib/sample-hold-dsp';
 
-declare const sampleRate: number;
-declare class AudioWorkletProcessor {
-  port: MessagePort;
-  constructor(options?: { processorOptions?: unknown });
-  process?(
-    inputs: Float32Array[][],
-    outputs: Float32Array[][],
-    parameters: Record<string, Float32Array>
-  ): boolean;
-}
-declare function registerProcessor(
-  name: string,
-  ctor: typeof AudioWorkletProcessor
-): void;
-
 // Shim worklet globals when running outside AudioWorkletGlobalScope (vitest
 // captures the class via this shim — see the sample-hold.test.ts loader). In
 // the real worklet these globals already exist, so the guards are no-ops.

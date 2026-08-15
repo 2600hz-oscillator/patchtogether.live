@@ -22,20 +22,6 @@
 
 import { RingChannel, RINGBACK_MAX_SIZE } from './lib/ringback-core';
 
-declare class AudioWorkletProcessor {
-  port: MessagePort;
-  constructor(options?: { processorOptions?: unknown });
-  process?(
-    inputs: Float32Array[][],
-    outputs: Float32Array[][],
-    parameters: Record<string, Float32Array>,
-  ): boolean;
-}
-declare function registerProcessor(
-  name: string,
-  ctor: typeof AudioWorkletProcessor,
-): void;
-
 // Shim the worklet globals when running outside AudioWorkletGlobalScope
 // (vitest). Guarded so the real runtime is untouched.
 const G = globalThis as unknown as {
