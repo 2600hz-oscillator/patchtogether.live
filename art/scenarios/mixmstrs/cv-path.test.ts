@@ -208,6 +208,18 @@ function peakDelta(a: Render, b: Render): number {
 const fmt = (v: number) => (v === 0 ? '0.0000e+0' : v.toExponential(4));
 const PARAM_INPUT_IDS = mixmstrsDef.inputs.filter((p) => p.paramTarget).map((p) => p.id);
 
+/** Each sweep leg builds and renders the REAL Faust factory once PER INPUT — a
+ *  fresh OfflineAudioContext, worklet and wasm instantiation included. Measured
+ *  ~15 s per sweep on an idle box, which sits close enough to the ART default of
+ *  30 s that a loaded runner turns a correct measurement into a timeout: an
+ *  otherwise-green run of this file reported five `Test timed out in 30000ms`
+ *  while the same two scenarios passed in 1415 ms each in isolation (a 432×
+ *  slowdown, no assertion failures). The cost is inherent to driving the shipped
+ *  DSP rather than a mirror, so it is DECLARED here instead of being bought back
+ *  by shortening the renders — a wall-clock cap that bounds the failure, never
+ *  the gate. */
+const SWEEP_TIMEOUT_MS = 300_000;
+
 describe('ART mixmstrs / CV path — a cable on a paramTarget input must change the audio', () => {
   it('MECH control — ConstantSource(1) → GainNode.gain modulates in THIS harness', async () => {
     const run = async (withCv: boolean) => {
@@ -250,7 +262,7 @@ describe('ART mixmstrs / CV path — a cable on a paramTarget input must change 
     // and the per-input positive control for the CV sweep below: a row that
     // reads zero on both legs is the metric being blind, not a dead cable.
     expect(dead, 'controls inert from their own knob — peak |Δsample| linear = 0').toEqual([]);
-  });
+  }, SWEEP_TIMEOUT_MS);
 
   it('every paramTarget input hosted ON THE DSP WORKLET moves the audio through the CV path', async () => {
     const base = basePatch();
@@ -265,7 +277,7 @@ describe('ART mixmstrs / CV path — a cable on a paramTarget input must change 
       if (d === 0) dead.push(id);
     }
     expect(dead, `CV cable inert (linear peak |Δsample| = 0) on: ${table.join(' | ')}`).toEqual([]);
-  });
+  }, SWEEP_TIMEOUT_MS);
 
   it('SCOPE — the inputs this scenario CANNOT certify are exactly the comp macros (#1661)', async () => {
     // Deny-by-default and DERIVED on both sides: the left is read off the live
@@ -280,7 +292,7 @@ describe('ART mixmstrs / CV path — a cable on a paramTarget input must change 
       ctrl.offWorkletHosts.slice().sort(),
       'paramTarget inputs published on a non-DSP node — their CV is a dead end; see #1661',
     ).toEqual(MIXMSTRS_CHANNELS.map((c) => `comp${c}`).sort());
-  });
+  }, SWEEP_TIMEOUT_MS);
 
   it('a dead published param also makes CLIP AUTOMATION of that control inert', async () => {
     // engine.ts:700 / :754 prefer `inputs[id].param` over `setParam`, so this is
@@ -298,5 +310,5 @@ describe('ART mixmstrs / CV path — a cable on a paramTarget input must change 
     expect(liveAuto, `automation must reach a LIVE param: ${fmt(liveAuto)} vs knob ${fmt(liveKnob)}`)
       .toBeGreaterThan(0);
     expect(liveAuto, 'automation and knob agree on a live param').toBeCloseTo(liveKnob, 6);
-  });
+  }, SWEEP_TIMEOUT_MS);
 });
