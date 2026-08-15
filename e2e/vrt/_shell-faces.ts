@@ -322,6 +322,18 @@ export const FACES = [
   // rack. That is what lets a module with no sound at rest still have a
   // faceplate that says something.
   { type: 'rings', pages: 3 },
+  // FACE BATCH 6 · the stereo sidechain ducker. `pages: 3` is the POST-hero
+  // split count: three declared pages, and promoting `threshold` into the hero
+  // leaves `detect` with knee + sc_hpf rather than emptying it, so no band is
+  // dropped (heroFacePlan only drops an EMPTIED band — the `noise` case).
+  //
+  // DETERMINISTIC AT REST BY CONSTRUCTION, and unusually so for a face with a
+  // live glyph: sidecar is an INSERT with four audio inputs and no generator of
+  // its own, so on the VRT rack nothing is patched, the worklet's `outAL` is
+  // `audio + sc·(…)` over two silent inputs, and the meter tap reads bit-zero
+  // whether the graph is frozen or running. It therefore neither exercises nor
+  // depends on #1420's pre-frame freeze — the mixer / reverb / clouds property.
+  { type: 'sidecar', pages: 3 },
 ] as const;
 
 /** TIGHT per-scene diff budgets (absolute pixels; Playwright takes the MIN of

@@ -110,14 +110,157 @@ export const sidecarDef: AudioModuleDef = {
     { id: 'release',   label: 'Release',   defaultValue: 100,  min: 1,   max: 2000, curve: 'log',    units: 'ms' },
     { id: 'knee',      label: 'Knee',      defaultValue: 6,    min: 0,   max: 24,   curve: 'linear', units: 'dB' },
     { id: 'envMag',     label: 'Env Mag',    defaultValue: 1,    min: 0,   max: 2,    curve: 'linear' },
-    { id: 'inputLevel', label: 'Input Lvl',  defaultValue: 1,    min: 0,   max: 2,    curve: 'linear', units: '%' },
+    // ⚠ `units: '%'` ON A 0..2 RANGE, and it is the only one in the registry —
+    // every other `%` param in the fleet is declared 0..100. The value is a
+    // GAIN (1.0 = 100 %), so any surface that prints value+units prints
+    // `1.00 %` where the module means 100 %. It has been invisible only because
+    // SidecarCard passes no `units` to its faders; a FACEPLATE reads the
+    // ParamDef and would paint it. Fixed at the source with a `format` rather
+    // than by rescaling the range — the worklet's own parameterDescriptor is
+    // 0..2 (packages/dsp/src/sidecar.ts) and every saved rack holds a 0..2
+    // value, so moving the range is an audio-affecting migration for a display
+    // bug. `format` is UI metadata: contract-signature projects id/min/max/
+    // curve/default/units and not this, so contract-lock does not move.
+    {
+      id: 'inputLevel', label: 'Input Lvl',  defaultValue: 1,    min: 0,   max: 2,    curve: 'linear', units: '%',
+      format: (v: number) => `${Math.round(v * 100)} %`,
+    },
     { id: 'makeup',     label: 'Makeup',     defaultValue: 0,    min: 0,   max: 24,   curve: 'linear', units: 'dB' },
     { id: 'sc_hpf',    label: 'SC HPF',    defaultValue: 20,   min: 20,  max: 1000, curve: 'log',    units: 'Hz' },
   ],
 
+  // ── THE FACEPLATE (PF-20) ─────────────────────────────────────────────────
+  //
+  // WHAT SIDECAR IS FOR, musically: it is the rack's PUMP — the one module that
+  // makes one signal breathe in time with another. It is not an insert
+  // compressor, it is a two-input BOX. The MAIN pair is the trigger and passes
+  // through untouched; the SC pair is what gets pushed down and summed back in.
+  // The verb is *patch a kick into MAIN, a pad into SC, and set how deep and
+  // how fast the pad gets out of the kick's way.* Every rank below descends
+  // from that sentence.
+  //
+  // THE RANKING IS AGAINST THE DSP, NOT THE DECLARATION ORDER, and it inverts
+  // the def's own list in one place that matters: `makeup` is declared eighth
+  // and ranked eighth here for a measured reason rather than a coincidental
+  // one — it is the SAME DIMENSION as `inputLevel` (compressor-dsp step 9
+  // multiplies the sidechain by both, and `duckLin` comes from the MAIN pair
+  // alone, so the ordering is irrelevant), so it is deliberately ranked BELOW
+  // its twin. And `envMag` is ranked LAST of nine because it is the one control
+  // on this module that provably cannot change what you hear: the output is
+  // bit-identical at 0 / 0.5 / 1 / 2.
+  //
+  //   1 threshold  decides WHETHER anything ducks at all
+  //   2 ratio      how deep (0 / -12.0 / -18.0 / -21.0 / -22.8 dB at 1/2/4/8/20)
+  //   3 release    the "breath" — in a ducker the release IS the groove
+  //   4 inputLevel how loud the ducked signal sits, and the SC path's enabler
+  //   5 attack     how snappy the clamp
+  //   6 knee       moves the ONSET by knee/2 (measured -18.0 -> -30.0 dB)
+  //   7 sc_hpf     detector shaping; ships effectively off (-0.47 dB at 60 Hz)
+  //   8 makeup     the redundant half of the sidechain gain
+  //   9 envMag     CV-shaping only — audio-invariant
+  //
+  // Read back as a sentence: mini shows THRESH; compact adds RATIO; the
+  // six-cell lane plate is the pump itself; and the dock adds the detector
+  // filter, the redundant makeup and the CV-only env scaler.
+  //
+  // `order` AND `pages` DISAGREE, deliberately. `order` is PRIORITY (the tiers
+  // that show a subset); `pages` is SIGNAL ORDER (the tier that shows
+  // everything). So `knee` is a rank-6 refinement that sits in the FIRST band,
+  // because it is part of the detection decision; and `envMag` is the
+  // lowest-ranked control in the module but is last in the chain.
+  //
+  // NO `title`, NO `hint`, NO band hints, NO sidebar. Owner ruling 2026-08-11:
+  // a faceplate states values, and the explanation lives in `docs` for
+  // right-click -> annotate. Everything this face learned is in `docs` above.
+  //
+  // ⚠ THE ONE THING THIS FACE STRUCTURALLY CANNOT SAY. Measured: with the SC
+  // pair unpatched all nine controls are BIT-EXACTLY inert, and with the MAIN
+  // pair unpatched six of them are. That is the most important fact about
+  // operating the module, and a `FaceReadoutValue` is `(read) => string` over
+  // PARAMS — it cannot observe a cable. So it is carried by `docs` and by the
+  // rear card's jack field, and NOT faked with a readout that would have to
+  // guess. The readouts instead state their operating point in their own
+  // labels (`@ FS` = a full-scale mono main).
+  face: {
+    order: [
+      'threshold',
+      'ratio',
+      'release',
+      'inputLevel',
+      'attack',
+      'knee',
+      'sc_hpf',
+      'makeup',
+      'envMag',
+    ],
+
+    // By FUNCTION, in signal order: what the MAIN must do to trigger, then the
+    // shape of the dip, then everything that scales what LEAVES the box (the
+    // ducked audio AND the two CV envelopes — `envMag` is here because ENV /
+    // ENV INV are outputs, not because it is a level).
+    pages: [
+      { id: 'detect', label: 'detect', controls: ['threshold', 'knee', 'sc_hpf'] },
+      { id: 'duck', label: 'duck', controls: ['ratio', 'attack', 'release'] },
+      { id: 'output', label: 'output', controls: ['inputLevel', 'makeup', 'envMag'] },
+    ],
+
+    // A live tap on the primary audio out. UNLIT on a silent rack, which is
+    // correct and deterministic for an insert with nothing patched — the
+    // mixer / reverb / clouds precedent, and measured here: with the SC
+    // unpatched the output is exactly the MAIN passthrough, and with nothing
+    // patched at all it is bit-zero.
+    glyph: 'meter',
+
+    // Every control on this module is a LEVEL or a TIME with a throw, and the
+    // card draws all nine as faders. `fader` is not inferable from a ParamDef
+    // (nothing separates "a level" from any other continuous scalar), so
+    // silently substituting knobs would be a real regression — the `noise`
+    // directive, applied to the module that has nine of them.
+    paramCells: {
+      threshold: 'fader',
+      ratio: 'fader',
+      release: 'fader',
+      inputLevel: 'fader',
+      attack: 'fader',
+      knee: 'fader',
+      sc_hpf: 'fader',
+      makeup: 'fader',
+      envMag: 'fader',
+    },
+
+    hero: {
+      // The dial that decides whether the module does anything at all. It MOVES
+      // out of the `detect` band (heroFacePlan), leaving knee + sc_hpf there —
+      // still two controls, so the band keeps its header.
+      control: 'threshold',
+      // NO `cell`. A transfer-curve picture is the obvious hero and it is a
+      // CONTRACT change (a `controlFamilies` entry -> a contract-lock line -> a
+      // `docs.controls` blob for STRICT_DOCS completeness), so it is queued as
+      // its own PR rather than folded into a face wave. Rank 7 is reachable
+      // here — nine keys — so it can be a real hero cell when it lands, not the
+      // sidebar consolation meowbox and noise had to take.
+      readouts: [
+        // FOUR derived values, each negative-controlled PERMANENTLY on the
+        // input a knob readback is blind to (sidecar-face-model.test.ts), and
+        // the first two are additionally each OTHER'S control: `onset` moves
+        // with KNEE and `duck` structurally cannot, because a detector at
+        // +6.02 dB is past the knee at every width.
+        //
+        // `threshold` prints -18.00 in every state this pair separates.
+        { label: 'onset', valueId: 'sidecar-onset' },
+        { label: 'duck @ FS', valueId: 'sidecar-duck' },
+        // `makeup` is invariant to INPUT LVL and vice versa; only their sum is
+        // the sidechain's gain, and only this readout can print `silent`.
+        { label: 'sc gain', valueId: 'sidecar-sc-gain' },
+        // `envMag` prints 1.00 whether ENV is a dead 0 or an unclamped 1.70.
+        { label: 'env @ FS', valueId: 'sidecar-env' },
+      ],
+    },
+  },
+
   docs: {
     explanation:
-      "A stereo sidechain ducker — the classic 'pumping' compressor where one signal pushes another down. The MAIN pair is the trigger (typically a kick drum); the SIDECHAIN pair is the signal that gets ducked and summed into the output (typically a pad or bass). The sidechain is always present at the output EXCEPT when the main fires, at which point the detector pulls it down by a compressor-style gain computer (threshold, ratio, knee, attack, release) and lets it spring back. Detection is stereo-linked so a transient on either main channel ducks both output channels equally (no image shift), and a sidechain high-pass lets you key off the kick's body without the low end choking the detector. Two extra CV outputs (ENV and ENV INV) expose the live ducking envelope for cross-patching the same pump into other VCAs. Real-source chain: feed a rhythmic source into MAIN and the bus you want pumped into SIDECHAIN.",
+      "A stereo sidechain ducker — the classic 'pumping' compressor where one signal pushes another down. The MAIN pair is the trigger (typically a kick drum); the SIDECHAIN pair is the signal that gets ducked and summed into the output (typically a pad or bass). The sidechain is always present at the output EXCEPT when the main fires, at which point the detector pulls it down by a compressor-style gain computer (threshold, ratio, knee, attack, release) and lets it spring back. Detection is stereo-linked so a transient on either main channel ducks both output channels equally (no image shift), and a sidechain high-pass lets you key off the kick's body without the low end choking the detector. Two extra CV outputs (ENV and ENV INV) expose the live ducking envelope for cross-patching the same pump into other VCAs. Real-source chain: feed a rhythmic source into MAIN and the bus you want pumped into SIDECHAIN. ⚠ IT NEEDS BOTH CABLES BEFORE ANY KNOB DOES ANYTHING, which is the one thing about this module no control can show you. With the SIDECHAIN pair unpatched there is nothing to duck, so the box is a wire: measured on the shipping DSP, the output is BIT-IDENTICAL with every one of the nine controls at either extreme. With the MAIN pair unpatched nothing ever triggers, so the reduction is exactly zero and the sidechain simply passes at its own gain. Patch both, then set the controls.",
     inputs: {
       audio_l_in: "Left MAIN / trigger input — the signal whose transients drive the ducking (e.g. a kick). It also passes through to the output untouched. Unpatched: silent.",
       audio_r_in: "Right MAIN / trigger input. If unpatched it is normalled to MAIN L, so a mono trigger drives both detector channels.",
@@ -134,14 +277,14 @@ export const sidecarDef: AudioModuleDef = {
       env_inv_out: "The inverted ducking envelope (1 − ENV), also un-clamped (can go negative when ENV exceeds 1). Patch it into a downstream VCA's strength to make that VCA CLOSE while this ducker is reducing.",
     },
     controls: {
-      threshold: "The main level (in dB) above which ducking kicks in (-60 to 0 dB, default -18): lower it to duck on quieter hits, raise it so only loud transients pump the sidechain. The THR CV input adds to this.",
-      ratio: "How hard the sidechain is pushed down once over threshold (1:1 to 20:1, default 4): higher ratios duck more aggressively.",
+      threshold: "Where the gain computer's knee is centred (-60 to 0 dB, default -18): lower it to duck on quieter hits, raise it so only loud transients pump the sidechain. ⚠ It is NOT the MAIN level at which ducking starts, for two reasons the dial cannot show. The detector is a stereo-linked sum of rectifiers (|L| + |R|), so a mono trigger normalled to both channels reads 6.02 dB above its own peak; and the soft KNEE opens half its width BELOW this value. At the shipped defaults ducking begins at a main peak of -27.0 dBFS. The faceplate's ONSET readout prints that number; the THR CV input adds to this one.",
+      ratio: "How hard the sidechain is pushed down once over threshold (1:1 to 20:1, default 4): higher ratios duck more aggressively. The dial is very non-linear in its own top half — at a full-scale mono trigger and the default threshold the reduction runs 0 / -12.0 / -18.0 / -21.0 / -22.8 dB at 1 / 2 / 4 / 8 / 20, so the last two thirds of the travel buy under 2 dB. What a given setting is worth also depends on the THRESHOLD, which is why the faceplate prints the reduction rather than the ratio.",
       attack: "How fast the duck clamps down after the main fires (0.1 to 200 ms, log, default 10): short for a snappy pump, longer for a gentler dip.",
       release: "How fast the sidechain springs back up after the main passes (1 to 2000 ms, log, default 100): this sets the 'breath' / pumping speed.",
       knee: "The soft-knee width around the threshold in dB (0 to 24, default 6): a wider knee eases ducking in gradually instead of switching hard at the threshold.",
-      envMag: "Scales how far the ENV / ENV INV CV outputs swing for a given gain reduction (0 to 2, default 1). At 1 a 24 dB reduction reaches ENV 1.0; above 1 the env overshoots past 1.0. Display/CV-shaping only — does not change the audio ducking. The MAG CV input adds to this.",
-      inputLevel: "Input gain on the SIDECHAIN signal before ducking (0 to 200%, default 100%): boost a quiet pad into the mix or trim a loud one. The LVL CV input adds to this.",
-      makeup: "A fixed output gain in dB added after ducking (0 to 24, default 0) to bring the overall level back up.",
+      envMag: "Scales how far the ENV / ENV INV CV outputs swing for a given gain reduction (0 to 2, default 1). It is CV-shaping ONLY: measured on the shipping DSP, the audio output is bit-identical at 0, 0.5, 1 and 2, so this is the one control on the module that cannot change what you hear. ENV is `(reduction / 24 dB) × MAG` and is NOT clamped, so it passes 1.0 whenever the reduction passes 24 dB — at the DEFAULT setting of 1, not only above it (measured 1.70 at MAG 1 with a deep duck). ENV INV is 1 − ENV and goes negative in the same states. Patch them where overshoot is tolerated. At MAG 0 both outputs are constants (ENV 0, ENV INV 1). The MAG CV input adds to this.",
+      inputLevel: "Input gain on the SIDECHAIN signal (0 to 200%, default 100%): boost a quiet pad into the mix or trim a loud one. At 0 the sidechain path is bit-exactly silent and MAKEUP has no authority at all — it and MAKEUP are the SAME dimension in different units (see MAKEUP), so the sidechain's real gain is this knob in dB PLUS makeup. The LVL CV input adds to this.",
+      makeup: "Extra gain in dB on the DUCKED SIDECHAIN (0 to 24, default 0). ⚠ It is NOT an output gain: measured with the sidechain unpatched, the output is bit-identical at 0, 12 and 24 dB, because the MAIN passthrough never passes through it. It multiplies the same signal INPUT LVL does — 20·log10(INPUT LVL) + MAKEUP is the sidechain's total gain, and the two knobs are exactly interchangeable (INPUT LVL 2 / MAKEUP 0 renders bit-identically to INPUT LVL 1 / MAKEUP 6.02). Unlike INPUT LVL it takes no CV.",
       sc_hpf: "A high-pass on the DETECTOR signal only (20 to 1000 Hz, log, default 20 = effectively off): raise it so the detector keys on the main's punch rather than its low end, preventing bass from over-triggering the duck. It does not filter the audio you hear.",
     },
   },
