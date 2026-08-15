@@ -26,6 +26,7 @@ import type { Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 import {
   installMidiMock,
+  replayDerivedBpm,
   sendCc,
   sendClockBurst,
   waitForMidiSubscription,
@@ -407,8 +408,15 @@ test('@midi NoteOn / NoteOff drives MIDI-CV-BUDDY gate', async ({ page }) => {
 //   pulsePeriodMs = smoothed dt between consecutive 0xF8 messages
 //   quarterMs     = pulsePeriodMs * 24
 //   bpm           = 60000 / quarterMs = 2500 / pulsePeriodMs
-// intervalMs = 50 → 50 BPM. We send 60 pulses (2.5 quarters) to let the
-// one-pole smoothing (α=0.25) settle, and tolerate ±5 BPM for timer jitter.
+// intervalMs = 50 REQUESTS ~50 BPM, but setTimeout delivery is a lower bound:
+// on a loaded runner the real spacing runs long (#1569 measured 57–58 ms →
+// 43 BPM, 0.78–4.7 % under the old fixed `>= 45` floor). The source derives
+// tempo from ARRIVAL times, so the only sound expectation is one computed
+// from the same arrivals: sendClockBurst() returns each pulse's in-page
+// performance.now() (dispatch is synchronous, so it equals the deps.now()
+// the source stamps to within microseconds), and replayDerivedBpm() replays
+// the source's exact one-pole α=0.25 derivation over those timestamps.
+// Same-clock comparison — no fixed wall-clock band to drift under load.
 
 test('@midi MIDI Clock pulses drive midi-clock-source BPM derivation', async ({ page, errorWatch }) => {
 
@@ -453,7 +461,7 @@ test('@midi MIDI Clock pulses drive midi-clock-source BPM derivation', async ({ 
     const w = window as unknown as { __mockMidi: { start(): void } };
     w.__mockMidi.start();
   });
-  await sendClockBurst(page, 60, 50);
+  const sentAtMs = await sendClockBurst(page, 60, 50);
 
   // Read the derived BPM out of the source singleton via the app-exposed test
   // hook (gated on testHooksEnabled) — resolves under `vite preview` too,
@@ -467,8 +475,27 @@ test('@midi MIDI Clock pulses drive midi-clock-source BPM derivation', async ({ 
   });
 
   expect(derivedBpm, 'midi-clock-source.getBpm() returned null — pulses never reached the singleton').not.toBeNull();
-  expect(derivedBpm!).toBeGreaterThanOrEqual(45);
-  expect(derivedBpm!).toBeLessThanOrEqual(55);
+
+  // Same-clock expectation: replay the source's exact derivation over the
+  // burst's ACTUAL send timestamps. Both sides observe the identical arrival
+  // times, so agreement is renderer- and load-independent; the old fixed
+  // 45–55 band instead asserted setTimeout's punctuality (#1569: 43.4 and
+  // 42.9 BPM on a loaded runner for a 50 ms request). Tolerance 1 BPM covers
+  // the µs-scale skew between our pre-dispatch stamp and the source's
+  // deps.now() at handler entry.
+  const expectedBpm = replayDerivedBpm(sentAtMs);
+  const dts = sentAtMs.slice(1).map((t, i) => t - sentAtMs[i]!);
+  const meanDtMs = dts.reduce((a, b) => a + b, 0) / Math.max(1, dts.length);
+  expect(
+    expectedBpm,
+    `replayed expectation is null — burst produced no valid intervals (pulses=${sentAtMs.length}, mean dt ${meanDtMs.toFixed(2)} ms)`,
+  ).not.toBeNull();
+  expect(
+    Math.abs(derivedBpm! - expectedBpm!),
+    `derived ${derivedBpm!.toFixed(3)} BPM must match the same-clock replay ` +
+      `${expectedBpm!.toFixed(3)} BPM (units: BPM; pulses=${sentAtMs.length}, ` +
+      `mean actual spacing ${meanDtMs.toFixed(2)} ms for a 50 ms request)`,
+  ).toBeLessThanOrEqual(1);
 
   // Send Stop — derived BPM should clear.
   await page.evaluate(() => {

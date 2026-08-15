@@ -144,23 +144,75 @@ test('per-lane rate: card dropdowns set 1/2 : 1 : 2x lanes advancing at a 1:2:4 
   await seedDenseClips(page, 'cp', [0, 1, 2]);
   await setTransport(page, 1);
 
-  // Let the 2x lane get well into its (no-wrap) 128 steps. base step @240bpm,
-  // 1/16 grid = 62.5 ms → 2x ≈ 32 steps/s.
-  const going = await waitForEngine(page, 'cp', 'currentStep:2', (v) => v >= 40, 8000);
-  expect(going.ok, `2x lane advanced well into the clip (saw ${going.last})`).toBe(true);
+  // ⚠ #1569: the old gate here ("currentStep:2 >= 40 within 8 s") and the
+  // one-shot atomic ratio read that followed were BOTH wall-clock bets against
+  // engine-boot latency. Lanes anchor to the TRANSPORT origin, so when the
+  // engine only becomes readable seconds later on a loaded runner, (a) the
+  // gate times out with almost no visible advance ("saw 7", "saw 30"), and
+  // (b) by read time the 1x lane has WRAPPED its 128-step clip and the
+  // instantaneous ratio is garbage — run 31850032517 read ÷2=102, 1x=77
+  // because 16 steps/s × 12.75 s = 204 ≡ 76 (mod 128). currentStep is CYCLIC;
+  // never compare instantaneous samples of it across lanes.
+  //
+  // Gate instead on LIVENESS (the engine is up and the playhead is moving),
+  // then measure the SUBJECT — the per-lane RATE ratio — as wrap-safe forward
+  // progress accumulated in-page over one shared observation window.
+  const live = await waitForEngine(page, 'cp', 'currentStep:2', (v) => v >= 1, 30_000);
+  expect(
+    live.ok,
+    `engine never became live — currentStep:2 stayed at ${live.last} (needs >= 1 to prove ticking)`,
+  ).toBe(true);
 
-  // ONE atomic read of all three playheads (audio-accurate, common origin) —
-  // the ratio must be 1:2:4 (÷2 : 1 : ×2), ±2 steps of read slack.
-  const [c0, c1, c2] = (await page.evaluate(() => {
-    const w = globalThis as unknown as EngineW;
-    const eng = w.__engine?.();
-    const node = w.__patch.nodes['cp'];
-    return [0, 1, 2].map((L) => (eng && node ? Number(eng.read(node, `currentStep:${L}`)) : NaN));
-  })) as [number, number, number];
-  expect(Number.isFinite(c0) && Number.isFinite(c1) && Number.isFinite(c2)).toBe(true);
-  expect(Math.abs(c1 - 2 * c0), `1x (${c1}) ≈ 2 × ÷2 lane (${c0})`).toBeLessThanOrEqual(2);
-  expect(Math.abs(c2 - 2 * c1), `2x (${c2}) ≈ 2 × 1x lane (${c1})`).toBeLessThanOrEqual(3);
-  expect(Math.abs(c2 - 4 * c0), `2x (${c2}) ≈ 4 × ÷2 lane (${c0})`).toBeLessThanOrEqual(4);
+  // Accumulate forward progress per lane in the page: one setInterval sampler
+  // reads all three playheads in the SAME synchronous callback (a shared
+  // window by construction), credits per-lane deltas, and treats a negative
+  // delta as a wrap (+CLIP_STEPS) — at 25 ms between samples the fastest lane
+  // moves <1 step, so a wrap (Δ ≈ −128) is unmistakable. Stops when the 2x
+  // lane has accumulated ≥40 steps of real progress; the wall-clock cap only
+  // bounds the failure.
+  const prog = await page.evaluate(
+    ({ len }) =>
+      new Promise<{ p: number[]; samples: number; elapsedMs: number }>((resolve) => {
+        const w = globalThis as unknown as EngineW;
+        const p = [0, 0, 0];
+        let last: number[] | null = null;
+        let samples = 0;
+        const startedAt = performance.now();
+        const CAP_MS = 30_000;
+        const timer = setInterval(() => {
+          const eng = w.__engine?.();
+          const node = w.__patch.nodes['cp'];
+          if (!eng || !node) return;
+          const now = [0, 1, 2].map((L) => Number(eng.read(node, `currentStep:${L}`)));
+          if (now.every(Number.isFinite)) {
+            if (last) {
+              for (let L = 0; L < 3; L++) {
+                let d = now[L]! - last[L]!;
+                if (d < 0) d += len; // loop wrap — credit the forward remainder
+                p[L] += d;
+              }
+            }
+            last = now;
+            samples++;
+          }
+          const elapsedMs = performance.now() - startedAt;
+          if (p[2]! >= 40 || elapsedMs >= CAP_MS) {
+            clearInterval(timer);
+            resolve({ p, samples, elapsedMs });
+          }
+        }, 25);
+      }),
+    { len: CLIP_STEPS },
+  );
+  const [p0, p1, p2] = prog.p as [number, number, number];
+  const obs =
+    `progress ÷2=${p0.toFixed(1)} 1x=${p1.toFixed(1)} 2x=${p2.toFixed(1)} steps ` +
+    `over ${Math.round(prog.elapsedMs)} ms / ${prog.samples} samples`;
+  expect(p2, `2x lane accumulated real progress — ${obs}`).toBeGreaterThanOrEqual(40);
+  // The ratio must be 1:2:4 (÷2 : 1 : ×2), ± read slack in STEPS.
+  expect(Math.abs(p1 - 2 * p0), `1x ≈ 2 × ÷2 lane — ${obs}`).toBeLessThanOrEqual(2);
+  expect(Math.abs(p2 - 2 * p1), `2x ≈ 2 × 1x lane — ${obs}`).toBeLessThanOrEqual(3);
+  expect(Math.abs(p2 - 4 * p0), `2x ≈ 4 × ÷2 lane — ${obs}`).toBeLessThanOrEqual(4);
 });
 
 test('RST button: all active clips snap back to step 1 and keep playing', async ({ page, rack }) => {

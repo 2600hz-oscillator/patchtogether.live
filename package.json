@@ -20,12 +20,20 @@
     "watch:dsp": "npm run watch -w packages/dsp",
     "test": "npm test --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "lint": "npm run lint --workspaces --if-present"
+    "lint": "npm run lint:eslint && npm run lint:shell",
+    "lint:eslint": "node scripts/lint/eslint-gate.mjs",
+    "lint:shell": "SHELLCHECK_BIN=\"$(bash scripts/lint/install-shellcheck.sh)/shellcheck\" node scripts/lint/shellcheck-gate.mjs"
   },
   "engines": {
     "node": ">=22.0.0"
   },
   "devDependencies": {
-    "pixelmatch": "^6.0.0"
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.8.1",
+    "eslint-plugin-svelte": "^3.23.0",
+    "globals": "^17.11.0",
+    "pixelmatch": "^6.0.0",
+    "svelte-eslint-parser": "^1.8.0",
+    "typescript-eslint": "^8.67.0"
   }
 }

@@ -25,7 +25,7 @@ tasks:
     silent: true
 
   actionlint:
-    desc: Lint GitHub Actions workflows locally (same pinned binary + flags as CI) — run before pushing any .github/workflows change
+    desc: Lint GitHub Actions workflows locally (same pinned binaries + flags as CI) — run before pushing any .github/workflows change
     vars:
       AL_VER: 1.7.12
       AL_BIN: node_modules/.cache/actionlint/actionlint
@@ -44,8 +44,20 @@ tasks:
             "https://github.com/rhysd/actionlint/releases/download/v{{.AL_VER}}/actionlint_{{.AL_VER}}_${OS}_${ARCH}.tar.gz"
           tar -xzf /tmp/actionlint.tar.gz -C "$(dirname "{{.AL_BIN}}")" actionlint
         fi
-        # -shellcheck= disables shellcheck integration to match ci.yml's actionlint job.
-        "{{.AL_BIN}}" -shellcheck=
+        # SHELLCHECK INTEGRATION IS ON (#1504). It used to be disabled with a
+        # bare `-shellcheck=`, which meant the embedded shell in every `run:`
+        # block — the scripts that decide what gates and what deploys — was
+        # checked for GitHub Actions syntax only. Turning it on surfaced six
+        # real findings across the workflow tree; they are fixed, and the
+        # integration now stays on so the seventh is caught on arrival.
+        # actionlint substitutes GitHub expressions before handing each body to
+        # shellcheck, so the run blocks are checked as shell rather than as
+        # templates. Keep in sync with ci.yml's actionlint job.
+        # (Do NOT write a GitHub expression literally in this file — go-task
+        # parses double braces as its own template action and fails the task.)
+        PATH="$(bash scripts/lint/install-shellcheck.sh):$PATH"
+        export PATH
+        "{{.AL_BIN}}"
 
   # ---------------- Setup ----------------
   install:
@@ -281,6 +293,34 @@ tasks:
     deps: [docs:ensure]
     cmds:
       - npm run typecheck --workspaces --if-present
+
+  lint:
+    desc: Lint TS/Svelte (ESLint) + shell (ShellCheck). The real gate — see #1504.
+    cmds:
+      - task: lint:eslint
+      - task: lint:shell
+
+  lint:eslint:
+    desc: |
+      ESLint over the whole tree (TS + Svelte + JS). FAILS on any finding from a
+      rule that is not NAMED in STAGED_RULES, on a staged entry that no longer
+      has findings (the debt is paid — delete it), on a stale ignore entry, and
+      on its own controls. Config: eslint.config.mjs. Policy: scripts/lint/lint-policy.mjs.
+    cmds:
+      - node scripts/lint/eslint-gate.mjs
+
+  lint:shell:
+    desc: |
+      ShellCheck over every tracked *.sh at the strictest severity. ZERO findings
+      permitted — exemptions are per-instance `# shellcheck disable=SCxxxx # why: ...`
+      directives, never a file-level opt-out. Workflow `run:` blocks are covered
+      separately by `task actionlint`, which now runs WITH the shellcheck integration.
+    cmds:
+      - |
+        set -euo pipefail
+        SHELLCHECK_BIN="$(bash scripts/lint/install-shellcheck.sh)/shellcheck"
+        export SHELLCHECK_BIN
+        node scripts/lint/shellcheck-gate.mjs
 
   # ---------------- Unit + integration tests ----------------
   test:

@@ -52,7 +52,11 @@ MODE="${1:-report}"
 if [ "$MODE" = "enforce" ] && [ -n "${2:-}" ]; then CAP="$2"; fi
 
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || { echo "not a git repo" >&2; exit 1; }
-cd "$ROOT"
+# `|| exit` is load-bearing here, not ceremony: every path below is relative to
+# the repo root, and this script REMOVES worktrees. A failed cd that fell
+# through would run `git worktree remove` from whatever directory the caller
+# happened to be in. (SC2164, found by the shellcheck lane added in #1504.)
+cd "$ROOT" || exit 1
 git fetch origin --quiet 2>/dev/null || true
 
 # The PRIMARY (main) worktree is always the first entry in the porcelain list,
@@ -64,7 +68,7 @@ ATRISK=()  # path|why            — dead but holds work; needs a human
 LIVE=()    # path|why            — a running agent; leave alone
 IDLE=()    # path|why            — unlocked (manual / primary excluded); counts but not auto-removed
 
-path=""; head=""; branch=""; locked=0; lockreason=""; prunable=0; bare=0
+path=""; branch=""; locked=0; lockreason=""; prunable=0; bare=0
 flush() {
   [ -z "$path" ] && return
   if [ "$bare" = "1" ] || [ "$path" = "$PRIMARY" ]; then _reset; return; fi
@@ -94,12 +98,14 @@ flush() {
   fi
   _reset
 }
-_reset() { path=""; head=""; branch=""; locked=0; lockreason=""; prunable=0; bare=0; }
+_reset() { path=""; branch=""; locked=0; lockreason=""; prunable=0; bare=0; }
 
 while IFS= read -r line; do
   case "$line" in
     "worktree "*) flush; path="${line#worktree }" ;;
-    "HEAD "*)     head="${line#HEAD }" ;;
+    # No "HEAD <sha>" case: the sha was parsed into a variable nothing ever
+    # read (SC2034, found by the shellcheck lane added in #1504). Classification
+    # keys off branch/lock/dirty state, never the commit.
     "branch "*)   branch="${line#branch refs/heads/}" ;;
     "detached")   branch="detached" ;;
     "bare")       bare=1 ;;
