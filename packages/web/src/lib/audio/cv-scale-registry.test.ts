@@ -36,7 +36,7 @@ const PASSTHROUGH_BY_DESIGN: Record<string, string[]> = {
   moog962: ['in1', 'in2', 'in3'],
   // filter.dsp: cutoffCv → pow(2, 5*cv) ±5 octaves; resCv: additive clamp.
   filter: ['cutoff', 'res'],
-  // wavetableVco.wavePos: ⚠ THE STATED REASON WAS WRONG UNTIL 2026-08-15 — it
+  // wavetableVco.wavePos: ⚠ THE STATED REASON WAS WRONG UNTIL 2026-08-15 (#1681) — it
   // read "audio-rate input (no paramTarget)", and the def has declared
   // `paramTarget: 'wavePos'` all along. The EXEMPTION is right; the reason is
   // that the port is not summed onto an AudioParam, so `cvScale` would have

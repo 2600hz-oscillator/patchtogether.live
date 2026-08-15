@@ -1,5 +1,5 @@
 <script lang="ts">
-  // ⚠ EVERY RANGE, CURVE, UNIT AND LABEL IS BOUND TO THE DEF (`paramSpec`),
+  // #1681. ⚠ EVERY RANGE, CURVE, UNIT AND LABEL IS BOUND TO THE DEF (`paramSpec`),
   // NEVER RE-TYPED. This card is the reason that rule has teeth: it shipped
   // `min={0}` on `fmAmount` and `pmAmount` where the def declares `min: -1`, so
   // the documented polarity inversion ("negative values invert the modulator's

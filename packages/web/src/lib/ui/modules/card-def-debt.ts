@@ -55,7 +55,7 @@ export const OPERATIONAL_DEBT: Readonly<Record<string, readonly string[]>> = {
   'Moog921bCard.svelte': ['range.curve'],
   'PeakstateCard.svelte': ['complexity.curve'],
 
-  // ── The analogVco bug, on its twin: PAID 2026-08-15, entry DELETED ────────
+  // ── The analogVco bug, on its twin: PAID 2026-08-15 (#1681), entry DELETED ─
   // `WavetableVcoCard.svelte: ['fmAmount.min', 'pmAmount.min']` lived here.
   // The def declares both as `min: -1`, the card passed `min={0}`, so the
   // documented polarity inversion was unreachable from the card while the
