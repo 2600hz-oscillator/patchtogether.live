@@ -75,7 +75,7 @@ jobs:
           set -euo pipefail
 
           # Last-shipped SHA (empty on first ever run → treat everything as new).
-          LAST=$(git rev-parse -q --verify refs/tags/prod-deployed^{commit} 2>/dev/null || echo "")
+          LAST=$(git rev-parse -q --verify "refs/tags/prod-deployed^{commit}" 2>/dev/null || echo "")
           echo "last-deployed: ${LAST:-<none>}"
 
           GREEN=""
@@ -117,15 +117,19 @@ jobs:
 
           if [ -z "$GREEN" ]; then
             echo "::warning::No fully-green main commit found in the last 40 — nothing to deploy."
-            echo "found=false" >> "$GITHUB_OUTPUT"
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-            echo "relay_changed=false" >> "$GITHUB_OUTPUT"
+            {
+              echo "found=false"
+              echo "changed=false"
+              echo "relay_changed=false"
+            } >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
-          echo "found=true" >> "$GITHUB_OUTPUT"
-          echo "sha=$GREEN" >> "$GITHUB_OUTPUT"
-          echo "short=${GREEN:0:9}" >> "$GITHUB_OUTPUT"
+          {
+            echo "found=true"
+            echo "sha=$GREEN"
+            echo "short=${GREEN:0:9}"
+          } >> "$GITHUB_OUTPUT"
 
           if [ "$GREEN" = "$LAST" ]; then
             echo "changed=false" >> "$GITHUB_OUTPUT"

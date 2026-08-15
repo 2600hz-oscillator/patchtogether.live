@@ -100,10 +100,17 @@ jobs:
   # at parse time but `yaml.safe_load` (the only check we had) cannot detect.
   # Pinned binary download (not the flox manifest — actionlint builds from
   # source under nix, which would add wall-time to every flox-activate job).
-  # `-shellcheck=` disables the shellcheck integration so the gate stays
-  # focused on GHA syntax + context availability, without failing on
-  # pre-existing shell nits inside run: blocks. Wired into the `ci` umbrella
-  # below → a broken workflow blocks merge, no ruleset change (like `build`).
+  # SHELLCHECK INTEGRATION IS ON (#1504). It used to be turned off with a bare
+  # `-shellcheck=`, on the reasoning that the gate should stay focused on GHA
+  # syntax without failing on pre-existing shell nits. The cost of that was
+  # thousands of lines of embedded shell — the scripts that decide what gates
+  # and what deploys — going unchecked for years. Turning it on found six real
+  # issues across the workflow tree (an unquoted git revision spec that shell
+  # was parsing as a brace group, two deliberate word-splits now documented as
+  # named exemptions, and redundant redirects); all are fixed, so the
+  # integration stays on and the seventh is caught on arrival.
+  # Wired into the `ci` umbrella below → a broken workflow blocks merge, no
+  # ruleset change (like `build`).
   # -----------------------------------------------------------------------
   actionlint:
     name: actionlint (workflow lint)
@@ -124,7 +131,56 @@ jobs:
             -o actionlint.tar.gz \
             "https://github.com/rhysd/actionlint/releases/download/v${VER}/actionlint_${VER}_linux_amd64.tar.gz"
           tar -xzf actionlint.tar.gz actionlint
-          ./actionlint -shellcheck=
+          # The PINNED shellcheck, not the runner's preinstalled one: a linter
+          # whose version drifts between a laptop and CI produces findings one
+          # of them cannot reproduce. Same binary `task lint:shell` uses.
+          PATH="$(bash scripts/lint/install-shellcheck.sh):$PATH"
+          export PATH
+          ./actionlint
+
+  # -----------------------------------------------------------------------
+  # lint — `task lint`: ESLint over TS/Svelte/JS + ShellCheck over every
+  # tracked *.sh. NEW in #1504; before it, this repo had no lint job at all,
+  # and the root `lint` script was `npm run lint --workspaces --if-present`
+  # against zero workspaces that defined one — a command that ran no linters
+  # and exited 0.
+  #
+  # OFF THE CRITICAL PATH. ~30 s of ESLint plus ~1 s of ShellCheck, and it
+  # runs in parallel with typecheck/unit/build. The umbrella's wall time is
+  # set by the e2e shards (minutes), so this adds runner-minutes but not
+  # merge latency. Independent of everything else — no `needs:`.
+  #
+  # It gates: it is in the `ci` umbrella's needs + env + failing condition
+  # below, the same three edits every other required job uses. No new required
+  # context, so no ruleset change (ruleset 16042163 requires the umbrella and
+  # vrt-strict; naming a job after a required context is the thing the
+  # docs-only-gate comments warn against).
+  # -----------------------------------------------------------------------
+  lint:
+    name: lint (eslint + shellcheck)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Flox
+        uses: flox/install-flox-action@v2
+
+      - name: Cache npm
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-deps-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-deps-
+
+      - name: Install workspace deps
+        run: flox activate -- task install
+
+      - name: Run lint
+        run: flox activate -- task lint
 
   # -----------------------------------------------------------------------
   # typecheck — `task typecheck` (npm run typecheck --workspaces). ~18 s of
@@ -1026,8 +1082,10 @@ jobs:
           # silently dropped spec would look exactly like a speedup.
           SPECS=$(cd e2e && flox activate -- npx playwright test --list --reporter=json 2>/dev/null \
             | flox activate -- node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{const r=JSON.parse(d),f=new Set();(function w(s){for(const x of s||[]){if(x.file)f.add(x.file);w(x.suites);}})(r.suites);console.log([...f].sort().join(" "));})')
+          # shellcheck disable=SC2086 # why: $SPECS is a SPACE-SEPARATED SPEC LIST and word splitting is the mechanism, not an accident — quoting it would hand the planner one argument that is the whole suite concatenated.
           FILES=$(flox activate -- node scripts/e2e-shard-plan.mjs ${{ matrix.shard }} 10 --files $SPECS)
           echo "shard ${{ matrix.shard }}/10 -> $(echo "$FILES" | wc -w) spec files"
+          # shellcheck disable=SC2086 # why: $FILES is this shard's spec list; word splitting is how playwright receives one argument per spec file. Quoting it would pass a single nonexistent filename.
           flox activate -- bash scripts/e2e-shard-budget.sh -- \
             npx --workspace e2e playwright test \
             --global-timeout 1020000 \
@@ -2562,7 +2620,7 @@ jobs:
     # result) but is INFORMATIONAL — $GRAND_ATTEST is deliberately NOT in the
     # failing `if` below, exactly how webgl-attest + collab-attest started. The
     # owner arms it required later by adding $GRAND_ATTEST to the failing test.
-    needs: [actionlint, typecheck, unit, dsp-build, build-web, art, build, e2e, webgl-smoke, webgl-attest, collab-attest, grand-attest, behavioral-smoke]
+    needs: [actionlint, lint, typecheck, unit, dsp-build, build-web, art, build, e2e, webgl-smoke, webgl-attest, collab-attest, grand-attest, behavioral-smoke]
     runs-on: ubuntu-latest
     timeout-minutes: 2
 
@@ -2570,6 +2628,7 @@ jobs:
       - name: Aggregate result
         env:
           ACTIONLINT: ${{ needs.actionlint.result }}
+          LINT: ${{ needs.lint.result }}
           TYPECHECK: ${{ needs.typecheck.result }}
           UNIT: ${{ needs.unit.result }}
           DSP_BUILD: ${{ needs.dsp-build.result }}
@@ -2584,6 +2643,7 @@ jobs:
           BEHAVIORAL_SMOKE: ${{ needs.behavioral-smoke.result }}
         run: |
           echo "actionlint:    $ACTIONLINT"
+          echo "lint:          $LINT"
           echo "typecheck:     $TYPECHECK"
           echo "unit:          $UNIT"
           echo "dsp-build:     $DSP_BUILD"
@@ -2637,7 +2697,14 @@ jobs:
           # below, exactly how webgl-attest + collab-attest started. Arm it required
           # later by adding `|| "$GRAND_ATTEST" != "success"` here once the pin is
           # stable. See ci-grand-attest/README.md.
+          # $LINT is GATING from the moment it lands (#1504). It is not
+          # informational-first like webgl-attest/collab-attest were: those
+          # were new, flake-prone real-hardware lanes. This is a deterministic
+          # static check that is green on the tree today, and an ungated lint
+          # job would recreate the exact defect #1504 exists to fix — a lint
+          # signal nobody has to act on.
           if [[ "$ACTIONLINT" != "success" \
+             || "$LINT" != "success" \
              || "$TYPECHECK" != "success" \
              || "$UNIT" != "success" \
              || "$DSP_BUILD" != "success" \
