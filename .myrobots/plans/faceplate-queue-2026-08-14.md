@@ -63,7 +63,12 @@ Ordered by user value — how often a player actually operates the module — wi
 the risk each one carries stated up front, because two of the top three carry
 platform risk that a face PR must not absorb silently.
 
-### Q1 · `sidecar` — the stereo sidechain ducker  ⟵ IMPLEMENTED FIRST
+### Q1 · `sidecar` — the stereo sidechain ducker  ⟵ IMPLEMENTED (this branch)
+
+**Status: promoted.** Face authored, `STRICT_FACES` entry added, four derived
+readouts registered, card range-bound, VRT roster entry added and the linux
+capture dispatched. The three documentation defects §3 measured are filed as
+**#1657** and fixed in the same branch.
 
 **What it is FOR, musically.** SIDECAR is the rack's PUMP: the one module that
 makes one signal breathe in time with another. It is not an insert compressor —
@@ -220,8 +225,8 @@ bass.
 **STOP 2: CLEAN** — `TreeohvoxCard.svelte` has zero buttons; every control is a
 param fader.
 
-**⚠ AUDIT ITEM THAT MUST BE SETTLED BEFORE THE FACE — it looks like the `rings`
-defect.** Grepped against the tree: the factory declares no `manualTrigger` read
+**⚠ AUDIT ITEM THAT MUST BE SETTLED BEFORE THE FACE — filed as #1658. It looks
+like the `rings` defect.** Grepped against the tree: the factory declares no `manualTrigger` read
 key and the card mounts no strike affordance, so **the module appears to be
 un-soundable from any surface** — you must patch a gate into `gate_in`. That is
 exactly what shipped on `rings` (twenty controls over an instrument that could
@@ -353,21 +358,21 @@ SC-path output for four equivalent pairs: `inLvl 2 / makeup 0` → 6.0206 dB;
 `20log₁₀(inputLevel) + makeup` and NEITHER knob's readback can print it. Not a
 defect — a redundancy — and it is why the face publishes `sc gain`.
 
-**M4 — DEFECT (doc): `makeup` IS NOT AN OUTPUT GAIN.** The def documents it as
+**M4 — DEFECT (doc, #1657): `makeup` IS NOT AN OUTPUT GAIN.** The def documents it as
 *"a fixed output gain in dB added after ducking … to bring the overall level back
 up"*. Measured with the SC unpatched, the output peak is `0.500000000` at makeup
 0, 12 AND 24 dB — bit-identical. `makeup` multiplies the DUCKED SIDECHAIN only
 (`compressor-dsp.ts` step 8/9); the MAIN passthrough never sees it. The DSP's own
 param comment says so correctly; the user-facing doc does not.
 
-**M5 — DEFECT (doc): ENV OVERSHOOTS AT THE DEFAULT `envMag`, NOT ONLY ABOVE IT.**
+**M5 — DEFECT (doc, #1657): ENV OVERSHOOTS AT THE DEFAULT `envMag`, NOT ONLY ABOVE IT.**
 The doc says *"At 1 a 24 dB reduction reaches ENV 1.0; above 1 the env overshoots
 past 1.0"*, which reads as "overshoot requires envMag > 1". Measured at
 `envMag = 1` with `threshold −40, ratio 20` and a −0.9 main, ENV ran
 **1.6889 – 1.7044**. The real condition is *reduction > 24 dB*, at any
 `envMag > 0` — `env = (−gainDb / 24) · envMag`, unclamped.
 
-**M6 — DEFECT (display): `inputLevel` DECLARES `units: '%'` ON A 0..2 RANGE.** It
+**M6 — DEFECT (display, #1657): `inputLevel` DECLARES `units: '%'` ON A 0..2 RANGE.** It
 is the only such param in the fleet — the other six `%` params (wavesculpt's wall
 alphas) are all `0..100`. Any surface that prints value+units prints `1.00 %`
 where the module means 100 %. It is invisible today only because
@@ -472,6 +477,15 @@ each had to learn the hard way:
 3. **Promotion is a behaviour change.** `migrated(type)` is
    `STRICT_FACES.has(type)` and the dock swap is not behind a flag, so a merged
    face changes what every workflow-mode user operates on the next deploy.
-4. **The VRT roster is NOT registry-driven.** `e2e/vrt/_shell-faces.ts` /
-   `workflow-shell-faces.spec.ts` must be edited by hand, or the promoted module
-   silently has no VRT scene at all.
+4. **The VRT roster is hand-maintained but IS now gate-coupled** — a correction
+   to `module-faceplates.md`, which still says nothing ties it to `STRICT_FACES`.
+   `workflow-shell-faces.spec.ts:313` asserts roster ≡ `STRICT_FACES` in BOTH
+   directions AND that every scene's baselines are COMMITTED (it reads the
+   filesystem, so a locally-recreated untracked PNG cannot satisfy it). You
+   still add the `{ type, pages }` entry by hand; you can no longer forget to.
+
+5. **A local VRT run WRITES the missing baselines as untracked PNGs.** Measured
+   in this session: running the two new sidecar scenes on macOS produced
+   `face-sidecar-compact.png` (4 626 B) and `face-sidecar-dock.png` (54 129 B)
+   in `__screenshots__/`, untracked. They were deleted, not committed — linux CI
+   is the only baseline author. `git status` for PNGs after every VRT run.
