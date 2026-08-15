@@ -87,7 +87,7 @@ const AUDIO_HANDLER_CEILING_PER_LOAD = 30;
 const IS_PRODUCTION_BUILD =
   process.env.E2E_PREVIEW === '1' || process.env.E2E_USE_PREVIEW === '1';
 
-async function readCounters(page: Page, cdp: CDPSession): Promise<Counters> {
+async function readCountersOnce(page: Page, cdp: CDPSession): Promise<Counters> {
   await cdp.send('HeapProfiler.collectGarbage').catch(() => undefined);
   await cdp.send('HeapProfiler.collectGarbage').catch(() => undefined);
   // Settle for pending finalizers + queued detach work. This is a settle, not a
@@ -104,6 +104,38 @@ async function readCounters(page: Page, cdp: CDPSession): Promise<Counters> {
     audioHandlers: get('AudioHandlers'),
     documents: get('Documents'),
   };
+}
+
+/** Read the counters at a CONVERGED state: repeat GC+read until AudioHandlers
+ *  is unchanged across three consecutive readings (≥2 quiet gaps of ~300 ms
+ *  plus two full GC cycles each), bounded by MAX_READS.
+ *
+ *  Why not one read: AudioHandlers settles ASYNCHRONOUSLY in both directions —
+ *  worklet fetch + AudioNode construction finish after the DOM says "mounted",
+ *  and Blink releases handlers only after the audio thread drops its refs.
+ *  #1569's flaky run is the exact signature of a single-sample instrument: its
+ *  baseline read 129 where the recovery-run read 143 (14 low, construction
+ *  still in flight), so load 1 was debited +41 while every later load read the
+ *  true steady +27 — the identical absolute line (170/197/224/251/278) in both
+ *  attempts. The subject never changed; the sample was early. Convergence
+ *  waits out both the stragglers and the laggards; the iteration cap only
+ *  BOUNDS the failure (a page that never converges returns the last reading
+ *  and reports how many reads it burned). */
+async function readCounters(page: Page, cdp: CDPSession): Promise<Counters> {
+  const MAX_READS = 12;
+  let last = await readCountersOnce(page, cdp);
+  let stableGaps = 0;
+  for (let i = 1; i < MAX_READS; i++) {
+    const next = await readCountersOnce(page, cdp);
+    stableGaps = next.audioHandlers === last.audioHandlers ? stableGaps + 1 : 0;
+    last = next;
+    if (stableGaps >= 2) return last;
+  }
+  console.log(
+    `[leak] ⚠ AudioHandlers did not converge within ${MAX_READS} reads — ` +
+      `using last reading ${last.audioHandlers} (units: Blink AudioHandlers)`,
+  );
+  return last;
 }
 
 function delta(a: Counters, b: Counters): Counters {
