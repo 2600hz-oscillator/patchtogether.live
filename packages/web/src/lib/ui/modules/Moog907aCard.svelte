@@ -63,7 +63,7 @@
           max={p.max}
           defaultValue={def(p.id).defaultValue}
           label={p.label}
-          curve="linear"
+          curve={p.curve}
           onchange={setParam(p.id)}
           moduleId={id}
           paramId={p.id}

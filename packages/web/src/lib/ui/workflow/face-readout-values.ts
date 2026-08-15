@@ -211,6 +211,50 @@ import {
   ceTailText,
   charlottesEchosFaceParams,
 } from '$lib/ui/modules/charlottes-echos-face-model';
+import {
+  MOOG907A_BANK,
+  MOOG914_BANK,
+  type MoogBank,
+  moogBankLevels,
+  moogBankNotchText,
+  moogBankPeakText,
+  moogBankSectionText,
+  moogBankSections,
+  moogBankTiltText,
+} from '$lib/ui/modules/moog-filterbank-face-model';
+
+/**
+ * Both Moog fixed filter banks' entries, GENERATED from the bank's own section
+ * list rather than written out fourteen (and then ten) times.
+ *
+ * ⚠ THE POPULATION IS THE SHARED CENTRE GRID, in both directions. `moogBankSections`
+ * derives the rows from `FILTERBANK_*_CENTERS` + the def's params; the def's
+ * `face.sidebar` derives its entries from the same table; so a registration and
+ * a row cannot go out of step, and neither place carries a count. Add a
+ * thirteenth centre to the lib and both grow together.
+ *
+ * The three hero values (`peak`, `notch`, `tilt`) are each a JOIN over every
+ * level — a coherent complex sum of fourteen overlapping sections — which no
+ * single readback can perform. `tilt` reads only the two end centres so it is
+ * EXACTLY invariant to a uniform level change, while `peak` and `notch` both
+ * move by exactly the change; that is what makes them each other's negative
+ * control on every run (moog-filterbank-face-model.test.ts).
+ */
+function moogBankReadouts(prefix: string, bank: MoogBank): Record<string, FaceReadoutValue> {
+  const lv = (read: (paramId: string) => number | undefined) => moogBankLevels(bank, read);
+  return {
+    [`${prefix}-peak`]: (read) => moogBankPeakText(bank, lv(read)),
+    [`${prefix}-notch`]: (read) => moogBankNotchText(bank, lv(read)),
+    [`${prefix}-tilt`]: (read) => moogBankTiltText(bank, lv(read)),
+    ...Object.fromEntries(
+      moogBankSections(bank).map((s) => [
+        `${prefix}-section-${s.id}`,
+        (read: (paramId: string) => number | undefined) =>
+          moogBankSectionText(bank, lv(read), s.id),
+      ]),
+    ),
+  };
+}
 
 /** A derived readout: live params in (through the caller's reader, which
  *  already resolves def defaults for untouched params), formatted string out.
@@ -901,6 +945,11 @@ const FACE_READOUT_VALUES: Readonly<Record<string, FaceReadoutValue>> = {
   'ce-spacing': (read) => ceSpacingText(charlottesEchosFaceParams(read)),
   'ce-loop-gain': (read) => ceLoopText(charlottesEchosFaceParams(read)),
   'ce-margin': (read) => ceMarginText(charlottesEchosFaceParams(read)),
+  // ── THE MOOG FIXED FILTER BANKS (907A + 914) ─────────────────────────────
+  // ONE generator for TWO modules, because they are one design over two slices
+  // of one grid. See `moogBankReadouts` above for why every id here is derived.
+  ...moogBankReadouts('moog914', MOOG914_BANK),
+  ...moogBankReadouts('moog907a', MOOG907A_BANK),
 };
 
 /** The derived value for a declared id, or `null` (⇒ the readout prints `—`
