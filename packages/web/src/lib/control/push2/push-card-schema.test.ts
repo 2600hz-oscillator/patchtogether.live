@@ -261,6 +261,34 @@ describe('resolvePushCardControls — tier 2, the curated face', () => {
     ]);
   });
 
+  it('a FIRST PROMOTION moves the module GENERIC → FACE, and that re-orders the encoders', () => {
+    // wavetableVco, promoted 2026-08-15 (faceplate queue Q9). Nothing pins it
+    // in PUSH_CARD_CONTROLS, so this is the drift CLAUDE.md's push-card note
+    // warns about, firing as designed — and it is ACCEPTED DELIBERATELY here
+    // rather than left silent, because the golden below only covers overrides
+    // and would never have gone red.
+    //
+    // What moved: the GENERIC tier is DECLARATION order — tune, fine, wavePos,
+    // fmAmount, pmAmount — so WAVE sat on encoder 3. The face ranks WAVE first
+    // (it is the only control that changes the timbre, and the only thing this
+    // VCO does that its siblings cannot), so it takes encoder 1 and pushes TUNE
+    // and FINE down one each. Five params, all turnable, so nothing is skipped
+    // and nothing falls off the 8-wide window; the card is a permutation of the
+    // same set, which is exactly the case an override would be wrong to freeze.
+    const spec = resolvePushCardControls(defByType('wavetableVco'));
+    expect(spec.source).toBe('face');
+    expect(spec.skipped, 'no families and no momentary pads on this module').toEqual([]);
+    expect(pushCardParams(spec).map((q) => q.id)).toEqual([
+      'wavePos', 'tune', 'fine', 'fmAmount', 'pmAmount',
+    ]);
+    // The negative control on the claim above: the DEF's own declaration order
+    // is genuinely different, so this test would pass vacuously if the two
+    // agreed and a future re-rank could not be distinguished from a no-op.
+    expect((defByType('wavetableVco').params ?? []).map((q) => q.id)).toEqual([
+      'tune', 'fine', 'wavePos', 'fmAmount', 'pmAmount',
+    ]);
+  });
+
   it('records WHICH keys it skipped, so the card cannot silently shrink', () => {
     // Fixture: a face whose first two ranks are unturnable. Both are named.
     const def = fixture({
