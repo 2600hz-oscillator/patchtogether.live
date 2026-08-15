@@ -148,34 +148,57 @@ test('#1661 — an LFO patched into the timbre CV input actually modulates the a
     ],
   );
 
-  const centroids: number[] = [];
-  for (let i = 0; i < 8; i++) {
-    const cap = await captureScope(page);
-    centroids.push(spectralCentroid(cap.buf, cap.sr));
+  // OBSERVABLE: RMS spread, not spectral centroid — MEASURED, not assumed.
+  //
+  // This assertion used to compare the RANGE of 8 spectral centroids against a
+  // depth-0 control, and it could not have worked. Measured over 3 runs of this
+  // exact patch (16 samples each):
+  //
+  //   centroid sd   modulated 493 / 493 / 527   control 575 / 541 / 537
+  //   rms sd        modulated 0.0738 x3         control 0.0031 / 0.0031 / 0.0030
+  //
+  // The control's centroid spread is LARGER than the modulated signal's: this
+  // waveshaped output moves its centroid violently on tiny phase differences,
+  // so the metric is blind to the thing under test and the old test passed or
+  // failed on which extreme its 8 samples happened to catch. RMS separates the
+  // two conditions by ~24x and reproduces to the 4th decimal.
+  //
+  // Statistic is the STANDARD DEVIATION, not max-min: a range is an
+  // extreme-value estimator whose expectation grows with sample count, which is
+  // exactly the wrong property for a noise-floor comparison.
+  const rmsOf = (b: Float32Array) => Math.sqrt(b.reduce((a, v) => a + v * v, 0) / b.length);
+  const sd = (xs: number[]) => {
+    const m = xs.reduce((a, v) => a + v, 0) / xs.length;
+    return Math.sqrt(xs.reduce((a, v) => a + (v - m) ** 2, 0) / xs.length);
+  };
+  const modRms: number[] = [];
+  for (let i = 0; i < 16; i++) {
+    modRms.push(rmsOf((await captureScope(page)).buf));
     await waitFrames(page, 6);
   }
-  const swing = Math.max(...centroids) - Math.min(...centroids);
+  const modSd = sd(modRms);
 
   // NEGATIVE CONTROL, in the same page and the same patch: pull the LFO's depth
-  // to 0 so the cable is still connected but carries no modulation. Whatever
-  // residual frame-to-frame jitter the instrument has shows up HERE, so the
-  // comparison below is against this run's own noise floor rather than a
-  // hand-tuned constant. Without it, "the CV works" and "the scope trace is
-  // just noisy" are indistinguishable.
+  // to 0 so the cable stays connected but carries no modulation. Whatever
+  // residual jitter the instrument has shows up HERE, so the comparison is
+  // against this run's own noise floor rather than a hand-tuned constant.
+  // Without it, "the CV works" and "the scope trace is noisy" are
+  // indistinguishable — and a DEAD CV path (the #1661 defect: peak |Δsample|
+  // exactly 0.0000e+0) reads as modSd ≈ ctrlSd.
   await setParams(page, 'lfo', { depth: 0 });
   await waitFrames(page, 20);
-  const still: number[] = [];
-  for (let i = 0; i < 8; i++) {
-    const cap = await captureScope(page);
-    still.push(spectralCentroid(cap.buf, cap.sr));
+  const ctrlRms: number[] = [];
+  for (let i = 0; i < 16; i++) {
+    ctrlRms.push(rmsOf((await captureScope(page)).buf));
     await waitFrames(page, 6);
   }
-  const stillSwing = Math.max(...still) - Math.min(...still);
+  const ctrlSd = sd(ctrlRms);
 
   expect(
-    swing,
-    `LFO → timbre produced a centroid swing of ${swing.toFixed(0)} Hz against a `
-    + `depth-0 control swing of ${stillSwing.toFixed(0)} Hz. A dead CV path reads `
-    + `as swing ≈ control (that was #1661: peak |Δsample| exactly 0.0000e+0).`,
-  ).toBeGreaterThan(Math.max(stillSwing * 3, 50));
+    modSd,
+    `LFO → timbre produced an RMS spread of sd=${modSd.toFixed(4)} against a depth-0 `
+    + `control of sd=${ctrlSd.toFixed(4)} (measured separation is ~24x; the bar is 5x). `
+    + `A dead CV path reads as modSd ≈ ctrlSd — that was #1661, peak |Δsample| `
+    + `exactly 0.0000e+0.`,
+  ).toBeGreaterThan(Math.max(ctrlSd * 5, 0.005));
 });
