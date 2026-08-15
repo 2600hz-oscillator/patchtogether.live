@@ -356,20 +356,29 @@ test('Sequenced VCO: matrix unpatch + re-patch, then Cmd-Z all the way back to t
 
   // The matrix WORKS: the new cable exists, the unpatched ones are gone, the
   // untouched ones remain.
+  // ⚠ #1569: this poll used to collapse all seven conditions into ONE bare
+  // boolean — its two CI failures reported `expect(false).toBe(true)` and
+  // nothing else, which is undiagnosable from the blob report. Poll a
+  // DESCRIPTION instead: green is 'OK', red prints exactly which conditions
+  // are unmet plus the live edge set it saw.
   await expect
     .poll(async () => {
       const ids = Object.keys(await readEdges(page));
-      return (
-        ids.includes('e-vd-adsr-env_inv-vd-vca-cv') && // new patch
-        !ids.includes('e-vd-adsr-env-vd-vca-cv') && // unpatched
-        !ids.includes('e-vd-seq-pitch-vd-vco-pitch') && // unpatched
-        ids.includes('e-vd-seq-gate-vd-adsr-gate') && // untouched
-        ids.includes('e-vd-vco-sine-vd-vca-audio') && // untouched
-        ids.includes('e-vd-vca-audio-vd-out-L') && // untouched (stereo)
-        ids.includes('e-vd-vca-audio-vd-out-R')
-      );
+      const conditions: [string, boolean][] = [
+        ['new patch e-vd-adsr-env_inv-vd-vca-cv PRESENT', ids.includes('e-vd-adsr-env_inv-vd-vca-cv')],
+        ['unpatched e-vd-adsr-env-vd-vca-cv GONE', !ids.includes('e-vd-adsr-env-vd-vca-cv')],
+        ['unpatched e-vd-seq-pitch-vd-vco-pitch GONE', !ids.includes('e-vd-seq-pitch-vd-vco-pitch')],
+        ['untouched e-vd-seq-gate-vd-adsr-gate PRESENT', ids.includes('e-vd-seq-gate-vd-adsr-gate')],
+        ['untouched e-vd-vco-sine-vd-vca-audio PRESENT', ids.includes('e-vd-vco-sine-vd-vca-audio')],
+        ['untouched stereo e-vd-vca-audio-vd-out-L PRESENT', ids.includes('e-vd-vca-audio-vd-out-L')],
+        ['untouched stereo e-vd-vca-audio-vd-out-R PRESENT', ids.includes('e-vd-vca-audio-vd-out-R')],
+      ];
+      const unmet = conditions.filter(([, ok]) => !ok).map(([label]) => label);
+      return unmet.length === 0
+        ? 'OK'
+        : `UNMET: ${unmet.join('; ')} — live edges: [${ids.sort().join(', ')}]`;
     })
-    .toBe(true);
+    .toBe('OK');
 
   // ── Hit Cmd-Z (the REAL keybinding) until we're back at the starting point ──
   const startKey = JSON.stringify(startEdges);

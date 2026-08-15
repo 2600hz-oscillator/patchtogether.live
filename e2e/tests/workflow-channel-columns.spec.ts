@@ -194,43 +194,64 @@ async function seedAndRun(page: Page, lanes: number[]): Promise<void> {
   }, lanes);
 }
 
-/** Poll for `durationMs`, accumulating the per-channel MAX mixmstrs meter RMS
- *  (read('levels') → number[8]) and the MAX pinned AUDIO OUT RMS. */
+/** Accumulate, IN THE PAGE, the per-channel MAX mixmstrs meter RMS
+ *  (read('levels') → number[8]) and the MAX pinned AUDIO OUT RMS over
+ *  `durationMs`, sampling on a 25 ms in-page timer.
+ *
+ *  ⚠ This was a Playwright-side poll loop (one cross-process round trip per
+ *  sample on the same main thread as the subject, 40 ms nominal). On a loaded
+ *  runner that samples SPARSELY, and the max of a decaying note-pattern meter
+ *  under sparse sampling is a lottery on which slices of the envelope the
+ *  samples land — #1569 caught the ADDITIVE test's after/base ratio at both
+ *  1.87× and 0.45× for IDENTICAL seeded content. In-page accumulation makes
+ *  sampling density independent of runner load; `samples`/`elapsedMs` are
+ *  returned so an assertion can show how well the window was actually
+ *  observed. */
 async function pollAudio(
   page: Page,
   durationMs: number,
-): Promise<{ channelMax: number[]; outMax: number }> {
-  const channelMax = new Array(8).fill(0);
-  let outMax = 0;
-  const end = Date.now() + durationMs;
-  while (Date.now() < end) {
-    const sample = await page.evaluate(() => {
-      const w = globalThis as unknown as {
-        __engine?: () => { read: (n: { id: string; type: string; domain: string }, k: string) => unknown } | null;
-        __patch: { nodes: Record<string, { id: string; type: string; domain: string } | undefined> };
-      };
-      const eng = w.__engine?.();
-      const mixer = w.__patch.nodes['pinned-mixmstrs'];
-      const out = w.__patch.nodes['pinned-audioOut'];
-      const levels = eng && mixer ? (eng.read(mixer, 'levels') as number[] | undefined) : undefined;
-      let outRms = 0;
-      if (eng && out) {
-        const snap = eng.read(out, 'outputSnapshot') as { samples: Float32Array } | undefined;
-        if (snap?.samples?.length) {
-          let s = 0;
-          for (let i = 0; i < snap.samples.length; i++) s += snap.samples[i]! * snap.samples[i]!;
-          outRms = Math.sqrt(s / snap.samples.length);
-        }
-      }
-      return { levels: levels ?? [], outRms };
-    });
-    for (let i = 0; i < sample.levels.length && i < 8; i++) {
-      channelMax[i] = Math.max(channelMax[i], sample.levels[i] ?? 0);
-    }
-    outMax = Math.max(outMax, sample.outRms);
-    await page.waitForTimeout(40);
-  }
-  return { channelMax, outMax };
+): Promise<{ channelMax: number[]; outMax: number; samples: number; elapsedMs: number }> {
+  return await page.evaluate(
+    ({ durationMs }) =>
+      new Promise<{ channelMax: number[]; outMax: number; samples: number; elapsedMs: number }>(
+        (resolve) => {
+          const w = globalThis as unknown as {
+            __engine?: () => { read: (n: { id: string; type: string; domain: string }, k: string) => unknown } | null;
+            __patch: { nodes: Record<string, { id: string; type: string; domain: string } | undefined> };
+          };
+          const channelMax = new Array(8).fill(0);
+          let outMax = 0;
+          let samples = 0;
+          const startedAt = performance.now();
+          const timer = setInterval(() => {
+            const eng = w.__engine?.();
+            const mixer = w.__patch.nodes['pinned-mixmstrs'];
+            const out = w.__patch.nodes['pinned-audioOut'];
+            const levels = eng && mixer ? (eng.read(mixer, 'levels') as number[] | undefined) : undefined;
+            if (levels) {
+              for (let i = 0; i < levels.length && i < 8; i++) {
+                channelMax[i] = Math.max(channelMax[i], levels[i] ?? 0);
+              }
+            }
+            if (eng && out) {
+              const snap = eng.read(out, 'outputSnapshot') as { samples: Float32Array } | undefined;
+              if (snap?.samples?.length) {
+                let s = 0;
+                for (let i = 0; i < snap.samples.length; i++) s += snap.samples[i]! * snap.samples[i]!;
+                outMax = Math.max(outMax, Math.sqrt(s / snap.samples.length));
+              }
+            }
+            samples++;
+            const elapsedMs = performance.now() - startedAt;
+            if (elapsedMs >= durationMs) {
+              clearInterval(timer);
+              resolve({ channelMax, outMax, samples, elapsedMs });
+            }
+          }, 25);
+        },
+      ),
+    { durationMs },
+  );
 }
 
 test.describe('workflow channel columns', () => {
@@ -706,8 +727,20 @@ test.describe('workflow channel columns', () => {
     const after = await pollAudio(page, 8_000);
     expect(after.channelMax[1], 'channel 2 still audible after the tap').toBeGreaterThan(0.002);
     // Within a tolerant ratio of the baseline (no boost, no cut from the tap).
-    expect(after.channelMax[1]).toBeGreaterThan(base.channelMax[1] * 0.5);
-    expect(after.channelMax[1]).toBeLessThan(base.channelMax[1] * 2.0);
+    // Units: mixmstrs meter RMS (max over the window). Both windows observe the
+    // SAME seeded lane-2 content, so a ratio outside the band with dense
+    // observation is a real level change, not sampling luck.
+    const ratioMsg =
+      `after ${after.channelMax[1]!.toFixed(4)} vs base ${base.channelMax[1]!.toFixed(4)} meter-RMS max ` +
+      `(ratio ${(after.channelMax[1]! / base.channelMax[1]!).toFixed(2)}; ` +
+      `base ${base.samples} samples/${Math.round(base.elapsedMs)} ms, ` +
+      `after ${after.samples} samples/${Math.round(after.elapsedMs)} ms)`;
+    expect(after.channelMax[1], `no cut from the tap — ${ratioMsg}`).toBeGreaterThan(
+      base.channelMax[1] * 0.5,
+    );
+    expect(after.channelMax[1], `no boost from the tap — ${ratioMsg}`).toBeLessThan(
+      base.channelMax[1] * 2.0,
+    );
   });
 
   test('MIDI-OUT-BUDDY: changing the MIDI out channel keeps its lane + clip assignment (violet override badge)', async ({ page }) => {
