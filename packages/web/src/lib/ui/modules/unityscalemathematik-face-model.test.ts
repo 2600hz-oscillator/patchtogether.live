@@ -180,12 +180,27 @@ describe('TOTALITY — the generator runs on every render', () => {
     }
   });
 
-  it('an unknown param id throws rather than silently defaulting', () => {
-    // `unityscaleFaceParams` resolves the DEF DEFAULT for anything untouched;
-    // that must not extend to a param the def does not declare, or a renamed
-    // param would read as "untouched" forever.
+  it('an unknown SECTION returns NaN and the formatter prints a dash — it never throws', () => {
+    // Two different failure modes, deliberately handled differently.
+    //
+    // An unknown SECTION is a caller bug that must not take the faceplate down
+    // mid-drag, so `unityscaleResponse` returns NaN and `fmtUnityscaleResponse`
+    // renders it as `—`. Nothing can reach it today (the ids are derived off
+    // the def), which is exactly why it is asserted rather than assumed.
     expect(() => unityscaleResponse('zzz', 0.5, base())).not.toThrow();
     expect(Number.isNaN(unityscaleResponse('zzz', 0.5, base()))).toBe(true);
+    expect(fmtUnityscaleResponse(Number.NaN)).toBe('—');
+
+    // An unknown PARAM id is a DEF bug — a rename that left this model behind —
+    // and it must NOT resolve to a plausible default, or the readout would keep
+    // printing a confident number for a control that no longer exists. It
+    // throws, which the totality leg above proves is unreachable for every id
+    // the model actually asks for.
+    expect(() => unityscaleFaceParams(() => undefined)).not.toThrow();
+    const declared = new Set(unityscalemathematikDef.params.map((p) => p.id));
+    for (const id of ['unityAtten', 'aAtten', 'aCurve', 'bAtten', 'bCurve']) {
+      expect(declared.has(id), `the model reads '${id}', which the def must declare`).toBe(true);
+    }
   });
 });
 
