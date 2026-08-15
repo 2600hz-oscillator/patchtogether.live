@@ -2948,6 +2948,7 @@ sidecar param threshold -60..0 linear default=-18 unit=dB
 sidecar stereo audio_l_in+audio_r_in
 sidecar stereo audio_l_out+audio_r_out
 sidecar stereo sc_l_in+sc_r_in
+sidecar family sidecar-curve kind=cell prefix=sidecar-curve
 sixstrum meta domain=audio
 sixstrum in accent cv
 sixstrum in body_cv cv param=body cvScale=linear
