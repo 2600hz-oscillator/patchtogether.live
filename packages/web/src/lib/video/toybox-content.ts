@@ -14,6 +14,37 @@
 //
 // The manifest declares each entry's float-uniform params: this is the
 // SINGLE SOURCE OF TRUTH for the card faders and (Phase 2+) CV targets.
+//
+// ── #1576: this module is now the STATIC-MANIFEST PROVIDER, not the registry ─
+//
+// The catalog is composed by `toybox-asset-registry.ts` from ordered providers.
+// This file supplies the highest-precedence one (the bundled manifest) and keeps
+// every public signature it had, because ~26 files depend on them and several
+// read the SYNC getters per frame. Specifically unchanged:
+//
+//   * `getContentMeta`/`getModelMeta`/`getPresetMeta` are still SYNCHRONOUS and
+//     still return `undefined` before the manifest resolves.
+//   * `ensureToyboxCatalog()` is still the single await point.
+//   * The manifest is still fetched exactly once per session.
+//
+// What is new is that those getters now resolve across ALL providers, so a
+// session-registered asset (disk ingest today, subsite later) is visible to the
+// same sync call — including one registered AFTER the manifest already loaded.
+// See the registry header for why lookup stayed sync and why the manifest wins
+// an id collision.
+
+import {
+  MANIFEST_PRECEDENCE,
+  invalidateToyboxAssets,
+  listedContent,
+  listedModels,
+  listedPresets,
+  registerToyboxAssetProvider,
+  resolveContent,
+  resolveModel,
+  resolvePreset,
+  type ToyboxAssetProvider,
+} from './toybox-asset-registry';
 
 /** Param descriptor for one declared float uniform of a content shader. */
 export interface ToyboxParamDef {
@@ -57,6 +88,13 @@ export interface ToyboxContent {
    *   - 'scene': the COMPOSITED layers below are bound to iChannel0 (FRAG
    *              family — recolour/displace/feedback FX on the layers beneath). */
   input?: 'none' | 'scene';
+  /** #1576: the GLSL is carried BY THE GRAPH (a layer's inline `shaderSrc`),
+   *  not fetchable from `glsl`. Set on the derived metadata a runtime provider
+   *  registers for a disk-loaded source, whose id is `customShaderKey(src)`.
+   *  `getContent()` REFUSES to fetch one of these rather than requesting the
+   *  unfetchable sentinel `glsl` value and reporting a confusing network error —
+   *  the engine takes the inline path for these ids and never asks. */
+  inlineSource?: true;
 }
 
 /** A 3D model entry (Phase 3 — the OBJ layer). Either a bundled OBJ fetched
@@ -129,12 +167,32 @@ export const TOYBOX_MANIFEST_URL = '/toybox/manifest.json';
 // ---------------- Manifest load + catalog ----------------
 
 let manifestPromise: Promise<ToyboxManifest> | null = null;
-let catalog: ToyboxContent[] | null = null;
-let byId: Map<string, ToyboxContent> | null = null;
-let modelCatalog: ToyboxModel[] | null = null;
-let modelById: Map<string, ToyboxModel> | null = null;
-let presetCatalog: ToyboxPreset[] | null = null;
-let presetById: Map<string, ToyboxPreset> | null = null;
+
+/** What the static-manifest provider has parsed so far. Empty until the fetch
+ *  resolves, which is exactly the pre-#1576 behaviour of the module-level
+ *  caches this replaces: a sync getter before the await returns `undefined`. */
+const manifestStore: {
+  content: ToyboxContent[];
+  models: ToyboxModel[];
+  presets: ToyboxPreset[];
+} = { content: [], models: [], presets: [] };
+
+/**
+ * The bundled-manifest provider. Highest precedence (`MANIFEST_PRECEDENCE`), so
+ * a runtime registration can never shadow a bundled id — presets reference those
+ * ids and presets ride the Y.Doc, so a shadow would diverge two rack-mates.
+ *
+ * Everything it offers is `listed`: bundled content IS the browsable library.
+ */
+const manifestProvider: ToyboxAssetProvider = {
+  name: 'static-manifest',
+  precedence: MANIFEST_PRECEDENCE,
+  content: () => manifestStore.content.map((asset) => ({ asset, listed: true })),
+  models: () => manifestStore.models.map((asset) => ({ asset, listed: true })),
+  presets: () => manifestStore.presets.map((asset) => ({ asset, listed: true })),
+};
+
+registerToyboxAssetProvider(manifestProvider);
 
 /** Fetch + parse the static manifest once; cached for the session. */
 async function loadManifest(): Promise<ToyboxManifest> {
@@ -147,12 +205,17 @@ async function loadManifest(): Promise<ToyboxManifest> {
       const json = (await res.json()) as ToyboxManifest;
       const shaders = Array.isArray(json.shaders) ? json.shaders : [];
       const gen = Array.isArray(json.gen) ? json.gen : [];
-      catalog = [...gen, ...shaders];
-      byId = new Map(catalog.map((c) => [c.id, c]));
-      modelCatalog = Array.isArray(json.models) ? json.models : [];
-      modelById = new Map(modelCatalog.map((m) => [m.id, m]));
-      presetCatalog = Array.isArray(json.presets) ? json.presets : [];
-      presetById = new Map(presetCatalog.map((p) => [p.id, p]));
+      // GEN first, then FX/FRAG — the dropdown order the card has always shown.
+      manifestStore.content = [...gen, ...shaders];
+      manifestStore.models = Array.isArray(json.models) ? json.models : [];
+      manifestStore.presets = Array.isArray(json.presets) ? json.presets : [];
+      // ⚠ Load POPULATES a provider; it does not rebuild a global index. Any
+      // runtime asset registered BEFORE the manifest landed therefore survives
+      // — the composed index is rebuilt from ALL providers on the next lookup,
+      // not overwritten by this one. `toybox-asset-registry.test.ts` covers both
+      // orderings, because "register then load" is the ordering that a naive
+      // cache-assignment would silently destroy.
+      invalidateToyboxAssets();
       return json;
     })();
   }
@@ -164,32 +227,41 @@ export async function ensureToyboxCatalog(): Promise<void> {
   await loadManifest();
 }
 
-/** All FX-family entries (the manifest's `shaders` array). Empty until
- *  ensureToyboxCatalog() has resolved. */
+/** All non-GEN (FX + FRAG family) entries. Was "the manifest's `shaders`
+ *  array"; now DERIVED from `family`, which partitions the two manifest arrays
+ *  exactly (`gen` is family GEN; `shaders` is family FX|FRAG), so the result is
+ *  unchanged for bundled content and additionally composes runtime assets. */
 export async function listShaders(): Promise<ToyboxContent[]> {
-  const m = await loadManifest();
-  return m.shaders;
+  await loadManifest();
+  return listedContent().filter((c) => c.family !== 'GEN');
 }
 
-/** All GEN-family entries (the manifest's `gen` array). Empty until
- *  ensureToyboxCatalog() has resolved. */
+/** All GEN-family entries. Derived from `family` — see listShaders(). */
 export async function listGen(): Promise<ToyboxContent[]> {
-  const m = await loadManifest();
-  return m.gen;
+  await loadManifest();
+  return listedContent().filter((c) => c.family === 'GEN');
 }
 
 /** The full combined catalog (GEN first, then FX) — what the card's content
- *  dropdown iterates. */
+ *  dropdown iterates. Composed across providers; UNLISTED runtime entries (the
+ *  derived metadata for an inline disk-loaded source) are deliberately absent,
+ *  so this change adds nothing to the dropdown. */
 export async function listAllContent(): Promise<ToyboxContent[]> {
   await loadManifest();
-  return catalog ?? [];
+  return [...listedContent()];
 }
 
 /** Synchronous catalog lookup — returns undefined if the manifest hasn't
  *  loaded yet OR the id is unknown. Cards/factories that have already awaited
- *  ensureToyboxCatalog() can use this on the hot path. */
+ *  ensureToyboxCatalog() can use this on the hot path.
+ *
+ *  ⚠ STILL SYNCHRONOUS, AND IT MUST STAY THAT WAY: the worker handle and the
+ *  main-thread engine call this PER FRAME to push each param's uniform, and the
+ *  CV/control-param resolvers call it during routing. Resolution walks a
+ *  memoized composed index (one integer compare + one Map.get), not the
+ *  providers. */
 export function getContentMeta(id: string): ToyboxContent | undefined {
-  return byId?.get(id);
+  return resolveContent(id);
 }
 
 // ---------------- Model catalog (Phase 3 OBJ layer) ----------------
@@ -198,12 +270,13 @@ export function getContentMeta(id: string): ToyboxContent | undefined {
  *  ensureToyboxCatalog() has resolved. */
 export async function listModels(): Promise<ToyboxModel[]> {
   await loadManifest();
-  return modelCatalog ?? [];
+  return [...listedModels()];
 }
 
-/** Synchronous model lookup (manifest must have loaded). */
+/** Synchronous model lookup (manifest must have loaded). Per-frame safe — see
+ *  the note on getContentMeta. */
 export function getModelMeta(id: string): ToyboxModel | undefined {
-  return modelById?.get(id);
+  return resolveModel(id);
 }
 
 // ---------------- Preset catalog (Phase 6) ----------------
@@ -212,18 +285,18 @@ export function getModelMeta(id: string): ToyboxModel | undefined {
  *  ensureToyboxCatalog() has resolved. */
 export async function listPresets(): Promise<ToyboxPreset[]> {
   await loadManifest();
-  return presetCatalog ?? [];
+  return [...listedPresets()];
 }
 
 /** Synchronous preset lookup (manifest must have loaded). */
 export function getPresetMeta(id: string): ToyboxPreset | undefined {
-  return presetById?.get(id);
+  return resolvePreset(id);
 }
 
 /** Fetch the manifest (if needed) then return the preset by id, or undefined. */
 export async function getPreset(id: string): Promise<ToyboxPreset | undefined> {
   await loadManifest();
-  return presetById?.get(id);
+  return resolvePreset(id);
 }
 
 /** The default model id (first model entry) for a fresh OBJ layer. */
@@ -239,7 +312,7 @@ const objCache = new Map<string, Promise<string>>();
  */
 export async function getModelObj(id: string): Promise<{ meta: ToyboxModel; obj: string }> {
   await loadManifest();
-  const meta = modelById?.get(id);
+  const meta = resolveModel(id);
   if (!meta) throw new Error(`TOYBOX: unknown model id '${id}'`);
   if (!meta.obj) throw new Error(`TOYBOX: model '${id}' is a built-in primitive (no OBJ to fetch)`);
   let p = objCache.get(id);
@@ -280,8 +353,17 @@ const glslCache = new Map<string, Promise<string>>();
  */
 export async function getContent(id: string): Promise<{ meta: ToyboxContent; glsl: string }> {
   await loadManifest();
-  const meta = byId?.get(id);
+  const meta = resolveContent(id);
   if (!meta) throw new Error(`TOYBOX: unknown content id '${id}'`);
+  if (meta.inlineSource) {
+    // Refuse LOUDLY rather than fetching the unfetchable sentinel `glsl` and
+    // surfacing it as a network error. The engine takes the inline path for
+    // these ids (layer.shaderSrc short-circuits before any fetch), so reaching
+    // here means a caller resolved a derived-metadata id down the bundled path.
+    throw new Error(
+      `TOYBOX: content '${id}' carries its GLSL inline on the layer (shaderSrc) — there is nothing to fetch`,
+    );
+  }
   let glslP = glslCache.get(id);
   if (!glslP) {
     glslP = (async () => {

@@ -62,6 +62,7 @@
     type ToyboxSurfaceMode,
     type ToyboxVideoSource,
   } from '$lib/video/toybox-content';
+  import { registerCustomShaderSource } from '$lib/video/toybox-custom-assets';
   import type { VideoEngine } from '$lib/video/engine';
   import { VIDEO_RES } from '$lib/video/engine';
   import {
@@ -617,6 +618,12 @@
     try {
       const src = await readCappedText(file);
       setLayerShaderSource(id, activeLayer, src, file.name);
+      // #1576: derive this source's params and register them as a session-local
+      // asset, keyed by customShaderKey(src). The SOURCE still rides the Y.Doc
+      // (the line above is unchanged) — this only memoizes metadata derived from
+      // it, so nothing extra is persisted or synced. Registration is idempotent
+      // and keyed by content, so a re-pick of the same file is a no-op.
+      registerCustomShaderSource(src, file.name);
       bumpRev();
     } catch (err) {
       inputError = err instanceof Error ? err.message : String(err);
