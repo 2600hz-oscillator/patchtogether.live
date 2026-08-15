@@ -45,6 +45,7 @@ import { describe, expect, it } from 'vitest';
 import { OfflineAudioContext } from 'node-web-audio-api';
 import {
   BUGGLES_AUDIBILITY_FLOOR_HZ,
+  BUGGLES_FIRST_WOGGLE_MS,
   BUGGLES_RING_DIVISOR,
   bugglesDef,
   bugglesMath,
@@ -429,7 +430,20 @@ describe('BUGGLES ART: the real factory is BIT-EXACTLY SILENT offline (real-fact
   // positive control in the same render is what makes that zero attributable
   // rather than "the capture path is broken" (`skeptical-first-baseline`: a
   // bit-exact zero is also what a dead instrument returns).
+  //
+  // ⚠ AND THE GATE STATES ITS OWN SCOPE, because the thing being asserted is a
+  // RACE and a race can be lost. The silence holds only while the render
+  // finishes inside BUGGLES_FIRST_WOGGLE_MS of wall clock; a runner slow enough
+  // to lose that would see the first woggle land INSIDE the buffer and this
+  // whole describe would go red for a reason that has nothing to do with the
+  // module. So the margin is MEASURED and asserted as its own leg, with the
+  // numbers in the message — if CI ever gets close, `the render finishes with
+  // margin` reddens FIRST and says by how much, instead of the silence legs
+  // reddening mysteriously. The render is deliberately SHORT for the same
+  // reason: 0.5 s of audio is ~0.02 ms of render work at the measured
+  // ~23,000x real-time, i.e. three orders of magnitude of headroom.
   const OUT_IDS = bugglesDef.outputs.map((o) => o.id);
+  const RENDER_S = 0.5;
 
   async function renderReal(nodeId: string, durS: number) {
     const N = Math.round(SAMPLE_RATE * durS);
@@ -446,6 +460,9 @@ describe('BUGGLES ART: the real factory is BIT-EXACTLY SILENT offline (real-fact
       // Everything cranked, so a silent result cannot be "it was turned down".
       params: { rate: 0.9, chaos: 0.5, smoothness: 0.1, burst_probability: 1, level: 1 },
     } as never;
+    // The clock starts HERE — the module's first-woggle timer is armed inside
+    // `factory`, so this is the instant the margin is measured from.
+    const t0 = Date.now();
     const handle = await bugglesDef.factory(ctx as unknown as AudioContext, node);
 
     const merger = ctx.createChannelMerger(OUT_IDS.length + 1);
@@ -461,13 +478,30 @@ describe('BUGGLES ART: the real factory is BIT-EXACTLY SILENT offline (real-fact
     merger.connect(ctx.destination);
 
     const r = await ctx.startRendering();
+    // Read the margin BEFORE the (comparatively slow) buffer copies below —
+    // what matters is when the render finished, not when the test did.
+    const wallMs = Date.now() - t0;
     handle.dispose?.();
     const chans = OUT_IDS.map((_, i) => Float32Array.from(r.getChannelData(i)));
-    return { chans, control: Float32Array.from(r.getChannelData(OUT_IDS.length)) };
+    return { chans, control: Float32Array.from(r.getChannelData(OUT_IDS.length)), wallMs };
   }
 
+  it('the render finishes with MARGIN — the scope of the two legs below', async () => {
+    // The precondition, asserted rather than assumed. Measured ~1 ms locally
+    // against a 50 ms budget; the bound is half the budget so this reddens with
+    // a number well before the silence legs start reporting phantom audio.
+    const a = await renderReal('art-margin', RENDER_S);
+    expect(
+      a.wallMs,
+      `${RENDER_S}s render took ${a.wallMs} ms wall against the module's ` +
+        `${BUGGLES_FIRST_WOGGLE_MS} ms first-woggle timer (units: ms). Past that budget the ` +
+        `scheduler starts writing INTO the buffer and the silence legs below stop meaning ` +
+        `what they say — that is a runner-speed problem, not a module regression.`,
+    ).toBeLessThan(BUGGLES_FIRST_WOGGLE_MS / 2);
+  });
+
   it('every declared output renders bit-exact zero, while the control renders 0.42', async () => {
-    const a = await renderReal('art-silence', 2.0);
+    const a = await renderReal('art-silence', RENDER_S);
     expect(peakAbs(a.control), 'the capture path CAN carry a signal (units: linear amplitude)')
       .toBeCloseTo(0.42, 6);
     OUT_IDS.forEach((id, i) => {
@@ -479,8 +513,8 @@ describe('BUGGLES ART: the real factory is BIT-EXACTLY SILENT offline (real-fact
     // Rendered TWICE and compared sample by sample, the #1680 discipline: a
     // module whose state is written from a wall-clock pump can differ run to
     // run, so "silent" is only a usable fact once it is also stable.
-    const a = await renderReal('art-silence', 2.0);
-    const b = await renderReal('art-silence', 2.0);
+    const a = await renderReal('art-silence', RENDER_S);
+    const b = await renderReal('art-silence', RENDER_S);
     OUT_IDS.forEach((id, i) => {
       const x = a.chans[i]!;
       const y = b.chans[i]!;

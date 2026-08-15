@@ -153,6 +153,12 @@ export function bugglesPrng(seed: number): () => number {
   };
 }
 
+/** Delay before the FIRST woggle fires after the node is built, in ms. Kept
+ *  short so a player sees movement immediately at the lowest rates — and
+ *  exported because it is the margin an offline render has to finish inside
+ *  before the scheduler starts writing into the buffer (see the ART's
+ *  `real-factory-silence` legs). */
+export const BUGGLES_FIRST_WOGGLE_MS = 50;
 /** Gate width of the CLOCK pulse, in ms. */
 export const BUGGLES_CLOCK_PULSE_MS = 5;
 /** Spacing between BURST pulses, in ms. */
@@ -735,7 +741,7 @@ export const bugglesDef: AudioModuleDef = {
     // Kick off the internal scheduler. First woggle fires immediately so
     // the user sees movement on the smooth/stepped outputs without
     // waiting up to 10 seconds at the lowest rate.
-    timer = setTimeout(fireWoggleEvent, 50);
+    timer = setTimeout(fireWoggleEvent, BUGGLES_FIRST_WOGGLE_MS);
 
     // External-clock polling. If a rising edge arrives, fire a woggle
     // event AND clear the internal timer so we don't get double-triggers.
