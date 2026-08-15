@@ -134,15 +134,78 @@ function runtimeSkips() {
   return { items };
 }
 
+// ───────────── The SUBJECT of an exemption list (#1524) ─────────────
+//
+// "370 exemptions" was one undifferentiated number, and nobody could say
+// whether it was scandalous or fine, because the bucket mixed populations with
+// opposite dispositions. The split below is per LIST, not per ENTRY — SEVEN
+// classifications instead of 370 — because the thing that decides the
+// disposition is WHAT THE SWEEP GATES, which is a property of the list:
+//
+//   'legacy-card' — the sweep screenshots a `?shell=legacy` CARD
+//     (vrt.spec.ts spawns `/rack?shell=legacy&seed=none` and captures the card
+//     element). LEG-08 #1519 deletes the card fleet; LEG-06 #1517 replaces the
+//     visual coverage with full-tier FACE baselines and states the policy in
+//     as many words: "Do NOT backfill 'baseline pending' exemptions … the masks
+//     die with the cards." So an entry here is not debt anyone should pay — it
+//     is work that will be DELETED, and paying it is double-paying.
+//
+//   'engine' — the sweep drives the audio/video GRAPH and survives the legacy
+//     deletion untouched. These are the entries where "payable debt" is a real
+//     question, and where the answer has to be argued per entry.
+//
+// ⚠ A per-ENTRY classification field was CONSIDERED AND REJECTED (issue #1524
+// scope item 1 asked for one). A required field on 370 entries is 370 hand-typed
+// known answers — the inventory-of-payable-debt the owner ruling forbids, and a
+// re-count tax on every agent who touches the area afterwards. What is written
+// instead is derived: this per-list subject, plus the DOM-source capability
+// derivation below, both read off artifacts that move on their own.
 const RECORD_EXEMPTIONS = [
-  { id: 'vrt.EXEMPT_FROM_VRT', file: 'e2e/vrt/vrt-exemptions.ts', konst: 'EXEMPT_FROM_VRT', desc: 'modules skipped from the per-card VRT sweep' },
-  { id: 'behavioral.BEHAVIORAL_MODULE_EXEMPT', file: 'e2e/tests/per-module-per-port-behavioral.spec.ts', konst: 'BEHAVIORAL_MODULE_EXEMPT', desc: 'whole-module skips of the behavioral CONTROL→PATCHED delta sweep' },
-  { id: 'behavioral.BEHAVIORAL_SWEEP_EXEMPT', file: 'e2e/tests/per-module-per-port-behavioral.spec.ts', konst: 'BEHAVIORAL_SWEEP_EXEMPT', desc: 'per-PORT skips of the behavioral delta sweep (module still enrolled)' },
-  { id: 'per-port.SKIP_SPAWN', file: 'e2e/tests/_per-module-per-port-shared.ts', konst: 'SKIP_SPAWN', desc: 'modules skipped from the per-module-per-port spawn (handle/emit/drive) sweep' },
-  { id: 'per-port.EXEMPT_OUTPUT_EMIT_MODULES', file: 'e2e/tests/_per-module-per-port-shared.ts', konst: 'EXEMPT_OUTPUT_EMIT_MODULES', desc: 'whole-module output-emit exemptions (asset/ROM/press-driven)' },
-  { id: 'per-port.EXEMPT_OUTPUT_EMIT', file: 'e2e/tests/_per-module-per-port-shared.ts', konst: 'EXEMPT_OUTPUT_EMIT', desc: 'per-PORT output-emit exemptions (module\'s other outputs DO emit)' },
-  { id: 'per-port.EXEMPT_INPUT_DRIVE', file: 'e2e/tests/_per-module-per-port-shared.ts', konst: 'EXEMPT_INPUT_DRIVE', desc: 'per-PORT input-drive exemptions (gameplay-deep / asset-gated inputs)' },
+  { id: 'vrt.EXEMPT_FROM_VRT', file: 'e2e/vrt/vrt-exemptions.ts', konst: 'EXEMPT_FROM_VRT', subject: 'legacy-card', desc: 'modules skipped from the per-card VRT sweep' },
+  { id: 'behavioral.BEHAVIORAL_MODULE_EXEMPT', file: 'e2e/tests/per-module-per-port-behavioral.spec.ts', konst: 'BEHAVIORAL_MODULE_EXEMPT', subject: 'engine', desc: 'whole-module skips of the behavioral CONTROL→PATCHED delta sweep' },
+  { id: 'behavioral.BEHAVIORAL_SWEEP_EXEMPT', file: 'e2e/tests/per-module-per-port-behavioral.spec.ts', konst: 'BEHAVIORAL_SWEEP_EXEMPT', subject: 'engine', desc: 'per-PORT skips of the behavioral delta sweep (module still enrolled)' },
+  { id: 'per-port.SKIP_SPAWN', file: 'e2e/tests/_per-module-per-port-shared.ts', konst: 'SKIP_SPAWN', subject: 'engine', desc: 'modules skipped from the per-module-per-port spawn (handle/emit/drive) sweep' },
+  { id: 'per-port.EXEMPT_OUTPUT_EMIT_MODULES', file: 'e2e/tests/_per-module-per-port-shared.ts', konst: 'EXEMPT_OUTPUT_EMIT_MODULES', subject: 'engine', desc: 'whole-module output-emit exemptions (asset/ROM/press-driven)' },
+  { id: 'per-port.EXEMPT_OUTPUT_EMIT', file: 'e2e/tests/_per-module-per-port-shared.ts', konst: 'EXEMPT_OUTPUT_EMIT', subject: 'engine', desc: 'per-PORT output-emit exemptions (module\'s other outputs DO emit)' },
+  { id: 'per-port.EXEMPT_INPUT_DRIVE', file: 'e2e/tests/_per-module-per-port-shared.ts', konst: 'EXEMPT_INPUT_DRIVE', subject: 'engine', desc: 'per-PORT input-drive exemptions (gameplay-deep / asset-gated inputs)' },
 ];
+
+/** The LEG-* issue that DELETES each subject, so an entry dies with its cause
+ *  instead of being maintained forever. Rendered beside the population. */
+const SUBJECT_ANCHORS = {
+  'legacy-card': {
+    label: 'LEGACY-RETIRING — the subject is a `?shell=legacy` card',
+    anchor:
+      'deleted by LEG-08 (#1519, the 195-card fleet); replacement visual coverage is LEG-06 ' +
+      '(#1517), whose delete-on-migrate policy says in as many words: do NOT backfill ' +
+      '"baseline pending" exemptions. Paying one of these is work that will be deleted.',
+  },
+  engine: {
+    label: 'LIVE — the subject is the audio/video graph',
+    anchor:
+      'survives the legacy deletion. CAPABILITY where the environment genuinely cannot ' +
+      'supply the input (derived below where the artifact allows); otherwise payable debt, ' +
+      'and payable debt is PAID rather than listed.',
+  },
+};
+
+/**
+ * DERIVED CAPABILITY — the one capability family this repo can read off an
+ * artifact instead of trusting prose. `DOM_SOURCE_LANE_TYPES` is the set of
+ * modules whose engine source is created and attached BY A MOUNTED CARD (the
+ * set the shell already keeps alive off-screen via HeadlessSourceHost). Under
+ * the bare `spawnPatch` these sweeps use, that source does not exist, so the
+ * control arm and the patched arm both read silence — a structural no-delta,
+ * not a dead port. LEG-02 (#1511) moves the media lifecycle onto the node,
+ * which is exactly what makes these payable; until then they are capability.
+ *
+ * Read off the source, so a module entering or leaving the set moves this
+ * number with no edit here.
+ */
+function domSourceTypes() {
+  const src = readFileSync(join(ROOT, 'packages/web/src/lib/ui/workflow/dom-source-modules.ts'), 'utf8');
+  return extractSetItems(src, 'DOM_SOURCE_LANE_TYPES');
+}
 
 // Set-shaped exemptions (bare `new Set([...])` with no per-entry reason).
 // EMPTY since 2026-08-10: its only member was `vrt.EXEMPT_BASELINE_PAIRS`, the
@@ -160,13 +223,20 @@ const RATCHETS = [
 ];
 
 function bucket2() {
+  const dom = domSourceTypes();
   const records = RECORD_EXEMPTIONS.map((e) => {
     const { keys, reasons } = readRecord(e.file, e.konst);
-    return { ...e, kind: 'record', count: keys.size, keys: sortedKeys(keys), reasons };
+    // An entry's MODULE is the key up to the first '.' (per-port lists are
+    // `<module>.<port>`); everything else is already a module type.
+    const moduleOf = (k) => (k.includes('.') ? k.slice(0, k.indexOf('.')) : k);
+    const domDerived = e.subject === 'engine'
+      ? sortedKeys(new Set([...keys].filter((k) => dom.has(moduleOf(k)))))
+      : [];
+    return { ...e, kind: 'record', count: keys.size, keys: sortedKeys(keys), reasons, domDerived };
   });
   const sets = SET_EXEMPTIONS.map((e) => {
     const items = extractSetItems(readFileSync(join(ROOT, e.file), 'utf8'), e.konst);
-    return { ...e, kind: 'set', count: items.size, keys: sortedKeys(items) };
+    return { ...e, kind: 'set', count: items.size, keys: sortedKeys(items), subject: e.subject ?? 'engine', domDerived: [] };
   });
   const ratchets = RATCHETS.map((e) => {
     const items = extractSetItems(readFileSync(join(ROOT, e.file), 'utf8'), e.konst);
@@ -370,9 +440,32 @@ export function generateLedger() {
   p('are DELIBERATE — but per repo doctrine the **behavioral** exemptions are ALSO');
   p('tracked-to-zero backlog (reconcile = fix or delete); see the roadmap.');
   p('');
+  p('**Split by SUBJECT (#1524)** — what the sweep gates decides the disposition,');
+  p('so the split is per LIST and derived, never a field typed onto 370 entries:');
+  p('');
+  p('| subject | exemptions | disposition |');
+  p('| --- | ---: | --- |');
+  for (const [key, meta] of Object.entries(SUBJECT_ANCHORS)) {
+    const n = [...b2.records, ...b2.sets]
+      .filter((e) => e.subject === key)
+      .reduce((s, e) => s + e.count, 0);
+    p(`| \`${key}\` | ${n} | ${meta.label} — ${meta.anchor} |`);
+  }
+  p('');
+  const domTotal = [...b2.records, ...b2.sets].reduce((s, e) => s + e.domDerived.length, 0);
+  p(`Of the \`engine\` population, **${domTotal}** are DERIVED CAPABILITY: the module is in`);
+  p('`DOM_SOURCE_LANE_TYPES` (`packages/web/src/lib/ui/workflow/dom-source-modules.ts`),');
+  p('i.e. its engine source is created and attached by a MOUNTED CARD, which does not');
+  p('exist under the bare `spawnPatch` these sweeps use — so both arms read silence by');
+  p('construction. LEG-02 (#1511, node-owned media lifecycle) is what makes them');
+  p('payable. Membership is read off that set, so it moves without an edit here.');
+  p('');
   for (const e of [...b2.records, ...b2.sets]) {
     p(`### \`${e.konst}\` (${e.count}) — ${e.desc}`);
-    p(`<sub>${e.file}</sub>`);
+    p(`<sub>${e.file} · subject: \`${e.subject}\`</sub>`);
+    if (e.domDerived.length > 0) {
+      p(`<sub>derived capability (DOM_SOURCE_LANE_TYPES): ${e.domDerived.map((k) => `\`${k}\``).join(', ')}</sub>`);
+    }
     if (e.count === 0) p('_none_');
     for (const k of e.keys) {
       const reason = e.reasons ? summarize(e.reasons.get(k)) : '';

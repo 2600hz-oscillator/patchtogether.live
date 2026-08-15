@@ -1,7 +1,7 @@
 // e2e/tests/per-module-per-port-behavioral.spec.ts
 //
 // BEHAVIORAL input-coverage sweep — the third sweep tier on top of
-// per-module-per-port.spec.ts's `handle-presence` + `inputs-accept` dims.
+// per-module-per-port-handles.spec.ts + per-module-per-port-inputs.spec.ts `handle-presence` + `inputs-accept` dims.
 //
 // Motivation (Codex coverage finding #6): the `inputs-accept` dim only
 // asserts "the edge lands without errors", which means a module can
@@ -81,7 +81,7 @@ import { collectPageErrors } from './_page-errors';
 
 // ────────── Module-level skips ──────────
 // Modules whose card can't render under bare spawnPatch (mirrors
-// per-module-per-port.spec.ts's SKIP_SPAWN).
+// _per-module-per-port-shared.ts SKIP_SPAWN).
 const SKIP_SPAWN: Record<string, string> = {
   group: 'requires data.children; covered by e2e/tests/grouping-phase1.spec.ts',
   cadillac: 'overlay sprite, not a flow card (zero ports); covered by e2e/tests/cadillac.spec.ts',
@@ -91,7 +91,7 @@ const SKIP_SPAWN: Record<string, string> = {
 //
 // Modules whose canonical output is gameplay/file/MIDI/hardware-conditional
 // and therefore can't be sampled at a stable baseline. The `inputs-accept`
-// dim in per-module-per-port.spec.ts STILL pins wire-up for these — only
+// dim in per-module-per-port-inputs.spec.ts STILL pins wire-up for these — only
 // the behavioral delta check is skipped.
 //
 // Keep tight; the design constraint is ~25 entries upper bound.
@@ -118,7 +118,7 @@ const BEHAVIORAL_MODULE_EXEMPT: Record<string, string> = {
   // (the module sits in its documented "bridge not found" idle state) and no
   // input can EVER show a delta — its out1..out8 inputs feed the physical
   // 3.5mm jacks, not the browser-observable outputs. Mirrors the whole-module
-  // emit exemption in per-module-per-port.spec.ts (inputs-accept still pins
+  // emit exemption in per-module-per-port-outputs.spec.ts (inputs-accept still pins
   // wire-up there). Re-enable path: a mock es9-bridge WebSocket fixture
   // feeding deterministic frames. Ring/scaling/hysteresis/underrun policy is
   // pinned by the dsp es9-bridge-core unit suite; flow verified on hardware
@@ -144,7 +144,7 @@ const BEHAVIORAL_MODULE_EXEMPT: Record<string, string> = {
   //  verified at the ES-9 jacks. RE-ENABLE via a per-input-scoped sink (observe
   //  the output the driven input actually feeds).
   cvBuddy: 'separate-output-per-input passthrough (pitch→pitchCv, gate→gate, velocity→velCv) — the sweep observes only the first output (pitchCv), so gate/velocity inputs read Δ=0 by construction; run/clock are owner/transport-driven not input-driven. Covered by cv-buddy slot-alloc/clock-math/es9-reconcile unit tests + owner hardware-verify; re-enable via a per-input-scoped sink',
-  cvBuddyMini: 'IDENTICAL structure to cvBuddy above, minus the velocity jack — the same separate-output-per-input passthrough (pitch→pitchCv, gate→gate), and it shares the SAME handle (createCvBuddyHandle in audio/modules/cv-buddy.ts), so the sweep observing only pitchCv reads Δ=0 on the gate input by construction, exactly as for cvBuddy. Was missed when the module shipped (#1398): it was exempted in per-module-per-port.spec.ts but NOT mirrored here, so the failure stayed invisible until a PR carried the `behavioral` label. Covered by the same cv-buddy slot-alloc/clock-math/es9-reconcile unit tests plus cv-buddy-clock-skips.test.ts; re-enable via the same per-input-scoped sink that re-enables cvBuddy — they must be re-enabled TOGETHER, since one handle serves both',
+  cvBuddyMini: 'IDENTICAL structure to cvBuddy above, minus the velocity jack — the same separate-output-per-input passthrough (pitch→pitchCv, gate→gate), and it shares the SAME handle (createCvBuddyHandle in audio/modules/cv-buddy.ts), so the sweep observing only pitchCv reads Δ=0 on the gate input by construction, exactly as for cvBuddy. Was missed when the module shipped (#1398): it was exempted in _per-module-per-port-shared.ts but NOT mirrored here, so the failure stayed invisible until a PR carried the `behavioral` label. Covered by the same cv-buddy slot-alloc/clock-math/es9-reconcile unit tests plus cv-buddy-clock-skips.test.ts; re-enable via the same per-input-scoped sink that re-enables cvBuddy — they must be re-enabled TOGETHER, since one handle serves both',
 
   // ── File-input sources: output is silent until a file is uploaded.
   //    No upstream signal can perturb that.
@@ -187,7 +187,7 @@ const BEHAVIORAL_MODULE_EXEMPT: Record<string, string> = {
   // behavioral sweep can't establish (and we never hit live famelack/streams in
   // CI). Same as videobox. Covered by tv-librarian-data/geo unit tests + a
   // network-mocked tv-librarian e2e.
-  tvLibrarian:    'needs a live tuned HLS stream to emit; no network stream in the sweep (mirrors videobox); covered by tv-librarian-data/geo.test.ts + network-mocked tv-librarian e2e',
+  tvLibrarian:    'needs a live tuned HLS stream to emit; no network stream in the sweep (mirrors videobox); covered by tv-librarian-data.test.ts + tv-librarian-geo.test.ts + network-mocked tv-librarian e2e',
   // PEERTUBE needs a resolved + attached PeerTube stream to emit any output, which
   // the behavioral sweep can't establish (and we never hit live Sepia/instance/HLS
   // in CI). Same as tvLibrarian/videobox. Covered by peertube-query unit tests + a
@@ -253,7 +253,7 @@ const BEHAVIORAL_MODULE_EXEMPT: Record<string, string> = {
   //    harness never supplies that base strum (a generic driver would need a
   //    gatePort append to _drivers.ts, which is a collab-attest BASIS file —
   //    the same reason as its per-port emit exemption in
-  //    per-module-per-port.spec.ts), so the mute1..mute6 palm-mute gates (and
+  //    per-module-per-port-outputs.spec.ts), so the mute1..mute6 palm-mute gates (and
   //    the accent/chord CVs) perturb an output reading rms 0.000 in BOTH
   //    arms — a structural no-delta, not dead CV. Re-enable path: the
   //    "provide the base signal, then perturb" pattern (hold a strum-gate
@@ -397,8 +397,17 @@ const BEHAVIORAL_MODULE_EXEMPT: Record<string, string> = {
 
   // ── slewSwitch — CV switcher: each input is selected sequentially
   //    by step_clock edges. Out1 only reflects the currently-selected
-  //    input. Same shape as 4plexvid. Covered by slewswitch.spec.ts.
-  slewSwitch: 'CV switcher with sequential channel selection; covered by slewswitch.spec.ts',
+  //    input. Same shape as 4plexvid.
+  //
+  //    ⚠ This reason used to name a `slewswitch` e2e spec, WHICH HAS NEVER
+  //    EXISTED — and neither did any other test for this module, at any tier
+  //    (#1524). The exemption's own prose was the only thing standing between
+  //    SLEWSWITCH and zero coverage. slewswitch.test.ts (written to pay this)
+  //    drives the real worklet processor through the slew one-pole, the
+  //    rising-edge advance in all three MODEs, RESET, the crossfade, EOC and
+  //    step_idx — and immediately found #1651 (LENGTH turned down below the
+  //    current step emitted step_idx = +5.0 on a ±1 CV port).
+  slewSwitch: 'CV switcher with sequential channel selection; covered by slewswitch.test.ts (real worklet: advance/reset/pendulum/random/EOC/step_idx)',
 
   // ── MI ports: marbles — a sequencer-like state machine whose outputs
   //    depend on prior state + multi-second probability distributions.
@@ -423,7 +432,7 @@ const BEHAVIORAL_MODULE_EXEMPT: Record<string, string> = {
   // dedicated unit + spec coverage that DOES pin the module's behaviour, so a
   // quarantine is NOT a silent skip — it's a "covered elsewhere with stronger
   // signal" pointer + a concrete re-enable path. The `inputs-accept` dim in
-  // per-module-per-port.spec.ts STILL pins wire-up for every port below.
+  // per-module-per-port-inputs.spec.ts STILL pins wire-up for every port below.
   //
   // (adsr RE-ENABLED — behavioral-recon #3. adsr's decay/release CV
   //  scalers are now real-coverage passes via a BEHAVIORAL_PARAMS leverage boost
@@ -522,8 +531,8 @@ const BEHAVIORAL_MODULE_EXEMPT: Record<string, string> = {
   //    the honest "reconcile = document-as-backlog" outcome, not fudged.
   //
   //    Real behavioral coverage for each lives in its VRT baseline + bespoke
-  //    e2e spec (cellshade.spec.ts / chromakey.spec.ts / outlines.spec.ts /
-  //    edges.spec.ts), and per-module-per-port.spec.ts still pins each port's
+  //    e2e spec (cellshade.spec.ts / keyer-functional.spec.ts + keying-core.test.ts for
+  //    chromakey / outlines.spec.ts / edges.spec.ts), and per-module-per-port-inputs.spec.ts still pins each port's
   //    wire-up via the `inputs-accept` dim. Re-enable needs a real-GPU CI lane
   //    or a reduced-capture behavioral path. One shared note for all four:
   edges: VIDEO_SINK_SWIFTSHADER_NOTE,
@@ -548,7 +557,7 @@ const BEHAVIORAL_MODULE_EXEMPT: Record<string, string> = {
   //    real local GPU (the ci-swiftshader-video-e2e-timeouts class; NOT a per-port
   //    delta failure). Skipping them here REDUCES the lane's CI wall-time. Real
   //    behavioral coverage lives in each module's VRT + bespoke e2e spec, and
-  //    per-module-per-port.spec.ts still pins each port's wire-up via inputs-accept.
+  //    per-module-per-port-inputs.spec.ts still pins each port's wire-up via inputs-accept.
   //    RE-ENABLE: a real-GPU CI lane or a reduced-capture behavioral path.
   chroma: VIDEO_SINK_SWIFTSHADER_NOTE,
   fader: VIDEO_SINK_SWIFTSHADER_NOTE,
@@ -597,7 +606,7 @@ const BEHAVIORAL_MODULE_EXEMPT: Record<string, string> = {
   //    value (silent C=P=0.000, or the constant idle CV C=P=0.500 the
   //    sequencer rows hold before the first clock-advanced step), so the
   //    delta can NEVER cross the threshold → they fail 100% of runs. The
-  //    `inputs-accept` dim in per-module-per-port.spec.ts STILL pins wire-up
+  //    `inputs-accept` dim in per-module-per-port-inputs.spec.ts STILL pins wire-up
   //    for every port, and each module's own unit test pins its routing /
   //    conversion / gain math directly (where the upstream source IS
   //    supplied). Same intrinsic-no-observable-delta class as the
@@ -701,7 +710,7 @@ const BEHAVIORAL_MODULE_EXEMPT: Record<string, string> = {
   //    are per-loaded-spec; this is a HOST-SUPERSET exemption, not a regression.
   //    Per-spec input→effect coverage lives in vfpga-runner.spec.ts (smpte-bars
   //    renders to OUTPUT) + the spec-validation + snapshot unit tests; each
-  //    port's wire-up is still pinned by per-module-per-port.spec.ts inputs-accept.
+  //    port's wire-up is still pinned by per-module-per-port-inputs.spec.ts inputs-accept.
   vfpgaRunner: 'manifest-HOST superset class: the def declares the full I/O superset (vin1-4/cv1-4/g1-4) but the loaded VFPGA selects the active subset — the only bundled spec (smpte-bars) is a pure generator using just cv1 (SHIFT, Δμvar≈0.6 below floor) + 0 video/gate, so 11/12 superset ports are correctly inert for it. Covered by vfpga-runner.spec.ts (smpte-bars → OUTPUT) + spec-validation/snapshot unit tests; inputs-accept still pins each port wire-up.',
 
   // ── COARSE-METRIC subtle-CV percussion / VCO voices (2026-07-18 batch, task
@@ -1273,12 +1282,12 @@ const BEHAVIORAL_SWEEP_EXEMPT: Record<string, string> = {
   //    a-cv-knob-that-modulates-a-zero-input case fails to perturb in
   //    a 1.5s window. The audio-rate fm/pm channels also need DC-biased
   //    modulators (not zero-mean noise) to perturb pitch on average.
-  //    Covered by analog-vco.test.ts (unit-level FM/PM depth + CV
+  //    Covered by analog-vco-modulation.test.ts (unit-level FM/PM depth + CV
   //    scaling) + cv-range-uniformity.spec.ts (cv knob displacement).
-  'analogVco.fm':       'audio-rate FM with zero-mean noise cancels symmetrically; covered by analog-vco.test.ts',
+  'analogVco.fm':       'audio-rate FM with zero-mean noise cancels symmetrically; covered by analog-vco-modulation.test.ts',
   'analogVco.fine':     'cv displacement on a small-range knob (±100 cents); covered by cv-range-uniformity.spec.ts',
-  'analogVco.fmAmount': 'cv-modulates-knob-that-modulates-zero-input; covered by analog-vco.test.ts',
-  'analogVco.pmAmount': 'cv-modulates-knob-that-modulates-zero-input; covered by analog-vco.test.ts',
+  'analogVco.fmAmount': 'cv-modulates-knob-that-modulates-zero-input; covered by analog-vco-modulation.test.ts',
+  'analogVco.pmAmount': 'cv-modulates-knob-that-modulates-zero-input; covered by analog-vco-modulation.test.ts',
   'analogVco.shape':    'morph-only param: shape morphs the morph output, not the measured sine tap; covered by analog-vco-morph.test.ts',
   // moog921Vco: sync + lin_fm ARE covered (BEHAVIORAL_PARAMS opens sync=HARD +
   // linFmAmount=0.6). These two remain legit no-ops on the sine tap:
@@ -1585,7 +1594,7 @@ const BEHAVIORAL_SWEEP_EXEMPT: Record<string, string> = {
 //     to delete the entry and re-run.
 //   • per-port entries SHADOWED by a whole-module exemption on the same module
 //     (all the mirrorpool rows, for instance) are unreachable but not flagged
-//     here. per-module-per-port.spec.ts pins its shadowed set name-by-name;
+//     here. per-module-per-port-inputs.spec.ts pins its shadowed set name-by-name;
 //     this file does not.
 test('behavioral exemption keys are anchored to REGISTRY', () => {
   const modulesByType = new Map(REGISTRY.map((m) => [m.type, m]));
@@ -1696,7 +1705,7 @@ test('behavioral exemption keys are anchored to REGISTRY', () => {
 
 // ────────── Type-aware upstream sources for input drive ──────────
 //
-// Mirrors per-module-per-port.spec.ts's pickInputSource but uses a
+// Mirrors _per-module-per-port-shared.ts pickInputSource but uses a
 // DIFFERENT source for `cv` to maximise the chance of an observable
 // delta: BUGGLES.smooth swings ±5V slowly, big perturbation. NOISE
 // for audio is loud enough to dominate any baseline DC. ACIDWARP for
@@ -3346,7 +3355,7 @@ async function populateAllSequencerSteps(page: Page, heldNoteDriver = false): Pr
 }
 
 // ────────── Console error filter ──────────
-// Shared with per-module-per-port.spec.ts + gibribbon.spec.ts — see
+// Shared with per-module-per-port-inputs.spec.ts + gibribbon.spec.ts — see
 // `_page-errors.ts`. The private copy that used to live here dropped EVERY
 // "Failed to load resource" unconditionally, so a 404'd worklet was invisible
 // to this sweep too.
@@ -3477,7 +3486,7 @@ test.describe('per-module per-port: BEHAVIORAL input coverage (output changes on
       // navigate to '/' between EACH spawn (control + patched +
       // next-iter's control...) so each spawn starts from a fresh
       // AudioContext + engine — same determinism story as
-      // per-module-per-port.spec.ts's outputs-emit dim. Pattern:
+      // per-module-per-port-outputs.spec.ts outputs-emit dim. Pattern:
       //  goto('/rack?shell=legacy&seed=none') → spawnPatch(control) → settle → read
       //  goto('/rack?shell=legacy&seed=none') → spawnPatch(patched) → settle → read → compare
       const failures: string[] = [];
