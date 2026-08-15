@@ -15,12 +15,16 @@
 // Outputs:
 //   out1..out4 (cv): per-channel slewed direct outputs.
 //   switched (cv): the slewed signal at the currently-selected index (4→1 sequential switch).
-//   step_idx (cv): the current switch index (-1..+1 scaled to 0..length).
+//   step_idx (cv): the current switch index, spread evenly over -1..+1 across
+//     the ACTIVE channels — (idx/(len-1))*2-1, so at the default length 4 the
+//     four steps read -1 / -0.3333 / +0.3333 / +1, and at length 1 it is 0.
 //   eoc (gate): one-pulse end-of-cycle when the switch wraps.
 //
 // Params:
-//   slew1..slew4 (log 0.001..5 s, default 0.5): per-channel slew time.
-//   mode (discrete 0..2, default 0): switch mode (forward / reverse / ping-pong).
+//   slew1..slew4 (log 0.001..5 s, default 0.5): per-channel one-pole TIME
+//     CONSTANT (tau), NOT the arrival time — 63% of the way in tau, ~99% in 5x
+//     tau. Measured across the whole range: t99/tau = 4.605 (= ln 100). #1712.
+//   mode (discrete 0..2, default 0): switch mode (forward / pendulum / random).
 //   length (discrete 1..4, default 4): active switch length.
 //   xfadeTime (log 0.001..2 s, default 0.05): smoothing on the switch index crossfade.
 
@@ -95,10 +99,10 @@ export const slewSwitchDef: AudioModuleDef = {
       eoc: "End-of-cycle: a short (~5 ms) gate pulse each time the switch WRAPS back to channel 0 (in random mode it pulses on every step). Chain it to another clock/reset to daisy-chain cycles.",
     },
     controls: {
-      slew1: "Channel 1 slew time, log 0.001..5 s (default 0.5 s) — how long OUT 1 takes to glide to a new value. Short = snappy/near-instant, long = a slow lag/portamento. Sums with the S1 CV input.",
-      slew2: "Channel 2 slew time, log 0.001..5 s (default 0.5 s). Sums with the S2 CV input.",
-      slew3: "Channel 3 slew time, log 0.001..5 s (default 0.5 s). Sums with the S3 CV input.",
-      slew4: "Channel 4 slew time, log 0.001..5 s (default 0.5 s). Sums with the S4 CV input.",
+      slew1: "Channel 1 slew TIME CONSTANT, log 0.001..5 s (default 0.5 s). It is the tau of a one-pole glide, not the arrival time: OUT 1 covers 63% of the distance to a new value in this time, 90% in 2.3x it, and settles (99%) in about 5x it — so the shipped 0.5 s reaches its target in ~2.3 s and the 5 s maximum takes ~23 s. Short = snappy/near-instant, long = a slow lag/portamento. Sums with the S1 CV input.",
+      slew2: "Channel 2 slew time constant, log 0.001..5 s (default 0.5 s) — the same one-pole tau as S1 (63% in tau, ~99% in 5x tau). Sums with the S2 CV input.",
+      slew3: "Channel 3 slew time constant, log 0.001..5 s (default 0.5 s) — the same one-pole tau as S1. Sums with the S3 CV input.",
+      slew4: "Channel 4 slew time constant, log 0.001..5 s (default 0.5 s) — the same one-pole tau as S1. Sums with the S4 CV input.",
       mode: "The switch scan pattern (a cycling button on the card): FWD = forward 0→1→2→3→0…, PND = pendulum / ping-pong 0→1→2→3→2→1→0…, RND = random (a new channel each clock, never repeating the previous). Default FWD.",
       length: "How many channels the switch scans, 1-4 (a cycling LEN button). A length of 2, for example, ping-pongs/cycles only channels 0-1 and ignores 2-3. Default 4.",
       xfadeTime: "The equal-gain crossfade time applied to the SWITCHED output when the selection changes, log 0.001..2 s (default 0.05 s). Short = a tight switch, long = a slow morph between the two channels' values. It is the only control that shapes what happens BETWEEN two channels rather than within one.",

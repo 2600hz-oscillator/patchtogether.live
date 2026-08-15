@@ -217,8 +217,11 @@ class SlewSwitchProcessor extends AudioWorkletProcessor {
       const b = this.xfade;
       swOut[i] = (1 - b) * this.y[this.prevIdx]! + b * this.y[this.curIdx]!;
 
-      // Step index as -1..+1 (4 quantized levels at 0/-0.333/+0.333/+1
-      // ... using a simple `(idx / (len-1)) * 2 - 1` mapping).
+      // Step index spread evenly over -1..+1 across the ACTIVE channels.
+      // Measured at each length: 4 -> -1 / -0.3333 / +0.3333 / +1; 3 -> -1 / 0 /
+      // +1; 2 -> -1 / +1; 1 -> 0 (the len>1 guard, since there is no spread to
+      // make). This comment used to read "0/-0.333/+0.333/+1", which is the
+      // length-4 row with -1 mistyped as 0 (#1712).
       idxOut[i] = len > 1 ? (this.curIdx / (len - 1)) * 2 - 1 : 0;
 
       // EOC pulse output (5 ms).

@@ -206,6 +206,41 @@ describe('slewSwitch slew: each channel one-poles toward its input', () => {
     expect(at(fast, 'out1', 4 * BLOCK - 1), 'τ=1 ms is settled after 10 ms').toBeGreaterThan(0.99);
   });
 
+  it('the slew param is the one-pole TAU, not the arrival time (#1712)', async () => {
+    // THE DOC DEFECT THIS PINS. `docs.controls.slew1` said the param was "how
+    // long OUT 1 takes to glide to a new value". It is the TIME CONSTANT: the
+    // output is 63.2 % of the way there at t = tau, and needs ln(100) = 4.605
+    // taus to reach 99 %. So the shipped 0.5 s default arrives in ~2.30 s and
+    // the 5 s maximum in ~23 s — a fixed 4.6x, across the whole three-decade
+    // range. Every gate was blind because the wrong thing was a VALUE in prose:
+    // `contract-lock` pins `slew1 0.001..5 log default=0.5 unit=s`, which is
+    // entirely correct about the range and the unit.
+    //
+    // The assertion is on the LAW rather than on the prose, because the prose
+    // is what goes stale: if the DSP is ever changed to make the dial mean
+    // arrival time, these two ratios move and this test names the docs to fix.
+    for (const tau of [0.001, 0.01, 0.05]) {
+      const blocks = Math.ceil((tau * 6 * SR) / BLOCK) + 2;
+      const r = await run({ slew: tau, levels: [1, 0, 0, 0], blocks });
+      // ⚠ INDEX round(tau*SR) - 1, NOT round(tau*SR). The worklet advances `y`
+      // and THEN writes it, so `out1[i]` holds the value after i+1 updates.
+      // Reading the naive index samples one step too far and returns 0.639705
+      // at tau = 1 ms — 1 - e^(-49/48), a 1.2 % relative error that looks like
+      // a slew-law defect and is an off-by-one in the INSTRUMENT. It shrinks
+      // with tau (invisible by 50 ms), which is exactly the shape of a bug that
+      // gets "fixed" by only testing the slow end.
+      const at63 = r.out1[Math.round(tau * SR) - 1]!;
+      expect(at63, `out1 at t = tau (${tau} s): a one-pole is at 1 - 1/e here, in CV units`)
+        .toBeCloseTo(1 - 1 / Math.E, 5);
+      let t99 = NaN;
+      for (let i = 0; i < r.out1.length; i++) {
+        if (r.out1[i]! >= 0.99) { t99 = i / SR; break; }
+      }
+      expect(t99 / tau, `t(99%) / tau at tau = ${tau} s — ln(100), NOT 1`)
+        .toBeCloseTo(Math.log(100), 1);
+    }
+  });
+
   it('the four channels are INDEPENDENT — out_n tracks in_n and nothing else', async () => {
     const r = await run({ levels: [0.2, 0.4, 0.6, 0.8], blocks: 16 });
     const last = 16 * BLOCK - 1;
