@@ -210,6 +210,30 @@ describe('buggles face model / SMOOTH GLIDE: the readout SMOOTH cannot give you'
     expect([...seen]).toEqual(['10 ms']);
   });
 
+  it('WHY the two adjacent readouts print near-identical numbers at spawn', () => {
+    // `glide` reads 843 ms and `stepped hold` reads 833 ms on a fresh module,
+    // which looks like one number printed twice. It is not: `slewS = 0.01 +
+    // smoothness * 2 * period`, so SMOOTH 0.5 is EXACTLY the setting where the
+    // glide is one woggle period plus the 10 ms floor — SMOOTH is perpetually
+    // chasing, arriving 10 ms after the next value has already been rolled.
+    // Asserted so the coincidence is a documented property rather than
+    // something a future reader "fixes".
+    const smoothDef = bugglesDef.params.find((p) => p.id === 'smoothness')!;
+    expect(smoothDef.defaultValue, 'the setting the identity holds at').toBe(0.5);
+    for (const rate of [0, 0.2, 0.4, 0.8, 1]) {
+      const p = P({ rate, smoothness: 0.5 });
+      expect(
+        bugglesSmoothGlideS(p) - 1 / bugglesWoggleHz(p),
+        `at SMOOTH 0.5, rate ${rate}: glide minus period (units: seconds) is the 10 ms floor`,
+      ).toBeCloseTo(0.01, 9);
+    }
+    expect(bugglesSmoothGlideText(P())).toBe('843 ms');
+    expect(bugglesSteppedHoldText(P())).toBe('833 ms ±15%');
+    // NEGATIVE CONTROL — the identity is a property of SMOOTH 0.5 alone, so
+    // the two readouts must part company anywhere else on that dial.
+    expect(bugglesSmoothGlideText(P({ smoothness: 0.9 }))).not.toBe('843 ms');
+  });
+
   it('POSITIVE CONTROL — it does move on its own dial, 168× at the shipped rate', () => {
     const at = (smoothness: number) => bugglesSmoothGlideS(P({ smoothness }));
     expect(at(0) * 1000, 'units: ms').toBeCloseTo(10, 6);

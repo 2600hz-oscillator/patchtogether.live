@@ -436,6 +436,16 @@ export const bugglesDef: AudioModuleDef = {
     //           cluster is cut by the next woggle event, so the obvious
     //           `p x rate x 5` says 250/s at RATE 1 where the real answer is
     //           50/s. See the BURST TRUNCATION block above.
+    //
+    // ⚠ `glide` reads 843 ms at spawn and the sidebar's `stepped` row reads
+    // 833 ms beside it, which looks like one number printed twice. It is not:
+    // `slewS = 0.01 + smoothness * 2 * period`, so SMOOTH 0.5 is EXACTLY the
+    // setting where the glide is ONE WOGGLE PERIOD plus the 10 ms floor —
+    // SMOOTH is perpetually chasing, arriving 10 ms after the next value has
+    // already been rolled. Asserted at every rate in the face-model test, with
+    // the control that the identity breaks anywhere else on the SMOOTH dial,
+    // so the coincidence is a documented property rather than something a
+    // future reader "fixes".
     hero: {
       control: 'rate',
       readouts: [
