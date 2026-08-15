@@ -1456,8 +1456,10 @@ because **the dock renders the DEF's label**:
 | `bCurve` | `B Crv` | `Curve` |
 
 The card disambiguates the three `Att` cells with static section captions the def
-cannot see. Fixed by binding the card to `paramSpec(def, id)` — one copy of every
-number, curve, unit AND label — and enrolling it in `RANGE_BOUND_CARDS`.
+cannot see. **All five were already sitting in `VOCABULARY_DEBT` — see M9.**
+Fixed by binding the card to `paramSpec(def, id)` — one copy of every number,
+curve, unit AND label — and enrolling it in `RANGE_BOUND_CARDS` +
+`MAPPING_BOUND_CARDS`.
 ⚠ **That moves `e2e/vrt/__screenshots__/vrt.spec.ts/unityscalemathematik.png`**,
 and a label change may land UNDER the diff budget, which is the
 passing-but-stale trap: COUNT what the bot commits against the prediction, and
@@ -1475,9 +1477,33 @@ and the assertion is a permanent leg, so a future pump cannot be added quietly.
 No dead CV input, no dead knob, no unexposed DSP capability, no range
 disagreement, no cross-talk between the three sections, and no defect in the
 worklet's math — the pure `unityScaleMath` helper the readouts use agrees with
-the rendered audio to **8.5e-9**, which is float32-vs-float64 `Math.pow` and
-nothing else. `unityscalemathematik` is a correct module with one false
-documentation claim and one card/def label divergence.
+the rendered audio to **9.02e-8 RELATIVE** (~0.76 float32 ULP), which is
+float32-vs-float64 `Math.pow` and nothing else. `unityscalemathematik` is a
+correct module with one false documentation claim and one card/def label
+divergence.
+
+⚠ **AND THAT NUMBER'S UNIT IS A LESSON, not a footnote.** The first draft of
+that leg asserted an ABSOLUTE budget of 1e-7 and went RED at 1.81e-7 — on a
+result of magnitude 2.004, i.e. 9.0e-8 relative, i.e. the harness working
+perfectly. An absolute budget over a quantity that spans 0 to 8 across the
+dials' travel is **a different assertion at every probe magnitude**; a relative
+one is the same assertion everywhere. The assertion message now names the unit
+(`RELATIVE error (dimensionless; budget 1e-6)`), which is the half of CLAUDE.md's
+"state the units" rule that would have caught it before the run.
+
+**M9 — THE DIVERGENCE WAS ALREADY LEDGERED, WHICH CHANGES WHAT M7 IS.** All five
+labels sat in `VOCABULARY_DEBT` (`card-def-debt.ts`, generated 2026-08-02), so
+this was not an undiscovered defect — it was a KNOWN one, deferred, in a ledger
+whose whole purpose is to keep a known answer around. §10.7's advice paid off
+exactly as written: *"before authoring a face, grep the debt/exemption lists for
+the module you are about to touch — you may already be holding the release
+condition."* A face PR IS that condition here, because promotion is what turns a
+latent divergence into a live rename. The entry is DELETED rather than re-worded
+(CLAUDE.md: when debt is paid, delete the mechanism and leave no replacement
+counter); what guards it now is the unconditional `unledgered(...) === []`
+clause of `card-def-agreement.test.ts` with five fewer exemptions, plus
+`RANGE_BOUND_CARDS` + `MAPPING_BOUND_CARDS`, which is strictly stronger — there
+is no second copy of a name left to disagree.
 
 ## 14. VERDICTS RECORDED — additions to §4 and §9
 

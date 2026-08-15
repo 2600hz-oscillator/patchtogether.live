@@ -12,8 +12,8 @@ Every registered module carries exactly one **disposition**: what kind of work i
 |  | count |
 |---|---|
 | registered modules | 196 |
-| done (faced + promoted) | 41 |
-| remaining (excludes organizational-native) | 152 |
+| done (faced + promoted) | 42 |
+| remaining (excludes organizational-native) | 151 |
 | registered with NO disposition (must be zero) | 0 |
 | inventory entries naming a dead def (must be zero) | 0 |
 
@@ -21,7 +21,7 @@ Every registered module carries exactly one **disposition**: what kind of work i
 
 | disposition | what it means | modules | done |
 |---|---|---|---|
-| `generic-face` | author a `face` and rank the controls — no new platform capability | 140 | 41 |
+| `generic-face` | author a `face` and rank the controls — no new platform capability | 140 | 42 |
 | `blocked` | would be a face today but for the named capability, and nothing else | 3 | — |
 | `bespoke-surface` | the primary interaction is not param-shaped — needs a purpose-built surface | 50 | — |
 | `organizational-native` | rack furniture; not a migration at all | 3 | — |
@@ -170,7 +170,7 @@ author a `face` and rank the controls — no new platform capability.
 | `timelorde` | audio | — | — |
 | `tomtom` | audio | done | — |
 | `treeohvox` | audio | — | — |
-| `unityscalemathematik` | audio | — | — |
+| `unityscalemathematik` | audio | done | — |
 | `vca` | audio | done | — |
 | `vdelay` | video | — | — |
 | `vfpgaRunner` | video | — | — |
