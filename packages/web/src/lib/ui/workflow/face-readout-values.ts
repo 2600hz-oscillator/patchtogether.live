@@ -169,12 +169,25 @@ import {
 } from '$lib/ui/modules/sixstrum-face-model';
 import { formatVcaGainAtFullCv, vcaFaceParams } from '$lib/audio/vca-gain-model';
 import {
+  attenumixCvRoomText,
+  attenumixDriveText,
+  attenumixFaceParams,
+  attenumixPeakText,
+} from '$lib/ui/modules/attenumix-face-model';
+import {
   sidecarDuckText,
   sidecarEnvText,
   sidecarFaceParams,
   sidecarOnsetText,
   sidecarScGainText,
 } from '$lib/ui/modules/sidecar-face-model';
+import {
+  warrensspectrumFaceParams,
+  wsFadeInText,
+  wsOutText,
+  wsResidualText,
+  wsVoiceText,
+} from '$lib/ui/modules/warrensspectrum-face-model';
 
 /** A derived readout: live params in (through the caller's reader, which
  *  already resolves def defaults for untouched params), formatted string out.
@@ -692,6 +705,29 @@ const FACE_READOUT_VALUES: Readonly<Record<string, FaceReadoutValue>> = {
   'cube-harmonics': (read) => cubeHarmonicsText(cubeFaceParams(read)),
   'cube-fold-drive': (read) => cubeFoldDriveText(cubeFaceParams(read)),
 
+  // ── ATTENUMIX ────────────────────────────────────────────────────────────
+  // Three, and all three are JOINS over five knobs no single readback can
+  // perform. The one that settles the case for them existing: at the shipped
+  // defaults every attenuator is 0, so the mix bus is BIT-EXACTLY SILENT while
+  // the MASTER dial reads a confident `1.00` — unity — and there is no knob on
+  // this module that can say otherwise. `peak` says `muted`.
+  //
+  // `drive` is the same scalar as `peak` seen through the tanh's other side
+  // (peak = tanh(drive)), published as a PAIR on purpose: the soft-clip is
+  // strictly monotone, so one moving while the other does not is a broken
+  // model — the clap-q / clap-bandwidth-hz precedent, where publishing both
+  // makes the instrument its own negative control. MASTER's readback is
+  // INVARIANT to the channel count that decides both (`1.00x` at drive 1.0 and
+  // at drive 4.0, i.e. at -2.2 dB and at -12.0 dB of squash).
+  //
+  // `cv room` is the orthogonal third — MASTER cannot move it at all. This
+  // module's CV law is `att = clamp(knob + cv, 0, 1)`, so a knob parked at
+  // unity is CV-DEAF while the jack still lights and the LFO still runs.
+  // Every one of these blindness legs is permanent in
+  // attenumix-face-model.test.ts.
+  'attenumix-peak': (read) => attenumixPeakText(attenumixFaceParams(read)),
+  'attenumix-drive': (read) => attenumixDriveText(attenumixFaceParams(read)),
+  'attenumix-cv-room': (read) => attenumixCvRoomText(attenumixFaceParams(read)),
   // ── SIDECAR ──────────────────────────────────────────────────────────────
   // FOUR, on a nine-fader ducker whose every knob prints a number that is not
   // the answer. The first two are ALSO each other's negative control, which is
@@ -715,6 +751,32 @@ const FACE_READOUT_VALUES: Readonly<Record<string, FaceReadoutValue>> = {
   // output is unclamped and overshoots past 1 whenever the reduction passes
   // 24 dB — at the DEFAULT envMag, which the def's own prose had wrong.
   'sidecar-env': (read) => sidecarEnvText(sidecarFaceParams(read)),
+
+  // ── WARREN'S SPECTRUM ────────────────────────────────────────────────────
+  // FOUR, on a module that is TWO DSP CLASSES behind one switch — so the
+  // recurring blind input here is MODE, and three of the four are `none` in
+  // the engine that does not implement them. That is not padding: a readout
+  // that quietly printed a SPECTRAL number while MASSPASS was selected would
+  // be the kickdrum-TAIL trap with a second engine attached.
+  //
+  // ⚠ PARTIALS PRINTS 64 IN A STATE WHERE 16 VOICES SOUND. In MASSPASS the
+  // same knob is the ACTIVE-BAND limiter, re-clamped to 1..BANDS — so the
+  // readback is blind to `engineMode` AND to `spectralBandCount`.
+  'warrensspectrum-voices': (read) => wsVoiceText(warrensspectrumFaceParams(read)),
+  // ⚠ RESIDUAL PRINTS 0.50 WHERE THE RESIDUAL IS BIT-EXACTLY ABSENT. The DSP
+  // scales it by `cbrt((PARTIALS-1)/47)`, which is exactly 0 at PARTIALS 1 —
+  // measured on the shipping worklet: sweeping the dial 0 → 2 there moves the
+  // output by 0.0000e+0, against 1.4299e-3 at PARTIALS 64.
+  'warrensspectrum-residual': (read) => wsResidualText(warrensspectrumFaceParams(read)),
+  // ⚠ STABILITY PRINTS 3 WHETHER THAT COSTS 20 ms OR 400 ms. The birth ramp is
+  // counted in analysis COMMITS, so its DURATION is SLICE-scaled — a 20×
+  // spread across a dial that never moves.
+  'warrensspectrum-fade-in': (read) => wsFadeInText(warrensspectrumFaceParams(read)),
+  // ⚠ GAIN PRINTS 0.0 dB WHILE THE MODULE RUNS 6.02 dB HOT. INPUT MIX is an
+  // un-normalised ADD, not a crossfade. And BANK WET moves the PATH half of
+  // this readout while being structurally unable to move the number, which is
+  // what makes the two halves each other's control.
+  'warrensspectrum-out': (read) => wsOutText(warrensspectrumFaceParams(read)),
 };
 
 /** The derived value for a declared id, or `null` (⇒ the readout prints `—`

@@ -150,6 +150,142 @@ export const attenumixDef: AudioModuleDef = {
     { id: 'master', label: 'Master', defaultValue: 1.0, min: 0, max: 2, curve: 'linear' },
   ],
 
+  // ── THE FACEPLATE (PF-20) ─────────────────────────────────────────────────
+  //
+  // WHAT THIS MODULE IS FOR. ATTENUMIX is the rack's SUM. Four things go in,
+  // one comes out, and the only decision a player makes is how much of each.
+  // The thing it does that VEILS (the same quad-VCA-plus-mix topology) does
+  // NOT is refuse to boost at the channel: every attenuator caps at unity, so
+  // the mix bus is the ONLY nonlinearity in the module and all the loudness
+  // lives in one knob. The verb is *bring a channel up until you hear it in
+  // the sum, then set the master where the tanh starts to bend.*
+  //
+  // THE RANKING, and it is measured rather than conventional. The four
+  // attenuators are INTERCHANGEABLE — a priority order over four identical
+  // controls carries no information — so they are ranked by LAYOUT, 1→4, which
+  // is the bluebox answer: every tier's PREFIX is then a recognisable fragment
+  // of the strip rather than an arbitrary pick. What IS a real ranking
+  // decision is MASTER, and it goes LAST:
+  //
+  //   ⚠ AT THE SHIPPED DEFAULTS, MASTER IS BIT-EXACTLY INERT. Every attenuator
+  //   defaults to 0, so the summing bus is fed zero and `tanh(0 · master)` is
+  //   exactly 0.000000000 at master 0, 1 AND 2 — measured through the shipping
+  //   worklet, and pinned permanently in attenumix-face-model.test.ts. An
+  //   attenuator, by contrast, makes sound on its own the moment a cable is in
+  //   its channel. That is why this face does NOT copy `mixer`'s ranking,
+  //   which puts `master` first: mixer's channels default to 1.0 (open), so
+  //   there the master is the live control and here it is the asleep one. The
+  //   same rank on this module would put its only always-inert-at-spawn
+  //   control at the top of every tier.
+  //
+  // TIER LADDER, as a sentence: *mini shows CH 1; the compact tile shows CH 1-3
+  // (three cells, because this face carries no glyph — see below); the six-cell
+  // lane plate shows the whole module, all four channels and the master; and
+  // the dock adds the readout row, the band headers and the rear jack field.*
+  //
+  // PAGES: two, and here `order` and `pages` AGREE rather than disagree —
+  // priority and signal flow are genuinely the same on a mixer (the channels
+  // are upstream of the bus in both senses). Two bands of 4 + 1, no wide cells
+  // (a `fader` cell is a 22px column, PARAM_CELL_WIDTH_CLASS), so PF-21 packs
+  // them into ONE row and the face is nowhere near DOCK_TAB_MIN_BANDS.
+  //
+  // ⚠ NO GLYPH, AND THAT IS A MEASUREMENT, NOT A SHRUG. `glyphBinding` taps
+  // `primaryAudioOutPortId`, which is "the FIRST declared `audio` output"
+  // (shell-glyph-live.ts:95) — on this def that resolves `out1`, channel one's
+  // DIRECT OUT, not the `mix` bus. A `meter` here would paint one of four
+  // channels while claiming to show the module's output: the blind-metric trap
+  // drawn on a faceplate. There is no per-face way to name the tapped port, so
+  // the honest face carries none, and the compact tier gets its third cell
+  // back for it (faceTierCap: 2 with a glyph, 3 without).
+  //
+  // NO title, NO hint, NO band hints, NO sidebar — the owner's standing ruling
+  // for faces (plain labels and values; the explanation lives in `docs` for
+  // right-click → annotate). No `momentary`: nothing here is a gesture. No
+  // hero `control` (no attenuator outranks another, and promoting MASTER would
+  // contradict the rank-5 argument above) and no hero `cell` (this module has
+  // no picture worth a PF-14 panel in v1) — the hero is the READOUT ROW, which
+  // heroFacePlan supports on its own.
+  face: {
+    order: ['att1', 'att2', 'att3', 'att4', 'master'],
+
+    pages: [
+      { id: 'channels', label: 'attenuators', controls: ['att1', 'att2', 'att3', 'att4'] },
+      { id: 'bus', label: 'mix bus', controls: ['master'] },
+    ],
+
+    // The card draws five FADERS and the shell must not silently substitute
+    // knobs — "a level is a THROW rather than a dial" is the declared reason
+    // `fader` exists at all (ModuleFace.paramCells, owner directive
+    // 2026-08-10, prompted by `noise`). All five are continuous, which is the
+    // shape the lint requires for this primitive.
+    paramCells: {
+      att1: 'fader', att2: 'fader', att3: 'fader', att4: 'fader', master: 'fader',
+    },
+
+    // THE HERO: three derived readouts and nothing else. Each is a JOIN over
+    // knobs that no single readback can perform, and each is negative-
+    // controlled permanently on the input a knob readback is BLIND to
+    // (attenumix-face-model.test.ts):
+    //
+    //   peak    tanh(Σatt · master) — MASTER is blind to it: at the defaults it
+    //           reads a confident 1.00 (unity) while the bus is exactly muted,
+    //           and it does not move when a channel opens.
+    //   drive   Σatt · master, plus what the tanh charges in dB — MASTER is
+    //           INVARIANT to the channel count: 1.00x whether the drive is 1.0
+    //           (-2.2 dB) or 4.0 (-12.0 dB).
+    //   cv room Σ(1 − att)/Σspan — this module's CV law is
+    //           `att = clamp(knob + cv, 0, 1)`, so a knob parked at unity is
+    //           CV-DEAF while the jack still lights. INVARIANT TO MASTER, which
+    //           is what makes it the orthogonal third rather than a third view
+    //           of the first two.
+    hero: {
+      readouts: [
+        { label: 'peak', valueId: 'attenumix-peak' },
+        { label: 'drive', valueId: 'attenumix-drive' },
+        { label: 'cv room', valueId: 'attenumix-cv-room' },
+      ],
+    },
+
+    // REAR CARD (rear-card-model). The derivation cannot group this field on
+    // its own: `rearTargetParamId` resolves a per-param CV from `paramTarget`
+    // or an `<x>_cv` id, and this module's CV ports are named `cv1..cv4` with
+    // NO paramTarget (they are audio-rate WORKLET INPUTS, not AudioParam
+    // shadows — see attenumix-cv-path.test.ts), so all eight inputs would fall
+    // into one undifferentiated `signal` band. Two curated groups instead:
+    // `signal` claims the LEADING slot for the four audio ins (a processor's
+    // plain feed, the vca/cloudseed reading), and `channels` claims the page
+    // slot of the same name for the four CV holes — which is exactly where the
+    // derivation would have filed them if they carried a `paramTarget`, so the
+    // rear band and the front band are the same group under two apt names (the
+    // mixer precedent). A curated group id that is neither the leading slot nor
+    // a declared page id appends as a STRAY band the totality gate cannot see,
+    // and module-face-lint refuses it.
+    //
+    // ⚠ `audioRate` IS DECLARED HERE, where mixer deliberately declares none.
+    // The `~` tick marks the SURPRISING case — a CV hole the DSP reads PER
+    // SAMPLE — and on this module that is exactly true and exactly unusual:
+    // `cv1..cv4` are worklet inputs summed into the attenuator sample by
+    // sample (`packages/dsp/src/attenumix.ts`), with no smoothing, so an
+    // audio-rate signal patched there is a ring modulator rather than a
+    // control. The audio ins are left un-ticked (saying "audio-rate" about an
+    // AUDIO input is noise on every hole — the mixer/vca precedent).
+    rear: {
+      groups: [
+        {
+          id: 'signal',
+          label: 'channel inputs · in1→ch 1 … in4→ch 4',
+          ports: ['in1', 'in2', 'in3', 'in4'],
+        },
+        {
+          id: 'channels',
+          label: 'attenuator cv · sums into the knob, clamped 0..1',
+          ports: ['cv1', 'cv2', 'cv3', 'cv4'],
+        },
+      ],
+      audioRate: ['cv1', 'cv2', 'cv3', 'cv4'],
+    },
+  },
+
   docs: {
     explanation:
       "The simple, no-surprises mixer: four channels, each with its own attenuator knob (0..1) and a CV input that sums into that knob, plus a per-channel direct out and one summed MIX output. Per channel out = in · clamp(knob + cv, 0, 1) — the attenuators only ATTENUATE, they never boost or invert (a negative knob+CV mutes, not phase-flips). The four channels sum and pass through a MASTER gain, then a tanh soft-clip: out = tanh(sum · master). Master goes up to ×2, so pushing past unity drives the sum into the tanh for warm saturation instead of a hard digital clip. Compared with VEILS (same quad-VCA-plus-mix topology) ATTENUMIX is the toggle-free 'just the mixer' version — the boost lives on the master, not per channel. There is a DSP worklet for the per-sample math.",

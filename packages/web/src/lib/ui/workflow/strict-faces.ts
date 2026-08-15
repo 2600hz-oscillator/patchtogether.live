@@ -750,8 +750,46 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   'resofilter',
   // FACE BATCH 4 · the exciter-driven resonator (2026-08-11) — see above.
   'rings',
+  // THE FACEPLATE QUEUE · Q6 — the 4-channel attenuating mixer (2026-08-14).
+  //
+  // The queue called this one MARGINAL on merit and it clears STOP 1 on the
+  // half the rule cares about: the refusal needs ALL of ≤2 params / no control
+  // families / no node.data affordances / no derived quantity worth a readout,
+  // and this module fails the first and the last. Its four channel knobs ARE
+  // interchangeable (the bluebox problem — a priority order over four identical
+  // controls carries no information), so the ranking is by LAYOUT and the
+  // INFORMATION moved to three derived readouts, each a join over five knobs
+  // that no single readback can perform. The load-bearing one: at the shipped
+  // defaults every attenuator is 0 and the mix bus is BIT-EXACTLY SILENT while
+  // MASTER reads a confident `1.00`.
+  //
+  // Audited before authoring (the #1661 swolevco class): all four declared CV
+  // inputs MOVE THE AUDIO through the CV path, measured on the shipping worklet
+  // at the input index the DEF publishes, each paired with a knob positive
+  // control, a bit-exact knob/CV equivalence leg and an instrument negative
+  // control. attenumix cannot fail that way by the same mechanism — its
+  // `cv1..cv4` are audio-rate worklet INPUTS, not `paramTarget` AudioParam
+  // shadows — and `attenumix-cv-path.test.ts` now asserts both halves of that
+  // sentence permanently, including that no attenumix input ever becomes one.
+  'attenumix',
   // FACE BATCH 6 · the stereo sidechain ducker (2026-08-14) — see above.
   'sidecar',
+  // FACE BATCH 6 · the two-engine spectral resynthesizer (2026-08-15).
+  //
+  // ⚠ THE PROMOTION IS GATED ON A PANEL, not on the face. This module's
+  // 8-band FILTERBANK is `node.data`, not ParamDefs, and before this batch its
+  // ONLY editor was `WarrensspectrumCard.svelte` — which promotion removes
+  // from both surfaces. Shipping the face without `WarrensspectrumBankPanel`
+  // would have made the bank unreachable: the samsloop failure, on a module
+  // that has a live bank rather than an absent sample. The panel is registered
+  // as the `ws-filterbank-{n}` shell cell and carries a `data` probe on
+  // `wsBands[0].send`, so a dead editor is red rather than merely invisible.
+  //
+  // ⚠ AND THE AUDIT CAME FIRST. All six declared `paramTarget` CV inputs were
+  // verified LIVE through the CV path — not the knob path — before a line of
+  // face was written (`art/scenarios/warrensspectrum/cv-path.test.ts`), because
+  // the two modules audited before it were both defective (#1661, #1662).
+  'warrensspectrum',
 ]);
 
 /**

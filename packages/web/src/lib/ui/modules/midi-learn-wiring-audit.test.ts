@@ -42,7 +42,28 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
  *  match the scan. Listed here only as the documented seam for future
  *  exemptions. */
 const ALLOWED_UNWIRED: Record<string, { count: number; reason: string }> = {
-  // e.g. 'SomeCard.svelte': { count: 1, reason: 'XY pad, not a single CC param' },
+  // A CLASS THE ALLOWLIST DID NOT ANTICIPATE, so it is spelled out rather than
+  // squeezed into "XY pad": this Fader edits `node.data.wsBands[i][field]`, not
+  // a `ParamDef`. MIDI Learn binds a (moduleId, paramId) pair — there is no
+  // paramId here to bind, and inventing one would be a lie the assign flow
+  // would then fail to honour.
+  //
+  // ⚠ This is a REAL, PRE-EXISTING limitation, not something the faceplate
+  // introduced: the WARRENSSPECTRUM card's own bank editor was equally
+  // unreachable from MIDI, and the panel preserves that parity exactly. Making
+  // the 8×5 band grid MIDI-assignable means giving the bands ParamDefs — a
+  // contract change, tracked as #1673, not something to smuggle in behind a
+  // faceplate promotion.
+  //
+  // The count is the ratchet: one source `<Fader>` rendered per FIELDS entry.
+  // If it moves, this entry reddens and someone re-reads the reason instead of
+  // inheriting it.
+  'WarrensspectrumBankPanel.svelte': {
+    count: 1,
+    reason:
+      'per-band filterbank editor writes node.data.wsBands, not a ParamDef — ' +
+      'MIDI Learn has no paramId to bind; same limitation as the card it replaces',
+  },
 };
 
 /** Strip HTML comments + JS `//` line comments so commented-out or

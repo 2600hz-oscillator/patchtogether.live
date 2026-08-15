@@ -323,6 +323,21 @@ export const FACES = [
   // rack. That is what lets a module with no sound at rest still have a
   // faceplate that says something.
   { type: 'rings', pages: 3 },
+  // THE FACEPLATE QUEUE · Q6 — the 4-channel attenuating mixer.
+  //
+  // `pages` is the POST-hero-split band count. It equals the declared
+  // `face.pages` length here because attenumix's hero promotes NOTHING out of a
+  // band — it is a readouts-only hero (no `cell`, no `control`, no `action`),
+  // which `heroFacePlan` supports on its own — so no band can be emptied and
+  // dropped.
+  //
+  // DETERMINISTIC by construction, like rings and unlike analogVco: this module
+  // carries NO glyph at all (`primaryAudioOutPortId` resolves `out1`, one of
+  // four channel direct outs, so a meter here would paint a lie — see the
+  // face's own comment), and all three readouts are pure functions of the five
+  // params. Every pixel is identical on a frozen graph, a live graph and a
+  // silent rack.
+  { type: 'attenumix', pages: 2 },
   // FACE BATCH 6 · the stereo sidechain ducker. `pages: 3` is the POST-hero
   // split count: three declared pages, and promoting `threshold` into the hero
   // leaves `detect` with knee + sc_hpf rather than emptying it, so no band is
@@ -335,6 +350,26 @@ export const FACES = [
   // whether the graph is frozen or running. It therefore neither exercises nor
   // depends on #1420's pre-frame freeze — the mixer / reverb / clouds property.
   { type: 'sidecar', pages: 3 },
+  // FACE BATCH 6 · the two-engine spectral resynthesizer. `pages: 5` is the
+  // POST-hero split count: five declared pages, and promoting `spectralPartials`
+  // into the hero leaves `engine` with MODE + BANDS rather than emptying it, so
+  // no band is dropped (heroFacePlan only drops an EMPTIED band — the `noise`
+  // case). Five is also comfortably under DOCK_TAB_MIN_BANDS, so this face
+  // packs rows rather than growing a tab rail.
+  //
+  // DETERMINISTIC AT REST, and MEASURED rather than assumed: it is an EFFECT,
+  // so with nothing patched into `audio_in` the worklet writes bit-exact zeros
+  // to both channels (art/scenarios/warrensspectrum/cv-path.test.ts asserts
+  // `peak |sample| === 0` on the silent-input leg), and the `meter` glyph tap
+  // therefore reads zero whether the graph is frozen or running. Like sidecar
+  // it neither exercises nor depends on #1420's pre-frame freeze.
+  //
+  // ⚠ ITS DOCK SCENE CARRIES A PANEL, which is new for this roster's tail: the
+  // `ws-filterbank-{n}` cell paints eight bars whose heights come from the
+  // SAVED band table, not from an analyser — pure geometry off `node.data`, no
+  // clock and no tap, so the picture is the same on a silent rack and a running
+  // one. That is why it needs no mask and no VRT_LIVE_SURFACES entry.
+  { type: 'warrensspectrum', pages: 5 },
 ] as const;
 
 /** TIGHT per-scene diff budgets (absolute pixels; Playwright takes the MIN of
