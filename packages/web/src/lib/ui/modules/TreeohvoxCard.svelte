@@ -30,6 +30,7 @@
   import { treeohvoxDef } from '$lib/audio/modules/treeohvox';
   import type { ModuleNode } from '$lib/graph/types';
   import { cardParams, portsFromDef } from './card-kit';
+  import { setManualGate } from './manual-strike-actions';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -43,6 +44,40 @@
     return typeof v === 'number' ? v : defaultFor(k);
   }
 
+
+  // ── THE AUDITION (the `treeohvox-gate` control family, one member).
+  //
+  // Before this, this card could make NO sound at all without a gate patched
+  // in: MEASURED at exactly 0.000e+0 peak on `audio_out` over 145 frames with
+  // every one of its twenty-five pressables clicked, against 3.390e-1 from the
+  // same analyser the moment a sequencer gate reached `gate_in` (#1658).
+  //
+  // press-and-HOLD, matching `gate_in`'s declared `edge: 'gate'` — the note
+  // lasts as long as the press, because that is what the port means. It goes
+  // through the SHARED seam (`setManualGate`), never an inline resolver that
+  // reads the audition key off the engine handle itself: a second resolver
+  // skips the latch, the leak guard and every gate in
+  // manual-strike-wiring.test.ts. (That gate greps card SOURCE for the quoted
+  // read key, comments included — which is why this note names the seam
+  // function and not the string.)
+  //
+  // The four release handlers are not belt-and-braces. A pointer that leaves
+  // the pad, a cancelled gesture and a blurred window are all releases the
+  // `up` handler alone never sees, and a gate left open is a note that never
+  // ends. (`setManualGate` installs window-level panic listeners for the cases
+  // even these miss — a deleted node, a hidden tab.) The `holding` guard makes
+  // the close idempotent, so an `up` after a `leave` is a no-op rather than a
+  // second edge.
+  let holding = $state(false);
+  function gateDown(): void {
+    holding = true;
+    setManualGate(id, true);
+  }
+  function gateUp(): void {
+    if (!holding) return;
+    holding = false;
+    setManualGate(id, false);
+  }
 
   const inputs = portsFromDef(treeohvoxDef.inputs, {
     pitch_in: 'PITCH', gate_in: 'GATE', accent_in: 'ACCNT', tune_cv: 'TUNE',
@@ -151,6 +186,24 @@
           readLive={live('waveform')}
         />
       </div>
+      <!-- The `treeohvox-gate` control family (one member). The testid carries
+           the family's declared `testidPrefix`, which module-docs-lint greps
+           for. -->
+      <div class="gate-row">
+        <button
+          type="button"
+          class="gate-pad"
+          class:held={holding}
+          aria-pressed={holding}
+          onpointerdown={gateDown}
+          onpointerup={gateUp}
+          onpointercancel={gateUp}
+          onpointerleave={gateUp}
+          onblur={gateUp}
+          data-testid={`treeohvox-gate-${id}-1`}
+          title="Audition: HOLD to sound a note (identical to holding the GATE input high)"
+        >gate</button>
+      </div>
     </div>
   </PatchPanel>
 
@@ -183,5 +236,31 @@
     gap: 14px;
     align-items: flex-end;
     justify-content: space-between;
+  }
+  .gate-row {
+    display: flex;
+    justify-content: center;
+  }
+  .gate-pad {
+    /* The acid-yellow stripe colour, so the one thing that makes noise reads as
+       this module's own control rather than generic chrome. */
+    width: 100%;
+    padding: 5px 0;
+    border: 1px solid var(--treeohvox-stripe, #f4b400);
+    border-radius: 4px;
+    background: transparent;
+    color: var(--treeohvox-stripe, #f4b400);
+    font: inherit;
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    cursor: pointer;
+    /* A held pad must not also be a text selection under the finger. */
+    user-select: none;
+    touch-action: none;
+  }
+  .gate-pad.held {
+    background: var(--treeohvox-stripe, #f4b400);
+    color: #1a1814;
   }
 </style>

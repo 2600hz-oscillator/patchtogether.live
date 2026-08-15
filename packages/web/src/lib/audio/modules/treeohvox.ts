@@ -34,6 +34,9 @@ import type { AudioModuleDef } from '$lib/audio/module-registry';
 import workletUrl from '@patchtogether.live/dsp/dist/treeohvox.js?url';
 
 import { createWorkletNode } from '$lib/audio/worklet-guard';
+// The canonical gate levels/edges, never re-derived here — see
+// $lib/audio/gate-trigger for why the numbers live in one place.
+import { closeGate, openGate } from '$lib/audio/gate-trigger';
 const PROCESSOR_NAME = 'treeohvox';
 const loadedContexts = new WeakSet<BaseAudioContext>();
 
@@ -112,6 +115,29 @@ export const treeohvoxDef: AudioModuleDef = {
     { id: 'waveform',  label: 'Wave',     defaultValue: 0,    min: 0,    max: 1,     curve: 'linear' },
   ],
 
+  // ── THE AUDITION (one member). MEASURED, not assumed: with nothing patched
+  // and every one of the twenty-five pressables on the card clicked, `audio_out`
+  // peaked at exactly 0.000e+0 over 145 frames, while the SAME analyser read
+  // 3.390e-1 the moment a sequencer gate reached `gate_in` (#1658). This is the
+  // rings/sixstrum class — a voice with no internal exciter and no surface that
+  // can excite it — and this family is the fix.
+  //
+  // ⚠ TO WHOEVER AUTHORS THE FACEPLATE (queue Q3). This pad reaches the dock
+  // ONLY because treeohvox has no curated `face` yet: with none, the dock
+  // full-view renders the legacy card (measured — `dock-full-view` contains one
+  // `.mod-card`). The moment a `face` lands, the dock renders THAT instead and
+  // this pad disappears from the dock unless the face ranks a gate cell of its
+  // own — a `kind: 'action'`, `mode: 'gate'` entry in shell-cells.ts calling
+  // `setManualGate`, exactly like meowbox's. THAT IS THE SIXSTRUM DEFECT
+  // VERBATIM: its card's STRUM button always worked while `?shell=1` offered
+  // twenty controls over an instrument that could not be sounded, because the
+  // face was authored without the audition. `e2e/tests/treeohvox-strike.spec.ts`
+  // asserts the dock surface can sound the voice, so it goes RED if the face
+  // lands without one — do not "fix" that by re-pointing the test at the card.
+  controlFamilies: [
+    { id: 'treeohvox-gate', label: 'Gate — hold to sound the voice', kind: 'other', testidPrefix: 'treeohvox-gate' },
+  ],
+
   docs: {
     explanation:
       "A TB-303 acid-bass voice in one card: a band-limited saw↔square oscillator into the classic 303 ladder-style resonant low-pass, with the cutoff swept by a snappy decay envelope. It's a port of Robin Schmidt's Open303, so the squelch, the resonance scream, and the accent boost behave like the real 303 voice. Play it from a pitch + gate source (a sequencer, keyboard, or MIDI lane): the gate's rising edge starts the note and its falling edge ends it (so gate length is note length), and the dedicated ACCENT gate latches an accent on that note for the louder, brighter, more resonant 303 accent character. This card is the VOICE only — the full 303 sequencer/slide/transpose lives in the planned 404 module.",
@@ -138,6 +164,7 @@ export const treeohvoxDef: AudioModuleDef = {
       decay: "FILTER-envelope decay time (50 ms–3 s, log) — how fast the cutoff falls back after each note: short for tight blips, long for slow sweeps; the canonical 303 range sits around 200 ms–2 s, extended here into doom-y territory. Like the hardware DECAY knob it shapes the TIMBRE, not the note's length — the note lasts as long as you hold the GATE.",
       accent: "Accent amount (0..1): how much louder and brighter an accented note (one whose ACCENT gate is high) gets — 0 makes accents identical to normal notes, 1 is the full 303 accent boost.",
       waveform: "Morphs the oscillator from saw (0, the classic 303 voice) to square (1) and every blend between. The morph is monotone — the fundamental only ever gets stronger as you turn it up — so there is no dead spot or octave jump anywhere in the travel.",
+      'treeohvox-gate-{n}': "HOLD to play a note with nothing patched in — it is exactly the GATE input held high, so the note starts when you press, lasts as long as you hold, and ends when you let go, and a real patched gate keeps working alongside it. Without a gate source this voice makes no sound at all, so this is how you hear what the seven knobs are doing before you patch anything. The pitch is whatever PITCH is fed (0 V, i.e. the base note, when nothing is patched), offset by TUNE.",
     },
   },
 
@@ -174,6 +201,24 @@ export const treeohvoxDef: AudioModuleDef = {
     silence.connect(workletNode, 0, 1);
     silence.connect(workletNode, 0, 2);
 
+    // ── THE MANUAL GATE. A dedicated ConstantSource summed into the SAME
+    // worklet input a cable feeds (input 1 = `gate_in`): Web Audio sums
+    // connections and the processor edge-detects the 0.5 crossing per sample
+    // (packages/dsp/src/treeohvox.ts), so this works ALONGSIDE a patched
+    // sequencer rather than instead of it. It writes nothing to the graph — no
+    // param moves, nothing persists, nothing syncs, nothing lands on the undo
+    // stack — which is exactly why the observable is the audition ledger and
+    // `readParam` is structurally blind to it.
+    //
+    // ⚠ A SEPARATE SOURCE FROM `silence`, deliberately. `silence` fans out to
+    // inputs 0/1/2 to keep the worklet decoding; driving ITS offset would also
+    // drive PITCH and ACCENT, so every audition would transpose the voice and
+    // latch an accent.
+    const gateCs = ctx.createConstantSource();
+    gateCs.offset.value = 0;
+    gateCs.start();
+    gateCs.connect(workletNode, 0, 1);
+
     const params = workletNode.parameters as unknown as Map<string, AudioParam>;
     for (const def of treeohvoxDef.params) {
       const v = (node.params ?? {})[def.id] ?? def.defaultValue;
@@ -207,9 +252,40 @@ export const treeohvoxDef: AudioModuleDef = {
       readParam(paramId) {
         return params.get(paramId)?.value;
       },
+      // The AUDITION seam — the shared karplus/meowbox `read(key)` idiom.
+      //
+      // ⚠ `manualGate` ONLY, and the OMISSION of `manualTrigger` is
+      // load-bearing. `resolveManualStrike` and `resolveManualGate` are two
+      // separate read keys precisely so a handle implementing one does not
+      // silently answer the other (ui/modules/manual-strike-actions.ts). THE
+      // SHAPE IS THE DEF'S, NOT A PREFERENCE: `gate_in` declares `edge: 'gate'`
+      // and the processor acts on BOTH edges — rising starts the note, FALLING
+      // ends it, so gate length IS note length. The shared one-shot is a 5 ms
+      // pulse (TRIGGER_PULSE_S), which would end every auditioned note 5 ms
+      // after it began. A caller asking for `manualTrigger` here gets
+      // `undefined` and the ledger records `delivered: false` — the honest
+      // answer, and distinguishable from a press that never happened.
+      read(key: string): unknown {
+        if (key === 'manualGate') {
+          return (high: boolean) => {
+            try {
+              if (high) openGate(gateCs, ctx.currentTime);
+              else closeGate(gateCs, ctx.currentTime);
+            } catch { /* the context went away with the node */ }
+          };
+        }
+        return undefined;
+      },
       dispose() {
+        // ⚠ CLOSE THE GATE BEFORE STOPPING ITS SOURCE. A node deleted mid-hold
+        // is one of the release edges the pad itself can never see (its button
+        // unmounts with the card), and a gate left open is a note that never
+        // ends — see ui/modules/manual-gate-latch.ts.
+        try { closeGate(gateCs, ctx.currentTime); } catch { /* */ }
         try { silence.stop(); } catch { /* */ }
         try { silence.disconnect(); } catch { /* */ }
+        try { gateCs.stop(); } catch { /* */ }
+        try { gateCs.disconnect(); } catch { /* */ }
         try { workletNode.disconnect(); } catch { /* */ }
       },
     };

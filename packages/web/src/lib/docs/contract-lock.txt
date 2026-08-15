@@ -3424,6 +3424,7 @@ treeohvox param envelope 0..1 linear default=0.5
 treeohvox param resonance 0..1 linear default=0.5
 treeohvox param tune -12..12 linear default=0 unit=st
 treeohvox param waveform 0..1 linear default=0
+treeohvox family treeohvox-gate kind=other prefix=treeohvox-gate
 tvLibrarian meta domain=video
 tvLibrarian in next gate param=cv_next edge=trigger
 tvLibrarian in random gate param=cv_random edge=trigger
