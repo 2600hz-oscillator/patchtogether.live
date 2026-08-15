@@ -115,7 +115,7 @@ those at spec granularity and the lane audit checks the realized string.
 - `e2e/tests/multi-video-playback.spec.ts:439` — decode-capacity probe — excluded from the heavy WebGL attest gate (ceiling-marginal)
 - `e2e/tests/new-rack-return-to-last.spec.ts:108` — IndexedDB unavailable — scratch replica cannot persist
 - `e2e/tests/new-rack-return-to-last.spec.ts:158` — IndexedDB unavailable — scratch replica cannot persist
-- `e2e/tests/patch-load-leak.spec.ts:277` — DOM retention is not measurable under vite dev — HMR retains destroyed component instances by design
+- `e2e/tests/patch-load-leak.spec.ts:309` — DOM retention is not measurable under vite dev — HMR retains destroyed component instances by design
 - `e2e/tests/peertube.spec.ts:326` — (dynamic: ``renderer could not decode the AVC/AAC HLS clip (state=${state})``)
 - `e2e/tests/per-module-per-port-inputs.spec.ts:113` — DOOM WASM/WAD not built — see static/doom/DOWNLOAD_INSTRUCTIONS.md
 - `e2e/tests/per-module.spec.ts:233` — DOOM WASM not built — run `bash packages/web/native/build-doom-wasm.sh`
