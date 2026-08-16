@@ -27,7 +27,7 @@
   import { nodeVersion, nodesStructuralVersion } from '$lib/graph/node-versions.svelte';
   import { getModuleDef } from '$lib/audio/module-registry';
   import { getVideoModuleDef } from '$lib/video/module-registry';
-  import ScopeCard from '$lib/ui/modules/ScopeCard.svelte';
+  import { GROUP_VIZ_HOST_CARDS } from '$lib/ui/modules/group-viz-hosts';
   import GroupExposedControls from '$lib/ui/GroupExposedControls.svelte';
 
   let { id, data }: NodeProps = $props();
@@ -251,11 +251,13 @@
     };
   });
 
-  /** Component lookup for the hidden viz-child mount. SCOPE is the only
-   *  vizPassthrough opt-in today; future opt-ins register here. */
+  /** Component lookup for the hidden viz-child mount, from the SHARED registry
+   *  ($lib/ui/modules/group-viz-hosts). It is shared because Canvas's headless
+   *  source host has to know the same answer — a node this card is already
+   *  hosting must not ALSO be hosted off-screen (#1721). Register a new opt-in
+   *  there, not here. */
   function componentForType(type: string) {
-    if (type === 'scope') return ScopeCard;
-    return null;
+    return GROUP_VIZ_HOST_CARDS[type] ?? null;
   }
 
   // The hidden ScopeCard needs the same NodeProps shape that SvelteFlow
@@ -412,8 +414,9 @@
         data-testid="viz-hidden-mount"
         data-child-id={vc.id}
       >
-        {#if componentForType(vc.type) === ScopeCard}
-          <ScopeCard {...hiddenCardProps(vc.childNode)} />
+        {#if componentForType(vc.type)}
+          {@const HostCard = componentForType(vc.type)!}
+          <HostCard {...hiddenCardProps(vc.childNode)} />
         {/if}
       </div>
     {/each}

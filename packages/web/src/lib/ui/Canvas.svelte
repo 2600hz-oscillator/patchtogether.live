@@ -221,6 +221,7 @@
   // DOM-SOURCE seam: a video module whose source lives on its CARD stays alive
   // in an off-screen host when the shell swaps its lane card away.
   import { HEADLESS_MOUNT_LANE_TYPES, needsHeadlessSourceMount } from '$lib/ui/workflow/dom-source-modules';
+  import { groupCardHostsChildCard } from '$lib/ui/modules/group-viz-hosts';
   import { nodeMedia } from '$lib/ui/media/node-media-registry';
   import { nodePresent } from '$lib/ui/modules/node-present-registry.svelte';
   import { nodeRecorder } from '$lib/ui/modules/node-recorder-registry.svelte';
@@ -2077,15 +2078,32 @@
    *  can never disagree: 'legacy' (`?shell=legacy`, or a NON_SHELL carve-out
    *  like cameraInput/videoOut) and 'stub' (real card in the dock rail) both
    *  render the card SOMEWHERE and are excluded — only 'shell'/'placeholder'
-   *  qualify. `?shell=legacy` can never produce those, so this is a strict
-   *  no-op there. Additionally excluded:
+   *  qualify. Additionally excluded:
    *    - a node whose full faceplate is OPEN in the dock (DockFullView already
    *      mounts its real card — a second mount would run two media elements for
    *      one node and the first to unmount would detach the survivor's source),
-   *    - canvas-hidden nodes (pinned drawer / hiddenCard cameras) and collapsed-
-   *      group children: those render no lane card in preview-off EITHER, so
-   *      hosting them would ADD engine state the shell-off rack doesn't have —
-   *      the opposite of the parity this fix exists to guarantee. */
+   *    - canvas-hidden nodes (pinned drawer / hiddenCard cameras): those render
+   *      no lane card in preview-off EITHER, so hosting them would ADD engine
+   *      state the shell-off rack doesn't have — the opposite of the parity
+   *      this fix exists to guarantee.
+   *
+   *  ⚠ COLLAPSED-GROUP CHILDREN USED TO BE EXCLUDED HERE TOO, on that same
+   *  parity reasoning, and for the DOM-SOURCE half they still are (see
+   *  `needsHeadlessSourceMount`, which is where the argument now lives). For the
+   *  PRODUCER half the exclusion was a hole (#1721): parity requires the two
+   *  shells to AGREE, and BOTH were dark, because the collapsed-child skip in
+   *  the flowNodes derivation below sits OUTSIDE its `shellFaces` branch.
+   *  Measured on the pre-fix tree, wavesculpt.video_out → VIDEO OUT, 20 rAF
+   *  frames of the module's own drawFrame into a 64×48 probe: `nonBlack
+   *  170/3072, maxLuma 203, 20 distinct signatures` before the group, `0/3072,
+   *  0, 1 signature` after it collapsed — identical in the default shell and
+   *  under `?shell=legacy`.
+   *
+   *  ⚠ SO THIS DERIVATION IS NO LONGER A NO-OP UNDER `?shell=legacy`, and the
+   *  `if (!shellFaces) return []` short-circuit that used to open it had to go.
+   *  It is still a no-op for every arm except the collapsed-group one:
+   *  `laneRenderKind` can only return 'legacy'/'stub' when shellFaces is false,
+   *  and neither mounts. */
   /** NODE-OWNED MEDIA teardown. A DOM-source module's <video>/<img>, object URL
    *  and MediaStream are owned by $lib/ui/media/node-media-registry so they
    *  survive a CARD unmount (expand/collapse moves the real card between the
@@ -2137,15 +2155,17 @@
   });
 
   let headlessSourceNodes = $derived.by<ModuleNode[]>(() => {
-    if (!shellFaces) return [];
     const collapsed = collapsedGroupIds;
     const out: ModuleNode[] = [];
     for (const n of snapshot.nodes) {
       if (!HEADLESS_MOUNT_LANE_TYPES.has(n.type)) continue;
       if (isCanvasHiddenNode(n)) continue;
-      const parentGroupId = (n.data as { parentGroupId?: string } | undefined)?.parentGroupId;
-      if (parentGroupId && collapsed.has(parentGroupId)) continue;
       if (dockStore.isFullView(n.id)) continue;
+      const parentGroupId = (n.data as { parentGroupId?: string } | undefined)?.parentGroupId;
+      // The lane emits NO node for a collapsed group's child (see the flowNodes
+      // derivation below), in EITHER shell — so `kind` describes a card that is
+      // never reached, and the decision needs to know that rather than infer it.
+      const laneOmitsNode = !!parentGroupId && collapsed.has(parentGroupId);
       const kind = laneRenderKind({
         shellFaces,
         userDocked: !!dockStore.entryFor(n.id),
@@ -2153,7 +2173,19 @@
         hasCard: isShellSwappable(n.type, cardTypeSet.has(n.type)),
         migrated: migrated(n.type),
       });
-      if (needsHeadlessSourceMount({ kind, type: n.type })) out.push(n);
+      if (
+        needsHeadlessSourceMount({
+          kind,
+          type: n.type,
+          laneOmitsNode,
+          // GroupCard hidden-mounts a viz-passthrough child's REAL card for
+          // exactly as long as the group is collapsed, so that node already has
+          // a live host and a second one would be a double mount.
+          hostedElsewhere: laneOmitsNode && groupCardHostsChildCard(n.type),
+        })
+      ) {
+        out.push(n);
+      }
     }
     return out;
   });

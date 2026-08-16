@@ -187,6 +187,37 @@ export interface HeadlessSourceInput {
   kind: LaneRenderKind;
   /** The module type id. */
   type: string;
+  /**
+   * TRUE when the lane emits NO xyflow node at all for this node, so `kind`
+   * describes a card that is never reached — today, a child of a COLLAPSED
+   * GROUP (#1721).
+   *
+   * ⚠ THE ONE ARM THAT IS NOT SHELL-SPECIFIC. Every other input here is a
+   * consequence of the faceplate shell, and the whole decision is a strict
+   * no-op under `?shell=legacy`. This one is not: Canvas's `flowNodes`
+   * derivation drops a collapsed group's children OUTSIDE its `shellFaces`
+   * branch, so a producer in a collapsed group has no card in EITHER shell.
+   * MEASURED on `main` (wavesculpt.video_out → VIDEO OUT, 64×48 probe of the
+   * module's own `drawFrame`, 20 rAF frames): before grouping `nonBlack
+   * 170/3072, maxLuma 203, 20 distinct signatures` under the default shell and
+   * `172/3072, 206, 20` under `?shell=legacy`; after the group collapses,
+   * `0/3072, 0, 1 signature` in BOTH.
+   */
+  laneOmitsNode?: boolean;
+  /**
+   * TRUE when SOME OTHER live surface already mounts this node's real card, so
+   * hosting it here would be a second mount of one node. The caller owns the
+   * question; the decision only has to honour it.
+   *
+   * Today's one producer of it: `GroupCard` hidden-mounts a viz-passthrough
+   * child's real card for exactly as long as the group is COLLAPSED
+   * (`$lib/ui/modules/group-viz-hosts` — SCOPE), which is precisely the window
+   * `laneOmitsNode` is true in. Measured on `main`: collapsing a group around
+   * SCOPE leaves `viz-hidden-mount` count 1 and its picture unchanged
+   * (`nonBlack 3072/3072, maxLuma 151`) in both shells, so it needs no host and
+   * must not get one.
+   */
+  hostedElsewhere?: boolean;
 }
 
 /**
@@ -196,7 +227,9 @@ export interface HeadlessSourceInput {
  *   - the module's engine state lives on its card — either because the card
  *     ATTACHES the source (DOM_SOURCE_LANE_TYPES) or because the card IS the
  *     producer (CARD_PRODUCER_LANE_TYPES) — AND
- *   - the lane is NOT rendering that card:
+ *   - no surface renders that card:
+ *       * `laneOmitsNode` — the lane emits no node AT ALL (a collapsed group's
+ *         child) → YES, but only for the PRODUCER half; see below,
  *       * 'shell' / 'placeholder' — the shell swapped it out  → YES,
  *       * 'legacy' — the card IS in the lane (?shell=legacy, or a
  *         NON_SHELL carve-out like cameraInput/videoOut) → no,
@@ -205,10 +238,30 @@ export interface HeadlessSourceInput {
  *         getUserMedia / two <video> elements for one node, and whichever
  *         unmounted last would detach the survivor's source.
  *
- * PURE — same inputs, same output, no side effects. Preview-off can never
- * produce 'shell'/'placeholder', so this is a strict no-op there.
+ * ⚠ WHY THE `laneOmitsNode` ARM IS CHANNEL-AWARE, AND WHY IT REVERSES NOTHING.
+ * The collapsed-group skip it replaces (Canvas.svelte, 72e062cf1) was written
+ * for THIS set when the set was DOM-SOURCE ONLY, and its stated reason —
+ * "those render no lane card in preview-off EITHER, so hosting them would ADD
+ * engine state the shell-off rack doesn't have" — is a PARITY argument, and it
+ * is correct. Parity is two-sided, though: it requires the two shells to
+ * AGREE, not to agree on the broken value. Skipping was one way to satisfy it
+ * (both shells dark); hosting in BOTH is the other, and it is the only one that
+ * also satisfies the rule THIS FILE encodes. #1587 then widened the set to
+ * include the producer half without revisiting the skip.
+ *
+ * The DOM-source half keeps the old behaviour verbatim, and that half of the
+ * original reasoning still stands on its own: `node-media-registry` already
+ * owns those elements across a card unmount, and hosting a CAMERA off-screen
+ * because a group is collapsed would run `getUserMedia` with no UI anywhere —
+ * the concrete harm the author was avoiding.
+ *
+ * PURE — same inputs, same output, no side effects. `kind` can only be
+ * 'legacy'/'stub' under `?shell=legacy`, so every arm EXCEPT `laneOmitsNode` is
+ * still a strict no-op there.
  */
 export function needsHeadlessSourceMount(i: HeadlessSourceInput): boolean {
   if (!HEADLESS_MOUNT_LANE_TYPES.has(i.type)) return false;
+  if (i.hostedElsewhere) return false;
+  if (i.laneOmitsNode) return CARD_PRODUCER_LANE_TYPES.has(i.type);
   return i.kind === 'shell' || i.kind === 'placeholder';
 }
