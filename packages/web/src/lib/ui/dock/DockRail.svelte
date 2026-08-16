@@ -22,6 +22,7 @@
   import type { ModuleNode } from '$lib/graph/types';
   import type { DockZone } from './dock';
   import { dockStore } from './dock-store.svelte';
+  import { drawerHeightPx, drawerStepFor, nextDrawerStep } from './dock-entries';
   import DockCardHost from './DockCardHost.svelte';
 
   /** One card slot: a docked entry or the bottom drawer's pinned occupant. (The
@@ -129,6 +130,36 @@
   });
 
   let pinnedCard = $derived(cards.find((c) => c.pinned) ?? null);
+
+  // ── THE DRAWER HEIGHT CONTROL (#1767) ────────────────────────────────────
+  //
+  // Owner: *"a single control in the top right of the drawer which impacts the
+  // vertical space that all open modules get."* It writes the SAME
+  // `railSize('bottom')` the grabber writes, so the two gestures share one
+  // stored quantity and one persisted value (localStorage, per rackspace,
+  // LOCAL — never the Y.Doc; see the ladder's header for that argument).
+  //
+  // ⚠ DRAWER-SCOPED, NOT CARD-SCOPED, and that is why it lives HERE rather
+  // than in `DockCardHost`'s header beside the zoom trio: the zoom is per-card
+  // by design and this is explicitly "the vertical space that ALL open modules
+  // get". One rail, one control, at the rail's own top-right corner.
+  //
+  // ⚠ THE LABEL READS THE DRAWER, NOT A REMEMBERED INDEX, so dragging the
+  // grabber and clicking the button stay consistent: `drawerStepFor` resolves
+  // the nearest step to the live height every render.
+  let viewportH = $state(typeof window === 'undefined' ? 900 : window.innerHeight);
+  $effect(() => {
+    if (typeof window === 'undefined') return;
+    const onResize = () => (viewportH = window.innerHeight);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  });
+  let heightStep = $derived(drawerStepFor(dragSize ?? railSize, viewportH));
+  function cycleHeight(): void {
+    const next = nextDrawerStep(dragSize ?? railSize, viewportH);
+    dockStore.setRailCollapsed(zone, false);
+    dockStore.setRailSize(zone, drawerHeightPx(next, viewportH));
+  }
 </script>
 
 {#if cards.length > 0 || zone === 'left'}
@@ -160,6 +191,19 @@
              keep the P1 scaffold's testid on an inner marker so the shell
              e2e contract holds with cards docked. -->
         <span class="dock-leftbar-marker" data-testid="workflow-leftbar" aria-hidden="true"></span>
+      {/if}
+      {#if zone === 'bottom'}
+        <!-- ONE control, the drawer's top-right corner (#1767). Sized by the
+             ladder in dock-entries; the label is the CURRENT step read off the
+             live height, so it stays honest after a grabber drag. -->
+        <button
+          class="dock-height"
+          data-testid="dock-height"
+          data-height-step={heightStep}
+          onclick={cycleHeight}
+          title="Drawer height — click to cycle (all open modules resize together)"
+          aria-label={`Drawer height: ${heightStep}. Click to cycle.`}
+        >⇕ {heightStep}</button>
       {/if}
       <div class="dock-rail-cards">
         {#each cards as card (card.node.id)}
@@ -217,18 +261,69 @@
     border-right: 1px solid #232833;
     max-width: 44vw;
   }
-  /* BOTTOM drawer: overlay pinned to the canvas bottom (P1 geometry). */
+  /* BOTTOM drawer: overlay pinned to the canvas bottom (P1 geometry).
+   *
+   * ⚠ IT SHRINK-WRAPS ITS CONTENT NOW (owner review of #1738: *"all the unused
+   * negative space on the side here needs to go away"*). It used to be
+   * `left: 0; right: 0` — a full-width bar regardless of what was in it. With
+   * the mixmstrs face down from 805 px to 553 px that left ~840 px of empty
+   * drawer beside a 555 px card, which is the most negative space anywhere on
+   * the screen and none of it was doing anything.
+   *
+   * `width: max-content` + `max-width: 100%` means the bar is exactly its cards
+   * and never wider than the canvas. `min-width` is the ONE thing keeping this
+   * from being a regression: `.dock-grabber-bottom` spans the rail, so a bar
+   * shrink-wrapped to a narrow card would leave a drag target too small to
+   * find. The floor keeps that gesture usable at any occupant width — and the
+   * new `⇕` height control (#1767) is the second, always-full-size route to the
+   * same value, so the resize affordance is strictly better than before rather
+   * than traded away. */
   .dock-rail-bottom {
     position: absolute;
     left: 0;
-    right: 0;
     bottom: 0;
     z-index: 30;
     flex-direction: row;
+    width: max-content;
+    min-width: min(100%, 520px);
+    max-width: 100%;
     border-top: 1px solid #2a2f3a;
+    border-right: 1px solid #2a2f3a;
     box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.45);
     background: #14171c;
     max-height: min(48vh, 620px);
+  }
+  /* The height control sits at the bar's own right edge, so it follows the
+     shrink-wrap instead of stranding itself over the canvas. */
+  .dock-rail-bottom .dock-rail-cards {
+    padding-right: 58px;
+  }
+  /* THE DRAWER HEIGHT CONTROL (#1767) — the drawer's own top-right corner, in
+     the `.dock-btn` vocabulary the card headers already use so it reads as the
+     same class of object. Absolutely positioned so it costs the cards row NO
+     layout: the drawer's DEFAULT height is untouched and no dock baseline
+     moves. `z-index` clears the cards; it sits inside the grabber's 7px strip
+     margin rather than under it. */
+  .dock-height {
+    position: absolute;
+    top: 5px;
+    right: 8px;
+    z-index: 3;
+    background: #14171c;
+    color: var(--text-dim);
+    border: 1px solid #404652;
+    border-radius: 3px;
+    padding: 1px 6px;
+    cursor: pointer;
+    font-family: ui-monospace, monospace;
+    font-size: 0.65rem;
+    line-height: 1.5;
+    white-space: nowrap;
+  }
+  .dock-height:hover {
+    background: #2a2f3a;
+    color: var(--accent, #00f0ff);
+    border-color: var(--accent-dim, #1d5f66);
   }
   .dock-rail-cards {
     display: flex;

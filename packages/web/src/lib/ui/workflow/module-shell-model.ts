@@ -342,6 +342,10 @@ export const LANE_CELL_H: Record<ParamCellKind, number> = {
   grid: PLATE_ROW_H,
   color: PLATE_ROW_H,
   fader: 96,
+  // The neon fader is the same THROW at the same track height, plus a 9px
+  // persistent readout line the plain fader has no concept of. Same row budget
+  // rather than a guessed one: the readout replaces the hover tag's space.
+  'neon-fader': 96,
   // A SQUARE pad plus its two-axis readout. Carried at its real height even
   // though `laneOrder` makes an xy cell DOCK-ONLY today, so the number is
   // already right if that ever changes — an entry that lied "42" would be a

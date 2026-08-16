@@ -378,6 +378,184 @@ test.describe('workflow · the pinned `m` tray renders the promoted face (#1739)
     expect(errors, `pageerrors: ${errors.join(' | ')}`).toEqual([]);
   });
 
+  // ── THE OWNER'S FOUR REVIEW ITEMS, MEASURED ─────────────────────────────
+  //
+  // "the level settings need to be above the rows of dials perfectly" is a
+  // GEOMETRY claim, so it gets a geometry assertion. A screenshot comparison
+  // cannot express "perfectly" and a VRT baseline would go green on any drift
+  // that was captured — this reads the centres.
+  test('OWNER ITEM 2: every LEVEL fader is centred EXACTLY over its own dial column', async ({ page }) => {
+    const errors = collectErrors(page);
+    await gotoWorkflow(page);
+    await waitForPin(page, 'pinned-mixmstrs');
+    const card = await openTray(page);
+    await expect(card.locator('[data-testid="module-shell"]')).toBeVisible();
+
+    // The channels band must BE a console grid — the mechanism the alignment
+    // comes from. Asserting the outcome without the mechanism would pass on a
+    // coincidence at one viewport.
+    const band = card.locator('[data-face-page="channels"]');
+    await expect(band, 'the channels band lays out as a console grid').toHaveAttribute(
+      'data-console-cols',
+      /^[0-9]+$/,
+    );
+
+    // Column centres, read off the live boxes. Every fader against every dial
+    // in its own strip — level over LOW over MID over HIGH.
+    const drift = await card.evaluate((host: Element) => {
+      const cell = (id: string) => {
+        const el = host.querySelector(`[data-testid="control-${id}"]`);
+        return el ? (el.closest('[data-cell-key]') ?? el) : null;
+      };
+      const cx = (el: Element) => {
+        const r = el.getBoundingClientRect();
+        return r.x + r.width / 2;
+      };
+      const out: { ch: number; row: string; dx: number }[] = [];
+      // Channel count is READ off the rendered band, never typed here.
+      const faders = [...host.querySelectorAll('[data-face-cluster="level"] [data-cell-key]')].length;
+      for (let ch = 1; ch <= faders; ch++) {
+        const f = cell(`ch${ch}_volume`);
+        if (!f) continue;
+        for (const row of ['low', 'mid', 'high']) {
+          const k = cell(`ch${ch}_${row}`);
+          if (!k) continue;
+          out.push({ ch, row, dx: +(cx(f) - cx(k)).toFixed(2) });
+        }
+      }
+      return out;
+    });
+
+    expect(drift.length, 'the sweep must actually have found columns to compare').toBeGreaterThan(0);
+    const offenders = drift.filter((d) => Math.abs(d.dx) > 0.5);
+    expect(
+      offenders,
+      `fader/dial centre drift in CSS px — a column whose fader is not over its own dials is ` +
+        `not a console strip. Measured before the console grid: ch1 -9.9, ch2 -29.6, ch3 -49.3, ` +
+        `accumulating to about -138 by ch8.`,
+    ).toEqual([]);
+
+    // ── OWNER ITEM 1: the send PRE/POST echoes are OUT of the header …
+    const labels = await card
+      .getByTestId('face-hero-readouts')
+      .evaluate((el: Element) => [...el.querySelectorAll('dt')].map((n) => (n.textContent ?? '').trim()));
+    expect(labels, 'the header keeps only what is NOT visible elsewhere on the face').toEqual([
+      'bus',
+      'asleep',
+    ]);
+    // … and the CONTROLS they echoed are still on the face, still reachable.
+    // Removing a readout must not have removed a switch.
+    await expect(card.locator('[data-testid="control-send1Pre"]')).toHaveCount(1);
+    await expect(card.locator('[data-testid="control-send2Pre"]')).toHaveCount(1);
+
+    // ── OWNER ITEM 3: the levels are the NEON control, and it prints a value
+    //    at rest the way the dials beside it do.
+    await expect(
+      card.locator('[data-cell-control="neon-fader"][data-cell-key="ch1_volume"]'),
+      'a level renders as the neon throw, not the shipped grey one',
+    ).toHaveCount(1);
+    await expect(card.locator('[data-testid="readout-ch1_volume"]')).toBeVisible();
+
+    // ── OWNER ITEM 4: no band is WIDER than the face — i.e. nothing is being
+    //    stretched to a width nothing needs. That is the whole negative-space
+    //    defect, stated as an invariant rather than as a pixel count that would
+    //    go stale the next time a control is added.
+    const stretch = await card.evaluate((host: Element) => {
+      const shell = host.querySelector('.module-shell')!;
+      const sw = shell.getBoundingClientRect().width;
+      return [...host.querySelectorAll('[data-console-cols]')].map((b) => ({
+        id: b.getAttribute('data-face-page'),
+        // A console band is content-sized, so it must be STRICTLY narrower than
+        // the face that contains it (which also holds the hero and the rail).
+        slackPx: +(sw - b.getBoundingClientRect().width).toFixed(1),
+      }));
+    });
+    expect(stretch.length).toBeGreaterThan(0);
+    expect(
+      stretch.filter((b) => b.slackPx < 0),
+      'a console band wider than the face it sits in means it is stretching, not content-sized',
+    ).toEqual([]);
+
+    expect(errors, `pageerrors: ${errors.join(' | ')}`).toEqual([]);
+  });
+
+  // ── #1767 — THE DRAWER HEIGHT CONTROL ───────────────────────────────────
+  test('#1767: ONE control in the drawer top-right sizes the WHOLE drawer, and it persists', async ({ page }) => {
+    const errors = collectErrors(page);
+    await gotoWorkflow(page);
+    await waitForPin(page, 'pinned-mixmstrs');
+    await openTray(page);
+
+    const drawer = page.getByTestId('dock-zone-bottom');
+    const height = page.getByTestId('dock-height');
+    await expect(height, 'exactly ONE height control, as asked').toHaveCount(1);
+
+    // TOP-RIGHT of the DRAWER — not of a card. Asserted as geometry so a move
+    // into a card header (which is what "beside the zoom trio" would have
+    // meant) is red.
+    const dBox = (await drawer.boundingBox())!;
+    const hBox = (await height.boundingBox())!;
+    expect(hBox.x + hBox.width, 'hugs the drawer right edge').toBeGreaterThan(dBox.x + dBox.width - 80);
+    expect(hBox.y, 'sits in the drawer top').toBeLessThan(dBox.y + 60);
+
+    // IT CYCLES, AND EVERY STEP IS A REAL, DIFFERENT HEIGHT. Walking the whole
+    // ladder proves ONE control reaches every size — the thing that makes a
+    // single control acceptable instead of a trap.
+    const seen: { step: string; h: number }[] = [];
+    for (let i = 0; i < 5; i++) {
+      const step = (await height.getAttribute('data-height-step'))!;
+      const h = (await drawer.boundingBox())!.height;
+      seen.push({ step, h });
+      await height.click();
+      await expect
+        .poll(async () => await height.getAttribute('data-height-step'))
+        .not.toBe(step);
+    }
+    const steps = [...new Set(seen.map((s) => s.step))];
+    expect(steps.length, 'the cycle must visit more than one step').toBeGreaterThan(1);
+    // The label describes the drawer: two different steps must be two different
+    // heights, or the control is decoration.
+    const byStep = new Map(seen.map((s) => [s.step, s.h]));
+    expect(new Set(byStep.values()).size, 'each step is a distinct drawer height').toBe(byStep.size);
+    // …and it WRAPPED: the walk returned to a step it had already visited.
+    expect(seen.length).toBeGreaterThan(steps.length);
+
+    // FUNCTIONAL PARITY AT EVERY SIZE. At the SMALLEST step the drawer must
+    // still be usable: the card header (and this control) visible, and the
+    // content scrollable rather than truncated.
+    while ((await height.getAttribute('data-height-step')) !== 'S') await height.click();
+    const smallH = (await drawer.boundingBox())!.height;
+    expect(smallH, 'the smallest step must not collapse the drawer').toBeGreaterThan(80);
+    await expect(height, 'the control is still reachable at the smallest size').toBeVisible();
+    await expect(page.getByTestId('dock-close'), 'so is the close button').toBeVisible();
+    const scrollable = await page
+      .locator('[data-testid="dock-zone-bottom"] .dock-rail-cards')
+      .evaluate((el: Element) => el.scrollHeight > el.clientHeight && getComputedStyle(el).overflowY !== 'visible');
+    expect(scrollable, 'the rest of the module must be reachable by SCROLL, not lost').toBe(true);
+
+    // PERSISTS across a reload — a size you re-set every load is worse than no
+    // control. (LOCAL, per rackspace: it rides the same `railSize` the grabber
+    // writes, never the Y.Doc, so a rack-mate's drawer is untouched.)
+    await page.reload();
+    await expect(page.getByTestId('workflow-topbar')).toBeVisible();
+    await waitForPin(page, 'pinned-mixmstrs');
+    await page.keyboard.press('m');
+    await expect(page.getByTestId('dock-zone-bottom')).toBeVisible();
+    await expect
+      .poll(async () => await page.getByTestId('dock-height').getAttribute('data-height-step'))
+      .toBe('S');
+
+    // ZOOM STILL WORKS AND COMPOSES: height sizes the window, zoom sizes the
+    // content inside it. Neither may have eaten the other.
+    const card = page.locator('[data-dock-card="pinned-mixmstrs"]');
+    const before = Number(await card.getAttribute('data-dock-scale'));
+    await card.getByTestId('dock-zoom-in').click();
+    await expect.poll(async () => Number(await card.getAttribute('data-dock-scale'))).toBeGreaterThan(before);
+    await expect(page.getByTestId('dock-height')).toHaveAttribute('data-height-step', 'S');
+
+    expect(errors, `pageerrors: ${errors.join(' | ')}`).toEqual([]);
+  });
+
   test('REAR VIEW (Tab) from the FACE tray: patch OUT of masterL → canvas commit', async ({ page }) => {
     // The default-shell mirror of `workflow-dock.spec.ts`'s masterL test. Same
     // node, same port, same anchors — the ONE difference is that here the

@@ -227,3 +227,98 @@ export function parsePersistedDockState(raw: string | null): DockPersistedState 
     return empty;
   }
 }
+
+// ---------------- DRAWER HEIGHT (#1767) ----------------
+//
+// Owner request: *"our drawer needs a control to be able to be resized … so
+// that i can make it taller or more narrow depending on how much i need to see.
+// should be a single control in the top right of the drawer which impacts the
+// vertical space that all open modules get."*
+//
+// ── WHAT THIS IS AND IS NOT ────────────────────────────────────────────────
+//
+// It is a LADDER over the SAME `railSize('bottom')` the drag-grabber already
+// writes — one stored quantity, so the button and the drag can never disagree
+// about how tall the drawer is. The button is the discoverable, repeatable,
+// one-click form of a gesture that until now existed only as a 7 px hit-area on
+// the drawer's top edge.
+//
+// ⚠ IT IS DELIBERATELY NOT A NEW PERSISTED FIELD. `railSize` is already stored
+// per-rackspace in `pt.dock.v2:<rackKey>` (localStorage) and already restored on
+// bind, so the owner's "persist it" requirement is met by USING it rather than
+// by inventing a second source of truth that would then need reconciling with
+// the grabber's.
+//
+// ⚠ AND IT IS DELIBERATELY NOT ON THE Y.DOC — which the issue asks to be
+// argued rather than defaulted. How tall MY drawer is is a property of MY
+// screen and MY attention, not of the rack: syncing it would let a rack-mate on
+// a 4K monitor shove a laptop user's drawer over half their canvas, and the
+// dock's occupancy/zoom/collapse state is already local for exactly that
+// reason (`dock-store.svelte.ts` — transient, cleared on rackspace bind). A
+// local view preference that survives reload is the strongest form that does
+// not reach into someone else's window.
+//
+// ── THE STEPS ARE FRACTIONS, NOT PIXELS ────────────────────────────────────
+//
+// The drawer's ceiling is a viewport-relative CSS rule (`.dock-rail-bottom`
+// `max-height: min(48vh, 620px)`), so a pixel ladder would mean something
+// different on every screen — 300 px is "half the drawer" on a laptop and "a
+// sliver" on a 4K panel. The ladder is therefore fractions OF THE AVAILABLE
+// CEILING, resolved against the live viewport at click time.
+//
+// ⚠ THE FLOOR CLEARS THE SNAP THRESHOLD. `DockRail`'s grabber collapses the
+// rail below `SNAP_COLLAPSE_PX` (80). A ladder step under that would mean the
+// button could put the drawer into a state the button cannot get it out of, so
+// `drawerHeightPx` clamps to a floor above it. That clamp IS the "functional
+// parity at every reachable size" requirement: every step the control can reach
+// still shows the card header (and therefore this control), and the cards area
+// scrolls for the rest.
+
+/** Named drawer heights, as fractions of the drawer's CSS ceiling. */
+export const DRAWER_HEIGHT_STEPS: readonly { id: string; frac: number }[] = [
+  { id: 'S', frac: 0.34 },
+  { id: 'M', frac: 0.58 },
+  { id: 'L', frac: 0.8 },
+  { id: 'XL', frac: 1 },
+];
+
+/** The smallest drawer the ladder may produce (px). Above `DockRail`'s
+ *  `SNAP_COLLAPSE_PX` so a step can never land in the collapsed state. */
+export const DRAWER_HEIGHT_MIN_PX = 120;
+
+/** The drawer's CSS ceiling for a viewport height — mirrors
+ *  `.dock-rail-bottom { max-height: min(48vh, 620px) }`. One number, so the
+ *  ladder cannot resolve against a ceiling the stylesheet disagrees with. */
+export function drawerCeilingPx(viewportH: number): number {
+  return Math.min(0.48 * viewportH, 620);
+}
+
+/** Resolve a ladder step to pixels for a viewport, clamped to the floor. */
+export function drawerHeightPx(stepId: string, viewportH: number): number {
+  const step = DRAWER_HEIGHT_STEPS.find((s) => s.id === stepId) ?? DRAWER_HEIGHT_STEPS[0]!;
+  return Math.max(DRAWER_HEIGHT_MIN_PX, Math.round(step.frac * drawerCeilingPx(viewportH)));
+}
+
+/**
+ * Which step best describes a CURRENT height — so the button reads the drawer
+ * rather than a remembered index, and a drag on the grabber leaves the label
+ * telling the truth. Nearest by resolved pixels.
+ */
+export function drawerStepFor(currentPx: number | null, viewportH: number): string {
+  const target = currentPx ?? drawerCeilingPx(viewportH);
+  let best = DRAWER_HEIGHT_STEPS[0]!;
+  let bestD = Infinity;
+  for (const s of DRAWER_HEIGHT_STEPS) {
+    const d = Math.abs(drawerHeightPx(s.id, viewportH) - target);
+    if (d < bestD) { bestD = d; best = s; }
+  }
+  return best.id;
+}
+
+/** The NEXT step in the cycle after the one describing `currentPx`. Wraps, so
+ *  one control reaches every size — the owner asked for ONE control. */
+export function nextDrawerStep(currentPx: number | null, viewportH: number): string {
+  const cur = drawerStepFor(currentPx, viewportH);
+  const i = DRAWER_HEIGHT_STEPS.findIndex((s) => s.id === cur);
+  return DRAWER_HEIGHT_STEPS[(i + 1) % DRAWER_HEIGHT_STEPS.length]!.id;
+}

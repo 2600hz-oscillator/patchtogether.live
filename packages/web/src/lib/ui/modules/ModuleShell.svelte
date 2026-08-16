@@ -48,7 +48,7 @@
   import { cardParams, portsFromDef } from './card-kit';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import VideoTileThumb from './VideoTileThumb.svelte';
-  import { Button, ColorField, Fader, KnobConic, ParamGrid, ScopeScreen, Segmented, Selector, Toggle, VuMeter, XyPad } from '$lib/ui/controls';
+  import { Button, ColorField, Fader, KnobConic, NeonFader, ParamGrid, ScopeScreen, Segmented, Selector, Toggle, VuMeter, XyPad } from '$lib/ui/controls';
   import {
     curatedFace,
     dockFacePlan,
@@ -67,6 +67,7 @@
   import { shellCellFor, type ShellCellEnv } from '$lib/ui/workflow/shell-cells';
   import { shellParamWrite } from '$lib/ui/workflow/shell-param-writes';
   import { dockBandVisible, dockTabPlan } from '$lib/ui/workflow/dock-tabs-model';
+  import { consoleGridCols } from '$lib/ui/workflow/console-grid';
   import { dockRowPlan, type RowPlanDefLike } from '$lib/ui/workflow/dock-row-plan';
   import {
     declaredParamCells,
@@ -873,6 +874,34 @@
               formatValue={pd.format}
             />
           </div>
+        {:else if cellKind === 'neon-fader'}
+          <!-- THE SAME THROW, drawn in the conic knob's language (owner review
+               of #1738: *"a new UI control for faders that matches our blue
+               neon controls"*). A separate KIND rather than a prop on `fader`,
+               because `Fader.svelte` is mounted by 93 cards and 8 other faced
+               modules whose baselines must not move for one face's look — the
+               module opts in, one declaration at a time.
+
+               `persistentReadout` is bound to the FACEPLATE tier for the same
+               reason KnobConic's is: a dock band has the row for a value line
+               and a 192px lane tile does not. -->
+          <div class="kcol ms-cell-fader" data-cell-kind="param" data-cell-control="neon-fader" data-cell-key={ctl.key}>
+            <NeonFader
+              value={params.paramVal(pd.id)}
+              min={pd.min}
+              max={pd.max}
+              defaultValue={pd.defaultValue}
+              label={pd.label}
+              units={pd.units ?? ''}
+              curve={pd.curve}
+              onchange={paramWrite(pd.id)}
+              readLive={params.live(pd.id)}
+              moduleId={id}
+              paramId={pd.id}
+              formatValue={pd.format}
+              persistentReadout={faceplateView}
+            />
+          </div>
         {:else if cellKind === 'selector'}
           <!-- The SAME roster past the button-row budget (≥7 states): a
                portaled, viewport-clamped dropdown. Selector derives
@@ -1288,6 +1317,17 @@
              hint nested inside) made the hint answer to the RAIL, so a tabbed
              face could not paint its prose in any state. See the model. -->
         {@const head = bandHeaderPlan(band, { tabbed: !!dockTabs, annotations })}
+        <!-- THE CONSOLE GRID (owner review of #1738). When every cluster in this
+             band holds the same number of cells, the band is a TABLE, not N
+             independent flex rows — so it becomes ONE grid and each cluster a
+             SUBGRID of it. Column j then has the same centre in every cluster by
+             construction (measured Δ = 0.00 px), which is what "the level
+             settings need to be above the rows of dials perfectly" asks for, and
+             the band's width becomes its real content instead of the widest
+             unwrapped flex packing, which is what "all the unused negative space
+             on the side needs to go away" asks for. `null` for every other band
+             in the roster, which keeps their layout byte-identical. -->
+        {@const consoleCols = consoleGridCols(band)}
         <!-- On a TABBED face the band IS the tab's panel, so it says so: the
              rail's buttons carry `aria-controls={face-page-<id>}` and this
              carries the matching id + `aria-labelledby`. Without the pair a
@@ -1296,7 +1336,10 @@
              (a dangling `aria-labelledby` is worse than none). -->
         <section
           class="dock-page"
+          class:console-band={consoleCols != null}
+          style:--console-cols={consoleCols ?? undefined}
           data-testid="face-page"
+          data-console-cols={consoleCols ?? undefined}
           data-face-page={band.id}
           id={dockTabs ? `face-page-${band.id}` : undefined}
           role={dockTabs ? 'tabpanel' : undefined}
@@ -1876,6 +1919,59 @@
     flex-wrap: wrap;
     align-items: flex-start;
     gap: 8px 10px;
+  }
+
+  /* ── THE CONSOLE GRID (owner review of #1738) ──────────────────────────────
+   *
+   * A band whose clusters all hold the same number of cells is a TABLE. It
+   * becomes ONE grid whose columns are `max-content` over the WHOLE band, and
+   * each cluster is a SUBGRID of it — so a 22 px fader cell and a 41.7 px knob
+   * cell land on the same centre instead of packing independently.
+   *
+   * ⚠ `max-content` COLUMNS, NOT A FIXED RULER. A fixed `--kcol-w` track would
+   * align the columns and then CLIP any cell wider than it (a selector, an XY
+   * pad, a panel), which is the no-clip rule `laneBodyPlan` exists to protect
+   * in the lane. Sizing the track to the widest cell IN THE BAND keeps the
+   * alignment exact AND cannot clip, at the cost of nothing: a band of narrow
+   * cells gets narrow columns.
+   *
+   * ⚠ `width: max-content` on the band is the negative-space half. Before this
+   * the band STRETCHED to the shell's max-content (783.1 px on mixmstrs) while
+   * its cells occupied ~414 px; the surplus was blank. Now the band is its
+   * content and the shell shrinks to the widest band.
+   *
+   * Two levels of `subgrid` (band → cluster → its `.page-controls`) — verified
+   * supported and pixel-exact in this repo's Playwright chromium before it was
+   * relied on. */
+  .dock-page.console-band {
+    display: grid;
+    grid-template-columns: repeat(var(--console-cols), max-content);
+    justify-content: start;
+    align-content: start;
+    gap: 8px 10px;
+    width: max-content;
+    max-width: 100%;
+  }
+  /* Band-level children (the label, the un-clustered row, each cluster) span
+     the whole ruler; only CELLS occupy single columns. */
+  .dock-page.console-band > :global(*) {
+    grid-column: 1 / -1;
+  }
+  .console-band :global(.page-cluster) {
+    display: grid;
+    grid-template-columns: subgrid;
+  }
+  .console-band :global(.page-cluster) > :global(*) {
+    grid-column: 1 / -1;
+  }
+  .console-band :global(.page-controls) {
+    display: grid;
+    grid-template-columns: subgrid;
+    gap: 8px 10px;
+  }
+  .console-band :global(.page-controls) > :global(*) {
+    grid-column: auto;
+    justify-self: center;
   }
 
   /* CLUSTER inside a band (ModuleFacePage.clusters): a quieter, SMALLER

@@ -758,6 +758,13 @@ describe('module-face lint — DECLARED param cells (face.paramCells) + PANEL ti
           }
           break;
         }
+        // ⚠ ONE CLAUSE FOR BOTH THROWS, DELIBERATELY. `neon-fader` is the same
+        // GESTURE as `fader` in a different visual language, so it can back
+        // exactly the same shapes — and writing the clause twice is how the two
+        // would eventually disagree about what a throw is. Sharing the arm
+        // means a future constraint lands on both by construction; the DENY
+        // arm below still refuses any THIRD kind that arrives without one.
+        case 'neon-fader':
         case 'fader': {
           // A THROW is a CONTINUOUS scale. The one shape it must not back is a
           // discrete roster: those are `segmented`/`selector`/`grid` territory,
@@ -766,7 +773,7 @@ describe('module-face lint — DECLARED param cells (face.paramCells) + PANEL ti
           // whether it is 0..1, 0..2 or −60..+6 dB.
           if (p.curve === 'discrete') {
             problems.push(
-              `${def.type}: face.paramCells['${key}'] = 'fader' but the param is ${shape} — a ` +
+              `${def.type}: face.paramCells['${key}'] = '${kind}' but the param is ${shape} — a ` +
                 `throw needs a CONTINUOUS param. A discrete roster belongs on a segmented row, ` +
                 `a selector or a grid, all of which NAME their states; a fader would show them ` +
                 `as unlabelled detents on a scale.`,
@@ -774,7 +781,7 @@ describe('module-face lint — DECLARED param cells (face.paramCells) + PANEL ti
           }
           if (p.options?.length) {
             problems.push(
-              `${def.type}: face.paramCells['${key}'] = 'fader' but the param declares an ` +
+              `${def.type}: face.paramCells['${key}'] = '${kind}' but the param declares an ` +
                 `\`options\` roster — the roster names its states and a fader cannot show names. ` +
                 `Drop one of the two declarations.`,
             );

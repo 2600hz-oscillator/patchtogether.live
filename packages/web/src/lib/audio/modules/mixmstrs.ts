@@ -420,10 +420,20 @@ export const mixmstrsDef: AudioModuleDef = {
     // 'column' (a 22 px track — narrower than a knob's 40-68.8 px), so the
     // eight-fader `levels` band still packs as ONE row under
     // `DOCK_ROW_MAX_CONTROLS = 10`.
+    //
+    // ⚠ `neon-fader`, NOT `fader` — owner review of #1738: *"we need to re-do
+    // that level setting fader entirely with a new UI control for faders that
+    // matches our blue neon controls."* `NeonFader.svelte` is the same throw
+    // gesture drawn in `KnobConic`'s vocabulary (the `--_ka` chain, the 5 px
+    // pointer glow, the 9 px mono readout), so on a console the level and its
+    // three tone dials read as one family BY CONSTRUCTION rather than by a
+    // matched hex. Adopting it is ONE declaration per module, which is why it
+    // is a KIND and not an edit to the shared `Fader.svelte` that 93 cards and
+    // eight other faced modules mount.
     paramCells: Object.fromEntries([
-      ['master_volume', 'fader' as const],
-      ...MIXMSTRS_CHANNELS.map((c) => [`ch${c}_volume`, 'fader' as const]),
-      ...MIXMSTRS_RETURNS.map((r) => [`ret${r}_volume`, 'fader' as const]),
+      ['master_volume', 'neon-fader' as const],
+      ...MIXMSTRS_CHANNELS.map((c) => [`ch${c}_volume`, 'neon-fader' as const]),
+      ...MIXMSTRS_RETURNS.map((r) => [`ret${r}_volume`, 'neon-fader' as const]),
     ]),
 
     // THE HERO: the master fader, and four derived readouts.
@@ -458,11 +468,26 @@ export const mixmstrsDef: AudioModuleDef = {
     //           echoed the switch would print PRE and imply something happened.
     hero: {
       control: 'master_volume',
+      // ⚠ THE SEND PRE/POST READOUTS ARE GONE FROM THE HEADER — owner review of
+      // #1738: *"we don't need the send pre/post in the header here."*
+      //
+      // The two remaining readouts are the ones that state something a player
+      // cannot see anywhere else on the face: BUS is the summed headroom (the
+      // measured 1.2797 clip at the defaults), ASLEEP is how many of the
+      // ninety-one controls are bit-exactly inert right now. `send1Pre` /
+      // `send2Pre` are ORDINARY CONTROLS — they have their own cells at the end
+      // of each `aux sends` cluster, where the thing they modify is, so the
+      // header was printing a second copy of a switch that is already on screen
+      // and already labelled.
+      //
+      // ⚠ THE CONTROLS ARE NOT REMOVED, only the header echo: `faces-parity`
+      // asserts one `control-<paramId>` per def param across the whole
+      // faceplate, so deleting a cell would be RED, and deleting only the
+      // readout is invisible to it — which is why the tray e2e asserts the two
+      // switch cells are still present and still reachable by name.
       readouts: [
         { label: 'bus', valueId: 'mixmstrs-bus-gain' },
         { label: 'asleep', valueId: 'mixmstrs-comp-asleep' },
-        { label: 'send 1', valueId: 'mixmstrs-send1' },
-        { label: 'send 2', valueId: 'mixmstrs-send2' },
       ],
     },
   },
