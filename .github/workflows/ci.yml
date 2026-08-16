@@ -467,7 +467,23 @@ jobs:
     if: github.event_name == 'push'
     needs: dsp-build
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    # ⚠ 25 was not generous — it was the number that CANCELLED EVERY MAIN RUN.
+    # Measured on run 31955489994: this job ran 15:25:06 -> 15:50:29 = 25m23s and
+    # was killed at the cap. A timed-out job makes the WHOLE RUN `cancelled`, so
+    # main could not report green at all — and `daily-prod-deploy.yml`'s
+    # `find-green` disqualifies any job that is not success/skipped/null, which
+    # silently BLOCKED THE NIGHTLY PRODUCTION DEPLOY.
+    #
+    # It was 18m31s wall on its last green run (1008 s of test time). The sweep
+    # materialises every paramTarget-bearing def, and main has gained modules and
+    # faces since — so the cost grew ~40% and crossed the cap.
+    #
+    # This cap only BOUNDS THE FAILURE; it is not the gate. The job is main-only
+    # (owner ruling), so a generous number costs no PR latency. Sizing it against
+    # a measurement that already crossed the old cap, with headroom for further
+    # registry growth, rather than trimming to the current number and repeating
+    # this the next time a module lands.
+    timeout-minutes: 45
 
     steps:
       # ART baselines (art/baselines/**/*.f32) are LFS-tracked. Check out
