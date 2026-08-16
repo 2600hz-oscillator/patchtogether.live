@@ -429,14 +429,25 @@ const key = (s: EdgeSite): string => `${s.module}.${s.param}`;
  * is that every one of them is NAMED, and a site that is not named is RED.
  */
 const KNOWN_REMAINING: readonly string[] = [
-  // BACKDRAFT — 6 raw-passthrough clock/gate ports, all edge-read in draw().
-  'backdraft.delayClock',   // clock-locked delay period measurement
-  'backdraft.mirrorXGate',  // rising edge toggles mirror X
-  'backdraft.mirrorYGate',  // rising edge toggles mirror Y
-  'backdraft.shapeGate',    // rising edge cycles the shape
-  'backdraft.pureGeoGate',  // rising edge toggles the masking space
-  'backdraft.tvGate',       // rising edge toggles PURE TV
-  // B3NTB0X / BENTBOX — the same mirror-gate helper, same placement.
+  // ⚠ BACKDRAFT's SIX ARE GONE (#1725, fixed). All of `delayClock`,
+  // `mirrorXGate`, `mirrorYGate`, `shapeGate`, `pureGeoGate` and `tvGate` now
+  // edge-detect in `setParam`, and their ports declare `edge: 'trigger'`.
+  // MEASURED before/after on the real factory, over the real
+  // installGateDispatch write sequence, as CAPTURE RATE (edges acted on /
+  // edges delivered), swept across the pulse's offset in the 25 ms tick window:
+  //
+  //     5 ms trigger   28.6 % -> 100 %       (flat across 1/2/4/8 Hz)
+  //    10 ms clock-out 42.9 % -> 100 %       (flat across 1/2/4/8 Hz)
+  //    5 ms @ 8 fps     0.0 % -> 100 %       (the SwiftShader floor)
+  //    50 ms held gate  100 % -> 100 %       (why it went unnoticed)
+  //
+  // The behavioural gate is `backdraft-gate-edges.test.ts`, which drives the
+  // real factory and carries the pre-fix placement as a PERMANENT negative
+  // control, so this entry cannot come back silently.
+  //
+  // B3NTB0X / BENTBOX — the same mirror-gate helper, same placement, still
+  // unfixed. Each needs its own behavioural verification and its own
+  // owner-preview (both are look-affecting modules under the WebGL attest).
   'b3ntb0x.mirrorXGate',
   'b3ntb0x.mirrorYGate',
   'bentbox.mirrorXGate',
@@ -1028,7 +1039,12 @@ const UNDECLARED_GATE_INPUTS: Readonly<Record<string, readonly string[]>> = {
   '4plexvid': ['gate1', 'gate2', 'gate3', 'gate4'],
   acidwarp: ['scene_cv'],
   b3ntb0x: ['mirror_x_gate', 'mirror_y_gate'], // also named in rule 1's KNOWN_REMAINING
-  backdraft: ['delay_clock', 'mirror_x_gate', 'mirror_y_gate', 'shape_gate', 'pure_geo_gate', 'tv_gate'],
+  // ⚠ backdraft DRAINED 2026-08-15 (#1725). All six of its raw-passthrough
+  // clock/gate inputs now declare `edge: 'trigger'` — established from the
+  // CONSUMER, not the name: every one acts once per rising edge (toggle /
+  // cycle / timestamp) and nothing in backdraft reads any of their held levels.
+  // Declaring 'trigger' hands them to rule 2, which is why the setParam
+  // detection is now checked rather than merely written.
   bentbox: ['mirror_x_gate', 'mirror_y_gate'], // also named in rule 1's KNOWN_REMAINING
   blood: ['base'],
   doom: ['portId', 'iddqd_in', 'idkfa_in'], // 'portId' = the computed-id cv-gate spread
