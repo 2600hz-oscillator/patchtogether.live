@@ -119,6 +119,18 @@ const routingPanel = (page: Page): Locator =>
 interface GateStats {
   /** ch1 peak — the boolean jack under test. */
   peak: number;
+  /**
+   * ch2 peak — the COMPLEMENT jack.
+   *
+   * ⚠ IT EXISTS TO GATE READINESS, and leaving it out was a real flake (1 run
+   * in 9). The two edges into the scope materialise independently, so ch1 can
+   * be live while ch2's analyser still holds zeros — and then at every sample
+   * where AND is LOW the complement reads |0 + 0 − 1| = 1 and the test fails
+   * claiming the module broke its own truth table. "Not wired yet" and
+   * "wired and wrong" were indistinguishable from the assertion's output,
+   * which is the CLAUDE.md instrument rule in miniature.
+   */
+  peakB: number;
   /** Fraction of ch1 samples that are NEITHER near 0 nor near 1 — a gate's
    *  "cleanness". A soft or interpolated gate raises this. */
   intermediate: number;
@@ -158,7 +170,9 @@ async function readGate(page: Page, scopeId: string): Promise<GateStats> {
         } | null;
         __patch: { nodes: Record<string, { id: string; type: string; domain: string }> };
       };
-      const empty = { peak: 0, intermediate: 1, sawLow: false, sawHigh: false, complementErr: 1, total: 0 };
+      const empty = {
+        peak: 0, peakB: 0, intermediate: 1, sawLow: false, sawHigh: false, complementErr: 1, total: 0,
+      };
       const eng = w.__engine?.();
       const node = w.__patch.nodes[scopeId];
       if (!eng || !node) return empty;
@@ -167,6 +181,7 @@ async function readGate(page: Page, scopeId: string): Promise<GateStats> {
       const b = snap?.ch2;
       if (!a || !b) return empty;
       let peak = 0;
+      let peakB = 0;
       let mid = 0;
       let sawLow = false;
       let sawHigh = false;
@@ -174,12 +189,13 @@ async function readGate(page: Page, scopeId: string): Promise<GateStats> {
       for (let i = 0; i < a.length; i++) {
         const v = a[i]!;
         if (Math.abs(v) > peak) peak = Math.abs(v);
+        if (Math.abs(b[i]!) > peakB) peakB = Math.abs(b[i]!);
         if (Math.abs(v) < 0.02) sawLow = true;
         else if (Math.abs(v - 1) < 0.02) sawHigh = true;
         else mid++;
         complementErr = Math.max(complementErr, Math.abs(v + b[i]! - 1));
       }
-      return { peak, intermediate: mid / a.length, sawLow, sawHigh, complementErr, total: a.length };
+      return { peak, peakB, intermediate: mid / a.length, sawLow, sawHigh, complementErr, total: a.length };
     },
     { scopeId },
   );
@@ -345,17 +361,22 @@ test.describe('illogic face — four identical dials, and the four numbers they 
       ],
     );
 
-    // The gate must be a real 0/1 train, not a soft or absent one. `total` is
-    // reported so an empty analyser cannot masquerade as a clean gate.
+    // ⚠ READINESS IS BOTH CHANNELS, not one. The two edges into the scope
+    // materialise independently, and the complement assertion below reads them
+    // together — so polling on AND alone lets a run reach it with NAND's
+    // analyser still full of zeros. Measured: that flaked 1 run in 9, printing
+    // a complement error of exactly 1.0, which reads as "the module broke its
+    // own truth table" and is really "the cable was not plugged in yet".
     await expect
-      .poll(async () => (await readGate(page, scope)).peak, {
-        message: 'AND must reach full scale in the real engine',
+      .poll(async () => { const g = await readGate(page, scope); return Math.min(g.peak, g.peakB); }, {
+        message: 'BOTH the AND and NAND jacks must reach full scale in the real engine',
         timeout: SLOW_RENDER ? 20_000 : 10_000,
       })
       .toBeGreaterThan(0.9);
 
     const before = await readGate(page, scope);
     expect(before.total, 'the analyser handed us a real buffer').toBeGreaterThan(0);
+    expect(before.peakB, 'the NAND channel is live, not still zeros').toBeGreaterThan(0.9);
     expect(before.sawLow && before.sawHigh, 'the window caught BOTH gate levels').toBe(true);
     expect(
       before.intermediate,
@@ -377,8 +398,8 @@ test.describe('illogic face — four identical dials, and the four numbers they 
       await setParam(page, il, p, [0, -1, 0.5, -0.25][i]!);
     }
     await expect
-      .poll(async () => (await readGate(page, scope)).peak, {
-        message: 'AND after the knob sweep',
+      .poll(async () => { const g = await readGate(page, scope); return Math.min(g.peak, g.peakB); }, {
+        message: 'AND and NAND after the knob sweep',
         timeout: SLOW_RENDER ? 20_000 : 10_000,
       })
       .toBeGreaterThan(0.9);

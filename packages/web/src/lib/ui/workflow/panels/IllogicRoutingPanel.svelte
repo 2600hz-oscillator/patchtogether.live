@@ -68,21 +68,44 @@
     });
   });
 
-  // Geometry: a 100-wide viewBox, one lane per channel, rows derived.
+  // ── Geometry ────────────────────────────────────────────────────────────
+  //
+  // A 100-wide viewBox, one lane per channel, row count derived.
+  //
+  // ⚠ TWO DECISIONS HERE ARE CORRECTIONS TO WHAT THE FIRST LINUX CAPTURE
+  // ACTUALLY DREW, and both were bugs a DOM assertion could not see:
+  //
+  //  1. THE LOGIC BLOCK IS ABOVE THE LANES, not below them. Below, the tap
+  //     rail had to run down PAST in3 and in4 to reach it, crossing two wires
+  //     belonging to channels the logic block does not touch — in a picture
+  //     whose entire job is to say which channels it touches. Above, each tap
+  //     rises from its own lane and the only wire it can cross belongs to the
+  //     OTHER tapped channel, which is true rather than misleading. The two
+  //     taps also leave at DIFFERENT x so they read as two taps, not one bus.
+  //  2. THERE ARE TWO BUSES AND THE PICTURE DRAWS TWO. The first version drew
+  //     ONE vertical line labelled `sum` at the top and `diff` at the bottom,
+  //     which says "one bus with two names" — and worse, it hung the +/− marks
+  //     on it, implying the polarity split applies to both. It does not: EVERY
+  //     channel enters SUM positively and only DIFF splits. Two lines, one
+  //     +/− column against DIFF alone.
   const W = 100;
-  const LANE_H = 15;
-  const TOP = 9;
-  const X_IN = 2;
-  /** Where the LOGIC tap leaves the raw line — UPSTREAM of the triangle. */
-  const X_TAP = 25;
-  const X_TRI = 35;
-  const TRI_W = 14;
-  const X_BUS = 76;
+  const LANE_H = 14;
+  /** Room above lane 0 for the logic block. */
+  const TOP = 22;
+  const X_IN = 1;
+  /** Where each LOGIC tap leaves the raw line — UPSTREAM of the triangle, and
+   *  one x per tapped channel so two taps do not draw as one. */
+  const tapX = (i: number) => 17 + i * 4;
+  const X_TRI = 29;
+  const TRI_W = 12;
+  const X_SUM = 66;
+  const X_DIFF = 82;
+  const LOGIC_Y = 9;
 
-  let H = $derived(TOP + rows.length * LANE_H + 22);
-  let logicY = $derived(TOP + rows.length * LANE_H + 12);
+  let H = $derived(TOP + rows.length * LANE_H + 12);
   const laneY = (i: number) => TOP + i * LANE_H + LANE_H / 2;
   const fillW = (a: number) => Math.min(1, Math.abs(a)) * TRI_W;
+  let lastY = $derived(laneY(rows.length - 1));
 </script>
 
 <div class="illogic-routing" data-testid="sidebar-panel-illogic-routing">
@@ -93,18 +116,22 @@
       {#if r.logic}
         <path
           class="tap"
-          d="M {X_TAP} {laneY(r.index)} L {X_TAP} {logicY} L {X_TAP + 6} {logicY}"
+          d="M {tapX(r.index)} {laneY(r.index)} L {tapX(r.index)} {LOGIC_Y}"
           fill="none"
         />
-        <circle class="tap-dot" cx={X_TAP} cy={laneY(r.index)} r="1.3" />
+        <circle class="tap-dot" cx={tapX(r.index)} cy={laneY(r.index)} r="1.2" />
       {/if}
     {/each}
+
+    <!-- THE LOGIC BLOCK, fed only by the raw taps above the attenuverters. -->
+    <rect class="logic-box" x="12" y={LOGIC_Y - 5} width="56" height="10" rx="1.5" />
+    <text class="logic-lbl" x="40" y={LOGIC_Y + 1.9} text-anchor="middle">and or nand not</text>
 
     {#each rows as r (r.paramId)}
       {@const y = laneY(r.index)}
       <!-- the raw input line, all the way to the triangle -->
-      <line class="wire" x1={X_IN + 12} y1={y} x2={X_TRI} y2={y} />
-      <text class="lbl" x={X_IN} y={y + 2.6}>{illogicChannelInputId(r.index)}</text>
+      <line class="wire" x1={X_IN + 11} y1={y} x2={X_TRI} y2={y} />
+      <text class="lbl" x={X_IN} y={y + 1.9}>{illogicChannelInputId(r.index)}</text>
 
       <!-- the attenuverter triangle. The row carries its own state as data-
            attributes so the e2e can read WHAT WAS DRAWN rather than infer it
@@ -117,31 +144,34 @@
         data-neg={r.amount < 0}
         data-diff-sign={r.diffSign}
         data-logic={r.logic}
-        points="{X_TRI},{y - 5} {X_TRI + TRI_W},{y} {X_TRI},{y + 5}"
+        points="{X_TRI},{y - 4.5} {X_TRI + TRI_W},{y} {X_TRI},{y + 4.5}"
       />
       <clipPath id="illogic-clip-{nodeId}-{r.index}">
-        <rect x={X_TRI} y={y - 5} width={fillW(r.amount)} height="10" />
+        <rect x={X_TRI} y={y - 4.5} width={fillW(r.amount)} height="9" />
       </clipPath>
       <polygon
         class="tri-fill"
         class:neg={r.amount < 0}
-        points="{X_TRI},{y - 5} {X_TRI + TRI_W},{y} {X_TRI},{y + 5}"
+        points="{X_TRI},{y - 4.5} {X_TRI + TRI_W},{y} {X_TRI},{y + 4.5}"
         clip-path="url(#illogic-clip-{nodeId}-{r.index})"
       />
 
-      <!-- post-attenuverter: to the mix buses, with the DIFF polarity marked -->
-      <line class="wire" x1={X_TRI + TRI_W} y1={y} x2={X_BUS} y2={y} />
-      <text class="sign" x={X_BUS - 8} y={y + 2.6}>{r.diffSign < 0 ? '−' : '+'}</text>
+      <!-- POST-ATTENUVERTER, to BOTH mix buses. Every channel enters SUM
+           positively (the dot on the first bus); only DIFF splits, so the
+           +/− column sits against DIFF alone. -->
+      <line class="wire" x1={X_TRI + TRI_W} y1={y} x2={X_DIFF} y2={y} />
+      <circle class="junction" cx={X_SUM} cy={y} r="1.2" />
+      <circle class="junction" cx={X_DIFF} cy={y} r="1.2" />
+      <text class="sign" class:neg={r.diffSign < 0} x={X_DIFF - 3} y={y - 1.6} text-anchor="end"
+        >{r.diffSign < 0 ? '−' : '+'}</text
+      >
     {/each}
 
-    <!-- the two mix buses -->
-    <line class="bus" x1={X_BUS} y1={laneY(0)} x2={X_BUS} y2={laneY(rows.length - 1)} />
-    <text class="bus-lbl" x={X_BUS + 3} y={laneY(0) + 2.6}>sum</text>
-    <text class="bus-lbl" x={X_BUS + 3} y={laneY(rows.length - 1) + 2.6}>diff</text>
-
-    <!-- the logic block, fed only by the tapped raw lines -->
-    <rect class="logic-box" x={X_TAP + 6} y={logicY - 5} width="30" height="10" rx="1.5" />
-    <text class="logic-lbl" x={X_TAP + 8} y={logicY + 2.6}>and or nand not</text>
+    <!-- THE TWO MIX BUSES, drawn as two. -->
+    <line class="bus" x1={X_SUM} y1={laneY(0)} x2={X_SUM} y2={lastY + 5} />
+    <line class="bus" x1={X_DIFF} y1={laneY(0)} x2={X_DIFF} y2={lastY + 5} />
+    <text class="bus-lbl" x={X_SUM} y={lastY + 11} text-anchor="middle">sum</text>
+    <text class="bus-lbl" x={X_DIFF} y={lastY + 11} text-anchor="middle">diff</text>
   </svg>
 </div>
 
@@ -176,6 +206,13 @@
     fill: var(--cable-gate, #9ece6a);
     opacity: 0.85;
   }
+  /* A junction dot means "this wire CONNECTS here", the schematic convention —
+     without it a wire that merely crosses a bus is indistinguishable from one
+     that joins it, and this picture has both. */
+  .junction {
+    fill: var(--cable-cv, #7aa2f7);
+    opacity: 0.9;
+  }
   .tri {
     fill: none;
     stroke: var(--text-dim, #8b93a7);
@@ -198,17 +235,30 @@
   }
   text {
     fill: var(--text-dim, #8b93a7);
-    font-size: 4.2px;
+    font-size: 4px;
     font-family: var(--font-mono, ui-monospace, monospace);
   }
+  /* ⚠ THE BOX IS 56 WIDE FOR 14 CHARACTERS AT 4px. The first linux capture
+     shipped this label CLIPPED — "and or nand no" — because the box was 30
+     wide and the text was left-anchored inside it. A DOM assertion cannot see
+     an overflowing <text>, so the geometry carries the margin instead: centred
+     in the box, and the box sized for the string it holds. */
   .logic-lbl {
     fill: var(--cable-gate, #9ece6a);
-    font-size: 3.8px;
+    font-size: 4px;
   }
   .bus-lbl {
     fill: var(--cable-cv, #7aa2f7);
   }
+  /* THE POLARITY COLUMN, against DIFF alone. It is the only mark on the picture
+     that distinguishes the two buses, so it is drawn at full contrast rather
+     than in the dim label colour — a `−` nobody can read makes DIFF look like a
+     second SUM, which is the exact misreading this panel exists to prevent. */
   .sign {
+    fill: var(--cable-cv, #7aa2f7);
     font-size: 5px;
+  }
+  .sign.neg {
+    fill: var(--warn, #e0af68);
   }
 </style>
