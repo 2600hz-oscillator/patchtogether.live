@@ -51,16 +51,19 @@ import {
   MATCAP_STYLES,
   ensureToyboxCatalog,
   getContent,
-  getContentMeta,
   getModelMeta,
   getModelObj,
-  customShaderKey,
   customObjKey,
   makeDefaultLayers,
   makeDefaultObjMaterial,
   type ToyboxLayer,
 } from '$lib/video/toybox-content';
 import { buildProjectorViewProj, projectorFromMaterial } from '$lib/video/toybox-projective';
+import {
+  ensureCustomShaderMeta,
+  resolveLayerContent,
+} from '$lib/video/toybox-custom-assets';
+import { paramsNeedingDeclaration } from '$lib/video/toybox-shader-params';
 import {
   OP_SHADER_INDEX,
   isCombineGraph,
@@ -711,9 +714,14 @@ export function createToyboxWorkerHandle(
         let paramIds: string[];
         let sceneInput: boolean;
         if (typeof inlineSrc === 'string') {
+          // #1708: a custom source's params are EXTRACTED from its own uniform
+          // declarations and registered on first observation — in THIS worker's
+          // module registry, which is a separate copy from the main thread's, so
+          // the worker must observe for itself rather than be told. Same sync
+          // lookup as the bundled branch; same locations renderShaderLayer pushes.
           glsl = inlineSrc;
           isSt = isShadertoySource(glsl);
-          paramIds = [];
+          paramIds = (ensureCustomShaderMeta(glsl)?.params ?? []).map((p) => p.id);
           sceneInput = isSt && /\biChannel0\b/.test(glsl);
         } else {
           const { meta, glsl: fetched } = await getContent(cacheKey);
@@ -722,7 +730,10 @@ export function createToyboxWorkerHandle(
           paramIds = meta.params.map((p) => p.id);
           sceneInput = meta.input === 'scene';
         }
-        const src = isSt ? wrapShadertoySource(glsl, '', paramIds) : glsl;
+        // Declare only what the source does not declare itself — see the same
+        // guard (and the duplicate-declaration argument) in modules/toybox.ts.
+        const declareIds = paramsNeedingDeclaration(glsl, paramIds);
+        const src = isSt ? wrapShadertoySource(glsl, '', declareIds) : glsl;
         const program = ctx.compileFragment(src);
         const uParams = new Map<string, WebGLUniformLocation | null>();
         for (const pid of paramIds) uParams.set(pid, gl.getUniformLocation(program, pid));
@@ -1056,8 +1067,10 @@ export function createToyboxWorkerHandle(
     // Multi-buffer shadertoy projects: not supported in Phase 2A worker
     // (requires its own FBO pool that would need createFloatFbo + per-pass state).
     // Degrade gracefully: render as single-pass using the contentId if present.
-    const customSrc = typeof layer.shaderSrc === 'string' && layer.shaderSrc.length > 0 ? layer.shaderSrc : null;
-    const cacheKey = customSrc ? customShaderKey(customSrc) : layer.contentId;
+    // ONE resolve → the program-cache key AND the metadata whose params are
+    // pushed below, registering a custom source's derived metadata the first
+    // time this worker sees it (#1708).
+    const { src: customSrc, id: cacheKey, meta } = resolveLayerContent(layer);
     if (!cacheKey) return false;
     ensureProgram(cacheKey, customSrc ?? undefined);
     const compiled = programs.get(cacheKey);
@@ -1092,7 +1105,6 @@ export function createToyboxWorkerHandle(
     } else if (compiled.uResolution) {
       g.uniform2f(compiled.uResolution, ctx.res.width, ctx.res.height);
     }
-    const meta = customSrc ? null : layer.contentId ? getContentMeta(layer.contentId) : null;
     if (meta) {
       for (const p of meta.params) {
         const loc = compiled.uParams.get(p.id);

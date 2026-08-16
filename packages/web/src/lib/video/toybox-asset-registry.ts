@@ -356,9 +356,10 @@ function currentOwner(kind: ToyboxAssetKind, id: string): string | undefined {
  * ⚠ The corollary, and the real limit: a registration made by ONE peer is not
  * seen by another. Convergence comes from every peer running the same derivation
  * over the same synced bytes, so registration must happen wherever the source is
- * OBSERVED, not only where the file was picked. The disk ingest registers at
- * pick time (this PR); the observe-side registration lands with the engine
- * change that consumes these params (see the PR body).
+ * OBSERVED, not only where the file was picked. #1708 made that so: the disk
+ * ingest no longer registers at pick time at all — `resolveLayerContent`
+ * (toybox-custom-assets.ts) is both the lookup and the registration, and every
+ * consumer of a layer's content metadata goes through it.
  */
 export function registerRuntimeToyboxAsset(
   kind: 'content',

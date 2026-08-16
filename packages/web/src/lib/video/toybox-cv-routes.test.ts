@@ -441,3 +441,73 @@ describe('findOrphanedRoutes (auto-unmap, #60)', () => {
     expect(findOrphanedRoutes(undefined, undefined, undefined)).toEqual([]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// #1708 — a CUSTOM disk-loaded shader is a CV target like any bundled content.
+// ---------------------------------------------------------------------------
+//
+// The layers below carry ONLY what the Y.Doc carries (source bytes + filename)
+// and are never registered by these tests, so they are a receiving peer's state:
+// if routing worked only after the file picker had run, every case here fails.
+//
+// ⚠ SCOPE: this proves the ROUTE resolves and writes the right key with the
+// right range. That the engine then pushes the written value as a UNIFORM is a
+// GL question, held by e2e/tests/toybox-disk-loading.spec.ts.
+
+describe('CV routing to a custom disk-loaded shader (#1708)', () => {
+  const CUSTOM = `uniform float warp;  // @param(-2, 2, 0.5, linear)
+uniform float amount; // @param(0, 1, 1)
+void main() { }
+`;
+  const customLayer = (): ToyboxLayer => ({
+    kind: 'gen',
+    contentId: null,
+    params: {},
+    shaderSrc: CUSTOM,
+    shaderName: 'received.glsl',
+  });
+
+  it('lists the extracted uniforms as CV params, with their declared ranges', () => {
+    const layers = [customLayer()];
+    const params = listCvParams({ target: 'layer', layer: 0 }, layers, undefined);
+    expect(params.map((p) => p.id)).toEqual(['warp', 'amount']);
+    expect(params[0]).toMatchObject({ id: 'warp', label: 'WARP', min: -2, max: 2 });
+  });
+
+  it('NEGATIVE CONTROL: the same layer WITHOUT the inline source lists nothing', () => {
+    // The instrument must be able to read []. A layer with no contentId and no
+    // source is exactly the pre-#1708 state of the custom layer above.
+    const bare: ToyboxLayer = { kind: 'gen', contentId: null, params: {} };
+    expect(listCvParams({ target: 'layer', layer: 0 }, [bare], undefined)).toEqual([]);
+  });
+
+  it('resolveRoute maps into the SOURCE-declared range and writes the uniform key', () => {
+    const layers = [customLayer()];
+    const route: CvRouteTarget = { target: 'layer', layer: 0, param: 'warp' };
+    const r = resolveRoute(route, layers, undefined)!;
+    expect(r).not.toBeNull();
+    expect({ min: r.min, max: r.max }).toEqual({ min: -2, max: 2 });
+    // Unset → the param's own default, not 0.
+    expect(r.current).toBe(0.5);
+    r.apply(-1.25);
+    expect(layers[0].params.warp).toBe(-1.25);
+  });
+
+  it('a route to a uniform the custom source does NOT declare is orphaned', () => {
+    // The auto-unmap path (#60) has to see custom params too, or swapping the
+    // loaded shader would leave a route pointing at a uniform that is gone.
+    const layers = [customLayer()];
+    const routes: CvRoutes = {
+      cv1: { target: 'layer', layer: 0, param: 'warp' }, // declared
+      cv2: { target: 'layer', layer: 0, param: 'speed' }, // not in THIS source
+    };
+    expect(findOrphanedRoutes(routes, layers, undefined)).toEqual(['cv2']);
+  });
+
+  it('the inline source outranks a bundled contentId the layer also carries', () => {
+    const layer: ToyboxLayer = { ...customLayer(), contentId: 'noise-fbm' };
+    const params = listCvParams({ target: 'layer', layer: 0 }, [layer], undefined);
+    // 'scale'/'speed' are the bundled noise-fbm params; the custom source wins.
+    expect(params.map((p) => p.id)).toEqual(['warp', 'amount']);
+  });
+});

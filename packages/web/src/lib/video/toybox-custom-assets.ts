@@ -37,7 +37,9 @@
 
 import {
   customShaderKey,
+  getContentMeta,
   type ToyboxContent,
+  type ToyboxLayer,
   type ToyboxParamDef,
 } from './toybox-content';
 import {
@@ -102,4 +104,102 @@ export function registerCustomShaderSource(
  *  the entry for THIS exact source. */
 export function unregisterCustomShaderSource(src: string): boolean {
   return unregisterRuntimeToyboxAsset('content', customShaderKey(src));
+}
+
+// ---------------- REGISTRATION DRIVEN BY OBSERVATION (#1708) ----------------
+//
+// ── The bug this shape exists to make impossible ────────────────────────────
+//
+// Registering where the FILE IS PICKED is wrong, and not subtly: a rack-mate who
+// receives the layer over the Y.Doc never runs the picker's handler, so its
+// lookup misses and its faders are absent while the picking peer's are present —
+// two peers rendering the same document differently, which is the one thing this
+// seam must not introduce. Syncing the registration would be the wrong fix (it
+// puts derived data on the wire). The right one is that ANY peer holding the
+// synced bytes derives the identical metadata locally, which means registration
+// must be driven from OBSERVING a layer that carries an inline source.
+//
+// So `resolveLayerContent` is BOTH the lookup and the registration: every
+// consumer that asks a layer what content it renders — the two render paths, CV
+// routing, the control-surface/MIDI resolver, the card's fader list — registers
+// it as a side effect of asking. There is no separate "register" call site left
+// that a new consumer could forget, and no ordering between them to get wrong.
+//
+// ── Cost on the render hot path ────────────────────────────────────────────
+//
+// Steady state is ONE djb2 hash of the source (which both render paths ALREADY
+// paid to key their program cache — this replaces that call, it does not add
+// one) plus one `Map.get`. The derivation runs only on a MISS, so it happens
+// once per distinct source per thread; a hit never touches the provider list and
+// never invalidates the composed index.
+
+/** What a layer renders, resolved once: its inline source (if any), the content
+ *  id that keys the engine's program cache, and the metadata carrying `params`. */
+export interface ResolvedLayerContent {
+  /** The inline custom GLSL this layer carries, or null for bundled content. */
+  src: string | null;
+  /** The id this layer resolves to: `customShaderKey(src)` when `src` is set,
+   *  else `layer.contentId`. Null when the layer has neither. */
+  id: string | null;
+  /** The resolved content metadata (`params`, `family`, `input`, …), or
+   *  undefined for an unknown id / a catalog that has not loaded yet. */
+  meta: ToyboxContent | undefined;
+}
+
+/** What `resolveLayerContent` reads off a layer. A whole `ToyboxLayer` satisfies
+ *  it; only `shaderSrc`, `shaderName` and `contentId` are ever looked at. */
+export type LayerContentRef = Readonly<Partial<ToyboxLayer>>;
+
+/** The inline custom GLSL a layer carries, normalised to `string | null`. PURE. */
+function inlineShaderSrc(layer: LayerContentRef | undefined | null): string | null {
+  const s = layer?.shaderSrc;
+  return typeof s === 'string' && s.length > 0 ? s : null;
+}
+
+/** Resolve a custom source's metadata, registering it if this is the first time
+ *  this thread has seen it. `id` must be `customShaderKey(src)` — passed in so a
+ *  caller that already computed it does not hash the source twice per frame. */
+function metaForSource(src: string, id: string, label: string | null): ToyboxContent | undefined {
+  const hit = getContentMeta(id);
+  if (hit) return hit;
+  registerCustomShaderSource(src, label);
+  return getContentMeta(id);
+}
+
+/**
+ * Resolve what a TOYBOX layer renders — inline custom source FIRST, bundled
+ * `contentId` otherwise — registering derived metadata for an inline source on
+ * first observation.
+ *
+ * SYNCHRONOUS and safe to call per frame (see the cost note above). This is the
+ * ONE place the inline-vs-bundled precedence is expressed; every consumer reads
+ * it here so a custom source and a bundled one travel the same code path from
+ * this point on.
+ */
+export function resolveLayerContent(
+  layer: LayerContentRef | undefined | null,
+): ResolvedLayerContent {
+  const src = inlineShaderSrc(layer);
+  if (src !== null) {
+    const id = customShaderKey(src);
+    // The filename rides the Y.Doc too, so a receiving peer derives the same
+    // label as the picking one — the entry is identical on both, not merely
+    // equivalent.
+    return { src, id, meta: metaForSource(src, id, layer?.shaderName ?? null) };
+  }
+  const id = layer?.contentId ?? null;
+  return { src: null, id, meta: id ? getContentMeta(id) : undefined };
+}
+
+/**
+ * Resolve an inline custom source's metadata when the caller holds the SOURCE
+ * but not the layer (the engines' `ensureProgram`, which is handed the GLSL).
+ * Same registration-on-observation contract as `resolveLayerContent`; hashes the
+ * source, so call it off the per-frame path.
+ */
+export function ensureCustomShaderMeta(
+  src: string,
+  label: string | null = null,
+): ToyboxContent | undefined {
+  return metaForSource(src, customShaderKey(src), label);
 }

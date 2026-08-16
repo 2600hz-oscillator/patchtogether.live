@@ -37,6 +37,7 @@ import {
   type ToyboxSurfaceMode,
   type ToyboxVideoSource,
 } from '$lib/video/toybox-content';
+import { resolveLayerContent } from '$lib/video/toybox-custom-assets';
 import { LAYER_INPUT_SOURCE } from '$lib/video/toybox-combine-graph';
 
 /** The valid VIDEO-source values (kept in sync with ToyboxVideoSource). */
@@ -270,9 +271,16 @@ export function setLayerImage(
  * Set a SHADER (shader/gen/frag) layer's CUSTOM disk-loaded GLSL source +
  * filename. Both ride the Y.Doc so the custom shader survives reload + exports
  * cleanly + rack-mates compile the same source. The engine prefers shaderSrc
- * over the bundled contentId when present (no params; Shadertoy-vs-GEN is
- * auto-detected). Pass src=null to clear back to the selected bundled content.
- * Writes both fields in ONE transact so peers see one update.
+ * over the bundled contentId when present (Shadertoy-vs-GEN is auto-detected).
+ * Pass src=null to clear back to the selected bundled content. Writes every
+ * field in ONE transact so peers see one update.
+ *
+ * #1708: params are RESET to the incoming content's defaults, exactly as
+ * `setLayerContent` does when the dropdown changes — because a custom source now
+ * HAS params. Without it a value left over from the previous content sits under
+ * a key the new source also declares but with a different range, and the fader
+ * shows a value outside its own travel. Clearing back to the bundled id restores
+ * that content's defaults for the same reason.
  */
 export function setLayerShaderSource(
   nodeId: string,
@@ -285,6 +293,16 @@ export function setLayerShaderSource(
     if (!layer) return;
     layer.shaderSrc = src;
     layer.shaderName = name;
+    // Resolve the content this layer now renders — the inline source when one
+    // was just set, otherwise the bundled id we fell back to — through the same
+    // seam the engine and the card use, so the seeded defaults are the ones the
+    // faders will show.
+    const meta = resolveLayerContent({
+      shaderSrc: src,
+      shaderName: name,
+      contentId: layer.contentId ?? null,
+    }).meta;
+    setParamsInPlace(layer, meta ? Object.fromEntries(meta.params.map((p) => [p.id, p.default])) : {});
   }, LOCAL_ORIGIN);
 }
 

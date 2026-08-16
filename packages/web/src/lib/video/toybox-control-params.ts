@@ -36,13 +36,13 @@
 import type { ParamDef } from '$lib/graph/types';
 import {
   LAYER_COUNT,
-  getContentMeta,
   makeDefaultObjMaterial,
   DEFAULT_PROJ,
   DEFAULT_PROJ_FOV,
   type ToyboxLayer,
   type ToyboxObjMaterial,
 } from './toybox-content';
+import { resolveLayerContent } from './toybox-custom-assets';
 import {
   MATERIAL_PARAMS,
   MATERIAL_PARAM_PREFIX,
@@ -244,15 +244,16 @@ function resolveLayerParam(
     }
     // fall through: a content uniform could share an id (unlikely) — try below.
   }
-  // Content (shader/gen/frag) uniform — find the first such layer that DECLARES it.
+  // Content (shader/gen/frag) uniform — find the first such layer that DECLARES
+  // it. #1708: "declares" now covers an inline disk-loaded source's extracted
+  // uniforms as well as a bundled entry's manifest params, through one lookup.
   const found = firstLayer(layers, (l) => {
     if (l.kind !== 'shader' && l.kind !== 'gen' && l.kind !== 'frag') return false;
-    if (!l.contentId) return false;
-    const meta = getContentMeta(l.contentId);
+    const meta = resolveLayerContent(l).meta;
     return !!meta?.params.some((p) => p.id === paramId);
   });
   if (!found) return null;
-  const meta = found.layer.contentId ? getContentMeta(found.layer.contentId) : undefined;
+  const meta = resolveLayerContent(found.layer).meta;
   const pdef = meta?.params.find((p) => p.id === paramId);
   if (!pdef) return null;
   if (!found.layer.params) return null;
@@ -323,9 +324,10 @@ function resolveLayerQualified(
     };
   }
 
-  // 3) Content (shader/gen/frag) uniform on THIS layer.
-  if ((layer.kind === 'shader' || layer.kind === 'gen' || layer.kind === 'frag') && layer.contentId) {
-    const meta = getContentMeta(layer.contentId);
+  // 3) Content (shader/gen/frag) uniform on THIS layer — bundled id or inline
+  //    custom source (#1708).
+  if (layer.kind === 'shader' || layer.kind === 'gen' || layer.kind === 'frag') {
+    const meta = resolveLayerContent(layer).meta;
     const pdef = meta?.params.find((d) => d.id === p);
     if (pdef) {
       if (!layer.params) layer.params = {};

@@ -6,17 +6,25 @@
 //   * Whether any of these shaders COMPILE. `registerCustomShaderSource` is
 //     pure string work; a source that is total nonsense registers perfectly
 //     happily. Compile validity is toybox-shader-validate.
-//   * Whether the ENGINE applies the registered params. It does not yet — this
-//     PR lands registration, not consumption.
+//   * Whether the ENGINE pushes the resolved params as UNIFORMS. It does
+//     (#1708), but that needs a GL context: the draw-site proof is
+//     e2e/tests/toybox-disk-loading.spec.ts, which moves a fader and reads the
+//     pixels. What IS covered here is the resolution those sites consume.
 //   * Whether a RACK-MATE sees the registration. It does not, by design; what
 //     converges is the derivation, because the id is a pure hash of bytes that
 //     already sync. The "same source ⇒ same id and params" test below is the
-//     property that makes that true, and is the closest a unit test can get.
+//     property that makes that true, and the observe-side block is what turns
+//     that property into behaviour on a peer that never picked the file.
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { registerCustomShaderSource, unregisterCustomShaderSource } from './toybox-custom-assets';
+import {
+  ensureCustomShaderMeta,
+  registerCustomShaderSource,
+  resolveLayerContent,
+  unregisterCustomShaderSource,
+} from './toybox-custom-assets';
 import { clearRuntimeToyboxAssets, runtimeToyboxProvider } from './toybox-asset-registry';
-import { customShaderKey, getContentMeta, listAllContent } from './toybox-content';
+import { customShaderKey, getContentMeta, listAllContent, type ToyboxLayer } from './toybox-content';
 
 const PLAIN_GLSL = `
 uniform float speed;   // @param(0, 4, 1, linear)
@@ -171,5 +179,107 @@ describe('label handling', () => {
     clearRuntimeToyboxAssets();
     const b = registerCustomShaderSource(PLAIN_GLSL, '   ');
     expect(getContentMeta(b.id)?.label).toBe('CUSTOM SHADER');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// #1708 — REGISTRATION DRIVEN BY OBSERVATION.
+// ---------------------------------------------------------------------------
+//
+// The defect being fenced off: registering where the FILE IS PICKED means a peer
+// that RECEIVES the layer over the Y.Doc never registers, so its lookup misses
+// and its faders are absent for a shader it is actively rendering.
+//
+// Every test in this block deliberately starts from a CLEARED runtime registry
+// and never calls `registerCustomShaderSource`. That is not tidiness — a
+// cleared registry IS the receiving peer's state, so "resolves from a cleared
+// registry" and "a rack-mate gets the same faders" are the same assertion.
+//
+// ⚠ What this block still cannot see: that the RENDER PATHS call
+// `resolveLayerContent`. A consumer that went back to reading `layer.contentId`
+// directly would leave every test here green. The card + engine sites are held
+// by e2e/tests/toybox-disk-loading.spec.ts, which reads pixels.
+
+const CUSTOM_TINT = `uniform float tint; // @param(0, 1, 0.25, linear)
+void main() { }
+`;
+
+/** A layer as a RECEIVING peer holds it: the synced bytes and filename, no
+ *  contentId, and nothing registered locally. */
+function receivedLayer(src: string, name: string | null = 'from-peer.glsl'): ToyboxLayer {
+  return { kind: 'gen', contentId: null, params: {}, shaderSrc: src, shaderName: name };
+}
+
+describe('resolveLayerContent registers on OBSERVATION, not on pick', () => {
+  it('resolves a layer whose source was never registered locally', () => {
+    // Precondition, asserted rather than assumed: nothing knows this source yet.
+    expect(getContentMeta(customShaderKey(CUSTOM_TINT))).toBeUndefined();
+
+    const resolved = resolveLayerContent(receivedLayer(CUSTOM_TINT));
+    expect(resolved.id).toBe(customShaderKey(CUSTOM_TINT));
+    expect(resolved.meta?.params.map((p) => p.id)).toEqual(['tint']);
+    expect(resolved.meta?.params[0]).toMatchObject({ min: 0, max: 1, default: 0.25 });
+  });
+
+  it('the registration STICKS, so the ordinary sync getter sees it afterwards', () => {
+    // The engines and the CV resolver read through getContentMeta; resolving
+    // must leave the catalog able to answer, not just return a local value.
+    resolveLayerContent(receivedLayer(CUSTOM_TINT));
+    expect(getContentMeta(customShaderKey(CUSTOM_TINT))?.params.map((p) => p.id)).toEqual(['tint']);
+  });
+
+  it('adopts the SYNCED filename, so both peers derive an identical entry', () => {
+    resolveLayerContent(receivedLayer(CUSTOM_TINT, 'shared-name.glsl'));
+    expect(getContentMeta(customShaderKey(CUSTOM_TINT))?.label).toBe('shared-name.glsl');
+  });
+
+  it('is idempotent across frames — repeated observation holds ONE entry', () => {
+    // The render paths call this EVERY FRAME. Measured on the provider, because
+    // a store that appended would still resolve correctly and grow unboundedly.
+    for (let i = 0; i < 5; i++) resolveLayerContent(receivedLayer(CUSTOM_TINT));
+    const held = runtimeToyboxProvider.content().filter((e) => e.asset.id === customShaderKey(CUSTOM_TINT));
+    expect(held).toHaveLength(1);
+  });
+
+  it('NEGATIVE CONTROL: a layer with NO inline source registers nothing', () => {
+    // The other direction. If observation registered unconditionally, every
+    // bundled layer would mint a runtime entry and this would read 1.
+    resolveLayerContent({ kind: 'gen', contentId: 'noise-fbm', params: {} });
+    expect(runtimeToyboxProvider.content()).toHaveLength(0);
+  });
+
+  it('NEGATIVE CONTROL: an EMPTY shaderSrc is not an inline source', () => {
+    const resolved = resolveLayerContent({ kind: 'gen', contentId: 'noise-fbm', params: {}, shaderSrc: '' });
+    expect(resolved.src).toBeNull();
+    expect(resolved.id).toBe('noise-fbm');
+    expect(runtimeToyboxProvider.content()).toHaveLength(0);
+  });
+
+  it('the inline source WINS over a contentId the layer also carries', () => {
+    // Mirrors the engine's precedence (shaderSrc beats contentId). If this
+    // inverted, a custom shader would render but show the bundled faders.
+    const resolved = resolveLayerContent({
+      kind: 'gen',
+      contentId: 'noise-fbm',
+      params: {},
+      shaderSrc: CUSTOM_TINT,
+      shaderName: 'x.glsl',
+    });
+    expect(resolved.id).toBe(customShaderKey(CUSTOM_TINT));
+    expect(resolved.meta?.params.map((p) => p.id)).toEqual(['tint']);
+  });
+
+  it('a layer with neither source nor contentId resolves to nothing, quietly', () => {
+    const resolved = resolveLayerContent({ kind: 'off', contentId: null, params: {} });
+    expect(resolved).toEqual({ src: null, id: null, meta: undefined });
+  });
+
+  it('ensureCustomShaderMeta agrees with resolveLayerContent for the same bytes', () => {
+    // The engines' compile site holds only the SOURCE (not the layer) and must
+    // arrive at the same params, or the uniform locations it resolves would not
+    // be the ones the draw site pushes.
+    const viaLayer = resolveLayerContent(receivedLayer(CUSTOM_TINT));
+    const viaSource = ensureCustomShaderMeta(CUSTOM_TINT);
+    expect(viaSource?.params).toEqual(viaLayer.meta?.params);
   });
 });
