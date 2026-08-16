@@ -83,7 +83,7 @@ author a `face` and rank the controls — no new platform capability.
 | `gatemaiden` | audio | — | — |
 | `grainsOfVision` | video | — | — |
 | `graphicEq` | video | — | — |
-| `illogic` | audio | — | — |
+| `illogic` | audio | done | — |
 | `inwards` | video | — | — |
 | `joystick` | audio | — | — |
 | `karplus` | audio | done | — |

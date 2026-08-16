@@ -1203,6 +1203,72 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // other glyph resolves to `{ kind: 'static' }` — the marbles defect (#1692),
   // asserted at its cause and negative-controlled in both directions.
   'featurecv',
+  // THE FACEPLATE QUEUE · Q17 — ILLOGIC, the attenuverter / math / logic
+  // utility (2026-08-16). Four dials, TEN jacks, and the merit argument is the
+  // `ninelives` one in its strongest available form: the module's four controls
+  // are four copies of the same control, and every interesting fact about its
+  // outputs is a fact none of them can print.
+  //
+  // ⚠ FOUR OF THE TEN JACKS ARE BEHIND NONE OF THE FOUR KNOBS. AND, NAND, OR
+  // and NOT threshold the RAW inputs, before the attenuverters, so sweeping any
+  // knob its full −1 → +1 travel moves all four by BIT-EXACTLY 0.0000e+0 —
+  // measured through this module's own factory, all four params × all ten
+  // outputs, with the port sets DERIVED from the def (`gate`-typed vs
+  // `cv`-typed) and asserted in BOTH directions, so the sweep cannot pass by
+  // measuring nothing. Correct design (an attenuverted gate is not a gate), and
+  // completely unknowable from a card showing four faders above ten jacks. The
+  // faceplate says it twice: as a NUMBER in the readout row (`logic ×1.00`
+  // beside three bus gains that do move) and as the routing picture, where the
+  // boolean taps visibly branch upstream of the attenuverter triangles.
+  //
+  // ⚠ AND DIFF SHIPS AS A COMMON-MODE NULL. Its gain on a signal present at
+  // every input is a1+a2−a3−a4, which is EXACTLY 0.00 at the shipped defaults
+  // (all four at +1) — verified against the rendered graph, not just the
+  // arithmetic. Underneath four faders sitting at maximum, one of the two mix
+  // buses is configured to output silence. `diff ×0.00` is the resting face's
+  // most useful two characters.
+  //
+  // ⚠ THE THIRD READOUT IS THE ONE THE OTHER TWO ARE BLIND TO. `peak` is Σ|aN|,
+  // the worst case either bus reaches for ±1 inputs — SIGN-BLIND, where `sum`
+  // and `diff` are signed and cancel. Neither bus is scaled by 1/n, so it reads
+  // ×4.00 at the defaults on a CV convention of ±1; measured, a deliberately
+  // modest 0.9/0.9/0.6/0.4 stimulus already leaves the rail on 26.8 % of SUM's
+  // samples and 39.2 % of DIFF's. Flip one knob negative and `sum`/`diff` move
+  // while `peak` does not, which is what makes them each other's control on
+  // every run rather than three spellings of one quantity.
+  //
+  // ⚠ `glyph: 'none'`, ESTABLISHED rather than assumed. Six `cv` outputs and
+  // four `gate`, no `audio` output, so `primaryAudioOutPortId` returns NULL and
+  // every other glyph value resolves to `{ kind: 'static' }` — the marbles
+  // defect (#1692). Asserted by calling both functions, negative-controlled in
+  // both directions, in `illogic-face-model.test.ts`.
+  //
+  // ⚠ THE AUDIT FOUND ONE LIVE DEFECT AND THIS PR FIXES IT (#1750). The gate
+  // threshold is declared as `>= 0.5` in three places — `illogicMath.gate`, the
+  // def's own `docs`, and the module manifest — and the SHIPPED path disagreed
+  // with all three AT EXACTLY THAT VALUE. `thresholdCurve` built its step with
+  // `x >= threshold`, but a WaveShaperNode LINEARLY INTERPOLATES between curve
+  // samples and 0.5 lands at index 3071.25 of 4096, a quarter of the way up the
+  // ramp: an input sitting exactly on the declared threshold rendered a gate of
+  // 0.25, so `not` read 0.750000 where the contract says 0 and `and` read
+  // 0.062500 where it says 1. Every gate was green because every gate read ONE
+  // SIDE — the pure helper's arithmetic, or a truth table sampled at 0.49/0.51.
+  // The step is now snapped to the sample at-or-below the threshold, so
+  // `v >= 0.5` renders an exact 1 and WaveShaper's unavoidable one-index ramp
+  // sits entirely BELOW the threshold. The ART baselines are BYTE-IDENTICAL
+  // across the fix (the profile drives 0/1 gate trains, far from the band) —
+  // only the four `.sha` source pins moved, which is the verification.
+  //
+  // ⚠ WHAT THE AUDIT DID NOT FIND, stated as a result rather than as silence.
+  // No dropped edges: the AND multiplier's AudioParam-modulator leg captures
+  // 100 % of pulses at 1/2/4/8/16 Hz at every width down to a SINGLE SAMPLE
+  // (20.8 µs), and so does its audio leg — both carried through the permanent
+  // sweep with instrument controls that read 0 and read a number they were not
+  // handed. No out-of-range excursion on coincident edges (worst 0.0000e+0), no
+  // card/def divergence on any operational or vocabulary field including
+  // `units`, no dead knob, and no FALSE value in the shipped docs — three
+  // OMISSIONS, all now written and all now printed by the face.
+  'illogic',
 ]);
 
 /**
