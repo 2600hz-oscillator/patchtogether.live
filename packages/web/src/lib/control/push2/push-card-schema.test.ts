@@ -589,6 +589,36 @@ describe('the AUTHORED push cards', () => {
   // coverage. The claim actually worth gating is "the override does real work",
   // and that claim is a DIFFERENCE, so assert the difference.
 
+  it('featurecv: promotion moved the card GENERIC → FACE, and the encoders really re-ordered', () => {
+    // THE FACEPLATE QUEUE · Q16. This module carries NO `PUSH_CARD_CONTROLS`
+    // entry, so its card is resolved by the FACE tier the moment it enters
+    // STRICT_FACES — the skill's "a first promotion moves the module from
+    // GENERIC to FACE, and the whole card changes, not one slot". It is
+    // asserted here rather than left silent because nothing else in this file
+    // would have noticed.
+    //
+    // Stated as a DIFFERENCE against the same def with its face removed, never
+    // as a copy of `face.order` (see the note above): the ranking is re-curated
+    // on its own schedule and a literal copy would redden this file for a
+    // change that has nothing to do with the Push.
+    const def = defByType('featurecv');
+    const faced = pushCardParams(resolvePushCardControls(def, {})).map((p) => p.id);
+    const generic = pushCardParams(
+      resolvePushCardControls({ ...def, face: undefined }, {}),
+    ).map((p) => p.id);
+    // Same controls either way — a re-ORDER, not a re-pick (six params, well
+    // inside the eight-encoder window).
+    expect([...faced].sort()).toEqual([...generic].sort());
+    expect(faced, 'the face must actually move the card, or this promotion is decoration')
+      .not.toEqual(generic);
+    // The ONE claim worth pinning: POLARITY takes encoder 1. That is the face's
+    // whole rank-1 argument — it is the only control on this module with
+    // authority over an output before anything is patched — so if it stops
+    // being true, the re-rank wants reviewing rather than absorbing.
+    expect(faced[0]).toBe('bipolar');
+    expect(generic[0]).not.toBe('bipolar');
+  });
+
   it('adsr REORDERS the face ranking into ENVELOPE order', () => {
     const ENVELOPE = ['attack', 'decay', 'sustain', 'release'];
     expect(ids('adsr')).toEqual(ENVELOPE);

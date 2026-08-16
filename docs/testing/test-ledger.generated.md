@@ -47,7 +47,7 @@ _none_
 ### spawn-smoke QUARANTINE map (e2e/tests/modules.spec.ts) — 1
 - `toybox` — task #102: SwiftShader software-renderer timeout (heavy WebGL)
 
-## Runtime skips — in-body env gates (80)
+## Runtime skips — in-body env gates (79)
 
 `test.skip(cond, reason)` guards that skip AT RUNTIME when an environment
 capability is missing (DB, asset, renderer, hardware). NOT disables — the test
@@ -72,8 +72,7 @@ those at spec granularity and the lane audit checks the realized string.
 - `e2e/tests/blood-keyboard.spec.ts:166` — engine not ready
 - `e2e/tests/blood-keyboard.spec.ts:87` — BLOOD engine did not reach ready (renderer/heap-sensitive on CI)
 - `e2e/tests/blood-keyboard.spec.ts:89` — e2e hooks / runtime extras unavailable (prod-preview)
-- `e2e/tests/card-producer-lifetime.spec.ts:624` — (dynamic: ``${type} shows no picture on any video output even with its card mounted, so there is ` + `nothing here to lose: ${di…`)
-- `e2e/tests/card-producer-lifetime.spec.ts:651` — (dynamic: ``${type} renders a STATIC picture even with its card mounted on ${liveMounted[0]} ` + `(${fmtChange(mountedMotion)}),…`)
+- `e2e/tests/card-producer-lifetime.spec.ts:658` — (dynamic: ``${type} shows no picture on any video output even with its card mounted, so there is ` + `nothing here to lose: ${di…`)
 - `e2e/tests/collapse-keeps-playing.spec.ts:437` — (dynamic: ``${type} is not a local-file player (no file input and/or no transport) — its unmount path is gated by card-media-lif…`)
 - `e2e/tests/doom-aspect.spec.ts:256` — DOOM WASM not built
 - `e2e/tests/doom-aspect.spec.ts:258` — DOOM1.WAD missing

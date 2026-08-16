@@ -29,6 +29,7 @@
 
 import type { Component } from 'svelte';
 import type { ParamDef } from '$lib/graph/types';
+import FeaturecvMapsPanel from './panels/FeaturecvMapsPanel.svelte';
 import FilterResponsePanel from './panels/FilterResponsePanel.svelte';
 import MeowboxFormantBankPanel from './panels/MeowboxFormantBankPanel.svelte';
 import NoiseTapsPanel from './panels/NoiseTapsPanel.svelte';
@@ -127,6 +128,27 @@ const SIDEBAR_PANELS: Readonly<Record<string, Component<SidebarPanelProps>>> = {
   // Widen that behind a declared prop when a second module wants the picture —
   // not now, on one module's guess about the next one.
   'svf-response': SvfResponsePanel as unknown as Component<SidebarPanelProps>,
+
+  // THE THREE FEATURE MAPS: one rail per CV output on the LIVE POLARITY's
+  // range, with the rack's own generators marked where each lands.
+  //
+  // ⚠ IT EXISTS BECAUSE PROMOTION REMOVES A LIVE METER, AND IT IS DELIBERATELY
+  // NOT THAT METER. `FeaturecvCard.svelte` pumps three bars off a worklet
+  // `snapshot` each rAF; measured, that snapshot is the extractor's UNSMOOTHED,
+  // always-UNIPOLAR target, so the bars disagree with the jacks they name (the
+  // PUNCH bar reads 0.145 where the PUNCH jack sits at −0.703 at the shipped
+  // BIPOLAR default) and are invariant to ATTACK and RELEASE. Rebuilding them
+  // would have promoted a third, disagreeing view. Every point here is DRAWN
+  // from the constants the worklet inlines, so the tile is deterministic on a
+  // running graph, a frozen one and a silent rack alike — the `noise-taps`
+  // argument, arrived at from the opposite direction (noise is free-running and
+  // could not be traced; featurecv COULD be traced and should not be).
+  //
+  // Not generic yet, and it says so: the component reads featurecv's own three
+  // feature maps. `synesthesia` publishes per-band versions of the same three
+  // quantities and is the plausible second adopter; widen it behind declared
+  // props then, not now, on one module's guess about the next one.
+  'featurecv-maps': FeaturecvMapsPanel as unknown as Component<SidebarPanelProps>,
 };
 
 /** The component for a declared `custom` panel id, or `null`. */

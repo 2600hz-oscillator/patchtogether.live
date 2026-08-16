@@ -236,6 +236,16 @@ import {
   unityscaleOverText,
 } from '$lib/ui/modules/unityscalemathematik-face-model';
 import {
+  featurecvAtkRiseText,
+  featurecvClipText,
+  featurecvFaceParams,
+  featurecvIdleText,
+  featurecvMaxRateText,
+  featurecvProbeText,
+  featurecvRelFallText,
+  featurecvThreshText,
+} from '$lib/ui/modules/featurecv-face-model';
+import {
   MOOG907A_BANK,
   MOOG914_BANK,
   type MoogBank,
@@ -1091,6 +1101,67 @@ const FACE_READOUT_VALUES: Readonly<Record<string, FaceReadoutValue>> = {
       ],
     ]),
   ) as Record<string, FaceReadoutValue>),
+
+  // ── FEATURECV ────────────────────────────────────────────────────────────
+  // SEVEN, on a six-dial analyser, and the reason is that not one of the six
+  // dials prints the quantity it decides. featurecv's dials are all in the
+  // WRONG UNITS for what they do: a multiplier where the answer is a level, a
+  // 0..1 where the answer is a threshold factor, a lockout where the answer is
+  // a rate, two time CONSTANTS where the answer is a rise time.
+  //
+  //   idle       WHERE THE THREE FEATURE CVs REST WITH NOTHING PATCHED. This is
+  //              the one a patcher is most likely to be caught by: every target
+  //              is 0 on silence, and BIPOLAR maps 0 to −1.00, so an idle
+  //              featurecv holds three destinations at the BOTTOM rail while
+  //              POLARITY prints `BI`. It is GAIN-INVARIANT (a trim on silence
+  //              is silence) and `−12 dB` below is not, which makes each the
+  //              other's negative control on every render — the unityscale
+  //              two-probe arrangement, one module later.
+  //   −12 dB     what a −12.04 dBFS-RMS source LEAVES AT THE LOUD JACK, a JOIN
+  //              over GAIN and POLARITY that neither dial can perform: `0.00`
+  //              at the shipped defaults, `+1.00` at GAIN 4 (where it is
+  //              CLAMPED and has stopped modulating), `−0.75` at GAIN 0.25.
+  //   fires at   the onset detector's adaptive-threshold MULTIPLIER, and the
+  //              DIRECTION is the point: SENS maps onto it INVERTED, 4.00× at
+  //              SENS 0 down to 1.20× at SENS 1. The dial prints `0.50`; the
+  //              detector is firing at 2.60× the running mean flux.
+  //   max rate   the fastest hit train ONSET passes intact — `1000/debounce`,
+  //              i.e. 12.5 Hz at the shipped 80 ms lockout. Measured on the
+  //              shipping worklet through the def's own factory: 36/36 pulses
+  //              on a 3 s 12 Hz train, every OTHER hit at 16 Hz (24 of 48), and
+  //              48/48 on that same 16 Hz train once DEBNCE drops to 40 ms — so
+  //              the ceiling is a property of the dial rather than a bound
+  //              nobody reaches. That is the number that decides whether
+  //              16th-note hi-hats get through, and the dial prints `80 ms`.
+  //   atk rise / rel fall
+  //              the 10→90 % moves the two one-poles actually deliver. The
+  //              dials print TIME CONSTANTS (`EnvFollower`'s coefficient is
+  //              `exp(-1/(ms/1000·sr))`), which are `ln 9` ≈ 2.197× shorter, so
+  //              the shipped 10 / 100 ms deliver 22 / 220 ms. Each is blind to
+  //              the other, which is their cross-control.
+  //   loud clip  the INPUT LEVEL at which LOUD pins at full scale and stops
+  //              modulating — `20·log10(1/(2·gain))`, so −6.0 dBFS at unity and
+  //              6.02 dB lower per doubling of the trim. It prints `never` when
+  //              the trim puts the clamp out of reach of a bounded signal,
+  //              which is the honest answer below GAIN 0.5 and not a number.
+  //
+  // ⚠ BRIGHT AND PUNCH GET NO READOUT, deliberately, and the reason is a
+  // MEASUREMENT rather than a preference: ZCR counts sign changes and crest is
+  // a peak-to-RMS ratio, so both are scale-invariant and GAIN is bit-exactly a
+  // no-op on them. Every param-derived number about those two jacks would be a
+  // constant. They are drawn instead, on the `featurecv-maps` sidebar picture,
+  // where a constant is the correct shape.
+  //
+  // All seven are negative-controlled in both directions, permanently, in
+  // featurecv-face-model.test.ts; every claim about AUDIO is re-derived from
+  // the shipping worklet by art/scenarios/featurecv/analysis.test.ts.
+  'featurecv-idle': (read) => featurecvIdleText(featurecvFaceParams(read)),
+  'featurecv-probe': (read) => featurecvProbeText(featurecvFaceParams(read)),
+  'featurecv-thresh': (read) => featurecvThreshText(featurecvFaceParams(read)),
+  'featurecv-max-rate': (read) => featurecvMaxRateText(featurecvFaceParams(read)),
+  'featurecv-atk-rise': (read) => featurecvAtkRiseText(featurecvFaceParams(read)),
+  'featurecv-rel-fall': (read) => featurecvRelFallText(featurecvFaceParams(read)),
+  'featurecv-loud-clip': (read) => featurecvClipText(featurecvFaceParams(read)),
 };
 
 /** The derived value for a declared id, or `null` (⇒ the readout prints `—`

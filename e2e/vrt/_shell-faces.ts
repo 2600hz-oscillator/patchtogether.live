@@ -549,6 +549,27 @@ export const FACES = [
   // twice in `art/scenarios/unityscalemathematik/cv-path.test.ts`: two
   // independent renders of the same patch are BIT-IDENTICAL (#1680).
   { type: 'unityscalemathematik', pages: 3 },
+  // THE FACEPLATE QUEUE · Q16 — the audio→CV feature extractor (2026-08-15).
+  //
+  // TWO bands, both surviving the hero split: the hero promotes `bipolar` out of
+  // band `feature`, which still holds gain/attack/release, and band `onset`
+  // holds its two. Nothing is emptied, so the count stays 2.
+  //
+  // `glyph: 'none'` for the same structural reason as unityscalemathematik
+  // above — three `cv` outputs and one `gate`, no `audio` output, so every
+  // glyph but 'none' resolves to `{ kind: 'static' }`.
+  //
+  // ⚠ THIS SCENE CARRIES THE FIRST SIDEBAR PANEL IN THE ROSTER WHOSE MODULE
+  // COULD HAVE BEEN TRACED LIVE AND IS NOT, and that is what makes it
+  // deterministic. `FeaturecvCard.svelte` pumps three meters off
+  // `engine.read(node,'snapshot')` every rAF; the face draws `featurecv-maps`
+  // from the DSP's own constants instead, so the picture is a pure function of
+  // `node.params` and there is no analyser, no rAF and nothing for the #1420
+  // freeze to be load-bearing about. The module is ALSO silent at rest by
+  // construction (an analyser with one input and no generator anywhere in the
+  // factory — the muted keep-alive is a `gain.value = 0` sink), so a bare tile
+  // emits exactly the polarity floor on three DC jacks.
+  { type: 'featurecv', pages: 2 },
 ] as const;
 
 /** TIGHT per-scene diff budgets (absolute pixels; Playwright takes the MIN of

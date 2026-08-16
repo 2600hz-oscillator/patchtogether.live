@@ -20,6 +20,12 @@ import type {
 import { webMidiAvailable } from '$lib/audio/modules/midi-cv-buddy';
 import { createMidiInputClaim } from './input-attach';
 import {
+  deliverCcToGraph,
+  deliverGateToGraph,
+  splitBindingKey,
+  flushGraphCcCommits,
+} from './graph-param-dispatch';
+import {
   parseNoteMessage,
   noteMatches,
   isCcBinding,
@@ -366,13 +372,28 @@ function handleCc(parsed: { channel: number; cc: number; value: number }): void 
     return;
   }
 
-  // 2. Dispatch to whichever CC binding (if any) owns this CC. Setter lookup
-  //    goes through the SEPARATE `setters` map. The intersection of "binding
-  //    present" + "setter registered" activates dispatch; either alone is silent.
+  // 2. Dispatch to whichever CC binding (if any) owns this CC.
+  //
+  //    TWO DELIVERY PATHS, and the binding alone is enough for the second
+  //    (#1727). A MOUNTED control registers a setter in the SEPARATE `setters`
+  //    map and is preferred — it owns the on-screen visual and any bespoke
+  //    commit the card wants. When no control is mounted the delivery is
+  //    RESOLVED FROM THE GRAPH instead: the binding names (node, param), and
+  //    the node outlives every view of it.
+  //
+  //    It used to be the intersection of "binding present" + "setter
+  //    registered", so a binding to any un-migrated module on the default
+  //    shell — which renders <ModuleShellPlaceholder> and mounts no control —
+  //    was silently inert while looking, exporting and persisting as assigned.
   for (const b of bindings.values()) {
     if (isCcBinding(b) && b.channel === parsed.channel && b.cc === parsed.cc) {
       const s = setters.get(b.key);
-      if (s) s.onchange(ccValueToParamValue(parsed.value, s.min, s.max));
+      if (s) {
+        s.onchange(ccValueToParamValue(parsed.value, s.min, s.max));
+        continue;
+      }
+      const addr = splitBindingKey(b.key);
+      if (addr) deliverCcToGraph(addr.moduleId, addr.paramId, parsed.value);
     }
   }
 }
@@ -405,11 +426,26 @@ function handleNote(parsed: ReturnType<typeof parseNoteMessage>): void {
   }
 
   // 2. Dispatch to whichever NOTE binding (if any) owns this note. on → gate
-  //    high, off → gate low (momentary). Setter lookup via `noteSetters`.
+  //    high, off → gate low (momentary). Setter lookup via `noteSetters`, with
+  //    the same GRAPH fallback the CC path has (#1727): a NOTE bound to a
+  //    declared `gate` INPUT port resolves to `engine.setGateInput`, which is
+  //    exactly what <PatchPanel>'s gate row would have registered.
+  //
+  //    ⚠ WHAT THIS FALLBACK CANNOT REACH, stated where it is true: a NOTE bound
+  //    to a card BUTTON (a synthetic action id like 'play') has no graph
+  //    meaning, so it stays card-scoped. Gate PORTS are additionally already
+  //    safe on every lane render, because <PatchPanel> — which registers their
+  //    setters — mounts in ModuleShell and ModuleShellPlaceholder alike; the
+  //    fallback covers the case where neither is mounted at all.
   for (const b of bindings.values()) {
     if (isNoteBinding(b) && noteMatches(b, parsed)) {
       const s = noteSetters.get(b.key);
-      if (s) s.onGate(parsed.kind === 'on');
+      if (s) {
+        s.onGate(parsed.kind === 'on');
+        continue;
+      }
+      const addr = splitBindingKey(b.key);
+      if (addr) deliverGateToGraph(addr.moduleId, addr.paramId, parsed.kind === 'on');
     }
   }
 }
@@ -452,6 +488,11 @@ export function registerSetter(moduleId: string, paramId: string, args: {
   min: number; max: number; onchange: (v: number) => void;
 }): void {
   setters.set(bindingKey(moduleId, paramId), { ...args });
+  // HANDOFF (#1727): this control is now the delivery path. Land anything the
+  // GRAPH path staged before it mounted, so a value up to CC_SETTLE_MS old
+  // cannot settle AFTER the control's newer one. A flush, never a teardown —
+  // dropping the setter again simply returns delivery to the graph.
+  flushGraphCcCommits();
 }
 
 /** Drop the live CC setter (called on Fader / Knob unmount). The persisted

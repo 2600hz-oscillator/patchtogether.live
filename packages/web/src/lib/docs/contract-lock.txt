@@ -1115,6 +1115,8 @@ featurecv param gain 0.25..4 log default=1
 featurecv param onset_debounce 20..1000 log default=80 unit=ms
 featurecv param onset_sens 0..1 linear default=0.5
 featurecv param release 1..2000 log default=100 unit=ms
+featurecv face sidebar 0 kind=custom label=maps panel=featurecv-maps
+featurecv face sidebar 1 kind=readouts label=delivered entries=atk rise:value=featurecv-atk-rise,rel fall:value=featurecv-rel-fall,loud clip:value=featurecv-loud-clip
 feedback meta domain=video
 feedback in decay cv param=decay cvScale=linear
 feedback in in video

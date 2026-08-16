@@ -113,14 +113,30 @@ class FeaturecvProcessor extends AudioWorkletProcessor {
     }
 
     // Snapshot for the card's display meters: UNIPOLAR feature levels (0..1)
-    // regardless of output polarity + whether an onset fired this quantum.
+    // regardless of output polarity + whether an onset fired since the last
+    // post.
     const lv = this.ex.levels();
     this.snapLoud = lv.loud;
     this.snapBright = lv.bright;
     this.snapPunch = lv.punch;
-    this.snapOnset = onsetSeen;
+    // ⚠ THE ONSET FLAG IS LATCHED ACROSS THE POST INTERVAL, NOT OVERWRITTEN
+    // (#1744). It used to be a bare `this.snapOnset = onsetSeen`, and the two
+    // cadences do not line up: the flag is WRITTEN every render quantum and
+    // READ every SIXTEENTH, while a trigger pulse is `TRIGGER_PULSE_S` = 5 ms =
+    // 240 samples ≈ 1.9 quanta. So a pulse only reached the host when it
+    // happened to straddle a quantum whose index was ≡ 0 (mod 16) — measured
+    // 18.8–25.0 % of the pulses the ONSET JACK emitted, at 1 / 2 / 4 / 8 Hz.
+    // Four hits in five simply never lit the LED.
+    //
+    // This is a DELIVERY bug in the display pipe only: the `onset` OUTPUT is
+    // written per sample from the same `o.onset` and was measured CLEAN (100 %
+    // of hits at 1/2/4/8/12 Hz, collapsing past the debounce ceiling exactly
+    // where the lockout puts it). Nothing about the audio changes here.
+    if (onsetSeen > this.snapOnset) this.snapOnset = onsetSeen;
 
-    // Post ~ every 16 quanta (≈ 30–60 Hz UI refresh).
+    // Post every 16 quanta = 2048 samples ≈ 23.4 Hz at 48 kHz (21.5 Hz at
+    // 44.1 k) — a UI refresh cadence, deliberately well under the frame rate so
+    // the card's rAF loop always has a fresh value and the port is not hot.
     if ((this.frame++ & 15) === 0) {
       try {
         this.port.postMessage({
@@ -133,6 +149,9 @@ class FeaturecvProcessor extends AudioWorkletProcessor {
       } catch {
         /* port may be closed during teardown */
       }
+      // Consume the latch: the next window reports its OWN onsets, so the LED
+      // blinks once per posted window rather than staying lit forever.
+      this.snapOnset = 0;
     }
     return true;
   }
