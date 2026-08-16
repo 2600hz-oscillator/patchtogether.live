@@ -1118,7 +1118,7 @@ defect (#1692) and the `ninelives` near-miss (#1706). It is caught now: the
 three are CV/gate-output-only. **Do not spend a spec argument on which output a
 glyph would tap: there is no glyph.**
 
-### Q16 · `featurecv` — the audio→CV feature extractor
+### Q16 · `featurecv` — the audio→CV feature extractor  ⟵ IMPLEMENTED (#1743 / this branch)
 
 **Merit: YES,** and it has the richest readout story in the cohort. 6 params
 (`gain`, `attack`, `release`, `bipolar`, `onset_sens`, `onset_debounce`), 1 audio
@@ -1995,3 +1995,218 @@ count reached with `waitFrames`, and a same-frame-index pixel comparison** —
 never a wall-clock wait and never a variance floor. That is a different
 assertion, not a tuned one, and it is the audit's deliverable whatever happens
 to the face.
+
+---
+
+## 18. Q16 · `featurecv` — THE AUDIT, MEASURED, and four spec corrections
+
+Run against the REAL shipped worklet (`packages/dsp/dist/featurecv.js`) in
+`node-web-audio-api`, driven through the def's OWN factory, so the GainNode-trim
+and k-rate-param seams the offline core does not have are in the harness.
+SR 48 000. Two metrics, different in kind: the SETTLED SAMPLE in LINEAR amplitude
+for the three continuous CVs, and a RISING-EDGE COUNT across `GATE_HI` for
+`onset`. Every number is reproduced on every run by
+`art/scenarios/featurecv/analysis.test.ts` (9 legs),
+`packages/web/src/lib/ui/modules/featurecv-face-model.test.ts` (30) and
+`packages/dsp/src/featurecv-snapshot.test.ts` (6).
+
+**M1 — WITH NOTHING PATCHED, ALL THREE FEATURE CVs SIT AT THE POLARITY FLOOR.**
+`loud`/`bright`/`punch` = **−1.00** at the shipped BIPOLAR default, **0.00** at
+UNIPOLAR, and `onset` emits zero edges in both. This is a property of the module
+as it appears in a rack, not of a contrived patch: the muted keep-alive makes the
+worklet process from spawn, the targets are 0 on silence, and `applyBipolar` maps
+0 to −1. **An idle featurecv holds three destinations at the BOTTOM of their
+range while POLARITY prints `BI`.** Nothing on the module said so.
+
+**M2 — POLARITY IS THE ONLY CONTROL THAT MOVES AN IDLE JACK, BIT-EXACTLY.**
+Driven to the far end of its travel against an unpatched module:
+
+| control | → | Δ on each of the three CV jacks |
+|---|---|---|
+| `gain` | 4 | `0.0000e+0` |
+| `attack` | 500 | `0.0000e+0` |
+| `release` | 2000 | `0.0000e+0` |
+| `onset_sens` | 1 | `0.0000e+0` |
+| `onset_debounce` | 1000 | `0.0000e+0` |
+| **`bipolar`** | **0** | **1.0000 (a full rail)** |
+
+That table IS the rank-1 argument. Every other control acts on a measurement of
+a signal that is not there, so ranking any of them first would put a
+conditionally-inert control at the top of the ladder.
+
+**M3 — LOUD CLIPS, AND THE CEILING IS A DIAL NOBODY READS AS ONE.**
+`clamp01(LOUD_MAKEUP · rms · gain)` with `LOUD_MAKEUP = 2`, measured against DC
+drivers so `rms ≡ amplitude`:
+
+| input rms | gain | LOUD (unipolar) |
+|---|---|---|
+| 0.10 | 1 | 0.2000 |
+| 0.25 | 1 | 0.5000 |
+| **0.50** | 1 | **1.0000 — pinned** |
+| 0.80 | 1 | 1.0000 |
+| 0.25 | 4 | 1.0000 |
+| 0.25 | 0.25 | 0.1250 |
+
+So at unity trim **every source above −6.02 dBFS RMS reads a flat full scale**,
+and GAIN divides that threshold 6.02 dB per doubling. A 0.8-amplitude sine
+(rms 0.5668) is already past it. The faceplate prints the live figure as
+`loud clip`, and `never` below GAIN 0.5 where the clamp needs an RMS above full
+scale.
+
+**M4 — GAIN REACHES EXACTLY ONE OF THE THREE FEATURES, BIT-EXACTLY.** At
+gain 0.25 / 0.5 / 2 / 4 against a fixed white-noise drive, `bright` and `punch`
+move by `0.0000e+0` — ZCR counts sign changes and crest is a peak-to-RMS ratio,
+so both are scale-invariant through a GainNode as well as in the algebra. The
+positive control on the same drive: LOUD moves 0.117 → 0.468 over the same trim.
+**The shipped docs said the trim lets "its features reach a usable CV range".**
+Corrected: it reaches ONE of them.
+
+**M5 — DEFECT (doc, #1745): THE CREST MAP IS CALIBRATED ON A DISTRIBUTION THIS
+RACK DOES NOT PRODUCE.** `featurecv-dsp.ts` said *"white noise (~3.5) → ~0.5"*.
+`noise`'s white tap is UNIFORM in [−1,+1], crest **√3 ≈ 1.73 regardless of
+window length**. Measured over featurecv's own 1024-sample window on the shipping
+generator, and confirmed at the jack:
+
+| tap | rms | zcr | crest | LOUD | BRIGHT | PUNCH (uni / bi) |
+|---|---|---|---|---|---|---|
+| white | 0.5784 | 0.4858 | **1.7265** | 1.000 | 0.972 | **0.146 / −0.709** |
+| pink | 0.1061 | 0.2063 | 3.1926 | 0.212 | 0.413 | 0.438 / −0.123 |
+| brown | 0.1905 | 0.0538 | 3.1876 | 0.381 | 0.108 | 0.438 / −0.125 |
+
+The canonical NOISE → FEATURECV patch lands PUNCH at a third of the promised
+level, at the bottom of the rail — **and the implied ordering is backwards**,
+since pink and brown are the peakier taps here. `3.5` is a GAUSSIAN figure.
+⚠ The MAP is not changed: whether `CREST_MAX = 6` suits this rack's material is a
+SOUND question and belongs to the owner.
+
+**M6 — THE ONSET JACK IS CLEAN, and the ceiling is exactly the readout.** The
+#1703 / #1725 census, hits at 2 ms decay so the material is never the constraint:
+
+| debounce | 12 Hz | 16 Hz | 20 Hz |
+|---|---|---|---|
+| 80 ms (shipped, ceiling 12.5 Hz) | **36/36** | 24/48 | 30/60 |
+| 40 ms (ceiling 25 Hz) | 36/36 | **48/48** | 60/60 |
+
+100 % below the lockout, exactly half above it, and the boundary MOVES with the
+dial. `1000/debounce` is therefore an honest readout rather than a bound nobody
+reaches.
+
+⚠ **THE HIT WIDTH IS PART OF THE INSTRUMENT.** With the 10 ms decay the other
+legs use, a 20 Hz train's tails OVERLAP, the slow envelope never falls, the flux
+never re-rises, and the census collapses to **ONE pulse at every debounce
+setting** — a result about the MATERIAL wearing the shape of a result about the
+DIAL. The first draft of this leg went red for exactly that reason.
+
+⚠ **AND SO IS THE LEAD-IN.** The factory pushes its k-rate params with
+`setValueAtTime(v, ctx.currentTime)`, and in an OfflineAudioContext the FIRST
+render quantum still reads the descriptor DEFAULT — so a hit inside the first 128
+samples arms the lockout at 80 ms whatever the patch says, and the SECOND hit of
+a 16 Hz train vanishes. Measured 47/48 through the factory against 48/48 through
+the pure core, the two buffers otherwise bit-identical, the missing edge at
+sample 3022. A one-quantum HOST artifact, not a module property — and a census
+that swallowed it would have reported 97.9 % capture for the wrong reason.
+
+**M7 — DEFECT (live, #1744): THE CARD'S ONSET LED REPORTS 18.8–25.0 % OF WHAT
+THE JACK EMITS.** `snapOnset` was written every render quantum and read every
+sixteenth; a trigger pulse is 240 samples ≈ 1.9 quanta.
+
+| hit rate | jack edges | LED blinks | capture |
+|---|---|---|---|
+| 1 Hz | 12 | 3 | 25.0 % |
+| 2 Hz | 24 | 5 | 20.8 % |
+| 4 Hz | 48 | 10 | 20.8 % |
+| 8 Hz | 96 | 18 | 18.8 % |
+
+The `buggles` / `backdraft` shape reached from the other side: those dropped
+edges because a main-thread poller rescanned a ring buffer; this one because two
+cadences inside ONE processor were never lined up. Fixed by latching across the
+post interval. **The gate had to go on the PROCESSOR** — the pure core has no
+port, an OfflineAudioContext render never delivers a `postMessage`, and the LED
+is a decaying CSS opacity.
+
+**M8 — SENS IS CONDITIONAL, AND THE FIRST PROBE COULD NOT SEE IT.** Swept
+against a clean 4 Hz hit train at four amplitudes, the WHOLE travel is a no-op
+(12/12 at SENS 0, 0.25, 0.5, 0.75, 1). That reads exactly like a dead dial and is
+not one — an unambiguous transient clears every threshold, so the probe was
+INVARIANT to the dimension under test. On ambiguous material:
+
+| signal | SENS 0 | 0.25 | 0.5 | 0.75 | 1 |
+|---|---|---|---|---|---|
+| tremolo sine (4 Hz AM) | 1 | 1 | 8 | 11 | **13** |
+| hits under a loud noise bed | 4 | 5 | 7 | 7 | **10** |
+| 30 Hz AM burst train (debounce 20) | 3 | 3 | 4 | 61 | **78** |
+
+The mechanism: the threshold is `avgFlux · mult + 0.15`, so the fixed floor
+dominates whenever the running flux is small. §15.10's rule, one cohort later.
+
+**M9 — THE RENDER IS REPRODUCIBLE AND THE TWO SEAMS AGREE.** Two independent
+renders of one patch are BIT-IDENTICAL (`0.0000e+0` across all four outputs), and
+the worklet agrees with the pure core to `0.0000e+0` — which matters because
+`gain` is a GainNode in the factory and an inline multiply offline.
+
+### What the audit did NOT find
+
+No dead jack, no dead dial (M8 is a conditional dial, not a dead one), no
+unexposed DSP capability, no range disagreement, no cross-domain leakage, and no
+defect in the feature maths. **The CV audit is VACUOUS BY CONSTRUCTION and says
+so** rather than running a null sweep that passes (the Q12 precedent): one input,
+plain `audio`, zero `paramTarget` ports — asserted directly, in a leg that
+reddens the day someone adds one.
+
+### 18.1 FOUR CORRECTIONS TO THE Q16 SPEC (§12), all measured
+
+1. **"the MAXIMUM trigger rate is `1000/debounce` = 12.5 Hz"** — right, and the
+   spec did not say under what. Under a train the detector can RESOLVE it is
+   exact (36/36 at 12 Hz, 24/48 at 16 Hz). Under a DENSE 60 Hz drive the
+   achieved ceiling is 10.0 Hz at the same 80 ms, because after the lockout
+   expires the flux still has to re-rise. Two different numbers from one dial,
+   and the readout states the first.
+2. **"`punchToCv` maps crest 1..6 onto 0..1, so … white noise (~3.5) reads
+   0.5"** — the spec inherited the DSP comment's error verbatim. This rack's
+   white noise reads **0.146** (M5). The spec's own instruction — *"Measure
+   every one of those claims against the real factory; do not transcribe
+   them"* — is what caught it, on the sentence the spec itself transcribed.
+3. **"PROMOTION LOSES THE METERS … the module is an ANALYSER and its picture IS
+   the analysis"** — true, and the cost is smaller than stated because the
+   meters were a THIRD, DISAGREEING view. `levels()` returns the UNSMOOTHED,
+   always-UNIPOLAR target: the bars are byte-identical at atk/rel 0.5/1,
+   10/100 and 500/2000 while the jack moves, and at the shipped BIPOLAR default
+   the PUNCH bar reads 0.145 where the PUNCH jack sits at −0.703. Filed as
+   #1747. So route 1 was taken in SHAPE (a `custom` sidebar block) and rejected
+   in CONTENT: `featurecv-maps` is DRAWN from the worklet's own constants, not
+   traced off the snapshot — which also retires the spec's VRT worry entirely,
+   since the picture is a pure function of `node.params`.
+4. **"`face.order` must rank `bipolar` … a TOGGLE cell"** — right that it must be
+   ranked, and it ranks FIRST rather than being fitted in. It also needed a
+   `ParamOption` roster: undeclared, a 0..1 discrete param renders as an
+   anonymous `<Toggle>` printing `0`/`1` where the card has always printed
+   `UNI`/`BI`. Cosmetic, so contract-lock does not move for it.
+
+### 18.2 WHAT COHORT 3 ADDS TO §5 / §10 / §15
+
+15. **A "CLEAN" PROBE CAN BE THE WRONG PROBE.** §15.10 says a no-op reading is
+    first an INSTRUMENT bug; Q16 adds the shape it takes when the instrument is
+    fine and the STIMULUS is invariant. A clean hit train cannot see SENS
+    because an unambiguous transient clears every threshold; hits at a 10 ms
+    decay cannot see DEBOUNCE because their tails overlap. **Ask what the probe
+    signal is invariant to, not only what the metric is.**
+
+16. **`contract-lock.txt` IS NOT `face`-BLIND — `face.sidebar` IS PROJECTED.**
+    `module-faceplates.md` said *"contract-lock.txt contains zero `face` lines …
+    a sidebar is free"*, and there are 41 `face sidebar` lines in the golden
+    today. Declaring, reordering, relabelling or REMOVING a sidebar block costs
+    a `task docs:accept` — which is the review surface #1468 did not have when
+    it removed a block from twelve modules with every non-pixel gate green.
+    Corrected in the skill with this PR.
+
+17. **A KNOB'S `units` NEVER PAINT AT REST**, so binding them is invisible to a
+    VRT baseline. `Knob.svelte` renders its value readout only while
+    `dragging || hovering`, and its `.label` is `text-transform: uppercase` — so
+    featurecv's five VOCABULARY_DEBT entries were pure CASE and its three
+    missing `units` were pure hover, i.e. **a card/def divergence with no
+    pixel symptom at all**. That is why they sat unpaid, and it is not a reason
+    to leave them: the dock renders the DEF's label, and the second copy is what
+    drifts. **Predict the baseline move from the RESTING DOM, not from the
+    diff** — and negative-control the prediction, because a local macOS run of
+    an untouched text-heavy card (`spectrograph`, 6506 px) fails HARDER than the
+    card you changed (`featurecv`, 3452 px), while a sparse one (`noise`) passes.
