@@ -31,6 +31,7 @@ import type { Component } from 'svelte';
 import type { ParamDef } from '$lib/graph/types';
 import FeaturecvMapsPanel from './panels/FeaturecvMapsPanel.svelte';
 import FilterResponsePanel from './panels/FilterResponsePanel.svelte';
+import IllogicRoutingPanel from './panels/IllogicRoutingPanel.svelte';
 import MeowboxFormantBankPanel from './panels/MeowboxFormantBankPanel.svelte';
 import NoiseTapsPanel from './panels/NoiseTapsPanel.svelte';
 import StereoCrossoverPanel from './panels/StereoCrossoverPanel.svelte';
@@ -149,6 +150,35 @@ const SIDEBAR_PANELS: Readonly<Record<string, Component<SidebarPanelProps>>> = {
   // quantities and is the plausible second adopter; widen it behind declared
   // props then, not now, on one module's guess about the next one.
   'featurecv-maps': FeaturecvMapsPanel as unknown as Component<SidebarPanelProps>,
+
+  // ILLOGIC's ROUTING MAP: four input lines, each through an attenuverter
+  // triangle into the two mix buses, with a SECOND, lighter set of taps leaving
+  // the RAW lines UPSTREAM of the triangles and running to the boolean jacks.
+  //
+  // ⚠ IT EXISTS FOR A FACT THAT IS UNPRINTABLE BY EVERY OTHER SURFACE ON THE
+  // MODULE. Measured through the shipping factory: sweeping any attenuverter
+  // its full −1 → +1 travel moves AND / NAND / OR / NOT by bit-exactly
+  // 0.0000e+0, because the logic block thresholds the inputs BEFORE the
+  // attenuverters. Four of ten jacks are behind none of the four knobs. A card
+  // showing four faders above ten jacks says the opposite by implication, and
+  // no readout, meter or knob label can correct it — only a drawing in which
+  // the boolean taps visibly branch upstream.
+  //
+  // The second thing it draws is the RANKING: channels 1–2 are added in DIFF
+  // and tapped by the logic block, channels 3–4 are subtracted there and reach
+  // no boolean jack, which is why four apparently interchangeable knobs have an
+  // intrinsic order (the `moog914` argument — an axis the module itself
+  // supplies).
+  //
+  // DRAWN, never traced: every mark is the live params plus the structural
+  // routing, so the tile is deterministic on a running graph, a frozen one and
+  // a silent rack alike.
+  //
+  // Not generic yet, and it says so: the row set and the DIFF polarity come
+  // from `illogic-face-model`. `analogLogicMaths` and the `moog9xx`
+  // attenuverter family are the plausible second adopters; widen it behind
+  // declared props then, not now, on one module's guess about the next one.
+  'illogic-routing': IllogicRoutingPanel as unknown as Component<SidebarPanelProps>,
 };
 
 /** The component for a declared `custom` panel id, or `null`. */

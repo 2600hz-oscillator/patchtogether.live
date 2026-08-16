@@ -245,6 +245,16 @@ import {
   featurecvRelFallText,
   featurecvThreshText,
 } from '$lib/ui/modules/featurecv-face-model';
+// ⚠ ITS OWN `import {` STATEMENT, deliberately. Concurrent face PRs collide on
+// this file, and a conflict opened on a SHARED import line resolves "take both
+// sides" into one member list with a dangling `from` — which is how #1675 bit
+// twice with no conflict marker at all. One module, one import block.
+import {
+  illogicBusCeilingText,
+  illogicDiffGainText,
+  illogicLogicGainText,
+  illogicSumGainText,
+} from '$lib/ui/modules/illogic-face-model';
 import {
   MOOG907A_BANK,
   MOOG914_BANK,
@@ -1162,6 +1172,34 @@ const FACE_READOUT_VALUES: Readonly<Record<string, FaceReadoutValue>> = {
   'featurecv-atk-rise': (read) => featurecvAtkRiseText(featurecvFaceParams(read)),
   'featurecv-rel-fall': (read) => featurecvRelFallText(featurecvFaceParams(read)),
   'featurecv-loud-clip': (read) => featurecvClipText(featurecvFaceParams(read)),
+
+  // ── ILLOGIC ──────────────────────────────────────────────────────────────
+  // FOUR IDENTICAL DIALS, TEN JACKS, and not one of the four numbers below is
+  // readable off a dial. Every one is a JOIN over all four attenuverters, and
+  // the four are chosen so that each is BLIND to something the next one sees —
+  // which is what makes them each other's negative control on every run rather
+  // than four spellings of the same quantity (illogic-face-model.test.ts):
+  //
+  //   sum   = a1+a2+a3+a4         signed; CANCELS
+  //   diff  = a1+a2−a3−a4         signed, OPPOSITE polarity split; ×0.00 at the
+  //                               shipped defaults — the module leaves the
+  //                               factory with one mix bus as a common-mode
+  //                               NULL, beside four faders all sitting at max
+  //   peak  = Σ|aN|               SIGN-BLIND; ×4.00 at the defaults on a bus
+  //                               whose convention is ±1
+  //   logic = 1                   INVARIANT to all four, because the boolean
+  //                               jacks threshold the RAW inputs
+  //
+  // ⚠ `illogic-logic-gain` prints a constant, and that is the point rather than
+  // an oversight — it sits in the same row and the same units as three numbers
+  // that do move, so the module's biggest surprise is visible as a NUMBER
+  // instead of a sentence nobody reads. Its authority is NOT this registration:
+  // `art/scenarios/illogic/face-audit.test.ts` measures the claim against the
+  // shipping factory and derives the affected port set from the def.
+  'illogic-sum-gain': (read) => illogicSumGainText(read),
+  'illogic-diff-gain': (read) => illogicDiffGainText(read),
+  'illogic-bus-ceiling': (read) => illogicBusCeilingText(read),
+  'illogic-logic-gain': (read) => illogicLogicGainText(read),
 };
 
 /** The derived value for a declared id, or `null` (⇒ the readout prints `—`
