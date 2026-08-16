@@ -866,7 +866,7 @@ complete answer**; so is "not a merit rejection — it needs a platform cell".
 | `moog905` | 3 | MARGINAL-YES, deferred. A spring reverb with a real derived quantity (the dispersion chirp) but only three dials; queue it behind Q14. |
 | `moog923` | 3 | MARGINAL-YES, deferred. Noise + two filter taps; the `moog903a` question (are the tap levels unprintable?) applies and is a one-hour measurement. |
 | `destroy` | 3 | MARGINAL-YES, deferred. The decimator's EFFECTIVE sample rate and bit depth are genuinely unprintable by a 0..1 dial — that is a readout, and it is the whole face. |
-| `illogic` | 4 | MARGINAL-YES, deferred. Four attenuverters, ten outputs of derived logic. |
+| `illogic` | 4 | **SHIPPED as Q17 (2026-08-16, #1751).** The "MARGINAL" was wrong and §11 below says why with numbers. |
 
 **NOT merit rejections — blocked on a platform cell, each named:**
 
@@ -2242,3 +2242,118 @@ scene passed" is never evidence on a branch that just ran VRT locally.
     diff** — and negative-control the prediction, because a local macOS run of
     an untouched text-heavy card (`spectrograph`, 6506 px) fails HARDER than the
     card you changed (`featurecv`, 3452 px), while a sparse one (`noise`) passes.
+
+## 11. Q17 · `illogic` — MEASURED, and the "MARGINAL" verdict was wrong
+
+§9 filed this as *"MARGINAL-YES, deferred. Four attenuverters, ten outputs of
+derived logic."* Shipped 2026-08-16 (#1751). It is not marginal, and the reason
+generalises: **§9 ranked the pool by what the module EXPOSES and this module's
+whole value is in what it PUBLISHES** — the §10 rule 6 correction (`ninelives`)
+applies here and was not applied.
+
+Every number below is re-derived on every run by
+`art/scenarios/illogic/face-audit.test.ts` against the REAL factory under
+`node-web-audio-api` at 48 kHz. Determinism is asserted first (two renders,
+bit-identical, every declared output) because #1680 measured three modules racy
+under it.
+
+**M1 — FOUR OF TEN JACKS ARE BEHIND NONE OF THE FOUR KNOBS.** Each attenuverter
+swept its full −1 → +1 travel, all ten outputs watched, max |Δ| in linear
+amplitude on a 0.9/0.9/0.6/0.4 stimulus of CO-PRIME sub-audio sines (3/5/7/11 Hz
+— an even ratio aliases the mix buses and makes a cancellation look like a null):
+
+| param | own `att` | `sum` | `diff` | `and` | `or` | `nand` | `not` |
+|---|---|---|---|---|---|---|---|
+| `att1_amount` | 1.80e+0 | 1.80e+0 | 1.80e+0 | **0** | **0** | **0** | **0** |
+| `att2_amount` | 1.80e+0 | 1.80e+0 | 1.80e+0 | **0** | **0** | **0** | **0** |
+| `att3_amount` | 1.20e+0 | 1.20e+0 | 1.20e+0 | **0** | **0** | **0** | **0** |
+| `att4_amount` | 8.00e-1 | 8.00e-1 | 8.00e-1 | **0** | **0** | **0** | **0** |
+
+Asserted with the port sets DERIVED FROM THE DEF (`gate`-typed vs `cv`-typed)
+and in BOTH DIRECTIONS — every gate output unmoved AND every cv output moved by
+at least one param — so the sweep cannot pass by measuring nothing. Each
+attenuverter is also orthogonal: knob N moves `attN` and no other `att` jack.
+
+**M2 — DIFF SHIPS AS A COMMON-MODE NULL, and this is the face's best sentence.**
+Its gain on a signal present at every input is `a1+a2−a3−a4` = exactly **0.00**
+at the shipped defaults. Read AT THE JACK, not computed: one sine into all four
+inputs gives `peak(diff) = 0.000000` while `peak(sum) = 0.8 × 4`. Underneath
+four faders sitting at maximum, one of two mix buses outputs silence. Negative
+control: unbalance ONE knob and DIFF comes alive at exactly ×2.
+
+**M3 — NEITHER BUS IS SCALED BY 1/n.** Worst case `Σ|aN|` = **×4.00** on a CV
+convention of ±1, reached on SUM under in-phase DC and on DIFF under the
+anti-phase split. A deliberately modest stimulus already leaves the rail on
+**26.8 %** of SUM's samples and **39.2 %** of DIFF's, while every individual
+`att` jack stays inside it — so the over-range is a property of the SUMMING,
+which is what the `peak` readout says.
+
+⚠ **§2 OF THE BATCH-5 SPEC DID NOT REPRODUCE, and that is the lesson.** It
+quoted `sum` 1.791 / `diff` 2.594 from "the same" 0.9/0.9/0.6/0.4 stimulus and
+called DIFF the worse of the two. Measured here: **sum 2.224 / diff 1.978**, with
+SUM the worse. Neither pair is wrong — they are different PHASE relationships of
+the same amplitudes, and a peak of a sum of sines is a property of the phases,
+not of the module. **A stimulus-dependent peak is not a fact about a module.**
+The face therefore prints the WORST CASE (`Σ|aN|`, phase-independent and
+derivable from the knobs), and the ART sweep asserts the fraction-outside-rail
+as an inequality rather than pinning either number.
+
+**M4 — A LEVEL STATISTIC CANNOT SEE AN ATTENUVERTER.** `att1` at −1 and +1: rms
+0.636396 and peak 0.900000 at BOTH, signed max |Δ| = 1.8000e+0. Every comparison
+in the audit is a signed per-sample delta for this reason, and the routing
+picture hatches the triangle on a negative coefficient. **An attenuverter is the
+most common control shape in the unfaced tail** (`analogLogicMaths`,
+`unityscalemathematik`, the `moog9xx` family), so any sweep over those must be
+signed or it will report the control's defining behaviour as doing nothing.
+
+**M5 — THE ONE LIVE DEFECT (#1750), and it is the two-sided-contract shape.**
+`>= 0.5` is declared in `illogicMath.gate`, the def's `docs`, and the module
+manifest; the shipped path rendered **0.25** at exactly that value, because
+`WaveShaperNode` interpolates and the threshold landed at curve index 3071.25 of
+4096. Fixed by snapping the step to the sample at-or-below the threshold. **ART
+baselines byte-identical across the fix — only the four `.sha` pins moved**,
+which is the verification. A permanent negative control carries the pre-fix
+construction through WaveShaper's own lookup arithmetic.
+
+**M6 — THE SWEEP THAT FOUND NOTHING, and why it is still the deliverable.** 100 %
+edge capture at 1/2/4/8/16 Hz at every width down to a SINGLE SAMPLE (20.8 µs),
+on BOTH legs of the AND multiplier — the audio input AND the AudioParam
+modulator, which is the only one a k-rate param could break. Instrument controls
+are permanent: the counter must read 0 with the other input low (while OR still
+counts every edge) and must report 8 for an 8 Hz × 4 Hz product, not 16. No
+out-of-range excursion on coincident edges (worst 0.0000e+0).
+
+**M7 — THE RANK HAS AN INTRINSIC AXIS after all.** Four apparently
+interchangeable knobs, but each input driven ALONE reaches **7 / 6 / 3 / 3** of
+the ten outputs (in1 taps the logic block and NOT; in2 taps the logic block;
+in3/in4 reach no boolean jack and are SUBTRACTED where 1–2 are added). The order
+comes out 1,2,3,4 — the same as declaration order — and the ART sweep asserts the
+reach ordering is non-increasing along `face.order` rather than the numbers. This
+is the `moog914` answer on a module §9 had written off as the `bluebox` problem.
+
+### What Q17 adds to §10
+
+9. **A PICTURE IS A CLAIM, AND THE ONLY GATE THAT READS IT IS A HUMAN LOOKING AT
+   THE BASELINE.** The first linux capture shipped the routing panel's logic
+   label CLIPPED (`and or nand no`) and drew ONE bus line labelled `sum` at the
+   top and `diff` at the bottom — "one bus with two names", with the +/− column
+   hung on it implying the polarity split applies to both. It does not. Both are
+   geometry; the e2e asserts DOM attributes and saw nothing, `module-face-lint`
+   saw a registered panel, and faces-parity saw no stray `control-*` testid.
+   **Look at the PNG the bot commits.** It is the deliverable, not the receipt.
+
+10. **PREDICT THE BOT'S FILE COUNT BEFORE EACH DISPATCH AND CHECK IT.** Two
+    dispatches here, both predicted exactly: #1 "2 added, 0 modified, 0 deleted"
+    (two new scenes) and #2 "1 modified, 0 added, 0 deleted" (the dock only — a
+    compact lane tile renders no sidebar, so a sidebar-only change cannot move
+    it). Scoping the second with `GREP=illogic` cut it from ~50 min to ~8.
+
+11. ⚠ **A LOCAL VRT RUN SILENTLY AUTHORS THE MISSING BASELINES IT JUST FAILED
+    ON** — and a second local run then reports them PASSING, against a macOS
+    render. Third occurrence; filed as #1752 with a suggested mechanisation.
+    Until then, `git status --untracked-files=all` after every local VRT run in
+    a window where a baseline is new. Note the useful half: once the baseline
+    EXISTS, a local run writes only `-actual.png` into the gitignored
+    `test-results/`, which makes it a safe and fast way to EYEBALL a picture
+    before spending a dispatch on it. Both panel defects above were found and
+    fixed that way.
