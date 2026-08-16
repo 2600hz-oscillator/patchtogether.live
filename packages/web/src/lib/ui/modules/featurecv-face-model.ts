@@ -146,9 +146,11 @@ export function featurecvThreshMult(p: FeaturecvFaceParams): number {
 }
 
 /** The fastest hit train ONSET passes intact, in Hz — the debounce lockout's
- *  reciprocal. Measured against the shipping core in
- *  `art/scenarios/featurecv/analysis.test.ts`: a 12 Hz train is captured 12/12
- *  at the shipped 80 ms and a 16 Hz train collapses. */
+ *  reciprocal. Measured through the def's own factory in
+ *  `art/scenarios/featurecv/analysis.test.ts` (M6): at the shipped 80 ms a 3 s
+ *  12 Hz train is captured 36/36 and a 16 Hz one loses every other hit (24 of
+ *  48); at DEBNCE 40 ms the same 16 Hz train passes 48/48, so the ceiling moves
+ *  with the dial rather than being a bound nobody reaches. */
 export function featurecvMaxTrigHz(p: FeaturecvFaceParams): number {
   if (!Number.isFinite(p.onsetDebounce) || p.onsetDebounce <= 0) return Number.NaN;
   return 1000 / p.onsetDebounce;
@@ -233,9 +235,14 @@ export type FeaturecvFeature = (typeof FEATURECV_FEATURES)[number];
 
 /**
  * The CANONICAL SOURCES the picture marks on each feature's rail — the rack's
- * OWN generators plus a plain tone, with the window statistics measured off
- * them in `art/scenarios/featurecv/analysis.test.ts` (1024-sample window,
- * 48 kHz, the shipped seeds) and re-derived there on every run.
+ * OWN generators plus a plain tone, with the window statistics taken over
+ * featurecv's own 1024-sample window at 48 kHz with the shipped seed.
+ *
+ * ⚠ RE-DERIVED FROM `noiseGenerators` ON EVERY RUN by
+ * `featurecv-face-model.test.ts`, and asserted AT THE JACK through the def's own
+ * factory by `art/scenarios/featurecv/analysis.test.ts` (M5). A measurement
+ * transcribed into a literal is a measurement waiting to go stale, and this one
+ * IS the audit's finding — see below.
  *
  * ⚠ THIS TABLE IS THE AUDIT'S FINDING, NOT A DECORATION. The DSP core's own
  * calibration comment said "white noise (~3.5) → ~0.5" for the crest map. The
