@@ -92,14 +92,26 @@ interface ProducerSeam {
 
 const PRODUCER_SEAMS: readonly ProducerSeam[] = [
   {
-    id: 'engine.write(node, …)',
-    re: /\bwrite\s*\(\s*node\s*,/,
+    // ⚠ WIDENED FROM `write\s*\(\s*node\s*,` (#1720). That form was bound to
+    // the IDENTIFIER `node`, and the engine ships TWO overloads —
+    // `audio/engine.ts` `write(nodeId: string, …)` on the domain engine and
+    // `write(node: ModuleNode, …)` on PatchEngine. A card reaching the domain
+    // engine (`e.getDomain<VideoEngine>('video')`, which several already do) and
+    // calling `ve.write(id, 'displayFrame', bmp)` produces IDENTICAL engine
+    // state and matched nothing. No card did that at the time, so the set was
+    // accurate — and one rename from silently emptying, with the vacuity guard
+    // still green because the other members matched. The negative controls
+    // below pin BOTH the widened matches and the shapes that must still miss.
+    id: 'engine.write(node|id, …)',
+    re: /\bwrite\s*\(\s*(?:node|id|nodeId)\s*,/,
     why:
       'the card pushes state INTO the module handle every rAF — TIMELORDE its composited ' +
       "display (`write(node,'displayFrame')`, the only writer of what video_out passes on) " +
       "and SYNESTHESIA its per-band video levels (`write(node,'video_levels_a'/'_b')`, the " +
       'only writer of what its AUDIO outputs carry). Unmount the card and the module keeps ' +
-      'drawing/emitting its idle value forever.',
+      'drawing/emitting its idle value forever. Matches BOTH engine overloads — the ' +
+      'PatchEngine `write(node, …)` and the domain-engine `write(nodeId, …)`, which are the ' +
+      'same engine state reached two ways.',
   },
   {
     id: 'install*FrameDrawer(…)',
@@ -579,12 +591,16 @@ describe('CARD_PRODUCER_LANE_TYPES — the second seam (#1587: the card IS the p
   });
 
   it('NEGATIVE CONTROL: each seam regex fires on the CALL and not on the PROSE around it', () => {
-    const write = PRODUCER_SEAMS.find((s) => s.id === 'engine.write(node, …)')!.re;
+    const write = PRODUCER_SEAMS.find((s) => s.id === 'engine.write(node|id, …)')!.re;
     const drawer = PRODUCER_SEAMS.find((s) => s.id === 'install*FrameDrawer(…)')!.re;
 
     // Fires on the real call shapes these cards use…
     expect(write.test("if (eng && node) eng.write(node, 'displayFrame', bmp);")).toBe(true);
     expect(write.test("if (lv) eng.write(node, 'video_levels_a', lv);")).toBe(true);
+    // …and the OTHER engine overload, which the pre-#1720 pattern missed: the
+    // DOMAIN engine takes a node ID, and produces identical engine state.
+    expect(write.test("ve.write(id, 'displayFrame', bmp);")).toBe(true);
+    expect(write.test("videoEngine.write(nodeId, 'displayFrame', bmp);")).toBe(true);
     expect(drawer.test('installWavesculptFrameDrawer(id, myFrameDrawer);')).toBe(true);
     expect(drawer.test('function installBridgeFrameDrawer(): void {')).toBe(true);
 
@@ -593,6 +609,11 @@ describe('CARD_PRODUCER_LANE_TYPES — the second seam (#1587: the card IS the p
     // it writes a FILE, not engine state, and pulling it in would give
     // frametable a second, wrong reason to be headless-mounted.
     expect(write.test('await writable.write(blob);')).toBe(false);
+    // The widening must not swallow an unrelated first argument that merely
+    // STARTS with one of the names — `idx`, `nodeIds`, `identity`.
+    expect(write.test("port.write(idx, 'x');")).toBe(false);
+    expect(write.test("bus.write(nodeIds, 'x');")).toBe(false);
+    expect(write.test("log.write(identity, 'x');")).toBe(false);
     // TimelordeCard's own comment naming the API without the `node` argument.
     expect(write.test("// PUSHES that same frame back into the node (handle.write('displayFrame', …))")).toBe(false);
     expect(write.test('const rewritten = rewrite(nodes, edges);')).toBe(false);
