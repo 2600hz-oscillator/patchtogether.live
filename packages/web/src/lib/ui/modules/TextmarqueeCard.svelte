@@ -11,12 +11,15 @@
   // map, the [[yjs-save-load-real-ydoc]] trap). That SAME model is rendered to
   // an offscreen 2D canvas (system-font glyphs) and pushed to the engine module
   // via read('extras').setTextCanvas — so editor DOM + video texture come from
-  // one serializable source of truth.
+  // one serializable source of truth. ⚠ The RENDER-AND-PUSH half no longer lives
+  // here: it is node-lifetime, in $lib/ui/media/extras-producers, so the node
+  // shows your text with no card mounted (#1720). This card writes the MODEL and
+  // nothing else. See the note further down.
   //
   // Plus four knobs (ScrlX/ScrlY scroll speed, PosX/PosY position) each with a
   // matching CV input, and a live preview of the OUT layer.
 
-  import { onMount, onDestroy, untrack } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { type NodeProps } from '@xyflow/svelte';
   import Knob from '$lib/ui/controls/Knob.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
@@ -24,7 +27,6 @@
   import { setNodeParam, mutateNode } from '$lib/graph/mutate';
   import {
     textmarqueeDef,
-    type TextmarqueeHandleExtras,
   } from '$lib/video/modules/textmarquee';
   import {
     type RichTextModel,
@@ -33,8 +35,6 @@
     type RichAlign,
     emptyRichTextModel,
     coerceRichTextModel,
-    layoutModel,
-    lineAlignOffset,
     modelPlainText,
     clampFontPx,
     truncateModelChars,
@@ -300,164 +300,45 @@
   let fontFamily = $state(DEFAULT_FONT_FAMILY);
   function setFontPx(v: number) {
     fontPx = clampFontPx(v);
+    // persistModel writes node.data.richText; the node-lifetime producer
+    // re-rasterizes off that. No card-side render call to make (#1720).
     persistModel(serializeEditor());
-    queueRender();
   }
   function setFontFamily(name: string) {
     fontFamily = normalizeFontFamily(name);
     if (editorEl) editorEl.style.fontFamily = fontFamily;
     persistModel(serializeEditor());
-    queueRender();
   }
   function setLayerBg(hex: string) {
     layerBg = hex;
     persistModel(serializeEditor());
   }
 
-  // ── Offscreen text canvas → engine texture ───────────────────────────────
-  const PAD = 16;
-
-  let textCanvas: HTMLCanvasElement | null = null;
-  let measureCtx: CanvasRenderingContext2D | null = null;
-
-  function runFont(run: RichRun, fpx: number): string {
-    const style = run.italic ? 'italic ' : '';
-    const weight = run.bold ? '700 ' : '400 ';
-    const family = normalizeFontFamily(model.fontFamily);
-    return `${style}${weight}${fpx}px ${family}`;
-  }
-
-  /** Render the current model to the offscreen canvas + push it to the engine. */
-  function renderTextCanvasToEngine() {
-    // EMPTY model → clear the engine canvas so its built-in "textmarquee"
-    // placeholder shows through (an empty editor must not push a black layer).
-    if (modelPlainText(model).length === 0) {
-      pushClearToEngine();
-      return;
-    }
-    if (!textCanvas) {
-      textCanvas = document.createElement('canvas');
-    }
-    if (!measureCtx) {
-      const mc = document.createElement('canvas').getContext('2d');
-      measureCtx = mc;
-    }
-    const mctx = measureCtx;
-    if (!mctx) return;
-
-    // Font size (video px) from the model — slider-driven; MAX makes a short word
-    // span the frame. LINE_HEIGHT scales with it.
-    const fpx = clampFontPx(model.fontPx);
-    const LINE_HEIGHT = Math.round(fpx * 1.3);
-
-    const measure = (text: string, run: RichRun): number => {
-      mctx.font = runFont(run, fpx);
-      return mctx.measureText(text).width;
-    };
-    const layout = layoutModel(model, measure, LINE_HEIGHT);
-
-    const contentW = Math.max(1, Math.ceil(layout.width));
-    const contentH = Math.max(LINE_HEIGHT, Math.ceil(layout.height));
-    const canvasW = contentW + PAD * 2;
-    const canvasH = contentH + PAD * 2;
-    textCanvas.width = canvasW;
-    textCanvas.height = canvasH;
-    const ctx2d = textCanvas.getContext('2d');
-    if (!ctx2d) return;
-
-    // bg fill the whole canvas (the block + its padding).
-    ctx2d.fillStyle = model.bg;
-    ctx2d.fillRect(0, 0, canvasW, canvasH);
-    ctx2d.textBaseline = 'top';
-
-    layout.lines.forEach((line, li) => {
-      const ax = lineAlignOffset(line.width, layout.width, line.align);
-      const y = PAD + li * LINE_HEIGHT;
-      for (const pr of line.runs) {
-        ctx2d.font = runFont(pr.run, fpx);
-        ctx2d.fillStyle = pr.run.color ?? model.fg;
-        const x = PAD + ax + pr.x;
-        ctx2d.fillText(pr.text, x, y);
-        if (pr.run.underline) {
-          const uy = y + fpx * 0.92;
-          ctx2d.strokeStyle = pr.run.color ?? model.fg;
-          ctx2d.lineWidth = Math.max(1, fpx * 0.06);
-          ctx2d.beginPath();
-          ctx2d.moveTo(x, uy);
-          ctx2d.lineTo(x + pr.width, uy);
-          ctx2d.stroke();
-        }
-      }
-    });
-
-    pushCanvasToEngine(textCanvas, canvasW, canvasH);
-  }
-
-  function getExtras(): TextmarqueeHandleExtras | null {
-    const e = engineCtx.get();
-    if (!e) return null;
-    try {
-      const ve = e.getDomain<VideoEngine>('video');
-      const extras = ve.read(id, 'extras') as TextmarqueeHandleExtras | undefined;
-      return extras ?? null;
-    } catch {
-      return null;
-    }
-  }
-
-  // Retry pushing until the engine has materialized this node (patch-load race,
-  // mirrors PictureboxCard.applyBytesToEngine).
-  let pushRetryTimer: ReturnType<typeof setTimeout> | null = null;
-  function pushCanvasToEngine(canvas: HTMLCanvasElement, w: number, h: number, attempt = 0) {
-    const extras = getExtras();
-    if (!extras) {
-      if (attempt >= 50) return;
-      if (pushRetryTimer) clearTimeout(pushRetryTimer);
-      pushRetryTimer = setTimeout(() => {
-        pushRetryTimer = null;
-        pushCanvasToEngine(canvas, w, h, attempt + 1);
-      }, 100);
-      return;
-    }
-    extras.setTextCanvas(canvas, w, h);
-  }
-
-  // Clear the engine canvas (revert to the built-in placeholder) — for an
-  // empty model. Retries until the engine has materialized this node.
-  let clearRetryTimer: ReturnType<typeof setTimeout> | null = null;
-  function pushClearToEngine(attempt = 0) {
-    const extras = getExtras();
-    if (!extras) {
-      if (attempt >= 50) return;
-      if (clearRetryTimer) clearTimeout(clearRetryTimer);
-      clearRetryTimer = setTimeout(() => {
-        clearRetryTimer = null;
-        pushClearToEngine(attempt + 1);
-      }, 100);
-      return;
-    }
-    extras.setTextCanvas(null, 0, 0);
-  }
-
-  // Re-render the text canvas whenever the model changes (local OR remote).
-  // DEFERRED to a rAF so the (canvas alloc + GL upload) work never runs
-  // synchronously inside a contenteditable `input` event's reactive flush —
-  // doing heavy DOM work there can disturb the caret / reorder typed chars.
-  let renderQueued = false;
-  function queueRender() {
-    if (renderQueued) return;
-    renderQueued = true;
-    requestAnimationFrame(() => {
-      renderQueued = false;
-      renderTextCanvasToEngine();
-    });
-  }
-  $effect(() => {
-    // Read the model so the effect tracks it.
-    const m = model;
-    void m;
-    untrack(() => queueRender());
-  });
+  // ── THE TEXT TEXTURE IS NODE-OWNED, NOT CARD-OWNED (#1720) ────────────────
+  //
+  // This card used to rasterize `node.data.richText` to an offscreen canvas and
+  // push it with `read('extras').setTextCanvas(...)`, retrying until the engine
+  // had materialized the node. It was the ONLY writer of that texture — so under
+  // the faceplate shell, where an un-migrated module's card exists only inside
+  // the dock full-view, a SAVED rack rendered the module's built-in
+  // "textmarquee" placeholder instead of your text, on LOAD, before anything was
+  // touched. Measured on the default /rack, reading the node's own output
+  // texture: nonBlack 446/49152 with the card never mounted vs 36992/49152 with
+  // it open.
+  //
+  // The rasterizer MOVED, verbatim, to $lib/ui/media/extras-producers
+  // (`rasterizeRichText`), driven by $lib/ui/media/node-extras-registry, which
+  // is keyed to GRAPH lifetime and swept from Canvas. It is now the ONLY writer,
+  // so the two cannot disagree — this card was NOT left pushing in parallel.
+  //
+  // Nothing was lost by the move. The card's render was ALREADY driven off the
+  // persisted model (`model` is `coerceRichTextModel(node.data.richText)`, and
+  // the effect that queued a render tracked exactly that), so a keystroke
+  // reached the texture through the Y.Doc either way. And the CRAWL is animated
+  // ENGINE-side from `frame.time` (textmarquee.ts `computeDrawOffset`) — the
+  // `pump()` below is a PREVIEW blit of the engine output into this card's
+  // little canvas and writes nothing to the engine, which is why enrolling this
+  // module in CARD_PRODUCER_LANE_TYPES would have been the wrong fix.
 
   // ── Live preview of OUT ───────────────────────────────────────────────────
   const ENGINE_W = VIDEO_RES.width;
@@ -487,7 +368,6 @@
     fontFamily = normalizeFontFamily(model.fontFamily);
     if (editorEl) editorEl.style.fontFamily = fontFamily;
     applyModelToDom(model);
-    renderTextCanvasToEngine();
     if (previewEl) {
       previewEl.width = 168;
       previewEl.height = Math.round((168 * ENGINE_H) / ENGINE_W);
@@ -498,8 +378,6 @@
     // Flush any pending debounced text edit before the card tears down.
     if (persistTimer) flushPersist();
     if (rafId) cancelAnimationFrame(rafId);
-    if (pushRetryTimer) clearTimeout(pushRetryTimer);
-    if (clearRetryTimer) clearTimeout(clearRetryTimer);
   });
 
   let isEmpty = $derived(modelPlainText(model).trim().length === 0);

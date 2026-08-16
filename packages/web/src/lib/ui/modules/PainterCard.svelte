@@ -41,6 +41,8 @@
   } from '$lib/video/modules/painter-draw';
   import type { VideoEngine } from '$lib/video/engine';
   import { VIDEO_RES } from '$lib/video/engine';
+  import { nodeExtras } from '$lib/ui/media/node-extras';
+  import type { ExtrasLease } from '$lib/ui/media/node-extras-registry';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
   import { portsFromDef } from './card-kit';
@@ -296,6 +298,28 @@
   function pickFg(hex: string) { fg = hex; }
   function pickBg(e: Event, hex: string) { e.preventDefault(); bg = hex; }
 
+  // ── The node-lifetime binding, and why this card CLAIMS it (#1720) ────────
+  //
+  // The node's picture is the deterministic replay of `node.data.ops`, so
+  // $lib/ui/media/node-extras-registry replays it onto a NODE-owned canvas and
+  // binds that — which is what makes a saved rack render your drawing instead of
+  // a blank white page when this card was never mounted (measured: meanRGB
+  // 255,255,255 vs the drawing's 255,0,0).
+  //
+  // While this card IS mounted its own canvas must be the bound one, because it
+  // is the LIVE drawing surface: an in-progress stroke is painted here and shows
+  // on the output BEFORE the op commits. So the card CLAIMS the binding (the
+  // registry stands down) and RELEASES it on unmount (the registry re-pushes its
+  // replay immediately). Both surfaces replay the same log, so the claim changes
+  // WHICH canvas is bound and never WHAT is on it.
+  //
+  // `release()` is owner-checked inside the registry, so a stale unmount can
+  // never revoke the claim of the card that took over from it — the ordering
+  // hazard node-media-registry documents, and the reason this is a lease rather
+  // than a boolean.
+  let extrasLease: ExtrasLease | null = null;
+  const leaseHolder = {};
+
   onMount(() => {
     if (canvasEl) {
       canvasEl.width = ENGINE_W;
@@ -304,10 +328,17 @@
     }
     fillBackground();
     syncFromOps();
+    extrasLease = nodeExtras.claim(id, leaseHolder);
     bindCanvasToEngine();
   });
   onDestroy(() => {
     if (bindRetry) clearTimeout(bindRetry);
+    // NOT a teardown of anything node-owned: this hands the binding BACK to the
+    // registry, which immediately re-pushes the node's own replay canvas. There
+    // is deliberately no `setPaintCanvas(null)` here — that would revert the
+    // node to the white placeholder, which is the bug.
+    extrasLease?.release();
+    extrasLease = null;
   });
 
   const inputs = portsFromDef(painterDef.inputs);

@@ -32,7 +32,6 @@
   import { patch } from '$lib/graph/store';
   import {
     downscaleAndEncode,
-    base64ToImageBitmap,
     TARGET_W as SYNC_IMG_W,
     TARGET_H as SYNC_IMG_H,
   } from '$lib/video/modules/picturebox-encode';
@@ -510,63 +509,29 @@
     }
   }
 
-  // ---- IMAGE: decode persisted bytes → upload into the engine per layer ----
+  // ---- IMAGE layers are NODE-OWNED, not card-owned (#1720) -----------------
   //
-  // Watch EVERY layer's imageBytes (not just the active one) so a remote peer's
-  // write to any image layer is applied locally. We track the last-applied bytes
-  // per layer so a snapshot-bus re-fire with unchanged bytes doesn't re-decode,
-  // and retry while the engine node hasn't materialised yet (PICTUREBOX pattern).
-  const lastAppliedImage = new Map<number, string | null>();
-  let imageApplyTimer: ReturnType<typeof setTimeout> | null = null;
-
-  function scheduleImageRetry(): void {
-    if (imageApplyTimer) return;
-    imageApplyTimer = setTimeout(() => {
-      imageApplyTimer = null;
-      // Clear the cache so applyImagesToEngine re-evaluates every layer.
-      lastAppliedImage.clear();
-      void applyImagesToEngine();
-    }, 100);
-  }
-
-  async function applyImagesToEngine(): Promise<void> {
-    const extras = getExtras();
-    const layers = patch.nodes[id]?.data?.layers as ToyboxLayer[] | undefined;
-    if (!layers) return;
-    let pendingNode = false;
-    for (let i = 0; i < LAYER_COUNT; i++) {
-      const layer = layers[i];
-      if (!layer || layer.kind !== 'image') {
-        // Non-image layer → ensure any prior image is cleared once.
-        if (lastAppliedImage.get(i) !== undefined && extras) {
-          extras.setLayerImage(i, null);
-          lastAppliedImage.set(i, undefined as unknown as string | null);
-        }
-        continue;
-      }
-      const bytes = layer.imageBytes ?? null;
-      if (bytes === lastAppliedImage.get(i)) continue;
-      if (!extras) { pendingNode = true; continue; }
-      lastAppliedImage.set(i, bytes);
-      if (!bytes) { extras.setLayerImage(i, null); continue; }
-      try {
-        const bitmap = await base64ToImageBitmap(bytes);
-        extras.setLayerImage(i, bitmap);
-      } catch (err) {
-        console.warn('[toybox] image decode failed:', err);
-      }
-    }
-    // The engine node wasn't ready for at least one image layer — retry.
-    if (pendingNode) scheduleImageRetry();
-  }
-
-  // Re-run whenever ANY layer's imageBytes changes (the readLiveLayers triggers
-  // fire on local + remote writes). Reading every layer's bytes registers them.
-  $effect(() => {
-    const ls = readLiveLayers();
-    for (let i = 0; i < LAYER_COUNT; i++) void ls?.[i]?.imageBytes;
-    void applyImagesToEngine();
-  });
+  // This card used to decode every layer's persisted `imageBytes` and push it
+  // with `extras.setLayerImage(i, bitmap)`, retrying while the engine node had
+  // not materialised. It was the ONLY decoder — and toybox.ts's own
+  // `renderImageLayer` paints its idle pattern until `hasImage`, which is set
+  // ONLY inside `setLayerImage`. So under the faceplate shell, where an
+  // un-migrated module's card exists only inside the dock full-view, an image
+  // layer of a SAVED rack showed the idle pattern instead of the picture, on
+  // LOAD, before anything was touched.
+  //
+  // Same defect, same bytes-on-the-Y.Doc mechanism as PICTUREBOX —
+  // toybox-content.ts said so all along ("base64-encoded JPEG bytes
+  // (PICTUREBOX-style, synced over Y.Doc) … The card decodes + uploads"). The
+  // decode+upload MOVED to $lib/ui/media/extras-producers, driven by
+  // $lib/ui/media/node-extras-registry and swept from Canvas against the live
+  // node set, so it is now keyed to GRAPH lifetime and is the ONLY writer.
+  //
+  // ⚠ The VIDEO half of this channel (`attachLayerVideo`, below) deliberately
+  // did NOT move and is not a defect: those bytes are a user-picked LOCAL FILE
+  // that no peer and no reload can reconstruct, and within a session the attach
+  // already survives a card unmount because nothing detaches it (#1589 removed
+  // that teardown, and card-media-lifetime.test.ts forbids it returning).
 
   async function onImageFileChange(ev: Event): Promise<void> {
     const input = ev.target as HTMLInputElement;
@@ -2157,7 +2122,6 @@
     // lasso delete, undo, a peer's CRDT delete, Clear, a patch load.
     // `card-media-lifetime.test.ts` fails the build if any of them returns.
     if (rafId !== null) cancelAnimationFrame(rafId);
-    if (imageApplyTimer) { clearTimeout(imageApplyTimer); imageApplyTimer = null; }
     for (const t of videoAttachTimers.values()) clearTimeout(t);
     videoAttachTimers.clear();
   });
