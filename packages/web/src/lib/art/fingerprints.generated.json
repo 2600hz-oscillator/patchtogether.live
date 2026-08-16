@@ -7071,7 +7071,7 @@
       }
     },
     "slew-switch/switched": {
-      "sourceSha256": "40834d1c9fd364336900730481cb5b1abb31c5b833fa924230f00c3931771666",
+      "sourceSha256": "032301fed73417cb37f81417e12a97ca360c8ad3ad8e57d126ef6db2dbcd4cbe",
       "spectrum": [
         255,
         243,
@@ -7079,8 +7079,8 @@
         213,
         195,
         167,
-        149,
-        120,
+        148,
+        119,
         86,
         47,
         4,
@@ -7123,13 +7123,13 @@
         0
       ],
       "features": {
-        "crest": 49,
+        "crest": 52,
         "zcr": 0,
         "centroid": 0
       },
       "labels": {
         "peakDb": -2.67,
-        "rmsDb": -7.67,
+        "rmsDb": -7.98,
         "durS": 1.5,
         "samples": 72000
       }

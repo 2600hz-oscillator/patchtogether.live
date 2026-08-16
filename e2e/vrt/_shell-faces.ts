@@ -531,6 +531,36 @@ export const FACES = [
   // therefore every other committed baseline — untouched. See the measurement
   // on `foldViewportFor` for why raising the shared constant is NOT a no-op.
   { type: 'mixmstrs', pages: 4, foldHeight: 2048 },
+  // THE FACEPLATE QUEUE · Q14 — quad slew + 4→1 sequential switch. `pages: 2`
+  // is the declared count AND the post-hero count, because this face promotes
+  // NO control into the hero: its hero is readouts only (the attenumix /
+  // moog907a / moog914 shape, for their reason — one of four interchangeable
+  // dials drawn four times larger claims something untrue). `heroFacePlan`
+  // therefore removes nothing and neither band can be emptied.
+  //
+  // DETERMINISTIC AT REST, and for a stronger reason than the effects above:
+  // this module has no oscillator and no internal clock of any kind. The switch
+  // advances only on a `step_clock` EDGE, which is an external input, and the
+  // four one-poles converge on whatever is patched — so with nothing patched
+  // every output holds a constant. It neither exercises nor depends on #1420's
+  // pre-frame freeze, and it is not the analogVco free-running case.
+  //
+  // ⚠ THE GLYPH IS 'none', SO THERE IS NO TAP TO BE NON-DETERMINISTIC — and
+  // that is a measurement, not a convenience. `primaryAudioOutPortId` returns
+  // NULL here (six `cv` outputs, one `gate`, no `audio`), the ninelives case;
+  // and unlike ninelives there is no `shape` param to make 'waveform' honest
+  // either, so EVERY candidate glyph resolves `{ kind: 'static' }`. The dock
+  // scene therefore shows the seven-row output table where other scenes show a
+  // trace. See slewswitch-face-model.test.ts.
+  //
+  // ⚠ THE DOCK SCENE SEES THE TOP ~425 px, so treat a green dock capture as
+  // evidence about the hero row and the first band ONLY. This face's band
+  // structure is gated by faceplate-platform.spec.ts and the pure dock-row-plan
+  // / module-face-lint units, which read the whole faceplate — and it has a
+  // SOLO band by construction (`switch` carries two `segmented` cells, which
+  // `cellWidthClass` classifies WIDE), which is exactly the kind of layout fact
+  // the 425 px window is blind to.
+  { type: 'slewSwitch', pages: 2 },
   // THE FACEPLATE QUEUE · Q15 (COHORT 3) — the curve-morph attenuverter.
   //
   // THREE bands, all three surviving the hero split: the hero promotes `aCurve`
