@@ -1127,9 +1127,12 @@ const FACE_READOUT_VALUES: Readonly<Record<string, FaceReadoutValue>> = {
   //              detector is firing at 2.60× the running mean flux.
   //   max rate   the fastest hit train ONSET passes intact — `1000/debounce`,
   //              i.e. 12.5 Hz at the shipped 80 ms lockout. Measured on the
-  //              shipping core through the def's own factory: 36/36 pulses on
-  //              a 3 s 12 Hz train, and every OTHER hit at 16 Hz (24 of 48). That is the number that decides whether 16th-note
-  //              hi-hats get through, and the dial prints `80 ms`.
+  //              shipping worklet through the def's own factory: 36/36 pulses
+  //              on a 3 s 12 Hz train, every OTHER hit at 16 Hz (24 of 48), and
+  //              48/48 on that same 16 Hz train once DEBNCE drops to 40 ms — so
+  //              the ceiling is a property of the dial rather than a bound
+  //              nobody reaches. That is the number that decides whether
+  //              16th-note hi-hats get through, and the dial prints `80 ms`.
   //   atk rise / rel fall
   //              the 10→90 % moves the two one-poles actually deliver. The
   //              dials print TIME CONSTANTS (`EnvFollower`'s coefficient is
