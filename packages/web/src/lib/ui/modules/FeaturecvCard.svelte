@@ -18,10 +18,23 @@
   // delete the mechanism); what guards it now is the unconditional
   // `unledgered(...) === []` clause plus RANGE_BOUND_CARDS + MAPPING_BOUND_CARDS.
   //
-  // The five divergences were pure CASE, and `Knob.svelte`'s label is
-  // `text-transform: uppercase`, so binding them moves NO pixels. The `units`
-  // props are new and DO: three knobs now print `ms`, which the def has always
-  // declared and the dock has always rendered.
+  // ⚠ NONE OF IT MOVES A PIXEL AT REST, and that is worth stating rather than
+  // shrugging at, because it is exactly why five entries sat unpaid for two
+  // weeks. The five label divergences were pure CASE and `Knob.svelte`'s
+  // `.label` is `text-transform: uppercase`; the three `units` props are NEW
+  // (the def has always declared `ms` and this card passed none) but a Knob
+  // renders its value readout only inside `{#if dragging || hovering}`, so a
+  // VRT capture never sees a unit either way. **A card/def divergence with no
+  // pixel symptom is still a second copy of a name, and it is the second copy
+  // that drifts** — the dock renders the DEF's label, and from promotion onward
+  // that is the name a user learns.
+  //
+  // ⚠ THE METERS BELOW DISAGREE WITH THE JACKS THEY NAME (#1747), which is why
+  // the FACEPLATE does not reproduce them: the worklet's `snapshot` carries the
+  // extractor's UNSMOOTHED, always-UNIPOLAR target, so the PUNCH bar reads
+  // 0.145 where the PUNCH jack sits at −0.703 at the shipped BIPOLAR default,
+  // and no ATTACK or RELEASE setting moves a bar at all. Filed rather than
+  // fixed here — the fix changes what a player watches while the module runs.
   import { onDestroy } from 'svelte';
   import type { NodeProps } from '@xyflow/svelte';
   import Knob from '$lib/ui/controls/Knob.svelte';

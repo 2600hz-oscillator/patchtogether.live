@@ -399,9 +399,12 @@ const RANGE_BOUND_CARDS: Readonly<Record<string, { params: readonly ParamDef[] }
   // Range AND mapping — every Knob reads
   // `P.<id>.{min,max,defaultValue,label,units,curve}` off
   // `paramSpec(featurecvDef, …)`. `units` was genuinely MISSING here rather
-  // than absent on both sides: three params declare `units: 'ms'`, the card
-  // passed none, and the dock has always painted them — so binding it is a
-  // visible card change and the featurecv card baseline moves with this PR.
+  // than absent on both sides: three params declare `units: 'ms'` and the card
+  // passed none. ⚠ It still moves NO pixels, because a Knob paints its value
+  // readout only inside `{#if dragging || hovering}` — so this whole conversion
+  // is invisible to the card's VRT baseline, which is precisely why it had gone
+  // unpaid. Predict a baseline move from the RESTING DOM, not from the size of
+  // the diff.
   'FeaturecvCard.svelte': featurecvDef,
 };
 
@@ -489,8 +492,8 @@ const MAPPING_BOUND_CARDS: readonly string[] = [
   // predecessors `units` is NOT "absent on both sides": `attack`, `release` and
   // `onset_debounce` declare `units: 'ms'`, the card passed no `units` at all,
   // and the def-driven dock has always printed them. Binding it makes the two
-  // surfaces read the same string for the first time, at the cost of a card
-  // re-capture.
+  // surfaces read the same string for the first time — at no pixel cost, since
+  // a Knob's readout paints only while dragging or hovering.
   'FeaturecvCard.svelte',
 ];
 

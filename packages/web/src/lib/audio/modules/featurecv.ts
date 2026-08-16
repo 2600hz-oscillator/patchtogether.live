@@ -160,9 +160,11 @@ export const featurecvDef: AudioModuleDef = {
   // six-cell lane plate and the dock both show all six, so the ranking's whole
   // authority is at the top two.*
   //
-  // ⚠ `order` and `pages` DISAGREE, deliberately. `order` is priority and puts
-  // POLARITY first; `pages` is SIGNAL ORDER and puts it last on its own page,
-  // after the trim and the smoothing it is applied on top of.
+  // ⚠ `order` and `pages` DISAGREE, deliberately. `order` is PRIORITY and puts
+  // POLARITY first; `pages` is SIGNAL ORDER and puts it LAST on the `feature`
+  // page, after the trim and the smoothing whose result it maps. Priority and
+  // signal flow genuinely differ here: the map is applied last and matters
+  // most.
   //
   // ⚠ GLYPH: 'none', AND THAT IS A DECISION, NOT A DEFAULT. This def declares
   // three `cv` outputs and one `gate`, and NO `audio` output — so

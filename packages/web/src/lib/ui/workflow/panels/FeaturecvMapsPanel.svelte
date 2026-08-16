@@ -48,7 +48,6 @@
     FEATURECV_SOURCES,
     featurecvFaceParams,
     featurecvIdleCv,
-    featurecvLoudClipReachable,
     featurecvRailFill,
     featurecvSourceCv,
     fmtFeaturecvClip,
@@ -111,8 +110,13 @@
           ></span>
         {/each}
       </span>
+      <!-- The rail's one annotation. On the rail GAIN reaches, the number that
+           decides whether the feature still MOVES (`fmtFeaturecvClip` already
+           prints `never` when the clamp is out of reach of a bounded signal);
+           on the two it does not, the reason — stated rather than left as an
+           unexplained stillness while the third rail slides. -->
       <span class="rail-note" class:muted={!gainReaches.has(feature)}>
-        {gainReaches.has(feature) ? (featurecvLoudClipReachable(voice) ? fmtFeaturecvClip(voice) : 'no clip') : 'no gain'}
+        {gainReaches.has(feature) ? fmtFeaturecvClip(voice) : 'no gain'}
       </span>
     </div>
   {/each}
