@@ -89,6 +89,7 @@ import { marblesDef } from '$lib/audio/modules/marbles';
 import { moog907aDef } from '$lib/audio/modules/moog907a';
 import { moog914Def } from '$lib/audio/modules/moog914';
 import { unityscalemathematikDef } from '$lib/audio/modules/unityscalemathematik';
+import { featurecvDef } from '$lib/audio/modules/featurecv';
 import { ninelivesDef } from '$lib/audio/modules/ninelives';
 import { noiseDef } from '$lib/audio/modules/noise';
 import { warrensvisionsDef } from '$lib/video/modules/warrensvisions';
@@ -383,6 +384,28 @@ const RANGE_BOUND_CARDS: Readonly<Record<string, { params: readonly ParamDef[] }
   // id — so re-ordering `params`, which no gate forbids, would have silently
   // re-pointed all five.
   'UnityscalemathematikCard.svelte': unityscalemathematikDef,
+  // THE FACEPLATE QUEUE · Q16 (COHORT 3). The Q15 shape again, one wave later
+  // and with the SAME half of the contract at fault: all five numeric props
+  // AGREED with the def and all five `label`s DISAGREED (`GAIN`/`ATK`/`REL`/
+  // `SENS`/`DEBNCE` against `Gain`/`Atk`/`Rel`/`Sens`/`Debnce`), all five
+  // already sitting in VOCABULARY_DEBT, and the dock renders the DEF's label.
+  //
+  // ⚠ THE DIVERGENCES WERE PURE CASE, and that is worth stating rather than
+  // shrugging at: `Knob.svelte` uppercases its label in CSS, so binding them
+  // moved no pixels at all — which is exactly why they sat unpaid. A
+  // divergence with no visible symptom is still a second copy of a name, and
+  // it is the second copy that drifts.
+  //
+  // Range AND mapping — every Knob reads
+  // `P.<id>.{min,max,defaultValue,label,units,curve}` off
+  // `paramSpec(featurecvDef, …)`. `units` was genuinely MISSING here rather
+  // than absent on both sides: three params declare `units: 'ms'` and the card
+  // passed none. ⚠ It still moves NO pixels, because a Knob paints its value
+  // readout only inside `{#if dragging || hovering}` — so this whole conversion
+  // is invisible to the card's VRT baseline, which is precisely why it had gone
+  // unpaid. Predict a baseline move from the RESTING DOM, not from the size of
+  // the diff.
+  'FeaturecvCard.svelte': featurecvDef,
 };
 
 /**
@@ -465,6 +488,13 @@ const MAPPING_BOUND_CARDS: readonly string[] = [
   // so there is nothing to paint and nothing left to drift. The prop that
   // actually mattered here was `label`, and it is bound with the rest (#1714).
   'UnityscalemathematikCard.svelte',
+  // THE FACEPLATE QUEUE · Q16 (COHORT 3). Mapping too, and unlike its four
+  // predecessors `units` is NOT "absent on both sides": `attack`, `release` and
+  // `onset_debounce` declare `units: 'ms'`, the card passed no `units` at all,
+  // and the def-driven dock has always printed them. Binding it makes the two
+  // surfaces read the same string for the first time — at no pixel cost, since
+  // a Knob's readout paints only while dragging or hovering.
+  'FeaturecvCard.svelte',
 ];
 
 /**

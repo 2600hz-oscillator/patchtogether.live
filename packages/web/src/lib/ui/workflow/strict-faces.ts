@@ -1093,6 +1093,80 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // the CV path and the KNOB and CV legs agree to every printed digit —
   // `art/scenarios/unityscalemathematik/cv-path.test.ts`.
   'unityscalemathematik',
+  // THE FACEPLATE QUEUE · Q16, COHORT 3 — the audio→CV feature extractor
+  // (2026-08-15), and the entry whose whole argument is that EVERY DIAL ON THE
+  // MODULE IS IN THE WRONG UNITS FOR WHAT IT DECIDES.
+  //
+  // featurecv is the rack's LISTENER: one audio in, three continuous CVs (LOUD
+  // = broadband RMS, BRIGHT = zero-crossing rate, PUNCH = crest factor) and an
+  // ONSET trigger, all time-domain so it is fully deterministic. SYNESTHESIA
+  // does the per-band version; nothing else in the rack publishes broadband
+  // TIMBRE as control voltage at all.
+  //
+  // ⚠ THE FACE EXISTS BECAUSE THE SIX DIALS PRINT MULTIPLIERS AND LOCKOUTS
+  // WHERE THE ANSWERS ARE LEVELS AND RATES. Measured on the shipping worklet
+  // through this def's own factory (`art/scenarios/featurecv/analysis.test.ts`):
+  // SENS `0.50` is a threshold of 2.60× the running mean flux and the map is
+  // INVERTED; DEBNCE `80 ms` is a 12.5 Hz rate ceiling (12/12 pulses captured
+  // at 12 Hz, and every OTHER hit at 16 Hz — 24 of 48); ATK `10 ms` is a one-pole TIME CONSTANT that
+  // delivers a 22 ms 10→90 % rise; and LOUD is `clamp01(2·rms·gain)`, so at
+  // unity trim any source above −6.02 dBFS RMS reads a flat full scale.
+  //
+  // ⚠ THE RANK-1 ARGUMENT IS A MEASUREMENT, NOT A PREFERENCE. POLARITY is the
+  // ONLY control on this module with unconditional authority: every other one is
+  // inert until a cable arrives, because with nothing patched all three feature
+  // targets are 0. POLARITY still moves all three jacks a full rail — and the
+  // direction is the surprise, since BIPOLAR maps that 0 to −1.00, so an idle
+  // featurecv is holding three destinations at the BOTTOM of their range rather
+  // than at their centre. Nothing on the module said so before this face.
+  //
+  // ⚠ THE CV AUDIT IS VACUOUS HERE BY CONSTRUCTION, and it is stated rather
+  // than run as a null sweep that passes (the Q12 precedent). The def declares
+  // exactly ONE input — plain `audio`, the signal under analysis — and zero
+  // `paramTarget` ports, so the rig that stopped #1661/#1662/#1664 has nothing
+  // to drive. `featurecv-face-model.test.ts` asserts the ABSENCE directly, in a
+  // leg that goes red the day someone adds a CV input without an audit.
+  //
+  // ⚠ WHAT THE AUDIT DID FIND, and both are VALUES rather than declarations:
+  //   * #1744 — the card's ONSET LED reports 18.8–25.0 % of the pulses the
+  //     ONSET jack emits. `snapOnset` is OVERWRITTEN every render quantum and
+  //     READ every sixteenth, and a trigger pulse is 240 samples ≈ 1.9 quanta,
+  //     so four hits in five never coincide with a post. Fixed by LATCHING
+  //     across the post interval; the ONSET OUTPUT itself was measured clean
+  //     (100 % at 1/2/4/8/12 Hz, collapsing past the debounce ceiling exactly
+  //     where it should).
+  //   * #1745 — the DSP core's crest calibration comment claimed "white noise
+  //     (~3.5) → ~0.5". That is a GAUSSIAN figure and the rack produces no
+  //     Gaussian noise: `noise`'s white tap is UNIFORM in [−1,+1], crest √3 ≈
+  //     1.73, so the canonical patch NOISE → FEATURECV lands PUNCH at 0.15
+  //     unipolar / −0.71 bipolar — the bottom of the rail, not the middle.
+  //   * #1746 — five card/def LABEL divergences, all already in
+  //     `VOCABULARY_DEBT`, paid here because the dock renders the DEF's label.
+  //
+  // ⚠ AND ONE INSTRUMENT LESSON, recorded because it nearly shipped as a
+  // finding. The first SENS sweep returned "the dial is bit-exactly dead across
+  // its whole travel" on four amplitudes of a clean 4 Hz hit train. It is not:
+  // an unambiguous transient clears every threshold, so the probe signal was
+  // INVARIANT to the dimension under test. On ambiguous material the same
+  // travel goes 1 → 13 pulses (a tremolo tone) and 4 → 10 (hits under a loud
+  // noise bed). CLAUDE.md's "a no-op reading is FIRST an instrument bug",
+  // one wave after `destroy` recorded it.
+  //
+  // ⚠ PROMOTION REMOVES A LIVE METER AND IT IS NOT REBUILT — decided on
+  // measurement rather than on cost. The card's three bars read the extractor's
+  // UNSMOOTHED, always-UNIPOLAR target, so they disagree with the jacks they
+  // name (PUNCH bar 0.145 against a PUNCH jack at −0.703 at the shipped
+  // default) and do not move when ATTACK or RELEASE do. What replaces them is
+  // the `featurecv-maps` sidebar picture, DRAWN from the constants the worklet
+  // inlines rather than traced off a snapshot — the `noise-taps` precedent,
+  // reached from the opposite direction: noise could not be traced, featurecv
+  // could be and should not be.
+  //
+  // ⚠ `glyph: 'none'`, and that is a decision. Three `cv` outputs and one
+  // `gate`, no `audio` output, so `primaryAudioOutPortId` returns null and any
+  // other glyph resolves to `{ kind: 'static' }` — the marbles defect (#1692),
+  // asserted at its cause and negative-controlled in both directions.
+  'featurecv',
 ]);
 
 /**
