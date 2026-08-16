@@ -116,3 +116,61 @@ describe('console grid — which SHIPPED bands it claims (derived membership)', 
     expect(refused.length, 'and the rule must refuse some of them').toBeGreaterThan(0);
   });
 });
+
+// ── THE `[hidden]` CLAUSE — a CSS defect no other gate can see ─────────────
+//
+// ⚠ THIS WAS A LIVE BUG, CAUGHT BY MEASUREMENT AND NOT BY ANY GATE. A tabbed
+// face hides its inactive bands with the `hidden` ATTRIBUTE (PF-16 — hidden,
+// never unmounted, so `faces-parity` can still count their cells). The UA
+// stylesheet implements that as `[hidden] { display: none }`, which a CLASS
+// selector outranks: `.dock-page.console-band { display: grid }` silently
+// un-hid every console band on a tabbed face. Measured on pentemelodica, whose
+// `mix` band is a console grid and its THIRD page: it painted 240 px wide
+// underneath the active `filter` tab while every other hidden band measured 0.
+//
+// A rail whose hide does not hide is the exact inverse of the blank-faceplate
+// failure `dock-tabs-model` exists to prevent, and NOTHING in the unit lane
+// could see it — the plan model is pure, and the only tabbed adopters are two
+// modules whose baselines had not been recaptured yet.
+//
+// ⚠ WHAT THIS GATE CAN AND CANNOT SEE: it reads ModuleShell's SOURCE and
+// asserts the clause exists at higher specificity than the grid rule. It cannot
+// evaluate CSS, so it cannot prove the cascade resolves the way it reads — that
+// is the DOM measurement above, and the dock VRT baselines after it.
+describe('the console grid must not out-rank the UA `[hidden]` rule', () => {
+  const MODULE_SHELL_SRC = Object.values(
+    import.meta.glob('../modules/ModuleShell.svelte', { eager: true, query: '?raw', import: 'default' }),
+  )[0] as string;
+
+  it('the source really loaded', () => {
+    expect(typeof MODULE_SHELL_SRC).toBe('string');
+    expect(MODULE_SHELL_SRC.length).toBeGreaterThan(10_000);
+  });
+
+  it('a `[hidden]` console band is restored to display:none EXPLICITLY', () => {
+    const css = MODULE_SHELL_SRC.replace(/\/\*[\s\S]*?\*\//g, '');
+    expect(
+      /\.dock-page\.console-band\[hidden\]\s*\{\s*display:\s*none;?\s*\}/.test(css),
+      'a `.dock-page.console-band { display: grid }` rule outranks the UA sheet\'s ' +
+        '`[hidden] { display: none }`, so an inactive TAB PANEL keeps painting. Restate the ' +
+        'hide at higher specificity beside the grid rule.',
+    ).toBe(true);
+  });
+
+  it('…and it is DECLARED BEFORE the grid rule it guards, so order cannot defeat it', () => {
+    // Equal specificity would make source order decide. It is not equal here
+    // (the attribute selector adds weight), but asserting the order too means
+    // the clause survives a future edit that drops the attribute from it.
+    const css = MODULE_SHELL_SRC.replace(/\/\*[\s\S]*?\*\//g, '');
+    const guard = css.indexOf('.dock-page.console-band[hidden]');
+    const grid = css.indexOf('.dock-page.console-band {');
+    expect(guard, 'the guard must exist').toBeGreaterThan(-1);
+    expect(grid, 'the grid rule must exist').toBeGreaterThan(-1);
+    expect(guard).toBeLessThan(grid);
+  });
+
+  it('NEGATIVE CONTROL: the probe fires on the shape that shipped the bug', () => {
+    const broken = '.dock-page.console-band { display: grid; }';
+    expect(/\.dock-page\.console-band\[hidden\]\s*\{\s*display:\s*none;?\s*\}/.test(broken)).toBe(false);
+  });
+});

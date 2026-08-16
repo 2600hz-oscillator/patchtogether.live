@@ -1943,6 +1943,18 @@
    * Two levels of `subgrid` (band → cluster → its `.page-controls`) — verified
    * supported and pixel-exact in this repo's Playwright chromium before it was
    * relied on. */
+  /* ⚠ `display: grid` FROM A CLASS BEATS THE UA'S `[hidden] { display: none }`,
+   * and that is not a theoretical hazard — it was measured. A TABBED face hides
+   * its inactive bands with the `hidden` attribute (PF-16: hidden, never
+   * unmounted, so faces-parity can still count their cells). Without this
+   * clause, pentemelodica's `mix` band — a console grid, and its THIRD page —
+   * kept painting 240 px wide underneath the active `filter` tab, while every
+   * other hidden band measured 0. A rail whose hide does not hide is the exact
+   * inverse of the blank-faceplate failure `dock-tabs-model` exists to prevent.
+   * Restated here at higher specificity rather than relying on the UA sheet. */
+  .dock-page.console-band[hidden] {
+    display: none;
+  }
   .dock-page.console-band {
     display: grid;
     grid-template-columns: repeat(var(--console-cols), max-content);
