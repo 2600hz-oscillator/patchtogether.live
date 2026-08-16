@@ -570,6 +570,26 @@ export const FACES = [
   // factory — the muted keep-alive is a `gain.value = 0` sink), so a bare tile
   // emits exactly the polarity floor on three DC jacks.
   { type: 'featurecv', pages: 2 },
+  // THE FACEPLATE QUEUE · Q17 — the attenuverter / math / logic utility.
+  //
+  // `pages: 1` is the POST-hero split count, the ninelives shape: the face
+  // declares NO `pages`, so its four ranked keys sit in the single unlabelled
+  // `__all` band and the hero promotes ATT1 out of it, leaving three. The band
+  // survives — this is NOT the `noise` case where the only key was promoted and
+  // `heroFacePlan` dropped the emptied band to `pages: 0`.
+  //
+  // DETERMINISTIC AT REST, and for the cleanest reason in this roster: the
+  // module contains NO generator of any kind. Its factory builds GainNodes,
+  // WaveShaperNodes and one ConstantSource whose whole job is the `1 − x`
+  // inversion, so with nothing patched every jack is a constant. Measured
+  // through the real factory: att1..att4 / sum / diff / and / or all sit at
+  // 0.000000 and — the one thing worth flagging for anyone reading a bare tile
+  // — nand and not sit at a constant 1.000000, from sample 0. There is no
+  // analyser, no rAF and no tap: `glyph` is 'none' because
+  // `primaryAudioOutPortId` returns null (six `cv` outputs, four `gate`, no
+  // audio), and the sidebar picture is drawn from `node.params` alone. So this
+  // scene neither exercises nor depends on #1420's pre-frame freeze.
+  { type: 'illogic', pages: 1 },
 ] as const;
 
 /** TIGHT per-scene diff budgets (absolute pixels; Playwright takes the MIN of

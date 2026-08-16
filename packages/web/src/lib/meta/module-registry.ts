@@ -10,7 +10,14 @@
 // engine-factory shape; meta defs share only the palette/persistence
 // surface (label, category, ports).
 
-import type { ModuleType, PortDef, ParamDef, Domain, RackSize } from '$lib/graph/types';
+import type {
+  ModuleType,
+  PortDef,
+  ParamDef,
+  Domain,
+  RackSize,
+  NoUserControlParam,
+} from '$lib/graph/types';
 import type { PaletteCategory } from '$lib/audio/module-registry';
 
 export interface MetaModuleDef {
@@ -24,6 +31,12 @@ export interface MetaModuleDef {
   inputs: PortDef[];
   outputs: PortDef[];
   params: readonly ParamDef[];
+  /** #1726 — params this module deliberately gives the player NO control over.
+   *  Declared for parity with AudioModuleDef / VideoModuleDef so the face lints
+   *  can read `def.noUserControl` uniformly across all three registries; no
+   *  meta module declares one today (meta defs have no ports, so any entry
+   *  would have to be `writer: 'internal'`). See NoUserControlParam. */
+  noUserControl?: readonly NoUserControlParam[];
   /** Rack HEIGHT tier ('1u' | '3u') — a def-declared size WINS over the bulk
    *  RACK_SIZE_DEFAULTS map (see Canvas.svelte rackSizeByType). */
   size?: RackSize;

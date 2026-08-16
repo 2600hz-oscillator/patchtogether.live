@@ -31,7 +31,7 @@
 // ranking for the next real param. Recording them is what lets a test assert
 // WHICH keys were dropped instead of watching the card silently shrink.
 
-import type { ParamDef } from '$lib/graph/types';
+import type { ParamDef, NoUserControlParam } from '$lib/graph/types';
 import { curatedFace, type FaceDefLike } from '$lib/ui/workflow/curated-face';
 import { momentaryParamIds } from '$lib/ui/workflow/shell-control-kind';
 import { looksLikeToggle } from '$lib/graph/group-controls';
@@ -75,6 +75,26 @@ export interface PushCardDefLike extends FaceDefLike {
   label?: string;
   category?: string;
   params?: readonly ParamDef[];
+  /** #1726 — params the module gives the player NO control over. An encoder is
+   *  a control, so none of these may reach a strip; see `noControlOf` below. */
+  noUserControl?: readonly NoUserControlParam[];
+}
+
+/**
+ * #1726 — the params NO tier may put under an encoder, because the module has
+ * declared that a player never sets them (a synthetic gate param a CV bridge
+ * writes; a determinism toggle). They are `isTurnable` — the six on `backdraft`
+ * are 0..1 `curve: 'linear'` — so nothing else in this file can see them, and
+ * `looksLikeToggle` cannot either: they would rank as CONTINUOUS params and
+ * take an encoder ahead of real switches.
+ *
+ * ⚠ Checked in ALL THREE tiers, including `override`. An override REPLACES the
+ * ranking, so it is exactly where a bad id would otherwise get through — and
+ * `push-card-schema.test.ts` reddens on an override naming one, the same way it
+ * reddens on a typo.
+ */
+function noControlOf(def: PushCardDefLike): ReadonlySet<string> {
+  return new Set((def.noUserControl ?? []).map((e) => e.param));
 }
 
 /**
@@ -129,6 +149,7 @@ function overrideControls(
   def: PushCardDefLike,
   ids: readonly string[],
   momentary: ReadonlySet<string>,
+  noControl: ReadonlySet<string>,
   skipped: string[],
 ): ParamDef[] {
   const params = def.params ?? [];
@@ -137,7 +158,7 @@ function overrideControls(
   const taken = new Set<string>();
   for (const id of ids.slice(0, PUSH_CARD_SLOTS)) {
     const p = byId.get(id);
-    if (!p || momentary.has(id) || !isTurnable(p) || taken.has(id)) {
+    if (!p || momentary.has(id) || noControl.has(id) || !isTurnable(p) || taken.has(id)) {
       skipped.push(id);
       warnBadOverride(def.type, id, params);
       continue;
@@ -152,6 +173,7 @@ function overrideControls(
 function faceControls(
   def: PushCardDefLike,
   momentary: ReadonlySet<string>,
+  noControl: ReadonlySet<string>,
   skipped: string[],
 ): ParamDef[] | null {
   // 'dock' = the tier that resolves EVERY ranked key (the lane tiers cap at
@@ -163,7 +185,7 @@ function faceControls(
   for (const c of face.controls) {
     if (picked.length >= PUSH_CARD_SLOTS) break;
     const p = c.kind === 'param' && c.paramId ? byId.get(c.paramId) : undefined;
-    if (!p || momentary.has(p.id) || !isTurnable(p)) {
+    if (!p || momentary.has(p.id) || noControl.has(p.id) || !isTurnable(p)) {
       skipped.push(c.key);
       continue;
     }
@@ -196,11 +218,12 @@ function faceControls(
 function genericControls(
   def: PushCardDefLike,
   momentary: ReadonlySet<string>,
+  noControl: ReadonlySet<string>,
   skipped: string[],
 ): ParamDef[] {
   const usable: ParamDef[] = [];
   for (const p of def.params ?? []) {
-    if (momentary.has(p.id) || !isTurnable(p)) {
+    if (momentary.has(p.id) || noControl.has(p.id) || !isTurnable(p)) {
       skipped.push(p.id);
       continue;
     }
@@ -228,12 +251,13 @@ export function resolvePushCardControls(
   overrides: Readonly<Record<string, readonly string[]>> = PUSH_CARD_CONTROLS,
 ): PushCardSpec {
   const momentary = momentaryParamIds(def);
+  const noControl = noControlOf(def);
   const domain = def.domain ?? 'audio';
 
   const ids = overrides[def.type];
   if (ids && ids.length) {
     const skipped: string[] = [];
-    const picked = overrideControls(def, ids, momentary, skipped);
+    const picked = overrideControls(def, ids, momentary, noControl, skipped);
     if (picked.length) {
       return { moduleType: def.type, domain, source: 'override', slots: pad(picked), skipped };
     }
@@ -241,14 +265,14 @@ export function resolvePushCardControls(
 
   {
     const skipped: string[] = [];
-    const picked = faceControls(def, momentary, skipped);
+    const picked = faceControls(def, momentary, noControl, skipped);
     if (picked && picked.length) {
       return { moduleType: def.type, domain, source: 'face', slots: pad(picked), skipped };
     }
   }
 
   const skipped: string[] = [];
-  const picked = genericControls(def, momentary, skipped);
+  const picked = genericControls(def, momentary, noControl, skipped);
   return { moduleType: def.type, domain, source: 'generic', slots: pad(picked), skipped };
 }
 

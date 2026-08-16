@@ -22,8 +22,9 @@ import '$lib/meta/modules';
 import { listModuleDefs } from '$lib/audio/module-registry';
 import { listVideoModuleDefs } from '$lib/video/module-registry';
 import { listMetaModuleDefs } from '$lib/meta/module-registry';
-import type { ParamDef } from '$lib/graph/types';
+import type { ParamDef, NoUserControlDefLike } from '$lib/graph/types';
 import { momentaryParamIds } from '$lib/ui/workflow/shell-control-kind';
+import { noUserControlIds } from '$lib/ui/workflow/no-user-control';
 
 import { PUSH_CARD_CONTROLS } from './push-card-config';
 import {
@@ -95,8 +96,13 @@ describe('push-card-config: every override names a control the def declares', ()
       const params = def.params ?? [];
       const byId = new Map(params.map((q) => [q.id, q]));
       const momentary = momentaryParamIds(def);
+      // #1726 — params the DEF declares a player never sets. They are
+      // `isTurnable` (backdraft's six gate params are 0..1 linear), so every
+      // other check here passes them, and they are absent from `face.momentary`
+      // too — nothing already in this gate can see them.
+      const noControl = noUserControlIds(def as NoUserControlDefLike);
       const valid = params
-        .filter((q) => isTurnable(q) && !momentary.has(q.id))
+        .filter((q) => isTurnable(q) && !momentary.has(q.id) && !noControl.has(q.id))
         .map((q) => q.id)
         .join(', ');
 
@@ -118,6 +124,16 @@ describe('push-card-config: every override names a control the def declares', ()
           `push-card-config: ${type} → '${id}' is a MOMENTARY press-pad ` +
             `(face.momentary), not a value an encoder can turn.\n` +
             `  valid params: ${valid}`,
+        ).toBe(false);
+        // #1726 — an override REPLACES the ranking, so it is the one tier a
+        // no-user-control param could still reach an encoder through. The
+        // resolver drops it either way; this makes the config say so at edit
+        // time rather than shipping a silently blank strip.
+        expect(
+          noControl.has(id),
+          `push-card-config: ${type} → '${id}' is declared noUserControl on the def ` +
+            `(a player never sets it — a CV bridge or the harness writes it), so it ` +
+            `cannot be an encoder.\n  valid params: ${valid}`,
         ).toBe(false);
       }
     }
@@ -308,6 +324,34 @@ describe('resolvePushCardControls — tier 2, the curated face', () => {
     // two orders agree, stated directly so a future re-rank cannot slip through
     // as "the card was always like that".
     expect((defByType('ninelives').params ?? []).map((q) => q.id)).toEqual(['rate', 'shape']);
+  });
+
+  it('a FIRST PROMOTION over FOUR IDENTICAL CONTROLS leaves the card identical — illogic', () => {
+    // illogic, promoted 2026-08-16 (faceplate queue Q17). The ninelives case
+    // again, and worth its own leg because the REASON the orders agree is
+    // different and could stop being true independently.
+    //
+    // ninelives's two keys agree with declaration order by coincidence of a
+    // genuine priority argument. illogic's four keys are four copies of the
+    // SAME control, so there is no priority to express at all — the face ranks
+    // them by the axis the module itself supplies (channel 1 reaches seven of
+    // the ten outputs, channel 2 six, channels 3 and 4 three each, measured in
+    // art/scenarios/illogic/face-audit.test.ts), which happens to be channel
+    // order, which happens to be declaration order. Three coincidences deep, so
+    // "the card did not move" is exactly the claim that needs recording rather
+    // than assuming.
+    const spec = resolvePushCardControls(defByType('illogic'));
+    expect(spec.source, 'the promotion moves it off the GENERIC tier').toBe('face');
+    expect(spec.skipped, 'no families and no momentary pads on this module').toEqual([]);
+    expect(pushCardParams(spec).map((q) => q.id)).toEqual([
+      'att1_amount', 'att2_amount', 'att3_amount', 'att4_amount',
+    ]);
+    // …and the GENERIC tier would have produced the same four in the same
+    // order, stated directly so a future re-rank cannot slip through as "the
+    // card was always like that".
+    expect((defByType('illogic').params ?? []).map((q) => q.id)).toEqual([
+      'att1_amount', 'att2_amount', 'att3_amount', 'att4_amount',
+    ]);
   });
 
   it('a PAIR promoted together keeps ONE card law — moog907a + moog914', () => {

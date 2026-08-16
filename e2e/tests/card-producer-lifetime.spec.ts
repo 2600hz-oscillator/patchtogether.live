@@ -63,10 +63,29 @@
 //   4. DELETE: the node leaves the graph → the card is unmounted from every
 //      host (that unmount is what runs disposeGl) and the engine handle is gone.
 //
+// ── #1724: THE FIRST *MIGRATED* PRODUCER, AND WHAT IT COST THIS SPEC ─────────
+// CUBE joined the set through the same seam as WAVESCULPT — a frame drawer
+// installed from `modules/cube/CubeVizSurface.svelte` — and broke an ASSUMPTION
+// baked in here rather than derived: that a producer's lane always shows the
+// un-migrated `module-shell-placeholder`. cube is MIGRATED, so its lane is a
+// `module-shell` — and being migrated is NOT a reprieve, because `curatedFace`
+// drops `face.hero.cell` from the lane order (PF-22 `laneOrder`) and cube's hero
+// cell IS its renderer. The lane tile mounts no surface at all. `laneTestId` is
+// now DERIVED from the def's own `strictFace`, so the next migrated producer
+// enrols without an edit.
+//
+// MEASURED for cube, headless mount disabled vs enabled, same probe/port:
+//   never-mounted nonBlack 0/3072 maxLuma 0   ·   card mounted 3072/3072 maxLuma 212
+// ⚠ cube then SKIPS the movement leg, correctly and loudly: its viz is PARAM-
+// driven, not time-animated (rotation is `view_rot_*`, not a clock), so it reads
+// `distinct signatures=1 over 300 frames` even with the card mounted. The causal
+// leg above it is what carries cube, and 0-vs-3072 is not a subtle signal.
+//
 // REGISTRY-DRIVEN: subjects are DERIVED from CARD_PRODUCER_LANE_TYPES (itself
-// held exhaustive by dom-source-modules.test.ts's seam gate) and each subject's
-// DOMAIN and OUTPUT PORTS come from the generated registry manifest. Nothing
-// here is a hand-typed module list, so a fourth producer module enrols itself.
+// held exhaustive by dom-source-modules.test.ts's seam gate); each subject's
+// DOMAIN and OUTPUT PORTS come from the generated registry manifest, and its
+// MIGRATION STATE from STRICT_FACES. Nothing here is a hand-typed module list,
+// so a producer module enrols itself.
 
 import { test, expect, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
@@ -166,6 +185,14 @@ const SUBJECTS = cardProducerTypes().map((type) => {
   return {
     type,
     domain: mod.domain,
+    /** What the shell renders in the lane INSTEAD of the real card. DERIVED
+     *  from the manifest's own `strictFace`, never declared here (#1724): a
+     *  MIGRATED module gets `<ModuleShell>`, an un-migrated one the uniform
+     *  `<ModuleShellPlaceholder>`. Both are `needsHeadlessSourceMount` kinds, so
+     *  the claim below is the same either way — but hard-coding the placeholder
+     *  made the assertion silently un-satisfiable for the first migrated
+     *  producer to join this set, which is exactly what CUBE is. */
+    laneTestId: mod.strictFace === true ? 'module-shell' : 'module-shell-placeholder',
     /** Every video-carrying OUTPUT port. Which of them actually carries the
      *  card-produced picture is DERIVED at runtime (a port that shows nothing
      *  even with the card mounted — SYNESTHESIA's per-band rasters with no
@@ -604,7 +631,7 @@ async function boot(page: Page, shell: Shell = 'default'): Promise<void> {
 type Shell = 'default' | 'legacy';
 
 for (const subject of SUBJECTS) {
-  const { type, domain, videoOuts } = subject;
+  const { type, domain, videoOuts, laneTestId } = subject;
   const nodeId = `producer-${type}`;
 
   test(`${type}: its card is kept alive off-screen when the shell swaps the lane card away`, async ({ page }) => {
@@ -612,10 +639,17 @@ for (const subject of SUBJECTS) {
     await boot(page);
     await spawnPatch(page, [{ id: nodeId, type, domain }], [], { mountTimeout: 30_000 });
 
-    // The lane shows the uniform tile (this module is un-migrated under the
-    // shell) — i.e. its real card is NOT in the lane…
+    // The lane shows the SHELL's tile — the uniform placeholder for an
+    // un-migrated module, the curated face for a migrated one — i.e. its real
+    // card is NOT in the lane…
+    //
+    // ⚠ A MIGRATED FACE IS NOT EVIDENCE THE PRODUCER IS MOUNTED, and CUBE is the
+    // case that proves it (#1724). `curatedFace` drops `face.hero.cell` from the
+    // lane order (PF-22 `laneOrder`: a 280px panel cannot paint in a 46px knob
+    // column) and cube's hero cell IS its renderer, so the lane tile mounts no
+    // surface at all. The claim is identical for both kinds.
     await expect(
-      page.locator(`.svelte-flow__node[data-id="${nodeId}"] [data-testid="module-shell-placeholder"]`),
+      page.locator(`.svelte-flow__node[data-id="${nodeId}"] [data-testid="${laneTestId}"]`),
     ).toHaveCount(1, { timeout: 20_000 });
 
     // …and the headless host is holding it, exactly once. This leg carries the
@@ -739,19 +773,34 @@ for (const subject of SUBJECTS) {
     // here and is skipped — the same hole the `liveMounted.length === 0` skip
     // above already has, and covered by the headless-mount test and by
     // dom-source-modules.test.ts rather than by this leg.
+    //
+    // ⚠ #1724 — THIS SKIPS THE MOVEMENT LEGS, NOT THE TEST. It used to be a
+    // `test.skip()`, which aborted the whole case and therefore silently dropped
+    // phases 3 (COLLAPSE CONTINUITY) and 4 (DELETE) for every static subject.
+    // That cost real coverage the moment cube joined: cube's viz is PARAM-driven
+    // (rotation is `view_rot_*`, not a clock) so it reads `distinct=1 over 300
+    // frames` even mounted — and "does the picture come back after a collapse or
+    // an LRU eviction" is exactly the question its issue was about. Motion is one
+    // CLAIM, not the test's precondition; the two claims are now scoped
+    // independently, and the reason is recorded as a loud annotation so a reader
+    // of the report sees which leg stood down and why.
     const mountedMotion = await framesToChange(page, nodeId, liveMounted[0]!);
-    test.skip(
-      !mountedMotion.changed,
-      `${type} renders a STATIC picture even with its card mounted on ${liveMounted[0]} ` +
-        `(${fmtChange(mountedMotion)}), so there is no card-driven motion here to lose. ` +
-        'Its producer lifetime is covered by the headless-mount test above and by ' +
-        'dom-source-modules.test.ts.',
-    );
+    const motionIsEvidence = mountedMotion.changed;
+    if (!motionIsEvidence) {
+      test.info().annotations.push({
+        type: 'movement-leg-stood-down',
+        description:
+          `${type} renders a STATIC picture even with its card mounted on ${liveMounted[0]} ` +
+          `(${fmtChange(mountedMotion)}), so "did it move" is a property of the SUBJECT AT REST ` +
+          'and not evidence about the producer. The causal leg above (which ports carry a ' +
+          'picture, mounted vs never-mounted) and phases 3+4 below still ran.',
+      });
+    }
 
     // MOVEMENT, on the state that matters. "Not black" alone is not enough for
     // TIMELORDE: its drawFrame keeps blitting the last bitmap the card ever
     // pushed, so a dead producer can read non-black forever.
-    for (const port of liveNever) {
+    for (const port of motionIsEvidence ? liveNever : []) {
       const moved = await framesToChange(page, nodeId, port);
       expect(
         moved.changed,
@@ -788,7 +837,7 @@ for (const subject of SUBJECTS) {
       livePorts(afterSamples),
       `${type} must still carry the same picture after the collapse: ${digest(afterSamples)}`,
     ).toEqual(liveNever);
-    for (const port of liveNever) {
+    for (const port of motionIsEvidence ? liveNever : []) {
       const moved = await framesToChange(page, nodeId, port);
       expect(
         moved.changed,

@@ -1,28 +1,42 @@
 {
   "schemaVersion": 1,
-  "webglContentHash": "05d2477849cd370bd813f1f4e8d8df0f3d954072e34ecdafd49c11944221ef00",
-  "attestedAt": "2026-08-14T18:26:28.425Z",
+  "webglContentHash": "3a14efba74d4c3ad50d52eb8bab2820c2bb87427884d4d4782fe803960fc02ad",
+  "attestedAt": "2026-08-16T12:38:21.018Z",
   "attestedBy": "patchtogether-maintainer",
-  "gitHeadAtAttest": "ba25d7f8190edb28980e43a6a63b8d55e62bf133",
+  "gitHeadAtAttest": "cb1a8008791ba2edaab38fc5a4fe3a42d8c6dbe0",
   "playwrightVersion": "1.50.0",
   "os": "darwin 25.4.0 (arm64)",
   "machineClass": "local-trusted-gpu-workstation",
+  "preflight": {
+    "samples": 7,
+    "windowMs": 10204,
+    "maxForeignCpu": 0,
+    "thresholdCpu": 25,
+    "load1": 2.49462890625,
+    "cores": 10
+  },
   "gpu": "ANGLE (Apple, ANGLE Metal Renderer: Apple M5, Unspecified Version)",
   "appServer": {
-    "url": "http://127.0.0.1:54905",
+    "url": "http://127.0.0.1:58245",
     "mode": "dev",
     "root": "/Users/2600hz/Documents/workspace/inet.modular",
-    "commit": "ba25d7f8190edb28980e43a6a63b8d55e62bf133"
+    "commit": "cb1a8008791ba2edaab38fc5a4fe3a42d8c6dbe0"
   },
   "repeatEach": 1,
   "suites": {
     "A-heavy": {
-      "specFiles": 57,
-      "passed": 200,
+      "specFiles": 58,
+      "passed": 213,
       "failed": 0,
-      "flaky": 0,
+      "flaky": 1,
       "skipped": 2,
-      "flakyDetails": []
+      "flakyDetails": [
+        {
+          "test": "the node-graph panel resizes + the height persists in node.data",
+          "file": "toybox-node-batch.spec.ts",
+          "firstError": "Error: expect(received).toBeGreaterThan(expected) |  | Expected: > 310 | Received:   188"
+        }
+      ]
     },
     "A-serial": {
       "specFiles": 2,
@@ -49,5 +63,5 @@
       "flakyDetails": []
     }
   },
-  "durationSec": 173
+  "durationSec": 203
 }

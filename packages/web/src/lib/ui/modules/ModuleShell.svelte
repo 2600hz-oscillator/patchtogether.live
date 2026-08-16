@@ -83,6 +83,7 @@
     spineCableVar,
     laneFaceTier,
     laneBodyPlan,
+    dockFullViewHeadPlan,
     roleLineForDef,
     DOCK_HERO_GLYPH_W,
     PLATE_ROW_H,
@@ -434,8 +435,25 @@
    * The glyph is untouched at every other tier (the compact lane tile genuinely
    * wants a live trace, and that is the only place it has room to be one), so
    * this suppresses nothing a lane baseline can see.
+   *
+   * #1726 — the extension's `fullViewBody` claims the head the same way and for
+   * the same reason: a module that mounts its own full-width surface does not
+   * also want the shell's four-column thumbnail of the identical picture. The
+   * precedence lives in `dockFullViewHeadPlan` (pure, unit-tested both ways);
+   * with no extension body it returns EXACTLY the expression above.
    */
-  let heroGlyph = $derived(hasGlyph && !(view === 'dock-full' && hero?.cell));
+  let headPlan = $derived(
+    dockFullViewHeadPlan({
+      view,
+      hasGlyph,
+      heroCell: !!hero?.cell,
+      hasExtensionBody: !!ext?.fullViewBody,
+    }),
+  );
+  let heroGlyph = $derived(headPlan.heroGlyph);
+  /** The resolved bespoke body component, or null. Read through the plan so
+   *  the "dock only" half of the policy cannot be forgotten at the call site. */
+  let extBody = $derived(headPlan.extBody ? (ext?.fullViewBody ?? null) : null);
 
   /**
    * The value a hero/sidebar READOUT prints.
@@ -1105,6 +1123,29 @@
       </div>
     {/if}
 
+    <!-- #1726 — THE EXTENSION'S FULL-VIEW BODY: the module's own full-width
+         surface, at the head of the faceplate. The ONE render site for
+         `ShellExtension.fullViewBody`; before this the slot was declared and
+         inert, which is why the wired list is anchored to this file's source in
+         BOTH directions (shell-extensions.test.ts) rather than described.
+
+         It sits ABOVE the bands and BESIDE nothing: a video module's picture is
+         the thing the player steers by, and it is also the only surface that
+         can carry the output-opening affordances (Full Frame / Full Screen /
+         Present), which no ParamCellKind can mount. The bands below are
+         UNCHANGED — the face still owes a cell per param.
+
+         `extBody` is already dock-gated by dockFullViewHeadPlan, so there is no
+         second copy of that policy here; and while the lazy chunk is still in
+         flight `ext` is null and the generic hero paints, exactly as it does
+         for a def that declares no extension at all. -->
+    {#if extBody}
+      {@const ExtFullViewBody = extBody}
+      <div class="dock-ext-body" data-testid="face-full-view-body">
+        <ExtFullViewBody nodeId={id} />
+      </div>
+    {/if}
+
     <!-- PF-20 — the HERO RAIL: the module's own PICTURE + the promoted control
          beside it (a big dial with a big readout) and its audition, then the
          labelled readouts UNDER them as a full-width strip. Every piece is
@@ -1512,6 +1553,21 @@
     flex: 0 0 auto;
     width: min(var(--dock-hero-glyph-w, 214px), 100%);
     min-width: 0;
+  }
+
+  /* #1726 — the EXTENSION'S FULL-VIEW BODY. Unlike the hero glyph this is NOT
+     capped to four knob columns: the whole point is that the module brought a
+     surface rather than a thumbnail, so it gets the faceplate's full width on
+     the same 10px grid edge as the bands under it. Height is the component's
+     own business (a video surface sizes to its aspect); the shell only reserves
+     the row and forbids it pushing the faceplate sideways. */
+  .dock-ext-body {
+    flex: 0 0 auto;
+    width: 100%;
+    min-width: 0;
+    padding: 4px 10px 0;
+    box-sizing: border-box;
+    overflow-x: auto;
   }
 
   /* PF-20 — THE PAGE HEADER (mock `.page-title` + `.page-hint`). A faceplate

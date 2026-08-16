@@ -93,17 +93,34 @@ function newCurve(size: number): Float32Array<ArrayBuffer> {
 }
 
 /** WaveShaper curve: hard-threshold to 0/1 at v >= 0.5 (gate semantics).
- *  We sample 4096 points across the WaveShaper input range [-1, +1] (the
+ *  We sample `size` points across the WaveShaper input range [-1, +1] (the
  *  default oversample range). For inputs outside ±1 (e.g., gate sources
  *  emitting +1 cleanly, or audio peaks), the WaveShaperNode clips the
- *  curve at the table endpoints, which is fine for our threshold. */
+ *  curve at the table endpoints, which is fine for our threshold.
+ *
+ *  ⚠ THE STEP IS SNAPPED TO THE SAMPLE AT-OR-BELOW THE THRESHOLD, and that is
+ *  the whole point of this function rather than a `x >= threshold` loop.
+ *  WaveShaperNode LINEARLY INTERPOLATES between adjacent curve points, so the
+ *  rendered gate at input `v` is a blend of the two curve samples straddling
+ *  it. The declared threshold does NOT generally land on a sample: at 0.5 with
+ *  size 4096 the index is (0.5+1)/2·(size−1) = 3071.25, so a naive
+ *  `x >= threshold` step (first 1 at index 3072) put the threshold a QUARTER of
+ *  the way up the ramp and an input sitting EXACTLY on 0.5 rendered a gate of
+ *  0.25 — measured, and measured against the contract this module publishes
+ *  everywhere else: `illogicMath.gate(0.5)` is 1, `docs.outputs.and` says
+ *  "High when BOTH inputs >= 0.5", and module-manifest says the same. Both
+ *  sides were green because every gate read one side only (#1750).
+ *
+ *  Snapping the step DOWN to `floor(index)` makes `v >= threshold` render an
+ *  exact 1. The one-index ramp WaveShaper interpolation always imposes cannot
+ *  be removed — but it now sits entirely BELOW the threshold, which is the side
+ *  the contract says nothing about, instead of straddling it.
+ *  `art/scenarios/illogic/face-audit.test.ts` pins the band and its side. */
 function thresholdCurve(threshold = 0.5, size = 4096): Float32Array<ArrayBuffer> {
   const curve = newCurve(size);
-  for (let i = 0; i < size; i++) {
-    // Map index [0, size-1] → x ∈ [-1, +1].
-    const x = (i / (size - 1)) * 2 - 1;
-    curve[i] = x >= threshold ? 1 : 0;
-  }
+  // Index of `threshold` in curve space, snapped to the sample at or below it.
+  const step = Math.floor(((threshold + 1) / 2) * (size - 1));
+  for (let i = 0; i < size; i++) curve[i] = i >= step ? 1 : 0;
   return curve;
 }
 
@@ -143,9 +160,101 @@ export const illogicDef: AudioModuleDef = {
     { id: 'att4_amount', label: 'Att4', defaultValue: 1, min: -1, max: 1, curve: 'linear' },
   ],
 
+  // ── THE FACEPLATE (PF-20) ────────────────────────────────────────────────
+  //
+  // WHAT THIS MODULE IS, IN ONE SENTENCE: four bipolar attenuverters that ALSO
+  // happen to be sitting in front of a sum/difference mixer and behind nothing
+  // at all, because the logic block reads the raw jacks. The verb a player
+  // performs is TRIM AND INVERT; the thing they cannot see while doing it is
+  // where each trim lands.
+  //
+  // THE RANK. Four attenuverters look interchangeable — the `bluebox` problem —
+  // and a flat "rank by channel number" would be the honest surrender. It is
+  // not necessary here, because THE MODULE SUPPLIES ITS OWN AXIS, the `moog914`
+  // answer: how many of the ten outputs each channel can reach.
+  //
+  //   in1 → att1, sum, diff(+), and, nand, or, not      the most
+  //   in2 → att2, sum, diff(+), and, nand, or           one fewer (no NOT)
+  //   in3 → att3, sum, diff(−)                          no boolean jack at all
+  //   in4 → att4, sum, diff(−)                          ties with in3
+  //
+  // MEASURED, not asserted: `art/scenarios/illogic/face-audit.test.ts` drives
+  // each input ALONE through this factory and asserts the reach ordering is
+  // non-increasing along `face.order`, with the in3/in4 tie broken by channel
+  // number. The order comes out 1,2,3,4 — the same as declaration order — and
+  // that is stated plainly rather than dressed up. What is NOT the same is the
+  // reason: it now descends from a measurement that would give a different
+  // answer on a module where it was different (`attenumix`'s four channels all
+  // reach one bus, so the same sweep correctly refuses to rank them).
+  //
+  // NO `pages`. Four keys, one promoted to the hero, so a page would buy an
+  // ~81 px band over three faders that are one idea. The page-less `__all` band
+  // renders unlabelled, which is the honest shape.
+  //
+  // NO `title`, no `hint`, no band hints — owner ruling 2026-08-11: plain labels
+  // and values on the face; the explanation lives in `docs`, one right-click
+  // away.
+  //
+  // ⚠ `faceTierCap('full')` is 6 and this module has FOUR params, so `full` and
+  // `dock` render the identical cells — the `resofilter` collapse. This face's
+  // value is entirely in the readouts and the picture, and that is said here
+  // rather than pretending the tier ladder buys anything.
+  face: {
+    order: ['att1_amount', 'att2_amount', 'att3_amount', 'att4_amount'],
+
+    // ⚠ ESTABLISHED, NOT ASSUMED. `primaryAudioOutPortId` matches
+    // `type === 'audio'` and this module declares SIX `cv` outputs and FOUR
+    // `gate` outputs and no audio output at all, so it returns NULL — every
+    // other glyph value would fall through `glyphBinding` to `{kind:'static'}`,
+    // the DEAD binding `module-face-lint` refuses. `illogic-face-model.test.ts`
+    // pins that by calling both functions rather than by trusting this comment.
+    glyph: 'none',
+
+    hero: {
+      control: 'att1_amount',
+      readouts: [
+        // THE TWO MIX BUSES' GAIN on a signal patched into every input at once
+        // — a join over all four dials that no single readback can perform, and
+        // they are each other's control: DIFF inverts the back half, so
+        // att3 −1 → +1 moves them in OPPOSITE directions.
+        //
+        // ⚠ `diff` READS ×0.00 AT THE SHIPPED DEFAULTS. The module leaves the
+        // factory with one of its two mix buses configured as a common-mode
+        // NULL, underneath four faders all sitting at maximum. That is the
+        // single most useful sentence this faceplate says.
+        { label: 'sum', valueId: 'illogic-sum-gain' },
+        { label: 'diff', valueId: 'illogic-diff-gain' },
+        // THE WORST CASE either bus reaches for full-scale ±1 inputs, Σ|aN|.
+        // SIGN-BLIND, which is exactly what the two above are not — so an
+        // inversion moves them and leaves this one still. ×4.00 at the
+        // defaults, on a bus whose convention is ±1: measured, a modest
+        // 0.9/0.9/0.6/0.4 stimulus already leaves the rail on 26.8 % of SUM's
+        // samples and 39.2 % of DIFF's.
+        { label: 'peak', valueId: 'illogic-bus-ceiling' },
+        // THE GAIN THE LOGIC BLOCK APPLIES — ×1.00, at every setting of every
+        // knob, because AND / NAND / OR / NOT threshold the RAW inputs. It is
+        // in the same row and the same units as the three above precisely so
+        // the module's biggest surprise is visible as a NUMBER rather than as
+        // prose the resting faceplate would not paint anyway.
+        { label: 'logic', valueId: 'illogic-logic-gain' },
+      ],
+    },
+
+    // THE PICTURE. The one representation in which the readout above is obvious
+    // instead of surprising: the boolean taps visibly leave each input line
+    // UPSTREAM of its attenuverter triangle, on a separate, lighter path.
+    //
+    // A `custom` sidebar block rather than a `hero.cell` for the structural
+    // reason meowbox and noise both hit: `module-face-lint` refuses a PANEL
+    // cell selected at a lane tier and the 'full' cap is 6, so a panel's first
+    // legal rank is 7 — unreachable on a module with four keys. A sidebar block
+    // carries no `face.order` key and therefore no rank at all.
+    sidebar: [{ kind: 'custom', label: 'routing', panelId: 'illogic-routing' }],
+  },
+
   docs: {
     explanation:
-      "A three-in-one CV utility: a four-channel attenuverter, a sum/difference mixer, and a digital logic block, all sharing the same four inputs. Each input runs through its own bipolar attenuverter knob (-1 to +1) and that attenuverted signal appears on its own ATT output AND feeds two mix buses: SUM (all four added) and DIFF (channels 1+2 minus channels 3+4). Separately, inputs 1 and 2 are treated as gates — thresholded at 0.5 — and combined into clean 0/1 AND, NAND, and OR outputs, while input 1 alone drives a NOT output. So you can attenuvert and mix CV on one half while deriving Boolean gate logic from the first two channels on the other — invert an LFO, blend modulation, and gate-AND two clocks, all from one module. (For continuous min/max/product math instead of digital 0/1 logic, see ANALOGLOGICMATHS.)",
+      "A three-in-one CV utility: a four-channel attenuverter, a sum/difference mixer, and a digital logic block, all sharing the same four inputs. Each input runs through its own bipolar attenuverter knob (-1 to +1) and that attenuverted signal appears on its own ATT output AND feeds two mix buses: SUM (all four added) and DIFF (channels 1+2 minus channels 3+4). Separately, inputs 1 and 2 are treated as gates — thresholded at 0.5 — and combined into clean 0/1 AND, NAND, and OR outputs, while input 1 alone drives a NOT output. So you can attenuvert and mix CV on one half while deriving Boolean gate logic from the first two channels on the other — invert an LFO, blend modulation, and gate-AND two clocks, all from one module. (For continuous min/max/product math instead of digital 0/1 logic, see ANALOGLOGICMATHS.) THREE THINGS TO KNOW BEFORE YOU PATCH IT, all measured on the shipping factory (art/scenarios/illogic/face-audit.test.ts). First, THE FOUR KNOBS DO NOT REACH THE FOUR LOGIC JACKS. The logic block thresholds the RAW inputs, before the attenuverters, so sweeping any knob its full -1 to +1 travel moves AND, NAND, OR and NOT by bit-exactly zero. That is correct and deliberate — an attenuverted gate is not a gate — but a card showing four faders above ten jacks implies the opposite, so the faceplate prints the logic block's gain (always x1.00) next to the two mix buses' gains, and its routing picture draws the boolean taps branching upstream. Second, SUM AND DIFF ARE UNSCALED AND WILL RUN A DOWNSTREAM INPUT OFF ITS RAILS. There is no 1/n, so with four full-scale +/-1 sources and the shipped +1 knobs either bus reaches +/-4.00 on a CV convention of +/-1; a deliberately modest 0.9/0.9/0.6/0.4 stimulus already puts SUM outside +/-1 on 26.8% of samples and DIFF on 39.2%. Turn the channels you are not using to 0, or attenuate downstream. The faceplate prints the live worst case as `peak`. Third, DIFF IS A COMMON-MODE NULL AT THE SHIPPED DEFAULTS. Its gain on a signal present at every input is (att1 + att2) - (att3 + att4), which is exactly 0.00 when all four knobs sit at their default +1 — so patching the same CV into all four inputs gives you SUM at x4 and DIFF at silence until you unbalance a knob. That is a useful instrument (it is what makes DIFF a difference-taker rather than a second mixer) and it is invisible on a card showing four identical faders at maximum.",
     inputs: {
       in1: "Signal input 1 (CV or audio, bipolar). Scaled by the ATT1 knob, summed into SUM/DIFF, and also thresholded at 0.5 as the first logic gate (it drives AND, NAND, OR and the NOT output).",
       in2: "Signal input 2 (CV or audio, bipolar). Scaled by ATT2, summed into SUM/DIFF, and thresholded at 0.5 as the second logic gate (AND, NAND, OR).",
@@ -157,18 +266,18 @@ export const illogicDef: AudioModuleDef = {
       att2: "Input 2 after its attenuverter (in2 × Att2).",
       att3: "Input 3 after its attenuverter (in3 × Att3).",
       att4: "Input 4 after its attenuverter (in4 × Att4).",
-      sum: "The signed sum of all four attenuverted channels: att1 + att2 + att3 + att4. A four-input CV mixer with per-channel invert.",
-      diff: "The signed difference (att1 + att2) − (att3 + att4): channels 1–2 lifted, 3–4 subtracted. Good for anti-correlated modulation from two pairs.",
-      and: "Logic AND of inputs 1 and 2 (each thresholded at 0.5): goes high (1) only while BOTH are above threshold, otherwise low. A clean gate.",
-      nand: "Logic NAND — the inverse of AND: high (1) unless both inputs 1 and 2 are above threshold, in which case it goes low.",
-      or: "Logic OR of inputs 1 and 2: high (1) while EITHER is above threshold, low only when both are below.",
-      not: "Logic NOT of input 1 alone: high (1) while input 1 is below threshold, low while it is high — an inverted gate of channel 1.",
+      sum: "The signed sum of all four attenuverted channels: att1 + att2 + att3 + att4. A four-input CV mixer with per-channel invert. ⚠ UNSCALED — there is no 1/n, so four full-scale ±1 sources at the shipped +1 knobs drive this jack to ±4.00 on a bus whose convention is ±1, and even a modest 0.9/0.9/0.6/0.4 stimulus puts it outside ±1 on 26.8 % of samples (measured). Its worst case is Σ|attN|, which the faceplate prints live as `peak`; turn unused channels to 0 or attenuate downstream.",
+      diff: "The signed difference (att1 + att2) − (att3 + att4): channels 1–2 lifted, 3–4 subtracted. Good for anti-correlated modulation from two pairs. ⚠ AT THE SHIPPED DEFAULTS THIS IS A COMMON-MODE NULL: its gain on a signal present at every input is att1 + att2 − att3 − att4 = 0.00 with all four knobs at +1, so patching one CV into all four jacks leaves DIFF silent until you unbalance a knob — which is what makes it a difference-taker rather than a second mixer. The faceplate prints that gain live as `diff`. ⚠ Also UNSCALED, with the same ±4.00 worst case as SUM (39.2 % of samples outside ±1 on the stimulus above).",
+      and: "Logic AND of inputs 1 and 2 (each thresholded at 0.5): goes high (1) only while BOTH are at or above threshold, otherwise low. A clean gate — and one the attenuverters cannot touch, because the threshold reads the RAW input (see the AND/NAND/OR/NOT note on ATT1). Rests LOW (0.00) with nothing patched.",
+      nand: "Logic NAND — the inverse of AND: high (1) unless both inputs 1 and 2 are at or above threshold, in which case it goes low. ⚠ IT RESTS HIGH: with nothing patched it emits a constant 1.00, so an unpatched ILLOGIC will hold a downstream envelope or VCA gate open from the moment it spawns. That is correct NAND behaviour (both inputs are low, so NOT-AND is true) rather than a fault, but it is not what an idle jack usually does.",
+      or: "Logic OR of inputs 1 and 2: high (1) while EITHER is at or above threshold, low only when both are below. Rests LOW (0.00) with nothing patched.",
+      not: "Logic NOT of input 1 alone: high (1) while input 1 is below threshold, low while it is at or above — an inverted gate of channel 1. ⚠ LIKE NAND, IT RESTS HIGH: with nothing patched it emits a constant 1.00 (input 1 is low, so NOT is true), which will hold a downstream gate input open on an untouched module.",
     },
     controls: {
-      att1_amount: "Channel-1 attenuverter (-1 to +1, default +1): scales input 1 on its way to the ATT1 output and the SUM/DIFF buses. +1 passes it through, 0 mutes it, negative values invert its sign. Does not affect the logic threshold (logic always reads the raw input).",
+      att1_amount: "Channel-1 attenuverter (-1 to +1, default +1): scales input 1 on its way to the ATT1 output and the SUM/DIFF buses. +1 passes it through, 0 mutes it, negative values invert its sign. ⚠ IT REACHES SIX OF THE TEN OUTPUTS AND NONE OF THE FOUR LOGIC JACKS. AND, NAND, OR and NOT threshold the RAW input, so this knob's full -1 to +1 travel moves all four of them by bit-exactly zero (measured through this module's own factory, art/scenarios/illogic/face-audit.test.ts). ⚠ AND A LEVEL METER CANNOT SEE HALF OF WHAT IT DOES: -1 and +1 differ only in SIGN, so ATT1's RMS, peak and spectral centroid are identical at both ends of the dial while the output is inverted. The faceplate's routing picture hatches the triangle when the coefficient is negative for exactly this reason.",
       att2_amount: "Channel-2 attenuverter (-1 to +1, default +1): scales input 2 into ATT2 and the mix buses; 0 mutes, negative inverts. The logic block still reads the raw input 2.",
-      att3_amount: "Channel-3 attenuverter (-1 to +1, default +1): scales input 3 into ATT3, adds it to SUM and subtracts it in DIFF; 0 mutes, negative inverts.",
-      att4_amount: "Channel-4 attenuverter (-1 to +1, default +1): scales input 4 into ATT4, adds it to SUM and subtracts it in DIFF; 0 mutes, negative inverts.",
+      att3_amount: "Channel-3 attenuverter (-1 to +1, default +1): scales input 3 into ATT3, adds it to SUM and subtracts it in DIFF; 0 mutes, negative inverts. ⚠ CHANNELS 3 AND 4 ARE NOT INTERCHANGEABLE WITH 1 AND 2: they reach three outputs rather than six or seven — no logic jack taps them, and DIFF subtracts them where it adds channels 1 and 2. That polarity split is what makes DIFF a common-mode null at the shipped defaults, so this is the knob that breaks the null.",
+      att4_amount: "Channel-4 attenuverter (-1 to +1, default +1): scales input 4 into ATT4, adds it to SUM and subtracts it in DIFF; 0 mutes, negative inverts. Reaches three outputs and no logic jack — see ATT3.",
     },
   },
 
