@@ -2182,6 +2182,38 @@ reddens the day someone adds one.
    anonymous `<Toggle>` printing `0`/`1` where the card has always printed
    `UNI`/`BI`. Cosmetic, so contract-lock does not move for it.
 
+### 18.3 VRT: PREDICTION vs ACTUAL, RECONCILED
+
+**PREDICTED, from the RESTING DOM rather than from a local diff: 2 files
+committed, 0 moved.**
+
+**ACTUAL: exactly that.** `chore(vrt): regenerate baselines [vrt-update
+workflow]` (`6234f82c0`) is `2 files changed, 6 insertions(+)`:
+
+```
+e2e/vrt/__screenshots__/workflow-shell-faces.spec.ts/face-featurecv-compact.png  (new)
+e2e/vrt/__screenshots__/workflow-shell-faces.spec.ts/face-featurecv-dock.png     (new)
+```
+
+The card baseline `vrt.spec.ts/featurecv.png` did NOT move, and it was checked
+BEFORE the capture rather than inferred from it: the PR run on `db0e7cd3c` failed
+exactly three `vrt-strict` assertions — the two missing snapshots and the roster
+clause that reads the filesystem for committed PNGs — and the card scene passed
+in the same run.
+
+⚠ **The local macOS run is what would have made the prediction wrong.** It failed
+the card scene at 3452 px, which reads as "your change moved it". It is platform
+noise: an untouched text-heavy card (`spectrograph`) fails the same local run at
+**6506 px** — harder than the card that was actually edited — while a sparse
+untouched one (`noise`) passes. Two controls in opposite directions, on a
+question where the tempting single observation says the opposite of the truth.
+
+⚠ **And the local run WROTE both new baselines as untracked PNGs**, which the
+second local run then reported as PASSING. They were deleted, not committed;
+`git status --untracked-files=all` was clean before the dispatch and again after
+the merge. This is the #1706 hazard in its new-baseline form, and it is why "the
+scene passed" is never evidence on a branch that just ran VRT locally.
+
 ### 18.2 WHAT COHORT 3 ADDS TO §5 / §10 / §15
 
 15. **A "CLEAN" PROBE CAN BE THE WRONG PROBE.** §15.10 says a no-op reading is
