@@ -521,7 +521,14 @@ export const FACES = [
   //
   // Deterministic on a silent rack like every sibling: a mixer contains no
   // generator, so with nothing patched masterL is bit-exactly zero.
-  { type: 'mixmstrs', pages: 5 },
+  //
+  // ⚠ THE ONLY ENTRY THAT DECLARES `foldHeight`, and it is the reason that field
+  // exists. The unfolded pane MEASURES 1623 CSS px, so at the shared 1400 it
+  // starts at y = -290 and cannot be framed; `foldViewportFor` gives this scene
+  // 2048 (425 px of headroom) and leaves every other scene's viewport — and
+  // therefore every other committed baseline — untouched. See the measurement
+  // on `foldViewportFor` for why raising the shared constant is NOT a no-op.
+  { type: 'mixmstrs', pages: 5, foldHeight: 2048 },
 ] as const;
 
 /** TIGHT per-scene diff budgets (absolute pixels; Playwright takes the MIN of
@@ -587,10 +594,58 @@ export const DOCK_MAX_DIFF = 1500;
 // `FOLD_VIEWPORT` then only has to be TALL ENOUGH to hold the unfolded pane:
 // the drawer is `position: absolute; bottom: 0`, so a pane taller than its
 // container would extend above the viewport top and Playwright could not scroll
-// it into view (the container does not scroll). 1400 px leaves ~300 px of
-// headroom over today's tallest face (drummergirl, 1002 px of pane) and the
-// dock test ASSERTS that headroom rather than assuming it.
+// it into view (the container does not scroll). 1400 px is the DEFAULT and the
+// dock test ASSERTS the headroom rather than assuming it.
 export const FOLD_VIEWPORT = { width: 1280, height: 1400 } as const;
+
+/**
+ * The fold viewport for ONE scene — the default, unless the roster entry
+ * declares a taller `foldHeight`.
+ *
+ * ⚠ IT IS PER-SCENE BECAUSE RAISING THE SHARED HEIGHT IS NOT A NO-OP, AND THAT
+ * WAS MEASURED RATHER THAN ASSUMED. mixmstrs' unfolded pane is 1623 CSS px (91
+ * controls in five clustered sections), so at 1400 it starts at y = -290 and
+ * cannot be framed at all — the dock test said so, with the number. The obvious
+ * move is to raise `FOLD_VIEWPORT.height` for everyone, and the file's own
+ * reasoning invites it: the pane is bottom-anchored at a fixed 1280 px width and
+ * `unfoldDockPane` has already removed the one `vh` term in its geometry, so
+ * viewport HEIGHT "should not" enter any face's layout.
+ *
+ * IT DOES. Measured with `vrt-fold-probe`'s diff-vs-baseline leg over the whole
+ * roster, same machine and renderer at both heights — a within-subject control,
+ * so the local-vs-linux font noise that dominates the absolute numbers cancels:
+ *
+ *   capture HEIGHT   identical for every face at both heights (tidyVco 783 px …)
+ *   diff@1           MOVED on every face (tidyVco 152 427 → 172 388 px;
+ *                    kickdrum 153 628 → 193 594; noise 46 058 → 115 538)
+ *   diff@26          moved on most (kickdrum 19 307 → 19 883, marbles
+ *                    11 154 → 11 738) — i.e. past the threshold the GATE applies
+ *   bbox             widened to the right edge and rose to y0 = 0 on nine faces
+ *                    (dx7 x1 1139 → 1172, drummergirl y0 28 → 0)
+ *
+ * INSTRUMENT CONTROL, because "the result differs" and "the instrument reads
+ * differently" look identical from that output: two independent probe runs at
+ * the SAME height are byte-identical in every reported number. So the movement
+ * is the viewport, not run-to-run drift.
+ *
+ * A face PR that re-pinned forty-two dock baselines to accommodate one new
+ * scene would be exactly the "chrome that is not in frame can still move a
+ * baseline — through layout, not pixels" class CLAUDE.md says NOT to answer by
+ * re-pinning. So the tall scene gets its own viewport and every existing
+ * baseline is untouched by construction.
+ *
+ * ⚠ ROUTE EVERY CALLER THROUGH THIS. An isolation mechanism half the entry
+ * points honour is not isolation: `workflow-shell-faces.spec.ts`'s dock scene
+ * and `vrt-fold-probe.spec.ts` both resolve here, and a new consumer that
+ * reaches for the bare constant would silently put a tall face back in a short
+ * window.
+ */
+export function foldViewportFor(type: string): { width: number; height: number } {
+  const entry = FACES.find((f) => f.type === type) as { foldHeight?: number } | undefined;
+  return entry?.foldHeight
+    ? { width: FOLD_VIEWPORT.width, height: entry.foldHeight }
+    : { ...FOLD_VIEWPORT };
+}
 /** The viewport the scene used before the unfold — reproduces the 432 px clamp
  *  regime for the negative control, and the config default for every other
  *  scene in this file (the compact tile is pinned at 1280×720). */

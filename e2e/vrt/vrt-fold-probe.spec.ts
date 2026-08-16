@@ -40,6 +40,7 @@ import {
   FACES,
   FOLD_VIEWPORT,
   LEGACY_FOLD_VIEWPORT,
+  foldViewportFor,
   bootWithFace,
   frameMember,
   openDock,
@@ -67,7 +68,7 @@ test('dock faceplate fold geometry, every curated face', async ({ page }) => {
     await openDock(page, memberId, pages);
     const legacy = await readFoldGeometry(page);
 
-    await page.setViewportSize(FOLD_VIEWPORT);
+    await page.setViewportSize(foldViewportFor(type));
     await settle(page);
     const now = await readFoldGeometry(page);
 
@@ -126,7 +127,7 @@ test('exact diff of every committed dock baseline', async ({ page }) => {
   const noFreeze = process.env.AUDIT_NO_FREEZE === '1';
   const rows: string[] = [];
   for (const { type, pages } of FACES) {
-    await page.setViewportSize(legacy ? LEGACY_FOLD_VIEWPORT : FOLD_VIEWPORT);
+    await page.setViewportSize(legacy ? LEGACY_FOLD_VIEWPORT : foldViewportFor(type));
     const memberId = await bootWithFace(page, type, { freezeAudio: !noFreeze });
     await frameMember(page, memberId, 0.7, 'full');
     const faceplate = await openDock(page, memberId, pages);
