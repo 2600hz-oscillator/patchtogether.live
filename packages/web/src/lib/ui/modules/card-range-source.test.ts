@@ -84,6 +84,7 @@ import { cubeDef } from '$lib/audio/modules/cube';
 import { cloudsDef } from '$lib/audio/modules/clouds';
 import { cofefveDelayDef } from '$lib/audio/modules/cofefve';
 import { delayDef } from '$lib/audio/modules/delay';
+import { destroyDef } from '$lib/audio/modules/destroy';
 import { macrooscillatorDef } from '$lib/audio/modules/macrooscillator';
 import { marblesDef } from '$lib/audio/modules/marbles';
 import { moog907aDef } from '$lib/audio/modules/moog907a';
@@ -245,6 +246,14 @@ import type { ParamDef } from '$lib/graph/types';
  */
 const RANGE_BOUND_CARDS: Readonly<Record<string, { params: readonly ParamDef[] }>> = {
   'AdsrCard.svelte': adsrDef,
+  // Converted with its FACEPLATE (queue Q18), and it is the entry that shows
+  // this list is not only about NUMBERS. All three of DestroyCard's ranges
+  // already agreed with the def; what diverged was a NAME (`Decimate` on the
+  // card, `Dec` on the def — a `VOCABULARY_DEBT` entry), and promotion is what
+  // turns that from a hazard into two surfaces calling one fader two things.
+  // Binding the whole `ParamDef` fixes the name and forecloses the numbers in
+  // the same edit, which is why the two lists share one mechanism.
+  'DestroyCard.svelte': destroyDef,
   // Converted with its FACEPLATE (queue Q6), which is when the divergence would
   // have started to cost: a faced module renders the DOCK straight off the
   // ParamDef and the legacy card off whatever it typed, so the same knob would
@@ -428,6 +437,12 @@ const MAPPING_BOUND_CARDS: readonly string[] = [
   'CloudsCard.svelte',
   'CofefveCard.svelte',
   'DelayCard.svelte',
+  // Range AND mapping: all three Faders read `P.<id>.{min,max,defaultValue,
+  // label,units,curve}` off `paramSpec(destroyDef, …)`, so the def is the only
+  // copy of any of them. (No param on this module declares `format`, so the
+  // readout clause below is vacuous here — the Fader's own ladder is the
+  // intended law for a sample count, a bit depth and a 0..1 mix.)
+  'DestroyCard.svelte',
   'MacrooscillatorCard.svelte',
   'FilterCard.svelte',
   'MarblesCard.svelte',

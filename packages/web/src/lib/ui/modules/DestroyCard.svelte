@@ -1,20 +1,43 @@
 <script lang="ts">
+  // ⚠ EVERY RANGE, CURVE, UNIT **AND LABEL** IS BOUND TO THE DEF (`paramSpec`),
+  // NEVER RE-TYPED — the #1746 / featurecv treatment, paid rather than deferred
+  // because promotion is what makes the divergence user-visible.
+  //
+  // All three of this card's numeric props AGREED with the def; ONE label did
+  // not:
+  //
+  //     decimate   def 'Dec'   card 'Decimate'
+  //
+  // It sat in `VOCABULARY_DEBT` (card-def-debt.ts), and a face PR IS that
+  // ledger's release condition: `ModuleShell` renders the dock full view
+  // straight off the `ParamDef`, so shipping the face without binding labels
+  // would have left the dock calling this control `Dec` and the card calling it
+  // `Decimate`, with nobody reviewing the rename. The entry is DELETED, not
+  // re-worded (CLAUDE.md: when debt is paid, delete the mechanism). The DEF
+  // took the CARD's wording — `Decimate` is unambiguous where `Dec` could be
+  // decay — so NO PIXEL MOVED on this card and nothing was renamed for a user.
   import type { NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import { destroyDef } from '$lib/audio/modules/destroy';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
-  import { cardParams, portsFromDef } from './card-kit';
+  import { cardParams, paramSpec, portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
-  const { set, live } = cardParams(destroyDef, () => id, () => node);
+  const { paramVal, set, live } = cardParams(destroyDef, () => id, () => node);
 
-  let decimate = $derived(node?.params.decimate ?? destroyDef.params[0]!.defaultValue);
-  let bits     = $derived(node?.params.bits     ?? destroyDef.params[1]!.defaultValue);
-  let wet      = $derived(node?.params.wet      ?? destroyDef.params[2]!.defaultValue);
+  /** THE ONE COPY of every number, curve, unit and label this card paints. */
+  const P = {
+    decimate: paramSpec(destroyDef, 'decimate'),
+    bits: paramSpec(destroyDef, 'bits'),
+    wet: paramSpec(destroyDef, 'wet'),
+  };
 
+  let decimate = $derived(paramVal('decimate'));
+  let bits = $derived(paramVal('bits'));
+  let wet = $derived(paramVal('wet'));
 
   const inputs = portsFromDef(destroyDef.inputs);
   const outputs = portsFromDef(destroyDef.outputs, { audio: 'OUT' });
@@ -26,9 +49,9 @@
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="fader-row">
-      <Fader value={decimate} min={1}  max={64} defaultValue={1}  label="Decimate" curve="linear" onchange={set('decimate')} moduleId={id} paramId="decimate" readLive={live('decimate')} />
-      <Fader value={bits}     min={1}  max={16} defaultValue={16} label="Bits"     curve="linear" onchange={set('bits')} moduleId={id} paramId="bits"     readLive={live('bits')} />
-      <Fader value={wet}      min={0}  max={1}  defaultValue={1}  label="Wet"      curve="linear" onchange={set('wet')} moduleId={id} paramId="wet"      readLive={live('wet')} />
+      <Fader value={decimate} min={P.decimate.min} max={P.decimate.max} defaultValue={P.decimate.defaultValue} label={P.decimate.label} units={P.decimate.units} curve={P.decimate.curve} onchange={set('decimate')} moduleId={id} paramId="decimate" readLive={live('decimate')} />
+      <Fader value={bits} min={P.bits.min} max={P.bits.max} defaultValue={P.bits.defaultValue} label={P.bits.label} units={P.bits.units} curve={P.bits.curve} onchange={set('bits')} moduleId={id} paramId="bits" readLive={live('bits')} />
+      <Fader value={wet} min={P.wet.min} max={P.wet.max} defaultValue={P.wet.defaultValue} label={P.wet.label} units={P.wet.units} curve={P.wet.curve} onchange={set('wet')} moduleId={id} paramId="wet" readLive={live('wet')} />
     </div>
   </PatchPanel>
 </div>

@@ -1299,6 +1299,70 @@ dry. Measure the join before ranking.
 card), but re-read it after the DSP fix — its expectations sit downstream of the
 very off-by-one above.
 
+#### BUILT — 2026-08-16, PR #1766 (#1716, #1764, #1765)
+
+Everything below was measured against the SHIPPED compiled wasm and is
+re-derived on every run by `art/scenarios/destroy/face-audit.test.ts`. Recorded
+here because two of the entries above turned out to be WRONG, and the entry
+that was wrong is more useful to a later reader than the ones that were right.
+
+**#1716 REPRODUCED and is fixed.** The hold-length table above is confirmed
+exactly. One correction to its root-cause sentence: the smoother's shortfall is
+not merely asymptotic, it is a float32 **STALL** — `y += 0.001·(x−y)` stops
+changing `y` once the increment falls under half an ULP, leaving it **≈ 4.8e-4**
+short at `d = 8` and staying there for the rest of the render. `int(d + 0.5)`
+absorbs ±0.5 in either direction; verified at 1.4→1, 1.6→2, 2.49→2, 2.51→3.
+
+**⚠ THE JOIN THIS ENTRY PROPOSED DOES NOT EXIST, and the entry told the right
+person to check.** *"The number of distinct output levels a player actually
+hears is a function of BITS **and** DECIMATE together"* is FALSE. Measured, the
+level census is a function of **BITS alone**: exactly 9 at 4 bits and 5 at 3
+bits, at DECIMATE 1, 2, 4, 8, 16 **and** 64. Decimation RE-USES grid cells
+rather than removing them. What makes the prediction plausible is real but is an
+artefact of the WINDOW: at 8 bits the census does read 129 / 95 / 47 as DECIMATE
+climbs, because a 0.3 s tail holds only 225 samples at DECIMATE 64 and cannot
+visit 129 cells. It vanishes at depths whose grid the window can fill, which is
+why the assertion is stated at 4/3/2 bits.
+
+*The general lesson, since it will recur:* **a census over a finite window
+measures the window as much as the cascade.** Ask what the sample count is
+before reading a count as a property.
+
+**The join the face ships instead is the DATA RATE** — `bits × effective rate`,
+kbit/s. A genuine two-dial product (768 at the defaults, 24 at DECIMATE 8 /
+BITS 4) and the figure of merit a player recognises.
+
+**Three findings this entry did not predict:**
+
+* **BITS has a DEAD ZONE and it is a CLIFF.** Mid-tread quantiser ⇒ anything
+  under half a step rounds to exactly zero, i.e. below `−6.02 × bits` dBFS. At 1
+  bit a source 1.2× over the threshold leaves at −4.3 dBFS and one at 0.98×
+  leaves at −99.0. The shipped doc said *"1 bit is near square-wave
+  destruction"*, true only above −6 dBFS.
+* **A level meter is BLIND to DECIMATE** — 0.12 dB across the whole travel on
+  broadband, 0.00 dB on a sine, against 99.2 dB of error-vs-dry. That decided
+  the glyph (`scope`, not the FX-family `meter`) on a measurement.
+* **A card/def label divergence** (`Decimate` vs `Dec`), already sitting in
+  `VOCABULARY_DEBT` and paid here.
+
+**⚠ AND PROMOTING IT EXHAUSTED A FIXTURE (#1765) — the #1689 hazard, one step
+worse.** `destroy` was the LAST accepted candidate in
+`e2e/tests/_face-fixtures.ts`'s `UNMIGRATED_CANDIDATES`, so promotion takes the
+legacy-fallback fixture to zero and the IIFE throws **at module load**, before
+any spec runs. The replacement then exposed a second, unwritten requirement: the
+operability leg drives `.fader-wrap .track`, so the fixture must mount a
+**Fader**, and the first candidate tried (`moog902`) draws knobs and failed as a
+30 s timeout. Both are now checked predicates rather than prose. **Any later
+queue item that promotes a module must re-read that file, not just grep for its
+own module name.**
+
+**Instrument controls worth carrying to Q19+:** the `wet` dry-leak trap named
+above is real (−89.8 dB measured) and is kept as a permanent test leg; so is the
+**1000 Hz source** trap, which is NOT in the entry above and cost a cycle here —
+1000 Hz is exactly 48 samples/period at 48 kHz, so it visits only 25 distinct
+magnitudes and reports "bit reduction does nothing" at 16, 12 and 8 bits alike.
+Use C4 (183.47 samples/period) for anything counting levels.
+
 ### Q19 · `analogLogicMaths` — the CONTINUOUS logic block (§9's verdict, CORRECTED)
 
 **Merit: YES on the readouts — a correction to §9, which rejected it on param

@@ -1233,6 +1233,58 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // `units`, no dead knob, and no FALSE value in the shipped docs — three
   // OMISSIONS, all now written and all now printed by the face.
   'illogic',
+
+  // FACE BATCH 4 · destroy (2026-08-16) — the bitcrusher, and the entry whose
+  // merit claim was A NUMBER: the queue (Q18) deferred it twice on the grounds
+  // that "the decimator's effective sample rate and bit depth are genuinely
+  // unprintable by a 0..1 dial", which is a faceplate argument that is only worth
+  // anything if the numbers are TRUE. They were not.
+  //
+  // ⚠ IT SHIPPED WITH ITS HEADLINE NUMBER WRONG AT EVERY DIAL POSITION (#1716),
+  // and that is fixed HERE rather than referenced: `packages/dsp/src/destroy.dsp`
+  // TRUNCATED a `si.smoo`-ed slider (`ba.period(int(d))`). A one-pole smoother
+  // stalls just BELOW its target in float32 — measured ≈ 4.8e-4 short at d = 8,
+  // which is the update underflowing half an ULP, not slow convergence — so every
+  // integer position resolved one step low. Measured on the shipping wasm, hold
+  // length by DECIMATE, BEFORE → AFTER `int(d + 0.5)`:
+  //
+  //     DECIMATE     2     4     8    16    32    64
+  //     before       1     3     7    15    31    63     ← DECIMATE 2 was a
+  //     after        2     4     8    16    32    64        bit-exact NO-OP
+  //
+  // The declared range, the `paramTarget`, the `cvScale` and the docs were all
+  // correct, so contract-lock, module-docs-lint and per-module-per-port were all
+  // green: the defect was in the VALUE, and the only instrument that could see it
+  // renders the module. It moves the ART baseline, reviewed as TIMBRAL.
+  //
+  // ⚠ AND THE QUEUE'S PROPOSED STRONGEST READOUT DOES NOT EXIST. §Q18 asked for a
+  // JOIN — "the number of distinct output levels is a function of BITS and
+  // DECIMATE together (a held sample is quantised once)" — and told this branch to
+  // measure it before ranking. Measured: the level census is a function of BITS
+  // ALONE (exactly 9 at 4 bits and 5 at 3 bits, at DECIMATE 1, 2, 4, 8, 16 AND
+  // 64). Decimation re-uses grid cells, it does not remove them; the apparent
+  // thinning at high DECIMATE is sampling exhaustion of a finite window, and it
+  // vanishes at low bit depths where the grid is small enough to fill. The join
+  // the face ships instead is the DATA RATE (bits × effective rate, kbit/s),
+  // which is a genuine two-dial product and the figure of merit a player knows.
+  //
+  // ⚠ ITS GLYPH IS A TRACE ON A MEASUREMENT, NOT A HOUSE STYLE. A level meter is
+  // INVARIANT TO THIS MODULE'S PRIMARY CONTROL: across DECIMATE's entire travel
+  // the output RMS moves 0.12 dB on broadband noise and 0.00 dB on a sine, while
+  // the error-vs-dry over the same travel moves 99.2 dB. Half the FX family
+  // declares `meter`; here it would have painted a dead indicator over the dial a
+  // player is turning.
+  //
+  // THE OTHER TWO THINGS THE AUDIT FOUND, both OMISSIONS rather than faults, both
+  // now printed by the face and written into the docs: the quantiser has a DEAD
+  // ZONE that is a cliff (at 1 bit a source 1.2× over −6.0 dBFS leaves at −4.3
+  // dBFS and one at 0.98× leaves at −99.0), and WET's own smoother never closes,
+  // so a residual dry path survives 89.8 dB down at WET 1 — inaudible, and the
+  // reason nobody could measure this module: output samples inside a held plateau
+  // are never bit-identical, so a bit-equality census reports "decimation does
+  // nothing" and a distinct-value census reports "bit reduction does nothing".
+  // Both are recorded as PERMANENT negative controls on the audit's instrument.
+  'destroy',
 ]);
 
 /**
