@@ -93,6 +93,22 @@ async function setParam(page: Page, nodeId: string, key: string, value: number):
 const heroReadout = (dock: Locator, valueId: string): Locator =>
   dock.locator(`[data-hero-readout="${valueId}"] dd`);
 
+/**
+ * Every readout the hero ACTUALLY PAINTED, read off the rendered faceplate.
+ *
+ * ⚠ DERIVED FROM THE ARTIFACT, not from a list — so a fifth readout enrols
+ * itself in the distinctness clause below and a readout that silently stopped
+ * rendering shrinks the set rather than being skipped. (The def is deliberately
+ * NOT imported here: `$lib/audio/modules/featurecv` pulls its worklet in through
+ * a `?url` import that node cannot resolve outside vite, which is why every
+ * other face spec imports the pure model and never the def.)
+ */
+async function paintedHeroReadouts(dock: Locator): Promise<string[]> {
+  return dock.locator('[data-hero-readout]').evaluateAll((els) =>
+    els.map((el) => el.getAttribute('data-hero-readout') ?? '').filter(Boolean),
+  );
+}
+
 /** The maps panel — rendered OUTSIDE the ModuleShell subtree (DockFullView owns
  *  the `.page.has-sidebar` grid), so it is scoped to the dock view. */
 const mapsPanel = (page: Page): Locator =>
@@ -133,14 +149,25 @@ test.describe('featurecv face — the numbers no dial prints, and the picture th
     await expect(heroReadout(dock, 'featurecv-thresh')).toHaveText(featurecvThreshText(at()));
     await expect(heroReadout(dock, 'featurecv-max-rate')).toHaveText(featurecvMaxRateText(at()));
 
-    // 2 · THE PROPERTY A KNOB-RELABELLED READOUT CANNOT HAVE. Four readouts,
-    // four different strings, none of them any dial's printed value.
-    const texts = await Promise.all(
-      ['featurecv-idle', 'featurecv-probe', 'featurecv-thresh', 'featurecv-max-rate'].map((v) =>
-        heroReadout(dock, v).textContent(),
-      ),
+    // 2 · THE PROPERTY A KNOB-RELABELLED READOUT CANNOT HAVE: every hero
+    // readout prints a DIFFERENT string, and none of them is any dial's printed
+    // value. The roster is read off the RENDERED faceplate, so a fifth readout
+    // enrols itself here and a readout that stopped painting shrinks the set
+    // rather than being skipped.
+    const painted = await paintedHeroReadouts(dock);
+    expect(painted, 'the hero paints its declared readouts').toEqual(
+      expect.arrayContaining([
+        'featurecv-idle',
+        'featurecv-probe',
+        'featurecv-thresh',
+        'featurecv-max-rate',
+      ]),
     );
-    expect(new Set(texts).size, `four distinct readouts, got ${texts.join(' / ')}`).toBe(4);
+    const texts = await Promise.all(painted.map((v) => heroReadout(dock, v).textContent()));
+    expect(
+      new Set(texts).size,
+      `every hero readout must be distinct, got ${texts.join(' / ')}`,
+    ).toBe(painted.length);
 
     // 3 · GAIN MOVES THE PROBE AND NOT THE IDLE LEVEL. This is the two-probe
     // pair's whole argument, at the DOM: a trim on silence is silence.
