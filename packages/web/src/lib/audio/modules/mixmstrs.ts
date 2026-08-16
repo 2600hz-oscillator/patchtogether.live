@@ -296,7 +296,7 @@ export const mixmstrsDef: AudioModuleDef = {
       ...MIXMSTRS_CHANNELS.map((c) => `ch${c}_ratio`),
     ],
 
-    // FIVE bands, and FIVE is a hard ceiling this module cannot be allowed to
+    // FOUR bands, under a ceiling this module cannot be allowed to
     // cross. At `DOCK_TAB_MIN_BANDS = 7` the dock becomes a TAB RAIL and
     // renders exactly one band at a time — which on a mixer destroys the single
     // thing the surface exists for, letting you balance eight faders against
@@ -309,28 +309,53 @@ export const mixmstrsDef: AudioModuleDef = {
     //
     // Every cluster holds exactly `MIXMSTRS_CHANNELS.length` cells in strip
     // order, so column N of every cluster is channel N and the page reads as a
-    // CONSOLE GRID — rows are functions, columns are channels. That alignment
-    // is what the layout buys back for the channel strip it gives up, and it is
-    // why the EQ is three clusters of eight rather than one flat band of
-    // twenty-four (`.page-controls` is flex-wrap; a 24-cell row wraps mid-bank
-    // and the columns stop lining up).
+    // CONSOLE GRID — rows are functions, columns are channels. That alignment is
+    // the whole layout, and it is why the EQ is three clusters of eight rather
+    // than one flat band of twenty-four (`.page-controls` is flex-wrap; a
+    // 24-cell row wraps mid-bank and the columns stop lining up).
     //
-    // ⚠ `pages` DISAGREES WITH SIGNAL ORDER IN EXACTLY ONE PLACE, deliberately.
-    // A channel runs EQ → comp → fader → send tap, so signal order would be
-    // eq, dynamics, levels, sends, returns. `levels` is hoisted to first
-    // because the dock capture and the 720p fold both see roughly the top
-    // 425 px, and on a console the faders are what must be there. Every other
-    // band is in the DSP's own order.
+    // ⚠ THE FADER HEADS ITS OWN CHANNEL'S COLUMN — owner review of #1738:
+    // *"the faders need to be above the 8 channels."* The first draft put the
+    // eight faders in a `levels` band of their own ABOVE a separate `eq` band,
+    // which is "above" in reading order but not in COLUMN order: two bands are
+    // two independently-laid-out rows, so fader N did not sit over EQ N and the
+    // narrower band did not line up with the grid under it. Merging them makes
+    // one band whose four clusters are `level / low / mid / high`, so column N
+    // is channel N all the way down and a column reads as an actual CHANNEL
+    // STRIP — fader, then its three tone controls.
+    //
+    // That is a CLUSTER merge, not a page merge in disguise: the type's own rule
+    // is "reach for a PAGE when the controls are a different IDEA; a CLUSTER
+    // when they are the same idea twice", and a channel's level and its tone are
+    // one idea — the strip — eight times over.
+    //
+    // ⚠ AND IT COSTS THE RANKING NOTHING. `order` is the PRIORITY ranking (it
+    // decides which controls a LANE TIER paints as a subset); `pages` is the
+    // DOCK's arrangement, which renders everything. They are separate fields the
+    // skill explicitly invites to disagree, and every assertion behind the SCOPE
+    // axis reads `order` / `laneOrder` — never `pages`. So the eleven bus-scoped
+    // controls still take every lane rank and no channel is privileged, with
+    // this layout or the previous one.
+    //
+    // ⚠ `pages` STILL DISAGREES WITH SIGNAL ORDER IN EXACTLY ONE PLACE. A
+    // channel runs EQ → comp → fader → send tap, so signal order would put the
+    // fader after the EQ inside this band. It leads instead, because the dock
+    // capture and the 720p fold both see roughly the top 425 px and on a console
+    // the faders are what must be there. Every other band is in the DSP's order.
     pages: [
-      { id: 'levels', label: 'levels',
-        controls: ['master_volume', ...MIXMSTRS_CHANNELS.map((c) => `ch${c}_volume`)] },
-      { id: 'eq', label: 'eq',
+      { id: 'channels', label: 'channels',
         controls: [
+          'master_volume',
+          ...MIXMSTRS_CHANNELS.map((c) => `ch${c}_volume`),
           ...MIXMSTRS_CHANNELS.map((c) => `ch${c}_low`),
           ...MIXMSTRS_CHANNELS.map((c) => `ch${c}_mid`),
           ...MIXMSTRS_CHANNELS.map((c) => `ch${c}_high`),
         ],
+        // `master_volume` is claimed by the band (which is what lets the hero
+        // MOVE it) but belongs to no cluster — it is not one of the eight, and
+        // the hero removes it before this band renders.
         clusters: [
+          { label: 'level', controls: MIXMSTRS_CHANNELS.map((c) => `ch${c}_volume`) },
           { label: 'low', controls: MIXMSTRS_CHANNELS.map((c) => `ch${c}_low`) },
           { label: 'mid', controls: MIXMSTRS_CHANNELS.map((c) => `ch${c}_mid`) },
           { label: 'high', controls: MIXMSTRS_CHANNELS.map((c) => `ch${c}_high`) },

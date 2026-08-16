@@ -169,6 +169,66 @@ describe('mixmstrs face — the SCOPE ranking, asserted from the live def', () =
     ).toEqual([]);
   });
 
+  it('THE CONSOLE GRID: every cluster is one cell per channel, in strip order', () => {
+    // The owner's review note — *"the faders need to be above the 8 channels"* —
+    // is a COLUMN property, not a reading-order one: fader N must sit over EQ N.
+    // That only holds while every cluster in a channel band has exactly one
+    // control per channel in the same order, so a cluster that lost a member
+    // (or gained a stray) would silently stagger the grid by one column with no
+    // pixel gate able to say why.
+    //
+    // Derived on both sides: the expected membership is built from
+    // `MIXMSTRS_CHANNELS` and the actual is read off the live `face.pages`.
+    const channelBands = (FACE.pages ?? []).filter((p) =>
+      (p.clusters ?? []).some((c) => c.controls.some(isChannelScoped)),
+    );
+    expect(channelBands.length, 'no band carries a per-channel cluster — the grid is gone').toBeGreaterThan(0);
+
+    // ⚠ THE PROPERTY IS ABOUT THE LEADING RUN, NOT THE WHOLE CLUSTER, and the
+    // first draft of this assertion got that wrong — it demanded every cell be
+    // per-channel and went red on `sends`, whose two clusters each end with
+    // their bus's own `send{R}Pre`. That trailing cell is correct (a PRE/POST
+    // switch belongs with the bus it re-taps) and it does NOT stagger anything:
+    // it comes AFTER columns 1..8. What would stagger the grid is a non-channel
+    // cell BEFORE or INSIDE the run, so that is what is refused.
+    const problems: string[] = [];
+    for (const band of channelBands) {
+      for (const cluster of band.clusters ?? []) {
+        if (!cluster.controls.some(isChannelScoped)) continue;
+        const lead = cluster.controls.slice(0, MIXMSTRS_CHANNELS.length);
+        const tail = cluster.controls.slice(MIXMSTRS_CHANNELS.length);
+        const channels = lead.map((k) => {
+          const m = /^ch(\d+)_/.exec(k) ?? /^comp(\d+)$/.exec(k);
+          return m ? Number(m[1]) : null;
+        });
+        if (JSON.stringify(channels) !== JSON.stringify([...MIXMSTRS_CHANNELS])) {
+          problems.push(
+            `${band.id}/${cluster.label}: leading cells are [${lead.join(',')}] — columns 1..N must be ` +
+              `each channel exactly once, in strip order [${MIXMSTRS_CHANNELS.join(',')}]`,
+          );
+        }
+        // Anything after the run must be BUS-scoped. A ninth per-channel cell
+        // would mean a channel appears twice and the next row no longer aligns.
+        const strays = tail.filter(isChannelScoped);
+        if (strays.length) {
+          problems.push(`${band.id}/${cluster.label}: per-channel cell(s) after the strip run — ${strays.join(',')}`);
+        }
+      }
+    }
+    expect(problems.join('\n'), 'the console grid is staggered — column N is no longer channel N').toBe('');
+
+    // AND THE FADERS LEAD. The band that holds the volumes must hold them in its
+    // FIRST cluster, so a column reads fader → tone rather than tone → fader.
+    const levelBand = (FACE.pages ?? []).find((p) =>
+      (p.clusters ?? []).some((c) => c.controls.includes(`ch${MIXMSTRS_CHANNELS[0]}_volume`)),
+    );
+    expect(levelBand, 'no band carries the channel faders').toBeDefined();
+    expect(
+      levelBand!.clusters![0]!.controls,
+      `the fader cluster must be FIRST in '${levelBand!.id}' so it heads each channel's column`,
+    ).toEqual(MIXMSTRS_CHANNELS.map((c) => `ch${c}_volume`));
+  });
+
   it('the page count stays UNDER the tab-rail threshold, and every level is a fader', () => {
     // At DOCK_TAB_MIN_BANDS the dock shows one band at a time, which would take
     // the eight faders out of one frame — the single thing this surface exists

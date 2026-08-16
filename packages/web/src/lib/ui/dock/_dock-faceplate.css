@@ -132,6 +132,28 @@
   min-width: 0;
   width: max-content;
 }
+/* …and the same is true of a curated face whose content is genuinely NARROWER
+   than the kit. Owner review of PR #1738: *"the whole thing should be about half
+   as wide, with none of this wasted space."*
+   MEASURED, and it is this rule that produces it. The pane shrink-wraps —
+   `.dock-fullview-pane` and `.dock-faceplate` are both `flex: 0 1 auto;
+   min-width: 0`, so nothing above stretches — and `.rl-tile` is `width: 100%`,
+   so the shell simply fills whatever floor is set here. mixmstrs' widest row is
+   ONE CLUSTER OF EIGHT cells (every cluster is `MIXMSTRS_CHANNELS.length` wide
+   by construction, which is the console-grid property its face-model test
+   pins), i.e. a few hundred px against a 900 px floor. `.page-controls` is a
+   left-packed `flex-wrap` row, so the whole surplus became blank margin on the
+   right — exactly the screenshot.
+   ⚠ SCOPED BY MODULE, NOT LIFTED FOR EVERY FACE. The comment above is right
+   that 900 px IS what most curated faces need, and it is also the width the
+   half-width-split scroll behaviour is designed around — lowering it globally
+   would reflow every dock scene in the roster. `data-shell-type` is emitted by
+   `ModuleShell.svelte` on its root, so `:has()` keys this to one module the same
+   way the rule above keys to one branch. */
+.dock-faceplate .faceplate-body:has([data-shell-type='mixmstrs']) {
+  min-width: 0;
+  width: max-content;
+}
 
 .dock-faceplate .faceplate {
   position: relative;

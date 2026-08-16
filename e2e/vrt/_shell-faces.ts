@@ -498,12 +498,14 @@ export const FACES = [
   // MIXMSTRS — the full mixer, and the largest face in this roster by 1.86x
   // (91 cells against pentemelodica's 49).
   //
-  // `pages: 5` is the POST-hero-split band count. The declared `face.pages`
-  // length is 5 and the hero promotes `master_volume` out of `levels`, which
-  // leaves that band eight channel faders — non-empty, so `heroFacePlan` drops
-  // nothing and 5 is also what the dock renders. FIVE is a ceiling rather than
-  // a choice: at `DOCK_TAB_MIN_BANDS = 7` the dock becomes a tab rail and shows
-  // one band at a time, which would take the eight faders out of one frame.
+  // `pages: 4` is the POST-hero-split band count. The declared `face.pages`
+  // length is 4 and the hero promotes `master_volume` out of `channels`, which
+  // still leaves that band four clusters of eight — non-empty, so `heroFacePlan`
+  // drops nothing and 4 is also what the dock renders. (It was 5 until the owner
+  // review of #1738 merged the separate `levels` band into `channels` as its
+  // first cluster, so each fader heads its own channel's column.) The ceiling is
+  // `DOCK_TAB_MIN_BANDS = 7`, where the dock becomes a tab rail and shows one
+  // band at a time — which would take the eight faders out of one frame.
   //
   // ⚠ THE GLYPH RESOLVES, established not assumed (the #1692 finding). The def's
   // first `audio`-typed output is `masterL`, so `primaryAudioOutPortId` returns
@@ -528,7 +530,7 @@ export const FACES = [
   // 2048 (425 px of headroom) and leaves every other scene's viewport — and
   // therefore every other committed baseline — untouched. See the measurement
   // on `foldViewportFor` for why raising the shared constant is NOT a no-op.
-  { type: 'mixmstrs', pages: 5, foldHeight: 2048 },
+  { type: 'mixmstrs', pages: 4, foldHeight: 2048 },
   // THE FACEPLATE QUEUE · Q15 (COHORT 3) — the curve-morph attenuverter.
   //
   // THREE bands, all three surviving the hero split: the hero promotes `aCurve`
