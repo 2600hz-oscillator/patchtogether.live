@@ -175,7 +175,7 @@ backdraft in chroma cv param=chroma cvScale=linear
 backdraft in darken video
 backdraft in darken_cv cv param=darken cvScale=linear
 backdraft in delay cv param=delay cvScale=linear
-backdraft in delay_clock cv param=delayClock
+backdraft in delay_clock cv param=delayClock edge=trigger
 backdraft in drive cv param=drive cvScale=linear
 backdraft in feedback cv param=feedback cvScale=linear
 backdraft in g cv param=g cvScale=linear
@@ -184,19 +184,19 @@ backdraft in in_b video
 backdraft in lighten video
 backdraft in lighten_cv cv param=lighten cvScale=linear
 backdraft in luma cv param=luma cvScale=linear
-backdraft in mirror_x_gate cv param=mirrorXGate
-backdraft in mirror_y_gate cv param=mirrorYGate
+backdraft in mirror_x_gate cv param=mirrorXGate edge=trigger
+backdraft in mirror_y_gate cv param=mirrorYGate edge=trigger
 backdraft in mix cv param=mix cvScale=linear
 backdraft in offsetx cv param=offsetX cvScale=linear
 backdraft in offsety cv param=offsetY cvScale=linear
 backdraft in phosphor cv param=phosphor cvScale=linear
 backdraft in pixelate cv param=pixelate cvScale=linear
-backdraft in pure_geo_gate cv param=pureGeoGate
+backdraft in pure_geo_gate cv param=pureGeoGate edge=trigger
 backdraft in r cv param=r cvScale=linear
 backdraft in room cv param=room cvScale=linear
 backdraft in rotate cv param=rotate cvScale=linear
-backdraft in shape_gate cv param=shapeGate
-backdraft in tv_gate cv param=tvGate
+backdraft in shape_gate cv param=shapeGate edge=trigger
+backdraft in tv_gate cv param=tvGate edge=trigger
 backdraft in zoom cv param=zoom cvScale=linear
 backdraft out out video
 backdraft param b -1..2 linear default=1

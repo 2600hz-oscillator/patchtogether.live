@@ -415,6 +415,67 @@ export interface ParamDef {
 
 export type ParamSchema = Readonly<ParamDef[]>;
 
+// ── PARAMS WITH NO USER CONTROL (#1726) ─────────────────────────────────────
+//
+// Some `ParamDef`s exist so the graph has somewhere to WRITE, not so a player
+// has something to TURN: the synthetic gate params a `paramTarget` CV bridge
+// pushes raw 0..1 swings into, and the determinism toggles a VRT capture flips.
+// `backdraft` has seven. Until now this was said only in PROSE — six separate
+// `// hidden — no card knob` comments on the def, which every gate is blind to
+// — so the shell's face rules had no way to know, and would have demanded an
+// interactive rotary over a raw gate swing for each of them (they all declare
+// `curve: 'linear'`, so `looksLikeToggle` cannot even see them as switches).
+//
+// THIS IS A DECLARATION, NOT AN EXEMPTION LIST. The distinction is enforced by
+// shape, not by discipline:
+//
+//   * `why` is REQUIRED BY THE TYPE, so `tsc` refuses the undeclared form
+//     before any test runs, and there is no "just this once" spelling.
+//   * `writer` is ANCHORED TO THE DEF'S OWN PORTS IN BOTH DIRECTIONS —
+//     'cv-port' asserts a port targeting the param EXISTS, 'internal' asserts
+//     one does NOT. Neither arm is unfalsifiable: rename the port and the
+//     'cv-port' entry reddens; ADD a port and the 'internal' entry reddens and
+//     gets re-read by whoever added it.
+//   * `param` must name a live `ParamDef` of the same def, so an entry that
+//     outlives its subject is RED rather than quietly inert.
+//
+// It lives on the DEF, not on `face`, for two reasons. It is true of the
+// LEGACY card too (that is what the def's own comments were already saying),
+// and `face` is unreachable for exactly the modules that need this: authoring a
+// `face` IS promotion to STRICT_FACES, so a `face`-nested field could not have
+// been adopted by anything without also building that module a full faceplate.
+// Like `face`, it is hash-transparent (HASH_TRANSPARENT_PROPS in
+// scripts/attest-code-basis.ts): it is UI curation and reaches no GPU / audio /
+// relay code, so a video def in the WebGL attest basis can declare it for free.
+
+/** One param this module deliberately gives the player no control over. */
+export interface NoUserControlParam {
+  /** The `ParamDef.id`. Must name a live param of THIS def — anchored. */
+  param: string;
+  /**
+   * WHO writes it instead, checked against the def's OWN ports:
+   *   'cv-port'  — an input `PortDef` declares `paramTarget: <param>`. The
+   *                usual case: a gate/clock bridge writing a raw swing the
+   *                module edge-detects.
+   *   'internal' — NOTHING on the patch surface targets it (a determinism or
+   *                harness toggle). Asserted to have no such port, so the day
+   *                one is added this entry stops being true and says so.
+   */
+  writer: 'cv-port' | 'internal';
+  /** WHY a player never sets it, naming what does instead. Required by the
+   *  type; the lint additionally refuses a one-word placeholder. */
+  why: string;
+}
+
+/** The def shape the no-user-control helpers read. Structural, so audio, video
+ *  and meta defs all satisfy it without a common base class. */
+export interface NoUserControlDefLike {
+  type?: string;
+  params?: readonly ParamDef[];
+  inputs?: readonly PortDef[];
+  noUserControl?: readonly NoUserControlParam[];
+}
+
 // ---------------- Living docs (contract-pinned documentation) ----------------
 
 /**

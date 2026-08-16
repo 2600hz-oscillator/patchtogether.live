@@ -114,6 +114,18 @@ export interface ModuleSpec {
    * covers both shapes with no branch.
    */
   faceAnnotations?: { title: number; pageHint: number; bandHints: number };
+  /**
+   * #1726 — the param ids this def declares as having NO USER CONTROL (a
+   * synthetic gate param a `paramTarget` CV bridge writes; a determinism
+   * toggle). Emitted only when the def declares any, so every existing spec
+   * JSON is byte-identical.
+   *
+   * PUBLISHED because `faces-parity` derives "one interactive cell per param"
+   * from `spec.params`, and a declared param must render ZERO. Without this the
+   * browser-free lint and its DOM twin would disagree the day a video face
+   * lands, and the DOM one is the authoritative half.
+   */
+  noUserControl?: string[];
   /** True when the type is in STRICT_FACES (a MIGRATED curated face) — the
    *  registry key the faces-parity e2e enumerates, so every future promoted
    *  module auto-enrolls in the dock render-parity sweep. Emitted only when
@@ -201,6 +213,9 @@ export function getAllModuleSpecs(): ModuleSpec[] {
       const controlFamilies: string[] | undefined =
         rawFamilies && rawFamilies.length ? rawFamilies.map((f) => f.id) : undefined;
       const strictFace = STRICT_FACES.has(def.type as string);
+      const rawNoControl = (def as { noUserControl?: readonly { param: string }[] }).noUserControl;
+      const noUserControl: string[] | undefined =
+        rawNoControl && rawNoControl.length ? rawNoControl.map((e) => e.param) : undefined;
       // PF-20 — the DECLARED sidebar blocks (kind + label only: the sweep asks
       // "did every declared block paint", never "what is inside it").
       const rawSidebar = (def as { face?: { sidebar?: readonly { kind: string; label: string }[] } })
@@ -239,6 +254,7 @@ export function getAllModuleSpecs(): ModuleSpec[] {
         ...(controlFamilies ? { controlFamilies } : {}),
         ...(faceSidebar ? { faceSidebar } : {}),
         ...(faceAnnotations ? { faceAnnotations } : {}),
+        ...(noUserControl ? { noUserControl } : {}),
         ...(strictFace ? { strictFace } : {}),
         hasAudioOutput: hasOutputType(outputs, 'audio'),
         hasCvOutput: hasOutputType(outputs, 'cv'),

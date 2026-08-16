@@ -120,6 +120,9 @@ interface SpecShape {
   type: string;
   params: SpecParam[];
   controlFamilies?: string[];
+  /** #1726 — param ids the def declares as having NO user control. They must
+   *  render ZERO cells; every other param exactly one. */
+  noUserControl?: string[];
   strictFace?: boolean;
 }
 
@@ -1131,12 +1134,29 @@ test.describe('faces render-parity: every STRICT_FACES dock full-view carries th
           })),
         )
       ).flatMap(idsCoveredBy);
-      const defIds = spec.params.map((p) => p.id);
+      // #1726 — a param the def DECLARES has no user control is not a lost
+      // control; it is a control that must not exist. So the identity is taken
+      // over the params that DO owe a cell, and the declared ones are asserted
+      // ABSENT immediately below rather than dropped from the subject — an
+      // exclusion with no matching assertion is how a suppression mechanism
+      // turns into a hiding place.
+      const noControl = new Set(spec.noUserControl ?? []);
+      const defIds = spec.params.map((p) => p.id).filter((id) => !noControl.has(id));
       expect(
         [...domIds].sort(),
         `${type}: dock full-view renders EXACTLY one interactive control per def param ` +
           `(missing = a lost control, duplicate/unknown = an unbacked extra)`,
       ).toEqual([...defIds].sort());
+
+      // The inverted half: ZERO cells for a declared param. This is what makes
+      // the declaration a claim about the RENDERER rather than a gate exemption
+      // — it can fail, and it fails loudly, in the direction a mis-declaration
+      // would actually break.
+      expect(
+        [...domIds].filter((id) => noControl.has(id)),
+        `${type}: param(s) declared noUserControl still rendered an interactive cell ` +
+          `— the declaration says a player never sets them`,
+      ).toEqual([]);
 
       // ── 2. FAMILY CELLS, no dead statics, and NO INERT CELLS. ──
       await expect(

@@ -193,15 +193,28 @@ directions, and make one of those a **permanent leg** of the test.
 
 ## A CARD can silently disagree with its DEF — and a def-reading gate is blind to it
 
-A def constrained a control to ±0.2; the card passed literal `xMin={-1} xMax={1}`.
-The pads *wrote values the contract forbids* and the model silently clamped them.
-`contract-lock`, `module-docs-lint` and the range assertions **all read the DEF**, so
-the entire gate set was blind and the work was honestly reported as "ranges
-constrained ✓" while the UI was still ±1.
+**The case (backdraft, 2026-07-28) is FIXED — read it as the reason for the rule,
+not as an open defect to go find.** A def constrained a control to ±0.2; the card
+passed literal `xMin={-1} xMax={1}`. The pads *wrote values the contract forbids*
+and the model silently clamped them. `contract-lock`, `module-docs-lint` and the
+range assertions **all read the DEF**, so the entire gate set was blind and the work
+was honestly reported as "ranges constrained ✓" while the UI was still ±1.
+
+Both pads now pass the def's own exported symbols (`BACKDRAFT_CAM_TILT_RANGE` /
+`BACKDRAFT_CAM_POS_RANGE`, imported from the def alongside `backdraftDef`), and two
+SOURCE-level gates hold the line: `card-range-source.test.ts` (backdraft is in
+`RANGE_BOUND_CARDS`) and `card-control-ranges.test.ts`, which rejects a bare numeric
+range prop on that file. It is not decoration — **#1223 re-introduced numeric
+literals in one of that card's Fader range props and the gate caught it**, as did a
+comment that merely *spelled the literal out* (the gate greps source, so it cannot
+tell code from comment).
 
 - **A control's range must come from ONE place** — export it from the def and import
   it in the card; never re-type numbers in the card.
 - **Guard it at the SOURCE level**, since no runtime gate sees it.
+- ⚠ Both gates are **opt-in per card** (`RANGE_BOUND_CARDS`), and every card outside
+  that set is unchecked. Bring a card in when you touch it — that blind spot, not
+  backdraft, is where this class lives now.
 - The general rule: **a gate that reads only one side of a two-sided contract proves
   nothing about the other side.**
 
