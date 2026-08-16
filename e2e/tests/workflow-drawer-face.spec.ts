@@ -40,6 +40,22 @@
 //     asserts the menu OPENS and is frame-anchored, and deliberately does not
 //     assert its grouping, because the grouping genuinely changed.
 
+// ── ATTEST: THIS FILE COSTS NOTHING, AND THAT WAS MEASURED, NOT ASSUMED ────
+//
+// "adding an e2e spec moves the collab hash" is the folk rule and it is wrong.
+// `collab-attest-lib.ts` puts only FOUR named files from `e2e/tests/` in the
+// basis wholesale (`_collab-helpers.ts`, `_helpers.ts`, `_drivers.ts`,
+// `_registry.ts`); every other spec enters by TAG. This spec carries no
+// multiplayer tag and edits none of those four, so it is out of the basis.
+// Verified rather than reasoned: `task collab:attest:check` and `task
+// webgl:attest:check` both report an existing attestation on this tree.
+//
+// ⚠ AND THE TAG TEST IS A GREP OVER THE WHOLE FILE, COMMENTS INCLUDED. An
+// earlier draft of this very comment spelled the tag in its at-sign form to
+// explain the rule, which enrolled the spec in the basis and moved the hash
+// from bb867526… to a4dd1f78… — a prose edit buying a re-attest. Name the tags
+// in prose only in the bare form, as here (collab / capacity).
+
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 import { pressFlipKey } from './_flip-key';
