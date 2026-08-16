@@ -42,6 +42,7 @@ import { describe, expect, it } from 'vitest';
 import { illogicDef, illogicMath } from '$lib/audio/modules/illogic';
 import {
   ILLOGIC_ATT_PARAM_IDS,
+  ILLOGIC_CV_RAIL,
   ILLOGIC_DIFF_SIGNS,
   ILLOGIC_LOGIC_TAPPED_INPUTS,
   ILLOGIC_NOT_INPUT,
@@ -298,7 +299,8 @@ describe('ILLOGIC audit / M3 — SUM and DIFF are UNSCALED, and DIFF ships as a 
       .toBeCloseTo(ceiling, 5);
 
     // ⚠ FOUR TIMES THE BUS CONVENTION. Neither bus is scaled by 1/n.
-    expect(ceiling).toBeGreaterThan(1);
+    expect(ceiling, 'the worst case exceeds the CV rail the buses are measured against')
+      .toBeGreaterThan(ILLOGIC_CV_RAIL);
   });
 
   it('DIFF IS A COMMON-MODE NULL AT THE SHIPPED DEFAULTS — read at the jack', async () => {
@@ -334,14 +336,14 @@ describe('ILLOGIC audit / M3 — SUM and DIFF are UNSCALED, and DIFF ships as a 
     // here is near full scale — 0.9 / 0.9 / 0.6 / 0.4 — and both buses still
     // spend a large fraction of every cycle outside the convention.
     const r = await render({ durationS: 0.5, inputs: standardInputs() });
-    const sumOut = fractionOutside(r.sum!, 1);
-    const diffOut = fractionOutside(r.diff!, 1);
+    const sumOut = fractionOutside(r.sum!, ILLOGIC_CV_RAIL);
+    const diffOut = fractionOutside(r.diff!, ILLOGIC_CV_RAIL);
     expect(sumOut, `SUM outside ±1 for ${(sumOut * 100).toFixed(1)} % of samples`).toBeGreaterThan(0.2);
     expect(diffOut, `DIFF outside ±1 for ${(diffOut * 100).toFixed(1)} % of samples`).toBeGreaterThan(0.2);
     // Every individual ATT jack, by contrast, stays inside — the over-range is
     // a property of the SUMMING, which is exactly what the readout says.
     for (const id of MIX_OUT_IDS.filter((o) => /^att\d+$/.test(o))) {
-      expect(fractionOutside(r[id]!, 1), `${id} stays on the rail`).toBe(0);
+      expect(fractionOutside(r[id]!, ILLOGIC_CV_RAIL), `${id} stays on the rail`).toBe(0);
     }
   });
 });
