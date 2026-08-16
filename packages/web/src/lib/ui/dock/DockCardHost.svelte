@@ -22,7 +22,6 @@
   //    target guard — Knob/Fader treat ctrl/meta-wheel as fine-adjust and
   //    do NOT stop propagation, so wheel events over a control are theirs,
   //    never a zoom.
-
   //
   //  * THE PROMOTED FACE (#1739). When the occupant renders its FACEPLATE
   //    (`face` — `dockRailRendersFace`, decided in Canvas so `?shell=legacy`
