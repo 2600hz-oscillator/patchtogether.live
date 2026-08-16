@@ -84,11 +84,13 @@
     laneFaceTier,
     laneBodyPlan,
     dockFullViewHeadPlan,
+    isFaceplateView,
     roleLineForDef,
     DOCK_HERO_GLYPH_W,
     PLATE_ROW_H,
     hasVideoSurface,
     type ShellDefLike,
+    type ShellView,
   } from '$lib/ui/workflow/module-shell-model';
   import {
     glyphBinding,
@@ -118,8 +120,12 @@
     id: string;
     data: {
       node: ModuleNode;
-      /** 'lane' (default) or 'dock-full' — the dock faceplate seam (P1). */
-      view?: 'lane' | 'dock-full';
+      /** Which SURFACE this shell is mounted on — 'lane' (default),
+       *  'dock-full' (a DockFullView pane) or 'drawer' (a DockCardHost rail
+       *  card, i.e. the pinned `m`/`e` tray). See `ShellView`; the drawer is
+       *  the full faceplate PLUS the lane PatchPanel, because its host has no
+       *  flip-to-RearCard of its own (#1739). */
+      view?: ShellView;
       /** Test/dock override of the LOD tier; else the getLodTier() context. */
       tier?: Tier;
       /**
@@ -134,13 +140,39 @@
   let { id, data }: Props = $props();
 
   let node = $derived(data.node);
-  let view = $derived(data.view ?? 'lane');
+  let view: ShellView = $derived(data.view ?? 'lane');
+
+  /**
+   * Is this the FULL FACEPLATE (every control, every page, dock cell sizes)?
+   *
+   * ⚠ THE ONE PLACE THE VIEW UNION IS COLLAPSED TO THAT QUESTION, and it is
+   * `view !== 'lane'` — never `view === 'dock-full'` (#1739). Every band, tier,
+   * hero and cell-size decision below is really asking "faceplate or tile?",
+   * and BOTH dock hosts answer "faceplate". A re-typed `=== 'dock-full'` at any
+   * of those ~30 sites is a silent default: the drawer would take the LANE
+   * branch and paint six of mixmstrs' ninety-one controls. `module-face-lint`
+   * anchors that to this file's source in both directions.
+   */
+  let faceplateView = $derived(isFaceplateView(view));
+
+  /**
+   * Does the JACK RAIL (`PatchPanel`, lane-rail variant) render?
+   *
+   * LANE **and** DRAWER, but not the full view — and the asymmetry is about
+   * what the HOST provides, not about how big the face is. `DockFullView` owns
+   * a better patch surface (the flip-to-`RearCard` jack field on its title
+   * bar), so down there the rail was a duplicate. `DockCardHost` has no title
+   * bar and no RearCard, so for a tray occupant this rail — and the
+   * `.card-back-panel` PatchPanel puts in the tile, which the canvas-wide rear
+   * view reveals — is the ONLY patch surface there is.
+   */
+  let jackRail = $derived(view !== 'dock-full');
 
   // LOD tier: the shared context store (falls back to the singleton when no
   // provider — e.g. a fixture/VRT mount), or an explicit override on `data`.
   const lodTierStore = getLodTier();
   let effTier: FaceTier = $derived(
-    view === 'dock-full' ? 'dock' : laneFaceTier(data.tier ?? $lodTierStore),
+    faceplateView ? 'dock' : laneFaceTier(data.tier ?? $lodTierStore),
   );
 
   function defLookup(type: string) {
@@ -239,7 +271,7 @@
   // Whether the glyph cell RENDERS in the current view/tier — the dock hero
   // always shows it; the lane obeys the fit plan. Mirrors the render branches
   // below; the live tap's lifecycle is keyed to this (mount face → mount tap).
-  let glyphShown = $derived(glyphKind !== 'none' && (view === 'dock-full' || (lanePlan?.glyph ?? true)));
+  let glyphShown = $derived(glyphKind !== 'none' && (faceplateView || (lanePlan?.glyph ?? true)));
 
   // DUAL glyph (owner spec — tidyVco): the param-derived STATIC CORE WAVEFORM
   // is the identity and renders EVERYWHERE the glyph fits; the live analyser
@@ -249,7 +281,7 @@
   // prefers the identity; two 40px-floor wells can't both fit next to the
   // knob columns — the no-clip rule).
   let dualShowsTrace = $derived(
-    binding.kind === 'dual' && (view === 'dock-full' || lanePlan?.layout === 'plate'),
+    binding.kind === 'dual' && (faceplateView || lanePlan?.layout === 'plate'),
   );
 
   // The live-audio tap: created when a live-trace glyph cell mounts, disposed
@@ -381,7 +413,7 @@
   // control (dock = all). The render-parity gates (module-face-lint unit +
   // the faces-parity e2e) pin this plan to the def's full control surface —
   // the tidyVco tune-cluster loss class can't silently recur at this seam.
-  let allDockBands = $derived(view === 'dock-full' && def ? dockFacePlan(def) : null);
+  let allDockBands = $derived(faceplateView && def ? dockFacePlan(def) : null);
 
   // PF-20 — THE HERO SPLIT. `face.hero` PROMOTES a ranked key out of its band
   // into the hero rail; it never copies it (a duplicated key would emit a
@@ -413,7 +445,7 @@
    * DOCK-ONLY, like every other `face` structure field: a 192×180 lane tile has
    * no room for a sentence, so annotating a node changes nothing in the lane.
    */
-  let annotations = $derived(view === 'dock-full' && isAnnotating(id));
+  let annotations = $derived(faceplateView && isAnnotating(id));
 
   /** PF-20 — the faceplate's TITLE + HINT rows, and BOTH are annotation prose
    *  (owner, 2026-08-02): at rest the faceplate carries NO section title and no
@@ -421,7 +453,7 @@
    *  untouched. `null` for a face that declares neither, and `null` for every
    *  face while annotations are off, so the resting card is clean. */
   let pageHeader = $derived(
-    view === 'dock-full' ? facePageHeader(def as FaceplateDefLike | undefined, annotations) : null,
+    faceplateView ? facePageHeader(def as FaceplateDefLike | undefined, annotations) : null,
   );
 
   /**
@@ -475,8 +507,13 @@
 
   /** PF-16 — the tab roster (null for a face that renders as one column), and
    *  the SAME pure answer DockFullView's rail computes. A rail without the
-   *  matching hide (or a hide without the rail) is a blank faceplate. */
-  let dockTabs = $derived(dockTabPlan(dockBands));
+   *  matching hide (or a hide without the rail) is a blank faceplate.
+   *
+   *  ⚠ `view` GOES IN (#1739). The pinned tray's host paints NO rail, so a
+   *  `'drawer'` face is never tabbed — the plan answers that, this file does not
+   *  re-test it. Passing the view rather than `null`-ing the result here is what
+   *  keeps ONE authority for "is this face tabbed". */
+  let dockTabs = $derived(dockTabPlan(dockBands, view));
 
   /**
    * PF-21 — the ROW PLAN: which section bands share a horizontal row.
@@ -627,13 +664,19 @@
   }
 </script>
 
+<!-- `dock-full` is the FACEPLATE-LAYOUT class, and it is now stamped on BOTH
+     dock surfaces (#1739) — its CSS is about "this is the full faceplate, not a
+     192×180 tile", which is equally true in the pinned tray. `data-shell-view`
+     is what distinguishes the two HOSTS, for the gates and for any rule that
+     genuinely needs one and not the other. -->
 <div
   class="module-shell rl-tile"
-  class:dock-full={view === 'dock-full'}
+  class:dock-full={faceplateView}
   data-testid="module-shell"
   data-shell-node={id}
   data-shell-type={node.type}
   data-shell-tier={effTier}
+  data-shell-view={view}
   style={`--spine:${spine};--domain:${spine}`}
 >
   <span class="rl-spine" aria-hidden="true"></span>
@@ -653,7 +696,7 @@
     {#if ctl.kind === 'param'}
       {@const pd = paramDef(ctl.paramId ?? ctl.key)}
       {#if pd}
-        {@const cellKind = paramCellKind(pd, momentary, view === 'dock-full' ? 'dock' : 'lane', declaredCells)}
+        {@const cellKind = paramCellKind(pd, momentary, faceplateView ? 'dock' : 'lane', declaredCells)}
         {#if cellKind === 'momentary'}
           <!-- MOMENTARY press-pad (declared on face.momentary): fires on the
                press edge and RETURNS TO REST on release. It must never be a
@@ -663,7 +706,7 @@
             <Button
               label={pd.label}
               momentary
-              variant={view === 'dock-full' ? 'accent' : 'sm'}
+              variant={faceplateView ? 'accent' : 'sm'}
               title={`${pd.label}: hold to fire (the press edge is the hit)`}
               onGate={(high) => firePressParam(pd, high)}
               moduleId={id}
@@ -729,8 +772,8 @@
               readLive={params.live(pd.id)}
               moduleId={id}
               paramId={pd.id}
-              hero={view === 'dock-full'}
-              compact={view !== 'dock-full'}
+              hero={faceplateView}
+              compact={!faceplateView}
               cell={binding.kind === 'algorithm' && pd.id === binding.paramId && ext?.glyph
                 ? algorithmCell
                 : undefined}
@@ -759,8 +802,8 @@
               label={pd.label}
               onchange={paramWrite(pd.id)}
               paramId={pd.id}
-              hero={view === 'dock-full'}
-              compact={view !== 'dock-full'}
+              hero={faceplateView}
+              compact={!faceplateView}
             />
           </div>
         {:else if cellKind === 'xy' && xyPads.get(pd.id) && paramDef(xyPads.get(pd.id)!.y)}
@@ -798,7 +841,7 @@
               onXChange={paramWrite(pd.id)}
               onYChange={paramWrite(py.id)}
               title={pad.label ?? `${pd.label} / ${py.label}`}
-              size={view === 'dock-full' ? 96 : 64}
+              size={faceplateView ? 96 : 64}
               moduleId={id}
               xParamId={pd.id}
               yParamId={py.id}
@@ -843,7 +886,7 @@
               readLive={params.live(pd.id)}
               moduleId={id}
               paramId={pd.id}
-              hero={view === 'dock-full'}
+              hero={faceplateView}
             />
           </div>
         {:else}
@@ -865,7 +908,7 @@
               options={pd.options}
               landmarks={pd.landmarks}
               format={pd.format}
-              persistentReadout={view === 'dock-full'}
+              persistentReadout={faceplateView}
             />
           </div>
         {/if}
@@ -881,12 +924,12 @@
             value={cell.value(liveCell.n)}
             options={cell.options(liveCell.n)}
             onchange={(v) => cell.onchange(id, String(v))}
-            label={view === 'dock-full' ? cell.tag : ctl.label}
-            compact={view !== 'dock-full'}
-            hero={view === 'dock-full'}
+            label={faceplateView ? cell.tag : ctl.label}
+            compact={!faceplateView}
+            hero={faceplateView}
             testid={cellTestId(ctl)}
           />
-          {#if view === 'dock-full'}<span class="cell-cap">{ctl.label}</span>{/if}
+          {#if faceplateView}<span class="cell-cap">{ctl.label}</span>{/if}
         </div>
       {:else if cell?.kind === 'toggle'}
         <div class="kcol ms-cell-act" data-cell-kind={ctl.kind} data-cell-control="toggle" data-cell-key={ctl.key}>
@@ -908,9 +951,9 @@
              the two handlers per `momentary`, so passing both is safe. -->
         <div class="kcol ms-cell-act" data-cell-kind={ctl.kind} data-cell-control="action" data-cell-key={ctl.key}>
           <Button
-            label={view === 'dock-full' ? cell.label : '▸'}
+            label={faceplateView ? cell.label : '▸'}
             title={cell.title ?? cell.label}
-            variant={view === 'dock-full' ? 'default' : 'sm'}
+            variant={faceplateView ? 'default' : 'sm'}
             momentary={cell.mode === 'gate'}
             onTrigger={() => cell.onFire?.(id, cellEnv())}
             onGate={(high) => cell.onGate?.(id, high, cellEnv())}
@@ -926,9 +969,9 @@
               data-testid={cellTestId(ctl)}
               onchange={(e) => onCellFile(ctl.key, cell.onFile, e)}
             />
-            <span>{view === 'dock-full' ? cell.label : '⇩'}</span>
+            <span>{faceplateView ? cell.label : '⇩'}</span>
           </label>
-          {#if view === 'dock-full' && cellStatus[ctl.key]}
+          {#if faceplateView && cellStatus[ctl.key]}
             <span
               class="cell-cap"
               class:err={!!cellStatus[ctl.key]?.error}
@@ -956,7 +999,7 @@
           style={`--panel-min-w:${cell.minWidth}px`}
         >
           <Panel nodeId={id} />
-          {#if view === 'dock-full'}<span class="cell-cap">{cell.label}</span>{/if}
+          {#if faceplateView}<span class="cell-cap">{cell.label}</span>{/if}
         </div>
       {:else}
         <!-- NO registered cell spec → an explicitly INERT cell. Both gates
@@ -995,9 +1038,9 @@
       {:else if glyphKind === 'meter'}
         <VuMeter
           getLevel={tap ? tap.getLevel : undefined}
-          orientation={view === 'dock-full' ? 'horizontal' : 'vertical'}
-          length={view === 'dock-full' ? DOCK_HERO_GLYPH_W : 84}
-          thickness={view === 'dock-full' ? 16 : 12}
+          orientation={faceplateView ? 'horizontal' : 'vertical'}
+          length={faceplateView ? DOCK_HERO_GLYPH_W : 84}
+          thickness={faceplateView ? 16 : 12}
           testid="shell-glyph-meter"
         />
       {:else if glyphKind === 'envelope'}
@@ -1008,7 +1051,7 @@
           sustain={envParams?.sustain}
           release={envParams?.release}
           fluid
-          height={view === 'dock-full' ? 64 : 40}
+          height={faceplateView ? 64 : 40}
           color={spine}
           testid="shell-glyph"
         />
@@ -1025,7 +1068,7 @@
               mode="wave"
               getWaveform={liveWave ?? undefined}
               fluid
-              height={view === 'dock-full' ? 64 : 40}
+              height={faceplateView ? 64 : 40}
               color={spine}
               testid="shell-glyph-wave"
               ariaLabel="core waveform (from shape controls)"
@@ -1037,7 +1080,7 @@
                 mode="waveform"
                 getSamples={tap ? tap.getSamples : undefined}
                 fluid
-                height={view === 'dock-full' ? 64 : 40}
+                height={faceplateView ? 64 : 40}
                 color={spine}
                 testid="shell-glyph"
                 ariaLabel="live output trace"
@@ -1066,7 +1109,7 @@
           <div
             class="topo-diagram"
             style:color={spine}
-            style:height="{view === 'dock-full' ? 64 : 40}px"
+            style:height="{faceplateView ? 64 : 40}px"
           >
             <!-- The diagram component is the module's OWN, resolved through
                  the extension seam (`face.extension` → the `glyph` slot) —
@@ -1084,7 +1127,7 @@
           mode="waveform"
           getSamples={tap ? tap.getSamples : undefined}
           fluid
-          height={view === 'dock-full' ? 64 : 40}
+          height={faceplateView ? 64 : 40}
           color={spine}
           testid="shell-glyph"
         />
@@ -1094,7 +1137,7 @@
           getWaveform={liveWave ?? undefined}
           waveform={liveWave ? undefined : glyphKind === 'waveform' ? SINE_TRACE : BURST_TRACE}
           fluid
-          height={view === 'dock-full' ? 64 : 40}
+          height={faceplateView ? 64 : 40}
           color={spine}
           testid="shell-glyph"
         />
@@ -1352,20 +1395,46 @@
 
   <!-- Jack rail = PatchPanel (lane-rail variant): domain jack dots open the
        drill-down; the "⤢" more-affordance opens the dock full-view.
-       LANE ONLY. The dock full-view has its OWN, better patch surface — the
-       RearCard jack field on the flip key (DockFullView.svelte) — so down here
-       the rail was a duplicate: a second, dot-only patch affordance with its
-       EXPAND button already suppressed (onExpand is undefined at view
-       'dock-full'), eating ~23px off the faceplate's fold budget and printing a
-       "▶ out" flow label the title bar already says. -->
-  {#if view === 'lane'}
+       LANE and DRAWER, never the full view. The dock FULL VIEW has its OWN,
+       better patch surface — the RearCard jack field on the flip key
+       (DockFullView.svelte) — so down there the rail was a duplicate: a second,
+       dot-only patch affordance with its EXPAND button already suppressed
+       (onExpand is undefined at view 'dock-full'), eating ~23px off the
+       faceplate's fold budget and printing a "▶ out" flow label the title bar
+       already says.
+
+       ⚠ THE PINNED DRAWER IS THE OPPOSITE CASE, and it is why `jackRail` is
+       `view !== 'dock-full'` rather than `view === 'lane'` (#1739).
+       `DockCardHost` has NO title bar, so it has no flip chip and no RearCard.
+       This PatchPanel is therefore the tray's ONLY patch surface — both the
+       front rail AND the `.card-back-panel` the canvas-wide rear view (Tab)
+       reveals through `.rear-view .rl-tile:has(> .patch-panel-host >
+       .card-back-panel)`. Drop it and the tray loses `masterL` and `ch1L`,
+       which is the owner's ES-9 send/return rack.
+
+       ⚠ NO `sections` HERE, AND IT IS A MEASURED DELTA (#1762). This mounts
+       `groupingStrategy: 'auto'` (group by cable type), so a module whose ports
+       are all one type drills into ONE list: mixmstrs' legacy card opened on
+       `Ch1 (11) … Master (3)`, the face opens on `INPUT (101)`. Every port is
+       still reachable (here and on the back panel), so nothing is lost but the
+       grouping — and the fix is not `sections={…}` on a whim, because in
+       sectioned mode PatchPanel derives the HANDLE STACK from the sections, so
+       a section list that drops a port drops its cables. -->
+  {#if jackRail}
+    <!-- ⚠ NO EXPAND PILL IN THE DRAWER. `expand()` calls
+         `dockStore.openFullView(id)`, and the store keeps the bottom drawer and
+         the full view MUTUALLY EXCLUSIVE (pinned XOR full-view) — so the pill
+         would CLOSE the tray the user is looking at and re-open the same face in
+         a different host. That is a new interaction with new occupancy
+         semantics, not parity, so the tray keeps the affordance set it shipped
+         with and the pill stays a LANE affordance. -->
     <PatchPanel
       nodeId={id}
       inputs={ports.inputs}
       outputs={ports.outputs}
       variant="lane-rail"
       {flowLabel}
-      onExpand={expand}
+      onExpand={view === 'lane' ? expand : undefined}
       expanded={isExpanded}
     />
   {/if}

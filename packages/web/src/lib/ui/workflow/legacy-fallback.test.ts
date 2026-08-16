@@ -12,9 +12,13 @@ import {
   laneRenderKind,
   emittedTypeFor,
   isShellSwappable,
+  dockRailRendersFace,
   NON_SHELL_LANE_TYPES,
   type LaneRenderInput,
+  type DockRailRenderInput,
 } from './legacy-fallback';
+import { migrated } from './strict-faces';
+import { WORKFLOW_PINNED_MODULES } from '$lib/graph/workflow-pins';
 
 // Registry side-effect imports + resolvers, for the ANCHORING GATE below.
 // legacy-fallback.ts itself is deliberately registry-free; the anchoring
@@ -192,5 +196,76 @@ describe('NON_SHELL_LANE_TYPES is ANCHORED to the registry (#1579)', () => {
     expect(resolve('clipplayer')).toBeTruthy(); // audio
     expect(resolve('videoOut')).toBeTruthy(); // video
     expect(resolve('sticky')).toBeTruthy(); // meta
+  });
+});
+
+describe('dockRailRendersFace — the pinned tray shows the PROMOTED face (#1739)', () => {
+  // The OWNER RULING behind it: *"the `m` key tray view needs to show the new
+  // card and not the old one"*. Before this the rule did not exist at all —
+  // `DockCardHost` resolved `nodeTypes[type]` with no migration input, so the
+  // one always-on surface in the app kept painting a legacy card after its
+  // module was promoted.
+  //
+  // Three inputs, all REQUIRED, so the truth table is DERIVED rather than
+  // hand-listed: exactly the all-true row may render the face.
+  const FLAGS = ['shellFaces', 'pinned', 'migrated'] as const;
+
+  it('the face renders IFF shellFaces AND pinned AND migrated — the whole truth table', () => {
+    const rows: string[] = [];
+    for (let mask = 0; mask < 1 << FLAGS.length; mask++) {
+      const input = Object.fromEntries(
+        FLAGS.map((f, i) => [f, (mask & (1 << i)) !== 0]),
+      ) as unknown as DockRailRenderInput;
+      const expected = FLAGS.every((f) => input[f]);
+      rows.push(`${FLAGS.map((f) => `${f}=${input[f] ? 1 : 0}`).join(' ')} → ${dockRailRendersFace(input)}`);
+      expect(dockRailRendersFace(input), rows[rows.length - 1]).toBe(expected);
+    }
+    // The gate is not vacuous in either direction: the table really contains
+    // both answers.
+    expect(rows.filter((r) => r.endsWith('true'))).toHaveLength(1);
+    expect(rows.filter((r) => r.endsWith('false'))).toHaveLength((1 << FLAGS.length) - 1);
+  });
+
+  it('`?shell=legacy` keeps the tray on the LEGACY card — and that is why the three shipped drawer specs cannot see this change', () => {
+    // `workflow-dock.spec.ts` (masterL out, ch1L in) and `workflow-mode.spec.ts`
+    // ("the pinned card renders IN FULL") all drive `/rack?shell=legacy`. They
+    // pass unchanged across the promotion — and would pass just as well if the
+    // tray were completely broken on the default shell. The default-shell
+    // coverage is `e2e/tests/workflow-drawer-face.spec.ts`.
+    expect(dockRailRendersFace({ shellFaces: false, pinned: true, migrated: true })).toBe(false);
+  });
+
+  it('a USER-DOCKED promoted module keeps its legacy card — the scope is pinned-only, on purpose', () => {
+    // A docked entry still has a lane DockStubCard AND a route to DockFullView,
+    // so its face is already reachable; the pinned occupant is canvas-hidden and
+    // has neither. Widening this would flip every user-docked promoted module
+    // at once — `workflow-dock.spec.ts` docks `mixer` and asserts `.mod-card`,
+    // and `workflow-dock-composite` VRT docks `vca`. Both are promoted.
+    expect(dockRailRendersFace({ shellFaces: true, pinned: false, migrated: true })).toBe(false);
+  });
+
+  it('ANCHORED to the live roster: the drawer occupants this rule can currently reach', () => {
+    // The pinned M/E occupants are the only nodes the `pinned` arm can ever see
+    // (`c` opens a full-view PANE, not the rail). Derived from the shipped spec
+    // list rather than named here, so adding a fourth pinned module cannot make
+    // this clause quietly stale.
+    const resolveDef = (t: string) =>
+      getModuleDef(t as ModuleType) ??
+      getVideoModuleDef(t as ModuleType) ??
+      getMetaModuleDef(t as ModuleType);
+    const drawerTypes = WORKFLOW_PINNED_MODULES.filter((s) => s.surface === 'drawer').map((s) => s.type);
+    expect(drawerTypes.length, 'the drawer must have occupants for this rule to mean anything').toBeGreaterThan(0);
+    for (const type of drawerTypes) {
+      expect(resolveDef(type), `${type} must resolve to a registered def`).toBeTruthy();
+      // Whatever the roster is, the rule agrees with STRICT_FACES for it — in
+      // BOTH directions, so a promotion or a demotion moves this by itself.
+      expect(
+        dockRailRendersFace({ shellFaces: true, pinned: true, migrated: migrated(type) }),
+        `${type}: tray face must track STRICT_FACES membership`,
+      ).toBe(migrated(type));
+    }
+    // …and the population is not degenerate: mixmstrs is promoted, so at least
+    // one occupant genuinely takes the face branch today.
+    expect(migrated('mixmstrs'), 'mixmstrs is the promotion this rule was written for').toBe(true);
   });
 });

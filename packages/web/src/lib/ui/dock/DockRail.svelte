@@ -32,6 +32,11 @@
     node: ModuleNode;
     title: string;
     pinned: boolean;
+    /** #1739 — mount the PROMOTED FACEPLATE for this occupant instead of its
+     *  verbatim legacy card. Canvas evaluates `dockRailRendersFace` (which is
+     *  `shellFaces && pinned && migrated`) so the rule, its `?shell=legacy`
+     *  arm and its pinned-only scope live in ONE pure, tested place. */
+    face: boolean;
   }
 
   interface Props {
@@ -161,6 +166,7 @@
           <DockCardHost
             node={card.node}
             {nodeTypes}
+            face={card.face}
             rackSize={rackSizeByType[card.node.type]}
             scale={dockStore.scaleOf(card.node.id)}
             title={card.title}
