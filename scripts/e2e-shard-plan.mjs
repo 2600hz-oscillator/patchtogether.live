@@ -103,6 +103,19 @@ export const PENDING_FIRST_MEASUREMENT = [
       'first green main run after this merges and DELETE this entry — the gate reddens ' +
       'on a stale entry as well as a missing one.',
   },
+  {
+    spec: 'illogic-face.spec.ts',
+    why:
+      'lands 2026-08-16 with the illogic faceplate (queue Q17). No ci.yml run containing ' +
+      'it has completed, so there are no blob reports to accept a cost from. Measured ' +
+      'LOCALLY at 3.9-4.0 CPU-s for all three tests together (1.3-1.4 s + 1.2 s + 1.4 s, ' +
+      'warm server, 3x with zero spread), i.e. under the median an unmeasured spec rides ' +
+      '— so the median fallback over-books this file rather than under-booking a shard, ' +
+      'which is the safe direction of the #1600 failure. Run ' +
+      '`task e2e:timings:accept -- <run-id>` on the first green main run after this ' +
+      'merges and DELETE this entry — the gate reddens on a stale entry as well as a ' +
+      'missing one.',
+  },
 ];
 
 /** Median of a numeric array (used as the cost of an unmeasured file). */

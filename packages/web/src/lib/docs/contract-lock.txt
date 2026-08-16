@@ -1402,6 +1402,7 @@ illogic param att1_amount -1..1 linear default=1
 illogic param att2_amount -1..1 linear default=1
 illogic param att3_amount -1..1 linear default=1
 illogic param att4_amount -1..1 linear default=1
+illogic face sidebar 0 kind=custom label=routing panel=illogic-routing
 inwards meta domain=video
 inwards in density cv param=density cvScale=linear
 inwards in speed cv param=speed cvScale=linear

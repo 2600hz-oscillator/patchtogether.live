@@ -310,6 +310,34 @@ describe('resolvePushCardControls — tier 2, the curated face', () => {
     expect((defByType('ninelives').params ?? []).map((q) => q.id)).toEqual(['rate', 'shape']);
   });
 
+  it('a FIRST PROMOTION over FOUR IDENTICAL CONTROLS leaves the card identical — illogic', () => {
+    // illogic, promoted 2026-08-16 (faceplate queue Q17). The ninelives case
+    // again, and worth its own leg because the REASON the orders agree is
+    // different and could stop being true independently.
+    //
+    // ninelives's two keys agree with declaration order by coincidence of a
+    // genuine priority argument. illogic's four keys are four copies of the
+    // SAME control, so there is no priority to express at all — the face ranks
+    // them by the axis the module itself supplies (channel 1 reaches seven of
+    // the ten outputs, channel 2 six, channels 3 and 4 three each, measured in
+    // art/scenarios/illogic/face-audit.test.ts), which happens to be channel
+    // order, which happens to be declaration order. Three coincidences deep, so
+    // "the card did not move" is exactly the claim that needs recording rather
+    // than assuming.
+    const spec = resolvePushCardControls(defByType('illogic'));
+    expect(spec.source, 'the promotion moves it off the GENERIC tier').toBe('face');
+    expect(spec.skipped, 'no families and no momentary pads on this module').toEqual([]);
+    expect(pushCardParams(spec).map((q) => q.id)).toEqual([
+      'att1_amount', 'att2_amount', 'att3_amount', 'att4_amount',
+    ]);
+    // …and the GENERIC tier would have produced the same four in the same
+    // order, stated directly so a future re-rank cannot slip through as "the
+    // card was always like that".
+    expect((defByType('illogic').params ?? []).map((q) => q.id)).toEqual([
+      'att1_amount', 'att2_amount', 'att3_amount', 'att4_amount',
+    ]);
+  });
+
   it('a PAIR promoted together keeps ONE card law — moog907a + moog914', () => {
     // The two fixed filter banks, promoted 2026-08-15 (faceplate queue Q12).
     // Recorded for the same reason as the two legs above, plus one more that is
