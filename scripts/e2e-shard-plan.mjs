@@ -82,6 +82,18 @@ export function loadContention(dir = join(ROOT, 'e2e/tests')) {
  */
 export const PENDING_FIRST_MEASUREMENT = [
   {
+    spec: 'extras-producer-lifetime.spec.ts',
+    why:
+      'lands 2026-08-16 with the #1720 fix (painter/textmarquee/picturebox/toybox ' +
+      'rendered placeholders with no card mounted, in the DEFAULT state). No ci.yml ' +
+      'run containing it has completed, so there are no blob reports to accept a cost ' +
+      'from. Measured 43.5 CPU-s locally under SwiftShader single-worker, which is a ' +
+      'LOCAL number and not what the planner needs. Run ' +
+      '`task e2e:timings:accept -- <run-id>` on the first green main run after this ' +
+      'merges and DELETE this entry — the gate reddens on a stale entry as loudly as ' +
+      'on a missing one.',
+  },
+  {
     spec: 'midi-binding-node-lifetime.spec.ts',
     why:
       'lands 2026-08-16 with the #1727 fix (a CC binding to an un-migrated module was ' +
