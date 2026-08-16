@@ -5,8 +5,16 @@ description: Author a PF-20 dock FACEPLATE for an audio module and promote it to
 
 # Authoring a module FACEPLATE (PF-20) and promoting it
 
-21 of ~118 audio defs carry a `face` today, and the set is exactly `STRICT_FACES`
-(`$lib/ui/workflow/strict-faces.ts:64-91`). The remaining ~97 are the batch queue.
+The faced set is exactly `STRICT_FACES` (`$lib/ui/workflow/strict-faces.ts`),
+asserted equal in both directions by `module-face-lint` — **authoring a `face`
+IS the promotion**. Everything else is the batch queue.
+
+⚠ **This paragraph used to carry "21 of ~118" and "the remaining ~97", and both
+were stale within a wave.** Do not re-introduce a count here; derive it when you
+need it — `task face:inventory` regenerates
+`docs/design/face-migration.generated.md`, which reports the per-disposition
+breakdown against the live registry. (The queue's pool join is
+`.myrobots/plans/faceplate-queue-2026-08-14.md` §11.)
 
 **Promoting a module is a behaviour change, not a skin.** `migrated(type)` is
 `STRICT_FACES.has(type)` (`strict-faces.ts:105`), and it decides which component
@@ -493,10 +501,36 @@ geometry is real code and stays in the hash, deliberately.)
 
 ## What this skill does NOT cover
 
-- **VIDEO modules.** No video def carries a `face`; their doc `[id]` page does
-  not exist either. (The attest side is no longer a concern — `face` is
-  hash-transparent by construction and covered by
-  `scripts/attest-code-basis.test.ts`.)
+- **VIDEO modules — but the two reasons this used to give are now STALE, and
+  the real blocker is elsewhere.** This entry said *"no video def carries a
+  `face`; their doc `[id]` page does not exist either."* The first is circular
+  (the skew offered as its own justification — the shape twice withdrawn for
+  `ninelives` and `analogLogicMaths`); the second is simply false now
+  (`module-manifest.ts` wires `VIDEO_SOURCES` into `buildModuleManifest`, and
+  `routes/docs/modules/[id]` enumerates it — video modules HAVE doc pages).
+  Nor is the attest a concern: a top-level `face` on a video def is
+  hash-transparent (`HASH_TRANSPARENT_PROPS`, `scripts/attest-code-basis.ts`),
+  verified live. And the shell is READY — `ModuleShell` gives a video face a
+  LIVE THUMBNAIL of its own output via `hasVideoSurface(def)`.
+
+  ⚠ **The declaration is counter-intuitive: a video def must declare
+  `glyph: 'none'`.** `primaryAudioOutPortId` matches `type === 'audio'` and a
+  video def has none, so any other glyph resolves to `{kind:'static'}` and
+  reddens the dead-glyph clause. The picture arrives through `hasGlyph`'s OR,
+  from a different seam — so `'none' + blank tile` and `'none' + live thumb`
+  are indistinguishable from the declaration. **Assert `hasVideoSurface`.**
+
+  **THE ACTUAL BLOCKER (#1726): face completeness has no exemption for a param
+  with NO USER CONTROL.** `module-face-lint` loops every `ParamDef` with no
+  filter and no skip-list, a second gate requires each to render exactly one
+  interactive cell, and `ModuleFace` has no `hidden` field. Several video
+  modules carry hidden SYNTHETIC params that exist only so a CV bridge has
+  somewhere to write a gate edge, plus a `freeze` VRT hook — `backdraft` has
+  seven. No faced module has ever had one, so there is no precedent to copy,
+  and since they declare `curve: 'linear'` they would render as continuous
+  rotaries over raw gate swings. Settle that on `ModuleFace` before picking a
+  first video face. Full audit:
+  `.myrobots/plans/faceplate-queue-2026-08-14.md` §16-§17.
 - **The lane-tile snowflakes** in `NON_SHELL_LANE_TYPES` (clipplayer, the MIDI
   surfaces, videoOut, cameraInput, group, sticky, cadillac) — they get bespoke
   faces in a later spike, and the dock-side story for them is unsolved.
