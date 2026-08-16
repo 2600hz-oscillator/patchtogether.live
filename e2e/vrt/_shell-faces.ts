@@ -626,6 +626,27 @@ export const FACES = [
   // audio), and the sidebar picture is drawn from `node.params` alone. So this
   // scene neither exercises nor depends on #1420's pre-frame freeze.
   { type: 'illogic', pages: 1 },
+  // THE FACEPLATE QUEUE · Q18 — the bitcrusher / sample-rate decimator.
+  //
+  // `pages: 1` is the POST-hero split count, the illogic / ninelives shape: the
+  // face declares NO `pages`, so its three ranked keys sit in the single
+  // unlabelled `__all` band and the hero promotes DECIMATE out of it, leaving
+  // BITS and WET. The band survives — this is NOT the `noise` case where the
+  // only key was promoted and `heroFacePlan` dropped the emptied band.
+  //
+  // DETERMINISTIC AT REST because it is an INSERT with no generator: the
+  // factory instantiates the Faust node plus ONE ConstantSource whose offset is
+  // 0 (it exists only to keep the worklet processing), so with nothing patched
+  // the single `audio` output is exactly zero and its `scope` glyph is the flat
+  // centreline every other faced insert draws. It therefore neither exercises
+  // nor depends on #1420's pre-frame freeze — the two free-running witnesses
+  // (analogVco, macrooscillator, noise) are what cover that.
+  //
+  // ⚠ THE FOUR HERO READOUTS ARE PURE FUNCTIONS OF `node.params` and print at
+  // the spawn defaults, so they are IN the dock image and a re-rank or a
+  // formatter change moves this baseline: `48.0 kHz · 768 kbit/s · -101.1 dB ·
+  // -96.3 dB` at DECIMATE 1 / BITS 16 / WET 1.
+  { type: 'destroy', pages: 1 },
 ] as const;
 
 /** TIGHT per-scene diff budgets (absolute pixels; Playwright takes the MIN of

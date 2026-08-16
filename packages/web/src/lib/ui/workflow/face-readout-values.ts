@@ -255,6 +255,14 @@ import {
   illogicLogicGainText,
   illogicSumGainText,
 } from '$lib/ui/modules/illogic-face-model';
+// ⚠ ITS OWN `import {` STATEMENT, deliberately — see the illogic note above.
+import {
+  destroyFaceParams,
+  destroyFloorText,
+  destroyMuteText,
+  destroyRateText,
+  destroyStreamText,
+} from '$lib/ui/modules/destroy-face-model';
 import {
   MOOG907A_BANK,
   MOOG914_BANK,
@@ -1218,6 +1226,41 @@ const FACE_READOUT_VALUES: Readonly<Record<string, FaceReadoutValue>> = {
   'illogic-diff-gain': (read) => illogicDiffGainText(read),
   'illogic-bus-ceiling': (read) => illogicBusCeilingText(read),
   'illogic-logic-gain': (read) => illogicLogicGainText(read),
+
+  // ── DESTROY ──────────────────────────────────────────────────────────────
+  // THREE DIALS WHOSE UNITS ARE ALL WRONG FOR WHAT A PLAYER NEEDS. DECIMATE
+  // prints a divisor where the useful number is a RATE; BITS prints a depth
+  // where the useful numbers are two LEVELS in dBFS; and the two most useful
+  // quantities are joins over two dials each. The four below are chosen so
+  // every dial moves at least two and every readout is blind to at least one,
+  // which is what makes them each other's controls on every run rather than
+  // four spellings of one number (destroy-face-model.test.ts):
+  //
+  //           DECIMATE   BITS   WET
+  //   rate       yes      —      —     48000 / round(d)
+  //   stream     yes     yes     —     bits × rate, kbit/s — THE JOIN
+  //   floor       —      yes    yes    20log10(wet · step/√12) dBFS
+  //   mute        —      yes     —     −6.02 × bits dBFS — the dead zone
+  //
+  // ⚠ `floor` and `mute` ARE THE SAME STAGE'S TWO EDGES, deliberately. WET
+  // moves the floor by exactly 20log10(wet) and moves the dead zone by
+  // nothing, because WET decides how much of the crush reaches the output and
+  // not where the quantiser's grid lands. Publishing both is the instrument's
+  // own negative control (the clap-q / clap-bandwidth-hz pattern).
+  //
+  // ⚠ `floor` IS THE BIT STAGE'S FLOOR, NOT THE WHOLE CRUSH, and `rate` sitting
+  // in the same row is how the face says so. A sample-and-hold error is a
+  // function of the INPUT's slew, so no pure function of the params can print
+  // the decimator's contribution — measured, it reaches −1.86 dBFS on
+  // broadband at DECIMATE 64 while this readout correctly stays at −101 dBFS.
+  //
+  // Their authority is NOT this registration: `art/scenarios/destroy/
+  // face-audit.test.ts` measures every one of these laws against the shipping
+  // compiled Faust wasm, including the integer hold length #1716 was about.
+  'destroy-rate': (read) => destroyRateText(destroyFaceParams(read)),
+  'destroy-stream': (read) => destroyStreamText(destroyFaceParams(read)),
+  'destroy-bit-floor': (read) => destroyFloorText(destroyFaceParams(read)),
+  'destroy-mute': (read) => destroyMuteText(destroyFaceParams(read)),
 };
 
 /** The derived value for a declared id, or `null` (⇒ the readout prints `—`

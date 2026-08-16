@@ -66,7 +66,7 @@ author a `face` and rank the controls — no new platform capability.
 | `cvBuddyMini` | audio | — | — |
 | `delay` | audio | done | — |
 | `depolarizer` | audio | — | — |
-| `destroy` | audio | — | — |
+| `destroy` | audio | done | — |
 | `destructor` | video | — | — |
 | `dockscope` | audio | — | — |
 | `drummergirl` | audio | done | — |
