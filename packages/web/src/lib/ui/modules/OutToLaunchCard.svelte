@@ -2,14 +2,25 @@
   // OUT TO LAUNCH card — binds a Novation Launchpad Mini Mk3 as a live 9×9 RGB
   // video MONITOR + shows an on-card 9×9 preview of exactly what the LEDs show.
   //
-  // Device lifecycle lives HERE (mirrors LaunchpadControlCard's connect UX): no
-  // eager MIDI prompt — "Connect" runs the gesture-gated sysex request, then we
-  // list the Launchpad output ports and bind the picked one as a monitor
-  // (bindMonitor claims exclusive LED control of that device). The module's
-  // pure-GL factory produces the 9×9 grid (read('grid9x9')); this card's rAF
-  // loop reads it, draws the preview, and — throttled to ~30 fps — maps it to
-  // LED colours (monitorGridToLeds) and pushes it (setMonitorFrame). On unbind /
-  // node-delete we release the device (clears its LEDs + returns it to Live).
+  // ⚠ THE DEVICE DOES NOT BELONG TO THIS CARD (#1728). It used to: `onDestroy`
+  // called `unbindMonitor(id)`, which blanks all 81 LEDs, hands the Launchpad
+  // back to Live mode and drops the claim — and a card unmounts on COLLAPSE, on
+  // dock LRU eviction when a THIRD unrelated module is expanded, on ESC and on
+  // navigation. Since `outToLaunch` is `bespoke-surface` its card only ever
+  // exists inside the dock full-view, so closing that pane took the performer's
+  // Launchpad dark mid-set with no re-bind on remount (measured: the card came
+  // back showing "Connect Launchpad" with no port picker).
+  //
+  // The claim and the 30 fps LED PUMP now live on the NODE, in
+  // $lib/ui/modules/node-launchpad-monitor-registry — the card ADOPTS and
+  // READS. Teardown is keyed to GRAPH lifetime via that registry's
+  // `sweep(liveNodeIds)` from Canvas. There is deliberately no teardown method
+  // on the registry to call from a lifecycle hook.
+  //
+  // WHAT IS STILL CARD-LIFETIME, correctly: the on-card 9×9 PREVIEW canvas and
+  // the rAF that paints it. A canvas that is not in the DOM cannot be drawn to,
+  // so that rAF SHOULD die with the mount — and it no longer carries the LED
+  // push, so its death costs the hardware nothing.
 
   import type { NodeProps } from '@xyflow/svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
@@ -25,17 +36,12 @@
     midiAvailable,
     connect as deviceConnect,
     enumerateLaunchpadPorts,
-    bindMonitor,
-    unbindMonitor,
-    isMonitorBound,
-    monitorOutputId,
     isOutputClaimed,
-    setMonitorFrame,
     statusRune,
     type LaunchpadPort,
   } from '$lib/control/launchpad/launchpad-device.svelte';
+  import { nodeLaunchpadMonitor } from './node-launchpad-monitor-registry.svelte';
   import {
-    monitorGridToLeds,
     LP_MONITOR_COLS,
     LP_MONITOR_ROWS,
     lpMonitorIndex,
@@ -56,11 +62,19 @@
   let status = $state<'idle' | 'listing' | 'no-midi' | 'no-device'>('idle');
   let ports = $state<LaunchpadPort[]>([]);
 
-  // Reactive device state (statusRune bumps on any bind/unbind).
-  let bound = $derived((statusRune(), isMonitorBound(id)));
-  let boundOut = $derived((statusRune(), monitorOutputId(id)));
+  // Reactive device state, read from the NODE's registry — not from card state.
+  // A card that re-mounts onto a live binding must show MONITOR ACTIVE, which
+  // is the whole point of the registry. (statusRune is still folded in so a
+  // bind/unbind made through the device layer by any other route repaints too.)
+  let bound = $derived((statusRune(), nodeLaunchpadMonitor.view(id).bound));
+  let boundOut = $derived((statusRune(), nodeLaunchpadMonitor.view(id).outputId));
 
   const engineCtx = useEngine();
+  // ADOPT — idempotent and non-destructive. Re-pins the engine accessor on
+  // every mount (a reboot swaps the instance) and never resets a live bind.
+  $effect(() => {
+    nodeLaunchpadMonitor.adopt(id, engineCtx);
+  });
   function getVideoEngine(): VideoEngine | null {
     const e = engineCtx.get();
     if (!e) return null;
@@ -71,12 +85,10 @@
     }
   }
 
-  // ── Preview canvas (9×9) + throttled LED push ──
+  // ── Preview canvas (9×9). The LED push + its throttle moved to the node
+  //    registry with the pump (#1728); nothing on this card writes to hardware.
   let canvasEl: HTMLCanvasElement | null = $state(null);
   let rafId: number | null = null;
-  let lastPush = 0;
-  const PUSH_FPS = 30;
-  const PUSH_INTERVAL_MS = 1000 / PUSH_FPS;
 
   // Preview geometry.
   const CELL = 22;
@@ -138,21 +150,14 @@
     c2d.fill();
   }
 
+  /** PREVIEW ONLY. The LED push moved to the node registry's pump (#1728); this
+   *  loop paints the on-card canvas and nothing else, so it is correct for it to
+   *  live and die with the mount. */
   function tick(): void {
     rafId = null;
-    const bright = paramVal('bright');
-    const gamma = paramVal('gamma');
     const ve = getVideoEngine();
     const grid = (ve?.read(id, 'grid9x9') as Uint8Array | undefined) ?? undefined;
-    drawPreview(grid, bright, gamma);
-    if (bound && grid) {
-      const now = performance.now();
-      if (now - lastPush >= PUSH_INTERVAL_MS) {
-        lastPush = now;
-        const leds = monitorGridToLeds(grid, { bright, gamma });
-        setMonitorFrameSafe(id, leds);
-      }
-    }
+    drawPreview(grid, paramVal('bright'), paramVal('gamma'));
     rafId = requestAnimationFrame(tick);
   }
 
@@ -164,14 +169,12 @@
     rafId = requestAnimationFrame(tick);
   });
   onDestroy(() => {
+    // ⚠ THE PREVIEW rAF, AND NOTHING ELSE. Releasing the Launchpad here is
+    // #1728 — a collapse is not the performer saying they are finished with
+    // their hardware. The device is released by the registry's graph sweep, or
+    // by the user pressing Unbind.
     if (rafId !== null) cancelAnimationFrame(rafId);
-    if (isMonitorBound(id)) unbindMonitor(id);
   });
-
-  // setMonitorFrame no-ops if the token is unbound, so the push path is safe.
-  function setMonitorFrameSafe(token: string, leds: Map<number, [number, number, number]>): void {
-    setMonitorFrame(token, { leds });
-  }
 
   async function connectAndList() {
     if (!supported) { status = 'no-midi'; return; }
@@ -182,10 +185,11 @@
   }
 
   function pick(port: LaunchpadPort) {
-    bindMonitor(id, port.outputId);
+    nodeLaunchpadMonitor.bind(id, port.outputId);
   }
+  /** The USER's explicit release — named for their intent, not a lifecycle. */
   function unbind() {
-    unbindMonitor(id);
+    nodeLaunchpadMonitor.unbind(id);
   }
   const isClaimedByOther = (port: LaunchpadPort) => isOutputClaimed(port.outputId, id);
 </script>

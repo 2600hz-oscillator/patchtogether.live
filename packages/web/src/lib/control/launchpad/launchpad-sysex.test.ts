@@ -30,6 +30,7 @@ import {
   encodePadRgb,
   encodeLedRgbBatch,
   decodeMidiMessage,
+  decodeSurfaceSysex,
   isMiniMk3Sysex,
 } from './launchpad-sysex';
 
@@ -197,5 +198,64 @@ describe('helpers', () => {
     expect(isMiniMk3Sysex([0xf0, 0x00, 0x20, 0x29, 0x02, 0x0c, 0x0e, 0x01, 0xf7])).toBe(false);
     expect(isMiniMk3Sysex([0xf0, 0x00, 0x00])).toBe(false);
     expect(isMiniMk3Sysex([0x90, 11, 100])).toBe(false); // not even SysEx
+  });
+});
+
+describe('decodeSurfaceSysex (the DEVICE half — what a Mini Mk3 does with our frames)', () => {
+  // This decoder is the INSTRUMENT the OUT TO LAUNCH monitor tests measure with
+  // (#1728): it turns the byte runs the host sent into the LED/mode state a real
+  // surface would hold, so "the Launchpad went dark" and "the Launchpad was
+  // handed back to Live" become observable facts without hardware. It is
+  // round-tripped against the encoders here so the instrument cannot silently
+  // drift from the protocol it claims to model.
+
+  it('round-trips programmer/live mode select', () => {
+    expect(decodeSurfaceSysex(encodeEnterProgrammerMode())).toEqual({ type: 'mode', programmer: true });
+    expect(decodeSurfaceSysex(encodeExitProgrammerMode())).toEqual({ type: 'mode', programmer: false });
+  });
+
+  it('round-trips a single-LED lighting frame', () => {
+    expect(decodeSurfaceSysex(encodeLedRgb(11, 10, 20, 30))).toEqual({
+      type: 'lighting',
+      specs: [{ index: 11, r: 10, g: 20, b: 30 }],
+    });
+    expect(decodeSurfaceSysex(encodePadRgb(7, 7, 1, 2, 3))).toEqual({
+      type: 'lighting',
+      specs: [{ index: 88, r: 1, g: 2, b: 3 }],
+    });
+  });
+
+  it('round-trips a whole-surface batch, preserving wire order', () => {
+    const specs = [
+      { index: 11, r: 127, g: 0, b: 0 },
+      { index: 99, r: 0, g: 127, b: 0 },
+      { index: 91, r: 0, g: 0, b: 127 },
+    ];
+    expect(decodeSurfaceSysex(encodeLedRgbBatch(specs))).toEqual({ type: 'lighting', specs });
+  });
+
+  it('round-trips a whole-surface BLANK — the frame unbindMonitor sends', () => {
+    const blank: { index: number; r: number; g: number; b: number }[] = [];
+    for (let y = 0; y < LP_HEIGHT; y++) {
+      for (let x = 0; x < LP_WIDTH; x++) blank.push({ index: padNote(x, y), r: 0, g: 0, b: 0 });
+    }
+    const decoded = decodeSurfaceSysex(encodeLedRgbBatch(blank));
+    expect(decoded?.type).toBe('lighting');
+    expect(decoded?.type === 'lighting' ? decoded.specs : null).toEqual(blank);
+  });
+
+  it('is NOT vacuous: it returns null only for runs a Mini Mk3 would ignore', () => {
+    // The round-trips above are the positive control (it CAN decode); these
+    // prove the null is discriminating rather than a blanket "I parse nothing".
+    expect(decodeSurfaceSysex([0xf0, 0x00, 0x20, 0x29, 0x02, 0x0c, 0x0e, 0x01, 0xf7])).toBeNull(); // Launchpad X
+    expect(decodeSurfaceSysex([0x90, 11, 100])).toBeNull(); // a Note-On, not SysEx
+    expect(decodeSurfaceSysex([0xf0, 0x00, 0x20, 0x29, 0x02, 0x0d, 0x0e, 0x01])).toBeNull(); // no F7
+    expect(decodeSurfaceSysex(encodeLedRgbBatch([]))).toBeNull(); // empty batch = zero bytes
+  });
+
+  it('a colour change MOVES the decoded value — the instrument is not stuck', () => {
+    const a = decodeSurfaceSysex(encodeLedRgb(11, 10, 20, 30));
+    const b = decodeSurfaceSysex(encodeLedRgb(11, 40, 50, 60));
+    expect(a).not.toEqual(b);
   });
 });

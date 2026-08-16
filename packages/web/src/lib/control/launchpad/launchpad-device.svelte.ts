@@ -49,6 +49,7 @@ import {
   encodeLedRgb,
   encodeLedRgbBatch,
   decodeMidiMessage,
+  decodeSurfaceSysex,
   type RgbSpec,
   type LaunchpadRxEvent,
 } from './launchpad-sysex';
@@ -810,6 +811,101 @@ export async function installSimulatedLaunchpadSingle(): Promise<SimulatedLaunch
   return simInstalled;
 }
 
+// ---------------------------------------------------------------------------
+// Simulated MONITOR device — a Launchpad the OUT TO LAUNCH path can claim.
+//
+// The two sims above BIND their ports to the L/R clip-launcher units, so
+// `isOutputClaimed` refuses a monitor on them by design (one owner per
+// surface). A monitor test therefore needs a device that is ENUMERATED but
+// UNCLAIMED, which is what this installs.
+//
+// ⚠ IT MODELS THE DEVICE, NOT THE WIRE. It decodes each frame it receives
+// (decodeSurfaceSysex) and holds the state a real Mini Mk3 would: which LEDs
+// are lit, and whether it is in programmer or Live mode. That is deliberate —
+// #1728 is "the physical surface went dark and was handed back to Live", and
+// neither half is visible in a probe that reads the HOST's diff map (which
+// reports what the sender believed) or a raw byte log (which can only be
+// asserted against by re-encoding the expectation, i.e. comparing the encoder
+// to itself).
+// ---------------------------------------------------------------------------
+
+export interface SimulatedLaunchpadMonitorDevice {
+  /** The Launchpad OUTPUT port id — free for `bindMonitor` (no unit holds it). */
+  outputId: string;
+  /** Is the device in PROGRAMMER mode (we own its LEDs)? `false` = handed back
+   *  to Live, which is what `unbindMonitor` does. */
+  programmer(): boolean;
+  /** What the DEVICE believes an LED index holds, decoded from the bytes it was
+   *  actually sent. `null` = never addressed. */
+  ledAt(index: number): [number, number, number] | null;
+  /** Every index the device currently shows as NOT black. The blanking half of
+   *  #1728 empties this. */
+  litIndices(): number[];
+  /** How many lighting frames the device has received. The PUMP's causal
+   *  quantity: units are frames-delivered-to-the-device, not host intentions. */
+  framesReceived(): number;
+}
+
+let simMonitorInstalled: SimulatedLaunchpadMonitorDevice | null = null;
+
+/** Install an in-memory Launchpad that no unit claims, so an OUT TO LAUNCH
+ *  monitor can bind it. Idempotent within a page/test. */
+export async function installSimulatedLaunchpadMonitorDevice(): Promise<SimulatedLaunchpadMonitorDevice> {
+  if (simMonitorInstalled) return simMonitorInstalled;
+
+  const inId = 'pt-sim-lp-monitor-in';
+  const outId = 'pt-sim-lp-monitor-out';
+  // Device-side state, mutated ONLY by decoding frames the host sent.
+  const leds = new Map<number, [number, number, number]>();
+  let programmer = false;
+  let frames = 0;
+
+  const input: MidiInputLike = {
+    id: inId,
+    name: 'LPMiniMK3 MIDI In',
+    manufacturer: 'Focusrite - Novation',
+    state: 'connected',
+    onmidimessage: null,
+  } as unknown as MidiInputLike;
+  const output: MidiOutputLike = {
+    id: outId,
+    name: 'LPMiniMK3 MIDI Out',
+    manufacturer: 'Focusrite - Novation',
+    state: 'connected',
+    send(d: number[] | Uint8Array) {
+      const cmd = decodeSurfaceSysex(d);
+      if (!cmd) return;
+      if (cmd.type === 'mode') {
+        programmer = cmd.programmer;
+        return;
+      }
+      frames++;
+      for (const s of cmd.specs) leds.set(s.index, [s.r, s.g, s.b]);
+    },
+  } as unknown as MidiOutputLike;
+
+  access = {
+    inputs: new Map([[inId, input]]),
+    outputs: new Map([[outId, output]]),
+    onstatechange: null,
+  };
+  connectStarted = true;
+  connectFailed = false;
+
+  simMonitorInstalled = {
+    outputId: outId,
+    programmer: () => programmer,
+    ledAt: (index) => {
+      const v = leds.get(index);
+      return v ? [v[0], v[1], v[2]] : null;
+    },
+    litIndices: () =>
+      [...leds.entries()].filter(([, [r, g, b]]) => r + g + b > 0).map(([i]) => i).sort((a, z) => a - z),
+    framesReceived: () => frames,
+  };
+  return simMonitorInstalled;
+}
+
 /** Reset ALL singleton state — test isolation between cases. */
 export function __test_resetLaunchpad(): void {
   for (const unit of ['L', 'R'] as const) {
@@ -820,6 +916,7 @@ export function __test_resetLaunchpad(): void {
   connectStarted = false;
   connectFailed = false;
   simInstalled = null;
+  simMonitorInstalled = null;
   keyListeners.clear();
   monitors.clear();
 }
