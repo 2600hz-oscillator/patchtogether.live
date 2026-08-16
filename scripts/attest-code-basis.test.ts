@@ -572,6 +572,15 @@ describe('attest-code-basis §ceremony: the docs-hash-ignore marker is retired',
   it('the module-scope def restriction is documented on the policy constant', () => {
     const lib = readFileSync(join(REPO_ROOT, 'scripts/attest-code-basis.ts'), 'utf8');
     expect(lib).toContain('MODULE-SCOPE');
-    expect(HASH_TRANSPARENT_PROPS).toEqual(['docs', 'controlFamilies', 'face']);
+    // The list is pinned so that WIDENING it is a deliberate, reviewed edit —
+    // every name added here is a name the hash stops seeing, and the unsafe
+    // direction (stripping something that IS behaviour) has no other guard.
+    // Each entry must carry its argument on the constant itself.
+    expect(HASH_TRANSPARENT_PROPS).toEqual([
+      'docs',
+      'controlFamilies',
+      'face',
+      'noUserControl',
+    ]);
   });
 });

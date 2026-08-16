@@ -40,6 +40,7 @@ import {
   VIDEO_THUMB_W,
   VIDEO_THUMB_H,
   VIDEO_THUMB_FPS,
+  dockFullViewHeadPlan,
   type ShellDefLike,
 } from './module-shell-model';
 import { curatedFace, type FaceDefLike } from './curated-face';
@@ -522,5 +523,78 @@ describe('DOCK_HERO_GLYPH_W — the dock hero glyph width cap (owner batch-1 fee
     // Aligned to the shared knob-column design constant (--kcol-max mirror).
     expect(DOCK_KCOL_W).toBe(46);
     expect(DOCK_PAGE_GAP_X).toBe(10);
+  });
+});
+
+// ── dockFullViewHeadPlan — the dock full-view head (#1726) ───────────────────
+//
+// WHAT THIS GATE CANNOT SEE, stated inside it: this is the PURE precedence, not
+// the paint. It cannot see that `.dock-ext-body` is styled full-width, nor that
+// the mounted component draws anything — the source anchors in
+// shell-extensions.test.ts pin the render site's existence, and a VRT scene
+// pins the pixels the day a face adopts the slot. What it CAN see, and what no
+// other browser-free gate can, is that adding the slot changed nothing for the
+// faces that do not use it.
+describe('dockFullViewHeadPlan — who owns the top of a dock faceplate', () => {
+  const LANE = { view: 'lane', hasGlyph: true, heroCell: false, hasExtensionBody: false } as const;
+  const DOCK = { ...LANE, view: 'dock-full' } as const;
+
+  it('an extension body claims the head and takes the hero glyph with it', () => {
+    const p = dockFullViewHeadPlan({ ...DOCK, hasExtensionBody: true });
+    expect(p.extBody).toBe(true);
+    expect(p.heroGlyph, 'a module that brought its own picture does not also want the shell thumbnail').toBe(false);
+  });
+
+  it('it beats a hero.cell too — most specific wins, and only one head paints', () => {
+    const p = dockFullViewHeadPlan({ ...DOCK, heroCell: true, hasExtensionBody: true });
+    expect(p.extBody).toBe(true);
+    expect(p.heroGlyph).toBe(false);
+  });
+
+  it('LANE never paints it: a 192px tile cannot carry a module surface', () => {
+    const p = dockFullViewHeadPlan({ ...LANE, hasExtensionBody: true });
+    expect(p.extBody).toBe(false);
+    expect(p.heroGlyph, 'and the lane keeps the thumbnail glyph it has today').toBe(true);
+  });
+
+  it('a def with no glyph at all gets neither head', () => {
+    const p = dockFullViewHeadPlan({ ...DOCK, hasGlyph: false });
+    expect(p).toEqual({ extBody: false, heroGlyph: false });
+  });
+
+  // ── PERMANENT NEGATIVE CONTROL — the no-adopter invariant ─────────────────
+  //
+  // The whole risk of wiring a new head is that it moves the ~40 faceplates
+  // that will never declare one. So: over EVERY combination of the other
+  // inputs, `hasExtensionBody: false` must reproduce the expression ModuleShell
+  // carried before #1726, bit for bit. This is the leg that would redden if a
+  // later edit made the plan "helpful" — and it is written as the pre-#1726
+  // formula rather than as expected values, so it is the OLD CODE that is being
+  // compared against, not a transcription of the new one.
+  it('NEGATIVE CONTROL: with no extension body the plan IS the pre-#1726 expression', () => {
+    const legacyHeroGlyph = (view: 'lane' | 'dock-full', hasGlyph: boolean, heroCell: boolean) =>
+      hasGlyph && !(view === 'dock-full' && heroCell);
+    for (const view of ['lane', 'dock-full'] as const) {
+      for (const hasGlyph of [false, true]) {
+        for (const heroCell of [false, true]) {
+          const p = dockFullViewHeadPlan({ view, hasGlyph, heroCell, hasExtensionBody: false });
+          expect(p.extBody, `${view}/${hasGlyph}/${heroCell}`).toBe(false);
+          expect(p.heroGlyph, `${view}/${hasGlyph}/${heroCell}`).toBe(
+            legacyHeroGlyph(view, hasGlyph, heroCell),
+          );
+        }
+      }
+    }
+  });
+
+  // The other direction of the same control: the ONLY input that may change the
+  // answer relative to the legacy formula is `hasExtensionBody`, and it must
+  // change it — a plan invariant to the new input would be a no-op wearing a
+  // render site.
+  it('NEGATIVE CONTROL (other direction): the new input actually moves the plan', () => {
+    const off = dockFullViewHeadPlan({ ...DOCK, hasExtensionBody: false });
+    const on = dockFullViewHeadPlan({ ...DOCK, hasExtensionBody: true });
+    expect(off).not.toEqual(on);
+    expect([off.extBody, on.extBody]).toEqual([false, true]);
   });
 });
