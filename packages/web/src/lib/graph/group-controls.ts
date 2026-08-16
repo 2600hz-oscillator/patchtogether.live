@@ -10,7 +10,7 @@
 // Lives in `lib/graph` (not `lib/ui`) so the schema-validation tests can
 // import without dragging in any Svelte component.
 
-import type { ModuleNode, ParamDef } from './types';
+import type { ModuleNode, ParamDef, NoUserControlParam } from './types';
 import type { ExposedControl, GroupData } from './group-projection';
 import type { ExposableControl } from '$lib/audio/module-registry';
 
@@ -25,21 +25,29 @@ export interface ControlDefLookup {
   (type: string): {
     exposableControls?: readonly ExposableControl[];
     params?: readonly ParamDef[];
+    /** #1726 — params the module gives the player no control over. Read here
+     *  so the group bar never auto-exposes one. */
+    noUserControl?: readonly NoUserControlParam[];
   } | undefined;
 }
 
-/**
- * Per-param-id excludelist: params we never expose to the group bar even
- * though `def.params` lists them. These are either internal state
- * (e.g. wavesculpt camera persistence) or input-CV proxies the bar can't
- * meaningfully display. Modules can still declare an explicit
- * `exposableControls` entry referencing the same param if they want it
- * surfaced under a custom label/kind.
- */
-const AUTO_EXPOSE_EXCLUDE_PARAM_IDS: ReadonlySet<string> = new Set([
-  // wavesculpt persisted camera state — not a user-facing knob
-  'camera_x', 'camera_y', 'camera_z', 'camera_yaw', 'camera_pitch',
-]);
+// #1726 — WHAT REPLACED `AUTO_EXPOSE_EXCLUDE_PARAM_IDS`.
+//
+// There used to be a module-blind excludelist here: a bare `Set` of five param
+// ids (`camera_x` … `camera_pitch`, described as "wavesculpt persisted camera
+// state") consulted for EVERY def in the repo. Two things were wrong with it,
+// and the second is why it is gone rather than moved:
+//
+//   * It matched by BARE ID across every module. Any def that ever declared a
+//     param called `camera_x` would have had it silently dropped from the group
+//     bar, with the reason attached to a different module entirely.
+//   * It named params NO LIVE DEF DECLARES — grepped 2026-08-15, all five ids
+//     appear only in this file. It was a ledger entry naming a vanished
+//     subject, and it had been excluding nothing for as long as that was true.
+//
+// The replacement is the DEF's own `noUserControl` declaration, which carries
+// the `(module, param, why)` triple, is anchored to that def's params and ports
+// in both directions, and cannot drift onto a module it was not written for.
 
 /** Heuristic: does the ParamDef look like a 0/1 toggle? (Exported so the
  *  Toggle primitive + its detection can share the ONE definition.) */
@@ -74,10 +82,16 @@ export function listExposableControls(
   const coveredParamIds = new Set<string>();
   for (const ec of explicit) coveredParamIds.add(ec.paramId);
 
+  // #1726 — the def's OWN declaration, not a repo-wide id list. An explicit
+  // `exposableControls` entry still wins (checked first, above): a module that
+  // deliberately surfaces one under a custom label/kind is making a different,
+  // louder claim than "no user control", and the explicit list is that claim.
+  const noControl = new Set((def.noUserControl ?? []).map((e) => e.param));
+
   const auto: ExposableControl[] = [];
   for (const p of params) {
     if (coveredParamIds.has(p.id)) continue;
-    if (AUTO_EXPOSE_EXCLUDE_PARAM_IDS.has(p.id)) continue;
+    if (noControl.has(p.id)) continue;
     auto.push({
       id: `param-${p.id}`,
       label: p.label,

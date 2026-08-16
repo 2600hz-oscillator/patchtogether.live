@@ -50,16 +50,23 @@ export interface ShellExtensionGlyphProps {
   testid?: string;
 }
 
+/** Props of the FULL-VIEW BODY slot — the module's own full-width surface at
+ *  the head of the dock full view. Just the node id: the component owns its
+ *  own engine access, exactly like the legacy card whose picture it carries
+ *  forward. */
+export interface ShellExtensionFullViewBodyProps {
+  nodeId: string;
+}
+
 /**
  * The slot map ONE extension module default-exports. Every slot is optional —
  * an extension fills only what its module needs.
  *
- * ⚠ ONLY `glyph` HAS A RENDER SITE TODAY (`WIRED_SHELL_EXTENSION_SLOTS`).
- * `editorSurface` / `fullViewBody` are the DECLARED contract for the LEG-05
- * bespoke-surface cohort; the first adopter wires the render site in
- * ModuleShell and moves the slot to the wired list IN THE SAME DIFF —
- * shell-extensions.test.ts refuses an extension exporting an unwired slot, so
- * a slot can never silently no-op.
+ * ⚠ `editorSurface` is still UNWIRED (`WIRED_SHELL_EXTENSION_SLOTS`) — it is
+ * the DECLARED contract for the rest of the LEG-05 bespoke-surface cohort. The
+ * first adopter wires the render site in ModuleShell and moves the slot to the
+ * wired list IN THE SAME DIFF; shell-extensions.test.ts refuses an extension
+ * exporting an unwired slot, so a slot can never silently no-op.
  */
 export interface ShellExtension {
   /** The module's identity/topology picture — fills the shell's glyph slot
@@ -70,10 +77,40 @@ export interface ShellExtension {
    *  which stays the right seam for one picture-you-edit inside the generic
    *  face. UNWIRED — see the interface note. */
   editorSurface?: Component<{ nodeId: string }>;
-  /** A fully bespoke DOCK FULL-VIEW body, replacing the generic faceplate
-   *  bands for modules whose full view is not a faceplate. UNWIRED — see the
-   *  interface note. */
-  fullViewBody?: Component<{ nodeId: string }>;
+  /**
+   * THE MODULE'S OWN FULL-WIDTH SURFACE at the head of the DOCK FULL VIEW —
+   * WIRED (#1726, the video-face platform). It paints above the faceplate's
+   * control bands and TAKES THE PLACE OF the generic hero glyph, because a
+   * module that brings its own picture does not also want the shell's
+   * four-column thumbnail of the same thing. The bands BELOW are untouched:
+   * every param still gets its cell, so face completeness, the dock
+   * render-plan parity gate and `faces-parity` all still apply to an adopter.
+   *
+   * ⚠ IT IS NOT A REPLACEMENT FOR THE FACEPLATE. The pre-wiring draft of this
+   * slot said "replacing the generic faceplate bands"; wiring it that way
+   * would make the first adopter lose every one of its controls — which is the
+   * exact `warrensspectrum` failure this seam exists to prevent (its card was
+   * the filterbank's only editor, so it got a bank PANEL *inside* the face,
+   * not a body that ate it).
+   *
+   * WHY VIDEO NEEDS IT: no `ParamCellKind` mounts a canvas, so a video module
+   * promoted to a face would lose the ONLY route to its own output — on
+   * `backdraft` the `⛶ OUTPUT` button beside the picture is the sole entry to
+   * Full Frame / Full Screen / Present, and the node menu offers just
+   * Docs/Duplicate/Delete. The shell's glyph slot DOES give a video face a
+   * live thumbnail (`VideoTileThumb`, gated on `hasVideoSurface`), but that is
+   * a read-only 160×120 well throttled to VIDEO_THUMB_FPS and capped to
+   * `DOCK_HERO_GLYPH_W`: a picture, not a surface. This slot is where the
+   * module mounts the real one.
+   *
+   * ⚠ WHY IT LIVES BEHIND THE EXTENSION REGISTRY rather than in the shell: the
+   * surface needs the module's own canvas plus its fullscreen / full-frame /
+   * present hooks, and ModuleShell may not import module-owned code
+   * (module-shell-import-guard). The extension file IS the module's own, so it
+   * may import them statically, and the chunk loads only for a def that
+   * declares the id.
+   */
+  fullViewBody?: Component<ShellExtensionFullViewBodyProps>;
 }
 
 /** Every slot key the contract defines. A loaded extension exporting any OTHER
@@ -84,7 +121,7 @@ export const SHELL_EXTENSION_SLOTS = ['glyph', 'editorSurface', 'fullViewBody'] 
  *  anchors this list to ModuleShell's source in BOTH directions (a wired slot
  *  must be read as `ext?.<slot>`; an unwired one must not appear), so it
  *  cannot drift from the render reality it names. */
-export const WIRED_SHELL_EXTENSION_SLOTS = ['glyph'] as const;
+export const WIRED_SHELL_EXTENSION_SLOTS = ['glyph', 'fullViewBody'] as const;
 
 /** Slot keys a loaded extension exports that the contract does not define. */
 export function unknownSlotKeys(ext: object): string[] {

@@ -10,7 +10,7 @@
 // then video — so users can spawn either kind from one search box.
 
 import type { ModuleType, PortDef, ParamDef, Domain } from '$lib/graph/types';
-import type { ControlFamily, ModuleDocs, ModuleFace } from '$lib/graph/types';
+import type { ControlFamily, ModuleDocs, ModuleFace, NoUserControlParam } from '$lib/graph/types';
 import type { VideoModuleFactory } from './engine';
 import type { PaletteCategory } from '$lib/audio/module-registry';
 
@@ -36,6 +36,18 @@ export interface VideoModuleDef {
    * module-face-lint, resolved by the pure `curatedFace` selector.
    */
   face?: ModuleFace;
+  /**
+   * #1726 — params this module deliberately gives the player NO control over
+   * (the synthetic gate params a `paramTarget` CV bridge writes; a determinism
+   * toggle). See NoUserControlParam: `why` is required by the type and
+   * `writer` is anchored to this def's own `inputs` in both directions.
+   *
+   * Hash-transparent for the SAME reason `face` is, and it matters more here:
+   * every video def is in the WebGL attest basis, so a property that was NOT
+   * stripped would make declaring one cost a real-GPU re-attest the CI cannot
+   * run. `HASH_TRANSPARENT_PROPS` carries it.
+   */
+  noUserControl?: readonly NoUserControlParam[];
   factory: VideoModuleFactory;
   /** Optional hard cap on simultaneous instances (mirrors the audio side).
    *  Phase 0 modules don't enforce caps; Phase 1's INWARDS will (one

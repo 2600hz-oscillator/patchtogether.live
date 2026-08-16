@@ -49,10 +49,12 @@
 // WHAT IS TREATED AS DOCUMENTATION (removed from the hash)
 //
 //   * ALL comments — line, block, JSDoc, in every .ts/.js/.svelte<script>.
-//   * The `docs` / `controlFamilies` / `face` properties of a MODULE-SCOPE
-//     definition object literal (`export const fooDef: X = { … }`). These are
-//     living-docs prose and UI curation; they reach no GPU / relay / audio code.
-//     The module-scope restriction is deliberate — see HASH_TRANSPARENT_PROPS.
+//   * The `docs` / `controlFamilies` / `face` / `noUserControl` properties of a
+//     MODULE-SCOPE definition object literal (`export const fooDef: X = { … }`).
+//     These are living-docs prose and UI curation; they reach no GPU / relay /
+//     audio code. The module-scope restriction is deliberate — see
+//     HASH_TRANSPARENT_PROPS, which is the ONE list and carries the per-property
+//     argument.
 //   * Type-only import declarations (`import type { ModuleDocs } from …`).
 //     Erased by the compiler, so provably runtime-neutral — and without this,
 //     ADDING docs to a def that had none would still churn the hash via the
@@ -90,7 +92,20 @@ import ts from 'typescript';
  * to the def's own top level makes the collision impossible.
  * (`attest-code-basis.test.ts` negative-controls exactly this.)
  */
-export const HASH_TRANSPARENT_PROPS: readonly string[] = ['docs', 'controlFamilies', 'face'];
+export const HASH_TRANSPARENT_PROPS: readonly string[] = [
+  'docs',
+  'controlFamilies',
+  'face',
+  // #1726 — `noUserControl`: which params the module gives the player no
+  // control over. UI CURATION in exactly the sense `face` is (it steers the
+  // shell's face rules, the group-bar auto-expose and the Push card ranking),
+  // and it reaches no GPU / audio / relay code — the module's own render path
+  // never reads it. Stripped for the same reason, and it MATTERS for the same
+  // reason it mattered for `face`: every video def sits in the WebGL attest
+  // basis, so a property that stayed in the hash would make declaring one cost
+  // a real-GPU re-attest that CI (SwiftShader) cannot run.
+  'noUserControl',
+];
 
 /**
  * package.json fields that cannot change ANY attested behaviour: npm-script
