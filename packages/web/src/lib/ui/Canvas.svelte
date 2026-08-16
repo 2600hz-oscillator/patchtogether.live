@@ -228,6 +228,7 @@
   import { nodeSamsloop } from '$lib/ui/modules/node-samsloop-registry.svelte';
   import { nodeAudioInput } from '$lib/ui/modules/node-audio-input-registry.svelte';
   import { nodeDoomSession } from '$lib/ui/modules/node-doom-session-registry.svelte';
+  import { nodeLaunchpadMonitor } from '$lib/ui/modules/node-launchpad-monitor-registry.svelte';
   import { RACK_SIZE_DEFAULTS } from '$lib/ui/rack-sizes';
   // ModuleNameLabel moved INTO every module card's title chrome (see
   // ModuleTitle.svelte) when the floating-overhead NodeToolbar was dropped.
@@ -403,7 +404,14 @@
   import type { HocuspocusProvider } from '@hocuspocus/provider';
   import type { PresenceUser } from '$lib/multiplayer/presence';
   import { installSimulatedMidiDevice, installSimulatedNoteDevice } from '$lib/midi/midi-learn.svelte';
-  import { installSimulatedLaunchpad, installSimulatedLaunchpadSingle } from '$lib/control/launchpad/launchpad-device.svelte';
+  import {
+    installSimulatedLaunchpad,
+    installSimulatedLaunchpadSingle,
+    installSimulatedLaunchpadMonitorDevice,
+    isMonitorBound,
+    monitorOutputId,
+    type SimulatedLaunchpadMonitorDevice,
+  } from '$lib/control/launchpad/launchpad-device.svelte';
   import { bindLaunchpadToClip, __test_setDeployment, __test_mode as __launchpadTestMode } from '$lib/control/launchpad/launchpad-control.svelte';
   import {
     installSimulatedPush2AndBind,
@@ -645,6 +653,11 @@
     return g.__provider ?? null;
   });
 
+  // The simulated Launchpad the OUT TO LAUNCH e2e installs (#1728), kept at
+  // component scope so both dev hooks below can reach it. Plain `let`, not
+  // `$state`: nothing renders from it and the hooks read it at call time.
+  let simulatedMonitorDevice: SimulatedLaunchpadMonitorDevice | null = null;
+
   // Dev-only (gated on testHooksEnabled): expose patch + ydoc on window so
   // e2e tests + chaos musician-bots can drive arbitrary module-spawning
   // combinations without a UI palette. Stripped in prod builds (autotest
@@ -759,6 +772,54 @@
       // never a card's: the card is the thing under test for being absent.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (globalThis as any).__nodeDoomSession = (nodeId: string) => nodeDoomSession.probe(nodeId);
+      // #1728: the NODE-owned LAUNCHPAD MONITOR (OUT TO LAUNCH). Two halves,
+      // and they are deliberately read from DIFFERENT places:
+      //   * the CLAIM — `bound` / `outputId` come from the DEVICE layer's
+      //     `monitors` map, which is the thing `unbindMonitor` deletes. Reading
+      //     it off the registry would be the registry's opinion of a claim it
+      //     does not itself hold.
+      //   * the SURFACE — `device` reports what the simulated Launchpad
+      //     BELIEVES (its decoded LED state + programmer/Live mode). The
+      //     user-visible symptom is a dark device handed back to Live, and no
+      //     host-side field can see that.
+      // `framesPushed` is the registry's pump counter and is reported only
+      // alongside `device.framesReceived`, the device-side count of frames that
+      // actually landed.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).__nodeLaunchpadMonitor = (nodeId: string) => {
+        const reg = nodeLaunchpadMonitor.probe(nodeId);
+        return {
+          // THE CLAIM — device layer.
+          bound: isMonitorBound(nodeId),
+          outputId: monitorOutputId(nodeId),
+          // THE PUMP — the registry's own counters. Never sufficient alone.
+          hasEntry: reg.hasEntry,
+          pumping: reg.pumping,
+          framesPushed: reg.framesPushed,
+          // THE SURFACE — the device's own decoded state.
+          device: simulatedMonitorDevice
+            ? {
+                programmer: simulatedMonitorDevice.programmer(),
+                // ROWS, not a count — a caller asserts PROPERTIES of the lit set
+                // (empty / non-empty / which indices moved), never its size.
+                litIndices: simulatedMonitorDevice.litIndices(),
+                framesReceived: simulatedMonitorDevice.framesReceived(),
+                ledAt11: simulatedMonitorDevice.ledAt(11),
+                ledAt99: simulatedMonitorDevice.ledAt(99),
+              }
+            : null,
+        };
+      };
+      // Installs an in-memory Launchpad that NO clip-launcher unit claims, so an
+      // OUT TO LAUNCH monitor can bind it (the L/R sims above bind their ports
+      // to units, which `isOutputClaimed` then refuses a monitor on, by design).
+      // Returns the free output port id. DEV-only.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).__launchpadMonitorTestInstall = async () => {
+        const dev = await installSimulatedLaunchpadMonitorDevice();
+        simulatedMonitorDevice = dev;
+        return dev.outputId;
+      };
       // #1589: observe the NODE-owned media entries from a spec. Same reasoning
       // as __nodeRecording — the point of the registry is that these outlive the
       // card, so the probe must read the NODE's record and never a card's state.
@@ -2126,7 +2187,20 @@
    *  a collapse froze EVERY peer of a netgame (#345: a starved barrier pauses by
    *  design). The netcode, the lockstep transport + cursors, the launch state
    *  and the pump loop are node-keyed now; the graph sweep here is the only
-   *  non-user teardown. */
+   *  non-user teardown.
+   *
+   *  ...and the NODE-OWNED LAUNCHPAD MONITOR
+   *  ($lib/ui/modules/node-launchpad-monitor-registry), the family's first row
+   *  to reach PHYSICAL HARDWARE (#1728): OutToLaunchCard's onDestroy ran
+   *  `unbindMonitor(id)`, which blanks all 81 LEDs, sends the exit-programmer
+   *  SysEx and drops the claim — so a collapse took the performer's Launchpad
+   *  dark and handed it back to Live, with nothing re-binding on remount. The
+   *  claim stays in the device layer (it arbitrates across the L/R clip-launcher
+   *  units too, and two maps could disagree about who owns a surface); what
+   *  moved to the node is the 30 fps LED PUMP and the release trigger. Swept
+   *  from here for the same reason as the other six — and a Launchpad left in
+   *  programmer mode with nothing driving it is unusable for control until a
+   *  replug, so this sweep is load-bearing, not politeness. */
   $effect(() => {
     const liveIds = snapshot.nodes.map((n) => n.id);
     nodeMedia.sweep(liveIds);
@@ -2135,6 +2209,7 @@
     nodeSamsloop.sweep(liveIds);
     nodeAudioInput.sweep(liveIds);
     nodeDoomSession.sweep(liveIds);
+    nodeLaunchpadMonitor.sweep(liveIds);
     nodeExtras.sweep(liveIds);
   });
 
