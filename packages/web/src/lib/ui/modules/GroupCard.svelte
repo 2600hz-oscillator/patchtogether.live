@@ -27,7 +27,15 @@
   import { nodeVersion, nodesStructuralVersion } from '$lib/graph/node-versions.svelte';
   import { getModuleDef } from '$lib/audio/module-registry';
   import { getVideoModuleDef } from '$lib/video/module-registry';
-  import { GROUP_VIZ_HOST_CARDS } from '$lib/ui/modules/group-viz-hosts';
+  // ⚠ A DIRECT `.svelte` IMPORT, DELIBERATELY — do not route this through a
+  // registry module. `dom-source-modules.test.ts`'s subtree walk (#1724/#1749)
+  // follows `.svelte` edges and stops at `.ts`, so importing ScopeCard through a
+  // `.ts` map hides this mount from the gate entirely (its
+  // `GroupCard → ScopeCard.svelte` exemption goes stale, which is how that draft
+  // of #1721 was caught). The TYPE IDS are shared with Canvas via
+  // `group-viz-hosts`; the COMPONENT stays here, in the walk's sight.
+  import ScopeCard from '$lib/ui/modules/ScopeCard.svelte';
+  import { GROUP_VIZ_HOST_TYPES } from '$lib/ui/modules/group-viz-hosts';
   import GroupExposedControls from '$lib/ui/GroupExposedControls.svelte';
 
   let { id, data }: NodeProps = $props();
@@ -251,13 +259,21 @@
     };
   });
 
-  /** Component lookup for the hidden viz-child mount, from the SHARED registry
-   *  ($lib/ui/modules/group-viz-hosts). It is shared because Canvas's headless
-   *  source host has to know the same answer — a node this card is already
-   *  hosting must not ALSO be hosted off-screen (#1721). Register a new opt-in
-   *  there, not here. */
+  /** Component lookup for the hidden viz-child mount.
+   *
+   *  ⚠ THE KEYS ARE NOT THE TRUTH — `GROUP_VIZ_HOST_TYPES` is, because Canvas's
+   *  headless-source host has to reach the same verdict (a node this card is
+   *  already mounting must not ALSO be hosted off-screen — #1721). This map is
+   *  the RENDERING half of that one truth, kept here so the `.svelte` edge stays
+   *  visible to the subtree walk. `group-viz-hosts.test.ts` asserts the two
+   *  agree in both directions, so adding a type without a component (or a
+   *  component without a type) reddens rather than silently rendering an empty
+   *  viz slot. Register a new opt-in in BOTH places. */
+  const HOST_CARDS: Record<string, typeof ScopeCard> = { scope: ScopeCard };
+
   function componentForType(type: string) {
-    return GROUP_VIZ_HOST_CARDS[type] ?? null;
+    if (!GROUP_VIZ_HOST_TYPES.has(type)) return null;
+    return HOST_CARDS[type] ?? null;
   }
 
   // The hidden ScopeCard needs the same NodeProps shape that SvelteFlow
