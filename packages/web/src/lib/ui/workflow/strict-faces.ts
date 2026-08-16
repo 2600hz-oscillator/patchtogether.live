@@ -978,6 +978,63 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // live.
   'moog907a',
   'moog914',
+  // THE FACEPLATE QUEUE · Q14 — SLEWSWITCH, quad slew + 4→1 sequential switch
+  // (2026-08-15), and the entry whose argument is that TWO ENGINES IN ONE BOX
+  // ARE TWO PAGES, not one ranked list of seven.
+  //
+  // 7 params, 10 inputs, 7 outputs. Four independent lag processors that turn
+  // any stepped voltage into a glide, plus a clocked selector that reads those
+  // same four smoothed lines one at a time — so the module both CONDITIONS four
+  // voltages and SEQUENCES between them, and out1..out4 stay live while it does.
+  // sampleHold latches on an edge, fourplexer routes raw signals with no
+  // conditioning; this one SHAPES and then SCANS.
+  //
+  // ⚠ THE FOUR SLEW DIALS LOOK INTERCHANGEABLE AND ARE NOT, which is what makes
+  // the ranking an argument rather than declaration order with a story. LENGTH
+  // counts UP from channel 1, so channel 1 is in the scan at all four length
+  // settings, channel 2 at three, channel 3 at two, channel 4 only at length 4;
+  // RESET returns to channel 1 and length 1 HOLDS channel 1. fourplexer's four
+  // inputs genuinely ARE symmetric — it has no LENGTH — so the argument does
+  // not transfer, which is the test of whether it is one. The whole SWITCH half
+  // is then ranked below the slew half because it is gated on a CABLE: there is
+  // no internal clock, so MODE / LENGTH / XFADE change nothing that leaves the
+  // box until `step_clock` is patched.
+  //
+  // ⚠ THE GLYPH DECISION IS THE ninelives HAZARD WITH NO ESCAPE HATCH, and it
+  // is measured. `primaryAudioOutPortId` returns NULL — six `cv` outputs and one
+  // `gate`, no `audio` output at all — so the `live-audio` short-circuit cannot
+  // fire, exactly as on ninelives. But ninelives could still declare 'waveform'
+  // honestly, because it HAS a `shape` param 0..2 that every one of its nine
+  // taps shares. This module has no `shape`, no ADSR quartet and no `algorithm`,
+  // so 'scope', 'meter', 'waveform', 'envelope' and 'algorithm' ALL resolve
+  // `{ kind: 'static' }`: a deterministic fake trace tapping nothing. There is
+  // no honest picture available at any setting, so the face declares
+  // `glyph: 'none'` and spends the budget on a SEVEN-ROW OUTPUT TABLE — one row
+  // per declared jack, each reading a different subset of the dials. Every
+  // branch is a permanent leg of `slewswitch-face-model.test.ts`, including the
+  // control that each candidate glyph would have resolved `static`.
+  //
+  // ⚠ AUDITED BEFORE AUTHORING, and the CV half came back CLEAN — which is only
+  // worth anything because the rig carried its controls. All four `paramTarget`
+  // inputs move the audio on BOTH paths and the two columns agree TO THE BIT
+  // (|cv − knob| = 0.0000e+0 on every channel), the four channels are perfectly
+  // isolated (slew1_cv moves out1 by 1.1156e+0 and out2/out3/out4 by
+  // 0.0000e+0), and the terminal partition is DERIVED off the live handle:
+  // 4 param terminals, 6 port terminals, zero params published off-worklet.
+  // `step_clock` captures 100.0 % of rising edges at 1 / 2 / 5 / 10 / 20 / 50 /
+  // 100 Hz and is width-invariant from 1 to 256 samples — the buggles defect
+  // measured for, and absent, because this consumer is a WORKLET doing a
+  // per-sample compare rather than a main-thread analyser poll.
+  //
+  // ⚠ IT FOUND TWO OTHER DEFECTS, both in the two preceding commits. The
+  // "glitch-free" equal-power crossfade ADDED a +41.42 % overshoot to every CV
+  // hand-off (#1711) — the audio law applied to correlated CV, invisible
+  // because the ART profile's `switched` assertion skips the fade window by
+  // construction. And the slew dials are one-pole TIME CONSTANTS documented as
+  // arrival times (#1712), a fixed 4.605x across three decades: the shipped
+  // 0.5 s default arrives in 2.30 s. That second one is now the face's own
+  // `settle` readout, so the panel prints the number the docs had wrong.
+  'slewSwitch',
   // THE FACEPLATE QUEUE · Q15, COHORT 3 — the curve-morph attenuverter
   // (2026-08-15), and the entry whose merit argument is a SHAPE rather than a
   // count.
