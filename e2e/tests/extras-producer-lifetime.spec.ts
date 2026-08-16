@@ -35,14 +35,53 @@
 // placeholder and a dark IDLE FIELD, and each subject's content is a saturated
 // colour chosen so the two cannot alias.
 //
+// ── AND WHY IT READS STRIPS, NOT THE WHOLE FRAME (#1757) ─────────────────────
+// The first version of this spec passed 3x locally, passed under
+// `E2E_SWIFTSHADER=1`, and then TIMED OUT ON CI — on the toybox subject only,
+// on both attempts. It also dragged two unrelated `modules.spec.ts` tests on the
+// same shard into `__ensureEngine` timeouts, which is the tell: the test was
+// STARVING ITS CO-TENANTS, not waiting on a producer.
+//
+// MEASURED under `E2E_SWIFTSHADER=1`, with the toybox content arriving after
+// TWO FRAMES in every rig — so nothing was ever "not arriving":
+//
+//   rig                              probeFull median      whole test
+//   2 toybox + 2 acidwarp (as was)   915 ms (peak 1478)    33.4 s
+//   1 toybox, no acidwarp            120 ms                 3.4 s
+//
+// Two multipliers, both of them the TEST's and neither the product's:
+//   * a full-frame 1024x768 readback is 3.1 MB and forces a flush+sync of a
+//     SwiftShader context that is drawing FOUR GL nodes per frame — so the
+//     instrument cost more than the subject it measured, which is the exact
+//     shape CLAUDE.md's instrument rule warns about;
+//   * the rig itself spawned TWO toybox nodes (the heaviest module in the repo)
+//     plus two acidwarp evictors.
+// CI runs this shard with FOUR Playwright workers on one runner, so ~1/4 the CPU
+// each: a ~900 ms probe becomes seconds, `expect.poll`'s callback outlives the
+// poll budget, and because Playwright cannot abort an in-flight callback the
+// 180 s TEST timeout fires from inside it (which is exactly where the CI stack
+// pointed, and why the retry died inside `probe`).
+//
+// The fix is the INSTRUMENT and the RIG, not a bigger timeout: a timeout raise
+// would have kept starving the neighbours. Strips read 49 KB instead of 3.1 MB
+// (64x less) and still span the frame vertically, so a top-anchored placeholder
+// like TEXTMARQUEE's is still in view.
+//
 // ── WHAT IS ASSERTED ─────────────────────────────────────────────────────────
 //   1. DEFAULT STATE — spawn with the content already in `node.data`, expand
 //      NOTHING, click nothing, and require the node's own output to carry that
 //      content. This is the owner-visible bug.
-//   2. PERMANENT NEGATIVE CONTROL — the SAME probe on a node with NO persisted
-//      content must read DIFFERENTLY. Without this, leg 1 passes for a probe
-//      that cannot tell a picture from a placeholder, which is precisely how the
-//      first instrument here failed.
+//   2. PERMANENT NEGATIVE CONTROL — the SAME probe on the SAME node BEFORE its
+//      content is written must read DIFFERENTLY. Without this, leg 1 passes for
+//      a probe that cannot tell a picture from a placeholder, which is precisely
+//      how the first instrument here failed.
+//      ⚠ This used to be a BARE SIBLING NODE of the same type. Same-node
+//      before/after is both cheaper (it does not spawn a second copy of the
+//      heaviest module in the repo — see the strips note above) and STRICTLY
+//      STRONGER: a sibling can differ for reasons other than its data (a
+//      different node id, a different spawn order, a different position in the
+//      draw list), whereas here the ONLY thing that changes between the two
+//      readings is the content itself.
 //   3. POSITIVE CONTROL — the identical probe with the real card mounted in the
 //      dock full-view. Leg 1 and leg 3 must AGREE, which is the causal claim in
 //      both directions.
@@ -234,10 +273,22 @@ interface Reading {
   fbComplete: boolean;
 }
 
+/**
+ * How many horizontal STRIPS the probe reads, and how many rows each is. Six
+ * full-width strips of two rows spans the frame vertically for 49 KB instead of
+ * the 3.1 MB a full-frame readback costs (#1757) — and the readback is a
+ * flush+sync on the SUBJECT's own GL context, so this is the difference between
+ * an instrument that costs less than what it measures and one that does not.
+ * Full width on purpose: nothing here samples a centre crop, because
+ * TEXTMARQUEE's placeholder is a text block that need not be centred.
+ */
+const PROBE_STRIPS = 6;
+const PROBE_STRIP_ROWS = 2;
+
 /** IN-PAGE, one evaluate: read the node's own output texture and report
  *  per-channel means. Never a Playwright-side per-pixel loop. */
 async function probe(page: Page, nodeId: string): Promise<Reading> {
-  return page.evaluate((id) => {
+  return page.evaluate(({ id, strips, rows }) => {
     const w = globalThis as unknown as {
       __engine: () => {
         getDomain: (d: string) => {
@@ -262,24 +313,28 @@ async function probe(page: Page, nodeId: string): Promise<Reading> {
     gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
     const complete = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
-    const px = new Uint8Array(W * H * 4);
-    if (complete) gl.readPixels(0, 0, W, H, gl.RGBA, gl.UNSIGNED_BYTE, px);
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    gl.deleteFramebuffer(fb);
-    while (gl.getError() !== gl.NO_ERROR) {
-      /* drain the readback (already captured) */
-    }
+    const px = new Uint8Array(W * rows * 4);
     let n = 0;
     let r = 0;
     let g = 0;
     let b = 0;
-    // Every 16th pixel — the question is "which channel dominates the frame",
-    // and every extra sample is readback cost on the subject's own main thread.
-    for (let i = 0; i < px.length; i += 4 * 16) {
-      r += px[i]!;
-      g += px[i + 1]!;
-      b += px[i + 2]!;
-      n++;
+    if (complete) {
+      for (let s = 0; s < strips; s++) {
+        // Strip centres, evenly spread top to bottom.
+        const y = Math.floor(((s + 0.5) / strips) * Math.max(1, H - rows));
+        gl.readPixels(0, y, W, rows, gl.RGBA, gl.UNSIGNED_BYTE, px);
+        for (let i = 0; i < px.length; i += 4 * 4) {
+          r += px[i]!;
+          g += px[i + 1]!;
+          b += px[i + 2]!;
+          n++;
+        }
+      }
+    }
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.deleteFramebuffer(fb);
+    while (gl.getError() !== gl.NO_ERROR) {
+      /* drain the readback (already captured) */
     }
     return {
       r: n ? Math.round(r / n) : 0,
@@ -289,7 +344,7 @@ async function probe(page: Page, nodeId: string): Promise<Reading> {
       hasTexture: true,
       fbComplete: complete,
     };
-  }, nodeId);
+  }, { id: nodeId, strips: PROBE_STRIPS, rows: PROBE_STRIP_ROWS });
 }
 
 function fmt(x: Reading): string {
@@ -395,10 +450,13 @@ test.describe('EXTRAS-channel producers are NODE-lifetime (#1720)', () => {
       page.on('pageerror', (e) => errors.push(e.message));
 
       const seeded = `extras-${type}`;
-      const bare = `extras-${type}-bare`;
-      // Two cheap extra occupants, so opening them EVICTS the subject's pane:
-      // the dock holds MAX_FULLVIEW_PANES (2) and drops from the front.
-      // acidwarp is a pure-GPU generator with no card-owned state of its own.
+      // Two cheap extra dock occupants, so opening them EVICTS the subject's
+      // pane: the dock holds MAX_FULLVIEW_PANES (2) and drops from the front.
+      // ⚠ AUDIO modules on purpose (#1757). These were two `acidwarp` nodes —
+      // pure-GPU generators — which meant the rig drew four GL nodes every frame
+      // into a software rasterizer on CI, and the readback the probe does had to
+      // sync behind all of them. The eviction claim is about the DOCK, not about
+      // GL, so the occupants need not render anything.
       const evictA = 'extras-evict-a';
       const evictB = 'extras-evict-b';
       await boot(page);
@@ -411,9 +469,8 @@ test.describe('EXTRAS-channel producers are NODE-lifetime (#1720)', () => {
         page,
         [
           { id: seeded, type, domain: 'video' },
-          { id: bare, type, domain: 'video' },
-          { id: evictA, type: 'acidwarp', domain: 'video' },
-          { id: evictB, type: 'acidwarp', domain: 'video' },
+          { id: evictA, type: 'lfo', domain: 'audio' },
+          { id: evictB, type: 'filter', domain: 'audio' },
           { id: 'extras-out', type: 'videoOut', domain: 'video' },
         ],
         [
@@ -428,10 +485,6 @@ test.describe('EXTRAS-channel producers are NODE-lifetime (#1720)', () => {
         { mountTimeout: 30_000 },
       );
 
-      const blue = await blueJpeg(page);
-      await seedData(page, seeded, fixture.data(blue));
-
-      // ── 1. DEFAULT STATE. Nothing expanded, clicked or docked. ────────────
       // The lane really is showing the uniform tile — i.e. no card is in it.
       await expect(
         page.locator(`.svelte-flow__node[data-id="${seeded}"] [data-testid="module-shell-placeholder"]`),
@@ -450,30 +503,41 @@ test.describe('EXTRAS-channel producers are NODE-lifetime (#1720)', () => {
         `${type} must NOT be kept alive by a headless card mount — the producer is node-lifetime`,
       ).toBe(0);
 
+      // ── 2. PERMANENT NEGATIVE CONTROL, TAKEN FIRST ───────────────────────
+      // The SAME node, the SAME probe, BEFORE any content exists. If this
+      // already reads as content, the probe cannot tell a picture from a
+      // placeholder and every other leg here is vacuous — which is exactly how
+      // the first instrument for this issue failed (two identical readings and
+      // a PASSING equality). Taken before the seed rather than from a sibling
+      // node so the only difference between the two readings is the DATA.
+      const waitedPre = await waitForTexture(page, seeded, 600);
+      const placeholder = await readSettled(page, seeded);
+      expect(
+        placeholder.hasTexture,
+        `${type} must have an output texture before its content is written ` +
+          `(waited ${waitedPre} frames): ${fmt(placeholder)}`,
+      ).toBe(true);
+      expect(
+        dominates(placeholder, fixture.channel),
+        `NEGATIVE CONTROL: a ${type} node with NO persisted content must NOT read as content. ` +
+          `It did, so the probe cannot distinguish the two and every other leg here is vacuous.` +
+          `\n  placeholder: ${fmt(placeholder)}`,
+      ).toBe(false);
+
+      // ── 1. DEFAULT STATE. Nothing expanded, clicked or docked. ────────────
+      const blue = await blueJpeg(page);
+      await seedData(page, seeded, fixture.data(blue));
       const waited = await waitForTexture(page, seeded, 600);
       await expect
         .poll(async () => dominates(await readSettled(page, seeded), fixture.channel), {
           message:
             `#1720: ${type} must render its PERSISTED content with NO card mounted. ` +
-            `Waited ${waited} frames for an output texture.`,
+            `Waited ${waited} frames for an output texture; the SAME probe on the SAME node ` +
+            `before the content was written read ${fmt(placeholder)}.`,
           timeout: SLOW_RENDER ? 60_000 : 30_000,
         })
         .toBe(true);
       const never = await probe(page, seeded);
-
-      // ── 2. PERMANENT NEGATIVE CONTROL ────────────────────────────────────
-      // The same probe on the BARE sibling. If this also reads as content, the
-      // probe cannot tell a picture from a placeholder and leg 1 measured
-      // nothing — which is exactly how the first instrument for this issue
-      // failed (two identical readings and a passing equality).
-      await waitForTexture(page, bare, 600);
-      const placeholder = await readSettled(page, bare);
-      expect(
-        dominates(placeholder, fixture.channel),
-        `NEGATIVE CONTROL: a ${type} node with NO persisted content must NOT read as content. ` +
-          `It did, so the probe cannot distinguish the two and every other leg here is vacuous.` +
-          `\n  seeded:      ${fmt(never)}\n  bare (empty): ${fmt(placeholder)}`,
-      ).toBe(false);
 
       // ── 3. POSITIVE CONTROL — the identical probe, card mounted ──────────
       await page.evaluate((id) => {
@@ -559,7 +623,7 @@ test.describe('EXTRAS-channel producers are NODE-lifetime (#1720)', () => {
       // just a green tick.
       console.log(
         `#1720 ${type}: never-mounted ${fmt(never)} | card-mounted ${fmt(mounted)} | ` +
-          `bare placeholder ${fmt(placeholder)}`,
+          `pre-seed placeholder ${fmt(placeholder)}`,
       );
     });
   }
