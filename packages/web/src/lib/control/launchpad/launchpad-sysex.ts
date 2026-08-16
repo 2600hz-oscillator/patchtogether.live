@@ -195,6 +195,62 @@ export function encodeLedRgbBatch(specs: readonly RgbSpec[]): Uint8Array {
 }
 
 // ---------------------------------------------------------------------------
+// DEVICE-SIDE decode of the host→Launchpad SysEx we just encoded. This is the
+// hardware's half of the protocol: what a real Mini Mk3 DOES when it receives
+// one of the frames above.
+//
+// WHY IT EXISTS. A simulated device that merely records the byte runs it was
+// sent can only be asserted against by re-encoding the expectation — which
+// compares an encoder to itself and stays green if the encoder is wrong. And a
+// probe that reads the SENDER's `lastRgb` diff map reports what the host
+// BELIEVED it sent, so it cannot see a frame that was never delivered. Decoding
+// back to LED state gives an instrument whose subject is the SURFACE: "the
+// device is dark" and "the device is in Live mode" become directly observable
+// facts, which is what a Launchpad-blanking regression is actually about.
+// Round-tripped against the encoders in launchpad-sysex.test.ts.
+// ---------------------------------------------------------------------------
+
+/** One decoded host→Launchpad command. */
+export type LaunchpadTxCommand =
+  /** Programmer/Live mode select. `programmer: false` hands the surface back to
+   *  Live mode — the device stops honouring our lighting SysEx. */
+  | { type: 'mode'; programmer: boolean }
+  /** A lighting frame: every RGB spec it carried, in wire order. */
+  | { type: 'lighting'; specs: RgbSpec[] };
+
+/**
+ * Decode ONE host→Launchpad SysEx frame into the command a device would act on,
+ * or `null` for anything that is not a Mini Mk3 frame we emit (a foreign SysEx,
+ * a truncated run, an unknown command byte). PURE.
+ *
+ * ⚠ It deliberately decodes only what THIS repo encodes. A `null` therefore
+ * means "this simulated device would ignore that byte run", never "the frame is
+ * malformed" — a distinction a caller asserting on device state does not need,
+ * and one a caller asserting on protocol conformance must not read into it.
+ */
+export function decodeSurfaceSysex(bytes: Uint8Array | readonly number[]): LaunchpadTxCommand | null {
+  const b = Array.from(bytes);
+  // The shared header predicate PLUS the terminator: a run with no F7 is a
+  // truncated frame no device would act on.
+  if (!isMiniMk3Sysex(b) || b.length < 8 || b[b.length - 1] !== SYSEX_END) return null;
+  const cmd = b[6];
+  if (cmd === CMD_MODE) {
+    if (b.length !== 9) return null;
+    return { type: 'mode', programmer: b[7] === 0x01 };
+  }
+  if (cmd === CMD_LIGHTING) {
+    const specs: RgbSpec[] = [];
+    // Body runs from index 7 to the F7 terminator, in 5-byte specs.
+    for (let i = 7; i + 4 < b.length - 1; i += 5) {
+      if (b[i] !== LIGHTING_TYPE_RGB) return null; // an unknown spec type
+      specs.push({ index: b[i + 1], r: b[i + 2], g: b[i + 3], b: b[i + 4] });
+    }
+    return { type: 'lighting', specs };
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------------------
 // RX — decode the inbound MIDI stream (Launchpad → host). Programmer mode sends
 // pad presses as Note-On/Off and the top-row/scene buttons as CC. A single MIDI
 // message is 3 bytes ([status, data1, data2]); a Note-On with velocity 0 is a

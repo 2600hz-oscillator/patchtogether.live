@@ -82,6 +82,17 @@ export function loadContention(dir = join(ROOT, 'e2e/tests')) {
  */
 export const PENDING_FIRST_MEASUREMENT = [
   {
+    spec: 'launchpad-monitor-survives-card-collapse.spec.ts',
+    why:
+      'lands 2026-08-16 with the #1728 fix (collapsing the card BLANKED the physical ' +
+      'Launchpad and dropped the device claim). No ci.yml run containing it has ' +
+      'completed, so there are no blob reports to accept a cost from. Measured ~2 s on ' +
+      'a real GPU and ~7 s under E2E_SWIFTSHADER=1 locally — LOCAL numbers, not what ' +
+      'the planner needs. Run `task e2e:timings:accept -- <run-id>` on the first green ' +
+      'main run after this merges and DELETE this entry — the gate reddens on a stale ' +
+      'entry as loudly as on a missing one.',
+  },
+  {
     spec: 'extras-producer-lifetime.spec.ts',
     why:
       'lands 2026-08-16 with the #1720 fix (painter/textmarquee/picturebox/toybox ' +
