@@ -607,3 +607,58 @@ export function laneBodyPlan(
     rowTracks: usedTracks,
   };
 }
+
+// ── THE DOCK FULL-VIEW HEAD (#1726) ─────────────────────────────────────────
+//
+// Three things compete for the top of a dock faceplate and only one of them
+// can have it: the extension's own full-width SURFACE (`ShellExtension`'s
+// `fullViewBody` slot), the face's own promoted picture (`hero.cell`), and the
+// shell's generic GLYPH — which for a video-domain def is the live
+// `VideoTileThumb`. The precedence was an inline expression in ModuleShell
+// (`hasGlyph && !(view === 'dock-full' && hero?.cell)`); pulling it out is what
+// makes the NEW arm testable without a browser, since the repo's unit lane is
+// `environment: 'node'` and mounts no Svelte components.
+//
+// ⚠ The invariant that keeps every existing faceplate byte-identical is that
+// with `hasExtensionBody: false` this returns EXACTLY the old expression. That
+// is asserted as a permanent leg of module-shell-model.test.ts rather than
+// asserted once here in prose — a VRT baseline is the only other thing that
+// would have caught a drift, and it would have caught it 25 minutes later.
+
+/** What paints at the head of a dock full view. */
+export interface DockFullViewHeadPlan {
+  /** The extension's bespoke full-width body renders (dock full view only). */
+  extBody: boolean;
+  /** The shell's generic hero glyph (video thumbnail / scope / topology plate)
+   *  renders. False when something more specific has claimed the head. */
+  heroGlyph: boolean;
+}
+
+/**
+ * Resolve the dock full view's head. Pure — no def, no engine, no DOM.
+ *
+ * Precedence, most specific first:
+ *   1. `hasExtensionBody` — the module brought its own full-width surface.
+ *   2. `heroCell` — the face promoted one of its own cells to the hero stage.
+ *   3. the generic glyph.
+ *
+ * `extBody` is dock-only: a 192px lane tile cannot paint a module's full
+ * surface, and the lane already has the thumbnail glyph for identity.
+ */
+export function dockFullViewHeadPlan(args: {
+  view: 'lane' | 'dock-full';
+  /** The shell has SOMETHING generic to paint (`glyphKind !== 'none'` or a
+   *  video surface) — `ModuleShell`'s `hasGlyph`. */
+  hasGlyph: boolean;
+  /** The face declares `hero.cell` (dock-only by construction). */
+  heroCell: boolean;
+  /** The resolved extension exports the `fullViewBody` slot. */
+  hasExtensionBody: boolean;
+}): DockFullViewHeadPlan {
+  const dock = args.view === 'dock-full';
+  const extBody = dock && args.hasExtensionBody;
+  return {
+    extBody,
+    heroGlyph: args.hasGlyph && !(dock && (args.heroCell || args.hasExtensionBody)),
+  };
+}

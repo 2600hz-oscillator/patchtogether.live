@@ -73,7 +73,7 @@ author a `face` and rank the controls — no new platform capability.
 | `dx7` | audio | done | — |
 | `edges` | video | — | — |
 | `fader` | video | — | — |
-| `featurecv` | audio | — | — |
+| `featurecv` | audio | done | — |
 | `feedback` | video | — | — |
 | `filter` | audio | done | — |
 | `flipper` | audio | — | — |

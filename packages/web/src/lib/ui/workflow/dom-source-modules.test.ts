@@ -40,7 +40,8 @@
 //     e2e's job.
 
 import { describe, it, expect } from 'vitest';
-import { readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import '$lib/audio/modules';
@@ -62,6 +63,10 @@ import { NON_SHELL_LANE_TYPES, laneRenderKind, type LaneRenderKind } from './leg
 
 /** The card directory the glob resolver reads (../modules relative to here). */
 const CARD_DIR = fileURLToPath(new URL('../modules/', import.meta.url));
+/** `$lib` — a card may mount a child component through the alias rather than a
+ *  relative path (`$lib/ui/controls/Knob.svelte`), and a walk that resolved only
+ *  relative specifiers would stop at the first aliased edge. */
+const LIB_DIR = fileURLToPath(new URL('../../', import.meta.url));
 
 /** A REAL call, not a mention in prose: `attachExternalSource(` / `?.(`.
  *  (Comments in these cards say "attachExternalSource" without parens, and the
@@ -87,14 +92,26 @@ interface ProducerSeam {
 
 const PRODUCER_SEAMS: readonly ProducerSeam[] = [
   {
-    id: 'engine.write(node, …)',
-    re: /\bwrite\s*\(\s*node\s*,/,
+    // ⚠ WIDENED FROM `write\s*\(\s*node\s*,` (#1720). That form was bound to
+    // the IDENTIFIER `node`, and the engine ships TWO overloads —
+    // `audio/engine.ts` `write(nodeId: string, …)` on the domain engine and
+    // `write(node: ModuleNode, …)` on PatchEngine. A card reaching the domain
+    // engine (`e.getDomain<VideoEngine>('video')`, which several already do) and
+    // calling `ve.write(id, 'displayFrame', bmp)` produces IDENTICAL engine
+    // state and matched nothing. No card did that at the time, so the set was
+    // accurate — and one rename from silently emptying, with the vacuity guard
+    // still green because the other members matched. The negative controls
+    // below pin BOTH the widened matches and the shapes that must still miss.
+    id: 'engine.write(node|id, …)',
+    re: /\bwrite\s*\(\s*(?:node|id|nodeId)\s*,/,
     why:
       'the card pushes state INTO the module handle every rAF — TIMELORDE its composited ' +
       "display (`write(node,'displayFrame')`, the only writer of what video_out passes on) " +
       "and SYNESTHESIA its per-band video levels (`write(node,'video_levels_a'/'_b')`, the " +
       'only writer of what its AUDIO outputs carry). Unmount the card and the module keeps ' +
-      'drawing/emitting its idle value forever.',
+      'drawing/emitting its idle value forever. Matches BOTH engine overloads — the ' +
+      'PatchEngine `write(node, …)` and the domain-engine `write(nodeId, …)`, which are the ' +
+      'same engine state reached two ways.',
   },
   {
     id: 'install*FrameDrawer(…)',
@@ -120,33 +137,184 @@ function cardNameToType(): Map<string, string> {
   return map;
 }
 
-/** Every `*Card.svelte` in the glob directory, as (basename, source). */
-function cardSources(): Array<{ base: string; src: string }> {
-  const out: Array<{ base: string; src: string }> = [];
-  for (const file of readdirSync(CARD_DIR)) {
-    if (!file.endsWith('Card.svelte')) continue;
-    out.push({
-      base: file.replace(/\.svelte$/, ''),
-      src: readFileSync(new URL(file, `file://${CARD_DIR}`), 'utf8'),
-    });
-  }
-  return out;
+// ── #1724: THE WALK, and what the old one was structurally unable to see ─────
+//
+// The seam patterns were RIGHT and the file set was WRONG. CUBE installs a frame
+// drawer — `installCubeFrameDrawer`, matched letter for letter by the
+// `install*FrameDrawer` seam below — from `modules/cube/CubeVizSurface.svelte`,
+// and the walk read `readdirSync(CARD_DIR)` (non-recursive) filtered to
+// `*Card.svelte`. Either filter alone hid the file. So the gate was green while
+// `CUBE.video_out → VIDEO OUT` was solid black on a rack nobody had touched
+// (MEASURED, never-mounted: nonBlack 0/3072 px, maxLuma 0; with the card mounted
+// in the dock full-view: 3072/3072, maxLuma 212 — the same probe, the same port).
+//
+// ⚠ THE ENTRY-POINT FILTER WAS NOT THE BUG, and copying it here was the bug.
+// `modules-card-components.ts` resolves cards with `import.meta.glob(
+// './modules/*Card.svelte')` — flat, `*Card.svelte`. That IS the set of cards,
+// exactly, and it is anchored below. What went wrong is that the walk then read
+// ONLY those files, when the subject of the check is "what does this card MOUNT"
+// — and a card's producer can live in any component in its subtree. So the entry
+// points stay the resolver's, and the SEAM SEARCH widens to the subtree.
+//
+// ⚠ WHY `.svelte` AND NOT THE WHOLE IMPORT CLOSURE. Measured, both ways, before
+// choosing: following every `.ts` edge too enrols **all 195 cards**, because
+// every card reaches `$lib/video/engine.ts` — which DEFINES
+// `attachExternalSource`. That is the blind-gate failure inverted (a filter so
+// wide the subject is redefined to "everything"), and it is not an accident of
+// this repo: a `.ts` module reached from a card is either the ENGINE API itself
+// or a NODE-KEYED registry that already survives a card unmount by construction
+// (`ui/media/node-media-registry.ts`, the #1583 fix — the one other `.ts` seam
+// hit, reached by ToyboxCard, and precisely a module that must NOT enrol a type).
+// A `.svelte` component, by contrast, shares its parent's MOUNT LIFETIME, which
+// is the thing this set is about. The component subtree is the honest boundary.
+//
+// MEASURED DELTA of the widening over the whole card set: exactly TWO
+// attributions the flat walk could not make — `CubeCard → cube/CubeVizSurface`
+// (the real defect) and `GroupCard → ScopeCard` (a wrong attribution, named and
+// exempted below). Nothing else moved.
+
+/** `*Card.svelte`, FLAT — the card ENTRY POINTS, and deliberately the same
+ *  filter `modules-card-components.ts` globs with. Anchored by
+ *  `the card entry points are exactly the glob the app resolves` below, so this
+ *  cannot drift away from the resolver in either direction. */
+function cardEntryPoints(): string[] {
+  return readdirSync(CARD_DIR)
+    .filter((f) => f.endsWith('Card.svelte'))
+    .map((f) => join(CARD_DIR, f));
 }
 
-/** Module types whose card matches ANY producer seam, plus the cards that
- *  matched but resolve to no registered def (a hole the set cannot cover). */
+/** Resolve a `.svelte` import specifier to a real path, or null. Relative and
+ *  `$lib/`-aliased only: a bare package specifier is a dependency, never a card
+ *  subtree member. */
+function resolveComponentImport(fromFile: string, spec: string): string | null {
+  if (!spec.endsWith('.svelte')) return null;
+  let base: string;
+  if (spec.startsWith('$lib/')) base = join(LIB_DIR, spec.slice('$lib/'.length));
+  else if (spec.startsWith('.')) base = resolve(dirname(fromFile), spec);
+  else return null;
+  return existsSync(base) && statSync(base).isFile() ? base : null;
+}
+
+const IMPORT_RE = /(?:^|\n)\s*import\s+(?:[^'"]*?\s+from\s+)?['"]([^'"]+)['"]/g;
+
+/**
+ * A card's COMPONENT SUBTREE — the card file plus every `.svelte` component it
+ * transitively mounts, at any depth and in any directory.
+ *
+ * This is the file set the seams are searched over. Exported shape (a plain
+ * array of absolute paths) so the negative controls can call the SAME function
+ * on a fixture the test builds, rather than a re-implementation of it.
+ */
+function componentSubtree(entry: string): string[] {
+  const seen = new Set<string>();
+  const stack = [entry];
+  while (stack.length > 0) {
+    const file = stack.pop()!;
+    if (seen.has(file)) continue;
+    seen.add(file);
+    let src: string;
+    try {
+      src = readFileSync(file, 'utf8');
+    } catch {
+      continue;
+    }
+    for (const m of src.matchAll(IMPORT_RE)) {
+      const child = resolveComponentImport(file, m[1]!);
+      if (child && !seen.has(child)) stack.push(child);
+    }
+  }
+  return [...seen];
+}
+
+/** A path printed the way a reader can find it: relative to the card dir. */
+function rel(file: string): string {
+  return relative(CARD_DIR, file).split(sep).join('/');
+}
+
+/** Every card, with its whole component subtree read. */
+function cardSources(): Array<{ base: string; entry: string; files: Array<{ path: string; src: string }> }> {
+  return cardEntryPoints().map((entry) => ({
+    base: entry.slice(CARD_DIR.length).replace(/\.svelte$/, ''),
+    entry,
+    files: componentSubtree(entry).map((path) => ({ path, src: readFileSync(path, 'utf8') })),
+  }));
+}
+
+/**
+ * ATTRIBUTIONS THE SUBTREE WALK GETS WRONG — deny by default, one NAMED entry
+ * per `(card, component)` PAIR.
+ *
+ * ⚠ A PAIR, never a filename. A new seam appearing in `GroupCard.svelte` ITSELF
+ * still reddens; only the one edge named here is excused. And every field is
+ * required, so `tsc` refuses an entry added without its reason.
+ *
+ * ANCHORED TO THE ARTIFACT (see the test): an entry whose card no longer exists,
+ * whose component is no longer in that card's subtree, or whose component no
+ * longer carries a seam, is RED — it cannot sit here reading as coverage for
+ * something that is gone.
+ */
+interface SubtreeSeamExemption {
+  /** Card basename, exactly as the glob resolver names it. */
+  readonly card: string;
+  /** The seam-carrying component, relative to CARD_DIR. */
+  readonly component: string;
+  /** Why the seam does NOT make this card the sole writer of THIS module's
+   *  engine state. */
+  readonly why: string;
+}
+
+const SUBTREE_SEAM_EXEMPTIONS: readonly SubtreeSeamExemption[] = [
+  {
+    card: 'GroupCard',
+    component: 'ScopeCard.svelte',
+    why:
+      'GroupCard mounts a HIDDEN ScopeCard per viz-passthrough CHILD (`<ScopeCard ' +
+      '{...hiddenCardProps(vc.childNode)} />`), so the `write(node, …)` it reaches writes to the ' +
+      "CHILD's node — `scope`, already a member in its own right — and never to the group's. " +
+      'Enrolling `group` would headless-mount an organizational container that is a ' +
+      'NON_SHELL_LANE_TYPE and is never swapped away in the first place, buying an off-screen ' +
+      'mount for a node whose engine state does not exist.',
+  },
+];
+
+/** The FIRST seam any file in a card's subtree matches, with the file that
+ *  carried it — `null` when the card produces nothing, and `null` when the only
+ *  match is a NAMED wrong attribution (deny by default: the pair must be
+ *  listed, not the file). */
+function seamHitFor(card: {
+  base: string;
+  entry: string;
+  files: Array<{ path: string; src: string }>;
+}, seams: readonly { id: string; re: RegExp }[]): { seam: string; file: string } | null {
+  for (const { path, src } of card.files) {
+    const seam = seams.find((s) => s.re.test(src));
+    if (!seam) continue;
+    const component = rel(path);
+    if (
+      path !== card.entry &&
+      SUBTREE_SEAM_EXEMPTIONS.some((x) => x.card === card.base && x.component === component)
+    ) {
+      continue;
+    }
+    return { seam: seam.id, file: component };
+  }
+  return null;
+}
+
+/** Module types whose card SUBTREE matches ANY producer seam, plus the cards
+ *  that matched but resolve to no registered def (a hole the set cannot cover). */
 function derivedProducerTypes(): { found: Set<string>; unmapped: string[]; hits: string[] } {
   const byName = cardNameToType();
   const found = new Set<string>();
   const unmapped: string[] = [];
   const hits: string[] = [];
-  for (const { base, src } of cardSources()) {
-    const seam = PRODUCER_SEAMS.find((s) => s.re.test(src));
-    if (!seam) continue;
-    hits.push(`${base} → ${seam.id}`);
-    const type = byName.get(base);
+  for (const card of cardSources()) {
+    const hit = seamHitFor(card, PRODUCER_SEAMS);
+    if (!hit) continue;
+    hits.push(`${card.base} → ${hit.seam} @ ${hit.file}`);
+    const type = byName.get(card.base);
     if (!type) {
-      unmapped.push(base);
+      unmapped.push(card.base);
       continue;
     }
     found.add(type);
@@ -154,20 +322,192 @@ function derivedProducerTypes(): { found: Set<string>; unmapped: string[]; hits:
   return { found, unmapped, hits };
 }
 
+describe('THE WALK (#1724) — the gate reads what a card MOUNTS, not one file', () => {
+  it('the card ENTRY POINTS are exactly the glob the app itself resolves', () => {
+    // ANCHORED TO THE RESOLVER, not to a comment about it. If
+    // `modules-card-components.ts` ever globs a different shape (recursive, or a
+    // second suffix), this fails and the walk is corrected WITH it — the entry
+    // set and the app's card set are one truth.
+    const resolverSrc = readFileSync(
+      fileURLToPath(new URL('../modules-card-components.ts', import.meta.url)),
+      'utf8',
+    );
+    const glob = /import\.meta\.glob<[^>]*>\(\s*'([^']+)'/.exec(resolverSrc)?.[1];
+    expect(glob, 'could not read the card glob out of modules-card-components.ts').toBe(
+      './modules/*Card.svelte',
+    );
+    // …and the entry points this file derives match that glob's shape exactly.
+    const entries = cardEntryPoints().map((p) => rel(p));
+    expect(entries.filter((p) => p.includes('/')), 'a card entry point in a SUBDIRECTORY').toEqual([]);
+    expect(entries.filter((p) => !p.endsWith('Card.svelte')), 'a non-Card entry point').toEqual([]);
+    expect(entries.length).toBeGreaterThan(0);
+  });
+
+  it('REACHES a component in a SUBDIRECTORY and one that is not a *Card.svelte', () => {
+    // THE PERMANENT NEGATIVE-CONTROL LEG the flat walk needed and did not have.
+    // The pre-#1724 vacuity guard could not fire here: the other members still
+    // matched, so "found something" stayed true while cube was invisible. This
+    // asserts the PROPERTY that was missing instead — that the walk leaves the
+    // card's own file at all, in BOTH the ways the old filters blocked.
+    //
+    // Slack is real and deliberate, so this is a vacuity guard and not a
+    // population count: it needs ONE subdirectory component and ONE non-Card
+    // component, out of the many the card tree mounts.
+    const reached = new Set<string>();
+    for (const card of cardSources()) for (const f of card.files) reached.add(rel(f.path));
+    const inSubdir = [...reached].filter((p) => p.includes('/'));
+    const notACard = [...reached].filter((p) => !p.endsWith('Card.svelte'));
+    expect(
+      inSubdir,
+      'the walk read no component in a subdirectory of the card dir — a NON-RECURSIVE walk is ' +
+        'exactly how #1724 hid cube/CubeVizSurface.svelte',
+    ).not.toEqual([]);
+    expect(
+      notACard,
+      'the walk read no component outside the `*Card.svelte` suffix — that filter is the OTHER ' +
+        'half of what hid cube/CubeVizSurface.svelte',
+    ).not.toEqual([]);
+  });
+
+  it('NEGATIVE CONTROL, both directions: the subtree walk finds a seam the flat walk cannot', () => {
+    // Direction 1 — the widening is LOAD-BEARING. Run the identical predicate
+    // with the pre-#1724 filters reinstated and require the answer to be
+    // strictly smaller. A revert to a flat, suffix-filtered walk fails HERE
+    // rather than silently going green with cube's picture black again.
+    const byName = cardNameToType();
+    const wide = derivedProducerTypes().found;
+    const flatOnly = new Set<string>();
+    for (const card of cardSources()) {
+      const own = card.files.find((f) => f.path === card.entry)!;
+      if (!PRODUCER_SEAMS.some((s) => s.re.test(own.src))) continue;
+      const t = byName.get(card.base);
+      if (t) flatOnly.add(t);
+    }
+    const gained = [...wide].filter((t) => !flatOnly.has(t)).sort();
+    expect(
+      gained,
+      'the card-file-only walk found the SAME set as the subtree walk. Either the walk has been ' +
+        'narrowed back to one file per card, or every producer now lives in its card — in which ' +
+        'case this leg has stopped measuring anything and needs a decision, not a deletion.',
+    ).not.toEqual([]);
+    // …and the widening only ever ADDS. A subtree walk that lost a member would
+    // mean the exemption list is eating real coverage.
+    expect(
+      [...flatOnly].filter((t) => !wide.has(t)).sort(),
+      'the subtree walk LOST a type the card-file walk found — an exemption is over-broad',
+    ).toEqual([]);
+  });
+
+  it('NEGATIVE CONTROL: componentSubtree resolves relative AND $lib edges, and stops at .ts', () => {
+    // Direction 2, on the MECHANISM rather than the population, over a fixture
+    // this test builds — so it stays true whatever the card tree does next.
+    // ⚠ `$lib/video/engine.ts` is the measured reason `.ts` edges are NOT
+    // followed: it DEFINES attachExternalSource and every one of the cards
+    // reaches it, so a `.ts`-following walk enrols the entire registry.
+    const cubeCard = join(CARD_DIR, 'CubeCard.svelte');
+    const subtree = componentSubtree(cubeCard).map((p) => rel(p));
+    expect(subtree, 'the entry itself is always in its own subtree').toContain('CubeCard.svelte');
+    expect(
+      subtree,
+      'CubeCard mounts cube/CubeVizSurface.svelte by a RELATIVE specifier — the edge #1724 was about',
+    ).toContain('cube/CubeVizSurface.svelte');
+    expect(
+      subtree.some((p) => p.startsWith('../')),
+      'a card mounts shared components through the $lib alias; a walk that resolved only relative ' +
+        'specifiers would stop at the first aliased edge',
+    ).toBe(true);
+    expect(
+      subtree.filter((p) => !p.endsWith('.svelte')),
+      'the walk followed a NON-component edge — see the header: following .ts enrols all cards ' +
+        'through $lib/video/engine.ts',
+    ).toEqual([]);
+  });
+
+  it('every subtree-seam EXEMPTION still names a live, seam-carrying edge', () => {
+    // ANCHORED TO THE ARTIFACT in all three ways an entry can go stale, so a
+    // name that no longer resolves is RED rather than quiet coverage.
+    const cards = new Map(cardSources().map((c) => [c.base, c]));
+    const stale: string[] = [];
+    for (const x of SUBTREE_SEAM_EXEMPTIONS) {
+      const card = cards.get(x.card);
+      if (!card) {
+        stale.push(`${x.card}: no such card`);
+        continue;
+      }
+      const file = card.files.find((f) => rel(f.path) === x.component);
+      if (!file) {
+        stale.push(`${x.card} → ${x.component}: not in that card's subtree`);
+        continue;
+      }
+      if (file.path === card.entry) {
+        stale.push(`${x.card} → ${x.component}: that IS the card's own file — never exemptible`);
+        continue;
+      }
+      const seams = [...PRODUCER_SEAMS, { id: 'attachExternalSource(…)', re: CALL_RE }];
+      if (!seams.some((s) => s.re.test(file.src))) {
+        stale.push(`${x.card} → ${x.component}: carries no seam any more`);
+      }
+    }
+    expect(stale, `stale subtree-seam exemption(s): ${stale.join(' | ')}`).toEqual([]);
+    // The `why` is the only thing a future reviewer of a widening actually
+    // needs, so an empty one is not an exemption.
+    for (const x of SUBTREE_SEAM_EXEMPTIONS) {
+      expect(x.why.length, `${x.card} → ${x.component} needs a real why`).toBeGreaterThan(40);
+    }
+  });
+
+  it('SCOPE: what this walk still cannot see, stated as an assertion', () => {
+    // 1. A producer reached through a `.ts` module. DELIBERATE and measured —
+    //    following .ts enrols all cards via $lib/video/engine.ts — and safe for
+    //    the one real case: `ui/media/node-media-registry.ts` is the NODE-KEYED
+    //    registry from #1583, which survives a card unmount BY CONSTRUCTION and
+    //    must not enrol anything. Asserted, not assumed:
+    const registry = readFileSync(
+      fileURLToPath(new URL('../media/node-media-registry.ts', import.meta.url)),
+      'utf8',
+    );
+    expect(
+      CALL_RE.test(registry),
+      'node-media-registry no longer calls attachExternalSource — the argument above for not ' +
+        'following .ts edges has changed and needs re-deriving',
+    ).toBe(true);
+    // 2. A DYNAMIC mount — `import()`, or a component resolved out of a registry
+    //    (the shell-cells PANEL seam is exactly that shape: `shell-cells.ts` maps
+    //    cube's hero to CubeHeroPanel, and no static import from CubeCard reaches
+    //    it). This gate cannot follow that edge, and does not need to HERE: the
+    //    panel's own renderer is CubeVizSurface, which the card DOES reach. But
+    //    a module whose producer is ONLY in a dynamically-mounted panel would be
+    //    invisible — the e2e (card-producer-lifetime.spec.ts) is the net.
+    const shellCells = readFileSync(
+      fileURLToPath(new URL('./shell-cells.ts', import.meta.url)),
+      'utf8',
+    );
+    expect(
+      /CubeHeroPanel/.test(shellCells),
+      'shell-cells no longer resolves a cube panel — the dynamic-mount blind spot named here ' +
+        'has moved and the statement is stale',
+    ).toBe(true);
+    // 3. Whether the mounted producer WORKS. Pixels are the e2e's job.
+  });
+});
+
 describe('DOM_SOURCE_LANE_TYPES — the grep gate (a new source module cannot ship dark)', () => {
   it('is EXACTLY the set of module types whose card calls attachExternalSource()', () => {
     const byName = cardNameToType();
     const found = new Set<string>();
     const unmapped: string[] = [];
 
-    for (const file of readdirSync(CARD_DIR)) {
-      if (!file.endsWith('Card.svelte')) continue;
-      const src = readFileSync(new URL(file, `file://${CARD_DIR}`), 'utf8');
-      if (!CALL_RE.test(src)) continue;
-      const base = file.replace(/\.svelte$/, '');
-      const type = byName.get(base);
+    // #1724: the SUBTREE, not the card file. This half's population does not
+    // move today (measured: every attachExternalSource call is in the card's own
+    // file), and that is the point — the widening removes the structural
+    // blindness without changing the answer, so the next DOM-source module that
+    // puts its `<video>` in a child component is caught rather than missed.
+    for (const card of cardSources()) {
+      const hit = seamHitFor(card, [{ id: 'attachExternalSource(…)', re: CALL_RE }]);
+      if (!hit) continue;
+      const type = byName.get(card.base);
       if (!type) {
-        unmapped.push(base);
+        unmapped.push(card.base);
         continue;
       }
       found.add(type);
@@ -222,7 +562,9 @@ describe('CARD_PRODUCER_LANE_TYPES — the second seam (#1587: the card IS the p
     // card is either a rename nobody followed or a mechanism that is gone.
     // Either way the entry must not sit here reading as coverage.
     const sources = cardSources();
-    const dead = PRODUCER_SEAMS.filter((s) => !sources.some((c) => s.re.test(c.src))).map((s) => s.id);
+    const dead = PRODUCER_SEAMS.filter(
+      (s) => !sources.some((c) => c.files.some((f) => s.re.test(f.src))),
+    ).map((s) => s.id);
     expect(dead, `producer seam(s) matching NO card: ${dead.join(', ')}`).toEqual([]);
   });
 
@@ -249,12 +591,16 @@ describe('CARD_PRODUCER_LANE_TYPES — the second seam (#1587: the card IS the p
   });
 
   it('NEGATIVE CONTROL: each seam regex fires on the CALL and not on the PROSE around it', () => {
-    const write = PRODUCER_SEAMS.find((s) => s.id === 'engine.write(node, …)')!.re;
+    const write = PRODUCER_SEAMS.find((s) => s.id === 'engine.write(node|id, …)')!.re;
     const drawer = PRODUCER_SEAMS.find((s) => s.id === 'install*FrameDrawer(…)')!.re;
 
     // Fires on the real call shapes these cards use…
     expect(write.test("if (eng && node) eng.write(node, 'displayFrame', bmp);")).toBe(true);
     expect(write.test("if (lv) eng.write(node, 'video_levels_a', lv);")).toBe(true);
+    // …and the OTHER engine overload, which the pre-#1720 pattern missed: the
+    // DOMAIN engine takes a node ID, and produces identical engine state.
+    expect(write.test("ve.write(id, 'displayFrame', bmp);")).toBe(true);
+    expect(write.test("videoEngine.write(nodeId, 'displayFrame', bmp);")).toBe(true);
     expect(drawer.test('installWavesculptFrameDrawer(id, myFrameDrawer);')).toBe(true);
     expect(drawer.test('function installBridgeFrameDrawer(): void {')).toBe(true);
 
@@ -263,6 +609,11 @@ describe('CARD_PRODUCER_LANE_TYPES — the second seam (#1587: the card IS the p
     // it writes a FILE, not engine state, and pulling it in would give
     // frametable a second, wrong reason to be headless-mounted.
     expect(write.test('await writable.write(blob);')).toBe(false);
+    // The widening must not swallow an unrelated first argument that merely
+    // STARTS with one of the names — `idx`, `nodeIds`, `identity`.
+    expect(write.test("port.write(idx, 'x');")).toBe(false);
+    expect(write.test("bus.write(nodeIds, 'x');")).toBe(false);
+    expect(write.test("log.write(identity, 'x');")).toBe(false);
     // TimelordeCard's own comment naming the API without the `node` argument.
     expect(write.test("// PUSHES that same frame back into the node (handle.write('displayFrame', …))")).toBe(false);
     expect(write.test('const rewritten = rewrite(nodes, edges);')).toBe(false);

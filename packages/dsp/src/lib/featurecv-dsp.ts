@@ -51,14 +51,29 @@ export const DEFAULT_ATTACK_MS = 10;
 export const DEFAULT_RELEASE_MS = 100;
 
 // ── Feature → 0..1 CV mappings ──
-/** RMS makeup: a full-scale sine (rms ≈ 0.707) reaches ≈ full scale; a −12 dBFS
- *  signal (rms ≈ 0.25) lands ≈ 0.5. Clamped to 1. */
+/** RMS makeup: a −12 dBFS signal (rms ≈ 0.25) lands at 0.5. ⚠ IT IS ALSO A
+ *  CEILING — the product is clamped to 1, so EVERY source at or above an RMS of
+ *  `1/LOUD_MAKEUP` = 0.5 (−6.02 dBFS) reads a flat full scale and the feature
+ *  stops modulating. A full-scale sine (rms 0.707) is already 1.41× past it.
+ *  The `gain` trim in front of the analyser divides that threshold. */
 export const LOUD_MAKEUP = 2.0;
 /** ZCR fraction (0..~0.5 for white noise) → 0..1 brightness. Clamped to 1. */
 export const BRIGHT_GAIN = 2.0;
-/** Crest-factor window mapped onto 0..1: a DC/flat signal (crest 1) → 0, a sine
- *  (crest √2 ≈ 1.41) → ~0.08, white noise (~3.5) → ~0.5, a sharp transient
- *  (≥ CREST_MAX) → 1. */
+/**
+ * Crest-factor window mapped onto 0..1: a DC/flat signal (crest 1) → 0, a sine
+ * (crest √2 ≈ 1.41) → 0.083, a sharp transient (≥ CREST_MAX) → 1.
+ *
+ * ⚠ THIS COMMENT USED TO SAY "white noise (~3.5) → ~0.5" AND THAT WAS A FALSE
+ * VALUE FOR THIS RACK (#1745). 3.5 is a GAUSSIAN white-noise figure, and the
+ * rack produces no Gaussian noise: `noise`'s white tap is UNIFORM in [−1,+1],
+ * whose crest is √3 ≈ 1.73 REGARDLESS of window length. Measured on the
+ * shipping generator over this module's own 1024-sample window (crest 1.7265),
+ * the canonical NOISE → FEATURECV patch lands PUNCH at 0.146 unipolar / −0.709
+ * bipolar — the bottom of the rail, not the middle. `pink` and `brown` are the
+ * peakier taps here (crest ≈ 3.19 → 0.438), which is the opposite of the
+ * ordering the old comment implied. Re-derived from `noiseGenerators` on every
+ * run by `featurecv-face-model.test.ts`.
+ */
 export const CREST_MIN = 1;
 export const CREST_MAX = 6;
 

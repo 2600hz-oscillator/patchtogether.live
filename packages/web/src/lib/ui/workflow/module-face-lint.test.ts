@@ -34,7 +34,13 @@ import '$lib/meta/modules';
 import { listModuleDefs } from '$lib/audio/module-registry';
 import { listVideoModuleDefs } from '$lib/video/module-registry';
 import { listMetaModuleDefs } from '$lib/meta/module-registry';
-import type { ControlFamily, ModuleFace, ParamDef } from '$lib/graph/types';
+import type {
+  ControlFamily,
+  ModuleFace,
+  ParamDef,
+  NoUserControlDefLike,
+} from '$lib/graph/types';
+import { noUserControlIds } from './no-user-control';
 import { staticKey, type LegendEntry } from '$lib/docs/control-doc-resolver';
 import { STRICT_FACES } from './strict-faces';
 import { curatedFace, dockFacePlan, dockPlanControls, type FaceDefLike } from './curated-face';
@@ -313,8 +319,22 @@ describe('module-face lint — completeness (STRICT_FACES set)', () => {
         continue;
       }
       const orderSet = new Set(face.order);
+      // #1726 — a param the def DECLARES has no user control is satisfied
+      // without a rank. Deny-by-default survives intact: a param in NEITHER is
+      // still red below, and a param in BOTH is red too — the declaration would
+      // be saying "no control" about something the face is about to give one.
+      const noControl = noUserControlIds(def as NoUserControlDefLike);
 
       for (const p of def.params ?? []) {
+        if (noControl.has(p.id)) {
+          if (orderSet.has(p.id)) {
+            missing.push(
+              `${def.type}: param '${p.id}' is declared noUserControl AND ranked in face.order — ` +
+                `pick one (rank it, or delete the noUserControl entry)`,
+            );
+          }
+          continue;
+        }
         if (!orderSet.has(p.id)) missing.push(`${def.type}: param '${p.id}' not in face.order`);
       }
       for (const f of def.controlFamilies ?? []) {
@@ -373,10 +393,21 @@ describe('module-face lint — DOCK RENDER-PLAN parity (STRICT_FACES set)', () =
           paramCounts.set(c.paramId, (paramCounts.get(c.paramId) ?? 0) + 1);
         }
       }
+      // #1726 — the declaration INVERTS this assertion rather than skipping it.
+      // A param declared noUserControl must render EXACTLY ZERO cells; every
+      // other param still exactly one. That is the whole reason the field is
+      // not the `curve="linear"` trap: it makes a falsifiable claim about the
+      // renderer in BOTH directions, so a declaration that failed to suppress
+      // (or suppressed the wrong param) is red, not quietly satisfied.
+      const noControl = noUserControlIds(def as NoUserControlDefLike);
       for (const p of def.params ?? []) {
         const n = paramCounts.get(p.id) ?? 0;
-        if (n !== 1) {
-          problems.push(`${def.type}: param '${p.id}' renders ${n}× in the dock plan (must be exactly 1)`);
+        const want = noControl.has(p.id) ? 0 : 1;
+        if (n !== want) {
+          problems.push(
+            `${def.type}: param '${p.id}' renders ${n}× in the dock plan (must be exactly ${want}` +
+              `${want === 0 ? ' — it is declared noUserControl' : ''})`,
+          );
         }
         paramCounts.delete(p.id);
       }

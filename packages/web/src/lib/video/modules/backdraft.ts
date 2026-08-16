@@ -238,6 +238,9 @@
 import type { VideoModuleDef } from '$lib/video/module-registry';
 import type { VideoNodeHandle, VideoNodeSurface } from '$lib/video/engine';
 import { detectEdge, makeEdgeState, type EdgeState } from '$lib/doom/cv-gate-edge';
+// The bridge's own write cadence — the DELAY CLOCK freshness window is
+// expressed in ticks rather than re-deriving a millisecond figure.
+import { SCHEDULER_TICK_MS } from '$lib/audio/scheduler-clock';
 
 /** Assumed engine frame rate for the ms→frames delay mapping. The engine
  *  drives one step per rAF (~60fps); we document nearest-frame semantics. */
@@ -2093,6 +2096,50 @@ export function backdraftClockTick(
   return false;
 }
 
+/** Monotonic wall clock in ms. ONE source of time for the DELAY CLOCK seam, so
+ *  the unit is visible at every call site. Deliberately NOT the engine's
+ *  `frame.time`: that is a RENDER clock, pinned by the render-smoke determinism
+ *  hook, and both quantities here — when the bridge last wrote, and how far
+ *  apart two rising edges arrived — are real wall-clock cadences that a frame
+ *  never observes. (Same helper, same reasoning, as freezeframe's `nowMs`.) */
+export function backdraftNowMs(): number {
+  return typeof performance !== 'undefined' ? performance.now() : Date.now();
+}
+
+/** How stale the bridge's last DELAY CLOCK write may be before the input counts
+ *  as UNPATCHED. Derived from the bridge's own cadence rather than typed: the
+ *  scheduler tick is what writes, so the window is expressed in ticks. Twenty
+ *  of them is the same 500 ms freezeframe settled on, and it also bounds how
+ *  long a REMOVED cable keeps overriding the DELAY knob. */
+export const BACKDRAFT_CLOCK_PATCH_GRACE_MS = 20 * SCHEDULER_TICK_MS;
+
+/** The FRAME floor, OR'd in for the opposite extreme. CI's SwiftShader renders
+ *  at ~8 fps, where three frames is ~375 ms and a slower stall exceeds the ms
+ *  window while the bridge is still writing perfectly happily. */
+export const BACKDRAFT_CLOCK_PATCH_GRACE_FRAMES = 3;
+
+/**
+ * Is the DELAY CLOCK input patched — i.e. did the CV bridge write `delayClock`
+ * RECENTLY ENOUGH?
+ *
+ * ⚠ NOT "since the previous draw". That formulation is false whenever the frame
+ * rate exceeds the ~25 ms bridge tick: at 60 Hz roughly every third draw sees
+ * no new write, so the delay override switches off for that frame and the
+ * feedback tap stutters between the knob's ring slot and the clock's. The
+ * freshness window is the fix, and the two units are OR'd because the bridge
+ * writes on a WALL CLOCK while draws happen on a FRAME clock.
+ */
+export function backdraftClockPatched(
+  nowMs: number,
+  lastWriteMs: number,
+  frame: number,
+  lastWriteFrame: number,
+  graceMs: number = BACKDRAFT_CLOCK_PATCH_GRACE_MS,
+  graceFrames: number = BACKDRAFT_CLOCK_PATCH_GRACE_FRAMES,
+): boolean {
+  return (nowMs - lastWriteMs) <= graceMs || (frame - lastWriteFrame) <= graceFrames;
+}
+
 /**
  * Resolve the effective feedback delay (ms) for this frame.
  *
@@ -3013,7 +3060,10 @@ export const backdraftDef: VideoModuleDef = {
     // RAW swing through (gate semantics) and the module edge-detects rising
     // edges to measure the pulse period. When patched it OVERRIDES the DELAY
     // knob (feedback delay = one clock-pulse duration, capped at 500ms).
-    { id: 'delay_clock', type: 'cv', paramTarget: 'delayClock' },
+    // `edge: 'trigger'` — it FIRES ONCE per rising edge and never reads the
+    // held level, so the detection belongs on the bridge's setParam clock
+    // (see the factory's setParam + the header note on #1725).
+    { id: 'delay_clock', type: 'cv', edge: 'trigger', paramTarget: 'delayClock' },
     { id: 'luma',        type: 'cv', paramTarget: 'luma',     cvScale: { mode: 'linear' } },
     { id: 'chroma',      type: 'cv', paramTarget: 'chroma',   cvScale: { mode: 'linear' } },
     { id: 'r',           type: 'cv', paramTarget: 'r',        cvScale: { mode: 'linear' } },
@@ -3029,20 +3079,23 @@ export const backdraftDef: VideoModuleDef = {
     { id: 'offsety',     type: 'cv', paramTarget: 'offsetY',  cvScale: { mode: 'linear' } },
     // MIRROR gate inputs — gate/clock style (NO cvScale => raw passthrough).
     // A RISING edge FLIPS (toggles) the matching mirror axis, so a clock can
-    // flip the kaleidoscope rhythmically. The module edge-detects them.
-    { id: 'mirror_x_gate', type: 'cv', paramTarget: 'mirrorXGate' },
-    { id: 'mirror_y_gate', type: 'cv', paramTarget: 'mirrorYGate' },
+    // flip the kaleidoscope rhythmically. `edge: 'trigger'`: the flip happens
+    // once per rising edge and the held level is never read, so the detection
+    // runs on the bridge's setParam clock.
+    { id: 'mirror_x_gate', type: 'cv', edge: 'trigger', paramTarget: 'mirrorXGate' },
+    { id: 'mirror_y_gate', type: 'cv', edge: 'trigger', paramTarget: 'mirrorYGate' },
     // SHAPE gate inputs — gate/clock style (NO cvScale => raw passthrough). A
     // RISING edge on shape_gate CYCLES the shape; on pure_geo_gate TOGGLES the
-    // pure-geometry masking space. The module edge-detects them.
-    { id: 'shape_gate',    type: 'cv', paramTarget: 'shapeGate' },
-    { id: 'pure_geo_gate', type: 'cv', paramTarget: 'pureGeoGate' },
+    // pure-geometry masking space. Both are `edge: 'trigger'`, detected in
+    // setParam.
+    { id: 'shape_gate',    type: 'cv', edge: 'trigger', paramTarget: 'shapeGate' },
+    { id: 'pure_geo_gate', type: 'cv', edge: 'trigger', paramTarget: 'pureGeoGate' },
     // PURE TV — tv_gate is gate/clock style (NO cvScale => raw passthrough); a
     // RISING edge TOGGLES the bounded-screen mode. ROOM + PHOSPHOR are
     // continuous knob modulators and carry cvScale like every other fader CV.
     // (A slow LFO on ROOM is Crutchfield's flashlight gesture — p.232 makes
     // external illumination load-bearing, not decorative.)
-    { id: 'tv_gate',       type: 'cv', paramTarget: 'tvGate' },
+    { id: 'tv_gate',       type: 'cv', edge: 'trigger', paramTarget: 'tvGate' },
     { id: 'room',          type: 'cv', paramTarget: 'room',     cvScale: { mode: 'linear' } },
     { id: 'phosphor',      type: 'cv', paramTarget: 'phosphor', cvScale: { mode: 'linear' } },
     { id: 'drive',         type: 'cv', paramTarget: 'drive',    cvScale: { mode: 'linear' } },
@@ -3123,6 +3176,28 @@ export const backdraftDef: VideoModuleDef = {
     { id: 'freeze',   label: 'Freeze',   defaultValue: DEFAULTS.freeze,   min: 0,  max: 1,                     curve: 'linear' },
   ],
 
+  // #1726 — THE SEVEN PARAMS A PLAYER NEVER SETS, said in a form a gate can
+  // read. Every one of them was already documented as "hidden — no card knob"
+  // in a comment four lines above its ParamDef; a comment is invisible to the
+  // face rules, the group-bar auto-expose and the Push card ranking, all three
+  // of which would otherwise offer a rotary over a RAW GATE SWING. They all
+  // declare `curve: 'linear'`, so `looksLikeToggle` cannot even see them as
+  // switches — they would rank as continuous values and take an encoder ahead
+  // of the real ones.
+  //
+  // `writer` is checked against THIS def's own `inputs` in both directions
+  // (no-user-control.test.ts): the six gate params must have the matching
+  // `paramTarget` port, and `freeze` must have none.
+  noUserControl: [
+    { param: 'delayClock',  writer: 'cv-port',  why: 'written by the delay_clock bridge as a raw 0..1 swing; the module edge-detects it to measure the pulse period that overrides the DELAY fader' },
+    { param: 'mirrorXGate', writer: 'cv-port',  why: 'written by the mirror_x_gate bridge; a rising edge FLIPS mirrorX, which is the param the player actually sets' },
+    { param: 'mirrorYGate', writer: 'cv-port',  why: 'written by the mirror_y_gate bridge; a rising edge FLIPS mirrorY, which is the param the player actually sets' },
+    { param: 'shapeGate',   writer: 'cv-port',  why: 'written by the shape_gate bridge; a rising edge CYCLES shape, which is the param the player actually sets' },
+    { param: 'pureGeoGate', writer: 'cv-port',  why: 'written by the pure_geo_gate bridge; a rising edge TOGGLES pureGeo, which is the param the player actually sets' },
+    { param: 'tvGate',      writer: 'cv-port',  why: 'written by the tv_gate bridge; a rising edge CYCLES tvMode, which is the param the player actually sets' },
+    { param: 'freeze',      writer: 'internal', why: 'determinism toggle for VRT capture: at >=0.5 draw() is a no-op so the ring and output hold their last frame. No port targets it and no card control sets it' },
+  ],
+
   docs: {
     explanation: `BACKDRAFT is a video feedback generator. It builds a "source" image by crossfading two video inputs (IN A / IN B) with MIX, then composites that against a processed copy of its OWN previous output, read from an internal ring of past frames so there is no live GL feedback loop (downstream sees frame N while the tap reads N-1..N-30). The fed-back frame is delayed (DELAY, 0-500ms or a clock pulse), colour-processed (per-channel R/G/B gain, then LUMA brightness, then CHROMA saturation), scaled per-pixel by two key masks (KEY+ lightens / KEY- darkens the effect), and geometrically warped a little each pass (ZOOM/ROTATE/OFF X/OFF Y) so the transform COMPOUNDS into tunnels, spirals, and directional trails. Two MIRROR buttons fold the whole composited frame into a kaleidoscope. A SHAPE button cuts the frame to a geometric mask (square = full frame, then circle / pentagon / triangle / octagon), and a PURE GEO button picks the masking SPACE: ON masks the FINAL OUTPUT in screen space (a fixed shape that cuts everything outside it at all zooms), OFF masks the SOURCE in the zoomed feedback space so the shape scales with ZOOM and its content spills out through the feedback tunnel (zoom-in pushes it toward the corners, zoom-out shrinks it). As FEEDBACK approaches its max (and a spatial transform is active) the additive trail-accumulator ramps into a pure recursive hall of mirrors. A FLICKER control (OFF / 6 / 24 / 50 / 60 / 120 Hz) models the display's pulsed emission as the virtual camera actually captures it, and then models what the CAMERA does to it: the emission rate beats against the camera's 60 fps sampling, so the per-frame loop gain oscillates around unity instead of being constant, and light can build up over several frames and then fade away rather than pinning at white — with a rolling-shutter band crawling down the frame at the beat rate. The captured light then passes through the sensor's multi-frame charge storage (a low-pass on the BEAT, so fast beats become soft shimmer while slow ones keep their full swing) and its saturating shoulder (so the modulation stops acting where the image is already hot and reads as contour shimmer rather than a full-field flash). That is what makes the fast positions breathe instead of strobe. Usage: patch a camera or generator into IN A, raise FEEDBACK toward ~1 and nudge ZOOM off 1.0 (with a little ROTATE) for the classic infinite-tunnel look; add OFF X/Y for smear, PIXELATE for blocky lo-fi, a SHAPE for a geometric vignette, and clock DELAY CLK for rhythmic echo. Output is the OUT video jack. The card carries NO in-rack picture. It used to show a 320×240 display, and that display was the single biggest consumer of the card's width and height; taking it out bought the module a narrower rack tier and taller faders, which is the better trade for a panel with this many controls. Feedback is still steered by watching it, so the output is one click away rather than always-on: the ⛶ OUTPUT button opens Full Frame (the card itself becomes a video panel in the rack), Full Screen, and Present-on-another-display, all of which grow the SAME surface — the button is now the only entry point, since there is no picture to right-click. For an arbitrarily-sized monitor, patch OUT into VIDEO OUT. The controls sit in two rows. Down the left of the first row are the discrete switches — MIRROR X / MIRROR Y, SHAPE and PURE GEO — with TV MODE, its fill/band readout and the OUTPUT button to their right and the six-position FLICKER switch beneath them; beside and below them run the labelled fader banks: LOOP (Mix/FB/Delay), COLOUR (Luma/Chroma/R/G/B), KEY (Lighten/Darken), GEOMETRY (Zoom/Rotate/Off X/Off Y/Pixelate), TV SCREEN (Room/Border/Phosphor/Drive — BORDER is the bezel, i.e. the screen frame's thickness) and VIRTUAL CAMERA, whose two 2-D pads steer the camera's TILT and POSITION with a DIST fader beside them. A control that does nothing in the current mode is DIMMED rather than hidden or disabled, so it stays draggable, resettable and MIDI-learnable and the card never changes height with the mode: the TV SCREEN bank dims while TV MODE is OFF (its title becomes a button that turns TV MODE on), and PURE GEO dims in PURE TV / CRITICAL, where SHAPE means only the screen's outline.`,
     inputs: {
@@ -3133,7 +3208,7 @@ export const backdraftDef: VideoModuleDef = {
       mix: "CV (linear) that modulates the Mix crossfade between IN A (0) and IN B (1).",
       feedback: "CV (linear) that modulates the FB (feedback) amount, the per-frame persistence ratio of the fed-back frame.",
       delay: "CV (linear) that modulates the Delay control, the feedback tap delay in milliseconds (0-500ms).",
-      delay_clock: "Gate/clock input (raw passthrough, edge-detected). Each rising edge times a pulse; once two edges land, the feedback delay locks to one clock-pulse duration (capped at 500ms = one beat at 120 BPM) and OVERRIDES the Delay control.",
+      delay_clock: "Gate/clock input (raw passthrough, edge-detected). Each rising edge times a pulse; once two edges land, the feedback delay locks to one clock-pulse duration (capped at 500ms = one beat at 120 BPM) and OVERRIDES the Delay control. A short TRIGGER works exactly as well as a held gate: the rising edge is detected as the value arrives from the patch bridge rather than sampled once per rendered frame, so a 5ms pulse cannot be missed and the lock does not depend on how fast the renderer is running. The measured period is accurate to about one 25ms bridge tick, which is how often the bridge can deliver an edge at all — well inside the resolution the delay is quantized to anyway (one video frame).",
       luma: "CV (linear) that modulates the Luma control, the feedback's overall brightness gain about black.",
       chroma: "CV (linear) that modulates the Chr (chroma/saturation) control of the fed-back frame.",
       r: "CV (linear, bipolar) that modulates the R per-channel red gain of the feedback (range -1..+2).",
@@ -3146,11 +3221,11 @@ export const backdraftDef: VideoModuleDef = {
       rotate: "CV (linear, bipolar) that modulates the Rot (Rotate) control, the per-pass rotation in degrees that turns the feedback into a spiral.",
       offsetx: "CV (linear, bipolar) that modulates the OffX (Off X) control, the per-pass horizontal translation of the feedback tap (directional trail).",
       offsety: "CV (linear, bipolar) that modulates the OffY (Off Y) control, the per-pass vertical translation of the feedback tap (directional trail).",
-      mirror_x_gate: "Gate/clock input (raw passthrough, edge-detected). A RISING edge TOGGLES (flips) the Mirror X kaleidoscope fold, so a clock can flip it rhythmically. Edge-triggered, not a held level.",
-      mirror_y_gate: "Gate/clock input (raw passthrough, edge-detected). A RISING edge TOGGLES (flips) the Mirror Y kaleidoscope fold. Edge-triggered, not a held level.",
-      shape_gate: "Gate/clock input (raw passthrough, edge-detected). A RISING edge CYCLES the Shape mask to the next geometry (square → circle → pentagon → triangle → octagon → square). Edge-triggered, not a held level.",
-      pure_geo_gate: "Gate/clock input (raw passthrough, edge-detected). A RISING edge TOGGLES the Pure Geo masking space (screen-space crop ↔ zoomed-source crop). Edge-triggered, not a held level.",
-      tv_gate: "Gate/clock input (raw passthrough, edge-detected). A RISING edge CYCLES TV MODE (off → PURE TV → CRITICAL → off), so a clock can flip the module between the infinite-plane tunnel and the bounded-screen television. Edge-triggered, not a held level.",
+      mirror_x_gate: "Gate/clock input (raw passthrough, edge-detected). A RISING edge TOGGLES (flips) the Mirror X kaleidoscope fold, so a clock can flip it rhythmically. Edge-triggered, not a held level: the rising edge is detected as the value arrives from the patch bridge rather than sampled once per rendered frame, so a short 5ms trigger advances it exactly as reliably as a sustained gate, and holding the gate high advances it once and then leaves it alone.",
+      mirror_y_gate: "Gate/clock input (raw passthrough, edge-detected). A RISING edge TOGGLES (flips) the Mirror Y kaleidoscope fold. Edge-triggered, not a held level: the rising edge is detected as the value arrives from the patch bridge rather than sampled once per rendered frame, so a short 5ms trigger advances it exactly as reliably as a sustained gate, and holding the gate high advances it once and then leaves it alone.",
+      shape_gate: "Gate/clock input (raw passthrough, edge-detected). A RISING edge CYCLES the Shape mask to the next geometry (square → circle → pentagon → triangle → octagon → square). Edge-triggered, not a held level: the rising edge is detected as the value arrives from the patch bridge rather than sampled once per rendered frame, so a short 5ms trigger advances it exactly as reliably as a sustained gate, and holding the gate high advances it once and then leaves it alone.",
+      pure_geo_gate: "Gate/clock input (raw passthrough, edge-detected). A RISING edge TOGGLES the Pure Geo masking space (screen-space crop ↔ zoomed-source crop). Edge-triggered, not a held level: the rising edge is detected as the value arrives from the patch bridge rather than sampled once per rendered frame, so a short 5ms trigger advances it exactly as reliably as a sustained gate, and holding the gate high advances it once and then leaves it alone.",
+      tv_gate: "Gate/clock input (raw passthrough, edge-detected). A RISING edge CYCLES TV MODE (off → PURE TV → CRITICAL → off), so a clock can flip the module between the infinite-plane tunnel and the bounded-screen television. Edge-triggered, not a held level: the rising edge is detected as the value arrives from the patch bridge rather than sampled once per rendered frame, so a short 5ms trigger advances it exactly as reliably as a sustained gate, and holding the gate high advances it once and then leaves it alone.",
       room: "CV (linear) that modulates the Room control — the light level OUTSIDE the TV screen in PURE TV / CRITICAL. A slow LFO here is Crutchfield's flashlight gesture (his rig needs external light to restart a dark screen). No effect while TV MODE is off.",
       phosphor: "CV (linear) that modulates the Phos control, the one-frame image retention (camera charge storage) applied in place. No effect while TV MODE is off.",
       cam_tilt_x: "CV (linear, bipolar) that modulates Tilt X — swings the virtual camera left/right of the screen's normal, keystoning the set horizontally. No effect while TV MODE is off.",
@@ -3325,29 +3400,89 @@ export const backdraftDef: VideoModuleDef = {
     let head = 0;
     let framesElapsed = 0;
 
+    // ══════════════════════════════════════════════════════════════════
+    // CLOCK / GATE INPUTS — EVERY ONE IS EDGE-DETECTED IN `setParam`, ON THE
+    // BRIDGE'S CLOCK. Never by reading `params.<id>` in draw(). (#1725.)
+    //
+    // WHY, and it is the wire protocol rather than a style preference:
+    // `PatchEngine.installGateDispatch` does NOT stream the gate waveform to a
+    // video module. It counts rising edges in the audio thread and REPLAYS them
+    // on the ~25 ms scheduler tick as `setParam(0); setParam(1)` per counted
+    // edge, then `setParam(currentLevel)` — all three writes inside the SAME
+    // MILLISECOND. A detector that runs in draw() therefore samples only the
+    // SETTLED LEVEL, which for a real trigger is back to 0 before any frame
+    // renders, and the rise it needed never existed.
+    //
+    // MEASURED on the real factory (backdraft-gate-edges.test.ts), capture rate
+    // = edges acted on / edges delivered, swept over the pulse's offset inside
+    // the tick window:
+    //
+    //     pulse width      draw()-time reading        setParam reading
+    //     5 ms (TRIGGER)   28.6 %  (flat, 1-16 Hz)    100 %
+    //    10 ms (SEQ clock) 42.9 %  (flat, 1-16 Hz)    100 %
+    //    50 ms (GATEMAIDEN-derived gate)  100 %       100 %
+    //
+    // Two things that hid this for so long. The rate is FLAT in the clock rate,
+    // so it does not look like a rate-dependent bug; and a HELD gate — anything
+    // wider than the 25 ms tick — reads 100 %, so every manual check with a
+    // sustained gate passed. At the SwiftShader ~8 fps CI frame rate the 5 ms
+    // trigger measured 0.0 %.
+    //
+    // Each effect below is a pure param mutation, so it is APPLIED where it is
+    // detected rather than latched for draw(). A boolean latch would be wrong
+    // here: `capture one frame` is idempotent (freezeframe's case) but `TOGGLE`
+    // and `CYCLE` are not — two edges inside one frame interval must advance
+    // twice, and a boolean collapses them to one.
+    // ══════════════════════════════════════════════════════════════════
+
     // ── DELAY CLOCK tracking ──────────────────────────────────────────
-    // The gate-style CV bridge calls setParam('delayClock', raw) EVERY frame
-    // the DELAY CLOCK edge exists (even when the gate is low between pulses);
-    // it stops calling when the edge is removed. So "was delayClock written
-    // since the last draw" is a robust PATCHED signal that doesn't confuse an
-    // idle-low clock with an unpatched input. We bump a write sequence on
-    // every setParam and compare it in draw().
+    // The gate-style CV bridge calls setParam('delayClock', raw) EVERY
+    // scheduler tick while the DELAY CLOCK edge exists (even when the gate is
+    // low between pulses); it stops calling when the edge is removed. So "has
+    // delayClock been written RECENTLY" is a robust PATCHED signal that doesn't
+    // confuse an idle-low clock with an unpatched input.
+    //
+    // ⚠ IT IS A FRESHNESS WINDOW, NOT "SINCE THE LAST DRAW". The obvious
+    // formulation — a write sequence compared for inequality once per draw —
+    // is wrong whenever the frame rate is FASTER than the ~25 ms bridge tick,
+    // which is every ordinary display: at 60 Hz there are ~1.5 frames per tick,
+    // so roughly every third draw sees no new write and declares the clock
+    // UNPATCHED for that frame. `backdraftEffectiveDelayMs` then alternates
+    // between the DELAY knob and the measured pulse period frame by frame, and
+    // the feedback tap stutters between two ring slots. Found while measuring
+    // #1725 (the flag read `false` on the last draw of every timeline).
+    //
+    // The window mirrors freezeframe's `gateIsPatched`, for the reasons its
+    // header gives: the PRIMARY unit is MILLISECONDS, because the bridge's
+    // write cadence is wall-clock while the draw cadence is frames; a frame
+    // COUNT is OR'd in as the floor for the opposite extreme, CI's ~8 fps
+    // SwiftShader renderer, where a handful of frames outlasts the ms window.
+    //
+    // The PERIOD, likewise, is measured in setParam from `performance.now()` —
+    // the same monotonic wall clock freezeframe times its gate writes on. It
+    // cannot come from `frame.time`: a frame is not where the edge arrives.
     const clock = makeBackdraftClockState();
-    let clockWriteSeq = 0;        // ++ on every setParam('delayClock')
-    let clockSeqSeenInDraw = -1;  // last seq observed by draw()
+    let lastClockWriteMs = Number.NEGATIVE_INFINITY;
+    let lastClockWriteFrame = Number.NEGATIVE_INFINITY;
     let clockPatched = false;
+    // Monotonic count of DELAY CLOCK rising edges this instance has ACTED ON.
+    // Nothing in the render output reveals a dropped edge — a clock that lands
+    // 1 pulse in 4 just measures a longer period and the picture looks fine —
+    // so the edge count is exposed as an engine read, the way SHAPEGEN exposes
+    // `regenCount` for exactly the same reason. It is the ONLY observable that
+    // distinguishes "captured every edge" from "captured a quarter of them",
+    // and #1725's whole measurement rests on it.
+    let clockRises = 0;
 
     // ── MIRROR gate tracking ──────────────────────────────────────────
     // A rising edge on mirror_x_gate / mirror_y_gate FLIPS the matching
-    // mirror boolean. We edge-detect the raw gate sample written by the CV
-    // bridge each frame. Like the DELAY CLOCK, the bridge only writes while
-    // patched, so an unpatched gate never spuriously fires.
+    // mirror boolean. The bridge only writes while patched, so an unpatched
+    // gate never spuriously fires.
     const mirrorGate = makeBackdraftMirrorGateState();
 
     // ── SHAPE / PURE GEO gate tracking ────────────────────────────────
     // A rising edge on shape_gate CYCLES the shape; on pure_geo_gate TOGGLES
-    // pureGeo. Same edge-detect convention as the mirror gates; the bridge only
-    // writes while patched, so an unpatched gate never spuriously fires.
+    // pureGeo. Same edge-detect convention as the mirror gates.
     const shapeGate = makeEdgeState();
     const pureGeoGate = makeEdgeState();
     // TV MODE gate: a rising edge CYCLES OFF -> PURE TV -> CRITICAL -> OFF.
@@ -3367,39 +3502,15 @@ export const backdraftDef: VideoModuleDef = {
         const lightenTex = frame.getInputTexture(node.id, 'lighten');
         const darkenTex = frame.getInputTexture(node.id, 'darken');
 
-        // DELAY CLOCK: detect patched-ness (did the bridge write delayClock
-        // since the previous draw?) then feed the raw gate sample to the
-        // edge detector to measure the pulse period.
-        clockPatched = clockWriteSeq !== clockSeqSeenInDraw;
-        clockSeqSeenInDraw = clockWriteSeq;
-        if (clockPatched) backdraftClockTick(clock, params.delayClock, frame.time);
-
-        // MIRROR gates: a rising edge on either gate FLIPS the matching
-        // mirror boolean. The button/UI reflects the resulting (possibly
-        // gate-toggled) state because we mutate the shared `params`.
-        if (backdraftMirrorGateTick(mirrorGate.x, params.mirrorXGate)) {
-          params.mirrorX = params.mirrorX >= 0.5 ? 0 : 1;
-        }
-        if (backdraftMirrorGateTick(mirrorGate.y, params.mirrorYGate)) {
-          params.mirrorY = params.mirrorY >= 0.5 ? 0 : 1;
-        }
-
-        // SHAPE gate: a rising edge CYCLES the shape. PURE GEO gate: a rising
-        // edge TOGGLES the masking space. The button/UI reflects the resulting
-        // (possibly gate-driven) state because we mutate the shared `params`.
-        if (detectEdge(shapeGate, params.shapeGate)?.pressed) {
-          params.shape = backdraftNextShape(params.shape);
-        }
-        if (detectEdge(pureGeoGate, params.pureGeoGate)?.pressed) {
-          params.pureGeo = params.pureGeo >= 0.5 ? 0 : 1;
-        }
-        // TV MODE gate: a rising edge CYCLES the mode. Same convention as the
-        // shape gate; the bridge only writes while patched, so an unpatched
-        // gate never spuriously fires, and the card button reflects the
-        // resulting state because we mutate the shared `params`.
-        if (detectEdge(tvGate, params.tvGate)?.pressed) {
-          params.tvMode = backdraftNextTvMode(params.tvMode);
-        }
+        // DELAY CLOCK: evaluate PATCHED-NESS only — has the bridge written
+        // delayClock recently enough? That is a LIVENESS question about the
+        // write CADENCE, not an edge question about the level, so it is the
+        // one clock/gate thing that legitimately belongs here. The rising
+        // edges themselves are counted in setParam (see the header block
+        // above) — a level read here would see 0 -> 0 -> 0.
+        clockPatched = backdraftClockPatched(
+          backdraftNowMs(), lastClockWriteMs, framesElapsed, lastClockWriteFrame,
+        );
 
         // Effective delay (ms): the DELAY knob, OR — when a DELAY CLOCK is
         // patched and has measured a period — one clock-pulse duration,
@@ -3666,10 +3777,56 @@ export const backdraftDef: VideoModuleDef = {
       surface,
       setParam(paramId, value) {
         if (paramId in params) (params as unknown as Record<string, number>)[paramId] = value;
-        // The gate-style CV bridge writes delayClock every frame while the
-        // DELAY CLOCK input is patched; bump the seq so draw() can tell the
-        // input is live (vs an unpatched input that never writes).
-        if (paramId === 'delayClock') clockWriteSeq++;
+        // ── THE EDGE SEAM. Every `edge: 'trigger'` input is detected HERE,
+        // as the value arrives, because this is the only place a bridge-
+        // replayed pulse is ever visible (see the block above draw()).
+        switch (paramId) {
+          case 'delayClock': {
+            // The bridge writes this every scheduler tick while the input is
+            // patched; stamp the write so draw() can tell the input is live
+            // (vs an unpatched input that never writes).
+            const t = backdraftNowMs();
+            lastClockWriteMs = t;
+            lastClockWriteFrame = framesElapsed;
+            // Rising edge -> timestamp the pulse. Two edges give the period
+            // that overrides DELAY.
+            if (backdraftClockTick(clock, value, t / 1000)) clockRises++;
+            break;
+          }
+          // MIRROR gates: a rising edge FLIPS the matching mirror boolean. The
+          // button/UI reflects the resulting state because we mutate the
+          // shared `params` object draw() renders from.
+          case 'mirrorXGate':
+            if (backdraftMirrorGateTick(mirrorGate.x, value)) {
+              params.mirrorX = params.mirrorX >= 0.5 ? 0 : 1;
+            }
+            break;
+          case 'mirrorYGate':
+            if (backdraftMirrorGateTick(mirrorGate.y, value)) {
+              params.mirrorY = params.mirrorY >= 0.5 ? 0 : 1;
+            }
+            break;
+          // SHAPE gate: a rising edge CYCLES the shape.
+          case 'shapeGate':
+            if (detectEdge(shapeGate, value)?.pressed) {
+              params.shape = backdraftNextShape(params.shape);
+            }
+            break;
+          // PURE GEO gate: a rising edge TOGGLES the masking space.
+          case 'pureGeoGate':
+            if (detectEdge(pureGeoGate, value)?.pressed) {
+              params.pureGeo = params.pureGeo >= 0.5 ? 0 : 1;
+            }
+            break;
+          // TV MODE gate: a rising edge CYCLES OFF -> PURE TV -> CRITICAL.
+          case 'tvGate':
+            if (detectEdge(tvGate, value)?.pressed) {
+              params.tvMode = backdraftNextTvMode(params.tvMode);
+            }
+            break;
+          default:
+            break;
+        }
       },
       readParam(paramId) {
         return (params as unknown as Record<string, number>)[paramId];
@@ -3680,6 +3837,9 @@ export const backdraftDef: VideoModuleDef = {
         // once the clock is patched AND has measured at least one period.
         if (key === 'clockDriving') return clockPatched && clock.periodSec > 0;
         if (key === 'clockPeriodSec') return clock.periodSec;
+        // How many DELAY CLOCK rising edges we have acted on (monotonic). The
+        // dropped-edge probe — see `clockRises`.
+        if (key === 'clockRiseCount') return clockRises;
         return undefined;
       },
       dispose() { surface.dispose(); },

@@ -370,11 +370,21 @@ Three tiers, first match wins (`push-card-config.ts:20-33`): OVERRIDE → **FACE
   override REPLACES, so it cannot drift. Otherwise **accept the golden diff
   deliberately, with the reason written in the test.**
 
-### ⚠ `face` is contract-transparent — `controlFamilies` is NOT
+### ⚠ `face` is MOSTLY contract-transparent — `sidebar` and `controlFamilies` are NOT
 
-`contract-lock.txt` contains zero `face` lines: `serializeModuleContract`
-projects only id/min/max/curve/defaultValue/units/ports/flags. So a re-rank, a
-page relabel, a hero, a sidebar and a hint are all free.
+`serializeModuleContract` projects id/min/max/curve/defaultValue/units/ports/
+flags, so a re-rank, a page relabel, a hero, a `paramCells` declaration, a
+`ParamOption` detent roster and a hint are all free.
+
+⚠ **`face.sidebar` IS PROJECTED and this section used to say it was not.**
+`contract-lock.txt` carries a `<type> face sidebar <i> kind=… label=… …` line
+per block (`serializeFaceSidebar`, `contract-signature.ts:142`), in declaration
+ORDER, because #1468 removed a sidebar block from twelve modules with every
+non-pixel gate green. So **declaring, reordering, relabelling or removing a
+sidebar block costs a `task docs:accept`** — and the diff is the review surface
+that incident did not have. The rest of `face` is enumerated in
+`FACE_FIELDS_NOT_IN_LOCK`, which `tsc` requires you to extend when you add a
+field, so "not in the lock" is a declaration rather than an omission.
 
 **But a new `controlFamilies` entry IS in the contract.** Batch 3 added three
 lines — `clap family clap-hero kind=cell prefix=clap-hero`,

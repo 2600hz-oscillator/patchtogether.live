@@ -63,6 +63,21 @@
     skinStore.setSkin(skinStore.current, false);
   });
 
+  // #1576: expose the TOYBOX shader compile-probe so the @webgl-smoke floor can
+  // exercise the REAL validator against a REAL GLSL compiler, rather than a
+  // re-implementation that could agree with the parser while both are wrong.
+  //
+  // Lazily imported so the validator never enters the main bundle, and gated on
+  // testHooksEnabled() exactly like __attachProvider below — the e2e shards run
+  // a PROD preview build where import.meta.env.DEV is false.
+  if (testHooksEnabled() && typeof window !== 'undefined') {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (window as any).__toyboxValidateShader = async (src: string, paramNames?: string[]) => {
+      const m = await import('$lib/video/toybox-shader-validate');
+      return m.validateToyboxShader(src, paramNames ?? []);
+    };
+  }
+
   // Stage B PR B-b: expose attachProvider as a dev global so Playwright
   // @collab + @capacity + @auth tests can wire browser contexts to the
   // same Hocuspocus doc without going through Clerk auth on /r/[id].

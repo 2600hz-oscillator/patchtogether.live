@@ -47,23 +47,57 @@
 // $lib/ui/media/node-media-registry, which is keyed to graph lifetime and
 // swept from Canvas against the live node set.
 //
-// ⚠⚠ WHAT THIS GATE IS STRUCTURALLY UNABLE TO SEE — read this before citing it
-// as coverage. Every pattern above is TEARDOWN-SHAPED: it reads `onDestroy`
-// bodies and asks "does this card destroy something it should not?". There is a
-// second, opposite failure mode in the same class that it CANNOT detect:
-// a module that never INITIALISES. painter, textmarquee and picturebox have no
-// teardown at all — their node renders a placeholder until a card mounts and
-// pushes its canvas/image, so with the shell swapping the card out they are
-// DARK BY DEFAULT rather than broken-on-collapse. This gate certifies all three
-// as clean and they are not.
+// ── THE SECOND FAILURE MODE, AND THE WIDENING THAT CAUGHT IT (#1720) ─────────
 //
-// They ARE in the subject set (asserted below), so widening the gate later
-// covers them automatically. Until then the blindness is made explicit by a
-// permanent negative-control leg — 'the gate does NOT see the
-// never-initialises failure mode' — which fails if anyone "fixes" it into
-// looking like coverage. Stating a gate's scope inside the gate is the
-// 2026-08-02 blind-gate discipline: ask what a green run would look like if the
-// answer were "everything".
+// Every pattern above is TEARDOWN-SHAPED: it reads `onDestroy` bodies and asks
+// "does this card destroy something it should not?". This file used to state,
+// as a permanent negative control, that it was structurally blind to the
+// OPPOSITE failure mode — a module that never INITIALISES:
+//
+//   "painter, textmarquee and picturebox have no teardown at all — their node
+//    renders a placeholder until a card mounts and pushes its canvas/image, so
+//    with the shell swapping the card out they are DARK BY DEFAULT rather than
+//    broken-on-collapse. This gate certifies all three as clean and they are
+//    not."
+//
+// That admission was correct and it was right about all three. MEASURED on the
+// default `/rack` with the content already in `node.data`, nothing expanded and
+// nothing clicked, reading each node's own output texture:
+//
+//   painter      meanRGB (255,255,255) — a blank page — vs (255,0,0) mounted
+//   textmarquee  nonBlack 446/49152 (the literal word "textmarquee") vs 36992
+//   picturebox   meanRGB (5,15,20) — the idle field — vs (0,0,254) mounted
+//
+// …and writing the per-card verdict this widening demands turned up a FOURTH,
+// unreported instance: TOYBOX's image layers are `node.data.layers[i].imageBytes`
+// decoded by the card and nothing else, with `renderImageLayer` painting its
+// idle pattern until `hasImage` — which only `setLayerImage` sets.
+//
+// All four now have a NODE-LIFETIME producer ($lib/ui/media/node-extras-registry),
+// so the gate is widened the way its own scope note said it would have to be:
+//
+//   EVERY CARD ON THE EXTRAS CHANNEL MUST DECLARE WHO OWNS ITS PUSH.
+//
+// Deny by default, one entry per CARD, each carrying its `why` in a REQUIRED
+// type field, and each `owner` cross-checked against the artifact that is
+// supposed to implement it. Anchored in BOTH directions: a card on the channel
+// with no entry is RED, and an entry naming a card that is no longer on the
+// channel is RED.
+//
+// ⚠⚠ WHAT THIS GATE STILL CANNOT SEE, stated so nobody reads a green run as
+// more than it is. It reads SOURCE and DECLARATIONS. It cannot observe a pixel,
+// a mount or a rAF, so:
+//   * a `node-lifetime-producer` entry proves a producer is REGISTERED for that
+//     type, never that the producer's output is CORRECT;
+//   * a `module-renders-itself` entry is taken at its word — the claim that the
+//     module's own draw is unconditional is a human judgement recorded in the
+//     `why`, not something checked here;
+//   * whether any of it actually works is PIXELS, and that is
+//     e2e/tests/extras-producer-lifetime.spec.ts's job (it spawns each producer
+//     type with persisted content, expands NOTHING, and requires the node's own
+//     output texture to carry that content — with a permanent leg proving the
+//     probe can tell the content from the placeholder).
+// Both directions of that blindness are negative-controlled below.
 
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
@@ -77,7 +111,11 @@ import { listModuleDefs } from '$lib/audio/module-registry';
 import { listVideoModuleDefs } from '$lib/video/module-registry';
 import { listMetaModuleDefs } from '$lib/meta/module-registry';
 import { conventionalCardName, type CardDefLike } from '$lib/ui/modules-card-map';
-import { DOM_SOURCE_LANE_TYPES } from '$lib/ui/workflow/dom-source-modules';
+import {
+  DOM_SOURCE_LANE_TYPES,
+  HEADLESS_MOUNT_LANE_TYPES,
+} from '$lib/ui/workflow/dom-source-modules';
+import { EXTRAS_PRODUCER_TYPES } from '$lib/ui/media/extras-producers';
 
 const CARD_DIR = fileURLToPath(new URL('../modules/', import.meta.url));
 
@@ -96,6 +134,151 @@ function subjectCards(): string[] {
     if (ATTACH_RE.test(code) || EXTRAS_RE.test(code)) out.push(file.replace(/\.svelte$/, ''));
   }
   return out.sort();
+}
+
+/** Card basenames on the EXTRAS channel specifically — the subjects of the
+ *  never-INITIALISES half of this gate (#1720). A strict subset of
+ *  `subjectCards()`; the attach-only cards (cameraInput, frametable, loopback,
+ *  videocube) are judged by the teardown patterns and owe no owner entry. */
+function extrasChannelCards(): string[] {
+  const out: string[] = [];
+  for (const file of readdirSync(CARD_DIR)) {
+    if (!file.endsWith('Card.svelte')) continue;
+    const code = stripComments(readFileSync(new URL(file, `file://${CARD_DIR}`), 'utf8'));
+    if (EXTRAS_RE.test(code)) out.push(file.replace(/\.svelte$/, ''));
+  }
+  return out.sort();
+}
+
+/**
+ * WHO owns a card's extras push when NO card is mounted. A closed union, so
+ * `tsc` refuses an unrecognised verdict, and two of the three are
+ * CROSS-CHECKED against the artifact that implements them.
+ */
+type ExtrasOwner =
+  /** $lib/ui/media/node-extras-registry reproduces the push from persisted
+   *  `node.data`. Cross-checked: the type must be in EXTRAS_PRODUCER_TYPES. */
+  | 'node-lifetime-producer'
+  /** <HeadlessSourceHost> keeps the real card alive off-screen. Cross-checked:
+   *  the type must be in HEADLESS_MOUNT_LANE_TYPES. */
+  | 'headless-card-mount'
+  /** The module's own draw is unconditional and the extras channel carries only
+   *  HUMAN INPUT (keys, a boot gesture, a reset) — there is nothing a registry
+   *  could reproduce, and "no picture until someone plays it" is the designed
+   *  behaviour. NOT cross-checkable: this one is a judgement, recorded in `why`
+   *  and negative-controlled below as a thing this gate takes on trust. */
+  | 'module-renders-itself';
+
+interface ExtrasOwnerVerdict {
+  readonly owner: ExtrasOwner;
+  /** REQUIRED BY THE TYPE. The reason is the only thing a reviewer of a future
+   *  entry actually needs, and a reason that lives in a commit message is not
+   *  available at the point of the edit. */
+  readonly why: string;
+}
+
+/**
+ * DENY BY DEFAULT, one entry per CARD on the extras channel (#1720). A card on
+ * the channel with no entry FAILS; an entry naming a card that is no longer on
+ * the channel FAILS. Both directions asserted below, so this cannot rot into a
+ * list of names nobody re-reads.
+ */
+//
+// ⚠ TEXTMARQUEE and PICTUREBOX are deliberately ABSENT, and their absence is
+// the fix rather than an oversight: their card-side push paths were DELETED
+// (not duplicated) when the producer took over, so neither card touches
+// `read(id, 'extras')` any more and neither is on this channel at all. The
+// anchoring leg below is what proved it — it reddened on exactly those two the
+// first time it ran. Their producers are anchored instead by
+// `EXTRAS_PRODUCERS` (see the producer-anchoring leg), which is the artifact
+// that actually implements them.
+const EXTRAS_OWNERS: Readonly<Record<string, ExtrasOwnerVerdict>> = {
+  PainterCard: {
+    owner: 'node-lifetime-producer',
+    why: "the picture is the deterministic replay of node.data.ops; unmounted it read a blank white page (meanRGB 255,255,255) against the drawing's 255,0,0",
+  },
+  ToyboxCard: {
+    owner: 'node-lifetime-producer',
+    why: 'an IMAGE layer is node.data.layers[i].imageBytes decoded — picturebox wearing a layer index; the VIDEO half is a local file no reload can reconstruct and its attach already survives an unmount',
+  },
+  ArchivistCard: {
+    owner: 'headless-card-mount',
+    why: 'the extras channel rides alongside a card-owned DOM media element the engine holds via attachExternalSource, so the card must stay mounted for the SOURCE regardless',
+  },
+  PeerTubeCard: {
+    owner: 'headless-card-mount',
+    why: 'same as archivist — a card-owned <video> plus an hls.js instance; the element is node-owned by nodeMedia but the attach is the card mount',
+  },
+  TvLibrarianCard: {
+    owner: 'headless-card-mount',
+    why: 'same as archivist — a card-owned <video> handed to the engine by attachExternalSource',
+  },
+  VideoboxCard: {
+    owner: 'headless-card-mount',
+    why: 'a card-owned <video> fed from a user file blob; the DOM-source rule already keeps this card mounted off-screen',
+  },
+  VideoVarispeedCard: {
+    owner: 'headless-card-mount',
+    why: 'a card-owned <video> plus the varispeed transport; the collapse-keeps-playing sweep is built on this card staying mounted',
+  },
+  BloodCard: {
+    owner: 'module-renders-itself',
+    why: 'the extras channel carries a WASM boot gesture and raw Build scancodes; blood.ts runs the frame and uploads its own framebuffer, and paints a deliberate "alive, no signal" dark-red scanline idle field until a human plays it',
+  },
+  DoomCard: {
+    owner: 'module-renders-itself',
+    why: 'the LIVE half (session, netcode, lockstep, pump) is already node-owned by node-doom-session-registry (#1590); what still crosses extras is a user boot gesture and keypresses, and doom.ts paints its own "alive but no signal" idle field',
+  },
+  GibribbonCard: {
+    owner: 'module-renders-itself',
+    why: 'gibribbon.ts paints and uploads a frame at construction and every draw, AUTOPLAY defaults on, and the same ABXY presses arrive from the graph as cv params — the card pushes only keyboard intent',
+  },
+  NibblesCard: {
+    owner: 'module-renders-itself',
+    why: 'nibbles.ts paints a frame before the first tick and ticks its own clock, with a built-in greedy bot under AUTO; the card pushes only arrow keys and a reset',
+  },
+};
+
+/** The module TYPE a card basename resolves to, or null. */
+function typeForCard(base: string): string | null {
+  for (const [type, cardBase] of typeToCardName()) if (cardBase === base) return type;
+  return null;
+}
+
+/** The owner verdicts a card FAILS, given its declared entry. Exported shape is
+ *  a list of strings so both the real check and the negative controls call the
+ *  SAME predicate. */
+function ownerOffenders(cards: readonly string[]): string[] {
+  const out: string[] = [];
+  for (const base of cards) {
+    const verdict = EXTRAS_OWNERS[base];
+    if (!verdict) {
+      out.push(
+        `${base}: on the EXTRAS channel with no declared owner. Add an EXTRAS_OWNERS entry ` +
+          "saying who pushes when no card is mounted — a node-lifetime producer, a headless " +
+          'card mount, or a module that renders itself.',
+      );
+      continue;
+    }
+    const type = typeForCard(base);
+    if (!type) {
+      out.push(`${base}: declares an extras owner but resolves to no registered module def`);
+      continue;
+    }
+    if (verdict.owner === 'node-lifetime-producer' && !EXTRAS_PRODUCER_TYPES.has(type)) {
+      out.push(
+        `${base}: declares 'node-lifetime-producer' but '${type}' has no entry in ` +
+          'EXTRAS_PRODUCERS ($lib/ui/media/extras-producers)',
+      );
+    }
+    if (verdict.owner === 'headless-card-mount' && !HEADLESS_MOUNT_LANE_TYPES.has(type)) {
+      out.push(
+        `${base}: declares 'headless-card-mount' but '${type}' is not in ` +
+          'HEADLESS_MOUNT_LANE_TYPES, so nothing keeps its card alive',
+      );
+    }
+  }
+  return out;
 }
 
 // THE EXEMPTION MECHANISM IS GONE, and that is the point (#1589).
@@ -255,21 +438,59 @@ describe('cards on a private node channel must not tear their media down on UNMO
       .toEqual([]);
   });
 
-  it('enrols the DARK-BY-DEFAULT cards even though it cannot yet judge them', () => {
-    // painter / textmarquee / picturebox fail by never INITIALISING, which the
-    // teardown patterns cannot see (see the header). Enrolling them now means a
-    // widened gate covers them without anyone having to remember.
-    for (const card of ['PainterCard', 'TextmarqueeCard', 'PictureboxCard']) {
-      expect(subjects, `${card} must be a gate subject`).toContain(card);
-    }
+  it('every card on the EXTRAS channel declares WHO owns its push (#1720)', () => {
+    // THE NEVER-INITIALISES HALF. Deny by default: a card that drives a node's
+    // *HandleExtras must say what pushes when NO card is mounted, because under
+    // the faceplate shell that is the COMMON case, not an edge case. Two of the
+    // three verdicts are cross-checked against the artifact that implements
+    // them, so a declaration cannot outlive its mechanism.
+    const cards = extrasChannelCards();
+    expect(cards.length, 'no card resolved on the extras channel — the predicate is broken')
+      .toBeGreaterThan(0);
+    expect(ownerOffenders(cards)).toEqual([]);
   });
 
-  it('TOYBOX is a subject on the EXTRAS channel — the one this gate used to enrol and not judge', () => {
-    // Anchored to the ARTIFACT: if the card is renamed or its extras channel
-    // goes away, this reddens rather than quietly certifying nothing. It is the
-    // positive counterpart of the deleted KNOWN_UNCONVERTED entry — the card is
-    // still watched, it is simply no longer excused.
-    expect(subjects, 'ToyboxCard must remain a gate subject').toContain('ToyboxCard');
+  it('an EXTRAS_OWNERS entry naming a card NOT on the channel is RED (anchored)', () => {
+    // The other direction, and the one a list of names always rots in: an entry
+    // for a card that was renamed, deleted, or has stopped using extras reads as
+    // coverage while covering nothing. Anchored to the ARTIFACT.
+    const onChannel = new Set(extrasChannelCards());
+    const stale = Object.keys(EXTRAS_OWNERS).filter((base) => !onChannel.has(base));
+    expect(
+      stale,
+      `EXTRAS_OWNERS entr(ies) for card(s) no longer on the extras channel: ${stale.join(', ')}`,
+    ).toEqual([]);
+  });
+
+  it('every NODE-LIFETIME PRODUCER is anchored to a module that still HAS an extras channel', () => {
+    // The other half of the anchoring, on the artifact that matters once a
+    // card's push path is gone. A producer pushes through the module handle's
+    // `extras`, so a producer for a module whose factory no longer exposes one
+    // is dead code reading as coverage — RED, not silently green.
+    const defsDir = fileURLToPath(new URL('../../video/modules/', import.meta.url));
+    const sources = readdirSync(defsDir)
+      .filter((f) => f.endsWith('.ts') && !f.endsWith('.test.ts'))
+      .map((f) => stripComments(readFileSync(new URL(f, `file://${defsDir}`), 'utf8')));
+    const orphans: string[] = [];
+    for (const type of EXTRAS_PRODUCER_TYPES) {
+      const declaresType = new RegExp(`type:\\s*'${type}'`);
+      const hit = sources.some((src) => declaresType.test(src) && /'extras'/.test(src));
+      if (!hit) orphans.push(type);
+    }
+    expect(
+      orphans,
+      `EXTRAS_PRODUCERS entr(ies) whose module def declares no extras channel: ${orphans.join(', ')}`,
+    ).toEqual([]);
+    expect(EXTRAS_PRODUCER_TYPES.size, 'the producer set must not silently empty').toBeGreaterThan(0);
+  });
+
+  it('every verdict carries a REAL reason, not a placeholder', () => {
+    // `why` is required by the TYPE, so tsc already refuses an absent one. This
+    // is the prose-quality floor that stops it being satisfied with ''.
+    const thin = Object.entries(EXTRAS_OWNERS)
+      .filter(([, v]) => v.why.trim().length < 40)
+      .map(([k]) => k);
+    expect(thin, `EXTRAS_OWNERS entr(ies) with a stub reason: ${thin.join(', ')}`).toEqual([]);
   });
 
   it('no subject card revokes urls, stops tracks or detaches in an unmount path', () => {
@@ -285,13 +506,15 @@ describe('cards on a private node channel must not tear their media down on UNMO
     expect(offenders).toEqual([]);
   });
 
-  it('the gate does NOT see the never-initialises failure mode (documented blind spot)', () => {
-    // PERMANENT negative control for the scope statement in the header. A card
-    // that is DARK BY DEFAULT — no teardown at all, the node simply renders
-    // nothing until this mounts and pushes — passes every pattern above. This
-    // asserts the blindness so nobody can read a green gate as coverage; if the
-    // gate is ever widened to catch this shape, this test fails and its prose
-    // (and the header) must be rewritten at the same time.
+  it('the TEARDOWN patterns still do NOT see the never-initialises mode (they never could)', () => {
+    // The permanent scope control this file has always carried, kept and
+    // re-pointed. A card that is DARK BY DEFAULT — no teardown at all, the node
+    // simply renders nothing until this mounts and pushes — trips no FORBIDDEN
+    // pattern, and never will: those patterns read `onDestroy` bodies. What
+    // changed with #1720 is not that they grew an eye, it is that a SECOND,
+    // declaration-shaped check now covers the mode they cannot see. If this
+    // ever reports a hit, the teardown half grew a capability the header denies
+    // and the header must be rewritten in the same commit.
     const darkByDefault = `
       onMount(() => {
         const ve = videoEngine();
@@ -305,6 +528,50 @@ describe('cards on a private node channel must not tear their media down on UNMO
       FORBIDDEN.filter((f) => f.re.test(b)).map((f) => f.name),
     );
     expect(hits, 'if this now reports a hit, the gate grew a capability the header denies').toEqual([]);
+  });
+
+  it('NEGATIVE CONTROL, both directions: the owner check fires on an undeclared card and not on a declared one', () => {
+    // PERMANENT, and it calls the SAME predicate the real check calls — an
+    // instrument that only ever returns [] is indistinguishable from one that
+    // never looked.
+    //
+    // DENY direction: a card on the channel with no entry is an offender.
+    expect(
+      ownerOffenders(['NoSuchExtrasCard']).length,
+      'an undeclared extras card must be reported',
+    ).toBe(1);
+    // ALLOW direction: a real, declared card is not.
+    expect(ownerOffenders(['PainterCard'])).toEqual([]);
+  });
+
+  it("SCOPE: 'module-renders-itself' is taken at its word — this gate reads no pixels", () => {
+    // The residual blindness, asserted rather than left in prose. Two of the
+    // three verdicts have an artifact to check against; this one does not, by
+    // construction — "the module's own draw is unconditional" is a claim about
+    // RENDERING, and nothing in a source grep can confirm it. So a card could
+    // declare it falsely and this gate would stay green.
+    //
+    // What that costs is bounded and stated: the verdict is only reachable for a
+    // card whose module is in NEITHER structural set, and the `why` must name
+    // the module's own idle-field paint. The behavioural net is
+    // e2e/tests/extras-producer-lifetime.spec.ts, which reads the actual output
+    // texture — and it can only cover the types that HAVE a producer, which is
+    // precisely why the other verdict needs a human on it.
+    const trusted = Object.entries(EXTRAS_OWNERS)
+      .filter(([, v]) => v.owner === 'module-renders-itself')
+      .map(([base]) => base);
+    for (const base of trusted) {
+      const type = typeForCard(base);
+      expect(type, `${base} must resolve to a registered module def`).toBeTruthy();
+      // If one of these ever gains a structural owner, the verdict is no longer
+      // the trusted kind and must be re-declared as the checkable kind.
+      expect(
+        EXTRAS_PRODUCER_TYPES.has(type!) || HEADLESS_MOUNT_LANE_TYPES.has(type!),
+        `${base} declares 'module-renders-itself' but '${type}' now HAS a structural owner — ` +
+          're-declare it as that owner so the check stops being a judgement',
+      ).toBe(false);
+    }
+    expect(trusted.length, 'the trusted-verdict set must not silently empty').toBeGreaterThan(0);
   });
 
   it('the predicate actually fires on a teardown body (negative control)', () => {

@@ -80,7 +80,45 @@ export function loadContention(dir = join(ROOT, 'e2e/tests')) {
  *
  * @type {{ spec: string, why: string }[]}
  */
-export const PENDING_FIRST_MEASUREMENT = [];
+export const PENDING_FIRST_MEASUREMENT = [
+  {
+    spec: 'extras-producer-lifetime.spec.ts',
+    why:
+      'lands 2026-08-16 with the #1720 fix (painter/textmarquee/picturebox/toybox ' +
+      'rendered placeholders with no card mounted, in the DEFAULT state). No ci.yml ' +
+      'run containing it has completed, so there are no blob reports to accept a cost ' +
+      'from. Measured 21.7 CPU-s locally under SwiftShader single-worker — REVISED ' +
+      'DOWN from 43.5 s (#1757): the first version timed out on CI because its RIG ' +
+      'drew four GL nodes per frame and its probe read the whole 1024x768 frame back ' +
+      '(3.1 MB, a flush+sync on the subject\'s own context), so the instrument cost ' +
+      'more than the subject and starved its shard co-tenants. Still a LOCAL number ' +
+      'and not what the planner needs. Run `task e2e:timings:accept -- <run-id>` on ' +
+      'the first green main run after this merges and DELETE this entry — the gate ' +
+      'reddens on a stale entry as loudly as on a missing one.',
+  },
+  {
+    spec: 'midi-binding-node-lifetime.spec.ts',
+    why:
+      'lands 2026-08-16 with the #1727 fix (a CC binding to an un-migrated module was ' +
+      'inert once its card unmounted). No ci.yml run containing it has completed, so ' +
+      'there are no blob reports to accept a cost from. Run ' +
+      '`task e2e:timings:accept -- <run-id>` on the first green main run after this ' +
+      'merges and DELETE this entry — the gate reddens on a stale entry as well as a ' +
+      'missing one.',
+  },
+  {
+    spec: 'featurecv-face.spec.ts',
+    why:
+      'lands 2026-08-16 with the featurecv faceplate (#1743). No ci.yml run containing ' +
+      'it has completed, so there are no blob reports to accept a cost from. Measured ' +
+      'LOCALLY at 2.7 CPU-s for both tests together (1.4 s + 1.3 s, warm server, 3x), ' +
+      'i.e. well UNDER the median an unmeasured spec rides — so the median fallback ' +
+      'over-books this file rather than under-booking a shard, which is the safe ' +
+      'direction of the #1600 failure. Run `task e2e:timings:accept -- <run-id>` on the ' +
+      'first green main run after this merges and DELETE this entry — the gate reddens ' +
+      'on a stale entry as well as a missing one.',
+  },
+];
 
 /** Median of a numeric array (used as the cost of an unmeasured file). */
 export function median(xs) {
