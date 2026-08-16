@@ -20,6 +20,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { destroyDef } from '$lib/audio/modules/destroy';
+import { readoutText } from '$lib/ui/workflow/dock-faceplate-model';
 import { faceReadoutValueFor } from '$lib/ui/workflow/face-readout-values';
 import { glyphBinding, primaryAudioOutPortId } from '$lib/ui/workflow/shell-glyph-live';
 import {
@@ -250,6 +251,32 @@ describe('destroy face model — TOTALITY (it runs on every frame of a drag)', (
   it('a FRESH node with no stored params resolves the def defaults', () => {
     const p = destroyFaceParams(reader({}));
     expect(p).toEqual({ decimate: 1, bits: 16, wet: 1 });
+  });
+
+  it('resolves through the SHELL LADDER, and never as the swallowed em-dash', () => {
+    // ⚠ `readoutText` (dock-faceplate-model.ts:386) wraps the registered
+    // function in a try/catch and returns '—' on a throw. So in the DOM, "this
+    // readout threw" and "this valueId is not registered" and "this readout is
+    // legitimately blank" are ALL the same three pixels. `printed()` above calls
+    // the registry directly and would let a throw here through as a test
+    // failure; this leg calls what the SHELL calls and refuses the dash, so the
+    // catch cannot quietly become the thing that makes the face look fine.
+    const junk = [NaN, Infinity, -Infinity, -999, 1e30, 0];
+    const offenders: string[] = [];
+    for (const r of destroyDef.face!.hero!.readouts!) {
+      for (const paramId of PARAM_IDS) {
+        for (const v of [...junk, ...PROBE[paramId]!]) {
+          const out = readoutText(r, destroyDef.params, reader({ ...DEFAULTS, [paramId]: v }));
+          if (out === '—') offenders.push(`${r.valueId} with ${paramId}=${v} resolved to the em-dash`);
+        }
+      }
+    }
+    expect(offenders, offenders.join('\n')).toEqual([]);
+
+    // NEGATIVE CONTROL on this leg — the dash IS reachable, so a green run
+    // above is a property of these four readouts and not of the assertion.
+    expect(readoutText({ label: 'x', valueId: 'destroy-not-a-real-id' }, destroyDef.params, reader(DEFAULTS)))
+      .toBe('—');
   });
 
   it('NaN and +/-Infinity on any param throw nothing and print a finite string', () => {
