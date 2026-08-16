@@ -88,6 +88,8 @@ import { macrooscillatorDef } from '$lib/audio/modules/macrooscillator';
 import { marblesDef } from '$lib/audio/modules/marbles';
 import { moog907aDef } from '$lib/audio/modules/moog907a';
 import { moog914Def } from '$lib/audio/modules/moog914';
+import { unityscalemathematikDef } from '$lib/audio/modules/unityscalemathematik';
+import { featurecvDef } from '$lib/audio/modules/featurecv';
 import { ninelivesDef } from '$lib/audio/modules/ninelives';
 import { noiseDef } from '$lib/audio/modules/noise';
 import { warrensvisionsDef } from '$lib/video/modules/warrensvisions';
@@ -99,6 +101,7 @@ import { resofilterDef } from '$lib/audio/modules/resofilter';
 import { ringbackDef } from '$lib/audio/modules/ringback';
 import { ringsDef } from '$lib/audio/modules/rings';
 import { sidecarDef } from '$lib/audio/modules/sidecar';
+import { slewSwitchDef } from '$lib/audio/modules/slewswitch';
 import { snaredrumDef } from '$lib/audio/modules/snaredrum';
 import { vcaDef } from '$lib/audio/modules/vca';
 import { warrensspectrumDef } from '$lib/audio/modules/warrensspectrum';
@@ -291,6 +294,17 @@ const RANGE_BOUND_CARDS: Readonly<Record<string, { params: readonly ParamDef[] }
   // paid that ledger rather than deferring it, and the def took the card's
   // wording so no pixels moved.
   'CharlottesEchosCard.svelte': charlottesEchosDef,
+  // THE FACEPLATE QUEUE · Q14. Enrolled with its faceplate, and the divergence
+  // it paid was a LABEL rather than a range: the four slew faders printed
+  // `Slew 1`..`Slew 4` where the def declares `S1`..`S4`, and the dock renders
+  // the DEF'S label — so promoting would have renamed all four controls out
+  // from under anyone who had learned the card (the `Feedback`/`Fbk` shape,
+  // #1689). The ranges agreed already; they were re-typed rather than wrong,
+  // which is the state before the analogVco backdraft, not after it. The
+  // mode/length DETENT NAMES were the third copy — hardcoded in card markup
+  // the shell cannot read — and are now a `ParamDef.options` roster this card
+  // renders rather than restates.
+  'SlewSwitchCard.svelte': slewSwitchDef,
   'SnaredrumCard.svelte': snaredrumDef,
   'VcaCard.svelte': vcaDef,
   'WarrensspectrumCard.svelte': warrensspectrumDef,
@@ -350,6 +364,48 @@ const RANGE_BOUND_CARDS: Readonly<Record<string, { params: readonly ParamDef[] }
   // MAPPING-bound too. Neither def declares `units`, so there is none to bind.
   'Moog907aCard.svelte': moog907aDef,
   'Moog914Card.svelte': moog914Def,
+  // THE FACEPLATE QUEUE · Q15 (COHORT 3). Enrolled while PAYING a live
+  // divergence (#1714), and it is the one that shows this gate's numeric half
+  // is only half: all five `min`/`max`/`defaultValue` literals AGREED with the
+  // def, and all five `label`s DISAGREED — the card painted `Att` / `Att` /
+  // `Curve` / `Att` / `Curve` under three static section captions where the def
+  // declares `Unity` / `A Att` / `A Crv` / `B Att` / `B Crv`. `card-def-agreement`
+  // compares the numbers, so nothing was watching the names.
+  //
+  // It becomes user-visible exactly at promotion: the dock full-view renders
+  // straight off the `ParamDef`, so shipping the face without binding labels
+  // would have renamed five controls with no review surface. Range AND mapping
+  // — every Fader reads `P.<id>.{min,max,defaultValue,label,units,curve}` off
+  // `paramSpec(unityscalemathematikDef, …)`, and no param on this module
+  // declares `units`, so there is none to paint and none left to drift.
+  //
+  // The conversion also removed the hazard the range clause is blind to: the
+  // defaults were read as `params[0]!.defaultValue` — bound by POSITION, not by
+  // id — so re-ordering `params`, which no gate forbids, would have silently
+  // re-pointed all five.
+  'UnityscalemathematikCard.svelte': unityscalemathematikDef,
+  // THE FACEPLATE QUEUE · Q16 (COHORT 3). The Q15 shape again, one wave later
+  // and with the SAME half of the contract at fault: all five numeric props
+  // AGREED with the def and all five `label`s DISAGREED (`GAIN`/`ATK`/`REL`/
+  // `SENS`/`DEBNCE` against `Gain`/`Atk`/`Rel`/`Sens`/`Debnce`), all five
+  // already sitting in VOCABULARY_DEBT, and the dock renders the DEF's label.
+  //
+  // ⚠ THE DIVERGENCES WERE PURE CASE, and that is worth stating rather than
+  // shrugging at: `Knob.svelte` uppercases its label in CSS, so binding them
+  // moved no pixels at all — which is exactly why they sat unpaid. A
+  // divergence with no visible symptom is still a second copy of a name, and
+  // it is the second copy that drifts.
+  //
+  // Range AND mapping — every Knob reads
+  // `P.<id>.{min,max,defaultValue,label,units,curve}` off
+  // `paramSpec(featurecvDef, …)`. `units` was genuinely MISSING here rather
+  // than absent on both sides: three params declare `units: 'ms'` and the card
+  // passed none. ⚠ It still moves NO pixels, because a Knob paints its value
+  // readout only inside `{#if dragging || hovering}` — so this whole conversion
+  // is invisible to the card's VRT baseline, which is precisely why it had gone
+  // unpaid. Predict a baseline move from the RESTING DOM, not from the size of
+  // the diff.
+  'FeaturecvCard.svelte': featurecvDef,
 };
 
 /**
@@ -393,6 +449,11 @@ const MAPPING_BOUND_CARDS: readonly string[] = [
   // identity (asserted in art/scenarios/charlottes-echos/cv-path.test.ts), so
   // there is no second copy of any number or name to drift.
   'CharlottesEchosCard.svelte',
+  // THE FACEPLATE QUEUE · Q14. Mapping too: all five Faders read `curve` off
+  // the ParamDef (`log` on every one of them), and `units` is bound rather than
+  // merely absent — all four slew params and `xfadeTime` declare `units: 's'`,
+  // which this card never printed at all before binding.
+  'SlewSwitchCard.svelte',
   'SnaredrumCard.svelte',
   'VcaCard.svelte',
   'WarrensspectrumCard.svelte',
@@ -421,6 +482,19 @@ const MAPPING_BOUND_CARDS: readonly string[] = [
   // iterate the def's own `params` array rather than listing controls.
   'Moog907aCard.svelte',
   'Moog914Card.svelte',
+  // THE FACEPLATE QUEUE · Q15 (COHORT 3). `curve` is bound off `paramSpec`;
+  // `units` is ABSENT ON BOTH SIDES — no unityscalemathematik param declares
+  // one and the card passes `P.<id>.units`, which resolves to `undefined` —
+  // so there is nothing to paint and nothing left to drift. The prop that
+  // actually mattered here was `label`, and it is bound with the rest (#1714).
+  'UnityscalemathematikCard.svelte',
+  // THE FACEPLATE QUEUE · Q16 (COHORT 3). Mapping too, and unlike its four
+  // predecessors `units` is NOT "absent on both sides": `attack`, `release` and
+  // `onset_debounce` declare `units: 'ms'`, the card passed no `units` at all,
+  // and the def-driven dock has always printed them. Binding it makes the two
+  // surfaces read the same string for the first time — at no pixel cost, since
+  // a Knob's readout paints only while dragging or hovering.
+  'FeaturecvCard.svelte',
 ];
 
 /**

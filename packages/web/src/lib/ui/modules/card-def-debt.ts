@@ -101,7 +101,16 @@ export const VOCABULARY_DEBT: Readonly<Record<string, readonly string[]>> = {
   'DoomCard.svelte': ['audioGain.label'],
   'DrummergirlCard.svelte': ['pitch.units'],
   'Dx7Card.svelte': ['algorithm.label', 'transpose.label'],
-  'FeaturecvCard.svelte': ['attack.label', 'gain.label', 'onset_debounce.label', 'onset_sens.label', 'release.label'],
+  // ⚠ `FeaturecvCard.svelte` USED TO BE HERE (`attack.label`, `gain.label`,
+  // `onset_debounce.label`, `onset_sens.label`, `release.label`: the card said
+  // `GAIN` / `ATK` / `REL` / `SENS` / `DEBNCE` where the def says `Gain` /
+  // `Atk` / `Rel` / `Sens` / `Debnce`). PAID, not deferred, when the module was
+  // faced (#1746): promotion makes the DEF's label the one a user reads at the
+  // dock, so a face PR is this ledger's release condition. All five were pure
+  // CASE differences that `Knob.svelte`'s `text-transform: uppercase` erases —
+  // which is why they sat unpaid, and why paying them cost no pixels. The card
+  // now reads every prop off `paramSpec(featurecvDef, …)`, so there is no
+  // second copy of a name left to disagree.
   'FoxyCard.svelte': ['src2_fine.label', 'src2_fold.label', 'src2_symmetry.label', 'src2_timbre.label', 'src2_tune.label', 'src3_fine.label', 'src3_fold.label', 'src3_symmetry.label', 'src3_timbre.label', 'src3_tune.label', 'src_fine.label', 'src_fold.label', 'src_symmetry.label', 'src_timbre.label', 'src_tune.label', 'xyz_smooth.label', 'xyz_zoom.label'],
   'FrametableCard.svelte': ['morph.label', 'shimmer.label', 'spread.label', 'waveShapeX.label', 'waveShapeY.label', 'weightShape.label'],
   'FroggerCard.svelte': ['initialTime.label'],
@@ -151,7 +160,28 @@ export const VOCABULARY_DEBT: Readonly<Record<string, readonly string[]>> = {
   'TextmarqueeCard.svelte': ['posX.label', 'posY.label', 'scrollX.label', 'scrollY.label'],
   'TidyVcoCard.svelte': ['cutoff.label', 'detune.label', 'drive.label', 'fatk.label', 'fdec.label', 'frel.label', 'fsus.label', 'level.label', 'oct2.label', 'shape1.label', 'shape2.label', 'track.label', 'width.label'],
   'TomtomCard.svelte': ['bend_time.label', 'decay.label', 'drive.label', 'level.label', 'noise.label'],
-  'UnityscalemathematikCard.svelte': ['aAtten.label', 'aCurve.label', 'bAtten.label', 'bCurve.label', 'unityAtten.label'],
+  // ⚠ `UnityscalemathematikCard.svelte` USED TO BE HERE, with ALL FIVE of its
+  // labels: the card painted `Att` / `Att` / `Curve` / `Att` / `Curve` (three
+  // of them identical, disambiguated only by static section captions the def
+  // cannot see) where the def declares `Unity` / `A Att` / `A Crv` / `B Att` /
+  // `B Crv`. PAID, not deferred, when the module was faced (#1714) — the
+  // `CharlottesEchosCard` precedent above, and for the same reason: promotion
+  // makes the DEF's label the one a user reads at the dock, so the divergence
+  // stops being a latent hazard and becomes a live rename of five controls.
+  //
+  // The card now binds `label` — and every range, default, curve and unit —
+  // off `paramSpec(unityscalemathematikDef, …)`, and is enrolled in
+  // `RANGE_BOUND_CARDS` + `MAPPING_BOUND_CARDS`, which is STRONGER than the
+  // agreement this entry was suppressing: there is no second copy of a name
+  // left to disagree. The def keeps the qualified wording rather than the card
+  // keeping the ambiguous one, because the FACE renders cells without section
+  // captions at the lane tiers, where three cells reading `Att` would be
+  // unusable.
+  //
+  // ⚠ NO REPLACEMENT COUNTER, deliberately. What guards it now is the
+  // unconditional `unledgered(...) === []` assertion in
+  // `card-def-agreement.test.ts` — the same predicate, with five fewer
+  // exemptions.
   'VideoVarispeedCard.svelte': ['speed.label'],
   'WavesculptCard.svelte': ['alpha_brightness.label', 'pos_z.label'],
 };

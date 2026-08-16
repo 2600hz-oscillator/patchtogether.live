@@ -907,3 +907,1338 @@ than carrying its own 1V/oct jack, so the pair's faces have to agree.
    (MECH, MECH-WORKLET, and a per-input KNOB leg) into the permanent test. A
    green sweep with no controls is indistinguishable from a sweep that measured
    nothing.
+
+---
+
+# COHORT 3 — appended 2026-08-15
+
+Cohort 2 is exhausted: Q9 `wavetableVco`, Q10 `charlottesEchos`, Q11 `ninelives`,
+Q12 `moog914`+`moog907a` and Q13 `buggles` are merged. Q14 `slewSwitch` is being
+built concurrently and is **not touched here**.
+
+## 11. THE RE-DERIVED POOL (2026-08-15, `origin/main` @ `1481e963`)
+
+Same three sources as §6, none of them this file, RE-RUN rather than re-read:
+
+```sh
+# contract-lock.txt            -> domain / params / discrete / in / out /
+#                                 paramTarget count / families / port KINDS
+# face-migration-inventory.ts  -> disposition (SOURCE, not the generated md)
+# strict-faces.ts              -> the promoted set
+# join: generic-face ∩ audio ∩ ¬STRICT_FACES, printed in THREE orderings
+```
+
+**`|STRICT_FACES|` = 41. The pool is 52.** The re-derivation is its own negative
+control on §6: every cohort-2 entry that merged has LEFT the pool
+(`wavetableVco`, `charlottesEchos`, `ninelives`, `moog914`, `moog907a`,
+`buggles` are all gone), and `slewSwitch` is still in it — exactly the shape a
+correct join has while a sibling PR is open.
+
+**And one ordering is not enough** (§10.6): sorting by param count alone is what
+hid `ninelives`, so the join was printed three ways — by params, by OUTPUTS, and
+by params+outputs.
+
+| type | par | disc | in | out | cvT | fam | disposition here |
+|---|---|---|---|---|---|---|---|
+| `mixmstrs` | 91 | 10 | 111 | 6 | 91 | 0 | Q7 — stopped by #1662 |
+| `wavesculpt` | 79 | 12 | 26 | 7 | 11 | 1 | owner manual review (§4) |
+| `moog960` | 36 | 11 | 3 | 4 | 0 | 0 | needs a STEP-GRID cell |
+| `foxy` | 33 | 6 | 5 | 5 | 3 | 0 | extension-class (video out) |
+| `synesthesia` | 22 | 4 | 4 | 48 | 0 | 0 | extension-class (video out) |
+| `moog984` | 16 | 0 | 4 | 4 | 0 | 0 | needs a MATRIX cell |
+| `wavecel` | 10 | 0 | 7 | 4 | 3 | 4 | extension-class (poly + video) |
+| `scope` | 9 | 3 | 11 | 3 | 9 | 0 | Q4 — extension-class |
+| `swolevco` | 8 | 0 | 7 | 4 | 4 | 0 | Q5 — unblocked by #1669 |
+| `slewSwitch` | 7 | 2 | 10 | 7 | 4 | 0 | **Q14 — IN FLIGHT, do not touch** |
+| `treeohvox` | 7 | 0 | 10 | 1 | 7 | 1 | Q3 — blocked by #1658 |
+| `featurecv` | 6 | 1 | 1 | 4 | 0 | 0 | **Q16** |
+| `moog921Vco` | 6 | 0 | 8 | 4 | 5 | 0 | the System-55 BANK batch |
+| `timelorde` | 6 | 4 | 5 | 14 | 0 | 0 | Q2 — extension-class |
+| `moog921b` | 5 | 1 | 5 | 4 | 0 | 0 | the System-55 BANK batch |
+| `moogCp3` | 5 | 0 | 5 | 7 | 0 | 0 | the System-55 BANK batch |
+| `unityscalemathematik` | 5 | 0 | 8 | 3 | 5 | 0 | **Q15 — IMPLEMENTED (this branch)** |
+| `illogic` | 4 | 0 | 4 | 10 | 0 | 0 | **Q17** |
+| `destroy` | 3 | 0 | 4 | 1 | 3 | 0 | **Q18** |
+| `moog923` | 3 | 0 | 1 | 4 | 0 | 0 | **Q20 — PROMOTED INTO THE COHORT (§11.1)** |
+| `moog905` | 3 | 0 | 1 | 1 | 0 | 0 | **Q21** |
+| `analogLogicMaths` | 2 | 0 | 4 | 5 | 2 | 0 | **Q19 — PROMOTED INTO THE COHORT (§11.1)** |
+
+### 11.1 DID THE RE-DERIVATION AGREE WITH THE FIVE §7 NAMED? Mostly — and the disagreement is the finding.
+
+§7's closing line named `featurecv` · `unityscalemathematik` · `illogic` ·
+`destroy` · `moog905`. **All five are still in the pool at the stated param
+counts**, so nothing on that list has gone stale and none of them has been
+promoted out from under it. But the OUTPUT ordering surfaces two candidates the
+list does not contain, and **both out-rank `moog905`**:
+
+- **`analogLogicMaths` — 2 params, 5 outputs.** §9 rejected it: *"NO FACE ON
+  MERIT. Attenuverter + logic: the module IS its five outputs, and the rear card
+  renders those without a face."* **That is the sentence §10.6 was written to
+  retire.** It is the `ninelives` argument with the sign flipped — `ninelives`
+  has 2 params and 9 outputs and was promoted *precisely because* the module IS
+  its outputs and no dial can print their relation. Read off the def rather than
+  the verdict: `SUM = tanh(A′+B′)` and `PRODUCT = tanh(A′·B′)` are
+  **soft-clipped**, and the compression is stated against the UN-CLIPPED SUM
+  (the only reference that makes the two rows comparable — see the ⚠ below):
+
+  | inputs, both attenuverters +1 | linear sum | `tanh` | compression |
+  |---|---|---|---|
+  | ±1 each | 2.0000 | 0.964028 | **−6.34 dB** |
+  | ±2 each | 4.0000 | 0.999329 | **−12.05 dB** |
+
+  Neither `attA` nor `attB` can print a compression that only exists when both
+  are open, and it more than doubles across a range of CV a rack produces
+  routinely. **Verdict corrected → Q19.**
+
+  ⚠ **THESE TWO NUMBERS ARE DERIVED FROM THE DEF'S STATED LAW, NOT RENDERED**,
+  and that distinction is load-bearing rather than pedantic: §5.2's whole point
+  is that a spec's arithmetic is a hypothesis. **Measure them against the real
+  worklet before authoring**, exactly as Q15 did. ⚠ And an earlier draft of this
+  paragraph got them WRONG — it quoted `−0.318 dB` and `−6.02 dB`, which are
+  the first row measured against UNITY and the second against nothing
+  consistent. Two rows referred to two different denominators and read as one
+  trend. **A dB figure with an unstated reference is not a measurement**, which
+  is the same lesson §15.10 records for `destroy` and §13 M8's budget records
+  for the model-vs-worklet leg.
+- **`moog923` — 3 params, 1 audio input, 4 audio outputs** (`white`, `pink`,
+  `lp`, `hp`). §9 already flagged it honestly (*"MARGINAL-YES, deferred. The
+  `moog903a` question (are the tap levels unprintable?) applies"*). The OUTPUT
+  ordering makes it concrete: one LEVEL dial and two **0..1 cutoff dials with no
+  `units`** drive four simultaneous taps, so the corner frequencies are nowhere
+  on the module and `pink`'s level relative to `white` is a property of the
+  pinking filter no dial states. Three unprintable facts over four taps is
+  exactly the bar that promoted `noise` (ONE param, three outputs). **→ Q20.**
+
+Everything else the output ordering surfaces is already dispositioned:
+`synesthesia` (48 outs) and `timelorde` (14) are extension-class; `moogCp3` (7),
+`moog921b` and `moog921Vco` belong to the System-55 BANK batch §9 named;
+`moog993`/`moog994` are the passive jack-field rejections; and
+`cvBuddy`/`cvBuddyMini` publish 5 and 4 outputs but their interesting quantities
+(SLOTS / LATE / ES-9-present) live in `node.data`, which `FaceReadoutValue` is
+structurally unable to see — a rejection no re-ordering can overturn.
+
+**What this pool STILL cannot see**, stated so a green derivation is not mistaken
+for a complete one: the join reads DECLARATIONS. It cannot tell a module whose
+five outputs are five genuinely different functions from one whose five outputs
+are five copies of the same bus, and it cannot see a card-only affordance at all
+— **STOP 2 is a grep, not a query.** Both were done by hand, per entry, below.
+
+## 12. THE COHORT
+
+Ordered by MERIT, not by param count. §5.2 applies to every one of them: the
+numbers below were measured in this branch and are still to be re-derived by the
+per-module oracle, not trusted.
+
+### Q15 · `unityscalemathematik` — the curve-morph attenuverter  ⟵ IMPLEMENTED (#1717 / this branch)
+
+**Status: promoted.** Face authored, `STRICT_FACES` entry added, four derived
+readouts registered, the card bound to the def through `paramSpec` (which is the
+fix for a FIVE-label card/def divergence, #1714), the false docs claim corrected
+(#1715), VRT roster entry added, capture dispatched. Full audit in §13.
+
+**What it is FOR, musically.** UNITYSCALEMATHEMATIK is the rack's CV BENDER. Six
+other modules attenuate or invert a control voltage — `scaler`, `polarizer`,
+`depolarizer`, `attenumix`, `illogic`, `analogLogicMaths` — and every one of them
+is a straight line: `out = in × k`. This is the only module in the rack that
+changes the SHAPE of a voltage rather than its size. The verb is *bend the
+response*: park an LFO or an envelope on A IN, turn A CRV up, and the bottom of
+the sweep goes flat while the top keeps its reach — the same modulation, redealt
+so most of the travel happens where you wanted it.
+
+**Merit (STOP 1): YES.** 5 params, 8 inputs (5 of them `paramTarget` CV), 3
+outputs — and a response law that is a pure function of two knobs and that
+NEITHER of them can print (§13 M3/M4).
+
+**STOP 2 (`grep` over `UnityscalemathematikCard.svelte`, 67 lines): CLEAN.** Zero
+`<button>`, zero `<select>`, zero `<input>`, no `node.data`, no `write(`, no
+`attachExternalSource`. Five `Fader`s, three static section captions and a
+`PatchPanel`. Every affordance is a `ParamDef`, so nothing becomes unreachable on
+promotion. (The three captions — `UNITY` / `A` / `B` — are card CHROME, not
+controls; the face reproduces them as band labels.)
+
+**Ranking** (against the DSP, not the declaration order — measurements in §13):
+
+| rank | key | why it is here and not lower |
+|---|---|---|
+| 1 | `aCurve` | the module's IDENTITY — the only control in the rack that bends a CV instead of scaling it. Measured: a 0.5 input leaves at 0.500 / 0.250 / 0.125 across its travel, and a 2.0 input leaves at 2.00 / 4.00 / **8.00** — it moves the two halves of the range in OPPOSITE directions |
+| 2 | `aAtten` | A's scale/invert AND its ENABLER: at 0 the whole A channel is dead, curve included. Ranked below the identity and above everything in B because it is UNCONDITIONALLY applicable — it still works at curve 0, where the module is a plain attenuverter |
+| 3 | `bCurve` | the same law again. B is a CLUSTER of A, not a second idea — which is why it is a cluster on one page rather than a page of its own |
+| 4 | `bAtten` | B's enabler, under A's for layout order alone, and that is stated rather than dressed up |
+| 5 | `unityAtten` | ranked LAST **deliberately**: it does the one thing three other modules already do, and it is the only control here that cannot bend anything. It is also the only one with no readout, because a dB conversion of a single dial IS that dial relabelled |
+
+Tier ladder as a sentence: *mini shows A CRV; compact adds A ATT; the six-cell
+lane plate and the dock both show all five, so the ranking's whole authority is
+at the top two.*
+
+**Pages (FUNCTION / signal order — deliberately disagreeing with `order`):**
+
+1. `shape` — the two curve-shapers, as two CLUSTERS (`a`, `b`). ⚠ This is the
+   documented cluster case verbatim (`ModuleFacePage.clusters`: *"reach for a
+   CLUSTER when they are the same idea, twice"*) — A and B are not merely
+   similar, they are bit-identical code paths on different inputs (§13 M5), so a
+   second PAGE would buy an ~81 px band to say the same word twice.
+2. `unity` — `unityAtten`.
+
+`order` and `pages` disagree because priority and signal flow genuinely differ
+here: UNITY is the FIRST section on the panel and the LAST thing worth reaching
+for.
+
+**Hero:** `hero.control: 'aCurve'` — the identity dial at hero size — with four
+derived readouts as the row below it. **`glyph: 'none'`**, and that is not a
+default: see the ⚠ below.
+
+**No `face.title`, no `face.hint`, no band hints, no sidebar.** Owner ruling
+2026-08-11: plain labels and values.
+
+**Derived readouts** — four, in two pairs, and the PAIRING is the instrument's
+own negative control:
+
+| valueId | what it says | which knob is BLIND to it |
+|---|---|---|
+| `unityscale-a-half` | A's output for a HALF-SCALE input | A ATT — blind to A CRV (0.500 → 0.125 with ATT untouched); A CRV — blind to A ATT |
+| `unityscale-a-over` | A's output for a 2× input | the SAME two knobs, moving the OTHER WAY: A CRV up sends `a-half` DOWN and `a-over` UP. Publishing both is what makes the curve's real behaviour visible instead of merely assertable — and it is the claim §13 M4 found the docs getting wrong |
+| `unityscale-b-half` | the same for B | B ATT / B CRV — and A's two readouts must NOT move, which is the cross-section control |
+| `unityscale-b-over` | the same for B | as above |
+
+**Risk: LOW.** Pure per-sample math, no free-running source, no card producer, no
+`node.data`, no video. Renders bit-identically twice (§13 M8), so #1680's
+non-reproducible-render hazard is CLOSED here by measurement rather than by
+assumption.
+
+⚠ **THE GLYPH RESOLVES TO NOTHING, AND SAYING SO IS THE POINT.**
+`primaryAudioOutPortId` matches `type === 'audio'`; this module declares three
+`cv` outputs and no audio output at all, so ANY glyph but `'none'` resolves to
+`{kind:'static'}` — a live-looking readout of NOTHING, which is the `marbles`
+defect (#1692) and the `ninelives` near-miss (#1706). It is caught now: the
+*"no declared glyph resolves to a DEAD (static) binding"* clause of
+`module-face-lint` is UNCONDITIONAL with no exemption list and no count.
+`glyph: 'none'` is declared, and the face takes the extra lane cell instead.
+
+⚠ **The same applies to `featurecv`, `illogic` and `analogLogicMaths`** — all
+three are CV/gate-output-only. **Do not spend a spec argument on which output a
+glyph would tap: there is no glyph.**
+
+### Q16 · `featurecv` — the audio→CV feature extractor  ⟵ IMPLEMENTED (#1743 / this branch)
+
+**Merit: YES,** and it has the richest readout story in the cohort. 6 params
+(`gain`, `attack`, `release`, `bipolar`, `onset_sens`, `onset_debounce`), 1 audio
+input, 4 outputs (`loud`/`bright`/`punch` CV plus an `onset` **trigger**).
+
+**The readout story: every number the player cares about is a MAPPING the dial
+does not print.** Read off `packages/dsp/src/lib/featurecv-dsp.ts` in this branch:
+
+- `onsetSensToThreshMult` maps SENS 0..1 onto an adaptive-threshold multiplier of
+  **4.0 → 1.2**, INVERTED (higher SENS = LOWER multiplier). The dial prints
+  `0.50`; the detector is firing at **2.6×** the running mean flux, and the dial
+  can say neither the number nor the direction.
+- `punchToCv` maps crest factor **1..6** onto 0..1, so a pure sine (crest √2)
+  reads `0.083` and white noise (~3.5) reads `0.5`. With POLARITY at its default
+  BIPOLAR those become **−0.83** and **0.0** at the jack — and the POLARITY
+  toggle prints `BI`.
+- `onset_debounce` is a lockout, so the MAXIMUM trigger rate is `1000/debounce` =
+  **12.5 Hz** at the shipped 80 ms. That is the number deciding whether a
+  16th-note hi-hat gets through; the dial prints `80 ms`.
+- `LOUD_MAKEUP = 2.0` and `BRIGHT_GAIN = 2.0` sit between the measurement and the
+  jack, and `gain` (a ×0.25..×4 trim) is IN FRONT of the analyser — so LOUD's CV
+  is `clamp01(2·rms(gain·x))` and the GAIN dial is blind to what CV it produces.
+
+**⚠ THE ONE REAL COST, AND IT MUST BE DECIDED BEFORE AUTHORING: PROMOTION LOSES
+THE METERS.** `FeaturecvCard.svelte` is 219 lines and roughly half of it is a
+live display — three bars (`LOUD`/`BRIGHT`/`PUNCH`) and an `ONSET` LED, pumped on
+rAF from `engine.read(node, 'snapshot')`. **A `FaceReadoutValue` sees ONLY
+params** (`face-readout-values.ts:83`), so the meters are structurally
+underivable from a readout, and the module has no audio output for a `meter`
+glyph to tap. This is the `scope` (Q4) argument at a smaller scale: the module is
+an ANALYSER and its picture IS the analysis.
+
+Two honest routes; the spec must PICK one rather than discovering it mid-build:
+
+1. **A `custom` sidebar block** (`sidebar-panels.ts`) carrying the four meters —
+   the **meowbox precedent** exactly: a `custom` block carries no `face.order`
+   rank, so it dodges the "a panel's first legal rank is 7" wall that made
+   `drummergirl` drop its picture and its audition together. Recommended, and a
+   normal-sized PR.
+2. Accept the loss and ship six ranked controls. Cheaper, and a straight look
+   regression on the module whose whole job is showing you what it heard.
+
+⚠ **AND IT IS A LIVE SURFACE, so the VRT argument is NOT free.** The meters poll
+the engine every rAF. The `bluebox` precedent says a polling hero CAN baseline
+deterministically — but bluebox's panel only assigns state when its 12-bit mask
+CHANGES, while featurecv's bars write `mLoud`/`mBright`/`mPunch` on EVERY frame.
+On a frozen graph the snapshot never updates and the bars sit at 0, which is
+almost certainly deterministic; **measure it with `vrt-face-audio-probe` before
+believing it**, the way `cube` and `bluebox` were measured, and never infer it
+from a passing scene.
+
+⚠ `face.order` must rank `bipolar`. It is `0..1 discrete` → a TOGGLE cell, and
+the card's `<button>` maps onto it one-for-one, so STOP 2 is clean — but a
+promoted module that grows a switch-shaped param nobody classified is a
+`module-face-lint` failure, and this one already exists.
+
+⚠ **`onset` declares `edge: 'trigger'`.** Nothing on the FACE consumes it, so
+#1703's rule does not bite the face itself — but any test that COUNTS onsets must
+use `$lib/audio/edge-detect` `createEdgeCounter` and never rescan an
+`AnalyserNode` buffer. `buggles`' `external_clock` captured **1 rising edge in
+6** doing exactly that.
+
+⚠ `art/scenarios/featurecv/feature-extract.test.ts` and
+`e2e/tests/featurecv-source-chain.spec.ts` BOTH already exist. Read what they pin
+before measuring anything; the e2e already drives a REAL source chain (noise →
+featurecv → filter cutoff → audible RMS), which a face PR should extend rather
+than duplicate.
+
+### Q17 · `illogic` — the attenuverter / math / logic block
+
+**Merit: YES.** 4 params, 4 `cv` inputs, **10 outputs** — four attenuverted
+passthroughs, `sum`, `diff`, and four logic gates. **Zero `paramTarget` CV
+inputs**, so the CV audit that stopped three of three modules is VACUOUS HERE BY
+CONSTRUCTION; state that as the finding rather than running a null sweep and
+calling it a pass (the Q12 precedent).
+
+**The readout story is the SUM BUS's HEADROOM, and it is measured.** Rendered
+through the def's own factory in `node-web-audio-api` (this branch; DC drivers;
+settled sample; all four attenuverters at their shipped +1 default):
+
+```
+spawn, nothing patched : att1..4=0  sum=0  diff=0  and=0  nand=1  or=0  not=1
+all four inputs at +1  : att1..4=1  sum=4  diff=0  and=1  nand=0  or=1  not=0
+att1=0, in1=1, in2=1   : att1=0 att2=1  sum=1  diff=1  and=1  nand=0  or=1  not=0
+```
+
+Three facts fall out of that table, and no dial prints any of them:
+
+1. **`SUM`'s full-scale reach is `|att1|+|att2|+|att3|+|att4|` — ×4 (+12.04 dB)
+   at the shipped defaults.** Web Audio summing is implicit and there is no
+   limiter anywhere in the factory, so four correlated inputs leave this module
+   4× over. It is the `attenumix` headroom readout with a harder edge, because
+   `attenumix` at least ends in a `tanh`.
+2. **`DIFF` is SILENT at the defaults for correlated inputs** —
+   `(att1+att2) − (att3+att4)` = 0 when all four sit at +1. A player patching
+   four copies of one LFO into a module called "diff" gets nothing, and every
+   knob reads `1.00`.
+3. **`NAND` and `NOT` sit at +1 DC from spawn**, driven by a free-running
+   `ConstantSource(+1)`. Correct Boolean semantics — and worth printing, because
+   two of ten jacks are HOT on an unpatched module.
+
+**Confirmed, NOT a defect:** the logic block reads the **RAW** input,
+pre-attenuverter — row 3 shows `att1 = 0` while `and`/`or` stay high. The def's
+own `docs` say so (*"Does not affect the logic threshold (logic always reads the
+raw input)"*) and the factory backs it (`gate1` taps `in1Bus`, not `att1`).
+**Do not "fix" it**; assert it, because it is the module's most surprising true
+statement.
+
+**The interchangeable-knob problem, with the `bluebox`/`moog914` answer.** Four
+identical attenuverters have no priority to express. Rank by LAYOUT so every
+PREFIX is a recognisable fragment (att1..att4), and put the INFORMATION in the
+readouts, which is where it belongs.
+
+⚠ `art/scenarios/illogic/` already holds `attenuverter-and-logic.test.ts` **and**
+a `profile.test.ts` — read what is pinned there, and by WHICH hash, before
+measuring anything.
+
+⚠ `cv-scale-registry.test.ts` names `illogic: ['in1','in2','in3','in4']` as
+PASSTHROUGH_BY_DESIGN. That is correct and must stay: they are the signals being
+attenuverted, not knob modulators.
+
+### Q18 · `destroy` — the bitcrusher, and it ships a LIVE DEFECT (#1716)
+
+**Merit: MARGINAL-YES on the controls, YES on the finding.** 3 params, 1 audio
+in, 1 audio out, 3 `paramTarget` CV inputs. §9 deferred it with the right
+argument — *"the decimator's EFFECTIVE sample rate and bit depth are genuinely
+unprintable by a 0..1 dial"* — and the audit turns that from a readout into a
+bug report.
+
+**MEASURED (this branch, the real shipped Faust wasm through
+`art/setup/faust-offline.ts`; 1.5 s render; census over the settled tail
+t ≥ 1.2 s; 1000 Hz sine at 0.5; plateau = consecutive samples within 1e-4):**
+
+| DECIMATE | median plateau | effective SR the doc claims (`SR/N`) | effective SR MEASURED |
+|---|---|---|---|
+| 1 | 1 | 48 000.0 Hz | 48 000.0 Hz |
+| 2 | **1** | 24 000.0 Hz | **48 000.0 Hz — the setting is a NO-OP** |
+| 4 | 3 | 12 000.0 Hz | 16 000.0 Hz |
+| 8 | 7 | 6 000.0 Hz | 6 857.1 Hz |
+| 16 | 15 | 3 000.0 Hz | 3 200.0 Hz |
+| 64 | 63 | 750.0 Hz | 761.9 Hz |
+
+**The hold length is `DECIMATE − 1`, not `DECIMATE`**, and at the bottom of the
+dial that is the difference between an effect and nothing at all. Root cause is
+visible in `packages/dsp/src/destroy.dsp:6,21`: the slider is `: si.smoo`-ed and
+then TRUNCATED by `int(d)`. A one-pole smoother approaches its target
+asymptotically and never reaches it, so `int(7.999…) = 7` for every integer
+position on the dial. `rint` / `int(d + 0.5)` is the fix; **it moves the ART
+baseline**, so it belongs in `destroy`'s own PR with an `art:update` and a
+reviewed manifest diff (a spectrum move here is expected and TIMBRAL), not folded
+into a face wave.
+
+**⚠ AND THE MEASUREMENT ALMOST DIDN'T HAPPEN — VALIDATE THE INSTRUMENT.** The
+first two instruments both returned confident, clean, WRONG answers, for the same
+single cause:
+
+- *"longest run of bit-identical consecutive samples"* → **1 at every DECIMATE**
+  ("decimation does nothing").
+- *"count of distinct output levels in the settled tail"* → **624 at every BITS
+  value from 16 down to 1** ("bit reduction does nothing").
+
+Both are artefacts of a **−90 dB dry leak**: `wet` is `si.smoo`-ed too, so at
+WET = 1 the settled value is ≈ `0.999968` and `audio*(1−wet)` never closes. A
+residual ~1.6e-5 sine rides on every held plateau and breaks bit-equality without
+moving the plateau. **A tolerance-based census recovers the truth immediately.**
+Anyone measuring this module must not compare output samples for EQUALITY.
+
+**The face, once the defect is fixed:** two readouts — the effective sample rate
+in Hz and the quantisation step / level count — each a pure function of ONE dial,
+which is this entry's weakness and why it ranks below `illogic`. The strongest
+available form is a JOIN: the crush is a CASCADE, so the number of distinct
+output levels a player actually hears is a function of BITS **and** DECIMATE
+together (a held sample is quantised once), and `wet` scales it back toward the
+dry. Measure the join before ranking.
+
+⚠ `e2e/tests/cv-range-uniformity.spec.ts:243` spawns a `destroy` with
+`decimate: 32`. Promotion does not touch it (that spec drives params, not the
+card), but re-read it after the DSP fix — its expectations sit downstream of the
+very off-by-one above.
+
+### Q19 · `analogLogicMaths` — the CONTINUOUS logic block (§9's verdict, CORRECTED)
+
+**Merit: YES on the readouts — a correction to §9, which rejected it on param
+count.** 2 params (`attA`, `attB`), 4 inputs (2 signal + 2 `paramTarget` CV), 5
+outputs (`min`, `max`, `diff`, `sum`, `product`).
+
+**What earns it a face is the `tanh`.** `SUM = tanh(A′+B′)` and
+`PRODUCT = tanh(A′·B′)` are the only two outputs in the `illogic` /
+`analogLogicMaths` pair that are SOFT-CLIPPED, and the clip is a JOIN over both
+attenuverters — see the table in §11.1: **−6.34 dB** against the un-clipped sum
+with two full-scale inputs at the shipped defaults, **−12.05 dB** with two ±2
+sources. Neither dial can print a compression that only exists when both are
+open, and it more than doubles across a range of CV a rack produces routinely.
+`min`/`max`/`diff` are LINEAR and are the readouts' own negative control — they
+must NOT move when the clip does.
+
+⚠ **DERIVED FROM THE DECLARED LAW, NOT RENDERED.** Measure both rows against the
+real worklet before authoring (§5.2), and state the dB REFERENCE in the
+assertion message — an earlier draft of this entry quoted two figures against
+two different denominators and they read as one trend.
+
+⚠ **The `ninelives` lesson is the whole reason this entry exists.** §9's
+rejection sentence — *"the module IS its five outputs, and the rear card renders
+those without a face"* — is the exact argument §7 recorded as WRONG for
+`ninelives`. A module's face value lives in what it PUBLISHES as much as in what
+it exposes.
+
+⚠ **2 `paramTarget` CV inputs — run the audit rig**
+(`art/scenarios/wavetable-vco/cv-path.test.ts` is the template, and
+`art/scenarios/unityscalemathematik/cv-path.test.ts` is the two-terminal-shape
+variant). This is the shape that was defective three times running.
+
+⚠ **Zero audio outputs → `glyph: 'none'`**, same as Q15/Q16/Q17.
+
+⚠ **STOP 1 is genuinely close here.** 2 params is the refusal threshold, and the
+whole case rests on the readouts being real. If the `tanh` turns out unreachable
+in practice — every realistic CV source well under ±1, so the clip never engages
+— that is a NO and it should be REPORTED as one. Measure the knee before
+authoring.
+
+### Q20 · `moog923` — noise + two filter taps (§9's deferral, RESOLVED)
+
+**Merit: YES, on the `noise` argument verbatim.** 3 params (`level`, `lpCutoff`,
+`hpCutoff`), 1 audio input, **4 audio outputs** (`white`, `pink`, `lp`, `hp`).
+
+§9 deferred it with the right question — *"are the tap levels unprintable?"* —
+and the def answers it: the two cutoffs are **0..1 dials with no `units`**, so
+the corner frequency they set appears nowhere on the module, and `pink`'s level
+relative to `white` is a property of the pinking filter that no LEVEL dial can
+state. Three unprintable facts over four taps is precisely the count that
+promoted `noise` (ONE param, three outputs).
+
+⚠ **Which tap does the glyph resolve to?** Unlike Q15–Q19 this module DOES have
+audio outputs, so a `meter` glyph BINDS — to `white`, because
+`primaryAudioOutPortId` takes the FIRST `type === 'audio'` output. **That is the
+`noise` finding verbatim** (#1692): the meter shows the tap the player is
+probably not listening to. Say which, in the spec, and decide whether a readout
+should print the other three levels.
+
+⚠ Measure the 0..1 → Hz map off the WORKLET, never off the description.
+
+⚠ `moog923` is in `NOT_TOKEN_PINNED_SCENES` (`vrt-cable-stripe.test.ts`) — the
+whole `moog*` family renders no `.stripe`. Promotion does not change that (the
+card still exists); do not "fix" the missing stripe while you are in there.
+
+### Q21 · `moog905` — the spring reverb
+
+**Merit: MARGINAL-YES, and it is LAST of the seven on the measurement.** 3 params
+(`mix`, `decay`, `size`), 1 in, 1 out, **zero CV inputs** — so it has neither a
+CV audit to run nor an output roster to derive readouts from. §9 deferred it on
+*"a real derived quantity (the dispersion chirp) but only three dials"*, and the
+audit narrows that considerably.
+
+**MEASURED (this branch, the def's own factory in `node-web-audio-api`, a
+1-sample impulse, `mix = 1`, tail = last sample above −60 dB of peak):**
+
+| decay | size | tail |
+|---|---|---|
+| 0.6 | 0.5 | 0.270 s |
+| 0.2 | 0.5 | 0.129 s |
+| 0.9 | 0.5 | 0.708 s |
+| 0.6 | 0.1 | 0.163 s |
+| 0.6 | 0.9 | 0.377 s |
+
+**SIZE is not orthogonal to DECAY.** At a FIXED `decay = 0.6`, moving SIZE across
+its travel moves the tail **0.163 s → 0.377 s** — a 2.3× range — while the module
+documents SIZE as *"spring length / dispersion — how much chirp and boing"* and
+DECAY as *"tail length"*. So the one number a player actually wants (how long
+does it ring) is a JOIN over two dials and neither can print it. That is a
+legitimate derived readout, and it is the module's only one. Renders
+bit-identically twice.
+
+**Why it still ranks last:** three dials means `faceTierCap` gives mini 1 /
+compact 2–3 / plate 6 — the plate and the dock render the identical three knobs,
+so `pages`, band packing and the tier ladder have nothing to organise. One
+readout over three dials is the thinnest case in the cohort. If it is built, it
+is built for completeness of the effects rack, not because the face earns its two
+VRT baselines.
+
+## 13. `unityscalemathematik` — THE AUDIT, MEASURED
+
+Run against the REAL shipped worklet (`packages/dsp/dist/unityscalemathematik.js`)
+in `node-web-audio-api`, driven through the def's OWN factory — so the
+publish-an-AudioParam seam that broke #1661/#1662 exists in the harness. SR
+48 000, DC drivers, metric = the settled output sample in LINEAR amplitude. Every
+number is reproduced on every run by
+`art/scenarios/unityscalemathematik/cv-path.test.ts` and
+`unityscalemathematik-face-model.test.ts`.
+
+**M1 — ALL FIVE `paramTarget` INPUTS REACH THE AUDIO, on BOTH paths, and the two
+paths AGREE TO THE PRINTED DIGIT.** The strong form: the CV terminal is not
+merely alive, it is the SAME terminal the knob writes.
+
+| input | param | base → target | KNOB Δ | CV Δ |
+|---|---|---|---|---|
+| `u_atten_cv` | `unityAtten` | 1 → −1 | 1.000000 | 1.000000 |
+| `a_atten_cv` | `aAtten` | 1 → −1 | 1.000000 | 1.000000 |
+| `a_curve_cv` | `aCurve` | 0 → 1 | 0.375000 | 0.375000 |
+| `b_atten_cv` | `bAtten` | 1 → −1 | 1.000000 | 1.000000 |
+| `b_curve_cv` | `bCurve` | 0 → 1 | 0.375000 | 0.375000 |
+
+**M2 — THE TERMINAL PARTITION IS EXACTLY `{5 params, 3 ports}`, DERIVED off the
+LIVE handle.** `u_atten_cv` / `a_atten_cv` / `a_curve_cv` / `b_atten_cv` /
+`b_curve_cv` publish an AudioParam, so `AudioEngine.addEdge` takes the
+`connect(din.param)` branch; `u_in` / `a_in` / `b_in` publish a raw node input and
+are the named `PASSTHROUGH_BY_DESIGN` entries. A sweep that assumed one shape
+would either throw or silently skip half the module.
+
+**M3 — THE RESPONSE LAW, CONFIRMED AGAINST THE RENDER:**
+`y = sign(x)·|x|^k·atten`, `k = 1 + 2·curve`, `k ∈ [1, 3]`.
+
+| \|x\| | curve 0 (k=1) | curve 0.5 (k=2) | curve 1 (k=3) |
+|---|---|---|---|
+| 0.10 | 0.100000 | 0.010000 | 0.001000 |
+| 0.25 | 0.250000 | 0.062500 | 0.015625 |
+| 0.50 | 0.500000 | 0.250000 | 0.125000 |
+| 0.90 | 0.900000 | 0.810000 | 0.729000 |
+| **1.00** | **1.000000** | **1.000000** | **1.000000** |
+| 1.50 | 1.500000 | 2.250000 | 3.375000 |
+| 2.00 | 2.000000 | 4.000000 | **8.000000** |
+| 3.00 | 3.000000 | 9.000000 | **27.000000** |
+
+**M4 — DEFECT (doc, #1715): "leaving larger excursions intact" IS FALSE ABOVE
+UNITY.** The def's `explanation` says the curve *"compresses small signals while
+leaving larger excursions intact"* and its `aCurve`/`bCurve` control docs say
+*"compressing small signals while preserving large ones"*. Measured: **`|x| = 1`
+is a FIXED POINT and the only one.** Below it the curve attenuates as documented;
+**above it the curve EXPANDS** — a ±2 source at CURVE 1 leaves at ±8 (a **×4
+gain**) and a ±3 source at ±27 (**×9**). "Preserved" is true at exactly one input
+magnitude and wrong everywhere above it. This is the #1701 class exactly: a false
+VALUE inside prose, with every gate blind because the DECLARATION is correct.
+Corrected in this PR, and the corrected sentence is what `unityscale-a-over`
+prints as a LIVE number rather than as an assertion.
+
+**M5 — SECTIONS A AND B ARE BIT-IDENTICAL CODE PATHS, AND THE THREE CHANNELS DO
+NOT CROSS-TALK.** Driving `a_in` alone leaves `u_out` and `b_out` at exactly `0`.
+That is what licenses `a`/`b` as CLUSTERS of one page rather than two pages.
+
+**M6 — EVERY CONTROL IS ENABLER-GATED ON A CABLE, bit-exactly.** With nothing
+patched into `a_in`, `aCurve = 1` and `aAtten = −1` together move the output by
+exactly `0`. Not a defect — it is what a shaper IS — but it means the FACE cannot
+say which cable is missing (a `FaceReadoutValue` sees only params), which is why
+all four readouts are stated as a RESPONSE ("what a 0.5 in would become") and
+never as a level.
+
+**M7 — DEFECT (live, #1714): THE CARD DISAGREES WITH THE DEF ON ALL FIVE
+LABELS.** The `min`/`max`/`defaultValue`/`curve` literals all AGREE (checked one
+by one), so this is NOT the `wavetableVco` range defect — it is the *other* half
+of the same class, and it is the half that becomes user-visible on promotion,
+because **the dock renders the DEF's label**:
+
+| param | def `label` | card paints |
+|---|---|---|
+| `unityAtten` | `Unity` | `Att` |
+| `aAtten` | `A Att` | `Att` |
+| `aCurve` | `A Crv` | `Curve` |
+| `bAtten` | `B Att` | `Att` |
+| `bCurve` | `B Crv` | `Curve` |
+
+The card disambiguates the three `Att` cells with static section captions the def
+cannot see. **All five were already sitting in `VOCABULARY_DEBT` — see M9.**
+Fixed by binding the card to `paramSpec(def, id)` — one copy of every number,
+curve, unit AND label — and enrolling it in `RANGE_BOUND_CARDS` +
+`MAPPING_BOUND_CARDS`.
+⚠ **That moves `e2e/vrt/__screenshots__/vrt.spec.ts/unityscalemathematik.png`**,
+and a label change may land UNDER the diff budget, which is the
+passing-but-stale trap: COUNT what the bot commits against the prediction, and
+`git rm` + re-dispatch if the card PNG is not among them.
+
+**M8 — THE RENDER IS REPRODUCIBLE.** Two independent renders of the same patch
+are BIT-IDENTICAL across the whole buffer. Stated as a MEASUREMENT because #1680
+found three modules where it was not: `node-web-audio-api` renders off-thread and
+a `setInterval` pump keeps firing during a render, so any value written only from
+one is racy. This module has no pump — it is a stateless per-sample function —
+and the assertion is a permanent leg, so a future pump cannot be added quietly.
+
+### What the audit did NOT find
+
+No dead CV input, no dead knob, no unexposed DSP capability, no range
+disagreement, no cross-talk between the three sections, and no defect in the
+worklet's math — the pure `unityScaleMath` helper the readouts use agrees with
+the rendered audio to **9.02e-8 RELATIVE** (~0.76 float32 ULP), which is
+float32-vs-float64 `Math.pow` and nothing else. `unityscalemathematik` is a
+correct module with one false documentation claim and one card/def label
+divergence.
+
+⚠ **AND THAT NUMBER'S UNIT IS A LESSON, not a footnote.** The first draft of
+that leg asserted an ABSOLUTE budget of 1e-7 and went RED at 1.81e-7 — on a
+result of magnitude 2.004, i.e. 9.0e-8 relative, i.e. the harness working
+perfectly. An absolute budget over a quantity that spans 0 to 8 across the
+dials' travel is **a different assertion at every probe magnitude**; a relative
+one is the same assertion everywhere. The assertion message now names the unit
+(`RELATIVE error (dimensionless; budget 1e-6)`), which is the half of CLAUDE.md's
+"state the units" rule that would have caught it before the run.
+
+**M9 — THE DIVERGENCE WAS ALREADY LEDGERED, WHICH CHANGES WHAT M7 IS.** All five
+labels sat in `VOCABULARY_DEBT` (`card-def-debt.ts`, generated 2026-08-02), so
+this was not an undiscovered defect — it was a KNOWN one, deferred, in a ledger
+whose whole purpose is to keep a known answer around. §10.7's advice paid off
+exactly as written: *"before authoring a face, grep the debt/exemption lists for
+the module you are about to touch — you may already be holding the release
+condition."* A face PR IS that condition here, because promotion is what turns a
+latent divergence into a live rename. The entry is DELETED rather than re-worded
+(CLAUDE.md: when debt is paid, delete the mechanism and leave no replacement
+counter); what guards it now is the unconditional `unledgered(...) === []`
+clause of `card-def-agreement.test.ts` with five fewer exemptions, plus
+`RANGE_BOUND_CARDS` + `MAPPING_BOUND_CARDS`, which is strictly stronger — there
+is no second copy of a name left to disagree.
+
+## 14. VERDICTS RECORDED — additions to §4 and §9
+
+| module | params | verdict |
+|---|---|---|
+| `analogLogicMaths` | 2 | **§9's "NO FACE ON MERIT" is WITHDRAWN → Q19.** The rejection sentence is the `ninelives` argument with the sign flipped, and the `tanh` on SUM/PRODUCT is a real derived readout (§11.1). |
+| `moog923` | 3 | **§9's deferral is RESOLVED → Q20.** Three unprintable facts over four taps = the `noise` bar. |
+| `moog905` | 3 | MARGINAL-YES **confirmed with a measurement** (Q21): SIZE moves the tail 2.3× at a fixed DECAY, so there IS one derived readout. Ranked last of seven. |
+| `moogCp3` | 5 | NOT a merit rejection — a member of the System-55 BANK batch (§9), and its face must share that batch's layout. Its 7 outputs put it high in the OUTPUT ordering; do not pull it out of the bank on that alone. |
+| `fourplexer` · `moog992` · `moog993` · `moog995` · `cvBuddy` · `cvBuddyMini` | 2–4 | §9's rejections STAND, re-checked against the output ordering. `cvBuddy`'s interesting quantities are `node.data`, which `FaceReadoutValue` cannot reach at all — a rejection no re-ordering can overturn. |
+
+## 15. WHAT COHORT 3 ADDS TO §5 AND §10
+
+9. **A GLYPH IS NOT A DEFAULT — RESOLVE IT.** Four of the seven entries in this
+   cohort have NO `type: 'audio'` output, so every glyph but `'none'` resolves to
+   `{kind:'static'}` and paints a live-looking readout of nothing. That used to
+   be invisible (marbles shipped it through three passes, #1692); it is now an
+   UNCONDITIONAL clause of `module-face-lint` with no exemption list and no
+   count. Establish what the glyph RESOLVES TO before writing it — and for a
+   module that DOES have audio outputs, say WHICH one, because
+   `primaryAudioOutPortId` takes the first.
+
+10. **A "NO-OP" INSTRUMENT READING IS FIRST AN INSTRUMENT BUG.** `destroy`'s
+    audit returned "decimation does nothing" and "bit reduction does nothing"
+    from two INDEPENDENT metrics, and both were wrong — a **−90 dB** dry residual
+    (`si.smoo` never closes `1 − wet`) broke bit-equality without moving the
+    signal. Any census over a Faust module's output that compares samples for
+    EQUALITY is measuring the smoother, not the DSP. Use a tolerance, and print
+    the tolerance in the assertion message.
+
+11. **RENDER EVERY BASELINE TWICE AND ASSERT BIT-IDENTITY** before trusting a
+    number from it (#1680). It costs two lines and it is the only cheap defence
+    against an off-thread render racing a pump.
+
+12. **THE LABEL IS HALF THE CARD/DEF CONTRACT, and it is the half that becomes
+    user-visible on promotion.** `wavetableVco` (#1681) was a RANGE divergence;
+    `unityscalemathematik` (#1714) is a LABEL divergence on all five params with
+    every range agreeing. `card-def-agreement.ts` compares the numbers. **The
+    dock renders the DEF's label**, so a face PR that does not bind labels ships
+    a rename nobody reviewed.
+
+13. **A dB FIGURE WITH AN UNSTATED REFERENCE IS NOT A MEASUREMENT.** §11.1's
+    first draft quoted `analogLogicMaths`' `tanh` compression as `−0.318 dB` and
+    `−6.02 dB` — the first against UNITY, the second against nothing consistent,
+    and the two read as one trend. Against the un-clipped sum, which is the only
+    reference that makes the rows comparable, they are **−6.34 dB** and
+    **−12.05 dB**. The same failure has three faces in this cohort alone: this
+    one, the ABSOLUTE-vs-RELATIVE budget in §13's model-vs-worklet leg, and
+    `destroy`'s equality-vs-tolerance census in §15.10. **Name the denominator
+    and the unit IN the number**, in a spec exactly as in an assertion message.
+
+14. **A SPEC'S ARITHMETIC IS A HYPOTHESIS UNTIL IT IS RENDERED.** Q15's numbers
+    came off the shipped worklet; Q19's and Q21's partly did not, and Q19's were
+    wrong. Mark which is which — an unmarked derived figure is indistinguishable
+    from a measured one, and the builder inherits it as fact.
+
+---
+
+## 16. THE DOMAIN THE POOL NEVER LOOKED AT — VIDEO (owner redirect, 2026-08-15) · #1726
+
+**§11's join filtered on `domain === 'audio'`, and §6's did before it.** So did
+§1's. Three cohorts, one filter, never restated as a decision — which is the
+same failure mode as ranking by param count alone, one level up: **a filter
+applied before the check quietly redefines the check's subject** (`blind-gates`,
+and CLAUDE.md's four-green-and-blind gates verbatim).
+
+Re-run WITHOUT the domain filter, same three sources:
+
+```sh
+# generic-face ∩ ¬STRICT_FACES, SPLIT by domain rather than filtered to one
+```
+
+| | audio | video | meta |
+|---|---|---|---|
+| registered modules | 120 | **68** | 8 |
+| `generic-face` disposition | 93 | **47** | 0 |
+| **PROMOTED (`STRICT_FACES`)** | **all of them** | **ZERO** | — |
+| remaining pool | 51 | **47** | 0 |
+
+**Every promoted face is `audio`. Not one video module is faced**, while video
+is a third of the `generic-face` population. State it as a relation, not a
+pair of counts: `STRICT_FACES ∩ {video defs} = ∅`, and it has been ∅ since the
+programme began.
+
+### 16.1 WHY, and both stated reasons are now STALE
+
+§1 wrote the exclusion down, which is the only reason it is recoverable:
+
+> *"Video defs are excluded on purpose: no video def carries a face, the doc
+> `[id]` renderer for them does not exist, and `module-faceplates.md` scopes
+> them out."*
+
+- **"no video def carries a face"** is CIRCULAR — it is the skew, offered as its
+  own justification. This is exactly the shape §10.6 retired for `ninelives`
+  and §11.1 retired for `analogLogicMaths`, and it survived twice as long
+  because it was phrased as a scope note rather than a verdict.
+- **"the doc `[id]` renderer does not exist"** was true and IS NO LONGER.
+  `module-manifest.ts:53` declares `VIDEO_SOURCES` and `buildModuleManifest`
+  takes it as a second parameter (`:1306`), so the manifest carries video defs;
+  `routes/docs/modules/[id]/+page.server.ts`'s `entries()` enumerates
+  `buildModuleManifest().modules` and its `load` finds any of them. **Video
+  modules have doc pages today**, and `backdraft` is already in `STRICT_DOCS`.
+- `module-faceplates.md`'s "What this skill does NOT cover · VIDEO MODULES"
+  cites both of the above and is therefore stale in both halves. It needs the
+  correction folded in with the first video face.
+
+### 16.2 AND THE PLATFORM WAS READY — the finding that costs a spec its main worry
+
+The obvious fear is that a faceplate has nothing to say about a picture. It is
+already answered in the shell, and it was answered deliberately:
+
+```ts
+// ModuleShell.svelte:216-221
+// VIDEO-domain module → the glyph slot shows a LIVE THUMBNAIL of its actual
+// output (the legacy preview seam via VideoTileThumb), never a static trace:
+// a migrated video face gets the same live picture the placeholder tiles do.
+let videoThumb = $derived(hasVideoSurface(def));
+let hasGlyph = $derived(glyphKind !== 'none' || videoThumb);
+```
+
+`hasVideoSurface(def)` is `def.domain === 'video'` (`module-shell-model.ts:177`),
+and the thumb is a 160×120 aspect-fit blit at 15 fps, IntersectionObserver-gated
+(`VIDEO_THUMB_*`). So a video face gets its module's real output in the glyph
+slot for free.
+
+⚠ **AND THE DECLARATION THAT GOES WITH IT IS COUNTER-INTUITIVE, so it must be
+asserted rather than commented.** A video def must declare **`glyph: 'none'`** —
+not because it has no picture, but because `primaryAudioOutPortId` matches
+`type === 'audio'` and a video def has none, so ANY other glyph resolves to
+`{kind:'static'}` and reddens `module-face-lint`'s dead-glyph clause. The live
+picture arrives through `hasGlyph`'s **OR**, from a different seam entirely.
+`'none' + a blank tile` and `'none' + a live video thumb` are indistinguishable
+from the declaration alone: **assert `hasVideoSurface` is what paints it.**
+
+### 16.3 THE VIDEO POOL, by param count
+
+| type | par | disc | in | out | cvT | notes |
+|---|---|---|---|---|---|---|
+| `backdraft` | **37** | 3 | 33 | 1 | **29** | **Q22 — owner pick, IMPLEMENTED, REVIEW-HOLD** |
+| `colourofmagic` | 37 | 22 | 31 | 22 | 15 | five colorspace blocks + 22 taps; already noted in §1's inventory as needing page splitting |
+| `spirographs` | 31 | 4 | 31 | 3 | 31 | every param CV-able, 1:1 |
+| `b3ntb0x` | 22 | 0 | 19 | 1 | 18 | |
+| `quadralogical` | 21 | 4 | 19 | 2 | 15 | |
+| `grainsOfVision` | 20 | 1 | 19 | 2 | 17 | granular video; three chained blocks = natural pages |
+| `bentbox` | 16 | 0 | 15 | 1 | 14 | |
+| `vfpgaRunner` | 16 | 0 | 12 | 2 | 8 | ⚠ THE VFPGA HOST — see the correction below |
+| `mandelbulb` | 13 | 4 | 10 | 2 | 10 | |
+| `ruttetra` | 12 | 0 | 8 | 1 | 7 | |
+| `warrensvisions` | 12 | 4 | 9 | 1 | 8 | already `RANGE_BOUND` + `MAPPING_BOUND` |
+| `mirrorpool` | 11 | 0 | 13 | 1 | 11 | |
+
+**`backdraft` is the fourth-largest `generic-face` candidate in the WHOLE fleet**
+— behind only `mixmstrs` (91, stopped by #1662), `wavesculpt` (79, owner manual
+review) and `colourofmagic` (37, tied on params but with 22 outputs and 22
+discrete switches). It is the largest that is neither blocked nor already
+carved out, in either domain.
+
+⚠ **A CORRECTION TO THE BRIEF THAT SENT ME HERE, recorded because it is the
+§5.2 rule applying to a task description rather than to a spec.** The redirect
+described `backdraft` as *"a VFPGA host … 4 video in, 4 CV in, 4 gate in, 2
+video out, an 8-slot generic param bank `p1..p8` … a loaded `VfpgaSpec`
+(`node.data.vfpga`) selects which subset is ACTIVE"*, and framed the central
+design problem as **a dynamic control set**. Read off `contract-lock.txt` and
+the def itself, that describes **`vfpgaRunner`** (16 params, 12 in = `cv×4 +
+gate×4 + video×4`, **2** video out) — not `backdraft` (37 params, 33 in =
+`cv×29 + video×4`, **1** video out, no `node.data` spec at all).
+
+The line counts in the redirect were right (`backdraft.ts` is 3688,
+`BackdraftCard.svelte` is 1290), which is exactly why the description read as
+authoritative. **Verify an I/O description against `contract-lock.txt` before
+designing against it**; the two modules' design problems have nothing in common.
+The real one is in §17.
+
+---
+
+## 17. Q22 · `backdraft` — the first VIDEO face, and it is NOT a face-sized job
+
+**Issues filed from this audit: #1725** (six dead gate inputs), **#1723** (the
+engine→store reflect dies with the card), **#1722** (docs describe a removed
+display; `tvMode` mode 1 has two names), **#1726** (the video-face platform gap).
+
+**Merit (STOP 1): YES, emphatically.** 37 params, 33 inputs (29 `paramTarget`
+CV + 4 `video`), 1 `video` out — the fourth-largest `generic-face` candidate in
+the fleet and the largest that is neither blocked nor carved out. Two `<XyPad>`
+mounts, three discrete switch banks, six edge-detected gate inputs, a derived TV
+readout, and an owner who says he uses it a lot. Nothing about merit is in
+doubt.
+
+**STOP 2: FAILS TODAY.** And the failure is not a judgement call — it is
+gate-enforced, so it is worth stating exactly.
+
+### 17.1 THE BLOCKER: promotion deletes the ONLY entry point to the output
+
+`BackdraftCard.svelte` no longer carries a picture at all (the 320×240 display
+was removed to buy 6hp→4hp and a taller fader; card header, lines 4/16-24). What
+it carries instead is the **`⛶ OUTPUT` button** (`:696-703`,
+`backdraft-output-menu`) → `VideoCanvasContextMenu` (`:914-929`) → **Full Frame /
+Full Screen / Present / Present All / Stop Present**, over a 0×0
+always-mounted `<canvas>` (`:896-911`) that `requestFullscreen()` and the Present
+popup both blit from.
+
+**That button is the whole feature**, and its own e2e says so:
+`backdraft-full-output.spec.ts:277` — *"there is no in-rack picture to
+right-click — the node menu answers instead"* — and pins that the node menu
+offers **Docs / Duplicate / Delete only**. So:
+
+- today, un-docked in the default shell, backdraft renders a
+  `ModuleShellPlaceholder` (`laneRenderKind`: `!migrated ⇒ 'placeholder'`), and
+  the card is reachable **only through the dock** (or `?shell=legacy`);
+- `DockFullView` swaps the card for `<ModuleShell>` on `migrated()` alone;
+- so **promotion removes the last surface that can open Full Frame, Full Screen
+  or Present.**
+
+There is no cell to build it from. `ParamCellKind` is
+`knob | momentary | toggle | segmented | selector | grid | color | fader | xy`
+(`shell-control-kind.ts:32-41`) — none of them mounts a canvas, and a `custom`
+sidebar panel is explicitly read-only (*"A panel READS; it does not own state"*,
+`sidebar-panels.ts:22-23`).
+
+**The only honest path is `face.extension` with the `fullViewBody` slot — and
+that slot HAS NO RENDER SITE.** `WIRED_SHELL_EXTENSION_SLOTS = ['glyph']`
+(`shell-extensions.ts:87`), and the interface note names the price:
+
+> *"`editorSurface` / `fullViewBody` are the DECLARED contract for the LEG-05
+> bespoke-surface cohort; the first adopter wires the render site in ModuleShell
+> and moves the slot to the wired list IN THE SAME DIFF — shell-extensions.test.ts
+> refuses an extension exporting an unwired slot, so a slot can never silently
+> no-op."*
+
+**So the first video faceplate is definitionally the first `fullViewBody`
+adopter.** That is a platform PR — the seam the bespoke-surface cohort
+(clipplayer, controlSurface, electraControl, launchpadControl, videoOut,
+cameraInput) plugs into — not a face wave. Sized honestly it is: wire the
+`{#if ext?.fullViewBody}` render site in `ModuleShell`, move the slot to the
+wired list, author `$lib/ui/modules/backdraft/shell-extension.ts` carrying the
+output surface + button + menu, and prove the whole
+`backdraft-full-output.spec.ts` suite still passes against the FACE rather than
+the card.
+
+**Recommended split, mirroring Q2's:** land the platform slot + the output
+surface FIRST, as its own reviewed PR with its own e2e; then the face on top of
+it. Authoring the face first produces a module whose output cannot be opened.
+
+### 17.2 THE SECOND STOP-2 ITEM IS ALREADY BROKEN — and that is the finding
+
+`syncFromEngine` (`BackdraftCard.svelte:490-520`) is a per-rAF **engine→store
+reflect** for five params the ENGINE flips by itself on a rising gate edge:
+`mirrorX`, `mirrorY`, `pureGeo` (`:499`), `tvMode` (`:508`), `shape` (`:517`) —
+each a `// guard:allow-raw-write`, deliberately outside undo.
+
+The obvious reading is "promotion kills it". **It is already dead for most
+users**: the card only mounts in the dock, so for anyone who has not docked the
+module, a `mirror_x_gate` / `shape_gate` / `tv_gate` edge flips the picture and
+**never reaches the store** — it does not persist, it does not sync to
+collaborators, and the button's lit state is stale the moment you open the dock.
+
+That is the **card-unmount-kills-node-resources class** (#1531/#1574/#1583) and
+its documented fix applies unchanged: **a NODE-keyed registry, not a card**.
+Filed separately; a face PR neither causes nor cures it, and the fix is the same
+work either way.
+
+### 17.3 THREE DISCRETE PARAMS CARRY NO `options[]` — so a def-driven face renders them as KNOBS
+
+| param | states | where the names live | what a face renders today |
+|---|---|---|---|
+| `shape` | 5 — SQUARE / CIRCLE / PENTAGON / TRIANGLE / OCTAGON | `BACKDRAFT_SHAPES` (`backdraft.ts:294`) | a `0..4` **knob** |
+| `flicker` | 6 — OFF / 6 / 24 / 50 / 60 / 120 Hz | `BACKDRAFT_FLICKER_OPTIONS` (`:306`) | a `0..5` **knob** |
+| `tvMode` | 3 — OFF / (see 17.4) / CRITICAL | `BACKDRAFT_TV_MODE_LABELS` (`:453`) | a `0..2` **knob** |
+
+`ParamDef.options` exists and has precedent in BOTH domains (`cloudseed`,
+`tidyVco`, `filter`, `warrensspectrum`, and the video `warrensvisions`), and
+declaring it turns each into a `segmented`/`selector` cell. **⚠ But `params` is
+in the CONTRACT and, for a VIDEO def, in the WebGL ATTEST BASIS** — unlike
+`face`/`docs`/`controlFamilies`, which the attest normalizer strips. So this fix
+costs `docs:accept` **and a real-GPU re-attest**, which is an owner-machine step.
+Price it before promising it.
+
+### 17.4 DEFECTS FOUND, filed rather than folded in
+
+1. **`tvMode` mode 1 has TWO NAMES, on the same button.** The button prints
+   `TV: VIRTUAL CAMERA` (from `BACKDRAFT_TV_MODE_LABELS`) while the button's own
+   `title` tooltip and the def's `docs` (`:3127`, `:3196`) both call it
+   `PURE TV`. One state, two names, one control.
+2. **`docs.explanation` describes a card that no longer exists.** It still says
+   *"The card carries a small 320×240 DISPLAY centred in a band across the top…
+   The discrete switches flank the display… over a **single row** of labelled
+   fader banks"*. The display was REMOVED, the card is now two rows, and the
+   explanation never mentions the VIRTUAL CAMERA bank at all. This is the #1701
+   class again — a false VALUE in prose, with every gate blind because the
+   declaration is correct — and it is the module's `STRICT_DOCS` text, i.e. the
+   thing right-click → annotate shows a player.
+3. **The engine→store reflect is dead un-docked** (§17.2).
+
+### 17.5 WHAT THE AUDIT FOUND CLEAN — and one of them retires a CLAUDE.md example
+
+- **NO live range divergence, anywhere.** Every Fader range is DERIVED
+  (`pmin()/pmax()/pdef()` read `backdraftDef.params.find(...)` and THROW if
+  absent), so a card/def range disagreement is structurally unrepresentable here.
+- ⚠ **CLAUDE.md's ±0.2-vs-±1 case study IS this module, and it is FIXED.**
+  `card-control-ranges.test.ts:6-11` names it verbatim: *"BACKDRAFT's two camera
+  joysticks were authored with literal `xMin={-1} xMax={1}` while the def
+  constrained those params to ±0.2 (tilt) and ±0.5 (position)."* Both pads now
+  pass `xMin={-BACKDRAFT_CAM_TILT_RANGE}` / `{-BACKDRAFT_CAM_POS_RANGE}` — **the
+  same exported symbols the def itself uses** — and a SOURCE-level regex gate
+  rejects any numeric literal on those props. The card carries the incident in a
+  comment, and a second comment records #1223 trying to re-introduce literals in
+  the `camDist` Fader and the gate catching it. **The rule in CLAUDE.md should
+  keep the case study and stop implying it is live.**
+- **The two pads are `face.xyPads` verbatim**: pad A = `camTiltX`/`camTiltY`,
+  pad B = `camPosX`/`camPosY`, all four continuous and bipolar, so all four
+  satisfy the lint (declared, ranked, non-momentary, continuous, claimed once).
+  The inventory note (`face-migration-inventory.ts:185`) called this correctly,
+  and the `wavesculpt` entry records what happens if it is ignored.
+
+### 17.6 SEVEN PARAMS HAVE NO USER CONTROL — AND COMPLETENESS HAS NO EXEMPTION
+
+`delayClock`, `mirrorXGate`, `mirrorYGate`, `shapeGate`, `pureGeoGate`, `tvGate`
+(synthetic gate params the CV bridges write, edge-detected by the module) and
+`freeze` (a VRT/determinism hook). Every one carries a `docs.controls` entry
+saying "No card knob" / "No card control".
+
+**There is no way to exclude them, and it was checked rather than assumed.**
+`module-face-lint.test.ts:301-331` loops `for (const p of def.params ?? [])`
+with **no filter, no skip-list, no predicate and no per-instance escape**, and
+`ModuleFace` (`graph/types.ts:584-741`) has no `hidden`/`exclude` field —
+its whole surface is `order`, `pages`, `glyph`, `glyphDepthGain`, `extension`,
+`paramCells`, `xyPads`, `momentary`, `rear`, `title`, `hint`, `hero`, `sidebar`.
+`ModuleFaceRear` curates PORTS, not params, so it is not a parking lot either.
+
+And ranking them is not enough: a **second** gate, dock render-plan parity
+(`:334-413`), requires every `ParamDef.id` to render **exactly one interactive
+cell** in the dock full-view — written for the tidyVco control-loss lesson,
+*"a control can be ranked in `face.order` yet still never REACH the user"*.
+
+⚠ **There is NO PRECEDENT to lean on.** No module in `STRICT_FACES` has a param
+without a user control. Every module that does — `grainsOfVision` (`freeze`,
+explicitly *"like BACKDRAFT"*), `gibribbon`, `tvLibrarian`, `vfpgaRunner` — is
+an UNFACED VIDEO module. backdraft would be the first, and the honest reading is
+that **`ModuleFace` needs a way to say "this param has no user control"** before
+any of them can be faced. That is a platform question, not a backdraft one.
+
+⚠ **AND THE SHAPE IS WRONG TOO.** All seven declare `curve: 'linear', min: 0,
+max: 1`, and `looksLikeToggle` is `curve === 'discrete' && min === 0 && max === 1`
+(`group-controls.ts:46-48`) — so they escape the momentary/latching
+classification entirely and would render as **continuous 0..1 rotaries over raw
+gate swings**. The same is true of `mirrorX`, `mirrorY` and `pureGeo`, which ARE
+user toggles: this is the cloudseed precedent verbatim
+(`module-face-lint.test.ts:432-436` — *"they only became visible to this gate
+when their `curve` was corrected `linear` → `discrete`; before that the shell
+painted them as continuous rotaries"*). Correcting those curves is a **`params`
+edit**, which §17.8 prices.
+
+### 17.7 THE SIX GATE INPUTS ARE ALREADY A NAMED, LEDGERED, LIVE DEFECT
+
+The coordinator's brief flagged the #1703 "consumer silently dropping input"
+class. It is not a risk here — **it is already documented as shipped and broken,
+on all six ports**, and the ledger is `trigger-edge-placement.test.ts:431-438`:
+
+```ts
+const KNOWN_REMAINING: readonly string[] = [
+  // BACKDRAFT — 6 raw-passthrough clock/gate ports, all edge-read in draw().
+  'backdraft.delayClock', 'backdraft.mirrorXGate', 'backdraft.mirrorYGate',
+  'backdraft.shapeGate',  'backdraft.pureGeoGate', 'backdraft.tvGate',
+```
+
+The mechanism, from that file's own header (`:23-41`): a rising edge on a
+raw-passthrough input **must** be detected in `setParam`, on the bridge's clock.
+`PatchEngine.installGateDispatch` replays each edge on the ~25 ms scheduler tick
+as `setParam(0); setParam(1); setParam(currentLevel)` **in the same
+millisecond**, so by the time `draw()` runs the param is back to 0 and the
+detector sees `0 → 0 → 0`. In the file's words: *"The consumer is not 'flaky' —
+it is DEAD, deterministically, for every patched trigger. A HELD gate still
+works, which is why they have gone unnoticed."*
+
+backdraft detects all six in `draw()` (`backdraft.ts:3373-3402`) using
+`detectEdge` from `$lib/doom/cv-gate-edge` (rise > 0.6 / fall < 0.4 hysteresis).
+The PRIMITIVE is sanctioned; the PLACEMENT is the defect. The ledger's own note
+says why it was left: *"each needs its own behavioural verification, and
+BACKDRAFT is a look-affecting module under the WebGL attest
+(owner-preview-before-merge)."*
+
+**So MIRROR X/Y, SHAPE, PURE GEO, TV and DELAY CLK do nothing from a clock
+today.** A faceplate that ranks them is a prettier broken module — audit before
+the face, exactly as §5.1 says.
+
+### 17.8 THE ATTEST PRICE, MEASURED — the one piece of GOOD news
+
+| edit to `backdraft.ts` | WebGL attest hash moves? |
+|---|---|
+| add ONLY a top-level `face: {...}` | **NO** |
+| also edit its `docs` strings | **NO** |
+| add `options[]` to a param, or correct a `curve` | **YES** |
+
+`packages/web/src/lib/video/modules/**` IS in the WebGL basis
+(`webgl-attest-lib.ts:237-239` walks the whole `lib/video` tree, `.test.ts`
+excluded). But `HASH_TRANSPARENT_PROPS = ['docs', 'controlFamilies', 'face']`
+(`attest-code-basis.ts:93`) and the normalizer strips them from any MODULE-SCOPE
+def object before hashing (`:215-231`), with a permanent negative control that a
+**nested** `face:` is kept. `module-registry.ts:29-38` already states the
+conclusion for exactly this case.
+
+**So the face itself is free.** Everything §17.3 and §17.6 say is needed to make
+it render correctly — `options[]`, the `curve` corrections — is not, and a
+real-GPU re-attest is an owner-machine step CI cannot perform.
+
+### 17.9 THE VERDICT
+
+**NOT A FACE. It is the first `fullViewBody` adopter, and four platform PRs
+stand between here and a faceplate.** Stated as work, in dependency order:
+
+1. **Fix the six gate placements** (§17.7) — each with its own behavioural
+   verification. Blocks any face, because the face would rank six dead controls.
+2. **Give `ModuleFace` a way to express "no user control"** (§17.6) — or accept
+   seven meaningless cells. Blocks every video face, not just this one.
+3. **Wire the `fullViewBody` slot + author backdraft's shell extension**
+   (§17.1) — the output surface, the OUTPUT button and its menu, plus a
+   node-keyed home for the engine→store reflect (§17.2). Without it, promotion
+   deletes the only way to open Full Frame / Full Screen / Present.
+4. **`options[]` + `curve` corrections** (§17.3, §17.6) — costs a `docs:accept`
+   AND an owner-machine re-attest (§17.8).
+
+Then, and only then, the face — which by comparison is the easy part: 37 ranked
+params, two `face.xyPads` that the card already proves out, ~7 bands (over
+`DOCK_TAB_MIN_BANDS`, so a tab rail), `glyph: 'none'` with the live thumb coming
+from `hasVideoSurface`, and a derived TV readout that is genuinely a
+`FaceReadoutValue` (`backdraftTvFill`/`Depth` are pure functions of params).
+
+**And backdraft is `EXEMPT_FROM_VRT` + `ALLOWED_PERMANENT_EXEMPT` today**
+(`vrt-exemptions.ts:971`, `:1035`) — *"What still blocks promotion is purely
+mechanical: no baseline PNGs"* — while a scene is already registered
+(`vrt-scenes.ts:535-570`, `afterSpawn` writes `freeze` after settle). So the
+face wave also owes it three baselines, not two.
+
+⚠ **This is a STOP-2 REFUSAL, which the skill names as a legitimate, expected
+outcome** — *"If a hit is load-bearing and has no shell representation you can
+build, do not promote."* Every clause above is gate-enforced or ledgered, not a
+judgement call: `shell-extensions.ts:87`, `module-face-lint.test.ts:301`,
+`trigger-edge-placement.test.ts:431`, `webgl-attest-lib.ts:237`,
+`vrt-exemptions.ts:971`. Authoring the face first produces a module that ranks
+six dead controls and cannot open its own output.
+
+### 17.7 AND THE CV AUDIT IS THE WIDEST BLIND SPOT IN THE FLEET
+
+**29 `paramTarget` CV inputs, and nothing in the repo proves ANY of them reaches
+the picture.** `per-module-per-port-behavioral.spec.ts:474` exempts backdraft
+**whole-module**, in its own words:
+
+> *"the HDR feedback-trail `out` has a per-frame luma-variance baseline of ~7700
+> with a HUGE ±4000-6000 per-frame RANGE driven by the ACIDWARP context motion +
+> trail accumulation… Δμvar runs 37→1750 and ΔRvar runs 2.7→4060 with NO
+> correlation to which port is driven, so the variance metric can't attribute a
+> delta to ANY input (the 22 ports all 'passed' once but only on the animation's
+> own noise)."*
+
+`contract-lock` and `module-docs-lint` read the declaration; `cv-scale-registry`
+never renders. So the module with the most CV inputs in the fleet has the least
+CV coverage — and #1664 already found a live CV defect in `rasterize`, a sibling
+video module, in exactly this gap.
+
+⚠ **The exemption's own reasoning names the instrument fix.** It failed because
+it drove a MOVING source (acidwarp) through a per-frame VARIANCE metric with
+three snapshots. The module is deterministic given a fixed source and a fixed
+frame count (`flicker` and the TV noise are both pure functions of the frame
+index `n`), so the instrument that works is: **a STATIC source, a fixed frame
+count reached with `waitFrames`, and a same-frame-index pixel comparison** —
+never a wall-clock wait and never a variance floor. That is a different
+assertion, not a tuned one, and it is the audit's deliverable whatever happens
+to the face.
+
+---
+
+## 18. Q16 · `featurecv` — THE AUDIT, MEASURED, and four spec corrections
+
+Run against the REAL shipped worklet (`packages/dsp/dist/featurecv.js`) in
+`node-web-audio-api`, driven through the def's OWN factory, so the GainNode-trim
+and k-rate-param seams the offline core does not have are in the harness.
+SR 48 000. Two metrics, different in kind: the SETTLED SAMPLE in LINEAR amplitude
+for the three continuous CVs, and a RISING-EDGE COUNT across `GATE_HI` for
+`onset`. Every number is reproduced on every run by
+`art/scenarios/featurecv/analysis.test.ts` (9 legs),
+`packages/web/src/lib/ui/modules/featurecv-face-model.test.ts` (30) and
+`packages/dsp/src/featurecv-snapshot.test.ts` (6).
+
+**M1 — WITH NOTHING PATCHED, ALL THREE FEATURE CVs SIT AT THE POLARITY FLOOR.**
+`loud`/`bright`/`punch` = **−1.00** at the shipped BIPOLAR default, **0.00** at
+UNIPOLAR, and `onset` emits zero edges in both. This is a property of the module
+as it appears in a rack, not of a contrived patch: the muted keep-alive makes the
+worklet process from spawn, the targets are 0 on silence, and `applyBipolar` maps
+0 to −1. **An idle featurecv holds three destinations at the BOTTOM of their
+range while POLARITY prints `BI`.** Nothing on the module said so.
+
+**M2 — POLARITY IS THE ONLY CONTROL THAT MOVES AN IDLE JACK, BIT-EXACTLY.**
+Driven to the far end of its travel against an unpatched module:
+
+| control | → | Δ on each of the three CV jacks |
+|---|---|---|
+| `gain` | 4 | `0.0000e+0` |
+| `attack` | 500 | `0.0000e+0` |
+| `release` | 2000 | `0.0000e+0` |
+| `onset_sens` | 1 | `0.0000e+0` |
+| `onset_debounce` | 1000 | `0.0000e+0` |
+| **`bipolar`** | **0** | **1.0000 (a full rail)** |
+
+That table IS the rank-1 argument. Every other control acts on a measurement of
+a signal that is not there, so ranking any of them first would put a
+conditionally-inert control at the top of the ladder.
+
+**M3 — LOUD CLIPS, AND THE CEILING IS A DIAL NOBODY READS AS ONE.**
+`clamp01(LOUD_MAKEUP · rms · gain)` with `LOUD_MAKEUP = 2`, measured against DC
+drivers so `rms ≡ amplitude`:
+
+| input rms | gain | LOUD (unipolar) |
+|---|---|---|
+| 0.10 | 1 | 0.2000 |
+| 0.25 | 1 | 0.5000 |
+| **0.50** | 1 | **1.0000 — pinned** |
+| 0.80 | 1 | 1.0000 |
+| 0.25 | 4 | 1.0000 |
+| 0.25 | 0.25 | 0.1250 |
+
+So at unity trim **every source above −6.02 dBFS RMS reads a flat full scale**,
+and GAIN divides that threshold 6.02 dB per doubling. A 0.8-amplitude sine
+(rms 0.5668) is already past it. The faceplate prints the live figure as
+`loud clip`, and `never` below GAIN 0.5 where the clamp needs an RMS above full
+scale.
+
+**M4 — GAIN REACHES EXACTLY ONE OF THE THREE FEATURES, BIT-EXACTLY.** At
+gain 0.25 / 0.5 / 2 / 4 against a fixed white-noise drive, `bright` and `punch`
+move by `0.0000e+0` — ZCR counts sign changes and crest is a peak-to-RMS ratio,
+so both are scale-invariant through a GainNode as well as in the algebra. The
+positive control on the same drive: LOUD moves 0.117 → 0.468 over the same trim.
+**The shipped docs said the trim lets "its features reach a usable CV range".**
+Corrected: it reaches ONE of them.
+
+**M5 — DEFECT (doc, #1745): THE CREST MAP IS CALIBRATED ON A DISTRIBUTION THIS
+RACK DOES NOT PRODUCE.** `featurecv-dsp.ts` said *"white noise (~3.5) → ~0.5"*.
+`noise`'s white tap is UNIFORM in [−1,+1], crest **√3 ≈ 1.73 regardless of
+window length**. Measured over featurecv's own 1024-sample window on the shipping
+generator, and confirmed at the jack:
+
+| tap | rms | zcr | crest | LOUD | BRIGHT | PUNCH (uni / bi) |
+|---|---|---|---|---|---|---|
+| white | 0.5784 | 0.4858 | **1.7265** | 1.000 | 0.972 | **0.146 / −0.709** |
+| pink | 0.1061 | 0.2063 | 3.1926 | 0.212 | 0.413 | 0.438 / −0.123 |
+| brown | 0.1905 | 0.0538 | 3.1876 | 0.381 | 0.108 | 0.438 / −0.125 |
+
+The canonical NOISE → FEATURECV patch lands PUNCH at a third of the promised
+level, at the bottom of the rail — **and the implied ordering is backwards**,
+since pink and brown are the peakier taps here. `3.5` is a GAUSSIAN figure.
+⚠ The MAP is not changed: whether `CREST_MAX = 6` suits this rack's material is a
+SOUND question and belongs to the owner.
+
+**M6 — THE ONSET JACK IS CLEAN, and the ceiling is exactly the readout.** The
+#1703 / #1725 census, hits at 2 ms decay so the material is never the constraint:
+
+| debounce | 12 Hz | 16 Hz | 20 Hz |
+|---|---|---|---|
+| 80 ms (shipped, ceiling 12.5 Hz) | **36/36** | 24/48 | 30/60 |
+| 40 ms (ceiling 25 Hz) | 36/36 | **48/48** | 60/60 |
+
+100 % below the lockout, exactly half above it, and the boundary MOVES with the
+dial. `1000/debounce` is therefore an honest readout rather than a bound nobody
+reaches.
+
+⚠ **THE HIT WIDTH IS PART OF THE INSTRUMENT.** With the 10 ms decay the other
+legs use, a 20 Hz train's tails OVERLAP, the slow envelope never falls, the flux
+never re-rises, and the census collapses to **ONE pulse at every debounce
+setting** — a result about the MATERIAL wearing the shape of a result about the
+DIAL. The first draft of this leg went red for exactly that reason.
+
+⚠ **AND SO IS THE LEAD-IN.** The factory pushes its k-rate params with
+`setValueAtTime(v, ctx.currentTime)`, and in an OfflineAudioContext the FIRST
+render quantum still reads the descriptor DEFAULT — so a hit inside the first 128
+samples arms the lockout at 80 ms whatever the patch says, and the SECOND hit of
+a 16 Hz train vanishes. Measured 47/48 through the factory against 48/48 through
+the pure core, the two buffers otherwise bit-identical, the missing edge at
+sample 3022. A one-quantum HOST artifact, not a module property — and a census
+that swallowed it would have reported 97.9 % capture for the wrong reason.
+
+**M7 — DEFECT (live, #1744): THE CARD'S ONSET LED REPORTS 18.8–25.0 % OF WHAT
+THE JACK EMITS.** `snapOnset` was written every render quantum and read every
+sixteenth; a trigger pulse is 240 samples ≈ 1.9 quanta.
+
+| hit rate | jack edges | LED blinks | capture |
+|---|---|---|---|
+| 1 Hz | 12 | 3 | 25.0 % |
+| 2 Hz | 24 | 5 | 20.8 % |
+| 4 Hz | 48 | 10 | 20.8 % |
+| 8 Hz | 96 | 18 | 18.8 % |
+
+The `buggles` / `backdraft` shape reached from the other side: those dropped
+edges because a main-thread poller rescanned a ring buffer; this one because two
+cadences inside ONE processor were never lined up. Fixed by latching across the
+post interval. **The gate had to go on the PROCESSOR** — the pure core has no
+port, an OfflineAudioContext render never delivers a `postMessage`, and the LED
+is a decaying CSS opacity.
+
+**M8 — SENS IS CONDITIONAL, AND THE FIRST PROBE COULD NOT SEE IT.** Swept
+against a clean 4 Hz hit train at four amplitudes, the WHOLE travel is a no-op
+(12/12 at SENS 0, 0.25, 0.5, 0.75, 1). That reads exactly like a dead dial and is
+not one — an unambiguous transient clears every threshold, so the probe was
+INVARIANT to the dimension under test. On ambiguous material:
+
+| signal | SENS 0 | 0.25 | 0.5 | 0.75 | 1 |
+|---|---|---|---|---|---|
+| tremolo sine (4 Hz AM) | 1 | 1 | 8 | 11 | **13** |
+| hits under a loud noise bed | 4 | 5 | 7 | 7 | **10** |
+| 30 Hz AM burst train (debounce 20) | 3 | 3 | 4 | 61 | **78** |
+
+The mechanism: the threshold is `avgFlux · mult + 0.15`, so the fixed floor
+dominates whenever the running flux is small. §15.10's rule, one cohort later.
+
+**M9 — THE RENDER IS REPRODUCIBLE AND THE TWO SEAMS AGREE.** Two independent
+renders of one patch are BIT-IDENTICAL (`0.0000e+0` across all four outputs), and
+the worklet agrees with the pure core to `0.0000e+0` — which matters because
+`gain` is a GainNode in the factory and an inline multiply offline.
+
+### What the audit did NOT find
+
+No dead jack, no dead dial (M8 is a conditional dial, not a dead one), no
+unexposed DSP capability, no range disagreement, no cross-domain leakage, and no
+defect in the feature maths. **The CV audit is VACUOUS BY CONSTRUCTION and says
+so** rather than running a null sweep that passes (the Q12 precedent): one input,
+plain `audio`, zero `paramTarget` ports — asserted directly, in a leg that
+reddens the day someone adds one.
+
+### 18.1 FOUR CORRECTIONS TO THE Q16 SPEC (§12), all measured
+
+1. **"the MAXIMUM trigger rate is `1000/debounce` = 12.5 Hz"** — right, and the
+   spec did not say under what. Under a train the detector can RESOLVE it is
+   exact (36/36 at 12 Hz, 24/48 at 16 Hz). Under a DENSE 60 Hz drive the
+   achieved ceiling is 10.0 Hz at the same 80 ms, because after the lockout
+   expires the flux still has to re-rise. Two different numbers from one dial,
+   and the readout states the first.
+2. **"`punchToCv` maps crest 1..6 onto 0..1, so … white noise (~3.5) reads
+   0.5"** — the spec inherited the DSP comment's error verbatim. This rack's
+   white noise reads **0.146** (M5). The spec's own instruction — *"Measure
+   every one of those claims against the real factory; do not transcribe
+   them"* — is what caught it, on the sentence the spec itself transcribed.
+3. **"PROMOTION LOSES THE METERS … the module is an ANALYSER and its picture IS
+   the analysis"** — true, and the cost is smaller than stated because the
+   meters were a THIRD, DISAGREEING view. `levels()` returns the UNSMOOTHED,
+   always-UNIPOLAR target: the bars are byte-identical at atk/rel 0.5/1,
+   10/100 and 500/2000 while the jack moves, and at the shipped BIPOLAR default
+   the PUNCH bar reads 0.145 where the PUNCH jack sits at −0.703. Filed as
+   #1747. So route 1 was taken in SHAPE (a `custom` sidebar block) and rejected
+   in CONTENT: `featurecv-maps` is DRAWN from the worklet's own constants, not
+   traced off the snapshot — which also retires the spec's VRT worry entirely,
+   since the picture is a pure function of `node.params`.
+4. **"`face.order` must rank `bipolar` … a TOGGLE cell"** — right that it must be
+   ranked, and it ranks FIRST rather than being fitted in. It also needed a
+   `ParamOption` roster: undeclared, a 0..1 discrete param renders as an
+   anonymous `<Toggle>` printing `0`/`1` where the card has always printed
+   `UNI`/`BI`. Cosmetic, so contract-lock does not move for it.
+
+### 18.3 VRT: PREDICTION vs ACTUAL, RECONCILED
+
+**PREDICTED, from the RESTING DOM rather than from a local diff: 2 files
+committed, 0 moved.**
+
+**ACTUAL: exactly that.** `chore(vrt): regenerate baselines [vrt-update
+workflow]` (`6234f82c0`) is `2 files changed, 6 insertions(+)`:
+
+```
+e2e/vrt/__screenshots__/workflow-shell-faces.spec.ts/face-featurecv-compact.png  (new)
+e2e/vrt/__screenshots__/workflow-shell-faces.spec.ts/face-featurecv-dock.png     (new)
+```
+
+The card baseline `vrt.spec.ts/featurecv.png` did NOT move, and it was checked
+BEFORE the capture rather than inferred from it: the PR run on `db0e7cd3c` failed
+exactly three `vrt-strict` assertions — the two missing snapshots and the roster
+clause that reads the filesystem for committed PNGs — and the card scene passed
+in the same run.
+
+⚠ **The local macOS run is what would have made the prediction wrong.** It failed
+the card scene at 3452 px, which reads as "your change moved it". It is platform
+noise: an untouched text-heavy card (`spectrograph`) fails the same local run at
+**6506 px** — harder than the card that was actually edited — while a sparse
+untouched one (`noise`) passes. Two controls in opposite directions, on a
+question where the tempting single observation says the opposite of the truth.
+
+⚠ **And the local run WROTE both new baselines as untracked PNGs**, which the
+second local run then reported as PASSING. They were deleted, not committed;
+`git status --untracked-files=all` was clean before the dispatch and again after
+the merge. This is the #1706 hazard in its new-baseline form, and it is why "the
+scene passed" is never evidence on a branch that just ran VRT locally.
+
+### 18.2 WHAT COHORT 3 ADDS TO §5 / §10 / §15
+
+15. **A "CLEAN" PROBE CAN BE THE WRONG PROBE.** §15.10 says a no-op reading is
+    first an INSTRUMENT bug; Q16 adds the shape it takes when the instrument is
+    fine and the STIMULUS is invariant. A clean hit train cannot see SENS
+    because an unambiguous transient clears every threshold; hits at a 10 ms
+    decay cannot see DEBOUNCE because their tails overlap. **Ask what the probe
+    signal is invariant to, not only what the metric is.**
+
+16. **`contract-lock.txt` IS NOT `face`-BLIND — `face.sidebar` IS PROJECTED.**
+    `module-faceplates.md` said *"contract-lock.txt contains zero `face` lines …
+    a sidebar is free"*, and there are 41 `face sidebar` lines in the golden
+    today. Declaring, reordering, relabelling or REMOVING a sidebar block costs
+    a `task docs:accept` — which is the review surface #1468 did not have when
+    it removed a block from twelve modules with every non-pixel gate green.
+    Corrected in the skill with this PR.
+
+17. **A KNOB'S `units` NEVER PAINT AT REST**, so binding them is invisible to a
+    VRT baseline. `Knob.svelte` renders its value readout only while
+    `dragging || hovering`, and its `.label` is `text-transform: uppercase` — so
+    featurecv's five VOCABULARY_DEBT entries were pure CASE and its three
+    missing `units` were pure hover, i.e. **a card/def divergence with no
+    pixel symptom at all**. That is why they sat unpaid, and it is not a reason
+    to leave them: the dock renders the DEF's label, and the second copy is what
+    drifts. **Predict the baseline move from the RESTING DOM, not from the
+    diff** — and negative-control the prediction, because a local macOS run of
+    an untouched text-heavy card (`spectrograph`, 6506 px) fails HARDER than the
+    card you changed (`featurecv`, 3452 px), while a sparse one (`noise`) passes.

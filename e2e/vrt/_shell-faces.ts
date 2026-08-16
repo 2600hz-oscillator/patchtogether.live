@@ -495,6 +495,81 @@ export const FACES = [
   // moog-filterbank-face-model.test.ts.
   { type: 'moog907a', pages: 1 },
   { type: 'moog914', pages: 1 },
+  // THE FACEPLATE QUEUE · Q14 — quad slew + 4→1 sequential switch. `pages: 2`
+  // is the declared count AND the post-hero count, because this face promotes
+  // NO control into the hero: its hero is readouts only (the attenumix /
+  // moog907a / moog914 shape, for their reason — one of four interchangeable
+  // dials drawn four times larger claims something untrue). `heroFacePlan`
+  // therefore removes nothing and neither band can be emptied.
+  //
+  // DETERMINISTIC AT REST, and for a stronger reason than the effects above:
+  // this module has no oscillator and no internal clock of any kind. The switch
+  // advances only on a `step_clock` EDGE, which is an external input, and the
+  // four one-poles converge on whatever is patched — so with nothing patched
+  // every output holds a constant. It neither exercises nor depends on #1420's
+  // pre-frame freeze, and it is not the analogVco free-running case.
+  //
+  // ⚠ THE GLYPH IS 'none', SO THERE IS NO TAP TO BE NON-DETERMINISTIC — and
+  // that is a measurement, not a convenience. `primaryAudioOutPortId` returns
+  // NULL here (six `cv` outputs, one `gate`, no `audio`), the ninelives case;
+  // and unlike ninelives there is no `shape` param to make 'waveform' honest
+  // either, so EVERY candidate glyph resolves `{ kind: 'static' }`. The dock
+  // scene therefore shows the seven-row output table where other scenes show a
+  // trace. See slewswitch-face-model.test.ts.
+  //
+  // ⚠ THE DOCK SCENE SEES THE TOP ~425 px, so treat a green dock capture as
+  // evidence about the hero row and the first band ONLY. This face's band
+  // structure is gated by faceplate-platform.spec.ts and the pure dock-row-plan
+  // / module-face-lint units, which read the whole faceplate — and it has a
+  // SOLO band by construction (`switch` carries two `segmented` cells, which
+  // `cellWidthClass` classifies WIDE), which is exactly the kind of layout fact
+  // the 425 px window is blind to.
+  { type: 'slewSwitch', pages: 2 },
+  // THE FACEPLATE QUEUE · Q15 (COHORT 3) — the curve-morph attenuverter.
+  //
+  // THREE bands, all three surviving the hero split: the hero promotes `aCurve`
+  // out of band `a`, which still holds `aAtten`, so nothing is emptied and the
+  // count stays 3 (`unity` holds one control by design — the attenumix `bus` /
+  // mixer `bus` / reverb `output` shape).
+  //
+  // ⚠ THE FIRST FACE IN THIS ROSTER WITH `glyph: 'none'` DECLARED FOR A
+  // STRUCTURAL REASON, and it is worth naming here rather than leaving it to be
+  // read as an omission. The module has THREE `cv` outputs and no `audio`
+  // output at all, so `primaryAudioOutPortId` returns null and every glyph kind
+  // but 'none' resolves to `{ kind: 'static' }` — the marbles defect (#1692):
+  // a live-looking readout of nothing, which a VRT baseline captures perfectly
+  // deterministically and therefore cannot see. `module-face-lint`'s dead-glyph
+  // clause is unconditional and refuses it at the source; the compact tile here
+  // simply gets the extra control cell instead of a glyph plate.
+  //
+  // DETERMINISTIC AT REST, structurally, and NOT via the #1420 freeze: the
+  // worklet is a stateless per-sample function with no generator anywhere in
+  // the factory — no oscillator, no ConstantSource, no pump — so an unpatched
+  // module emits exactly zero and there is no live surface to freeze. Measured
+  // twice in `art/scenarios/unityscalemathematik/cv-path.test.ts`: two
+  // independent renders of the same patch are BIT-IDENTICAL (#1680).
+  { type: 'unityscalemathematik', pages: 3 },
+  // THE FACEPLATE QUEUE · Q16 — the audio→CV feature extractor (2026-08-15).
+  //
+  // TWO bands, both surviving the hero split: the hero promotes `bipolar` out of
+  // band `feature`, which still holds gain/attack/release, and band `onset`
+  // holds its two. Nothing is emptied, so the count stays 2.
+  //
+  // `glyph: 'none'` for the same structural reason as unityscalemathematik
+  // above — three `cv` outputs and one `gate`, no `audio` output, so every
+  // glyph but 'none' resolves to `{ kind: 'static' }`.
+  //
+  // ⚠ THIS SCENE CARRIES THE FIRST SIDEBAR PANEL IN THE ROSTER WHOSE MODULE
+  // COULD HAVE BEEN TRACED LIVE AND IS NOT, and that is what makes it
+  // deterministic. `FeaturecvCard.svelte` pumps three meters off
+  // `engine.read(node,'snapshot')` every rAF; the face draws `featurecv-maps`
+  // from the DSP's own constants instead, so the picture is a pure function of
+  // `node.params` and there is no analyser, no rAF and nothing for the #1420
+  // freeze to be load-bearing about. The module is ALSO silent at rest by
+  // construction (an analyser with one input and no generator anywhere in the
+  // factory — the muted keep-alive is a `gain.value = 0` sink), so a bare tile
+  // emits exactly the polarity floor on three DC jacks.
+  { type: 'featurecv', pages: 2 },
 ] as const;
 
 /** TIGHT per-scene diff budgets (absolute pixels; Playwright takes the MIN of

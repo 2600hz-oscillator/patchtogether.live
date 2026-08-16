@@ -978,6 +978,195 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // live.
   'moog907a',
   'moog914',
+  // THE FACEPLATE QUEUE · Q14 — SLEWSWITCH, quad slew + 4→1 sequential switch
+  // (2026-08-15), and the entry whose argument is that TWO ENGINES IN ONE BOX
+  // ARE TWO PAGES, not one ranked list of seven.
+  //
+  // 7 params, 10 inputs, 7 outputs. Four independent lag processors that turn
+  // any stepped voltage into a glide, plus a clocked selector that reads those
+  // same four smoothed lines one at a time — so the module both CONDITIONS four
+  // voltages and SEQUENCES between them, and out1..out4 stay live while it does.
+  // sampleHold latches on an edge, fourplexer routes raw signals with no
+  // conditioning; this one SHAPES and then SCANS.
+  //
+  // ⚠ THE FOUR SLEW DIALS LOOK INTERCHANGEABLE AND ARE NOT, which is what makes
+  // the ranking an argument rather than declaration order with a story. LENGTH
+  // counts UP from channel 1, so channel 1 is in the scan at all four length
+  // settings, channel 2 at three, channel 3 at two, channel 4 only at length 4;
+  // RESET returns to channel 1 and length 1 HOLDS channel 1. fourplexer's four
+  // inputs genuinely ARE symmetric — it has no LENGTH — so the argument does
+  // not transfer, which is the test of whether it is one. The whole SWITCH half
+  // is then ranked below the slew half because it is gated on a CABLE: there is
+  // no internal clock, so MODE / LENGTH / XFADE change nothing that leaves the
+  // box until `step_clock` is patched.
+  //
+  // ⚠ THE GLYPH DECISION IS THE ninelives HAZARD WITH NO ESCAPE HATCH, and it
+  // is measured. `primaryAudioOutPortId` returns NULL — six `cv` outputs and one
+  // `gate`, no `audio` output at all — so the `live-audio` short-circuit cannot
+  // fire, exactly as on ninelives. But ninelives could still declare 'waveform'
+  // honestly, because it HAS a `shape` param 0..2 that every one of its nine
+  // taps shares. This module has no `shape`, no ADSR quartet and no `algorithm`,
+  // so 'scope', 'meter', 'waveform', 'envelope' and 'algorithm' ALL resolve
+  // `{ kind: 'static' }`: a deterministic fake trace tapping nothing. There is
+  // no honest picture available at any setting, so the face declares
+  // `glyph: 'none'` and spends the budget on a SEVEN-ROW OUTPUT TABLE — one row
+  // per declared jack, each reading a different subset of the dials. Every
+  // branch is a permanent leg of `slewswitch-face-model.test.ts`, including the
+  // control that each candidate glyph would have resolved `static`.
+  //
+  // ⚠ AUDITED BEFORE AUTHORING, and the CV half came back CLEAN — which is only
+  // worth anything because the rig carried its controls. All four `paramTarget`
+  // inputs move the audio on BOTH paths and the two columns agree TO THE BIT
+  // (|cv − knob| = 0.0000e+0 on every channel), the four channels are perfectly
+  // isolated (slew1_cv moves out1 by 1.1156e+0 and out2/out3/out4 by
+  // 0.0000e+0), and the terminal partition is DERIVED off the live handle:
+  // 4 param terminals, 6 port terminals, zero params published off-worklet.
+  // `step_clock` captures 100.0 % of rising edges at 1 / 2 / 5 / 10 / 20 / 50 /
+  // 100 Hz and is width-invariant from 1 to 256 samples — the buggles defect
+  // measured for, and absent, because this consumer is a WORKLET doing a
+  // per-sample compare rather than a main-thread analyser poll.
+  //
+  // ⚠ IT FOUND TWO OTHER DEFECTS, both in the two preceding commits. The
+  // "glitch-free" equal-power crossfade ADDED a +41.42 % overshoot to every CV
+  // hand-off (#1711) — the audio law applied to correlated CV, invisible
+  // because the ART profile's `switched` assertion skips the fade window by
+  // construction. And the slew dials are one-pole TIME CONSTANTS documented as
+  // arrival times (#1712), a fixed 4.605x across three decades: the shipped
+  // 0.5 s default arrives in 2.30 s. That second one is now the face's own
+  // `settle` readout, so the panel prints the number the docs had wrong.
+  'slewSwitch',
+  // THE FACEPLATE QUEUE · Q15, COHORT 3 — the curve-morph attenuverter
+  // (2026-08-15), and the entry whose merit argument is a SHAPE rather than a
+  // count.
+  //
+  // Six other modules in the rack attenuate or invert a control voltage —
+  // scaler, polarizer, depolarizer, attenumix, illogic, analogLogicMaths — and
+  // every one of them is a straight line. This is the only module that changes
+  // the SHAPE of a voltage: `y = sign(x)·|x|^k·atten`, `k = 1 + 2·curve`.
+  //
+  // ⚠ AN EXPONENT IS NOT A GAIN, and that is the whole face. Measured on the
+  // shipped worklet through the def's own factory: at full CURVE a 0.5 input
+  // leaves at 0.125 while a 2.0 input leaves at 8.0 — one dial, −12 dB at one
+  // end of the range and +12 dB at the other, PIVOTING about a magnitude of
+  // exactly 1. No single number a dial could print says both, which is why the
+  // hero publishes the response at BOTH probe magnitudes and why the two move
+  // in opposite directions on every render.
+  //
+  // ⚠ THE AUDIT FOUND THE DOCS ASSERTING ONLY THE HALF THAT SUITED THEM.
+  // `docs.explanation` and both curve controls said the curve "leaves larger
+  // excursions intact" / "preserves large ones". |x| = 1 is the ONLY fixed
+  // point; above it the curve EXPANDS (2 → 8, 3 → 27). Every gate was blind
+  // because the DECLARATION is correct and the defect is a VALUE inside prose —
+  // the #1701 class. Corrected (#1715), and the corrected claim is now printed
+  // as a live number rather than asserted in a sentence.
+  //
+  // ⚠ AND IT PAID A CARD/DEF DIVERGENCE ON ALL FIVE LABELS (#1714), with every
+  // RANGE agreeing — the other half of the #1681 class, and the half that
+  // becomes user-visible exactly here: the dock renders the DEF's label, so
+  // promoting this module without binding the card would have shipped a rename
+  // of five controls that nobody reviewed. All five were already sitting in
+  // `VOCABULARY_DEBT`, so this is a KNOWN answer paid rather than a new find —
+  // the CharlottesEchosCard precedent verbatim, and the reason the queue tells
+  // you to grep the debt lists before authoring a face. The card is now
+  // `paramSpec`-bound on every prop including `label`, enrolled in
+  // RANGE_BOUND_CARDS + MAPPING_BOUND_CARDS, and the five ledger entries are
+  // DELETED with no replacement counter.
+  //
+  // ⚠ THE PUSH 2 CARD MOVES, and no golden covers it. Promotion takes this
+  // module from the GENERIC tier (declaration order: unityAtten, aAtten,
+  // aCurve, bAtten, bCurve) to the FACE tier (`face.order`: aCurve, aAtten,
+  // bCurve, bAtten, unityAtten) — five encoders re-assigned. That is the
+  // INTENDED effect of ranking the identity first, and it is recorded here
+  // because `push-card-schema.test.ts`'s AUTHORED goldens only cover modules
+  // with an explicit `PUSH_CARD_CONTROLS` override, so "the card did not move"
+  // and "nobody looked" would otherwise be one green.
+  //
+  // ⚠ `glyph: 'none'` IS A DECISION. Three `cv` outputs and no audio output, so
+  // `primaryAudioOutPortId` returns null and any other glyph resolves to
+  // `{ kind: 'static' }` — the marbles defect (#1692). The face takes the extra
+  // lane cell instead.
+  //
+  // The CV audit found nothing, which is only worth anything because the sweep
+  // carries its positive controls permanently (a GainNode leg, a
+  // worklet-AudioParam leg, a per-input knob leg, and a DERIVED terminal
+  // partition): all five declared `paramTarget` inputs move the audio through
+  // the CV path and the KNOB and CV legs agree to every printed digit —
+  // `art/scenarios/unityscalemathematik/cv-path.test.ts`.
+  'unityscalemathematik',
+  // THE FACEPLATE QUEUE · Q16, COHORT 3 — the audio→CV feature extractor
+  // (2026-08-15), and the entry whose whole argument is that EVERY DIAL ON THE
+  // MODULE IS IN THE WRONG UNITS FOR WHAT IT DECIDES.
+  //
+  // featurecv is the rack's LISTENER: one audio in, three continuous CVs (LOUD
+  // = broadband RMS, BRIGHT = zero-crossing rate, PUNCH = crest factor) and an
+  // ONSET trigger, all time-domain so it is fully deterministic. SYNESTHESIA
+  // does the per-band version; nothing else in the rack publishes broadband
+  // TIMBRE as control voltage at all.
+  //
+  // ⚠ THE FACE EXISTS BECAUSE THE SIX DIALS PRINT MULTIPLIERS AND LOCKOUTS
+  // WHERE THE ANSWERS ARE LEVELS AND RATES. Measured on the shipping worklet
+  // through this def's own factory (`art/scenarios/featurecv/analysis.test.ts`):
+  // SENS `0.50` is a threshold of 2.60× the running mean flux and the map is
+  // INVERTED; DEBNCE `80 ms` is a 12.5 Hz rate ceiling (12/12 pulses captured
+  // at 12 Hz, and every OTHER hit at 16 Hz — 24 of 48); ATK `10 ms` is a one-pole TIME CONSTANT that
+  // delivers a 22 ms 10→90 % rise; and LOUD is `clamp01(2·rms·gain)`, so at
+  // unity trim any source above −6.02 dBFS RMS reads a flat full scale.
+  //
+  // ⚠ THE RANK-1 ARGUMENT IS A MEASUREMENT, NOT A PREFERENCE. POLARITY is the
+  // ONLY control on this module with unconditional authority: every other one is
+  // inert until a cable arrives, because with nothing patched all three feature
+  // targets are 0. POLARITY still moves all three jacks a full rail — and the
+  // direction is the surprise, since BIPOLAR maps that 0 to −1.00, so an idle
+  // featurecv is holding three destinations at the BOTTOM of their range rather
+  // than at their centre. Nothing on the module said so before this face.
+  //
+  // ⚠ THE CV AUDIT IS VACUOUS HERE BY CONSTRUCTION, and it is stated rather
+  // than run as a null sweep that passes (the Q12 precedent). The def declares
+  // exactly ONE input — plain `audio`, the signal under analysis — and zero
+  // `paramTarget` ports, so the rig that stopped #1661/#1662/#1664 has nothing
+  // to drive. `featurecv-face-model.test.ts` asserts the ABSENCE directly, in a
+  // leg that goes red the day someone adds a CV input without an audit.
+  //
+  // ⚠ WHAT THE AUDIT DID FIND, and both are VALUES rather than declarations:
+  //   * #1744 — the card's ONSET LED reports 18.8–25.0 % of the pulses the
+  //     ONSET jack emits. `snapOnset` is OVERWRITTEN every render quantum and
+  //     READ every sixteenth, and a trigger pulse is 240 samples ≈ 1.9 quanta,
+  //     so four hits in five never coincide with a post. Fixed by LATCHING
+  //     across the post interval; the ONSET OUTPUT itself was measured clean
+  //     (100 % at 1/2/4/8/12 Hz, collapsing past the debounce ceiling exactly
+  //     where it should).
+  //   * #1745 — the DSP core's crest calibration comment claimed "white noise
+  //     (~3.5) → ~0.5". That is a GAUSSIAN figure and the rack produces no
+  //     Gaussian noise: `noise`'s white tap is UNIFORM in [−1,+1], crest √3 ≈
+  //     1.73, so the canonical patch NOISE → FEATURECV lands PUNCH at 0.15
+  //     unipolar / −0.71 bipolar — the bottom of the rail, not the middle.
+  //   * #1746 — five card/def LABEL divergences, all already in
+  //     `VOCABULARY_DEBT`, paid here because the dock renders the DEF's label.
+  //
+  // ⚠ AND ONE INSTRUMENT LESSON, recorded because it nearly shipped as a
+  // finding. The first SENS sweep returned "the dial is bit-exactly dead across
+  // its whole travel" on four amplitudes of a clean 4 Hz hit train. It is not:
+  // an unambiguous transient clears every threshold, so the probe signal was
+  // INVARIANT to the dimension under test. On ambiguous material the same
+  // travel goes 1 → 13 pulses (a tremolo tone) and 4 → 10 (hits under a loud
+  // noise bed). CLAUDE.md's "a no-op reading is FIRST an instrument bug",
+  // one wave after `destroy` recorded it.
+  //
+  // ⚠ PROMOTION REMOVES A LIVE METER AND IT IS NOT REBUILT — decided on
+  // measurement rather than on cost. The card's three bars read the extractor's
+  // UNSMOOTHED, always-UNIPOLAR target, so they disagree with the jacks they
+  // name (PUNCH bar 0.145 against a PUNCH jack at −0.703 at the shipped
+  // default) and do not move when ATTACK or RELEASE do. What replaces them is
+  // the `featurecv-maps` sidebar picture, DRAWN from the constants the worklet
+  // inlines rather than traced off a snapshot — the `noise-taps` precedent,
+  // reached from the opposite direction: noise could not be traced, featurecv
+  // could be and should not be.
+  //
+  // ⚠ `glyph: 'none'`, and that is a decision. Three `cv` outputs and one
+  // `gate`, no `audio` output, so `primaryAudioOutPortId` returns null and any
+  // other glyph resolves to `{ kind: 'static' }` — the marbles defect (#1692),
+  // asserted at its cause and negative-controlled in both directions.
+  'featurecv',
 ]);
 
 /**

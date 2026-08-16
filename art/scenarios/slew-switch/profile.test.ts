@@ -17,7 +17,18 @@
 //         deterministic random walk
 // step_clock = canonical 240 BPM clockTrain (epoch 0) → six advances in
 // 1.5 s; forward mode walks 1→2→3→0(wrap: EOC)→1→2 with the worklet's
-// 50 ms equal-power crossfade at each hop.
+// 50 ms equal-GAIN crossfade at each hop.
+//
+// ⚠ THE CROSSFADE WINDOW IS OUTSIDE THIS FILE'S `switched` ASSERTION, BY
+// CONSTRUCTION, and that is why #1711 shipped. The walk check below starts
+// each segment at `k*SEGMENT_S + XFADE_S + 0.02` — i.e. it deliberately skips
+// the fade and compares only the SETTLED tail, so an equal-POWER fade that
+// overshot a correlated CV hand-off by 41.4 % passed here for as long as it
+// existed. The `.f32` baseline DOES contain those six windows, which is what
+// makes this scenario's re-pin the artifact that records the fix; the LAW
+// itself is asserted in packages/web/src/lib/audio/modules/slewswitch.test.ts
+// ('the crossfade is EQUAL-GAIN'), where the fade is the subject rather than
+// the thing stepped over.
 //
 // DETERMINISM: forward mode NEVER draws from the worklet's step PRNG (rand()
 // is reached only in random mode), and the PRNG seed is injected anyway via
@@ -30,8 +41,8 @@
 // above.
 //
 // SIGNATURE outputs (owner decision §6b.2): `out2` (the slew law drawn
-// large) and `switched` (the equal-power selector walk — the module's
-// headline). out1/out3/out4 demonstrate the SAME one-pole law on other
+// large) and `switched` (the selector walk — the module's headline).
+// out1/out3/out4 demonstrate the SAME one-pole law on other
 // inputs (asserted structurally below, not pinned); step_idx is a derived
 // 4-level staircase and eoc a fixed 5 ms wrap pulse (both asserted
 // sample-exact, not pinned).
@@ -137,7 +148,8 @@ describe('ART slew-switch / audio profile (four slewed CVs, 240 BPM selector wal
     // switched — after each hop's 50 ms crossfade settles, it tracks the
     // selected channel (walk: seg k → channel WALK[k]). The settled tail of
     // each segment must match that channel's slewed output to within the
-    // equal-power fade's float residue.
+    // fade's float residue. ⚠ See the header: the fade itself is skipped here
+    // and asserted in slewswitch.test.ts instead.
     const WALK = [1, 2, 3, 0, 1, 2]; // selected index during segment k
     const sw = bufs.switched!;
     const outs = [bufs.out1!, bufs.out2!, bufs.out3!, bufs.out4!];
@@ -150,6 +162,47 @@ describe('ART slew-switch / audio profile (four slewed CVs, 240 BPM selector wal
           throw new Error(`switched ≠ out${WALK[k]! + 1} at sample ${i} (segment ${k})`);
         }
       }
+    }
+
+    // switched, INSIDE the fade — the window the walk check above skips, and
+    // the one #1711 lived in. Per SAMPLE of each hop, the crossfade output must
+    // lie between the two channels it is fading BETWEEN: an equal-gain blend of
+    // two values is bounded by them, at every progress point, whatever the two
+    // signals are doing. The old equal-power blend was not (peak 1.4142x on a
+    // correlated pair), so this leg is red on the pre-fix worklet.
+    //
+    // It is stated per-sample against the LIVE channel pair rather than as a
+    // fixed level, because these four drivers are moving: `between` has to mean
+    // "between what out_a and out_b are doing right now", not "inside a box".
+    //
+    // ⚠ THIS IS THE WEAKER OF THE TWO GATES ON THE SAME DEFECT, and the margin
+    // says so: verified red on the pre-fix worklet at 2.346e-5 CV units (hop 2,
+    // out3→out4). Equal-power's error is proportional to how CORRELATED the two
+    // channels are, and this profile's drivers are chosen to be maximally
+    // UNLIKE each other (2 Hz square / 1 Hz square / 4 Hz sine / noise), so at
+    // the hop instants the overshoot mostly lands between two already-distant
+    // values. The same defect measures +41.42 % — 1.4142x — on two channels
+    // holding the SAME level, which is the ordinary case for a CV switch and is
+    // where slewswitch.test.ts drives it. Keep both: this one proves the law
+    // holds on the SHIPPED render, that one proves how big it gets.
+    for (let k = 1; k < WALK.length; k++) {
+      const from = outs[WALK[k - 1]!]!;
+      const to = outs[WALK[k]!]!;
+      const s = Math.round(k * SEGMENT_S * SR);
+      const e = Math.round((k * SEGMENT_S + XFADE_S) * SR);
+      let worst = 0;
+      let worstAt = -1;
+      for (let i = s; i < e; i++) {
+        const lo = Math.min(from[i]!, to[i]!);
+        const hi = Math.max(from[i]!, to[i]!);
+        const ex = sw[i]! > hi ? sw[i]! - hi : lo - sw[i]!;
+        if (ex > worst) { worst = ex; worstAt = i; }
+      }
+      expect(
+        worst,
+        `hop ${k} (out${WALK[k - 1]! + 1}→out${WALK[k]! + 1}): peak excursion outside the ` +
+        `two channels during the 50 ms fade, in LINEAR CV units, at sample ${worstAt}`,
+      ).toBeLessThan(1e-6);
     }
 
     // step_idx — the derived 4-level staircase ((idx/3)·2 − 1), held per

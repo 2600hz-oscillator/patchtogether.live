@@ -77,6 +77,11 @@ export const NOT_LINTED = [
     anchor: { gitignored: 'packages/web/src/lib/docs/module-docs.generated.ts' },
     why: 'Generated artifacts on the accept loop (module docs, timings). Reviewed as a diff via their accept task; a finding here is a bug in the generator, and editing the artifact would be overwritten.',
   },
+  {
+    pattern: 'e2e/vrt/report/**',
+    anchor: { gitignored: 'e2e/vrt/report/trace/sw.bundle.js' },
+    why: "Playwright's generated HTML report + trace-viewer bundle, written by any local VRT run. Gitignored and never committed, but eslint globbed it anyway: after one `task vrt:one` the gate reported 211 errors — every one inside minified vendor JS (no-empty, no-cond-assign, no-self-assign in sw.bundle.js / uiMode.*.js). CI never saw them because CI has no such directory, so `task lint` failed LOCALLY and passed on the same commit remotely, which reads as a broken gate rather than a stale artifact. Same class as dist/build: machine-generated, rewritten by every run, nothing a human can fix in place.",
+  },
 ];
 
 /**
