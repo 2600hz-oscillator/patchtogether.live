@@ -44,6 +44,7 @@ import {
   primaryAudioOutPortId,
 } from '$lib/ui/workflow/shell-glyph-live';
 import { faceReadoutValueFor } from '$lib/ui/workflow/face-readout-values';
+import { resolvePushCardControls } from '$lib/control/push2/push-card-schema';
 import {
   SETTLE_TAUS,
   SLEW_PARAM_IDS,
@@ -477,7 +478,59 @@ describe('slewSwitch face / the RANKING rests on two facts, and both are measure
   });
 });
 
-// ── 6. totality ─────────────────────────────────────────────────────────────
+// ── 6. the Push 2 card the promotion moved ──────────────────────────────────
+
+describe('slewSwitch face / the PUSH 2 card moved GENERIC → FACE, and it is recorded', () => {
+  // ⚠ PROMOTING A MODULE MOVES ITS PUSH CARD, silently. `resolvePushCardControls`
+  // is three tiers, first match wins: OVERRIDE (none for this module) → FACE
+  // (the first 8 turnable params of `face.order`) → GENERIC (declaration
+  // order). Before this face the module took the GENERIC tier; now it takes
+  // FACE, and `push-card-schema.test.ts` does not pin slewSwitch, so nothing
+  // else in the tree would have noticed. "The card did not move" and "nobody
+  // looked" must not be one green (the buggles precedent) — so the move is
+  // asserted HERE, in the module's own file, rather than by editing the shared
+  // golden that every concurrent face PR collides on.
+  //
+  // THE MEASURED DELTA: seven params and eight encoders, so nothing is lost —
+  // slots 5 and 6 SWAP, because the face ranks LENGTH above MODE (LENGTH can
+  // make MODE irrelevant and not the reverse; see the `order` note on the def)
+  // while the declaration order has MODE first. That is the ranking reaching
+  // the hardware, which is what the FACE tier is for.
+  /** The occupied encoders, in order. ⚠ `pad()` fills the tail with
+   *  `{ kind: 'empty' }` OBJECTS, not nulls — a truthiness filter keeps them
+   *  and yields a trailing `undefined` paramId, which is how the first draft of
+   *  this leg read 8 controls on a 7-param module. Filter on the KIND. */
+  const encoders = (spec: ReturnType<typeof resolvePushCardControls>): string[] =>
+    spec.slots.flatMap((s) => (s.kind === 'param' ? [s.paramId] : []));
+
+  it('the card is the FACE tier, and it is exactly face.order', () => {
+    const spec = resolvePushCardControls(slewSwitchDef as never);
+    expect(spec.source, 'promotion moves this module off the GENERIC tier').toBe('face');
+    expect(encoders(spec), 'encoder 1→7: the face ranking, verbatim')
+      .toEqual([...slewSwitchDef.face!.order]);
+    expect(spec.skipped, 'nothing on this face is unturnable').toEqual([]);
+  });
+
+  it('and the GENERIC tier it left behind differed ONLY by swapping slots 5 and 6', () => {
+    // Re-resolve the same def with the face stripped — the exact card this
+    // module shipped before the promotion. Asserting the DIFFERENCE, not just
+    // the new value, is what makes this a record of a change rather than a
+    // restatement of the current state.
+    const { face: _face, ...faceless } = slewSwitchDef;
+    const before = resolvePushCardControls(faceless as never);
+    const after = resolvePushCardControls(slewSwitchDef as never);
+    expect(before.source).toBe('generic');
+    expect(encoders(before), 'the pre-promotion card: declaration order')
+      .toEqual(['slew1', 'slew2', 'slew3', 'slew4', 'mode', 'length', 'xfadeTime']);
+    expect(encoders(after), 'the shipped card: LENGTH before MODE, per the face ranking')
+      .toEqual(['slew1', 'slew2', 'slew3', 'slew4', 'length', 'mode', 'xfadeTime']);
+    // Same SET — seven params into eight encoders, so nothing fell off the
+    // window. The move is a REORDER of two adjacent slots, not a loss.
+    expect(encoders(after).slice().sort()).toEqual(encoders(before).slice().sort());
+  });
+});
+
+// ── 7. totality ─────────────────────────────────────────────────────────────
 
 describe('slewSwitch face / every readout is TOTAL — a throw takes the faceplate down', () => {
   const HOSTILE: Record<string, Record<string, number>> = {
