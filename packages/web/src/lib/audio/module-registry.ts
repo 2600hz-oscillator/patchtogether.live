@@ -15,6 +15,7 @@ import type {
   ControlFamily,
   ModuleDocs,
   ModuleFace,
+  NoUserControlParam,
   ChainWiring,
 } from '$lib/graph/types';
 import type { AudioModuleFactory } from './engine';
@@ -178,6 +179,18 @@ export interface AudioModuleDef {
    * module-face-lint. Resolved by the pure `curatedFace` selector.
    */
   face?: ModuleFace;
+  /**
+   * #1726 — params this module deliberately gives the player NO control over
+   * (a synthetic gate param a `paramTarget` CV bridge writes; a determinism or
+   * harness toggle). See NoUserControlParam: `why` is required by the type and
+   * `writer` is anchored to this def's own `inputs` in BOTH directions, so an
+   * entry cannot outlive what justified it.
+   *
+   * UI curation like `face`, and hash-transparent for the same reason — which
+   * matters for the two audio-domain WebGL defs (cube, wavesculpt) that sit in
+   * the WebGL attest basis.
+   */
+  noUserControl?: readonly NoUserControlParam[];
   /**
    * Optional workflow channel-columns chain-wiring override + lane note-tap
    * declaration (see ChainWiring in graph/types.ts). Two orthogonal uses:

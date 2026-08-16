@@ -222,6 +222,7 @@
   // in an off-screen host when the shell swaps its lane card away.
   import { HEADLESS_MOUNT_LANE_TYPES, needsHeadlessSourceMount } from '$lib/ui/workflow/dom-source-modules';
   import { nodeMedia } from '$lib/ui/media/node-media-registry';
+  import { nodeExtras } from '$lib/ui/media/node-extras';
   import { nodePresent } from '$lib/ui/modules/node-present-registry.svelte';
   import { nodeRecorder } from '$lib/ui/modules/node-recorder-registry.svelte';
   import { nodeSamsloop } from '$lib/ui/modules/node-samsloop-registry.svelte';
@@ -2209,6 +2210,33 @@
     nodeAudioInput.sweep(liveIds);
     nodeDoomSession.sweep(liveIds);
     nodeLaunchpadMonitor.sweep(liveIds);
+    nodeExtras.sweep(liveIds);
+  });
+
+  /** THE EXTRAS-CHANNEL PRODUCER SEAM (#1720). The sixth instance of the #1583
+   *  class and the first that is NOT a teardown: painter, textmarquee,
+   *  picturebox and toybox never INITIALISE without a card. Their picture is a
+   *  pure function of persisted `node.data` (an op log, a rich-text model, a
+   *  base64 image), and the CARD was the only thing that ever pushed it through
+   *  `engine.read(id, 'extras')` — so under the shell, where an un-migrated
+   *  module's card exists only inside the dock full-view, a SAVED rack rendered
+   *  each module's BUILT-IN PLACEHOLDER on load, before anything was touched.
+   *
+   *  Measured on the default `/rack` with the content already in node.data,
+   *  reading each node's own output texture: painter meanRGB (255,255,255) — a
+   *  blank page — against (255,0,0) with the card mounted; textmarquee nonBlack
+   *  446/49152 (the literal word "textmarquee") against 36992/49152; picturebox
+   *  (5,15,20) against (0,0,254).
+   *
+   *  Deliberately NOT solved by adding them to CARD_PRODUCER_LANE_TYPES: that
+   *  buys a PERMANENT off-screen mount of the real card on every rack, and none
+   *  of these four is a live producer — each pushes ONCE from graph state. See
+   *  $lib/ui/media/node-extras-registry for the full argument.
+   *
+   *  Runs on the SAME snapshot the sweep above reads, so a node that arrives,
+   *  changes its data, or leaves is handled by one authority: the graph. */
+  $effect(() => {
+    nodeExtras.sync(snapshot.nodes, engine);
   });
 
   let headlessSourceNodes = $derived.by<ModuleNode[]>(() => {

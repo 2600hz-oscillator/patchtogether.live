@@ -63,6 +63,23 @@ const MODULE_SHELL_SRC = Object.values(
   }),
 )[0] as string;
 
+/** The testid the `fullViewBody` render site puts on its container. Named here
+ *  (not re-typed at each assertion) so the source anchor and any DOM-level
+ *  consumer read the SAME string. */
+const FULL_VIEW_BODY_TESTID = 'face-full-view-body';
+
+/** Strip Svelte markup comments, block comments and line comments so a source
+ *  anchor cannot be satisfied by PROSE ABOUT the thing it is anchoring. The
+ *  wired-slot anchor below deliberately does NOT use this — its unwired half
+ *  must refuse even a mention, so that a half-written render site cannot sit in
+ *  the file commented out. Mirrors webgl-attest-lib's stripComments. */
+function stripSourceComments(src: string): string {
+  return src
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/(^|[^:])\/\/[^\n]*/g, '$1');
+}
+
 describe('shell-extensions registry lint (#1512)', () => {
   it('every declared face.extension resolves to a discovered extension module', () => {
     const ids = new Set(shellExtensionIds());
@@ -134,6 +151,42 @@ describe('shell-extensions registry lint (#1512)', () => {
     }
   });
 
+  // ── THE fullViewBody RENDER SITE (#1726) ──────────────────────────────────
+  //
+  // The anchor test above proves the slot is READ in ModuleShell. Reading is
+  // not rendering: `let x = ext?.fullViewBody` alone would satisfy a substring
+  // anchor while painting nothing, which is the precise silent no-op the wired
+  // list exists to forbid. So this pins the three parts a render site actually
+  // has — the read, the MOUNT, and the queryable element the DOM-level gates
+  // (and the first video face's e2e) will look for — against a
+  // COMMENT-STRIPPED source, so prose about the slot cannot green any of them.
+  it('fullViewBody has a real render site: read, mounted, and queryable', () => {
+    const src = stripSourceComments(MODULE_SHELL_SRC);
+    expect(WIRED_SHELL_EXTENSION_SLOTS).toContain('fullViewBody');
+    expect(/\bext\??\.fullViewBody\b/.test(src), 'the slot must be READ in code, not only in a comment').toBe(true);
+    expect(/<ExtFullViewBody\b/.test(src), 'the resolved component must be MOUNTED, not merely read').toBe(true);
+    expect(
+      src.includes(FULL_VIEW_BODY_TESTID),
+      `the mounted body must be queryable as "${FULL_VIEW_BODY_TESTID}" — a surface no gate can select is a surface no gate can prove`,
+    ).toBe(true);
+  });
+
+  it('the fullViewBody site is DOCK-GATED in ONE place (dockFullViewHeadPlan)', () => {
+    // The lane tile is 192×180 and already carries the thumbnail glyph; a
+    // module's full surface has no business there. That policy lives in the
+    // pure plan (module-shell-model.test.ts drives it), and this asserts the
+    // shell does not carry a SECOND copy of it that could drift — the shell
+    // reads `headPlan.extBody`, never re-tests the view for this slot.
+    const src = stripSourceComments(MODULE_SHELL_SRC);
+    expect(/dockFullViewHeadPlan\(/.test(src)).toBe(true);
+    const extBodyDecl = /let\s+extBody\s*=\s*\$derived\(([^;]*)\)/.exec(src)?.[1] ?? '';
+    expect(extBodyDecl, 'extBody must be derived from the plan').toContain('headPlan.extBody');
+    expect(
+      /view\s*===\s*'dock-full'/.test(extBodyDecl),
+      'the dock gate must not be re-typed at the extBody call site — it is the plan\'s job',
+    ).toBe(false);
+  });
+
   it('dx7 is the proof: declared, discovered, loads a glyph component lazily', async () => {
     // Derived membership, not a count: the def that declares glyph 'algorithm'
     // is the def that must resolve — asserted generically above; this pins the
@@ -151,11 +204,19 @@ describe('shell-extensions registry lint (#1512)', () => {
     const bogus = { glyph: (() => {}) as unknown, bogusSlot: 1 } as unknown as ShellExtension;
     expect(unknownSlotKeys(bogus)).toEqual(['bogusSlot']);
 
-    const premature = { fullViewBody: (() => {}) as unknown } as unknown as ShellExtension;
-    expect(unwiredSlotKeys(premature)).toEqual(['fullViewBody']);
-    expect(unwiredSlotKeys({ editorSurface: 1 } as unknown as ShellExtension)).toEqual([
-      'editorSurface',
-    ]);
+    // STILL UNWIRED: `editorSurface` has no render site, so exporting it is
+    // still refused. This is the leg that keeps `unwiredSlotKeys` honest now
+    // that fullViewBody has moved — a predicate whose refusal set has gone
+    // empty is a predicate nobody would notice breaking.
+    const premature = { editorSurface: (() => {}) as unknown } as unknown as ShellExtension;
+    expect(unwiredSlotKeys(premature)).toEqual(['editorSurface']);
+
+    // NEWLY WIRED (#1726): fullViewBody now HAS a render site, so the same
+    // predicate must let it through — asserted in both directions so "wired"
+    // and "refused" cannot both be true of one slot.
+    const body = { fullViewBody: (() => {}) as unknown } as unknown as ShellExtension;
+    expect(unwiredSlotKeys(body)).toEqual([]);
+    expect(unknownSlotKeys(body)).toEqual([]);
 
     // the other direction: the sanctioned shape passes both predicates.
     const ok = { glyph: (() => {}) as unknown } as unknown as ShellExtension;

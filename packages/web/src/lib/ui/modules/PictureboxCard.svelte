@@ -2,36 +2,31 @@
   // PictureboxCard — file-picker source. User clicks "Choose image..."
   // → file is downscaled to 640x480 (zoom-fit-crop) → encoded as JPEG
   // q=85 → base64 → written into node.data.imageBytes. The Y.Doc carries
-  // those bytes to every rack-mate; each peer's PictureboxCard runs the
-  // reverse path (base64 → ImageBitmap → engine.setImage) automatically.
+  // those bytes to every rack-mate; every peer runs the reverse path
+  // (base64 → ImageBitmap → engine.setImage) automatically — from the
+  // NODE-lifetime producer, not from this card (#1720; see the note below).
   //
   // Multiplayer: image content NOW syncs across rack-mates — sizing,
   // codec, and limit decisions are documented in picturebox-encode.ts.
-  import { onMount, onDestroy } from 'svelte';
   import { type NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import { patch, ydoc, LOCAL_ORIGIN } from '$lib/graph/store';
   import { setNodeParam } from '$lib/graph/mutate';
-  import { pictureboxDef, type PictureboxHandleExtras } from '$lib/video/modules/picturebox';
+  import { pictureboxDef } from '$lib/video/modules/picturebox';
   import {
     encodePickedFile,
-    base64ToImageBitmap,
-    decodeAnimatedGif,
     GIF_MIME,
     TARGET_W,
     TARGET_H,
   } from '$lib/video/modules/picturebox-encode';
-  import { ASSET_SLOTS, ASSET_SLOT_LABELS, slotForVOct } from '$lib/video/asset-select';
-  import { useEngine } from '$lib/audio/engine-context';
-  import type { VideoEngine } from '$lib/video/engine';
+  import { ASSET_SLOTS, ASSET_SLOT_LABELS } from '$lib/video/asset-select';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
   import { portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
-  const engineCtx = useEngine();
 
   let loading = $state(false);
   let error = $state<string | null>(null);
@@ -82,226 +77,34 @@
     return (v: number) => setNodeParam(id, paramId, v);
   }
 
-  function getExtras(): PictureboxHandleExtras | null {
-    const e = engineCtx.get();
-    if (!e) return null;
-    try {
-      const videoEngine = e.getDomain<VideoEngine>('video');
-      const extras = videoEngine.read(id, 'extras') as PictureboxHandleExtras | undefined;
-      return extras ?? null;
-    } catch {
-      return null;
-    }
-  }
-
-  /**
-   * Push the latest persisted bytes into the local engine's source
-   * texture. Runs whenever imageBytes changes (local file pick OR remote
-   * peer update). Decoding happens off the main thread via
-   * createImageBitmap (in picturebox-encode.ts). Re-runs are tolerated
-   * by the engine — texImage2D simply overwrites.
-   *
-   * We track the last-applied bytes so a second card mount with the same
-   * data doesn't redundantly decode (the $derived recomputes whenever
-   * the snapshot bus fires, even when our specific byte string didn't
-   * actually change).
-   *
-   * IMPORTANT: when this card mounts as part of a patch LOAD (envelope
-   * already carries imageBytes, e.g. the GLITCHES GET RICHES demo or any
-   * user-saved patch), the $effect fires on first mount BEFORE the
-   * reconciler has instantiated the engine-side picturebox node. The
-   * engine context exists but `read(id, 'extras')` returns undefined.
-   * `engineCtx.get()` is a non-reactive getter — reading it does NOT
-   * subscribe the $effect to engine readiness, so there is no natural
-   * re-fire when extras becomes available. To bridge that, we RETRY
-   * (mirroring VideoboxCard.ensureAudioWired's pattern) until extras
-   * appears or we exhaust the attempt budget. ~5s @ 100ms is generous
-   * for the reconciler microtask (typical end-to-end ~150ms post-click).
-   */
-  let lastAppliedBytes: string | null = null;
-  let applyRetryTimer: ReturnType<typeof setTimeout> | null = null;
-  $effect(() => {
-    const bytes = imageBytes;
-    void bytes;
-    void node?.id;
-    if (bytes === lastAppliedBytes) return;
-    lastAppliedBytes = bytes;
-    if (applyRetryTimer) { clearTimeout(applyRetryTimer); applyRetryTimer = null; }
-    void applyBytesToEngine(bytes, 0);
-  });
-  // Clear any pending retry on card unmount so we don't leak setTimeout
-  // handles into the page's task queue when SvelteFlow tears down nodes
-  // (e.g., user clears the patch while extras was still pending).
-  $effect(() => {
-    return () => {
-      if (applyRetryTimer) { clearTimeout(applyRetryTimer); applyRetryTimer = null; }
-    };
-  });
-
-  async function applyBytesToEngine(bytes: string | null, attempt: number): Promise<void> {
-    const extras = getExtras();
-    if (!extras) {
-      // Engine hasn't materialized this card's video node yet (most
-      // common during a patch load: the reconciler microtask runs
-      // after the card mounts). Schedule a short retry — bytes are
-      // stable on node.data so we can safely close over them. Cap
-      // at ~50 attempts (5s) to bound the retry storm.
-      if (attempt >= 50) return;
-      // Reset lastAppliedBytes so a real `imageBytes` change during
-      // the retry window still kicks off a fresh attempt via the
-      // $effect (rather than getting suppressed by the equality check).
-      lastAppliedBytes = null;
-      applyRetryTimer = setTimeout(() => {
-        applyRetryTimer = null;
-        // Re-check the latest bytes off `node.data` (a remote write
-        // during the wait window should win). Snapshot here so we don't
-        // touch reactive state from the timeout callback.
-        const latest = (node?.data as { imageBytes?: string | null } | undefined)?.imageBytes ?? null;
-        lastAppliedBytes = latest;
-        void applyBytesToEngine(latest, attempt + 1);
-      }, 100);
-      return;
-    }
-    if (bytes === null) {
-      extras.setImage(null);
-      extras.setAnimatedImage(null);
-      extras.setFilename(null);
-      return;
-    }
-    // Read the MIME fresh off node.data (a remote write during the retry window
-    // should win, same as `bytes`).
-    const mime = (node?.data as { imageMime?: string } | undefined)?.imageMime ?? 'image/jpeg';
-    try {
-      if (mime === GIF_MIME) {
-        // Animated gif: decode all frames (WebCodecs) and let the module step
-        // them on the engine clock. Where ImageDecoder is unavailable, fall back
-        // to a static first frame — no error, just no motion.
-        const gifFrames = await decodeAnimatedGif(bytes, mime);
-        if (gifFrames && gifFrames.length > 1) {
-          extras.setAnimatedImage(gifFrames);
-          extras.setFilename(imageName);
-          return;
-        }
-        const firstFrame = await base64ToImageBitmap(bytes, mime);
-        extras.setImage(firstFrame);
-        extras.setFilename(imageName);
-        return;
-      }
-      const bitmap = await base64ToImageBitmap(bytes);
-      extras.setImage(bitmap);
-      extras.setFilename(imageName);
-    } catch (err) {
-      // Decode failure on a peer = the writer sent something we can't
-      // parse. Don't reset hasImage — the writer's local copy still
-      // works; just log + show the error in our UI.
-      const msg = err instanceof Error ? err.message : String(err);
-      console.warn('[picturebox] decode failed:', msg);
-      error = `Decode failed: ${msg}`;
-    }
-  }
-
-  // ---- 7-slot asset pre-upload ----------------------------------------
+  // ── THE PICTURE + THE ASSET-GATE POLL ARE NODE-OWNED (#1720) ──────────────
   //
-  // Decode every loaded `assets[i]` base64 → ImageBitmap and pre-upload it
-  // into the engine slot texture, so a gate-driven switch is an instant
-  // active-index flip (no decode/upload on the gate). Re-runs when the
-  // synced `assets` array changes (local load OR remote peer). We track the
-  // last-applied byte string per slot to avoid redundant re-decode when the
-  // snapshot bus re-fires with unchanged bytes. Like the single-image path,
-  // this RETRIES until the engine has materialized this node (patch load).
-  const lastSlotBytes: (string | null)[] = new Array(ASSET_SLOTS).fill(undefined as unknown as null);
-  let slotRetryTimer: ReturnType<typeof setTimeout> | null = null;
-  $effect(() => {
-    const snapshot = assets.slice(0, ASSET_SLOTS);
-    const mimeSnapshot = assetMimes.slice(0, ASSET_SLOTS);
-    void node?.id;
-    if (slotRetryTimer) { clearTimeout(slotRetryTimer); slotRetryTimer = null; }
-    void applySlotsToEngine(snapshot, mimeSnapshot, 0);
-  });
-  $effect(() => () => {
-    if (slotRetryTimer) { clearTimeout(slotRetryTimer); slotRetryTimer = null; }
-  });
-
-  async function applySlotsToEngine(
-    snapshot: (string | null)[],
-    mimeSnapshot: (string | null)[],
-    attempt: number,
-  ): Promise<void> {
-    const extras = getExtras();
-    if (!extras || !extras.setAssetAtSlot) {
-      if (attempt >= 50) return;
-      slotRetryTimer = setTimeout(() => {
-        slotRetryTimer = null;
-        const d = node?.data as { assets?: (string | null)[]; assetMimes?: (string | null)[] } | undefined;
-        const latest = (d?.assets ?? new Array(ASSET_SLOTS).fill(null)).slice(0, ASSET_SLOTS);
-        const latestMimes = (d?.assetMimes ?? new Array(ASSET_SLOTS).fill(null)).slice(0, ASSET_SLOTS);
-        void applySlotsToEngine(latest, latestMimes, attempt + 1);
-      }, 100);
-      return;
-    }
-    for (let i = 0; i < ASSET_SLOTS; i++) {
-      const bytes = snapshot[i] ?? null;
-      if (bytes === lastSlotBytes[i]) continue;
-      lastSlotBytes[i] = bytes;
-      if (!bytes) {
-        extras.setAssetAtSlot(i, null);
-        continue;
-      }
-      const mime = mimeSnapshot[i] ?? 'image/jpeg';
-      try {
-        if (mime === GIF_MIME) {
-          const gifFrames = await decodeAnimatedGif(bytes, mime);
-          if (gifFrames && gifFrames.length > 1) {
-            extras.setAnimatedAtSlot(i, gifFrames);
-            continue;
-          }
-          // Degrade: static first frame.
-          extras.setAssetAtSlot(i, await base64ToImageBitmap(bytes, mime));
-          continue;
-        }
-        extras.setAssetAtSlot(i, await base64ToImageBitmap(bytes));
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        console.warn(`[picturebox] slot ${i} decode failed:`, msg);
-      }
-    }
-  }
-
-  // ---- asset_gate edge detection → slot select ------------------------
+  // This card used to own BOTH halves of its extras channel, and both broke the
+  // same way. Under the faceplate shell an un-migrated module's card exists only
+  // inside the dock full-view, so in the common case it is NEVER MOUNTED:
   //
-  // Mirror VIDEOVARISPEED's polled gate loop: each tick read the raw
-  // asset_gate level (bridge-written synthetic param), detect a rising
-  // edge, and on a rising edge read the raw asset_pitch V/oct, map it to a
-  // slot (asset-select.slotForVOct), and select that slot IF it holds an
-  // asset. A black-key pitch (slotForVOct → null) or an empty slot is
-  // ignored (keep showing the current asset). The selection is purely
-  // LOCAL render state — every peer computes it from the same synced gate +
-  // synced assets, so we never write it to the Y.Doc.
-  let lastAssetGate = 0;
-  function readParamLive(paramId: string): number {
-    const e = engineCtx.get();
-    if (!e || !node) return 0;
-    const v = e.readParam(node, paramId);
-    return typeof v === 'number' ? v : 0;
-  }
-  let gateTimer: ReturnType<typeof setInterval> | null = null;
-  onMount(() => {
-    gateTimer = setInterval(() => {
-      const e = engineCtx.get();
-      if (!e || !node) return;
-      const g = readParamLive('asset_gate');
-      const rising = lastAssetGate < 0.5 && g >= 0.5;
-      lastAssetGate = g;
-      if (!rising) return;
-      const slot = slotForVOct(readParamLive('asset_pitch'));
-      if (slot == null) return; // black key — no slot, ignore
-      const extras = getExtras();
-      if (extras?.slotHasAsset?.(slot)) extras.selectSlot(slot);
-    }, 33);
-  });
-  onDestroy(() => {
-    if (gateTimer !== null) { clearInterval(gateTimer); gateTimer = null; }
-  });
+  //   1. THE TEXTURE. `applyBytesToEngine` / `applySlotsToEngine` decoded
+  //      node.data.imageBytes / .assets and uploaded them, retrying until the
+  //      reconciler had built the engine node. Nothing else ever pushed, so a
+  //      SAVED rack rendered the module's idle field instead of your image, on
+  //      LOAD. Measured on the default /rack, reading the node's own output
+  //      texture: meanRGB (5,15,20) never-mounted vs (0,0,254) with the card open.
+  //
+  //   2. THE CV INPUTS. A 33 ms interval was the ONLY consumer of ASSET GATE and
+  //      ASSET PITCH: it polled the gate, rising-edge detected, and selected a
+  //      slot. With no card the two jacks were patched, visibly connected and
+  //      INERT — and the displayed slot LATCHED at its last selection rather than
+  //      going dark, which is the stuck-value shape, not the placeholder shape.
+  //      A fix that only restores the texture does NOT fix this one.
+  //
+  // Both MOVED to $lib/ui/media/extras-producers, driven by
+  // $lib/ui/media/node-extras-registry, which is keyed to GRAPH lifetime and
+  // swept from Canvas. The producer is now the ONLY writer of the texture and the
+  // pump the ONLY reader of the gate, so there is no second code path to drift
+  // from and no double edge-count. This card writes node.data and renders UI.
+  //
+  // The pump runs on ONE shared ticker for every pumped node at the same 33 ms
+  // this card used, so gate timing is unchanged by the move.
 
   // ---- "Load multiple…" panel: per-slot file load --------------------
   async function onSlotFileChange(ev: Event, slot: number): Promise<void> {
