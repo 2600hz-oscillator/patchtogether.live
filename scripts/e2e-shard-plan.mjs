@@ -80,7 +80,18 @@ export function loadContention(dir = join(ROOT, 'e2e/tests')) {
  *
  * @type {{ spec: string, why: string }[]}
  */
-export const PENDING_FIRST_MEASUREMENT = [];
+export const PENDING_FIRST_MEASUREMENT = [
+  {
+    spec: 'midi-binding-node-lifetime.spec.ts',
+    why:
+      'lands 2026-08-16 with the #1727 fix (a CC binding to an un-migrated module was ' +
+      'inert once its card unmounted). No ci.yml run containing it has completed, so ' +
+      'there are no blob reports to accept a cost from. Run ' +
+      '`task e2e:timings:accept -- <run-id>` on the first green main run after this ' +
+      'merges and DELETE this entry — the gate reddens on a stale entry as well as a ' +
+      'missing one.',
+  },
+];
 
 /** Median of a numeric array (used as the cost of an unmeasured file). */
 export function median(xs) {
