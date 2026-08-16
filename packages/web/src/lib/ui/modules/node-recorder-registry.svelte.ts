@@ -52,6 +52,41 @@
 // `tsc` refuses the attempt before any test runs. The only ways a recording ends
 // are `stop()` (the user pressed Record OFF) and `sweep()` (the node is gone).
 //
+// ── THE DESTINATION FOLDER — #1583's last tabled row ──────────────────────
+//
+// The same file owns the node's chosen OUTPUT FOLDER, and that is a second
+// instance of the identical bug rather than a convenience. `saveFolder` was a
+// card-local `$state` in RecorderboxCard, so every card unmount forgot it —
+// and the card's own header promises the opposite ("The folder is remembered,
+// so the next record needs no prompt").
+//
+// ⚠ THE EPIC UNDER-RATED THIS ROW as "survives as a re-prompt, not data loss".
+// It is worse than a re-prompt, because of the PRESENTATION path: at record
+// start `planRecordStartFolder(haveFolder, isFullscreen)` returns 'download'
+// — deliberately NOT 'prompt' — when there is no folder while presenting,
+// since opening a picker would drop the performer out of fullscreen
+// (./recorderbox-present-policy). So the sequence
+//
+//     pick a folder → expand a THIRD module (LRU evicts this pane, no user
+//     action against RECORDERBOX at all) → go fullscreen → press Record
+//
+// SILENTLY REDIRECTS the take from the chosen folder to the browser's
+// downloads, mid-performance, with only a non-modal hint on a card that is not
+// even mounted to show it. A re-prompt is visible; this is not.
+//
+// WHY A REGISTRY AND NOT THE Y.DOC: a `FileSystemDirectoryHandle` is a
+// permission-bound, origin-bound live capability, not data. It must never sync
+// to a rack-mate (their browser cannot honour it, and it would leak the local
+// filesystem layout), so the Y.Doc is the wrong owner however convenient. Node
+// lifetime in local memory is exactly right.
+//
+// SCOPE — this survives card unmount, NOT a page reload. Re-picking after a
+// reload is correct-by-permission (the handle needs a fresh user gesture to
+// re-grant write access anyway), so it is out of this bug's scope.
+//
+// The folder map has no remover either, for the same structural reason: a
+// re-pick OVERWRITES via `rememberFolder`, and the only removal is `sweep()`.
+//
 // HASH TRANSPARENCY: this lives under `lib/ui/**`, NOT `lib/video/**`, which is
 // hashed WHOLESALE for the WebGL attest — a change there costs a GPU re-attest
 // window. Keeping it here is deliberate and is a constraint on any future edit:
@@ -137,6 +172,11 @@ const defaultDeps: RegistryDeps = {
 
 export class NodeRecorderRegistry {
   #entries = new Map<string, Entry>();
+  /** The node's chosen destination FOLDER. Keyed by node and kept OUTSIDE
+   *  `#entries` on purpose: an entry exists only for the span of one live
+   *  recording, but the whole point of remembering a folder is that it spans
+   *  recordings — including the gap before the FIRST one. See the header. */
+  #folders = new Map<string, FileSystemDirectoryHandle>();
   /** Bumped on every mutation so `$derived` readers in cards re-run. The Map
    *  itself is not deeply reactive, and entry fields are written from a rAF
    *  pump, so a version counter is the honest way to publish changes. */
@@ -152,6 +192,29 @@ export class NodeRecorderRegistry {
     void this.#version;
     const e = this.#entries.get(nodeId);
     return e ? { state: e.state, elapsed: e.elapsed, lastSavedChunk: e.lastSavedChunk } : null;
+  }
+
+  /**
+   * The destination folder this node last chose, or null.
+   *
+   * Reactive: reading it inside a `$derived` re-runs when a pick lands. The
+   * card ADOPTS this value; it never holds its own copy, because a copy in
+   * card state is precisely the bug (#1583).
+   */
+  folderFor(nodeId: string): FileSystemDirectoryHandle | null {
+    void this.#version;
+    return this.#folders.get(nodeId) ?? null;
+  }
+
+  /**
+   * USER INTENT: this node's recordings go here from now on. Called only from
+   * a real user gesture (the folder picker resolving), and idempotent — a
+   * re-pick simply overwrites, which is why no `forgetFolder` is needed and
+   * therefore why none exists (see the structural guard in the header).
+   */
+  rememberFolder(nodeId: string, handle: FileSystemDirectoryHandle): void {
+    this.#folders.set(nodeId, handle);
+    this.#bump();
   }
 
   /** Is this node recording right now? Survives card unmount by construction. */
@@ -285,6 +348,14 @@ export class NodeRecorderRegistry {
       void entry.recorder.abandon().catch(() => {});
       changed = true;
     }
+    // The remembered folder is node-lifetime too, so it ends the same way and
+    // ONLY this way. A node id is swept independently of whether it also had a
+    // live recording — the two maps have different populations by design.
+    for (const nodeId of [...this.#folders.keys()]) {
+      if (live.has(nodeId)) continue;
+      this.#folders.delete(nodeId);
+      changed = true;
+    }
     if (changed) this.#bump();
   }
 
@@ -302,6 +373,12 @@ export class NodeRecorderRegistry {
   get liveNodeIds(): string[] {
     void this.#version;
     return [...this.#entries.keys()];
+  }
+
+  /** Test-only introspection: which nodes remember a destination folder. */
+  get folderNodeIds(): string[] {
+    void this.#version;
+    return [...this.#folders.keys()];
   }
 }
 

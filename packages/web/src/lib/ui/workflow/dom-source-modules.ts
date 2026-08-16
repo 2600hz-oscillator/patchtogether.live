@@ -91,6 +91,28 @@ export const DOM_SOURCE_LANE_TYPES: ReadonlySet<string> = new Set<string>([
  * to make it look like a user action caused it. A SAVED rack renders dark on
  * LOAD, before anything is touched:
  *
+ *   cube         (#1724) the SAME seam as wavesculpt, on the same registry, and
+ *                invisible to the gate for a reason worth keeping: the drawer is
+ *                installed from `modules/cube/CubeVizSurface.svelte`, and the
+ *                gate's file walk was flat + `*Card.svelte`-filtered, so the
+ *                pattern matched a file nothing read. `CubeVizSurface` is THE
+ *                cube renderer (the legacy card and the faceplate hero are two
+ *                mounts of it, not two renderers), and cube's own `drawFrame`
+ *                paints SOLID BLACK when no drawer is registered — cube.ts:84
+ *                says so outright. MEASURED on `CUBE.video_out → VIDEO OUT`,
+ *                same probe and same port in every phase: never-mounted
+ *                nonBlack 0/3072 px maxLuma 0; dock full-view open 3072/3072
+ *                maxLuma 212; collapsed again 0/3072; `?shell=legacy` (real card
+ *                in the lane) 3072/3072.
+ *
+ *                ⚠ cube is MIGRATED, so its lane kind is 'shell', not
+ *                'placeholder' — and that is not a reprieve. `curatedFace` drops
+ *                `face.hero.cell` from the lane order (`laneOrder`, PF-22: a
+ *                280px panel cannot paint in a 46px knob column), and cube's
+ *                hero cell IS `cube-view-{n}` — the surface. So the lane tile
+ *                mounts no renderer at all and the picture exists only inside
+ *                the dock full-view. A migrated face is not evidence that a
+ *                producer is mounted.
  *   wavesculpt   the card installs a frame drawer
  *                (`installWavesculptFrameDrawer`) that blits its WebGL ribbon
  *                render into the canvas the audio→video texture bridge hands
@@ -123,14 +145,29 @@ export const DOM_SOURCE_LANE_TYPES: ReadonlySet<string> = new Set<string>([
  *                ⚠ THESE TWO DEGRADE, THEY DO NOT GO DARK, and the distinction
  *                is load-bearing rather than a hedge. Both render their picture
  *                inside the MODULE from its own analysers, so an unmounted card
- *                still produces a full, moving, correct trace/raster — it just
- *                draws every display param at its KNOB, ignoring any patched cv
- *                cable. So they are members for the LIFETIME half of this rule
- *                (keep the card alive in the headless host and the cable is
- *                honoured) and NOT for the "renders black" half. A future
- *                reader comparing them against wavesculpt's measured
- *                `nonBlack 0/3072` should expect a normal picture here, not a
- *                black one; that is not this set being wrong.
+ *                still produces a full, moving, correct trace/raster. So they
+ *                are members for the LIFETIME half of this rule (keep the card
+ *                alive in the headless host and the cable is honoured) and NOT
+ *                for the "renders black" half. A future reader comparing them
+ *                against wavesculpt's measured `nonBlack 0/3072` should expect
+ *                a normal picture here, not a black one; that is not this set
+ *                being wrong.
+ *
+ *                ⚠⚠ CORRECTED (#1583 verify pass). This paragraph used to say
+ *                an unmounted card "draws every display param at its KNOB,
+ *                ignoring any patched cv cable". THAT IS NOT WHAT HAPPENS, and
+ *                the error mattered in the direction this epic cares about.
+ *                `$lib/audio/cv-shadow` `read()` returns `combined ??
+ *                knobValue`, and `combined` is cleared ONLY by `set()` — a
+ *                KNOB MOVE. Nothing clears it when the pump stops. So a param
+ *                that was under CV when the card went away LATCHES AT ITS LAST
+ *                MODULATED VALUE indefinitely; it does not fall back to the
+ *                knob. "Degrades to the knob" is a graceful story with a
+ *                self-limiting failure; "latches wherever the LFO happened to
+ *                be" is the stuck-value shape, and it is what ships. The
+ *                picture is still full and moving either way, so the black-vs-
+ *                degrade distinction above stands — only the description of
+ *                the degraded VALUE was wrong.
  *
  *                The durable fix is an engine-side same-domain equivalent of
  *                `addCrossDomainCvBridge`, which would take both out of this
@@ -148,6 +185,7 @@ export const DOM_SOURCE_LANE_TYPES: ReadonlySet<string> = new Set<string>([
  * and none of them is blocked from a face by one.
  */
 export const CARD_PRODUCER_LANE_TYPES: ReadonlySet<string> = new Set<string>([
+  'cube',
   'rasterize',
   'scope',
   'synesthesia',

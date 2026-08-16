@@ -212,6 +212,40 @@ import {
   charlottesEchosFaceParams,
 } from '$lib/ui/modules/charlottes-echos-face-model';
 import {
+  bugglesBurstText,
+  bugglesFaceParams,
+  bugglesRingText,
+  bugglesSmoothGlideText,
+  bugglesSteppedHoldText,
+  bugglesWoggleText,
+} from '$lib/ui/modules/buggles-face-model';
+import {
+  SLEW_PARAM_IDS,
+  slewSwitchChannelSettleText,
+  slewSwitchFaceParams,
+  slewSwitchLapText,
+  slewSwitchSettleText,
+  slewSwitchSpreadText,
+  slewSwitchStepIdxText,
+  slewSwitchSwitchedText,
+} from '$lib/ui/modules/slewswitch-face-model';
+import {
+  UNITYSCALE_SHAPED_SECTIONS,
+  unityscaleFaceParams,
+  unityscaleHalfText,
+  unityscaleOverText,
+} from '$lib/ui/modules/unityscalemathematik-face-model';
+import {
+  featurecvAtkRiseText,
+  featurecvClipText,
+  featurecvFaceParams,
+  featurecvIdleText,
+  featurecvMaxRateText,
+  featurecvProbeText,
+  featurecvRelFallText,
+  featurecvThreshText,
+} from '$lib/ui/modules/featurecv-face-model';
+import {
   MOOG907A_BANK,
   MOOG914_BANK,
   type MoogBank,
@@ -945,11 +979,189 @@ const FACE_READOUT_VALUES: Readonly<Record<string, FaceReadoutValue>> = {
   'ce-spacing': (read) => ceSpacingText(charlottesEchosFaceParams(read)),
   'ce-loop-gain': (read) => ceLoopText(charlottesEchosFaceParams(read)),
   'ce-margin': (read) => ceMarginText(charlottesEchosFaceParams(read)),
+
+  // ── BUGGLES ──────────────────────────────────────────────────────────────
+  // FIVE — one per JACK — on a five-knob chaos source, and the reason is that
+  // the map from knobs to holes is not one-to-one in EITHER direction. RATE
+  // alone reaches all five outputs and prints none of them: it is a normalised
+  // 0..1 dial over a LOG map spanning 500x, so it reads `0.40` while the clock
+  // runs at 1.20 Hz. Three of the five jacks are then governed by a PRODUCT of
+  // two knobs, and one of them by a product plus a term nothing on the panel
+  // hints at.
+  //
+  //   smooth-glide  THE KICK-DRUM TAIL SHAPE, verbatim. The nearest knob is
+  //                 SMOOTH and it DOES move when you turn SMOOTH — and it is
+  //                 blind to RATE, which changes the answer 36.5x: at a
+  //                 bit-identical SMOOTH 0.5 the glide is 2895 ms at RATE 0.2
+  //                 and 79 ms at RATE 0.8. The `0.01 +` floor is why it is not
+  //                 simply proportional: at SMOOTH 0 it is 10 ms at EVERY rate.
+  //   stepped-hold  RATE *and* CHAOS. The hold is 1/rateHz and CHAOS widens it
+  //                 by +/-50% x chaos — a term a `rate` readback cannot see at
+  //                 all, and the difference between a metronome and a woggle.
+  //   woggle-hz     the log map itself, which is also the CLOCK jack's row.
+  //   burst-rate    RATE, BURST *and* TRUNCATION. `fireWoggleEvent` cancels the
+  //                 burst schedule on every event, so a rolled cluster of 3-7
+  //                 is CUT by the next tick: E[delivered] falls 5.00 -> 3.80 ->
+  //                 2.00 -> 1.00 across the top of the RATE travel, and at
+  //                 RATE 1 "a cluster of 3-7" delivers exactly ONE pulse. The
+  //                 obvious `p x rate x 5` says 250/s there; the real answer is
+  //                 50/s. That 5x is the whole argument for deriving it, and
+  //                 the naive form is kept in the model ONLY so the test can
+  //                 assert the gap rather than describe it.
+  //   ring-hz       the carrier, rate/4, SUB-AUDIO at every knob position
+  //                 (0.025 .. 12.5 Hz against a ~20 Hz floor of hearing). This
+  //                 is the audit's finding put on the panel: four doc strings
+  //                 called RING "audio-rate" for as long as the module existed.
+  //
+  // ⚠ LEVEL MOVES NONE OF THE FIVE, and that is asserted permanently rather
+  // than left implicit — it is the table's own negative control on every run,
+  // in the `clap-q` / `clap-bandwidth-hz` shape. Every OTHER param moves at
+  // least one row, also asserted, so the pair is deny-by-default over the
+  // module's whole param roster (buggles-face-model.test.ts).
+  'buggles-woggle-hz': (read) => bugglesWoggleText(bugglesFaceParams(read)),
+  'buggles-smooth-glide': (read) => bugglesSmoothGlideText(bugglesFaceParams(read)),
+  'buggles-stepped-hold': (read) => bugglesSteppedHoldText(bugglesFaceParams(read)),
+  'buggles-burst-rate': (read) => bugglesBurstText(bugglesFaceParams(read)),
+  'buggles-ring-hz': (read) => bugglesRingText(bugglesFaceParams(read)),
+
+  // ── SLEWSWITCH (queue Q14) ───────────────────────────────────────────────
+  // Three hero rows plus a SEVEN-ROW output table, and the per-channel rows are
+  // GENERATED from `SLEW_PARAM_IDS` — which is itself derived from the def's
+  // `slew<N>` params — so the number of slew channels is never typed here. A
+  // fifth channel registers its own row; a renamed one empties the roster and
+  // reddens the model's non-vacuity leg rather than silently publishing three.
+  //
+  // ⚠ THE TWO SLEW ROWS ARE EACH OTHER'S NEGATIVE CONTROL. `settle` is the
+  // SLOWEST channel's arrival and is invariant to lowering the fastest;
+  // `spread` is the slowest/fastest ratio and is invariant to scaling all four
+  // together. Either one alone would look correct while blind to a whole
+  // dimension of the four dials — the `clap-q` / `clap-bandwidth-hz` shape.
+  // And `xfadeTime` moves NEITHER, nor any out row: it reaches exactly one row
+  // of the ten, which is the table's own negative control on every run
+  // (slewswitch-face-model.test.ts asserts the whole reach matrix).
+  'slewswitch-settle': (read) => slewSwitchSettleText(slewSwitchFaceParams(read)),
+  'slewswitch-spread': (read) => slewSwitchSpreadText(slewSwitchFaceParams(read)),
+  'slewswitch-lap': (read) => slewSwitchLapText(slewSwitchFaceParams(read)),
+  'slewswitch-switched': (read) => slewSwitchSwitchedText(slewSwitchFaceParams(read)),
+  'slewswitch-step-idx': (read) => slewSwitchStepIdxText(slewSwitchFaceParams(read)),
+  ...Object.fromEntries(
+    SLEW_PARAM_IDS.map((id, i) => [
+      `slewswitch-${id}-settle`,
+      (read: (paramId: string) => number | undefined) =>
+        slewSwitchChannelSettleText(slewSwitchFaceParams(read), i),
+    ]),
+  ),
+
   // ── THE MOOG FIXED FILTER BANKS (907A + 914) ─────────────────────────────
   // ONE generator for TWO modules, because they are one design over two slices
   // of one grid. See `moogBankReadouts` above for why every id here is derived.
   ...moogBankReadouts('moog914', MOOG914_BANK),
   ...moogBankReadouts('moog907a', MOOG907A_BANK),
+
+  // ── UNITYSCALEMATHEMATIK ─────────────────────────────────────────────────
+  // FOUR values that are ONE function read at TWO probe magnitudes on TWO
+  // sections, and the arrangement is the whole argument.
+  //
+  // The dial under them is a bare 0..1 CURVE fader, and what it moves is an
+  // EXPONENT (`k = 1 + 2·curve`). An exponent is not a gain: it PIVOTS the
+  // response about an input magnitude of 1, so at full curve a 0.5 input leaves
+  // at 0.125 (−12 dB) while a 2.0 input leaves at 8.0 (+12 dB) — one control,
+  // two opposite effects, and no single number a dial COULD print says both.
+  //
+  //   `half` moves DOWN as CURVE rises; `2×` moves UP. Each is therefore the
+  //   other's negative control on every render, which is what turns "the curve
+  //   compresses" from an assertion into a measurement. The shipped docs
+  //   asserted only the first half and were wrong about the second (#1715).
+  //   Both are also a JOIN over ATT and CRV: an ATT readback is blind to CRV
+  //   (0.500 → 0.125 with ATT untouched) and a CRV readback is blind to ATT.
+  //
+  //   A and B are the CROSS-SECTION control: the three channels do not
+  //   cross-talk (measured bit-exactly), so moving A's dials must leave B's two
+  //   numbers alone and vice versa. Asserted in both directions on every run.
+  //
+  // ⚠ UNITY GETS NO READOUT, deliberately. Its output is `in · unityAtten` and
+  // any number derived from that is a function of ONE dial, i.e. that dial
+  // relabelled — the exact thing `valueId` exists NOT to be.
+  //
+  // The section ids come from `UNITYSCALE_SHAPED_SECTIONS`, derived off the
+  // def's own param roster (an `<x>Atten` that has a matching `<x>Curve`), so a
+  // third shaped channel would register its two ids here without a list to
+  // update — and a readout can never name a section the module does not have.
+  ...(Object.fromEntries(
+    UNITYSCALE_SHAPED_SECTIONS.flatMap((s) => [
+      [
+        `unityscale-${s}-half`,
+        (read: (paramId: string) => number | undefined) =>
+          unityscaleHalfText(s, unityscaleFaceParams(read)),
+      ],
+      [
+        `unityscale-${s}-over`,
+        (read: (paramId: string) => number | undefined) =>
+          unityscaleOverText(s, unityscaleFaceParams(read)),
+      ],
+    ]),
+  ) as Record<string, FaceReadoutValue>),
+
+  // ── FEATURECV ────────────────────────────────────────────────────────────
+  // SEVEN, on a six-dial analyser, and the reason is that not one of the six
+  // dials prints the quantity it decides. featurecv's dials are all in the
+  // WRONG UNITS for what they do: a multiplier where the answer is a level, a
+  // 0..1 where the answer is a threshold factor, a lockout where the answer is
+  // a rate, two time CONSTANTS where the answer is a rise time.
+  //
+  //   idle       WHERE THE THREE FEATURE CVs REST WITH NOTHING PATCHED. This is
+  //              the one a patcher is most likely to be caught by: every target
+  //              is 0 on silence, and BIPOLAR maps 0 to −1.00, so an idle
+  //              featurecv holds three destinations at the BOTTOM rail while
+  //              POLARITY prints `BI`. It is GAIN-INVARIANT (a trim on silence
+  //              is silence) and `−12 dB` below is not, which makes each the
+  //              other's negative control on every render — the unityscale
+  //              two-probe arrangement, one module later.
+  //   −12 dB     what a −12.04 dBFS-RMS source LEAVES AT THE LOUD JACK, a JOIN
+  //              over GAIN and POLARITY that neither dial can perform: `0.00`
+  //              at the shipped defaults, `+1.00` at GAIN 4 (where it is
+  //              CLAMPED and has stopped modulating), `−0.75` at GAIN 0.25.
+  //   fires at   the onset detector's adaptive-threshold MULTIPLIER, and the
+  //              DIRECTION is the point: SENS maps onto it INVERTED, 4.00× at
+  //              SENS 0 down to 1.20× at SENS 1. The dial prints `0.50`; the
+  //              detector is firing at 2.60× the running mean flux.
+  //   max rate   the fastest hit train ONSET passes intact — `1000/debounce`,
+  //              i.e. 12.5 Hz at the shipped 80 ms lockout. Measured on the
+  //              shipping worklet through the def's own factory: 36/36 pulses
+  //              on a 3 s 12 Hz train, every OTHER hit at 16 Hz (24 of 48), and
+  //              48/48 on that same 16 Hz train once DEBNCE drops to 40 ms — so
+  //              the ceiling is a property of the dial rather than a bound
+  //              nobody reaches. That is the number that decides whether
+  //              16th-note hi-hats get through, and the dial prints `80 ms`.
+  //   atk rise / rel fall
+  //              the 10→90 % moves the two one-poles actually deliver. The
+  //              dials print TIME CONSTANTS (`EnvFollower`'s coefficient is
+  //              `exp(-1/(ms/1000·sr))`), which are `ln 9` ≈ 2.197× shorter, so
+  //              the shipped 10 / 100 ms deliver 22 / 220 ms. Each is blind to
+  //              the other, which is their cross-control.
+  //   loud clip  the INPUT LEVEL at which LOUD pins at full scale and stops
+  //              modulating — `20·log10(1/(2·gain))`, so −6.0 dBFS at unity and
+  //              6.02 dB lower per doubling of the trim. It prints `never` when
+  //              the trim puts the clamp out of reach of a bounded signal,
+  //              which is the honest answer below GAIN 0.5 and not a number.
+  //
+  // ⚠ BRIGHT AND PUNCH GET NO READOUT, deliberately, and the reason is a
+  // MEASUREMENT rather than a preference: ZCR counts sign changes and crest is
+  // a peak-to-RMS ratio, so both are scale-invariant and GAIN is bit-exactly a
+  // no-op on them. Every param-derived number about those two jacks would be a
+  // constant. They are drawn instead, on the `featurecv-maps` sidebar picture,
+  // where a constant is the correct shape.
+  //
+  // All seven are negative-controlled in both directions, permanently, in
+  // featurecv-face-model.test.ts; every claim about AUDIO is re-derived from
+  // the shipping worklet by art/scenarios/featurecv/analysis.test.ts.
+  'featurecv-idle': (read) => featurecvIdleText(featurecvFaceParams(read)),
+  'featurecv-probe': (read) => featurecvProbeText(featurecvFaceParams(read)),
+  'featurecv-thresh': (read) => featurecvThreshText(featurecvFaceParams(read)),
+  'featurecv-max-rate': (read) => featurecvMaxRateText(featurecvFaceParams(read)),
+  'featurecv-atk-rise': (read) => featurecvAtkRiseText(featurecvFaceParams(read)),
+  'featurecv-rel-fall': (read) => featurecvRelFallText(featurecvFaceParams(read)),
+  'featurecv-loud-clip': (read) => featurecvClipText(featurecvFaceParams(read)),
 };
 
 /** The derived value for a declared id, or `null` (⇒ the readout prints `—`

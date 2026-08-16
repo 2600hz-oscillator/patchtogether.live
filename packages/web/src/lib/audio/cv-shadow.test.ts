@@ -70,6 +70,35 @@ describe('createCvShadow — the knob/CV landing pad for a JS-consumed param', (
     expect(s.read()).toBe(130);
   });
 
+  it('a STOPPED pump LATCHES the last combined value — it does NOT fall back to the knob', () => {
+    // #1583 verify pass. `dom-source-modules.ts` used to tell readers that when
+    // scope/rasterize lose their card the module "draws every display param at
+    // its KNOB, ignoring any patched cv cable". It does not, and the difference
+    // is the difference between a self-limiting degrade and a stuck value.
+    //
+    // The mechanism here is CORRECT and deliberate: `combined` is cleared only
+    // by `set()` (a knob move), because clearing it on anything else would make
+    // a dragged fader snap back for a frame (the test above). What makes it a
+    // LATCH is the CONSUMER — the pushing pump lives on a card, so it can stop
+    // while the value stays. This test pins the mechanism so the corrected
+    // prose is anchored to an assertion rather than to a comment, and so that
+    // whoever removes the card-owned pump has to come here and say so.
+    const { ctx } = fakeCtx();
+    const s = createCvShadow(ctx, 20);
+    s.setCombined(95); // an LFO happens to be high when the card goes away…
+    // …and now nobody pushes again, ever.
+    expect(
+      s.read(),
+      'no further push: the draw path keeps reporting the last MODULATED value, ' +
+        'not the knob (20) — a stuck value, not a graceful degrade',
+    ).toBe(95);
+    // NEGATIVE CONTROL, the other direction: the only thing that releases the
+    // latch is a knob move, so the probe above is reading a real hold rather
+    // than a value that was never going to change.
+    s.set(20);
+    expect(s.read(), 'a knob move is the ONLY release').toBe(20);
+  });
+
   it('ignores a non-finite push instead of drawing NaN', () => {
     const { ctx } = fakeCtx();
     const s = createCvShadow(ctx, 20);

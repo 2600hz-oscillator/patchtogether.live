@@ -2,12 +2,33 @@
 //
 // ART for BUGGLES.
 //
-// BUGGLES' woggle scheduler runs off setTimeout, which doesn't tick
-// during an OfflineAudioContext render (offline rendering is faster
-// than wall-clock). So we can't drive a full BUGGLES instance through
-// an offline render and get a meaningful waveform out.
+// ⚠ WHY THIS SCENARIO NEVER INSTANTIATES THE MODULE — corrected 2026-08-15,
+// because the reason it used to give is measurably wrong and the wrong reason
+// implies "safe by construction" where the truth is a RACE.
 //
-// Instead this ART:
+// The old header said the woggle scheduler "doesn't tick during an
+// OfflineAudioContext render". Timers DO tick during the render:
+// node-web-audio-api renders OFF-THREAD and `await startRendering()` yields to
+// the Node timer queue. Measured, in a render deliberately slowed to 3517 ms by
+// loading the graph (32 channels × 600 s): 566 interval callbacks fired DURING
+// the await, at ctx.currentTime 1.05 / 2.09 / 3.09 / 4.13 / 5.20 s — i.e. mid
+// render, exactly the #1680 non-reproducibility hazard.
+//
+// What actually makes BUGGLES silent offline is that the render OUTRUNS the
+// timer. An idle box renders ~23,000× real time (300 s of audio in 13 ms wall),
+// and the module's first woggle is a 50 ms setTimeout — so `ctx.currentTime` is
+// already past the end of the buffer before the scheduler ever runs, and every
+// `setValueAtTime` it then issues lands beyond the render. `real-factory-silence`
+// below pins that as a measurement, with a positive control on the capture path
+// so the zero is attributable.
+//
+// The consequence for ART: BUGGLES cannot carry an audio-profile baseline. A
+// `.f32` pinned from this harness would be a pin of SILENCE that flips to a pin
+// of NOISE the first time a runner is loaded enough to lose the race. That is
+// why the module sits in `ART_BACKLOG` with no baseline, no `.sha` and no
+// `fingerprints.generated.json` entry — nothing here is pinned by a hash.
+//
+// So this ART:
 //   1. Exercises bugglesMath at higher iteration counts than the unit
 //      tests, asserting statistical behaviour (chaos divergence,
 //      jitter spread, burst probability calibration).
@@ -22,9 +43,26 @@
 
 import { describe, expect, it } from 'vitest';
 import { OfflineAudioContext } from 'node-web-audio-api';
-import { bugglesMath, bugglesPrng } from '../../../packages/web/src/lib/audio/modules/buggles';
+import {
+  BUGGLES_AUDIBILITY_FLOOR_HZ,
+  BUGGLES_FIRST_WOGGLE_MS,
+  BUGGLES_RING_DIVISOR,
+  bugglesDef,
+  bugglesMath,
+  bugglesPrng,
+} from '../../../packages/web/src/lib/audio/modules/buggles';
 
 const SAMPLE_RATE = 48000;
+
+/** Peak |sample|, so a "silent" claim is a number rather than a shrug. */
+function peakAbs(buf: Float32Array): number {
+  let p = 0;
+  for (let i = 0; i < buf.length; i++) {
+    const a = Math.abs(buf[i]!);
+    if (a > p) p = a;
+  }
+  return p;
+}
 
 describe('BUGGLES ART: chaos knob increases divergence', () => {
   it('chaos=1 produces ≥ 4× the per-step variance of chaos=0', () => {
@@ -192,6 +230,47 @@ describe('BUGGLES ART: burst output schedules N closely-spaced pulses', () => {
 describe('BUGGLES ART: ring output mixes smooth + sub-osc via gain×param', () => {
   // Replicates the ringMul construction: gain=0, oscillator → input,
   // smooth → gain.gain. Multiplier semantics: out = osc × smooth.
+  //
+  // ⚠ THE OSCILLATOR IN THE TWO PRODUCT LEGS BELOW IS 200 Hz AND THE MODULE'S
+  // IS NOT. That is deliberate and it is also the reason this describe block
+  // was blind to a shipped defect for as long as it existed: the legs are about
+  // the MULTIPLIER's algebra (0 × x = 0, 0.5 × x = 0.5x), which is frequency-
+  // independent, so a fast carrier keeps the peak-tracker's window short. The
+  // FREQUENCY is a separate claim and it gets its own leg, below, because
+  // mirroring the construction at 667× the real carrier is exactly how "an
+  // audio-rate RING output" survived in four doc strings while the real carrier
+  // topped out at 12.5 Hz.
+
+  it('the REAL carrier is SUB-AUDIO across the whole RATE travel — not audio-rate', () => {
+    // The claim the module's docs used to make, as a gate. `rateKnobToHz` tops
+    // out at 50 Hz and the carrier is that over BUGGLES_RING_DIVISOR, so the
+    // ceiling is 12.5 Hz against a ~20 Hz floor of hearing. Making RING audible
+    // now means editing this assertion and the prose in the same diff.
+    const rateDef = bugglesDef.params.find((p) => p.id === 'rate')!;
+    const carrierHz = (knob: number) => bugglesMath.rateKnobToHz(knob) / BUGGLES_RING_DIVISOR;
+
+    // The whole travel, endpoints included — a middle-only sweep would miss the
+    // ceiling, which is where the claim would be true if it were true anywhere.
+    for (let i = 0; i <= 100; i++) {
+      const knob = rateDef.min + ((rateDef.max - rateDef.min) * i) / 100;
+      expect(
+        carrierHz(knob),
+        `RATE ${knob.toFixed(2)} → RING carrier ${carrierHz(knob).toFixed(5)} Hz ` +
+          `(units: Hz) must stay under the ${BUGGLES_AUDIBILITY_FLOOR_HZ} Hz floor of hearing`,
+      ).toBeLessThan(BUGGLES_AUDIBILITY_FLOOR_HZ);
+    }
+
+    // The two numbers the docs quote, pinned where a reader can check them.
+    expect(carrierHz(rateDef.defaultValue), 'units: Hz, at spawn').toBeCloseTo(0.30028, 5);
+    expect(carrierHz(rateDef.max), 'units: Hz, flat out').toBeCloseTo(12.5, 6);
+
+    // POSITIVE CONTROL on the metric: the SAME expression DOES cross the floor
+    // once the divisor stops dividing — so the sweep above is a fact about this
+    // module's arithmetic, not about a comparison that can never fail.
+    expect(bugglesMath.rateKnobToHz(rateDef.max) / 1).toBeGreaterThan(
+      BUGGLES_AUDIBILITY_FLOOR_HZ,
+    );
+  });
 
   it('output is the product of oscillator and modulator (zero when modulator is zero)', async () => {
     const DURATION_S = 0.1;
@@ -340,6 +419,112 @@ describe('BUGGLES ART: clock → ADSR contract (regression for e2e flake)', () =
       ratio,
       `slices with peak>0.1: ${slicesWithPeak}/${totalSlices} (${(ratio * 100).toFixed(0)}%)`,
     ).toBeGreaterThan(0.3);
+  });
+});
+
+describe('BUGGLES ART: the real factory is BIT-EXACTLY SILENT offline (real-factory-silence)', () => {
+  // ⚠ THIS IS THE LEG THAT MAKES THE HEADER'S CLAIM A MEASUREMENT. Every other
+  // scenario in this file hand-orchestrates the events `fireWoggleEvent` WOULD
+  // schedule; this one builds the module through its OWN def factory and reads
+  // what actually comes out. The answer is nothing, on all five jacks, and the
+  // positive control in the same render is what makes that zero attributable
+  // rather than "the capture path is broken" (`skeptical-first-baseline`: a
+  // bit-exact zero is also what a dead instrument returns).
+  //
+  // ⚠ AND THE GATE STATES ITS OWN SCOPE, because the thing being asserted is a
+  // RACE and a race can be lost. The silence holds only while the render
+  // finishes inside BUGGLES_FIRST_WOGGLE_MS of wall clock; a runner slow enough
+  // to lose that would see the first woggle land INSIDE the buffer and this
+  // whole describe would go red for a reason that has nothing to do with the
+  // module. So the margin is MEASURED and asserted as its own leg, with the
+  // numbers in the message — if CI ever gets close, `the render finishes with
+  // margin` reddens FIRST and says by how much, instead of the silence legs
+  // reddening mysteriously. The render is deliberately SHORT for the same
+  // reason: 0.5 s of audio is ~0.02 ms of render work at the measured
+  // ~23,000x real-time, i.e. three orders of magnitude of headroom.
+  const OUT_IDS = bugglesDef.outputs.map((o) => o.id);
+  const RENDER_S = 0.5;
+
+  async function renderReal(nodeId: string, durS: number) {
+    const N = Math.round(SAMPLE_RATE * durS);
+    // One extra channel past the module's own jacks, for the control tone.
+    const ctx = new OfflineAudioContext({
+      numberOfChannels: OUT_IDS.length + 1,
+      length: N,
+      sampleRate: SAMPLE_RATE,
+    });
+    const node = {
+      id: nodeId,
+      type: 'buggles',
+      position: { x: 0, y: 0 },
+      // Everything cranked, so a silent result cannot be "it was turned down".
+      params: { rate: 0.9, chaos: 0.5, smoothness: 0.1, burst_probability: 1, level: 1 },
+    } as never;
+    // The clock starts HERE — the module's first-woggle timer is armed inside
+    // `factory`, so this is the instant the margin is measured from.
+    const t0 = Date.now();
+    const handle = await bugglesDef.factory(ctx as unknown as AudioContext, node);
+
+    const merger = ctx.createChannelMerger(OUT_IDS.length + 1);
+    OUT_IDS.forEach((id, i) => {
+      const o = handle.outputs.get(id)!;
+      o.node.connect(merger, o.output, i);
+    });
+    // THE POSITIVE CONTROL, on the SAME merger and the SAME destination.
+    const control = ctx.createConstantSource();
+    control.offset.value = 0.42;
+    control.connect(merger, 0, OUT_IDS.length);
+    control.start(0);
+    merger.connect(ctx.destination);
+
+    const r = await ctx.startRendering();
+    // Read the margin BEFORE the (comparatively slow) buffer copies below —
+    // what matters is when the render finished, not when the test did.
+    const wallMs = Date.now() - t0;
+    handle.dispose?.();
+    const chans = OUT_IDS.map((_, i) => Float32Array.from(r.getChannelData(i)));
+    return { chans, control: Float32Array.from(r.getChannelData(OUT_IDS.length)), wallMs };
+  }
+
+  it('the render finishes with MARGIN — the scope of the two legs below', async () => {
+    // The precondition, asserted rather than assumed. Measured ~1 ms locally
+    // against a 50 ms budget; the bound is half the budget so this reddens with
+    // a number well before the silence legs start reporting phantom audio.
+    const a = await renderReal('art-margin', RENDER_S);
+    expect(
+      a.wallMs,
+      `${RENDER_S}s render took ${a.wallMs} ms wall against the module's ` +
+        `${BUGGLES_FIRST_WOGGLE_MS} ms first-woggle timer (units: ms). Past that budget the ` +
+        `scheduler starts writing INTO the buffer and the silence legs below stop meaning ` +
+        `what they say — that is a runner-speed problem, not a module regression.`,
+    ).toBeLessThan(BUGGLES_FIRST_WOGGLE_MS / 2);
+  });
+
+  it('every declared output renders bit-exact zero, while the control renders 0.42', async () => {
+    const a = await renderReal('art-silence', RENDER_S);
+    expect(peakAbs(a.control), 'the capture path CAN carry a signal (units: linear amplitude)')
+      .toBeCloseTo(0.42, 6);
+    OUT_IDS.forEach((id, i) => {
+      expect(peakAbs(a.chans[i]!), `${id} peak (units: linear amplitude)`).toBe(0);
+    });
+  });
+
+  it('and it is REPRODUCIBLE — two renders are bit-identical on every jack', async () => {
+    // Rendered TWICE and compared sample by sample, the #1680 discipline: a
+    // module whose state is written from a wall-clock pump can differ run to
+    // run, so "silent" is only a usable fact once it is also stable.
+    const a = await renderReal('art-silence', RENDER_S);
+    const b = await renderReal('art-silence', RENDER_S);
+    OUT_IDS.forEach((id, i) => {
+      const x = a.chans[i]!;
+      const y = b.chans[i]!;
+      expect(x.length, `${id} length`).toBe(y.length);
+      let firstDiff = -1;
+      for (let n = 0; n < x.length; n++) {
+        if (!Object.is(x[n], y[n])) { firstDiff = n; break; }
+      }
+      expect(firstDiff, `${id}: first differing sample index (-1 = bit-identical)`).toBe(-1);
+    });
   });
 });
 

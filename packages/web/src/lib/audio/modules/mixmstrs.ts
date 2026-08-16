@@ -7,8 +7,11 @@
 // 20 audio inputs (8 ch × stereo + 2 returns × stereo) + 14 worklet audio
 // outputs: 6 patchable module ports (master L/R + send1 L/R + send2 L/R) plus
 // 8 internal POST-FADER per-channel level taps (NOT module ports) feeding the
-// VU read('levels'). 81 AudioParams (73 original + 8 per-channel `comp`
-// macro knobs).
+// VU read('levels'). The AudioParams are whatever `buildParams()` emits — a
+// per-channel strip plus the master, the two send-bus flags and the two return
+// strips. (The count that used to be written here said 81 and the truth was 91:
+// the return strips and the pre/post flags were added and the sentence was not.
+// Per CLAUDE.md a population count is never the right shape — read buildParams.)
 //
 // Per-channel `comp` macro (added in feat/audio-fidelity-mixmstrs-comp-swolevco):
 //
@@ -47,7 +50,7 @@
 //   send1L / send1R (audio): stereo aux-send 1 output.
 //   send2L / send2R (audio): stereo aux-send 2 output.
 //
-// Params (81 total — built programmatically, see buildParams() below):
+// Params (built programmatically — see buildParams() below):
 //   master_volume (linear 0..1, default 0.8): bus output gain.
 //   per-channel × 8: volume / low / mid / high (linear ±12 dB) /
 //     thresh (-36..0 dB) / ratio (1..10) / compEnable (discrete) /
@@ -169,7 +172,7 @@ const AUDIO_IN_PORTS: readonly string[] = [
 // Comp-macro ids, derived from the channel list so they never drift apart.
 const COMP_MACRO_IDS: readonly string[] = MIXMSTRS_CHANNELS.map((ch) => `comp${ch}`);
 
-// Inputs: 20 audio + 81 paramTarget CV inputs (73 originals + 8 comp macros).
+// Inputs: the 20 audio ports above, plus one paramTarget CV input per param.
 //
 // Every CV input gets a `cvScale: linear` hint per
 // docs/adr/004-cv-range-convention.md so an LFO at ±1 sweeps the param's
@@ -371,8 +374,16 @@ export const mixmstrsDef: AudioModuleDef = {
       return out;
     }
 
-    // Build inputs map: 20 audio at fixed indices, 81 CV-targets per param
-    // (73 Faust-backed + 8 comp macros).
+    // Build inputs map: the audio ports at fixed merger indices, then one
+    // CV-target per param — Faust-backed except the comp macros, which are
+    // published on a shadow GainNode instead.
+    //
+    // ⚠ #1662: a cable on one of those shadow params is a DEAD END — the
+    // GainNode's output goes nowhere and nothing reads `g.gain` back, so CV and
+    // clip automation of `comp{N}` are bit-exactly inert while the motorized
+    // knob still animates off the engine's param tap. Measured in
+    // art/scenarios/mixmstrs/cv-path.test.ts. `wavesculpt.ts:1501` is the fix
+    // template (an AnalyserNode on the shadow + a main-thread pump).
     //
     // For comp macros we still need a backing AudioParam so the engine's
     // CV → AudioParam tap analyser works (motorized fader feedback). We

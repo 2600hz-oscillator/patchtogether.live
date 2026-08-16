@@ -41,7 +41,7 @@
 //    Taskfile, covered by `assert-up is on the e2e:one path` below reading the
 //    Taskfile rather than by executing a Playwright run.
 
-import { describe, it, expect, afterEach, beforeAll } from 'vitest';
+import { describe, it, expect, afterEach, beforeAll, vi } from 'vitest';
 import { execFile, spawn, type ChildProcess } from 'node:child_process';
 import { promisify } from 'node:util';
 import { createServer } from 'node:http';
@@ -49,6 +49,29 @@ import { readFileSync, mkdtempSync, symlinkSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
+
+// ── The per-test timeout is a FAILURE BOUND, not a gate (#1685) ─────────────
+//
+// Every leg here spawns a node listener, polls it over the loopback, then shells
+// out to dev-server.sh which itself runs lsof. That is three processes before an
+// assertion is even reached. Vitest's DEFAULT 5000 ms test timeout was written
+// for in-process unit tests, and on a box running two agents these legs blew it
+// — 8 timeouts, all of the form `Test timed out in 5000ms`, while the same legs
+// pass on an idle machine and on CI.
+//
+// ⚠ THIS IS NOT "tune the threshold until it passes", and the distinction is the
+// whole point of CLAUDE.md's frames-not-milliseconds rule: *keep a wall-clock cap
+// only to BOUND the failure, never as the gate*. Readiness here is already waited
+// on properly — `spawnListener` polls the real observable (the listener answering)
+// rather than sleeping, so the pass/fail verdict is renderer- and load-independent
+// by construction. Nothing about the ASSERTION moves with this number; it only
+// decides how long a genuinely hung listener is allowed to hang before the suite
+// gives up and says so.
+//
+// Set generously on purpose. A too-tight bound here does not make the suite
+// stricter, it makes it report machine load as an ownership defect — which is
+// exactly the confusion this comment exists to stop the next person repeating.
+vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
 
 const execFileAsync = promisify(execFile);
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
