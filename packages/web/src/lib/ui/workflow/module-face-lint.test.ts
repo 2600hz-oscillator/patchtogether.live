@@ -51,6 +51,10 @@ import {
   type FaceplateDefLike,
 } from './dock-faceplate-model';
 import { sidebarPanelIds } from './sidebar-panels';
+// The channel list mixmstrs' ACKNOWLEDGED_LATCHING entries are DERIVED from —
+// see the entry itself for why eight identical enables are generated rather
+// than typed.
+import { MIXMSTRS_CHANNELS } from '$lib/audio/modules/mixmstrs';
 import { faceReadoutValueIds } from './face-readout-values';
 import { laneBodyPlan } from './module-shell-model';
 import { looksLikeSwitch } from './shell-control-kind';
@@ -507,6 +511,33 @@ describe('module-face lint — MOMENTARY pads (face.momentary)', () => {
     // the module's headline feature could never be held — the `clouds:freeze`
     // case, reached by the simpler mechanism.
     'warrensspectrum:engineFreeze',
+    // MIXMSTRS, 2026-08-15. Ten params share the press-pad SHAPE
+    // (`0..1 discrete resting at 0`) and every one is a console state you set
+    // and leave. None is read on an edge: the Faust DSP takes all ten through
+    // `si.smoo` and reads them as LEVELS every sample, so a momentary render
+    // would flip the state back on release.
+    //
+    // ⚠ THE EIGHT CHANNEL ENABLES ARE DERIVED, NOT TYPED EIGHT TIMES, and that
+    // is a claim about the SUBJECT rather than a shortcut. `buildParams` emits
+    // `ch{N}_compEnable` from ONE loop body over `MIXMSTRS_CHANNELS`
+    // (`mixmstrs.ts:124-137`) and `channelChain` consumes all eight through the
+    // same `compStereo(..., en, ...)` argument, so "confirmed to latch" is
+    // structurally the same confirmation eight times over — and a ninth channel
+    // upstream would arrive already acknowledged rather than silently
+    // unclassified. `ba.if(en >= 0.5, wet, dry)` (`mixmstrs.dsp:180-187`) is the
+    // level read; the compressor is a stage you switch into the channel and
+    // leave there.
+    ...MIXMSTRS_CHANNELS.map((c) => `mixmstrs:ch${c}_compEnable`),
+    // The two SEND-BUS tap-point switches, spelled out because they are two
+    // DIFFERENT buses rather than eight instances of one control. POST (0) is
+    // the default; PRE re-taps the whole bus ahead of the fader so a return
+    // keeps sounding through a mute — the owner's ES-9 send/return rack depends
+    // on exactly this state persisting. `si.smoo` on the flag makes the flip a
+    // short CROSSFADE between tap points (`mixmstrs.dsp:96-97`), so a momentary
+    // render would not merely un-latch it, it would sweep the bus back on
+    // release.
+    'mixmstrs:send1Pre',
+    'mixmstrs:send2Pre',
     // pointerup, the worklet ORs it into the mono gate like tomtom's `strike`,
     // and the def's own doc says "released = note-off (no latch)". It is now
     // declared on `face.momentary`. The cross-check below is what stops that

@@ -495,6 +495,33 @@ export const FACES = [
   // moog-filterbank-face-model.test.ts.
   { type: 'moog907a', pages: 1 },
   { type: 'moog914', pages: 1 },
+  // MIXMSTRS — the full mixer, and the largest face in this roster by 1.86x
+  // (91 cells against pentemelodica's 49).
+  //
+  // `pages: 5` is the POST-hero-split band count. The declared `face.pages`
+  // length is 5 and the hero promotes `master_volume` out of `levels`, which
+  // leaves that band eight channel faders — non-empty, so `heroFacePlan` drops
+  // nothing and 5 is also what the dock renders. FIVE is a ceiling rather than
+  // a choice: at `DOCK_TAB_MIN_BANDS = 7` the dock becomes a tab rail and shows
+  // one band at a time, which would take the eight faders out of one frame.
+  //
+  // ⚠ THE GLYPH RESOLVES, established not assumed (the #1692 finding). The def's
+  // first `audio`-typed output is `masterL`, so `primaryAudioOutPortId` returns
+  // it and `glyphBinding` returns `{ kind: 'live-audio', portId: 'masterL' }` —
+  // NOT the `{ kind: 'static' }` dead-segment shape. On this module that also
+  // means the meter taps the MASTER BUS rather than a per-channel direct out:
+  // #1667 (auto-wire grabbing `outputs[0]`) is open precisely because
+  // `attenumix.outputs[0]` is a direct out, and mixmstrs is on the right side of
+  // it. Asserted, with the port named, in mixmstrs-face-model.test.ts.
+  //
+  // ⚠ AND THE METER IS DELIBERATELY NOT THE PER-CHANNEL VU. `read('levels')` is
+  // a mono-sum tap (`mixmstrs.dsp:349-356`) measured to read 0.0000e+0 on an
+  // anti-phase channel that masterL and masterR each carry at rms 0.184216.
+  // Nothing in this scene paints it.
+  //
+  // Deterministic on a silent rack like every sibling: a mixer contains no
+  // generator, so with nothing patched masterL is bit-exactly zero.
+  { type: 'mixmstrs', pages: 5 },
 ] as const;
 
 /** TIGHT per-scene diff budgets (absolute pixels; Playwright takes the MIN of
