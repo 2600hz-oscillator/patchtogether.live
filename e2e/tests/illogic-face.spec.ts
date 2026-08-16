@@ -44,6 +44,13 @@ import {
   illogicLogicGainText,
   illogicSumGainText,
 } from '../../packages/web/src/lib/ui/modules/illogic-face-model';
+// ⚠ THIS IMPORT REACHES THE DEF, and on most modules that would not load here.
+// `illogic-face-model` imports `$lib/audio/modules/illogic` to derive its port
+// and param rosters, and a def that pulls a worklet in through a `?url` import
+// cannot be resolved by node outside vite — which is why featurecv's face spec
+// imports its model and says, in as many words, that it never imports the def.
+// ILLOGIC HAS NO WORKLET (GainNodes, WaveShapers and one ConstantSource), so the
+// chain resolves. If it ever grows one, this import is the thing that breaks.
 
 const SLOW_RENDER = process.env.E2E_SWIFTSHADER === '1' || !!process.env.CI;
 
