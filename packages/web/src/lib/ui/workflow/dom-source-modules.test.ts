@@ -673,8 +673,144 @@ describe('needsHeadlessSourceMount — the pure headless-mount decision', () => 
         migrated: false,
       });
       expect(kind).toBe('legacy');
+      // ⚠ NO `laneOmitsNode` HERE, deliberately: that arm is the one exception
+      // to this claim and has its own describe below. Adding it to this loop
+      // would quietly convert a true statement about the SHELL into a false one
+      // about the whole decision.
       expect(needsHeadlessSourceMount({ kind, type })).toBe(false);
     }
+  });
+});
+
+describe("laneOmitsNode — a COLLAPSED GROUP's child, in BOTH shells (#1721)", () => {
+  const KINDS: LaneRenderKind[] = ['legacy', 'shell', 'placeholder', 'stub'];
+
+  it('hosts EXACTLY the producer half — membership derived, never listed here', () => {
+    // DERIVED MEMBERSHIP, both directions, over the whole union: a type is
+    // hosted under this arm IF AND ONLY IF it is a CARD_PRODUCER. Nothing in
+    // this test names a module, so a sixth producer enrols itself and a tenth
+    // DOM-source module stays out, with no edit here.
+    for (const type of HEADLESS_MOUNT_LANE_TYPES) {
+      for (const kind of KINDS) {
+        expect(
+          needsHeadlessSourceMount({ kind, type, laneOmitsNode: true }),
+          `${type} @ ${kind} with the lane emitting no node`,
+        ).toBe(CARD_PRODUCER_LANE_TYPES.has(type));
+      }
+    }
+  });
+
+  it('is SHELL-INDEPENDENT — the same answer on the legacy kind as on the shell kinds', () => {
+    // THE CLAIM THAT MAKES #1721 DIFFERENT from every other row of #1583. The
+    // collapsed-child skip lives in the flowNodes derivation OUTSIDE its
+    // `shellFaces` branch, so the defect exists under `?shell=legacy` too, and
+    // a fix that only ran under the shell would leave half of it standing.
+    // MEASURED on the pre-fix tree, wavesculpt.video_out → VIDEO OUT: before
+    // grouping `nonBlack 170/3072 maxLuma 203, 20 distinct signatures in 20
+    // frames` (default shell) and `172/3072, 206, 20` (?shell=legacy); once the
+    // group collapsed, `0/3072, 0, 1 signature` in BOTH.
+    for (const type of CARD_PRODUCER_LANE_TYPES) {
+      const legacyKind = laneRenderKind({
+        shellFaces: false,
+        userDocked: false,
+        type,
+        hasCard: true,
+        migrated: false,
+      });
+      expect(legacyKind).toBe('legacy');
+      expect(
+        needsHeadlessSourceMount({ kind: legacyKind, type, laneOmitsNode: true }),
+        `${type} in a collapsed group under ?shell=legacy`,
+      ).toBe(true);
+      expect(
+        needsHeadlessSourceMount({ kind: 'placeholder', type, laneOmitsNode: true }),
+        `${type} in a collapsed group under the faceplate shell`,
+      ).toBe(true);
+    }
+  });
+
+  it('leaves the DOM-SOURCE half exactly as it was — a camera is not opened off-screen', () => {
+    // The half of the original author's parity argument that still stands on
+    // its own: `node-media-registry` already owns those elements across a card
+    // unmount, and hosting a capture module because a GROUP is collapsed would
+    // run getUserMedia with no UI anywhere. Asserted over the derived set.
+    for (const type of DOM_SOURCE_LANE_TYPES) {
+      for (const kind of KINDS) {
+        expect(
+          needsHeadlessSourceMount({ kind, type, laneOmitsNode: true }),
+          `${type} @ ${kind} must NOT be hosted just because its group collapsed`,
+        ).toBe(false);
+      }
+    }
+  });
+
+  it('never mounts a module in NEITHER set, collapsed or not', () => {
+    for (const kind of KINDS) {
+      for (const laneOmitsNode of [true, false]) {
+        expect(needsHeadlessSourceMount({ kind, type: 'acidwarp', laneOmitsNode })).toBe(false);
+        expect(needsHeadlessSourceMount({ kind, type: 'tidyvco', laneOmitsNode })).toBe(false);
+      }
+    }
+  });
+
+  it('hostedElsewhere OVERRIDES every arm — no node is mounted twice', () => {
+    // GroupCard hidden-mounts a viz-passthrough child's real card for exactly
+    // as long as the group is collapsed ($lib/ui/modules/group-viz-hosts), which
+    // is precisely the window `laneOmitsNode` is true in. Two live mounts of one
+    // node is the hazard the 'stub' and dock-full-view arms already exist for.
+    for (const type of HEADLESS_MOUNT_LANE_TYPES) {
+      for (const kind of KINDS) {
+        for (const laneOmitsNode of [true, false]) {
+          expect(
+            needsHeadlessSourceMount({ kind, type, laneOmitsNode, hostedElsewhere: true }),
+            `${type} @ ${kind} (laneOmitsNode=${laneOmitsNode}) is already hosted elsewhere`,
+          ).toBe(false);
+        }
+      }
+    }
+  });
+
+  it('PERMANENT NEGATIVE CONTROL: every new input actually MOVES the decision, both ways', () => {
+    // A decision that ignored its new inputs would satisfy some of the above by
+    // accident. Each of these pairs differs in exactly ONE input and must differ
+    // in the answer — so a constant-returning implementation reddens here first.
+    const producer = [...CARD_PRODUCER_LANE_TYPES][0]!;
+    const domSource = [...DOM_SOURCE_LANE_TYPES].find((t) => !NON_SHELL_LANE_TYPES.has(t))!;
+
+    // laneOmitsNode: false → true flips a producer ON, on a kind that never mounts.
+    expect(needsHeadlessSourceMount({ kind: 'legacy', type: producer })).toBe(false);
+    expect(needsHeadlessSourceMount({ kind: 'legacy', type: producer, laneOmitsNode: true })).toBe(true);
+
+    // ...and true → false flips it back OFF again, which is the direction that
+    // proves the arm is not simply "always true for a producer".
+    expect(needsHeadlessSourceMount({ kind: 'stub', type: producer, laneOmitsNode: true })).toBe(true);
+    expect(needsHeadlessSourceMount({ kind: 'stub', type: producer, laneOmitsNode: false })).toBe(false);
+
+    // hostedElsewhere: false → true flips a mounting case OFF...
+    expect(needsHeadlessSourceMount({ kind: 'placeholder', type: producer })).toBe(true);
+    expect(
+      needsHeadlessSourceMount({ kind: 'placeholder', type: producer, hostedElsewhere: true }),
+    ).toBe(false);
+    // ...and back ON when it is false again.
+    expect(
+      needsHeadlessSourceMount({ kind: 'placeholder', type: producer, hostedElsewhere: false }),
+    ).toBe(true);
+
+    // The CHANNEL split is real: same inputs, different half of the union.
+    expect(needsHeadlessSourceMount({ kind: 'legacy', type: domSource, laneOmitsNode: true })).toBe(false);
+    expect(needsHeadlessSourceMount({ kind: 'legacy', type: producer, laneOmitsNode: true })).toBe(true);
+  });
+
+  it('SCOPE: this arm reads a FLAG the caller computes, never the graph', () => {
+    // Stated inside the gate. `needsHeadlessSourceMount` cannot see a group, a
+    // collapsed flag or a node — Canvas computes `laneOmitsNode` from
+    // `collapsedGroupIds` + `data.parentGroupId` and `hostedElsewhere` from the
+    // GroupCard registry, and NOTHING here proves it computes either correctly.
+    // That wiring is proven by e2e/tests/card-producer-lifetime.spec.ts's #1721
+    // leg, which reads the real DOM in both shells; and the CANVAS-HIDDEN arm
+    // (pinned singletons / hiddenCard cameras — #1754) is a different exclusion
+    // that this decision never sees at all.
+    expect(typeof needsHeadlessSourceMount).toBe('function');
   });
 });
 

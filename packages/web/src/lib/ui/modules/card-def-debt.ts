@@ -97,7 +97,14 @@ export const VOCABULARY_DEBT: Readonly<Record<string, readonly string[]>> = {
   'ClipplayerCard.svelte': ['gateLength.label', 'octave.label'],
   'CloudseedCard.svelte': ['cross_seed.label', 'early_diffuse_count.label', 'early_diffuse_delay.label', 'early_diffuse_feedback.label', 'early_diffuse_mod_amt.label', 'early_diffuse_mod_rate.label', 'eq_cutoff.label', 'high_cut.label', 'input_mix.label', 'late_diffuse_delay.label', 'late_diffuse_feedback.label', 'late_diffuse_mod_amt.label', 'late_diffuse_mod_rate.label', 'late_line_mod_amt.label', 'late_line_mod_rate.label', 'low_cut.label', 'tap_count.label', 'tap_decay.label', 'tap_length.label'],
   'CofefveCard.svelte': ['driftAmount.label', 'driftSpeed.label', 'driveCutoff.label', 'driveMix.label', 'duckAmount.label', 'feedback.label', 'highCut.label', 'lfoAmount.label', 'lfoFrequency.label', 'lowCut.label'],
-  'DestroyCard.svelte': ['decimate.label'],
+  // ⚠ `DestroyCard.svelte` USED TO BE HERE (`decimate.label`: the card said
+  // `Decimate` where the def said `Dec`). PAID, not deferred, when the module
+  // was faced — the charlottesEchos / featurecv release condition: promotion
+  // makes the DEF's label the one a player reads at the dock, so the two
+  // surfaces would have named the same fader two ways. The DEF took the CARD's
+  // wording (`Dec` is ambiguous with decay), so no pixels moved; the card now
+  // binds every range, curve, unit AND label off `paramSpec(destroyDef, …)`,
+  // so there is no second copy left to disagree.
   'DoomCard.svelte': ['audioGain.label'],
   'DrummergirlCard.svelte': ['pitch.units'],
   'Dx7Card.svelte': ['algorithm.label', 'transpose.label'],
