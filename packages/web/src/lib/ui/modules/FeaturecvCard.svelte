@@ -1,33 +1,55 @@
 <script lang="ts">
+  // ⚠ EVERY RANGE, CURVE, UNIT **AND LABEL** IS BOUND TO THE DEF (`paramSpec`),
+  // NEVER RE-TYPED — #1746, paid rather than deferred because promotion is what
+  // makes the divergence user-visible. All five of this card's numeric props
+  // AGREED with the def and all five of its `label`s DISAGREED:
+  //
+  //     gain            def 'Gain'    card 'GAIN'
+  //     attack          def 'Atk'     card 'ATK'
+  //     release         def 'Rel'     card 'REL'
+  //     onset_sens      def 'Sens'    card 'SENS'
+  //     onset_debounce  def 'Debnce'  card 'DEBNCE'
+  //
+  // All five were already sitting in `VOCABULARY_DEBT` (card-def-debt.ts), and
+  // a face PR IS that ledger's release condition: `ModuleShell` renders the
+  // dock full-view straight off the `ParamDef`, so shipping the face without
+  // binding labels would rename five controls with nobody reviewing it. The
+  // five entries are DELETED, not re-worded (CLAUDE.md: when debt is paid,
+  // delete the mechanism); what guards it now is the unconditional
+  // `unledgered(...) === []` clause plus RANGE_BOUND_CARDS + MAPPING_BOUND_CARDS.
+  //
+  // The five divergences were pure CASE, and `Knob.svelte`'s label is
+  // `text-transform: uppercase`, so binding them moves NO pixels. The `units`
+  // props are new and DO: three knobs now print `ms`, which the def has always
+  // declared and the dock has always rendered.
   import { onDestroy } from 'svelte';
   import type { NodeProps } from '@xyflow/svelte';
   import Knob from '$lib/ui/controls/Knob.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
-  import { setNodeParam } from '$lib/graph/mutate';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
-  import type { FeaturecvSnapshot } from '$lib/audio/modules/featurecv';
+  import { featurecvDef, type FeaturecvSnapshot } from '$lib/audio/modules/featurecv';
   import ModuleTitle from './ModuleTitle.svelte';
+  import { cardParams, paramSpec } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
   const engineCtx = useEngine();
+  const { paramVal, set, live } = cardParams(featurecvDef, () => id, () => node);
 
-  function param(id_: string, fallback: number): number {
-    const v = node?.params?.[id_];
-    return typeof v === 'number' ? v : fallback;
-  }
-  const set = (id_: string) => (v: number) => setNodeParam(id, id_, v);
-  const live = (id_: string) => () => {
-    const e = engineCtx.get();
-    if (!e || !node) return undefined;
-    return e.readParam(node, id_);
+  /** THE ONE COPY of every number, curve, unit and label this card paints. */
+  const P = {
+    gain: paramSpec(featurecvDef, 'gain'),
+    attack: paramSpec(featurecvDef, 'attack'),
+    release: paramSpec(featurecvDef, 'release'),
+    onset_sens: paramSpec(featurecvDef, 'onset_sens'),
+    onset_debounce: paramSpec(featurecvDef, 'onset_debounce'),
   };
 
   // POLARITY of the feature CV outputs: BI = bipolar [-1,+1] (default), UNI =
   // unipolar [0,1]. Reactive so the badge follows the param.
-  let bipolar = $derived(Math.round(param('bipolar', 1)));
+  let bipolar = $derived(Math.round(paramVal('bipolar')));
   const isBipolar = (): boolean => bipolar === 1;
   function togglePolarity(): void {
     set('bipolar')(bipolar === 1 ? 0 : 1);
@@ -109,12 +131,15 @@
       </div>
 
       <div class="controls">
-        <Knob value={param('gain', 1)} min={0.25} max={4} defaultValue={1} label="GAIN"
-          curve="log" onchange={set('gain')} moduleId={id} paramId="gain" readLive={live('gain')} />
-        <Knob value={param('attack', 10)} min={0.5} max={500} defaultValue={10} label="ATK"
-          curve="log" onchange={set('attack')} moduleId={id} paramId="attack" readLive={live('attack')} />
-        <Knob value={param('release', 100)} min={1} max={2000} defaultValue={100} label="REL"
-          curve="log" onchange={set('release')} moduleId={id} paramId="release" readLive={live('release')} />
+        <Knob value={paramVal('gain')} min={P.gain.min} max={P.gain.max} defaultValue={P.gain.defaultValue}
+          label={P.gain.label} units={P.gain.units} curve={P.gain.curve}
+          onchange={set('gain')} moduleId={id} paramId="gain" readLive={live('gain')} />
+        <Knob value={paramVal('attack')} min={P.attack.min} max={P.attack.max} defaultValue={P.attack.defaultValue}
+          label={P.attack.label} units={P.attack.units} curve={P.attack.curve}
+          onchange={set('attack')} moduleId={id} paramId="attack" readLive={live('attack')} />
+        <Knob value={paramVal('release')} min={P.release.min} max={P.release.max} defaultValue={P.release.defaultValue}
+          label={P.release.label} units={P.release.units} curve={P.release.curve}
+          onchange={set('release')} moduleId={id} paramId="release" readLive={live('release')} />
       </div>
       <div class="controls">
         <button
@@ -126,10 +151,14 @@
           onclick={togglePolarity}
           title="Feature CV polarity: BI [-1,+1] (default) or UNI [0,1]"
         >{isBipolar() ? 'BI' : 'UNI'}</button>
-        <Knob value={param('onset_sens', 0.5)} min={0} max={1} defaultValue={0.5} label="SENS"
-          curve="linear" onchange={set('onset_sens')} moduleId={id} paramId="onset_sens" readLive={live('onset_sens')} />
-        <Knob value={param('onset_debounce', 80)} min={20} max={1000} defaultValue={80} label="DEBNCE"
-          curve="log" onchange={set('onset_debounce')} moduleId={id} paramId="onset_debounce" readLive={live('onset_debounce')} />
+        <Knob value={paramVal('onset_sens')} min={P.onset_sens.min} max={P.onset_sens.max}
+          defaultValue={P.onset_sens.defaultValue} label={P.onset_sens.label} units={P.onset_sens.units}
+          curve={P.onset_sens.curve}
+          onchange={set('onset_sens')} moduleId={id} paramId="onset_sens" readLive={live('onset_sens')} />
+        <Knob value={paramVal('onset_debounce')} min={P.onset_debounce.min} max={P.onset_debounce.max}
+          defaultValue={P.onset_debounce.defaultValue} label={P.onset_debounce.label}
+          units={P.onset_debounce.units} curve={P.onset_debounce.curve}
+          onchange={set('onset_debounce')} moduleId={id} paramId="onset_debounce" readLive={live('onset_debounce')} />
       </div>
     </div>
   </PatchPanel>
