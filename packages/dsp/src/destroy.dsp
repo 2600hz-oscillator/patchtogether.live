@@ -18,7 +18,15 @@ with {
   // Sample-rate reduction: hold the input for `d` audio samples between
   // refreshes. ba.sAndH(trig, x) latches `x` on rising edges of `trig`.
   // Build a periodic trigger by counting samples mod d.
-  counter = ba.period(int(d));
+  //
+  // ⚠ ROUND, DO NOT TRUNCATE (#1716). `decimateKnob` is `si.smoo`-ed and a
+  // one-pole smoother approaches its target ASYMPTOTICALLY — it never arrives.
+  // So `int(d)` truncated every integer dial position one step low
+  // (`int(7.999…) = 7`), the hold ran `d - 1` samples instead of `d`, and at
+  // DECIMATE 2 that is `ba.period(1)` — a bit-exact NO-OP where the dial's
+  // first usable position should halve the sample rate. Measured before the
+  // fix: hold 1/3/7/15/63 at DECIMATE 2/4/8/16/64.
+  counter = ba.period(int(d + 0.5));
   trig    = counter == 0;
   decimated = ba.sAndH(trig, audio);
 
