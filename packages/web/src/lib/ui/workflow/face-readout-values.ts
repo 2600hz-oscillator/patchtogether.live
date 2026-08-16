@@ -274,6 +274,12 @@ import {
   moogBankSections,
   moogBankTiltText,
 } from '$lib/ui/modules/moog-filterbank-face-model';
+import {
+  busGainText,
+  compAsleepText,
+  mixmstrsFaceParams,
+  sendText,
+} from '$lib/ui/modules/mixmstrs-face-model';
 
 /**
  * Both Moog fixed filter banks' entries, GENERATED from the bank's own section
@@ -1075,6 +1081,18 @@ const FACE_READOUT_VALUES: Readonly<Record<string, FaceReadoutValue>> = {
   // of one grid. See `moogBankReadouts` above for why every id here is derived.
   ...moogBankReadouts('moog914', MOOG914_BANK),
   ...moogBankReadouts('moog907a', MOOG907A_BANK),
+
+  // ── MIXMSTRS — the four facts ninety-one faders cannot show ───────────────
+  // Each one is a JOIN over controls no single readback can perform, and each
+  // is negative-controlled permanently in `mixmstrs-face-model.test.ts` on the
+  // input a knob readback is blind to. The measurements that anchor them are on
+  // the functions themselves.
+  'mixmstrs-bus-gain': (read) => busGainText(mixmstrsFaceParams(read)),
+  'mixmstrs-comp-asleep': (read) => compAsleepText(mixmstrsFaceParams(read)),
+  // Indexed rather than spelled twice: the two buses are one law over an index
+  // list the def exports, so a third bus upstream cannot leave a readout behind.
+  'mixmstrs-send1': (read) => sendText(0, mixmstrsFaceParams(read)),
+  'mixmstrs-send2': (read) => sendText(1, mixmstrsFaceParams(read)),
 
   // ── UNITYSCALEMATHEMATIK ─────────────────────────────────────────────────
   // FOUR values that are ONE function read at TWO probe magnitudes on TWO

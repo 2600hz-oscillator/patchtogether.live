@@ -141,3 +141,63 @@ export function emittedTypeFor(kind: LaneRenderKind, legacyType: string): string
 export function isShellSwappable(type: string, hasResolvableCard: boolean): boolean {
   return hasResolvableCard && !NON_SHELL_LANE_TYPES.has(type);
 }
+
+// ── THE DOCK RAIL's OWN FALLBACK (#1739) ────────────────────────────────────
+//
+// The bridge above answers "what does this module render as IN ITS LANE". A
+// DOCK RAIL occupant is a third surface the rule never covered, and the gap was
+// user-visible: `migrated(type)` removes the legacy card from the lane and from
+// the dock FULL VIEW (`DockFullView.svelte`, gated on the `migrated` prop), but
+// `DockCardHost` resolved `nodeTypes[node.type]` with no `migrated` input at
+// all — so the always-on `m` tray kept painting `MixmstrsCard` after mixmstrs
+// was promoted. OWNER RULING (#1739): *"the `m` key tray view needs to show the
+// new card and not the old one."*
+//
+// ⚠ `pinned` IS PART OF THE RULE, NOT AN OPTIMISATION. The two rail occupant
+// kinds have different amounts of surface:
+//   * a PINNED occupant is canvas-hidden (`isCanvasHiddenNode`), so it has NO
+//     lane tile, NO EXPAND pill and no route to `DockFullView`. The tray is its
+//     ONLY surface, and it is therefore the only place its face can appear.
+//   * a USER-DOCKED entry still has both — the lane shows its DockStubCard and
+//     the stub's own affordances reach the full view — so its face is already
+//     reachable and the rail card is the second surface, not the only one.
+// Widening this to every occupant is a separate, deliberate change: it flips
+// every user-docked promoted module at once and MOVES `workflow-dock.spec.ts`
+// (which docks `mixer` and asserts `.mod-card`) plus the `workflow-dock-
+// composite` VRT baseline (which docks `vca`). Both are promoted types.
+//
+// ⚠ `shellFaces` IS PART OF THE RULE for the same reason it is part of
+// `laneRenderKind`: `?shell=legacy` means "verbatim legacy cards inside the
+// same shell", and a tray that ignored it would make the escape hatch a lie.
+// ⚠ AND IT IS WHY THE THREE SHIPPED DRAWER SPECS CANNOT SEE THIS CHANGE —
+// `workflow-dock.spec.ts` and `workflow-mode.spec.ts` both drive
+// `/rack?shell=legacy`, so they exercise the `false` arm forever. New coverage
+// for the `true` arm must drive the DEFAULT shell; see
+// `e2e/tests/workflow-drawer-face.spec.ts`.
+
+/** Inputs to the pure dock-rail render decision. */
+export interface DockRailRenderInput {
+  /** Render FACEPLATES at all — false under `?shell=legacy`. */
+  shellFaces: boolean;
+  /** This occupant is the drawer's PINNED singleton (the M/E trio), i.e. the
+   *  tray is its only surface — not a user-docked entry. */
+  pinned: boolean;
+  /** STRICT_FACES membership for this type — `migrated(type)`, injected by the
+   *  caller so this stays pure/registry-free. */
+  migrated: boolean;
+}
+
+/**
+ * Does a DOCK RAIL occupant render the promoted FACEPLATE (`<ModuleShell
+ * view='drawer'>`) instead of its verbatim legacy card? PURE.
+ *
+ * The `'drawer'` view is the dock faceplate PLUS the lane `PatchPanel`: the
+ * tray has no `DockFullView` title bar and therefore no flip-to-RearCard
+ * affordance, so the shell's own jack rail (and the `.card-back-panel` the
+ * canvas-wide rear view reveals) is the ONLY thing keeping the drawer's jacks —
+ * which is not hypothetical, since the owner's ES-9 send/return rack patches
+ * `masterL` out of and `ch1L` into exactly this surface.
+ */
+export function dockRailRendersFace(i: DockRailRenderInput): boolean {
+  return i.shellFaces && i.pinned && i.migrated;
+}

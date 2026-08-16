@@ -216,6 +216,282 @@ export const mixmstrsDef: AudioModuleDef = {
   ],
   params: PARAMS,
 
+  // ── THE FACEPLATE ─────────────────────────────────────────────────────────
+  //
+  // The largest face in the repo, and the design problem is stated by the
+  // module itself: a mixer is N INTERCHANGEABLE CHANNEL STRIPS. The eight
+  // channels are bit-identical in every declared property — same ids modulo the
+  // index, same ranges, same curves, same defaults — so a rank over them has no
+  // priority to express (#1701, the two Moog filter banks).
+  //
+  // THE AXIS IS SCOPE: how many of the ten stereo inputs a control's effect
+  // reaches, read off the summing expression at `mixmstrs.dsp:329-336`. It is
+  // TOTAL over the eleven bus-scoped controls and exactly TIED over the eighty
+  // channel-scoped ones, and the face is built so the tie is never consulted —
+  // ranks 1-11 are the whole bus-scoped block, which is longer than the largest
+  // lane tier, so no lane tier ever paints a channel control and no channel is
+  // ever privileged over another. The argument and the measurements are in
+  // `$lib/ui/modules/mixmstrs-face-model.ts`; the invariant is asserted from
+  // the live def, both directions, in `mixmstrs-face-model.test.ts`.
+  //
+  // ⚠ WHY THERE IS NO PANEL, stated because the sibling case went the other way.
+  // `warrensspectrum` earned a PF-14 bank panel because its bank lives in
+  // `node.data` and the card was its ONLY editor. Here the STOP-2 grep comes
+  // back clean: every affordance on `MixmstrsCard.svelte` is a `ParamDef` (the
+  // two `.prepost` buttons write `send{R}Pre`; the ◆ toggle is card-local view
+  // state), so promotion removes no way of getting data in. And a panel could
+  // not carry the fader bank even if it wanted to — faces-parity asserts EXACT
+  // multiset equality between the dock's `control-<paramId>` testids and the
+  // def's params, and a panel may never emit one (`shell-cells.ts` rule 1). The
+  // only panel available here would be a read-only console PICTURE, whose
+  // natural content is the per-channel VU — and that tap is MEASURABLY BLIND:
+  // `ch{N}Level` is `(L+R)/2` (`mixmstrs.dsp:349-356`), so an anti-phase channel
+  // reads rms 0.0000e+0 while masterL and masterR each carry 0.184216, byte-
+  // identical to the in-phase render. Painting bars off it is the ninelives /
+  // buggles glyph hazard (#1692, #1706) with a live tap instead of a dead one.
+  face: {
+    // 1-11 · BUS-SCOPED. Master first (scope 10, and the largest measured mover
+    // on the module), then the two return STRIPS whole — level, then the
+    // low→mid→high frequency axis #1701 ranked its filter banks with. Ordering
+    // the returns strip-major rather than function-major is what makes the
+    // six-cell plate coherent: `Master · R1V · R1Lo · R1Md · R1Hi · R2V`, a
+    // master fader plus one COMPLETE return strip, rather than a scatter of
+    // single bands across two returns.
+    //
+    // ⚠ THE TWO PRE/POST SWITCHES RANK LAST IN THIS BLOCK, at 10-11, and that
+    // is a measurement rather than taste. Both are BIT-EXACTLY INERT until a
+    // send opens (0.0000e+0 on send1L and masterL across both positions with
+    // every send at 0, against 3.2138e-1 with the sends at 0.5), and their
+    // enablers — the sixteen per-channel send amounts — are channel-scoped, so
+    // the enabler-above-dependent rule and the scope axis cannot BOTH be
+    // satisfied by a total order. The rule that actually protects a player is
+    // the operational half of it: no LANE TIER may paint a control that is
+    // inert at the shipped defaults, because a lane tier is the only place
+    // `order` decides what a player meets as a subset. Ranks 10-11 are below
+    // every lane budget, so the switches are dock-only, and the two `send N`
+    // hero readouts state the enabler on the same face. Asserted, with the
+    // inert set derived, in mixmstrs-face-model.test.ts.
+    //
+    // 12+ · CHANNEL-SCOPED, FUNCTION-MAJOR / CHANNEL-MINOR — the eight
+    // instances of one control, in strip order, then the next control. The
+    // channel index therefore never separates two DIFFERENT controls; it only
+    // orders the eight instances of the SAME one. Within this block the
+    // enabler rule holds outright: the COMP macro and the manual enable both
+    // outrank the thresh/ratio pair they gate.
+    order: [
+      'master_volume',
+      ...MIXMSTRS_RETURNS.flatMap((r) => [
+        `ret${r}_volume`, `ret${r}_low`, `ret${r}_mid`, `ret${r}_high`,
+      ]),
+      ...MIXMSTRS_RETURNS.map((r) => `send${r}Pre`),
+      ...MIXMSTRS_CHANNELS.map((c) => `ch${c}_volume`),
+      ...MIXMSTRS_CHANNELS.map((c) => `comp${c}`),
+      ...MIXMSTRS_CHANNELS.map((c) => `ch${c}_send1`),
+      ...MIXMSTRS_CHANNELS.map((c) => `ch${c}_send2`),
+      ...MIXMSTRS_CHANNELS.map((c) => `ch${c}_low`),
+      ...MIXMSTRS_CHANNELS.map((c) => `ch${c}_mid`),
+      ...MIXMSTRS_CHANNELS.map((c) => `ch${c}_high`),
+      ...MIXMSTRS_CHANNELS.map((c) => `ch${c}_compEnable`),
+      ...MIXMSTRS_CHANNELS.map((c) => `ch${c}_thresh`),
+      ...MIXMSTRS_CHANNELS.map((c) => `ch${c}_ratio`),
+    ],
+
+    // FOUR bands, under a ceiling this module cannot be allowed to
+    // cross. At `DOCK_TAB_MIN_BANDS = 7` the dock becomes a TAB RAIL and
+    // renders exactly one band at a time — which on a mixer destroys the single
+    // thing the surface exists for, letting you balance eight faders against
+    // each other. So membership is grouped BY FUNCTION, never by channel (eight
+    // channel bands plus returns plus master would be eleven), and the
+    // eight-channel structure is carried by `clusters` — a ~14 px sub-header
+    // instead of a ~81 px band (`graph/types.ts:502-507`: a PAGE is a different
+    // IDEA, a CLUSTER is the same idea twice; eight channels' LOW is the same
+    // idea eight times).
+    //
+    // Every cluster holds exactly `MIXMSTRS_CHANNELS.length` cells in strip
+    // order, so column N of every cluster is channel N and the page reads as a
+    // CONSOLE GRID — rows are functions, columns are channels. That alignment is
+    // the whole layout, and it is why the EQ is three clusters of eight rather
+    // than one flat band of twenty-four (`.page-controls` is flex-wrap; a
+    // 24-cell row wraps mid-bank and the columns stop lining up).
+    //
+    // ⚠ THE FADER HEADS ITS OWN CHANNEL'S COLUMN — owner review of #1738:
+    // *"the faders need to be above the 8 channels."* The first draft put the
+    // eight faders in a `levels` band of their own ABOVE a separate `eq` band,
+    // which is "above" in reading order but not in COLUMN order: two bands are
+    // two independently-laid-out rows, so fader N did not sit over EQ N and the
+    // narrower band did not line up with the grid under it. Merging them makes
+    // one band whose four clusters are `level / low / mid / high`, so column N
+    // is channel N all the way down and a column reads as an actual CHANNEL
+    // STRIP — fader, then its three tone controls.
+    //
+    // That is a CLUSTER merge, not a page merge in disguise: the type's own rule
+    // is "reach for a PAGE when the controls are a different IDEA; a CLUSTER
+    // when they are the same idea twice", and a channel's level and its tone are
+    // one idea — the strip — eight times over.
+    //
+    // ⚠ AND IT COSTS THE RANKING NOTHING. `order` is the PRIORITY ranking (it
+    // decides which controls a LANE TIER paints as a subset); `pages` is the
+    // DOCK's arrangement, which renders everything. They are separate fields the
+    // skill explicitly invites to disagree, and every assertion behind the SCOPE
+    // axis reads `order` / `laneOrder` — never `pages`. So the eleven bus-scoped
+    // controls still take every lane rank and no channel is privileged, with
+    // this layout or the previous one.
+    //
+    // ⚠ `pages` STILL DISAGREES WITH SIGNAL ORDER IN EXACTLY ONE PLACE. A
+    // channel runs EQ → comp → fader → send tap, so signal order would put the
+    // fader after the EQ inside this band. It leads instead, because the dock
+    // capture and the 720p fold both see roughly the top 425 px and on a console
+    // the faders are what must be there. Every other band is in the DSP's order.
+    pages: [
+      { id: 'channels', label: 'channels',
+        controls: [
+          'master_volume',
+          ...MIXMSTRS_CHANNELS.map((c) => `ch${c}_volume`),
+          ...MIXMSTRS_CHANNELS.map((c) => `ch${c}_low`),
+          ...MIXMSTRS_CHANNELS.map((c) => `ch${c}_mid`),
+          ...MIXMSTRS_CHANNELS.map((c) => `ch${c}_high`),
+        ],
+        // `master_volume` is claimed by the band (which is what lets the hero
+        // MOVE it) but belongs to no cluster — it is not one of the eight, and
+        // the hero removes it before this band renders.
+        clusters: [
+          { label: 'level', controls: MIXMSTRS_CHANNELS.map((c) => `ch${c}_volume`) },
+          { label: 'low', controls: MIXMSTRS_CHANNELS.map((c) => `ch${c}_low`) },
+          { label: 'mid', controls: MIXMSTRS_CHANNELS.map((c) => `ch${c}_mid`) },
+          { label: 'high', controls: MIXMSTRS_CHANNELS.map((c) => `ch${c}_high`) },
+        ] },
+      { id: 'dynamics', label: 'dynamics',
+        controls: [
+          ...MIXMSTRS_CHANNELS.map((c) => `comp${c}`),
+          ...MIXMSTRS_CHANNELS.map((c) => `ch${c}_compEnable`),
+          ...MIXMSTRS_CHANNELS.map((c) => `ch${c}_thresh`),
+          ...MIXMSTRS_CHANNELS.map((c) => `ch${c}_ratio`),
+        ],
+        clusters: [
+          { label: 'amount', controls: MIXMSTRS_CHANNELS.map((c) => `comp${c}`) },
+          { label: 'enable', controls: MIXMSTRS_CHANNELS.map((c) => `ch${c}_compEnable`) },
+          { label: 'threshold', controls: MIXMSTRS_CHANNELS.map((c) => `ch${c}_thresh`) },
+          { label: 'ratio', controls: MIXMSTRS_CHANNELS.map((c) => `ch${c}_ratio`) },
+        ] },
+      { id: 'sends', label: 'aux sends',
+        controls: [
+          ...MIXMSTRS_CHANNELS.map((c) => `ch${c}_send1`), 'send1Pre',
+          ...MIXMSTRS_CHANNELS.map((c) => `ch${c}_send2`), 'send2Pre',
+        ],
+        clusters: MIXMSTRS_RETURNS.map((r) => ({
+          label: `send ${r}`,
+          controls: [...MIXMSTRS_CHANNELS.map((c) => `ch${c}_send${r}`), `send${r}Pre`],
+        })) },
+      { id: 'returns', label: 'returns',
+        controls: MIXMSTRS_RETURNS.flatMap((r) => [
+          `ret${r}_volume`, `ret${r}_low`, `ret${r}_mid`, `ret${r}_high`,
+        ]),
+        clusters: MIXMSTRS_RETURNS.map((r) => ({
+          label: `return ${r}`,
+          controls: [`ret${r}_volume`, `ret${r}_low`, `ret${r}_mid`, `ret${r}_high`],
+        })) },
+    ],
+
+    // A live tap on `masterL`, and the resolution is ESTABLISHED rather than
+    // assumed. `primaryAudioOutPortId` takes the FIRST `audio`-typed output
+    // (`shell-glyph-live.ts:95`), which here is `masterL` — the master bus this
+    // module exists to produce. That is NOT true of every multi-out mixer:
+    // #1667 is open precisely because `attenumix.outputs[0]` is a per-channel
+    // DIRECT OUT, so the same resolver grabs channel one there. mixmstrs is on
+    // the right side of that bug by construction, and the assertion in
+    // `mixmstrs-face-model.test.ts` names the port so a future output reorder
+    // reddens instead of silently re-pointing the meter.
+    //
+    // ⚠ NOT the per-channel VU. `read('levels')` is a MONO-SUM tap and is
+    // measurably blind to phase (see the note above the face); `masterL` is the
+    // real bus. UNLIT and deterministic on a silent rack — this is a mixer with
+    // no generator in it, so with nothing patched the output is bit-exactly
+    // zero and there is no analogVco-class VRT instability.
+    glyph: 'meter',
+
+    // EVERY LEVEL IS A FADER, because that is what a console is and `fader` is
+    // the declared way a def says "this level is a THROW, not a dial"
+    // (`ModuleFace.paramCells`, owner directive 2026-08-10). The eight channel
+    // volumes, the two return levels and the master. The send AMOUNTS are
+    // levels too and stay dials: on a console an aux send is a rotary, and the
+    // fader row is what a hand finds without looking.
+    //
+    // Width was checked rather than guessed: `PARAM_CELL_WIDTH_CLASS.fader` is
+    // 'column' (a 22 px track — narrower than a knob's 40-68.8 px), so the
+    // eight-fader `levels` band still packs as ONE row under
+    // `DOCK_ROW_MAX_CONTROLS = 10`.
+    //
+    // ⚠ `neon-fader`, NOT `fader` — owner review of #1738: *"we need to re-do
+    // that level setting fader entirely with a new UI control for faders that
+    // matches our blue neon controls."* `NeonFader.svelte` is the same throw
+    // gesture drawn in `KnobConic`'s vocabulary (the `--_ka` chain, the 5 px
+    // pointer glow, the 9 px mono readout), so on a console the level and its
+    // three tone dials read as one family BY CONSTRUCTION rather than by a
+    // matched hex. Adopting it is ONE declaration per module, which is why it
+    // is a KIND and not an edit to the shared `Fader.svelte` that 93 cards and
+    // eight other faced modules mount.
+    paramCells: Object.fromEntries([
+      ['master_volume', 'neon-fader' as const],
+      ...MIXMSTRS_CHANNELS.map((c) => [`ch${c}_volume`, 'neon-fader' as const]),
+      ...MIXMSTRS_RETURNS.map((r) => [`ret${r}_volume`, 'neon-fader' as const]),
+    ]),
+
+    // THE HERO: the master fader, and four derived readouts.
+    //
+    // ⚠ `master_volume` IS PROMOTED WHERE moog914 REFUSED TO PROMOTE ANYTHING,
+    // and the difference is the whole test of a rank. There, all fourteen levels
+    // were interchangeable, so elevating one was an arbitrary claim. Here the
+    // master is the single control that is NOT one of a symmetric set: unique on
+    // the module, scope 10 against every channel's 1, and the largest measured
+    // mover. The argument would be WRONG for the filter banks, which is what
+    // makes it an argument rather than a preference.
+    //
+    // No `hero.cell` — see the no-panel note above the face. That also means
+    // the shell glyph is NOT suppressed at the dock, so the meter paints.
+    //
+    // Each readout is negative-controlled PERMANENTLY on the input a knob
+    // readback is blind to, in `mixmstrs-face-model.test.ts`:
+    //
+    //   bus     the fully-correlated worst-case gain into the master, which no
+    //           single fader can show. Measured 6.7187 against the formula's
+    //           6.72 on ten correlated full-scale sources at the defaults —
+    //           i.e. TWO hot channels already clip and nothing here limits.
+    //           `ch1_thresh` (bit-exactly inert) must not move it; `ret1_volume`
+    //           must, which is the leg that catches a readout that summed only
+    //           the channels.
+    //   asleep  the sixteen faders that do nothing. Reads BOTH enablers through
+    //           `mapCompMacro`, so the manual switch and the macro are each
+    //           other's controls; `ch1_volume` must move neither.
+    //   send 1  the tap point AND whether the bus is alive, because the switch
+    //   send 2  is bit-exactly inert until a send opens. Must print `off` in
+    //           BOTH switch positions while the sends are shut — a caption that
+    //           echoed the switch would print PRE and imply something happened.
+    hero: {
+      control: 'master_volume',
+      // ⚠ THE SEND PRE/POST READOUTS ARE GONE FROM THE HEADER — owner review of
+      // #1738: *"we don't need the send pre/post in the header here."*
+      //
+      // The two remaining readouts are the ones that state something a player
+      // cannot see anywhere else on the face: BUS is the summed headroom (the
+      // measured 1.2797 clip at the defaults), ASLEEP is how many of the
+      // ninety-one controls are bit-exactly inert right now. `send1Pre` /
+      // `send2Pre` are ORDINARY CONTROLS — they have their own cells at the end
+      // of each `aux sends` cluster, where the thing they modify is, so the
+      // header was printing a second copy of a switch that is already on screen
+      // and already labelled.
+      //
+      // ⚠ THE CONTROLS ARE NOT REMOVED, only the header echo: `faces-parity`
+      // asserts one `control-<paramId>` per def param across the whole
+      // faceplate, so deleting a cell would be RED, and deleting only the
+      // readout is invisible to it — which is why the tray e2e asserts the two
+      // switch cells are still present and still reachable by name.
+      readouts: [
+        { label: 'bus', valueId: 'mixmstrs-bus-gain' },
+        { label: 'asleep', valueId: 'mixmstrs-comp-asleep' },
+      ],
+    },
+  },
+
   docs: (() => {
     const inputs: Record<string, string> = {};
     const controls: Record<string, string> = {};

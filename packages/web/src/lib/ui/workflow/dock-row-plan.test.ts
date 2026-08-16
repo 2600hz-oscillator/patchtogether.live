@@ -363,6 +363,12 @@ describe('cellWidthClass — the instrument, perturbed in both directions', () =
       { kind: 'grid', def: { type: 'x', params: [knobParam('p')], face: { paramCells: { p: 'grid' } } } },
       { kind: 'color', def: { type: 'x', params: [knobParam('p')], face: { paramCells: { p: 'color' } } } },
       { kind: 'fader', def: { type: 'x', params: [knobParam('p')], face: { paramCells: { p: 'fader' } } } },
+      // The SAME throw in the conic knob's language — declared the same way,
+      // so the resolver must reach the same width class through the same field.
+      {
+        kind: 'neon-fader',
+        def: { type: 'x', params: [knobParam('p')], face: { paramCells: { p: 'neon-fader' } } },
+      },
       // The pad is declared through `face.xyPads`, NOT `face.paramCells` — it
       // binds a PAIR and that map is keyed by one id. Driving the real resolver
       // through the real declaration field is the point of this sweep: an `xy`

@@ -978,6 +978,42 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // live.
   'moog907a',
   'moog914',
+  // THE FACEPLATE QUEUE · Q7 — the full mixer (2026-08-15). 91 params, 111
+  // input ports: 1.86x the previous largest face (pentemelodica, 49 cells).
+  //
+  // ⚠ THE PROMOTION SURFACE IS SMALLER THAN THE RULE SAYS, AND IT WAS TRACED
+  // RATHER THAN ASSUMED. `shell-cells.ts:995` and the module-faceplates skill
+  // both state the promotion rule as "migrated(type) removes the legacy card
+  // from the lane AND the dock". That is true of the dock FULL-VIEW
+  // (`DockFullView.svelte:317-340`, gated on the `migrated` prop passed at
+  // `Canvas.svelte:8359`) and FALSE of the pinned DRAWER — `DockCardHost.svelte`
+  // resolves `nodeTypes[node.type]` at `:62`/`:167` with no `migrated` input at
+  // all. The `m` key routes to `dockStore.toggle('bottom', 'pinned-mixmstrs')`
+  // (`Canvas.svelte:1570` via `DRAWER_KEY_TO_PINNED`, `workflow-pins.ts:138`),
+  // i.e. through `DockRail` → `DockCardHost`. And `pinned-mixmstrs` is
+  // canvas-hidden (`Canvas.svelte:2489`), so it has no lane tile, no EXPAND
+  // pill, and cannot reach `DockFullView` at all outside the e2e hook.
+  //
+  // So promoting mixmstrs changes exactly two surfaces, both on NON-PINNED
+  // instances (the submixes and parallel buses the def explicitly supports):
+  // the lane tile (placeholder → ModuleShell) and that instance's dock
+  // full-view (MixmstrsCard → ModuleShell). The always-on `m` drawer is
+  // BYTE-IDENTICAL before and after. That asymmetry is a real gap in the rule
+  // as written, not a property of this module, and it is filed as its own
+  // issue rather than papered over here.
+  //
+  // ⚠ THE AUDIT FOUND FOUR MEASURED FACTS AND THE FACE PUBLISHES ALL FOUR.
+  // Eighteen of ninety-one controls are BIT-EXACTLY inert on a factory-fresh
+  // module (16 thresh/ratio behind a bypassed compressor, 2 PRE/POST switches
+  // behind sixteen shut sends) against a measured module floor of 2.9062e-4;
+  // two correlated full-scale channels already clip the bus (peak 1.2797 at
+  // the defaults, and nothing limits); the per-channel VU tap is a mono sum and
+  // reads 0.0000e+0 on an anti-phase channel the master carries at full level;
+  // and the comp macro overwrites a saved compressor at load, measured
+  // +29.174 dB. The first three are hero readouts here. The fourth is a
+  // def/factory bug that changes saved-rack audio and is NOT fixed in a face
+  // PR — see the note on `applyCompMacro`.
+  'mixmstrs',
   // THE FACEPLATE QUEUE · Q14 — SLEWSWITCH, quad slew + 4→1 sequential switch
   // (2026-08-15), and the entry whose argument is that TWO ENGINES IN ONE BOX
   // ARE TWO PAGES, not one ranked list of seven.
