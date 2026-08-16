@@ -16,7 +16,7 @@
 //      directly. No runtime gate can see that: the pre-fix defect was one
 //      import and one call inside `onDestroy`, which type-checks perfectly.
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import type { MidiInputLike } from '$lib/audio/modules/midi-cv-buddy';
@@ -122,6 +122,27 @@ async function pumpFrames(n: number): Promise<void> {
 }
 
 const NODE = 'otl1';
+
+// ⚠ RESTORE THE GLOBAL CLOCK. `packages/web/vitest.config.ts` runs the WHOLE
+// unit suite in ONE process (`pool: 'forks'`, `singleFork: true`), so
+// `vi.useFakeTimers()` patches a global that every LATER test file inherits.
+// Leaving it installed took CI red on three unrelated files — the video CV/gate
+// bridge, the reconciler and the Push 2 display — every one of them failing on
+// `await new Promise((r) => setTimeout(r, n))`, which under fake timers never
+// resolves and reports as `Test timed out`.
+//
+// It passed locally and only failed on CI because of vitest's SEQUENCER: with
+// no `node_modules/.vite/vitest` timing cache (a fresh CI checkout) files are
+// ordered by SIZE DESCENDING, and this file is larger than the three it broke,
+// so it runs FIRST there. Locally the cache reorders by recorded duration and
+// happened to put it last. The suite order is not a stable thing to rely on;
+// restoring the clock is.
+//
+// File-level, not per-describe: the guard describes below install no timers of
+// their own and would otherwise inherit whatever the last pump test left.
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 describe('the pump belongs to the NODE, not the card', () => {
   beforeEach(() => {
