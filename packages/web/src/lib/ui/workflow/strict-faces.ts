@@ -1035,6 +1035,64 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // 0.5 s default arrives in 2.30 s. That second one is now the face's own
   // `settle` readout, so the panel prints the number the docs had wrong.
   'slewSwitch',
+  // THE FACEPLATE QUEUE · Q15, COHORT 3 — the curve-morph attenuverter
+  // (2026-08-15), and the entry whose merit argument is a SHAPE rather than a
+  // count.
+  //
+  // Six other modules in the rack attenuate or invert a control voltage —
+  // scaler, polarizer, depolarizer, attenumix, illogic, analogLogicMaths — and
+  // every one of them is a straight line. This is the only module that changes
+  // the SHAPE of a voltage: `y = sign(x)·|x|^k·atten`, `k = 1 + 2·curve`.
+  //
+  // ⚠ AN EXPONENT IS NOT A GAIN, and that is the whole face. Measured on the
+  // shipped worklet through the def's own factory: at full CURVE a 0.5 input
+  // leaves at 0.125 while a 2.0 input leaves at 8.0 — one dial, −12 dB at one
+  // end of the range and +12 dB at the other, PIVOTING about a magnitude of
+  // exactly 1. No single number a dial could print says both, which is why the
+  // hero publishes the response at BOTH probe magnitudes and why the two move
+  // in opposite directions on every render.
+  //
+  // ⚠ THE AUDIT FOUND THE DOCS ASSERTING ONLY THE HALF THAT SUITED THEM.
+  // `docs.explanation` and both curve controls said the curve "leaves larger
+  // excursions intact" / "preserves large ones". |x| = 1 is the ONLY fixed
+  // point; above it the curve EXPANDS (2 → 8, 3 → 27). Every gate was blind
+  // because the DECLARATION is correct and the defect is a VALUE inside prose —
+  // the #1701 class. Corrected (#1715), and the corrected claim is now printed
+  // as a live number rather than asserted in a sentence.
+  //
+  // ⚠ AND IT PAID A CARD/DEF DIVERGENCE ON ALL FIVE LABELS (#1714), with every
+  // RANGE agreeing — the other half of the #1681 class, and the half that
+  // becomes user-visible exactly here: the dock renders the DEF's label, so
+  // promoting this module without binding the card would have shipped a rename
+  // of five controls that nobody reviewed. All five were already sitting in
+  // `VOCABULARY_DEBT`, so this is a KNOWN answer paid rather than a new find —
+  // the CharlottesEchosCard precedent verbatim, and the reason the queue tells
+  // you to grep the debt lists before authoring a face. The card is now
+  // `paramSpec`-bound on every prop including `label`, enrolled in
+  // RANGE_BOUND_CARDS + MAPPING_BOUND_CARDS, and the five ledger entries are
+  // DELETED with no replacement counter.
+  //
+  // ⚠ THE PUSH 2 CARD MOVES, and no golden covers it. Promotion takes this
+  // module from the GENERIC tier (declaration order: unityAtten, aAtten,
+  // aCurve, bAtten, bCurve) to the FACE tier (`face.order`: aCurve, aAtten,
+  // bCurve, bAtten, unityAtten) — five encoders re-assigned. That is the
+  // INTENDED effect of ranking the identity first, and it is recorded here
+  // because `push-card-schema.test.ts`'s AUTHORED goldens only cover modules
+  // with an explicit `PUSH_CARD_CONTROLS` override, so "the card did not move"
+  // and "nobody looked" would otherwise be one green.
+  //
+  // ⚠ `glyph: 'none'` IS A DECISION. Three `cv` outputs and no audio output, so
+  // `primaryAudioOutPortId` returns null and any other glyph resolves to
+  // `{ kind: 'static' }` — the marbles defect (#1692). The face takes the extra
+  // lane cell instead.
+  //
+  // The CV audit found nothing, which is only worth anything because the sweep
+  // carries its positive controls permanently (a GainNode leg, a
+  // worklet-AudioParam leg, a per-input knob leg, and a DERIVED terminal
+  // partition): all five declared `paramTarget` inputs move the audio through
+  // the CV path and the KNOB and CV legs agree to every printed digit —
+  // `art/scenarios/unityscalemathematik/cv-path.test.ts`.
+  'unityscalemathematik',
 ]);
 
 /**

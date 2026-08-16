@@ -525,6 +525,30 @@ export const FACES = [
   // `cellWidthClass` classifies WIDE), which is exactly the kind of layout fact
   // the 425 px window is blind to.
   { type: 'slewSwitch', pages: 2 },
+  // THE FACEPLATE QUEUE · Q15 (COHORT 3) — the curve-morph attenuverter.
+  //
+  // THREE bands, all three surviving the hero split: the hero promotes `aCurve`
+  // out of band `a`, which still holds `aAtten`, so nothing is emptied and the
+  // count stays 3 (`unity` holds one control by design — the attenumix `bus` /
+  // mixer `bus` / reverb `output` shape).
+  //
+  // ⚠ THE FIRST FACE IN THIS ROSTER WITH `glyph: 'none'` DECLARED FOR A
+  // STRUCTURAL REASON, and it is worth naming here rather than leaving it to be
+  // read as an omission. The module has THREE `cv` outputs and no `audio`
+  // output at all, so `primaryAudioOutPortId` returns null and every glyph kind
+  // but 'none' resolves to `{ kind: 'static' }` — the marbles defect (#1692):
+  // a live-looking readout of nothing, which a VRT baseline captures perfectly
+  // deterministically and therefore cannot see. `module-face-lint`'s dead-glyph
+  // clause is unconditional and refuses it at the source; the compact tile here
+  // simply gets the extra control cell instead of a glyph plate.
+  //
+  // DETERMINISTIC AT REST, structurally, and NOT via the #1420 freeze: the
+  // worklet is a stateless per-sample function with no generator anywhere in
+  // the factory — no oscillator, no ConstantSource, no pump — so an unpatched
+  // module emits exactly zero and there is no live surface to freeze. Measured
+  // twice in `art/scenarios/unityscalemathematik/cv-path.test.ts`: two
+  // independent renders of the same patch are BIT-IDENTICAL (#1680).
+  { type: 'unityscalemathematik', pages: 3 },
 ] as const;
 
 /** TIGHT per-scene diff budgets (absolute pixels; Playwright takes the MIN of

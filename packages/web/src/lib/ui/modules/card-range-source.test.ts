@@ -88,6 +88,7 @@ import { macrooscillatorDef } from '$lib/audio/modules/macrooscillator';
 import { marblesDef } from '$lib/audio/modules/marbles';
 import { moog907aDef } from '$lib/audio/modules/moog907a';
 import { moog914Def } from '$lib/audio/modules/moog914';
+import { unityscalemathematikDef } from '$lib/audio/modules/unityscalemathematik';
 import { ninelivesDef } from '$lib/audio/modules/ninelives';
 import { noiseDef } from '$lib/audio/modules/noise';
 import { warrensvisionsDef } from '$lib/video/modules/warrensvisions';
@@ -362,6 +363,26 @@ const RANGE_BOUND_CARDS: Readonly<Record<string, { params: readonly ParamDef[] }
   // MAPPING-bound too. Neither def declares `units`, so there is none to bind.
   'Moog907aCard.svelte': moog907aDef,
   'Moog914Card.svelte': moog914Def,
+  // THE FACEPLATE QUEUE · Q15 (COHORT 3). Enrolled while PAYING a live
+  // divergence (#1714), and it is the one that shows this gate's numeric half
+  // is only half: all five `min`/`max`/`defaultValue` literals AGREED with the
+  // def, and all five `label`s DISAGREED — the card painted `Att` / `Att` /
+  // `Curve` / `Att` / `Curve` under three static section captions where the def
+  // declares `Unity` / `A Att` / `A Crv` / `B Att` / `B Crv`. `card-def-agreement`
+  // compares the numbers, so nothing was watching the names.
+  //
+  // It becomes user-visible exactly at promotion: the dock full-view renders
+  // straight off the `ParamDef`, so shipping the face without binding labels
+  // would have renamed five controls with no review surface. Range AND mapping
+  // — every Fader reads `P.<id>.{min,max,defaultValue,label,units,curve}` off
+  // `paramSpec(unityscalemathematikDef, …)`, and no param on this module
+  // declares `units`, so there is none to paint and none left to drift.
+  //
+  // The conversion also removed the hazard the range clause is blind to: the
+  // defaults were read as `params[0]!.defaultValue` — bound by POSITION, not by
+  // id — so re-ordering `params`, which no gate forbids, would have silently
+  // re-pointed all five.
+  'UnityscalemathematikCard.svelte': unityscalemathematikDef,
 };
 
 /**
@@ -438,6 +459,12 @@ const MAPPING_BOUND_CARDS: readonly string[] = [
   // iterate the def's own `params` array rather than listing controls.
   'Moog907aCard.svelte',
   'Moog914Card.svelte',
+  // THE FACEPLATE QUEUE · Q15 (COHORT 3). `curve` is bound off `paramSpec`;
+  // `units` is ABSENT ON BOTH SIDES — no unityscalemathematik param declares
+  // one and the card passes `P.<id>.units`, which resolves to `undefined` —
+  // so there is nothing to paint and nothing left to drift. The prop that
+  // actually mattered here was `label`, and it is bound with the rest (#1714).
+  'UnityscalemathematikCard.svelte',
 ];
 
 /**
