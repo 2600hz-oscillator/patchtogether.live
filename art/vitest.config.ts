@@ -52,9 +52,26 @@ export default defineConfig({
     // Mirror packages/web/vitest.config.ts so ART scenarios can import any
     // module under packages/web/src/lib that uses the SvelteKit `$lib/...`
     // alias (e.g., poly.ts imports note-entry via $lib/audio/note-entry).
-    alias: {
-      $lib: resolve(__dirname, '../packages/web/src/lib'),
-    },
+    alias: [
+      { find: '$lib', replacement: resolve(__dirname, '../packages/web/src/lib') },
+      // `faust-runtime.ts` imports `@grame/faustwasm` bare → the package `main`,
+      // a CJS IIFE bundle whose named exports resolve to `undefined` under vite
+      // (faust-offline.ts documents the same trap and sidesteps it by importing
+      // the `dist/esm` subpath explicitly). Point the BARE specifier at the real
+      // ESM entry so a scenario can drive a Faust def's SHIPPED factory without a
+      // test-only branch in packages/web. See setup/faust-fetch-fs.ts.
+      //
+      // ⚠ ANCHORED (`^…$`), and it must stay that way. A plain string alias is a
+      // PREFIX rewrite, so it also captures faust-offline.ts's explicit
+      // `@grame/faustwasm/dist/esm/index.js` and doubles the tail into
+      // `…/dist/esm/index.js/dist/esm/index.js`. That took out all 14 scenarios
+      // that render through `renderFaustOffline` — as SUITE-level import errors,
+      // which report as "14 failed test FILES / 0 failed tests".
+      {
+        find: /^@grame\/faustwasm$/,
+        replacement: resolve(__dirname, '../node_modules/@grame/faustwasm/dist/esm/index.js'),
+      },
+    ],
   },
   test: {
     include: ['scenarios/**/*.test.ts'],
@@ -99,6 +116,6 @@ export default defineConfig({
     reporters: ['default'],
     // Browser AudioWorklet globals, so a scenario can drive a REAL module
     // factory (worklet and all) rather than rebuilding its graph by hand.
-    setupFiles: ['./setup/node-audio-globals.ts'],
+    setupFiles: ['./setup/node-audio-globals.ts', './setup/faust-fetch-fs.ts'],
   },
 });

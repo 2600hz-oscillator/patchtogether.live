@@ -113,11 +113,19 @@
   let elapsed = $derived(live?.elapsed ?? 0);
 
   // ── No-prompt save (Tweak 1) + GoPro chunking (Tweak 3) ──
-  // The destination FOLDER picked ONCE via showDirectoryPicker. Remembered in
-  // component state so subsequent records + every rolling chunk write into it
-  // with NO further prompt. Null until a folder is picked / on a no-picker
-  // browser (then the per-chunk <a download> fallback applies).
-  let saveFolder: FileSystemDirectoryHandle | null = $state(null);
+  // The destination FOLDER picked ONCE via showDirectoryPicker, so subsequent
+  // records + every rolling chunk write into it with NO further prompt. Null
+  // until a folder is picked / on a no-picker browser (then the per-chunk
+  // <a download> fallback applies).
+  //
+  // #1583: this is a READ of the node-keyed registry, not card state. It used
+  // to be `$state(null)` here, which meant any card unmount — collapse, ESC,
+  // an LRU eviction caused by expanding a THIRD module — forgot the folder and
+  // broke this card's own promise at the top of this file. Worse than a
+  // re-prompt: while PRESENTING, `planRecordStartFolder` deliberately answers
+  // 'download' rather than 'prompt', so a forgotten folder silently redirects
+  // the take to the browser's downloads mid-performance.
+  let saveFolder = $derived(nodeRecorder.folderFor(id));
   // The last chunk file the recorder reported saving (status line / a11y).
   let lastSavedChunk = $derived<string | null>(live?.lastSavedChunk ?? null);
   // Display name of the remembered destination folder (null = none chosen yet).
@@ -177,7 +185,7 @@
       folderHint = 'Write permission was denied for that folder.';
       return;
     }
-    saveFolder = picked;
+    nodeRecorder.rememberFolder(id, picked);
     folderHint = null;
   }
 
@@ -298,7 +306,9 @@
         if (!recording) return;
         if (picked) {
           dirHandle = picked;
-          saveFolder = picked; // remember → no prompt next time.
+          // Remember → no prompt next time. On the NODE, so a collapse or an
+          // LRU eviction cannot forget it (#1583).
+          nodeRecorder.rememberFolder(id, picked);
         }
         // picked === null → no FS-Access: dirHandle stays null → download path.
       } else if (plan.action === 'download') {

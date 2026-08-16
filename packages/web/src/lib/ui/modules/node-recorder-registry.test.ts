@@ -322,3 +322,135 @@ describe('the pump is defensive', () => {
     expect(h.registry.isRecording('n1')).toBe(true);
   });
 });
+
+// ── #1583's last tabled row: the DESTINATION FOLDER ────────────────────────
+//
+// `saveFolder` was a card-local `$state` in RecorderboxCard, so every card
+// unmount forgot it. The epic tabled that as "survives as a re-prompt, not data
+// loss" — which UNDERSTATES it, and the understatement is what these tests
+// pin. At record start `planRecordStartFolder(haveFolder, isFullscreen)`
+// answers 'download', NOT 'prompt', when there is no folder while presenting
+// (./recorderbox-present-policy — opening a picker would drop the performer out
+// of fullscreen). So a forgotten folder does not ask; it silently redirects the
+// take to the browser's downloads mid-performance.
+//
+// Same lifetime property as the recording above, so the same two events may end
+// it and no others: nothing at all for a card unmount, and `sweep()` for a node
+// that left the graph.
+
+/** A directory-handle test double. Only identity and `.name` are ever read. */
+function fakeDir(name: string): FileSystemDirectoryHandle {
+  return { name } as unknown as FileSystemDirectoryHandle;
+}
+
+describe('the destination folder belongs to the NODE (#1583)', () => {
+  it('there is NO way for a card to forget a folder — the absence IS the guard', () => {
+    // The structural assertion, in the shape #1574 established: the fix is not
+    // "cards should not forget the folder", it is that there is no method to
+    // call, so `tsc` refuses the attempt before any test runs. Naming every
+    // plausible spelling matters more here than for the recorder, because
+    // "clear the folder" reads like ordinary housekeeping rather than like the
+    // destructive act it is.
+    const { registry } = harness();
+    const surface = new Set<string>();
+    for (
+      let o: object | null = registry;
+      o && o !== Object.prototype;
+      o = Object.getPrototypeOf(o) as object | null
+    ) {
+      for (const k of Object.getOwnPropertyNames(o)) surface.add(k);
+    }
+    for (const forbidden of [
+      'forgetFolder',
+      'clearFolder',
+      'releaseFolder',
+      'resetFolder',
+      'dropFolder',
+      'unsetFolder',
+      'deleteFolder',
+    ]) {
+      expect(
+        surface.has(forbidden),
+        `NodeRecorderRegistry.${forbidden}() would let a card unmount forget the ` +
+          `destination folder again (#1583) — a re-pick OVERWRITES via rememberFolder, ` +
+          `so no remover is needed and none may exist`,
+      ).toBe(false);
+    }
+    // POSITIVE CONTROL — the probe can see the folder methods that DO exist, so
+    // the sweep above is not passing vacuously against an empty surface.
+    expect(surface.has('rememberFolder'), 'the probe can see real folder methods').toBe(true);
+    expect(surface.has('folderFor')).toBe(true);
+  });
+
+  it('a card unmount cannot forget the folder — the registry never hears about one', () => {
+    const h = harness();
+    h.registry.rememberFolder('n1', fakeDir('takes'));
+    // A card unmount is expressible only as "the card stops calling". Nothing
+    // is notified, and that is precisely the point.
+    expect(h.registry.folderFor('n1')?.name).toBe('takes');
+    expect(h.registry.folderNodeIds).toEqual(['n1']);
+  });
+
+  it('the folder outlives a whole record → stop cycle, which is the promise being kept', async () => {
+    // The card header promises "the folder is remembered, so the next record
+    // needs no prompt". `stop()` deletes the recording ENTRY; the folder lives
+    // in a different map for exactly this reason.
+    const h = harness();
+    h.registry.rememberFolder('n1', fakeDir('takes'));
+    await h.registry.start('n1', startArgs(h.engine));
+    await h.registry.stop('n1');
+    expect(h.registry.isRecording('n1'), 'the recording ended').toBe(false);
+    expect(h.registry.folderFor('n1')?.name, 'the folder did not').toBe('takes');
+  });
+
+  it('a folder is remembered BEFORE any recording exists — the two maps have different populations', () => {
+    // The gap before the FIRST record is the common case (pick a folder, then
+    // press Record), so keying the folder off a live recording entry would fix
+    // nothing. Asserted as a relation between the two populations, not a count.
+    const h = harness();
+    h.registry.rememberFolder('n1', fakeDir('takes'));
+    expect(h.registry.liveNodeIds, 'no recording yet').toEqual([]);
+    expect(h.registry.folderNodeIds, 'but the folder is already node-owned').toEqual(['n1']);
+  });
+
+  it('a re-pick overwrites in place', () => {
+    const h = harness();
+    h.registry.rememberFolder('n1', fakeDir('takes'));
+    h.registry.rememberFolder('n1', fakeDir('other-takes'));
+    expect(h.registry.folderFor('n1')?.name).toBe('other-takes');
+    expect(h.registry.folderNodeIds, 'still one entry for the node').toEqual(['n1']);
+  });
+
+  it('sweep is the ONLY thing that forgets a folder, and it is per-node', () => {
+    const h = harness();
+    h.registry.rememberFolder('n1', fakeDir('takes'));
+    h.registry.rememberFolder('n2', fakeDir('other'));
+    h.registry.sweep(['n2']);
+    expect(h.registry.folderFor('n1'), 'n1 left the graph').toBeNull();
+    expect(h.registry.folderFor('n2')?.name, "n2's folder is untouched").toBe('other');
+  });
+
+  it('sweep forgets a folder for a node that never recorded', () => {
+    // The folder map is swept independently of `#entries` — a node can hold a
+    // folder and no recording, and that node must still be reclaimed.
+    const h = harness();
+    h.registry.rememberFolder('n1', fakeDir('takes'));
+    expect(h.registry.liveNodeIds).toEqual([]);
+    h.registry.sweep([]);
+    expect(h.registry.folderNodeIds).toEqual([]);
+  });
+
+  it('NEGATIVE CONTROL: a live node is never swept', () => {
+    // The other direction of the sweep probe. Without this leg, a `sweep()`
+    // that simply cleared the whole map would pass every test above.
+    const h = harness();
+    h.registry.rememberFolder('n1', fakeDir('takes'));
+    h.registry.sweep(['n1']);
+    expect(h.registry.folderFor('n1')?.name, 'still live in the graph, so still remembered').toBe('takes');
+  });
+
+  it('an unknown node reads as null rather than throwing', () => {
+    const h = harness();
+    expect(h.registry.folderFor('never-seen')).toBeNull();
+  });
+});

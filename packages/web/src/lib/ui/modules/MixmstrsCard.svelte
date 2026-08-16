@@ -29,7 +29,7 @@
   // Sectioned grouping: Ch1..Ch8 + Master, so the patch panel's
   // click-to-expand UX kicks in (each section's row list collapses by
   // default; user clicks a header to fan out the channel's handles).
-  // Without this the 101-input column overflows even a 1366×768 viewport
+  // Without this the full input column overflows even a 1366×768 viewport
   // when every section is expanded simultaneously.
   //
   // The audio + CV ports for each channel live in the same section so
@@ -60,8 +60,9 @@
     panelWidth is the total open-state popover width. With the
     two-column open layout (inputs left, outputs right), 560 gives
     each column ~265px — wide enough for verbose labels like
-    "ch1 SEND 1" without truncation. MIXMSTRS has 101 inputs + 6
-    outputs across 9 sections (Ch1..Ch8 + Master); sections
+    "ch1 SEND 1" without truncation. MIXMSTRS's input field is by far
+    the largest in the fleet (a strip's worth of audio + CV per channel,
+    plus the returns and master); sections
     collapse by default via PatchPanel's click-to-expand UX so the
     panel fits on a 1366×768 laptop viewport even with one or two
     sections open.
