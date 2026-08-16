@@ -220,6 +220,12 @@ import {
   bugglesWoggleText,
 } from '$lib/ui/modules/buggles-face-model';
 import {
+  UNITYSCALE_SHAPED_SECTIONS,
+  unityscaleFaceParams,
+  unityscaleHalfText,
+  unityscaleOverText,
+} from '$lib/ui/modules/unityscalemathematik-face-model';
+import {
   MOOG907A_BANK,
   MOOG914_BANK,
   type MoogBank,
@@ -1021,6 +1027,50 @@ const FACE_READOUT_VALUES: Readonly<Record<string, FaceReadoutValue>> = {
   // list the def exports, so a third bus upstream cannot leave a readout behind.
   'mixmstrs-send1': (read) => sendText(0, mixmstrsFaceParams(read)),
   'mixmstrs-send2': (read) => sendText(1, mixmstrsFaceParams(read)),
+
+  // ── UNITYSCALEMATHEMATIK ─────────────────────────────────────────────────
+  // FOUR values that are ONE function read at TWO probe magnitudes on TWO
+  // sections, and the arrangement is the whole argument.
+  //
+  // The dial under them is a bare 0..1 CURVE fader, and what it moves is an
+  // EXPONENT (`k = 1 + 2·curve`). An exponent is not a gain: it PIVOTS the
+  // response about an input magnitude of 1, so at full curve a 0.5 input leaves
+  // at 0.125 (−12 dB) while a 2.0 input leaves at 8.0 (+12 dB) — one control,
+  // two opposite effects, and no single number a dial COULD print says both.
+  //
+  //   `half` moves DOWN as CURVE rises; `2×` moves UP. Each is therefore the
+  //   other's negative control on every render, which is what turns "the curve
+  //   compresses" from an assertion into a measurement. The shipped docs
+  //   asserted only the first half and were wrong about the second (#1715).
+  //   Both are also a JOIN over ATT and CRV: an ATT readback is blind to CRV
+  //   (0.500 → 0.125 with ATT untouched) and a CRV readback is blind to ATT.
+  //
+  //   A and B are the CROSS-SECTION control: the three channels do not
+  //   cross-talk (measured bit-exactly), so moving A's dials must leave B's two
+  //   numbers alone and vice versa. Asserted in both directions on every run.
+  //
+  // ⚠ UNITY GETS NO READOUT, deliberately. Its output is `in · unityAtten` and
+  // any number derived from that is a function of ONE dial, i.e. that dial
+  // relabelled — the exact thing `valueId` exists NOT to be.
+  //
+  // The section ids come from `UNITYSCALE_SHAPED_SECTIONS`, derived off the
+  // def's own param roster (an `<x>Atten` that has a matching `<x>Curve`), so a
+  // third shaped channel would register its two ids here without a list to
+  // update — and a readout can never name a section the module does not have.
+  ...(Object.fromEntries(
+    UNITYSCALE_SHAPED_SECTIONS.flatMap((s) => [
+      [
+        `unityscale-${s}-half`,
+        (read: (paramId: string) => number | undefined) =>
+          unityscaleHalfText(s, unityscaleFaceParams(read)),
+      ],
+      [
+        `unityscale-${s}-over`,
+        (read: (paramId: string) => number | undefined) =>
+          unityscaleOverText(s, unityscaleFaceParams(read)),
+      ],
+    ]),
+  ) as Record<string, FaceReadoutValue>),
 };
 
 /** The derived value for a declared id, or `null` (⇒ the readout prints `—`

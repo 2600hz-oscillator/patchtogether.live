@@ -108,9 +108,97 @@ export const unityscalemathematikDef: AudioModuleDef = {
     { id: 'bCurve',     label: 'B Crv', defaultValue: 0, min:  0, max: 1, curve: 'linear' },
   ],
 
+  // ── THE FACEPLATE (PF-20) — queue Q15, COHORT 3 ──────────────────────────
+  //
+  // WHAT THIS MODULE IS FOR, and every rank below descends from it: six other
+  // modules in the rack attenuate or invert a control voltage — `scaler`,
+  // `polarizer`, `depolarizer`, `attenumix`, `illogic`, `analogLogicMaths` —
+  // and every one of them is a STRAIGHT LINE, out = in × k. This is the only
+  // module that changes the SHAPE of a voltage rather than its size. The verb
+  // is *bend the response*.
+  face: {
+    // 1 — A CRV, the IDENTITY. Measured on the shipped worklet through this
+    //     def's own factory (art/scenarios/unityscalemathematik/cv-path.test.ts):
+    //     a 0.5 input leaves at 0.500 / 0.250 / 0.125 across its travel while a
+    //     2.0 input leaves at 2.00 / 4.00 / 8.00 — it moves the two halves of
+    //     the range in OPPOSITE directions, which is the one thing no
+    //     attenuverter anywhere in the rack can do.
+    // 2 — A ATT, A's scale/invert AND its ENABLER: at 0 the whole A channel is
+    //     dead, curve included. It ranks under the identity and over everything
+    //     in B because it is UNCONDITIONALLY applicable — it still works at
+    //     curve 0, where this module is just an attenuverter.
+    // 3/4 — B's pair. The same law again on a second channel.
+    // 5 — UNITY, ranked LAST deliberately: it does the one thing three other
+    //     modules already do, and it is the only control here that cannot bend
+    //     anything. It is also the only one with no readout, because a dB
+    //     conversion of a single dial IS that dial relabelled.
+    //
+    // Tier ladder as a sentence: mini shows A CRV; compact adds A ATT; the
+    // six-cell lane plate and the dock both show all five, so the ranking's
+    // whole authority is at the top two.
+    order: ['aCurve', 'aAtten', 'bCurve', 'bAtten', 'unityAtten'],
+
+    // PAGES BY SIGNAL ORDER (u → a → b), deliberately disagreeing with `order`,
+    // which is priority: UNITY is the FIRST section on the panel and the LAST
+    // thing worth reaching for.
+    //
+    // ⚠ WHY THREE PAGES AND NOT ONE PAGE WITH TWO CLUSTERS. A and B are the
+    // documented cluster case on the face of it — "the same idea, twice" — and
+    // that was the first draft. The REAR CARD settles it the other way:
+    // `rearFieldPlan` derives one rear band per `pages` page and files each
+    // page's CV holes under it, and this module's five CV jacks partition
+    // EXACTLY by section (u_atten_cv | a_atten_cv + a_curve_cv | b_atten_cv +
+    // b_curve_cv). Clustering A and B onto one `shape` page would pile four of
+    // those five jacks into one band and lose the only structure the rear has.
+    // Three pages keep the front and the back saying the same thing.
+    pages: [
+      { id: 'unity', label: 'unity', controls: ['unityAtten'] },
+      { id: 'a', label: 'a', controls: ['aCurve', 'aAtten'] },
+      { id: 'b', label: 'b', controls: ['bCurve', 'bAtten'] },
+    ],
+
+    // ⚠ 'none' IS A DECISION, NOT A DEFAULT. `primaryAudioOutPortId` matches
+    // `type === 'audio'`; this module declares three `cv` outputs and no audio
+    // output at all, so ANY other glyph resolves to `{kind:'static'}` — a
+    // live-looking readout of NOTHING. That is the marbles defect (#1692) and
+    // the ninelives near-miss (#1706); `module-face-lint`'s dead-glyph clause
+    // is unconditional now and would refuse anything else. The face takes the
+    // extra lane cell instead.
+    glyph: 'none',
+    hero: {
+      control: 'aCurve',
+      // FOUR READOUTS IN TWO PAIRS, and the PAIRING is the instrument's own
+      // negative control. Each half prints a RESPONSE — what a given input
+      // magnitude becomes — never a level, because with nothing patched into
+      // `a_in` every control here is bit-exactly inert (measured) and a
+      // `FaceReadoutValue` cannot see a cable.
+      //
+      //   `half` is what a HALF-SCALE input becomes. A ATT is blind to A CRV
+      //          (0.500 → 0.125 with ATT untouched) and A CRV is blind to A ATT.
+      //   `2×`   is what a DOUBLE-SCALE input becomes, and it moves the OTHER
+      //          WAY as CURVE rises (0.5 → 0.125 while 2 → 8). Publishing both
+      //          is what makes the pivot at |1| visible instead of merely
+      //          assertable — and it is the claim the shipped docs got wrong
+      //          (#1715: "leaving larger excursions intact" is false above 1).
+      //
+      // B's pair is the cross-section control: moving A's dials must not move
+      // B's numbers, which unityscalemathematik-face-model.test.ts asserts in
+      // both directions on every run.
+      readouts: [
+        { label: 'a half', valueId: 'unityscale-a-half' },
+        { label: 'a 2×', valueId: 'unityscale-a-over' },
+        { label: 'b half', valueId: 'unityscale-b-half' },
+        { label: 'b 2×', valueId: 'unityscale-b-over' },
+      ],
+    },
+    // No `title`, no `hint`, no band hints, no sidebar — owner ruling
+    // 2026-08-11 (marbles / resofilter): plain labels and values on the face;
+    // the explanation lives in `docs`, one right-click away.
+  },
+
   docs: {
     explanation:
-      "A bipolar CV-shaping utility with three independent channels. UNITY is a plain attenuverter — out = in · atten, with atten swinging -1..+1 so it can scale, attenuate, OR invert a signal. A and B are the same attenuverter PLUS a curve morph: each adds a knob that bends the response from linear toward exponential. The shaping math preserves the sign of the input and raises its magnitude to a power: y = sign(x)·|x|^k·atten where k = 1 + 2·curve runs from 1 (linear) to 3 (steep expo). A steep curve compresses small signals while leaving large excursions intact — useful for taming a hot LFO, reshaping an envelope, or turning a triangle into something rounder. The map is continuous through the bipolar zero crossing (no kink). Each atten and each curve also has its own CV input. There is a DSP worklet for the per-sample math.",
+      "A bipolar CV-shaping utility with three independent channels. UNITY is a plain attenuverter — out = in · atten, with atten swinging -1..+1 so it can scale, attenuate, OR invert a signal. A and B are the same attenuverter PLUS a curve morph: each adds a knob that bends the response from linear toward exponential. The shaping math preserves the sign of the input and raises its magnitude to a power: y = sign(x)·|x|^k·atten where k = 1 + 2·curve runs from 1 (linear) to 3 (steep expo). A steep curve PIVOTS the response about a magnitude of 1: below it small signals are pushed further down (0.5 in leaves at 0.125 at full curve, 0.25 in at 0.0156), and ABOVE it the same curve EXPANDS — a ±2 input leaves at ±8, a ±3 at ±27. So it tames a hot LFO whose peaks sit at or under 1, and it is a gain stage for anything hotter; the crossover is exactly |1|, and unity is the only magnitude the curve leaves alone. The map is continuous through the bipolar zero crossing (no kink). Each atten and each curve also has its own CV input. There is a DSP worklet for the per-sample math.",
     inputs: {
       u_in: "UNITY-section signal input. Passed through the linear attenuverter: u_out = u_in · unityAtten.",
       u_atten_cv: "CV that sums into the UNITY attenuverter amount (linear), modulating how much the UNITY section scales/inverts its input.",
@@ -129,9 +217,9 @@ export const unityscalemathematikDef: AudioModuleDef = {
     controls: {
       unityAtten: "UNITY attenuverter, linear -1..+1 (default +1 = unity passthrough). +1 passes the input as-is, 0 mutes, -1 inverts; in between it attenuates (and flips below 0).",
       aAtten: "A-section attenuverter, linear -1..+1 (default +1). Scales A's curve-shaped output; negative values invert it.",
-      aCurve: "A-section curve, linear 0..1 (default 0 = linear). 0 is a straight attenuvert; turning it up bends the response toward exponential (exponent k goes 1→3), compressing small signals while preserving large ones. Sign is always kept.",
+      aCurve: "A-section curve, linear 0..1 (default 0 = linear). 0 is a straight attenuvert; turning it up bends the response toward exponential (exponent k goes 1→3). It PIVOTS about an input magnitude of 1, which is the only magnitude it leaves alone: below 1 it pushes signals further down (0.5 in leaves at 0.125 at full curve), above 1 it lifts them (2 in leaves at 8). Sign is always kept.",
       bAtten: "B-section attenuverter, linear -1..+1 (default +1). Scales B's curve-shaped output; negative inverts.",
-      bCurve: "B-section curve, linear 0..1 (default 0 = linear), bending B's response from linear toward steep exponential exactly like A's curve.",
+      bCurve: "B-section curve, linear 0..1 (default 0 = linear), bending B's response from linear toward steep exponential exactly like A's curve — same pivot at an input magnitude of 1, same expansion above it.",
     },
   },
 
