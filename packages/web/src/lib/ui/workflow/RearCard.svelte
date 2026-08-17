@@ -722,9 +722,37 @@
     background: radial-gradient(circle at 50% 42%, var(--rcd) 0 46%, #04060a 54% 100%);
     box-shadow: inset 0 0 4px rgba(0, 0, 0, 0.6), 0 0 10px var(--rcd-glow);
   }
+  /* ⚠ THE CHIP YIELDS BEFORE THE LABEL — a PRIORITY rule, not a tuning knob.
+     Both were `flex: … 1 auto`, so flexbox shrank them in proportion to their
+     content and a jack lost its OWN IDENTITY to describe what happened to be
+     plugged into it: the dx7 baseline rendered `GATE…` next to `← clip pla…`.
+     Wrong ordering. The label says WHICH JACK THIS IS and is the reason to look
+     at the row; the chip says what is in it today. `flex-shrink: 3` plus a hard
+     40% cap makes the chip absorb the overflow first, so the label is the LAST
+     thing to truncate.
+     ⚠ MITIGATION, NOT A CURE — and the numbers are MEASURED, in-page, A/B
+     against the old declarations at the shipped 126px column (an earlier draft
+     of this comment guessed "~11 vs ~14" and both figures were wrong):
+
+       chip chars:        4     8    12    18    26
+       label budget OLD:  8     5     2     0     0     ← unbounded collapse
+       label budget NEW:  7     7     7     7     7     ← flat, chip capped 37%
+
+     So what the fix actually buys is a FLOOR, not parity: the label stops
+     degrading as the chip grows, instead of being eaten entirely by an 18-char
+     remote name. An unpatched row fits 16 characters, a patched one 7 — a chip
+     still costs 9 characters, permanently, and a label longer than 7 truncates
+     when something is plugged in. Widening `--rc-col-min` is the only real cure
+     and it trades card width for label room on every module, which is an owner
+     call, not a silent one.
+
+     It matters NOW because the owner's full-words ruling and #1807 both make
+     labels LONGER, so the old ordering was pointed the wrong way down a road
+     already being driven. */
   .rj .ep {
-    flex: 0 1 auto;
+    flex: 0 3 auto;
     min-width: 0;
+    max-width: 40%;
     font-family: var(--rc-mono);
     font-size: calc(9px * var(--rc-t));
     letter-spacing: 0.03em;
