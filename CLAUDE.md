@@ -256,6 +256,38 @@ writes nothing to the graph by design, so `readParam`/`readData` are structurall
 blind to it — the observable is the audition ledger, and `delivered: false` is
 recorded, never dropped.
 
+### ⚠ A gate whose PRECONDITION is the defect cannot fail on the defect
+
+The blind-gate rule above asks what a gate cannot SEE. This is the sharper
+version: ask what makes the condition it measures **true** — the feature, or the
+bug?
+
+**Measured (#1796).** `.faceplate-body` carried `min-width: 900px`, padding every
+dock faceplate to 900 px. Five specs asserted things that were only true
+*because* of that padding:
+
+- `dock-pane-close-chrome` scrolled `adsr` sideways to prove the ✕ is pane-fixed.
+  adsr has **259 px** of real content — it overflowed a half-width pane only
+  because the floor inflated it to 900. ⚠ **That test passed vacuously and would
+  have CERTIFIED the replacement bug** (a `max-width` clamp that clips a wide
+  face instead of scrolling it). It only caught the bug after its subject was
+  re-pointed at a genuinely wide face.
+- `workflow-shell-live-glyphs` asserted *"blank space remains to the hero's
+  right"* — **a gate pinning the wasted space as correct.** It could only ever
+  fail if the plate stopped being oversized.
+- Two more asserted panes split 50/50 (true only while every face was forced to
+  one width) and that a face KEEPS its kit floor (the design being overturned).
+
+**So:** when a fix removes a condition, the gates that depended on it do not
+merely go red — some go **green and blind**, and a green-and-blind gate will
+certify the next bug in that area. When you change a layout invariant, list the
+assertions that consumed it and ask of each whether its precondition still
+exists. Fix the SUBJECT (drive the assertion from a case that produces the
+condition on its own merits), never the threshold.
+
+The repaired versions are strictly stronger: they exercise real overflow from a
+genuinely wide face instead of overflow manufactured by padding a narrow one.
+
 ## Faceplate chrome: NO resting numbers, NO useless width
 
 Three owner rulings from one review round (2026-08-17). They are about
