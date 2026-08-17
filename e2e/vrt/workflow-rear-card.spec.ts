@@ -3,27 +3,30 @@
 // VRT: the REAR CARD — the dock full-view's flip side (rear-card-spec.md).
 // PINNED scenes bracket the range and pin the curation shapes:
 //
-//   rear-tidyVco — the BUSIEST prototype (27 in + 2 out): voice band + the
-//     five face-page bands (oscillator curated, EG clusters, audio-rate `~`
-//     ticks) + the inverted OUTPUTS rail with the stereo-pair tie. The lane
+//   rear-tidyVco — the BUSIEST prototype: the leading voice section + the five
+//     face-page sections (oscillator authored, EG clusters, audio-rate `~`
+//     ticks) + the OUTPUT zone with its collapsed stereo hole. The lane
 //     auto-wire seats real plugs (endpoint chips) deterministically.
-//   rear-vca — the SIMPLEST (2 in + 2 out): the curated signal → gain-stage
-//     split and a 2-hole rail; pins the frame/hatch/footer at minimum density.
+//   rear-vca — the SIMPLEST: the authored signal → gain-stage split and a
+//     two-hole rail; pins the frame/hatch/footer at minimum density.
 //
 // P1 batch 2 adds the two rears the batch's most complex module pair needs —
 // the axes tidyVco/vca do NOT already cover:
 //
 //   rear-dx7 — the batch's most complex FACE (4 pages, 10 ranked controls, a
 //     preset selector + a file-input family) has the SIMPLEST possible rear:
-//     3 note-source inputs and 1 output, ZERO per-param CV. It is the only
-//     pinned scene where the whole field is ONE curated band with an inline
-//     CLUSTER inside it (the mono PITCH CV + GATE legacy pair split out of
-//     the poly bus) — a shape derivation cannot produce, on a card with no
-//     CV bands at all to dilute it.
-//   rear-sixstrum — the batch's genuinely busiest FIELD (22 in + 1 out): a
-//     curated leading band with TWO sub-header clusters of six (the strum
-//     triggers, the mute gates), seven derived per-param CV bands, and 14
-//     audio-rate `~` ticks — by far the widest tick set on any pinned scene.
+//     note-source inputs and one output, ZERO per-param CV. It is the only
+//     pinned scene where the whole field is ONE authored section with an
+//     inline CLUSTER inside it (the mono PITCH CV + GATE legacy pair split out
+//     of the poly bus) — a shape derivation cannot produce, on a card with no
+//     CV sections at all to dilute it.
+//   rear-sixstrum — the batch's genuinely busiest FIELD: an authored leading
+//     section with TWO sub-header clusters (the strum triggers, the mute
+//     gates), the derived per-param CV sections, and by far the widest
+//     audio-rate `~` tick set on any pinned scene.
+//
+// ⚠ #1800 moved all four of these: one row grammar on both rails, sections as
+// COLUMNS, and the faceplate body no longer forced to the front kit's 900px.
 //
 // Deterministic by construction: the rear card renders NO live glyphs and NO
 // knobs — labels, recessed holes, domain rings and seated plugs only; the
@@ -41,24 +44,30 @@ import { pressFlipKey } from '../tests/_flip-key';
 
 test.describe.configure({ mode: 'default' });
 
-/** The two bracket scenes.
+/** The pinned scenes — the module TYPES only.
  *
- *  `ports` = declared inputs + outputs. `holes` = the jacks the rear RENDERS,
- *  which since PR-4 (owner Q5) is one FEWER per derived stereo pair — the
- *  pair-tie retired in favour of a single stereo hole. Both are asserted
- *  before the pixel pin, because a count alone cannot tell a collapsed pair
- *  from a lost jack.
- *
- *  Only `tidyVco` has a pair here (`out_l`+`out_r`), so it is the one scene
- *  whose hole count moves; the other three are unchanged, which is what makes
- *  them the control. */
-const SCENES = [
-  { type: 'tidyVco', ports: 29, holes: 28, stereoHoles: 1 },
-  { type: 'vca', ports: 4, holes: 4, stereoHoles: 0 },
-  // P1 batch 2
-  { type: 'dx7', ports: 4, holes: 4, stereoHoles: 0 },
-  { type: 'sixstrum', ports: 23, holes: 23, stereoHoles: 0 },
-] as const;
+ *  ⚠ This table used to carry `ports` / `holes` / `stereoHoles` per scene, and
+ *  every one of them was a HAND-TYPED POPULATION COUNT of a def's port list
+ *  (CLAUDE.md P0). They are gone: the structural gate below reads the declared
+ *  ports off the LIVE def (`window.__moduleSpecs`) and the collapsed pairs off
+ *  the RENDERED DOM, and asserts the relation between them. That is strictly
+ *  stronger — the old table could be edited to match a regression, and a def
+ *  gaining a port made it stale without any gate noticing — and it removes the
+ *  re-count tax on anyone who adds a jack to one of these four modules. */
+const SCENES = ['tidyVco', 'vca', 'dx7', 'sixstrum'] as const;
+
+/** Declared inputs + outputs for `type`, read off the live registry the page
+ *  exposes — never restated here. */
+async function declaredPortCount(page: Page, type: string): Promise<number> {
+  return page.evaluate((t) => {
+    const w = globalThis as unknown as {
+      __moduleSpecs: Array<{ type: string; inputs: unknown[]; outputs: unknown[] }>;
+    };
+    const spec = w.__moduleSpecs.find((s) => s.type === t);
+    if (!spec) throw new Error(`no module spec for ${t}`);
+    return spec.inputs.length + spec.outputs.length;
+  }, type);
+}
 
 /** Full-width faceplate element capture (workflow-shell-faces budget). */
 const REAR_MAX_DIFF = 1500;
@@ -126,7 +135,7 @@ async function bootWithMember(page: Page, type: string): Promise<string> {
 }
 
 test.describe('VRT: rear card — the dock full-view flip side', () => {
-  for (const { type, ports, holes, stereoHoles } of SCENES) {
+  for (const type of SCENES) {
     test(`rear-${type}: the flip-side jack field matches baseline`, async ({ page }) => {
       const errors: string[] = [];
       page.on('pageerror', (e) => errors.push(e.message));
@@ -148,29 +157,34 @@ test.describe('VRT: rear card — the dock full-view flip side', () => {
       // port is addressed by exactly one hole, the control face is gone.
       const rear = faceplate.getByTestId('rear-card');
       await expect(rear).toBeVisible();
-      // Count the collapsed pairs ON THE PAGE first, then require the rendered
-      // hole count to be `ports - (what we just measured)`.
-      //
-      // ⚠ This used to end with `expect(holes + stereoHoles).toBe(ports)`, and
-      // that line was VACUOUS: all three were fields of the same SCENES
-      // literal, so it could only fail if the table contradicted ITSELF and it
-      // observed nothing about the rendered card — while its comment claimed to
-      // stop a dropped jack satisfying the count. The DOM has to be one side of
-      // the comparison or the assertion is decoration.
-      await expect(
-        rear.locator('[data-testid="back-jack"][data-stereo-sibling]'),
-        `${type}: collapsed stereo pairs on the rendered rear card`,
-      ).toHaveCount(stereoHoles);
+      // DERIVED on both sides: the declared ports come from the live def, the
+      // collapsed pairs from the rendered DOM, and the rendered hole count must
+      // be the difference. A dropped jack cannot hide inside the shortfall, and
+      // nothing here is a literal anyone has to re-count.
+      const ports = await declaredPortCount(page, type);
       const collapsed = await rear
         .locator('[data-testid="back-jack"][data-stereo-sibling]')
         .count();
       await expect(
         rear.locator('[data-testid="back-jack"]'),
-        `${type}: ${ports} declared ports minus ${collapsed} collapsed pair(s)`,
+        `${type}: ${ports} declared ports (live def) minus ${collapsed} collapsed pair(s) on the page`,
       ).toHaveCount(ports - collapsed);
-      // The table's own `holes` must agree with what the page actually shows —
-      // this is the row that fails if SCENES drifts from reality.
-      expect(ports - collapsed, `${type}: SCENES.holes disagrees with the DOM`).toBe(holes);
+      // …and every rendered hole sits in a section of its own direction, which
+      // is the #1800 shape: two zones, one row grammar, nothing loose.
+      await expect(
+        rear.locator('[data-testid="rear-section"]').first(),
+        `${type}: the field renders as section columns`,
+      ).toBeVisible();
+      const strays = await rear.evaluate((card) =>
+        Array.from(card.querySelectorAll('[data-testid="back-jack"]'))
+          .filter(
+            (j) =>
+              j.closest('[data-testid="rear-section"]')?.getAttribute('data-direction') !==
+              j.getAttribute('data-direction'),
+          )
+          .map((j) => j.getAttribute('data-port-id')),
+      );
+      expect(strays, `${type}: holes filed into a section of the wrong direction`).toEqual([]);
       await expect(faceplate.getByTestId('faceplate-editor')).toBeHidden();
       // The lane auto-wire seats the member's plugs — deterministic chips.
       await expect(rear.locator('[data-testid="back-jack"][data-patched="true"]').first()).toBeVisible();

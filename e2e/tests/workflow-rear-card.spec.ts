@@ -1,7 +1,7 @@
 // e2e/tests/workflow-rear-card.spec.ts
 //
 // REAR CARD — the RACKLINE flip-side patch field in the dock full-view
-// (rear-card-spec.md). What this pins:
+// (RearCard.svelte). What this pins:
 //
 //   1) THE FLIP KEY flips the OPEN dock full-view to the rear card
 //      (data-flipped attr, the jack FIELD visible, the control face GONE) and
@@ -20,6 +20,11 @@
 //      def via window.__moduleSpecs — the no-orphan-holes guarantee), each
 //      hole domain-classed off its cable type and PAINTED with the live
 //      --cable-* palette hue (color = cable domain only).
+//   2b) DIRECTION READS WITHOUT COLOUR (#1800): both rails share one compact
+//      row grammar now, so the cues are measured — rows MIRROR (jack on the
+//      row's outer edge), the two ZONES split left/right, every section
+//      heading carries its ←/→ — and, the inverse, one cable domain resolves
+//      to one hue on BOTH rails.
 //   3) The holes drive the SHIPPED click-click carry seam VERBATIM: click →
 //      pickup (connectDragState + PickupCable ghost), incompatible holes DIM
 //      while carrying (the Bitwig pre-highlight, inverted), click a lit hole
@@ -193,9 +198,14 @@ test('the flip key flips the open dock full-view to the rear card and back (cont
     await faceplate(page).locator('[data-testid^="control-"]:visible').count(),
     'zero control cells render on the rear (patch points only)',
   ).toBe(0);
-  // The rear is a patch FIELD: input bands + the fixed OUTPUTS rail.
-  await expect(rearCard(page).getByTestId('rear-rail')).toBeVisible();
-  expect(await rearCard(page).getByTestId('rear-band').count()).toBeGreaterThan(0);
+  // The rear is a patch FIELD: two direction ZONES of section COLUMNS (#1800).
+  await expect(
+    rearCard(page).locator('[data-testid="rear-zone"][data-direction="input"]'),
+  ).toBeVisible();
+  await expect(
+    rearCard(page).locator('[data-testid="rear-zone"][data-direction="output"]'),
+  ).toBeVisible();
+  expect(await rearCard(page).getByTestId('rear-section').count()).toBeGreaterThan(0);
 
   // FLIP again → front restored (same mounted face, controls visible again).
   await pressFlipKey(page);
@@ -207,7 +217,7 @@ test('the flip key flips the open dock full-view to the rear card and back (cont
 
 // ── (2) one hole per declared port + domain color = the live cable palette ──
 
-test('every declared port is addressed by exactly one domain-mapped hole (tidyVco, 27 in + 2 out)', async ({
+test('every declared port is addressed by exactly one domain-mapped hole (tidyVco)', async ({
   page,
 }) => {
   await gotoWorkflow(page);
@@ -217,8 +227,11 @@ test('every declared port is addressed by exactly one domain-mapped hole (tidyVc
   await expect(rearCard(page)).toBeVisible();
 
   const { inputs, outputs } = await portsOf(page, 'tidyVco');
-  expect(inputs.length, 'the def declares 27 inputs').toBe(27);
-  expect(outputs.length, 'the def declares 2 outputs').toBe(2);
+  // NON-VACUITY, not a port census: the two literals that used to sit here
+  // (`27` in, `2` out) were hand-typed population counts of a def this spec
+  // does not own, and every assertion below already reads the live lists.
+  expect(inputs.length, 'the live def reported inputs').toBeGreaterThan(0);
+  expect(outputs.length, 'the live def reported outputs').toBeGreaterThan(0);
 
   // COUNT. ⚠ A hole is no longer 1:1 with a port (PR-4, owner Q5): a derived
   // stereo pair renders as ONE hole addressing TWO ports, so tidyVco's
@@ -277,6 +290,110 @@ test('every declared port is addressed by exactly one domain-mapped hole (tidyVc
   expect(await ringColor('poly', 'input'), 'poly hole = --cable-polyPitchGate').toBe(
     await resolved('--cable-polyPitchGate'),
   );
+});
+
+// ── (2b) DIRECTION IS LEGIBLE WITHOUT COLOUR (#1800) ────────────────────────
+//
+// The redesign gave both rails ONE row grammar, and the shipped card had named
+// the input/output shape difference as one of its three direction cues. This is
+// the DOM/geometry half of the replacement — `rear-direction.test.ts` reads the
+// component SOURCE and can only prove the rules exist, never that they produce
+// a difference on screen. Measured in CSS px off real boxes.
+//
+// ⚠ AND THE INVERSE, in the same test: the same CABLE TYPE resolves to the SAME
+// HUE on both rails. That is what "colour means cable domain only" means
+// operationally, and it is the property the four direction channels exist to
+// avoid spending. adsr is the fixture because it declares cv on BOTH rails
+// (attack/decay/… in, env/env_inv out) — a module with no shared domain would
+// make this leg vacuous.
+
+test('direction reads without colour: rows MIRROR, zones split, glyphs point — and the hue does not move', async ({
+  page,
+}) => {
+  await gotoWorkflow(page);
+  await spawnPatch(page, [{ id: 'env', type: 'adsr', position: { x: 460, y: 240 } }]);
+  await openFullView(page, 'env');
+  await pressFlipKey(page);
+  await expect(rearCard(page)).toBeVisible();
+
+  // CHANNEL: ROW MIRROR — the jack rides the row's OUTER edge. Measured in the
+  // PAGE (one evaluate, not a poll loop): for each row, is the hole's centre
+  // left or right of the label's centre?
+  const rows = await rearCard(page).evaluate((card) =>
+    Array.from(card.querySelectorAll('[data-testid="back-jack"]')).map((j) => {
+      const hole = j.querySelector('.hole')!.getBoundingClientRect();
+      const lab = j.querySelector('[data-testid="jack-label"]')!.getBoundingClientRect();
+      return {
+        portId: j.getAttribute('data-port-id'),
+        direction: j.getAttribute('data-direction'),
+        // CSS px, both centres, so the sign IS the mirror.
+        deltaPx: hole.left + hole.width / 2 - (lab.left + lab.width / 2),
+        hue: getComputedStyle(j).getPropertyValue('--rcd').trim(),
+        cable: j.getAttribute('data-domain'),
+      };
+    }),
+  );
+  const ins = rows.filter((r) => r.direction === 'input');
+  const outs = rows.filter((r) => r.direction === 'output');
+  // The probe read something on BOTH rails — otherwise "every row mirrors" is
+  // a statement about an empty set.
+  expect(ins.length, 'input rows sampled').toBeGreaterThan(0);
+  expect(outs.length, 'output rows sampled').toBeGreaterThan(0);
+  expect(
+    ins.filter((r) => r.deltaPx >= 0).map((r) => `${r.portId} +${r.deltaPx.toFixed(1)}px`),
+    'every INPUT row puts its jack LEFT of its label (CSS px, hole centre − label centre)',
+  ).toEqual([]);
+  expect(
+    outs.filter((r) => r.deltaPx <= 0).map((r) => `${r.portId} ${r.deltaPx.toFixed(1)}px`),
+    'every OUTPUT row puts its jack RIGHT of its label (CSS px, hole centre − label centre)',
+  ).toEqual([]);
+
+  // CHANNEL: ZONE — the output zone sits to the RIGHT of the input zone.
+  const zones = await rearCard(page).evaluate((card) => {
+    const box = (dir: string) =>
+      card.querySelector(`[data-testid="rear-zone"][data-direction="${dir}"]`)!.getBoundingClientRect();
+    return { inLeft: box('input').left, outLeft: box('output').left };
+  });
+  expect(zones.outLeft, 'the OUT zone starts right of the IN zone (CSS px)').toBeGreaterThan(
+    zones.inLeft,
+  );
+
+  // CHANNEL: SECTION GLYPH — every section heading carries an arrow, and the
+  // arrow agrees with the section's declared direction.
+  const glyphs = await rearCard(page).evaluate((card) =>
+    Array.from(card.querySelectorAll('[data-testid="rear-section"]')).map((s) => ({
+      id: s.getAttribute('data-section-id'),
+      direction: s.getAttribute('data-direction'),
+      glyph: s.querySelector('.rsec-dir')?.textContent?.trim() ?? '',
+    })),
+  );
+  expect(glyphs.length, 'sections sampled').toBeGreaterThan(0);
+  expect(
+    glyphs.filter((g) => g.glyph !== (g.direction === 'input' ? '←' : '→')),
+    'a section heading whose arrow disagrees with its direction (or has none)',
+  ).toEqual([]);
+
+  // THE INVERSE: hue is a pure function of cable domain, not of direction.
+  const byDomain = new Map<string, Set<string>>();
+  for (const r of rows) {
+    if (!byDomain.has(r.cable!)) byDomain.set(r.cable!, new Set());
+    byDomain.get(r.cable!)!.add(r.hue);
+  }
+  // The fixture really does put one domain on both rails — assert it, so this
+  // leg cannot quietly become vacuous if adsr's ports ever change.
+  const shared = [...new Set(ins.map((r) => r.cable))].filter((d) =>
+    outs.some((r) => r.cable === d),
+  );
+  expect(shared, 'adsr is still the both-rails-one-domain fixture').not.toEqual([]);
+  for (const [domain, hues] of byDomain) {
+    expect([...hues], `${domain}: one hue across both rails`).toHaveLength(1);
+  }
+  // NEGATIVE CONTROL for that probe: two DIFFERENT domains must read two
+  // different hues, or "one hue per domain" would also be true of a card that
+  // painted everything the same.
+  expect(byDomain.size, 'more than one domain on this card').toBeGreaterThan(1);
+  const allHues = new Set([...byDomain.values()].flatMap((s) => [...s]));
+  expect(allHues.size, 'the hues actually differ between domains').toBe(byDomain.size);
 });
 
 // ── (3) the click-click carry seam + compatibility dim + a validated commit ──
@@ -383,15 +500,16 @@ test('50/50 split: the flip key flips BOTH panes to their rear cards together (o
     await expect(paneOf(page, nodeId).getByTestId('rear-card')).toBeVisible();
     await expect(paneOf(page, nodeId).getByTestId('faceplate-editor')).toBeHidden();
   }
-  // Half-width panes stay FLAT (bands wrap via the auto-fill raster — no
-  // menus, no elision): the busiest field still shows every patch point.
+  // Half-width panes stay FLAT (section columns wrap — no menus, no elision,
+  // and since #1800 no disclosure either): the busiest field still shows every
+  // patch point.
   // (Scoped INSIDE the rear card — the hidden front face keeps its legacy
   // back-panel buttons in the DOM.)
   //
-  // 28 holes for tidyVco's 29 declared ports: `out_l`+`out_r` are a derived
-  // stereo pair and render as ONE hole (PR-4, owner Q5). Derived from the
-  // collapsed pairs actually present, so a genuinely dropped jack cannot hide
-  // inside the shortfall.
+  // `out_l`+`out_r` are a derived stereo pair and render as ONE hole (PR-4,
+  // owner Q5), so the rendered count is the declared count minus the collapsed
+  // pairs actually present — read off the live def and the live page, never a
+  // literal, so a genuinely dropped jack cannot hide inside the shortfall.
   const tvRear = paneOf(page, 'tv').getByTestId('rear-card');
   await expect(
     tvRear.locator('[data-testid="back-jack"][data-stereo-sibling]'),
