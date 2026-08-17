@@ -1223,7 +1223,73 @@ jobs:
           # playwright invocation; we ran with `--workspace e2e`, which sets
           # cwd to e2e/, so the output lands at e2e/blob-report/.
           path: e2e/blob-report
-          retention-days: 7
+          # 30d, not 7d (raised 2026-08-17). The MERGED HTML report was the
+          # long-lived (30d) copy of this run's results and it is gone with
+          # `merge-reports`; these blobs are now the only artifact a triage can
+          # replay from. Two retentions for one truth was the bug — a 12-day-old
+          # investigation could open the merged report and find the blobs it
+          # drills into already expired.
+          retention-days: 30
+
+      # ── THE LANE-LEAK DETECTOR, MIGRATED OFF `merge-reports` (2026-08-17) ───
+      #
+      # This audit used to live in the `merge-reports` aggregator, which was
+      # deleted with the rest of the informational lanes. It is the ONE piece of
+      # that job with real teeth: a capability probe (WebGL2, IndexedDB, DOOM
+      # WASM, ImageDecoder) flipping false on CI makes its spec `test.skip(…)`
+      # and THE LANE STAYS GREEN. `scripts/e2e-skip-budget.mjs` is deny-by-
+      # default — every runtime skip must match a NAMED (spec, reason) entry
+      # admitting THIS lane — so a probe that starts skipping is a red job
+      # instead of a quiet coverage hole.
+      #
+      # ⚠ IT IS PER-SHARD AND THAT IS SOUND, not an approximation of the merged
+      # check. `budgetViolations()` classifies each row INDEPENDENTLY (row →
+      # (spec, reason) → entry); it never reads the population. So the union of
+      # the ten shards' violations is exactly the merged report's violations.
+      # There is no "every budget entry must be used" direction to lose — that
+      # anchor lives in scripts/e2e-skip-budget.test.ts against the SOURCE
+      # inventory, not against a run.
+      #
+      # ⚠ AND IT NOW GATES. On `merge-reports` this was deliberately
+      # non-blocking ("visible but off the umbrella"). `e2e` IS in the umbrella's
+      # needs+env+failing-if, so a budget violation here BLOCKS THE MERGE. That
+      # is the point of the migration and not an accident of where it landed: a
+      # detector nobody has to act on is the thing this PR is deleting nine of.
+      # Safe to arm because the lane is green on it — run 31963118383 (main,
+      # 2026-08-16) reported `Merge Playwright reports` SUCCESS with the budget
+      # armed, as has every completed run since the budget landed.
+      #
+      # ⚠ `--fail-on-flaky` STAYS OFF, for the measured reason in #1502: 16 of 18
+      # consecutive runs recovered at least one flake, so arming it would redden
+      # a required lane on ~89 % of runs and get the gate reverted rather than
+      # the tests fixed. Flakes are still PRINTED here (step summary + the JSON
+      # artifact); only the skip budget is armed.
+      - name: Audit shard report for flaky + skipped (lane e2e skip budget)
+        if: always()
+        run: |
+          set -euo pipefail
+          # `--workspace e2e` runs Playwright with cwd=e2e/, so `./blob-report`
+          # resolves to e2e/blob-report (where the run above wrote it) while the
+          # SHELL redirect below lands at the repo root, which is where the
+          # audit script and its --json-out are read/written. Same split as the
+          # merged invocation this replaces.
+          flox activate -- npx --workspace e2e playwright merge-reports \
+            --reporter json \
+            ./blob-report > shard-report.json
+          flox activate -- node scripts/e2e-report-audit.mjs shard-report.json \
+            --lane e2e --json-out e2e-report-audit-${{ matrix.shard }}.json
+
+      # The machine-readable audit (rows + classifications + budget verdicts) —
+      # uploaded even when the audit step above exits non-zero, so a red audit is
+      # inspectable without replaying the blob locally (#1502).
+      - name: Upload report-audit artifact (shard ${{ matrix.shard }})
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-report-audit-${{ matrix.shard }}
+          path: e2e-report-audit-${{ matrix.shard }}.json
+          retention-days: 30
+          if-no-files-found: warn
 
       - name: Upload Playwright test-results on failure (shard ${{ matrix.shard }})
         if: failure()
