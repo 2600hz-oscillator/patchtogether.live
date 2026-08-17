@@ -24,9 +24,8 @@
   // "write the spec", not "rebuild the page".
   import { onMount } from 'svelte';
   import { testHooksEnabled } from '$lib/dev/test-hooks';
-  import DropPatchModal from '$lib/dev/video-patch-drop/DropPatchModal.svelte';
-  import DropSandbox from '$lib/dev/video-patch-drop/DropSandbox.svelte';
-  import { buildDropPlan, type DropDefLike } from '$lib/dev/video-patch-drop/drop-plan';
+  import DropPatchModal from '$lib/ui/patch-drop/DropPatchModal.svelte';
+  import { buildDropPlan, type DropDefLike } from '$lib/ui/patch-drop/drop-plan';
 
   // REAL defs, imported directly rather than through the registry so a scene
   // cannot silently render a placeholder if registration order changes.
@@ -71,17 +70,6 @@
   const comOuts = (defs.colourofmagic.outputs ?? []).length;
   const RAIL_DOT_CAP = 4; // mirrors PatchPanel's lane-rail preview cap
 
-  /** The live sandbox's starting layout. Spread far enough apart that NO pair
-   *  starts overlapping — the first overlap on the page is one the reviewer
-   *  made. */
-  const sandboxSeed = [
-    { id: 'camera-1', label: 'camera', def: defs.camera, x: 0, y: 0 },
-    { id: 'backdraft-1', label: 'backdraft', def: defs.backdraft, x: 300, y: 20 },
-    { id: 'colorizer-1', label: 'colorizer', def: defs.colorizer, x: 300, y: 200 },
-    { id: 'com-1', label: 'colour of magic', def: defs.colourofmagic, x: 610, y: 20 },
-    { id: 'edges-1', label: 'edges', def: defs.edges, x: 610, y: 200 },
-    { id: 'peakstate-1', label: 'peakstate', def: defs.peakstate, x: 0, y: 200 },
-  ];
 </script>
 
 <svelte:head><title>video patch-drop — mocks</title></svelte:head>
@@ -105,73 +93,21 @@
       </p>
     </header>
 
-    <!-- 0 ─── THE WORKING GESTURE ──────────────────────────────────────── -->
-    <section class="scene" data-testid="scene-sandbox">
+    <!-- 0 ─── IT IS IN THE REAL RACK NOW ────────────────────────────── -->
+    <section class="scene" data-testid="scene-shipped">
       <div class="scene-head">
-        <h2><span class="n">0</span> the gesture, working</h2>
+        <h2><span class="n">0</span> the gesture is on the rack — not here</h2>
         <p>
-          Pick up a card and drop it so its <b>centre</b> lands on another one. The modal opens on
-          the real defs; click rows to stage them, <kbd>enter</kbd> to patch,
-          <kbd>tab</kbd> to invert, <kbd>esc</kbd> to cancel. A committed set is
-          <b>one</b> <kbd>⌘Z</kbd>. The dragged card <b>snaps back</b> — see below for why that one
-          is not cosmetic.
-        </p>
-        <p>
-          The strip above the canvas is the <b>decision, live</b>: while you drag it prints the
-          overlap area, the coverage, and whether the gate has passed, for the top three candidates.
-          A row reading <code>1200 px² · centre outside</code> is precisely the case xyflow's own
-          <code>getIntersectingNodes</code> default would have claimed as a drop.
-        </p>
-      </div>
-      <DropSandbox seed={sandboxSeed} {repairCandidates} />
-
-      <div class="callout" data-testid="drag-decisions">
-        <h3>the four decisions the library does not make</h3>
-        <p>
-          <b>1 · which node wins.</b> Ranked by <b>coverage</b> = overlap ÷ area of the
-          <i>smaller</i> rect. Raw overlap area favours big candidates (clipping a tall card beats
-          being centred on a short one); normalising by the dragged card alone breaks
-          "drop a big card onto a small one"; normalising by the candidate alone breaks the mirror
-          case. <code>min</code> is the only denominator that scores <i>both</i> full-containment
-          cases 1.0. Nearest-centre and topmost-z were rejected — the first has the same asymmetry,
-          the second is drag order, which is not something the user is looking at.
-        </p>
-        <p>
-          <b>2 · what overlap counts.</b> The dragged card's <b>centre</b> must be inside the
-          candidate. Two measurements, not a guess. (a) xyflow's default is
-          <code>partially = true</code>, implemented as <code>overlappingArea &gt; 0</code> —
-          <b>one square pixel</b>. Cards here do not merely brush: <code>findFreeRackSlot</code>
-          resolves a collision by sliding a card in <b>22.5 px</b> HP steps, which on a one-U card is
-          <b>4 050 px²</b> of overlap. A rule that fires at 1 px² fires on every reshuffle the app
-          performs on its own. (b) The app already answered this question the same way —
-          lane membership hit-tests the card's <b>centre</b>, with a comment recording that a
-          top-edge probe "would unassign it on a 1px nudge". Using the same rule means the drop
-          gesture and lane membership cannot disagree about "am I on it".
+          <b>Go to <code>/rack</code> and drag one module card onto another.</b> Real cards, real
+          defs, real committed edges. This page is now only the design record: the scenes below are
+          the same <code>&lt;DropPatchModal&gt;</code> the rack opens, mounted against real defs so
+          the type rule and the collapse can be read without setting up a patch.
         </p>
         <p class="warn">
-          ⚠ <b>3 · the card snaps back — and this is the one with teeth.</b> In the shipped handler
-          <b>position decides lane membership</b>: <code>handleNodeDragStop</code> hit-tests the
-          dropped centre against the lane bands and rewrites <code>data.channel</code> /
-          <code>data.sendSlot</code> from the result. A modal-opening drop that left the card where
-          it landed would therefore <i>silently reparent it into whatever lane it was over</i> — a
-          second effect nobody asked for. Restoring the pre-drag position first makes that
-          impossible <b>by construction</b>: there is no new position for a reparent to be derived
-          from, so the membership pass reaches exactly the conclusion it would have reached had the
-          drag never happened. It is not a guard anyone has to remember.
-        </p>
-        <p>
-          Snap-back happens <i>before</i> the modal exists, so no dismissal path — esc, click-away,
-          a crash — can strand the card. And when <b>no</b> target is claimed the handler returns
-          before touching a position at all, so an ordinary move is bit-for-bit the drag xyflow
-          already performed. For the case where you really did mean to move it there, the modal
-          offers an explicit <b>leave it there</b> — labelled, and never the default.
-        </p>
-        <p>
-          <b>4 · commit and undo.</b> Rows <b>stage</b>; <kbd>enter</kbd> commits the staged set in
-          one go; one <kbd>⌘Z</kbd> removes that whole set. The unit is the <i>session</i>, not the
-          click, because a half-applied patch set is the failure mode — the same atomic-apply
-          requirement the randomizer has. Staging buys it with no undo-grouping trick: by the time
-          anything is written the full set is already known.
+          ⚠ The standalone sandbox that used to live here <b>has been deleted</b>. It was a second
+          implementation of the same gesture against fake cards, and the owner's verdict on it was
+          exactly right — there was nothing to test. Two implementations of one interaction is a
+          divergence waiting to happen, so there is now only one.
         </p>
       </div>
     </section>
