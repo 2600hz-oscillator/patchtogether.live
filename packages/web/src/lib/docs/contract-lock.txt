@@ -58,6 +58,7 @@ analogLogicMaths out product cv
 analogLogicMaths out sum cv
 analogLogicMaths param attA -1..1 linear default=1
 analogLogicMaths param attB -1..1 linear default=1
+analogLogicMaths face sidebar 0 kind=custom label=transfer panel=alm-transfer
 analogVco meta domain=audio
 analogVco in fine cv param=fine cvScale=linear
 analogVco in fm audio

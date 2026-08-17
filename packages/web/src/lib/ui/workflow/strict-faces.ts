@@ -1321,6 +1321,69 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // nothing" and a distinct-value census reports "bit reduction does nothing".
   // Both are recorded as PERMANENT negative controls on the audit's instrument.
   'destroy',
+  // FACE BATCH 4 · analogLogicMaths (2026-08-17) — the CONTINUOUS logic block,
+  // and the entry that RETIRES ITS OWN REJECTION. Queue Q19.
+  //
+  // §9 refused it on merit: *"the module IS its five outputs, and the rear card
+  // renders those without a face."* That is the `ninelives` argument with the
+  // sign flipped — `ninelives` has 2 params and 9 outputs and was promoted
+  // PRECISELY because the module is its outputs and no dial can print their
+  // relation. The rear card renders five JACKS. It cannot render the five LAWS,
+  // and the laws are the module.
+  //
+  // WHAT MAKES IT A FACE, measured on the shipping worklet through the def's
+  // own factory (`art/scenarios/analog-logic-maths/face-audit.test.ts`, which
+  // re-derives every figure on each run):
+  //
+  //  · SUM IS A SATURATOR, NOT A MIXER. Two dials at +1 have a nameplate gain
+  //    of ×2.00 and deliver ×0.96 — −6.34 dB against the un-clipped sum, and
+  //    −12.05 dB for two ±2 sources. §11.1 DERIVED those two figures from the
+  //    declared law and told this branch to render them before authoring; they
+  //    REPRODUCE to four decimal places (−6.3388 / −12.0470). The knee is not a
+  //    corner case: the compression reads −0.96 dB at ±0.3 in each input and
+  //    passes 1 dB by ±0.4, less than half the rail. And it is a JOIN — with ATT
+  //    B at 0 the same full-scale input compresses by only −2.37 dB, so opening
+  //    the second dial nearly triples
+  //    it. Neither dial can print a number that only exists when both are open,
+  //    which is the STOP-1 test this module was rejected for failing.
+  //
+  //  · AND THE SOFT-CLIP IS ON THE WRONG PAIR OF JACKS. For in-range inputs
+  //    |a′·b′| ≤ 1, so PRODUCT's tanh cannot be protecting anything (it is a
+  //    fixed −2.37 dB of distortion at the corner), while DIFF reaches
+  //    |attA|+|attB| = ±2.00 UNCLIPPED and is the only jack on the module that
+  //    leaves the ±1 rail. The DSP said the exact opposite in a comment — *"MIN
+  //    / MAX / DIFF stay bounded for any in-range pair"* — wrong in both halves,
+  //    corrected here, with the BEHAVIOUR deliberately unchanged (a soft-clipped
+  //    difference would stop being a difference) and the live ceiling printed as
+  //    `peak`.
+  //
+  //  · DIFF SHIPS AS A COMMON-MODE NULL (×0.00 with both faders at maximum),
+  //    the illogic finding in a module with half the dials.
+  //
+  // ⚠ THE RANK AXIS ILLOGIC USED DOES NOT WORK HERE, AND THE AUDIT PROVES IT
+  // RATHER THAN ASSUMING IT. Ranking by REACH reports attA moving five jacks
+  // and attB four — and SWAPPING THE TWO INPUT AMPLITUDES FLIPS THE ANSWER,
+  // because MIN and MAX are selectors and whichever channel is louder owns them.
+  // Reach is a property of the STIMULUS on this module, not of the module. Both
+  // readings are asserted as a permanent leg so the refusal cannot be quietly
+  // forgotten. The intrinsic axis is POLARITY: `diff = a′ − b′` is the one
+  // antisymmetric law, so ATT A enters all five jacks with the sign the panel
+  // implies and ATT B inverts one of them.
+  //
+  // ⚠ ITS GLYPH IS 'none' ON A RESOLUTION, not a house style: five `cv` outputs
+  // and no `audio` output means `primaryAudioOutPortId` returns null and every
+  // other literal collapses to the dead `{kind:'static'}` binding. The face's
+  // only picture is therefore a registered `custom` sidebar panel — the transfer
+  // curve, where "SUM bends and DIFF does not, and it is the straight line that
+  // crosses the rail" is one drawing instead of three sentences.
+  //
+  // ⚠ AND ITS TWO CV INPUTS ARE HALF-DEAD AT THE FACTORY SETTINGS, found by
+  // sampling AT the declared value rather than around it (the #1750 lesson):
+  // `attA`/`attB` ship at +1, which IS the top of their declared −1..+1 range,
+  // and a CV cable ADDS to the knob, so a +1 — or a +5 — CV changes the output
+  // by bit-exactly zero. Written into the docs; the knob-at-0 positive control
+  // is a permanent leg.
+  'analogLogicMaths',
 ]);
 
 /**

@@ -1403,6 +1403,100 @@ in practice — every realistic CV source well under ±1, so the clip never enga
 — that is a NO and it should be REPORTED as one. Measure the knee before
 authoring.
 
+#### BUILT — 2026-08-17 (#1771, #1772, #1773)
+
+Everything below was measured against the SHIPPED worklet through the def's own
+factory and is re-derived on every run by
+`art/scenarios/analog-logic-maths/face-audit.test.ts` (27 legs, 1.4 s).
+
+**STOP 1 PASSES, and the knee is the reason.** The entry told this branch to
+measure it before authoring, and the answer is not marginal. SUM's compression
+against the UN-CLIPPED sum:
+
+```
+drive  ±0.05  ±0.10  ±0.25  ±0.30  ±0.40  ±0.50  ±1.00  ±2.00
+dB     −0.03  −0.11  −0.68  −0.96  −1.62  −2.37  −6.34  −12.05
+```
+
+⚠ **The entry's derived figures REPRODUCED** — −6.3388 and −12.0470 against
+§11.1's −6.34 / −12.05. That is worth recording precisely because §15.14 exists:
+this is the first cohort-3 entry whose unrendered arithmetic turned out RIGHT,
+and it stayed right only because §11.1 had already caught and corrected its own
+first draft (−0.318 / −6.02 against two different denominators).
+
+⚠ **BUT THE PROSE ABOUT THE KNEE WAS WRONG, IN THIS BRANCH.** The first draft of
+the face comment said the compression *"crosses 1 dB at about a THIRD of the rail
+(±0.3)"* — read straight off the ±0.3 row, which is **−0.9627 dB and has
+therefore NOT crossed**. The gate caught it. *The general lesson, since it will
+recur:* **a table is not a claim. Reading a threshold OFF a table is a
+derivation, and it obeys the same "measure it" rule as the table itself.**
+
+**THE MERIT CLAIM IS A JOIN, confirmed:** with ATT B at 0 the same full-scale
+input compresses by only −2.37 dB, so opening the second dial nearly triples it.
+
+**THREE FINDINGS THE ENTRY DID NOT PREDICT.**
+
+* **THE SOFT-CLIP IS ON THE WRONG PAIR OF JACKS (#1772).** The DSP said *"soft-
+  clip is applied only to SUM + PRODUCT (the operations that can leave the
+  [-1,+1] range). MIN / MAX / DIFF stay bounded for any in-range pair"* — wrong
+  in BOTH halves. For in-range inputs `|a′·b′| ≤ 1`, so PRODUCT's tanh protects
+  nothing (a fixed −2.37 dB of distortion at the corner); and **DIFF reaches
+  `|attA|+|attB|` = ±2.00 with no clip at all** and is the ONLY jack that leaves
+  the rail. `algebra.test.ts` asserted the bounds of SUM and PRODUCT and said
+  nothing about DIFF's range — the half that was wrong. Behaviour deliberately
+  unchanged; the face prints the live ceiling as `peak`.
+* **BOTH CV INPUTS ARE HALF-DEAD AT THE SHIPPED DEFAULT (#1773).** `attA`/`attB`
+  ship at +1, which IS the declared `maxValue`, and a cable ADDS to the knob, so
+  a +1 — or a +5 — CV changes the output by bit-exactly zero and a bipolar LFO is
+  half-wave rectified. Found by sampling **AT** the declared value (the #1750
+  lesson); a probe at ±0.1 either side of a mid knob sees nothing. Left OPEN as a
+  family-level owner call (the same shape exists on `unityscalemathematik`).
+* **ONE INPUT PATCHED MAKES IT A RECTIFIER PAIR.** With B unpatched, MIN keeps
+  only the negative half of A and MAX only the positive half, and PRODUCT is
+  bit-exactly silent. The behaviour a player meets FIRST, stated nowhere.
+
+⚠ **AND THE RANK AXIS THIS ENTRY INHERITED FROM Q17 DOES NOT EXIST HERE.**
+`illogic` ranked four identical dials by REACH. Applied to ALM that sweep reports
+attA moving 5 jacks and attB 4 — and **swapping the two input amplitudes flips
+the answer**, because MIN and MAX are SELECTORS and whichever channel is louder
+owns them. Reach is a property of the STIMULUS on this module. Both readings are
+a permanent leg. The axis that IS intrinsic is POLARITY: `diff = a′ − b′` is the
+one antisymmetric law, so ATT A enters all five jacks with the sign the panel
+implies and ATT B inverts one. *The general lesson:* **an axis that worked on the
+sibling is a hypothesis, not an inheritance — and a selector-shaped output makes
+"reach" stimulus-dependent by construction.**
+
+**Instrument controls worth carrying to Q20+:**
+
+* ⚠ **RELATIVE ERROR IS THE WRONG INSTRUMENT AT A NULL, and this module is full
+  of nulls.** The model-vs-worklet leg went red at 1.3e8 relative on
+  `a=−0.6 b=0.2 att=0.25/0.75`, where the summed pair is −0.15+0.15: float64 says
+  2.8e-17, float32 says −3.7e-9, both are zero to any honest reading, and their
+  RATIO is meaningless. The metric now SWITCHES on the expected magnitude, with
+  the switch and its floor printed in the assertion message. §13 recorded
+  "absolute is wrong, use relative"; the complete rule is **name the denominator
+  AND state where it stops existing.**
+* ⚠ **`tanh(x)` IS EXACTLY 1 IN FLOAT32 for large x**, so
+  `expect(|out|).toBeLessThan(1)` fails on a correctly-saturating jack. The
+  clipped/linear partition is asserted as `≤ 1` **plus** proportionality (linear
+  jacks track a ×50 drive, clipped ones come nowhere near it) — the property, not
+  a strict interior.
+* ⚠ **An anti-phase stimulus puts SUM on its own null**, so a ratio taken against
+  it is a NaN wearing a measurement. Use an ASYMMETRIC pair (0.4 / 0.2).
+* ⚠ **`glyphBinding` SHORT-CIRCUITS ON THE DECLARED LITERAL** before it inspects
+  a port, so a `glyph: 'none'` def returns `{kind:'none'}`, NOT `{kind:'static'}`
+  — and a negative control that spreads the def and only adds an `audio` output
+  still returns `{kind:'none'}`, i.e. it measures the literal it was trying to
+  control for. Override the glyph in BOTH mutants.
+* The `destroy` 1000 Hz trap is honoured (C4 everywhere a waveform is counted).
+
+**VRT: PREDICTION vs ACTUAL.** Predicted exactly two new baselines
+(`face-analogLogicMaths-compact.png`, `face-analogLogicMaths-dock.png`) and no
+moves elsewhere. ⚠ The #1752 hazard fired again: the local `task vrt:one` WROTE
+both PNGs as untracked macOS renders, which a second local run would have
+reported as PASSING. Deleted; `git status --untracked-files=all` after every VRT
+run is not optional.
+
 ### Q20 · `moog923` — noise + two filter taps (§9's deferral, RESOLVED)
 
 **Merit: YES, on the `noise` argument verbatim.** 3 params (`level`, `lpCutoff`,

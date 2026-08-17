@@ -17,8 +17,28 @@
 // user invert + level each input before the math, so e.g. (-1 * a) + b gives
 // `b - a` on the SUM output for free.
 //
-// Soft-clip is applied only to SUM + PRODUCT (the operations that can leave
-// the [-1, +1] range). MIN / MAX / DIFF stay bounded for any in-range pair.
+// ⚠ WHICH JACKS CAN LEAVE THE ±1 RAIL — MEASURED, and it is NOT the pair the
+// soft-clip protects. This comment used to read "soft-clip is applied only to
+// SUM + PRODUCT (the operations that can leave the [-1, +1] range). MIN / MAX /
+// DIFF stay bounded for any in-range pair", and it was wrong in BOTH halves.
+// For in-range inputs (|a|,|b| <= 1) at any attenuverter setting, |a'| <= 1 and
+// |b'| <= 1, so:
+//
+//   SUM      a'+b' in [-2,+2]   CAN exceed the rail  -> tanh, bounded under 1
+//   PRODUCT  a'*b' in [-1,+1]   CANNOT exceed it     -> tanh anyway: -2.37 dB
+//                                                      of distortion at the
+//                                                      corner, protecting
+//                                                      nothing
+//   DIFF     a'-b' in [-2,+2]   CAN exceed the rail  -> NOT CLIPPED. The only
+//                                                      jack here that leaves
+//                                                      +/-1; it reaches +/-2.00
+//                                                      at the shipped defaults
+//   MIN/MAX  select one of a', b' — genuinely bounded
+//
+// The BEHAVIOUR is unchanged and deliberately so: an unclipped difference is
+// the correct instrument (a soft-clipped DIFF would stop being a difference),
+// and the faceplate prints its live ceiling as `peak`. Measured against this
+// compiled worklet in art/scenarios/analog-logic-maths/face-audit.test.ts.
 //
 // Why a custom JS worklet (no Faust): the math is 5 trivial expressions per
 // sample, all stateless. A bare AudioWorkletProcessor is the minimum-surface
@@ -68,7 +88,8 @@ class AnalogLogicMathsProcessor extends AudioWorkletProcessor {
       if (minOut) minOut[i] = ap < bp ? ap : bp;
       if (maxOut) maxOut[i] = ap > bp ? ap : bp;
       if (diffOut) diffOut[i] = ap - bp;
-      // tanh soft-clip: SUM and PRODUCT can exceed unity; keep them in (-1, +1).
+      // tanh soft-clip. SUM genuinely needs it (a'+b' reaches +/-2); PRODUCT
+      // does not for in-range inputs and gets it anyway — see the header.
       if (sumOut) sumOut[i] = Math.tanh(ap + bp);
       if (prodOut) prodOut[i] = Math.tanh(ap * bp);
     }

@@ -263,6 +263,13 @@ import {
   destroyRateText,
   destroyStreamText,
 } from '$lib/ui/modules/destroy-face-model';
+// ⚠ ITS OWN `import {` STATEMENT, deliberately — see the illogic note above.
+import {
+  almDiffGainText,
+  almPeakText,
+  almRingGainText,
+  almSumGainText,
+} from '$lib/ui/modules/analog-logic-maths-face-model';
 import {
   MOOG907A_BANK,
   MOOG914_BANK,
@@ -1261,6 +1268,42 @@ const FACE_READOUT_VALUES: Readonly<Record<string, FaceReadoutValue>> = {
   'destroy-stream': (read) => destroyStreamText(destroyFaceParams(read)),
   'destroy-bit-floor': (read) => destroyFloorText(destroyFaceParams(read)),
   'destroy-mute': (read) => destroyMuteText(destroyFaceParams(read)),
+
+  // ── ANALOGLOGICMATHS ─────────────────────────────────────────────────────
+  // TWO DIALS, FIVE JACKS, and every jack is a DIFFERENT function of the SAME
+  // two dials — which is precisely the shape a ranked list of controls cannot
+  // express. All four below are stated at a full-scale ±1 common-mode probe,
+  // in one unit, and they are chosen so each is blind to something the next one
+  // sees (analog-logic-maths-face-model.test.ts asserts that as a matrix over
+  // four structural perturbations, in both directions):
+  //
+  //   sum   = tanh(attA + attB)   ⚠ THE ONLY NON-LINEAR ROW. ×0.96 at the
+  //                               shipped defaults against a nameplate ×2.00 —
+  //                               a −6.34 dB compression that exists only when
+  //                               BOTH dials are open, so neither can print it
+  //   diff  = attA − attB         LINEAR; ×0.00 at the defaults — one of five
+  //                               jacks ships as a common-mode NULL beneath two
+  //                               faders both at maximum
+  //   ring  = tanh(attA · attB)   the one law where the dials MULTIPLY: halve
+  //                               both and this QUARTERS while `peak` halves
+  //   peak  = Σ|attN|             SIGN-BLIND; ×2.00 on a ±1 bus, and DIFF's
+  //                               ceiling alone — the sign flip that swaps
+  //                               `sum` and `diff` leaves this one still
+  //
+  // ⚠ `sum` IS A GAIN THAT ONLY HOLDS AT THE PROBE, because tanh makes SUM's
+  // gain a function of the drive as well as of the dials. It is honest in this
+  // row precisely because `peak` sits beside it in the same units: the GAP
+  // between ×2.00 and ×0.96 is the compression, and it is the module's whole
+  // merit claim rendered as two numbers.
+  //
+  // Their authority is NOT this registration:
+  // `art/scenarios/analog-logic-maths/face-audit.test.ts` measures every one of
+  // these four laws at the JACK, through the def's own factory and the shipping
+  // worklet, with the dB reference named in each assertion message.
+  'alm-sum-gain': (read) => almSumGainText(read),
+  'alm-diff-gain': (read) => almDiffGainText(read),
+  'alm-ring-gain': (read) => almRingGainText(read),
+  'alm-peak': (read) => almPeakText(read),
 };
 
 /** The derived value for a declared id, or `null` (⇒ the readout prints `—`

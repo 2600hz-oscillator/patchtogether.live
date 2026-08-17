@@ -77,6 +77,7 @@ import { stripSourceComments } from '$lib/source-guards/strip-source-comments';
 import { adsrDef } from '$lib/audio/modules/adsr';
 import { attenumixDef } from '$lib/audio/modules/attenumix';
 import { analogVcoDef } from '$lib/audio/modules/analog-vco';
+import { analogLogicMathsDef } from '$lib/audio/modules/analog-logic-maths';
 import { backdraftDef } from '$lib/video/modules/backdraft';
 import { bugglesDef } from '$lib/audio/modules/buggles';
 import { chromaconsoleDef } from '$lib/audio/modules/chromaconsole';
@@ -254,6 +255,16 @@ const RANGE_BOUND_CARDS: Readonly<Record<string, { params: readonly ParamDef[] }
   // Binding the whole `ParamDef` fixes the name and forecloses the numbers in
   // the same edit, which is why the two lists share one mechanism.
   'DestroyCard.svelte': destroyDef,
+  // Converted with its FACEPLATE (queue Q19), and it is the entry that shows
+  // this list is not only about DIVERGENCES either. NOTHING on this card
+  // disagreed with the def — both ranges, both defaults, both curves and both
+  // labels already matched, and neither side passed `units` because neither
+  // param declares one. What promotion changes is the CONSEQUENCE of the second
+  // copy: from `analogLogicMaths` entering STRICT_FACES, the dock renders these
+  // two faders straight off the `ParamDef`, so any later edit to one copy would
+  // ship two surfaces calling one control two things. Binding the whole
+  // `ParamDef` forecloses that without moving a pixel.
+  'AnalogLogicMathsCard.svelte': analogLogicMathsDef,
   // Converted with its FACEPLATE (queue Q6), which is when the divergence would
   // have started to cost: a faced module renders the DOCK straight off the
   // ParamDef and the legacy card off whatever it typed, so the same knob would
@@ -443,6 +454,13 @@ const MAPPING_BOUND_CARDS: readonly string[] = [
   // readout clause below is vacuous here — the Fader's own ladder is the
   // intended law for a sample count, a bit depth and a 0..1 mix.)
   'DestroyCard.svelte',
+  // THE FACEPLATE QUEUE · Q19. Range AND mapping: both Faders read
+  // `P.<id>.{min,max,defaultValue,label,units,curve}` off
+  // `paramSpec(analogLogicMathsDef, …)`, so the def is the only copy of any of
+  // them. `units` is bound rather than merely absent — neither attenuverter
+  // declares one, and binding is what makes that a DECLARATION instead of an
+  // omission the next editor has to re-derive.
+  'AnalogLogicMathsCard.svelte',
   'MacrooscillatorCard.svelte',
   'FilterCard.svelte',
   'MarblesCard.svelte',

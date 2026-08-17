@@ -647,6 +647,29 @@ export const FACES = [
   // formatter change moves this baseline: `48.0 kHz · 768 kbit/s · -101.1 dB ·
   // -96.3 dB` at DECIMATE 1 / BITS 16 / WET 1.
   { type: 'destroy', pages: 1 },
+  // THE FACEPLATE QUEUE · Q19 — the CONTINUOUS logic block, `illogic`'s sibling.
+  //
+  // `pages: 1` is the POST-hero split count, the illogic / destroy / ninelives
+  // shape: the face declares NO `pages`, so its two ranked keys sit in the single
+  // unlabelled `__all` band and the hero promotes ATT A out of it, leaving ATT B.
+  // The band survives — this is NOT the `noise` case where the only key was
+  // promoted and `heroFacePlan` dropped the emptied band.
+  //
+  // DETERMINISTIC AT REST, and for the same reason as illogic only more so: the
+  // factory builds exactly ONE AudioWorkletNode and nothing else — no
+  // ConstantSource, no analyser, no rAF, no generator of any kind. Measured
+  // through the real factory, an unpatched module emits BIT-EXACT ZERO on all
+  // five jacks from sample 0 (illogic's nand/not sit at a constant 1; this one
+  // has no such source). `glyph` is 'none' because `primaryAudioOutPortId`
+  // returns null (five `cv` outputs, no audio), so the shell paints no tile at
+  // all, and the sidebar picture is drawn from `node.params` alone. This scene
+  // therefore neither exercises nor depends on #1420's pre-frame freeze.
+  //
+  // ⚠ THE FOUR HERO READOUTS ARE PURE FUNCTIONS OF `node.params` and print at
+  // the spawn defaults, so they are IN the dock image and a re-rank or a
+  // formatter change moves this baseline: `×0.96 · ×0.00 · ×0.76 · ×2.00` at
+  // ATT A +1 / ATT B +1.
+  { type: 'analogLogicMaths', pages: 1 },
 ] as const;
 
 /** TIGHT per-scene diff budgets (absolute pixels; Playwright takes the MIN of
