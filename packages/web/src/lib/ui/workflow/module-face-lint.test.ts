@@ -391,6 +391,20 @@ describe('module-face lint — DOCK RENDER-PLAN parity (STRICT_FACES set)', () =
       for (const c of flat) {
         if (c.kind === 'param' && c.paramId) {
           paramCounts.set(c.paramId, (paramCounts.get(c.paramId) ?? 0) + 1);
+          // ⚠ A 2-D PAD IS ONE CELL BINDING TWO PARAMS — the only kind with
+          // arity 2. Counting cells alone reads the partner axis as a DROPPED
+          // control, which is the false positive this gate must not produce
+          // (the mirror of the clustered-control case above). `backdraft`, the
+          // first `face.xyPads` adopter, is where this surfaced: the pure plan
+          // said the axis rendered 0×, the DOM said the pad emitted it, and the
+          // two disagreed because the model had no way to say "this cell covers
+          // both".
+          if (c.padPartnerParamId) {
+            paramCounts.set(
+              c.padPartnerParamId,
+              (paramCounts.get(c.padPartnerParamId) ?? 0) + 1,
+            );
+          }
         }
       }
       // #1726 — the declaration INVERTS this assertion rather than skipping it.

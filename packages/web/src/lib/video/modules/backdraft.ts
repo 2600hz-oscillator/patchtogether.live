@@ -3343,6 +3343,13 @@ export const backdraftDef: VideoModuleDef = {
       { id: 'geometry', label: 'geometry', controls: ['zoom', 'rotate', 'offsetX', 'offsetY', 'pixelate'] },
       { id: 'switches', label: 'switches', controls: ['mirrorX', 'mirrorY', 'shape', 'pureGeo', 'flicker', 'tvMode'] },
       { id: 'screen', label: 'tv screen', controls: ['room', 'bezel', 'phosphor', 'drive'] },
+      // The page declares its FULL membership, both pad axes included — the
+      // fold to one cell per pad is the platform's job (`resolvePage`), not the
+      // author's. ⚠ That fold did not exist until this face: `foldedOrder`
+      // covered `order` and pages were resolved raw, so listing `camTiltY` here
+      // painted a stray dial beside the pad that already contained it, and
+      // omitting it made the parity gate call the axis a dropped control. Both
+      // authorings were red; the seam was the bug.
       { id: 'camera', label: 'virtual camera', controls: ['camTiltX', 'camTiltY', 'camPosX', 'camPosY', 'camDist'] },
     ],
 
