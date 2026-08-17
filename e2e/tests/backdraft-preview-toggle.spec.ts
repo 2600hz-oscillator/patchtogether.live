@@ -45,6 +45,12 @@ const CASE_MS = SLOW_RENDER ? 120_000 : 30_000;
  */
 const SAMPLE_FRAMES = SLOW_RENDER ? 30 : 12;
 
+/** rAFs to let the engine's own draw counter advance while the preview is
+ *  collapsed. Deliberately small: the assertion is `> 0`, so this only has to
+ *  outlast ONE engine frame, and on CI every frame here is a full
+ *  software-rasterized feedback pass. */
+const PRODUCER_FRAMES = SLOW_RENDER ? 12 : 20;
+
 /**
  * ⚠ ADD to the live patch, never `spawnPatch`. `spawnPatch` CLEARS the rack,
  * which nukes the workflow rack's seeded video-zone defaults — including the
@@ -204,22 +210,54 @@ function framesDrawn(page: Page): Promise<number> {
  * a blackness check calls that healthy, which is exactly how this defect class
  * keeps shipping.
  */
-async function previewMoves(page: Page, frames: number): Promise<{ moved: boolean; distinct: number }> {
+async function previewMoves(
+  page: Page,
+  frames: number,
+): Promise<{ moved: boolean; distinct: number; frames: number }> {
   return page.evaluate(async (n: number) => {
     const c = document.querySelector(
       '[data-testid="backdraft-face-output"] canvas',
     ) as HTMLCanvasElement | null;
-    if (!c) return { moved: false, distinct: 0 };
+    if (!c) return { moved: false, distinct: 0, frames: 0 };
+    const ctx = c.getContext('2d');
+    if (!ctx) return { moved: false, distinct: 0, frames: 0 };
+
+    // ⚠ A STRIDED PIXEL SAMPLE, NOT `toDataURL()`. The first version PNG-encoded
+    // the whole 320×240 surface once per frame — ~77 k pixels × 30 frames × two
+    // probes — and on CI, where a software-rasterized feedback chain is already
+    // the expensive thing on the shard, that alone blew a 120 s per-test
+    // ceiling. This reads a fixed 16×16 grid of samples: same question,
+    // a fraction of the work, and it still sees any real change to the picture.
+    const STEP_X = Math.max(1, Math.floor(c.width / 16));
+    const STEP_Y = Math.max(1, Math.floor(c.height / 16));
+    const signature = (): string => {
+      let s = '';
+      for (let y = 0; y < c.height; y += STEP_Y) {
+        for (let x = 0; x < c.width; x += STEP_X) {
+          const d = ctx.getImageData(x, y, 1, 1).data;
+          s += `${d[0]},${d[1]},${d[2]};`;
+        }
+      }
+      return s;
+    };
+
     const seen = new Set<string>();
+    let used = 0;
     for (let i = 0; i < n; i++) {
       await new Promise((r) => requestAnimationFrame(() => r(null)));
+      used++;
       try {
-        seen.add(c.toDataURL().slice(-96));
+        seen.add(signature());
       } catch {
         /* a tainted canvas contributes nothing rather than throwing */
       }
+      // EARLY EXIT the moment the question is answered. Two distinct frames IS
+      // "it moves", so a healthy surface pays two frames and only a FAILING one
+      // pays the whole budget — which is the right way round for a probe that
+      // runs on the slowest renderer in the fleet.
+      if (seen.size > 1) break;
     }
-    return { moved: seen.size > 1, distinct: seen.size };
+    return { moved: seen.size > 1, distinct: seen.size, frames: used };
   }, frames);
 }
 
@@ -386,7 +424,7 @@ test.describe('backdraft faceplate — the preview ON/OFF toggle', () => {
       before,
       'the engine draw counter must be reachable — without it this test proves nothing',
     ).toBeGreaterThanOrEqual(0);
-    await waitFrames(page, SAMPLE_FRAMES);
+    await waitFrames(page, PRODUCER_FRAMES);
     const after = await framesDrawn(page);
     expect(
       after - before,
