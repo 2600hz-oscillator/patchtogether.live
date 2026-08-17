@@ -17,14 +17,15 @@
 // something"*). Three functions, three different questions, and the split is
 // the whole design:
 //
-//   knobNameReadout  — WHAT IS PAINTED under the dial. A declared option or
-//                      landmark NAME, else `null` ⇒ nothing renders. A name is
-//                      not a decimal representation of state: it is the only
-//                      surface that says a morph knob is currently at TRI, and
-//                      the owner's own rationale for keeping tidyVco's A/D/S/R
-//                      labels — text earns its place when it disambiguates
-//                      controls that are otherwise indistinguishable — is
-//                      exactly the argument for keeping it.
+//   knobNameReadout  — WHAT IS PAINTED under the dial: a BARE option/landmark
+//                      NAME, else `null` ⇒ nothing renders. A name is not a
+//                      decimal representation of state — it is the only surface
+//                      saying a morph knob is at TRI or which of fourteen
+//                      engines is loaded — and the owner's own rationale for
+//                      keeping tidyVco's A/D/S/R labels (text earns its place
+//                      when it disambiguates otherwise-indistinguishable
+//                      things) is exactly the argument for keeping it.
+//                      ⚠ A declared `format` DISQUALIFIES — see `paintsReadout`.
 //   knobReadout      — the declared vocabulary's own rendering, `format` first.
 //                      NOT painted; the specificity ladder aria-valuetext walks.
 //   knobValueReadout — what the control is WORTH, always a string. Feeds
@@ -85,27 +86,58 @@ export function nearestByValue<T extends { value: number }>(
 }
 
 /**
+ * DOES THIS PARAM PAINT ANYTHING AT REST? The whole gate, as one named
+ * predicate — because the RENDER (`knobNameReadout` → `KnobConic`) and the
+ * lane cell's reserved HEIGHT (`curated-face`'s `faceLaneCellHeights`, which
+ * imports this) have to answer it identically. They used to be two copies of
+ * the same condition and the comment on the second one said so; two copies is
+ * how a face reserves 15 px for a line it no longer draws.
+ *
+ * TRUE only for a bare `options` / `landmarks` roster. TWO exclusions, and both
+ * are load-bearing:
+ *
+ *   no roster  → nothing to name. This is most params.
+ *   a declared `format` → the module chose its own NUMERIC rendering, which is
+ *     exactly what came off the panel (`450 ms`, `900 HZ`, `+3.0 dB`).
+ *
+ * ⚠ THE `format` EXCLUSION IS NOT MERELY "IT IS A NUMBER" — IT ALSO FIXES A
+ * LIVE BUG THE NAIVE RULE WOULD SHIP. A param may declare BOTH, and where it
+ * does the roster is often not a naming roster at all. vca's `cvAmount` is the
+ * case: it is an ATTENUVERTER whose meaning is its SIGN, so its `landmarks` are
+ * reduced to the single null-point detent worth marking on the arc while
+ * `format` does the reading. Rank landmarks above `format` here and the nearest
+ * landmark to EVERY value is that one detent, so the dial would print one
+ * unchanging word across its whole travel — the −0.4 case the def's own comment
+ * warns about. Deferring to `format` and then painting nothing is right on both
+ * counts.
+ */
+export function paintsReadout(vocab: KnobVocabulary): boolean {
+  return !vocab.format && !!(vocab.options?.length || vocab.landmarks?.length);
+}
+
+/**
  * THE PAINTED READOUT — a declared STATE NAME, or `null` ⇒ the dial prints
  * nothing at rest.
  *
- * ⚠ IT DELIBERATELY IGNORES `format`. A `format` renders a NUMBER in the
- * module's own units (`450 ms`, `900 HZ`, `+3.0 dB`) and a number under every
- * dial is precisely what the owner removed. `options` / `landmarks` render a
- * NAME, and a name is not a representation of the number — it is the only
- * surface that says which waypoint a continuous morph is nearest, so a face
- * without it has an unreadable shape knob rather than a tidier one.
+ * A name is not a decimal representation of state. It is the only surface that
+ * says which of fourteen engines a `model` dial has selected, or which waypoint
+ * a shape morph is nearest — and in the LANE, where an `options` param renders
+ * as a dial rather than the dock's named button row, removing it would leave a
+ * genuinely unreadable control. That is the owner's own test applied to a
+ * readout instead of a label: text earns its place when it disambiguates
+ * otherwise-indistinguishable states.
  *
- * ⚠ AND IT IS NOT `knobReadout` MINUS A BRANCH BY ACCIDENT. Keeping the two
- * separate is what lets `aria-valuetext` keep the FULL declared rendering (see
- * `knobValueReadout`) while the panel paints only the name — one value, two
- * audiences, no second formatter to drift.
+ * ⚠ IT IS NOT `knobReadout` MINUS A BRANCH. Keeping the two separate is what
+ * lets `aria-valuetext` carry the FULL declared rendering (`knobValueReadout`)
+ * while the panel paints only the name — one value, two audiences, no second
+ * formatter to drift.
  *
  * Nearest-match, not exact, for the reason `knobReadout` states below.
  */
 export function knobNameReadout(value: number, vocab: KnobVocabulary): string | null {
+  if (!paintsReadout(vocab)) return null;
   if (vocab.options?.length) return nearestByValue(value, vocab.options)?.label ?? null;
-  if (vocab.landmarks?.length) return nearestByValue(value, vocab.landmarks)?.label ?? null;
-  return null;
+  return nearestByValue(value, vocab.landmarks ?? [])?.label ?? null;
 }
 
 /**

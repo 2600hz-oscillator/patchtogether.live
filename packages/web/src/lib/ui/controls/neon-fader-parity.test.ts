@@ -127,7 +127,7 @@ describe('NeonFader ↔ Fader — behaviour parity (#1738)', () => {
 //
 // Everything NeonFader has that Fader does not. Each is an ADDITION; the sweep
 // above is what guarantees none of them arrived by trading a behaviour away.
-describe('NeonFader — the three gaps it closes, asserted so they cannot be dropped', () => {
+describe('NeonFader — the gaps it closes, asserted so they cannot be dropped', () => {
   const ADDITIONS: readonly { name: string; probe: RegExp; why: string }[] = [
     {
       name: 'keyboard value gesture',
@@ -144,14 +144,17 @@ describe('NeonFader — the three gaps it closes, asserted so they cannot be dro
         'KnobConic emits it and Fader does not, so a screen reader read the raw number where ' +
         'the screen showed formatted units.',
     },
-    {
-      name: 'persistent readout at the faceplate tier',
-      probe: /data-testid=\{paramId \? `readout-\$\{paramId\}` : undefined\}/,
-      why:
-        "a dock band has the row for a value line and a 192px lane tile does not — the same " +
-        'split KnobConic already makes, so a faceplate stops printing values for its dials ' +
-        'and not for its throws.',
-    },
+    // ⚠ THE ROW THAT USED TO SIT HERE IS DELETED, NOT MOVED, and it is worth
+    // saying why in place. It probed for the `readout-<paramId>` element and
+    // its reason was that "a faceplate stops printing values for its dials and
+    // not for its throws" — a PARITY argument, which was sound while dials
+    // printed. Owner ruling 2026-08-17 removed the printed value from BOTH
+    // (*"i want the data gone, not there but hidden or something"*), so parity
+    // is restored by neither having it, and an ADDITIONS row asserting the
+    // element still exists would be a gate demanding the thing the owner
+    // removed. The value's surviving observable is `aria-valuetext`, which is
+    // the row directly above and is a strictly stronger claim: it is present at
+    // EVERY tier, not just the dock.
     {
       name: 'lost-pointer-capture recovery',
       probe: /onlostpointercapture=/,

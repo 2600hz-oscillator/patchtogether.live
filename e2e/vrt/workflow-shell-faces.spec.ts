@@ -171,6 +171,53 @@ const NC_CHANNEL_DELTA = 26;
 /** The negative control's perturbation: shift one band sideways. CSS px. */
 const NC_SHIFT_PX = 8;
 
+// ── COMPACT BY DEFAULT — THE WIDTH GATE ────────────────────────────────────
+//
+// Owner ruling 2026-08-17: *"we do not want useless gray horizontal space on
+// cards, ever. prefer compact. screen real estate is expensive!"* Width is
+// EARNED and the burden of proof is on the wide face, so the check is
+// deny-by-default over the LIVE layout of every face in the roster.
+//
+// ⚠ WHAT THIS GATE STRUCTURALLY CANNOT SEE. It reads GEOMETRY, so it cannot
+// tell "intentionally roomy" from "accidentally double-wide" — the two are the
+// same number. That is exactly why an exemption is a NAME plus the thing
+// consuming the width, and why no amount of tuning the ceiling would replace
+// them. It also cannot see:
+//   * the LANE tile, which is a fixed 192 px pin by design and whose analogous
+//     guarantee is `laneBodyPlan`'s no-clip rule, asserted elsewhere;
+//   * whether narrowing CLIPPED anything — `hiddenX === 0` above is that leg,
+//     and the two must be read together (a face can be perfectly filled
+//     because its content is spilling out of the pane);
+//   * VERTICAL slack, which is a different question with a different answer.
+//
+// ⚠ THIS SPEC'S LANE IS NON-BLOCKING (vrt-strict covers CARDS, not dock
+// faceplates). The source-level half — `.faceplate-body` may not carry a px
+// width floor — is what runs in the required lane; this is the measurement
+// that says whether the CSS actually produced the result.
+
+/**
+ * The most empty plate a face may carry to the right of its content, CSS px.
+ *
+ * A POLICY THRESHOLD ON A DERIVED MEASUREMENT, not a population count. It is
+ * the geometry that is unavoidable once the plate is `width: max-content`:
+ * `.dock-pages`' own 10 px right padding, the `.faceplate` 1 px border, and
+ * sub-pixel rounding on a `max-content` track. Rounded up to the next
+ * comfortable multiple so a one-off half-pixel cannot redden the roster.
+ */
+const FACE_WIDTH_SLACK_MAX_PX = 24;
+
+/**
+ * Faces whose empty width is EARNED, each naming what consumes it.
+ *
+ * ⚠ ANCHORED TO THE ROSTER: an entry naming a face that is no longer in `FACES`
+ * is RED (the anchor test at the bottom of this file), so a deleted or renamed
+ * face cannot leave a permission behind for whatever takes its name.
+ *
+ * An exemption you cannot write a concrete reason for is an offender, not an
+ * exemption — "it looks roomier" is not a thing that consumes width.
+ */
+const FACE_WIDTH_EXEMPTIONS: Readonly<Record<string, string>> = {};
+
 test.describe('VRT: P1 curated faces (?shell=1) — compact lane tile + dock full-view', () => {
   for (const { type, pages } of FACES) {
     test(`face-${type}-compact: the compact lane tile matches baseline`, async ({ page }) => {
@@ -252,6 +299,32 @@ test.describe('VRT: P1 curated faces (?shell=1) — compact lane tile + dock ful
           `in _shell-faces.ts (pane is ${g.captureH} CSS px tall).`,
       ).toBeGreaterThanOrEqual(0);
 
+      // ── COMPACT BY DEFAULT: THE PLATE IS ITS CONTENT ────────────────────
+      //
+      // Owner ruling 2026-08-17: *"we do not want useless gray horizontal
+      // space on cards, ever. prefer compact. screen real estate is
+      // expensive!"*, prompted by *"tidyvco is fully twice as wide as it needs
+      // to be"*. DENY-BY-DEFAULT: a face that does not fill its plate is RED
+      // unless NAMED below with the thing consuming the width.
+      //
+      // ⚠ MEASURED, NEVER LISTED. The offenders are derived from the live
+      // layout on every run, so a face that lands double-wide next month is
+      // caught without anyone maintaining a roster of the ones that are wrong
+      // today. Units: CSS px, and the same CSS px the PNG is in (see
+      // `readFoldGeometry`'s units note) — this pane is not inside xyflow's
+      // zoom transform.
+      const slack = g.plateW - g.contentW;
+      const widthWhy = FACE_WIDTH_EXEMPTIONS[type];
+      expect(
+        widthWhy ? -1 : slack,
+        `face-${type}-dock: ${slack} CSS px of EMPTY PLATE to the right of the content ` +
+          `(content ${g.contentW}, plate ${g.plateW}), against a ${FACE_WIDTH_SLACK_MAX_PX} px ` +
+          `ceiling. Either the face is reserving width nothing draws in — the tidyVco defect, ` +
+          `whose cause was a \`min-width\` floor on \`.faceplate-body\` — or the width is ` +
+          `EARNED, in which case add a FACE_WIDTH_EXEMPTIONS entry naming the thing that ` +
+          `consumes it. "It looks roomier" is not a thing that consumes it.`,
+      ).toBeLessThanOrEqual(FACE_WIDTH_SLACK_MAX_PX);
+
       // ── RESIDUAL SCOPE #1, ASSERTED: the tab rail ───────────────────────
       // A railed face renders ONE band; every other face renders all of them.
       // Derived from the SAME threshold DockFullView and ModuleShell branch on,
@@ -315,6 +388,28 @@ test.describe('VRT: P1 curated faces (?shell=1) — compact lane tile + dock ful
   // `git rm`-ed baseline silently recreated by a later plain VRT run (the
   // standing hazard in CLAUDE.md) is an UNTRACKED png; this leg reads the
   // filesystem, so it goes green again only when someone commits it.
+  test('ANCHOR: every width exemption still names a face in the roster', () => {
+    // A permission that outlives its subject is worse than no permission: it
+    // silently covers whatever takes the name next. Anchored to the ARTIFACT
+    // (`FACES`), never to a count.
+    const rostered = new Set<string>(FACES.map((f) => f.type));
+    const dead = Object.keys(FACE_WIDTH_EXEMPTIONS).filter((t) => !rostered.has(t));
+    expect(
+      dead,
+      'a FACE_WIDTH_EXEMPTIONS entry names a face that is no longer in the roster — delete it.',
+    ).toEqual([]);
+
+    const thin = Object.entries(FACE_WIDTH_EXEMPTIONS)
+      .filter(([, why]) => why.trim().length < 40)
+      .map(([t]) => t);
+    expect(
+      thin,
+      'a width exemption without a concrete reason is a suppression. Name the thing that ' +
+        'consumes the width (a live picture, a scope trace, a video preview, an XY pad, a ' +
+        'control that only appears in one mode).',
+    ).toEqual([]);
+  });
+
   test('every shipped face has a scene, and every scene has its baselines', () => {
     // Widened to Set<string> so `.has()` accepts entries read from
     // STRICT_FACES (ReadonlySet<string>) — the comparison is the point.

@@ -22,6 +22,7 @@
 // — that is the lint gate's job (module-face-lint.test.ts). The selector treats
 // an unrecognized key as a humanized static control so it stays pure.
 
+import { paintsReadout } from '$lib/ui/controls/knob-vocabulary-model';
 import type { ModuleFace, ModuleFacePage, ParamLandmark, ParamOption } from '$lib/graph/types';
 import {
   LANE_CELL_H,
@@ -151,12 +152,20 @@ export function foldedOrder(face: ModuleFace): readonly string[] {
   return face.order.filter((k) => !partners.has(k));
 }
 
-/** Does this param earn a persistent readout line under its dial? Mirrors
- *  `knobReadout`'s gate (knob-vocabulary-model): declaring ANY of the three
- *  vocabulary fields prints a line, declaring none prints nothing. A named
- *  predicate so the HEIGHT here and the RENDER there answer one question once. */
+/**
+ * Does this param paint a readout line under its dial?
+ *
+ * ⚠ IT CALLS THE RENDERER'S OWN PREDICATE — it does not mirror it. This used to
+ * be a re-typed copy of `knobReadout`'s condition with a comment claiming the
+ * HEIGHT here and the RENDER there "answer one question once", and the moment
+ * the render gate changed (a declared numeric `format` stopped painting, owner
+ * 2026-08-17) the copy went on reserving `LANE_KNOB_READOUT_H` for a line
+ * nothing draws — 15 px of blank per cell on adsr, delay, kickdrum, ringback,
+ * vca and sidecar, i.e. exactly the useless space the same review was about.
+ * Importing the predicate is what makes the claim true instead of aspirational.
+ */
 function earnsReadout(p: FaceParamLike): boolean {
-  return !!(p.options?.length || p.landmarks?.length || p.format);
+  return paintsReadout(p);
 }
 
 /**

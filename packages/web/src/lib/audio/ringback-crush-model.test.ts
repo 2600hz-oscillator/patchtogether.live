@@ -426,19 +426,20 @@ describe('ringback face — the ranking and the glyph are claims about the DSP',
     const dock = curatedFace(ringbackDef, 'dock')!;
     expect(mini.controls.map((c) => c.key)).toEqual(['rate']);
     expect(compact.controls.map((c) => c.key)).toEqual(['rate', 'size']);
-    // ⚠ THREE, NOT FOUR, SINCE 2026-08-12 — and the reason is a HEIGHT, not the
-    // ranking. RATE, FEEDBACK and MIX each declare a `format`, so each earns a
-    // readout line and each cell is 57 CSS px rather than the 42 px design row.
-    // RATE is rank 1, so the plate's FIRST row is 57 — and two 57 px rows plus
-    // the 4 px gap is 118 px against a 112 px body. One row fits, so the plate
-    // paints three cells and MIX becomes dock-only.
+    // ⚠ FOUR AGAIN — it was three between 2026-08-12 and 2026-08-17, and both
+    // moves were a HEIGHT rather than a ranking. RATE / FEEDBACK / MIX each
+    // declare a `format`, which used to earn a readout line and make each cell
+    // 57 CSS px against the 42 px design row; two 57 px rows plus the 4 px gap
+    // is 118 px against a 112 px body, so the plate held ONE row and MIX went
+    // dock-only.
     //
-    // This is the narrow half of a trade measured across the whole roster: the
-    // plate's tracks are now sized PER ROW, so a tall cell costs only the rows
-    // beneath it. Four faces whose tall cell sits in the LAST row (cofefve,
-    // filter, resofilter, tidyVco) lose nothing at all; ringback is one of the
-    // four that do, because its tall cell leads the ranking.
-    expect(full.controls).toHaveLength(3);
+    // Owner ruling 2026-08-17 stopped a declared numeric `format` from painting
+    // anything, so none of the three earns a line and every cell is back to the
+    // design row — the plate holds all four and nothing on this face is
+    // dock-only for a height reason. That it followed with no edit here beyond
+    // the number is the point: `curated-face` now IMPORTS the render's own
+    // `paintsReadout` instead of re-typing its condition.
+    expect(full.controls).toHaveLength(4);
     expect(dock.controls).toHaveLength(4);
     expect(dock.pages).toHaveLength(2);
 
@@ -447,11 +448,12 @@ describe('ringback face — the ranking and the glyph are claims about the DSP',
     // a surprise to discover in a screenshot.
     const plan = laneBodyPlan(full.cellHeights, full.glyph !== 'none', 'full');
     expect(plan.layout).toBe('plate');
-    expect(plan.cellCount).toBe(3);
-    expect(plan.rowTracks, 'ONE row, sized to the readout-bearing cells in it').toEqual([57]);
+    expect(plan.cellCount).toBe(4);
+    expect(plan.rowTracks, 'TWO rows, both at the 42 px design height').toEqual([42, 42]);
     expect(
       plan.glyph,
-      'the strip is refused under a taller-than-design row — see plateGlyphFitsRows',
+      'the ranked controls still outrank the strip at `full` — four cells over two rows leave\n' +
+        'no column for it, which is a RANKING fact and not the row-height one above',
     ).toBe(false);
     // …while the two tiers that DO show it select exactly two cells beside it.
     expect(laneBodyPlan(compact.controls.length, true, 'compact').glyph).toBe(true);

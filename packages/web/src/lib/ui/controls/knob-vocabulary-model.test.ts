@@ -9,6 +9,7 @@ import { describe, expect, it } from 'vitest';
 import {
   knobMarks,
   knobNameReadout,
+  paintsReadout,
   knobReadout,
   knobValueReadout,
   nearestByValue,
@@ -81,30 +82,69 @@ describe('knobNameReadout — what the dial PAINTS', () => {
     expect(knobValueReadout(2, { options: MODES })).toBe('BP');
   });
 
-  it('a landmark NAME paints, nearest wins, and a FORMAT does not outrank it', () => {
+  it('a landmark NAME paints, and nearest wins', () => {
     expect(knobNameReadout(0.9, { landmarks: SHAPES })).toBe('SAW');
-    // ⚠ PRECEDENCE INVERTS vs `knobReadout`, deliberately. There `format` wins
-    // (it is the most specific RENDERING); here the question is different —
-    // "is there a name?" — and a param that declared both wants the name on
-    // the panel and the units in the accessibility tree.
-    const both = { landmarks: SHAPES, format: (v: number) => `${v.toFixed(2)}x` };
-    expect(knobNameReadout(0.9, both)).toBe('SAW');
-    expect(knobValueReadout(0.9, both)).toBe('0.90x');
+    expect(knobNameReadout(1.6, { landmarks: SHAPES })).toBe('SQR');
+  });
+
+  it('a roster declared ALONGSIDE a format paints NOTHING — the vca cvAmount trap', () => {
+    // ⚠ THIS IS THE CLAUSE THAT IS NOT JUST ABOUT TIDINESS. vca's `cvAmount` is
+    // an attenuverter whose meaning is its SIGN, so its landmark roster is
+    // reduced to the ONE null-point detent worth drawing on the arc while
+    // `format` does the reading. Paint the nearest landmark and every value on
+    // the dial resolves to that single entry — one unchanging word across the
+    // whole travel, which is worse than the number it replaced.
+    const oneDetent = [{ value: 0, label: 'NULL' }] as const;
+    const attenuverter = {
+      landmarks: oneDetent,
+      format: (v: number) => (v < 0 ? 'DUCK' : 'OPEN'),
+    };
+    expect(knobNameReadout(-0.4, attenuverter)).toBeNull();
+    expect(knobNameReadout(0.9, attenuverter)).toBeNull();
+    // …and the naive rule really would have printed the same word for both.
+    expect(nearestByValue(-0.4, oneDetent)?.label).toBe('NULL');
+    expect(nearestByValue(0.9, oneDetent)?.label).toBe('NULL');
+    // The value is still SPOKEN, and it is still the module's own rendering.
+    expect(knobValueReadout(-0.4, attenuverter)).toBe('DUCK');
   });
 
   it('an EMPTY roster is not a vocabulary', () => {
     expect(knobNameReadout(0.42, { options: [], landmarks: [] })).toBeNull();
   });
 
-  it('NEGATIVE CONTROL: the predicate moves in BOTH directions on one param', () => {
-    // The permanent leg. `knobNameReadout` returning null for everything would
-    // pass every assertion above except this one, which requires the SAME
-    // vocabulary shape to produce a name once a roster is added and nothing
-    // before it.
+  it('NEGATIVE CONTROL: the predicate moves in BOTH directions, on the SAME function', () => {
+    // The permanent leg. `knobNameReadout` hard-wired to null would pass every
+    // assertion above except this one, which requires the same call to produce
+    // a name once a bare roster is present and nothing before it. `paintsReadout`
+    // is asserted alongside because it is the predicate `curated-face` reserves
+    // lane cell HEIGHT from — if the two ever disagree, a face reserves 15 px
+    // for a line nothing draws (or clips one it does).
     const bare = {};
     const named = { landmarks: SHAPES };
     expect(knobNameReadout(1, bare)).toBeNull();
+    expect(paintsReadout(bare)).toBe(false);
     expect(knobNameReadout(1, named)).toBe('SAW');
+    expect(paintsReadout(named)).toBe(true);
+  });
+
+  it('paintsReadout and knobNameReadout AGREE on every shape — one gate, two callers', () => {
+    // Anchored to the functions, not to a list: whatever the vocabulary, "does
+    // it paint" and "what does it paint" cannot disagree, which is the property
+    // `faceLaneCellHeights` depends on for its row tracks.
+    const shapes = [
+      {},
+      { options: [] },
+      { landmarks: [] },
+      { options: MODES },
+      { landmarks: SHAPES },
+      { format: (v: number) => `${v}` },
+      { options: MODES, format: (v: number) => `${v}` },
+      { landmarks: SHAPES, format: (v: number) => `${v}` },
+    ];
+    const disagreements = shapes.filter(
+      (v) => paintsReadout(v) !== (knobNameReadout(0.5, v) !== null),
+    );
+    expect(disagreements, 'a shape where the HEIGHT gate and the RENDER gate differ').toEqual([]);
   });
 });
 
