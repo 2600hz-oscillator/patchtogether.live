@@ -696,6 +696,10 @@ export const FACES = [
       'the dock faceplate mounts a fullViewBody extension that blits the live video engine every ' +
       'rAF; the compact tile is static today but is pinned the same way so a future lane picture ' +
       'cannot silently make this scene a moving target',
+    // CAPTURED: the linux dispatch committed EXACTLY the two PNGs this entry
+    // predicts (`face-backdraft-compact`, `face-backdraft-dock`) and moved no
+    // other baseline — counted against the prediction rather than assumed, per
+    // the "a green dispatch that committed nothing is a RED FLAG" rule.
   },
 ] as const;
 
