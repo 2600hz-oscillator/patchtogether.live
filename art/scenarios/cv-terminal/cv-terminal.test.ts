@@ -334,7 +334,20 @@ async function readStructure(def: AudioModuleDef): Promise<PortStructure[]> {
       id: 'cv-terminal', type: def.type, domain: 'audio',
       position: { x: 0, y: 0 }, params: {},
     } as never);
-  } finally { /* release below, even on throw */ }
+  } catch (e) {
+    // Release BEFORE rethrowing. A factory that throws still leaves a live
+    // context holding a native render thread, and leaking one here would slow
+    // every module measured after it — i.e. one module's failure would present
+    // as the whole sweep degrading. Name the module: this throw is the only
+    // report a non-materialising def gets, by design (there is no
+    // `harness-cannot-materialize` list to hide in).
+    await release(ctx);
+    throw new Error(
+      `cv-terminal: ${String(def.type)}'s factory threw, so none of its paramTarget ` +
+        `ports could be read — ${String((e as Error)?.message ?? e).slice(0, 160)}`,
+      { cause: e },
+    );
+  }
 
   // ⚠ REGISTER ONLY — never `paramHost.set(r.param, r.node)`. A port's `node`
   // is where a CABLE lands, which is NOT in general where its `param` lives:
@@ -570,12 +583,17 @@ describe('every paramTarget CV input lands on a live, unaliased AudioParam', () 
     ).toEqual([]);
   });
 
-  it('EVERY enrolled def materialises — no harness exemption exists', () => {
-    // Deliberately unconditional. `cv-param-reach` carried a nine-module
-    // `harness-cannot-materialize` list here; with `release()` in place the
-    // population of modules this harness cannot build is EMPTY, so there is no
-    // mechanism to maintain. If a def ever cannot be built, beforeAll throws and
-    // names it — which is louder than a list.
+  it('every DECLARED paramTarget port is answered by the live handle', () => {
+    // Deliberately unconditional, and there is no harness exemption to pair it
+    // with. `cv-param-reach` carried a nine-module `harness-cannot-materialize`
+    // list; with `release()` in place the population of modules this harness
+    // cannot build is EMPTY, so there is no mechanism to maintain.
+    //
+    // NOTE the division of labour: a def that cannot be BUILT throws out of
+    // `readStructure` and names itself, which is louder than any list. This
+    // assertion covers the quieter half — a def that builds fine but whose
+    // handle simply has no entry for a port its own def declares, so the engine
+    // would find nothing to connect a cable to.
     expect(structures.filter((s) => !s.hasRef).map(key)).toEqual([]);
   });
 
