@@ -670,6 +670,33 @@ export const FACES = [
   // formatter change moves this baseline: `×0.96 · ×0.00 · ×0.76 · ×2.00` at
   // ATT A +1 / ATT B +1.
   { type: 'analogLogicMaths', pages: 1 },
+  // THE FIRST VIDEO FACE. 7 bands — loop / colour / key / geometry / switches /
+  // tv screen / virtual camera — which is exactly DOCK_TAB_MIN_BANDS, so the
+  // dock scene captures a TAB RAIL with one band under it.
+  //
+  // ⚠ IT IS THE FIRST SCENE IN THIS ROSTER WITH A LIVE PICTURE IN IT, and an
+  // AudioContext suspend cannot pin that. The dock faceplate mounts the
+  // module's `fullViewBody` extension — a real video surface blitting the
+  // engine's output every rAF — which is the `analogVco` non-determinism class
+  // (254 / 154 / 315 px across three captures of one tile) with a bigger
+  // subject. `videoFaceWhy` turns on the same fix the module's own card scene
+  // already uses (`vrt-scenes.ts`): write backdraft's `freeze` param after the
+  // settle, so the ring and the output hold their last frame.
+  //
+  // That param exists for exactly this and says so — it is declared
+  // `noUserControl` with `writer: 'internal'`, `why: 'determinism toggle for
+  // VRT capture'`. It is NOT a general "freeze anything called freeze" rule:
+  // `clouds:freeze` is a player-facing latch and writing it would change that
+  // module's look on purpose, which is why this is a per-scene DECLARATION with
+  // a reason rather than a predicate over param names.
+  {
+    type: 'backdraft',
+    pages: 7,
+    videoFaceWhy:
+      'the dock faceplate mounts a fullViewBody extension that blits the live video engine every ' +
+      'rAF; the compact tile is static today but is pinned the same way so a future lane picture ' +
+      'cannot silently make this scene a moving target',
+  },
 ] as const;
 
 /** TIGHT per-scene diff budgets (absolute pixels; Playwright takes the MIN of
@@ -957,6 +984,27 @@ export interface BootFaceOptions {
    * would pass for the wrong reason forever.
    */
   upstream?: string;
+  /**
+   * THE FACE IS A VIDEO MODULE — boot it into the VIDEO ZONE instead of an
+   * audio channel column, and pin its live surface before capture. The string
+   * is the REASON, so the declaration cannot be a bare flag (the
+   * `freezeAudioWhy` idiom in `vrt-scenes.ts`).
+   *
+   * ⚠ THE AUDIO PATH CANNOT BOOT A VIDEO FACE AT ALL, and it fails as a
+   * 90-SECOND TIMEOUT rather than an error, which reads like a broken app.
+   * `bootWithFace` waits for the spawned node to appear in
+   * `pinned-mixmstrs.data.columns['1']`, because for an audio face a column IS
+   * the chain. A video module never joins one: the video-domain analog of the
+   * mixer strip is the purple VIDEO ZONE below the channel-lane baseline
+   * (`videoAreaBand`, channel-columns.ts). Measured on `backdraft`, the first
+   * video face: both its scenes timed out in that `waitForFunction`.
+   *
+   * So this branch spawns into the zone and identifies the member BY TYPE
+   * rather than by column position — the zone already contains an auto-spawned
+   * `videoOut`, so "the newest node" would be ambiguous and "the only node"
+   * false.
+   */
+  videoFaceWhy?: string;
 }
 
 /** How many times the suspend may be re-applied before the scene gives up. The
@@ -988,6 +1036,79 @@ const FREEZE_RACE_FRAMES = 3;
  *      advance across real animation frames. A state flag is a claim; a pinned
  *      `currentTime` is the thing the analyser's window actually depends on.
  */
+/** rAFs a frozen video surface must hold still for before we believe it. */
+const VIDEO_FREEZE_SETTLE_FRAMES = 6;
+
+/**
+ * Pin a face scene's LIVE VIDEO SURFACE by writing the module's own `freeze`
+ * param, and PROVE it held — the video sibling of `freezeFaceAudio`.
+ *
+ * ⚠ AN AUDIO SUSPEND DOES NOT TOUCH THIS. The video engine runs on rAF, not on
+ * the AudioContext, so every guarantee `freezeFaceAudio` provides is silent
+ * about a video face. `backdraft` is the first roster entry with a picture in
+ * its faceplate, and without this its dock scene is the `analogVco`
+ * non-determinism class: a live surface re-drawing between capture attempts.
+ *
+ * ⚠ WHY A DECLARATION AND NOT A PREDICATE. This is opt-in per scene
+ * (`videoFaceWhy` on the FACES entry), NOT "write any param called freeze":
+ * `clouds:freeze` is a player-facing latch whose whole point is changing what
+ * the module sounds like, and a name-matching rule would silently re-look it.
+ * The modules this is for declare the param `noUserControl` with
+ * `writer: 'internal'` and say "determinism toggle for VRT capture" in their
+ * own `why`.
+ *
+ * The write goes through the Y.Doc transaction the module's card scene already
+ * uses (`vrt-scenes.ts`), then we settle real frames and REQUIRE the surface to
+ * be byte-identical across a second read — the effect, not the flag, because a
+ * param that never reached the engine looks exactly like a frozen one from the
+ * store.
+ */
+export async function freezeFaceVideo(page: Page, nodeId: string, label: string): Promise<void> {
+  await page.evaluate((id) => {
+    const w = globalThis as unknown as {
+      __patch: { nodes: Record<string, { params: Record<string, number> } | undefined> };
+      __ydoc: { transact: (fn: () => void) => void };
+    };
+    w.__ydoc.transact(() => {
+      const n = w.__patch.nodes[id];
+      if (n) n.params.freeze = 1;
+    });
+  }, nodeId);
+  // Let the param reach the engine and the last pre-freeze frame be the one held.
+  await waitFrames(page, VIDEO_FREEZE_SETTLE_FRAMES);
+
+  // THE EFFECT, sampled IN THE PAGE across real frames — never a Playwright
+  // poll loop, which would be one round-trip per sample on the same main thread
+  // as the subject and cannot tell "frozen" from "never looked".
+  const held = await page.evaluate(async (frames: number) => {
+    const canvases = Array.from(document.querySelectorAll('canvas')) as HTMLCanvasElement[];
+    const sample = (): string =>
+      canvases
+        .map((c) => {
+          try {
+            return c.width && c.height ? c.toDataURL().slice(-64) : 'x';
+          } catch {
+            return 'x'; // a tainted/GL canvas contributes nothing rather than throwing
+          }
+        })
+        .join('|');
+    const first = sample();
+    for (let i = 0; i < frames; i++) {
+      await new Promise((r) => requestAnimationFrame(() => r(null)));
+    }
+    const second = sample();
+    return { same: first === second, canvases: canvases.length, frames };
+  }, VIDEO_FREEZE_SETTLE_FRAMES);
+
+  expect(
+    held.same,
+    `${label}: the video surface was still MOVING after writing freeze=1 on '${nodeId}' ` +
+      `(${held.canvases} canvases sampled across ${held.frames} rAFs). A scene captured now ` +
+      `would be a moving target — the param did not reach the engine, or this module's picture ` +
+      `is driven by something freeze does not stop.`,
+  ).toBe(true);
+}
+
 export async function freezeFaceAudio(page: Page, label: string): Promise<void> {
   const seen: string[] = [];
   for (let attempt = 1; attempt <= FREEZE_ATTEMPTS; attempt++) {
@@ -1180,6 +1301,17 @@ export async function bootWithFace(
   await awaitVrtFonts(page);
   await waitForHooks(page);
 
+  // ── VIDEO FACES BOOT INTO THE VIDEO ZONE, not a channel column ──────────
+  // See BootFaceOptions.videoFaceWhy. Only the MEMBER RESOLUTION differs; the
+  // scene style + audio freeze tail below is shared, so an audio face runs the
+  // same code it always has.
+  if (opts.videoFaceWhy) {
+    const videoMemberId = await spawnVideoZoneMember(page, type);
+    await applyFaceSceneStyle(page);
+    if (opts.freezeAudio !== false) await freezeFaceAudio(page, `face-${type}`);
+    return videoMemberId;
+  }
+
   // A channel column IS the chain (source → processor → … → mixer channel;
   // channel-columns.ts), and the order array is the chain order, so spawning
   // `upstream` first puts its output into `type`'s input through the REAL
@@ -1227,13 +1359,69 @@ export async function bootWithFace(
     expect(t, `${type}: the LAST lane-1 member is the face under test, not its upstream`).toBe(type);
   }
 
+  await applyFaceSceneStyle(page);
+  if (opts.freezeAudio !== false) await freezeFaceAudio(page, `face-${type}`);
+  return memberId;
+}
+
+/** The scene's chrome-hiding + animation-killing style tag. Extracted so the
+ *  video-zone boot path applies the IDENTICAL rules rather than a second copy
+ *  that could drift — a scene styled even slightly differently is measuring a
+ *  different box. */
+async function applyFaceSceneStyle(page: Page): Promise<void> {
   await page.addStyleTag({
     content:
       '.svelte-flow__minimap,.svelte-flow__controls,.svelte-flow__attribution,.minimap-toggle{display:none !important;}' +
       '*,*::before,*::after{animation:none !important;transition:none !important;}',
   });
-  if (opts.freezeAudio !== false) await freezeFaceAudio(page, `face-${type}`);
-  return memberId;
+}
+
+/**
+ * Spawn a VIDEO face into the video zone and return its node id.
+ *
+ * Identified BY TYPE, not by position or recency: the zone is auto-populated
+ * with a default `videoOut` on a fresh workflow rack, so "the only node there"
+ * is false and "the newest node" is ambiguous under any concurrent reconcile.
+ * Asserted to be exactly one, so a second instance is an error rather than a
+ * silent arbitrary pick.
+ */
+async function spawnVideoZoneMember(page: Page, type: string): Promise<string> {
+  await page.evaluate((tt) => {
+    const w = globalThis as unknown as {
+      __setSpawnFlowPos: (p: { x: number; y: number }) => void;
+      __spawnFromPalette: (t: string) => void;
+    };
+    // Inside the purple VIDEO ZONE: the band starts at the channel-lane
+    // baseline (COLUMN_BASELINE_Y = 4320) and is VIDEO_AREA_HEIGHT (3u = 540)
+    // tall, spanning columns 1..8 from COLUMN_ORIGIN_X. A point comfortably
+    // inside it, since the drop hit-test is 2-D.
+    w.__setSpawnFlowPos({ x: 200, y: 4560 });
+    w.__spawnFromPalette(tt);
+  }, type);
+
+  await page.waitForFunction(
+    (tt) => {
+      const w = globalThis as unknown as {
+        __patch?: { nodes: Record<string, { type?: string } | undefined> };
+      };
+      const nodes = w.__patch?.nodes ?? {};
+      return Object.values(nodes).filter((n) => n?.type === tt).length === 1;
+    },
+    type,
+    { timeout: 20_000 },
+  );
+
+  const ids = await page.evaluate((tt) => {
+    const w = globalThis as unknown as {
+      __patch: { nodes: Record<string, { type?: string } | undefined> };
+    };
+    return Object.entries(w.__patch.nodes)
+      .filter(([, n]) => n?.type === tt)
+      .map(([id]) => id);
+  }, type);
+
+  expect(ids, `${type}: exactly one video-zone member spawned`).toHaveLength(1);
+  return ids[0]!;
 }
 
 /** Center the viewport on the lane-1 member (members bottom-anchor toward the

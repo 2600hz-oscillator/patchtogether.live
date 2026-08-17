@@ -149,6 +149,7 @@ import {
   bootWithFace,
   frameMember,
   freezeFaceAudio,
+  freezeFaceVideo,
   lowestBand,
   openDock,
   perturbBand,
@@ -172,7 +173,11 @@ const NC_CHANNEL_DELTA = 26;
 const NC_SHIFT_PX = 8;
 
 test.describe('VRT: P1 curated faces (?shell=1) — compact lane tile + dock full-view', () => {
-  for (const { type, pages } of FACES) {
+  for (const { type, pages, videoFaceWhy } of FACES as readonly {
+    type: string;
+    pages: number;
+    videoFaceWhy?: string;
+  }[]) {
     test(`face-${type}-compact: the compact lane tile matches baseline`, async ({ page }) => {
       const errors: string[] = [];
       page.on('pageerror', (e) => errors.push(e.message));
@@ -180,7 +185,7 @@ test.describe('VRT: P1 curated faces (?shell=1) — compact lane tile + dock ful
       // The compact tile is pinned at the config viewport — the dock scene's
       // taller one would be a baseline move for no reason.
       await page.setViewportSize(LEGACY_FOLD_VIEWPORT);
-      const memberId = await bootWithFace(page, type);
+      const memberId = await bootWithFace(page, type, videoFaceWhy ? { videoFaceWhy } : {});
       // zoom 0.45 = the LOD 'compact' band [0.30, 0.52) — the design-point tile.
       await frameMember(page, memberId, 0.45, 'compact');
 
@@ -198,6 +203,10 @@ test.describe('VRT: P1 curated faces (?shell=1) — compact lane tile + dock ful
       // two-sided check (state AND a pinned currentTime), with the window
       // closed instead of reported.
       await freezeFaceAudio(page, `face-${type}-compact`);
+      // ── AND THE VIDEO SURFACE, for a scene that declares one ────────────
+      // An AudioContext suspend says nothing about a rAF-driven picture; see
+      // freezeFaceVideo. Opt-in per scene, with the reason on the roster entry.
+      if (videoFaceWhy) await freezeFaceVideo(page, memberId, `face-${type}-compact`);
       const tile = page.locator(`.svelte-flow__node[data-id="${memberId}"] [data-testid="module-shell"]`);
       await expect(tile).toHaveScreenshot(`face-${type}-compact.png`, {
         maxDiffPixels: COMPACT_MAX_DIFF,
@@ -218,7 +227,7 @@ test.describe('VRT: P1 curated faces (?shell=1) — compact lane tile + dock ful
       // was MEASURED to move every other dock scene's pixels (see
       // `foldViewportFor`). `mixmstrs` is the case that found it.
       await page.setViewportSize(foldViewportFor(type));
-      const memberId = await bootWithFace(page, type);
+      const memberId = await bootWithFace(page, type, videoFaceWhy ? { videoFaceWhy } : {});
       // Frame at the 'full' tier so the jack-rail EXPAND affordance is
       // comfortably clickable, then open the dock full-view.
       await frameMember(page, memberId, 0.7, 'full');
@@ -279,6 +288,9 @@ test.describe('VRT: P1 curated faces (?shell=1) — compact lane tile + dock ful
       // interaction between boot and capture, which is exactly where
       // `ensureEngine()` resumes the context.
       await freezeFaceAudio(page, `face-${type}-dock`);
+      // The dock faceplate is where a fullViewBody extension paints, so this is
+      // the scene the video freeze actually exists for.
+      if (videoFaceWhy) await freezeFaceVideo(page, memberId, `face-${type}-dock`);
       await settle(page);
       await expect(faceplate).toHaveScreenshot(`face-${type}-dock.png`, {
         maxDiffPixels: DOCK_MAX_DIFF,
