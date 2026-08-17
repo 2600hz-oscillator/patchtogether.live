@@ -45,6 +45,7 @@
 //     direction for a load gate.
 
 import { SHADERTOY_UNIFORM_BLOCK, isShadertoySource, wrapShadertoySource } from './toybox-shadertoy';
+import { paramsNeedingDeclaration } from './toybox-shader-params';
 
 export type ShaderDiagnosticSeverity = 'error' | 'warning';
 
@@ -238,8 +239,18 @@ export function validateToyboxShader(
   const versionStripped = /^\s*#version[^\n]*\n/.test(src);
   // A Shadertoy source is wrapped (preamble + params); a plain `main()` engine
   // source is compiled verbatim, so it needs no correction at all.
-  const wrapped = shadertoy ? wrapShadertoySource(src, '', paramNames) : src;
-  const preamble = shadertoy ? shadertoyPreambleLines(paramNames, '') : 0;
+  // #1708: the engine declares only the params the SOURCE does not declare
+  // itself (a user shader declares its own; injecting them again is a duplicate
+  // global declaration). Validate through the identical filter or this probe
+  // would report a compile error the engine does not produce.
+  //
+  // ⚠ ONE variable feeds BOTH the wrap and the preamble measurement. The
+  // preamble grows one line per DECLARED param, so filtering the wrap and not
+  // the offset would mis-point every diagnostic by the number filtered out —
+  // silently, and only for shaders that declare their own uniforms.
+  const declareNames = paramsNeedingDeclaration(src, paramNames);
+  const wrapped = shadertoy ? wrapShadertoySource(src, '', declareNames) : src;
+  const preamble = shadertoy ? shadertoyPreambleLines(declareNames, '') : 0;
 
   const shader = ctx.createShader(ctx.FRAGMENT_SHADER);
   if (!shader) {

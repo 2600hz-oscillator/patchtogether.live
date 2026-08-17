@@ -4,8 +4,9 @@
 // for the design + why lanes may never mix). Kept SEPARATE from
 // cc-commit.ts so the pump module stays Y-free for unit tests.
 //
-// CC_STREAM_ORIGIN lives HERE (not graph/store.ts — that file is in the
-// collab-attest basis and must stay untouched): it is deliberately NOT in
+// CC_STREAM_ORIGIN lives HERE rather than in graph/store.ts (originally to keep
+// that file, a collab-attest basis member, untouched — the attest was deleted
+// 2026-08-17, so the constraint is gone): it is deliberately NOT in
 // the UndoManager's trackedOrigins set, so the bare Electra lane's
 // transactions stay non-undoable — wrapping the raw proxy writes absorbs
 // SyncedStore's internal no-origin transact without promoting it.

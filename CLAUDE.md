@@ -72,6 +72,19 @@ vs ~60 fps on a real GPU, and CI runs ten shards in parallel on top of that.
   it and **refuses to add a line**, so it only shrinks, and a ledger entry naming
   a wait that no longer exists is RED.
 - Keep a wall-clock cap only to **bound the failure**, never as the gate.
+- ⚠ **DOOM IS EXEMPT FROM THIS RULE. Never convert, annotate or otherwise touch a
+  DOOM wait — or any DOOM spec — without specific owner approval** (owner ruling,
+  2026-08-17: *"do not fuck with doom in any way without specific approval"*).
+  Its ~49 ledger entries are permanent, so **the ledger never reaches zero and
+  that is intended** — never write an "0 remaining" check. The reason is
+  mechanical, not preference: `video/modules/doom.ts` calls `runtime.runTic()`
+  inside `surface.draw`, and `runTic` runs exactly one `dgpt_tick`, so **DOOM's
+  game clock IS the frame clock — one rendered frame = one game tic.**
+  `waitForTimeout(1200)` is ~72 game tics on a local GPU and ~9 under
+  SwiftShader; "fixing" it re-specifies **how far the marine walks** in a suite
+  that then asserts on where he ended up. If a sweep's scope would include DOOM,
+  **exclude it BY NAME with the reason, and say so in the PR body** — a silent
+  inclusion is the failure mode even when the change is correct.
 - ⚠ The ~2.5× "CI is slower" figure is a **unit-lane** number. Do not carry it to
   anything touching WebGL.
 - **Establish WHY before touching any budget.** "Slower on CI" and "genuinely
@@ -414,7 +427,6 @@ than authored here, so fix it upstream rather than editing it in place:
 | `architecture` | how the app fits together |
 | `blind-gates` | writing or reviewing any gate |
 | `coding-conventions` | writing code in this repo |
-| `collab-attest` · `grand-attest` · `webgl-attest` | touching an attest basis |
 | `debugging` | chasing a defect |
 | `deploy-pipeline` | deploys, environments, previews |
 | `flox-environment` | the toolchain |
@@ -430,3 +442,4 @@ than authored here, so fix it upstream rather than editing it in place:
 | `skeptical-first-baseline` | first measurement of anything |
 | `testing-conventions` | what tier a test belongs in |
 | `vrt-baselines` · `vrt-failures` | anything touching a baseline |
+| `webgl-attest` | touching the attest basis |

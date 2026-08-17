@@ -191,11 +191,14 @@ describe('the sampling schedule itself', () => {
   });
 });
 
-// The predicate is worthless if the runners do not call it — and BOTH used to
-// carry their own copy (grand's had an older co-tenant regex that could not see
-// Discord/Slack/generic Electron renderers at all).
-describe('both attest runners use THIS guard — no second copy', () => {
-  for (const f of ['webgl-attest.ts', 'grand-attest.ts']) {
+// The predicate is worthless if the runner does not call it — and BOTH runners
+// used to carry their own copy (grand's had an older co-tenant regex that could
+// not see Discord/Slack/generic Electron renderers at all). grand-attest.ts was
+// deleted 2026-08-17 with its non-gating CI job, so webgl is the only caller
+// left; the loop stays because the assertion is about ANY caller, and the
+// duplication it forbids is what #1331 was.
+describe('every attest runner uses THIS guard — no second copy', () => {
+  for (const f of ['webgl-attest.ts']) {
     it(`${f} imports preflightSolo and defines none of its own`, () => {
       const src = readFileSync(join(HERE, f), 'utf8');
       expect(src, `${f} must import the shared guard`).toMatch(

@@ -40,9 +40,10 @@ export type ShellParamWriter = (nodeId: string, value: number) => void;
  * transaction, no undo entry, no subscription.
  *
  * ⚠ Read through the live `patch` ESM binding, which `bindRackspace()`
- * REASSIGNS on rackspace change, so this must not capture it. Deliberately NOT
- * added to `graph/mutate.ts`: that file is in the COLLAB ATTEST BASIS, and a
- * read helper is not worth forcing a re-attest of the multiplayer semaphore.
+ * REASSIGNS on rackspace change, so this must not capture it. Kept out of
+ * `graph/mutate.ts` because a shell-local read helper is not a graph mutation;
+ * it also used to avoid a re-attest of the multiplayer semaphore, but that
+ * attest was deleted 2026-08-17.
  */
 function readNodeParam(nodeId: string, paramId: string): number | undefined {
   const live = patch?.nodes?.[nodeId] as ModuleNode | undefined;

@@ -28,8 +28,8 @@ Jobs run in parallel after the shared prep jobs (`dsp-build`, `build-web`):
 - `build-web` — builds the Vite/SvelteKit **preview** bundle with
   `VITE_E2E_HOOKS=1`, publishes `web-preview-dist`. E2E/VRT/collab run against
   `vite preview` (:4173), not a dev server.
-- `typecheck`, `unit`, `art`, `build`, `e2e` (10 shards) → `merge-reports`,
-  `vrt`, `vrt-strict`.
+- `typecheck`, `unit`, `art`, `build`, `e2e` (10 shards), `vrt-strict-shard`
+  (4 shards) → `vrt-strict`.
 
 ### Required checks (branch protection)
 
@@ -60,21 +60,45 @@ ruleset.
   sweep, grepping 7 rock-solid core modules
   (`adsr|analogVco|filter|lfo|noise|stereovca|vca`).
 
-**Informational (NOT gating)** lanes — run for visibility, never block merge:
+**Informational (NOT gating)** lanes — there is now exactly ONE:
 
-- `behavioral-coverage` (the FULL ~168-module behavioral sweep) —
-  `continue-on-error: true`, NOT in the umbrella `needs:`, runs only on main-push /
-  dispatch / PRs labeled `behavioral`. Per-module delta thresholds are still being
-  tuned and it needs a proper 3× flake-purge before it can re-gate; the stable
-  `behavioral-smoke` subset gates every PR in the meantime.
-- `vrt` (full canvas sweep) — `continue-on-error: true`; canvas/GPU timing may
-  drift, so only `vrt-strict` is required.
-- `collab` (@collab multi-context) — un-gated pending flake-purge proof.
-- `collab-attest` — in the umbrella `needs:` + `env:` but deliberately absent from
-  the failing `if` (un-gated 2026-06-28; a local-relay re-attest treadmill made it
-  a merge-blocker on the owner's box only). Waited-on, non-blocking.
-- `grand-attest` — informational-first (2026-07-19): in `needs:` + `env:`, absent
-  from the failing `if`; the owner arms it required later once the pin is stable.
+- `collab` (@collab multi-context) — un-gated pending flake-purge proof. It
+  survives on a CLOCK: `daily-prod-deploy.yml` fires at 04:00 UTC and
+  `collab-nightly.yml` at 09:00 UTC, so the nightly multiplayer backstop runs
+  five hours AFTER prod has already shipped. Without this job a multiplayer
+  regression reaches production before any multiplayer lane runs. 417-500 s
+  against a 40-min cap.
+
+### The informational tier was CLOSED on 2026-08-17
+
+Nine jobs were **deleted**, not re-tuned: `vrt` (full canvas sweep, 50-min cap),
+`behavioral-coverage` ×6 + `merge-behavioral-reports` (125), `behavioral-watchdog`
+(30), `grand-attest` (10), `merge-reports` (5), `collab-attest` (10). None was in
+the umbrella's `needs:`/`env:`/failing-`if`, so none could ever block a merge —
+and `vrt` and `behavioral-coverage` had grown into their caps and were turning
+main runs `cancelled`, which poisons the green signal AND disqualifies the run
+from `daily-prod-deploy.yml`'s `find-green` (it rejects any conclusion that is
+not success/skipped/null). Owner ruling: *"shit that is not gating, is
+worthless"*.
+
+⚠ **Merge latency did not change.** None of them was in the umbrella; time to
+merge is still pinned by the `e2e` shard matrix. The payoff is that main stops
+reporting `cancelled` and the nightly PROD deploy unblocks.
+
+What this costs, plainly: full-canvas VRT baselines are still AUTHORED
+(`vrt-update.yml`, `task vrt:commit`, `FULL_MATCH` — all untouched) but only the
+`vrt-strict` subset is COMPARED on a PR; and dead-input detection stops at
+`behavioral-smoke`'s required subset instead of the whole registry.
+
+What was KEPT and why: `merge-reports` carried the deny-by-default runtime-SKIP
+BUDGET (`scripts/e2e-report-audit.mjs --lane e2e`), which catches a capability
+probe going dark — a WebGL2/IndexedDB/DOOM-WASM/ImageDecoder probe flipping false
+skips its spec while the lane stays GREEN. That audit was migrated into the `e2e`
+shard job **first**, and because `e2e` is in the umbrella it now GATES.
+
+A new lane goes into the umbrella (`needs:` + `env:` + the failing `if`) or it
+does not go into `ci.yml`. "Land it informational, arm it later" is what produced
+all nine.
 
 ### Merge discipline
 

@@ -42,13 +42,15 @@
 
 // ── ATTEST: THIS FILE COSTS NOTHING, AND THAT WAS MEASURED, NOT ASSUMED ────
 //
-// "adding an e2e spec moves the collab hash" is the folk rule and it is wrong.
-// `collab-attest-lib.ts` puts only FOUR named files from `e2e/tests/` in the
-// basis wholesale (`_collab-helpers.ts`, `_helpers.ts`, `_drivers.ts`,
-// `_registry.ts`); every other spec enters by TAG. This spec carries no
-// multiplayer tag and edits none of those four, so it is out of the basis.
-// Verified rather than reasoned: `task collab:attest:check` and `task
-// webgl:attest:check` both report an existing attestation on this tree.
+// "adding an e2e spec moves the collab hash" was the folk rule, it was wrong,
+// and as of 2026-08-17 there is no collab hash at all — `collab-attest` was
+// deleted with the rest of the non-gating CI lanes. The measurement is kept
+// because the SHAPE recurs: that attest put only FOUR named files from
+// `e2e/tests/` in its basis wholesale (`_collab-helpers.ts`, `_helpers.ts`,
+// `_drivers.ts`, `_registry.ts`) and every other spec entered by TAG, so most
+// specs were never in it. Verified rather than reasoned, at the time, with
+// `task collab:attest:check` + `task webgl:attest:check`. Only the WebGL attest
+// remains; `task webgl:attest:check` still answers the question for it.
 //
 // ⚠ AND THE TAG TEST IS A GREP OVER THE WHOLE FILE, COMMENTS INCLUDED. An
 // earlier draft of this very comment spelled the tag in its at-sign form to

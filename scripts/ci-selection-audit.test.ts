@@ -120,11 +120,42 @@ describe('every e2e spec executes in some CI lane', () => {
     const yml = readFileSync(CI_YML, 'utf8');
     // If a lane's flags change in CI and not here, this guard would be auditing a
     // fiction — the same drift class the docs-only-gate path-list test exists for.
+    //
+    // ⚠ THIS CHECK USED TO PASS VACUOUSLY FOR THE COLLAB LANE, and that is the
+    // exact failure mode this file exists to prevent — a model agreeing with
+    // itself. It searched for the bare selector `@collab|@capacity`, which is a
+    // SUBSTRING of the e2e shard lane's `--grep-invert
+    // "@collab|@capacity|BEHAVIORAL input coverage"`. So the collab lane's row
+    // stayed green off the OTHER lane's text: delete the collab job entirely and
+    // this assertion would not have noticed. (It survived the 2026-08-17 burn of
+    // the informational lanes on its merits — daily-prod-deploy runs five hours
+    // before collab-nightly, so it is the only pre-merge multiplayer signal —
+    // but the check had no opinion either way.)
+    //
+    // Anchoring on the FLAG plus its quoted selector fixes it by construction:
+    // `--grep "@collab|@capacity"` cannot be a substring of `--grep-invert "…`,
+    // because the character after `--grep` differs. Both directions are built
+    // from the lane model itself, so there is no third place to drift.
     for (const lane of LANES) {
-      const pattern = lane.flags[1];
-      expect(yml, `ci.yml no longer contains lane '${lane.name}' flags`).toContain(pattern);
+      const anchor = `${lane.flags[0]} "${lane.flags[1]}"`;
+      expect(
+        yml,
+        `ci.yml no longer invokes lane '${lane.name}' as \`${anchor}\` — either the lane's ` +
+          'flags changed in CI without changing this model (the audit is now auditing a ' +
+          'fiction), or the lane was deleted.',
+      ).toContain(anchor);
     }
   }, DISCOVERY_TIMEOUT_MS);
+
+  it('NEGATIVE CONTROL: the lane anchor cannot be satisfied by a SIBLING lane', () => {
+    // The permanent leg for the blindness above. A file containing ONLY the e2e
+    // shard's grep-invert must NOT satisfy the collab lane's anchor — the old
+    // `toContain(lane.flags[1])` form did exactly that.
+    const shardLine = '            --grep-invert "@collab|@capacity|BEHAVIORAL input coverage" \\';
+    const collab = LANES.find((l) => l.name.startsWith('collab'))!;
+    expect(shardLine).toContain(collab.flags[1]); // the old, blind form: green
+    expect(shardLine).not.toContain(`${collab.flags[0]} "${collab.flags[1]}"`); // the fixed form: red
+  });
 
   it('no spec is selected by ZERO lanes', () => {
     const selected = new Set<string>();

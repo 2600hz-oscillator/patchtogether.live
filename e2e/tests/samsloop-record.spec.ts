@@ -365,9 +365,11 @@ test.describe('SAMSLOOP audio-input record', () => {
   // That cost is INTRINSIC, not a bad arrangement: proving this ceiling needs
   // ~12 MB of base64 actually present in `node.data`, and materialising that
   // in a live syncedStore doc costs 15-20 s on a CI runner however you stage
-  // it. (Planting it at spawn is not available either — `SpawnNode` carries no
-  // `data`, and `_helpers.ts` is in the COLLAB ATTEST BASIS, so widening it
-  // for a test convenience would force a relay re-attest.)
+  // it. (Planting it at spawn was not available either — `SpawnNode` carries no
+  // `data`, and widening `_helpers.ts` for a test convenience forced a relay
+  // re-attest because that file was in the COLLAB ATTEST BASIS. That attest was
+  // deleted 2026-08-17, so widening `SpawnNode` is now merely a design call, not
+  // a blocked one — but the split below is better regardless.)
   //
   // So the ceiling proof moved to the unit lane, where it is instant and can
   // be exhaustive, and it is split three ways so nothing is lost:

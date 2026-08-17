@@ -1,13 +1,15 @@
 // e2e/tests/_score-helpers.ts
 //
-// SCORE / sequencer test-setup helpers. Deliberately NOT in _helpers.ts: that
-// file is a hand-listed entry in the @collab attestation basis
-// (scripts/collab-attest-lib.ts COLLAB_STANDALONE_HELPER, "shared e2e helpers
-// the multi-context specs depend on"), and NO multi-context spec uses anything
-// here — this only seeds a SCORE node's music and toggles its transport, which
-// cannot move relay/sync behavior. Putting it there would force a full ~8-min
-// local re-attest on every edit for no coverage, which is the treadmill the
-// narrow package.json dep-hashing in that same file exists to kill.
+// SCORE / sequencer test-setup helpers. Deliberately NOT in _helpers.ts: no
+// multi-context spec uses anything here — this only seeds a SCORE node's music
+// and toggles its transport, which cannot move relay/sync behavior, so it does
+// not belong in the shared multi-context helper file.
+//
+// The split originally had a mechanical reason on top of that one: _helpers.ts
+// was a hand-listed entry in the @collab attestation basis, so parking this
+// here instead avoided a full ~8-min local re-attest on every edit. The collab
+// attest was deleted 2026-08-17, so only the meaning-based reason survives —
+// which was always the better half of the argument.
 
 import { expect, type Page } from '@playwright/test';
 

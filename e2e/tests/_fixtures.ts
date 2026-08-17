@@ -1,9 +1,10 @@
 // e2e/tests/_fixtures.ts
 //
 // Shared Playwright fixtures for the three copy-pasted blocks that used to be
-// hand-rolled at the top of most specs (LoC campaign row 3). Deliberately a
-// SEPARATE file from `_helpers.ts` (which is in the collab-attest basis) so
-// fixture-only changes don't move the collab hash.
+// hand-rolled at the top of most specs (LoC campaign row 3). A SEPARATE file
+// from `_helpers.ts` — originally so fixture-only changes could not move the
+// collab attest hash (that attest was deleted 2026-08-17), and now simply
+// because fixtures and multi-context helpers are different concerns.
 //
 //   * `errorWatch` — collects page errors + console.error lines for the life
 //     of the test and asserts the list is EMPTY at teardown (after the test
@@ -139,11 +140,12 @@ export { expect };
  * it is NOT bound-widening (and cannot mask a hang or a slow-setup regression)
  * live on `applySetupCredit` in `./_setup-credit`, next to its negative control.
  *
- * ⚠ DELIBERATELY OPT-IN, and deliberately NOT in `_helpers.ts`. The natural home
- * for the systemic version is `spawnPatch` itself — that is where the engine
- * boot happens — but `e2e/tests/_helpers.ts` is in the COLLAB-ATTEST BASIS
- * (`scripts/collab-attest-lib.ts`), so hoisting it there forces a collab
- * re-attest. That is a reasonable follow-up; it is not a flake fix.
+ * ⚠ DELIBERATELY OPT-IN, and NOT in `_helpers.ts`. The natural home for the
+ * systemic version is `spawnPatch` itself — that is where the engine boot
+ * happens — and the only thing that stopped it was that `_helpers.ts` sat in
+ * the collab-attest basis, so hoisting cost a re-attest. That attest was
+ * deleted 2026-08-17, so the hoist is now UNBLOCKED and payable. It is still a
+ * follow-up rather than a flake fix.
  */
 export function creditSetupBudget(startedAtMs: number, label: string): number {
   return applySetupCredit(test.info(), Date.now() - startedAtMs, label);
@@ -175,8 +177,9 @@ const VOICE_DEMO_NODE_IDS = ['vd-seq', 'vd-vco', 'vd-adsr', 'vd-vca', 'vd-out'] 
  * on `vd-seq.data.steps`. A sequencer with no steps is silent, which would have
  * quietly gutted the specs that assert the demo makes noise.
  *
- * Lives in `_fixtures.ts` (NOT `_helpers.ts`) on purpose — `_helpers.ts` is in
- * the collab-attest basis and this is fixture-only churn.
+ * Lives in `_fixtures.ts` (NOT `_helpers.ts`) because this is fixture-only
+ * churn. (It also used to keep the collab attest hash still; that attest was
+ * deleted 2026-08-17.)
  */
 export async function loadVoiceDemo(page: Page): Promise<void> {
   await page.waitForFunction(() => {
@@ -276,8 +279,9 @@ export async function loadVoiceDemo(page: Page): Promise<void> {
 // the seam so ~a dozen specs don't each re-derive "click File, maybe click a
 // section header, then click the row".
 //
-// Lives here (NOT `_helpers.ts`) on purpose: `_helpers.ts` is in the
-// collab-attest basis, and test-harness churn must not move that hash.
+// Lives here (NOT `_helpers.ts`) because this is test-harness churn, not a
+// multi-context helper. (It also used to keep the collab attest hash still;
+// that attest was deleted 2026-08-17.)
 
 /** Open the File.. menu (idempotent — a no-op when it is already open). */
 export async function openFileMenu(page: Page): Promise<void> {

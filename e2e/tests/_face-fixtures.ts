@@ -2,12 +2,15 @@
 //
 // Fixtures for the workflow-mode FACE / legacy-fallback bridge specs.
 //
-// Deliberately NOT in `_helpers.ts`: that file is a hand-listed member of the
-// @collab attest basis (scripts/collab-attest-lib.ts, COLLAB_STANDALONE_HELPER),
-// so anything added to it churns the collab content-hash and forces a full
-// re-attest — a Postgres spin-up plus the ~50-test @collab lane. None of this
-// has anything to do with multiplayer, so it lives here instead and the collab
-// hash stays put. Keep it that way: put face/shell fixtures in THIS file.
+// NOT in `_helpers.ts`: none of this has anything to do with multiplayer, and
+// `_helpers.ts` is the shared multi-context helper file. Keep it that way — put
+// face/shell fixtures in THIS file.
+//
+// The split originally had teeth: `_helpers.ts` was a hand-listed member of the
+// @collab attest basis, so anything added to it churned the collab content-hash
+// and forced a full re-attest (a Postgres spin-up plus the ~50-test @collab
+// lane). collab-attest was deleted 2026-08-17, so the rule now rests on meaning
+// alone.
 
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';

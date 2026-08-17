@@ -304,3 +304,60 @@ describe('cvInputs SCALE/OFFSET params (audit M6)', () => {
     expect((n.data.cvInputs as Record<string, { offset: number }>).cv2.offset).toBe(0.6);
   });
 });
+
+// ---------------------------------------------------------------------------
+// #1708 — the control surface / MIDI-learn seam sees custom-shader uniforms.
+// ---------------------------------------------------------------------------
+//
+// The card's faders pass `layer:<idx>:<uniform>` as their paramId, so a binding
+// learned on a custom shader's fader resolves through here. Nothing below
+// registers the source — the node is shaped exactly as a receiving peer holds it.
+
+describe('a CUSTOM disk-loaded shader is control-surface / MIDI addressable (#1708)', () => {
+  const CUSTOM = `uniform float glow; // @param(0, 4, 1.5, linear)
+void main() { }
+`;
+  const customNode = () => ({
+    data: {
+      layers: [
+        {
+          kind: 'gen' as const,
+          contentId: null,
+          params: {},
+          shaderSrc: CUSTOM,
+          shaderName: 'received.glsl',
+        },
+      ],
+    },
+  });
+
+  it('resolves the layer-QUALIFIED id with the source-declared range + default', () => {
+    const n = customNode();
+    const r = resolveToyboxParam(n, 'layer:0:glow')!;
+    expect(r).not.toBeNull();
+    expect(r.def).toMatchObject({ id: 'layer:0:glow', label: 'GLOW', min: 0, max: 4, defaultValue: 1.5 });
+    expect(r.get()).toBe(1.5); // unset → the extracted default
+    r.set(3);
+    expect(r.get()).toBe(3);
+    expect((n.data.layers[0].params as Record<string, number>).glow).toBe(3);
+  });
+
+  it('resolves the BARE id by finding the first layer whose source declares it', () => {
+    const n = customNode();
+    const r = resolveToyboxParam(n, 'glow')!;
+    expect(r).not.toBeNull();
+    expect(r.def).toMatchObject({ min: 0, max: 4 });
+  });
+
+  it('NEGATIVE CONTROL: a uniform the source does not declare stays unresolvable', () => {
+    // Proves the resolver reads THIS source rather than accepting any name on a
+    // layer that happens to carry one.
+    expect(resolveToyboxParam(customNode(), 'layer:0:speed')).toBeNull();
+    expect(resolveToyboxParam(customNode(), 'speed')).toBeNull();
+  });
+
+  it('NEGATIVE CONTROL: the same layer with the source removed resolves nothing', () => {
+    const n = { data: { layers: [{ kind: 'gen' as const, contentId: null, params: {} }] } };
+    expect(resolveToyboxParam(n, 'layer:0:glow')).toBeNull();
+  });
+});

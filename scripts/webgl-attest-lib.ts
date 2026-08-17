@@ -295,8 +295,10 @@ export function resolveWebglBasis(): string[] {
  *  The hash is DOCS-BLIND BY CONSTRUCTION — there is no marker to remember and
  *  no lint to catch a forgotten one (owner directive 2026-08-09: "docs should
  *  not need explicit ignore, they should be ignored by design; only code that
- *  is, you know, code, should be considered"). The same normalizer backs the
- *  collab and grand attests, so the three cannot drift apart. */
+ *  is, you know, code, should be considered"). The normalizer lives in its own
+ *  module (scripts/attest-code-basis.ts) rather than here: it backed three
+ *  attests until collab and grand were deleted on 2026-08-17, and it stays
+ *  shared so the next one cannot drift from this one. */
 export function computeWebglHash(read: BasisReader = readBasisFile): string {
   const h = createHash('sha256');
   for (const rel of resolveWebglBasis()) {

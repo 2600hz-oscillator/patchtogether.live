@@ -141,13 +141,14 @@
 // with a `--grep-invert` covering the collab and capacity tags plus that
 // string, and this file belongs in the sharded lane where it gates every PR.
 //
-// ⚠⚠ The two tags are spelled WITHOUT their leading at-sign in this comment ON
-// PURPOSE, and must stay that way. `scripts/collab-attest-lib.ts` resolves the
-// collab attest basis with COLLAB_TAG_RE, which scans e2e/tests for those tags
-// in their at-prefixed form — and it matches the FILE, not the test title. So
-// merely quoting the selector verbatim in a comment enrols this spec in that
-// basis and makes every edit to it demand a collab re-attest. That is exactly
-// what happened on the first push of this PR.
+// The two tags are spelled WITHOUT their leading at-sign in this comment. That
+// used to be LOAD-BEARING: `scripts/collab-attest-lib.ts` resolved the collab
+// attest basis by scanning e2e/tests for those tags in their at-prefixed form,
+// matching the FILE rather than the test title, so merely quoting the selector
+// verbatim in a comment enrolled this spec in the basis and made every future
+// edit demand a collab re-attest (it happened, on the first push of that PR).
+// The collab attest was deleted 2026-08-17 and nothing greps for the sigil form
+// any more, so this is now only a style leftover — not a rule to enforce.
 
 import { test, expect, type Page } from '@playwright/test';
 import {

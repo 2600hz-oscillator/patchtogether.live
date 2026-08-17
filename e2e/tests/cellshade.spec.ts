@@ -30,6 +30,12 @@
 import { test, expect } from './_fixtures';
 import { type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
+import { waitFrames } from '../_helpers/frames';
+
+/** Source draw → CELLSHADE draw → OUTPUT FBO → VideoOutCard's own rAF blit is
+ *  a 3-frame chain; this is that chain with margin. FRAMES, never ms: the same
+ *  literal duration is a different number of frames on every renderer. */
+const CHAIN_FRAMES = 10;
 
 // ACIDWARP + CELLSHADE + videoOut are WebGL canvas cards whose FIRST-paint is
 // slow on CI's SwiftShader software renderer (markedly slower at 1024×768 —
@@ -115,8 +121,11 @@ async function captureCell(
   );
   await expect(page.locator('.svelte-flow__node-cellshade'), 'CELLSHADE visible').toBeVisible();
   await expect(page.locator('canvas[data-testid="video-out-canvas"]')).toHaveCount(1);
-  // A handful of rAFs so the ACIDWARP -> CELLSHADE -> OUTPUT chain renders.
-  await page.waitForTimeout(800);
+  // A handful of rAFs so the ACIDWARP -> CELLSHADE -> OUTPUT chain renders —
+  // COUNTED, not guessed. The comment always said "rAFs"; the code said
+  // milliseconds, which is ~48 frames on a local GPU and ~6 under CI's
+  // SwiftShader (7.9 fps measured). waitFrames makes the two machines agree.
+  await waitFrames(page, CHAIN_FRAMES);
   return readCellStats(page);
 }
 
@@ -200,24 +209,26 @@ test.describe('CELLSHADE — cel-shader video processor', () => {
         n.params.ink = 0.4;
       });
     });
-    await page.waitForTimeout(120);
-
-    const params = await page.evaluate(() => {
-      const w = globalThis as unknown as {
-        __patch: { nodes: Record<string, { params: Record<string, number> }> };
-      };
-      const n = w.__patch.nodes['cel'];
-      return {
-        th: n?.params.threshold, wk: n?.params.thickness, bits: n?.params.bits,
-        soft: n?.params.softness, smo: n?.params.smooth, ink: n?.params.ink,
-      };
-    });
-    expect(params.th).toBe(0.42);
-    expect(params.wk).toBe(5);
-    expect(params.bits).toBe(3);
-    expect(params.soft).toBe(0.6);
-    expect(params.smo).toBe(0.8);
-    expect(params.ink).toBe(0.4);
+    // The subject is the store values themselves, so poll THOSE rather than
+    // budget a guess for how long the Y.Doc transaction takes to be observable.
+    // Polling the whole record keeps this ONE assertion — a partial write is a
+    // failure, exactly as it was with six separate reads off one snapshot.
+    await expect
+      .poll(
+        () =>
+          page.evaluate(() => {
+            const w = globalThis as unknown as {
+              __patch: { nodes: Record<string, { params: Record<string, number> }> };
+            };
+            const n = w.__patch.nodes['cel'];
+            return {
+              th: n?.params.threshold, wk: n?.params.thickness, bits: n?.params.bits,
+              soft: n?.params.softness, smo: n?.params.smooth, ink: n?.params.ink,
+            };
+          }),
+        { message: 'every CELLSHADE param write lands in the patch store' },
+      )
+      .toEqual({ th: 0.42, wk: 5, bits: 3, soft: 0.6, smo: 0.8, ink: 0.4 });
 
     // The card's BANDS readout reflects the 6-band step (data-testid kept on
     // the readout). Renderer-agnostic DOM assertion (no canvas read needed).

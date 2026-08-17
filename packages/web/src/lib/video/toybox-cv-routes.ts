@@ -35,9 +35,9 @@
 
 import {
   LAYER_COUNT,
-  getContentMeta,
   type ToyboxLayer,
 } from './toybox-content';
+import { resolveLayerContent } from './toybox-custom-assets';
 import {
   OP_PARAMS,
   isCombineGraph,
@@ -328,7 +328,10 @@ export function listCvParams(
       return IMAGE_VIDEO_PARAMS.map((p) => ({ id: p.id, label: p.label, min: p.min, max: p.max }));
     }
     if (layer.kind === 'shader' || layer.kind === 'gen' || layer.kind === 'frag') {
-      const meta = layer.contentId ? getContentMeta(layer.contentId) : undefined;
+      // #1708: an inline disk-loaded source resolves through the SAME lookup as
+      // a bundled id, so a custom shader's extracted uniforms are CV targets
+      // exactly like a manifest entry's.
+      const meta = resolveLayerContent(layer).meta;
       if (!meta) return [];
       return meta.params.map((p) => ({ id: p.id, label: p.label, min: p.min, max: p.max }));
     }
@@ -435,9 +438,11 @@ export function resolveRoute(
         apply: (v) => { params[route.param] = v; },
       };
     }
-    // Content (shader/gen/frag) uniform.
+    // Content (shader/gen/frag) uniform — bundled id OR inline custom source
+    // (#1708), resolved through the one seam so the RANGE a CV write maps into
+    // is the range the card's fader shows, for both.
     if (layer.kind !== 'shader' && layer.kind !== 'gen' && layer.kind !== 'frag') return null;
-    const meta = layer.contentId ? getContentMeta(layer.contentId) : undefined;
+    const meta = resolveLayerContent(layer).meta;
     const pdef = meta?.params.find((p) => p.id === route.param);
     if (!pdef) return null;
     if (!layer.params) return null;

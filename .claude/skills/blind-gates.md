@@ -192,6 +192,54 @@ a gate, check the consumer reads it.** Otherwise the gate now certifies the bug.
 
 ---
 
+## Pattern 6 — the HARNESS starves itself, and the starvation reads as a property of the SUBJECT
+
+**Case: `cv-param-reach` → `cv-terminal`, 2026-08-17 (#1769).** The registry-wide
+CV sweep reported **11 modules (every `moog*`, `qbrt`, `rings`, `resofilter`,
+`ringback`, `samsloop`) as failing to materialise**, each hitting a 30 s cap. It
+was written up as a harness limitation and carried a named
+`harness-cannot-materialize` exemption covering **nine Faust modules / 120 ports
+— including `mixmstrs`, the one module already known to be broken.** The sweep's
+own header conceded it: *"the one module already known to be broken is the one
+this sweep cannot see."*
+
+**None of it was true.** Driven in isolation those same modules materialise in
+**66–97 ms**. The harness created one `OfflineAudioContext` per module and never
+rendered any of them; an unrendered context holds its native render thread, and a
+registry's worth starves the pool. A 128-sample `startRendering()` per context
+releases it:
+
+| | without release | with release |
+|---|---|---|
+| `cv-terminal` (whole registry) | 488 076 ms, 11 "cannot materialise" | **762 ms, zero** |
+| `cv-display-param-reach` (13 ports) | 591 388 ms | **795 ms** |
+
+**The tell was in the shape of the numbers, not in any single number.** Cost rose
+*monotonically with position in the run* — kickdrum 1.2 s → marbles 3.4 s →
+meowbox 12.3 s → mixmstrs 34.4 s → everything after it pinned at the cap. A real
+per-module property does not correlate with alphabetical order. **If your
+measurement correlates with WHEN it was taken rather than WHAT it measured, the
+instrument is the subject.**
+
+Three things this class does that make it especially dangerous:
+
+- **It fabricates a blind spot, then justifies it.** The false result was
+  faithfully written up as an exemption *with evidence* ("the factory still
+  throws"), and that exemption is what hid a live defect for months.
+- **The symptom lands nowhere near the cause.** In `cv-display-param-reach` the
+  leak was in the *membership probe*, and the cost landed on the *renders that
+  ran afterwards* — a different function, a different test.
+- **It is invisible to a scoped re-run.** Running the "broken" module alone is
+  exactly the thing that makes it pass, so the obvious debugging step reports
+  "works for me" and looks like flake.
+
+**Defences.** Release every resource the harness creates, in a `finally`, even on
+the throw path — *especially* on the throw path, or one subject's failure
+degrades every subject after it. And when a sweep reports that a **contiguous
+tail** of its population is broken, suspect the sweep before the population.
+
+---
+
 ## The negative control is the antidote
 
 The one technique that caught all of this reliably: **make the gate go RED on

@@ -16,18 +16,20 @@
 // it still writes a report naming which tests were in flight.
 //
 // ── WHY THE FLAG AND NOT `globalTimeout` IN playwright.config.ts ────────────
-// A config value is ONE number shared by all six Playwright jobs, whose
-// ceilings are 10/15/20/20/30/40 min. Any single default therefore sits ABOVE
-// two of them and can never fire there — a guard that is not guarding, i.e.
-// the same shape as the bug it would be fixing.
+// A config value is ONE number shared by EVERY Playwright job, and their
+// ceilings differ (10 to 40 min on the tree today). Any single default
+// therefore sits ABOVE some of them and can never fire there — a guard that is
+// not guarding, i.e. the same shape as the bug it would be fixing. The precise
+// spread is deliberately not written down here: it is derivable from the file
+// this test parses, and a copy of it in prose is a number that drifts.
 //
 // It would also drag e2e/playwright.config.ts into a pure-CI change, and that
-// file is in TWO attest bases at once — `STANDALONE_BASIS_FILES` in
-// scripts/webgl-attest-lib.ts AND the 77-file collab basis
-// (`npx tsx scripts/collab-attest-hash.ts --list`) — so a one-line config edit
-// costs a real-GPU re-attest AND a local-relay re-attest. `.github/workflows/
-// ci.yml` is in NEITHER. Verified 2026-08-03: reverting the config edit turned
-// both attest gates green with no re-attest run.
+// file is in the WebGL attest basis (`STANDALONE_BASIS_FILES` in
+// scripts/webgl-attest-lib.ts) — so a one-line config edit costs a real-GPU
+// re-attest. `.github/workflows/ci.yml` is not. Verified 2026-08-03: reverting
+// the config edit turned the attest gate green with no re-attest run. (It used
+// to cost TWO re-attests; the collab basis went away with `collab-attest` on
+// 2026-08-17.)
 //
 // So the guard is a CLI flag set per job, in the file where that job's ceiling
 // is visible three lines up — and it is measurably the cheaper place to put it.
@@ -46,11 +48,12 @@
 // Each was a number or pattern that had to track something else by discipline.
 // This test replaces the discipline with an assertion.
 //
-// It deliberately does NOT demand that every Playwright job be guarded. Five of
-// the six have never died this way, and only the e2e shard's runtime was ever
-// measured; five speculative guards would be five more numbers to drift. What
-// it demands is: whatever IS set must be correct, and whatever is NOT set must
-// be visible.
+// It deliberately does NOT demand that every Playwright job be guarded. Only
+// the e2e shard has ever died this way, and only its runtime was ever measured;
+// a speculative guard on each of the others would be another number that must
+// track a ceiling it cannot see. What it demands is: whatever IS set must be
+// correct, and whatever is NOT set must be visible — which is what the
+// UNGUARDED set below pins, in both directions.
 //
 // ── WHAT THIS GATE CANNOT SEE (stated, per the blind-gates rule) ────────────
 //  · Guards are attributed at JOB scope, not step scope: a job with two
@@ -138,8 +141,19 @@ describe('CI Playwright jobs cannot die mute', () => {
   it('the scan is not vacuous — it found Playwright jobs and their ceilings', () => {
     // ⚠ A BARE GREEN HERE WOULD BE INDISTINGUISHABLE FROM A BROKEN PARSER.
     // If ci.yml is restructured so the scanner stops recognising jobs, every
-    // assertion below passes over an empty set. Floor it.
-    expect(PW_JOBS.length, 'no Playwright-invoking job found — the scanner is broken').toBeGreaterThanOrEqual(4);
+    // assertion below passes over an empty set.
+    //
+    // Anchored to the NAME the whole file is about, never to a population size.
+    // This used to be `PW_JOBS.length >= 4`, chosen when six jobs invoked
+    // Playwright. The 2026-08-17 burn deleted behavioral-coverage and
+    // behavioral-watchdog and took that to five — a vacuity floor one deletion
+    // away from sitting ON its population, which is a ratchet whatever it was
+    // in intent (CLAUDE.md, "NEVER hand-type a population count"). A name is
+    // checkable against the artifact and cannot go stale by arithmetic.
+    expect(
+      PW_JOBS.map((j) => j.name),
+      'the Playwright-job scan cannot see `e2e` — the scanner is broken, not the file',
+    ).toContain('e2e');
     const noCeiling = PW_JOBS.filter((j) => j.ceilingMin === null).map((j) => j.name);
     expect(noCeiling.join(', '), 'a Playwright job has no timeout-minutes the scanner could read').toBe('');
     // The guard side needs its own floor: the ceiling scan above could be
@@ -178,7 +192,10 @@ describe('CI Playwright jobs cannot die mute', () => {
     // quiet. If you guard one of these, delete it here in the same commit.
     // This is ALSO the parser's negative control against the live file: a guard
     // regex that stops matching drops `e2e` back into this list and reddens.
-    const UNGUARDED = ['behavioral-coverage', 'behavioral-smoke', 'behavioral-watchdog', 'collab', 'webgl-smoke'];
+    // Shrunk 2026-08-17: `behavioral-coverage` and `behavioral-watchdog` were
+    // DELETED (informational lanes that could not block a merge), not guarded.
+    // Derived from the surviving jobs, not edited by hand from the old list.
+    const UNGUARDED = ['behavioral-smoke', 'collab', 'webgl-smoke'];
     const actual = PW_JOBS.filter((j) => j.guardsMs.length === 0).map((j) => j.name).sort();
     expect(
       actual,

@@ -62,6 +62,7 @@ import {
   VOICE_LANES,
 } from '$lib/audio/chord-tables';
 import { sampleHumanizeOffsets } from '$lib/audio/humanize';
+import { markJsConsumedParam } from '$lib/audio/cv-shadow';
 import {
   createTransportCv,
   pickQueuedSlotFromEvents,
@@ -283,7 +284,11 @@ export const polyseqzDef: AudioModuleDef = {
       target.connect(ana);
       const buf = new Float32Array(ana.fftSize);
       return {
-        param: target.offset,
+        // DECLARED JS-consumed: `pollValue()` below is the whole consumer, so
+        // this param correctly reaches no declared output. Without the mark,
+        // `art/scenarios/cv-terminal` cannot tell this landing pad from the
+        // #1661 dead-terminal defect — they have the same graph signature.
+        param: markJsConsumedParam(target.offset),
         pollValue() {
           ana.getFloatTimeDomainData(buf);
           // Average the most recent samples for a stable read — anything
