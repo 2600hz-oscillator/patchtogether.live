@@ -175,21 +175,29 @@
     }
     const ctx2d = canvasEl.getContext('2d', { alpha: false });
     if (ctx2d) {
-      try { videoEngine.blitOutputToDrawingBuffer(id); } catch { /* defensive */ }
-      const src = videoEngine.canvas as CanvasImageSource;
+      // #1802 — gated preview blit (see VideoEngine.blitOutputForPreview).
+      // ⚠ A WRAP, not an early return: the mirror-state writeback further down
+      // this function is NOT a preview and must keep running on a gated frame.
+      let blitted = false;
+      try { blitted = videoEngine.blitOutputForPreview(id); } catch { /* defensive */ }
       // Mirror the live engine dims so the fullscreen buffer-size derive follows
-      // the engine resolution. Cheap change-guard.
+      // the engine resolution. Cheap change-guard. Outside the blit guard: these
+      // are property reads, and a resolution change must reach the fullscreen
+      // buffer even on a throttled frame.
       const ew = videoEngine.canvas.width || ENGINE_W;
       const eh = videoEngine.canvas.height || ENGINE_H;
       if (ew !== engineW) engineW = ew;
       if (eh !== engineH) engineH = eh;
-      const cw = canvasEl.width;
-      const ch = canvasEl.height;
-      ctx2d.fillStyle = '#050608';
-      ctx2d.fillRect(0, 0, cw, ch);
-      const r = fitRect(cw, ch);
-      // drawImage from a WebGL canvas is already upright — no Y-flip.
-      ctx2d.drawImage(src, r.x, r.y, r.w, r.h);
+      if (blitted) {
+        const src = videoEngine.canvas as CanvasImageSource;
+        const cw = canvasEl.width;
+        const ch = canvasEl.height;
+        ctx2d.fillStyle = '#050608';
+        ctx2d.fillRect(0, 0, cw, ch);
+        const r = fitRect(cw, ch);
+        // drawImage from a WebGL canvas is already upright — no Y-flip.
+        ctx2d.drawImage(src, r.x, r.y, r.w, r.h);
+      }
     }
     // Reflect gate-toggled mirror state back into the store + read the
     // reduced-precision flag for the badge.

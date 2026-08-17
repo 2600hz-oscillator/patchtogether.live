@@ -226,7 +226,15 @@
     const e = engineCtx.get();
     const ve = getVideoEngine();
     if (!e || !ve || !previewEl) { rafId = requestAnimationFrame(draw); return; }
-    try { ve.blitOutputToDrawingBuffer(id); } catch { /* never nuke the rAF loop */ }
+    // #1802 — gated preview blit (see VideoEngine.blitOutputForPreview).
+    // SAFE FOR RECORDING: capture does not run here. The node-recorder
+    // registry holds an `acquireRenderLease` for the whole take and pumps the
+    // UNGATED `blitOutputToDrawingBuffer` itself, and a lease bypasses both
+    // gates — so a recording node keeps rendering at full rate even with this
+    // card off-screen, unmounted, or throttled.
+    let blitted = false;
+    try { blitted = ve.blitOutputForPreview(id); } catch { /* never nuke the rAF loop */ }
+    if (!blitted) { rafId = requestAnimationFrame(draw); return; }
     const src = ve.canvas as CanvasImageSource;
     const ew = ve.canvas.width || ENGINE_W;
     const eh = ve.canvas.height || ENGINE_H;

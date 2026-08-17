@@ -2046,11 +2046,18 @@
     if (!videoEngine) return;
     const ctx2d = canvasEl.getContext('2d', { alpha: false });
     if (!ctx2d) return;
+    // #1802 — gated preview blit (see VideoEngine.blitOutputForPreview). This
+    // is `blitOnce()`, called from draw() AFTER pushMouse(); returning here
+    // therefore skips only the paint, never the iMouse push (which must run
+    // every frame so a Shadertoy click-frame sign is consumed) and never the
+    // scope tick that follows.
+    let blitted = false;
     try {
-      videoEngine.blitOutputToDrawingBuffer(id);
+      blitted = videoEngine.blitOutputForPreview(id);
     } catch {
       // Don't let engine errors nuke the rAF loop.
     }
+    if (!blitted) return;
     const src = videoEngine.canvas as CanvasImageSource;
     const cw = canvasEl.width;
     const ch = canvasEl.height;

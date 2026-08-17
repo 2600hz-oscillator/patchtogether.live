@@ -263,34 +263,48 @@
       // OUTPUT cards on the same engine, each card's draw() does this
       // step with its own id so cards stay independent (no
       // last-OUTPUT-wins coupling through the shared default FB).
+      // #1802 — blitOutputForPreview, NOT blitOutputToDrawingBuffer. It
+      // applies the viewport gate and the preview cadence cap and reports
+      // whether the drawing buffer actually holds our picture. `false` means
+      // the card is off-screen (so it must stop being an observer of its node
+      // — the blit IS the watch mark) or this frame is inside the cadence
+      // window. Either way we skip the drawImage below, which is the
+      // synchronising half and the expensive one. A LEASED node (fullscreen /
+      // projector / full-frame) bypasses both gates and always returns true.
+      let blitted = false;
       try {
-        videoEngine.blitOutputToDrawingBuffer(id);
+        blitted = videoEngine.blitOutputForPreview(id);
       } catch {
         // Engine method shouldn't throw, but we never want a single
         // OUTPUT card to nuke its own rAF loop on an unexpected error.
       }
-      const src = videoEngine.canvas as CanvasImageSource;
       // Mirror the live engine dims into $state so the fullscreen buffer-size
       // derive (bufferDims) follows the engine resolution. Cheap guard so we
-      // don't churn reactivity every frame when nothing changed.
+      // don't churn reactivity every frame when nothing changed. OUTSIDE the
+      // `blitted` guard on purpose: these are property reads, not engine work,
+      // and the fullscreen buffer must track a resolution change even on a
+      // frame whose preview was throttled.
       const ew = videoEngine.canvas.width || ENGINE_W;
       const eh = videoEngine.canvas.height || ENGINE_H;
       if (ew !== engineW) engineW = ew;
       if (eh !== engineH) engineH = eh;
-      const cw = canvasEl.width;
-      const ch = canvasEl.height;
-      // Black background, then aspect-fit blit with Y-flip.
-      ctx2d.fillStyle = '#050608';
-      ctx2d.fillRect(0, 0, cw, ch);
-      const r = fitRect(cw, ch);
-      // drawImage() from a WebGL canvas already presents the GL drawing
-      // buffer in top-left CSS orientation (the browser accounts for GL's
-      // bottom-left origin). Procedural sources author against vUv and
-      // DOOM/CAMERA upload with UNPACK_FLIP_Y so their FBOs are upright in
-      // that same convention — so a straight blit is upright. (A manual
-      // scale(1,-1) used to live here and flipped every source upside
-      // down.)
-      ctx2d.drawImage(src, r.x, r.y, r.w, r.h);
+      if (blitted) {
+        const src = videoEngine.canvas as CanvasImageSource;
+        const cw = canvasEl.width;
+        const ch = canvasEl.height;
+        // Black background, then aspect-fit blit with Y-flip.
+        ctx2d.fillStyle = '#050608';
+        ctx2d.fillRect(0, 0, cw, ch);
+        const r = fitRect(cw, ch);
+        // drawImage() from a WebGL canvas already presents the GL drawing
+        // buffer in top-left CSS orientation (the browser accounts for GL's
+        // bottom-left origin). Procedural sources author against vUv and
+        // DOOM/CAMERA upload with UNPACK_FLIP_Y so their FBOs are upright in
+        // that same convention — so a straight blit is upright. (A manual
+        // scale(1,-1) used to live here and flipped every source upside
+        // down.)
+        ctx2d.drawImage(src, r.x, r.y, r.w, r.h);
+      }
     }
     rafId = requestAnimationFrame(draw);
   }

@@ -52,6 +52,7 @@ import {
   type RenderCostStats,
   type RenderCostRecorder,
 } from './render-cost';
+import { previewDecision, type PreviewDecision } from './preview-gate';
 
 /** The 4:3 default render resolution (1024×768, "768p"). Re-exported from
  *  video-res.ts (the single aspect→res source of truth) so every importer that
@@ -627,6 +628,14 @@ export class VideoEngine implements DomainEngine {
   // wrong one is a whole PR spent on the wrong half.
   private readonly stepCost: RenderCostRecorder = createRenderCostRecorder('video.engine.step');
   private readonly blitCost: RenderCostRecorder = createRenderCostRecorder('video.engine.blit');
+
+  // ---- CARD-PREVIEW GATE (#1802 — see preview-gate.ts) ----
+  /** When each node last repainted a card preview (the watch clock). */
+  private lastPreviewAt = new Map<string, number>();
+  /** The last decision per node — a probe, not state the gate reads back. */
+  private lastPreviewDecision = new Map<string, PreviewDecision>();
+  /** Cadence-cap override; undefined = the shipped default. Test seam. */
+  private previewMinIntervalMs: number | undefined = undefined;
   /** How long an observation keeps a node watched. Long enough that a card's
    *  ~60fps blit loop never flickers the state (and that a synchronous
    *  test-driven `step()` burst inside one task can't expire it), short
@@ -789,6 +798,19 @@ export class VideoEngine implements DomainEngine {
     this.cardVisible.delete(nodeId);
     this.renderLeases.delete(nodeId);
     this.framesDrawn.delete(nodeId);
+    // Preview bookkeeping is keyed by nodeId for the primary surface and by
+    // `<nodeId> <portId>` for an inline per-port preview, so a bare delete
+    // would strand the per-port entries — the same prefix sweep the param maps
+    // above use, for the same reason.
+    this.lastPreviewAt.delete(nodeId);
+    this.lastPreviewDecision.delete(nodeId);
+    const previewPrefix = `${nodeId} `;
+    for (const k of this.lastPreviewAt.keys()) {
+      if (k.startsWith(previewPrefix)) this.lastPreviewAt.delete(k);
+    }
+    for (const k of this.lastPreviewDecision.keys()) {
+      if (k.startsWith(previewPrefix)) this.lastPreviewDecision.delete(k);
+    }
     this.topoStale = true;
   }
 
@@ -1511,6 +1533,122 @@ export class VideoEngine implements DomainEngine {
   // OUTPUT's input is unpatched (the OUTPUT's own FBO is still
   // initialized in that case — to its idle pattern — so we always have
   // SOMETHING to blit).
+  /**
+   * THE CARD-PREVIEW BLIT (#1802) — `blitOutputToDrawingBuffer` with the
+   * viewport gate and the cadence cap applied, returning whether it actually
+   * blitted.
+   *
+   * A card previewing ITS OWN node calls this and SKIPS its `drawImage` when
+   * it returns false. That is what turns "the card is off-screen" from a
+   * partial saving into a whole one:
+   *
+   *   * no GL copy;
+   *   * no `drawImage(engine.canvas, …)` — the synchronising half, and the
+   *     expensive one;
+   *   * and, because the blit IS the watch mark, **no `markWatched`** — so the
+   *     node stops being a pull root and its whole upstream chain stops
+   *     rendering, unless something ELSE is still watching it (a downstream
+   *     OUTPUT card, a lease, an export). That "unless" is pull evaluation
+   *     working correctly, and it is why the saving depends on the patch and
+   *     not just on the toggle.
+   *
+   * ⚠ THIS IS NOT A DROP-IN FOR EVERY CALLER, and the distinction is
+   * load-bearing. `blitOutputToDrawingBuffer` is also used to CONSUME another
+   * node's pixels — WAVESCULPT uploads an upstream node's output into a GL
+   * texture, SYNESTHESIA derives audio levels from one, TIMELORDE composites
+   * one into the frame it pushes back. Those callers pass the UPSTREAM node's
+   * id, whose card visibility says nothing about whether the CONSUMER needs
+   * fresh pixels; gating them would feed a stale frame into a producer, which
+   * is the #1721/#1728 failure class. They keep the ungated method, and
+   * `card-preview-gate.test.ts` asserts which callers use which.
+   *
+   * Returns `true` when the drawing buffer now holds this node's picture.
+   */
+  blitOutputForPreview(nodeId: string): boolean {
+    const handle = this.nodes.get(nodeId);
+    if (!handle) return false;
+    const now = this.watchNow();
+    const decision = previewDecision({
+      cardVisible: this.cardVisible.get(nodeId),
+      leased: this.renderLeases.has(nodeId),
+      lastPreviewAtMs: this.lastPreviewAt.get(nodeId) ?? null,
+      nowMs: now,
+      minIntervalMs: this.previewMinIntervalMs,
+    });
+    this.lastPreviewDecision.set(nodeId, decision);
+    if (decision !== 'blit') return false;
+    this.lastPreviewAt.set(nodeId, now);
+    const tex = handle.surface.texture;
+    if (!tex) return false;
+    // markWatched happens HERE and only here on this path — deliberately after
+    // the gate, so a refused frame is not an observation.
+    this.markWatched(nodeId);
+    this.blitTexToDrawingBuffer(tex);
+    return true;
+  }
+
+  /**
+   * The per-PORT sibling of {@link VideoEngine.blitOutputForPreview}, for a
+   * card previewing a NON-primary output inline (VIDEOCUBE's SLICE
+   * cross-section).
+   *
+   * Cadence is tracked per `(node, port)`, not per node: the primary preview
+   * and the slice are two separate surfaces on the same card, and sharing one
+   * timestamp would make each throttle the other into half the target rate.
+   * The VISIBILITY gate and the lease bypass are shared, because those are
+   * properties of the card, not of the port.
+   *
+   * ⚠ Refusing here also withholds `requestOutputPreview`, which is what keeps
+   * a port rendering while UNPATCHED. That is the intended behaviour and the
+   * whole point: an off-screen VIDEOCUBE must stop driving a port nobody can
+   * see, not merely stop drawing it.
+   */
+  blitOutputPortForPreview(nodeId: string, portId: string): boolean {
+    const handle = this.nodes.get(nodeId);
+    if (!handle) return false;
+    const key = `${nodeId} ${portId}`;
+    const now = this.watchNow();
+    const decision = previewDecision({
+      cardVisible: this.cardVisible.get(nodeId),
+      leased: this.renderLeases.has(nodeId),
+      lastPreviewAtMs: this.lastPreviewAt.get(key) ?? null,
+      nowMs: now,
+      minIntervalMs: this.previewMinIntervalMs,
+    });
+    this.lastPreviewDecision.set(key, decision);
+    if (decision !== 'blit') return false;
+    this.lastPreviewAt.set(key, now);
+    const tex =
+      (handle.read?.(`outputTexture:${portId}`) as WebGLTexture | null | undefined) ??
+      handle.surface?.texture ??
+      null;
+    if (!tex) return false;
+    this.requestOutputPreview(nodeId, portId);
+    this.blitTexToDrawingBuffer(tex);
+    return true;
+  }
+
+  /** Per-node (and per `node\0port`) record of the last preview decision — the
+   *  probe that lets a spec tell "refused because off-screen" from "refused
+   *  because throttled" from "never asked", three states a repaint count
+   *  cannot separate. */
+  previewGateStats(): Record<string, PreviewDecision> {
+    return Object.fromEntries(this.lastPreviewDecision);
+  }
+
+  /**
+   * Override the preview cadence cap, MILLISECONDS between repaints of one
+   * node. `0` disables the cap (every frame); `undefined` restores the
+   * shipped default. The VISIBILITY gate is unaffected — it is a correctness
+   * rule, not a performance knob, and `preview-gate.test.ts` pins that.
+   *
+   * Exists so a spec can prove the cap's effect in BOTH directions rather than
+   * asserting a number that the default happens to produce.
+   */
+  setPreviewMinIntervalMs(ms: number | undefined): void {
+    this.previewMinIntervalMs = ms;
+  }
+
   blitOutputToDrawingBuffer(nodeId: string): void {
     const handle = this.nodes.get(nodeId);
     if (!handle) return;

@@ -68,11 +68,13 @@
       const c2d = previewEl.getContext('2d', { alpha: false });
       if (c2d) {
         try {
-          videoEngine.blitOutputToDrawingBuffer(id);
-          c2d.drawImage(
-            videoEngine.canvas as CanvasImageSource,
-            0, 0, previewEl.width, previewEl.height,
-          );
+          // #1802 — gated preview blit (see VideoEngine.blitOutputForPreview).
+          if (videoEngine.blitOutputForPreview(id)) {
+            c2d.drawImage(
+              videoEngine.canvas as CanvasImageSource,
+              0, 0, previewEl.width, previewEl.height,
+            );
+          }
         } catch {
           /* engine churn — never let it kill the rAF loop */
         }

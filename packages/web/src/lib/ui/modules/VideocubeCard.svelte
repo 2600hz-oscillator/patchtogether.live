@@ -282,14 +282,24 @@
     if (!videoEngine) { rafId = requestAnimationFrame(draw); return; }
     const src = videoEngine.canvas as CanvasImageSource;
     // 1) video_out preview (primary surface).
-    try { videoEngine.blitOutputToDrawingBuffer(id); } catch { /* never nuke the rAF loop */ }
-    drawEngineCanvasInto(canvasEl, src, '');
-    // 2) SLICE cross-section (slice_out FBO — per-port blit also keeps it rendering
-    //    while unpatched, so the inline viz is always-on). Blit→drawImage before
-    //    the next blit overwrites the shared drawing buffer.
-    if (sliceCanvasEl) {
-      try { videoEngine.blitOutputPortToDrawingBuffer(id, 'slice_out'); } catch { /* */ }
-      drawEngineCanvasInto(sliceCanvasEl, src, 'SLICE');
+    // #1802 — gated preview blit (see VideoEngine.blitOutputForPreview).
+    let blitted = false;
+    try { blitted = videoEngine.blitOutputForPreview(id); } catch { /* never nuke the rAF loop */ }
+    if (blitted) {
+      drawEngineCanvasInto(canvasEl, src, '');
+      // 2) SLICE cross-section (slice_out FBO — per-port blit also keeps it rendering
+      //    while unpatched, so the inline viz is always-on). Blit→drawImage before
+      //    the next blit overwrites the shared drawing buffer.
+      //    ⚠ INSIDE the gate on purpose. This is a SECOND preview of the same
+      //    card, and its per-port blit is what keeps `slice_out` rendering
+      //    while unpatched — so leaving it outside would mean an off-screen
+      //    VIDEOCUBE still drove a port nobody can see, which is exactly the
+      //    "off is not the same as not there" defect this change is about.
+      if (sliceCanvasEl) {
+        let sliced = false;
+        try { sliced = videoEngine.blitOutputPortForPreview(id, 'slice_out'); } catch { /* */ }
+        if (sliced) drawEngineCanvasInto(sliceCanvasEl, src, 'SLICE');
+      }
     }
     // 3) AUDIO WAVEFORM (derived wave, Canvas2D — no drawing-buffer read).
     if (waveCanvasEl) {

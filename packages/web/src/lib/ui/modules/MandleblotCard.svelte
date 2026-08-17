@@ -76,14 +76,17 @@
     }
     const ctx2d = canvasEl.getContext('2d', { alpha: false });
     if (ctx2d) {
+      // #1802 — gated preview blit (see VideoEngine.blitOutputForPreview).
+      let blitted = false;
       try {
         // surface.texture == color_out's FBO texture, so the preview
         // shows the colour pass. (mono_out is reachable downstream via
         // the multi-output read('outputTexture:mono_out') path.)
-        videoEngine.blitOutputToDrawingBuffer(id);
+        blitted = videoEngine.blitOutputForPreview(id);
       } catch {
         // Don't let engine errors nuke the rAF loop.
       }
+      if (!blitted) { rafId = requestAnimationFrame(draw); return; }
       const src = videoEngine.canvas as CanvasImageSource;
       const cw = canvasEl.width;
       const ch = canvasEl.height;

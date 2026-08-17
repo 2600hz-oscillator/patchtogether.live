@@ -73,7 +73,10 @@
     if (!videoEngine) { rafId = requestAnimationFrame(draw); return; }
     const ctx2d = canvasEl.getContext('2d', { alpha: false });
     if (ctx2d) {
-      try { videoEngine.blitOutputToDrawingBuffer(id); } catch { /* never kill the rAF loop */ }
+      // #1802 — gated preview blit (see VideoEngine.blitOutputForPreview).
+      let blitted = false;
+      try { blitted = videoEngine.blitOutputForPreview(id); } catch { /* never kill the rAF loop */ }
+      if (!blitted) { rafId = requestAnimationFrame(draw); return; }
       const cw = canvasEl.width;
       const ch = canvasEl.height;
       ctx2d.fillStyle = '#050608';
