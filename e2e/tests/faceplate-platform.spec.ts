@@ -731,14 +731,31 @@ test.describe('PF-21 row plan — sections share a row, legibly and without over
   // component as built, and is kept only as a cheap guard for a future change
   // that pins a width or drops the `min-width: 0`.
   //
-  // What DOES distinguish the two behaviours is whether a section that no
-  // longer fits MOVES TO THE NEXT LINE or is crushed in place — which is the
-  // whole reason `.dock-row` wraps. So the live negative control is the WRAP
-  // leg below: at 820 px the kit's own floors bind (`.faceplate-body` min-width
-  // 900, `.page.has-sidebar` reserving 288 for the rail) and the column bottoms
-  // out near 548 px, narrower than the widest packed row, so a wrap MUST be
-  // observed. Measured: with `nowrap` forced on, that leg goes red and this
-  // one still passes — which is exactly why it ships as a permanent leg.
+  // ── ⚠ THE ABSORBER CHANGED IN #1796, AND THIS TEST'S OWN GUARD SAID SO ────
+  //
+  // The narrow leg used to require that a packed row WRAPPED. Its precondition
+  // was the kit's floors: *"at 820 px the kit's own floors bind
+  // (`.faceplate-body` min-width 900, `.page.has-sidebar` reserving 288 for the
+  // rail) and the column bottoms out near 548 px, narrower than the widest
+  // packed row, so a wrap MUST be observed."* Owner ruling 2026-08-17 deleted
+  // that 900 px floor — the plate is `width: max-content` now — and a
+  // `max-content` box is sized to the row UNWRAPPED, so the row always fits its
+  // column and the PANE scrolls instead.
+  //
+  // MEASURED across three widths after the change: **wrappedRows = 0 at 820,
+  // 640 AND 480 px**, with 32 packed rows observed each time. So there is no
+  // width at which the old guard can be satisfied — re-pointing the number
+  // would have been a lie, and the guard correctly refused to pass rather than
+  // reporting a green it had not earned. (This is the sixth spec in the family
+  // CLAUDE.md's "a gate whose PRECONDITION is the defect" rule was written for,
+  // and the only one that ANNOUNCED itself instead of going silently green.)
+  //
+  // ⚠ SO `flex-wrap` ON `.dock-row` IS NOW UNREACHABLE, and that is a real
+  // behaviour change worth stating rather than burying: a packed row that does
+  // not fit a narrow pane is now reached by SCROLLING, not by reflowing onto a
+  // second line. The guard below is re-pointed at the absorber that actually
+  // runs — `.faceplate-scroll` taking horizontal overflow — so it stays a live
+  // negative control instead of a number that happens to pass.
   const WIDTHS = [
     { label: 'wide', size: { width: 1280, height: 900 } },
     { label: 'narrow', size: { width: 820, height: 900 } },
@@ -755,6 +772,11 @@ test.describe('PF-21 row plan — sections share a row, legibly and without over
     let packedRows = 0;
     let packedFaces = 0;
     let wrappedRows = 0;
+    /** Faces whose pane genuinely could not show everything — i.e. where the
+     *  SCROLL CONTAINER absorbed the overflow. This is the mechanism that
+     *  replaced `flex-wrap` (see the note above), so it is what the narrow
+     *  leg's vacuity guard now reads. */
+    let scrollAbsorbed = 0;
     const shapes: string[] = [];
 
     for (const spec of faces) {
@@ -824,6 +846,13 @@ test.describe('PF-21 row plan — sections share a row, legibly and without over
         if (row.wrapped) wrappedRows++;
       }
       if (rows.some((r) => r.packed)) packedFaces++;
+
+      // Did the PANE have to scroll to show this face? Read off the real
+      // scroll container, in the same CSS px as everything else here.
+      const overflowed = await fp
+        .locator('.faceplate-scroll')
+        .evaluate((el) => el.scrollWidth > el.clientWidth + 1);
+      if (overflowed) scrollAbsorbed++;
     }
 
     // ⚠ THE NEGATIVE CONTROL, permanent leg. Every assertion above is inside
@@ -837,15 +866,58 @@ test.describe('PF-21 row plan — sections share a row, legibly and without over
     ).toBeGreaterThanOrEqual(10);
     expect(packedRows, 'packed rows observed').toBeGreaterThanOrEqual(10);
 
+    // ⚠ WHAT THE **WIDE** LEG CAN NO LONGER SEE, STATED BECAUSE IT HAS NO GUARD
+    // OF ITS OWN. Its column-fit assertion was already documented above as
+    // unable to fail for this component as built; since #1796 made the plate
+    // `width: max-content`, the column is sized to the row's content BY
+    // CONSTRUCTION, so `scrollW <= clientW` is now true structurally rather
+    // than because anything absorbed anything. At 1280 px this leg therefore
+    // proves exactly two things — every packed row still shows every section's
+    // LABEL, and packing still happens at all — and those are real. It proves
+    // nothing about fit. The narrow leg is where fit is exercised, which is why
+    // the guard lives there and not here.
+
     // …and the SECOND half of the negative control: at the narrow pane the
-    // wrap has to have actually engaged somewhere, or the no-overflow claim
-    // above is again being satisfied by rows that simply fit.
+    // OVERFLOW ABSORBER has to have actually engaged somewhere, or the
+    // column-fit claim above is being satisfied by rows that simply fit and
+    // proves nothing about what happens when they do not.
+    //
+    // ⚠ THE SUBJECT MOVED, THE GUARD DID NOT WEAKEN. It used to read
+    // `wrappedRows` — see the note at the top of this describe for why that is
+    // now unreachable at every width (measured 0 at 820/640/480). It reads the
+    // scroll container instead, which is the thing that absorbs the overflow
+    // today. A pane that showed everything at 820 px would mean the narrow leg
+    // is testing the same situation as the wide one, and this fails rather than
+    // passing quietly.
     if (label === 'narrow') {
+      // ⚠ A PROPORTION OF THE SWEPT ROSTER, NOT A COUNT — and the number was
+      // chosen from the measurement rather than guessed, because the obvious
+      // guard (`scrollAbsorbed > 0`) DOES NOT DISCRIMINATE. Measured over the
+      // 50-face roster:
+      //
+      //     1600 px →  2 faces scroll   (4%)
+      //     1280 px →  2 faces scroll   (4%)
+      //      820 px → 12 faces scroll  (24%)
+      //
+      // Two faces are wide enough to overflow ANY realistic pane (dx7 leads at
+      // 1139 px of content), so `> 0` is satisfied at every width and would
+      // have let the narrow leg silently become a second wide leg — exactly the
+      // failure this guard exists to prevent, reintroduced by its own
+      // replacement. Verified: with the narrow width temporarily set to 1600,
+      // `> 0` still passed and the floor below goes RED.
+      //
+      // A tenth of the roster sits cleanly between 4% and 24%, and it is
+      // expressed against `faces.length` so a growing roster carries it.
+      const constrainedFloor = Math.ceil(faces.length * 0.1);
       expect(
-        wrappedRows,
-        `no packed row WRAPPED at ${size.width}px — the no-overflow assertion is ` +
-          `vacuous at this width, so it cannot prove flex-wrap does anything. shapes:\n${shapes.join('\n')}`,
-      ).toBeGreaterThan(0);
+        scrollAbsorbed,
+        `only ${scrollAbsorbed} of ${faces.length} faces needed the pane to SCROLL at ` +
+          `${size.width}px (floor ${constrainedFloor} = a tenth of the roster). A narrow pane ` +
+          `must constrain materially more faces than a comfortable one — measured 12/50 here ` +
+          `against 2/50 at 1280px — or this leg is measuring the same situation as the wide ` +
+          `one and the column-fit assertion above proves nothing about overflow. ` +
+          `shapes:\n${shapes.join('\n')}`,
+      ).toBeGreaterThanOrEqual(constrainedFloor);
     }
   });
   }
