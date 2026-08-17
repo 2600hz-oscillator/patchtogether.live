@@ -24,9 +24,31 @@
     /** Explicit test id — for a NON-param switch (a shell family cell backed by
      *  node.data) that has no paramId to derive `control-<id>` from. */
     testid?: string;
+    /**
+     * DROP THE PAINTED `.sw-lab` — the caption under the switch.
+     *
+     * ⚠ NOT `label={undefined}`, and that distinction is the whole reason this
+     * prop exists. Dropping the prop would take `aria-label` and the annotate
+     * menu's title with it, leaving an unnamed switch: a real accessibility and
+     * MIDI-addressing regression dressed up as a layout tidy. This hides TEXT.
+     *
+     * Declared per cell (`face.bareCells`) — see KnobConic's copy for the
+     * owner's redundancy rule.
+     */
+    hideCaption?: boolean;
   }
 
-  let { value, onchange, label, hint, readLive, moduleId, paramId, testid }: Props = $props();
+  let {
+    value,
+    onchange,
+    label,
+    hint,
+    readLive,
+    moduleId,
+    paramId,
+    testid,
+    hideCaption = false,
+  }: Props = $props();
 
   const midiEnabled = $derived(!!(moduleId && paramId));
 
@@ -93,7 +115,7 @@
   >
     <span class="thumb"></span>
   </div>
-  {#if label}<div class="sw-lab">{label}</div>{/if}
+  {#if label && !hideCaption}<div class="sw-lab">{label}</div>{/if}
   {#if hint}<div class="sw-hint">{hint}</div>{/if}
   {#if midi.binding}
     <span class="midi-badge" title={`Bound to MIDI ${midi.bindingLabel}`}>{midi.badge}</span>

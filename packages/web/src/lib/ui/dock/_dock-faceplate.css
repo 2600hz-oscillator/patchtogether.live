@@ -120,39 +120,45 @@
 .dock-faceplate .faceplate-scroll {
   overflow: auto;
 }
+/* ── COMPACT BY DEFAULT — A FACEPLATE IS AS WIDE AS ITS CONTENT ────────────
+ *
+ * Owner ruling, 2026-08-17: *"we do not want useless gray horizontal space on
+ * cards, ever. prefer compact. screen real estate is expensive!"*, prompted by
+ * *"tidyvco is fully twice as wide as it needs to be"*.
+ *
+ * ⚠ THIS RULE USED TO BE `min-width: 900px` AND THE 900 WAS THE WHOLE DEFECT.
+ * The kit's frame width was applied to every occupant, and every element above
+ * this one shrink-wraps — `.dock-fullview-pane` and `.dock-faceplate` are both
+ * `flex: 0 1 auto; min-width: 0`, `.rl-tile` is `width: 100%` — so the floor
+ * set here WAS the faceplate's width for every curated face. `.dock-pages` is a
+ * flex column with default `align-items: stretch`, so each band was stretched
+ * across it, and `.page-controls` is a left-packed `flex-wrap` row, so the
+ * entire surplus painted as blank plate on the right. MEASURED on the committed
+ * baselines: 37 of 48 dock faces were EXACTLY 900 px wide, against ~450 px of
+ * real content on tidyVco. A modal 900 with one outlier is the signature of a
+ * floor, not of thirty-seven faces that happen to need the same width.
+ *
+ * ⚠ AND IT ALREADY HAD TWO ESCAPE HATCHES, WHICH IS THE TELL. `:has(.fp-card-
+ * frame)` (legacy cards, #1573) and `:has([data-shell-type='mixmstrs'])`
+ * (#1738) both said "…but not this occupant", each landing after an owner
+ * review of one screenshot. A default that needs a new exemption per review is
+ * the wrong default; the exemptions were the rule trying to state itself. Both
+ * are now gone, replaced by the thing they had in common — content sizing —
+ * which is also what the pinned tray host has always done
+ * (`.dock-natural-sized { width: max-content }`, DockFullView.svelte).
+ *
+ * `max-width: 100%` keeps the no-sideways-scroll guarantee: content wider than
+ * the pane still scrolls inside `.faceplate-scroll` rather than pushing the
+ * page, which is what the 900 px floor was ALSO doing for a half-width split
+ * pane and the only half of its job worth keeping.
+ *
+ * The gate that holds this line is `face-width-source.test.ts` +
+ * `e2e/tests/faceplate-width.spec.ts`: a face whose content does not fill its
+ * plate is RED unless NAMED with the specific thing consuming the width. */
 .dock-faceplate .faceplate-body {
-  min-width: 900px;
-}
-/* …but 900px is the KIT's width, not every occupant's. A legacy card frame is
-   already `width: max-content`, so forcing 900px on its body is precisely the
-   "more horizontal space than it needs" this fixes (#1573). Curated faces
-   (ModuleShell) keep the kit width — for them 900px IS what they need, and the
-   half-width-split scroll behaviour the min-width exists for is unchanged. */
-.dock-faceplate .faceplate-body:has(.fp-card-frame) {
   min-width: 0;
   width: max-content;
-}
-/* …and the same is true of a curated face whose content is genuinely NARROWER
-   than the kit. Owner review of PR #1738: *"the whole thing should be about half
-   as wide, with none of this wasted space."*
-   MEASURED, and it is this rule that produces it. The pane shrink-wraps —
-   `.dock-fullview-pane` and `.dock-faceplate` are both `flex: 0 1 auto;
-   min-width: 0`, so nothing above stretches — and `.rl-tile` is `width: 100%`,
-   so the shell simply fills whatever floor is set here. mixmstrs' widest row is
-   ONE CLUSTER OF EIGHT cells (every cluster is `MIXMSTRS_CHANNELS.length` wide
-   by construction, which is the console-grid property its face-model test
-   pins), i.e. a few hundred px against a 900 px floor. `.page-controls` is a
-   left-packed `flex-wrap` row, so the whole surplus became blank margin on the
-   right — exactly the screenshot.
-   ⚠ SCOPED BY MODULE, NOT LIFTED FOR EVERY FACE. The comment above is right
-   that 900 px IS what most curated faces need, and it is also the width the
-   half-width-split scroll behaviour is designed around — lowering it globally
-   would reflow every dock scene in the roster. `data-shell-type` is emitted by
-   `ModuleShell.svelte` on its root, so `:has()` keys this to one module the same
-   way the rule above keys to one branch. */
-.dock-faceplate .faceplate-body:has([data-shell-type='mixmstrs']) {
-  min-width: 0;
-  width: max-content;
+  max-width: 100%;
 }
 
 .dock-faceplate .faceplate {

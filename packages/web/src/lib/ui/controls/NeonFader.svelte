@@ -30,9 +30,10 @@
   //     in the same colour over the same unlit remainder.
   //   * the 5 px GLOW — `box-shadow: 0 0 5px var(--_ka)` (KnobConic:391), on
   //     the thumb, which is this control's pointer.
-  //   * the READOUT: 9 px mono, uppercase, `0.06em`, coloured `--_ka`
-  //     (KnobConic:429-443), with the same `readout-<paramId>` testid.
-  //   * the LABEL: 9 px mono, `0.07em`, `--text-dim` (KnobConic:414-426).
+  //   * the LABEL: 9 px mono, `0.07em`, `--text-dim` (KnobConic's `.label`).
+  //     ⚠ The RESTING READOUT this control used to copy from KnobConic no
+  //     longer exists on either of them (owner, 2026-08-17) — a level's readout
+  //     can only ever be a number, so there is nothing left of it here at all.
   //   * the detent TICK vocabulary for a bipolar centre.
   //
   // ── AND IT CLOSES THREE GAPS `Fader.svelte` HAS ───────────────────────────
@@ -101,9 +102,15 @@
     /** Track length in px. ONE number drives the track box AND the thumb
      *  travel, exactly as on `Fader.svelte`. */
     trackHeight?: number;
-    /** Print the value UNDER the label at rest (the dock tier), instead of only
-     *  while hovering/dragging. Mirrors `KnobConic`'s `persistentReadout`. */
-    persistentReadout?: boolean;
+    /**
+     * DROP THE PER-CONTROL CAPTION — the `.label` line under the throw.
+     *
+     * ⚠ TEXT ONLY. `aria-label`, the annotate menu's title and the MIDI-learn
+     * address all still carry `label`. Declared per cell (`face.bareCells`)
+     * because a caption is clutter only where a section heading already says
+     * it — see KnobConic's copy of this prop for the owner's rule.
+     */
+    hideCaption?: boolean;
     /** Explicit accent override for one cell — the `--ka` seam KnobConic uses.
      *  Omitted, the domain chain applies. */
     accent?: string;
@@ -123,7 +130,7 @@
     moduleId,
     paramId,
     trackHeight = 80,
-    persistentReadout = false,
+    hideCaption = false,
     accent,
   }: Props = $props();
 
@@ -369,10 +376,18 @@
       <div class="thumb" style:transform="translateY({thumbY}px)" aria-hidden="true"></div>
     </div>
   </div>
-  <div class="label" title={label}>{label}</div>
-  {#if persistentReadout}
-    <div class="readout" data-testid={paramId ? `readout-${paramId}` : undefined}>{readoutText}</div>
-  {/if}
+  <!-- THE CAPTION. Suppressed per cell by `face.bareCells`; `aria-label` on the
+       track above is untouched, so nothing addressable is lost.
+
+       ⚠ THERE IS NO READOUT LINE HERE ANY MORE, AND THERE IS NOTHING TO PUT
+       BACK. A fader's readout is a number by construction — there is no
+       option/landmark NAME a level could print — so the whole element went
+       (owner, 2026-08-17: *"all of our white decimely representatons of fader
+       state ... should be removed"*, and *"i want the data gone, not there but
+       hidden or something"*). `readoutText` still feeds `aria-valuetext` and
+       the drag/hover `.value-tag`, so the value is speakable, assertable, and
+       visible WHILE YOU SET IT — it just does not sit on the panel at rest. -->
+  {#if !hideCaption}<div class="label" title={label}>{label}</div>{/if}
   {#if midi.binding}
     <div class="midi-badge" title={`Bound to MIDI ${midi.bindingLabel}`}>{midi.badge}</div>
   {/if}
@@ -491,9 +506,9 @@
     box-shadow: 0 0 6px color-mix(in srgb, var(--_ka) 45%, transparent);
   }
 
-  /* LABEL + READOUT — KnobConic:414-443, same metrics, same colours. */
-  .label,
-  .readout {
+  /* LABEL — KnobConic's `.label` metrics, verbatim. The `.readout` rule that
+     sat beside it is gone with the element (see the markup note). */
+  .label {
     max-width: 100%;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -504,14 +519,8 @@
     line-height: 1;
     text-transform: uppercase;
     font-weight: 700;
-  }
-  .label {
     letter-spacing: 0.07em;
     color: var(--text-dim, #8a9099);
-  }
-  .readout {
-    letter-spacing: 0.06em;
-    color: var(--_ka);
   }
 
   /* The hover tag — KnobConic:468-481's tokens, positioned for a vertical

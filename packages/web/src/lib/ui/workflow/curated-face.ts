@@ -287,6 +287,9 @@ export interface ResolvedFacePage {
   hint: string;
   controls: FaceControl[];
   clusters: FaceCluster[];
+  /** `ModuleFacePage.clusterFlow`, resolved — 'stack' when the page declares
+   *  none, so every existing band keeps exactly the layout it had. */
+  clusterFlow: 'stack' | 'row';
 }
 
 /** The selector's result. `pages` is present only for the 'dock' tier (and only
@@ -382,8 +385,9 @@ function resolvePage(page: ModuleFacePage, def: FaceDefLike): ResolvedFacePage {
   const all = page.controls.map((k) => resolveFaceControl(k, def));
   const hint = page.hint?.trim() ?? '';
   const declared = page.clusters ?? [];
+  const clusterFlow = page.clusterFlow ?? 'stack';
   if (!declared.length) {
-    return { id: page.id, label: page.label, hint, controls: all, clusters: [] };
+    return { id: page.id, label: page.label, hint, controls: all, clusters: [], clusterFlow };
   }
   const byKey = new Map(all.map((c) => [c.key, c]));
   const claimed = new Set<string>();
@@ -406,6 +410,7 @@ function resolvePage(page: ModuleFacePage, def: FaceDefLike): ResolvedFacePage {
     hint,
     controls: all.filter((c) => !claimed.has(c.key)),
     clusters,
+    clusterFlow,
   };
 }
 
@@ -474,6 +479,11 @@ export interface DockFaceBand {
   hint: string;
   controls: FaceControl[];
   clusters: FaceCluster[];
+  /** How the band's clusters flow — 'stack' (one per row, the default and the
+   *  only behaviour before `ModuleFacePage.clusterFlow` existed) or 'row'
+   *  (side by side, wrapping). A 'row' band is never a CONSOLE GRID: a shared
+   *  column ruler and a side-by-side flow are contradictory requests. */
+  clusterFlow: 'stack' | 'row';
 }
 
 /** EVERY cell a dock plan paints, band order, un-clustered before clustered.
@@ -497,7 +507,16 @@ export function dockFacePlan(def: FaceDefLike): DockFaceBand[] | null {
 
   const pages = dock.pages ?? [];
   if (!pages.length) {
-    return [{ id: DOCK_ALL_BAND_ID, label: '', hint: '', controls: dock.controls, clusters: [] }];
+    return [
+      {
+        id: DOCK_ALL_BAND_ID,
+        label: '',
+        hint: '',
+        controls: dock.controls,
+        clusters: [],
+        clusterFlow: 'stack',
+      },
+    ];
   }
 
   const bands: DockFaceBand[] = pages.map((p) => ({
@@ -506,6 +525,7 @@ export function dockFacePlan(def: FaceDefLike): DockFaceBand[] | null {
     hint: p.hint,
     controls: p.controls,
     clusters: p.clusters,
+    clusterFlow: p.clusterFlow,
   }));
   // A clustered cell is still CLAIMED by its page — the tail must sweep only
   // what no page mentions at all, never a cell a cluster pulled aside.
@@ -514,7 +534,14 @@ export function dockFacePlan(def: FaceDefLike): DockFaceBand[] | null {
   );
   const unpaged = dock.controls.filter((c) => !claimed.has(c.key));
   if (unpaged.length) {
-    bands.push({ id: DOCK_UNPAGED_BAND_ID, label: 'more', hint: '', controls: unpaged, clusters: [] });
+    bands.push({
+      id: DOCK_UNPAGED_BAND_ID,
+      label: 'more',
+      hint: '',
+      controls: unpaged,
+      clusters: [],
+      clusterFlow: 'stack',
+    });
   }
   return bands;
 }

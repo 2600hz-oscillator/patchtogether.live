@@ -6,7 +6,13 @@
 // roster — because those are the ones a live rack actually produces.
 
 import { describe, expect, it } from 'vitest';
-import { knobMarks, knobReadout, knobValueReadout, nearestByValue } from './knob-vocabulary-model';
+import {
+  knobMarks,
+  knobNameReadout,
+  knobReadout,
+  knobValueReadout,
+  nearestByValue,
+} from './knob-vocabulary-model';
 import { knobValueToFrac } from './knob-conic-model';
 
 const MODES = [
@@ -45,7 +51,64 @@ describe('nearestByValue', () => {
   });
 });
 
-describe('knobValueReadout — the PF-20 DOCK readout (the gate moves, it does not vanish)', () => {
+// ── THE PAINTED READOUT — A NAME, NEVER A NUMBER ──────────────────────────
+//
+// Owner ruling 2026-08-17: *"we should kill the light white decimil
+// represebtation of knob state in ALL modules"* / *"i want the data gone, not
+// there but hidden or something"*. `knobNameReadout` is the whole of what a
+// dial paints at rest, and the tests below are written as a PAIR against
+// `knobValueReadout` on every case — the number must be absent from one and
+// present in the other for the same input, or the removal is either incomplete
+// or has taken the accessible value with it.
+describe('knobNameReadout — what the dial PAINTS', () => {
+  it('a plain param paints NOTHING (and still SPEAKS its number)', () => {
+    expect(knobNameReadout(0.42, {})).toBeNull();
+    // The paired leg. Without it, deleting the readout and deleting the VALUE
+    // look identical from this file.
+    expect(knobValueReadout(0.42, {})).toBe('0.42');
+  });
+
+  it('a declared numeric FORMAT paints nothing — a formatted number is still a number', () => {
+    // The case the removal is actually about. `450 ms` / `900 HZ` / `+3.0 dB`
+    // read as "meaningful" and are exactly what covered tidyVco's faceplate.
+    const ms = { format: (v: number) => `${Math.round(v)} ms` };
+    expect(knobNameReadout(450, ms)).toBeNull();
+    expect(knobValueReadout(450, ms)).toBe('450 ms');
+  });
+
+  it('an option NAME paints — it is not a representation of the number', () => {
+    expect(knobNameReadout(2, { options: MODES })).toBe('BP');
+    expect(knobValueReadout(2, { options: MODES })).toBe('BP');
+  });
+
+  it('a landmark NAME paints, nearest wins, and a FORMAT does not outrank it', () => {
+    expect(knobNameReadout(0.9, { landmarks: SHAPES })).toBe('SAW');
+    // ⚠ PRECEDENCE INVERTS vs `knobReadout`, deliberately. There `format` wins
+    // (it is the most specific RENDERING); here the question is different —
+    // "is there a name?" — and a param that declared both wants the name on
+    // the panel and the units in the accessibility tree.
+    const both = { landmarks: SHAPES, format: (v: number) => `${v.toFixed(2)}x` };
+    expect(knobNameReadout(0.9, both)).toBe('SAW');
+    expect(knobValueReadout(0.9, both)).toBe('0.90x');
+  });
+
+  it('an EMPTY roster is not a vocabulary', () => {
+    expect(knobNameReadout(0.42, { options: [], landmarks: [] })).toBeNull();
+  });
+
+  it('NEGATIVE CONTROL: the predicate moves in BOTH directions on one param', () => {
+    // The permanent leg. `knobNameReadout` returning null for everything would
+    // pass every assertion above except this one, which requires the SAME
+    // vocabulary shape to produce a name once a roster is added and nothing
+    // before it.
+    const bare = {};
+    const named = { landmarks: SHAPES };
+    expect(knobNameReadout(1, bare)).toBeNull();
+    expect(knobNameReadout(1, named)).toBe('SAW');
+  });
+});
+
+describe('knobValueReadout — the SPOKEN value (aria-valuetext), never painted', () => {
   it('prints the NUMBER where knobReadout prints nothing — the bare-label fix', () => {
     // The dock faceplate's largest single drift from its mock: a column of
     // knobs with labels and no values. `knobReadout` is still null here; the

@@ -162,6 +162,22 @@ function buildParams(): readonly ParamDef[] {
 
 const PARAMS = buildParams();
 
+/**
+ * The params whose per-cell CAPTION survives on the faceplate — the exceptions
+ * `face.bareCells` is derived against (see the note there).
+ *
+ * A NAMED exemption per instance rather than a positive list of the eighty-odd
+ * bare ones: the rule is "a caption is redundant when a cluster heading and a
+ * column already name the control", and these two are exactly the cells that
+ * sit outside that arrangement. Anchored — `mixmstrs-face-model.test.ts`
+ * asserts every id here is a real param, so a rename cannot leave a dead
+ * exemption silently captioning nothing.
+ */
+const CAPTIONED_PARAM_IDS: ReadonlySet<string> = new Set<string>([
+  'master_volume',
+  ...MIXMSTRS_RETURNS.map((r) => `send${r}Pre`),
+]);
+
 // Audio input port ids in the exact order the Faust process() declares them:
 // 16 channel ports (ch1L..ch8R) then the 4 return ports.
 const AUDIO_IN_PORTS: readonly string[] = [
@@ -369,7 +385,13 @@ export const mixmstrsDef: AudioModuleDef = {
         ],
         clusters: [
           { label: 'amount', controls: MIXMSTRS_CHANNELS.map((c) => `comp${c}`) },
-          { label: 'enable', controls: MIXMSTRS_CHANNELS.map((c) => `ch${c}_compEnable`) },
+          // ⚠ 'enable compressor', not 'enable' — owner review, 2026-08-17:
+          // *"the "enable" label shoud say "enable compressor""*. With the
+          // per-cell `1CP…8CP` captions gone (see `bareCells`) this heading is
+          // the ONLY text naming the row, so it has to say what it enables.
+          // Lowercase per the repo's label convention; `.cluster-label`
+          // uppercases it in CSS.
+          { label: 'enable compressor', controls: MIXMSTRS_CHANNELS.map((c) => `ch${c}_compEnable`) },
           { label: 'threshold', controls: MIXMSTRS_CHANNELS.map((c) => `ch${c}_thresh`) },
           { label: 'ratio', controls: MIXMSTRS_CHANNELS.map((c) => `ch${c}_ratio`) },
         ] },
@@ -382,7 +404,20 @@ export const mixmstrsDef: AudioModuleDef = {
           label: `send ${r}`,
           controls: [...MIXMSTRS_CHANNELS.map((c) => `ch${c}_send${r}`), `send${r}Pre`],
         })) },
-      { id: 'returns', label: 'returns',
+      // ⚠ THE ONE BAND WHOSE CLUSTERS SIT SIDE BY SIDE — owner, 2026-08-17:
+      // *"return 1 and return 2 can sit next to each other, too, saving on
+      // vertical space and reducing unused horizontal space"*. The two returns
+      // are PEERS (one strip each, identical shape), not two rows of one table,
+      // so nothing is aligned by stacking them — unlike `channels`, where
+      // column N of `level`/`low`/`mid`/`high` is channel N and the stack IS
+      // the console grid. Declaring `'row'` turns the console grid off for this
+      // band, which is correct and not a loss: the alignment it would provide
+      // is between return 1's fader and return 2's fader, which nobody reads.
+      //
+      // It only fits because the captions went first: a return strip was
+      // `[fader][LO][MD][HI]` plus four caption lines and four value lines, and
+      // is now four bare cells.
+      { id: 'returns', label: 'returns', clusterFlow: 'row',
         controls: MIXMSTRS_RETURNS.flatMap((r) => [
           `ret${r}_volume`, `ret${r}_low`, `ret${r}_mid`, `ret${r}_high`,
         ]),
@@ -430,6 +465,41 @@ export const mixmstrsDef: AudioModuleDef = {
     // matched hex. Adopting it is ONE declaration per module, which is why it
     // is a KIND and not an edit to the shared `Fader.svelte` that 93 cards and
     // eight other faced modules mount.
+    // ── THE CAPTIONS THAT ARE NOT THERE ───────────────────────────────────
+    //
+    // Owner review, 2026-08-17: *"the 1lo 1md 1hi etc labels should also go
+    // away because the low/mid/high labels above the knob rows convey that
+    // fine"*, *"we do not need a 1cp etc label under it"*, *"all the threshold
+    // ratio abd send knobs should not have white numbers or 1S1 etc labels"*,
+    // *"all of our white decimely representatons of fader state and the fader
+    // labels should be removed"*.
+    //
+    // ⚠ THE RULE IS REDUNDANCY, NOT TIDINESS, and the owner drew the line
+    // himself in the same review: *"mixmstrs is different than tidyvco because
+    // tidyvco does need some of the gray labels -- like a/d/s/r would not be
+    // comprehensible without them"*. On tidyVco `F.A`/`F.D`/`F.S`/`F.R` are the
+    // ONLY thing separating four identical dials. Here every cell sits in a
+    // cluster whose heading already names the function and whose COLUMN already
+    // names the channel — `1LO` under a `LOW` heading in column 1 says nothing
+    // the grid has not said twice. That is why this is a per-param list and not
+    // a face-wide or tier-wide flag: the two faces need opposite answers.
+    //
+    // DERIVED MEMBERSHIP, both directions: it is EVERY declared param except
+    // the ones no heading names, so a ninth channel or a new per-channel
+    // control arrives bare without anyone editing this list, and the exceptions
+    // are the thing that has to be justified rather than the rule.
+    //
+    //   master_volume  the HERO. It sits alone above every band with no cluster
+    //                  heading over it, so `MASTER` is its only name.
+    //   send{R}Pre     the tail of an `aux sends` cluster whose heading says
+    //                  `SEND 1` — which is the send AMOUNT row, not the tap
+    //                  point. `S1PRE` is the only surface that says this switch
+    //                  is the pre/post select, and the header echo that used to
+    //                  say it a second time was removed in #1738.
+    bareCells: PARAMS.map((p) => p.id).filter(
+      (id) => !CAPTIONED_PARAM_IDS.has(id),
+    ),
+
     paramCells: Object.fromEntries([
       ['master_volume', 'neon-fader' as const],
       ...MIXMSTRS_CHANNELS.map((c) => [`ch${c}_volume`, 'neon-fader' as const]),

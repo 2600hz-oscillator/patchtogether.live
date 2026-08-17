@@ -11,13 +11,32 @@
 // that throws — unit-testable without a browser, and leaves KnobConic.svelte a
 // thin shell (the knob-conic-model precedent).
 //
-// THE READOUT GATE IS THE POINT (PF-3). `knobReadout` returns `null` for a
-// plain param, and KnobConic renders NOTHING when it is null. That is not a
-// micro-optimization: the dial already shows its value on hover/drag, so a
-// persistent readout on every knob would add a text row to ~17 dock faceplates
-// and move every one of their baselines to say what hovering already said.
-// A persistent readout is earned by DECLARING a meaning the number does not
-// carry on its own.
+// ⚠ THE PAINTED READOUT IS A **NAME**, NEVER A NUMBER (owner ruling,
+// 2026-08-17: *"we should kill the light white decimil represebtation of knob
+// state in ALL modules"* / *"i want the data gone, not there but hidden or
+// something"*). Three functions, three different questions, and the split is
+// the whole design:
+//
+//   knobNameReadout  — WHAT IS PAINTED under the dial. A declared option or
+//                      landmark NAME, else `null` ⇒ nothing renders. A name is
+//                      not a decimal representation of state: it is the only
+//                      surface that says a morph knob is currently at TRI, and
+//                      the owner's own rationale for keeping tidyVco's A/D/S/R
+//                      labels — text earns its place when it disambiguates
+//                      controls that are otherwise indistinguishable — is
+//                      exactly the argument for keeping it.
+//   knobReadout      — the declared vocabulary's own rendering, `format` first.
+//                      NOT painted; the specificity ladder aria-valuetext walks.
+//   knobValueReadout — what the control is WORTH, always a string. Feeds
+//                      `aria-valuetext`, so the value stays in the
+//                      accessibility tree (a slider whose value is unspeakable
+//                      is a real regression) and every gate that needs to prove
+//                      a face still tracks the graph keeps an observable.
+//
+// ⚠ `persistentReadout=false` WAS THE WRONG FIX AND IS NOT COMING BACK. It left
+// the number one hover away — "there but hidden", refused by name. The element
+// is gone from the DOM at rest, which is why the gate that holds this line
+// (`face-readout-source.test.ts`) reads SOURCE rather than a rendered page.
 
 import type { KnobCurve, ParamLandmark, ParamOption } from '$lib/graph/types';
 import { knobValueToFrac } from './knob-conic-model';
@@ -66,8 +85,37 @@ export function nearestByValue<T extends { value: number }>(
 }
 
 /**
- * The PERSISTENT readout text for a dial, or `null` when the param declared no
- * vocabulary (the gate — see the header note).
+ * THE PAINTED READOUT — a declared STATE NAME, or `null` ⇒ the dial prints
+ * nothing at rest.
+ *
+ * ⚠ IT DELIBERATELY IGNORES `format`. A `format` renders a NUMBER in the
+ * module's own units (`450 ms`, `900 HZ`, `+3.0 dB`) and a number under every
+ * dial is precisely what the owner removed. `options` / `landmarks` render a
+ * NAME, and a name is not a representation of the number — it is the only
+ * surface that says which waypoint a continuous morph is nearest, so a face
+ * without it has an unreadable shape knob rather than a tidier one.
+ *
+ * ⚠ AND IT IS NOT `knobReadout` MINUS A BRANCH BY ACCIDENT. Keeping the two
+ * separate is what lets `aria-valuetext` keep the FULL declared rendering (see
+ * `knobValueReadout`) while the panel paints only the name — one value, two
+ * audiences, no second formatter to drift.
+ *
+ * Nearest-match, not exact, for the reason `knobReadout` states below.
+ */
+export function knobNameReadout(value: number, vocab: KnobVocabulary): string | null {
+  if (vocab.options?.length) return nearestByValue(value, vocab.options)?.label ?? null;
+  if (vocab.landmarks?.length) return nearestByValue(value, vocab.landmarks)?.label ?? null;
+  return null;
+}
+
+/**
+ * The declared vocabulary's own rendering, or `null` when the param declared
+ * none.
+ *
+ * ⚠ NOT PAINTED ANY MORE — see `knobNameReadout`. This is the specificity
+ * ladder `knobValueReadout` walks on the way to `aria-valuetext`, and the
+ * ordering below is why a formatted param still SPEAKS its own units even
+ * though it no longer prints them.
  *
  * Precedence is by SPECIFICITY, and it is deliberate:
  *   1. `format`     — the param supplied its own renderer; nothing outranks that.
@@ -90,22 +138,20 @@ export function knobReadout(value: number, vocab: KnobVocabulary): string | null
 }
 
 /**
- * The DOCK-TIER readout: the declared vocabulary NAME when there is one, else
- * the plain numeric ladder with units. Never null.
+ * WHAT THE CONTROL IS WORTH, as a string. Never null.
  *
- * PF-20 — WHY THIS EXISTS AND WHY IT IS NOT `knobReadout`. The PF-3 gate above
- * is right for a LANE tile: a 46px knob column cannot afford a text row for
- * something hovering already shows. It was wrong for the DOCK. Every mocked
- * faceplate prints a value under every knob (`SUB DEC 450 ms`, `P AMT 24 st`),
- * and shipping bare labels there is the single largest share of the drift the
- * owner put next to the mock — a readout you must hover to see does not exist
- * on a panel you are reading.
+ * ⚠ ITS ONE CONSUMER IS `aria-valuetext`. It used to be the DOCK's painted
+ * readout (PF-20) and that is exactly what the owner removed; what survives is
+ * the half nobody was objecting to — the value has to remain SPEAKABLE. A
+ * `role="slider"` whose value cannot be announced is a real accessibility
+ * regression, and it is not the clutter complaint: nothing about it is painted.
  *
- * So the GATE MOVES TO THE CALLER instead of disappearing: `knobReadout` still
- * answers "did this param declare a meaning", this answers "print the value
- * whatever it declared", and KnobConic picks per view. The lane keeps the bare
- * dial; the dock always prints. Same ladder either way, which is what stops the
- * hero readout and the dial under it from disagreeing about one number.
+ * ⚠ IT IS ALSO THE OBSERVABLE THE GATES MOVED TO. A spec that used to read
+ * `readout-<paramId>`'s text to prove a face tracks the graph now reads
+ * `aria-valuetext` off `control-<paramId>` — the SAME ladder, so the proof is
+ * unchanged and no assertion had to be weakened to survive the removal. That is
+ * deliberate: an assertion deleted to make a suite pass proves nothing, and
+ * this function is what made deleting them unnecessary.
  */
 export function knobValueReadout(value: number, vocab: KnobVocabulary, units = ''): string {
   return knobReadout(value, vocab) ?? formatParamNumber(value, units);
