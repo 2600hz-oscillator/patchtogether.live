@@ -97,6 +97,13 @@ type Leg =
 interface Render {
   /** settled sample per DECLARED output id. */
   out: Record<string, number>;
+  /** THE RAW HEAD — from sample 0, spanning the first two 128-frame render
+   *  quanta and a little beyond. `buf` starts at `SETTLE`, so without this the
+   *  first-quantum leg (#1744) would have been reading a sample 480 frames in
+   *  and calling it "sample 0". Kept as its own field rather than by moving
+   *  `buf`'s origin, because the bit-identity and fraction-outside legs WANT to
+   *  skip any settling. */
+  head: Record<string, Float32Array>;
   /** the settled window per output, for the bit-identity leg. */
   buf: Record<string, Float32Array>;
   /** DERIVED off the LIVE handle — never typed. */
@@ -200,12 +207,14 @@ async function render(opts: {
 
   const out: Record<string, number> = {};
   const buf: Record<string, Float32Array> = {};
+  const head: Record<string, Float32Array> = {};
   OUT_IDS.forEach((id, i) => {
     const chan = rendered.getChannelData(i);
     buf[id] = chan.slice(SETTLE);
+    head[id] = chan.slice(0, 320);
     out[id] = chan[N - 1]!;
   });
-  return { out, buf, paramTerminals, portTerminals, offWorkletHosts };
+  return { out, buf, head, paramTerminals, portTerminals, offWorkletHosts };
 }
 
 /** The largest |Δ| across every declared output, in LINEAR amplitude. */
@@ -279,22 +288,47 @@ describe('ALM audit / M1 — what an UNPATCHED module emits', () => {
     // silent on all five jacks — and it is silent from the FIRST sample, not
     // after a ramp (the featurecv lesson, #1744: a factory's first render
     // quantum can read differently from every quantum after it).
+    //
+    // ⚠ BOTH WINDOWS, and that is the point: `buf` starts at `SETTLE`, so on its
+    // own it would prove nothing about the head — which is exactly the claim in
+    // this test's own name. `head` starts at sample 0.
     const r = await render({});
     for (const id of OUT_IDS) {
-      expect(peakOf(r.buf[id]!), `'${id}' is bit-exactly silent at rest`).toBe(0);
+      expect(peakOf(r.head[id]!), `'${id}' is bit-exactly silent from SAMPLE 0`).toBe(0);
+      expect(peakOf(r.buf[id]!), `'${id}' is bit-exactly silent in steady state`).toBe(0);
     }
   }, TIMEOUT_MS);
 
-  it('NO first-quantum transient on a DRIVEN render either', async () => {
-    // Sampled ACROSS the 128-frame block boundary, which is where a
-    // block-quantised parameter or a one-quantum init would show.
+  it('NO first-quantum transient on a DRIVEN render either — read from SAMPLE 0', async () => {
+    // ⚠ THE FIRST DRAFT OF THIS LEG COULD NOT SEE WHAT IT CLAIMED TO. It read
+    // `buf[id][0]`, and `buf` starts at `SETTLE` (480 frames in) — so a genuine
+    // one-quantum transient would have been skipped by the very slice meant to
+    // avoid it, and the test would have gone green calling frame 480 "sample 0".
+    // `head` exists for this leg alone and starts at 0.
+    //
+    // EVERY sample of the first two 128-frame render quanta is compared against
+    // steady state, so a block-quantised parameter, a one-quantum init or a
+    // ramped param would all show (the featurecv class, #1744).
     const r = await render({ drive: { a: 0.5, b: -0.25 } });
     for (const id of OUT_IDS) {
       const settled = r.out[id]!;
-      // buf starts at SETTLE, so read the raw head through a second render of
-      // the same scene at the sample indices that matter.
-      expect(r.buf[id]![0], `'${id}' at the first settled sample equals steady state`).toBe(settled);
+      const h = r.head[id]!;
+      const offenders = [];
+      for (let i = 0; i < h.length; i++) {
+        if (h[i] !== settled) offenders.push(`${id}[${i}]=${h[i]} != ${settled}`);
+        if (offenders.length >= 3) break;
+      }
+      expect(
+        offenders,
+        `'${id}': the first ${h.length} samples (quanta 0-2) must all equal steady state`,
+      ).toEqual([]);
     }
+    // NEGATIVE CONTROL on the instrument — `head` really does start at sample 0
+    // and really is shorter than `buf`'s origin, so the loop above cannot be
+    // silently reading the settled region the way the first draft did.
+    expect(r.head[OUT_IDS[0]!]!.length).toBeLessThan(SETTLE);
+    expect(r.head[OUT_IDS[0]!]![0], 'head[0] IS the render\'s first sample')
+      .toBe(analogLogicMath.min(0.5, -0.25));
   }, TIMEOUT_MS);
 });
 
