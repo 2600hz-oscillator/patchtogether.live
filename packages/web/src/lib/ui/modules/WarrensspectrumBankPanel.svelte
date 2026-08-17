@@ -33,7 +33,7 @@
   import { patch } from '$lib/graph/store';
   import { nodeVersion } from '$lib/graph/node-versions.svelte';
   import { mutateNode } from '$lib/graph/mutate';
-  import Fader from '$lib/ui/controls/Fader.svelte';
+  import NeonFader from '$lib/ui/controls/NeonFader.svelte';
   import {
     WARRENSSPECTRUM_BAND_SPEC,
     WARRENSSPECTRUM_BANDS_KEY,
@@ -145,7 +145,7 @@
       <!-- The wrapper carries the testid; the Fader itself carries NONE (see
            the header). `ws-bank-fader-send` is the declared operability probe. -->
       <div class="fader" data-testid={`ws-bank-fader-${f}`}>
-        <Fader
+        <NeonFader
           value={sel[f]}
           min={spec[f].min}
           max={spec[f].max}

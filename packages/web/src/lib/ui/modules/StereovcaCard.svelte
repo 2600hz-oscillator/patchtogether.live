@@ -9,7 +9,7 @@
   // labels so the panel hover layout matches the L-on-top, R-below
   // stereo convention.
   import type { NodeProps } from '@xyflow/svelte';
-  import Fader from '$lib/ui/controls/Fader.svelte';
+  import NeonFader from '$lib/ui/controls/NeonFader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import { stereovcaDef } from '$lib/audio/modules/stereovca';
   import type { ModuleNode } from '$lib/graph/types';
@@ -36,8 +36,8 @@
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="fader-row">
-      <Fader value={level}  min={0}  max={1} defaultValue={1.0} label="Level"  curve="linear" onchange={set('level')} moduleId={id} paramId="level"  readLive={live('level')} />
-      <Fader value={offset} min={-1} max={1} defaultValue={0}   label="Offset" curve="linear" onchange={set('offset')} moduleId={id} paramId="offset" readLive={live('offset')} />
+      <NeonFader value={level}  min={0}  max={1} defaultValue={1.0} label="Level"  curve="linear" onchange={set('level')} moduleId={id} paramId="level"  readLive={live('level')} />
+      <NeonFader value={offset} min={-1} max={1} defaultValue={0}   label="Offset" curve="linear" onchange={set('offset')} moduleId={id} paramId="offset" readLive={live('offset')} />
     </div>
   </PatchPanel>
 </div>

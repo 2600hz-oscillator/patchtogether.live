@@ -15,7 +15,7 @@
   //   └─────────────────────┴──────────────────────────────┘
 
   import type { NodeProps } from '@xyflow/svelte';
-  import Fader from '$lib/ui/controls/Fader.svelte';
+  import NeonFader from '$lib/ui/controls/NeonFader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { snaredrumDef } from '$lib/audio/modules/snaredrum';
@@ -195,29 +195,29 @@
         <div class="group wide">
           <header>HEAD</header>
           <div class="fader-row">
-            <Fader value={tune}      min={P.tune.min}       max={P.tune.max}       defaultValue={defaultFor('tune')}       label={P.tune.label}       units={P.tune.units}       curve={P.tune.curve}       onchange={set('tune')}       moduleId={id} paramId="tune"       readLive={live('tune')} />
-            <Fader value={headDecay} min={P.head_decay.min} max={P.head_decay.max} defaultValue={defaultFor('head_decay')} label={P.head_decay.label} units={P.head_decay.units} curve={P.head_decay.curve} onchange={set('head_decay')} moduleId={id} paramId="head_decay" readLive={live('head_decay')} />
-            <Fader value={damping}   min={P.damping.min}    max={P.damping.max}    defaultValue={defaultFor('damping')}    label={P.damping.label}    units={P.damping.units}    curve={P.damping.curve}    onchange={set('damping')}    moduleId={id} paramId="damping"    readLive={live('damping')} />
-            <Fader value={damp}      min={P.damp.min}       max={P.damp.max}       defaultValue={defaultFor('damp')}       label={P.damp.label}       units={P.damp.units}       curve={P.damp.curve}       onchange={set('damp')}       moduleId={id} paramId="damp"       readLive={live('damp')} />
+            <NeonFader value={tune}      min={P.tune.min}       max={P.tune.max}       defaultValue={defaultFor('tune')}       label={P.tune.label}       units={P.tune.units}       curve={P.tune.curve}       onchange={set('tune')}       moduleId={id} paramId="tune"       readLive={live('tune')} />
+            <NeonFader value={headDecay} min={P.head_decay.min} max={P.head_decay.max} defaultValue={defaultFor('head_decay')} label={P.head_decay.label} units={P.head_decay.units} curve={P.head_decay.curve} onchange={set('head_decay')} moduleId={id} paramId="head_decay" readLive={live('head_decay')} />
+            <NeonFader value={damping}   min={P.damping.min}    max={P.damping.max}    defaultValue={defaultFor('damping')}    label={P.damping.label}    units={P.damping.units}    curve={P.damping.curve}    onchange={set('damping')}    moduleId={id} paramId="damping"    readLive={live('damping')} />
+            <NeonFader value={damp}      min={P.damp.min}       max={P.damp.max}       defaultValue={defaultFor('damp')}       label={P.damp.label}       units={P.damp.units}       curve={P.damp.curve}       onchange={set('damp')}       moduleId={id} paramId="damp"       readLive={live('damp')} />
           </div>
           <div class="fader-row">
-            <Fader value={pitchAmt}  min={P.pitch_amt.min}  max={P.pitch_amt.max}  defaultValue={defaultFor('pitch_amt')}  label={P.pitch_amt.label}  units={P.pitch_amt.units}  curve={P.pitch_amt.curve}  onchange={set('pitch_amt')}  moduleId={id} paramId="pitch_amt"  readLive={live('pitch_amt')} />
-            <Fader value={pitchTime} min={P.pitch_time.min} max={P.pitch_time.max} defaultValue={defaultFor('pitch_time')} label={P.pitch_time.label} units={P.pitch_time.units} curve={P.pitch_time.curve} onchange={set('pitch_time')} moduleId={id} paramId="pitch_time" readLive={live('pitch_time')} />
+            <NeonFader value={pitchAmt}  min={P.pitch_amt.min}  max={P.pitch_amt.max}  defaultValue={defaultFor('pitch_amt')}  label={P.pitch_amt.label}  units={P.pitch_amt.units}  curve={P.pitch_amt.curve}  onchange={set('pitch_amt')}  moduleId={id} paramId="pitch_amt"  readLive={live('pitch_amt')} />
+            <NeonFader value={pitchTime} min={P.pitch_time.min} max={P.pitch_time.max} defaultValue={defaultFor('pitch_time')} label={P.pitch_time.label} units={P.pitch_time.units} curve={P.pitch_time.curve} onchange={set('pitch_time')} moduleId={id} paramId="pitch_time" readLive={live('pitch_time')} />
           </div>
         </div>
         <div class="group">
           <header>BODY</header>
           <div class="fader-row">
-            <Fader value={tone}      min={P.tone.min}       max={P.tone.max}       defaultValue={defaultFor('tone')}       label={P.tone.label}       units={P.tone.units}       curve={P.tone.curve}       onchange={set('tone')}       moduleId={id} paramId="tone"       readLive={live('tone')} />
-            <Fader value={bodyDecay} min={P.body_decay.min} max={P.body_decay.max} defaultValue={defaultFor('body_decay')} label={P.body_decay.label} units={P.body_decay.units} curve={P.body_decay.curve} onchange={set('body_decay')} moduleId={id} paramId="body_decay" readLive={live('body_decay')} />
+            <NeonFader value={tone}      min={P.tone.min}       max={P.tone.max}       defaultValue={defaultFor('tone')}       label={P.tone.label}       units={P.tone.units}       curve={P.tone.curve}       onchange={set('tone')}       moduleId={id} paramId="tone"       readLive={live('tone')} />
+            <NeonFader value={bodyDecay} min={P.body_decay.min} max={P.body_decay.max} defaultValue={defaultFor('body_decay')} label={P.body_decay.label} units={P.body_decay.units} curve={P.body_decay.curve} onchange={set('body_decay')} moduleId={id} paramId="body_decay" readLive={live('body_decay')} />
           </div>
         </div>
         <div class="group">
           <header>WIRE</header>
           <div class="fader-row">
-            <Fader value={wire}      min={P.wire.min}       max={P.wire.max}       defaultValue={defaultFor('wire')}       label={P.wire.label}       units={P.wire.units}       curve={P.wire.curve}       onchange={set('wire')}       moduleId={id} paramId="wire"       readLive={live('wire')} />
-            <Fader value={wireTone}  min={P.wire_tone.min}  max={P.wire_tone.max}  defaultValue={defaultFor('wire_tone')}  label={P.wire_tone.label}  units={P.wire_tone.units}  curve={P.wire_tone.curve}  onchange={set('wire_tone')}  moduleId={id} paramId="wire_tone"  readLive={live('wire_tone')} />
-            <Fader value={wireDecay} min={P.wire_decay.min} max={P.wire_decay.max} defaultValue={defaultFor('wire_decay')} label={P.wire_decay.label} units={P.wire_decay.units} curve={P.wire_decay.curve} onchange={set('wire_decay')} moduleId={id} paramId="wire_decay" readLive={live('wire_decay')} />
+            <NeonFader value={wire}      min={P.wire.min}       max={P.wire.max}       defaultValue={defaultFor('wire')}       label={P.wire.label}       units={P.wire.units}       curve={P.wire.curve}       onchange={set('wire')}       moduleId={id} paramId="wire"       readLive={live('wire')} />
+            <NeonFader value={wireTone}  min={P.wire_tone.min}  max={P.wire_tone.max}  defaultValue={defaultFor('wire_tone')}  label={P.wire_tone.label}  units={P.wire_tone.units}  curve={P.wire_tone.curve}  onchange={set('wire_tone')}  moduleId={id} paramId="wire_tone"  readLive={live('wire_tone')} />
+            <NeonFader value={wireDecay} min={P.wire_decay.min} max={P.wire_decay.max} defaultValue={defaultFor('wire_decay')} label={P.wire_decay.label} units={P.wire_decay.units} curve={P.wire_decay.curve} onchange={set('wire_decay')} moduleId={id} paramId="wire_decay" readLive={live('wire_decay')} />
           </div>
         </div>
       </div>
@@ -229,8 +229,8 @@
         <div class="group">
           <header>CRACK</header>
           <div class="fader-row">
-            <Fader value={crack}     min={P.crack.min}      max={P.crack.max}      defaultValue={defaultFor('crack')}      label={P.crack.label}      units={P.crack.units}      curve={P.crack.curve}      onchange={set('crack')}      moduleId={id} paramId="crack"      readLive={live('crack')} />
-            <Fader value={crackTone} min={P.crack_tone.min} max={P.crack_tone.max} defaultValue={defaultFor('crack_tone')} label={P.crack_tone.label} units={P.crack_tone.units} curve={P.crack_tone.curve} onchange={set('crack_tone')} moduleId={id} paramId="crack_tone" readLive={live('crack_tone')} />
+            <NeonFader value={crack}     min={P.crack.min}      max={P.crack.max}      defaultValue={defaultFor('crack')}      label={P.crack.label}      units={P.crack.units}      curve={P.crack.curve}      onchange={set('crack')}      moduleId={id} paramId="crack"      readLive={live('crack')} />
+            <NeonFader value={crackTone} min={P.crack_tone.min} max={P.crack_tone.max} defaultValue={defaultFor('crack_tone')} label={P.crack_tone.label} units={P.crack_tone.units} curve={P.crack_tone.curve} onchange={set('crack_tone')} moduleId={id} paramId="crack_tone" readLive={live('crack_tone')} />
           </div>
         </div>
         <!-- THE AUDITION — the `snaredrum-hit` + `snaredrum-roll` families.
@@ -272,9 +272,9 @@
         <div class="group wide">
           <header>ROLL</header>
           <div class="fader-row">
-            <Fader value={rollSpeed} min={P.roll_speed.min} max={P.roll_speed.max} defaultValue={defaultFor('roll_speed')} label={P.roll_speed.label} units={P.roll_speed.units} curve={P.roll_speed.curve} onchange={set('roll_speed')} moduleId={id} paramId="roll_speed" readLive={live('roll_speed')} />
-            <Fader value={bounce}    min={P.bounce.min}     max={P.bounce.max}     defaultValue={defaultFor('bounce')}     label={P.bounce.label}     units={P.bounce.units}     curve={P.bounce.curve}     onchange={set('bounce')}     moduleId={id} paramId="bounce"     readLive={live('bounce')} />
-            <Fader value={humanize}  min={P.humanize.min}   max={P.humanize.max}   defaultValue={defaultFor('humanize')}   label={P.humanize.label}   units={P.humanize.units}   curve={P.humanize.curve}   onchange={set('humanize')}   moduleId={id} paramId="humanize"   readLive={live('humanize')} />
+            <NeonFader value={rollSpeed} min={P.roll_speed.min} max={P.roll_speed.max} defaultValue={defaultFor('roll_speed')} label={P.roll_speed.label} units={P.roll_speed.units} curve={P.roll_speed.curve} onchange={set('roll_speed')} moduleId={id} paramId="roll_speed" readLive={live('roll_speed')} />
+            <NeonFader value={bounce}    min={P.bounce.min}     max={P.bounce.max}     defaultValue={defaultFor('bounce')}     label={P.bounce.label}     units={P.bounce.units}     curve={P.bounce.curve}     onchange={set('bounce')}     moduleId={id} paramId="bounce"     readLive={live('bounce')} />
+            <NeonFader value={humanize}  min={P.humanize.min}   max={P.humanize.max}   defaultValue={defaultFor('humanize')}   label={P.humanize.label}   units={P.humanize.units}   curve={P.humanize.curve}   onchange={set('humanize')}   moduleId={id} paramId="humanize"   readLive={live('humanize')} />
           </div>
         </div>
         <!-- `fit`: DRIVE holds the one fixed-width control on the card (the
@@ -283,7 +283,7 @@
         <div class="group fit">
           <header>DRIVE</header>
           <div class="fader-row">
-            <Fader value={drive} min={P.drive.min} max={P.drive.max} defaultValue={defaultFor('drive')} label={P.drive.label} units={P.drive.units} curve={P.drive.curve} onchange={set('drive')} moduleId={id} paramId="drive" readLive={live('drive')} />
+            <NeonFader value={drive} min={P.drive.min} max={P.drive.max} defaultValue={defaultFor('drive')} label={P.drive.label} units={P.drive.units} curve={P.drive.curve} onchange={set('drive')} moduleId={id} paramId="drive" readLive={live('drive')} />
             <button
               class="toggle"
               class:on={hardOn}
@@ -293,7 +293,7 @@
             >HARD: {hardOn ? 'ON' : 'OFF'}</button>
           </div>
           <div class="fader-row">
-            <Fader value={ceiling} min={P.ceiling.min} max={P.ceiling.max} defaultValue={defaultFor('ceiling')} label={P.ceiling.label} units={P.ceiling.units} curve={P.ceiling.curve} onchange={set('ceiling')} moduleId={id} paramId="ceiling" readLive={live('ceiling')} />
+            <NeonFader value={ceiling} min={P.ceiling.min} max={P.ceiling.max} defaultValue={defaultFor('ceiling')} label={P.ceiling.label} units={P.ceiling.units} curve={P.ceiling.curve} onchange={set('ceiling')} moduleId={id} paramId="ceiling" readLive={live('ceiling')} />
           </div>
         </div>
       </div>
@@ -305,14 +305,14 @@
         <div class="group wide">
           <header>STEREO</header>
           <div class="fader-row">
-            <Fader value={spread} min={P.spread.min} max={P.spread.max} defaultValue={defaultFor('spread')} label={P.spread.label} units={P.spread.units} curve={P.spread.curve} onchange={set('spread')} moduleId={id} paramId="spread" readLive={live('spread')} />
-            <Fader value={width}  min={P.width.min}  max={P.width.max}  defaultValue={defaultFor('width')}  label={P.width.label}  units={P.width.units}  curve={P.width.curve}  onchange={set('width')}  moduleId={id} paramId="width"  readLive={live('width')} />
+            <NeonFader value={spread} min={P.spread.min} max={P.spread.max} defaultValue={defaultFor('spread')} label={P.spread.label} units={P.spread.units} curve={P.spread.curve} onchange={set('spread')} moduleId={id} paramId="spread" readLive={live('spread')} />
+            <NeonFader value={width}  min={P.width.min}  max={P.width.max}  defaultValue={defaultFor('width')}  label={P.width.label}  units={P.width.units}  curve={P.width.curve}  onchange={set('width')}  moduleId={id} paramId="width"  readLive={live('width')} />
           </div>
         </div>
         <div class="group">
           <header>OUT</header>
           <div class="fader-row">
-            <Fader value={level} min={P.level.min} max={P.level.max} defaultValue={defaultFor('level')} label={P.level.label} units={P.level.units} curve={P.level.curve} onchange={set('level')} moduleId={id} paramId="level" readLive={live('level')} />
+            <NeonFader value={level} min={P.level.min} max={P.level.max} defaultValue={defaultFor('level')} label={P.level.label} units={P.level.units} curve={P.level.curve} onchange={set('level')} moduleId={id} paramId="level" readLive={live('level')} />
           </div>
         </div>
       </div>

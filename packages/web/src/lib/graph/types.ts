@@ -739,7 +739,7 @@ export interface ModuleFace {
    * can chart; the exact packed-RGB space for a colour; a CONTINUOUS scale for
    * a fader — the first two are discrete-only, the third discrete-never).
    */
-  paramCells?: Readonly<Record<string, 'grid' | 'color' | 'fader' | 'neon-fader'>>;
+  paramCells?: Readonly<Record<string, 'grid' | 'color' | 'fader'>>;
   /**
    * DECLARED 2-D PADS — the one cell that binds a PAIR of params.
    *

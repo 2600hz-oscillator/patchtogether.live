@@ -12,7 +12,7 @@
   // the pad with trigger_in, so its rising edge fires exactly ONE hit.
 
   import type { NodeProps } from '@xyflow/svelte';
-  import Fader from '$lib/ui/controls/Fader.svelte';
+  import NeonFader from '$lib/ui/controls/NeonFader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import { clearStuckMomentaryParams, setMomentaryParam } from './manual-strike-actions';
   import { tomtomDef } from '$lib/audio/modules/tomtom';
@@ -127,24 +127,24 @@
         <div class="group wide">
           <header>MEMBRANE</header>
           <div class="fader-row">
-            <Fader value={tune}     min={60} max={400}  defaultValue={defaultFor('tune')}      label="Tune" units="Hz" curve="log"    onchange={set('tune')}      moduleId={id} paramId="tune"      readLive={live('tune')} />
-            <Fader value={bendAmt}  min={0}  max={24}   defaultValue={defaultFor('bend_amt')}  label="Bend" units="st" curve="linear" onchange={set('bend_amt')}  moduleId={id} paramId="bend_amt"  readLive={live('bend_amt')} />
-            <Fader value={bendTime} min={10} max={300}  defaultValue={defaultFor('bend_time')} label="BTim" units="ms" curve="log"    onchange={set('bend_time')} moduleId={id} paramId="bend_time" readLive={live('bend_time')} />
-            <Fader value={decay}    min={40} max={1500} defaultValue={defaultFor('decay')}     label="Dec"  units="ms" curve="log"    onchange={set('decay')}     moduleId={id} paramId="decay"     readLive={live('decay')} />
+            <NeonFader value={tune}     min={60} max={400}  defaultValue={defaultFor('tune')}      label="Tune" units="Hz" curve="log"    onchange={set('tune')}      moduleId={id} paramId="tune"      readLive={live('tune')} />
+            <NeonFader value={bendAmt}  min={0}  max={24}   defaultValue={defaultFor('bend_amt')}  label="Bend" units="st" curve="linear" onchange={set('bend_amt')}  moduleId={id} paramId="bend_amt"  readLive={live('bend_amt')} />
+            <NeonFader value={bendTime} min={10} max={300}  defaultValue={defaultFor('bend_time')} label="BTim" units="ms" curve="log"    onchange={set('bend_time')} moduleId={id} paramId="bend_time" readLive={live('bend_time')} />
+            <NeonFader value={decay}    min={40} max={1500} defaultValue={defaultFor('decay')}     label="Dec"  units="ms" curve="log"    onchange={set('decay')}     moduleId={id} paramId="decay"     readLive={live('decay')} />
           </div>
         </div>
         <div class="group">
           <header>COLOR</header>
           <div class="fader-row">
-            <Fader value={tone}  min={0} max={1} defaultValue={defaultFor('tone')}  label="Tone" curve="linear" onchange={set('tone')}  moduleId={id} paramId="tone"  readLive={live('tone')} />
-            <Fader value={noise} min={0} max={1} defaultValue={defaultFor('noise')} label="Nse"  curve="linear" onchange={set('noise')} moduleId={id} paramId="noise" readLive={live('noise')} />
-            <Fader value={drive} min={0} max={1} defaultValue={defaultFor('drive')} label="Drv"  curve="linear" onchange={set('drive')} moduleId={id} paramId="drive" readLive={live('drive')} />
+            <NeonFader value={tone}  min={0} max={1} defaultValue={defaultFor('tone')}  label="Tone" curve="linear" onchange={set('tone')}  moduleId={id} paramId="tone"  readLive={live('tone')} />
+            <NeonFader value={noise} min={0} max={1} defaultValue={defaultFor('noise')} label="Nse"  curve="linear" onchange={set('noise')} moduleId={id} paramId="noise" readLive={live('noise')} />
+            <NeonFader value={drive} min={0} max={1} defaultValue={defaultFor('drive')} label="Drv"  curve="linear" onchange={set('drive')} moduleId={id} paramId="drive" readLive={live('drive')} />
           </div>
         </div>
         <div class="group">
           <header>OUT</header>
           <div class="fader-row">
-            <Fader value={level} min={-24} max={12} defaultValue={defaultFor('level')} label="Lvl" units="dB" curve="linear" onchange={set('level')} moduleId={id} paramId="level" readLive={live('level')} />
+            <NeonFader value={level} min={-24} max={12} defaultValue={defaultFor('level')} label="Lvl" units="dB" curve="linear" onchange={set('level')} moduleId={id} paramId="level" readLive={live('level')} />
             <button
               class="strike"
               class:held={striking}

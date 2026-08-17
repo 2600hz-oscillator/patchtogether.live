@@ -379,7 +379,7 @@
   import DockFullView from '$lib/ui/dock/DockFullView.svelte';
   // Off-screen lifecycle host for DOM-source video modules the shell swapped out.
   import HeadlessSourceHost from '$lib/ui/workflow/HeadlessSourceHost.svelte';
-  import { SHELL_TILE_W, SHELL_TILE_H_SLOT, SHELL_VIDEO_ZONE_TILE_INSET_Y, videoZonePackedXs } from '$lib/ui/workflow/module-shell-model';
+  import { SHELL_TILE_W, SHELL_TILE_H_SLOT, SHELL_VIDEO_ZONE_TILE_INSET_Y, videoZonePackedXs, spineCableVar } from '$lib/ui/workflow/module-shell-model';
   // DOCKING P2.5b: the pan-gesture screen-space cable tail (stub → rail).
   import DockPanTail, { type DockTailSpec } from '$lib/ui/dock/DockPanTail.svelte';
   import { dockStore } from '$lib/ui/dock/dock-store.svelte';
@@ -2746,6 +2746,32 @@
         // remote-state branching.
         ...(remoteUser ? { className: 'remote-group-building' } : {}),
       };
+      // ── THE DOMAIN HUE, ON EVERY CARD HOST (#1794) ────────────────────────
+      //
+      // The neon control family resolves ONE accent chain —
+      // `var(--ka, var(--domain, var(--accent)))` — and until this line the
+      // LEGACY shell set no `--domain` at all, so every control on a legacy
+      // card fell through to `--accent`. That fallback is `#ffb347`, an ORANGE
+      // reserved for focus rings and hover glow; MEASURED on `?shell=legacy`
+      // before this change, an audio card and a video card both resolved
+      // `rgb(255, 179, 71)`.
+      //
+      // ⚠ IT IS NOT ONLY "video is not purple". `ModuleShell` (the lane tile /
+      // faceplate) and `.dock-faceplate .video` (the dock full view) BOTH
+      // already set `--domain`, so those two tiers were correct and only this
+      // one was wrong — which is exactly why it stayed invisible while the
+      // faders were grey and became load-bearing the moment they took the
+      // accent. Fixing the HOST rather than hard-coding a hue per card is the
+      // same argument `console.css` makes: re-skin the app and the cards
+      // follow, and no colour is chosen here.
+      //
+      // Derived from `spineCableVar` — the identical function `ModuleShell`
+      // uses for its own root — so the two hosts cannot disagree about what
+      // colour a module is. Video defs live in their own registry, hence the
+      // `??` chain (mirrors the edge-type lookup above).
+      node.style = `${node.style ? node.style + ';' : ''}--domain:${spineCableVar(
+        (getModuleDef(n.type) ?? getVideoModuleDef(n.type)) as Parameters<typeof spineCableVar>[0],
+      )}`;
       if (dockEntry) {
         // Stubs: fixed small face (no rack sizing), not draggable (undock
         // returns the node to restorePosition — a movable stub would make

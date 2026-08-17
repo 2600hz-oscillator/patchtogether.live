@@ -417,23 +417,23 @@ export const mixmstrsDef: AudioModuleDef = {
     // fader row is what a hand finds without looking.
     //
     // Width was checked rather than guessed: `PARAM_CELL_WIDTH_CLASS.fader` is
-    // 'column' (a 22 px track — narrower than a knob's 40-68.8 px), so the
+    // 'column' (a 12 px slot — narrower than a knob's 40-68.8 px), so the
     // eight-fader `levels` band still packs as ONE row under
     // `DOCK_ROW_MAX_CONTROLS = 10`.
     //
-    // ⚠ `neon-fader`, NOT `fader` — owner review of #1738: *"we need to re-do
-    // that level setting fader entirely with a new UI control for faders that
-    // matches our blue neon controls."* `NeonFader.svelte` is the same throw
-    // gesture drawn in `KnobConic`'s vocabulary (the `--_ka` chain, the 5 px
-    // pointer glow, the 9 px mono readout), so on a console the level and its
-    // three tone dials read as one family BY CONSTRUCTION rather than by a
-    // matched hex. Adopting it is ONE declaration per module, which is why it
-    // is a KIND and not an edit to the shared `Fader.svelte` that 93 cards and
-    // eight other faced modules mount.
+    // ⚠ THIS SAID `'neon-fader'` UNTIL #1794. That kind existed only while the
+    // old `Fader.svelte` was still mounted by ~90 cards — owner review of
+    // #1738 asked for *"a new UI control for faders that matches our blue neon
+    // controls"*, and adopting it one declaration at a time was how the new
+    // throw shipped without moving every other module's baseline. The owner
+    // then ruled the migration global (*"all the old style faders need to be
+    // replaced with the new ones"*), `Fader.svelte` is deleted, and `'fader'`
+    // now MEANS the neon throw — so the two kinds collapsed into one and this
+    // declaration lost its adjective without losing its meaning.
     paramCells: Object.fromEntries([
-      ['master_volume', 'neon-fader' as const],
-      ...MIXMSTRS_CHANNELS.map((c) => [`ch${c}_volume`, 'neon-fader' as const]),
-      ...MIXMSTRS_RETURNS.map((r) => [`ret${r}_volume`, 'neon-fader' as const]),
+      ['master_volume', 'fader' as const],
+      ...MIXMSTRS_CHANNELS.map((c) => [`ch${c}_volume`, 'fader' as const]),
+      ...MIXMSTRS_RETURNS.map((r) => [`ret${r}_volume`, 'fader' as const]),
     ]),
 
     // THE HERO: the master fader, and four derived readouts.

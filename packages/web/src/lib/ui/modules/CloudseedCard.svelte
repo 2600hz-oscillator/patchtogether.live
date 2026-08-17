@@ -18,7 +18,7 @@
 
   import type { NodeProps } from '@xyflow/svelte';
   import Knob from '$lib/ui/controls/Knob.svelte';
-  import Fader from '$lib/ui/controls/Fader.svelte';
+  import NeonFader from '$lib/ui/controls/NeonFader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import OssAttribution from '$lib/ui/modules/OssAttribution.svelte';
   import { setNodeParam } from '$lib/graph/mutate';
@@ -201,9 +201,9 @@
       <section class="panel bottom" data-testid="cs-panel-out">
         <div class="bottom-grid">
           <div class="bottom-faders">
-            <Fader value={paramVal('dry_out')}   min={pmin('dry_out')} max={pmax('dry_out')} defaultValue={pdef('dry_out')} label="Dry"   curve={pcurve('dry_out')} onchange={set('dry_out')} moduleId={id} paramId="dry_out"   readLive={live('dry_out')} />
-            <Fader value={paramVal('early_out')} min={pmin('early_out')} max={pmax('early_out')} defaultValue={pdef('early_out')}    label="Early" curve={pcurve('early_out')} onchange={set('early_out')} moduleId={id} paramId="early_out" readLive={live('early_out')} />
-            <Fader value={paramVal('late_out')}  min={pmin('late_out')} max={pmax('late_out')} defaultValue={pdef('late_out')} label="Late"  curve={pcurve('late_out')} onchange={set('late_out')} moduleId={id} paramId="late_out"  readLive={live('late_out')} />
+            <NeonFader value={paramVal('dry_out')}   min={pmin('dry_out')} max={pmax('dry_out')} defaultValue={pdef('dry_out')} label="Dry"   curve={pcurve('dry_out')} onchange={set('dry_out')} moduleId={id} paramId="dry_out"   readLive={live('dry_out')} />
+            <NeonFader value={paramVal('early_out')} min={pmin('early_out')} max={pmax('early_out')} defaultValue={pdef('early_out')}    label="Early" curve={pcurve('early_out')} onchange={set('early_out')} moduleId={id} paramId="early_out" readLive={live('early_out')} />
+            <NeonFader value={paramVal('late_out')}  min={pmin('late_out')} max={pmax('late_out')} defaultValue={pdef('late_out')} label="Late"  curve={pcurve('late_out')} onchange={set('late_out')} moduleId={id} paramId="late_out"  readLive={live('late_out')} />
           </div>
           <div class="bottom-utility">
             <div class="util-toggles">

@@ -15,7 +15,7 @@
   // hazard of their own: they bind by POSITION, so re-ordering `params` (which
   // no gate forbids) would have silently re-pointed every default.
   import type { NodeProps } from '@xyflow/svelte';
-  import Fader from '$lib/ui/controls/Fader.svelte';
+  import NeonFader from '$lib/ui/controls/NeonFader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import { bugglesDef } from '$lib/audio/modules/buggles';
   import type { ModuleNode } from '$lib/graph/types';
@@ -54,11 +54,11 @@
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="fader-row">
-      <Fader value={rate}       min={P.rate.min}              max={P.rate.max}              defaultValue={P.rate.defaultValue}              label={P.rate.label}              curve={P.rate.curve}              onchange={set('rate')} moduleId={id} paramId="rate"              readLive={live('rate')} />
-      <Fader value={chaos}      min={P.chaos.min}             max={P.chaos.max}             defaultValue={P.chaos.defaultValue}             label={P.chaos.label}             curve={P.chaos.curve}             onchange={set('chaos')} moduleId={id} paramId="chaos"             readLive={live('chaos')} />
-      <Fader value={smoothness} min={P.smoothness.min}        max={P.smoothness.max}        defaultValue={P.smoothness.defaultValue}        label={P.smoothness.label}        curve={P.smoothness.curve}        onchange={set('smoothness')} moduleId={id} paramId="smoothness"        readLive={live('smoothness')} />
-      <Fader value={burstProb}  min={P.burst_probability.min} max={P.burst_probability.max} defaultValue={P.burst_probability.defaultValue} label={P.burst_probability.label} curve={P.burst_probability.curve} onchange={set('burst_probability')} moduleId={id} paramId="burst_probability" readLive={live('burst_probability')} />
-      <Fader value={level}      min={P.level.min}             max={P.level.max}             defaultValue={P.level.defaultValue}             label={P.level.label}             curve={P.level.curve}             onchange={set('level')} moduleId={id} paramId="level"             readLive={live('level')} />
+      <NeonFader value={rate}       min={P.rate.min}              max={P.rate.max}              defaultValue={P.rate.defaultValue}              label={P.rate.label}              curve={P.rate.curve}              onchange={set('rate')} moduleId={id} paramId="rate"              readLive={live('rate')} />
+      <NeonFader value={chaos}      min={P.chaos.min}             max={P.chaos.max}             defaultValue={P.chaos.defaultValue}             label={P.chaos.label}             curve={P.chaos.curve}             onchange={set('chaos')} moduleId={id} paramId="chaos"             readLive={live('chaos')} />
+      <NeonFader value={smoothness} min={P.smoothness.min}        max={P.smoothness.max}        defaultValue={P.smoothness.defaultValue}        label={P.smoothness.label}        curve={P.smoothness.curve}        onchange={set('smoothness')} moduleId={id} paramId="smoothness"        readLive={live('smoothness')} />
+      <NeonFader value={burstProb}  min={P.burst_probability.min} max={P.burst_probability.max} defaultValue={P.burst_probability.defaultValue} label={P.burst_probability.label} curve={P.burst_probability.curve} onchange={set('burst_probability')} moduleId={id} paramId="burst_probability" readLive={live('burst_probability')} />
+      <NeonFader value={level}      min={P.level.min}             max={P.level.max}             defaultValue={P.level.defaultValue}             label={P.level.label}             curve={P.level.curve}             onchange={set('level')} moduleId={id} paramId="level"             readLive={live('level')} />
     </div>
   </PatchPanel>
 </div>
