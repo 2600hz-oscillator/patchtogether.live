@@ -696,10 +696,21 @@ export const FACES = [
       'the dock faceplate mounts a fullViewBody extension that blits the live video engine every ' +
       'rAF; the compact tile is static today but is pinned the same way so a future lane picture ' +
       'cannot silently make this scene a moving target',
-    // CAPTURED: the linux dispatch committed EXACTLY the two PNGs this entry
-    // predicts (`face-backdraft-compact`, `face-backdraft-dock`) and moved no
-    // other baseline — counted against the prediction rather than assumed, per
-    // the "a green dispatch that committed nothing is a RED FLAG" rule.
+    // CAPTURED, twice, both counted against a prediction made first — per the
+    // "a green dispatch that committed nothing is a RED FLAG" rule:
+    //
+    //   authoring        predicted 2, committed 2 (compact + dock), nothing else
+    //   owner round 1    predicted 1, committed 1 (dock only)
+    //
+    // ⚠ The round-1 asymmetry is the useful part: the faceplate was
+    // restructured completely — tabs renamed and reordered, a page deleted, the
+    // hero row removed, a band stacked into three rows, a new button — and
+    // `face-backdraft-compact` did NOT move by so much as a pixel. The COMPACT
+    // LANE TILE reads `order` / `paramCells` / `xyPads` / `glyph`, and `hero`,
+    // `pages`, `clusters` and the extension body are all DOCK-ONLY. A face can
+    // be rebuilt at the dock and leave the lane byte-identical, which is worth
+    // knowing before anyone reads a green compact scene as coverage of a
+    // faceplate change.
   },
 ] as const;
 
