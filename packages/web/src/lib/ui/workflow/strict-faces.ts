@@ -1421,11 +1421,13 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // to make the roster legal, which is correct on its own terms: the DSP
   // thresholds it at ±0.5, so half its declared travel was one flat state.
   //
-  // ⚠ moog921b IS THE THIRD FREE-RUNNING VOICE IN THE VRT ROSTER (after
-  // analogVco and macrooscillator) — a VCO with no gate, sounding from spawn —
-  // so its compact tile exercises #1420's pre-frame audio freeze rather than
-  // being indifferent to it. moog921a is silent by construction (it has no
-  // audio path at all) and carries no glyph.
+  // ⚠ moog921b JOINS THE VRT ROSTER'S FREE-RUNNING SET — a VCO with no gate,
+  // sounding from spawn — so its compact tile exercises #1420's pre-frame audio
+  // freeze rather than being indifferent to it. moog921a is silent by
+  // construction (it has no audio path at all) and carries no glyph. ⚠ NO
+  // ORDINAL here or in the roster entry: "the Nth free-running voice" is a
+  // population count, and the existing comments already need reading together
+  // to establish what N is. State the PROPERTY per entry, never the position.
   //
   // DEFECTS FOUND BY THE AUDIT, FILED RATHER THAN FOLDED IN: #1791 (the 921A's
   // declared MINIMUM width produces the MIDPOINT duty — measured 49.85 % through

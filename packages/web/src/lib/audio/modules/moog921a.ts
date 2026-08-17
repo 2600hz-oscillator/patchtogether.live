@@ -105,7 +105,8 @@ export const moog921aDef: AudioModuleDef = {
   //   2 RANGE  ⚠ BIT-EXACTLY INERT AT SPAWN, which is why it is not the hero
   //            even though it carries 6× FREQ's authority. `frequency` defaults
   //            to 0 and the worklet computes `frequency × octSpan`
-  //            (moog921a.ts:138), so 0 × 1 and 0 × 6 are the same 0 V: flipping
+  //            (`packages/dsp/src/moog921a.ts:138`), so 0 × 1 and 0 × 6 are the
+  //            same 0 V: flipping
   //            RANGE on a freshly spawned module changes nothing at all. It is
   //            a SCALE for rank 1, and it ranks directly under what it scales.
   //   3 WIDTH  the SECOND, independent bus. It reaches only a slaved 921B's
@@ -164,7 +165,7 @@ export const moog921aDef: AudioModuleDef = {
 
     // THE COMPARISON — the pair's headline fact, as two rows: the pitch this
     // dial position encodes in EACH range position, both live, side by side. At
-    // `frequency = +0.50` they read `370.00 Hz` and `2.09k`, a factor of 5.66
+    // `frequency = +0.50` they read `370.0 Hz` and `2.09k`, a factor of 5.66
     // from a two-state switch; at the shipped `frequency = 0` they are the same
     // number, which is the inertness argument above made visible rather than
     // asserted. LABELLED FROM `MOOG921A_RANGE_OPTIONS` so the switch's names

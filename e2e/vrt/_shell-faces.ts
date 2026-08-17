@@ -686,9 +686,13 @@ export const FACES = [
   // `glyphBinding` returns `{ kind: 'live-audio', portId: 'sine' }` and the
   // compact scene has a trace beside two cells.
   //
-  // ⚠ moog921b IS THE THIRD FREE-RUNNING VOICE IN THIS ROSTER — after analogVco
-  // and macrooscillator — and therefore the third scene that EXERCISES #1420's
-  // pre-frame audio freeze rather than being indifferent to it. It is a VCO
+  // ⚠ moog921b JOINS THE ROSTER'S FREE-RUNNING SET, so this scene EXERCISES
+  // #1420's pre-frame audio freeze rather than being indifferent to it. ⚠ NO
+  // ORDINAL, deliberately: "the Nth free-running entry" is a population count,
+  // and the entries above already have to be read together to work out what N
+  // is (analogVco, macrooscillator, wavetableVco and noise are all in it, and
+  // the `destroy` note calls that set "two" while naming three of them). The
+  // PROPERTY is what matters and it is stated per entry. It is a VCO
   // with no gate and no note to wait for: the factory feeds silence to all five
   // inputs purely to keep the worklet processing, the bus normals to 0 V = C4
   // and the width bus normals to a 50 % square, so `sine` is a full-scale

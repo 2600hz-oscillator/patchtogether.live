@@ -159,9 +159,10 @@ export const moog921bDef: AudioModuleDef = {
     // both modules, with a negative control, in moog921-face-model.test.ts.
     //
     // ⚠ THIS IS A FREE-RUNNING VOICE — it sounds the instant it spawns, with no
-    // gate and no note to wait for — so its lane tile is the third entry in the
-    // VRT roster that actually EXERCISES #1420's pre-frame audio freeze rather
-    // than being indifferent to it. See the roster note in e2e/vrt/_shell-faces.
+    // gate and no note to wait for — so its lane tile EXERCISES #1420's
+    // pre-frame audio freeze rather than being indifferent to it, like
+    // analogVco and macrooscillator and unlike most of the roster. See the
+    // roster note in e2e/vrt/_shell-faces.
     glyph: 'scope',
 
     // THE HERO: the coarse octave dial, plus the five numbers this module
@@ -179,7 +180,7 @@ export const moog921bDef: AudioModuleDef = {
     //           see `freq_bus` — it cannot print the played pitch at all. It
     //           prints its own term; the driver prints the other; they add.
     //   out     LEVEL is a 0..2 LINEAR multiplier, so its readback says `1.00`
-    //           where the answer is `0.0 dB` and `2.00` where it is `+6.0 dB`.
+    //           where the answer is `+0.0 dB` and `2.00` where it is `+6.0 dB`.
     //   fm      the ±Hz a full-scale modulator buys. `off` at the shipped depth.
     //   sync    the comparator's state through the DSP's own ±0.5 thresholds.
     hero: {
