@@ -217,10 +217,17 @@ function report(
 }
 
 test.describe('#1811 main-thread cost instrument', () => {
-  // Two measurement phases plus a spawn. Kept to one page load and a small
-  // rack: three other agents and the owner share this machine, and a heavy
-  // spec here is a permanent tax on every CI run.
-  test.setTimeout(120_000);
+  // THREE phases at TICKS_PER_PHASE arrivals each (~7.5 s at the 25 ms
+  // cadence), plus one page load and one spawn — about 30 s of a single shard
+  // measured locally. Deliberately one page load and a two-node video rack: a
+  // heavy spec here is a permanent tax on every CI run.
+  //
+  // The timeout is 180 s rather than 3x7.5 s because each phase carries its own
+  // 45 s in-page CAP: a wedged scheduler clock must surface as the assertion
+  // "0 tick arrivals observed", which names the fault, rather than as a
+  // Playwright timeout, which names nothing. 3 x 45 s + boot has to fit inside
+  // it or the informative failure is replaced by the uninformative one.
+  test.setTimeout(180_000);
 
   test('the main-thread cost probe is live, accumulates, and MOVES when the main thread is blocked', async ({
     page,
