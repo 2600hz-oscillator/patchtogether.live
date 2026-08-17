@@ -66,6 +66,49 @@
 // `RasterizeCard`. Nothing patched ⇒ no tap ⇒ `readParam` returns the knob, so
 // the pushed value and the knob agree and no render moves.
 
+// ---------------------------------------------------------------------------
+// THE JS-CONSUMED REGISTER — how a STRUCTURAL gate tells this apart from #1661
+// ---------------------------------------------------------------------------
+//
+// ⚠ A landing pad and the #1661 DEFECT have the SAME GRAPH SIGNATURE: both are
+// an AudioParam on a node that reaches no declared output. `swolevco` published
+// a dead GainNode and that was a bug; the pad above publishes a dead GainNode
+// and that is the FIX. Reachability alone therefore cannot separate them, and a
+// structural gate that guesses will either miss #1661 or condemn every correct
+// display param.
+//
+// So the difference is DECLARED, at the one place that knows it — the
+// construction site — and `art/scenarios/cv-terminal` reads the declaration
+// instead of guessing. Membership is DERIVED: a module that builds its pad with
+// `createCvShadow` is registered automatically, with no list to append to.
+//
+// It is not an escape hatch. The gate asserts the register in BOTH directions:
+// a registered param that DOES reach a declared output is red too, because then
+// the claim "my consumer is JavaScript" is false and the cable is landing on
+// live audio. Marking a genuinely dead DSP param would swap one red for the
+// other, not silence the gate.
+
+const JS_CONSUMED = new WeakSet<AudioParam>();
+
+/**
+ * DECLARE that this AudioParam's consumer is JAVASCRIPT — a card's draw code, a
+ * per-frame painter, a `setInterval` pump — and not a Web Audio node, so it is
+ * CORRECT for it to reach no declared output.
+ *
+ * Call at the construction site, on the param the port publishes. Returns the
+ * param so it can be marked inline. `createCvShadow` does this for you; call it
+ * directly only for a hand-rolled pad that cannot use the helper.
+ */
+export function markJsConsumedParam<P extends AudioParam>(param: P): P {
+  JS_CONSUMED.add(param);
+  return param;
+}
+
+/** Was this AudioParam declared JS-consumed by its construction site? */
+export function isJsConsumedParam(param: AudioParam): boolean {
+  return JS_CONSUMED.has(param);
+}
+
 /** A knob+CV landing pad for a JS-consumed param. Create one PER PORT. */
 export interface CvShadow {
   /** Publish as the port's `node`. Out of the audio path by construction, so
@@ -97,6 +140,8 @@ export function createCvShadow(ctx: BaseAudioContext, initial: number): CvShadow
 
   let knobValue = initial;
   let combined: number | undefined;
+
+  markJsConsumedParam(gain.gain);
 
   return {
     node: gain,

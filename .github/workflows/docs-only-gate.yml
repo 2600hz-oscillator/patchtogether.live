@@ -176,6 +176,20 @@ jobs:
           # no reliable module referrer inside github-script's AsyncFunction body.
           CONTEXTS: ${{ steps.decide.outputs.contexts }}
         with:
+          # ⚠ github-script defaults to retries: 0, and THAT IS WHAT BROKE (#1783).
+          # During the 2026-08-17 GitHub incident this step's LOGIC ran perfectly
+          # — both guards agreed, the bypass applied, CONTEXTS resolved — and only
+          # the POST failed, on a single 503. The PR was then blocked with ZERO
+          # statuses on the SHA: no failing check to point at and no passing one
+          # either, which GitHub treats as pending forever.
+          #
+          # Two runs failed identically, so close+reopen does NOT help during a
+          # sustained incident — the retry has to be inside the call.
+          #
+          # This is the WHOLE JOB of this workflow: it exists to post two statuses
+          # that nothing else will post. A transient 5xx here is not a failure to
+          # report, it is a failure to retry.
+          retries: 3
           script: |
             const REQUIRED_CONTEXTS = JSON.parse(process.env.CONTEXTS);
             const sha = context.payload.pull_request.head.sha;

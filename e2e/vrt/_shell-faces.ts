@@ -670,6 +670,56 @@ export const FACES = [
   // formatter change moves this baseline: `×0.96 · ×0.00 · ×0.76 · ×2.00` at
   // ATT A +1 / ATT B +1.
   { type: 'analogLogicMaths', pages: 1 },
+  // THE FACEPLATE QUEUE · Q28 — the Moog 921 oscillator, as a PAIR: a CV-only
+  // driver and the slave it drives.
+  //
+  // `pages: 1` on both, and it is the POST-hero split count (the illogic /
+  // destroy / analogLogicMaths shape): neither face declares `pages`, so the
+  // ranked keys sit in the single unlabelled `__all` band and each hero
+  // promotes ONE key out of it — FREQ on the driver, leaving RANGE + WIDTH;
+  // RANGE on the slave, leaving FREQ, LEVEL, FM and SYNC. Both bands survive.
+  //
+  // ⚠ THEIR GLYPHS DIFFER, WHICH IS WHY THEY ARE ONE ENTRY. `moog921a`'s two
+  // outputs are `cv`, so `primaryAudioOutPortId` is null and its face declares
+  // `glyph: 'none'` — the shell paints NO tile at all, and the compact scene is
+  // three cells with no picture. `moog921b`'s four outputs are `audio`, so
+  // `glyphBinding` returns `{ kind: 'live-audio', portId: 'sine' }` and the
+  // compact scene has a trace beside two cells.
+  //
+  // ⚠ moog921b JOINS THE ROSTER'S FREE-RUNNING SET, so this scene EXERCISES
+  // #1420's pre-frame audio freeze rather than being indifferent to it. ⚠ NO
+  // ORDINAL, deliberately: "the Nth free-running entry" is a population count,
+  // and the entries above already have to be read together to work out what N
+  // is (analogVco, macrooscillator, wavetableVco and noise are all in it, and
+  // the `destroy` note calls that set "two" while naming three of them). The
+  // PROPERTY is what matters and it is stated per entry. It is a VCO
+  // with no gate and no note to wait for: the factory feeds silence to all five
+  // inputs purely to keep the worklet processing, the bus normals to 0 V = C4
+  // and the width bus normals to a 50 % square, so `sine` is a full-scale
+  // 261.626 Hz tone from sample 0. It carries NO mask, exactly like its two
+  // predecessors: with the graph frozen before the tile is framed the analyser
+  // reads zeros and the glyph draws the same flat centreline everything else
+  // does. ⚠ WHAT WOULD SILENTLY RETIRE THAT PROPERTY: nothing here — unlike
+  // macrooscillator there is no engine selector that could move the default
+  // onto a struck voice. The only way this scene stops exercising the freeze is
+  // if `level` stops defaulting to unity.
+  //
+  // ⚠ moog921a IS THE OPPOSITE AND IS ALSO WORTH NAMING: it has no audio path
+  // at ALL — no oscillator, no analyser, no rAF — so its tile is deterministic
+  // by construction rather than by the freeze, like illogic and
+  // analogLogicMaths.
+  //
+  // ⚠ BOTH HEROES' READOUTS ARE PURE FUNCTIONS OF `node.params` and print at
+  // the spawn defaults, so they are IN the dock image and a re-rank or a
+  // formatter change moves these baselines. At the shipped defaults the driver
+  // reads `+0.00 V · 130.8 Hz … 523.3 Hz · 50 %` and its sidebar reads
+  // `261.6 Hz` twice (the RANGE switch is inert at the dial's centre, which is
+  // the face's own rank argument made visible); the slave reads
+  // `261.6 Hz · +0.00 oct · +0.0 dB · off · off`. Those exact strings are
+  // pinned in `moog921-face-model.test.ts`, so a formatter change reddens the
+  // unit lane before it reddens a baseline.
+  { type: 'moog921a', pages: 1 },
+  { type: 'moog921b', pages: 1 },
 ] as const;
 
 /** TIGHT per-scene diff budgets (absolute pixels; Playwright takes the MIN of

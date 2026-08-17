@@ -1,16 +1,19 @@
 // e2e/fixtures/grand-integration/clips.ts
 //
-// THE shared clip + automation fixture for the GRAND-INTEGRATION scenario
-// (.claude/skills/grand-attest.md). It is imported by
-// BOTH:
-//   - the heavy browser attest spec (e2e/tests/grand-integration.attest.spec.ts)
-//     — seeds these exact clips into the pinned clip player, and
-//   - the OFFLINE combined-master ART (art/scenarios/grand-integration/…) via the
-//     pure clip driver (art/setup/clip-driver.ts).
-// Sharing ONE fixture is the whole point: the pinned audio (offline ART) and the
-// live browser assertions replay the SAME note/automation schedule, so they
-// cannot silently drift. The fixture is therefore IN the grand-attest hash basis
-// (scripts/grand-attest-lib.ts).
+// THE clip + automation fixture for the GRAND-INTEGRATION scenario, replayed by
+// the OFFLINE combined-master ART (art/scenarios/grand-integration/…) via the
+// pure clip driver (art/setup/clip-driver.ts).
+//
+// ⚠ IT USED TO HAVE A SECOND CONSUMER, and that is why it is a separate file.
+// The heavy browser attest spec (e2e/tests/grand-integration.attest.spec.ts)
+// seeded these exact clips into the pinned clip player, so the pinned audio and
+// the live browser assertions replayed the SAME note/automation schedule and
+// could not silently drift. That spec ran only under `task grand:attest`, whose
+// CI verify job asserted nothing and was deleted 2026-08-17 — taking the spec,
+// the runner and the hash basis with it. What survives is the deterministic
+// half: the ART pin, on the gating ART lane. The fixture stays HERE, under
+// e2e/, rather than moving into art/ — it is import-safe for both runners (see
+// below) and moving it would churn the ART basis for no gain.
 //
 // IMPORT-SAFETY (load-bearing): this module is pure DATA with a single
 // `import type` (fully erased by esbuild at build time). It must NOT gain any

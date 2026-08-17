@@ -9,7 +9,8 @@
 //
 //   · in `needs:` but NOT in the `if` — the umbrella WAITS on a job whose
 //     result it never reads. Pure merge latency asserting nothing. This is the
-//     state that shipped: collab-attest and grand-attest sat in `needs:` on
+//     state that shipped (and that ended in both jobs being deleted on
+//     2026-08-17): collab-attest and grand-attest sat in `needs:` on
 //     every PR while the failing test named neither.
 //   · in the `if` but NOT in `needs:` — worse and silent: `needs.<job>.result`
 //     for an undeclared job expands to the EMPTY STRING, so `"" != "success"`
@@ -26,8 +27,10 @@
 //     green and vacuous — that is each lane's own negative-control problem).
 //   · Whether branch protection actually REQUIRES the umbrella's context. That
 //     lives in a GitHub ruleset, not in this file.
-//   · Other jobs' `needs:` (e.g. the watchdog legitimately needs collab-attest
-//     to look PAST its failure). Only the umbrella is checked.
+//   · Other jobs' `needs:`. Only the umbrella is checked — another job may
+//     legitimately depend on a lane in order to look PAST its failure. (The
+//     example this note used to give, `behavioral-watchdog` needing
+//     `collab-attest`, is gone: both jobs were deleted 2026-08-17.)
 //   · `if:` conditions on the dependency jobs themselves — a job that skips
 //     reports `skipped`, which these clauses treat as failure, by design.
 

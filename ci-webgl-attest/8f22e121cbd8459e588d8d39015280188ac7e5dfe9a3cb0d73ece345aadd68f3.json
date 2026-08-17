@@ -1,40 +1,40 @@
 {
   "schemaVersion": 1,
-  "webglContentHash": "3a14efba74d4c3ad50d52eb8bab2820c2bb87427884d4d4782fe803960fc02ad",
-  "attestedAt": "2026-08-16T12:38:21.018Z",
+  "webglContentHash": "8f22e121cbd8459e588d8d39015280188ac7e5dfe9a3cb0d73ece345aadd68f3",
+  "attestedAt": "2026-08-17T16:29:55.527Z",
   "attestedBy": "patchtogether-maintainer",
-  "gitHeadAtAttest": "cb1a8008791ba2edaab38fc5a4fe3a42d8c6dbe0",
+  "gitHeadAtAttest": "30f74e609b1adbae70850d1fa24934f939ae92a1",
   "playwrightVersion": "1.50.0",
   "os": "darwin 25.4.0 (arm64)",
   "machineClass": "local-trusted-gpu-workstation",
   "preflight": {
     "samples": 7,
     "windowMs": 10204,
-    "maxForeignCpu": 0,
+    "maxForeignCpu": 8.5,
     "thresholdCpu": 25,
-    "load1": 2.49462890625,
+    "load1": 1.072265625,
     "cores": 10
   },
   "gpu": "ANGLE (Apple, ANGLE Metal Renderer: Apple M5, Unspecified Version)",
   "appServer": {
-    "url": "http://127.0.0.1:58245",
+    "url": "http://127.0.0.1:62113",
     "mode": "dev",
-    "root": "/Users/2600hz/Documents/workspace/inet.modular",
-    "commit": "cb1a8008791ba2edaab38fc5a4fe3a42d8c6dbe0"
+    "root": "/Users/2600hz/Documents/workspace/inet.modular/.claude/worktrees/agent-a0cc890f8d03b499d",
+    "commit": "30f74e609b1adbae70850d1fa24934f939ae92a1"
   },
   "repeatEach": 1,
   "suites": {
     "A-heavy": {
       "specFiles": 58,
-      "passed": 213,
+      "passed": 227,
       "failed": 0,
       "flaky": 1,
-      "skipped": 2,
+      "skipped": 4,
       "flakyDetails": [
         {
-          "test": "the node-graph panel resizes + the height persists in node.data",
-          "file": "toybox-node-batch.spec.ts",
-          "firstError": "Error: expect(received).toBeGreaterThan(expected) |  | Expected: > 310 | Received:   188"
+          "test": "PICTUREBOX(bright-top image) -> OUTPUT shows bright on top",
+          "file": "video-orientation.spec.ts",
+          "firstError": "Error: PICTUREBOX bright-top must dominate (top=0 bottom=0) |  | expect(received).toBeGreaterThan(expected) | "
         }
       ]
     },

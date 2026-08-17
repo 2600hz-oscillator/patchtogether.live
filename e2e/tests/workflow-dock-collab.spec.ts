@@ -1,8 +1,10 @@
 // e2e/tests/workflow-dock-collab.spec.ts
 //
-// @collab — the TAGGED multi-user dock spec (workflow P2.5b; owner answer
-// Q4: this spec JOINS the collab-attest basis by design, and the attest is
-// paid at P2.5b review). It proves the Max-style DUAL-RECT invariants
+// @collab — the TAGGED multi-user dock spec (workflow P2.5b). The tag routes it
+// onto the dedicated `collab` CI lane. (Owner answer Q4 was that it also JOINED
+// the collab-attest basis by design, with the attest paid at P2.5b review; that
+// attest was deleted 2026-08-17, so the tag now costs only the lane.) It proves
+// the Max-style DUAL-RECT invariants
 // ACROSS PEERS: dock state is a LOCAL projection (never in the Y.Doc), so
 // while user A docks a module,
 //

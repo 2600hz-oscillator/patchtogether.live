@@ -66,14 +66,13 @@ export interface RegistryModule {
    *  renders `<ModuleShell>` rather than the uniform `<ModuleShellPlaceholder>`.
    *  Emitted only when true, so read it as `=== true`.
    *
-   *  ⚠ This file IS in the @collab attest basis (`scripts/collab-attest-hash.sh
-   *  --list`), so adding to it looks like it costs a re-attest. MEASURED, all
-   *  four corners in one controlled run (#1724): this field is HASH-TRANSPARENT
-   *  — an optional TYPE-ONLY interface member emits no runtime code, and
-   *  `scripts/attest-code-basis.ts` parses with the real TypeScript compiler
-   *  rather than diffing bytes. origin/main hashed c62605e4…; with this member
-   *  added and nothing else changed it hashed c62605e4… again. Adding a
-   *  RUNTIME member here would not be free. */
+   *  (This file was in the @collab attest basis until that attest was deleted
+   *  on 2026-08-17, so adding to it looked like it cost a re-attest. It did not:
+   *  MEASURED, all four corners in one controlled run (#1724), this field is
+   *  HASH-TRANSPARENT — an optional TYPE-ONLY interface member emits no runtime
+   *  code, and `scripts/attest-code-basis.ts` parses with the real TypeScript
+   *  compiler rather than diffing bytes. The finding still holds for the WebGL
+   *  attest, which uses the same normalizer.) */
   strictFace?: boolean;
   hasAudioOutput: boolean;
   hasCvOutput: boolean;

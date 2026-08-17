@@ -28,6 +28,12 @@
 
 import { test, expect } from './_fixtures';
 import { spawnPatch } from './_helpers';
+import { waitFrames } from '../_helpers/frames';
+
+/** Source draw → TILER draw → OUTPUT FBO → VideoOutCard's own rAF blit is a
+ *  3-frame chain; this is that chain with margin. FRAMES, never ms: the same
+ *  literal duration is a different number of frames on every renderer. */
+const CHAIN_FRAMES = 10;
 
 // SHAPES + TILER + videoOut are WebGL canvas cards whose first paint is slow on
 // CI's SwiftShader software renderer (markedly slower at 1024×768). spawnPatch's
@@ -115,8 +121,11 @@ async function captureTiler(
   );
   await expect(page.locator('[data-testid="tiler-card"]'), 'TILER visible').toHaveCount(1);
   await expect(page.locator('canvas[data-testid="video-out-canvas"]')).toHaveCount(1);
-  // A handful of rAFs so the SHAPES → TILER → OUTPUT chain renders.
-  await page.waitForTimeout(700);
+  // A handful of rAFs so the SHAPES → TILER → OUTPUT chain renders — COUNTED,
+  // not guessed. The comment always said "rAFs"; the code said milliseconds,
+  // which is ~42 frames on a local GPU and ~5 under CI's SwiftShader (7.9 fps
+  // measured). waitFrames makes the two machines agree.
+  await waitFrames(page, CHAIN_FRAMES);
   return readFrame(page);
 }
 
@@ -161,14 +170,19 @@ test.describe('TILER — video multiscreen / tile processor', () => {
         n.params.tile = 4; // → total 16 (4×4)
       });
     });
-    await page.waitForTimeout(120);
-
-    const tile = await page.evaluate(() => {
-      const w = globalThis as unknown as {
-        __patch: { nodes: Record<string, { params: Record<string, number> }> };
-      };
-      return w.__patch.nodes['tlr']?.params.tile;
-    });
-    expect(tile).toBe(4);
+    // The subject is the store value itself, so poll THAT rather than budget a
+    // guess for how long the Y.Doc transaction takes to be observable.
+    await expect
+      .poll(
+        () =>
+          page.evaluate(() => {
+            const w = globalThis as unknown as {
+              __patch: { nodes: Record<string, { params: Record<string, number> }> };
+            };
+            return w.__patch.nodes['tlr']?.params.tile;
+          }),
+        { message: 'TILER tile write lands in the patch store' },
+      )
+      .toBe(4);
   });
 });

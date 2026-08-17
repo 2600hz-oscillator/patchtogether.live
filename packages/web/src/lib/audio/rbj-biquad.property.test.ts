@@ -6,10 +6,10 @@
 // filter stage added since.
 //
 // WHY IT LIVES UNDER packages/web. `fast-check` is a devDependency of the WEB
-// workspace, and `packages/dsp/src/lib/rbj-biquad.ts` sits in the
-// grand-attest basis (scripts/grand-attest-lib.ts GRAND_DSP_CORES). Adding a
-// dep to `packages/dsp` — or touching the core at all — costs a real-GPU
-// re-attest and an ART re-pin. Testing it from here via a relative import
+// workspace, and touching `packages/dsp/src/lib/rbj-biquad.ts` at all costs an
+// ART re-pin (it is a DSP source-basis core). It also used to cost a real-GPU
+// grand re-attest — that attest was deleted 2026-08-17, so the ART re-pin is
+// the remaining cost. Testing it from here via a relative import
 // costs nothing and is the established pattern (cf. wavecel-spread-parity,
 // resofilter-face-model, videocube-core). NOTHING under packages/dsp is
 // modified by this file.

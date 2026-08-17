@@ -604,8 +604,10 @@ export const clipplayerDef: AudioModuleDef = {
     }
 
     // ── ONE-TIME clip-key SCHEMA MIGRATION (v1 stride-8 → v2 stride-64) ──
-    // The persistence loader (graph/persistence.ts) is in the collab-attest
-    // basis, so the migration can't hook there; instead it runs ONCE here — the
+    // The migration does not hook the persistence loader (graph/persistence.ts)
+    // — originally because that file was in the collab-attest basis (deleted
+    // 2026-08-17), and still because the loader is not the seam that always
+    // runs. Instead it runs ONCE here — the
     // engine factory is the single per-node seam that always runs, for every
     // load path (envelope load AND live-doc / rackspace restore). It re-keys the
     // `clips` map so every clip stays at its original (lane, slot), then stamps

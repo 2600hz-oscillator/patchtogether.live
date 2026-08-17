@@ -31,6 +31,12 @@
 import { test, expect } from './_fixtures';
 import { type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
+import { waitFrames } from '../_helpers/frames';
+
+/** Source draw → MAPPER draw → OUTPUT FBO → VideoOutCard's own rAF blit is a
+ *  3-frame chain; this is that chain with margin. FRAMES, never ms: the same
+ *  literal duration is a different number of frames on every renderer. */
+const CHAIN_FRAMES = 10;
 
 // ACIDWARP + SHAPES + MAPPER + videoOut are WebGL canvas cards whose
 // FIRST-paint is slow on CI's SwiftShader software renderer (markedly slower
@@ -107,8 +113,11 @@ async function captureMapper(
   );
   await expect(page.locator('.svelte-flow__node-mapper'), 'MAPPER visible').toBeVisible();
   await expect(page.locator('canvas[data-testid="video-out-canvas"]')).toHaveCount(1);
-  // A handful of rAFs so the ACIDWARP + SHAPES -> MAPPER -> OUTPUT chain renders.
-  await page.waitForTimeout(700);
+  // A handful of rAFs so the ACIDWARP + SHAPES -> MAPPER -> OUTPUT chain
+  // renders — COUNTED, not guessed. The comment always said "rAFs"; the code
+  // said milliseconds, which is ~42 frames on a local GPU and ~5 under CI's
+  // SwiftShader (7.9 fps measured). waitFrames makes the two machines agree.
+  await waitFrames(page, CHAIN_FRAMES);
   return readKeyStats(page);
 }
 
@@ -165,14 +174,19 @@ test.describe('MAPPER — video keyer / matte processor', () => {
         n.params.threshold = 0.42;
       });
     });
-    await page.waitForTimeout(120);
-
-    const threshold = await page.evaluate(() => {
-      const w = globalThis as unknown as {
-        __patch: { nodes: Record<string, { params: Record<string, number> }> };
-      };
-      return w.__patch.nodes['map']?.params.threshold;
-    });
-    expect(threshold).toBe(0.42);
+    // The subject is the store value itself, so poll THAT rather than budget a
+    // guess for how long the Y.Doc transaction takes to be observable.
+    await expect
+      .poll(
+        () =>
+          page.evaluate(() => {
+            const w = globalThis as unknown as {
+              __patch: { nodes: Record<string, { params: Record<string, number> }> };
+            };
+            return w.__patch.nodes['map']?.params.threshold;
+          }),
+        { message: 'MAPPER threshold write lands in the patch store' },
+      )
+      .toBe(0.42);
   });
 });

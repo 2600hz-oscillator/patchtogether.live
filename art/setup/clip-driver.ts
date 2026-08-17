@@ -1,8 +1,9 @@
 // art/setup/clip-driver.ts
 //
 // A PURE, deterministic clip → per-sample note-frame driver for the offline
-// GRAND-INTEGRATION combined-master ART
-// (.claude/skills/grand-attest.md).
+// GRAND-INTEGRATION combined-master ART. (The `grand-attest` local runner and
+// its skill doc were deleted 2026-08-17 with the other non-gating CI lanes; the
+// offline ART pin they wrapped runs on the gating ART lane and survives.)
 //
 // The ART harness CANNOT run the real clip-player scheduler (it is a browser-only
 // web module driven by the real-time Web-Worker tick + the live Svelte store —

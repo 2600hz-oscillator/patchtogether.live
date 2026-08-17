@@ -13,11 +13,23 @@
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import { patch } from '$lib/graph/store';
   import { setNodeParam } from '$lib/graph/mutate';
-  import { moog921aDef } from '$lib/audio/modules/moog921a';
+  import { moog921aDef, MOOG921A_RANGE_OPTIONS } from '$lib/audio/modules/moog921a';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import MoogPanel from './moog/MoogPanel.svelte';
-  import { portsFromDef } from './card-kit';
+  import { paramSpec, portsFromDef } from './card-kit';
+
+  // Every control prop comes off the DEF — the backdraft class (a card that
+  // re-types its def's numbers can disagree with it, and every gate we own
+  // reads the def). Bound WITH the faceplate promotion, because from the moment
+  // this module enters STRICT_FACES the dock renders straight off the ParamDef
+  // while this card renders off whatever it typed, so a divergence would give
+  // one knob two travels depending on which surface you reached it through.
+  const P = {
+    frequency: paramSpec(moog921aDef, 'frequency'),
+    freqRange: paramSpec(moog921aDef, 'freqRange'),
+    width: paramSpec(moog921aDef, 'width'),
+  };
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -44,10 +56,11 @@
   }
 
   // RANGE is a 2-position switch: 1 = SEMITONE (2-oct) / 2 = OCTAVE (12-oct).
-  const RANGE_POS: Array<{ v: number; label: string }> = [
-    { v: 1, label: 'SEMI' },
-    { v: 2, label: 'OCT' },
-  ];
+  // The names come off the DEF's own `options` roster (PF-1) rather than a
+  // private array here — this card used to be the ONLY place in the tree that
+  // knew the two states were called SEMI and OCT, so a def-driven surface
+  // painted a rotary printing `1.00` over them.
+  const RANGE_POS = MOOG921A_RANGE_OPTIONS;
   function setRange(v: number) {
     const target = patch.nodes[id];
     if (target) target.params.freqRange = v;
@@ -62,23 +75,23 @@
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <!-- FREQUENCY + WIDTH pots. -->
     <div class="knob-row" data-testid="moog921a-knob-row">
-      <Knob value={frequency} min={-1} max={1} defaultValue={0} label="Freq" curve="linear" onchange={setParam('frequency')} moduleId={id} paramId="frequency" readLive={readLive('frequency')} />
-      <Knob value={width} min={0} max={1} defaultValue={0.5} label="Width" curve="linear" onchange={setParam('width')} moduleId={id} paramId="width" readLive={readLive('width')} />
+      <Knob value={frequency} min={P.frequency.min} max={P.frequency.max} defaultValue={P.frequency.defaultValue} label={P.frequency.label} units={P.frequency.units} curve={P.frequency.curve} onchange={setParam('frequency')} moduleId={id} paramId="frequency" readLive={readLive('frequency')} />
+      <Knob value={width} min={P.width.min} max={P.width.max} defaultValue={P.width.defaultValue} label={P.width.label} units={P.width.units} curve={P.width.curve} onchange={setParam('width')} moduleId={id} paramId="width" readLive={readLive('width')} />
     </div>
 
     <!-- RANGE switch (SEMITONE 2-oct / OCTAVE 12-oct). -->
     <div class="range-row" data-testid="moog921a-range-switch">
       <span class="range-label">RANGE</span>
       <div class="range-seg" role="radiogroup" aria-label="Frequency range">
-        {#each RANGE_POS as pos (pos.v)}
+        {#each RANGE_POS as pos (pos.value)}
           <button
             type="button"
             class="range-btn"
-            class:active={freqRange === pos.v}
+            class:active={freqRange === pos.value}
             role="radio"
-            aria-checked={freqRange === pos.v}
-            data-range-value={pos.v}
-            onclick={() => setRange(pos.v)}
+            aria-checked={freqRange === pos.value}
+            data-range-value={pos.value}
+            onclick={() => setRange(pos.value)}
           >{pos.label}</button>
         {/each}
       </div>

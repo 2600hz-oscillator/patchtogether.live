@@ -108,10 +108,43 @@ describe('CI gating classification (derived from ci.yml)', () => {
     expect(positional, 'ci.yml:<line> is a reference to a POSITION — anchor to the job key instead').toEqual([]);
   });
 
-  it('behavioral-smoke GATES; the full behavioral-coverage sweep does NOT', () => {
+  it('behavioral-smoke GATES, and is now the ONLY behavioral lane on CI', () => {
+    // The full `behavioral-coverage` sweep (6 shards, continue-on-error,
+    // push/label-only) was DELETED 2026-08-17 with the rest of the
+    // informational tier. Its absence is asserted by the exact informational
+    // set below, not by `informational.has('behavioral-coverage') === false` —
+    // that reads green for a DELETED job and for a MISSPELLED one alike.
     expect(gating.has('behavioral-smoke')).toBe(true);
-    expect(informational.has('behavioral-coverage')).toBe(true);
-    expect(gating.has('behavioral-coverage')).toBe(false);
+  });
+
+  it('the informational tier is CLOSED — `collab` is the only member', () => {
+    // ⚠ THE POINT OF THE 2026-08-17 BURN, in one derived assertion.
+    //
+    // Nine jobs — vrt, behavioral-coverage ×6, merge-behavioral-reports,
+    // behavioral-watchdog, grand-attest, merge-reports, collab-attest — were
+    // deleted rather than left reporting a signal nobody had to act on. Two had
+    // grown into their caps and were turning main runs `cancelled`, which
+    // poisons the green signal AND disqualifies the run from
+    // daily-prod-deploy.yml's `find-green`.
+    //
+    // Asserted as an EXACT SET, derived from ci.yml in both directions, because
+    // the failure mode this guards is ADDITION: a new lane landed
+    // "informational-first, arm it later" is exactly how all nine got here, and
+    // an assertion that only names the dead ones cannot see the tenth.
+    //
+    // `collab` survives on a CLOCK, not on sentiment: daily-prod-deploy.yml
+    // fires at 04:00 UTC and collab-nightly.yml at 09:00 UTC, so the nightly
+    // multiplayer backstop runs FIVE HOURS AFTER prod has already shipped.
+    // Deleting it lets a multiplayer regression reach production before any
+    // multiplayer lane runs. Arm it (needs + env + the failing `if`) or leave
+    // it here — but do not add a second name without the same kind of reason.
+    expect(
+      [...informational].sort(),
+      'a job is informational (continue-on-error, waited-on-but-not-gated, or ' +
+        'declared off-umbrella) that is not `collab`. The informational tier was ' +
+        'CLOSED on 2026-08-17: arm the lane through the umbrella (needs + env + ' +
+        'the failing `if`), or do not add it to ci.yml.',
+    ).toEqual(['collab']);
   });
 
   it('e2e + webgl-attest gate (a var with a digit must not be dropped)', () => {
@@ -122,19 +155,18 @@ describe('CI gating classification (derived from ci.yml)', () => {
     expect(gating.has('webgl-attest')).toBe(true);
   });
 
-  it('collab-attest + grand-attest are informational and OFF the umbrella; vrt is informational', () => {
-    // ⚠ THIS TEST USED TO PIN THE DEFECT. It asserted they were "waited-on but
-    // NON-gating" — i.e. it encoded as correct the one state #1505 calls
-    // indefensible: in the umbrella's `needs:` (so every PR waits on them)
-    // while the failing `if` never reads their result. They are now off the
-    // umbrella entirely and report their own check contexts; parity between
-    // `needs:` and the failing `if` is enforced by ci-umbrella-parity.test.ts.
-    expect(informational.has('collab-attest')).toBe(true);
-    expect(informational.has('grand-attest')).toBe(true);
-    expect(gating.has('collab-attest')).toBe(false);
-    expect(gating.has('grand-attest')).toBe(false);
-    // vrt (full canvas) is continue-on-error; only vrt-strict gates.
-    expect(informational.has('vrt')).toBe(true);
-    expect(gating.has('vrt')).toBe(false);
+  it('webgl-attest is the ONE surviving attest, and it GATES', () => {
+    // ⚠ THIS TEST USED TO PIN THE DEFECT, TWICE OVER. It first asserted
+    // collab-attest and grand-attest were "waited-on but NON-gating" — the one
+    // state #1505 calls indefensible (in `needs:`, so every PR waits, while the
+    // failing `if` never reads the result). It was then rewritten to assert
+    // they were informational and off the umbrella, which encoded the SECOND
+    // defect as correct: a lane that cannot fail anything is a lane nobody acts
+    // on. Both jobs were deleted 2026-08-17, and `vrt` (continue-on-error) with
+    // them.
+    //
+    // What is left is the assertion that was always the real content: of the
+    // three attests, exactly the one that could block a merge survived.
+    expect(gating.has('webgl-attest')).toBe(true);
   });
 });

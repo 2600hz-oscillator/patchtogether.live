@@ -205,3 +205,23 @@ regenerates it and REFUSES TO ADD A LINE, so it can only shrink; a ledger entry
 that no longer names a live call site fails `task lint`. That is the burn-down
 ratchet: convert or annotate, re-run accept, commit the shrunk artifact, and read
 the removals in the diff as the measurement.
+
+⚠ **DOOM is carved out of the burn-down permanently, by owner ruling
+(2026-08-17): _"do not fuck with doom in any way without specific approval"_.**
+Its ~49 entries stay in the ledger, so **the ledger's floor is not zero** — the
+payoff campaign (#1787) finishes with them still listed, and nothing may assert
+an empty ledger or a remaining count.
+
+The reason is worth carrying, because it generalises: `video/modules/doom.ts`
+calls `runtime.runTic()` from inside `surface.draw`, and `runTic` runs exactly
+one `dgpt_tick`. **DOOM's game clock IS the frame clock — one rendered frame is
+one game tic.** So `waitForTimeout(1200)` while a key is held is ~72 game tics
+on a local GPU and ~9 under SwiftShader. That is not a settle margin with slack
+in it: converting it changes **how far the marine walks**, in a suite whose
+assertions are about where he ended up. Whenever a wait feeds a simulation that
+advances per frame rather than per millisecond, "mechanical refactor" and
+"behavioural change" are the same edit — find that out BEFORE you touch it.
+
+If a later sweep's scope would include DOOM specs, exclude them **by name with
+the reason attached**, and say so in the PR body. A silent inclusion is the
+failure mode even when the conversion is correct.

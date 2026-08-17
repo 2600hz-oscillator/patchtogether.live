@@ -61,7 +61,7 @@
     type ToyboxSurfaceMode,
     type ToyboxVideoSource,
   } from '$lib/video/toybox-content';
-  import { registerCustomShaderSource } from '$lib/video/toybox-custom-assets';
+  import { resolveLayerContent } from '$lib/video/toybox-custom-assets';
   import type { VideoEngine } from '$lib/video/engine';
   import { VIDEO_RES } from '$lib/video/engine';
   import {
@@ -302,7 +302,25 @@
   // Derive from the reactive `catalog` (not the module-level lookup) so the
   // faders appear as soon as the manifest loads, and re-derive when the
   // selected content changes.
-  let currentMeta = $derived(catalog.find((c) => c.id === currentContentId));
+  //
+  // #1708: an inline disk-loaded source OVERRIDES the dropdown selection in the
+  // engine, so the faders must follow the same precedence — otherwise the card
+  // shows the bundled shader's controls while the custom one renders. The custom
+  // branch resolves (and, on first observation, registers) derived metadata for
+  // the SYNCED source bytes, so a rack-mate who never touched the file picker
+  // gets the identical fader list from the identical derivation.
+  // ⚠ Reads the live layer through readLiveLayers() rather than the
+  // `currentShaderSrc` derived below: that one is declared later in this script,
+  // and a `let … = $derived` is in its TDZ until then. readLiveLayers is a
+  // hoisted function and registers the same two reactive triggers.
+  let currentMeta = $derived.by<ToyboxContent | undefined>(() => {
+    const layer = readLiveLayers()?.[activeLayer];
+    if (layer && typeof layer.shaderSrc === 'string' && layer.shaderSrc.length > 0) {
+      return resolveLayerContent(layer).meta;
+    }
+    void catalog.length; // dep: faders appear the moment the manifest lands
+    return catalog.find((c) => c.id === currentContentId);
+  });
 
   // The content dropdown is filtered by the active KIND:
   //   - GEN (and legacy 'shader'): all NO-scene-input shaders (GEN + FX families)
@@ -582,13 +600,18 @@
     inputError = null;
     try {
       const src = await readCappedText(file);
+      // #1708: NOTHING is registered here on purpose. Registering where the file
+      // is PICKED is precisely the bug — a rack-mate receives this layer over the
+      // Y.Doc, never runs this handler, and would show no faders for a shader it
+      // is rendering. Derived metadata is now registered wherever a layer with an
+      // inline source is OBSERVED (resolveLayerContent), which this peer reaches
+      // through the very same path the receiving peer does: `currentMeta` below,
+      // and the engine's own per-frame resolve.
+      //
+      // ⚠ Do not "helpfully" re-add a register call here. It would make this
+      // peer pass a fader test that the receiving peer fails, i.e. it would make
+      // the test blind to the exact defect the mechanism exists to prevent.
       setLayerShaderSource(id, activeLayer, src, file.name);
-      // #1576: derive this source's params and register them as a session-local
-      // asset, keyed by customShaderKey(src). The SOURCE still rides the Y.Doc
-      // (the line above is unchanged) — this only memoizes metadata derived from
-      // it, so nothing extra is persisted or synced. Registration is idempotent
-      // and keyed by content, so a re-pick of the same file is a no-op.
-      registerCustomShaderSource(src, file.name);
       bumpRev();
     } catch (err) {
       inputError = err instanceof Error ? err.message : String(err);

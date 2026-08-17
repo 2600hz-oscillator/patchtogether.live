@@ -10,12 +10,14 @@
 
 import { describe, it, expect } from 'vitest';
 import {
+  declaredUniformNames,
   extractShaderParams,
   labelForUniform,
+  paramsNeedingDeclaration,
   ENGINE_RESERVED_UNIFORMS,
   UNANNOTATED_RANGE,
 } from './toybox-shader-params';
-import { SHADERTOY_UNIFORM_BLOCK } from './toybox-shadertoy';
+import { SHADERTOY_UNIFORM_BLOCK, wrapShadertoySource } from './toybox-shadertoy';
 
 describe('the engine-reserved set is DERIVED from the block the engine prepends', () => {
   it('contains every uniform SHADERTOY_UNIFORM_BLOCK declares — both directions', () => {
@@ -269,5 +271,132 @@ void mainImage(out vec4 o, in vec2 c) { o = vec4(zoom, warp, unlabelled, 1.0); }
     for (const p of params) {
       expect(Object.keys(p).sort()).toEqual(['curve', 'default', 'id', 'label', 'max', 'min']);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// #1708 — the DECLARATION guard that keeps compile-site and draw-site agreeing.
+// ---------------------------------------------------------------------------
+//
+// ⚠ SCOPE: these are STRING assertions. They prove the wrapper is handed the
+// right names; they cannot prove that a GLSL compiler REJECTS a duplicate
+// declaration, which is the premise the filter rests on. That premise is
+// asserted against a REAL compiler in e2e/tests/toybox-shader-validate.spec.ts
+// (@webgl-smoke). If GLSL ever started permitting an identical redeclaration,
+// THAT test would go red and these would not — which is the correct division of
+// labour, not a gap.
+
+describe('declaredUniformNames — what the source already occupies', () => {
+  it('reads names of ANY uniform type, not just the float params', () => {
+    const names = declaredUniformNames(`
+      uniform float speed;
+      uniform vec3 tint;
+      uniform sampler2D tex;
+      uniform highp float slow;
+    `);
+    expect([...names].sort()).toEqual(['slow', 'speed', 'tex', 'tint']);
+  });
+
+  it('splits comma lists and strips array subscripts', () => {
+    const names = declaredUniformNames('uniform float a, b;\nuniform vec3 chans[4];');
+    expect([...names].sort()).toEqual(['a', 'b', 'chans']);
+  });
+
+  it('ignores declarations that are only in COMMENTS', () => {
+    // The same scanner extraction uses, so a commented-out declaration cannot
+    // make the wrapper skip a uniform the shader genuinely needs.
+    const names = declaredUniformNames(
+      '// uniform float ghost;\n/* uniform float ghost2; */\nuniform float real;',
+    );
+    expect([...names]).toEqual(['real']);
+  });
+
+  it('NEGATIVE CONTROL: a BARE identifier is not a declaration', () => {
+    // The bundled convention: `caustic-pool` USES `speed` without declaring it.
+    // If that read as declared, every bundled Shadertoy content would lose its
+    // injected uniforms and stop compiling.
+    const names = declaredUniformNames('void mainImage(out vec4 o, in vec2 c){ o = vec4(speed); }');
+    expect(names.has('speed')).toBe(false);
+  });
+});
+
+describe('paramsNeedingDeclaration — the two conventions, one rule', () => {
+  const BUNDLED = 'void mainImage(out vec4 o, in vec2 c){ o = vec4(speed * scale); }';
+  const USER =
+    'uniform float speed;\nuniform float scale;\nvoid mainImage(out vec4 o, in vec2 c){ o = vec4(speed*scale); }';
+
+  it('BUNDLED source (bare identifiers) → the wrapper declares everything', () => {
+    expect(paramsNeedingDeclaration(BUNDLED, ['speed', 'scale'])).toEqual(['speed', 'scale']);
+  });
+
+  it('USER source (declares its own) → the wrapper declares NOTHING', () => {
+    expect(paramsNeedingDeclaration(USER, ['speed', 'scale'])).toEqual([]);
+  });
+
+  it('MIXED source → exactly the undeclared half, order preserved', () => {
+    const mixed =
+      'uniform float scale;\nvoid mainImage(out vec4 o, in vec2 c){ o = vec4(speed*scale); }';
+    expect(paramsNeedingDeclaration(mixed, ['speed', 'scale'])).toEqual(['speed']);
+  });
+
+  it('a name occupied by a DIFFERENT type is still occupied', () => {
+    // `uniform vec3 tint;` plus an injected `uniform float tint;` is the same
+    // redeclaration error, so the TYPE must not enter the test.
+    expect(paramsNeedingDeclaration('uniform vec3 tint;', ['tint'])).toEqual([]);
+  });
+});
+
+describe('the wrapper emits each param exactly ONCE for either convention', () => {
+  // The end-to-end property the engine depends on, asserted on the real wrapper
+  // rather than on the filter in isolation: whatever the source does, the
+  // compiled text declares every param once — never zero times (the shader
+  // would not compile) and never twice (nor would it).
+  // ⚠ The precision qualifier is OPTIONAL and must be in the counter: a first
+  // draft without it read `uniform highp float warp;` as zero declarations and
+  // reported the filter broken when the filter was right. The instrument has to
+  // recognise every form the SOURCE may legally use, not just the form the
+  // wrapper emits.
+  const declCount = (haystack: string, name: string): number =>
+    haystack
+      .split('\n')
+      .filter((l) =>
+        new RegExp(`^\\s*uniform\\s+(?:lowp\\s+|mediump\\s+|highp\\s+)?\\w+\\s+${name}\\s*;`).test(l),
+      ).length;
+
+  const SOURCES: ReadonlyArray<{ why: string; src: string }> = [
+    {
+      why: 'bundled convention: bare identifiers, engine injects',
+      src: 'void mainImage(out vec4 o, in vec2 c){ o = vec4(warp); }',
+    },
+    {
+      why: 'user convention: the source declares its own',
+      src: 'uniform float warp; // @param(-1,1,0)\nvoid mainImage(out vec4 o, in vec2 c){ o = vec4(warp); }',
+    },
+    {
+      why: 'user convention with a precision qualifier',
+      src: 'uniform highp float warp;\nvoid mainImage(out vec4 o, in vec2 c){ o = vec4(warp); }',
+    },
+  ];
+
+  for (const { why, src } of SOURCES) {
+    it(`${why} → exactly one 'uniform … warp;' line`, () => {
+      const declare = paramsNeedingDeclaration(src, ['warp']);
+      const wrapped = wrapShadertoySource(src, '', declare);
+      expect(declCount(wrapped, 'warp'), `wrapper was asked to declare ${declare.length} of 1 param`).toBe(1);
+    });
+  }
+
+  it('NEGATIVE CONTROL: skipping the filter really does produce TWO', () => {
+    // The counter must be able to READ 2, or "exactly one" above proves nothing
+    // about the filter — only about the counter.
+    const wrapped = wrapShadertoySource(SOURCES[1].src, '', ['warp']);
+    expect(declCount(wrapped, 'warp')).toBe(2);
+  });
+
+  it('NEGATIVE CONTROL: over-filtering really does produce ZERO', () => {
+    // The other direction: a filter that dropped EVERYTHING would also satisfy
+    // "never twice". A bundled source with nothing declared must read 0.
+    const wrapped = wrapShadertoySource(SOURCES[0].src, '', []);
+    expect(declCount(wrapped, 'warp')).toBe(0);
   });
 });

@@ -75,38 +75,35 @@ export default defineConfig({
   },
   test: {
     include: ['scenarios/**/*.test.ts'],
-    // ⚠ THE CV-REACH SWEEPS ARE NOT PART OF THE BASELINE LANE, and they are
-    // excluded on a MEASUREMENT, not a preference. Each builds and renders the
-    // real factory once per port across every declared paramTarget port in the
-    // registry, plus a baseline PAIR per module for its reproducibility leg;
-    // measured 127 s on an idle local box and ~15 min on a CI runner, which
-    // took the `art` job from its historical 3 min to a hard cancel at its
-    // 10 min timeout — i.e. it more than doubled a REQUIRED lane on every PR.
+    // ⚠ THERE IS NO OPT-IN LIST ANY MORE, AND THERE MUST NOT BE ONE AGAIN.
     //
-    // ⚠ THIS LIST IS THE OPT-IN'S WHOLE SUBJECT, so a sweep that is not named
-    // here silently rides the REQUIRED lane and re-creates the cancel. That is
-    // not hypothetical: `cv-display-param-reach` landed while only
-    // `cv-param-reach` was listed, and cancelled the `art` job at 10m21s.
-    // Adding a sweep directory means adding it HERE and to the `art:cv-reach`
-    // script in package.json, together — the script is what the CI job runs, so
-    // a sweep excluded here but absent there is excluded EVERYWHERE and gates
-    // nothing at all.
+    // An `ART_CV_REACH=1` escape hatch used to hold two CV-reach sweeps out of
+    // this REQUIRED lane, because they were too slow for it. Both have been
+    // paid off rather than deferred (#1769):
     //
-    // They still gate, in ci.yml's `cv-param-reach` job — which is MAIN-ONLY as
-    // of the 2026-08-15 owner ruling (#1669): its measured cost had made it the
-    // critical path at ≈ +4m45s per PR. A failure there reddens the main run (a
-    // P0) and blocks the nightly prod deploy via daily-prod-deploy's find-green,
-    // which scans every job's conclusion. Enforcement is post-merge, by choice.
+    //   cv-param-reach          DELETED. It answered a STRUCTURAL question with
+    //                           a render PER PORT — 45 min, and its timeout
+    //                           cancelled every main run and blocked the nightly
+    //                           prod deploy. Replaced by `scenarios/cv-terminal`,
+    //                           which reads the same registry-derived population
+    //                           structurally in ~0.8 s.
+    //   cv-display-param-reach  KEPT, and now costs 795 ms instead of 591 s. Its
+    //                           membership probe materialised every audio def and
+    //                           never rendered the context, so a registry's worth
+    //                           of native render threads starved the renders that
+    //                           followed. See that file's `drawParamKeys`.
     //
-    // ART_CV_REACH=1 opts them IN (that CI job, and `npm run art:cv-reach -w art`
-    // locally). Default runs the baseline lane without them.
-    exclude: process.env.ART_CV_REACH === '1'
-      ? [...configDefaults.exclude]
-      : [
-          ...configDefaults.exclude,
-          'scenarios/cv-param-reach/**',
-          'scenarios/cv-display-param-reach/**',
-        ],
+    // With nothing left that is too slow to gate, the opt-in had no subject —
+    // and a mechanism whose debt is paid gets DELETED, not left idling with an
+    // empty list (CLAUDE.md: "when debt is paid, delete the mechanism entirely").
+    // `scripts/art-cv-reach-optin.test.ts`, which existed only to keep the two
+    // halves of that opt-in agreeing, went with it.
+    //
+    // ⚠ If a future sweep is genuinely too slow for this lane, the answer this
+    // PR establishes is to MEASURE WHY FIRST. Both sweeps here looked
+    // irreducibly expensive and both were one un-released `OfflineAudioContext`
+    // away from being free.
+    exclude: [...configDefaults.exclude],
     testTimeout: 30_000,
     hookTimeout: 30_000,
     pool: 'forks',

@@ -432,10 +432,11 @@ test.describe('multi-video playback — N sources all decode at once', () => {
     // 2-min marathon the machine occasionally drops 1 of 10 → a false attest
     // refusal (it passes 10/10 in isolation). It is NOT a render-correctness
     // check — the 4× case (above) is the deterministic in-attest guard. Still
-    // runs on a direct local spec run. (Deliberately gated by env, NOT by a
-    // collab/capacity test tag: the collab attest resolves its basis by grepping
-    // spec files for those tag strings, so tagging — or even NAMING the literal
-    // tag here — would wrongly pull this spec into the collab gate.)
+    // runs on a direct local spec run. (Gated by env, NOT by a collab/capacity
+    // test tag — those tags route a spec onto the dedicated `collab` lane, which
+    // has no business running a decode-capacity probe. It also used to pull the
+    // spec into the collab attest basis, which resolved by grepping spec files
+    // for the tag strings; that attest was deleted 2026-08-17.)
     test.skip(process.env.E2E_WEBGL_HEAVY === 'only', 'decode-capacity probe — excluded from the heavy WebGL attest gate (ceiling-marginal); runs on a direct local spec run');
     test.setTimeout(180_000);
     const N = 10;

@@ -23,6 +23,13 @@
 
 import { test, expect } from '@playwright/test';
 import { spawnPatch } from './_helpers';
+import { waitFrames } from '../_helpers/frames';
+
+/** LINES → CHROMA → ONETONINE → two videoOut sinks, each with its OWN rAF blit
+ *  (VideoOutCard.svelte): a 3-frame chain, plus room for the freshly-spawned
+ *  nodes to materialise and LINES to produce its first animated frame. FRAMES,
+ *  never ms — the same duration is a different number of frames per renderer. */
+const CHAIN_FRAMES = 16;
 
 type Page = import('@playwright/test').Page;
 
@@ -104,7 +111,7 @@ test.describe('ONE TO NINE — 3×3 screen splitter', () => {
     await expect(page.locator('[data-testid="onetonine-card"]')).toHaveCount(1);
     await expect(page.locator('[data-testid="onetonine-canvas"]')).toHaveCount(1);
     await expect(page.locator('canvas[data-testid="video-out-canvas"]')).toHaveCount(2);
-    await page.waitForTimeout(800);
+    await waitFrames(page, CHAIN_FRAMES);
 
     // 1) The MONITOR (the on-card preview = input + grid + numbers) is non-blank
     //    + structured. The amber grid + white digits alone guarantee structure

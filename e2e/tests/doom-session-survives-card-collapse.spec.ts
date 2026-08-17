@@ -14,11 +14,12 @@
 // the launch state (`launched`, generation, cursors) was card $state and died
 // with the mount.
 //
-// ⚠ SCOPE — SINGLE PAGE, deliberately NOT collab-tagged (bare word on purpose:
-// the basis resolver regex-scans spec CONTENT for the tag form, so even a
-// comment in tag form would enroll this file in the collab attest basis). A
-// real 2-context netgame collapse belongs to the attest lane, which owes a
-// re-attest; the multi-peer netcode-survival CONTRACT is pinned by
+// ⚠ SCOPE — SINGLE PAGE, deliberately NOT collab-tagged. (The tag is written as
+// a bare word here; that used to be load-bearing, because the collab-attest
+// basis resolver regex-scanned spec CONTENT for the tag form and a comment
+// alone would enrol the file. That attest was deleted 2026-08-17, so the tag now
+// only routes a spec onto the `collab` lane.) A real 2-context netgame collapse
+// belongs on that lane; the multi-peer netcode-survival CONTRACT is pinned by
 // node-doom-session-registry.test.ts with a netcode stub. What THIS spec
 // drives end-to-end in a real browser is the same session machinery on the
 // single-page path: a real WASM launch, the registry pump, the session state,

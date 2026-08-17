@@ -20,7 +20,8 @@
 // `face:` in, and this test checked for the marker. Now the shared attest
 // normalizer (`scripts/attest-code-basis.ts`) strips comments and the
 // `docs`/`controlFamilies`/`face` properties of any module-scope def BY
-// CONSTRUCTION — the same normalizer the webgl / collab / grand attests use.
+// CONSTRUCTION — the same normalizer the webgl attest uses (it backed the collab
+// and grand attests too, until those were deleted 2026-08-17).
 //
 // So the check is no longer "is the ceremony present" (a proxy) but "does the
 // LIVE hash basis actually still contain this field" (the artifact). That

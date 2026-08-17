@@ -27,6 +27,7 @@ import {
   setLayerSurfaceMode,
   setLayerMaterialField,
   setLayerImage,
+  setLayerShaderSource,
   setLayerVideoName,
   setLayerVideoSource,
   setLayerSceneInputSource,
@@ -412,5 +413,67 @@ describe('projective surface mode (#45)', () => {
     expect(mat.projUseCamera).toBe(1);
     expect(mat.projPosZ).toBe(2.5);
     expect(mat.projFov).toBe(1.1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// #1708 — a custom source now HAS params, so setting one must seed them.
+// ---------------------------------------------------------------------------
+//
+// Against a REAL Y.Doc specifically because the second write mutates an
+// already-integrated `layer.params`: seeding it by spread-and-reassign is the
+// "Type already integrated" trap, so this is the tier that can catch it.
+//
+// ⚠ SCOPE: this covers what the MUTATOR writes. It says nothing about whether
+// the FADERS appear (the card) or the UNIFORM moves (the engine).
+
+describe('setLayerShaderSource seeds the custom source own param defaults', () => {
+  const CUSTOM = `uniform float glow;  // @param(0, 4, 1.5, linear)
+uniform float bias;  // @param(-1, 1, 0)
+void main() { }
+`;
+
+  it('replaces the previous content params with the loaded source defaults', () => {
+    makeToybox();
+    setLayerContent(TID, 0, DEFAULT_CONTENT_ID); // scale/speed from the manifest
+    expect(Object.keys(layers()[0]!.params).sort()).toEqual(['scale', 'speed']);
+
+    setLayerShaderSource(TID, 0, CUSTOM, 'glowy.glsl');
+    expect(layers()[0]!.shaderSrc).toBe(CUSTOM);
+    expect(layers()[0]!.shaderName).toBe('glowy.glsl');
+    // The stale bundled keys are GONE — a leftover `scale` under a source that
+    // declares a different range is exactly the fader-outside-its-travel bug.
+    expect(Object.keys(layers()[0]!.params).sort()).toEqual(['bias', 'glow']);
+    expect(layers()[0]!.params.glow).toBe(1.5);
+    expect(layers()[0]!.params.bias).toBe(0);
+  });
+
+  it('clearing back to the bundled content restores THAT content defaults', () => {
+    makeToybox();
+    setLayerContent(TID, 0, DEFAULT_CONTENT_ID);
+    setLayerShaderSource(TID, 0, CUSTOM, 'glowy.glsl');
+    setLayerShaderSource(TID, 0, null, null);
+    expect(layers()[0]!.shaderSrc).toBeNull();
+    expect(Object.keys(layers()[0]!.params).sort()).toEqual(['scale', 'speed']);
+    expect(layers()[0]!.params.scale).toBe(2);
+  });
+
+  it('a SECOND custom source re-seeds in place on the already-integrated Y type', () => {
+    // The regression this tier exists for: layers/params are real Y types after
+    // the first write, so the re-seed must clear-and-set, never reassign.
+    makeToybox();
+    setLayerShaderSource(TID, 0, CUSTOM, 'a.glsl');
+    setLayerShaderSource(TID, 0, 'uniform float only; // @param(0,10,4)\nvoid main(){}', 'b.glsl');
+    expect(Object.keys(layers()[0]!.params)).toEqual(['only']);
+    expect(layers()[0]!.params.only).toBe(4);
+  });
+
+  it('NEGATIVE CONTROL: a source declaring NOTHING seeds an empty params map', () => {
+    // The seeding must follow the SOURCE. If it invented params, or kept the
+    // previous content's, this would not read empty.
+    makeToybox();
+    setLayerContent(TID, 0, DEFAULT_CONTENT_ID);
+    setLayerShaderSource(TID, 0, 'void main() { }', 'bare.glsl');
+    expect(Object.keys(layers()[0]!.params)).toEqual([]);
   });
 });

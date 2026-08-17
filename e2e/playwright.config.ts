@@ -138,12 +138,13 @@ export default defineConfig({
   //
   // Two runs of one test is a sample, not a rate; that is why the audit had to
   // be run over a SERIES before anything was concluded from it. The attest
-  // scripts already model the right response — `collab-attest.ts` and
-  // `grand-attest.ts` REFUSE on a flaky outcome rather than absorb it — and
-  // that is the shape this lane wants. `merge-reports` in ci.yml can arm it
-  // today by passing `--fail-on-flaky`; it deliberately does NOT, because at a
-  // measured 16/18 that would redden the required lane on day one and be
-  // reverted rather than fixed. It gets armed when the tail above is drained —
+  // runner already models the right response — `webgl-attest.ts` REFUSES on a
+  // flaky outcome rather than absorb it — and that is the shape this lane wants.
+  // The per-shard audit in ci.yml's `e2e` job (migrated off `merge-reports` when
+  // that job was deleted, 2026-08-17) can arm it today by passing
+  // `--fail-on-flaky`; it deliberately does NOT, because at a measured 16/18
+  // that would redden the required lane on day one and be reverted rather than
+  // fixed. It gets armed when the tail above is drained —
   // which needs a FRESH series of >=10 runs measured after the fixes land, not
   // an argument from the rows that have been struck out.
   retries: process.env.CI ? 1 : 0,

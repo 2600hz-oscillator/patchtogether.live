@@ -175,15 +175,12 @@ export function conditionalApplySteps(wfs = workflows()): ConditionalApply[] {
  *  `<workflow>::<step name>` pair, never by filename, so a second conditional
  *  apply in an already-listed workflow is still red. */
 export const CONDITIONAL_APPLY_EXEMPTIONS: Record<string, { condition: string; reason: string }> = {
-  'ci.yml::Apply DB schema + emit manifest (for re-run)': {
-    condition: "steps.agg.outputs.candidate_count != '0'",
-    reason:
-      'Prep for the behavioral RE-RUN block. Every step in that block — the ' +
-      'artifact downloads, the browser install, and the re-run itself — carries ' +
-      'this identical condition, so when it is false no test runs against the ' +
-      'database at all. Skipping the schema here cannot produce a table-less ' +
-      'test run, which is the hazard the rule exists for.',
-  },
+  // EMPTY since 2026-08-17, and that is the strongest state this map can be in:
+  // every schema apply on the tree is now UNCONDITIONAL. Its only entry was
+  // `ci.yml::Apply DB schema + emit manifest (for re-run)`, prep for the
+  // `behavioral-watchdog` re-run block — and that job was deleted with the rest
+  // of the non-gating CI lanes. The exemption went with the step rather than
+  // outliving it, which is what the staleness assertion below enforces.
 };
 
 /** Any workflow line that still applies a schema file by hand. */

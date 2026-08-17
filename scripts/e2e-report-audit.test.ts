@@ -216,7 +216,7 @@ describe('reason resolution reads BOTH annotation types, and classifies rows', (
   });
 });
 
-describe('the --lane skip-budget exit path (armed in merge-reports + merge-behavioral-reports)', () => {
+describe('the --lane skip-budget exit path (armed PER SHARD in the e2e job)', () => {
   const SCRIPT = resolve(dirname(fileURLToPath(import.meta.url)), 'e2e-report-audit.mjs');
   const dir = mkdtempSync(join(tmpdir(), 'e2e-audit-lane-'));
 
