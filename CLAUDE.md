@@ -288,9 +288,10 @@ caller cannot do it by dropping `label`.
 the wide face.** *"we do not want useless gray horizontal space on cards, ever.
 prefer compact. screen real estate is expensive!"* A genuine earner is a live
 picture, a scope trace, a video preview, an XY pad, or a control that appears in
-one mode only. Measured: `.faceplate-body` carried `min-width: 900px`, so **37 of
-48 dock baselines were EXACTLY 900 px wide** against ~450 px of content on
-tidyVco. ⚠ It had already grown two per-occupant escape hatches; **a default that
+one mode only. Measured off the committed PNG headers: `.faceplate-body` carried
+`min-width: 900px`, so **39 of the 50 dock baselines were EXACTLY 900 px wide**
+against ~450 px of content on tidyVco. ⚠ It had already grown two per-occupant
+escape hatches; **a default that
 needs a new exemption per review is the wrong default** — fix the default, never
 add a third hatch. Gates: `face-width-source.test.ts` (the rule) plus the
 per-face content-vs-plate measurement in `workflow-shell-faces.spec.ts` (the

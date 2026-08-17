@@ -134,9 +134,9 @@
  * flex column with default `align-items: stretch`, so each band was stretched
  * across it, and `.page-controls` is a left-packed `flex-wrap` row, so the
  * entire surplus painted as blank plate on the right. MEASURED on the committed
- * baselines: 37 of 48 dock faces were EXACTLY 900 px wide, against ~450 px of
+ * baselines (read straight off the PNG headers): 39 of the 50 dock faces were
  * real content on tidyVco. A modal 900 with one outlier is the signature of a
- * floor, not of thirty-seven faces that happen to need the same width.
+ * floor, not of thirty-nine faces that happen to need the same width.
  *
  * ⚠ AND IT ALREADY HAD TWO ESCAPE HATCHES, WHICH IS THE TELL. `:has(.fp-card-
  * frame)` (legacy cards, #1573) and `:has([data-shell-type='mixmstrs'])`

@@ -17,9 +17,9 @@
 // `.rl-tile` is `width: 100%`, so whatever floor was set there simply BECAME
 // the faceplate's width. `.dock-pages` then stretched each band across it and
 // `.page-controls` left-packed its cells, so the surplus painted as blank
-// plate. MEASURED on the committed baselines at the time: 37 of 48 dock faces
+// plate. MEASURED off the committed PNG headers: 39 of the 50 dock faces
 // were EXACTLY 900 px wide, against ~450 px of real content on tidyVco. A modal
-// 900 with a single outlier is the signature of a floor, not of thirty-seven
+// 900 with a single outlier is the signature of a floor, not of thirty-nine
 // faces that independently needed the same width.
 //
 // ⚠ AND IT HAD ALREADY GROWN TWO ESCAPE HATCHES, which is the part worth
@@ -34,11 +34,14 @@
 //
 // The geometric check — content extent vs plate width, swept over the whole
 // roster — lives in `e2e/vrt/workflow-shell-faces.spec.ts`, and it is the one
-// that can actually say a face is too wide. But that spec's lane does NOT gate
-// merges (vrt-strict covers cards, not dock faceplates). This file runs in the
-// unit lane, on every push, and holds the mechanism the measurement is
-// downstream of. The two are complements: this says the rule is right, that
-// says the rule produced the right result.
+// that can actually say a face is too wide. ⚠ THAT SPEC *IS* IN THE REQUIRED
+// LANE — verified on this PR, where all four `vrt-strict` shards reddened and
+// every failure was `workflow-shell-faces.spec.ts`. (An older note in this repo
+// says vrt-strict covers cards only; it is out of date, and believing it would
+// have made this file look like the only gate.) They are still complements: the
+// spec cannot run without a browser and a captured baseline, while this runs in
+// the unit lane on every push and holds the MECHANISM the measurement is
+// downstream of. This says the rule is right; that says it produced the result.
 //
 // ── ⚠ WHAT THIS GATE STRUCTURALLY CANNOT SEE ───────────────────────────────
 //
