@@ -1,7 +1,8 @@
 // scripts/attest-code-basis.ts
 //
 // THE ONE PLACE that decides "what part of a basis file is CODE" for every
-// local-attestation content hash (webgl / collab / grand) and for the ART
+// local-attestation content hash (webgl — collab and grand were deleted
+// 2026-08-17 with their non-gating CI jobs) and for the ART
 // source pins. Shared so the three attests cannot drift apart — the asymmetry
 // WAS the bug (webgl had a docs escape hatch, collab had none, so a two-line
 // comment edit under packages/server/src forced a full relay re-attest, #1422).
@@ -112,7 +113,7 @@ export const HASH_TRANSPARENT_PROPS: readonly string[] = [
  * strings and package prose. Everything else (dependencies, devDependencies,
  * overrides, engines, exports, workspaces, …) stays in the hash.
  *
- * This is a DENY-list on purpose. The collab/grand attests narrow their
+ * This is a DENY-list on purpose. The collab/grand attests used to narrow their
  * package.json pins with an ALLOW-list of relevant dep names, which risks a
  * missed re-attest from a dep nobody listed; a deny-list of prose fields cannot.
  * It fixes the measured #1425 incident: a one-word edit to an `e2e/package.json`

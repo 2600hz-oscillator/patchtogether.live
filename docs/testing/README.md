@@ -40,25 +40,29 @@ Notable specifics:
 - **`behavioral-smoke` GATES** every PR — the fast REQUIRED subset that greps 7
   rock-solid core signal-path modules
   (`adsr|analogVco|filter|lfo|noise|stereovca|vca`), validated 3× locally.
-- **The full `behavioral-coverage` sweep does NOT gate** — `continue-on-error:
-  true`, not in the umbrella `needs:`, and runs only on main-push / dispatch /
-  `behavioral`-labeled PRs. Its per-module delta thresholds are still being tuned
-  and a premature 1× gate flaked on `moog911`; it needs a proper 3× flake-purge
-  before it can re-gate. **So: behavioral is _partially_ gating — the bulletproof
-  core slice blocks merge; the ~168-module sweep is informational.**
+- **The full `behavioral-coverage` sweep was DELETED (2026-08-17)** — it was
+  `continue-on-error: true` and off the umbrella, so it could never block a
+  merge, and at a 125-minute cap it had started reporting `cancelled` on main.
+  **So: behavioral coverage on CI now stops at the bulletproof core slice.** The
+  modules outside `behavioral-smoke` have no dead-input detection; widening that
+  subset is the way back, not resurrecting a non-gating sweep.
 - **`webgl-attest` GATES** (re-armed 2026-06-11, Phase 4) — a WebGL-path change
   without a re-run `task webgl:attest` fails it. `webgl-smoke` gates too.
 - **`per-module-per-port` handle/emit/drive** runs inside the required `e2e` job
   (the sweep is not among `e2e`'s `--grep-invert` exclusions), so it gates
   transitively.
-- **`collab-attest` and `grand-attest`** sit in the umbrella `needs:` + `env:` but
-  are deliberately absent from the failing `if` — waited-on, **non-gating**
-  (collab-attest un-gated 2026-06-28; grand-attest informational-first).
-- **`vrt`** (full canvas) is `continue-on-error: true`; only `vrt-strict` gates.
-- **`collab`** (@collab multi-context) is un-gated pending a flake-purge.
+- **`collab-attest` and `grand-attest` were DELETED (2026-08-17)**, along with
+  their local runners, records and skills. Both were waited-on-but-non-gating for
+  months; `webgl-attest` is the one attest that gates and the only one left.
+- **`vrt`** (full canvas) was DELETED too. Only `vrt-strict` gates, and it is now
+  the only lane that COMPARES a baseline. The baselines themselves are untouched
+  and still authored by `vrt-update.yml` / `task vrt:commit`.
+- **`collab`** (@collab multi-context) is un-gated pending a flake-purge, and is
+  now the ONLY informational lane. It was explicitly kept: the nightly
+  multiplayer backstop runs at 09:00 UTC and the prod deploy at 04:00 UTC, so
+  without it a multiplayer regression ships before any multiplayer lane runs.
 
-The exact informational-lane list + `ci.yml` line anchors are in
-[Bucket 3 of the ledger](./test-ledger.generated.md).
+Bucket 3 of the ledger is the generated list, and it now has one entry.
 
 ---
 
@@ -105,5 +109,5 @@ module incidentally touched is promoted — the boy-scout rule).
 
 The CI-gate configuration itself and any new/skipped tests are **out of scope**
 for this ledger PR — it only measures + documents the current state. Changing what
-gates (e.g. arming `grand-attest`, re-gating the full behavioral sweep) or clearing
+gates (e.g. re-gating the full behavioral sweep) or clearing
 a Bucket-1 skip are deliberate follow-up PRs, each with its own flake-purge.

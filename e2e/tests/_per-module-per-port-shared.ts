@@ -266,15 +266,22 @@ export const EXEMPT_OUTPUT_EMIT_MODULES: Record<string, string> = {
 //
 // Keep this list tight too (~10-15 entries).
 export const EXEMPT_OUTPUT_EMIT: Record<string, string> = {
-  // SIX STRUM — a plucked-string voice, silent until struck. Driving it in the
-  // generic sweep would need a _drivers.ts gatePort entry, but _drivers.ts is a
-  // collab-attest BASIS file, so that append forces a full collab re-attest
-  // (the treadmill task #160 is trying to kill). The output-emit is instead
+  // SIX STRUM — a plucked-string voice, silent until struck. The output-emit is
   // covered by the IDENTICAL drive in the dedicated e2e/tests/sixstrum-poly.spec.ts
   // (SEQUENCER.gate → strum1 → SCOPE audible RMS + SEQUENCER.pitch → poly → RMS),
   // plus the worklet-wiring unit test (strum1/poly → audible). Handle-presence +
   // input-drive still run here.
-  'sixstrum.out': 'plucked-string voice, silent-until-struck; a generic driver would need a collab-basis _drivers.ts append → covered instead by the same drive in sixstrum-poly.spec.ts (gate→strum1→RMS, pitch→poly→RMS) + worklet-wiring unit',
+  //
+  // ⚠ THE ORIGINAL REASON FOR THIS EXEMPTION IS GONE, and the `why` below no
+  // longer claims it. Driving sixstrum in the generic sweep needs a _drivers.ts
+  // gatePort entry, and that append used to force a full collab re-attest
+  // because _drivers.ts was a collab-attest basis file — the treadmill task #160
+  // exists to kill. collab-attest was deleted 2026-08-17, so the append is now
+  // free. This exemption is therefore PAYABLE and should be paid: add the
+  // gatePort driver and delete this entry. It stayed in this PR only because
+  // that changes what the sweep asserts, which does not belong in a CI-deletion
+  // change.
+  'sixstrum.out': 'plucked-string voice, silent-until-struck; covered by the same drive in sixstrum-poly.spec.ts (gate→strum1→RMS, pitch→poly→RMS) + worklet-wiring unit. PAYABLE: the _drivers.ts gatePort append that would retire this is no longer blocked by a collab re-attest',
   // ── OUTLINES.mapped is doubly input-conditional: it shows the `video` INPUT
   // wherever ≥2 shapes overlap, so it needs BOTH a patched video source AND a
   // ≥2-overlap region to land in the same sweep window. The driver wires
@@ -494,13 +501,13 @@ export const EXEMPT_OUTPUT_EMIT: Record<string, string> = {
 // up one of those tags would silently demote the gate to informational without
 // changing one line of its body.
 //
-// The tag literals are deliberately NOT reproduced here, in prose or anywhere
-// else in this file. The collab attest BASIS is resolved by grepping spec
-// CONTENT for those two tokens in their sigil form (COLLAB_TAG_RE in
-// scripts/collab-attest-lib.ts), so merely quoting them in a comment enrols
-// this spec in the basis, moves the collab content hash, and reddens
-// collab-attest — after which every future edit to this file costs a re-attest.
-// Write them bare when you need to name them.
+// The tag literals are not reproduced here, in prose or anywhere else in this
+// file. That used to be load-bearing: the collab attest BASIS was resolved by
+// grepping spec CONTENT for those two tokens in their sigil form (COLLAB_TAG_RE
+// in scripts/collab-attest-lib.ts), so quoting them in a comment enrolled the
+// file in the basis and made every future edit cost a re-attest. collab-attest
+// was deleted 2026-08-17, so nothing greps for them now — writing them bare is
+// still the house style, but it is no longer a constraint.
 //
 // SCOPE — what this gate is structurally UNABLE to see, stated here so a green
 // run is not read as more than it is:

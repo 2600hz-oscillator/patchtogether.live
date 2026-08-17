@@ -115,10 +115,12 @@ describe('assertServerIsThisWorktree (#1597)', () => {
     expect(err).not.toBeNull();
   });
 
-  it('the three attest runners actually call the guard (anchored to the sources)', () => {
+  it('every attest runner actually calls the guard (anchored to the sources)', () => {
     // The refusal is worthless if nothing calls it. Read the runners rather
-    // than trusting that the wiring still exists.
-    for (const runner of ['webgl-attest.ts', 'collab-attest.ts', 'grand-attest.ts']) {
+    // than trusting that the wiring still exists. Three runners until
+    // 2026-08-17; collab-attest.ts and grand-attest.ts were deleted with their
+    // non-gating CI jobs, so webgl is the only one left.
+    for (const runner of ['webgl-attest.ts']) {
       const src = readFileSync(join(ROOT, 'scripts', runner), 'utf8');
       expect(src, `${runner} must boot its OWN app server`).toContain('bootOwnAppServer');
       expect(src, `${runner} must RE-VERIFY identity before writing`).toContain(
@@ -233,7 +235,7 @@ describe('createGroupStopper — teardown that the success path can await (#1630
   }, 15_000);
 
   it('the runners actually await stopAndWait on their normal paths (source-anchored)', () => {
-    for (const f of ['webgl-attest.ts', 'grand-attest.ts', 'collab-attest.ts']) {
+    for (const f of ['webgl-attest.ts']) {
       const src = readFileSync(join(__dirname, f), 'utf8');
       expect(
         /await\s+(ownServer|appServer)[?.]*\.stopAndWait\(/.test(src),

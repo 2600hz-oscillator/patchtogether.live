@@ -12,7 +12,7 @@ source tree, so they cannot go stale. Prose + roadmap: `docs/testing/README.md`.
 | --- | --- | ---: |
 | 1 | HARD SKIPS / QUARANTINES (backlog → drive to 0) | 6 |
 | 2 | COVERAGE EXEMPTIONS (deliberate auto-enrollment opt-outs) | 370 |
-| 3 | INFORMATIONAL-ONLY CI LANES (run, never block merge) | 5 |
+| 3 | INFORMATIONAL-ONLY CI LANES (run, never block merge) | 1 |
 
 ## CI gating truth (from `.github/workflows/ci.yml`)
 
@@ -47,15 +47,16 @@ _none_
 ### spawn-smoke QUARANTINE map (e2e/tests/modules.spec.ts) — 1
 - `toybox` — task #102: SwiftShader software-renderer timeout (heavy WebGL)
 
-## Runtime skips — in-body env gates (80)
+## Runtime skips — in-body env gates (79)
 
 `test.skip(cond, reason)` guards that skip AT RUNTIME when an environment
 capability is missing (DB, asset, renderer, hardware). NOT disables — the test
 runs wherever the capability exists — but each produces a `skipped` row a green
-lane would otherwise hide, so the merged-report audits in ci.yml surface every
-row and enforce the deny-by-default per-lane budget in
+lane would otherwise hide, so ci.yml audits each e2e shard's own report and
+enforces the deny-by-default per-lane budget in
 `scripts/e2e-skip-budget.mjs`: a reasonless or unknown-reason skip reds the
-audit. Both directions are anchored by `scripts/e2e-skip-budget.test.ts`.
+shard, and `e2e` is a REQUIRED lane, so it blocks the merge. Both directions
+are anchored by `scripts/e2e-skip-budget.test.ts`.
 A reason shown as `(dynamic)` is computed at runtime; the budget test anchors
 those at spec granularity and the lane audit checks the realized string.
 
@@ -94,8 +95,8 @@ those at spec granularity and the lane audit checks the realized string.
 - `e2e/tests/doom-late-join.spec.ts:192` — @collab — runs on the dedicated COLLAB_JOB lane, not the sharded matrix
 - `e2e/tests/doom-late-join.spec.ts:201` — (dynamic: `assets.reason`)
 - `e2e/tests/doom-late-join.spec.ts:207` — DOOM runtime failed to load on A within 25s
-- `e2e/tests/doom-launch.spec.ts:264` — @collab — runs on the dedicated COLLAB_JOB lane, not the sharded matrix
-- `e2e/tests/doom-launch.spec.ts:274` — (dynamic: `assets.reason`)
+- `e2e/tests/doom-launch.spec.ts:265` — @collab — runs on the dedicated COLLAB_JOB lane, not the sharded matrix
+- `e2e/tests/doom-launch.spec.ts:275` — (dynamic: `assets.reason`)
 - `e2e/tests/doom-mp-latejoin-freeze.spec.ts:230` — DOOM WASM / WAD missing — run build-doom-wasm.sh + fetch DOOM1.WAD
 - `e2e/tests/doom-mp-lockstep-sharedstate.spec.ts:386` — DOOM WASM / WAD missing — run build-doom-wasm.sh + fetch DOOM1.WAD
 - `e2e/tests/doom-mp-lockstep-sharedstate.spec.ts:642` — DOOM WASM / WAD missing — run build-doom-wasm.sh + fetch DOOM1.WAD
@@ -108,12 +109,11 @@ those at spec granularity and the lane audit checks the realized string.
 - `e2e/tests/doom-per-type-death-gates.spec.ts:138` — DOOM WASM not built — run `bash packages/web/native/build-doom-wasm.sh`
 - `e2e/tests/dx7.spec.ts:383` — IndexedDB unavailable — the scratch replica cannot persist
 - `e2e/tests/es9-hardware.spec.ts:29` — hardware-in-the-loop: needs a real ES-9 + es9-bridge on ws://127.0.0.1:9209 (opt in with ES9_HW=1)
-- `e2e/tests/grand-integration.attest.spec.ts:310` — heavy local attest — runs only via `task grand:attest` (GRAND_ATTEST=1) on a trusted GPU machine
 - `e2e/tests/in-card-title.spec.ts:143` — @collab in-card-title rename-sync needs the relay + DB — runs on the dedicated COLLAB_JOB lane, not the sharded matrix
 - `e2e/tests/login-smoke.spec.ts:30` — E2E_CLERK_TEST_EMAIL / E2E_CLERK_TEST_PASSWORD not set — real sign-in smoke skipped.
 - `e2e/tests/milkdrop-render-smoke.spec.ts:65` — WebGL2 unsupported in this runtime — MILKDROP cannot render
 - `e2e/tests/multi-video-playback.spec.ts:428` — scale run is heavy for CI software-GL runners
-- `e2e/tests/multi-video-playback.spec.ts:439` — decode-capacity probe — excluded from the heavy WebGL attest gate (ceiling-marginal)
+- `e2e/tests/multi-video-playback.spec.ts:440` — decode-capacity probe — excluded from the heavy WebGL attest gate (ceiling-marginal)
 - `e2e/tests/new-rack-return-to-last.spec.ts:108` — IndexedDB unavailable — scratch replica cannot persist
 - `e2e/tests/new-rack-return-to-last.spec.ts:158` — IndexedDB unavailable — scratch replica cannot persist
 - `e2e/tests/patch-load-leak.spec.ts:309` — DOM retention is not measurable under vite dev — HMR retains destroyed component instances by design
@@ -560,14 +560,10 @@ payable. Membership is read off that set, so it moves without an edit here.
 - `STRICT_DOCS`: **185** — modules held to the FULL living-docs completeness bar (deny-missing-docs) <sub>(packages/web/src/lib/docs/strict-docs.ts)</sub>
 - `STRICT_VRT_MODULES`: **48** — modules whose card MUST ship a VRT baseline (deny-missing-baseline) <sub>(e2e/vrt/vrt-exemptions.ts)</sub>
 
-## Bucket 3 — informational-only CI lanes (5)
+## Bucket 3 — informational-only CI lanes (1)
 
 Jobs that RUN on a PR but never block merge. Red here is a signal to inspect,
 not a merge blocker.
 
-- `behavioral-coverage` — continue-on-error: true
 - `collab` — umbrella aggregate step labels it informational
-- `collab-attest` — declared informational and deliberately OFF the umbrella (reports its own check context)
-- `grand-attest` — declared informational and deliberately OFF the umbrella (reports its own check context)
-- `vrt` — continue-on-error: true
 

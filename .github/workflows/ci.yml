@@ -5,13 +5,38 @@ name: CI
 # the project's Flox environment so the toolchain (Node 22.22.2, Faust 2.85.5,
 # esbuild, go-task, git-lfs, gh) matches what developers run locally.
 #
-# Job shape (as of 2026-05-24, post-MED-1):
+# ── 2026-08-17: NINE NON-GATING JOBS DELETED ────────────────────────────────
+# `vrt`, `behavioral-coverage` (×6) + `merge-behavioral-reports`,
+# `behavioral-watchdog`, `grand-attest`, `merge-reports` and `collab-attest`
+# are GONE. None was in the `ci` umbrella's `needs:`/`env:`/failing-`if`, so
+# none could ever block a merge — and two of them (`vrt` at a 50 min cap,
+# `behavioral-coverage` at 125) had grown into those caps and were reporting
+# `cancelled` on main runs, which poisons the green signal AND disqualifies the
+# run from `daily-prod-deploy.yml`'s `find-green` (it rejects any job not
+# success/skipped/null). Owner ruling: "shit that is not gating, is worthless".
+#
+# ⚠ MERGE LATENCY IS UNCHANGED. Time-to-merge was, and remains, pinned by the
+# `e2e` shard matrix inside the umbrella. This is not a speedup; it is the
+# removal of a signal nobody could act on and of a `cancelled` that was
+# blocking the nightly PROD deploy.
+#
+# The ONE piece of those jobs with teeth was migrated BEFORE they were
+# deleted: `merge-reports`' deny-by-default runtime-SKIP BUDGET now runs
+# per-shard inside `e2e` (and therefore GATES). See the e2e job.
+#
+# WHAT COVERAGE THIS COSTS, plainly: the full-canvas VRT sweep no longer
+# COMPARES the baselines outside `vrt-strict`'s subset (they are still
+# AUTHORED — `vrt-update.yml` + `task vrt:commit` are untouched), and dead-input
+# detection now stops at `behavioral-smoke`'s required subset instead of the
+# whole registry.
+#
+# Job shape (as of 2026-08-17):
 #
 #   typecheck       ~30 s  | independent setup
 #   unit            ~90 s  | independent setup (server + web vitest)
 #   dsp-build       ~1-2 min | compiles Faust worklets ONCE → dsp-dist artifact
-#                            | (cache hit ~10 s); art/build/e2e/collab/vrt/
-#                            | vrt-strict-shard/behavioral `needs:` it + restore
+#                            | (cache hit ~10 s); art/build/e2e/collab/
+#                            | vrt-strict-shard `needs:` it + restore
 #   build-web       ~4 min | INDEPENDENT since #1595 — restores the SAME DSP
 #                            | dist cache itself instead of `needs: dsp-build`,
 #                            | so it starts at t=0 and every e2e shard starts
@@ -27,9 +52,7 @@ name: CI
 #                            | (the dead `e2e-video` lane that used to run them
 #                            | was deleted 2026-06-20; webgl-smoke + webgl-attest
 #                            | are the blessed heavy-WebGL gates now).
-#   merge-reports   ~30 s  | needs: [e2e] — merges the blob-reports
 #   ci (umbrella)   ~0 s   | needs all above; gates branch protection
-#   vrt             ~3-5 min | needs: dsp-build (restores dist)
 #   vrt-strict-shard (× 4) ~6.5 min | matrix 1..4/4, needs: dsp-build; the
 #                            | REQUIRED comparison lane, split by MEASURED
 #                            | per-test cost (scripts/vrt-shard-plan.mjs)
@@ -41,17 +64,15 @@ name: CI
 # It now runs ONCE in the `dsp-build` job, which caches + uploads
 # packages/dsp/dist/**; every downstream job `needs:` it and DOWNLOADS the
 # `dsp-dist` artifact. Jobs that call a `task` listing dsp:build as a dep
-# (art/vrt/vrt-strict/build) reuse the restored dist via the Taskfile
+# (art/vrt-strict/build) reuse the restored dist via the Taskfile
 # `status:` guard (dist/.dsp-srchash) — no double compile.
 #
-# Critical path: max(typecheck, unit, art, slowest-e2e-shard) + merge-reports
-# ≈ 4-5 min, vs the previous ~22 min single-runner pipeline. Setup is repeated
-# per-job (npm cache makes it ~70 s each), which is the deliberate trade-off
-# the plan accepted in exchange for parallelism. Free-tier concurrency cap
-# is 20 concurrent jobs; the full pipeline tops out at ~16 (10 e2e + typecheck
-# + unit + art + vrt + merge-reports + ci), still under cap. (Behavioral's 6
-# shards no longer run per-PR — see its `if:` guard — so they don't add to the
-# per-PR peak; on a main-push/label run they overlap but stay under cap.)
+# Critical path: max(typecheck, unit, art, slowest-e2e-shard) ≈ 4-5 min, vs the
+# previous ~22 min single-runner pipeline. Setup is repeated per-job (npm cache
+# makes it ~70 s each), which is the deliberate trade-off the plan accepted in
+# exchange for parallelism. Free-tier concurrency cap is 20 concurrent jobs;
+# with the informational lanes deleted the pipeline tops out well under it
+# (10 e2e + 4 vrt-strict shards + typecheck/unit/art/build/… ).
 #
 # Branch ruleset note: the "main: green PRs only" ruleset (id 16042163)
 # requires the status check `typecheck + unit + ART + E2E`. The `ci` umbrella
@@ -69,14 +90,22 @@ on:
       - '.myrobots/**'
       - 'LICENSE'
   pull_request:
-    # `labeled` is included so adding the 'behavioral' label to an open PR
-    # re-fires CI and lets the (otherwise-skipped) behavioral lane run on
-    # demand — see the `if:` guard on behavioral-coverage /
-    # merge-behavioral-reports. The other three are the GitHub default set
-    # (opened/synchronize/reopened); we list them explicitly because once
-    # `types:` is declared the default no longer applies. Path filters below
-    # are unchanged.
-    types: [opened, synchronize, reopened, labeled]
+    # `labeled` REMOVED 2026-08-17 with the behavioral lane. It existed for one
+    # reason — adding the 'behavioral' label re-fired CI so the otherwise-skipped
+    # `behavioral-coverage` / `merge-behavioral-reports` jobs would run on demand
+    # — and both jobs are deleted, so nothing in this workflow reads a label any
+    # more. Keeping it would be a pure liability: it is the measured cause of
+    # #1581, where opening a PR with four labels attached fired `opened` plus one
+    # `labeled` event per label IN THE SAME SECOND, starting ELEVEN runs for one
+    # SHA. `cancel-in-progress` cancelled ten of them, and a `cancelled` run is
+    # exactly what this PR exists to stop main from reporting.
+    #
+    # These three are the GitHub default set; they stay listed explicitly because
+    # once `types:` is declared the default no longer applies — and because
+    # docs-only-gate.yml declares the SAME three, so the two workflows now fire
+    # on identical event types (their path filters are complements; see the note
+    # on `paths-ignore` below). Path filters are unchanged.
+    types: [opened, synchronize, reopened]
     branches: [main]
     paths-ignore:
       - '**/*.md'
@@ -631,7 +660,9 @@ jobs:
   # dsp-build — compile the DSP worklets (Faust + esbuild) ONCE per run and
   # publish packages/dsp/dist/** as an artifact for every downstream job to
   # restore, instead of recompiling Faust ~16× (once per e2e shard ×8, vrt,
-  # vrt-strict, behavioral ×6, art, …).
+  # vrt-strict, behavioral ×6, art, …). Several of those consumers are gone
+  # since 2026-08-17 (vrt, behavioral ×6), which only widens the margin — the
+  # dedupe is what makes the surviving fan-out cheap, not the count.
   #
   # WHY (build-wall-time): `task dsp:build` (slow Faust compile) was a step or
   # a transitive `deps:` in every job that boots the dev/preview server or runs
@@ -882,7 +913,7 @@ jobs:
       # packages/web/static/). `vite build` copies static/ into the client
       # output, so they need to be present here to be baked into the preview
       # artifact the e2e shards download. Same cache+build pattern as the
-      # e2e/collab/vrt jobs.
+      # e2e/collab jobs.
       - name: Cache DOOM WASM artifact
         id: cache-doom-wasm
         uses: actions/cache@v4
@@ -940,10 +971,11 @@ jobs:
   # shards carry ~80% the tests each, spreading the heavy specs and shortening
   # the long pole. Still a REQUIRED gate (only the shard COUNT changed).
   #
-  # Reporter is `blob` so we can merge all shards into a single HTML report
-  # via the `merge-reports` job. Each shard uploads its blob artifact;
-  # merge-reports downloads them all by PATTERN (blob-report-*, count-agnostic)
-  # and runs `playwright merge-reports` — no aggregator change for the bump.
+  # Reporter is `blob`. The cross-shard `merge-reports` aggregator that used to
+  # fold the blobs into one HTML report was deleted 2026-08-17 (informational,
+  # nothing gated on it); each shard now uploads its own blob artifact (30 d) and
+  # runs the skip-budget audit on it in-place — see the audit step below, which
+  # is the piece of that job worth keeping.
   #
   # DB schema + DOOM assets are needed (same as the previous monolithic job).
   # -----------------------------------------------------------------------
@@ -981,8 +1013,9 @@ jobs:
         # 10 shards (was 8): the slow toybox/WebGL specs clustered into one
         # shard (~9 min long pole vs ~5 min for the rest). Spreading across 10
         # carries ~80% the tests per shard → the heavy specs distribute and the
-        # long pole shortens. merge-reports is count-agnostic (downloads
-        # blob-report-* by pattern), so no aggregator change is needed.
+        # long pole shortens. Nothing aggregates across shards any more (the
+        # `merge-reports` job was deleted 2026-08-17), so the shard COUNT is a
+        # free parameter: each shard reports and audits itself.
         shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 
     services:
@@ -1033,7 +1066,7 @@ jobs:
       # PREBUILT web-preview-dist artifact (downloaded below), which already
       # bakes in any LFS-tracked static bundles (build-web checks out lfs:true).
       # No functional spec reads an LFS-tracked path directly: the ART .f32 /
-      # VRT .png baselines belong to the art/vrt jobs, and the runtime
+      # VRT .png baselines belong to the art / vrt-strict-shard jobs, and the runtime
       # wavetables under static/wavetables/ are ordinary blobs (not LFS). So
       # skip the LFS payload entirely.
       - name: Checkout (no LFS — functional e2e serves the prebuilt bundle)
@@ -1115,10 +1148,13 @@ jobs:
       # `per-module-per-port-behavioral.spec.ts` is the heavy behavioral
       # input-coverage sweep — ~100 module-level tests, each iterating
       # internal inputs with 2-spawn control-vs-patched comparisons.
-      # Wall-time ~25-30 min for the full sweep. Excluded from the main
-      # 8-way shard matrix (would balloon shard wall-time from 3-4 min
-      # to 8-10 min) and runs in its own dedicated `behavioral-coverage`
-      # job below. The test titles are matched via the
+      # Wall-time ~25-30 min for the full sweep, which is why it is still
+      # inverted OUT of this matrix. ⚠ Since 2026-08-17 the only lane that runs
+      # any of it is `behavioral-smoke` (the required subset) — the full
+      # `behavioral-coverage` sweep was deleted with the other informational
+      # lanes, so the modules outside that subset have no dead-input detection
+      # on CI. Do NOT drop this inversion to "restore" the coverage: it would
+      # add ~25 min to a required lane. The test titles are matched via the
       # "BEHAVIORAL input coverage" describe block name.
       # ⚠ --global-timeout STOPS THIS SHARD DESTROYING ITS OWN EVIDENCE.
       # The job ceiling is 20 min (above). If Playwright is still running then,
@@ -1300,175 +1336,6 @@ jobs:
           retention-days: 14
 
   # -----------------------------------------------------------------------
-  # merge-reports — downloads ALL e2e blob artifacts (by the count-agnostic
-  # `blob-report-*` pattern, so the 8 → 10 shard bump needs no change here) and
-  # merges them into a single HTML report. Uploaded as `playwright-report` so
-  # the artifact name matches what reviewers expect (and what the previous
-  # monolithic workflow uploaded).
-  #
-  # `!cancelled()` (not `always()`) so we still get a merged report even if one
-  # shard FAILED — that's the whole point of an aggregated dashboard for triage
-  # — but NOT when the whole run was CANCELLED, where there is nothing to merge.
-  #
-  # Why the distinction (measured on #1581, 2026-08-13). Opening that PR with
-  # four labels attached fired `opened` + one `labeled` pull_request event per
-  # label in the SAME SECOND (`types:` above includes `labeled`), so GitHub
-  # started ELEVEN CI runs for one SHA. `cancel-in-progress` correctly cancelled
-  # ten; the eleventh ran the full suite green. But this job was `always()`, so
-  # in cancelled run 31726408821 it ran ANYWAY, downloaded `Found 0 artifact(s)`
-  # (the cancelled shards never uploaded a blob), and died on
-  # `Error: Directory does not exist: .../e2e/all-blob-reports` — posting a RED
-  # `Merge Playwright reports` check-run against a SHA whose real CI was green.
-  # That false red is indistinguishable from a genuine failure at a glance and
-  # cost a full jobs/logs investigation to clear.
-  #
-  # `cancelled()` is true only when the RUN was cancelled, so the failure path
-  # is untouched: a shard that genuinely fails still merges its report here.
-  # A shard that individually times out also still merges (the run is not
-  # cancelled), and a total wipeout still errors loudly rather than passing
-  # blind — this narrows the trigger, it does not add a green-on-empty path.
-  #
-  # ⚠ Do NOT make the same edit to the `ci` umbrella below. It carries a
-  # REQUIRED context name (`typecheck + unit + ART + E2E`), and a job-level
-  # `if:` skip reports as SUCCESS to branch protection — so `!cancelled()`
-  # there would turn a cancelled run into a GREEN required gate with zero tests
-  # run. The umbrella must stay `always()` and must keep failing on `cancelled`.
-  # This job is safe to skip precisely because it is NOT a required context
-  # (the ruleset requires only `vrt-strict …` and `typecheck + unit + ART + E2E`).
-  #
-  # Path note (bug fixed 2026-05-24): `npx --workspace e2e playwright ...`
-  # runs Playwright with cwd = e2e/, so any relative path passed on the CLI
-  # resolves relative to e2e/, not the repo root. We therefore download the
-  # blob artifacts INTO e2e/all-blob-reports/ and pass `./all-blob-reports`
-  # (which Playwright resolves to e2e/all-blob-reports). The previous version
-  # downloaded to repo-root ./all-blob-reports and failed with
-  # `Error: Directory does not exist: .../e2e/all-blob-reports`.
-  # -----------------------------------------------------------------------
-  merge-reports:
-    name: Merge Playwright reports
-    if: ${{ !cancelled() }}
-    # (the `e2e-video` lane was deleted 2026-06-20 — it produced the only other
-    # blob-report-* artifact; merge-reports now aggregates the e2e shards alone.)
-    needs: [e2e]
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install Flox
-        uses: flox/install-flox-action@v2
-
-      - name: Cache npm
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.npm
-            ~/.cache/ms-playwright
-          key: ${{ runner.os }}-deps-${{ hashFiles('package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-deps-
-
-      - name: Install workspace deps
-        run: flox activate -- task install
-
-      - name: Download blob reports
-        uses: actions/download-artifact@v4
-        with:
-          # Download into e2e/all-blob-reports so the merge-reports step
-          # below (which runs with cwd=e2e/ via --workspace e2e) finds
-          # them at the relative path `./all-blob-reports`.
-          path: e2e/all-blob-reports
-          pattern: blob-report-*
-          merge-multiple: true
-
-      - name: Merge into HTML report
-        run: |
-          flox activate -- npx --workspace e2e playwright merge-reports \
-            --reporter html \
-            ./all-blob-reports
-
-      # SURFACE FLAKY + RUNTIME-SKIPPED TESTS (#1502).
-      #
-      # A green e2e job hides two classes today. `retries: 1` on CI means a test
-      # that fails then passes is reported `flaky` with the JOB STILL GREEN; and
-      # nothing parses results for runtime `test.skip(cond, …)`, which the
-      # generated ledger deliberately excludes. Both are the same shape: the run
-      # knows, and nobody is told.
-      #
-      # Not hypothetical — the #1559 camera regression failed three runs running
-      # and was caught by a human reading logs, not by any gate.
-      #
-      # STILL REPORT-ONLY, AND NOW FOR A MEASURED REASON (2026-08-13).
-      #
-      # The sequence the issue asks for is: make it visible, fix the known
-      # flakes, THEN pass --fail-on-flaky. Step two turned out to be bigger than
-      # "the two named flakes". The blob-report artifacts of EIGHTEEN
-      # consecutive completed ci.yml runs were downloaded, merged with
-      # `playwright merge-reports --reporter json` and fed to this same script:
-      #
-      #   runs with >=1 recovered flake ............ 16 of 18
-      #   distinct tests involved .................. 9
-      #   behavioral-observation-window.spec.ts .... 11/18 (root-caused here)
-      #   camera-input.spec.ts ..................... 6/18  (fixed by #1564)
-      #   collapse-keeps-playing.spec.ts ........... 5/18  (root-caused, #1569)
-      #   matrixmix.spec.ts ........................ 2/18  (open)
-      #   midi / patch-load-leak / samsloop-record /
-      #     clipplayer-custom-scale /
-      #     workflow-channel-columns ............... 1/18 each (open)
-      #
-      # Arming the flag today would therefore redden a REQUIRED lane on ~16 of
-      # every 18 runs, which gets the gate reverted rather than the tests fixed.
-      # The exit path is not untested for being unarmed: scripts/
-      # e2e-report-audit.test.ts drives the real CLI in a subprocess and asserts
-      # BOTH directions (exit 1 with the flag on a flaky report, exit 0 without
-      # it, exit 0 with it on a clean one), so the day it is armed is not the
-      # day it is first exercised. Add `--fail-on-flaky` to the node line below
-      # once the remaining tail is drained.
-      #
-      # `--lane e2e` ALSO arms the deny-by-default SKIP-REASON BUDGET
-      # (scripts/e2e-skip-budget.mjs): a runtime skip that is reasonless, or
-      # whose (spec, reason) matches no NAMED budget entry for this lane, exits
-      # non-zero. This job is NOT in the `ci` umbrella's needs/if, so a budget
-      # red is VISIBLE (red job + ::error:: + step summary) but NON-BLOCKING —
-      # the staging the issue asks for. Do not add this job to the umbrella to
-      # "promote" it; arming is a separate decision, like --fail-on-flaky.
-      - name: Audit merged report for flaky + skipped (lane e2e skip budget)
-        if: always()
-        run: |
-          flox activate -- npx --workspace e2e playwright merge-reports \
-            --reporter json \
-            ./all-blob-reports > merged-report.json
-          flox activate -- node scripts/e2e-report-audit.mjs merged-report.json \
-            --lane e2e --json-out e2e-report-audit.json
-
-      # The machine-readable audit (rows + classifications + budget verdicts) —
-      # uploaded even when the audit step above exits non-zero, so a red audit
-      # is inspectable without re-merging blobs locally (#1502).
-      - name: Upload report-audit artifact
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: e2e-report-audit
-          path: e2e-report-audit.json
-          retention-days: 30
-          if-no-files-found: warn
-
-      - name: Upload merged HTML report
-        # always(): the HTML report must survive a red audit step above — it is
-        # the drill-down for exactly that red.
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: playwright-report
-          # `playwright merge-reports --reporter html` writes to
-          # `playwright-report/` in the cwd. We ran with `--workspace e2e`
-          # so that's `e2e/playwright-report/`.
-          path: e2e/playwright-report
-          retention-days: 30
-
-  # -----------------------------------------------------------------------
   # collab — the @collab multi-context Playwright specs, run on a SINGLE,
   # NON-SHARDED runner with --workers=1 (fully SERIAL). These drive two+
   # independent browser contexts (separate cookie jars / ydocs — real "two
@@ -1548,8 +1415,8 @@ jobs:
       # No LFS here: the @collab specs serve the PREBUILT web-preview-dist
       # artifact (downloaded below), which already bakes the LFS-tracked SM64
       # bundle (build-web checks out lfs:true). No @collab spec reads an
-      # LFS-tracked path directly (ART/VRT baselines belong to the art/vrt
-      # jobs; the SM64 IDB fixture is gitignored/user-provided). So skip the
+      # LFS-tracked path directly (ART/VRT baselines belong to the art /
+      # vrt-strict-shard jobs; the SM64 IDB fixture is gitignored/user-provided). So skip the
       # LFS payload — this is the multi-context functional lane, not a
       # baseline consumer.
       - name: Checkout (no LFS — @collab serves the prebuilt bundle)
@@ -1668,10 +1535,11 @@ jobs:
             --workers=1 \
             --reporter=list,html
 
-      # Always upload the browsable HTML report so the @collab lane is as
-      # inspectable as e2e/behavioral/vrt (those merge blobs → html; @collab is
-      # single-runner so it writes html directly). Mirrors retention=30 of the
-      # other browsable reports.
+      # Always upload the browsable HTML report. @collab is single-runner so it
+      # writes html directly, rather than emitting a blob for a cross-shard
+      # merge the way `e2e` does — which is why this lane kept its report when
+      # the `merge-reports` aggregator was deleted (2026-08-17). retention=30
+      # matches the e2e shards' blobs.
       - name: Upload Playwright HTML report (@collab)
         if: always()
         uses: actions/upload-artifact@v4
@@ -1690,611 +1558,6 @@ jobs:
           name: playwright-test-results-collab
           path: e2e/test-results
           retention-days: 14
-
-  # -----------------------------------------------------------------------
-  # behavioral-coverage — the heavy behavioral input-coverage sweep
-  # (per-module-per-port-behavioral.spec.ts). ~100 module-level tests,
-  # each iterating its module's inputs with 2-spawn control-vs-patched
-  # comparisons. Wall-time ~25-30 min UNSHARDED at 4 workers — too heavy
-  # to roll into the main 8-way shard matrix (would balloon each shard
-  # from ~3-4 min to ~8-10 min).
-  #
-  # SHARDED 6 ways (same pattern as the `e2e` job): a `shard: [1..6]/6`
-  # matrix with `--shard=${{matrix.shard}}/6` + blob reporter, then a
-  # `merge-behavioral-reports` job downloads all 6 blobs and merges them
-  # into a single HTML report. ~100 tests / 6 shards ≈ 17 tests/shard at 4
-  # workers each → a few minutes per shard instead of a ~50-min tail.
-  # Each shard runs on its own dedicated runner with full DB + DSP setup.
-  #
-  # NOT a required status check — landing it as informational lets the
-  # gating decision happen separately after the tier proves itself
-  # reliable. Stays `continue-on-error: true` (another agent is tuning
-  # its per-module thresholds separately; do not change its required-ness
-  # or its assertions). Promote to the `ci` umbrella `needs:` list to
-  # make it blocking once thresholds are tuned.
-  #
-  # TODO(behavioral-coverage): non-blocking until per-module threshold tuning lands.
-  # Current spec (PR #471) uses a delta threshold that's too tight for modules with
-  # subtle CV→audio effects (envelope-amount knobs, decay, etc.). Whack-a-mole
-  # exempting modules (grids/sequencer/adsr/buggles/backdraft/qbert/peaks/treeohvox/
-  # mixmstrs all failing as of 2026-05-30) is the wrong fix. Tune thresholds per
-  # module or per port-type, then flip continue-on-error off + re-add to aggregator.
-  # Tracking task TBD.
-  # -----------------------------------------------------------------------
-  behavioral-coverage:
-    name: behavioral input coverage (shard ${{ matrix.shard }}/6)
-    # INFORMATIONAL lane (continue-on-error, NOT in the `ci` umbrella's needs) —
-    # so to cut per-PR runner contention it no longer runs on every PR. It runs
-    # ONLY on: push-to-main, manual workflow_dispatch, or a PR explicitly
-    # labeled 'behavioral' (apply the label to opt a PR in — the `labeled`
-    # pull_request type above re-fires CI). Normal PRs SKIP it. Main-merge
-    # frequency + the on-demand label give enough coverage while it's still a
-    # tuning lane. Re-add it (sharded) to the per-PR gate when it becomes a real
-    # required check (#42). (A fast REQUIRED SUBSET of it — the `behavioral-smoke`
-    # job below — now gates every PR on the rock-solid core modules; the FULL
-    # sweep stays informational here.)
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'behavioral'))
-    needs: [dsp-build, build-web]
-    runs-on: ubuntu-latest
-    # INFORMATIONAL lane (un-gated 2026-06-03 after a premature 1x gate flaked
-    # on moog911): red here must NOT block PR merges. The per-port stabilization
-    # pass (#562) + driver-params/exempts landed, but the lane needs a proper 3x
-    # flake-purge (moog911/drummergirl + any others) before it can gate reliably.
-    # Re-add to the `ci` umbrella's needs + failure check only once 3x-clean.
-    continue-on-error: true
-    # 20 min ceiling per shard: sharded 6 ways the per-shard work is a few
-    # minutes; cushion for cold-cache CI runs + setup time.
-    timeout-minutes: 20
-
-    strategy:
-      # Don't fail-fast: surface independent failures across all 6 shards in
-      # one run rather than masking shards 2-6 when shard 1 trips a threshold.
-      fail-fast: false
-      matrix:
-        shard: [1, 2, 3, 4, 5, 6]
-
-    services:
-      postgres:
-        # AWS ECR Public mirror (see note on the unit job) — avoids the flaky
-        # Docker Hub service-container pull.
-        image: public.ecr.aws/docker/library/postgres:17
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: patchtogether_test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U postgres"
-          --health-interval 5s
-          --health-timeout 3s
-          --health-retries 10
-
-    env:
-      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/patchtogether_test
-
-    steps:
-      # No LFS here: the behavioral sweep serves the PREBUILT web-preview-dist
-      # artifact (downloaded below, bakes the LFS-tracked SM64 bundle) and runs
-      # per-module-per-port-behavioral.spec.ts, which reads no LFS-tracked path
-      # directly (ART/VRT baselines belong to the art/vrt jobs). Skip the LFS
-      # payload.
-      - name: Checkout (no LFS — behavioral serves the prebuilt bundle)
-        uses: actions/checkout@v4
-        with:
-          lfs: false
-
-      - name: Install Flox
-        uses: flox/install-flox-action@v2
-
-      - name: Cache npm + Playwright browsers
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.npm
-            ~/.cache/ms-playwright
-          key: ${{ runner.os }}-deps-${{ hashFiles('package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-deps-
-
-      - name: Cache .svelte-kit
-        uses: actions/cache@v4
-        with:
-          path: packages/web/.svelte-kit
-          key: ${{ runner.os }}-svelte-kit-${{ hashFiles('packages/web/svelte.config.js', 'packages/web/src/routes/**', 'packages/web/package.json') }}
-
-      - name: Install workspace deps + Playwright Chromium
-        run: flox activate -- task setup
-
-      # Restore the worklet dist built once by dsp-build, then the prebuilt
-      # preview bundle from build-web. The behavioral sweep runs under
-      # E2E_USE_PREVIEW (vite preview) like the e2e shards, so the served app
-      # is prebuilt — no on-demand dev-server compile, which was flaking some
-      # shards under load (drummergirl/moog911/sequencer passed once the
-      # server was warm).
-      - name: Download DSP dist artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: dsp-dist
-          path: packages/dsp/dist
-
-      - name: Download web preview bundle artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: web-preview-dist
-          path: packages/web/.svelte-kit/output
-
-      - name: Apply DB schema
-        run: flox activate -- scripts/apply-db-schema.sh "$DATABASE_URL"
-
-      - name: Emit registry manifest for E2E
-        run: flox activate -- task test:emit-manifest
-
-      # (DSP dist was restored from the dsp-build artifact above.)
-
-      - name: Run E2E (behavioral input coverage, shard ${{ matrix.shard }}/6, 4 workers, blob reporter)
-        env:
-          E2E_USE_PREVIEW: '1'
-        run: |
-          flox activate -- npx --workspace e2e playwright test \
-            per-module-per-port-behavioral.spec.ts \
-            --shard=${{ matrix.shard }}/6 \
-            --workers=4 \
-            --reporter=blob
-
-      - name: Upload blob report (behavioral shard ${{ matrix.shard }})
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          # Default blob-report location is the cwd of the playwright
-          # invocation; we ran with `--workspace e2e` so the output lands at
-          # e2e/blob-report/.
-          name: behavioral-blob-report-${{ matrix.shard }}
-          path: e2e/blob-report
-          retention-days: 7
-
-      - name: Upload Playwright test-results on failure (behavioral shard ${{ matrix.shard }})
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: playwright-test-results-behavioral-shard-${{ matrix.shard }}
-          path: e2e/test-results
-          retention-days: 14
-
-  # -----------------------------------------------------------------------
-  # merge-behavioral-reports — downloads all 6 behavioral blob artifacts and
-  # merges them into a single HTML report. Mirrors the `merge-reports` job
-  # for the e2e shards. `if: always()` so we get an aggregated dashboard for
-  # triage even when a shard fails (continue-on-error keeps the behavioral
-  # lane non-blocking regardless).
-  #
-  # Path note (same as merge-reports): `npx --workspace e2e playwright ...`
-  # runs with cwd = e2e/, so we download the blobs INTO
-  # e2e/all-behavioral-blob-reports/ and pass the relative
-  # `./all-behavioral-blob-reports`.
-  # -----------------------------------------------------------------------
-  merge-behavioral-reports:
-    name: Merge behavioral Playwright reports
-    # Gate this on the SAME event condition as behavioral-coverage so it's
-    # skipped on normal PRs (no behavioral shards ran → nothing to merge), and
-    # wrap it in always() so that ON the runs where behavioral DOES run
-    # (push-to-main / dispatch / 'behavioral'-labeled PR) we still get the
-    # aggregated HTML report even when a shard failed. continue-on-error on the
-    # shards keeps the lane non-blocking regardless.
-    if: |
-      always() && (
-        github.event_name == 'push'
-        || github.event_name == 'workflow_dispatch'
-        || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'behavioral'))
-      )
-    needs: [behavioral-coverage]
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install Flox
-        uses: flox/install-flox-action@v2
-
-      - name: Cache npm
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.npm
-            ~/.cache/ms-playwright
-          key: ${{ runner.os }}-deps-${{ hashFiles('package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-deps-
-
-      - name: Install workspace deps
-        run: flox activate -- task install
-
-      - name: Download behavioral blob reports
-        uses: actions/download-artifact@v4
-        with:
-          path: e2e/all-behavioral-blob-reports
-          pattern: behavioral-blob-report-*
-          merge-multiple: true
-
-      - name: Merge into HTML report
-        run: |
-          flox activate -- npx --workspace e2e playwright merge-reports \
-            --reporter html \
-            ./all-behavioral-blob-reports
-
-      # SURFACE FLAKY + RUNTIME-SKIPPED TESTS (#1502) — behavioral lane.
-      # The e2e `merge-reports` job audits only the e2e shards; the behavioral
-      # sweep's flakes and runtime skips were invisible to any gate (the shards
-      # are continue-on-error, so even a FAILURE reports success). Same script,
-      # `--lane behavioral` budget: today that lane's only legitimate skips are
-      # the [SKIPPED:]-marker exemption placeholders, so ANY non-placeholder
-      # skip here is a budget red. This job is not in the `ci` umbrella —
-      # visible, not blocking.
-      - name: Audit merged behavioral report for flaky + skipped (skip budget)
-        if: always()
-        run: |
-          flox activate -- npx --workspace e2e playwright merge-reports \
-            --reporter json \
-            ./all-behavioral-blob-reports > behavioral-merged-report.json
-          flox activate -- node scripts/e2e-report-audit.mjs behavioral-merged-report.json \
-            --lane behavioral --json-out behavioral-report-audit.json
-
-      - name: Upload behavioral report-audit artifact
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: behavioral-report-audit
-          path: behavioral-report-audit.json
-          retention-days: 30
-          if-no-files-found: warn
-
-      - name: Upload merged behavioral HTML report
-        # always(): keep the HTML drill-down even when the audit step reds.
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          # `playwright merge-reports --reporter html` writes to
-          # `playwright-report/` in the cwd (e2e/ via --workspace e2e).
-          name: behavioral-playwright-report
-          path: e2e/playwright-report
-          retention-days: 30
-
-  # -----------------------------------------------------------------------
-  # behavioral-watchdog — the PUSH-ONLY main-red scream (+ optional rollback).
-  #
-  # The `behavioral-coverage` lane is `continue-on-error: true` (an informational
-  # tuning lane), so its GitHub JOB CONCLUSION always reports success even when
-  # real per-module behavioral assertions FAILED — a green umbrella LIES about
-  # behavioral health. This watchdog reads the REAL result out of the merged
-  # Playwright JSON report (scripts/behavioral-watchdog.mjs), and for @collab
-  # asserts the committed attestation was produced with a REAL DATABASE
-  # (`databaseConfirmed`) — a green attestation built WITHOUT a DB is VACUOUS
-  # (memory `feedback_collab_tests_vacuous_without_db`).
-  #
-  # Flow: aggregate the shard reports → diff against a "last-green" baseline (the
-  # `behavioral-last-green` CI artifact, seeded by the committed
-  # ci/behavioral-last-green.json) → CANDIDATE newly-failing modules → RE-RUN
-  # only those rows ONCE (a break counts only if it REPRODUCES, rejecting
-  # LFS-502 / SwiftShader-timeout blips) → on a reproduced regression (or a
-  # vacuous collab) open a p0 issue via the SAME github-script issue-create alert
-  # path used by live-smoke-alert.yml / #1105 (emails repo watchers incl.
-  # tmayshark@gmail.com) and EXIT NON-ZERO. On a clean run it refreshes the
-  # baseline artifact.
-  #
-  # PUSH-ONLY (main): it never gates PRs and is NOT in the `ci` umbrella — it is
-  # the after-the-fact main-health backstop, not a merge gate. It CANNOT be fully
-  # e2e'd until it runs on a real push (the p0/rollback branches only exercise on
-  # a genuine reproduced main break); the aggregator brain is unit-tested instead
-  # (scripts/behavioral-watchdog.test.ts).
-  #
-  # OPTIONAL auto-rollback is gated on repo var AUTO_ROLLBACK=1 and DEFAULTS OFF:
-  # it opens a `git revert` PR from `rollback/behavioral-<sha>` and NEVER
-  # auto-merges — a human still reviews + merges the revert.
-  # -----------------------------------------------------------------------
-  behavioral-watchdog:
-    name: behavioral/collab watchdog (push-only main-red scream)
-    needs: [behavioral-coverage, collab-attest]
-    runs-on: ubuntu-latest
-    # PUSH-to-main ONLY, and `always()` so it runs regardless of the upstream
-    # jobs' conclusions (behavioral-coverage's continue-on-error success is
-    # exactly what we must look past; a failed collab-attest must still be seen).
-    if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
-    timeout-minutes: 30
-    permissions:
-      contents: write        # push the rollback/behavioral-<sha> branch
-      issues: write          # open the p0 alert issue (the reused alert path)
-      pull-requests: write   # open the rollback PR (never auto-merged)
-      actions: read          # cross-workflow artifact download (baseline)
-
-    services:
-      postgres:
-        # AWS ECR Public mirror (see the unit job) — avoids the flaky Docker Hub
-        # service-container pull. Needed only for the conditional re-run of
-        # failing behavioral rows, but a service container is job-scoped.
-        image: public.ecr.aws/docker/library/postgres:17
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: patchtogether_test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U postgres"
-          --health-interval 5s
-          --health-timeout 3s
-          --health-retries 10
-
-    env:
-      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/patchtogether_test
-      # Repo var, DEFAULT OFF. Only '1' arms the auto-rollback PR.
-      AUTO_ROLLBACK: ${{ vars.AUTO_ROLLBACK }}
-
-    steps:
-      # Full history (no LFS) so `git revert -m 1 <mergeSHA>` can resolve both
-      # parents of the pushed merge commit when AUTO_ROLLBACK is armed.
-      - name: Checkout (full history, no LFS)
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          lfs: false
-
-      - name: Install Flox
-        uses: flox/install-flox-action@v2
-
-      - name: Cache npm + Playwright browsers
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.npm
-            ~/.cache/ms-playwright
-          key: ${{ runner.os }}-deps-${{ hashFiles('package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-deps-
-
-      - name: Install workspace deps (tsx for the collab hash + playwright merge)
-        run: flox activate -- task install
-
-      # ── Read the REAL behavioral result ────────────────────────────────
-      - name: Download behavioral blob reports
-        uses: actions/download-artifact@v4
-        with:
-          path: e2e/all-behavioral-blob-reports
-          pattern: behavioral-blob-report-*
-          merge-multiple: true
-
-      - name: Merge behavioral blobs → JSON report
-        run: |
-          # The json reporter writes the report to stdout; capture it. If the
-          # merge fails (e.g. no shard produced a blob), fall back to an EMPTY
-          # report so the aggregator sees zero failures and does NOT false-scream
-          # (a real break with corrupt reports is a separate, louder problem).
-          if flox activate -- npx --workspace e2e playwright merge-reports \
-               --reporter json ./all-behavioral-blob-reports \
-               > "$GITHUB_WORKSPACE/behavioral-report.json" 2> merge.err; then
-            echo "merged behavioral report OK"
-          else
-            echo "::warning::behavioral merge-reports failed; using empty report (see merge.err)"
-            cat merge.err || true
-            echo '{"suites":[]}' > "$GITHUB_WORKSPACE/behavioral-report.json"
-          fi
-
-      # ── Fetch the last-green baseline (artifact → committed seed fallback) ─
-      - name: Restore last-green baseline
-        uses: dawidd6/action-download-artifact@v6
-        with:
-          name: behavioral-last-green
-          workflow: ci.yml
-          path: ./.behavioral-baseline
-          if_no_artifact_found: ignore
-
-      - name: Resolve baseline path
-        id: baseline
-        run: |
-          if [[ -f ./.behavioral-baseline/behavioral-last-green.json ]]; then
-            echo "path=./.behavioral-baseline/behavioral-last-green.json" >> "$GITHUB_OUTPUT"
-            echo "using prior baseline artifact"
-          else
-            echo "path=ci/behavioral-last-green.json" >> "$GITHUB_OUTPUT"
-            echo "no baseline artifact — bootstrapping from committed seed"
-          fi
-
-      # ── Aggregate: behavioral pass/fail + collab db_present + candidate diff ─
-      - name: Aggregate behavioral + collab result
-        id: agg
-        run: |
-          HASH="$(flox activate -- bash scripts/collab-attest-hash.sh)"
-          ATT="ci-collab-attest/${HASH}.json"
-          echo "collab content hash: ${HASH} (attestation: ${ATT})"
-          flox activate -- node scripts/behavioral-watchdog.mjs aggregate \
-            --behavioral "$GITHUB_WORKSPACE/behavioral-report.json" \
-            --collab "$ATT" \
-            --baseline "${{ steps.baseline.outputs.path }}"
-
-      # ── Re-run ONLY the candidate rows ONCE (reject infra blips) ───────
-      - name: Download DSP dist artifact (for re-run)
-        if: steps.agg.outputs.candidate_count != '0'
-        uses: actions/download-artifact@v4
-        with:
-          name: dsp-dist
-          path: packages/dsp/dist
-
-      - name: Download web preview bundle artifact (for re-run)
-        if: steps.agg.outputs.candidate_count != '0'
-        uses: actions/download-artifact@v4
-        with:
-          name: web-preview-dist
-          path: packages/web/.svelte-kit/output
-
-      - name: Install Playwright Chromium (for re-run)
-        if: steps.agg.outputs.candidate_count != '0'
-        run: flox activate -- task install:browsers
-
-      - name: Apply DB schema + emit manifest (for re-run)
-        if: steps.agg.outputs.candidate_count != '0'
-        run: |
-          flox activate -- scripts/apply-db-schema.sh "$DATABASE_URL"
-          flox activate -- task test:emit-manifest
-
-      - name: Re-run failing behavioral rows (once)
-        if: steps.agg.outputs.candidate_count != '0'
-        env:
-          E2E_USE_PREVIEW: '1'
-        run: |
-          echo "re-running candidates: ${{ steps.agg.outputs.candidate_modules }}"
-          # Non-fatal: a reproduced failure is EXPECTED here — we parse the
-          # report, not the exit code.
-          flox activate -- npx --workspace e2e playwright test \
-            per-module-per-port-behavioral.spec.ts \
-            --grep "${{ steps.agg.outputs.candidate_grep }}" \
-            --workers=4 \
-            --reporter=json > "$GITHUB_WORKSPACE/behavioral-rerun.json" 2> rerun.err || true
-          if [[ ! -s "$GITHUB_WORKSPACE/behavioral-rerun.json" ]]; then
-            echo "::warning::re-run produced no JSON; treating candidates as UNreproduced"
-            cat rerun.err || true
-            echo '{"suites":[]}' > "$GITHUB_WORKSPACE/behavioral-rerun.json"
-          fi
-
-      - name: Confirm reproduced regressions
-        id: confirm
-        if: steps.agg.outputs.candidate_count != '0'
-        run: |
-          flox activate -- node scripts/behavioral-watchdog.mjs confirm \
-            --candidates "${{ steps.agg.outputs.candidate_modules }}" \
-            --rerun "$GITHUB_WORKSPACE/behavioral-rerun.json"
-
-      # ── Decide: scream? rollback? ──────────────────────────────────────
-      - name: Decide
-        id: decide
-        run: |
-          newly='${{ steps.confirm.outputs.newly_failing }}'
-          newly_count='${{ steps.confirm.outputs.newly_failing_count }}'
-          [[ -z "$newly_count" ]] && newly_count=0
-          collab_vacuous='${{ steps.agg.outputs.collab_vacuous }}'
-
-          scream=false
-          rollback=false
-          if [[ "$newly_count" -gt 0 ]]; then
-            scream=true
-            # Auto-rollback ONLY for a reproduced behavioral regression (a code
-            # break tied to this push's SHA), never for collab vacuity.
-            if [[ "$AUTO_ROLLBACK" == "1" ]]; then rollback=true; fi
-          fi
-          if [[ "$collab_vacuous" == "true" ]]; then scream=true; fi
-
-          {
-            echo "scream=$scream"
-            echo "rollback=$rollback"
-            echo "newly_failing=$newly"
-            echo "newly_count=$newly_count"
-          } >> "$GITHUB_OUTPUT"
-          echo "scream=$scream rollback=$rollback newly='$newly' collab_vacuous=$collab_vacuous"
-
-      # ── Fire the existing alert path: open a p0 issue (emails watchers) ─
-      # Reuses live-smoke-alert.yml / #1105's github-script issue-create
-      # integration (github.rest.issues.create → emails repo watchers incl.
-      # tmayshark@gmail.com). No fabricated endpoint.
-      - name: Open p0 main-red issue (scream)
-        if: steps.decide.outputs.scream == 'true'
-        uses: actions/github-script@v7
-        env:
-          NEWLY: ${{ steps.decide.outputs.newly_failing }}
-          COLLAB_VACUOUS: ${{ steps.agg.outputs.collab_vacuous }}
-          COLLAB_REASON: ${{ steps.agg.outputs.collab_reason }}
-          FAILED_MODULES: ${{ steps.agg.outputs.failed_modules }}
-        with:
-          script: |
-            const newly = (process.env.NEWLY || '').trim();
-            const collabVacuous = process.env.COLLAB_VACUOUS === 'true';
-            const lines = [
-              '**Behavioral/collab watchdog tripped on a push to `main`.**',
-              '',
-              `Run: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
-              `Commit: ${context.sha}`,
-              '',
-            ];
-            if (newly) {
-              lines.push(
-                '### Reproduced behavioral regression',
-                `NEWLY-failing modules (green at the last-green baseline, now failing — and failed AGAIN on the targeted re-run): **${newly.split(' ').filter(Boolean).join(', ')}**`,
-                '',
-                `All currently-failing behavioral modules: ${process.env.FAILED_MODULES || '(none)'}`,
-                '',
-              );
-            }
-            if (collabVacuous) {
-              lines.push(
-                '### @collab ran VACUOUS',
-                `The committed @collab attestation for the current collab content hash was NOT produced with a real DATABASE (${process.env.COLLAB_REASON}). A green @collab lane here proves nothing about multi-user behaviour — re-attest with a real Postgres (\`flox activate -- task collab:attest\`).`,
-                '',
-              );
-            }
-            lines.push(
-              'This issue emails repo watchers (incl. tmayshark@gmail.com) via the same alert path as `live-smoke-alert.yml` (#1105). Root-cause immediately — a red push on `main` is a P0.',
-            );
-            const title = newly
-              ? `[P0] main red: behavioral regression — ${newly.split(' ').filter(Boolean).slice(0, 4).join(', ')}`
-              : '[P0] main red: @collab attestation ran VACUOUS';
-            await github.rest.issues.create({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              title,
-              body: lines.join('\n'),
-              labels: ['p0', 'behavioral-regression', 'main-red', 'observability', 'alert'],
-            });
-
-      # ── Optional auto-rollback PR (AUTO_ROLLBACK=1, default OFF; never merged) ─
-      - name: Open rollback PR (optional, never auto-merged)
-        if: steps.decide.outputs.rollback == 'true'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NEWLY: ${{ steps.decide.outputs.newly_failing }}
-        run: |
-          set -euo pipefail
-          SHA='${{ github.sha }}'
-          SHORT="${SHA:0:12}"
-          BRANCH="rollback/behavioral-${SHORT}"
-          git config user.name  "behavioral-watchdog[bot]"
-          git config user.email "behavioral-watchdog@users.noreply.github.com"
-          git checkout -b "$BRANCH"
-          # Prefer the merge-commit revert; fall back to a plain revert if the
-          # pushed commit is not a merge (squash-merge → single parent).
-          if ! git revert --no-edit -m 1 "$SHA" 2>/dev/null; then
-            git revert --abort 2>/dev/null || true
-            git revert --no-edit "$SHA"
-          fi
-          git push origin "$BRANCH"
-          gh pr create --base main --head "$BRANCH" \
-            --title "rollback: revert ${SHORT} — reproduced behavioral regression (${NEWLY})" \
-            --body "Auto-opened by the behavioral-watchdog (AUTO_ROLLBACK=1) after a REPRODUCED behavioral regression on a push to main (modules: ${NEWLY}). This is a **draft rollback for a human to review + merge** — it is NEVER auto-merged. Close it if the break is being fixed forward instead." \
-            --label "p0,behavioral-regression,main-red" \
-            --draft
-
-      # ── Refresh the baseline on a clean run ────────────────────────────
-      - name: Refresh last-green baseline
-        if: steps.decide.outputs.scream != 'true'
-        run: |
-          flox activate -- node scripts/behavioral-watchdog.mjs snapshot \
-            --behavioral "$GITHUB_WORKSPACE/behavioral-report.json" \
-            --out ./behavioral-last-green.json \
-            --sha '${{ github.sha }}'
-
-      - name: Upload refreshed baseline artifact
-        if: steps.decide.outputs.scream != 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: behavioral-last-green
-          path: ./behavioral-last-green.json
-          retention-days: 90
-          overwrite: true
-
-      # ── Exit non-zero on a real break (marks the push run red) ─────────
-      - name: Fail the run on a reproduced break / vacuous collab
-        if: steps.decide.outputs.scream == 'true'
-        run: |
-          echo "::error::behavioral-watchdog tripped — newly-failing: '${{ steps.decide.outputs.newly_failing }}', collab_vacuous: ${{ steps.agg.outputs.collab_vacuous }}"
-          exit 1
 
   # -----------------------------------------------------------------------
   # webgl-smoke — the REQUIRED on-CI WebGL FLOOR (.myrobots/plans/webgl-
@@ -2399,8 +1662,9 @@ jobs:
       # peakstate joined 2026-06-23 after its DRS was tuned (one-shot seed-clear +
       # warmup 48→18) to converge cheaply on SwiftShader; wavecel-video-outs is an
       # already-cheap DRS. OUTLINES render-smoke stays EXCLUDED (~48s — too close
-      # to the budget for a floor → attest-only). cwd is e2e/ (see the Path note on
-      # merge-reports), so the bare spec filenames resolve under e2e/tests/.
+      # to the budget for a floor → attest-only). ⚠ `npx --workspace e2e` runs
+      # Playwright with cwd = e2e/, so the bare spec filenames below resolve
+      # under e2e/tests/ (testDir) rather than against the repo root.
       - name: Run cheap render-smoke floor (SwiftShader)
         run: |
           flox activate -- npx --workspace e2e playwright test \
@@ -2518,148 +1782,16 @@ jobs:
         run: flox activate -- bash scripts/webgl-attest-verify.sh
 
   # -----------------------------------------------------------------------
-  # collab-attest — the LOCAL-RELAY @collab attestation VERIFY gate (the collab
-  # analogue of webgl-attest; see .claude/skills/collab-attest.md +
-  # ci-collab-attest/README.md). Recomputes the deterministic @collab content-
-  # hash (scripts/collab-attest-hash.sh) and checks ci-collab-attest/<hash>.json
-  # exists. The attestation was produced by the owner's local FRESH-dedicated-
-  # relay+DB `task collab:attest` run and committed WITH the PR; it travels
-  # through squash-merge because the hash is content-keyed, NOT git-HEAD-keyed.
-  #
-  #   match  → collab surface unchanged-or-attested → the ~6.5-8 min @collab lane
-  #            stays per-PR-informational, trusting the local calm-relay run. PASS.
-  #   miss   → a collab/sync/relay path changed without re-attesting → FAIL with
-  #            `run: flox activate -- task collab:attest`.
-  #
-  # WHY: the @collab CI lane is FLAKY + slow — the single-process Hocuspocus relay
-  # buckles under CI's 10-shard contention (so it's informational, un-gated since
-  # 2026-06-06; DOOM-MP specs test.skip(true,'…relay flake…') → green-but-vacuous).
-  # LOCALLY the owner controls the relay (a fresh, dedicated, uncontended relay
-  # actually converges), so we attest there + verify cheaply here.
-  #
-  # CAVEAT (differs from webgl): a calm LOCAL relay is merely LESS CONTENDED than
-  # CI's, not strictly superior — it can mask an under-load race. The NIGHTLY
-  # backstop (collab-nightly.yml) runs the FULL real @collab lane on CI daily to
-  # surface contention regressions. See the plan doc.
-  #
-  # GATING (armed 2026-06-20, the final step of the @collab de-flake campaign) —
-  # this verify job is now in the `ci` umbrella's failing-condition set, EXACTLY
-  # mirroring webgl-attest: added to the umbrella's `needs:`, its result-mapping
-  # `env:` ($COLLAB_ATTEST), AND the failing `if [[ ]]` test, and
-  # `continue-on-error` removed. `needs:` ALONE only makes the umbrella WAIT (it
-  # is `if: always()` and gates via the env+if block) — the env+if edits are what
-  # make a hash MISS fail the required `ci` check. Because gating flows THROUGH
-  # the already-required umbrella (whose name `typecheck + unit + ART + E2E`
-  # never changes), NO ruleset edit is required — same as webgl-attest.
-  #
-  # Cheap (< 2 min: checkout + flox + one hash). No LFS, no DB, no bundle.
-  # -----------------------------------------------------------------------
-  collab-attest:
-    name: collab-attest (local-relay attestation gate)
-    runs-on: ubuntu-latest
-    # 10 min, not 5 — see the ATTEST-JOB BUDGET note on webgl-attest's npm-cache
-    # step (anchor: attest-npm-cache). Same shape, same exposure.
-    timeout-minutes: 10
-    # GATING (armed 2026-06-20, final step of the @collab de-flake campaign): the
-    # @collab multi-context lane is now a reliable real green lane (#844 — sync
-    # budgets + vacuity-skips→asserts + a basis guard unit test), and a fresh
-    # local-relay+DB attestation (ci-collab-attest/<hash>.json) is committed, so
-    # this verify job now GATES the `ci` umbrella (the `$COLLAB_ATTEST` clause in
-    # the aggregator `if`). No `continue-on-error` (mirrors webgl-attest's
-    # Phase-4). See ci-collab-attest/README.md + the plan doc.
-    steps:
-      - name: Checkout (no LFS — only needs source + ci-collab-attest/)
-        uses: actions/checkout@v4
-        with:
-          lfs: false
-
-      - name: Install Flox
-        uses: flox/install-flox-action@v2
-
-      # See the ATTEST-JOB BUDGET note on webgl-attest (anchor: attest-npm-cache).
-      - name: Cache npm (attest jobs never launch a browser — no ms-playwright)
-        uses: actions/cache@v4
-        with:
-          path: ~/.npm
-          key: ${{ runner.os }}-npm-attest-${{ hashFiles('package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-npm-attest-
-
-      - name: Install workspace deps (tsx for the hash script)
-        run: flox activate -- task install
-
-      - name: Verify @collab attestation
-        run: flox activate -- bash scripts/collab-attest-verify.sh
-
-  # -----------------------------------------------------------------------
-  # grand-attest — the LOCAL-GPU GRAND-INTEGRATION attestation VERIFY gate (the
-  # third sibling of webgl-attest + collab-attest; see
-  # .claude/skills/grand-attest.md + ci-grand-attest/
-  # README.md). Recomputes the deterministic grand content-hash
-  # (scripts/grand-attest-hash.sh) and checks ci-grand-attest/<hash>.json exists.
-  # The attestation was produced by the owner's local `task grand:attest` run on a
-  # TRUSTED GPU machine (real GPU synesthesia + real H.264 recorderbox + the real
-  # clip scheduler + real automation) and committed WITH the PR; it travels through
-  # squash-merge because the hash is content-keyed, NOT git-HEAD-keyed.
-  #
-  #   match  → the grand scenario substance (the four instrument DSP cores, the
-  #            pure clip step math, the shared fixture, the offline ART + driver,
-  #            the toolchain pins) is unchanged-or-attested → CI trusts the local
-  #            heavy run. PASS.
-  #   miss   → the scenario substance changed without re-attesting on a real GPU →
-  #            FAIL with `run: flox activate -- task grand:attest`.
-  #
-  # WHY: the full scenario drives a real GPU (synesthesia is WebGL; SwiftShader
-  # can't fairly render it) AND a real H.264 encoder (recorderbox; CI has neither),
-  # so the heavy scenario NEVER runs on CI. The DETERMINISTIC audio pin is the
-  # OFFLINE combined-master ART, which DOES run on the normal `art` lane.
-  #
-  # INFORMATIONAL for now (mirrors how webgl-attest + collab-attest started): this
-  # job is in the umbrella's `needs:` + `env:` (so the umbrella WAITS + logs it)
-  # but NOT in the failing `if [[ ]]` test — $GRAND_ATTEST is deliberately absent
-  # from the failing condition. The owner arms it required later (add $GRAND_ATTEST
-  # to the failing `if`) once the pin has proven stable. See ci-grand-attest/README.md.
-  #
-  # Cheap (< 5 min: checkout + flox + one hash). No LFS, no GPU, no DB, no bundle.
-  # -----------------------------------------------------------------------
-  grand-attest:
-    name: grand-attest (local-GPU attestation gate — informational)
-    runs-on: ubuntu-latest
-    # 10 min, not 5 — see the ATTEST-JOB BUDGET note on webgl-attest's npm-cache
-    # step (anchor: attest-npm-cache). Same shape, same exposure. This one is
-    # informational, so a timeout here only ever cost a confusing log — but it
-    # sits in the umbrella's `needs:`, so it still stalls the merge signal.
-    timeout-minutes: 10
-    steps:
-      - name: Checkout (no LFS — only needs source + ci-grand-attest/)
-        uses: actions/checkout@v4
-        with:
-          lfs: false
-
-      - name: Install Flox
-        uses: flox/install-flox-action@v2
-
-      # See the ATTEST-JOB BUDGET note on webgl-attest (anchor: attest-npm-cache).
-      - name: Cache npm (attest jobs never launch a browser — no ms-playwright)
-        uses: actions/cache@v4
-        with:
-          path: ~/.npm
-          key: ${{ runner.os }}-npm-attest-${{ hashFiles('package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-npm-attest-
-
-      - name: Install workspace deps (tsx for the hash script)
-        run: flox activate -- task install
-
-      - name: Verify grand-integration attestation
-        run: flox activate -- bash scripts/grand-attest-verify.sh
-
-  # -----------------------------------------------------------------------
   # behavioral-smoke — the FAST, REQUIRED pre-merge SUBSET of the behavioral
-  # input-coverage sweep. The full per-module-per-port-behavioral lane
-  # (behavioral-coverage above) stays INFORMATIONAL + push/label-only (~168
-  # modules × 6 shards, too slow for every PR). This job runs on EVERY PR a
-  # small hand-picked subset of rock-solid CORE signal-path modules — adsr,
+  # input-coverage sweep, and SINCE 2026-08-17 THE ONLY LANE THAT RUNS ANY OF
+  # IT. The full per-module-per-port-behavioral lane (`behavioral-coverage`, 6
+  # shards, push/label-only, continue-on-error) was deleted with the other
+  # informational jobs: it could not block a merge, and at a 125-minute cap it
+  # was reporting `cancelled` on main. The modules outside this subset therefore
+  # have NO dead-input detection on CI — that is the known, accepted cost, and
+  # the reason to widen THIS subset rather than resurrect that one.
+  # This job runs on EVERY PR a small hand-picked subset of rock-solid CORE
+  # signal-path modules — adsr,
   # analogVco, filter, lfo, noise, vca, stereovca — whose behavioral deltas are
   # large + deterministic (validated 3× locally: 21/21 green, e.g. vca.audio
   # 0→0.347 rms, adsr/gate 0→0.79). It's the canary that catches a gross
@@ -2812,7 +1944,8 @@ jobs:
     # divergence is invisible by inspection and costs real wall-clock:
     # collab-attest and grand-attest sat in `needs:` (so the umbrella WAITED on
     # both, on every PR) while the failing test named neither, i.e. they added
-    # latency and asserted nothing. They are now off the umbrella entirely.
+    # latency and asserted nothing. Both jobs were DELETED 2026-08-17 — that is
+    # the end state of a lane nobody has to act on.
     #
     # Arming an informational lane therefore means THREE edits together —
     # `needs:`, the aggregate `env:`, and the failing `if` — and the parity test
@@ -2820,16 +1953,19 @@ jobs:
     # umbrella is `if: always()`, so it runs even when a need fails and decides
     # purely from the env+if block.
     #
-    # Still INFORMATIONAL, and deliberately NOT on the umbrella. Each reports
-    # its own check context on the PR, so a failure stays visible — it just
-    # does not block, and does not delay the merge. DECLARED here in one
-    # machine-read line because the ledger generator can no longer INFER it:
-    # its old rule was "in needs: but not in the failing if", which stops
-    # describing a job the moment the job leaves `needs:` — the visibility
-    # these lanes have would have silently vanished with this very change.
+    # `collab` is the ONE surviving off-umbrella lane, and it survives on a
+    # CLOCK, not on sentiment: `daily-prod-deploy.yml` fires at 04:00 UTC and
+    # `collab-nightly.yml` at 09:00 UTC, so the nightly multiplayer backstop
+    # runs FIVE HOURS AFTER prod has already shipped. Without this job a
+    # multiplayer regression reaches production before any multiplayer lane has
+    # run. It also costs 417-500 s against a 40-min cap, 9/9 green.
+    #
+    # DECLARED below in one machine-read line because the ledger generator can no
+    # longer INFER it: its old rule was "in needs: but not in the failing if",
+    # which stops describing a job the moment the job leaves `needs:`.
     # scripts/test-ledger.mjs parses the next line; test-ledger.test.ts asserts
     # every name here resolves to a real job, so a stale entry is RED.
-    # informational-off-umbrella: collab, collab-attest, grand-attest
+    # informational-off-umbrella: collab
     needs: [actionlint, lint, typecheck, unit, dsp-build, build-web, art, build, e2e, webgl-smoke, webgl-attest, behavioral-smoke]
     runs-on: ubuntu-latest
     timeout-minutes: 2
@@ -2864,15 +2000,15 @@ jobs:
           echo "behavioral-smoke: $BEHAVIORAL_SMOKE"
           echo "collab:        (informational — see collab job; temporarily un-gated, task #69)"
           # `e2e` is a matrix; its aggregated result is `success` only if all
-          # shards succeeded. (The old `e2e-video` WebGL-heavy lane was deleted
-          # 2026-06-20 — it had been dormant/dispatch-only; webgl-smoke +
-          # webgl-attest are the heavy-WebGL gates now.) `collab` is
-          # TEMPORARILY UN-GATED (informational — pending the 5x
-          # collab-flake-purge; see the needs: note above). It is deliberately
-          # NOT in the failing condition below. `behavioral` is
-          # INFORMATIONAL again — gating it on a single clean run (#562) was
-          # premature; it flaked on moog911 on the very next PR. Re-gate only
-          # after a proper 3x flake-purge. `merge-reports` also stays OUT.
+          # shards succeeded — and since 2026-08-17 that includes the per-shard
+          # runtime-SKIP BUDGET audit migrated off the deleted `merge-reports`,
+          # so a capability probe going dark now fails THIS gate. (The old
+          # `e2e-video` WebGL-heavy lane was deleted 2026-06-20 — it had been
+          # dormant/dispatch-only; webgl-smoke + webgl-attest are the heavy-WebGL
+          # gates now.) `collab` is TEMPORARILY UN-GATED (informational —
+          # pending the 5x collab-flake-purge; see the needs: note above). It is
+          # deliberately NOT in the failing condition below, and it is the only
+          # job left that is off the umbrella.
           #
           # `build` is the PRODUCTION-bundle gate (`task build` = dsp:build +
           # `vite build`). It's gated here so a broken prod bundle fails this
@@ -2881,7 +2017,7 @@ jobs:
           # no required check ran the production bundler.
           #
           # `dsp-build` compiles the Faust worklets ONCE and is a dependency of
-          # art/build/build-web/e2e/collab (+ vrt/behavioral). A failure there
+          # art/build/build-web/e2e/collab (+ vrt-strict). A failure there
           # cascades to those jobs, but we gate on it explicitly so a broken DSP
           # compile produces a clear, fast failure signal instead of a wall of
           # confusing "artifact not found" downloads.
@@ -2892,23 +2028,25 @@ jobs:
           # this umbrella → the e2e shards would otherwise fail confusingly on
           # an "artifact not found" download.
           #
-          # `behavioral-coverage` (BEHAVIORAL) is INFORMATIONAL
-          # (continue-on-error; push/label-only) and is deliberately NOT in this
-          # gate — the 1x gate (#562) flaked on moog911 on the next PR, so it is
-          # un-gated pending a proper 3x flake-purge. `merge-reports` is likewise
-          # informational and left out of this gate.
-          # $GRAND_ATTEST is INFORMATIONAL-first (2026-07-19): the grand-integration
-          # local-GPU attest verify is new test infra; it sits in `needs:`+`env:`
-          # (umbrella waits + logs it) but is deliberately NOT in the failing test
-          # below, exactly how webgl-attest + collab-attest started. Arm it required
-          # later by adding `|| "$GRAND_ATTEST" != "success"` here once the pin is
-          # stable. See ci-grand-attest/README.md.
-          # $LINT is GATING from the moment it lands (#1504). It is not
-          # informational-first like webgl-attest/collab-attest were: those
-          # were new, flake-prone real-hardware lanes. This is a deterministic
-          # static check that is green on the tree today, and an ungated lint
-          # job would recreate the exact defect #1504 exists to fix — a lint
-          # signal nobody has to act on.
+          # ⚠ THE INFORMATIONAL TIER NO LONGER EXISTS (2026-08-17). Nine jobs
+          # that sat outside this condition — vrt, behavioral-coverage ×6 +
+          # merge-behavioral-reports, behavioral-watchdog, grand-attest,
+          # merge-reports, collab-attest — were DELETED rather than left
+          # producing a signal nobody had to act on. Two of them had grown into
+          # their caps and were reporting `cancelled` on main, which poisons the
+          # green signal and disqualifies the run from the nightly prod deploy.
+          #
+          # So "land it informational-first, arm it later" is no longer a
+          # supported shape here: every one of those lanes proved that the
+          # second half never happens. A new lane either goes into the three
+          # lists above (needs + env + this `if`) or it does not go into ci.yml.
+          #
+          # $LINT is the model (#1504): GATING from the moment it lands. It was
+          # not informational-first like webgl-attest was — that was a new,
+          # flake-prone real-hardware lane. Lint is a deterministic static check
+          # that is green on the tree today, and an ungated lint job would
+          # recreate the exact defect #1504 exists to fix — a lint signal nobody
+          # has to act on.
           if [[ "$ACTIONLINT" != "success" \
              || "$LINT" != "success" \
              || "$TYPECHECK" != "success" \
@@ -2921,345 +2059,26 @@ jobs:
              || "$WEBGL_SMOKE" != "success" \
              || "$WEBGL_ATTEST" != "success" \
              || "$BEHAVIORAL_SMOKE" != "success" ]]; then
-          # ⚠ This block used to assert BOTH "$COLLAB_ATTEST is intentionally NOT
-          # in the failing test" and, eight lines later, "$COLLAB_ATTEST is
-          # GATING (armed 2026-06-20)". Both cannot be true; the `if` above was
-          # the only honest answer, and a reader had no way to know which
-          # sentence to believe (#1505). What is true, in one place:
+          # ⚠ This block used to carry a paragraph per attest lane, and once
+          # asserted BOTH "$COLLAB_ATTEST is intentionally NOT in the failing
+          # test" and, eight lines later, "$COLLAB_ATTEST is GATING". Both could
+          # not be true; the `if` above was the only honest answer (#1505). What
+          # is true, in one place, now that collab-attest and grand-attest are
+          # deleted:
           #
-          #   $WEBGL_ATTEST GATES (re-armed 2026-06-11): a WebGL-path change
-          #   without a re-run `task webgl:attest` → hash mismatch → this fails.
-          #   webgl-smoke and the coverage guard (in `unit`) gate too.
+          #   $WEBGL_ATTEST is the ONLY surviving attest, and it GATES (re-armed
+          #   2026-06-11): a WebGL-path change without a re-run
+          #   `task webgl:attest` → hash mismatch → this fails. webgl-smoke and
+          #   the coverage guard (in `unit`) gate too. It survived the 2026-08-17
+          #   burn for exactly that reason — it is the only one of the three that
+          #   could ever block anything.
           #
-          #   collab-attest does NOT gate (un-gated 2026-06-28, rolling back
-          #   #847): it hinges on a LOCAL relay+DB run whose flakiest specs fail
-          #   at retries=0 on anything but the owner's box, and it forced a local
-          #   re-attest on every collab-basis change — a merge-blocking
-          #   treadmill. The nightly backstop (collab-nightly.yml) still runs the
-          #   full real lane daily. Re-gating it means a CI-native replacement
-          #   (a thin reliable @collab smoke as a real PR job).
-          #
-          #   grand-attest does NOT gate (informational since 2026-07-19).
-          #   behavioral does NOT gate — the 1x gate flaked on moog911; do not
-          #   re-add it until the lane is verified 3x-clean.
-          #
-          # Arming any of them = the three edits named above the `needs:` list,
-          # made together; ci-umbrella-parity.test.ts refuses a partial job.
+          # Arming a lane = the three edits named above the `needs:` list, made
+          # together; ci-umbrella-parity.test.ts refuses a partial job.
             echo "::error::One or more required CI jobs failed."
             exit 1
           fi
           echo "All required CI jobs passed."
-
-  # -----------------------------------------------------------------------
-  # Visual Regression Tests (Playwright `toHaveScreenshot`). Separate job
-  # from the main `ci` so a baseline drift on one card doesn't kneecap the
-  # functional E2E run.
-  #
-  # Modeled on doomviz's vrt job: lfs-true checkout (baselines are
-  # LFS-tracked under e2e/vrt/__screenshots__/**), upload test-results +
-  # generated gallery as artifacts.
-  #
-  # INFORMATIONAL lane (2026-06-06): ruleset 16042163 now gates `vrt-strict`
-  # (the fast, deterministic pure-DOM subset below) instead of this full canvas
-  # sweep. This job is `continue-on-error: true` and is NOT in the `ci`
-  # umbrella's needs — a baseline drift / GPU/timing flake on a canvas-driven
-  # card here can NOT block merge. It still runs on every PR for visibility
-  # (gallery + report artifacts) so regressions are reviewable; treat a red here
-  # as a signal to inspect, not a merge blocker. See retro 2026-06-06.
-  # A scene with no committed baseline FAILS here as "snapshot doesn't exist"
-  # rather than being skipped. That is deliberate (#1458): the old
-  # `EXEMPT_BASELINE_PAIRS` route made missing coverage invisible on green runs.
-  # Fix it by capturing — `task vrt:commit` — not by declaring it away.
-  # -----------------------------------------------------------------------
-  vrt:
-    name: VRT (visual regression)
-    needs: dsp-build
-    # ruleset 16042163 now gates `vrt-strict`; full canvas vrt is informational
-    # (may flake — see retro 2026-06-06).
-    continue-on-error: true
-    # OFF THE PER-PR PATH (2026-08-12, #1506). Runs on main pushes, on manual
-    # dispatch, and on a PR carrying the `vrt-full` label — same shape as the
-    # behavioral lane's opt-in above.
-    #
-    # MEASURED, run 31648526721: this job takes 48.6 min. It is
-    # continue-on-error AND absent from the `ci` umbrella's needs, so it can
-    # block nothing — its entire per-PR effect was ~49 runner-minutes and an
-    # "all checks done" signal arriving ~32 min after the required contexts
-    # (slowest e2e shard 16.1 min, vrt-strict 15.2 min) had already settled.
-    # It also contended for runners with the ten e2e shards that DO gate.
-    #
-    # What still covers a PR: `vrt-strict` (REQUIRED, unchanged) and the
-    # separate vrt-changeset-gallery workflow, which fires independently on
-    # `paths: e2e/vrt/__screenshots__/**` and builds its OLD/NEW/DIFF review
-    # gallery from the committed PNGs — it never consumed this job's artifacts,
-    # so baseline review on a PR is unaffected.
-    #
-    # Add the `vrt-full` label to a PR when you want the whole sweep before
-    # merge (a broad render change, a suspected regression outside the strict
-    # subset). Re-labelling re-fires CI — `labeled` is in the trigger types.
-    if: >-
-      github.event_name == 'push'
-      || github.event_name == 'workflow_dispatch'
-      || (github.event_name == 'pull_request'
-          && contains(github.event.pull_request.labels.*.name, 'vrt-full'))
-    runs-on: ubuntu-latest
-    # ⚠ 20 -> 50 (2026-08-10), AND THIS IS A REAL RUNNER-MINUTES INCREASE —
-    # flagged rather than buried, per CLAUDE.md's ">~2 min needs sign-off".
-    #
-    # WHY: this lane used to skip roughly half its own suite. 146 scenes were
-    # dark on linux via four platform-gap mechanisms, so ~151 of 297 tests
-    # actually executed here. Collapsing to one baseline set removes every one
-    # of those skips: all 297 now run. Measured at 9.2 s/test on this runner
-    # (241 tests in 36.8 min, run 31450544563), that is ~23 min -> ~45 min.
-    # The 20-minute cap killed this job mid-sweep on the very first push.
-    #
-    # WALL-CLOCK COST TO A MERGE: ~zero. This job is `continue-on-error: true`
-    # and is NOT in the `ci` umbrella's `needs`, so time-to-merge is set by the
-    # required lanes, not by this one. RUNNER-MINUTES COST: ~+25 min per PR
-    # run, which is the number to weigh. The alternative is keeping 146 scenes
-    # dark on the platform that gates, which is what this PR exists to end.
-    #
-    # `vrt-strict` (the REQUIRED lane) is unaffected: it runs only vrt.spec.ts
-    # filtered to STRICT_VRT_MODULES, all of which already ran on linux.
-    timeout-minutes: 50
-    # Scoped explicitly: contents/actions read for checkout+LFS+artifact download,
-    # pull-requests write so the on-failure VRT diff-gallery step can upsert its
-    # PR comment (the repo has no top-level permissions block → default applies).
-    permissions:
-      contents: read
-      actions: read
-      pull-requests: write
-
-    services:
-      postgres:
-        # AWS ECR Public mirror (see note on the unit job) — avoids the flaky
-        # Docker Hub service-container pull.
-        image: public.ecr.aws/docker/library/postgres:17
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: patchtogether_test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U postgres"
-          --health-interval 5s
-          --health-timeout 3s
-          --health-retries 10
-
-    env:
-      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/patchtogether_test
-
-    steps:
-      # VRT baselines live under e2e/vrt/__screenshots__/ and are LFS-tracked.
-      # Check out WITHOUT LFS, then restore the LFS object store from an
-      # actions/cache keyed on the baseline PNG SHAs and `git lfs pull` — a
-      # cache HIT makes the pull a near-no-op, a MISS fetches only the changed
-      # objects. This cuts the repeated full-payload LFS download (the
-      # exhausted-budget root cause) by ~95% while still giving
-      # `toHaveScreenshot` the real PNG bytes (not the ~130-byte pointer files,
-      # which otherwise diff as a giant failure on every card).
-      - name: Checkout (LFS objects restored from cache below)
-        uses: actions/checkout@v4
-        with:
-          lfs: false
-
-      - name: Install Flox
-        uses: flox/install-flox-action@v2
-
-      - name: Cache npm + Playwright browsers
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.npm
-            ~/.cache/ms-playwright
-          key: ${{ runner.os }}-deps-${{ hashFiles('package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-deps-
-
-      - name: Cache .svelte-kit
-        uses: actions/cache@v4
-        with:
-          path: packages/web/.svelte-kit
-          key: ${{ runner.os }}-svelte-kit-${{ hashFiles('packages/web/svelte.config.js', 'packages/web/src/routes/**', 'packages/web/package.json') }}
-
-      # Cache the git-LFS object store keyed on the VRT baseline PNG contents
-      # (the pointer files' tracked SHAs change when a baseline is regenerated).
-      # A HIT restores .git/lfs so `git lfs pull` downloads nothing; a MISS
-      # fetches only the changed objects, then repopulates this cache.
-      - name: Cache git-LFS objects (VRT baselines)
-        uses: actions/cache@v4
-        with:
-          path: .git/lfs
-          key: ${{ runner.os }}-lfs-vrt-${{ hashFiles('e2e/vrt/__screenshots__/**/*.png') }}
-          restore-keys: |
-            ${{ runner.os }}-lfs-vrt-
-
-      - name: Fetch VRT LFS objects (no-op on cache hit)
-        run: flox activate -- git lfs pull --include "e2e/vrt/__screenshots__/**"
-
-      - name: Install workspace deps + Playwright Chromium
-        run: flox activate -- task setup
-
-      # Restore the worklet dist built once by dsp-build, BEFORE `task vrt`
-      # (whose dsp:build dep then no-ops via the .dsp-srchash status guard);
-      # the VRT cards import `?url` artifacts from packages/dsp/dist/.
-      - name: Download DSP dist artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: dsp-dist
-          path: packages/dsp/dist
-
-      - name: Apply DB schema
-        run: flox activate -- scripts/apply-db-schema.sh "$DATABASE_URL"
-
-      # Share the same DOOM WASM cache the `ci` job uses; the VRT spec set
-      # also exercises the DOOM card so the bundle has to be on disk before
-      # the SvelteKit dev server starts (Vite serves `static/doom/*` as-is).
-      - name: Cache DOOM WASM artifact
-        id: cache-doom-wasm
-        uses: actions/cache@v4
-        with:
-          path: |
-            packages/web/static/doom/doom.js
-            packages/web/static/doom/doom.wasm
-          key: ${{ runner.os }}-doom-wasm-${{ hashFiles('packages/web/native/build-doom-wasm.sh', 'packages/web/native/doomgeneric/**') }}
-
-      - name: Build DOOM WASM (emcc)
-        if: steps.cache-doom-wasm.outputs.cache-hit != 'true'
-        run: flox activate -- bash packages/web/native/build-doom-wasm.sh
-
-      - name: Run VRT
-        run: flox activate -- task vrt
-
-      - name: Build VRT gallery (baselines + last run's diffs)
-        if: always()
-        run: flox activate -- task vrt:gallery
-
-      - name: Upload VRT gallery
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: vrt-gallery
-          path: docs/vrt
-          retention-days: 30
-
-      - name: Upload Playwright VRT report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: vrt-playwright-report
-          path: e2e/vrt/report
-          retention-days: 30
-
-      - name: Upload Playwright VRT test-results (actual + diff PNGs)
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: vrt-test-results
-          path: e2e/vrt/test-results
-          retention-days: 14
-
-      # --- On VRT FAILURE (PRs only): publish a "what changed" diff gallery -----
-      # The full `vrt` lane is informational, so a render-shifting change is easy
-      # to miss. When it fails on a PR, build the OLD/NEW/DIFF + slider/onion-skin
-      # gallery FROM THIS RUN's Playwright results (expected vs actual), publish
-      # it to CF Pages, and upsert a loud PR comment with the accept command.
-      # failure() + pull_request only → zero added cost on green PRs and pushes.
-      - name: Build VRT failure diff gallery (from this run's results)
-        id: failgallery
-        if: failure() && github.event_name == 'pull_request'
-        env:
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: |
-          set -euo pipefail
-          COUNT=$(flox activate -- node scripts/vrt-changeset-gallery.mjs \
-            --from-results e2e/vrt/test-results \
-            --pr "${PR_NUMBER}" \
-            --out docs/vrt-failure \
-            --json /tmp/vrt-failure.json)
-          echo "count=$COUNT" >> "$GITHUB_OUTPUT"
-          echo "VRT mismatch images: $COUNT"
-
-      - name: Deploy failure gallery to Cloudflare Pages
-        id: faildeploy
-        if: failure() && github.event_name == 'pull_request' && steps.failgallery.outputs.count != '0'
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: >-
-            pages deploy docs/vrt-failure
-            --project-name=patchtogether-live-autotest
-            --branch=vrt-fail-pr-${{ github.event.pull_request.number }}
-            --commit-message=vrt-failure-${{ github.sha }}
-
-      - name: Compute failure gallery URL
-        id: failurl
-        if: failure() && github.event_name == 'pull_request' && steps.failgallery.outputs.count != '0'
-        run: |
-          URL="${{ steps.faildeploy.outputs.deployment-url }}"
-          if [ -z "$URL" ]; then
-            URL="https://vrt-fail-pr-${{ github.event.pull_request.number }}.patchtogether-live-autotest.pages.dev"
-          fi
-          echo "url=$URL" >> "$GITHUB_OUTPUT"
-
-      - name: Upsert PR comment with the VRT failure gallery
-        if: failure() && github.event_name == 'pull_request' && steps.failgallery.outputs.count != '0'
-        uses: actions/github-script@v7
-        env:
-          GALLERY_URL: ${{ steps.failurl.outputs.url }}
-          COUNT: ${{ steps.failgallery.outputs.count }}
-          HEAD_REF: ${{ github.head_ref }}
-        with:
-          script: |
-            const fs = require('fs');
-            const marker = '<!-- vrt-failure-gallery -->';
-            const url = process.env.GALLERY_URL;
-            const count = process.env.COUNT;
-            const headRef = process.env.HEAD_REF;
-            let summary = '';
-            try {
-              const j = JSON.parse(fs.readFileSync('/tmp/vrt-failure.json', 'utf8'));
-              const bits = [];
-              if (j.modified) bits.push(`${j.modified} changed`);
-              if (j.added) bits.push(`${j.added} new`);
-              summary = bits.length ? ` (${bits.join(', ')})` : '';
-            } catch {}
-            const body = [
-              marker,
-              `### ⚠️ VRT changed — review before merge`,
-              ``,
-              `The informational \`vrt\` lane rendered **${count}** baseline${count === '1' ? '' : 's'} differently${summary}. Review each as OLD / NEW / DIFF, with a draggable slider + onion-skin:`,
-              ``,
-              `**[▶ View the VRT diff gallery →](${url})**`,
-              ``,
-              `If the change is INTENTIONAL, accept the new baselines (regenerated on`,
-              `linux CI — the only baseline author — and committed back to this branch) by running EITHER:`,
-              ``,
-              '```',
-              `# from a local checkout of this branch:`,
-              `flox activate -- task vrt:commit`,
-              ``,
-              `# or trigger the CI job directly from anywhere:`,
-              `gh workflow run vrt-update.yml -f ref=${headRef}`,
-              '```',
-              ``,
-              `<sub>Built from this run's Playwright results by \`scripts/vrt-changeset-gallery.mjs --from-results\`. Re-renders on every push. The full \`vrt\` lane is informational (does not block merge); \`vrt-strict\` remains the required gate.</sub>`,
-            ].join('\n');
-            const { owner, repo } = context.repo;
-            const issue_number = context.payload.pull_request.number;
-            const comments = await github.paginate(github.rest.issues.listComments, {
-              owner, repo, issue_number, per_page: 100,
-            });
-            const existing = comments.find((c) => c.body && c.body.includes(marker));
-            if (existing) {
-              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
-              core.info(`Updated existing comment ${existing.id}`);
-            } else {
-              await github.rest.issues.createComment({ owner, repo, issue_number, body });
-              core.info('Created new failure-gallery comment');
-            }
 
   # -----------------------------------------------------------------------
   # VRT (strict subset) — fast, deterministic gate. Runs ONLY the pure-DOM
@@ -3272,12 +2091,22 @@ jobs:
   # REQUIRED status check for VRT (2026-06-06): the `main: green PRs only`
   # ruleset (16042163) was flipped to require the AGGREGATOR job's name
   # (`vrt-strict (visual regression — strict subset)`) instead of the full
-  # `VRT (visual regression)` sweep. Drift here blocks merge. The full-sweep
-  # `vrt` job above is now the INFORMATIONAL lane for canvas-driven + animated
-  # cards (`continue-on-error: true` — covers more surface, may flake, never
-  # blocks merge). Renaming the `vrt-strict` job now requires an accompanying
-  # ruleset PUT (`gh api -X PUT repos/:owner/:repo/rulesets/16042163`) to swap
-  # the `required_status_checks` context — names are matched literally.
+  # `VRT (visual regression)` sweep. Drift here blocks merge. Renaming the
+  # `vrt-strict` job requires an accompanying ruleset PUT (`gh api -X PUT
+  # repos/:owner/:repo/rulesets/16042163`) to swap the `required_status_checks`
+  # context — names are matched literally.
+  #
+  # ⚠ THIS IS NOW THE ONLY LANE THAT COMPARES A BASELINE. The full-sweep `vrt`
+  # job (canvas-driven + animated cards, `continue-on-error: true`) was DELETED
+  # 2026-08-17: it could never block a merge, and at a 50-minute cap it had
+  # started reporting `cancelled` on main runs. The baselines it compared are
+  # NOT deleted and are still AUTHORED — `vrt-update.yml`, `task vrt`,
+  # `task vrt:commit` and `FULL_MATCH` in e2e/vrt/vrt.config.ts are untouched,
+  # because `vrt:commit` reads FULL_MATCH to WRITE baselines and pruning it
+  # would silently stop baseline authoring for the whole faceplate programme.
+  # What is gone is the COMPARISON of everything outside STRICT_VRT_MODULES.
+  # Widening this lane is how that comes back; resurrecting a non-gating sweep
+  # is not.
   #
   # ── SHARDED 2026-08-13 (#1595) ─────────────────────────────────────────────
   #
@@ -3371,9 +2200,9 @@ jobs:
     steps:
       # VRT baselines are LFS-tracked under e2e/vrt/__screenshots__/. Check out
       # WITHOUT LFS, then restore the LFS object store from cache + `git lfs
-      # pull` (HIT → no-op, MISS → fetch only changed objects). Same ~95%
-      # bandwidth cut as the full `vrt` job; the strict subset still needs the
-      # real PNG bytes for its pure-DOM card comparisons.
+      # pull` (HIT → no-op, MISS → fetch only changed objects) — a ~95%
+      # bandwidth cut. The strict subset still needs the real PNG bytes for its
+      # pure-DOM card comparisons.
       - name: Checkout (LFS objects restored from cache below)
         uses: actions/checkout@v4
         with:
@@ -3399,8 +2228,11 @@ jobs:
           key: ${{ runner.os }}-svelte-kit-${{ hashFiles('packages/web/svelte.config.js', 'packages/web/src/routes/**', 'packages/web/package.json') }}
 
       # Cache the git-LFS object store keyed on the VRT baseline PNG contents.
-      # Shares the same cache key namespace as the full `vrt` job so whichever
-      # runs first warms the cache for the other within the cache TTL.
+      # The key namespace (`<os>-lfs-vrt-<hash>`) used to be shared with the full
+      # `vrt` job, so whichever ran first warmed the cache for the other. That
+      # job was deleted 2026-08-17 and no other workflow uses this namespace
+      # today, so the sharing is now only across THIS job's 4 shards — still the
+      # point of the cache (one LFS fetch, four consumers), just narrower.
       - name: Cache git-LFS objects (VRT baselines)
         uses: actions/cache@v4
         with:

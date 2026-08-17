@@ -299,18 +299,18 @@ test('dx7: changing preset updates the dropdown value', async ({ page, rack }) =
 // a nested object graph rather than a scalar, and a Yjs write that looked fine
 // in memory could still fail to encode.
 //
-// ⚠ PEER PROPAGATION IS *NOT* COVERED HERE, DELIBERATELY. A two-context test
-// needs the collab tag, and every collab-tagged spec file is resolved INTO the
-// collab attest basis by scripts/collab-attest-lib.ts, so adding one would
-// force a relay re-attest for a synth change.
+// ⚠ PEER PROPAGATION IS NOT COVERED HERE, AND IT IS NOW PAYABLE. A two-context
+// test needs the collab tag, and every collab-tagged spec file used to be
+// resolved INTO the collab attest basis, so adding one forced a relay re-attest
+// for a synth change — which is why this gap exists. collab-attest was deleted
+// 2026-08-17 and the tag is free again: a two-context dx7 propagation test is a
+// real follow-up, not a blocked one.
 //
-// ⚠⚠ AND DO NOT WRITE THAT TAG IN ITS `@`-PREFIXED FORM ANYWHERE IN THIS FILE,
-// NOT EVEN IN A COMMENT. `collab-attest-lib.ts` resolves the basis by GREPPING
-// spec sources for the literal string — it does not parse them — so a prose
-// mention is indistinguishable from a real tag. This very comment did exactly
-// that and turned `collab-attest` RED on a PR that touches no collab code at
-// all. Write the bare word. The dx7 program's plan
-// declares attest movement NIL. What this test does cover is the same encoded
+// (The companion rule — never write the tag in its `@`-prefixed form, not even
+// in a comment, because the basis was resolved by GREPPING spec sources so a
+// prose mention was indistinguishable from a real tag, and this very comment
+// once turned `collab-attest` RED on a PR touching no collab code — is likewise
+// moot. Nothing greps for it now.) What this test does cover is the same encoded
 // Y.Doc update a peer receives: the IndexedDB scratch replica round-trips the
 // stamp through exactly that binary.
 

@@ -12,7 +12,8 @@
 // This module is PURE on purpose (no `document` / `URL` / Blob): the card owns
 // the thin browser glue (download / file-picker) and calls these; the unit test
 // round-trips them directly. It lives under lib/ui (NOT lib/video/**) so it is
-// OUTSIDE the WebGL/collab attest hash basis — see scripts/webgl-attest-lib.ts.
+// OUTSIDE the WebGL attest hash basis — see scripts/webgl-attest-lib.ts. (It was
+// outside the collab basis too; that attest was deleted 2026-08-17.)
 //
 // All geometry coercion REUSES the canonical mappy pure helpers
 // (normalizeSurfaces / surfaceFitOn / clampSurfaceCount) so the map's notion of

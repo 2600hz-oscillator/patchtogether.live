@@ -8,8 +8,11 @@
 // evolving local audio clocks; if they disagree, the clip fires a bar apart and
 // the patch is audibly wrong on one machine and right on the other. That is a
 // convergence law over ALL lane phases, which is precisely the shape an example
-// test cannot cover — and the clip math sits in the grand-attest basis, so
-// properties are what test it BETWEEN re-pins.
+// test cannot cover. The clip math is pinned by the offline combined-master ART
+// (art/scenarios/grand-integration/), which moves only on a deliberate re-pin,
+// so properties are what test it BETWEEN pins. (It sat in the grand-attest
+// basis too, until that attest was deleted 2026-08-17; the ART pin is the half
+// that ran on CI and it survives.)
 //
 // The laws:
 //   P1 FUTURE     — the boundary is STRICTLY after `now`. (`while (wrap <= now)`

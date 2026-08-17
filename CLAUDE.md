@@ -414,7 +414,6 @@ than authored here, so fix it upstream rather than editing it in place:
 | `architecture` | how the app fits together |
 | `blind-gates` | writing or reviewing any gate |
 | `coding-conventions` | writing code in this repo |
-| `collab-attest` · `grand-attest` · `webgl-attest` | touching an attest basis |
 | `debugging` | chasing a defect |
 | `deploy-pipeline` | deploys, environments, previews |
 | `flox-environment` | the toolchain |
@@ -430,3 +429,4 @@ than authored here, so fix it upstream rather than editing it in place:
 | `skeptical-first-baseline` | first measurement of anything |
 | `testing-conventions` | what tier a test belongs in |
 | `vrt-baselines` · `vrt-failures` | anything touching a baseline |
+| `webgl-attest` | touching the attest basis |

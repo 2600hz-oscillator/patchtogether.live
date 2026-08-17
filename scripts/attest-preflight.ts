@@ -5,6 +5,8 @@
 // ── WHAT WAS WRONG ─────────────────────────────────────────────────────────
 // `preflightSolo()` existed TWICE (webgl-attest.ts + grand-attest.ts, identical
 // but for env-var names) and each decided from a SINGLE `ps` invocation.
+// (grand-attest was deleted 2026-08-17; webgl is the only caller now, but the
+// shared module stays — the duplication, not the count, was the bug.)
 // Browser CPU is not a steady signal — it oscillates with a period of a few
 // seconds — so one instant samples a spiky distribution rather than measuring
 // it. Measured on one contended machine (#1331): four single instants of the
@@ -17,8 +19,8 @@
 //   45 samples @2 s: over-threshold(25 %) = 25 of 45, max 87.1 %, period ≈ 4 s
 //
 // A pass there runs the attest for minutes under a co-tenant spiking to 87 %,
-// and THAT path WRITES: an attestation JSON (plus, for grand, a regenerated
-// baseline) that is thereafter indistinguishable from an honest one.
+// and THAT path WRITES an attestation JSON that is thereafter indistinguishable
+// from an honest one.
 //
 // ⚠ A REGULAR INTERVAL IS NOT A FIX — it is the same bug with more steps.
 // Twelve samples at a regular 10 s against that same machine read 3.9–5.6 %
@@ -196,7 +198,7 @@ export function measureCoTenants(thresholdCpu: number, load1: number, cores: num
 }
 
 export interface PreflightOptions {
-  /** 'webgl:attest' | 'grand:attest' — names the caller in every message. */
+  /** e.g. 'webgl:attest' — names the caller in every message. */
   label: string;
   /** e.g. 'WEBGL_ATTEST_ALLOW_BUSY' — the trusted-runner override. */
   allowBusyEnv: string;

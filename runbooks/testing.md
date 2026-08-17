@@ -8,8 +8,8 @@ There are four test layers plus two specialized lanes. All run through Flox.
 | **E2E** | Playwright | browser flows, per-port I/O sweeps | `task e2e` |
 | **VRT** | Playwright screenshots | per-card visual regression | `task vrt` / `task vrt:strict` |
 | **ART** | Vitest + `node-web-audio-api` | offline audio render fingerprints | `task art` |
-| **behavioral** | Playwright | audio fingerprint delta CONTROL→PATCHED | `behavioral-smoke` (7-module subset) GATES; full sweep informational |
-| **collab** | Playwright (`@collab`) | multi-user Yjs sync | dedicated CI lane (informational) |
+| **behavioral** | Playwright | audio fingerprint delta CONTROL→PATCHED | `behavioral-smoke` (7-module subset) GATES; the full sweep has no CI lane since 2026-08-17 |
+| **collab** | Playwright (`@collab`) | multi-user Yjs sync | dedicated CI lane (informational — the only one left) |
 
 ## Running everything
 
@@ -17,7 +17,7 @@ There are four test layers plus two specialized lanes. All run through Flox.
 flox activate -- task test     # unit/integration (dsp + server + web + scripts) + emit registry manifest
 flox activate -- task art      # full ART suite (offline audio render)
 flox activate -- task e2e      # full E2E (sharded 8–10× in CI, 1 retry)
-flox activate -- task vrt      # full VRT sweep (informational lane — canvas-heavy specs may flake)
+flox activate -- task vrt      # full VRT sweep (LOCAL + vrt-update.yml only — no PR lane compares it since 2026-08-17; still AUTHORS baselines)
 flox activate -- task vrt:strict   # deterministic VRT subset (this is the REQUIRED gate)
 flox activate -- task ci       # full PR-gate chain: typecheck → test → art → e2e → vrt:strict
 flox activate -- task typecheck    # svelte-check across all workspaces
@@ -25,9 +25,10 @@ flox activate -- task typecheck    # svelte-check across all workspaces
 
 **What actually gates a PR** (branch ruleset 16042163 → 2 required contexts: the
 `ci` umbrella + `vrt-strict`). The umbrella fails if ANY of these is not green:
-`actionlint, typecheck, unit, dsp-build, build-web, art, build, e2e, webgl-smoke,
-webgl-attest, behavioral-smoke`. Everything else (`behavioral-coverage`, `vrt`,
-`collab`, `collab-attest`, `grand-attest`) RUNS but never blocks merge. The live,
+`actionlint, lint, typecheck, unit, dsp-build, build-web, art, build, e2e,
+webgl-smoke, webgl-attest, behavioral-smoke`. The only job left that RUNS without
+blocking merge is `collab` — the other eight informational lanes were DELETED
+2026-08-17 (see [ci.md](ci.md)). The live,
 generated source of truth is [`docs/testing/README.md`](../docs/testing/README.md)
 + `docs/testing/test-ledger.generated.md` — see [ci.md](ci.md) for the evidence.
 

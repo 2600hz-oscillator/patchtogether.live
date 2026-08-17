@@ -128,10 +128,11 @@ async function readLoadState(page: Page, nodeId: string): Promise<{ loaded: unkn
  *     report a loadError?" are different bugs and the test could not tell you
  *     which, so a failure here carried no information at all.
  *  2. It SKIPPED. `checkAssets` has already proven the WASM + WAD are served two
- *     lines earlier, and `collab:attest` pre-flights both. Past that point a
- *     runtime that does not come up is a DEFECT, not an environment. Skipping
- *     made it invisible: the attest classified that reason as a benign "asset
- *     skip" and minted anyway (see scripts/collab-attest-lib.ts).
+ *     lines earlier. Past that point a runtime that does not come up is a
+ *     DEFECT, not an environment. Skipping made it invisible — and worse than
+ *     invisible while `collab:attest` existed, because that runner classified
+ *     the reason as a benign "asset skip" and minted an attestation anyway. The
+ *     attest is gone (deleted 2026-08-17); the reason not to skip is not.
  *
  * MEASURED on this machine 2026-08-13, three consecutive green runs: spawnPatch
  * 43 ms, the overlay click 23 ms, `loaded === true` a further 201 ms. The 25 s

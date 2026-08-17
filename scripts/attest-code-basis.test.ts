@@ -20,9 +20,11 @@
 //                       normalizer that returned the empty string for every
 //                       input could not pass this file.
 //   * §per-attest     — the same both-direction proof against the REAL
-//                       computeWebglHash / computeCollabHash / computeGrandHash
-//                       over the REAL basis, via an injected reader that
-//                       perturbs one file. Not a re-implementation.
+//                       computeWebglHash over the REAL basis, via an injected
+//                       reader that perturbs one file. Not a re-implementation.
+//                       (It ran over three attests until 2026-08-17; collab and
+//                       grand were deleted with their non-gating CI jobs, so
+//                       webgl is the only attest left.)
 //   * §scope          — what the normalizer still cannot see, stated as an
 //                       assertion with a named list, so a new raw-hashed file
 //                       type shows up as a red test instead of silent coverage.
@@ -64,8 +66,6 @@ import {
   resolveWebglBasis,
   readBasisFile,
 } from './webgl-attest-lib';
-import { computeCollabHash, resolveCollabBasis } from './collab-attest-lib';
-import { computeGrandHash, resolveGrandBasis } from './grand-attest-lib';
 
 const ts = (src: string) => normalizeForHash('fixture.ts', src);
 
@@ -378,10 +378,11 @@ function pickTsFile(basis: string[], preferDocs: boolean): string {
   return tsFiles[0]!;
 }
 
+// One entry since 2026-08-17 (was three). `describe.each` is KEPT rather than
+// inlined: webgl is not special here — the proof is a property of the
+// normalizer, and the next attest to land should be one line, not a rewrite.
 const ATTESTS = [
   { name: 'webgl', hash: computeWebglHash, basis: resolveWebglBasis },
-  { name: 'collab', hash: computeCollabHash, basis: resolveCollabBasis },
-  { name: 'grand', hash: computeGrandHash, basis: resolveGrandBasis },
 ] as const;
 
 describe.each(ATTESTS)('$name attest: docs-blind, code-sensitive (both directions)', (attest) => {
@@ -469,23 +470,35 @@ function exportedNames(fileName: string, text: string): string[] {
   return names;
 }
 
+// ⚠ SHRANK 2026-08-17, and the two entries that left were NOT waived — they
+// stopped existing. `db/schema/001_init.sql` and `db/schema/003_saved_groups.sql`
+// were in the COLLAB basis only, and collab-attest was deleted with the rest of
+// the non-gating CI jobs. An entry naming a file that is in no basis is RED here
+// by construction (the assertion is `toEqual`, both directions), which is
+// exactly how this list is supposed to behave when the artifact moves.
 const EXPECTED_RAW_BASIS_FILES = [
   '.flox/env/manifest.toml',
-  'db/schema/001_init.sql',
-  'db/schema/003_saved_groups.sql',
   'packages/web/src/lib/video/vfpga/__snapshots__/bitstream.test.ts.snap',
 ] as const;
 
 describe('attest-code-basis §scope: the normalizer states what it cannot see', () => {
-  const allBasis = [
-    ...new Set([...resolveWebglBasis(), ...resolveCollabBasis(), ...resolveGrandBasis()]),
-  ].sort();
+  const allBasis = [...new Set(resolveWebglBasis())].sort();
 
   it('every basis file is accounted for by exactly one mode', () => {
     const byMode: Record<string, string[]> = {};
     for (const rel of allBasis) (byMode[normalizeModeFor(rel)] ??= []).push(rel);
     expect(Object.keys(byMode).sort()).toEqual(['package-json', 'raw', 'svelte', 'typescript']);
-    expect(byMode.typescript!.length).toBeGreaterThan(250);
+    // Anchored to a NAME, never to a population size. This was
+    // `byMode.typescript!.length > 250`, calibrated when three attest bases were
+    // unioned here; deleting two took the real number to ~207 and the floor
+    // would have gone red for a reason that has nothing to do with what it
+    // claims to measure — which is that the classifier is not degenerate (e.g.
+    // returning 'raw' for everything). A named .ts file that MUST classify as
+    // typescript says that directly and cannot drift with the basis size.
+    expect(
+      byMode.typescript,
+      'a .ts basis file is not being classified as typescript — the mode classifier is degenerate',
+    ).toContain('e2e/playwright.config.ts');
   });
 
   it('the RAW (still comment-sensitive) set is exactly the declared list', () => {

@@ -92,15 +92,16 @@ export function getPool(): pg.Pool {
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) {
     throw new Error(
-      // ⚠ STALE TEXT, deliberately not edited here: `flyctl postgres attach`
-      // refers to the decommissioned Fly Managed Postgres stack. The correct
-      // action is `scripts/sync-secrets.sh <tier> --apply`, which pushes
-      // NEON_{TIER}_DIRECT_URL. Left verbatim because this string is IN the
-      // @collab attest basis (comments are not — verified 2026-08-11), so
-      // rewording it costs a `task collab:attest` cycle. Fix it the next time
-      // you are re-attesting anyway.
-      'DATABASE_URL is required. Set it in the Fly app secrets ' +
-        '(`flyctl postgres attach` does this) or via .env locally.',
+      // FIXED 2026-08-17. This text used to say `flyctl postgres attach` — the
+      // decommissioned Fly Managed Postgres stack — and was knowingly left
+      // wrong, because the STRING was in the @collab attest basis (comments were
+      // not, verified 2026-08-11) so rewording it cost a `task collab:attest`
+      // cycle. The comment said "fix it the next time you are re-attesting
+      // anyway"; collab-attest was deleted instead, so it is free now. That is
+      // the shape of what a non-gating gate costs: a wrong operator message
+      // shipped for months to protect a hash nothing checked.
+      'DATABASE_URL is required. Set it via `scripts/sync-secrets.sh <tier> --apply` ' +
+        '(pushes NEON_<TIER>_DIRECT_URL) or in .env locally.',
     );
   }
   pool = new Pool({
