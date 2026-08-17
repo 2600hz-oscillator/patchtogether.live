@@ -50,6 +50,39 @@ re-run) before the MR. `@collab` specs are relay/DB-heavy and flake under *CI*
 load specifically — verify those on CI rather than hammering the local machine,
 but still root-cause every failure (see `feedback_no_flake_tolerance`).
 
+## ⚠ ART: RELEASE every `OfflineAudioContext` you create — `startRendering()` frees it
+
+An `OfflineAudioContext` under `node-web-audio-api` holds a **native render
+thread** until it is rendered. A scenario that creates one per module and never
+renders — a membership probe, a "does this def expose X?" sweep, anything that
+materialises a factory and only reads the handle — accumulates them, and the pool
+starves.
+
+**It does not present as a leak. It presents as the SUBJECT being broken**, and
+the cost lands on whatever runs *after* the leak, not on the leak itself.
+Measured (2026-08-17, #1769):
+
+| | leaked | released |
+|---|---|---|
+| `cv-terminal`, whole registry | 488 076 ms, **11 modules "cannot materialise"** | **762 ms, zero** |
+| `cv-display-param-reach`, 13 ports | 591 388 ms | **795 ms** |
+
+The 11 "failures" were fiction — driven alone those modules build in 66–97 ms —
+but they had already been written up as a permanent `harness-cannot-materialize`
+exemption covering nine Faust modules and 120 ports, which is what hid a live
+defect (#1737).
+
+```ts
+/** 128 samples completes the context and frees its native render thread. */
+async function release(ctx: OfflineAudioContext): Promise<void> {
+  try { await ctx.startRendering(); } catch { /* freed either way */ }
+}
+```
+
+Release in a `finally`, **including the throw path** — otherwise one module's
+failure silently degrades every module measured after it. Full case study:
+`blind-gates`, Pattern 6.
+
 ## Updating baselines
 
 ART:
