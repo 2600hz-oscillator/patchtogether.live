@@ -175,8 +175,8 @@ const EXEMPT: readonly Exemption[] = [
   //        PASSTHROUGH_BY_DESIGN — `cvScale` would have no AudioParam to scale.
   ...([
     ['filter', 'cutoff', 'filter.dsp does `pow(2, 5*cv)` on a dedicated cutoffCv input for a +-5 octave sweep; the def declares paramTarget for the DOCS and the runtime deliberately ignores it (stated verbatim on the def).'],
-    ['moog902', 'cv', 'Passive CV panel input summed at audio rate inside the worklet, not routed onto an AudioParam.'],
-    ['moog902', 'fcv', 'Frequency CV summed at audio rate inside the worklet, not routed onto an AudioParam.'],
+    ['moog902', 'cv', 'Summing CONTROL INPUT to the VCA gain on a dedicated worklet input (1), added per-sample rather than routed onto an AudioParam.'],
+    ['moog902', 'fcv', 'The SECOND summing control input to the same gain, on worklet input 2. ⚠ It shares `paramTarget: gain` with `cv` by design — two jacks that sum into one control — which is legitimate precisely because neither publishes an AudioParam, so the ALIASING leg has no object to collide.'],
     ['moog904a', 'cutoff_cv', 'Ladder cutoff CV is exponential and summed per-sample in the worklet; no AudioParam exists to sum onto.'],
     ['moog904a', 'reso_cv', 'Resonance CV is an additive clamp applied per-sample in the worklet; no AudioParam exists to sum onto.'],
     ['moog904b', 'cutoff_cv', 'Ladder cutoff CV is exponential and summed per-sample in the worklet; no AudioParam exists to sum onto.'],
