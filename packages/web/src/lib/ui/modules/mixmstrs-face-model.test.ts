@@ -246,7 +246,64 @@ describe('mixmstrs face — the SCOPE ranking, asserted from the live def', () =
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 2 · GLYPH RESOLUTION
+// 2 · THE CAPTIONS
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('mixmstrs face — the CAPTIONS, as a partition of the def', () => {
+  // Owner review 2026-08-17: *"the 1lo 1md 1hi etc labels should also go away
+  // because the low/mid/high labels above the knob rows convey that fine"*.
+  //
+  // `face.bareCells` is authored as EVERY param except a small exception set,
+  // so what is worth asserting is the PARTITION rather than the list: every
+  // declared param is on exactly one side, both sides are non-empty, and the
+  // captioned side is exactly the cells that sit outside the
+  // heading-plus-column arrangement. Read off the live def in both directions,
+  // so a ninth channel or a new per-channel control is swept without touching
+  // this file — and a rename cannot leave a dead exception quietly captioning
+  // a cell nobody meant to caption.
+  const BARE = new Set(FACE.bareCells ?? []);
+
+  it('every param is either BARE or one of the NAMED exceptions — nothing in between', () => {
+    // The exception restated as a PROPERTY rather than copied as a list: a
+    // send-bus PRE/POST switch is the one control whose cluster heading names
+    // something else (the send AMOUNT row), so it is the one that keeps its
+    // own caption.
+    const isSendPre = (id: string) => /^send\d+Pre$/.test(id);
+    const captioned = PARAM_IDS.filter((id) => !BARE.has(id));
+    expect(
+      captioned.filter((id) => !isSendPre(id)).sort(),
+      'a param is captioned but is not a send PRE/POST switch — either it was left out of ' +
+        'face.bareCells by accident, or the exception rule changed and this test did not',
+    ).toEqual([]);
+    expect(
+      PARAM_IDS.filter(isSendPre).filter((id) => BARE.has(id)),
+      'a send PRE/POST switch went bare — nothing else on the face names the tap point, and ' +
+        'the header echo that used to was removed in #1738',
+    ).toEqual([]);
+  });
+
+  it('ANCHOR: bareCells names only live params, and both sides are non-empty', () => {
+    // A dead entry is invisible in the render — the cell simply keeps a caption
+    // nobody meant it to keep — which is why it is asserted rather than
+    // eyeballed. The two non-emptiness legs are the anti-vacuity pair: an empty
+    // BARE set satisfies everything above while changing nothing, and a BARE
+    // set covering every param would silently strip the two switches.
+    const live = new Set(PARAM_IDS);
+    expect(
+      [...BARE].filter((id) => !live.has(id)).sort(),
+      'face.bareCells names a param that no longer exists',
+    ).toEqual([]);
+    expect(BARE.size, 'no param is bare — the declutter did not reach the face').toBeGreaterThan(0);
+    expect(
+      PARAM_IDS.filter((id) => !BARE.has(id)).length,
+      'EVERY param is bare — the two PRE/POST switches lost the only text naming them',
+    ).toBeGreaterThan(0);
+  });
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 3 · GLYPH RESOLUTION
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('mixmstrs face — the glyph RESOLVES, and to the MASTER BUS', () => {
@@ -281,7 +338,7 @@ describe('mixmstrs face — the glyph RESOLVES, and to the MASTER BUS', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 3 · THE DERIVED READOUTS
+// 4 · THE DERIVED READOUTS
 // ─────────────────────────────────────────────────────────────────────────────
 
 // ── THE READOUT SUITES ARE DELETED WITH THEIR SUBJECT ─────────────────────
