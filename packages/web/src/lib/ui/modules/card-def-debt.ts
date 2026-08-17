@@ -52,7 +52,21 @@ export const OPERATIONAL_DEBT: Readonly<Record<string, readonly string[]>> = {
   // do. Teaching it one changes the drag feel of every discrete knob in the
   // rack, so it stays its own reviewed PR.
   'FoxyCard.svelte': ['gen_mode.curve'],
-  'Moog921bCard.svelte': ['range.curve'],
+  // ⚠ `Moog921bCard.svelte: ['range.curve']` USED TO BE HERE. PAID with the
+  // faceplate (queue Q28), on the ResofilterCard release condition rather than
+  // on a change of mind about the reasoning above — which is still exactly
+  // right: `Knob.svelte` has no `discrete` branch, so binding the prop moved no
+  // pixel and the card's VRT baseline is unchanged. The card entered
+  // `RANGE_BOUND_CARDS` in that PR, and `card-range-source`'s curve-AGREEMENT
+  // clause refuses a certified def-bound card that still carries a known
+  // disagreement, however harmless — because "harmless" is a property of
+  // today's `Knob.svelte`, not of the declaration.
+  //
+  // ⚠ THE REAL DEFECT IS UNTOUCHED AND IS NOT TRACKED BY THIS ENTRY ANY MORE.
+  // It is the two cards below plus every other discrete `<Knob>` in the rack:
+  // the primitive has no `discrete` branch while `Fader.svelte` and
+  // `knob-conic-model.ts` both do. Teaching it one changes the drag feel of
+  // every discrete knob, so it stays its own reviewed PR.
   'PeakstateCard.svelte': ['complexity.curve'],
 
   // ── The analogVco bug, on its twin: PAID 2026-08-15 (#1681), entry DELETED ─
