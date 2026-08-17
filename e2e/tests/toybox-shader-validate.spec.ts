@@ -198,4 +198,83 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     expect(res.ok).toBe(false);
     expect(res.errors.length).toBeGreaterThan(0);
   });
+
+  // ------------------------------------------------------------------
+  // #1708 — the premise the engine's declaration filter rests on.
+  // ------------------------------------------------------------------
+  //
+  // A USER shader declares its own `uniform float`s (that declaration is what
+  // param extraction reads). A BUNDLED one uses bare identifiers and lets the
+  // wrapper declare them. The engine therefore declares only what the source
+  // does not — and the whole argument for that filter is the claim below, which
+  // is a property of a real GLSL compiler and cannot be asserted anywhere else
+  // in this repo. If ANGLE ever started tolerating an identical redeclaration,
+  // the first test here goes red and we would learn the filter is merely
+  // defensive rather than load-bearing.
+
+  test('a DUPLICATE uniform declaration is a real compile error @webgl-smoke', async ({ page }) => {
+    // THE PREMISE, as an experiment on the compiler itself rather than on our
+    // wrapper: two identical `uniform float speed;` at global scope. The filter
+    // exists only because this is an ERROR; if it ever compiled, the filter
+    // would be defensive rather than load-bearing and we should know that here.
+    // Written INTO the source (not injected) so no engine code stands between
+    // the claim and the compiler.
+    const src = `uniform float speed;
+uniform float speed;
+void mainImage(out vec4 c, in vec2 p) { c = vec4(speed, 0.0, 0.0, 1.0); }`;
+    const res = await validate(page, src, []);
+    expect(res.ok, `GLSL accepted a duplicate uniform: ${res.rawLog}`).toBe(false);
+    expect(res.errors.length).toBeGreaterThan(0);
+
+    // POSITIVE CONTROL: the identical shader with ONE declaration compiles, so
+    // the failure above is the duplication and not something else in the text.
+    const single = await validate(
+      page,
+      `uniform float speed;
+void mainImage(out vec4 c, in vec2 p) { c = vec4(speed, 0.0, 0.0, 1.0); }`,
+      [],
+    );
+    expect(single.errors, `the single-declaration control must compile: ${single.rawLog}`).toEqual([]);
+    expect(single.ok).toBe(true);
+  });
+
+  test('a source declaring its OWN param uniform still compiles @webgl-smoke', async ({ page }) => {
+    // THE ONE THAT MATTERS. This is precisely a disk-loaded custom shader with a
+    // fader: `uniform float speed;` in the body, 'speed' in the param list.
+    // Before #1708 the wrapper emitted a second declaration and every such
+    // shader failed to compile — silently, as a layer that never drew.
+    const src = `uniform float speed; // @param(0, 4, 1)
+void mainImage(out vec4 c, in vec2 p) { c = vec4(speed, 0.0, 0.0, 1.0); }`;
+    const res = await validate(page, src, ['speed']);
+    expect(res.errors, `the source own declaration was duplicated: ${res.rawLog}`).toEqual([]);
+    expect(res.ok).toBe(true);
+  });
+
+  test('the line mapping survives the declaration filter @webgl-smoke', async ({ page }) => {
+    // The filter shortens the preamble by one line per filtered name, and the
+    // preamble offset is what maps a compiler line back onto the user's. If the
+    // wrap and the offset were computed from DIFFERENT lists, this error would
+    // come back one line off — plausible-looking and wrong.
+    const src = `uniform float speed; // @param(0, 4, 1)
+void mainImage(out vec4 c, in vec2 p) {
+  c = vec4(speed);
+  bogusSymbolOnLineFour;
+}`;
+    const res = await validate(page, src, ['speed']);
+    expect(res.ok).toBe(false);
+    const lines = res.errors.filter((e) => e.line !== null).map((e) => e.line);
+    expect(lines, `raw: ${res.rawLog}`).toContain(4);
+  });
+
+  test('a BUNDLED-convention source still gets its params injected @webgl-smoke', async ({
+    page,
+  }) => {
+    // NEGATIVE CONTROL for the filter, in the other direction: over-filtering
+    // (declaring nothing, ever) would break every bundled Shadertoy content,
+    // which uses its params as bare identifiers. This must still compile.
+    const src = `void mainImage(out vec4 c, in vec2 p) { c = vec4(speed, scale, 0.0, 1.0); }`;
+    const res = await validate(page, src, ['speed', 'scale']);
+    expect(res.errors, `bundled-convention params were not injected: ${res.rawLog}`).toEqual([]);
+    expect(res.ok).toBe(true);
+  });
 });

@@ -61,10 +61,8 @@ import {
   MATCAP_STYLES,
   ensureToyboxCatalog,
   getContent,
-  getContentMeta,
   getModelMeta,
   getModelObj,
-  customShaderKey,
   customObjKey,
   makeDefaultLayers,
   makeDefaultObjMaterial,
@@ -73,6 +71,11 @@ import {
   type ToyboxObjMaterial,
 } from '$lib/video/toybox-content';
 import { buildProjectorViewProj, projectorFromMaterial } from '$lib/video/toybox-projective';
+import {
+  ensureCustomShaderMeta,
+  resolveLayerContent,
+} from '$lib/video/toybox-custom-assets';
+import { paramsNeedingDeclaration } from '$lib/video/toybox-shader-params';
 import { resolveToyboxParam } from '$lib/video/toybox-control-params';
 import { createVideoFrameUploader } from '$lib/video/video-frame-upload';
 import { createVideoAudioKeepAlive, type VideoAudioKeepAlive } from '$lib/video/video-audio-keepalive';
@@ -467,8 +470,9 @@ export const toyboxDef: VideoModuleDef = {
      *     mainImage convention, wrap with the content's declared params.
      *   - custom disk-loaded shader (inlineSrc given, `cacheKey` is a
      *     `custom-shader:<hash>` synthetic id): compile THAT source directly.
-     *     Shadertoy-vs-GEN is detected from the source alone; a custom shader
-     *     declares NO params (the card shows no faders) so we wrap with [].
+     *     Shadertoy-vs-GEN is detected from the source alone; its params are the
+     *     ones EXTRACTED from its own uniform declarations (#1708), resolved
+     *     through the same sync lookup a bundled entry uses.
      *     Scene-input (FRAG) for a custom FRAG-layer shader is decided by the
      *     CALLER (renderShaderLayer) from layer.kind, not the manifest.
      * The failed-compile guard degrades a bad uploaded shader gracefully
@@ -487,7 +491,14 @@ export const toyboxDef: VideoModuleDef = {
             // Custom disk-loaded source: compile directly, no manifest fetch.
             glsl = inlineSrc;
             isSt = isShadertoySource(glsl);
-            paramIds = []; // custom shaders declare no params
+            // #1708: a custom source's params come from its OWN `uniform float`
+            // declarations, derived + registered on first observation, so this
+            // is the SAME sync lookup the bundled branch below does — and the
+            // uniform locations resolved from it are the ones renderShaderLayer
+            // pushes each frame. Compile-site and draw-site read one source of
+            // truth; if they disagreed the locations would come back null and
+            // the faders would move nothing, silently.
+            paramIds = (ensureCustomShaderMeta(glsl)?.params ?? []).map((p) => p.id);
             // A custom Shadertoy source that reads iChannel0 (a FRAG-style FX)
             // gets the composited layers below bound to iChannel0 — same as a
             // bundled scene-input content. Cheap textual probe; harmless when
@@ -503,7 +514,14 @@ export const toyboxDef: VideoModuleDef = {
             paramIds = meta.params.map((p) => p.id);
             sceneInput = meta.input === 'scene';
           }
-          const src = isSt ? wrapShadertoySource(glsl, '', paramIds) : glsl;
+          // The wrapper declares only the params the SOURCE does not already
+          // declare — read off the text, not off which branch we came from. A
+          // bundled Shadertoy content uses bare identifiers (nothing declared →
+          // all injected); a user source declares its own (nothing injected),
+          // and injecting them anyway would be a duplicate global declaration,
+          // i.e. a compile failure for every custom shader with a fader.
+          const declareIds = paramsNeedingDeclaration(glsl, paramIds);
+          const src = isSt ? wrapShadertoySource(glsl, '', declareIds) : glsl;
           const program = ctx.compileFragment(src);
           const uParams = new Map<string, WebGLUniformLocation | null>();
           for (const pid of paramIds) uParams.set(pid, gl.getUniformLocation(program, pid));
@@ -1710,11 +1728,11 @@ export const toyboxDef: VideoModuleDef = {
       // ---- Single content shader ----
       // A custom disk-loaded source (layer.shaderSrc) takes precedence over the
       // bundled contentId: compile THAT directly under a synthetic cache key.
-      const customSrc =
-        typeof layer.shaderSrc === 'string' && layer.shaderSrc.length > 0
-          ? layer.shaderSrc
-          : null;
-      const cacheKey = customSrc ? customShaderKey(customSrc) : layer.contentId;
+      // ONE resolve gives the cache key AND the metadata whose params are pushed
+      // below — and registers a custom source's derived metadata the first time
+      // THIS engine sees it, so a rack-mate who received the layer over the
+      // Y.Doc (and never ran the file picker) resolves it identically.
+      const { src: customSrc, id: cacheKey, meta } = resolveLayerContent(layer);
       if (!cacheKey) return false;
       ensureProgram(cacheKey, customSrc ?? undefined);
       const compiled = programs.get(cacheKey);
@@ -1739,8 +1757,9 @@ export const toyboxDef: VideoModuleDef = {
         // Engine convention: iResolution is a vec2.
         g.uniform2f(compiled.uResolution, ctx.res.width, ctx.res.height);
       }
-      // Custom disk-loaded shaders declare no params; only bundled content does.
-      const meta = customSrc ? null : layer.contentId ? getContentMeta(layer.contentId) : null;
+      // Push each declared param's uniform. `meta` came from the SAME resolve
+      // that produced `cacheKey`, so a custom source's extracted params land
+      // here exactly like a bundled entry's manifest params (#1708).
       if (meta) {
         for (const p of meta.params) {
           const loc = compiled.uParams.get(p.id);

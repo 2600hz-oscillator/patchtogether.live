@@ -207,6 +207,71 @@ function parseAnnotation(
   return { min, max, default: def, curve };
 }
 
+/**
+ * Every uniform name the SOURCE declares itself, of ANY type.
+ *
+ * ── Why this is not just `extractShaderParams(...).params` ──────────────────
+ *
+ * Extraction answers "which CONTROLS does this shader offer" and is therefore
+ * `float`-only and reserved-filtered. This answers a different, purely
+ * syntactic question — "which names does this text already occupy at global
+ * scope" — and so it must see `vec3`, `sampler2D`, an engine-reserved name and
+ * a duplicate alike. A `uniform vec3 speed;` collides with an injected
+ * `uniform float speed;` just as fatally as a matching one would.
+ *
+ * Array declarators (`uniform vec3 iChannelResolution[4];`) yield the bare name.
+ * PURE; comment-safe (the same scanner extraction uses).
+ */
+export function declaredUniformNames(src: string): ReadonlySet<string> {
+  const { code } = scanComments(src);
+  const out = new Set<string>();
+  // `uniform [precision] <type> a, b[2];` — any type, whole declarator list.
+  const DECL = /\buniform\s+(?:lowp\s+|mediump\s+|highp\s+)?\w+\s+([^;{]+);/g;
+  for (const m of code.matchAll(DECL)) {
+    for (const rawDeclarator of m[1].split(',')) {
+      const id = rawDeclarator
+        .split('=')[0]
+        .replace(/\[[^\]]*\]/g, '')
+        .trim();
+      if (/^[A-Za-z_]\w*$/.test(id)) out.add(id);
+    }
+  }
+  return out;
+}
+
+/**
+ * Of `paramIds`, the subset the SHADERTOY WRAPPER still has to declare — i.e.
+ * those the source does not declare itself.
+ *
+ * ── The two conventions this reconciles, and why it is DERIVED ──────────────
+ *
+ * A BUNDLED Shadertoy content uses its params as BARE IDENTIFIERS and relies on
+ * `wrapShadertoySource` to emit `uniform float <name>;` from the manifest. A
+ * USER source DECLARES ITS OWN — that declaration is literally what extraction
+ * read to produce the param — so emitting it again is a duplicate declaration at
+ * global scope, and the whole program fails to compile. The failure is silent in
+ * the worst way: the layer just never draws.
+ *
+ * The filter is read OFF THE SOURCE rather than off which branch the caller is
+ * in, so it is one rule for both conventions and it also fixes the (currently
+ * broken) case of a bundled Shadertoy shader that declares its own uniform.
+ *
+ * ⚠ CALLERS MUST PASS THE SAME LIST TO `wrapShadertoySource` AND TO
+ * `shadertoyPreambleLines`. The preamble grows one line per DECLARED param, so
+ * filtering one and not the other mis-points every compile diagnostic by the
+ * number of names filtered out — silently. `toybox-shader-validate.ts` does both
+ * from one variable for exactly that reason.
+ *
+ * PURE.
+ */
+export function paramsNeedingDeclaration(
+  src: string,
+  paramIds: readonly string[],
+): string[] {
+  const declared = declaredUniformNames(src);
+  return paramIds.filter((id) => !declared.has(id));
+}
+
 /** `flowField` / `flow_field` / `flow-field` → `FLOW FIELD` (manifest style). */
 export function labelForUniform(id: string): string {
   return id
