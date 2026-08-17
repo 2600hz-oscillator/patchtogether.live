@@ -25,17 +25,24 @@
 //  2. `[SKIPPED: …]` / `[EXEMPT: …]` title-marker placeholder rows are
 //     exemption-map machinery with their own named-entry governance (ledger
 //     buckets 1–2). This budget deliberately does not re-govern them.
-//  3. Lanes with no merged-JSON audit step (collab, vrt, webgl-attest) are
-//     not audited at all — `homeLane` records where a guard is EXPECTED to
-//     resolve, but nothing checks those lanes' reports today.
+//  3. Lanes with no JSON audit step (collab, webgl-attest) are not audited at
+//     all — `homeLane` records where a guard is EXPECTED to resolve, but
+//     nothing checks those lanes' reports today.
 //  4. The TRUTH of a reason string. A guard that skips for reason A while
 //     printing budgeted reason B matches its entry. The budget pins the
 //     vocabulary, not the diagnosis.
 //
-// Lane names are the AUDIT invocations in ci.yml: 'e2e' (merge-reports),
-// 'behavioral' (merge-behavioral-reports). `homeLane` may also name a
-// non-audited resolution context ('collab', 'webgl-attest', 'local' = a
-// developer machine / opt-in local run).
+// Lane names are the AUDIT invocations in ci.yml. Since 2026-08-17 there is
+// exactly ONE: 'e2e', run PER SHARD inside the e2e job (it used to live in the
+// `merge-reports` aggregator, which was deleted with the other non-gating jobs
+// — the audit was migrated first, and it now GATES because `e2e` is in the
+// umbrella). 'behavioral' has no audit site any more: the
+// `merge-behavioral-reports` job went with `behavioral-coverage`. It stays in
+// AUDITED_LANES because entries still declare it, and because a lane that
+// declares itself audited while nothing audits it is exactly the kind of
+// silent hole this module exists to make loud — see scope note 3.
+// `homeLane` may also name a non-audited resolution context ('collab',
+// 'webgl-attest', 'local' = a developer machine / opt-in local run).
 
 export const AUDITED_LANES = Object.freeze(['e2e', 'behavioral']);
 export const KNOWN_LANES = Object.freeze([...AUDITED_LANES, 'collab', 'webgl-attest', 'local']);
@@ -336,15 +343,6 @@ export const SKIP_BUDGET = [
     why:
       'Hardware-in-the-loop: needs a physical ES-9 + the es9-bridge WebSocket, opt-in via ES9_HW=1 on the '
       + 'owner machine. On CI the whole file skips with this reason on every run.',
-  },
-  {
-    specs: ['grand-integration.attest.spec.ts'],
-    reason: /GRAND_ATTEST=1/,
-    lanes: ['e2e'],
-    homeLane: 'local',
-    why:
-      'The grand attest is a heavy local run on a trusted GPU machine (task grand:attest); its spec rides '
-      + 'the shared testDir so it appears in audited lanes only as this opt-in skip.',
   },
   {
     specs: ['samsloop-memory-bench.spec.ts'],

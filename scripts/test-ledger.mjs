@@ -430,10 +430,11 @@ export function generateLedger() {
   p('`test.skip(cond, reason)` guards that skip AT RUNTIME when an environment');
   p('capability is missing (DB, asset, renderer, hardware). NOT disables — the test');
   p('runs wherever the capability exists — but each produces a `skipped` row a green');
-  p('lane would otherwise hide, so the merged-report audits in ci.yml surface every');
-  p('row and enforce the deny-by-default per-lane budget in');
+  p('lane would otherwise hide, so ci.yml audits each e2e shard\'s own report and');
+  p('enforces the deny-by-default per-lane budget in');
   p('`scripts/e2e-skip-budget.mjs`: a reasonless or unknown-reason skip reds the');
-  p('audit. Both directions are anchored by `scripts/e2e-skip-budget.test.ts`.');
+  p('shard, and `e2e` is a REQUIRED lane, so it blocks the merge. Both directions');
+  p('are anchored by `scripts/e2e-skip-budget.test.ts`.');
   p('A reason shown as `(dynamic)` is computed at runtime; the budget test anchors');
   p('those at spec granularity and the lane audit checks the realized string.');
   p('');

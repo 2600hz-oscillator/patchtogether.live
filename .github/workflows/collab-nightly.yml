@@ -1,10 +1,18 @@
 # collab-nightly — the daily FULL-@collab backstop, SHARDED so it completes.
 #
-# WHY this exists: per-PR @collab gating moved to the cheap content-hash VERIFY
-# (the `collab-attest` job in ci.yml). The per-PR `collab` job downloads CACHED
-# artifacts (WASM + preview bundle), so build-script rot + relay/DB infra drift
-# can hide there. This scheduled job runs the FULL real @collab lane on CI every
-# day, built FROM SCRATCH, so those surface daily off the PR critical path.
+# WHY this exists: the per-PR `collab` job downloads CACHED artifacts (WASM +
+# preview bundle), so build-script rot + relay/DB infra drift can hide there.
+# This scheduled job runs the FULL real @collab lane on CI every day, built FROM
+# SCRATCH, so those surface daily off the PR critical path. (It used to be the
+# backstop for `collab-attest`, the cheap per-PR content-hash VERIFY; that job
+# was deleted 2026-08-17 with the rest of the non-gating lanes.)
+#
+# ⚠ THIS IS A BACKSTOP, NOT A GATE, AND IT RUNS TOO LATE TO BE ONE. The cron
+# below fires at 09:00 UTC; daily-prod-deploy.yml fires at 04:00 UTC. A
+# multiplayer regression that lands on main therefore reaches PRODUCTION five
+# hours before this workflow looks at it. That gap is precisely why ci.yml's
+# per-PR `collab` job survived the 2026-08-17 deletion of every other
+# non-gating lane — it is the only multiplayer signal that runs before a merge.
 #
 # ⚠ ROOT CAUSE OF THE 40/40 TIMEOUT-CANCEL STREAK (#1500, fixed 2026-08-13):
 # this workflow's inline `task build:web` was missing `VITE_E2E_HOOKS: '1'`

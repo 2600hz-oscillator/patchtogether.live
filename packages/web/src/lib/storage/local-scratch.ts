@@ -4,9 +4,11 @@
 //
 // Lives under lib/storage (NOT lib/multiplayer) on purpose: this is a
 // client-only, single-user localStorage id helper — it has nothing to do with
-// collaboration/sync. lib/multiplayer is a whole-directory collab-attest basis
-// root (scripts/collab-attest-lib.ts COLLAB_DIR_ROOTS), so putting a non-collab
-// file there would falsely force a collab re-attest on every edit. Keep it out.
+// collaboration/sync. That is the whole reason now. It used to have a second,
+// mechanical one — lib/multiplayer was a whole-directory collab-attest basis
+// root, so a non-collab file there falsely forced a re-attest on every edit —
+// and that attest was deleted 2026-08-17. Keep it out on the meaning, not the
+// hash.
 //
 // The `/rack` scratch canvas (routes/rack/+page.svelte) has no rackspace id
 // and no relay — so before this helper it never attached the `local-replica`

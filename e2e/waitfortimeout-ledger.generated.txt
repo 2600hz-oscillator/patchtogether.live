@@ -187,9 +187,6 @@ e2e/tests/gibribbon.spec.ts :: gibribbon: card mounts cleanly + 1024×576 canvas
 e2e/tests/gibribbon.spec.ts :: pulse :: waitForTimeout(8) #1
 e2e/tests/gibribbon.spec.ts :: pulse :: waitForTimeout(8) #2
 e2e/tests/gl-feedback-loop.spec.ts :: the default workflow rack emits ZERO GL feedback-loop errors :: waitForTimeout(OBSERVE_MS) #1
-e2e/tests/grand-integration.attest.spec.ts :: sampleSpread :: waitForTimeout(intervalMs) #1
-e2e/tests/grand-integration.attest.spec.ts :: sweepCc :: waitForTimeout(60) #1
-e2e/tests/grand-integration.attest.spec.ts :: workflow-mode: kick/snare/tidy-mono/sixstrum through clips + automation + synesthesia + recorderbox, hard state throughout :: waitForTimeout(30) #1
 e2e/tests/illogic.spec.ts :: illogic: LFO → in1 → att1 (gain=1) produces audible signal at scope :: waitForTimeout(1000) #1
 e2e/tests/illogic.spec.ts :: illogic: att1_amount=-1 still produces audible signal (sign-flipped) :: waitForTimeout(1000) #1
 e2e/tests/illogic.spec.ts :: illogic: att1_amount=0 mutes the att1 output :: waitForTimeout(700) #1

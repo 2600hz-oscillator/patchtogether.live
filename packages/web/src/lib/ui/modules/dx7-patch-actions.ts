@@ -50,9 +50,12 @@
 // modules/dx7.ts:288-300 documents (every SYX-loaded voice silently failed to
 // reach the engine while the plain-JS built-ins worked).
 //
-// ⚠ The stamp helper lives HERE, not in `$lib/graph/mutate.ts`. That file is
-// in the COLLAB ATTEST BASIS (scripts/collab-attest-lib.ts:75), so a dx7
-// helper parked in it would force a relay re-attest for a synth edit.
+// The stamp helper lives HERE, not in `$lib/graph/mutate.ts`. The original
+// reason was that `mutate.ts` sat in the collab-attest basis, so a dx7 helper
+// parked in it forced a relay re-attest for a synth edit; that attest was
+// deleted 2026-08-17 and the cost is gone. The placement stands on its own —
+// this is dx7-specific patch surgery, not a general graph mutation — but it is
+// no longer a hard constraint, so do not cite a re-attest to defend it.
 
 import { patch } from '$lib/graph/store';
 import { mutateNode } from '$lib/graph/mutate';

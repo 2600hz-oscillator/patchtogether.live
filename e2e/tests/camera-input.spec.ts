@@ -10,10 +10,11 @@
 //      enumeration, request flow, 'streaming' state, local-only hint,
 //      'no-cameras-found'). The attest GREP-INVERTS this tag, so it runs ONLY in
 //      the lighter functional (sharded) e2e lane, NOT in the cumulative-load
-//      attest. (It must stay in THIS file rather than a new file because the
-//      chromium-camera project's testMatch is `camera-input.spec.ts` and adding
-//      a new file there would edit playwright.config.ts — which is in the collab
-//      attest basis, forcing an unrelated collab re-attest.)
+//      attest. (It stays in THIS file rather than a new file because the
+//      chromium-camera project's testMatch is `camera-input.spec.ts`, so a new
+//      file means editing playwright.config.ts — which is in the WEBGL attest
+//      basis and costs a real-GPU re-attest. It used to cost a collab re-attest
+//      too; that attest was deleted 2026-08-17.)
 //
 // WHY THE RENDER TEST IS DETERMINISTIC: the old render test depended on the LIVE
 // getUserMedia → 'streaming' → rAF-render chain (three un-synchronized async
@@ -442,8 +443,9 @@ test.describe('CAMERA → OUTPUT (fake webcam) — getUserMedia integration @cam
 //
 // It lives in THIS FILE for the reason the sibling shell test documents: only
 // `chromium-camera` carries the fake webcam + pre-granted permission, and
-// playwright.config.ts is in the collab attest basis, so adding a project for
-// one test would force a re-attest.
+// playwright.config.ts is in the WEBGL attest basis, so adding a project for one
+// test forces a real-GPU re-attest. (It was in the collab basis too, until that
+// attest was deleted 2026-08-17.)
 test.describe('CAMERA node-owned media lifetime @camera-integration', () => {
   test('a card move (expand + collapse) does NOT stop the capture', async ({ page }) => {
     test.setTimeout(90_000);

@@ -1,18 +1,25 @@
 name: Daily Prod Deploy (latest fully-green main)
 
 # Once a day, deploy the LATEST commit on main whose ENTIRE CI run is green —
-# INCLUDING the informational jobs (collab-attest, behavioral, full vrt,
-# webgl-attest, …), not just the required `ci` umbrella.
+# EVERY job, not just the required `ci` umbrella.
 #
-# Why "every job", not the run conclusion: the informational jobs run with
-# `continue-on-error: true`, so the CI *run* concludes `success` even when one of
-# them is red. To honor "deploy only if informational is ALSO green" we inspect
-# every JOB's conclusion on the CI run for the candidate SHA (a continue-on-error
-# job still reports its own `failure`), and require them all success/skipped.
+# Why "every job", not the run conclusion: a job outside the umbrella can be red
+# while the CI *run* still concludes `success`, and `collab` (the one lane left
+# off the umbrella) is a real signal. So we inspect every JOB's conclusion on the
+# CI run for the candidate SHA and require them all success/skipped.
+#
+# ⚠ AND THAT IS WHY `cancelled` IS FATAL HERE. The predicate below rejects any
+# conclusion that is not success/skipped/null, so a single job hitting its
+# `timeout-minutes` disqualifies the whole SHA — silently, since the run itself
+# still reads green. That is exactly what happened through 2026-08: the
+# informational `vrt` (50 min cap) and `behavioral-coverage` (125 min) had grown
+# into their ceilings and were reporting `cancelled` on main, blocking this
+# deploy while asserting nothing. Both jobs — and seven more like them — were
+# DELETED on 2026-08-17 rather than have their caps raised again.
 #
 # "Latest fully-green version": we walk recent main commits newest-first and pick
-# the FIRST one that is fully green. So a red-informational HEAD doesn't block the
-# nightly ship — it falls back to the newest green commit beneath it.
+# the FIRST one that is fully green. So a red HEAD doesn't block the nightly
+# ship — it falls back to the newest green commit beneath it.
 #
 # Idempotent: the last-shipped SHA is recorded in the lightweight `prod-deployed`
 # git tag; if the newest fully-green SHA already equals it, the run no-ops (no
@@ -92,8 +99,10 @@ jobs:
               echo "· ${sha:0:9}  CI status=$status — skip"
               continue
             fi
-            # EVERY job (incl continue-on-error informational ones) must be
-            # success or skipped. A red informational job → not fully green.
+            # EVERY job must be success or skipped — including `collab`, which
+            # is the only lane left outside the required umbrella. ⚠ `cancelled`
+            # is NOT in the allow-list, so a job that hits its timeout-minutes
+            # disqualifies the SHA even though the run reads green.
             bad=$(gh api "repos/$REPO/actions/runs/$run_id/jobs?per_page=100" \
               --jq '[.jobs[] | select(.conclusion != "success" and .conclusion != "skipped" and .conclusion != null)] | length')
             still=$(gh api "repos/$REPO/actions/runs/$run_id/jobs?per_page=100" \

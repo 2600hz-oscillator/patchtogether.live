@@ -6,9 +6,10 @@
 // reasons PR 5's preset stamp is: undo becomes ONE step, and collab sends ONE
 // message instead of a burst the peer applies half-way.
 //
-// ⚠ These helpers live HERE and not in `$lib/graph/mutate.ts` — that file is
-// in the COLLAB ATTEST BASIS, so adding to it turns the attest red and forces
-// a re-attest for what is purely module UI.
+// These helpers live HERE and not in `$lib/graph/mutate.ts` because they are
+// purely module UI, not general graph mutation. (`mutate.ts` was also a
+// collab-attest basis file, so adding to it reddened that attest and forced a
+// re-attest; the attest was deleted 2026-08-17.)
 //
 // Every edit bumps `voiceRev`. The dx7 factory polls that counter and sends a
 // NON-DESTRUCTIVE `{type:'voice'}` message, so an operator tweak morphs a held

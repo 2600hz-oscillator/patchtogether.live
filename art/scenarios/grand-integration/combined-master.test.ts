@@ -18,8 +18,10 @@
 //
 // Runs on the NORMAL CI ART lane (no GPU, no encoder, bit-stable). Because the
 // four cores are already in the ART/DSP source basis, a change to any of them
-// correctly forces BOTH an ART re-pin AND (via scripts/grand-attest-lib.ts) a
-// grand re-attest — the desired coupling. Re-pin the `.sha` LAST (memory
+// correctly forces an ART re-pin. (It used to force a grand re-attest as well,
+// via scripts/grand-attest-lib.ts; the grand attest was deleted 2026-08-17 with
+// the other non-gating CI lanes, so THIS test is now the whole coupling — which
+// is the half that ran on CI anyway.) Re-pin the `.sha` LAST (memory
 // `art-sha-pin-regenerate-last`); confirm ONLY `.sha` moved on a pure re-pin.
 
 import { describe, expect, it } from 'vitest';

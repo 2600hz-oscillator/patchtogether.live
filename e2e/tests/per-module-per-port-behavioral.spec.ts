@@ -268,10 +268,11 @@ const BEHAVIORAL_MODULE_EXEMPT: Record<string, string> = {
 
   // ── Strike-gated voice: SIX STRUM is a plucked-string instrument whose
   //    `out` is hard-silent until a strum/pluck fires. The one-input-at-a-time
-  //    harness never supplies that base strum (a generic driver would need a
-  //    gatePort append to _drivers.ts, which is a collab-attest BASIS file —
-  //    the same reason as its per-port emit exemption in
-  //    per-module-per-port-outputs.spec.ts), so the mute1..mute6 palm-mute gates (and
+  //    harness never supplies that base strum (a generic driver needs a gatePort
+  //    append to _drivers.ts — which USED to be blocked because that file was a
+  //    collab-attest BASIS file; that attest was deleted 2026-08-17, so the
+  //    append is now free and this exemption is PAYABLE, same as its per-port
+  //    emit twin in per-module-per-port-outputs.spec.ts), so the mute1..mute6 palm-mute gates (and
   //    the accent/chord CVs) perturb an output reading rms 0.000 in BOTH
   //    arms — a structural no-delta, not dead CV. Re-enable path: the
   //    "provide the base signal, then perturb" pattern (hold a strum-gate

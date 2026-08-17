@@ -4,8 +4,10 @@
 // Deluge "quantize a queued launch to the LONGEST currently-playing clip's next
 // loop boundary" model. Kept out of clipplayer.ts so the boundary math is
 // unit-testable with no engine, and DELIBERATELY out of clip-types.ts /
-// clip-clock.ts so the (grand-attest-basis) data model + clock tables don't grow
-// scheduler knowledge and don't drift the grand hash. (This file exports no
+// clip-clock.ts so the data model + clock tables don't grow scheduler
+// knowledge. (Those two were also grand-attest basis files, so keeping this out
+// kept the grand hash still; that attest was deleted 2026-08-17 and the
+// separation now stands on the design reason alone.) (This file exports no
 // `*Def`, so the audio module glob ignores it.)
 //
 // MODEL (owner-locked, 2026-07-20): a queued launch does NOT fire immediately
