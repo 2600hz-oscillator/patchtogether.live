@@ -377,8 +377,8 @@ describe('tidyVco face — rear bands stay in lockstep with the pages', () => {
     expect((face.pages ?? []).map((p) => p.id)).not.toContain(lead!.id);
   });
 
-  it('the rear renders exactly leading + one band per page, ids unique', () => {
-    const ids = plan.bands.map((b) => b.id);
+  it('the rear renders exactly leading + one input section per page, ids unique', () => {
+    const ids = plan.inputs.map((b) => b.id);
     expect(ids).toEqual(['voice', 'oscillator', 'wavefolder', 'filter', 'envelopes', 'output']);
     expect(new Set(ids).size).toBe(ids.length);
     expect(ids.length).toBe(1 + (face.pages ?? []).length);

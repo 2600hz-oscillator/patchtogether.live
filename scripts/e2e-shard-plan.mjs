@@ -86,87 +86,19 @@ export const PENDING_FIRST_MEASUREMENT = [
     why:
       'lands 2026-08-17 with owner review round 1 of the backdraft faceplate (the preview ' +
       'ON/OFF collapse). No ci.yml run containing it has completed, so there are no blob ' +
-      'reports to accept a cost from. MEASURED LOCALLY, single-worker on a real GPU, warm ' +
-      'server: 41.4 s wall / ~140 CPU-s across its five tests — LOCAL numbers, not what the ' +
-      'planner needs. ⚠ It is a VIDEO spec and belongs in a contention class: four of the ' +
-      'five tests drive a live GL feedback chain (LINES -> BACKDRAFT -> the seeded videoOut) ' +
-      'and two of them sample the canvas across ~12 rAFs via toDataURL, so it will be ' +
-      'materially slower under SwiftShader than the DOM-only specs above it here. Run ' +
-      '`task e2e:timings:accept -- <run-id>` on the first green main run after this merges ' +
-      'and DELETE this entry — the gate reddens on a stale entry as loudly as on a missing one.',
-  },
-  {
-    spec: 'workflow-drawer-face.spec.ts',
-    why:
-      'lands 2026-08-16 with #1739 (the pinned `m` tray renders the promoted face). No ' +
-      'ci.yml run containing it has completed, so there are no blob reports to accept a ' +
-      'cost from. Measured 14.8 CPU-s locally single-worker across its seven tests — cheap ' +
-      'because it is DOM-only: it opens a drawer, reads ' +
-      'testids and clicks jacks, with no GL rig, no media decode and no readback, so it ' +
-      'joins no contention class. Run `task e2e:timings:accept -- <run-id>` on the first ' +
-      'green main run after this merges and DELETE this entry — the gate reddens on a ' +
-      'stale entry as loudly as on a missing one.',
-  },
-  {
-    spec: 'launchpad-monitor-survives-card-collapse.spec.ts',
-    why:
-      'lands 2026-08-16 with the #1728 fix (collapsing the card BLANKED the physical ' +
-      'Launchpad and dropped the device claim). No ci.yml run containing it has ' +
-      'completed, so there are no blob reports to accept a cost from. Measured ~2 s on ' +
-      'a real GPU and ~7 s under E2E_SWIFTSHADER=1 locally — LOCAL numbers, not what ' +
-      'the planner needs. Run `task e2e:timings:accept -- <run-id>` on the first green ' +
-      'main run after this merges and DELETE this entry — the gate reddens on a stale ' +
+      'reports to accept a cost from. MEASURED under E2E_SWIFTSHADER=1 — the renderer that ' +
+      'actually failed it — single-worker: 57.5 s across its five cases, heaviest case 16.8 s. ' +
+      '⚠ REVISED DOWN from 1.9 min, and both halves of that are the interesting part: its ' +
+      'FIXTURE wired LINES -> BACKDRAFT -> videoOut for ALL FIVE cases, so four DOM-only ' +
+      'tests each paid for a software-rasterized 1024x768 feedback pass per frame (the chain ' +
+      'now lives in the ONE case that needs it); and its INSTRUMENT called toDataURL() on the ' +
+      'whole surface once per frame, ~77k pixels x 30 frames x two probes, which now reads a ' +
+      'strided 16x16 sample and EXITS EARLY the moment it has seen two distinct frames. It is ' +
+      'still a VIDEO spec and belongs in a contention class — one case drives a live GL ' +
+      'feedback chain — but it no longer costs more than its subject. Still a LOCAL number ' +
+      'and not what the planner needs. Run `task e2e:timings:accept -- <run-id>` on the first ' +
+      'green main run after this merges and DELETE this entry — the gate reddens on a stale ' +
       'entry as loudly as on a missing one.',
-  },
-  {
-    spec: 'extras-producer-lifetime.spec.ts',
-    why:
-      'lands 2026-08-16 with the #1720 fix (painter/textmarquee/picturebox/toybox ' +
-      'rendered placeholders with no card mounted, in the DEFAULT state). No ci.yml ' +
-      'run containing it has completed, so there are no blob reports to accept a cost ' +
-      'from. Measured 21.7 CPU-s locally under SwiftShader single-worker — REVISED ' +
-      'DOWN from 43.5 s (#1757): the first version timed out on CI because its RIG ' +
-      'drew four GL nodes per frame and its probe read the whole 1024x768 frame back ' +
-      '(3.1 MB, a flush+sync on the subject\'s own context), so the instrument cost ' +
-      'more than the subject and starved its shard co-tenants. Still a LOCAL number ' +
-      'and not what the planner needs. Run `task e2e:timings:accept -- <run-id>` on ' +
-      'the first green main run after this merges and DELETE this entry — the gate ' +
-      'reddens on a stale entry as loudly as on a missing one.',
-  },
-  {
-    spec: 'midi-binding-node-lifetime.spec.ts',
-    why:
-      'lands 2026-08-16 with the #1727 fix (a CC binding to an un-migrated module was ' +
-      'inert once its card unmounted). No ci.yml run containing it has completed, so ' +
-      'there are no blob reports to accept a cost from. Run ' +
-      '`task e2e:timings:accept -- <run-id>` on the first green main run after this ' +
-      'merges and DELETE this entry — the gate reddens on a stale entry as well as a ' +
-      'missing one.',
-  },
-  {
-    spec: 'featurecv-face.spec.ts',
-    why:
-      'lands 2026-08-16 with the featurecv faceplate (#1743). No ci.yml run containing ' +
-      'it has completed, so there are no blob reports to accept a cost from. Measured ' +
-      'LOCALLY at 2.7 CPU-s for both tests together (1.4 s + 1.3 s, warm server, 3x), ' +
-      'i.e. well UNDER the median an unmeasured spec rides — so the median fallback ' +
-      'over-books this file rather than under-booking a shard, which is the safe ' +
-      'direction of the #1600 failure. Run `task e2e:timings:accept -- <run-id>` on the ' +
-      'first green main run after this merges and DELETE this entry — the gate reddens ' +
-      'on a stale entry as well as a missing one.',
-  },
-  {
-    spec: 'illogic-face.spec.ts',
-    why:
-      'lands 2026-08-16 with the illogic faceplate (queue Q17). No ci.yml run containing ' +
-      'it has completed, so there are no blob reports to accept a cost from. Measured ' +
-      'LOCALLY at 3.9-4.0 CPU-s for all three tests together (1.3-1.4 s + 1.2 s + 1.4 s, ' +
-      'warm server, 3x with zero spread), i.e. under the median an unmeasured spec rides ' +
-      '— so the median fallback over-books this file rather than under-booking a shard, ' +
-      'which is the safe direction of the #1600 failure. Run ' +
-      '`task e2e:timings:accept -- <run-id>` on the first green main run after this ' +
-      'merges and DELETE this entry — the gate reddens on a stale entry as well as a ' +
-      'missing one.',
   },
 ];
 
