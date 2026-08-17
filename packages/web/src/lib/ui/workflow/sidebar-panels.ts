@@ -29,6 +29,7 @@
 
 import type { Component } from 'svelte';
 import type { ParamDef } from '$lib/graph/types';
+import AnalogLogicMathsTransferPanel from './panels/AnalogLogicMathsTransferPanel.svelte';
 import FeaturecvMapsPanel from './panels/FeaturecvMapsPanel.svelte';
 import FilterResponsePanel from './panels/FilterResponsePanel.svelte';
 import IllogicRoutingPanel from './panels/IllogicRoutingPanel.svelte';
@@ -179,6 +180,25 @@ const SIDEBAR_PANELS: Readonly<Record<string, Component<SidebarPanelProps>>> = {
   // attenuverter family are the plausible second adopters; widen it behind
   // declared props then, not now, on one module's guess about the next one.
   'illogic-routing': IllogicRoutingPanel as unknown as Component<SidebarPanelProps>,
+  // THE TRANSFER CURVE for ANALOGLOGICMATHS — one drawing for the one thing its
+  // four readouts state but cannot show: SUM BENDS AND DIFF DOES NOT, and it is
+  // the STRAIGHT line that crosses the ±1 rail. Both curves are traced under the
+  // SAME common-mode drive the `sum` and `diff` readouts are stated at, so the
+  // picture and the numbers beside it cannot disagree.
+  //
+  // This module's `glyph` is 'none' (five `cv` outputs, no `audio`, so
+  // `primaryAudioOutPortId` returns null), which means the shell paints no tile
+  // — the panel is the face's only picture.
+  //
+  // DRAWN, never traced: every mark is a pure function of the two live dial
+  // values, so the tile is deterministic on a running graph, a frozen one and a
+  // silent rack alike.
+  //
+  // Not generic yet, and it says so: the curve set and the clipped/linear split
+  // come from `analog-logic-maths-face-model`. `sidecar`'s deferred
+  // transfer-curve panel (queue Q1b) is the obvious second adopter; widen it
+  // behind declared props then, not now, on one module's guess about the next.
+  'alm-transfer': AnalogLogicMathsTransferPanel as unknown as Component<SidebarPanelProps>,
 };
 
 /** The component for a declared `custom` panel id, or `null`. */
