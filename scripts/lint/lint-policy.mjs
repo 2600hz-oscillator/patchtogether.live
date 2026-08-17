@@ -170,10 +170,17 @@ export const STAGED_RULES = [
     rule: 'svelte/no-dom-manipulating',
     why: 'Direct DOM writes in the text-marquee card, which drives its own scroll animation outside Svelte state on purpose (a per-frame text transform is not a state update). Fixing it means moving the animation into the framework, which is a rewrite of the module, not a lint fix.',
   },
-  {
-    rule: 'svelte/no-at-html-tags',
-    why: '`{@html}` in the Fader control. This one is security-relevant (XSS surface) and therefore explicitly NOT a mechanical fix: it needs someone to establish where the string comes from and whether it is ever user- or peer-authored, which in a multiplayer rackspace is a real question.',
-  },
+  // ⚠ `svelte/no-at-html-tags` WAS STAGED HERE AND IS NOW A HARD ERROR (#1794).
+  // Its `why` read: "`{@html}` in the Fader control … security-relevant (XSS
+  // surface) and therefore explicitly NOT a mechanical fix". The finding was
+  // `Fader.svelte`'s sprite-handle path — dead code behind `const useSprite =
+  // false` since the P0.1 palette re-tier — and the whole control was deleted
+  // when every card migrated to `NeonFader`, which renders no raw HTML at all.
+  // So the last `{@html}` in the tree went with it and the staging list
+  // ratcheted itself, exactly as it is designed to: the rule is promoted rather
+  // than the entry rewritten. Re-introducing `{@html}` anywhere is now a
+  // BLOCKING lint error, which is the correct posture for an XSS surface in a
+  // multiplayer rackspace.
   {
     rule: 'svelte/prefer-writable-derived',
     why: 'A `$state` + `$effect` pair in the port context menu that a writable `$derived` would express directly. Small, but it is a reactivity-timing change in menu code that VRT baselines capture — wants a VRT run, which this PR deliberately does not trigger.',
