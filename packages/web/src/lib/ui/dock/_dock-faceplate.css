@@ -154,6 +154,21 @@
   min-width: 0;
   width: max-content;
 }
+/* …and the same for the REAR (patch) card (#1800). 900px is the FRONT kit's
+   width; the flip side is a jack field whose width is decided by how many
+   section COLUMNS it has, and it caps itself (`.rear-zone.in/.out` max-width in
+   RearCard.svelte). Leaving the kit floor on meant a two-jack module's rear
+   reserved 900px and filled the surplus with the diagonal-hatch ground — the
+   "we do not want useless gray horizontal space on cards, ever" case, on the
+   one surface where the owner reported it.
+
+   ⚠ SCOPED BY `:has(.rear-card)`, so it applies ONLY while the pane is flipped
+   — the front face keeps the kit width and the half-width-split sideways-scroll
+   behaviour the floor exists for, unchanged. */
+.dock-faceplate .faceplate-body:has(.rear-card) {
+  min-width: 0;
+  width: max-content;
+}
 
 .dock-faceplate .faceplate {
   position: relative;

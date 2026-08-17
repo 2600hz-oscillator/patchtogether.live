@@ -1,35 +1,52 @@
 <script lang="ts">
-  // RearCard — the RACKLINE flip-side PATCH FIELD (rear-card-spec.md).
+  // RearCard — the RACKLINE flip-side PATCH FIELD.
   //
-  // The dock full-view's rear face: every declared port = ONE hole, grouped
-  // into full-width input BANDS (mirroring the face's pages) + a fixed,
-  // visually INVERTED right OUTPUTS rail. No knobs, no menus — all patch
-  // points flat and visible; the >60-hole pathology fallback is band-collapse
-  // (a band folds to its header + jack-count pill), never a cascade.
+  // Every declared port = ONE hole. #1800 gave BOTH rails the SAME compact
+  // labelled row the OUTPUTS list already had, and lays the groups out as
+  // COLUMNS instead of stacking full-width bands:
   //
-  // PATCHING reuses the shipped click-click carry seam VERBATIM: each hole is
-  // the same `back-jack` button contract the legacy back panel uses (testids +
-  // patchpanel:jackclick / patchpanel:carrycommit CustomEvents, bubbled to
-  // document; Canvas owns commitCarriedEdge + validateEdge; PickupCable draws
-  // the ghost — its dock-anchor fallback already ships). A rear patch is the
-  // SAME validated edge with the SAME port ids as a front patch.
+  //   owner, 2026-08-17 — "[the OUTPUTS list] is cool but [the INPUTS bands]
+  //   is wasteful. everything should be done in the output style list" /
+  //   "we want to do intelligent authored grouping of inputs and outputs,
+  //   with different sections as coumns i think."
   //
-  // One NEW interaction: COMPATIBILITY DIM — while a cable is carried, holes
-  // a commit would reject drop to ~35% opacity (pure-derived from
-  // connectDragState.pickupSource via canConnectToPort; no seam change).
+  // A band claiming a full card row for three jacks was the waste; a column of
+  // rows is the fix, and the reclaimed horizontal space is where the other
+  // sections go. Grouping is AUTHORED on the def (`face.rear.groups`, now with
+  // a `direction`) over a derived default — see rear-card-model.ts.
   //
-  // Direction is TRIPLE-CODED (rail position + inverted output tiles + ←/→
-  // band glyphs) so COLOR means cable domain only: holes take the 5 RACKLINE
-  // domain tokens (mapped off the live --cable-* palette exactly like the
-  // dock faceplate kit; pitch → cv-green + a '1v/oct' tag). Live cable hues
-  // are untouched — committed cables still render on the canvas edge layer;
-  // the rear shows seated plugs (domain fill + endpoint chip).
-  import { untrack } from 'svelte';
+  // ── DIRECTION WITHOUT COLOUR ────────────────────────────────────────────
+  // COLOR MEANS CABLE DOMAIN AND NOTHING ELSE: holes take the RACKLINE domain
+  // tokens mapped off the live --cable-* palette (pitch → cv-green + a '1v/oct'
+  // tag), so the same port type is the same hue on BOTH rails. Direction is
+  // carried by FOUR non-colour channels — zone, section glyph, ROW MIRROR
+  // (`.rj.out` reverses the row so the jack rides the outer edge) and the
+  // inverted output tile. They are DECLARED in `rear-direction.ts` and gated by
+  // `rear-direction.test.ts`, which also asserts the inverse: no
+  // direction-qualified selector in this file may assign the domain hue.
+  //
+  // ⚠ The row MARKUP is a single snippet for both rails — one grammar in the
+  // source, not just on screen. The mirror is `flex-direction: row-reverse`,
+  // so there is exactly one place a row can drift from itself.
+  //
+  // ── PATCHING IS THE SHIPPED SEAM, VERBATIM ──────────────────────────────
+  // Each hole is the same `back-jack` button contract the legacy back panel
+  // uses (testids + patchpanel:jackclick / patchpanel:carrycommit CustomEvents,
+  // bubbled to document; Canvas owns commitCarriedEdge + validateEdge;
+  // PickupCable draws the ghost). A rear patch is the SAME validated edge with
+  // the SAME port ids as a front patch. #1800 changed LAYOUT ONLY — not one
+  // line of the seam below moved.
+  //
+  // COMPATIBILITY DIM: while a cable is carried, holes a commit would reject
+  // drop to ~35% opacity (pure-derived from connectDragState.pickupSource via
+  // canConnectToPort; no seam change).
   import {
     rearFieldPlan,
     rearHoleAcceptsCarry,
+    rearZoneColumns,
     type RearDefLike,
     type RearHole,
+    type RearSection,
   } from './rear-card-model';
   import { connectDragState } from '$lib/ui/connect-drag-state.svelte';
   import { stereoPairForPort, type StereoPairDefLike } from '$lib/graph/stereo-pairs';
@@ -105,7 +122,7 @@
     return parts.join(' — ');
   }
 
-  // ---- carry state: source pulse + compatibility dim (spec §2.2) ----
+  // ---- carry state: source pulse + compatibility dim ----
   let carried = $derived(
     connectDragState.mode === 'pickup' && !connectDragState.pickupVirtual
       ? connectDragState.pickupSource
@@ -228,6 +245,14 @@
     );
   }
 
+  /** BALANCED COLUMN MODE — see `.zone-cols.balanced`. CSS multicol balances
+   *  column heights (no orphan last row), but a section wider than one column
+   *  would overflow it, so the zone only takes that mode when every section in
+   *  it is one column wide. Derived from the plan, never guessed. */
+  function balanced(sections: readonly RearSection[]): boolean {
+    return sections.every((s) => s.columns === 1);
+  }
+
   /** Does this hole carry a stereo image the picker can split? A collapsed hole
    *  says so directly; an uncollapsed one is asked of the def (a rail that
    *  shows only one leg of a pair still has the image). */
@@ -235,25 +260,12 @@
     if (hole.stereoSiblingPortId) return true;
     return stereoPairForPort(def as StereoPairDefLike, hole.portId, hole.direction) !== null;
   }
-
-  // ---- band collapse (pathology fallback only — spec §1.5) ----
-  // Session-scoped per-band expansion; bands start collapsed only when the
-  // field exceeds the threshold. State resets with the component (per-open).
-  let expandedBands = $state<Set<string>>(new Set());
-  function bandOpen(id: string): boolean {
-    return !plan.collapse || expandedBands.has(id);
-  }
-  function toggleBand(id: string): void {
-    if (!plan.collapse) return;
-    untrack(() => {
-      const next = new Set(expandedBands);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      expandedBands = next;
-    });
-  }
 </script>
 
+<!-- ONE ROW GRAMMAR. The same snippet renders an input and an output; `.rj.out`
+     mirrors it (row-reverse + right-aligned label) so the jack always rides the
+     row's OUTER edge, and inverts its chrome. Nothing here branches on
+     direction to pick a COLOUR. -->
 {#snippet jack(hole: RearHole)}
   {@const remotes = remotesFor(hole)}
   {@const patched = remotes.length > 0}
@@ -277,92 +289,86 @@
     onclick={() => onHoleClick(hole)}
     oncontextmenu={(e) => onHoleContextMenu(e, hole)}
   >
-    {#if hole.direction === 'output'}
-      <span class="hole" aria-hidden="true"></span>
-      <span class="col">
-        <span class="lab" data-testid="jack-label"
-          >{hole.label}{#if remotes.length > 1}<span class="fan">+{remotes.length - 1}</span>{/if}</span
-        >
-        {#if patched}<span class="ep">→ {remoteName(remotes[0])}</span>{/if}
-      </span>
-    {:else}
-      <span class="lab" data-testid="jack-label">
-        {hole.label}
-        {#if hole.audioRate}<span class="ar" title="audio-rate">~</span>{/if}
-        {#if hole.edge}<span class="edge" aria-hidden="true">{hole.edge === 'trigger' ? '▲' : '▬'}</span>{/if}
-        {#if hole.pitch}<span class="voct">1v/oct</span>{/if}
-      </span>
-      <span class="hole" aria-hidden="true"></span>
-      {#if patched}<span class="ep">← {remoteName(remotes[0])}</span>{/if}
-    {/if}
+    <span class="hole" aria-hidden="true"></span>
+    <span class="lab" data-testid="jack-label"
+      >{hole.label}{#if hole.audioRate}<span class="ar" title="audio-rate">~</span>{/if}{#if hole.edge}<span
+          class="edge"
+          aria-hidden="true">{hole.edge === 'trigger' ? '▲' : '▬'}</span
+        >{/if}{#if hole.pitch}<span class="voct">1v/oct</span>{/if}{#if remotes.length > 1}<span
+          class="fan">+{remotes.length - 1}</span
+        >{/if}</span
+    >
+    {#if patched}<span class="ep">{hole.direction === 'input' ? '←' : '→'} {remoteName(remotes[0])}</span>{/if}
   </button>
 {/snippet}
 
-<!-- The full-card jack field: input bands (full width, incl. the middle the
-     legacy flip wasted) + the fixed inverted OUTPUTS rail. -->
-<div
-  class="rear-card"
-  data-testid="rear-card"
-  data-rear-node={nodeId}
-  bind:this={hostEl}
->
-  <div class="rear-page" class:dense-rail={plan.denseRail}>
-    <div class="rear-main">
-      {#each plan.bands as band (band.id)}
-        <section class="rband" data-testid="rear-band" data-band-id={band.id}>
-          {#if plan.collapse}
-            <button
-              type="button"
-              class="rband-head as-button"
-              data-testid="rear-band-toggle"
-              aria-expanded={bandOpen(band.id)}
-              onclick={() => toggleBand(band.id)}
-            >
-              <span class="dir" aria-hidden="true">←</span>
-              <span class="bname">{band.label}</span>
-              <span class="pill"
-                >{band.holes.length + band.clusters.reduce((n, c) => n + c.holes.length, 0)} jacks</span
-              >
-            </button>
-          {:else}
-            <header class="rband-head">
-              <span class="dir" aria-hidden="true">←</span>
-              <span class="bname">{band.label}</span>
-              {#if band.holes.some((h) => h.audioRate) || band.clusters.some((c) => c.holes.some((h) => h.audioRate))}
-                <span class="tag">~ = audio-rate</span>
-              {/if}
-              {#if band.holes.some((h) => h.edge) || band.clusters.some((c) => c.holes.some((h) => h.edge))}
-                <span class="tag">▲ trigger · ▬ gate</span>
-              {/if}
-            </header>
-          {/if}
-          {#if bandOpen(band.id)}
-            <div class="rgrid">
-              {#each band.holes as hole (hole.portId)}
-                {@render jack(hole)}
-              {/each}
-              {#each band.clusters as cluster (cluster.label)}
-                <div class="rcluster">{cluster.label}</div>
-                {#each cluster.holes as hole (hole.portId)}
-                  {@render jack(hole)}
-                {/each}
-              {/each}
-            </div>
-          {/if}
-        </section>
+<!-- A SECTION IS A COLUMN: a heading plus a single list of rows. Both rails use
+     it; `data-direction` is the machine-readable half of the ZONE channel. -->
+{#snippet sectionCol(sec: RearSection)}
+  <!-- `--cols` is the section's DERIVED width in columns (rear-card-model:
+       `rearSectionColumns`). It drives both the section's own width and the
+       `column-count` its row list flows into, from ONE number — so the box and
+       the rows inside it cannot disagree about how wide the group is. -->
+  <section
+    class="rsec"
+    data-testid="rear-section"
+    data-section-id={sec.id}
+    data-direction={sec.direction}
+    data-columns={sec.columns}
+    style={`--cols:${sec.columns}`}
+  >
+    <header class="rsec-head">
+      {#if sec.direction === 'input'}
+        <span class="rsec-dir" aria-hidden="true">←</span>
+        <span class="rsec-name">{sec.label}</span>
+      {:else}
+        <span class="rsec-name">{sec.label}</span>
+        <span class="rsec-dir" aria-hidden="true">→</span>
+      {/if}
+    </header>
+    <div class="rsec-rows">
+      {#each sec.holes as hole (hole.portId)}
+        {@render jack(hole)}
       {/each}
-    </div>
-
-    <div class="rear-rail" data-testid="rear-rail">
-      <header class="rband-head">
-        <span class="dir" aria-hidden="true">→</span>
-        <span class="bname">outputs</span>
-      </header>
-      <div class="rail-cells">
-        {#each plan.outputs as hole (hole.portId)}
+      {#each sec.clusters as cluster (cluster.label)}
+        <div class="rcluster">{cluster.label}</div>
+        {#each cluster.holes as hole (hole.portId)}
           {@render jack(hole)}
         {/each}
-      </div>
+      {/each}
+    </div>
+  </section>
+{/snippet}
+
+<div class="rear-card" data-testid="rear-card" data-rear-node={nodeId} bind:this={hostEl}>
+  <div class="rear-page" class:dense={plan.dense}>
+    <div class="rear-zones">
+      {#if plan.inputs.length > 0}
+        <div class="rear-zone in" data-testid="rear-zone" data-direction="input">
+          <div
+            class="zone-cols"
+            class:balanced={balanced(plan.inputs)}
+            style={`--zcols:${rearZoneColumns(plan.inputs.length, 'input', plan.dense)}`}
+          >
+            {#each plan.inputs as sec (sec.id)}
+              {@render sectionCol(sec)}
+            {/each}
+          </div>
+        </div>
+      {/if}
+      {#if plan.outputs.length > 0}
+        <div class="rear-zone out" data-testid="rear-zone" data-direction="output">
+          <div
+            class="zone-cols"
+            class:balanced={balanced(plan.outputs)}
+            style={`--zcols:${rearZoneColumns(plan.outputs.length, 'output', plan.dense)}`}
+          >
+            {#each plan.outputs as sec (sec.id)}
+              {@render sectionCol(sec)}
+            {/each}
+          </div>
+        </div>
+      {/if}
     </div>
 
     <div class="rear-foot">
@@ -407,34 +413,38 @@
        TWO dials, and the split is the whole finding: a box that has to hold a
        WORD cannot shrink as fast as the space around it.
 
-         --rc-s  SPACE — hole diameter, padding, gaps, row height, rail chrome.
-                 0.6 is the ask, delivered in full.
-         --rc-t  TYPE  — every font-size, PLUS the two widths whose job is to
-                 contain text (--rc-cell-min, --rc-rail-w). LEGIBILITY floors
-                 this at 0.9: 10px x 0.6 = 6px is not a readable uppercase
-                 mono label, and a 0.6 cell would ellipsize labels the old
-                 cell showed in full. Measured over all 1242 rear labels in
-                 the registry, intrinsic width at 9px: median 35.8px,
-                 p95 71.5px, max 95.3px — so the cell must keep ~80px of label
-                 room to truncate no more often than it does today.
-
-       Widening the SPACE dial was cheap and widening the TYPE dial was not,
-       which is also why this is the right place to spend: at 1280x720 the
-       field overflowed VERTICALLY 2.7x (954px of content in a 352px viewport)
-       and did not overflow horizontally at all.
+         --rc-s  SPACE — hole diameter, padding, gaps, row height, chrome.
+         --rc-t  TYPE  — every font-size, PLUS the widths whose job is to
+                 contain text (--rc-col-min/max). LEGIBILITY floors this at
+                 0.9: 10px x 0.6 = 6px is not a readable uppercase mono label.
+                 Measured over all 1242 rear labels in the registry, intrinsic
+                 width at 9px: median 35.8px, p95 71.5px, max 95.3px — so a
+                 column must keep ~80px of label room to truncate no more often
+                 than it does today.
 
        Sub-glyph marks (~, the trigger/gate ticks, the fan-out badge) are
        ALREADY at the 8px legibility floor and deliberately do NOT scale. */
     --rc-s: 0.6;
     --rc-t: 0.9;
 
-    /* rear geometry (spec Appendix A), all dialled */
     --rc-hole: calc(26px * var(--rc-s));
-    --rc-cell-min: calc(96px * var(--rc-t));
-    --rc-rail-w: calc(170px * var(--rc-t));
+    /* A SECTION COLUMN, floored by the label + jack it must hold and capped so
+       one wide label cannot stretch the whole card (#1800: "we do not want
+       useless gray horizontal space on cards, ever"). */
+    --rc-col-min: calc(140px * var(--rc-t));
+    --rc-col-max: calc(200px * var(--rc-t));
+    --rc-gap: calc(14px * var(--rc-s));
     color: var(--rc-ink);
+    /* The field is exactly as wide as its columns need. `.faceplate-body`
+       relaxes its 900px kit floor for us (`:has(.rear-card)` in
+       _dock-faceplate.css) so this is not immediately overridden. */
+    width: max-content;
+    max-width: 100%;
   }
-  /* domain setters — hole ring + derived shades per cell */
+  /* DOMAIN SETTERS — the ONLY place `--rcd` is assigned, and every selector
+     here is direction-FREE by construction. That is the invariant
+     rear-direction.test.ts asserts: colour means cable domain, so the same
+     port type must resolve to the same hue on either rail. */
   .rj.audio { --rcd: var(--rc-audio); }
   .rj.cv { --rcd: var(--rc-cv); }
   .rj.gate { --rcd: var(--rc-gate); }
@@ -453,90 +463,148 @@
   .sw.video { background: var(--rc-video); }
   .sw.poly { background: var(--rc-poly); }
 
-  /* ---- field surface: two-zone grid + the diagonal-hatch "back of the
-     unit" wash (legacy back panel's gradient at RACKLINE opacity) ---- */
+  /* ---- field surface: the two direction ZONES + the "back of the unit" wash
+     (legacy back panel's diagonal hatch at RACKLINE opacity) ---- */
   .rear-page {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) var(--rc-rail-w);
+    display: flex;
+    flex-direction: column;
     background: repeating-linear-gradient(135deg, rgba(0, 0, 0, 0.14) 0 2px, rgba(0, 0, 0, 0) 2px 8px);
   }
-  .rear-page.dense-rail {
-    --rc-rail-w: calc(220px * var(--rc-t));
-    --rc-hole: calc(22px * var(--rc-s));
+  .rear-zones {
+    display: flex;
+    align-items: stretch;
   }
-  .rear-main {
-    padding: calc(6px * var(--rc-s)) calc(22px * var(--rc-s)) calc(18px * var(--rc-s));
+  /* CHANNEL: ZONE. Inputs left, outputs right, parted by a rule. The outputs
+     zone never stretches — it is as wide as the sections in it, which is the
+     "width must be earned" rule applied to the rail that used to be a fixed
+     170px whatever it held. */
+  .rear-zone {
+    padding: calc(10px * var(--rc-s)) calc(14px * var(--rc-s)) calc(14px * var(--rc-s));
     min-width: 0;
   }
+  .rear-zone.in {
+    flex: 0 1 auto;
+  }
+  .rear-zone.out {
+    flex: 0 0 auto;
+    border-left: 1px solid var(--rc-line);
+    background: linear-gradient(180deg, #12161e, #0e1219);
+  }
 
-  /* ---- group band (kit .section grammar) ---- */
-  .rband {
-    padding: calc(13px * var(--rc-s)) 0 calc(15px * var(--rc-s));
-    border-top: 1px solid var(--rc-line);
+  /* ---- SECTIONS AS COLUMNS. A wrapping row of content-width columns: they
+     never stretch (no grey filler inside a column) and they never overflow
+     sideways (they wrap to a new band of columns instead). ---- */
+  /* ⚠ `--zcols` IS LOAD-BEARING LAYOUT, not a taste knob. The card is
+     `width: max-content`, and NEITHER of the two modes below has a usable
+     intrinsic width: a `flex-wrap` row asked for max-content never wraps (every
+     column on one line), and a multicol asked for max-content collapses to ONE
+     column — that second one was MEASURED, not predicted, and turned tidyVco's
+     field into a 287x929 ribbon. `--zcols` (rear-card-model `rearZoneColumns`,
+     the one home for the caps) is the definite bound both modes resolve
+     against. */
+  .zone-cols {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    align-content: flex-start;
+    gap: calc(4px * var(--rc-s)) var(--rc-gap);
+    max-width: calc(var(--rc-col-max) * var(--zcols) + var(--rc-gap) * (var(--zcols) - 1));
   }
-  .rband:first-of-type {
-    border-top: none;
-    padding-top: calc(8px * var(--rc-s));
+  /* BALANCED MODE — used when every section in the zone is one column wide,
+     which is almost every module.
+     ⚠ MEASURED, not preferred: `flex-wrap` is GREEDY, so tidyVco's six
+     single-column groups packed 5 + 1 and left its last group alone beside
+     ~600 px of empty hatch — the owner's "useless gray horizontal space", moved
+     rather than removed. CSS multicol BALANCES column heights instead, so the
+     same six groups fill evenly and there is no orphan row. It cannot be the
+     only mode: a multi-column section is wider than a multicol column and would
+     overflow it, so a zone containing one falls back to the wrap above. The
+     switch is DERIVED from the plan (`sec.columns`), never guessed. */
+  .zone-cols.balanced {
+    display: block;
+    width: calc(var(--rc-col-min) * var(--zcols) + var(--rc-gap) * (var(--zcols) - 1));
+    max-width: none;
+    column-count: var(--zcols);
+    column-gap: var(--rc-gap);
   }
-  .rband-head {
+  .zone-cols.balanced > .rsec {
+    break-inside: avoid;
+    width: auto;
+    max-width: none;
+    min-width: 0;
+  }
+  /* ONE SECTION = ONE COLUMN, until its own content earns another. A section
+     stays shrink-to-fit at `--cols: 1` (so a three-jack group is three jacks
+     wide, not a reserved slot), and takes an exact multi-column box above that
+     — a thirty-row group is the case where the OLD full-width band was
+     space-efficient, and a single tall column would have been the regression. */
+  .rsec {
+    flex: 0 1 auto;
+    min-width: var(--rc-col-min);
+    max-width: calc(var(--rc-col-max) * var(--cols, 1) + var(--rc-gap) * (var(--cols, 1) - 1));
+    padding: calc(6px * var(--rc-s)) 0 calc(8px * var(--rc-s));
+  }
+  .rsec[data-columns='1'] {
+    width: max-content;
+  }
+  .rsec:not([data-columns='1']) {
+    width: calc(var(--rc-col-max) * var(--cols) + var(--rc-gap) * (var(--cols) - 1));
+  }
+  .rsec:not([data-columns='1']) .rsec-rows {
+    column-count: var(--cols);
+    column-gap: var(--rc-gap);
+  }
+  /* Multicol may break anywhere it likes; a row split down the middle or a
+     cluster heading orphaned at a column foot are both real. */
+  .rsec-rows .rj {
+    break-inside: avoid;
+  }
+  .rsec-rows .rcluster {
+    break-inside: avoid;
+    break-after: avoid;
+  }
+  .rsec-head {
     display: flex;
     align-items: baseline;
-    gap: calc(10px * var(--rc-s));
-    margin-bottom: calc(10px * var(--rc-s));
-    font-size: calc(12px * var(--rc-t));
+    gap: calc(8px * var(--rc-s));
+    margin-bottom: calc(5px * var(--rc-s));
+    padding-bottom: calc(4px * var(--rc-s));
+    border-bottom: 1px solid var(--rc-line);
+    font-size: calc(11px * var(--rc-t));
     letter-spacing: 0.12em;
     text-transform: uppercase;
     color: var(--rc-dim);
     font-weight: 650;
   }
-  .rband-head .dir {
+  .rsec-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  /* CHANNEL: SECTION GLYPH — a literal ← / →, legible with no legend, no hue
+     and no colour vision. Pushed to the heading's OUTER edge so it points the
+     same way the rows below it are mirrored. */
+  .rsec-dir {
     color: var(--rc-faint);
     font-family: var(--rc-mono);
     font-size: calc(11px * var(--rc-t));
+    flex: none;
   }
-  .rband-head .tag {
+  .rsec[data-direction='output'] .rsec-name {
     margin-left: auto;
-    font-family: var(--rc-mono);
-    font-size: calc(10px * var(--rc-t));
-    color: var(--rc-faint);
-    text-transform: none;
-    letter-spacing: 0.02em;
   }
-  .rband-head .tag + .tag {
-    margin-left: calc(12px * var(--rc-s));
+  /* BLOCK flow, not flex-column: a multi-column section (`--cols` > 1) needs
+     CSS multicol on this box, and multicol does not fragment a flex container.
+     Row spacing therefore rides on the rows themselves. */
+  .rsec-rows {
+    display: block;
   }
-  .rband-head.as-button {
-    appearance: none;
-    border: none;
-    background: transparent;
-    width: 100%;
-    padding: 0;
-    cursor: pointer;
-    font: inherit;
-    color: var(--rc-dim);
-    text-transform: uppercase;
-  }
-  .rband-head .pill {
-    margin-left: auto;
-    font-family: var(--rc-mono);
-    font-size: calc(10px * var(--rc-t));
-    color: var(--rc-faint);
-    border: 1px solid var(--rc-line);
-    border-radius: 999px;
-    padding: 1px calc(8px * var(--rc-s));
-    text-transform: none;
-  }
-
-  /* rigid raster: cells align across bands, wrap at 50/50 width for free */
-  .rgrid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(var(--rc-cell-min), 1fr));
-    gap: calc(6px * var(--rc-s)) calc(8px * var(--rc-s));
-    align-items: start;
+  .rsec-rows > * {
+    margin-bottom: calc(2px * var(--rc-s));
   }
   .rcluster {
-    grid-column: 1 / -1;
-    margin: calc(4px * var(--rc-s)) 0 calc(-2px * var(--rc-s));
+    margin: calc(5px * var(--rc-s)) 0 calc(1px * var(--rc-s));
     display: flex;
     align-items: center;
     gap: calc(8px * var(--rc-s));
@@ -554,34 +622,38 @@
     opacity: 0.7;
   }
 
-  /* ---- jack cell: the whole cell is the button ----------------------------
-     THE WHOLE CELL — label, hole, and the space between them — has always been
-     one <button>; the hole is a decorative <span> inside it. What was wrong was
-     the AFFORDANCE: the only conspicuous hover cue was the hole scaling 12%,
-     with a 3%-white cell wash nobody can see, so a control that accepted a
-     click anywhere LOOKED like a 26px circle. Owner 2026-08-11: "the whole text
-     area should be clickable, no reason to force it to just be the jack."
-     The hit area did not move; the cue moved onto it, which matters more now
-     the hole is 15.6px. See rear-card-hit-target.spec.ts — it clicks the LABEL
-     (never the hole) and asserts the carry starts. */
+  /* ---- THE ROW: one grammar, jack + label ---------------------------------
+     THE WHOLE ROW — label, hole, and the space between them — is one <button>;
+     the hole is a decorative <span> inside it. Owner 2026-08-11: "the whole
+     text area should be clickable, no reason to force it to just be the jack."
+     See rear-card-hit-target.spec.ts — it clicks the LABEL (never the hole) and
+     asserts the carry starts. */
   .rj {
     appearance: none;
-    border: none;
+    border: 1px solid transparent;
     font: inherit;
-    text-align: center;
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
     align-items: center;
-    gap: calc(5px * var(--rc-s));
-    padding: calc(7px * var(--rc-s)) calc(4px * var(--rc-s)) calc(6px * var(--rc-s));
-    border-radius: calc(8px * var(--rc-s));
+    gap: calc(9px * var(--rc-s));
+    padding: calc(4px * var(--rc-s)) calc(6px * var(--rc-s));
+    border-radius: calc(7px * var(--rc-s));
     cursor: pointer;
     background: transparent;
     color: var(--rc-ink);
-    min-height: calc(64px * var(--rc-s));
+    text-align: left;
+    width: 100%;
     position: relative;
   }
-  /* Row-level hover: the whole cell washes + rings in its domain hue and the
+  /* CHANNEL: ROW MIRROR. The one channel that survives a single row seen in
+     isolation — the jack rides the OUTER edge of the field, so an output's
+     socket is on the right and an input's on the left, and the label reads
+     inward from it. Geometry only: no hue, no chrome, no extra pixels. */
+  .rj.out {
+    flex-direction: row-reverse;
+    text-align: right;
+  }
+  /* Row-level hover: the whole row washes + rings in its domain hue and the
      label lifts to full ink, so the live area and the visible area are the
      same shape. */
   .rj:hover {
@@ -596,6 +668,7 @@
     outline-offset: 1px;
   }
   .rj .lab {
+    flex: 1 1 auto;
     font-family: var(--rc-mono);
     font-size: calc(10px * var(--rc-t));
     letter-spacing: 0.06em;
@@ -604,15 +677,12 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    max-width: 100%;
-    display: inline-flex;
-    align-items: baseline;
-    gap: calc(3px * var(--rc-s));
-    justify-content: center;
+    min-width: 0;
   }
   .rj .lab .ar {
     color: var(--rcd);
     font-weight: 700;
+    margin-left: calc(3px * var(--rc-s));
   }
   /* The ▲/▬ ticks and the 1v/oct tag are ALREADY at the 8px legibility floor;
      they do not take --rc-t. (10px x 0.9 = 9px for the label they sit beside,
@@ -620,12 +690,14 @@
   .rj .lab .edge {
     color: var(--rcd);
     font-size: 8px;
+    margin-left: calc(3px * var(--rc-s));
   }
   .rj .lab .voct {
     color: var(--rcd);
     font-size: 8px;
     letter-spacing: 0.02em;
     text-transform: none;
+    margin-left: calc(3px * var(--rc-s));
   }
 
   /* the hole — recessed socket, domain ring */
@@ -650,7 +722,37 @@
     background: radial-gradient(circle at 50% 42%, var(--rcd) 0 46%, #04060a 54% 100%);
     box-shadow: inset 0 0 4px rgba(0, 0, 0, 0.6), 0 0 10px var(--rcd-glow);
   }
+  /* ⚠ THE CHIP YIELDS BEFORE THE LABEL — a PRIORITY rule, not a tuning knob.
+     Both were `flex: … 1 auto`, so flexbox shrank them in proportion to their
+     content and a jack lost its OWN IDENTITY to describe what happened to be
+     plugged into it: the dx7 baseline rendered `GATE…` next to `← clip pla…`.
+     Wrong ordering. The label says WHICH JACK THIS IS and is the reason to look
+     at the row; the chip says what is in it today. `flex-shrink: 3` plus a hard
+     40% cap makes the chip absorb the overflow first, so the label is the LAST
+     thing to truncate.
+     ⚠ MITIGATION, NOT A CURE — and the numbers are MEASURED, in-page, A/B
+     against the old declarations at the shipped 126px column (an earlier draft
+     of this comment guessed "~11 vs ~14" and both figures were wrong):
+
+       chip chars:        4     8    12    18    26
+       label budget OLD:  8     5     2     0     0     ← unbounded collapse
+       label budget NEW:  7     7     7     7     7     ← flat, chip capped 37%
+
+     So what the fix actually buys is a FLOOR, not parity: the label stops
+     degrading as the chip grows, instead of being eaten entirely by an 18-char
+     remote name. An unpatched row fits 16 characters, a patched one 7 — a chip
+     still costs 9 characters, permanently, and a label longer than 7 truncates
+     when something is plugged in. Widening `--rc-col-min` is the only real cure
+     and it trades card width for label room on every module, which is an owner
+     call, not a silent one.
+
+     It matters NOW because the owner's full-words ruling and #1807 both make
+     labels LONGER, so the old ordering was pointed the wrong way down a road
+     already being driven. */
   .rj .ep {
+    flex: 0 3 auto;
+    min-width: 0;
+    max-width: 40%;
     font-family: var(--rc-mono);
     font-size: calc(9px * var(--rc-t));
     letter-spacing: 0.03em;
@@ -660,16 +762,11 @@
     border-radius: calc(4px * var(--rc-s));
     padding: 0 calc(6px * var(--rc-s));
     white-space: nowrap;
-    max-width: 100%;
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  /* carry source — dashed domain pulse (the ghost cable's dash vocabulary).
-     Anchored to the HOLE, not to the cell: it used to be a ::after on .rj at
-     `top: 38px` with a `.rj.out` override at `left: 23px`, two magic numbers
-     that encoded the OLD cell geometry and would have silently drifted off the
-     socket the moment --rc-s moved. Riding the hole's own box is scale-correct
-     by construction and drops the override. */
+  /* carry source — dashed domain pulse (the ghost cable's dash vocabulary),
+     anchored to the HOLE so it is scale-correct by construction. */
   .rj.carrying .hole::after {
     content: '';
     position: absolute;
@@ -695,42 +792,15 @@
     filter: saturate(0.4);
   }
 
-  /* ---- OUTPUTS rail: fixed right column, inverted domain tiles ---- */
-  .rear-rail {
-    border-left: 1px solid var(--rc-line);
-    background: linear-gradient(180deg, #12161e, #0e1219);
-    padding: calc(14px * var(--rc-s)) calc(12px * var(--rc-s)) calc(18px * var(--rc-s));
-    display: flex;
-    flex-direction: column;
-  }
-  .rear-rail .rband-head {
-    margin-bottom: calc(8px * var(--rc-s));
-  }
-  .rail-cells {
-    display: flex;
-    flex-direction: column;
-    gap: calc(8px * var(--rc-s));
-  }
-  .dense-rail .rail-cells {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: calc(6px * var(--rc-s));
-  }
+  /* CHANNEL: TILE CHROME — an output row is a filled, bordered tile with its
+     socket sunk into a collar; an input row is open on the card ground. A
+     LUMINANCE difference, not a hue one: the fill is whatever domain hue the
+     row already carries, so the same port type is the same colour on both
+     rails (asserted by rear-direction.test.ts). */
   .rj.out {
-    flex-direction: row;
-    justify-content: flex-start;
-    gap: calc(10px * var(--rc-s));
-    text-align: left;
     background: var(--rcd-wash);
-    border: 1px solid var(--rcd-d);
-    border-radius: calc(8px * var(--rc-s));
-    padding: calc(9px * var(--rc-s)) calc(10px * var(--rc-s));
-    min-height: 0;
-    width: 100%;
+    border-color: var(--rcd-d);
   }
-  /* The output tile already washed on hover; keep it and add the same
-     whole-cell ring + label lift the input cells now get, so BOTH shapes say
-     "this entire tile is the control". */
   .rj.out:hover {
     background: color-mix(in srgb, var(--rcd) 28%, transparent);
     box-shadow: inset 0 0 0 1px var(--rcd);
@@ -743,13 +813,6 @@
   .rj.out.patched .hole {
     background: radial-gradient(circle at 50% 42%, var(--rcd) 0 38%, var(--rc-inset) 46% 100%);
     box-shadow: inset 0 0 0 calc(3px * var(--rc-s)) var(--rcd), 0 0 10px var(--rcd-glow);
-  }
-  .rj.out .col {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: calc(2px * var(--rc-s));
-    min-width: 0;
   }
   .rj.out .lab {
     color: var(--rc-ink);
@@ -764,9 +827,42 @@
     padding: 0 calc(5px * var(--rc-s));
     margin-left: calc(4px * var(--rc-s));
   }
-  /* ---- footer: domain legend + interaction hint ---- */
+
+  /* ---- THE HIGH-PORT-COUNT STEP (plan.dense) ------------------------------
+     Columns are the primary answer — the same rows in N columns are 1/N the
+     height, and height is the axis that overflowed. Past REAR_DENSE_ROWS the
+     rows also tighten and the endpoint chip drops its TEXT.
+
+     ⚠ NOTHING IS HIDDEN. This replaces band-collapse, which kept a band's
+     holes OUT OF THE DOM until you clicked its header — i.e. patch points
+     behind a disclosure, on a card whose only patch surface this is. Every
+     hole here stays rendered, hit-testable and patchable, and the remote it is
+     wired to is still on the row's `title` and in its aria-label. */
+  .dense .rj {
+    padding: calc(2px * var(--rc-s)) calc(5px * var(--rc-s));
+    gap: calc(7px * var(--rc-s));
+  }
+  .dense .rj .ep {
+    display: none;
+  }
+  .dense .rsec {
+    padding-bottom: calc(5px * var(--rc-s));
+  }
+
+  /* ---- footer: domain legend + interaction hint ----
+     ⚠ `width: 0; min-width: 100%` is deliberate. The card is `width:
+     max-content`, so ANY child that will not wrap becomes the width floor —
+     and this row of legend + hint is ~740px of text that would have set the
+     card's width for a two-jack module and filled the difference with exactly
+     the grey space this redesign exists to remove. Zero width takes it out of
+     the intrinsic-size calculation; 100% min-width then stretches it back to
+     whatever the JACK FIELD decided, where its own flex-wrap can take over. */
   .rear-foot {
-    grid-column: 1 / -1;
+    width: 0;
+    min-width: 100%;
+    /* explicit: the padding below must sit INSIDE the 100%, or the footer
+       overhangs the card it was just told not to widen. */
+    box-sizing: border-box;
     display: flex;
     align-items: center;
     gap: calc(18px * var(--rc-s));
