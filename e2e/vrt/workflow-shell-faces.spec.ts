@@ -198,13 +198,19 @@ const NC_SHIFT_PX = 8;
 /**
  * The most empty plate a face may carry to the right of its content, CSS px.
  *
- * A POLICY THRESHOLD ON A DERIVED MEASUREMENT, not a population count. It is
- * the geometry that is unavoidable once the plate is `width: max-content`:
- * `.dock-pages`' own 10 px right padding, the `.faceplate` 1 px border, and
- * sub-pixel rounding on a `max-content` track. Rounded up to the next
- * comfortable multiple so a one-off half-pixel cannot redden the roster.
+ * A POLICY THRESHOLD ON A DERIVED MEASUREMENT, not a population count — and it
+ * was CHOSEN FROM THE MEASUREMENT rather than guessed. Swept over the whole
+ * roster after the `min-width: 900px` floor came off, the slack collapses to a
+ * tight bimodal distribution: **15 px** for a face whose widest band defines
+ * the plate, and **32-33 px** for one whose HERO row does (the hero's own
+ * `padding: 4px 10px 0` sits inside `.dock-pages`' 10 px, and the extra ~18 px
+ * is the hero rail's gutter). Every face in the roster lands on one of those
+ * two values or below, except the ones NAMED below.
+ *
+ * 40 px is the first round number above the upper mode, so a face has to be
+ * meaningfully over — not a rounding artefact — to redden.
  */
-const FACE_WIDTH_SLACK_MAX_PX = 24;
+const FACE_WIDTH_SLACK_MAX_PX = 40;
 
 /**
  * Faces whose empty width is EARNED, each naming what consumes it.
@@ -216,7 +222,24 @@ const FACE_WIDTH_SLACK_MAX_PX = 24;
  * An exemption you cannot write a concrete reason for is an offender, not an
  * exemption — "it looks roomier" is not a thing that consumes width.
  */
-const FACE_WIDTH_EXEMPTIONS: Readonly<Record<string, string>> = {};
+const FACE_WIDTH_EXEMPTIONS: Readonly<Record<string, string>> = {
+  unityscalemathematik:
+    "its HERO READOUT STRIP is intrinsically wider than its ink: four label/value pairs whose " +
+    "columns are sized by the widest of `dt`/`dd` per item plus a 22 px gutter, against a face " +
+    "whose bands are three knob columns. Measured 93 CSS px of slack (content 280, plate 373). " +
+    "⚠ THIS IS A KNOWN DEFECT, NOT AN EARNED WIDTH, and it is exempt only because its fix is " +
+    "the owner's own follow-up ruling — *\"generally we don't want text like that in our " +
+    "faceplates\"* — which removes the strip from every face and takes this entry with it.",
+  vca:
+    "the same hero readout strip, on the narrowest face that has one: measured 90 CSS px of " +
+    "slack (content 247, plate 337) — the strip alone is wider than both of the face's bands. " +
+    "⚠ Same status as unityscalemathematik: a defect held open by a pending global removal, " +
+    "not a width anything consumes.",
+  wavetableVco:
+    "the same hero readout strip: measured 69 CSS px of slack (content 250, plate 319). " +
+    "⚠ Same status — this entry exists to keep the gate GREEN AND HONEST about a known " +
+    "offender rather than to bless it, and it dies with the strip.",
+};
 
 test.describe('VRT: P1 curated faces (?shell=1) — compact lane tile + dock full-view', () => {
   for (const { type, pages } of FACES) {

@@ -1736,8 +1736,29 @@
      split pane must drop the hero dial below the picture instead of squeezing
      a 64px dial. */
   .dock-hero.has-hero {
-    flex-wrap: wrap;
-    align-items: flex-end;
+    /* ⚠ A COLUMN, NOT A WRAPPING ROW — and the RENDER is unchanged by this.
+     *
+     * `.hero-rail` below is `width: 100%`, so in a wrapping ROW it can never
+     * share a line with the glyph: it always wrapped onto its own. The picture
+     * has therefore always sat ABOVE the rail, which is what the comment above
+     * asks for. But a wrapping row's MAX-CONTENT is the sum of its items, and
+     * `.faceplate-body` is `width: max-content` — so the plate reserved
+     * `glyph + gap + rail` of width for a side-by-side arrangement it never
+     * drew, and then painted the difference as blank plate.
+     *
+     * MEASURED on the six faces this hit (owner ruling 2026-08-17, *"we do not
+     * want useless gray horizontal space on cards, ever"*): destroy reserved
+     * 670 px for 409 px of ink, wavetableVco 436 for 250, vca 348 for 247 —
+     * every one of them a face with BOTH a hero glyph and a readout strip,
+     * which is exactly the pair that made the sum large. As a column the
+     * intrinsic width is the MAX of the two instead of their sum, which is what
+     * the layout was already drawing.
+     *
+     * `align-items` flips axis with the direction, so it is restated: in a row
+     * `flex-end` was the vertical baseline of a line box; in a column it would
+     * right-align the picture. */
+    flex-direction: column;
+    align-items: flex-start;
     gap: 14px;
     padding-bottom: 6px;
   }

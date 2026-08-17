@@ -256,6 +256,47 @@ writes nothing to the graph by design, so `readParam`/`readData` are structurall
 blind to it — the observable is the audition ledger, and `delivered: false` is
 recorded, never dropped.
 
+## Faceplate chrome: NO resting numbers, NO useless width
+
+Three owner rulings from one review round (2026-08-17). They are about
+FACEPLATES — the legacy cards are untouched.
+
+**No face prints a decimal under a control, and the data is REMOVED, not
+hidden.** *"we should kill the light white decimil represebtation of knob state
+in ALL modules"* / *"i want the data gone, not there but hidden or something"*.
+⚠ **`persistentReadout=false` is NOT the implementation** — a hover reveal is
+"there but hidden", refused by name, and the prop is deleted so it cannot come
+back. A readout still paints when its text is a declared option/landmark NAME
+and the param declares no `format` (`paintsReadout`); a name disambiguates
+otherwise-identical states, a number restates the dial. The value survives in
+`aria-valuetext`, which is what every spec proving a face tracks the graph now
+reads — so no assertion had to be weakened to survive the removal.
+Gate: `face-readout-source.test.ts` (source-level, and it denies the PROP, not
+its value).
+
+**A per-control label earns its place when it disambiguates otherwise-identical
+controls; it is clutter when a section heading already conveys it.** tidyVco's
+`A`/`D`/`S`/`R` are the only thing separating four identical knobs and STAY;
+mixmstrs' `1LO…8LO` under a `LOW` heading say nothing the grid has not said
+twice and GO. Declared per param (`face.bareCells`), dock-only — a lane tile has
+no section headings, so the thing that makes the caption redundant is not on
+screen. mixmstrs is currently the only face that declares it. ⚠ Hide the TEXT,
+never the accessible name: the primitives take `hideCaption` precisely so a
+caller cannot do it by dropping `label`.
+
+**Compact is the DEFAULT. Width must be EARNED, and the burden of proof is on
+the wide face.** *"we do not want useless gray horizontal space on cards, ever.
+prefer compact. screen real estate is expensive!"* A genuine earner is a live
+picture, a scope trace, a video preview, an XY pad, or a control that appears in
+one mode only. Measured: `.faceplate-body` carried `min-width: 900px`, so **37 of
+48 dock baselines were EXACTLY 900 px wide** against ~450 px of content on
+tidyVco. ⚠ It had already grown two per-occupant escape hatches; **a default that
+needs a new exemption per review is the wrong default** — fix the default, never
+add a third hatch. Gates: `face-width-source.test.ts` (the rule) plus the
+per-face content-vs-plate measurement in `workflow-shell-faces.spec.ts` (the
+result), both deny-by-default with a NAMED exemption carrying the thing that
+consumes the width.
+
 ## NEVER hand-type a population count
 
 **Never write a new hand-typed population count.** Not a ceiling, not a floor, not a

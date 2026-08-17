@@ -15,8 +15,16 @@
 // So this spec asserts three things a generic sweep structurally cannot:
 //   1. at MINI exactly ONE control renders and it is RELEASE (rank 1);
 //   2. driving it changes the GRAPH (`__patch`), not just the DOM;
-//   3. the dial's persistent readout is the DEF's formatter reaching the DOM —
+//   3. the dial's ACCESSIBLE VALUE is the DEF's formatter reaching the DOM —
 //      "300 ms", never the raw "0.30" a magnitude-banded fallback prints.
+//
+// ⚠ (3) USED TO READ A PAINTED `readout-release` LINE. The owner removed the
+// resting number from every face (2026-08-17), and every adsr param declares a
+// `format`, so no adsr dial paints anything at all now. The STRING did not
+// change: `aria-valuetext` is `knobValueReadout`, the same ladder the readout
+// printed, so the assertion moved surface without being weakened. It is also
+// the only live-value observable this face has left — the resofilter-face
+// precedent.
 //
 // Runs on /rack (no DB/relay), the normal e2e lane.
 
@@ -84,18 +92,27 @@ test.describe('adsr curated face — the ranked tiers', () => {
       "mini's one cell is RELEASE — the only stage that always runs (rank 1)",
     ).toHaveAttribute('data-cell-key', 'release');
 
-    // ── 3a. The persistent readout is the DEF's `format`, not KnobConic's
-    //        magnitude-banded fallback (which prints 0.30 with no unit).
-    const readout = shell.getByTestId('readout-release');
-    await expect(readout, 'the release dial reads out in real time units').toHaveText('300 ms');
+    // ── 3a. The dial SPEAKS the DEF's `format`, not KnobConic's magnitude-
+    //        banded fallback (which says 0.30 with no unit). Nothing is painted
+    //        under the dial any more; `aria-valuetext` carries the identical
+    //        string, so this is the same assertion on the surviving surface.
+    const knob = shell.locator('[data-testid="control-release"]');
+    await expect(knob, 'the release dial reads out in real time units').toHaveAttribute(
+      'aria-valuetext',
+      '300 ms',
+    );
+    await expect(
+      shell.getByTestId('readout-release'),
+      'and it paints NOTHING: `release` declares a `format`, which is exactly the case the ' +
+        'owner removed — a NAME would still print, a number never does',
+    ).toHaveCount(0);
 
     // ── 2. Driving the ranked control changes the GRAPH.
     // A fresh spawn stores NO explicit value — the dial (and the '300 ms'
-    // readout above) is reading the def's declared default through the shell,
-    // which is exactly the fallback path a re-typed card range would break.
+    // accessible value above) is reading the def's declared default through the
+    // shell, which is exactly the fallback path a re-typed card range would break.
     const before = await readParam(page, 'env', 'release');
     expect(before, 'a fresh spawn stores no explicit release value').toBeNull();
-    const knob = shell.locator('[data-testid="control-release"]');
     const box = (await knob.boundingBox())!;
     const cx = box.x + box.width / 2;
     const cy = box.y + box.height / 2;
@@ -115,10 +132,12 @@ test.describe('adsr curated face — the ranked tiers', () => {
       0.3,
     );
 
-    // ── 3b. …and the readout TRACKS it, still in real units. (A readout that
-    //        never moves is the same class of dead surface as an inert cell.)
-    await expect(readout).not.toHaveText('300 ms');
-    await expect(readout).toHaveText(/^\d+(\.\d+)? (ms|s)$/);
+    // ── 3b. …and the spoken value TRACKS it, still in real units. (A value that
+    //        never moves is the same class of dead surface as an inert cell, and
+    //        it is now the ONLY way to see that from the DOM — there is no
+    //        painted line left to read.)
+    await expect(knob).not.toHaveAttribute('aria-valuetext', '300 ms');
+    await expect(knob).toHaveAttribute('aria-valuetext', /^\d+(\.\d+)? (ms|s)$/);
 
     // ── 1b. COMPACT: two cells, in RANK order — release then attack. DOM order
     //        is the assertion: a face that drifted back to declaration order

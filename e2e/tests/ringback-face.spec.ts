@@ -6,14 +6,26 @@
 // the model unit test proves the readout arithmetic. Neither can prove the
 // three things this face's promotion is FOR:
 //
-//   1. the persistent readouts (`ParamDef.format` → KnobConic's `.readout`)
-//      follow the COMMITTED GRAPH rather than a component-local value — the
-//      failure mode is a DOM that re-labels itself while `__patch` never moved,
-//      so every assertion below pins BOTH sides;
-//   2. SIZE deliberately has NO readout, which is a rendered absence and
-//      therefore invisible to any test that only looks at what IS there;
+//   1. the declared vocabularies (`ParamDef.format`) follow the COMMITTED GRAPH
+//      rather than a component-local value — the failure mode is a DOM that
+//      re-labels itself while `__patch` never moved, so every assertion below
+//      pins BOTH sides;
+//   2. SIZE deliberately declares NO vocabulary, so it must read as the RAW
+//      LADDER and never as a name — a rendered absence, and therefore invisible
+//      to any test that only looks at what IS there;
 //   3. the rear card's `~` ticks land on exactly the four CV holes — the face's
 //      audio-rate CLAIM, drawn.
+//
+// ⚠ EVERY ASSERTION HERE USED TO READ A PAINTED `readout-<id>` LINE. The owner
+// removed the resting number from every faceplate (2026-08-17); RATE, FEEDBACK
+// and MIX declare a `format` and SIZE declares nothing, so NO ringback dial
+// paints at any tier. Each string moved to `control-<id>`'s `aria-valuetext`
+// (`knobValueReadout` — format, then roster, then the raw ladder), which is the
+// identical resolution the line printed, so every expected literal is unchanged.
+// ⚠ WATCH FOR VACUITY WHEN READING THIS FILE: "SIZE paints nothing" is no longer
+// a statement ABOUT SIZE, because nothing on this face paints. The claim that
+// still discriminates is that SIZE resolves to a NUMBER where its neighbours
+// resolve to NAMES, and that is what is asserted.
 //
 // The drags overshoot the end of the arc on purpose (`knobFracToValue` clamps
 // its fraction to [0,1]), so each gesture lands on an EXACT endpoint and the
@@ -25,10 +37,6 @@
 import { test, expect, type Locator, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 import { pressFlipKey } from './_flip-key';
-import {
-  LANE_KCOL_MAX_PX,
-  READOUT_MAX_CHARS,
-} from '../../packages/web/src/lib/ui/workflow/lane-readout-fit';
 import {
   RINGBACK_FEEDBACK,
   RINGBACK_RATE,
@@ -113,7 +121,7 @@ async function setLaneTier(page: Page, zoom: number, tier: string): Promise<void
   );
 }
 
-test.describe('ringback face — the readouts follow the graph', () => {
+test.describe('ringback face — the resolved values follow the graph', () => {
   test('RATE / FEEDBACK / MIX name what the module is doing, and SIZE deliberately does not', async ({
     page,
   }) => {
@@ -127,55 +135,69 @@ test.describe('ringback face — the readouts follow the graph', () => {
     await expect(dock.locator('[data-face-page="output"] .page-label')).toHaveText('output blend');
 
     // ── SPAWN STATE. The defaults are rate 0.5 / size 64 / feedback 0.3 /
-    //    mix 1, and each readout must say what the number MEANS. `WET` is this
+    //    mix 1, and each dial must say what the number MEANS. `WET` is this
     //    module's spawn-time surprise: it is fully wet the instant you patch it.
-    const rateOut = dock.getByTestId('readout-rate');
-    const fbOut = dock.getByTestId('readout-feedback');
-    const mixOut = dock.getByTestId('readout-mix');
-    await expect(rateOut, 'half the input samples never reach the ring').toHaveText('SR/2.0');
-    await expect(fbOut, 'the default tail is about six laps').toHaveText('6 LAPS');
-    await expect(mixOut, 'a fresh RINGBACK is FULLY WET').toHaveText('WET');
-
-    // ── THE DECLARED ABSENCE. SIZE declares NO vocabulary, and that is a
-    //    decision: the quantity that matters is size/rate, which no per-param
-    //    formatter can show. What changed in PF-20 is WHERE that decision is
-    //    visible.
-    //
-    //    ⚠ THIS ASSERTION USED TO READ `readout-size` COUNT 0 AT THE DOCK, and
-    //    PF-20 deliberately overturned the argument under it. "A readout is
-    //    earned" was a LANE argument — a 46px knob column cannot spend a text
-    //    row on what hovering already shows — and it was silently applied to
-    //    the dock too. On a faceplate it was simply wrong: every mocked panel
-    //    prints a value under every knob, and bare labels were the single
-    //    largest share of the shell-vs-mock drift the owner reported. So the
-    //    dock now prints the NUMBER for an undeclared param, and the "earned"
-    //    rule survives where it was always true — the lane.
-    //
-    //    The absence is still asserted, and still where the regression would
-    //    be silent: SIZE must print the raw ladder here (never a NAME, which
-    //    would mean someone quietly gave it a vocabulary), and print NOTHING
-    //    in the lane. ──
-    await expect(dock.locator('[data-testid="control-size"]')).toBeVisible();
-    await expect(
-      dock.getByTestId('readout-size'),
-      'the DOCK prints SIZE’s value — the raw ladder + its declared units, because it ' +
-        'declared no vocabulary (a NAME here would mean someone quietly gave it one)',
-    ).toHaveText('64.0 smp');
-
     const rateDial = dock.locator('[data-testid="control-rate"]');
     const fbDial = dock.locator('[data-testid="control-feedback"]');
     const mixDial = dock.locator('[data-testid="control-mix"]');
+    await expect(rateDial, 'half the input samples never reach the ring').toHaveAttribute(
+      'aria-valuetext',
+      'SR/2.0',
+    );
+    await expect(fbDial, 'the default tail is about six laps').toHaveAttribute(
+      'aria-valuetext',
+      '6 LAPS',
+    );
+    await expect(mixDial, 'a fresh RINGBACK is FULLY WET').toHaveAttribute(
+      'aria-valuetext',
+      'WET',
+    );
+
+    // ── THE DECLARED ABSENCE. SIZE declares NO vocabulary, and that is a
+    //    decision: the quantity that matters is size/rate, which no per-param
+    //    formatter can show. What keeps changing is WHERE that decision is
+    //    visible.
+    //
+    //    ⚠ IT WAS `readout-size` COUNT 0, THEN `readout-size` TEXT, AND IS NOW
+    //    NEITHER — and the reason to re-read it each time is that the obvious
+    //    port is VACUOUS. PF-20 overturned "a readout is earned" at the dock
+    //    (that was a LANE argument: a 46 px column cannot spend a text row on
+    //    what hovering already shows) and made the dock print the raw number for
+    //    an undeclared param. The 2026-08-17 ruling then removed the printed
+    //    number outright, so "SIZE paints nothing" is true of every dial on this
+    //    face and says nothing about SIZE at all.
+    //
+    //    What still discriminates — and would go red the moment someone quietly
+    //    gave SIZE a roster — is the SHAPE of what it resolves to: the raw
+    //    ladder plus its declared units, where its three neighbours resolve to
+    //    names. Both halves are asserted, because the ladder alone would also be
+    //    satisfied by a face that lost its formats entirely. ──
+    await expect(dock.locator('[data-testid="control-size"]')).toBeVisible();
+    const sizeDial = dock.locator('[data-testid="control-size"]');
+    await expect(
+      sizeDial,
+      'SIZE resolves to the raw ladder + its declared units, because it declared no ' +
+        'vocabulary (a NAME here would mean someone quietly gave it one)',
+    ).toHaveAttribute('aria-valuetext', '64.0 smp');
+    await expect(
+      dock.locator('[data-testid^="readout-"]'),
+      'and nothing on this face paints a resting value — three formats and one bare param, ' +
+        'which is every case the ruling removed and none of the case it kept',
+    ).toHaveCount(0);
 
     // ── PAST THE TOP OF RATE'S ARC → exactly max. Above 1 no input sample is
-    //    discarded, so the readout stops counting divisors. ──
+    //    discarded, so the dial stops counting divisors. ──
     await dragDial(page, rateDial, -260);
     await expect
       .poll(() => readParam(page, 'rb', 'rate'), {
         message: 'dragging the dial COMMITS the new rate into the graph',
       })
       .toBe(RINGBACK_RATE.max);
-    await expect(rateOut).toHaveText(formatRingbackRate(RINGBACK_RATE.max));
-    await expect(rateOut).toHaveText('FULL SR');
+    await expect(rateDial).toHaveAttribute(
+      'aria-valuetext',
+      formatRingbackRate(RINGBACK_RATE.max),
+    );
+    await expect(rateDial).toHaveAttribute('aria-valuetext', 'FULL SR');
 
     // ── PAST THE TOP OF FEEDBACK'S ARC → 0.98, the ring's hard ceiling: the
     //    tail outlasts 100 laps and the dial names the regime instead. ──
@@ -183,27 +205,35 @@ test.describe('ringback face — the readouts follow the graph', () => {
     await expect
       .poll(() => readParam(page, 'rb', 'feedback'))
       .toBe(RINGBACK_FEEDBACK.max);
-    await expect(fbOut).toHaveText(formatRingbackFeedback(RINGBACK_FEEDBACK.max));
-    await expect(fbOut).toHaveText('RINGING');
+    await expect(fbDial).toHaveAttribute(
+      'aria-valuetext',
+      formatRingbackFeedback(RINGBACK_FEEDBACK.max),
+    );
+    await expect(fbDial).toHaveAttribute('aria-valuetext', 'RINGING');
 
     // ── AND THE BOTTOM OF MIX → 0, the one setting that makes the module
     //    inaudible rather than different. ──
     await dragDial(page, mixDial, 260);
     await expect.poll(() => readParam(page, 'rb', 'mix')).toBe(0);
-    await expect(mixOut).toHaveText(formatRingbackMix(0));
-    await expect(mixOut).toHaveText('DRY');
+    await expect(mixDial).toHaveAttribute('aria-valuetext', formatRingbackMix(0));
+    await expect(mixDial).toHaveAttribute('aria-valuetext', 'DRY');
 
     // ── THE NEGATIVE CONTROL, INLINE. Move ONE knob back and confirm the other
-    //    two readouts do NOT follow it, and their params did not move either.
-    //    Without this, three readouts hard-coded to their final strings would
-    //    pass every assertion above. ──
+    //    two values do NOT follow it, and their params did not move either.
+    //    Without this, three dials hard-coded to their final strings would pass
+    //    every assertion above. ──
     await dragDial(page, mixDial, -260);
     await expect.poll(() => readParam(page, 'rb', 'mix')).toBe(1);
-    await expect(mixOut).toHaveText('WET');
-    await expect(rateOut, 'rate’s readout is bound to rate, not to whatever moved last').toHaveText(
-      'FULL SR',
-    );
-    await expect(fbOut).toHaveText('RINGING');
+    await expect(mixDial).toHaveAttribute('aria-valuetext', 'WET');
+    await expect(
+      rateDial,
+      'rate’s value is bound to rate, not to whatever moved last',
+    ).toHaveAttribute('aria-valuetext', 'FULL SR');
+    await expect(fbDial).toHaveAttribute('aria-valuetext', 'RINGING');
+    // …and SIZE, which nobody touched, still reads the raw ladder. The other
+    // half of the same control: a face that lost its formats would print this
+    // shape for ALL FOUR.
+    await expect(sizeDial).toHaveAttribute('aria-valuetext', '64.0 smp');
     expect(await readParam(page, 'rb', 'rate')).toBe(RINGBACK_RATE.max);
     expect(await readParam(page, 'rb', 'feedback')).toBe(RINGBACK_FEEDBACK.max);
   });
@@ -263,22 +293,41 @@ test.describe('ringback face — the readouts follow the graph', () => {
     expect(ticked, 'the ticked set IS the per-param CV set, from the live def').toEqual(cvInputs);
   });
 
-  // ── THE LANE FIT, MEASURED ────────────────────────────────────────────────
+  // ── THE LANE, WHERE THE VOCABULARY HAS TO SURVIVE THE SMALLEST TIER ───────
   //
-  // A readout that outgrows `--kcol-max` does NOT ellipsize: `.readout`'s
-  // `max-width:100%` resolves against `.knob-wrap`, which is uncapped, so the
-  // text ESCAPES the column (measured — see lane-readout-fit.ts). `FULL SR` is
-  // 7 glyphs, the widest string this face can produce and exactly the budget,
-  // so it is the case worth rendering rather than reasoning about.
-  test('the widest readout STAYS INSIDE the 46px lane column', async ({ page }) => {
+  // ⚠ THIS WAS A PIXEL MEASUREMENT AND ITS SUBJECT NO LONGER EXISTS. It laid out
+  // `readout-rate` at the compact tier and required its width to stay inside the
+  // 46 px `--kcol-max` column, because a readout that outgrows the cap does NOT
+  // ellipsize — `.readout`'s `max-width:100%` resolves against `.knob-wrap`,
+  // which is uncapped, so the text ESCAPES the column instead (measured; see
+  // lane-readout-fit.ts). `FULL SR` was chosen as the case because it is 7
+  // glyphs, the widest string this face can produce and exactly the budget. It
+  // also cross-checked the live `--kcol-max` and this runner's real glyph
+  // advance against the constants the unit guard is calibrated with.
+  //
+  // The owner removed the resting readout from every faceplate (2026-08-17), so
+  // there is no `.readout` on this face at any tier and every one of those
+  // measurements would now read zero elements and pass in silence. Deleted, not
+  // re-pointed: ringback's fixture has no face that paints. `lane-readout-fit`'s
+  // pure unit tests still bound the NAME readouts — the only strings a lane
+  // column can still be asked to hold — and this file's own
+  // `ringback-crush-model.test.ts` still walks the `READOUT_MAX_CHARS` boundary
+  // in both directions. What is gone and named as gone: nothing re-measures
+  // those constants against a live render any more.
+  //
+  // What survives is the claim the pixels were only ever the vehicle for — that
+  // the LANE resolves each dial's vocabulary the same way the dock does, which
+  // is a per-tier prop-threading question a dock-only assertion cannot answer.
+  test('the LANE resolves the same vocabulary the dock does — a name, and a number', async ({ page }) => {
     test.setTimeout(SLOW_RENDER ? 60_000 : 30_000);
     await gotoShell(page);
     await spawnPatch(page, [
       { id: 'rb', type: 'ringback', position: { x: 460, y: 240 }, params: { rate: 1 } },
     ]);
 
-    // The 46px cap is scoped to `.rl-tile .tile-body .kcol` — the LANE body.
-    // The dock's band is uncapped, which is why a dock screenshot hides this.
+    // COMPACT is the tier the deleted measurement ran at, and it stays the tier
+    // here: it is the SMALLEST one that renders two cells, so it is where a
+    // prop that stopped being threaded would show first.
     await setLaneTier(page, 0.45, 'compact');
     const laneShell = page.locator(
       '.svelte-flow__node[data-id="rb"] [data-testid="module-shell"][data-shell-tier="compact"]',
@@ -286,67 +335,20 @@ test.describe('ringback face — the readouts follow the graph', () => {
     await expect(laneShell).toBeVisible();
     await expect(laneShell.locator('.tile-body .kcol')).not.toHaveCount(0);
 
-    const readout = laneShell.getByTestId('readout-rate');
-    await expect(readout).toHaveText('FULL SR');
-
-    // ── THE SURVIVING HALF OF "A READOUT IS EARNED" (PF-20). The rule moved
-    //    to the LANE, where its argument was always true: a 46px column cannot
-    //    spend a text row on what hovering already shows. SIZE is rank 2, so
-    //    the compact tile RENDERS it beside RATE — and prints nothing under it,
-    //    because it declared no vocabulary. RATE, which declared one, prints.
-    //    Asserting both in one place is what makes this a statement about the
-    //    GATE rather than about one param. ──
+    // ── THE PAIR, IN ONE PLACE, WHICH IS WHAT MAKES THIS A STATEMENT ABOUT THE
+    //    RESOLVER RATHER THAN ABOUT ONE PARAM. SIZE is rank 2, so the compact
+    //    tile renders it beside RATE. RATE declared a `format` and resolves to
+    //    its NAME; SIZE declared nothing and resolves to the raw ladder. A face
+    //    that dropped `format` on the way to this tier would collapse both to
+    //    the ladder and only the first half would notice. ──
     await expect(laneShell.locator('[data-testid="control-size"]')).toBeVisible();
     await expect(
-      laneShell.getByTestId('readout-size'),
-      'the LANE still earns its readouts — SIZE declared no vocabulary, so it prints none',
-    ).toHaveCount(0);
-
-    // ⚠ UNITS. `getBoundingClientRect()` on a flow node is VIEWPORT-SCALED
-    // (xyflow applies a CSS transform for zoom — the measureOverflow trap in
-    // CLAUDE.md). `offsetWidth` is a layout box and is immune to transforms,
-    // so every width below is an offsetWidth, and the glyph probe is appended
-    // to document.body, OUTSIDE the transformed subtree.
-    const fit = await readout.evaluate((el) => {
-      // Locator.evaluate hands us HTMLElement | SVGElement; offsetWidth (a
-      // layout-px box) only exists on HTMLElement — assert it, don't cast.
-      if (!(el instanceof HTMLElement)) throw new Error('readout is not an HTMLElement — offsetWidth (layout px) requires one');
-      const cs = getComputedStyle(el);
-      const kcol = el.closest('.kcol') as HTMLElement | null;
-      if (!kcol) throw new Error('readout is not inside a .kcol — the cap does not apply');
-      const N = 32;
-      const probe = document.createElement('span');
-      probe.textContent = '0'.repeat(N);
-      probe.style.cssText =
-        `position:absolute;left:-9999px;top:0;white-space:nowrap;display:inline-block;` +
-        `font-family:${cs.fontFamily};font-size:${cs.fontSize};font-weight:${cs.fontWeight};` +
-        `letter-spacing:${cs.letterSpacing};text-transform:${cs.textTransform};`;
-      document.body.appendChild(probe);
-      const advancePx = probe.getBoundingClientRect().width / N;
-      probe.remove();
-      return {
-        text: el.textContent ?? '',
-        readoutWidthPx: el.offsetWidth,
-        columnMaxWidthPx: parseFloat(getComputedStyle(kcol).maxWidth),
-        advancePx,
-      };
-    });
-
-    // The CSS cap the unit guard mirrors, read off a live column.
-    expect(
-      fit.columnMaxWidthPx,
-      `--kcol-max drifted from LANE_KCOL_MAX_PX (${LANE_KCOL_MAX_PX})`,
-    ).toBe(LANE_KCOL_MAX_PX);
-    // The VERDICT, not the constant: this runner's `monospace` resolution is
-    // platform-dependent and a hundredth of a px is noise; 7 glyphs no longer
-    // fitting is not.
-    expect(
-      READOUT_MAX_CHARS * fit.advancePx,
-      `${READOUT_MAX_CHARS} glyphs at this runner's ${fit.advancePx.toFixed(3)} px/glyph`,
-    ).toBeLessThanOrEqual(LANE_KCOL_MAX_PX);
-    expect(
-      fit.readoutWidthPx,
-      `'${fit.text}' laid out at ${fit.readoutWidthPx} px against a ${fit.columnMaxWidthPx} px column`,
-    ).toBeLessThanOrEqual(fit.columnMaxWidthPx);
+      laneShell.locator('[data-testid="control-rate"]'),
+      'the LANE resolves RATE through the def’s formatter, exactly as the dock does',
+    ).toHaveAttribute('aria-valuetext', 'FULL SR');
+    await expect(
+      laneShell.locator('[data-testid="control-size"]'),
+      'and SIZE through the raw ladder, because it declared no vocabulary',
+    ).toHaveAttribute('aria-valuetext', '64.0 smp');
   });
 });

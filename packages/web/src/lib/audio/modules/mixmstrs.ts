@@ -174,7 +174,6 @@ const PARAMS = buildParams();
  * exemption silently captioning nothing.
  */
 const CAPTIONED_PARAM_IDS: ReadonlySet<string> = new Set<string>([
-  'master_volume',
   ...MIXMSTRS_RETURNS.map((r) => `send${r}Pre`),
 ]);
 
@@ -538,27 +537,31 @@ export const mixmstrsDef: AudioModuleDef = {
     //           echoed the switch would print PRE and imply something happened.
     hero: {
       control: 'master_volume',
-      // ⚠ THE SEND PRE/POST READOUTS ARE GONE FROM THE HEADER — owner review of
-      // #1738: *"we don't need the send pre/post in the header here."*
+      // ⚠ THERE ARE NO HERO READOUTS, AND `BUS` WAS THE FACE'S OWN MERIT
+      // ARGUMENT — recorded here rather than quietly dropped.
       //
-      // The two remaining readouts are the ones that state something a player
-      // cannot see anywhere else on the face: BUS is the summed headroom (the
-      // measured 1.2797 clip at the defaults), ASLEEP is how many of the
-      // ninety-one controls are bit-exactly inert right now. `send1Pre` /
-      // `send2Pre` are ORDINARY CONTROLS — they have their own cells at the end
-      // of each `aux sends` cluster, where the thing they modify is, so the
-      // header was printing a second copy of a switch that is already on screen
-      // and already labelled.
+      // Two derived values used to print here. `BUS` was the fully-correlated
+      // worst-case gain into the master (measured 6.7187 against the formula's
+      // 6.72 on ten correlated full-scale sources at the defaults — i.e. TWO
+      // hot channels already clip and nothing on this module limits), and
+      // `ASLEEP` counted the thresh/ratio pair on every bypassed channel. Both
+      // were justified as facts NO SINGLE FADER CAN SHOW, and that justification
+      // was true; the `send N` pair above it had already gone in #1738 for the
+      // weaker reason that they echoed a switch on the same face.
       //
-      // ⚠ THE CONTROLS ARE NOT REMOVED, only the header echo: `faces-parity`
-      // asserts one `control-<paramId>` per def param across the whole
-      // faceplate, so deleting a cell would be RED, and deleting only the
-      // readout is invisible to it — which is why the tray e2e asserts the two
-      // switch cells are still present and still reachable by name.
-      readouts: [
-        { label: 'bus', valueId: 'mixmstrs-bus-gain' },
-        { label: 'asleep', valueId: 'mixmstrs-comp-asleep' },
-      ],
+      // The owner has now looked at the shipped result and ruled anyway
+      // (2026-08-17): *"[MASTER 1.00 / BUS ≤ 8.60× · +18.7 dB / ASLEEP 16
+      // asleep] these numbers and text should go away"*, and generally *"we
+      // don't want text like that in our faceplates"*. So the trade is real and
+      // it is the owner's to make: the headroom warning is no longer on the
+      // panel at all. It survives in the module's authored `docs`, which is
+      // where the explanation belongs (faces carry near-zero authored prose).
+      //
+      // ⚠ AND THE COMPUTATION WENT WITH THE DISPLAY. `busGainText` /
+      // `compAsleepText` / `sendText` and the param snapshot they read are
+      // DELETED from `mixmstrs-face-model.ts`, not left dangling behind an
+      // unrendered declaration — a derived value nothing paints is a silent
+      // no-op that reads like a shipped decision.
     },
   },
 
