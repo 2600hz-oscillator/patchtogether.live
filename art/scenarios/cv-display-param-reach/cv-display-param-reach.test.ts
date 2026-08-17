@@ -7,10 +7,12 @@
 // WHY A SECOND SWEEP (#1664)
 // ---------------------------------------------------------------------------
 //
-// `cv-param-reach` measures RENDERED AUDIO, and says so: its own header names
-// "NON-AUDIO CONSUMERS" as a structural blind spot — "a param whose only
-// consumer is the CARD, a video output, or a MIDI stream is invisible here even
-// when its CV path is perfect."
+// `art/scenarios/cv-terminal` proves a CV cable lands on a live, unaliased
+// AudioParam, but the last thing it can say about a DISPLAY param is that the
+// param is correctly reachable from NOTHING — a `cv-shadow` landing pad whose
+// consumer is JavaScript. Whether the number then reaches the thing that DRAWS
+// is outside every graph predicate, and it is listed as that sweep's blind
+// spot 5.
 //
 // SCOPE and RASTERIZE are exactly that shape. Every one of their 13 CV inputs
 // drives a DISPLAY parameter: a timebase, a vertical scale, a scan cursor. None
@@ -18,11 +20,15 @@
 // none of the controls touch the audio path", and RASTERIZE's THRU is
 // documented as "the input signal unchanged".
 //
-// So on the audio metric a correctly-fixed SCOPE reads 0.0000e+0 on BOTH legs,
-// which is that sweep's honest "the instrument cannot see this control" state
-// and not a pass. This file supplies the observable it cannot: the module's own
-// `read('drawParams')` — the very record its painter and its video bridge draw
-// from — measured across a real `OfflineAudioContext` render.
+// So on an AUDIO metric a correctly-fixed SCOPE reads 0.0000e+0 whatever you
+// patch — the honest "this instrument cannot see this control" state, never a
+// pass. (That is why the deleted `cv-param-reach` carried thirteen `known-defect`
+// entries for these ports whose evidence had silently become "correctly fixed":
+// its predicate was satisfied by "still broken" AND by "now a proper display
+// param", and it could not tell them apart.) This file supplies the observable
+// neither can: the module's own `read('drawParams')` — the very record its
+// painter and its video bridge draw from — measured across a real
+// `OfflineAudioContext` render.
 //
 // ---------------------------------------------------------------------------
 // WHAT IT ASSERTS, per (module, port)
@@ -116,8 +122,9 @@ function audioIshOutputs(def: AudioModuleDef): string[] {
     .map((o) => o.id);
 }
 
-/** The same driver vocabulary `cv-param-reach` uses, so "driven" means one
- *  thing across the lane. */
+/** The same canonical driver vocabulary the ART audio profiles and
+ *  `scenarios/cv-terminal/sample.test.ts` use, so "driven" means one thing
+ *  across the lane. */
 function driverFor(type: string, edge: string | undefined): Float32Array | null {
   if (type === 'audio') {
     return vcoTestSignal({ totalS: DURATION_S, freqHz: C4_HZ, shape: 'saw', sampleRate: SR });
@@ -240,7 +247,21 @@ function probeValue(min: number, max: number, dflt: number): number {
   return (dflt - min) < (max - dflt) ? min + 0.8 * (max - min) : min + 0.2 * (max - min);
 }
 
-/** Does a def expose a draw record at all? Materialised once, cheaply. */
+/** Does a def expose a draw record at all? Materialised once, cheaply.
+ *
+ *  ⚠ THE `finally` IS NOT HYGIENE — IT IS THE COST OF THIS FILE. Membership is
+ *  derived by materialising EVERY audio def, and an `OfflineAudioContext` that
+ *  is never rendered holds its native render thread for the rest of the run. A
+ *  registry's worth of them starves the pool, and the starvation lands on the
+ *  RENDERS that come afterwards, not here — so the symptom appears nowhere near
+ *  the cause. Measured on this file, whole run, 13 ports over 2 modules:
+ *
+ *      without the release   591 388 ms
+ *      with the release          795 ms
+ *
+ *  A 128-sample `startRendering()` completes the context and frees the thread.
+ *  Same defect and same fix as `art/scenarios/cv-terminal`, whose header
+ *  records the 488 076 ms → 762 ms version of it. */
 async function drawParamKeys(def: AudioModuleDef): Promise<string[] | null> {
   const ctx = new OfflineAudioContext({ numberOfChannels: 1, length: 128, sampleRate: SR });
   try {
@@ -252,11 +273,14 @@ async function drawParamKeys(def: AudioModuleDef): Promise<string[] | null> {
     return Object.keys(dp as Record<string, number>);
   } catch {
     return null;
+  } finally {
+    try { await ctx.startRendering(); } catch { /* thread is freed either way */ }
   }
 }
 
-/** Peak |Δsample| across every captured output — the SAME metric, in the same
- *  units, that `cv-param-reach` reports its numbers in. */
+/** Peak |Δsample| across every captured output — LINEAR AMPLITUDE, not dB and
+ *  not RMS. The same metric and units #1661 reported its 0.0000e+0 in, and the
+ *  one `scenarios/cv-terminal/sample.test.ts` still reports. */
 function peakDelta(a: LegResult, b: LegResult): number {
   let m = 0;
   for (let c = 0; c < a.channels.length; c++) {
