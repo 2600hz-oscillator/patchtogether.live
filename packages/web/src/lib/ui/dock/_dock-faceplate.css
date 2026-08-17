@@ -149,7 +149,34 @@
    half-width-split scroll behaviour is designed around — lowering it globally
    would reflow every dock scene in the roster. `data-shell-type` is emitted by
    `ModuleShell.svelte` on its root, so `:has()` keys this to one module the same
-   way the rule above keys to one branch. */
+   way the rule above keys to one branch.
+
+   ── HOW FAR IT ACTUALLY GETS, AND WHAT OWNS THE REST ──────────────────────
+   (Moved here from `console.css` when that file was deleted with #1794 — it
+   documented THIS rule from a stylesheet that no longer exists.)
+
+   MEASURED: pane 940 → **761.2 px**. That is 19 %, not half, and the rest was
+   chased rather than guessed. In the page, with the floor lifted: widest CELL
+   **52.0 px**, all four bands exactly **695.2 px**, `.dock-hero` 715.2, pane
+   761.2. Four bands reporting an IDENTICAL width is the tell that nothing was
+   content-sized. Squeezing the body to 360 px made NOTHING overflow, so no
+   control demands the width either.
+
+   The widest-child path from the body names the driver, and it is not a
+   faceplate element at all:
+
+       div.faceplate-body   w=761.2
+         div.fp-front       w=0.0     ← the flip container
+           div.tabrail      w=761.2   ← ...whose widest child is a 89.5 px tab
+
+   The dock's own TAB RAIL sets the width, inside a zero-width flip box. That is
+   shared full-view chrome on every faced module, not something a console can
+   fix from here, and two hero knobs tried against it (`--dock-hero-glyph-w`, a
+   new `--dock-hero-vis-basis`) moved the number by 0.0 px — so they were
+   REVERTED rather than shipped as decoration. Filed as its own issue.
+
+   ⚠ THE 19 % IS REAL AND COSTS NOTHING ELSE: re-running the whole-roster fold
+   probe after this change came back BYTE-IDENTICAL for all 42 other faces. */
 .dock-faceplate .faceplate-body:has([data-shell-type='mixmstrs']) {
   min-width: 0;
   width: max-content;

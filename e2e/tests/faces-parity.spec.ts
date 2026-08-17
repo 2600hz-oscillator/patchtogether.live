@@ -141,7 +141,6 @@ type CellControl =
   | 'grid'
   | 'color'
   | 'fader'
-  | 'neon-fader'
   | 'xy'
   | 'action'
   | 'file'
@@ -576,14 +575,12 @@ async function driveCell(
   // exists because the AFFORDANCE differs (a card that draws a throw and a face
   // that draws a dial are not the same control), not because the value
   // semantics do — so a separate drive helper would be two implementations of
-  // one gesture. `Fader.svelte` derives `control-<paramId>` itself, so the
+  // one gesture. `NeonFader` derives `control-<paramId>` itself, so the
   // locator is identical.
-  // ⚠ ONE ARM FOR BOTH THROWS. `neon-fader` is the same GESTURE in the conic
-  // knob's visual language: the same `control-<paramId>` locator, the same
-  // vertical drag, the same commit. Two arms would be two implementations of
-  // one gesture, and the drift would show up as one of them quietly not
-  // proving anything.
-  if (cell.control === 'fader' || cell.control === 'neon-fader') {
+  // ⚠ THIS ARM USED TO MATCH `'neon-fader'` TOO. #1794 collapsed the two
+  // declared kinds into one — there is a single throw in the app now — so the
+  // second alternative would name a kind `DeclaredParamCell` no longer has.
+  if (cell.control === 'fader') {
     const pid = cell.key;
     const p = spec.params.find((q) => q.id === pid);
     expect(p, `${where}: backed by a real ParamDef`).toBeTruthy();

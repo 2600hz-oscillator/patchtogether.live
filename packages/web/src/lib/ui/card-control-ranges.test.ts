@@ -171,9 +171,18 @@ describe('BACKDRAFT — every control stays REACHABLE', () => {
     // legal for pure READOUT chrome (the fill/bands text), but never for a
     // control: an unmounted fader cannot be dragged, MIDI-learned, or reset,
     // and unmounting it would also make the card's height mode-dependent.
+    // ⚠ THE TAG NAME IS PART OF THIS ASSERTION'S SUBJECT (#1794). This read
+    // `<Fader`, and a NEGATIVE assertion goes green — not red — when its
+    // pattern stops matching anything: after the migration to `<NeonFader` it
+    // would have kept passing while being structurally blind to the very
+    // regression it exists to catch.
     expect(
-      /\{#if tvOn\}[\s\S]{0,400}?<Fader/.test(src),
-      'a Fader must never be mounted behind {#if tvOn} — dim it instead',
+      /\{#if tvOn\}[\s\S]{0,400}?<NeonFader/.test(src),
+      'a fader must never be mounted behind {#if tvOn} — dim it instead',
     ).toBe(false);
+    // …and the probe is really looking at this file: the card DOES mount
+    // faders, so a zero-match above is about the CONDITIONAL, not about the
+    // pattern having gone stale.
+    expect(/<NeonFader(?=[\s/>])/.test(src), 'BackdraftCard must still mount faders at all').toBe(true);
   });
 });

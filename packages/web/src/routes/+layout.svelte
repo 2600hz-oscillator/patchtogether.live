@@ -9,11 +9,14 @@
   // <ModuleShell> and <ModuleShellPlaceholder> consume. After _module-card.css
   // (which pins the uniform tile HEIGHT) so the visual frame layers on top.
   import '$lib/ui/modules/_rackline-tile.css';
-  // The mixmstrs console's fader accent. LAST, because it only sets CSS custom
-  // properties under `[data-shell-type='mixmstrs']` and every one of them falls
-  // back to the literal `Fader.svelte` already had — so it can only ever add
-  // paint inside that one shell, never take any away from another.
-  import '$lib/styles/console.css';
+  // ⚠ `$lib/styles/console.css` WAS IMPORTED HERE AND IS DELETED (#1794). Its
+  // whole body was a `[data-shell-type='mixmstrs']` block setting the
+  // `--fader-*` custom properties that ONLY `Fader.svelte` read, to give that
+  // one console's throws the neon accent. `NeonFader` resolves its own
+  // `--_ka: var(--ka, var(--domain, var(--accent)))` chain instead and reads
+  // none of those tokens, so once every card was migrated and `Fader.svelte`
+  // was deleted the file could not paint anything. Its pane-width prose moved
+  // to `_dock-faceplate.css`, beside the rule it actually documented.
   import { onMount } from 'svelte';
   import { skinStore } from '$lib/ui/skins/skin-store.svelte';
   import { ClerkProvider } from 'svelte-clerk';
