@@ -1384,6 +1384,55 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // by bit-exactly zero. Written into the docs; the knob-at-0 positive control
   // is a permanent leg.
   'analogLogicMaths',
+
+  // THE FACEPLATE QUEUE · Q28 (COHORT 4) — the Moog 921 oscillator, as a PAIR.
+  // ONE INSTRUMENT SPLIT ACROSS TWO DEFS: `moog921a` is a CV-only driver (3
+  // params, two `cv` outputs, no audio anywhere) and `moog921b` is the
+  // sound-making slave (5 params, four `audio` outputs) with no 1V/oct jack of
+  // its own. Pitch arrives on the bus. They are promoted together because the
+  // number that matters is a product of both faces.
+  //
+  // ⚠ THE MERIT IS A DIMENSIONLESS DIAL WITH ITS SCALE ON ANOTHER CONTROL.
+  // `moog921a.frequency` runs −1..+1 and means nothing alone; `freqRange` picks
+  // whether that span is ONE octave or SIX (`packages/dsp/src/moog921a.ts:66-72`).
+  // DERIVED THROUGH THE SHIPPING CORE, 921B at its own defaults:
+  //
+  //   frequency +0.50, SEMI →  +0.5 V →   370.00 Hz  (F#4)
+  //   frequency +0.50, OCT  →  +3.0 V →  2093.01 Hz  (C7)
+  //
+  // The same dial position, a factor of 5.66 apart, from a two-state switch —
+  // and the shipped cards print `0.50` and `SEMI`/`OCT` and no Hz, no octave
+  // count and no volts on either panel. The SEMI compass is 130.81..523.25 Hz;
+  // the OCT compass is 4.09 Hz..16.74 kHz.
+  //
+  // ⚠ AND THE PAIR'S GLYPHS DIFFER, WHICH IS WHY AUTHORING THEM APART WOULD HAVE
+  // GOT ONE WRONG. `moog921a`'s outputs are `cv`·`cv`, so `primaryAudioOutPortId`
+  // is null and every glyph but 'none' collapses to the dead `{kind:'static'}`
+  // binding (#1692). `moog921b`'s four `audio` outputs bind a live trace — to
+  // `sine`, the FIRST declared audio output and one tap of four, which its docs
+  // now say out loud. Both asserted, with negative controls, in
+  // moog921-face-model.test.ts.
+  //
+  // ⚠ TWO SWITCH VOCABULARIES RECOVERED FROM CARD MARKUP. `SEMI`/`OCT` and
+  // `OFF`/`LO`/`HI` existed only in each card's private array, so a def-driven
+  // surface painted rotaries printing `1.00` and `0.00` over them. Both are now
+  // `ParamDef.options` rosters the cards MAP rather than restate — and
+  // `moog921b.syncMode`'s `curve` went `linear` → `discrete` in the same commit
+  // to make the roster legal, which is correct on its own terms: the DSP
+  // thresholds it at ±0.5, so half its declared travel was one flat state.
+  //
+  // ⚠ moog921b IS THE THIRD FREE-RUNNING VOICE IN THE VRT ROSTER (after
+  // analogVco and macrooscillator) — a VCO with no gate, sounding from spawn —
+  // so its compact tile exercises #1420's pre-frame audio freeze rather than
+  // being indifferent to it. moog921a is silent by construction (it has no
+  // audio path at all) and carries no glyph.
+  //
+  // DEFECTS FOUND BY THE AUDIT, FILED RATHER THAN FOLDED IN: #1791 (the 921A's
+  // declared MINIMUM width produces the MIDPOINT duty — measured 49.85 % through
+  // the real worklet chain, printed by the `duty` readout as `norm 50 %`) and
+  // #1792 (the "1 Hz to 40 kHz" prose is wrong at both ends).
+  'moog921a',
+  'moog921b',
 ]);
 
 /**
