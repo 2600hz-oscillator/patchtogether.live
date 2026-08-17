@@ -15,6 +15,13 @@ import { fileURLToPath } from 'node:url';
 import { STRICT_FACES } from '../../packages/web/src/lib/ui/workflow/strict-faces';
 import { getModuleDef } from '../../packages/web/src/lib/audio/module-registry';
 import { domainClassForDef } from '../../packages/web/src/lib/ui/workflow/module-shell-model';
+// ⚠ THERE IS NO IMPORTABLE VIDEO REGISTRY HERE, and the video fixture below
+// found that out by rejecting every one of its candidates. `getModuleDef`
+// (audio) returns undefined for a video module, and `getVideoModuleDef` returns
+// undefined too under Playwright's loader: the video registry is populated by
+// `import.meta.glob` side effects, which is Vite-only and does not run in plain
+// Node. So the video check reads the SOURCE, exactly like `mountsAFader` below
+// and for exactly the same stated reason.
 
 /**
  * A still-UN-MIGRATED audio module — the fixture for every legacy-fallback test
@@ -72,6 +79,45 @@ import { domainClassForDef } from '../../packages/web/src/lib/ui/workflow/module
 // list on purpose: the predicate below now REJECTS it out loud, which is the
 // documentation.
 const UNMIGRATED_CANDIDATES = ['stereovca', 'moog902', 'gatemaiden'] as const;
+
+/**
+ * ORDERED PREFERENCE of un-promoted VIDEO modules for `UNMIGRATED_VIDEO_MODULE`
+ * — same contract as the audio list: a promoting PR removes its module from
+ * here and must leave at least one accepted candidate behind, or the IIFE
+ * throws at import time.
+ *
+ * `backdraft` is deliberately ABSENT: the first video face consumed it, and per
+ * the audio list's own rule a promoted module is REMOVED rather than left for
+ * `find` to skip. `bentbox` / `b3ntb0x` are the mirror-gate siblings (simple
+ * cards, cheap to mount); `freezeframe` and `grainsOfVision` back them up.
+ */
+const UNMIGRATED_VIDEO_CANDIDATES = ['bentbox', 'b3ntb0x', 'freezeframe', 'grainsOfVision'] as const;
+
+/**
+ * Is this a VIDEO module? Read off the DEF SOURCE — a file under
+ * `lib/video/modules/` declaring `domain: 'video'` is exactly what the video
+ * registry's glob picks up, so this asks the registry's own question without
+ * needing the registry (see the import note at the top of this file).
+ *
+ * Fails SAFE: an unreadable or non-matching file rejects the candidate with a
+ * named reason rather than accepting it silently.
+ */
+function declaresVideoDomain(type: string): boolean {
+  try {
+    return /domain:\s*'video'/.test(
+      readFileSync(
+        resolve(
+          dirname(fileURLToPath(import.meta.url)),
+          '../../packages/web/src/lib/video/modules',
+          `${type}.ts`,
+        ),
+        'utf8',
+      ),
+    );
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Does this module's legacy card mount a `Fader`? Read off the CARD SOURCE, so
@@ -139,6 +185,49 @@ export const UNMIGRATED_AUDIO_MODULE: string = (() => {
       'no UNMIGRATED_CANDIDATES module can serve as the legacy-fallback fixture. ' +
         'Add another module that is un-promoted, renders .faceplate.audio ' +
         `(domainClassForDef === 'audio') AND mounts a <Fader>, in ` +
+        'e2e/tests/_face-fixtures.ts.\n  ' +
+        rejected.join('\n  '),
+    );
+  }
+  return pick;
+})();
+
+/**
+ * A still-UN-MIGRATED **VIDEO** module — the legacy-card half of
+ * `workflow-dock-ux`'s "migrated AND legacy cards" split-pane case.
+ *
+ * ⚠ IT EXISTS BECAUSE THAT SPEC HARD-CODED `backdraft`, AND THE FIRST VIDEO
+ * FACE PROMOTED IT. The spec needs a module that renders a lane PLACEHOLDER and
+ * a verbatim LEGACY CARD in the dock — i.e. one that is NOT in STRICT_FACES —
+ * and it named the module that was, at the time, the most obvious un-migrated
+ * video card. That is the same rot the audio sibling above was built to end,
+ * one domain over, and it had to bite once here before anyone noticed the
+ * asymmetry: the audio fixture was derived and the video one was a literal.
+ *
+ * Checked with the predicates the assertions depend on, not described in prose:
+ * un-promoted (else it renders a curated face, not a placeholder) and
+ * `domain: 'video'` (the case is explicitly the VIDEO legacy-card path — that
+ * is the `useStore()`-at-init card class the crash-free assertion is about).
+ */
+export const UNMIGRATED_VIDEO_MODULE: string = (() => {
+  const rejected: string[] = [];
+  const pick = UNMIGRATED_VIDEO_CANDIDATES.find((t) => {
+    if (STRICT_FACES.has(t)) {
+      rejected.push(`${t}: promoted (in STRICT_FACES) — it renders a curated face, not a placeholder`);
+      return false;
+    }
+    if (!declaresVideoDomain(t)) {
+      rejected.push(
+        `${t}: no packages/web/src/lib/video/modules/${t}.ts declaring domain: 'video'`,
+      );
+      return false;
+    }
+    return true;
+  });
+  if (!pick) {
+    throw new Error(
+      'no UNMIGRATED_VIDEO_CANDIDATES module can serve as the video legacy-fallback fixture. ' +
+        'Add another un-promoted `domain: video` module with a real legacy card in ' +
         'e2e/tests/_face-fixtures.ts.\n  ' +
         rejected.join('\n  '),
     );
