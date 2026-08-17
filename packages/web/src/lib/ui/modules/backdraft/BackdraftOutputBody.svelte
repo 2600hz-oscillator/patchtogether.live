@@ -96,6 +96,46 @@
   /** The surface is LARGER than its resting size in exactly these modes. */
   let expanded = $derived(fs.isFullscreen || present.isPresenting || fullFrame);
 
+  // ── PREVIEW ON/OFF (owner review round 1) ────────────────────────────────
+  // *"the screen preview on the card should have an on/off button and when it's
+  // off it collapses so we reclaim the vertical space. that on/off persists
+  // through tab switches"*.
+  //
+  // ⚠ STATE LIVES ON THE NODE, NOT IN THIS COMPONENT, and that is the whole
+  // safety argument rather than a preference. A `$state` here dies with the
+  // component, and this component unmounts on dock collapse / LRU eviction —
+  // the card-unmount-kills-node-lifetime-state class (#1531 / #1574 / #1583).
+  // `node.data` is the SAME seam the sibling toggle on this very surface
+  // already uses (`node.data.fullFrame`), so this matches the shipped
+  // affordance instead of inventing a second policy: it survives tab switches
+  // (the stated floor), survives remount, survives reload, and syncs to
+  // collaborators.
+  //
+  // ⚠ It is NOT transient render state — one boolean per click, never per
+  // frame. The Y.Doc write-storm rule is about per-frame CV writes; a click is
+  // exactly what `node.data` is for.
+  //
+  // Absent ⇒ false ⇒ the preview is ON, so an existing rack opens unchanged.
+  let previewCollapsed = $derived<boolean>(
+    (patch.nodes[nodeId]?.data?.previewCollapsed as boolean | undefined) ?? false,
+  );
+  function togglePreview(): void {
+    const next = !previewCollapsed;
+    mutateNode(nodeId, (live) => {
+      if (!live.data) live.data = {};
+      live.data.previewCollapsed = next;
+    });
+  }
+
+  /**
+   * Is the in-dock picture taking space right now?
+   *
+   * ⚠ `expanded` OVERRIDES the collapse. Full Screen / Present / Full Frame all
+   * blit from THIS canvas, so a collapsed preview must not black out the
+   * projector — the toggle governs the DOCK's resting picture only.
+   */
+  let previewShown = $derived(expanded || !previewCollapsed);
+
   // Presenting = a surface that outlives this component's viewport rect. Without
   // the hard lease, pull-eval can freeze the node — and the projector with it
   // (owner report 2026-08-05: backdraft → present froze on scroll).
@@ -188,11 +228,21 @@
       if (ew !== engineW) engineW = ew;
       if (eh !== engineH) engineH = eh;
       if (!harnessFrozen() && !document.hidden) {
-        // Keeps the node a PULL ROOT so the feedback nest goes on advancing
-        // even with nothing patched downstream — a feedback module that stops
-        // rendering loses its history.
+        // ⚠ markWatched RUNS EVEN WHILE THE PREVIEW IS COLLAPSED, and that is
+        // the load-bearing half of the on/off toggle. It keeps the node a PULL
+        // ROOT so the engine goes on advancing the feedback nest with nothing
+        // patched downstream. Stop it and the module loses its history: the
+        // picture would come back BLACK (or as a stale frame) when the preview
+        // is switched on again — the collapse-kills-the-producer class
+        // (#1721 collapsing a group killed a CARD_PRODUCER pump; #1728
+        // collapsing the card blanked the Launchpad). Collapsing here changes
+        // what is PAINTED, never what is PRODUCED.
         videoEngine.markWatched?.(nodeId);
-        drawOutput(videoEngine);
+        // The BLIT is the only thing the toggle actually saves — a GL readback
+        // into a surface nobody can see. Skipped while collapsed, resumed the
+        // moment it is shown, and never skipped while expanded (fullscreen and
+        // the Present popup both blit from this same canvas).
+        if (previewShown) drawOutput(videoEngine);
       }
     }
     rafId = requestAnimationFrame(tick);
@@ -227,11 +277,20 @@
 </script>
 
 <div class="bd-out" class:full-frame={fullFrame} bind:this={rootEl} data-testid="backdraft-face-output">
+  <!-- ⚠ NEVER `{#if}`-ed AWAY. `requestFullscreen()` must be handed a real,
+       rendered element at the moment the menu item is clicked, and the Present
+       popup blits FROM this canvas every frame — so OFF collapses it to a
+       zero-space ghost (the legacy card's own proven shape) rather than
+       unmounting it. `.collapsed` takes it out of flow, which is what actually
+       reclaims the vertical space; `display:none` would too, but it also
+       forfeits the fullscreen target. -->
   <div
     bind:this={wrapEl}
     class="bd-canvas-wrap"
     class:fullscreen={fs.isFullscreen}
+    class:collapsed={!previewShown}
     data-testid="backdraft-fs-wrap"
+    data-preview-collapsed={previewCollapsed ? 'true' : 'false'}
     oncontextmenu={onPictureContextMenu}
     role="presentation"
   >
@@ -244,6 +303,18 @@
       data-node-id={nodeId}
     ></canvas>
   </div>
+
+  <button
+    type="button"
+    class="bd-out-btn nodrag"
+    class:on={!previewCollapsed}
+    data-testid="backdraft-preview-toggle"
+    aria-pressed={!previewCollapsed}
+    title={previewCollapsed
+      ? 'SCREEN is OFF — the preview is collapsed and its space reclaimed. The module keeps rendering: switching it back on shows the LIVE picture, not a stale frame.'
+      : 'SCREEN — turn the preview off to collapse it and reclaim the vertical space. The module goes on rendering either way.'}
+    onclick={togglePreview}
+  >{previewCollapsed ? 'SCREEN OFF' : 'SCREEN ON'}</button>
 
   <button
     type="button"
@@ -308,6 +379,23 @@
     display: block;
     width: 100%;
     height: auto;
+  }
+
+  /* PREVIEW OFF — a zero-space ghost. `position: absolute` is what takes it
+   * OUT OF FLOW, which is the "reclaim the vertical space" half of the
+   * requirement; 1×1 + hidden is what makes it paint nothing. It stays a real,
+   * rendered element so `requestFullscreen()` still has a target and the
+   * Present popup still has a blit source. Copied in shape from
+   * BackdraftCard's in-rack ghost, which has shipped this way for months. */
+  .bd-canvas-wrap.collapsed {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    min-width: 0;
+    border: 0;
+    opacity: 0;
+    pointer-events: none;
+    overflow: hidden;
   }
 
   /* TRUE fullscreen: the wrap IS the fullscreen element, filling the screen. */

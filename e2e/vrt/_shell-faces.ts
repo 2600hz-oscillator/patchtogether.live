@@ -1066,6 +1066,20 @@ const VIDEO_FREEZE_SETTLE_FRAMES = 6;
  * be byte-identical across a second read — the effect, not the flag, because a
  * param that never reached the engine looks exactly like a frozen one from the
  * store.
+ *
+ * ⚠ SCOPE — WHAT THIS IS STRUCTURALLY UNABLE TO SEE, stated because a green run
+ * here would look identical either way. It is a NEGATIVE control: it proves the
+ * surface STOPPED. It cannot prove the surface was ever MOVING, so a scene whose
+ * video never rendered at all — no sink pulling the chain, the node not a pull
+ * root, the engine never booted — satisfies it VACUOUSLY. That is not
+ * hypothetical: `spawnPatch` clears the rack and takes the seeded `videoOut`
+ * with it, and a chain with no sink sat at `framesDrawnFor === 0` forever while
+ * looking, from here, perfectly frozen.
+ *
+ * The POSITIVE control for this surface lives in
+ * `e2e/tests/backdraft-preview-toggle.spec.ts`, which asserts the same canvas
+ * genuinely animates (distinct frames across rAFs) before it concludes anything
+ * about it stopping. A passing negative control is not enough on its own.
  */
 export async function freezeFaceVideo(page: Page, nodeId: string, label: string): Promise<void> {
   await page.evaluate((id) => {

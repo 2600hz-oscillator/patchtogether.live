@@ -47,7 +47,7 @@ _none_
 ### spawn-smoke QUARANTINE map (e2e/tests/modules.spec.ts) — 1
 - `toybox` — task #102: SwiftShader software-renderer timeout (heavy WebGL)
 
-## Runtime skips — in-body env gates (79)
+## Runtime skips — in-body env gates (80)
 
 `test.skip(cond, reason)` guards that skip AT RUNTIME when an environment
 capability is missing (DB, asset, renderer, hardware). NOT disables — the test
@@ -62,6 +62,7 @@ those at spec granularity and the lane audit checks the realized string.
 
 - `e2e/tests/auth-routes.spec.ts:120` — live-deploy only (E2E_BASE_URL must be a remote host)
 - `e2e/tests/auth-routes.spec.ts:130` — tier has no DATABASE_URL configured — nothing to reach
+- `e2e/tests/backdraft-preview-toggle.spec.ts:343` — engine draw counter unavailable in this runtime
 - `e2e/tests/blood-audio-output.spec.ts:106` — BLOOD runtime/extras unavailable (prod-preview)
 - `e2e/tests/blood-audio-output.spec.ts:192` — BLOOD engine did not reach ready (renderer/heap-sensitive on CI)
 - `e2e/tests/blood-audio-output.spec.ts:206` — BLOOD runtime unavailable (prod-preview)

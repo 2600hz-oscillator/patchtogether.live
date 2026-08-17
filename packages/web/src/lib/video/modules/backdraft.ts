@@ -3336,12 +3336,53 @@ export const backdraftDef: VideoModuleDef = {
       { x: 'camPosX', y: 'camPosY', label: 'position' },
     ],
 
+    // ⚠ OWNER REVIEW, round 1 (2026-08-17). Five of the seven notes land here.
+    //
+    // `feedback` IS FIRST AND IS A REAL PAGE NOW. It used to be the `__unpaged`
+    // defensive tail band, which the shell labels **`more`** — `hero.control`
+    // promoted FEEDBACK out of the `loop` page without any page claiming it, so
+    // the module's single most important control sat in a catch-all tab called
+    // "more", last in the rail. Owner: *"'more' should be called 'feedback' and
+    // be the first tab"*. Declaring it removes the tail band entirely rather
+    // than renaming it — a `__unpaged` band is a REPORT that authoring missed
+    // something, so relabelling it would have hidden the finding.
+    //
+    // GEOMETRY IS FOLDED IN and its own page deleted (owner: *"geometry
+    // controls should also be on this tab and the geometry tab removed"*). It
+    // reads correctly: ZOOM/ROTATE/OFF X/OFF Y are the per-pass warp that the
+    // feedback loop COMPOUNDS, so they are the same idea as FB, not a
+    // neighbouring one — they only do anything through the loop.
     pages: [
+      { id: 'feedback', label: 'feedback', controls: ['feedback', 'zoom', 'rotate', 'offsetX', 'offsetY', 'pixelate'] },
       { id: 'loop', label: 'loop', controls: ['mix', 'delay'] },
       { id: 'colour', label: 'colour', controls: ['luma', 'chroma', 'r', 'g', 'b'] },
       { id: 'key', label: 'key', controls: ['lighten', 'darken'] },
-      { id: 'geometry', label: 'geometry', controls: ['zoom', 'rotate', 'offsetX', 'offsetY', 'pixelate'] },
-      { id: 'switches', label: 'switches', controls: ['mirrorX', 'mirrorY', 'shape', 'pureGeo', 'flicker', 'tvMode'] },
+      // ⚠ STACKED INTO THREE ROWS, and the reason is MEASURED width, not taste.
+      // As one flat row this band was 1037.75 px and it dragged the whole dock
+      // pane from 900 px (every other tab) to 1103.75 px — owner: *"this is
+      // much too wide"*. `clusters` is the only face-level mechanism that
+      // breaks a band into rows: un-clustered cells render first, then each
+      // cluster as its own sub-group, in declaration order. So the row order
+      // below IS the owner's stacking order, top to bottom.
+      //
+      // ⚠ THE SUB-HEADERS ARE A COST THE OWNER DID NOT ASK FOR. `module-face-
+      // lint` refuses a blank cluster label, so rows 2 and 3 must be named;
+      // only row 1 can be captionless (by being un-clustered). Flagged for
+      // review rather than decided silently — see the PR body.
+      {
+        id: 'switches',
+        label: 'switches',
+        controls: ['mirrorX', 'mirrorY', 'shape', 'pureGeo', 'flicker', 'tvMode'],
+        clusters: [
+          // Both are about HOW the frame is sampled: PURE GEO picks the SPACE
+          // the mask is taken in (screen vs the zoomed feedback source), and
+          // FLICKER is the temporal sampling — the display's emission rate
+          // beating against the camera's 60 fps.
+          { label: 'sampling', controls: ['pureGeo', 'flicker'] },
+          // The bounded-screen mode selector, alone on the bottom row.
+          { label: 'mode', controls: ['tvMode'] },
+        ],
+      },
       { id: 'screen', label: 'tv screen', controls: ['room', 'bezel', 'phosphor', 'drive'] },
       // The page declares its FULL membership, both pad axes included — the
       // fold to one cell per pad is the platform's job (`resolvePage`), not the
@@ -3355,35 +3396,29 @@ export const backdraftDef: VideoModuleDef = {
 
     // No `title`, no `hint`, no band hints — owner ruling 2026-08-11: plain
     // labels and values on the face; the explanation is one right-click away.
-    hero: {
-      control: 'feedback',
-      readouts: [
-        // HOW MANY NESTING LEVELS ARE ACTUALLY RESOLVABLE — the FIRST of three
-        // ceilings to bind (the bezel band going sub-pixel, spatial resolution,
-        // or contrast). The nearest dial is ZOOM, and a ZOOM readback is blind
-        // to the other two live inputs: FEEDBACK (the per-pass gain, which sets
-        // the contrast ceiling) and BEZEL (the only high-contrast edge between
-        // one nesting level and the next). Both are permanent negative controls
-        // in backdraft-face-model.test.ts.
-        //
-        // ⚠ Deliberately NOT the card's version of this number. The card omits
-        // `bezelTb` entirely, so its readout is computed at a hardcoded bezel of
-        // 0.4 while the param ships at 0.5 — measured wrong at the defaults, and
-        // structurally blind to a fader sitting right beside it.
-        { label: 'bands', valueId: 'backdraft-tv-bands' },
-        // WHAT FRACTION OF THE FRAME the nested screen fills. A pure function
-        // of ZOOM, and published BESIDE `bands` on purpose: it is the
-        // BEZEL-INVARIANT half of the pair, so the two together are the
-        // instrument's own negative control — move BEZEL and exactly one of
-        // them may move.
-        { label: 'fill', valueId: 'backdraft-tv-fill' },
-        // THE QUANTISATION THE MILLISECOND DIAL CANNOT SHOW. DELAY is snapped
-        // to a WHOLE frame of the 60 fps ring and floored at 1, so the whole
-        // 0-8 ms bottom of the fader is one frame and the dial is lying about
-        // resolution it does not have.
-        { label: 'tap', valueId: 'backdraft-delay-frames' },
-      ],
-    },
+    //
+    // ⚠ AND NO `hero` AT ALL, as of owner review round 1. It carried two things
+    // and the owner removed both:
+    //
+    //   * the BANDS / FILL / TAP readout row — *"the bands, fill and timing is
+    //     not useful and should go away"*. They were correct numbers (each
+    //     negative-controlled on an input a dial is blind to) and that is not
+    //     the same as USEFUL: this module is steered by watching the picture,
+    //     which is two inches above where those digits were.
+    //   * the FEEDBACK fader — *"this should only be on the … 'feedback' tab and
+    //     not be present in all views"*. A `hero.control` is painted ABOVE the
+    //     tab rail, so it was on screen in all eight tabs. It now lives in the
+    //     `feedback` page like any other control.
+    //
+    // ⚠ THE PREVIEW SCREEN IS NOT PART OF THIS and stays persistent across
+    // every tab — owner: *"the preview screen can stay present in all views"*.
+    // It arrives through `face.extension`'s `fullViewBody` slot, not through
+    // `hero`, which is why removing `hero` does not touch it.
+    //
+    // The three readout FUNCTIONS survive in `backdraft-face-model.ts` and are
+    // still registered + still tested. They are the measurement that BackdraftCard
+    // prints a wrong, BEZEL-blind band count (#1786), so deleting them would
+    // delete the evidence for an open bug on a surface this PR does not touch.
   },
 
   docs: {
