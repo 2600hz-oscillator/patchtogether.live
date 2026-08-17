@@ -114,9 +114,13 @@
 
 /* wide content scrolls inside its own container; the page body never scrolls
    sideways. The scroll region sits BELOW the pane-fixed chrome (grip + title
-   bar + .win-ctrls) inside the frame — the kit's 900px min-width lives on
-   .faceplate-body, so only the CONTENT travels sideways in a half-width
-   split pane; the title bar (and its ✕) hugs the pane. */
+   bar + .win-ctrls) inside the frame, so only the CONTENT travels sideways in a
+   half-width split pane; the title bar (and its ✕) hugs the pane.
+   ⚠ THIS RULE IS NOW THE WHOLE GUARANTEE. It used to be assisted by a 900px
+   min-width on `.faceplate-body` that forced overflow into existence; the body
+   is content-sized now (see below), so whether anything scrolls is decided by
+   whether the content is genuinely wider than the pane — which is the honest
+   version of the same behaviour. */
 .dock-faceplate .faceplate-scroll {
   overflow: auto;
 }
@@ -147,18 +151,42 @@
  * which is also what the pinned tray host has always done
  * (`.dock-natural-sized { width: max-content }`, DockFullView.svelte).
  *
- * `max-width: 100%` keeps the no-sideways-scroll guarantee: content wider than
- * the pane still scrolls inside `.faceplate-scroll` rather than pushing the
- * page, which is what the 900 px floor was ALSO doing for a half-width split
- * pane and the only half of its job worth keeping.
+ * ⚠ AND THERE IS DELIBERATELY NO `max-width` HERE. Adding one looks like the
+ * safe way to keep the no-sideways-scroll guarantee and is the exact opposite:
+ * clamping the body to `100%` makes the BODY stop at the pane while its
+ * children keep their natural width, so the overflow moves INSIDE the body —
+ * where `.faceplate` (`overflow: hidden`) clips it and `.faceplate-scroll`
+ * cannot see it. `scrollWidth === clientWidth`, the scroll container decides it
+ * has nothing to scroll, and a wide occupant in a half-width split pane is
+ * simply CUT OFF with no way to reach the rest.
  *
- * The gate that holds this line is `face-width-source.test.ts` +
- * `e2e/tests/faceplate-width.spec.ts`: a face whose content does not fill its
- * plate is RED unless NAMED with the specific thing consuming the width. */
+ * That is not hypothetical, and the evidence is a DELIBERATE NEGATIVE CONTROL
+ * rather than a story. Re-add `max-width: 100%` here and
+ * `dock-pane-close-chrome`'s "A+B split … after sideways scroll" case goes red
+ * with `half-width pane content still has sideways travel: expected true,
+ * received false` — dx7 (1139 px of content in a ~620 px half-pane) stops being
+ * scrollable and its right-hand controls become unreachable. Remove it and the
+ * case passes. Verified both directions, in that order.
+ *
+ * ⚠ THAT TEST ONLY CATCHES IT BECAUSE ITS SUBJECT WAS FIXED FIRST. It used to
+ * spawn `adsr`, which overflowed a half-width pane only because the 900 px
+ * floor forced it to; with the plate content-sized adsr genuinely fits, so the
+ * case passed vacuously and would have certified the clamp. A gate whose
+ * precondition disappeared is not a gate — see the note in that spec.
+ *
+ * The guarantee comes from `.faceplate-scroll { overflow: auto }` above, and it
+ * needs the body to be HONEST about its width: a body at its content width that
+ * exceeds the pane makes the scroll container scroll, which is the behaviour the
+ * 900 px floor used to produce by brute force. The page still never scrolls
+ * sideways, because the scroll container is bounded by the pane.
+ *
+ * The gate that holds this line is `face-width-source.test.ts` plus the
+ * per-face content-vs-plate measurement in `e2e/vrt/workflow-shell-faces.spec.ts`:
+ * a face whose content does not fill its plate is RED unless NAMED with the
+ * specific thing consuming the width. */
 .dock-faceplate .faceplate-body {
   min-width: 0;
   width: max-content;
-  max-width: 100%;
 }
 
 .dock-faceplate .faceplate {

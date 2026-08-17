@@ -105,6 +105,17 @@ async function panTileTo(page: Page, id: string, top: number): Promise<void> {
 /** The clip player's deterministic pinned node id — the pane's backing node. */
 const CLIP_ID = 'pinned-clipplayer';
 
+// ⚠ `dx7` IS THE WIDE SUBJECT, AND IT IS LOAD-BEARING (#1796). Any test below
+// that asserts a pane SCROLLS sideways needs a pane whose content genuinely
+// exceeds a half-width pane. Until the plate became content-sized, every
+// curated face got that for free from a defect — `.faceplate-body` forced all
+// of them to 900 px, so even `vca` (measured 247 px of real content)
+// overflowed. Now they fit, and an assertion written against the old default
+// passes vacuously or fails outright. dx7 is the widest face in the roster
+// (measured 1139 px of content), so its overflow is a property of the module
+// rather than of a layout bug.
+const WIDE_FACE = 'dx7';
+
 /** A full-view pane by its backing node id (module OR the clip player). */
 const paneFor = (page: Page, id: string) =>
   page.locator(`[data-testid="dock-fullview-pane"][data-pane-node="${id}"]`);
@@ -114,7 +125,7 @@ const paneFor = (page: Page, id: string) =>
  *  trio — re-wait for it before any hotkey (the keymap is inert until the
  *  pinned node exists). */
 async function spawnExpandableTile(page: Page) {
-  await spawnPatch(page, [{ id: 'm1', type: 'vca', position: { x: 30, y: 40 } }]);
+  await spawnPatch(page, [{ id: 'm1', type: WIDE_FACE, position: { x: 30, y: 40 } }]);
   const tile = page.locator('.svelte-flow__node[data-id="m1"] [data-testid="module-shell"]');
   await expect(tile).toBeVisible();
   await waitForPinnedTrio(page);
@@ -205,18 +216,26 @@ test.describe('bottom-drawer occupancy: pinned XOR full-view (?shell=1)', () => 
     expect(b.width).toBeGreaterThan(0);
 
     // INDEPENDENT SCROLL: each pane owns its overflow container.
-    const clipScroll = paneFor(page, CLIP_ID).locator('.faceplate-scroll');
-    const scrolled = await clipScroll.evaluate((el) => {
+    //
+    // ⚠ THE SCROLLED PANE IS THE MODULE, NOT THE CLIP PLAYER — it was the other
+    // way round, and the swap is the point. The clip pane used to overflow
+    // because the MODULE pane hogged 900 px of the drawer and squeezed it; with
+    // the plate content-sized (#1796) the module takes what it needs, the clip
+    // pane gets more room, and it simply fits. Asserting overflow there now
+    // asserts a defect. dx7 overflows a half-width pane on its own merits, so
+    // the independence claim is exercised against real travel either way.
+    const wideScroll = paneFor(page, 'm1').locator('.faceplate-scroll');
+    const scrolled = await wideScroll.evaluate((el) => {
       el.scrollLeft = 120;
       return { scrollable: el.scrollWidth > el.clientWidth, scrollLeft: el.scrollLeft };
     });
-    expect(scrolled.scrollable, 'half-width clip pane has sideways overflow').toBe(true);
-    expect(scrolled.scrollLeft, 'clip pane scrolled').toBeGreaterThan(0);
+    expect(scrolled.scrollable, 'half-width module pane has sideways overflow').toBe(true);
+    expect(scrolled.scrollLeft, 'module pane scrolled').toBeGreaterThan(0);
     expect(
-      await paneFor(page, 'm1')
+      await paneFor(page, CLIP_ID)
         .locator('.faceplate-scroll')
         .evaluate((el) => ({ left: el.scrollLeft, top: el.scrollTop })),
-      'module pane unmoved',
+      'clip pane unmoved',
     ).toEqual({ left: 0, top: 0 });
 
     // BOTH INTERACTABLE: a real click lands in the clip player pane (its S&H
@@ -389,8 +408,17 @@ test.describe('full-view SPLIT: two panes, one drawer occupant (?shell=1)', () =
   /** Spawn TWO migrated modules and return their tiles' EXPAND pills. */
   async function spawnTwoTiles(page: Page) {
     await spawnPatch(page, [
-      { id: 'm1', type: 'vca', position: { x: 30, y: 40 } },
-      { id: 'm2', type: 'adsr', position: { x: 250, y: 40 } },
+      // ⚠ BOTH PANES ARE THE SAME FACE, and that is what makes the 50/50
+      // claim mean anything (#1796). Panes are content-sized now, so two
+      // DIFFERENT faces are naturally different widths — measured vca 247 px
+      // against dx7 1139 px, a 734 px gap — and asserting equality across them
+      // would be asserting the old `min-width: 900px` defect that made every
+      // face the same size. The sibling test already says this in prose:
+      // "equality is no longer a property of the layout — asserting it would be
+      // asserting the bug". Two instances of the WIDE face give equality AND
+      // the real horizontal travel the independent-scroll leg needs.
+      { id: 'm1', type: WIDE_FACE, position: { x: 30, y: 40 } },
+      { id: 'm2', type: WIDE_FACE, position: { x: 250, y: 40 } },
     ]);
     const tile1 = page.locator('.svelte-flow__node[data-id="m1"] [data-testid="module-shell"]');
     const tile2 = page.locator('.svelte-flow__node[data-id="m2"] [data-testid="module-shell"]');
@@ -427,8 +455,15 @@ test.describe('full-view SPLIT: two panes, one drawer occupant (?shell=1)', () =
     expect(Math.abs(d.width - (a.width + b.width + GAP + 16)), '2 panes + gap + padding = drawer').toBeLessThanOrEqual(4);
 
     // INDEPENDENT SCROLL: each pane's .faceplate-scroll is its OWN overflow
-    // container on BOTH axes (the kit faceplate's 900px min-width guarantees
-    // horizontal travel in a half-width pane at the 1280px viewport).
+    // container on BOTH axes.
+    //
+    // ⚠ THE HORIZONTAL TRAVEL IS NOW A PROPERTY OF THE MODULE, NOT OF THE KIT.
+    // This comment used to read "the kit faceplate's 900px min-width guarantees
+    // horizontal travel in a half-width pane" — which was true and was the
+    // defect: every face was padded to 900 px whether it needed it or not
+    // (#1796). Pane B is the widest face in the roster so the travel is real;
+    // pane A is a narrow one that legitimately does NOT scroll, which is why
+    // only B is scrolled below.
     const scrollBoxes = page.locator('[data-testid="dock-fullview-pane"] .faceplate-scroll');
     await expect(scrollBoxes).toHaveCount(2);
     const overflow = await scrollBoxes.first().evaluate((el) => {

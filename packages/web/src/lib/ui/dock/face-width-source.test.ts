@@ -119,11 +119,42 @@ describe('dock faceplate width — compact is the DEFAULT, not an exemption', ()
       /min-width:\s*0\s*;/,
     );
     expect(body!.body, 'the plate must be its content').toMatch(/width:\s*max-content\s*;/);
+  });
+
+  it('the body carries NO `max-width` clamp — the clamp CLIPS a wide occupant', () => {
+    // ⚠ THIS CLAUSE REPLACES ITS OWN OPPOSITE, WHICH IS WHY IT IS SPELLED OUT.
+    // The first pass of this gate REQUIRED `max-width: 100%` here, reasoning
+    // that it "keeps the no-sideways-scroll guarantee". It does the reverse.
+    //
+    // Clamping the body to the pane does not shrink its CHILDREN. The card
+    // frame or the widest band keeps its natural width and overflows INSIDE the
+    // body, where `.faceplate` (`overflow: hidden`) clips it — so
+    // `.faceplate-scroll` measures `scrollWidth === clientWidth`, concludes it
+    // has nothing to scroll, and a wide occupant in a half-width split pane is
+    // cut off with no way to reach the rest of it.
+    //
+    // VERIFIED BOTH DIRECTIONS, not argued: with the clamp re-added,
+    // `dock-pane-close-chrome`'s "after sideways scroll" case reports
+    // `half-width pane content still has sideways travel: expected true,
+    // received false` for dx7 (1139 px of content in a ~620 px half-pane);
+    // without it, that case passes. The guarantee actually lives on
+    // `.faceplate-scroll { overflow: auto }`, and it needs the body to report
+    // its REAL width for the scroll container to see anything to scroll.
+    const body = blocks(css('_dock-faceplate.css')).find(
+      (b) => b.selector === '.dock-faceplate .faceplate-body',
+    )!;
     expect(
-      body!.body,
-      'and still clamp to the pane, so content wider than the drawer scrolls inside ' +
-        '`.faceplate-scroll` instead of pushing the page sideways',
-    ).toMatch(/max-width:\s*100%\s*;/);
+      body.body,
+      'a `max-width` on the faceplate body hides its overflow from the scroll container. ' +
+        'The page-level guarantee is `.faceplate-scroll { overflow: auto }`, not a clamp here.',
+    ).not.toMatch(/max-width:/);
+    // …and the scroll container that DOES own the guarantee still exists.
+    const scroll = blocks(css('_dock-faceplate.css')).find(
+      (b) => b.selector === '.dock-faceplate .faceplate-scroll',
+    );
+    expect(scroll?.body ?? '', 'the scroll container is the whole guarantee').toMatch(
+      /overflow:\s*auto\s*;/,
+    );
   });
 
   it('no per-occupant escape hatch re-appears — the default is the rule', () => {
