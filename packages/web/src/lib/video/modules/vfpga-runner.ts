@@ -133,14 +133,31 @@ export const vfpgaRunnerDef: VideoModuleDef = {
   // Every catalog VFPGA is pure-GL with a DOM-free factory → eligible for the
   // off-main-thread render worker under the EXPLICIT flag.
   //
-  // EXPERIMENTAL (not default-on, PR V2): the card polls `read('gateState')`
-  // + `readParam('cvN_val')` every frame for its gate LEDs / CV scopes, and
-  // the WorkerProxyHandle serves `read()` by materializing AND ticking a
-  // main-thread fallback handle — so defaulting VFPGA to the worker would
-  // render every catalog VFPGA TWICE (worker GL + main fallback GL), a net
-  // perf LOSS. Stays behind the explicit flag until worker-side probe
-  // forwarding exists.
-  renderLocus: 'worker-experimental',
+  // ⚠ RENDER LOCUS: MAIN (#1811). This def used to declare
+  // `renderLocus: 'worker-experimental'`, and that declaration was INERT AND
+  // MISLEADING — the render worker's bundle manifest never imported a VFPGA
+  // factory, so `?videoworker=1` installed a WorkerProxyHandle that received
+  // no frame, ever, and silently fell back to the main thread for the life of
+  // the node. The render-locus gate (worker/worker-eligibility.test.ts) found
+  // it by asserting the manifest and the registry agree in both directions.
+  //
+  // Registering a factory would not have fixed it, for two reasons that are
+  // structural rather than incidental:
+  //   * VFPGA declares vin1..vin4. The worker's `getInputTexture` ALWAYS
+  //     returns null (there are no cross-thread input textures and no
+  //     worker-side edges), so a patched VFPGA would render as if every video
+  //     input were unpatched — a different picture, not a degraded one.
+  //   * VFPGA declares vout1 AND vout2. The return protocol carries ONE
+  //     ImageBitmap per node, so vout2 could only be served by materialising
+  //     the main factory — a double render, strictly slower than staying put.
+  // The original note below is still true and is the THIRD reason:
+  //   the card polls `read('gateState')` + `readParam('cvN_val')` every frame
+  //   for its gate LEDs / CV scopes, and WorkerProxyHandle serves `read()` by
+  //   materialising AND ticking a main-thread fallback handle.
+  //
+  // Re-promotion needs worker-side input edges, a multi-output return
+  // protocol, and worker-side probe forwarding. Until then this renders on the
+  // main thread and SAYS SO.
   inputs: [
     // VIDEO inputs — the superset; a loaded spec binds videoIn of them.
     ...VFPGA_VIDEO_IN_PORTS.map((id) => ({ id, type: 'video' as const })),

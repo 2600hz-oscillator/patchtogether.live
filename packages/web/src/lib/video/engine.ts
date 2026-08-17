@@ -47,6 +47,11 @@ import { VIDEO_RES } from './video-res';
 import { RenderWorkerBridge, workerFlagState, workerLocusEligible } from './worker/worker-bridge';
 import { WorkerProxyHandle } from './worker/worker-proxy-handle';
 import { computeActiveSet, isPullEvalOn } from './pull-eval';
+import {
+  createRenderCostRecorder,
+  type RenderCostStats,
+  type RenderCostRecorder,
+} from './render-cost';
 
 /** The 4:3 default render resolution (1024×768, "768p"). Re-exported from
  *  video-res.ts (the single aspect→res source of truth) so every importer that
@@ -604,6 +609,24 @@ export class VideoEngine implements DomainEngine {
   /** Last frame's pull decision (node ids), for the `pullStats()` probe. */
   private lastEvaluated: string[] = [];
   private lastSkipped: string[] = [];
+
+  // ---- MAIN-THREAD COST (#1811 — the instrument, see render-cost.ts) ----
+  //
+  // Two sites, because they are two different bills and #1802 vs #1811 propose
+  // opposite fixes for them:
+  //
+  //   `step`  — ONE call per engine rAF: every node's GL draw() for the frame.
+  //             This is the cost that MOVING A MODULE TO THE WORKER removes.
+  //   `blit`  — ONE call per CARD per frame (the preview loops + OUTPUT cards
+  //             funnel through blitTexToDrawingBuffer). This is the cost that
+  //             GATING THE PER-CARD rAF removes, and no amount of worker
+  //             migration touches it — the blit is main-GL by construction.
+  //
+  // Attributing them separately is the whole reason the instrument exists: a
+  // single "video is slow" number cannot tell those two apart, and picking the
+  // wrong one is a whole PR spent on the wrong half.
+  private readonly stepCost: RenderCostRecorder = createRenderCostRecorder('video.engine.step');
+  private readonly blitCost: RenderCostRecorder = createRenderCostRecorder('video.engine.blit');
   /** How long an observation keeps a node watched. Long enough that a card's
    *  ~60fps blit loop never flickers the state (and that a synchronous
    *  test-driven `step()` burst inside one task can't expire it), short
@@ -975,6 +998,36 @@ export class VideoEngine implements DomainEngine {
     };
   }
 
+  /**
+   * MAIN-THREAD COST of the video path, MILLISECONDS (#1811).
+   *
+   * The accumulator lives IN THE PAGE (see render-cost.ts) — a caller reads
+   * this ONCE at the end of a window rather than sampling it, so a loaded
+   * runner cannot starve the measurement into looking like a result.
+   *
+   * `resetRenderCost()` gives a caller a DEFINED window over what are
+   * otherwise session-cumulative counters; without it a spec measuring "the
+   * last 10 s" would be reading "since the page booted", which includes every
+   * first-frame shader compile.
+   *
+   * ⚠ These are CPU-side numbers. A GL call returns when the command is
+   * queued, so `blit` in particular under-reports the true cost of the card
+   * preview path: the card's own `drawImage(engine.canvas, …)` — the
+   * synchronising half — happens in the CARD and is not visible from here.
+   * Read `blit.calls` as "how many card preview blits per frame", which is the
+   * quantity #1802 is about, and `step` as "how much GL draw work the main
+   * thread still owns", which is the quantity #1811 is about.
+   */
+  renderCostStats(): { step: RenderCostStats; blit: RenderCostStats } {
+    return { step: this.stepCost.stats(), blit: this.blitCost.stats() };
+  }
+
+  /** Start a fresh measurement window for {@link renderCostStats}. */
+  resetRenderCost(): void {
+    this.stepCost.reset();
+    this.blitCost.reset();
+  }
+
   /** Cumulative number of frames in which `nodeId`'s draw() actually ran. */
   framesDrawnFor(nodeId: string): number {
     return this.framesDrawn.get(nodeId) ?? 0;
@@ -1290,7 +1343,30 @@ export class VideoEngine implements DomainEngine {
 
   /** Run one frame's worth of draws. Test code calls this directly so it
    *  doesn't have to wait for rAF. */
+  /**
+   * Render one frame — and TIME IT (#1811).
+   *
+   * The timing wrapper is here rather than in `ensureLoop` on purpose: tests
+   * and the render-smoke harness drive `step()` directly, and a cost
+   * instrument that only sees the rAF path would report `never ran` for
+   * exactly the runs that are easiest to reason about.
+   *
+   * Cost of the instrument itself: two `performance.now()` calls per frame
+   * (~60/s) and no allocation. That is orders below the thing it measures, so
+   * it cannot perturb it — the same argument `scheduler-clock.ts` makes for
+   * putting its own `latency.arrive()` outside the try.
+   */
   step(): void {
+    const startedAt = performance.now();
+    try {
+      this.stepInner();
+    } finally {
+      const endedAt = performance.now();
+      this.stepCost.record(endedAt - startedAt, endedAt);
+    }
+  }
+
+  private stepInner(): void {
     if (this.topoStale) this.recomputeTopo();
 
     // Determinism forwarding — mirror the main-thread freeze/pause globals
@@ -1496,6 +1572,16 @@ export class VideoEngine implements DomainEngine {
    *  blitOutputPortToDrawingBuffer}: pass-through copy `tex` fullscreen into the
    *  default framebuffer at the engine res. */
   private blitTexToDrawingBuffer(tex: WebGLTexture): void {
+    const startedAt = performance.now();
+    try {
+      this.blitTexToDrawingBufferInner(tex);
+    } finally {
+      const endedAt = performance.now();
+      this.blitCost.record(endedAt - startedAt, endedAt);
+    }
+  }
+
+  private blitTexToDrawingBufferInner(tex: WebGLTexture): void {
     const gl = this.gl;
     if (!this.copyProgram) {
       this.copyProgram = this.compileFragmentImpl(VideoEngine.COPY_FRAG_SRC);

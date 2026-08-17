@@ -21,14 +21,20 @@ import {
 import '$lib/video/modules';
 
 describe('vfpgaRunnerDef — module def shape', () => {
-  it('worker-eligible under the EXPLICIT flag only (renderLocus worker-experimental)', () => {
-    // All catalog VFPGAs are pure-GL, but the card polls read('gateState') /
-    // readParam('cvN_val') every frame and the WorkerProxyHandle serves
-    // read() by materializing + ticking a main-thread fallback -- so the
-    // DEFAULT-ON worker tier (PR V2) would render every VFPGA twice. It
-    // stays in the experimental tier until worker-side probe forwarding
-    // exists (see the def comment + workerLocusEligible).
-    expect(vfpgaRunnerDef.renderLocus).toBe('worker-experimental');
+  it('renders on the MAIN thread, and the def says so (#1811)', () => {
+    // This assertion used to read `toBe('worker-experimental')`, and it was
+    // GREEN while the claim was false: the render worker's bundle manifest
+    // never imported a VFPGA factory, so the experimental flag installed a
+    // WorkerProxyHandle that never received a frame and fell back to main for
+    // the life of the node. A def-reading assertion cannot see the manifest —
+    // the two-sided gate that can is worker/worker-eligibility.test.ts.
+    //
+    // The locus is now MAIN and is blocked structurally three ways: vin1..vin4
+    // (the worker's getInputTexture is always null), vout1+vout2 (the return
+    // protocol carries one ImageBitmap per node), and the card's per-frame
+    // read() polling (which materialises a main-thread fallback that is then
+    // ticked alongside the worker — a double render).
+    expect(vfpgaRunnerDef.renderLocus ?? 'main').toBe('main');
   });
 
   it('declares the full INPUT superset: vin1-4 (video) + cv1-4 (cv) + g1-4 (gate)', () => {

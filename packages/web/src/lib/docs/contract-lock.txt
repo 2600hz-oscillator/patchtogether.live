@@ -3531,7 +3531,7 @@ vdelay param colorShift 0..1 linear default=0
 vdelay param delayTime 1..32 linear default=8
 vdelay param feedback 0..0.95 linear default=0.4
 vdelay param mix 0..1 linear default=0.5
-vfpgaRunner meta domain=video renderLocus=worker-experimental
+vfpgaRunner meta domain=video
 vfpgaRunner in cv1 cv param=cv1_val cvScale=linear
 vfpgaRunner in cv2 cv param=cv2_val cvScale=linear
 vfpgaRunner in cv3 cv param=cv3_val cvScale=linear
