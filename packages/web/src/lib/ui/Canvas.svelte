@@ -288,6 +288,7 @@
   import {
     buildModuleEntries,
     compatibleTargetPorts,
+    moduleDisplayName,
     type AnyDef,
     type CandidatePort,
     type ModuleEntry,
@@ -398,7 +399,12 @@
     isTypingTarget,
     isRackFlipKey,
     RACK_FLIP_KEY,
+    flipKeyOwner,
+    setFlipKeyOccupancy,
   } from '$lib/graph/workflow-pins';
+  import DropPatchModal from '$lib/ui/patch-drop/DropPatchModal.svelte';
+  import { pickDropTarget, type DropRect } from '$lib/ui/patch-drop/drop-target';
+  import { buildDropPlan, dropEdgeKey, type DropDefLike, type DropEdge } from '$lib/ui/patch-drop/drop-plan';
   import { removePatchNode } from '$lib/graph/mutate';
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
@@ -1660,7 +1666,13 @@
         // Tab-as-flip is an OWNER RULING (#1629): the flip gesture outranks
         // native focus traversal in this app (the #1508→#1599 rebind to `f`
         // was reversed). Shift-Tab and Tab inside typing targets stay native.
-        if (dockStore.fullViewNodeIds.length > 0) {
+        //
+        // The guard names ONLY ITSELF. Precedence lives in FLIP_KEY_CLAIMANTS
+        // (workflow-pins.ts); this used to read `fullViewNodeIds.length > 0`
+        // with the canvas owner hard-coding the exact complement, which meant
+        // a third claimant had to edit both — with nothing failing if it
+        // didn't. Occupancy for this claimant is registered below.
+        if (flipKeyOwner() === 'dock-full-view') {
           e.preventDefault();
           dockStore.toggleFullViewFlipped();
         }
@@ -1694,6 +1706,14 @@
     window.addEventListener('keydown', onDockKey);
     return () => window.removeEventListener('keydown', onDockKey);
   });
+
+  // FLIP-KEY OCCUPANCY for the dock claimant. The predicate is read at
+  // keystroke time (never cached), so this registers once and the live
+  // full-view list answers. Deregistering on teardown is the invariant that
+  // keeps a gone surface from swallowing the key — see setFlipKeyOccupancy.
+  $effect(() =>
+    setFlipKeyOccupancy('dock-full-view', () => dockStore.fullViewNodeIds.length > 0),
+  );
 
   // The workflow viewport-pan animation duration (ms) — shared by the nav keys,
   // the on-add camera reveal, and the on-load lane framing.
@@ -4422,6 +4442,189 @@
     }
   }
 
+  // ── DROP-TO-PATCH ────────────────────────────────────────────────────────
+  // Drop one card ONTO another and get the patch modal, instead of drilling
+  // down once per cable. The owner's case is video ("patching video is very
+  // intensive on the patch menus"), but nothing here is video-specific: the
+  // compatibility question is answered by the signal lattice, so an audio pair
+  // that can be patched behaves the same way.
+  //
+  // ⚠ THE SEAM. `handleNodeDragStop` already serves two outcomes and this adds
+  // a third, so the rule is that the new one is ADDITIVE ON THE NON-OVERLAPPING
+  // PATH. `resolveCardDrop` returns null for every drag that is not a card
+  // landing on a card, and on null the rest of the handler is byte-identical to
+  // before. Plain dragging is the most-used gesture in the app; it pays one
+  // rect comparison per drag and nothing else.
+  //
+  //   1. drop on empty canvas  → reposition          (unchanged)
+  //   2. drop into a lane/send → lane assignment     (unchanged)
+  //   3. drop onto another card → THIS, and it must not do 2 as a side effect
+  //
+  // ⚠ HOW 3 AVOIDS 2, structurally rather than by a guard. Membership is
+  // derived from POSITION (`laneTargetForFlowPoint` on the dropped centre), so
+  // the only way to guarantee no reparent is to make sure the lane block never
+  // sees a new position. A claimed card-drop therefore RESTORES the pre-drag
+  // position and RETURNS before the membership pass — it does not fall through
+  // with a rewritten value, because `setWcolOrder` assigns unconditionally and
+  // a same-order write would still land a no-op undo entry on a cancelled drop.
+  //
+  // `resolveCardDrop` only ever claims a SINGLE-node drag, so returning early
+  // cannot strand other nodes: there are none.
+
+  /** Pre-drag positions, captured at dragstart. The value snap-back restores.
+   *  Keyed by node id and cleared on every dragstop, so it cannot go stale. */
+  let dragOriginById = new Map<string, { x: number; y: number }>();
+
+  function handleNodeDragStart({ targetNode, nodes }: { targetNode: FlowNode | null; nodes: FlowNode[] }) {
+    const moved = nodes.length > 0 ? nodes : targetNode ? [targetNode] : [];
+    dragOriginById = new Map(moved.map((n) => [n.id, { x: n.position.x, y: n.position.y }]));
+  }
+
+  /**
+   * Did this drag land a card on another card? Null for every other drag.
+   *
+   * ⚠ The dragged rect is built from the DRAG PAYLOAD's position, never by
+   * resolving the node id through the flow store. `getIntersectingNodes` (and
+   * anything else id-based) reads `store.nodeLookup`, i.e. the COMMITTED
+   * position — while the lane hit-test twenty lines below reads `n.position`
+   * off the payload, and the `__handleNodeDragStop` test hook deliberately
+   * passes synthetic positions that differ from the store. An id-based query
+   * would silently disagree with lane membership under exactly the tests that
+   * exist to pin lane membership. Candidates come from `flowApi.getNodes()`,
+   * mirroring `recomputeLassoHits` — the shipped precedent for node-vs-node
+   * hit tests.
+   */
+  function resolveCardDrop(
+    moved: FlowNode[],
+  ): { droppedId: string; ontoId: string; restoreTo: { x: number; y: number } } | null {
+    // A multi-select drag is not a drop-to-patch gesture: "which of these did
+    // you mean" has no answer, so none is invented.
+    if (moved.length !== 1) return null;
+    // One session at a time. A second drop while the modal is open would stack
+    // two undo scopes and leave the first session's staged rows unreachable.
+    if (patchDrop) return null;
+    const n = moved[0]!;
+    const origin = dragOriginById.get(n.id);
+    if (!origin) return null;
+    // A drag that did not actually move cannot have been aimed at anything.
+    if (origin.x === n.position.x && origin.y === n.position.y) return null;
+    if (!flowApi) return null;
+
+    const size = nodeFootprintPx(n.id);
+    if (size.w <= 0 || size.h <= 0) return null;
+    const dragged: DropRect = { id: n.id, x: n.position.x, y: n.position.y, width: size.w, height: size.h };
+
+    const candidates: DropRect[] = [];
+    for (const other of flowApi.getNodes()) {
+      if (other.id === n.id) continue;
+      // Never a drop target: the canonical mixer/clip pins and the cadillac
+      // overlay are chrome, not patchable modules the user is aiming at.
+      if (other.id === WCOL_MIXER_ID || other.id === WCOL_CLIP_ID || other.type === 'cadillac') continue;
+      if (!patch.nodes[other.id]) continue;
+      const s = nodeFootprintPx(other.id);
+      if (s.w <= 0 || s.h <= 0) continue;
+      candidates.push({ id: other.id, x: other.position.x, y: other.position.y, width: s.w, height: s.h });
+    }
+
+    const decision = pickDropTarget(dragged, candidates);
+    if (!decision.targetId) return null;
+
+    // ⚠ ONLY CLAIM THE DRAG IF THERE IS SOMETHING TO PATCH. Popping a modal on
+    // every card-on-card overlap would make ordinary rack tidying unusable, and
+    // a pair with nothing compatible in EITHER direction has no patch to offer.
+    // Derived from the defs — never a domain check, so a compatible audio pair
+    // gets the gesture and an incompatible video pair does not.
+    if (!dropHasAnyOffer(n.id, decision.targetId)) return null;
+
+    return { droppedId: n.id, ontoId: decision.targetId, restoreTo: origin };
+  }
+
+  /** A `DropDefLike` view of a live node's def, or null. */
+  function dropDefOf(nodeId: string): DropDefLike | null {
+    const node = patch.nodes[nodeId];
+    if (!node) return null;
+    const def = defLookup(node.type);
+    return (def as unknown as DropDefLike) ?? null;
+  }
+
+  /** True when EITHER direction offers at least one legal edge. */
+  function dropHasAnyOffer(droppedId: string, ontoId: string): boolean {
+    const a = dropDefOf(droppedId);
+    const b = dropDefOf(ontoId);
+    if (!a || !b) return false;
+    const lhs = { nodeId: droppedId, def: a };
+    const rhs = { nodeId: ontoId, def: b };
+    for (const dir of ['downstream', 'upstream'] as const) {
+      if (buildDropPlan(lhs, rhs, dir).census.offeredInputs > 0) return true;
+    }
+    return false;
+  }
+
+  /** The open drop-patch modal, or null. */
+  let patchDrop = $state<{ droppedId: string; ontoId: string } | null>(null);
+
+  /** Defs `findRepair` may search when a row is refused. The LIVE registry, so
+   *  a new module that happens to reduce colour to mono becomes an offered
+   *  repair the day it lands — there is no list of "converter modules", because
+   *  being a converter is a property of a def's ports. */
+  let patchDropRepairCandidates = $derived(
+    [...listVideoModuleDefs(), ...listModuleDefs()] as unknown as DropDefLike[],
+  );
+
+  /** Edges that ALREADY exist between the two nodes, in the modal's key format,
+   *  so a re-opened modal shows them as `patched` instead of offering them
+   *  again. Derived from the live patch — never a local mirror. */
+  let patchDropCommitted = $derived.by(() => {
+    const s = patchDrop;
+    if (!s) return [] as string[];
+    const pair = new Set([s.droppedId, s.ontoId]);
+    return Object.values(patch.edges)
+      .filter((e) => e && pair.has(e.source.nodeId) && pair.has(e.target.nodeId))
+      .map((e) => dropEdgeKey({
+        fromNode: e!.source.nodeId,
+        fromPort: e!.source.portId,
+        intoNode: e!.target.nodeId,
+        intoPort: e!.target.portId,
+      }));
+  });
+
+  /** Display name for the modal header. Two instances of the same type get a
+   *  " #N" suffix, or the header reads "backdraft ▶ backdraft" and the
+   *  direction it is trying to show becomes unreadable. */
+  function patchDropLabel(nodeId: string): string {
+    return moduleDisplayName(nodeId, patch.nodes as Record<string, ModuleNode>, defLookup);
+  }
+
+  /** Commit the modal's staged set. ONE `ydoc.transact` — so the whole session
+   *  is ONE undo entry — via the shipped `commitConvenienceEdges`, which
+   *  re-resolves cable types from the live defs, validates, and honours target
+   *  occupancy. Nothing bespoke writes an edge. */
+  function commitPatchDrop(edges: DropEdge[]): void {
+    commitConvenienceEdges(
+      edges.map((e) => ({
+        sourceNodeId: e.fromNode,
+        fromPortId: e.fromPort,
+        targetNodeId: e.intoNode,
+        toPortId: e.intoPort,
+      })),
+    );
+    patchDrop = null;
+  }
+
+  /** Dismiss. `keepPosition` is the escape hatch for a drop that really was a
+   *  move: the card has already been restored by the time the modal opened, so
+   *  this re-applies the drop position the user actually released at. */
+  function cancelPatchDrop(opts: { keepPosition: boolean }): void {
+    if (opts.keepPosition && patchDrop) {
+      const at = patchDropReleasedAt;
+      if (at) writeNodePosition(patchDrop.droppedId, at);
+    }
+    patchDrop = null;
+  }
+
+  /** Where the card was actually released — kept only to serve "leave it there". */
+  let patchDropReleasedAt: { x: number; y: number } | null = null;
+
   /** User finished dragging one or more module cards. Persist new positions.
    *
    *  Multi-user mode (currentUserId defined): writes to layouts[userId][nodeId]
@@ -4438,6 +4641,23 @@
     // stacking-by-DOM-order resumes for the next overlap interaction.
     if (topNodeId && !moved.some((n) => n.id === topNodeId)) {
       topNodeId = null;
+    }
+
+    // ── OUTCOME 3: a card landed on a card. Restore and hand off. ──────────
+    // Everything below this block is untouched for every other drag.
+    const cardDrop = resolveCardDrop(moved);
+    dragOriginById = new Map();
+    if (cardDrop) {
+      const n = moved[0]!;
+      patchDropReleasedAt = { x: n.position.x, y: n.position.y };
+      // SNAP BACK through the SAME dual-path write every other drag uses, so
+      // multiplayer layout semantics are identical. This write is what makes
+      // the card actually return: the flowNodes rebuild has an identity-reuse
+      // short-circuit, so without a real position change xyflow's internal
+      // store would keep the card at the drop point.
+      writeMovedPositions([{ ...n, position: { x: cardDrop.restoreTo.x, y: cardDrop.restoreTo.y } }]);
+      patchDrop = { droppedId: cardDrop.droppedId, ontoId: cardDrop.ontoId };
+      return;
     }
 
     // WORKFLOW CHANNEL COLUMNS: a drag RE-TARGETS membership + order. Because a
@@ -8121,7 +8341,12 @@
       // inverted). Guarding on occupancy (not event ordering) makes exactly one
       // handler act per keystroke, whichever listener happens to be registered
       // first. With the full-view CLOSED, the canvas-wide flip is the owner.
-      return dockStore.fullViewNodeIds.length === 0;
+      //
+      // `canvas` is the FLOOR of FLIP_KEY_CLAIMANTS (workflow-pins.ts): it owns
+      // the key whenever nothing more specific is occupied. This used to be a
+      // hard-coded complement of the dock's guard above; the resolver replaces
+      // the pair so a third claimant needs no edit here.
+      return flipKeyOwner() === 'canvas';
     }
     function onKey(e: KeyboardEvent) {
       if (shouldIgnore(e.target)) return;
@@ -8451,6 +8676,7 @@
       connectionDragThreshold={5}
       connectionMode={ConnectionMode.Loose}
       ondelete={handleDelete}
+      onnodedragstart={handleNodeDragStart}
       onnodedragstop={handleNodeDragStop}
       onmovestart={onViewportMoveStart}
       onmove={onViewportMove}
@@ -8550,6 +8776,37 @@
            data-testid hooks ('name-label-button' / 'name-label-input' /
            'name-label-error') so existing e2e selectors still resolve. -->
     </SvelteFlow>
+
+    <!-- ── DROP-TO-PATCH MODAL ─────────────────────────────────────────────
+         Opened by dropping one card onto another (handleNodeDragStop →
+         resolveCardDrop). Rendered OUTSIDE <SvelteFlow> so it is not a node
+         and cannot be panned/zoomed away from, and so its Tab handling is a
+         plain window listener like the other two flip-key owners. -->
+    {#if patchDrop && dropDefOf(patchDrop.droppedId) && dropDefOf(patchDrop.ontoId)}
+      <div class="patch-drop-scrim" data-testid="patch-drop-scrim">
+        <div class="patch-drop-shell">
+          <DropPatchModal
+            dropped={{
+              nodeId: patchDrop.droppedId,
+              def: dropDefOf(patchDrop.droppedId)!,
+              label: patchDropLabel(patchDrop.droppedId),
+            }}
+            onto={{
+              nodeId: patchDrop.ontoId,
+              def: dropDefOf(patchDrop.ontoId)!,
+              label: patchDropLabel(patchDrop.ontoId),
+            }}
+            direction="downstream"
+            live
+            repairCandidates={patchDropRepairCandidates}
+            committed={patchDropCommitted}
+            onCommit={commitPatchDrop}
+            onCancel={cancelPatchDrop}
+          />
+        </div>
+      </div>
+    {/if}
+
     <!-- THE BOTTOM DRAWER — ONE container, ONE occupant (dock unification,
          owner design call): EITHER the expanded full-view faceplate OR the
          P2.5a rail (the toggled pinned M/E/C occupant + cards docked to
@@ -8999,6 +9256,30 @@
 />
 
 <style>
+  /* ── DROP-TO-PATCH MODAL ───────────────────────────────────────────────
+     Centred over the flow, above the cards but BELOW the bottom drawer so a
+     full-view pane is never occluded by it. The scrim is click-through-proof
+     on purpose: the modal is a decision point, and a stray canvas click
+     mid-decision was how the drill-down picker used to lose state. */
+  .patch-drop-scrim {
+    position: absolute;
+    inset: 0;
+    z-index: 45;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background: rgb(6 8 12 / 55%);
+    backdrop-filter: blur(2px);
+  }
+  .patch-drop-shell {
+    width: min(880px, 100%);
+    max-height: 100%;
+    overflow: auto;
+    border-radius: 8px;
+    box-shadow: 0 18px 60px rgb(0 0 0 / 70%);
+  }
+
   .root {
     height: 100vh;
     display: flex;
