@@ -957,14 +957,40 @@ export type FaceSidebarBlock =
 
 /** Rear-card curation block (see ModuleFace.rear). */
 export interface ModuleFaceRear {
-  /** Explicit input group bands. A group whose id is 'voice'/'signal' claims
-   *  the leading voice/signal slot; an id matching a `pages` page id claims
-   *  that page's slot (its label wins); any other id appends after the page
-   *  bands. Ports listed here are exempt from derivation. */
-  groups?: readonly { id: string; label: string; ports: readonly string[] }[];
-  /** Cluster sub-headers INSIDE a band (e.g. envelopes → filter eg / amp eg).
-   *  `group` names the band (a page id or a curated group id); listed ports
-   *  must belong to that band. */
+  /**
+   * Explicit rear SECTIONS — the authored grouping the patch field lays out as
+   * columns (#1800). One list covers BOTH rails; `direction` says which.
+   *
+   * INPUT sections (the default) keep the slot-claiming semantics they have
+   * always had: a group whose id is 'voice'/'signal' claims the leading
+   * voice/signal slot; an id matching a `pages` page id claims that page's slot
+   * (its label wins); any other id appends after the page sections. Ports
+   * listed here are exempt from derivation.
+   *
+   * OUTPUT sections (`direction: 'output'`) have no pages to project from, so
+   * they are pure authoring: each names its own ports and heading, in
+   * declaration order, and whatever is left over falls to the derived default
+   * (see `rearFieldPlan` — one `out` section, split by cable domain only once
+   * the rail out-runs a column).
+   *
+   * ⚠ `direction` DEFAULTS TO 'input' because the input side is the one with a
+   * derivation to override and carries every group authored before #1800 — but
+   * the default is not load-bearing, because module-face-lint refuses a group
+   * whose ports do not all exist on the direction it declares. A port id may
+   * legitimately exist on BOTH rails (`delay` declares an `audio` input AND an
+   * `audio` output), so the field is what disambiguates and the lint is what
+   * makes forgetting it RED rather than silently wrong.
+   */
+  groups?: readonly {
+    id: string;
+    label: string;
+    ports: readonly string[];
+    /** Which rail this section groups. Omitted = 'input'. */
+    direction?: 'input' | 'output';
+  }[];
+  /** Cluster sub-headers INSIDE a section (e.g. envelopes → filter eg / amp
+   *  eg). `group` names the section (a page id or a curated group id); listed
+   *  ports must belong to that section. */
   clusters?: readonly { group: string; label: string; ports: readonly string[] }[];
   /** INPUT ports consumed at audio rate — rendered with the `~` tick. Curated
    *  (spec §6 Q5): there is no PortDef.rate field, and adding one would churn

@@ -202,15 +202,15 @@ describe('karplus face — the dock bands (pages = FUNCTION)', () => {
 });
 
 describe('karplus face — the REAR card the pages project onto', () => {
-  const bands = rearFieldPlan(karplusDef as never).bands;
+  const bands = rearFieldPlan(karplusDef as never).inputs;
 
-  it('is TOTAL: every declared port lands in exactly one hole, no `cv` tail band', () => {
+  it('is TOTAL: every declared port lands in exactly one hole, no `cv` tail section', () => {
     const holes = bands.flatMap((b) => [...b.holes, ...b.clusters.flatMap((c) => c.holes)]);
     const ids = holes.map((h) => h.portId);
     expect(new Set(ids).size, `a port rendered TWICE: ${ids.join(', ')}`).toBe(ids.length);
     expect(new Set(ids)).toEqual(new Set(karplusDef.inputs!.map((p) => p.id)));
     expect(ids).toHaveLength(12);
-    expect(bands.map((b) => b.id), 'no derived `cv` orphan band').toEqual(['voice', 'string', 'pick']);
+    expect(bands.map((b) => b.id), 'no derived `cv` orphan section').toEqual(['voice', 'string', 'pick']);
   });
 
   it('LEVEL_CV followed LEVEL out of the retired `output` band into `pick`', () => {

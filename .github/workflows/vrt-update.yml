@@ -209,6 +209,23 @@ jobs:
   # thing that can satisfy a required context here is a real `pull_request` CI
   # run. Logic + negative controls: scripts/vrt-revalidate-gate{.mjs,.test.ts}.
   #
+  # ── ⚠ …AND "A RUN EXISTS" WAS STILL THE WRONG QUESTION (#1815) ─────────
+  # A run held for approval reports `status: completed, conclusion:
+  # action_required` — a completed run, with a conclusion, that executed
+  # NOTHING. It satisfied "exists" cleanly, so this step went green over a PR
+  # with ZERO check runs. Measured 2026-08-17 on head ad27705c…: ci.yml runs
+  # for the SHA = 1, check-runs on the commit = 0. The two traces this job's
+  # header cited as proof the re-fire works (c2c9c27eb, 022c6cc23) were BOTH
+  # parked on attempt 1 and only ran because a human approved them ~25 min
+  # later — the "✓" measured run CREATION and was read as EXECUTION.
+  #
+  # The verification now classifies the run's state and only accepts one that
+  # executed or will; a parked run is APPROVED via the REST endpoint and
+  # re-verified. ⚠ Root cause, unfixed here (#1816): every pull_request run whose
+  # actor is github-actions[bot] is parked on attempt 1 in this repo, so this
+  # fires on every capture. Setting VRT_BASELINE_PUSH_TOKEN (already wired below,
+  # absent today) makes the push a real account's and retires the whole class.
+  #
   # ⚠ The oracle filters on `event=pull_request`, where G2 deliberately does
   # not. There, presence means REFUSE THE BYPASS, so over-counting is safe;
   # here presence means DECLARE SUCCESS, so the safe direction is the opposite
@@ -243,12 +260,18 @@ jobs:
     needs: capture
     if: ${{ needs.capture.outputs.pushed == 'true' }}
     # Bounds the failure; the gate is the verdict, never the clock. The loop's
-    # own budget (MAX_REFIRES × POLLS_PER_REFIRE × POLL_INTERVAL_MS, defaults in
-    # scripts/vrt-revalidate-gate.mjs) is well inside this.
+    # own budget (MAX_REFIRES × POLLS_PER_ACTION × POLL_INTERVAL_MS, plus
+    # MAX_APPROVALS; defaults in scripts/vrt-revalidate-gate.mjs) is well inside
+    # this.
     timeout-minutes: 10
     permissions:
       contents: read         # checkout, for scripts/vrt-revalidate-gate.mjs
-      actions: read          # read: did GitHub start a ci.yml run for this SHA?
+      # write, not read (#1815): the gate must both READ the run's state and
+      # APPROVE it when GitHub parked it at `action_required`. Every
+      # github-actions[bot]-triggered pull_request run in this repo is parked on
+      # attempt 1, so without this the verification can only ever report the
+      # deadlock it is standing in.
+      actions: write
       pull-requests: write   # close + reopen to re-fire; comment on a deadlock
     steps:
       # Only the one script is needed, so no LFS and no baselines.
@@ -264,9 +287,24 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Re-fire pull_request and VERIFY a ci.yml run exists
+      # ⚠ VERIFY A RUN **RAN** — not that one exists (#1815). A run parked at
+      # `conclusion: action_required` is a completed run with a conclusion, so
+      # "exists" was satisfied by a run that executed nothing and the PR sat at
+      # zero check runs. The gate now classifies the run's state, approves a
+      # parked one through POST /actions/runs/{id}/approve, and fails loudly
+      # with the state printed when it cannot.
+      #
+      # ⚠ NEVER `gh run approve` — it is not a subcommand: it prints `gh run`'s
+      # usage and EXITS 0, so a shell step built on it looks green and does
+      # nothing. Asserted in scripts/vrt-revalidate-gate.test.ts.
+      #
+      # The token falls back exactly like the capture job's: with
+      # VRT_BASELINE_PUSH_TOKEN present the re-fire and the approval are made by
+      # a real account (and the push itself no longer produces a parked run at
+      # all — that is the root fix); absent, GITHUB_TOKEN + `actions: write`.
+      - name: Re-fire pull_request and VERIFY a ci.yml run RAN (approve if parked)
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.VRT_BASELINE_PUSH_TOKEN || github.token }}
           REF: ${{ inputs.ref }}
           REPO: ${{ github.repository }}
           PUSHED_SHA: ${{ needs.capture.outputs.sha }}

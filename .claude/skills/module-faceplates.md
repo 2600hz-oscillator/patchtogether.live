@@ -492,8 +492,28 @@ geometry is real code and stays in the hash, deliberately.)
    `<mod>-face-model.test.ts` on the input a knob readback is blind to, plus a
    totality leg.
 10. **Rear card is a PROJECTION of `face.pages`** — re-derive it on paper for
-    every page edit (which CV holes land in which band, orphan `_cv` stems, a
+    every page edit (which CV holes land in which section, orphan `_cv` stems, a
     curated group id colliding with a page id), then check `rear-card-model.test.ts`.
+    Since **#1800** both rails share ONE row grammar and the groups lay out as
+    COLUMNS, so three things changed for an author:
+    - `face.rear.groups` covers BOTH rails. An entry takes an optional
+      `direction` (default `'input'`); an OUTPUT group declares
+      `direction: 'output'`. ⚠ A port id can exist on both rails at once
+      (`delay` declares an `audio` in AND an `audio` out) — module-face-lint
+      refuses a group whose ports are not on the direction it declares, and
+      refuses one that resolves to no port at all (the section would silently
+      never render).
+    - Outputs have a **derived default**, so authoring is optional: one `out`
+      section, splitting into one section per CABLE DOMAIN only once the rail
+      out-runs a column. Author a group when the split should mean something
+      else (main vs sends), not to restate the domains.
+    - A section's WIDTH is derived from its row count (`rearSectionColumns`), so
+      a three-jack group is three jacks wide and a thirty-jack group takes the
+      columns it needs. Nothing collapses or hides — band-collapse is gone.
+    - **Direction is carried by four NON-COLOUR channels** declared in
+      `rear-direction.ts` (zone · section glyph · row mirror · tile chrome).
+      Colour means cable domain and nothing else; `rear-direction.test.ts` fails
+      any direction-qualified rule that assigns a domain hue.
 11. **Promote**: add to `STRICT_FACES`. An authored face NOT in the set is
     INERT — it ships as a no-op while looking complete. (Zero instances in the
     tree today; keep it that way.)
