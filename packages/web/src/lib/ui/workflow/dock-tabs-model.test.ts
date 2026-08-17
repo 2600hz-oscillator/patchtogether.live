@@ -127,3 +127,41 @@ describe('the LIVE registry — which faces are tabbed today', () => {
     ).toEqual(['cloudseed', 'pentemelodica']);
   });
 });
+
+describe('dockTabPlan — the DRAWER host paints no rail, so it is never tabbed (#1739)', () => {
+  // The file header's argument, applied to a third consumer. `DockCardHost`
+  // (the pinned `m`/`e` tray) has no title bar and therefore no tab rail, so a
+  // tabbed answer there is a HIDE WITH NO RAIL — the blank faceplate this model
+  // exists to prevent. Driven ABOVE the threshold, where the two answers
+  // actually differ; below it they agree trivially and the leg would be vacuous.
+  it('a drawer face is untabbed at ANY band count', () => {
+    for (const n of [DOCK_TAB_MIN_BANDS, DOCK_TAB_MIN_BANDS + 1, DOCK_TAB_MIN_BANDS + 9]) {
+      expect(dockTabPlan(bands(n), 'drawer'), `${n} bands, drawer`).toBeNull();
+    }
+  });
+
+  it('…and every band therefore RENDERS in a drawer, which is the property that matters', () => {
+    const plan = bands(DOCK_TAB_MIN_BANDS + 2);
+    const tabs = dockTabPlan(plan, 'drawer');
+    const hidden = plan.filter((b) => !dockBandVisible(b.id, tabs, 'p0'));
+    expect(hidden.map((b) => b.id), 'a drawer must never hide a band').toEqual([]);
+  });
+
+  it('NEGATIVE CONTROL, BOTH DIRECTIONS: the same inputs DO tab on the two rail hosts', () => {
+    // Without this the clause above would pass just as well if `dockTabPlan`
+    // had been broken to return null for everything.
+    const plan = bands(DOCK_TAB_MIN_BANDS + 2);
+    for (const view of ['dock-full', 'lane'] as const) {
+      expect(dockTabPlan(plan, view), `${view} must still tab`).not.toBeNull();
+    }
+    // …and the DEFAULT argument is the full view, so DockFullView's existing
+    // call site (`dockTabPlan(allBands)`) is unchanged by the new parameter.
+    expect(dockTabPlan(plan)).toEqual(dockTabPlan(plan, 'dock-full'));
+    // The hide side moves with it: the same plan on a full view hides all but
+    // the active band.
+    const tabs = dockTabPlan(plan, 'dock-full');
+    expect(plan.filter((b) => !dockBandVisible(b.id, tabs, 'p0')).map((b) => b.id)).toEqual(
+      plan.slice(1).map((b) => b.id),
+    );
+  });
+});

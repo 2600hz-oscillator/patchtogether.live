@@ -41,7 +41,9 @@ import {
   VIDEO_THUMB_H,
   VIDEO_THUMB_FPS,
   dockFullViewHeadPlan,
+  isFaceplateView,
   type ShellDefLike,
+  type ShellView,
 } from './module-shell-model';
 import { curatedFace, type FaceDefLike } from './curated-face';
 import type { Tier } from '$lib/ui/canvas/lod';
@@ -596,5 +598,61 @@ describe('dockFullViewHeadPlan — who owns the top of a dock faceplate', () => 
     const on = dockFullViewHeadPlan({ ...DOCK, hasExtensionBody: true });
     expect(off).not.toEqual(on);
     expect([off.extBody, on.extBody]).toEqual([false, true]);
+  });
+});
+
+// ── THE SHELL VIEW UNION, AND THE THIRD MEMBER (#1739) ──────────────────────
+//
+// `isFaceplateView` is the one place the union collapses to "is this the full
+// faceplate?". ModuleShell asks it ~30 times; every one of those sites used to
+// read `view === 'dock-full'`, which silently answered NO for the drawer and
+// would have painted six of mixmstrs' ninety-one controls in the `m` tray.
+//
+// ⚠ WHAT THIS GATE CANNOT SEE: it is the pure predicate, not the shell. That
+// ModuleShell actually CALLS it at every one of those sites is
+// `module-shell-drawer-view.test.ts`'s source anchor; that the drawer host
+// mounts the shell at all is `e2e/tests/workflow-drawer-face.spec.ts`.
+describe('isFaceplateView — which surfaces paint the FULL faceplate (#1739)', () => {
+  // DERIVED over the union, not three hand-written cases: a fourth member added
+  // without a decision here goes red rather than defaulting.
+  const ALL: readonly ShellView[] = ['lane', 'dock-full', 'drawer'];
+
+  it('both DOCK hosts are faceplates; the lane tile is not', () => {
+    expect(ALL.filter((v) => isFaceplateView(v))).toEqual(['dock-full', 'drawer']);
+    expect(ALL.filter((v) => !isFaceplateView(v))).toEqual(['lane']);
+  });
+
+  it('it is `!== lane`, so a NEW member is a faceplate by default rather than silently a tile', () => {
+    // The failure mode this shape prevents: `=== dock-full` makes every future
+    // member fall into the LANE branch, which is a fraction of the controls and
+    // looks like a working face.
+    expect(isFaceplateView('drawer')).toBe(true);
+  });
+});
+
+describe('dockFullViewHeadPlan — the DRAWER answers like the full view (#1739)', () => {
+  const BASE = { hasGlyph: true, heroCell: false, hasExtensionBody: false } as const;
+
+  it('the two dock hosts agree over EVERY combination of the other inputs', () => {
+    for (const hasGlyph of [false, true]) {
+      for (const heroCell of [false, true]) {
+        for (const hasExtensionBody of [false, true]) {
+          const args = { hasGlyph, heroCell, hasExtensionBody };
+          expect(
+            dockFullViewHeadPlan({ ...args, view: 'drawer' }),
+            `drawer vs dock-full @ glyph=${hasGlyph} hero=${heroCell} ext=${hasExtensionBody}`,
+          ).toEqual(dockFullViewHeadPlan({ ...args, view: 'dock-full' }));
+        }
+      }
+    }
+  });
+
+  it('NEGATIVE CONTROL: and BOTH still differ from the lane, so the equality above is not vacuous', () => {
+    const ext = { ...BASE, hasExtensionBody: true };
+    expect(dockFullViewHeadPlan({ ...ext, view: 'lane' })).not.toEqual(
+      dockFullViewHeadPlan({ ...ext, view: 'drawer' }),
+    );
+    expect(dockFullViewHeadPlan({ ...ext, view: 'lane' }).extBody).toBe(false);
+    expect(dockFullViewHeadPlan({ ...ext, view: 'drawer' }).extBody).toBe(true);
   });
 });

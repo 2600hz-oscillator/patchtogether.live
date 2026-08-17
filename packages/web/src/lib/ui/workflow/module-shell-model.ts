@@ -342,6 +342,10 @@ export const LANE_CELL_H: Record<ParamCellKind, number> = {
   grid: PLATE_ROW_H,
   color: PLATE_ROW_H,
   fader: 96,
+  // The neon fader is the same THROW at the same track height, plus a 9px
+  // persistent readout line the plain fader has no concept of. Same row budget
+  // rather than a guessed one: the readout replaces the hover tag's space.
+  'neon-fader': 96,
   // A SQUARE pad plus its two-axis readout. Carried at its real height even
   // though `laneOrder` makes an xy cell DOCK-ONLY today, so the number is
   // already right if that ever changes — an entry that lied "42" would be a
@@ -608,6 +612,42 @@ export function laneBodyPlan(
   };
 }
 
+// ── THE SHELL VIEW UNION ────────────────────────────────────────────────────
+//
+// WHICH SURFACE is a `<ModuleShell>` mounted on. Three members, and the third
+// is the whole of #1739:
+//
+//   * 'lane'      — the 192×180 workflow lane tile: a tier-CURATED subset of the
+//                   controls plus the `PatchPanel` lane rail.
+//   * 'dock-full' — a `DockFullView` pane: the full faceplate (every control,
+//                   every page) and NO `PatchPanel`, because that host owns a
+//                   better patch surface — the flip-to-`RearCard` jack field on
+//                   its own title bar.
+//   * 'drawer'    — a `DockCardHost` rail card, i.e. the pinned `m`/`e` tray:
+//                   the full faceplate AND the `PatchPanel` lane rail. That
+//                   combination exists for exactly one reason — the tray host
+//                   has NO title bar, so it has no flip-to-`RearCard`, so
+//                   without the shell's own jack rail (and the
+//                   `.card-back-panel` it puts in the tile, which the
+//                   canvas-wide rear view reveals through the ancestor-generic
+//                   `.rear-view .rl-tile:has(> .patch-panel-host >
+//                   .card-back-panel)` rule) the tray would have NO JACKS AT
+//                   ALL. Two shipped specs patch `masterL` out of and `ch1L`
+//                   into that drawer.
+//
+// ⚠ THE DOCK-vs-LANE QUESTION IS `view !== 'lane'`, NEVER `view === 'dock-full'`.
+// Every band/tier/hero decision keyed off `'dock-full'` is really asking "is
+// this the full faceplate?", and the answer is yes on both dock surfaces. A
+// re-typed `=== 'dock-full'` is a silent default: the drawer would fall back to
+// the LANE branch and paint a 6-of-91-control plate.
+export type ShellView = 'lane' | 'dock-full' | 'drawer';
+
+/** TRUE on the surfaces that paint the FULL faceplate (both dock hosts). The
+ *  one place the union is collapsed to that question. Pure. */
+export function isFaceplateView(view: ShellView): boolean {
+  return view !== 'lane';
+}
+
 // ── THE DOCK FULL-VIEW HEAD (#1726) ─────────────────────────────────────────
 //
 // Three things compete for the top of a dock faceplate and only one of them
@@ -646,7 +686,7 @@ export interface DockFullViewHeadPlan {
  * surface, and the lane already has the thumbnail glyph for identity.
  */
 export function dockFullViewHeadPlan(args: {
-  view: 'lane' | 'dock-full';
+  view: ShellView;
   /** The shell has SOMETHING generic to paint (`glyphKind !== 'none'` or a
    *  video surface) — `ModuleShell`'s `hasGlyph`. */
   hasGlyph: boolean;
@@ -655,7 +695,9 @@ export function dockFullViewHeadPlan(args: {
   /** The resolved extension exports the `fullViewBody` slot. */
   hasExtensionBody: boolean;
 }): DockFullViewHeadPlan {
-  const dock = args.view === 'dock-full';
+  // `isFaceplateView`, not `=== 'dock-full'`: the pinned drawer paints the same
+  // full faceplate and wants the same head precedence (#1739).
+  const dock = isFaceplateView(args.view);
   const extBody = dock && args.hasExtensionBody;
   return {
     extBody,

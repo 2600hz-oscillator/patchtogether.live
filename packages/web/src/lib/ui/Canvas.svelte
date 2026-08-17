@@ -216,7 +216,7 @@
   // which node component a module renders as in its workflow lane (legacy card /
   // curated ModuleShell / uniform placeholder / dock stub). Gated behind the
   // `?shell=1` opt-in preview flag so it's a strict no-op until owner sign-off.
-  import { laneRenderKind, emittedTypeFor, isShellSwappable, NON_SHELL_LANE_TYPES } from '$lib/ui/workflow/legacy-fallback';
+  import { laneRenderKind, emittedTypeFor, isShellSwappable, dockRailRendersFace, NON_SHELL_LANE_TYPES } from '$lib/ui/workflow/legacy-fallback';
   import { migrated } from '$lib/ui/workflow/strict-faces';
   // DOM-SOURCE seam: a video module whose source lives on its CARD stays alive
   // in an off-screen host when the shell swaps its lane card away.
@@ -1921,15 +1921,34 @@
     };
   });
 
+  /** One DockRail occupant. `face` is the #1739 promotion decision, evaluated
+   *  HERE (the only place that has `shellFaces`) and injected, never re-derived
+   *  inside the rail. */
+  interface DockRailCardSpec {
+    node: ModuleNode;
+    title: string;
+    pinned: boolean;
+    face: boolean;
+  }
+
   /** Rail card lists (top/left; bottom adds the pinned occupant below).
    *  A docked id whose node is mid-retirement resolves to nothing here —
    *  the rail slot simply disappears until the tombstone revives. */
-  function railCards(zone: DockZone): Array<{ node: ModuleNode; title: string; pinned: boolean }> {
-    const out: Array<{ node: ModuleNode; title: string; pinned: boolean }> = [];
+  function railCards(zone: DockZone): DockRailCardSpec[] {
+    const out: DockRailCardSpec[] = [];
     for (const { nodeId } of dockStore.entriesFor(zone)) {
       const node = snapshot.nodes.find((n) => n.id === nodeId);
       if (!node) continue;
-      out.push({ node, title: dockDisplayName(node), pinned: false });
+      // A USER-DOCKED entry keeps its verbatim legacy card: it still has a lane
+      // DockStubCard and a route to DockFullView, so its face is already
+      // reachable — see dockRailRendersFace's header for why `pinned` is part
+      // of the rule and what widening it would move.
+      out.push({
+        node,
+        title: dockDisplayName(node),
+        pinned: false,
+        face: dockRailRendersFace({ shellFaces, pinned: false, migrated: migrated(node.type) }),
+      });
     }
     return out;
   }
@@ -2324,14 +2343,27 @@
 
   let bottomRailCards = $derived.by(() => {
     const docked = railCards('bottom');
-    const out: Array<{ node: ModuleNode; title: string; pinned: boolean }> = [];
+    const out: DockRailCardSpec[] = [];
     // The pinned M/E/C occupant renders FIRST, alongside docked cards —
     // the P1 drawer generalized (pinned stays drawer-only per owner Q2).
     // NOTE: the EXPANDED full-view no longer routes through this card flex — it
     // owns its own full-width <DockFullView> faceplate below the bottom rail
     // (P0.3b re-spec); this list holds only the pinned occupant + docked entries.
     if (dockedBottomNode && dockedBottomSpec) {
-      out.push({ node: dockedBottomNode, title: dockedBottomSpec.label, pinned: true });
+      // #1739 — THE PINNED OCCUPANT IS THE ONE THAT GETS ITS FACE. The tray is
+      // its ONLY surface (canvas-hidden ⇒ no lane tile, no EXPAND pill, no
+      // route to DockFullView), so without this the `m` key was the one place
+      // in the app where a promoted module still painted its legacy card.
+      out.push({
+        node: dockedBottomNode,
+        title: dockedBottomSpec.label,
+        pinned: true,
+        face: dockRailRendersFace({
+          shellFaces,
+          pinned: true,
+          migrated: migrated(dockedBottomNode.type),
+        }),
+      });
     }
     out.push(...docked);
     return out;

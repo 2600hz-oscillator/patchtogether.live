@@ -145,4 +145,34 @@ export const PUSH_CARD_CONTROLS: Readonly<Record<string, readonly string[]>> = {
     'spectralStab',
     'spectralShape',
   ],
+
+  // ── mixmstrs ─────────────────────────────────────────────────────────────
+  // EIGHT CHANNELS, EIGHT ENCODERS. This is the one module in the fleet where
+  // the hardware's arity and the module's arity are the same number, so the
+  // card is not a curation at all — it is the console, one strip per encoder,
+  // left to right.
+  //
+  // ⚠ AND THE FACE TIER WOULD GET IT WRONG, which is why the override exists.
+  // mixmstrs' `face.order` deliberately ranks the ELEVEN BUS-SCOPED controls
+  // first (master, the two return levels, the two PRE/POST switches, the six
+  // return EQ bands) so that no LANE tier ever privileges one interchangeable
+  // channel over another. That is the right answer for a 46 px knob column and
+  // the wrong one for eight encoders: taking the first 8 turnable ranks would
+  // put the master and a reverb return's EQ under your hands and leave every
+  // channel fader off the display.
+  //
+  // An override REPLACES rather than merges, so this also pins the card against
+  // the drift CLAUDE.md warns about — `.myrobots/stereo-audio-plan/plan.md`
+  // PR-6 adds eight `pan{N}` params to this module, which would otherwise
+  // re-rank the generic tier underneath it.
+  //
+  // Spelled out rather than generated from `MIXMSTRS_CHANNELS`: this file is a
+  // deliberately dependency-free text schema (its header says so), and
+  // `push-card-schema.test.ts` reads the LIVE registry and fails on any id that
+  // is not a real turnable param — so a renamed or removed channel is RED here,
+  // anchored to the artifact rather than to a count.
+  mixmstrs: [
+    'ch1_volume', 'ch2_volume', 'ch3_volume', 'ch4_volume',
+    'ch5_volume', 'ch6_volume', 'ch7_volume', 'ch8_volume',
+  ],
 };

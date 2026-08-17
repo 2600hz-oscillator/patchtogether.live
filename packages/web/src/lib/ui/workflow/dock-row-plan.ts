@@ -123,6 +123,10 @@ export const PARAM_CELL_WIDTH_CLASS: Record<ParamCellKind, DockCellWidthClass> =
   // marbles is the first face to put faders IN bands, and while this said
   // 'wide' every one of its six bands would have taken a row of its own.
   fader: 'column',
+  // Same answer and the same reason: `NeonFader`'s slot is 12px inside a
+  // `.kcol`. Stated rather than inherited — this Record exists BECAUSE `fader`
+  // once shipped with a width class nobody chose.
+  'neon-fader': 'column',
   // Rosters and pictures — 1.4× to 8× a knob column, so they hold a row.
   segmented: 'wide',
   selector: 'wide',

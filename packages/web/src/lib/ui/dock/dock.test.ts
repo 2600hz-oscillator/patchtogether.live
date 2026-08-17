@@ -17,6 +17,12 @@ import {
   stepScale,
   parsePersistedDockState,
   DOCK_STORAGE_PREFIX,
+  DRAWER_HEIGHT_STEPS,
+  DRAWER_HEIGHT_MIN_PX,
+  drawerCeilingPx,
+  drawerHeightPx,
+  drawerStepFor,
+  nextDrawerStep,
 } from './dock-entries';
 import { DOCKABLE_TYPES, isDockableType } from './dockable';
 import { dockStore, type DockStorage } from './dock-store.svelte';
@@ -283,5 +289,80 @@ describe('dockStore — tombstone GC (the quicksave slot-switch scenario)', () =
         JSON.stringify({ entries: { ok: { zone: 'top', order: 0, scale: 1.25, restorePosition: { x: 1, y: 2 } } } }),
       ).entries.ok,
     ).toMatchObject({ zone: 'top', scale: 1.25 });
+  });
+});
+
+// ── THE DRAWER HEIGHT LADDER (#1767) ───────────────────────────────────────
+//
+// The owner's two hard requirements on this control are "persist it" and
+// "functional parity at every reachable size". The first is met by writing the
+// SAME `railSize` the grabber writes (asserted in the store clauses above); the
+// second is a property of the LADDER, and this is where it is held.
+describe('drawer height ladder (#1767)', () => {
+  const VH = 900;
+
+  it('the ceiling mirrors the stylesheet: min(48vh, 620px), both arms', () => {
+    // `.dock-rail-bottom { max-height: min(48vh, 620px) }`. A ladder resolving
+    // against a ceiling CSS disagrees with would produce steps the drawer
+    // silently refuses.
+    expect(drawerCeilingPx(900), '48vh wins on a laptop').toBeCloseTo(432, 5);
+    expect(drawerCeilingPx(2000), 'the 620px cap wins on a tall panel').toBe(620);
+  });
+
+  it('every step is REACHABLE and STRICTLY ORDERED, so the cycle is not a no-op', () => {
+    const px = DRAWER_HEIGHT_STEPS.map((s) => drawerHeightPx(s.id, VH));
+    for (let i = 1; i < px.length; i++) {
+      expect(px[i]!, `${DRAWER_HEIGHT_STEPS[i]!.id} must be taller than ${DRAWER_HEIGHT_STEPS[i - 1]!.id}`)
+        .toBeGreaterThan(px[i - 1]!);
+    }
+    expect(new Set(px).size, 'no two steps may resolve to the same height').toBe(px.length);
+  });
+
+  it('⚠ NO reachable step can collapse the drawer — the parity floor', () => {
+    // `DockRail`'s grabber collapses below SNAP_COLLAPSE_PX (80). A ladder step
+    // under that would let the button put the drawer into a state the button
+    // itself is then hidden by. Checked at a deliberately CRUEL viewport.
+    for (const vh of [400, 600, 900, 1440, 2160]) {
+      for (const s of DRAWER_HEIGHT_STEPS) {
+        expect(
+          drawerHeightPx(s.id, vh),
+          `step ${s.id} at ${vh}px viewport must stay above the collapse threshold`,
+        ).toBeGreaterThanOrEqual(DRAWER_HEIGHT_MIN_PX);
+      }
+    }
+  });
+
+  it('the label READS the drawer — a grabber drag leaves it telling the truth', () => {
+    for (const s of DRAWER_HEIGHT_STEPS) {
+      expect(drawerStepFor(drawerHeightPx(s.id, VH), VH), `${s.id} round-trips`).toBe(s.id);
+    }
+    // An off-ladder height (a free drag) resolves to its NEAREST step rather
+    // than to a remembered index.
+    const mid = (drawerHeightPx('S', VH) + drawerHeightPx('M', VH)) / 2;
+    expect(['S', 'M']).toContain(drawerStepFor(mid + 1, VH));
+    // No stored size yet = the CSS default, i.e. the ceiling.
+    expect(drawerStepFor(null, VH)).toBe('XL');
+  });
+
+  it('ONE control reaches EVERY size: the cycle wraps and visits all steps', () => {
+    // The owner asked for one control, so "you can only go up" would be a
+    // trap. Walking the cycle from any start must enumerate the whole ladder.
+    let px: number | null = drawerHeightPx('S', VH);
+    const seen: string[] = [];
+    for (let i = 0; i < DRAWER_HEIGHT_STEPS.length; i++) {
+      const next = nextDrawerStep(px, VH);
+      seen.push(next);
+      px = drawerHeightPx(next, VH);
+    }
+    expect(seen.slice().sort()).toEqual(DRAWER_HEIGHT_STEPS.map((s) => s.id).slice().sort());
+    expect(seen[seen.length - 1], 'and it returns to where it started').toBe('S');
+  });
+
+  it('NEGATIVE CONTROL: an unknown step id falls back rather than producing NaN', () => {
+    // The label is derived from a live measurement, so a stale/garbage id is
+    // reachable in principle; a NaN height would blank the drawer.
+    const px = drawerHeightPx('not-a-step', VH);
+    expect(Number.isFinite(px)).toBe(true);
+    expect(px).toBe(drawerHeightPx(DRAWER_HEIGHT_STEPS[0]!.id, VH));
   });
 });

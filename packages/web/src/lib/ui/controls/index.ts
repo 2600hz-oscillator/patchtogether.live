@@ -11,6 +11,7 @@
 // ── existing primitives ──
 export { default as Knob } from './Knob.svelte';
 export { default as Fader } from './Fader.svelte';
+export { default as NeonFader } from './NeonFader.svelte';
 export { default as XyPad } from './XyPad.svelte';
 export { default as VuMeter } from './VuMeter.svelte';
 export { default as ScopeScreen } from './ScopeScreen.svelte';

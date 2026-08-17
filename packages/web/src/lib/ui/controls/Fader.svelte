@@ -528,12 +528,27 @@
     user-select: none;
     touch-action: none;
   }
+  /* ── OPT-IN ACCENT HOOKS (2026-08-15, the mixmstrs console) ───────────────
+   *
+   * ⚠ EVERY ONE OF THESE FALLS BACK TO THE LITERAL THAT WAS HERE BEFORE, so an
+   * unset var renders BYTE-IDENTICALLY. That is the whole design: this control
+   * is shared, and six other FACED modules already declare `paramCells: 'fader'`
+   * — attenumix, marbles, moog907a, moog914, noise, rings — each with a compact
+   * AND a dock VRT baseline, plus `FaderCard` and its own `vrt.spec` card.
+   * Restyling the component outright would have moved that whole population to
+   * satisfy one module's review note.
+   *
+   * The opt-in lives in the CONSUMER's stylesheet (see
+   * `$lib/styles/console.css`), so the blast radius is exactly the scene that
+   * sets the vars, and the day the app decides every fader should look like this
+   * the change is to DELETE the attribute selector there — not to re-litigate
+   * these rules. */
   .track {
     position: relative;
     width: 22px;
     height: 80px;
-    background: #14171c;
-    border: 1px solid #404652;
+    background: var(--fader-track-bg-color, #14171c);
+    border: 1px solid var(--fader-track-border, #404652);
     border-radius: 3px;
     cursor: ns-resize;
     outline: none;
@@ -562,7 +577,7 @@
     left: 50%;
     width: 2px;
     margin-left: -1px;
-    background: #2a2f3a;
+    background: var(--fader-track-line, #2a2f3a);
     border-radius: 1px;
     pointer-events: none;
   }
@@ -586,10 +601,14 @@
     left: 1px;
     right: 1px;
     height: 14px;
-    background: linear-gradient(180deg, #4a5063 0%, #2a2f3a 100%);
-    border: 1px solid #5a6075;
+    background: var(--fader-thumb-bg, linear-gradient(180deg, #4a5063 0%, #2a2f3a 100%));
+    border: 1px solid var(--fader-thumb-border, #5a6075);
     border-radius: 2px;
-    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.06) inset, 0 -1px 2px rgba(0, 0, 0, 0.3) inset;
+    box-shadow: var(
+      --fader-thumb-shadow,
+      0 1px 0 rgba(255, 255, 255, 0.06) inset,
+      0 -1px 2px rgba(0, 0, 0, 0.3) inset
+    );
     pointer-events: none;
   }
   .thumb::after {
@@ -600,7 +619,7 @@
     left: 3px;
     right: 3px;
     height: 1px;
-    background: var(--text);
+    background: var(--fader-thumb-tick, var(--text));
     transform: translateY(-50%);
     border-radius: 0.5px;
   }

@@ -123,6 +123,15 @@ const FACE_ANSWER: Readonly<Record<string, FaceAnswer>> = {
       'is a look regression, NOT a lost gesture (1-D to 1-D), so it is reported by the fader ' +
       'audit below rather than failed here.',
   },
+  NeonFader: {
+    via: 'param-cell',
+    kind: 'neon-fader',
+    note:
+      'the SAME throw as Fader in KnobConic\'s visual language. A separate primitive, and a ' +
+      'separate kind, because Fader.svelte is mounted by 93 cards and eight other faced ' +
+      'modules: a look change there moves every one of their baselines, so a module opts in ' +
+      'one declaration at a time instead.',
+  },
   Toggle: { via: 'param-cell', kind: 'toggle', note: 'and ShellToggleCell for a node.data switch' },
   Button: { via: 'param-cell', kind: 'momentary', note: 'and ShellActionCell for an audition' },
   Segmented: { via: 'param-cell', kind: 'segmented', note: 'dock only; a lane paints the knob' },

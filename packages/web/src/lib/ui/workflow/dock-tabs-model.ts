@@ -48,6 +48,7 @@
 // trade for them, so the number stays where it is.
 
 import type { DockFaceBand } from './curated-face';
+import type { ShellView } from './module-shell-model';
 
 /** Measured section-band pitch in the dock faceplate (px). See the header. */
 export const DOCK_BAND_PX = 90;
@@ -67,8 +68,27 @@ export interface DockTab {
  * The tab roster for a dock plan, or `null` when the face renders as ONE
  * scrolling column (the overwhelming majority — every face below the
  * threshold). `null` is the "no tabs" answer both consumers branch on. Pure.
+ *
+ * ⚠ `view` IS PART OF THE ANSWER, NOT A FILTER THE CALLER APPLIES (#1739). The
+ * file header's whole argument is that a RAIL WITH NO MATCHING HIDE, OR A HIDE
+ * WITH NO RAIL, IS A BLANK FACEPLATE — which is exactly what the pinned `m`
+ * tray would be. `DockCardHost` has no title bar and paints no tab rail, so a
+ * `'drawer'` face is NEVER tabbed however many bands it has: it renders as the
+ * one scrolling column its host can actually scroll (`.dock-rail-cards` is
+ * `overflow:auto`, and the drawer is drag-resizable). Answering it here rather
+ * than at the shell's hide site is the same single-authority argument the
+ * header already makes for the two full-view consumers.
+ *
+ * Today's pinned occupant (mixmstrs, 4 bands) is under the threshold either
+ * way, so this is currently a NO-OP on the live roster — which is why
+ * `dock-tabs-model.test.ts` drives the drawer arm at a band count ABOVE the
+ * threshold, where the two answers actually differ.
  */
-export function dockTabPlan(bands: readonly DockFaceBand[] | null | undefined): DockTab[] | null {
+export function dockTabPlan(
+  bands: readonly DockFaceBand[] | null | undefined,
+  view: ShellView = 'dock-full',
+): DockTab[] | null {
+  if (view === 'drawer') return null;
   if (!bands || bands.length < DOCK_TAB_MIN_BANDS) return null;
   return bands.map((b) => ({ id: b.id, label: b.label || b.id }));
 }

@@ -141,6 +141,7 @@ import {
   DOCK_MAX_DIFF,
   FACES,
   FOLD_VIEWPORT,
+  foldViewportFor,
   LEGACY_FOLD_CLAMP_PX,
   LEGACY_FOLD_PX,
   LEGACY_FOLD_VIEWPORT,
@@ -212,7 +213,11 @@ test.describe('VRT: P1 curated faces (?shell=1) — compact lane tile + dock ful
       const errors: string[] = [];
       page.on('pageerror', (e) => errors.push(e.message));
 
-      await page.setViewportSize(FOLD_VIEWPORT);
+      // PER-SCENE, never the bare constant: a face whose unfolded pane is taller
+      // than the shared default needs its own window, and raising the shared one
+      // was MEASURED to move every other dock scene's pixels (see
+      // `foldViewportFor`). `mixmstrs` is the case that found it.
+      await page.setViewportSize(foldViewportFor(type));
       const memberId = await bootWithFace(page, type);
       // Frame at the 'full' tier so the jack-rail EXPAND affordance is
       // comfortably clickable, then open the dock full-view.
@@ -540,7 +545,7 @@ test.describe('VRT: P1 curated faces (?shell=1) — compact lane tile + dock ful
     const entry = FACES.find((f) => f.type === NC_FACE);
     expect(entry, `${NC_FACE} is still in the FACES roster`).toBeDefined();
 
-    await page.setViewportSize(FOLD_VIEWPORT);
+    await page.setViewportSize(foldViewportFor(NC_FACE));
     const memberId = await bootWithFace(page, NC_FACE);
     await frameMember(page, memberId, 0.7, 'full');
     const faceplate = await openDock(page, memberId, entry!.pages);
