@@ -21,8 +21,31 @@
 
 import { test, expect } from '@playwright/test';
 import { spawnPatch } from './_helpers';
+import { waitFrames } from '../_helpers/frames';
 
 type Page = import('@playwright/test').Page;
+
+// ── every read in this spec is a PAINT read, so every wait is a FRAME COUNT ──
+//
+// The chain behind `readStats()` is three rAF callbacks deep:
+//   a Y.Doc write (warpSurface / setFit / setParams)
+//     → the engine reconciles the node
+//     → the video engine's rAF draw composites MAPPY's surfaces into its FBO
+//     → VideoOutCard's OWN rAF blit copies the engine drawing buffer into
+//       canvas[data-testid="video-out-canvas"] (VideoOutCard.svelte)
+// and only then does `getImageData` see the new composite.
+//
+// ⚠ This used to be `waitForTimeout(500…600)`, which is not one assertion — it
+// is a different assertion per machine. 600 ms buys ~36 frames on a local GPU
+// and ~5 under CI's SwiftShader (7.9 fps measured, ten shards in parallel), so
+// the local run was asserting on a chain that had settled seven times over
+// while CI was asserting on one that had barely settled once. A frame count is
+// the same claim on both.
+/** One Y.Doc edit → composite → blit, with margin over the 3-frame chain. */
+const EDIT_FRAMES = 8;
+/** Additionally covers the engine materialising freshly-spawned nodes and the
+ *  LINES generator producing its first animated frame. */
+const SPAWN_FRAMES = 16;
 
 // Tint per input so each surface is a separable colour (LINES is mono; CHROMA
 // tints it). Mirrors the QUADRALOGICAL e2e's TINTS.
@@ -176,7 +199,7 @@ test.describe('MAPPY — multi-surface projection mapper output', () => {
     await expect(page.locator('[data-testid="mappy-card"]')).toHaveCount(1);
     await expect(page.locator('[data-testid="mappy-canvas"]')).toHaveCount(1);
     await expect(page.locator('canvas[data-testid="video-out-canvas"]')).toHaveCount(1);
-    await page.waitForTimeout(600);
+    await waitFrames(page, SPAWN_FRAMES);
 
     // 1) Full-frame surface 1 → the whole composite shows the (red) live source.
     const full = await readStats(page);
@@ -189,7 +212,7 @@ test.describe('MAPPY — multi-surface projection mapper output', () => {
     // 2) Warp surface 1 into a small TOP-LEFT sub-rect → far fewer lit texels
     //    and a different spatial signature. The composite MUST change.
     await warpSurface(page, 'mappy', 1, [[0.02, 0.02], [0.42, 0.02], [0.42, 0.42], [0.02, 0.42]]);
-    await page.waitForTimeout(600);
+    await waitFrames(page, EDIT_FRAMES);
     const warped = await readStats(page);
     expect(warped, 'warped composite readable').not.toBeNull();
     // The footprint shrank to ~1/4×1/4 of the frame → the lit fraction drops.
@@ -226,13 +249,13 @@ test.describe('MAPPY — multi-surface projection mapper output', () => {
     // on a full-frame surface must NOT change the lit footprint (deterministic +
     // animation-tolerant: lit fraction is stable even though LINES animates).
     await setFit(page, 'mappy', 1, true);
-    await page.waitForTimeout(500);
+    await waitFrames(page, EDIT_FRAMES);
     const fitFull = await readStats(page);
     expect(fitFull, 'FIT full-frame readable').not.toBeNull();
     expect(fitFull!.nonZeroFrac, 'full-frame FIT fills the frame').toBeGreaterThan(0.5);
 
     await setFit(page, 'mappy', 1, false);
-    await page.waitForTimeout(500);
+    await waitFrames(page, EDIT_FRAMES);
     const cropFull = await readStats(page);
     expect(cropFull, 'CROP full-frame readable').not.toBeNull();
     // same footprint within a generous tolerance (animation jitters the exact
@@ -248,7 +271,7 @@ test.describe('MAPPY — multi-surface projection mapper output', () => {
     await warpSurface(page, 'mappy', 1, [[0.02, 0.02], [0.42, 0.02], [0.42, 0.42], [0.02, 0.42]]);
     for (const fit of [true, false]) {
       await setFit(page, 'mappy', 1, fit);
-      await page.waitForTimeout(500);
+      await waitFrames(page, EDIT_FRAMES);
       const st = await readStats(page);
       expect(st, `${fit ? 'FIT' : 'CROP'} warped readable`).not.toBeNull();
       expect(st!.nonZeroFrac, `${fit ? 'FIT' : 'CROP'} warped box is non-blank`).toBeGreaterThan(0.02);
@@ -283,7 +306,7 @@ test.describe('MAPPY — multi-surface projection mapper output', () => {
     //     either way).
     await spawnPatch(page, nodes, baseEdges);
     await warpSurface(page, 'mappy', 2, [[0.0, 0.5], [1.0, 0.5], [1.0, 1.0], [0.0, 1.0]]);
-    await page.waitForTimeout(600);
+    await waitFrames(page, SPAWN_FRAMES);
     const before = await readStats(page);
     expect(before, 'in1-only composite readable').not.toBeNull();
     expect(before!.nonZeroFrac, 'in1 drives a non-blank composite').toBeGreaterThan(0.1);
@@ -296,7 +319,7 @@ test.describe('MAPPY — multi-surface projection mapper output', () => {
     ];
     await spawnPatch(page, nodes, withIn2);
     await warpSurface(page, 'mappy', 2, [[0.0, 0.5], [1.0, 0.5], [1.0, 1.0], [0.0, 1.0]]);
-    await page.waitForTimeout(600);
+    await waitFrames(page, SPAWN_FRAMES);
     const after = await readStats(page);
     expect(after, 'in1+in2 composite readable').not.toBeNull();
 
@@ -326,7 +349,7 @@ test.describe('MAPPY — multi-surface projection mapper output', () => {
     ];
     await spawnPatch(page, nodes, edges);
     await expect(page.locator('[data-testid="mappy-card"]')).toHaveCount(1);
-    await page.waitForTimeout(600);
+    await waitFrames(page, SPAWN_FRAMES);
 
     // 1) the default single surface renders its grid → non-blank + structured
     //    (the checker + border + digit), with NO input connected.
@@ -339,7 +362,7 @@ test.describe('MAPPY — multi-surface projection mapper output', () => {
     //    the composite → it demonstrably changes.
     await warpSurface(page, 'mappy', 2, [[0.1, 0.1], [0.5, 0.1], [0.5, 0.5], [0.1, 0.5]]);
     await setParams(page, 'mappy', { surfaceCount: 2 });
-    await page.waitForTimeout(600);
+    await waitFrames(page, EDIT_FRAMES);
     const grid2 = await readStats(page);
     expect(grid2, '2-grid composite readable').not.toBeNull();
     expect(grid2!.sig, 'a 2nd grid changes the composite signature').not.toBe(grid1!.sig);
@@ -401,7 +424,7 @@ test.describe('MAPPY — multi-surface projection mapper output', () => {
     // surface 1 → visual top-left quadrant: x∈[0.05,0.5], visual-y∈[0.05,0.5]
     // (v∈[0.5,0.95], v high = top).
     await warpSurface(page, 'mappy', 1, [[0.05, 0.95], [0.5, 0.95], [0.5, 0.5], [0.05, 0.5]]);
-    await page.waitForTimeout(600);
+    await waitFrames(page, SPAWN_FRAMES);
 
     const b = await page.locator('canvas[data-testid="video-out-canvas"]').evaluate((el) => {
       const c = el as HTMLCanvasElement;
@@ -459,7 +482,7 @@ test.describe('MAPPY — multi-surface projection mapper output', () => {
 
     // a clearly-off-centre quad so a flip/offset would be unmissable
     await warpSurface(page, 'mappy', 1, [[0.1, 0.9], [0.6, 0.9], [0.6, 0.45], [0.1, 0.45]]);
-    await page.waitForTimeout(500);
+    await waitFrames(page, SPAWN_FRAMES);
 
     const canvasBox = await page.locator('[data-testid="mappy-canvas"]').boundingBox();
     expect(canvasBox, 'card preview canvas present').not.toBeNull();
