@@ -96,14 +96,13 @@ const UNEXERCISED_BY_FACES_PARITY: Readonly<Record<string, { why: string; covere
       'STRICT_FACES dock renders a colour cell and faces-parity never enters its driveCell arm.',
     coveredBy: 'e2e/tests/color-field.spec.ts',
   },
-  xy: {
-    why:
-      'The 2-D pad cell lands one PR before its first consumer. No shipped def declares ' +
-      '`face.xyPads`, so no STRICT_FACES dock renders a pad and faces-parity never enters its ' +
-      'driveCell arm — which for this kind would be the arm that proves ONE drag moves BOTH ' +
-      'axes, i.e. the entire reason the kind exists.',
-    coveredBy: 'e2e/tests/xy-pad-cell.spec.ts',
-  },
+  // ⚠ THE `xy` ROW IS GONE, and its deletion is the point of the ratchet's
+  // second direction. It said "No shipped def declares `face.xyPads`" — true
+  // until backdraft's face, which declares two (camTiltX/Y and camPosX/Y). The
+  // kind is now exercised by a real adopter, so faces-parity DOES enter its
+  // driveCell arm and a listed-and-exercised row would be a stale entry that
+  // fails. Left as a comment rather than silently removed because "the first
+  // adopter deletes the row" is the mechanism, not an accident.
 };
 
 interface FaceDefLike {

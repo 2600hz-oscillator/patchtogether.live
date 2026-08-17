@@ -2203,7 +2203,17 @@ export function backdraftTvFill(zoom: number): number {
 
 /** BEZEL knob -> half-width `tb` in SCREEN-LOCAL units (so a level-k bezel
  *  lands at `tb*s^k` automatically — deeper bezels shrink because they are
- *  IMAGES of the real one). Floored so BEZEL = 0 cannot delete the nest. */
+ *  IMAGES of the real one).
+ *
+ *  ⚠ THIS SENTENCE USED TO READ "Floored so BEZEL = 0 cannot delete the nest",
+ *  and it had become FALSE: `BACKDRAFT_TV_BEZEL_MIN` is 0, so
+ *  `backdraftTvBezel(0) === 0` exactly and there is no floor at all. The
+ *  constant's own comment above already says the opposite deliberately — at 0
+ *  "the nest stops reading as frames-within-frames and becomes a smooth zoom…
+ *  a legitimate look… now reachable on purpose". Two comments in one file
+ *  disagreeing, with the stale one three lines from the code it describes.
+ *  MEASURED: at the shipped defaults with BEZEL 0 the resolvable-band count is
+ *  0, against 14 at BEZEL 1 (backdraft-face-model.test.ts pins both ends). */
 export function backdraftTvBezel(bezel: number): number {
   return BACKDRAFT_TV_BEZEL_MIN
     + (BACKDRAFT_TV_BEZEL_MAX - BACKDRAFT_TV_BEZEL_MIN) * clamp01(bezel);
@@ -3134,8 +3144,18 @@ export const backdraftDef: VideoModuleDef = {
     { id: 'delayClock', label: 'Delay Clk', defaultValue: DEFAULTS.delayClock, min: 0, max: 1, curve: 'linear' },
     // MIRROR kaleidoscope toggles (0/1). Buttons on the card set these; the
     // gate inputs flip them on a rising edge. Default off.
-    { id: 'mirrorX',  label: 'Mirror X', defaultValue: DEFAULTS.mirrorX,  min: 0,  max: 1,                     curve: 'linear' },
-    { id: 'mirrorY',  label: 'Mirror Y', defaultValue: DEFAULTS.mirrorY,  min: 0,  max: 1,                     curve: 'linear' },
+    //
+    // ⚠ `curve: 'discrete'` IS LOAD-BEARING, not cosmetic. `looksLikeToggle`
+    // (group-controls) is `curve === 'discrete' && min === 0 && max === 1`, and
+    // it is the ONE canonical 0/1-switch detector — shared by the faceplate's
+    // `paramCellKind`, the group-bar auto-expose and the Toggle primitive. They
+    // declared `linear` until the face was authored, which made every consumer
+    // read them as CONTINUOUS: the dock painted a 0..1 rotary printing "0.00"
+    // for a two-state fold, and flipping it took a 200px drag. This is the
+    // cloudseed precedent verbatim (module-face-lint.test.ts) — those params
+    // only became visible to the switch gates when their curve was corrected.
+    { id: 'mirrorX',  label: 'Mirror X', defaultValue: DEFAULTS.mirrorX,  min: 0,  max: 1,                     curve: 'discrete' },
+    { id: 'mirrorY',  label: 'Mirror Y', defaultValue: DEFAULTS.mirrorY,  min: 0,  max: 1,                     curve: 'discrete' },
     // Synthetic gate params the mirror_x_gate / mirror_y_gate bridge writes —
     // hidden (no card knob); the module edge-detects a rising edge to FLIP.
     { id: 'mirrorXGate', label: 'Mir X Gate', defaultValue: DEFAULTS.mirrorXGate, min: 0, max: 1, curve: 'linear' },
@@ -3143,8 +3163,16 @@ export const backdraftDef: VideoModuleDef = {
     // SHAPE geometry mask. `shape` is a DISCRETE index (0=square=full frame …
     // 4=octagon); the SHAPE button + shape_gate cycle it. `pureGeo` (0/1) picks
     // the masking space; the PURE GEO button + pure_geo_gate toggle it.
-    { id: 'shape',   label: 'Shape',    defaultValue: DEFAULTS.shape,   min: 0, max: BACKDRAFT_SHAPE_COUNT - 1, curve: 'discrete' },
-    { id: 'pureGeo', label: 'Pure Geo', defaultValue: DEFAULTS.pureGeo, min: 0, max: 1, curve: 'linear' },
+    // ⚠ `options` is DERIVED from BACKDRAFT_SHAPES, never re-typed. The roster
+    // and the mask geometry then cannot disagree: adding a shape to that array
+    // adds its detent here, and a caption can never name a shape the shader
+    // does not cut. Five states (<= SEGMENTED_MAX_OPTIONS) so the dock paints
+    // an inline `.seg` row; without a roster it painted a 0..4 KNOB, i.e. a
+    // dial over five unnamed geometries.
+    { id: 'shape',   label: 'Shape',    defaultValue: DEFAULTS.shape,   min: 0, max: BACKDRAFT_SHAPE_COUNT - 1, curve: 'discrete',
+      options: BACKDRAFT_SHAPES.map((s, i) => ({ value: i, label: s.toUpperCase() })) },
+    // `curve: 'discrete'` for the same reason as mirrorX/mirrorY above.
+    { id: 'pureGeo', label: 'Pure Geo', defaultValue: DEFAULTS.pureGeo, min: 0, max: 1, curve: 'discrete' },
     // Synthetic gate params the shape_gate / pure_geo_gate bridge writes — hidden
     // (no card knob); the module edge-detects a rising edge to CYCLE / TOGGLE.
     { id: 'shapeGate',   label: 'Shape Gate',   defaultValue: DEFAULTS.shapeGate,   min: 0, max: 1, curve: 'linear' },
@@ -3153,12 +3181,31 @@ export const backdraftDef: VideoModuleDef = {
     // 4=59.94Hz, 5=119.88Hz) modelling the display's pulsed emission as our
     // virtual camera captures it, and what the camera's own storage + shoulder
     // then do to it. 0 = OFF is the bit-identical no-op default.
-    { id: 'flicker', label: 'Flicker', defaultValue: DEFAULTS.flicker, min: 0, max: BACKDRAFT_FLICKER_COUNT - 1, curve: 'discrete' },
+    // `options` DERIVED from BACKDRAFT_FLICKER_OPTIONS. Exactly six states, so
+    // it lands on `segmented` rather than `selector` (SEGMENTED_MAX_OPTIONS=6)
+    // — the same inline six-button row the card paints, which is the point.
+    { id: 'flicker', label: 'Flicker', defaultValue: DEFAULTS.flicker, min: 0, max: BACKDRAFT_FLICKER_COUNT - 1, curve: 'discrete',
+      options: BACKDRAFT_FLICKER_OPTIONS.map((o, i) => ({
+        value: i,
+        label: o === 'off' ? 'OFF' : o,
+        title: BACKDRAFT_FLICKER_HZ[i] === 0
+          ? 'OFF — the bit-identical no-op default: no emission modelling at all.'
+          : `${BACKDRAFT_FLICKER_HZ[i]} Hz emission, beating against the 60 fps virtual camera.`,
+      })) },
     // PURE TV — the bounded-screen (Crutchfield) mode. `tvMode` is a DISCRETE
     // 3-position index (0=off, 1=PURE TV, 2=CRITICAL); the TV button and the
     // tv_gate rising edge both cycle it. 0 is the exact-zero no-op: the shader
     // branch is skipped entirely and the legacy composite is untouched.
-    { id: 'tvMode',   label: 'TV Mode',  defaultValue: DEFAULTS.tvMode,   min: 0, max: BACKDRAFT_TV_MODE_COUNT - 1, curve: 'discrete' },
+    // `options` DERIVED from BACKDRAFT_TV_MODE_LABELS — the SAME array the card
+    // button prints, so the face and the card can never call a mode different
+    // things. ⚠ That array and this file's own docs DISAGREE about mode 1
+    // (`VIRTUAL CAMERA` here, `PURE TV` in docs.explanation, every docs.inputs
+    // entry and the comment four lines above the array). That is #1722 and it
+    // is NOT settled here: `backdraft-tv.test.ts` pins the array's spelling, so
+    // deriving from it keeps the face consistent with the shipped UI while the
+    // naming question stays open for the owner.
+    { id: 'tvMode',   label: 'TV Mode',  defaultValue: DEFAULTS.tvMode,   min: 0, max: BACKDRAFT_TV_MODE_COUNT - 1, curve: 'discrete',
+      options: BACKDRAFT_TV_MODE_LABELS.map((label, value) => ({ value, label })) },
     // Synthetic gate param the tv_gate CV bridge writes — hidden (no card
     // knob); the module edge-detects a rising edge to CYCLE the mode.
     { id: 'tvGate',   label: 'TV Gate',  defaultValue: DEFAULTS.tvGate,   min: 0,  max: 1,                     curve: 'linear' },
@@ -3197,6 +3244,140 @@ export const backdraftDef: VideoModuleDef = {
     { param: 'tvGate',      writer: 'cv-port',  why: 'written by the tv_gate bridge; a rising edge CYCLES tvMode, which is the param the player actually sets' },
     { param: 'freeze',      writer: 'internal', why: 'determinism toggle for VRT capture: at >=0.5 draw() is a no-op so the ring and output hold their last frame. No port targets it and no card control sets it' },
   ],
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // THE FACEPLATE — the first VIDEO face in the repo, and the first adopter of
+  // BOTH `face.xyPads` and the `fullViewBody` extension slot.
+  //
+  // WHAT IT IS FOR. Every other feedback module in the fleet mixes its output
+  // back in. BACKDRAFT is the one that warps the frame a little on EVERY pass
+  // — zoom, rotate, offset — so the transform COMPOUNDS and its fixed point IS
+  // the picture. The verb is not "set a level", it is STEER A RUNAWAY: you push
+  // the loop toward instability and catch it. Everything below descends from
+  // that one sentence.
+  //
+  // THE TIER LADDER, read back as a sentence: at mini you get FB — how much of
+  // the last frame survives, the one number that decides whether there is a
+  // feedback image at all. At compact, FB and ZOOM — persistence plus the
+  // per-pass scale that turns persistence into a TUNNEL. At plate, add MIX
+  // (what is being fed in), DELAY (how long the loop takes, i.e. the echo's
+  // rhythm), ROTATE (tunnel -> spiral) and LUMA (the loop's gain about black,
+  // which is what actually decides decay vs bloom). Those six are exactly the
+  // "get a tunnel going" set, and nothing else is.
+  //
+  // ⚠ RANKED FOR APPLICABILITY AT SPAWN, which is why the two most PICTORIAL
+  // clusters rank LOW. ROOM / BEZEL / PHOSPHOR / DRIVE and all five VIRTUAL
+  // CAMERA controls are no-ops while `tvMode` is 0 — and 0 is the shipped
+  // default, the exact-zero branch the shader skips entirely. A control that
+  // does nothing on a freshly-spawned node has no business in a six-cell lane
+  // budget, however good it looks. (The card says the same thing by DIMMING
+  // both banks at rest.)
+  //
+  // `order` and `pages` DISAGREE, deliberately. `order` is priority — what a
+  // shrinking tier keeps. `pages` is SIGNAL ORDER — where a value enters the
+  // loop: source, then colour, then the keyed masks, then the geometry, then
+  // the discrete switches that re-cut the whole composite, then the two
+  // bounded-screen engines. Seven bands, which is exactly DOCK_TAB_MIN_BANDS,
+  // so the dock paints a TAB RAIL rather than seven stacked bands.
+  face: {
+    order: [
+      // ── the lane budget: the six that make a tunnel ──
+      'feedback', 'zoom', 'mix', 'delay', 'rotate', 'luma',
+      // ── dock-only from here ──
+      'chroma', 'pixelate', 'offsetX', 'offsetY',
+      'r', 'g', 'b',
+      'lighten', 'darken',
+      'mirrorX', 'mirrorY', 'shape', 'pureGeo', 'flicker', 'tvMode',
+      'room', 'bezel', 'phosphor', 'drive',
+      // Both axes of both pads are REQUIRED in `order` by the xyPads lint even
+      // though the y axis folds into the x cell and never renders its own.
+      'camTiltX', 'camTiltY', 'camPosX', 'camPosY', 'camDist',
+    ],
+
+    // ⚠ MANDATORY for a video def, and counter-intuitively so: the live picture
+    // does NOT arrive through the glyph. `primaryAudioOutPortId` matches
+    // `type === 'audio'` and this def has no audio port, so ANY other glyph
+    // literal resolves to `{kind:'static'}` and reddens module-face-lint's
+    // dead-glyph clause. The tile picture comes from a different seam entirely
+    // — `hasVideoSurface(def)` (`domain === 'video'`) mounting VideoTileThumb —
+    // which means `'none' + blank tile` and `'none' + live thumb` look
+    // IDENTICAL from this declaration. backdraft-face-model.test.ts asserts
+    // `hasVideoSurface` directly for exactly that reason.
+    glyph: 'none',
+
+    // The bespoke output surface — see $lib/ui/modules/backdraft/. This is what
+    // keeps the module's own picture reachable after promotion: the `⛶ OUTPUT`
+    // button is `node.data`-backed, not a ParamDef, so no ParamCellKind can
+    // express it and promotion would otherwise delete the SOLE entry to Full
+    // Frame / Full Screen / Present.
+    extension: 'backdraft',
+
+    // Every one of these is a THROW on the card (20 `<Fader>` mounts, measured
+    // off the card source). Nothing in a ParamDef separates "a level" from any
+    // other continuous scalar, so a face that does not declare them silently
+    // repaints all twenty as dials — a look regression the shell cannot infer.
+    paramCells: {
+      mix: 'fader', feedback: 'fader', delay: 'fader',
+      luma: 'fader', chroma: 'fader', r: 'fader', g: 'fader', b: 'fader',
+      lighten: 'fader', darken: 'fader',
+      zoom: 'fader', rotate: 'fader', offsetX: 'fader', offsetY: 'fader', pixelate: 'fader',
+      room: 'fader', bezel: 'fader', phosphor: 'fader', drive: 'fader',
+      camDist: 'fader',
+    },
+
+    // THE TWO JOYSTICKS. The card has always drawn these as 2-D pads; four
+    // knobs would keep the values and lose the GESTURE, which is the whole
+    // point of a camera you aim. Ranges come off each axis's own ParamDef
+    // (±0.2 tilt / ±0.5 position) — this module is the one the card/def range
+    // divergence class is NAMED after, and the pad cell reads the def so the
+    // divergence is unrepresentable here by construction.
+    xyPads: [
+      { x: 'camTiltX', y: 'camTiltY', label: 'tilt' },
+      { x: 'camPosX', y: 'camPosY', label: 'position' },
+    ],
+
+    pages: [
+      { id: 'loop', label: 'loop', controls: ['mix', 'delay'] },
+      { id: 'colour', label: 'colour', controls: ['luma', 'chroma', 'r', 'g', 'b'] },
+      { id: 'key', label: 'key', controls: ['lighten', 'darken'] },
+      { id: 'geometry', label: 'geometry', controls: ['zoom', 'rotate', 'offsetX', 'offsetY', 'pixelate'] },
+      { id: 'switches', label: 'switches', controls: ['mirrorX', 'mirrorY', 'shape', 'pureGeo', 'flicker', 'tvMode'] },
+      { id: 'screen', label: 'tv screen', controls: ['room', 'bezel', 'phosphor', 'drive'] },
+      { id: 'camera', label: 'virtual camera', controls: ['camTiltX', 'camTiltY', 'camPosX', 'camPosY', 'camDist'] },
+    ],
+
+    // No `title`, no `hint`, no band hints — owner ruling 2026-08-11: plain
+    // labels and values on the face; the explanation is one right-click away.
+    hero: {
+      control: 'feedback',
+      readouts: [
+        // HOW MANY NESTING LEVELS ARE ACTUALLY RESOLVABLE — the FIRST of three
+        // ceilings to bind (the bezel band going sub-pixel, spatial resolution,
+        // or contrast). The nearest dial is ZOOM, and a ZOOM readback is blind
+        // to the other two live inputs: FEEDBACK (the per-pass gain, which sets
+        // the contrast ceiling) and BEZEL (the only high-contrast edge between
+        // one nesting level and the next). Both are permanent negative controls
+        // in backdraft-face-model.test.ts.
+        //
+        // ⚠ Deliberately NOT the card's version of this number. The card omits
+        // `bezelTb` entirely, so its readout is computed at a hardcoded bezel of
+        // 0.4 while the param ships at 0.5 — measured wrong at the defaults, and
+        // structurally blind to a fader sitting right beside it.
+        { label: 'bands', valueId: 'backdraft-tv-bands' },
+        // WHAT FRACTION OF THE FRAME the nested screen fills. A pure function
+        // of ZOOM, and published BESIDE `bands` on purpose: it is the
+        // BEZEL-INVARIANT half of the pair, so the two together are the
+        // instrument's own negative control — move BEZEL and exactly one of
+        // them may move.
+        { label: 'fill', valueId: 'backdraft-tv-fill' },
+        // THE QUANTISATION THE MILLISECOND DIAL CANNOT SHOW. DELAY is snapped
+        // to a WHOLE frame of the 60 fps ring and floored at 1, so the whole
+        // 0-8 ms bottom of the fader is one frame and the dial is lying about
+        // resolution it does not have.
+        { label: 'tap', valueId: 'backdraft-delay-frames' },
+      ],
+    },
+  },
 
   docs: {
     explanation: `BACKDRAFT is a video feedback generator. It builds a "source" image by crossfading two video inputs (IN A / IN B) with MIX, then composites that against a processed copy of its OWN previous output, read from an internal ring of past frames so there is no live GL feedback loop (downstream sees frame N while the tap reads N-1..N-30). The fed-back frame is delayed (DELAY, 0-500ms or a clock pulse), colour-processed (per-channel R/G/B gain, then LUMA brightness, then CHROMA saturation), scaled per-pixel by two key masks (KEY+ lightens / KEY- darkens the effect), and geometrically warped a little each pass (ZOOM/ROTATE/OFF X/OFF Y) so the transform COMPOUNDS into tunnels, spirals, and directional trails. Two MIRROR buttons fold the whole composited frame into a kaleidoscope. A SHAPE button cuts the frame to a geometric mask (square = full frame, then circle / pentagon / triangle / octagon), and a PURE GEO button picks the masking SPACE: ON masks the FINAL OUTPUT in screen space (a fixed shape that cuts everything outside it at all zooms), OFF masks the SOURCE in the zoomed feedback space so the shape scales with ZOOM and its content spills out through the feedback tunnel (zoom-in pushes it toward the corners, zoom-out shrinks it). As FEEDBACK approaches its max (and a spatial transform is active) the additive trail-accumulator ramps into a pure recursive hall of mirrors. A FLICKER control (OFF / 6 / 24 / 50 / 60 / 120 Hz) models the display's pulsed emission as the virtual camera actually captures it, and then models what the CAMERA does to it: the emission rate beats against the camera's 60 fps sampling, so the per-frame loop gain oscillates around unity instead of being constant, and light can build up over several frames and then fade away rather than pinning at white — with a rolling-shutter band crawling down the frame at the beat rate. The captured light then passes through the sensor's multi-frame charge storage (a low-pass on the BEAT, so fast beats become soft shimmer while slow ones keep their full swing) and its saturating shoulder (so the modulation stops acting where the image is already hot and reads as contour shimmer rather than a full-field flash). That is what makes the fast positions breathe instead of strobe. Usage: patch a camera or generator into IN A, raise FEEDBACK toward ~1 and nudge ZOOM off 1.0 (with a little ROTATE) for the classic infinite-tunnel look; add OFF X/Y for smear, PIXELATE for blocky lo-fi, a SHAPE for a geometric vignette, and clock DELAY CLK for rhythmic echo. Output is the OUT video jack. The card carries NO in-rack picture. It used to show a 320×240 display, and that display was the single biggest consumer of the card's width and height; taking it out bought the module a narrower rack tier and taller faders, which is the better trade for a panel with this many controls. Feedback is still steered by watching it, so the output is one click away rather than always-on: the ⛶ OUTPUT button opens Full Frame (the card itself becomes a video panel in the rack), Full Screen, and Present-on-another-display, all of which grow the SAME surface — the button is now the only entry point, since there is no picture to right-click. For an arbitrarily-sized monitor, patch OUT into VIDEO OUT. The controls sit in two rows. Down the left of the first row are the discrete switches — MIRROR X / MIRROR Y, SHAPE and PURE GEO — with TV MODE, its fill/band readout and the OUTPUT button to their right and the six-position FLICKER switch beneath them; beside and below them run the labelled fader banks: LOOP (Mix/FB/Delay), COLOUR (Luma/Chroma/R/G/B), KEY (Lighten/Darken), GEOMETRY (Zoom/Rotate/Off X/Off Y/Pixelate), TV SCREEN (Room/Border/Phosphor/Drive — BORDER is the bezel, i.e. the screen frame's thickness) and VIRTUAL CAMERA, whose two 2-D pads steer the camera's TILT and POSITION with a DIST fader beside them. A control that does nothing in the current mode is DIMMED rather than hidden or disabled, so it stays draggable, resettable and MIDI-learnable and the card never changes height with the mode: the TV SCREEN bank dims while TV MODE is OFF (its title becomes a button that turns TV MODE on), and PURE GEO dims in PURE TV / CRITICAL, where SHAPE means only the screen's outline.`,

@@ -1384,6 +1384,37 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // by bit-exactly zero. Written into the docs; the knob-at-0 positive control
   // is a permanent leg.
   'analogLogicMaths',
+  // ⛔ REVIEW-HOLD · THE FIRST VIDEO FACE (2026-08-17) — Q22, `backdraft`.
+  //
+  // 37 params, 33 inputs (29 paramTarget CV + 4 video), 1 video out: the
+  // largest generic-face candidate in the fleet that is neither blocked nor
+  // carved out. It came back a STOP-2 REFUSAL in the 2026-08-14 audit on four
+  // blockers, and it is promoted now because three of them were fixed and the
+  // fourth is paid in this diff:
+  //
+  //   1. Six clock/gate inputs edge-detected in `draw()`, so a pulsed trigger
+  //      was DEAD on all six — 28.6 % capture of a 5 ms trigger, 0.0 % at 8 fps.
+  //      FIXED on main (#1725 / #1741): all six moved to `setParam`, 100 %.
+  //      A face that ranked MIRROR X/Y, SHAPE, PURE GEO and TV MODE while their
+  //      clock inputs were dead would have been a prettier broken module.
+  //   2. Face completeness had no exemption for a param with NO user control,
+  //      and this module has seven. FIXED on main (#1732): `def.noUserControl`,
+  //      which backdraft already adopts — they render exactly ZERO cells.
+  //   3. `face.extension`'s `fullViewBody` slot had no render site, and no
+  //      ParamCellKind mounts a canvas. FIXED on main (#1732). See below.
+  //   4. Three discrete params had no `options` roster and three 0/1 switches
+  //      declared `curve: 'linear'`, so a def-driven face painted six of the
+  //      module's most-used controls as anonymous continuous rotaries. PAID
+  //      HERE — and unlike the rest of this promotion it is a `params` edit, so
+  //      it MOVES THE WEBGL ATTEST HASH and needs an owner-machine re-attest.
+  //
+  // ⚠ PROMOTION WOULD OTHERWISE DELETE THE MODULE'S OUTPUT. The `⛶ OUTPUT`
+  // button is `node.data`-backed rather than a ParamDef, and it is the SOLE
+  // entry to Full Frame / Full Screen / Present (the node menu offers only
+  // Docs / Duplicate / Delete). It survives as the `fullViewBody` extension at
+  // `$lib/ui/modules/backdraft/` — the first adopter of that slot in the repo,
+  // and the first adopter of `face.xyPads` too.
+  'backdraft',
 ]);
 
 /**
