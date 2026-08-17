@@ -25,6 +25,27 @@ import { waitFrames } from '../_helpers/frames';
 const NODE = 'bd';
 
 /**
+ * ⚠ THIS SPEC IS RENDERER-DEPENDENT AND IT FAILED ON CI WHILE PASSING 3× ON A
+ * REAL GPU — the capability-dependent class, verbatim. Every test here boots
+ * the engine, injects a live GL chain and drives the dock, and CI is
+ * SwiftShader (measured repo-wide at ~7.9 fps against ~60) with ten shards in
+ * parallel on top. The flat 30 s default expired in clicks and attribute waits.
+ *
+ * Same knob and same shape as every other video spec in this suite.
+ */
+const SLOW_RENDER = process.env.E2E_SWIFTSHADER === '1' || !!process.env.CI;
+const CASE_MS = SLOW_RENDER ? 120_000 : 30_000;
+
+/**
+ * How many rAFs the movement probes sample across. FRAMES, never ms — a
+ * wall-clock window is a different number of frames on every renderer, which is
+ * not one assertion but a different assertion per machine. The count is raised
+ * under SwiftShader because each frame there carries a whole software-rasterized
+ * feedback pass, so a fixed 12 frames buys far less of the source's own motion.
+ */
+const SAMPLE_FRAMES = SLOW_RENDER ? 30 : 12;
+
+/**
  * ⚠ ADD to the live patch, never `spawnPatch`. `spawnPatch` CLEARS the rack,
  * which nukes the workflow rack's seeded video-zone defaults — including the
  * auto-spawned `videoOut`. That sink is what PULLS the video chain, so a
@@ -204,6 +225,7 @@ async function previewMoves(page: Page, frames: number): Promise<{ moved: boolea
 
 test.describe('backdraft faceplate — the preview ON/OFF toggle', () => {
   test.beforeEach(async ({ page }) => {
+    test.setTimeout(CASE_MS);
     await gotoShell(page);
     // A REAL animated source into the feedback loop, so "the picture moves" is
     // a claim about the chain rather than about noise.
@@ -325,7 +347,7 @@ test.describe('backdraft faceplate — the preview ON/OFF toggle', () => {
     // POSITIVE CONTROL first: the picture genuinely moves while ON. Without
     // this leg the "it moves again" assertion below could pass on a subject
     // that never moved, and every conclusion would be about nothing.
-    const whileOn = await previewMoves(page, 12);
+    const whileOn = await previewMoves(page, SAMPLE_FRAMES);
     expect(
       whileOn.moved,
       `the preview must be animating while ON before this test can say anything ` +
@@ -339,9 +361,19 @@ test.describe('backdraft faceplate — the preview ON/OFF toggle', () => {
     // root — `markWatched` keeps running even though the blit does not — so the
     // engine's own per-node draw counter must keep climbing. If collapsing tore
     // the producer down this is where it shows, and it is invisible in pixels.
+    // ⚠ ASSERTED, NOT SKIPPED. The obvious shape here is
+    // `test.skip(before < 0, 'counter unavailable')`, and it is wrong: the probe
+    // going missing is exactly the failure that would make the assertion below
+    // vacuous, so guarding on it converts a broken instrument into a green run.
+    // `workflow-shell-video.spec.ts` sets the precedent by asserting reachability
+    // instead. A skip here would also owe `SKIP_BUDGET` an entry — a cost that
+    // buys nothing.
     const before = await framesDrawn(page);
-    test.skip(before < 0, 'engine draw counter unavailable in this runtime');
-    await waitFrames(page, 20);
+    expect(
+      before,
+      'the engine draw counter must be reachable — without it this test proves nothing',
+    ).toBeGreaterThanOrEqual(0);
+    await waitFrames(page, SAMPLE_FRAMES);
     const after = await framesDrawn(page);
     expect(
       after - before,
@@ -353,7 +385,7 @@ test.describe('backdraft faceplate — the preview ON/OFF toggle', () => {
     // …and switching back ON shows a LIVE picture, not a stale held frame.
     await toggle.click();
     await expect(wrap).toHaveAttribute('data-preview-collapsed', 'false');
-    const whileBack = await previewMoves(page, 12);
+    const whileBack = await previewMoves(page, SAMPLE_FRAMES);
     expect(
       whileBack.moved,
       `after switching the preview back ON the picture must be LIVE, not a stale ` +

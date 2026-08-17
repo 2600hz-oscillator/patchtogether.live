@@ -82,6 +82,20 @@ export function loadContention(dir = join(ROOT, 'e2e/tests')) {
  */
 export const PENDING_FIRST_MEASUREMENT = [
   {
+    spec: 'backdraft-preview-toggle.spec.ts',
+    why:
+      'lands 2026-08-17 with owner review round 1 of the backdraft faceplate (the preview ' +
+      'ON/OFF collapse). No ci.yml run containing it has completed, so there are no blob ' +
+      'reports to accept a cost from. MEASURED LOCALLY, single-worker on a real GPU, warm ' +
+      'server: 41.4 s wall / ~140 CPU-s across its five tests — LOCAL numbers, not what the ' +
+      'planner needs. ⚠ It is a VIDEO spec and belongs in a contention class: four of the ' +
+      'five tests drive a live GL feedback chain (LINES -> BACKDRAFT -> the seeded videoOut) ' +
+      'and two of them sample the canvas across ~12 rAFs via toDataURL, so it will be ' +
+      'materially slower under SwiftShader than the DOM-only specs above it here. Run ' +
+      '`task e2e:timings:accept -- <run-id>` on the first green main run after this merges ' +
+      'and DELETE this entry — the gate reddens on a stale entry as loudly as on a missing one.',
+  },
+  {
     spec: 'workflow-drawer-face.spec.ts',
     why:
       'lands 2026-08-16 with #1739 (the pinned `m` tray renders the promoted face). No ' +
