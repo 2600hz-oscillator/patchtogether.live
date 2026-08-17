@@ -188,6 +188,27 @@
   min-width: 0;
   width: max-content;
 }
+/* ⚠ #1809's `:has(.rear-card)` OVERRIDE WAS HERE AND IS DELETED, NOT LOST —
+   the two PRs arrived at the same fix from opposite ends and this is the merge
+   resolution.
+
+   #1809 removed the 900px floor for the FLIPPED pane only, scoped by
+   `:has(.rear-card)`, because a two-jack module's rear reserved 900px and
+   filled the surplus with the diagonal-hatch ground — *"we do not want useless
+   gray horizontal space on cards, ever"*, on the surface where the owner
+   reported it. That reasoning is exactly right and is the reason the rear side
+   is now covered by the rule above rather than beside it: the override set
+   `min-width: 0; width: max-content`, which is byte-for-byte what the
+   unconditional rule already does, so keeping it would have been a third
+   per-occupant hatch doing nothing — and `face-width-source.test.ts` duly
+   failed the merged tree with "a width override keyed to one occupant".
+
+   Its own note said the scoping kept "the front face … unchanged", which was
+   true when written and is not true now: the front face has no kit width to
+   keep. The rear-specific FACTS worth carrying: a jack field's width is decided
+   by how many section COLUMNS it has and it caps itself
+   (`.rear-zone.in/.out` max-width in RearCard.svelte), so content sizing is
+   safe there for a reason of its own rather than by inheritance. */
 
 .dock-faceplate .faceplate {
   position: relative;

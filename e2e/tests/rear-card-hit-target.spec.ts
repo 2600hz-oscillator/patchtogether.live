@@ -17,11 +17,14 @@
 // from a screenshot:
 //
 //   1) BEHAVIOUR — clicking the LABEL (never the hole) starts the carry, and
-//      clicking a second cell's LABEL commits the SAME validated edge. Both
-//      directions: an input cell (label above hole) and an OUTPUTS-rail tile
-//      (hole beside label). Every click point is asserted to lie OUTSIDE the
-//      hole's box first, so the test cannot pass by accidentally hitting the
-//      jack — that guard is the whole reason the assertion means anything.
+//      clicking a second row's LABEL commits the SAME validated edge. BOTH
+//      directions, which since #1800 are one row grammar MIRRORED (the jack
+//      rides the row's outer edge — leading on an input, trailing on an
+//      output), so this spec is also the check that the mirror did not put the
+//      label under the jack on one of the two rails. Every click point is
+//      asserted to lie OUTSIDE the hole's box first, so the test cannot pass by
+//      accidentally hitting the jack — that guard is the whole reason the
+//      assertion means anything.
 //   2) AFFORDANCE — hovering the LABEL lights the CELL, not just the hole.
 //      Negative-controlled in the same test: the same cell, unhovered, must
 //      read as un-lit, so a rule that painted every cell always would fail.
@@ -131,9 +134,9 @@ test('the whole cell is the patch control: clicking the LABEL (never the hole) c
   const baseline = await readEdges();
   expect(baseline.filter((e) => e.includes('env.')), 'no edge touches the spawned adsr yet').toEqual([]);
 
-  // PICK UP from the OUTPUTS-rail tile's TEXT. That tile lays the hole BESIDE
-  // the label, so it exercises the row-shaped cell; the input cells below
-  // exercise the column-shaped one.
+  // PICK UP from the OUTPUT tile's TEXT — the MIRRORED row (jack on the right,
+  // label reading leftward). The input rows below exercise the other hand of
+  // the same grammar.
   await clickLabelOffHole(page, 'env', 'output');
   expect(await pickupMode(page), 'clicking the output tile TEXT began the carry').toEqual({
     mode: 'pickup',

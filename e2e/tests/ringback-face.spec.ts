@@ -258,12 +258,15 @@ test.describe('ringback face — the resolved values follow the graph', () => {
     const rear = page.getByTestId('rear-card');
     await expect(rear).toBeVisible();
 
-    await expect(rear.getByTestId('rear-band')).toHaveCount(3);
-    await expect(rear.getByTestId('rear-band')).toHaveText([
-      /stereo in/i,
-      /crush ring/i,
-      /output blend/i,
-    ]);
+    // #1800: input groups are SECTION COLUMNS, scoped by direction — the
+    // OUTPUT rail is a section now too, so an unscoped selector would pick it
+    // up and the count would silently be about a different set.
+    // `toHaveText` with an ARRAY already pins both the exact headings and how
+    // many there are, so the `toHaveCount(3)` that used to sit here was a
+    // hand-typed population count (CLAUDE.md P0) that could only ever go stale
+    // or agree with the line below it.
+    const inSections = rear.locator('[data-testid="rear-section"][data-direction="input"]');
+    await expect(inSections).toHaveText([/stereo in/i, /crush ring/i, /output blend/i]);
 
     // Every hole, and which of them draw the `~`.
     const ticked = await rear.evaluate((el) =>

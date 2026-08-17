@@ -273,7 +273,7 @@ describe('kickdrum face — the dock bands (pages = FUNCTION)', () => {
     // in `curatedGroups`, so nothing claims it. So: assert the property that
     // actually matters (each band id once) and forbid only the leading ids.
     const { rearFieldPlan } = await import('$lib/ui/workflow/rear-card-model');
-    const bands = rearFieldPlan(kickdrumDef as never).bands;
+    const bands = rearFieldPlan(kickdrumDef as never).inputs;
     const ids = bands.map((b) => b.id);
     expect(new Set(ids).size, `a band rendered twice: ${ids.join(', ')}`).toBe(ids.length);
     for (const b of plan) {
@@ -289,7 +289,7 @@ describe('kickdrum face — the dock bands (pages = FUNCTION)', () => {
     // sitting directly under the band that IS the strike. A gate patched into
     // the wrong one detunes the drum instead of hitting it.
     const { rearFieldPlan } = await import('$lib/ui/workflow/rear-card-model');
-    const bands = rearFieldPlan(kickdrumDef as never).bands;
+    const bands = rearFieldPlan(kickdrumDef as never).inputs;
     const byId = new Map(bands.map((b) => [b.id, b]));
     expect(byId.get('voice')!.label).toBe('strike');
     expect(byId.get('sub')!.label).toBe('sub · the layer');

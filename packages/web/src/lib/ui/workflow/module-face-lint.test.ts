@@ -1396,12 +1396,13 @@ describe('module-face lint — LANE tier caps ↔ lane fit plan (authored intent
 
 describe('module-face lint — rear-card curation (face.rear) + derivation totality', () => {
   // The rear card (rear-card-model.ts) renders EVERY declared port as exactly
-  // one hole. Two pure gates hold that line (rear-card-spec.md §5):
-  //   1. CONSISTENCY: every `face.rear` key resolves to a DECLARED port, no
-  //      port is claimed by two groups, clusters point at a real band and only
-  //      at ports of that band, audioRate lists INPUT ports only.
+  // one hole. Two pure gates hold that line:
+  //   1. CONSISTENCY: every `face.rear` key resolves to a DECLARED port ON THE
+  //      DIRECTION ITS GROUP DECLARES, no port is claimed by two groups,
+  //      clusters point at a real section and only at ports of that section,
+  //      audioRate lists INPUT ports only.
   //   2. TOTALITY (STRICT_FACES): the derivation over every promoted module is
-  //      TOTAL — every declared port lands in exactly one band/rail hole (the
+  //      TOTAL — every declared port lands in exactly one section hole (the
   //      no-orphan-holes guarantee behind "exposes ALL patch points").
   it('every face.rear key resolves to a declared port (groups/clusters/audioRate)', () => {
     const problems: string[] = [];
@@ -1416,19 +1417,53 @@ describe('module-face lint — rear-card curation (face.rear) + derivation total
       for (const g of rear.groups ?? []) {
         if (groupIds.has(g.id)) problems.push(`${def.type}: face.rear duplicate group id '${g.id}'`);
         groupIds.add(g.id);
+        // ⚠ DIRECTION-SCOPED (#1800). `groups` now covers BOTH rails, and a
+        // port id can exist on both at once — `delay` declares an `audio` input
+        // AND an `audio` output. A group naming a port that only exists on the
+        // OTHER rail resolves to nothing, so its heading silently disappears
+        // and its ports fall back to derivation: green everywhere, wrong on
+        // screen. `direction` defaults to 'input', and THIS is what stops the
+        // default from being load-bearing.
+        const dir = g.direction ?? 'input';
+        const onRail = dir === 'input' ? inputIds : outputIds;
+        const onOther = dir === 'input' ? outputIds : inputIds;
         for (const pid of g.ports) {
-          if (!inputIds.has(pid) && !outputIds.has(pid)) {
-            problems.push(`${def.type}: face.rear.groups['${g.id}'] port '${pid}' is not a declared port`);
+          if (!onRail.has(pid)) {
+            problems.push(
+              onOther.has(pid)
+                ? `${def.type}: face.rear.groups['${g.id}'] port '${pid}' is an ${dir === 'input' ? 'OUTPUT' : 'INPUT'} ` +
+                    `but the group declares direction '${dir}' — set direction: '${dir === 'input' ? 'output' : 'input'}'`
+                : `${def.type}: face.rear.groups['${g.id}'] port '${pid}' is not a declared port`,
+            );
           }
-          if (claimed.has(pid)) {
-            problems.push(`${def.type}: face.rear port '${pid}' claimed by two groups`);
+          const key = `${dir}:${pid}`;
+          if (claimed.has(key)) {
+            problems.push(`${def.type}: face.rear ${dir} port '${pid}' claimed by two groups`);
           }
-          claimed.add(pid);
+          claimed.add(key);
+        }
+        // A group that resolves to NOTHING renders no section at all — the
+        // whole heading vanishes and every gate below still reads green,
+        // because totality only cares that the ports landed SOMEWHERE.
+        if (g.ports.length > 0 && !g.ports.some((pid) => onRail.has(pid))) {
+          problems.push(
+            `${def.type}: face.rear.groups['${g.id}'] resolves to NO ${dir} port — the section never renders`,
+          );
         }
       }
       for (const c of rear.clusters ?? []) {
-        if (!groupIds.has(c.group) && !pageIds.has(c.group) && c.group !== 'voice' && c.group !== 'signal' && c.group !== 'cv') {
-          problems.push(`${def.type}: face.rear.clusters group '${c.group}' matches no page/group/derived band`);
+        // `out` and `out-<domain>` are the DERIVED output section ids
+        // (`derivedOutputSections`), so a cluster may name one of those too.
+        const derivedOut = c.group === 'out' || c.group.startsWith('out-');
+        if (
+          !groupIds.has(c.group) &&
+          !pageIds.has(c.group) &&
+          !derivedOut &&
+          c.group !== 'voice' &&
+          c.group !== 'signal' &&
+          c.group !== 'cv'
+        ) {
+          problems.push(`${def.type}: face.rear.clusters group '${c.group}' matches no page/group/derived section`);
         }
         for (const pid of c.ports) {
           if (!inputIds.has(pid) && !outputIds.has(pid)) {
@@ -1458,13 +1493,19 @@ describe('module-face lint — rear-card curation (face.rear) + derivation total
     for (const def of allDefs()) {
       if (!STRICT_FACES.has(def.type)) continue;
       const plan = rearFieldPlan(def as unknown as import('./rear-card-model').RearDefLike);
-      const holes = [
-        ...plan.bands.flatMap((b) => [
-          ...b.holes.map((h) => ({ dir: 'input', h })),
-          ...b.clusters.flatMap((c) => c.holes.map((h) => ({ dir: 'input', h }))),
-        ]),
-        ...plan.outputs.map((h) => ({ dir: 'output', h })),
-      ];
+      // ⚠ #1800: `dir` is read off the SECTION, not assumed from which list it
+      // came out of. Both rails are now the same type, so an input hole
+      // wrongly filed into an output section is a real failure mode the old
+      // "plan.bands are inputs, plan.outputs are outputs" shape made
+      // unstateable.
+      const holes = [...plan.inputs, ...plan.outputs].flatMap((b) =>
+        [...b.holes, ...b.clusters.flatMap((c) => c.holes)].map((h) => ({ dir: h.direction, h, sec: b })),
+      );
+      for (const { h, sec } of holes) {
+        if (h.direction !== sec.direction) {
+          missing.push(`${def.type}: ${h.direction} hole '${h.portId}' filed into ${sec.direction} section '${sec.id}'`);
+        }
+      }
       const rendered = holes.flatMap(({ dir, h }) =>
         h.stereoSiblingPortId
           ? [`${dir}:${h.portId}`, `${dir}:${h.stereoSiblingPortId}`]
@@ -1519,6 +1560,12 @@ describe('module-face lint — rear-card curation (face.rear) + derivation total
       if (!groups.length) continue;
       const pageIds = new Set((def.face?.pages ?? []).map((p) => p.id));
       for (const g of groups) {
+        // ⚠ INPUT GROUPS ONLY. The slot-claiming mechanism this guards is the
+        // PAGE PROJECTION, and pages project onto inputs. An OUTPUT group has
+        // no slot to claim and no derivation to shadow — it is pure authoring,
+        // always renders where it is declared, and the "resolves to no port on
+        // its rail" check above is what covers ITS silent-disappearance case.
+        if ((g.direction ?? 'input') !== 'input') continue;
         const claimsLead = g.id === 'voice' || g.id === 'signal';
         if (!claimsLead && !pageIds.has(g.id)) {
           problems.push(
@@ -1540,7 +1587,9 @@ describe('module-face lint — rear-card curation (face.rear) + derivation total
     // mechanism — kickdrum's `sub`, tidyVco's `oscillator` — not a bug.)
     const problems: string[] = [];
     for (const def of allDefs()) {
-      const lead = (def.face?.rear?.groups ?? []).find((g) => g.id === 'voice' || g.id === 'signal');
+      const lead = (def.face?.rear?.groups ?? []).find(
+        (g) => (g.direction ?? 'input') === 'input' && (g.id === 'voice' || g.id === 'signal'),
+      );
       if (!lead) continue;
       if ((def.face?.pages ?? []).some((p) => p.id === lead.id)) {
         problems.push(`${def.type}: page '${lead.id}' collides with the LEADING rear group — that band renders TWICE`);
@@ -1549,13 +1598,12 @@ describe('module-face lint — rear-card curation (face.rear) + derivation total
     expect(problems.join('\n'), 'a page id claiming the leading rear slot').toBe('');
   });
 
-  it('STRICT_FACES: no rear band LABEL prefixes another on the same card', async () => {
+  it('STRICT_FACES: no rear section LABEL prefixes another ON THE SAME RAIL', async () => {
     // ⚠ THE GATE FOR A REAL MISPATCH, not for tidiness. Every rear check above
-    // reads IDS; `rear-card-model.test.ts` asserts `bandIds(def)` and never
+    // reads IDS; `rear-card-model.test.ts` asserts section ids and never
     // touches a label; and `workflow-shell-faces.spec.ts` captures only
-    // `-compact` and `-dock` — there is NO VRT scene for the rear card at all.
-    // So the labels a player actually reads on the flip side are, collectively,
-    // ungated.
+    // `-compact` and `-dock`. So the labels a player actually reads on the flip
+    // side are, collectively, ungated except here.
     //
     // What that let through (kickdrum): a page renamed `sub` → `strike · the
     // pulse` — correct on the FRONT, where that band holds the strike button —
@@ -1567,27 +1615,41 @@ describe('module-face lint — rear-card curation (face.rear) + derivation total
     //
     // Prefix, not equality: `strike` and `strike · the pulse` are distinct
     // strings, so an equality check reads clean on exactly this bug.
+    //
+    // ⚠ SCOPED PER RAIL (#1800), which NARROWS this gate — say so rather than
+    // let it look unchanged. The mispatch it exists for is aiming at the wrong
+    // group of jacks that a cable COULD land in, and a carried cable can only
+    // land on one rail: the compat dim greys the whole other rail out while you
+    // carry. Two sections on OPPOSITE rails also sit in different zones, carry
+    // opposite ← / → glyphs, and mirror their rows — four separations before
+    // the label is read. Keeping it cross-rail would now fire on the derived
+    // `out` section against any page a def happens to call `output`, which is a
+    // true statement about strings and a false one about mispatches.
     const { rearFieldPlan } = await import('./rear-card-model');
     const problems: string[] = [];
     for (const def of allDefs()) {
       if (!STRICT_FACES.has(def.type)) continue;
-      const labels = rearFieldPlan(def as unknown as import('./rear-card-model').RearDefLike)
-        .bands.map((b) => (b.label ?? '').trim().toLowerCase())
-        .filter(Boolean);
-      for (let i = 0; i < labels.length; i++) {
-        for (let j = 0; j < labels.length; j++) {
-          if (i === j) continue;
-          if (labels[j]!.startsWith(labels[i]!)) {
-            problems.push(
-              `${def.type}: rear bands '${labels[i]}' and '${labels[j]}' — one heads the other, ` +
-                `so the card shows two bands the player reads as the same jack group. ` +
-                `Re-head one with a face.rear.groups entry whose id matches the page id.`,
-            );
+      const plan = rearFieldPlan(def as unknown as import('./rear-card-model').RearDefLike);
+      for (const [rail, sections] of [
+        ['input', plan.inputs],
+        ['output', plan.outputs],
+      ] as const) {
+        const labels = sections.map((b) => (b.label ?? '').trim().toLowerCase()).filter(Boolean);
+        for (let i = 0; i < labels.length; i++) {
+          for (let j = 0; j < labels.length; j++) {
+            if (i === j) continue;
+            if (labels[j]!.startsWith(labels[i]!)) {
+              problems.push(
+                `${def.type}: rear ${rail} sections '${labels[i]}' and '${labels[j]}' — one heads the ` +
+                  `other, so the card shows two columns the player reads as the same jack group. ` +
+                  `Re-head one with a face.rear.groups entry whose id matches the page id.`,
+              );
+            }
           }
         }
       }
     }
-    expect([...new Set(problems)].join('\n'), 'ambiguous rear band headings').toBe('');
+    expect([...new Set(problems)].join('\n'), 'ambiguous rear section headings').toBe('');
   });
 });
 

@@ -43,7 +43,7 @@ import {
 } from '$lib/ui/workflow/lane-readout-fit';
 import { curatedFace } from '$lib/ui/workflow/curated-face';
 import { laneBodyPlan } from '$lib/ui/workflow/module-shell-model';
-import { rearFieldPlan } from '$lib/ui/workflow/rear-card-model';
+import { rearFieldPlan, rearSectionHoles } from '$lib/ui/workflow/rear-card-model';
 import { RingChannel } from '../../../../dsp/src/lib/ringback-core';
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -460,38 +460,40 @@ describe('ringback face — the ranking and the glyph are claims about the DSP',
     expect(laneBodyPlan(mini.controls.length, true, 'mini').glyph).toBe(true);
   });
 
-  it('the rear card is total and its bands read stereo in / crush ring / output blend', () => {
+  it('the rear card is total and its input sections read stereo in / crush ring / output blend', () => {
     const plan = rearFieldPlan(ringbackDef);
     // PR-4: each derived stereo pair renders as ONE hole addressing TWO ports,
     // so totality is stated over `portCount`; `holeCount` is two lower here
     // (in_l+in_r and out_l+out_r each collapse).
     expect(plan.portCount).toBe(ringbackDef.inputs.length + ringbackDef.outputs.length);
     expect(plan.holeCount).toBe(plan.portCount - 2);
-    expect(plan.bands.map((b) => b.label)).toEqual(['stereo in', 'crush ring', 'output blend']);
+    expect(plan.inputs.map((b) => b.label)).toEqual(['stereo in', 'crush ring', 'output blend']);
     // The audio pair claims the LEADING slot as ONE stereo hole, and the
-    // per-param CV holes fall into the band of the page whose control they
+    // per-param CV holes fall into the section of the page whose control they
     // target.
-    expect(plan.bands[0]!.holes.map((h) => h.portId)).toEqual(['in_l']);
-    expect(plan.bands[0]!.holes[0]!.stereoSiblingPortId).toBe('in_r');
-    expect(plan.bands[0]!.holes[0]!.label).toBe('IN');
-    expect(plan.bands[1]!.holes.map((h) => h.portId)).toEqual(['rate', 'size', 'feedback']);
-    expect(plan.bands[2]!.holes.map((h) => h.portId)).toEqual(['mix']);
+    expect(plan.inputs[0]!.holes.map((h) => h.portId)).toEqual(['in_l']);
+    expect(plan.inputs[0]!.holes[0]!.stereoSiblingPortId).toBe('in_r');
+    expect(plan.inputs[0]!.holes[0]!.label).toBe('IN');
+    expect(plan.inputs[1]!.holes.map((h) => h.portId)).toEqual(['rate', 'size', 'feedback']);
+    expect(plan.inputs[2]!.holes.map((h) => h.portId)).toEqual(['mix']);
     // The `~` tick lands on the four CV holes and NOWHERE else: the audio pair
     // is not "an audio-rate consumer" in the sense the tick marks (delay ticks
     // its `time` CV and not its `audio` input, for the same reason), and the
-    // outputs rail never ticks at all.
-    const ticked = plan.bands
-      .flatMap((b) => b.holes)
+    // output rail never ticks at all.
+    const ticked = rearSectionHoles(plan.inputs)
       .filter((h) => h.audioRate)
       .map((h) => h.portId);
     expect(ticked).toEqual(['rate', 'size', 'feedback', 'mix']);
-    expect(plan.outputs.some((h) => h.audioRate)).toBe(false);
-    // The outputs rail knows L and R are one pair — and now DRAWS it as one
+    const outs = rearSectionHoles(plan.outputs);
+    expect(outs.some((h) => h.audioRate)).toBe(false);
+    // The output rail knows L and R are one pair — and now DRAWS it as one
     // stereo hole (owner Q5), named from the pair's shared stem rather than
-    // from either leg's own 'L' / 'R' label.
-    expect(plan.outputs.map((h) => h.label)).toEqual(['OUT']);
-    expect(plan.outputs[0]!.portId).toBe('out_l');
-    expect(plan.outputs[0]!.stereoSiblingPortId).toBe('out_r');
+    // from either leg's own 'L' / 'R' label. #1800: it is a SECTION now, and a
+    // homogeneous two-tap rail derives exactly one of them.
+    expect(plan.outputs.map((s) => s.id)).toEqual(['out']);
+    expect(outs.map((h) => h.label)).toEqual(['OUT']);
+    expect(outs[0]!.portId).toBe('out_l');
+    expect(outs[0]!.stereoSiblingPortId).toBe('out_r');
   });
 
   // ── THE GLYPH CHOICE, MEASURED ─────────────────────────────────────────
