@@ -13,11 +13,28 @@
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import { patch } from '$lib/graph/store';
   import { setNodeParam } from '$lib/graph/mutate';
-  import { moog921bDef } from '$lib/audio/modules/moog921b';
+  import { moog921bDef, MOOG921B_SYNC_OPTIONS } from '$lib/audio/modules/moog921b';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import MoogPanel from './moog/MoogPanel.svelte';
-  import { portsFromDef } from './card-kit';
+  import { paramSpec, portsFromDef } from './card-kit';
+
+  // Every control prop comes off the DEF — see the note on Moog921aCard.
+  //
+  // ⚠ THIS CARD WAS CARRYING A LEDGERED OPERATIONAL DISAGREEMENT, and binding
+  // is what pays it: `card-def-debt.ts` listed `range.curve` because the def
+  // declares `discrete` and this card typed `curve="linear"`. That was harmless
+  // — `Knob.svelte` implements `log`/`exp` and nothing else, so both spellings
+  // map identically and no pixel moves — but "harmless" was a property of
+  // today's Knob, not of the declaration, and `card-range-source`'s
+  // curve-AGREEMENT clause refuses a certified def-bound card that still
+  // hand-types a curve its def disagrees with. The ledger entry is deleted.
+  const P = {
+    fine: paramSpec(moog921bDef, 'fine'),
+    range: paramSpec(moog921bDef, 'range'),
+    modAmount: paramSpec(moog921bDef, 'modAmount'),
+    level: paramSpec(moog921bDef, 'level'),
+  };
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -46,11 +63,17 @@
   }
 
   // SYNC is a 3-position switch (off / lo=soft / hi=hard) → 0 / -1 / +1.
-  const SYNC_POS: Array<{ v: number; label: string }> = [
-    { v: 0, label: 'OFF' },
-    { v: -1, label: 'LO' },
-    { v: 1, label: 'HI' },
-  ];
+  // The names come off the DEF's own `options` roster (PF-1) rather than a
+  // private array here — this card used to be the only place in the tree that
+  // knew the three states were called OFF, LO and HI.
+  //
+  // ⚠ THE BUTTON ORDER IS DELIBERATELY THE CARD'S, NOT THE ROSTER'S. The roster
+  // is in VALUE order (-1, 0, +1) because that is what the dock's Segmented and
+  // the face's discrete dial step through; this panel has always read OFF | LO |
+  // HI, and re-ordering it would move a `STRICT_VRT_MODULES` baseline for no
+  // reason. Derived from the roster by lookup so the two cannot disagree on the
+  // NAMES while disagreeing on the order on purpose.
+  const SYNC_POS = [0, -1, 1].map((v) => MOOG921B_SYNC_OPTIONS.find((o) => o.value === v)!);
   function setSync(v: number) {
     const target = patch.nodes[id];
     if (target) target.params.syncMode = v;
@@ -66,29 +89,29 @@
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <!-- FREQUENCY (fine) + RANGE footage + LEVEL. -->
     <div class="knob-row" data-testid="moog921b-freq-row">
-      <Knob value={fine} min={-12} max={12} defaultValue={0} label="Freq" units="st" curve="linear" onchange={setParam('fine')} moduleId={id} paramId="fine" readLive={readLive('fine')} />
-      <Knob value={range} min={-5} max={5} defaultValue={0} label="Range" units="oct" curve="linear" onchange={setParam('range')} moduleId={id} paramId="range" readLive={readLive('range')} />
-      <Knob value={level} min={0} max={2} defaultValue={1} label="Level" curve="linear" onchange={setParam('level')} moduleId={id} paramId="level" readLive={readLive('level')} />
+      <Knob value={fine} min={P.fine.min} max={P.fine.max} defaultValue={P.fine.defaultValue} label={P.fine.label} units={P.fine.units} curve={P.fine.curve} onchange={setParam('fine')} moduleId={id} paramId="fine" readLive={readLive('fine')} />
+      <Knob value={range} min={P.range.min} max={P.range.max} defaultValue={P.range.defaultValue} label={P.range.label} units={P.range.units} curve={P.range.curve} onchange={setParam('range')} moduleId={id} paramId="range" readLive={readLive('range')} />
+      <Knob value={level} min={P.level.min} max={P.level.max} defaultValue={P.level.defaultValue} label={P.level.label} units={P.level.units} curve={P.level.curve} onchange={setParam('level')} moduleId={id} paramId="level" readLive={readLive('level')} />
     </div>
 
     <!-- FM depth (DC + AC MODULATE inputs). -->
     <div class="knob-row">
-      <Knob value={modAmount} min={-1} max={1} defaultValue={0} label="FM" curve="linear" onchange={setParam('modAmount')} moduleId={id} paramId="modAmount" readLive={readLive('modAmount')} />
+      <Knob value={modAmount} min={P.modAmount.min} max={P.modAmount.max} defaultValue={P.modAmount.defaultValue} label={P.modAmount.label} units={P.modAmount.units} curve={P.modAmount.curve} onchange={setParam('modAmount')} moduleId={id} paramId="modAmount" readLive={readLive('modAmount')} />
     </div>
 
     <!-- SYNC switch (off / lo=soft / hi=hard). -->
     <div class="sync-row" data-testid="moog921b-sync-switch">
       <span class="sync-label">SYNC</span>
       <div class="sync-seg" role="radiogroup" aria-label="Sync mode">
-        {#each SYNC_POS as pos (pos.v)}
+        {#each SYNC_POS as pos (pos.value)}
           <button
             type="button"
             class="sync-btn"
-            class:active={syncMode === pos.v}
+            class:active={syncMode === pos.value}
             role="radio"
-            aria-checked={syncMode === pos.v}
-            data-sync-value={pos.v}
-            onclick={() => setSync(pos.v)}
+            aria-checked={syncMode === pos.value}
+            data-sync-value={pos.value}
+            onclick={() => setSync(pos.value)}
           >{pos.label}</button>
         {/each}
       </div>

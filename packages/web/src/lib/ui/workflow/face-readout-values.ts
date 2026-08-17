@@ -281,6 +281,21 @@ import {
   moogBankSections,
   moogBankTiltText,
 } from '$lib/ui/modules/moog-filterbank-face-model';
+import { MOOG921A_RANGE_OPTIONS } from '$lib/audio/modules/moog921a';
+import {
+  busCompassText,
+  busPitchAtSpanText,
+  busVoltsText,
+  moog921aFaceParams,
+  moog921bFaceParams,
+  rangeOctSpan,
+  slaveDutyText,
+  slaveFmText,
+  slaveOffsetText,
+  slaveOutText,
+  slavePitchText,
+  slaveSyncText,
+} from '$lib/ui/modules/moog921-face-model';
 
 /**
  * Both Moog fixed filter banks' entries, GENERATED from the bank's own section
@@ -1082,6 +1097,53 @@ const FACE_READOUT_VALUES: Readonly<Record<string, FaceReadoutValue>> = {
   // of one grid. See `moogBankReadouts` above for why every id here is derived.
   ...moogBankReadouts('moog914', MOOG914_BANK),
   ...moogBankReadouts('moog907a', MOOG907A_BANK),
+
+  // ── THE MOOG 921 OSCILLATOR (921A driver + 921B slave) ───────────────────
+  // ONE model for TWO modules again, and this time because they are one
+  // INSTRUMENT rather than one design: the 921A is a CV-only driver with no
+  // audio anywhere and the 921B is the sound-making slave with no 1V/oct jack.
+  //
+  // ⚠ THE NUMBER THAT MATTERS IS NOT REGISTERED HERE, AND CANNOT BE. A
+  // `FaceReadoutValue` receives a param reader and nothing else, so the 921B's
+  // face is structurally unable to see `freq_bus` and therefore cannot print
+  // the pitch it is actually playing. What the two faces publish instead are
+  // the two TERMS that compose into it, in units that add: the driver's `bus`
+  // volts and the slave's `offset` octaves. Stating that limit is the point of
+  // the pair, not a workaround for it.
+  //
+  // Each id below is negative-controlled permanently in
+  // `moog921-face-model.test.ts`, and the reach matrix is disjoint by design so
+  // every readout is the others' control on every run:
+  //   moog921a-bus     ← frequency, freqRange   (a FREQ readback is invariant
+  //                                              to RANGE, which is ×6)
+  //   moog921a-span    ← freqRange ONLY         (reads the dial's endpoints)
+  //   moog921a-duty    ← width ONLY
+  //   moog921b-pitch   ← range, fine
+  //   moog921b-offset  ← range, fine
+  //   moog921b-out     ← level ONLY
+  //   moog921b-fm      ← modAmount ONLY
+  //   moog921b-sync    ← syncMode ONLY
+  'moog921a-bus': (read) => busVoltsText(moog921aFaceParams(read)),
+  'moog921a-span': (read) => busCompassText(moog921aFaceParams(read)),
+  // ⚠ PRINTS A LIVE DEFECT ON PURPOSE (#1791, filed not fixed): the 921A's
+  // declared MINIMUM width lands on the MIDPOINT duty, so this says `norm 50 %`
+  // there rather than a plausible `50 %` that reads like the dial working.
+  'moog921a-duty': (read) => slaveDutyText(moog921aFaceParams(read).width),
+  // The two-row sidebar comparison — the pitch this dial position encodes in
+  // EACH range position, indexed off the def's own `options` roster so a third
+  // switch position upstream could not leave a row behind.
+  ...Object.fromEntries(
+    MOOG921A_RANGE_OPTIONS.map((o) => [
+      `moog921a-pitch-${o.value}`,
+      (read: (paramId: string) => number | undefined) =>
+        busPitchAtSpanText(moog921aFaceParams(read), rangeOctSpan(o.value)),
+    ]),
+  ),
+  'moog921b-pitch': (read) => slavePitchText(moog921bFaceParams(read)),
+  'moog921b-offset': (read) => slaveOffsetText(moog921bFaceParams(read)),
+  'moog921b-out': (read) => slaveOutText(moog921bFaceParams(read)),
+  'moog921b-fm': (read) => slaveFmText(moog921bFaceParams(read)),
+  'moog921b-sync': (read) => slaveSyncText(moog921bFaceParams(read)),
 
   // ── MIXMSTRS — DELETED, with the computation, 2026-08-17 ─────────────────
   // Four derived values used to live here (`bus-gain`, `comp-asleep`, and one
