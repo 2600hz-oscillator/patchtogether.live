@@ -11,8 +11,12 @@ import {
   rearSectionColumns,
   rearSectionHoles,
   rearTargetParamId,
+  rearZoneColumns,
   REAR_DENSE_ROWS,
+  REAR_MAX_OUT_ZONE_COLUMNS,
   REAR_MAX_SECTION_COLUMNS,
+  REAR_MAX_ZONE_COLUMNS,
+  REAR_MAX_ZONE_COLUMNS_DENSE,
   REAR_OUTPUT_SPLIT_ROWS,
   REAR_ROWS_PER_COLUMN,
   type RearDefLike,
@@ -826,6 +830,30 @@ describe('rear-card high port counts — columns, split, dense (nothing hidden)'
           `${def.type}/${sec.id}: a hole of another domain`,
         ).toEqual([]);
       }
+    }
+  });
+
+  it('rearZoneColumns: never wider than it has sections, capped, dense earns more', () => {
+    // ⚠ WHY THIS FUNCTION EXISTS AT ALL, because it reads like a taste knob and
+    // is not. The card is `width: max-content`, and MEASURED in a browser
+    // neither layout it uses has a usable intrinsic width: a `flex-wrap` row
+    // asked for max-content never wraps, and a CSS multicol asked for
+    // max-content collapses to ONE column — which rendered tidyVco's field as a
+    // 287x929 ribbon until this was wired. It is the definite bound both modes
+    // resolve against, and it lives here so the component cannot hold a second
+    // copy of the caps.
+    expect(rearZoneColumns(0, 'input', false)).toBe(1); // never zero-width
+    expect(rearZoneColumns(2, 'input', false)).toBe(2); // never wider than it needs
+    expect(rearZoneColumns(99, 'input', false)).toBe(REAR_MAX_ZONE_COLUMNS);
+    // A field dense enough to have earned it gets more width, not less.
+    expect(rearZoneColumns(99, 'input', true)).toBe(REAR_MAX_ZONE_COLUMNS_DENSE);
+    expect(rearZoneColumns(99, 'input', true)).toBeGreaterThan(
+      rearZoneColumns(99, 'input', false),
+    );
+    // The OUT rail stays narrow in BOTH density states — past two columns the
+    // domain split has already done the grouping.
+    for (const dense of [false, true]) {
+      expect(rearZoneColumns(99, 'output', dense)).toBe(REAR_MAX_OUT_ZONE_COLUMNS);
     }
   });
 

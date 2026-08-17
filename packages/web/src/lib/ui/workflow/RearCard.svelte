@@ -43,6 +43,7 @@
   import {
     rearFieldPlan,
     rearHoleAcceptsCarry,
+    rearZoneColumns,
     type RearDefLike,
     type RearHole,
     type RearSection,
@@ -244,6 +245,14 @@
     );
   }
 
+  /** BALANCED COLUMN MODE — see `.zone-cols.balanced`. CSS multicol balances
+   *  column heights (no orphan last row), but a section wider than one column
+   *  would overflow it, so the zone only takes that mode when every section in
+   *  it is one column wide. Derived from the plan, never guessed. */
+  function balanced(sections: readonly RearSection[]): boolean {
+    return sections.every((s) => s.columns === 1);
+  }
+
   /** Does this hole carry a stereo image the picker can split? A collapsed hole
    *  says so directly; an uncollapsed one is asked of the def (a rail that
    *  shows only one leg of a pair still has the image). */
@@ -336,7 +345,11 @@
     <div class="rear-zones">
       {#if plan.inputs.length > 0}
         <div class="rear-zone in" data-testid="rear-zone" data-direction="input">
-          <div class="zone-cols">
+          <div
+            class="zone-cols"
+            class:balanced={balanced(plan.inputs)}
+            style={`--zcols:${rearZoneColumns(plan.inputs.length, 'input', plan.dense)}`}
+          >
             {#each plan.inputs as sec (sec.id)}
               {@render sectionCol(sec)}
             {/each}
@@ -345,7 +358,11 @@
       {/if}
       {#if plan.outputs.length > 0}
         <div class="rear-zone out" data-testid="rear-zone" data-direction="output">
-          <div class="zone-cols">
+          <div
+            class="zone-cols"
+            class:balanced={balanced(plan.outputs)}
+            style={`--zcols:${rearZoneColumns(plan.outputs.length, 'output', plan.dense)}`}
+          >
             {#each plan.outputs as sec (sec.id)}
               {@render sectionCol(sec)}
             {/each}
@@ -465,40 +482,56 @@
     padding: calc(10px * var(--rc-s)) calc(14px * var(--rc-s)) calc(14px * var(--rc-s));
     min-width: 0;
   }
-  /* ⚠ THE COLUMN CAPS ARE WHAT MAKES THE WRAP WORK AT ALL. `.rear-card` is
-     `width: max-content`, and a `flex-wrap` container asked for its max-content
-     width never wraps — it lays every column on one line. The cap is the outer
-     bound the wrap resolves against, so it is load-bearing layout, not taste:
-     without it a 111-port module would render one 3000px-wide row of columns.
-     `dense` raises the input cap because a field that genuinely has that much
-     content has EARNED the width — the rule is "width must be earned", not
-     "width is forbidden". */
   .rear-zone.in {
     flex: 0 1 auto;
-    max-width: calc(var(--rc-col-max) * 4 + var(--rc-gap) * 3);
-  }
-  .dense .rear-zone.in {
-    max-width: calc(var(--rc-col-max) * 6 + var(--rc-gap) * 5);
   }
   .rear-zone.out {
     flex: 0 0 auto;
     border-left: 1px solid var(--rc-line);
     background: linear-gradient(180deg, #12161e, #0e1219);
-    /* Two columns' worth is the cap: past that the domain split in
-       `derivedOutputSections` has already grouped the rail, and a third column
-       would push the whole card wider than the front face. */
-    max-width: calc(var(--rc-col-max) * 2 + var(--rc-gap));
   }
 
   /* ---- SECTIONS AS COLUMNS. A wrapping row of content-width columns: they
      never stretch (no grey filler inside a column) and they never overflow
      sideways (they wrap to a new band of columns instead). ---- */
+  /* ⚠ `--zcols` IS LOAD-BEARING LAYOUT, not a taste knob. The card is
+     `width: max-content`, and NEITHER of the two modes below has a usable
+     intrinsic width: a `flex-wrap` row asked for max-content never wraps (every
+     column on one line), and a multicol asked for max-content collapses to ONE
+     column — that second one was MEASURED, not predicted, and turned tidyVco's
+     field into a 287x929 ribbon. `--zcols` (rear-card-model `rearZoneColumns`,
+     the one home for the caps) is the definite bound both modes resolve
+     against. */
   .zone-cols {
     display: flex;
     flex-wrap: wrap;
     align-items: flex-start;
     align-content: flex-start;
     gap: calc(4px * var(--rc-s)) var(--rc-gap);
+    max-width: calc(var(--rc-col-max) * var(--zcols) + var(--rc-gap) * (var(--zcols) - 1));
+  }
+  /* BALANCED MODE — used when every section in the zone is one column wide,
+     which is almost every module.
+     ⚠ MEASURED, not preferred: `flex-wrap` is GREEDY, so tidyVco's six
+     single-column groups packed 5 + 1 and left its last group alone beside
+     ~600 px of empty hatch — the owner's "useless gray horizontal space", moved
+     rather than removed. CSS multicol BALANCES column heights instead, so the
+     same six groups fill evenly and there is no orphan row. It cannot be the
+     only mode: a multi-column section is wider than a multicol column and would
+     overflow it, so a zone containing one falls back to the wrap above. The
+     switch is DERIVED from the plan (`sec.columns`), never guessed. */
+  .zone-cols.balanced {
+    display: block;
+    width: calc(var(--rc-col-min) * var(--zcols) + var(--rc-gap) * (var(--zcols) - 1));
+    max-width: none;
+    column-count: var(--zcols);
+    column-gap: var(--rc-gap);
+  }
+  .zone-cols.balanced > .rsec {
+    break-inside: avoid;
+    width: auto;
+    max-width: none;
+    min-width: 0;
   }
   /* ONE SECTION = ONE COLUMN, until its own content earns another. A section
      stays shrink-to-fit at `--cols: 1` (so a three-jack group is three jacks

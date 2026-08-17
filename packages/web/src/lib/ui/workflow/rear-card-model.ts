@@ -240,6 +240,44 @@ export function rearSectionColumns(rows: number): number {
   return Math.min(REAR_MAX_SECTION_COLUMNS, Math.ceil(rows / REAR_ROWS_PER_COLUMN));
 }
 
+/**
+ * How wide a ZONE may get, in section columns. Physical caps, not counts.
+ *
+ * ⚠ THESE ARE LOAD-BEARING, not cosmetic. The card is `width: max-content`, and
+ * neither of the two layouts it uses has a usable intrinsic width: a
+ * `flex-wrap` row asked for max-content never wraps (every column on one line),
+ * and a CSS multicol asked for max-content collapses to a SINGLE column — that
+ * second one was measured, not predicted, and turned tidyVco's field into a
+ * 287x929 ribbon. The cap is the definite outer bound both modes resolve
+ * against.
+ *
+ * The input zone earns more columns when the field is `dense`, because a field
+ * with that much content has earned the width — the rule is "width must be
+ * earned", not "width is forbidden". The output zone stays narrow: past two
+ * columns the domain split in `derivedOutputSections` has already grouped the
+ * rail.
+ */
+export const REAR_MAX_ZONE_COLUMNS = 4;
+export const REAR_MAX_ZONE_COLUMNS_DENSE = 6;
+export const REAR_MAX_OUT_ZONE_COLUMNS = 2;
+
+/** Columns for a ZONE holding `sections` sections — capped, and never wider
+ *  than it has sections to put there. One home for the rule; both the wrap and
+ *  the balanced layout size themselves from it. */
+export function rearZoneColumns(
+  sections: number,
+  direction: 'input' | 'output',
+  dense: boolean,
+): number {
+  const cap =
+    direction === 'output'
+      ? REAR_MAX_OUT_ZONE_COLUMNS
+      : dense
+        ? REAR_MAX_ZONE_COLUMNS_DENSE
+        : REAR_MAX_ZONE_COLUMNS;
+  return Math.max(1, Math.min(cap, sections));
+}
+
 /** The per-param CV target param id for a port: explicit `paramTarget`
  *  (Pattern A — kickdrum/adsr/lfo/cloudseed) else the `<param>_cv` id stem
  *  (Pattern B — tidyVco). Undefined when the port declares neither shape. */
