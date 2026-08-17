@@ -37,6 +37,33 @@
 // Baselines are authored by LINUX CI — one set, no {platform} segment (see
 // vrt.config.ts). `task vrt:commit` dispatches the capture; a local macOS run
 // is a smoke test, not a capture.
+//
+// ⚠⚠ THESE FOUR BASELINES ARE AUTHORED BUT NEVER COMPARED ON PR CI. Two facts
+// compound, and neither is obvious from this file:
+//
+//   1. this spec is in `FULL_MATCH` only, NOT `STRICT_MATCH` (vrt.config.ts),
+//      so the required `vrt-strict` context does not run it; and
+//   2. the full-sweep `vrt` job — the informational lane that compared
+//      everything outside the strict subset — was DELETED 2026-08-17. ci.yml
+//      says it outright: "THIS IS NOW THE ONLY LANE THAT COMPARES A BASELINE …
+//      What is gone is the COMPARISON of everything outside STRICT_VRT_MODULES."
+//
+// So a rear-card visual regression reddens NOTHING — not a required check, not
+// an informational one. These PNGs are REVIEW MATERIAL, not a gate. Do not
+// read a green PR as evidence that they still match the code. Closing the gap
+// means widening `vrt-strict` to include these scenes, which is a CI wall-time
+// decision, not a drive-by.
+//
+// ⚠ AND THE STALENESS IS NOT HYPOTHETICAL — it happened here, on #1800.
+// `REAR_MAX_DIFF` is 1500 px against a ~305k px capture, so a change that
+// re-flows a few LABELS sits UNDER tolerance: the comparison PASSES and
+// `--update-snapshots=changed` therefore rewrites NOTHING, because Playwright
+// only rewrites a snapshot whose comparison FAILS. A dispatch came back
+// "4 passed / No VRT baseline changes — nothing to commit" over four baselines
+// that genuinely no longer matched the CSS. The fix is the documented one:
+// `git rm` the stale baselines FIRST, so the next dispatch writes them as
+// MISSING (unconditional) rather than comparing them. All four were byte-
+// different afterwards, which is what proved they had been stale.
 
 import { test, expect, type Page } from '@playwright/test';
 import { pinVrtFonts, awaitVrtFonts } from './_fonts';
