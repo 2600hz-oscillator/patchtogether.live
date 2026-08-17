@@ -76,7 +76,7 @@
     /** Undock → promote to a persisted entry. Omitted in P0.3b (the full-view
      *  was never a persisted entry); shown disabled-free when it lands. */
     onUndock?: () => void;
-    /** REAR CARD (rear-card-spec.md): TRUE flips this pane to the flip-side
+    /** REAR CARD (RearCard.svelte + rear-card-model.ts): TRUE flips this pane to the flip-side
      *  patch field. Canvas feeds dockStore.fullViewFlipped — the view-global
      *  flip-key (Tab) flip seam — so with the 50/50 split BOTH panes flip together; the
      *  per-pane surface is this prop + the `data-flipped` attr. */

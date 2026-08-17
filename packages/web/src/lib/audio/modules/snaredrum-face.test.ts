@@ -40,7 +40,7 @@ import {
 import { paramCellKind, momentaryParamIds } from '$lib/ui/workflow/shell-control-kind';
 import { shellCellFor } from '$lib/ui/workflow/shell-cells';
 import { laneBodyPlan } from '$lib/ui/workflow/module-shell-model';
-import { rearFieldPlan } from '$lib/ui/workflow/rear-card-model';
+import { rearFieldPlan, rearSectionHoles } from '$lib/ui/workflow/rear-card-model';
 
 const def = snaredrumDef as unknown as FaceDefLike;
 const momentary = momentaryParamIds(snaredrumDef as { face?: { momentary?: readonly string[] } });
@@ -270,15 +270,12 @@ describe('snaredrum face — the two auditions are TWO cells with DIFFERENT pres
 });
 
 describe('snaredrum face — the REAR field', () => {
-  it('is TOTAL: every declared port is addressed by exactly one hole, in six bands', () => {
+  it('is TOTAL: every declared port is addressed by exactly one hole, in six input sections', () => {
     const plan = rearFieldPlan(snaredrumDef);
     // PR-4: a derived stereo pair is ONE hole addressing TWO ports, so the
     // totality claim is over the ADDRESSED ports. snaredrum's `audio_l` /
     // `audio_r` outputs are that pair — one hole, two ports.
-    const holes = [
-      ...plan.bands.flatMap((b) => [...b.holes, ...b.clusters.flatMap((c) => c.holes)]),
-      ...plan.outputs,
-    ];
+    const holes = rearSectionHoles([...plan.inputs, ...plan.outputs]);
     const addressed = holes.flatMap((h) =>
       h.stereoSiblingPortId ? [h.portId, h.stereoSiblingPortId] : [h.portId],
     );
@@ -289,27 +286,27 @@ describe('snaredrum face — the REAR field', () => {
     expect([...addressed].sort(), 'no orphan, no duplicate').toEqual([...declared].sort());
     expect(plan.portCount).toBe(declared.length);
     expect(plan.holeCount).toBe(declared.length - 1); // the one collapsed pair
-    expect(plan.outputs.map((h) => h.portId)).toEqual(['audio_l']);
-    expect(plan.outputs[0]!.stereoSiblingPortId).toBe('audio_r');
-    expect(plan.bands.map((b) => b.id)).toEqual(['voice', 'drum', 'snap', 'roll', 'whole', 'bus']);
+    expect(rearSectionHoles(plan.outputs).map((h) => h.portId)).toEqual(['audio_l']);
+    expect(rearSectionHoles(plan.outputs)[0]!.stereoSiblingPortId).toBe('audio_r');
+    expect(plan.inputs.map((b) => b.id)).toEqual(['voice', 'drum', 'snap', 'roll', 'whole', 'bus']);
   });
 
   it('no page id collides with the LEADING rear group id (the dx7 double-band scar)', () => {
-    const leading = rearFieldPlan(snaredrumDef).bands[0]!.id;
+    const leading = rearFieldPlan(snaredrumDef).inputs[0]!.id;
     expect(leading).toBe('voice');
     expect(snaredrumDef.face!.pages!.map((p) => p.id)).not.toContain(leading);
   });
 
-  it('no rear band label PREFIXES another, and no page claims the word STRIKE', () => {
+  it('no rear input-section label PREFIXES another, and no page claims the word STRIKE', () => {
     // The KICK DRUM finding: two adjacent bands both headed STRIKE, the second
     // one's first hole being `tune_cv`, so patching a gate into the wrong one
     // silently detunes the drum. The REAR owns 'strike' on this module (it is
     // where trigger_in and gate_in are patched) and no front page takes it.
-    const labels = rearFieldPlan(snaredrumDef).bands.map((b) => b.label);
+    const labels = rearFieldPlan(snaredrumDef).inputs.map((b) => b.label);
     for (const a of labels) {
       for (const b of labels) {
         if (a === b) continue;
-        expect(b.startsWith(a), `rear band '${b}' is prefixed by '${a}'`).toBe(false);
+        expect(b.startsWith(a), `rear section '${b}' is prefixed by '${a}'`).toBe(false);
       }
     }
     expect(labels[0]).toMatch(/^strike/);
@@ -319,7 +316,7 @@ describe('snaredrum face — the REAR field', () => {
   });
 
   it('the strike cluster TEACHES the trigger/gate split rather than restating the header', () => {
-    const voice = rearFieldPlan(snaredrumDef).bands[0]!;
+    const voice = rearFieldPlan(snaredrumDef).inputs[0]!;
     const strike = voice.clusters.find((c) => c.holes.some((h) => h.portId === 'trigger_in'))!;
     expect(strike.holes.map((h) => h.portId)).toEqual(['trigger_in', 'gate_in']);
     expect(

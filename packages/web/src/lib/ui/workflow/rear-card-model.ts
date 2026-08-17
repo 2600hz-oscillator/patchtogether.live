@@ -1,32 +1,52 @@
 // packages/web/src/lib/ui/workflow/rear-card-model.ts
 //
 // PURE derivation for the REAR CARD — the RACKLINE flip-side patch field the
-// dock full-view shows on TAB (design: scratchpad rear-card-spec.md §1/§4/§5).
+// dock full-view shows on TAB.
 //
 // The def's `inputs[]`/`outputs[]` ALREADY IS the one-function-per-hole list:
 // the rear card renders EVERY declared port, one hole each, no synthesis and
-// no elision. This module decides GROUPING + LABELING, nothing DOM:
+// no elision. This module decides GROUPING + LABELING, nothing DOM.
 //
-//   voice   = inputs that are not per-param CVs (no paramTarget AND no
-//             `<param>_cv` id match), in declared order → the leading
-//             "voice"/"signal" band
-//   pages   = for each `face.pages` page, the CV holes targeting that page's
-//             params (target = port.paramTarget ?? stripSuffix(id, '_cv')),
-//             in page-control order → one band per page (empty → no band)
-//   orphans = per-param CVs whose target param is in NO page → trailing "cv"
-//             band
-//   outputs = def.outputs, declared order → the fixed OUTPUTS rail
+// ── #1800: ONE GRAMMAR, SECTIONS AS COLUMNS ─────────────────────────────────
 //
-// Optional curation extends `face` (UI metadata — contract untouched):
-// `face.rear.groups` pins listed ports to an explicit band (claiming the
-// voice slot / a page slot by id), `face.rear.clusters` adds sub-headers
-// inside a band, `face.rear.audioRate` drives the `~` tick (no PortDef.rate
-// field exists — spec §6 Q5 ships v1 with a curated list).
+// Owner, 2026-08-17: *"[the OUTPUTS list] is cool but [the INPUTS bands] is
+// wasteful. everything should be done in the output style list"* / *"we want to
+// do intelligent authored grouping of inputs and outputs, with different
+// sections as coumns i think."*
+//
+// So the plan no longer has two shapes. It has ONE — `RearSection` — and BOTH
+// rails are lists of it. What used to be a full-width input BAND and a fixed
+// right OUTPUTS RAIL are now the same object with a different `direction`, and
+// the card flows them into COLUMNS. A section holding three jacks no longer
+// claims a whole row of the card and leaves the rest grey.
+//
+// GROUPING, in precedence order, for EITHER direction:
+//
+//   1. AUTHORED — `face.rear.groups` entries, `direction` selecting the rail.
+//      Co-located on the def exactly like `docs:`, so a port change and its
+//      grouping edit land in the same diff.
+//   2. DERIVED, inputs — unchanged and already page-authored:
+//        voice/signal = inputs that are not per-param CVs (no paramTarget AND
+//                       no `<param>_cv` id match), declared order
+//        pages        = for each `face.pages` page, the CV holes targeting that
+//                       page's params, in page-control order
+//        orphans      = per-param CVs whose target is in NO page → trailing
+//                       `cv` section
+//   3. DERIVED, outputs — ONE `out` section, which is what a rail of two to
+//      four taps should look like. It splits into one section per CABLE DOMAIN
+//      only once the un-split rail would out-run a column (see
+//      `derivedOutputSections`). There is deliberately no cleverer default: a
+//      page projection has no meaning for outputs, and a header over a
+//      one-row group is chrome, not grouping.
+//
+// `face.rear.clusters` adds sub-headers inside a section (either rail);
+// `face.rear.audioRate` drives the `~` tick (no PortDef.rate field exists, so
+// the tick ships from a curated list).
 //
 // Labels are by FUNCTION: a per-param CV hole takes its target param's label
-// (CUTOFF, not CUTOFF_CV — the band header + `←` glyph already say "input");
-// a `<x>_cv` port with no matching param labels from the stem; everything
-// else falls back to the shared resolveVerboseLabel.
+// (CUTOFF, not CUTOFF_CV — the section heading and the row's own geometry
+// already say "input"); a `<x>_cv` port with no matching param labels from the
+// stem; everything else falls back to the shared resolveVerboseLabel.
 //
 // Framework-free + registry-free (reads only the passed def), so it is
 // unit-testable and zero-flake, exactly like module-shell-model.ts.
@@ -96,28 +116,56 @@ export interface RearHole {
   stereoSiblingPortId?: string;
 }
 
-/** A cluster sub-header inside a band (envelopes → filter eg / amp eg). */
+/** A cluster sub-header inside a section (envelopes → filter eg / amp eg). */
 export interface RearCluster {
   label: string;
   holes: RearHole[];
 }
 
-/** One input group band. */
-export interface RearBand {
+/**
+ * ONE GROUP OF HOLES — the single grammar both rails now use (#1800).
+ *
+ * Before this, an input group was a `RearBand` (full-width, stacked) and the
+ * outputs were a bare `RearHole[]` pinned to a fixed-width rail. Those were two
+ * shapes for one idea, and the type difference is exactly what made it
+ * impossible to give inputs the compact row treatment the outputs already had.
+ */
+export interface RearSection {
   id: string;
   label: string;
-  /** Un-clustered holes (render first, band order). */
+  /** Which rail. Drives the row's geometry, not its colour — see
+   *  `rear-direction.ts` for the full set of non-colour direction channels. */
+  direction: 'input' | 'output';
+  /** Un-clustered holes (render first, section order). */
   holes: RearHole[];
   /** Clustered holes (render after `holes`, declaration order). */
   clusters: RearCluster[];
+  /**
+   * How many COLUMNS of rows this section's list flows into.
+   *
+   * ⚠ THIS IS THE HALF THAT KEEPS "SECTIONS AS COLUMNS" FROM BEING A
+   * REGRESSION, and it was measured rather than assumed. The old full-width
+   * band was wasteful for a THREE-jack group (the owner's screenshot) but
+   * space-EFFICIENT for a thirty-jack one, because its auto-fill raster spread
+   * those thirty across the card. Giving every section exactly one column would
+   * have fixed the first case by making the second one a 33-row tower —
+   * mixmstrs' `channels` group, measured on the real def.
+   *
+   * So a section's WIDTH is earned by its CONTENT: one column up to
+   * `REAR_ROWS_PER_COLUMN` rows, then another, capped at
+   * `REAR_MAX_SECTION_COLUMNS`. A section is still ONE group with ONE heading —
+   * it just does not pretend a thirty-row list is a column.
+   */
+  columns: number;
 }
 
 export interface RearFieldPlan {
-  /** Input bands: voice/signal first, then page bands, then extra curated
-   *  groups, then the orphan "cv" band. Empty bands are dropped. */
-  bands: RearBand[];
-  /** The OUTPUTS rail, declared order. */
-  outputs: RearHole[];
+  /** Input sections: voice/signal first, then page sections, then extra
+   *  authored groups, then the orphan "cv" section. Empty sections dropped. */
+  inputs: RearSection[];
+  /** Output sections: authored ones in declaration order, then the derived
+   *  remainder. Same type as `inputs` — that symmetry IS the redesign. */
+  outputs: RearSection[];
   /** Total RENDERED holes (inputs + outputs). A collapsed stereo pair is ONE
    *  hole, so this is ≤ the declared port count — see `portCount`. */
   holeCount: number;
@@ -127,19 +175,108 @@ export interface RearFieldPlan {
    *  pair renders as one hole. Keeping both means the totality invariant is
    *  still assertable instead of quietly becoming untestable. */
   portCount: number;
-  /** Pathology fallback (>REAR_COLLAPSE_THRESHOLD holes): bands render
-   *  collapsed to their headers (jack-count pill, click to expand) — a
-   *  visibility fallback, NEVER a cascading menu. No prototype needs it. */
-  collapse: boolean;
-  /** Outputs rail goes 2-col + dense cells past this many outs (spec §1.5). */
-  denseRail: boolean;
+  /**
+   * The HIGH-PORT-COUNT FALLBACK, and it is the whole of it (#1800).
+   *
+   * ⚠ WHAT THIS REPLACES. The old fallback was BAND-COLLAPSE: past ~60 holes
+   * every band rendered as its header plus a jack-count pill, and its holes
+   * WERE NOT IN THE DOM until you clicked the header open. On the one surface
+   * that is a dock card's only patch field, that is not a density step — it is
+   * hiding patch points behind a disclosure. Columns removed the need for it:
+   * the same rows in N columns are 1/N the height, which is the axis that
+   * actually overflowed (measured at 1280x720: 954 px of content in a 352 px
+   * viewport vertically, and NO horizontal overflow at all).
+   *
+   * So the ladder is now: COLUMNS first (CSS, no threshold — the card fits as
+   * many as the width allows), then `dense` — tighter row metrics and the
+   * endpoint chip degrading to a plug mark — past `REAR_DENSE_ROWS`. EVERY
+   * hole stays rendered, hit-testable and patchable at every step. Still never
+   * a cascade, and now never a disclosure either.
+   */
+  dense: boolean;
 }
 
-/** Band-collapse pathology threshold (spec §1.5: "> ~60 holes"). */
-export const REAR_COLLAPSE_THRESHOLD = 60;
+/**
+ * Row count past which the field steps to its dense row metrics.
+ *
+ * A LAYOUT POLICY THRESHOLD on a derived measurement (rendered rows), not a
+ * population count: it does not encode how many of anything there are, and a
+ * def gaining a port cannot make it stale.
+ */
+export const REAR_DENSE_ROWS = 40;
 
-/** Outputs-rail 2-column threshold (spec Appendix A: "2-col past 8 outs"). */
-export const REAR_DENSE_RAIL_OUTPUTS = 8;
+/**
+ * Rows past which the DERIVED output grouping splits by cable domain.
+ *
+ * Same class of constant as `REAR_DENSE_ROWS`: it measures the rail against a
+ * column, it is not a count of anything that exists. Below it a single `out`
+ * section is the honest default — a heading over a one-row group is chrome,
+ * not grouping — and above it a rail long enough to need scanning gets the one
+ * split that is derivable from the CONTRACT rather than guessed.
+ */
+export const REAR_OUTPUT_SPLIT_ROWS = 12;
+
+/**
+ * Rows a single section column may hold before the section takes another.
+ *
+ * A LAYOUT POLICY THRESHOLD on a derived measurement, like the two above: it
+ * says how tall a column is allowed to get, not how many of anything exists.
+ */
+export const REAR_ROWS_PER_COLUMN = 16;
+
+/**
+ * The most columns ONE section may claim.
+ *
+ * A physical cap, not a count: past three the section stops reading as one
+ * group and the field would rather wrap it than let a single heading own half
+ * the card.
+ */
+export const REAR_MAX_SECTION_COLUMNS = 3;
+
+/** Columns for a section holding `rows` rows — the derivation behind
+ *  `RearSection.columns`, exported so the layout rule has exactly one home. */
+export function rearSectionColumns(rows: number): number {
+  if (rows <= 0) return 1;
+  return Math.min(REAR_MAX_SECTION_COLUMNS, Math.ceil(rows / REAR_ROWS_PER_COLUMN));
+}
+
+/**
+ * How wide a ZONE may get, in section columns. Physical caps, not counts.
+ *
+ * ⚠ THESE ARE LOAD-BEARING, not cosmetic. The card is `width: max-content`, and
+ * neither of the two layouts it uses has a usable intrinsic width: a
+ * `flex-wrap` row asked for max-content never wraps (every column on one line),
+ * and a CSS multicol asked for max-content collapses to a SINGLE column — that
+ * second one was measured, not predicted, and turned tidyVco's field into a
+ * 287x929 ribbon. The cap is the definite outer bound both modes resolve
+ * against.
+ *
+ * The input zone earns more columns when the field is `dense`, because a field
+ * with that much content has earned the width — the rule is "width must be
+ * earned", not "width is forbidden". The output zone stays narrow: past two
+ * columns the domain split in `derivedOutputSections` has already grouped the
+ * rail.
+ */
+export const REAR_MAX_ZONE_COLUMNS = 4;
+export const REAR_MAX_ZONE_COLUMNS_DENSE = 6;
+export const REAR_MAX_OUT_ZONE_COLUMNS = 2;
+
+/** Columns for a ZONE holding `sections` sections — capped, and never wider
+ *  than it has sections to put there. One home for the rule; both the wrap and
+ *  the balanced layout size themselves from it. */
+export function rearZoneColumns(
+  sections: number,
+  direction: 'input' | 'output',
+  dense: boolean,
+): number {
+  const cap =
+    direction === 'output'
+      ? REAR_MAX_OUT_ZONE_COLUMNS
+      : dense
+        ? REAR_MAX_ZONE_COLUMNS_DENSE
+        : REAR_MAX_ZONE_COLUMNS;
+  return Math.max(1, Math.min(cap, sections));
+}
 
 /** The per-param CV target param id for a port: explicit `paramTarget`
  *  (Pattern A — kickdrum/adsr/lfo/cloudseed) else the `<param>_cv` id stem
@@ -268,8 +405,54 @@ function collapseStereoHoles(
 }
 
 /**
+ * Every hole in a section list, clusters included, in render order.
+ *
+ * Exists because "the holes on this rail" used to be a bare array field and is
+ * now two levels of nesting on BOTH rails — one flattening, one place, so a
+ * caller cannot forget the clusters (which is exactly how a hole goes missing
+ * from a check without going missing from the screen).
+ */
+export function rearSectionHoles(sections: readonly RearSection[]): RearHole[] {
+  return sections.flatMap((s) => [...s.holes, ...s.clusters.flatMap((c) => c.holes)]);
+}
+
+/**
+ * The DERIVED output grouping — the default under ~190 modules that author
+ * nothing (#1800).
+ *
+ * ONE section (`out`) is the answer for a rail of two to four taps, and that is
+ * almost every module: a heading over a one-row group is chrome, not grouping,
+ * and a page projection (what the input side derives from) has no meaning for
+ * outputs. The ONE split that is derivable from the CONTRACT rather than
+ * guessed is by CABLE DOMAIN — `PortDef.type`, the same declaration the hole's
+ * colour already reads — and it only earns its headings once the un-split rail
+ * out-runs a column (`REAR_OUTPUT_SPLIT_ROWS`). That is what keeps a 30-tap
+ * hardware interface or a 29-event game module scannable without any of them
+ * having to be hand-authored first.
+ *
+ * ⚠ The split REINFORCES the colour channel rather than competing with it —
+ * colour still means domain and nothing else. Direction is carried entirely by
+ * `rear-direction.ts`'s non-colour channels.
+ */
+function derivedOutputSections(outs: RearHole[]): RearSection[] {
+  if (outs.length === 0) return [];
+  const domains = [...new Set(outs.map((h) => h.domain))];
+  if (domains.length === 1 || outs.length <= REAR_OUTPUT_SPLIT_ROWS) {
+    return [{ id: 'out', label: 'out', direction: 'output', holes: outs, clusters: [], columns: 1 }];
+  }
+  return domains.map((d) => ({
+    id: `out-${d}`,
+    label: `${d} out`,
+    direction: 'output' as const,
+    holes: outs.filter((h) => h.domain === d),
+    clusters: [],
+    columns: 1,
+  }));
+}
+
+/**
  * Derive the full rear-card field plan for a def. Total by construction:
- * every declared input lands in exactly one band, every output on the rail.
+ * every declared port lands in exactly one section, on its own rail.
  */
 export function rearFieldPlan(def: RearDefLike): RearFieldPlan {
   const inputs = def.inputs ?? [];
@@ -282,11 +465,23 @@ export function rearFieldPlan(def: RearDefLike): RearFieldPlan {
   const paramIds = new Set(params.map((p) => p.id));
   const hole = (p: RearPortLike, dir: 'input' | 'output') => makeHole(p, dir, def, audioRate);
 
-  // ---- curated groups claim their ports first (first listing wins) ----
-  const curatedByPort = new Map<string, string>(); // portId → group id
-  const curatedGroups = rear?.groups ?? [];
+  // ---- authored groups claim their ports first (first listing wins) ----
+  //
+  // ⚠ KEYED BY (direction, portId), NEVER by portId alone. A port id may exist
+  // on BOTH rails — `delay` declares an `audio` input and an `audio` output —
+  // so a port-only key let an input group silently claim the output of the same
+  // name, and the OUTPUT then vanished from its own rail. That was invisible
+  // while outputs had no grouping at all; it is a live hazard the moment they
+  // do.
+  const allGroups = rear?.groups ?? [];
+  const curatedGroups = allGroups.filter((g) => (g.direction ?? 'input') === 'input');
+  const outputGroups = allGroups.filter((g) => g.direction === 'output');
+  const inputPortIds = new Set(inputs.map((p) => p.id));
+  const outputPortIds = new Set(outputs.map((p) => p.id));
+  const curatedByPort = new Map<string, string>(); // portId → group id (INPUTS)
   for (const g of curatedGroups) {
     for (const pid of g.ports) {
+      if (!inputPortIds.has(pid)) continue;
       if (!curatedByPort.has(pid)) curatedByPort.set(pid, g.id);
     }
   }
@@ -319,19 +514,21 @@ export function rearFieldPlan(def: RearDefLike): RearFieldPlan {
     else perParam.set(target!, [port]);
   }
 
-  // ---- assemble bands: voice slot → page slots → extra curated → orphans ----
+  // ---- assemble INPUT sections: voice slot → page slots → extra → orphans ----
   const portById = new Map(inputs.map((p) => [p.id, p]));
-  const bands: RearBand[] = [];
+  const inSections: RearSection[] = [];
   const usedGroupIds = new Set<string>();
 
-  const curatedBand = (g: { id: string; label: string; ports: readonly string[] }): RearBand => ({
+  const curatedBand = (g: { id: string; label: string; ports: readonly string[] }): RearSection => ({
     id: g.id,
     label: g.label,
+    direction: 'input',
     holes: g.ports
       .map((pid) => portById.get(pid))
       .filter((p): p is RearPortLike => p !== undefined && curatedByPort.get(p.id) === g.id)
       .map((p) => hole(p, 'input')),
     clusters: [],
+    columns: 1,
   });
 
   // voice/signal slot — a curated 'voice'/'signal' group claims it.
@@ -339,21 +536,23 @@ export function rearFieldPlan(def: RearDefLike): RearFieldPlan {
   if (voiceGroup) {
     usedGroupIds.add(voiceGroup.id);
     const band = curatedBand(voiceGroup);
-    // Derived voice ports still land in the leading band (curation lists the
-    // exceptions, it does not have to restate the whole band).
+    // Derived voice ports still land in the leading section (curation lists the
+    // exceptions, it does not have to restate the whole section).
     band.holes.push(...voice.map((p) => hole(p, 'input')));
-    if (band.holes.length > 0) bands.push(band);
+    if (band.holes.length > 0) inSections.push(band);
   } else if (voice.length > 0) {
-    // 'voice' when the band carries gate/poly/pitch drive; 'signal' for a
+    // 'voice' when the section carries gate/poly/pitch drive; 'signal' for a
     // processor's plain audio/cv feed (vca/cloudseed read as patchbays).
     const isVoice = voice.some(
       (p) => p.type === 'gate' || p.type === 'polyPitchGate' || p.type === 'pitch' || p.type === 'keys',
     );
-    bands.push({
+    inSections.push({
       id: isVoice ? 'voice' : 'signal',
       label: isVoice ? 'voice' : 'signal',
+      direction: 'input',
       holes: voice.map((p) => hole(p, 'input')),
       clusters: [],
+      columns: 1,
     });
   }
 
@@ -362,9 +561,9 @@ export function rearFieldPlan(def: RearDefLike): RearFieldPlan {
   // page-control order.
   for (const page of pages) {
     const g = curatedGroups.find((gr) => gr.id === page.id);
-    const band: RearBand = g
+    const band: RearSection = g
       ? (usedGroupIds.add(g.id), curatedBand(g))
-      : { id: page.id, label: page.label, holes: [], clusters: [] };
+      : { id: page.id, label: page.label, direction: 'input', holes: [], clusters: [], columns: 1 };
     const perParam = byPage.get(page.id);
     if (perParam) {
       for (const key of page.controls) {
@@ -372,68 +571,106 @@ export function rearFieldPlan(def: RearDefLike): RearFieldPlan {
         if (ports) band.holes.push(...ports.map((p) => hole(p, 'input')));
       }
     }
-    if (band.holes.length > 0) bands.push(band);
+    if (band.holes.length > 0) inSections.push(band);
   }
 
   // extra curated groups (no page match), declaration order.
   for (const g of curatedGroups) {
     if (usedGroupIds.has(g.id)) continue;
     const band = curatedBand(g);
-    if (band.holes.length > 0) bands.push(band);
+    if (band.holes.length > 0) inSections.push(band);
   }
 
-  // trailing orphan band — per-param CVs whose target is in NO page.
+  // trailing orphan section — per-param CVs whose target is in NO page.
   if (orphans.length > 0) {
-    bands.push({ id: 'cv', label: 'cv', holes: orphans.map((p) => hole(p, 'input')), clusters: [] });
-  }
-
-  // ---- clusters: pull listed holes out of their band into sub-headers ----
-  for (const c of rear?.clusters ?? []) {
-    const band = bands.find((b) => b.id === c.group);
-    if (!band) continue;
-    const member = new Set(c.ports);
-    const pulled = band.holes.filter((h) => member.has(h.portId));
-    if (pulled.length === 0) continue;
-    band.holes = band.holes.filter((h) => !member.has(h.portId));
-    band.clusters.push({ label: c.label, holes: pulled });
+    inSections.push({
+      id: 'cv',
+      label: 'cv',
+      direction: 'input',
+      holes: orphans.map((p) => hole(p, 'input')),
+      clusters: [],
+      columns: 1,
+    });
   }
 
   // ---- ONE STEREO HOLE per derived pair, on BOTH rails ----
-  for (const band of bands) {
+  //
+  // INPUTS collapse AFTER grouping (a pair's legs can be authored into
+  // different sections, and grouping is what decides which section owns the
+  // surviving hole). OUTPUTS collapse BEFORE, because output sectioning is
+  // itself derived FROM the holes — the domain split has to count the rows a
+  // reader will actually see, and an authored output group must be free to
+  // name EITHER leg of a pair.
+  for (const band of inSections) {
     band.holes = collapseStereoHoles(band.holes, def, 'input');
-    for (const cluster of band.clusters) {
-      cluster.holes = collapseStereoHoles(cluster.holes, def, 'input');
-    }
   }
-  const outs = collapseStereoHoles(
+  const outHoles = collapseStereoHoles(
     outputs.map((p) => hole(p, 'output')),
     def,
     'output',
   );
 
-  const bandHoles = bands.reduce(
-    (n, b) => n + b.holes.length + b.clusters.reduce((m, c) => m + c.holes.length, 0),
-    0,
-  );
-  const holeCount = bandHoles + outs.length;
+  // ---- assemble OUTPUT sections: authored first, then the derived remainder --
+  const outSections: RearSection[] = [];
+  const claimedOut = new Set<string>();
+  for (const g of outputGroups) {
+    const member = new Set(g.ports.filter((pid) => outputPortIds.has(pid)));
+    const holes = outHoles.filter(
+      (h) =>
+        !claimedOut.has(h.portId) &&
+        (member.has(h.portId) || (h.stereoSiblingPortId !== undefined && member.has(h.stereoSiblingPortId))),
+    );
+    if (holes.length === 0) continue;
+    for (const h of holes) claimedOut.add(h.portId);
+    outSections.push({ id: g.id, label: g.label, direction: 'output', holes, clusters: [], columns: 1 });
+  }
+  outSections.push(...derivedOutputSections(outHoles.filter((h) => !claimedOut.has(h.portId))));
+
+  // ---- clusters: pull listed holes out of their section into sub-headers ----
+  // Runs LAST so it reaches either rail through one code path, and after the
+  // stereo collapse so a cluster naming a collapsed leg still finds its hole.
+  const sections = [...inSections, ...outSections];
+  for (const c of rear?.clusters ?? []) {
+    const band = sections.find((b) => b.id === c.group);
+    if (!band) continue;
+    const member = new Set(c.ports);
+    const claims = (h: RearHole) =>
+      member.has(h.portId) || (h.stereoSiblingPortId !== undefined && member.has(h.stereoSiblingPortId));
+    const pulled = band.holes.filter(claims);
+    if (pulled.length === 0) continue;
+    band.holes = band.holes.filter((h) => !claims(h));
+    band.clusters.push({ label: c.label, holes: pulled });
+  }
+
+  // ---- WIDTH IS EARNED BY CONTENT: a section's column count is derived from
+  // its final row count, after grouping, collapse and cluster extraction have
+  // all settled — anything earlier would size the column from a list that is
+  // still moving.
+  for (const sec of sections) {
+    sec.columns = rearSectionColumns(
+      sec.holes.length + sec.clusters.reduce((n, c) => n + c.holes.length, 0),
+    );
+  }
+
+  const rowsIn = (list: readonly RearSection[]) =>
+    list.reduce((n, b) => n + b.holes.length + b.clusters.reduce((m, c) => m + c.holes.length, 0), 0);
+  const holeCount = rowsIn(inSections) + rowsIn(outSections);
   // Every declared port is addressed by exactly one hole; a stereo hole
   // addresses two. Summed from the holes, NOT from the def, so it is a real
   // check on the derivation rather than a restatement of the input.
   const countPorts = (list: readonly RearHole[]) =>
     list.reduce((n, h) => n + (h.stereoSiblingPortId ? 2 : 1), 0);
-  const portCount =
-    bands.reduce(
-      (n, b) => n + countPorts(b.holes) + b.clusters.reduce((m, c) => m + countPorts(c.holes), 0),
-      0,
-    ) + countPorts(outs);
+  const portCount = sections.reduce(
+    (n, b) => n + countPorts(b.holes) + b.clusters.reduce((m, c) => m + countPorts(c.holes), 0),
+    0,
+  );
 
   return {
-    bands,
-    outputs: outs,
+    inputs: inSections,
+    outputs: outSections,
     holeCount,
     portCount,
-    collapse: holeCount > REAR_COLLAPSE_THRESHOLD,
-    denseRail: outs.length > REAR_DENSE_RAIL_OUTPUTS,
+    dense: holeCount > REAR_DENSE_ROWS,
   };
 }
 
