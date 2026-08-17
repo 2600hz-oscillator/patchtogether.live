@@ -37,11 +37,47 @@
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
+import type { ParamOption } from '$lib/graph/types';
 import workletUrl from '@patchtogether.live/dsp/dist/moog921b.js?url';
 
 import { createWorkletNode } from '$lib/audio/worklet-guard';
 // Per-context cache so addModule isn't called twice on the same context.
 const loadedContexts = new WeakSet<BaseAudioContext>();
+
+/**
+ * The SYNC switch's three named states (PF-1).
+ *
+ * ⚠ `syncMode` IS A COMPARATOR, NOT A DIAL, AND IT USED TO BE DECLARED AS ONE.
+ * The DSP thresholds it at ±0.5 (`syncModeFromParam`, `lib/moog-vco-dsp.ts:48-52`:
+ * `v >= 0.5 → hard`, `v <= -0.5 → soft`, else `off`), so HALF the declared
+ * −1..1 travel is one flat `off` state and nothing between the detents exists.
+ * It shipped `curve: 'linear'`, which is the inverse of the PF-1 defect: a
+ * def-driven face painted a continuous rotary printing `0.00` over a
+ * three-position switch, and `options` cannot be declared on a non-discrete
+ * curve (`param-vocabulary.test.ts` refuses a def carrying both). The two edits
+ * are therefore SEQUENCED and land together — `discrete` first, then the roster.
+ *
+ * ⚠ CHECKED AGAINST THE CONSUMERS BEFORE CHANGING IT (CLAUDE.md's "before
+ * fixing a declaration to satisfy a gate, check the consumer reads it"): the
+ * DSP quantizes it already, so no rendered sample moves; no input declares
+ * `paramTarget: 'syncMode'`, so no CV bridge reads the curve; and
+ * `Moog921bCard.svelte` paints it as an OFF/LO/HI button row rather than a
+ * `<Knob>`, so no legacy pixel moves either. What DOES change is that the
+ * faceplate's dial now steps to −1 / 0 / +1 instead of stopping anywhere in a
+ * band that means the same thing, and the dock paints the three names.
+ *
+ * Cosmetic by construction: `contract-signature.ts` projects only
+ * id/min/max/curve/defaultValue/units, so the ROSTER cannot move
+ * `contract-lock.txt`. The `curve` can and does — reviewed in that diff.
+ *
+ * The card's own private `SYNC_POS` array is gone; it maps this roster instead,
+ * so the three names have exactly one copy.
+ */
+export const MOOG921B_SYNC_OPTIONS: readonly ParamOption[] = [
+  { value: -1, label: 'LO', title: 'soft sync — a rising edge nudges the phase only past the half-cycle' },
+  { value: 0, label: 'OFF', title: 'the sync input is ignored' },
+  { value: 1, label: 'HI', title: 'hard sync — every rising edge resets the phase to 0' },
+];
 
 export const moog921bDef: AudioModuleDef = {
   type: 'moog921b',
@@ -77,18 +113,96 @@ export const moog921bDef: AudioModuleDef = {
     { id: 'fine',      label: 'Freq',  defaultValue: 0, min: -12, max: 12, curve: 'linear', units: 'st' },
     { id: 'range',     label: 'Range', defaultValue: 0, min: -5,  max: 5,  curve: 'discrete', units: 'oct' },
     { id: 'modAmount', label: 'FM',    defaultValue: 0, min: -1,  max: 1,  curve: 'linear' },
-    { id: 'syncMode',  label: 'Sync',  defaultValue: 0, min: -1,  max: 1,  curve: 'linear' },
+    { id: 'syncMode',  label: 'Sync',  defaultValue: 0, min: -1,  max: 1,  curve: 'discrete', options: MOOG921B_SYNC_OPTIONS },
     { id: 'level',     label: 'Level', defaultValue: 1, min: 0,   max: 2,  curve: 'linear' },
   ],
 
+  // THE FACE — the 921A's other half. Every design note about the PAIR lives on
+  // `moog921aDef.face` and in `$lib/ui/modules/moog921-face-model`; this comment
+  // carries only what is different here, because a second copy of the argument
+  // is how the pair would drift.
+  //
+  // ── THE RANK IS PITCH AUTHORITY, THEN WHAT IS ALIVE AT SPAWN ───────────────
+  //
+  //   1 RANGE  ±5 octaves = ±6000 cents, the largest reach on the module and
+  //            the reason a bank of 921Bs exists at all (stack one an octave
+  //            over its siblings off the shared bus).
+  //   2 FREQ   ±12 semitones = ±1200 cents, 5× less. The detune.
+  //   3 LEVEL  unconditional — it scales ALL FOUR taps, ships at unity, and is
+  //            the only control here that is audible with nothing patched.
+  //   4 FM     ⚠ INERT AT SPAWN: `modAmount` defaults to 0, so BOTH linear-FM
+  //            jacks are bit-exactly silent as delivered. It ranks on reach,
+  //            not on liveness, and the `fm` readout prints `off` to say so.
+  //   5 SYNC   DOUBLY inert: it defaults to `OFF`, and even at either extreme
+  //            it does nothing without a source on the sync input.
+  //
+  // Tier ladder: mini = RANGE; compact = RANGE + FREQ beside the trace; plate
+  // and dock = all five plus the hero.
+  //
+  // ── NO PAGES ───────────────────────────────────────────────────────────────
+  // Five controls, one of which the hero promotes. Splitting the remaining four
+  // into `tune` / `modulation` / `out` bands would buy ~243 px of headers on a
+  // dock that folds at 720p for one, two and one cell — and the three ideas are
+  // already named by the readouts (`offset` / `fm` + `sync` / `out`).
+  face: {
+    order: ['range', 'fine', 'level', 'modAmount', 'syncMode'],
+
+    // ⚠ IT RESOLVES, AND IT RESOLVES TO ONE TAP OF FOUR — SAY WHICH.
+    // `primaryAudioOutPortId` takes the FIRST `type: 'audio'` output, and this
+    // def declares sine, triangle, saw, rect in that order, so `glyphBinding`
+    // returns `{ kind: 'live-audio', portId: 'sine' }` and the trace is THE SINE
+    // TAP ONLY. The other three are not drawn and a narrow rect or a bright saw
+    // will not change this picture (#1692's finding is a glyph that resolves to
+    // nothing; the sibling failure is a glyph that resolves to the wrong thing,
+    // which is only visible if someone states which thing). The 921A, whose
+    // outputs are both `cv`, correctly declares `glyph: 'none'`. Asserted for
+    // both modules, with a negative control, in moog921-face-model.test.ts.
+    //
+    // ⚠ THIS IS A FREE-RUNNING VOICE — it sounds the instant it spawns, with no
+    // gate and no note to wait for — so its lane tile EXERCISES #1420's
+    // pre-frame audio freeze rather than being indifferent to it, like
+    // analogVco and macrooscillator and unlike most of the roster. See the
+    // roster note in e2e/vrt/_shell-faces.
+    glyph: 'scope',
+
+    // THE HERO: the coarse octave dial, plus the five numbers this module
+    // publishes that none of its knobs can print. Each is negative-controlled
+    // PERMANENTLY on the input a knob readback is blind to
+    // (moog921-face-model.test.ts), and the five have DISJOINT reach — `pitch`
+    // and `offset` move on RANGE+FREQ, `out` on LEVEL alone, `fm` on FM alone,
+    // `sync` on SYNC alone — so each is the others' control on every run:
+    //
+    //   pitch   what it sings with the bus AT REST: 261.626 · 2^(range + fine/12).
+    //           A join over TWO dials plus the C4 reference; neither dial prints it.
+    //   offset  the same thing in the unit that ADDS to the 921A's `bus` volts.
+    //           ⚠ THIS IS THE PAIRING SEAM. A `FaceReadoutValue` receives a param
+    //           reader and nothing else, so this face is STRUCTURALLY unable to
+    //           see `freq_bus` — it cannot print the played pitch at all. It
+    //           prints its own term; the driver prints the other; they add.
+    //   out     LEVEL is a 0..2 LINEAR multiplier, so its readback says `1.00`
+    //           where the answer is `+0.0 dB` and `2.00` where it is `+6.0 dB`.
+    //   fm      the ±Hz a full-scale modulator buys. `off` at the shipped depth.
+    //   sync    the comparator's state through the DSP's own ±0.5 thresholds.
+    hero: {
+      control: 'range',
+      readouts: [
+        { label: 'pitch', valueId: 'moog921b-pitch' },
+        { label: 'offset', valueId: 'moog921b-offset' },
+        { label: 'out', valueId: 'moog921b-out' },
+        { label: 'fm', valueId: 'moog921b-fm' },
+        { label: 'sync', valueId: 'moog921b-sync' },
+      ],
+    },
+  },
+
   docs: {
     explanation:
-      "A clean-room recreation of the Moog 921B Oscillator — the slaved (sound-making) half of the System 55/35 two-part oscillator. It has NO 1V/oct jack of its own: its pitch comes from a 921A driver's FREQ BUS, so several 921Bs sharing one 921A play in unison and you tune the whole bank from the driver. Off one core it presents four fixed-level simultaneous waveform outputs — sine, triangle, saw, rectangular — across ~1 Hz to 40 kHz, with two linear-FM inputs (a DC-coupled and an AC/cap-coupled one) and a hard/soft sync input. The FREQ (fine) and RANGE (octave footage) knobs offset its pitch relative to the bus, so each 921B in a bank can be detuned or octave-shifted off the shared pitch. Mental model: a 921 VCO whose pitch is fed by the bus instead of a knob, built for stacked unison/detune voices.",
+      "A clean-room recreation of the Moog 921B Oscillator — the slaved (sound-making) half of the System 55/35 two-part oscillator. It has NO 1V/oct jack of its own: its pitch comes from a 921A driver's FREQ BUS, so several 921Bs sharing one 921A play in unison and you tune the whole bank from the driver. Off one core it presents four fixed-level simultaneous waveform outputs — sine, triangle, saw, rectangular — across ~1 Hz to 40 kHz, with two linear-FM inputs (a DC-coupled and an AC/cap-coupled one) and a hard/soft sync input. The FREQ (fine) and RANGE (octave footage) knobs offset its pitch relative to the bus, so each 921B in a bank can be detuned or octave-shifted off the shared pitch. Mental model: a 921 VCO whose pitch is fed by the bus instead of a knob, built for stacked unison/detune voices. WHAT IT SINGS IS A SUM OF TWO PANELS AND NEITHER ONE CAN SHOW YOU THE ANSWER: 261.626 Hz x 2^(bus volts + range + fine/12), where the bus volts come from the 921A's FREQUENCY pot times its RANGE compass and this module contributes only the offset. Its faceplate prints that offset in octaves and the pitch it would sing with the bus at rest; the driver's faceplate prints the volts it is sending; the two terms add. Everything else on this panel is asleep as delivered — FM ships at 0, so both linear-FM jacks are silent until it is raised, and SYNC ships OFF — which is why the faceplate prints their state rather than their dial position.",
     inputs: {
       freq_bus:
         "1V/oct pitch CV from a 921A driver's freq bus (0 = C4) — this is how the 921B gets its pitch. Patch the driver's FREQ BUS output here; the FREQ + RANGE knobs offset on top of it.",
       width_bus:
-        "Pulse-width CV from a 921A driver's width bus; sets the rectangular output's duty cycle. Unpatched it normals to 0.5 (a 50% square).",
+        "Pulse-width CV from a 921A driver's width bus; sets the rectangular output's duty cycle (the sine, triangle and saw taps ignore it). It normals to 0.5 — a 50% square — and the normal is decided by the VALUE on the cable rather than by whether a cable is there: anything at or below 0.02 is treated as 'nothing patched'. So a fully patched driver sitting at its WIDTH minimum gets the same 50% square as no cable at all, and the duty jumps straight from 50% to 2% just above that. See issue #1791.",
       dc_mod:
         "DC-coupled linear FM input: added to the frequency in Hz and scaled by the FM knob. Because it is DC-coupled, a steady offset here shifts the pitch (good for envelope-to-pitch), and audio here gives linear FM.",
       ac_mod:
@@ -97,17 +211,17 @@ export const moog921bDef: AudioModuleDef = {
         "External sync source: each rising edge resets (hard) or nudges (soft) the oscillator's phase per the SYNC switch, locking it to the incoming signal for hard-sync sweeps.",
     },
     outputs: {
-      sine: "The pure sine tap (fixed level), the fundamental with no harmonics.",
+      sine: "The pure sine tap (fixed level), the fundamental with no harmonics. It is also the tap the faceplate's live glyph traces — the shell binds to the FIRST audio output a module declares, so the little waveform on the tile is the sine and never the saw, triangle or rect.",
       triangle: "The triangle tap (fixed level) — soft and hollow, gentler than the saw.",
       saw: "The band-limited sawtooth tap (fixed level) — the brightest, all-harmonics waveform.",
       rect: "The rectangular / pulse tap (fixed level); its duty cycle follows the width bus (50% when unpatched).",
     },
     controls: {
-      fine: "FREQ — a ±12-semitone (2-octave) fine tuning offset applied on top of the bus pitch, for detuning this 921B against others in the bank.",
-      range: "RANGE — octave footage, a discrete ±5-octave coarse offset on top of the bus pitch, to stack a 921B an octave (or several) above/below its siblings.",
-      modAmount: "FM — linear-FM depth, ±1, shared by both the DC and AC modulate inputs; at 0 both FM jacks are silent.",
-      syncMode: "SYNC switch: -1 = soft sync (a gentle phase nudge), 0 = off, +1 = hard sync (a full phase reset on each edge of the sync input).",
-      level: "Output gain on every waveform tap, 0 to 2 (1 = unity) — the 921B's built-in VCA.",
+      fine: "FREQ — a ±12-semitone (2-octave) fine tuning offset applied on top of the bus pitch, for detuning this 921B against others in the bank. ±1200 cents, five times less reach than RANGE.",
+      range: "RANGE — octave footage, a discrete ±5-octave coarse offset on top of the bus pitch, to stack a 921B an octave (or several) above/below its siblings. ±6000 cents: the largest authority on the module, which is why the faceplate promotes it. RANGE and FREQ land in the SAME exponent as the pitch bus, so the pitch this module sings is 261.626 Hz x 2^(bus volts + range + fine/12) — the faceplate's `pitch` readout is that expression with the bus at rest, and `offset` is the term this module contributes to it.",
+      modAmount: "FM — linear-FM depth, ±1, shared by both the DC and AC modulate inputs. At the shipped 0 BOTH FM jacks are bit-exactly silent, so patching one changes nothing until this is turned up; the faceplate's `fm` readout prints `off` there and the ±Hz swing a full-scale modulator buys otherwise.",
+      syncMode: "SYNC switch: LO = soft sync (a gentle phase nudge), OFF = the sync input is ignored, HI = hard sync (a full phase reset on each rising edge of the sync input). It is a three-position switch rather than a dial — the DSP compares against ±0.5, so there is nothing between the detents.",
+      level: "Output gain on every waveform tap, 0 to 2 (1 = unity) — the 921B's built-in VCA. It is a LINEAR multiplier, so its own value reads 1.00 at unity where the faceplate's `out` readout says 0.0 dB, and 2.00 at the top where that is +6.0 dB.",
     },
   },
 

@@ -90,6 +90,8 @@ import { macrooscillatorDef } from '$lib/audio/modules/macrooscillator';
 import { marblesDef } from '$lib/audio/modules/marbles';
 import { moog907aDef } from '$lib/audio/modules/moog907a';
 import { moog914Def } from '$lib/audio/modules/moog914';
+import { moog921aDef } from '$lib/audio/modules/moog921a';
+import { moog921bDef } from '$lib/audio/modules/moog921b';
 import { unityscalemathematikDef } from '$lib/audio/modules/unityscalemathematik';
 import { featurecvDef } from '$lib/audio/modules/featurecv';
 import { ninelivesDef } from '$lib/audio/modules/ninelives';
@@ -426,6 +428,38 @@ const RANGE_BOUND_CARDS: Readonly<Record<string, { params: readonly ParamDef[] }
   // unpaid. Predict a baseline move from the RESTING DOM, not from the size of
   // the diff.
   'FeaturecvCard.svelte': featurecvDef,
+  // THE FACEPLATE QUEUE · Q28 (COHORT 4), the Moog 921 oscillator PAIR — a
+  // CV-only driver and the slave it drives, promoted together.
+  //
+  // The 921A is the plain case: five range literals and two curves, all
+  // AGREEING with the def, converted because from the moment it enters
+  // STRICT_FACES the dock renders straight off the `ParamDef` and this card
+  // renders off whatever it typed.
+  //
+  // ⚠ THE 921B IS THE ENTRY THAT PAYS A LEDGERED `OPERATIONAL_DEBT` LINE, and
+  // it is the ResofilterCard case verbatim, one wave later. Its RANGE knob
+  // passed `curve="linear"` against a def declaring `discrete`
+  // (`card-def-debt.ts`), which is genuinely harmless today — `Knob.svelte`
+  // branches on `log`/`exp` alone, so both spellings map identically and the
+  // card's `STRICT_VRT_MODULES` baseline does not move. The clause below is
+  // what refuses to let "currently harmless" sit inside the certified set, and
+  // the ledger entry is deleted rather than re-worded.
+  //
+  // Both are range AND mapping bound, and `units` is bound rather than merely
+  // absent on the 921B — `fine` declares `st` and `range` declares `oct`, and
+  // both now come off the ParamDef instead of being hand-typed beside a `curve`
+  // that disagreed with it. No 921A param declares `units`, so that side is the
+  // same fact stated by omission.
+  //
+  // The two SWITCH ROSTERS went with them: `SEMI`/`OCT` and `OFF`/`LO`/`HI`
+  // lived in private arrays in card markup — a third copy of a vocabulary, of
+  // exactly the kind FilterCard's `const MODES` was — and are now
+  // `ParamDef.options` these cards MAP. (The 921B's button ORDER is still the
+  // card's own, deliberately and with the reason on the line: the roster is in
+  // value order because the dock's Segmented steps through it that way, and
+  // re-ordering the panel would move a strict baseline for nothing.)
+  'Moog921aCard.svelte': moog921aDef,
+  'Moog921bCard.svelte': moog921bDef,
 };
 
 /**
@@ -528,6 +562,15 @@ const MAPPING_BOUND_CARDS: readonly string[] = [
   // surfaces read the same string for the first time — at no pixel cost, since
   // a Knob's readout paints only while dragging or hovering.
   'FeaturecvCard.svelte',
+  // THE FACEPLATE QUEUE · Q28 (COHORT 4), the 921 pair. `curve` is bound on
+  // both, and on the 921B that is a PAYMENT rather than a tidy — see the
+  // RANGE_BOUND_CARDS note. `units` is bound rather than merely absent on the
+  // 921B (`st` on `fine`, `oct` on `range`, neither of which the card printed
+  // before); on the 921A no param declares one and the card passes
+  // `P.<id>.units`, which resolves to `undefined` — the same fact as an
+  // omission, but stated.
+  'Moog921aCard.svelte',
+  'Moog921bCard.svelte',
 ];
 
 /**
