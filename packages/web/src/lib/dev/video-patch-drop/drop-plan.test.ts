@@ -16,6 +16,9 @@ import {
   invertDirection,
   findRepair,
   videoPortsOf,
+  dropRefusal,
+  dropEdgeKey,
+  DROP_REFUSAL_TEXT,
   type DropDefLike,
 } from './drop-plan';
 
@@ -38,18 +41,19 @@ describe("scene 1 — the owner's example", () => {
     expect(plan.carried).toMatchObject({ portId: 'out', cable: 'video' });
   });
 
-  it('offers every video input and refuses none', () => {
-    expect(plan.rows.map((r) => r.portId)).toEqual(['in_a', 'in_b', 'lighten', 'darken']);
-    expect(plan.rows.filter((r) => r.state !== 'offered')).toEqual([]);
+  it('offers exactly the inputs that take the carried cable', () => {
+    const offered = plan.rows.filter((r) => r.state === 'offered');
+    expect(offered.map((r) => r.portId)).toEqual(['in_a', 'in_b', 'lighten', 'darken']);
   });
 
-  it('states what the video filter hid instead of hiding it silently', () => {
-    // Derived from the def, not typed: shown + hidden must account for every
-    // declared input, which is the property that makes the disclosure honest.
-    const declared = (backdraft.inputs ?? []).length;
-    const { shownInputs, hiddenCvInputs, hiddenOtherInputs } = plan.subset;
-    expect(shownInputs + hiddenCvInputs + hiddenOtherInputs).toBe(declared);
-    expect(hiddenCvInputs).toBeGreaterThan(0);
+  it('KEEPS the rest as refused rows rather than filtering them away', () => {
+    // The round-2 change. These 29 cv inputs used to be removed by a domain
+    // filter and reported only as a number, next to a `disabled` "show all" —
+    // so the count was the ONLY thing a user could ever learn about them.
+    const refused = plan.rows.filter((r) => r.state === 'refused');
+    expect(refused.length).toBeGreaterThan(0);
+    expect(new Set(refused.map((r) => r.cable))).toEqual(new Set(['cv']));
+    expect(refused.every((r) => r.reason === 'different-domain')).toBe(true);
   });
 });
 
@@ -61,12 +65,19 @@ describe('scene 2 — the inverted direction is legitimately empty', () => {
     expect(plan.into.label).toBe('camera');
   });
 
-  it('yields no rows, because camera declares no video inputs', () => {
+  it('offers nothing, because camera declares no input that takes video', () => {
     expect(videoPortsOf(camera, 'inputs')).toEqual([]);
-    expect(plan.rows).toEqual([]);
+    expect(plan.rows.filter((r) => r.state === 'offered')).toEqual([]);
     // …and the carry still exists, so the modal has something to say rather
     // than nothing to show.
     expect(plan.carried).toMatchObject({ portId: 'out' });
+  });
+
+  it("still LISTS camera's inputs, so 'may not' is distinguishable from 'none'", () => {
+    // The whole point of the collapse: an empty offered list next to a
+    // "2 not compatible" summary is a different sentence from an empty panel.
+    expect(plan.rows.length).toBe((camera.inputs ?? []).length);
+    expect(plan.rows.every((r) => r.state === 'refused')).toBe(true);
   });
 });
 
@@ -94,8 +105,10 @@ describe('scene 4 — the typing rule', () => {
       carriedPortId: 'mono_out',
     });
     expect(plan.carried).toMatchObject({ portId: 'mono_out', cable: 'mono-video' });
-    expect(plan.rows.filter((r) => r.state !== 'offered')).toEqual([]);
-    expect(plan.rows.length).toBeGreaterThan(0); // vacuity guard
+    // Every VIDEO-typed input takes it; nothing is refused on a lattice axis.
+    const videoRows = plan.rows.filter((r) => r.cable !== 'cv');
+    expect(videoRows.filter((r) => r.state !== 'offered')).toEqual([]);
+    expect(videoRows.length).toBeGreaterThan(0); // vacuity guard
   });
 
   it('colour out is REFUSED by a mono in, and says which axis failed', () => {
@@ -155,21 +168,91 @@ describe('scene 5 — the subset is reported, not just applied', () => {
     // The rail shows the first 4 outputs in declaration order whatever the
     // count; a modal built on the rear model must not inherit that cut.
     const plan = buildDropPlan(A(com), B(camera), 'upstream');
-    expect(plan.subset.totalOutputs).toBe((com.outputs ?? []).length);
-    expect(plan.carriable.length).toBe(plan.subset.totalOutputs); // every out is video-typed
+    expect(plan.census.declaredOutputs).toBe((com.outputs ?? []).length);
+    expect(plan.carriable.length).toBe(plan.census.declaredOutputs);
     expect(plan.carriable.length).toBeGreaterThan(4);
   });
 
-  it('the video filter keeps exactly the video-typed ports', () => {
-    const vids = videoPortsOf(backdraft, 'inputs');
-    const nonVideo = vids.filter(
-      (p) => !['keys', 'image', 'mono-video', 'video'].includes(p.type),
-    );
-    expect(nonVideo).toEqual([]);
-    const dropped = (backdraft.inputs ?? []).filter((p) => !vids.includes(p));
-    expect(dropped.every((p) => !['keys', 'image', 'mono-video', 'video'].includes(p.type))).toBe(
-      true,
-    );
+  it('splits outputs by whether they REACH, instead of by domain', () => {
+    // Carrying from colour-of-magic into camera: camera takes no video at all,
+    // so every one of COM's outputs is live-but-useless HERE. That is a
+    // different sentence from "refused" and gets its own group.
+    const plan = buildDropPlan(A(com), B(camera), 'upstream');
+    expect(plan.census.reachingOutputs).toBe(0);
+    expect(plan.carriable.every((c) => !c.reaches)).toBe(true);
+
+    // …and into backdraft, whose ins are `video`, every one of them reaches.
+    const live = buildDropPlan(A(com), B(backdraft), 'upstream');
+    expect(live.census.reachingOutputs).toBe(live.carriable.length);
+    expect(live.census.reachingOutputs).toBeGreaterThan(0); // vacuity guard
+  });
+});
+
+describe('THE COLLAPSE INVARIANT — nothing is ever silently absent', () => {
+  // The property that makes a collapsed summary honest rather than a second
+  // hiding place. Asserted over EVERY ordered pair of the real defs and BOTH
+  // directions, so it is a statement about the model and not about the scenes
+  // that happen to be rendered today.
+  const ALL: [string, DropDefLike][] = [
+    ['backdraft', backdraft],
+    ['camera', camera],
+    ['colorizer', colorizer],
+    ['colourofmagic', com],
+    ['edges', edges],
+    ['peakstate', peakstate],
+  ];
+
+  it('every declared input lands in exactly one group, for every pair', () => {
+    const broken: string[] = [];
+    let sawRefusals = 0;
+    for (const [ka, a] of ALL) {
+      for (const [kb, b] of ALL) {
+        for (const dir of ['downstream', 'upstream'] as const) {
+          const p = buildDropPlan(A(a), B(b), dir);
+          const { declaredInputs, offeredInputs, refusedInputs } = p.census;
+          if (offeredInputs + refusedInputs !== declaredInputs) {
+            broken.push(`${ka}->${kb} ${dir}: ${offeredInputs}+${refusedInputs}≠${declaredInputs}`);
+          }
+          if (p.rows.length !== declaredInputs) {
+            broken.push(`${ka}->${kb} ${dir}: rows ${p.rows.length}≠${declaredInputs}`);
+          }
+          sawRefusals += refusedInputs;
+        }
+      }
+    }
+    expect(broken).toEqual([]);
+    // ⚠ VACUITY GUARD. The identity above holds trivially if nothing is ever
+    // refused, which is exactly the state the pre-collapse filter produced.
+    expect(sawRefusals).toBeGreaterThan(0);
+  });
+
+  it('every refused row carries a reason with real text', () => {
+    const mute: string[] = [];
+    for (const [ka, a] of ALL) {
+      for (const [kb, b] of ALL) {
+        const p = buildDropPlan(A(a), B(b), 'downstream');
+        for (const r of p.rows.filter((x) => x.state === 'refused')) {
+          if (!r.reason || !DROP_REFUSAL_TEXT[r.reason]) mute.push(`${ka}->${kb}.${r.portId}`);
+        }
+      }
+    }
+    expect(mute).toEqual([]);
+  });
+});
+
+describe('dropRefusal — the fourth case the lattice deliberately does not own', () => {
+  it('names the axis inside the lattice', () => {
+    expect(dropRefusal('video', 'mono-video')).toBe('colour-into-mono');
+    expect(dropRefusal('video', 'image')).toBe('motion-into-still');
+    expect(dropRefusal('video', 'keys')).toBe('colour-and-motion');
+  });
+
+  it('reports a cross-domain refusal instead of returning undefined into the UI', () => {
+    // A `video` cable at a `cv` jack is not an axis failure — it is a
+    // different domain, and the lattice returns undefined for it by design.
+    expect(dropRefusal('video', 'cv')).toBe('different-domain');
+    expect(dropRefusal('cv', 'video')).toBe('different-domain');
+    expect(DROP_REFUSAL_TEXT['different-domain'].length).toBeGreaterThan(20);
   });
 });
 

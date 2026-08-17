@@ -25,6 +25,7 @@
   import { onMount } from 'svelte';
   import { testHooksEnabled } from '$lib/dev/test-hooks';
   import DropPatchModal from '$lib/dev/video-patch-drop/DropPatchModal.svelte';
+  import DropSandbox from '$lib/dev/video-patch-drop/DropSandbox.svelte';
   import { buildDropPlan, type DropDefLike } from '$lib/dev/video-patch-drop/drop-plan';
 
   // REAL defs, imported directly rather than through the registry so a scene
@@ -66,14 +67,21 @@
     { nodeId: 'camera-1', def: defs.camera },
     'downstream',
   );
-  const cameraSubset = backdraftOnCamera.subset;
+  const cameraCensus = backdraftOnCamera.census;
   const comOuts = (defs.colourofmagic.outputs ?? []).length;
-  const comVideoOuts = buildDropPlan(
-    { nodeId: 'x', def: defs.backdraft },
-    { nodeId: 'com-1', def: defs.colourofmagic },
-    'upstream',
-  ).carriable.length;
   const RAIL_DOT_CAP = 4; // mirrors PatchPanel's lane-rail preview cap
+
+  /** The live sandbox's starting layout. Spread far enough apart that NO pair
+   *  starts overlapping — the first overlap on the page is one the reviewer
+   *  made. */
+  const sandboxSeed = [
+    { id: 'camera-1', label: 'camera', def: defs.camera, x: 0, y: 0 },
+    { id: 'backdraft-1', label: 'backdraft', def: defs.backdraft, x: 300, y: 20 },
+    { id: 'colorizer-1', label: 'colorizer', def: defs.colorizer, x: 300, y: 200 },
+    { id: 'com-1', label: 'colour of magic', def: defs.colourofmagic, x: 610, y: 20 },
+    { id: 'edges-1', label: 'edges', def: defs.edges, x: 610, y: 200 },
+    { id: 'peakstate-1', label: 'peakstate', def: defs.peakstate, x: 0, y: 200 },
+  ];
 </script>
 
 <svelte:head><title>video patch-drop — mocks</title></svelte:head>
@@ -97,6 +105,77 @@
       </p>
     </header>
 
+    <!-- 0 ─── THE WORKING GESTURE ──────────────────────────────────────── -->
+    <section class="scene" data-testid="scene-sandbox">
+      <div class="scene-head">
+        <h2><span class="n">0</span> the gesture, working</h2>
+        <p>
+          Pick up a card and drop it so its <b>centre</b> lands on another one. The modal opens on
+          the real defs; click rows to stage them, <kbd>enter</kbd> to patch,
+          <kbd>tab</kbd> to invert, <kbd>esc</kbd> to cancel. A committed set is
+          <b>one</b> <kbd>⌘Z</kbd>. The dragged card <b>snaps back</b> — see below for why that one
+          is not cosmetic.
+        </p>
+        <p>
+          The strip above the canvas is the <b>decision, live</b>: while you drag it prints the
+          overlap area, the coverage, and whether the gate has passed, for the top three candidates.
+          A row reading <code>1200 px² · centre outside</code> is precisely the case xyflow's own
+          <code>getIntersectingNodes</code> default would have claimed as a drop.
+        </p>
+      </div>
+      <DropSandbox seed={sandboxSeed} {repairCandidates} />
+
+      <div class="callout" data-testid="drag-decisions">
+        <h3>the four decisions the library does not make</h3>
+        <p>
+          <b>1 · which node wins.</b> Ranked by <b>coverage</b> = overlap ÷ area of the
+          <i>smaller</i> rect. Raw overlap area favours big candidates (clipping a tall card beats
+          being centred on a short one); normalising by the dragged card alone breaks
+          "drop a big card onto a small one"; normalising by the candidate alone breaks the mirror
+          case. <code>min</code> is the only denominator that scores <i>both</i> full-containment
+          cases 1.0. Nearest-centre and topmost-z were rejected — the first has the same asymmetry,
+          the second is drag order, which is not something the user is looking at.
+        </p>
+        <p>
+          <b>2 · what overlap counts.</b> The dragged card's <b>centre</b> must be inside the
+          candidate. Two measurements, not a guess. (a) xyflow's default is
+          <code>partially = true</code>, implemented as <code>overlappingArea &gt; 0</code> —
+          <b>one square pixel</b>. Cards here do not merely brush: <code>findFreeRackSlot</code>
+          resolves a collision by sliding a card in <b>22.5 px</b> HP steps, which on a one-U card is
+          <b>4 050 px²</b> of overlap. A rule that fires at 1 px² fires on every reshuffle the app
+          performs on its own. (b) The app already answered this question the same way —
+          lane membership hit-tests the card's <b>centre</b>, with a comment recording that a
+          top-edge probe "would unassign it on a 1px nudge". Using the same rule means the drop
+          gesture and lane membership cannot disagree about "am I on it".
+        </p>
+        <p class="warn">
+          ⚠ <b>3 · the card snaps back — and this is the one with teeth.</b> In the shipped handler
+          <b>position decides lane membership</b>: <code>handleNodeDragStop</code> hit-tests the
+          dropped centre against the lane bands and rewrites <code>data.channel</code> /
+          <code>data.sendSlot</code> from the result. A modal-opening drop that left the card where
+          it landed would therefore <i>silently reparent it into whatever lane it was over</i> — a
+          second effect nobody asked for. Restoring the pre-drag position first makes that
+          impossible <b>by construction</b>: there is no new position for a reparent to be derived
+          from, so the membership pass reaches exactly the conclusion it would have reached had the
+          drag never happened. It is not a guard anyone has to remember.
+        </p>
+        <p>
+          Snap-back happens <i>before</i> the modal exists, so no dismissal path — esc, click-away,
+          a crash — can strand the card. And when <b>no</b> target is claimed the handler returns
+          before touching a position at all, so an ordinary move is bit-for-bit the drag xyflow
+          already performed. For the case where you really did mean to move it there, the modal
+          offers an explicit <b>leave it there</b> — labelled, and never the default.
+        </p>
+        <p>
+          <b>4 · commit and undo.</b> Rows <b>stage</b>; <kbd>enter</kbd> commits the staged set in
+          one go; one <kbd>⌘Z</kbd> removes that whole set. The unit is the <i>session</i>, not the
+          click, because a half-applied patch set is the failure mode — the same atomic-apply
+          requirement the randomizer has. Staging buys it with no undo-grouping trick: by the time
+          anything is written the full set is already known.
+        </p>
+      </div>
+    </section>
+
     <!-- 1 ─────────────────────────────────────────────────────────────── -->
     <section class="scene" data-testid="scene-default">
       <div class="scene-head">
@@ -104,8 +183,10 @@
         <p>
           The owner's example: drop <b>backdraft</b> onto <b>camera</b>. The dropped module lands
           <i>downstream</i>, so camera's out feeds backdraft's ins — all
-          {cameraSubset.shownInputs} of them, offered at once. That is the whole point: this patch
-          currently costs a drill-down per cable.
+          {cameraCensus.offeredInputs} of them, offered at once. That is the whole point: this patch
+          currently costs a drill-down per cable. The other
+          {cameraCensus.refusedInputs} declared inputs are behind the
+          <b>"{cameraCensus.refusedInputs} not compatible"</b> row — collapsed, but there.
         </p>
       </div>
       <p class="live-note">
@@ -264,7 +345,7 @@
           <b>on a port-heavy module the outs are the first thing to vanish entirely</b>.
           <b>colour of magic</b> declares <b>{comOuts}</b> outputs and the rail can show
           {RAIL_DOT_CAP}. Which {RAIL_DOT_CAP} is decided by <i>declaration order</i>, not by
-          usefulness — its {comOuts - comVideoOuts + comVideoOuts - 6} mono channel taps
+          usefulness — its mono channel taps
           (<code>LUMA</code>, <code>R</code>, <code>G</code>, <code>B</code> …) all sit past the cap.
         </p>
         <p>
@@ -274,17 +355,30 @@
           construction. The panels below are exactly that.
         </p>
 
-        <h3>(b) the deliberate filter — video ports only</h3>
+        <h3>(b) the deliberate filter — REPLACED, in this round, by the collapse</h3>
         <p>
-          The owner's "we only need to consider video ins and outs" is a filter this modal
-          <i>should</i> apply: it is what turns backdraft's <b>33</b> inputs into the
-          <b>{cameraSubset.shownInputs}</b> that matter for a video drop. But a filter that hides
-          silently re-creates the problem it solved, so every scene above <b>states its own
-          omission</b> — "{cameraSubset.hiddenCvInputs} cv hidden" — and offers to drop it.
-          ⚠ Those CV inputs are not decorative: <code>canConnect('cv', &lt;any video type&gt;)</code>
-          is <code>true</code>, so a CV out really can reach a video-typed in. "Video ports" and
-          "ports that can carry this patch" are different sets, and the modal must not conflate
-          them.
+          The owner's "we only need to consider video ins and outs" was implemented last round as a
+          <b>domain filter</b>. It has been removed, and the reason is a measurement: across every
+          ordered pair of these six modules the <i>refused-row</i> count peaks at <b>one</b>. The
+          large data the owner was worried about was never the refusals — it was what the filter was
+          hiding. Dropping onto backdraft showed {cameraCensus.offeredInputs} inputs and silently
+          dropped {cameraCensus.refusedInputs}; and the <b>"show all"</b> button offered beside that
+          sentence was <code>disabled</code>, so the count was the only thing you could ever learn.
+        </p>
+        <p>
+          So the partition is now <b>by the compatibility predicate itself</b> — the question the
+          user is actually asking. Compatible inputs are shown; everything else collapses behind
+          <b>"{cameraCensus.refusedInputs} not compatible"</b>, expandable, each row still carrying
+          its reason. In effect this <i>is</i> the owner's filter — carrying a video cable, the
+          compatible inputs are the video-ish ones, so the default view is the same short list — but
+          the omission is recoverable instead of terminal.
+        </p>
+        <p class="warn">
+          ⚠ It also fixes a conflation the last round flagged in its own prose and then shipped
+          anyway. <code>canConnect('cv', &lt;any video type&gt;)</code> is <code>true</code>, so
+          "video ports" and "ports that can carry this patch" are <i>different sets</i> — and a
+          DOMAIN filter gets that wrong in both directions. A compatibility partition cannot, because
+          it is the predicate.
         </p>
       </div>
 
@@ -332,21 +426,37 @@
           survives intact: at every level Tab means <i>show me the reverse side</i> — the back of a
           card, or the other direction of a patch.
         </p>
-        <p class="warn">
-          ⚠ <b>The finding.</b> Each owner's guard is written independently and names the others by
-          hand (the canvas hard-codes <code>fullViewNodeIds.length === 0</code>). Adding a third
-          means editing every existing guard, and <b>nothing fails loudly if you forget</b> — the
-          symptom is two handlers firing on one keystroke and two flip states phase-diverging, which
-          is a bug this codebase has already had once and fixed by hand. Before adding an owner,
-          replace the pairwise guards with one <code>flipKeyOwner()</code> resolver that returns the
-          innermost claimant, so a new surface <i>registers</i> instead of every existing surface
-          learning about it.
+        <p>
+          <b>The finding from last round is now FIXED, not written down.</b> Each owner's guard used
+          to name the others by hand — the dock read
+          <code>fullViewNodeIds.length &gt; 0</code> and the canvas hard-coded the exact complement
+          <code>=== 0</code>. Correct for two owners; silently wrong for three, because the new
+          surface had to be added to <i>every</i> existing guard and <b>nothing fails loudly if you
+          forget</b>. The symptom is two handlers on one keystroke and two flip states
+          phase-diverging — a bug this codebase already had once (<code>7e21befe2</code>) and fixed
+          by hand.
+        </p>
+        <p>
+          Precedence now lives in one ordered list, <code>FLIP_KEY_CLAIMANTS</code>
+          (<code>workflow-pins.ts</code>), and a surface <b>registers</b> its occupancy with
+          <code>setFlipKeyOccupancy()</code>. Every guard asks only about itself —
+          <code>flipKeyOwner() === 'canvas'</code> — so the two shipped guards in
+          <code>Canvas.svelte</code> were rewritten to name nobody, and <b>adding this modal
+          required no edit to either of them</b>. The unit test enumerates the whole power set of
+          occupancy states and asserts exactly one claimant sees itself as the owner in each, over
+          the claimant <i>list</i> rather than over the owners that happen to exist today.
         </p>
         <p class="warn">
-          ⚠ Related, and already live: the sequencer cards (<code>SequencerCard</code>,
-          <code>PolyseqzCard</code>, <code>DrumseqzCard</code>, <code>CartesianCard</code>) handle
-          Tab on their step buttons without <code>stopPropagation</code>, so the window flip handler
-          fires on the same keystroke — Tab advances the step <i>and</i> flips the rack.
+          ⚠ <b>Still live, and NOT fixed here.</b> Four sequencer cards
+          (<code>SequencerCard</code>, <code>PolyseqzCard</code>, <code>DrumseqzCard</code>,
+          <code>CartesianCard</code>) handle Tab on their step buttons with
+          <b>no <code>stopPropagation</code></b> — grep returns zero in all four files and in
+          <code>NoteEntry.svelte</code>. A gate button is not a typing target, so
+          <code>isTypingTarget</code> does not save it: the window flip handler fires on the same
+          keystroke and <b>Tab advances the step AND flips the rack</b>. The resolver above does not
+          help — this is not an arbitration bug, it is a propagation bug, and its fix belongs in
+          those four cards with its own issue. Left alone deliberately rather than folded into a
+          design PR.
         </p>
       </div>
 
@@ -387,20 +497,49 @@
       </div>
 
       <div class="callout" data-testid="not-captured">
-        <h3>what these mocks do NOT capture</h3>
+        <h3>⚠ what is still NOT real — read this before poking at scene 0</h3>
+        <p>
+          The gesture works. It works <b>in this sandbox</b>, on a private canvas, against a local
+          edge list. Everything below is a real gap, stated plainly because scene 0 invites you to
+          expect otherwise.
+        </p>
         <ul>
           <li>
-            <b>The drag itself.</b> No card-onto-card drag exists in the app — the only node-drag
-            handler is <code>onnodedragstop</code>, used for workflow-lane membership. The nearest
-            precedent is the <i>cable</i> drop-on-card
-            (<code>hoveredCardNodeId</code> → <code>openDrillDownForCarry</code>). Hit-testing,
-            the drop-shadow/hover affordance, what happens when you drop on empty canvas, and how
-            this interacts with lane membership on <code>onnodedragstop</code> are all undesigned.
+            <b>It is not wired into the rack.</b> Deliberate — the scope on this PR is a working
+            interaction to review, not a shipped feature. <code>Canvas.svelte</code>'s
+            <code>handleNodeDragStop</code> is <b>untouched</b>. See the adoption note below for
+            exactly what turning it on would take.
           </li>
           <li>
-            <b>Commit.</b> Rows show a <code>patched</code> state but nothing writes an edge.
-            Undo grouping (is a modal session one undo step?), overwrite of an occupied input, and
-            the destructive-overwrite warning the cascade already shows are not modelled.
+            <b>The cards are stand-ins.</b> <code>SandboxFace</code> draws port dots from the def;
+            it is not <code>PatchPanel</code>. The DRAG, the GEOMETRY and the DEF are real; the
+            pixels of the card are not, so this tells you nothing about how the gesture feels
+            against a real faceplate at real size.
+          </li>
+          <li>
+            <b>Undo is a local stack, not the Y.Doc UndoManager.</b> The SHAPE is right — one modal
+            session is one entry — but adopting it means one
+            <code>ydoc.transact(fn, LOCAL_ORIGIN)</code> around the committed set.
+            <b>Redo is not implemented at all</b> (Shift-⌘Z does nothing).
+          </li>
+          <li>
+            <b>Committing does not create a real patch.</b> An edge is pushed to the sandbox's own
+            list and drawn. Nothing calls the graph mutators, no engine node is connected, and
+            <b>overwrite of an already-occupied input is not modelled</b> — neither is the
+            destructive-overwrite warning the shipped cascade shows.
+          </li>
+          <li>
+            <b>No hover affordance during the drag.</b> The HUD tells you the numbers, but the
+            candidate card does not highlight, and there is no drop shadow. That is the single
+            biggest thing between this and something that feels finished.
+          </li>
+          <li>
+            <b>Multi-select drags are ignored</b> (fall through as an ordinary move). "Which of
+            these did you mean" has no answer, so no answer is invented.
+          </li>
+          <li>
+            <b>Touch and pen are untested.</b> The threshold is centre-containment, which has no
+            pointer dependence, but nothing was tried on a touch device.
           </li>
           <li>
             <b>More than one carried out at a time.</b> The modal carries one output; a 4-in / 4-out
@@ -434,6 +573,52 @@
             with its own row list without anything complaining.
           </li>
           <li><b>Responsive / small-viewport layout, and the light theme.</b></li>
+        </ul>
+      </div>
+
+      <div class="callout" data-testid="adoption">
+        <h3>what adopting it into the rack would take</h3>
+        <p>
+          The seam was kept narrow on purpose: the decision is a <b>pure function over rects</b>
+          (<code>pickDropTarget</code>), so nothing about it is coupled to the sandbox. Adoption is
+          a move, not a rewrite:
+        </p>
+        <ul>
+          <li>
+            <b>One call at the top of <code>handleNodeDragStop</code>.</b> Build the dragged rect
+            from the payload's <code>n.position</code> plus <code>nodeFootprintPx(n.id)</code>
+            (mirroring <code>recomputeLassoHits</code>), call <code>pickDropTarget</code> against
+            <code>flowApi.getNodes()</code>. ⚠ Build a <b>Rect</b> — do not pass a node or an id.
+            <code>getIntersectingNodes</code> resolves ids through <code>store.nodeLookup</code>,
+            i.e. the <i>committed</i> position, while the lane hit-test three lines below reads the
+            <i>payload</i> position, and both e2e drivers for that seam deliberately pass synthetic
+            positions that differ from the store. Resolving by id would silently disagree with lane
+            membership under exactly the tests that pin lane membership.
+          </li>
+          <li>
+            <b>On a claim: rewrite <code>n.position</code> to the pre-drag value and let the rest of
+            the handler run unchanged.</b> Not an early return — falling through means the
+            membership pass, the <code>topNodeId</code> clear and the position write all compute
+            from the original coordinates, so they reach exactly what they would have with no drag.
+            That is the whole non-interference argument, and it needs no new branch in the
+            membership block.
+          </li>
+          <li>
+            <b>Pre-drag position needs capturing.</b> Canvas wires no
+            <code>onnodedragstart</code> today; the sandbox uses one. Alternatively read it back
+            from <code>patch.nodes[id].position</code> before the write — but ⚠ <b>not</b> for a
+            lane member, whose position is derived from its order index rather than stored.
+          </li>
+          <li>
+            <b>Commit through the graph mutators inside one
+            <code>ydoc.transact(fn, LOCAL_ORIGIN)</code></b>, which gives the session-is-one-undo
+            property for free from the existing UndoManager.
+          </li>
+          <li>
+            <b>Tab needs nothing.</b> The modal already registers through
+            <code>setFlipKeyOccupancy('drop-modal', …)</code> and the claimant list already names
+            it, innermost. That work landed in this PR.
+          </li>
         </ul>
       </div>
     </section>

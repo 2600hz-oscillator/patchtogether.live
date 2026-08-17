@@ -397,6 +397,8 @@
     isTypingTarget,
     isRackFlipKey,
     RACK_FLIP_KEY,
+    flipKeyOwner,
+    setFlipKeyOccupancy,
   } from '$lib/graph/workflow-pins';
   import { removePatchNode } from '$lib/graph/mutate';
   import { goto } from '$app/navigation';
@@ -1601,7 +1603,13 @@
         // Tab-as-flip is an OWNER RULING (#1629): the flip gesture outranks
         // native focus traversal in this app (the #1508→#1599 rebind to `f`
         // was reversed). Shift-Tab and Tab inside typing targets stay native.
-        if (dockStore.fullViewNodeIds.length > 0) {
+        //
+        // The guard names ONLY ITSELF. Precedence lives in FLIP_KEY_CLAIMANTS
+        // (workflow-pins.ts); this used to read `fullViewNodeIds.length > 0`
+        // with the canvas owner hard-coding the exact complement, which meant
+        // a third claimant had to edit both — with nothing failing if it
+        // didn't. Occupancy for this claimant is registered below.
+        if (flipKeyOwner() === 'dock-full-view') {
           e.preventDefault();
           dockStore.toggleFullViewFlipped();
         }
@@ -1635,6 +1643,14 @@
     window.addEventListener('keydown', onDockKey);
     return () => window.removeEventListener('keydown', onDockKey);
   });
+
+  // FLIP-KEY OCCUPANCY for the dock claimant. The predicate is read at
+  // keystroke time (never cached), so this registers once and the live
+  // full-view list answers. Deregistering on teardown is the invariant that
+  // keeps a gone surface from swallowing the key — see setFlipKeyOccupancy.
+  $effect(() =>
+    setFlipKeyOccupancy('dock-full-view', () => dockStore.fullViewNodeIds.length > 0),
+  );
 
   // The workflow viewport-pan animation duration (ms) — shared by the nav keys,
   // the on-add camera reveal, and the on-load lane framing.
@@ -8062,7 +8078,12 @@
       // inverted). Guarding on occupancy (not event ordering) makes exactly one
       // handler act per keystroke, whichever listener happens to be registered
       // first. With the full-view CLOSED, the canvas-wide flip is the owner.
-      return dockStore.fullViewNodeIds.length === 0;
+      //
+      // `canvas` is the FLOOR of FLIP_KEY_CLAIMANTS (workflow-pins.ts): it owns
+      // the key whenever nothing more specific is occupied. This used to be a
+      // hard-coded complement of the dock's guard above; the resolver replaces
+      // the pair so a third claimant needs no edit here.
+      return flipKeyOwner() === 'canvas';
     }
     function onKey(e: KeyboardEvent) {
       if (shouldIgnore(e.target)) return;

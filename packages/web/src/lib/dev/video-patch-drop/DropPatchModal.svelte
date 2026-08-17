@@ -23,14 +23,22 @@
   import RearCard from '$lib/ui/workflow/RearCard.svelte';
   import { connectDragState } from '$lib/ui/connect-drag-state.svelte';
   import {
+    isRackFlipKey,
+    isTypingTarget,
+    flipKeyOwner,
+    setFlipKeyOccupancy,
+  } from '$lib/graph/workflow-pins';
+  import {
     buildDropPlan,
     invertDirection,
     findRepair,
+    DROP_REFUSAL_TEXT,
+    dropEdgeKey,
     type DropDefLike,
     type DropDirection,
+    type DropEdge,
     type DropSideInput,
   } from './drop-plan';
-  import { REFUSAL_TEXT } from './signal-lattice';
 
   interface Props {
     /** The faceplate the user dragged. */
@@ -45,10 +53,20 @@
      *  builds a patch across TWO Tab states, so committed edges have to survive
      *  the flip or the second half of the loop cannot be seen. */
     committed?: readonly string[];
-    /** Static scenes for capture set this false so no global carry is claimed. */
+    /**
+     * Static scenes for capture set this false so no global carry is claimed.
+     * `live` also gates the KEYBOARD and COMMIT: a live modal is the one the
+     * user is actually in, and there is only ever one.
+     */
     live?: boolean;
     /** Render the TAB hint as pressed — the scene that shows the flip mid-gesture. */
     tabPressed?: boolean;
+    /** Commit the staged set. ONE call per modal session — see the note on
+     *  `stage` below for why the session, not the click, is the unit. */
+    onCommit?: (edges: DropEdge[]) => void;
+    /** Dismiss. `keepPosition` distinguishes "I meant to patch, never mind"
+     *  from "I actually meant to move the card there". */
+    onCancel?: (opts: { keepPosition: boolean }) => void;
   }
 
   let {
@@ -60,6 +78,8 @@
     committed = [],
     live = false,
     tabPressed = false,
+    onCommit,
+    onCancel,
   }: Props = $props();
 
   // The prop is the SCENE's answer; the override is the USER's. Kept as a
@@ -76,9 +96,58 @@
   /** Edge key for the committed set — direction-free, so a 1→2 edge committed
    *  in the default view is still recognised after the flip. */
   const edgeKey = (fromNode: string, outId: string, intoNode: string, inId: string) =>
-    `${fromNode}.${outId}→${intoNode}.${inId}`;
+    dropEdgeKey({ fromNode, fromPort: outId, intoNode, intoPort: inId });
 
   let committedSet = $derived(new Set(committed));
+
+  // ── THE COLLAPSE ─────────────────────────────────────────────────────────
+  // Compatible rows shown; refused rows behind a summary that CARRIES ITS
+  // COUNT. A bare chevron would be indistinguishable from "nothing here",
+  // which is the exact failure the dimmed-not-hidden recommendation exists to
+  // prevent — so the count is not decoration, it is the whole affordance.
+  let offeredRows = $derived(plan.rows.filter((r) => r.state === 'offered'));
+  let refusedRows = $derived(plan.rows.filter((r) => r.state === 'refused'));
+  let deadOuts = $derived(plan.carriable.filter((c) => !c.reaches));
+  let liveOuts = $derived(plan.carriable.filter((c) => c.reaches));
+
+  // ⚠ AUTO-EXPAND WHEN THERE IS NOTHING ELSE TO SHOW. Collapsing the only
+  // content leaves a blank panel, which reads as "this module has no inputs" —
+  // the failure mode again, arrived at from the other direction. So the
+  // disclosure defaults closed EXCEPT when closing it would empty the panel.
+  // Nullable override, not `$state` seeded from a value, so a scene that
+  // re-renders with a different plan still flows through.
+  let refusedOpenOverride = $state<boolean | null>(null);
+  let refusedOpen = $derived(refusedOpenOverride ?? offeredRows.length === 0);
+  let deadOutsOpenOverride = $state<boolean | null>(null);
+  let deadOutsOpen = $derived(deadOutsOpenOverride ?? liveOuts.length === 0);
+
+  // ── STAGING ──────────────────────────────────────────────────────────────
+  // Clicking a row STAGES an edge; Enter commits every staged edge at once.
+  // The unit of undo is the modal SESSION, not the click — a half-applied
+  // patch set is the failure mode, and the same atomic-apply requirement the
+  // randomizer has. Staging is what makes that possible without needing an
+  // undo-transaction grouping trick.
+  let staged = $state<DropEdge[]>([]);
+  let stagedKeys = $derived(new Set(staged.map(dropEdgeKey)));
+
+  function toggleStage(intoPort: string) {
+    if (!live || !plan.carried) return;
+    const e: DropEdge = {
+      fromNode: plan.from.nodeId,
+      fromPort: plan.carried.portId,
+      intoNode: plan.into.nodeId,
+      intoPort,
+    };
+    const k = dropEdgeKey(e);
+    if (committedSet.has(k)) return; // already patched — not re-stageable
+    staged = stagedKeys.has(k) ? staged.filter((s) => dropEdgeKey(s) !== k) : [...staged, e];
+  }
+
+  function commit() {
+    if (!live || staged.length === 0) return;
+    onCommit?.(staged);
+    staged = [];
+  }
 
   // ── THE CARRY ────────────────────────────────────────────────────────────
   // Drive the SHIPPED singleton so RearCard's compat-dim is doing the real
@@ -107,16 +176,45 @@
     carriedOverride = null;
   }
 
-  // ⚠ TAB. This is the third occupancy-guarded owner of the flip key — see the
-  // route's notes. The guard is the SAME shape the two shipped owners use
-  // (act only while this surface is occupied), and the same `isRackFlipKey`
-  // predicate would be imported in a real implementation so the three cannot
-  // drift onto different keys. Modifiers are rejected, so Shift-Tab stays
-  // native traversal exactly as owner ruling #1629 requires.
+  // ── TAB: THE THIRD OWNER, AND WHY IT NEEDS NO EDIT ELSEWHERE ─────────────
+  // The previous round found the hazard and could only write it down: each
+  // flip-key owner's guard hard-coded the others, so a third claimant meant
+  // editing every existing guard with nothing failing if you forgot — and the
+  // symptom is the phase-divergence bug 7e21befe2 already fixed once by hand.
+  //
+  // That is now structural rather than a comment. Precedence lives in ONE
+  // ordered list (`FLIP_KEY_CLAIMANTS`, workflow-pins.ts); this surface
+  // REGISTERS its occupancy and asks only about itself. The two shipped guards
+  // in Canvas.svelte were rewritten the same way and no longer name anybody.
+  //
+  // Three defects from the mock are also fixed here: it re-typed `'Tab'`
+  // instead of importing the shared predicate (they could drift onto different
+  // keys), it had no `isTypingTarget` guard (Tab inside a field would be
+  // eaten), and it never registered at all.
+  $effect(() => {
+    if (!live) return;
+    return setFlipKeyOccupancy('drop-modal', () => true);
+  });
+
   function onKey(e: KeyboardEvent) {
-    if (e.key !== 'Tab' || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
-    e.preventDefault();
-    flip();
+    if (isTypingTarget(e.target)) return;
+    if (isRackFlipKey(e)) {
+      // Ask only about ourselves. Modifiers are already rejected by
+      // isRackFlipKey, so Shift-Tab stays native traversal per ruling #1629.
+      if (flipKeyOwner() !== 'drop-modal') return;
+      e.preventDefault();
+      flip();
+      return;
+    }
+    if (e.key === 'Enter' && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey) {
+      e.preventDefault();
+      commit();
+      return;
+    }
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      onCancel?.({ keepPosition: false });
+    }
   }
 </script>
 
@@ -149,11 +247,11 @@
       </h3>
       {#if plan.carriable.length === 0}
         <p class="dm-empty" data-testid="drop-source-empty">
-          no video outputs — nothing to carry in this direction
+          {plan.from.label} declares no outputs — nothing to carry in this direction
         </p>
       {:else}
         <ul class="dm-outs">
-          {#each plan.carriable as c (c.portId)}
+          {#each liveOuts as c (c.portId)}
             <li>
               <button
                 type="button"
@@ -172,12 +270,47 @@
             </li>
           {/each}
         </ul>
-        {#if plan.subset.hiddenOutputs > 0}
-          <p class="dm-subset" data-testid="drop-source-subset">
-            + {plan.subset.hiddenOutputs} non-video output{plan.subset.hiddenOutputs === 1
-              ? ''
-              : 's'} not shown
-          </p>
+
+        <!-- Outputs that reach NOTHING on the receiving side. Not illegal —
+             just useless for this drop, which is a different sentence and so
+             gets its own group rather than being merged with "refused". -->
+        {#if deadOuts.length > 0}
+          <div class="dm-more" data-testid="drop-source-more" data-open={deadOutsOpen}>
+            <button
+              type="button"
+              class="dm-more-sum"
+              data-testid="drop-source-more-toggle"
+              data-count={deadOuts.length}
+              aria-expanded={deadOutsOpen}
+              onclick={() => (deadOutsOpenOverride = !deadOutsOpen)}
+            >
+              <span class="dm-chev" aria-hidden="true">{deadOutsOpen ? '▾' : '▸'}</span>
+              <span class="dm-more-n">{deadOuts.length}</span>
+              reach nothing on {plan.into.label}
+            </button>
+            {#if deadOutsOpen}
+              <ul class="dm-outs dm-outs-dead">
+                {#each deadOuts as c (c.portId)}
+                  <li>
+                    <button
+                      type="button"
+                      class="dm-out is-dead"
+                      class:is-carried={plan.carried?.portId === c.portId}
+                      data-testid="drop-out"
+                      data-port-id={c.portId}
+                      data-cable={c.cable}
+                      data-reaches="false"
+                      onclick={() => (carriedOverride = c.portId)}
+                    >
+                      <span class="dm-dot" data-cable={c.cable}></span>
+                      <span class="dm-out-label">{c.label}</span>
+                      <span class="dm-cable">{c.cable}</span>
+                    </button>
+                  </li>
+                {/each}
+              </ul>
+            {/if}
+          </div>
         {/if}
       {/if}
     </section>
@@ -188,81 +321,108 @@
         <span class="dm-side-role">in</span>{plan.into.label}
       </h3>
 
+      {#snippet rowItem(row: (typeof plan.rows)[number])}
+        {@const key = plan.carried
+          ? edgeKey(plan.from.nodeId, plan.carried.portId, plan.into.nodeId, row.portId)
+          : ''}
+        {@const isCommitted = committedSet.has(key)}
+        {@const isStaged = stagedKeys.has(key)}
+        {@const repair =
+          row.state === 'refused' && plan.carried
+            ? findRepair(plan.carried.cable, { id: row.portId, type: row.cable }, repairCandidates)
+            : undefined}
+        <li>
+          <button
+            type="button"
+            class="dm-row"
+            class:is-refused={row.state === 'refused'}
+            class:is-committed={isCommitted}
+            class:is-staged={isStaged}
+            disabled={row.state === 'refused' || isCommitted || !live}
+            data-testid="drop-row"
+            data-port-id={row.portId}
+            data-state={isCommitted ? 'committed' : isStaged ? 'staged' : row.state}
+            data-cable={row.cable}
+            data-reason={row.reason ?? ''}
+            onclick={() => toggleStage(row.portId)}
+          >
+            <span class="dm-dot" data-cable={row.cable} data-state={row.state}></span>
+            <span class="dm-row-label">{row.label}</span>
+            <span class="dm-cable">{row.cable}</span>
+            {#if isCommitted}
+              <span class="dm-badge dm-badge-ok" data-testid="drop-row-committed">patched</span>
+            {:else if isStaged}
+              <span class="dm-badge dm-badge-stage" data-testid="drop-row-staged">staged</span>
+            {:else if row.state === 'offered'}
+              <span class="dm-badge">{row.viaPortOptIn ? 'accepts' : 'patch'}</span>
+            {:else}
+              <span class="dm-badge dm-badge-no" data-testid="drop-row-refused">refused</span>
+            {/if}
+          </button>
+          {#if row.state === 'refused' && row.reason}
+            <p class="dm-why" data-testid="drop-row-why">
+              {DROP_REFUSAL_TEXT[row.reason]}
+              {#if repair}
+                <span class="dm-repair" data-testid="drop-row-repair">
+                  → insert <b>{repair.label}</b>
+                  <span class="dm-repair-path">
+                    {repair.inPortId} ▸ pick a tap:
+                    {#each repair.outPortIds.slice(0, 4) as o, i (o)}<span class="dm-tap"
+                        >{o.toUpperCase()}</span
+                      >{#if i < Math.min(4, repair.outPortIds.length) - 1}{' '}{/if}{/each}{#if repair.outPortIds.length > 4}
+                      <span class="dm-tap dm-tap-more">+{repair.outPortIds.length - 4}</span
+                      >{/if}
+                  </span>
+                </span>
+              {/if}
+            </p>
+          {/if}
+        </li>
+      {/snippet}
+
       {#if plan.rows.length === 0}
         <p class="dm-empty" data-testid="drop-target-empty">
-          {plan.into.label} declares no video inputs — this direction has nowhere to land.
+          {plan.into.label} declares no inputs — this direction has nowhere to land.
           <br />
           <b>tab</b> to patch the other way round.
         </p>
       {:else}
-        <ul class="dm-rows">
-          {#each plan.rows as row (row.portId)}
-            {@const key = plan.carried
-              ? edgeKey(plan.from.nodeId, plan.carried.portId, plan.into.nodeId, row.portId)
-              : ''}
-            {@const isCommitted = committedSet.has(key)}
-            {@const repair =
-              row.state === 'refused' && plan.carried
-                ? findRepair(plan.carried.cable, { id: row.portId, type: row.cable }, repairCandidates)
-                : undefined}
-            <li>
-              <div
-                class="dm-row"
-                class:is-refused={row.state === 'refused'}
-                class:is-committed={isCommitted}
-                data-testid="drop-row"
-                data-port-id={row.portId}
-                data-state={isCommitted ? 'committed' : row.state}
-                data-cable={row.cable}
-                data-reason={row.reason ?? ''}
-              >
-                <span class="dm-dot" data-cable={row.cable} data-state={row.state}></span>
-                <span class="dm-row-label">{row.label}</span>
-                <span class="dm-cable">{row.cable}</span>
-                {#if isCommitted}
-                  <span class="dm-badge dm-badge-ok" data-testid="drop-row-committed">patched</span>
-                {:else if row.state === 'offered'}
-                  <span class="dm-badge">{row.viaPortOptIn ? 'accepts' : 'patch'}</span>
-                {:else}
-                  <span class="dm-badge dm-badge-no" data-testid="drop-row-refused">refused</span>
-                {/if}
-              </div>
-              {#if row.state === 'refused' && row.reason}
-                <p class="dm-why" data-testid="drop-row-why">
-                  {REFUSAL_TEXT[row.reason]}
-                  {#if repair}
-                    <span class="dm-repair" data-testid="drop-row-repair">
-                      → insert <b>{repair.label}</b>
-                      <span class="dm-repair-path">
-                        {repair.inPortId} ▸ pick a tap:
-                        {#each repair.outPortIds.slice(0, 4) as o, i (o)}<span class="dm-tap"
-                            >{o.toUpperCase()}</span
-                          >{#if i < Math.min(4, repair.outPortIds.length) - 1}{' '}{/if}{/each}{#if repair.outPortIds.length > 4}
-                          <span class="dm-tap dm-tap-more"
-                            >+{repair.outPortIds.length - 4}</span
-                          >{/if}
-                      </span>
-                    </span>
-                  {/if}
-                </p>
-              {/if}
-            </li>
-          {/each}
-        </ul>
-      {/if}
+        {#if offeredRows.length > 0}
+          <ul class="dm-rows">
+            {#each offeredRows as row (row.portId)}{@render rowItem(row)}{/each}
+          </ul>
+        {/if}
 
-      {#if plan.subset.hiddenCvInputs + plan.subset.hiddenOtherInputs > 0}
-        <p class="dm-subset" data-testid="drop-target-subset">
-          showing {plan.subset.shownInputs} video input{plan.subset.shownInputs === 1 ? '' : 's'}
-          of {plan.subset.shownInputs + plan.subset.hiddenCvInputs + plan.subset.hiddenOtherInputs}
-          — {plan.subset.hiddenCvInputs} cv
-          {#if plan.subset.hiddenOtherInputs > 0}
-            + {plan.subset.hiddenOtherInputs} other
-          {/if}
-          hidden by the video filter
-          <button type="button" class="dm-showall" data-testid="drop-show-all" disabled
-            >show all</button
-          >
+        <!-- ⚠ THE COLLAPSE. Summary carries its COUNT — never a bare chevron,
+             which would be indistinguishable from "nothing here". Open by
+             default only when closing it would leave the panel blank. -->
+        {#if refusedRows.length > 0}
+          <div class="dm-more" data-testid="drop-target-more" data-open={refusedOpen}>
+            <button
+              type="button"
+              class="dm-more-sum"
+              data-testid="drop-refused-toggle"
+              data-count={refusedRows.length}
+              aria-expanded={refusedOpen}
+              onclick={() => (refusedOpenOverride = !refusedOpen)}
+            >
+              <span class="dm-chev" aria-hidden="true">{refusedOpen ? '▾' : '▸'}</span>
+              <span class="dm-more-n">{refusedRows.length}</span>
+              not compatible
+            </button>
+            {#if refusedOpen}
+              <ul class="dm-rows dm-rows-refused">
+                {#each refusedRows as row (row.portId)}{@render rowItem(row)}{/each}
+              </ul>
+            {/if}
+          </div>
+        {/if}
+
+        <!-- The identity that makes the collapse honest, stated in the UI and
+             derived from the same plan the rows came from. -->
+        <p class="dm-census" data-testid="drop-census">
+          {plan.census.offeredInputs} of {plan.census.declaredInputs} declared inputs take
+          <b>{plan.carried?.cable ?? '—'}</b>
         </p>
       {/if}
     </section>
@@ -285,6 +445,36 @@
     <span class="dm-hint"><kbd>tab</kbd> invert</span>
     <span class="dm-hint"><kbd>enter</kbd> commit</span>
     <span class="dm-hint"><kbd>esc</kbd> cancel</span>
+    {#if live}
+      <span class="dm-foot-right">
+        <!-- ⚠ DECISION 3's escape hatch. The card SNAPS BACK on drop, so the
+             default dismissal restores nothing — it already happened. This is
+             the way out for a drop that really was a move: it is explicit,
+             labelled, and never the default. -->
+        <button
+          type="button"
+          class="dm-act"
+          data-testid="drop-cancel-keep"
+          onclick={() => onCancel?.({ keepPosition: true })}>leave it there</button
+        >
+        <button
+          type="button"
+          class="dm-act"
+          data-testid="drop-cancel"
+          onclick={() => onCancel?.({ keepPosition: false })}>cancel</button
+        >
+        <button
+          type="button"
+          class="dm-act dm-act-go"
+          data-testid="drop-commit"
+          data-staged={staged.length}
+          disabled={staged.length === 0}
+          onclick={commit}
+        >
+          patch {staged.length || ''}
+        </button>
+      </span>
+    {/if}
   </footer>
 </div>
 
@@ -434,10 +624,79 @@
     display: flex;
     align-items: center;
     gap: 7px;
+    width: 100%;
     padding: 4px 7px;
     border: 1px solid transparent;
     border-radius: 4px;
     background: #1e222a;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+  .dm-row:disabled {
+    cursor: default;
+  }
+  .dm-row.is-staged {
+    border-color: #d8a657;
+    background: #262117;
+  }
+
+  /* ── THE COLLAPSE ─────────────────────────────────────────────────────
+     A summary row that reads as a control, with its COUNT as the largest
+     thing in it. The count is the affordance: "▸ 29 not compatible" and a
+     bare "▸" are the same pixel budget and completely different sentences. */
+  .dm-more {
+    margin-top: 6px;
+  }
+  .dm-more-sum {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    width: 100%;
+    padding: 4px 7px;
+    border: 1px solid var(--dm-line);
+    border-radius: 4px;
+    background: #191c22;
+    color: var(--dm-dim);
+    font: inherit;
+    font-size: 10.5px;
+    text-align: left;
+    cursor: pointer;
+  }
+  .dm-more-sum:hover {
+    background: #1e222a;
+    color: var(--dm-text);
+  }
+  .dm-chev {
+    width: 9px;
+    flex: none;
+    color: var(--dm-dim);
+  }
+  .dm-more-n {
+    color: var(--dm-text);
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .dm-rows-refused,
+  .dm-outs-dead {
+    margin-top: 4px;
+    padding-left: 9px;
+    border-left: 1px dotted var(--dm-line);
+  }
+  .dm-out.is-dead {
+    opacity: 0.5;
+  }
+  .dm-census {
+    margin: 8px 0 0;
+    padding-top: 7px;
+    border-top: 1px dotted var(--dm-line);
+    font-size: 10px;
+    color: var(--dm-dim);
+  }
+  .dm-census b {
+    color: var(--dm-text);
+    font-weight: 500;
   }
   /* ⚠ THE REFUSAL. Present, legible, greyed — never removed. See the route's
      recommendation panel for why hiding was rejected. */
@@ -550,25 +809,6 @@
     color: var(--dm-text);
   }
 
-  .dm-subset {
-    margin: 8px 0 0;
-    padding-top: 7px;
-    border-top: 1px dotted var(--dm-line);
-    font-size: 10px;
-    color: var(--dm-dim);
-  }
-  .dm-showall {
-    margin-left: 6px;
-    padding: 1px 6px;
-    border: 1px solid var(--dm-line);
-    border-radius: 3px;
-    background: #232833;
-    color: var(--dm-dim);
-    font: inherit;
-    font-size: 9px;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-  }
 
   .dm-panel {
     border-top: 1px solid var(--dm-line);
@@ -609,5 +849,34 @@
     display: inline-flex;
     align-items: center;
     gap: 5px;
+  }
+  .dm-foot-right {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-left: auto;
+  }
+  .dm-act {
+    padding: 2px 9px;
+    border: 1px solid var(--dm-line);
+    border-radius: 3px;
+    background: #232833;
+    color: var(--dm-dim);
+    font: inherit;
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    cursor: pointer;
+  }
+  .dm-act:hover:not(:disabled) {
+    color: var(--dm-text);
+  }
+  .dm-act-go:not(:disabled) {
+    border-color: var(--dm-ok);
+    color: var(--dm-ok);
+  }
+  .dm-act:disabled {
+    opacity: 0.4;
+    cursor: default;
   }
 </style>

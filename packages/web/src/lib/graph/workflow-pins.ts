@@ -348,3 +348,95 @@ export function isRackFlipKey(e: FlipKeyEventLike): boolean {
   if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return false;
   return typeof e.key === 'string' && e.key.toLowerCase() === RACK_FLIP_KEY.toLowerCase();
 }
+
+// ── WHO OWNS THE FLIP KEY ────────────────────────────────────────────────
+// `isRackFlipKey` says WHICH key. This says WHO ACTS, and it exists because
+// the previous answer was a hand-maintained complement pair.
+//
+// THE BUG THIS PREVENTS (already had once, fixed by hand in 7e21befe2): both
+// flip owners are plain non-capture `window` keydown listeners, so
+// `preventDefault` in one does NOT stop the other. One keystroke toggled BOTH
+// `dockStore.fullViewFlipped` AND the canvas `rearView`; the two states then
+// PHASE-DIVERGED — flip in the dock, close it, press the flip key on the
+// canvas, and the canvas came up already inverted, so the key looked dead.
+// The fix was ownership by OCCUPANCY rather than by listener order (ordering
+// is not controllable between two window listeners, which is why
+// stopImmediatePropagation was explicitly rejected).
+//
+// ⚠ WHAT WAS STILL WRONG WITH THAT FIX. It was written as two guards that
+// hard-code each other:
+//
+//     dock:   if (dockStore.fullViewNodeIds.length > 0)   // Canvas.svelte:1604
+//     canvas: return dockStore.fullViewNodeIds.length === 0; // Canvas.svelte:8065
+//
+// A literal complement pair. Correct for two owners, and silently wrong the
+// moment there is a third: the new surface must be added to EVERY existing
+// guard, and NOTHING FAILS LOUDLY IF YOU FORGET — the symptom is the same
+// phase divergence, re-introduced. The hazard is not that anyone was careless;
+// it is that the construct requires N-1 edits in N places to add one thing.
+//
+// So arbitration is inverted: each owner's guard now names ONLY ITSELF
+// (`flipKeyOwner() === 'canvas'`), and precedence lives in one ordered list.
+// Adding a surface is ONE entry here plus ONE registration at that surface.
+// No existing guard changes, so there is no edit anyone can forget.
+
+/**
+ * Every surface that can claim the flip key, INNERMOST FIRST.
+ *
+ * The order IS the precedence rule, and the rule is occupancy: the innermost
+ * OCCUPIED surface owns the key. That is the same principle the two shipped
+ * owners already used — this only writes it down once instead of twice as a
+ * complement.
+ *
+ * `canvas` is last and is the floor: the canvas is always present, so it owns
+ * the key whenever nothing more specific is occupied.
+ */
+export const FLIP_KEY_CLAIMANTS = ['drop-modal', 'dock-full-view', 'canvas'] as const;
+export type FlipKeyClaimant = (typeof FLIP_KEY_CLAIMANTS)[number];
+
+/** Module-level because the claimants are genuinely global surfaces — the same
+ *  scope the two `window` listeners already share. */
+const flipKeyOccupancy = new Map<FlipKeyClaimant, () => boolean>();
+
+/**
+ * Declare how to tell whether `who` is currently occupied, and get a
+ * deregistration function back.
+ *
+ * The predicate is read at keystroke time, never cached, so a claimant may
+ * register once on mount and let its own reactive state answer.
+ *
+ * ⚠ Deregister on unmount. A claimant that stays registered while gone is the
+ * phase-divergence bug wearing a different hat — the innermost owner would
+ * swallow the key for a surface nobody can see. (The dock carries the matching
+ * invariant on its own state: `fullViewFlipped` self-resets to false when
+ * `fullView` empties, dock-store.svelte.ts:263.)
+ */
+export function setFlipKeyOccupancy(who: FlipKeyClaimant, isOccupied: () => boolean): () => void {
+  flipKeyOccupancy.set(who, isOccupied);
+  return () => {
+    // Only clear if still ours — a remount that re-registered before the old
+    // teardown ran must not be un-registered by the stale closure.
+    if (flipKeyOccupancy.get(who) === isOccupied) flipKeyOccupancy.delete(who);
+  };
+}
+
+/**
+ * The innermost occupied claimant. Never null — `canvas` is the floor.
+ *
+ * Call it from a guard that names only itself:
+ *     if (!isRackFlipKey(e) || isTypingTarget(e.target)) return;
+ *     if (flipKeyOwner() !== 'canvas') return;
+ */
+export function flipKeyOwner(): FlipKeyClaimant {
+  for (const who of FLIP_KEY_CLAIMANTS) {
+    if (who === 'canvas') break;
+    const occupied = flipKeyOccupancy.get(who);
+    if (occupied?.()) return who;
+  }
+  return 'canvas';
+}
+
+/** Test seam — drops every registration. Never called by app code. */
+export function __resetFlipKeyOccupancy(): void {
+  flipKeyOccupancy.clear();
+}
