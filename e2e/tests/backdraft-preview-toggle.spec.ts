@@ -227,14 +227,25 @@ test.describe('backdraft faceplate — the preview ON/OFF toggle', () => {
   test.beforeEach(async ({ page }) => {
     test.setTimeout(CASE_MS);
     await gotoShell(page);
-    // A REAL animated source into the feedback loop, so "the picture moves" is
-    // a claim about the chain rather than about noise.
+    // ⚠ BACKDRAFT ALONE — NO SOURCE AND NO SINK, deliberately. Four of the five
+    // cases here are about LAYOUT and STATE and are pure DOM; only the producer
+    // case needs a live GL chain, and it builds one itself.
+    //
+    // That split is not tidiness, it is the CI budget. The first version wired
+    // LINES -> BACKDRAFT -> videoOut in this hook, so every case paid for a
+    // software-rasterized feedback pass at 1024×768 on every frame. Measured:
+    // 1.9 min for the five locally under `E2E_SWIFTSHADER=1`, and on CI — ten
+    // shards in parallel on a 4-vCPU runner — individual cases blew a
+    // **120 s** per-test ceiling. Rendering nothing costs nothing.
+    await injectPatch(page, [{ id: NODE, type: 'backdraft', position: { x: -700, y: 4500 } }]);
+  });
+
+  /** Wire a real animated source and a real sink — the only case that needs the
+   *  chain actually rendering. Kept out of `beforeEach`; see the note there. */
+  async function wireLiveChain(page: Page): Promise<void> {
     await injectPatch(
       page,
-      [
-        { id: 'src', type: 'lines', position: { x: -1200, y: 4500 } },
-        { id: NODE, type: 'backdraft', position: { x: -700, y: 4500 } },
-      ],
+      [{ id: 'src', type: 'lines', position: { x: -1200, y: 4500 } }],
       [
         {
           id: 'e1',
@@ -245,10 +256,11 @@ test.describe('backdraft faceplate — the preview ON/OFF toggle', () => {
         },
       ],
     );
-    // …and a real SINK, without which nothing pulls the chain.
+    // Without a SINK pulling the chain nothing renders at all — measured,
+    // `framesDrawnFor` sits at 0 forever.
     const sinkOk = await patchToSeededSink(page);
     expect(sinkOk, 'the workflow rack seeds a videoOut to pull the chain').toBe(true);
-  });
+  }
 
   test('OFF collapses and RECLAIMS the vertical space; ON restores it', async ({ page }) => {
     const fv = await openFace(page);
@@ -340,6 +352,7 @@ test.describe('backdraft faceplate — the preview ON/OFF toggle', () => {
   test('⚠ COLLAPSING DOES NOT KILL THE PRODUCER — the engine keeps advancing, and the picture comes back LIVE', async ({
     page,
   }) => {
+    await wireLiveChain(page);
     const fv = await openFace(page);
     const wrap = fv.locator('[data-testid="backdraft-fs-wrap"]');
     const toggle = fv.getByTestId('backdraft-preview-toggle');
