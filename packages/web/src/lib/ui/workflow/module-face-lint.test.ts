@@ -57,6 +57,7 @@ import {
   type FaceplateDefLike,
 } from './dock-faceplate-model';
 import { sidebarPanelIds } from './sidebar-panels';
+import { paintsReadout } from '$lib/ui/controls/knob-vocabulary-model';
 // The channel list mixmstrs' ACKNOWLEDGED_LATCHING entries are DERIVED from —
 // see the entry itself for why eight identical enables are generated rather
 // than typed.
@@ -642,6 +643,139 @@ describe('module-face lint — MOMENTARY pads (face.momentary)', () => {
       }
     }
     expect(problems.join('\n'), 'face.momentary drifted from the params — fix the ids').toBe('');
+  });
+
+  // ── face.bareCells + ModuleFacePage.clusterFlow (#1796) ─────────────────
+  //
+  // Two declarations added for the owner's 2026-08-17 faceplate review, and
+  // both are the kind that is INVISIBLE when wrong: a `bareCells` id that names
+  // nothing simply captions nothing extra, and a `clusterFlow` on a band with
+  // no clusters lays out exactly as it did. A declaration nobody validates is a
+  // silent no-op that reads like a shipped decision, which is the same trap
+  // `face.momentary` and `face.paramCells` are gated for above.
+
+  it('every face.bareCells id is a real param, ranked, and listed once', () => {
+    const problems: string[] = [];
+    for (const def of allDefs()) {
+      const declared = def.face?.bareCells ?? [];
+      const byId = new Map((def.params ?? []).map((p) => [p.id, p]));
+      const ranked = new Set(def.face?.order ?? []);
+      const seen = new Set<string>();
+      for (const pid of declared) {
+        if (seen.has(pid)) problems.push(`${def.type}: face.bareCells lists '${pid}' twice`);
+        seen.add(pid);
+        if (!byId.has(pid)) {
+          problems.push(
+            `${def.type}: face.bareCells '${pid}' is not a declared param — a rename left a ` +
+              `dead entry, and the cell it was meant to strip is captioned again`,
+          );
+          continue;
+        }
+        if (!ranked.has(pid)) {
+          problems.push(
+            `${def.type}: face.bareCells '${pid}' is not ranked in face.order, so it never ` +
+              `reaches a curated face and the declaration is a no-op`,
+          );
+        }
+      }
+    }
+    expect(problems.join('\n'), 'face.bareCells drifted from the params — fix the ids').toBe('');
+  });
+
+  it('face.bareCells never silences a param whose readout is its only STATE NAME', () => {
+    // ⚠ THE ONE CASE WHERE THE DECLARATION IS ACTIVELY HARMFUL, and it is not
+    // hypothetical — it is one `bareCells` entry away on any face that keeps a
+    // roster. `hideCaption` suppresses the caption AND the painted readout, so
+    // declaring it on an `options`/`landmarks` param would hide the only thing
+    // saying WHICH of fourteen engines is loaded. The rule the owner gave is
+    // about REDUNDANCY ("the low/mid/high labels above the knob rows convey
+    // that fine"); a state name is the opposite of redundant.
+    //
+    // `paintsReadout` is the SAME predicate KnobConic renders through and
+    // `curated-face` reserves cell height from, so this cannot drift from what
+    // actually paints.
+    const problems: string[] = [];
+    for (const def of allDefs()) {
+      const declared = new Set(def.face?.bareCells ?? []);
+      for (const p of def.params ?? []) {
+        if (!declared.has(p.id)) continue;
+        if (!paintsReadout(p)) continue;
+        problems.push(
+          `${def.type}: face.bareCells '${p.id}' declares options/landmarks, so its readout is ` +
+            `a STATE NAME — hiding it leaves a dial nobody can read. Remove the bareCells entry, ` +
+            `or remove the roster if the name really is redundant.`,
+        );
+      }
+    }
+    expect(problems.join('\n'), 'a bareCells entry would hide a state name').toBe('');
+  });
+
+  it("a band declaring clusterFlow:'row' actually HAS clusters to flow", () => {
+    const problems: string[] = [];
+    for (const def of allDefs()) {
+      for (const page of def.face?.pages ?? []) {
+        if (page.clusterFlow !== 'row') continue;
+        if ((page.clusters?.length ?? 0) < 2) {
+          problems.push(
+            `${def.type}: face.pages['${page.id}'] declares clusterFlow:'row' with ` +
+              `${page.clusters?.length ?? 0} cluster(s). Side-by-side needs two peers; with ` +
+              `fewer the declaration changes nothing and reads like a shipped layout decision.`,
+          );
+        }
+      }
+    }
+    expect(problems.join('\n'), "clusterFlow:'row' on a band with nothing to flow").toBe('');
+  });
+
+  it('NEGATIVE CONTROL: both clauses fire on a synthetic def', () => {
+    // Neither check above has ever been seen to fail on the live registry (one
+    // face declares `bareCells`, one band declares `clusterFlow`), so without
+    // this they are assertions nobody has watched work.
+    const bad = {
+      type: 'synthetic',
+      params: [
+        { id: 'a', label: 'A', defaultValue: 0, min: 0, max: 1, curve: 'linear' as const },
+        {
+          id: 'mode',
+          label: 'Mode',
+          defaultValue: 0,
+          min: 0,
+          max: 2,
+          curve: 'discrete' as const,
+          options: [
+            { value: 0, label: 'LP' },
+            { value: 1, label: 'HP' },
+          ],
+        },
+      ],
+      face: {
+        order: ['a', 'mode'],
+        bareCells: ['a', 'a', 'ghost', 'mode'],
+        pages: [{ id: 'p', label: 'p', controls: ['a'], clusterFlow: 'row' as const }],
+      },
+    };
+    const byId = new Map(bad.params.map((p) => [p.id, p]));
+    const ranked = new Set(bad.face.order);
+    const seen = new Set<string>();
+    const dupes: string[] = [];
+    const unknown: string[] = [];
+    for (const pid of bad.face.bareCells) {
+      if (seen.has(pid)) dupes.push(pid);
+      seen.add(pid);
+      if (!byId.has(pid)) unknown.push(pid);
+    }
+    expect(dupes, 'the duplicate clause must catch a repeated id').toEqual(['a']);
+    expect(unknown, 'the orphan clause must catch an id no param answers to').toEqual(['ghost']);
+    expect(ranked.has('ghost'), 'and the ranked clause is a second, independent leg').toBe(false);
+    expect(
+      paintsReadout(byId.get('mode')!),
+      'the state-name clause must see that a bare roster paints',
+    ).toBe(true);
+    const rowPage = bad.face.pages[0]!;
+    expect(
+      (rowPage as { clusters?: unknown[] }).clusters?.length ?? 0,
+      "the clusterFlow clause must see a 'row' band with nothing to flow",
+    ).toBeLessThan(2);
   });
 
   it('STRICT_FACES: every switch-shaped param is classified momentary OR acknowledged latching', () => {
