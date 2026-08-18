@@ -202,6 +202,11 @@ export const FACE_FIELDS_NOT_IN_LOCK: Readonly<
     why: 'Marks a param as press-and-release. It changes how a cell is DRIVEN, and the audition ledger is the observable — a text line would restate what the probe measures.',
     coveredBy: 'faces-parity ShellActionCell.probe + audition-ledger (both directions, unit lane, every run).',
   },
+  channelAccent: {
+    why: 'WHICH COLOUR a cell paints in — the rack lane colour of the channel it belongs to (#1825). No id in it is new (every one is already a pinned param line) and no I/O changes; what it selects is a CSS custom property. A text golden would restate the def\'s own param list and still say nothing about whether the colour arrives, which is a live DOM question.',
+    coveredBy:
+      'mixmstrs-face-model.test.ts (the declaration and `mixmstrsChannelIndex` partition the def by channel, both directions, plus the bus-scoped refusal) + module-face-lint (every declared id resolves, no duplicates, the declaring roster) + the mixmstrs-face-grid e2e, which reads the RESOLVED `--_ka` off each control and matches it against `laneColorEff` + VRT face-mixmstrs-dock.',
+  },
   rear: {
     why: 'Rear-card port grouping/clusters/audio-rate ticks. Every PORT it arranges is already a pinned `in`/`out` line; this is the arrangement.',
     coveredBy: 'rear-card-model units + VRT rear-<type>.',

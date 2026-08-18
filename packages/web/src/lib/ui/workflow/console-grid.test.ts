@@ -10,7 +10,13 @@ import { listModuleDefs } from '$lib/audio/module-registry';
 import { listVideoModuleDefs } from '$lib/video/module-registry';
 import { listMetaModuleDefs } from '$lib/meta/module-registry';
 import { dockFacePlan, type FaceDefLike } from './curated-face';
-import { consoleGridCols, CONSOLE_MIN_CELLS, CONSOLE_MIN_CLUSTERS } from './console-grid';
+import {
+  consoleGridCols,
+  faceConsoleGridCols,
+  CONSOLE_MIN_CELLS,
+  CONSOLE_MIN_CLUSTERS,
+  FACE_CONSOLE_MIN_BANDS,
+} from './console-grid';
 import '$lib/audio/modules';
 import '$lib/video/modules';
 import '$lib/meta/modules';
@@ -45,6 +51,45 @@ describe('consoleGridCols — the pure rule', () => {
   it('is order-insensitive about WHICH cluster is ragged', () => {
     expect(consoleGridCols({ clusters: [cluster(3), cluster(3), cluster(2)] })).toBeNull();
     expect(consoleGridCols({ clusters: [cluster(2), cluster(3), cluster(3)] })).toBeNull();
+  });
+});
+
+describe('faceConsoleGridCols — the FACE-wide ruler (#1825)', () => {
+  const band = (cols: number, clusters = CONSOLE_MIN_CLUSTERS) => ({
+    clusters: Array.from({ length: clusters }, () => cluster(cols)),
+  });
+
+  it('is the WIDEST console band, so a narrower band spans a PREFIX of the ruler', () => {
+    expect(faceConsoleGridCols([band(8), band(9), band(4)])).toBe(9);
+    expect(faceConsoleGridCols([band(4), band(4)])).toBe(4);
+  });
+
+  it('ONE console band is not a ruler — it has nothing to be aligned to', () => {
+    expect(faceConsoleGridCols([band(8)])).toBeNull();
+    // …and the non-console bands beside it do not make one.
+    expect(faceConsoleGridCols([band(8), { clusters: [] }, { clusters: [cluster(3)] }])).toBeNull();
+  });
+
+  it('no bands / no console bands / nullish ⇒ null (the layout every face has today)', () => {
+    expect(faceConsoleGridCols(null)).toBeNull();
+    expect(faceConsoleGridCols(undefined)).toBeNull();
+    expect(faceConsoleGridCols([])).toBeNull();
+    expect(faceConsoleGridCols([{ clusters: [] }, { clusters: [] }])).toBeNull();
+    expect(faceConsoleGridCols([null, undefined])).toBeNull();
+  });
+
+  it('the threshold is checked on BOTH sides', () => {
+    const at = Array.from({ length: FACE_CONSOLE_MIN_BANDS }, () => band(CONSOLE_MIN_CELLS));
+    expect(faceConsoleGridCols(at)).toBe(CONSOLE_MIN_CELLS);
+    expect(faceConsoleGridCols(at.slice(0, FACE_CONSOLE_MIN_BANDS - 1))).toBeNull();
+  });
+
+  it('it is the SAME predicate as consoleGridCols, band by band (no second opinion)', () => {
+    // A ragged band contributes nothing to the ruler AND is not a console band —
+    // if those two ever disagreed, a band could span tracks it does not subgrid.
+    const ragged = { clusters: [cluster(8), cluster(7)] };
+    expect(consoleGridCols(ragged)).toBeNull();
+    expect(faceConsoleGridCols([band(4), band(4), ragged])).toBe(4);
   });
 });
 
@@ -94,6 +139,46 @@ describe('console grid — which SHIPPED bands it claims (derived membership)', 
       'pentemelodica/mix=5',
       'tidyVco/envelopes=4',
     ]);
+  });
+
+  // ⚠ THE SAME CLAUSE FOR THE FACE-WIDE RULER (#1825). A face listed here has
+  // its `.dock-pages` turned into a grid and EVERY console band re-parented
+  // onto it as a subgrid, which moves that face's dock baseline. A face NOT
+  // listed is byte-identical, which is the whole containment argument for this
+  // change: only a face with TWO OR MORE console bands can have the misaligned-
+  // columns defect in the first place.
+  it('the FACE-wide ruler claims EXACTLY these faces — a new one is a baseline dispatch', () => {
+    const out: string[] = [];
+    for (const def of allDefs()) {
+      if (!def.face) continue;
+      const plan = dockFacePlan(def);
+      if (!plan) continue;
+      const cols = faceConsoleGridCols(plan);
+      if (cols != null) out.push(`${def.type}=${cols}`);
+    }
+    expect(out.sort()).toEqual(['mixmstrs=9']);
+  });
+
+  it('NEGATIVE CONTROL: faces WITH a console band but only one keep their own ruler', () => {
+    // Without this, the clause above would look identical if the face rule had
+    // been broken to answer `null` for everything.
+    const singles: string[] = [];
+    for (const def of allDefs()) {
+      if (!def.face) continue;
+      const plan = dockFacePlan(def);
+      if (!plan) continue;
+      const consoleBands = plan.filter((b) => consoleGridCols(b) != null);
+      if (consoleBands.length === 1) singles.push(def.type);
+    }
+    expect(singles.sort(), 'the roster must still contain single-console-band faces').toEqual([
+      'kickdrum',
+      'pentemelodica',
+      'tidyVco',
+    ]);
+    for (const t of singles) {
+      const def = allDefs().find((d) => d.type === t)!;
+      expect(faceConsoleGridCols(dockFacePlan(def)), `${t} must keep its own ruler`).toBeNull();
+    }
   });
 
   it('NEGATIVE CONTROL: the rule really can say no, and does for most clustered bands', () => {

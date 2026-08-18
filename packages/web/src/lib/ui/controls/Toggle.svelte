@@ -121,7 +121,17 @@
 {/if}
 
 <style>
+  /* THE ACCENT CHAIN, VERBATIM from KnobConic:347 / NeonFader:484 — no colour
+     is chosen here, and the DOMAIN behaviour is byte-identical because `--ka`
+     is unset everywhere it was unset before.
+     ⚠ THIS CONTROL WAS OUTSIDE THE CHAIN UNTIL #1825, reading
+     `var(--domain, var(--accent))` directly. That is #1812's shape: a per-cell
+     `--ka` (the documented override the knob and the fader both honour) simply
+     did not reach it, so on mixmstrs' `enable` row the compressor switch stayed
+     domain-teal while the eight controls above and below it took their lane
+     colour — a whole ROW of the console silently opted out. */
   .toggle-ctl {
+    --_ka: var(--ka, var(--domain, var(--accent)));
     position: relative;
     display: inline-flex;
     flex-direction: column;
@@ -139,7 +149,7 @@
     cursor: pointer;
     outline: none;
   }
-  .switch:focus-visible { outline: 2px solid var(--domain, var(--accent)); outline-offset: 2px; }
+  .switch:focus-visible { outline: 2px solid var(--_ka); outline-offset: 2px; }
   .thumb {
     display: block;
     width: 18px;
@@ -149,15 +159,15 @@
     transition: margin-left 0.14s ease, background 0.14s ease;
   }
   .switch.on {
-    background: color-mix(in srgb, var(--domain, var(--accent)) 20%, transparent);
-    border-color: var(--domain, var(--accent));
+    background: color-mix(in srgb, var(--_ka) 20%, transparent);
+    border-color: var(--_ka);
   }
   .switch.on .thumb {
     margin-left: 26px;
     background: linear-gradient(
       180deg,
-      var(--domain, var(--accent)),
-      color-mix(in srgb, var(--domain, var(--accent)) 80%, #05070a)
+      var(--_ka),
+      color-mix(in srgb, var(--_ka) 80%, #05070a)
     );
   }
   .sw-lab {
