@@ -411,6 +411,7 @@
   import DetachedDisplay from '$lib/ui/modules/DetachedDisplay.svelte';
   import {
     REATTACH_CLEARS,
+    detachedRect,
     isDetached,
     supportsDetachedDisplay,
   } from '$lib/ui/modules/detached-display';
@@ -4373,6 +4374,34 @@
       patch.edges,
       stereoDefForNode,
     );
+    // BRIDGE-ON-DELETE (#1821) — the KEYBOARD half. This path does not call
+    // `removePatchNode`, so the bridge is applied here too; wiring only the
+    // context menu would make Backspace and right-click → Delete do different
+    // things to the same rack.
+    //
+    // ⚠ PLANNED BEFORE ANY WRITE, and that ordering is a MEASURED fix rather
+    // than tidiness. xyflow's `deleteElements` puts the doomed node's CONNECTED
+    // EDGES in `payload.edges` alongside it, so by the time the node loop below
+    // runs the chain has ALREADY been cut by the edge loop — a plan computed
+    // there sees an OUTPUT with nothing patched and correctly declines to
+    // bridge. The e2e caught exactly this: the node vanished and the chain was
+    // left in two pieces while the context-menu path bridged fine.
+    //
+    // ⚠ AND THE RESULT IS FILTERED AFTERWARDS. Planning up front means a
+    // multi-select can produce a bridge whose far end is itself being deleted,
+    // so each candidate is re-checked against the SURVIVING nodes before it is
+    // written — never against the graph it was planned in.
+    const bridgePlans = payload.nodes
+      .filter((n) => !isPinnedNode(patch.nodes[n.id]))
+      .map((n) =>
+        planDeleteBridge(
+          n.id,
+          Object.values(patch.nodes) as ModuleNode[],
+          Object.values(patch.edges) as (Edge | undefined)[],
+          defLookup,
+        ),
+      );
+
     ydoc.transact(() => {
       for (const id of edgeIds) {
         const live = patch.edges[id];
@@ -4390,24 +4419,6 @@
         // can't be in a SvelteFlow delete payload — but guard anyway (the
         // shared delete discipline: pinned nodes are undeletable).
         if (isPinnedNode(patch.nodes[n.id])) continue;
-        // BRIDGE-ON-DELETE (#1821) — the KEYBOARD half. This path does not call
-        // `removePatchNode`, so the bridge has to be applied here too; wiring
-        // only the context menu would make Backspace and right-click → Delete do
-        // different things to the same rack. Planned per node against the LIVE
-        // graph inside this transact, so a node deleted earlier in the payload
-        // is already reflected.
-        //
-        // ⚠ MULTI-SELECT IS SELF-CORRECTING IN BOTH ORDERS, and it is worth
-        // saying why rather than trusting it: if the upstream is deleted BEFORE
-        // the pass-through, the pass-through has no upstream and plans nothing;
-        // if it is deleted AFTER, the bridge exists briefly and is then swept by
-        // that node's own edge cleanup below. Neither leaves a dangling cable.
-        const bridge = planDeleteBridge(
-          n.id,
-          Object.values(patch.nodes) as ModuleNode[],
-          Object.values(patch.edges) as (Edge | undefined)[],
-          defLookup,
-        );
         if (patch.nodes[n.id]) delete patch.nodes[n.id];
         // Also drop any edges that referenced the deleted node.
         for (const [edgeId, edge] of Object.entries(patch.edges)) {
@@ -4415,10 +4426,15 @@
             delete patch.edges[edgeId];
           }
         }
-        // AFTER the sweep, so the replacement cable is never a candidate for it.
-        // Still inside the ONE transact this function already opened, so the
-        // whole delete-plus-bridge remains a single undo entry.
-        for (const e2 of bridge?.bridgeEdges ?? []) patch.edges[e2.id] = e2;
+      }
+      // LAST, so the replacement cables are never candidates for the sweeps
+      // above — and still inside the ONE transact this function already opened,
+      // so the whole delete-plus-bridge remains a single undo entry.
+      for (const plan of bridgePlans) {
+        for (const e2 of plan?.bridgeEdges ?? []) {
+          if (!patch.nodes[e2.source.nodeId] || !patch.nodes[e2.target.nodeId]) continue;
+          patch.edges[e2.id] = e2;
+        }
       }
     }, LOCAL_ORIGIN);
     if (topNodeId && payload.nodes.some((n) => n.id === topNodeId)) {
@@ -4562,8 +4578,37 @@
   //
   // The reverse direction (delete FROM the panel) is `deleteNode(id)` — the very
   // function the node context menu calls, so "delete" has one implementation.
+  //
+  // ⚠ IT READS `snapshot.nodes`, NOT `patch.nodes`, and that is not a style
+  // choice. Canvas consumes the graph through the SNAPSHOT BUS (`$state.raw`,
+  // id-sorted, fed by `observeDeep` on the two root Y.Maps) so the UI and the
+  // engine see the same tick. A `$derived` reading the SyncedStore proxy
+  // directly does not re-run when a peer — or `mutateNode` — writes a nested
+  // `data` key, so the panel would appear only on the next unrelated re-render.
+  // Measured while landing this: the flag was written and the CARD updated (it
+  // reads its node off its own props) while the panel never mounted at all.
+  //
+  // ⚠ AND THE GEOMETRY IS RESOLVED HERE TOO, for the same reason: the panel is
+  // handed an already-clamped rect rather than reading the node itself. A
+  // `$derived` inside the panel reading `patch.nodes[id]` MEASURED as one-shot —
+  // `node.data.detachedW` moved to 632 while the panel's own box stayed 480 —
+  // because a SyncedStore proxy read registers no Svelte dependency, so the
+  // memo never invalidates. One reactive read, at the one place that has one.
+  let detachedViewport = $state({
+    width: typeof window === 'undefined' ? 1280 : window.innerWidth,
+    height: typeof window === 'undefined' ? 720 : window.innerHeight,
+  });
+  $effect(() => {
+    const onResize = (): void => {
+      detachedViewport = { width: window.innerWidth, height: window.innerHeight };
+    };
+    window.addEventListener('resize', onResize);
+    onResize();
+    return () => window.removeEventListener('resize', onResize);
+  });
+
   let detachedDisplays = $derived(
-    Object.values(patch.nodes as Record<string, ModuleNode>)
+    snapshot.nodes
       .filter((n): n is ModuleNode => !!n && isDetached(n))
       // DERIVED capability, not a type check at the render site: the def must be
       // both scoped and able to publish a picture (see detached-display.ts).
@@ -4573,6 +4618,7 @@
         label: patchDropLabel(n.id),
         // THE DOMAIN CHAIN, resolved from the live def — never a literal violet.
         domain: spineCableVar(defLookup(n.type) as Parameters<typeof spineCableVar>[0]),
+        rect: detachedRect(n, detachedViewport),
       })),
   );
 
@@ -8853,6 +8899,7 @@
         nodeId={dd.id}
         label={dd.label}
         domain={dd.domain}
+        rect={dd.rect}
         onreattach={() => reattachDisplay(dd.id)}
         ondelete={() => deleteNode(dd.id)}
       />

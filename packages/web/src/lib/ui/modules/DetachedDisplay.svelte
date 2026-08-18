@@ -38,7 +38,6 @@
 
   import { untrack } from 'svelte';
   import { useEngine } from '$lib/audio/engine-context';
-  import { patch } from '$lib/graph/store';
   import { mutateNode } from '$lib/graph/mutate';
   import { startCornerResize } from './card-resize';
   import { createFullscreen } from './use-fullscreen.svelte';
@@ -51,12 +50,10 @@
     DETACHED_KEYS,
     DETACHED_MIN_H,
     DETACHED_MIN_W,
-    detachedRect,
     type DetachedRect,
   } from './detached-display';
   import type { VideoEngine } from '$lib/video/engine';
   import { VIDEO_RES } from '$lib/video/engine';
-  import type { ModuleNode } from '$lib/graph/types';
 
   interface Props {
     /** The node whose picture this is. */
@@ -71,6 +68,19 @@
      * hard-coding a control colour produced).
      */
     domain?: string;
+    /**
+     * The panel's ALREADY-CLAMPED screen rectangle, resolved by Canvas from the
+     * snapshot bus.
+     *
+     * ⚠ IT IS A PROP RATHER THAN A LOCAL READ OF `patch.nodes[nodeId]`, AND THAT
+     * IS A MEASURED FIX, not a preference. A `$derived` here reading the
+     * SyncedStore proxy registers no Svelte dependency, so it memoises the value
+     * it saw at mount and never invalidates: dragging the grip moved
+     * `node.data.detachedW` to 632 while this component's own box stayed at 480.
+     * Canvas holds the ONE reactive read (`snapshot.nodes`) and hands the result
+     * down. Writes are unaffected — `mutateNode` needs no reactivity.
+     */
+    rect: DetachedRect;
     /** RE-ATTACH — clears the one flag. The SAME callback the card's own
      *  right-click menu fires, so the two entry points cannot drift. */
     onreattach: () => void;
@@ -83,7 +93,7 @@
     ondelete: () => void;
   }
 
-  let { nodeId, label, domain, onreattach, ondelete }: Props = $props();
+  let { nodeId, label, domain, rect, onreattach, ondelete }: Props = $props();
 
   const engineCtx = useEngine();
   const ENGINE_W = VIDEO_RES.width;
@@ -97,25 +107,9 @@
   let engineW = $state<number>(ENGINE_W);
   let engineH = $state<number>(ENGINE_H);
 
-  let node = $derived(patch.nodes[nodeId] as ModuleNode | undefined);
-
   // ── GEOMETRY ──────────────────────────────────────────────────────────────
   // Screen space, not flow space: the panel does NOT pan or zoom with the rack
-  // (see the model header). The viewport is tracked so a window resize re-clamps
-  // a panel that would otherwise be left off-screen.
-  let vw = $state(typeof window === 'undefined' ? 1280 : window.innerWidth);
-  let vh = $state(typeof window === 'undefined' ? 720 : window.innerHeight);
-  $effect(() => {
-    const onResize = (): void => {
-      vw = window.innerWidth;
-      vh = window.innerHeight;
-    };
-    window.addEventListener('resize', onResize);
-    onResize();
-    return () => window.removeEventListener('resize', onResize);
-  });
-
-  let rect = $derived<DetachedRect>(detachedRect(node, { width: vw, height: vh }));
+  // (see the model header). `rect` arrives already clamped — see the prop note.
 
   /** Persist geometry. `mutateNode` (not a bare proxy write) so a drag/resize
    *  is undoable and syncs, like every other node.data affordance. */
