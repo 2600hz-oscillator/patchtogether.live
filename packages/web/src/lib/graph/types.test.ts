@@ -69,11 +69,14 @@ describe('canConnect — video-domain upcasts', () => {
   it('does not upcast the other direction (video → image)', () => {
     expect(canConnect('video', 'image')).toBe(false);
   });
-  it('does not upcast keys → video directly (must hop via mono-video / image)', () => {
-    // The runtime resolver only knows about the two-step chain; we
-    // intentionally don't shortcut here so the cable-type stays
-    // single-hop predictable at the UI level.
-    expect(canConnect('keys', 'video')).toBe(false);
+  it('upcasts keys → video — the diagonal (#1780)', () => {
+    // keys is mono+still and video is colour+animated, so this widens on BOTH
+    // axes; both widenings are free at the shader layer and the patch was
+    // already legal in two hops (keys → mono-video → video). The old
+    // hand-written edge table simply never wrote the diagonal down, which is
+    // why BACKDRAFT's key-mask inputs had to be declared `video`. The rule is
+    // now the product order in ./signal-lattice.ts, closed by construction.
+    expect(canConnect('keys', 'video')).toBe(true);
   });
 });
 
@@ -137,12 +140,23 @@ describe('canConnectToPort — per-port `accepts` widening (SCOPE probe)', () =>
   });
 });
 
-describe('canConnect — modsignal (TOYBOX 6-input modulation) accepts cv/gate/audio', () => {
+describe('canConnect — modsignal (TOYBOX / GIBRIBBON modulation) accepts the CV family + audio', () => {
   it('accepts cv → modsignal', () => {
     expect(canConnect('cv', 'modsignal')).toBe(true);
   });
   it('accepts gate → modsignal', () => {
     expect(canConnect('gate', 'modsignal')).toBe(true);
+  });
+  it('accepts pitch → modsignal — the CV family is admitted whole (#1780)', () => {
+    // cv / pitch / gate are declared "freely interchangeable" and flow through
+    // the same AudioParam plumbing; a V/oct source into a modulation input is
+    // an ordinary keytracking patch. The clause reads CV_FAMILY rather than
+    // re-listing members, which is how `pitch` fell out of it in the first
+    // place. The consumer was extended with it: AudioEngine.addEdge routes a
+    // `pitch` source into a `modsignal` target through the same sample-and-hold
+    // cv bridge cv/gate take (only an `audio` source is envelope-followed), so
+    // this is a permitted patch that actually moves the target param.
+    expect(canConnect('pitch', 'modsignal')).toBe(true);
   });
   it('accepts audio → modsignal (envelope-followed by the bridge)', () => {
     expect(canConnect('audio', 'modsignal')).toBe(true);
@@ -156,12 +170,15 @@ describe('canConnect — modsignal (TOYBOX 6-input modulation) accepts cv/gate/a
     expect(canConnect('audio', 'cv')).toBe(false);
     expect(canConnect('audio', 'pitch')).toBe(false);
   });
-  it('rejects video / pitch sources into a modsignal input', () => {
+  it('rejects video sources into a modsignal input', () => {
     expect(canConnect('video', 'modsignal')).toBe(false);
     expect(canConnect('image', 'modsignal')).toBe(false);
-    // pitch is CV-family but the bridge only handles cv/gate/audio; pitch is not
-    // a documented modulation source for the section.
-    expect(canConnect('pitch', 'modsignal')).toBe(false);
+  });
+  it('rejects polyPitchGate → modsignal — a poly bus is an ADAPTER, not CV family', () => {
+    // polyPitchGate interchanges with cv/pitch/gate because the engine
+    // interposes a splitter; that is a declared conversion, not a free
+    // widening, so it does not ride in on the CV-family clause above.
+    expect(canConnect('polyPitchGate', 'modsignal')).toBe(false);
   });
 });
 

@@ -16,7 +16,14 @@
 //      bridge branch + calls VideoEngine.addCvBridge.
 //   2. A `gate` source (gamepad button / dpad) ALSO takes the bridge
 //      branch (the regression fix) instead of dispatching to audio.
-//   3. The bridge is keyed by edge id + torn down on removeEdge.
+//   3. A `pitch` source into a `modsignal` modulation input takes it too
+//      (#1780). canConnect admits the whole CV family into a modsignal input;
+//      this is the CONSUMER side of that permission, and without it the patch
+//      is legal in the UI and a silent no-op in the engine — the "green gate
+//      certifying a live bug" shape. The recorded sourceType is asserted as
+//      well, because VideoEngine.addCvBridge branches on it (only `audio` is
+//      envelope-followed) and the tail-sample path is the correct one here.
+//   4. The bridge is keyed by edge id + torn down on removeEdge.
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { AudioEngine, PatchEngine, type DomainEngine } from './engine';
@@ -60,8 +67,8 @@ function makeFakeAudioContext(): AudioContext {
   } as unknown as AudioContext;
 }
 
-// A minimal audio source def with one `cv` output and one `gate` output —
-// stands in for an LFO (cv) and a GAMEPAD (gate buttons / cv sticks).
+// A minimal audio source def with one output per CV-family type — stands in for
+// an LFO (cv), a GAMEPAD (gate buttons / cv sticks) and a SEQUENCER (pitch).
 const CV_GATE_SOURCE_DEF: AudioModuleDef = {
   type: 'cvGateBridgeTestSource',
   domain: 'audio',
@@ -71,17 +78,20 @@ const CV_GATE_SOURCE_DEF: AudioModuleDef = {
   outputs: [
     { id: 'cvOut', type: 'cv' },
     { id: 'gateOut', type: 'gate' },
+    { id: 'pitchOut', type: 'pitch' },
   ],
   params: [],
   async factory(_ctx, _node) {
     const cvNode = makeFakeNode('cv-src');
     const gateNode = makeFakeNode('gate-src');
+    const pitchNode = makeFakeNode('pitch-src');
     return {
       domain: 'audio' as const,
       inputs: new Map(),
       outputs: new Map([
         ['cvOut', { node: cvNode as unknown as AudioNode, output: 0 }],
         ['gateOut', { node: gateNode as unknown as AudioNode, output: 0 }],
+        ['pitchOut', { node: pitchNode as unknown as AudioNode, output: 0 }],
       ]),
       setParam(_id, _v) { /* */ },
       readParam(_id) { return undefined; },
@@ -95,6 +105,11 @@ interface RecordedBridge {
   targetNodeId: string;
   targetPortId: string;
   teardown: () => void;
+  /** What the real VideoEngine.addCvBridge branches on: `audio` gets an
+   *  envelope follower, everything else takes the tail sample. Recorded so a
+   *  test can assert WHICH path a source type lands on, not merely that a
+   *  bridge was created. */
+  sourceType: string | undefined;
 }
 
 class VideoEngineStub implements DomainEngine {
@@ -114,8 +129,9 @@ class VideoEngineStub implements DomainEngine {
     targetNodeId: string,
     targetPortId: string,
     teardown: () => void,
+    sourceType?: string,
   ): void {
-    this.bridges.push({ edgeId, targetNodeId, targetPortId, teardown });
+    this.bridges.push({ edgeId, targetNodeId, targetPortId, teardown, sourceType });
   }
 
   removeCvBridge(edgeId: string): void {
@@ -194,6 +210,52 @@ describe('PatchEngine — cv/gate → video cross-domain bridge dispatch', () =>
     // (plainEdges) and never created a video bridge → DOOM no-op.
     expect(ve.bridges.map((b) => b.edgeId), 'gate source must create a video bridge').toContain('e-gate');
     expect(ve.plainEdges, 'gate edge must NOT fall through to audio dispatch').toEqual([]);
+    pe.dispose();
+  });
+
+  it('#1780: a pitch source into a modsignal input takes the bridge branch', async () => {
+    const { pe, ve } = await setup();
+    const edge: Edge = {
+      id: 'e-pitch-mod',
+      source: { nodeId: 'a-src', portId: 'pitchOut' },
+      target: { nodeId: 'v-toybox', portId: 'mod1' },
+      sourceType: 'pitch',
+      targetType: 'modsignal',
+    };
+    pe.addEdge(edge, 'audio', 'video');
+
+    // canConnect('pitch','modsignal') is now true. If the dispatch had not been
+    // extended with it, this edge would fall past every cross-domain branch
+    // into single-domain audio dispatch: the cable would draw, the UI would
+    // call it legal, and the target param would never move.
+    const bridge = ve.bridges.find((b) => b.edgeId === 'e-pitch-mod');
+    expect(bridge, 'pitch → modsignal must create a video cv bridge').toBeDefined();
+    expect(ve.plainEdges, 'pitch → modsignal must NOT fall through to audio dispatch').toEqual([]);
+    // …and on the SAMPLE-AND-HOLD path, not the envelope follower: the real
+    // VideoEngine.addCvBridge builds a follower only for `audio`, and
+    // envelope-following a V/oct voltage would rectify it into nonsense.
+    expect(bridge?.sourceType).toBe('pitch');
+    pe.dispose();
+  });
+
+  it('scope: a pitch source into a video STREAM port still does NOT take the cv bridge', async () => {
+    // The permanent negative leg of the test above. The pitch arm of the
+    // dispatch is scoped to CV-family + modsignal TARGETS precisely so a pitch
+    // cable can never be mistaken for a texture; widening that target set is
+    // the way this fix could go wrong, and this is what would catch it.
+    const { pe, ve } = await setup();
+    const edge: Edge = {
+      id: 'e-pitch-stream',
+      source: { nodeId: 'a-src', portId: 'pitchOut' },
+      target: { nodeId: 'v-toybox', portId: 'in' },
+      sourceType: 'pitch',
+      targetType: 'video',
+    };
+    // It falls through to single-domain audio dispatch, which cannot resolve a
+    // VIDEO node and says so — the loud failure, not a silent bridge. (The edge
+    // is unreachable through the UI anyway: canConnect refuses pitch → video.)
+    expect(() => pe.addEdge(edge, 'audio', 'video')).toThrow(/no target node/);
+    expect(ve.bridges.map((b) => b.edgeId)).not.toContain('e-pitch-stream');
     pe.dispose();
   });
 
