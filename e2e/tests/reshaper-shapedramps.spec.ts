@@ -92,7 +92,7 @@ test.describe('RESHAPER + SHAPEDRAMPS integration', () => {
   // 96 h CI census to 2026-08-18 — never a hard failure, so every one of those jobs reported SUCCESS.
   // LOST WHILE PARKED: the linear control case for RESHAPER — with h_lin/v_lin driving x/y the module must behave as a clean raster passthrough, the reference against which every shaped scan is judged.
   // Re-enable only on a root cause (#1847); "it passes now" is not one.
-  test.fixme('linear (h_lin/v_lin) wiring acts like a clean raster passthrough', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 1 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page, rack, errorWatch }) => {
+  test.fixme('linear (h_lin/v_lin) wiring acts like a clean raster passthrough', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 1 recovered-on-retry observation in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page, rack, errorWatch }) => {
     // Two separate cards, same LINES feeding each. Output RESHAPER wired
     // to h_lin/v_lin (identity coord field). The OUTPUT card displays
     // the same LINES feed directly. Their pixel stats should be very

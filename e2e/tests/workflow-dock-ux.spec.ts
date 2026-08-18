@@ -140,7 +140,7 @@ test.describe('P1 dock/expand UX fixes (?shell=1)', () => {
   // 96 h CI census to 2026-08-18 — never a hard failure, so every one of those jobs reported SUCCESS.
   // LOST WHILE PARKED: the owner split extension: two side-by-side dock panes with LRU replacement, asserted for BOTH migrated faces and legacy cards — the shell-parity leg is what stops a fix landing for one shell only.
   // Re-enable only on a root cause (#1847); "it passes now" is not one.
-  test.fixme('expanding B while A is open SPLITS the dock; a third replaces the oldest — migrated AND legacy cards', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 1 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page }) => {
+  test.fixme('expanding B while A is open SPLITS the dock; a third replaces the oldest — migrated AND legacy cards', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 1 recovered-on-retry observation in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page }) => {
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(String(e)));
     await gotoWorkflow(page);
@@ -261,7 +261,7 @@ test.describe('P1 dock/expand UX fixes (?shell=1)', () => {
   // 96 h CI census to 2026-08-18 — never a hard failure, so every one of those jobs reported SUCCESS.
   // LOST WHILE PARKED: the dock full-view's structural contract — no lane rail, and the REAR card is the patch surface; a stray rail here is the layout regression class that also moves VRT baselines.
   // Re-enable only on a root cause (#1847); "it passes now" is not one.
-  test.fixme('the dock full-view shell renders NO lane rail; the rear card is its patch surface', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 1 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page }) => {
+  test.fixme('the dock full-view shell renders NO lane rail; the rear card is its patch surface', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 1 recovered-on-retry observation in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page }) => {
     await gotoWorkflow(page);
     await spawnPatch(page, [{ id: 'm1', type: 'vca', position: { x: 30, y: 40 } }]);
     const tile = page.locator('.svelte-flow__node[data-id="m1"] [data-testid="module-shell"]');

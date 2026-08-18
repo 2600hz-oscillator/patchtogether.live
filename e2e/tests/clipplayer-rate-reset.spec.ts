@@ -225,7 +225,7 @@ test.fixme('per-lane rate: card dropdowns set 1/2 : 1 : 2x lanes advancing at a 
 // 96 h CI census to 2026-08-18 — never a hard failure, so every one of those jobs reported SUCCESS.
 // LOST WHILE PARKED: that the card RST button snaps every ACTIVE lane back to step 1 while playback continues — a live-performance control whose failure mode is a silent no-op.
 // Re-enable only on a root cause (#1847); "it passes now" is not one.
-test.fixme('RST button: all active clips snap back to step 1 and keep playing', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 1 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page, rack }) => {
+test.fixme('RST button: all active clips snap back to step 1 and keep playing', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 1 recovered-on-retry observation in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page, rack }) => {
   await spawnPatch(page, [
     { id: 'cp', type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio',
       params: { quantize: 0, stepDiv: 2, gateLength: 0.9, octave: 0 } },

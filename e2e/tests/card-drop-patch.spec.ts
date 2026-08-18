@@ -157,7 +157,7 @@ test.describe('drop a card on a card → the patch modal', () => {
   // 96 h CI census to 2026-08-18 — never a hard failure, so every one of those jobs reported SUCCESS.
   // LOST WHILE PARKED: the entry point of the whole feature — a centre-drop onto another card opens the patch modal at all, and the dragged card returns to its origin instead of being left displaced.
   // Re-enable only on a root cause (#1847); "it passes now" is not one.
-  test.fixme('dropping the CENTRE on another card opens the modal and SNAPS THE CARD BACK', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 1 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page }) => {
+  test.fixme('dropping the CENTRE on another card opens the modal and SNAPS THE CARD BACK', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 1 recovered-on-retry observation in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page }) => {
     const { camId, bdId } = await seedTwoVideoCards(page);
     const before = await nodePos(page, bdId);
 
