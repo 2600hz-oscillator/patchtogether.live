@@ -128,7 +128,17 @@ export interface RefusedBridge {
 
 /** The plan `removePatchNodeBridging` applies, in ONE transaction. */
 export interface DeleteBridgePlan {
-  /** Edge ids to delete — exactly the doomed node's own cables. */
+  /**
+   * Exactly the doomed node's own cables — the edges the delete will remove.
+   *
+   * ⚠ IT IS AN OBSERVABLE, NOT AN INSTRUCTION. No applicator reads it: both
+   * delete paths remove edges themselves (`removePatchNode`'s brute scan, and
+   * `handleDelete`'s own loop), because there must be ONE delete primitive
+   * rather than a second list that can disagree with it. What it is FOR is the
+   * assertion `delete-bridge.test.ts` makes with it — that a bridge never
+   * claims a THIRD PARTY's cable, which is the fan-out failure mode and is
+   * invisible from `bridgeEdges` alone.
+   */
   removeEdgeIds: string[];
   /** New edges joining upstream directly to each downstream target. */
   bridgeEdges: Edge[];
@@ -145,6 +155,14 @@ function passThroughPorts(
   const outs = videoPortsOf(def, 'outputs');
   // DERIVED, and both halves matter: exactly one of each. A module with two
   // video inputs has no unambiguous "the" upstream to re-home.
+  //
+  // ⚠ WIDENING HAZARD, stated because the header claims widening is cheap. This
+  // counts VIDEO ports only, so a future `BRIDGE_ON_DELETE` entry for a module
+  // with 1 video-in / 1 video-out PLUS an audio or gate port would qualify — and
+  // its non-video cables would be dropped by the delete with no bridge and no
+  // `refused` entry to say so. "Deleting a scope entry, not a rewrite" holds for
+  // a video-PURE def (videoOut is one: `inputs` and `outputs` are each a single
+  // video port). Anything else needs this predicate widened first.
   if (ins.length !== 1 || outs.length !== 1) return null;
   return { input: ins[0]!, output: outs[0]! };
 }
@@ -225,15 +243,28 @@ export function planDeleteBridge(
   const survivors = nodes.filter((n) => n.id !== nodeId);
   const seen = new Set<string>();
 
+  // ⚠ THE CABLE TYPES ARE RE-DERIVED FROM THE LIVE DEFS, not carried off the
+  // two edges being replaced — the discipline `commitConvenienceEdges` already
+  // follows. `validateEdge` re-derives them for the LEGALITY check regardless,
+  // so carrying them would only affect what is STORED; and a stored type is
+  // exactly the thing that goes stale when a saved patch is loaded against a def
+  // whose port type has since changed. Falls back to the old edge's value when a
+  // port cannot be resolved, so a graph this planner does not fully understand
+  // degrades rather than writing `undefined`.
+  const upDef = resolveDef(nodes.find((n) => n.id === upstream.source.nodeId)?.type ?? '');
+  const upPortType =
+    upDef?.outputs?.find((o) => o.id === upstream.source.portId)?.type ?? upstream.sourceType;
+
   for (const dn of downstream) {
+    const dnDef = resolveDef(nodes.find((n) => n.id === dn.target.nodeId)?.type ?? '');
+    const dnPortType =
+      dnDef?.inputs?.find((i) => i.id === dn.target.portId)?.type ?? dn.targetType;
     const candidate: Edge = {
       id: audioEdgeId(upstream.source.nodeId, upstream.source.portId, dn.target.nodeId, dn.target.portId),
       source: { ...upstream.source },
       target: { ...dn.target },
-      // Re-derived from the live ports by validateEdge; carried here so the
-      // written edge matches what every other writer stores.
-      sourceType: upstream.sourceType,
-      targetType: dn.targetType,
+      sourceType: upPortType as Edge['sourceType'],
+      targetType: dnPortType as Edge['targetType'],
     };
     // A fan-out that lands twice on the same target port would write the same
     // deterministic id twice — dedupe rather than emit a duplicate.

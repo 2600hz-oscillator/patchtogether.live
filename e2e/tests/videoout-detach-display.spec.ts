@@ -269,6 +269,110 @@ test.describe('videoOut — detach display', () => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 
+test.describe('videoOut — detach on the DEFAULT shell (the promoted face)', () => {
+  // ⚠ WHY THIS DESCRIBE EXISTS. Everything above drives `?shell=legacy`, which
+  // renders `VideoOutCard` — the surface this PR REPLACES. A green run there is
+  // structurally unable to see the shipping path: the `ModuleShell` lane tile,
+  // and `VideoOutBody`'s own detach button and detached plate. That is the
+  // blind-gate shape (a gate whose subject is not the thing that ships), and it
+  // matters extra because `strict-faces.ts` cites this file as what covers the
+  // face. These legs are what make that citation true.
+
+  async function seedDefaultShell(page: Page): Promise<string> {
+    await page.goto('/rack?seed=none');
+    await page.waitForFunction(() => !!(window as unknown as PatchWindow).__patch);
+    await page.evaluate(() => {
+      (window as unknown as PatchWindow).__spawnAtFlowPos('videoOut', { x: 0, y: 0 });
+    });
+    await expect
+      .poll(() =>
+        page.evaluate(() =>
+          Object.values((window as unknown as PatchWindow).__patch.nodes).some((n) => n.type === 'videoOut'),
+        ),
+      )
+      .toBe(true);
+    const id = await page.evaluate(
+      () =>
+        Object.entries((window as unknown as PatchWindow).__patch.nodes).find(
+          ([, n]) => n.type === 'videoOut',
+        )![0],
+    );
+    await expect(
+      page.locator(`.svelte-flow__node[data-id="${id}"] [data-testid="module-shell"]`),
+    ).toBeVisible();
+    return id;
+  }
+
+  test('the lane is a FACE TILE with a live picture, and its right-click detaches and re-attaches', async ({ page }) => {
+    const id = await seedDefaultShell(page);
+    const tile = page.locator(`.svelte-flow__node[data-id="${id}"] [data-testid="module-shell"]`);
+    // Not a placeholder, and not the legacy card — with a live canvas. "The tile
+    // mounted" is equally true of a placeholder, which is the regression the old
+    // carve-out existed to prevent, so the picture is asserted too.
+    await expect(page.locator(`.svelte-flow__node[data-id="${id}"] [data-testid="video-out-card"]`)).toHaveCount(0);
+    await expect(tile.locator('canvas')).toHaveCount(1);
+
+    await page.locator(`.svelte-flow__node[data-id="${id}"]`).click({ button: 'right', position: { x: 6, y: 6 } });
+    await page.getByTestId('ctx-detach-display').click();
+    await expect(panel(page)).toHaveCount(1);
+
+    await page.locator(`.svelte-flow__node[data-id="${id}"]`).click({ button: 'right', position: { x: 6, y: 6 } });
+    await page.getByTestId('ctx-reattach-display').click();
+    await expect(panel(page)).toHaveCount(0);
+  });
+
+  test("the FACEPLATE's own detach button works, and the faceplate shows the detached plate", async ({ page }) => {
+    const id = await seedDefaultShell(page);
+    const tile = page.locator(`.svelte-flow__node[data-id="${id}"] [data-testid="module-shell"]`);
+    await tile.getByTestId('shell-open-dock').click();
+    await expect(page.getByTestId('dock-full-view')).toBeVisible();
+    // The bespoke body IS the faceplate for this module (it ranks no controls).
+    await expect(page.getByTestId('face-full-view-body')).toHaveCount(1);
+    await expect(page.getByTestId('videoout-face-output')).toBeVisible();
+    await expect(page.getByTestId('videoout-face-canvas')).toBeVisible();
+    await expect(page.getByTestId('videoout-face-detached-plate')).toHaveCount(0);
+
+    await page.getByTestId('videoout-face-detach').click();
+    await expect(panel(page)).toHaveCount(1);
+    await expect(page.getByTestId('videoout-face-detached-plate')).toHaveCount(1);
+    await expect(page.getByTestId('videoout-fs-wrap')).toHaveAttribute('data-detached', 'true');
+
+    // The same button re-attaches — one control, two states, like the menu pair.
+    await page.getByTestId('videoout-face-detach').click();
+    await expect(panel(page)).toHaveCount(0);
+    await expect(page.getByTestId('videoout-fs-wrap')).toHaveAttribute('data-detached', 'false');
+  });
+
+  test('DETACH clears full frame — the card must not stay expanded around a picture that left it', async ({ page }) => {
+    // Regression (#1821 review): two of the three detach entry points cleared
+    // `fullFrame` and the NODE MENU — the only detach route a rack tile has —
+    // did not. The clear now lives in `detachPatch`, so every caller inherits it;
+    // this drives the path that used to skip it.
+    const id = await seedDefaultShell(page);
+    const tile = page.locator(`.svelte-flow__node[data-id="${id}"] [data-testid="module-shell"]`);
+    await tile.getByTestId('shell-open-dock').click();
+    await expect(page.getByTestId('videoout-face-output')).toBeVisible();
+
+    await page.getByTestId('videoout-display-menu').click();
+    await page.getByTestId('ctx-full-frame').click();
+    await expect
+      .poll(() => page.evaluate((i) => (window as unknown as PatchWindow).__patch.nodes[i]!.data?.fullFrame, id))
+      .toBe(true);
+
+    // Detach through the NODE MENU specifically.
+    await page.locator(`.svelte-flow__node[data-id="${id}"]`).click({ button: 'right', position: { x: 6, y: 6 } });
+    await page.getByTestId('ctx-detach-display').click();
+    await expect(panel(page)).toHaveCount(1);
+    await expect
+      .poll(() => page.evaluate((i) => (window as unknown as PatchWindow).__patch.nodes[i]!.data?.fullFrame, id), {
+        message: 'detach supersedes full frame, whichever entry point fired it',
+      })
+      .toBe(false);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 test.describe('videoOut — bridge on delete', () => {
   test('source ▸ OUTPUT ▸ sink: deleting the OUTPUT patches source straight into the sink, in ONE undo', async ({ page }) => {
     const ids = await seed(page, ['lines', 'videoOut', 'sourcery']);

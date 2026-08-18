@@ -246,6 +246,14 @@ export function detachPatch(rect: DetachedRect): Record<string, number | boolean
     [DETACHED_KEYS.y]: rect.y,
     [DETACHED_KEYS.w]: rect.w,
     [DETACHED_KEYS.h]: rect.h,
+    // ⚠ DETACH SUPERSEDES FULL FRAME, and it is HERE rather than at the three
+    // call sites on purpose. Two of them cleared it and the third — the node
+    // context menu, which after promotion is the ONLY detach route a rack TILE
+    // has — did not, so the shipping path was the one that skipped the mutual
+    // exclusion and left a card expanded around a picture that had left it.
+    // Mutual exclusion belongs to the state transition, not to whoever happens
+    // to trigger it.
+    fullFrame: false,
   };
 }
 

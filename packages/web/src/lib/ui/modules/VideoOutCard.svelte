@@ -55,7 +55,6 @@
   import VideoCanvasContextMenu from './VideoCanvasContextMenu.svelte';
   import { mutateNode } from '$lib/graph/mutate';
   import {
-    DETACHED_KEYS,
     REATTACH_CLEARS,
     detachPatch,
     detachedRect,

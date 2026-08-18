@@ -153,6 +153,44 @@ describe('planDeleteBridge — the chain is maintained', () => {
   });
 });
 
+describe('the written cable types come from the LIVE DEFS, not the replaced edges', () => {
+  it('a STALE stored type on the old edge does not propagate into the bridge', () => {
+    // ⚠ THIS LEG EXISTS BECAUSE THE HAPPY PATH CANNOT SEE THE DIFFERENCE. In
+    // every other test the stored types already agree with the ports, so the
+    // planner would pass whether it re-derived them or copied them. Here the old
+    // edges carry types the defs contradict — the shape a patch saved against an
+    // older def load has — and the bridge must write what the PORTS say.
+    const nodes = [n('bd', 'backdraft'), n('vo', 'videoOut'), n('src', 'sourcery')];
+    const edges = [
+      e('e-bd-out-vo-in', 'bd', 'out', 'vo', 'in', 'mono-video', 'mono-video'),
+      e('e-vo-out-src-in', 'vo', 'out', 'src', 'in', 'mono-video', 'mono-video'),
+    ];
+    const plan = planDeleteBridge('vo', nodes, edges, resolveDef)!;
+    expect(plan.bridgeEdges).toHaveLength(1);
+    // backdraft.out and sourcery.in are BOTH declared `video` in DEFS above.
+    expect(plan.bridgeEdges[0]!.sourceType, 'source type read off backdraft.out').toBe('video');
+    expect(plan.bridgeEdges[0]!.targetType, 'target type read off sourcery.in').toBe('video');
+  });
+
+  it('falls back to the old edge value when a port cannot be resolved, rather than writing undefined', () => {
+    // Totality: an edge naming a port the def does not declare still produces a
+    // well-formed edge. (It is refused by `validateEdge` anyway — the point is
+    // that the planner does not emit `undefined` on the way there.)
+    const nodes = [n('bd', 'backdraft'), n('vo', 'videoOut'), n('src', 'sourcery')];
+    const edges = [
+      e('e-bd-ghost-vo-in', 'bd', 'ghost', 'vo', 'in'),
+      e('e-vo-out-src-in', 'vo', 'out', 'src', 'in'),
+    ];
+    const plan = planDeleteBridge('vo', nodes, edges, resolveDef)!;
+    const written = [...plan.bridgeEdges, ...plan.refused];
+    expect(written.length).toBeGreaterThan(0);
+    for (const b of plan.bridgeEdges) {
+      expect(b.sourceType).toBeDefined();
+      expect(b.targetType).toBeDefined();
+    }
+  });
+});
+
 // ---- ORDINARY DELETE: the precondition is BOTH sides patched ---------------
 
 describe('one side free ⇒ ORDINARY delete (null plan, caller falls through)', () => {

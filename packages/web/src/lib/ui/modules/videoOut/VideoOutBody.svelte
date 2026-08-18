@@ -211,7 +211,18 @@
         // picture, it does not clone it (the #1802 per-card cost), and it never
         // stops the engine (the collapse-kills-the-producer class).
         videoEngine.markWatched?.(nodeId);
-        if (!detached || expanded) drawOutput(videoEngine);
+        // ⚠ NO `|| expanded` ESCAPE HATCH. An earlier draft blitted while
+        // detached-and-expanded, on the theory that fullscreen/present need a
+        // live canvas. They do not, and the hatch bought a SECOND blit of the
+        // same node id on top of the floating panel's — the exact double-pay the
+        // panel's header promises does not happen:
+        //   · the `.vo-detached` plate covers this canvas whenever `detached`,
+        //     so "fullscreen while detached" would full-screen a label;
+        //   · the Present popup does its OWN `blitOutputToDrawingBuffer` and
+        //     reads `engine.canvas` (node-present-registry), which is why it
+        //     survives this component unmounting at all.
+        // Detach supersedes, exactly as it does on the card.
+        if (!detached) drawOutput(videoEngine);
       }
     }
     rafId = requestAnimationFrame(tick);

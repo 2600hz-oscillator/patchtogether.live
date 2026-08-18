@@ -320,6 +320,7 @@
         </button>
       {/if}
       {#if ondelete}
+        {#if !ondetach && !onreattach}<div class="ctx-sep" role="separator"></div>{/if}
         <button
           class="ctx-item danger"
           onclick={pickDelete}

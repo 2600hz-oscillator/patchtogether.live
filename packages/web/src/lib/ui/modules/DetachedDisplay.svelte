@@ -50,6 +50,7 @@
     DETACHED_KEYS,
     DETACHED_MIN_H,
     DETACHED_MIN_W,
+    clampDetachedRect,
     type DetachedRect,
   } from './detached-display';
   import type { VideoEngine } from '$lib/video/engine';
@@ -111,16 +112,35 @@
   // Screen space, not flow space: the panel does NOT pan or zoom with the rack
   // (see the model header). `rect` arrives already clamped — see the prop note.
 
-  /** Persist geometry. `mutateNode` (not a bare proxy write) so a drag/resize
-   *  is undoable and syncs, like every other node.data affordance. */
-  function writeRect(next: Partial<DetachedRect>): void {
-    mutateNode(nodeId, (live) => {
-      if (!live.data) live.data = {};
-      if (next.x !== undefined) live.data[DETACHED_KEYS.x] = next.x;
-      if (next.y !== undefined) live.data[DETACHED_KEYS.y] = next.y;
-      if (next.w !== undefined) live.data[DETACHED_KEYS.w] = next.w;
-      if (next.h !== undefined) live.data[DETACHED_KEYS.h] = next.h;
+  /**
+   * THE GESTURE'S LIVE GEOMETRY, held locally while a drag/resize is in flight.
+   *
+   * ⚠ THE POINTER GESTURE DOES NOT TOUCH THE Y.DOC, and that is the rack's own
+   * discipline rather than a micro-optimisation: node POSITIONS are written once
+   * at `handleNodeDragStop`, never per move, because every `LOCAL_ORIGIN`
+   * transaction fires `observeDeep` → a snapshot-bus rebuild → the whole Canvas
+   * derive chain → a reconciler pass → a provider broadcast. Writing per
+   * `pointermove` is ~60 of those per second for the length of the drag — the
+   * update-storm shape `mutate.ts` names on `setControlColor`
+   * ([[cv-modulation-live-store-write-storm]]).
+   *
+   * It also makes the gesture ONE undo entry instead of sixty.
+   */
+  let gestureRect = $state<DetachedRect | null>(null);
+  /** What the panel PAINTS: the in-flight gesture if there is one, else the
+   *  clamped rect Canvas derived from the node. */
+  let live = $derived<DetachedRect>(gestureRect ?? rect);
+
+  /** Commit geometry to the node — called ONCE, at the end of a gesture. */
+  function commitRect(next: DetachedRect): void {
+    mutateNode(nodeId, (n) => {
+      if (!n.data) n.data = {};
+      n.data[DETACHED_KEYS.x] = next.x;
+      n.data[DETACHED_KEYS.y] = next.y;
+      n.data[DETACHED_KEYS.w] = next.w;
+      n.data[DETACHED_KEYS.h] = next.h;
     });
+    gestureRect = null;
   }
 
   // ── DRAG (the header is the handle) ───────────────────────────────────────
@@ -133,7 +153,7 @@
     ev.stopPropagation();
     const startX = ev.clientX;
     const startY = ev.clientY;
-    const from = { x: rect.x, y: rect.y };
+    const from = { ...live };
     dragAbort?.abort();
     const ctl = new AbortController();
     dragAbort = ctl;
@@ -143,12 +163,18 @@
       // so a 1 px pointer move is 1 px of panel move at every canvas zoom —
       // which is exactly why the divisor `startCornerResize` applies to a CARD
       // must NOT be applied here (`flowStore: null` below says the same).
-      writeRect({ x: from.x + (m.clientX - startX), y: from.y + (m.clientY - startY) });
+      // Clamped per move so the panel cannot be dragged somewhere it could not
+      // be dragged back from, and so what is committed is what was shown.
+      gestureRect = clampDetachedRect(
+        { ...from, x: from.x + (m.clientX - startX), y: from.y + (m.clientY - startY) },
+        { width: window.innerWidth, height: window.innerHeight },
+      );
     };
     const stop = (): void => {
       dragging = false;
       dragAbort = null;
       ctl.abort();
+      if (gestureRect) commitRect(gestureRect);
     };
     window.addEventListener('pointermove', move, { signal: ctl.signal });
     window.addEventListener('pointerup', stop, { signal: ctl.signal });
@@ -160,6 +186,13 @@
   let resizeAbort: AbortController | null = null;
 
   function onResizeStart(ev: PointerEvent): void {
+    // ⚠ ABORT ANY LIVE RESIZE FIRST. Without this a second `pointerdown` on the
+    // grip before the matching `pointerup` (multi-touch, or a dropped pointerup)
+    // overwrites `resizeAbort` and leaks the first controller's three window
+    // listeners — two gestures then applying against different start sizes.
+    // `onDragStart` above already guards this way.
+    resizeAbort?.abort();
+    const start = { ...live };
     resizeAbort = startCornerResize(ev, {
       // Outside the SvelteFlow provider: screen px ARE panel px, no zoom divide.
       flowStore: null,
@@ -169,10 +202,19 @@
       // owner asked for a resizable display, not one that jumps a whole u.
       // (STICKY takes the same `snapTo: 1` for the same reason.)
       snapTo: 1,
-      getStartSize: () => ({ width: rect.w, height: rect.h }),
-      apply: (w, h) => writeRect({ w, h }),
+      getStartSize: () => ({ width: start.w, height: start.h }),
+      // Local while dragging, committed once at the end — see `gestureRect`.
+      apply: (w, h) =>
+        (gestureRect = clampDetachedRect(
+          { ...start, w, h },
+          { width: window.innerWidth, height: window.innerHeight },
+        )),
       onStart: () => { resizing = true; },
-      onEnd: () => { resizing = false; resizeAbort = null; },
+      onEnd: () => {
+        resizing = false;
+        resizeAbort = null;
+        if (gestureRect) commitRect(gestureRect);
+      },
     });
   }
 
@@ -216,7 +258,14 @@
   // edge-to-edge and the CSS `object-fit: contain` does the ONLY letterboxing —
   // the doubly-letterboxed-preview bug `fullscreen-canvas-dims.ts` documents.
   let bufferDims = $derived(
-    fullscreenCanvasDims(true, { canvas: { width: engineW, height: engineH } }, { width: rect.w, height: rect.h }),
+    // ⚠ THE THIRD ARGUMENT IS IGNORED while the first is `true` — the buffer
+    // always carries ENGINE dims here, which is what makes `fitRect` fill it
+    // edge-to-edge and leaves the CSS `object-fit: contain` as the ONLY
+    // letterboxing (the doubly-letterboxed-preview bug `fullscreen-canvas-dims`
+    // documents). It is passed anyway so the call reads the same as every other
+    // presenting surface's, and so flipping the first argument stays a one-word
+    // change rather than a rewrite.
+    fullscreenCanvasDims(true, { canvas: { width: engineW, height: engineH } }, { width: live.w, height: live.h }),
   );
 
   function fitRect(cw: number, ch: number): { x: number; y: number; w: number; h: number } {
@@ -303,7 +352,7 @@
   class="detached-display"
   class:dragging
   class:resizing
-  style="left: {rect.x}px; top: {rect.y}px; width: {rect.w}px; height: {rect.h}px; --domain: {domain ?? 'var(--cable-video)'};"
+  style="left: {live.x}px; top: {live.y}px; width: {live.w}px; height: {live.h}px; --domain: {domain ?? 'var(--cable-video)'};"
   data-testid="detached-display"
   data-node-id={nodeId}
   oncontextmenu={onPanelContextMenu}

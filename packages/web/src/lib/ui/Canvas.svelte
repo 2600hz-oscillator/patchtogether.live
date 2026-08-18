@@ -4447,20 +4447,30 @@
     // bridge. The e2e caught exactly this: the node vanished and the chain was
     // left in two pieces while the context-menu path bridged fine.
     //
-    // ⚠ AND THE RESULT IS FILTERED AFTERWARDS. Planning up front means a
-    // multi-select can produce a bridge whose far end is itself being deleted,
-    // so each candidate is re-checked against the SURVIVING nodes before it is
-    // written — never against the graph it was planned in.
-    const bridgePlans = payload.nodes
-      .filter((n) => !isPinnedNode(patch.nodes[n.id]))
-      .map((n) =>
-        planDeleteBridge(
-          n.id,
-          Object.values(patch.nodes) as ModuleNode[],
-          Object.values(patch.edges) as (Edge | undefined)[],
-          defLookup,
-        ),
+    // ⚠ AND IT IS A SEQUENTIAL FOLD, NOT A MAP, because a multi-select can
+    // contain a CHAIN of pass-throughs. `A ▸ OUT1 ▸ OUT2 ▸ B` with both outputs
+    // selected: planned independently, OUT1 offers `A ▸ OUT2` and OUT2 offers
+    // `OUT1 ▸ B`, and the surviving-node filter below correctly rejects BOTH —
+    // leaving A and B disconnected, while deleting them one at a time gives
+    // `A ▸ B`. Two routes to the same rack must not disagree. So each node is
+    // planned against a WORKING COPY that already reflects the deletions and
+    // bridges decided before it, which reproduces the sequential semantics
+    // exactly; the intermediate bridges then fall out at the survivor filter.
+    let workNodes = Object.values(patch.nodes) as ModuleNode[];
+    let workEdges = Object.values(patch.edges) as (Edge | undefined)[];
+    const bridgePlans: (ReturnType<typeof planDeleteBridge>)[] = [];
+    for (const n of payload.nodes) {
+      if (isPinnedNode(patch.nodes[n.id])) continue;
+      const plan = planDeleteBridge(n.id, workNodes, workEdges, defLookup);
+      bridgePlans.push(plan);
+      // Simulate this delete for the NEXT node's plan: drop the node, drop every
+      // cable touching it, then add whatever it bridged.
+      workNodes = workNodes.filter((w) => w.id !== n.id);
+      workEdges = workEdges.filter(
+        (e) => !!e && e.source.nodeId !== n.id && e.target.nodeId !== n.id,
       );
+      if (plan) workEdges = [...workEdges, ...plan.bridgeEdges];
+    }
 
     ydoc.transact(() => {
       for (const id of edgeIds) {

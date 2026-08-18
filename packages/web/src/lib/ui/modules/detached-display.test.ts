@@ -196,7 +196,16 @@ describe('detach / re-attach are ONE flag apart', () => {
       [DETACHED_KEYS.y]: 20,
       [DETACHED_KEYS.w]: 480,
       [DETACHED_KEYS.h]: 360,
+      fullFrame: false,
     });
+  });
+
+  it('detachPatch CLEARS full frame — the mutual exclusion lives in the transition, not the caller', () => {
+    // Regression: two of the three detach entry points cleared `fullFrame` and
+    // the third did not — and the third was the NODE CONTEXT MENU, which after
+    // promotion is the only detach route a rack TILE has. Putting it in the
+    // patch makes every caller correct by construction.
+    expect(detachPatch({ x: 0, y: 0, w: 480, h: 360 }).fullFrame).toBe(false);
   });
 
   it('RE-ATTACH clears the FLAG ONLY — the panel comes back where you left it', () => {
