@@ -1,42 +1,86 @@
 // e2e/tests/doom-keyboard-routing.spec.ts
 //
-// Regression test for the "arrow keys move the DOOM card on the canvas
-// instead of the player in-game" bug AND the follow-up bug where the
-// arrow keys reached the WASM but were *decoded as KEY_MINUS* (shrinking
-// the in-game viewport) because the patchtogether C shim was masking the
-// doomkey to 7 bits (`& 0x7f`). KEY_UPARROW = 0xad → 0x2d after mask =
-// KEY_MINUS = key_menu_decscreen.
+// ⚠ DOOM SPECS ARE NORMALLY OFF-LIMITS — the standing owner ruling is
+//   "do not fuck with doom in any way without specific approval". This file was
+//   rewritten under a SPECIFIC approval given by the owner on 2026-08-18,
+//   verbatim:
+//     "okay see if you can go make the doom tests blurrier and less flakey,
+//      just knowing doom renders and our kb logic and basic game nav works
+//      is fine"
+//   That approval covers THE SPECS ONLY — not video/modules/doom.ts, not the
+//   WASM/WAD assets, not the netcode. See #1848 and e2e/tests/_doom-helpers.ts.
+//
+// Regression test for the "arrow keys move the DOOM card on the canvas instead
+// of the player in-game" bug AND the follow-up bug where the arrow keys reached
+// the WASM but were *decoded as KEY_MINUS* (shrinking the in-game viewport)
+// because the patchtogether C shim was masking the doomkey to 7 bits
+// (`& 0x7f`). KEY_UPARROW = 0xad → 0x2d after mask = KEY_MINUS =
+// key_menu_decscreen.
 //
 // The fix lives in two places:
 //   1. DoomCard.svelte — window-level capture-phase keydown/keyup, fires
-//      BEFORE SvelteFlow's document-level node-keyboard-move handler.
-//      This keeps the arrow keys from sliding the card on the canvas.
-//   2. doomgeneric_patchtogether.c — encode the full 8-bit doomkey in
-//      the low byte (not low 7 bits) of the key-queue entry. This keeps
-//      the arrow keys from being mis-decoded as KEY_MINUS inside the
-//      WASM.
+//      BEFORE SvelteFlow's document-level node-keyboard-move handler. This
+//      keeps the arrow keys from sliding the card on the canvas.
+//   2. doomgeneric_patchtogether.c — encode the full 8-bit doomkey in the low
+//      byte (not low 7 bits) of the key-queue entry. This keeps the arrow keys
+//      from being mis-decoded as KEY_MINUS inside the WASM.
 //
-// What this spec asserts (all must hold for a single keypress burst):
+// ── WHAT THIS FILE ASSERTS NOW, AND WHY IT IS BLURRIER (#1848) ─────────────
 //
-//   1. After spawning DOOM + clicking the card, the card's on-canvas
-//      position (the .svelte-flow__node[data-id="v-doom"] CSS transform)
-//      does NOT change when arrow keys are pressed.
-//   2. SvelteFlow's viewport zoom/pan is unchanged.
-//   3. **The player's in-game x/y position changes when ArrowUp is held**
-//      (forward movement on E1M1 — verified by reading players[0].mo->y
-//      via dgpt_get_player_y exported from the WASM, NOT by sampling the
-//      framebuffer, which the broken-key bug also changed).
-//   4. **The player's facing angle changes when ArrowLeft / ArrowRight
-//      is held** (left turns increase angle, right turns decrease angle
-//      per DOOM's CCW convention).
+// The owner's bar for DOOM coverage is "doom renders, our kb logic works, basic
+// game nav works". Everything finer than that was a liability here, because
+// DOOM's game clock IS the frame clock (one rendered frame = one game tic — see
+// _doom-helpers.ts), so every "hold a key for N ms, then assert the marine
+// travelled at least D" was really an assertion about HOW MANY TICS ELAPSED.
+// That is a different assertion on every renderer and under every shard load.
 //
-// Cold-start cost: the spec needs the WASM blob + the shareware WAD on
-// the dev server. If either is missing (`/doom/doom.js` 404 or `/doom/
-// DOOM1.WAD` 404) the test skips with a diagnostic — same gating pattern
-// as doom-multiplayer.spec.ts.
+// Two of the old thresholds were quietly minimum-tic-count gates:
+//   · `|Δangle| > 50_000_000` — DOOM's SLOW turn rate (angleturn[2] = 320, used
+//     for the first ~6 tics of a held turn) is 320 << 16 = 20_971_520 per tic,
+//     so that threshold needed ≥ 3 tics INSIDE a fixed 800 ms window.
+//   · `|dx|+|dy| > 100_000` after a fixed 1200 ms hold — a smaller margin, but
+//     the same shape.
+//
+// So the assertions now read: HOLD THE KEY AND POLL UNTIL THE MARINE IS NO
+// LONGER WHERE IT WAS (MOVE_EPS / TURN_EPS — one map unit, ~0.33°), bounded by
+// a timeout that BOUNDS THE FAILURE rather than gating it. A frozen sim still
+// fails; a slow renderer just takes longer to pass. The direction properties
+// that are genuinely tic-count-independent are KEPT (left and right turn
+// opposite ways; forward and backward are both motion).
+//
+// ⚠ NEGATIVE CONTROLS, PERMANENT LEGS OF EACH TEST. "The marine moved" is
+// worthless without "the marine does NOT move when nothing is pressed" — a
+// probe that always reports motion would pass the positive leg forever. Both
+// tests therefore open with a NO-INPUT leg over a real span of TICS and assert
+// the marine holds still, using the SAME epsilon and the SAME reader the
+// positive legs use. The second test additionally keeps the post-Escape leg,
+// which is a negative control by construction.
+//
+// Cold-start cost: the spec needs the WASM blob + the shareware WAD on the dev
+// server. If either is missing (`/doom/doom.js` 404 or `/doom/DOOM1.WAD` 404)
+// the test skips with a diagnostic — same gating pattern as
+// doom-multiplayer.spec.ts.
 
 import { test, expect, type Page, type Locator } from '@playwright/test';
 import { spawnPatch } from './_helpers';
+import {
+  MOVE_EPS,
+  TURN_EPS,
+  angleDelta,
+  manhattan,
+  pressUntilInLevel,
+  readPlayer,
+  waitTics,
+} from './_doom-helpers';
+
+const NODE = 'v-doom';
+
+/** How many GAME TICS a no-input control leg observes. Tics, never ms: the
+ *  claim is "the marine did not move while the sim ran", and the sim's clock is
+ *  the only honest unit for "while the sim ran". 25 tics is a hair over the
+ *  ~0.7 s of DOOM game time in which a held key produces obvious travel, so the
+ *  control leg covers the same span of GAME time the positive leg needs. */
+const CONTROL_TICS = 25;
 
 interface PlayerState {
   x: number;
@@ -45,13 +89,11 @@ interface PlayerState {
 }
 
 test.describe('DOOM — keyboard routing (arrows reach player, not viewport)', () => {
-  // Cold-start WASM init + 4 MB WAD fetch + menu nav + the per-keypress
-  // delays add up; bump the per-test budget.
+  // Cold-start WASM init + 4 MB WAD fetch + menu nav + several polled key
+  // bursts. Generous per-test budget; the assertions gate, this only bounds it.
   test.setTimeout(180_000);
 
-  test('arrow keys move the player in-game (verified via player.x/y/angle delta)', async ({
-    page,
-  }) => {
+  test('arrow keys move the player in-game, and nothing moves without them', async ({ page }) => {
     page.on('pageerror', (e) => console.error('pageerror:', e.message));
 
     await page.goto('/rack?shell=legacy&seed=none');
@@ -64,7 +106,7 @@ test.describe('DOOM — keyboard routing (arrows reach player, not viewport)', (
     }
 
     await spawnPatch(page, [
-      { id: 'v-doom', type: 'doom', position: { x: 200, y: 120 }, domain: 'video' },
+      { id: NODE, type: 'doom', position: { x: 200, y: 120 }, domain: 'video' },
     ]);
 
     const card = page.locator('[data-testid="doom-card"]');
@@ -86,181 +128,165 @@ test.describe('DOOM — keyboard routing (arrows reach player, not viewport)', (
       'card becomes the selected SF node after click',
     ).toHaveCount(1);
 
-    // Walk the title-screen menu into actual gameplay:
-    //   Enter → exits the demo loop into the main menu
-    //   Enter → "New Game"
-    //   Enter → skill picker (default = "I'm too young to die")
-    //   Enter → confirms skill, drops us into E1M1
-    for (let i = 0; i < 4; i++) {
-      await page.keyboard.press('Enter');
-      await page.waitForTimeout(300);
-    }
-
-    // Wait for the player mobj to actually spawn into the level (E1M1
-    // loads asynchronously after the skill picker). hasPlayerMobj()
-    // flips true once the player thinker has placed the mobj on the map.
-    await page.waitForFunction(
-      () => {
-        const w = globalThis as unknown as {
-          __engine?: () => {
-            getDomain?: (d: string) => {
-              read?: (id: string, k: string) => unknown;
-            } | null;
-          } | null;
-        };
-        const ve = w.__engine?.()?.getDomain?.('video');
-        const extras = ve?.read?.('v-doom', 'extras') as {
-          getRuntime?: () => { hasPlayerMobj?: () => boolean } | null;
-        } | undefined;
-        return extras?.getRuntime?.()?.hasPlayerMobj?.() === true;
-      },
-      { timeout: 30_000 },
-    );
-
-    // Helper to snapshot player state from the runtime.
-    async function readPlayerState(): Promise<PlayerState> {
-      const state = await page.evaluate(() => {
-        const w = globalThis as unknown as {
-          __engine?: () => {
-            getDomain?: (d: string) => {
-              read?: (id: string, k: string) => unknown;
-            } | null;
-          } | null;
-        };
-        const ve = w.__engine?.()?.getDomain?.('video');
-        const extras = ve?.read?.('v-doom', 'extras') as {
-          getRuntime?: () => {
-            getPlayerState?: () => { x: number; y: number; angle: number } | null;
-          } | null;
-        } | undefined;
-        return extras?.getRuntime?.()?.getPlayerState?.() ?? null;
-      });
-      if (!state) throw new Error('runtime.getPlayerState() returned null — no level loaded');
-      return state;
-    }
+    // ── BASIC GAME NAV: keyboard walks the title sequence into E1M1 ─────────
+    // Enter → exits the demo loop into the main menu → "New Game" → skill
+    // picker → confirms skill → E1M1. Pressed until the marine EXISTS rather
+    // than four times on a wall-clock cadence, so a slow renderer cannot leave
+    // the walk stranded in the skill picker (see pressUntilInLevel).
+    const presses = await pressUntilInLevel(page, NODE);
+    expect(
+      presses,
+      `keyboard nav reached E1M1 in ${presses} Enter presses (vanilla walk is 4). A ` +
+        `much larger number means presses are being DROPPED, which is the very ` +
+        `routing bug this file exists to catch — not merely a slow machine.`,
+    ).toBeLessThanOrEqual(12);
 
     const nodeWrapper = page.locator('.svelte-flow__node[data-id="v-doom"]');
     const viewport = page.locator('.svelte-flow__viewport');
 
-    // -------- ArrowUp: forward movement --------
-    //
-    // Sample player state before + after holding ArrowUp ~1s. The exact
-    // movement axis (x vs y) depends on the player's spawn-facing angle
-    // on E1M1; the player starts facing east (angle = 0), so forward
-    // movement increments x. We assert |dx| + |dy| > threshold rather
-    // than pinning to a specific axis, so the test isn't fragile to
-    // map-specific spawn angles.
+    // ── NEGATIVE CONTROL (permanent): NO KEY HELD ⇒ the marine holds still ──
+    // Read with the same reader and judged against the same epsilon as every
+    // positive leg below. Without this, "the marine is not where it was" would
+    // be satisfied by a probe that reports motion unconditionally, and all
+    // four positive legs would be green lights wired to nothing.
+    const idleBefore = await readState();
+    const idleTics = await waitTics(page, NODE, CONTROL_TICS, 30_000);
+    const idleAfter = await readState();
+    expect(
+      idleTics,
+      `DOOM's game clock did not advance ${CONTROL_TICS} tics (advanced ${idleTics}). ` +
+        `A frozen sim makes the control leg below vacuous — it would report "did not ` +
+        `move" for a sim that cannot move at all.`,
+    ).toBeGreaterThanOrEqual(CONTROL_TICS);
+    expect(
+      manhattan(idleBefore, idleAfter),
+      `the marine MOVED with no key held (|dx|+|dy|=${manhattan(idleBefore, idleAfter)} ` +
+        `over ${idleTics} tics, before=(${idleBefore.x}, ${idleBefore.y}) ` +
+        `after=(${idleAfter.x}, ${idleAfter.y})). Every "a key moved the marine" ` +
+        `assertion below is meaningless while this is true.`,
+    ).toBeLessThan(MOVE_EPS);
+    expect(
+      Math.abs(angleDelta(idleBefore.angle, idleAfter.angle)),
+      `the marine TURNED with no key held (Δangle=` +
+        `${angleDelta(idleBefore.angle, idleAfter.angle)} over ${idleTics} tics).`,
+    ).toBeLessThan(TURN_EPS);
 
+    // ── ArrowUp: forward movement ──────────────────────────────────────────
+    // The exact movement axis (x vs y) depends on the spawn-facing angle on
+    // E1M1, so this is |dx|+|dy| — not a specific axis. And it is a POLL, not a
+    // fixed hold: the key stays down until the marine is somewhere else, so the
+    // tic rate sets the DURATION and never the VERDICT.
     const transformBefore = await readTransform(nodeWrapper);
     const viewportBefore = await readTransform(viewport);
-    const before = await readPlayerState();
+    const beforeUp = await readState();
 
     await page.keyboard.down('ArrowUp');
-    await page.waitForTimeout(1200);
-    await page.keyboard.up('ArrowUp');
-    await page.waitForTimeout(300);
-
-    const transformAfterUp = await readTransform(nodeWrapper);
-    const viewportAfterUp = await readTransform(viewport);
-    const afterUp = await readPlayerState();
+    let movedUp = 0;
+    try {
+      await expect
+        .poll(
+          async () => {
+            movedUp = manhattan(beforeUp, await readState());
+            return movedUp;
+          },
+          {
+            timeout: 30_000,
+            intervals: [100, 200, 400],
+            message:
+              'ArrowUp produced no player movement. The doomkey was either lost en ' +
+              'route OR mis-decoded inside the WASM. Check ' +
+              'doomgeneric_patchtogether.c → dgpt_set_key / DG_GetKey: KEY_UPARROW ' +
+              '(0xad) must round-trip the full 8 bits; the original "& 0x7f" mask ' +
+              'aliased it to KEY_MINUS (0x2d) and shrunk the screen instead of ' +
+              'moving forward.',
+          },
+        )
+        .toBeGreaterThan(MOVE_EPS);
+    } finally {
+      await page.keyboard.up('ArrowUp');
+    }
 
     expect(
-      transformAfterUp,
-      `card moved on canvas after ArrowUp (${transformBefore} → ${transformAfterUp}). ` +
-        `SvelteFlow stole the arrow key instead of DOOM consuming it.`,
+      await readTransform(nodeWrapper),
+      `card moved on canvas during ArrowUp (was ${transformBefore}). SvelteFlow ` +
+        `stole the arrow key instead of DOOM consuming it.`,
     ).toBe(transformBefore);
-
     expect(
-      viewportAfterUp,
-      `canvas zoom/pan changed after ArrowUp (${viewportBefore} → ${viewportAfterUp}). ` +
-        `Some part of the canvas chrome received the key.`,
+      await readTransform(viewport),
+      `canvas zoom/pan changed during ArrowUp (was ${viewportBefore}). Some part of ` +
+        `the canvas chrome received the key.`,
     ).toBe(viewportBefore);
 
-    const dxUp = Math.abs(afterUp.x - before.x);
-    const dyUp = Math.abs(afterUp.y - before.y);
-    const movedDistance = dxUp + dyUp; // Manhattan distance in fixed-point map units (16.16).
-    // Forward walk speed on Doom's lowest skill is ~25 map units/sec
-    // (the player's forwardmove[0] = 25 with frictionless start). Over
-    // ~1.2 s that's ~30 units → 30 << 16 = ~1.97 M raw fixed-point units.
-    // Threshold of 100,000 fixed-point units (~1.5 map units) is well above
-    // any noise/jitter from the spawn animation but well below real walk.
+    // ── ArrowLeft / ArrowRight: the view turns, and in OPPOSITE directions ──
+    // Direction is the part of a turn that does NOT depend on how many tics
+    // elapsed, so it survives the blur while the magnitude does not.
+    const angleDeltaL = await turnAndMeasure('ArrowLeft', nodeWrapper, viewport);
+    const angleDeltaR = await turnAndMeasure('ArrowRight', nodeWrapper, viewport);
     expect(
-      movedDistance,
-      `ArrowUp produced no player movement (|dx|+|dy| = ${movedDistance} fixed-point units, ` +
-        `before=(${before.x}, ${before.y}), after=(${afterUp.x}, ${afterUp.y})). ` +
-        `The doomkey was either lost en route OR mis-decoded inside the WASM. ` +
-        `Check doomgeneric_patchtogether.c → dgpt_set_key / DG_GetKey: KEY_UPARROW (0xad) ` +
-        `must round-trip the full 8 bits; the original "& 0x7f" mask aliased it to ` +
-        `KEY_MINUS (0x2d) and shrunk the screen instead of moving forward.`,
-    ).toBeGreaterThan(100_000);
+      Math.sign(angleDeltaL),
+      `ArrowLeft and ArrowRight turned the SAME way (Δleft=${angleDeltaL} ` +
+        `Δright=${angleDeltaR}). Both keys reaching the game is not enough — if they ` +
+        `produce the same rotation, one of them is being decoded as the other.`,
+    ).toBe(-Math.sign(angleDeltaR));
 
-    // -------- ArrowLeft: turn left (angle increases per DOOM convention) --------
-
-    const beforeL = await readPlayerState();
-    const tBeforeL = await readTransform(nodeWrapper);
-    const vBeforeL = await readTransform(viewport);
-    await page.keyboard.down('ArrowLeft');
-    await page.waitForTimeout(800);
-    await page.keyboard.up('ArrowLeft');
-    await page.waitForTimeout(300);
-    const afterL = await readPlayerState();
-    const tAfterL = await readTransform(nodeWrapper);
-    const vAfterL = await readTransform(viewport);
-
-    expect(tAfterL, `card moved on canvas after ArrowLeft`).toBe(tBeforeL);
-    expect(vAfterL, `canvas zoom changed after ArrowLeft`).toBe(vBeforeL);
-
-    // angle is angle_t (uint32 — modular). Use unsigned-mod arithmetic.
-    const angleDeltaL = angleDelta(beforeL.angle, afterL.angle);
-    expect(
-      Math.abs(angleDeltaL),
-      `ArrowLeft produced no facing-angle change (Δangle = ${angleDeltaL}). ` +
-        `before=${beforeL.angle} after=${afterL.angle}`,
-    ).toBeGreaterThan(50_000_000);
-
-    // -------- ArrowRight: turn right (angle decreases) --------
-
-    const beforeR = await readPlayerState();
-    const tBeforeR = await readTransform(nodeWrapper);
-    const vBeforeR = await readTransform(viewport);
-    await page.keyboard.down('ArrowRight');
-    await page.waitForTimeout(800);
-    await page.keyboard.up('ArrowRight');
-    await page.waitForTimeout(300);
-    const afterR = await readPlayerState();
-    const tAfterR = await readTransform(nodeWrapper);
-    const vAfterR = await readTransform(viewport);
-
-    expect(tAfterR, `card moved on canvas after ArrowRight`).toBe(tBeforeR);
-    expect(vAfterR, `canvas zoom changed after ArrowRight`).toBe(vBeforeR);
-
-    const angleDeltaR = angleDelta(beforeR.angle, afterR.angle);
-    expect(
-      Math.abs(angleDeltaR),
-      `ArrowRight produced no facing-angle change (Δangle = ${angleDeltaR}). ` +
-        `before=${beforeR.angle} after=${afterR.angle}`,
-    ).toBeGreaterThan(50_000_000);
-    // Left + right should be opposite directions.
-    expect(
-      Math.sign(angleDeltaL) === -Math.sign(angleDeltaR),
-      `ArrowLeft and ArrowRight should turn in opposite directions ` +
-        `(Δleft=${angleDeltaL} Δright=${angleDeltaR})`,
-    ).toBe(true);
-
-    // -------- ArrowDown: backward movement --------
-
-    const beforeD = await readPlayerState();
+    // ── ArrowDown: backward movement ───────────────────────────────────────
+    const beforeD = await readState();
     await page.keyboard.down('ArrowDown');
-    await page.waitForTimeout(800);
-    await page.keyboard.up('ArrowDown');
-    await page.waitForTimeout(300);
-    const afterD = await readPlayerState();
-    const movedDistanceD = Math.abs(afterD.x - beforeD.x) + Math.abs(afterD.y - beforeD.y);
-    expect(
-      movedDistanceD,
-      `ArrowDown produced no player movement (|dx|+|dy| = ${movedDistanceD}). ` +
-        `before=(${beforeD.x}, ${beforeD.y}), after=(${afterD.x}, ${afterD.y}).`,
-    ).toBeGreaterThan(50_000);
+    try {
+      await expect
+        .poll(async () => manhattan(beforeD, await readState()), {
+          timeout: 30_000,
+          intervals: [100, 200, 400],
+          message: `ArrowDown produced no player movement from (${beforeD.x}, ${beforeD.y}).`,
+        })
+        .toBeGreaterThan(MOVE_EPS);
+    } finally {
+      await page.keyboard.up('ArrowDown');
+    }
+
+    // ---- local helpers, closed over `page` ----
+
+    async function readState(): Promise<PlayerState> {
+      const s = await readPlayer(page, NODE);
+      if (!s) throw new Error('runtime.getPlayerState() returned null — no level loaded');
+      return s;
+    }
+
+    /** Hold a turn key until the facing angle has moved past TURN_EPS, assert
+     *  the canvas chrome did not eat the key, and return the SIGNED delta. */
+    async function turnAndMeasure(
+      key: 'ArrowLeft' | 'ArrowRight',
+      wrapper: Locator,
+      vp: Locator,
+    ): Promise<number> {
+      const tBefore = await readTransform(wrapper);
+      const vBefore = await readTransform(vp);
+      const before = await readState();
+      let delta = 0;
+      await page.keyboard.down(key);
+      try {
+        await expect
+          .poll(
+            async () => {
+              delta = angleDelta(before.angle, (await readState()).angle);
+              return Math.abs(delta);
+            },
+            {
+              timeout: 30_000,
+              intervals: [100, 200, 400],
+              message:
+                `${key} produced no facing-angle change from ${before.angle}. The key ` +
+                `never reached the WASM, or it was decoded as something else.`,
+            },
+          )
+          .toBeGreaterThan(TURN_EPS);
+      } finally {
+        await page.keyboard.up(key);
+      }
+      expect(await readTransform(wrapper), `card moved on canvas during ${key}`).toBe(tBefore);
+      expect(await readTransform(vp), `canvas zoom changed during ${key}`).toBe(vBefore);
+      return delta;
+    }
   });
 
   // Regression for the multiplayer "keyboard capture keeps dropping — have to
@@ -287,7 +313,7 @@ test.describe('DOOM — keyboard routing (arrows reach player, not viewport)', (
     }
 
     await spawnPatch(page, [
-      { id: 'v-doom', type: 'doom', position: { x: 200, y: 120 }, domain: 'video' },
+      { id: NODE, type: 'doom', position: { x: 200, y: 120 }, domain: 'video' },
     ]);
     const card = page.locator('[data-testid="doom-card"]');
     await expect(card, 'DOOM card mounts').toHaveCount(1);
@@ -299,38 +325,12 @@ test.describe('DOOM — keyboard routing (arrows reach player, not viewport)', (
       timeout: 30_000,
     });
 
-    // Click latches keyboard control.
+    // Click latches keyboard control; keyboard walks into E1M1.
     await card.click();
-    // Walk into E1M1.
-    for (let i = 0; i < 4; i++) {
-      await page.keyboard.press('Enter');
-      await page.waitForTimeout(300);
-    }
-    await page.waitForFunction(
-      () => {
-        const w = globalThis as unknown as {
-          __engine?: () => { getDomain?: (d: string) => { read?: (id: string, k: string) => unknown } | null } | null;
-        };
-        const ve = w.__engine?.()?.getDomain?.('video');
-        const extras = ve?.read?.('v-doom', 'extras') as {
-          getRuntime?: () => { hasPlayerMobj?: () => boolean } | null;
-        } | undefined;
-        return extras?.getRuntime?.()?.hasPlayerMobj?.() === true;
-      },
-      { timeout: 30_000 },
-    );
+    await pressUntilInLevel(page, NODE);
 
     async function readState(): Promise<PlayerState> {
-      const s = await page.evaluate(() => {
-        const w = globalThis as unknown as {
-          __engine?: () => { getDomain?: (d: string) => { read?: (id: string, k: string) => unknown } | null } | null;
-        };
-        const ve = w.__engine?.()?.getDomain?.('video');
-        const extras = ve?.read?.('v-doom', 'extras') as {
-          getRuntime?: () => { getPlayerState?: () => { x: number; y: number; angle: number } | null } | null;
-        } | undefined;
-        return extras?.getRuntime?.()?.getPlayerState?.() ?? null;
-      });
+      const s = await readPlayer(page, NODE);
       if (!s) throw new Error('no player state');
       return s;
     }
@@ -344,69 +344,94 @@ test.describe('DOOM — keyboard routing (arrows reach player, not viewport)', (
         .querySelector('.svelte-flow__node[data-id="v-doom"]')
         ?.classList.remove('selected');
     });
-    await page.waitForTimeout(100);
 
+    // ── NEGATIVE CONTROL (permanent): churn alone must not move the marine ──
+    // The positive leg below claims "the latch survived the churn, so the key
+    // still moves the player". That claim only means something if the CHURN
+    // ITSELF does not move the player — otherwise the leg passes on a marine
+    // that was already sliding.
+    const idleBefore = await readState();
+    const idleTics = await waitTics(page, NODE, CONTROL_TICS, 30_000);
+    const idleAfter = await readState();
+    expect(
+      idleTics,
+      `game clock did not advance ${CONTROL_TICS} tics after the churn (advanced ` +
+        `${idleTics}) — the control leg below would be vacuous.`,
+    ).toBeGreaterThanOrEqual(CONTROL_TICS);
+    expect(
+      manhattan(idleBefore, idleAfter),
+      `the marine moved during the churn itself with no key held ` +
+        `(|dx|+|dy|=${manhattan(idleBefore, idleAfter)} over ${idleTics} tics).`,
+    ).toBeLessThan(MOVE_EPS);
+
+    // ── The latch survived: a held ArrowUp still reaches the game ───────────
     const before = await readState();
     await page.keyboard.down('ArrowUp');
-    await page.waitForTimeout(1000);
-    await page.keyboard.up('ArrowUp');
-    await page.waitForTimeout(200);
-    const after = await readState();
-    const moved = Math.abs(after.x - before.x) + Math.abs(after.y - before.y);
-    expect(
-      moved,
-      `player did NOT move after a re-render churn (|dx|+|dy|=${moved}). The sticky ` +
-        `keyboard latch should keep DOOM capturing keys even when focus / .selected drop.`,
-    ).toBeGreaterThan(100_000);
+    try {
+      await expect
+        .poll(async () => manhattan(before, await readState()), {
+          timeout: 30_000,
+          intervals: [100, 200, 400],
+          message:
+            'player did NOT move after a re-render churn. The sticky keyboard latch ' +
+            'should keep DOOM capturing keys even when focus / .selected drop.',
+        })
+        .toBeGreaterThan(MOVE_EPS);
+    } finally {
+      await page.keyboard.up('ArrowUp');
+    }
 
-    // Escape = explicit release. After it, a fresh key press must NOT move the
-    // player (capture handed back).
+    // ── Escape = explicit release. A fresh press must NOT move the player ───
     await page.keyboard.press('Escape');
 
-    // Let residual momentum from the forward burst fully decay BEFORE we
-    // measure the post-release press. The latched ArrowUp built up player
-    // momentum; DOOM friction decays it over ~1s of *game tics*, but the
-    // runtime advances tics on the rAF clock — which CI throttles into bursts,
-    // so the decay lurches forward well after the key is up. Measuring a fixed
-    // 800ms window right after Esc therefore catches leftover slide (~0.5–1M
-    // units), not key routing, and flakes. Instead poll until the marine is
-    // STATIONARY (two consecutive ~stable samples), which isolates "does a new
-    // key after Esc move the player" from momentum. If forward were genuinely
-    // STUCK (a real release bug) the marine would never settle and this loop
-    // times out — so this can't mask a real bug, only the momentum confound.
-    const STILL = 8_000; // < 0.13 map units between samples == settled
+    // Let residual momentum from the forward burst decay BEFORE measuring the
+    // post-release press. The latched ArrowUp built up momentum; DOOM friction
+    // decays it over ~1 s of GAME TICS, and the runtime advances tics on the
+    // rAF clock — so a fixed wall-clock window here catches leftover slide, not
+    // key routing. Poll until the marine is STATIONARY instead. If forward were
+    // genuinely STUCK (a real release bug) it would never settle and this times
+    // out, so it cannot mask a real bug — only the momentum confound.
     let prev = await readState();
-    const settleDeadline = Date.now() + 8_000;
-    let settled = false;
-    while (Date.now() < settleDeadline) {
-      await page.waitForTimeout(150);
-      const cur = await readState();
-      const delta = Math.abs(cur.x - prev.x) + Math.abs(cur.y - prev.y);
-      prev = cur;
-      if (delta < STILL) {
-        settled = true;
-        break;
-      }
-    }
-    expect(
-      settled,
-      `player never stopped moving after Escape — forward momentum should decay ` +
-        `and DOOM should stop consuming keys once the latch is released.`,
-    ).toBe(true);
+    await expect
+      .poll(
+        async () => {
+          // Sample across a few TICS so "settled" means settled in game time,
+          // not "two Playwright reads landed in the same frame" — an even
+          // wall-clock lag against a paused renderer aliases to a constant and
+          // would declare a still-sliding marine stationary.
+          await waitTics(page, NODE, 5, 5_000);
+          const cur = await readState();
+          const delta = manhattan(prev, cur);
+          prev = cur;
+          return delta;
+        },
+        {
+          timeout: 30_000,
+          message:
+            'player never stopped moving after Escape — forward momentum should decay ' +
+            'and DOOM should stop consuming keys once the latch is released.',
+        },
+      )
+      .toBeLessThan(MOVE_EPS);
 
     const beforeRelease = await readState();
     await page.keyboard.down('ArrowUp');
-    await page.waitForTimeout(800);
+    const heldTics = await waitTics(page, NODE, CONTROL_TICS, 30_000);
     await page.keyboard.up('ArrowUp');
-    await page.waitForTimeout(200);
     const afterRelease = await readState();
-    const movedAfterEsc =
-      Math.abs(afterRelease.x - beforeRelease.x) + Math.abs(afterRelease.y - beforeRelease.y);
     expect(
-      movedAfterEsc,
-      `player moved after Escape released the latch (|dx|+|dy|=${movedAfterEsc}). ` +
+      heldTics,
+      `game clock did not advance ${CONTROL_TICS} tics while ArrowUp was held after ` +
+        `Escape (advanced ${heldTics}). "The marine did not move" is vacuous when the ` +
+        `sim did not run — this is the leg that stops a frozen renderer from reading ` +
+        `as a correctly-released keyboard.`,
+    ).toBeGreaterThanOrEqual(CONTROL_TICS);
+    expect(
+      manhattan(beforeRelease, afterRelease),
+      `player moved after Escape released the latch ` +
+        `(|dx|+|dy|=${manhattan(beforeRelease, afterRelease)} over ${heldTics} tics). ` +
         `Escape should hand the keyboard back so DOOM stops consuming keys.`,
-    ).toBeLessThan(100_000);
+    ).toBeLessThan(MOVE_EPS);
   });
 });
 
@@ -435,18 +460,4 @@ async function readTransform(loc: Locator): Promise<string> {
   // viewport. We compare strings — exact byte equality is what we want
   // ("not moved" = "transform string identical").
   return await loc.evaluate((el) => (el as HTMLElement).style.transform || '');
-}
-
-// DOOM's angle_t is a uint32 representing angle as 2^32 = full rotation.
-// Compute the SHORTEST signed delta (handles wrap-around) so a turn of
-// just-past-zero doesn't show as a near-360° turn.
-function angleDelta(before: number, after: number): number {
-  // Both inputs are in [0, 2^32). JS bitwise ops would force into 32-bit
-  // signed; use plain modular subtraction in floating point and re-center
-  // into (-2^31, 2^31].
-  const TWO32 = 4_294_967_296;
-  let d = after - before;
-  if (d > TWO32 / 2) d -= TWO32;
-  if (d < -TWO32 / 2) d += TWO32;
-  return d;
 }

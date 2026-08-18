@@ -1,5 +1,15 @@
 // e2e/tests/doom-mp-real.spec.ts
 //
+// ⚠ DOOM SPECS ARE NORMALLY OFF-LIMITS — the standing owner ruling is
+//   "do not fuck with doom in any way without specific approval". The
+//   tic-precision assertions in this file were blurred under a SPECIFIC
+//   approval given by the owner on 2026-08-18, verbatim:
+//     "okay see if you can go make the doom tests blurrier and less flakey,
+//      just knowing doom renders and our kb logic and basic game nav works
+//      is fine"
+//   That approval covers THE SPECS ONLY — not video/modules/doom.ts, not the
+//   WASM/WAD assets, not the netcode. See #1848 and e2e/tests/_doom-helpers.ts.
+//
 // @collab — the operator's exact "real 2-user DOOM multiplayer" flow, driven
 // across two INDEPENDENT browser contexts (separate cookie jars / localStorage
 // / ydocs — two real users on two machines) against the real local Hocuspocus
@@ -45,6 +55,12 @@ import { spawnPatch, type SpawnNode } from './_helpers';
 // former local `const SYNC_BUDGET_MS = 20_000` when #837's helper budget and
 // #841's doom-mp-real asserts merged onto one branch.)
 import { SYNC_BUDGET_MS } from './_collab-helpers';
+import { MOVE_EPS, manhattan, waitTics } from './_doom-helpers';
+
+/** How many GAME TICS a no-input control leg observes. Tics, never ms — DOOM's
+ *  game clock IS the frame clock, so it is the only honest unit for "while the
+ *  sim ran". See _doom-helpers.ts. */
+const CONTROL_TICS = 12;
 
 const GS_LEVEL = 0;
 // DOOM gamestate_t ordinals (doomdef.h): GS_LEVEL=0, GS_INTERMISSION=1,
@@ -198,20 +214,37 @@ async function waitForLevel(page: Page, id: string, timeout = 45000): Promise<bo
     .catch(() => false);
 }
 
-// FNV-1a over a sub-sampled canvas — a cheap fingerprint of the rendered POV.
-async function canvasHash(page: Page): Promise<number> {
+/**
+ * FNV-1a over a sub-sampled canvas — a cheap fingerprint of the rendered POV.
+ *
+ * Returns the hash of the LIVE frame AND `blank`: the same hash computed over
+ * an all-zero buffer of the same length. That second number is the NEGATIVE
+ * CONTROL for "DOOM renders": the sampled offsets all land on the RED channel,
+ * so `hash === blank` means every sampled pixel is black — a frozen, cleared or
+ * never-painted canvas. Without it, "two hashes differ" would be satisfied by a
+ * canvas flickering between two shades of nothing, and "the hash is not -1"
+ * only proves an ELEMENT exists (the repo's documented "unwired LAYER INPUT
+ * passing on a dead canvas" failure).
+ */
+async function canvasHash(page: Page): Promise<{ hash: number; blank: number }> {
   return await page.evaluate(() => {
+    const fnv = (at: (i: number) => number, len: number): number => {
+      let h = 2166136261;
+      for (let i = 0; i < len; i += 64) {
+        h ^= at(i);
+        h = Math.imul(h, 16777619);
+      }
+      return h >>> 0;
+    };
     const cv = document.querySelector('[data-testid="doom-canvas"]') as HTMLCanvasElement | null;
-    if (!cv) return -1;
+    if (!cv) return { hash: -1, blank: -2 };
     const ctx = cv.getContext('2d');
-    if (!ctx) return -1;
+    if (!ctx) return { hash: -1, blank: -2 };
     const { data } = ctx.getImageData(0, 0, cv.width, cv.height);
-    let h = 2166136261;
-    for (let i = 0; i < data.length; i += 64) {
-      h ^= data[i]!;
-      h = Math.imul(h, 16777619);
-    }
-    return h >>> 0;
+    return {
+      hash: fnv((i) => data[i]!, data.length),
+      blank: fnv(() => 0, data.length),
+    };
   });
 }
 
@@ -506,13 +539,34 @@ test.describe('@collab DOOM multiplayer — real 2-user', () => {
       expect(oStart!.slot, 'owner controls slot 0').toBe(0);
       expect(gStart!.slot, 'guest controls slot 1 (P2, distinct)').toBe(1);
 
-      // The guest renders its OWN advancing framebuffer (not a frozen mirror /
-      // demo). Capture two hashes a moment apart while the sim ticks.
-      const gHashA = await canvasHash(guest.page);
-      await guest.page.waitForTimeout(1200);
-      const gHashB = await canvasHash(guest.page);
-      expect(gHashA, 'guest canvas is rendering').not.toBe(-1);
-      expect(gHashB, "guest's own framebuffer advances frame-to-frame").not.toBe(gHashA);
+      // -- DOOM RENDERS, on the GUEST's own framebuffer (not a frozen mirror) --
+      //
+      // Was: two hashes 1200 ms apart, compared once. That is a bet on how many
+      // FRAMES land in 1200 ms -- and a frame is a game tic here, so it is a
+      // different assertion on every renderer, and on a backgrounded second
+      // context (which this is) rAF is throttled hard. One unlucky window and
+      // the two hashes match. Now it POLLS until the fingerprint moves, so the
+      // renderer sets the duration and never the verdict.
+      const gFirst = await canvasHash(guest.page);
+      expect(gFirst.hash, 'guest canvas element exists and yields image data').not.toBe(-1);
+      // NEGATIVE CONTROL for "renders": every sampled offset is a RED byte, so
+      // a hash equal to the all-zero reference means the frame is BLACK. A
+      // "changing" black canvas would otherwise satisfy the poll below.
+      expect(
+        gFirst.hash,
+        'the guest canvas is uniformly BLACK at every sampled pixel - it is a dead ' +
+          'or cleared canvas, not a rendered DOOM frame, and the "it changed" poll ' +
+          'below would happily pass on one.',
+      ).not.toBe(gFirst.blank);
+      await expect
+        .poll(async () => (await canvasHash(guest.page)).hash, {
+          timeout: 30_000,
+          intervals: [200, 400, 800],
+          message:
+            "the guest's own framebuffer never advanced - it is showing a frozen " +
+            'mirror of someone else, or its render loop is dead.',
+        })
+        .not.toBe(gFirst.hash);
 
       // ── A moving changes B's view (cross-peer ticcmd feed) ───────────────
       // Owner holds ArrowUp; its marine must advance in the GUEST's world (the
@@ -528,6 +582,29 @@ test.describe('@collab DOOM multiplayer — real 2-user', () => {
         return w.__doomCards?.[nid]?.getSlotState(0) ?? null;
       }, NODE_ID);
       expect(ownerInGuestBefore, "owner's marine exists in the guest's world").not.toBeNull();
+
+      // -- NEGATIVE CONTROL (permanent): NO KEY HELD => the marine holds still -
+      // Every "holding ArrowUp moved the marine" leg below is worthless without
+      // it: a marine already sliding (a stuck key, a demo playing itself, a
+      // ticcmd stream replaying someone else's input) satisfies "the position
+      // changed" forever. Same reader, same epsilon, and a span of GAME TICS
+      // rather than wall-clock so the control covers the same amount of game
+      // time on every renderer.
+      const ownerIdleBefore = await playerPos(owner.page, NODE_ID);
+      const idleTics = await waitTics(owner.page, NODE_ID, CONTROL_TICS, 30_000);
+      const ownerIdleAfter = await playerPos(owner.page, NODE_ID);
+      expect(
+        idleTics,
+        `the owner's game clock did not advance ${CONTROL_TICS} tics (advanced ` +
+          `${idleTics}). "The marine did not move" is vacuous when the sim did not run.`,
+      ).toBeGreaterThanOrEqual(CONTROL_TICS);
+      expect(
+        manhattan(ownerIdleBefore!, ownerIdleAfter!),
+        `the owner's marine moved with NO key held ` +
+          `(|dx|+|dy|=${manhattan(ownerIdleBefore!, ownerIdleAfter!)} over ${idleTics} ` +
+          `tics). Every movement assertion below is meaningless while this is true.`,
+      ).toBeLessThan(MOVE_EPS);
+
       // Hold ArrowUp on the owner for a sustained burst. Take a STICKY,
       // focus-independent keyboard claim via the forceClaimKeyboard() hook (see
       // claimKeyboard) — NOT a DOM click/focus, which is racy across two
@@ -543,16 +620,19 @@ test.describe('@collab DOOM multiplayer — real 2-user', () => {
       // Owner's own marine moves (local input → its own sim).
       const ownerMoved = await owner.page
         .waitForFunction(
+          // MOVE_EPS, not `!==`: the control leg above proves the marine is
+          // stationary to within one map unit, so the positive leg must clear
+          // the SAME bar or the pair leaves a gap that both legs pass through.
           (args) => {
-            const [nid, sx, sy] = args as [string, number, number];
+            const [nid, sx, sy, eps] = args as [string, number, number, number];
             const w = globalThis as unknown as {
               __doomCards?: Record<string, { getPlayerState: () => { x: number; y: number } | null }>;
             };
             const p = w.__doomCards?.[nid]?.getPlayerState();
-            return !!p && (p.x !== sx || p.y !== sy);
+            return !!p && Math.abs(p.x - sx) + Math.abs(p.y - sy) > eps;
           },
-          [NODE_ID, oStart!.x, oStart!.y],
-          { timeout: 10000 },
+          [NODE_ID, oStart!.x, oStart!.y, MOVE_EPS],
+          { timeout: 30000 },
         )
         .then(() => true)
         .catch(() => false);
@@ -575,16 +655,19 @@ test.describe('@collab DOOM multiplayer — real 2-user', () => {
       );
       const guestMoved = await guest.page
         .waitForFunction(
+          // MOVE_EPS, not `!==`: the control leg above proves the marine is
+          // stationary to within one map unit, so the positive leg must clear
+          // the SAME bar or the pair leaves a gap that both legs pass through.
           (args) => {
-            const [nid, sx, sy] = args as [string, number, number];
+            const [nid, sx, sy, eps] = args as [string, number, number, number];
             const w = globalThis as unknown as {
               __doomCards?: Record<string, { getPlayerState: () => { x: number; y: number } | null }>;
             };
             const p = w.__doomCards?.[nid]?.getPlayerState();
-            return !!p && (p.x !== sx || p.y !== sy);
+            return !!p && Math.abs(p.x - sx) + Math.abs(p.y - sy) > eps;
           },
-          [NODE_ID, gMoveStart!.x, gMoveStart!.y],
-          { timeout: 10000 },
+          [NODE_ID, gMoveStart!.x, gMoveStart!.y, MOVE_EPS],
+          { timeout: 30000 },
         )
         .then(() => true)
         .catch(() => false);
@@ -615,15 +698,18 @@ test.describe('@collab DOOM multiplayer — real 2-user', () => {
       const crossPeerMoved = await guest.page
         .waitForFunction(
           (args) => {
-            const [nid, bx, by] = args as [string, number, number];
+            const [nid, bx, by, eps] = args as [string, number, number, number];
             const w = globalThis as unknown as {
               __doomCards?: Record<string, { getSlotState: (s: number) => { x: number; y: number } | null }>;
             };
             const s = w.__doomCards?.[nid]?.getSlotState(0);
-            return !!s && (s.x !== bx || s.y !== by);
+            return !!s && Math.abs(s.x - bx) + Math.abs(s.y - by) > eps;
           },
-          [NODE_ID, ownerInGuestBaseline!.x, ownerInGuestBaseline!.y],
-          { timeout: 15000 },
+          [NODE_ID, ownerInGuestBaseline!.x, ownerInGuestBaseline!.y, MOVE_EPS],
+          // A CAP, not the gate: the cross-peer ticcmd feed has to reach the
+          // guest's sim and be run there, and both of those are paced by the
+          // GUEST's frame clock, which a backgrounded context throttles.
+          { timeout: 45000 },
         )
         .then(() => true)
         .catch(() => false);

@@ -1,36 +1,87 @@
 // e2e/tests/doom-audio-output.spec.ts
 //
+// ⚠ DOOM SPECS ARE NORMALLY OFF-LIMITS — the standing owner ruling is
+//   "do not fuck with doom in any way without specific approval". This file was
+//   rewritten under a SPECIFIC approval given by the owner on 2026-08-18,
+//   verbatim:
+//     "okay see if you can go make the doom tests blurrier and less flakey,
+//      just knowing doom renders and our kb logic and basic game nav works
+//      is fine"
+//   That approval covers THE SPECS ONLY — not video/modules/doom.ts, not the
+//   WASM/WAD assets, not the netcode. See #1848 and e2e/tests/_doom-helpers.ts.
+//
 // LIVE end-to-end regression coverage for DOOM's stereo audio outputs.
 //
 // PR #421's video→audio CV/gate sweep covered DOOM's six event gates
 // (evt_kill / evt_door / evt_gun_p1..p4) but NOT the stereo audio outs
-// (audio_l / audio_r). This file closes that gap.
+// (audio_l / audio_r). This file closes that gap: real PatchEngine + real
+// AudioContext + real DoomRuntime + real worklet, asserting a SCOPE actually
+// sees the stereo signal arrive when patched.
 //
-// Why this matters: the user reported "DOOM's A-L / A-R don't produce
-// sound". The unit-level sweep in engine-video-audio-bridge.test.ts now
-// covers doom.audio_l / doom.audio_r at the dispatcher level (this PR),
-// proving the engine .connect()s the GainNode upstream into the audio
-// sink. This spec is the live layer: real PatchEngine + real AudioContext
-// + real DoomRuntime + real worklet, asserting SCOPE actually sees the
-// stereo signal arrive when patched.
+// It also carries the LOUDNESS GUARD. Root cause of the original defect: the C
+// mixer (i_pcmgen.c `int32_t out = accum >> 6;`) divides by 64, so a single SFX
+// at full volume peaked at only ~254/32768 ≈ −42 dBFS — DOOM was ~40 dB too
+// quiet since day one. The fix is a FIXED makeup gain + tanh soft-limiter in
+// the PCM worklet (we do NOT touch the C / WASM). This spec proves the makeup
+// actually lifts the audible level.
+//
+// ── WHAT MADE THIS THE #1 DOOM FLAKE, AND WHAT CHANGED (#1848) ─────────────
+//
+// The old probe held fire for a FIXED 24 × 80 ms and read the SCOPE analyser
+// once per iteration from the Playwright side. Two separate defects:
+//
+//   1. THE INSTRUMENT WAS BLIND TO MOST OF THE AUDIO. The analyser window is
+//      2048 samples ≈ 42 ms; sampling it every 80 ms means slightly more than
+//      HALF the timeline was never looked at. A pistol shot is ~200 ms of
+//      decaying noise but its PEAK is a handful of milliseconds — landing that
+//      peak inside a sampled window was luck.
+//   2. THE NUMBER OF SHOTS WAS RENDERER-DEPENDENT. DOOM's game clock is the
+//      frame clock (see _doom-helpers.ts), so a fixed 1.92 s of held fire is
+//      ~115 tics on a real GPU and ~15 under SwiftShader. The pistol's refire
+//      is measured in TICS, so the loud events the probe was hunting for got
+//      rarer exactly when the sampling got sparser.
+//
+// Both are fixed by MOVING THE ACCUMULATOR INTO THE PAGE (CLAUDE.md's
+// instrument rule) and polling the ACCUMULATED maximum instead of an
+// instantaneous read: a 20 ms page-side interval against a ~42 ms window
+// OVERLAPS, so no sample of DOOM's output can slip between observations, and
+// the test then simply holds fire until the accumulator has seen a loud frame
+// — however many tics that takes on this machine.
+//
+// ⚠ TWO NEGATIVE CONTROLS, BOTH PERMANENT LEGS OF THIS TEST:
+//
+//   SPATIAL — a THIRD scope is spawned and left UNPATCHED. Same module, same
+//     read path, same accumulator, no edge. It must stay at silence for the
+//     whole run. Without it, "the accumulator saw a loud frame" would also be
+//     satisfied by an accumulator reading noise, reading the wrong node, or
+//     reading a shared bus — the exact failure mode of the repo's documented
+//     "unwired LAYER INPUT passing on a dead canvas" case.
+//   TEMPORAL — the accumulators are installed BEFORE the "Click to load DOOM"
+//     button is pressed, and every scope must read silence while DOOM is not
+//     running. This is what makes the later loudness a statement about DOOM
+//     rather than about the page: the ONLY thing that changed between the two
+//     reads is that the runtime started.
+//
+// ⚠ A FINDING WHILE REWRITING THIS (#1848): the old file carried a
+// `test.fixme` claiming "idle nomonsters E1M1 with no input doesn't fire any
+// channel" (task #78). That is FALSE on the real menu-driven path — measured
+// peak 0.148 on audio_l immediately after the title walk, before a single shot
+// (DOOM's menu-select sound is DSPISTOL and it is still ringing). So the
+// keypress-driven SFX this file was waiting on for #78 is already there; the
+// two permanently-fixme'd tests it left behind are deleted, and BOTH channels
+// are asserted here instead of only audio_l.
 //
 // Skip semantics: DOOM requires both the WASM bundle (built locally via
 // `bash packages/web/native/build-doom-wasm.sh`) AND the DOOM1.WAD asset.
 // Either missing → test.skip() with a clear reason. CI builds both before
-// running e2e; locally a developer who hasn't run the WASM build sees the
-// skip rather than a noisy fail.
-//
-// Out of scope for this spec:
-//   - the WASM bundle itself (forbidden by the task — don't touch DOOM
-//     WASM)
-//   - keyboard input handling (forbidden by the task)
-//   - audio gain calibration / SFX timing (those are runtime concerns
-//     covered by doom-wasm.spec.ts)
+// running e2e; locally a developer who hasn't run the WASM build sees the skip
+// rather than a noisy fail.
 
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
+import { pressUntilInLevel, waitTics } from './_doom-helpers';
 
-test.describe.configure({ mode: 'serial' });
+
 
 /** Probe DOOM-WASM presence. Skip cleanly when the optional asset is
  *  absent. Mirrors the helper in video-audio-cvgate-coverage.spec.ts so
@@ -52,101 +103,97 @@ async function doomWadPresent(page: Page): Promise<boolean> {
   });
 }
 
-/** Trigger DOOM's runtime load + a single-player start so the WASM mixer
- *  begins emitting PCM into the worklet. Returns true on success, false
- *  if any step times out. The caller polls. */
-async function ensureDoomRunning(page: Page, nodeId: string): Promise<boolean> {
-  return await page.evaluate(async (id) => {
+/** What one scope's page-side accumulator has seen since it was installed. */
+interface ScopeAccum {
+  /** Largest |sample| across EVERY analyser frame observed. */
+  peak: number;
+  /** Largest per-frame RMS across every analyser frame observed. */
+  rms: number;
+  /** How many analyser frames the accumulator actually read. */
+  samples: number;
+  /** Wall-clock the accumulator has been running, ms. */
+  elapsedMs: number;
+}
+
+/**
+ * Install ONE page-side accumulator that watches every named scope.
+ *
+ * ⚠ This is the fix for the #1 flake in this file, and it is an INSTRUMENT fix,
+ * not a threshold fix. Reading a scope once per Playwright round trip is one
+ * CDP hop per sample ON THE SAME MAIN THREAD AS THE SUBJECT, and at an 80 ms
+ * cadence against a ~42 ms analyser window it structurally cannot see about
+ * half the signal. The interval here is 20 ms, so consecutive windows OVERLAP
+ * and no DOOM output can pass unobserved.
+ *
+ * `samples` and `elapsedMs` come back with the result and go into the assertion
+ * messages, so "the path is silent" and "the accumulator never ran" are
+ * distinguishable from the failure output alone — they are not, from a bare
+ * peak of 0.
+ */
+async function installScopeAccumulators(page: Page, scopeIds: string[]): Promise<void> {
+  await page.evaluate((ids) => {
     const w = globalThis as unknown as {
       __engine?: () => {
         read: (n: { id: string; type: string; domain: string }, k: string) => unknown;
       } | null;
       __patch: { nodes: Record<string, { id: string; type: string; domain: string }> };
+      __doomScopeAccum?: Record<string, { peak: number; rms: number; samples: number; t0: number }>;
+      __doomScopeTimer?: number;
     };
-    const eng = w.__engine?.();
-    if (!eng) return false;
-    const node = w.__patch.nodes[id];
-    if (!node) return false;
-    const extras = eng.read(node, 'extras') as
-      | {
-          ensureLoaded?: () => Promise<string | null>;
-          startNetGame?: (s: unknown, p: number) => void;
+    if (w.__doomScopeTimer !== undefined) clearInterval(w.__doomScopeTimer);
+    const now = performance.now();
+    const acc: Record<string, { peak: number; rms: number; samples: number; t0: number }> = {};
+    for (const id of ids) acc[id] = { peak: 0, rms: 0, samples: 0, t0: now };
+    w.__doomScopeAccum = acc;
+    w.__doomScopeTimer = setInterval(() => {
+      const eng = w.__engine?.();
+      if (!eng) return;
+      for (const id of ids) {
+        const node = w.__patch.nodes[id];
+        if (!node) continue;
+        const snap = eng.read(node, 'snapshot') as { ch1: Float32Array } | undefined;
+        if (!snap || !snap.ch1) continue;
+        let peak = 0;
+        let sq = 0;
+        for (let i = 0; i < snap.ch1.length; i++) {
+          const v = snap.ch1[i]!;
+          const a = v < 0 ? -v : v;
+          if (a > peak) peak = a;
+          sq += v * v;
         }
-      | undefined;
-    if (!extras || typeof extras.ensureLoaded !== 'function') return false;
-    const err = await extras.ensureLoaded();
-    if (err) return false;
-    // Single-player start (consoleplayer = 0, episode 1 map 1, easiest skill,
-    // no monsters so the sim is deterministic + the demo intro doesn't
-    // distract). DOOM's S_StartSound emits PCM from t=0 (the level intro
-    // music + ambient SFX), so we don't need to wait for an event.
-    extras.startNetGame?.(
-      {
-        deathmatch: 0,
-        episode: 1,
-        map: 1,
-        skill: 1,
-        nomonsters: 1,
-        fastMonsters: 0,
-        respawnMonsters: 0,
-        numPlayers: 1,
-      },
-      0,
-    );
-    return true;
-  }, nodeId);
+        const rms = Math.sqrt(sq / Math.max(1, snap.ch1.length));
+        const slot = acc[id]!;
+        slot.samples++;
+        if (peak > slot.peak) slot.peak = peak;
+        if (rms > slot.rms) slot.rms = rms;
+      }
+      // 20 ms < the analyser's ~42 ms window ⇒ consecutive reads OVERLAP, so
+      // the accumulator cannot miss a transient the way an 80 ms Playwright
+      // poll did.
+    }, 20) as unknown as number;
+  }, scopeIds);
 }
 
-/** Read a SCOPE's ch1 analyser snapshot. Returns peak + rms across the
- *  current FFT window. Identical helper-shape to other specs so a future
- *  refactor can lift this into _helpers.ts. */
-async function readScopePeak(
-  page: Page,
-  scopeNodeId: string,
-): Promise<{ peak: number; rms: number } | null> {
+/** Read one accumulator without disturbing it. */
+async function readAccum(page: Page, scopeId: string): Promise<ScopeAccum> {
   return await page.evaluate((id) => {
     const w = globalThis as unknown as {
-      __engine?: () => {
-        read: (n: { id: string; type: string; domain: string }, k: string) => unknown;
-      } | null;
-      __patch: { nodes: Record<string, { id: string; type: string; domain: string }> };
+      __doomScopeAccum?: Record<string, { peak: number; rms: number; samples: number; t0: number }>;
     };
-    const eng = w.__engine?.();
-    if (!eng) return null;
-    const node = w.__patch.nodes[id];
-    if (!node) return null;
-    const snap = eng.read(node, 'snapshot') as
-      | { ch1: Float32Array; ch2: Float32Array; sampleRate: number }
-      | undefined;
-    if (!snap) return null;
-    let peak = 0, sq = 0;
-    for (let i = 0; i < snap.ch1.length; i++) {
-      const v = snap.ch1[i]!;
-      const a = Math.abs(v);
-      if (a > peak) peak = a;
-      sq += v * v;
-    }
-    return { peak, rms: Math.sqrt(sq / Math.max(1, snap.ch1.length)) };
-  }, scopeNodeId);
+    const a = w.__doomScopeAccum?.[id];
+    if (!a) return { peak: -1, rms: -1, samples: 0, elapsedMs: 0 };
+    return { peak: a.peak, rms: a.rms, samples: a.samples, elapsedMs: performance.now() - a.t0 };
+  }, scopeId);
 }
 
-// ---- LOUDNESS GUARD (the −42 dB fix) ----------------------------------------
-//
-// Root cause: the C mixer (i_pcmgen.c `int32_t out = accum >> 6;`) divides by
-// 64, so a single SFX at full volume peaks at only ~254/32768 ≈ −42 dBFS — DOOM
-// has been ~40 dB too quiet since day one. The fix is a FIXED makeup gain +
-// tanh soft-limiter in the PCM worklet (we do NOT touch the C / WASM). This
-// LIVE test proves the makeup actually lifts the audible level: it boots DOOM,
-// walks into E1M1, fires the pistol (Ctrl) a few times to guarantee a loud SFX,
-// and asserts the SCOPE RMS off audio_l is well above the old near-silence
-// floor. The threshold is tolerant (well above −42 dB, well below a hard clip)
-// so it guards the makeup without being brittle about the non-deterministic
-// exact in-game amplitude.
-//
-// Skip-clean when WASM/WAD are absent (same semantics as the rest of the file).
-// CI ships both, so CI enforces the guard even when a local dev can't.
-test.describe('DOOM loudness: makeup gain lifts audio_l RMS above the old −42 dB floor', () => {
-  test('in-level SFX (pistol) produce audible RMS on a downstream SCOPE', async ({ page }) => {
+test.describe('DOOM audio: A-L / A-R reach a downstream SCOPE, above the old −42 dB floor', () => {
+  // Cold WASM + 4 MB WAD + a menu walk + a held-fire burst that waits for the
+  // renderer rather than assuming it. Generous ceiling; the assertions gate.
+  test.setTimeout(180_000);
+
+  test('in-level SFX (pistol) produce audible level on BOTH channels — and an unpatched scope stays silent', async ({
+    page,
+  }) => {
     page.on('pageerror', (e) => console.error('pageerror:', e.message));
     await page.goto('/rack?shell=legacy&seed=none');
     await page.waitForLoadState('networkidle');
@@ -161,24 +208,71 @@ test.describe('DOOM loudness: makeup gain lifts audio_l RMS above the old −42 
     );
 
     const doomId = 'v-doom-loud';
-    const scopeId = 'cons-scope-doom-loud';
+    const scopeL = 'cons-scope-doom-l';
+    const scopeR = 'cons-scope-doom-r';
+    // THE NEGATIVE CONTROL. Same module, same read path, same accumulator —
+    // and NO edge from DOOM. If this one ever goes loud, the probe is not
+    // measuring the DOOM audio path and the two positive legs prove nothing.
+    const scopeUnpatched = 'cons-scope-doom-control';
 
     await spawnPatch(
       page,
       [
-        { id: doomId,  type: 'doom',  position: { x: 80,  y: 80 }, domain: 'video' },
-        { id: scopeId, type: 'scope', position: { x: 540, y: 80 }, domain: 'audio' },
+        { id: doomId,          type: 'doom',  position: { x: 80,  y: 80  }, domain: 'video' },
+        { id: scopeL,          type: 'scope', position: { x: 540, y: 80  }, domain: 'audio' },
+        { id: scopeR,          type: 'scope', position: { x: 540, y: 320 }, domain: 'audio' },
+        { id: scopeUnpatched,  type: 'scope', position: { x: 540, y: 560 }, domain: 'audio' },
       ],
       [
         {
-          id: 'e-doom-loud-scope',
-          from: { nodeId: doomId,  portId: 'audio_l' },
-          to:   { nodeId: scopeId, portId: 'ch1' },
+          id: 'e-doom-l-scope',
+          from: { nodeId: doomId, portId: 'audio_l' },
+          to:   { nodeId: scopeL, portId: 'ch1' },
           sourceType: 'audio',
           targetType: 'audio',
         },
+        {
+          id: 'e-doom-r-scope',
+          from: { nodeId: doomId, portId: 'audio_r' },
+          to:   { nodeId: scopeR, portId: 'ch1' },
+          sourceType: 'audio',
+          targetType: 'audio',
+        },
+        // scopeUnpatched deliberately has NO edge.
       ],
     );
+
+    // Everything below reads through ONE page-side accumulator, installed
+    // BEFORE the runtime is loaded so the temporal control below is honest.
+    await installScopeAccumulators(page, [scopeL, scopeR, scopeUnpatched]);
+
+    // ── NEGATIVE CONTROL, TEMPORAL LEG: silence while DOOM is NOT running ───
+    // The accumulator must have actually taken samples (a peak of 0 from an
+    // instrument that never looked is "never looked", not "silent" — and the
+    // two are indistinguishable from the number alone, which is why the sample
+    // count is asserted separately) and every scope must read silence.
+    await expect
+      .poll(async () => (await readAccum(page, scopeL)).samples, {
+        timeout: 15_000,
+        message:
+          'the page-side scope accumulator never took a sample. Its later silence ' +
+          'and its later loudness would BOTH be vacuous.',
+      })
+      .toBeGreaterThan(10);
+    for (const [id, label] of [
+      [scopeL, 'audio_l'],
+      [scopeR, 'audio_r'],
+      [scopeUnpatched, 'unpatched control'],
+    ] as const) {
+      const pre = await readAccum(page, id);
+      expect(
+        pre.peak,
+        `${label}'s scope was already at ${pre.peak} BEFORE DOOM was loaded ` +
+          `(${pre.samples} frames / ${Math.round(pre.elapsedMs)}ms). Something other ` +
+          `than DOOM is feeding this probe, so the loudness assertions below would ` +
+          `pass whether or not the DOOM audio path works.`,
+      ).toBeLessThan(0.001);
+    }
 
     const card = page.locator('[data-testid="doom-card"]');
     await expect(card, 'DOOM card mounts').toHaveCount(1);
@@ -188,195 +282,102 @@ test.describe('DOOM loudness: makeup gain lifts audio_l RMS above the old −42 
     await expect(card.locator('.overlay'), 'load overlay clears').toHaveCount(0, {
       timeout: 30_000,
     });
-    await card.click(); // focus the card so DOOM consumes our keys
+    await card.click(); // focus/latch the card so DOOM consumes our keys
 
-    // Walk into E1M1 (Enter ×4) and wait for the marine.
-    for (let i = 0; i < 4; i++) {
-      await page.keyboard.press('Enter');
-      await page.waitForTimeout(300);
-    }
-    await page.waitForFunction(
-      (id) => {
-        const w = globalThis as unknown as {
-          __engine?: () => {
-            getDomain?: (d: string) => { read?: (n: string, k: string) => unknown } | null;
-          } | null;
-        };
-        const ve = w.__engine?.()?.getDomain?.('video');
-        const extras = ve?.read?.(id, 'extras') as
-          | { getRuntime?: () => { hasPlayerMobj?: () => boolean } | null }
-          | undefined;
-        return extras?.getRuntime?.()?.hasPlayerMobj?.() === true;
-      },
-      doomId,
-      { timeout: 30_000 },
-    );
+    // BASIC GAME NAV: walk the title sequence into E1M1 by keyboard. Presses
+    // until the marine exists rather than four presses on a wall-clock cadence
+    // — see pressUntilInLevel.
+    const presses = await pressUntilInLevel(page, doomId);
+    expect(
+      presses,
+      `keyboard nav walked the DOOM title sequence into a level in ${presses} Enter ` +
+        `presses. The vanilla walk is 4 (demo → menu → New Game → skill → E1M1); a ` +
+        `much larger number means presses are being dropped, not that the test is slow.`,
+    ).toBeLessThanOrEqual(12);
 
-    // Fire the pistol by HOLDING primary fire (KeyF). Ctrl is DOOM's secondary
-    // fire bind but macOS binds Ctrl+Arrow to Mission Control and intercepts the
-    // key, so a keyboard `press('Control')` fired unreliably — that's what made
-    // this flake between a faint shot and total silence. KeyF is the documented
-    // MacBook-safe PRIMARY fire (see doomkeys.ts). Holding it auto-repeats the
-    // pistol; we sample the SCOPE across the burst so a shot reliably lands
-    // inside an analyser window.
-    let bestRms = 0;
-    let bestPeak = 0;
+    // Let the sim run a real span of TICS in the level before judging anything
+    // — renderer-independent by construction (see waitTics), and it proves the
+    // game clock is advancing at all rather than assuming it.
+    const ticked = await waitTics(page, doomId, 20, 20_000);
+    expect(
+      ticked,
+      `DOOM's game clock did not advance 20 tics in the level (advanced ${ticked}). ` +
+        `A frozen sim produces no SFX, so every audio assertion below would fail for ` +
+        `a reason that has nothing to do with the audio path.`,
+    ).toBeGreaterThanOrEqual(20);
+
+    // ── Hold PRIMARY FIRE and wait for the accumulator to see a loud frame ──
+    // KeyF is the documented MacBook-safe PRIMARY fire (see doomkeys.ts); Ctrl
+    // is DOOM's secondary bind but macOS steals Ctrl+Arrow for Mission Control,
+    // which is what made the original probe alternate between a faint shot and
+    // total silence. Holding auto-repeats the pistol.
+    //
+    // ⚠ This POLLS the accumulated maximum. It does not sample-and-hope: the
+    // accumulator has already seen every frame since installation, so the poll
+    // only decides WHEN ENOUGH TICS HAVE PASSED for a shot to have happened —
+    // which is precisely the renderer-dependent quantity we refuse to guess.
     await page.keyboard.down('f');
     try {
-      for (let i = 0; i < 24; i++) {
-        await page.waitForTimeout(80);
-        const s = await readScopePeak(page, scopeId);
-        if (s) {
-          if (s.rms > bestRms) bestRms = s.rms;
-          if (s.peak > bestPeak) bestPeak = s.peak;
-        }
-      }
+      await expect
+        .poll(async () => (await readAccum(page, scopeL)).peak, {
+          timeout: 45_000,
+          intervals: [250, 500, 1000],
+          message:
+            'audio_l never reached an audible peak while primary fire was held. ' +
+            'Either the PCM worklet makeup gain (the −42 dB fix) is missing, the ' +
+            'video→audio bridge dropped the edge, or the key never reached DOOM.',
+        })
+        .toBeGreaterThan(0.08);
+      // audio_r shares the SFX (the pistol is at the listener, so it pans
+      // centre) but gets its own edge and its own GainNode — a bridge that
+      // wires only the left channel is a real, previously untested defect.
+      await expect
+        .poll(async () => (await readAccum(page, scopeR)).peak, {
+          timeout: 20_000,
+          intervals: [250, 500, 1000],
+          message:
+            'audio_r stayed near silence while audio_l went loud — the stereo pair ' +
+            'is half-wired (only the left GainNode reached the sink).',
+        })
+        .toBeGreaterThan(0.08);
     } finally {
       await page.keyboard.up('f');
     }
 
-    // Old behaviour: a single SFX peaked at ≈ 0.00775 (−42 dBFS), so RMS over a
-    // window was a tiny fraction of that. The makeup gain (24×) lifts a single
-    // SFX peak to ≈ 0.18, so even a sparse pistol-shot window must show RMS
-    // comfortably above the old floor. 0.02 RMS is ~14 dB above the old
-    // single-SFX PEAK and far above its RMS — a clear, tolerant witness that
-    // the makeup gain is live (and that the worklet didn't go silent).
+    const loudL = await readAccum(page, scopeL);
+    const loudR = await readAccum(page, scopeR);
+
+    // The makeup gain (24×) lifts a single SFX peak from ≈0.00775 (−42 dBFS) to
+    // ≈0.18. 0.02 RMS is ~14 dB above the OLD single-SFX PEAK — a tolerant
+    // witness that the makeup is live and the worklet did not go silent.
     expect(
-      bestPeak,
-      `audio_l peak stayed near silence (${bestPeak}). The PCM worklet's makeup ` +
-        `gain (the −42 dB fix) is missing or the audio path is dead.`,
-    ).toBeGreaterThan(0.08);
-    expect(
-      bestRms,
-      `audio_l RMS (${bestRms}) is at the old −42 dB near-silence floor. With the ` +
-        `makeup gain a fired pistol must lift RMS well above it.`,
+      loudL.rms,
+      `audio_l RMS (${loudL.rms}, peak ${loudL.peak}, ${loudL.samples} frames) is at the ` +
+        `old −42 dB near-silence floor. With the makeup gain a fired pistol must lift ` +
+        `RMS well above it.`,
     ).toBeGreaterThan(0.02);
+    expect(
+      loudR.rms,
+      `audio_r RMS (${loudR.rms}, peak ${loudR.peak}, ${loudR.samples} frames) is at the ` +
+        `old −42 dB near-silence floor.`,
+    ).toBeGreaterThan(0.02);
+
+    // ── NEGATIVE CONTROL, LEG 2: the UNPATCHED scope stayed silent ──────────
+    // Read LAST, so it has been accumulating through the entire loud burst.
+    // This is what separates "the probe read DOOM's audio_l" from "the probe
+    // reads something loud that happens to be on the page".
+    const control = await readAccum(page, scopeUnpatched);
+    expect(
+      control.samples,
+      `the control scope's accumulator never ran (samples=${control.samples}) — its ` +
+        `silence would be vacuous.`,
+    ).toBeGreaterThan(5);
+    expect(
+      control.peak,
+      `an UNPATCHED scope read ${control.peak} while DOOM was firing (${control.samples} ` +
+        `frames). The probe is not measuring the doom→scope edge — it is reading a ` +
+        `shared bus, the wrong node, or stale data, and the loudness assertions above ` +
+        `prove nothing.`,
+    ).toBeLessThan(0.001);
   });
-});
-
-test.describe('DOOM audio output regression: A-L / A-R reach a downstream SCOPE', () => {
-  for (const channel of ['audio_l', 'audio_r'] as const) {
-    // FIXME(#78): test scenario needs a synthetic keypress to trigger an
-    // SFX (S_StartSound), since `nomonsters: 1` idle E1M1 with no input
-    // doesn't fire any channel. PR #429's keep-alive fix made the audio
-    // PATH alive; this test now confirms the path BUT the scenario must
-    // actually produce PCM samples. Task #78 ("DOOM audio: dedicated e2e
-    // driver that waits for WASM ready + injects keypress") tracks the
-    // proper rewrite. Until then, the engine-bridge unit sweep + the
-    // handle audit are the regression bar for the audio output class.
-    // The details-object annotation puts the FIXME(#78) reason above onto the
-    // report row — a bare `test.fixme(title, fn)` is an anonymous skip to the
-    // merged-report audit (#1502).
-    test.fixme(
-      `doom.${channel} → scope.ch1 produces non-silence`,
-      {
-        annotation: {
-          type: 'fixme',
-          description:
-            'task #78: scenario needs a synthetic keypress to fire an SFX — idle nomonsters E1M1 '
-            + 'produces no PCM; audio-output class covered by the engine-bridge unit sweep meanwhile',
-        },
-      },
-      async ({ page }) => {
-      const errors: string[] = [];
-      page.on('pageerror', (e) => errors.push(e.message));
-      page.on('console', (m) => {
-        if (m.type() === 'error') errors.push(m.text());
-      });
-
-      await page.goto('/rack?shell=legacy&seed=none');
-      await page.waitForLoadState('networkidle');
-
-      const hasWasm = await doomWasmPresent(page);
-      const hasWad = await doomWadPresent(page);
-      test.skip(
-        !hasWasm || !hasWad,
-        'DOOM WASM and/or DOOM1.WAD not present locally — '
-          + 'run `bash packages/web/native/build-doom-wasm.sh` + drop DOOM1.WAD '
-          + 'into packages/web/static/doom. CI builds both before e2e.',
-      );
-
-      const doomId = `src-doom-${channel}`;
-      const scopeId = `cons-scope-doom-${channel}`;
-
-      // Patch: DOOM.<channel> → SCOPE.ch1. SCOPE's ch1 is an audio-typed
-      // input that exposes a node-input handle (no AudioParam) — exactly
-      // what the dispatcher's video.audio → audio bridge connects into.
-      await spawnPatch(
-        page,
-        [
-          { id: doomId,  type: 'doom',  position: { x: 80,  y: 80 }, domain: 'video' },
-          { id: scopeId, type: 'scope', position: { x: 540, y: 80 }, domain: 'audio' },
-        ],
-        [
-          {
-            id: `e-doom-${channel}-scope`,
-            from: { nodeId: doomId,  portId: channel },
-            to:   { nodeId: scopeId, portId: 'ch1' },
-            sourceType: 'audio',
-            targetType: 'audio',
-          },
-        ],
-      );
-
-      // Wait for the DOOM card to render so extras() is reachable.
-      await page.locator('[data-card-type="doom"]').first()
-        .waitFor({ state: 'visible', timeout: 10_000 });
-
-      // Boot DOOM. ensureLoaded + startNetGame fires the WASM init + game
-      // start; the PCM mixer begins emitting samples a few hundred ms
-      // later (S_Init seeds the intro music + ambient SFX). Poll until
-      // the start hook returns true (the extras handle materialises
-      // asynchronously after the card's $effect lands).
-      await expect.poll(
-        async () => ensureDoomRunning(page, doomId),
-        { timeout: 15_000, intervals: [200, 400, 800] },
-      ).toBe(true);
-
-      // Give the WASM mixer + pcm worklet pump time to produce its first
-      // ~300ms of audio. The pump interval is 16ms, the worklet's ring
-      // is 1s of headroom, and the engine emits the intro music starting
-      // at level-load. 1.5s is comfortably past S_StartMusic.
-      await page.waitForTimeout(1500);
-
-      // Poll the scope analyser. The mixer is non-deterministic in exact
-      // amplitude (intro music level differs from in-game ambience), but
-      // ANY non-silence proves the path: bridge connected, GainNode
-      // alive, worklet emitting non-zero PCM. The 0.005 floor is well
-      // above the analyser's noise but well below typical SFX amplitude
-      // (~0.3-0.8 mid-game).
-      let after: { peak: number; rms: number } | null = null;
-      await expect.poll(
-        async () => {
-          after = await readScopePeak(page, scopeId);
-          return after?.peak ?? 0;
-        },
-        {
-          timeout: 10_000,
-          intervals: [200, 400, 600, 1000],
-          message:
-            `scope.ch1 peak stayed at 0 — doom.${channel} is silent. `
-              + 'Pre-fix the user-reported regression: the dispatcher dropped '
-              + 'the edge, the GainNode never received the worklet output, '
-              + 'or the worklet pump never started.',
-        },
-      ).toBeGreaterThan(0.005);
-
-      expect(after, `doom.${channel}: scope read must succeed`).not.toBeNull();
-
-      // Cosmetic: tolerate the well-known DOOM loader noise (WASM
-      // streaming, WAD fetch warnings) but flag anything else.
-      const realErrors = errors.filter((e) =>
-        !e.includes('AudioContext')
-        && !e.includes('DOOM1.WAD')
-        && !e.includes('doom.js')
-        && !e.includes('streamingCompile')
-        && !e.includes('Uncaught (in promise) Error: aborted')
-      );
-      expect(
-        realErrors,
-        `doom.${channel}: no unexpected console / page errors`,
-      ).toEqual([]);
-    });
-  }
 });
