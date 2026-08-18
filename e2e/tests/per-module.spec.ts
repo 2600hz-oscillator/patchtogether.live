@@ -6,10 +6,6 @@
 // by the per-module driver (see _drivers.ts).
 //
 // What this slice ships:
-//   * Spawn check: every registered module mounts without console / page
-//     errors. (Redundant with modules.spec.ts for non-skipped modules,
-//     but kept here so the spec is self-contained when modules.spec
-//     eventually gets folded into this one.)
 //   * Output-alive check: every module with `hasAudioOutput` is wired
 //     into SCOPE.ch1 and its peak / RMS asserted to clear the floor.
 //     Modules that need a gate/pitch to fire have a driver override
@@ -151,10 +147,10 @@ const SKIP_OUTPUT_ALIVE: Record<string, string> = {
 };
 
 // Reference list of modules that can't spawn under bare spawnPatch —
-// not consumed here (spawn-solo coverage lives in modules.spec.ts)
-// but kept as a comment so a future per-module test that DOES need
-// the module mounted (CV-input wire-LFO, video-output canvas-pixel
-// check) starts from this same skip seed:
+// not consumed here (spawn-solo coverage lives in the registry card sweep,
+// e2e/tests/io-spec-consistency.spec.ts) but kept as a comment so a future
+// per-module test that DOES need the module mounted (CV-input wire-LFO,
+// video-output canvas-pixel check) starts from this same skip seed:
 //
 //   group: 'requires data.children; covered by grouping-phase1.spec.ts'
 
@@ -162,13 +158,19 @@ test.describe.configure({ mode: 'parallel' });
 
 test.describe('per-module: output-alive smoke', () => {
   for (const mod of REGISTRY) {
-    // Spawn-solo check is covered by modules.spec.ts (which also asserts
-    // handle count + label substring) — running spawn-solo a second time
-    // here adds ~2 sec × 74 modules of pure duplication. SKIP_SPAWN was
-    // intentionally kept on this branch as a reference for which modules
-    // can't spawn cleanly under bare spawnPatch (group needs
-    // data.children), but the test is no longer emitted from here. If
-    // modules.spec.ts ever stops covering spawn, restore the loop.
+    // Spawn-solo check is covered by the registry card sweep in
+    // io-spec-consistency.spec.ts (which also asserts handle parity, handle
+    // count, card identity, card box and control bounds off that ONE spawn) —
+    // running spawn-solo a second time here adds ~2 sec × 76 modules of pure
+    // duplication. ⚠ The fold went THAT way, not this one, and the reason is
+    // the PATCH SHAPE: this spec's test spawns module + SCOPE (+ SEQUENCER),
+    // and only for the `hasAudioOutput` subset, so moving the solo-card
+    // assertions here would still have needed a separate solo spawn for every
+    // other module — i.e. no page load saved. SKIP_SPAWN was intentionally kept
+    // on this branch as a reference for which modules can't spawn cleanly under
+    // bare spawnPatch (group needs data.children), but the test is no longer
+    // emitted from here. If the card sweep ever stops covering spawn, restore
+    // the loop.
 
     // ───── Output-alive check ─────
     // Only stamp this for modules that declare an audio output AND

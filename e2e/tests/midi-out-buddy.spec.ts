@@ -52,7 +52,7 @@ test('midi-out-buddy: drops + card mounts with EVERY declared input handle, no c
   // comment, so when the def gained its `poly` bus the assertion kept passing
   // while checking 3 of 4 ports — a gate whose stated scope exceeded what it
   // verified, and the card shipped without a poly jack anyway (caught only by
-  // modules.spec's handle COUNT). Deriving keeps the claim and the check the
+  // the registry card sweep's handle COUNT). Deriving keeps the claim and the check the
   // same thing.
   const declaredInputs: string[] = await page.evaluate(() => {
     const w = globalThis as unknown as {

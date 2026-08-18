@@ -30,11 +30,21 @@
 //     LAST sent CC's scaled value (collab peers / persistence contract), and
 //     the toybox engine clone (read('liveModulated')) agrees.
 //
-// The FPS measurement is deliberately a LOG-ONLY diagnostic (second test):
-// CI's SwiftShader software renderer makes absolute-FPS asserts flaky (repo
-// memory: capability/renderer-dependent e2e), while the transaction-count
-// invariant above pins the starvation mechanism deterministically — the same
-// approach perf-tempo-under-modulation.spec.ts uses for pointer drags.
+// The FPS measurement is deliberately a LOG-ONLY diagnostic: CI's SwiftShader
+// software renderer makes absolute-FPS asserts flaky (repo memory:
+// capability/renderer-dependent e2e), while the transaction-count invariant
+// above pins the starvation mechanism deterministically — the same approach
+// perf-tempo-under-modulation.spec.ts uses for pointer drags.
+//
+// ⚠ It used to be its OWN test, paying a second bootVideoPatch (toybox +
+// backdraft + videoOut on SwiftShader) plus 4 s of sampling for three sanity
+// asserts, one of which — `blastFps > 0` — a renderer crawling at 0.5 fps
+// satisfies, i.e. the exact degenerate state it existed to detect. #1861 folded
+// all three into the coalescing test below, where a REAL burst is already
+// running: the idle window that was already there supplies the idle arm (and
+// doubles as the frame counter's positive control), `burst()` accumulates
+// frames across each blast IN THE PAGE, and the wedge check is expressed in
+// FRAMES rather than a rate so a slower machine cannot launder it.
 
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
@@ -155,6 +165,10 @@ interface BurstResult {
   txns: number;
   streamMs: number;
   lastVal: number;
+  /** VideoEngine frames rendered across the burst window (see burst()). */
+  frames: number;
+  /** Frames per second across the burst — the log-only FPS diagnostic. */
+  fps: number;
 }
 
 /** Blast `count` sine-swept CC messages at ~250 msg/s IN-PAGE (one evaluate —
@@ -166,7 +180,16 @@ interface BurstResult {
  *  per-message 4 ms sleep stretches the "burst" to many seconds. The catch-up
  *  loop sends however many messages are DUE by wall-clock each turn, exactly
  *  like queued Web MIDI macrotasks draining back-to-back after a stall — so
- *  the wire rate stays ~250 msg/s regardless of render load. */
+ *  the wire rate stays ~250 msg/s regardless of render load.
+ *
+ *  ALSO samples the VideoEngine frame counter across the SAME window (#1861,
+ *  absorbing the deleted FPS case): the whole point of the coalescing fix was
+ *  that a CC storm must not starve the render loop, and this is the only place
+ *  in the file where a real storm is running. Both quantities are accumulated
+ *  IN THE PAGE — a Playwright-side poll would be one round trip per sample on
+ *  the same main thread as the subject it claims to measure, which on a loaded
+ *  runner starves both and makes "frozen" and "never looked" identical from the
+ *  output. */
 async function burst(page: Page, cc: number, count: number): Promise<BurstResult> {
   return page.evaluate(
     async ({ cc, count }) => {
@@ -174,6 +197,8 @@ async function burst(page: Page, cc: number, count: number): Promise<BurstResult
       let txns = 0;
       const onU = () => { txns++; };
       w.__ydoc.on('update', onU);
+      const video = w.__engine?.()?.getDomain('video');
+      const f0 = video ? video.currentFrameCount() : 0;
       const RATE_PER_MS = 0.25; // 250 msg/s
       const t0 = performance.now();
       let sent = 0;
@@ -189,10 +214,11 @@ async function burst(page: Page, cc: number, count: number): Promise<BurstResult
         await new Promise((r) => setTimeout(r, 0));
       }
       const streamMs = performance.now() - t0;
+      const frames = video ? video.currentFrameCount() - f0 : -1;
       // Wait out the trailing settle flush (200 ms) + margin.
       await new Promise((r) => setTimeout(r, 700));
       w.__ydoc.off('update', onU);
-      return { sent, txns, streamMs, lastVal };
+      return { sent, txns, streamMs, lastVal, frames, fps: (frames / streamMs) * 1000 };
     },
     { cc, count },
   );
@@ -216,20 +242,42 @@ test.describe('MIDI-CC coalescing — store-write starvation gate', () => {
 
     // Idle floor: nothing else in this patch writes the doc at rest, so every
     // transaction measured during a burst is attributable to CC dispatch.
+    //
+    // The same window doubles as the IDLE arm of the FPS diagnostic (#1861) —
+    // free, because it is a window this test already had to sit through. It is
+    // also the POSITIVE CONTROL for the frame counter: a renderer that reads
+    // zero frames at REST is not evidence about CC starvation, it is a broken
+    // instrument, and without this leg the under-load reading below could not
+    // tell those apart.
     const idle = await page.evaluate(async () => {
       const w = globalThis as unknown as W;
       let txns = 0;
       const onU = () => { txns++; };
       w.__ydoc.on('update', onU);
+      const video = w.__engine?.()?.getDomain('video');
+      const f0 = video ? video.currentFrameCount() : 0;
+      const t0 = performance.now();
       await new Promise((r) => setTimeout(r, 600));
+      const dt = performance.now() - t0;
+      const frames = video ? video.currentFrameCount() - f0 : -1;
       w.__ydoc.off('update', onU);
-      return txns;
+      return { txns, frames, fps: (frames / dt) * 1000 };
     });
-    expect(idle, 'idle patch writes no doc transactions').toBe(0);
+    expect(idle.txns, 'idle patch writes no doc transactions').toBe(0);
+    expect(
+      idle.frames,
+      `INSTRUMENT CONTROL: the video engine rendered ${idle.frames} frames in an IDLE 600 ms window `
+      + '— the frame counter is unreadable or the render loop is already dead, so the under-load '
+      + 'readings below would prove nothing about CC starvation',
+    ).toBeGreaterThan(0);
 
     // ── Leg 1: params-backed module (BACKDRAFT mix — Fader setter path). ──
     const mix = await burst(page, 22, 100);
     console.log(`[perf-midi-cc] backdraft mix burst: sent=${mix.sent} txns=${mix.txns} streamMs=${Math.round(mix.streamMs)} ceiling=${txnCeiling(mix.streamMs)}`);
+    console.log(
+      `[perf-midi-cc] FPS diagnostic (mix burst): idle=${idle.fps.toFixed(1)} blast=${mix.fps.toFixed(1)} `
+      + `ratio=${(idle.fps > 0 ? mix.fps / idle.fps : 0).toFixed(2)} (sent=${mix.sent} msgs @~250/s)`,
+    );
     expect(mix.sent).toBe(100);
     expect(mix.txns, 'mix burst coalesced (mechanism ceiling)').toBeLessThanOrEqual(txnCeiling(mix.streamMs));
     expect(mix.txns, 'mix burst nowhere near 1-txn-per-message').toBeLessThan(mix.sent * 0.25);
@@ -242,6 +290,10 @@ test.describe('MIDI-CC coalescing — store-write starvation gate', () => {
     // ── Leg 2: toybox DATA-write leg (layer:0:rotX — Knob setter → setMat). ──
     const rot = await burst(page, 21, 100);
     console.log(`[perf-midi-cc] toybox rotX burst: sent=${rot.sent} txns=${rot.txns} streamMs=${Math.round(rot.streamMs)} ceiling=${txnCeiling(rot.streamMs)}`);
+    console.log(
+      `[perf-midi-cc] FPS diagnostic (rotX burst): idle=${idle.fps.toFixed(1)} blast=${rot.fps.toFixed(1)} `
+      + `ratio=${(idle.fps > 0 ? rot.fps / idle.fps : 0).toFixed(2)} (sent=${rot.sent} msgs @~250/s)`,
+    );
     expect(rot.sent).toBe(100);
     expect(rot.txns, 'rotX burst coalesced (mechanism ceiling)').toBeLessThanOrEqual(txnCeiling(rot.streamMs));
     expect(rot.txns, 'rotX burst nowhere near 1-txn-per-message').toBeLessThan(rot.sent * 0.25);
@@ -265,6 +317,32 @@ test.describe('MIDI-CC coalescing — store-write starvation gate', () => {
       return lm?.layers?.[0]?.material?.rotX;
     });
     expect(engineRot).toBeCloseTo(expectedRot, 3);
+
+    // ── RENDERING NEVER FULLY WEDGED (#1861) ────────────────────────────────
+    // This was a separate test that paid its own bootVideoPatch (toybox +
+    // backdraft + videoOut on SwiftShader) plus 4 s of sampling, to assert
+    // `blastFps > 0` — which a renderer crawling at 0.5 fps satisfies, i.e. the
+    // exact degenerate state it existed to detect. Its window is now this one,
+    // where a REAL coalescing burst is running, and its check is expressed as
+    // FRAMES rather than a rate so it says something a slower machine cannot
+    // launder: across the burst the engine rendered at least one frame.
+    //
+    // ⚠ It is deliberately still a FLOOR, not a ratio gate. CI's SwiftShader
+    // FPS is too noisy for an absolute or relative threshold (repo memory:
+    // capability/renderer-dependent e2e), and the STARVATION MECHANISM is
+    // pinned deterministically by the transaction ceilings above — this leg
+    // only rules out "the render loop stopped entirely", which the ceilings
+    // cannot see. The idle arm above is what stops it being vacuous.
+    expect(
+      mix.frames,
+      `render loop wedged during the mix burst: ${mix.frames} frames in ${Math.round(mix.streamMs)} ms `
+      + `(idle reference ${idle.fps.toFixed(1)} fps)`,
+    ).toBeGreaterThan(0);
+    expect(
+      rot.frames,
+      `render loop wedged during the rotX burst: ${rot.frames} frames in ${Math.round(rot.streamMs)} ms `
+      + `(idle reference ${idle.fps.toFixed(1)} fps)`,
+    ).toBeGreaterThan(0);
 
     expect(errors, 'no page errors during the CC storm').toEqual([]);
   });
@@ -424,63 +502,5 @@ test.describe('MIDI-CC coalescing — store-write starvation gate', () => {
     expect(res.tbRebuilt, 'dirty TOYBOX entry rebuilds').toBe(true);
     expect(res.tbMeasuredKept, 'dirty node keeps measured (no re-measure)').toBe(true);
     expect(errors, 'no page errors').toEqual([]);
-  });
-
-  test('FPS under CC blast — LOG-ONLY diagnostic (renderer-dependent, not a CI gate)', async ({ page }) => {
-    test.setTimeout(180_000);
-    const errors: string[] = [];
-    await bootVideoPatch(page, errors);
-    await assertChainLive(page);
-
-    const result = await page.evaluate(async () => {
-      const w = globalThis as unknown as W;
-      const video = w.__engine!()!.getDomain('video');
-      const sample = async (ms: number): Promise<number> => {
-        const f0 = video.currentFrameCount();
-        const t0 = performance.now();
-        await new Promise((r) => setTimeout(r, ms));
-        const dt = performance.now() - t0;
-        return ((video.currentFrameCount() - f0) / dt) * 1000;
-      };
-
-      const idleFps = await sample(2000);
-
-      // Sustained alternating blast at ~250 msg/s for 2 s while sampling —
-      // schedule-driven catch-up pacing (see burst() above) so the wire rate
-      // holds even when the render loop stalls the main thread.
-      let stop = false;
-      const blaster = (async () => {
-        const RATE_PER_MS = 0.25;
-        const b0 = performance.now();
-        let i = 0;
-        while (!stop) {
-          const due = Math.floor((performance.now() - b0) * RATE_PER_MS) + 1;
-          while (i < due) {
-            const val = Math.round(63.5 + 63.5 * Math.sin(i * 0.11));
-            w.__midiTestInject!(0, i % 2 === 0 ? 21 : 22, val);
-            i++;
-          }
-          await new Promise((r) => setTimeout(r, 0));
-        }
-        return i;
-      })();
-      const blastFps = await sample(2000);
-      stop = true;
-      const sent = await blaster;
-
-      return { idleFps, blastFps, sent, ratio: idleFps > 0 ? blastFps / idleFps : 0 };
-    });
-
-    // Deliverable diagnostic line (owner go/no-go; CI-visible in the report).
-    console.log(
-      `[perf-midi-cc] FPS diagnostic: idle=${result.idleFps.toFixed(1)} blast=${result.blastFps.toFixed(1)} ` +
-      `ratio=${result.ratio.toFixed(2)} (sent=${result.sent} msgs @~250/s)`,
-    );
-
-    // Only sanity-level asserts (SwiftShader FPS is too noisy for a ratio
-    // gate): the storm actually ran, and rendering never fully wedged.
-    expect(result.sent).toBeGreaterThan(200);
-    expect(result.blastFps).toBeGreaterThan(0);
-    expect(errors, 'no page errors during the FPS diagnostic').toEqual([]);
   });
 });

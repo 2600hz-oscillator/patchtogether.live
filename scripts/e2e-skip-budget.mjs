@@ -240,13 +240,17 @@ export const SKIP_BUDGET = [
       + 'no moof fragments ever materialize. Verified on-device; unit/per-port/behavioral cover the module.',
   },
   {
-    specs: ['modules.spec.ts'],
+    specs: ['io-spec-consistency.spec.ts'],
     reason: /task #102/,
     lanes: ['e2e'],
     homeLane: 'e2e',
     why:
-      'The spawn-smoke QUARANTINE map (currently toybox: SwiftShader first-paint timeout). The fixme '
-      + 'annotation derives its description from the map, so map reason and row reason cannot diverge.',
+      'The spawn-smoke QUARANTINE map (currently toybox: SwiftShader first-paint timeout), which moved '
+      + 'with the rest of modules.spec.ts into the consolidated registry card sweep (#1861). The fixme '
+      + 'annotation derives its description from the map, so map reason and row reason cannot diverge. '
+      + 'It now stands down ONE assertion group rather than the whole test — toybox still runs its '
+      + 'handle-parity and control-bounds groups there, as it always did in the sweeps that never '
+      + 'quarantined it.',
   },
   {
     specs: ['recording-survives-card-collapse.spec.ts'],
@@ -498,7 +502,7 @@ export const SKIP_BUDGET = [
       + 'landing for one shell only, and they are what goes dark first here.',
   },
   {
-    specs: ['modules.spec.ts'],
+    specs: ['io-spec-consistency.spec.ts'],
     reason: /FLAKE-PARK #1847/,
     lanes: ['e2e'],
     homeLane: 'e2e',
@@ -507,7 +511,11 @@ export const SKIP_BUDGET = [
       + 'QUARANTINE map, which renders an interpolated-title test.fixme whose annotation carries the MAP value, '
       + 'so map reason and report row cannot diverge. The live title is unchanged, so un-parking is a one-entry '
       + 'deletion. Lost meanwhile: those modules spawn smoke — card render, registry-derived handle count and a '
-      + 'clean console — which is the only per-module render gate outside the VRT lanes.',
+      + 'clean console — which is the only per-module render gate outside the VRT lanes. '
+      + 'The map moved with the rest of modules.spec.ts into the consolidated registry card sweep (#1861) and '
+      + 'the park did NOT change scope: it stands down that sweep\'s render-smoke group, which is exactly what '
+      + 'modules.spec.ts asserted, and these three were never parked in the three sibling sweeps that also '
+      + 'spawned them.',
   },
   {
     specs: ['per-module-per-port-behavioral.spec.ts'],
