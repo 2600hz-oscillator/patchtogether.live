@@ -163,6 +163,29 @@ function buildParams(): readonly ParamDef[] {
 const PARAMS = buildParams();
 
 /**
+ * The CHANNEL a param belongs to, as a 0-based index into `MIXMSTRS_CHANNELS`,
+ * or `null` for a BUS-scoped param (`master_volume`, `send{R}Pre`, the return
+ * strips).
+ *
+ * ⚠ ONE STATEMENT OF THE NAMING CONVENTION, and it lives beside the loop that
+ * creates the names. Two things read it and neither may re-type it: the face
+ * model's `isChannelScoped` (the SCOPE ranking axis) and `face.channelAccent`
+ * (#1825's per-column lane colour). A second regex somewhere else would agree
+ * on the day it was written and drift the first time a channel control is
+ * added — the failure this repo has paid for repeatedly.
+ *
+ * ⚠ IT MATCHES ON THE INDEX, NOT ON A SUFFIX LIST. `ch{N}_anything` and
+ * `comp{N}` are the two shapes `buildParams` emits, so a NEW per-channel
+ * control is claimed automatically and gets its colour with no edit here.
+ */
+export function mixmstrsChannelIndex(paramId: string): number | null {
+  const m = /^ch(\d+)_/.exec(paramId) ?? /^comp(\d+)$/.exec(paramId);
+  if (!m) return null;
+  const i = (MIXMSTRS_CHANNELS as readonly number[]).indexOf(Number(m[1]));
+  return i >= 0 ? i : null;
+}
+
+/**
  * The params whose per-cell CAPTION survives on the faceplate — the exceptions
  * `face.bareCells` is derived against (see the note there).
  *
@@ -508,6 +531,31 @@ export const mixmstrsDef: AudioModuleDef = {
       ...MIXMSTRS_CHANNELS.map((c) => [`ch${c}_volume`, 'fader' as const]),
       ...MIXMSTRS_RETURNS.map((r) => [`ret${r}_volume`, 'fader' as const]),
     ]),
+
+    // ── CHANNEL N IS LANE N (#1825) ────────────────────────────────────────
+    //
+    // Owner, 2026-08-17: *"for mixmstrs only, ch1-8 instead of neon blue, all
+    // controls should match the assigned color of its lane."*
+    //
+    // A mixmstrs channel is not an anonymous strip — it is the SAME index that
+    // names a rack lane everywhere else: the automation lane, the clip row, the
+    // "assign to channel N" action, the assigned card's border, the Launchpad
+    // pad. On a console of eight bit-identical strips the colour is the only
+    // thing that says WHICH one you are touching, and the face-model header
+    // already argues that the eight channels are exactly TIED on every axis the
+    // module has — so identity has to come from outside the module, and the
+    // lane is where it already lives.
+    //
+    // ⚠ DERIVED FROM `PARAMS` THROUGH THE DEF'S OWN NAMING RULE, not typed. A
+    // ninth channel, or a tenth per-channel control, joins with no edit here.
+    // ⚠ AND THE RETURN STRIPS ARE DELIBERATELY ABSENT: `ret1_*` is not channel
+    // one, it is the wet coming back from send one, so it keeps the domain
+    // accent. `mixmstrsChannelIndex` answers `null` for it, which is the whole
+    // reason the mapping is a predicate over ids and not a column position —
+    // the `returns` band is a 4-column table whose columns are NOT channels.
+    channelAccent: MIXMSTRS_CHANNELS.map((_, i) =>
+      PARAMS.filter((p) => mixmstrsChannelIndex(p.id) === i).map((p) => p.id),
+    ),
 
     // THE HERO: the master fader, and four derived readouts.
     //

@@ -49,8 +49,12 @@ concurrency:
 
 jobs:
   # ---------------------------------------------------------------------------
-  # The capture. Mirrors the ci.yml `vrt` job (postgres service container), but
-  # runs vrt:update and commits the regenerated e2e/vrt/__screenshots__/ PNGs.
+  # The capture. Runs the FULL_MATCH sweep with --update-snapshots=changed and
+  # commits the regenerated e2e/vrt/__screenshots__/ PNGs.
+  #
+  # It used to say "mirrors the ci.yml `vrt` job (postgres service container)".
+  # That job was deleted 2026-08-17, and the mirroring is what put a database in
+  # here that nothing ever read — see the NO DATABASE note below (#1828).
   # ---------------------------------------------------------------------------
   capture:
     name: regenerate VRT baselines
@@ -74,22 +78,40 @@ jobs:
       # deadlock notice, so a stuck PR names the exact commit that never got a
       # run instead of leaving someone to reconstruct it from timestamps.
       sha: ${{ steps.commit.outputs.sha }}
-    services:
-      postgres:
-        image: postgres:17
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: patchtogether_test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U postgres"
-          --health-interval 5s
-          --health-timeout 3s
-          --health-retries 10
-    env:
-      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/patchtogether_test
+    # ── NO DATABASE. THE CAPTURE NEVER TOUCHED ONE (#1828) ────────────────────
+    #
+    # This job used to declare `services: postgres:17` — bare Docker Hub, not
+    # even the mirror every other lane had moved to — plus an `Apply DB schema`
+    # step. Both were copied when the workflow was written (#549: "mirrors the
+    # ci.yml `vrt` job (postgres service container)"), and that ci.yml `vrt` job
+    # was itself deleted 2026-08-17. Nothing here ever read the database.
+    #
+    # CHECKED, not assumed, because the capture boots the whole app:
+    #   * Every `goto` in the e2e/vrt tree resolves to `/` or `/rack[?…]` —
+    #     no /dashboard, no /r/[id], no /api.
+    #   * `routes/rack/+page.ts` sets `ssr = false`, so /rack has NO server load
+    #     at all; `routes/+page.ts` sets `prerender = true` and reads no auth.
+    #   * The root `+layout.server.ts` calls only `readHomeAuth` (Clerk cookies).
+    #     `hooks.server.ts` reads no DB. The only DATABASE_URL consumers are
+    #     lib/server/db.ts (reached solely from /api + /dashboard + /r/) and
+    #     packages/server.
+    #   * vrt.config.ts's webServer is `vite dev` ALONE — the Hocuspocus relay,
+    #     the other DATABASE_URL consumer, is never started in this lane.
+    #   * The one `/api/*` request in the tree (interactions.spec.ts →
+    #     /api/saved-groups) is `page.route`-stubbed and never reaches a server.
+    #   * POSITIVE CONTROL, running today: ci.yml's REQUIRED `vrt-strict-shard`
+    #     runs vrt.spec.ts + workflow-shell-faces.spec.ts against those same
+    #     routes with no postgres and no schema step, and is green every run.
+    #
+    # So this deletes an image pull, a container start and a schema apply — and
+    # with them A WHOLE FAILURE MODE — from the repo's ONLY baseline author: the
+    # job whose failure costs 45-55 min and, per #1810, currently discards every
+    # good baseline in the run.
+    #
+    # ⚠ IF A FULL_MATCH SPEC EVER VISITS /r/, /dashboard OR /api FOR REAL, this
+    # job needs the DB back — as a STEP (`.github/scripts/start-postgres.sh`),
+    # never a `services:` block. scripts/ci-service-container-pull.test.ts is
+    # what makes that non-optional.
     steps:
       - name: Checkout ${{ inputs.ref }} (LFS for VRT baseline PNGs)
         uses: actions/checkout@v4
@@ -135,9 +157,6 @@ jobs:
 
       - name: Install workspace deps + Playwright Chromium
         run: flox activate -- task setup
-
-      - name: Apply DB schema
-        run: flox activate -- scripts/apply-db-schema.sh "$DATABASE_URL"
 
       - name: Cache DOOM WASM artifact
         id: cache-doom-wasm

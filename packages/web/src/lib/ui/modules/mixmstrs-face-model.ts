@@ -63,6 +63,7 @@ import {
   MIXMSTRS_CHANNELS,
   MIXMSTRS_RETURNS,
   mapCompMacro,
+  mixmstrsChannelIndex,
   mixmstrsDef,
 } from '$lib/audio/modules/mixmstrs';
 
@@ -103,9 +104,15 @@ export const returnStripIds = (r: number): string[] => [
  * added. `mixmstrs-face-model.test.ts` anchors it both ways against the live
  * def — every param matches this or is one of the eleven bus-scoped ids, and
  * the two sets partition `mixmstrsDef.params` with nothing left over.
+ *
+ * ⚠ THE REGEX ITSELF MOVED TO THE DEF (#1825, `mixmstrsChannelIndex`), because
+ * the face's per-column LANE COLOUR needs the same question answered with a
+ * channel INDEX rather than a yes/no. Two regexes over one naming convention is
+ * the drift this comment was already warning about; this predicate is now a
+ * thin `!== null` over the one that lives beside the loop that builds the ids.
  */
 export const isChannelScoped = (paramId: string): boolean =>
-  /^ch\d+_/.test(paramId) || /^comp\d+$/.test(paramId);
+  mixmstrsChannelIndex(paramId) !== null;
 
 // ── THE HERO READOUTS ARE GONE, AND SO IS THEIR ARITHMETIC ─────────────────
 //

@@ -820,6 +820,37 @@ export interface ModuleFace {
    */
   momentary?: readonly string[];
   /**
+   * CHANNEL ACCENT (#1825) — the param ids of each CHANNEL, in column order, so
+   * the shell can paint channel N's controls in the colour of clip/automation
+   * LANE N instead of the module's domain accent.
+   *
+   * Owner, 2026-08-17: *"for mixmstrs only, ch1-8 instead of neon blue, all
+   * controls should match the assigned color of its lane."* A mixer channel IS
+   * a lane — the same index that colours the automation lane, the clip row, the
+   * Launchpad pad and the assigned card's border — and a console whose eight
+   * strips are one colour makes the player count columns to find theirs.
+   *
+   * ⚠ PLAIN, DERIVED DATA. Outer index = channel = LANE index (0-based); the
+   * def builds each inner list by FILTERING ITS OWN `params` through its own
+   * naming rule, so a new per-channel control joins with no edit and no count
+   * is ever typed. An id listed twice, or a listed id the def does not declare,
+   * is red (module-face-lint).
+   *
+   * ⚠ THE COLOUR REACHES THE CELL THROUGH THE ACCENT CHAIN, never per control:
+   * ModuleShell sets `--ka` on the cell and passes the same value as
+   * `KnobConic`'s `accent`, and every neon primitive resolves
+   * `--_ka: var(--ka, var(--domain, var(--accent)))`. Hard-coding a colour onto
+   * a control is what produced #1812.
+   *
+   * ⚠ THE NO-LANE FALLBACK IS THE DOMAIN ACCENT. A rack with no clip player has
+   * no lane colours at all, so the face paints exactly as it does today — the
+   * declaration changes nothing on its own.
+   *
+   * UI metadata like the rest of `face`: OUT of contract-signature /
+   * contract-lock (a colour source is not an I/O change).
+   */
+  channelAccent?: readonly (readonly string[])[];
+  /**
    * PARAM IDS WHOSE CELL PAINTS NO CAPTION — the `.label` line under the
    * control is not rendered at the DOCK.
    *
