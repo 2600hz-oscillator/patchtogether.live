@@ -127,6 +127,36 @@ const QUARANTINE: Record<string, string> = {
   // until #102 lands SwiftShader-scaled timeouts / WEBGL_HEAVY routing for it
   // and restores this coverage, THEN un-fixme.
   toybox: 'task #102: SwiftShader software-renderer timeout (heavy WebGL); restore coverage then un-fixme',
+
+  // ── ⏸ FLAKE-PARK #1847 ────────────────────────────────────────────────────
+  // These three are NOT a SwiftShader timeout class like toybox above — they are
+  // NONDETERMINISTIC: in the 96 h CI census to 2026-08-18 each failed and then
+  // PASSED ON RETRY at the same SHA, so every one of those jobs reported SUCCESS
+  // and the debt was invisible in the green/red signal. Parked here rather than
+  // deleted; the title the branch renders is IDENTICAL to the live one, so
+  // un-parking is a one-entry deletion from this map.
+  // LOST WHILE PARKED: each module's slot in the per-module spawn smoke — that
+  // its card renders with the registry-derived handle count and a clean console.
+  // Re-enable only on a root cause (#1847); "it passes now" is not one.
+  //
+  // ⚠ CARRIED OVER FROM modules.spec.ts BY #1861, AND THE PARK IS NOT WIDENED
+  // OR NARROWED. #1850 parked these in modules.spec.ts ONLY — on main they still
+  // run, unparked, in io-spec-consistency, per-module-per-port-handles and
+  // card-control-overflow. So standing down the RENDER-SMOKE group here (rather
+  // than the whole test) reproduces main exactly: modules.spec.ts's assertions
+  // parked, the other three specs' assertions live.
+  // ⚠ The one entry worth checking twice is the HANDLE COUNT named in "LOST
+  // WHILE PARKED" above. It still runs for these three — and that is NOT an
+  // un-park: the count assertion this sweep runs is io-spec-consistency's own
+  // `toHaveCount(inputs + outputs)`, which #1850 never touched and which is
+  // live on main for these modules today. modules.spec.ts's separate copy of
+  // that assertion is the one that was parked, and it is gone with the file.
+  bluebox:
+    'FLAKE-PARK #1847 — nondeterministic on CI: 9 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused',
+  buggles:
+    'FLAKE-PARK #1847 — nondeterministic on CI: 2 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused',
+  quadralogical:
+    'FLAKE-PARK #1847 — nondeterministic on CI: 3 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused',
 };
 
 // ────────── Heavy-WebGL budgets + scheduling (from modules.spec.ts) ─────────

@@ -64,7 +64,12 @@ async function expectWholeInside(el: Locator, tileBox: { x: number; y: number; w
 }
 
 test.describe('P1 batch-1 curated faces (?shell=1)', () => {
-  test('adsr renders its SHELL face in-lane (not the placeholder) + the dock shows its pages', async ({ page }) => {
+  // ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are UNCHANGED.
+  // NONDETERMINISM: 2 recovered-on-retry observation(s) across 1 SHA(s) / 1 branch(es) in the
+  // 96 h CI census to 2026-08-18 — never a hard failure, so every one of those jobs reported SUCCESS.
+  // LOST WHILE PARKED: the migration seam itself — that a MIGRATED module renders its curated ModuleShell face in-lane rather than the un-migrated placeholder, and that the dock exposes its declared pages.
+  // Re-enable only on a root cause (#1847); "it passes now" is not one.
+  test.fixme('adsr renders its SHELL face in-lane (not the placeholder) + the dock shows its pages', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 2 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page }) => {
     await gotoWorkflow(page, { shell: true });
     await spawnPatch(page, [{ id: 'env', type: 'adsr', position: { x: 460, y: 240 } }]);
 

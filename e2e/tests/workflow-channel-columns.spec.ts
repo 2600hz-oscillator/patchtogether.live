@@ -686,7 +686,12 @@ test.describe('workflow channel columns', () => {
     expect(await wcolEdges(page)).toContain(`${PINNED_CLIP}.pitch1->${cvbId}.pitch`);
   });
 
-  test('ADDITIVE: adding a CV Buddy tap to an in-app source lane leaves its audio RMS unchanged', async ({ page }) => {
+  // ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are UNCHANGED.
+  // NONDETERMINISM: 2 recovered-on-retry observation(s) across 1 SHA(s) / 1 branch(es) in the
+  // 96 h CI census to 2026-08-18 — never a hard failure, so every one of those jobs reported SUCCESS.
+  // LOST WHILE PARKED: the additivity invariant of the channel-column reconciler — adding a CV tap must not perturb the source lane's audio RMS; a reconciler that re-routes audio while adding a tap is silently destructive.
+  // Re-enable only on a root cause (#1847); "it passes now" is not one.
+  test.fixme('ADDITIVE: adding a CV Buddy tap to an in-app source lane leaves its audio RMS unchanged', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 2 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page }) => {
     // The single closest test to its budget in the whole e2e suite: MEASURED
     // 30.06 s of a 30 s default on a GREEN run (100.2 %) — it reported passed
     // only because the last assertion landed inside the tick the timeout fired

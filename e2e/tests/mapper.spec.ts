@@ -138,7 +138,12 @@ test.describe('MAPPER — video keyer / matte processor', () => {
 
   });
 
-  test('raising THRESHOLD shrinks the keyed area; lowering grows it', async ({ page }) => {
+  // ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are UNCHANGED.
+  // NONDETERMINISM: 5 recovered-on-retry observation(s) across 3 SHA(s) / 3 branch(es) in the
+  // 96 h CI census to 2026-08-18 — never a hard failure, so every one of those jobs reported SUCCESS.
+  // LOST WHILE PARKED: MAPPER's key threshold responding in the right DIRECTION through the real ACIDWARP → key → OUTPUT chain — an inverted or dead threshold makes the keyer useless while every port still 'works'.
+  // Re-enable only on a root cause (#1847); "it passes now" is not one.
+  test.fixme('raising THRESHOLD shrinks the keyed area; lowering grows it', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 5 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page }) => {
     // SHAPES paints a filled white circle whose anti-aliased RIM ramps from
     // black (background) to white (interior). A LOW threshold keys the whole
     // disc incl. the rim → more shown pixels; a HIGH threshold keys only where

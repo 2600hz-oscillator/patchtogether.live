@@ -45,7 +45,20 @@
 // 'webgl-attest', 'local' = a developer machine / opt-in local run).
 
 export const AUDITED_LANES = Object.freeze(['e2e', 'behavioral']);
-export const KNOWN_LANES = Object.freeze([...AUDITED_LANES, 'collab', 'webgl-attest', 'local']);
+// 'webgl-smoke' is the SwiftShader WebGL floor job in ci.yml. It is a real lane
+// with a real job name, and it is where the WEBGL_HEAVY_GLOBS specs resolve —
+// they are in the chromium project's `testIgnore` under E2E_WEBGL_HEAVY=exclude,
+// which is what the sharded matrix sets, so their rows can never reach the `e2e`
+// audit. It is NOT audited (no merged-JSON step), which is scope note 3 again:
+// naming it lets a heavy spec's guard declare where it actually resolves instead
+// of borrowing 'local' and hiding that a CI lane owns it.
+export const KNOWN_LANES = Object.freeze([
+  ...AUDITED_LANES,
+  'collab',
+  'webgl-attest',
+  'webgl-smoke',
+  'local',
+]);
 
 /** Loop-generated exemption placeholders carry their reason in the TITLE. */
 export const PLACEHOLDER_TITLE_RE = /\[(SKIPPED|EXEMPT):/;
@@ -356,6 +369,187 @@ export const SKIP_BUDGET = [
     why:
       'Opt-in memory benchmark, too slow and too machine-sensitive for a shared lane; the reason names the '
       + 'env var that arms it locally.',
+  },
+
+  // ── ⏸ FLAKE PARK (#1847) — the NONDETERMINISTIC population ────────────────
+  //
+  // These are NOT capability probes and NOT env gates. Every entry below names a
+  // spec holding one or more tests that, during the 96 h CI census to
+  // 2026-08-18, FAILED AND THEN PASSED ON RETRY AT THE SAME SHA. A recovered
+  // flake makes Playwright report the job SUCCESS, so this whole population was
+  // invisible in the green/red signal — which is the same failure mode this
+  // module was written for, arriving from the other direction.
+  //
+  // ⚠ THEY ARE PARKED, NOT EXEMPT. An exemption says "there is no contract to
+  // assert here". Every one of these has a real contract; what is unreliable is
+  // the MEASUREMENT. The reason string says `parked until root-caused` on
+  // purpose, and #1847 states the exit condition: a test leaves this list when
+  // its nondeterminism is root-caused and fixed — never by deletion, never by
+  // retrying until green, and never because "it passes now".
+  //
+  // ⚠ WHAT THIS BUDGET STILL CANNOT SEE, specific to these entries: the pattern
+  // is the PARK MARKER, not the diagnosis. It admits any parked row in a named
+  // spec, so a park that spreads to a second test inside an already-listed spec
+  // does not redden here — it reddens in the ledger diff and in the e2e report
+  // audit's printed skip list. Anchoring per-test would mean typing every title,
+  // and a title is not a stable key (they get edited); the spec is.
+  //
+  // The grouping is by SUBSYSTEM so each `why` says what goes dark, per the
+  // coverage report committed with the campaign
+  // (.myrobots/2026-08-18-flake-park-coverage-lost.md).
+  {
+    specs: [
+      'cable-drag-panel-lock.spec.ts',
+      'card-drop-patch.spec.ts',
+      'clear-patch-undo.spec.ts',
+      'clear.spec.ts',
+      'control-surface.spec.ts',
+      'duplicate-module.spec.ts',
+      'matrixmix.spec.ts',
+      'patch-load-leak.spec.ts',
+      'patch-panel.spec.ts',
+    ],
+    reason: /FLAKE-PARK #1847/,
+    lanes: ['e2e'],
+    homeLane: 'e2e',
+    why:
+      'PARKED (#1847) — the patch/canvas gesture surface: drop-to-patch, the PatchPanel open/close contract, '
+      + 'matrix undo integrity, Duplicate, Clear + its undo, and patch-load retention. card-drop-patch alone '
+      + 'was a quarter of all flakiness in the census window and is the ONLY coverage of the card-onto-card '
+      + 'drop-to-patch gesture; while these are parked, a modal that opens on every drag, an edge written by a '
+      + 'cancel, an irreversible Clear or a leaking patch load all ship green.',
+  },
+  {
+    specs: [
+      'clip-automation.spec.ts',
+      'clip-prob-default.spec.ts',
+      'clipplayer-card-erase.spec.ts',
+      'clipplayer-clip-view-grid.spec.ts',
+      'clipplayer-controls.spec.ts',
+      'clipplayer-custom-scale.spec.ts',
+      'clipplayer-grid-stability.spec.ts',
+      'clipplayer-play-every.spec.ts',
+      'clipplayer-rate-reset.spec.ts',
+      'clipplayer-songmode.spec.ts',
+      'clipplayer-transport-no-controller.spec.ts',
+      'launchpad-keys-record.spec.ts',
+      'launchpad-perf-controls.spec.ts',
+    ],
+    reason: /FLAKE-PARK #1847/,
+    lanes: ['e2e'],
+    homeLane: 'e2e',
+    why:
+      'PARKED (#1847) — the clip player, its transport and the hardware surfaces that drive it: per-clip '
+      + 'automation (record/arm/suspend), clip-default probability, song mode, per-lane rate + RST, the note '
+      + 'editor, and the #1165 guard that the card transport works with NO controller attached. Several of '
+      + 'these are the ONLY real-source-chain proof for their feature; #1646 was a declared fix for the '
+      + 'clip-automation flakiness and the census shows it did NOT hold.',
+  },
+  {
+    specs: [
+      'blood-audio-output.spec.ts',
+      'clap.spec.ts',
+      'coverage-groups-3-4-5.spec.ts',
+      'cv-range-uniformity.spec.ts',
+      'drumseqz.spec.ts',
+      'illogic-face.spec.ts',
+      'nibbles.spec.ts',
+      'scope-tuner.spec.ts',
+      'score.spec.ts',
+      'shapegen-clock.spec.ts',
+      'stereo-mono-normal.spec.ts',
+      'voice-pitch-accuracy.spec.ts',
+    ],
+    reason: /FLAKE-PARK #1847/,
+    lanes: ['e2e'],
+    homeLane: 'e2e',
+    why:
+      'PARKED (#1847) — REAL-SOURCE-CHAIN audio proofs and the CV conventions they rest on: default-tuning '
+      + 'pitch accuracy, CLAP and DRUMSEQZ through their real trigger chains, triplet playback, the mono-normal '
+      + 'contract, ADR-004 CV range travel, and SHAPEGEN gate edge semantics. This is precisely the class the '
+      + 'poly/MIDI discipline exists for — an engine-direct substitute is what shipped POLYHELM green-but-'
+      + 'silent — so while these are parked a silent or mistuned chain has no CI gate at all.',
+  },
+  {
+    specs: [
+      'backdraft-preview-toggle.spec.ts',
+      'backdraft-pure-tv.spec.ts',
+      'extras-producer-lifetime.spec.ts',
+      'layers-survive-card-collapse.spec.ts',
+      'lushgarden.spec.ts',
+      'mapper.spec.ts',
+      'present-survives-card-collapse.spec.ts',
+      'reshaper-shapedramps.spec.ts',
+    ],
+    reason: /FLAKE-PARK #1847|parkReason/,
+    lanes: ['e2e'],
+    homeLane: 'e2e',
+    why:
+      'PARKED (#1847) — video producers and NODE-LIFETIME state: that collapsing or never mounting a card does '
+      + 'not tear down its producer, drop its layers or freeze a live projector. This is the #1720/#1574/#1589 '
+      + 'family, a class that has shipped repeatedly, and extras-producer-lifetime is its unique regression net '
+      + '— #1757 was a declared fix for that spec and the census shows most of its flakiness landed AFTER it. '
+      + 'The alternation admits the loop-parked sites, whose description is the per-subject map value.',
+  },
+  {
+    specs: [
+      'workflow-channel-columns.spec.ts',
+      'workflow-dock-ux.spec.ts',
+      'workflow-dock.spec.ts',
+      'workflow-shell-faces.spec.ts',
+      'workflow-shell.spec.ts',
+      'workflow-surfaces.spec.ts',
+    ],
+    reason: /FLAKE-PARK #1847/,
+    lanes: ['e2e'],
+    homeLane: 'e2e',
+    why:
+      'PARKED (#1847) — the workflow shell and dock: the migration seam (a curated face in-lane rather than '
+      + 'the placeholder), lane tile geometry and header composition, the two-pane dock split with LRU '
+      + 'replacement asserted for BOTH shells, independent rail zoom, the MIDI clock-source assignment and the '
+      + 'channel-column reconciler additivity invariant. The shell-parity legs are the ones that stop a fix '
+      + 'landing for one shell only, and they are what goes dark first here.',
+  },
+  {
+    specs: ['io-spec-consistency.spec.ts'],
+    reason: /FLAKE-PARK #1847/,
+    lanes: ['e2e'],
+    homeLane: 'e2e',
+    why:
+      'PARKED (#1847) — three registry modules (bluebox, buggles, quadralogical) parked inside the existing '
+      + 'QUARANTINE map, which renders an interpolated-title test.fixme whose annotation carries the MAP value, '
+      + 'so map reason and report row cannot diverge. The live title is unchanged, so un-parking is a one-entry '
+      + 'deletion. Lost meanwhile: those modules spawn smoke — card render, registry-derived handle count and a '
+      + 'clean console — which is the only per-module render gate outside the VRT lanes. '
+      + 'The map moved with the rest of modules.spec.ts into the consolidated registry card sweep (#1861) and '
+      + 'the park did NOT change scope: it stands down that sweep\'s render-smoke group, which is exactly what '
+      + 'modules.spec.ts asserted, and these three were never parked in the three sibling sweeps that also '
+      + 'spawned them.',
+  },
+  {
+    specs: ['per-module-per-port-behavioral.spec.ts'],
+    reason: /FLAKE-PARK #1847|parkReason/,
+    lanes: [],
+    homeLane: 'behavioral',
+    why:
+      'PARKED (#1847) — fifteen modules taken out of the BEHAVIORAL input-coverage sweep. lanes:[] because the '
+      + 'whole describe is grep-inverted out of the sharded matrix ("BEHAVIORAL input coverage"), so a row with '
+      + 'this reason appearing in an audited lane is a lane-partition leak first. ⚠ ci.yml already records that '
+      + 'deleting the full behavioral lane left the modules outside behavioral-smoke with no dead-input '
+      + 'detection on CI; parking these removes the last of it for those fifteen, so a module that silently '
+      + 'IGNORES a wired input is now unobservable for them.',
+  },
+  {
+    specs: ['peakstate-render-smoke.spec.ts', 'wavecel-video-outs.spec.ts'],
+    reason: /FLAKE-PARK #1847/,
+    lanes: [],
+    homeLane: 'webgl-smoke',
+    why:
+      'PARKED (#1847) — two WEBGL_HEAVY_GLOBS specs, so they are in the chromium project testIgnore under the '
+      + 'sharded matrix\'s E2E_WEBGL_HEAVY=exclude and resolve only on the webgl-smoke floor job, which has no '
+      + 'JSON audit step: lanes:[] means a row here in an audited lane is a partition leak. Lost meanwhile: '
+      + 'PEAKSTATE\'s per-port render gate (unconsumed outputs stay dark) and WAVECEL.scope_out producing a '
+      + 'structured, frame-stable trace independent of the on-card preview toggle.',
   },
 ];
 

@@ -17,7 +17,12 @@ type W = {
   __patch: { nodes: Record<string, { type?: string; params?: Record<string, number>; data?: Record<string, unknown> }> };
 };
 
-test('clip player: per-lane MONO toggle flips data + replaces-on-add in the editor', async ({ page, rack }) => {
+// ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are UNCHANGED.
+// NONDETERMINISM: 1 recovered-on-retry observation(s) across 1 SHA(s) / 1 branch(es) in the
+// 96 h CI census to 2026-08-18 — never a hard failure, so every one of those jobs reported SUCCESS.
+// LOST WHILE PARKED: that the per-lane MONO toggle both writes node.data.mono and switches the editor to replace-on-add — the button being wired to the synced state at all.
+// Re-enable only on a root cause (#1847); "it passes now" is not one.
+test.fixme('clip player: per-lane MONO toggle flips data + replaces-on-add in the editor', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 1 recovered-on-retry observation in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page, rack }) => {
   await spawnPatch(page, [{ id: 'cp', type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio' }]);
 
   const card = page.locator('.svelte-flow__node-clipplayer');
@@ -59,7 +64,12 @@ test('clip player: per-lane MONO toggle flips data + replaces-on-add in the edit
   expect(col3, 'mono lane: one note per column (replace-on-add)').toBe(1);
 });
 
-test('TIMELORDE: the global transport (run) button flips running', async ({ page, rack }) => {
+// ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are UNCHANGED.
+// NONDETERMINISM: 1 recovered-on-retry observation(s) across 1 SHA(s) / 1 branch(es) in the
+// 96 h CI census to 2026-08-18 — never a hard failure, so every one of those jobs reported SUCCESS.
+// LOST WHILE PARKED: that TIMELORDE's global transport button is actually wired to the synced `running` state — the rack's master play/stop.
+// Re-enable only on a root cause (#1847); "it passes now" is not one.
+test.fixme('TIMELORDE: the global transport (run) button flips running', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 1 recovered-on-retry observation in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page, rack }) => {
   await spawnPatch(page, [{ id: 'tl', type: 'timelorde', position: { x: 80, y: 80 }, domain: 'audio' }]);
 
   const run = page.getByTestId('timelorde-run-tl');
@@ -73,7 +83,12 @@ test('TIMELORDE: the global transport (run) button flips running', async ({ page
   expect(running).toBe(0);
 });
 
-test('TIMELORDE: the run button hides when an external transport (start_in) owns it', async ({ page, rack }) => {
+// ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are UNCHANGED.
+// NONDETERMINISM: 1 recovered-on-retry observation(s) across 1 SHA(s) / 1 branch(es) in the
+// 96 h CI census to 2026-08-18 — never a hard failure, so every one of those jobs reported SUCCESS.
+// LOST WHILE PARKED: the ownership handoff: when an external transport drives start_in, TIMELORDE's own run button hides instead of offering a control that silently does nothing.
+// Re-enable only on a root cause (#1847); "it passes now" is not one.
+test.fixme('TIMELORDE: the run button hides when an external transport (start_in) owns it', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 1 recovered-on-retry observation in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page, rack }) => {
   await spawnPatch(
     page,
     [
