@@ -78,23 +78,6 @@ jobs:
       matrix:
         shard: [1, 2, 3, 4]
 
-    services:
-      postgres:
-        # AWS ECR Public mirror — avoids the flaky Docker Hub service-container
-        # pull (same image the ci.yml collab/unit jobs use).
-        image: public.ecr.aws/docker/library/postgres:17
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: patchtogether_test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U postgres"
-          --health-interval 5s
-          --health-timeout 3s
-          --health-retries 10
-
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/patchtogether_test
       # Opt the COLLAB_JOB-gated @collab DOOM specs IN (same as the ci.yml collab
@@ -109,6 +92,15 @@ jobs:
         uses: actions/checkout@v4
         with:
           lfs: true
+
+      # Postgres as a STEP, not a `services:` block (#1828). A service
+      # container is initialised BEFORE step 1, so a transient registry error
+      # there kills the job with nothing run and nothing a step could have done
+      # about it — and the ECR mirror it replaced was itself the fix for this
+      # exact failure on Docker Hub. The script owns the retry AND falls back
+      # to a second registry; the full argument is on the ci.yml `unit` job.
+      - name: Start postgres (retried pull, ECR → Docker Hub fallback)
+        run: bash .github/scripts/start-postgres.sh
 
       - name: Install Flox
         uses: flox/install-flox-action@v2
