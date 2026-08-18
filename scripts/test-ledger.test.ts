@@ -6,7 +6,8 @@
 // contract-lock.txt gate: regenerate the ledger from the committed source tree
 // and string-compare to the committed artifact — any new skip / exemption /
 // informational-lane change flips it red until a human regenerates + notices
-// (`flox activate -- task test:ledger:accept`). CI NEVER self-heals: the write
+// (#1858: the committed artifact and its freshness gate are deleted; what remains
+// below is DERIVED from ci.yml and can fail on substance.)
 // path is gated on LEDGER_UPDATE.
 //
 // Also asserts the ledger is NON-vacuous: the CI-gating classification (Bucket 3
@@ -30,38 +31,6 @@ const { generateLedger, LEDGER_PATH, bucket3 } = ledger as unknown as {
   };
 };
 
-describe('test-ledger (generated 3-bucket punch-list) freshness gate', () => {
-  it('the committed ledger matches a fresh regeneration from source', () => {
-    const current = generateLedger();
-
-    if (process.env.LEDGER_UPDATE) {
-      // `task test:ledger:accept` — the deliberate human re-pin.
-      writeFileSync(LEDGER_PATH, current, 'utf8');
-      return;
-    }
-
-    let committed = '';
-    try {
-      committed = readFileSync(LEDGER_PATH, 'utf8');
-    } catch {
-      committed = '';
-    }
-
-    expect(
-      committed,
-      'docs/testing/test-ledger.generated.md is STALE — a skip / exemption / CI ' +
-        'lane changed. Regenerate with `flox activate -- task test:ledger:accept` and ' +
-        'review the git diff (a diff = the punch-list moved: accept it, or recognize a bug).',
-    ).toBe(current);
-  });
-
-  it('is deterministic (two regenerations are byte-identical)', () => {
-    expect(generateLedger()).toBe(generateLedger());
-  });
-});
-
-// Non-vacuous: the CI-gating classification is the factual Part-1 answer. Lock it
-// against ci.yml so a parsing regression (or a real gating change) is caught.
 describe('CI gating classification (derived from ci.yml)', () => {
   const b3 = bucket3();
   const informational = new Set(b3.items.map((i) => i.name));
