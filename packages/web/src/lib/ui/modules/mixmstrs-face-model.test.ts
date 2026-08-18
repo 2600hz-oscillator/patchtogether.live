@@ -32,6 +32,7 @@ import { fileURLToPath } from 'node:url';
 import {
   MIXMSTRS_CHANNELS,
   MIXMSTRS_RETURNS,
+  mixmstrsChannelIndex,
   mixmstrsDef,
 } from '$lib/audio/modules/mixmstrs';
 import { FACE_TIER_CAPS, laneOrder } from '$lib/ui/workflow/curated-face';
@@ -243,6 +244,95 @@ describe('mixmstrs face — the SCOPE ranking, asserted from the live def', () =
       if (kind !== 'fader') continue;
       expect(levels, `${id} declares 'fader' but is not one of the module's levels`).toContain(id);
     }
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 1b · CHANNEL ACCENT — channel N is LANE N (#1825)
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// ⚠ THE THING THAT CAN GO WRONG HERE IS NOT "the colour is ugly", it is that
+// the declaration and the naming rule stop agreeing. `face.channelAccent` is
+// what the shell paints from; `mixmstrsChannelIndex` is what the SCOPE ranking
+// axis reads. They are built from the same function on purpose, and the legs
+// below are the ways that could silently stop being true — a param claimed by
+// two channels, a bus-scoped param claimed by one, a channel with no controls,
+// or a param the def declares that nothing claims and nothing refuses.
+
+describe('mixmstrs face — CHANNEL ACCENT partitions the def by channel', () => {
+  const accent = FACE.channelAccent!;
+
+  it('is declared at all, one entry per channel, in strip order', () => {
+    expect(accent, 'mixmstrs must declare channelAccent').toBeTruthy();
+    expect(accent.length).toBe(MIXMSTRS_CHANNELS.length);
+  });
+
+  it('every listed id is a REAL param of this def', () => {
+    const unknown = accent.flat().filter((id) => !PARAM_IDS.includes(id));
+    expect(unknown, 'channelAccent must not name a param the def does not declare').toEqual([]);
+  });
+
+  it('no id is claimed twice — a cell has ONE colour', () => {
+    const flat = accent.flat();
+    const dupes = flat.filter((id, i) => flat.indexOf(id) !== i);
+    expect(dupes).toEqual([]);
+  });
+
+  it('the declaration and the NAMING RULE are the same partition, both directions', () => {
+    // ⇒ every listed id resolves to the index it is listed under…
+    const misplaced = accent.flatMap((ids, ch) =>
+      ids.filter((id) => mixmstrsChannelIndex(id) !== ch).map((id) => `${id}@${ch}`),
+    );
+    expect(misplaced).toEqual([]);
+    // …and ⇐ every param the rule claims is listed exactly once, under that index.
+    const claimed = PARAM_IDS.filter((id) => mixmstrsChannelIndex(id) !== null);
+    expect([...accent.flat()].sort()).toEqual([...claimed].sort());
+  });
+
+  it('and it is the SAME set the SCOPE axis calls channel-scoped', () => {
+    // The two consumers of one rule, anchored to each other. If `isChannelScoped`
+    // ever grew its own regex again, this is where the copies diverge.
+    expect([...accent.flat()].sort()).toEqual(PARAM_IDS.filter(isChannelScoped).sort());
+  });
+
+  it('NO BUS-SCOPED PARAM takes a lane colour — the stated fallback, asserted', () => {
+    // The `returns` band is a 4-column console grid whose columns are NOT
+    // channels, which is exactly why the mapping is a predicate over IDS and
+    // not a column position. `ret1_volume` sitting in column 1 must not come
+    // out the colour of channel 1.
+    const bus = PARAM_IDS.filter((id) => !isChannelScoped(id));
+    expect(bus, 'the module must have bus-scoped params at all').not.toEqual([]);
+    expect(bus.filter((id) => accent.flat().includes(id))).toEqual([]);
+    for (const r of MIXMSTRS_RETURNS) {
+      expect(mixmstrsChannelIndex(`ret${r}_volume`), `ret${r}_volume is not a channel`).toBeNull();
+    }
+    expect(mixmstrsChannelIndex('master_volume')).toBeNull();
+    expect(mixmstrsChannelIndex('send1Pre')).toBeNull();
+  });
+
+  it('every channel actually carries controls — an empty column is a dead colour', () => {
+    expect(accent.filter((ids) => ids.length === 0)).toEqual([]);
+    // …and every channel carries the SAME roster shape (the strips are
+    // interchangeable — the face model's whole premise), asserted as a property
+    // rather than a number: strip the index out and the eight lists coincide.
+    const shapes = accent.map((ids, ch) =>
+      ids.map((id) => id.replace(String(MIXMSTRS_CHANNELS[ch]), '{n}')).sort().join(','),
+    );
+    expect(new Set(shapes).size, 'the eight channels must have the same controls').toBe(1);
+  });
+
+  it('NEGATIVE CONTROL: the rule refuses ids that merely LOOK channel-shaped', () => {
+    // Proves the mapping reads the def's channel LIST rather than "any digit".
+    expect(mixmstrsChannelIndex('ch99_volume'), 'no such channel').toBeNull();
+    expect(mixmstrsChannelIndex('comp99'), 'no such channel').toBeNull();
+    expect(mixmstrsChannelIndex('chatter_volume'), 'not an index at all').toBeNull();
+    expect(mixmstrsChannelIndex('compEnable'), 'not an index at all').toBeNull();
+    expect(mixmstrsChannelIndex('')).toBeNull();
+    // …and it really can say YES, in both shapes the def emits.
+    expect(mixmstrsChannelIndex(`ch${MIXMSTRS_CHANNELS[0]}_volume`)).toBe(0);
+    expect(mixmstrsChannelIndex(`comp${MIXMSTRS_CHANNELS.at(-1)}`)).toBe(
+      MIXMSTRS_CHANNELS.length - 1,
+    );
   });
 });
 

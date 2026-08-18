@@ -41,7 +41,8 @@
   import { getVideoModuleDef } from '$lib/video/module-registry';
   import { getMetaModuleDef } from '$lib/meta/module-registry';
   import { patch } from '$lib/graph/store';
-  import { nodeVersion } from '$lib/graph/node-versions.svelte';
+  import { nodeVersion, nodesStructuralVersion } from '$lib/graph/node-versions.svelte';
+  import { canonicalClipPlayerId, canonicalLaneColors } from '$lib/graph/lane-colors';
   import { resolveDisplayName } from '$lib/multiplayer/module-naming';
   import { getLodTier } from '$lib/ui/canvas/workflow-zoom';
   import { dockStore } from '$lib/ui/dock/dock-store.svelte';
@@ -67,7 +68,7 @@
   import { shellCellFor, type ShellCellEnv } from '$lib/ui/workflow/shell-cells';
   import { shellParamWrite } from '$lib/ui/workflow/shell-param-writes';
   import { dockBandVisible, dockTabPlan } from '$lib/ui/workflow/dock-tabs-model';
-  import { consoleGridCols } from '$lib/ui/workflow/console-grid';
+  import { consoleGridCols, faceConsoleGridCols } from '$lib/ui/workflow/console-grid';
   import { dockRowPlan, type RowPlanDefLike } from '$lib/ui/workflow/dock-row-plan';
   import {
     declaredParamCells,
@@ -193,6 +194,54 @@
   });
 
   let spine = $derived(spineCableVar(def));
+
+  // ── PER-CHANNEL LANE ACCENT (#1825) ────────────────────────────────────────
+  //
+  // A def that declares `face.channelAccent` says "control X belongs to channel
+  // N", and channel N's colour is the rack's LANE N colour — the same value the
+  // node menu's channel buttons, the assigned-card border and the workflow
+  // column badges paint, derived ONCE in `$lib/graph/lane-colors`.
+  //
+  // ⚠ THE SHELL NEVER NAMES A MODULE. It reads a declaration and a shared
+  // graph seam; `mixmstrs` appears nowhere here (module-shell-import-guard).
+  //
+  // ⚠ NO SIGNAL IS TOUCHED FOR A FACE THAT DOES NOT DECLARE IT. The early
+  // return happens before any reactive read, so ~200 other modules subscribe to
+  // nothing and re-derive never.
+  let channelOfParam = $derived.by<Map<string, number> | null>(() => {
+    const decl = (def as FaceplateDefLike | undefined)?.face?.channelAccent;
+    if (!decl?.length) return null;
+    const m = new Map<string, number>();
+    decl.forEach((ids, ch) => ids.forEach((pid) => m.set(pid, ch)));
+    return m;
+  });
+  /** The rack's lane colours, or `[]` — the declared no-lane case. */
+  let laneColors = $derived.by<readonly string[]>(() => {
+    if (!channelOfParam) return [];
+    // Two SIGNALS, both per-key rather than whole-doc: a clip player being
+    // added or removed, and the canonical player's own data (its lane colour
+    // array lives in `node.data.laneColor`). A `docVersion()` pump here would
+    // re-derive every mounted faceplate on every transaction in the rack.
+    void nodesStructuralVersion();
+    const player = canonicalClipPlayerId(patch.nodes);
+    if (!player) return [];
+    void nodeVersion(player);
+    return canonicalLaneColors(patch.nodes);
+  });
+  /**
+   * The explicit accent for ONE cell, or `undefined` to leave the chain alone.
+   *
+   * `undefined` is the answer for every cell of every other module, for every
+   * BUS-scoped cell of a declaring module, and — the stated fallback — for
+   * EVERY cell when the rack has no clip player to hold lane colours. In all
+   * three the control resolves `var(--ka, var(--domain, var(--accent)))` down
+   * to the domain accent exactly as it does today.
+   */
+  function cellAccent(ctl: FaceControl): string | undefined {
+    if (!channelOfParam) return undefined;
+    const ch = channelOfParam.get(ctl.paramId ?? ctl.key);
+    return ch === undefined ? undefined : laneColors[ch];
+  }
 
   // Param plumbing (card-kit): identical closures every card carries, so the
   // shell's KnobConic cells are MIDI-assignable + live-motorized + right-click-
@@ -534,6 +583,24 @@
   });
   let dockRows = $derived(dockRowPlan(dockBands, rowPlanDef));
 
+  /**
+   * #1825 — the FACE-WIDE CONSOLE RULER. When two or more bands are console
+   * grids, `.dock-pages` owns the columns and each of those bands is a SUBGRID
+   * of it, so column N has ONE x on the whole faceplate instead of one per
+   * band (measured before/after in console-grid.ts's header).
+   *
+   * ⚠ ONLY BANDS THAT RENDER AS A SOLO ROW ARE ELIGIBLE, because only they are
+   * grid ITEMS of `.dock-pages` — a PACKED row (PF-21) puts its bands inside a
+   * `.dock-row` flex wrapper, which no `subgrid` can reach through. Those bands
+   * keep the band-level ruler they have today. Stated as the filter rather than
+   * left implicit: a face that starts packing console bands silently loses the
+   * shared ruler otherwise, and `console-grid.test.ts` asserts the eligible set
+   * off the live roster.
+   */
+  let faceConsoleCols = $derived(
+    faceConsoleGridCols(dockRows.flatMap((r) => (r.bands.length === 1 ? r.bands : []))),
+  );
+
   function paramDef(pid: string): ParamDef | undefined {
     return (def?.params ?? []).find((p) => p.id === pid);
   }
@@ -710,6 +777,20 @@
   </div>
 
   {#snippet controlCell(ctl: FaceControl, knobSize: 'sm' | 'md' | 'lg' | 'xl' = 'md')}
+    <!-- #1825 — THE CELL'S ACCENT OVERRIDE, on EVERY branch below.
+         `--ka` is the documented per-cell head of the neon accent chain
+         (`--_ka: var(--ka, var(--domain, var(--accent)))`), so setting it on
+         the `.kcol` re-tints whatever primitive the branch happens to mount and
+         nothing chooses a colour twice. `undefined` removes the property, which
+         is the case for every cell of every module that declares no
+         `face.channelAccent` — i.e. all of them but one.
+         ⚠ Set on ALL branches deliberately, including the kinds mixmstrs does
+         not currently use: a def that grows a segmented or an xy pad on a
+         channel must not silently drop out of the scheme. Whether the mounted
+         primitive HONOURS the chain is a separate question — `XyPad` and the
+         card-local chips read `var(--accent)` directly and are tracked as
+         #1812. -->
+    {@const ka = cellAccent(ctl)}
     {#if ctl.kind === 'param'}
       {@const pd = paramDef(ctl.paramId ?? ctl.key)}
       {#if pd}
@@ -719,7 +800,7 @@
                press edge and RETURNS TO REST on release. It must never be a
                rotary — dragging a latching knob to 1 held the pad down, masked
                the module's own TRIG jack and persisted the stuck value. -->
-          <div class="kcol ms-cell-act" data-cell-kind="param" data-cell-control="momentary" data-cell-key={ctl.key}>
+          <div class="kcol ms-cell-act" data-cell-kind="param" data-cell-control="momentary" data-cell-key={ctl.key} style:--ka={ka}>
             <Button
               label={pd.label}
               momentary
@@ -736,7 +817,7 @@
                "0.00" and needed a full-arc drag to change one of two states.
                Toggle emits role="switch" + `control-<paramId>`, so the param
                multiset + MIDI-learn are unchanged; only the primitive moves. -->
-          <div class="kcol ms-cell-act" data-cell-kind="param" data-cell-control="toggle" data-cell-key={ctl.key}>
+          <div class="kcol ms-cell-act" data-cell-kind="param" data-cell-control="toggle" data-cell-key={ctl.key} style:--ka={ka}>
             <Toggle
               value={params.paramVal(pd.id)}
               label={pd.label}
@@ -757,7 +838,7 @@
                MIDI-assignable, so the param multiset + MIDI-learn are
                unchanged; only the primitive moves. `snapActive` because a
                PARAM always has a value (see the prop's note). -->
-          <div class="kcol ms-cell-sel" data-cell-kind="param" data-cell-control="segmented" data-cell-key={ctl.key}>
+          <div class="kcol ms-cell-sel" data-cell-kind="param" data-cell-control="segmented" data-cell-key={ctl.key} style:--ka={ka}>
             <Segmented
               value={params.paramVal(pd.id)}
               segments={pd.options ?? []}
@@ -778,7 +859,7 @@
                `control-<paramId>` (the portaled grid is outside the dock shell,
                so a testid there would drop the param out of faces-parity's
                multiset and read as a LOST control). -->
-          <div class="kcol ms-cell-sel" data-cell-kind="param" data-cell-control="grid" data-cell-key={ctl.key}>
+          <div class="kcol ms-cell-sel" data-cell-kind="param" data-cell-control="grid" data-cell-key={ctl.key} style:--ka={ka}>
             <ParamGrid
               value={params.paramVal(pd.id)}
               min={pd.min}
@@ -812,7 +893,7 @@
                space, so the two cannot drift. TIER-INDEPENDENT like `grid` —
                a 40 px swatch fits a lane knob column, and the knob it replaces
                is exactly as wrong there as at the dock. -->
-          <div class="kcol ms-cell-color" data-cell-kind="param" data-cell-control="color" data-cell-key={ctl.key}>
+          <div class="kcol ms-cell-color" data-cell-kind="param" data-cell-control="color" data-cell-key={ctl.key} style:--ka={ka}>
             <ColorField
               value={params.paramVal(pd.id)}
               min={pd.min}
@@ -844,7 +925,7 @@
                control may rank it FIRST and still keep a legal face. -->
           {@const pad = xyPads.get(pd.id)!}
           {@const py = paramDef(pad.y)!}
-          <div class="kcol ms-cell-xy" data-cell-kind="param" data-cell-control="xy" data-cell-key={ctl.key}>
+          <div class="kcol ms-cell-xy" data-cell-kind="param" data-cell-control="xy" data-cell-key={ctl.key} style:--ka={ka}>
             <XyPad
               xValue={params.paramVal(pd.id)}
               yValue={params.paramVal(py.id)}
@@ -892,7 +973,7 @@
                (owner, 2026-08-17: *"i want the data gone, not there but hidden
                or something"*). The value reaches `aria-valuetext` and the
                drag/hover tag; nothing paints it at rest. -->
-          <div class="kcol ms-cell-fader" data-cell-kind="param" data-cell-control="fader" data-cell-key={ctl.key}>
+          <div class="kcol ms-cell-fader" data-cell-kind="param" data-cell-control="fader" data-cell-key={ctl.key} style:--ka={ka}>
             <NeonFader
               value={params.paramVal(pd.id)}
               min={pd.min}
@@ -913,7 +994,7 @@
           <!-- The SAME roster past the button-row budget (≥7 states): a
                portaled, viewport-clamped dropdown. Selector derives
                `control-<paramId>` itself when no explicit testid is given. -->
-          <div class="kcol ms-cell-sel" data-cell-kind="param" data-cell-control="selector" data-cell-key={ctl.key}>
+          <div class="kcol ms-cell-sel" data-cell-kind="param" data-cell-control="selector" data-cell-key={ctl.key} style:--ka={ka}>
             <Selector
               value={params.paramVal(pd.id)}
               options={pd.options ?? []}
@@ -926,7 +1007,12 @@
             />
           </div>
         {:else}
-          <div class="kcol" data-cell-kind="param" data-cell-control="knob" data-cell-key={ctl.key}>
+          <!-- ⚠ `accent={ka ?? spine}` BELOW, not the cell's inherited `--ka`
+               (#1825). KnobConic writes `style:--ka={accent}` on its OWN root,
+               which SHADOWS anything inherited from `.kcol` — so the knob would
+               have ignored the lane colour while the fader beside it took it.
+               One resolution, passed explicitly. -->
+          <div class="kcol" data-cell-kind="param" data-cell-control="knob" data-cell-key={ctl.key} style:--ka={ka}>
             <KnobConic
               value={params.paramVal(pd.id)}
               min={pd.min}
@@ -940,7 +1026,7 @@
               moduleId={id}
               paramId={pd.id}
               size={effTier === 'mini' ? 'lg' : knobSize}
-              accent={spine}
+              accent={ka ?? spine}
               options={pd.options}
               landmarks={pd.landmarks}
               format={pd.format}
@@ -955,7 +1041,7 @@
            it runs the SAME action/state the legacy card runs. -->
       {@const cell = shellCellFor(node.type, ctl)}
       {#if cell?.kind === 'selector'}
-        <div class="kcol ms-cell-sel" data-cell-kind={ctl.kind} data-cell-control="selector" data-cell-key={ctl.key}>
+        <div class="kcol ms-cell-sel" data-cell-kind={ctl.kind} data-cell-control="selector" data-cell-key={ctl.key} style:--ka={ka}>
           <Selector
             value={cell.value(liveCell.n)}
             options={cell.options(liveCell.n)}
@@ -968,7 +1054,7 @@
           {#if faceplateView}<span class="cell-cap">{ctl.label}</span>{/if}
         </div>
       {:else if cell?.kind === 'toggle'}
-        <div class="kcol ms-cell-act" data-cell-kind={ctl.kind} data-cell-control="toggle" data-cell-key={ctl.key}>
+        <div class="kcol ms-cell-act" data-cell-kind={ctl.kind} data-cell-control="toggle" data-cell-key={ctl.key} style:--ka={ka}>
           <Toggle
             value={cell.value(liveCell.n) ? 1 : 0}
             label={cell.label}
@@ -985,7 +1071,7 @@
              face.momentary press-pad path — so a HELD audition needs a
              declaration, not a new control. Button dispatches exactly one of
              the two handlers per `momentary`, so passing both is safe. -->
-        <div class="kcol ms-cell-act" data-cell-kind={ctl.kind} data-cell-control="action" data-cell-key={ctl.key}>
+        <div class="kcol ms-cell-act" data-cell-kind={ctl.kind} data-cell-control="action" data-cell-key={ctl.key} style:--ka={ka}>
           <Button
             label={faceplateView ? cell.label : '▸'}
             title={cell.title ?? cell.label}
@@ -997,7 +1083,7 @@
           />
         </div>
       {:else if cell?.kind === 'file'}
-        <div class="kcol ms-cell-act" data-cell-kind={ctl.kind} data-cell-control="file" data-cell-key={ctl.key}>
+        <div class="kcol ms-cell-act" data-cell-kind={ctl.kind} data-cell-control="file" data-cell-key={ctl.key} style:--ka={ka}>
           <label class="file-btn" title={cell.title ?? cell.label}>
             <input
               type="file"
@@ -1032,7 +1118,7 @@
           data-cell-kind={ctl.kind}
           data-cell-control="panel"
           data-cell-key={ctl.key}
-          style={`--panel-min-w:${cell.minWidth}px`}
+          style={`--panel-min-w:${cell.minWidth}px${ka ? `;--ka:${ka}` : ''}`}
         >
           <Panel nodeId={id} />
           {#if faceplateView}<span class="cell-cap">{cell.label}</span>{/if}
@@ -1048,6 +1134,7 @@
           data-cell-control="inert"
           data-cell-inert="true"
           data-cell-key={ctl.key}
+          style:--ka={ka}
         >
           <span class="lab">{ctl.label}</span>
         </div>
@@ -1290,7 +1377,18 @@
         {/if}
       </div>
     {/if}
-    <div class="dock-pages" data-testid="face-pages">
+    <!-- #1825 — the FACE-WIDE ruler. `face-console` turns this column into the
+         grid every console band subgrids onto, so channel N's fader, EQ knob,
+         compressor switch and send all share one x. Absent (and the DOM
+         byte-identical to before) on every face with fewer than two console
+         bands. -->
+    <div
+      class="dock-pages"
+      class:face-console={faceConsoleCols != null}
+      style:--face-console-cols={faceConsoleCols ?? undefined}
+      data-face-console-cols={faceConsoleCols ?? undefined}
+      data-testid="face-pages"
+    >
       <!-- PF-16 — a TABBED face hides its inactive bands with CSS; it NEVER
            unmounts them. faces-parity asserts one `control-<paramId>` per def
            param and one cell per curated control across the whole faceplate
@@ -1309,14 +1407,18 @@
       {#each dockRows as row (row.id)}
         {#if row.bands.length > 1}
           <div class="dock-row" data-testid="face-row" data-face-row={row.id}>
-            {#each row.bands as band (band.id)}{@render bandSection(band)}{/each}
+            {#each row.bands as band (band.id)}{@render bandSection(band, false)}{/each}
           </div>
         {:else}
-          {@render bandSection(row.bands[0])}
+          {@render bandSection(row.bands[0], true)}
         {/if}
       {/each}
     </div>
-    {#snippet bandSection(band: DockFaceBand)}
+    <!-- `solo` = this band is a DIRECT child of `.dock-pages` (a row of one),
+         which is exactly the condition under which it can subgrid onto the
+         face-wide ruler. A band inside a `.dock-row` flex wrapper cannot, and
+         keeps its own band-level grid (#1825). -->
+    {#snippet bandSection(band: DockFaceBand, solo: boolean)}
         <!-- THE BAND HEADER, as TWO independent questions (bandHeaderPlan).
              The LABEL answers "is there a tab rail already naming this band?";
              the HINT answers "are annotations on?" — and nothing else. Asking
@@ -1335,6 +1437,12 @@
              on the side needs to go away" asks for. `null` for every other band
              in the roster, which keeps their layout byte-identical. -->
         {@const consoleCols = consoleGridCols(band)}
+        <!-- …and when the FACE carries a ruler (two or more console bands), this
+             band stops owning its columns and spans a PREFIX of the page's:
+             `1 / span consoleCols`. An 8-column band on a 9-column ruler takes
+             tracks 1-8, so its column j is the ruler's column j — the whole
+             point of #1825. -->
+        {@const onFaceRuler = solo && faceConsoleCols != null && consoleCols != null}
         <!-- On a TABBED face the band IS the tab's panel, so it says so: the
              rail's buttons carry `aria-controls={face-page-<id>}` and this
              carries the matching id + `aria-labelledby`. Without the pair a
@@ -1351,9 +1459,12 @@
           class="dock-page"
           class:cluster-row={band.clusterFlow === 'row' && band.clusters.length > 1}
           class:console-band={consoleCols != null}
+          class:on-face-ruler={onFaceRuler}
           style:--console-cols={consoleCols ?? undefined}
+          style:grid-column={onFaceRuler ? `1 / span ${consoleCols}` : undefined}
           data-testid="face-page"
           data-console-cols={consoleCols ?? undefined}
+          data-face-ruler={onFaceRuler ? '' : undefined}
           data-face-page={band.id}
           id={dockTabs ? `face-page-${band.id}` : undefined}
           role={dockTabs ? 'tabpanel' : undefined}
@@ -1872,6 +1983,47 @@
     gap: 10px;
     padding: 4px 10px 10px;
     min-width: 0;
+  }
+
+  /* ── THE FACE-WIDE CONSOLE RULER (#1825) ──────────────────────────────────
+   *
+   * The page becomes ONE grid of `max-content` columns and every console band
+   * SUBGRIDS onto it, so column N is channel N at the same x in the EQ rows,
+   * the compressor rows, the sends and the faders — instead of three pitches
+   * (51.72 / 62.00 / 50.00 px, measured; see console-grid.ts) drifting 90 px
+   * apart by channel 8.
+   *
+   * ⚠ `column-gap` MUST MATCH the band's own (10px). A subgrid inherits the
+   * parent's tracks but declares its own gutters, so two different numbers
+   * would re-introduce the drift this rule exists to remove — with the tracks
+   * still perfectly aligned, which is the version that looks fixed and is not.
+   *
+   * ⚠ THE DEFAULT FOR A CHILD IS `1 / -1`, not `auto`. `.dock-pages` also holds
+   * PACKED rows (`.dock-row`) and any non-console band; each must span the whole
+   * ruler or it would silently squeeze into track 1. Only a CELL occupies one
+   * column, three subgrid levels down.
+   *
+   * No `width` here on purpose: the tracks are `max-content` and
+   * `justify-content: start`, so a stretched container leaves trailing space
+   * exactly as the flex column did, and the shell's own `max-content` sizing
+   * still reads the real content width through the grid. */
+  .dock-pages.face-console {
+    display: grid;
+    grid-template-columns: repeat(var(--face-console-cols), max-content);
+    justify-content: start;
+    align-content: start;
+    row-gap: 10px;
+    column-gap: 10px;
+  }
+  .dock-pages.face-console > :global(*) {
+    grid-column: 1 / -1;
+  }
+  /* A band ON the ruler no longer sizes itself — the tracks it spans do. Its
+     own `width: max-content` (the band-level negative-space fix) would fight
+     them, so it is released here and only here. */
+  .dock-page.console-band.on-face-ruler {
+    grid-template-columns: subgrid;
+    width: auto;
   }
   .dock-page {
     border-top: 1px solid var(--border, #2c3037);
