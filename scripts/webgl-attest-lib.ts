@@ -118,7 +118,16 @@ export const WEBGL_CAMERA_SPECS = ['camera-input.spec.ts'];
  *  A spec that fails in isolation is BROKEN — fix it, don't park it here.
  *  Basenames (like the other lists). The runner logs this bucket's wall-time
  *  each run so growth stays visible. */
-export const WEBGL_SERIAL_SPECS = ['scope-video-out.spec.ts', 'wavecel-video-outs.spec.ts'];
+export const WEBGL_SERIAL_SPECS = [
+  'scope-video-out.spec.ts',
+  'wavecel-video-outs.spec.ts',
+  // #1826 — same output-FBO readback race, MEASURED under the real Pass A
+  // filter on clean main; green 20/20 in isolation on the same tree. Not a
+  // frame-count issue: picturebox's upload is a synchronous texImage2D and a
+  // 15 s re-stepping poll still reads zero bright pixels. See the rationale
+  // block above the first describe in the spec.
+  'video-orientation.spec.ts',
+];
 
 /** Toolchain pins that can change bundled/rendered WebGL output (a bundler or
  *  Playwright/renderer bump can move shader-string emission — the Clerk #464

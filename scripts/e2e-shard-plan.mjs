@@ -100,6 +100,28 @@ export const PENDING_FIRST_MEASUREMENT = [
       + '`flox activate -- task e2e:timings:accept` on the first green CI run after this merges and '
       + 'DELETE this entry.',
   },
+  {
+    spec: 'main-thread-cost.spec.ts',
+    why:
+      'lands with #1811 as the instrument that MEASURED AND REJECTED the worker migration, so no ' +
+      'ci.yml run containing it has completed and there is no blob report to accept a cost from. ' +
+      'MEASURED under E2E_SWIFTSHADER=1, single worker, in the configuration CI actually runs ' +
+      '(both perturbation phases gated OFF): 14.5 s cold, 10.2 s warm across a 3/3 flake-check. ' +
+      'The full three-phase form costs 32.1 s and is OPT-IN ONLY (PT_COST_PERTURB=1, which nothing ' +
+      'in CI sets): the planner co-schedules this spec onto shard 2/10 with two DOOM specs, and ' +
+      'DOOM runs runTic() inside surface.draw, so its game clock IS its frame clock — a co-tenant ' +
+      'that pins a core does not delay a DOOM assertion, it changes how far the marine walks. ' +
+      'Owner ruling: DOOM is not touched without specific approval, and reaching that outcome ' +
+      'through a neighbouring spec is the same violation through the side door. ' +
+      '⚠ TREAT 10.2 s AS A FLOOR, NOT A PREDICTION. This is a VIDEO spec — it drives a real ' +
+      'spirographs -> videoOut chain and asserts on engine frame counts — and the entry deleted ' +
+      'directly above this one is the precedent: backdraft-preview-toggle predicted 57.5 s from ' +
+      'exactly this kind of local single-worker run and measured 358.2 CPU-s, 6x, because a local ' +
+      'run cannot see ten shards competing for one software rasterizer. Do not use the local ' +
+      'number for shard-balance reasoning; it is here to prove the spec was measured at all. ' +
+      'Run `task e2e:timings:accept -- <run-id>` on the first green main run after this merges and ' +
+      'DELETE this entry — the gate reddens on a stale entry as loudly as on a missing one.',
+  },
   // Every entry here is a debt with a deadline.
   //
   // All six that stood on 2026-08-17 were paid in one accept against ci.yml run

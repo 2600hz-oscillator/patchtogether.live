@@ -243,6 +243,10 @@
     if (e.key === 'Tab') {
       const dir = e.shiftKey ? -1 : 1;
       const nextIdx = stepIdx + dir;
+      // Bounds: decline, and the event propagates to the global flip owner —
+      // the rack turns around (bare Tab is the flip gesture, #1629). Not a
+      // "tab out": returning false here is what keeps #1790's stopPropagation
+      // from trapping the gesture.
       if (nextIdx < minStep || nextIdx > maxStep) return false;
       return focusCell(nextIdx, role);
     }
@@ -270,7 +274,16 @@
       e.key === 'Tab'
     ) {
       const handled = handleNav(e, stepIdx, role);
-      if (handled) e.preventDefault();
+      if (!handled) return;
+      e.preventDefault();
+      // #1790, badge leg. The gate cells of all four sequencer cards route
+      // their keys through NoteEntry.onGateKeydown, which stops Tab there —
+      // these badges DO NOT. They are this card's own <button>s on their own
+      // keydown, so the fix has to be repeated here or the flip leaks from
+      // the quality / inversion / voicing cells only. Same reasoning in full
+      // on NoteEntry.onGateKeydown; same narrow scope (Tab, and only when
+      // handled — at the page bounds the rack SHOULD flip).
+      if (e.key === 'Tab') e.stopPropagation();
     }
   }
 

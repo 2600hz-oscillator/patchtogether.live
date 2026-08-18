@@ -137,7 +137,8 @@
         onto={{ nodeId: 'camera-1', def: defs.camera }}
         direction="downstream"
         live
-        {repairCandidates}
+
+        rearOpen
       />
     </section>
 
@@ -158,7 +159,8 @@
         onto={{ nodeId: 'camera-1', def: defs.camera }}
         direction="upstream"
         tabPressed
-        {repairCandidates}
+
+        rearOpen
       />
     </section>
 
@@ -183,7 +185,8 @@
             onto={{ nodeId: 'backdraft-1', def: defs.backdraft, label: 'backdraft #1' }}
             direction="downstream"
             committed={['backdraft-1.out→backdraft-2.in_a']}
-            {repairCandidates}
+
+            rearOpen
           />
         </div>
         <div class="pair-cell">
@@ -194,7 +197,8 @@
             direction="upstream"
             tabPressed
             committed={['backdraft-1.out→backdraft-2.in_a', 'backdraft-2.out→backdraft-1.in_b']}
-            {repairCandidates}
+
+            rearOpen
           />
         </div>
       </div>
@@ -221,7 +225,8 @@
             onto={{ nodeId: 'peakstate-1', def: defs.peakstate }}
             direction="downstream"
             carriedPortId="mono_out"
-            {repairCandidates}
+
+            rearOpen
           />
         </div>
         <div class="pair-cell">
@@ -230,7 +235,8 @@
             dropped={{ nodeId: 'colorizer-1', def: defs.colorizer }}
             onto={{ nodeId: 'camera-1', def: defs.camera }}
             direction="downstream"
-            {repairCandidates}
+
+            rearOpen
           />
         </div>
       </div>
@@ -327,7 +333,8 @@
             dropped={{ nodeId: 'com-1', def: defs.colourofmagic }}
             onto={{ nodeId: 'camera-1', def: defs.camera }}
             direction="upstream"
-            {repairCandidates}
+
+            rearOpen
           />
         </div>
         <div class="pair-cell">
@@ -336,7 +343,8 @@
             dropped={{ nodeId: 'com-1', def: defs.colourofmagic }}
             onto={{ nodeId: 'camera-1', def: defs.camera }}
             direction="downstream"
-            {repairCandidates}
+
+            rearOpen
           />
         </div>
       </div>
@@ -493,6 +501,12 @@
             <b>Stereo collapse.</b> <code>collapseStereoPorts</code> is a no-op for video (no video
             def declares <code>stereoPairs</code>) so the scenes never exercise it. An audio
             extension would.
+          </li>
+          <li>
+            ⚠ <b>These scenes force the backpanel OPEN.</b> #1838 made it collapse by default
+            behind the same counted disclosure the refusals use — the owner's call, and what the
+            rack now shows. Every scene here passes <code>rearOpen</code> because showing the
+            panel is the entire point of the page; nothing else does.
           </li>
           <li>
             <b>Real pixels in the panels.</b> <code>RearCard</code> renders against an empty patch

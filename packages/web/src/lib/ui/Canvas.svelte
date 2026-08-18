@@ -306,6 +306,7 @@
   import { videoAspectStore } from '$lib/ui/video-aspect-store.svelte';
   import { audioLatencyStore, type AudioLatencyMode } from '$lib/ui/audio-latency-store.svelte';
   import { createAudioHealthMonitor } from '$lib/audio/audio-health.svelte';
+  import { peekSchedulerClock } from '$lib/audio/scheduler-clock';
   import { formatAudioHealth } from '$lib/audio/playback-stats';
   import FlowBridge, { type FlowBridgeApi, type InternalFlowNode } from '$lib/ui/FlowBridge.svelte';
   import CadillacOverlay from '$lib/ui/CadillacOverlay.svelte';
@@ -702,6 +703,46 @@
       (globalThis as any).__ydoc = ydoc;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (globalThis as any).__engine = () => engine;
+      // #1811 — THE MAIN-THREAD COST PROBE. Three in-page accumulators read in
+      // ONE round trip, deliberately:
+      //   tick  — scheduler ARRIVAL lateness + DISPATCH cost, ms (tick-latency)
+      //   video — engine step + card-blit CPU, ms (video/render-cost)
+      //   drop  — the browser's own AudioContext.playbackStats
+      // High `tick` with zero `drop` means the MAIN THREAD is busy, not the
+      // audio device — the discriminator #1803 documents, and the success
+      // metric for moving video work off-thread.
+      //
+      // ⚠ This is a READ, not a sampler. The summing already happened on the
+      // same thread as the work; a caller reads it once at the end of a window
+      // (CLAUDE.md: never sample a page-side quantity with a Playwright-side
+      // poll loop). `peekSchedulerClock` NEVER constructs the clock — an
+      // observer that creates its own subject is not an observer, so `tick` is
+      // null until some module actually starts sequencing.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).__mainThreadCost = () => {
+        let video: unknown = null;
+        try {
+          video = engine?.getDomain<VideoEngine>('video')?.renderCostStats() ?? null;
+        } catch {
+          video = null; // no video domain booted — distinct from "cost was zero"
+        }
+        return {
+          tick: peekSchedulerClock()?.tickStats() ?? null,
+          video,
+          drop: audioHealth.health,
+        };
+      };
+      // Start a DEFINED measurement window over the otherwise session-cumulative
+      // counters. Without this a spec measuring "the last 10 s" reads "since
+      // boot", which includes every first-frame shader compile.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).__resetMainThreadCost = () => {
+        try {
+          engine?.getDomain<VideoEngine>('video')?.resetRenderCost();
+        } catch {
+          /* no video domain — nothing to reset */
+        }
+      };
       // ES-9 bridge OWNERSHIP probe. The whole point of moving the connection
       // off the card is that it survives a card unmount, and that is invisible
       // from the DOM — an e2e can see the card disappear but not whether the
@@ -718,6 +759,24 @@
       // boot to avoid maintaining a stale catalog mirror.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (globalThis as any).__listModuleDefs = listModuleDefs;
+      // #1811 — the VIDEO registry, which `listModuleDefs` does not cover (it
+      // returns the AUDIO registry only; the two are deliberately separate so
+      // the domains cannot collide on type ids). Exposed as a projection rather
+      // than the live defs so it survives `page.evaluate`'s structured clone —
+      // a def carries a `factory` function, which is not cloneable.
+      //
+      // `renderLocus` is the field this exists for: render-worker-locus.spec.ts
+      // derives its subject set from it, so the parity proof covers whatever is
+      // promoted rather than a list of names a spec would have to re-type.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).__listVideoModuleDefs = () =>
+        listVideoModuleDefs().map((d) => ({
+          type: String(d.type),
+          domain: d.domain,
+          renderLocus: d.renderLocus ?? 'main',
+          inputs: d.inputs.map((p) => ({ id: p.id, type: p.type })),
+          outputs: d.outputs.map((p) => ({ id: p.id, type: p.type })),
+        }));
       // Lets E2E tests exercise the palette spawn path (with all its
       // per-user / per-rackspace / maxInstances guards) without driving
       // the right-click → palette → click sequence. Used by SAMSLOOP
@@ -4660,6 +4719,32 @@
 
   /** The open drop-patch modal, or null. */
   let patchDrop = $state<{ droppedId: string; ontoId: string } | null>(null);
+
+  /** ⚠ THE ONE DEFINITION OF "the drop modal is open" — the fully RESOLVED
+   *  subject, or null. Everything that renders the modal, and everything that
+   *  has to get out of its way, reads THIS. Nobody re-types the three-part
+   *  guard, because two copies of one predicate is exactly how a modal and the
+   *  layers around it drift apart later.
+   *
+   *  #1838 is the reason it exists: `<PickupCable>` is `position: fixed` at
+   *  z-index 1002, ABOVE the scrim's 45, so the carry ghost drew a live-patch
+   *  line straight across a dialog about making a patch. The suppression is
+   *  PRESENTATION ONLY — the carry itself is untouched, and must be: the modal
+   *  claims it deliberately (DropPatchModal's `$effect` → `connectDragState
+   *  .pickup(...)`) so RearCard's compatibility dim is the shipped answer
+   *  rather than a redrawn one.
+   *
+   *  It RESOLVES the defs rather than merely testing them, so the modal gets
+   *  its narrowing from the same expression instead of asserting non-null on a
+   *  second lookup. */
+  let dropModal = $derived.by(() => {
+    const s = patchDrop;
+    if (!s) return null;
+    const droppedDef = dropDefOf(s.droppedId);
+    const ontoDef = dropDefOf(s.ontoId);
+    if (!droppedDef || !ontoDef) return null;
+    return { droppedId: s.droppedId, ontoId: s.ontoId, droppedDef, ontoDef };
+  });
 
   /** Defs `findRepair` may search when a row is refused. The LIVE registry, so
    *  a new module that happens to reduce colour to mono becomes an offered
@@ -8943,19 +9028,19 @@
          resolveCardDrop). Rendered OUTSIDE <SvelteFlow> so it is not a node
          and cannot be panned/zoomed away from, and so its Tab handling is a
          plain window listener like the other two flip-key owners. -->
-    {#if patchDrop && dropDefOf(patchDrop.droppedId) && dropDefOf(patchDrop.ontoId)}
+    {#if dropModal}
       <div class="patch-drop-scrim" data-testid="patch-drop-scrim">
         <div class="patch-drop-shell">
           <DropPatchModal
             dropped={{
-              nodeId: patchDrop.droppedId,
-              def: dropDefOf(patchDrop.droppedId)!,
-              label: patchDropLabel(patchDrop.droppedId),
+              nodeId: dropModal.droppedId,
+              def: dropModal.droppedDef,
+              label: patchDropLabel(dropModal.droppedId),
             }}
             onto={{
-              nodeId: patchDrop.ontoId,
-              def: dropDefOf(patchDrop.ontoId)!,
-              label: patchDropLabel(patchDrop.ontoId),
+              nodeId: dropModal.ontoId,
+              def: dropModal.ontoDef,
+              label: patchDropLabel(dropModal.ontoId),
             }}
             direction="downstream"
             live
@@ -9046,7 +9131,19 @@
       nodes={headlessSourceNodes}
       nodeTypes={nodeTypes as unknown as Record<string, unknown>}
     />
-    <PickupCable />
+    <!-- ⚠ #1838 — SUPPRESSED WHILE THE DROP MODAL IS OPEN. Owner: "in this view
+         we do not want the dangling dotted patch cable, it's clutter that's not
+         helpful." The ghost is `position: fixed` at z-index 1002 and the scrim
+         is 45, so it drew OVER the dialog, not behind it, and read as a live
+         patch in progress underneath a dialog about making a patch.
+         Presentation only: the carry stays exactly as the modal set it (the
+         modal's own `$effect` claims it so RearCard's compat-dim is real), and
+         staging / Tab inversion / commit / single-⌘Z undo all still hang off
+         it. Reads the SAME `dropModal` the scrim does — one predicate, so the
+         ghost cannot fall out of step with the thing it is hiding from. -->
+    {#if !dropModal}
+      <PickupCable />
+    {/if}
     {#if dockPanTails.length > 0 && flowApi}
       <!-- DOCKING P2.5b: gesture-scoped stub→rail tail (presentation-only;
            mounted onmovestart, killed onmoveend — zero idle cost). -->
@@ -9124,6 +9221,22 @@
               + `(${audioHealth.health.underrunEvents} in ${audioHealth.health.totalSec.toFixed(0)}s of output).\n`
               + `tick = main-thread scheduler lateness p99 — HIGH TICK WITH ZERO DROPS means the `
               + `MAIN THREAD is busy (UI/video), not the audio thread. They are different problems.\n`
+              // #1811: `dispatchP99Ms` was computed every second and thrown away. It is the
+              // ATTRIBUTION half of `tick`: lateness says the main thread was busy, dispatch says
+              // whether it was busy with OUR tick work or with someone else's (UI, video). Two
+              // different conclusions a lateness number alone conflates. Surfaced in the TOOLTIP
+              // and not the readout on purpose — the row has ~9 CSS px of slack at 1280 px and
+              // another visible field would wrap the legend and move every VRT baseline.
+              // ⚠ These two numbers have DIFFERENT TIME SEMANTICS from `drop` directly above:
+              // both tick figures are WINDOWED (last ≤256 arrivals ≈ 6.4 s), `drop` is cumulative.
+              + `tick dispatch = how long the tick's own subscriber callbacks took, p99 `
+              + `${audioHealth.tick ? audioHealth.tick.dispatchP99Ms.toFixed(1) : '—'}ms / max `
+              + `${audioHealth.tick ? audioHealth.tick.dispatchMaxMs.toFixed(1) : '—'}ms over `
+              + `${audioHealth.tick?.samples ?? 0} arrivals in `
+              + `${audioHealth.tick ? audioHealth.tick.elapsedMs.toFixed(0) : '—'}ms. `
+              + `Lateness HIGH but dispatch LOW = something else owns the main thread. Both high `
+              + `= our own scheduling work is the expensive thing. (Both are windowed over the `
+              + `last ${audioHealth.tick?.samples ?? 0} arrivals; drop above is cumulative.)\n`
               + `dead = AudioWorkletProcessors that threw. A processor that throws outputs silence for `
               + `the rest of its life (Web Audio spec) — that module is gone until you reload. The `
               + `badge is only rendered when the count is non-zero.\n`

@@ -40,6 +40,12 @@
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 import { pressFlipKey } from './_flip-key';
+// The sequencer/polyseqz page width, imported from the APP SOURCE for the same
+// reason `_flip-key.ts` imports RACK_FLIP_KEY: section (6) needs the LAST cell
+// of the visible page (the one where nav declines and the flip must still
+// fire), and re-typing it here would leave the control pointing at the wrong
+// cell — silently passing — the day the page width changes.
+import { PAGE_SIZE } from '../../packages/web/src/lib/audio/modules/sequencer-pages';
 
 // Serial: these tests drive the shared connect-drag singleton through real
 // pointer clicks (the rear-view-patching.spec precedent).
@@ -697,4 +703,148 @@ test('canvas rear view left ON: a docked LEGACY pane still shows its FRONT, and 
 
   // Single-owner intact: none of that touched the canvas flip state.
   await expect(canvasFlow(page)).toHaveClass(/rear-view/);
+});
+
+// ── (6) A CARD THAT CONSUMED THE FLIP KEY MUST NOT ALSO FLIP (#1790) ───────
+//
+// The flip key is BARE TAB (#1629), claimed on `window`. A sequencer's GATE
+// cell is a `<button>`, so `isTypingTarget` waves it through and the flip
+// owner acted on the same keystroke the card had just used to advance a step:
+// Tab moved the step AND turned the pane around. The PITCH side is an
+// `<input>` and was never affected — which is exactly why this went unseen.
+//
+// SUBJECT: the DOCK FULL-VIEW, because that is the only place these cells
+// exist on a shell rack — on the canvas a sequencer is a TILE (name + EXPAND
+// pill), so there is no gate cell to focus there. With the full-view open the
+// flip is DOCK-owned (section 4), so the leaked flip shows up as
+// `data-fullview-flipped`, and the canvas legs below double as the
+// single-owner check.
+//
+// BOTH LEGS ARE PERMANENT, and the second is the one that matters:
+//
+//   (a) HANDLED  → the card stopped it → NO flip.
+//   (b) DECLINED → at the page bound the card returns false, the event
+//       propagates, and THE PANE FLIPS. That is the global gesture working,
+//       not a fallback — this repo does no keyboard-traversal work (owner
+//       ruling), so there is nothing to "tab out" to.
+//
+// Without (b) this file would pass if someone simply swallowed Tab in the
+// grid outright: a green gate certifying a dead gesture.
+//
+// SCOPE — what these two tests CANNOT see. They pin the two distinct ROUTES,
+// not all four cards: `sequencer` stands for the SHARED seam
+// (NoteEntry.onGateKeydown), which the drumseqz + cartesian gate cells reach
+// through the identical line, and polyseqz's badge has no shared seam at all
+// (its own onBadgeKeydown), so it is asserted directly. A regression in the
+// shared line reddens the first test; a regression in the badge copy reddens
+// the second. A card that grows a THIRD bespoke keydown route is invisible
+// here.
+
+test('#1790 sequencer GATE: the flip key advances the step and does NOT flip — but still flips at the page bound', async ({
+  page,
+}) => {
+  await gotoWorkflow(page);
+  await spawnPatch(page, [
+    { id: 'seq', type: 'sequencer', params: { bpm: 120, length: PAGE_SIZE, isPlaying: 0 }, position: { x: 460, y: 240 } },
+  ]);
+  const drawer = page.getByTestId('dock-fullview-drawer');
+  await openFullView(page, 'seq');
+  await expect(drawer).toHaveAttribute('data-fullview-flipped', 'false');
+
+  const gateAt = (i: number) => page.getByTestId(`seq-gate-seq-${i}`);
+
+  // (a) HANDLED — mid-grid. Focus a gate cell (a <button>: NOT a typing
+  //     target, which is the whole defect) and press the flip key.
+  await gateAt(0).focus();
+  await expect(gateAt(0)).toBeFocused();
+
+  await pressFlipKey(page);
+
+  // The card consumed it: focus advanced one step. This assertion goes FIRST
+  // because it is the one that cannot read EARLY — `data-fullview-flipped` is
+  // a reactive attribute, so a leaked flip needs a DOM flush before it is
+  // visible, while focus is moved synchronously inside the same dispatch.
+  // Measured on the negative control (stopPropagation removed): this is the
+  // line that reddens for the sequencer, because the leaked flip hides the
+  // front face and the focused cell goes with it.
+  await expect(
+    gateAt(1),
+    'the card handled the key AND the face survived it — a leaked flip takes the focused cell down with the front face',
+  ).toBeFocused();
+  // …and NOTHING ELSE acted on the same keystroke. Pre-fix the pane flipped
+  // here, because the card called preventDefault (which a sibling `window`
+  // listener never sees) and not stopPropagation. ONE press is the whole
+  // assertion — a second would mask a leak by flipping back.
+  await expect(drawer, 'a handled key must not reach the flip owner').toHaveAttribute(
+    'data-fullview-flipped',
+    'false',
+  );
+  await expect(rearCard(page)).toHaveCount(0);
+  await expect(canvasFlow(page)).not.toHaveClass(/rear-view/);
+
+  // (b) POSITIVE CONTROL — the LAST step of the visible page. handleNav
+  //     declines (no next cell), the event propagates, and the dock flip owner
+  //     does its job. This leg is what stops (a) from being satisfied by
+  //     breaking Tab handling altogether.
+  const lastOnPage = PAGE_SIZE - 1;
+  await gateAt(lastOnPage).focus();
+  await expect(gateAt(lastOnPage)).toBeFocused();
+
+  await pressFlipKey(page);
+
+  await expect(drawer, 'at the page bound the flip gesture must still fire').toHaveAttribute(
+    'data-fullview-flipped',
+    'true',
+  );
+  await expect(rearCard(page)).toBeVisible();
+  // Single-owner intact throughout: the canvas never moved.
+  await expect(canvasFlow(page)).not.toHaveClass(/rear-view/);
+  await expect(flipRackBtn(page)).toHaveAttribute('aria-pressed', 'false');
+});
+
+test("#1790 polyseqz CHORD BADGE: same two legs through the card's OWN keydown route (no shared seam)", async ({
+  page,
+}) => {
+  await gotoWorkflow(page);
+  await spawnPatch(page, [
+    { id: 'p', type: 'polyseqz', params: { isPlaying: 0 }, position: { x: 460, y: 240 } },
+  ]);
+  const drawer = page.getByTestId('dock-fullview-drawer');
+  await openFullView(page, 'p');
+  await expect(drawer).toHaveAttribute('data-fullview-flipped', 'false');
+
+  // The quality badge is a plain <button> on PolyseqzCard's own
+  // `onBadgeKeydown` — it does NOT pass through NoteEntry, so fixing the
+  // shared seam leaves this route leaking on its own.
+  const badgeAt = (i: number) => page.getByTestId(`polyseqz-quality-p-${i}`);
+
+  // (a) HANDLED.
+  await badgeAt(0).focus();
+  await expect(badgeAt(0)).toBeFocused();
+
+  await pressFlipKey(page);
+
+  // Settle the dispatch on the synchronous subject first (see the sequencer
+  // test). A badge keeps focus through a leaked flip, so here it is the
+  // drawer assertion below that reddens — measured on the negative control.
+  await expect(badgeAt(1), 'the badge route must still navigate').toBeFocused();
+  await expect(drawer, 'a handled key must not reach the flip owner').toHaveAttribute(
+    'data-fullview-flipped',
+    'false',
+  );
+  await expect(rearCard(page)).toHaveCount(0);
+
+  // (b) POSITIVE CONTROL at the page bound — the pane flips.
+  const lastOnPage = PAGE_SIZE - 1;
+  await badgeAt(lastOnPage).focus();
+  await expect(badgeAt(lastOnPage)).toBeFocused();
+
+  await pressFlipKey(page);
+
+  await expect(drawer, 'at the page bound the flip gesture must still fire').toHaveAttribute(
+    'data-fullview-flipped',
+    'true',
+  );
+  await expect(rearCard(page)).toBeVisible();
+  await expect(canvasFlow(page)).not.toHaveClass(/rear-view/);
 });
