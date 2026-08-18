@@ -91,9 +91,9 @@ those at spec granularity and the lane audit checks the realized string.
 - `e2e/tests/doom-identity-crossview.spec.ts:215` — DOOM runtime failed to load on A within 25s
 - `e2e/tests/doom-keyboard-routing.spec.ts:104` — (dynamic: `skip`)
 - `e2e/tests/doom-keyboard-routing.spec.ts:311` — (dynamic: `skip`)
-- `e2e/tests/doom-late-join.spec.ts:220` — @collab — runs on the dedicated COLLAB_JOB lane, not the sharded matrix
-- `e2e/tests/doom-late-join.spec.ts:229` — (dynamic: `assets.reason`)
-- `e2e/tests/doom-late-join.spec.ts:235` — DOOM runtime failed to load on A within 25s
+- `e2e/tests/doom-late-join.spec.ts:230` — @collab — runs on the dedicated COLLAB_JOB lane, not the sharded matrix
+- `e2e/tests/doom-late-join.spec.ts:252` — (dynamic: `assets.reason`)
+- `e2e/tests/doom-late-join.spec.ts:258` — DOOM runtime failed to load on A within 25s
 - `e2e/tests/doom-launch.spec.ts:265` — @collab — runs on the dedicated COLLAB_JOB lane, not the sharded matrix
 - `e2e/tests/doom-launch.spec.ts:275` — (dynamic: `assets.reason`)
 - `e2e/tests/doom-mp-latejoin-freeze.spec.ts:230` — DOOM WASM / WAD missing — run build-doom-wasm.sh + fetch DOOM1.WAD
