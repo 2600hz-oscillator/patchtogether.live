@@ -263,20 +263,11 @@ function overlaps(a: DetachedRect, b: AvoidRect): boolean {
 export function placeDetached(viewport: ViewportSize, avoid?: AvoidRect): DetachedRect {
   const centred = clampDetachedRect({}, viewport);
 
-  // ⚠ AN UNMEASURABLE CARD FALLS BACK TO A CORNER, NOT TO THE CENTRE. If the
-  // caller could not read a box — the element is gone, not laid out yet, or
-  // measured zero on a slow machine before first layout — then "centre" is the
-  // worst available guess, because a just-revealed card is itself centred. The
-  // failure this whole function exists for is a panel opening ON TOP of the card
-  // whose right-click is one of the two documented ways to re-attach, and
-  // falling back to the most likely collision would reinstate it in exactly the
-  // conditions where we know least. A corner is unhelpful at worst; the centre
-  // is wrong at exactly the wrong moment.
-  // ⚠ TWO DIFFERENT UNKNOWNS, and conflating them was a bug in the first draft.
-  // `avoid === undefined` means the caller found NO CARD ELEMENT AT ALL — there
-  // is nothing on screen to collide with, so the centre is correct and a corner
-  // would be arbitrary. A PRESENT element that measures zero (or non-finite) is
-  // the other case: the card is there, we simply could not read it.
+  // ⚠ TWO DIFFERENT UNKNOWNS. `avoid === undefined` means the caller found NO
+  // CARD ELEMENT AT ALL — nothing on screen to collide with, so the centre is
+  // correct. A PRESENT element measuring zero (or non-finite) is the other case:
+  // the card is there, we simply could not read it, and then the centre is the
+  // WORST guess because a just-revealed card is itself centred.
   if (!avoid) return centred;
   const degenerate = !Number.isFinite(avoid.w) || !Number.isFinite(avoid.h) || avoid.w <= 0 || avoid.h <= 0;
   if (degenerate) {
@@ -284,27 +275,57 @@ export function placeDetached(viewport: ViewportSize, avoid?: AvoidRect): Detach
   }
   if (!overlaps(centred, avoid)) return centred;
 
+  // ⚠ NEVER FALL BACK TO AN OVERLAPPING POSITION. The first version tried right
+  // then left and, if neither FIT ON SCREEN, returned the centred rect — which
+  // is the collision this function exists to prevent. MEASURED on CI and not
+  // locally, because the shape of the failure is pure geometry: the CI viewport
+  // is `devices['Desktop Chrome']` = 1280x720, and a 480-wide panel cannot clear
+  // a ~360-wide card sitting near the middle of 1280 px on EITHER side (right
+  // needs 832+480 = 1312 > 1280; left needs -32 < 0). Both candidates were
+  // rejected as off-screen and the overlapping fallback shipped — so the panel
+  // covered the card and swallowed the right-click that re-attaches. A wider dev
+  // viewport dodged successfully and hid it.
+  //
+  // So: try the four sides, then the corners, and if NOTHING is fully clear pick
+  // the on-screen candidate with the LEAST overlap rather than the most. Least
+  // overlap is not a cosmetic tie-break — it is what keeps the card's own centre
+  // (where a right-click lands) reachable when the viewport is genuinely too
+  // small for a clean dodge.
   const gap = 12;
-  const roomRight = viewport.width - (avoid.x + avoid.w);
-  const roomLeft = avoid.x;
-  const candidates =
-    roomRight >= roomLeft
-      ? [avoid.x + avoid.w + gap, avoid.x - centred.w - gap]
-      : [avoid.x - centred.w - gap, avoid.x + avoid.w + gap];
+  const maxX = Math.max(0, viewport.width - centred.w);
+  const maxY = Math.max(0, viewport.height - centred.h);
+  const xs = [avoid.x + avoid.w + gap, avoid.x - centred.w - gap, maxX, 0];
+  const ys = [avoid.y + avoid.h + gap, avoid.y - centred.h - gap, maxY, 0];
 
-  for (const x of candidates) {
-    const placed = clampDetachedRect({ ...centred, x }, viewport);
-    // ⚠ A DODGE THAT GOES OFF-SCREEN IS NOT A DODGE. `clampDetachedRect` permits
-    // x down to `KEEP_VISIBLE - w` — correct for a USER drag, where leaving a
-    // grab strip on screen is the whole contract — but wrong for a panel that is
-    // OPENING: it put the window at x = -113 with its title bar's left half past
-    // the viewport edge, which is unreachable by pointer (measured as a drag
-    // that produced exactly zero movement, because the grab point had negative
-    // screen coordinates). A fresh window opens FULLY visible or not there.
-    if (placed.x < 0 || placed.x + placed.w > viewport.width) continue;
-    if (!overlaps(placed, avoid)) return placed;
+  const candidates: DetachedRect[] = [];
+  for (const x of xs) candidates.push({ ...centred, x, y: centred.y });
+  for (const y of ys) candidates.push({ ...centred, x: centred.x, y });
+  // Corners last: they move BOTH axes, so they are the most disruptive option
+  // and only worth taking when no single-axis slide works.
+  for (const x of [maxX, 0]) for (const y of [0, maxY]) candidates.push({ ...centred, x, y });
+
+  const onScreen = candidates
+    .map((c) => clampDetachedRect(c, viewport))
+    .filter((c) => c.x >= 0 && c.y >= 0 && c.x + c.w <= viewport.width && c.y + c.h <= viewport.height);
+
+  for (const c of onScreen) if (!overlaps(c, avoid)) return c;
+
+  // Nothing is fully clear — take the least-overlapping on-screen candidate.
+  const area = (c: DetachedRect): number => {
+    const ox = Math.max(0, Math.min(c.x + c.w, avoid.x + avoid.w) - Math.max(c.x, avoid.x));
+    const oy = Math.max(0, Math.min(c.y + c.h, avoid.y + avoid.h) - Math.max(c.y, avoid.y));
+    return ox * oy;
+  };
+  let best = centred;
+  let bestArea = area(centred);
+  for (const c of onScreen) {
+    const a = area(c);
+    if (a < bestArea) {
+      best = c;
+      bestArea = a;
+    }
   }
-  return centred;
+  return best;
 }
 
 /**

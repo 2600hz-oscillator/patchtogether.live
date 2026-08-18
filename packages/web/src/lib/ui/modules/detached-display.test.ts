@@ -253,6 +253,57 @@ describe('placeDetached — a fresh panel must not cover the card it came from',
     }
   });
 
+  it("⚠ THE CI GEOMETRY: a 1280x720 viewport where NEITHER SIDE FITS still does not overlap the click target", () => {
+    // ⚠ THIS IS THE LEG THAT WOULD HAVE CAUGHT THE CI FAILURE, and it failed only
+    // on CI because the shape is pure geometry. `devices['Desktop Chrome']` is
+    // 1280x720; a 480-wide panel cannot clear a 360-wide card near the middle on
+    // EITHER side (right needs 832+480 = 1312 > 1280; left needs -32 < 0). The
+    // first version rejected both as off-screen and returned the CENTRED rect —
+    // the exact collision this function exists to prevent — so the panel covered
+    // the card and swallowed the right-click that re-attaches. A wider dev
+    // viewport dodged cleanly and hid it for 48 local runs.
+    const CI = { width: 1280, height: 720 };
+    const card = { x: 460, y: 180, w: 360, h: 360 };
+    const r = placeDetached(CI, card);
+
+    // Fully on screen…
+    expect(r.x).toBeGreaterThanOrEqual(0);
+    expect(r.y).toBeGreaterThanOrEqual(0);
+    expect(r.x + r.w).toBeLessThanOrEqual(CI.width);
+    expect(r.y + r.h).toBeLessThanOrEqual(CI.height);
+
+    // …and NOT the centred rect, which is what shipped and overlapped.
+    expect(r, 'must not fall back to the overlapping centred position').not.toEqual(
+      clampDetachedRect({}, CI),
+    );
+
+    // The load-bearing property: the CARD'S OWN CENTRE — where a right-click
+    // lands — is not covered. That is the user-visible requirement; "zero
+    // overlap" is merely the usual way to achieve it.
+    const cx = card.x + card.w / 2;
+    const cy = card.y + card.h / 2;
+    const covers = cx >= r.x && cx <= r.x + r.w && cy >= r.y && cy <= r.y + r.h;
+    expect(covers, `panel ${JSON.stringify(r)} covers the card centre (${cx},${cy})`).toBe(false);
+  });
+
+  it('the click target stays clear across a sweep of viewports and card positions', () => {
+    // A property, not one example: the CI case above is one point in this space,
+    // and the first fix passed every point I happened to try locally.
+    for (const vp of [{ width: 1280, height: 720 }, { width: 1440, height: 900 }, { width: 1024, height: 768 }]) {
+      for (const cx0 of [0, 200, 460, 700, vp.width - 380]) {
+        const card = { x: cx0, y: 180, w: 360, h: 360 };
+        const r = placeDetached(vp, card);
+        const cx = card.x + card.w / 2;
+        const cy = card.y + card.h / 2;
+        const covers = cx >= r.x && cx <= r.x + r.w && cy >= r.y && cy <= r.y + r.h;
+        expect(
+          covers,
+          `viewport ${vp.width}x${vp.height}, card at ${cx0}: panel ${JSON.stringify(r)} covers the click target`,
+        ).toBe(false);
+      }
+    }
+  });
+
   it('an UNMEASURABLE card falls back to a CORNER, never to the centre', () => {
     // ⚠ The centre is the worst guess when the card cannot be measured, because
     // a just-revealed card is itself centred — so the "unknown" fallback would
