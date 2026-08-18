@@ -11,7 +11,7 @@
   // the factory's `manualTrigger` read key → a host-side ConstantSource on the
   // worklet's STRUM input — so there is one implementation, not two.
   import type { NodeProps } from '@xyflow/svelte';
-  import Fader from '$lib/ui/controls/Fader.svelte';
+  import NeonFader from '$lib/ui/controls/NeonFader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import OssAttribution from '$lib/ui/modules/OssAttribution.svelte';
   import { ringsDef, RINGS_MODEL_NAMES } from '$lib/audio/modules/rings';
@@ -102,12 +102,12 @@
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="fader-row">
-      <Fader value={note}       min={P.note.min}       max={P.note.max}       defaultValue={P.note.defaultValue}       label="Note"       units={P.note.units}       curve={P.note.curve}       onchange={set('note')} moduleId={id} paramId="note"       readLive={live('note')} />
-      <Fader value={structure}  min={P.structure.min}  max={P.structure.max}  defaultValue={P.structure.defaultValue}  label="Structure"  units={P.structure.units}  curve={P.structure.curve}  onchange={set('structure')} moduleId={id} paramId="structure"  readLive={live('structure')} />
-      <Fader value={brightness} min={P.brightness.min} max={P.brightness.max} defaultValue={P.brightness.defaultValue} label="Brightness" units={P.brightness.units} curve={P.brightness.curve} onchange={set('brightness')} moduleId={id} paramId="brightness" readLive={live('brightness')} />
-      <Fader value={damping}    min={P.damping.min}    max={P.damping.max}    defaultValue={P.damping.defaultValue}    label="Damping"    units={P.damping.units}    curve={P.damping.curve}    onchange={set('damping')} moduleId={id} paramId="damping"    readLive={live('damping')} />
-      <Fader value={position}   min={P.position.min}   max={P.position.max}   defaultValue={P.position.defaultValue}   label="Position"   units={P.position.units}   curve={P.position.curve}   onchange={set('position')} moduleId={id} paramId="position"   readLive={live('position')} />
-      <Fader value={level}      min={P.level.min}      max={P.level.max}      defaultValue={P.level.defaultValue}      label="Level"      units={P.level.units}      curve={P.level.curve}      onchange={set('level')} moduleId={id} paramId="level"      readLive={live('level')} />
+      <NeonFader value={note}       min={P.note.min}       max={P.note.max}       defaultValue={P.note.defaultValue}       label="Note"       units={P.note.units}       curve={P.note.curve}       onchange={set('note')} moduleId={id} paramId="note"       readLive={live('note')} />
+      <NeonFader value={structure}  min={P.structure.min}  max={P.structure.max}  defaultValue={P.structure.defaultValue}  label="Structure"  units={P.structure.units}  curve={P.structure.curve}  onchange={set('structure')} moduleId={id} paramId="structure"  readLive={live('structure')} />
+      <NeonFader value={brightness} min={P.brightness.min} max={P.brightness.max} defaultValue={P.brightness.defaultValue} label="Brightness" units={P.brightness.units} curve={P.brightness.curve} onchange={set('brightness')} moduleId={id} paramId="brightness" readLive={live('brightness')} />
+      <NeonFader value={damping}    min={P.damping.min}    max={P.damping.max}    defaultValue={P.damping.defaultValue}    label="Damping"    units={P.damping.units}    curve={P.damping.curve}    onchange={set('damping')} moduleId={id} paramId="damping"    readLive={live('damping')} />
+      <NeonFader value={position}   min={P.position.min}   max={P.position.max}   defaultValue={P.position.defaultValue}   label="Position"   units={P.position.units}   curve={P.position.curve}   onchange={set('position')} moduleId={id} paramId="position"   readLive={live('position')} />
+      <NeonFader value={level}      min={P.level.min}      max={P.level.max}      defaultValue={P.level.defaultValue}      label="Level"      units={P.level.units}      curve={P.level.curve}      onchange={set('level')} moduleId={id} paramId="level"      readLive={live('level')} />
     </div>
   </PatchPanel>
   <OssAttribution author={ringsDef.ossAttribution?.author} />

@@ -22,7 +22,7 @@
   // that they keep agreeing.)
   import { onMount, onDestroy } from 'svelte';
   import { type NodeProps } from '@xyflow/svelte';
-  import Fader from '$lib/ui/controls/Fader.svelte';
+  import NeonFader from '$lib/ui/controls/NeonFader.svelte';
   import Toggle from '$lib/ui/controls/Toggle.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import { useEngine } from '$lib/audio/engine-context';
@@ -136,10 +136,10 @@
     </div>
 
     <div class="fader-grid">
-      <Fader value={p('quant_r')}    min={0} max={1} defaultValue={def('quant_r').defaultValue}    label="QUANT R"    curve="linear" onchange={setParam('quant_r')}    moduleId={id} paramId="quant_r" />
-      <Fader value={p('quant_g')}    min={0} max={1} defaultValue={def('quant_g').defaultValue}    label="QUANT G"    curve="linear" onchange={setParam('quant_g')}    moduleId={id} paramId="quant_g" />
-      <Fader value={p('quant_b')}    min={0} max={1} defaultValue={def('quant_b').defaultValue}    label="QUANT B"    curve="linear" onchange={setParam('quant_b')}    moduleId={id} paramId="quant_b" />
-      <Fader value={p('quant_luma')} min={0} max={1} defaultValue={def('quant_luma').defaultValue} label="QUANT LUMA" curve="linear" onchange={setParam('quant_luma')} moduleId={id} paramId="quant_luma" />
+      <NeonFader value={p('quant_r')}    min={0} max={1} defaultValue={def('quant_r').defaultValue}    label="QUANT R"    curve="linear" onchange={setParam('quant_r')}    moduleId={id} paramId="quant_r" />
+      <NeonFader value={p('quant_g')}    min={0} max={1} defaultValue={def('quant_g').defaultValue}    label="QUANT G"    curve="linear" onchange={setParam('quant_g')}    moduleId={id} paramId="quant_g" />
+      <NeonFader value={p('quant_b')}    min={0} max={1} defaultValue={def('quant_b').defaultValue}    label="QUANT B"    curve="linear" onchange={setParam('quant_b')}    moduleId={id} paramId="quant_b" />
+      <NeonFader value={p('quant_luma')} min={0} max={1} defaultValue={def('quant_luma').defaultValue} label="QUANT LUMA" curve="linear" onchange={setParam('quant_luma')} moduleId={id} paramId="quant_luma" />
     </div>
 
     <!-- PHOSPHOR DECAY. Only observable while the image is FROZEN — a captured
@@ -163,7 +163,7 @@
         moduleId={id}
         paramId="decay_invert"
       />
-      <Fader
+      <NeonFader
         value={p('decay_time')}
         min={def('decay_time').min}
         max={def('decay_time').max}

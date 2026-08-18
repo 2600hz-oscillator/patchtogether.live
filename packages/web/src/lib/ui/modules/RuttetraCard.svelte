@@ -11,7 +11,7 @@
 
   import { onMount, onDestroy } from 'svelte';
   import { type NodeProps } from '@xyflow/svelte';
-  import Fader from '$lib/ui/controls/Fader.svelte';
+  import NeonFader from '$lib/ui/controls/NeonFader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import { useEngine } from '$lib/audio/engine-context';
   import { patch } from '$lib/graph/store';
@@ -268,28 +268,28 @@
       </div>
 
       <div class="fader-grid five">
-        <Fader value={p('xShape')}    min={0}  max={1} defaultValue={pdef('xShape')}    label="XS" curve="linear" onchange={setParam('xShape')}    moduleId={id} paramId="xShape" />
-        <Fader value={p('yShape')}    min={0}  max={1} defaultValue={pdef('yShape')}    label="YS" curve="linear" onchange={setParam('yShape')}    moduleId={id} paramId="yShape" />
-        <Fader value={p('xDisp')}     min={-1} max={1} defaultValue={pdef('xDisp')}     label="XD" curve="linear" onchange={setParam('xDisp')}     moduleId={id} paramId="xDisp" />
-        <Fader value={p('yDisp')}     min={-1} max={1} defaultValue={pdef('yDisp')}     label="YD" curve="linear" onchange={setParam('yDisp')}     moduleId={id} paramId="yDisp" />
-        <Fader value={p('intensity')} min={0}  max={2} defaultValue={pdef('intensity')} label="I"  curve="linear" onchange={setParam('intensity')} moduleId={id} paramId="intensity" />
+        <NeonFader value={p('xShape')}    min={0}  max={1} defaultValue={pdef('xShape')}    label="XS" curve="linear" onchange={setParam('xShape')}    moduleId={id} paramId="xShape" />
+        <NeonFader value={p('yShape')}    min={0}  max={1} defaultValue={pdef('yShape')}    label="YS" curve="linear" onchange={setParam('yShape')}    moduleId={id} paramId="yShape" />
+        <NeonFader value={p('xDisp')}     min={-1} max={1} defaultValue={pdef('xDisp')}     label="XD" curve="linear" onchange={setParam('xDisp')}     moduleId={id} paramId="xDisp" />
+        <NeonFader value={p('yDisp')}     min={-1} max={1} defaultValue={pdef('yDisp')}     label="YD" curve="linear" onchange={setParam('yDisp')}     moduleId={id} paramId="yDisp" />
+        <NeonFader value={p('intensity')} min={0}  max={2} defaultValue={pdef('intensity')} label="I"  curve="linear" onchange={setParam('intensity')} moduleId={id} paramId="intensity" />
       </div>
 
       <!-- Tint as small R/G/B sliders. -->
       <div class="fader-grid tint" data-testid="ruttetra-tint">
-        <Fader value={p('tintR')} min={0} max={1} defaultValue={pdef('tintR')} label="R" curve="linear" onchange={setParam('tintR')} moduleId={id} paramId="tintR" />
-        <Fader value={p('tintG')} min={0} max={1} defaultValue={pdef('tintG')} label="G" curve="linear" onchange={setParam('tintG')} moduleId={id} paramId="tintG" />
-        <Fader value={p('tintB')} min={0} max={1} defaultValue={pdef('tintB')} label="B" curve="linear" onchange={setParam('tintB')} moduleId={id} paramId="tintB" />
+        <NeonFader value={p('tintR')} min={0} max={1} defaultValue={pdef('tintR')} label="R" curve="linear" onchange={setParam('tintR')} moduleId={id} paramId="tintR" />
+        <NeonFader value={p('tintG')} min={0} max={1} defaultValue={pdef('tintG')} label="G" curve="linear" onchange={setParam('tintG')} moduleId={id} paramId="tintG" />
+        <NeonFader value={p('tintB')} min={0} max={1} defaultValue={pdef('tintB')} label="B" curve="linear" onchange={setParam('tintB')} moduleId={id} paramId="tintB" />
       </div>
 
       <!-- Frequency/phase under an Advanced disclosure (matches p10). -->
       <details class="advanced" data-testid="ruttetra-advanced">
         <summary>ADVANCED</summary>
         <div class="fader-grid">
-          <Fader value={p('xFreq')}  min={0.25} max={8} defaultValue={pdef('xFreq')}  label="XF" curve="linear" onchange={setParam('xFreq')}  moduleId={id} paramId="xFreq" />
-          <Fader value={p('yFreq')}  min={0.25} max={8} defaultValue={pdef('yFreq')}  label="YF" curve="linear" onchange={setParam('yFreq')}  moduleId={id} paramId="yFreq" />
-          <Fader value={p('xPhase')} min={0}    max={1} defaultValue={pdef('xPhase')} label="XP" curve="linear" onchange={setParam('xPhase')} moduleId={id} paramId="xPhase" />
-          <Fader value={p('yPhase')} min={0}    max={1} defaultValue={pdef('yPhase')} label="YP" curve="linear" onchange={setParam('yPhase')} moduleId={id} paramId="yPhase" />
+          <NeonFader value={p('xFreq')}  min={0.25} max={8} defaultValue={pdef('xFreq')}  label="XF" curve="linear" onchange={setParam('xFreq')}  moduleId={id} paramId="xFreq" />
+          <NeonFader value={p('yFreq')}  min={0.25} max={8} defaultValue={pdef('yFreq')}  label="YF" curve="linear" onchange={setParam('yFreq')}  moduleId={id} paramId="yFreq" />
+          <NeonFader value={p('xPhase')} min={0}    max={1} defaultValue={pdef('xPhase')} label="XP" curve="linear" onchange={setParam('xPhase')} moduleId={id} paramId="xPhase" />
+          <NeonFader value={p('yPhase')} min={0}    max={1} defaultValue={pdef('yPhase')} label="YP" curve="linear" onchange={setParam('yPhase')} moduleId={id} paramId="yPhase" />
         </div>
       </details>
     </div>

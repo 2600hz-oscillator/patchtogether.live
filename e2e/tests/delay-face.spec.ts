@@ -1,25 +1,34 @@
 // e2e/tests/delay-face.spec.ts
 //
-// THE DELAY FACE, driven for real: the three knob readouts must follow the
-// GRAPH, and the repeat count must be the one the pure model computes.
+// THE DELAY FACE, driven for real: the three knob values must follow the GRAPH,
+// and the repeat count must be the one the pure model computes.
 //
 // faces-parity already proves every delay cell is present and operable, and the
 // VRT pair pins the default state's pixels. What neither can prove is what this
 // rework is FOR:
 //
-//   * `feedback` prints a REPEAT COUNT rather than a ratio, and the count is
+//   * `feedback` reads as a REPEAT COUNT rather than a ratio, and the count is
 //     arithmetic — so the DOM must agree with `delay-echo-model`, not with a
 //     string this spec re-types. Every expectation below is the model's own
 //     output, so a re-tuned formatter moves the test and the module together
 //     and a DIVERGENCE between them is the only thing that can fail.
-//   * a readout is a string a component computes, so the failure mode is a DOM
-//     that re-labels itself while the graph never moved (or the graph moving
-//     while the readout stays put, wired to a stale local). Every assertion
-//     pins BOTH sides: the committed `__patch` value AND the printed text.
+//   * a rendered value is a string a component computes, so the failure mode is
+//     a DOM that re-labels itself while the graph never moved (or the graph
+//     moving while the value stays put, wired to a stale local). Every
+//     assertion pins BOTH sides: the committed `__patch` value AND the string.
 //   * `time` and `feedback` are the only two cells the COMPACT lane tile can
 //     hold (the glyph takes the third column), which is the entire consequence
 //     of `face.order` on this module — asserted here in the real DOM, not only
 //     derived from `curatedFace` in the unit lane.
+//
+// ⚠ WHERE THE STRING IS READ CHANGED ON 2026-08-17, AND THE STRING DID NOT.
+// All three delay params declare a `format`, and the owner removed the resting
+// number from every faceplate — so no delay dial paints anything now. Each
+// assertion moved from `readout-<id>`'s text to `control-<id>`'s
+// `aria-valuetext`, which is `knobValueReadout`: the SAME formatter, the same
+// expected literal, still the model's own output. Nothing here was weakened to
+// survive the removal; what died is the PIXEL-FIT half, and it is buried with
+// its reasons where it stood.
 //
 // The drags are deliberately PAST the end of the arc — `knobFracToValue` clamps
 // its fraction to [0,1] — so each gesture lands on an EXACT endpoint rather
@@ -31,7 +40,6 @@
 
 import { test, expect, type Locator, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
-import { LANE_KCOL_MAX_PX, READOUT_MAX_CHARS } from '../../packages/web/src/lib/ui/workflow/lane-readout-fit';
 import {
   formatDelayFeedback,
   formatDelayMix,
@@ -113,7 +121,7 @@ async function dragDial(page: Page, dial: Locator, dy: number): Promise<void> {
 }
 
 test.describe('delay face — the repeat count follows the graph', () => {
-  test('one band, three readouts, and every one of them is backed by a committed param', async ({
+  test('one band, three live values, and every one of them is backed by a committed param', async ({
     page,
   }) => {
     test.setTimeout(SLOW_RENDER ? 60_000 : 30_000);
@@ -129,19 +137,25 @@ test.describe('delay face — the repeat count follows the graph', () => {
     );
 
     // ── SPAWN STATE. Expectations come from the MODEL, so this cannot pass by
-    //    agreeing with a stale string typed here. ──
-    const timeOut = dock.getByTestId('readout-time');
-    const fbOut = dock.getByTestId('readout-feedback');
-    const mixOut = dock.getByTestId('readout-mix');
-    await expect(timeOut).toHaveText(formatDelayTime(0.25)); // 250 MS
-    await expect(fbOut, 'the ratio 0.4 is EIGHT repeats, and the dial says so').toHaveText(
-      formatDelayFeedback(0.4), // 8 REP
-    );
-    await expect(mixOut).toHaveText(formatDelayMix(0.35)); // 35% WET
-
+    //    agreeing with a stale string typed here. The dial IS the observable
+    //    now — `aria-valuetext` carries what the readout line used to print. ──
     const fbDial = dock.locator('[data-testid="control-feedback"]');
     const mixDial = dock.locator('[data-testid="control-mix"]');
     const timeDial = dock.locator('[data-testid="control-time"]');
+    await expect(timeDial).toHaveAttribute('aria-valuetext', formatDelayTime(0.25)); // 250 MS
+    await expect(fbDial, 'the ratio 0.4 is EIGHT repeats, and the dial says so').toHaveAttribute(
+      'aria-valuetext',
+      formatDelayFeedback(0.4), // 8 REP
+    );
+    await expect(mixDial).toHaveAttribute('aria-valuetext', formatDelayMix(0.35)); // 35% WET
+
+    // …and NOTHING is painted under any of them. A declared numeric `format` is
+    // exactly the case the owner removed (2026-08-17), so this is the negative
+    // control for the removal on the face that had three of them.
+    await expect(
+      dock.locator('[data-testid^="readout-"]'),
+      'no delay dial paints a resting value — all three params declare a `format`',
+    ).toHaveCount(0);
 
     // ── THE CEILING. Drag feedback past the top of its arc: the fraction
     //    clamps, so this lands on exactly 0.95 — the hard clamp that keeps the
@@ -154,58 +168,70 @@ test.describe('delay face — the repeat count follows the graph', () => {
         message: 'dragging the dial COMMITS the new ratio into the graph',
       })
       .toBe(0.95);
-    await expect(fbOut, 'the ceiling is a very long but FINITE tail').toHaveText(
+    await expect(fbDial, 'the ceiling is a very long but FINITE tail').toHaveAttribute(
+      'aria-valuetext',
       formatDelayFeedback(0.95), // 135 REP
     );
 
     // ── THE OTHER END: no recirculation at all is still ONE echo. ──
     await dragDial(page, fbDial, 260);
     await expect.poll(() => readParam(page, 'd', 'feedback')).toBe(0);
-    await expect(fbOut).toHaveText(formatDelayFeedback(0)); // 1 REP
+    await expect(fbDial).toHaveAttribute('aria-valuetext', formatDelayFeedback(0)); // 1 REP
 
     // ── MIX names its ends. ──
     await dragDial(page, mixDial, -260);
     await expect.poll(() => readParam(page, 'd', 'mix')).toBe(1);
-    await expect(mixOut, 'full wet is named, not printed as 1.00').toHaveText('WET');
+    await expect(mixDial, 'full wet is named, not read as 1.00').toHaveAttribute(
+      'aria-valuetext',
+      'WET',
+    );
 
     // ── THE NEGATIVE-CONTROL SHAPE, INLINE: move a DIFFERENT knob and confirm
-    //    these readouts do not follow it. Without this, a readout hard-coded to
+    //    these values do not follow it. Without this, a dial hard-coded to
     //    'WET' / '1 REP' would satisfy every assertion above. ──
     await dragDial(page, timeDial, -260);
     await expect.poll(() => readParam(page, 'd', 'time')).toBe(2);
-    await expect(timeOut).toHaveText(formatDelayTime(2)); // 2.00 S
-    await expect(mixOut, 'mix’s readout is bound to mix, not to whatever moved last').toHaveText(
-      'WET',
-    );
-    await expect(fbOut).toHaveText(formatDelayFeedback(0));
+    await expect(timeDial).toHaveAttribute('aria-valuetext', formatDelayTime(2)); // 2.00 S
+    await expect(
+      mixDial,
+      'mix’s value is bound to mix, not to whatever moved last',
+    ).toHaveAttribute('aria-valuetext', 'WET');
+    await expect(fbDial).toHaveAttribute('aria-valuetext', formatDelayFeedback(0));
     expect(await readParam(page, 'd', 'mix'), 'and mix itself did not move').toBe(1);
     expect(await readParam(page, 'd', 'feedback')).toBe(0);
   });
 
-  // ── THE LANE, where `face.order` and the column caps both bite. ───────────
+  // ── THE LANE, where `face.order` bites. ──────────────────────────────────
   //
-  // Two claims the dock cannot make. (1) The COMPACT tile holds exactly TWO
-  // cells because the glyph takes the third column, so rank 3 (`mix`) is not on
-  // it — the entire consequence of the ranking, and invisible at the dock tier,
-  // which shows everything. (2) A lane knob column does NOT ellipsize
-  // (`.knob-wrap` is uncapped), so an over-long readout ESCAPES its cell —
-  // measured, not assumed; see lane-readout-fit.ts.
+  // The claim the dock cannot make: the COMPACT tile holds exactly TWO cells
+  // because the glyph takes the third column, so rank 3 (`mix`) is not on it —
+  // the entire consequence of the ranking, and invisible at the dock tier,
+  // which shows everything.
   //
-  // ⚠ THE CAP IS TIER-DEPENDENT AND THE FIRST DRAFT OF THIS TEST MEASURED THE
-  // WRONG ONE. `--kcol-max: 46px` is scoped to `.rl-tile .tile-body .kcol` —
-  // the ROW body (mini / compact). The `full` tier's PLATE grid overrides it
-  // with `max-width: 100%` of a ~53 px grid track, and `getComputedStyle`
-  // returns the computed *percentage*, so a naive `parseFloat(maxWidth)` reads
-  // `100` and a "≤ 46" assertion against it passes for a reason unrelated to
-  // layout. (`vca-face.spec.ts` measures 46 at `full` only because vca has TWO
-  // controls, so its full tier is still a ROW.) Each tier is therefore checked
-  // in the units of ITS OWN constraint: the 46 px cap where it exists, and
-  // "nothing escapes the fixed 192 px tile" on the plate.
-  test('the compact tile drops mix, and no readout escapes its lane cell', async ({ page }) => {
+  // ⚠ THIS TEST USED TO CARRY A SECOND CLAIM AND IT NO LONGER HAS A SUBJECT.
+  // It measured each compact-tile readout's laid-out width against the 46 px
+  // `--kcol-max` column, because a lane knob column does NOT ellipsize
+  // (`.knob-wrap` is uncapped) so an over-long readout ESCAPED its cell rather
+  // than being clipped — `999 MS` / `135 REP` were spawned deliberately as this
+  // face's two widest strings. The owner removed the resting readout from every
+  // faceplate on 2026-08-17 and all three delay params declare a `format`, so
+  // there is no `.readout` element on this face at ANY tier: the measurement
+  // would resolve zero elements and the loop would assert nothing, in silence.
+  // Deleted rather than re-pointed — delay's fixture has no face that paints,
+  // and re-pointing it at another module would make this delay spec a test of
+  // that module. What still covers the remainder: `lane-readout-fit.ts`'s own
+  // pure unit tests (`readoutFitsLane` + the `READOUT_MAX_CHARS` boundary pair)
+  // still bound the NAME readouts, which are the only strings a lane column can
+  // still be asked to hold, and the plate-overflow leg below still catches a
+  // cell wider than its track.
+  test('the compact tile drops mix, and nothing escapes the fixed lane tile', async ({ page }) => {
     test.setTimeout(SLOW_RENDER ? 60_000 : 30_000);
     await gotoShell(page);
     // Spawn AT the widest-string values rather than dragging to them: the value
-    // must be exact for the expected text to be a literal.
+    // must be exact for the expected text to be a literal. They are kept because
+    // the strings are still ASSERTED (on `aria-valuetext`) even though nothing
+    // measures their pixels any more — a face driven at its default values would
+    // prove less, for no saving.
     //   time 0.999 → `999 MS` (6) · feedback 0.95 → `135 REP` (7)
     //   mix  0.99  → `99% WET` (7 — the widest the format can ever produce)
     await spawnPatch(page, [
@@ -217,7 +243,7 @@ test.describe('delay face — the repeat count follows the graph', () => {
       },
     ]);
 
-    // (1) COMPACT: two cells, ranks 1-2, in the 46 px ROW column.
+    // (1) COMPACT: two cells, ranks 1-2.
     await setLaneTier(page, 0.45, 'compact');
     const compact = page.locator(
       '.svelte-flow__node[data-id="d"] [data-testid="module-shell"][data-shell-tier="compact"]',
@@ -230,39 +256,23 @@ test.describe('delay face — the repeat count follows the graph', () => {
       'the compact tile holds the top TWO ranks; the glyph takes the third column',
     ).toEqual(['time', 'feedback']);
 
+    // …and the LANE dial speaks the same string the dock one does. This is the
+    // half of the deleted measurement that survived the removal: the value is
+    // still asserted at this tier, it is simply no longer laid out here.
     for (const [pid, expected] of [
-      ['time', formatDelayTime(0.999)], // 999 MS  (6 glyphs)
-      ['feedback', formatDelayFeedback(0.95)], // 135 REP (7 — the widest this face makes)
+      ['time', formatDelayTime(0.999)], // 999 MS
+      ['feedback', formatDelayFeedback(0.95)], // 135 REP (the widest this face makes)
     ] as const) {
-      const readout = compact.getByTestId(`readout-${pid}`);
-      await expect(readout).toHaveText(expected);
-      // ⚠ UNITS. `offsetWidth` is a LAYOUT box and is immune to xyflow's zoom
-      // transform; `getBoundingClientRect()` is not (the CLAUDE.md
-      // measureOverflow trap). Every number below is an offsetWidth.
-      const fit = await readout.evaluate((el) => {
-        const kcol = el.closest('.kcol') as HTMLElement | null;
-        if (!kcol) throw new Error('readout is not inside a .kcol');
-        return {
-          readoutWidthPx: (el as HTMLElement).offsetWidth,
-          columnMaxWidthPx: parseFloat(getComputedStyle(kcol).maxWidth),
-        };
-      });
-      expect(
-        fit.columnMaxWidthPx,
-        'the ROW-body column cap the unit guard is calibrated against, read off a live render',
-      ).toBe(LANE_KCOL_MAX_PX);
-      expect(
-        fit.readoutWidthPx,
-        `${pid}: "${expected}" (${expected.length} glyphs, budget ${READOUT_MAX_CHARS}) lays out ` +
-          `at ${fit.readoutWidthPx} CSS px against a ${fit.columnMaxWidthPx} px column cap — it ` +
-          `ESCAPES the cell (it does NOT ellipsize; lane-readout-fit.ts). Shorten the format.`,
-      ).toBeLessThanOrEqual(fit.columnMaxWidthPx);
+      await expect(compact.locator(`[data-testid="control-${pid}"]`)).toHaveAttribute(
+        'aria-valuetext',
+        expected,
+      );
     }
 
-    // (2) FULL: the 3-cell plate — all three readouts render in-lane, and
-    //     NOTHING escapes the fixed 192 px tile. `scrollWidth > clientWidth` is
-    //     the plate's real failure mode (its body is `overflow:hidden`, so an
-    //     over-wide readout is CLIPPED rather than spilling visibly — which is
+    // (2) FULL: the 3-cell plate — all three cells render in-lane, and NOTHING
+    //     escapes the fixed 192 px tile. `scrollWidth > clientWidth` is the
+    //     plate's real failure mode (its body is `overflow:hidden`, so an
+    //     over-wide cell is CLIPPED rather than spilling visibly — which is
     //     precisely why an eyeball on a screenshot would not catch it).
     await setLaneTier(page, 0.7, 'full');
     const lane = page.locator(
@@ -275,7 +285,10 @@ test.describe('delay face — the repeat count follows the graph', () => {
         .evaluateAll((els) => els.map((e) => e.getAttribute('data-cell-key'))),
       'three cells fit ONE plate row, so all three render in-lane',
     ).toEqual(['time', 'feedback', 'mix']);
-    await expect(lane.getByTestId('readout-mix')).toHaveText(formatDelayMix(0.99)); // 99% WET
+    await expect(lane.locator('[data-testid="control-mix"]')).toHaveAttribute(
+      'aria-valuetext',
+      formatDelayMix(0.99), // 99% WET
+    );
 
     const plate = await lane.locator('.tile-body.plate').evaluate((el) => ({
       scrollWidth: (el as HTMLElement).scrollWidth,
@@ -285,7 +298,7 @@ test.describe('delay face — the repeat count follows the graph', () => {
     expect(
       plate.scrollWidth,
       `the full-tier plate overflows its own body (${plate.scrollWidth} > ${plate.clientWidth} CSS px; ` +
-        `cells ${plate.cellWidths.join('/')}) — a readout is wider than its grid track and the ` +
+        `cells ${plate.cellWidths.join('/')}) — a cell is wider than its grid track and the ` +
         `body's overflow:hidden is silently clipping it`,
     ).toBeLessThanOrEqual(plate.clientWidth);
   });

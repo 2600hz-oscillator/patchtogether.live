@@ -118,15 +118,14 @@ export const PARAM_CELL_WIDTH_CLASS: Record<ParamCellKind, DockCellWidthClass> =
   // A 56px swatch at hero — narrower than a knob's 64px column.
   color: 'column',
   // `ModuleShell`'s fader branch renders `<div class="kcol ms-cell-fader">` and
-  // `Fader.svelte`'s track is 22px wide. noise could not surface this (one
-  // param, promoted to the hero, zero bands, so no fader ever reached a band);
-  // marbles is the first face to put faders IN bands, and while this said
-  // 'wide' every one of its six bands would have taken a row of its own.
+  // `NeonFader`'s slot is 12px wide inside it. noise could not surface this
+  // (one param, promoted to the hero, zero bands, so no fader ever reached a
+  // band); marbles is the first face to put faders IN bands, and while this
+  // said 'wide' every one of its six bands would have taken a row of its own.
+  // Stated rather than inherited — this Record exists BECAUSE `fader` once
+  // shipped with a width class nobody chose. (#1794 folded the transitional
+  // `neon-fader` entry into this one; it carried the identical 'column'.)
   fader: 'column',
-  // Same answer and the same reason: `NeonFader`'s slot is 12px inside a
-  // `.kcol`. Stated rather than inherited — this Record exists BECAUSE `fader`
-  // once shipped with a width class nobody chose.
-  'neon-fader': 'column',
   // Rosters and pictures — 1.4× to 8× a knob column, so they hold a row.
   segmented: 'wide',
   selector: 'wide',

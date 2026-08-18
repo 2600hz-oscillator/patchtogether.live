@@ -8,7 +8,7 @@
 
   import { onMount, onDestroy } from 'svelte';
   import { type NodeProps } from '@xyflow/svelte';
-  import Fader from '$lib/ui/controls/Fader.svelte';
+  import NeonFader from '$lib/ui/controls/NeonFader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import { useEngine } from '$lib/audio/engine-context';
   import { patch } from '$lib/graph/store';
@@ -267,9 +267,9 @@
       </div>
 
       <div class="fader-grid three">
-        <Fader value={p('gain')} min={0.5} max={4}    defaultValue={pdef('gain')} label="GAIN" curve="linear" onchange={setParam('gain')} moduleId={id} paramId="gain" />
-        <Fader value={p('peak')} min={0.5} max={0.99} defaultValue={pdef('peak')} label="PEAK" curve="linear" onchange={setParam('peak')} moduleId={id} paramId="peak" />
-        <Fader value={p('hue')}  min={0}   max={1}    defaultValue={pdef('hue')}  label="HUE"  curve="linear" onchange={setParam('hue')}  moduleId={id} paramId="hue" />
+        <NeonFader value={p('gain')} min={0.5} max={4}    defaultValue={pdef('gain')} label="GAIN" curve="linear" onchange={setParam('gain')} moduleId={id} paramId="gain" />
+        <NeonFader value={p('peak')} min={0.5} max={0.99} defaultValue={pdef('peak')} label="PEAK" curve="linear" onchange={setParam('peak')} moduleId={id} paramId="peak" />
+        <NeonFader value={p('hue')}  min={0}   max={1}    defaultValue={pdef('hue')}  label="HUE"  curve="linear" onchange={setParam('hue')}  moduleId={id} paramId="hue" />
       </div>
     </div>
   {/if}

@@ -281,12 +281,6 @@ import {
   moogBankSections,
   moogBankTiltText,
 } from '$lib/ui/modules/moog-filterbank-face-model';
-import {
-  busGainText,
-  compAsleepText,
-  mixmstrsFaceParams,
-  sendText,
-} from '$lib/ui/modules/mixmstrs-face-model';
 import { MOOG921A_RANGE_OPTIONS } from '$lib/audio/modules/moog921a';
 import {
   busCompassText,
@@ -302,6 +296,16 @@ import {
   slavePitchText,
   slaveSyncText,
 } from '$lib/ui/modules/moog921-face-model';
+
+// ⚠ ITS OWN IMPORT BLOCK, deliberately. Concurrent face PRs all append here,
+// and two branches inserting into the SAME multi-line block conflict on the
+// shared `import {` / `} from` lines even though the additions are disjoint.
+// A standalone block merges clean.
+import {
+  backdraftBandsText,
+  backdraftFillText,
+  backdraftTapText,
+} from '$lib/ui/modules/backdraft-face-model';
 
 /**
  * Both Moog fixed filter banks' entries, GENERATED from the bank's own section
@@ -1151,17 +1155,14 @@ const FACE_READOUT_VALUES: Readonly<Record<string, FaceReadoutValue>> = {
   'moog921b-fm': (read) => slaveFmText(moog921bFaceParams(read)),
   'moog921b-sync': (read) => slaveSyncText(moog921bFaceParams(read)),
 
-  // ── MIXMSTRS — the four facts ninety-one faders cannot show ───────────────
-  // Each one is a JOIN over controls no single readback can perform, and each
-  // is negative-controlled permanently in `mixmstrs-face-model.test.ts` on the
-  // input a knob readback is blind to. The measurements that anchor them are on
-  // the functions themselves.
-  'mixmstrs-bus-gain': (read) => busGainText(mixmstrsFaceParams(read)),
-  'mixmstrs-comp-asleep': (read) => compAsleepText(mixmstrsFaceParams(read)),
-  // Indexed rather than spelled twice: the two buses are one law over an index
-  // list the def exports, so a third bus upstream cannot leave a readout behind.
-  'mixmstrs-send1': (read) => sendText(0, mixmstrsFaceParams(read)),
-  'mixmstrs-send2': (read) => sendText(1, mixmstrsFaceParams(read)),
+  // ── MIXMSTRS — DELETED, with the computation, 2026-08-17 ─────────────────
+  // Four derived values used to live here (`bus-gain`, `comp-asleep`, and one
+  // per send bus), each a JOIN over controls no single readback can perform.
+  // The owner removed the hero strip from the faceplate — *"these numbers and
+  // text should go away"*, and generally *"we don't want text like that in our
+  // faceplates"* — so the providers went WITH the display rather than being
+  // left registered against a declaration nothing renders. The measurements
+  // they carried are preserved in the def's own comment above `hero`.
 
   // ── UNITYSCALEMATHEMATIK ─────────────────────────────────────────────────
   // FOUR values that are ONE function read at TWO probe magnitudes on TWO
@@ -1366,6 +1367,15 @@ const FACE_READOUT_VALUES: Readonly<Record<string, FaceReadoutValue>> = {
   'alm-diff-gain': (read) => almDiffGainText(read),
   'alm-ring-gain': (read) => almRingGainText(read),
   'alm-peak': (read) => almPeakText(read),
+
+  // BACKDRAFT — the first VIDEO face's readouts. `backdraft-tv-fill` is a pure
+  // function of ZOOM and `backdraft-tv-bands` is not; publishing the pair makes
+  // each the other's negative control. `backdraft-delay-frames` is the whole-
+  // frame quantisation the millisecond fader structurally cannot show.
+  // All three are permanently controlled in backdraft-face-model.test.ts.
+  'backdraft-tv-fill': (read) => backdraftFillText(read),
+  'backdraft-tv-bands': (read) => backdraftBandsText(read),
+  'backdraft-delay-frames': (read) => backdraftTapText(read),
 };
 
 /** The derived value for a declared id, or `null` (⇒ the readout prints `—`

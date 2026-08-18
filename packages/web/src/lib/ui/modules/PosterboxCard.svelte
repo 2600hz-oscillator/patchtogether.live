@@ -10,7 +10,7 @@
   //   (mirrors CellshadeCard's blit).
   import { onMount, onDestroy } from 'svelte';
   import { type NodeProps } from '@xyflow/svelte';
-  import Fader from '$lib/ui/controls/Fader.svelte';
+  import NeonFader from '$lib/ui/controls/NeonFader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import { useEngine } from '$lib/audio/engine-context';
   import { setNodeParam } from '$lib/graph/mutate';
@@ -115,7 +115,7 @@
     </div>
 
     <div class="fader-grid">
-      <Fader
+      <NeonFader
         value={p('depth')}
         min={0}
         max={DEPTH_MAX_INDEX}
@@ -128,8 +128,8 @@
         moduleId={id}
         paramId="depth"
       />
-      <Fader value={p('dither')} min={0} max={1} defaultValue={pdef('dither')} label="Dither" curve="linear" onchange={setParam('dither')} moduleId={id} paramId="dither" />
-      <Fader value={p('mix')}    min={0} max={1} defaultValue={pdef('mix')}    label="Mix"    curve="linear" onchange={setParam('mix')}    moduleId={id} paramId="mix" />
+      <NeonFader value={p('dither')} min={0} max={1} defaultValue={pdef('dither')} label="Dither" curve="linear" onchange={setParam('dither')} moduleId={id} paramId="dither" />
+      <NeonFader value={p('mix')}    min={0} max={1} defaultValue={pdef('mix')}    label="Mix"    curve="linear" onchange={setParam('mix')}    moduleId={id} paramId="mix" />
     </div>
   </PatchPanel>
 </div>

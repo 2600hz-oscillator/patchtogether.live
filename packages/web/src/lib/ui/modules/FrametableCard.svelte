@@ -13,7 +13,7 @@
   // inactive mode's extras so each mode fits the card bounds (no control overflow).
   import { onMount, onDestroy } from 'svelte';
   import { type NodeProps } from '@xyflow/svelte';
-  import Fader from '$lib/ui/controls/Fader.svelte';
+  import NeonFader from '$lib/ui/controls/NeonFader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import { useEngine } from '$lib/audio/engine-context';
   import { setNodeParam } from '$lib/graph/mutate';
@@ -586,9 +586,9 @@
 
     <!-- Shared faders: MORPH + SPREAD. -->
     <div class="fader-row">
-      <Fader value={p('morph')} min={pmin('morph')} max={pmax('morph')} defaultValue={pdef('morph')}
+      <NeonFader value={p('morph')} min={pmin('morph')} max={pmax('morph')} defaultValue={pdef('morph')}
         label="Morph" curve="linear" onchange={setParam('morph')} moduleId={id} paramId="morph" />
-      <Fader value={p('spread')} min={pmin('spread')} max={pmax('spread')} defaultValue={pdef('spread')}
+      <NeonFader value={p('spread')} min={pmin('spread')} max={pmax('spread')} defaultValue={pdef('spread')}
         label="Spread" curve="linear" onchange={setParam('spread')} moduleId={id} paramId="spread" />
     </div>
 
@@ -616,7 +616,7 @@
             </div>
             <div class="pad-label">x freq / amt</div>
             <div class="knob-cell">
-              <Fader value={p('waveShapeX')} min={pmin('waveShapeX')} max={pmax('waveShapeX')} defaultValue={pdef('waveShapeX')}
+              <NeonFader value={p('waveShapeX')} min={pmin('waveShapeX')} max={pmax('waveShapeX')} defaultValue={pdef('waveShapeX')}
                 label="X Shp" curve="linear" onchange={setParam('waveShapeX')} moduleId={id} paramId="waveShapeX" />
             </div>
           </div>
@@ -641,7 +641,7 @@
             </div>
             <div class="pad-label">y freq / amt</div>
             <div class="knob-cell">
-              <Fader value={p('waveShapeY')} min={pmin('waveShapeY')} max={pmax('waveShapeY')} defaultValue={pdef('waveShapeY')}
+              <NeonFader value={p('waveShapeY')} min={pmin('waveShapeY')} max={pmax('waveShapeY')} defaultValue={pdef('waveShapeY')}
                 label="Y Shp" curve="linear" onchange={setParam('waveShapeY')} moduleId={id} paramId="waveShapeY" />
             </div>
           </div>
@@ -649,9 +649,9 @@
       </div>
     {:else if mode === FRAMETABLE_MODE_CHAOS}
       <div class="extras fader-row" data-testid="frametable-extras-chaos">
-        <Fader value={p('shimmer')} min={pmin('shimmer')} max={pmax('shimmer')} defaultValue={pdef('shimmer')}
+        <NeonFader value={p('shimmer')} min={pmin('shimmer')} max={pmax('shimmer')} defaultValue={pdef('shimmer')}
           label="Shimmer" curve="linear" onchange={setParam('shimmer')} moduleId={id} paramId="shimmer" />
-        <Fader value={p('weightShape')} min={pmin('weightShape')} max={pmax('weightShape')} defaultValue={pdef('weightShape')}
+        <NeonFader value={p('weightShape')} min={pmin('weightShape')} max={pmax('weightShape')} defaultValue={pdef('weightShape')}
           label="Shape" curve="linear" onchange={setParam('weightShape')} moduleId={id} paramId="weightShape" />
       </div>
     {:else}

@@ -8,7 +8,7 @@
 
   import { onMount, onDestroy } from 'svelte';
   import { type NodeProps } from '@xyflow/svelte';
-  import Fader from '$lib/ui/controls/Fader.svelte';
+  import NeonFader from '$lib/ui/controls/NeonFader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import { useEngine } from '$lib/audio/engine-context';
   import { patch } from '$lib/graph/store';
@@ -249,12 +249,12 @@
     </div>
 
     <div class="fader-grid" data-testid="reshaper-controls">
-      <Fader value={p('intensity')} min={0}  max={2}  defaultValue={reshaperDef.params.find((x) => x.id === 'intensity')!.defaultValue} label="I"   curve="linear" onchange={setParam('intensity')} moduleId={id} paramId="intensity" />
-      <Fader value={p('xDisp')}     min={-1} max={1}  defaultValue={reshaperDef.params.find((x) => x.id === 'xDisp')!.defaultValue}     label="XD"  curve="linear" onchange={setParam('xDisp')} moduleId={id} paramId="xDisp" />
-      <Fader value={p('yDisp')}     min={-1} max={1}  defaultValue={reshaperDef.params.find((x) => x.id === 'yDisp')!.defaultValue}     label="YD"  curve="linear" onchange={setParam('yDisp')} moduleId={id} paramId="yDisp" />
-      <Fader value={p('tintR')}     min={0}  max={1}  defaultValue={reshaperDef.params.find((x) => x.id === 'tintR')!.defaultValue}     label="R"   curve="linear" onchange={setParam('tintR')} moduleId={id} paramId="tintR" />
-      <Fader value={p('tintG')}     min={0}  max={1}  defaultValue={reshaperDef.params.find((x) => x.id === 'tintG')!.defaultValue}     label="G"   curve="linear" onchange={setParam('tintG')} moduleId={id} paramId="tintG" />
-      <Fader value={p('tintB')}     min={0}  max={1}  defaultValue={reshaperDef.params.find((x) => x.id === 'tintB')!.defaultValue}     label="B"   curve="linear" onchange={setParam('tintB')} moduleId={id} paramId="tintB" />
+      <NeonFader value={p('intensity')} min={0}  max={2}  defaultValue={reshaperDef.params.find((x) => x.id === 'intensity')!.defaultValue} label="I"   curve="linear" onchange={setParam('intensity')} moduleId={id} paramId="intensity" />
+      <NeonFader value={p('xDisp')}     min={-1} max={1}  defaultValue={reshaperDef.params.find((x) => x.id === 'xDisp')!.defaultValue}     label="XD"  curve="linear" onchange={setParam('xDisp')} moduleId={id} paramId="xDisp" />
+      <NeonFader value={p('yDisp')}     min={-1} max={1}  defaultValue={reshaperDef.params.find((x) => x.id === 'yDisp')!.defaultValue}     label="YD"  curve="linear" onchange={setParam('yDisp')} moduleId={id} paramId="yDisp" />
+      <NeonFader value={p('tintR')}     min={0}  max={1}  defaultValue={reshaperDef.params.find((x) => x.id === 'tintR')!.defaultValue}     label="R"   curve="linear" onchange={setParam('tintR')} moduleId={id} paramId="tintR" />
+      <NeonFader value={p('tintG')}     min={0}  max={1}  defaultValue={reshaperDef.params.find((x) => x.id === 'tintG')!.defaultValue}     label="G"   curve="linear" onchange={setParam('tintG')} moduleId={id} paramId="tintG" />
+      <NeonFader value={p('tintB')}     min={0}  max={1}  defaultValue={reshaperDef.params.find((x) => x.id === 'tintB')!.defaultValue}     label="B"   curve="linear" onchange={setParam('tintB')} moduleId={id} paramId="tintB" />
     </div>
   {/if}
   </PatchPanel>

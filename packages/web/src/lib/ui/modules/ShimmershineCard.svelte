@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { NodeProps } from '@xyflow/svelte';
-  import Fader from '$lib/ui/controls/Fader.svelte';
+  import NeonFader from '$lib/ui/controls/NeonFader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import { shimmershineDef } from '$lib/audio/modules/shimmershine';
   import type { ModuleNode } from '$lib/graph/types';
@@ -28,11 +28,11 @@
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="fader-row">
-      <Fader value={decay}   min={0} max={1} defaultValue={0.6} label="Decay"   curve="linear" onchange={set('decay')} moduleId={id} paramId="decay"   readLive={live('decay')} />
-      <Fader value={shimmer} min={0} max={1} defaultValue={0.4} label="Shimmer" curve="linear" onchange={set('shimmer')} moduleId={id} paramId="shimmer" readLive={live('shimmer')} />
-      <Fader value={size}    min={0} max={1} defaultValue={0.6} label="Size"    curve="linear" onchange={set('size')} moduleId={id} paramId="size"    readLive={live('size')} />
-      <Fader value={damp}    min={0} max={1} defaultValue={0.4} label="Damp"    curve="linear" onchange={set('damp')} moduleId={id} paramId="damp"    readLive={live('damp')} />
-      <Fader value={mix}     min={0} max={1} defaultValue={0.4} label="Mix"     curve="linear" onchange={set('mix')} moduleId={id} paramId="mix"     readLive={live('mix')} />
+      <NeonFader value={decay}   min={0} max={1} defaultValue={0.6} label="Decay"   curve="linear" onchange={set('decay')} moduleId={id} paramId="decay"   readLive={live('decay')} />
+      <NeonFader value={shimmer} min={0} max={1} defaultValue={0.4} label="Shimmer" curve="linear" onchange={set('shimmer')} moduleId={id} paramId="shimmer" readLive={live('shimmer')} />
+      <NeonFader value={size}    min={0} max={1} defaultValue={0.6} label="Size"    curve="linear" onchange={set('size')} moduleId={id} paramId="size"    readLive={live('size')} />
+      <NeonFader value={damp}    min={0} max={1} defaultValue={0.4} label="Damp"    curve="linear" onchange={set('damp')} moduleId={id} paramId="damp"    readLive={live('damp')} />
+      <NeonFader value={mix}     min={0} max={1} defaultValue={0.4} label="Mix"     curve="linear" onchange={set('mix')} moduleId={id} paramId="mix"     readLive={live('mix')} />
     </div>
   </PatchPanel>
 </div>

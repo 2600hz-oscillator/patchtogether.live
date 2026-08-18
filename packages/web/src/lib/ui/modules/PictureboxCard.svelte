@@ -9,7 +9,7 @@
   // Multiplayer: image content NOW syncs across rack-mates — sizing,
   // codec, and limit decisions are documented in picturebox-encode.ts.
   import { type NodeProps } from '@xyflow/svelte';
-  import Fader from '$lib/ui/controls/Fader.svelte';
+  import NeonFader from '$lib/ui/controls/NeonFader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import { patch, ydoc, LOCAL_ORIGIN } from '$lib/graph/store';
   import { setNodeParam } from '$lib/graph/mutate';
@@ -275,7 +275,7 @@
   </div>
 
   <div class="fader-grid">
-    <Fader value={p('gain')} min={0} max={2} defaultValue={pictureboxDef.params.find((x) => x.id === 'gain')!.defaultValue} label="Gain" curve="linear" onchange={setParam('gain')} moduleId={id} paramId="gain" />
+    <NeonFader value={p('gain')} min={0} max={2} defaultValue={pictureboxDef.params.find((x) => x.id === 'gain')!.defaultValue} label="Gain" curve="linear" onchange={setParam('gain')} moduleId={id} paramId="gain" />
   </div>
 
   {#if multiOpen}

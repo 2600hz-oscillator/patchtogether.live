@@ -5,7 +5,7 @@
   // THRESHOLD (edge trigger) + THICKNESS (rendered edge width), each with
   // a matching per-param CV input. The yellow PatchPanel hosts the handles.
   import { type NodeProps } from '@xyflow/svelte';
-  import Fader from '$lib/ui/controls/Fader.svelte';
+  import NeonFader from '$lib/ui/controls/NeonFader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import { setNodeParam } from '$lib/graph/mutate';
   import { edgesDef, EDGES_MAX_THICKNESS } from '$lib/video/modules/edges';
@@ -37,8 +37,8 @@
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="fader-grid">
-      <Fader value={p('threshold')} min={0} max={1}                  defaultValue={pdef('threshold')} label="Thresh" curve="linear" onchange={setParam('threshold')} moduleId={id} paramId="threshold" />
-      <Fader value={p('thickness')} min={1} max={EDGES_MAX_THICKNESS} units="px" defaultValue={pdef('thickness')} label="Thick"  curve="linear" onchange={setParam('thickness')} moduleId={id} paramId="thickness" />
+      <NeonFader value={p('threshold')} min={0} max={1}                  defaultValue={pdef('threshold')} label="Thresh" curve="linear" onchange={setParam('threshold')} moduleId={id} paramId="threshold" />
+      <NeonFader value={p('thickness')} min={1} max={EDGES_MAX_THICKNESS} units="px" defaultValue={pdef('thickness')} label="Thick"  curve="linear" onchange={setParam('thickness')} moduleId={id} paramId="thickness" />
     </div>
   </PatchPanel>
 </div>

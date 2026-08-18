@@ -25,7 +25,7 @@
   // the analogVco backdraft.
 
   import type { NodeProps } from '@xyflow/svelte';
-  import Fader from '$lib/ui/controls/Fader.svelte';
+  import NeonFader from '$lib/ui/controls/NeonFader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import { slewSwitchDef } from '$lib/audio/modules/slewswitch';
   import type { ModuleNode } from '$lib/graph/types';
@@ -91,7 +91,7 @@
       <div class="strips">
         {#each slews as p (p.id)}
           <div class="strip">
-            <Fader
+            <NeonFader
               value={paramVal(p.id)}
               min={p.min} max={p.max} defaultValue={p.defaultValue}
               label={p.label} units={p.units}
@@ -106,7 +106,7 @@
         <button class="modebtn" onclick={() => cycle(P.mode)} data-testid="slewswitch-mode">{modeLabel}</button>
         <button class="modebtn" onclick={() => cycle(P.length)} data-testid="slewswitch-length">{lenLabel}</button>
         <div class="xfade">
-          <Fader
+          <NeonFader
             value={paramVal('xfadeTime')}
             min={P.xfadeTime.min} max={P.xfadeTime.max} defaultValue={P.xfadeTime.defaultValue}
             label={P.xfadeTime.label} units={P.xfadeTime.units}

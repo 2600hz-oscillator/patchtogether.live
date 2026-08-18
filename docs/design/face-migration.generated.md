@@ -12,8 +12,8 @@ Every registered module carries exactly one **disposition**: what kind of work i
 |  | count |
 |---|---|
 | registered modules | 196 |
-| done (faced + promoted) | 50 |
-| remaining (excludes organizational-native) | 143 |
+| done (faced + promoted) | 51 |
+| remaining (excludes organizational-native) | 142 |
 | registered with NO disposition (must be zero) | 0 |
 | inventory entries naming a dead def (must be zero) | 0 |
 
@@ -21,7 +21,7 @@ Every registered module carries exactly one **disposition**: what kind of work i
 
 | disposition | what it means | modules | done |
 |---|---|---|---|
-| `generic-face` | author a `face` and rank the controls — no new platform capability | 140 | 50 |
+| `generic-face` | author a `face` and rank the controls — no new platform capability | 140 | 51 |
 | `blocked` | would be a face today but for the named capability, and nothing else | 3 | — |
 | `bespoke-surface` | the primary interaction is not param-shaped — needs a purpose-built surface | 50 | — |
 | `organizational-native` | rack furniture; not a migration at all | 3 | — |
@@ -47,7 +47,7 @@ author a `face` and rank the controls — no new platform capability.
 | `analogVco` | audio | done | — |
 | `attenumix` | audio | done | — |
 | `b3ntb0x` | video | — | — |
-| `backdraft` | video | — | — |
+| `backdraft` | video | done | — |
 | `bentbox` | video | — | — |
 | `bluebox` | audio | done | — |
 | `buggles` | audio | done | — |

@@ -4,11 +4,18 @@
 // is not expanded and its been sent to a projector, the output stops").
 //
 // WHAT "not expanded" MEANS, mechanically. Under the faceplate shell (the
-// default — `?shell=legacy` is the escape hatch) BACKDRAFT is un-migrated, so
-// its lane slot renders a <ModuleShellPlaceholder> and its REAL card exists in
-// exactly one place: the dock FULL-VIEW that the tile's EXPAND opens. The
-// "Present on <display>" menu lives on that real card. So the owner's sequence
-// is expand -> present -> COLLAPSE, and the collapse UNMOUNTS BackdraftCard.
+// default — `?shell=legacy` is the escape hatch) BACKDRAFT's OUTPUT SURFACE
+// exists in exactly one place: the dock FULL-VIEW that the tile's EXPAND opens.
+// The "Present on <display>" menu lives on that surface. So the owner's
+// sequence is expand -> present -> COLLAPSE, and the collapse UNMOUNTS the host.
+//
+// ⚠ WHICH HOST, since backdraft became the first VIDEO FACE (2026-08-17): the
+// dock now mounts <ModuleShell>, and the output surface is the face's
+// `fullViewBody` extension, `BackdraftOutputBody`. Before promotion it was
+// BackdraftCard, mounted in the dock for the same reason. The mechanism, the
+// three things that died with the unmount, and every assertion below are
+// unchanged — the surface that owns `createPresent` simply has a new name, and
+// it is the CURRENT one that needs this proof.
 // present-second-display.spec.ts cannot see any of this: it runs
 // `?shell=legacy`, where the card sits in the lane forever and is never swapped.
 //
@@ -151,18 +158,29 @@ test.describe('present on a second display SURVIVES the card collapsing', () => 
       [{ id: 'e1', from: { nodeId: 'src', portId: 'out' }, to: { nodeId: 'bd', portId: 'in_a' }, sourceType: 'mono-video', targetType: 'video' }],
     );
 
-    // Un-migrated module under the shell: no real card in the lane at all.
+    // ⚠ THE HOST UNDER TEST IS NO LONGER THE LEGACY CARD. `backdraft` became
+    // the first VIDEO FACE, so the dock full-view mounts `<ModuleShell>` and the
+    // OUTPUT surface arrives through the face's `fullViewBody` extension
+    // (`BackdraftOutputBody`) instead of `BackdraftCard`. The BEHAVIOUR under
+    // test is unchanged and the coverage is strictly better: the thing that
+    // owns `createPresent` and then unmounts on collapse is now that component,
+    // which is exactly the seam that needed proving. Only the selectors move —
+    // `backdraft-output-menu` is deliberately the SAME testid on both hosts.
+    const outputHost = '[data-testid="backdraft-face-output"]';
+
+    // Nothing mounts the OUTPUT surface in the lane — a 192px tile cannot carry
+    // a module surface (`extBody` is dock-gated by `dockFullViewHeadPlan`).
     await expect(
-      page.locator('[data-testid="backdraft-card"]'),
-      'the shell renders a placeholder tile, not the real card',
+      page.locator(outputHost),
+      'the lane tile carries no output surface, only the dock does',
     ).toHaveCount(0);
 
-    // EXPAND — the dock full-view, where the real card (and its OUTPUT menu)
-    // lives. Same call the tile's EXPAND button makes.
+    // EXPAND — the dock full-view, where the output surface (and its OUTPUT
+    // menu) lives. Same call the tile's EXPAND button makes.
     await page.evaluate(() => {
       (globalThis as unknown as { __openDockFullView: (id: string) => void }).__openDockFullView('bd');
     });
-    await expect(page.locator('[data-testid="backdraft-card"]'), 'real card mounted in the dock full-view').toHaveCount(1);
+    await expect(page.locator(outputHost), 'output surface mounted in the dock full-view').toHaveCount(1);
 
     // PRESENT on display 2.
     await page.locator('[data-testid="backdraft-output-menu"]').click();
@@ -199,7 +217,7 @@ test.describe('present on a second display SURVIVES the card collapsing', () => 
 
     // ── THE BUG: COLLAPSE the full view. The card unmounts.
     await page.locator('[data-testid="faceplate-collapse"]').click();
-    await expect(page.locator('[data-testid="backdraft-card"]'), 'the real card really did unmount').toHaveCount(0);
+    await expect(page.locator(outputHost), 'the output surface really did unmount').toHaveCount(0);
 
     // 1. THE POPUP STILL EXISTS. (Pre-fix this is where it died: onDestroy ->
     //    present.dispose() -> popup.close().)

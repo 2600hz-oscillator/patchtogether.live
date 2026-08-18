@@ -14,7 +14,7 @@
   // PatchPanel. A live preview of the rendered OUT is shown (the Cellshade blit).
   import { onMount, onDestroy } from 'svelte';
   import { type NodeProps } from '@xyflow/svelte';
-  import Fader from '$lib/ui/controls/Fader.svelte';
+  import NeonFader from '$lib/ui/controls/NeonFader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import { useEngine } from '$lib/audio/engine-context';
   import { setNodeParam } from '$lib/graph/mutate';
@@ -304,7 +304,7 @@
 
     <div class="fader-grid">
       {#each KNOBS as k (k.id)}
-        <Fader
+        <NeonFader
           value={p(k.id)}
           min={pmin(k.id)}
           max={pmax(k.id)}

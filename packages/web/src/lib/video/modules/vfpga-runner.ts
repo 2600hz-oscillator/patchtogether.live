@@ -22,9 +22,12 @@
 //            read('outputTexture:vout2')).
 //   params : p1..p8 generic slot bank + the cv/gate synthetic params.
 //
-// Render: renderLocus 'worker' (every catalog VFPGA is pure-GL). The worker
-// re-runs THIS factory; the card preview pulls a CPU snapshot (`read('snapshot')`)
-// computed in JS from the active spec, independent of where GL runs.
+// Render: MAIN THREAD (#1811). This header used to claim renderLocus 'worker'
+// and the def used to declare 'worker-experimental'; both were wrong — the
+// render worker's bundle manifest never imported a VFPGA factory, so the flag
+// installed a proxy that never received a frame. See the def below for the
+// three structural reasons it cannot move (vin1..vin4, vout1+vout2, and the
+// card's per-frame read('gateState') poll).
 //
 // Inputs (def):
 //   vin1..vin4 (video): bound to the active spec's declared video-in samplers.
