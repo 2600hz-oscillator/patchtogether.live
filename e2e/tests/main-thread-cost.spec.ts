@@ -104,7 +104,7 @@ interface CostSnapshot {
  * exists to demonstrate. 300 > 256 guarantees the ring holds only this phase.
  * At the 25 ms cadence that is ≈7.5 s per phase.
  */
-const TICKS_PER_PHASE = 100;
+const TICKS_PER_PHASE = 300;
 
 /** The synthetic main-thread block, MILLISECONDS. ONE constant: it sizes the
  *  perturbation AND is the threshold the ambient-floor probe compares against,
@@ -267,10 +267,38 @@ function report(
 }
 
 test.describe('#1811 main-thread cost instrument', () => {
-  // THREE phases at TICKS_PER_PHASE arrivals each (~7.5 s at the 25 ms
-  // cadence), plus one page load and one spawn — about 30 s of a single shard
-  // measured locally. Deliberately one page load and a two-node video rack: a
-  // heavy spec here is a permanent tax on every CI run.
+  // ON CI: ONE phase (idle) at TICKS_PER_PHASE arrivals (~7.5 s at the 25 ms
+  // cadence), plus one page load and one spawn. The two perturbation phases are
+  // opt-in (PT_COST_PERTURB=1) and do NOT run here, so CI pays roughly a third
+  // of the full three-phase cost — measured locally under E2E_SWIFTSHADER=1:
+  // 32.1 s with all three phases; gated as CI runs it, 14.5 s cold and 10.2 s
+  // warm (3/3 flake-check).
+  //
+  // ⚠ Those are FLOORS, not predictions. This is a VIDEO spec, and a local
+  // single-worker run cannot see ten shards competing for one software
+  // rasterizer: backdraft-preview-toggle predicted 57.5 s the same way and
+  // measured 358.2 CPU-s on CI, 6x. Take the real cost from
+  // e2e-timings.generated.json once a run has carried this spec.
+  //
+  // ⚠ TICKS_PER_PHASE IS NOT A COST KNOB, and the reason is the repo's headline
+  // renderer rule read backwards. The WINDOW is a time budget (N tick arrivals
+  // at a 25 ms cadence); the FLOORS below are FRAME COUNTS (>10 engine frames).
+  // Frames-per-window is therefore renderer-dependent, so shortening the window
+  // does not scale the assertion down with it — it silently makes the floor
+  // harder on the slowest renderer, which is the one CI runs.
+  //
+  // MEASURED: at 100 ticks (~2.5 s) this spec is green on a local GPU and RED
+  // under E2E_SWIFTSHADER=1 — the idle phase reported ONE frame and failed its
+  // own vacuity guard. At 300 it reports 65 frames under SwiftShader. 300 is
+  // also what the ring above requires (> 256), so a shorter phase would summarise
+  // a MIXTURE of itself and its predecessor regardless.
+  //
+  // Skipping the two opt-in phases is where the CI saving comes from. The window
+  // is not the lever. Verify any change to it under E2E_SWIFTSHADER=1, not on a
+  // local GPU.
+  //
+  // Deliberately one page load and a two-node video rack: a heavy spec here is
+  // a permanent tax on every CI run.
   //
   // The timeout is 180 s rather than 3x7.5 s because each phase carries its own
   // 45 s in-page CAP: a wedged scheduler clock must surface as the assertion
