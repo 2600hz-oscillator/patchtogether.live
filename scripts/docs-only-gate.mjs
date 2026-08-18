@@ -74,6 +74,10 @@
 //
 // ⚠ THE "NEXT CODE PR CATCHES IT" ARGUMENT WAS TESTED IN THE FIELD AND LOST.
 // This note used to accept the gap for `test-ledger.generated.md` on exactly
+// (⚠ #1858 DELETED that artifact and its freshness gate — a committed copy of a
+// derivable thing, gated only on being a faithful copy, so it could fail on
+// process and never on substance. `face-migration.generated.md` below is the
+// SAME SHAPE and is the reason this note survives.)
 // that reasoning. On 2026-08-15 a SECOND golden joined the class
 // (`face-migration.generated.md`) and the failure mode played out in full:
 // two face PRs each regenerated it from the same base, wrote the same value,
@@ -94,7 +98,6 @@
 export const DOCS_PATTERNS = [
   '**/*.md',
   // Negations MUST follow the pattern they negate — GitHub evaluates in order.
-  '!docs/testing/test-ledger.generated.md',
   '!docs/design/face-migration.generated.md',
   '.myrobots/**',
   'LICENSE',

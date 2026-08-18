@@ -479,26 +479,6 @@ tasks:
     cmds:
       - npx vitest run src/lib/dev/registry-manifest.test.ts
 
-  test:ledger:
-    desc: |
-      Test ledger — CHECK the generated 3-bucket punch-list
-      (docs/testing/test-ledger.generated.md) against a fresh regeneration,
-      read-only (the same freshness gate CI runs in the `unit` lane). Fails
-      if the committed artifact is stale. Prose + roadmap: docs/testing/README.md.
-    cmds:
-      - npx vitest run --config vitest.scripts.config.ts test-ledger
-
-  test:ledger:accept:
-    desc: |
-      [accept-loop] Re-pin the GENERATED test ledger
-      (docs/testing/test-ledger.generated.md) from the current source tree —
-      run after an INTENTIONAL new skip / exemption / CI-lane change, then
-      review the git diff before committing (a diff = the punch-list moved:
-      accept it, or recognize a bug). The ART/VRT *:update analog for the ledger.
-    cmds:
-      - LEDGER_UPDATE=1 npx vitest run --config vitest.scripts.config.ts test-ledger
-      - 'echo "[test:ledger:accept] re-pinned docs/testing/test-ledger.generated.md — review the git diff before committing"'
-
   face:inventory:
     desc: |
       Face-migration inventory (LEG-01) — run the RATCHET: every registered
