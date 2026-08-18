@@ -81,7 +81,26 @@ export function loadContention(dir = join(ROOT, 'e2e/tests')) {
  * @type {{ spec: string, why: string }[]}
  */
 export const PENDING_FIRST_MEASUREMENT = [
-  // EMPTY, and that is the point: every entry here is a debt with a deadline.
+  {
+    spec: 'videoout-detach-display.spec.ts',
+    why:
+      '#1821 — new with the videoOut detach display + bridge-on-delete. Measured locally, single '
+      + 'worker, E2E_SWIFTSHADER=1: 27.0 s wall for 10 tests. ⚠ TREAT THAT AS A FLOOR, not a '
+      + 'prediction: the backdraft-preview-toggle entry measured 57.5 s locally and 358.2 CPU-s on '
+      + 'CI (6x), because a local run cannot see ten shards competing for one software rasterizer. '
+      + 'Run `flox activate -- task e2e:timings:accept` on the first green CI run after this merges '
+      + 'and DELETE this entry.',
+  },
+  {
+    spec: 'videoout-drop-patch.spec.ts',
+    why:
+      '#1819 — the per-module drop-gesture coverage that lands with the videoOut face. Measured '
+      + 'locally, single worker, E2E_SWIFTSHADER=1: 24.7 s wall for 5 tests. Same 6x caveat as its '
+      + 'sibling above; for calibration the generic card-drop-patch.spec.ts measures 246 CPU-s. Run '
+      + '`flox activate -- task e2e:timings:accept` on the first green CI run after this merges and '
+      + 'DELETE this entry.',
+  },
+  // Every entry here is a debt with a deadline.
   //
   // All six that stood on 2026-08-17 were paid in one accept against ci.yml run
   // 32069537806. `backdraft-preview-toggle.spec.ts` (#1784) was paid the same
