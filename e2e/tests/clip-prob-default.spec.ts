@@ -157,7 +157,12 @@ async function seedClip(
 // 1) GESTURE — SHIFT + a Grid clip pad → clip-PROB page → level tap writes
 //    node.data.defaultProb; the card recolours source-aware.
 // ===========================================================================
-test('@launchpad clip-default prob: SHIFT+clip → PROB page → level tap writes defaultProb; card recolours orange/purple', async ({ page, rack, errorWatch }) => {
+// ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are UNCHANGED.
+// NONDETERMINISM: 6 recovered-on-retry observation(s) across 6 SHA(s) / 6 branch(es) in the
+// 96 h CI census to 2026-08-18 — never a hard failure, so every one of those jobs reported SUCCESS.
+// LOST WHILE PARKED: the hardware gesture for clip-default probability on a simulated Launchpad, and the source-aware recolour (orange = defaulted, purple = per-note override) that tells the user which is in effect.
+// Re-enable only on a root cause (#1847); "it passes now" is not one.
+test.fixme('@launchpad clip-default prob: SHIFT+clip → PROB page → level tap writes defaultProb; card recolours orange/purple', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 6 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page, rack, errorWatch }) => {
   await buildChain(page, 'cg');
   // Two notes at the clip ROOT (midi 48 → editor display row 7): step 0 carries a
   // per-note override (0.25 → purple); step 1 takes the clip default (→ orange).
@@ -213,7 +218,12 @@ test('@launchpad clip-default prob: SHIFT+clip → PROB page → level tap write
 // 2) PLAYBACK — the clip default gates firing through the REAL chain; a per-note
 //    override BEATS it. Deterministic 0 / 1 edges (no RNG flake).
 // ===========================================================================
-test('@clipplayer clip-default prob 0 SILENCES a launched clip through the real chain', async ({ page, rack, errorWatch }) => {
+// ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are UNCHANGED.
+// NONDETERMINISM: 7 recovered-on-retry observation(s) across 7 SHA(s) / 6 branch(es) in the
+// 96 h CI census to 2026-08-18 — never a hard failure, so every one of those jobs reported SUCCESS.
+// LOST WHILE PARKED: the real-chain proof that a clip-level defaultProb of 0 genuinely silences a launched clip (clipplayer → VCO → VCA → SCOPE), not merely that the number was written to node.data.
+// Re-enable only on a root cause (#1847); "it passes now" is not one.
+test.fixme('@clipplayer clip-default prob 0 SILENCES a launched clip through the real chain', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 7 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page, rack, errorWatch }) => {
   await buildChain(page, 'cs');
   // 4 notes, clip default 0, NO overrides → every note is diced out → silent.
   await seedClip(page, 'cs-cp', [

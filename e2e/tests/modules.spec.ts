@@ -84,6 +84,23 @@ const QUARANTINE: Record<string, string> = {
   // until #102 lands SwiftShader-scaled timeouts / WEBGL_HEAVY routing for it
   // and restores this coverage, THEN un-fixme.
   toybox: 'task #102: SwiftShader software-renderer timeout (heavy WebGL); restore coverage then un-fixme',
+
+  // ── ⏸ FLAKE-PARK #1847 ────────────────────────────────────────────────────
+  // These three are NOT a SwiftShader timeout class like toybox above — they are
+  // NONDETERMINISTIC: in the 96 h CI census to 2026-08-18 each failed and then
+  // PASSED ON RETRY at the same SHA, so every one of those jobs reported SUCCESS
+  // and the debt was invisible in the green/red signal. Parked here rather than
+  // deleted; the title the branch renders is IDENTICAL to the live one, so
+  // un-parking is a one-entry deletion from this map.
+  // LOST WHILE PARKED: each module's slot in the per-module spawn smoke — that
+  // its card renders with the registry-derived handle count and a clean console.
+  // Re-enable only on a root cause (#1847); "it passes now" is not one.
+  bluebox:
+    'FLAKE-PARK #1847 — nondeterministic on CI: 9 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused',
+  buggles:
+    'FLAKE-PARK #1847 — nondeterministic on CI: 2 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused',
+  quadralogical:
+    'FLAKE-PARK #1847 — nondeterministic on CI: 3 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused',
 };
 
 // ── HEAVY WebGL RENDERS DO NOT RUN CONCURRENTLY ─────────────────────────────

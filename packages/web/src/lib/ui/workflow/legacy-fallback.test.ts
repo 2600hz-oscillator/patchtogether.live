@@ -102,14 +102,27 @@ describe('isShellSwappable — eligibility', () => {
     expect(NON_SHELL_LANE_TYPES.has('tidyvco')).toBe(false);
   });
 
-  it('videoOut is a VIDEO-SURFACE snowflake: its legacy card (the live, freely-resizable output screen) stays in the lane', () => {
-    // The owner ?shell=1 regression: swapping videoOut for a placeholder tile
-    // removed the only user-viewable video output. It must render legacy.
-    expect(NON_SHELL_LANE_TYPES.has('videoOut')).toBe(true);
-    expect(isShellSwappable('videoOut', true)).toBe(false);
-    expect(laneRenderKind({ ...base, type: 'videoOut', hasCard: isShellSwappable('videoOut', true) })).toBe('legacy');
-    // …while the other video-domain modules (recorderbox / backdraft / …) still
-    // swap to tiles — they get the LIVE THUMBNAIL glyph instead.
+  it('videoOut SWAPS now that it has a face — the carve-out was about a PLACEHOLDER, not about the module', () => {
+    // HISTORY, because the reversal is the point (the `es9` shape below). This
+    // used to assert the opposite: the owner ?shell=1 regression was that
+    // swapping videoOut for a PLACEHOLDER TILE removed the only user-viewable
+    // video output, so it was held back on the verbatim legacy card.
+    //
+    // #1821 removes the cause rather than the symptom. videoOut carries a real
+    // `face`, so the swap now lands on a `ModuleShell` painting the LIVE
+    // `VideoTileThumb` — not a placeholder — and the big picture moved to
+    // right-click → DETACH DISPLAY, which is what the owner asked for.
+    //
+    // ⚠ THE PICTURE'S SURVIVAL IS NOT ASSERTED HERE and cannot be: this module
+    // is deliberately registry-free, so it cannot see a glyph plan. That leg
+    // lives in `videoout-face-model.test.ts`, which asserts the tile resolves a
+    // live video surface at every lane tier (the #1785 eviction).
+    expect(NON_SHELL_LANE_TYPES.has('videoOut')).toBe(false);
+    expect(isShellSwappable('videoOut', true)).toBe(true);
+    expect(
+      laneRenderKind({ ...base, type: 'videoOut', hasCard: isShellSwappable('videoOut', true), migrated: true }),
+    ).toBe('shell');
+    // …like the other video-domain modules, which have always swapped.
     expect(NON_SHELL_LANE_TYPES.has('recorderbox')).toBe(false);
     expect(NON_SHELL_LANE_TYPES.has('backdraft')).toBe(false);
   });

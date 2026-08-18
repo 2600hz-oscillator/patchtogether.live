@@ -242,7 +242,12 @@ test('score: currently-playing note highlight tracks engine.read currentNoteId',
   expect(['n1', 'n2', 'n3']).toContain(noteId);
 });
 
-test('score: every triplet position SOUNDS — all three notes of a triplet group', async ({ page, rack }) => {
+// ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are UNCHANGED.
+// NONDETERMINISM: 5 recovered-on-retry observation(s) across 3 SHA(s) / 2 branch(es) in the
+// 96 h CI census to 2026-08-18 — never a hard failure, so every one of those jobs reported SUCCESS.
+// LOST WHILE PARKED: that ALL THREE notes of a triplet group actually sound — triplet tick math that drops a position is inaudible as a bug and reads as a performance mistake.
+// Re-enable only on a root cause (#1847); "it passes now" is not one.
+test.fixme('score: every triplet position SOUNDS — all three notes of a triplet group', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 5 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page, rack }) => {
   // -- THE BUG THIS EXISTS FOR --------------------------------------------
   //
   // `triplet8th` is 4 grid ticks wide, so the toolbar snaps it to

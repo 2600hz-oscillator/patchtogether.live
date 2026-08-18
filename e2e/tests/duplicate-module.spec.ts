@@ -29,7 +29,12 @@ async function readNodes(page: Page): Promise<PatchNode[]> {
   });
 }
 
-test('right-click → Duplicate creates a clone with same params, fresh id, offset position', async ({
+// ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are UNCHANGED.
+// NONDETERMINISM: 4 recovered-on-retry observation(s) across 4 SHA(s) / 2 branch(es) in the
+// 96 h CI census to 2026-08-18 — never a hard failure, so every one of those jobs reported SUCCESS.
+// LOST WHILE PARKED: that Duplicate produces a genuinely new node — same params, FRESH id, offset position — rather than an alias that makes two cards edit one node.
+// Re-enable only on a root cause (#1847); "it passes now" is not one.
+test.fixme('right-click → Duplicate creates a clone with same params, fresh id, offset position', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 4 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({
   page,
 }) => {
   await page.goto('/rack?shell=legacy&seed=none');
@@ -84,7 +89,12 @@ test('right-click → Duplicate creates a clone with same params, fresh id, offs
   expect(dup!.position.y - source!.position.y).toBeLessThan(60);
 });
 
-test('right-click → Duplicate deep-clones data (mutating dup does not affect source)', async ({
+// ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are UNCHANGED.
+// NONDETERMINISM: 4 recovered-on-retry observation(s) across 4 SHA(s) / 2 branch(es) in the
+// 96 h CI census to 2026-08-18 — never a hard failure, so every one of those jobs reported SUCCESS.
+// LOST WHILE PARKED: the deep-clone guarantee: editing the duplicate must not reach back into the source's data, the shared-reference bug that corrupts both copies at once.
+// Re-enable only on a root cause (#1847); "it passes now" is not one.
+test.fixme('right-click → Duplicate deep-clones data (mutating dup does not affect source)', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 4 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({
   page,
 }) => {
   // Use a sequencer-like data shape: array of step objects. The Yjs

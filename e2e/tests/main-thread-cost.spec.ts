@@ -274,10 +274,13 @@ test.describe('#1811 main-thread cost instrument', () => {
   // 32.1 s with all three phases; gated as CI runs it, 14.5 s cold and 10.2 s
   // warm (3/3 flake-check).
   //
-  // ⚠ Those are FLOORS, not predictions. This is a VIDEO spec, and a local
-  // single-worker run cannot see ten shards competing for one software
-  // rasterizer: backdraft-preview-toggle predicted 57.5 s the same way and
-  // measured 358.2 CPU-s on CI, 6x. Take the real cost from
+  // ⚠ Those are FLOORS, not predictions. This is a VIDEO spec, and CI runs it on
+  // a 2-core VM: backdraft-preview-toggle predicted 57.5 s from a local run the
+  // same way and measured 358.2 CPU-s on CI, 6x. ⚠ NOT shard contention — every
+  // `runs-on:` here is `ubuntu-latest` and a GitHub-hosted job gets its OWN VM
+  // (ci.yml, checked 2026-08-12), so shards have nothing to contend for; and a
+  // local headless run is ALREADY SwiftShader, so E2E_SWIFTSHADER=1 is not the
+  // lever it looks like. Take the real cost from
   // e2e-timings.generated.json once a run has carried this spec.
   //
   // ⚠ TICKS_PER_PHASE IS NOT A COST KNOB, and the reason is the repo's headline

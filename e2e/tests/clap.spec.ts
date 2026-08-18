@@ -60,7 +60,12 @@ const CLAP_BAND_HZ = [700, 850, 1000, 1200, 1500];
 const LOW_BAND_HZ = [60, 90, 130, 200];
 const HIGH_BAND_HZ = [5000, 6400, 8000];
 
-test('CLAP real chain: SEQUENCER → trigger_in → AUDIOOUT — audible RMS + clap-band-dominant spectrum', async ({ page, rack, errorWatch }) => {
+// ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are UNCHANGED.
+// NONDETERMINISM: 6 recovered-on-retry observation(s) across 6 SHA(s) / 6 branch(es) in the
+// 96 h CI census to 2026-08-18 — never a hard failure, so every one of those jobs reported SUCCESS.
+// LOST WHILE PARKED: CLAP's REAL default-mode source chain (SEQUENCER → trigger_in → AUDIOOUT) proving audible RMS and a clap-band-dominant spectrum — the poly/MIDI discipline that exists because engine-direct substitutes shipped POLYHELM green-but-silent.
+// Re-enable only on a root cause (#1847); "it passes now" is not one.
+test.fixme('CLAP real chain: SEQUENCER → trigger_in → AUDIOOUT — audible RMS + clap-band-dominant spectrum', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 6 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page, rack, errorWatch }) => {
   await spawnPatch(
     page,
     [

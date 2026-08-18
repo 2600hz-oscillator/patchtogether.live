@@ -135,7 +135,12 @@ test.describe('P1 dock/expand UX fixes (?shell=1)', () => {
   // Then migrated C: it replaces the least-recently-opened pane (A). ESC
   // closes the whole view. Every step is a REAL click on the lane pill; zero
   // pageerrors allowed (the crash class stays shut across pane mounts).
-  test('expanding B while A is open SPLITS the dock; a third replaces the oldest — migrated AND legacy cards', async ({ page }) => {
+  // ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are UNCHANGED.
+  // NONDETERMINISM: 1 recovered-on-retry observation(s) across 1 SHA(s) / 1 branch(es) in the
+  // 96 h CI census to 2026-08-18 — never a hard failure, so every one of those jobs reported SUCCESS.
+  // LOST WHILE PARKED: the owner split extension: two side-by-side dock panes with LRU replacement, asserted for BOTH migrated faces and legacy cards — the shell-parity leg is what stops a fix landing for one shell only.
+  // Re-enable only on a root cause (#1847); "it passes now" is not one.
+  test.fixme('expanding B while A is open SPLITS the dock; a third replaces the oldest — migrated AND legacy cards', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 1 recovered-on-retry observation in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page }) => {
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(String(e)));
     await gotoWorkflow(page);
@@ -194,7 +199,12 @@ test.describe('P1 dock/expand UX fixes (?shell=1)', () => {
   // FIX 3 — the drill-down anchors ADJACENT to the invoking tile: beside its
   // right edge normally, flipping to the left side at the right screen edge —
   // never at a far-away/stale position (pre-fix: the viewport origin).
-  test('patch drill-down opens adjacent to the tile at BOTH screen edges', async ({ page }) => {
+  // ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are UNCHANGED.
+  // NONDETERMINISM: 2 recovered-on-retry observation(s) across 1 SHA(s) / 1 branch(es) in the
+  // 96 h CI census to 2026-08-18 — never a hard failure, so every one of those jobs reported SUCCESS.
+  // LOST WHILE PARKED: that the patch drill-down opens adjacent to its tile at BOTH screen edges — the same off-screen-menu class as the patch-panel edge alignment, in the dock.
+  // Re-enable only on a root cause (#1847); "it passes now" is not one.
+  test.fixme('patch drill-down opens adjacent to the tile at BOTH screen edges', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 2 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page }) => {
     await gotoWorkflow(page);
     await spawnPatch(page, [{ id: 'p1', type: 'vca', position: { x: 30, y: 40 } }]);
     const tile = page.locator('.svelte-flow__node[data-id="p1"] [data-testid="module-shell"]');
@@ -246,7 +256,12 @@ test.describe('P1 dock/expand UX fixes (?shell=1)', () => {
   // drill-down to anchor there. This is the replacement gate: the DUPLICATE
   // patch surface is gone, and the dock's REAL one (the RearCard on flip) still
   // carries every declared hole — i.e. the removal cost the user nothing.
-  test('the dock full-view shell renders NO lane rail; the rear card is its patch surface', async ({ page }) => {
+  // ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are UNCHANGED.
+  // NONDETERMINISM: 1 recovered-on-retry observation(s) across 1 SHA(s) / 1 branch(es) in the
+  // 96 h CI census to 2026-08-18 — never a hard failure, so every one of those jobs reported SUCCESS.
+  // LOST WHILE PARKED: the dock full-view's structural contract — no lane rail, and the REAR card is the patch surface; a stray rail here is the layout regression class that also moves VRT baselines.
+  // Re-enable only on a root cause (#1847); "it passes now" is not one.
+  test.fixme('the dock full-view shell renders NO lane rail; the rear card is its patch surface', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 1 recovered-on-retry observation in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page }) => {
     await gotoWorkflow(page);
     await spawnPatch(page, [{ id: 'm1', type: 'vca', position: { x: 30, y: 40 } }]);
     const tile = page.locator('.svelte-flow__node[data-id="m1"] [data-testid="module-shell"]');
