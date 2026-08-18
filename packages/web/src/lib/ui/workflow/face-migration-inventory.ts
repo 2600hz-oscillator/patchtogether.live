@@ -28,7 +28,10 @@
 //                             a hardware-device binding flow, a media browser or
 //                             transport. A ranked cell list cannot express it;
 //                             it needs a hand-written surface behind the
-//                             ModuleShell extension seam.
+//                             ModuleShell extension seam — which EXISTS
+//                             (`shell-extensions.ts`, #1512, two adopters).
+//                             The disposition is a statement about the WORK the
+//                             module needs, never about a missing platform.
 //   'organizational-native' — not a module UI at all. Rack furniture.
 //   'blocked'               — would be 'generic-face' TODAY but for a NAMED
 //                             missing platform capability, and nothing else.
@@ -39,6 +42,21 @@
 // of it; a sequencer grid still wants ONE shared note-entry primitive rather
 // than a ninth hand-clone). A 'blocked' DISPOSITION says something stronger:
 // remove the blocker and this module is a face, with no surface work at all.
+//
+// ⚠ A DISPOSITION IS NOT A BLOCKER (#1799). 'bespoke-surface' used to carry a
+// blanket blocker on the ModuleShell extension seam, derived onto all of its
+// entries — and it OUTLIVED THE SEAM. #1512 shipped `shell-extensions.ts` with
+// the `glyph` and `fullViewBody` slots wired and two modules already plugged
+// into it, while a third of the remaining migration went on reading as
+// un-startable. Every gate stayed green because all of them checked the blocker
+// list against ITSELF (declared ✓, named by something ✓) and none against the
+// tree. Blockers now carry a CAPABILITY PROBE (below) and a blocker whose probe
+// fires is RED.
+//
+// ⚠ AND DO NOT RE-ADD IT FOR `editorSurface`. That slot is deliberately UNWIRED:
+// shell-extensions.ts specifies that the FIRST ADOPTER wires its render site in
+// ModuleShell in the same diff. That is a bespoke surface's OWN work, not a
+// platform capability it waits on.
 //
 // ⚠ WHAT THIS FILE DOES NOT STORE: whether a module is DONE. That is
 // `STRICT_FACES` membership, which module-face-lint.test.ts already pins to "the
@@ -72,13 +90,67 @@ export type FaceMigrationDisposition =
 
 /**
  * A NAMED platform capability a module's v2 surface needs and the platform does
- * not have yet. Each one resolves to an OPEN issue below — an id with no issue,
- * or an issue nobody needs, is RED in the gate.
+ * NOT HAVE YET — with "yet" measured, not remembered. Each one resolves to an
+ * issue below and to a CAPABILITY PROBE that reads the tree: an id with no
+ * declaration, a declaration nobody needs, and a declaration whose capability is
+ * ALREADY THERE are all RED in the gate.
  */
-export type MigrationBlockerId =
-  | 'needs-note-entry-cell'
-  | 'needs-media-controller'
-  | 'needs-extension-registry';
+export type MigrationBlockerId = 'needs-note-entry-cell' | 'needs-media-controller';
+
+/**
+ * THE LIVE TREE, reduced to the handful of facts the capability probes read.
+ *
+ * GATHERED BY THE GATE from the real artifacts and passed in, so this module
+ * stays import-free of them — the same discipline `migrationDone` uses for
+ * STRICT_FACES, and for the same reason: two derivations of one fact drift.
+ * Every field is a MEASUREMENT of something that exists, never a restatement of
+ * something declared in this file.
+ */
+export interface CapabilityEvidence {
+  /** Every extension id the `shell-extensions.ts` glob discovered. */
+  readonly shellExtensionIds: readonly string[];
+  /** The extension slots ModuleShell actually RENDERS (not merely declares). */
+  readonly wiredShellExtensionSlots: readonly string[];
+  /**
+   * Does the ONE shared renderer — ModuleShell.svelte, the only thing that
+   * paints a face cell — mount TYPED ENTRY (`<NoteEntry>`, a `<textarea>`, a
+   * contenteditable or a typed `<input>`)? Read with the same `mountsTypedEntry`
+   * predicate the gate applies to the legacy cards, so the two cannot disagree
+   * about what "typed entry" means.
+   */
+  readonly faceShellMountsTypedEntry: boolean;
+  /**
+   * Module types whose ENGINE-VISIBLE state exists only while their card is
+   * mounted — `HEADLESS_MOUNT_LANE_TYPES`, i.e. a card-owned media element or a
+   * card that IS the producer. That set is itself grep-gated against the cards,
+   * so it cannot lag the code.
+   */
+  readonly cardOwnedSourceTypes: readonly string[];
+}
+
+/**
+ * WHAT MAKES A BLOCKER STILL TRUE — the artifact anchor the blocker legs were
+ * missing (#1799).
+ *
+ * "Declared with an issue" and "named by something" are both INTERNAL
+ * referential integrity: a blocker satisfies them just as happily after its
+ * capability ships. The probe asks the only question that goes stale — IS THIS
+ * SEAM ALREADY IN THE TREE? — and answers it from the tree.
+ *
+ * ⚠ The probe is REQUIRED BY THE TYPE, not by a test: a blocker declared with no
+ * way to observe its own resolution does not compile.
+ */
+export interface CapabilityProbe {
+  /** ONE LINE: what in the TREE exists only once this capability has shipped. */
+  readonly evidence: string;
+  /** TRUE when that evidence is PRESENT — the capability shipped, so the blocker
+   *  is STALE. The gate asserts this is FALSE for every declared blocker. */
+  readonly shipped: (tree: CapabilityEvidence) => boolean;
+  /** The real tree PATCHED into the world where this capability HAS landed. The
+   *  gate asserts `shipped` is TRUE on it, so a probe that can never fire — a
+   *  green-because-blind probe, the exact defect this replaces — is refused. */
+  readonly landed: (tree: CapabilityEvidence) => CapabilityEvidence;
+}
 
 export interface MigrationBlocker {
   /** The GitHub issue that lands this capability. */
@@ -87,6 +159,8 @@ export interface MigrationBlocker {
   readonly capability: string;
   /** What the module fleet gets when it lands. */
   readonly unblocks: string;
+  /** How the TREE says whether this is still true. See CapabilityProbe. */
+  readonly probe: CapabilityProbe;
 }
 
 /**
@@ -105,6 +179,15 @@ export const MIGRATION_BLOCKERS: Readonly<Record<MigrationBlockerId, MigrationBl
     unblocks:
       'the sequencer-class surfaces (their step rosters are typed, not turned) and every card ' +
       'carrying a short-text field, which today can only hand-roll one',
+    probe: {
+      evidence:
+        'ModuleShell.svelte — the ONE renderer every face cell is painted by — mounts typed ' +
+        'entry. There is nowhere else it could land: no ParamCellKind paints text, so the cell ' +
+        'cannot exist without the shared shell mounting a <NoteEntry>, a <textarea>, a ' +
+        'contenteditable or a typed <input>.',
+      shipped: (tree) => tree.faceShellMountsTypedEntry,
+      landed: (tree) => ({ ...tree, faceShellMountsTypedEntry: true }),
+    },
   },
   'needs-media-controller': {
     issue: 1511,
@@ -115,32 +198,36 @@ export const MIGRATION_BLOCKERS: Readonly<Record<MigrationBlockerId, MigrationBl
     unblocks:
       'every module whose source exists only because a card is mounted; until it lands their ' +
       'cards are kept alive off-screen by HeadlessSourceHost, which is a tax on every rack',
-  },
-  'needs-extension-registry': {
-    issue: 1512,
-    capability:
-      'a ModuleShell extension registry — a def-declared, lazily resolved slot for a bespoke ' +
-      'component (glyph, editor surface, full-view body), so a purpose-built surface plugs in ' +
-      'instead of becoming another module-specific import in the shared shell',
-    unblocks:
-      'the whole bespoke-surface cohort, which otherwise lands as N special cases inside one ' +
-      '1,700-line renderer — the trajectory that produced the 8,610-line Canvas',
+    probe: {
+      evidence:
+        'NO module type is left whose engine-visible state depends on its card being mounted ' +
+        '(HEADLESS_MOUNT_LANE_TYPES is empty) — which is #1511 stated as a property of the tree: ' +
+        '"no source may exist because a card is mounted". The set is grep-gated against the ' +
+        'cards that call attachExternalSource, so it cannot lag the code it describes.',
+      shipped: (tree) => tree.cardOwnedSourceTypes.length === 0,
+      landed: (tree) => ({ ...tree, cardOwnedSourceTypes: [] }),
+    },
   },
 };
 
 /**
- * A blocker that follows from the DISPOSITION itself rather than from anything
- * about the individual module — declared ONCE here and derived onto every entry
- * by `migrationBlockers()`, because writing it on each bespoke entry would be
- * the same fact typed many times, drifting the moment the seam lands.
+ * Declared blockers whose capability is ALREADY IN THE TREE — the entries that
+ * are lying. Empty is the only acceptable answer and the gate asserts exactly
+ * that: membership, never a size.
  *
- * Every bespoke surface needs somewhere to plug in; that is what #1512 IS.
+ * `blockers` is a PARAMETER so the gate can drive this same predicate over a
+ * synthetic record in both directions. That control does not depend on which
+ * blockers happen to be declared today, so it survives the last one being
+ * deleted — which is precisely when a self-referential gate goes quiet.
  */
-export const DISPOSITION_BLOCKER: Readonly<
-  Partial<Record<FaceMigrationDisposition, MigrationBlockerId>>
-> = {
-  'bespoke-surface': 'needs-extension-registry',
-};
+export function staleBlockers(
+  tree: CapabilityEvidence,
+  blockers: Readonly<Record<string, MigrationBlocker>> = MIGRATION_BLOCKERS,
+): string[] {
+  return Object.keys(blockers)
+    .filter((id) => blockers[id]!.probe.shipped(tree))
+    .sort();
+}
 
 /**
  * One record per registered module.
@@ -349,8 +436,9 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
 
   // ── bespoke-surface ───────────────────────────────────────────────────────
   // The primary interaction is not param-shaped. Each of these needs a
-  // hand-written surface behind the extension seam (derived, see
-  // DISPOSITION_BLOCKER) — plus anything named in `blockers`.
+  // hand-written surface behind the extension seam — which is BUILT and adopted
+  // (#1512), so this disposition names WORK, not a wait. What a given module is
+  // still waiting on, if anything, is named in its own `blockers`.
   {
     type: 'archivist',
     disposition: 'bespoke-surface',
@@ -415,7 +503,7 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
     why:
       'the CLIP LAUNCHER: a scene/track grid of pads with per-cell arm, capture, quantised launch ' +
       'and automation state. It is already carved out of the shell swap (NON_SHELL_LANE_TYPES) ' +
-      'and is the canonical bespoke surface the extension seam is being built for.',
+      'and is the canonical bespoke surface the extension seam was built for (#1512, now shipped).',
   },
   {
     type: 'clockedRunner',
@@ -763,15 +851,19 @@ export function inventoryEntry(type: string): FaceMigrationEntry | undefined {
 
 /**
  * Every blocker that stands between this module and its v2 surface: the ones the
- * entry names, plus the one its DISPOSITION implies (see DISPOSITION_BLOCKER).
- * Sorted + de-duplicated so callers can compare sets.
+ * entry names. Sorted + de-duplicated so callers can compare sets.
+ *
+ * ⚠ THERE IS NO DISPOSITION-DERIVED BLOCKER ANY MORE (#1799). One used to hang
+ * `needs-extension-registry` on every 'bespoke-surface' entry from a single
+ * declaration; when the seam shipped, that one line kept a third of the
+ * migration marked un-startable and no gate could see it. A blocker is a fact
+ * about a MODULE, so it is typed on the module. If a capability is ever again
+ * genuinely missing for a whole disposition, the derivation comes back WITH a
+ * capability probe — the thing that makes such a claim falsifiable.
  */
 export function migrationBlockers(entry: FaceMigrationEntry): readonly MigrationBlockerId[] {
   const declared = 'blockers' in entry && entry.blockers ? entry.blockers : [];
-  const fromDisposition = DISPOSITION_BLOCKER[entry.disposition];
-  const all = new Set<MigrationBlockerId>(declared);
-  if (fromDisposition) all.add(fromDisposition);
-  return [...all].sort();
+  return [...new Set<MigrationBlockerId>(declared)].sort();
 }
 
 /**

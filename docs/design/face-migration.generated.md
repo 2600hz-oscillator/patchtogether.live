@@ -30,7 +30,6 @@ Every registered module carries exactly one **disposition**: what kind of work i
 
 | blocker | issue | modules waiting |
 |---|---|---|
-| `needs-extension-registry` | #1512 | 50 |
 | `needs-media-controller` | #1511 | 12 |
 | `needs-note-entry-cell` | #1509 | 15 |
 
@@ -197,56 +196,56 @@ the primary interaction is not param-shaped — needs a purpose-built surface.
 
 | module | domain | state | blockers |
 |---|---|---|---|
-| `archivist` | video | — | `needs-extension-registry` `needs-media-controller` `needs-note-entry-cell` |
-| `audioIn` | audio | — | `needs-extension-registry` `needs-media-controller` |
-| `audioOut` | audio | — | `needs-extension-registry` |
-| `blood` | video | — | `needs-extension-registry` |
-| `cameraInput` | video | — | `needs-extension-registry` `needs-media-controller` |
-| `cartesian` | audio | — | `needs-extension-registry` `needs-note-entry-cell` |
-| `chromaconsole` | audio | — | `needs-extension-registry` |
-| `clipplayer` | audio | — | `needs-extension-registry` |
-| `clockedRunner` | audio | — | `needs-extension-registry` |
-| `controlSurface` | meta | — | `needs-extension-registry` `needs-note-entry-cell` |
-| `doom` | video | — | `needs-extension-registry` |
-| `drumseqz` | audio | — | `needs-extension-registry` `needs-note-entry-cell` |
-| `electraControl` | meta | — | `needs-extension-registry` `needs-note-entry-cell` |
-| `es9` | audio | — | `needs-extension-registry` |
-| `frogger` | audio | — | `needs-extension-registry` |
-| `gamepad` | audio | — | `needs-extension-registry` |
-| `gibribbon` | video | — | `needs-extension-registry` |
-| `kria` | audio | — | `needs-extension-registry` |
-| `launchpadControlLeft` | meta | — | `needs-extension-registry` |
-| `livecode` | audio | — | `needs-extension-registry` |
-| `macseq` | audio | — | `needs-extension-registry` `needs-note-entry-cell` |
-| `mappy` | video | — | `needs-extension-registry` |
-| `matrixMix` | meta | — | `needs-extension-registry` |
-| `midiclock` | audio | — | `needs-extension-registry` |
-| `midiCvBuddy` | audio | — | `needs-extension-registry` |
-| `midiLane` | audio | — | `needs-extension-registry` `needs-note-entry-cell` |
-| `midiOutBuddy` | audio | — | `needs-extension-registry` |
-| `modtris` | audio | — | `needs-extension-registry` |
-| `moog956` | audio | — | `needs-extension-registry` |
-| `nibbles` | video | — | `needs-extension-registry` |
-| `numpadPlus` | audio | — | `needs-extension-registry` |
-| `outToLaunch` | video | — | `needs-extension-registry` |
-| `painter` | video | — | `needs-extension-registry` `needs-note-entry-cell` |
-| `peertube` | video | — | `needs-extension-registry` `needs-media-controller` `needs-note-entry-cell` |
-| `picturebox` | video | — | `needs-extension-registry` |
-| `polyseqz` | audio | — | `needs-extension-registry` `needs-note-entry-cell` |
-| `pong` | audio | — | `needs-extension-registry` |
-| `push2Control` | meta | — | `needs-extension-registry` |
-| `recorderbox` | video | — | `needs-extension-registry` `needs-media-controller` `needs-note-entry-cell` |
-| `score` | audio | — | `needs-extension-registry` |
-| `sequencer` | audio | — | `needs-extension-registry` `needs-note-entry-cell` |
-| `skifree` | audio | — | `needs-extension-registry` |
-| `textmarquee` | video | — | `needs-extension-registry` `needs-note-entry-cell` |
-| `toybox` | video | — | `needs-extension-registry` `needs-media-controller` `needs-note-entry-cell` |
-| `tvLibrarian` | video | — | `needs-extension-registry` `needs-media-controller` |
-| `twotracks` | audio | — | `needs-extension-registry` |
-| `videobox` | video | — | `needs-extension-registry` `needs-media-controller` |
-| `videoOut` | video | — | `needs-extension-registry` |
-| `videovarispeed` | video | — | `needs-extension-registry` `needs-media-controller` |
-| `writeseq` | audio | — | `needs-extension-registry` `needs-note-entry-cell` |
+| `archivist` | video | — | `needs-media-controller` `needs-note-entry-cell` |
+| `audioIn` | audio | — | `needs-media-controller` |
+| `audioOut` | audio | — | — |
+| `blood` | video | — | — |
+| `cameraInput` | video | — | `needs-media-controller` |
+| `cartesian` | audio | — | `needs-note-entry-cell` |
+| `chromaconsole` | audio | — | — |
+| `clipplayer` | audio | — | — |
+| `clockedRunner` | audio | — | — |
+| `controlSurface` | meta | — | `needs-note-entry-cell` |
+| `doom` | video | — | — |
+| `drumseqz` | audio | — | `needs-note-entry-cell` |
+| `electraControl` | meta | — | `needs-note-entry-cell` |
+| `es9` | audio | — | — |
+| `frogger` | audio | — | — |
+| `gamepad` | audio | — | — |
+| `gibribbon` | video | — | — |
+| `kria` | audio | — | — |
+| `launchpadControlLeft` | meta | — | — |
+| `livecode` | audio | — | — |
+| `macseq` | audio | — | `needs-note-entry-cell` |
+| `mappy` | video | — | — |
+| `matrixMix` | meta | — | — |
+| `midiclock` | audio | — | — |
+| `midiCvBuddy` | audio | — | — |
+| `midiLane` | audio | — | `needs-note-entry-cell` |
+| `midiOutBuddy` | audio | — | — |
+| `modtris` | audio | — | — |
+| `moog956` | audio | — | — |
+| `nibbles` | video | — | — |
+| `numpadPlus` | audio | — | — |
+| `outToLaunch` | video | — | — |
+| `painter` | video | — | `needs-note-entry-cell` |
+| `peertube` | video | — | `needs-media-controller` `needs-note-entry-cell` |
+| `picturebox` | video | — | — |
+| `polyseqz` | audio | — | `needs-note-entry-cell` |
+| `pong` | audio | — | — |
+| `push2Control` | meta | — | — |
+| `recorderbox` | video | — | `needs-media-controller` `needs-note-entry-cell` |
+| `score` | audio | — | — |
+| `sequencer` | audio | — | `needs-note-entry-cell` |
+| `skifree` | audio | — | — |
+| `textmarquee` | video | — | `needs-note-entry-cell` |
+| `toybox` | video | — | `needs-media-controller` `needs-note-entry-cell` |
+| `tvLibrarian` | video | — | `needs-media-controller` |
+| `twotracks` | audio | — | — |
+| `videobox` | video | — | `needs-media-controller` |
+| `videoOut` | video | — | — |
+| `videovarispeed` | video | — | `needs-media-controller` |
+| `writeseq` | audio | — | `needs-note-entry-cell` |
 
 ## `organizational-native`
 
