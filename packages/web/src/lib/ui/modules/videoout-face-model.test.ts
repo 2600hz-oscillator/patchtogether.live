@@ -31,10 +31,9 @@ import { describe, expect, it } from 'vitest';
 
 import { videoOutDef } from '$lib/video/modules/video-out';
 import {
-  LANE_ROW_MAX_CELLS,
-  LANE_ROW_MAX_CELLS_WITH_GLYPH,
   hasVideoSurface,
   laneBodyPlan,
+  laneGlyphFor,
 } from '$lib/ui/workflow/module-shell-model';
 import { STRICT_FACES } from '$lib/ui/workflow/strict-faces';
 import { shellExtensionIds, loadShellExtension } from '$lib/ui/workflow/shell-extensions';
@@ -43,57 +42,62 @@ import '$lib/video/modules';
 
 const LANE_TIERS = ['mini', 'compact', 'full'] as const;
 
-describe('videoOut face — the LANE PICTURE (#1785)', () => {
-  it('resolves a LIVE VIDEO SURFACE, which is the only reason its tile paints anything', () => {
-    // `glyph: 'none'` says nothing about the picture. `hasVideoSurface` is what
-    // mounts VideoTileThumb, and it is a property of the DOMAIN, not the face.
+describe('videoOut face — the LANE PICTURE (#1785, as settled by #1845)', () => {
+  it('resolves a LIVE VIDEO SURFACE, and that is what makes its lane glyph a PICTURE', () => {
+    // `face.glyph: 'none'` says nothing about the picture — it is mandatory for a
+    // video def (no audio port, so any other literal is a dead binding). The
+    // picture arrives from the DOMAIN, through `hasVideoSurface`, and #1845 gave
+    // that its own kind in the lane plan.
     expect(videoOutDef.face?.glyph).toBe('none');
     expect(hasVideoSurface(videoOutDef)).toBe(true);
+    expect(laneGlyphFor(videoOutDef)).toBe('picture');
   });
 
-  it('KEEPS the glyph strip at EVERY lane tier — it never reaches the plate branch', () => {
-    // #1785: "ranked cells outrank the glyph" is a property of `laneBodyPlan`'s
-    // PLATE branch, which is reached only when a face has more controls than a
-    // row can hold. With zero controls this face takes the ROW branch at every
-    // tier, where the glyph is unconditional.
+  it('KEEPS its picture at EVERY lane tier', () => {
+    // WARNING: THE REASON CHANGED UNDER THIS TEST, AND THE CONCLUSION GOT
+    // STRONGER. It used to argue: "#1785 evicts on the PLATE branch; videoOut
+    // ranks nothing, so it never reaches that branch." True when written, and now
+    // obsolete: #1845 made the PICTURE OUTRANK ranked cells, so a picture face
+    // keeps its glyph on BOTH branches and the cells give way instead. videoOut
+    // no longer depends on being control-less for its picture, which is why the
+    // margin test that used to live here is deleted rather than re-tuned.
+    const glyph = laneGlyphFor(videoOutDef);
     const cells = (videoOutDef.face?.order ?? []).length;
     for (const tier of LANE_TIERS) {
-      const plan = laneBodyPlan(cells, /* hasGlyph */ true, tier);
-      expect(plan.layout, `${tier}: a zero-control face must not take the plate branch`).toBe('row');
-      expect(plan.glyph, `${tier}: the rack tile keeps its live picture`).toBe(true);
+      expect(laneBodyPlan(cells, glyph, tier).glyph, `${tier}: the rack tile keeps its live picture`).toBe(true);
     }
   });
 
-  it('NEGATIVE CONTROL: the SAME predicate DOES evict the picture for a control-heavy face', () => {
-    // ⚠ Without this leg, the assertion above would pass on an instrument that
-    // simply always returns `glyph: true` — the passing-negative-control trap.
-    // A face with more cells than a plate row can hold loses it, which is
-    // exactly what #1785 measured on backdraft's 28 lane-eligible controls.
-    const heavy = laneBodyPlan(28, true, 'full');
+  it('and keeps it even if this def GROWS CONTROLS — the property #1845 actually bought', () => {
+    // The forward-looking half. Under the old rule, adding params to videoOut
+    // would eventually have cost it its thumbnail; under #1845 a control-heavy
+    // PICTURE face keeps the picture and sheds cells to fit. Pinned here because
+    // videoOut is the face that would rely on it first.
+    for (const n of [4, 12, 28]) {
+      expect(laneBodyPlan(n, 'picture', 'full').glyph, `a ${n}-cell picture face keeps its picture`).toBe(true);
+    }
+  });
+
+  it('NEGATIVE CONTROL: the plan still EVICTS a trace, so `glyph: true` is not a constant', () => {
+    // WARNING: THIS LEG MOVED, AND SAYING WHY MATTERS. It used to assert that a
+    // 28-cell face LOSES its glyph — the eviction #1785 measured on backdraft,
+    // which #1845 deliberately removed for pictures. Left as it was it would now
+    // fail; mechanically changed to `'picture'` it would assert the OPPOSITE of
+    // the shipped rule and pass forever without meaning anything.
+    //
+    // The property it exists to protect is still real: `laneBodyPlan` must be
+    // ABLE to return `glyph: false`, or every assertion above is vacuous.
+    // Eviction survives for `'trace'` — an AUDIO face's scope strip — so that is
+    // where the control belongs now.
+    const heavy = laneBodyPlan(28, 'trace', 'full');
     expect(heavy.layout).toBe('plate');
-    expect(heavy.glyph, 'the eviction this face avoids is REAL and still fires').toBe(false);
+    expect(heavy.glyph, 'ranked cells still outrank a TRACE — the instrument can say false').toBe(false);
   });
 
-  it('NEGATIVE CONTROL: the picture is a function of hasGlyph, not a constant', () => {
-    // The other direction: the plan must be able to say "no glyph" for a face
-    // that declares none, or the leg above proves nothing about this one.
+  it('NEGATIVE CONTROL: a face that declares NO glyph gets none, at every tier', () => {
     for (const tier of LANE_TIERS) {
-      expect(laneBodyPlan(0, false, tier).glyph).toBe(false);
+      expect(laneBodyPlan(0, 'none', tier).glyph).toBe(false);
     }
-  });
-
-  it('the margin to the plate branch is stated, so a future param is a RED test and not a surprise', () => {
-    // Not a population count — a PROPERTY of the current declaration measured
-    // against the platform's own row cap. It says: this face has room for this
-    // many ranked controls before the tile starts losing its picture.
-    const cells = (videoOutDef.face?.order ?? []).length;
-    const cap = Math.max(LANE_ROW_MAX_CELLS, LANE_ROW_MAX_CELLS_WITH_GLYPH);
-    expect(
-      cells,
-      `videoOut ranks ${cells} control(s); above ${cap} the 'full' lane tier takes the PLATE branch `
-        + 'and #1785 evicts the live thumbnail. Adding a param to this def means deciding what the '
-        + 'rack tile shows.',
-    ).toBeLessThanOrEqual(cap);
   });
 });
 

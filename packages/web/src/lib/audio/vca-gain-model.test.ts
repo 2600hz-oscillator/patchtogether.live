@@ -357,7 +357,7 @@ describe('the curated face — what each tier actually surfaces', () => {
     // laneBodyPlan keeps the ROW at `full` for a 2-cell glyph face, so the
     // glyph survives at every tier — the ≥4-cell glyph cliff never applies here.
     for (const tier of ['compact', 'full'] as const) {
-      const plan = laneBodyPlan(face(tier).controls.length, true, tier);
+      const plan = laneBodyPlan(face(tier).controls.length, 'trace', tier);
       expect(plan, tier).toEqual({
         layout: 'row',
         cellCount: 2,

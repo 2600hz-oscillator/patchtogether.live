@@ -21,7 +21,8 @@ import {
   backdraftTvFill,
   backdraftTvGain,
 } from '$lib/video/modules/backdraft';
-import { hasVideoSurface } from '$lib/ui/workflow/module-shell-model';
+import { hasVideoSurface, laneBodyPlan, laneGlyphFor } from '$lib/ui/workflow/module-shell-model';
+import { curatedFace } from '$lib/ui/workflow/curated-face';
 import { faceReadoutValueFor } from '$lib/ui/workflow/face-readout-values';
 import {
   BACKDRAFT_READOUT_WIDTH_PX,
@@ -253,6 +254,52 @@ describe('BACKDRAFT — the structural claims the FIRST VIDEO FACE owes', () => 
     // proves nothing about whether anything paints. This asserts the other seam.
     expect(hasVideoSurface(backdraftDef), 'the video-domain tile surface').toBe(true);
     expect(backdraftDef.domain).toBe('video');
+  });
+
+  it('the PROMOTED lane tile paints the picture at EVERY lane tier (#1785), and this is what it cost', () => {
+    // The regression #1784 shipped and #1785 measured: promotion moved the tile
+    // from `ModuleShellPlaceholder` (which always painted `VideoTileThumb`) to
+    // `ModuleShell`, and at the `full` tier the plate's "ranked controls outrank
+    // the glyph" rule dropped the picture. The owner ruling is that for a video
+    // module the picture IS the identity, so it now outranks them.
+    //
+    // ⚠ ASSERTED OFF THE LIVE DEF, not a fixture, and through the SAME two calls
+    // ModuleShell makes — `laneGlyphFor(def)` and `laneBodyPlan(face.cellHeights,
+    // …)`. A fixture would prove the platform rule and say nothing about whether
+    // THIS face reaches it, which is the half that broke.
+    expect(laneGlyphFor(backdraftDef), 'a video def is a PICTURE, not a trace').toBe('picture');
+    for (const tier of ['mini', 'compact', 'full'] as const) {
+      const face = curatedFace(backdraftDef, tier)!;
+      const plan = laneBodyPlan(face.cellHeights, laneGlyphFor(backdraftDef), tier);
+      expect(plan.glyph, `${tier}: the live thumbnail renders`).toBe(true);
+      // SELECTED === RENDERED. Before the reconciliation these were 3 and 2 at
+      // `compact`: the selector asked the glyph-LESS question and the tile
+      // silently dropped the third control it chose.
+      expect(plan.cellCount, `${tier}: selected === rendered`).toBe(face.controls.length);
+    }
+  });
+
+  it('…and the cells the lane gave up for it are NAMED, and still reachable', () => {
+    // The trade, stated: the `full` tile drops its third ranked cell. It is not
+    // lost — the dock faceplate renders every ranked control, and `laneOrder`
+    // is the same ranking either way, so the cell that moved is the one the
+    // face itself ranked last of the three.
+    const laneKeys = (tier: 'compact' | 'full') =>
+      curatedFace(backdraftDef, tier)!.controls.map((c) => c.key);
+    const full = laneKeys('full');
+    const dropped = (backdraftDef.face?.order ?? [])
+      .filter((k) => !full.includes(k))
+      .slice(0, 1);
+    expect(dropped, 'exactly one ranked control moved out of the full-tier lane tile').toEqual([
+      'mix',
+    ]);
+    expect(
+      curatedFace(backdraftDef, 'dock')!.controls.map((c) => c.key),
+      'and the dock still renders it',
+    ).toContain('mix');
+    // The two lane tiers now agree, which is the shape a picture face has: the
+    // picture is the constant and the controls are what the tier ladder varies.
+    expect(laneKeys('compact')).toEqual(full);
   });
 
   it('declares the fullViewBody extension — the module output stays reachable', () => {

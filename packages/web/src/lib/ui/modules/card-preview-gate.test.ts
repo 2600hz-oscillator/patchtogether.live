@@ -76,8 +76,10 @@ const UNGATED_OK: Readonly<Record<string, UngatedExemption>> = {
       '(it takes the node id as a prop). It carries its own IntersectionObserver — which ' +
       'really does `cancelAnimationFrame`, not just skip a frame — plus its own fps throttle. ' +
       'Routing it through the engine gate would key the viewport check on the SOURCE card ' +
-      'rather than on the thumbnail, which is the wrong element. Relevant to #1785: if live ' +
-      'lane thumbnails come back for promoted faces, this is the loop they land on.',
+      'rather than on the thumbnail, which is the wrong element. #1785 LANDED and live lane ' +
+      'thumbnails are back for promoted video faces, so this loop now serves BOTH tile hosts ' +
+      '(ModuleShellPlaceholder and ModuleShell) — one more reason the gate belongs on the ' +
+      'thumbnail element rather than on any one card.',
   },
 };
 

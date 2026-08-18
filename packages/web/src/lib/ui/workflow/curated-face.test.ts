@@ -16,7 +16,13 @@ import {
   type FaceDefLike,
   type FaceTier,
 } from './curated-face';
-import { laneBodyPlan, PLATE_COLS, PLATE_MAX_ROWS } from './module-shell-model';
+import {
+  laneBodyPlan,
+  laneGlyphFor,
+  PLATE_COLS,
+  PLATE_MAX_ROWS,
+  type LaneGlyph,
+} from './module-shell-model';
 
 // A def with 10 ranked controls: a mix of params, one family template, and one
 // static button — enough to prove the top-N slice at every tier.
@@ -332,26 +338,40 @@ describe('faceTierCap — the cap RECONCILED with the lane fit plan', () => {
   // face's ranks 7-8 were authored as in-lane and silently truncated). The caps
   // now FOLLOW the plan, and this test pins them together.
   it('compact = 2 with a glyph, 3 without; full = 6 either way; others are the ladder', () => {
-    expect(faceTierCap('compact', true)).toBe(2);
-    expect(faceTierCap('compact', false)).toBe(3);
-    expect(faceTierCap('full', true)).toBe(6);
-    expect(faceTierCap('full', false)).toBe(6);
+    expect(faceTierCap('compact', 'trace')).toBe(2);
+    expect(faceTierCap('compact', 'none')).toBe(3);
+    expect(faceTierCap('full', 'trace')).toBe(6);
+    expect(faceTierCap('full', 'none')).toBe(6);
     for (const t of ['mini', 'full', 'dock'] as FaceTier[]) {
-      for (const g of [true, false]) expect(faceTierCap(t, g)).toBe(FACE_TIER_CAPS[t]);
+      for (const g of ['trace', 'none'] as LaneGlyph[]) {
+        expect(faceTierCap(t, g)).toBe(FACE_TIER_CAPS[t]);
+      }
     }
   });
 
-  it('SELECTED count === RENDERED count at EVERY lane tier, for both glyph cases', () => {
-    for (const hasGlyph of [true, false]) {
-      const def: FaceDefLike = {
-        ...DEF,
-        face: { ...DEF.face!, glyph: hasGlyph ? 'scope' : 'none' },
-      };
+  it('SELECTED count === RENDERED count at EVERY lane tier, for EVERY glyph kind', () => {
+    // ⚠ THE THIRD CASE IS THE ONE THAT WAS MISSING (#1785). While this loop ran
+    // only the two DECLARED glyph states it could not reach a video def at all,
+    // and a video def is precisely where the selector's predicate and the
+    // shell's disagreed — `domain: 'video'` + `glyph: 'none'` renders a live
+    // picture the declaration cannot mention. The case is driven off the SAME
+    // `laneGlyphFor` the shell reads, so a def can only be in one of them.
+    const cases: Array<{ label: string; def: FaceDefLike }> = [
+      { label: 'trace', def: { ...DEF, face: { ...DEF.face!, glyph: 'scope' } } },
+      { label: 'none', def: { ...DEF, face: { ...DEF.face!, glyph: 'none' } } },
+      {
+        label: 'picture',
+        def: { ...DEF, domain: 'video', face: { ...DEF.face!, glyph: 'none' } },
+      },
+    ];
+    for (const { label, def } of cases) {
+      expect(laneGlyphFor(def), `${label}: the case is what it says it is`).toBe(label);
       for (const tier of ['mini', 'compact', 'full'] as FaceTier[]) {
-        const selected = curatedFace(def, tier)!.controls.length;
+        const face = curatedFace(def, tier)!;
+        const selected = face.controls.length;
         expect(
-          laneBodyPlan(selected, hasGlyph, tier).cellCount,
-          `${tier} (glyph=${hasGlyph}): selected ${selected}`,
+          laneBodyPlan(face.cellHeights, laneGlyphFor(def), tier).cellCount,
+          `${tier} (glyph=${label}): selected ${selected}`,
         ).toBe(selected);
       }
     }

@@ -62,7 +62,7 @@ describe('snaredrum face — the tier ladder (order = PRIORITY)', () => {
   it('compact is TUNE + WIRES beside the live trace: which drum, and is it a snare', () => {
     const face = curatedFace(def, 'compact')!;
     expect(face.glyph, 'the compact tile keeps its scope trace').toBe('scope');
-    expect(faceTierCap('compact', true), 'a glyph-bearing compact tile fits two whole cells').toBe(2);
+    expect(faceTierCap('compact', 'trace'), 'a glyph-bearing compact tile fits two whole cells').toBe(2);
     expect(keysAt('compact')).toEqual(['tune', 'wire']);
   });
 
@@ -70,7 +70,7 @@ describe('snaredrum face — the tier ladder (order = PRIORITY)', () => {
     // The stale-comment bug this face was rebuilt for. The def used to promise
     // "ranks 4–8 complete the full-in-lane face"; the plate is 3 cols × 2 whole
     // rows, so ranks 7 and 8 rendered NOWHERE.
-    expect(faceTierCap('full', true)).toBe(LANE_PLATE_MAX_CELLS);
+    expect(faceTierCap('full', 'trace')).toBe(LANE_PLATE_MAX_CELLS);
     expect(LANE_PLATE_MAX_CELLS).toBe(6);
     const full = keysAt('full');
     expect(full).toHaveLength(6);
@@ -136,10 +136,10 @@ describe('snaredrum face — the tier ladder (order = PRIORITY)', () => {
 
 describe('snaredrum face — the GLYPH accounting (easy to assume backwards)', () => {
   it('the scope survives mini + compact and is ALREADY dead at full', () => {
-    expect(laneBodyPlan(keysAt('mini').length, true, 'mini').glyph).toBe(true);
-    expect(laneBodyPlan(keysAt('compact').length, true, 'compact').glyph).toBe(true);
+    expect(laneBodyPlan(keysAt('mini').length, 'trace', 'mini').glyph).toBe(true);
+    expect(laneBodyPlan(keysAt('compact').length, 'trace', 'compact').glyph).toBe(true);
 
-    const plan = laneBodyPlan(keysAt('full').length, true, 'full');
+    const plan = laneBodyPlan(keysAt('full').length, 'trace', 'full');
     expect(plan.layout).toBe('plate');
     expect(plan.cellCount).toBe(6);
     expect(
@@ -151,7 +151,7 @@ describe('snaredrum face — the GLYPH accounting (easy to assume backwards)', (
   it('and it was ALREADY false before this re-cut — the face costs the trace nothing', () => {
     // The previous face also selected 6 cells at `full` (its cap was the same
     // 6). Re-deriving from the cap rather than from a remembered number.
-    expect(laneBodyPlan(faceTierCap('full', true), true, 'full').glyph).toBe(false);
+    expect(laneBodyPlan(faceTierCap('full', 'trace'), 'trace', 'full').glyph).toBe(false);
   });
 });
 

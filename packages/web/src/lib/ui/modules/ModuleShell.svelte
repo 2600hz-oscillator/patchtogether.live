@@ -91,7 +91,7 @@
     roleLineForDef,
     DOCK_HERO_GLYPH_W,
     PLATE_ROW_H,
-    hasVideoSurface,
+    laneGlyphFor,
     type ShellDefLike,
     type ShellView,
   } from '$lib/ui/workflow/module-shell-model';
@@ -298,11 +298,25 @@
     };
   });
 
-  // VIDEO-domain module → the glyph slot shows a LIVE THUMBNAIL of its actual
-  // output (the legacy preview seam via VideoTileThumb), never a static trace:
-  // a migrated video face gets the same live picture the placeholder tiles do.
-  let videoThumb = $derived(hasVideoSurface(def));
-  let hasGlyph = $derived(glyphKind !== 'none' || videoThumb);
+  // ── WHAT IS IN THE GLYPH SLOT — ONE derivation, three consumers (#1785) ──
+  //
+  // VIDEO-domain module → the slot shows a LIVE THUMBNAIL of its actual output
+  // (the legacy preview seam via VideoTileThumb), never a static trace: a
+  // migrated video face gets the same live picture the placeholder tiles do.
+  //
+  // ⚠ THIS USED TO BE TWO PREDICATES AND A VIDEO FACE WAS WHERE THEY DIVERGED.
+  // The shell asked `glyphKind !== 'none' || hasVideoSurface(def)`; the
+  // SELECTOR asked `face.glyph !== 'none'`, which is false for every video def
+  // (a trace on a def with no audio output is a dead glyph the lint refuses).
+  // So the selector sized the tile as glyph-less and the shell rendered it
+  // glyph-bearing — measured on backdraft's compact tile as three controls
+  // selected and two painted. `laneGlyphFor` is now the ONLY place the question
+  // is answered, and it answers with a KIND, because the fit plan needs to know
+  // whether the glyph is decoration that yields to ranked cells ('trace') or
+  // the module's identity, which outranks them ('picture').
+  let laneGlyph = $derived(laneGlyphFor(def));
+  let videoThumb = $derived(laneGlyph === 'picture');
+  let hasGlyph = $derived(laneGlyph !== 'none');
 
   // The LANE body plan — the no-clip guarantee (fixed 192×180 tile ⇒ fit is a
   // design-time constant): which layout (row/plate), how many WHOLE cells, and
@@ -316,7 +330,7 @@
   // a max, because only a cell with a row BENEATH it can collide — see
   // `plateRowTracks`.
   let lanePlan = $derived(
-    view === 'lane' ? laneBodyPlan(face?.cellHeights ?? [], hasGlyph, effTier) : null,
+    view === 'lane' ? laneBodyPlan(face?.cellHeights ?? [], laneGlyph, effTier) : null,
   );
 
   // Whether the glyph cell RENDERS in the current view/tier — the dock hero
@@ -1540,7 +1554,7 @@
          only, anything that can't fit entirely is not rendered in-lane (the
          dock faceplate has everything). -->
     {@const cells = lanePlan ? controls.slice(0, lanePlan.cellCount) : controls}
-    {@const showGlyph = hasGlyph && (lanePlan ? lanePlan.glyph : true)}
+    {@const showGlyph = lanePlan ? lanePlan.glyph : hasGlyph}
     <div
       class="tile-body"
       class:center={cells.length === 0}
