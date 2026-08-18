@@ -195,6 +195,10 @@
     if (e.key === 'Tab') {
       const dir = e.shiftKey ? -1 : 1;
       const nextStep = step + dir;
+      // Bounds: decline, and the event propagates to the global flip owner —
+      // the rack turns around (bare Tab is the flip gesture, #1629). Not a
+      // "tab out": returning false here is what keeps #1790's stopPropagation
+      // from trapping the gesture.
       if (nextStep < pageStart || nextStep > pageStart + PAGE_SIZE - 1) return false;
       return focusCell(track, nextStep, role);
     }
