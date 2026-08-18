@@ -120,9 +120,22 @@ test.describe('dock full-view pane ✕ — visible chrome in every state (?shell
     page,
   }) => {
     await gotoShellWorkflow(page);
+    // ⚠ PANE B IS `dx7` AND THAT IS THE WHOLE SETUP — it used to be `adsr`.
+    // The scroll leg below needs a pane whose CONTENT genuinely exceeds a
+    // half-width pane. It used to get that for free from a defect: every
+    // curated face was forced to 900 px by `.faceplate-body`'s min-width, so
+    // even adsr (measured 259 px of real content) overflowed. With the plate
+    // content-sized (#1796) adsr simply FITS, `scrollWidth === clientWidth`,
+    // and the leg asserted a condition the layout no longer produces.
+    //
+    // dx7 is the widest face in the roster (measured 1139 px of content
+    // against a ~620 px half-pane), so the overflow is REAL rather than
+    // manufactured — which makes this a stronger pin than before, not a
+    // weaker one: it now exercises the case where a pane genuinely cannot
+    // show everything, which is the case the pane-fixed chrome exists for.
     await spawnPatch(page, [
       { id: 'm1', type: 'vca', position: { x: 30, y: 40 } },
-      { id: 'm2', type: 'adsr', position: { x: 250, y: 40 } },
+      { id: 'm2', type: 'dx7', position: { x: 250, y: 40 } },
     ]);
     await openFullView(page, 'm1');
     await openFullView(page, 'm2');
@@ -134,8 +147,16 @@ test.describe('dock full-view pane ✕ — visible chrome in every state (?shell
     await expectCloseInsidePane(page, 'm2', 'split/front/right');
 
     // CHROME IS PANE-FIXED: scrolling pane B's content sideways must NOT
-    // move its ✕ (pre-fix the bar scrolled with the 900px content and the ✕
-    // lived past the pane edge; this is the direct regression pin).
+    // move its ✕ (pre-fix the bar scrolled with the content and the ✕ lived
+    // past the pane edge; this is the direct regression pin).
+    //
+    // ⚠ IT IS ALSO THE PIN FOR A `max-width` ON `.faceplate-body`. Clamping the
+    // body to the pane does not shrink its children — they overflow INSIDE the
+    // body, where `.faceplate` (`overflow: hidden`) clips them, so the scroll
+    // container reports `scrollWidth === clientWidth` and dx7's right-hand
+    // controls become unreachable rather than scrollable. `scrollable === true`
+    // below is what catches that; it was verified by re-adding the clamp and
+    // watching this line go red.
     const before = (await closeOf(page, 'm2').boundingBox())!;
     const scrolled = await paneOf(page, 'm2')
       .locator('.faceplate-scroll')

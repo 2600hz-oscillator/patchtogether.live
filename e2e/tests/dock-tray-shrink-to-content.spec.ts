@@ -22,11 +22,21 @@
 //
 // ── The constraint this must not re-break ─────────────────────────────────────
 //
-// `.faceplate-body`'s 900 px min-width exists so a half-width split pane still gets
-// horizontal SCROLL rather than dragging the title bar and ✕ out of view — an
-// owner-reported fix. Shrink-wrapping must not resurrect that: the ✕ has to stay visible
-// AND clickable in every pane, front and flipped. Re-breaking it is worse than the wasted
-// space, so it is asserted here in all four combinations rather than assumed.
+// A half-width split pane must keep its title bar and ✕ reachable rather than dragging
+// them out of view — an owner-reported fix. Shrink-wrapping must not resurrect that: the
+// ✕ has to stay visible AND clickable in every pane, front and flipped. Re-breaking it is
+// worse than the wasted space, so it is asserted here in all four combinations rather
+// than assumed.
+//
+// ⚠ THE MECHANISM BEHIND THAT CONSTRAINT CHANGED IN #1796, and this paragraph used to
+// name the old one: *"`.faceplate-body`'s 900 px min-width exists so a half-width split
+// pane still gets horizontal SCROLL"*. That floor is gone — owner ruling, *"we do not
+// want useless gray horizontal space on cards, ever"* — because it padded EVERY face to
+// 900 px to buy scroll behaviour for the few that need it. The guarantee now lives where
+// it always belonged, on `.faceplate-scroll { overflow: auto }`: a face whose content
+// genuinely exceeds the pane scrolls, and one that fits simply fits. The ✕ assertions
+// below are unchanged and still pass, because they were always about CLICKABILITY rather
+// than about the floor.
 
 import { test, expect } from './_fixtures';
 import { spawnPatch } from './_helpers';
@@ -127,10 +137,21 @@ test.describe('#1573 expanded tray hugs its content', () => {
     expect(tray.ctrlsInsetTop, 'CSS px from the tray top to the ⤡/✕ cluster').toBeLessThan(64);
   });
 
-  test('a curated face still gets its full kit width', async ({ page }) => {
-    // POSITIVE CONTROL for the change: shrink-wrapping is scoped to legacy card frames.
-    // A migrated face renders through ModuleShell and asks for the kit width by design;
-    // if this shrank too, the fix would have broken every faceplate to fix one tray.
+  test('a curated face is CONTENT-SIZED too, not padded to a kit width', async ({ page }) => {
+    // ⚠ THIS TEST ASSERTED ITS OWN OPPOSITE UNTIL #1796, and the reversal is the owner's.
+    //
+    // It was the POSITIVE CONTROL for #1573: shrink-wrapping was scoped to legacy card
+    // frames, and a migrated face "asks for the kit width by design", so this checked
+    // that a face did NOT shrink — `kitMin > 0` and `tray.width >= kitMin`.
+    //
+    // That design was the defect. Owner, 2026-08-17: *"tidyvco is fully twice as wide as
+    // it needs to be"* and *"we do not want useless gray horizontal space on cards,
+    // ever. prefer compact."* Measured off the committed baselines: 39 of the 50 dock
+    // faces were EXACTLY 900 px wide, against ~450 px of real content on tidyVco.
+    //
+    // So the control INVERTS rather than disappears: it still proves the scoping claim,
+    // just the other way round — a curated face must now be content-sized like the
+    // legacy card frame beside it, and must NOT carry a width floor.
     test.setTimeout(120_000);
     await page.goto('/rack');
     await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: 30_000 });
@@ -142,13 +163,27 @@ test.describe('#1573 expanded tray hugs its content', () => {
     const g = await trayGeometry(page);
     const [tray] = g.panes;
     expect(tray.isLegacyCard, 'adsr is migrated — no legacy card frame').toBe(false);
-    // Derived from the element itself, not a typed constant: the kit's own min-width is
-    // what the tray must honour, whatever that kit is.
-    const kitMin = await page.evaluate(() =>
-      parseInt(getComputedStyle(document.querySelector('.faceplate-body') as HTMLElement).minWidth, 10),
-    );
-    expect(kitMin, 'a curated face keeps a real kit min-width').toBeGreaterThan(0);
-    expect(tray.width, 'a curated face is not shrink-wrapped below its kit').toBeGreaterThanOrEqual(kitMin);
+
+    // Read off the element, never a typed constant — the rule is "no floor", so the
+    // assertion is about the DECLARATION rather than about any particular number.
+    const sizing = await page.evaluate(() => {
+      const cs = getComputedStyle(document.querySelector('.faceplate-body') as HTMLElement);
+      return { minWidth: cs.minWidth, width: cs.width };
+    });
+    expect(
+      parseInt(sizing.minWidth, 10) || 0,
+      'a curated face carries NO width floor — a floor IS the wasted space, since every ' +
+        'element above `.faceplate-body` shrink-wraps and `.rl-tile` is `width: 100%`',
+    ).toBe(0);
+
+    // …and it really did shrink: the tray must be a fraction of the viewport rather than
+    // the ~900 px the kit used to impose. A RELATION, not a literal, exactly like the
+    // rest of this file.
+    expect(
+      tray.width,
+      `a curated face is content-sized (tray ${tray.width} CSS px in a ${g.vw} px viewport)`,
+    ).toBeLessThan(g.vw * 0.75);
+    expect(tray.width, 'and it still has real width').toBeGreaterThan(0);
     expect(tray.ctrlsInsetRight).toBeLessThan(48);
   });
 

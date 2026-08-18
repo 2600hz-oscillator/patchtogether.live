@@ -206,6 +206,10 @@ export const FACE_FIELDS_NOT_IN_LOCK: Readonly<
     why: 'Marks a param as press-and-release. It changes how a cell is DRIVEN, and the audition ledger is the observable — a text line would restate what the probe measures.',
     coveredBy: 'faces-parity ShellActionCell.probe + audition-ledger (both directions, unit lane, every run).',
   },
+  bareCells: {
+    why: "Which cells paint no CAPTION at the dock. It removes TEXT and nothing else — `aria-label`, the annotate menu's title and MIDI-learn's address all still carry the param's `label`, so no consumer of the contract can observe it. Declared per param rather than per face because it encodes REDUNDANCY against a section heading, which only the module knows (owner, 2026-08-17: mixmstrs' `1LO…8LO` go, tidyVco's `A`/`D`/`S`/`R` stay).",
+    coveredBy: 'module-face-lint (every id is a declared param, ranked in `order`, no duplicates) + face-readout-source.test.ts + VRT face-<type>-dock, where a missing caption is exactly a pixel change.',
+  },
   rear: {
     why: 'Rear-card port grouping/clusters/audio-rate ticks. Every PORT it arranges is already a pinned `in`/`out` line; this is the arrangement.',
     coveredBy: 'rear-card-model units + VRT rear-<type>.',

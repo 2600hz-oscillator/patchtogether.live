@@ -22,6 +22,7 @@
 // — that is the lint gate's job (module-face-lint.test.ts). The selector treats
 // an unrecognized key as a humanized static control so it stays pure.
 
+import { paintsReadout } from '$lib/ui/controls/knob-vocabulary-model';
 import type { ModuleFace, ModuleFacePage, ParamLandmark, ParamOption } from '$lib/graph/types';
 import {
   LANE_CELL_H,
@@ -151,12 +152,20 @@ export function foldedOrder(face: ModuleFace): readonly string[] {
   return face.order.filter((k) => !partners.has(k));
 }
 
-/** Does this param earn a persistent readout line under its dial? Mirrors
- *  `knobReadout`'s gate (knob-vocabulary-model): declaring ANY of the three
- *  vocabulary fields prints a line, declaring none prints nothing. A named
- *  predicate so the HEIGHT here and the RENDER there answer one question once. */
+/**
+ * Does this param paint a readout line under its dial?
+ *
+ * ⚠ IT CALLS THE RENDERER'S OWN PREDICATE — it does not mirror it. This used to
+ * be a re-typed copy of `knobReadout`'s condition with a comment claiming the
+ * HEIGHT here and the RENDER there "answer one question once", and the moment
+ * the render gate changed (a declared numeric `format` stopped painting, owner
+ * 2026-08-17) the copy went on reserving `LANE_KNOB_READOUT_H` for a line
+ * nothing draws — 15 px of blank per cell on adsr, delay, kickdrum, ringback,
+ * vca and sidecar, i.e. exactly the useless space the same review was about.
+ * Importing the predicate is what makes the claim true instead of aspirational.
+ */
 function earnsReadout(p: FaceParamLike): boolean {
-  return !!(p.options?.length || p.landmarks?.length || p.format);
+  return paintsReadout(p);
 }
 
 /**
@@ -310,6 +319,9 @@ export interface ResolvedFacePage {
   hint: string;
   controls: FaceControl[];
   clusters: FaceCluster[];
+  /** `ModuleFacePage.clusterFlow`, resolved — 'stack' when the page declares
+   *  none, so every existing band keeps exactly the layout it had. */
+  clusterFlow: 'stack' | 'row';
 }
 
 /** The selector's result. `pages` is present only for the 'dock' tier (and only
@@ -420,8 +432,9 @@ function resolvePage(page: ModuleFacePage, def: FaceDefLike): ResolvedFacePage {
     .map((k) => resolveFaceControl(k, def));
   const hint = page.hint?.trim() ?? '';
   const declared = page.clusters ?? [];
+  const clusterFlow = page.clusterFlow ?? 'stack';
   if (!declared.length) {
-    return { id: page.id, label: page.label, hint, controls: all, clusters: [] };
+    return { id: page.id, label: page.label, hint, controls: all, clusters: [], clusterFlow };
   }
   const byKey = new Map(all.map((c) => [c.key, c]));
   const claimed = new Set<string>();
@@ -444,6 +457,7 @@ function resolvePage(page: ModuleFacePage, def: FaceDefLike): ResolvedFacePage {
     hint,
     controls: all.filter((c) => !claimed.has(c.key)),
     clusters,
+    clusterFlow,
   };
 }
 
@@ -512,6 +526,11 @@ export interface DockFaceBand {
   hint: string;
   controls: FaceControl[];
   clusters: FaceCluster[];
+  /** How the band's clusters flow — 'stack' (one per row, the default and the
+   *  only behaviour before `ModuleFacePage.clusterFlow` existed) or 'row'
+   *  (side by side, wrapping). A 'row' band is never a CONSOLE GRID: a shared
+   *  column ruler and a side-by-side flow are contradictory requests. */
+  clusterFlow: 'stack' | 'row';
 }
 
 /** EVERY cell a dock plan paints, band order, un-clustered before clustered.
@@ -535,7 +554,16 @@ export function dockFacePlan(def: FaceDefLike): DockFaceBand[] | null {
 
   const pages = dock.pages ?? [];
   if (!pages.length) {
-    return [{ id: DOCK_ALL_BAND_ID, label: '', hint: '', controls: dock.controls, clusters: [] }];
+    return [
+      {
+        id: DOCK_ALL_BAND_ID,
+        label: '',
+        hint: '',
+        controls: dock.controls,
+        clusters: [],
+        clusterFlow: 'stack',
+      },
+    ];
   }
 
   const bands: DockFaceBand[] = pages.map((p) => ({
@@ -544,6 +572,7 @@ export function dockFacePlan(def: FaceDefLike): DockFaceBand[] | null {
     hint: p.hint,
     controls: p.controls,
     clusters: p.clusters,
+    clusterFlow: p.clusterFlow,
   }));
   // A clustered cell is still CLAIMED by its page — the tail must sweep only
   // what no page mentions at all, never a cell a cluster pulled aside.
@@ -552,7 +581,14 @@ export function dockFacePlan(def: FaceDefLike): DockFaceBand[] | null {
   );
   const unpaged = dock.controls.filter((c) => !claimed.has(c.key));
   if (unpaged.length) {
-    bands.push({ id: DOCK_UNPAGED_BAND_ID, label: 'more', hint: '', controls: unpaged, clusters: [] });
+    bands.push({
+      id: DOCK_UNPAGED_BAND_ID,
+      label: 'more',
+      hint: '',
+      controls: unpaged,
+      clusters: [],
+      clusterFlow: 'stack',
+    });
   }
   return bands;
 }

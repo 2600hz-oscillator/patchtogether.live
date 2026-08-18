@@ -114,88 +114,125 @@
 
 /* wide content scrolls inside its own container; the page body never scrolls
    sideways. The scroll region sits BELOW the pane-fixed chrome (grip + title
-   bar + .win-ctrls) inside the frame — the kit's 900px min-width lives on
-   .faceplate-body, so only the CONTENT travels sideways in a half-width
-   split pane; the title bar (and its ✕) hugs the pane. */
+   bar + .win-ctrls) inside the frame, so only the CONTENT travels sideways in a
+   half-width split pane; the title bar (and its ✕) hugs the pane.
+   ⚠ THIS RULE IS NOW THE WHOLE GUARANTEE. It used to be assisted by a 900px
+   min-width on `.faceplate-body` that forced overflow into existence; the body
+   is content-sized now (see below), so whether anything scrolls is decided by
+   whether the content is genuinely wider than the pane — which is the honest
+   version of the same behaviour. */
 .dock-faceplate .faceplate-scroll {
   overflow: auto;
 }
+/* ── COMPACT BY DEFAULT — A FACEPLATE IS AS WIDE AS ITS CONTENT ────────────
+ *
+ * Owner ruling, 2026-08-17: *"we do not want useless gray horizontal space on
+ * cards, ever. prefer compact. screen real estate is expensive!"*, prompted by
+ * *"tidyvco is fully twice as wide as it needs to be"*.
+ *
+ * ⚠ THIS RULE USED TO BE `min-width: 900px` AND THE 900 WAS THE WHOLE DEFECT.
+ * The kit's frame width was applied to every occupant, and every element above
+ * this one shrink-wraps — `.dock-fullview-pane` and `.dock-faceplate` are both
+ * `flex: 0 1 auto; min-width: 0`, `.rl-tile` is `width: 100%` — so the floor
+ * set here WAS the faceplate's width for every curated face. `.dock-pages` is a
+ * flex column with default `align-items: stretch`, so each band was stretched
+ * across it, and `.page-controls` is a left-packed `flex-wrap` row, so the
+ * entire surplus painted as blank plate on the right. MEASURED on the committed
+ * baselines (read straight off the PNG headers): 39 of the 50 dock faces were
+ * real content on tidyVco. A modal 900 with one outlier is the signature of a
+ * floor, not of thirty-nine faces that happen to need the same width.
+ *
+ * ⚠ AND IT ALREADY HAD TWO ESCAPE HATCHES, WHICH IS THE TELL. `:has(.fp-card-
+ * frame)` (legacy cards, #1573) and `:has([data-shell-type='mixmstrs'])`
+ * (#1738) both said "…but not this occupant", each landing after an owner
+ * review of one screenshot. A default that needs a new exemption per review is
+ * the wrong default; the exemptions were the rule trying to state itself. Both
+ * are now gone, replaced by the thing they had in common — content sizing —
+ * which is also what the pinned tray host has always done
+ * (`.dock-natural-sized { width: max-content }`, DockFullView.svelte).
+ *
+ * ⚠ AND THERE IS DELIBERATELY NO `max-width` HERE. Adding one looks like the
+ * safe way to keep the no-sideways-scroll guarantee and is the exact opposite:
+ * clamping the body to `100%` makes the BODY stop at the pane while its
+ * children keep their natural width, so the overflow moves INSIDE the body —
+ * where `.faceplate` (`overflow: hidden`) clips it and `.faceplate-scroll`
+ * cannot see it. `scrollWidth === clientWidth`, the scroll container decides it
+ * has nothing to scroll, and a wide occupant in a half-width split pane is
+ * simply CUT OFF with no way to reach the rest.
+ *
+ * That is not hypothetical, and the evidence is a DELIBERATE NEGATIVE CONTROL
+ * rather than a story. Re-add `max-width: 100%` here and
+ * `dock-pane-close-chrome`'s "A+B split … after sideways scroll" case goes red
+ * with `half-width pane content still has sideways travel: expected true,
+ * received false` — dx7 (1139 px of content in a ~620 px half-pane) stops being
+ * scrollable and its right-hand controls become unreachable. Remove it and the
+ * case passes. Verified both directions, in that order.
+ *
+ * ⚠ THAT TEST ONLY CATCHES IT BECAUSE ITS SUBJECT WAS FIXED FIRST. It used to
+ * spawn `adsr`, which overflowed a half-width pane only because the 900 px
+ * floor forced it to; with the plate content-sized adsr genuinely fits, so the
+ * case passed vacuously and would have certified the clamp. A gate whose
+ * precondition disappeared is not a gate — see the note in that spec.
+ *
+ * The guarantee comes from `.faceplate-scroll { overflow: auto }` above, and it
+ * needs the body to be HONEST about its width: a body at its content width that
+ * exceeds the pane makes the scroll container scroll, which is the behaviour the
+ * 900 px floor used to produce by brute force. The page still never scrolls
+ * sideways, because the scroll container is bounded by the pane.
+ *
+ * The gate that holds this line is `face-width-source.test.ts` plus the
+ * per-face content-vs-plate measurement in `e2e/vrt/workflow-shell-faces.spec.ts`:
+ * a face whose content does not fill its plate is RED unless NAMED with the
+ * specific thing consuming the width. */
 .dock-faceplate .faceplate-body {
-  min-width: 900px;
-}
-/* …but 900px is the KIT's width, not every occupant's. A legacy card frame is
-   already `width: max-content`, so forcing 900px on its body is precisely the
-   "more horizontal space than it needs" this fixes (#1573). Curated faces
-   (ModuleShell) keep the kit width — for them 900px IS what they need, and the
-   half-width-split scroll behaviour the min-width exists for is unchanged. */
-.dock-faceplate .faceplate-body:has(.fp-card-frame) {
   min-width: 0;
   width: max-content;
 }
-/* …and the same is true of a curated face whose content is genuinely NARROWER
-   than the kit. Owner review of PR #1738: *"the whole thing should be about half
-   as wide, with none of this wasted space."*
-   MEASURED, and it is this rule that produces it. The pane shrink-wraps —
-   `.dock-fullview-pane` and `.dock-faceplate` are both `flex: 0 1 auto;
-   min-width: 0`, so nothing above stretches — and `.rl-tile` is `width: 100%`,
-   so the shell simply fills whatever floor is set here. mixmstrs' widest row is
-   ONE CLUSTER OF EIGHT cells (every cluster is `MIXMSTRS_CHANNELS.length` wide
-   by construction, which is the console-grid property its face-model test
-   pins), i.e. a few hundred px against a 900 px floor. `.page-controls` is a
-   left-packed `flex-wrap` row, so the whole surplus became blank margin on the
-   right — exactly the screenshot.
-   ⚠ SCOPED BY MODULE, NOT LIFTED FOR EVERY FACE. The comment above is right
-   that 900 px IS what most curated faces need, and it is also the width the
-   half-width-split scroll behaviour is designed around — lowering it globally
-   would reflow every dock scene in the roster. `data-shell-type` is emitted by
-   `ModuleShell.svelte` on its root, so `:has()` keys this to one module the same
-   way the rule above keys to one branch.
+/* ⚠ #1794's `:has([data-shell-type='mixmstrs'])` OVERRIDE WAS HERE TOO, AND IS
+   GONE WITH THE OTHERS — but the MEASUREMENT it carried is not, because it is
+   about a limiter this rule does not remove.
 
-   ── HOW FAR IT ACTUALLY GETS, AND WHAT OWNS THE REST ──────────────────────
-   (Moved here from `console.css` when that file was deleted with #1794 — it
-   documented THIS rule from a stylesheet that no longer exists.)
-
-   MEASURED: pane 940 → **761.2 px**. That is 19 %, not half, and the rest was
-   chased rather than guessed. In the page, with the floor lifted: widest CELL
-   **52.0 px**, all four bands exactly **695.2 px**, `.dock-hero` 715.2, pane
-   761.2. Four bands reporting an IDENTICAL width is the tell that nothing was
-   content-sized. Squeezing the body to 360 px made NOTHING overflow, so no
-   control demands the width either.
-
-   The widest-child path from the body names the driver, and it is not a
-   faceplate element at all:
+   That comment (moved into this file when `console.css` was deleted) recorded
+   how far lifting the floor for ONE module actually got: pane 940 → 761.2 px,
+   i.e. 19 %, not the half the owner asked for. It then chased the remainder
+   instead of guessing, and named it:
 
        div.faceplate-body   w=761.2
          div.fp-front       w=0.0     ← the flip container
-           div.tabrail      w=761.2   ← ...whose widest child is a 89.5 px tab
+           div.tabrail      w=761.2   ← …whose widest child is an 89.5 px tab
 
-   The dock's own TAB RAIL sets the width, inside a zero-width flip box. That is
-   shared full-view chrome on every faced module, not something a console can
-   fix from here, and two hero knobs tried against it (`--dock-hero-glyph-w`, a
-   new `--dock-hero-vis-basis`) moved the number by 0.0 px — so they were
-   REVERTED rather than shipped as decoration. Filed as its own issue.
+   ⚠ THE DOCK'S OWN TAB RAIL SETS THE WIDTH, inside a zero-width flip box —
+   shared full-view chrome on every faced module, not something a faceplate can
+   fix from here. Two hero knobs tried against it (`--dock-hero-glyph-w`, a new
+   `--dock-hero-vis-basis`) moved the number by 0.0 px and were REVERTED rather
+   than shipped as decoration. It is filed as its own issue.
 
-   ⚠ THE 19 % IS REAL AND COSTS NOTHING ELSE: re-running the whole-roster fold
-   probe after this change came back BYTE-IDENTICAL for all 42 other faces. */
-.dock-faceplate .faceplate-body:has([data-shell-type='mixmstrs']) {
-  min-width: 0;
-  width: max-content;
-}
-/* …and the same for the REAR (patch) card (#1800). 900px is the FRONT kit's
-   width; the flip side is a jack field whose width is decided by how many
-   section COLUMNS it has, and it caps itself (`.rear-zone.in/.out` max-width in
-   RearCard.svelte). Leaving the kit floor on meant a two-jack module's rear
-   reserved 900px and filled the surplus with the diagonal-hatch ground — the
-   "we do not want useless gray horizontal space on cards, ever" case, on the
-   one surface where the owner reported it.
+   Carried forward because it is still true and still unfixed: content sizing is
+   necessary for a compact plate and is not sufficient while the rail is wider
+   than the content. The per-face slack gate in `workflow-shell-faces.spec.ts`
+   is what will show it if the rail ever becomes the binding constraint again.
 
-   ⚠ SCOPED BY `:has(.rear-card)`, so it applies ONLY while the pane is flipped
-   — the front face keeps the kit width and the half-width-split sideways-scroll
-   behaviour the floor exists for, unchanged. */
-.dock-faceplate .faceplate-body:has(.rear-card) {
-  min-width: 0;
-  width: max-content;
-}
+   ⚠ #1809's `:has(.rear-card)` OVERRIDE WAS HERE AND IS DELETED, NOT LOST —
+   the two PRs arrived at the same fix from opposite ends and this is the merge
+   resolution.
+
+   #1809 removed the 900px floor for the FLIPPED pane only, scoped by
+   `:has(.rear-card)`, because a two-jack module's rear reserved 900px and
+   filled the surplus with the diagonal-hatch ground — *"we do not want useless
+   gray horizontal space on cards, ever"*, on the surface where the owner
+   reported it. That reasoning is exactly right and is the reason the rear side
+   is now covered by the rule above rather than beside it: the override set
+   `min-width: 0; width: max-content`, which is byte-for-byte what the
+   unconditional rule already does, so keeping it would have been a third
+   per-occupant hatch doing nothing — and `face-width-source.test.ts` duly
+   failed the merged tree with "a width override keyed to one occupant".
+
+   Its own note said the scoping kept "the front face … unchanged", which was
+   true when written and is not true now: the front face has no kit width to
+   keep. The rear-specific FACTS worth carrying: a jack field's width is decided
+   by how many section COLUMNS it has and it caps itself
+   (`.rear-zone.in/.out` max-width in RearCard.svelte), so content sizing is
+   safe there for a reason of its own rather than by inheritance. */
 
 .dock-faceplate .faceplate {
   position: relative;
