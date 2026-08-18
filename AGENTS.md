@@ -72,7 +72,7 @@ Accept loops (regenerate a golden, then **review the diff**):
 ```sh
 flox activate -- task docs:accept        # contract-lock.txt
 flox activate -- task art:update         # ART baselines + fingerprint manifest
-flox activate -- task vrt:commit         # dispatch baseline capture on LINUX CI
+flox activate -- task vrt:commit         # dispatch baseline capture on LINUX CI (SCOPED from the branch diff; ALL=1 for the full sweep)
 ```
 
 Housekeeping: `task worktree:guard` (before creating a worktree — hard cap 10),

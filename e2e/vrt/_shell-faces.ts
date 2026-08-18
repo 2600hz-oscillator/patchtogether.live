@@ -755,6 +755,7 @@ export const FACES = [
     //   authoring        predicted 2, committed 2 (compact + dock), nothing else
     //   owner round 1    predicted 1, committed 1 (dock only)
     //   fader migration  predicted 2, committed 2 (both MODIFIED, 0 added/deleted)
+    //   main unblock     predicted 1, committed 1 (dock only)
     //
     // ⚠ The round-1 asymmetry is the useful part: the faceplate was
     // restructured completely — tabs renamed and reordered, a page deleted, the
@@ -773,6 +774,24 @@ export const FACES = [
     // or primitive — and the count alone does not. Both blob hashes were
     // recorded before the dispatch and re-read after, so "2 files touched" is
     // known to be "2 files genuinely different" rather than a re-timestamp.
+    //
+    // ⚠ THE MAIN-UNBLOCK ROW IS THE ONE THAT NEEDED AN ARGUMENT, because the
+    // compact scene was PASSING and a capture cannot regenerate a passing
+    // baseline — so "it went green" would have been indistinguishable from "it
+    // is stale but under COMPACT_MAX_DIFF", and only an explicit `git rm`
+    // reaches the second case. #1805 changed the fader PRIMITIVE again (it
+    // deleted the resting readout outright), which by the row above should have
+    // reached every tier that paints a fader cell. It did not, and the reason is
+    // that the readout was never a lane element in the first place:
+    // `persistentReadout={faceplateView}` bound it to the DOCK tier alone, so
+    // the compact tile had nothing to lose. Three independent legs agree —
+    // `min-width: 900px` sat on `.faceplate-body` (the dock plate, not the lane
+    // tile); backdraft declares NO `format` on any param, so KnobConic's
+    // format-suppression change (what moved the eight compact baselines that
+    // DID move) cannot reach it; and `flicker`, the roster that newly paints a
+    // NAME, is dock-only in `face.order` while compact shows the first 2-3 of
+    // feedback/zoom/mix. The dock scene, by contrast, failed on a DIMENSION
+    // mismatch (900x523 -> 657x509), which no diff budget can absorb.
   },
 ] as const;
 
@@ -1606,6 +1625,22 @@ export interface FoldGeometry {
   renderedBands: number;
   /** Tab-rail chips, 0 when the face renders as one scrolling column. */
   tabs: number;
+  /**
+   * THE WIDTH THE FACE ACTUALLY USES, and the width it was GIVEN. CSS px.
+   *
+   * `contentW` is the rightmost extent of anything the face DRAWS, measured
+   * from the scroll container's content-box left edge: control cells, pictures
+   * and the TEXT of every heading (via a Range, because a heading is a block
+   * element whose BOX is the full plate width and whose ink is not — measuring
+   * boxes would report every face as perfectly filled and the gate would be
+   * blind by construction).
+   *
+   * `plateW` is `.faceplate-scroll`'s client width. `plateW - contentW` is the
+   * useless grey space owner ruling 2026-08-17 forbids: *"we do not want
+   * useless gray horizontal space on cards, ever."*
+   */
+  contentW: number;
+  plateW: number;
   /** The pane's top edge in viewport coords. NEGATIVE = the pane has grown off
    *  the top of the window and Playwright cannot scroll it into view, because
    *  the drawer is absolutely positioned in a non-scrolling container. This is
@@ -1642,7 +1677,35 @@ export async function readFoldGeometry(page: Page): Promise<FoldGeometry> {
         rendered: r.width > 0 && r.height > 0,
       };
     });
+    // ── CONTENT EXTENT ────────────────────────────────────────────────────
+    // Boxes for the things that ARE their content (cells, pictures), and TEXT
+    // RANGES for everything else. A `.page-label` <h4> is a block box as wide
+    // as the plate, so a box-only sweep would measure the plate against itself
+    // and return zero slack for every face including the double-wide ones.
+    const scStyle = getComputedStyle(sc);
+    const contentLeft = scr.left + parseFloat(scStyle.paddingLeft || '0');
+    let right = contentLeft;
+    const BOXY = '[data-cell-key],.tile-glyph,canvas,svg,img,[data-testid="face-hero"] .hero-vis';
+    for (const node of Array.from(sc.querySelectorAll<HTMLElement>('*'))) {
+      if (node.getClientRects().length === 0) continue;
+      if (node.matches(BOXY)) {
+        const r = node.getBoundingClientRect();
+        if (r.width > 0 && r.right > right) right = r.right;
+        continue;
+      }
+      for (const child of Array.from(node.childNodes)) {
+        if (child.nodeType !== Node.TEXT_NODE) continue;
+        if (!(child.textContent ?? '').trim()) continue;
+        const rng = document.createRange();
+        rng.selectNodeContents(child);
+        const r = rng.getBoundingClientRect();
+        if (r.width > 0 && r.right > right) right = r.right;
+      }
+    }
+
     return {
+      contentW: Math.round(right - contentLeft),
+      plateW: sc.clientWidth,
       captureH: Math.round(er.height),
       scrollH: sc.scrollHeight,
       clientH: sc.clientHeight,

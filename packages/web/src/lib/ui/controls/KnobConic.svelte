@@ -14,7 +14,7 @@
   import { makeMidiAssignable } from './midi-assignable.svelte';
   import { notifyAutomationTouch, notifyAutomationRelease } from '$lib/audio/automation-touch';
   import { knobValueToFrac, knobFracToValue, knobPointerAngle } from './knob-conic-model';
-  import { knobMarks, knobReadout, knobValueReadout } from './knob-vocabulary-model';
+  import { knobMarks, knobNameReadout, knobValueReadout } from './knob-vocabulary-model';
   import { formatParamNumber } from './param-format';
 
   interface Props {
@@ -38,15 +38,13 @@
     accent?: string;
     /**
      * PARAM VOCABULARY (PF-1 / PF-3 / PF-10) — what this dial's numbers MEAN.
-     * Supplying ANY of the three earns a PERSISTENT readout under the dial.
      *
-     * ⚠ SUPPLYING NONE KEEPS THE BARE KNOB **IN THE LANE ONLY**. PF-20
-     * overturned the other half: at the dock, `persistentReadout` (below) makes
-     * an undeclared param fall back to the numeric ladder, because every mocked
-     * faceplate prints a value under every knob and bare labels were the single
-     * largest share of the shell-vs-mock drift. The "a readout is earned"
-     * argument survives where it was always true — a 46px lane column cannot
-     * spend a text row on what hovering already shows.
+     * ⚠ ONLY `options` / `landmarks` PAINT. A declared `format` renders a
+     * NUMBER in the module's own units, and a number under every dial is
+     * exactly what the owner removed (2026-08-17). It still reaches
+     * `aria-valuetext`, so the value is speakable and assertable — it is simply
+     * not painted. See `knob-vocabulary-model`'s header for the three-function
+     * split and why a hover reveal was refused by name.
      *
      * `options` (discrete states) and `landmarks` (continuous waypoints) also
      * paint detent TICKS around the arc. They are never interchangeable — see
@@ -56,17 +54,23 @@
     landmarks?: readonly ParamLandmark[];
     format?: (v: number) => string;
     /**
-     * PF-20 — PRINT THE VALUE WHETHER OR NOT A VOCABULARY WAS DECLARED.
+     * DROP THE PER-CONTROL CAPTION — the `.label` line under the dial.
      *
-     * The gate above is a LANE argument (a 46px column cannot spend a text row
-     * on what hovering shows). It was silently applied to the DOCK too, and
-     * that is where it was wrong: every mocked faceplate carries a formatted
-     * value under every knob, and bare labels were the single largest share of
-     * the shell-vs-mock drift. ModuleShell passes this at `view='dock-full'`
-     * only, so the lane tile is untouched and only the ~19 dock baselines move
-     * — deliberately, once.
+     * ⚠ IT HIDES TEXT, NEVER THE ACCESSIBLE NAME. `aria-label` still carries
+     * `label`, the right-click annotate menu still titles itself with it, and
+     * MIDI-learn still addresses the same param: the only thing that goes is
+     * the painted line.
+     *
+     * Owner ruling 2026-08-17, and the rule is about REDUNDANCY, not about
+     * labels: *"the 1lo 1md 1hi etc labels should also go away because the
+     * low/mid/high labels above the knob rows convey that fine"* — against
+     * *"tidyvco does need some of the gray labels -- like a/d/s/r would not be
+     * comprehensible without them"*. A caption earns its place when it
+     * disambiguates otherwise-identical controls and is clutter when a section
+     * heading already says it, which is why this is DECLARED per cell
+     * (`face.bareCells`) and not a tier-wide switch.
      */
-    persistentReadout?: boolean;
+    hideCaption?: boolean;
   }
 
   let {
@@ -86,7 +90,7 @@
     options,
     landmarks,
     format: formatValue,
-    persistentReadout = false,
+    hideCaption = false,
   }: Props = $props();
 
   // ---- MIDI-Learn (shared factory, kind:'cc') — getters so the factory reads
@@ -176,12 +180,13 @@
 
   // ── PARAM VOCABULARY (PF-1 / PF-3 / PF-10), resolved in the pure layer ──
   let vocab = $derived({ options, landmarks, format: formatValue });
-  /** The persistent readout text — `null` (⇒ NOT RENDERED) for a plain param
-   *  in the LANE; at the dock (`persistentReadout`) a plain param falls back to
-   *  the numeric ladder, so every dial on a faceplate prints its value. */
-  let readout = $derived(
-    persistentReadout ? knobValueReadout(liveValue, vocab, units) : knobReadout(liveValue, vocab),
-  );
+  /** The PAINTED readout — a declared state NAME, or `null` ⇒ nothing renders.
+   *  Never a number: see knob-vocabulary-model's header. */
+  let readout = $derived(knobNameReadout(liveValue, vocab));
+  /** What the dial is WORTH, for `aria-valuetext` only. Not painted — this is
+   *  the leg that keeps the value speakable and assertable after the printed
+   *  decimal went away. */
+  let spokenValue = $derived(knobValueReadout(liveValue, vocab, units));
   /** Detent ticks around the arc. Empty unless options/landmarks were declared. */
   let marks = $derived(knobMarks(vocab, min, max, curve));
 
@@ -263,7 +268,7 @@
     aria-valuemin={min}
     aria-valuemax={max}
     aria-valuenow={liveValue}
-    aria-valuetext={readout ?? undefined}
+    aria-valuetext={spokenValue}
     style:--v={frac}
     style:--ka={accent ?? undefined}
     oncontextmenu={openContextMenu}
@@ -289,15 +294,17 @@
       ></span>
     {/each}
   </div>
-  <div class="label">{label}</div>
-  <!-- PERSISTENT READOUT. In the LANE it renders only when the param declared a
-       vocabulary (`knobReadout` returns null otherwise) — the "a readout is
-       earned" gate, which is a 46px-column argument. At the DOCK the caller
-       passes `persistentReadout` and an undeclared param falls back to the
-       numeric ladder, so every dial on a faceplate prints its value. Same
-       ladder either way, which is what stops a hero readout and the dial under
-       it disagreeing about one number. -->
-  {#if readout !== null}
+  <!-- THE CAPTION. Suppressed per cell by `face.bareCells` where a section
+       heading already says it; `aria-label` above is untouched either way, so
+       the accessible name and the annotate menu's title survive the hide. -->
+  {#if !hideCaption}<div class="label">{label}</div>{/if}
+  <!-- THE READOUT — a declared state NAME and nothing else. A NUMBER under a
+       dial is gone from every face (owner, 2026-08-17), and it is REMOVED, not
+       hidden: there is no `persistentReadout` to flip back on and no hover
+       reveal, because "there but hidden" was refused by name. The value lives
+       on in `aria-valuetext` above, which is what every gate that has to prove
+       a face tracks the graph now reads. -->
+  {#if readout !== null && !hideCaption}
     <div class="readout" data-testid={paramId ? `readout-${paramId}` : undefined}>{readout}</div>
   {/if}
   {#if midi.binding}
@@ -424,8 +431,8 @@
     white-space: nowrap;
     text-align: center;
   }
-  /* PERSISTENT READOUT — the option/landmark NAME (or a bespoke format), shown
-     under the label. Only rendered for a param that declared a vocabulary. */
+  /* THE READOUT — the option/landmark NAME, shown under the label. NEVER a
+     number: a declared `format` reaches `aria-valuetext` and stops there. */
   .readout {
     font-family: var(--mono, ui-monospace, monospace);
     font-size: 9px;

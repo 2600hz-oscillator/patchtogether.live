@@ -1282,14 +1282,27 @@ test.describe('param vocabulary: a NAMED discrete param reads as its name at BOT
   // PF-1's two halves are different primitives answering the SAME question, so
   // the only assertion worth making spans both: the dock lays the states out
   // as a row, the lane keeps the dial (a 46 px knob column cannot hold a row)
-  // and earns a persistent readout instead — and they must NAME THE SAME
+  // and paints a readout NAMING the state instead — and they must NAME THE SAME
   // STATE. A per-tier test would pass while the two disagreed, which is the
   // failure a player actually notices when they zoom out.
   //
   // filter.mode is the case: three parallel two-pole sections, `curve:
   // 'discrete'`, and the one control that decides whether CUTOFF sounds dark,
   // thin or narrow. Pre-PF-1 it rendered as a rotary printing "0.00".
-  test('filter.mode: Segmented in the dock, dial + persistent readout in the lane, same state', async ({ page }) => {
+  //
+  // ⚠ THIS PAIR SURVIVED THE 2026-08-17 READOUT REMOVAL UNCHANGED, and it is
+  // worth saying why rather than leaving the reader to check. The owner removed
+  // the resting NUMBER from every face, not the resting NAME (`paintsReadout`:
+  // a bare `options`/`landmarks` roster and no declared `format`). filter's two
+  // params here are exactly the two ends of that predicate — `mode` declares a
+  // bare roster and still paints, `cutoff` declares nothing at all and still
+  // does not — so both assertions mean today what they meant when they were
+  // written. ⚠ What CHANGED is the predicate behind the second one: "no
+  // declared vocabulary ⇒ no readout" is now strictly weaker than the rule,
+  // because a param declaring a `format` would ALSO paint nothing. If cutoff is
+  // ever given a formatter, this leg stops discriminating and the contrast has
+  // to move to `aria-valuetext`, where the vocabulary still resolves.
+  test('filter.mode: Segmented in the dock, dial + painted NAME in the lane, same state', async ({ page }) => {
     test.setTimeout(FACE_FIXED_MS);
     await gotoShell(page);
     await spawnPatch(page, [{ id: 'f', type: 'filter', position: { x: 460, y: 240 } }]);
@@ -1303,8 +1316,15 @@ test.describe('param vocabulary: a NAMED discrete param reads as its name at BOT
     await expect(laneCell, 'lane: mode keeps the DIAL — a lane column has no room for a row')
       .toHaveAttribute('data-cell-control', 'knob');
     const laneReadout = laneCell.locator('[data-testid="readout-mode"]');
-    await expect(laneReadout, 'lane: the dial earns a PERSISTENT readout naming the state').toBeVisible();
+    await expect(laneReadout, 'lane: the dial PAINTS a readout naming the state').toBeVisible();
     await expect(laneReadout).toHaveText('LP');
+    // …and speaks it too, off the same resolver. One value, two audiences — the
+    // split that let every `format`-only face keep its assertions when the
+    // painted line went away.
+    await expect(laneCell.locator('[data-testid="control-mode"]')).toHaveAttribute(
+      'aria-valuetext',
+      'LP',
+    );
     // DETENT TICKS: a declared roster also marks the arc, so the dial SHOWS it
     // has three resting positions rather than reading as a continuous sweep.
     // This is the same renderer PF-10's landmarks use, so exercising it here
@@ -1321,8 +1341,16 @@ test.describe('param vocabulary: a NAMED discrete param reads as its name at BOT
     await expect(cutoffCell, 'a plain param is still a dial').toHaveAttribute('data-cell-control', 'knob');
     await expect(
       cutoffCell.locator('[data-testid="readout-cutoff"]'),
-      'a param with no declared vocabulary renders NO persistent readout',
+      'a param with no declared vocabulary paints NO readout',
     ).toHaveCount(0);
+    // …and falls back to the raw ladder when asked what it is worth. This is
+    // what stops the line above from being satisfied by a face that lost its
+    // vocabulary resolution entirely: both cells would then paint nothing, and
+    // only this assertion would tell them apart from `mode`'s `LP`.
+    await expect(cutoffCell.locator('[data-testid="control-cutoff"]')).toHaveAttribute(
+      'aria-valuetext',
+      /^\d/,
+    );
     await expect(
       cutoffCell.locator('.tick'),
       'a param with no declared vocabulary renders NO detent ticks',
@@ -1346,7 +1374,7 @@ test.describe('param vocabulary: a NAMED discrete param reads as its name at BOT
       .poll(() => readParam(page, 'f', 'mode'), { message: 'picking BP commits mode=2' })
       .toBe(2);
     await expect(segs.nth(2), 'dock: BP is now the lit state').toHaveAttribute('aria-checked', 'true');
-    await expect(laneReadout, 'lane: the dial readout follows the dock selection').toHaveText('BP');
+    await expect(laneReadout, 'lane: the painted name follows the dock selection').toHaveText('BP');
   });
 });
 

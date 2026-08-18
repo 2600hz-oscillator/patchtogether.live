@@ -722,9 +722,19 @@ tasks:
       macOS render is a smoke test, not a capture. The loud VRT-diff PR comment
       points here for exactly that reason; inspect the diff gallery it links
       BEFORE accepting. (The `vrt` lane is INFORMATIONAL; `vrt-strict` gates.)
+
+      SCOPED BY DEFAULT (#1795). A bare `task vrt:commit` DERIVES the capture
+      grep from this branch's own diff and dispatches with it. MEASURED on
+      2026-08-17: a scoped capture is ~3 min against 41-56 min unscoped, and the
+      scoping capability existed the whole time — nothing chose it for you. The
+      full sweep is still available and is now DELIBERATE (`ALL=1`), never a
+      silent fallback. `scripts/vrt-scope.mjs` prints the scope it chose, the
+      files that produced it, and how many of the discovered tests it selects,
+      BEFORE the dispatch.
       Examples:
-        task vrt:commit                       # current branch
-        GREP=adsr   task vrt:commit           # scope capture to matching cards (single token)
+        task vrt:commit                       # derive the scope from the branch diff
+        GREP=adsr   task vrt:commit           # scope by hand (single token)
+        ALL=1       task vrt:commit           # deliberate FULL sweep
         task vrt:commit -- some-other-branch  # explicit branch override
     cmds:
       - |
@@ -743,9 +753,55 @@ tasks:
         # anything, so the documented ONLY-baseline-author entry point did not
         # run at all and every capture went out as a hand-typed `gh` command.
         GREP="${GREP:-}"
+        ALL="${ALL:-}"
+        if [ -n "$GREP" ] && [ -n "$ALL" ]; then
+          echo "GREP='$GREP' and ALL=1 ask for opposite things — pass one." >&2
+          exit 1
+        fi
+        if [ -n "$ALL" ]; then
+          echo "FULL SWEEP requested (ALL=1): every VRT spec, in ONE unsharded job (41-56 min, measured 2026-08-17)."
+        elif [ -z "$GREP" ]; then
+          # ── SCOPE IS DERIVED, NOT ASSUMED (#1795) ─────────────────────────
+          # The script writes its report to stderr and exactly one machine-read
+          # line to stdout. Exit 3 = "nothing on this branch can move a
+          # baseline", which is a refusal to burn a runner, not an error — but
+          # it still must not dispatch, so every non-zero code stops here.
+          # `set +e` around the substitution because `set -e` would abort the
+          # target before the code could be read, and the two outcomes need
+          # different messages.
+          set +e
+          DECISION="$(node scripts/vrt-scope.mjs decide --branch "$BRANCH")"
+          RC=$?
+          set -e
+          if [ "$RC" -ne 0 ]; then exit "$RC"; fi
+          case "$DECISION" in
+            'SCOPE '*) GREP="${DECISION#SCOPE }" ;;
+            'FULL') GREP="" ;;
+            *) echo "vrt:commit: unrecognized scope decision '$DECISION' from scripts/vrt-scope.mjs" >&2; exit 1 ;;
+          esac
+        fi
+        # ⚠ ONE SHELL-SAFE TOKEN, always — derived or hand-passed. The capture
+        # step runs `task vrt:update -- --grep "$GREP"`, and go-task joins
+        # CLI_ARGS into a shell line UNQUOTED (the same hazard ci.yml's
+        # vrt-strict-shard job cites when it bypasses the Taskfile to pass its
+        # own alternation). A `|` here would become a PIPE inside that line —
+        # most likely leaving Playwright with NO grep at all, i.e. a silent full
+        # rewrite of every baseline. Refuse instead of mangling.
+        case "$GREP" in
+          '') : ;;
+          *[!A-Za-z0-9_.-]*)
+            echo "GREP='$GREP' is not a single shell-safe token ([A-Za-z0-9_.-]+)." >&2
+            echo "An alternation cannot survive the unquoted CLI_ARGS join in the capture step — dispatch ALL=1 instead." >&2
+            exit 1
+            ;;
+        esac
         FLAGS="-f ref=$BRANCH"
         if [ -n "$GREP" ]; then FLAGS="$FLAGS -f grep=$GREP"; fi
-        echo "Dispatching vrt-update.yml for branch '$BRANCH'${GREP:+ grep=$GREP} …"
+        if [ -n "$GREP" ]; then
+          echo "Dispatching vrt-update.yml for branch '$BRANCH' grep=$GREP …"
+        else
+          echo "Dispatching vrt-update.yml for branch '$BRANCH' — FULL SWEEP, no grep …"
+        fi
         # ⚠ `--ref "$BRANCH"` RUNS THE BRANCH'S OWN COPY of vrt-update.yml, and
         # that is load-bearing whenever a PR changes the capture itself.
         #

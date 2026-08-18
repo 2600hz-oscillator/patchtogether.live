@@ -291,51 +291,51 @@ jobs:
     # growth rather than by any one PR. Both want a WARNING before the cliff.
     timeout-minutes: 20
 
-    services:
-      postgres:
-        # AWS ECR Public mirror of the official Docker Hub image — Docker
-        # Hub's registry-1.docker.io intermittently times out the service-
-        # container pull (recurring CI flake). ECR Public has no rate limits
-        # and is far more reliable. Same image, different (mirror) registry.
-        image: public.ecr.aws/docker/library/postgres:16
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: patchtogether_test
-        ports:
-          # ⚠ THE FIXED HOST PORT DOES NOT COLLIDE UNDER CONCURRENCY — checked
-          # 2026-08-12, because it looks like it should and keeps being
-          # re-investigated.
-          #
-          # Every `runs-on:` in this repo is `ubuntu-latest` (57/57 across all
-          # workflows; no self-hosted runners), and a GitHub-HOSTED job gets its
-          # own dedicated VM. A service container publishes into THAT VM's
-          # network namespace, so two concurrent jobs are two separate hosts and
-          # there is nothing to contend for. Corroborating: six other workflows
-          # publish `5432:5432` — the DEFAULT postgres port, maximally
-          # collision-prone if a host were ever shared — with no history of it.
-          #
-          # The port is also load-bearing, so do not churn it: it matches the
-          # `localhost:54320` fallback in rackspaces-capacity.test.ts (line 31)
-          # that lets that test run against a local Postgres with no PG_TEST_URL.
-          #
-          # This reasoning DOES expire if a self-hosted runner is ever added
-          # with more than one concurrent job per machine. At that point make
-          # the host port dynamic and set PG_TEST_URL from it — do not just
-          # pick a different constant.
-          - 54320:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
     env:
       PG_TEST_URL: postgres://postgres:postgres@localhost:54320/patchtogether_test
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      # ── POSTGRES IS A STEP, NOT A `services:` BLOCK (#1828) ───────────────
+      #
+      # ⚠ DO NOT PUT IT BACK. A service container is initialised BEFORE step 1,
+      # so a transient registry error there kills the job with nothing run and
+      # nothing a step could have done about it. Measured on the six ci.yml runs
+      # before this landed: 1 / 0 / 1 / 3 / 0 / 2 jobs dead that way — several
+      # re-run cycles a night, none of them about code. GitHub's own three
+      # attempts all hit ONE registry and were the entire budget.
+      #
+      # ⚠ AND IT HAD ALREADY BEEN "FIXED" ONCE: this block used to read "AWS ECR
+      # Public mirror — avoids the flaky Docker Hub service-container pull",
+      # i.e. Docker Hub flaked, someone swapped to ECR Public, and ECR Public
+      # then flaked identically. The defect is not which registry — it is that a
+      # single registry is a hard dependency of the job.
+      #
+      # ⚠ THE HOST PORT DOES NOT COLLIDE UNDER CONCURRENCY — checked 2026-08-12,
+      # because it looks like it should and keeps being re-investigated. Every
+      # `runs-on:` in this repo is `ubuntu-latest` and a GitHub-HOSTED job gets
+      # its own dedicated VM, so two concurrent jobs are two separate hosts with
+      # nothing to contend for. The port is load-bearing, so do not churn it: it
+      # matches the `localhost:54320` fallback in rackspaces-capacity.test.ts
+      # that lets that test run against a local Postgres with no PG_TEST_URL.
+      # This reasoning DOES expire if a self-hosted runner is ever added with
+      # more than one concurrent job per machine — at that point make the host
+      # port dynamic and set PG_TEST_URL from it, don't pick another constant.
+      #
+      # ⚠ TAG 16, not 17 as everywhere else. PRESERVED DELIBERATELY: #1828 is
+      # reliability plumbing and must not change what any lane tests, and a
+      # postgres major bump can. If the divergence is unintentional it wants its
+      # own issue and its own green run.
+      #
+      # No `flox activate` — docker and bash are host tools, and requiring flox
+      # would force the install step in front of the fastest way to fail.
+      - name: Start postgres (retried pull, ECR → Docker Hub fallback)
+        run: bash .github/scripts/start-postgres.sh
+        env:
+          PG_IMAGE_TAG: '16'
+          PG_HOST_PORT: '54320'
 
       - name: Install Flox
         uses: flox/install-flox-action@v2
@@ -901,25 +901,6 @@ jobs:
         # free parameter: each shard reports and audits itself.
         shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 
-    services:
-      # Postgres for the persistence layer (Stage B1+). Both the SvelteKit
-      # webServer and the Hocuspocus server read DATABASE_URL.
-      postgres:
-        # AWS ECR Public mirror (see note on the unit job) — avoids the flaky
-        # Docker Hub service-container pull.
-        image: public.ecr.aws/docker/library/postgres:17
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: patchtogether_test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U postgres"
-          --health-interval 5s
-          --health-timeout 3s
-          --health-retries 10
-
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/patchtogether_test
       # Run against the prebuilt `vite preview` (:4173) instead of `vite dev`
@@ -956,6 +937,15 @@ jobs:
         uses: actions/checkout@v4
         with:
           lfs: false
+
+      # Postgres as a STEP, not a `services:` block (#1828). A service
+      # container is initialised BEFORE step 1, so a transient registry error
+      # there kills the job with nothing run and nothing a step could have done
+      # about it — and the ECR mirror it replaced was itself the fix for this
+      # exact failure on Docker Hub. The script owns the retry AND falls back
+      # to a second registry; the full argument is on the ci.yml `unit` job.
+      - name: Start postgres (retried pull, ECR → Docker Hub fallback)
+        run: bash .github/scripts/start-postgres.sh
 
       - name: Install Flox
         uses: flox/install-flox-action@v2
@@ -1259,23 +1249,6 @@ jobs:
     # cheap now.)
     timeout-minutes: 40
 
-    services:
-      postgres:
-        # AWS ECR Public mirror (see note on the unit job) — avoids the flaky
-        # Docker Hub service-container pull.
-        image: public.ecr.aws/docker/library/postgres:17
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: patchtogether_test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U postgres"
-          --health-interval 5s
-          --health-timeout 3s
-          --health-retries 10
-
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/patchtogether_test
       # Opt the quarantined @collab DOOM specs back IN for this dedicated,
@@ -1306,6 +1279,15 @@ jobs:
         uses: actions/checkout@v4
         with:
           lfs: false
+
+      # Postgres as a STEP, not a `services:` block (#1828). A service
+      # container is initialised BEFORE step 1, so a transient registry error
+      # there kills the job with nothing run and nothing a step could have done
+      # about it — and the ECR mirror it replaced was itself the fix for this
+      # exact failure on Docker Hub. The script owns the retry AND falls back
+      # to a second registry; the full argument is on the ci.yml `unit` job.
+      - name: Start postgres (retried pull, ECR → Docker Hub fallback)
+        run: bash .github/scripts/start-postgres.sh
 
       - name: Install Flox
         uses: flox/install-flox-action@v2
@@ -1463,21 +1445,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
-    services:
-      postgres:
-        image: public.ecr.aws/docker/library/postgres:17
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: patchtogether_test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U postgres"
-          --health-interval 5s
-          --health-timeout 3s
-          --health-retries 10
-
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/patchtogether_test
       E2E_USE_PREVIEW: '1'
@@ -1490,6 +1457,15 @@ jobs:
         uses: actions/checkout@v4
         with:
           lfs: false
+
+      # Postgres as a STEP, not a `services:` block (#1828). A service
+      # container is initialised BEFORE step 1, so a transient registry error
+      # there kills the job with nothing run and nothing a step could have done
+      # about it — and the ECR mirror it replaced was itself the fix for this
+      # exact failure on Docker Hub. The script owns the retry AND falls back
+      # to a second registry; the full argument is on the ci.yml `unit` job.
+      - name: Start postgres (retried pull, ECR → Docker Hub fallback)
+        run: bash .github/scripts/start-postgres.sh
 
       - name: Install Flox
         uses: flox/install-flox-action@v2
@@ -1694,22 +1670,6 @@ jobs:
     needs: [dsp-build, build-web]
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    services:
-      postgres:
-        # AWS ECR Public mirror (same as the other DB-backed jobs) — avoids the
-        # flaky Docker Hub service-container pull.
-        image: public.ecr.aws/docker/library/postgres:17
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: patchtogether_test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U postgres"
-          --health-interval 5s
-          --health-timeout 3s
-          --health-retries 10
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/patchtogether_test
       # STATISTICAL POWER, bought only where it is cheap (#1337).
@@ -1738,6 +1698,15 @@ jobs:
         uses: actions/checkout@v4
         with:
           lfs: false
+      # Postgres as a STEP, not a `services:` block (#1828). A service
+      # container is initialised BEFORE step 1, so a transient registry error
+      # there kills the job with nothing run and nothing a step could have done
+      # about it — and the ECR mirror it replaced was itself the fix for this
+      # exact failure on Docker Hub. The script owns the retry AND falls back
+      # to a second registry; the full argument is on the ci.yml `unit` job.
+      - name: Start postgres (retried pull, ECR → Docker Hub fallback)
+        run: bash .github/scripts/start-postgres.sh
+
       - name: Install Flox
         uses: flox/install-flox-action@v2
       - name: Cache npm + Playwright browsers

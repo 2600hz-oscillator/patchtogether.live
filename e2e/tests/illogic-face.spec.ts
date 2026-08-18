@@ -141,6 +141,25 @@ interface GateStats {
   /** max |ch1 + ch2 − 1| over the window — the AND/NAND complement, from ONE
    *  snapshot so the two channels are the same instant. */
   complementErr: number;
+  /**
+   * Samples where BOTH channels read ~0 — the fingerprint of a HALF-FILLED
+   * ANALYSER, and the whole subject of #1823.
+   *
+   * ⚠ IT CANNOT HAPPEN IN A CORRECT SIGNAL. With one source into both inputs
+   * AND is the gate and NAND is its complement, so exactly one of them is high
+   * at every sample; even mid-transition the pair sits near 0.5/0.5, not 0/0.
+   * It happens for one reason: the ch2 edge materialised PART-WAY THROUGH the
+   * 2048-sample window, so the older part of ch2's buffer is still the zeros it
+   * was allocated with while ch1 already carries signal. At those indices the
+   * complement reads |0 + 0 − 1| = 1.
+   *
+   * ⚠ AND THIS IS WHY `peakB > 0.9` WAS THE WRONG READINESS TEST. `peak` is an
+   * ANY-sample property (a max) and `complementErr` is an EVERY-sample property
+   * (a pointwise max of error). A part-filled buffer satisfies the first and
+   * fails the second, so the poll certified a window the assertion then
+   * rejected — a gate answering a different question from the one being asked.
+   */
+  bothZero: number;
   total: number;
 }
 
@@ -171,7 +190,8 @@ async function readGate(page: Page, scopeId: string): Promise<GateStats> {
         __patch: { nodes: Record<string, { id: string; type: string; domain: string }> };
       };
       const empty = {
-        peak: 0, peakB: 0, intermediate: 1, sawLow: false, sawHigh: false, complementErr: 1, total: 0,
+        peak: 0, peakB: 0, intermediate: 1, sawLow: false, sawHigh: false, complementErr: 1,
+        bothZero: 0, total: 0,
       };
       const eng = w.__engine?.();
       const node = w.__patch.nodes[scopeId];
@@ -186,6 +206,7 @@ async function readGate(page: Page, scopeId: string): Promise<GateStats> {
       let sawLow = false;
       let sawHigh = false;
       let complementErr = 0;
+      let bothZero = 0;
       for (let i = 0; i < a.length; i++) {
         const v = a[i]!;
         if (Math.abs(v) > peak) peak = Math.abs(v);
@@ -194,15 +215,87 @@ async function readGate(page: Page, scopeId: string): Promise<GateStats> {
         else if (Math.abs(v - 1) < 0.02) sawHigh = true;
         else mid++;
         complementErr = Math.max(complementErr, Math.abs(v + b[i]! - 1));
+        if (Math.abs(v) < 0.02 && Math.abs(b[i]!) < 0.02) bothZero++;
       }
-      return { peak, peakB, intermediate: mid / a.length, sawLow, sawHigh, complementErr, total: a.length };
+      return {
+        peak, peakB, intermediate: mid / a.length, sawLow, sawHigh, complementErr,
+        bothZero, total: a.length,
+      };
     },
     { scopeId },
   );
 }
 
-/** Peak on ch1 alone — used for the SUM-bus positive control after the repatch,
- *  where ch2 carries nothing and the complement is meaningless. */
+/**
+ * Read the scope until the snapshot is FULLY POPULATED on both channels, and
+ * return THAT snapshot — #1823.
+ *
+ * ⚠ THE POINT IS THAT THE VALIDATED WINDOW AND THE ASSERTED WINDOW ARE THE SAME
+ * OBJECT. The previous shape was
+ *
+ *     await expect.poll(() => readGate(...).peak…).toBeGreaterThan(0.9);
+ *     const before = await readGate(...);          // ← a DIFFERENT snapshot
+ *
+ * so readiness was established for one buffer and the complement asserted on
+ * another. Returning the snapshot that passed removes the seam entirely rather
+ * than making it narrower; there is no interval in which the subject can change
+ * because there is no second read.
+ *
+ * ⚠ THE PREDICATE IS DELIBERATELY WEAKER THAN THE ASSERTION, and that is the
+ * design constraint that took the most care. Polling on "the complement holds"
+ * and then asserting the complement would be self-fulfilling — a gate that
+ * cannot fail. `bothZero` is strictly weaker: a correct signal never has both
+ * channels at zero, but plenty of BROKEN ones satisfy it. Both jacks stuck HIGH
+ * gives `bothZero === 0` and `complementErr === 1`, so the assertion keeps its
+ * teeth on exactly the failure mode a readiness check must not swallow.
+ *
+ * ⚠ NOT A LONGER WAIT. The timeout bounds the failure; it is not the mechanism.
+ * The mechanism is that the returned window is PROVEN free of pre-connection
+ * zeros, so a slower machine takes more iterations rather than producing a
+ * differently-correct answer.
+ */
+async function readGateWhenPopulated(
+  page: Page,
+  scopeId: string,
+  what: string,
+): Promise<GateStats> {
+  const deadline = Date.now() + (SLOW_RENDER ? 20_000 : 10_000);
+  let last = await readGate(page, scopeId);
+  while (Date.now() < deadline) {
+    if (last.total > 0 && last.bothZero === 0 && last.peak > 0.9 && last.peakB > 0.9) return last;
+    last = await readGate(page, scopeId);
+  }
+  throw new Error(
+    `${what}: the scope never produced a fully-populated window. ` +
+      `total=${last.total} peak(AND)=${last.peak.toFixed(3)} peak(NAND)=${last.peakB.toFixed(3)} ` +
+      `bothZero=${last.bothZero}/${last.total} samples. ` +
+      `bothZero > 0 means part of the window predates the ch2 edge (the #1823 race); ` +
+      `peak(NAND) ≈ 0 with bothZero ≈ half the window means the NAND jack is genuinely dead.`,
+  );
+}
+
+/**
+ * Peak on ch1 alone — used for the SUM-bus positive control after the repatch,
+ * where ch2 carries nothing and the complement is meaningless.
+ *
+ * ⚠ THE SIBLING AUDIT FOR #1823, RECORDED SO IT IS NOT REDONE OR "FIXED". Two
+ * other places in this file poll `readGate` and they do NOT carry the race,
+ * for a reason that is worth stating rather than rechecking:
+ *
+ *   · the SUM-bus control polls `readPeak(...) < 0.01`. "Peak below a floor" is
+ *     an EVERY-sample property (a max under a bound), so a half-filled window
+ *     can only DELAY it — the live part keeps the peak up — never satisfy it
+ *     early. Safe direction.
+ *   · the #1823 negative control polls `peak > 0.9` and then asserts
+ *     `bothZero > 0`. A stale window can only INCREASE `bothZero`, so again the
+ *     race cannot manufacture a pass.
+ *
+ * The rule the two share, and the one the flake broke: a readiness poll is safe
+ * when the race can only push the measurement AWAY from the assertion's
+ * threshold. It was unsafe at the two complement sites because `peak` (any
+ * sample) and `complementErr` (every sample) move in opposite directions on a
+ * partially-populated buffer.
+ */
 async function readPeak(page: Page, scopeId: string): Promise<number> {
   return (await readGate(page, scopeId)).peak;
 }
@@ -361,20 +454,19 @@ test.describe('illogic face — four identical dials, and the four numbers they 
       ],
     );
 
-    // ⚠ READINESS IS BOTH CHANNELS, not one. The two edges into the scope
-    // materialise independently, and the complement assertion below reads them
-    // together — so polling on AND alone lets a run reach it with NAND's
-    // analyser still full of zeros. Measured: that flaked 1 run in 9, printing
-    // a complement error of exactly 1.0, which reads as "the module broke its
-    // own truth table" and is really "the cable was not plugged in yet".
-    await expect
-      .poll(async () => { const g = await readGate(page, scope); return Math.min(g.peak, g.peakB); }, {
-        message: 'BOTH the AND and NAND jacks must reach full scale in the real engine',
-        timeout: SLOW_RENDER ? 20_000 : 10_000,
-      })
-      .toBeGreaterThan(0.9);
-
-    const before = await readGate(page, scope);
+    // ⚠ READINESS IS A PROPERTY OF THE SNAPSHOT WE ASSERT ON — #1823.
+    //
+    // This used to poll `min(peak, peakB) > 0.9` and then take a SECOND
+    // snapshot to assert against. Both halves were reasonable and the pair was
+    // not: `peak` is an ANY-sample property, the complement is an EVERY-sample
+    // property, so a window whose ch2 edge landed part-way through satisfied the
+    // poll and failed the assertion. Measured at 1 run in 9 on `origin/main`,
+    // printing exactly `1.000e+0` — the fingerprint of |0 + 0 − 1| at the
+    // indices where ch2 was still its allocated zeros.
+    //
+    // `readGateWhenPopulated` returns the window it validated, so there is no
+    // second read and no interval for the subject to change in.
+    const before = await readGateWhenPopulated(page, scope, 'AND/NAND at the shipped defaults');
     expect(before.total, 'the analyser handed us a real buffer').toBeGreaterThan(0);
     expect(before.peakB, 'the NAND channel is live, not still zeros').toBeGreaterThan(0.9);
     expect(before.sawLow && before.sawHigh, 'the window caught BOTH gate levels').toBe(true);
@@ -397,13 +489,10 @@ test.describe('illogic face — four identical dials, and the four numbers they 
     for (const [i, p] of ILLOGIC_ATT_PARAM_IDS.entries()) {
       await setParam(page, il, p, [0, -1, 0.5, -0.25][i]!);
     }
-    await expect
-      .poll(async () => { const g = await readGate(page, scope); return Math.min(g.peak, g.peakB); }, {
-        message: 'AND and NAND after the knob sweep',
-        timeout: SLOW_RENDER ? 20_000 : 10_000,
-      })
-      .toBeGreaterThan(0.9);
-    const after = await readGate(page, scope);
+    // Same seam, same fix — the knob sweep re-writes params but the analyser
+    // window is still 2048 samples wide, so a snapshot taken while the sweep's
+    // effect is straddling it carries pre-sweep samples too.
+    const after = await readGateWhenPopulated(page, scope, 'AND/NAND after the knob sweep');
     expect(after.sawLow && after.sawHigh, 'still toggling after the sweep').toBe(true);
     expect(after.intermediate, 'still a clean gate').toBeLessThan(0.05);
     expect(
@@ -442,5 +531,73 @@ test.describe('illogic face — four identical dials, and the four numbers they 
         timeout: SLOW_RENDER ? 20_000 : 10_000,
       })
       .toBeLessThan(0.01);
+  });
+
+  // ── #1823 · THE READINESS PREDICATE, NEGATIVE-CONTROLLED ─────────────────
+  //
+  // The fix for the 1-in-9 flake replaced a readiness poll that answered a
+  // DIFFERENT question from the assertion (`peak`, an any-sample max) with one
+  // that is a property of the asserted window itself (`bothZero`, an
+  // every-sample count). A readiness check that cannot fail is worse than the
+  // race it replaced — it converts a loud flake into a silent pass — so this
+  // leg proves the predicate discriminates, on a patch where a channel is
+  // genuinely not live.
+  //
+  // ⚠ IT IS ALSO THE PROOF THAT THE PREDICATE IS NOT SELF-FULFILLING. Polling
+  // on the complement and then asserting the complement would be a gate that
+  // cannot fail; `bothZero` is strictly weaker, and the case below is one the
+  // complement assertion would also reject — so readiness rejects a subset of
+  // what the assertion rejects, never a superset.
+  test('#1823 NEGATIVE CONTROL: an unwired NAND jack is REFUSED, not silently awaited', async ({
+    page,
+  }) => {
+    await gotoShell(page);
+    const il = 'il-nc';
+    const scope = 'il-nc-scope';
+    // The SAME patch as the cross-implementation leg, with ONE edge missing:
+    // AND reaches the scope, NAND does not. That is exactly the state the race
+    // produced transiently, made permanent so it can be asserted on.
+    await spawnPatch(
+      page,
+      [
+        { id: 'lfo', type: 'lfo', position: { x: 60, y: 100 }, params: { rate: 100, shape: 2 } },
+        { id: il, type: 'illogic', position: { x: 380, y: 100 } },
+        { id: scope, type: 'scope', position: { x: 700, y: 100 }, params: { timeMs: 100 } },
+      ],
+      [
+        { id: 'n1', from: { nodeId: 'lfo', portId: 'phase0' }, to: { nodeId: il, portId: 'in1' }, sourceType: 'cv', targetType: 'cv' },
+        { id: 'n2', from: { nodeId: 'lfo', portId: 'phase0' }, to: { nodeId: il, portId: 'in2' }, sourceType: 'cv', targetType: 'cv' },
+        { id: 'n3', from: { nodeId: il, portId: 'and' }, to: { nodeId: scope, portId: 'ch1' }, sourceType: 'gate', targetType: 'audio' },
+        // …and deliberately NO edge from `nand` to ch2.
+      ],
+    );
+
+    // AND alone reaches full scale, so this is NOT "nothing is wired" — the
+    // half-live state is the whole point.
+    await expect
+      .poll(async () => (await readGate(page, scope)).peak, {
+        message: 'the AND jack must be live, or this control proves nothing',
+        timeout: SLOW_RENDER ? 20_000 : 10_000,
+      })
+      .toBeGreaterThan(0.9);
+
+    const g = await readGate(page, scope);
+    expect(g.peakB, 'ch2 carries nothing — the NAND edge was never made').toBeLessThan(0.02);
+    expect(
+      g.bothZero,
+      'the stale/dead-channel fingerprint must FIRE here: wherever AND is low, both channels ' +
+        'read zero. If this is 0 the predicate cannot see a dead channel and the readiness ' +
+        'check is decoration.',
+    ).toBeGreaterThan(0);
+    // …and the old predicate's own failure mode, recorded: the complement
+    // reads exactly 1.0 here, which is the number the flake printed.
+    expect(g.complementErr).toBeGreaterThan(0.9);
+
+    // THE ACTUAL CONTRACT: readiness REFUSES this window rather than returning
+    // it, and says which of the two causes it is.
+    await expect(
+      readGateWhenPopulated(page, scope, 'negative control'),
+      'an unwired channel must be reported, never awaited into a pass',
+    ).rejects.toThrow(/fully-populated window/);
   });
 });

@@ -11,10 +11,49 @@ A baseline is one PNG at `__screenshots__/<spec>/<scene>.png`, written by the
 `vrt-update.yml` capture job on ubuntu-latest. **You never commit a baseline.**
 
 ```sh
-flox activate -- task vrt:commit          # dispatch the capture for THIS branch
+flox activate -- task vrt:commit          # dispatch the capture for THIS branch — SCOPED by default
+flox activate -- ALL=1 task vrt:commit    # deliberate FULL sweep (every spec, one job)
+flox activate -- GREP=adsr task vrt:commit  # scope by hand (SINGLE token)
 flox activate -- task vrt                 # local smoke test: does it render, does it throw
 flox activate -- task vrt:docker          # OPTIONAL pixel-exact local loop (needs Docker)
 ```
+
+### The capture is SCOPED BY DEFAULT (#1795)
+
+MEASURED across the eight dispatches of 2026-08-17: **41-56 min unscoped, ~3 min
+scoped.** The capture is one unsharded job over every spec, and the `grep` input
+that fixes that had existed for weeks — nothing chose it for you, so the
+documented entry point swept everything.
+
+A bare `task vrt:commit` now runs `scripts/vrt-scope.mjs decide`, which reads the
+branch's diff against `origin/main` and prints, BEFORE dispatching: the token it
+chose, the files that produced it, and how many of the discovered tests that
+token selects. It is **deny-by-default** — one module, or the full sweep:
+
+| what changed | what you get |
+|---|---|
+| files of exactly ONE module (paths, or a shared roster file whose diff registers it) | `SCOPE <type>` |
+| two or more modules (e.g. the moog921a/921b pair) | FULL, with both tokens named |
+| a renderable file attributable to no module (shared primitive, stylesheet, spec, lockfile) | FULL, with the file named |
+| nothing that can move a pixel (CI, prose, `*.test.ts`, attest receipts) | REFUSES to dispatch (exit 3) |
+
+- ⚠ **The token is ONE shell-safe word**, derived or hand-passed, and both the
+  Taskfile and the workflow refuse anything else. `task vrt:update -- --grep
+  "$GREP"` goes through go-task's **unquoted** CLI_ARGS join, so `a|b` becomes a
+  PIPE — most likely a capture with no grep at all, silently rewriting every
+  baseline. (Same reason ci.yml's `vrt-strict-shard` bypasses the Taskfile to
+  pass its own alternation.)
+- **Why a scoped default is safe:** a scoped capture cannot silently
+  under-capture where it *gates* — `vrt-strict` (required, 4 shards, the strict
+  card set plus **every** face) reddens on the next CI run and names the file.
+  Worst case is one extra round trip. ⚠ Its limit, stated honestly: the
+  informational full `vrt` job was deleted from ci.yml on 2026-08-17, so specs
+  outside the strict set are compared by no lane at all — scoping does not
+  weaken a gate there because there is no gate there.
+- The workflow re-checks the token on the runner and **refuses a grep that
+  selects zero tests**: a capture that renders nothing commits nothing and
+  SUCCEEDS, which is indistinguishable from "ran and found no drift".
+- Sharding the full sweep is the other half and is **not** done: #1824.
 
 - **A local macOS run is not a verification.** It compares Metal-rendered text
   against a linux baseline, so it reports AA/font drift that is not a

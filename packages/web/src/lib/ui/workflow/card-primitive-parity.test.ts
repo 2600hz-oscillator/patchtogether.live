@@ -143,7 +143,9 @@ const FACE_ANSWER: Readonly<Record<string, FaceAnswer>> = {
     via: 'ambient',
     why:
       'a printed value, not an affordance. The face has FaceReadout (hero + `readouts` sidebar ' +
-      'block) plus every cell\'s own persistentReadout at the dock.',
+      'block). ⚠ It no longer has a per-cell resting readout: owner ruling 2026-08-17 removed ' +
+      'the printed decimal from every face and `persistentReadout` is deleted, so a cell ' +
+      'paints a value only when it is a declared option/landmark NAME (see paintsReadout).',
   },
   MidiAssignButton: {
     via: 'ambient',
