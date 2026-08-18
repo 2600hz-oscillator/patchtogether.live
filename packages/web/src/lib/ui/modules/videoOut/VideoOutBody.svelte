@@ -201,9 +201,13 @@
       if (ew !== engineW) engineW = ew;
       if (eh !== engineH) engineH = eh;
       if (!harnessFrozen() && !document.hidden) {
-        // ⚠ markWatched RUNS EVEN WHILE DETACHED — it keeps the node a PULL ROOT
-        // so the chain goes on rendering. Only the BLIT is skipped, because the
-        // floating panel is doing that readback instead: detaching MOVES the
+        // ⚠ markWatched RUNS EVEN WHILE DETACHED, and skipping the blit is
+        // exactly why it has to. `blitOutputToDrawingBuffer` marks the node
+        // watched as its first act — *"a blit IS the 'something is showing this
+        // node' signal for pull evaluation"* (engine.ts) — so a surface that
+        // stops blitting silently stops watching, and pull-eval drops the
+        // upstream chain after WATCH_TTL_MS. Only the READBACK is skipped,
+        // because the floating panel is doing it instead: detaching MOVES the
         // picture, it does not clone it (the #1802 per-card cost), and it never
         // stops the engine (the collapse-kills-the-producer class).
         videoEngine.markWatched?.(nodeId);

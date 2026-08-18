@@ -301,12 +301,19 @@
     }
     // ⚠ WHILE DETACHED, THIS CARD DOES NOT BLIT — the floating panel does, and
     // paying twice for one picture is exactly the per-card cost #1802 is about.
-    // `markWatched` still runs, because that is what keeps the node a PULL ROOT:
-    // stop it and the upstream chain freezes, so the detached panel would show a
-    // stale frame (the collapse-kills-the-producer class — #1721 collapsing a
-    // group killed a CARD_PRODUCER pump, #1728 collapsing a card blanked the
-    // Launchpad). Detaching changes what THIS SURFACE paints, never what the
-    // engine produces.
+    //
+    // ⚠ BUT `markWatched` MUST STILL RUN, AND SKIPPING THE BLIT IS PRECISELY WHY.
+    // `VideoEngine.blitOutputToDrawingBuffer` marks the node watched as its FIRST
+    // act, and says so: *"a blit IS the 'something is showing this node' signal
+    // for pull evaluation"* (engine.ts, above `markWatched(nodeId)`). So a card
+    // that stops blitting silently stops WATCHING, pull-eval drops the upstream
+    // chain after WATCH_TTL_MS, and the detached panel goes stale — the
+    // collapse-kills-the-producer class (#1721 collapsing a group killed a
+    // CARD_PRODUCER pump; #1728 collapsing a card blanked the Launchpad). Calling
+    // it explicitly here keeps the signal while dropping only the readback.
+    // (The panel independently marks watched AND holds a render lease, so this is
+    // belt-and-braces — but the belt is the one that survives the panel changing.)
+    // Detaching changes what THIS SURFACE paints, never what the engine produces.
     if (detached) {
       try {
         videoEngine.markWatched?.(id);
