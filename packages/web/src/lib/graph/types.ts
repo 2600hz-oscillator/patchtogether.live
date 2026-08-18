@@ -573,6 +573,34 @@ export interface ModuleFacePage {
    * (module-face-lint) reading exactly one membership list.
    */
   clusters?: readonly { label: string; controls: readonly string[] }[];
+  /**
+   * HOW THIS BAND'S CLUSTERS FLOW. `'stack'` (the default, and what every band
+   * did before this field existed) puts each cluster on its own row; `'row'`
+   * sets them side by side and wraps.
+   *
+   * ⚠ IT IS A PER-BAND DECLARATION, NOT A PLATFORM RULE, and the difference is
+   * measured. `dock-row-plan` packs whole BANDS onto a row from their cell
+   * count alone, and doing the same to clusters would reflow every faced module
+   * that declares them (adsr, analogVco, bluebox, charlottesEchos, cofefve,
+   * cube, karplus, kickdrum, pentemelodica, sixstrum, snaredrum, tidyVco …) for
+   * one face's owner review. It is also not always right: stacking is what
+   * makes a CONSOLE GRID work — mixmstrs' `channels` band aligns column N of
+   * `level` / `low` / `mid` / `high` because the four clusters sit one under
+   * the other, and side-by-side would destroy exactly the alignment owner
+   * review of #1738 asked for.
+   *
+   * So the module says which shape its band is. `'row'` is for clusters that
+   * are PEERS wide enough to sit together and narrow enough to fit — mixmstrs'
+   * two RETURN strips (owner, 2026-08-17: *"return 1 and return 2 can sit next
+   * to each other, too, saving on vertical space and reducing unused horizontal
+   * space"*) — and it turns the CONSOLE GRID off for that band, because a
+   * shared column ruler and a side-by-side flow are contradictory requests.
+   *
+   * UI metadata like the rest of `face`: OUT of contract-signature /
+   * contract-lock, linted by module-face-lint.test.ts (a band declaring `'row'`
+   * must actually HAVE clusters, or the declaration is a silent no-op).
+   */
+  clusterFlow?: 'stack' | 'row';
 }
 
 /**
@@ -739,7 +767,7 @@ export interface ModuleFace {
    * can chart; the exact packed-RGB space for a colour; a CONTINUOUS scale for
    * a fader — the first two are discrete-only, the third discrete-never).
    */
-  paramCells?: Readonly<Record<string, 'grid' | 'color' | 'fader' | 'neon-fader'>>;
+  paramCells?: Readonly<Record<string, 'grid' | 'color' | 'fader'>>;
   /**
    * DECLARED 2-D PADS — the one cell that binds a PAIR of params.
    *
@@ -791,6 +819,71 @@ export interface ModuleFace {
    * module grows a NEW switch-shaped param that nobody classified.
    */
   momentary?: readonly string[];
+  /**
+   * CHANNEL ACCENT (#1825) — the param ids of each CHANNEL, in column order, so
+   * the shell can paint channel N's controls in the colour of clip/automation
+   * LANE N instead of the module's domain accent.
+   *
+   * Owner, 2026-08-17: *"for mixmstrs only, ch1-8 instead of neon blue, all
+   * controls should match the assigned color of its lane."* A mixer channel IS
+   * a lane — the same index that colours the automation lane, the clip row, the
+   * Launchpad pad and the assigned card's border — and a console whose eight
+   * strips are one colour makes the player count columns to find theirs.
+   *
+   * ⚠ PLAIN, DERIVED DATA. Outer index = channel = LANE index (0-based); the
+   * def builds each inner list by FILTERING ITS OWN `params` through its own
+   * naming rule, so a new per-channel control joins with no edit and no count
+   * is ever typed. An id listed twice, or a listed id the def does not declare,
+   * is red (module-face-lint).
+   *
+   * ⚠ THE COLOUR REACHES THE CELL THROUGH THE ACCENT CHAIN, never per control:
+   * ModuleShell sets `--ka` on the cell and passes the same value as
+   * `KnobConic`'s `accent`, and every neon primitive resolves
+   * `--_ka: var(--ka, var(--domain, var(--accent)))`. Hard-coding a colour onto
+   * a control is what produced #1812.
+   *
+   * ⚠ THE NO-LANE FALLBACK IS THE DOMAIN ACCENT. A rack with no clip player has
+   * no lane colours at all, so the face paints exactly as it does today — the
+   * declaration changes nothing on its own.
+   *
+   * UI metadata like the rest of `face`: OUT of contract-signature /
+   * contract-lock (a colour source is not an I/O change).
+   */
+  channelAccent?: readonly (readonly string[])[];
+  /**
+   * PARAM IDS WHOSE CELL PAINTS NO CAPTION — the `.label` line under the
+   * control is not rendered at the DOCK.
+   *
+   * ⚠ THE ACCESSIBLE NAME IS UNTOUCHED. `aria-label`, the right-click annotate
+   * menu's title and MIDI-learn's address all still carry the param's `label`;
+   * the primitives take a `hideCaption` prop precisely so a caller cannot
+   * achieve this by dropping `label`, which would leave an unnamed control.
+   *
+   * ⚠ AND IT IS DECLARED PER PARAM, NOT PER TIER OR PER FACE, because the rule
+   * it encodes is about REDUNDANCY and only the module knows. Owner ruling
+   * 2026-08-17, stated as a contrast rather than a preference:
+   *
+   *   *"the 1lo 1md 1hi etc labels should also go away because the low/mid/high
+   *   labels above the knob rows convey that fine"*
+   *   *"mixmstrs is different than tidyvco because tidyvco does need some of
+   *   the gray labels -- like a/d/s/r would not be comprehensible without
+   *   them"*
+   *
+   * So: a caption earns its place when it disambiguates otherwise-identical
+   * controls (tidyVco's four EG knobs are `A`/`D`/`S`/`R` and nothing else
+   * separates them), and is clutter when a section heading already conveys it
+   * (mixmstrs' `1LO…8LO` under a `LOW` cluster heading). A tier-wide switch
+   * cannot tell those apart, which is why there isn't one.
+   *
+   * ⚠ DOCK ONLY, BY THE SAME ARGUMENT. A lane tile has no section headings at
+   * all, so the heading that makes the caption redundant is not on screen —
+   * ModuleShell gates this on `faceplateView` and the lane keeps every label.
+   *
+   * UI metadata like the rest of `face`: OUT of contract-signature /
+   * contract-lock, linted by module-face-lint.test.ts (every id must be a
+   * declared param that is also ranked in `order`, and must not repeat).
+   */
+  bareCells?: readonly string[];
   /** OPTIONAL rear-card curation (the dock flip-side jack field). Derivation
    *  covers most modules — voice/signal band + one band per `pages` page (the
    *  CV holes targeting that page's params) + the OUTPUTS rail — so this is

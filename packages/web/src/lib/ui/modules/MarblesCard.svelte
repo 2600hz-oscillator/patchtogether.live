@@ -16,7 +16,7 @@
   // including X DÉJÀ VU, which is half of the module's headline feature. Both
   // are added here. (marbles is in EXEMPT_FROM_VRT, so no baseline moves.)
   import type { NodeProps } from '@xyflow/svelte';
-  import Fader from '$lib/ui/controls/Fader.svelte';
+  import NeonFader from '$lib/ui/controls/NeonFader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import OssAttribution from '$lib/ui/modules/OssAttribution.svelte';
   import { patch } from '$lib/graph/store';
@@ -81,27 +81,27 @@
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="fader-row">
-      <Fader value={paramVal('rate')}      min={pRate.min}     max={pRate.max}     defaultValue={pRate.defaultValue}     label={pRate.label}     units={pRate.units ?? ''} curve={pRate.curve}     onchange={set('rate')}      moduleId={id} paramId="rate"      readLive={live('rate')} />
-      <Fader value={paramVal('t_bias')}    min={pTBias.min}    max={pTBias.max}    defaultValue={pTBias.defaultValue}    label={pTBias.label}   curve={pTBias.curve}    onchange={set('t_bias')}    moduleId={id} paramId="t_bias"    readLive={live('t_bias')} />
-      <Fader value={paramVal('t_jitter')}  min={pTJitter.min}  max={pTJitter.max}  defaultValue={pTJitter.defaultValue}  label={pTJitter.label}   curve={pTJitter.curve}  onchange={set('t_jitter')}  moduleId={id} paramId="t_jitter"  readLive={live('t_jitter')} />
+      <NeonFader value={paramVal('rate')}      min={pRate.min}     max={pRate.max}     defaultValue={pRate.defaultValue}     label={pRate.label}     units={pRate.units ?? ''} curve={pRate.curve}     onchange={set('rate')}      moduleId={id} paramId="rate"      readLive={live('rate')} />
+      <NeonFader value={paramVal('t_bias')}    min={pTBias.min}    max={pTBias.max}    defaultValue={pTBias.defaultValue}    label={pTBias.label}   curve={pTBias.curve}    onchange={set('t_bias')}    moduleId={id} paramId="t_bias"    readLive={live('t_bias')} />
+      <NeonFader value={paramVal('t_jitter')}  min={pTJitter.min}  max={pTJitter.max}  defaultValue={pTJitter.defaultValue}  label={pTJitter.label}   curve={pTJitter.curve}  onchange={set('t_jitter')}  moduleId={id} paramId="t_jitter"  readLive={live('t_jitter')} />
       <!-- PWidth: the t1/t2 gate width, 5 % + 90 % × PW of the step. It was a
            declared param with a CV input and no card control at all. -->
-      <Fader value={paramVal('pw_mean')}   min={pPwMean.min}   max={pPwMean.max}   defaultValue={pPwMean.defaultValue}   label={pPwMean.label}   curve={pPwMean.curve}   onchange={set('pw_mean')}   moduleId={id} paramId="pw_mean"   readLive={live('pw_mean')} />
-      <Fader value={paramVal('deja_vu')}   min={pDejaVu.min}   max={pDejaVu.max}   defaultValue={pDejaVu.defaultValue}   label={pDejaVu.label}  curve={pDejaVu.curve}   onchange={set('deja_vu')}   moduleId={id} paramId="deja_vu"   readLive={live('deja_vu')} />
+      <NeonFader value={paramVal('pw_mean')}   min={pPwMean.min}   max={pPwMean.max}   defaultValue={pPwMean.defaultValue}   label={pPwMean.label}   curve={pPwMean.curve}   onchange={set('pw_mean')}   moduleId={id} paramId="pw_mean"   readLive={live('pw_mean')} />
+      <NeonFader value={paramVal('deja_vu')}   min={pDejaVu.min}   max={pDejaVu.max}   defaultValue={pDejaVu.defaultValue}   label={pDejaVu.label}  curve={pDejaVu.curve}   onchange={set('deja_vu')}   moduleId={id} paramId="deja_vu"   readLive={live('deja_vu')} />
       <!-- The mapping is BOUND, not re-typed: the def declares both loop
            lengths discrete, and this card used to hand-type the linear form,
            which let the fader commit 8.37 into a param the engine then floors —
            the dial's position and the value it stored disagreed by up to half a
            step. `card-range-source` greps the SOURCE for that literal, so the
            previous wording of this very comment failed the gate. -->
-      <Fader value={paramVal('length')}    min={pLength.min}   max={pLength.max}   defaultValue={pLength.defaultValue}   label={pLength.label}   curve={pLength.curve}   onchange={set('length')}    moduleId={id} paramId="length"    readLive={live('length')} />
-      <Fader value={paramVal('spread')}    min={pSpread.min}   max={pSpread.max}   defaultValue={pSpread.defaultValue}   label={pSpread.label}   curve={pSpread.curve}   onchange={set('spread')}    moduleId={id} paramId="spread"    readLive={live('spread')} />
-      <Fader value={paramVal('x_bias')}    min={pXBias.min}    max={pXBias.max}    defaultValue={pXBias.defaultValue}    label={pXBias.label}   curve={pXBias.curve}    onchange={set('x_bias')}    moduleId={id} paramId="x_bias"    readLive={live('x_bias')} />
-      <Fader value={paramVal('steps')}     min={pSteps.min}    max={pSteps.max}    defaultValue={pSteps.defaultValue}    label={pSteps.label}    curve={pSteps.curve}    onchange={set('steps')}     moduleId={id} paramId="steps"     readLive={live('steps')} />
+      <NeonFader value={paramVal('length')}    min={pLength.min}   max={pLength.max}   defaultValue={pLength.defaultValue}   label={pLength.label}   curve={pLength.curve}   onchange={set('length')}    moduleId={id} paramId="length"    readLive={live('length')} />
+      <NeonFader value={paramVal('spread')}    min={pSpread.min}   max={pSpread.max}   defaultValue={pSpread.defaultValue}   label={pSpread.label}   curve={pSpread.curve}   onchange={set('spread')}    moduleId={id} paramId="spread"    readLive={live('spread')} />
+      <NeonFader value={paramVal('x_bias')}    min={pXBias.min}    max={pXBias.max}    defaultValue={pXBias.defaultValue}    label={pXBias.label}   curve={pXBias.curve}    onchange={set('x_bias')}    moduleId={id} paramId="x_bias"    readLive={live('x_bias')} />
+      <NeonFader value={paramVal('steps')}     min={pSteps.min}    max={pSteps.max}    defaultValue={pSteps.defaultValue}    label={pSteps.label}    curve={pSteps.curve}    onchange={set('steps')}     moduleId={id} paramId="steps"     readLive={live('steps')} />
       <!-- X Déjà Vu: the X half of the module's headline control, and the
            second param that had no card affordance. -->
-      <Fader value={paramVal('x_deja_vu')} min={pXDejaVu.min}  max={pXDejaVu.max}  defaultValue={pXDejaVu.defaultValue}  label={pXDejaVu.label}   curve={pXDejaVu.curve}  onchange={set('x_deja_vu')} moduleId={id} paramId="x_deja_vu" readLive={live('x_deja_vu')} />
-      <Fader value={paramVal('x_length')}  min={pXLength.min}  max={pXLength.max}  defaultValue={pXLength.defaultValue}  label={pXLength.label}    curve={pXLength.curve}  onchange={set('x_length')}  moduleId={id} paramId="x_length"  readLive={live('x_length')} />
+      <NeonFader value={paramVal('x_deja_vu')} min={pXDejaVu.min}  max={pXDejaVu.max}  defaultValue={pXDejaVu.defaultValue}  label={pXDejaVu.label}   curve={pXDejaVu.curve}  onchange={set('x_deja_vu')} moduleId={id} paramId="x_deja_vu" readLive={live('x_deja_vu')} />
+      <NeonFader value={paramVal('x_length')}  min={pXLength.min}  max={pXLength.max}  defaultValue={pXLength.defaultValue}  label={pXLength.label}    curve={pXLength.curve}  onchange={set('x_length')}  moduleId={id} paramId="x_length"  readLive={live('x_length')} />
     </div>
   </PatchPanel>
   <OssAttribution author={marblesDef.ossAttribution?.author} />

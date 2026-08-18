@@ -9,13 +9,13 @@
 // prop silently drops the feature.
 //
 // This test scans every module card's .svelte source, finds every <Knob>
-// and <Fader> instance, and asserts each one declares moduleId + paramId.
+// and <NeonFader> instance, and asserts each one declares moduleId + paramId.
 // It runs at ~zero cost (pure string scan, no jsdom mount, no WASM) and both
 // (a) audits the whole module surface today and (b) prevents regressions:
 // any newly-added un-wired control fails this test.
 //
 // EXCEPTIONS — a 2D joystick / XY pad is not a single-CC param, so it doesn't
-// render as a <Knob>/<Fader> at all (bespoke pad <div>s). Two cases:
+// render as a <Knob>/<NeonFader> at all (bespoke pad <div>s). Two cases:
 //   * The shared <XyPad> control (VideoCube) exposes a PER-AXIS MIDI/Electra
 //     assign button, so its TWO axes ARE assignable — the third test below
 //     (`every <XyPad> axis is MIDI-assignable`) COVERS them: every XyPad in a
@@ -55,7 +55,7 @@ const ALLOWED_UNWIRED: Record<string, { count: number; reason: string }> = {
   // contract change, tracked as #1673, not something to smuggle in behind a
   // faceplate promotion.
   //
-  // The count is the ratchet: one source `<Fader>` rendered per FIELDS entry.
+  // The count is the ratchet: one source `<NeonFader>` rendered per FIELDS entry.
   // If it moves, this entry reddens and someone re-reads the reason instead of
   // inheriting it.
   'WarrensspectrumBankPanel.svelte': {
@@ -77,19 +77,27 @@ function stripComments(src: string): string {
 }
 
 interface ControlInstance {
-  kind: 'Knob' | 'Fader';
+  kind: 'Knob' | 'NeonFader';
   tag: string;
   hasModuleId: boolean;
   hasParamId: boolean;
 }
 
-/** Parse every <Knob ...> / <Fader ...> opening tag, walking to the tag's
+/** Parse every <Knob ...> / <NeonFader ...> opening tag, walking to the tag's
  *  closing '>' while respecting nested `{...}` Svelte expressions and
  *  '/" / backtick string literals (so attribute values like
- *  paramId={`trk${t}_x`} don't end the tag early). */
+ *  paramId={`trk${t}_x`} don't end the tag early).
+ *
+ * ⚠ THE ALTERNATION IS THE WHOLE AUDIT'S SUBJECT, AND #1794 NEARLY EMPTIED IT.
+ * This read `/<(Knob|Fader)[\s/>]/`, and `<NeonFader` DOES NOT MATCH THAT — the
+ * `<` must sit immediately before the name. Migrating every card off
+ * `Fader.svelte` would therefore have removed ~460 controls from the audit
+ * silently, leaving a green gate that had stopped looking at faders entirely.
+ * The two anti-vacuity floors at the bottom of this file are what would have
+ * turned that from invisible into red; they are the reason this was caught. */
 function parseControls(src: string): ControlInstance[] {
   const out: ControlInstance[] = [];
-  const re = /<(Knob|Fader)[\s/>]/g;
+  const re = /<(Knob|NeonFader)[\s/>]/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(src)) !== null) {
     let i = re.lastIndex - 1; // back up onto the delimiter char
@@ -114,7 +122,7 @@ function parseControls(src: string): ControlInstance[] {
     }
     const tag = src.slice(m.index, end >= 0 ? end + 1 : m.index + 200);
     out.push({
-      kind: m[1] as 'Knob' | 'Fader',
+      kind: m[1] as 'Knob' | 'NeonFader',
       tag,
       hasModuleId: /\bmoduleId\b/.test(tag),
       hasParamId: /\bparamId\b/.test(tag),
@@ -178,7 +186,7 @@ function parseXyPads(src: string): XyPadInstance[] {
 }
 
 describe('MIDI Learn wiring audit (static scan of every module card)', () => {
-  it('every <Knob> / <Fader> in every card passes moduleId + paramId', () => {
+  it('every <Knob> / <NeonFader> in every card passes moduleId + paramId', () => {
     const offenders: string[] = [];
     let totalControls = 0;
     let cardsWithControls = 0;

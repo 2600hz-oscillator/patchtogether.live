@@ -1,7 +1,7 @@
 <script lang="ts">
   // DestructorCard — RGB-shift / scanline / posterize glitch effect.
   import { type NodeProps } from '@xyflow/svelte';
-  import Fader from '$lib/ui/controls/Fader.svelte';
+  import NeonFader from '$lib/ui/controls/NeonFader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import { setNodeParam } from '$lib/graph/mutate';
   import { destructorDef } from '$lib/video/modules/destructor';
@@ -30,10 +30,10 @@
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="fader-grid">
-      <Fader value={p('shift')}     min={0} max={1} defaultValue={destructorDef.params.find((x) => x.id === 'shift')!.defaultValue}     label="Shift"  curve="linear" onchange={setParam('shift')} moduleId={id} paramId="shift" />
-      <Fader value={p('scanline')}  min={0} max={1} defaultValue={destructorDef.params.find((x) => x.id === 'scanline')!.defaultValue}  label="Scan"   curve="linear" onchange={setParam('scanline')} moduleId={id} paramId="scanline" />
-      <Fader value={p('posterize')} min={0} max={1} defaultValue={destructorDef.params.find((x) => x.id === 'posterize')!.defaultValue} label="Post"   curve="linear" onchange={setParam('posterize')} moduleId={id} paramId="posterize" />
-      <Fader value={p('mangle')}    min={0} max={1} defaultValue={destructorDef.params.find((x) => x.id === 'mangle')!.defaultValue}    label="Mangle" curve="linear" onchange={setParam('mangle')} moduleId={id} paramId="mangle" />
+      <NeonFader value={p('shift')}     min={0} max={1} defaultValue={destructorDef.params.find((x) => x.id === 'shift')!.defaultValue}     label="Shift"  curve="linear" onchange={setParam('shift')} moduleId={id} paramId="shift" />
+      <NeonFader value={p('scanline')}  min={0} max={1} defaultValue={destructorDef.params.find((x) => x.id === 'scanline')!.defaultValue}  label="Scan"   curve="linear" onchange={setParam('scanline')} moduleId={id} paramId="scanline" />
+      <NeonFader value={p('posterize')} min={0} max={1} defaultValue={destructorDef.params.find((x) => x.id === 'posterize')!.defaultValue} label="Post"   curve="linear" onchange={setParam('posterize')} moduleId={id} paramId="posterize" />
+      <NeonFader value={p('mangle')}    min={0} max={1} defaultValue={destructorDef.params.find((x) => x.id === 'mangle')!.defaultValue}    label="Mangle" curve="linear" onchange={setParam('mangle')} moduleId={id} paramId="mangle" />
     </div>
   </PatchPanel>
 </div>

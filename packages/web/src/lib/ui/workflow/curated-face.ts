@@ -22,6 +22,7 @@
 // — that is the lint gate's job (module-face-lint.test.ts). The selector treats
 // an unrecognized key as a humanized static control so it stays pure.
 
+import { paintsReadout } from '$lib/ui/controls/knob-vocabulary-model';
 import type { ModuleFace, ModuleFacePage, ParamLandmark, ParamOption } from '$lib/graph/types';
 import {
   LANE_CELL_H,
@@ -151,12 +152,20 @@ export function foldedOrder(face: ModuleFace): readonly string[] {
   return face.order.filter((k) => !partners.has(k));
 }
 
-/** Does this param earn a persistent readout line under its dial? Mirrors
- *  `knobReadout`'s gate (knob-vocabulary-model): declaring ANY of the three
- *  vocabulary fields prints a line, declaring none prints nothing. A named
- *  predicate so the HEIGHT here and the RENDER there answer one question once. */
+/**
+ * Does this param paint a readout line under its dial?
+ *
+ * ⚠ IT CALLS THE RENDERER'S OWN PREDICATE — it does not mirror it. This used to
+ * be a re-typed copy of `knobReadout`'s condition with a comment claiming the
+ * HEIGHT here and the RENDER there "answer one question once", and the moment
+ * the render gate changed (a declared numeric `format` stopped painting, owner
+ * 2026-08-17) the copy went on reserving `LANE_KNOB_READOUT_H` for a line
+ * nothing draws — 15 px of blank per cell on adsr, delay, kickdrum, ringback,
+ * vca and sidecar, i.e. exactly the useless space the same review was about.
+ * Importing the predicate is what makes the claim true instead of aspirational.
+ */
 function earnsReadout(p: FaceParamLike): boolean {
-  return !!(p.options?.length || p.landmarks?.length || p.format);
+  return paintsReadout(p);
 }
 
 /**
@@ -266,6 +275,29 @@ export interface FaceControl {
   familyId?: string;
   /** Friendly display name (ParamDef.label / humanized family or static key). */
   label: string;
+  /**
+   * Present iff this cell is a declared 2-D PAD (`face.xyPads`) — the PARTNER
+   * axis's ParamDef id, i.e. the second param this ONE cell binds.
+   *
+   * ⚠ IT EXISTS BECAUSE `xy` IS THE ONLY CELL KIND WITH ARITY 2, and every
+   * coverage rule in the repo counts params per CELL. Without it a pad's `y`
+   * axis is invisible to the dock render-plan parity gate — the gate that
+   * exists to prove no control silently fails to reach the user — so the two
+   * available authorings were BOTH red and neither was wrong:
+   *
+   *   `y` listed in the page  → the page resolves it to its OWN cell, so the
+   *                             dock paints a stray dial beside the pad that
+   *                             already contains it (faces-parity: two unbacked
+   *                             extras in the control multiset);
+   *   `y` omitted from the page → the plan sees it ZERO times and parity calls
+   *                             it a dropped control.
+   *
+   * Found by `backdraft`, the first `face.xyPads` adopter in the repo: the kind
+   * shipped one PR ahead of any consumer, and the FOLD half never landed. The
+   * pure gate and the DOM gate disagreed, which is exactly the signature of a
+   * model that is blind to something the renderer does.
+   */
+  padPartnerParamId?: string;
 }
 
 /** A resolved cluster sub-header inside a page/band (the front-side mirror of
@@ -287,6 +319,9 @@ export interface ResolvedFacePage {
   hint: string;
   controls: FaceControl[];
   clusters: FaceCluster[];
+  /** `ModuleFacePage.clusterFlow`, resolved — 'stack' when the page declares
+   *  none, so every existing band keeps exactly the layout it had. */
+  clusterFlow: 'stack' | 'row';
 }
 
 /** The selector's result. `pages` is present only for the 'dock' tier (and only
@@ -365,7 +400,13 @@ export function resolveFaceControl(key: string, def: FaceDefLike): FaceControl {
   }
   const param = params.find((p) => p.id === key);
   if (param) {
-    return { key, kind: 'param', paramId: key, label: param.label || humanize(key) };
+    const ctl: FaceControl = { key, kind: 'param', paramId: key, label: param.label || humanize(key) };
+    // A declared pad ANCHORS at its `x` key and binds `y` in the SAME cell.
+    // Recorded here so every coverage consumer credits both axes to one cell
+    // instead of losing the partner (see `padPartnerParamId`).
+    const pad = (def.face?.xyPads ?? []).find((p) => p.x === key);
+    if (pad) ctl.padPartnerParamId = pad.y;
+    return ctl;
   }
   return { key, kind: 'static', label: humanize(key) };
 }
@@ -379,11 +420,21 @@ export function resolveFaceControl(key: string, def: FaceDefLike): FaceControl {
  * dock); module-face-lint fails that authoring mistake loudly.
  */
 function resolvePage(page: ModuleFacePage, def: FaceDefLike): ResolvedFacePage {
-  const all = page.controls.map((k) => resolveFaceControl(k, def));
+  // ⚠ THE FOLD APPLIES HERE TOO, and it did not used to. `curatedFace` folds
+  // pad partners out of `order` (`foldedOrder`) but pages were resolved from
+  // the RAW `page.controls`, so a face that listed both axes — which the xyPads
+  // lint REQUIRES in `face.order`, and which reads natural to write in a page —
+  // painted the partner twice: once inside the pad, once as a stray dial. One
+  // fold seam, applied at every place a control roster is resolved.
+  const partners = new Set((def.face?.xyPads ?? []).map((p) => p.y));
+  const all = page.controls
+    .filter((k) => !partners.has(k))
+    .map((k) => resolveFaceControl(k, def));
   const hint = page.hint?.trim() ?? '';
   const declared = page.clusters ?? [];
+  const clusterFlow = page.clusterFlow ?? 'stack';
   if (!declared.length) {
-    return { id: page.id, label: page.label, hint, controls: all, clusters: [] };
+    return { id: page.id, label: page.label, hint, controls: all, clusters: [], clusterFlow };
   }
   const byKey = new Map(all.map((c) => [c.key, c]));
   const claimed = new Set<string>();
@@ -406,6 +457,7 @@ function resolvePage(page: ModuleFacePage, def: FaceDefLike): ResolvedFacePage {
     hint,
     controls: all.filter((c) => !claimed.has(c.key)),
     clusters,
+    clusterFlow,
   };
 }
 
@@ -474,6 +526,11 @@ export interface DockFaceBand {
   hint: string;
   controls: FaceControl[];
   clusters: FaceCluster[];
+  /** How the band's clusters flow — 'stack' (one per row, the default and the
+   *  only behaviour before `ModuleFacePage.clusterFlow` existed) or 'row'
+   *  (side by side, wrapping). A 'row' band is never a CONSOLE GRID: a shared
+   *  column ruler and a side-by-side flow are contradictory requests. */
+  clusterFlow: 'stack' | 'row';
 }
 
 /** EVERY cell a dock plan paints, band order, un-clustered before clustered.
@@ -497,7 +554,16 @@ export function dockFacePlan(def: FaceDefLike): DockFaceBand[] | null {
 
   const pages = dock.pages ?? [];
   if (!pages.length) {
-    return [{ id: DOCK_ALL_BAND_ID, label: '', hint: '', controls: dock.controls, clusters: [] }];
+    return [
+      {
+        id: DOCK_ALL_BAND_ID,
+        label: '',
+        hint: '',
+        controls: dock.controls,
+        clusters: [],
+        clusterFlow: 'stack',
+      },
+    ];
   }
 
   const bands: DockFaceBand[] = pages.map((p) => ({
@@ -506,6 +572,7 @@ export function dockFacePlan(def: FaceDefLike): DockFaceBand[] | null {
     hint: p.hint,
     controls: p.controls,
     clusters: p.clusters,
+    clusterFlow: p.clusterFlow,
   }));
   // A clustered cell is still CLAIMED by its page — the tail must sweep only
   // what no page mentions at all, never a cell a cluster pulled aside.
@@ -514,7 +581,14 @@ export function dockFacePlan(def: FaceDefLike): DockFaceBand[] | null {
   );
   const unpaged = dock.controls.filter((c) => !claimed.has(c.key));
   if (unpaged.length) {
-    bands.push({ id: DOCK_UNPAGED_BAND_ID, label: 'more', hint: '', controls: unpaged, clusters: [] });
+    bands.push({
+      id: DOCK_UNPAGED_BAND_ID,
+      label: 'more',
+      hint: '',
+      controls: unpaged,
+      clusters: [],
+      clusterFlow: 'stack',
+    });
   }
   return bands;
 }

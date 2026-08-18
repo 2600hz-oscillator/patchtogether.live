@@ -30,9 +30,10 @@
   //     in the same colour over the same unlit remainder.
   //   * the 5 px GLOW — `box-shadow: 0 0 5px var(--_ka)` (KnobConic:391), on
   //     the thumb, which is this control's pointer.
-  //   * the READOUT: 9 px mono, uppercase, `0.06em`, coloured `--_ka`
-  //     (KnobConic:429-443), with the same `readout-<paramId>` testid.
-  //   * the LABEL: 9 px mono, `0.07em`, `--text-dim` (KnobConic:414-426).
+  //   * the LABEL: 9 px mono, `0.07em`, `--text-dim` (KnobConic's `.label`).
+  //     ⚠ The RESTING READOUT this control used to copy from KnobConic no
+  //     longer exists on either of them (owner, 2026-08-17) — a level's readout
+  //     can only ever be a number, so there is nothing left of it here at all.
   //   * the detent TICK vocabulary for a bipolar centre.
   //
   // ── AND IT CLOSES THREE GAPS `Fader.svelte` HAS ───────────────────────────
@@ -58,6 +59,7 @@
 
   import type { KnobCurve } from '$lib/graph/types';
   import { onDestroy, onMount, untrack } from 'svelte';
+  import WaveformGlyph from './WaveformGlyph.svelte';
   import { createDragCommit } from './drag-commit';
   import ControlContextMenu from './ControlContextMenu.svelte';
   import { makeMidiAssignable } from './midi-assignable.svelte';
@@ -83,6 +85,29 @@
     }, 200);
   }
 
+  /** A single inline glyph anchored at a normalized [0,1] fraction along the
+   *  track. The LFO-shape throws use it to render sine/tri/saw/square icons
+   *  beside the slot so the user sees what they are morphing into.
+   *
+   *  ⚠ THIS TYPE MOVED HERE FROM `Fader.svelte` WHEN THAT CONTROL WAS DELETED
+   *  (#1794). It is re-exported unchanged — the rail is a CAPABILITY of the
+   *  shipped fader, not a detail of the old one, and dropping it would have
+   *  silently degraded four cards (Cartesian, Lfo, Ninelives, Pentemelodica)
+   *  whose shape sliders are unreadable without the icons. */
+  export interface FaderGlyph {
+    frac: number;
+    kind: 'sine' | 'tri' | 'saw' | 'square';
+  }
+
+  /** Optional inline label anchored at a [0,1] fraction along the track.
+   *  Cartesian's LFO division slider marks each snap point with "1/8", "1/4",
+   *  "x2"; Cellshade/Posterbox/Samsloop/Spirographs/Tiler mark discrete
+   *  index stops the same way. Also moved here from `Fader.svelte` (#1794). */
+  export interface FaderTick {
+    frac: number;
+    label: string;
+  }
+
   interface Props {
     value: number;
     min: number;
@@ -94,6 +119,10 @@
     onchange: (value: number) => void;
     /** Motorized read — polled per rAF while idle, so CV visibly moves it. */
     readLive?: () => number | undefined;
+    /** Optional waveform glyphs anchored at fractions along the track. */
+    glyphs?: FaderGlyph[];
+    /** Optional text labels anchored at fractions along the track. */
+    ticks?: FaderTick[];
     /** Override for the readout text (a discrete index → a word). */
     formatValue?: (v: number) => string;
     moduleId?: string;
@@ -101,9 +130,15 @@
     /** Track length in px. ONE number drives the track box AND the thumb
      *  travel, exactly as on `Fader.svelte`. */
     trackHeight?: number;
-    /** Print the value UNDER the label at rest (the dock tier), instead of only
-     *  while hovering/dragging. Mirrors `KnobConic`'s `persistentReadout`. */
-    persistentReadout?: boolean;
+    /**
+     * DROP THE PER-CONTROL CAPTION — the `.label` line under the throw.
+     *
+     * ⚠ TEXT ONLY. `aria-label`, the annotate menu's title and the MIDI-learn
+     * address all still carry `label`. Declared per cell (`face.bareCells`)
+     * because a caption is clutter only where a section heading already says
+     * it — see KnobConic's copy of this prop for the owner's rule.
+     */
+    hideCaption?: boolean;
     /** Explicit accent override for one cell — the `--ka` seam KnobConic uses.
      *  Omitted, the domain chain applies. */
     accent?: string;
@@ -119,11 +154,13 @@
     curve = 'linear',
     onchange,
     readLive,
+    glyphs,
+    ticks,
     formatValue,
     moduleId,
     paramId,
     trackHeight = 80,
-    persistentReadout = false,
+    hideCaption = false,
     accent,
   }: Props = $props();
 
@@ -319,6 +356,31 @@
     return formatValue ? formatValue(v) : format(v, units);
   }
   let readoutText = $derived(valueText(liveValue));
+
+  /** Index of the rail entry nearest the current position — the one drawn lit.
+   *  ONE helper for both rails: they differ in what they PAINT, not in how
+   *  "which one am I on" is decided, and `Fader.svelte` carried two
+   *  byte-identical copies of this loop. */
+  function nearestIdx(entries: readonly { frac: number }[] | undefined, frac: number): number {
+    if (!entries || entries.length === 0) return -1;
+    let best = 0;
+    let bestD = Infinity;
+    for (let i = 0; i < entries.length; i++) {
+      const d = Math.abs((entries[i]?.frac ?? 0) - frac);
+      if (d < bestD) { bestD = d; best = i; }
+    }
+    return best;
+  }
+  let activeGlyphIdx = $derived(nearestIdx(glyphs, displayFrac));
+  let activeTickIdx = $derived(nearestIdx(ticks, displayFrac));
+
+  /** A rail entry's centre, in px from the rail top. Mirrors the thumb's own
+   *  travel (`TRACK_HEIGHT - THUMB_HEIGHT`) plus half a thumb, so a glyph sits
+   *  on the thumb's CENTRELINE at the fraction it marks — the same derivation
+   *  the shipped fader used, re-pointed at this control's 12px thumb. */
+  function railTop(frac: number): number {
+    return (1 - frac) * (TRACK_HEIGHT - THUMB_HEIGHT) + THUMB_HEIGHT / 2;
+  }
 </script>
 
 <!-- ⚠ `.fader-wrap` is kept VERBATIM: it is the class `DockCardHost` greps to
@@ -368,11 +430,42 @@
       {/if}
       <div class="thumb" style:transform="translateY({thumbY}px)" aria-hidden="true"></div>
     </div>
+    <!-- THE RAILS. Siblings of the slot, exactly as on the control this
+         replaced, so a card that passes `glyphs`/`ticks` keeps its icons and
+         its snap-point captions instead of silently losing them. -->
+    {#if glyphs && glyphs.length > 0}
+      <div class="glyph-rail" style:height="{TRACK_HEIGHT}px" aria-hidden="true">
+        {#each glyphs as g, i (i)}
+          <div class="glyph-anchor" style:top="{railTop(g.frac)}px">
+            <WaveformGlyph kind={g.kind} active={i === activeGlyphIdx} size={12} />
+          </div>
+        {/each}
+      </div>
+    {/if}
+    {#if ticks && ticks.length > 0}
+      <div class="tick-rail" style:height="{TRACK_HEIGHT}px" aria-hidden="true">
+        {#each ticks as t, i (i)}
+          <div
+            class="tick-anchor"
+            class:active={i === activeTickIdx}
+            style:top="{railTop(t.frac)}px"
+          >{t.label}</div>
+        {/each}
+      </div>
+    {/if}
   </div>
-  <div class="label" title={label}>{label}</div>
-  {#if persistentReadout}
-    <div class="readout" data-testid={paramId ? `readout-${paramId}` : undefined}>{readoutText}</div>
-  {/if}
+  <!-- THE CAPTION. Suppressed per cell by `face.bareCells`; `aria-label` on the
+       track above is untouched, so nothing addressable is lost.
+
+       ⚠ THERE IS NO READOUT LINE HERE ANY MORE, AND THERE IS NOTHING TO PUT
+       BACK. A fader's readout is a number by construction — there is no
+       option/landmark NAME a level could print — so the whole element went
+       (owner, 2026-08-17: *"all of our white decimely representatons of fader
+       state ... should be removed"*, and *"i want the data gone, not there but
+       hidden or something"*). `readoutText` still feeds `aria-valuetext` and
+       the drag/hover `.value-tag`, so the value is speakable, assertable, and
+       visible WHILE YOU SET IT — it just does not sit on the panel at rest. -->
+  {#if !hideCaption}<div class="label" title={label}>{label}</div>{/if}
   {#if midi.binding}
     <div class="midi-badge" title={`Bound to MIDI ${midi.bindingLabel}`}>{midi.badge}</div>
   {/if}
@@ -416,6 +509,40 @@
     position: relative;
     display: flex;
     align-items: flex-start;
+    gap: 4px;
+  }
+
+  /* THE GLYPH / TICK RAILS. Geometry is the shipped fader's; the PAINT is this
+   * control's — the lit entry takes `--_ka` rather than a hard-coded
+   * `var(--cable-cv)`, so a rail follows the same accent chain as the slot it
+   * annotates instead of being green on every module. */
+  .glyph-rail,
+  .tick-rail {
+    position: relative;
+    width: 14px;
+    pointer-events: none;
+  }
+  .tick-rail {
+    width: auto;
+    min-width: 20px;
+  }
+  .glyph-anchor,
+  .tick-anchor {
+    position: absolute;
+    left: 0;
+    transform: translateY(-50%);
+    line-height: 1;
+  }
+  .tick-anchor {
+    font-family: var(--mono, ui-monospace, monospace);
+    font-size: 9px;
+    letter-spacing: 0.04em;
+    color: var(--text-dim, #8a9099);
+    white-space: nowrap;
+    transition: color 0.08s ease-out;
+  }
+  .tick-anchor.active {
+    color: var(--_ka);
   }
 
   /* THE SLOT. Darker than the old track so the lit column has something to sit
@@ -491,9 +618,9 @@
     box-shadow: 0 0 6px color-mix(in srgb, var(--_ka) 45%, transparent);
   }
 
-  /* LABEL + READOUT — KnobConic:414-443, same metrics, same colours. */
-  .label,
-  .readout {
+  /* LABEL — KnobConic's `.label` metrics, verbatim. The `.readout` rule that
+     sat beside it is gone with the element (see the markup note). */
+  .label {
     max-width: 100%;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -504,14 +631,8 @@
     line-height: 1;
     text-transform: uppercase;
     font-weight: 700;
-  }
-  .label {
     letter-spacing: 0.07em;
     color: var(--text-dim, #8a9099);
-  }
-  .readout {
-    letter-spacing: 0.06em;
-    color: var(--_ka);
   }
 
   /* The hover tag — KnobConic:468-481's tokens, positioned for a vertical

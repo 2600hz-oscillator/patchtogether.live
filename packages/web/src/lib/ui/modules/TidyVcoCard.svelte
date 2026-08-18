@@ -15,7 +15,7 @@
   // note; persisting that OR level is how a rack got saved mid-drone.
 
   import type { NodeProps } from '@xyflow/svelte';
-  import Fader from '$lib/ui/controls/Fader.svelte';
+  import NeonFader from '$lib/ui/controls/NeonFader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import ScopeScreen from '$lib/ui/controls/ScopeScreen.svelte';
   import { clearStuckMomentaryParams, setMomentaryParam } from './manual-strike-actions';
@@ -197,30 +197,30 @@
             />
           </div>
           <div class="fader-row">
-            <Fader value={shape1} min={0} max={1} defaultValue={defaultFor('shape1')} label="Shp1" curve="linear" onchange={set('shape1')} moduleId={id} paramId="shape1" readLive={live('shape1')} />
-            <Fader value={shape2} min={0} max={1} defaultValue={defaultFor('shape2')} label="Shp2" curve="linear" onchange={set('shape2')} moduleId={id} paramId="shape2" readLive={live('shape2')} />
-            <Fader value={pw} min={0.05} max={0.5} defaultValue={defaultFor('pw')} label="PW" curve="linear" onchange={set('pw')} moduleId={id} paramId="pw" readLive={live('pw')} />
-            <Fader value={detune} min={-50} max={50} defaultValue={defaultFor('detune')} label="Det" units="¢" curve="linear" onchange={set('detune')} moduleId={id} paramId="detune" readLive={live('detune')} />
-            <Fader value={oct2} min={-1} max={1} defaultValue={defaultFor('oct2')} label="Oct2" curve="discrete" onchange={set('oct2')} moduleId={id} paramId="oct2" readLive={live('oct2')} />
-            <Fader value={mix} min={0} max={1} defaultValue={defaultFor('mix')} label="Mix" curve="linear" onchange={set('mix')} moduleId={id} paramId="mix" readLive={live('mix')} />
-            <Fader value={sub} min={0} max={1} defaultValue={defaultFor('sub')} label="Sub" curve="linear" onchange={set('sub')} moduleId={id} paramId="sub" readLive={live('sub')} />
+            <NeonFader value={shape1} min={0} max={1} defaultValue={defaultFor('shape1')} label="Shp1" curve="linear" onchange={set('shape1')} moduleId={id} paramId="shape1" readLive={live('shape1')} />
+            <NeonFader value={shape2} min={0} max={1} defaultValue={defaultFor('shape2')} label="Shp2" curve="linear" onchange={set('shape2')} moduleId={id} paramId="shape2" readLive={live('shape2')} />
+            <NeonFader value={pw} min={0.05} max={0.5} defaultValue={defaultFor('pw')} label="PW" curve="linear" onchange={set('pw')} moduleId={id} paramId="pw" readLive={live('pw')} />
+            <NeonFader value={detune} min={-50} max={50} defaultValue={defaultFor('detune')} label="Det" units="¢" curve="linear" onchange={set('detune')} moduleId={id} paramId="detune" readLive={live('detune')} />
+            <NeonFader value={oct2} min={-1} max={1} defaultValue={defaultFor('oct2')} label="Oct2" curve="discrete" onchange={set('oct2')} moduleId={id} paramId="oct2" readLive={live('oct2')} />
+            <NeonFader value={mix} min={0} max={1} defaultValue={defaultFor('mix')} label="Mix" curve="linear" onchange={set('mix')} moduleId={id} paramId="mix" readLive={live('mix')} />
+            <NeonFader value={sub} min={0} max={1} defaultValue={defaultFor('sub')} label="Sub" curve="linear" onchange={set('sub')} moduleId={id} paramId="sub" readLive={live('sub')} />
           </div>
         </div>
         <div class="group fold">
           <header>WAVEFOLD</header>
           <div class="fader-row">
-            <Fader value={fold} min={0} max={1} defaultValue={defaultFor('fold')} label="Fold" curve="linear" onchange={set('fold')} moduleId={id} paramId="fold" readLive={live('fold')} />
-            <Fader value={sym} min={-1} max={1} defaultValue={defaultFor('sym')} label="Sym" curve="linear" onchange={set('sym')} moduleId={id} paramId="sym" readLive={live('sym')} />
+            <NeonFader value={fold} min={0} max={1} defaultValue={defaultFor('fold')} label="Fold" curve="linear" onchange={set('fold')} moduleId={id} paramId="fold" readLive={live('fold')} />
+            <NeonFader value={sym} min={-1} max={1} defaultValue={defaultFor('sym')} label="Sym" curve="linear" onchange={set('sym')} moduleId={id} paramId="sym" readLive={live('sym')} />
           </div>
         </div>
         <div class="group">
           <header>DIODE FILTER</header>
           <div class="fader-row">
-            <Fader value={cutoff} min={40} max={14000} defaultValue={defaultFor('cutoff')} label="Cut" units="Hz" curve="log" onchange={set('cutoff')} moduleId={id} paramId="cutoff" readLive={live('cutoff')} />
-            <Fader value={res} min={0} max={1} defaultValue={defaultFor('res')} label="Res" curve="linear" onchange={set('res')} moduleId={id} paramId="res" readLive={live('res')} />
-            <Fader value={drive} min={0} max={1} defaultValue={defaultFor('drive')} label="Drv" curve="linear" onchange={set('drive')} moduleId={id} paramId="drive" readLive={live('drive')} />
-            <Fader value={env} min={-1} max={1} defaultValue={defaultFor('env')} label="Env" curve="linear" onchange={set('env')} moduleId={id} paramId="env" readLive={live('env')} />
-            <Fader value={track} min={0} max={1} defaultValue={defaultFor('track')} label="Trk" curve="linear" onchange={set('track')} moduleId={id} paramId="track" readLive={live('track')} />
+            <NeonFader value={cutoff} min={40} max={14000} defaultValue={defaultFor('cutoff')} label="Cut" units="Hz" curve="log" onchange={set('cutoff')} moduleId={id} paramId="cutoff" readLive={live('cutoff')} />
+            <NeonFader value={res} min={0} max={1} defaultValue={defaultFor('res')} label="Res" curve="linear" onchange={set('res')} moduleId={id} paramId="res" readLive={live('res')} />
+            <NeonFader value={drive} min={0} max={1} defaultValue={defaultFor('drive')} label="Drv" curve="linear" onchange={set('drive')} moduleId={id} paramId="drive" readLive={live('drive')} />
+            <NeonFader value={env} min={-1} max={1} defaultValue={defaultFor('env')} label="Env" curve="linear" onchange={set('env')} moduleId={id} paramId="env" readLive={live('env')} />
+            <NeonFader value={track} min={0} max={1} defaultValue={defaultFor('track')} label="Trk" curve="linear" onchange={set('track')} moduleId={id} paramId="track" readLive={live('track')} />
           </div>
         </div>
       </div>
@@ -231,26 +231,26 @@
         <div class="group">
           <header>FILTER EG</header>
           <div class="fader-row">
-            <Fader value={fatk} min={0.0005} max={5} defaultValue={defaultFor('fatk')} label="A" units="s" curve="log" onchange={set('fatk')} moduleId={id} paramId="fatk" readLive={live('fatk')} />
-            <Fader value={fdec} min={0.001} max={5} defaultValue={defaultFor('fdec')} label="D" units="s" curve="log" onchange={set('fdec')} moduleId={id} paramId="fdec" readLive={live('fdec')} />
-            <Fader value={fsus} min={0} max={1} defaultValue={defaultFor('fsus')} label="S" curve="linear" onchange={set('fsus')} moduleId={id} paramId="fsus" readLive={live('fsus')} />
-            <Fader value={frel} min={0.001} max={5} defaultValue={defaultFor('frel')} label="R" units="s" curve="log" onchange={set('frel')} moduleId={id} paramId="frel" readLive={live('frel')} />
+            <NeonFader value={fatk} min={0.0005} max={5} defaultValue={defaultFor('fatk')} label="A" units="s" curve="log" onchange={set('fatk')} moduleId={id} paramId="fatk" readLive={live('fatk')} />
+            <NeonFader value={fdec} min={0.001} max={5} defaultValue={defaultFor('fdec')} label="D" units="s" curve="log" onchange={set('fdec')} moduleId={id} paramId="fdec" readLive={live('fdec')} />
+            <NeonFader value={fsus} min={0} max={1} defaultValue={defaultFor('fsus')} label="S" curve="linear" onchange={set('fsus')} moduleId={id} paramId="fsus" readLive={live('fsus')} />
+            <NeonFader value={frel} min={0.001} max={5} defaultValue={defaultFor('frel')} label="R" units="s" curve="log" onchange={set('frel')} moduleId={id} paramId="frel" readLive={live('frel')} />
           </div>
         </div>
         <div class="group">
           <header>AMP EG</header>
           <div class="fader-row">
-            <Fader value={atk} min={0.0005} max={5} defaultValue={defaultFor('atk')} label="A" units="s" curve="log" onchange={set('atk')} moduleId={id} paramId="atk" readLive={live('atk')} />
-            <Fader value={dec} min={0.001} max={5} defaultValue={defaultFor('dec')} label="D" units="s" curve="log" onchange={set('dec')} moduleId={id} paramId="dec" readLive={live('dec')} />
-            <Fader value={sus} min={0} max={1} defaultValue={defaultFor('sus')} label="S" curve="linear" onchange={set('sus')} moduleId={id} paramId="sus" readLive={live('sus')} />
-            <Fader value={rel} min={0.001} max={5} defaultValue={defaultFor('rel')} label="R" units="s" curve="log" onchange={set('rel')} moduleId={id} paramId="rel" readLive={live('rel')} />
+            <NeonFader value={atk} min={0.0005} max={5} defaultValue={defaultFor('atk')} label="A" units="s" curve="log" onchange={set('atk')} moduleId={id} paramId="atk" readLive={live('atk')} />
+            <NeonFader value={dec} min={0.001} max={5} defaultValue={defaultFor('dec')} label="D" units="s" curve="log" onchange={set('dec')} moduleId={id} paramId="dec" readLive={live('dec')} />
+            <NeonFader value={sus} min={0} max={1} defaultValue={defaultFor('sus')} label="S" curve="linear" onchange={set('sus')} moduleId={id} paramId="sus" readLive={live('sus')} />
+            <NeonFader value={rel} min={0.001} max={5} defaultValue={defaultFor('rel')} label="R" units="s" curve="log" onchange={set('rel')} moduleId={id} paramId="rel" readLive={live('rel')} />
           </div>
         </div>
         <div class="group out">
           <header>OUT</header>
           <div class="fader-row">
-            <Fader value={width} min={0} max={1} defaultValue={defaultFor('width')} label="Wdth" curve="linear" onchange={set('width')} moduleId={id} paramId="width" readLive={live('width')} />
-            <Fader value={level} min={-24} max={12} defaultValue={defaultFor('level')} label="Lvl" units="dB" curve="linear" onchange={set('level')} moduleId={id} paramId="level" readLive={live('level')} />
+            <NeonFader value={width} min={0} max={1} defaultValue={defaultFor('width')} label="Wdth" curve="linear" onchange={set('width')} moduleId={id} paramId="width" readLive={live('width')} />
+            <NeonFader value={level} min={-24} max={12} defaultValue={defaultFor('level')} label="Lvl" units="dB" curve="linear" onchange={set('level')} moduleId={id} paramId="level" readLive={live('level')} />
             <button
               class="hold-pad"
               class:held={holding}

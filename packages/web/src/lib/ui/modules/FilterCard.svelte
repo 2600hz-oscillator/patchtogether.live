@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { NodeProps } from '@xyflow/svelte';
-  import Fader from '$lib/ui/controls/Fader.svelte';
+  import NeonFader from '$lib/ui/controls/NeonFader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import { filterDef } from '$lib/audio/modules/filter';
   import type { ModuleNode } from '$lib/graph/types';
@@ -54,8 +54,8 @@
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="fader-row">
-      <Fader value={cutoff}    min={pCutoff.min} max={pCutoff.max} defaultValue={pCutoff.defaultValue} label={pCutoff.label} units={pCutoff.units} curve={pCutoff.curve} formatValue={pCutoff.format} onchange={set('cutoff')}    moduleId={id} paramId="cutoff"    readLive={live('cutoff')} />
-      <Fader value={resonance} min={pRes.min}    max={pRes.max}    defaultValue={pRes.defaultValue}    label={pRes.label}    units={pRes.units}    curve={pRes.curve}    formatValue={pRes.format}    onchange={set('resonance')} moduleId={id} paramId="resonance" readLive={live('resonance')} />
+      <NeonFader value={cutoff}    min={pCutoff.min} max={pCutoff.max} defaultValue={pCutoff.defaultValue} label={pCutoff.label} units={pCutoff.units} curve={pCutoff.curve} formatValue={pCutoff.format} onchange={set('cutoff')}    moduleId={id} paramId="cutoff"    readLive={live('cutoff')} />
+      <NeonFader value={resonance} min={pRes.min}    max={pRes.max}    defaultValue={pRes.defaultValue}    label={pRes.label}    units={pRes.units}    curve={pRes.curve}    formatValue={pRes.format}    onchange={set('resonance')} moduleId={id} paramId="resonance" readLive={live('resonance')} />
     </div>
 
     <div class="mode-row">

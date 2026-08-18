@@ -114,7 +114,10 @@ const FACE_ANSWER: Readonly<Record<string, FaceAnswer>> = {
   // ── first-class param cells ──
   Knob: { via: 'param-cell', kind: 'knob' },
   KnobConic: { via: 'param-cell', kind: 'knob', note: 'the shell paints this one directly' },
-  Fader: {
+  // ⚠ THERE WAS A SECOND FADER ENTRY HERE UNTIL #1794 (`Fader`, kind `fader`,
+  // beside `NeonFader`, kind `neon-fader`). `Fader.svelte` is deleted and the
+  // two kinds collapsed, so the app has ONE throw primitive backing ONE kind.
+  NeonFader: {
     via: 'param-cell',
     kind: 'fader',
     note:
@@ -122,15 +125,6 @@ const FACE_ANSWER: Readonly<Record<string, FaceAnswer>> = {
       'continuous scalar. A ranked param a card draws as a fader and a face does not declare ' +
       'is a look regression, NOT a lost gesture (1-D to 1-D), so it is reported by the fader ' +
       'audit below rather than failed here.',
-  },
-  NeonFader: {
-    via: 'param-cell',
-    kind: 'neon-fader',
-    note:
-      'the SAME throw as Fader in KnobConic\'s visual language. A separate primitive, and a ' +
-      'separate kind, because Fader.svelte is mounted by 93 cards and eight other faced ' +
-      'modules: a look change there moves every one of their baselines, so a module opts in ' +
-      'one declaration at a time instead.',
   },
   Toggle: { via: 'param-cell', kind: 'toggle', note: 'and ShellToggleCell for a node.data switch' },
   Button: { via: 'param-cell', kind: 'momentary', note: 'and ShellActionCell for an audition' },
@@ -149,7 +143,9 @@ const FACE_ANSWER: Readonly<Record<string, FaceAnswer>> = {
     via: 'ambient',
     why:
       'a printed value, not an affordance. The face has FaceReadout (hero + `readouts` sidebar ' +
-      'block) plus every cell\'s own persistentReadout at the dock.',
+      'block). ⚠ It no longer has a per-cell resting readout: owner ruling 2026-08-17 removed ' +
+      'the printed decimal from every face and `persistentReadout` is deleted, so a cell ' +
+      'paints a value only when it is a declared option/landmark NAME (see paintsReadout).',
   },
   MidiAssignButton: {
     via: 'ambient',
@@ -357,7 +353,7 @@ describe('card ↔ face PRIMITIVE PARITY — the vocabulary', () => {
       primitivesInTree(),
       'the roster must contain the primitives this file reasons about; if XyPad has moved, the ' +
         'reasoning in the header needs re-checking, not the path',
-    ).toEqual(expect.arrayContaining(['Knob', 'Fader', 'XyPad']));
+    ).toEqual(expect.arrayContaining(['Knob', 'NeonFader', 'XyPad']));
   });
 });
 
@@ -450,9 +446,14 @@ describe('card ↔ face PRIMITIVE PARITY — CONTROLS on the predicate', () => {
     // one perturbs the answer table and re-runs the REAL sweep — registry load,
     // card-path resolution, delegate following and all — so a break anywhere in
     // that chain shows up as "the perturbed sweep found nothing" instead of as a
-    // green gate. Fader is the perturbation because it is the primitive the most
-    // faced cards mount, so a resolution bug cannot hide behind a thin card.
-    const patched = { ...FACE_ANSWER, Fader: { via: 'none', why: 'control' } as FaceAnswer };
+    // green gate. NeonFader is the perturbation because it is the primitive the
+    // most faced cards mount, so a resolution bug cannot hide behind a thin
+    // card. (#1794 re-pointed this from `Fader`, which WAS that primitive until
+    // every card was migrated off it and it was deleted — leaving the
+    // perturbation on a name no card mounts would have made this leg red for
+    // the honest reason "the sweep found nothing", which is exactly the
+    // false-alarm shape it exists to distinguish from.)
+    const patched = { ...FACE_ANSWER, NeonFader: { via: 'none', why: 'control' } as FaceAnswer };
     const found = facedDefs().flatMap((def) => {
       const s = cardSourceFor(def);
       return s ? downgradesIn(def, basename(s.path), s.src, patched) : [];
@@ -467,7 +468,7 @@ describe('card ↔ face PRIMITIVE PARITY — CONTROLS on the predicate', () => {
       new Set(found.map((o) => o.primitive)),
       'the perturbation must be the ONLY thing reported — anything else means the unperturbed ' +
         'sweep is already dirty',
-    ).toEqual(new Set(['Fader']));
+    ).toEqual(new Set(['NeonFader']));
   });
 
   it('the tag reader is TAG-SCOPED, not file-scoped', () => {

@@ -2,7 +2,7 @@
   import { onDestroy, onMount } from 'svelte';
   import { onMeterFrame } from '$lib/ui/meter-frame';
   import type { NodeProps } from '@xyflow/svelte';
-  import Fader from '$lib/ui/controls/Fader.svelte';
+  import NeonFader from '$lib/ui/controls/NeonFader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch } from '$lib/graph/store';
@@ -293,15 +293,15 @@
     </div>
 
     <div class="fader-row">
-      <Fader value={timeMs}    min={1}    max={200} defaultValue={20} label="Time" units="ms" curve="log"    onchange={setParam('timeMs')} moduleId={id} paramId="timeMs" />
-      <Fader value={ch1Scale}  min={0.1}  max={10}  defaultValue={1}  label="1 Sc"            curve="log"    onchange={setParam('ch1Scale')} moduleId={id} paramId="ch1Scale" />
-      <Fader value={ch1Offset} min={-1}   max={1}   defaultValue={0}  label="1 Y"             curve="linear" onchange={setParam('ch1Offset')} moduleId={id} paramId="ch1Offset" />
-      <Fader value={ch2Scale}  min={0.1}  max={10}  defaultValue={1}  label="2 Sc"            curve="log"    onchange={setParam('ch2Scale')} moduleId={id} paramId="ch2Scale" />
-      <Fader value={ch2Offset} min={-1}   max={1}   defaultValue={0}  label="2 Y"             curve="linear" onchange={setParam('ch2Offset')} moduleId={id} paramId="ch2Offset" />
+      <NeonFader value={timeMs}    min={1}    max={200} defaultValue={20} label="Time" units="ms" curve="log"    onchange={setParam('timeMs')} moduleId={id} paramId="timeMs" />
+      <NeonFader value={ch1Scale}  min={0.1}  max={10}  defaultValue={1}  label="1 Sc"            curve="log"    onchange={setParam('ch1Scale')} moduleId={id} paramId="ch1Scale" />
+      <NeonFader value={ch1Offset} min={-1}   max={1}   defaultValue={0}  label="1 Y"             curve="linear" onchange={setParam('ch1Offset')} moduleId={id} paramId="ch1Offset" />
+      <NeonFader value={ch2Scale}  min={0.1}  max={10}  defaultValue={1}  label="2 Sc"            curve="log"    onchange={setParam('ch2Scale')} moduleId={id} paramId="ch2Scale" />
+      <NeonFader value={ch2Offset} min={-1}   max={1}   defaultValue={0}  label="2 Y"             curve="linear" onchange={setParam('ch2Offset')} moduleId={id} paramId="ch2Offset" />
       <!-- Phosphor INTENSITY (beam persistence). 0.5 (12:00, centered) =
            today's render; down toward 7:00 → a moving dot; up toward 5:00 →
            a ~2-screen persistence trail. Display-only. -->
-      <Fader value={intensity} min={0}    max={1}   defaultValue={0.5} label="Inten"          curve="linear" onchange={setParam('intensity')} moduleId={id} paramId="intensity" />
+      <NeonFader value={intensity} min={0}    max={1}   defaultValue={0.5} label="Inten"          curve="linear" onchange={setParam('intensity')} moduleId={id} paramId="intensity" />
     </div>
   </PatchPanel>
 </div>

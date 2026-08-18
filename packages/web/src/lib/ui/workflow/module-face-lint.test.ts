@@ -57,6 +57,7 @@ import {
   type FaceplateDefLike,
 } from './dock-faceplate-model';
 import { sidebarPanelIds } from './sidebar-panels';
+import { paintsReadout } from '$lib/ui/controls/knob-vocabulary-model';
 // The channel list mixmstrs' ACKNOWLEDGED_LATCHING entries are DERIVED from —
 // see the entry itself for why eight identical enables are generated rather
 // than typed.
@@ -391,6 +392,20 @@ describe('module-face lint — DOCK RENDER-PLAN parity (STRICT_FACES set)', () =
       for (const c of flat) {
         if (c.kind === 'param' && c.paramId) {
           paramCounts.set(c.paramId, (paramCounts.get(c.paramId) ?? 0) + 1);
+          // ⚠ A 2-D PAD IS ONE CELL BINDING TWO PARAMS — the only kind with
+          // arity 2. Counting cells alone reads the partner axis as a DROPPED
+          // control, which is the false positive this gate must not produce
+          // (the mirror of the clustered-control case above). `backdraft`, the
+          // first `face.xyPads` adopter, is where this surfaced: the pure plan
+          // said the axis rendered 0×, the DOM said the pad emitted it, and the
+          // two disagreed because the model had no way to say "this cell covers
+          // both".
+          if (c.padPartnerParamId) {
+            paramCounts.set(
+              c.padPartnerParamId,
+              (paramCounts.get(c.padPartnerParamId) ?? 0) + 1,
+            );
+          }
         }
       }
       // #1726 — the declaration INVERTS this assertion rather than skipping it.
@@ -569,6 +584,25 @@ describe('module-face lint — MOMENTARY pads (face.momentary)', () => {
     // release.
     'mixmstrs:send1Pre',
     'mixmstrs:send2Pre',
+    // BACKDRAFT, 2026-08-17 — THE FIRST VIDEO FACE. Three kaleidoscope/masking
+    // switches, and they are the CLOUDSEED case repeated exactly: they only
+    // became visible to this gate when their `curve` was corrected
+    // `linear` → `discrete` in the same diff. Before that `looksLikeSwitch`
+    // could not see them at all, so the shell would have painted three
+    // two-state folds as continuous 0..1 rotaries reading "0.00".
+    //
+    // ⚠ THE LEVEL READ IS THE WHOLE ARGUMENT, and it is measured rather than
+    // assumed: the draw loop pushes all three straight into uniforms every
+    // frame — `g.uniform1f(uMirrorX, params.mirrorX >= 0.5 ? 1.0 : 0.0)` and
+    // the same for `mirrorY` / `pureGeo` — and the shader branches on the
+    // uniform (`if (uMirrorX > 0.5) uv.x = …`). Nothing edge-detects the PARAM.
+    // What edge-detects is the separate GATE param beside it (`mirrorXGate`,
+    // declared `noUserControl`), whose rising edge FLIPS this one. So a
+    // momentary render would unfold the kaleidoscope on release — the fold
+    // could never be held, which is the module's whole look.
+    'backdraft:mirrorX',
+    'backdraft:mirrorY',
+    'backdraft:pureGeo',
     // pointerup, the worklet ORs it into the mono gate like tomtom's `strike`,
     // and the def's own doc says "released = note-off (no latch)". It is now
     // declared on `face.momentary`. The cross-check below is what stops that
@@ -644,6 +678,139 @@ describe('module-face lint — MOMENTARY pads (face.momentary)', () => {
     expect(problems.join('\n'), 'face.momentary drifted from the params — fix the ids').toBe('');
   });
 
+  // ── face.bareCells + ModuleFacePage.clusterFlow (#1796) ─────────────────
+  //
+  // Two declarations added for the owner's 2026-08-17 faceplate review, and
+  // both are the kind that is INVISIBLE when wrong: a `bareCells` id that names
+  // nothing simply captions nothing extra, and a `clusterFlow` on a band with
+  // no clusters lays out exactly as it did. A declaration nobody validates is a
+  // silent no-op that reads like a shipped decision, which is the same trap
+  // `face.momentary` and `face.paramCells` are gated for above.
+
+  it('every face.bareCells id is a real param, ranked, and listed once', () => {
+    const problems: string[] = [];
+    for (const def of allDefs()) {
+      const declared = def.face?.bareCells ?? [];
+      const byId = new Map((def.params ?? []).map((p) => [p.id, p]));
+      const ranked = new Set(def.face?.order ?? []);
+      const seen = new Set<string>();
+      for (const pid of declared) {
+        if (seen.has(pid)) problems.push(`${def.type}: face.bareCells lists '${pid}' twice`);
+        seen.add(pid);
+        if (!byId.has(pid)) {
+          problems.push(
+            `${def.type}: face.bareCells '${pid}' is not a declared param — a rename left a ` +
+              `dead entry, and the cell it was meant to strip is captioned again`,
+          );
+          continue;
+        }
+        if (!ranked.has(pid)) {
+          problems.push(
+            `${def.type}: face.bareCells '${pid}' is not ranked in face.order, so it never ` +
+              `reaches a curated face and the declaration is a no-op`,
+          );
+        }
+      }
+    }
+    expect(problems.join('\n'), 'face.bareCells drifted from the params — fix the ids').toBe('');
+  });
+
+  it('face.bareCells never silences a param whose readout is its only STATE NAME', () => {
+    // ⚠ THE ONE CASE WHERE THE DECLARATION IS ACTIVELY HARMFUL, and it is not
+    // hypothetical — it is one `bareCells` entry away on any face that keeps a
+    // roster. `hideCaption` suppresses the caption AND the painted readout, so
+    // declaring it on an `options`/`landmarks` param would hide the only thing
+    // saying WHICH of fourteen engines is loaded. The rule the owner gave is
+    // about REDUNDANCY ("the low/mid/high labels above the knob rows convey
+    // that fine"); a state name is the opposite of redundant.
+    //
+    // `paintsReadout` is the SAME predicate KnobConic renders through and
+    // `curated-face` reserves cell height from, so this cannot drift from what
+    // actually paints.
+    const problems: string[] = [];
+    for (const def of allDefs()) {
+      const declared = new Set(def.face?.bareCells ?? []);
+      for (const p of def.params ?? []) {
+        if (!declared.has(p.id)) continue;
+        if (!paintsReadout(p)) continue;
+        problems.push(
+          `${def.type}: face.bareCells '${p.id}' declares options/landmarks, so its readout is ` +
+            `a STATE NAME — hiding it leaves a dial nobody can read. Remove the bareCells entry, ` +
+            `or remove the roster if the name really is redundant.`,
+        );
+      }
+    }
+    expect(problems.join('\n'), 'a bareCells entry would hide a state name').toBe('');
+  });
+
+  it("a band declaring clusterFlow:'row' actually HAS clusters to flow", () => {
+    const problems: string[] = [];
+    for (const def of allDefs()) {
+      for (const page of def.face?.pages ?? []) {
+        if (page.clusterFlow !== 'row') continue;
+        if ((page.clusters?.length ?? 0) < 2) {
+          problems.push(
+            `${def.type}: face.pages['${page.id}'] declares clusterFlow:'row' with ` +
+              `${page.clusters?.length ?? 0} cluster(s). Side-by-side needs two peers; with ` +
+              `fewer the declaration changes nothing and reads like a shipped layout decision.`,
+          );
+        }
+      }
+    }
+    expect(problems.join('\n'), "clusterFlow:'row' on a band with nothing to flow").toBe('');
+  });
+
+  it('NEGATIVE CONTROL: both clauses fire on a synthetic def', () => {
+    // Neither check above has ever been seen to fail on the live registry (one
+    // face declares `bareCells`, one band declares `clusterFlow`), so without
+    // this they are assertions nobody has watched work.
+    const bad = {
+      type: 'synthetic',
+      params: [
+        { id: 'a', label: 'A', defaultValue: 0, min: 0, max: 1, curve: 'linear' as const },
+        {
+          id: 'mode',
+          label: 'Mode',
+          defaultValue: 0,
+          min: 0,
+          max: 2,
+          curve: 'discrete' as const,
+          options: [
+            { value: 0, label: 'LP' },
+            { value: 1, label: 'HP' },
+          ],
+        },
+      ],
+      face: {
+        order: ['a', 'mode'],
+        bareCells: ['a', 'a', 'ghost', 'mode'],
+        pages: [{ id: 'p', label: 'p', controls: ['a'], clusterFlow: 'row' as const }],
+      },
+    };
+    const byId = new Map(bad.params.map((p) => [p.id, p]));
+    const ranked = new Set(bad.face.order);
+    const seen = new Set<string>();
+    const dupes: string[] = [];
+    const unknown: string[] = [];
+    for (const pid of bad.face.bareCells) {
+      if (seen.has(pid)) dupes.push(pid);
+      seen.add(pid);
+      if (!byId.has(pid)) unknown.push(pid);
+    }
+    expect(dupes, 'the duplicate clause must catch a repeated id').toEqual(['a']);
+    expect(unknown, 'the orphan clause must catch an id no param answers to').toEqual(['ghost']);
+    expect(ranked.has('ghost'), 'and the ranked clause is a second, independent leg').toBe(false);
+    expect(
+      paintsReadout(byId.get('mode')!),
+      'the state-name clause must see that a bare roster paints',
+    ).toBe(true);
+    const rowPage = bad.face.pages[0]!;
+    expect(
+      (rowPage as { clusters?: unknown[] }).clusters?.length ?? 0,
+      "the clusterFlow clause must see a 'row' band with nothing to flow",
+    ).toBeLessThan(2);
+  });
+
   it('STRICT_FACES: every switch-shaped param is classified momentary OR acknowledged latching', () => {
     const unclassified: string[] = [];
     for (const def of allDefs()) {
@@ -664,6 +831,72 @@ describe('module-face lint — MOMENTARY pads (face.momentary)', () => {
       unclassified.join('\n'),
       'unclassified switch-shaped param(s) — a momentary pad would render as a latching rotary',
     ).toBe('');
+  });
+});
+
+// ── face.channelAccent — the per-channel LANE colour (#1825) ────────────────
+//
+// The declaration says "these param ids belong to channel N", and the shell
+// paints them in rack lane N's colour through the `--ka` accent chain. Nothing
+// at runtime can tell a WRONG id from a right one — a stale id simply paints
+// nothing and a duplicated id silently picks whichever channel came last — so
+// the shape is linted here, roster-wide and deny-by-default.
+describe('module-face lint — CHANNEL ACCENT (face.channelAccent)', () => {
+  it('every declared id is a real, RANKED param, claimed by exactly one channel', () => {
+    const problems: string[] = [];
+    for (const def of allDefs()) {
+      const decl = def.face?.channelAccent;
+      if (!decl) continue;
+      const byId = new Set((def.params ?? []).map((p) => p.id));
+      const ranked = new Set(def.face?.order ?? []);
+      const seen = new Map<string, number>();
+      decl.forEach((ids, ch) => {
+        if (ids.length === 0) {
+          problems.push(
+            `${def.type}: face.channelAccent channel ${ch} is EMPTY — a column with a colour ` +
+              `and no controls is a dead lane`,
+          );
+        }
+        for (const pid of ids) {
+          if (seen.has(pid)) {
+            problems.push(
+              `${def.type}: face.channelAccent claims '${pid}' for channel ${seen.get(pid)} AND ` +
+                `${ch} — a cell has one colour`,
+            );
+          }
+          seen.set(pid, ch);
+          if (!byId.has(pid)) {
+            problems.push(`${def.type}: face.channelAccent '${pid}' is not a declared param`);
+            continue;
+          }
+          if (!ranked.has(pid)) {
+            problems.push(`${def.type}: face.channelAccent '${pid}' is not ranked in face.order`);
+          }
+        }
+      });
+    }
+    expect(problems.join('\n'), 'face.channelAccent drifted from the params').toBe('');
+  });
+
+  it('the declaring ROSTER is exactly this — owner scoped it to ONE module', () => {
+    // Owner, 2026-08-17: *"for mixmstrs ONLY"*. A second adopter is a deliberate
+    // edit here (and a VRT dispatch for its face), never a quiet spread. Named
+    // membership, not a count.
+    const declaring = allDefs()
+      .filter((d) => d.face?.channelAccent)
+      .map((d) => d.type)
+      .sort();
+    expect(declaring).toEqual(['mixmstrs']);
+  });
+
+  it('NEGATIVE CONTROL: the roster clause can see a face that does NOT declare it', () => {
+    // A vacuous version of the clause above (e.g. reading the wrong field) would
+    // return `[]` and still pass a `toEqual([...])` written to match it. This
+    // asserts the other side: most faces have no declaration at all.
+    const faced = allDefs().filter((d) => d.face);
+    const undeclared = faced.filter((d) => !d.face?.channelAccent);
+    expect(faced.length, 'the roster must contain faced defs').toBeGreaterThan(0);
+    expect(undeclared.length, 'and most of them must not declare it').toBeGreaterThan(0);
   });
 });
 
@@ -758,13 +991,12 @@ describe('module-face lint — DECLARED param cells (face.paramCells) + PANEL ti
           }
           break;
         }
-        // ⚠ ONE CLAUSE FOR BOTH THROWS, DELIBERATELY. `neon-fader` is the same
-        // GESTURE as `fader` in a different visual language, so it can back
-        // exactly the same shapes — and writing the clause twice is how the two
-        // would eventually disagree about what a throw is. Sharing the arm
-        // means a future constraint lands on both by construction; the DENY
-        // arm below still refuses any THIRD kind that arrives without one.
-        case 'neon-fader':
+        // ⚠ THIS ARM WAS SHARED WITH `neon-fader` UNTIL #1794, on the reasoning
+        // that the two were the same GESTURE in different visual languages and
+        // writing the clause twice is how they would eventually disagree about
+        // what a throw is. The kinds have since COLLAPSED — there is one fader
+        // in the app — so the sharing is no longer needed to keep them honest.
+        // The DENY arm below still refuses any kind that arrives without one.
         case 'fader': {
           // A THROW is a CONTINUOUS scale. The one shape it must not back is a
           // discrete roster: those are `segmented`/`selector`/`grid` territory,

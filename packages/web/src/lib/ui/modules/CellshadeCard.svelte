@@ -11,7 +11,7 @@
   // cel-shaded OUT is shown (mirrors FreezeframeCard's blit).
   import { onMount, onDestroy } from 'svelte';
   import { type NodeProps } from '@xyflow/svelte';
-  import Fader from '$lib/ui/controls/Fader.svelte';
+  import NeonFader from '$lib/ui/controls/NeonFader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import { useEngine } from '$lib/audio/engine-context';
   import { setNodeParam } from '$lib/graph/mutate';
@@ -119,9 +119,9 @@
     </div>
 
     <div class="fader-grid">
-      <Fader value={p('threshold')} min={0} max={1}                  defaultValue={pdef('threshold')} label="Thresh" curve="linear" onchange={setParam('threshold')} moduleId={id} paramId="threshold" />
-      <Fader value={p('thickness')} min={1} max={EDGES_MAX_THICKNESS} units="px" defaultValue={pdef('thickness')} label="Thick"  curve="linear" onchange={setParam('thickness')} moduleId={id} paramId="thickness" />
-      <Fader
+      <NeonFader value={p('threshold')} min={0} max={1}                  defaultValue={pdef('threshold')} label="Thresh" curve="linear" onchange={setParam('threshold')} moduleId={id} paramId="threshold" />
+      <NeonFader value={p('thickness')} min={1} max={EDGES_MAX_THICKNESS} units="px" defaultValue={pdef('thickness')} label="Thick"  curve="linear" onchange={setParam('thickness')} moduleId={id} paramId="thickness" />
+      <NeonFader
         value={p('bits')}
         min={0}
         max={BANDS_MAX_INDEX}
@@ -134,9 +134,9 @@
         moduleId={id}
         paramId="bits"
       />
-      <Fader value={p('softness')} min={0} max={1} defaultValue={pdef('softness')} label="Soft"   curve="linear" onchange={setParam('softness')} moduleId={id} paramId="softness" />
-      <Fader value={p('smooth')}   min={0} max={1} defaultValue={pdef('smooth')}   label="Smooth" curve="linear" onchange={setParam('smooth')}   moduleId={id} paramId="smooth" />
-      <Fader value={p('ink')}      min={0} max={1} defaultValue={pdef('ink')}      label="Ink"    curve="linear" onchange={setParam('ink')}      moduleId={id} paramId="ink" />
+      <NeonFader value={p('softness')} min={0} max={1} defaultValue={pdef('softness')} label="Soft"   curve="linear" onchange={setParam('softness')} moduleId={id} paramId="softness" />
+      <NeonFader value={p('smooth')}   min={0} max={1} defaultValue={pdef('smooth')}   label="Smooth" curve="linear" onchange={setParam('smooth')}   moduleId={id} paramId="smooth" />
+      <NeonFader value={p('ink')}      min={0} max={1} defaultValue={pdef('ink')}      label="Ink"    curve="linear" onchange={setParam('ink')}      moduleId={id} paramId="ink" />
     </div>
   </PatchPanel>
 </div>

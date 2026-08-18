@@ -8,7 +8,7 @@
   // the EdgesCard / LumakeyCard processor-card layout (handles on the
   // left, OUT on the right, fader grid below).
   import { type NodeProps } from '@xyflow/svelte';
-  import Fader from '$lib/ui/controls/Fader.svelte';
+  import NeonFader from '$lib/ui/controls/NeonFader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { setNodeParam } from '$lib/graph/mutate';
@@ -47,7 +47,7 @@
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="fader-grid">
-      <Fader value={p('threshold')} min={0} max={1} defaultValue={pdef('threshold')} label="Thresh" curve="linear" onchange={setParam('threshold')} moduleId={id} paramId="threshold" />
+      <NeonFader value={p('threshold')} min={0} max={1} defaultValue={pdef('threshold')} label="Thresh" curve="linear" onchange={setParam('threshold')} moduleId={id} paramId="threshold" />
     </div>
   </PatchPanel>
 </div>

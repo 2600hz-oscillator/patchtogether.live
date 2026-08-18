@@ -32,32 +32,17 @@ import { fileURLToPath } from 'node:url';
 import {
   MIXMSTRS_CHANNELS,
   MIXMSTRS_RETURNS,
+  mixmstrsChannelIndex,
   mixmstrsDef,
 } from '$lib/audio/modules/mixmstrs';
 import { FACE_TIER_CAPS, laneOrder } from '$lib/ui/workflow/curated-face';
 import { glyphBinding, primaryAudioOutPortId } from '$lib/ui/workflow/shell-glyph-live';
 import { controlTags, OPERATIONAL_FIELDS } from './card-def-agreement';
-import {
-  busGainLinear,
-  busGainText,
-  compAsleepText,
-  isChannelScoped,
-  mixmstrsFaceParams,
-  sendText,
-} from './mixmstrs-face-model';
+import { isChannelScoped } from './mixmstrs-face-model';
 
 const FACE = mixmstrsDef.face!;
 const PARAMS = mixmstrsDef.params ?? [];
 const PARAM_IDS = PARAMS.map((p) => p.id);
-
-/** A reader over the def's declared defaults, with `overrides` on top — the
- *  shape a `FaceReadoutValue` is actually handed. */
-const reader =
-  (overrides: Record<string, number> = {}) =>
-  (id: string): number | undefined =>
-    id in overrides ? overrides[id] : PARAMS.find((p) => p.id === id)?.defaultValue;
-
-const at = (overrides: Record<string, number> = {}) => mixmstrsFaceParams(reader(overrides));
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 1 · THE RANKING INVARIANT
@@ -244,13 +229,14 @@ describe('mixmstrs face — the SCOPE ranking, asserted from the live def', () =
       ...MIXMSTRS_RETURNS.map((r) => `ret${r}_volume`),
     ];
     for (const id of levels) {
-      // ⚠ `neon-fader`, the conic-knob-language throw (owner review of #1738).
-      // Still asserted as an exact kind rather than "some kind of fader", so a
-      // silent drop back to the plain widget is red.
+      // ⚠ THIS ASSERTED `'neon-fader'` UNTIL #1794, to keep a silent drop back
+      // to the plain widget red. There is no plain widget to drop back TO —
+      // `Fader.svelte` is deleted and `'fader'` IS the conic-knob-language
+      // throw — so the exact-kind assertion now names the surviving kind.
       expect(
         FACE.paramCells?.[id],
         `${id} is a level and must render as the neon throw`,
-      ).toBe('neon-fader');
+      ).toBe('fader');
     }
     // …and nothing else claims to be one: a `fader` is discrete-never, and the
     // ten switch-shaped params on this module would be a real defect there.
@@ -262,7 +248,153 @@ describe('mixmstrs face — the SCOPE ranking, asserted from the live def', () =
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 2 · GLYPH RESOLUTION
+// 1b · CHANNEL ACCENT — channel N is LANE N (#1825)
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// ⚠ THE THING THAT CAN GO WRONG HERE IS NOT "the colour is ugly", it is that
+// the declaration and the naming rule stop agreeing. `face.channelAccent` is
+// what the shell paints from; `mixmstrsChannelIndex` is what the SCOPE ranking
+// axis reads. They are built from the same function on purpose, and the legs
+// below are the ways that could silently stop being true — a param claimed by
+// two channels, a bus-scoped param claimed by one, a channel with no controls,
+// or a param the def declares that nothing claims and nothing refuses.
+
+describe('mixmstrs face — CHANNEL ACCENT partitions the def by channel', () => {
+  const accent = FACE.channelAccent!;
+
+  it('is declared at all, one entry per channel, in strip order', () => {
+    expect(accent, 'mixmstrs must declare channelAccent').toBeTruthy();
+    expect(accent.length).toBe(MIXMSTRS_CHANNELS.length);
+  });
+
+  it('every listed id is a REAL param of this def', () => {
+    const unknown = accent.flat().filter((id) => !PARAM_IDS.includes(id));
+    expect(unknown, 'channelAccent must not name a param the def does not declare').toEqual([]);
+  });
+
+  it('no id is claimed twice — a cell has ONE colour', () => {
+    const flat = accent.flat();
+    const dupes = flat.filter((id, i) => flat.indexOf(id) !== i);
+    expect(dupes).toEqual([]);
+  });
+
+  it('the declaration and the NAMING RULE are the same partition, both directions', () => {
+    // ⇒ every listed id resolves to the index it is listed under…
+    const misplaced = accent.flatMap((ids, ch) =>
+      ids.filter((id) => mixmstrsChannelIndex(id) !== ch).map((id) => `${id}@${ch}`),
+    );
+    expect(misplaced).toEqual([]);
+    // …and ⇐ every param the rule claims is listed exactly once, under that index.
+    const claimed = PARAM_IDS.filter((id) => mixmstrsChannelIndex(id) !== null);
+    expect([...accent.flat()].sort()).toEqual([...claimed].sort());
+  });
+
+  it('and it is the SAME set the SCOPE axis calls channel-scoped', () => {
+    // The two consumers of one rule, anchored to each other. If `isChannelScoped`
+    // ever grew its own regex again, this is where the copies diverge.
+    expect([...accent.flat()].sort()).toEqual(PARAM_IDS.filter(isChannelScoped).sort());
+  });
+
+  it('NO BUS-SCOPED PARAM takes a lane colour — the stated fallback, asserted', () => {
+    // The `returns` band is a 4-column console grid whose columns are NOT
+    // channels, which is exactly why the mapping is a predicate over IDS and
+    // not a column position. `ret1_volume` sitting in column 1 must not come
+    // out the colour of channel 1.
+    const bus = PARAM_IDS.filter((id) => !isChannelScoped(id));
+    expect(bus, 'the module must have bus-scoped params at all').not.toEqual([]);
+    expect(bus.filter((id) => accent.flat().includes(id))).toEqual([]);
+    for (const r of MIXMSTRS_RETURNS) {
+      expect(mixmstrsChannelIndex(`ret${r}_volume`), `ret${r}_volume is not a channel`).toBeNull();
+    }
+    expect(mixmstrsChannelIndex('master_volume')).toBeNull();
+    expect(mixmstrsChannelIndex('send1Pre')).toBeNull();
+  });
+
+  it('every channel actually carries controls — an empty column is a dead colour', () => {
+    expect(accent.filter((ids) => ids.length === 0)).toEqual([]);
+    // …and every channel carries the SAME roster shape (the strips are
+    // interchangeable — the face model's whole premise), asserted as a property
+    // rather than a number: strip the index out and the eight lists coincide.
+    const shapes = accent.map((ids, ch) =>
+      ids.map((id) => id.replace(String(MIXMSTRS_CHANNELS[ch]), '{n}')).sort().join(','),
+    );
+    expect(new Set(shapes).size, 'the eight channels must have the same controls').toBe(1);
+  });
+
+  it('NEGATIVE CONTROL: the rule refuses ids that merely LOOK channel-shaped', () => {
+    // Proves the mapping reads the def's channel LIST rather than "any digit".
+    expect(mixmstrsChannelIndex('ch99_volume'), 'no such channel').toBeNull();
+    expect(mixmstrsChannelIndex('comp99'), 'no such channel').toBeNull();
+    expect(mixmstrsChannelIndex('chatter_volume'), 'not an index at all').toBeNull();
+    expect(mixmstrsChannelIndex('compEnable'), 'not an index at all').toBeNull();
+    expect(mixmstrsChannelIndex('')).toBeNull();
+    // …and it really can say YES, in both shapes the def emits.
+    expect(mixmstrsChannelIndex(`ch${MIXMSTRS_CHANNELS[0]}_volume`)).toBe(0);
+    expect(mixmstrsChannelIndex(`comp${MIXMSTRS_CHANNELS.at(-1)}`)).toBe(
+      MIXMSTRS_CHANNELS.length - 1,
+    );
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 2 · THE CAPTIONS
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('mixmstrs face — the CAPTIONS, as a partition of the def', () => {
+  // Owner review 2026-08-17: *"the 1lo 1md 1hi etc labels should also go away
+  // because the low/mid/high labels above the knob rows convey that fine"*.
+  //
+  // `face.bareCells` is authored as EVERY param except a small exception set,
+  // so what is worth asserting is the PARTITION rather than the list: every
+  // declared param is on exactly one side, both sides are non-empty, and the
+  // captioned side is exactly the cells that sit outside the
+  // heading-plus-column arrangement. Read off the live def in both directions,
+  // so a ninth channel or a new per-channel control is swept without touching
+  // this file — and a rename cannot leave a dead exception quietly captioning
+  // a cell nobody meant to caption.
+  const BARE = new Set(FACE.bareCells ?? []);
+
+  it('every param is either BARE or one of the NAMED exceptions — nothing in between', () => {
+    // The exception restated as a PROPERTY rather than copied as a list: a
+    // send-bus PRE/POST switch is the one control whose cluster heading names
+    // something else (the send AMOUNT row), so it is the one that keeps its
+    // own caption.
+    const isSendPre = (id: string) => /^send\d+Pre$/.test(id);
+    const captioned = PARAM_IDS.filter((id) => !BARE.has(id));
+    expect(
+      captioned.filter((id) => !isSendPre(id)).sort(),
+      'a param is captioned but is not a send PRE/POST switch — either it was left out of ' +
+        'face.bareCells by accident, or the exception rule changed and this test did not',
+    ).toEqual([]);
+    expect(
+      PARAM_IDS.filter(isSendPre).filter((id) => BARE.has(id)),
+      'a send PRE/POST switch went bare — nothing else on the face names the tap point, and ' +
+        'the header echo that used to was removed in #1738',
+    ).toEqual([]);
+  });
+
+  it('ANCHOR: bareCells names only live params, and both sides are non-empty', () => {
+    // A dead entry is invisible in the render — the cell simply keeps a caption
+    // nobody meant it to keep — which is why it is asserted rather than
+    // eyeballed. The two non-emptiness legs are the anti-vacuity pair: an empty
+    // BARE set satisfies everything above while changing nothing, and a BARE
+    // set covering every param would silently strip the two switches.
+    const live = new Set(PARAM_IDS);
+    expect(
+      [...BARE].filter((id) => !live.has(id)).sort(),
+      'face.bareCells names a param that no longer exists',
+    ).toEqual([]);
+    expect(BARE.size, 'no param is bare — the declutter did not reach the face').toBeGreaterThan(0);
+    expect(
+      PARAM_IDS.filter((id) => !BARE.has(id)).length,
+      'EVERY param is bare — the two PRE/POST switches lost the only text naming them',
+    ).toBeGreaterThan(0);
+  });
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 3 · GLYPH RESOLUTION
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('mixmstrs face — the glyph RESOLVES, and to the MASTER BUS', () => {
@@ -297,253 +429,23 @@ describe('mixmstrs face — the glyph RESOLVES, and to the MASTER BUS', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 3 · THE DERIVED READOUTS
+// 4 · THE DERIVED READOUTS
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe('mixmstrs readout · BUS — the worst-case gain no fader can show', () => {
-  it('prints the measured bound at the shipped defaults', () => {
-    // MEASURED, ten correlated full-scale sources through the shipped Faust
-    // wasm at the factory defaults: masterL peak 6.7187, against the formula's
-    // (8 x 0.8 + 2 x 1.0) x 0.8 = 6.72. Mute both returns and it is 5.1190
-    // against 5.12. TWO correlated full-scale channels already exceed 1.0
-    // (measured peak 1.2797) and nothing in the module limits.
-    expect(busGainText(at())).toBe('≤ 6.72× · +16.5 dB');
-  });
+// ── THE READOUT SUITES ARE DELETED WITH THEIR SUBJECT ─────────────────────
+//
+// Three describes lived here — `BUS`, `ASLEEP` and `SENDS` — and each carried a
+// PERMANENT negative control on the input a knob readback is blind to (a
+// bit-exactly inert `ch1_thresh` must not move BUS; `ch1_volume` must not move
+// ASLEEP; a PRE/POST flip must still print `off` while every send is shut).
+// They were good tests. Their subject is gone: owner ruling 2026-08-17 removed
+// the hero readout strip from the faceplate, and the functions went with the
+// display rather than being left registered against a declaration nothing
+// renders (see `mixmstrs-face-model.ts`'s closing note).
+//
+// ⚠ NOTHING WAS WEAKENED TO MAKE A SUITE PASS. The assertions above — the SCOPE
+// ranking anchored to the live def in both directions, the glyph resolving to
+// `masterL` by name, and the card/def agreement sweep — are untouched, and they
+// are what this file exists for. What is missing is coverage of arithmetic that
+// no longer runs anywhere.
 
-  it('NEGATIVE CONTROL — ch1_thresh across its WHOLE travel must not move it', () => {
-    // `ch1_thresh` is bit-exactly inert at the shipped defaults (measured
-    // 0.0000e+0 over -36 -> 0 dB with every input driven), so a bus-gain readout
-    // that reacted to it would be reporting a control the DSP is ignoring.
-    const lo = PARAMS.find((p) => p.id === 'ch1_thresh')!.min!;
-    const hi = PARAMS.find((p) => p.id === 'ch1_thresh')!.max!;
-    expect(busGainText(at({ ch1_thresh: lo }))).toBe(busGainText(at()));
-    expect(busGainText(at({ ch1_thresh: hi }))).toBe(busGainText(at()));
-  });
-
-  it('LEG — master_volume 0.8 -> 1.0 scales it by EXACTLY 1.25', () => {
-    // The render agrees: masterL peak ratio 1.250030 across the same move. A
-    // readout that only ever went up with a channel fader would pass a
-    // one-sided test while being blind to the master.
-    const base = busGainLinear(at());
-    const full = busGainLinear(at({ master_volume: 1 }));
-    expect(full / base).toBeCloseTo(1.25, 12);
-  });
-
-  it('LEG — the RETURNS are in the sum, which no channel fader can reveal', () => {
-    // The measurement that forces this leg: with both return volumes at 0 the
-    // same ten-source render peaks at 5.1190 instead of 6.7187. A readout that
-    // summed only `ch{N}_volume` would pass every other leg in this block.
-    const muted = Object.fromEntries(MIXMSTRS_RETURNS.map((r) => [`ret${r}_volume`, 0]));
-    expect(busGainLinear(at(muted))).toBeCloseTo(5.12, 12);
-    expect(busGainLinear(at())).toBeCloseTo(6.72, 12);
-  });
-
-  it('TOTALITY — a fresh node, NaN and ±Infinity all render a string, never a throw', () => {
-    // The function runs on every render, so a throw takes the faceplate down
-    // mid-drag.
-    expect(busGainText(mixmstrsFaceParams(() => undefined))).toBe('≤ 6.72× · +16.5 dB');
-    expect(busGainText(at({ master_volume: Number.NaN }))).toBe('≤ 6.72× · +16.5 dB');
-    expect(() => busGainText(at({ master_volume: Number.POSITIVE_INFINITY }))).not.toThrow();
-    expect(() => busGainText(at({ ch1_volume: Number.NEGATIVE_INFINITY }))).not.toThrow();
-    expect(busGainText(at({ master_volume: 0 }))).toBe('0× · −∞ dB');
-    for (const s of [
-      busGainText(at({ master_volume: Number.POSITIVE_INFINITY })),
-      busGainText(at({ ch1_volume: Number.NEGATIVE_INFINITY })),
-    ]) {
-      expect(s, 'a readout must never print a raw NaN at the user').not.toMatch(/NaN/);
-    }
-  });
-});
-
-describe('mixmstrs readout · ASLEEP — the sixteen faders that do nothing', () => {
-  it('counts every gated fader at the shipped defaults', () => {
-    // MEASURED: sweeping ch1_thresh across its entire -36..0 dB travel with all
-    // twenty audio inputs driven moves masterL by 0.0000e+0, and ch1_ratio
-    // (1..10) likewise. Open the enable and the same sweeps move it by
-    // 1.8631e-1 and 1.1563e-1. The module's own floor — the smallest move ANY
-    // control makes on the same harness — is ch1_volume 0.800 -> 0.801 =
-    // 2.9062e-4, so the plateau is a real zero and not a quantisation bucket.
-    expect(compAsleepText(at())).toBe('16 asleep');
-  });
-
-  it('NEGATIVE CONTROL — a level change wakes nothing', () => {
-    expect(compAsleepText(at({ ch1_volume: 0 }))).toBe('16 asleep');
-    expect(compAsleepText(at({ master_volume: 1 }))).toBe('16 asleep');
-  });
-
-  it('LEG A — the MANUAL switch wakes its pair', () => {
-    expect(compAsleepText(at({ ch1_compEnable: 1 }))).toBe('14 asleep');
-  });
-
-  it('LEG B — the MACRO wakes it too, and the two legs are each other\'s controls', () => {
-    // The module ships TWO independent enablers. A readout watching only the
-    // manual switch passes LEG A and prints `16 asleep` here while the DSP has
-    // already engaged the compressor — the macro writes `compEnable` downstream
-    // through `mapCompMacro`, which this model imports rather than restates.
-    expect(compAsleepText(at({ comp1: 0.5 }))).toBe('14 asleep');
-    // …and the macro's own bypass point is the def's, not a guessed one.
-    expect(compAsleepText(at({ comp1: 0 }))).toBe('16 asleep');
-  });
-
-  it('reads `all live` only when EVERY channel is awake', () => {
-    const allOn = Object.fromEntries(MIXMSTRS_CHANNELS.map((c) => [`ch${c}_compEnable`, 1]));
-    expect(compAsleepText(at(allOn))).toBe('all live');
-    // One short of the whole bank must NOT read `all live`.
-    const { [`ch${MIXMSTRS_CHANNELS[0]}_compEnable`]: _drop, ...allButOne } = allOn;
-    expect(compAsleepText(at(allButOne))).toBe('2 asleep');
-  });
-
-  it('TOTALITY — a fresh node and a NaN both render', () => {
-    expect(compAsleepText(mixmstrsFaceParams(() => undefined))).toBe('16 asleep');
-    expect(compAsleepText(at({ comp1: Number.NaN }))).toBe('16 asleep');
-    expect(() => compAsleepText(at({ ch1_compEnable: Number.POSITIVE_INFINITY }))).not.toThrow();
-  });
-});
-
-describe('mixmstrs readout · SENDS — the tap point AND whether the bus is alive', () => {
-  it('both buses read POST and OFF at the shipped defaults', () => {
-    expect(sendText(0, at())).toBe('POST · off');
-    expect(sendText(1, at())).toBe('POST · off');
-  });
-
-  it('NEGATIVE CONTROL — the switch alone must still read `off` in BOTH positions', () => {
-    // THE MEASUREMENT THAT FORCES THIS LEG: with every send at 0, flipping
-    // send1Pre 0 -> 1 moves send1L by 0.0000e+0 and masterL by 0.0000e+0. Open
-    // every send to 0.5 and the same flip moves send1L by 3.2138e-1. A caption
-    // that merely echoed the switch would print `PRE` and imply something
-    // happened — on the control the owner's ES-9 send/return rack depends on.
-    expect(sendText(0, at({ send1Pre: 1 }))).toBe('PRE · off');
-    expect(sendText(1, at({ send2Pre: 1 }))).toBe('PRE · off');
-  });
-
-  it('LEG — opening a send is what makes the bus alive', () => {
-    expect(sendText(0, at({ ch3_send1: 0.5 }))).toBe('POST · 1 ch');
-    expect(sendText(0, at({ ch3_send1: 0.5, send1Pre: 1 }))).toBe('PRE · 1 ch');
-    const allSend1 = Object.fromEntries(MIXMSTRS_CHANNELS.map((c) => [`ch${c}_send1`, 0.2]));
-    expect(sendText(0, at(allSend1))).toBe(`POST · ${MIXMSTRS_CHANNELS.length} ch`);
-  });
-
-  it('CROSS-CONTROL — the two buses are independent, in both directions', () => {
-    // send 2's amounts must not move send 1's readout and vice versa. The DSP
-    // sums them separately (`mixmstrs.dsp:336-339`) and the two PRE flags are
-    // explicitly per-bus; a model that indexed the wrong row would pass every
-    // single-bus leg above.
-    expect(sendText(0, at({ ch3_send2: 1, send2Pre: 1 }))).toBe('POST · off');
-    expect(sendText(1, at({ ch3_send1: 1, send1Pre: 1 }))).toBe('POST · off');
-  });
-
-  it('TOTALITY — a fresh node and a NaN both render', () => {
-    expect(sendText(0, mixmstrsFaceParams(() => undefined))).toBe('POST · off');
-    expect(sendText(0, at({ ch1_send1: Number.NaN }))).toBe('POST · off');
-    expect(() => sendText(0, at({ send1Pre: Number.NaN }))).not.toThrow();
-  });
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// 4 · CARD ↔ DEF, OVER THE CONTROLS THE TREE-WIDE GATE CANNOT SEE
-// ─────────────────────────────────────────────────────────────────────────────
-
-describe('MixmstrsCard ↔ def — the TEMPLATED controls card-def-agreement is blind to', () => {
-  // `card-def-agreement.ts` keys on a LITERAL `paramId="…"` and says so in its
-  // stated blind spots: a control naming its param through an EXPRESSION
-  // (`paramId={`ch${ch}_volume`}`) reads as "no paramId at all". On this card
-  // that is EIGHTY of the eighty-nine rendered controls — the largest single
-  // un-scanned card surface in the repo — because eight channel strips are one
-  // `{#each}` body. (The card's own comment says the two RETURN strips are
-  // deliberately UNROLLED for exactly this reason; the channels were not.)
-  //
-  // MEASURED WHEN THIS FACE WAS AUTHORED: expanding every template and
-  // comparing all four OPERATIONAL fields found ZERO divergence — every range,
-  // default and curve the card re-types agrees with the def. That is a result,
-  // not an absence of one, and this test is what keeps it true. The VOCABULARY
-  // tier is a different story and is filed separately: all eighty templated
-  // controls disagree on `label` (card `LOW` under a `CH 3` column header, def
-  // `3Lo`), systematically and benignly, and the DOCK renders the DEF's label —
-  // which is what makes the def's channel-indexed labels the right ones for the
-  // console grid this face builds.
-  //
-  // Module-scoped on purpose: teaching the tree-wide scanner to expand
-  // templates is a platform change that would redden other cards, and a
-  // behaviour change does not belong in a face PR.
-  const cardSrc = readFileSync(
-    fileURLToPath(new URL('./MixmstrsCard.svelte', import.meta.url)),
-    'utf8',
-  );
-
-  /** Every `<Knob …/>` on the card, with its `paramId` EXPANDED over the def's
-   *  own channel list when it is a template. */
-  function resolvedControls(): { id: string; line: number; props: string }[] {
-    const out: { id: string; line: number; props: string }[] = [];
-    for (const t of controlTags(cardSrc)) {
-      const tpl = /paramId=\{`([^`]+)`\}/.exec(t.props)?.[1];
-      const ids = t.paramId
-        ? [t.paramId]
-        : tpl
-          ? MIXMSTRS_CHANNELS.map((c) => tpl.replace(/\$\{ch\}/g, String(c)))
-          : [];
-      for (const id of ids) out.push({ id, line: t.line, props: t.props });
-    }
-    return out;
-  }
-
-  const numProp = (props: string, field: string): number | undefined => {
-    const m = new RegExp(`(?:^|[^A-Za-z0-9_])${field}=\\{\\s*(-?[0-9][0-9._eE+-]*)\\s*\\}`).exec(props);
-    return m ? Number(m[1]) : undefined;
-  };
-  const strProp = (props: string, field: string): string | undefined =>
-    new RegExp(`(?:^|[^A-Za-z0-9_])${field}="([^"]*)"`).exec(props)?.[1];
-
-  it('the scan is NOT VACUOUS — it resolves the whole templated bank', () => {
-    // A bare green here is exactly what the tree-wide gate's own header warns
-    // about: a scan that resolved nothing is indistinguishable from a clean one.
-    const rows = resolvedControls();
-    const templated = rows.filter((r) => !/paramId="/.test(r.props));
-    expect(templated.length, 'no templated control resolved — the scan is measuring nothing')
-      .toBeGreaterThanOrEqual(MIXMSTRS_CHANNELS.length);
-    // Every resolved id must be a real param, in both directions for the bank:
-    // a template that expanded to a non-param would otherwise be skipped.
-    expect(rows.filter((r) => !PARAM_IDS.includes(r.id)).map((r) => `${r.id} @${r.line}`)).toEqual([]);
-  });
-
-  it('no control contradicts the def on min / max / defaultValue / curve', () => {
-    const bad: string[] = [];
-    for (const row of resolvedControls()) {
-      const p = PARAMS.find((q) => q.id === row.id)!;
-      for (const field of OPERATIONAL_FIELDS) {
-        if (field === 'curve') {
-          const got = strProp(row.props, 'curve');
-          if (got !== undefined && got !== (p.curve ?? 'linear')) {
-            bad.push(`${row.id}.curve card=${got} def=${p.curve ?? 'linear'} @${row.line}`);
-          }
-          continue;
-        }
-        const got = numProp(row.props, field);
-        const want = p[field];
-        if (got !== undefined && want !== undefined && got !== want) {
-          bad.push(`${row.id}.${field} card=${got} def=${want} @${row.line}`);
-        }
-      }
-    }
-    expect(
-      bad.sort(),
-      'a MixmstrsCard control disagrees with its def about what it can WRITE or how it MAPS — ' +
-        'and no tree-wide gate can see it, because the id is a template',
-    ).toEqual([]);
-  });
-
-  it('every def param is reachable from the card or from a NAMED non-knob affordance', () => {
-    // The STOP-2 property, kept permanent: promotion removes the card, so
-    // anything that lives ONLY there becomes unreachable. Here the answer is
-    // that nothing does — every affordance is a ParamDef — and the two that are
-    // not knobs are named rather than assumed.
-    const knobbed = new Set(resolvedControls().map((r) => r.id));
-    const nonKnob = MIXMSTRS_RETURNS.map((r) => `send${r}Pre`); // the `.prepost` buttons
-    for (const id of nonKnob) {
-      expect(cardSrc, `${id} must still be written by the card's button`).toContain(`set('${id}')`);
-    }
-    expect(
-      PARAM_IDS.filter((id) => !knobbed.has(id) && !nonKnob.includes(id)),
-      'a def param the card can no longer reach — either the card lost a control or this list is stale',
-    ).toEqual([]);
-  });
-});

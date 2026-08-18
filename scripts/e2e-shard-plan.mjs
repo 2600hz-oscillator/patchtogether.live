@@ -82,10 +82,23 @@ export function loadContention(dir = join(ROOT, 'e2e/tests')) {
  */
 export const PENDING_FIRST_MEASUREMENT = [
   // EMPTY, and that is the point: every entry here is a debt with a deadline.
+  //
   // All six that stood on 2026-08-17 were paid in one accept against ci.yml run
-  // 32069537806 — the gate reddens on a stale entry exactly as loudly as on a
-  // missing one, so an entry whose first measurement has landed MUST be deleted
-  // rather than left as a record that it once existed.
+  // 32069537806. `backdraft-preview-toggle.spec.ts` (#1784) was paid the same
+  // way against run 32095771313 — its own entry named the deadline ("run
+  // `task e2e:timings:accept` on the first green run after this merges and
+  // DELETE this entry"), and this is that deletion.
+  //
+  // ⚠ ITS MEASURED COST IS 358.2 CPU-s, against the 57.5 s its entry predicted
+  // from a local single-worker `E2E_SWIFTSHADER=1` run — 6x. That is not a
+  // regression in the spec, it is the gap this artifact exists to close: a local
+  // measurement of a VIDEO spec cannot see ten shards competing for the same
+  // software rasterizer. It is now the 11th most expensive file in the suite,
+  // and the planner can finally see that.
+  //
+  // The gate reddens on a STALE entry exactly as loudly as on a missing one, so
+  // an entry whose first measurement has landed MUST be deleted rather than left
+  // as a record that it once existed.
 ];
 
 /** Median of a numeric array (used as the cost of an unmeasured file). */

@@ -2,7 +2,7 @@
   // VideoMixerCard — 4-channel video mixer. Each row pairs an `in{N}`
   // video input with an `amount{N}` CV input + corresponding fader.
   import { type NodeProps } from '@xyflow/svelte';
-  import Fader from '$lib/ui/controls/Fader.svelte';
+  import NeonFader from '$lib/ui/controls/NeonFader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import { setNodeParam } from '$lib/graph/mutate';
   import { mixerVideoDef } from '$lib/video/modules/mixer';
@@ -33,10 +33,10 @@
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="fader-grid">
-      <Fader value={p('amount1')} min={0} max={1} defaultValue={mixerVideoDef.params.find((x) => x.id === 'amount1')!.defaultValue} label="A1" curve="linear" onchange={setParam('amount1')} moduleId={id} paramId="amount1" />
-      <Fader value={p('amount2')} min={0} max={1} defaultValue={mixerVideoDef.params.find((x) => x.id === 'amount2')!.defaultValue} label="A2" curve="linear" onchange={setParam('amount2')} moduleId={id} paramId="amount2" />
-      <Fader value={p('amount3')} min={0} max={1} defaultValue={mixerVideoDef.params.find((x) => x.id === 'amount3')!.defaultValue} label="A3" curve="linear" onchange={setParam('amount3')} moduleId={id} paramId="amount3" />
-      <Fader value={p('amount4')} min={0} max={1} defaultValue={mixerVideoDef.params.find((x) => x.id === 'amount4')!.defaultValue} label="A4" curve="linear" onchange={setParam('amount4')} moduleId={id} paramId="amount4" />
+      <NeonFader value={p('amount1')} min={0} max={1} defaultValue={mixerVideoDef.params.find((x) => x.id === 'amount1')!.defaultValue} label="A1" curve="linear" onchange={setParam('amount1')} moduleId={id} paramId="amount1" />
+      <NeonFader value={p('amount2')} min={0} max={1} defaultValue={mixerVideoDef.params.find((x) => x.id === 'amount2')!.defaultValue} label="A2" curve="linear" onchange={setParam('amount2')} moduleId={id} paramId="amount2" />
+      <NeonFader value={p('amount3')} min={0} max={1} defaultValue={mixerVideoDef.params.find((x) => x.id === 'amount3')!.defaultValue} label="A3" curve="linear" onchange={setParam('amount3')} moduleId={id} paramId="amount3" />
+      <NeonFader value={p('amount4')} min={0} max={1} defaultValue={mixerVideoDef.params.find((x) => x.id === 'amount4')!.defaultValue} label="A4" curve="linear" onchange={setParam('amount4')} moduleId={id} paramId="amount4" />
     </div>
   </PatchPanel>
 </div>

@@ -137,19 +137,35 @@ test.describe('LIVE shell glyphs (?shell=1)', () => {
       faceplate.locator('[data-glyph-kind="waveform"]'),
     ).toHaveAttribute('data-glyph-binding', 'dual');
 
-    // 4) The dock hero LAYOUT: the dual pair still fits the 4-knob-column cap
-    //    (the panes SPLIT it), well short of the faceplate span (blank space
-    //    to its right).
+    // 4) The dock hero LAYOUT: the dual pair is CAPPED at the 4-knob-column
+    //    width (the panes SPLIT it) rather than stretching to the plate.
     const dualBox = (await faceplate.getByTestId('shell-glyph-dual').boundingBox())!;
     const glyphBox = (await glyph.boundingBox())!;
     const plateBox = (await faceplate.boundingBox())!;
     expect(dualBox.width, 'dual hero spans the first 4 knob columns').toBeLessThanOrEqual(DOCK_HERO_GLYPH_W + 2);
     expect(dualBox.width).toBeGreaterThanOrEqual(DOCK_HERO_GLYPH_W - 2);
     expect(glyphBox.width, 'the trace pane keeps the 40px scope floor').toBeGreaterThanOrEqual(40);
+    // ⚠ THIS USED TO READ "blank space remains to the hero's right", against the
+    // plate's MIDPOINT — and it passed only because the plate was padded to
+    // 900 px by `.faceplate-body`'s min-width while tidyVco's real content is
+    // 431 px. #1796 removed that floor (owner: *"we do not want useless gray
+    // horizontal space on cards, ever"*), so the plate is now 464 px, half of
+    // it is 282, and a hero correctly capped at 214 px ends at 299 — past the
+    // midpoint of a plate that is no longer twice the size it needs to be.
+    //
+    // The claim worth keeping is that the hero is CAPPED, not STRETCHED, and
+    // the two assertions directly above already pin the cap to ±2 px. What this
+    // adds is that the cap is a real constraint on THIS plate — the hero must
+    // be strictly narrower than the faceplate and end inside it — which is a
+    // relation rather than a proxy for the old padding.
+    expect(
+      DOCK_HERO_GLYPH_W,
+      'the 4-column cap must actually constrain this plate, or "capped" says nothing',
+    ).toBeLessThan(plateBox.width);
     expect(
       dualBox.x + dualBox.width,
-      'blank space remains to the hero’s right',
-    ).toBeLessThan(plateBox.x + plateBox.width * 0.5);
+      'the hero ends INSIDE the faceplate rather than spanning it',
+    ).toBeLessThan(plateBox.x + plateBox.width);
 
     // 2) SILENT: the live trace is present but FLAT and the canvas is STATIC.
     //    (Wait until the glyph has painted at least one live frame first —

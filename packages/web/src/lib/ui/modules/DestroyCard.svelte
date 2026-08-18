@@ -17,7 +17,7 @@
   // took the CARD's wording — `Decimate` is unambiguous where `Dec` could be
   // decay — so NO PIXEL MOVED on this card and nothing was renamed for a user.
   import type { NodeProps } from '@xyflow/svelte';
-  import Fader from '$lib/ui/controls/Fader.svelte';
+  import NeonFader from '$lib/ui/controls/NeonFader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import { destroyDef } from '$lib/audio/modules/destroy';
   import type { ModuleNode } from '$lib/graph/types';
@@ -49,9 +49,9 @@
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="fader-row">
-      <Fader value={decimate} min={P.decimate.min} max={P.decimate.max} defaultValue={P.decimate.defaultValue} label={P.decimate.label} units={P.decimate.units} curve={P.decimate.curve} onchange={set('decimate')} moduleId={id} paramId="decimate" readLive={live('decimate')} />
-      <Fader value={bits} min={P.bits.min} max={P.bits.max} defaultValue={P.bits.defaultValue} label={P.bits.label} units={P.bits.units} curve={P.bits.curve} onchange={set('bits')} moduleId={id} paramId="bits" readLive={live('bits')} />
-      <Fader value={wet} min={P.wet.min} max={P.wet.max} defaultValue={P.wet.defaultValue} label={P.wet.label} units={P.wet.units} curve={P.wet.curve} onchange={set('wet')} moduleId={id} paramId="wet" readLive={live('wet')} />
+      <NeonFader value={decimate} min={P.decimate.min} max={P.decimate.max} defaultValue={P.decimate.defaultValue} label={P.decimate.label} units={P.decimate.units} curve={P.decimate.curve} onchange={set('decimate')} moduleId={id} paramId="decimate" readLive={live('decimate')} />
+      <NeonFader value={bits} min={P.bits.min} max={P.bits.max} defaultValue={P.bits.defaultValue} label={P.bits.label} units={P.bits.units} curve={P.bits.curve} onchange={set('bits')} moduleId={id} paramId="bits" readLive={live('bits')} />
+      <NeonFader value={wet} min={P.wet.min} max={P.wet.max} defaultValue={P.wet.defaultValue} label={P.wet.label} units={P.wet.units} curve={P.wet.curve} onchange={set('wet')} moduleId={id} paramId="wet" readLive={live('wet')} />
     </div>
   </PatchPanel>
 </div>

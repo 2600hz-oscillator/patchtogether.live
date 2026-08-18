@@ -1,16 +1,26 @@
 // e2e/tests/vca-face.spec.ts
 //
-// THE VCA FACE, driven for real: the two knob readouts must follow the GRAPH,
+// THE VCA FACE, driven for real: the two knob values must follow the GRAPH,
 // not merely re-label themselves.
 //
 // faces-parity already proves every vca cell is present and operable. What it
-// cannot prove is the thing this face's rework is FOR — that the persistent
-// readouts (`ParamDef.format` → KnobConic's `.readout`) tell the truth about
-// the module's mode. A readout is a string a component computes, so the failure
-// mode is a DOM that re-labels itself while the graph never moved (or, worse,
-// the graph moving while the readout stays put because it was wired to a stale
-// local). Every assertion below therefore pins BOTH sides: the committed
-// `__patch` param value AND the text the dial prints for it.
+// cannot prove is the thing this face's rework is FOR — that the def's declared
+// vocabulary (`ParamDef.format`) tells the truth about the module's mode. It is
+// a string a component computes, so the failure mode is a DOM that re-labels
+// itself while the graph never moved (or, worse, the graph moving while the
+// string stays put because it was wired to a stale local). Every assertion
+// below therefore pins BOTH sides: the committed `__patch` param value AND the
+// string the dial resolves for it.
+//
+// ⚠ NEITHER vca DIAL PAINTS ANYTHING NOW, and both of them used to. The owner
+// removed the resting number from every faceplate (2026-08-17). `base` declares
+// a `format` and is the plain case; `cvAmount` declares landmarks AND a
+// `format`, and its landmarks are a SINGLE null-point detent for an
+// attenuverter — ranking them over `format` would print one unchanging word
+// across the whole travel, which is why `paintsReadout` defers to `format` and
+// then paints nothing. So the strings moved to `aria-valuetext`
+// (`knobValueReadout` — the same ladder, byte for byte) and the assertions are
+// unchanged in everything but the surface they read.
 //
 // The drags are deliberately PAST the end of the arc — `knobFracToValue` clamps
 // its fraction to [0,1] — so each gesture lands on an EXACT endpoint (−1 / +1)
@@ -22,11 +32,6 @@
 
 import { test, expect, type Locator, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
-import {
-  LANE_KCOL_MAX_PX,
-  READOUT_CHAR_PX,
-  READOUT_MAX_CHARS,
-} from '../../packages/web/src/lib/ui/workflow/lane-readout-fit';
 import { formatVcaBase } from '../../packages/web/src/lib/audio/vca-gain-model';
 
 const SLOW_RENDER = process.env.E2E_SWIFTSHADER === '1' || !!process.env.CI;
@@ -109,71 +114,17 @@ async function setLaneTier(page: Page, zoom: number, tier: string): Promise<void
   );
 }
 
-interface ReadoutFit {
-  text: string;
-  /** The readout's own laid-out width, in UNSCALED CSS px. */
-  readoutWidthPx: number;
-  /** The enclosing `.kcol`'s laid-out width, in UNSCALED CSS px. Fit-content,
-   *  clamped by `--kcol-max`, so it is 40 (the knob) until a wide readout drags
-   *  it up to the 46 cap and then stops. */
-  columnWidthPx: number;
-  /** The live `max-width` of that `.kcol`, in CSS px — the cap itself. */
-  columnMaxWidthPx: number;
-  /** True when Chromium is actually drawing the `…`. MEASURED AND REPORTED
-   *  ONLY AS EVIDENCE, never as the gate: `.readout`'s `max-width:100%`
-   *  resolves against `.knob-wrap` (`max-width:none`), which grows to the text,
-   *  so this is ALWAYS false no matter how long the string is. A gate built on
-   *  it would be invariant to the thing it claims to measure. */
-  ellipsized: boolean;
-  /** Sub-pixel advance of ONE `.readout` glyph on THIS runner's font stack,
-   *  measured with a probe span that inherits the readout's computed type. */
-  advancePx: number;
-}
-
-/**
- * Measure a live `.readout`: does it stay inside its column, and what is this
- * runner's real glyph advance?
- *
- * ⚠ UNITS. `getBoundingClientRect()` on a flow node is VIEWPORT-SCALED — xyflow
- * applies a CSS transform for zoom, the `measureOverflow` trap in CLAUDE.md.
- * `offsetWidth` is NOT (it is a layout box, immune to transforms), which is why
- * every width below is an `offsetWidth`. Confirmed on this very element: the
- * readout reads 48 at zoom 0.2 / 0.4 / 0.7 alike, while its client rect scales
- * 1 : 2 : 3.5 across the same three. The advance probe is additionally appended
- * to `document.body`, OUTSIDE the transformed subtree.
- */
-async function measureReadoutFit(readout: Locator): Promise<ReadoutFit> {
-  return readout.evaluate((el) => {
-    // Locator.evaluate hands us HTMLElement | SVGElement; offsetWidth (a
-    // layout-px box) only exists on HTMLElement — assert it, don't cast.
-    if (!(el instanceof HTMLElement)) throw new Error('readout is not an HTMLElement — offsetWidth (layout px) requires one');
-    const cs = getComputedStyle(el);
-    const kcol = el.closest('.kcol') as HTMLElement | null;
-    if (!kcol) throw new Error('readout is not inside a .kcol — the 46px cap does not apply');
-
-    // The advance probe: same computed type as the real readout, 32 identical
-    // glyphs so a rounding error is divided by 32, laid out untransformed.
-    const N = 32;
-    const probe = document.createElement('span');
-    probe.textContent = '0'.repeat(N);
-    probe.style.cssText =
-      `position:absolute;left:-9999px;top:0;white-space:nowrap;display:inline-block;` +
-      `font-family:${cs.fontFamily};font-size:${cs.fontSize};font-weight:${cs.fontWeight};` +
-      `letter-spacing:${cs.letterSpacing};text-transform:${cs.textTransform};`;
-    document.body.appendChild(probe);
-    const advancePx = probe.getBoundingClientRect().width / N;
-    probe.remove();
-
-    return {
-      text: el.textContent ?? '',
-      readoutWidthPx: el.offsetWidth,
-      columnWidthPx: kcol.offsetWidth,
-      columnMaxWidthPx: parseFloat(getComputedStyle(kcol).maxWidth),
-      ellipsized: el.scrollWidth > el.clientWidth,
-      advancePx,
-    };
-  });
-}
+// ⚠ `measureReadoutFit` LIVED HERE AND IS DELETED WITH ITS SUBJECT. It measured
+// a live `.readout`'s laid-out width, its `.kcol`'s width and live `--kcol-max`,
+// whether Chromium was drawing an ellipsis (carried as EVIDENCE only — it is
+// always false, so a gate built on it would have been invariant to the thing
+// under test), and this runner's real per-glyph advance from a probe span
+// appended OUTSIDE xyflow's transform. All of it in `offsetWidth`, never
+// `getBoundingClientRect`, because a flow node's client rect is VIEWPORT-SCALED
+// (the measureOverflow trap in CLAUDE.md) — confirmed on this very element: the
+// readout read 48 at zoom 0.2 / 0.4 / 0.7 alike while its client rect scaled
+// 1 : 2 : 3.5. No vca dial paints a `.readout` any more (see the dB sweep
+// below), so every one of those numbers would now be measured off nothing.
 
 /** Drag a dial VERTICALLY by `dy` px (negative = up = toward max). Overshooting
  *  the arc is intentional — see the header. */
@@ -203,16 +154,27 @@ test.describe('vca face — the knob readouts follow the graph', () => {
       'the single dock band states the gain law',
     ).toHaveText('gain = base + cv × amount');
 
-    // ── SPAWN STATE. The defaults are base 0 / cvAmount 1, and the two
-    //    readouts must say what those numbers MEAN — `CLOSED` is the module's
-    //    whole spawn-time surprise (silent until CV arrives). ──
-    const baseOut = dock.getByTestId('readout-base');
-    const cvOut = dock.getByTestId('readout-cvAmount');
-    await expect(baseOut, 'a fresh VCA announces that it is shut').toHaveText('CLOSED');
-    await expect(cvOut, 'and that positive CV will open it').toHaveText('OPEN');
-
+    // ── SPAWN STATE. The defaults are base 0 / cvAmount 1, and the two dials
+    //    must say what those numbers MEAN — `CLOSED` is the module's whole
+    //    spawn-time surprise (silent until CV arrives). ──
     const baseDial = dock.locator('[data-testid="control-base"]');
     const cvDial = dock.locator('[data-testid="control-cvAmount"]');
+    await expect(baseDial, 'a fresh VCA announces that it is shut').toHaveAttribute(
+      'aria-valuetext',
+      'CLOSED',
+    );
+    await expect(cvDial, 'and that positive CV will open it').toHaveAttribute(
+      'aria-valuetext',
+      'OPEN',
+    );
+    // …and neither one paints it. `cvAmount` is the interesting half: it DOES
+    // declare a roster, so a naive "has a vocabulary ⇒ print it" rule would put
+    // a word back under this dial — and that word would be the same at every
+    // value. The absence is asserted so that reading cannot come back green.
+    await expect(
+      dock.locator('[data-testid^="readout-"]'),
+      'no vca dial paints a resting value — `format` wins over a one-detent roster',
+    ).toHaveCount(0);
 
     // ── THE ATTENUVERTER FLIP. Drag cvAmount past the bottom of its arc: the
     //    fraction clamps, so this lands on exactly −1. The graph must carry it
@@ -223,7 +185,10 @@ test.describe('vca face — the knob readouts follow the graph', () => {
         message: 'dragging the dial COMMITS the new depth into the graph',
       })
       .toBe(-1);
-    await expect(cvOut, 'a negative amount is a DUCKER, and the dial says so').toHaveText('DUCK');
+    await expect(cvDial, 'a negative amount is a DUCKER, and the dial says so').toHaveAttribute(
+      'aria-valuetext',
+      'DUCK',
+    );
 
     // ── THE FLOOR. Drag base past the top: exactly 1, i.e. unity passthrough
     //    with no CV at all. ──
@@ -233,142 +198,97 @@ test.describe('vca face — the knob readouts follow the graph', () => {
         message: 'the floor knob commits its value into the graph',
       })
       .toBe(1);
-    await expect(baseOut, 'a floor of 1 is unity passthrough').toHaveText('UNITY');
-
-    // ── THE NEGATIVE-CONTROL SHAPE, INLINE: move the OTHER knob and confirm
-    //    this readout does NOT change. Without it, a readout hard-coded to
-    //    'UNITY' would pass every assertion above.  ──
-    await dragDial(page, cvDial, -260); // cvAmount back to +1
-    await expect.poll(() => readParam(page, 'v', 'cvAmount')).toBe(1);
-    await expect(cvOut).toHaveText('OPEN');
-    await expect(baseOut, 'base’s readout is bound to base, not to whatever moved last').toHaveText(
+    await expect(baseDial, 'a floor of 1 is unity passthrough').toHaveAttribute(
+      'aria-valuetext',
       'UNITY',
     );
+
+    // ── THE NEGATIVE-CONTROL SHAPE, INLINE: move the OTHER knob and confirm
+    //    this value does NOT change. Without it, a dial hard-coded to 'UNITY'
+    //    would pass every assertion above.  ──
+    await dragDial(page, cvDial, -260); // cvAmount back to +1
+    await expect.poll(() => readParam(page, 'v', 'cvAmount')).toBe(1);
+    await expect(cvDial).toHaveAttribute('aria-valuetext', 'OPEN');
+    await expect(
+      baseDial,
+      'base’s value is bound to base, not to whatever moved last',
+    ).toHaveAttribute('aria-valuetext', 'UNITY');
     expect(await readParam(page, 'v', 'base'), 'and base itself did not move').toBe(1);
   });
 
-  // ── THE dB BRANCH, RENDERED. ─────────────────────────────────────────────
+  // ── THE dB BRANCH, RESOLVED IN A REAL BROWSER. ───────────────────────────
   //
   // Everything above lands on an ENDPOINT (CLOSED / UNITY / OPEN / DUCK), and
   // both face VRT scenes capture the DEFAULT state (`base = 0` → CLOSED). So
-  // before this test the dB branch of `formatVcaBase` — the entire reason the
-  // readout exists — had never been rendered in a browser ANYWHERE, and the
-  // unit guard that was supposed to bound its width counted GLYPHS while the
-  // constraint is in PIXELS: `-12.0 dB` is 8 glyphs ≈ 47.8 px against a 46 px
-  // column cap, and the guard's budget was "≤ 8 chars".
+  // without this sweep the dB branch of `formatVcaBase` — the entire reason the
+  // format exists — would never be exercised in a browser ANYWHERE. The band on
+  // each side of the −10 dB precision switch is walked because a boundary is
+  // where a formatter breaks. Cheap: one spawned node, a param rewrite per step.
   //
-  // ⚠ WHAT THE OVERFLOW ACTUALLY DOES, because the obvious guess is wrong and
-  // this test was written on the wrong instrument first. `.readout` carries
-  // `overflow:hidden; text-overflow:ellipsis`, so "it ellipsizes" is the
-  // natural assumption — and it is FALSE. Its `max-width:100%` resolves against
-  // `.knob-wrap`, which has `max-width:none` and grows to the text, so
-  // `scrollWidth === clientWidth` at every string length ever tried (36/48/66/95
-  // px for 6/8/11/16 glyphs). An ellipsis probe is invariant to the very thing
-  // under test and would have passed on the broken build. What actually happens
-  // is that the readout ESCAPES the column and drags `.kcol` from its natural
-  // 40 px up to the 46 px cap — so the gate is the readout's own width against
-  // that column, and `ellipsized` is carried along only as evidence.
+  // ⚠ THIS TEST USED TO BE A PIXEL MEASUREMENT AND THAT HALF IS DELETED. It
+  // measured `readout-base`'s laid-out width against the lane's 46 px
+  // `--kcol-max`, because `.readout` does NOT ellipsize — its `max-width:100%`
+  // resolves against `.knob-wrap`, which is uncapped, so `scrollWidth ===
+  // clientWidth` at every string length ever tried (36/48/66/95 px for 6/8/11/16
+  // glyphs) and the text ESCAPED the column instead, dragging `.kcol` to its
+  // cap. It also cross-checked `LANE_KCOL_MAX_PX` and `READOUT_CHAR_PX` — the
+  // two constants the unit guard is calibrated with — against a live render, so
+  // neither was a number asserted from a comment. A separate `dB readout STAYS
+  // INSIDE the 46px lane column` test measured the same thing at base = 0.25.
   //
-  // Both constants the UNIT guard is calibrated with are cross-checked against
-  // this same live render, so neither is a number asserted from a comment.
-  test('the dB readout STAYS INSIDE the 46px lane column', async ({ page }) => {
-    test.setTimeout(SLOW_RENDER ? 60_000 : 30_000);
-    await gotoShell(page);
-
-    // Spawn AT an intermediate base rather than dragging to one: the value has
-    // to be exact for the expected string to be a literal, and a drag lands
-    // "somewhere near". 0.25 is −12.04 dB — the review's own case, and the
-    // widest class of string the formatter can produce.
-    await spawnPatch(page, [
-      { id: 'v', type: 'vca', position: { x: 460, y: 240 }, params: { base: 0.25 } },
-    ]);
-
-    // The 46px cap is scoped to `.rl-tile .tile-body .kcol` — the LANE body.
-    // The dock's band is `.page-controls` and is UNCAPPED, which is exactly why
-    // the dock VRT baseline looks fine and hides this. So force a LANE tier and
-    // assert we got one before measuring anything.
-    await setLaneTier(page, 0.7, 'full');
-    const laneShell = page.locator(
-      '.svelte-flow__node[data-id="v"] [data-testid="module-shell"][data-shell-tier="full"]',
-    );
-    await expect(laneShell, 'the measurement only means anything in the LANE body').toBeVisible();
-    await expect(laneShell.locator('.tile-body .kcol')).not.toHaveCount(0);
-
-    const readout = laneShell.getByTestId('readout-base');
-    await expect(readout, 'base = 0.25 puts the readout on its dB branch').toHaveText(
-      formatVcaBase(0.25),
-    );
-
-    // ── THE MEASUREMENT. ──
-    const fit = await measureReadoutFit(readout);
-
-    expect(
-      fit.columnMaxWidthPx,
-      `the lane knob column's live --kcol-max is ${fit.columnMaxWidthPx} CSS px, but the unit ` +
-        `guard (lane-readout-fit.ts) is calibrated against ${LANE_KCOL_MAX_PX}. One of them moved.`,
-    ).toBe(LANE_KCOL_MAX_PX);
-
-    // Does the unit guard's VERDICT still hold under this runner's real font?
-    // Gate on the invariant that matters — "the longest string the unit guard
-    // permits still fits here" — rather than on `advancePx <= READOUT_CHAR_PX`
-    // itself. The runner's mono is platform-dependent (SF Mono on darwin,
-    // DejaVu/Liberation on the linux lane, all ≈0.6 em), and a hundredth of a
-    // px either way is noise, not a defect; what would be a defect is 7 glyphs
-    // no longer fitting. The literal comparison is printed for diagnosis.
-    expect(
-      READOUT_MAX_CHARS * fit.advancePx,
-      `one .readout glyph measures ${fit.advancePx.toFixed(4)} CSS px on this runner ` +
-        `(lane-readout-fit.ts assumes ≤ ${READOUT_CHAR_PX}), so the ${READOUT_MAX_CHARS}-glyph ` +
-        `budget the unit guard permits is ${(READOUT_MAX_CHARS * fit.advancePx).toFixed(2)} px ` +
-        `against a ${LANE_KCOL_MAX_PX} px column — the unit guard is now OPTIMISTIC here and can ` +
-        `pass a string that overflows. Re-measure and raise READOUT_CHAR_PX.`,
-    ).toBeLessThanOrEqual(LANE_KCOL_MAX_PX);
-
-    // THE GATE. Both halves are UNSCALED offsetWidths, so this is CSS px on
-    // both sides and the xyflow zoom cancels out of the comparison anyway.
-    expect(
-      fit.readoutWidthPx,
-      `the readout ${JSON.stringify(fit.text)} (${fit.text.length} glyphs) lays out at ` +
-        `${fit.readoutWidthPx} CSS px inside a column capped at ${fit.columnMaxWidthPx} px. It ` +
-        `does NOT ellipsize (measured: ellipsized=${fit.ellipsized}) — .knob-wrap has ` +
-        `max-width:none, so the text escapes the column instead, and pins .kcol to its cap with ` +
-        `no margin left for the fit plan. Shorten the format.`,
-    ).toBeLessThanOrEqual(LANE_KCOL_MAX_PX);
-
-    expect(
-      fit.readoutWidthPx,
-      `and it must not be WIDER than the column it sits in (col=${fit.columnWidthPx} px)`,
-    ).toBeLessThanOrEqual(fit.columnWidthPx);
-  });
-
-  // ── THE SWEEP. One value proves one value; the format changes PRECISION at
-  //    −10 dB, so the band on each side of that boundary is checked too. Cheap:
-  //    it re-uses the one spawned node and only rewrites a param. ──
-  test('every dB the base knob can reach stays inside its column', async ({ page }) => {
+  // The owner removed the resting readout from every faceplate (2026-08-17) and
+  // vca's two params both resolve through `format`, so this face paints no
+  // `.readout` at any tier: `getByTestId('readout-base')` resolves ZERO
+  // elements. Every one of those measurements would have measured nothing and
+  // passed in silence — which is why they are deleted rather than left green.
+  // Not re-pointed either: vca's fixture contains no face that paints, and
+  // pointing a vca spec at another module's dial would make it a test of that
+  // module. What still covers the remainder: `lane-readout-fit.ts`'s own pure
+  // unit tests still bound the NAME readouts (the only strings a lane column can
+  // still be asked to hold) against the same `LANE_KCOL_MAX_PX` /
+  // `READOUT_CHAR_PX` constants, and `ringback-crush-model.test.ts` carries the
+  // `READOUT_MAX_CHARS` boundary pair. What is NOT covered any more: nothing
+  // re-measures those constants against a live render. That leg died with its
+  // subject and is recorded here rather than quietly dropped.
+  //
+  // What survives is the VALUE, which was never the pixel claim: the same eight
+  // values, the same `formatVcaBase` expectations, read off `aria-valuetext`.
+  test('every dB the base knob can reach resolves through the def’s formatter', async ({ page }) => {
     test.setTimeout(SLOW_RENDER ? 60_000 : 30_000);
     await gotoShell(page);
     await spawnPatch(page, [
       { id: 'v', type: 'vca', position: { x: 460, y: 240 }, params: { base: 0.5 } },
     ]);
+
+    // Still driven at the LANE tier, and deliberately: the dock renders every
+    // control and is the easy case, so a face that resolved its vocabulary at
+    // the dock and lost it in the tile would look fine everywhere a dock-only
+    // assertion could see. (vca has TWO controls, so its `full` tier is still a
+    // ROW rather than the plate — which is why `.kcol` resolves here at all.)
     await setLaneTier(page, 0.7, 'full');
     const laneShell = page.locator(
       '.svelte-flow__node[data-id="v"] [data-testid="module-shell"][data-shell-tier="full"]',
     );
-    const readout = laneShell.getByTestId('readout-base');
+    await expect(laneShell).toBeVisible();
+    await expect(laneShell.locator('.tile-body .kcol')).not.toHaveCount(0);
+    const dial = laneShell.locator('[data-testid="control-base"]');
 
     // 0.005 is the CLOSED edge (−46 dB, the widest magnitude); 0.3162 is the
     // −10 dB boundary the precision switch sits on; 0.9 and 0.5 are the fine
     // band; 0.994 is the `-0.0 dB` sign trap just under UNITY.
     for (const base of [0.005, 0.0501, 0.25, 0.3162, 0.3163, 0.5, 0.9, 0.994]) {
       await setParam(page, 'v', 'base', base);
-      await expect(readout).toHaveText(formatVcaBase(base));
-      const fit = await measureReadoutFit(readout);
-      expect(
-        fit.readoutWidthPx,
-        `base=${base} → ${JSON.stringify(fit.text)} (${fit.text.length} glyphs) lays out at ` +
-          `${fit.readoutWidthPx} CSS px and ESCAPES its ${fit.columnMaxWidthPx} px column.`,
-      ).toBeLessThanOrEqual(LANE_KCOL_MAX_PX);
+      await expect(dial, `base=${base} resolves the def's own dB string`).toHaveAttribute(
+        'aria-valuetext',
+        formatVcaBase(base),
+      );
     }
+
+    // The removal, asserted at the LANE tier too — this is the tier the readout
+    // rule was originally argued FOR ("a 46 px column cannot spend a text row"),
+    // so it is the one where a regression would be most defensible and least
+    // noticed.
+    await expect(laneShell.locator('[data-testid^="readout-"]')).toHaveCount(0);
   });
 });
 
@@ -431,11 +351,14 @@ test.describe('vca face — the DERIVED hero readout reaches the dock and moves 
     // into, and no other surface states it.
     await expect(entry).toContainText('+3.5 dB');
 
-    // The two dials, BEFORE.
-    const baseRo = dockShell.getByTestId('readout-base');
-    const amtRo = dockShell.getByTestId('readout-cvAmount');
-    await expect(baseRo).toHaveText('-6.0 dB');
-    await expect(amtRo).toHaveText('OPEN');
+    // The two dials, BEFORE. Read off `aria-valuetext`: neither paints, and the
+    // strip beside them does — which is the whole shape of the owner's ruling
+    // (a DERIVED, labelled hero value earns its ink; a decimal restating the
+    // dial under it does not).
+    const baseRo = dockShell.locator('[data-testid="control-base"]');
+    const amtRo = dockShell.locator('[data-testid="control-cvAmount"]');
+    await expect(baseRo).toHaveAttribute('aria-valuetext', '-6.0 dB');
+    await expect(amtRo).toHaveAttribute('aria-valuetext', 'OPEN');
 
     // PERTURB the input the dials are blind to.
     await setParam(page, 'v', 'cvAmount', 0.5);
@@ -449,8 +372,11 @@ test.describe('vca face — the DERIVED hero readout reaches the dock and moves 
 
     // …and the two dials did NOT, which is the entire reason this readout is
     // derived rather than a `paramId`.
-    await expect(baseRo, 'base is blind to cvAmount').toHaveText('-6.0 dB');
-    await expect(amtRo, 'cvAmount prints its SENSE, which is OPEN at +0.5 too').toHaveText('OPEN');
+    await expect(baseRo, 'base is blind to cvAmount').toHaveAttribute('aria-valuetext', '-6.0 dB');
+    await expect(
+      amtRo,
+      'cvAmount reads its SENSE, which is OPEN at +0.5 too',
+    ).toHaveAttribute('aria-valuetext', 'OPEN');
 
     // The other direction, and the module's most surprising state: a sum below
     // zero passes PHASE-INVERTED, and the ` INV` suffix is the face's only
@@ -458,7 +384,10 @@ test.describe('vca face — the DERIVED hero readout reaches the dock and moves 
     await setParam(page, 'v', 'base', 0);
     await setParam(page, 'v', 'cvAmount', -1);
     await expect(entry, 'a negative summed gain is flagged INV').toContainText('INV');
-    await expect(amtRo, 'and the dial now names the sense').toHaveText('DUCK');
+    await expect(amtRo, 'and the dial now names the sense').toHaveAttribute(
+      'aria-valuetext',
+      'DUCK',
+    );
   });
 });
 

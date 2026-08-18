@@ -51,6 +51,9 @@
 /** The minimal band shape this reads — a subset of `DockFaceBand`. */
 export interface ConsoleGridBandLike {
   clusters: readonly { readonly controls: readonly unknown[] }[];
+  /** `DockFaceBand.clusterFlow`. Optional here so every existing caller and
+   *  fixture keeps compiling as a STACKED band, which is what they all were. */
+  clusterFlow?: 'stack' | 'row';
 }
 
 /**
@@ -75,10 +78,86 @@ export const CONSOLE_MIN_CELLS = 2;
  * byte, which is what keeps the rest of the roster's baselines still.
  */
 export function consoleGridCols(band: ConsoleGridBandLike | null | undefined): number | null {
+  // ⚠ A SIDE-BY-SIDE BAND IS NEVER A CONSOLE GRID, and this is the first clause
+  // for a reason. The grid's whole product is that column j of every cluster
+  // shares one centre, which requires the clusters to sit one ABOVE the other;
+  // `clusterFlow: 'row'` asks for the opposite arrangement. Answering `cols`
+  // here would hand ModuleShell a `repeat(N, max-content)` ruler for a band
+  // that is about to be laid out as a flex row — two layout systems disagreeing
+  // about the same element, which resolves as neither.
+  if (band?.clusterFlow === 'row') return null;
   const clusters = band?.clusters ?? [];
   if (clusters.length < CONSOLE_MIN_CLUSTERS) return null;
   const cols = clusters[0]!.controls.length;
   if (cols < CONSOLE_MIN_CELLS) return null;
   for (const c of clusters) if (c.controls.length !== cols) return null;
   return cols;
+}
+
+// ── ONE RULER FOR THE WHOLE FACE (#1825) ───────────────────────────────────
+//
+// ⚠ THE BAND-LEVEL GRID ABOVE ALIGNS CLUSTERS AND NOTHING ELSE, and on a
+// multi-band console that is half a fix. Each band sizes its OWN `max-content`
+// columns from its OWN widest cell, so two bands of eight channels land on two
+// different rulers. MEASURED on the shipped mixmstrs faceplate (dock full view,
+// 1280×720, CSS px, cell centres):
+//
+//   band        widest cell           pitch     ch1 cx    ch8 cx
+//   channels    knob        41.72 px  51.72 px  105.86    467.89
+//   dynamics    Toggle      52.00 px  62.00 px  111.00    545.00
+//   sends       knob        40.00 px  50.00 px  105.00    455.00
+//
+// Three pitches, and by channel 8 the same channel's cells are **90.00 px
+// apart** between `dynamics` and `sends`. Owner review of #1805: *"need to
+// ensure all row content lines up, the channels and sliders and dynamics and
+// compressors all need to be aligned so it's visually clear."* A column that
+// means "channel N" in one band and "channel N ± two thirds of a column" in the
+// next is not a console.
+//
+// THE FIX IS THE SAME ARGUMENT ONE LEVEL UP: if a band whose clusters agree on
+// a width is one table, then a FACE whose bands agree on nothing but their
+// column COUNT is still one table — the bands are its row groups. So the
+// ruler moves to the page: `.dock-pages` owns the columns, every console band
+// is a SUBGRID of it, and a column's width is `max-content` over every cell in
+// that column ON THE WHOLE FACE. Derived once, consumed by every row — there is
+// no per-section number to hand-tune and none to drift.
+//
+// ⚠ THE COLUMN OWNS THE WIDTH, NOT THE CONTROL. A `Toggle` (52 px), a
+// `KnobConic` (40-47.7 px) and a `NeonFader` (23.8 px) have three different
+// intrinsic widths; the track takes the widest and each cell centres inside it
+// (`justify-self: center`, already the band rule). Sizing the other way round —
+// making the controls equal — would either clip the switch or fatten the fader.
+//
+// ⚠ AND IT STAYS `max-content`, for the reason the band rule gives: a fixed
+// ruler clips any cell wider than it. A wider cell WIDENS THE COLUMN, on every
+// band at once, and nothing is ever cut off.
+
+/**
+ * Fewest CONSOLE BANDS on one face for a shared ruler to mean anything.
+ *
+ * One console band is already internally consistent — it has nothing to be
+ * aligned to, and re-parenting it onto a page-level grid would move its pixels
+ * for no reading benefit. Below this the face keeps the layout it has today,
+ * byte for byte, which is what bounds this change's blast radius to the faces
+ * that actually have the defect.
+ */
+export const FACE_CONSOLE_MIN_BANDS = 2;
+
+/**
+ * How many COLUMNS the WHOLE FACE's shared ruler carries, or `null` when the
+ * face has fewer than `FACE_CONSOLE_MIN_BANDS` console bands and every band
+ * keeps its own.
+ *
+ * The width is the WIDEST band's column count, so a band with fewer columns
+ * spans a PREFIX of the ruler (`1 / span cols`) and its column j is still the
+ * ruler's column j. On mixmstrs that is 9 — the `aux sends` clusters carry
+ * eight channels plus their bus PRE/POST switch — and the eight-wide bands
+ * occupy columns 1-8 of it, which is exactly the property the owner asked for.
+ */
+export function faceConsoleGridCols(
+  bands: readonly (ConsoleGridBandLike | null | undefined)[] | null | undefined,
+): number | null {
+  const cols = (bands ?? []).map(consoleGridCols).filter((c): c is number => c != null);
+  if (cols.length < FACE_CONSOLE_MIN_BANDS) return null;
+  return Math.max(...cols);
 }

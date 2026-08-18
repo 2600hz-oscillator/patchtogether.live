@@ -2,7 +2,7 @@
   // CloudsCard — granular texture processor (Mutable Instruments Clouds-style).
   // Six faders for the granular macros + a FREEZE toggle button.
   import type { NodeProps } from '@xyflow/svelte';
-  import Fader from '$lib/ui/controls/Fader.svelte';
+  import NeonFader from '$lib/ui/controls/NeonFader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import OssAttribution from '$lib/ui/modules/OssAttribution.svelte';
   import { patch } from '$lib/graph/store';
@@ -65,12 +65,12 @@
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="fader-row">
-      <Fader value={position} min={pPosition.min} max={pPosition.max} defaultValue={pPosition.defaultValue} label="Position" curve={pPosition.curve} units={pPosition.units} onchange={set('position')} moduleId={id} paramId="position" readLive={live('position')} />
-      <Fader value={size}     min={pSize.min}     max={pSize.max}     defaultValue={pSize.defaultValue}     label="Size"     curve={pSize.curve}     units={pSize.units}     onchange={set('size')} moduleId={id} paramId="size"     readLive={live('size')} />
-      <Fader value={pitch}    min={pPitch.min}    max={pPitch.max}    defaultValue={pPitch.defaultValue}    label="Pitch"    curve={pPitch.curve}    units={pPitch.units}    onchange={set('pitch')} moduleId={id} paramId="pitch"    readLive={live('pitch')} />
-      <Fader value={density}  min={pDensity.min}  max={pDensity.max}  defaultValue={pDensity.defaultValue}  label="Density"  curve={pDensity.curve}  units={pDensity.units}  onchange={set('density')} moduleId={id} paramId="density"  readLive={live('density')} />
-      <Fader value={texture}  min={pTexture.min}  max={pTexture.max}  defaultValue={pTexture.defaultValue}  label="Texture"  curve={pTexture.curve}  units={pTexture.units}  onchange={set('texture')} moduleId={id} paramId="texture"  readLive={live('texture')} />
-      <Fader value={blend}    min={pBlend.min}    max={pBlend.max}    defaultValue={pBlend.defaultValue}    label="Blend"    curve={pBlend.curve}    units={pBlend.units}    onchange={set('blend')} moduleId={id} paramId="blend"    readLive={live('blend')} />
+      <NeonFader value={position} min={pPosition.min} max={pPosition.max} defaultValue={pPosition.defaultValue} label="Position" curve={pPosition.curve} units={pPosition.units} onchange={set('position')} moduleId={id} paramId="position" readLive={live('position')} />
+      <NeonFader value={size}     min={pSize.min}     max={pSize.max}     defaultValue={pSize.defaultValue}     label="Size"     curve={pSize.curve}     units={pSize.units}     onchange={set('size')} moduleId={id} paramId="size"     readLive={live('size')} />
+      <NeonFader value={pitch}    min={pPitch.min}    max={pPitch.max}    defaultValue={pPitch.defaultValue}    label="Pitch"    curve={pPitch.curve}    units={pPitch.units}    onchange={set('pitch')} moduleId={id} paramId="pitch"    readLive={live('pitch')} />
+      <NeonFader value={density}  min={pDensity.min}  max={pDensity.max}  defaultValue={pDensity.defaultValue}  label="Density"  curve={pDensity.curve}  units={pDensity.units}  onchange={set('density')} moduleId={id} paramId="density"  readLive={live('density')} />
+      <NeonFader value={texture}  min={pTexture.min}  max={pTexture.max}  defaultValue={pTexture.defaultValue}  label="Texture"  curve={pTexture.curve}  units={pTexture.units}  onchange={set('texture')} moduleId={id} paramId="texture"  readLive={live('texture')} />
+      <NeonFader value={blend}    min={pBlend.min}    max={pBlend.max}    defaultValue={pBlend.defaultValue}    label="Blend"    curve={pBlend.curve}    units={pBlend.units}    onchange={set('blend')} moduleId={id} paramId="blend"    readLive={live('blend')} />
     </div>
     <div class="freeze-row">
       <button

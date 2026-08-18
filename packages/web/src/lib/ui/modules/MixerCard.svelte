@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { NodeProps } from '@xyflow/svelte';
-  import Fader from '$lib/ui/controls/Fader.svelte';
+  import NeonFader from '$lib/ui/controls/NeonFader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import { mixerDef } from '$lib/audio/modules/mixer';
   import type { ModuleNode } from '$lib/graph/types';
@@ -30,11 +30,11 @@
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="fader-row">
-      <Fader value={ch1}    min={0} max={1} defaultValue={1} label="Ch1"    curve="linear" onchange={set('ch1')} moduleId={id} paramId="ch1"    readLive={live('ch1')} />
-      <Fader value={ch2}    min={0} max={1} defaultValue={1} label="Ch2"    curve="linear" onchange={set('ch2')} moduleId={id} paramId="ch2"    readLive={live('ch2')} />
-      <Fader value={ch3}    min={0} max={1} defaultValue={1} label="Ch3"    curve="linear" onchange={set('ch3')} moduleId={id} paramId="ch3"    readLive={live('ch3')} />
-      <Fader value={ch4}    min={0} max={1} defaultValue={1} label="Ch4"    curve="linear" onchange={set('ch4')} moduleId={id} paramId="ch4"    readLive={live('ch4')} />
-      <Fader value={master} min={0} max={1} defaultValue={1} label="Master" curve="linear" onchange={set('master')} moduleId={id} paramId="master" readLive={live('master')} />
+      <NeonFader value={ch1}    min={0} max={1} defaultValue={1} label="Ch1"    curve="linear" onchange={set('ch1')} moduleId={id} paramId="ch1"    readLive={live('ch1')} />
+      <NeonFader value={ch2}    min={0} max={1} defaultValue={1} label="Ch2"    curve="linear" onchange={set('ch2')} moduleId={id} paramId="ch2"    readLive={live('ch2')} />
+      <NeonFader value={ch3}    min={0} max={1} defaultValue={1} label="Ch3"    curve="linear" onchange={set('ch3')} moduleId={id} paramId="ch3"    readLive={live('ch3')} />
+      <NeonFader value={ch4}    min={0} max={1} defaultValue={1} label="Ch4"    curve="linear" onchange={set('ch4')} moduleId={id} paramId="ch4"    readLive={live('ch4')} />
+      <NeonFader value={master} min={0} max={1} defaultValue={1} label="Master" curve="linear" onchange={set('master')} moduleId={id} paramId="master" readLive={live('master')} />
     </div>
   </PatchPanel>
 </div>

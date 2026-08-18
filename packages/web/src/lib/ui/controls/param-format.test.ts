@@ -11,7 +11,7 @@
 // existing precedent for this shape of gate).
 
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { formatParamNumber, isBipolarRange } from './param-format';
 
@@ -73,7 +73,10 @@ describe('isBipolarRange', () => {
 // A component that re-declares the ladder locally is invisible to every
 // runtime gate: it renders, it looks right, and it silently drifts. So grep.
 
-const PRIMITIVES = ['Knob.svelte', 'KnobConic.svelte', 'Fader.svelte'] as const;
+// `Fader.svelte` was the third entry until #1794 migrated every call site to
+// `NeonFader` and deleted it. The roster follows the SHIPPED primitives — a
+// row naming a component that no longer exists cannot guard anything.
+const PRIMITIVES = ['Knob.svelte', 'KnobConic.svelte', 'NeonFader.svelte'] as const;
 
 function readPrimitive(name: string): string {
   return readFileSync(fileURLToPath(new URL(`./${name}`, import.meta.url)), 'utf8');
@@ -100,11 +103,22 @@ describe('the readout ladder has exactly ONE implementation', () => {
     ).not.toMatch(/abs >= 10000/);
   });
 
-  it('Fader shares the ONE bipolar test rather than re-typing min < 0 && max > 0', () => {
-    const src = readPrimitive('Fader.svelte');
+  it('the fader shares the ONE bipolar test rather than re-typing min < 0 && max > 0', () => {
+    const src = readPrimitive('NeonFader.svelte');
     expect(src).toMatch(/isBipolarRange\(min, max\)/);
-    expect(src, 'Fader must not re-type the bipolar predicate').not.toMatch(
+    expect(src, 'the fader must not re-type the bipolar predicate').not.toMatch(
       /\$derived\(min < 0 && max > 0\)/,
     );
+  });
+
+  it('the roster names only primitives that EXIST (anchored, so a deleted one is RED)', () => {
+    // Without this, the clauses above go green the day a named file is
+    // deleted and `readPrimitive` starts throwing... which is exactly what
+    // #1794 caused, loudly. Anchoring makes the next one a one-line diagnosis.
+    const present = new Set(readdirSync(fileURLToPath(new URL('.', import.meta.url))));
+    expect(
+      PRIMITIVES.filter((p) => !present.has(p)),
+      'these PRIMITIVES name control files that do not exist (renamed? deleted?)',
+    ).toEqual([]);
   });
 });
