@@ -100,6 +100,26 @@ async function centreOf(page: Page, id: string): Promise<{ x: number; y: number 
 
 const scrim = (page: Page) => page.locator('[data-testid="patch-drop-scrim"]');
 
+/** The SHIPPED carry singleton's mode, read straight off the page. The point
+ *  of reading it is that "the ghost is not drawn" and "the carry was thrown
+ *  away" look identical from the outside, and only one of them is the fix. */
+const pickupMode = (page: Page) =>
+  page.evaluate(
+    () =>
+      (window as unknown as { __connectDragState?: { mode: string } }).__connectDragState?.mode ??
+      'idle',
+  );
+
+/** Start an ORDINARY click-click carry from a card's first output row — the
+ *  gesture the ghost exists for, with no modal anywhere near it. */
+async function carryFirstOutputOf(page: Page, nodeId: string): Promise<void> {
+  const chrome = page.locator(`[data-patch-panel-chrome="${nodeId}"]`);
+  await page.locator(`.svelte-flow__node[data-id="${nodeId}"] [data-testid="patch-trigger"]`).click();
+  await expect(chrome).toHaveAttribute('aria-hidden', 'false');
+  await chrome.locator('[data-testid="patch-panel-nav"][data-nav="outputs"]').click();
+  await chrome.locator('[data-testid="patch-panel-port-row"]').first().click();
+}
+
 test.describe('drop a card on a card → the patch modal', () => {
   test('a plain drag to empty canvas MOVES the card and opens NOTHING', async ({ page }) => {
     // OUTCOME 1, unchanged. This is the leg that fails if the drop rule is too
@@ -247,5 +267,87 @@ test.describe('drop a card on a card → the patch modal', () => {
 
     await expect(modal).toHaveAttribute('data-direction', 'upstream');
     expect(await page.locator('.flow').getAttribute('data-rear-view')).toBe(rearBefore);
+  });
+
+  test('the pickup ghost draws for a PLAIN carry and is SUPPRESSED under the modal', async ({
+    page,
+  }) => {
+    // #1838, owner: "in this view we do not want the dangling dotted patch
+    // cable, it's clutter that's not helpful."
+    //
+    // ⚠ BOTH DIRECTIONS OR THIS TEST IS WORTHLESS. "no ghost while the modal
+    // is open" alone passes just as happily against a DELETED <PickupCable>,
+    // which is the opposite of the fix: the ordinary click-click carry is the
+    // most-used patching gesture in the app. So the present leg runs first,
+    // through the same real gesture, in the same rack.
+    const { camId, bdId } = await seedTwoVideoCards(page);
+    const ghost = page.getByTestId('pickup-cable');
+
+    // ── PRESENT: an ordinary carry, no modal anywhere. ──
+    await carryFirstOutputOf(page, camId);
+    await page.mouse.move(520, 380);
+    await expect(ghost).toBeVisible();
+    await expect(scrim(page)).toHaveCount(0);
+
+    await page.keyboard.press('Escape');
+    await expect(ghost).toHaveCount(0);
+    await expect.poll(() => pickupMode(page)).toBe('idle');
+
+    // ── ABSENT: the same ghost, with the drop modal open over it. ──
+    await dragCardTo(page, bdId, await centreOf(page, camId));
+    await expect(scrim(page)).toBeVisible();
+    // Move the cursor: the ghost is drawn from the carry to the LIVE cursor, so
+    // a stale cursor is a second reason it could be missing. Rule it out.
+    await page.mouse.move(520, 380);
+    await expect(ghost).toHaveCount(0);
+
+    // ⚠ PRESENTATION ONLY. The modal CLAIMS the carry deliberately — RearCard's
+    // compatibility dim is driven by it, and staging / Tab / commit / one-⌘Z
+    // undo all hang off the same state — so "the ghost is gone" must not mean
+    // "the carry was cancelled". The singleton is still held while nothing is
+    // drawn, which is exactly the difference between a presentation fix and a
+    // state change.
+    expect(await pickupMode(page)).toBe('pickup');
+  });
+
+  test('the rear backpanel is COLLAPSED by default behind a counted chevron', async ({ page }) => {
+    // #1838, owner: "i would also like this content collapsed by default, with
+    // a chevron to expand it? hiding the unpatchable connections by default.
+    // this was part of the original spec" — the spec being the refusal
+    // disclosure's idiom, which is why this asserts the COUNT and not just the
+    // chevron.
+    const { camId, bdId } = await seedTwoVideoCards(page);
+    await dragCardTo(page, bdId, await centreOf(page, camId));
+    await expect(scrim(page)).toBeVisible();
+
+    const panel = scrim(page).locator('[data-testid="drop-rear-panel"]');
+    const toggle = panel.locator('[data-testid="drop-rear-toggle"]');
+    const holes = panel.locator('[data-testid="back-jack"]');
+
+    // ── COLLAPSED on open ──
+    await expect(toggle).toBeVisible();
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    await expect(holes).toHaveCount(0);
+
+    // ⚠ THE COUNT IS THE AFFORDANCE, same as the refusal summary. Collapsing to
+    // a bare chevron would lose the fact that a backpanel exists at all, which
+    // is worse than the clutter it replaced.
+    const count = Number(await toggle.getAttribute('data-count'));
+    expect(count).toBeGreaterThan(0);
+    await expect(toggle).toContainText(String(count));
+
+    // ⚠ THE HALF THAT ANSWERS THE QUESTION DID NOT COLLAPSE. "what can I
+    // actually patch" stays on screen — offered rows, the refusal disclosure
+    // and the census.
+    await expect(scrim(page).locator('[data-testid="drop-row"][data-state="offered"]').first()).toBeVisible();
+    await expect(scrim(page).getByTestId('drop-refused-toggle')).toBeVisible();
+    await expect(scrim(page).getByTestId('drop-census')).toBeVisible();
+
+    // ── EXPANDED by the chevron ── and the header's number is the panel's
+    // real population, not a label that happens to sit next to it.
+    await toggle.click();
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    await expect(panel.getByTestId('rear-card')).toBeVisible();
+    await expect(holes).toHaveCount(count);
   });
 });
