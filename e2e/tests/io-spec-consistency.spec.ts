@@ -168,6 +168,28 @@ const HANDLE_SETTLE_TIMEOUT = 45_000;
 // steady-state frames have all run.
 const LIVE_DRAW_FRAMES = 4;
 
+// ⚠ DOOM IS IN THIS SWEEP, AND IT WAS IN ALL FOUR OF THE SPECS THIS REPLACES.
+// Read this before "fixing" anything about how long it renders here.
+//
+// `video/modules/doom.ts` calls `runtime.runTic()` inside `surface.draw`, and
+// `runTic` runs exactly one `dgpt_tick` — so DOOM's GAME CLOCK IS ITS FRAME
+// CLOCK: one rendered frame is one game tic, and changing how long it renders
+// re-specifies HOW FAR THE MARINE WALKS. That is why the owner ruling forbids
+// touching DOOM's timing without specific approval.
+//
+// What this sweep asserts about DOOM is unchanged and contains no game state:
+// handle parity, handle count, card identity, card box, control bounds, console
+// errors. What DID change is the tic count, and it changed DOWNWARD:
+// modules.spec.ts ran DOOM UN-FROZEN for the whole test (seconds of tics at
+// whatever rate the renderer managed), whereas here it mounts FROZEN and then
+// renders exactly LIVE_DRAW_FRAMES tics. Fewer tics, and a fixed number of them
+// instead of a renderer-dependent one.
+//
+// EXCLUDING it was considered and rejected: the other three specs assert DOOM's
+// handle parity today, so dropping it from the sweep would be a real coverage
+// loss to avoid a change that is strictly more deterministic. No DOOM spec, DOOM
+// wait, DOOM budget or DOOM ledger entry is touched by this file.
+
 // ────────── Video predicate + render freeze ──────────
 //
 // A module touches the video GL pipeline if it has ANY video / mono-video port
