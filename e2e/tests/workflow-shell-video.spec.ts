@@ -30,6 +30,7 @@
 // LINES pattern differ, no absolute pixel values are pinned).
 
 import { test, expect, type Page } from '@playwright/test';
+import { VIDEO_THUMB_FPS } from '../../packages/web/src/lib/ui/workflow/module-shell-model';
 
 // CI (and a local E2E_SWIFTSHADER=1 flake-check) rasterize WebGL on the
 // SwiftShader SOFTWARE renderer. With several live video surfaces churning
@@ -42,6 +43,27 @@ import { test, expect, type Page } from '@playwright/test';
 // renderer-tolerant; only the whole-test ceiling needs the software-renderer
 // scale. Real-GPU local runs keep the default 30s.
 const SLOW_RENDER = process.env.E2E_SWIFTSHADER === '1' || !!process.env.CI;
+
+// ── #1785 blit-cost measurement constants ───────────────────────────────────
+/** Wall-clock length of one blit-cost window, MILLISECONDS. Long enough that
+ *  the thumb's own cadence produces tens of repaints (so a ±1 edge effect is
+ *  noise, not the answer) and short enough that two of them plus a settle stay
+ *  inside the software-renderer budget. */
+const COST_WINDOW_MS = 1500;
+/** A short probe window used only to WAIT for the off-screen release to settle
+ *  — the gate is the observable (`drawn === 0`), this is just its sample size. */
+const SETTLE_WINDOW_MS = 400;
+/**
+ * Head-room over `VIDEO_THUMB_FPS` the cap assertion allows.
+ *
+ * A POLICY THRESHOLD on a derived measurement, not a count. The throttle is
+ * `now - lastDraw < 1000 / VIDEO_THUMB_FPS` evaluated on rAF ticks, so the
+ * achieved rate can only ever come in AT or UNDER the cap — the head-room is
+ * for window-edge effects (a window that opens just before a due repaint and
+ * closes just after one carries a spare) and `performance.now()` jitter, not
+ * for a legitimately faster loop.
+ */
+const COST_RATE_SLACK = 1.25;
 
 const VIDEO_OUT = 'workflow-videoOut';
 const RECORDERBOX = 'workflow-recorderbox';
@@ -186,6 +208,100 @@ async function framesDrawn(page: Page, id: string): Promise<number> {
   }, id);
 }
 
+/**
+ * BLIT COST of ONE lane tile, over a WALL-CLOCK window, sampled INSIDE the page.
+ *
+ * ⚠ THE UNIT IS DELIBERATE AND IT IS NOT THE "count frames, never ms" case.
+ * That rule governs renderer-dependent WAITS. What is measured here is a
+ * PRODUCT-SIDE CADENCE — `VIDEO_THUMB_FPS`, a repaints-per-SECOND cap the
+ * component enforces off `performance.now()` — and `preview-gate.ts` makes the
+ * same argument for `PREVIEW_MIN_INTERVAL_MS`: a frame count would be a
+ * different real rate on a 60 Hz laptop, a 144 Hz monitor and SwiftShader,
+ * which is exactly what the cap must NOT be. A software renderer can only come
+ * in UNDER the cap, so the assertion is one-sided and renderer-safe.
+ *
+ * Everything is accumulated in ONE `page.evaluate` (never a Playwright-side
+ * poll of a page-side quantity), and the window reports its own `rafSamples` /
+ * `elapsedMs` so a starved runner is visible in the failure message instead of
+ * being indistinguishable from a frozen subject.
+ */
+interface ThumbCostSample {
+  /** Engine `blitTexToDrawingBuffer` calls in the window — EVERY preview path
+   *  funnels through it, the lane thumb's ungated one included. GLOBAL, so it
+   *  is only ever read as a DIFFERENCE between two windows. */
+  blitCalls: number;
+  /** This node's own GL draws in the window. The blit IS the watch mark, so a
+   *  node nothing blits stops being a pull root and this goes to 0. */
+  drawn: number;
+  /** Engine steps in the window — reported, never asserted on. */
+  engineFrames: number;
+  rafSamples: number;
+  elapsedMs: number;
+}
+
+async function sampleThumbCost(page: Page, nodeId: string, windowMs: number): Promise<ThumbCostSample> {
+  return page.evaluate(
+    async ({ nodeId, windowMs }) => {
+      const w = globalThis as unknown as {
+        __engine: () => {
+          getDomain: (d: string) => {
+            framesDrawnFor: (id: string) => number;
+            currentFrameCount: () => number;
+            renderCostStats: () => { blit: { calls: number } };
+            resetRenderCost: () => void;
+          };
+        };
+      };
+      const vid = w.__engine().getDomain('video');
+      const drawn0 = vid.framesDrawnFor(nodeId);
+      const frame0 = vid.currentFrameCount();
+      vid.resetRenderCost();
+      const t0 = performance.now();
+      let rafSamples = 0;
+      await new Promise<void>((resolve) => {
+        const tick = (): void => {
+          rafSamples++;
+          if (performance.now() - t0 >= windowMs) {
+            resolve();
+            return;
+          }
+          requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      });
+      return {
+        blitCalls: vid.renderCostStats().blit.calls,
+        drawn: vid.framesDrawnFor(nodeId) - drawn0,
+        engineFrames: vid.currentFrameCount() - frame0,
+        rafSamples,
+        elapsedMs: performance.now() - t0,
+      };
+    },
+    { nodeId, windowMs },
+  );
+}
+
+/** Shift nodes far below the viewport in flow space (the patch moves, the
+ *  viewport does not — so every OTHER tile's cost stays constant and the
+ *  difference between two windows is attributable to THESE nodes). */
+async function shiftNodes(page: Page, ids: string[], dy: number): Promise<void> {
+  await page.evaluate(
+    ({ ids, dy }) => {
+      const w = globalThis as unknown as {
+        __ydoc: { transact: (fn: () => void) => void };
+        __patch: { nodes: Record<string, { position: { x: number; y: number } }> };
+      };
+      w.__ydoc.transact(() => {
+        for (const id of ids) {
+          const n = w.__patch.nodes[id];
+          if (n) n.position = { x: n.position.x, y: n.position.y + dy };
+        }
+      });
+    },
+    { ids, dy },
+  );
+}
+
 /** Snapshot a canvas's pixels (2D canvases only — all our preview canvases). */
 async function canvasData(page: Page, selector: string): Promise<string> {
   return page.evaluate((sel) => {
@@ -310,12 +426,14 @@ test.describe('?shell=1 video visibility', () => {
       [
         { id: 'l1', type: 'lines', position: { x: -1200, y: 4500 } },
         { id: 'b1', type: 'backdraft', position: { x: -700, y: 4500 } },
-        // ⚠ A SECOND DOWNSTREAM NODE, added when `backdraft` was promoted. The
-        // "thumb blit DRIVES the real chain and the picture ANIMATES" half of
-        // this case needs a tile that HAS a thumb, and a faced video module no
-        // longer does (see the pinned gap below). `grainsOfVision` is
-        // un-migrated, video-domain and takes the same `in_a`, so the claim
-        // moves to it verbatim instead of being weakened or deleted.
+        // ⚠ A SECOND DOWNSTREAM NODE. It was added when `backdraft` was
+        // promoted and lost its thumb (#1785), because the "thumb blit DRIVES
+        // the real chain and the picture ANIMATES" half of this case needs a
+        // tile that HAS one. #1785 gave the faced tile its picture back, so
+        // that is no longer the reason to keep it — this one is:
+        // `grainsOfVision` is UN-MIGRATED, so it exercises the PLACEHOLDER
+        // thumb loop, and b1 now exercises the FACED one. Two hosts, one
+        // `VideoTileThumb`; dropping either would leave a host unproven.
         { id: 'g1', type: 'grainsOfVision', position: { x: -200, y: 4500 } },
       ],
       [
@@ -327,8 +445,9 @@ test.describe('?shell=1 video visibility', () => {
     // Each PLACEHOLDER tile's glyph slot is the LIVE THUMB, and the fake
     // dashed-wave SVG is GONE for video modules.
     //
-    // ⚠ `b1` (BACKDRAFT) IS NO LONGER ONE OF THEM, and the reason is a MEASURED
-    // platform gap rather than a test-fixture detail — see the block below.
+    // ⚠ `b1` (BACKDRAFT) IS NOT ONE OF THEM because it is FACED, not because it
+    // has no thumb — it has one again (#1785), asserted on the shell host a few
+    // lines below. This loop is the placeholder host.
     for (const id of ['l1', RECORDERBOX]) {
       const tile = page.locator(`.svelte-flow__node[data-id="${id}"] [data-testid="module-shell-placeholder"]`);
       await expect(tile, `${id} renders a placeholder tile`).toHaveCount(1);
@@ -336,36 +455,44 @@ test.describe('?shell=1 video visibility', () => {
       await expect(tile.locator('.tile-wave'), `${id} fake wave glyph gone`).toHaveCount(0);
     }
 
-    // ⚠ A PROMOTED VIDEO MODULE LOSES ITS LANE THUMBNAIL, and this pins the
-    // fact so it cannot change silently in either direction.
+    // ⚠ A PROMOTED VIDEO MODULE KEEPS ITS LANE THUMBNAIL (#1785) — the owner
+    // ruling that "the picture IS a video module's identity in a rack", and the
+    // DOM half of it. The pure half is `module-shell-model.test.ts`.
     //
-    // `backdraft` became the first VIDEO face. `hasVideoSurface` still says yes
-    // (`domain === 'video'`), so `hasGlyph` is true — but the lane tile renders
-    // `hasGlyph && lanePlan.glyph`, and at the `full` tier a face this size
-    // takes the PLATE layout, where "ranked controls outrank the glyph": the
-    // strip renders only if a whole strip-row still fits under the cell rows,
-    // and with 28 lane-eligible controls it never does.
+    // THE BUG THIS REPLACES, kept because it is why the assertion exists at
+    // all: `backdraft` became the first VIDEO face and the tile went blank.
+    // `hasVideoSurface` said yes (`domain === 'video'`) so the shell's
+    // `hasGlyph` was true — but at the `full` tier a face this size takes the
+    // PLATE layout, where "ranked controls outrank the glyph" dropped the strip.
+    // MEASURED both ways, so the cause was not guessed: WITH `face.paramCells`
+    // declaring the card's faders the tile painted 3 cells and 0 thumbs; with
+    // those declarations REMOVED, 6 cells and still 0 thumbs. Face SIZE removed
+    // the picture, not the fader kind.
     //
-    // MEASURED on the live tile, both ways, so the cause is not guessed: WITH
-    // `face.paramCells` declaring the card's 20 faders the tile paints 3 cells
-    // and 0 thumbs; with those declarations REMOVED it paints 6 cells and still
-    // 0 thumbs. So the fader declaration costs lane CELLS (96px vs 42px rows,
-    // exactly the trade the shell-control-kind doc names) and is NOT what
-    // removes the picture — promotion plus face SIZE is.
-    //
-    // The module's own output stays reachable through the dock (`fullViewBody`,
-    // which is the whole reason that slot was wired), so nothing is unreachable
-    // — but the AT-A-GLANCE rack picture is gone for big video faces, and that
-    // is a platform ruling for the owner, not something a face can declare its
-    // way out of. Asserted as-is rather than skipped: if the platform later
-    // gives a video surface priority over ranked cells, this line goes red and
-    // whoever changes it reads this note.
+    // The fix inverts the precedence for the VIDEO DOMAIN only (`laneGlyphFor`
+    // → 'picture'): the strip is reserved first and the cells take what is
+    // left. backdraft's fader rows do not fit under it, so the plan falls back
+    // to the ROW layout — the picture beside two cells, which is exactly what
+    // its own `compact` tile has painted all along. The trade is one lane cell
+    // (`mix`), and the dock renders every ranked control regardless.
     const b1Tile = page.locator('.svelte-flow__node[data-id="b1"] [data-testid="module-shell"]');
     await expect(b1Tile, 'b1 is a FACED tile, not a placeholder').toHaveCount(1);
     await expect(
       b1Tile.locator('[data-testid="video-tile-thumb"]'),
-      'a faced video module at the full lane tier currently paints NO thumb (ranked cells outrank the glyph strip)',
-    ).toHaveCount(0);
+      'a faced video module at the full lane tier paints its LIVE thumb — the picture outranks ranked cells (#1785)',
+    ).toHaveCount(1);
+    // …and it is the shell's glyph slot that holds it, not some other surface:
+    // the same cell that would hold a trace on an audio face.
+    await expect(
+      b1Tile.locator('.tile-glyph[data-glyph-kind="video"] [data-testid="video-tile-thumb"]'),
+      'the thumb is IN the glyph cell, and that cell reports itself as video',
+    ).toHaveCount(1);
+    // FUNCTIONAL PARITY: the picture did not cost the tile its controls. The
+    // ROW layout still paints whole knob columns beside it.
+    await expect(
+      b1Tile.locator('.tile-body .kcol'),
+      'ranked control cells still render beside the picture',
+    ).not.toHaveCount(0);
     // Boundary: synesthesia is AUDIO-domain (no engine surface) — it must NOT
     // get a (necessarily dead/black) video thumb.
     await expect(
@@ -394,6 +521,118 @@ test.describe('?shell=1 video visibility', () => {
     const first = await canvasData(page, thumbSel);
     expect(first, 'thumb canvas snapshot captured').not.toBe('');
     await expectCanvasChanges(page, thumbSel, first, 'g1 tile thumbnail');
+  });
+
+  test('the RESTORED lane thumbnail is still GATED: off-screen costs nothing, on-screen is capped (#1785 / #1802)', async ({
+    page,
+  }) => {
+    // ⚠ THIS IS THE BILL #1785 COULD HAVE RE-OPENED. #1802/#1836 gated the
+    // per-card preview blits (measured: off-screen blits 5061 → 0, main-thread
+    // share 49.7 % → 24.7 %), and giving a promoted video face its picture back
+    // puts a live blit loop into every video lane tile again. So the claim is
+    // measured on the FACED host rather than assumed from the placeholder's.
+    //
+    // `VideoTileThumb` is the repo's one NAMED exemption from the engine-side
+    // gate (`card-preview-gate.test.ts` / `UNGATED_OK`), and the reason it is
+    // exempt is that it carries a STRONGER gate: an IntersectionObserver on the
+    // thumbnail CANVAS that really calls `cancelAnimationFrame`, so an
+    // off-screen tile schedules no callback at all, plus its own
+    // `VIDEO_THUMB_FPS` cadence — HALF `PREVIEW_FPS`. It takes NO render lease.
+    test.setTimeout(SLOW_RENDER ? 120_000 : 45_000);
+    await gotoShell(page);
+    await expect(videoOutCard(page)).toBeVisible({ timeout: 15_000 });
+
+    // ⚠ EXACTLY ONE INJECTED NODE, and that is the INSTRUMENT, not laziness.
+    // `renderCostStats().blit` is engine-WIDE, so it can only attribute a rate
+    // to one tile if one tile is the only thing blitting. The first draft of
+    // this test put LINES → BACKDRAFT on screen together and measured 21.3
+    // blits/s, which read as a broken cap and was in fact TWO capped thumbs
+    // (10.65/s each) — a wrong instrument returning a confident wrong number.
+    // With one tile the ON window's blit count IS this thumb's, no differencing
+    // and no attribution argument.
+    //
+    // backdraft's INPUT and OUTPUT are both patched NOWHERE, which is the #1802
+    // shape exactly: the tile's own thumbnail is the ONLY thing watching it, so
+    // "the thumb stopped blitting" and "the chain stopped rendering" are the
+    // same event and the engine's per-node draw counter can see it.
+    await injectPatch(page, [{ id: 'bcost', type: 'backdraft', position: { x: -700, y: 6200 } }]);
+
+    const thumb = page.locator('.svelte-flow__node[data-id="bcost"] [data-testid="video-tile-thumb"]');
+    await expect(thumb, 'the promoted video face paints its thumb — the subject exists').toHaveCount(1);
+
+    // ── ON-SCREEN: the picture is live, and the loop is running ──────────────
+    await centerOnNode(page, 'bcost', 0.9);
+    await expect(thumb).toBeVisible();
+    await expect
+      .poll(async () => await framesDrawn(page, 'bcost'), {
+        message: 'the thumb has armed and the chain is rendering before the window opens',
+        timeout: 20_000,
+      })
+      .toBeGreaterThan(0);
+    const on = await sampleThumbCost(page, 'bcost', COST_WINDOW_MS);
+    console.log(`[1785] lane thumb ON-screen ${JSON.stringify(on)}`);
+    expect(
+      on.rafSamples,
+      `the window ran at all — ${on.rafSamples} rAF samples over ${on.elapsedMs.toFixed(0)} ms. ` +
+        'A starved runner and a frozen subject are indistinguishable from the counters alone.',
+    ).toBeGreaterThan(2);
+    expect(on.drawn, 'POSITIVE CONTROL: the chain renders while the tile is on screen').toBeGreaterThan(0);
+    expect(on.blitCalls, 'and preview blits are happening at all').toBeGreaterThan(0);
+
+    // ── OFF-SCREEN: zero. Not "fewer" — the rAF is cancelled ─────────────────
+    // The NODES move; the viewport does not. Every other tile's cost is
+    // therefore identical across the two windows, which is what makes the
+    // global blit counter's DIFFERENCE attributable to this tile.
+    await shiftNodes(page, ['bcost'], 9000);
+    await expect(thumb).not.toBeInViewport();
+    await expect
+      .poll(
+        async () => (await sampleThumbCost(page, 'bcost', SETTLE_WINDOW_MS)).drawn,
+        {
+          message: 'the off-screen tile stops being an observer (the blit IS the watch mark)',
+          timeout: 30_000,
+        },
+      )
+      .toBe(0);
+    const off = await sampleThumbCost(page, 'bcost', COST_WINDOW_MS);
+    console.log(`[1785] lane thumb OFF-screen ${JSON.stringify(off)}`);
+    expect(
+      off.drawn,
+      `an OFF-SCREEN lane thumbnail costs ZERO: ${off.drawn} node draws over ` +
+        `${off.elapsedMs.toFixed(0)} ms (${off.rafSamples} rAF samples). Anything above 0 means ` +
+        'the tile is still blitting, still marking itself watched, and still pulling its whole ' +
+        'upstream chain into every frame — the exact bill #1802 paid off.',
+    ).toBe(0);
+    expect(
+      off.blitCalls,
+      `and the engine-wide blit count goes with it: ${off.blitCalls} off-screen vs ` +
+        `${on.blitCalls} on-screen. This tile was the only blitter, so anything left here is a ` +
+        'loop that outlived its element.',
+    ).toBe(0);
+    expect(
+      off.engineFrames,
+      'POSITIVE CONTROL on the OFF window: the ENGINE is still stepping, so "0 blits" means this ' +
+        'tile was RELEASED, not that everything stopped — the #1721/#1728 reading of the same ' +
+        'counter going down',
+    ).toBeGreaterThan(0);
+
+    // ── THE CAP: the on-screen loop runs at the thumb cadence, not at rAF ────
+    // No differencing: the OFF window proved this tile is the only blitter, so
+    // the ON window's count is this thumb's count.
+    const thumbBlits = on.blitCalls;
+    const rate = (thumbBlits / on.elapsedMs) * 1000;
+    console.log(`[1785] lane thumb blit rate ${rate.toFixed(1)}/s over ${thumbBlits} blits`);
+    expect(
+      rate,
+      `an ON-SCREEN lane thumbnail is CAPPED: ${rate.toFixed(1)} blits/s (${thumbBlits} blits over ` +
+        `${on.elapsedMs.toFixed(0)} ms, ${on.rafSamples} rAF samples). Units are BLITS PER SECOND, ` +
+        `against the component's own VIDEO_THUMB_FPS cadence — a wall-clock product interval, not ` +
+        `a frame budget. Exceeding it means the thumb is repainting at full rAF, which is the ` +
+        `pre-#1802 behaviour.`,
+    ).toBeLessThanOrEqual(VIDEO_THUMB_FPS * COST_RATE_SLACK);
+    // NEGATIVE CONTROL on the instrument itself: a cap assertion that a DEAD
+    // loop would also satisfy proves nothing.
+    expect(rate, 'and the capped loop is actually running, not merely slow').toBeGreaterThan(0);
   });
 
   test('dock full-view renders LIVE video for expanded video legacy cards (feedback via EXPAND; videoOut via the dev seam) with a render lease', async ({ page }) => {

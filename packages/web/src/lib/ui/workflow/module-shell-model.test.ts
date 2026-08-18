@@ -24,8 +24,12 @@ import {
   LANE_BODY_H,
   LANE_CELL_H,
   laneCellHeight,
+  laneGlyphFor,
   plateRowsFor,
+  plateRowTracks,
+  plateRowTracksWithin,
   plateGlyphFits,
+  PLATE_PICTURE_RESERVE_H,
   SHELL_TILE_H,
   SHELL_TILE_W,
   SHELL_TILE_H_SLOT,
@@ -188,20 +192,20 @@ describe('roleLineForDef — the migrated header role line', () => {
 
 describe('laneBodyPlan — the fixed-tile no-clip guarantee', () => {
   it('mini: one hero cell + the glyph', () => {
-    expect(laneBodyPlan(8, true, 'mini')).toEqual({ layout: 'row', cellCount: 1, glyph: true, knobSize: 'md', rowTracks: [] });
-    expect(laneBodyPlan(0, true, 'mini')).toEqual({ layout: 'row', cellCount: 0, glyph: true, knobSize: 'md', rowTracks: [] });
-    expect(laneBodyPlan(5, false, 'mini')).toEqual({ layout: 'row', cellCount: 1, glyph: false, knobSize: 'md', rowTracks: [] });
+    expect(laneBodyPlan(8, 'trace', 'mini')).toEqual({ layout: 'row', cellCount: 1, glyph: true, knobSize: 'md', rowTracks: [] });
+    expect(laneBodyPlan(0, 'trace', 'mini')).toEqual({ layout: 'row', cellCount: 0, glyph: true, knobSize: 'md', rowTracks: [] });
+    expect(laneBodyPlan(5, 'none', 'mini')).toEqual({ layout: 'row', cellCount: 1, glyph: false, knobSize: 'md', rowTracks: [] });
   });
 
   it('compact row: whole md cells only — 2 with a glyph (which fills the rest), 3 without', () => {
-    expect(laneBodyPlan(3, true, 'compact')).toEqual({
+    expect(laneBodyPlan(3, 'trace', 'compact')).toEqual({
       layout: 'row',
       cellCount: LANE_ROW_MAX_CELLS_WITH_GLYPH,
       glyph: true,
       knobSize: 'md',
       rowTracks: [],
     });
-    expect(laneBodyPlan(3, false, 'compact')).toEqual({
+    expect(laneBodyPlan(3, 'none', 'compact')).toEqual({
       layout: 'row',
       cellCount: LANE_ROW_MAX_CELLS,
       glyph: false,
@@ -209,38 +213,43 @@ describe('laneBodyPlan — the fixed-tile no-clip guarantee', () => {
       rowTracks: [],
     });
     // A small face keeps every cell.
-    expect(laneBodyPlan(2, true, 'compact')).toEqual({ layout: 'row', cellCount: 2, glyph: true, knobSize: 'md', rowTracks: [] });
+    expect(laneBodyPlan(2, 'trace', 'compact')).toEqual({ layout: 'row', cellCount: 2, glyph: true, knobSize: 'md', rowTracks: [] });
   });
 
   it('full keeps the ROW (md cells, glyph) while the whole face fits it — the vca case', () => {
-    expect(laneBodyPlan(2, true, 'full')).toEqual({ layout: 'row', cellCount: 2, glyph: true, knobSize: 'md', rowTracks: [] });
-    expect(laneBodyPlan(3, false, 'full')).toEqual({ layout: 'row', cellCount: 3, glyph: false, knobSize: 'md', rowTracks: [] });
+    expect(laneBodyPlan(2, 'trace', 'full')).toEqual({ layout: 'row', cellCount: 2, glyph: true, knobSize: 'md', rowTracks: [] });
+    expect(laneBodyPlan(3, 'none', 'full')).toEqual({ layout: 'row', cellCount: 3, glyph: false, knobSize: 'md', rowTracks: [] });
   });
 
   it('full switches to the 3-col PLATE when the face outgrows the row: whole rows only, max 6 cells', () => {
     // kickdrum/tidyVco/cloudseed: 8 ranked at full → 2 whole rows = 6 cells,
     // ranks 7-8 not rendered in-lane, no room for a whole glyph strip.
-    expect(laneBodyPlan(8, true, 'full')).toEqual({ layout: 'plate', cellCount: 6, glyph: false, knobSize: 'sm', rowTracks: [PLATE_ROW_H, PLATE_ROW_H] });
-    expect(laneBodyPlan(8, true, 'full').cellCount).toBe(PLATE_COLS * PLATE_MAX_ROWS);
+    expect(laneBodyPlan(8, 'trace', 'full')).toEqual({ layout: 'plate', cellCount: 6, glyph: false, knobSize: 'sm', rowTracks: [PLATE_ROW_H, PLATE_ROW_H] });
+    expect(laneBodyPlan(8, 'trace', 'full').cellCount).toBe(PLATE_COLS * PLATE_MAX_ROWS);
     // adsr: 4 ranked → 2 rows (3+1), all four render, glyph strip doesn't fit.
-    expect(laneBodyPlan(4, true, 'full')).toEqual({ layout: 'plate', cellCount: 4, glyph: false, knobSize: 'sm', rowTracks: [PLATE_ROW_H, PLATE_ROW_H] });
+    expect(laneBodyPlan(4, 'trace', 'full')).toEqual({ layout: 'plate', cellCount: 4, glyph: false, knobSize: 'sm', rowTracks: [PLATE_ROW_H, PLATE_ROW_H] });
   });
 
   it('full PLATE keeps the glyph strip when the cells need only one row — the lfo case', () => {
     // lfo: 3 ranked with a glyph → 3 > row max (2) → plate, one row of cells +
     // a whole full-width glyph strip.
-    expect(laneBodyPlan(3, true, 'full')).toEqual({ layout: 'plate', cellCount: 3, glyph: true, knobSize: 'sm', rowTracks: [PLATE_ROW_H] });
+    expect(laneBodyPlan(3, 'trace', 'full')).toEqual({ layout: 'plate', cellCount: 3, glyph: true, knobSize: 'sm', rowTracks: [PLATE_ROW_H] });
   });
 
   it('never plans more cells than exist, and never a partial row beyond the plate cap', () => {
     for (const tier of ['mini', 'compact', 'full'] as const) {
-      for (const glyph of [true, false]) {
+      // ⚠ ALL THREE GLYPH KINDS, not the two the boolean could express: the
+      // PICTURE arm reserves its strip before the cells (#1785) and is a
+      // different code path, so a sweep that skipped it proved nothing about it.
+      for (const glyph of ['trace', 'none', 'picture'] as const) {
         for (let n = 0; n <= 12; n++) {
           const plan = laneBodyPlan(n, glyph, tier);
           expect(plan.cellCount).toBeLessThanOrEqual(n);
           expect(plan.cellCount).toBeLessThanOrEqual(PLATE_COLS * PLATE_MAX_ROWS);
           if (plan.layout === 'plate' && plan.glyph) {
-            // A plate glyph strip only ever coexists with a single cell row.
+            // A plate glyph strip only ever coexists with a single cell row —
+            // true from BOTH ends of the precedence, since the strip and one
+            // design row are all the 112 px body holds either way.
             expect(Math.ceil(plan.cellCount / PLATE_COLS)).toBeLessThanOrEqual(1);
           }
         }
@@ -308,7 +317,7 @@ describe('lane cell HEIGHT — the plate fits every ParamCellKind, not just a kn
     for (const kind of KINDS) {
       const h = LANE_CELL_H[kind];
       // 12 controls forces the plate at 'full' for any kind.
-      const plan = laneBodyPlan(12, false, 'full', h);
+      const plan = laneBodyPlan(12, 'none', 'full', h);
       if (plan.layout !== 'plate') continue;
       // Every track must clear the cells it holds; only a row with a row BELOW
       // it can overlap anything, so the last track is free to be short.
@@ -333,7 +342,7 @@ describe('lane cell HEIGHT — the plate fits every ParamCellKind, not just a kn
   it('a glyph strip is never promised where it would not fit', () => {
     for (const kind of KINDS) {
       const h = LANE_CELL_H[kind];
-      const plan = laneBodyPlan(12, true, 'full', h);
+      const plan = laneBodyPlan(12, 'trace', 'full', h);
       if (!plan.glyph) continue;
       const rows = Math.ceil(plan.cellCount / PLATE_COLS);
       expect(
@@ -363,8 +372,8 @@ describe('lane cell HEIGHT — the plate fits every ParamCellKind, not just a kn
     expect(plateGlyphFits(1, LANE_CELL_H.fader)).toBe(false);
     // And the PLAN moves with it: the same control count and glyph flag give a
     // different tile for a tall cell than for a short one.
-    expect(laneBodyPlan(6, false, 'full', PLATE_ROW_H).cellCount).toBe(6);
-    expect(laneBodyPlan(6, false, 'full', LANE_CELL_H.fader).cellCount).toBe(PLATE_COLS);
+    expect(laneBodyPlan(6, 'none', 'full', PLATE_ROW_H).cellCount).toBe(6);
+    expect(laneBodyPlan(6, 'none', 'full', LANE_CELL_H.fader).cellCount).toBe(PLATE_COLS);
   });
 
   it('marbles: the regression, at the numbers that were measured in the browser', () => {
@@ -384,9 +393,9 @@ describe('lane cell HEIGHT — the plate fits every ParamCellKind, not just a kn
     // then plan the body — lands on three whole cells with NO overlap. Three
     // cells and no glyph fit the ROW layout, which lays them side by side, so
     // one 96px cell clears the 112px body outright.
-    const cap = laneBodyPlan(Number.MAX_SAFE_INTEGER, false, 'full', fader).cellCount;
+    const cap = laneBodyPlan(Number.MAX_SAFE_INTEGER, 'none', 'full', fader).cellCount;
     expect(cap).toBe(3);
-    const plan = laneBodyPlan(cap, false, 'full', fader);
+    const plan = laneBodyPlan(cap, 'none', 'full', fader);
     expect(plan.cellCount).toBe(3);
     expect(plan.layout).toBe('row');
     expect(fader).toBeLessThanOrEqual(LANE_BODY_H);
@@ -422,6 +431,153 @@ describe('hasVideoSurface — which tiles carry the LIVE video thumbnail', () =>
     expect(VIDEO_THUMB_FPS).toBe(15);
   });
 });
+
+describe('laneGlyphFor — ONE notion of "does this tile have a glyph", and what KIND (#1785)', () => {
+  // The defect this closes is a DISAGREEMENT, not a wrong number: the shell
+  // asked `glyphKind !== 'none' || hasVideoSurface(def)` and the selector asked
+  // `face.glyph !== 'none'`, and a video def is exactly where those differ.
+  it('a VIDEO-domain def is a PICTURE even though its face declares glyph: none', () => {
+    // backdraft's shape, and the declaration is MANDATORY: a def with no audio
+    // output cannot carry a trace glyph (the face lint's dead-glyph clause), so
+    // 'none' is the only legal literal and the picture arrives from the domain.
+    expect(laneGlyphFor({ domain: 'video', face: { glyph: 'none' } })).toBe('picture');
+    expect(laneGlyphFor({ domain: 'video' })).toBe('picture');
+  });
+
+  it('a declared glyph on a non-video def is a TRACE; no declaration is none', () => {
+    expect(laneGlyphFor({ domain: 'audio', face: { glyph: 'scope' } })).toBe('trace');
+    expect(laneGlyphFor({ domain: 'audio', face: { glyph: 'none' } })).toBe('none');
+    expect(laneGlyphFor({ domain: 'audio', face: {} })).toBe('none');
+    expect(laneGlyphFor({ domain: 'audio' })).toBe('none');
+    expect(laneGlyphFor(undefined)).toBe('none');
+  });
+
+  it('the PICTURE wins over a declared trace — mirroring the render, not guessing', () => {
+    // ModuleShell's glyph cell branches `{#if videoThumb} … {:else if
+    // glyphKind === …}`, so a video def that also declared a trace would paint
+    // the picture. No def does; the ORDER is still the render's.
+    expect(laneGlyphFor({ domain: 'video', face: { glyph: 'scope' } })).toBe('picture');
+  });
+
+  it('is the SAME question `hasVideoSurface` answers, one layer down', () => {
+    for (const domain of ['video', 'audio', 'cv', undefined]) {
+      expect(laneGlyphFor({ domain }) === 'picture', `domain=${domain}`).toBe(
+        hasVideoSurface({ domain }),
+      );
+    }
+  });
+});
+
+describe('laneBodyPlan — a PICTURE outranks ranked cells (#1785)', () => {
+  // "The picture IS a video module's identity in a rack" (owner ruling). The
+  // policy it overturns — ranked controls outrank the glyph — was written for
+  // AUDIO faces, where the glyph is a decorative trace.
+  //
+  // MEASURED on `backdraft`, the first video face: every one of its
+  // lane-eligible cells is a declared `fader`, i.e. LANE_CELL_H.fader tall,
+  // which is what the shipped tile rendered.
+  const FADER = LANE_CELL_H.fader;
+  const backdraftLike = Array<number>(PLATE_COLS * PLATE_MAX_ROWS).fill(FADER);
+  const designLike = Array<number>(PLATE_COLS * PLATE_MAX_ROWS).fill(PLATE_ROW_H);
+
+  it('the fader face that lost its picture gets it back — and the trade is STATED', () => {
+    // BEFORE, reproduced from the old expression (the shell passed hasGlyph =
+    // true, which is this function's 'trace').
+    const before = laneBodyPlan(backdraftLike, 'trace', 'full');
+    expect(before, 'the shipped bug: three cells, no picture').toMatchObject({
+      layout: 'plate',
+      cellCount: 3,
+      glyph: false,
+    });
+
+    // AFTER: the picture is reserved first. No whole cell row fits under it —
+    // a fader row needs LANE_CELL_H.fader and the reserve leaves
+    // LANE_BODY_H - PLATE_PICTURE_RESERVE_H — so the plate cannot hold both and
+    // the plan falls back to the ROW layout, where the picture sits BESIDE the
+    // cells and one fader clears the body on its own.
+    const after = laneBodyPlan(backdraftLike, 'picture', 'full');
+    expect(after).toMatchObject({
+      layout: 'row',
+      cellCount: LANE_ROW_MAX_CELLS_WITH_GLYPH,
+      glyph: true,
+    });
+    expect(
+      LANE_BODY_H - PLATE_PICTURE_RESERVE_H,
+      'the arithmetic that decides it: CSS px left for cells after the strip',
+    ).toBeLessThan(FADER);
+
+    // THE TRADE, in an assertion rather than in prose: one lane cell, for the
+    // picture. Everything else stays reachable in the dock, which renders every
+    // ranked control.
+    expect(before.cellCount - after.cellCount).toBe(1);
+  });
+
+  it('a DESIGN-height picture face keeps a whole plate row UNDER the picture', () => {
+    // The other side of the same branch — a video face whose cells are ordinary
+    // knob columns. Those cells fill both plate rows and would evict the glyph
+    // under the old precedence; under the new one the picture is reserved and
+    // ONE row of cells fits beneath it.
+    expect(laneBodyPlan(designLike, 'trace', 'full'), 'a TRACE still yields').toMatchObject({
+      layout: 'plate',
+      cellCount: PLATE_COLS * PLATE_MAX_ROWS,
+      glyph: false,
+    });
+    expect(laneBodyPlan(designLike, 'picture', 'full'), 'a PICTURE does not').toMatchObject({
+      layout: 'plate',
+      cellCount: PLATE_COLS,
+      glyph: true,
+      rowTracks: [PLATE_ROW_H],
+    });
+  });
+
+  it('NEGATIVE CONTROL — the inversion is scoped to the picture, in both directions', () => {
+    // A permanent leg: if the 'trace' answers ever start tracking the 'picture'
+    // ones, the inversion has leaked out of the video domain.
+    for (const cells of [backdraftLike, designLike]) {
+      const trace = laneBodyPlan(cells, 'trace', 'full');
+      const picture = laneBodyPlan(cells, 'picture', 'full');
+      expect(trace.glyph, 'a trace yields its strip to the ranked cells').toBe(false);
+      expect(picture.glyph, 'the picture never does').toBe(true);
+      expect(picture.cellCount).toBeLessThan(trace.cellCount);
+    }
+    // …and a glyph-LESS face is untouched by either: no glyph to rank, so it
+    // keeps the whole plate and the same cell count the trace face got.
+    expect(laneBodyPlan(backdraftLike, 'none', 'full')).toMatchObject({
+      layout: 'plate',
+      cellCount: laneBodyPlan(backdraftLike, 'trace', 'full').cellCount,
+      glyph: false,
+    });
+  });
+
+  it('the lane tiers below `full` never reached the plate, so they do NOT move', () => {
+    // mini/compact take the ROW layout for every glyph kind, and a row has
+    // always painted its glyph. The bug was only ever the plate's.
+    for (const tier of ['mini', 'compact'] as const) {
+      const trace = laneBodyPlan(backdraftLike, 'trace', tier);
+      const picture = laneBodyPlan(backdraftLike, 'picture', tier);
+      expect(picture, `${tier} is identical to the trace plan`).toEqual(trace);
+      expect(picture.glyph).toBe(true);
+    }
+  });
+
+  it('plateRowTracksWithin admits only WHOLE rows and may legally return NONE', () => {
+    // The never-empty floor `plateRowTracks` keeps ("a tile that renders
+    // nothing is worse than one over-tall row") is exactly what must NOT apply
+    // once a picture has claimed the body: an over-tall row would paint over
+    // the thing that outranked it.
+    expect(plateRowTracks([FADER]), 'the floor still holds').toEqual([FADER]);
+    expect(plateRowTracksWithin([FADER], LANE_BODY_H - PLATE_PICTURE_RESERVE_H)).toEqual([]);
+    expect(plateRowTracksWithin(designLike, LANE_BODY_H)).toEqual([PLATE_ROW_H, PLATE_ROW_H]);
+    expect(plateRowTracksWithin([], LANE_BODY_H)).toEqual([]);
+  });
+
+  it('the reserve is DERIVED from the strip geometry, not typed', () => {
+    // The same pixels the other end of the precedence asks for, so the two
+    // directions cannot disagree about what a strip costs.
+    expect(PLATE_PICTURE_RESERVE_H).toBe(PLATE_ROW_H + PLATE_GAP_Y);
+  });
+});
+
 
 describe('thumbFitRect — aspect-fit blit rect (the legacy preview fit rule)', () => {
   it('pillarboxes a 4:3 engine frame into a wide well', () => {
@@ -484,11 +640,11 @@ describe('ModuleShell tier-swap contract (fixture — no real module is faced ye
     // The fixture declares glyph 'scope', so compact is the fit-reconciled
     // two cells + glyph (faceTierCap) — the SAME number laneBodyPlan renders.
     expect(laneControlCount('compact')).toBe(2);
-    expect(laneBodyPlan(laneControlCount('compact'), true, 'compact').cellCount).toBe(2);
+    expect(laneBodyPlan(laneControlCount('compact'), 'trace', 'compact').cellCount).toBe(2);
     // 'full' is likewise fit-reconciled: the 3×2 plate paints SIX whole cells,
     // so selecting 8 only ever handed the shell two it had to throw away.
     expect(laneControlCount('full')).toBe(6);
-    expect(laneBodyPlan(laneControlCount('full'), true, 'full').cellCount).toBe(6);
+    expect(laneBodyPlan(laneControlCount('full'), 'trace', 'full').cellCount).toBe(6);
   });
 
   it("the richest LOD band 'dock' still renders the FULL-in-lane face (6), not all", () => {
