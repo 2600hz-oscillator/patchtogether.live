@@ -1,9 +1,29 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
   import Canvas from '$lib/ui/Canvas.svelte';
+  import AudioGate from '$lib/ui/AudioGate.svelte';
+  import { createAudioGate } from '$lib/audio/audio-gate.svelte';
   import { ydoc, bindRackspace, unbindRackspace } from '$lib/graph/store';
   import { attachLocalReplica } from '$lib/multiplayer/local-replica';
   import { getOrCreateLocalScratchId } from '$lib/storage/local-scratch';
+
+  // AUDIO GATE (#1826). `ensureEngine()` builds the AudioContext, awaits
+  // resume(), and only THEN reaches `new VideoEngine(...)` — so until a user
+  // gesture runs it there is no engine AT ALL, video paints black and audio is
+  // silent. `/r/[id]` has always mounted the overlay that says so; THIS route —
+  // the default, and the one most people land on — did not, so the scratch rack
+  // simply sat there dead with no explanation. (It was reported as "video output
+  // is broken", which is what a silent dead engine looks like from outside.)
+  //
+  // The store is created here and threaded BOTH ways on purpose: `audioGate` into
+  // Canvas so it can register `ensureEngine` as the booter and bind the live
+  // AudioContext, and the same store into <AudioGate> so the overlay reflects it.
+  // Passing only one half yields an overlay that renders and does nothing.
+  //
+  // ⚠ Coverage of this is a property of the ROUTE SET, not of this file: see
+  // `canvas-routes-audio-gate.test.ts`, which derives every route that mounts
+  // Canvas and requires both halves of the wiring on each of them.
+  const audioGate = createAudioGate();
 
   // `homeAuth` is derived SERVER-SIDE in +layout.server.ts (the scratch
   // canvas at `/rack` doesn't mount the client <ClerkProvider> — that would
@@ -129,7 +149,12 @@
 {#key scratchId}
   <Canvas
     {headerAuth}
+    {audioGate}
     rackspaceId={scratchId}
     scratchSeeded={replicaEnabled ? seeded : undefined}
   />
 {/key}
+<!-- OUTSIDE {#key} — minting a fresh scratch id (File → New rack) remounts the
+     canvas but must not tear down and re-raise the overlay over an AudioContext
+     that is already running. Same placement as /r/[id]'s. -->
+<AudioGate gate={audioGate} />

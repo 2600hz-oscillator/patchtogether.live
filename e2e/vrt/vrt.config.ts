@@ -24,11 +24,19 @@
 //   - VRT failures upload a different artifact bundle (the HTML gallery).
 
 import { defineConfig, devices } from '@playwright/test';
+import { fileURLToPath } from 'node:url';
 // #1597: the default target is this WORKTREE'S OWN derived port (E2E_PORT /
 // E2E_BASE_URL still win) — never the shared 5173, where reuseExistingServer
 // silently adopted a sibling checkout's dev server and swept the wrong branch.
 // APP_PORT feeds the webServer command below so url/command cannot disagree.
 import { localBaseUrl } from '../worktree-port';
+
+// CSS applied ONLY while a `toHaveScreenshot` capture is being taken — see the
+// long header in the file itself for what it hides and why. Resolved absolutely
+// off `import.meta.url` so it does not depend on the cwd Playwright was invoked
+// from (the VRT lane is driven from `e2e/` by npm, from the repo root by task,
+// and from `e2e/vrt/` by a bare `playwright test --config`).
+const SCREENSHOT_STYLE = fileURLToPath(new URL('./vrt-screenshot.css', import.meta.url));
 
 const { baseUrl: BASE_URL, port: APP_PORT } = localBaseUrl('dev');
 const IS_LOCAL_TARGET =
@@ -393,6 +401,14 @@ export default defineConfig({
       // baseline. Note: this is on top of the prefers-reduced-motion
       // emulation we set on the use{} block.
       animations: 'disabled',
+      // Hide the audio-gate overlay for the duration of the CAPTURE only.
+      // VRT's own `freezeAudioContext()` SUSPENDS the AudioContext for
+      // determinism, and a suspended context correctly re-raises the gate — so
+      // without this every frozen scene is shot through a 78%-opacity scrim plus
+      // a 2px backdrop blur. MEASURED on this branch: face-adsr-dock came out
+      // visibly darkened; the non-freezing per-module card path did not. The full
+      // argument, and what it makes this lane blind to, is in the CSS file itself.
+      stylePath: SCREENSHOT_STYLE,
     },
   },
 

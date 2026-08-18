@@ -39,7 +39,7 @@ guards (`test.skip(cond, …)`) are env gates, not disables, and are excluded.
 ### e2e — declaration-level disables (3)
 - `e2e/tests/edges.spec.ts:139` — test.fixme — raising THICKNESS increases edge pixels
 - `e2e/tests/in-card-title.spec.ts:109` — test.fixme — rename in A appears in B inside the in-card title (peer Yjs sync)
-- `e2e/tests/recorderbox.spec.ts:494` — test.fixme — RECORDERBOX records a real VCO + ACIDWARP into a crash-recoverable MP4
+- `e2e/tests/recorderbox.spec.ts:499` — test.fixme — RECORDERBOX records a real VCO + ACIDWARP into a crash-recoverable MP4
 
 ### art — declaration-level disables (0)
 _none_
