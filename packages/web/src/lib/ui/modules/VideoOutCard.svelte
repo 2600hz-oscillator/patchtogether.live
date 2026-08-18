@@ -57,6 +57,7 @@
   import { VIDEO_RES } from '$lib/video/engine';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
+  import { drawPreviewDownscaled } from './preview-downscale';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -303,7 +304,7 @@
         // that same convention — so a straight blit is upright. (A manual
         // scale(1,-1) used to live here and flipped every source upside
         // down.)
-        ctx2d.drawImage(src, r.x, r.y, r.w, r.h);
+        drawPreviewDownscaled(ctx2d, src, r.x, r.y, r.w, r.h);
       }
     }
     rafId = requestAnimationFrame(draw);

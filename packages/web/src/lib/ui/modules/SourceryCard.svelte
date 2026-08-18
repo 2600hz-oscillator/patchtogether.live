@@ -18,6 +18,7 @@
   import { onMount, onDestroy } from 'svelte';
   import ModuleTitle from './ModuleTitle.svelte';
   import { cardParams, portsFromDef } from './card-kit';
+  import { drawPreviewDownscaled } from './preview-downscale';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -63,7 +64,7 @@
       ctx2d.fillStyle = '#050608';
       ctx2d.fillRect(0, 0, cw, ch);
       const r = fitRect(cw, ch);
-      ctx2d.drawImage(src, r.x, r.y, r.w, r.h);
+      drawPreviewDownscaled(ctx2d, src, r.x, r.y, r.w, r.h);
     }
     drawRaf = requestAnimationFrame(draw);
   }

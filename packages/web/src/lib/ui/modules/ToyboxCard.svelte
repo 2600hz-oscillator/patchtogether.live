@@ -158,6 +158,7 @@
     setLayerVideoSource,
   } from '$lib/graph/toybox-layers';
   import { nodeMedia } from '$lib/ui/media/node-media-registry';
+  import { drawPreviewDownscaled } from './preview-downscale';
   import {
     expectedVideoLayers,
     exportRefusalMessage,
@@ -2080,7 +2081,7 @@
     ctx2d.fillStyle = '#050608';
     ctx2d.fillRect(0, 0, cw, ch);
     const r = fitRect(cw, ch);
-    ctx2d.drawImage(src, r.x, r.y, r.w, r.h);
+    drawPreviewDownscaled(ctx2d, src, r.x, r.y, r.w, r.h);
   }
 
   function draw() {

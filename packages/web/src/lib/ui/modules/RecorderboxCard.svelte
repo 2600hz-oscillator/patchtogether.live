@@ -73,6 +73,7 @@
   } from './recorderbox-present-policy';
   import { chunkFileName } from '$lib/video/recorderbox-chunk-name';
   import { nodeRecorder } from './node-recorder-registry.svelte';
+  import { drawPreviewDownscaled } from './preview-downscale';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -250,7 +251,7 @@
       let w = cw, h = ch, x = 0, y = 0;
       if (dstAspect > srcAspect) { h = ch; w = Math.round(h * srcAspect); x = Math.round((cw - w) / 2); }
       else { w = cw; h = Math.round(w / srcAspect); y = Math.round((ch - h) / 2); }
-      pctx.drawImage(src, x, y, w, h);
+      drawPreviewDownscaled(pctx, src, x, y, w, h);
     }
 
     // CAPTURE IS NOT HERE. It runs on the registry's own pump, which keeps

@@ -35,6 +35,7 @@
   import { liveEngineAspect } from './video-card-aspect';
   import ModuleTitle from './ModuleTitle.svelte';
   import { captureFlowStore, cardParams, portsFromDef } from './card-kit';
+  import { drawPreviewDownscaled } from './preview-downscale';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -196,7 +197,7 @@
         ctx2d.fillRect(0, 0, cw, ch);
         const r = fitRect(cw, ch);
         // drawImage from a WebGL canvas is already upright — no Y-flip.
-        ctx2d.drawImage(src, r.x, r.y, r.w, r.h);
+        drawPreviewDownscaled(ctx2d, src, r.x, r.y, r.w, r.h);
       }
     }
     // Reflect gate-toggled mirror state back into the store + read the
