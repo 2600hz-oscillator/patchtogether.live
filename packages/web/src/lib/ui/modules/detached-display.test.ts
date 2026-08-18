@@ -253,6 +253,29 @@ describe('placeDetached — a fresh panel must not cover the card it came from',
     }
   });
 
+  it('an UNMEASURABLE card falls back to a CORNER, never to the centre', () => {
+    // ⚠ The centre is the worst guess when the card cannot be measured, because
+    // a just-revealed card is itself centred — so the "unknown" fallback would
+    // reinstate the very collision this function exists to prevent, in exactly
+    // the conditions where we know least (element gone, or not yet laid out).
+    const centred = clampDetachedRect({}, VIEWPORT);
+    for (const bad of [
+      // ⚠ `undefined` is NOT in this list: it means "no card element at all",
+      // which is genuinely nothing to dodge and is asserted to CENTRE above.
+      // These are the "the card is there, we could not measure it" cases.
+      { x: 100, y: 100, w: 0, h: 0 },
+      { x: 100, y: 100, w: NaN, h: 200 },
+      { x: 100, y: 100, w: 200, h: -5 },
+    ]) {
+      const r = placeDetached(VIEWPORT, bad as never);
+      expect(r, `unmeasurable card ${JSON.stringify(bad)} must not centre`).not.toEqual(centred);
+      // …and still fully on screen.
+      expect(r.x).toBeGreaterThanOrEqual(0);
+      expect(r.x + r.w).toBeLessThanOrEqual(VIEWPORT.width);
+      expect(r.y).toBeGreaterThanOrEqual(0);
+    }
+  });
+
   it('a card covering the WHOLE viewport falls back to centred rather than off-screen', () => {
     // Deliberate: no placement can dodge it, and a draggable panel beats a
     // wedged one.

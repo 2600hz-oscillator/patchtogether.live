@@ -262,7 +262,27 @@ function overlaps(a: DetachedRect, b: AvoidRect): boolean {
  */
 export function placeDetached(viewport: ViewportSize, avoid?: AvoidRect): DetachedRect {
   const centred = clampDetachedRect({}, viewport);
-  if (!avoid || !overlaps(centred, avoid)) return centred;
+
+  // ⚠ AN UNMEASURABLE CARD FALLS BACK TO A CORNER, NOT TO THE CENTRE. If the
+  // caller could not read a box — the element is gone, not laid out yet, or
+  // measured zero on a slow machine before first layout — then "centre" is the
+  // worst available guess, because a just-revealed card is itself centred. The
+  // failure this whole function exists for is a panel opening ON TOP of the card
+  // whose right-click is one of the two documented ways to re-attach, and
+  // falling back to the most likely collision would reinstate it in exactly the
+  // conditions where we know least. A corner is unhelpful at worst; the centre
+  // is wrong at exactly the wrong moment.
+  // ⚠ TWO DIFFERENT UNKNOWNS, and conflating them was a bug in the first draft.
+  // `avoid === undefined` means the caller found NO CARD ELEMENT AT ALL — there
+  // is nothing on screen to collide with, so the centre is correct and a corner
+  // would be arbitrary. A PRESENT element that measures zero (or non-finite) is
+  // the other case: the card is there, we simply could not read it.
+  if (!avoid) return centred;
+  const degenerate = !Number.isFinite(avoid.w) || !Number.isFinite(avoid.h) || avoid.w <= 0 || avoid.h <= 0;
+  if (degenerate) {
+    return clampDetachedRect({ ...centred, x: Math.max(0, viewport.width - centred.w - 24), y: 24 }, viewport);
+  }
+  if (!overlaps(centred, avoid)) return centred;
 
   const gap = 12;
   const roomRight = viewport.width - (avoid.x + avoid.w);
