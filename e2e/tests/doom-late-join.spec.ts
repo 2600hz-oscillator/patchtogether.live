@@ -60,6 +60,16 @@ import { SIM_BUDGET_MS } from './_doom-helpers';
 
 const GS_LEVEL = 0;
 
+/** Cap for "the marine appeared", NOT for "the level loaded".
+ *
+ *  GS_LEVEL is set by G_DoLoadLevel and P_SpawnPlayer places the mobj a few
+ *  TICS later — so by the time this wait starts, the expensive sim-paced part
+ *  (SIM_BUDGET_MS, spent on reaching GS_LEVEL) is already done and what remains
+ *  is a handful of frames. Giving it a full level-load budget would only push
+ *  the worst case past the test timeout and turn a named assertion into an
+ *  opaque one. */
+const MARINE_SPAWN_BUDGET_MS = 20_000;
+
 interface DoomPair {
   pageA: Page;
   pageB: Page;
@@ -219,8 +229,21 @@ test.describe('@collab DOOM late-join — hot-drop into the running map', () => 
   // (doom-roster.test.ts); this is the browser-level integration check.
   test.skip(!!process.env.CI && !process.env.COLLAB_JOB, '@collab — runs on the dedicated COLLAB_JOB lane, not the sharded matrix');
   // Cold WASM + 4 MB WAD on TWO contexts + cross-context sync + a launch + an
-  // intermission round-trip + a second launch → a long window. Generous ceiling.
-  test.setTimeout(180_000);
+  // intermission round-trip + a second launch → a long window.
+  //
+  // ⚠ THE TEST TIMEOUT MUST EXCEED THE SUM OF THE CAPS INSIDE IT, or the
+  // slowest failure arrives as an opaque "Test timeout exceeded" instead of the
+  // named assertion that says WHICH step never converged — which is the exact
+  // diagnostic this rewrite exists to provide. Measured the hard way: raising
+  // two waits to SIM_BUDGET_MS pushed the worst case past a flat 180 s, and a
+  // contended local batch run duly produced a bare timeout with no clue in it.
+  // So the ceiling is DERIVED from the budgets rather than typed next to them,
+  // and it moves when they do.
+  //
+  //   asset/mount/seat waits ≈ 60 s  +  2 × SIM_BUDGET_MS (A's launch, B's
+  //   hot-drop relaunch)  +  SYNC_BUDGET_MS (B sees the host's live-MP flag)
+  //   +  MARINE_SPAWN_BUDGET_MS  →  rounded up with slack.
+  test.setTimeout(60_000 + 2 * SIM_BUDGET_MS + SYNC_BUDGET_MS + MARINE_SPAWN_BUDGET_MS + 30_000);
 
   test('B joins mid-level → hot-drops into the current map as active player 1', async ({ browser }) => {
     const pair = await openPair(browser);
@@ -326,7 +349,7 @@ test.describe('@collab DOOM late-join — hot-drop into the running map', () => 
       // not a statement about the hot-drop.
       await expect
         .poll(async () => (await slotPos(pair.pageB, NODE, 1)) !== null, {
-          timeout: SIM_BUDGET_MS,
+          timeout: MARINE_SPAWN_BUDGET_MS,
           intervals: [200, 500, 1000],
           message:
             'B reached GS_LEVEL but never spawned a live marine at slot 1 — the ' +
