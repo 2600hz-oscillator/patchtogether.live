@@ -58,6 +58,13 @@
 // from engine state rather than re-declared per card. A lease means a human is
 // looking at the real picture: no visibility gate, no cadence cap.
 //
+// A ONE-SHOT PRESENT bypasses the CADENCE cap (see {@link
+// PreviewGateInput.immediate}). The cap's whole justification is that the
+// frame it drops is replaced 8-16 ms later by the next tick of a FREE-RUNNING
+// loop. A caller that rendered one specific frame and is asking for that frame
+// to appear has no next tick, so the cap does not defer the frame — it LOSES
+// it, and the surface goes on showing a picture the engine has left behind.
+//
 // PURE + framework-free: no timers, no globals, no `performance`. The caller
 // passes the clock in, so this unit-tests deterministically.
 
@@ -113,6 +120,29 @@ export interface PreviewGateInput {
   /** Minimum gap between repaints. Defaults to {@link PREVIEW_MIN_INTERVAL_MS};
    *  pass 0 to disable the cadence cap (the kill switch's shape). */
   readonly minIntervalMs?: number;
+  /**
+   * Is this a ONE-SHOT PRESENT rather than a tick of a free-running loop?
+   *
+   * ⚠ THIS IS WHAT MAKES THE CADENCE CAP SOUND, and #1836 shipped without it.
+   * Dropping a repaint is free ONLY because another one is 8-16 ms away: the
+   * viewer never sees the frame that was skipped, they see the next one. A
+   * caller that rendered a SPECIFIC frame and is now asking for THAT frame to
+   * appear has no next one — the surface keeps showing a picture that does not
+   * correspond to the state the engine is in, and keeps showing it until
+   * something else happens to repaint. That is not "30 fps instead of 120", it
+   * is a WRONG picture, indefinitely.
+   *
+   * MEASURED (#1836): TOYBOX's LAYER INPUT feedback tap, driven through the
+   * card's `__toyboxFreeze(t)` determinism hook (step() then present). Twelve
+   * engine frames were rendered; the cadence cap presented TWO of them, and
+   * the composite the card was showing was the one from feedback iteration 2
+   * while the engine was on iteration 12 (matcap distance 3.66 vs 32.52).
+   *
+   * Bypasses the CADENCE cap ONLY. The VISIBILITY gate still applies and must:
+   * "nobody can see this card" is a correctness fact about the surface, and it
+   * is true of a one-shot present exactly as much as of a loop tick.
+   */
+  readonly immediate?: boolean;
 }
 
 /**
@@ -127,6 +157,10 @@ export interface PreviewGateInput {
 export function previewDecision(input: PreviewGateInput): PreviewDecision {
   if (input.leased) return 'blit';
   if (input.cardVisible === false) return 'skip:offscreen';
+  // A ONE-SHOT PRESENT is not a cadence candidate — there is no later repaint
+  // for the cap to defer this frame to. Deliberately AFTER the visibility
+  // check, so `immediate` can never resurrect an off-screen card's preview.
+  if (input.immediate === true) return 'blit';
   const min = input.minIntervalMs ?? PREVIEW_MIN_INTERVAL_MS;
   if (min <= 0) return 'blit';
   if (input.lastPreviewAtMs === null) return 'blit';

@@ -163,7 +163,7 @@ async function setOp1FadeAmount(page: Page, amount: number): Promise<void> {
   await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
 }
 
-test.describe('TOYBOX per-layer editing — LAYER selector', () => {
+test.describe('TOYBOX per-layer editing — LAYER selector @webgl-serial', () => {
   test('the LAYER tabs retarget controls to layers[activeLayer]; author a 2-layer patch', async ({ page }) => {
     // TOYBOX runs a WebGL rAF compositor; CI's software renderer is slow, so the
     // multi-step author flow needs headroom beyond the 30s default.

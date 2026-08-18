@@ -372,6 +372,37 @@ export interface VideoEngineContext {
   notifyAudioSourcesChanged?(nodeId: string): void;
 }
 
+/**
+ * Per-call modifiers for the two GATED preview blits
+ * ({@link VideoEngine.blitOutputForPreview} and its per-port sibling).
+ *
+ * One field, because there is exactly one thing the caller knows that the
+ * engine cannot infer from a node id: whether another repaint is coming.
+ */
+export interface PreviewBlitOptions {
+  /**
+   * ONE-SHOT PRESENT: this call is not a tick of a free-running loop, it is
+   * "I rendered a specific frame, put THAT frame on the surface". Bypasses the
+   * CADENCE cap; the VISIBILITY gate still applies. See
+   * `preview-gate.ts` → `PreviewGateInput.immediate` for the measurement.
+   */
+  readonly immediate?: boolean;
+}
+
+/** Separator between node id and port id in a per-PORT preview key. NUL, so it
+ *  cannot occur inside either id. */
+const PREVIEW_PORT_SEP = '\u0000';
+
+/** The `lastPreviewAt` / `lastPreviewDecision` key for a per-PORT preview.
+ *  ONE definition, because the removal sweep in `removeNode` and the two blit
+ *  paths must agree on the separator — they did not (#1836: the key was built
+ *  with NUL and swept with a SPACE), so the sweep matched nothing and every
+ *  per-port entry leaked for the lifetime of the engine, ready to throttle a
+ *  RECREATED node against a dead timestamp. */
+function previewPortKey(nodeId: string, portId: string): string {
+  return `${nodeId}${PREVIEW_PORT_SEP}${portId}`;
+}
+
 // ----------------------------------------------------------------------
 // VideoEngine
 // ----------------------------------------------------------------------
@@ -799,12 +830,16 @@ export class VideoEngine implements DomainEngine {
     this.renderLeases.delete(nodeId);
     this.framesDrawn.delete(nodeId);
     // Preview bookkeeping is keyed by nodeId for the primary surface and by
-    // `<nodeId> <portId>` for an inline per-port preview, so a bare delete
-    // would strand the per-port entries — the same prefix sweep the param maps
-    // above use, for the same reason.
+    // `previewPortKey(nodeId, portId)` for an inline per-port preview, so a
+    // bare delete would strand the per-port entries — the same prefix sweep the
+    // param maps above use, for the same reason.
+    //
+    // ⚠ The prefix MUST be built from the same separator the key is
+    // (PREVIEW_PORT_SEP). It was a SPACE here and `\u0000` at the two call
+    // sites, so this loop matched nothing and every per-port entry leaked.
     this.lastPreviewAt.delete(nodeId);
     this.lastPreviewDecision.delete(nodeId);
-    const previewPrefix = `${nodeId} `;
+    const previewPrefix = `${nodeId}${PREVIEW_PORT_SEP}`;
     for (const k of this.lastPreviewAt.keys()) {
       if (k.startsWith(previewPrefix)) this.lastPreviewAt.delete(k);
     }
@@ -1562,9 +1597,20 @@ export class VideoEngine implements DomainEngine {
    * is the #1721/#1728 failure class. They keep the ungated method, and
    * `card-preview-gate.test.ts` asserts which callers use which.
    *
+   * ⚠ A ONE-SHOT PRESENT MUST SAY SO — `{ immediate: true }`. The cadence cap
+   * is only sound for a FREE-RUNNING loop, where the frame it drops is
+   * replaced by the next rAF 8-16 ms later. A caller that renders one specific
+   * frame and then asks for it (a determinism/VRT hook, an on-demand refresh)
+   * has no next rAF: the cap does not defer that frame, it LOSES it, and the
+   * surface goes on showing a picture the engine has left behind. MEASURED
+   * (#1836): TOYBOX's LAYER INPUT feedback tap presented 2 of 12 rendered
+   * frames through `__toyboxFreeze`, leaving the card showing feedback
+   * iteration 2 while the engine was on 12. `immediate` bypasses the CADENCE
+   * cap only — the viewport gate is correctness and still applies.
+   *
    * Returns `true` when the drawing buffer now holds this node's picture.
    */
-  blitOutputForPreview(nodeId: string): boolean {
+  blitOutputForPreview(nodeId: string, opts?: PreviewBlitOptions): boolean {
     const handle = this.nodes.get(nodeId);
     if (!handle) return false;
     const now = this.watchNow();
@@ -1574,6 +1620,7 @@ export class VideoEngine implements DomainEngine {
       lastPreviewAtMs: this.lastPreviewAt.get(nodeId) ?? null,
       nowMs: now,
       minIntervalMs: this.previewMinIntervalMs,
+      immediate: opts?.immediate === true,
     });
     this.lastPreviewDecision.set(nodeId, decision);
     if (decision !== 'blit') return false;
@@ -1602,11 +1649,15 @@ export class VideoEngine implements DomainEngine {
    * a port rendering while UNPATCHED. That is the intended behaviour and the
    * whole point: an off-screen VIDEOCUBE must stop driving a port nobody can
    * see, not merely stop drawing it.
+   *
+   * ⚠ And it is why a ONE-SHOT PRESENT must pass `{ immediate: true }` here
+   * too: on this path a throttled call does not merely skip a paint, it skips
+   * the render request that would have produced the next picture at all.
    */
-  blitOutputPortForPreview(nodeId: string, portId: string): boolean {
+  blitOutputPortForPreview(nodeId: string, portId: string, opts?: PreviewBlitOptions): boolean {
     const handle = this.nodes.get(nodeId);
     if (!handle) return false;
-    const key = `${nodeId}\u0000${portId}`;
+    const key = previewPortKey(nodeId, portId);
     const now = this.watchNow();
     const decision = previewDecision({
       cardVisible: this.cardVisible.get(nodeId),
@@ -1614,6 +1665,7 @@ export class VideoEngine implements DomainEngine {
       lastPreviewAtMs: this.lastPreviewAt.get(key) ?? null,
       nowMs: now,
       minIntervalMs: this.previewMinIntervalMs,
+      immediate: opts?.immediate === true,
     });
     this.lastPreviewDecision.set(key, decision);
     if (decision !== 'blit') return false;

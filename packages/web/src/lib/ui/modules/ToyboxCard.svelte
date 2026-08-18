@@ -62,7 +62,7 @@
     type ToyboxVideoSource,
   } from '$lib/video/toybox-content';
   import { resolveLayerContent } from '$lib/video/toybox-custom-assets';
-  import type { VideoEngine } from '$lib/video/engine';
+  import type { VideoEngine, PreviewBlitOptions } from '$lib/video/engine';
   import { VIDEO_RES } from '$lib/video/engine';
   import {
     canvasToEnginePx,
@@ -2034,7 +2034,23 @@
     pushMouse();
   }
 
-  function blitOnce(): void {
+  /**
+   * Pull this node's output into the on-card 2D canvas.
+   *
+   * `immediate` distinguishes the TWO callers, and the distinction is
+   * load-bearing (#1836):
+   *
+   *   * `draw()` — the free-running rAF loop. A refused repaint costs nothing:
+   *     the next rAF is 8-16 ms away and carries the picture. THROTTLED.
+   *   * `__toyboxFreeze(t)` — render ONE pinned frame and present THAT frame.
+   *     There is no next rAF (the hook sets `frozen = true`, which is what
+   *     stops `draw()`), so a refused repaint does not defer the frame, it
+   *     LOSES it and the canvas keeps showing an older render indefinitely.
+   *     MEASURED: with the cap applied here, the LAYER INPUT feedback tap
+   *     presented 2 of 12 rendered frames and the card showed feedback
+   *     iteration 2 while the engine was on iteration 12. IMMEDIATE.
+   */
+  function blitOnce(opts?: PreviewBlitOptions): void {
     const e = engineCtx.get();
     if (!e || !canvasEl) return;
     let videoEngine: VideoEngine | undefined;
@@ -2053,7 +2069,7 @@
     // scope tick that follows.
     let blitted = false;
     try {
-      blitted = videoEngine.blitOutputForPreview(id);
+      blitted = videoEngine.blitOutputForPreview(id, opts);
     } catch {
       // Don't let engine errors nuke the rAF loop.
     }
@@ -2132,7 +2148,10 @@
         // pull it into the on-card canvas, then freeze the preview.
         const e = engineCtx.get();
         try { e?.getDomain<VideoEngine>('video')?.step(); } catch { /* */ }
-        blitOnce();
+        // ONE-SHOT PRESENT: we just rendered THIS frame and `frozen = true`
+        // below stops the rAF loop, so nothing will repaint after us. The
+        // preview cadence cap must not eat it (#1836).
+        blitOnce({ immediate: true });
         // Fill the 6 scope rings DETERMINISTICALLY from `seed` so the scopes are
         // pixel-stable for VRT (a sine per port, phase-offset by the port index
         // + seed). Then draw each once. frozen=true stops tickScopes after this.

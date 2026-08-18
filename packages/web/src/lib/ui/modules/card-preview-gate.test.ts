@@ -81,6 +81,29 @@ const UNGATED_OK: Readonly<Record<string, UngatedExemption>> = {
   },
 };
 
+/**
+ * Cards that install a ONE-SHOT PRESENT hook and are allowed NOT to present
+ * immediately, and why. Same shape and same anchoring as {@link UNGATED_OK}:
+ * `why` is required by the type, so `tsc` refuses an undeclared exemption.
+ *
+ * Empty is the correct resting state — see the `it` block for what earns a row.
+ */
+const THROTTLED_ONE_SHOT_OK: Readonly<Record<string, UngatedExemption>> = {};
+
+/** An assignment that PUBLISHES a one-shot render/present hook on the global —
+ *  `g.__toyboxFreeze = (t) => { step(); present(); }` and its relatives. The
+ *  shape, not a module name: any card that renders a specific frame on demand
+ *  and then presents it is in scope. */
+const ONE_SHOT_HOOK_INSTALL =
+  /\b(?:g|w|globalThis)\.__[A-Za-z0-9_$]*(?:Freeze|Step)[A-Za-z0-9_$]*\s*=\s*(?:\(|function|async|[A-Za-z_$][\w$]*\s*=>)/;
+
+/** The gated preview blit, in either arity. */
+const GATED_PREVIEW_CALL = /\bblitOutput(?:Port)?ForPreview\s*\(/;
+
+/** `{ immediate: true }` reaching a preview blit — directly at the call site or
+ *  forwarded through the card's own local blit helper. */
+const IMMEDIATE_PRESENT = /\bimmediate\s*:\s*true\b/;
+
 /** Strip comments conservatively: whole-line `//` and `*` continuations, and
  *  `/* … *\/` blocks. Deliberately NOT a mid-line `//` strip — CLAUDE.md's
  *  string-safety note (a naive `//` regex eats `'https://x'`) applies, and the
@@ -155,6 +178,98 @@ describe('#1802 card preview gate', () => {
         `  ${bare.join(', ')}\n` +
         'The return value is the whole point — it says whether the drawing buffer holds this ' +
         "node's picture. Ignoring it means painting whatever the previous card left there.",
+    ).toEqual([]);
+  });
+
+  // ── #1836: A ONE-SHOT PRESENT MUST NOT BE THROTTLED ──────────────────────
+  //
+  // The cadence cap is sound for a FREE-RUNNING loop and only for one: the
+  // frame it drops is replaced by the next rAF 8-16 ms later, so nobody sees
+  // the gap. A card that renders ONE specific frame and then presents it — a
+  // VRT/determinism hook, an on-demand refresh — has no next rAF. There the cap
+  // does not defer the frame, it LOSES it, and the surface keeps showing an
+  // older render for as long as nothing else repaints.
+  //
+  // MEASURED (#1836, `toybox-layer-input.spec.ts` at real GPU / workers=1):
+  // twelve engine frames rendered through `__toyboxFreeze`, TWO presented. The
+  // card was showing feedback iteration 2 while the engine was on iteration 12
+  // — matcap distance 3.66 against a floor of 4, where the uncapped value is
+  // 32.52. It reproduced 4 times in 6 and 0 times in 34 on main.
+  //
+  // Membership is DERIVED from the source (a global one-shot hook install +
+  // the gated blit), not from a list of module names, so the next card that
+  // grows a determinism hook is in scope the day it lands.
+  it('a card that installs a ONE-SHOT PRESENT hook presents IMMEDIATELY', () => {
+    const oneShotCards = files.filter(
+      (f) => ONE_SHOT_HOOK_INSTALL.test(f.src) && GATED_PREVIEW_CALL.test(f.src),
+    );
+
+    // Vacuity floor with real slack: this asserts the DETECTOR still finds the
+    // population, not how big the population is. If the two regexes stop
+    // matching anything, every claim below is green and blind.
+    expect(
+      oneShotCards.map((f) => f.name),
+      'NO card matched "installs a one-shot present hook AND uses the gated preview blit". ' +
+        'Either the detector broke or the hooks moved — either way this assertion is vacuous ' +
+        'and the next card to throttle a determinism hook will ship green.',
+    ).not.toEqual([]);
+
+    const offenders = oneShotCards
+      .filter((f) => !IMMEDIATE_PRESENT.test(f.src))
+      .map((f) => f.name)
+      .filter((name) => !(name in THROTTLED_ONE_SHOT_OK));
+
+    expect(
+      offenders,
+      'These cards publish a hook that renders a specific frame and then presents it, but ' +
+        'never pass `{ immediate: true }` to the preview blit:\n' +
+        `  ${offenders.join(', ')}\n` +
+        'The preview cadence cap will silently eat that frame and the surface will keep ' +
+        'showing the previous render. Pass `{ immediate: true }` on the ONE-SHOT path only — ' +
+        'the free-running rAF loop must stay throttled, which is where the whole #1802 ' +
+        'main-thread saving lives.',
+    ).toEqual([]);
+
+    // THE OTHER DIRECTION, PER FILE. "Pass `immediate: true`" is trivially
+    // satisfied by passing it EVERYWHERE, which deletes the cadence cap and
+    // with it the entire #1802 main-thread saving — and reads as a clean pass.
+    // So each one-shot card must ALSO retain a preview call that does not force
+    // it: the free-running loop it still runs.
+    const capDeleted = oneShotCards
+      .filter((f) => {
+        const calls = [...f.src.matchAll(/\bblitOutput(?:Port)?ForPreview\s*\(([^()]*)\)/g)];
+        return calls.length > 0 && calls.every((m) => IMMEDIATE_PRESENT.test(m[1] ?? ''));
+      })
+      .map((f) => f.name);
+    expect(
+      capDeleted,
+      'These cards force `immediate: true` at EVERY preview call site:\n' +
+        `  ${capDeleted.join(', ')}\n` +
+        'That is not an escape hatch for the one-shot path, it is the cadence cap deleted — ' +
+        'the card repaints every rAF again and the measured saving (step 49.7% -> 24.7% of ' +
+        'the main thread) is gone. The free-running loop must keep the plain call.',
+    ).toEqual([]);
+
+    // ⚠ WHAT THIS CANNOT SEE, stated inside the gate: it reads TEXT. It proves
+    // a one-shot card has BOTH a forced-immediate call and a plain one; it
+    // cannot prove the immediate one is on the one-shot path and the plain one
+    // on the rAF loop, and a card that aliases the option object
+    // (`const now = { immediate: true }`) is invisible to it. The runtime half
+    // of the pair is `e2e/tests/toybox-layer-input.spec.ts` (RED when a
+    // one-shot present is throttled — measured 4 failures in 6 runs) and
+    // `e2e/tests/video-preview-gate.spec.ts` (RED if throttling stops).
+  });
+
+  it('ANCHORED: every one-shot exemption names a file that still installs a hook', () => {
+    const byName = new Map(files.map((f) => [f.name, f]));
+    const stale = Object.keys(THROTTLED_ONE_SHOT_OK).filter((name) => {
+      const f = byName.get(name);
+      return !f || !ONE_SHOT_HOOK_INSTALL.test(f.src) || !GATED_PREVIEW_CALL.test(f.src);
+    });
+    expect(
+      stale,
+      'THROTTLED_ONE_SHOT_OK names a file that no longer exists or no longer installs a ' +
+        'one-shot present hook. An entry naming something that is not there is RED.',
     ).toEqual([]);
   });
 

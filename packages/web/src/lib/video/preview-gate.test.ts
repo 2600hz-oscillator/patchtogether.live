@@ -122,6 +122,35 @@ describe('preview gate', () => {
     ).toBe('skip:offscreen');
   });
 
+  it('a ONE-SHOT PRESENT beats the cadence cap — and ONLY the cadence cap', () => {
+    // The exact input that fails without it: painted 1 ms ago, well inside the
+    // window, on-screen, unleased.
+    const insideWindow = { ...base, lastPreviewAtMs: 1000, nowMs: 1001 };
+    expect(
+      previewDecision({ ...insideWindow, immediate: true }),
+      'a caller that rendered THIS frame and is asking for it to appear has no next rAF to ' +
+        'defer to, so the cap does not delay the frame — it loses it, and the surface keeps ' +
+        'showing an older render indefinitely (MEASURED #1836: 2 of 12 frames presented, ' +
+        'card on feedback iteration 2 while the engine was on 12)',
+    ).toBe('blit');
+    expect(
+      previewDecision(insideWindow),
+      'NEGATIVE CONTROL: the IDENTICAL input without `immediate` is still throttled — ' +
+        'otherwise this pair is satisfied by a gate that stopped throttling at all, which is ' +
+        'exactly the regression the escape hatch must not become',
+    ).toBe('skip:throttled');
+    expect(
+      previewDecision({ ...insideWindow, cardVisible: false, immediate: true }),
+      'NEGATIVE CONTROL, the other direction: `immediate` must NOT resurrect an off-screen ' +
+        'card. "Nobody can see this surface" is a correctness fact and it is as true of a ' +
+        'one-shot present as of a loop tick; only a LEASE crosses that line',
+    ).toBe('skip:offscreen');
+    expect(
+      previewDecision({ ...insideWindow, immediate: false }),
+      'and the flag is read as a strict `true`, not as truthiness of an absent field',
+    ).toBe('skip:throttled');
+  });
+
   it('a never-painted node paints immediately at any clock value', () => {
     expect(previewDecision({ ...base, lastPreviewAtMs: null, nowMs: 0 })).toBe('blit');
     expect(previewDecision({ ...base, lastPreviewAtMs: null, nowMs: 1e9 })).toBe('blit');
