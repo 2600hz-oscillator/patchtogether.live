@@ -3312,10 +3312,16 @@ export const backdraftDef: VideoModuleDef = {
     // Frame / Full Screen / Present.
     extension: 'backdraft',
 
-    // Every one of these is a THROW on the card (20 `<Fader>` mounts, measured
-    // off the card source). Nothing in a ParamDef separates "a level" from any
-    // other continuous scalar, so a face that does not declare them silently
-    // repaints all twenty as dials — a look regression the shell cannot infer.
+    // Every one of these is a THROW on the card (20 `<NeonFader>` mounts,
+    // measured off the card source). Nothing in a ParamDef separates "a level"
+    // from any other continuous scalar, so a face that does not declare them
+    // silently repaints all twenty as dials — a look regression the shell
+    // cannot infer.
+    //
+    // ⚠ `'fader'` IS NOW THE ONLY SPELLING. #1822 deleted `Fader.svelte`, made
+    // NeonFader the one fader, and COLLAPSED the `'neon-fader'` cell kind onto
+    // `'fader'` — a def still declaring `'neon-fader'` fails `tsc`. Nothing
+    // here changed, because this face never declared the split kind.
     paramCells: {
       mix: 'fader', feedback: 'fader', delay: 'fader',
       luma: 'fader', chroma: 'fader', r: 'fader', g: 'fader', b: 'fader',
