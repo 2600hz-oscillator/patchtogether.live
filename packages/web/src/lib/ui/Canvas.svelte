@@ -406,8 +406,14 @@
   import DropPatchModal from '$lib/ui/patch-drop/DropPatchModal.svelte';
   import { pickDropTarget, type DropRect } from '$lib/ui/patch-drop/drop-target';
   import { buildDropPlan, dropEdgeKey, type DropDefLike, type DropEdge } from '$lib/ui/patch-drop/drop-plan';
-  import { removePatchNodeBridging } from '$lib/graph/mutate';
+  import { removePatchNodeBridging, mutateNode } from '$lib/graph/mutate';
   import { planDeleteBridge } from '$lib/graph/delete-bridge';
+  import DetachedDisplay from '$lib/ui/modules/DetachedDisplay.svelte';
+  import {
+    REATTACH_CLEARS,
+    isDetached,
+    supportsDetachedDisplay,
+  } from '$lib/ui/modules/detached-display';
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import { resetLocalScratchId } from '$lib/storage/local-scratch';
@@ -4537,6 +4543,46 @@
     if (!node) return null;
     const def = defLookup(node.type);
     return (def as unknown as DropDefLike) ?? null;
+  }
+
+  // ── DETACHED DISPLAYS (#1821) ────────────────────────────────────────────
+  //
+  // The floating picture of a video OUTPUT, rendered HERE — outside
+  // <SvelteFlow>, beside the drop-patch scrim — rather than by the card.
+  //
+  // ⚠ THAT PLACEMENT IS THE FEATURE, TWICE OVER:
+  //
+  //   1. **No patch wires, structurally.** A panel that is not a flow node has
+  //      no handle for a cable and nothing for the edge layer to draw. Styling
+  //      wires away would have been a promise; not being a node is a proof.
+  //   2. **Delete the card → the panel goes with it, BY CONSTRUCTION.** This
+  //      list is derived from the LIVE nodes, so a deleted node is simply not in
+  //      it — there is no teardown to forget, no registry to sweep, and no
+  //      second handler to drift from the first.
+  //
+  // The reverse direction (delete FROM the panel) is `deleteNode(id)` — the very
+  // function the node context menu calls, so "delete" has one implementation.
+  let detachedDisplays = $derived(
+    Object.values(patch.nodes as Record<string, ModuleNode>)
+      .filter((n): n is ModuleNode => !!n && isDetached(n))
+      // DERIVED capability, not a type check at the render site: the def must be
+      // both scoped and able to publish a picture (see detached-display.ts).
+      .filter((n) => supportsDetachedDisplay(n.type, dropDefOf(n.id) ?? undefined))
+      .map((n) => ({
+        id: n.id,
+        label: patchDropLabel(n.id),
+        // THE DOMAIN CHAIN, resolved from the live def — never a literal violet.
+        domain: spineCableVar(defLookup(n.type) as Parameters<typeof spineCableVar>[0]),
+      })),
+  );
+
+  /** RE-ATTACH: clear the one flag. Called from the panel AND from the card's
+   *  own right-click menu — the owner asked for both, and both land here. */
+  function reattachDisplay(nodeId: string): void {
+    mutateNode(nodeId, (live) => {
+      if (!live.data) return;
+      for (const k of REATTACH_CLEARS) delete live.data[k];
+    });
   }
 
   /** True when EITHER direction offers at least one legal edge. */
@@ -8795,6 +8841,22 @@
            data-testid hooks ('name-label-button' / 'name-label-input' /
            'name-label-error') so existing e2e selectors still resolve. -->
     </SvelteFlow>
+
+    <!-- ── DETACHED DISPLAYS ───────────────────────────────────────────────
+         One free-floating picture per node carrying `data.detached`. Rendered
+         OUTSIDE <SvelteFlow> so it is NOT a flow node — which is what makes the
+         owner's "no patch wires" structural rather than styled — and derived
+         from the live node map, so deleting a card removes its panel with no
+         teardown path at all. See detachedDisplays above. -->
+    {#each detachedDisplays as dd (dd.id)}
+      <DetachedDisplay
+        nodeId={dd.id}
+        label={dd.label}
+        domain={dd.domain}
+        onreattach={() => reattachDisplay(dd.id)}
+        ondelete={() => deleteNode(dd.id)}
+      />
+    {/each}
 
     <!-- ── DROP-TO-PATCH MODAL ─────────────────────────────────────────────
          Opened by dropping one card onto another (handleNodeDragStop →
