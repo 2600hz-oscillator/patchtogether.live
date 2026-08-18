@@ -345,10 +345,20 @@ test.describe('backdraft faceplate — the preview ON/OFF toggle', () => {
   });
 
   // ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are UNCHANGED.
+  // ⚠ THIS TEST HAD MAIN RED AT THE MOMENT OF PARKING, and the history is the
+  // whole point of #1847 rather than a regression to bisect. On ec8a0b856 it was
+  // FLAKY (2 attempts) and the job reported SUCCESS; on 3614b89c0 it FAILED BOTH
+  // ATTEMPTS and the job reported FAILURE. Nothing changed between them except
+  // which way the coin landed twice. A red main here is the census's central
+  // finding — recovered flakes riding inside green jobs — finally surfacing.
   // NONDETERMINISM: 21 recovered-on-retry observation(s) across 23 SHA(s) / 12 branch(es) in the
   // 96 h CI census to 2026-08-18 — it also hard-failed 2 time(s) on a branch, but the recovered-on-retry runs stayed green.
-  // LOST WHILE PARKED: the owner-stated floor for the faceplate preview ON/OFF button — that the choice survives a tab switch instead of silently reverting and re-claiming the vertical space it was told to give back.
-  // Re-enable only on a root cause (#1847); "it passes now" is not one.
+  // LOST WHILE PARKED: the owner-stated floor for the faceplate preview ON/OFF
+  // button — *"that on/off persists through tab switches"*. With this parked,
+  // the toggle can silently revert on a tab switch, re-claiming the vertical
+  // space the owner asked it to give back, and no CI lane will say so.
+  // Re-enable only on a root cause (#1847); "it passes now" is not one — and a
+  // speculative fix here IS "it passes now" against a 33-observation history.
   test.fixme('the choice PERSISTS across a tab switch (the owner\'s stated floor)', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 21 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page }) => {
     const fv = await openFace(page);
     const wrap = fv.locator('[data-testid="backdraft-fs-wrap"]');
@@ -393,10 +403,25 @@ test.describe('backdraft faceplate — the preview ON/OFF toggle', () => {
   });
 
   // ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are UNCHANGED.
+  // ⚠ THIS SPEC HAD MAIN RED AT THE MOMENT OF PARKING. On 3614b89c0 this test
+  // recovered on retry while its sibling above lost both attempts; on ec8a0b856
+  // BOTH were flaky and the job still reported SUCCESS. The spec was already
+  // failing before the run that went red — it had simply been winning its
+  // retries.
   // NONDETERMINISM: 11 recovered-on-retry observation(s) across 14 SHA(s) / 9 branch(es) in the
   // 96 h CI census to 2026-08-18 — it also hard-failed 2 time(s) on a branch, but the recovered-on-retry runs stayed green.
-  // LOST WHILE PARKED: the pixel-invisible half of a collapse: that turning the preview off does not tear down the CARD_PRODUCER, so the picture returns LIVE rather than black or stale — the class that shipped twice as #1721 and #1728.
-  // Re-enable only on a root cause (#1847); "it passes now" is not one.
+  // LOST WHILE PARKED — and this is the expensive one. It is the ONLY assertion
+  // that the DANGEROUS HALF of a collapse is safe, and that half is INVISIBLE IN
+  // PIXELS: collapsing a view that also owns a producer tears the producer down,
+  // and the picture then returns BLACK or STALE rather than LIVE. A VRT baseline
+  // cannot see it, because a stale frame is a valid-looking frame. That exact
+  // class has already shipped twice — #1721 (collapsing a GROUP killed a
+  // CARD_PRODUCER pump, in BOTH shells) and #1728 (collapsing the card blanked
+  // the physical Launchpad and dropped the device claim) — and it is the same
+  // node-lifetime family as #1720. While this is parked, a third occurrence
+  // reaches the owner, not CI.
+  // Re-enable only on a root cause (#1847); "it passes now" is not one — and a
+  // speculative fix here IS "it passes now" against a 33-observation history.
   test.fixme('⚠ COLLAPSING DOES NOT KILL THE PRODUCER — the engine keeps advancing, and the picture comes back LIVE', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 11 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({
     page,
   }) => {
