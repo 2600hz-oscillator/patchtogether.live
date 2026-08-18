@@ -1466,6 +1466,37 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // `$lib/ui/modules/backdraft/` — the first adopter of that slot in the repo,
   // and the first adopter of `face.xyPads` too.
   'backdraft',
+  // THE SECOND VIDEO FACE, AND THE FIRST FACE THAT RANKS NOTHING (2026-08-18,
+  // #1821) — `videoOut`, the OUTPUT monitor. Owner: *"video output face should
+  // be prioritized next for face … that's the most important face work to do."*
+  //
+  // ⚠ `face.order` IS EMPTY, and every completeness gate therefore passes
+  // VACUOUSLY over it. That is stated here rather than left to be discovered,
+  // because it is exactly the shape `blind-gates.md` warns about: `module-face-
+  // lint`'s completeness, the dock render-plan parity check and `faces-parity`
+  // all enumerate `params`, and this def declares NONE — so a green run from any
+  // of them says nothing whatever about this face. What actually covers it:
+  //
+  //   * `videoout-face-model.test.ts` — the permanent negative controls, and
+  //     they are about the two things the declaration CANNOT show: that the lane
+  //     tile still resolves a live video surface (`glyph: 'none'` plus a blank
+  //     tile is indistinguishable from `'none'` plus a live thumb), and that the
+  //     face never reaches the plate branch where #1785 evicts the picture.
+  //   * `videoout-detach-display.spec.ts` — the affordances, on a real canvas.
+  //   * `shell-extensions.test.ts` — the declared id ↔ the discovered module.
+  //
+  // ⚠ IT MERITS A FACE ON THE `node.data` CLAUSE, NOT THE PARAM ONE. STOP 1 in
+  // `module-faceplates.md` refuses a face only when ALL of "≤2 params, no
+  // families, no `node.data`-backed affordances, no derived quantity" hold.
+  // OUTPUT has zero params and fails the refusal on the third: full frame is
+  // `node.data.fullFrame`, and #1821 adds DETACH — a floating, resizable picture
+  // with no patch wires, owned by `node.data.detached` so that deleting the card
+  // takes the floating output with it by construction.
+  //
+  // The picture and all four ways of enlarging it live in the `fullViewBody`
+  // extension at `$lib/ui/modules/videoOut/` — the second adopter of that slot.
+  // For backdraft the slot AUGMENTS a faceplate; here it IS the faceplate.
+  'videoOut',
 ]);
 
 /**

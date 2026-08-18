@@ -45,7 +45,14 @@
 // free: each `ydoc.transact(...)` / `patch.nodes[...]` reads the current value.
 
 import { patch, ydoc, LOCAL_ORIGIN } from '$lib/graph/store';
-import type { ModuleNode } from '$lib/graph/types';
+import type { Edge, ModuleNode } from '$lib/graph/types';
+import {
+  planDeleteBridge,
+  type BridgeResolveDef,
+  type RefusedBridge,
+} from '$lib/graph/delete-bridge';
+
+export type { BridgeResolveDef };
 
 /** Options shared by the mutation helpers. */
 export interface MutateOptions {
@@ -189,6 +196,79 @@ export function removePatchNode(
     removed = true;
   }, origin);
   return removed;
+}
+
+/** What `removePatchNodeBridging` reports back to its caller. */
+export interface BridgingDeleteOutcome {
+  /** Edges written to re-join upstream directly to downstream. */
+  bridged: Edge[];
+  /** Bridge candidates the cable lattice refused, with the validator's reason. */
+  refused: RefusedBridge[];
+}
+
+/**
+ * Delete node `nodeId` and, when it is a scoped 1-in/1-out PASS-THROUGH with
+ * BOTH sides patched, RE-JOIN its upstream directly to each of its downstream
+ * targets — all inside ONE origin-tagged transaction (#1821).
+ *
+ * Owner: *"if a backdraft is patched through a video output into a sourcery, and
+ * i delete the video output, now backdraft out is patched to sourcery."*
+ *
+ * ⚠ ONE UNDO ENTRY, and the mechanism is NESTING rather than a second policy.
+ * `Y.UndoManager` opens a stack item per TRANSACTION, and `ydoc.transact(f, o)`
+ * only creates a `Transaction` when none is open — an inner `transact` joins the
+ * outer one. So calling `removePatchNode` from inside this transact merges its
+ * writes here instead of stacking a second entry, and a single Cmd-Z restores
+ * the node AND removes the bridge. (Do NOT lean on the UndoManager's 500 ms
+ * `captureTimeout` to merge two separate transacts — that is wall-clock
+ * dependent and any `stopCapturing()` breaks it.)
+ *
+ * ⚠ THE PLAN IS COMPUTED INSIDE THE TRANSACTION, exactly like `mutateNode`'s
+ * live re-read and for the same reason: a remote write may have moved a cable
+ * between the render that offered the delete and the delete itself, and a plan
+ * built outside would bridge a chain that no longer exists.
+ *
+ * Falls back to the plain delete — behaviour byte-identical to
+ * `removePatchNode` — for every ordinary case: an out-of-scope type, a module
+ * that is not a 1-in/1-out pass-through, either side unpatched, and the
+ * SELF-PATCH case. See `delete-bridge.ts` for why each of those is not a bridge.
+ *
+ * @returns `null` when nothing happened (node absent, or pinned); otherwise what
+ *          was bridged and what the lattice refused, so the caller can surface it.
+ */
+export function removePatchNodeBridging(
+  nodeId: string,
+  resolveDef: BridgeResolveDef,
+  { origin = LOCAL_ORIGIN }: MutateOptions = {},
+): BridgingDeleteOutcome | null {
+  let outcome: BridgingDeleteOutcome | null = null;
+  ydoc.transact(() => {
+    const live = patch.nodes[nodeId] as ModuleNode | undefined;
+    if (!live) return; // node gone → safe no-op
+    if (live.data?.pinned === true) return; // pinned → refuse (removePatchNode's rule)
+
+    const plan = planDeleteBridge(
+      nodeId,
+      Object.values(patch.nodes) as ModuleNode[],
+      Object.values(patch.edges) as (Edge | undefined)[],
+      resolveDef,
+    );
+
+    // The delete itself is ALWAYS the shared primitive — this never re-implements
+    // "drop the edges, then the node". The nested transact joins the one we are
+    // already inside, which is what keeps this ONE undo entry.
+    if (!removePatchNode(nodeId, { origin })) return;
+
+    // ⚠ THE BRIDGE IS WRITTEN AFTER THE DELETE. `removePatchNode` drops every
+    // cable touching the doomed node; the bridge touches neither endpoint, so it
+    // would survive either ordering — but the engine reconciler reads a clean
+    // disconnect before it sees the replacement, which is the ordering the rest
+    // of the delete path already promises.
+    for (const edge of plan?.bridgeEdges ?? []) patch.edges[edge.id] = edge;
+
+    outcome = { bridged: plan?.bridgeEdges ?? [], refused: plan?.refused ?? [] };
+  }, origin);
+  return outcome;
 }
 
 /**

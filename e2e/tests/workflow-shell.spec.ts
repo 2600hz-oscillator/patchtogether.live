@@ -584,12 +584,16 @@ test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
 test.describe('P0.3b workflow-shell ?shell=1 bug fixes', () => {
   const VZONE_IDS = ['workflow-videoOut', 'workflow-recorderbox', 'workflow-synesthesia'];
 
-  /** The video-zone default's LANE FACE under ?shell=1: videoOut renders its
-   *  verbatim LEGACY card (NON_SHELL video-surface snowflake — the shell
-   *  video-visibility fix); recorderbox/synesthesia render placeholder tiles. */
+  /** The video-zone default's LANE FACE under the shell.
+   *
+   *  ⚠ videoOut renders a PROMOTED FACE TILE now (#1821). This used to special-
+   *  case it to `[data-testid="video-out-card"]` — its verbatim LEGACY card,
+   *  because it was a NON_SHELL video-surface snowflake — and the special case
+   *  is gone: it is a `module-shell` like any faced module, while
+   *  recorderbox/synesthesia are still un-migrated placeholders. */
   const vzFaceSelector = (id: string) =>
     id === 'workflow-videoOut'
-      ? `.svelte-flow__node[data-id="${id}"] [data-testid="video-out-card"]`
+      ? `.svelte-flow__node[data-id="${id}"] [data-testid="module-shell"]`
       : `.svelte-flow__node[data-id="${id}"] [data-testid="module-shell-placeholder"]`;
 
   /** Drop `type` at the tight SHELL pitch so the pitch-aware hit-test resolves the
