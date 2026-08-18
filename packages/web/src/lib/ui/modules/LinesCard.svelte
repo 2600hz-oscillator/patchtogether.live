@@ -6,7 +6,7 @@
   // (border accent uses --cable-mono-video so users immediately read the
   // card as "video-domain output").
   import { type NodeProps } from '@xyflow/svelte';
-  import Fader from '$lib/ui/controls/Fader.svelte';
+  import NeonFader from '$lib/ui/controls/NeonFader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import { setNodeParam } from '$lib/graph/mutate';
   import { linesDef } from '$lib/video/modules/lines';
@@ -35,10 +35,10 @@
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="fader-grid">
-      <Fader value={p('orient')}    min={0}    max={1}  defaultValue={linesDef.params.find((x) => x.id === 'orient')!.defaultValue}    label="Orient"    curve="linear" onchange={setParam('orient')} moduleId={id} paramId="orient" />
-      <Fader value={p('amp')}       min={0.5}  max={50} defaultValue={linesDef.params.find((x) => x.id === 'amp')!.defaultValue}       label="Amp"       curve="linear" onchange={setParam('amp')} moduleId={id} paramId="amp" />
-      <Fader value={p('thickness')} min={0}    max={1}  defaultValue={linesDef.params.find((x) => x.id === 'thickness')!.defaultValue} label="Thickness" curve="linear" onchange={setParam('thickness')} moduleId={id} paramId="thickness" />
-      <Fader value={p('phase')}     min={0}    max={1}  defaultValue={linesDef.params.find((x) => x.id === 'phase')!.defaultValue}     label="Phase"     curve="linear" onchange={setParam('phase')} moduleId={id} paramId="phase" />
+      <NeonFader value={p('orient')}    min={0}    max={1}  defaultValue={linesDef.params.find((x) => x.id === 'orient')!.defaultValue}    label="Orient"    curve="linear" onchange={setParam('orient')} moduleId={id} paramId="orient" />
+      <NeonFader value={p('amp')}       min={0.5}  max={50} defaultValue={linesDef.params.find((x) => x.id === 'amp')!.defaultValue}       label="Amp"       curve="linear" onchange={setParam('amp')} moduleId={id} paramId="amp" />
+      <NeonFader value={p('thickness')} min={0}    max={1}  defaultValue={linesDef.params.find((x) => x.id === 'thickness')!.defaultValue} label="Thickness" curve="linear" onchange={setParam('thickness')} moduleId={id} paramId="thickness" />
+      <NeonFader value={p('phase')}     min={0}    max={1}  defaultValue={linesDef.params.find((x) => x.id === 'phase')!.defaultValue}     label="Phase"     curve="linear" onchange={setParam('phase')} moduleId={id} paramId="phase" />
     </div>
   </PatchPanel>
 </div>

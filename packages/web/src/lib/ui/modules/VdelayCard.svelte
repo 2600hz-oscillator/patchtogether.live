@@ -5,7 +5,7 @@
   // an OUTPUT / MONOGLITCH / RUTTETRA card to see the result.
 
   import { type NodeProps } from '@xyflow/svelte';
-  import Fader from '$lib/ui/controls/Fader.svelte';
+  import NeonFader from '$lib/ui/controls/NeonFader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import { setNodeParam } from '$lib/graph/mutate';
   import { vdelayDef, VDELAY_MAX_DELAY } from '$lib/video/modules/vdelay';
@@ -34,10 +34,10 @@
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
   <div class="fader-grid">
-    <Fader value={p('delayTime')}  min={1} max={VDELAY_MAX_DELAY} defaultValue={vdelayDef.params.find((x) => x.id === 'delayTime')!.defaultValue}  label="Time"  curve="linear" onchange={setParam('delayTime')} moduleId={id} paramId="delayTime" />
-    <Fader value={p('feedback')}   min={0} max={0.95}             defaultValue={vdelayDef.params.find((x) => x.id === 'feedback')!.defaultValue}   label="FB"    curve="linear" onchange={setParam('feedback')} moduleId={id} paramId="feedback" />
-    <Fader value={p('mix')}        min={0} max={1}                defaultValue={vdelayDef.params.find((x) => x.id === 'mix')!.defaultValue}        label="Mix"   curve="linear" onchange={setParam('mix')} moduleId={id} paramId="mix" />
-    <Fader value={p('colorShift')} min={0} max={1}                defaultValue={vdelayDef.params.find((x) => x.id === 'colorShift')!.defaultValue} label="Color" curve="linear" onchange={setParam('colorShift')} moduleId={id} paramId="colorShift" />
+    <NeonFader value={p('delayTime')}  min={1} max={VDELAY_MAX_DELAY} defaultValue={vdelayDef.params.find((x) => x.id === 'delayTime')!.defaultValue}  label="Time"  curve="linear" onchange={setParam('delayTime')} moduleId={id} paramId="delayTime" />
+    <NeonFader value={p('feedback')}   min={0} max={0.95}             defaultValue={vdelayDef.params.find((x) => x.id === 'feedback')!.defaultValue}   label="FB"    curve="linear" onchange={setParam('feedback')} moduleId={id} paramId="feedback" />
+    <NeonFader value={p('mix')}        min={0} max={1}                defaultValue={vdelayDef.params.find((x) => x.id === 'mix')!.defaultValue}        label="Mix"   curve="linear" onchange={setParam('mix')} moduleId={id} paramId="mix" />
+    <NeonFader value={p('colorShift')} min={0} max={1}                defaultValue={vdelayDef.params.find((x) => x.id === 'colorShift')!.defaultValue} label="Color" curve="linear" onchange={setParam('colorShift')} moduleId={id} paramId="colorShift" />
   </div>
   </PatchPanel>
 </div>

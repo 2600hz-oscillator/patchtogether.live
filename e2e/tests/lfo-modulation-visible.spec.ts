@@ -8,10 +8,19 @@
 // clearly audible — this spec is a regression smoke for that whole class.
 //
 // Strategy: spawn LFO + a target with a param-routed input, connect them,
-// sample the target fader thumb's CSS `top` at ~10 evenly-spaced points over
-// ~1.5s. Assert at least 4 distinct values appear. With LFO at ~2 Hz (default
-// 1 Hz works too but slower oscillation = fewer distinct samples per window),
-// the thumb should sweep through the modulation depth several times.
+// sample the target fader thumb's inline TRANSFORM at ~10 evenly-spaced points
+// over ~1.5s. Assert at least 4 distinct values appear. With LFO at ~2 Hz
+// (default 1 Hz works too but slower oscillation = fewer distinct samples per
+// window), the thumb should sweep through the modulation depth several times.
+//
+// ⚠ IT SAMPLED `style.top` UNTIL #1794, AND THAT IS A TRAP WORTH NAMING. The
+// old `Fader.svelte` positioned its thumb with `style:top`; `NeonFader` uses
+// `style:transform="translateY(…)"`. Read against the new control, `style.top`
+// returns THE EMPTY STRING every time — so the sample set is `{''}`, size 1,
+// and the spec fails claiming the thumb never moved. A frozen thumb and a probe
+// reading the wrong property are indistinguishable from the assertion message
+// alone, which is why `readThumbOffset` below REFUSES an empty read instead of
+// folding it into the distinct-value count.
 //
 // Two targets covered: QBRT cutoff (user-reported concern) and DRUMMERGIRL
 // volume (added in the same change). Both use paramTarget routing so the
@@ -26,6 +35,21 @@ import { spawnPatch } from './_helpers';
 
 test.use({ video: 'on' });
 
+/** The thumb's position as the control actually expresses it. Throws on an
+ *  empty read, so "the probe is looking at the wrong property" can never be
+ *  reported as "the thumb did not move" (see the header note). */
+async function readThumbOffset(thumb: import('@playwright/test').Locator): Promise<string> {
+  const v = await thumb.evaluate((el) => (el as HTMLElement).style.transform);
+  if (!v) {
+    throw new Error(
+      'fader thumb has no inline transform — NeonFader positions its thumb with ' +
+        'style:transform="translateY(…)". An empty read means this probe is reading the ' +
+        'wrong property, NOT that the thumb is frozen.',
+    );
+  }
+  return v;
+}
+
 async function sampleFaderThumbTops(
   page: import('@playwright/test').Page,
   faderSelector: string,
@@ -34,12 +58,7 @@ async function sampleFaderThumbTops(
 ): Promise<string[]> {
   const tops: string[] = [];
   for (let i = 0; i < samples; i++) {
-    const top = await page
-      .locator(faderSelector)
-      .first()
-      .locator('.thumb')
-      .evaluate((el) => (el as HTMLElement).style.top);
-    tops.push(top);
+    tops.push(await readThumbOffset(page.locator(faderSelector).first().locator('.thumb')));
     await page.waitForTimeout(intervalMs);
   }
   return tops;
@@ -101,8 +120,7 @@ test('LFO modulating DRUMMERGIRL volume visibly moves the volume fader thumb', a
 
   const tops: string[] = [];
   for (let i = 0; i < 12; i++) {
-    const top = await volumeFader.locator('.thumb').evaluate((el) => (el as HTMLElement).style.top);
-    tops.push(top);
+    tops.push(await readThumbOffset(volumeFader.locator('.thumb')));
     await page.waitForTimeout(140);
   }
 

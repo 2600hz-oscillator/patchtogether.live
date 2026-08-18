@@ -350,22 +350,30 @@ test.describe('workflow · the pinned `m` tray renders the promoted face (#1739)
       })
       .not.toBe(before);
 
-    // ── THE OWNER'S NEON FADERS SURVIVE THE HOST CHANGE. `console.css` is keyed
-    //    on the SHELL root's `data-shell-type`, so it paints wherever the face
-    //    paints — asserted as the resolved CHAIN (`--domain`, i.e. the module's
-    //    own spine colour), never a literal hex, exactly as the stylesheet
-    //    argues it should be.
+    // ── THE OWNER'S NEON FADERS SURVIVE THE HOST CHANGE — asserted as the
+    //    resolved CHAIN (`--domain`, i.e. the module's own spine colour), never
+    //    a literal hex.
+    //
+    // ⚠ THIS READ `--fader-thumb-bg` UNTIL #1794, AND THAT WAS ALREADY THE
+    // WRONG TOKEN. That property was set by `console.css` and consumed only by
+    // the old `Fader.svelte`; this cell has rendered `NeonFader` since #1738,
+    // which reads none of it. The assertion passed purely because custom
+    // properties INHERIT — it was reading a token that reached the element and
+    // painted nothing on it, i.e. a green assertion about a dead variable.
+    // `--_ka` is the chain `NeonFader` actually resolves, so this now measures
+    // the control under test.
     const fader = card.locator('[data-testid="control-ch1_volume"]');
     await expect(fader).toBeVisible();
     const neon = await fader.evaluate((el: Element) => {
       const cs = getComputedStyle(el);
       return {
-        thumb: cs.getPropertyValue('--fader-thumb-bg').trim(),
+        accent: cs.getPropertyValue('--_ka').trim(),
         domain: cs.getPropertyValue('--domain').trim(),
       };
     });
     expect(neon.domain, 'the shell must publish a domain colour in the tray').not.toBe('');
-    expect(neon.thumb, 'the fader accent must BE the domain chain, not a grey default').toBe(neon.domain);
+    expect(neon.accent, "the fader's own accent chain must resolve, not fall back to empty").not.toBe('');
+    expect(neon.accent, 'the fader accent must BE the domain chain, not a grey default').toBe(neon.domain);
 
     // ── MIDI-LEARN. A face cell is the same live, MIDI-assignable control a
     //    hand-built card carries (`cardParams` closures + KnobConic's
@@ -453,7 +461,7 @@ test.describe('workflow · the pinned `m` tray renders the promoted face (#1739)
     // ── OWNER ITEM 3: the levels are the NEON control, and it prints a value
     //    at rest the way the dials beside it do.
     await expect(
-      card.locator('[data-cell-control="neon-fader"][data-cell-key="ch1_volume"]'),
+      card.locator('[data-cell-control="fader"][data-cell-key="ch1_volume"]'),
       'a level renders as the neon throw, not the shipped grey one',
     ).toHaveCount(1);
     await expect(card.locator('[data-testid="readout-ch1_volume"]')).toBeVisible();

@@ -22,7 +22,7 @@
   // RANGE_BOUND_CARDS + MAPPING_BOUND_CARDS in card-range-source.test.ts.
   import type { NodeProps } from '@xyflow/svelte';
   import Knob from '$lib/ui/controls/Knob.svelte';
-  import Fader from '$lib/ui/controls/Fader.svelte';
+  import NeonFader from '$lib/ui/controls/NeonFader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import ModuleTitle from './ModuleTitle.svelte';
   import { setNodeParam } from '$lib/graph/mutate';
@@ -89,8 +89,8 @@
       <aside class="rail">
         <div class="rail-title"><ModuleTitle {id} {data} defaultLabel="COFEFVE DELAY" inline /></div>
         <div class="rail-faders">
-          <Fader value={paramVal('dryVolume')} min={P.dryVolume.min} max={P.dryVolume.max} defaultValue={P.dryVolume.defaultValue} curve={P.dryVolume.curve} units={P.dryVolume.units}   label="Dry" onchange={set('dryVolume')} moduleId={id} paramId="dryVolume" readLive={live('dryVolume')} />
-          <Fader value={paramVal('wetVolume')} min={P.wetVolume.min} max={P.wetVolume.max} defaultValue={P.wetVolume.defaultValue} curve={P.wetVolume.curve} units={P.wetVolume.units} label="Wet" onchange={set('wetVolume')} moduleId={id} paramId="wetVolume" readLive={live('wetVolume')} />
+          <NeonFader value={paramVal('dryVolume')} min={P.dryVolume.min} max={P.dryVolume.max} defaultValue={P.dryVolume.defaultValue} curve={P.dryVolume.curve} units={P.dryVolume.units}   label="Dry" onchange={set('dryVolume')} moduleId={id} paramId="dryVolume" readLive={live('dryVolume')} />
+          <NeonFader value={paramVal('wetVolume')} min={P.wetVolume.min} max={P.wetVolume.max} defaultValue={P.wetVolume.defaultValue} curve={P.wetVolume.curve} units={P.wetVolume.units} label="Wet" onchange={set('wetVolume')} moduleId={id} paramId="wetVolume" readLive={live('wetVolume')} />
         </div>
         <div class="rail-version">v1.0</div>
       </aside>

@@ -303,6 +303,16 @@ import {
   slaveSyncText,
 } from '$lib/ui/modules/moog921-face-model';
 
+// ⚠ ITS OWN IMPORT BLOCK, deliberately. Concurrent face PRs all append here,
+// and two branches inserting into the SAME multi-line block conflict on the
+// shared `import {` / `} from` lines even though the additions are disjoint.
+// A standalone block merges clean.
+import {
+  backdraftBandsText,
+  backdraftFillText,
+  backdraftTapText,
+} from '$lib/ui/modules/backdraft-face-model';
+
 /**
  * Both Moog fixed filter banks' entries, GENERATED from the bank's own section
  * list rather than written out fourteen (and then ten) times.
@@ -1366,6 +1376,15 @@ const FACE_READOUT_VALUES: Readonly<Record<string, FaceReadoutValue>> = {
   'alm-diff-gain': (read) => almDiffGainText(read),
   'alm-ring-gain': (read) => almRingGainText(read),
   'alm-peak': (read) => almPeakText(read),
+
+  // BACKDRAFT — the first VIDEO face's readouts. `backdraft-tv-fill` is a pure
+  // function of ZOOM and `backdraft-tv-bands` is not; publishing the pair makes
+  // each the other's negative control. `backdraft-delay-frames` is the whole-
+  // frame quantisation the millisecond fader structurally cannot show.
+  // All three are permanently controlled in backdraft-face-model.test.ts.
+  'backdraft-tv-fill': (read) => backdraftFillText(read),
+  'backdraft-tv-bands': (read) => backdraftBandsText(read),
+  'backdraft-delay-frames': (read) => backdraftTapText(read),
 };
 
 /** The derived value for a declared id, or `null` (⇒ the readout prints `—`

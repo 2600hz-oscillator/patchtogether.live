@@ -10,7 +10,8 @@
 
 // ── existing primitives ──
 export { default as Knob } from './Knob.svelte';
-export { default as Fader } from './Fader.svelte';
+// `Fader.svelte` was exported here until #1794 migrated every call site onto
+// `NeonFader` and deleted it. There is ONE throw primitive.
 export { default as NeonFader } from './NeonFader.svelte';
 export { default as XyPad } from './XyPad.svelte';
 export { default as VuMeter } from './VuMeter.svelte';

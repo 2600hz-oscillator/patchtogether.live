@@ -39,7 +39,7 @@
   // through colour space, and 1-bit steps of the CC would flip the RED channel.
   // The legacy card already reasoned this out ("Not a single-CC param … so it's
   // correctly exempt from the MIDI-Learn audit") and that audit only scans
-  // <Knob>/<Fader>, so this is consistent rather than an escape.
+  // <Knob>/<NeonFader>, so this is consistent rather than an escape.
   //
   // ⚠ NO `readLive`. Every other primitive polls a live reader on rAF for
   // CV/motorized displacement. A colour param has no CV jack anywhere in the

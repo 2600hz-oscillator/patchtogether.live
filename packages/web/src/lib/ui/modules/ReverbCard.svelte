@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { NodeProps } from '@xyflow/svelte';
-  import Fader from '$lib/ui/controls/Fader.svelte';
+  import NeonFader from '$lib/ui/controls/NeonFader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import { reverbDef } from '$lib/audio/modules/reverb';
   import type { ModuleNode } from '$lib/graph/types';
@@ -26,9 +26,9 @@
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="fader-row">
-      <Fader value={size} min={0} max={1} defaultValue={0.5} label="Size" curve="linear" onchange={set('size')} moduleId={id} paramId="size" readLive={live('size')} />
-      <Fader value={damp} min={0} max={1} defaultValue={0.3} label="Damp" curve="linear" onchange={set('damp')} moduleId={id} paramId="damp" readLive={live('damp')} />
-      <Fader value={mix}  min={0} max={1} defaultValue={0.3} label="Mix"  curve="linear" onchange={set('mix')} moduleId={id} paramId="mix"  readLive={live('mix')} />
+      <NeonFader value={size} min={0} max={1} defaultValue={0.5} label="Size" curve="linear" onchange={set('size')} moduleId={id} paramId="size" readLive={live('size')} />
+      <NeonFader value={damp} min={0} max={1} defaultValue={0.3} label="Damp" curve="linear" onchange={set('damp')} moduleId={id} paramId="damp" readLive={live('damp')} />
+      <NeonFader value={mix}  min={0} max={1} defaultValue={0.3} label="Mix"  curve="linear" onchange={set('mix')} moduleId={id} paramId="mix"  readLive={live('mix')} />
     </div>
   </PatchPanel>
 </div>

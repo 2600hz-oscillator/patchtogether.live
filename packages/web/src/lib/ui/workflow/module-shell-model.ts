@@ -329,9 +329,17 @@ export const LANE_BODY_H = 112;
  * indistinguishable from an answer. There is deliberately no fallback arm.
  *
  * Everything that paints inside a small knob column is `PLATE_ROW_H` — that IS
- * the design cell. `fader` is the outlier: `Fader.svelte` is an 80px track plus
- * 4px gap plus a 12px label (MEASURED: the cell's border box is 96.0 CSS px),
- * i.e. 2.3 plate rows.
+ * the design cell. `fader` is the outlier: `NeonFader` is an 80px slot plus a
+ * 5px gap plus a 9px label (MEASURED after #1794: the cell's border box is
+ * **94.0 CSS px**), i.e. 2.2 plate rows.
+ *
+ * ⚠ THE CONSTANT IS 96, NOT 94, AND THAT IS DELIBERATE. It was measured at 96.0
+ * against the control this replaced (an 80px track + 4px gap + a 12px label)
+ * and is a RESERVATION the plate's row arithmetic divides by, so it is checked
+ * as a CEILING with a floor — never as equality — in
+ * `e2e/tests/faceplate-platform.spec.ts`. Over-reserving by 2px is safe;
+ * under-reserving is a cell overlap. Lowering it to 94 would buy nothing and
+ * would remove the headroom the font-dependence of the label line box needs.
  */
 export const LANE_CELL_H: Record<ParamCellKind, number> = {
   knob: PLATE_ROW_H,
@@ -341,11 +349,11 @@ export const LANE_CELL_H: Record<ParamCellKind, number> = {
   selector: PLATE_ROW_H,
   grid: PLATE_ROW_H,
   color: PLATE_ROW_H,
+  // The throw plus its 9px persistent readout line at the dock tier. The
+  // readout occupies the hover tag's space rather than adding to it, which is
+  // why one budget covers both tiers. (#1794 folded the transitional
+  // `neon-fader` entry into this one — it carried the identical 96.)
   fader: 96,
-  // The neon fader is the same THROW at the same track height, plus a 9px
-  // persistent readout line the plain fader has no concept of. Same row budget
-  // rather than a guessed one: the readout replaces the hover tag's space.
-  'neon-fader': 96,
   // A SQUARE pad plus its two-axis readout. Carried at its real height even
   // though `laneOrder` makes an xy cell DOCK-ONLY today, so the number is
   // already right if that ever changes — an entry that lied "42" would be a

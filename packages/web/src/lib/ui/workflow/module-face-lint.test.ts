@@ -391,6 +391,20 @@ describe('module-face lint — DOCK RENDER-PLAN parity (STRICT_FACES set)', () =
       for (const c of flat) {
         if (c.kind === 'param' && c.paramId) {
           paramCounts.set(c.paramId, (paramCounts.get(c.paramId) ?? 0) + 1);
+          // ⚠ A 2-D PAD IS ONE CELL BINDING TWO PARAMS — the only kind with
+          // arity 2. Counting cells alone reads the partner axis as a DROPPED
+          // control, which is the false positive this gate must not produce
+          // (the mirror of the clustered-control case above). `backdraft`, the
+          // first `face.xyPads` adopter, is where this surfaced: the pure plan
+          // said the axis rendered 0×, the DOM said the pad emitted it, and the
+          // two disagreed because the model had no way to say "this cell covers
+          // both".
+          if (c.padPartnerParamId) {
+            paramCounts.set(
+              c.padPartnerParamId,
+              (paramCounts.get(c.padPartnerParamId) ?? 0) + 1,
+            );
+          }
         }
       }
       // #1726 — the declaration INVERTS this assertion rather than skipping it.
@@ -569,6 +583,25 @@ describe('module-face lint — MOMENTARY pads (face.momentary)', () => {
     // release.
     'mixmstrs:send1Pre',
     'mixmstrs:send2Pre',
+    // BACKDRAFT, 2026-08-17 — THE FIRST VIDEO FACE. Three kaleidoscope/masking
+    // switches, and they are the CLOUDSEED case repeated exactly: they only
+    // became visible to this gate when their `curve` was corrected
+    // `linear` → `discrete` in the same diff. Before that `looksLikeSwitch`
+    // could not see them at all, so the shell would have painted three
+    // two-state folds as continuous 0..1 rotaries reading "0.00".
+    //
+    // ⚠ THE LEVEL READ IS THE WHOLE ARGUMENT, and it is measured rather than
+    // assumed: the draw loop pushes all three straight into uniforms every
+    // frame — `g.uniform1f(uMirrorX, params.mirrorX >= 0.5 ? 1.0 : 0.0)` and
+    // the same for `mirrorY` / `pureGeo` — and the shader branches on the
+    // uniform (`if (uMirrorX > 0.5) uv.x = …`). Nothing edge-detects the PARAM.
+    // What edge-detects is the separate GATE param beside it (`mirrorXGate`,
+    // declared `noUserControl`), whose rising edge FLIPS this one. So a
+    // momentary render would unfold the kaleidoscope on release — the fold
+    // could never be held, which is the module's whole look.
+    'backdraft:mirrorX',
+    'backdraft:mirrorY',
+    'backdraft:pureGeo',
     // pointerup, the worklet ORs it into the mono gate like tomtom's `strike`,
     // and the def's own doc says "released = note-off (no latch)". It is now
     // declared on `face.momentary`. The cross-check below is what stops that
@@ -758,13 +791,12 @@ describe('module-face lint — DECLARED param cells (face.paramCells) + PANEL ti
           }
           break;
         }
-        // ⚠ ONE CLAUSE FOR BOTH THROWS, DELIBERATELY. `neon-fader` is the same
-        // GESTURE as `fader` in a different visual language, so it can back
-        // exactly the same shapes — and writing the clause twice is how the two
-        // would eventually disagree about what a throw is. Sharing the arm
-        // means a future constraint lands on both by construction; the DENY
-        // arm below still refuses any THIRD kind that arrives without one.
-        case 'neon-fader':
+        // ⚠ THIS ARM WAS SHARED WITH `neon-fader` UNTIL #1794, on the reasoning
+        // that the two were the same GESTURE in different visual languages and
+        // writing the clause twice is how they would eventually disagree about
+        // what a throw is. The kinds have since COLLAPSED — there is one fader
+        // in the app — so the sharing is no longer needed to keep them honest.
+        // The DENY arm below still refuses any kind that arrives without one.
         case 'fader': {
           // A THROW is a CONTINUOUS scale. The one shape it must not back is a
           // discrete roster: those are `segmented`/`selector`/`grid` territory,

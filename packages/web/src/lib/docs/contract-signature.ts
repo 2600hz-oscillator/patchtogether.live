@@ -198,6 +198,10 @@ export const FACE_FIELDS_NOT_IN_LOCK: Readonly<
     why: 'Which PRIMITIVE renders a param (grid/color/fader). Not the range or the mapping, which are pinned on the param line; the widget choice.',
     coveredBy: 'shell-cells (every key resolves to a registered cell spec) + param-cell-coverage + faces-parity driveCell.',
   },
+  xyPads: {
+    why: 'Which PAIRS of params are one 2-D gesture rather than two dials. Like paramCells it is a widget choice, not a mapping: each axis keeps its own ParamDef line, and the pad reads its min/max straight off that line per axis — so the RANGES stay pinned in the lock exactly as before and only the affordance moves. Declared rather than inferred because nothing in a pair of ParamDefs says "these two are one gesture".',
+    coveredBy: 'module-face-lint xyPadProblems (both axes declared, ranked, non-momentary, CONTINUOUS, claimed once, x !== y — with a negative control per clause) + param-cell-coverage (the `xy` kind is exercised by a real adopter) + faces-parity driveCell + VRT face-<type>-dock.',
+  },
   momentary: {
     why: 'Marks a param as press-and-release. It changes how a cell is DRIVEN, and the audition ledger is the observable — a text line would restate what the probe measures.',
     coveredBy: 'faces-parity ShellActionCell.probe + audition-ledger (both directions, unit lane, every run).',

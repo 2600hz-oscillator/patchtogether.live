@@ -34,7 +34,7 @@
   import { type NodeProps } from '@xyflow/svelte';
   import { patch } from '$lib/graph/store';
   import { setNodeParam } from '$lib/graph/mutate';
-  import Fader from '$lib/ui/controls/Fader.svelte';
+  import NeonFader from '$lib/ui/controls/NeonFader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import type { ModuleNode } from '$lib/graph/types';
   import type { VideoEngine } from '$lib/video/engine';
@@ -497,7 +497,7 @@
               <div class="edge-faders">
                 {#if labels.amount}
                   {@const r = paramRange(`${edge.id}_amount`)}
-                  <Fader
+                  <NeonFader
                     value={pget(`${edge.id}_amount`)}
                     min={r.min}
                     max={r.max}
@@ -512,7 +512,7 @@
                 {/if}
                 {#if labels.param}
                   {@const r = paramRange(`${edge.id}_param`)}
-                  <Fader
+                  <NeonFader
                     value={pget(`${edge.id}_param`)}
                     min={r.min}
                     max={r.max}
@@ -539,9 +539,9 @@
       {#if anyChroma}
         <div class="key-row" data-testid="quadralogical-keycolor">
           <span class="key-label">CHROMA KEY</span>
-          <Fader value={pget('keyR')} min={0} max={1} defaultValue={defaultFor('keyR')} label="R" curve="linear" onchange={set('keyR')} readLive={live('keyR')} moduleId={id} paramId="keyR" />
-          <Fader value={pget('keyG')} min={0} max={1} defaultValue={defaultFor('keyG')} label="G" curve="linear" onchange={set('keyG')} readLive={live('keyG')} moduleId={id} paramId="keyG" />
-          <Fader value={pget('keyB')} min={0} max={1} defaultValue={defaultFor('keyB')} label="B" curve="linear" onchange={set('keyB')} readLive={live('keyB')} moduleId={id} paramId="keyB" />
+          <NeonFader value={pget('keyR')} min={0} max={1} defaultValue={defaultFor('keyR')} label="R" curve="linear" onchange={set('keyR')} readLive={live('keyR')} moduleId={id} paramId="keyR" />
+          <NeonFader value={pget('keyG')} min={0} max={1} defaultValue={defaultFor('keyG')} label="G" curve="linear" onchange={set('keyG')} readLive={live('keyG')} moduleId={id} paramId="keyG" />
+          <NeonFader value={pget('keyB')} min={0} max={1} defaultValue={defaultFor('keyB')} label="B" curve="linear" onchange={set('keyB')} readLive={live('keyB')} moduleId={id} paramId="keyB" />
         </div>
       {/if}
     </div>

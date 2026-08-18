@@ -17,7 +17,7 @@
   // way they tolerate any audio-rate signal exceeding ±1.
 
   import type { NodeProps } from '@xyflow/svelte';
-  import Fader from '$lib/ui/controls/Fader.svelte';
+  import NeonFader from '$lib/ui/controls/NeonFader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import { sidecarDef } from '$lib/audio/modules/sidecar';
   import type { ModuleNode } from '$lib/graph/types';
@@ -85,15 +85,15 @@
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="fader-row">
-      <Fader value={threshold} min={P.threshold.min} max={P.threshold.max} defaultValue={P.threshold.defaultValue} label="Thresh" curve={P.threshold.curve} onchange={set('threshold')} moduleId={id} paramId="threshold" readLive={live('threshold')} />
-      <Fader value={ratio}     min={P.ratio.min}     max={P.ratio.max}     defaultValue={P.ratio.defaultValue}     label="Ratio"  curve={P.ratio.curve}     onchange={set('ratio')}     moduleId={id} paramId="ratio"     readLive={live('ratio')} />
-      <Fader value={knee}      min={P.knee.min}      max={P.knee.max}      defaultValue={P.knee.defaultValue}      label="Knee"   curve={P.knee.curve}      onchange={set('knee')}      moduleId={id} paramId="knee"      readLive={live('knee')} />
-      <Fader value={makeup}    min={P.makeup.min}    max={P.makeup.max}    defaultValue={P.makeup.defaultValue}    label="Makeup" curve={P.makeup.curve}    onchange={set('makeup')}    moduleId={id} paramId="makeup"    readLive={live('makeup')} />
+      <NeonFader value={threshold} min={P.threshold.min} max={P.threshold.max} defaultValue={P.threshold.defaultValue} label="Thresh" curve={P.threshold.curve} onchange={set('threshold')} moduleId={id} paramId="threshold" readLive={live('threshold')} />
+      <NeonFader value={ratio}     min={P.ratio.min}     max={P.ratio.max}     defaultValue={P.ratio.defaultValue}     label="Ratio"  curve={P.ratio.curve}     onchange={set('ratio')}     moduleId={id} paramId="ratio"     readLive={live('ratio')} />
+      <NeonFader value={knee}      min={P.knee.min}      max={P.knee.max}      defaultValue={P.knee.defaultValue}      label="Knee"   curve={P.knee.curve}      onchange={set('knee')}      moduleId={id} paramId="knee"      readLive={live('knee')} />
+      <NeonFader value={makeup}    min={P.makeup.min}    max={P.makeup.max}    defaultValue={P.makeup.defaultValue}    label="Makeup" curve={P.makeup.curve}    onchange={set('makeup')}    moduleId={id} paramId="makeup"    readLive={live('makeup')} />
     </div>
     <div class="fader-row">
-      <Fader value={attack}    min={P.attack.min}     max={P.attack.max}     defaultValue={P.attack.defaultValue}     label="Att"    curve={P.attack.curve}     onchange={set('attack')}    moduleId={id} paramId="attack"    readLive={live('attack')} />
-      <Fader value={release}   min={P.release.min}    max={P.release.max}    defaultValue={P.release.defaultValue}    label="Rel"    curve={P.release.curve}    onchange={set('release')}   moduleId={id} paramId="release"   readLive={live('release')} />
-      <Fader value={envMag}    min={P.envMag.min}     max={P.envMag.max}     defaultValue={P.envMag.defaultValue}     label="EnvMag" curve={P.envMag.curve}     onchange={set('envMag')}     moduleId={id} paramId="envMag"     readLive={live('envMag')} />
+      <NeonFader value={attack}    min={P.attack.min}     max={P.attack.max}     defaultValue={P.attack.defaultValue}     label="Att"    curve={P.attack.curve}     onchange={set('attack')}    moduleId={id} paramId="attack"    readLive={live('attack')} />
+      <NeonFader value={release}   min={P.release.min}    max={P.release.max}    defaultValue={P.release.defaultValue}    label="Rel"    curve={P.release.curve}    onchange={set('release')}   moduleId={id} paramId="release"   readLive={live('release')} />
+      <NeonFader value={envMag}    min={P.envMag.min}     max={P.envMag.max}     defaultValue={P.envMag.defaultValue}     label="EnvMag" curve={P.envMag.curve}     onchange={set('envMag')}     moduleId={id} paramId="envMag"     readLive={live('envMag')} />
       <!-- ⚠ THE ONE FADER THAT CHANGES WHAT IT PRINTS, and the gate demanded it
            (card-range-source: "a control whose param declares `format` must
            pass formatValue — otherwise the card prints one law and the dock
@@ -101,8 +101,8 @@
            so this readout used to say `1.00` for what the module calls 100 %,
            and a faceplate reading the ParamDef would have said `1.00 %`. Both
            surfaces now print `100 %` from the def's own formatter. -->
-      <Fader value={inputLvl}  min={P.inputLevel.min} max={P.inputLevel.max} defaultValue={P.inputLevel.defaultValue} label="In Lvl" curve={P.inputLevel.curve} formatValue={P.inputLevel.format} onchange={set('inputLevel')} moduleId={id} paramId="inputLevel" readLive={live('inputLevel')} />
-      <Fader value={scHpf}     min={P.sc_hpf.min}     max={P.sc_hpf.max}     defaultValue={P.sc_hpf.defaultValue}     label="SC HPF" curve={P.sc_hpf.curve}     onchange={set('sc_hpf')}     moduleId={id} paramId="sc_hpf"     readLive={live('sc_hpf')} />
+      <NeonFader value={inputLvl}  min={P.inputLevel.min} max={P.inputLevel.max} defaultValue={P.inputLevel.defaultValue} label="In Lvl" curve={P.inputLevel.curve} formatValue={P.inputLevel.format} onchange={set('inputLevel')} moduleId={id} paramId="inputLevel" readLive={live('inputLevel')} />
+      <NeonFader value={scHpf}     min={P.sc_hpf.min}     max={P.sc_hpf.max}     defaultValue={P.sc_hpf.defaultValue}     label="SC HPF" curve={P.sc_hpf.curve}     onchange={set('sc_hpf')}     moduleId={id} paramId="sc_hpf"     readLive={live('sc_hpf')} />
     </div>
   </PatchPanel>
 
