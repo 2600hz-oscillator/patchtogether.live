@@ -104,9 +104,9 @@ function bucket1() {
     return { block, items };
   });
 
-  // Quarantine MAP: modules.spec.ts renders these as an interpolated-title
+  // Quarantine MAP: the registry card sweep renders these as an interpolated-title
   // test.fixme (so disabledInventory does NOT double-count them) — count the map.
-  const quarantine = readRecord('e2e/tests/modules.spec.ts', 'QUARANTINE');
+  const quarantine = readRecord('e2e/tests/io-spec-consistency.spec.ts', 'QUARANTINE');
 
   const disabledTotal = blocks.reduce((n, b) => n + b.items.length, 0);
   const total = disabledTotal + quarantine.keys.size;
@@ -419,7 +419,7 @@ export function generateLedger() {
     for (const it of blk.items) p(`- \`${it.loc}\` — ${it.kind} — ${it.title || '(no title)'}`);
     p('');
   }
-  p(`### spawn-smoke QUARANTINE map (e2e/tests/modules.spec.ts) — ${b1.quarantine.keys.size}`);
+  p(`### spawn-smoke QUARANTINE map (e2e/tests/io-spec-consistency.spec.ts) — ${b1.quarantine.keys.size}`);
   if (b1.quarantine.keys.size === 0) p('_none_');
   for (const k of sortedKeys(b1.quarantine.keys)) p(`- \`${k}\` — ${summarize(b1.quarantine.reasons.get(k))}`);
   p('');

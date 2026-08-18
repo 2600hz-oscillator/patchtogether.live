@@ -236,13 +236,17 @@ export const SKIP_BUDGET = [
       + 'SFX before any PCM exists. The engine-bridge unit sweep is the regression bar meanwhile.',
   },
   {
-    specs: ['modules.spec.ts'],
+    specs: ['io-spec-consistency.spec.ts'],
     reason: /task #102/,
     lanes: ['e2e'],
     homeLane: 'e2e',
     why:
-      'The spawn-smoke QUARANTINE map (currently toybox: SwiftShader first-paint timeout). The fixme '
-      + 'annotation derives its description from the map, so map reason and row reason cannot diverge.',
+      'The spawn-smoke QUARANTINE map (currently toybox: SwiftShader first-paint timeout), which moved '
+      + 'with the rest of modules.spec.ts into the consolidated registry card sweep (#1861). The fixme '
+      + 'annotation derives its description from the map, so map reason and row reason cannot diverge. '
+      + 'It now stands down ONE assertion group rather than the whole test — toybox still runs its '
+      + 'handle-parity and control-bounds groups there, as it always did in the sweeps that never '
+      + 'quarantined it.',
   },
   {
     specs: ['recording-survives-card-collapse.spec.ts'],

@@ -1,7 +1,7 @@
 // e2e/tests/per-module-per-port-behavioral.spec.ts
 //
 // BEHAVIORAL input-coverage sweep — the third sweep tier on top of
-// per-module-per-port-handles.spec.ts + per-module-per-port-inputs.spec.ts `handle-presence` + `inputs-accept` dims.
+// io-spec-consistency.spec.ts (handle parity, which absorbed the handle-presence dim in #1861) + per-module-per-port-inputs.spec.ts `inputs-accept` dim.
 //
 // Motivation (Codex coverage finding #6): the `inputs-accept` dim only
 // asserts "the edge lands without errors", which means a module can

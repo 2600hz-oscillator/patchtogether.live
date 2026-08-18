@@ -2,8 +2,8 @@
 //
 // ILLOGIC end-to-end coverage:
 //   1. Spawn the module → 14 handles (4 inputs + 10 outputs) render via the
-//      patch panel; the card mounts without console errors. (modules.spec.ts
-//      and io-spec-consistency.spec.ts already cover this; we add a
+//      patch panel; the card mounts without console errors. (the registry card
+//      sweep in io-spec-consistency.spec.ts already covers this; we add a
 //      smoke check here so the file isn't trivially passing on negative
 //      assertions alone.)
 //   2. LFO → ILLOGIC.in1 → att1 (att1_amount = 1) → Scope: peak audible.

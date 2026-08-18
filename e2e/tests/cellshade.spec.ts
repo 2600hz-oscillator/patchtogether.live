@@ -42,7 +42,7 @@ const CHAIN_FRAMES = 10;
 // see the ci-swiftshader-video-e2e-timeouts memory). spawnPatch's generic 5s
 // node-mount-readiness wait is enough on a real GPU but times out on a loaded
 // CI shard. Grant the established WebGL-heavy headroom (matches
-// modules.spec.ts / edges.spec.ts / mapper.spec.ts HEAVY_MOUNT_TIMEOUT). This
+// io-spec-consistency.spec.ts / edges.spec.ts / mapper.spec.ts HEAVY_MOUNT_TIMEOUT). This
 // is a setup-timing fix, NOT a shader/behaviour change.
 const HEAVY_MOUNT_TIMEOUT = 30_000;
 
