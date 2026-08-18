@@ -479,7 +479,7 @@ export const mixmstrsDef: AudioModuleDef = {
     // one, it is the wet coming back from send one, so it keeps the domain
     // accent. `mixmstrsChannelIndex` answers `null` for it, which is the whole
     // reason the mapping is a predicate over ids and not a column position —
-    // the `returns` band is an 4-column table whose columns are NOT channels.
+    // the `returns` band is a 4-column table whose columns are NOT channels.
     channelAccent: MIXMSTRS_CHANNELS.map((_, i) =>
       PARAMS.filter((p) => mixmstrsChannelIndex(p.id) === i).map((p) => p.id),
     ),
