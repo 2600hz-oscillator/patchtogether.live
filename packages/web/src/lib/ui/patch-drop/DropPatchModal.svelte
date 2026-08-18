@@ -1,5 +1,8 @@
 <script lang="ts">
-  // ⛔ MOCK — the proposed DROP-PATCH modal. Nothing in the app opens this.
+  // The DROP-PATCH modal. SHIPPED since #1781 — `Canvas.svelte` opens it when
+  // one card is dropped onto another; `/dev/video-patch-drop` still mounts the
+  // same component as static scenes for review. (This header used to read
+  // "MOCK — nothing in the app opens this", which stopped being true at #1781.)
   //
   // The chrome is new because the thing being designed is new. Everything
   // INSIDE it is the shipped machinery:
@@ -61,6 +64,13 @@
     live?: boolean;
     /** Render the TAB hint as pressed — the scene that shows the flip mid-gesture. */
     tabPressed?: boolean;
+    /**
+     * #1838: the backpanel's STARTING state. False everywhere the user is —
+     * the owner asked for collapsed-by-default. The reference page's scenes
+     * exist to SHOW the backpanel ("one carry, eight panels"), so they pass
+     * true and keep demonstrating what their prose claims.
+     */
+    rearOpen?: boolean;
     /** Commit the staged set. ONE call per modal session — see the note on
      *  `stage` below for why the session, not the click, is the unit. */
     onCommit?: (edges: DropEdge[]) => void;
@@ -78,6 +88,7 @@
     committed = [],
     live = false,
     tabPressed = false,
+    rearOpen = false,
     onCommit,
     onCancel,
   }: Props = $props();
@@ -120,6 +131,44 @@
   let refusedOpen = $derived(refusedOpenOverride ?? offeredRows.length === 0);
   let deadOutsOpenOverride = $state<boolean | null>(null);
   let deadOutsOpen = $derived(deadOutsOpenOverride ?? liveOuts.length === 0);
+
+  // ── THE BACKPANEL COLLAPSE (#1838) ───────────────────────────────────────
+  // owner, 2026-08-18: "i would also like this content collapsed by default,
+  // with a chevron to expand it? hiding the unpatchable connections by
+  // default. this was part of the original spec"
+  //
+  // The backpanel shows EVERY declared port, and for any given carry most of
+  // them are dimmed and unpatchable — reference material, not an answer. The
+  // upper half is the answer ("what can I actually do with this drop"), so
+  // that stays open and this closes.
+  //
+  // ⚠ SAME IDIOM as the refusal disclosure, deliberately, because the owner's
+  // "part of the original spec" IS `▸ 29 not compatible`: chevron + COUNT +
+  // what is behind it. A bare chevron is indistinguishable from "nothing
+  // here" — the reader would lose the fact that a backpanel exists at all,
+  // which is strictly worse than the clutter it replaced.
+  //
+  // ⚠ NO AUTO-EXPAND, unlike `refusedOpen` / `deadOutsOpen`. That rule exists
+  // because collapsing the ONLY content leaves a blank panel; it does not
+  // apply here, because the offered rows, the refusal disclosure and the
+  // census always render above this and closing it can never empty the modal.
+  // The owner asked for collapsed-by-default and there is no case that
+  // contradicts it, so this is a plain default rather than a nullable
+  // override.
+  //
+  // ⚠ STATE LIVES HERE, per modal open — the same nullable-override shape as
+  // `dirOverride` / `refusedOpenOverride`: the PROP is the scene's answer, the
+  // override is the USER's. It dies with the component, and the component
+  // unmounts with the modal, so every drop starts collapsed for free.
+  // Transient view state never goes near the Y.Doc or node data (standing
+  // rule); there is nothing to persist.
+  let rearOpenOverride = $state<boolean | null>(null);
+  let rearShown = $derived(rearOpenOverride ?? rearOpen);
+
+  /** Every declared port on the receiving side — DERIVED off the same census
+   *  the rows came from. `declaredInputs + declaredOutputs` is the backpanel's
+   *  own population, so the header cannot disagree with what expanding shows. */
+  let rearPortCount = $derived(plan.census.declaredInputs + plan.census.declaredOutputs);
 
   // ── STAGING ──────────────────────────────────────────────────────────────
   // Clicking a row STAGES an edge; Enter commits every staged edge at once.
@@ -430,15 +479,32 @@
 
   <!-- ── THE REAL BACKPANEL ──────────────────────────────────────────────
        Mounted with the receiving module's REAL def. Its holes dim themselves
-       from the live carry — the mock passes no compat information at all. -->
-  <div class="dm-panel" data-testid="drop-rear-panel">
+       from the live carry — the mock passes no compat information at all.
+
+       #1838: COLLAPSED BY DEFAULT behind the same counted disclosure the
+       refusals use. The cap is the control, so the header still says WHAT is
+       hidden and HOW MUCH of it — the count is the affordance, not decor. -->
+  <div class="dm-panel" data-testid="drop-rear-panel" data-open={rearShown}>
     <div class="dm-panel-cap">
-      <span>{plan.into.label} — rear</span>
+      <button
+        type="button"
+        class="dm-panel-toggle"
+        data-testid="drop-rear-toggle"
+        data-count={rearPortCount}
+        aria-expanded={rearShown}
+        onclick={() => (rearOpenOverride = !rearShown)}
+      >
+        <span class="dm-chev" aria-hidden="true">{rearShown ? '▾' : '▸'}</span>
+        <span class="dm-more-n">{rearPortCount}</span>
+        ports — {plan.into.label} rear
+      </button>
       <span class="dm-panel-note">the shipped faceplate backpanel, every declared port</span>
     </div>
-    <div class="dm-panel-scroll">
-      <RearCard nodeId={plan.into.nodeId} def={plan.into.def as never} />
-    </div>
+    {#if rearShown}
+      <div class="dm-panel-scroll">
+        <RearCard nodeId={plan.into.nodeId} def={plan.into.def as never} />
+      </div>
+    {/if}
   </div>
 
   <footer class="dm-foot">
@@ -824,6 +890,26 @@
     text-transform: uppercase;
     color: var(--dm-dim);
     border-bottom: 1px solid var(--dm-line);
+  }
+  /* #1838: the cap IS the disclosure control. Typography is inherited from
+     .dm-panel-cap so the collapsed header reads as the same cap it replaced —
+     only the chevron and the count are added. */
+  .dm-panel-toggle {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 6px;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    letter-spacing: inherit;
+    text-transform: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+  .dm-panel-toggle:hover {
+    color: var(--dm-text);
   }
   .dm-panel-note {
     text-transform: none;
