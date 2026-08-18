@@ -190,19 +190,31 @@ const LIVE_DRAW_FRAMES = 4;
 // loss to avoid a change that is strictly more deterministic. No DOOM spec, DOOM
 // wait, DOOM budget or DOOM ledger entry is touched by this file.
 
-// ────────── Video predicate + render freeze ──────────
+// ────────── Video render freeze: which modules, and why THAT predicate ─────
 //
-// A module touches the video GL pipeline if it has ANY video / mono-video port
-// on EITHER side (NOT just domain === 'video' — WAVESCULPT is audio-domain with
-// a 3D viewport). Those cards mount the VideoEngine, whose per-frame draw is
-// brutally slow on CI's SwiftShader renderer.
-function touchesVideo(mod: RegistryModule): boolean {
-  return (
-    mod.hasVideoOutput ||
-    mod.outputs.some((p) => p.type === 'video' || p.type === 'mono-video') ||
-    mod.inputs.some((p) => p.type === 'video' || p.type === 'mono-video')
-  );
-}
+// Freezing means `VideoEngine.stepInner()` returns before the per-frame draw,
+// so it only does anything for a module the VIDEO ENGINE actually steps — i.e.
+// a `domain === 'video'` node.
+//
+// ⚠ MEASURED, and it corrects a claim the old card-control-overflow sweep made.
+// That sweep froze on a `touchesVideo` predicate ("any video / mono-video port
+// on either side, NOT just domain === 'video' — WAVESCULPT is audio-domain with
+// a 3D viewport"). Solo-spawn WAVESCULPT and the video engine advances ZERO
+// frames across four animation frames whether the flag is set or not: with no
+// video-domain node in the patch there is nothing for that engine to step, and
+// WAVESCULPT's own viewport does not read the flag (nothing outside
+// engine.ts / VideoOutBody / BackdraftOutputBody / DetachedDisplay does). So on
+// those cards the freeze was a NO-OP, and the sweep's stated saving there was
+// imaginary. This was caught by the live-draw POSITIVE CONTROL below, which is
+// the whole reason that control exists.
+//
+// Consequences, both directions:
+//   * audio-domain cards are never frozen now — which is what modules.spec.ts
+//     and this spec's own original predicate already did, and is a no-op change
+//     for the layout sweep, since the flag never reached them anyway.
+//   * `domain === 'video'` cards are frozen for groups A–E and un-frozen for F,
+//     where the frame counter is REQUIRED to move.
+const isVideoDomain = (mod: RegistryModule): boolean => mod.domain === 'video';
 
 // Set via addInitScript (document_start, every navigation) so it covers
 // spawnPatch's navigation. The card still mounts (shaders compiled, FBOs
@@ -251,14 +263,19 @@ interface LiveDrawProof {
  * not weakened; a per-module draw assertion is the render-smoke specs' job.
  */
 async function unfreezeAndDraw(page: Page): Promise<LiveDrawProof> {
+  // ⚠ `currentFrameCount` is a METHOD — read it THROUGH the domain object every
+  // time. Detaching it (`const fc = domain.currentFrameCount; fc.call(null)`)
+  // loses `this` and throws inside the engine, which is how the first version
+  // of this helper failed.
   const before = await page.evaluate(() => {
     const w = globalThis as unknown as {
       __videoEngineFreezeRender?: boolean;
       __engine?: () => { getDomain?: (d: string) => { currentFrameCount?: () => number } | null } | null;
     };
     w.__videoEngineFreezeRender = false;
-    const fc = w.__engine?.()?.getDomain?.('video')?.currentFrameCount;
-    return { readable: typeof fc === 'function', frames: typeof fc === 'function' ? fc.call(null) : 0 };
+    const dom = w.__engine?.()?.getDomain?.('video') ?? null;
+    const readable = typeof dom?.currentFrameCount === 'function';
+    return { readable, frames: readable ? dom!.currentFrameCount!() : 0 };
   });
 
   await waitFrames(page, LIVE_DRAW_FRAMES);
@@ -270,13 +287,14 @@ async function unfreezeAndDraw(page: Page): Promise<LiveDrawProof> {
         __videoEnginePause?: boolean;
         __engine?: () => { getDomain?: (d: string) => { currentFrameCount?: () => number } | null } | null;
       };
-      const fc = w.__engine?.()?.getDomain?.('video')?.currentFrameCount;
-      const now = typeof fc === 'function' ? fc.call(null) : 0;
+      const dom = w.__engine?.()?.getDomain?.('video') ?? null;
+      const stillReadable = typeof dom?.currentFrameCount === 'function';
+      const now = stillReadable ? dom!.currentFrameCount!() : 0;
       return {
         frozen: w.__videoEngineFreezeRender === true,
         paused: w.__videoEnginePause === true,
         framesDelta: now - frames,
-        readable: readable && typeof fc === 'function',
+        readable: readable && stillReadable,
       };
     },
     before,
@@ -391,7 +409,7 @@ function declareSweep(mod: RegistryModule): void {
 
   const runSmoke = !smokeSkip && !quarantineReason;
   const isHeavy = HEAVY_RENDER.has(mod.type);
-  const isVideo = touchesVideo(mod);
+  const isVideo = isVideoDomain(mod);
 
   test(title, async ({ page }) => {
     test.setTimeout(isHeavy ? HEAVY_TEST_TIMEOUT : BASE_TEST_TIMEOUT);
