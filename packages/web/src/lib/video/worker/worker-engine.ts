@@ -247,6 +247,29 @@ export class WorkerRenderEngine {
     gl.bindTexture(gl.TEXTURE_2D, tex);
     if (this.copyUTex) gl.uniform1i(this.copyUTex, 0);
     this.drawFullscreenQuadImpl();
+    // ⚠ FORCE THE PIPELINE TO COMPLETE BEFORE TRANSFERRING.
+    //
+    // This method is called ONCE PER WORKER-RESIDENT NODE within a single
+    // task: draw node A into the shared drawing buffer → transfer → draw node
+    // B → transfer → … GL commands are queued, not executed, and
+    // `transferToImageBitmap()` is not specified to flush them, so on a
+    // renderer that defers aggressively every transfer in the frame can
+    // capture the SAME contents.
+    //
+    // MEASURED (#1811): with four worker-resident modules under
+    // `E2E_SWIFTSHADER=1`, all four nodes came back with byte-identical
+    // picture statistics — every OUTPUT in the rack showed ACIDWARP. It was
+    // invisible before this PR only because ACIDWARP was the only module in
+    // the worker, and one node cannot alias with itself. The
+    // render-worker-locus e2e's "not all modules produced the same picture"
+    // control is what surfaced it.
+    //
+    // `finish()` (not `flush()`) because we need the commands EXECUTED, not
+    // merely submitted, before the transfer reads the buffer. The stall it
+    // costs is paid ON THE WORKER THREAD — which is the entire point of this
+    // file existing: a sync stall here does not delay the audio scheduler,
+    // and that is precisely the trade #1811 is making.
+    gl.finish();
     return this.canvas.transferToImageBitmap();
   }
 

@@ -230,6 +230,23 @@ export class WorkerProxyHandle implements VideoNodeHandle {
     // delivered frames" assertion only when this is true; otherwise accept the
     // non-black main-thread fallback (the proxy's documented degradation).
     if (key === 'workerActive') return this.bridge.ready();
+    // #1811 — WHICH KIND of not-active. `workerActive === false` is returned
+    // both while the worker is still spinning up its WebGL2 context AND after
+    // it has permanently failed, and those two are OPPOSITE facts for a test:
+    // the first means "wait", the second means "assert the fallback". A gate
+    // that cannot tell them apart accepts the main-thread fallback the instant
+    // it paints and never once exercises the worker — green, and blind to
+    // everything it claims to cover. Measured: the render-locus parity spec
+    // reported `workerActive=false` on a real GPU on every run, because it
+    // asked before the worker had answered.
+    //   'active'        — worker is the live render path
+    //   'initialising'  — supported, no WebGL2 confirmation yet: WAIT
+    //   'unsupported'   — construction/GL failed, or the kill switch: the
+    //                     main-thread fallback is the final state
+    if (key === 'workerState') {
+      if (this.bridge.ready()) return 'active';
+      return this.bridge.supported ? 'initialising' : 'unsupported';
+    }
     // The card preview path (e.g. acidwarp's `read('snapshot')`) is CPU-only and
     // identical regardless of where GL runs. We serve it from the fallback
     // handle, materializing it on demand so the card always has a live preview
