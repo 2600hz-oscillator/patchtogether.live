@@ -143,9 +143,25 @@
     gestureRect = null;
   }
 
+  // ── the ONE gesture slot ──────────────────────────────────────────────────
+  //
+  // ⚠ DRAG AND RESIZE SHARE IT, because they are mutually exclusive gestures on
+  // one window and separate slots let both run at once: two handlers writing
+  // `gestureRect` from different origins, and — since both register bare
+  // `window` pointerup listeners with no `pointerId` filter — whichever pointer
+  // lifts first tearing down both.
+  let gestureAbort: AbortController | null = null;
+
+  /** Begin a gesture, cancelling whatever was in flight. */
+  function openGesture(): AbortController {
+    gestureAbort?.abort();
+    const ctl = new AbortController();
+    gestureAbort = ctl;
+    return ctl;
+  }
+
   // ── DRAG (the header is the handle) ───────────────────────────────────────
   let dragging = $state(false);
-  let dragAbort: AbortController | null = null;
 
   function onDragStart(ev: PointerEvent): void {
     if (ev.button !== 0) return;
@@ -154,9 +170,7 @@
     const startX = ev.clientX;
     const startY = ev.clientY;
     const from = { ...live };
-    dragAbort?.abort();
-    const ctl = new AbortController();
-    dragAbort = ctl;
+    const ctl = openGesture();
     dragging = true;
     const move = (m: PointerEvent): void => {
       // ⚠ SCREEN px, no zoom divisor. The panel is outside the flow transform,
@@ -172,28 +186,47 @@
     };
     const stop = (): void => {
       dragging = false;
-      dragAbort = null;
+      gestureAbort = null;
       ctl.abort();
       if (gestureRect) commitRect(gestureRect);
     };
     window.addEventListener('pointermove', move, { signal: ctl.signal });
     window.addEventListener('pointerup', stop, { signal: ctl.signal });
     window.addEventListener('pointercancel', stop, { signal: ctl.signal });
+    // ⚠ THE LOST-POINTERUP ESCAPE — POINTER CAPTURE, not a `window` blur.
+    //
+    // A swallowed `pointerup` (alt-tab, a focus steal) is worse here than the
+    // leaked listeners it costs a card: `live` prefers `gestureRect`, so a
+    // stranded gesture would make the panel IGNORE ITS PROP FOREVER — a peer's
+    // move, a re-detach and the viewport reclamp all invisible, and the next
+    // bare mouse move dragging the window.
+    //
+    // ⚠ A `blur` LISTENER IS THE WRONG FIX AND I SHIPPED IT FIRST. Focus moves
+    // for reasons that have nothing to do with the pointer, so it ended drags
+    // mid-gesture — MEASURED as a drag that produced exactly zero movement
+    // (x stayed at -113 across a 180 px drag). `lostpointercapture` fires when
+    // the browser genuinely takes the pointer away and at no other time, which
+    // is the actual condition.
+    const handle = ev.currentTarget as HTMLElement | null;
+    try {
+      handle?.setPointerCapture(ev.pointerId);
+      handle?.addEventListener('lostpointercapture', stop, { signal: ctl.signal });
+    } catch {
+      // Capture is a nicety; pointerup/pointercancel remain the primary path.
+    }
   }
 
   // ── RESIZE (the corner grip) ──────────────────────────────────────────────
   let resizing = $state(false);
-  let resizeAbort: AbortController | null = null;
 
   function onResizeStart(ev: PointerEvent): void {
-    // ⚠ ABORT ANY LIVE RESIZE FIRST. Without this a second `pointerdown` on the
-    // grip before the matching `pointerup` (multi-touch, or a dropped pointerup)
-    // overwrites `resizeAbort` and leaks the first controller's three window
-    // listeners — two gestures then applying against different start sizes.
-    // `onDragStart` above already guards this way.
-    resizeAbort?.abort();
+    // Primary button only — the guard `onDragStart` has and this lacked. A
+    // right-click on the grip started a resize AND opened the panel menu, so the
+    // window resized under the open menu until the next pointerup.
+    if (ev.button !== 0) return;
+    const ctl = openGesture();
     const start = { ...live };
-    resizeAbort = startCornerResize(ev, {
+    const inner = startCornerResize(ev, {
       // Outside the SvelteFlow provider: screen px ARE panel px, no zoom divide.
       flowStore: null,
       minWidth: DETACHED_MIN_W,
@@ -212,15 +245,26 @@
       onStart: () => { resizing = true; },
       onEnd: () => {
         resizing = false;
-        resizeAbort = null;
+        gestureAbort = null;
         if (gestureRect) commitRect(gestureRect);
       },
     });
+    // Route the shared slot's abort at the resize helper's own controller, so
+    // starting a drag mid-resize (or unmounting) tears the resize down too.
+    ctl.signal.addEventListener('abort', () => inner.abort(), { once: true });
+    // Same lost-pointerup escape as the drag, and NOT a `blur` listener for the
+    // same measured reason (see `onDragStart`).
+    const grip = ev.currentTarget as HTMLElement | null;
+    try {
+      grip?.setPointerCapture(ev.pointerId);
+      grip?.addEventListener('lostpointercapture', () => inner.abort(), { signal: ctl.signal });
+    } catch {
+      /* capture is a nicety */
+    }
   }
 
   $effect(() => () => {
-    dragAbort?.abort();
-    resizeAbort?.abort();
+    gestureAbort?.abort();
   });
 
   // ── the output menu (the SAME component the card and the dock body use) ────

@@ -42,10 +42,12 @@
   import { liveEngineAspect } from '../video-card-aspect';
   import VideoCanvasContextMenu from '../VideoCanvasContextMenu.svelte';
   import {
+    DETACHED_KEYS,
     REATTACH_CLEARS,
     detachPatch,
     detachedRect,
     isDetached,
+    placeDetached,
   } from '../detached-display';
   import type { VideoEngine } from '$lib/video/engine';
   import { VIDEO_RES } from '$lib/video/engine';
@@ -106,16 +108,26 @@
   let detached = $derived(isDetached(patch.nodes[nodeId]));
 
   function detachDisplay(): void {
-    const rect = detachedRect(patch.nodes[nodeId], {
+    const vp = {
       width: typeof window === 'undefined' ? 1280 : window.innerWidth,
       height: typeof window === 'undefined' ? 720 : window.innerHeight,
-    });
+    };
+    const live = patch.nodes[nodeId];
+    const saved = live?.data?.[DETACHED_KEYS.x] !== undefined;
+    const box = rootEl?.getBoundingClientRect();
+    const rect = saved
+      ? detachedRect(live, vp)
+      : placeDetached(vp, box ? { x: box.x, y: box.y, w: box.width, h: box.height } : undefined);
     const data = detachPatch(rect);
     mutateNode(nodeId, (live) => {
       if (!live.data) live.data = {};
       for (const [k, v] of Object.entries(data)) live.data[k] = v;
     });
     if (fullFrame) ff.exit();
+    // DETACH SUPERSEDES BROWSER FULLSCREEN TOO. `detachPatch` clears the
+    // `node.data` half; the Fullscreen API is browser state it cannot reach,
+    // and this wrap is about to show the `display detached` plate.
+    void fs.exit();
   }
 
   function reattachDisplay(): void {
@@ -251,7 +263,7 @@
 <div class="vo-face" class:full-frame={fullFrame} bind:this={rootEl} data-testid="videoout-face-output">
   <!-- ⚠ NEVER `{#if}`-ed AWAY. `requestFullscreen()` must be handed a real,
        rendered element at the moment the menu item is clicked, and the Present
-       popup blits FROM this canvas every frame — so DETACHED covers it with the
+       popup is NODE-keyed and blits the ENGINE, not this canvas — so DETACHED covers it with the
        plate rather than unmounting it. The plate sits inside the wrap that owns
        `oncontextmenu`, so right-clicking it is how "re-attach" is reached from
        the faceplate. -->

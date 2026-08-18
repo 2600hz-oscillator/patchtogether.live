@@ -502,6 +502,71 @@ test.describe('videoOut — detach on the DEFAULT shell (the promoted face)', ()
       .not.toBe(first);
   });
 
+  test('detaching MOVES the node from WATCH-driven to LEASE-driven — the observer rule, at the engine', async ({ page }) => {
+    // ⚠ THE #1836 OBSERVER RULE, PINNED AT THE ENGINE RATHER THAN AT A DOM
+    // ATTRIBUTE. The `data-detached` leg elsewhere in this file was an adequate
+    // proxy while the claim was "the card stops blitting"; after #1836 the
+    // load-bearing claim is "the card stops MARKING WATCHED", and the two are
+    // indistinguishable from the DOM. `preview-gate.ts` is explicit that a card
+    // showing nothing must not be an observer — so the thing to assert is WHY
+    // the node is still a pull root, not merely that it still renders.
+    //
+    // Attached: no lease (the card is not presenting) — the node is a pull root
+    // because a surface BLITS it. Detached: the panel's lease is what holds it,
+    // and every card-side observer has withdrawn.
+    await page.goto('/rack?seed=none');
+    await page.waitForFunction(() => !!(window as unknown as PatchWindow).__patch);
+    await page.evaluate(() => {
+      (window as unknown as PatchWindow).__spawnAtFlowPos('videoOut', { x: 0, y: 0 });
+    });
+    await expect
+      .poll(() =>
+        page.evaluate(() =>
+          Object.values((window as unknown as PatchWindow).__patch.nodes).some((n) => n.type === 'videoOut'),
+        ),
+      )
+      .toBe(true);
+    const vo = await page.evaluate(
+      () =>
+        Object.entries((window as unknown as PatchWindow).__patch.nodes).find(
+          ([, n]) => n.type === 'videoOut',
+        )![0],
+    );
+    await expect(page.locator(`.svelte-flow__node[data-id="${vo}"] [data-testid="module-shell"]`)).toBeVisible();
+
+    const leased = (): Promise<string[]> =>
+      page.evaluate(() => {
+        const w = globalThis as unknown as {
+          __engine?: () => { getDomain: (d: string) => { pullStats: () => { leased: string[] } } };
+        };
+        try {
+          return w.__engine!().getDomain('video').pullStats().leased;
+        } catch {
+          return [];
+        }
+      });
+
+    // ATTACHED: the card shows the picture and holds NO lease.
+    await expect.poll(leased, { message: 'an attached OUTPUT is watch-driven, not leased' }).not.toContain(vo);
+
+    await page.locator(`.svelte-flow__node[data-id="${vo}"]`).click({ button: 'right', position: { x: 6, y: 6 } });
+    await page.getByTestId('ctx-detach-display').click();
+    await expect(panel(page)).toHaveCount(1);
+
+    // DETACHED: the panel's lease is now what makes it a pull root.
+    await expect
+      .poll(leased, { message: 'the detached panel holds the lease that keeps the chain alive' })
+      .toContain(vo);
+
+    // RE-ATTACH releases it — the card goes back to being the observer.
+    await page.locator(`.svelte-flow__node[data-id="${vo}"]`).click({ button: 'right', position: { x: 6, y: 6 } });
+    await page.getByTestId('ctx-reattach-display').click();
+    await expect(panel(page)).toHaveCount(0);
+    await expect
+      .poll(leased, { message: 're-attaching releases the lease rather than leaking it' })
+      .not.toContain(vo);
+  });
+
   test('DETACH clears full frame — the card must not stay expanded around a picture that left it', async ({ page }) => {
     // Regression (#1821 review): two of the three detach entry points cleared
     // `fullFrame` and the NODE MENU — the only detach route a rack tile has —

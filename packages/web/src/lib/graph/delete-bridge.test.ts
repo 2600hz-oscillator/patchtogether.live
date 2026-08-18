@@ -247,6 +247,43 @@ describe('SELF-PATCH ⇒ plain delete', () => {
     expect(planDeleteBridge('vo', nodes, edges, resolveDef)).toBeNull();
   });
 
+  it('a TWO-NODE CYCLE does not bridge a surviving node onto ITSELF', () => {
+    // ⚠ THE SELF-PATCH CLASS IS TWO CASES. The 1-node cycle above is the owner's
+    // "silly edge case"; this is the one the header's guard could not see.
+    // A.out → B.in and B.out → A.in, delete A: the ends to be joined are B.out
+    // and B.in, and NEITHER cable has both endpoints on A — so the edge-level
+    // self-patch guard sees nothing, and `validateEdge` is happy to connect a
+    // node to itself. Bridging would leave B self-patched by a delete that never
+    // asked to rewire it.
+    const nodes = [n('a', 'videoOut'), n('b', 'videoOut')];
+    const edges = [
+      e('e-a-out-b-in', 'a', 'out', 'b', 'in'),
+      e('e-b-out-a-in', 'b', 'out', 'a', 'in'),
+    ];
+    const plan = planDeleteBridge('a', nodes, edges, resolveDef)!;
+    expect(plan).not.toBeNull();
+    expect(plan.bridgeEdges, 'no self-edge is written').toEqual([]);
+    expect(plan.refused).toHaveLength(1);
+    expect(plan.refused[0]!.reason).toMatch(/self-patch/);
+    // The delete still happens — refusing the bridge is not refusing the delete.
+    expect(plan.removeEdgeIds.sort()).toEqual(['e-a-out-b-in', 'e-b-out-a-in']);
+  });
+
+  it('NEGATIVE CONTROL: a THREE-node chain through the same types DOES bridge', () => {
+    // Without this, the leg above would pass on a planner that refused every
+    // videoOut→videoOut bridge rather than only the cyclic one.
+    const nodes = [n('a', 'videoOut'), n('b', 'videoOut'), n('c', 'videoOut')];
+    const edges = [
+      e('e-a-out-b-in', 'a', 'out', 'b', 'in'),
+      e('e-b-out-c-in', 'b', 'out', 'c', 'in'),
+    ];
+    const plan = planDeleteBridge('b', nodes, edges, resolveDef)!;
+    expect(plan.refused).toEqual([]);
+    expect(plan.bridgeEdges).toHaveLength(1);
+    expect(plan.bridgeEdges[0]!.source.nodeId).toBe('a');
+    expect(plan.bridgeEdges[0]!.target.nodeId).toBe('c');
+  });
+
   it('NEGATIVE CONTROL: the SAME graph without the self-cable DOES bridge', () => {
     // The self-patch leg above must fail for the self-cable and nothing else.
     const { nodes } = chain();

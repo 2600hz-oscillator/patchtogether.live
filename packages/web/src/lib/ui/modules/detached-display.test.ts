@@ -16,6 +16,7 @@ import {
   REATTACH_CLEARS,
   clampDetachedRect,
   detachPatch,
+  placeDetached,
   detachedRect,
   isDetached,
   supportsDetachedDisplay,
@@ -182,6 +183,81 @@ describe('detachedRect — reads the node, clamps the result', () => {
     expect(r.h).toBeLessThanOrEqual(small.height);
     expect(r.x).toBeLessThanOrEqual(small.width - DETACHED_KEEP_VISIBLE);
     expect(r.y).toBeLessThanOrEqual(small.height - DETACHED_KEEP_VISIBLE);
+  });
+});
+
+
+describe('placeDetached — a fresh panel must not cover the card it came from', () => {
+  it('centres when there is nothing to avoid', () => {
+    expect(placeDetached(VIEWPORT)).toEqual(clampDetachedRect({}, VIEWPORT));
+  });
+
+  it('centres when the card does not overlap the centred position', () => {
+    const farLeft = { x: 0, y: 0, w: 200, h: 200 };
+    expect(placeDetached(VIEWPORT, farLeft)).toEqual(clampDetachedRect({}, VIEWPORT));
+  });
+
+  it('SLIDES CLEAR when the card sits where the panel would open', () => {
+    // ⚠ The regression this exists for: the panel opened dead-centre, a
+    // just-revealed card is dead-centre, and the panel's canvas then swallowed
+    // the right-click aimed at the card — blocking one of the two re-attach
+    // entry points the owner asked for.
+    const centred = clampDetachedRect({}, VIEWPORT);
+    const card = { x: centred.x, y: centred.y, w: 360, h: 360 };
+    const placed = placeDetached(VIEWPORT, card);
+    const clear =
+      placed.x >= card.x + card.w || card.x >= placed.x + placed.w ||
+      placed.y >= card.y + card.h || card.y >= placed.y + placed.h;
+    expect(clear, `placed ${JSON.stringify(placed)} still overlaps ${JSON.stringify(card)}`).toBe(true);
+  });
+
+  it('prefers the side with more room', () => {
+    // Card hard against the left edge ⇒ the panel goes right.
+    const leftCard = { x: 0, y: 300, w: 700, h: 360 };
+    expect(placeDetached(VIEWPORT, leftCard).x).toBeGreaterThanOrEqual(leftCard.w);
+    // Card hard against the right edge ⇒ the panel goes left.
+    const rightCard = { x: VIEWPORT.width - 700, y: 300, w: 700, h: 360 };
+    const placed = placeDetached(VIEWPORT, rightCard);
+    expect(placed.x + placed.w).toBeLessThanOrEqual(rightCard.x);
+  });
+
+  it('stays ON SCREEN whatever it does — placement never defeats the clamp', () => {
+    for (const card of [
+      { x: 0, y: 0, w: VIEWPORT.width, h: VIEWPORT.height },
+      { x: -500, y: -500, w: 900, h: 900 },
+      { x: VIEWPORT.width - 10, y: 0, w: 2000, h: 2000 },
+    ]) {
+      const r = placeDetached(VIEWPORT, card);
+      expect(r.w).toBeGreaterThanOrEqual(DETACHED_MIN_W);
+      expect(r.h).toBeGreaterThanOrEqual(DETACHED_MIN_H);
+      expect(r.x).toBeLessThanOrEqual(VIEWPORT.width - DETACHED_KEEP_VISIBLE);
+      expect(r.y).toBeGreaterThanOrEqual(0);
+    }
+  });
+
+  it('NEVER opens partly off-screen — a dodge that leaves the title bar unreachable is not a dodge', () => {
+    // ⚠ MEASURED: dodging a card near the left edge placed the panel at x = -113,
+    // and a pointer cannot grab a title bar at negative screen coordinates — the
+    // drag produced exactly zero movement. `clampDetachedRect` allows that
+    // position for a USER drag (KEEP_VISIBLE is about leaving a grab strip); an
+    // OPENING window has a stricter requirement.
+    for (const card of [
+      { x: 300, y: 200, w: 360, h: 360 },
+      { x: 40, y: 200, w: 360, h: 360 },
+      { x: VIEWPORT.width - 400, y: 200, w: 360, h: 360 },
+      { x: 0, y: 0, w: 900, h: 700 },
+    ]) {
+      const r = placeDetached(VIEWPORT, card);
+      expect(r.x, `card ${JSON.stringify(card)} → x`).toBeGreaterThanOrEqual(0);
+      expect(r.x + r.w, `card ${JSON.stringify(card)} → right edge`).toBeLessThanOrEqual(VIEWPORT.width);
+    }
+  });
+
+  it('a card covering the WHOLE viewport falls back to centred rather than off-screen', () => {
+    // Deliberate: no placement can dodge it, and a draggable panel beats a
+    // wedged one.
+    const everything = { x: 0, y: 0, w: VIEWPORT.width, h: VIEWPORT.height };
+    expect(placeDetached(VIEWPORT, everything)).toEqual(clampDetachedRect({}, VIEWPORT));
   });
 });
 

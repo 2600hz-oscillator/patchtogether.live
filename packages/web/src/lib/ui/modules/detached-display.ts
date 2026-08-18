@@ -232,6 +232,61 @@ export function detachedRect(node: ModuleNode | undefined, viewport: ViewportSiz
   );
 }
 
+/** A screen-space box to keep clear when placing a fresh panel. */
+export interface AvoidRect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+function overlaps(a: DetachedRect, b: AvoidRect): boolean {
+  return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+}
+
+/**
+ * Where a FRESH panel opens.
+ *
+ * ⚠ IT MUST NOT LAND ON TOP OF THE CARD IT CAME FROM, and that is a requirement
+ * rather than a nicety: the owner asked that re-attach be reachable by
+ * right-clicking *"the underlying video output card"*, and a panel centred in
+ * the viewport lands exactly where a just-revealed card is — covering the very
+ * surface whose context menu is the documented way back. Measured as a click
+ * interception: the panel's canvas swallowed the right-click aimed at the
+ * card's picture.
+ *
+ * So: centre, and if that overlaps the card, slide to whichever side has more
+ * room. Falling back to the centred position when NEITHER side fits is
+ * deliberate — a viewport too small to dodge is one where any placement
+ * overlaps, and a panel the user can drag beats a panel wedged off-screen.
+ */
+export function placeDetached(viewport: ViewportSize, avoid?: AvoidRect): DetachedRect {
+  const centred = clampDetachedRect({}, viewport);
+  if (!avoid || !overlaps(centred, avoid)) return centred;
+
+  const gap = 12;
+  const roomRight = viewport.width - (avoid.x + avoid.w);
+  const roomLeft = avoid.x;
+  const candidates =
+    roomRight >= roomLeft
+      ? [avoid.x + avoid.w + gap, avoid.x - centred.w - gap]
+      : [avoid.x - centred.w - gap, avoid.x + avoid.w + gap];
+
+  for (const x of candidates) {
+    const placed = clampDetachedRect({ ...centred, x }, viewport);
+    // ⚠ A DODGE THAT GOES OFF-SCREEN IS NOT A DODGE. `clampDetachedRect` permits
+    // x down to `KEEP_VISIBLE - w` — correct for a USER drag, where leaving a
+    // grab strip on screen is the whole contract — but wrong for a panel that is
+    // OPENING: it put the window at x = -113 with its title bar's left half past
+    // the viewport edge, which is unreachable by pointer (measured as a drag
+    // that produced exactly zero movement, because the grab point had negative
+    // screen coordinates). A fresh window opens FULLY visible or not there.
+    if (placed.x < 0 || placed.x + placed.w > viewport.width) continue;
+    if (!overlaps(placed, avoid)) return placed;
+  }
+  return centred;
+}
+
 /**
  * The `node.data` patch that DETACHES a node, geometry included.
  *

@@ -55,10 +55,12 @@
   import VideoCanvasContextMenu from './VideoCanvasContextMenu.svelte';
   import { mutateNode } from '$lib/graph/mutate';
   import {
+    DETACHED_KEYS,
     REATTACH_CLEARS,
     detachPatch,
     detachedRect,
     isDetached,
+    placeDetached,
   } from './detached-display';
   import type { VideoEngine } from '$lib/video/engine';
   import { VIDEO_RES } from '$lib/video/engine';
@@ -203,10 +205,18 @@
     // Geometry is written with the flag so the whole gesture is ONE undo entry,
     // and it is CLAMPED at write time against the live window rather than left
     // for the panel to fix on first paint.
-    const rect = detachedRect(node, {
+    // Open clear of THIS card, so the right-click that re-attaches is not
+    // covered by the very panel it opens (see `placeDetached`). A node whose
+    // geometry was already saved keeps it; only a FRESH detach is placed.
+    const vp = {
       width: typeof window === 'undefined' ? 1280 : window.innerWidth,
       height: typeof window === 'undefined' ? 720 : window.innerHeight,
-    });
+    };
+    const saved = node?.data?.[DETACHED_KEYS.x] !== undefined;
+    const box = cardEl?.getBoundingClientRect();
+    const rect = saved
+      ? detachedRect(node, vp)
+      : placeDetached(vp, box ? { x: box.x, y: box.y, w: box.width, h: box.height } : undefined);
     const data = detachPatch(rect);
     mutateNode(id, (live) => {
       if (!live.data) live.data = {};
@@ -217,6 +227,10 @@
     // blank rectangle. (Mutual exclusion, exactly as full frame and true
     // fullscreen already have.)
     if (fullFrame) ff.exit();
+    // DETACH SUPERSEDES BROWSER FULLSCREEN TOO. `detachPatch` clears the
+    // `node.data` half; the Fullscreen API is browser state it cannot reach,
+    // and this wrap is about to show the `display detached` plate.
+    void fs.exit();
   }
 
   function reattachDisplay(): void {
@@ -396,6 +410,12 @@
   let resizeAbort: AbortController | null = null;
 
   function onResizeStart(ev: PointerEvent) {
+    // Primary button only, and abort any live resize first: a second pointerdown
+    // before the matching pointerup would otherwise overwrite `resizeAbort` and
+    // leak the first controller's window listeners, leaving two gestures applying
+    // against different start sizes.
+    if (ev.button !== 0) return;
+    resizeAbort?.abort();
     resizeAbort = startCornerResize(ev, {
       flowStore,
       minWidth: MIN_WIDTH,
@@ -452,7 +472,7 @@
     ></canvas>
     <!-- ⚠ THE CANVAS IS NEVER `{#if}`-ed AWAY while detached. `requestFullscreen()`
          needs a real rendered element at the moment the menu item is clicked, and
-         the Present popup blits from this same canvas — so detaching COVERS it
+         the Present popup is NODE-keyed and blits the ENGINE, not this canvas — so detaching COVERS it
          with the plate below rather than unmounting it. The plate is what the
          user right-clicks to get "re-attach" back, which is why it sits inside
          the wrap that owns `oncontextmenu`. -->

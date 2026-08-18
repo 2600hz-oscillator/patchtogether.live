@@ -256,6 +256,24 @@ export function planDeleteBridge(
     upDef?.outputs?.find((o) => o.id === upstream.source.portId)?.type ?? upstream.sourceType;
 
   for (const dn of downstream) {
+    // ⚠ THE SELF-PATCH CLASS IS TWO CASES, NOT ONE, and the guard above only
+    // catches the first. A 1-node cycle (`OUT.out → OUT.in`) is the owner's
+    // "silly edge case" and is refused up there. A 2-NODE cycle is not:
+    // `A.out → B.in` and `B.out → A.in`, delete A, and the ends to be joined are
+    // `B.out` and `B.in` — neither cable has both endpoints on A, so the guard
+    // above sees nothing. `validateEdge` does not reject a self-edge either (it
+    // resolves the two endpoints and asks the cable lattice, which is happy), so
+    // the bridge would land B SELF-PATCHED by a delete that never asked to
+    // rewire it. Refused per candidate, because in a fan-out only SOME targets
+    // may be the upstream itself.
+    if (dn.target.nodeId === upstream.source.nodeId) {
+      refused.push({
+        source: { ...upstream.source },
+        target: { ...dn.target },
+        reason: `bridging would self-patch ${dn.target.nodeId} (the chain is a cycle through the deleted node)`,
+      });
+      continue;
+    }
     const dnDef = resolveDef(nodes.find((n) => n.id === dn.target.nodeId)?.type ?? '');
     const dnPortType =
       dnDef?.inputs?.find((i) => i.id === dn.target.portId)?.type ?? dn.targetType;

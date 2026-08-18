@@ -1562,6 +1562,14 @@ async function spawnVideoZoneMember(page: Page, type: string): Promise<string> {
     w.__spawnFromPalette(tt);
   }, type);
 
+  // ⚠ `>= 1`, NOT `=== 1`, and that distinction is the bug this helper was
+  // written to fix — one level up. An equality wait is only ever satisfiable
+  // TRANSIENTLY: if two nodes of the type appear (a double reconcile, or the
+  // rack's own video-zone auto-population landing after `before` was captured),
+  // the count goes 1 → 2 and never comes back, so the wait eats its full 20 s
+  // and reports Playwright's generic timeout with none of the diagnostics the
+  // assertion below carries. Wait for ARRIVAL; let the assertion judge the
+  // COUNT, which is where a useful message lives.
   await page.waitForFunction(
     ({ tt, seen }) => {
       const w = globalThis as unknown as {
@@ -1571,7 +1579,7 @@ async function spawnVideoZoneMember(page: Page, type: string): Promise<string> {
       return (
         Object.entries(w.__patch?.nodes ?? {}).filter(
           ([id, n]) => n?.type === tt && !known.has(id),
-        ).length === 1
+        ).length >= 1
       );
     },
     { tt: type, seen: before },
@@ -1586,14 +1594,34 @@ async function spawnVideoZoneMember(page: Page, type: string): Promise<string> {
     `${type}: exactly one NEW video-zone member spawned ` +
       `(${before.length} of this type pre-existed: [${before.join(', ')}])`,
   ).toHaveLength(1);
-  // ⚠ THE PERMANENT NEGATIVE CONTROL for the bug above: returning a pre-existing
-  // node would frame and baseline the wrong tile — the default `videoOut` rather
-  // than the face under test — and every pixel assertion downstream would be
-  // green about the wrong subject.
+
+  // ⚠ THESE TWO ARE ANCHORED TO THE ARTIFACT, and the previous attempt was NOT.
+  // It asserted `expect(before).not.toContain(fresh[0])` — but `fresh` is
+  // DEFINED as `after` minus `before`, so that is true for every possible input:
+  // a gate green on all inputs including the regression it names, which is
+  // exactly the "would its green run look any different if the answer were
+  // 'everything'?" shape. Replaced with two properties read off the live patch,
+  // both of which can genuinely fail:
+  //   · the population of this type grew by EXACTLY ONE (a spawn that silently
+  //     did not happen, or fired twice, reddens here);
+  //   · the id we are returning really is a node of the type under test.
   expect(
-    before,
-    `${type}: the returned member must be the SPAWNED node, never a pre-existing one`,
-  ).not.toContain(fresh[0]!);
+    after.length,
+    `${type}: the spawn must add exactly one node of this type ` +
+      `(before ${before.length}, after ${after.length})`,
+  ).toBe(before.length + 1);
+
+  const freshType = await page.evaluate((id) => {
+    const w = globalThis as unknown as { __patch?: { nodes: Record<string, { type?: string } | undefined> } };
+    return w.__patch?.nodes[id]?.type ?? '(absent)';
+  }, fresh[0]!);
+  expect(
+    freshType,
+    `${type}: the returned member must BE the face under test — framing the wrong ` +
+      `tile would baseline the wrong subject and every pixel assertion downstream ` +
+      `would be green about it`,
+  ).toBe(type);
+
   return fresh[0]!;
 }
 

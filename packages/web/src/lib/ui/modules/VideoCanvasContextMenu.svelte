@@ -227,7 +227,18 @@
       data-testid="video-canvas-context-menu"
     >
       <div class="ctx-header">{title}</div>
-      {#if multiMonitor}
+      <!-- ⚠ FULLSCREEN IS SUPPRESSED WHILE DETACHED. The fullscreen element is
+           the CARD's / faceplate's own wrap, and while detached that wrap paints
+           the `display detached` plate — the picture is in the floating panel,
+           which lives outside that subtree and so is not in the fullscreen view
+           at all. Offering it produced a full-screen "display detached" label
+           with the real window invisible and only Esc to escape. `detachPatch`
+           enforces mutual exclusion with full frame; the Fullscreen API is
+           browser state it cannot reach, so the exclusion is enforced here (and
+           the two detach call sites also call `fs.exit()`). -->
+      {#if isDetached}
+        <div class="ctx-note">picture is detached — re-attach to use fullscreen</div>
+      {:else if multiMonitor}
         {#each availableScreens as screen (screen.id)}
           <button
             class="ctx-item"
@@ -376,6 +387,12 @@
   .ctx-item:focus-visible {
     background: rgba(96, 165, 250, 0.1);
     outline: none;
+  }
+  .ctx-note {
+    padding: 6px 12px;
+    font-size: 0.72rem;
+    color: var(--text-dim);
+    pointer-events: none;
   }
   .ctx-sep {
     height: 1px;

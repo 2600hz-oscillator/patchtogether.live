@@ -411,10 +411,12 @@
   import { planDeleteBridge } from '$lib/graph/delete-bridge';
   import DetachedDisplay from '$lib/ui/modules/DetachedDisplay.svelte';
   import {
+    DETACHED_KEYS,
     REATTACH_CLEARS,
     detachPatch,
     detachedRect,
     isDetached,
+    placeDetached,
     supportsDetachedDisplay,
   } from '$lib/ui/modules/detached-display';
   import { goto } from '$app/navigation';
@@ -4461,6 +4463,12 @@
     const bridgePlans: (ReturnType<typeof planDeleteBridge>)[] = [];
     for (const n of payload.nodes) {
       if (isPinnedNode(patch.nodes[n.id])) continue;
+      // ⚠ THE SAME `undeletable` REFUSAL `deleteNode` MAKES. The fold's comment
+      // above argues that two routes to the same rack must not disagree, and
+      // this path only ever guarded `isPinnedNode` — so Backspace deleted a def
+      // the right-click menu refuses (TIMELORDE). The surplus sweep resurrects
+      // it, so it self-healed, which is exactly why nobody noticed.
+      if (defLookup(patch.nodes[n.id]?.type ?? '')?.undeletable) continue;
       const plan = planDeleteBridge(n.id, workNodes, workEdges, defLookup);
       bridgePlans.push(plan);
       // Simulate this delete for the NEXT node's plan: drop the node, drop every
@@ -4489,6 +4497,7 @@
         // can't be in a SvelteFlow delete payload — but guard anyway (the
         // shared delete discipline: pinned nodes are undeletable).
         if (isPinnedNode(patch.nodes[n.id])) continue;
+        if (defLookup(patch.nodes[n.id]?.type ?? '')?.undeletable) continue;
         if (patch.nodes[n.id]) delete patch.nodes[n.id];
         // Also drop any edges that referenced the deleted node.
         for (const [edgeId, edge] of Object.entries(patch.edges)) {
@@ -4504,6 +4513,11 @@
         for (const e2 of plan?.bridgeEdges ?? []) {
           if (!patch.nodes[e2.source.nodeId] || !patch.nodes[e2.target.nodeId]) continue;
           patch.edges[e2.id] = e2;
+        }
+        // Refusals are TRACED here exactly as `deleteNode` traces them — the
+        // keyboard path used to cut a chain with no signal at all.
+        for (const r of plan?.refused ?? []) {
+          trace(`bridge refused ${r.source.nodeId}.${r.source.portId} → ${r.target.nodeId}.${r.target.portId}: ${r.reason}`);
         }
       }
     }, LOCAL_ORIGIN);
@@ -4705,7 +4719,14 @@
    *  gesture is one undo entry. Same helper the module's own surfaces call. */
   function detachDisplayFor(nodeId: string): void {
     const live = patch.nodes[nodeId] as ModuleNode | undefined;
-    const rect = detachedRect(live, detachedViewport);
+    // Open clear of the node's own tile — the node menu is one of the two
+    // re-attach entry points, and a panel covering the tile blocks it.
+    const el = document.querySelector(`.svelte-flow__node[data-id="${nodeId}"]`);
+    const box = el?.getBoundingClientRect();
+    const saved = live?.data?.[DETACHED_KEYS.x] !== undefined;
+    const rect = saved
+      ? detachedRect(live, detachedViewport)
+      : placeDetached(detachedViewport, box ? { x: box.x, y: box.y, w: box.width, h: box.height } : undefined);
     const data = detachPatch(rect);
     mutateNode(nodeId, (n) => {
       if (!n.data) n.data = {};
