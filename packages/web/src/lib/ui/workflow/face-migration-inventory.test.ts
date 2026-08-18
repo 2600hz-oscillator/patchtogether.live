@@ -322,8 +322,8 @@ describe('face-migration inventory — blockers resolve, in both directions', ()
 });
 
 describe('face-migration inventory — blockers are LIVE, measured against the TREE', () => {
-  // The legs above check the blocker list against ITSELF: declared with an
-  // issue OK, named by something OK. Both stay true after a capability ships,
+  // The legs above check the blocker list against ITSELF: is it declared with an
+  // issue, and does anything name it. Both stay true after a capability SHIPS,
   // and that is the whole of #1799 — `needs-extension-registry` outlived #1512
   // by days, with two modules already plugged into the seam it claimed was
   // absent. These legs ask the question the other two structurally cannot: IS
