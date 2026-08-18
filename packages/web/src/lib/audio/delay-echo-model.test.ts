@@ -315,13 +315,13 @@ describe('the curated face — the ladder, DERIVED', () => {
     // rows, and 4 controls is `ceil(4/3) = 2`.
     const hasGlyph = delayDef.face?.glyph !== 'none' && delayDef.face?.glyph !== undefined;
     expect(hasGlyph).toBe(true);
-    const three = laneBodyPlan(3, true, 'full');
+    const three = laneBodyPlan(3, 'trace', 'full');
     expect(three, 'three cells fit ONE plate row, so the glyph strip still fits').toMatchObject({
       layout: 'plate',
       cellCount: 3,
       glyph: true,
     });
-    const four = laneBodyPlan(4, true, 'full');
+    const four = laneBodyPlan(4, 'trace', 'full');
     expect(four, 'a fourth cell forces a second row and the glyph is dropped').toMatchObject({
       cellCount: 4,
       glyph: false,

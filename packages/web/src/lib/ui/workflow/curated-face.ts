@@ -33,6 +33,8 @@ import {
   PLATE_MAX_ROWS,
   PLATE_ROW_H,
   laneBodyPlan,
+  laneGlyphFor,
+  type LaneGlyph,
 } from './module-shell-model';
 
 /** The curation LADDER — the tiers a face is sliced into. Distinct from the
@@ -58,7 +60,8 @@ export const LANE_PLATE_MAX_CELLS = PLATE_COLS * PLATE_MAX_ROWS;
  *   compact → three md knob columns, or TWO plus the glyph
  *             (laneBodyPlan's LANE_ROW_MAX_CELLS / LANE_ROW_MAX_CELLS_WITH_GLYPH);
  *   full    → the 3×2 plate grid = SIX cells (LANE_PLATE_MAX_CELLS).
- * Use `faceTierCap(tier, hasGlyph)` — never a raw FACE_TIER_CAPS lookup — so
+ * Use `faceTierCap(tier, laneGlyphFor(def))` — never a raw FACE_TIER_CAPS
+ * lookup, and never a hand-rolled glyph predicate (#1785) — so
  * the SELECTED count and the RENDERED count are the same number by
  * construction (the authored-intent mismatch this reconciles: faces documented
  * a 3-control compact tile the shell truncated to 2, and an 8-control full face
@@ -227,9 +230,11 @@ export function faceLaneCellHeights(def: FaceDefLike): number[] {
  * The EFFECTIVE cap for a tier — the ladder, reconciled with the lane fit plan.
  * At 'compact' a glyph-bearing face surfaces two cells (the glyph takes the
  * third column's room) and a glyph-less face three; at 'full' the plate holds
- * six DESIGN cells (ranked controls outrank the glyph, which simply drops when
- * the cells need both rows) — fewer when the face's own cells are too tall for
- * two rows, e.g. a face of 96 px faders, which leaves room for one plate row.
+ * six DESIGN cells (ranked controls outrank a `'trace'` glyph, which simply
+ * drops when the cells need both rows) — fewer when the face's own cells are
+ * too tall for two rows, e.g. a face of 96 px faders, which leaves room for one
+ * plate row. A `'picture'` glyph INVERTS that precedence (#1785): it is
+ * reserved first and the cells take what is left.
  *
  * ⚠ THE CAP IS THE PLAN'S OWN ANSWER, not a parallel derivation. It hands
  * `laneBodyPlan` the SAME per-cell heights the shell will render, so "selected"
@@ -249,14 +254,14 @@ export function faceLaneCellHeights(def: FaceDefLike): number[] {
  */
 export function faceTierCap(
   tier: FaceTier,
-  hasGlyph: boolean,
+  glyph: LaneGlyph,
   cells: number | readonly number[] = PLATE_ROW_H,
 ): number {
   if (tier === 'dock') return FACE_TIER_CAPS.dock;
   const plan =
     typeof cells === 'number'
-      ? laneBodyPlan(LANE_PLATE_MAX_CELLS, hasGlyph, tier, cells)
-      : laneBodyPlan(cells, hasGlyph, tier);
+      ? laneBodyPlan(LANE_PLATE_MAX_CELLS, glyph, tier, cells)
+      : laneBodyPlan(cells, glyph, tier);
   return plan.cellCount;
 }
 
@@ -362,6 +367,17 @@ export interface FaceDefLike {
   face?: ModuleFace;
   params?: readonly FaceParamLike[];
   controlFamilies?: readonly { id: string; label?: string }[];
+  /**
+   * The def's signal DOMAIN — read for exactly one reason, and it is the same
+   * geometric one the param fields above are here for: `domain === 'video'`
+   * means the tile's glyph slot holds the module's LIVE PICTURE rather than a
+   * decorative trace, and a picture OUTRANKS ranked cells in the lane fit plan
+   * (#1785, `laneGlyphFor`). Without it the selector sized every video face as
+   * though it had no glyph at all while the shell rendered one — two answers to
+   * one question, and a promoted video module lost its rack thumbnail between
+   * them.
+   */
+  domain?: string;
 }
 
 const FAMILY_TEMPLATE = /^(.+)-\{n\}$/;
@@ -474,7 +490,14 @@ export function curatedFace(def: FaceDefLike, tier: FaceTier): CuratedFace | nul
 
   const glyph = face.glyph ?? 'none';
   const cellHeights = faceLaneCellHeights(def);
-  const cap = faceTierCap(tier, glyph !== 'none', cellHeights);
+  // ⚠ `laneGlyphFor(def)`, NOT `glyph !== 'none'` (#1785). The declared glyph
+  // is only half the question: a VIDEO-domain def paints a live picture in the
+  // same slot while declaring `glyph: 'none'` (it must — a trace on a def with
+  // no audio output is a dead glyph the face lint refuses). Asking the declared
+  // half alone sized every video face as glyph-LESS while the shell rendered it
+  // glyph-BEARING, so `curatedFace` selected three compact cells and the tile
+  // painted two. `laneGlyphFor` is the one derivation the shell reads too.
+  const cap = faceTierCap(tier, laneGlyphFor(def), cellHeights);
   // PF-22 — the DOCK renders the hero picture, so it keeps the whole order; a
   // LANE cannot paint a 280px panel in a 46px column, so the picture does not
   // consume a lane rank. See `laneOrder`. `foldedOrder` applies at EVERY tier:
