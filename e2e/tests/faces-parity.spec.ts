@@ -513,6 +513,34 @@ async function centreOf(control: Locator): Promise<{ cx: number; cy: number }> {
   });
 }
 
+/**
+ * `centreOf`'s twin for a control driven by a gesture that needs the WHOLE box
+ * rather than its centre — today exactly the 2-D pad, whose drive is a diagonal
+ * from the centre toward a corner. Same scroll, same one-round-trip shape, same
+ * equivalence argument.
+ *
+ * ⚠ IT EXISTS BECAUSE THE `xy` ARM WAS THE ONE ARM THAT NEVER SCROLLED, and
+ * that was invisible until a face declared a pad. `centreOf` returns a centre,
+ * so the pad arm — which needs width/height to aim at a corner — was written
+ * with a bare `boundingBox()` and the scroll silently dropped out. Nothing
+ * caught it because `face.xyPads` had NO ADOPTER: the kind shipped ahead of its
+ * first consumer, so this branch had never executed against a real faceplate.
+ *
+ * MEASURED on `backdraft`, the first adopter: the TILT pad's box came back at
+ * y=774..870 in a 720-tall viewport — entirely below the fold —
+ * `document.elementFromPoint` at both the grab and the release point returned
+ * NONE, and the drag wrote nothing. The failure surfaced as "'camTiltX' did not
+ * move", which reads like a pad wired to one axis: a true statement about the
+ * symptom that points at the wrong subject.
+ */
+async function rectOf(control: Locator): Promise<{ x: number; y: number; width: number; height: number }> {
+  return await control.evaluate((el) => {
+    el.scrollIntoView({ block: 'center', inline: 'center' });
+    const r = el.getBoundingClientRect();
+    return { x: r.x, y: r.y, width: r.width, height: r.height };
+  });
+}
+
 async function dragKnob(page: Page, knob: Locator, p: SpecParam, current: number): Promise<void> {
   const { cx, cy } = await centreOf(knob);
 
@@ -619,7 +647,9 @@ async function driveCell(
     const before = await Promise.all(axes.map((pid) => readParam(page, nodeId, pid)));
     // Drag from the pad's centre toward its lower-left corner: both axes move,
     // and away from centre so a default-at-an-edge param still has travel.
-    const box = (await pad.boundingBox())!;
+    // SCROLL FIRST — see `rectOf`. A pad below the fold reports a perfectly
+    // good box that no pointer can reach.
+    const box = await rectOf(pad);
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
     await page.mouse.down();
     await page.mouse.move(box.x + box.width * 0.15, box.y + box.height * 0.85, { steps: 8 });

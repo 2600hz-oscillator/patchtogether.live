@@ -81,11 +81,25 @@ export function loadContention(dir = join(ROOT, 'e2e/tests')) {
  * @type {{ spec: string, why: string }[]}
  */
 export const PENDING_FIRST_MEASUREMENT = [
-  // EMPTY, and that is the point: every entry here is a debt with a deadline.
-  // All six that stood on 2026-08-17 were paid in one accept against ci.yml run
-  // 32069537806 — the gate reddens on a stale entry exactly as loudly as on a
-  // missing one, so an entry whose first measurement has landed MUST be deleted
-  // rather than left as a record that it once existed.
+  {
+    spec: 'backdraft-preview-toggle.spec.ts',
+    why:
+      'lands 2026-08-17 with owner review round 1 of the backdraft faceplate (the preview ' +
+      'ON/OFF collapse). No ci.yml run containing it has completed, so there are no blob ' +
+      'reports to accept a cost from. MEASURED under E2E_SWIFTSHADER=1 — the renderer that ' +
+      'actually failed it — single-worker: 57.5 s across its five cases, heaviest case 16.8 s. ' +
+      '⚠ REVISED DOWN from 1.9 min, and both halves of that are the interesting part: its ' +
+      'FIXTURE wired LINES -> BACKDRAFT -> videoOut for ALL FIVE cases, so four DOM-only ' +
+      'tests each paid for a software-rasterized 1024x768 feedback pass per frame (the chain ' +
+      'now lives in the ONE case that needs it); and its INSTRUMENT called toDataURL() on the ' +
+      'whole surface once per frame, ~77k pixels x 30 frames x two probes, which now reads a ' +
+      'strided 16x16 sample and EXITS EARLY the moment it has seen two distinct frames. It is ' +
+      'still a VIDEO spec and belongs in a contention class — one case drives a live GL ' +
+      'feedback chain — but it no longer costs more than its subject. Still a LOCAL number ' +
+      'and not what the planner needs. Run `task e2e:timings:accept -- <run-id>` on the first ' +
+      'green main run after this merges and DELETE this entry — the gate reddens on a stale ' +
+      'entry as loudly as on a missing one.',
+  },
 ];
 
 /** Median of a numeric array (used as the cost of an unmeasured file). */

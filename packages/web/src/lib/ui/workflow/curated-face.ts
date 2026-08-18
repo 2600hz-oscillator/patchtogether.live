@@ -266,6 +266,29 @@ export interface FaceControl {
   familyId?: string;
   /** Friendly display name (ParamDef.label / humanized family or static key). */
   label: string;
+  /**
+   * Present iff this cell is a declared 2-D PAD (`face.xyPads`) — the PARTNER
+   * axis's ParamDef id, i.e. the second param this ONE cell binds.
+   *
+   * ⚠ IT EXISTS BECAUSE `xy` IS THE ONLY CELL KIND WITH ARITY 2, and every
+   * coverage rule in the repo counts params per CELL. Without it a pad's `y`
+   * axis is invisible to the dock render-plan parity gate — the gate that
+   * exists to prove no control silently fails to reach the user — so the two
+   * available authorings were BOTH red and neither was wrong:
+   *
+   *   `y` listed in the page  → the page resolves it to its OWN cell, so the
+   *                             dock paints a stray dial beside the pad that
+   *                             already contains it (faces-parity: two unbacked
+   *                             extras in the control multiset);
+   *   `y` omitted from the page → the plan sees it ZERO times and parity calls
+   *                             it a dropped control.
+   *
+   * Found by `backdraft`, the first `face.xyPads` adopter in the repo: the kind
+   * shipped one PR ahead of any consumer, and the FOLD half never landed. The
+   * pure gate and the DOM gate disagreed, which is exactly the signature of a
+   * model that is blind to something the renderer does.
+   */
+  padPartnerParamId?: string;
 }
 
 /** A resolved cluster sub-header inside a page/band (the front-side mirror of
@@ -365,7 +388,13 @@ export function resolveFaceControl(key: string, def: FaceDefLike): FaceControl {
   }
   const param = params.find((p) => p.id === key);
   if (param) {
-    return { key, kind: 'param', paramId: key, label: param.label || humanize(key) };
+    const ctl: FaceControl = { key, kind: 'param', paramId: key, label: param.label || humanize(key) };
+    // A declared pad ANCHORS at its `x` key and binds `y` in the SAME cell.
+    // Recorded here so every coverage consumer credits both axes to one cell
+    // instead of losing the partner (see `padPartnerParamId`).
+    const pad = (def.face?.xyPads ?? []).find((p) => p.x === key);
+    if (pad) ctl.padPartnerParamId = pad.y;
+    return ctl;
   }
   return { key, kind: 'static', label: humanize(key) };
 }
@@ -379,7 +408,16 @@ export function resolveFaceControl(key: string, def: FaceDefLike): FaceControl {
  * dock); module-face-lint fails that authoring mistake loudly.
  */
 function resolvePage(page: ModuleFacePage, def: FaceDefLike): ResolvedFacePage {
-  const all = page.controls.map((k) => resolveFaceControl(k, def));
+  // ⚠ THE FOLD APPLIES HERE TOO, and it did not used to. `curatedFace` folds
+  // pad partners out of `order` (`foldedOrder`) but pages were resolved from
+  // the RAW `page.controls`, so a face that listed both axes — which the xyPads
+  // lint REQUIRES in `face.order`, and which reads natural to write in a page —
+  // painted the partner twice: once inside the pad, once as a stray dial. One
+  // fold seam, applied at every place a control roster is resolved.
+  const partners = new Set((def.face?.xyPads ?? []).map((p) => p.y));
+  const all = page.controls
+    .filter((k) => !partners.has(k))
+    .map((k) => resolveFaceControl(k, def));
   const hint = page.hint?.trim() ?? '';
   const declared = page.clusters ?? [];
   if (!declared.length) {

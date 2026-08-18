@@ -37,7 +37,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 import { pressFlipKey } from './_flip-key';
-import { UNMIGRATED_AUDIO_MODULE } from './_face-fixtures';
+import { UNMIGRATED_AUDIO_MODULE, UNMIGRATED_VIDEO_MODULE } from './_face-fixtures';
 
 async function gotoWorkflow(page: Page): Promise<void> {
   await page.goto('/rack');
@@ -122,8 +122,16 @@ test.describe('P1 dock/expand UX fixes (?shell=1)', () => {
   });
 
   // FIX 2 (re-specced for the owner SPLIT extension) — expand migrated A,
-  // then un-migrated B (its verbatim LEGACY card — backdraft is one of the 18
-  // useStore()-at-init cards that crashed the old swap): A+B sit SIDE-BY-SIDE.
+  // then un-migrated B (its verbatim LEGACY card — a VIDEO card, i.e. one of
+  // the 18 useStore()-at-init cards that crashed the old swap): A+B sit
+  // SIDE-BY-SIDE.
+  //
+  // ⚠ B IS DERIVED, NOT NAMED. It was hard-coded to `backdraft` until the first
+  // VIDEO face promoted it, at which point B rendered a curated face and the
+  // "placeholder is visible" assertion failed for a reason that is not a bug —
+  // the exact rot `UNMIGRATED_AUDIO_MODULE` already existed to prevent one
+  // domain over. `UNMIGRATED_VIDEO_MODULE` checks un-promoted + domain:video
+  // with the predicates these assertions depend on.
   // Then migrated C: it replaces the least-recently-opened pane (A). ESC
   // closes the whole view. Every step is a REAL click on the lane pill; zero
   // pageerrors allowed (the crash class stays shut across pane mounts).
@@ -133,7 +141,7 @@ test.describe('P1 dock/expand UX fixes (?shell=1)', () => {
     await gotoWorkflow(page);
     await spawnPatch(page, [
       { id: 'a1', type: 'tidyVco', position: { x: 30, y: 40 } }, // migrated
-      { id: 'b1', type: 'backdraft', position: { x: 250, y: 40 } }, // un-migrated legacy (video)
+      { id: 'b1', type: UNMIGRATED_VIDEO_MODULE, position: { x: 250, y: 40 } }, // un-migrated legacy (video)
       { id: 'c1', type: 'vca', position: { x: 470, y: 40 } }, // migrated
     ]);
     const tileA = page.locator('.svelte-flow__node[data-id="a1"] [data-testid="module-shell"]');
