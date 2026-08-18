@@ -71,7 +71,13 @@
     if (!videoEngine) { rafId = requestAnimationFrame(draw); return; }
     const ctx2d = canvasEl.getContext('2d', { alpha: false });
     if (ctx2d) {
-      try { videoEngine.blitOutputToDrawingBuffer(id); } catch { /* never nuke the rAF loop */ }
+      // #1802 — gated preview blit: false ⇒ this card is off-screen or the
+      // frame is inside the preview cadence window, so skip the drawImage
+      // below (the synchronising half, and the expensive one). See
+      // VideoEngine.blitOutputForPreview for why "off" has to mean "not there".
+      let blitted = false;
+      try { blitted = videoEngine.blitOutputForPreview(id); } catch { /* never nuke the rAF loop */ }
+      if (!blitted) { rafId = requestAnimationFrame(draw); return; }
       const src = videoEngine.canvas as CanvasImageSource;
       const cw = canvasEl.width;
       const ch = canvasEl.height;

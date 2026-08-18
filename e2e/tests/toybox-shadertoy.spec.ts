@@ -69,7 +69,7 @@ async function spawnToybox(page: Page): Promise<void> {
   await card.waitFor({ state: 'visible', timeout: 10_000 });
 }
 
-test.describe('TOYBOX Shadertoy runtime', () => {
+test.describe('TOYBOX Shadertoy runtime @webgl-serial', () => {
   test('a FRAG shader visibly transforms the layer below it', async ({ page }) => {
     test.setTimeout(90_000);
     const errors: string[] = [];

@@ -60,7 +60,10 @@
     if (!videoEngine) { drawRaf = requestAnimationFrame(draw); return; }
     const ctx2d = canvasEl.getContext('2d', { alpha: false });
     if (ctx2d) {
-      try { videoEngine.blitOutputToDrawingBuffer(id); } catch { /* never nuke the loop */ }
+      // #1802 — gated preview blit (see VideoEngine.blitOutputForPreview).
+      let blitted = false;
+      try { blitted = videoEngine.blitOutputForPreview(id); } catch { /* never nuke the loop */ }
+      if (!blitted) { drawRaf = requestAnimationFrame(draw); return; }
       const src = videoEngine.canvas as CanvasImageSource;
       ctx2d.fillStyle = '#050608';
       ctx2d.fillRect(0, 0, canvasEl.width, canvasEl.height);

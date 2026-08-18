@@ -195,11 +195,16 @@
     }
     const ctx2d = canvasEl.getContext('2d', { alpha: false });
     if (ctx2d) {
+      // #1802 — gated preview blit (see VideoEngine.blitOutputForPreview).
+      // The display polls above (`ready`/`presetName`/…) already ran, so the
+      // early return only skips the paint.
+      let blitted = false;
       try {
-        videoEngine.blitOutputToDrawingBuffer(id);
+        blitted = videoEngine.blitOutputForPreview(id);
       } catch {
         /* never let an engine error nuke the rAF loop */
       }
+      if (!blitted) { rafId = requestAnimationFrame(draw); return; }
       const src = videoEngine.canvas as CanvasImageSource;
       const cw = canvasEl.width;
       const ch = canvasEl.height;

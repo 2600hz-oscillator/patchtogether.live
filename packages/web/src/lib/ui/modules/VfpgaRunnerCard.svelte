@@ -195,7 +195,11 @@
     // smpte-bars pattern; every other preset left the canvas stale).
     if (ctx2d && canvasEl) {
       try {
-        ve.blitOutputToDrawingBuffer(id);
+        // #1802 — gated preview blit (see VideoEngine.blitOutputForPreview).
+        // A WRAP, not a return: the CV scopes and gate LEDs below are read
+        // from the engine, not from the drawing buffer, and must keep
+        // updating on a frame whose preview was gated.
+        if (ve.blitOutputForPreview(id)) {
         const src = ve.canvas as CanvasImageSource;
         const sw = ve.canvas.width || PREVIEW_W;
         const sh = ve.canvas.height || PREVIEW_H;
@@ -205,6 +209,7 @@
         ctx2d.fillRect(0, 0, cw, ch);
         const r = fitRect(sw, sh, cw, ch);
         ctx2d.drawImage(src, r.x, r.y, r.w, r.h);
+        }
       } catch { /* engine not ready / GL hiccup — keep the loop alive */ }
     }
     // CV scopes: read each active CV slot's post scale+offset value back.
