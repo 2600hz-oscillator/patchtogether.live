@@ -1,5 +1,29 @@
 // e2e/tests/doom-mp-lockstep-sharedstate.spec.ts
 //
+// ⚠ DOOM SPECS ARE NORMALLY OFF-LIMITS — the standing owner ruling is
+//   "do not fuck with doom in any way without specific approval". The
+//   tic-count assertions in this file were re-expressed under a SPECIFIC
+//   approval given by the owner on 2026-08-18, verbatim:
+//     "okay see if you can go make the doom tests blurrier and less flakey,
+//      just knowing doom renders and our kb logic and basic game nav works
+//      is fine"
+//   That approval covers THE SPECS ONLY — not video/modules/doom.ts, not the
+//   WASM/WAD assets, not the netcode. See #1848 and e2e/tests/_doom-helpers.ts.
+//
+// ── WHAT CHANGED (#1848) ──────────────────────────────────────
+//
+// The tic FLOORS here are load-bearing anti-vacuity guards and they STAY —
+// `gametic > 20` says the sims did not freeze, and the bigger one exists so
+// the "log stays bounded" assertion cannot pass on a game too short for an
+// unpruned log to have exceeded the bound. What was wrong was HOW THE SIM WAS
+// DRIVEN TO REACH THEM: fixed wall-clock bursts. DOOM's game clock IS the frame
+// clock, so `waitForTimeout(500) x4` is ~120 tics on a real GPU and ~15 under
+// SwiftShader — i.e. the floors were satisfiable on one renderer and not the
+// other, which is a flake, not a check. The sim is now driven in GAME TICS
+// until the floor is actually reachable, and the big floor is DERIVED from the
+// log bound it protects instead of being a second hand-typed number that can
+// drift away from it.
+//
 // @collab — P1 TRUE DETERMINISTIC LOCKSTEP shared-state proof.
 //
 // THE POINT (the whole reason P1 exists)
@@ -42,9 +66,21 @@
 import { test, expect, type Page, type Browser, type BrowserContext } from '@playwright/test';
 import { spawnPatch, claimKeyboard, type SpawnNode } from './_helpers';
 import { SYNC_BUDGET_MS } from './_collab-helpers';
+import { SIM_BUDGET_MS, waitTics } from './_doom-helpers';
 
 const GS_LEVEL = 0;
 const NODE_ID = 'doom-ls';
+
+/** Ceiling on the arbiter's shared ticcmd-log. Covers the input-delay + prune
+ *  window + jitter for 2 players, and is independent of game length. */
+const LOG_BOUND = 256;
+
+/** The gametic past which an UNPRUNED log (≈ 2 entries per tic for 2 players)
+ *  would ALREADY have exceeded LOG_BOUND — plus slack. Derived, not typed: the
+ *  floor exists only to stop the LOG_BOUND assertion being vacuous, so if the
+ *  bound moves this must move with it or the guard silently stops guarding. */
+const MIN_GAMETIC = Math.ceil(LOG_BOUND / 2) + 16;
+
 
 interface Peer {
   ctx: BrowserContext;
@@ -478,7 +514,12 @@ test.describe('@collab DOOM multiplayer — P1 true lockstep shared state', () =
         await holdKey(p2.page, 'ArrowUp').catch(() => {});
         await holdKey(p2.page, 'ControlLeft').catch(() => {});
         await holdKey(p2.page, t2k).catch(() => {});
-        await p1.page.waitForTimeout(380);
+        // TICS, not ms. The point of this loop is PER-TIC INPUT VARIATION the
+        // transport must preserve, so the burst length has to be measured in
+        // the same unit the variation lives in. 12 tics is 12 tics on every
+        // renderer; 380 ms was ~23 locally and ~3 under SwiftShader, which
+        // quietly changed how many distinct ticcmds each burst produced.
+        await waitTics(p1.page, NODE_ID, 12, 20_000);
         await releaseKey(p1.page, t1k).catch(() => {});
         await releaseKey(p2.page, t2k).catch(() => {});
       }
@@ -550,13 +591,19 @@ test.describe('@collab DOOM multiplayer — P1 true lockstep shared state', () =
       // The host keeps advancing.
       const before = (await tics(p1.page, NODE_ID)).gametic;
       await holdKey(p1.page, 'ArrowUp');
-      await p1.page.waitForTimeout(700);
       await holdKey(p2.page, 'ArrowUp'); // P2 must also feed input so the barrier releases
-      await p1.page.waitForTimeout(700);
+      // The claim is "the sim ADVANCED", so wait in the unit the claim is about.
+      // A wall-clock pair of 700 ms waits asserted "advanced by however many
+      // tics this machine managed", which on a starved runner can be zero.
+      const hostAdvance = await waitTics(p1.page, NODE_ID, 8, SIM_BUDGET_MS);
       await releaseKey(p1.page, 'ArrowUp').catch(() => {});
       await releaseKey(p2.page, 'ArrowUp').catch(() => {});
       const after = (await tics(p1.page, NODE_ID)).gametic;
-      expect(after, 'host keeps advancing (no freeze)').toBeGreaterThan(before);
+      expect(
+        after,
+        `host keeps advancing (no freeze). before=${before} after=${after} ` +
+          `ticsObserved=${hostAdvance}`,
+      ).toBeGreaterThan(before);
 
       // ── ISSUE #348: the shared ticcmd-log stays BOUNDED, not linear ──────────
       // By now both sims have advanced many tics (gametic well past the seed).
@@ -572,13 +619,24 @@ test.describe('@collab DOOM multiplayer — P1 true lockstep shared state', () =
       const arbiterIsP1 = (await getState(p1.page, NODE_ID)).isNetArbiter;
       const arbiter = arbiterIsP1 ? p1 : p2;
       const other = arbiterIsP1 ? p2 : p1;
-      // Drive both peers a while longer so the gametic climbs well past the log
-      // size — if the log tracked gametic (unbounded) this is where it'd blow up.
-      for (let i = 0; i < 4; i++) {
-        await holdKey(p1.page, 'ArrowUp').catch(() => {});
-        await holdKey(p2.page, 'ArrowUp').catch(() => {});
-        await arbiter.page.waitForTimeout(500);
-      }
+      // Drive both peers until the gametic climbs well past the log size — if
+      // the log tracked gametic (unbounded) this is where it'd blow up.
+      //
+      // ⚠ DRIVEN IN GAME TICS, and to a target DERIVED from the bound below.
+      // The old form was four 500 ms bursts and a separately hand-typed floor
+      // of 140. Two problems: the bursts are a different number of tics on
+      // every renderer (so the floor was reachable on a GPU and not under
+      // SwiftShader), and the floor was a second literal that could drift away
+      // from the bound whose vacuity it was protecting. MIN_GAMETIC is now
+      // computed FROM LOG_BOUND, so changing one moves the other.
+      await holdKey(p1.page, 'ArrowUp').catch(() => {});
+      await holdKey(p2.page, 'ArrowUp').catch(() => {});
+      const ticsDriven = await waitTics(
+        arbiter.page,
+        NODE_ID,
+        Math.max(0, MIN_GAMETIC - (await tics(arbiter.page, NODE_ID)).gametic),
+        SIM_BUDGET_MS,
+      );
       await releaseKey(p1.page, 'ArrowUp').catch(() => {});
       await releaseKey(p2.page, 'ArrowUp').catch(() => {});
       const gtArb = (await tics(arbiter.page, NODE_ID)).gametic;
@@ -586,16 +644,23 @@ test.describe('@collab DOOM multiplayer — P1 true lockstep shared state', () =
       // Sanity: lockstep is active so the log is real (not the -1 sentinel).
       expect(arbLog, 'arbiter shared log is live').toBeGreaterThanOrEqual(0);
       // BOUNDED: the log holds far fewer entries than a never-pruned log would
-      // (≈ 2 × gametic). 256 covers the input-delay + prune window + jitter for
-      // 2 players with comfortable headroom, and is independent of game length.
+      // (≈ 2 × gametic). LOG_BOUND covers the input-delay + prune window +
+      // jitter for 2 players with comfortable headroom, and is independent of
+      // game length.
       expect(
         arbLog,
         `shared ticcmd-log must stay BOUNDED by barrier-floor pruning, not grow ` +
           `~2×gametic. gametic=${gtArb} logSize=${arbLog} (unpruned would be ≈${2 * gtArb}).`,
-      ).toBeLessThan(256);
+      ).toBeLessThan(LOG_BOUND);
       // And the game must actually have run long enough that an unpruned log
-      // WOULD have exceeded the bound — otherwise the assertion is vacuous.
-      expect(gtArb, 'sim ran long enough that pruning is load-bearing').toBeGreaterThan(140);
+      // WOULD have exceeded the bound — otherwise the assertion above is
+      // vacuous. DERIVED from LOG_BOUND (see MIN_GAMETIC), never re-typed.
+      expect(
+        gtArb,
+        `sim ran long enough that pruning is load-bearing: an unpruned log at ` +
+          `gametic=${gtArb} would hold ≈${2 * gtArb}, which must exceed the ` +
+          `LOG_BOUND=${LOG_BOUND} the assertion above checks. ticsDriven=${ticsDriven}`,
+      ).toBeGreaterThan(MIN_GAMETIC - 1);
       // Shared state still holds AFTER pruning: both peers agree at a common tic.
       const cA = await checksumAt(arbiter.page, NODE_ID);
       const cB = await checksumAt(other.page, NODE_ID);

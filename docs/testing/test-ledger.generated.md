@@ -47,7 +47,7 @@ _none_
 ### spawn-smoke QUARANTINE map (e2e/tests/modules.spec.ts) — 1
 - `toybox` — task #102: SwiftShader software-renderer timeout (heavy WebGL)
 
-## Runtime skips — in-body env gates (79)
+## Runtime skips — in-body env gates (78)
 
 `test.skip(cond, reason)` guards that skip AT RUNTIME when an environment
 capability is missing (DB, asset, renderer, hardware). NOT disables — the test
@@ -80,29 +80,28 @@ those at spec granularity and the lane audit checks the realized string.
 - `e2e/tests/doom-aspect.spec.ts:258` — DOOM1.WAD missing
 - `e2e/tests/doom-aspect.spec.ts:57` — (dynamic: ``DOOM WASM not built (status ${wasmShim.status()}).`)
 - `e2e/tests/doom-aspect.spec.ts:67` — (dynamic: ``DOOM1.WAD not on dev server (status ${wadResp.status()}).``)
-- `e2e/tests/doom-audio-output.spec.ts:156` — DOOM WASM and/or DOOM1.WAD not present locally — run `bash packages/web/native/build-doom-wasm.sh` + drop DOOM1.WAD i…
-- `e2e/tests/doom-audio-output.spec.ts:292` — DOOM WASM and/or DOOM1.WAD not present locally — run `bash packages/web/native/build-doom-wasm.sh` + drop DOOM1.WAD i…
+- `e2e/tests/doom-audio-output.spec.ts:203` — DOOM WASM and/or DOOM1.WAD not present locally — run `bash packages/web/native/build-doom-wasm.sh` + drop DOOM1.WAD i…
 - `e2e/tests/doom-cheat-gates.spec.ts:142` — DOOM WASM and/or DOOM1.WAD not present locally — run `bash packages/web/native/build-doom-wasm.sh` + drop DOOM1.WAD i…
 - `e2e/tests/doom-cheat-gates.spec.ts:221` — DOOM WASM and/or DOOM1.WAD not present locally — run `bash packages/web/native/build-doom-wasm.sh` + drop DOOM1.WAD i…
-- `e2e/tests/doom-controls.spec.ts:156` — (dynamic: `skip`)
-- `e2e/tests/doom-controls.spec.ts:212` — (dynamic: `skip`)
-- `e2e/tests/doom-controls.spec.ts:325` — (dynamic: `skip`)
+- `e2e/tests/doom-controls.spec.ts:168` — (dynamic: `skip`)
+- `e2e/tests/doom-controls.spec.ts:250` — (dynamic: `skip`)
+- `e2e/tests/doom-controls.spec.ts:376` — (dynamic: `skip`)
 - `e2e/tests/doom-identity-crossview.spec.ts:202` — @collab — runs on the dedicated COLLAB_JOB lane, not the sharded matrix
 - `e2e/tests/doom-identity-crossview.spec.ts:209` — (dynamic: `assets.reason`)
 - `e2e/tests/doom-identity-crossview.spec.ts:215` — DOOM runtime failed to load on A within 25s
-- `e2e/tests/doom-keyboard-routing.spec.ts:285` — (dynamic: `skip`)
-- `e2e/tests/doom-keyboard-routing.spec.ts:62` — (dynamic: `skip`)
-- `e2e/tests/doom-late-join.spec.ts:192` — @collab — runs on the dedicated COLLAB_JOB lane, not the sharded matrix
-- `e2e/tests/doom-late-join.spec.ts:201` — (dynamic: `assets.reason`)
-- `e2e/tests/doom-late-join.spec.ts:207` — DOOM runtime failed to load on A within 25s
+- `e2e/tests/doom-keyboard-routing.spec.ts:104` — (dynamic: `skip`)
+- `e2e/tests/doom-keyboard-routing.spec.ts:311` — (dynamic: `skip`)
+- `e2e/tests/doom-late-join.spec.ts:220` — @collab — runs on the dedicated COLLAB_JOB lane, not the sharded matrix
+- `e2e/tests/doom-late-join.spec.ts:229` — (dynamic: `assets.reason`)
+- `e2e/tests/doom-late-join.spec.ts:235` — DOOM runtime failed to load on A within 25s
 - `e2e/tests/doom-launch.spec.ts:265` — @collab — runs on the dedicated COLLAB_JOB lane, not the sharded matrix
 - `e2e/tests/doom-launch.spec.ts:275` — (dynamic: `assets.reason`)
 - `e2e/tests/doom-mp-latejoin-freeze.spec.ts:230` — DOOM WASM / WAD missing — run build-doom-wasm.sh + fetch DOOM1.WAD
-- `e2e/tests/doom-mp-lockstep-sharedstate.spec.ts:386` — DOOM WASM / WAD missing — run build-doom-wasm.sh + fetch DOOM1.WAD
-- `e2e/tests/doom-mp-lockstep-sharedstate.spec.ts:642` — DOOM WASM / WAD missing — run build-doom-wasm.sh + fetch DOOM1.WAD
-- `e2e/tests/doom-mp-real.spec.ts:292` — DOOM WASM / WAD missing — run `bash packages/web/native/build-doom-wasm.sh` + fetch DOOM1.WAD
-- `e2e/tests/doom-mp-real.spec.ts:736` — DOOM WASM / WAD missing
-- `e2e/tests/doom-mp-real.spec.ts:815` — DOOM WASM / WAD missing
+- `e2e/tests/doom-mp-lockstep-sharedstate.spec.ts:422` — DOOM WASM / WAD missing — run build-doom-wasm.sh + fetch DOOM1.WAD
+- `e2e/tests/doom-mp-lockstep-sharedstate.spec.ts:707` — DOOM WASM / WAD missing — run build-doom-wasm.sh + fetch DOOM1.WAD
+- `e2e/tests/doom-mp-real.spec.ts:325` — DOOM WASM / WAD missing — run `bash packages/web/native/build-doom-wasm.sh` + fetch DOOM1.WAD
+- `e2e/tests/doom-mp-real.spec.ts:822` — DOOM WASM / WAD missing
+- `e2e/tests/doom-mp-real.spec.ts:901` — DOOM WASM / WAD missing
 - `e2e/tests/doom-multiplayer.spec.ts:158` — @collab — runs on the dedicated COLLAB_JOB lane, not the sharded matrix
 - `e2e/tests/doom-multiplayer.spec.ts:168` — (dynamic: `assets.reason`)
 - `e2e/tests/doom-multiplayer.spec.ts:173` — DOOM runtime failed to load on host within 20s
