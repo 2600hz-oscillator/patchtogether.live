@@ -167,7 +167,28 @@
     align-items: center;
     justify-content: center;
     background: rgba(14, 17, 22, 0.78);
-    backdrop-filter: blur(2px);
+    /* ⚠ NO `backdrop-filter`, AND THIS ONE WAS MEASURED TWICE BECAUSE THE FIRST
+       MEASUREMENT WAS TAKEN OVER THE WRONG SCENE. A viewport-sized backdrop
+       filter re-reads and blurs the whole framebuffer on every frame anything
+       behind it changes, and on the software rasterizer CI runs that is not
+       cheap. Over an EMPTY /rack it looks free (~119 fps either way), which is
+       what an earlier pass here concluded — but the specs that broke open the
+       `m` dock tray first, and with real content behind the scrim, cold-load fps
+       on /rack is (n=3 per condition, each in its own browser):
+
+         with backdrop-filter ....  29.0 /  29.0 /  31.5 fps
+         without .................. 119.7 / 119.8 / 119.7 fps
+         no overlay at all ........ 120.0 / 119.4 / 120.3 fps
+
+       4x, and removing it is indistinguishable from removing the overlay. That
+       matters beyond tidiness: Playwright's actionability waits (`stable`,
+       `boundingBox`) are rAF-driven, so starving frames makes them time out on
+       elements that are present and visible — which is how this surfaced, as
+       `locator.boundingBox: Test timeout` on an element the log had already
+       resolved to "visible".
+
+       Nothing is lost visually: the scrim is already rgba(14,17,22,0.78), so
+       what is behind it is 78% obscured before any blur is applied. */
     color: var(--text);
     user-select: none;
     /* ⚠ NO `animation` AND NO `transition` HERE, AND THAT IS A MEASUREMENT, NOT A
