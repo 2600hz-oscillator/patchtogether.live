@@ -7,7 +7,7 @@
   // PatchPanel pattern (a quad-channel fader layout stripped of the
   // response toggle — ATTENUMIX is the no-extra-controls mixer).
   import type { NodeProps } from '@xyflow/svelte';
-  import Fader from '$lib/ui/controls/Fader.svelte';
+  import NeonFader from '$lib/ui/controls/NeonFader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import { attenumixDef } from '$lib/audio/modules/attenumix';
   import type { ModuleNode } from '$lib/graph/types';
@@ -58,7 +58,7 @@
       <div class="strips">
         {#each channels as p (p.id)}
           <div class="strip">
-            <Fader
+            <NeonFader
               value={paramVal(p.id, p.defaultValue)}
               min={p.min} max={p.max} defaultValue={p.defaultValue}
               label={p.label ?? p.id}
@@ -69,7 +69,7 @@
           </div>
         {/each}
         <div class="strip master">
-          <Fader
+          <NeonFader
             value={paramVal(pMaster.id, pMaster.defaultValue)}
             min={pMaster.min} max={pMaster.max} defaultValue={pMaster.defaultValue}
             label={pMaster.label ?? pMaster.id}

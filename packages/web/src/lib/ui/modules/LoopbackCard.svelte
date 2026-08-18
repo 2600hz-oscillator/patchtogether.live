@@ -18,7 +18,7 @@
   import { nodeMedia, type NodeMediaLease } from '$lib/ui/media/node-media-registry';
   import { type NodeProps } from '@xyflow/svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import Fader from '$lib/ui/controls/Fader.svelte';
+  import NeonFader from '$lib/ui/controls/NeonFader.svelte';
   import { useEngine } from '$lib/audio/engine-context';
   import { setNodeParam } from '$lib/graph/mutate';
   import { loopbackDef } from '$lib/video/modules/loopback';
@@ -328,7 +328,7 @@
     </div>
 
     <div class="fader-grid">
-      <Fader
+      <NeonFader
         value={p('gain')}
         min={0}
         max={2}

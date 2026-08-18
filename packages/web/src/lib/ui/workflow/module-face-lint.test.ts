@@ -758,13 +758,12 @@ describe('module-face lint — DECLARED param cells (face.paramCells) + PANEL ti
           }
           break;
         }
-        // ⚠ ONE CLAUSE FOR BOTH THROWS, DELIBERATELY. `neon-fader` is the same
-        // GESTURE as `fader` in a different visual language, so it can back
-        // exactly the same shapes — and writing the clause twice is how the two
-        // would eventually disagree about what a throw is. Sharing the arm
-        // means a future constraint lands on both by construction; the DENY
-        // arm below still refuses any THIRD kind that arrives without one.
-        case 'neon-fader':
+        // ⚠ THIS ARM WAS SHARED WITH `neon-fader` UNTIL #1794, on the reasoning
+        // that the two were the same GESTURE in different visual languages and
+        // writing the clause twice is how they would eventually disagree about
+        // what a throw is. The kinds have since COLLAPSED — there is one fader
+        // in the app — so the sharing is no longer needed to keep them honest.
+        // The DENY arm below still refuses any kind that arrives without one.
         case 'fader': {
           // A THROW is a CONTINUOUS scale. The one shape it must not back is a
           // discrete roster: those are `segmented`/`selector`/`grid` territory,

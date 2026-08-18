@@ -4,7 +4,7 @@
   // per rising edge). ▷ marks the trigger port, ▭ the gate ports.
 
   import type { NodeProps } from '@xyflow/svelte';
-  import Fader from '$lib/ui/controls/Fader.svelte';
+  import NeonFader from '$lib/ui/controls/NeonFader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import { patch } from '$lib/graph/store';
   import { gatemaidenDef } from '$lib/audio/modules/gatemaiden';
@@ -37,7 +37,7 @@
   <PatchPanel nodeId={id} {inputs} {outputs} panelWidth={180}>
     <div class="body">
       <div class="len">
-        <Fader
+        <NeonFader
           value={paramVal('gateLen')}
           min={0.005} max={2} defaultValue={defaultFor('gateLen')}
           label="Len"

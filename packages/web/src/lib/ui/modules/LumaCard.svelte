@@ -8,7 +8,7 @@
   // hard standard — NO raw side <Handle> jacks). Port `id`s are byte-identical
   // to lumaDef so the CV bridge + persisted edges route unchanged.
   import type { NodeProps } from '@xyflow/svelte';
-  import Fader from '$lib/ui/controls/Fader.svelte';
+  import NeonFader from '$lib/ui/controls/NeonFader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import { setNodeParam } from '$lib/graph/mutate';
   import { lumaDef } from '$lib/video/modules/luma';
@@ -40,10 +40,10 @@
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="body">
       <div class="fader-grid">
-        <Fader value={p('gamma')}           min={0.1} max={3.0}  defaultValue={lumaDef.params.find((x) => x.id === 'gamma')!.defaultValue}           label="Gamma" curve="linear" onchange={setParam('gamma')}           moduleId={id} paramId="gamma" />
-        <Fader value={p('contrast')}        min={0}   max={2}    defaultValue={lumaDef.params.find((x) => x.id === 'contrast')!.defaultValue}        label="Cntr"  curve="linear" onchange={setParam('contrast')}        moduleId={id} paramId="contrast" />
-        <Fader value={p('posterizeLevels')} min={2}   max={16}   defaultValue={lumaDef.params.find((x) => x.id === 'posterizeLevels')!.defaultValue} label="Post"  curve="linear" onchange={setParam('posterizeLevels')} moduleId={id} paramId="posterizeLevels" />
-        <Fader value={p('bias')}            min={-0.5} max={0.5} defaultValue={lumaDef.params.find((x) => x.id === 'bias')!.defaultValue}            label="Bias"  curve="linear" onchange={setParam('bias')}            moduleId={id} paramId="bias" />
+        <NeonFader value={p('gamma')}           min={0.1} max={3.0}  defaultValue={lumaDef.params.find((x) => x.id === 'gamma')!.defaultValue}           label="Gamma" curve="linear" onchange={setParam('gamma')}           moduleId={id} paramId="gamma" />
+        <NeonFader value={p('contrast')}        min={0}   max={2}    defaultValue={lumaDef.params.find((x) => x.id === 'contrast')!.defaultValue}        label="Cntr"  curve="linear" onchange={setParam('contrast')}        moduleId={id} paramId="contrast" />
+        <NeonFader value={p('posterizeLevels')} min={2}   max={16}   defaultValue={lumaDef.params.find((x) => x.id === 'posterizeLevels')!.defaultValue} label="Post"  curve="linear" onchange={setParam('posterizeLevels')} moduleId={id} paramId="posterizeLevels" />
+        <NeonFader value={p('bias')}            min={-0.5} max={0.5} defaultValue={lumaDef.params.find((x) => x.id === 'bias')!.defaultValue}            label="Bias"  curve="linear" onchange={setParam('bias')}            moduleId={id} paramId="bias" />
       </div>
     </div>
   </PatchPanel>

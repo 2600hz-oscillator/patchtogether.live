@@ -17,7 +17,7 @@
   // implementation and both surfaces make exactly the same sound.
 
   import type { NodeProps } from '@xyflow/svelte';
-  import Fader from '$lib/ui/controls/Fader.svelte';
+  import NeonFader from '$lib/ui/controls/NeonFader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { karplusDef } from '$lib/audio/modules/karplus';
@@ -126,18 +126,18 @@
         <div class="group wide">
           <header>STRING</header>
           <div class="fader-row">
-            <Fader value={tune}       min={P.tune.min}       max={P.tune.max}       curve={P.tune.curve}       units={P.tune.units}  defaultValue={defaultFor('tune')}       label="Tune" onchange={set('tune')}       moduleId={id} paramId="tune"       readLive={live('tune')} />
-            <Fader value={decay}      min={P.decay.min}      max={P.decay.max}      curve={P.decay.curve}      units={P.decay.units} defaultValue={defaultFor('decay')}      label="Dec"  onchange={set('decay')}      moduleId={id} paramId="decay"      readLive={live('decay')} />
-            <Fader value={brightness} min={P.brightness.min} max={P.brightness.max} curve={P.brightness.curve}                       defaultValue={defaultFor('brightness')} label="Brt"  onchange={set('brightness')} moduleId={id} paramId="brightness" readLive={live('brightness')} />
-            <Fader value={stiffness}  min={P.stiffness.min}  max={P.stiffness.max}  curve={P.stiffness.curve}                        defaultValue={defaultFor('stiffness')}  label="Stf"  onchange={set('stiffness')}  moduleId={id} paramId="stiffness"  readLive={live('stiffness')} />
+            <NeonFader value={tune}       min={P.tune.min}       max={P.tune.max}       curve={P.tune.curve}       units={P.tune.units}  defaultValue={defaultFor('tune')}       label="Tune" onchange={set('tune')}       moduleId={id} paramId="tune"       readLive={live('tune')} />
+            <NeonFader value={decay}      min={P.decay.min}      max={P.decay.max}      curve={P.decay.curve}      units={P.decay.units} defaultValue={defaultFor('decay')}      label="Dec"  onchange={set('decay')}      moduleId={id} paramId="decay"      readLive={live('decay')} />
+            <NeonFader value={brightness} min={P.brightness.min} max={P.brightness.max} curve={P.brightness.curve}                       defaultValue={defaultFor('brightness')} label="Brt"  onchange={set('brightness')} moduleId={id} paramId="brightness" readLive={live('brightness')} />
+            <NeonFader value={stiffness}  min={P.stiffness.min}  max={P.stiffness.max}  curve={P.stiffness.curve}                        defaultValue={defaultFor('stiffness')}  label="Stf"  onchange={set('stiffness')}  moduleId={id} paramId="stiffness"  readLive={live('stiffness')} />
           </div>
         </div>
         <div class="group">
           <header>EXCITER</header>
           <div class="fader-row">
-            <Fader value={color}    min={P.color.min}    max={P.color.max}    curve={P.color.curve}    defaultValue={defaultFor('color')}    label="Col"  onchange={set('color')}    moduleId={id} paramId="color"    readLive={live('color')} />
-            <Fader value={burst}    min={P.burst.min}    max={P.burst.max}    curve={P.burst.curve}    defaultValue={defaultFor('burst')}    label="Brst" onchange={set('burst')}    moduleId={id} paramId="burst"    readLive={live('burst')} />
-            <Fader value={position} min={P.position.min} max={P.position.max} curve={P.position.curve} defaultValue={defaultFor('position')} label="Pos"  onchange={set('position')} moduleId={id} paramId="position" readLive={live('position')} />
+            <NeonFader value={color}    min={P.color.min}    max={P.color.max}    curve={P.color.curve}    defaultValue={defaultFor('color')}    label="Col"  onchange={set('color')}    moduleId={id} paramId="color"    readLive={live('color')} />
+            <NeonFader value={burst}    min={P.burst.min}    max={P.burst.max}    curve={P.burst.curve}    defaultValue={defaultFor('burst')}    label="Brst" onchange={set('burst')}    moduleId={id} paramId="burst"    readLive={live('burst')} />
+            <NeonFader value={position} min={P.position.min} max={P.position.max} curve={P.position.curve} defaultValue={defaultFor('position')} label="Pos"  onchange={set('position')} moduleId={id} paramId="position" readLive={live('position')} />
           </div>
         </div>
       </div>
@@ -164,7 +164,7 @@
         <div class="group">
           <header>OUT</header>
           <div class="fader-row">
-            <Fader value={level} min={P.level.min} max={P.level.max} curve={P.level.curve} units={P.level.units} defaultValue={defaultFor('level')} label="Lvl" onchange={set('level')} moduleId={id} paramId="level" readLive={live('level')} />
+            <NeonFader value={level} min={P.level.min} max={P.level.max} curve={P.level.curve} units={P.level.units} defaultValue={defaultFor('level')} label="Lvl" onchange={set('level')} moduleId={id} paramId="level" readLive={live('level')} />
           </div>
         </div>
       </div>

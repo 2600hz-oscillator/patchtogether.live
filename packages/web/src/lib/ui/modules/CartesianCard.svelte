@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
   import type { NodeProps } from '@xyflow/svelte';
-  import Fader from '$lib/ui/controls/Fader.svelte';
+  import NeonFader from '$lib/ui/controls/NeonFader.svelte';
   import NoteEntry from '$lib/ui/controls/NoteEntry.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import { patch, ydoc } from '$lib/graph/store';
@@ -274,13 +274,13 @@
   </div>
 
   <div class="fader-row">
-    <Fader value={octave}     min={-2}  max={2}    defaultValue={0}   label="Oct"  curve="discrete" onchange={set('octave')} moduleId={id} paramId="octave"     readLive={live('octave')} />
-    <Fader value={gateLength} min={0.1} max={0.95} defaultValue={0.5} label="Gate" curve="linear"   onchange={set('gateLength')} moduleId={id} paramId="gateLength" readLive={live('gateLength')} />
+    <NeonFader value={octave}     min={-2}  max={2}    defaultValue={0}   label="Oct"  curve="discrete" onchange={set('octave')} moduleId={id} paramId="octave"     readLive={live('octave')} />
+    <NeonFader value={gateLength} min={0.1} max={0.95} defaultValue={0.5} label="Gate" curve="linear"   onchange={set('gateLength')} moduleId={id} paramId="gateLength" readLive={live('gateLength')} />
   </div>
 
   <div class="lfo-row" data-testid={`cart-lfo-${id}`}>
     <div class="lfo-label">LFO</div>
-    <Fader
+    <NeonFader
       value={lfoDiv}
       min={0}
       max={LFO_DIVISIONS.length - 1}
@@ -292,7 +292,7 @@
       ticks={LFO_DIV_TICKS}
       formatValue={formatLfoDiv}
     />
-    <Fader
+    <NeonFader
       value={lfoShape}
       min={0}
       max={3}

@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { NodeProps } from '@xyflow/svelte';
-  import Fader from '$lib/ui/controls/Fader.svelte';
+  import NeonFader from '$lib/ui/controls/NeonFader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import { vcaDef } from '$lib/audio/modules/vca';
   import type { ModuleNode } from '$lib/graph/types';
@@ -46,8 +46,8 @@
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="fader-row">
-      <Fader value={base}     min={pBase.min}     max={pBase.max}     defaultValue={pBase.defaultValue}     label={pBase.label}     units={pBase.units}     curve={pBase.curve}     formatValue={pBase.format}     onchange={set('base')}     readLive={live('base')}     moduleId={id} paramId="base" />
-      <Fader value={cvAmount} min={pCvAmount.min} max={pCvAmount.max} defaultValue={pCvAmount.defaultValue} label={pCvAmount.label} units={pCvAmount.units} curve={pCvAmount.curve} formatValue={pCvAmount.format} onchange={set('cvAmount')} readLive={live('cvAmount')} moduleId={id} paramId="cvAmount" />
+      <NeonFader value={base}     min={pBase.min}     max={pBase.max}     defaultValue={pBase.defaultValue}     label={pBase.label}     units={pBase.units}     curve={pBase.curve}     formatValue={pBase.format}     onchange={set('base')}     readLive={live('base')}     moduleId={id} paramId="base" />
+      <NeonFader value={cvAmount} min={pCvAmount.min} max={pCvAmount.max} defaultValue={pCvAmount.defaultValue} label={pCvAmount.label} units={pCvAmount.units} curve={pCvAmount.curve} formatValue={pCvAmount.format} onchange={set('cvAmount')} readLive={live('cvAmount')} moduleId={id} paramId="cvAmount" />
     </div>
   </PatchPanel>
 </div>

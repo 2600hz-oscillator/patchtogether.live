@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
   import type { NodeProps } from '@xyflow/svelte';
-  import Fader from '$lib/ui/controls/Fader.svelte';
+  import NeonFader from '$lib/ui/controls/NeonFader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import { setNodeParam } from '$lib/graph/mutate';
   import { pongDef, drawPong, type PongState, type PongParams } from '$lib/audio/modules/pong';
@@ -87,9 +87,9 @@
       ></canvas>
     </div>
     <div class="fader-row">
-      <Fader value={speed}      min={0.25} max={4}  defaultValue={1.0} label="Speed"  curve="log"    onchange={setParam('speed')} moduleId={id} paramId="speed"      readLive={readLive('speed')} />
-      <Fader value={paddleH}    min={0.05} max={0.5} defaultValue={0.2} label="Paddle" curve="linear" onchange={setParam('paddleH')} moduleId={id} paramId="paddleH"    readLive={readLive('paddleH')} />
-      <Fader value={serveAngle} min={0}    max={1}   defaultValue={0.3} label="Serve"  curve="linear" onchange={setParam('serveAngle')} moduleId={id} paramId="serveAngle" readLive={readLive('serveAngle')} />
+      <NeonFader value={speed}      min={0.25} max={4}  defaultValue={1.0} label="Speed"  curve="log"    onchange={setParam('speed')} moduleId={id} paramId="speed"      readLive={readLive('speed')} />
+      <NeonFader value={paddleH}    min={0.05} max={0.5} defaultValue={0.2} label="Paddle" curve="linear" onchange={setParam('paddleH')} moduleId={id} paramId="paddleH"    readLive={readLive('paddleH')} />
+      <NeonFader value={serveAngle} min={0}    max={1}   defaultValue={0.3} label="Serve"  curve="linear" onchange={setParam('serveAngle')} moduleId={id} paramId="serveAngle" readLive={readLive('serveAngle')} />
     </div>
   </PatchPanel>
 </div>

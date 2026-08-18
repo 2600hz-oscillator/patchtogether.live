@@ -17,7 +17,7 @@
   // second copy that drifts. Enrolled in RANGE_BOUND_CARDS and
   // MAPPING_BOUND_CARDS in the same edit.
   import type { NodeProps } from '@xyflow/svelte';
-  import Fader from '$lib/ui/controls/Fader.svelte';
+  import NeonFader from '$lib/ui/controls/NeonFader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import { analogLogicMathsDef } from '$lib/audio/modules/analog-logic-maths';
   import type { ModuleNode } from '$lib/graph/types';
@@ -47,8 +47,8 @@
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="fader-row">
-      <Fader value={attA} min={P.attA.min} max={P.attA.max} defaultValue={P.attA.defaultValue} label={P.attA.label} units={P.attA.units} curve={P.attA.curve} onchange={set('attA')} moduleId={id} paramId="attA" readLive={live('attA')} />
-      <Fader value={attB} min={P.attB.min} max={P.attB.max} defaultValue={P.attB.defaultValue} label={P.attB.label} units={P.attB.units} curve={P.attB.curve} onchange={set('attB')} moduleId={id} paramId="attB" readLive={live('attB')} />
+      <NeonFader value={attA} min={P.attA.min} max={P.attA.max} defaultValue={P.attA.defaultValue} label={P.attA.label} units={P.attA.units} curve={P.attA.curve} onchange={set('attA')} moduleId={id} paramId="attA" readLive={live('attA')} />
+      <NeonFader value={attB} min={P.attB.min} max={P.attB.max} defaultValue={P.attB.defaultValue} label={P.attB.label} units={P.attB.units} curve={P.attB.curve} onchange={set('attB')} moduleId={id} paramId="attB" readLive={live('attB')} />
     </div>
   </PatchPanel>
 </div>

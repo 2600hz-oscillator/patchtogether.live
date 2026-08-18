@@ -12,7 +12,7 @@
   // the pad with trigger_in, so its rising edge fires exactly ONE clap.
 
   import type { NodeProps } from '@xyflow/svelte';
-  import Fader from '$lib/ui/controls/Fader.svelte';
+  import NeonFader from '$lib/ui/controls/NeonFader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import { clapDef } from '$lib/audio/modules/clap';
   import type { ModuleNode } from '$lib/graph/types';
@@ -97,25 +97,25 @@
         <div class="group">
           <header>BURST</header>
           <div class="fader-row">
-            <Fader value={pulses} min={2} max={5}  defaultValue={defaultFor('pulses')} label="Puls"           curve="discrete" onchange={set('pulses')} moduleId={id} paramId="pulses" readLive={live('pulses')} />
-            <Fader value={spread} min={4} max={25} defaultValue={defaultFor('spread')} label="Sprd" units="ms" curve="log"      onchange={set('spread')} moduleId={id} paramId="spread" readLive={live('spread')} />
-            <Fader value={snap}   min={0} max={1}  defaultValue={defaultFor('snap')}   label="Snap"           curve="linear"   onchange={set('snap')}   moduleId={id} paramId="snap"   readLive={live('snap')} />
+            <NeonFader value={pulses} min={2} max={5}  defaultValue={defaultFor('pulses')} label="Puls"           curve="discrete" onchange={set('pulses')} moduleId={id} paramId="pulses" readLive={live('pulses')} />
+            <NeonFader value={spread} min={4} max={25} defaultValue={defaultFor('spread')} label="Sprd" units="ms" curve="log"      onchange={set('spread')} moduleId={id} paramId="spread" readLive={live('spread')} />
+            <NeonFader value={snap}   min={0} max={1}  defaultValue={defaultFor('snap')}   label="Snap"           curve="linear"   onchange={set('snap')}   moduleId={id} paramId="snap"   readLive={live('snap')} />
           </div>
         </div>
         <div class="group">
           <header>NOISE</header>
           <div class="fader-row">
-            <Fader value={tone}  min={400} max={3000} defaultValue={defaultFor('tone')}  label="Tone" units="Hz" curve="log"    onchange={set('tone')}  moduleId={id} paramId="tone"  readLive={live('tone')} />
-            <Fader value={width} min={0}   max={1}    defaultValue={defaultFor('width')} label="Wdth"           curve="linear" onchange={set('width')} moduleId={id} paramId="width" readLive={live('width')} />
-            <Fader value={color} min={0}   max={1}    defaultValue={defaultFor('color')} label="Col"            curve="linear" onchange={set('color')} moduleId={id} paramId="color" readLive={live('color')} />
+            <NeonFader value={tone}  min={400} max={3000} defaultValue={defaultFor('tone')}  label="Tone" units="Hz" curve="log"    onchange={set('tone')}  moduleId={id} paramId="tone"  readLive={live('tone')} />
+            <NeonFader value={width} min={0}   max={1}    defaultValue={defaultFor('width')} label="Wdth"           curve="linear" onchange={set('width')} moduleId={id} paramId="width" readLive={live('width')} />
+            <NeonFader value={color} min={0}   max={1}    defaultValue={defaultFor('color')} label="Col"            curve="linear" onchange={set('color')} moduleId={id} paramId="color" readLive={live('color')} />
           </div>
         </div>
         <div class="group wide">
           <header>ROOM · OUT</header>
           <div class="fader-row">
-            <Fader value={tail}  min={30}  max={800} defaultValue={defaultFor('tail')}  label="Tail" units="ms" curve="log"    onchange={set('tail')}  moduleId={id} paramId="tail"  readLive={live('tail')} />
-            <Fader value={drive} min={0}   max={1}   defaultValue={defaultFor('drive')} label="Drv"             curve="linear" onchange={set('drive')} moduleId={id} paramId="drive" readLive={live('drive')} />
-            <Fader value={level} min={-24} max={12}  defaultValue={defaultFor('level')} label="Lvl"  units="dB" curve="linear" onchange={set('level')} moduleId={id} paramId="level" readLive={live('level')} />
+            <NeonFader value={tail}  min={30}  max={800} defaultValue={defaultFor('tail')}  label="Tail" units="ms" curve="log"    onchange={set('tail')}  moduleId={id} paramId="tail"  readLive={live('tail')} />
+            <NeonFader value={drive} min={0}   max={1}   defaultValue={defaultFor('drive')} label="Drv"             curve="linear" onchange={set('drive')} moduleId={id} paramId="drive" readLive={live('drive')} />
+            <NeonFader value={level} min={-24} max={12}  defaultValue={defaultFor('level')} label="Lvl"  units="dB" curve="linear" onchange={set('level')} moduleId={id} paramId="level" readLive={live('level')} />
             <button
               class="clap-pad"
               class:held={clapping}
