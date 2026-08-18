@@ -1,46 +1,40 @@
 {
   "schemaVersion": 1,
-  "webglContentHash": "db2c1ad2549dd753e4625e454c0706ed4d292b197f32b21a546bad836f61b87b",
-  "attestedAt": "2026-08-18T01:23:35.273Z",
+  "webglContentHash": "180802771d4bde960ad64e5fc98f8698f89eaee1758e058635adcbf7f6273b4f",
+  "attestedAt": "2026-08-18T03:29:49.933Z",
   "attestedBy": "patchtogether-maintainer",
-  "gitHeadAtAttest": "e4f342e012312c9150e7c7061cd14a83e49fe2df",
+  "gitHeadAtAttest": "bc3b9994da91a43b51c6084fb31ffc688416a0f2",
   "playwrightVersion": "1.50.0",
   "os": "darwin 25.4.0 (arm64)",
   "machineClass": "local-trusted-gpu-workstation",
   "preflight": {
     "samples": 7,
     "windowMs": 10204,
-    "maxForeignCpu": 1.3,
+    "maxForeignCpu": 2.3,
     "thresholdCpu": 25,
-    "load1": 3.19580078125,
+    "load1": 2.84814453125,
     "cores": 10
   },
   "gpu": "ANGLE (Apple, ANGLE Metal Renderer: Apple M5, Unspecified Version)",
   "appServer": {
-    "url": "http://127.0.0.1:64355",
+    "url": "http://127.0.0.1:52808",
     "mode": "dev",
-    "root": "/Users/2600hz/Documents/workspace/inet.modular/.claude/worktrees/agent-a094801dfa020e6e2",
-    "commit": "e4f342e012312c9150e7c7061cd14a83e49fe2df"
+    "root": "/Users/2600hz/Documents/workspace/inet.modular/.claude/worktrees/agent-a2c4a13198d01f758",
+    "commit": "bc3b9994da91a43b51c6084fb31ffc688416a0f2"
   },
   "repeatEach": 1,
   "suites": {
     "A-heavy": {
       "specFiles": 58,
-      "passed": 227,
+      "passed": 210,
       "failed": 0,
-      "flaky": 1,
+      "flaky": 0,
       "skipped": 4,
-      "flakyDetails": [
-        {
-          "test": "PICTUREBOX(bright-top image) -> OUTPUT shows bright on top",
-          "file": "video-orientation.spec.ts",
-          "firstError": "Error: PICTUREBOX bright-top must dominate (top=0 bottom=0) |  | expect(received).toBeGreaterThan(expected) | "
-        }
-      ]
+      "flakyDetails": []
     },
     "A-serial": {
-      "specFiles": 2,
-      "passed": 4,
+      "specFiles": 3,
+      "passed": 24,
       "failed": 0,
       "flaky": 0,
       "skipped": 0,
@@ -63,5 +57,5 @@
       "flakyDetails": []
     }
   },
-  "durationSec": 202
+  "durationSec": 217
 }
