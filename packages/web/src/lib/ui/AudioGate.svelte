@@ -105,6 +105,19 @@
   //     and a permanently-attached window listener on the app's busiest event is
   //     not free.
   //
+  // ⚠ POINTER ONLY — NO BLANKET `keydown`, AND THAT IS A CORRECTION, NOT A GAP.
+  // An earlier revision of this listener also took `keydown`, which sounds like
+  // it preserves the old overlay's Enter/Space handler. It does not: that handler
+  // required the overlay to be FOCUSED and only accepted two keys. A window-level
+  // keydown boots the audio engine when you type anything at all — including into
+  // a text input, and including the app's own single-key shortcuts (`m`/`e`/`c`
+  // open the dock trays). That is a new behaviour nobody asked for, it starts an
+  // AudioContext on a keystroke that was not about audio, and it made a rack that
+  // is driven entirely by the keyboard boot an engine it never used to have.
+  // "Click anywhere to enable audio" is what the overlay promises; pointer input
+  // is what it should listen for. (The owner's standing ruling is that keyboard
+  // a11y is out of scope here, so the focused-button path is not re-added.)
+  //
   // ⚠ `resume()` awaits, which outlives TRANSIENT user activation — that is
   // fine and is what the old onclick handler did too: Chrome gates AudioContext
   // on STICKY activation (`hasBeenActive`), which never expires for the document.
@@ -115,12 +128,10 @@
     };
     const opts = { capture: true } as const;
     window.addEventListener('pointerdown', onGesture, opts);
-    window.addEventListener('keydown', onGesture, opts);
     // Some touch surfaces dispatch touchstart without a preceding pointerdown.
     window.addEventListener('touchstart', onGesture, opts);
     return () => {
       window.removeEventListener('pointerdown', onGesture, opts);
-      window.removeEventListener('keydown', onGesture, opts);
       window.removeEventListener('touchstart', onGesture, opts);
     };
   });
