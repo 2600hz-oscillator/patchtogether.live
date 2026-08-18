@@ -227,15 +227,6 @@ export const SKIP_BUDGET = [
       + 'no moof fragments ever materialize. Verified on-device; unit/per-port/behavioral cover the module.',
   },
   {
-    specs: ['doom-audio-output.spec.ts'],
-    reason: /task #78/,
-    lanes: ['e2e'],
-    homeLane: 'e2e',
-    why:
-      'Quarantined audio_l/audio_r non-silence cases: the scenario needs a synthetic keypress to fire an '
-      + 'SFX before any PCM exists. The engine-bridge unit sweep is the regression bar meanwhile.',
-  },
-  {
     specs: ['modules.spec.ts'],
     reason: /task #102/,
     lanes: ['e2e'],
