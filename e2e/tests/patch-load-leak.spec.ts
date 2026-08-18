@@ -259,7 +259,12 @@ test.describe('patch load releases the previous patch', () => {
     ).toBeGreaterThan(0);
   });
 
-  test('five consecutive loads do not accumulate', async ({ page }) => {
+  // ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are UNCHANGED.
+  // NONDETERMINISM: 2 recovered-on-retry observation(s) across 2 SHA(s) / 2 branch(es) in the
+  // 96 h CI census to 2026-08-18 — it also hard-failed 1 time(s) on a branch, but the recovered-on-retry runs stayed green.
+  // LOST WHILE PARKED: the patch-load retention gate — five consecutive loads must release the graph they replaced; without it the 2026-07-29 audio-bog class returns with no signal at all.
+  // Re-enable only on a root cause (#1847); "it passes now" is not one.
+  test.fixme('five consecutive loads do not accumulate', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 2 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page }) => {
     const cdp = await page.context().newCDPSession(page);
     await cdp.send('Performance.enable');
     const env = await bootAndCapture(page);

@@ -44,6 +44,14 @@
      *  slot. Drives the Lock/Unlock entry label + which callback fires. */
     locked?: boolean;
     ondelete: () => void;
+    /** DETACH DISPLAY (#1821) — float this module's picture free of the rack.
+     *  Wired by Canvas only for a def that supports one; absent ⇒ no item. */
+    ondetachdisplay?: () => void;
+    /** RE-ATTACH the floating display. Same gating; shown when `isDetached`. */
+    onreattachdisplay?: () => void;
+    /** Whether this node's display is currently detached — chooses between the
+     *  two items above. */
+    isDetached?: boolean;
     onduplicate: () => void;
     onunpatch: () => void;
     /** Virtual-rack Phase 2: screw the module down to its rack slot (snap to
@@ -130,6 +138,9 @@
     groupExpanded = false,
     locked = false,
     ondelete,
+    ondetachdisplay,
+    onreattachdisplay,
+    isDetached = false,
     onduplicate,
     onunpatch,
     onlock,
@@ -254,6 +265,14 @@
 
   function pickDelete() {
     ondelete();
+    onclose();
+  }
+  function pickDetachDisplay() {
+    ondetachdisplay?.();
+    onclose();
+  }
+  function pickReattachDisplay() {
+    onreattachdisplay?.();
     onclose();
   }
   function pickDuplicate() {
@@ -600,6 +619,34 @@
           {locked ? 'Unlock' : 'Lock'}
         </button>
       {/if}
+    {/if}
+    <!-- DETACH DISPLAY (#1821) — the OTHER of the two entry points the owner
+         asked for: *"we can right click either it OR the underlying video output
+         card, and click 're-attach'"*. The floating panel and the module's dock
+         faceplate mount `VideoCanvasContextMenu`; the LANE TILE is a generic
+         `ModuleShell` with no menu of its own, so its entry is here.
+         Prop-gated — Canvas wires these only for a node whose def supports a
+         detached display (`supportsDetachedDisplay`, derived), so no module name
+         appears in this component. -->
+    {#if ondetachdisplay && !isDetached}
+      <button
+        class="ctx-item"
+        onclick={pickDetachDisplay}
+        role="menuitem"
+        data-testid="ctx-detach-display"
+      >
+        Detach display
+      </button>
+    {/if}
+    {#if onreattachdisplay && isDetached}
+      <button
+        class="ctx-item"
+        onclick={pickReattachDisplay}
+        role="menuitem"
+        data-testid="ctx-reattach-display"
+      >
+        Re-attach display
+      </button>
     {/if}
     <button class="ctx-item danger" onclick={pickDelete} role="menuitem">
       {isGroup ? 'Delete instrument + modules' : 'Delete'}

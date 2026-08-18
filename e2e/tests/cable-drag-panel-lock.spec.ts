@@ -16,7 +16,12 @@ function chrome(page: Page, nodeId: string) {
 }
 
 test.describe('PatchPanel: click-open / outside-click-close', () => {
-  test('click opens the menu; hover alone does not; outside-click closes', async ({ page, rack }) => {
+  // ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are UNCHANGED.
+  // NONDETERMINISM: 4 recovered-on-retry observation(s) across 2 SHA(s) / 2 branch(es) in the
+  // 96 h CI census to 2026-08-18 — never a hard failure, so every one of those jobs reported SUCCESS.
+  // LOST WHILE PARKED: the post-no-drag-redesign PatchPanel open/close contract — a hover that opens the menu, or an outside click that fails to close it, makes every patch gesture in the app unusable.
+  // Re-enable only on a root cause (#1847); "it passes now" is not one.
+  test.fixme('click opens the menu; hover alone does not; outside-click closes', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 4 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page, rack }) => {
     // ARRANGE. Charged to SETUP, not to this test's assertion budget (#1648):
     // on run 31821939046 `spawnPatch`'s `await __ensureEngine()` alone took
     // 24.61 s of the 30 s budget, and the test died on the next step — a

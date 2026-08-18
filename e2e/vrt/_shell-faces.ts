@@ -742,6 +742,27 @@ export const FACES = [
   // `clouds:freeze` is a player-facing latch and writing it would change that
   // module's look on purpose, which is why this is a per-scene DECLARATION with
   // a reason rather than a predicate over param names.
+  // THE SECOND VIDEO FACE, and the first scene in this roster whose module
+  // ranks NOTHING (#1821). `pages: 1` is the single unlabelled `__all` band
+  // `dockFacePlan` returns for a face with no `face.pages` — it renders as one
+  // empty `face-page` section under the extension body, which IS the faceplate
+  // here (videoOut declares `params: []`).
+  //
+  // ⚠ `videoFaceWhy` is MANDATORY and doubly so for this one: the dock body
+  // blits the live engine every rAF, and unlike backdraft the COMPACT tile is a
+  // live picture too (`hasVideoSurface` mounts VideoTileThumb, and a zero-control
+  // face never reaches the plate branch that would evict it — see
+  // videoout-face-model.test.ts). Both scenes are moving targets without the
+  // video freeze; an AudioContext suspend says nothing about either.
+  {
+    type: 'videoOut',
+    pages: 1,
+    videoFaceWhy:
+      'BOTH scenes carry a live picture: the dock faceplate IS a fullViewBody extension blitting '
+      + 'the video engine every rAF, and the compact lane tile paints a live VideoTileThumb because '
+      + 'this face ranks no controls and so keeps its glyph strip at every tier. Neither is '
+      + 'pixel-deterministic without the video freeze.',
+  },
   {
     type: 'backdraft',
     pages: 7,
@@ -1486,16 +1507,48 @@ async function applyFaceSceneStyle(page: Page): Promise<void> {
   });
 }
 
+/** Every node id of `type` currently in the patch. */
+async function idsOfType(page: Page, type: string): Promise<string[]> {
+  return page.evaluate((tt) => {
+    const w = globalThis as unknown as {
+      __patch?: { nodes: Record<string, { type?: string } | undefined> };
+    };
+    return Object.entries(w.__patch?.nodes ?? {})
+      .filter(([, n]) => n?.type === tt)
+      .map(([id]) => id);
+  }, type);
+}
+
 /**
- * Spawn a VIDEO face into the video zone and return its node id.
+ * Spawn a VIDEO face into the video zone and return the id of the node THIS CALL
+ * created.
  *
- * Identified BY TYPE, not by position or recency: the zone is auto-populated
- * with a default `videoOut` on a fresh workflow rack, so "the only node there"
- * is false and "the newest node" is ambiguous under any concurrent reconcile.
- * Asserted to be exactly one, so a second instance is an error rather than a
- * silent arbitrary pick.
+ * ⚠ IDENTIFIED AS "THE NEW ONE", NOT "THE ONLY ONE" — and the difference is a
+ * shipped bug, not a refinement. This function's own doc comment used to warn
+ * that *"the zone is auto-populated with a default `videoOut` … so 'the only node
+ * there' is false"* — and then waited for `filter(type).length === 1` anyway. For
+ * every face that had ever used this path the two readings agreed, because none
+ * of their types pre-existed in the zone. `videoOut` is the first face whose own
+ * type IS the node already sitting there, so spawning it makes the count 2 and a
+ * wait for `=== 1` can never be satisfied: both its scenes timed out at 20 s on
+ * every run, deterministically, and the "every face has baselines" gate failed as
+ * a CONSEQUENCE because the scenes could not reach `toHaveScreenshot`.
+ *
+ * The fix is general rather than a `videoOut` special case — snapshot the ids of
+ * this type BEFORE spawning and take the one that appears — so it is correct for
+ * a type with 0, 1 or N pre-existing instances, and the NEXT colliding type does
+ * not get to rediscover this.
+ *
+ * The property the old code was reaching for is KEPT and strengthened: exactly
+ * ONE new node must appear, so a double-spawn is an error rather than a silent
+ * arbitrary pick, and the returned id is asserted NOT to be a pre-existing one —
+ * which is the assertion that fails if this ever regresses to picking the
+ * default `videoOut` instead of the spawned face.
  */
 async function spawnVideoZoneMember(page: Page, type: string): Promise<string> {
+  // The population BEFORE the spawn — the thing that made `=== 1` wrong.
+  const before = await idsOfType(page, type);
+
   await page.evaluate((tt) => {
     const w = globalThis as unknown as {
       __setSpawnFlowPos: (p: { x: number; y: number }) => void;
@@ -1509,29 +1562,67 @@ async function spawnVideoZoneMember(page: Page, type: string): Promise<string> {
     w.__spawnFromPalette(tt);
   }, type);
 
+  // ⚠ `>= 1`, NOT `=== 1`, and that distinction is the bug this helper was
+  // written to fix — one level up. An equality wait is only ever satisfiable
+  // TRANSIENTLY: if two nodes of the type appear (a double reconcile, or the
+  // rack's own video-zone auto-population landing after `before` was captured),
+  // the count goes 1 → 2 and never comes back, so the wait eats its full 20 s
+  // and reports Playwright's generic timeout with none of the diagnostics the
+  // assertion below carries. Wait for ARRIVAL; let the assertion judge the
+  // COUNT, which is where a useful message lives.
   await page.waitForFunction(
-    (tt) => {
+    ({ tt, seen }) => {
       const w = globalThis as unknown as {
         __patch?: { nodes: Record<string, { type?: string } | undefined> };
       };
-      const nodes = w.__patch?.nodes ?? {};
-      return Object.values(nodes).filter((n) => n?.type === tt).length === 1;
+      const known = new Set(seen);
+      return (
+        Object.entries(w.__patch?.nodes ?? {}).filter(
+          ([id, n]) => n?.type === tt && !known.has(id),
+        ).length >= 1
+      );
     },
-    type,
+    { tt: type, seen: before },
     { timeout: 20_000 },
   );
 
-  const ids = await page.evaluate((tt) => {
-    const w = globalThis as unknown as {
-      __patch: { nodes: Record<string, { type?: string } | undefined> };
-    };
-    return Object.entries(w.__patch.nodes)
-      .filter(([, n]) => n?.type === tt)
-      .map(([id]) => id);
-  }, type);
+  const after = await idsOfType(page, type);
+  const fresh = after.filter((id) => !before.includes(id));
 
-  expect(ids, `${type}: exactly one video-zone member spawned`).toHaveLength(1);
-  return ids[0]!;
+  expect(
+    fresh,
+    `${type}: exactly one NEW video-zone member spawned ` +
+      `(${before.length} of this type pre-existed: [${before.join(', ')}])`,
+  ).toHaveLength(1);
+
+  // ⚠ THESE TWO ARE ANCHORED TO THE ARTIFACT, and the previous attempt was NOT.
+  // It asserted `expect(before).not.toContain(fresh[0])` — but `fresh` is
+  // DEFINED as `after` minus `before`, so that is true for every possible input:
+  // a gate green on all inputs including the regression it names, which is
+  // exactly the "would its green run look any different if the answer were
+  // 'everything'?" shape. Replaced with two properties read off the live patch,
+  // both of which can genuinely fail:
+  //   · the population of this type grew by EXACTLY ONE (a spawn that silently
+  //     did not happen, or fired twice, reddens here);
+  //   · the id we are returning really is a node of the type under test.
+  expect(
+    after.length,
+    `${type}: the spawn must add exactly one node of this type ` +
+      `(before ${before.length}, after ${after.length})`,
+  ).toBe(before.length + 1);
+
+  const freshType = await page.evaluate((id) => {
+    const w = globalThis as unknown as { __patch?: { nodes: Record<string, { type?: string } | undefined> } };
+    return w.__patch?.nodes[id]?.type ?? '(absent)';
+  }, fresh[0]!);
+  expect(
+    freshType,
+    `${type}: the returned member must BE the face under test — framing the wrong ` +
+      `tile would baseline the wrong subject and every pixel assertion downstream ` +
+      `would be green about it`,
+  ).toBe(type);
+
+  return fresh[0]!;
 }
 
 /** Center the viewport on the lane-1 member (members bottom-anchor toward the

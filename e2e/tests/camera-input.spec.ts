@@ -406,7 +406,21 @@ test.describe('CAMERA → OUTPUT (fake webcam) — getUserMedia integration @cam
 
     // …and the OUTPUT surface paints MOVING pixels (the fake device's animated
     // pattern). Pre-fix this canvas stayed black — "no video at all".
-    const outSel = '.svelte-flow__node[data-id="v-out"] [data-testid="video-out-canvas"]';
+    //
+    // ⚠ THE OUTPUT SURFACE IS THE FACE TILE'S LIVE THUMB NOW, not the legacy
+    // card's canvas (#1821). This selector was
+    // `[data-testid="video-out-canvas"]`, which exists only on `VideoOutCard` —
+    // and videoOut left `NON_SHELL_LANE_TYPES` when it was promoted, so under
+    // the DEFAULT shell this rack renders a `ModuleShell` tile whose glyph slot
+    // is the live `VideoTileThumb`. The old selector matched nothing and the
+    // assertion failed `element(s) not found`.
+    //
+    // ⚠ THE TEST'S SUBJECT IS UNCHANGED and this is not a loosened locator: the
+    // camera-side assertions above (the carve-out, the device picker, the
+    // streaming state) are untouched and still pass — cameraInput is still
+    // carved out — and the pixel-inequality poll below still proves
+    // camera → OUTPUT paints. Only the element that IS the output surface moved.
+    const outSel = '.svelte-flow__node[data-id="v-out"] [data-testid="module-shell"] canvas';
     await expect(page.locator(outSel)).toBeVisible({ timeout: 15_000 });
     const snap = async () =>
       page.evaluate((sel) => {

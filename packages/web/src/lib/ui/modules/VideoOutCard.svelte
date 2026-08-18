@@ -53,6 +53,15 @@
   import { fullscreenCanvasDims } from './fullscreen-canvas-dims';
   import { liveEngineAspect } from './video-card-aspect';
   import VideoCanvasContextMenu from './VideoCanvasContextMenu.svelte';
+  import { mutateNode } from '$lib/graph/mutate';
+  import {
+    DETACHED_KEYS,
+    REATTACH_CLEARS,
+    detachPatch,
+    detachedRect,
+    isDetached,
+    placeDetached,
+  } from './detached-display';
   import type { VideoEngine } from '$lib/video/engine';
   import { VIDEO_RES } from '$lib/video/engine';
   import type { ModuleNode } from '$lib/graph/types';
@@ -185,6 +194,53 @@
     presenting: () => fs.isFullscreen || present.isPresenting || fullFrame,
   });
 
+  // ---------- DETACHED DISPLAY (#1821) ----------
+  // The picture leaves the card and floats free. STATE LIVES ON THE NODE
+  // (`node.data.detached`, the `fullFrame` / `previewCollapsed` seam) — see
+  // $lib/ui/modules/detached-display for the model and why node-ownership is
+  // what makes the delete-either-destroys-both lifecycle structural. The PANEL
+  // is rendered by Canvas, outside <SvelteFlow>, so it has no patch wires.
+  let detached = $derived(isDetached(node));
+
+  function detachDisplay(): void {
+    // Geometry is written with the flag so the whole gesture is ONE undo entry,
+    // and it is CLAMPED at write time against the live window rather than left
+    // for the panel to fix on first paint.
+    // Open clear of THIS card, so the right-click that re-attaches is not
+    // covered by the very panel it opens (see `placeDetached`). A node whose
+    // geometry was already saved keeps it; only a FRESH detach is placed.
+    const vp = {
+      width: typeof window === 'undefined' ? 1280 : window.innerWidth,
+      height: typeof window === 'undefined' ? 720 : window.innerHeight,
+    };
+    const saved = node?.data?.[DETACHED_KEYS.x] !== undefined;
+    const box = cardEl?.getBoundingClientRect();
+    const rect = saved
+      ? detachedRect(node, vp)
+      : placeDetached(vp, box ? { x: box.x, y: box.y, w: box.width, h: box.height } : undefined);
+    const data = detachPatch(rect);
+    mutateNode(id, (live) => {
+      if (!live.data) live.data = {};
+      for (const [k, v] of Object.entries(data)) live.data[k] = v;
+    });
+    // Detaching supersedes in-card full frame — the picture is not in the card
+    // any more, so a card expanded to "fill its border" around nothing is a
+    // blank rectangle. (Mutual exclusion, exactly as full frame and true
+    // fullscreen already have.)
+    if (fullFrame) ff.exit();
+    // DETACH SUPERSEDES BROWSER FULLSCREEN TOO. `detachPatch` clears the
+    // `node.data` half; the Fullscreen API is browser state it cannot reach,
+    // and this wrap is about to show the `display detached` plate.
+    void fs.exit();
+  }
+
+  function reattachDisplay(): void {
+    mutateNode(id, (live) => {
+      if (!live.data) return;
+      for (const k of REATTACH_CLEARS) delete live.data[k];
+    });
+  }
+
   // Canvas drawing-buffer dims. In the rack: the card's inner dims (card
   // aspect). In TRUE fullscreen — OR while PRESENTING on a second display: the
   // live ENGINE dims so the buffer carries the ENGINE aspect — fitRect then
@@ -254,6 +310,28 @@
       return;
     }
     if (!videoEngine) {
+      rafId = requestAnimationFrame(draw);
+      return;
+    }
+    // ⚠ WHILE DETACHED THIS CARD IS NOT A SURFACE, so it neither blits NOR
+    // marks watched — it drops out of the observer set entirely.
+    //
+    // ⚠ AN EARLIER VERSION OF THIS BRANCH CALLED `markWatched` HERE, on the
+    // reasoning that "a blit IS the watch mark, so a card that stops blitting
+    // stops watching". That reasoning is right and the conclusion was wrong, and
+    // #1802/#1836 measured exactly why: a backdraft card that skipped its blit
+    // but kept marking watched held `toybox → backdraft` at 481 frames in 4 s
+    // for a picture presented on NO surface. *"A card that is not showing
+    // anything must not be an observer, and the way to stop being one is to stop
+    // blitting, because the blit IS the watch mark"* (preview-gate.ts).
+    //
+    // Detaching does not make the picture unobserved — it MOVES the observer.
+    // `DetachedDisplay` blits this node every frame (which marks it watched) AND
+    // holds a render lease, and a leased node bypasses the visibility gate and
+    // the cadence cap by design. So the chain stays alive because the surface
+    // that is actually showing it says so, which is the invariant #1836 asks
+    // for, rather than because a card that shows nothing votes for it.
+    if (detached) {
       rafId = requestAnimationFrame(draw);
       return;
     }
@@ -333,6 +411,12 @@
   let resizeAbort: AbortController | null = null;
 
   function onResizeStart(ev: PointerEvent) {
+    // Primary button only, and abort any live resize first: a second pointerdown
+    // before the matching pointerup would otherwise overwrite `resizeAbort` and
+    // leak the first controller's window listeners, leaving two gestures applying
+    // against different start sizes.
+    if (ev.button !== 0) return;
+    resizeAbort?.abort();
     resizeAbort = startCornerResize(ev, {
       flowStore,
       minWidth: MIN_WIDTH,
@@ -376,6 +460,7 @@
     class:full-frame={fullFrame}
     style="width: {fs.isFullscreen || fullFrame ? '100%' : innerWidth + 'px'}; height: {fs.isFullscreen || fullFrame ? '100%' : innerHeight + 'px'};"
     data-testid="video-out-fs-wrap"
+    data-detached={detached ? 'true' : 'false'}
     oncontextmenu={onCanvasContextMenu}
   >
     <canvas
@@ -386,6 +471,23 @@
       data-testid="video-out-canvas"
       data-node-id={id}
     ></canvas>
+    <!-- ⚠ THE CANVAS IS NEVER `{#if}`-ed AWAY while detached. `requestFullscreen()`
+         needs a real rendered element at the moment the menu item is clicked, and
+         the Present popup is NODE-keyed and blits the ENGINE, not this canvas — so detaching COVERS it
+         with the plate below rather than unmounting it. The plate is what the
+         user right-clicks to get "re-attach" back, which is why it sits inside
+         the wrap that owns `oncontextmenu`. -->
+    {#if detached}
+      <div class="detached-plate" data-testid="video-out-detached-plate">
+        <span>display detached</span>
+        <button
+          type="button"
+          class="detached-reattach nodrag"
+          data-testid="video-out-reattach"
+          onclick={reattachDisplay}
+        >re-attach</button>
+      </div>
+    {/if}
   </div>
 
   <!-- Bottom-right corner-drag resize handle. The svelte-flow nodrag
@@ -415,6 +517,9 @@
   onpresentall={() => present.presentAll(fs.availableScreens.filter((s) => !s.isPrimary).map((s) => s.id))}
   onstoppresent={() => present.stop()}
   isPresenting={present.isPresenting}
+  isDetached={detached}
+  ondetach={detachDisplay}
+  onreattach={reattachDisplay}
   onclose={() => { ctxOpen = false; }}
 />
 
@@ -437,6 +542,39 @@
     display: flex;
     justify-content: center;
     align-items: center;
+    /* The detached plate is absolutely positioned over the live canvas. */
+    position: relative;
+  }
+  /* DETACHED (#1821): the picture is in the floating panel, so the card says
+   * where it went and offers the way back. It COVERS the canvas rather than
+   * replacing it — see the markup note. */
+  .detached-plate {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    background: #050608;
+    border: 1px dashed var(--cable-video);
+    color: var(--text-dim);
+    font-size: 0.62rem;
+    letter-spacing: 0.06em;
+  }
+  .detached-reattach {
+    padding: 3px 8px;
+    font: inherit;
+    color: var(--text);
+    background: transparent;
+    border: 1px solid var(--cable-video);
+    border-radius: 3px;
+    cursor: pointer;
+  }
+  .detached-reattach:hover,
+  .detached-reattach:focus-visible {
+    background: color-mix(in srgb, var(--cable-video) 22%, transparent);
+    outline: none;
   }
   .canvas-wrap canvas {
     background: #050608;

@@ -302,7 +302,12 @@ async function bindControls(page: Page, surfaceId: string): Promise<void> {
   }, surfaceId);
 }
 
-test('card grows so ALL groups + knobs render within bounds (locked + unlocked)', async ({ page, rack }) => {
+// ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are UNCHANGED.
+// NONDETERMINISM: 10 recovered-on-retry observation(s) across 6 SHA(s) / 6 branch(es) in the
+// 96 h CI census to 2026-08-18 — never a hard failure, so every one of those jobs reported SUCCESS.
+// LOST WHILE PARKED: that the control surface card grows to contain every proxied group and knob in BOTH locked and unlocked states — controls rendering outside their own card bounds are unreachable.
+// Re-enable only on a root cause (#1847); "it passes now" is not one.
+test.fixme('card grows so ALL groups + knobs render within bounds (locked + unlocked)', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 10 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page, rack }) => {
   await spawnPatch(page, [
     { id: 'cs-1', type: 'controlSurface', position: { x: 900, y: 40 }, domain: 'meta' },
     { id: 'adsr-1', type: 'adsr', position: { x: 40, y: 40 }, domain: 'audio' },

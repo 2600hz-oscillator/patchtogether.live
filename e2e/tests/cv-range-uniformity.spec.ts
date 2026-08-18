@@ -212,7 +212,12 @@ test('LFO sweeps DRUMMERGIRL volume (linear 0..2) across full range', async ({ p
   ).toBeGreaterThanOrEqual(0.8);
 });
 
-test('LFO sweeps MIXMSTRS ch1 EQ low (-12..+12 dB linear) across full range', async ({ page, rack }) => {
+// ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are UNCHANGED.
+// NONDETERMINISM: 2 recovered-on-retry observation(s) across 1 SHA(s) / 1 branch(es) in the
+// 96 h CI census to 2026-08-18 — never a hard failure, so every one of those jobs reported SUCCESS.
+// LOST WHILE PARKED: ADR-004's CV range convention on a linear-scaled param — an LFO into MIXMSTRS EQ low must traverse the FULL -12..+12 dB range, not the ~10% the pre-scaling engine delivered.
+// Re-enable only on a root cause (#1847); "it passes now" is not one.
+test.fixme('LFO sweeps MIXMSTRS ch1 EQ low (-12..+12 dB linear) across full range', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 2 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page, rack }) => {
   await spawnPatch(
     page,
     [

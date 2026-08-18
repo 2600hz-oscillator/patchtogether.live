@@ -190,7 +190,12 @@ test.describe('P2.5a docking core (workflow racks)', () => {
     expect(errors, `pageerrors: ${errors.join(' | ')}`).toEqual([]);
   });
 
-  test('independent zoom: ± steps the discrete scale and resizes the rail frame; ctrl+wheel is guarded', async ({ page }) => {
+  // ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are UNCHANGED.
+  // NONDETERMINISM: 1 recovered-on-retry observation(s) across 1 SHA(s) / 1 branch(es) in the
+  // 96 h CI census to 2026-08-18 — never a hard failure, so every one of those jobs reported SUCCESS.
+  // LOST WHILE PARKED: the dock rail's independent zoom — discrete ± steps that resize the frame, with ctrl+wheel guarded so a trackpad pinch does not zoom the browser instead.
+  // Re-enable only on a root cause (#1847); "it passes now" is not one.
+  test.fixme('independent zoom: ± steps the discrete scale and resizes the rail frame; ctrl+wheel is guarded', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 1 recovered-on-retry observation in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page }) => {
     await gotoWorkflow(page);
     await spawnPatch(page, [{ id: 'mx', type: 'mixer', position: { x: 300, y: 200 } }]);
     await page.evaluate(() => {

@@ -479,26 +479,6 @@ tasks:
     cmds:
       - npx vitest run src/lib/dev/registry-manifest.test.ts
 
-  test:ledger:
-    desc: |
-      Test ledger — CHECK the generated 3-bucket punch-list
-      (docs/testing/test-ledger.generated.md) against a fresh regeneration,
-      read-only (the same freshness gate CI runs in the `unit` lane). Fails
-      if the committed artifact is stale. Prose + roadmap: docs/testing/README.md.
-    cmds:
-      - npx vitest run --config vitest.scripts.config.ts test-ledger
-
-  test:ledger:accept:
-    desc: |
-      [accept-loop] Re-pin the GENERATED test ledger
-      (docs/testing/test-ledger.generated.md) from the current source tree —
-      run after an INTENTIONAL new skip / exemption / CI-lane change, then
-      review the git diff before committing (a diff = the punch-list moved:
-      accept it, or recognize a bug). The ART/VRT *:update analog for the ledger.
-    cmds:
-      - LEDGER_UPDATE=1 npx vitest run --config vitest.scripts.config.ts test-ledger
-      - 'echo "[test:ledger:accept] re-pinned docs/testing/test-ledger.generated.md — review the git diff before committing"'
-
   face:inventory:
     desc: |
       Face-migration inventory (LEG-01) — run the RATCHET: every registered
@@ -820,7 +800,38 @@ tasks:
         # workflow_dispatch run on ANY ref does not count toward it), so
         # nothing is lost by preferring the branch's copy.
         gh workflow run vrt-update.yml --ref "$BRANCH" $FLAGS
-        echo "Dispatched. Track it with:  gh run list --workflow=vrt-update.yml"
+        echo "Dispatched. WATCH IT WITH:  flox activate -- task vrt:watch"
+        echo "  (do NOT hand-roll a poll loop — the gh core quota is shared across every"
+        echo "   agent, and three 45s loops drained it to 0/5000 on 2026-08-18. vrt:watch"
+        echo "   backs off, waits out a rate limit, and reports what the run COMMITTED.)"
+
+  vrt:watch:
+    desc: |
+      [watch a dispatched VRT capture] Poll the vrt-update run for THIS branch
+      and report WHAT IT COMMITTED — the one watcher, so nobody hand-rolls
+      another.
+
+      ⚠ THE `gh` CORE QUOTA IS SHARED across every agent and the coordinator's
+      board queries. Three hand-rolled 45s loops drained it to 0/5000 on
+      2026-08-18; an exhausted quota answers 403, and a loop that cannot tell
+      403 from "no failures" reports success on no data. This target backs off
+      (30s while a ~3min scoped capture could still be running, then a 5min
+      floor), asks the quota-exempt rate_limit endpoint before it spends, sleeps
+      to the documented reset when exhausted, and ENDS at a hard cap.
+      Cost: ~6 calls scoped, ~18 for a full sweep, against ~70 for a 45s loop.
+
+      ⚠ IT REPORTS THE COMMITTED FILES, NOT THE CONCLUSION. `--update-snapshots`
+      only rewrites a comparison that FAILED, so a baseline that is wrong but
+      inside tolerance passes and commits NOTHING — a green dispatch that
+      committed zero files is a RED FLAG, not a pass, and this says so in as
+      many words. Pass your predicted count and it reconciles for you.
+
+      Examples:
+        task vrt:watch -- --run 32148747938
+        task vrt:watch -- --run 32148747938 --predicted 6
+        task vrt:watch -- --run 32148747938 --cap-min 90
+    cmds:
+      - node scripts/vrt-watch.mjs {{.CLI_ARGS}}
 
   vrt:docker:
     desc: |

@@ -140,7 +140,12 @@ test.describe('present on a second display SURVIVES the card collapsing', () => 
   // action paces on its rAF (see the COST note in backdraft-full-output.spec.ts).
   test.describe.configure({ timeout: 120_000 });
 
-  test('collapsing the expanded card leaves the projector open AND live', async ({ page, context }) => {
+  // ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are UNCHANGED.
+  // NONDETERMINISM: 4 recovered-on-retry observation(s) across 3 SHA(s) / 3 branch(es) in the
+  // 96 h CI census to 2026-08-18 — it also hard-failed 1 time(s) on a branch, but the recovered-on-retry runs stayed green.
+  // LOST WHILE PARKED: the owner P0 'output stops when the card is not expanded' — that collapsing the dock full-view leaves the presented projector window OPEN and LIVE rather than freezing the show.
+  // Re-enable only on a root cause (#1847); "it passes now" is not one.
+  test.fixme('collapsing the expanded card leaves the projector open AND live', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 4 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page, context }) => {
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
 

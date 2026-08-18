@@ -1,5 +1,23 @@
 // e2e/tests/doom-wasm.spec.ts
 //
+// ⚠ DOOM SPECS ARE NORMALLY OFF-LIMITS — the standing owner ruling is
+//   "do not fuck with doom in any way without specific approval". This file's
+//   frame-difference probe was rewritten under a SPECIFIC approval given by
+//   the owner on 2026-08-18, verbatim:
+//     "okay see if you can go make the doom tests blurrier and less flakey,
+//      just knowing doom renders and our kb logic and basic game nav works
+//      is fine"
+//   That approval covers THE SPECS ONLY — not video/modules/doom.ts, not the
+//   WASM/WAD assets, not the netcode. See #1848 and e2e/tests/_doom-helpers.ts.
+//
+// This file is the owner's FIRST named property — "doom renders" — so it is
+// the one place where blurring most risks producing a green light wired to
+// nothing. Two things guard against that, both permanent legs below:
+// the frame must not be BLACK at every sampled pixel, and the probe must
+// report how many frames it actually looked at (a max-diff of 0 from a probe
+// that never sampled is "never looked", not "frozen", and the two are
+// indistinguishable from the number alone).
+//
 // Asserts that the DOOM card renders real gameplay pixels — i.e. that
 // CI built the emcc WASM blob + downloaded the shareware WAD, not just
 // the "DOOM WASM not built" overlay. The test:
@@ -102,43 +120,61 @@ test.describe('DOOM — WASM gameplay renders real pixels in CI', () => {
     // be in the `loadStatus === 'ready'` state and the rAF blit loop
     // should be actively painting frames into the 2D canvas.
 
-    // Let DOOM's title-demo settle into actively animating frames.
-    // The demo opens with a static title patch (~2 s pagetic) before
-    // playing back the demo lump, which DOES animate. Wait through the
-    // title-pause window first so the two samples land on animating
-    // content — sampling during the static title would give a 0 diff
-    // and look like the runtime froze.
-    await page.waitForTimeout(2500);
+    // ── DOOM RENDERS: a non-black frame arrives, and the frame CHANGES ─────
+    //
+    // Was: wait 2500 ms for the title-pause to end, then compare two samples
+    // 800 ms apart, up to 4 times. Every one of those numbers is a bet on how
+    // many FRAMES land in a wall-clock window — and here a frame is a game tic,
+    // so the whole probe was a different assertion on every renderer. Worse,
+    // the samples were taken from the PLAYWRIGHT side: ~1 MB across the CDP
+    // boundary per sample, on the same main thread as the thing being measured,
+    // and blind to every frame between two samples.
+    //
+    // Now: ONE page-side rAF probe accumulates the largest per-frame difference
+    // against a reference frame, so it SEES EVERY PAINTED FRAME, and the test
+    // polls that accumulator. The title-pause needs no special handling — the
+    // poll simply waits through it.
+    await installFrameProbe(page);
 
-    // Sample-pair loop with a slightly longer window. Even on the
-    // demo loop's quieter HUD frames we should see a per-pixel diff
-    // of at least 1000 bytes (status-bar face animation, breath sway,
-    // weapon bob — none of which the title-card has). 3 retries to
-    // absorb the rare case where both samples land on demo-end and
-    // next-loop frames that happen to be identical.
-    let diffBytes = 0;
-    let sampleA: CanvasSample | null = null;
-    let sampleB: CanvasSample | null = null;
-    for (let attempt = 0; attempt < 4; attempt++) {
-      sampleA = await sampleCanvas(page);
-      expect(sampleA.bytesLen, 'canvas yielded image data').toBeGreaterThan(0);
-      // Active wait so the rAF loop keeps painting. waitForTimeout
-      // pauses test execution but doesn't pause the browser's rAF clock.
-      await page.waitForTimeout(800);
-      sampleB = await sampleCanvas(page);
-      expect(sampleB.bytesLen, 'canvas yielded image data').toBeGreaterThan(0);
-      diffBytes = countDiffBytes(sampleA.bytes, sampleB.bytes);
-      if (diffBytes > 1000) break;
-    }
+    // The probe must actually be looking. A max-diff of 0 from a probe that
+    // never ran is "never looked", not "frozen".
+    await expect
+      .poll(async () => (await readFrameProbe(page)).frames, {
+        timeout: 20_000,
+        message:
+          'the page-side frame probe never sampled a frame — its later verdict, ' +
+          'whatever it is, would be vacuous.',
+      })
+      .toBeGreaterThan(3);
 
+    // NEGATIVE CONTROL (permanent): the frame is not BLACK at every sampled
+    // pixel. Without it, "the canvas changed" is satisfied by a canvas
+    // flickering between two shades of nothing — the repo's documented
+    // "unwired LAYER INPUT passing on a dead canvas" failure.
+    const seen = await readFrameProbe(page);
     expect(
-      diffBytes,
-      `expected canvas to update across ~800ms windows (4 attempts) — ` +
-        `only ${diffBytes} bytes differ on the last pair. If this is 0, ` +
-        `the runtime froze or the rAF blit loop isn't running; if it's ` +
-        `the "WASM not built" overlay path, the pre-flight asserts above ` +
-        `would have fired first.`,
-    ).toBeGreaterThan(1000);
+      seen.nonZeroBytes,
+      `every sampled pixel of the DOOM canvas is BLACK (${seen.frames} frames, ` +
+        `${Math.round(seen.elapsedMs)}ms). That is a dead or cleared canvas, not a ` +
+        `rendered DOOM frame — and the "it changed" assertion below would pass on ` +
+        `one anyway.`,
+    ).toBeGreaterThan(0);
+
+    // THE VERDICT: the framebuffer is actively repainting. Polled, so the
+    // renderer sets the duration and never the outcome. 1000 differing sampled
+    // bytes is well above 1-pixel noise and well below a scene cut — the demo
+    // loop's quietest frames (status-bar face, breath sway, weapon bob) clear
+    // it easily and a frozen title card cannot.
+    await expect
+      .poll(async () => (await readFrameProbe(page)).maxDiff, {
+        timeout: 60_000,
+        intervals: [250, 500, 1000],
+        message:
+          'the DOOM canvas never changed by more than a pixel or two. The runtime ' +
+          "froze or the rAF blit loop isn't running; if it were the \"WASM not " +
+          'built" overlay path, the pre-flight asserts above would have fired first.',
+      })
+      .toBeGreaterThan(1000);
 
     // Save the last frame as an artifact for triage.
     await canvas.screenshot({ path: 'test-results/doom-wasm-frame.png' });
@@ -159,45 +195,81 @@ test.describe('DOOM — WASM gameplay renders real pixels in CI', () => {
   });
 });
 
-interface CanvasSample {
-  bytes: Uint8Array;
-  bytesLen: number;
-  width: number;
-  height: number;
+/** What the page-side frame probe has seen since it was installed. */
+interface FrameProbe {
+  /** Largest number of differing sampled bytes against the reference frame. */
+  maxDiff: number;
+  /** Frames the probe actually read (0 ⇒ its verdict is vacuous). */
+  frames: number;
+  /** Sampled bytes that were non-zero in any observed frame (0 ⇒ black). */
+  nonZeroBytes: number;
+  /** Wall-clock the probe has been running, ms. */
+  elapsedMs: number;
 }
 
-async function sampleCanvas(page: import('@playwright/test').Page): Promise<CanvasSample> {
-  const data = await page.locator('[data-testid="doom-canvas"]').evaluate((el) => {
-    const c = el as HTMLCanvasElement;
-    const ctx = c.getContext('2d');
-    if (!ctx) return null;
-    const img = ctx.getImageData(0, 0, c.width, c.height);
-    // Serialise the raw Uint8ClampedArray into a regular array of
-    // numbers so it crosses the CDP boundary intact. ~1 MB per frame
-    // — fine for two samples in a single test.
+/**
+ * Install ONE rAF-paced probe INSIDE the page that fingerprints every painted
+ * frame against a reference.
+ *
+ * ⚠ This is an INSTRUMENT fix, not a threshold fix. The old sampler shipped
+ * ~1 MB of pixels across the CDP boundary per sample, on the SAME MAIN THREAD
+ * as the renderer it was measuring, and could only ever see the two frames it
+ * happened to grab. CLAUDE.md names that exact shape: never sample a page-side
+ * quantity with a Playwright-side poll loop — move the accumulator into the
+ * page and report frames/elapsedMs alongside the value.
+ *
+ * Only the RED byte of every 4th pixel is compared (skip alpha, which the card
+ * always writes 255) — enough signal for a flicker without walking a megabyte
+ * twice per frame.
+ */
+async function installFrameProbe(page: import('@playwright/test').Page): Promise<void> {
+  await page.evaluate(() => {
+    const w = globalThis as unknown as {
+      __doomFrameProbe?: { maxDiff: number; frames: number; nonZeroBytes: number; t0: number };
+      __doomFrameProbeStop?: () => void;
+    };
+    w.__doomFrameProbeStop?.();
+    const state = { maxDiff: 0, frames: 0, nonZeroBytes: 0, t0: performance.now() };
+    w.__doomFrameProbe = state;
+    let ref: Uint8ClampedArray | null = null;
+    let raf = 0;
+    const tick = (): void => {
+      raf = requestAnimationFrame(tick);
+      const cv = document.querySelector('[data-testid="doom-canvas"]') as HTMLCanvasElement | null;
+      const ctx = cv?.getContext('2d');
+      if (!cv || !ctx || cv.width === 0 || cv.height === 0) return;
+      const data = ctx.getImageData(0, 0, cv.width, cv.height).data;
+      state.frames++;
+      let nonZero = 0;
+      for (let i = 0; i < data.length; i += 16) if (data[i] !== 0) nonZero++;
+      if (nonZero > state.nonZeroBytes) state.nonZeroBytes = nonZero;
+      if (!ref) {
+        ref = new Uint8ClampedArray(data);
+        return;
+      }
+      let diff = 0;
+      const n = Math.min(ref.length, data.length);
+      for (let i = 0; i < n; i += 4) if (ref[i] !== data[i]) diff++;
+      if (diff > state.maxDiff) state.maxDiff = diff;
+    };
+    raf = requestAnimationFrame(tick);
+    w.__doomFrameProbeStop = () => cancelAnimationFrame(raf);
+  });
+}
+
+/** Read the probe without disturbing it. */
+async function readFrameProbe(page: import('@playwright/test').Page): Promise<FrameProbe> {
+  return await page.evaluate(() => {
+    const w = globalThis as unknown as {
+      __doomFrameProbe?: { maxDiff: number; frames: number; nonZeroBytes: number; t0: number };
+    };
+    const s = w.__doomFrameProbe;
+    if (!s) return { maxDiff: -1, frames: 0, nonZeroBytes: -1, elapsedMs: 0 };
     return {
-      width: img.width,
-      height: img.height,
-      bytes: Array.from(img.data),
+      maxDiff: s.maxDiff,
+      frames: s.frames,
+      nonZeroBytes: s.nonZeroBytes,
+      elapsedMs: performance.now() - s.t0,
     };
   });
-  if (!data) throw new Error('DOOM canvas: getContext("2d") returned null');
-  return {
-    bytes: new Uint8Array(data.bytes),
-    bytesLen: data.bytes.length,
-    width: data.width,
-    height: data.height,
-  };
-}
-
-function countDiffBytes(a: Uint8Array, b: Uint8Array): number {
-  const n = Math.min(a.length, b.length);
-  let diff = 0;
-  // Skip alpha — the card always writes 255 there. Sample every 4th
-  // byte starting from R; that's enough signal to detect even a tiny
-  // flicker without iterating the full ~1 MB twice.
-  for (let i = 0; i < n; i += 4) {
-    if (a[i] !== b[i]) diff++;
-  }
-  return diff;
 }
