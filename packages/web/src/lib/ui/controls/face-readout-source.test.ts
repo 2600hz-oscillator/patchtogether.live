@@ -57,6 +57,12 @@
 //     the DEF's rosters, not the render, so if that predicate were ever
 //     loosened this leg would keep passing. `knob-vocabulary-model.test.ts`
 //     owns that half, with both directions asserted on one function.
+//     ⚠ There is a LIVE param sitting behind exactly that door:
+//     `warrensspectrum/spectralBandCount` declares options labelled
+//     `16 / 24 / 33 / 48 / 66 / 99` and is invisible to Leg 2 ONLY because it
+//     also declares a `format`. Removing that `format` would put six numbers
+//     under a dial and this gate would go red — which is the correct outcome,
+//     and is recorded here so the next reader knows the quiet case exists.
 
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -150,6 +156,18 @@ describe('face readouts — the resting decimal is REMOVED, not hidden', () => {
  * ⚠ ANCHORED: an entry naming a `(type, param, label)` triple that no longer
  * exists on the live def is RED, so a rename cannot leave a dead exemption
  * quietly permitting the next one.
+ *
+ * ⚠ POPULATE IT FROM A SWEEP, NOT FROM THE RED LINE. When this list grew for
+ * backdraft it was tempting to add the five labels the assertion happened to
+ * print and stop. The whole registry was swept instead — every def, faced or
+ * not, every `options`/`landmarks` label through this file's own
+ * `looksNumeric` + `paintsReadout` — and it returns exactly five params:
+ * `cofefve/tempoSync`, `slewSwitch/length`, `tidyVco/oct2`,
+ * `backdraft/flicker`, and `warrensspectrum/spectralBandCount` (the last one
+ * masked by a declared `format`, see the header). The first four are this
+ * list; the fifth is the blind spot named above. So the answer today really is
+ * "the red one and nothing else" — but it is a MEASURED answer, and the sweep
+ * is four lines of the same two predicates whenever it needs re-running.
  */
 const NUMERIC_LABEL_EXEMPTIONS: readonly { type: string; param: string; label: string; why: string }[] = [
   {
@@ -199,6 +217,51 @@ const NUMERIC_LABEL_EXEMPTIONS: readonly { type: string; param: string; label: s
     param: 'oct2',
     label: '+1',
     why: 'the up position of the same three-state octave switch; the sign is part of the name.',
+  },
+  // ── FLICKER · a DISPLAY REFRESH RATE is spoken as its number ────────────
+  //
+  // The six positions are `OFF, 6, 24, 50, 60, 120` and the five numeric ones
+  // are FRAME RATES, not a reading of the param — the param is a 0..5 index and
+  // the label is not derived from it (position 4 is labelled `60` and emits
+  // 59.94 Hz, position 5 is `120` and emits 119.88 Hz; see
+  // `BACKDRAFT_FLICKER_HZ`, which deliberately uses the NTSC 60000/1001 rate so
+  // the beat against the 60 fps virtual camera does not genlock). A label that
+  // does not track the value cannot be a decimal representation of it.
+  //
+  // They are also the case the ban is FOR permitting rather than catching: a
+  // refresh rate has no name that is not its number. "cinema" for 24 and
+  // "PAL" for 50 exist, but 6, 60 and 120 have none, and half a roster spelled
+  // in prose and half in digits is less readable than the panel convention
+  // every camera, projector and monitor already uses.
+  {
+    type: 'backdraft',
+    param: 'flicker',
+    label: '6',
+    why: 'a display FRAME RATE in Hz — the sub-refresh position, modelling a slow strobe/BFI/dimmer below the 60 fps virtual camera. There is no name for "six hertz" that is not the number, and the label does not track the param (a 0..5 index), so it is not a reading of state.',
+  },
+  {
+    type: 'backdraft',
+    param: 'flicker',
+    label: '24',
+    why: 'the same frame-rate roster — CINEMA. The number is how the rate is spoken on every camera and projector, and writing it as a word here while 6/60/120 stay numeric would make one roster two vocabularies.',
+  },
+  {
+    type: 'backdraft',
+    param: 'flicker',
+    label: '50',
+    why: 'the same frame-rate roster — the PAL/SECAM field rate and 50 Hz mains. Same argument: the number is the name, and it is what a shooter says out loud when picking a shutter against a 50 Hz supply.',
+  },
+  {
+    type: 'backdraft',
+    param: 'flicker',
+    label: '60',
+    why: 'the same frame-rate roster — the NTSC field rate. ⚠ It EMITS 59.94 Hz (60000/1001), not 60.000, so the label is provably a NAME for the standard rather than a printed reading of what the param is worth.',
+  },
+  {
+    type: 'backdraft',
+    param: 'flicker',
+    label: '120',
+    why: 'the same frame-rate roster — a 120 Hz panel (or double-strobed 60). Emits 119.88 Hz for the same NTSC reason as the 60 position, so it too names a standard rather than reporting a value.',
   },
 ];
 
