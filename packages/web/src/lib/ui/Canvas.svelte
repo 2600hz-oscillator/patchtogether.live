@@ -26,17 +26,19 @@
     coerceAutoAssign,
     laneColorEff as autoLaneColorEff,
     scrubClipPlayerTransientData,
-    CLIP_LANES as AUTO_CLIP_LANES,
     type ClipPlayerData as AutoClipPlayerData,
   } from '$lib/audio/modules/clip-types';
   import {
-    listClipPlayers,
     assignAutomationLane,
     removeAutomationAssignment,
     automationAssignmentFor,
     pruneAllAutoAssignDangling,
     repairDuplicateAutoAssign,
   } from '$lib/graph/automation-assign';
+  // #1825 — ONE derivation of "which clip player is canonical" and "what colour
+  // is channel N", shared by the column badges, the node menu and the mixmstrs
+  // faceplate.
+  import { canonicalClipPlayerId, canonicalLaneColors } from '$lib/graph/lane-colors';
   import { reconcileCvBuddyEs9 } from '$lib/graph/cv-buddy-es9-reconcile';
   import {
     isClipEligible,
@@ -4995,7 +4997,9 @@
   // canonical clip-player) + mixer channel N (on the canonical mixmstrs).
   let ctxMenuCanonClipPlayer = $derived.by<string | null>(() => {
     void snapshot;
-    return listClipPlayers(patch.nodes).sort()[0] ?? null;
+    // #1825 — the tie-break moved to `$lib/graph/lane-colors` so the faceplate
+    // and this menu cannot disagree about WHICH player is canonical.
+    return canonicalClipPlayerId(patch.nodes);
   });
   let ctxMenuCanonMixer = $derived.by<string | null>(() => {
     void snapshot;
@@ -5007,21 +5011,24 @@
     return mixers[0] ?? null;
   });
 
-  // The per-channel COLOURS (length = 8) of the canonical clip-player — each
-  // channel button is tinted by its colour, which IS the automation-lane colour
-  // (the per-channel clip colour). Empty ⇒ the whole assignment section is
-  // hidden (no clip-player in the rack to hold the automation assignment).
+  // The per-channel COLOURS of the canonical clip-player — each channel button
+  // is tinted by its colour, which IS the automation-lane colour (the
+  // per-channel clip colour). Empty ⇒ the whole assignment section is hidden
+  // (no clip-player in the rack to hold the automation assignment).
   // Not offered for groups, clip-players themselves, or dock stubs.
+  //
+  // ⚠ THE DERIVATION ITSELF LIVES IN `$lib/graph/lane-colors` (#1825). It used
+  // to be inline here, which made this menu the de-facto owner of "what colour
+  // is channel N" — so the mixmstrs faceplate, the second consumer, would have
+  // had to restate it. What stays local is only the ELIGIBILITY test below:
+  // which nodes are offered a channel assignment at all.
   let ctxMenuChannelColors = $derived.by<string[]>(() => {
     void snapshot;
     const mid = ctxMenuNodeId;
     if (!mid) return [];
     const n = patch.nodes[mid];
     if (!n || n.type === 'group' || n.type === 'clipplayer') return [];
-    const player = ctxMenuCanonClipPlayer;
-    if (!player) return [];
-    const data = patch.nodes[player]?.data as AutoClipPlayerData | undefined;
-    return Array.from({ length: AUTO_CLIP_LANES }, (_, lane) => autoLaneColorEff(data, lane));
+    return canonicalLaneColors(patch.nodes);
   });
   // THIS module's current automation lane (0-based) on ANY clip-player (lowest
   // id wins), or null — drives the ✓ + "Remove automation assignment".
@@ -5294,10 +5301,14 @@
   }
 
   /** The canonical clip-player that holds column automation lanes (the pinned
-   *  one in a workflow rack; else the lowest clip-player id). */
+   *  one in a workflow rack; else the lowest clip-player id).
+   *
+   *  ⚠ ONE RULE, IN ONE PLACE (#1825). This used to be the only site that
+   *  preferred the pinned player; the node menu's channel assignment took the
+   *  lowest id unconditionally, so the two could point at different players on
+   *  the same rack. Both now call `canonicalClipPlayerId`. */
   function wcolCanonClip(): string | null {
-    if (patch.nodes[WCOL_CLIP_ID]) return WCOL_CLIP_ID;
-    return listClipPlayers(patch.nodes).sort()[0] ?? null;
+    return canonicalClipPlayerId(patch.nodes);
   }
 
   // MAJOR 1 — durable manual override: a user-deleted managed (wcol-) cable must

@@ -35,6 +35,16 @@ emit_sha() {
   fi
 }
 
+# The run page's verdict. "0 baselines committed" and "the capture never ran"
+# look identical from a green run, and that ambiguity cost #1809 a round trip —
+# so the outcome is STATED on the summary, not left to be inferred from a log.
+# Harmless outside Actions, where GITHUB_STEP_SUMMARY is unset.
+summarize() {
+  if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+    printf '%s\n' "$@" >>"$GITHUB_STEP_SUMMARY"
+  fi
+}
+
 git config user.name "vrt-baseline-bot"
 git config user.email "vrt-baseline-bot@users.noreply.github.com"
 
@@ -42,9 +52,22 @@ git add e2e/vrt/__screenshots__
 if git diff --cached --quiet; then
   echo "No VRT baseline changes — nothing to commit."
   echo "::warning::vrt-update captured ZERO baselines. Playwright only rewrites a snapshot whose comparison FAILS, so a sub-tolerance diff writes nothing — investigate rather than assuming there was nothing to do."
+  summarize \
+    "" \
+    "### ZERO baselines committed" \
+    "" \
+    "This run rendered its scope and rewrote **nothing**. That is NOT proof there was nothing to do:" \
+    "\`--update-snapshots\` only rewrites a snapshot whose comparison FAILS, so a stale-but-under-tolerance" \
+    "baseline passes and is never regenerated (\`git rm\` it and re-dispatch), and a scope that missed the" \
+    "changed cards looks exactly the same from here." \
+    "" \
+    "**Count what you predicted against what landed before reading this as success.**"
   emit_pushed false
   exit 0
 fi
+
+# DERIVED from what is staged — never a predicted or hand-typed number.
+BASELINE_COUNT="$(git diff --cached --name-only | wc -l | tr -d ' ')"
 
 git commit -m "chore(vrt): regenerate baselines [vrt-update workflow]"
 
@@ -73,4 +96,10 @@ git push origin "HEAD:${REF}"
 # rebase, so it is the commit that actually landed on the branch.
 emit_pushed true
 emit_sha "$(git rev-parse HEAD)"
+summarize \
+  "" \
+  "### Committed ${BASELINE_COUNT} baseline file(s)" \
+  "" \
+  "Pushed to \`${REF}\` as \`$(git rev-parse HEAD)\`. Count this against what you predicted —" \
+  "a capture rewrites only what FAILED its comparison, so a short count is a finding, not a formality."
 echo "Pushed VRT baselines to ${REF} as $(git rev-parse HEAD)."

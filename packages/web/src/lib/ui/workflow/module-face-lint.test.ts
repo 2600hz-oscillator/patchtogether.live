@@ -834,6 +834,72 @@ describe('module-face lint — MOMENTARY pads (face.momentary)', () => {
   });
 });
 
+// ── face.channelAccent — the per-channel LANE colour (#1825) ────────────────
+//
+// The declaration says "these param ids belong to channel N", and the shell
+// paints them in rack lane N's colour through the `--ka` accent chain. Nothing
+// at runtime can tell a WRONG id from a right one — a stale id simply paints
+// nothing and a duplicated id silently picks whichever channel came last — so
+// the shape is linted here, roster-wide and deny-by-default.
+describe('module-face lint — CHANNEL ACCENT (face.channelAccent)', () => {
+  it('every declared id is a real, RANKED param, claimed by exactly one channel', () => {
+    const problems: string[] = [];
+    for (const def of allDefs()) {
+      const decl = def.face?.channelAccent;
+      if (!decl) continue;
+      const byId = new Set((def.params ?? []).map((p) => p.id));
+      const ranked = new Set(def.face?.order ?? []);
+      const seen = new Map<string, number>();
+      decl.forEach((ids, ch) => {
+        if (ids.length === 0) {
+          problems.push(
+            `${def.type}: face.channelAccent channel ${ch} is EMPTY — a column with a colour ` +
+              `and no controls is a dead lane`,
+          );
+        }
+        for (const pid of ids) {
+          if (seen.has(pid)) {
+            problems.push(
+              `${def.type}: face.channelAccent claims '${pid}' for channel ${seen.get(pid)} AND ` +
+                `${ch} — a cell has one colour`,
+            );
+          }
+          seen.set(pid, ch);
+          if (!byId.has(pid)) {
+            problems.push(`${def.type}: face.channelAccent '${pid}' is not a declared param`);
+            continue;
+          }
+          if (!ranked.has(pid)) {
+            problems.push(`${def.type}: face.channelAccent '${pid}' is not ranked in face.order`);
+          }
+        }
+      });
+    }
+    expect(problems.join('\n'), 'face.channelAccent drifted from the params').toBe('');
+  });
+
+  it('the declaring ROSTER is exactly this — owner scoped it to ONE module', () => {
+    // Owner, 2026-08-17: *"for mixmstrs ONLY"*. A second adopter is a deliberate
+    // edit here (and a VRT dispatch for its face), never a quiet spread. Named
+    // membership, not a count.
+    const declaring = allDefs()
+      .filter((d) => d.face?.channelAccent)
+      .map((d) => d.type)
+      .sort();
+    expect(declaring).toEqual(['mixmstrs']);
+  });
+
+  it('NEGATIVE CONTROL: the roster clause can see a face that does NOT declare it', () => {
+    // A vacuous version of the clause above (e.g. reading the wrong field) would
+    // return `[]` and still pass a `toEqual([...])` written to match it. This
+    // asserts the other side: most faces have no declaration at all.
+    const faced = allDefs().filter((d) => d.face);
+    const undeclared = faced.filter((d) => !d.face?.channelAccent);
+    expect(faced.length, 'the roster must contain faced defs').toBeGreaterThan(0);
+    expect(undeclared.length, 'and most of them must not declare it').toBeGreaterThan(0);
+  });
+});
+
 describe('module-face lint — DECLARED param cells (face.paramCells) + PANEL tier', () => {
   // PF-15 / PF-14. `face.paramCells` is the ONE render primitive a module has
   // to declare — `'toggle'` is derived from the 0/1 switch shape and

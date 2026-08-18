@@ -440,7 +440,10 @@ measured companion — not in a face PR.
 **New face scenes need NOTHING declared** (since #1458). Add the module to the
 `FACES` roster, push, and run `flox activate -- task vrt:commit` — linux CI
 writes `face-<t>-compact.png` and `face-<t>-dock.png` and commits them to the
-branch. There is no pair to add, no ceiling to move, no ledger to re-pin, and no
+branch. Since #1795 that dispatch DERIVES its scope from your branch's diff, so
+a single-module face PR captures in ~3 min instead of 41-56; it prints the token
+and the test count before dispatching, and falls back to the full sweep loudly
+(two modules, or a file it cannot attribute) rather than guessing. There is no pair to add, no ceiling to move, no ledger to re-pin, and no
 drain-before-dispatch ordering: all of that existed to manage a second baseline
 population that no longer exists. Until the capture lands the two scenes FAIL as
 "snapshot doesn't exist", which is the visible-debt state the exemption pair used
