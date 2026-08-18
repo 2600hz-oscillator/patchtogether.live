@@ -83,6 +83,26 @@ export const MOVE_EPS = MAP_UNIT;
  */
 export const TURN_EPS = 4_000_000;
 
+/**
+ * A CAP for a transition DOOM's own sim has to run — never a relay budget.
+ *
+ * ⚠ THE CATEGORY ERROR THIS EXISTS TO STOP. `SYNC_BUDGET_MS` (20 s,
+ * `_collab-helpers.ts`) is calibrated for CROSS-CONTEXT YJS CONVERGENCE — A
+ * mutates, the relay ships it, B observes. It is paced by the relay's event
+ * loop. A DOOM level relaunch (`G_InitNew` + the joiner's marine spawning at
+ * its coop start) is paced by the FRAME CLOCK, because DOOM's game clock is the
+ * frame clock — and the peer waiting for it is very often a BACKGROUNDED
+ * Playwright context, where rAF is throttled hard. Spending a relay budget on a
+ * sim-paced transition makes the cap the gate, which is exactly the shape that
+ * flakes.
+ *
+ * So: sync waits keep SYNC_BUDGET_MS; anything the SIM has to run gets this,
+ * and it BOUNDS THE FAILURE rather than gating it. It stays well under the
+ * specs' own `test.setTimeout` so a genuine hang still surfaces as a named
+ * assertion rather than an opaque test timeout.
+ */
+export const SIM_BUDGET_MS = 60_000;
+
 /** Manhattan distance in raw fixed-point units. */
 export function manhattan(
   a: { x: number; y: number },

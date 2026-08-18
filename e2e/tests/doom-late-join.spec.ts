@@ -1,5 +1,32 @@
 // e2e/tests/doom-late-join.spec.ts
 //
+// ⚠ DOOM SPECS ARE NORMALLY OFF-LIMITS — the standing owner ruling is
+//   "do not fuck with doom in any way without specific approval". The waits in
+//   this file were re-budgeted under a SPECIFIC approval given by the owner on
+//   2026-08-18, verbatim:
+//     "okay see if you can go make the doom tests blurrier and less flakey,
+//      just knowing doom renders and our kb logic and basic game nav works
+//      is fine"
+//   That approval covers THE SPECS ONLY — not video/modules/doom.ts, not the
+//   WASM/WAD assets, not the netcode. See #1848 and e2e/tests/_doom-helpers.ts.
+//
+// ── WHAT CHANGED, AND WHY IT WAS THE FLAKE (#1848) ──────────────────────
+//
+// Every wait in the original spec spent SYNC_BUDGET_MS. That budget is
+// calibrated for CROSS-CONTEXT YJS CONVERGENCE (A mutates → relay → B
+// observes) and is paced by the relay's event loop. But two of the waits here
+// are not sync waits at all: the launch and the hot-drop RELAUNCH are DOOM
+// running G_InitNew and spawning a marine, which is paced by the FRAME CLOCK —
+// DOOM's game clock IS the frame clock — on a peer that Playwright is keeping
+// BACKGROUNDED, where rAF is throttled hard. Spending a relay budget on a
+// sim-paced transition makes the cap the gate. Those two now use SIM_BUDGET_MS
+// (see _doom-helpers.ts); the genuine sync waits keep SYNC_BUDGET_MS.
+//
+// And B's marine was read ONCE, immediately after B's gamestate flipped to
+// GS_LEVEL. GS_LEVEL is set by G_DoLoadLevel; the player mobj is placed by
+// P_SpawnPlayer a few TICS later, so a one-shot read raced the spawn on any
+// peer whose tics were arriving slowly. It is polled now.
+//
 // Late-join acceptance: HOT-DROP into the running map.
 //
 // The late-join design (operator-revised — supersedes the slice-6 "seat at the
@@ -29,6 +56,7 @@
 import { test, expect, type Page, type Browser } from '@playwright/test';
 import { spawnPatch, type SpawnNode } from './_helpers';
 import { SYNC_BUDGET_MS } from './_collab-helpers';
+import { SIM_BUDGET_MS } from './_doom-helpers';
 
 const GS_LEVEL = 0;
 
@@ -237,7 +265,9 @@ test.describe('@collab DOOM late-join — hot-drop into the running map', () => 
           return !!st && st.launched === true && st.gamestate === level;
         },
         [NODE, GS_LEVEL],
-        { timeout: SYNC_BUDGET_MS },
+        // SIM-paced, not relay-paced: this is DOOM loading E1M1, so the cap
+        // must bound the failure rather than gate a slow renderer.
+        { timeout: SIM_BUDGET_MS },
       );
 
       // ─── B joins WHILE A's level is running → HOT-DROP into the CURRENT map ─
@@ -270,7 +300,10 @@ test.describe('@collab DOOM late-join — hot-drop into the running map', () => 
           return !!st && st.mySlot === 1 && st.launched === true && st.gamestate === level;
         },
         [NODE, GS_LEVEL],
-        { timeout: SYNC_BUDGET_MS },
+        // SIM-paced: the arbiter's hot-drop RELAUNCHES the map, so every peer
+        // runs a fresh G_InitNew. B is the backgrounded context here, which is
+        // precisely where a relay-sized budget turns into the gate.
+        { timeout: SIM_BUDGET_MS },
       );
 
       // ─── B is an ACTIVE player at slot 1 in the SAME map (not pending) ───
@@ -286,8 +319,20 @@ test.describe('@collab DOOM late-join — hot-drop into the running map', () => 
       });
       expect(Object.keys(aMid!.pending), 'no pending reservations — hot-drop is immediate').toHaveLength(0);
       // B has a LIVE marine in the current map (slot 1 spawned via the relaunch).
-      const bMarine = await slotPos(pair.pageB, NODE, 1);
-      expect(bMarine, 'B spawned a live marine into the current map (hot-drop)').not.toBeNull();
+      //
+      // POLLED. GS_LEVEL is set by G_DoLoadLevel but the mobj is placed by
+      // P_SpawnPlayer a few TICS later, and a tic is a frame — so a one-shot
+      // read here is a race against B's (throttled, backgrounded) frame clock,
+      // not a statement about the hot-drop.
+      await expect
+        .poll(async () => (await slotPos(pair.pageB, NODE, 1)) !== null, {
+          timeout: SIM_BUDGET_MS,
+          intervals: [200, 500, 1000],
+          message:
+            'B reached GS_LEVEL but never spawned a live marine at slot 1 — the ' +
+            'hot-drop relaunch seated B without putting a body in the map.',
+        })
+        .toBe(true);
     } finally {
       await pair.close();
     }
