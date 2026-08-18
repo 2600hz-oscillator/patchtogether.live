@@ -36,7 +36,6 @@ on:
     # scripts/docs-only-gate.test.ts fails if the two lists ever drift.
     paths:
       - '**/*.md'
-      - '!docs/testing/test-ledger.generated.md'
       - '!docs/design/face-migration.generated.md'
       - '.myrobots/**'
       - 'LICENSE'
