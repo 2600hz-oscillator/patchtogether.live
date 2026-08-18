@@ -4591,6 +4591,32 @@
   /** The open drop-patch modal, or null. */
   let patchDrop = $state<{ droppedId: string; ontoId: string } | null>(null);
 
+  /** ⚠ THE ONE DEFINITION OF "the drop modal is open" — the fully RESOLVED
+   *  subject, or null. Everything that renders the modal, and everything that
+   *  has to get out of its way, reads THIS. Nobody re-types the three-part
+   *  guard, because two copies of one predicate is exactly how a modal and the
+   *  layers around it drift apart later.
+   *
+   *  #1838 is the reason it exists: `<PickupCable>` is `position: fixed` at
+   *  z-index 1002, ABOVE the scrim's 45, so the carry ghost drew a live-patch
+   *  line straight across a dialog about making a patch. The suppression is
+   *  PRESENTATION ONLY — the carry itself is untouched, and must be: the modal
+   *  claims it deliberately (DropPatchModal's `$effect` → `connectDragState
+   *  .pickup(...)`) so RearCard's compatibility dim is the shipped answer
+   *  rather than a redrawn one.
+   *
+   *  It RESOLVES the defs rather than merely testing them, so the modal gets
+   *  its narrowing from the same expression instead of asserting non-null on a
+   *  second lookup. */
+  let dropModal = $derived.by(() => {
+    const s = patchDrop;
+    if (!s) return null;
+    const droppedDef = dropDefOf(s.droppedId);
+    const ontoDef = dropDefOf(s.ontoId);
+    if (!droppedDef || !ontoDef) return null;
+    return { droppedId: s.droppedId, ontoId: s.ontoId, droppedDef, ontoDef };
+  });
+
   /** Defs `findRepair` may search when a row is refused. The LIVE registry, so
    *  a new module that happens to reduce colour to mono becomes an offered
    *  repair the day it lands — there is no list of "converter modules", because
@@ -8819,19 +8845,19 @@
          resolveCardDrop). Rendered OUTSIDE <SvelteFlow> so it is not a node
          and cannot be panned/zoomed away from, and so its Tab handling is a
          plain window listener like the other two flip-key owners. -->
-    {#if patchDrop && dropDefOf(patchDrop.droppedId) && dropDefOf(patchDrop.ontoId)}
+    {#if dropModal}
       <div class="patch-drop-scrim" data-testid="patch-drop-scrim">
         <div class="patch-drop-shell">
           <DropPatchModal
             dropped={{
-              nodeId: patchDrop.droppedId,
-              def: dropDefOf(patchDrop.droppedId)!,
-              label: patchDropLabel(patchDrop.droppedId),
+              nodeId: dropModal.droppedId,
+              def: dropModal.droppedDef,
+              label: patchDropLabel(dropModal.droppedId),
             }}
             onto={{
-              nodeId: patchDrop.ontoId,
-              def: dropDefOf(patchDrop.ontoId)!,
-              label: patchDropLabel(patchDrop.ontoId),
+              nodeId: dropModal.ontoId,
+              def: dropModal.ontoDef,
+              label: patchDropLabel(dropModal.ontoId),
             }}
             direction="downstream"
             live
@@ -8922,7 +8948,19 @@
       nodes={headlessSourceNodes}
       nodeTypes={nodeTypes as unknown as Record<string, unknown>}
     />
-    <PickupCable />
+    <!-- ⚠ #1838 — SUPPRESSED WHILE THE DROP MODAL IS OPEN. Owner: "in this view
+         we do not want the dangling dotted patch cable, it's clutter that's not
+         helpful." The ghost is `position: fixed` at z-index 1002 and the scrim
+         is 45, so it drew OVER the dialog, not behind it, and read as a live
+         patch in progress underneath a dialog about making a patch.
+         Presentation only: the carry stays exactly as the modal set it (the
+         modal's own `$effect` claims it so RearCard's compat-dim is real), and
+         staging / Tab inversion / commit / single-⌘Z undo all still hang off
+         it. Reads the SAME `dropModal` the scrim does — one predicate, so the
+         ghost cannot fall out of step with the thing it is hiding from. -->
+    {#if !dropModal}
+      <PickupCable />
+    {/if}
     {#if dockPanTails.length > 0 && flowApi}
       <!-- DOCKING P2.5b: gesture-scoped stub→rail tail (presentation-only;
            mounted onmovestart, killed onmoveend — zero idle cost). -->

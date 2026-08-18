@@ -114,6 +114,39 @@ const TICKS_PER_PHASE = 300;
 const BLOCK_MS = 75;
 
 /**
+ * THE SATURATING NEGATIVE CONTROL IS OPT-IN, AND CI NEVER RUNS IT.
+ *
+ * ⚠ THIS IS A DOOM-ADJACENCY RULING, not a performance tweak. Measured
+ * placement: the cost-based planner puts this spec on shard 2/10 alongside
+ * `doom-audio-output.spec.ts`, `doom-session-survives-card-collapse.spec.ts`
+ * and `audio-health-readout.spec.ts`. In DOOM, `runtime.runTic()` runs inside
+ * `surface.draw`, so THE GAME CLOCK IS THE FRAME CLOCK: starving that runner
+ * does not delay a DOOM assertion, it changes how far the marine walks. The
+ * owner's standing ruling is that DOOM is not to be touched without specific
+ * approval, and a co-tenant spec that deliberately pins a core for seconds
+ * reaches the same outcome through the side door. `audio-health-readout` is
+ * the same collision by construction — it asserts the scheduler-tick readout
+ * is LIVE, which is the exact quantity this perturbation moves.
+ *
+ * Shrinking the window was not enough: a shorter burst next to a frame-clock
+ * game is a smaller violation of the same ruling, not compliance with it. So
+ * the perturbation cannot fire on CI at all — it now requires an explicit
+ * `PT_COST_PERTURB=1`, which nothing in CI sets.
+ *
+ * ⚠ AND CI LOSES NOTHING IT WAS ACTUALLY GETTING. Measured on e2e shard 3/10:
+ * ambient p50 lateness was 263.3 ms against a 75 ms stimulus, so the
+ * ambient-floor gate below ALREADY refused the comparison there. The control
+ * was never running on CI; it was only ever costing DOOM its determinism.
+ *
+ * What still runs on CI, and can still go red there: the probe is installed,
+ * the accumulators actually accumulate, the labels name their own subject.
+ * The blocking-moves-the-number property is separately proven DETERMINISTICALLY
+ * in the unit lane — `tick-latency.test.ts` drives a synthetic 200 ms stall
+ * through the same recorder with an injectable clock and zero wall-clock time.
+ */
+const PERTURB = process.env.PT_COST_PERTURB === '1';
+
+/**
  * Wait, INSIDE THE PAGE, for `n` more scheduler tick ARRIVALS, then read every
  * accumulator once.
  *
@@ -234,10 +267,38 @@ function report(
 }
 
 test.describe('#1811 main-thread cost instrument', () => {
-  // THREE phases at TICKS_PER_PHASE arrivals each (~7.5 s at the 25 ms
-  // cadence), plus one page load and one spawn — about 30 s of a single shard
-  // measured locally. Deliberately one page load and a two-node video rack: a
-  // heavy spec here is a permanent tax on every CI run.
+  // ON CI: ONE phase (idle) at TICKS_PER_PHASE arrivals (~7.5 s at the 25 ms
+  // cadence), plus one page load and one spawn. The two perturbation phases are
+  // opt-in (PT_COST_PERTURB=1) and do NOT run here, so CI pays roughly a third
+  // of the full three-phase cost — measured locally under E2E_SWIFTSHADER=1:
+  // 32.1 s with all three phases; gated as CI runs it, 14.5 s cold and 10.2 s
+  // warm (3/3 flake-check).
+  //
+  // ⚠ Those are FLOORS, not predictions. This is a VIDEO spec, and a local
+  // single-worker run cannot see ten shards competing for one software
+  // rasterizer: backdraft-preview-toggle predicted 57.5 s the same way and
+  // measured 358.2 CPU-s on CI, 6x. Take the real cost from
+  // e2e-timings.generated.json once a run has carried this spec.
+  //
+  // ⚠ TICKS_PER_PHASE IS NOT A COST KNOB, and the reason is the repo's headline
+  // renderer rule read backwards. The WINDOW is a time budget (N tick arrivals
+  // at a 25 ms cadence); the FLOORS below are FRAME COUNTS (>10 engine frames).
+  // Frames-per-window is therefore renderer-dependent, so shortening the window
+  // does not scale the assertion down with it — it silently makes the floor
+  // harder on the slowest renderer, which is the one CI runs.
+  //
+  // MEASURED: at 100 ticks (~2.5 s) this spec is green on a local GPU and RED
+  // under E2E_SWIFTSHADER=1 — the idle phase reported ONE frame and failed its
+  // own vacuity guard. At 300 it reports 65 frames under SwiftShader. 300 is
+  // also what the ring above requires (> 256), so a shorter phase would summarise
+  // a MIXTURE of itself and its predecessor regardless.
+  //
+  // Skipping the two opt-in phases is where the CI saving comes from. The window
+  // is not the lever. Verify any change to it under E2E_SWIFTSHADER=1, not on a
+  // local GPU.
+  //
+  // Deliberately one page load and a two-node video rack: a heavy spec here is
+  // a permanent tax on every CI run.
   //
   // The timeout is 180 s rather than 3x7.5 s because each phase carries its own
   // 45 s in-page CAP: a wedged scheduler clock must surface as the assertion
@@ -293,6 +354,40 @@ test.describe('#1811 main-thread cost instrument', () => {
     const idle = await measureOverTicks(page, TICKS_PER_PHASE);
     console.log(report('idle video rack', idle));
 
+    // ── STRUCTURAL ASSERTIONS — these ALWAYS run, including on CI ─────────
+    // They sit BEFORE both gates on purpose. Everything below is opt-in or
+    // environment-dependent; if these moved under a gate this spec would
+    // become decoration on the one runner that matters.
+    expect(idle.tick, 'the scheduler clock is running (a sequencer subscribed)').not.toBeNull();
+    expect(
+      idle.ticksObserved,
+      `scheduler tick ARRIVALS observed in the window — 0 means the clock never ticked, ` +
+        `which makes every lateness number below meaningless rather than good`,
+    ).toBeGreaterThan(10);
+    expect(idle.video, 'the video domain resolved (renderCostStats reachable)').not.toBeNull();
+    expect(
+      idle.video!.step.calls,
+      `engine.step CALLS (frames) in the window. 0 here is the reading a bare percentile ` +
+        `cannot distinguish from "cheap": it means the engine rAF never ran, so a p99 of 0.00ms ` +
+        `would be certifying that nothing happened.`,
+    ).toBeGreaterThan(10);
+    expect(
+      idle.video!.blit.calls,
+      `engine.blit CALLS (card preview blits) in the window. 0 means no card is presenting, ` +
+        `so the per-card blit cost this instrument exists to attribute is invisible.`,
+    ).toBeGreaterThan(10);
+    expect(idle.video!.step.label, 'the stats name their own subject').toBe('video.engine.step');
+    expect(idle.video!.blit.label, 'the stats name their own subject').toBe('video.engine.blit');
+
+    if (!PERTURB) {
+      console.log(
+        '[main-thread-cost] saturating negative control SKIPPED — opt-in only ' +
+          '(PT_COST_PERTURB=1). It pins a core for seconds and the planner co-schedules this ' +
+          'spec with DOOM, whose game clock IS its frame clock. The structural assertions above ' +
+          'still ran. See BLOCK_MS for the measurement and the ruling.',
+      );
+      return;
+    }
     // ── (2b) IS THE SIGNAL EVEN VISIBLE ON THIS RUNNER? ─────────────────────
     //
     // MEASURED, CI e2e shard 3/10 (10 shards in parallel, SwiftShader): the
@@ -338,26 +433,6 @@ test.describe('#1811 main-thread cost instrument', () => {
       return;
     }
 
-    expect(idle.tick, 'the scheduler clock is running (a sequencer subscribed)').not.toBeNull();
-    expect(
-      idle.ticksObserved,
-      `scheduler tick ARRIVALS observed in the window — 0 means the clock never ticked, ` +
-        `which makes every lateness number below meaningless rather than good`,
-    ).toBeGreaterThan(10);
-    expect(idle.video, 'the video domain resolved (renderCostStats reachable)').not.toBeNull();
-    expect(
-      idle.video!.step.calls,
-      `engine.step CALLS (frames) in the window. 0 here is the reading a bare percentile ` +
-        `cannot distinguish from "cheap": it means the engine rAF never ran, so a p99 of 0.00ms ` +
-        `would be certifying that nothing happened.`,
-    ).toBeGreaterThan(10);
-    expect(
-      idle.video!.blit.calls,
-      `engine.blit CALLS (card preview blits) in the window. 0 means no card is presenting, ` +
-        `so the per-card blit cost this instrument exists to attribute is invisible.`,
-    ).toBeGreaterThan(10);
-    expect(idle.video!.step.label, 'the stats name their own subject').toBe('video.engine.step');
-    expect(idle.video!.blit.label, 'the stats name their own subject').toBe('video.engine.blit');
 
     // (3) NEGATIVE CONTROL, DIRECTION 1 — block the main thread and confirm
     // the LATENESS number moves. This is the leg that proves the instrument is
