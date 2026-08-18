@@ -213,6 +213,26 @@ describe('drawPreviewDownscaled', () => {
     expect(ctx.draws[0]!.args).toEqual([0, 0, ENGINE_W, ENGINE_H, 0, 0, 200, 150]);
   });
 
+  it('NEGATIVE CONTROL: at 1:1 (fullscreen) it does not touch the sampler AT ALL', () => {
+    // The "fullscreen is unchanged" claim, pinned. `fullscreenCanvasDims` sizes
+    // the buffer to the engine dims while fullscreen / full-frame / presenting,
+    // so that draw is exactly 1:1 — and this asserts the helper leaves the
+    // context's smoothing state exactly as it found it there.
+    const ctx = fakeCtx();
+    ctx.imageSmoothingEnabled = false;
+    ctx.imageSmoothingQuality = 'low';
+    drawPreviewDownscaled(
+      ctx,
+      { width: ENGINE_W, height: ENGINE_H } as unknown as CanvasImageSource,
+      0,
+      0,
+      ENGINE_W,
+      ENGINE_H,
+    );
+    expect(ctx.imageSmoothingEnabled, 'smoothing untouched at 1:1').toBe(false);
+    expect(ctx.imageSmoothingQuality, 'quality untouched at 1:1').toBe('low');
+  });
+
   it('a 1:1 source (fullscreen) makes exactly ONE draw', () => {
     const ctx = fakeCtx();
     const used = drawPreviewDownscaled(

@@ -257,9 +257,13 @@ function intrinsicSize(src: CanvasImageSource): { w: number; h: number } {
  * DROP-IN FOR `ctx.drawImage(src, dx, dy, dw, dh)` ON A PREVIEW SURFACE.
  *
  * Shrinks through `planDownscaleSteps` so no step exceeds 2×, then draws.
- * Falls back to the plain single `drawImage` — byte-identical to the call it
- * replaced — whenever the plan is empty (reduction already under 2×, source
- * dimensions unreadable) or no scratch context is available.
+ * Falls back to the plain single `drawImage` whenever the plan is empty
+ * (reduction already under 2×, source dimensions unreadable) or no scratch
+ * context is available. ⚠ That fallback is byte-identical to the call it
+ * replaced ONLY where there is no reduction at all — at a sub-2× reduction it
+ * still asks the sampler for `'high'`, which is a real request. The case that
+ * has to be untouched is the 1:1 one (fullscreen), and the `sw > dw` guard
+ * below is what makes it so.
  *
  * @returns how many halving steps were used; 0 means it drew directly.
  */
