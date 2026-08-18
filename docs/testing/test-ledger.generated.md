@@ -106,9 +106,9 @@ guards (`test.skip(cond, …)`) are env gates, not disables, and are excluded.
 - `e2e/tests/workflow-dock-ux.spec.ts:264` — test.fixme — the dock full-view shell renders NO lane rail; the rear card is its patch surface
 - `e2e/tests/workflow-dock.spec.ts:198` — test.fixme — independent zoom: ± steps the discrete scale and resizes the rail frame; ctrl+wheel is guarded
 - `e2e/tests/workflow-shell-faces.spec.ts:72` — test.fixme — adsr renders its SHELL face in-lane (not the placeholder) + the dock shows its pages
-- `e2e/tests/workflow-shell.spec.ts:1018` — test.fixme — 4-stack lane: ≥90px headroom above the top tile, ONE shared band top, badges fully visible
+- `e2e/tests/workflow-shell.spec.ts:1022` — test.fixme — 4-stack lane: ≥90px headroom above the top tile, ONE shared band top, badges fully visible
 - `e2e/tests/workflow-shell.spec.ts:504` — test.fixme — tile header: domain-colour rule ── gap ── FULL long name, type badge on row 2
-- `e2e/tests/workflow-shell.spec.ts:746` — test.fixme — port-heavy rail FITS the tile: EXPAND fully visible, surplus dots collapse into
+- `e2e/tests/workflow-shell.spec.ts:750` — test.fixme — port-heavy rail FITS the tile: EXPAND fully visible, surplus dots collapse into
 - `e2e/tests/workflow-surfaces.spec.ts:258` — test.fixme — assign wires the midiclock bridge, disables tap, and unassign round-trips
 
 ### art — declaration-level disables (0)
