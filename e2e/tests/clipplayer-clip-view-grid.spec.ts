@@ -73,7 +73,12 @@ async function cardBox(page: Page): Promise<{ w: number; h: number }> {
   return { w: box.width, h: box.height };
 }
 
-test('clip-view: whole editable grid is shown at once, card grows with clip length, no scroll', async ({
+// ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are UNCHANGED.
+// NONDETERMINISM: 5 recovered-on-retry observation(s) across 5 SHA(s) / 3 branch(es) in the
+// 96 h CI census to 2026-08-18 — never a hard failure, so every one of those jobs reported SUCCESS.
+// LOST WHILE PARKED: the owner requirement that clip-view shows the WHOLE editable grid at once and grows with clip length — a regression reintroduces the scroll-hunt for a note the feature was built to remove.
+// Re-enable only on a root cause (#1847); "it passes now" is not one.
+test.fixme('clip-view: whole editable grid is shown at once, card grows with clip length, no scroll', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 5 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({
   page,
   rack,
 }) => {

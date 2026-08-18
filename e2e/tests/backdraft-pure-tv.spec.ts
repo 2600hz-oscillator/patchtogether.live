@@ -371,7 +371,12 @@ test.describe('BACKDRAFT PURE TV — the GPU renders a bounded screen', () => {
     expect(bandCount(on.row), 'the nest survives the refresh').toBeGreaterThanOrEqual(3);
   });
 
-  test('CRITICAL — it breathes at high DRIVE, is still at low DRIVE, and recovers', async ({ page, rack }) => {
+  // ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are UNCHANGED.
+  // NONDETERMINISM: 2 recovered-on-retry observation(s) across 1 SHA(s) / 1 branch(es) in the
+  // 96 h CI census to 2026-08-18 — never a hard failure, so every one of those jobs reported SUCCESS.
+  // LOST WHILE PARKED: the only proof that BACKDRAFT's GPU shader agrees with its GL-free CPU mirror — that the iterated feedback nest actually breathes under DRIVE, settles when DRIVE is low, and recovers afterwards.
+  // Re-enable only on a root cause (#1847); "it passes now" is not one.
+  test.fixme('CRITICAL — it breathes at high DRIVE, is still at low DRIVE, and recovers', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 2 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page, rack }) => {
     // The CPU mirror proves the limit cycle with the noise floor OFF (C1/C2);
     // this only has to show the GPU servo is alive and, crucially, RECOVERABLE.
     await spawn(page, { ...TV_BASE, tvMode: 2, drive: 0.85 });

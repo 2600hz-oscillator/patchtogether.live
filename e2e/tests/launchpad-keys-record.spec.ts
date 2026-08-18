@@ -158,7 +158,12 @@ async function buildChain(page: import('@playwright/test').Page, prefix: string)
   await expect(page.locator('.svelte-flow__node-clipplayer')).toHaveCount(1);
 }
 
-test('@launchpad KEYS live audition — playing a keyboard pad is AUDIBLE (empty clip, transport running)', async ({ page, rack, errorWatch }) => {
+// ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are UNCHANGED.
+// NONDETERMINISM: 1 recovered-on-retry observation(s) across 1 SHA(s) / 1 branch(es) in the
+// 96 h CI census to 2026-08-18 — never a hard failure, so every one of those jobs reported SUCCESS.
+// LOST WHILE PARKED: the real-source-chain proof for the Launchpad KEYS view — a keyboard pad is AUDIBLE through the same decode/dispatch path real hardware uses, into the real TIMELORDE-locked voice chain.
+// Re-enable only on a root cause (#1847); "it passes now" is not one.
+test.fixme('@launchpad KEYS live audition — playing a keyboard pad is AUDIBLE (empty clip, transport running)', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 1 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page, rack, errorWatch }) => {
   await buildChain(page, 'k');
   await seedEmptyClip(page, 'k-cp');
 

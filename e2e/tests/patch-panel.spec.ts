@@ -203,7 +203,12 @@ test.describe('PatchPanel: redesigned menu', () => {
     await expect(chrome(page, 'adsr')).toHaveCount(0);
   });
 
-  test('edge-alignment: left trigger anchors menu left; right trigger anchors menu right', async ({ page, rack }) => {
+  // ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are UNCHANGED.
+  // NONDETERMINISM: 6 recovered-on-retry observation(s) across 3 SHA(s) / 3 branch(es) in the
+  // 96 h CI census to 2026-08-18 — never a hard failure, so every one of those jobs reported SUCCESS.
+  // LOST WHILE PARKED: that the body-portaled patch menu anchors to the side of its trigger — a menu that opens off-screen at a card near the viewport edge is an unreachable patch.
+  // Re-enable only on a root cause (#1847); "it passes now" is not one.
+  test.fixme('edge-alignment: left trigger anchors menu left; right trigger anchors menu right', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 6 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page, rack }) => {
     await spawnPatch(page, [{ id: 'adsr', type: 'adsr', position: { x: 200, y: 160 } }]);
 
     // ── Settled contract, measured in ONE layout pass and auto-retried ──────

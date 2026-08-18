@@ -117,7 +117,12 @@ async function setTransport(page: Page, running: number, bpm = 240) {
   );
 }
 
-test('per-lane rate: card dropdowns set 1/2 : 1 : 2x lanes advancing at a 1:2:4 ratio', async ({ page, rack }) => {
+// ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are UNCHANGED.
+// NONDETERMINISM: 22 recovered-on-retry observation(s) across 11 SHA(s) / 9 branch(es) in the
+// 96 h CI census to 2026-08-18 — never a hard failure, so every one of those jobs reported SUCCESS.
+// LOST WHILE PARKED: per-lane clock multiply/divide through the REAL TIMELORDE-driven tick loop, read off the engine's audio-accurate per-lane playhead — the polyrhythm the module exists for.
+// Re-enable only on a root cause (#1847); "it passes now" is not one.
+test.fixme('per-lane rate: card dropdowns set 1/2 : 1 : 2x lanes advancing at a 1:2:4 ratio', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 22 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page, rack }) => {
   await spawnPatch(page, [
     { id: 'cp', type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio',
       params: { quantize: 0, stepDiv: 2, gateLength: 0.9, octave: 0 } },
@@ -215,7 +220,12 @@ test('per-lane rate: card dropdowns set 1/2 : 1 : 2x lanes advancing at a 1:2:4 
   expect(Math.abs(p2 - 4 * p0), `2x ≈ 4 × ÷2 lane — ${obs}`).toBeLessThanOrEqual(4);
 });
 
-test('RST button: all active clips snap back to step 1 and keep playing', async ({ page, rack }) => {
+// ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are UNCHANGED.
+// NONDETERMINISM: 1 recovered-on-retry observation(s) across 1 SHA(s) / 1 branch(es) in the
+// 96 h CI census to 2026-08-18 — never a hard failure, so every one of those jobs reported SUCCESS.
+// LOST WHILE PARKED: that the card RST button snaps every ACTIVE lane back to step 1 while playback continues — a live-performance control whose failure mode is a silent no-op.
+// Re-enable only on a root cause (#1847); "it passes now" is not one.
+test.fixme('RST button: all active clips snap back to step 1 and keep playing', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 1 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page, rack }) => {
   await spawnPatch(page, [
     { id: 'cp', type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio',
       params: { quantize: 0, stepDiv: 2, gateLength: 0.9, octave: 0 } },

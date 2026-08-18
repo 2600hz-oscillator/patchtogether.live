@@ -344,7 +344,12 @@ test.describe('backdraft faceplate — the preview ON/OFF toggle', () => {
     ).toBeLessThan(4);
   });
 
-  test('the choice PERSISTS across a tab switch (the owner\'s stated floor)', async ({ page }) => {
+  // ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are UNCHANGED.
+  // NONDETERMINISM: 21 recovered-on-retry observation(s) across 23 SHA(s) / 12 branch(es) in the
+  // 96 h CI census to 2026-08-18 — it also hard-failed 2 time(s) on a branch, but the recovered-on-retry runs stayed green.
+  // LOST WHILE PARKED: the owner-stated floor for the faceplate preview ON/OFF button — that the choice survives a tab switch instead of silently reverting and re-claiming the vertical space it was told to give back.
+  // Re-enable only on a root cause (#1847); "it passes now" is not one.
+  test.fixme('the choice PERSISTS across a tab switch (the owner\'s stated floor)', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 21 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page }) => {
     const fv = await openFace(page);
     const wrap = fv.locator('[data-testid="backdraft-fs-wrap"]');
     await fv.getByTestId('backdraft-preview-toggle').click();
@@ -387,7 +392,12 @@ test.describe('backdraft faceplate — the preview ON/OFF toggle', () => {
     ).toHaveAttribute('data-preview-collapsed', 'true');
   });
 
-  test('⚠ COLLAPSING DOES NOT KILL THE PRODUCER — the engine keeps advancing, and the picture comes back LIVE', async ({
+  // ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are UNCHANGED.
+  // NONDETERMINISM: 11 recovered-on-retry observation(s) across 14 SHA(s) / 9 branch(es) in the
+  // 96 h CI census to 2026-08-18 — it also hard-failed 2 time(s) on a branch, but the recovered-on-retry runs stayed green.
+  // LOST WHILE PARKED: the pixel-invisible half of a collapse: that turning the preview off does not tear down the CARD_PRODUCER, so the picture returns LIVE rather than black or stale — the class that shipped twice as #1721 and #1728.
+  // Re-enable only on a root cause (#1847); "it passes now" is not one.
+  test.fixme('⚠ COLLAPSING DOES NOT KILL THE PRODUCER — the engine keeps advancing, and the picture comes back LIVE', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 11 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({
     page,
   }) => {
     await wireLiveChain(page);
