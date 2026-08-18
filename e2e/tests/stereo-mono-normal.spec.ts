@@ -197,7 +197,33 @@ async function measure(
 }
 
 test.describe('stereo modules: an unpatched R output follows L (mono normal)', () => {
+  // ── ⏸ FLAKE-PARK #1847 ────────────────────────────────────────────────────
+  // charlottesEchos failed then PASSED ON RETRY at the same SHA in the 96 h CI
+  // census to 2026-08-18, so the job reported SUCCESS. Parked with `test.fixme`,
+  // not deleted; the assertion body below is untouched and still runs for every
+  // other SUT, including the permanent nothing-patched negative control.
+  // LOST WHILE PARKED: charlottesEchos' mono-normal contract — a mono source
+  // into L must not leave R at digital silence. That is the exact class where
+  // five modules declared the normal in their DSP and then defeated it in their
+  // FACTORY, so this module is unmeasured in every lane while parked.
+  // Re-enable only on a root cause (#1847); "it passes now" is not one.
+  const FLAKE_PARK_1847: Record<string, string> = {
+    charlottesEchos:
+      'FLAKE-PARK #1847 — nondeterministic on CI: 2 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused',
+  };
+
   for (const sut of SUTS) {
+    const parkReason = FLAKE_PARK_1847[sut.type];
+    if (parkReason) {
+      test.fixme(
+        `${sut.type}: a MONO source into ${sut.inL} makes ${sut.outR} audible`,
+        { annotation: { type: 'fixme', description: parkReason } },
+        () => {
+          /* FLAKE-PARKED — see FLAKE_PARK_1847 and #1847 */
+        },
+      );
+      continue;
+    }
     test(`${sut.type}: a MONO source into ${sut.inL} makes ${sut.outR} audible`, async ({ page }) => {
       // ── LEG 1: NOTHING PATCHED. The permanent negative control. If the probe
       //    manufactured signal of its own, or the module self-oscillated, leg 2

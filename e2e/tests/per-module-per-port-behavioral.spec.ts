@@ -3911,6 +3911,52 @@ async function populateAllSequencerSteps(page: Page, heldNoteDriver = false): Pr
 
 test.describe.configure({ mode: 'parallel' });
 
+// ── ⏸ FLAKE-PARK #1847 — the NONDETERMINISTIC modules of this sweep ─────────
+//
+// Each row below failed and then PASSED ON RETRY at the SAME SHA during the 96 h
+// CI census to 2026-08-18. A recovered flake reports the job as SUCCESS, so none
+// of this was visible in the green/red signal. These are parked with
+// `test.fixme` — a parking space, not a verdict — NOT moved into
+// BEHAVIORAL_MODULE_EXEMPT, because an exemption says "this module has no
+// behavioral contract to assert" and that is not what is being claimed: the
+// contract is real and the MEASUREMENT is unreliable.
+//
+// ⚠ wavecel is the one with a written-down hypothesis already (see the spread_cv
+// analysis further down this file: a race against the async wavetable load in the
+// TEST SETUP, not a budget). That note is the shape a root cause should take here.
+//
+// The value is the report-row reason string; keep the `FLAKE-PARK #1847` prefix,
+// which is what scripts/e2e-skip-budget.mjs names.
+const FLAKE_PARK_1847: Record<string, string> = {
+  analogVco:
+    'FLAKE-PARK #1847 — nondeterministic on CI: 1 recovered-on-retry observation in the 96 h census to 2026-08-18; parked until root-caused',
+  clap: 'FLAKE-PARK #1847 — nondeterministic on CI: 2 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused',
+  cloudseed:
+    'FLAKE-PARK #1847 — nondeterministic on CI: 2 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused',
+  colorizer:
+    'FLAKE-PARK #1847 — nondeterministic on CI: 2 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused',
+  cube: 'FLAKE-PARK #1847 — nondeterministic on CI: 2 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused',
+  flipper:
+    'FLAKE-PARK #1847 — nondeterministic on CI: 5 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused',
+  lfo: 'FLAKE-PARK #1847 — nondeterministic on CI: 14 recovered-on-retry observations across 13 SHAs / 7 branches in the 96 h census to 2026-08-18; parked until root-caused',
+  lines:
+    'FLAKE-PARK #1847 — nondeterministic on CI: 5 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused',
+  moog911:
+    'FLAKE-PARK #1847 — nondeterministic on CI: 4 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused',
+  moog921Vco:
+    'FLAKE-PARK #1847 — nondeterministic on CI: 6 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused',
+  moog962:
+    'FLAKE-PARK #1847 — nondeterministic on CI: 2 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused',
+  moog995:
+    'FLAKE-PARK #1847 — nondeterministic on CI: 2 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused',
+  shimmershine:
+    'FLAKE-PARK #1847 — nondeterministic on CI: 4 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused',
+  treeohvox:
+    'FLAKE-PARK #1847 — nondeterministic on CI: 3 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused',
+  wavecel:
+    'FLAKE-PARK #1847 — nondeterministic on CI: 15 recovered-on-retry observations across 10 SHAs in the 96 h census to 2026-08-18; leading hypothesis is the async wavetable-load race documented at the spread_cv analysis below; parked until root-caused',
+};
+
 test.describe('per-module per-port: BEHAVIORAL input coverage (output changes on driven input vs unpatched)', () => {
   for (const mod of REGISTRY) {
     if (mod.inputs.length === 0) continue;
@@ -3928,6 +3974,24 @@ test.describe('per-module per-port: BEHAVIORAL input coverage (output changes on
     const title = `${mod.type}: each declared input perturbs the module's observable output (vs unpatched control)`;
     if (skipReason) {
       test.fixme(`${title} [SKIPPED: ${skipReason}]`, () => {});
+      continue;
+    }
+    // ⏸ FLAKE-PARK #1847 — parked, NOT exempt and NOT deleted. The title stays
+    // IDENTICAL to the live one, so un-parking is a one-entry deletion from
+    // FLAKE_PARK_1847; the assertion body below is untouched and still runs for
+    // every module NOT in that map.
+    // LOST WHILE PARKED, per module: the only dead-input detection this module
+    // has outside the behavioral smoke subset — that each declared input
+    // measurably perturbs its observable output against an unpatched control.
+    // ⚠ ci.yml already records that deleting the full behavioral lane left the
+    // modules outside that subset with no CI dead-input coverage at all; a park
+    // here removes the last of it for these modules specifically.
+    // Re-enable only on a root cause (#1847); "it passes now" is not one.
+    const parkReason = FLAKE_PARK_1847[mod.type];
+    if (parkReason) {
+      test.fixme(title, { annotation: { type: 'fixme', description: parkReason } }, () => {
+        /* FLAKE-PARKED — see FLAKE_PARK_1847 and #1847 */
+      });
       continue;
     }
     const modExempt = BEHAVIORAL_MODULE_EXEMPT[mod.type];
