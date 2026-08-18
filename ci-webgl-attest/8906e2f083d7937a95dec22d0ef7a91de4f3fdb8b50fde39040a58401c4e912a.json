@@ -1,40 +1,40 @@
 {
   "schemaVersion": 1,
-  "webglContentHash": "180802771d4bde960ad64e5fc98f8698f89eaee1758e058635adcbf7f6273b4f",
-  "attestedAt": "2026-08-18T03:29:49.933Z",
+  "webglContentHash": "8906e2f083d7937a95dec22d0ef7a91de4f3fdb8b50fde39040a58401c4e912a",
+  "attestedAt": "2026-08-18T13:48:43.214Z",
   "attestedBy": "patchtogether-maintainer",
-  "gitHeadAtAttest": "bc3b9994da91a43b51c6084fb31ffc688416a0f2",
+  "gitHeadAtAttest": "c02ff0c6bb6c14a129841d9a9367651243e7526c",
   "playwrightVersion": "1.50.0",
   "os": "darwin 25.4.0 (arm64)",
   "machineClass": "local-trusted-gpu-workstation",
   "preflight": {
     "samples": 7,
     "windowMs": 10204,
-    "maxForeignCpu": 2.3,
+    "maxForeignCpu": 0,
     "thresholdCpu": 25,
-    "load1": 2.84814453125,
+    "load1": 1.5615234375,
     "cores": 10
   },
   "gpu": "ANGLE (Apple, ANGLE Metal Renderer: Apple M5, Unspecified Version)",
   "appServer": {
-    "url": "http://127.0.0.1:52808",
+    "url": "http://127.0.0.1:52496",
     "mode": "dev",
-    "root": "/Users/2600hz/Documents/workspace/inet.modular/.claude/worktrees/agent-a2c4a13198d01f758",
-    "commit": "bc3b9994da91a43b51c6084fb31ffc688416a0f2"
+    "root": "/Users/2600hz/Documents/workspace/inet.modular/.claude/worktrees/fix-1836-reds",
+    "commit": "c02ff0c6bb6c14a129841d9a9367651243e7526c"
   },
   "repeatEach": 1,
   "suites": {
     "A-heavy": {
-      "specFiles": 58,
-      "passed": 210,
+      "specFiles": 56,
+      "passed": 199,
       "failed": 0,
       "flaky": 0,
       "skipped": 4,
       "flakyDetails": []
     },
     "A-serial": {
-      "specFiles": 3,
-      "passed": 24,
+      "specFiles": 6,
+      "passed": 37,
       "failed": 0,
       "flaky": 0,
       "skipped": 0,
@@ -57,5 +57,5 @@
       "flakyDetails": []
     }
   },
-  "durationSec": 217
+  "durationSec": 225
 }
