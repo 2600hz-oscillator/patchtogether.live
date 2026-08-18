@@ -54,6 +54,13 @@ import { installRenderSmokeHooks } from './_render-smoke';
 
 const FIXED_STEPS = 6;
 
+/** Minimum bright-pixel count (luma > 90) for the frame to HAVE an orientation
+ *  at all. Below this there is nothing to be the right way up, and any verdict
+ *  is fiction — see the assertion in analyzeTriangleOrientation. One constant,
+ *  used both to gate the verdict and to refuse the empty frame, so the two can
+ *  never drift into disagreeing the way the settle threshold did. */
+const MIN_BRIGHT_TOTAL = 100;
+
 /** Drive the video engine `steps` frames SYNCHRONOUSLY (one evaluate, no
  *  yield). The engine rAF loop is paused by installRenderSmokeHooks, so the
  *  test owns the exact frame count; this leaves the module's output FBO
@@ -211,13 +218,13 @@ async function injectCameraSourceAndSettle(page: Page, brightHalf: 'top' | 'bott
 async function analyzeTriangleOrientation(
   page: import('@playwright/test').Page,
   testid: string,
-): Promise<{ topBright: number; bottomBright: number; verdict: 'up' | 'down' | 'ambiguous' }> {
+): Promise<{ topBright: number; bottomBright: number; total: number; verdict: 'up' | 'down' | 'ambiguous' }> {
   const handle = page.locator(`canvas[data-testid="${testid}"]`);
   await expect(handle, `${testid} present`).toHaveCount(1);
-  return await handle.evaluate((el) => {
+  const r = await handle.evaluate((el, MIN_BRIGHT_TOTAL) => {
     const c = el as HTMLCanvasElement;
     const ctx = c.getContext('2d');
-    if (!ctx) return { topBright: 0, bottomBright: 0, verdict: 'ambiguous' as const };
+    if (!ctx) return { topBright: 0, bottomBright: 0, total: 0, verdict: 'ambiguous' as const };
     const w = c.width, h = c.height;
     const img = ctx.getImageData(0, 0, w, h).data;
     // Per-row bright-pixel width. For an up-pointing triangle the width
@@ -251,12 +258,45 @@ async function analyzeTriangleOrientation(
     void rowW;
     let verdict: 'up' | 'down' | 'ambiguous' = 'ambiguous';
     const total = topBright + bottomBright;
-    if (total > 100) {
+    if (total > MIN_BRIGHT_TOTAL) {
       if (bottomBright > topBright * 1.08) verdict = 'up';
       else if (topBright > bottomBright * 1.08) verdict = 'down';
     }
-    return { topBright, bottomBright, verdict };
-  });
+    return { topBright, bottomBright, total, verdict };
+  }, MIN_BRIGHT_TOTAL);
+
+  // ── THE PRECONDITION, ASSERTED WHERE EVERY LEG PASSES THROUGH ────────────
+  //
+  // Until #1826 this function returned an orientation verdict for a frame with
+  // NO BRIGHT PIXELS AT ALL, and every caller then asserted on it. The maths
+  // makes that a guaranteed FALSE VERDICT rather than a soft one:
+  // `expect(topBright).toBeGreaterThan(bottomBright * 1.5)` with both at 0 is
+  // `0 > 0`, which is false. So "the source never arrived" was REPORTED AS
+  // "the orientation is wrong" — and it cost two real-GPU attest windows and
+  // sent a reviewer hunting through render-worker transfer code for a flip
+  // that never happened.
+  //
+  // ⚠ THE THRESHOLDS DID NOT AGREE, and that is the whole mechanism.
+  // `settleFrozenCanvas` converges on luma > 8 sampled every 16th pixel; the
+  // verdict above counts luma > 90. The injected PICTUREBOX image is a bright
+  // TOP half on a #141414 background — luma 20. So a frame carrying ONLY the
+  // background passes the settle (20 > 8) and then scores top=0 bottom=0 at the
+  // verdict's threshold. The readiness gate was converging on content the
+  // assertion is structurally unable to see.
+  //
+  // Asserting here rather than at ~20 call sites is deliberate: every
+  // orientation leg funnels through this function, so one check makes all of
+  // them self-diagnosing, including the ones that are currently green by luck.
+  expect(
+    r.total,
+    `${testid}: THE SOURCE NEVER PRODUCED BRIGHT CONTENT (top=${r.topBright} bottom=${r.bottomBright} ` +
+      `bright-pixel total=${r.total}, threshold luma>90). This is a FIXTURE-READINESS failure, ` +
+      `NOT an orientation failure — there is nothing in the frame to be the right way up. ` +
+      `Look at whether the source actually loaded (the injected image / video / shader), not at ` +
+      `flips, uploads or transfer paths. Note that a canvas showing only a dark background ` +
+      `SATISFIES settleFrozenCanvas (luma>8) while scoring zero here (luma>90).`,
+  ).toBeGreaterThan(MIN_BRIGHT_TOTAL);
+  return r;
 }
 
 const TRIANGLE_PARAMS = { shape: 2, tile: 0, rotate: 0, zoom: 2.2 };
@@ -286,7 +326,25 @@ async function setupLive(page: import('@playwright/test').Page) {
   return errors;
 }
 
-test.describe('video orientation — SHAPES triangle reference', () => {
+// @webgl-serial — MEASURED, not inferred. Under the attest's PARALLEL Pass
+// A-heavy on a real GPU, PICTUREBOX's own output surface comes back with ZERO
+// bright pixels: reproduced on CLEAN MAIN (14b1edef9 + only this file's
+// readiness fix), with the real Pass A filter
+// (--grep-invert '@collab|@capacity|@webgl-serial', --workers=5). The same tree
+// passes 20/20 in isolation (E2E_REAL_GPU=1 task e2e:one -- video-orientation).
+//
+// It is NOT a frame-count problem, and that is worth stating because it is the
+// obvious wrong fix: `setImage` uploads SYNCHRONOUSLY (picturebox.ts
+// `setImage` -> `uploadToSlot` -> `glUpload` -> `gl.texImage2D`, no promise, no
+// deferral), and the readiness poll below re-steps the frozen engine for 15 s
+// and still reads 0. Raising FIXED_STEPS would change nothing.
+//
+// That leaves the same output-FBO readback race the other two members of this
+// bucket carry, so it runs in the SERIAL bucket (workers=1) — a quiet GPU, so
+// it passes honestly rather than being papered over by retries. See
+// WEBGL_SERIAL_SPECS in scripts/webgl-attest-lib.ts. Wall-time there is
+// ADDITIVE; this earns its place with the reproduction above.
+test.describe('video orientation — SHAPES triangle reference @webgl-serial', () => {
   test('1. SHAPES(triangle) -> OUTPUT is upright (apex on top)', async ({ page }) => {
     await setupFrozen(page);
     await spawnPatch(page,
@@ -496,7 +554,7 @@ const TRANSFORM_CASES: TransformCase[] = [
   { type: 'backdraft',  label: 'BACKDRAFT',  inPort: 'in_a', targetType: 'video',     params: { feedback: 0, mix: 0, zoom: 1, rotate: 0 } },
 ];
 
-test.describe('video orientation — parametrized transform/keyer lock', () => {
+test.describe('video orientation — parametrized transform/keyer lock @webgl-serial', () => {
   for (const tc of TRANSFORM_CASES) {
     test(`SHAPES(triangle) -> ${tc.label} -> OUTPUT is upright (apex on top)`, async ({ page }) => {
       await setupFrozen(page);
@@ -575,7 +633,7 @@ test.describe('video orientation — parametrized transform/keyer lock', () => {
 // helpers (deterministic promise chain, not a wall-clock wait), then drive a
 // fixed frozen step burst + settle the present blit on rendered state.
 // ---------------------------------------------------------------------------
-test.describe('video orientation — PICTUREBOX image source', () => {
+test.describe('video orientation — PICTUREBOX image source @webgl-serial', () => {
   test('PICTUREBOX(bright-top image) -> OUTPUT shows bright on top', async ({ page }) => {
     await setupFrozen(page);
     await spawnPatch(page,
@@ -585,7 +643,7 @@ test.describe('video orientation — PICTUREBOX image source', () => {
       ],
       [{ id: 'e1', from: { nodeId: 'pic', portId: 'out' }, to: { nodeId: 'out', portId: 'in' }, sourceType: 'image', targetType: 'video' }],
     );
-    await page.evaluate(async () => {
+    const injected = await page.evaluate(async () => {
       const w = globalThis as unknown as {
         __engine?: () => { getDomain: (d: string) => { read: (id: string, key: string) => unknown } } | null;
       };
@@ -613,8 +671,77 @@ test.describe('video orientation — PICTUREBOX image source', () => {
       const bmp: ImageBitmap = await mod.base64ToImageBitmap(b64);
       const extras = w.__engine?.()?.getDomain('video')?.read('pic', 'extras') as { setImage: (b: ImageBitmap) => void } | undefined;
       if (!extras) throw new Error('no picturebox extras');
+      // Report what we are about to inject. A 640x480 bright-TOP fill must
+      // decode to a bitmap with real dimensions; a 0x0 bitmap would upload
+      // "successfully" and render nothing, which is one of the ways this test
+      // used to report a phantom orientation failure.
       extras.setImage(bmp);
+      return { w: bmp.width, h: bmp.height, b64Len: b64.length };
     });
+    expect(
+      injected.w * injected.h,
+      `PICTUREBOX: the injected ImageBitmap has no pixels (${injected.w}x${injected.h}, ` +
+        `base64 ${injected.b64Len} chars). The encode/decode chain produced nothing to upload, ` +
+        'so nothing downstream can be the right way up.',
+    ).toBeGreaterThan(0);
+
+    // ── POSITIVE CONTROL: the SOURCE carries the picture, before we ask the
+    //    SINK where the bright half is. ───────────────────────────────────────
+    //
+    // Without this, PICTUREBOX-never-loaded and VIDEOOUT-shows-it-upside-down
+    // are the same failure message. With it, the two are different assertions
+    // with different text, and the one that fires names the half that broke.
+    //
+    // Bounded by RENDERED STATE, not by a wall-clock budget: each poll drives
+    // the (paused) engine one more frozen step and re-reads the PICTUREBOX
+    // node's OWN output, so it converges on the upload actually landing. That
+    // is the readGateWhenPopulated shape — wait on the thing you are about to
+    // assert on, never on a proxy for it and never on a longer timeout.
+    await expect
+      .poll(
+        async () => {
+          await stepEngineFrames(page, 1);
+          return page.evaluate(() => {
+            const w = globalThis as unknown as {
+              __engine: () => {
+                getDomain: (d: string) => {
+                  gl: WebGL2RenderingContext;
+                  res: { width: number; height: number };
+                  blitOutputToDrawingBuffer: (n: string) => void;
+                };
+              };
+            };
+            const vid = w.__engine().getDomain('video');
+            const gl = vid.gl;
+            const { width: W, height: H } = vid.res;
+            gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+            gl.viewport(0, 0, W, H);
+            gl.clearColor(0, 0, 0, 1);
+            gl.clear(gl.COLOR_BUFFER_BIT);
+            vid.blitOutputToDrawingBuffer('pic');
+            const px = new Uint8Array(W * H * 4);
+            gl.readPixels(0, 0, W, H, gl.RGBA, gl.UNSIGNED_BYTE, px);
+            // Same luma threshold the orientation verdict uses, so this gate
+            // cannot converge on content the assertion is unable to see.
+            let bright = 0;
+            for (let i = 0; i < px.length; i += 4 * 16) {
+              if ((px[i]! + px[i + 1]! + px[i + 2]!) / 3 > 90) bright++;
+            }
+            return bright;
+          });
+        },
+        {
+          message:
+            'PICTUREBOX\'s OWN output carries the injected bright half. If this is what fails, ' +
+            'the SOURCE never loaded — do not go looking for a flip, an upload orientation or a ' +
+            'worker transfer path. The image is a 640x480 bright-TOP fill on a #141414 ' +
+            'background, injected through the real downscaleAndEncode -> base64ToImageBitmap -> ' +
+            'setImage chain.',
+          timeout: 15_000,
+        },
+      )
+      .toBeGreaterThan(0);
+
     const delta = await stepEngineFrames(page, FIXED_STEPS);
     expect(delta, 'engine advanced exactly the fixed frame count (loop paused)').toBe(FIXED_STEPS);
     await settleFrozenCanvas(page, 'video-out-canvas');
