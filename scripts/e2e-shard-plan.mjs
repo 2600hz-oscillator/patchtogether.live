@@ -82,6 +82,23 @@ export function loadContention(dir = join(ROOT, 'e2e/tests')) {
  */
 export const PENDING_FIRST_MEASUREMENT = [
   {
+    spec: 'audio-gate-cold-rack.spec.ts',
+    why:
+      'lands with #1826 (the audio gate was mounted on /r/[id] only, so the DEFAULT route booted ' +
+      'no engine and said nothing), so no completed ci.yml run contains it and there is no blob ' +
+      'report to accept a cost from. MEASURED under E2E_SWIFTSHADER=1, single worker, in the ' +
+      'configuration CI runs: 11.9 s for the file (2 tests) cold, 5.8 s warm; the assertions ' +
+      'themselves are ~1.5 s each and the rest is browser launch plus one /rack load per test. ' +
+      'It is a DOM/state spec — an overlay locator, window.__engine(), and an AudioContext state ' +
+      'read — with no WebGL work of its own, so unlike the video specs above it has no ' +
+      'ten-shards-on-one-rasterizer amplification to be wrong about. It is nonetheless a FLOOR, ' +
+      'not a prediction: the cold-load leg deliberately performs NO gesture, so it holds a page ' +
+      'open on a route whose engine has not booted, and a loaded runner pays that in page-load ' +
+      'time rather than in test work. ' +
+      'Run `task e2e:timings:accept -- <run-id>` on the first green main run after this merges ' +
+      'and DELETE this entry — the gate reddens on a stale entry as loudly as on a missing one.',
+  },
+  {
     spec: 'main-thread-cost.spec.ts',
     why:
       'lands with #1811 as the instrument that MEASURED AND REJECTED the worker migration, so no ' +

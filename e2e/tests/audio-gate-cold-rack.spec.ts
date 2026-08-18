@@ -88,6 +88,40 @@ async function readEngine(page: import('@playwright/test').Page): Promise<{
   });
 }
 
+/**
+ * Navigate to the bare default route and wait for the CANVAS TO HAVE MOUNTED —
+ * without touching the page.
+ *
+ * ⚠ THIS PRECONDITION IS NOT CEREMONY; ITS ABSENCE WAS A REAL DEFECT IN THIS
+ * FILE. Without it the first assertion was `expect(overlay).toBeVisible()` on a
+ * default 5 s budget, and on a COLD dev server the first /rack load spends longer
+ * than that compiling. MEASURED, deterministically reproducible by restarting the
+ * server and running this spec immediately: leg 1 failed `Timeout: 5000ms ...
+ * element(s) not found` while leg 2 — same file, now-warm server — passed.
+ *
+ * The failure is the dangerous kind, because "the overlay is missing" and "the
+ * page has not booted yet" are the SAME OUTPUT and need OPPOSITE fixes, and the
+ * message it printed was the #1826 one — it would have sent the next reader
+ * hunting for a mounting bug in the gate. Waiting on the app's own readiness
+ * signal first splits them into two distinguishable failures.
+ *
+ * `__ensureEngine` is the right signal precisely because it is the boot function
+ * that has NOT been called yet: its presence proves Canvas mounted and installed
+ * its hooks, while `__engine()` is still falsy — which is exactly the state under
+ * test. And it is gesture-free: `waitForFunction` polls inside the page.
+ */
+async function gotoColdRack(page: import('@playwright/test').Page): Promise<void> {
+  await page.goto('/rack');
+  await page.waitForFunction(
+    () => typeof (globalThis as unknown as { __ensureEngine?: unknown }).__ensureEngine === 'function',
+    undefined,
+    // A bound on the FAILURE, not the gate: it exists so a page that never boots
+    // fails as "never booted" instead of masquerading as a missing overlay. Sized
+    // for a cold vite compile on a loaded CI shard, where this spec may be first.
+    { timeout: 60_000 },
+  );
+}
+
 test.describe('audio gate on the DEFAULT route', () => {
   test('COLD /rack — the overlay is up and NO engine exists, with no gesture at all', async ({
     page,
@@ -96,7 +130,8 @@ test.describe('audio gate on the DEFAULT route', () => {
     // ⚠ NOTHING BETWEEN THIS NAVIGATION AND THE ASSERTIONS MAY TOUCH THE PAGE.
     // A gesture here would boot the engine and make every assertion below
     // vacuously true — the exact shape of the blind spot that shipped #1826.
-    await page.goto('/rack');
+    // (`gotoColdRack` only WAITS — it dispatches no input; see its comment.)
+    await gotoColdRack(page);
 
     // State readiness on the REAL subject, auto-retrying — not a wall-clock
     // wait. Canvas mounts client-side, so "the overlay is visible" is the thing
@@ -135,7 +170,7 @@ test.describe('audio gate on the DEFAULT route', () => {
     page,
     errorWatch,
   }) => {
-    await page.goto('/rack');
+    await gotoColdRack(page);
 
     const gate = page.getByTestId('audio-gate');
     await expect(gate).toBeVisible();

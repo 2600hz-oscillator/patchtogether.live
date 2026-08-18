@@ -13,16 +13,14 @@
 // the spec; the doc page resolves it to authored docs.controls blobs.
 
 import { defineConfig, devices } from '@playwright/test';
-import { fileURLToPath } from 'node:url';
 // #1597: default to this WORKTREE'S OWN derived port (E2E_PORT/E2E_BASE_URL
 // win) — never the shared 5173 that reuseExistingServer adopted blindly.
 import { localBaseUrl } from '../worktree-port';
+// The VRT lane opts OUT of the audio gate entirely — see the long header there
+// for the measured resume-on-click this prevents, and for why a capture-time
+// stylesheet could not.
+import { vrtStandDownStorageState } from './vrt-stand-down';
 
-// Same capture-time stylesheet the regression lane uses (vrt.config.ts). The
-// annotated faces are DOC ASSETS shot from the same frozen scenes, so they hit
-// the identical audio-gate scrim — and a doc face published with a dark veil
-// over it is the same defect with a wider audience.
-const SCREENSHOT_STYLE = fileURLToPath(new URL('./vrt-screenshot.css', import.meta.url));
 
 const { baseUrl: BASE_URL, port: APP_PORT } = localBaseUrl('dev');
 const IS_LOCAL_TARGET =
@@ -76,12 +74,15 @@ export default defineConfig({
       threshold: 0.15,
       maxDiffPixelRatio: 0.02,
       animations: 'disabled',
-      stylePath: SCREENSHOT_STYLE,
     },
   },
 
   use: {
     baseURL: BASE_URL,
+    // Seeded before the first paint of every scene, for every context this
+    // config creates. Delivery is VERIFIED on every freeze (freezeAudioContext
+    // throws if the overlay is present), not assumed.
+    storageState: vrtStandDownStorageState(BASE_URL),
     viewport: { width: 1280, height: 720 },
     deviceScaleFactor: 1,
     // ⚠ #1499: must be inside `contextOptions` — Playwright 1.59 silently
