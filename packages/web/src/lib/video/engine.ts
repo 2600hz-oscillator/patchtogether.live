@@ -1606,7 +1606,7 @@ export class VideoEngine implements DomainEngine {
   blitOutputPortForPreview(nodeId: string, portId: string): boolean {
     const handle = this.nodes.get(nodeId);
     if (!handle) return false;
-    const key = `${nodeId} ${portId}`;
+    const key = `${nodeId}\u0000${portId}`;
     const now = this.watchNow();
     const decision = previewDecision({
       cardVisible: this.cardVisible.get(nodeId),
