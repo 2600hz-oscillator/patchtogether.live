@@ -1,4 +1,14 @@
-// e2e/tests/video-main-thread-cost.spec.ts
+// e2e/tests/main-thread-cost.spec.ts
+//
+// ⚠ THE FILENAME IS LOAD-BEARING — do not put `video-` back on the front.
+// `e2e/webgl-heavy-globs.ts` matches `**/video-*.spec.ts`, so this spec was
+// silently enrolled in the real-GPU WebGL ATTEST pass, which runs ~60 heavy
+// spec files IN PARALLEL on one Metal context. This spec measures MAIN-THREAD
+// SCHEDULING and needs no GPU at all — and its negative control deliberately
+// BUSY-WAITS 75 ms out of every 150 ms for ~7.5 s, i.e. it pins a core for
+// ~22 s. Saturating a core inside a parallel GPU attest is a contention source
+// for every co-tenant spec, and it added ~30 s to every attest for nothing.
+// Renamed so it runs on the sharded lane, where it belongs.
 //
 // THE INSTRUMENT FOR #1811 — "audio slows down when I use video controls"
 // (#1801), whose mechanism is #1803: the audio scheduler DISPATCHES on the main
