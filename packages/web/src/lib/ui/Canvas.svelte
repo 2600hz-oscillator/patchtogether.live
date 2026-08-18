@@ -406,7 +406,8 @@
   import DropPatchModal from '$lib/ui/patch-drop/DropPatchModal.svelte';
   import { pickDropTarget, type DropRect } from '$lib/ui/patch-drop/drop-target';
   import { buildDropPlan, dropEdgeKey, type DropDefLike, type DropEdge } from '$lib/ui/patch-drop/drop-plan';
-  import { removePatchNode } from '$lib/graph/mutate';
+  import { removePatchNodeBridging } from '$lib/graph/mutate';
+  import { planDeleteBridge } from '$lib/graph/delete-bridge';
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import { resetLocalScratchId } from '$lib/storage/local-scratch';
@@ -4383,6 +4384,24 @@
         // can't be in a SvelteFlow delete payload — but guard anyway (the
         // shared delete discipline: pinned nodes are undeletable).
         if (isPinnedNode(patch.nodes[n.id])) continue;
+        // BRIDGE-ON-DELETE (#1821) — the KEYBOARD half. This path does not call
+        // `removePatchNode`, so the bridge has to be applied here too; wiring
+        // only the context menu would make Backspace and right-click → Delete do
+        // different things to the same rack. Planned per node against the LIVE
+        // graph inside this transact, so a node deleted earlier in the payload
+        // is already reflected.
+        //
+        // ⚠ MULTI-SELECT IS SELF-CORRECTING IN BOTH ORDERS, and it is worth
+        // saying why rather than trusting it: if the upstream is deleted BEFORE
+        // the pass-through, the pass-through has no upstream and plans nothing;
+        // if it is deleted AFTER, the bridge exists briefly and is then swept by
+        // that node's own edge cleanup below. Neither leaves a dangling cable.
+        const bridge = planDeleteBridge(
+          n.id,
+          Object.values(patch.nodes) as ModuleNode[],
+          Object.values(patch.edges) as (Edge | undefined)[],
+          defLookup,
+        );
         if (patch.nodes[n.id]) delete patch.nodes[n.id];
         // Also drop any edges that referenced the deleted node.
         for (const [edgeId, edge] of Object.entries(patch.edges)) {
@@ -4390,6 +4409,10 @@
             delete patch.edges[edgeId];
           }
         }
+        // AFTER the sweep, so the replacement cable is never a candidate for it.
+        // Still inside the ONE transact this function already opened, so the
+        // whole delete-plus-bridge remains a single undo entry.
+        for (const e2 of bridge?.bridgeEdges ?? []) patch.edges[e2.id] = e2;
       }
     }, LOCAL_ORIGIN);
     if (topNodeId && payload.nodes.some((n) => n.id === topNodeId)) {
@@ -7292,9 +7315,27 @@
     // Shared delete primitive (graph/mutate.ts): removes the node + every
     // touching edge in one undoable transact, and REFUSES pinned workflow
     // singletons (node-level data.pinned — the M/E/C drawer trio).
-    if (!removePatchNode(nodeId)) {
+    //
+    // BRIDGE-ON-DELETE (#1821): when the doomed node is a scoped 1-video-in /
+    // 1-video-out PASS-THROUGH with BOTH sides patched, the same transact also
+    // re-joins its upstream straight to each downstream target, so deleting a
+    // monitor out of the middle of a chain maintains the chain. Every ordinary
+    // case (out of scope, not a pass-through, a free side, the SELF-PATCH) plans
+    // to nothing and this is byte-for-byte the old `removePatchNode` call.
+    const outcome = removePatchNodeBridging(nodeId, defLookup);
+    if (!outcome) {
       if (target) trace(`delete refused: ${nodeId} (${target.type}) is pinned`);
       return;
+    }
+    for (const b of outcome.bridged) {
+      trace(`bridged ${b.source.nodeId}.${b.source.portId} → ${b.target.nodeId}.${b.target.portId}`);
+    }
+    // A refused bridge is SILENT to the user, matching every other cable
+    // refusal on this canvas (isValidConnection / commitConvenienceEdges both
+    // discard without a toast) — the delete the user asked for still happened,
+    // and the chain is simply cut where the lattice says it must be.
+    for (const r of outcome.refused) {
+      trace(`bridge refused ${r.source.nodeId}.${r.source.portId} → ${r.target.nodeId}.${r.target.portId}: ${r.reason}`);
     }
     // No defensive flow* sync needed: snapshot bus + one-way prop (B3).
     if (topNodeId === nodeId) topNodeId = null;
