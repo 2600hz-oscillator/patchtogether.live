@@ -2,7 +2,7 @@
   // InwardsCard — radial pattern source. Mirrors LinesCard's shape; only
   // the param + handle list differs.
   import { type NodeProps } from '@xyflow/svelte';
-  import Fader from '$lib/ui/controls/Fader.svelte';
+  import NeonFader from '$lib/ui/controls/NeonFader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import { setNodeParam } from '$lib/graph/mutate';
   import { inwardsDef } from '$lib/video/modules/inwards';
@@ -31,9 +31,9 @@
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="fader-grid">
-      <Fader value={p('speed')}     min={-2}  max={2}  defaultValue={inwardsDef.params.find((x) => x.id === 'speed')!.defaultValue}     label="Speed"     curve="linear" onchange={setParam('speed')} moduleId={id} paramId="speed" />
-      <Fader value={p('density')}   min={1}   max={50} defaultValue={inwardsDef.params.find((x) => x.id === 'density')!.defaultValue}   label="Density"   curve="linear" onchange={setParam('density')} moduleId={id} paramId="density" />
-      <Fader value={p('thickness')} min={0}   max={1}  defaultValue={inwardsDef.params.find((x) => x.id === 'thickness')!.defaultValue} label="Thick"     curve="linear" onchange={setParam('thickness')} moduleId={id} paramId="thickness" />
+      <NeonFader value={p('speed')}     min={-2}  max={2}  defaultValue={inwardsDef.params.find((x) => x.id === 'speed')!.defaultValue}     label="Speed"     curve="linear" onchange={setParam('speed')} moduleId={id} paramId="speed" />
+      <NeonFader value={p('density')}   min={1}   max={50} defaultValue={inwardsDef.params.find((x) => x.id === 'density')!.defaultValue}   label="Density"   curve="linear" onchange={setParam('density')} moduleId={id} paramId="density" />
+      <NeonFader value={p('thickness')} min={0}   max={1}  defaultValue={inwardsDef.params.find((x) => x.id === 'thickness')!.defaultValue} label="Thick"     curve="linear" onchange={setParam('thickness')} moduleId={id} paramId="thickness" />
     </div>
   </PatchPanel>
 </div>

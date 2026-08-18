@@ -15,7 +15,12 @@
 
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
-import { UNMIGRATED_AUDIO_MODULE } from './_face-fixtures';
+import {
+  CONTRACT_MODULE_TYPES,
+  DENIED,
+  UNMIGRATED_AUDIO_MODULE,
+  UNMIGRATED_AUDIO_POOL,
+} from './_face-fixtures';
 
 async function gotoWorkflow(page: Page, opts: { shell: boolean }): Promise<void> {
   await page.goto(opts.shell ? '/rack' : '/rack?shell=legacy');
@@ -146,6 +151,46 @@ async function setZoomTier(page: Page, zoom: number, expectTier: string): Promis
     { timeout: 10_000 },
   );
 }
+
+// ── THE FIXTURE POOL HAS SLACK (#1789) ──────────────────────────────────────
+//
+// `UNMIGRATED_AUDIO_MODULE` throws at import time when the derived pool is
+// EMPTY, which is correct but is help that arrives too late: by then every spec
+// importing `_face-fixtures.ts` is already failing before it runs a line. This
+// asserts the pool is not merely non-empty but has ROOM — so the next face wave
+// reddens ONE named test while a replacement fixture still exists, rather than
+// taking the suite down at the moment the last candidate is consumed.
+//
+// It is deliberately a `>` and not an `=`: the number of un-promoted audio
+// modules is a population, not a target, and pinning it would be the ratchet
+// this repo forbids. What is being asserted is the PROPERTY "a promotion from
+// here is survivable", which needs exactly two members to be true.
+test('the derived legacy-fallback pool has more than one candidate', () => {
+  expect(
+    UNMIGRATED_AUDIO_POOL.length,
+    `the legacy-fallback fixture pool is down to ${UNMIGRATED_AUDIO_POOL.length} ` +
+      `(${UNMIGRATED_AUDIO_POOL.join(', ') || 'nothing'}). The NEXT face promotion empties it, ` +
+      'and an empty pool throws at import time in every spec that imports ' +
+      'e2e/tests/_face-fixtures.ts. Either land an un-promoted audio module whose card ' +
+      'mounts a <NeonFader>, or re-home these bridge specs on a purpose-built fixture ' +
+      'module instead of borrowing a real one.',
+  ).toBeGreaterThan(1);
+  // …and the pool is really the PREDICATES' output, not an empty scan that
+  // happens to satisfy nothing: the pick must be a member of it.
+  expect(UNMIGRATED_AUDIO_POOL, 'the pick must come from the pool').toContain(UNMIGRATED_AUDIO_MODULE);
+
+  // ANCHORED TO THE ARTIFACT: a deny entry naming a module the contract golden
+  // does not know is a licence nobody is watching — the module was renamed or
+  // deleted and the exclusion silently stopped excluding anything.
+  expect(
+    Object.keys(DENIED).filter((t) => !CONTRACT_MODULE_TYPES.includes(t)),
+    'these DENIED entries name modules that are not in contract-lock.txt (renamed? deleted?)',
+  ).toEqual([]);
+  // …and every reason is a REASON, not a shrug.
+  for (const [type, why] of Object.entries(DENIED)) {
+    expect(why.length, `DENIED.${type}: an exclusion without evidence is a guess`).toBeGreaterThan(40);
+  }
+});
 
 test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
   test('un-migrated module → placeholder in lane + legacy card operable in the dock', async ({ page }) => {

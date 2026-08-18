@@ -17,14 +17,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { STRICT_FACES } from '../../packages/web/src/lib/ui/workflow/strict-faces';
 import { getModuleDef } from '../../packages/web/src/lib/audio/module-registry';
-import { domainClassForDef } from '../../packages/web/src/lib/ui/workflow/module-shell-model';
-// ⚠ THERE IS NO IMPORTABLE VIDEO REGISTRY HERE, and the video fixture below
-// found that out by rejecting every one of its candidates. `getModuleDef`
-// (audio) returns undefined for a video module, and `getVideoModuleDef` returns
-// undefined too under Playwright's loader: the video registry is populated by
-// `import.meta.glob` side effects, which is Vite-only and does not run in plain
-// Node. So the video check reads the SOURCE, exactly like `mountsAFader` below
-// and for exactly the same stated reason.
+import { domainClassForCable } from '../../packages/web/src/lib/ui/workflow/module-shell-model';
 
 /**
  * A still-UN-MIGRATED audio module — the fixture for every legacy-fallback test
@@ -37,70 +30,257 @@ import { domainClassForDef } from '../../packages/web/src/lib/ui/workflow/module
  * happened four times: `vca` (P1 batch 1), `delay` (P1 batch 3), `noise` and
  * `attenumix` (face batch 4), and `destroy` (2026-08-16, Q18).
  *
- * The candidate list is an ORDERED PREFERENCE of simple, stable, cheap-to-mount
- * audio modules; we take the first that is not yet promoted. Deterministic (a
- * fixed list, not registry iteration order), and self-healing across future
- * waves — the day `moog902` gets a face, this moves to whatever is added below
- * it. Every entry must be `domain: 'audio'` (the bridge specs assert
- * `.faceplate.audio`) and must mount a real legacy card with controls.
+ * ⚠ THE POOL IS DERIVED FROM THE REGISTRY, NOT HAND-WRITTEN (#1789, #1794).
  *
- * ⚠ SELF-HEALING IS NOT THE SAME AS SELF-REFILLING, and the Q18 promotion is
- * the proof: the list ran DRY. A promoting PR must leave at least one ACCEPTED
- * candidate behind it, and the IIFE below throws at import time when it does
- * not — loudly, but only once someone runs the suite.
+ * It used to be `UNMIGRATED_CANDIDATES`, an ordered list of three module names.
+ * That list was SELF-HEALING (a promoted entry was skipped) but never
+ * SELF-REFILLING, so every face wave drained it by one and five modules were
+ * consumed this way — `vca`, `delay`, `noise`, `attenumix`, `destroy` — each
+ * discovered by breaking the suite. #1765 made the exhaustion LOUD (the throw
+ * below) but left the draining in place, guarded only by a comment asking the
+ * next promoting author to top the list up: an unenforced obligation, in a file
+ * a promoting PR has no other reason to open.
  *
- * ⚠ A PROMOTED MODULE IS REMOVED FROM THE LIST, not left in for `find` to skip.
- * `ringback` was consumed by the 2026-08-02 face batch and dropped here in the
- * same commit: leaving it would have made the sentence above name a module
- * that can never be picked, which is how a self-healing fixture quietly stops
- * being readable.
+ * Deriving it deletes that obligation. A promotion removes a module from the
+ * pool automatically (it enters `STRICT_FACES`), and the pool REFILLS from the
+ * registry as new un-promoted audio modules land.
+ *
+ * Determinism — the property the fixed list was written to get — is preserved
+ * by SORTING, not by hand-ordering: registry iteration order is a glob artifact
+ * and must never decide which module the bridge specs drive.
+ *
+ * The three predicates are the ASSERTIONS' OWN predicates, run here rather than
+ * described in prose, because each one has already cost a cycle when it was
+ * only prose:
+ *   * `STRICT_FACES` — a promoted module renders a curated face, so the spec
+ *     asserting "placeholder is visible" fails for a reason that is not a bug.
+ *   * the DOMAIN CLASS — the bridge specs assert `.faceplate.audio`, which is
+ *     derived from the module's CABLE TYPES, not its declared `domain`.
+ *     `gatemaiden` is `domain: 'audio'` with GATE ports and renders
+ *     `.faceplate.gate`: it satisfied the requirement as written and still
+ *     could not satisfy the assertion.
+ *   * `mountsAFader` — `workflow-shell.spec.ts`'s operability leg drives
+ *     `.fader-wrap .track` specifically. `moog902` satisfied every OTHER stated
+ *     requirement and its card draws KNOBS, so the spec spent 30 s in
+ *     `locator.boundingBox` and failed as a TIMEOUT, which reads like a broken
+ *     app rather than an unfit fixture.
+ *
+ * ⚠⚠ THE DOMAIN PREDICATE USED TO BE VACUOUS HERE, AND NOTHING SAID SO.
+ *
+ * It read `domainClassForDef(getModuleDef(t))`. `getModuleDef` reads a registry
+ * that `$lib/audio/modules/index.ts` fills with Vite's `import.meta.glob` —
+ * and PLAYWRIGHT DOES NOT RUN VITE. This file never imports that glob, so under
+ * the test loader the registry is EMPTY, `getModuleDef` returns `undefined` for
+ * every type, and `domainClassForDef(undefined)` falls all the way through to
+ * its `default:` arm and answers `'audio'` UNCONDITIONALLY (measured
+ * 2026-08-17: `listModuleDefs().length === 0`).
+ *
+ * So the check the header advertised as rejecting `gatemaiden` "out loud" had
+ * never once fired. `gatemaiden` was rejected only for being third in a
+ * hand-ordered list whose first entry already matched — i.e. by luck, and the
+ * luck was documented as a mechanism. That is the exact shape CLAUDE.md warns
+ * about: a filter applied before the check that quietly redefines the check's
+ * subject, with a green run that looks identical to a working one.
+ *
+ * The fix is to feed the predicate a def it can actually read.
+ * `contract-lock.txt` is a COMMITTED, GENERATED artifact carrying every
+ * module's domain and every port's cable type, it is on the `docs:accept` loop,
+ * and it is a plain file — so it is available at import time under any loader.
+ * The cable→domain mapping itself is still the REAL `domainClassForCable`,
+ * imported rather than re-typed.
  */
-// `stereovca` is the working pick: 2 params, audio in and out, a two-Fader
-// card, and a self-contained TS worklet with no Faust bundle and no asset load.
-//
-// ⚠ IT HAS TO MOUNT A **FADER**, and that requirement was NOWHERE in this file
-// until it cost a cycle. `workflow-shell.spec.ts`'s operability leg drives
-// `.fader-wrap .track` specifically; the first replacement tried here
-// (`moog902`) satisfied every stated requirement — un-promoted, audio class, a
-// real card with controls — and its card draws KNOBS, so the spec spent 30 s in
-// `locator.boundingBox` and failed as a TIMEOUT, which reads like a broken app.
-// The predicate below now CHECKS it, for the same reason `gatemaiden`'s domain
-// class is checked rather than described.
-//
-// ⚠ IT REPLACES `destroy`, WHICH THIS WAVE PROMOTED — and the replacement is
-// the whole reason a promotion has to read this file. `destroy` was the LAST
-// candidate the predicate could accept (`noise` and `attenumix` were consumed
-// by earlier waves and `gatemaiden` is rejected below), so promoting it with
-// this list untouched does not degrade the fixture, it EXHAUSTS it: the IIFE
-// throws at module load and every spec that imports this file fails before it
-// runs a line. That is #1689's class with the failure moved to import time.
-//
-// Deliberately NOT `audioIn` (needs getUserMedia — capability-dependent on CI)
-// and NOT `twotracks` (a two-reel tape emulator; it mounts, but the bridge test
-// timed out at 30 s on `boundingBox` waiting for it, and this fixture's whole
-// contract is "simple, stable, cheap-to-mount"). `gatemaiden` is kept in the
-// list on purpose: the predicate below now REJECTS it out loud, which is the
-// documentation.
-const UNMIGRATED_CANDIDATES = ['stereovca', 'moog902', 'gatemaiden'] as const;
 
 /**
- * ORDERED PREFERENCE of un-promoted VIDEO modules for `UNMIGRATED_VIDEO_MODULE`
- * — same contract as the audio list: a promoting PR removes its module from
- * here and must leave at least one accepted candidate behind, or the IIFE
- * throws at import time.
- *
- * `backdraft` is deliberately ABSENT: the first video face consumed it, and per
- * the audio list's own rule a promoted module is REMOVED rather than left for
- * `find` to skip. `bentbox` / `b3ntb0x` are the mirror-gate siblings (simple
- * cards, cheap to mount); `freezeframe` and `grainsOfVision` back them up.
+ * Modules the predicates ACCEPT but that are known unfit, each with the
+ * evidence already paid for. Deny-by-default with a reason per entry, rather
+ * than a silent omission — and anchored below, so an entry naming a module that
+ * would not have been picked anyway is RED instead of quietly decorative.
  */
-const UNMIGRATED_VIDEO_CANDIDATES = ['bentbox', 'b3ntb0x', 'freezeframe', 'grainsOfVision'] as const;
+export const DENIED: Readonly<Record<string, string>> = {
+  audioIn:
+    'needs getUserMedia — capability-dependent on CI, where there is no camera or mic to grant',
+  audioOut:
+    'the rack MASTER OUTPUT: `AudioIoSurface.svelte` hosts it (and audioIn) in a dedicated ' +
+    'I/O drawer via DockCardHost, so it never renders the lane tile + dock full view the ' +
+    'bridge specs assert on. It passes every content predicate and is still unfit.',
+  twotracks:
+    'a two-reel tape emulator: it mounts, but the bridge test timed out at 30 s in ' +
+    "`boundingBox` waiting for it, and this fixture's whole contract is " +
+    '"simple, stable, cheap-to-mount"',
+};
+
+/**
+ * Does this module's legacy card mount a fader? Read off the CARD SOURCE, so
+ * the fixture is rejected at import time with a reason instead of at 30 s with
+ * a timeout.
+ *
+ * ⚠ THE TAG IS `<NeonFader`, NOT `<Fader` (#1794). This read `/<Fader\b/` until
+ * every card was migrated onto `NeonFader` and `Fader.svelte` was deleted —
+ * and `<NeonFader` does NOT match `/<Fader\b/`, so the un-updated predicate
+ * would have rejected every candidate at once, emptied the pool, and thrown at
+ * import time in every spec that imports this file.
+ */
+function mountsAFader(type: string): boolean {
+  const def = getModuleDef(type) as { card?: string } | undefined;
+  // The `modules-card-map` convention (`card` override wins, else
+  // `PascalCase(type) + 'Card'`), mirrored rather than imported: that module
+  // resolves its components with `import.meta.glob`, which is Vite-only and
+  // takes the whole spec file down at load time under Playwright's loader
+  // ("No tests found", with no import error printed). A mis-resolve here fails
+  // SAFE — the candidate is rejected with a named reason, never silently
+  // accepted.
+  const file = def?.card
+    ? `${def.card}.svelte`
+    : `${type.charAt(0).toUpperCase()}${type.slice(1)}Card.svelte`;
+  try {
+    return /<NeonFader\b/.test(
+      readFileSync(
+        resolve(dirname(fileURLToPath(import.meta.url)), '../../packages/web/src/lib/ui/modules', file),
+        'utf8',
+      ),
+    );
+  } catch {
+    return false;
+  }
+}
+
+/** One module's ports and param count, read off `contract-lock.txt`. */
+interface LockedPorts {
+  outputs: string[];
+  inputs: string[];
+  params: number;
+}
+
+/**
+ * Parse the committed contract golden into `type → cable types`. Lines are
+ * `<type> meta domain=<d>` / `<type> in <portId> <cable> …` /
+ * `<type> out <portId> <cable>` / `<type> param …`.
+ */
+function readContractLock(): Map<string, LockedPorts> {
+  const text = readFileSync(
+    resolve(dirname(fileURLToPath(import.meta.url)), '../../packages/web/src/lib/docs/contract-lock.txt'),
+    'utf8',
+  );
+  const byType = new Map<string, LockedPorts>();
+  for (const line of text.split('\n')) {
+    if (!line || line.startsWith('#')) continue;
+    const [type, kind, , cable] = line.split(/\s+/);
+    if (!type || !kind) continue;
+    const entry = byType.get(type) ?? { outputs: [], inputs: [], params: 0 };
+    if (kind === 'out' && cable) entry.outputs.push(cable);
+    else if (kind === 'in' && cable) entry.inputs.push(cable);
+    else if (kind === 'param') entry.params += 1;
+    byType.set(type, entry);
+  }
+  return byType;
+}
+
+const CONTRACT = readContractLock();
+
+/**
+ * Does this module render `.faceplate.audio`?
+ *
+ * ⚠ DELIBERATELY STRICTER THAN THE RUNTIME RULE, and the reason is an ordering
+ * hazard rather than caution. `cableTypeForDef` takes `outputs[0] ?? inputs[0]`
+ * — the DEF's declaration order — while `contract-lock.txt` lists ports SORTED
+ * BY ID. Those two orders are not the same, so asking this artifact for "the
+ * first output" would be asking a different question than the app asks. Instead
+ * every output must map to `audio`, which makes the answer INVARIANT to
+ * ordering: whichever port the real def happens to declare first, the class is
+ * the same. A module with mixed outputs is simply not offered as a fixture —
+ * over-rejecting only shrinks the pool, and the slack assertion guards that.
+ */
+function rendersAudioFaceplate(type: string): boolean {
+  const ports = CONTRACT.get(type);
+  if (!ports) return false; // unknown to the golden → fail safe, never guess
+  const cables = ports.outputs.length > 0 ? ports.outputs : ports.inputs;
+  if (cables.length === 0) return false;
+  return cables.every((c) => domainClassForCable(c) === 'audio');
+}
+
+/**
+ * Every module that could serve, SIMPLEST FIRST.
+ *
+ * ⚠ THE ORDER IS DERIVED, NOT ALPHABETICAL, and that is the point rather than a
+ * detail. What this fixture needs is stated in its own contract — "simple,
+ * stable, cheap-to-mount" — and param count is that contract's own measure, so
+ * ordering by it means the fixture's REQUIREMENT chooses the pick instead of
+ * the accident of a name's first letter. Ties break on port count and then on
+ * the type name, so the result is still fully deterministic and never depends
+ * on registry or glob iteration order.
+ */
+function derivePool(): string[] {
+  return [...CONTRACT.keys()]
+    .filter((t) => !STRICT_FACES.has(t))
+    .filter((t) => !(t in DENIED))
+    .filter((t) => rendersAudioFaceplate(t))
+    .filter((t) => mountsAFader(t))
+    .sort((a, b) => {
+      const pa = CONTRACT.get(a)!;
+      const pb = CONTRACT.get(b)!;
+      const ports = (p: LockedPorts): number => p.inputs.length + p.outputs.length;
+      return pa.params - pb.params || ports(pa) - ports(pb) || a.localeCompare(b);
+    });
+}
+
+/**
+ * The whole derived pool, exported so a test can assert it has SLACK rather
+ * than merely being non-empty. `_face-fixtures.test.ts` requires MORE THAN ONE
+ * member: the point of #1789 is to redden while there is still room, instead of
+ * at the moment the last candidate is consumed.
+ */
+export const UNMIGRATED_AUDIO_POOL: readonly string[] = derivePool();
+
+/** Every module type the contract golden knows — the anchor the deny list is
+ *  checked against, so an entry naming a module that no longer exists is RED
+ *  rather than silently decorative. */
+export const CONTRACT_MODULE_TYPES: readonly string[] = [...CONTRACT.keys()].sort();
+
+/**
+ * The pick: the first member, alphabetically. Deterministic by SORT rather than
+ * by hand-ordering, so the choice never depends on registry glob order.
+ */
+export const UNMIGRATED_AUDIO_MODULE: string = (() => {
+  const pick = UNMIGRATED_AUDIO_POOL[0];
+  if (!pick) {
+    // Report WHY each near-miss missed, from the same predicates — an empty
+    // pool with no diagnosis is the failure #1765 was written to end.
+    const near = [...CONTRACT.keys()]
+      .sort()
+      .map((t) => {
+        if (STRICT_FACES.has(t)) return null; // promoted: the expected, boring case
+        if (t in DENIED) return `${t}: DENIED — ${DENIED[t]}`;
+        if (!rendersAudioFaceplate(t)) return `${t}: does not render .faceplate.audio`;
+        if (!mountsAFader(t)) {
+          return `${t}: its legacy card mounts no <NeonFader>, so the operability leg has no '.fader-wrap .track' to drive`;
+        }
+        return null;
+      })
+      .filter((x): x is string => x !== null);
+    throw new Error(
+      'the derived legacy-fallback pool is EMPTY: no registered module is un-promoted, ' +
+        "renders .faceplate.audio (domainClassForDef === 'audio') and mounts a " +
+        '<NeonFader>. Every spec importing e2e/tests/_face-fixtures.ts fails at import ' +
+        'until this resolves.\n  ' +
+        near.join('\n  '),
+    );
+  }
+  return pick;
+})();
 
 /**
  * Is this a VIDEO module? Read off the DEF SOURCE — a file under
  * `lib/video/modules/` declaring `domain: 'video'` is exactly what the video
  * registry's glob picks up, so this asks the registry's own question without
- * needing the registry (see the import note at the top of this file).
+ * needing the registry.
+ *
+ * ⚠ THERE IS NO IMPORTABLE VIDEO REGISTRY HERE, and the fixture below found
+ * that out by rejecting every one of its candidates. `getModuleDef` (audio)
+ * returns undefined for a video module, and `getVideoModuleDef` returns
+ * undefined too under Playwright's loader: the video registry is populated by
+ * `import.meta.glob` side effects, which is Vite-only and does not run in plain
+ * Node. So this reads the source, exactly like `mountsAFader` above and for
+ * exactly the same stated reason.
  *
  * Fails SAFE: an unreadable or non-matching file rejects the candidate with a
  * named reason rather than accepting it silently.
@@ -123,77 +303,16 @@ function declaresVideoDomain(type: string): boolean {
 }
 
 /**
- * Does this module's legacy card mount a `Fader`? Read off the CARD SOURCE, so
- * the fixture is rejected at import time with a reason instead of at 30 s with
- * a timeout. Same shape as the `domainClassForDef` check below: the predicate
- * the assertion depends on, run here rather than described in prose.
- */
-function mountsAFader(type: string): boolean {
-  const def = getModuleDef(type) as { card?: string } | undefined;
-  // The `modules-card-map` convention (`card` override wins, else
-  // `PascalCase(type) + 'Card'`), mirrored rather than imported: that module
-  // resolves its components with `import.meta.glob`, which is Vite-only and
-  // takes the whole spec file down at load time under Playwright's loader
-  // ("No tests found", with no import error printed). A mis-resolve here fails
-  // SAFE — the candidate is rejected with a named reason, never silently
-  // accepted.
-  const file = def?.card
-    ? `${def.card}.svelte`
-    : `${type.charAt(0).toUpperCase()}${type.slice(1)}Card.svelte`;
-  try {
-    return /<Fader\b/.test(
-      readFileSync(
-        resolve(dirname(fileURLToPath(import.meta.url)), '../../packages/web/src/lib/ui/modules', file),
-        'utf8',
-      ),
-    );
-  } catch {
-    return false;
-  }
-}
-
-/**
- * ⚠ "AUDIO" HERE MEANS THE FACEPLATE'S CLASS, NOT THE DEF'S `domain` FIELD, and
- * the two disagree. The bridge specs assert `.faceplate.audio`, which
- * `DockFullView` derives via `domainClassForDef` — i.e. from the module's CABLE
- * types, not its declared domain. `gatemaiden` is `domain: 'audio'` with GATE
- * ports, so it renders `.faceplate.gate`: it satisfied the comment's stated
- * requirement and still could not satisfy the assertion.
+ * ORDERED PREFERENCE of un-promoted VIDEO modules for `UNMIGRATED_VIDEO_MODULE`.
+ * A promoting PR removes its module from here and must leave at least one
+ * accepted candidate behind, or the IIFE below throws at import time.
  *
- * That stayed invisible while `attenumix` was the pick and surfaced the moment
- * attenumix was promoted — a fixture that heals itself into an INVALID pick is
- * worse than one that rots loudly, so the requirement is now CHECKED with the
- * same predicate the assertion depends on instead of being described in prose.
+ * `backdraft` is deliberately ABSENT: the first video face consumed it, and per
+ * the audio fixture's own rule a promoted module is REMOVED rather than left
+ * for the predicate to skip. `bentbox` / `b3ntb0x` are the mirror-gate siblings
+ * (simple cards, cheap to mount); `freezeframe` and `grainsOfVision` back them up.
  */
-export const UNMIGRATED_AUDIO_MODULE: string = (() => {
-  const rejected: string[] = [];
-  const pick = UNMIGRATED_CANDIDATES.find((t) => {
-    if (STRICT_FACES.has(t)) {
-      rejected.push(`${t}: promoted (in STRICT_FACES)`);
-      return false;
-    }
-    const cls = domainClassForDef(getModuleDef(t));
-    if (cls !== 'audio') {
-      rejected.push(`${t}: renders .faceplate.${cls}, not .faceplate.audio`);
-      return false;
-    }
-    if (!mountsAFader(t)) {
-      rejected.push(`${t}: its legacy card mounts no <Fader>, so the operability leg has no '.fader-wrap .track' to drive`);
-      return false;
-    }
-    return true;
-  });
-  if (!pick) {
-    throw new Error(
-      'no UNMIGRATED_CANDIDATES module can serve as the legacy-fallback fixture. ' +
-        'Add another module that is un-promoted, renders .faceplate.audio ' +
-        `(domainClassForDef === 'audio') AND mounts a <Fader>, in ` +
-        'e2e/tests/_face-fixtures.ts.\n  ' +
-        rejected.join('\n  '),
-    );
-  }
-  return pick;
-})();
+const UNMIGRATED_VIDEO_CANDIDATES = ['bentbox', 'b3ntb0x', 'freezeframe', 'grainsOfVision'] as const;
 
 /**
  * A still-UN-MIGRATED **VIDEO** module — the legacy-card half of
@@ -201,16 +320,14 @@ export const UNMIGRATED_AUDIO_MODULE: string = (() => {
  *
  * ⚠ IT EXISTS BECAUSE THAT SPEC HARD-CODED `backdraft`, AND THE FIRST VIDEO
  * FACE PROMOTED IT. The spec needs a module that renders a lane PLACEHOLDER and
- * a verbatim LEGACY CARD in the dock — i.e. one that is NOT in STRICT_FACES —
- * and it named the module that was, at the time, the most obvious un-migrated
- * video card. That is the same rot the audio sibling above was built to end,
- * one domain over, and it had to bite once here before anyone noticed the
- * asymmetry: the audio fixture was derived and the video one was a literal.
+ * a verbatim LEGACY CARD in the dock — i.e. one NOT in STRICT_FACES — and it
+ * named the most obvious un-migrated video card at the time. That is the same
+ * rot the audio fixture above was built to end, one domain over.
  *
- * Checked with the predicates the assertions depend on, not described in prose:
- * un-promoted (else it renders a curated face, not a placeholder) and
- * `domain: 'video'` (the case is explicitly the VIDEO legacy-card path — that
- * is the `useStore()`-at-init card class the crash-free assertion is about).
+ * Checked with the predicates the assertions depend on rather than described in
+ * prose: un-promoted (else it renders a curated face, not a placeholder) and
+ * `domain: 'video'` (the case is explicitly the VIDEO legacy-card path — the
+ * `useStore()`-at-init card class its crash-free assertion is about).
  */
 export const UNMIGRATED_VIDEO_MODULE: string = (() => {
   const rejected: string[] = [];
@@ -220,9 +337,7 @@ export const UNMIGRATED_VIDEO_MODULE: string = (() => {
       return false;
     }
     if (!declaresVideoDomain(t)) {
-      rejected.push(
-        `${t}: no packages/web/src/lib/video/modules/${t}.ts declaring domain: 'video'`,
-      );
+      rejected.push(`${t}: no packages/web/src/lib/video/modules/${t}.ts declaring domain: 'video'`);
       return false;
     }
     return true;

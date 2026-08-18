@@ -22,7 +22,7 @@
   import { acquireCameraStream } from '$lib/ui/camera-acquire';
   import { type NodeProps } from '@xyflow/svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import Fader from '$lib/ui/controls/Fader.svelte';
+  import NeonFader from '$lib/ui/controls/NeonFader.svelte';
   import { useEngine } from '$lib/audio/engine-context';
   import { useProvider } from '$lib/multiplayer/provider-context';
   import {
@@ -623,7 +623,7 @@
     </div>
 
     <div class="fader-grid">
-      <Fader
+      <NeonFader
         value={p('gain')}
         min={0}
         max={2}

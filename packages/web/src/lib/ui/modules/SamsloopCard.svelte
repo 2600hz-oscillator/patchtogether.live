@@ -38,7 +38,7 @@
   //     see relay-single-process-and-drift memory).
 
   import type { NodeProps } from '@xyflow/svelte';
-  import Fader from '$lib/ui/controls/Fader.svelte';
+  import NeonFader from '$lib/ui/controls/NeonFader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import { patch } from '$lib/graph/store';
   import { docVersion } from '$lib/graph/node-versions.svelte';
@@ -934,7 +934,7 @@
       {/if}
 
       <div class="waveform-row">
-        <Fader
+        <NeonFader
           value={start}
           min={0}
           max={Math.max(1, sampleLength)}
@@ -951,7 +951,7 @@
           class="waveform"
           data-testid="samsloop-waveform"
         ></canvas>
-        <Fader
+        <NeonFader
           value={end}
           min={0}
           max={Math.max(1, sampleLength)}
@@ -964,7 +964,7 @@
       </div>
 
       <div class="rate-row">
-        <Fader
+        <NeonFader
           value={rateToKnob(rate)}
           min={0}
           max={1}

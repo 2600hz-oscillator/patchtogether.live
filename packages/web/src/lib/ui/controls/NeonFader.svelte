@@ -58,6 +58,7 @@
 
   import type { KnobCurve } from '$lib/graph/types';
   import { onDestroy, onMount, untrack } from 'svelte';
+  import WaveformGlyph from './WaveformGlyph.svelte';
   import { createDragCommit } from './drag-commit';
   import ControlContextMenu from './ControlContextMenu.svelte';
   import { makeMidiAssignable } from './midi-assignable.svelte';
@@ -83,6 +84,29 @@
     }, 200);
   }
 
+  /** A single inline glyph anchored at a normalized [0,1] fraction along the
+   *  track. The LFO-shape throws use it to render sine/tri/saw/square icons
+   *  beside the slot so the user sees what they are morphing into.
+   *
+   *  ⚠ THIS TYPE MOVED HERE FROM `Fader.svelte` WHEN THAT CONTROL WAS DELETED
+   *  (#1794). It is re-exported unchanged — the rail is a CAPABILITY of the
+   *  shipped fader, not a detail of the old one, and dropping it would have
+   *  silently degraded four cards (Cartesian, Lfo, Ninelives, Pentemelodica)
+   *  whose shape sliders are unreadable without the icons. */
+  export interface FaderGlyph {
+    frac: number;
+    kind: 'sine' | 'tri' | 'saw' | 'square';
+  }
+
+  /** Optional inline label anchored at a [0,1] fraction along the track.
+   *  Cartesian's LFO division slider marks each snap point with "1/8", "1/4",
+   *  "x2"; Cellshade/Posterbox/Samsloop/Spirographs/Tiler mark discrete
+   *  index stops the same way. Also moved here from `Fader.svelte` (#1794). */
+  export interface FaderTick {
+    frac: number;
+    label: string;
+  }
+
   interface Props {
     value: number;
     min: number;
@@ -94,6 +118,10 @@
     onchange: (value: number) => void;
     /** Motorized read — polled per rAF while idle, so CV visibly moves it. */
     readLive?: () => number | undefined;
+    /** Optional waveform glyphs anchored at fractions along the track. */
+    glyphs?: FaderGlyph[];
+    /** Optional text labels anchored at fractions along the track. */
+    ticks?: FaderTick[];
     /** Override for the readout text (a discrete index → a word). */
     formatValue?: (v: number) => string;
     moduleId?: string;
@@ -119,6 +147,8 @@
     curve = 'linear',
     onchange,
     readLive,
+    glyphs,
+    ticks,
     formatValue,
     moduleId,
     paramId,
@@ -319,6 +349,31 @@
     return formatValue ? formatValue(v) : format(v, units);
   }
   let readoutText = $derived(valueText(liveValue));
+
+  /** Index of the rail entry nearest the current position — the one drawn lit.
+   *  ONE helper for both rails: they differ in what they PAINT, not in how
+   *  "which one am I on" is decided, and `Fader.svelte` carried two
+   *  byte-identical copies of this loop. */
+  function nearestIdx(entries: readonly { frac: number }[] | undefined, frac: number): number {
+    if (!entries || entries.length === 0) return -1;
+    let best = 0;
+    let bestD = Infinity;
+    for (let i = 0; i < entries.length; i++) {
+      const d = Math.abs((entries[i]?.frac ?? 0) - frac);
+      if (d < bestD) { bestD = d; best = i; }
+    }
+    return best;
+  }
+  let activeGlyphIdx = $derived(nearestIdx(glyphs, displayFrac));
+  let activeTickIdx = $derived(nearestIdx(ticks, displayFrac));
+
+  /** A rail entry's centre, in px from the rail top. Mirrors the thumb's own
+   *  travel (`TRACK_HEIGHT - THUMB_HEIGHT`) plus half a thumb, so a glyph sits
+   *  on the thumb's CENTRELINE at the fraction it marks — the same derivation
+   *  the shipped fader used, re-pointed at this control's 12px thumb. */
+  function railTop(frac: number): number {
+    return (1 - frac) * (TRACK_HEIGHT - THUMB_HEIGHT) + THUMB_HEIGHT / 2;
+  }
 </script>
 
 <!-- ⚠ `.fader-wrap` is kept VERBATIM: it is the class `DockCardHost` greps to
@@ -368,6 +423,29 @@
       {/if}
       <div class="thumb" style:transform="translateY({thumbY}px)" aria-hidden="true"></div>
     </div>
+    <!-- THE RAILS. Siblings of the slot, exactly as on the control this
+         replaced, so a card that passes `glyphs`/`ticks` keeps its icons and
+         its snap-point captions instead of silently losing them. -->
+    {#if glyphs && glyphs.length > 0}
+      <div class="glyph-rail" style:height="{TRACK_HEIGHT}px" aria-hidden="true">
+        {#each glyphs as g, i (i)}
+          <div class="glyph-anchor" style:top="{railTop(g.frac)}px">
+            <WaveformGlyph kind={g.kind} active={i === activeGlyphIdx} size={12} />
+          </div>
+        {/each}
+      </div>
+    {/if}
+    {#if ticks && ticks.length > 0}
+      <div class="tick-rail" style:height="{TRACK_HEIGHT}px" aria-hidden="true">
+        {#each ticks as t, i (i)}
+          <div
+            class="tick-anchor"
+            class:active={i === activeTickIdx}
+            style:top="{railTop(t.frac)}px"
+          >{t.label}</div>
+        {/each}
+      </div>
+    {/if}
   </div>
   <div class="label" title={label}>{label}</div>
   {#if persistentReadout}
@@ -416,6 +494,40 @@
     position: relative;
     display: flex;
     align-items: flex-start;
+    gap: 4px;
+  }
+
+  /* THE GLYPH / TICK RAILS. Geometry is the shipped fader's; the PAINT is this
+   * control's — the lit entry takes `--_ka` rather than a hard-coded
+   * `var(--cable-cv)`, so a rail follows the same accent chain as the slot it
+   * annotates instead of being green on every module. */
+  .glyph-rail,
+  .tick-rail {
+    position: relative;
+    width: 14px;
+    pointer-events: none;
+  }
+  .tick-rail {
+    width: auto;
+    min-width: 20px;
+  }
+  .glyph-anchor,
+  .tick-anchor {
+    position: absolute;
+    left: 0;
+    transform: translateY(-50%);
+    line-height: 1;
+  }
+  .tick-anchor {
+    font-family: var(--mono, ui-monospace, monospace);
+    font-size: 9px;
+    letter-spacing: 0.04em;
+    color: var(--text-dim, #8a9099);
+    white-space: nowrap;
+    transition: color 0.08s ease-out;
+  }
+  .tick-anchor.active {
+    color: var(--_ka);
   }
 
   /* THE SLOT. Darker than the old track so the lit column has something to sit

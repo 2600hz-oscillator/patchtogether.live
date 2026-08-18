@@ -70,7 +70,6 @@ const ALL_KINDS = [
   'grid',
   'color',
   'fader',
-  'neon-fader',
   'xy',
 ] as const satisfies readonly ParamCellKind[];
 

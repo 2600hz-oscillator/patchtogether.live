@@ -12,7 +12,7 @@
 
   import { onMount, onDestroy } from 'svelte';
   import { type NodeProps } from '@xyflow/svelte';
-  import Fader from '$lib/ui/controls/Fader.svelte';
+  import NeonFader from '$lib/ui/controls/NeonFader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import { useEngine } from '$lib/audio/engine-context';
   import { patch } from '$lib/graph/store';
@@ -360,10 +360,10 @@
       {/if}
 
       <div class="fader-grid four">
-        <Fader value={p('reactivity')} min={0} max={2} defaultValue={pdef('reactivity')} label="RCT" curve="linear" onchange={setParam('reactivity')} moduleId={id} paramId="reactivity" />
-        <Fader value={p('speed')} min={0} max={2} defaultValue={pdef('speed')} label="SPD" curve="linear" onchange={setParam('speed')} moduleId={id} paramId="speed" />
-        <Fader value={p('presetSelect')} min={0} max={pmax('presetSelect')} defaultValue={pdef('presetSelect')} label="PST" curve="linear" onchange={setParam('presetSelect')} moduleId={id} paramId="presetSelect" />
-        <Fader value={p('morph')} min={0} max={8} defaultValue={pdef('morph')} label="MPH" curve="linear" onchange={setParam('morph')} moduleId={id} paramId="morph" />
+        <NeonFader value={p('reactivity')} min={0} max={2} defaultValue={pdef('reactivity')} label="RCT" curve="linear" onchange={setParam('reactivity')} moduleId={id} paramId="reactivity" />
+        <NeonFader value={p('speed')} min={0} max={2} defaultValue={pdef('speed')} label="SPD" curve="linear" onchange={setParam('speed')} moduleId={id} paramId="speed" />
+        <NeonFader value={p('presetSelect')} min={0} max={pmax('presetSelect')} defaultValue={pdef('presetSelect')} label="PST" curve="linear" onchange={setParam('presetSelect')} moduleId={id} paramId="presetSelect" />
+        <NeonFader value={p('morph')} min={0} max={8} defaultValue={pdef('morph')} label="MPH" curve="linear" onchange={setParam('morph')} moduleId={id} paramId="morph" />
       </div>
       <p class="hint">BAS/MID/TRB jacks REPLACE that band (open = live audio).</p>
       <p

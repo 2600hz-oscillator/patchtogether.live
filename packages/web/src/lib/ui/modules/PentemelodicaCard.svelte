@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { NodeProps } from '@xyflow/svelte';
-  import Fader from '$lib/ui/controls/Fader.svelte';
+  import NeonFader from '$lib/ui/controls/NeonFader.svelte';
   import Knob from '$lib/ui/controls/Knob.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import { setNodeParam } from '$lib/graph/mutate';
@@ -134,12 +134,12 @@
             ></canvas>
           </div>
           <div class="strip">
-            <Fader value={pval(`v${v}_tune`)} min={-36} max={36} defaultValue={0} label="TUNE" units="st" curve="linear" onchange={setParam(`v${v}_tune`)} moduleId={id} paramId={`v${v}_tune`} readLive={readLive(`v${v}_tune`)} />
-            <Fader value={pval(`v${v}_fine`)} min={-100} max={100} defaultValue={0} label="FINE" units="¢" curve="linear" onchange={setParam(`v${v}_fine`)} moduleId={id} paramId={`v${v}_fine`} readLive={readLive(`v${v}_fine`)} />
-            <Fader value={pval(`v${v}_fm`)} min={-1} max={1} defaultValue={0} label="FM" curve="linear" onchange={setParam(`v${v}_fm`)} moduleId={id} paramId={`v${v}_fm`} readLive={readLive(`v${v}_fm`)} />
-            <Fader value={pval(`v${v}_pm`)} min={-1} max={1} defaultValue={0} label="PM" curve="linear" onchange={setParam(`v${v}_pm`)} moduleId={id} paramId={`v${v}_pm`} readLive={readLive(`v${v}_pm`)} />
-            <Fader value={pval(`v${v}_pw`)} min={0.05} max={0.95} defaultValue={0.5} label="PW" curve="linear" onchange={setParam(`v${v}_pw`)} moduleId={id} paramId={`v${v}_pw`} readLive={readLive(`v${v}_pw`)} />
-            <Fader value={pval(`v${v}_wave`)} min={0} max={1} defaultValue={0} label="WAVE" curve="linear" onchange={setParam(`v${v}_wave`)} moduleId={id} paramId={`v${v}_wave`} readLive={readLive(`v${v}_wave`)} glyphs={[{ frac: 0, kind: 'tri' }, { frac: 0.5, kind: 'saw' }, { frac: 1, kind: 'square' }]} />
+            <NeonFader value={pval(`v${v}_tune`)} min={-36} max={36} defaultValue={0} label="TUNE" units="st" curve="linear" onchange={setParam(`v${v}_tune`)} moduleId={id} paramId={`v${v}_tune`} readLive={readLive(`v${v}_tune`)} />
+            <NeonFader value={pval(`v${v}_fine`)} min={-100} max={100} defaultValue={0} label="FINE" units="¢" curve="linear" onchange={setParam(`v${v}_fine`)} moduleId={id} paramId={`v${v}_fine`} readLive={readLive(`v${v}_fine`)} />
+            <NeonFader value={pval(`v${v}_fm`)} min={-1} max={1} defaultValue={0} label="FM" curve="linear" onchange={setParam(`v${v}_fm`)} moduleId={id} paramId={`v${v}_fm`} readLive={readLive(`v${v}_fm`)} />
+            <NeonFader value={pval(`v${v}_pm`)} min={-1} max={1} defaultValue={0} label="PM" curve="linear" onchange={setParam(`v${v}_pm`)} moduleId={id} paramId={`v${v}_pm`} readLive={readLive(`v${v}_pm`)} />
+            <NeonFader value={pval(`v${v}_pw`)} min={0.05} max={0.95} defaultValue={0.5} label="PW" curve="linear" onchange={setParam(`v${v}_pw`)} moduleId={id} paramId={`v${v}_pw`} readLive={readLive(`v${v}_pw`)} />
+            <NeonFader value={pval(`v${v}_wave`)} min={0} max={1} defaultValue={0} label="WAVE" curve="linear" onchange={setParam(`v${v}_wave`)} moduleId={id} paramId={`v${v}_wave`} readLive={readLive(`v${v}_wave`)} glyphs={[{ frac: 0, kind: 'tri' }, { frac: 0.5, kind: 'saw' }, { frac: 1, kind: 'square' }]} />
           </div>
         </div>
       {/each}
@@ -151,7 +151,7 @@
         <div class="mixer-grid">
           {#each voices as v (v)}
             <div class="mix-col">
-              <Fader value={pval(`v${v}_level`)} min={0} max={1} defaultValue={0.8} label={`L${v}`} curve="linear" onchange={setParam(`v${v}_level`)} moduleId={id} paramId={`v${v}_level`} readLive={readLive(`v${v}_level`)} />
+              <NeonFader value={pval(`v${v}_level`)} min={0} max={1} defaultValue={0.8} label={`L${v}`} curve="linear" onchange={setParam(`v${v}_level`)} moduleId={id} paramId={`v${v}_level`} readLive={readLive(`v${v}_level`)} />
               <Knob value={pval(`v${v}_pan`)} min={-1} max={1} defaultValue={0} label={`P${v}`} curve="linear" onchange={setParam(`v${v}_pan`)} moduleId={id} paramId={`v${v}_pan`} readLive={readLive(`v${v}_pan`)} />
             </div>
           {/each}
@@ -162,7 +162,7 @@
         <div class="block-title">AMP ADSR</div>
         <div class="adsr-row">
           {#each ADSR_FADERS as k (k.pid)}
-            <Fader
+            <NeonFader
               value={pval(k.pid)}
               min={pmin(k.pid)}
               max={pmax(k.pid)}

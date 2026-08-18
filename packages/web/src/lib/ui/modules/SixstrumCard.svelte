@@ -14,7 +14,7 @@
   //   └─────────────────────────┴────────────────┴────────┘
 
   import type { NodeProps } from '@xyflow/svelte';
-  import Fader from '$lib/ui/controls/Fader.svelte';
+  import NeonFader from '$lib/ui/controls/NeonFader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { sixstrumDef } from '$lib/audio/modules/sixstrum';
@@ -132,20 +132,20 @@
         <div class="group g-strings">
           <header>STRINGS</header>
           <div class="fader-row">
-            <Fader value={register} min={-24} max={24} defaultValue={defaultFor('register')} label="Reg" units="st" curve="linear" onchange={set('register')} moduleId={id} paramId="register" readLive={live('register')} />
-            <Fader value={ring}     min={0.1} max={10} defaultValue={defaultFor('ring')}     label="Ring" units="s" curve="log"   onchange={set('ring')}     moduleId={id} paramId="ring"     readLive={live('ring')} />
-            <Fader value={material} min={0}   max={1}  defaultValue={defaultFor('material')} label="Matl"           curve="linear" onchange={set('material')} moduleId={id} paramId="material" readLive={live('material')} />
-            <Fader value={pickPos}  min={0.02} max={0.5} defaultValue={defaultFor('pickPos')} label="Pos"          curve="linear" onchange={set('pickPos')}  moduleId={id} paramId="pickPos"  readLive={live('pickPos')} />
-            <Fader value={stiffness} min={0}  max={1}  defaultValue={defaultFor('stiffness')} label="Stf"          curve="linear" onchange={set('stiffness')} moduleId={id} paramId="stiffness" readLive={live('stiffness')} />
+            <NeonFader value={register} min={-24} max={24} defaultValue={defaultFor('register')} label="Reg" units="st" curve="linear" onchange={set('register')} moduleId={id} paramId="register" readLive={live('register')} />
+            <NeonFader value={ring}     min={0.1} max={10} defaultValue={defaultFor('ring')}     label="Ring" units="s" curve="log"   onchange={set('ring')}     moduleId={id} paramId="ring"     readLive={live('ring')} />
+            <NeonFader value={material} min={0}   max={1}  defaultValue={defaultFor('material')} label="Matl"           curve="linear" onchange={set('material')} moduleId={id} paramId="material" readLive={live('material')} />
+            <NeonFader value={pickPos}  min={0.02} max={0.5} defaultValue={defaultFor('pickPos')} label="Pos"          curve="linear" onchange={set('pickPos')}  moduleId={id} paramId="pickPos"  readLive={live('pickPos')} />
+            <NeonFader value={stiffness} min={0}  max={1}  defaultValue={defaultFor('stiffness')} label="Stf"          curve="linear" onchange={set('stiffness')} moduleId={id} paramId="stiffness" readLive={live('stiffness')} />
           </div>
         </div>
         <div class="group g-pick">
           <header>PICK</header>
           <div class="fader-row">
-            <Fader value={pickTone}  min={0}   max={1} defaultValue={defaultFor('pickTone')}  label="Tone"  curve="linear" onchange={set('pickTone')}  moduleId={id} paramId="pickTone"  readLive={live('pickTone')} />
-            <Fader value={pickGrain} min={0.1} max={4} defaultValue={defaultFor('pickGrain')} label="Grain" curve="log"    onchange={set('pickGrain')} moduleId={id} paramId="pickGrain" readLive={live('pickGrain')} />
-            <Fader value={spread}    min={0}   max={1} defaultValue={defaultFor('spread')}    label="Sprd"  curve="linear" onchange={set('spread')}    moduleId={id} paramId="spread"    readLive={live('spread')} />
-            <Fader value={body}      min={0}   max={1} defaultValue={defaultFor('body')}      label="Body"  curve="linear" onchange={set('body')}      moduleId={id} paramId="body"      readLive={live('body')} />
+            <NeonFader value={pickTone}  min={0}   max={1} defaultValue={defaultFor('pickTone')}  label="Tone"  curve="linear" onchange={set('pickTone')}  moduleId={id} paramId="pickTone"  readLive={live('pickTone')} />
+            <NeonFader value={pickGrain} min={0.1} max={4} defaultValue={defaultFor('pickGrain')} label="Grain" curve="log"    onchange={set('pickGrain')} moduleId={id} paramId="pickGrain" readLive={live('pickGrain')} />
+            <NeonFader value={spread}    min={0}   max={1} defaultValue={defaultFor('spread')}    label="Sprd"  curve="linear" onchange={set('spread')}    moduleId={id} paramId="spread"    readLive={live('spread')} />
+            <NeonFader value={body}      min={0}   max={1} defaultValue={defaultFor('body')}      label="Body"  curve="linear" onchange={set('body')}      moduleId={id} paramId="body"      readLive={live('body')} />
           </div>
         </div>
         <div class="group g-sel">
@@ -154,7 +154,7 @@
                RECALL knob. Same stamp the shell's PRESET selector fires. -->
           <div class="sel-cell" data-testid={`sixstrum-preset-${id}-1`}>
             <div class="sel-readout" data-testid="sixstrum-tuning-name">{tuningName}</div>
-            <Fader value={tuning} min={0} max={2} defaultValue={defaultFor('tuning')} label="Mode" curve="discrete" onchange={setMode} moduleId={id} paramId="tuning" readLive={live('tuning')} />
+            <NeonFader value={tuning} min={0} max={2} defaultValue={defaultFor('tuning')} label="Mode" curve="discrete" onchange={setMode} moduleId={id} paramId="tuning" readLive={live('tuning')} />
           </div>
         </div>
       </div>
@@ -166,24 +166,24 @@
         <div class="group g-env">
           <header>ENVELOPE</header>
           <div class="fader-row">
-            <Fader value={attack}   min={0.0005} max={5} defaultValue={defaultFor('attack')}   label="A"    units="s" curve="log"    onchange={set('attack')}   moduleId={id} paramId="attack"   readLive={live('attack')} />
-            <Fader value={envDecay} min={0.001}  max={5} defaultValue={defaultFor('envDecay')} label="D"    units="s" curve="log"    onchange={set('envDecay')} moduleId={id} paramId="envDecay" readLive={live('envDecay')} />
-            <Fader value={sustain}  min={0}      max={1} defaultValue={defaultFor('sustain')}  label="S"              curve="linear" onchange={set('sustain')}  moduleId={id} paramId="sustain"  readLive={live('sustain')} />
-            <Fader value={release}  min={0.001}  max={5} defaultValue={defaultFor('release')}  label="R"    units="s" curve="log"    onchange={set('release')}  moduleId={id} paramId="release"  readLive={live('release')} />
-            <Fader value={muteDepth} min={0}     max={1} defaultValue={defaultFor('muteDepth')} label="Mute"          curve="linear" onchange={set('muteDepth')} moduleId={id} paramId="muteDepth" readLive={live('muteDepth')} />
+            <NeonFader value={attack}   min={0.0005} max={5} defaultValue={defaultFor('attack')}   label="A"    units="s" curve="log"    onchange={set('attack')}   moduleId={id} paramId="attack"   readLive={live('attack')} />
+            <NeonFader value={envDecay} min={0.001}  max={5} defaultValue={defaultFor('envDecay')} label="D"    units="s" curve="log"    onchange={set('envDecay')} moduleId={id} paramId="envDecay" readLive={live('envDecay')} />
+            <NeonFader value={sustain}  min={0}      max={1} defaultValue={defaultFor('sustain')}  label="S"              curve="linear" onchange={set('sustain')}  moduleId={id} paramId="sustain"  readLive={live('sustain')} />
+            <NeonFader value={release}  min={0.001}  max={5} defaultValue={defaultFor('release')}  label="R"    units="s" curve="log"    onchange={set('release')}  moduleId={id} paramId="release"  readLive={live('release')} />
+            <NeonFader value={muteDepth} min={0}     max={1} defaultValue={defaultFor('muteDepth')} label="Mute"          curve="linear" onchange={set('muteDepth')} moduleId={id} paramId="muteDepth" readLive={live('muteDepth')} />
           </div>
         </div>
         <div class="group g-strum">
           <header>STRUM</header>
           <div class="fader-row">
-            <Fader value={strumSpread} min={0} max={1} defaultValue={defaultFor('strumSpread')} label="Roll" curve="linear" onchange={set('strumSpread')} moduleId={id} paramId="strumSpread" readLive={live('strumSpread')} />
+            <NeonFader value={strumSpread} min={0} max={1} defaultValue={defaultFor('strumSpread')} label="Roll" curve="linear" onchange={set('strumSpread')} moduleId={id} paramId="strumSpread" readLive={live('strumSpread')} />
             <div class="sel-cell">
               <div class="sel-readout" data-testid="sixstrum-dir-name">{dirName}</div>
-              <Fader value={strumDir} min={0} max={2} defaultValue={defaultFor('strumDir')} label="Dir" curve="discrete" onchange={set('strumDir')} moduleId={id} paramId="strumDir" readLive={live('strumDir')} />
+              <NeonFader value={strumDir} min={0} max={2} defaultValue={defaultFor('strumDir')} label="Dir" curve="discrete" onchange={set('strumDir')} moduleId={id} paramId="strumDir" readLive={live('strumDir')} />
             </div>
             <div class="sel-cell">
               <div class="sel-readout" data-testid="sixstrum-chord-name">{qualityName}</div>
-              <Fader value={quality} min={0} max={7} defaultValue={defaultFor('quality')} label="Chord" curve="discrete" onchange={set('quality')} moduleId={id} paramId="quality" readLive={live('quality')} />
+              <NeonFader value={quality} min={0} max={7} defaultValue={defaultFor('quality')} label="Chord" curve="discrete" onchange={set('quality')} moduleId={id} paramId="quality" readLive={live('quality')} />
             </div>
             <button
               class="strum-btn"
@@ -197,7 +197,7 @@
         <div class="group g-sel">
           <header>OUT</header>
           <div class="fader-row">
-            <Fader value={level} min={-24} max={12} defaultValue={defaultFor('level')} label="Lvl" units="dB" curve="linear" onchange={set('level')} moduleId={id} paramId="level" readLive={live('level')} />
+            <NeonFader value={level} min={-24} max={12} defaultValue={defaultFor('level')} label="Lvl" units="dB" curve="linear" onchange={set('level')} moduleId={id} paramId="level" readLive={live('level')} />
           </div>
         </div>
       </div>

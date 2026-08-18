@@ -25,7 +25,7 @@
   // no gate forbids and which re-pointing the `params` array would silently
   // scramble. `paramVal` resolves by id.
   import type { NodeProps } from '@xyflow/svelte';
-  import Fader from '$lib/ui/controls/Fader.svelte';
+  import NeonFader from '$lib/ui/controls/NeonFader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import { unityscalemathematikDef } from '$lib/audio/modules/unityscalemathematik';
   import type { ModuleNode } from '$lib/graph/types';
@@ -59,21 +59,21 @@
     <div class="section">
       <div class="section-label">UNITY</div>
       <div class="fader-row">
-        <Fader value={paramVal('unityAtten')} min={P.unityAtten.min} max={P.unityAtten.max} defaultValue={P.unityAtten.defaultValue} label={P.unityAtten.label} units={P.unityAtten.units} curve={P.unityAtten.curve} onchange={set('unityAtten')} moduleId={id} paramId="unityAtten" readLive={live('unityAtten')} />
+        <NeonFader value={paramVal('unityAtten')} min={P.unityAtten.min} max={P.unityAtten.max} defaultValue={P.unityAtten.defaultValue} label={P.unityAtten.label} units={P.unityAtten.units} curve={P.unityAtten.curve} onchange={set('unityAtten')} moduleId={id} paramId="unityAtten" readLive={live('unityAtten')} />
       </div>
     </div>
     <div class="section">
       <div class="section-label">A</div>
       <div class="fader-row">
-        <Fader value={paramVal('aAtten')} min={P.aAtten.min} max={P.aAtten.max} defaultValue={P.aAtten.defaultValue} label={P.aAtten.label} units={P.aAtten.units} curve={P.aAtten.curve} onchange={set('aAtten')} moduleId={id} paramId="aAtten" readLive={live('aAtten')} />
-        <Fader value={paramVal('aCurve')} min={P.aCurve.min} max={P.aCurve.max} defaultValue={P.aCurve.defaultValue} label={P.aCurve.label} units={P.aCurve.units} curve={P.aCurve.curve} onchange={set('aCurve')} moduleId={id} paramId="aCurve" readLive={live('aCurve')} />
+        <NeonFader value={paramVal('aAtten')} min={P.aAtten.min} max={P.aAtten.max} defaultValue={P.aAtten.defaultValue} label={P.aAtten.label} units={P.aAtten.units} curve={P.aAtten.curve} onchange={set('aAtten')} moduleId={id} paramId="aAtten" readLive={live('aAtten')} />
+        <NeonFader value={paramVal('aCurve')} min={P.aCurve.min} max={P.aCurve.max} defaultValue={P.aCurve.defaultValue} label={P.aCurve.label} units={P.aCurve.units} curve={P.aCurve.curve} onchange={set('aCurve')} moduleId={id} paramId="aCurve" readLive={live('aCurve')} />
       </div>
     </div>
     <div class="section">
       <div class="section-label">B</div>
       <div class="fader-row">
-        <Fader value={paramVal('bAtten')} min={P.bAtten.min} max={P.bAtten.max} defaultValue={P.bAtten.defaultValue} label={P.bAtten.label} units={P.bAtten.units} curve={P.bAtten.curve} onchange={set('bAtten')} moduleId={id} paramId="bAtten" readLive={live('bAtten')} />
-        <Fader value={paramVal('bCurve')} min={P.bCurve.min} max={P.bCurve.max} defaultValue={P.bCurve.defaultValue} label={P.bCurve.label} units={P.bCurve.units} curve={P.bCurve.curve} onchange={set('bCurve')} moduleId={id} paramId="bCurve" readLive={live('bCurve')} />
+        <NeonFader value={paramVal('bAtten')} min={P.bAtten.min} max={P.bAtten.max} defaultValue={P.bAtten.defaultValue} label={P.bAtten.label} units={P.bAtten.units} curve={P.bAtten.curve} onchange={set('bAtten')} moduleId={id} paramId="bAtten" readLive={live('bAtten')} />
+        <NeonFader value={paramVal('bCurve')} min={P.bCurve.min} max={P.bCurve.max} defaultValue={P.bCurve.defaultValue} label={P.bCurve.label} units={P.bCurve.units} curve={P.bCurve.curve} onchange={set('bCurve')} moduleId={id} paramId="bCurve" readLive={live('bCurve')} />
       </div>
     </div>
   </PatchPanel>

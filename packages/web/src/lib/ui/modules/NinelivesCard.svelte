@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { NodeProps } from '@xyflow/svelte';
-  import Fader from '$lib/ui/controls/Fader.svelte';
+  import NeonFader from '$lib/ui/controls/NeonFader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { ninelivesDef } from '$lib/audio/modules/ninelives';
@@ -50,12 +50,12 @@
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <!-- Rate (out1 frequency) + the shared Waveform morph, one row. -->
     <div class="control-row">
-      <Fader
+      <NeonFader
         value={rate}
         min={pRate.min} max={pRate.max} defaultValue={pRate.defaultValue}
         label={pRate.label ?? pRate.id} units={pRate.units} curve={pRate.curve}
         onchange={set('rate')} readLive={live('rate')} moduleId={id} paramId={pRate.id} />
-      <Fader
+      <NeonFader
         value={shape}
         min={pShape.min} max={pShape.max} defaultValue={pShape.defaultValue}
         label={pShape.label ?? pShape.id} curve={pShape.curve}
