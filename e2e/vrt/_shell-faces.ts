@@ -754,6 +754,7 @@ export const FACES = [
     //
     //   authoring        predicted 2, committed 2 (compact + dock), nothing else
     //   owner round 1    predicted 1, committed 1 (dock only)
+    //   fader migration  predicted 2, committed 2 (both MODIFIED, 0 added/deleted)
     //
     // ⚠ The round-1 asymmetry is the useful part: the faceplate was
     // restructured completely — tabs renamed and reordered, a page deleted, the
@@ -764,6 +765,14 @@ export const FACES = [
     // be rebuilt at the dock and leave the lane byte-identical, which is worth
     // knowing before anyone reads a green compact scene as coverage of a
     // faceplate change.
+    //
+    // ⚠ AND THE FADER MIGRATION (#1822) MOVED BOTH, which is the same lesson
+    // from the other side: that change was to the fader PRIMITIVE rather than
+    // to any dock-only declaration, so it reached every tier that paints a
+    // fader cell. Which scenes move tells you WHICH LAYER changed — declaration
+    // or primitive — and the count alone does not. Both blob hashes were
+    // recorded before the dispatch and re-read after, so "2 files touched" is
+    // known to be "2 files genuinely different" rather than a re-timestamp.
   },
 ] as const;
 
