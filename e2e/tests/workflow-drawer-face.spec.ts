@@ -373,7 +373,37 @@ test.describe('workflow · the pinned `m` tray renders the promoted face (#1739)
     });
     expect(neon.domain, 'the shell must publish a domain colour in the tray').not.toBe('');
     expect(neon.accent, "the fader's own accent chain must resolve, not fall back to empty").not.toBe('');
-    expect(neon.accent, 'the fader accent must BE the domain chain, not a grey default').toBe(neon.domain);
+    expect(neon.accent, 'the accent must be a RESOLVED colour, not a grey default').toMatch(
+      /^#[0-9a-f]{3,8}$|^rgb/i,
+    );
+
+    // ⚠ THIS CELL NO LONGER ENDS AT `--domain`, AND THAT IS THE POINT (#1825).
+    // `ch1_volume` is CHANNEL-scoped, and the owner's rule for mixmstrs is that
+    // channel N wears rack LANE N's colour: `face.channelAccent` puts lane 1's
+    // hex on the cell's `--ka`, which is the documented head of the same chain.
+    // This clause used to read `accent === domain` — it was the strongest
+    // available statement of "the chain resolves" when every cell ended at the
+    // domain, and it is now FALSE for exactly the cells the feature is about.
+    //
+    // Restated as the two-sided property, which is strictly stronger AND makes
+    // the tray a second witness for #1825 (the mixmstrs-face-console spec drives
+    // the DOCK FULL VIEW; nothing else measures the pinned `m` tray):
+    //   a CHANNEL cell resolves its lane colour, NOT the domain…
+    expect(
+      neon.accent,
+      'ch1_volume is channel-scoped: it must take lane 1s colour, not the domain accent (#1825)',
+    ).not.toBe(neon.domain);
+    //   …and a BUS-scoped cell in the SAME tray still ends at the domain, which
+    //   is what keeps this an assertion about the CHAIN rather than about one
+    //   colour. Without it, a bug that painted the whole tray any single
+    //   non-domain colour would pass the clause above.
+    const busAccent = await card
+      .locator('[data-testid="control-ret1_volume"]')
+      .evaluate((el: Element) => getComputedStyle(el).getPropertyValue('--_ka').trim());
+    expect(
+      busAccent,
+      'ret1_volume is BUS-scoped (the wet back from send 1, not channel 1) and must keep the domain accent',
+    ).toBe(neon.domain);
 
     // ── MIDI-LEARN. A face cell is the same live, MIDI-assignable control a
     //    hand-built card carries (`cardParams` closures + KnobConic's
