@@ -1,5 +1,15 @@
 // e2e/tests/doom-controls.spec.ts
 //
+// ⚠ DOOM SPECS ARE NORMALLY OFF-LIMITS — the standing owner ruling is
+//   "do not fuck with doom in any way without specific approval". The
+//   tic-precision assertions in this file were blurred under a SPECIFIC
+//   approval given by the owner on 2026-08-18, verbatim:
+//     "okay see if you can go make the doom tests blurrier and less flakey,
+//      just knowing doom renders and our kb logic and basic game nav works
+//      is fine"
+//   That approval covers THE SPECS ONLY — not video/modules/doom.ts, not the
+//   WASM/WAD assets, not the netcode. See #1848 and e2e/tests/_doom-helpers.ts.
+//
 // E2E coverage for the 2026-05-29 DOOM controls overhaul (PR
 // fix/doom-controls-comprehensive). Six fixes, six tests:
 //
@@ -24,6 +34,19 @@
 import { test, expect } from './_fixtures';
 import { type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
+import { waitFrames } from '../_helpers/frames';
+import {
+  MOVE_EPS,
+  addEdgeLive,
+  manhattan,
+  pressUntilInLevel,
+  waitTics,
+} from './_doom-helpers';
+
+/** How many GAME TICS a control leg observes. Tics, never ms — DOOM's game
+ *  clock IS the frame clock, so "while the sim ran" has exactly one honest
+ *  unit. See _doom-helpers.ts. */
+const CONTROL_TICS = 25;
 
 async function assetsMissing(page: Page): Promise<string | null> {
   const wasm = await page.request.get('/doom/doom.js');
@@ -88,27 +111,16 @@ async function readPlayerXY(page: Page): Promise<{ x: number; y: number } | null
   });
 }
 
+/** BASIC GAME NAV: walk the title sequence into E1M1 by keyboard.
+ *
+ *  Was `for (4) { press Enter; waitForTimeout(300) }` — a bet that each 300 ms
+ *  window holds enough GAME TICS for DOOM to consume the key. It does not on a
+ *  slow renderer (DOOM's game clock is the frame clock), and the walk then
+ *  strands in the skill picker so the NEXT assertion fails for an unrelated
+ *  reason. pressUntilInLevel presses until the marine exists, which is
+ *  self-correcting at any tic rate. */
 async function waitForLevel(page: Page): Promise<void> {
-  // Walk the title-screen menu into actual gameplay (Enter ×4).
-  for (let i = 0; i < 4; i++) {
-    await page.keyboard.press('Enter');
-    await page.waitForTimeout(300);
-  }
-  await page.waitForFunction(
-    () => {
-      const w = globalThis as unknown as {
-        __engine?: () => {
-          getDomain?: (d: string) => { read?: (id: string, k: string) => unknown } | null;
-        } | null;
-      };
-      const ve = w.__engine?.()?.getDomain?.('video');
-      const extras = ve?.read?.('v-doom', 'extras') as
-        | { getRuntime?: () => { hasPlayerMobj?: () => boolean } | null }
-        | undefined;
-      return extras?.getRuntime?.()?.hasPlayerMobj?.() === true;
-    },
-    { timeout: 30_000 },
-  );
+  await pressUntilInLevel(page, 'v-doom');
 }
 
 // ----------------------------------------------------------------- #1
@@ -158,14 +170,17 @@ test.describe('CV input drives the player (single-player) (#2)', () => {
     // LFO at a slow rate so its ±1 sweep holds above 0 for several ticks at
     // a stretch (a high-rate LFO would oscillate faster than the engine
     // edge-detector can transcribe).
+    //
+    // ⚠ SPAWNED WITHOUT THE CV EDGE, on purpose. The edge is added LIVE below,
+    // after the marine is in the level and has been proven stationary — that
+    // makes the wire the ONLY thing that changed between the control leg and
+    // the positive leg. (spawnPatch CLEARS the graph, so it cannot add an edge
+    // to a booted runtime; addEdgeLive transacts one in, see _doom-helpers.)
     await spawnPatch(
       page,
       [
         { id: 'lfo',    type: 'lfo',  position: { x: 50,  y: 50  }, domain: 'audio', params: { rate: 0.5 } },
         { id: 'v-doom', type: 'doom', position: { x: 400, y: 50  }, domain: 'video' },
-      ],
-      [
-        { id: 'e-cv-up', from: { nodeId: 'lfo', portId: 'phase0' }, to: { nodeId: 'v-doom', portId: 'p1_up' }, sourceType: 'cv', targetType: 'cv' },
       ],
     );
 
@@ -178,26 +193,49 @@ test.describe('CV input drives the player (single-player) (#2)', () => {
     await card.click(); // latch keyboard for Enter presses
     await waitForLevel(page);
 
-    // Sample player.y for several seconds — the LFO should produce a half-cycle
-    // of "p1_up high" within ~1 second at rate 0.5Hz. We only need ONE
-    // detectable forward-walk to prove CV reaches the marine.
-    const before = await readPlayerXY(page);
-    expect(before, 'player not spawned').not.toBeNull();
-
-    // Hold the patch for ~3 seconds so the LFO at 0.5 Hz finishes 1.5 cycles —
-    // at least one rising edge into p1_up, ~1s of held-high movement.
-    await page.waitForTimeout(3000);
-
-    const after = await readPlayerXY(page);
-    expect(after, 'player vanished').not.toBeNull();
-    const moved = Math.abs(after!.x - before!.x) + Math.abs(after!.y - before!.y);
-    // Same threshold as the keyboard regression test — well below "walked
-    // forward for ~1s" but well above start-of-level jitter.
+    // ── NEGATIVE CONTROL (permanent): NO CV EDGE ⇒ the marine holds still ───
+    // Same reader, same epsilon, same span of GAME TICS as the positive leg.
+    // Without it, "the marine moved" would be satisfied by a marine that was
+    // already walking (a stuck key, a demo playing itself), and the CV path
+    // would be certified by something that has nothing to do with CV.
+    const unpatchedBefore = await readPlayerXY(page);
+    expect(unpatchedBefore, 'player not spawned').not.toBeNull();
+    const idleTics = await waitTics(page, 'v-doom', CONTROL_TICS, 30_000);
+    const unpatchedAfter = await readPlayerXY(page);
     expect(
-      moved,
-      `expected CV → p1_up to walk the marine forward (|dx|+|dy|=${moved}); ` +
-        `pre-fix the SP own-slot-null guard dropped every CV write.`,
-    ).toBeGreaterThan(100_000);
+      idleTics,
+      `DOOM's game clock did not advance ${CONTROL_TICS} tics (advanced ${idleTics}) — ` +
+        `the control leg would report "did not move" for a sim that cannot move.`,
+    ).toBeGreaterThanOrEqual(CONTROL_TICS);
+    expect(
+      manhattan(unpatchedBefore!, unpatchedAfter!),
+      `the marine moved BEFORE any CV was patched ` +
+        `(|dx|+|dy|=${manhattan(unpatchedBefore!, unpatchedAfter!)} over ${idleTics} tics).`,
+    ).toBeLessThan(MOVE_EPS);
+
+    // ── Wire LFO.phase0 → DOOM.p1_up and poll until the marine is elsewhere ─
+    // A POLL, not a fixed 3 s hold: at 0.5 Hz the LFO's first rising edge into
+    // p1_up arrives on its own schedule and the marine then walks at DOOM's tic
+    // rate, so the DURATION is renderer- and phase-dependent while the VERDICT
+    // ("did the marine leave its spot") is not.
+    const before = await readPlayerXY(page);
+    await addEdgeLive(page, {
+      id: 'e-cv-up',
+      from: { nodeId: 'lfo', portId: 'phase0' },
+      to: { nodeId: 'v-doom', portId: 'p1_up' },
+      sourceType: 'cv',
+      targetType: 'cv',
+    });
+
+    await expect
+      .poll(async () => manhattan(before!, (await readPlayerXY(page))!), {
+        timeout: 45_000,
+        intervals: [250, 500, 1000],
+        message:
+          'CV → p1_up never walked the marine forward; pre-fix the SP ' +
+          'own-slot-null guard dropped every CV write.',
+      })
+      .toBeGreaterThan(MOVE_EPS);
   });
 });
 
@@ -247,24 +285,37 @@ test.describe('Keyboard goes inert when CV is patched (#3)', () => {
     // patched. This is the same flag the card's $effect drives via
     // extras.setKeyboardInert(cvGatePatched), which closes the keyboard at
     // the runtime boundary even if the JS claim gate is bypassed.
-    const inert = await page.evaluate(() => {
-      const w = globalThis as unknown as {
-        __engine?: () => {
-          getDomain?: (d: string) => { read?: (id: string, k: string) => unknown } | null;
-        } | null;
-      };
-      const ve = w.__engine?.()?.getDomain?.('video');
-      const extras = ve?.read?.('v-doom', 'extras') as
-        | { getRuntime?: () => { isKeyboardInert?: () => boolean } | null }
-        | undefined;
-      return extras?.getRuntime?.()?.isKeyboardInert?.() ?? null;
-    });
-    expect(
-      inert,
-      `runtime should report keyboard-inert=true when ANY CV gate is patched on the SP DOOM node ` +
-        `(SP fallback: own slot is null but CV-patched is still true). ` +
-        `If false, the card never called extras.setKeyboardInert(true) — bug #3.`,
-    ).toBe(true);
+    //
+    // ⚠ POLLED, not read once. `cvGatePatched` is a Svelte derived and the card
+    // re-pushes it into the runtime on its rAF; the engine reconciler may
+    // materialize the doom node a beat AFTER the edge syncs (DoomCard.svelte
+    // says so in as many words). A single read is therefore a race against
+    // frame ordering, which is exactly the class of flake this file is being
+    // de-flaked for — state readiness gets an auto-retrying expect.
+    await expect
+      .poll(
+        async () =>
+          await page.evaluate(() => {
+            const w = globalThis as unknown as {
+              __engine?: () => {
+                getDomain?: (d: string) => { read?: (id: string, k: string) => unknown } | null;
+              } | null;
+            };
+            const ve = w.__engine?.()?.getDomain?.('video');
+            const extras = ve?.read?.('v-doom', 'extras') as
+              | { getRuntime?: () => { isKeyboardInert?: () => boolean } | null }
+              | undefined;
+            return extras?.getRuntime?.()?.isKeyboardInert?.() ?? null;
+          }),
+        {
+          timeout: 15_000,
+          message:
+            'runtime never reported keyboard-inert=true while a CV gate was patched on ' +
+            'the SP DOOM node (SP fallback: own slot is null but CV-patched is still ' +
+            'true). The card never called extras.setKeyboardInert(true) — bug #3.',
+        },
+      )
+      .toBe(true);
 
     // Belt-and-braces: a held ArrowUp must produce no setKeyForKeyboardCode
     // delta. We compare counter at the runtime boundary via the inert path:
@@ -355,9 +406,12 @@ test.describe('q → KEY_ESCAPE intercept in DOOM keyboard mode (#5)', () => {
     // Should be in GS_LEVEL (0) before the q.
     expect(beforeState).toBe(0);
 
-    // q + small wait for the engine to process the keypress in a tic.
+    // q, then wait for the engine to process the keypress — in TICS. The unit
+    // matters: DOOM consumes a queued key inside a tic, so "300 ms" is "however
+    // many tics this renderer managed", which is ~9 under SwiftShader and ~18
+    // on a real GPU. 4 tics is 4 tics everywhere.
     await page.keyboard.press('KeyQ');
-    await page.waitForTimeout(300);
+    await waitTics(page, 'v-doom', 4, 10_000);
 
     // After ESCAPE the engine processes M_StartControlPanel, which doesn't
     // change gamestate but sets `menuactive = true`. We don't have a JS
@@ -365,7 +419,7 @@ test.describe('q → KEY_ESCAPE intercept in DOOM keyboard mode (#5)', () => {
     // confirm the round-trip didn't crash the runtime, then sample
     // gamestate is still GS_LEVEL.
     await page.keyboard.press('KeyQ');
-    await page.waitForTimeout(300);
+    await waitTics(page, 'v-doom', 4, 10_000);
     const afterState = await page.evaluate(() => {
       const w = globalThis as unknown as {
         __engine?: () => {
@@ -433,7 +487,27 @@ test.describe('DOOM Volume control writes params.audioGain (the −42 dB fix UI)
     await page.mouse.down();
     await page.mouse.move(cx, cy + 60, { steps: 12 }); // drag down → lower gain
     await page.mouse.up();
-    await page.waitForTimeout(100);
+
+    // Poll the SUBJECT (the param the drag is supposed to write) rather than
+    // waiting a fixed 100 ms for Svelte to flush. State readiness → an
+    // auto-retrying expect; the drag either lands or the poll's cap reports it.
+    await expect
+      .poll(
+        async () =>
+          await page.evaluate(() => {
+            const w = globalThis as unknown as {
+              __patch: { nodes: Record<string, { params?: Record<string, number> } | undefined> };
+            };
+            return w.__patch.nodes['v-doom']?.params?.audioGain ?? 1;
+          }),
+        {
+          timeout: 10_000,
+          message:
+            'dragging the Volume knob down never wrote params.audioGain — the knob ' +
+            "isn't wired to the audioGain param's setter.",
+        },
+      )
+      .toBeLessThan(before);
 
     const after = await page.evaluate(() => {
       const w = globalThis as unknown as {
@@ -483,8 +557,10 @@ test.describe('DOOM evt_kill → SCOREBOARD.score fires (same-domain video CV br
       ],
     );
 
-    // Let the engine settle.
-    await page.waitForTimeout(300);
+    // Let the engine settle — in FRAMES. The video CV/gate bridge samples on
+    // the video frame tick, so the thing being waited for is literally a count
+    // of frames; 300 ms is a different number of them on every renderer.
+    await waitFrames(page, 8);
 
     // Snapshot SCORE before.
     const before = await page.evaluate(() => {
@@ -515,11 +591,13 @@ test.describe('DOOM evt_kill → SCOREBOARD.score fires (same-domain video CV br
       if (!extras?.forcePulse) throw new Error('extras.forcePulse missing');
       extras.forcePulse('evt_kill');
     });
-    // Each pulse is 10ms wide; the video frame tick is ~16ms, so a single
-    // pulse may straddle two frames or miss the next frame's sample
-    // entirely. Wait ~40ms between pulses to ensure two frames sample BOTH
-    // the high and the subsequent low.
-    await page.waitForTimeout(80);
+    // Each pulse is 10 ms wide and the bridge samples on the VIDEO FRAME TICK,
+    // so what has to elapse between pulses is FRAMES — enough that a frame
+    // samples the high and a later frame samples the subsequent low. 5 frames
+    // is 5 frames on every renderer; the old 80 ms was ~5 frames locally and
+    // well under 1 on a loaded SwiftShader shard, which silently merged two
+    // pulses into one edge.
+    await waitFrames(page, 5);
     await page.evaluate(() => {
       const w = globalThis as unknown as {
         __engine?: () => {
@@ -531,7 +609,7 @@ test.describe('DOOM evt_kill → SCOREBOARD.score fires (same-domain video CV br
         | undefined);
       extras?.forcePulse?.('evt_kill');
     });
-    await page.waitForTimeout(80);
+    await waitFrames(page, 5);
     await page.evaluate(() => {
       const w = globalThis as unknown as {
         __engine?: () => {
@@ -543,8 +621,8 @@ test.describe('DOOM evt_kill → SCOREBOARD.score fires (same-domain video CV br
         | undefined);
       extras?.forcePulse?.('evt_kill');
     });
-    // Final settle.
-    await page.waitForTimeout(200);
+    // Final settle — frames again, same reason.
+    await waitFrames(page, 8);
 
     const after = await page.evaluate(() => {
       const w = globalThis as unknown as {

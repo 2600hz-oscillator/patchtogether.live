@@ -204,6 +204,43 @@ export async function inLevel(page: Page, nodeId: string): Promise<boolean> {
 }
 
 /**
+ * Add ONE edge to the LIVE patch without tearing anything down.
+ *
+ * `spawnPatch` CLEARS the graph before rebuilding it, so it cannot be used to
+ * wire something into an already-booted DOOM runtime — the clear would destroy
+ * the WASM instance and the level with it. This transacts a single edge into
+ * `__patch.edges` exactly the way spawnPatch does, which is what makes an
+ * EDGE-ABSENT / EDGE-PRESENT negative control affordable: the same marine, in
+ * the same level, with the wire as the only thing that changed.
+ */
+export async function addEdgeLive(
+  page: Page,
+  edge: {
+    id: string;
+    from: { nodeId: string; portId: string };
+    to: { nodeId: string; portId: string };
+    sourceType?: string;
+    targetType?: string;
+  },
+): Promise<void> {
+  await page.evaluate((e) => {
+    const w = globalThis as unknown as {
+      __patch: { edges: Record<string, unknown> };
+      __ydoc: { transact: (fn: () => void) => void };
+    };
+    w.__ydoc.transact(() => {
+      w.__patch.edges[e.id] = {
+        id: e.id,
+        source: e.from,
+        target: e.to,
+        sourceType: e.sourceType ?? 'audio',
+        targetType: e.targetType ?? 'audio',
+      };
+    });
+  }, edge);
+}
+
+/**
  * BASIC GAME NAV, THE SELF-CORRECTING WAY: press Enter until the marine exists.
  *
  * DOOM's title sequence needs ~4 Enters (demo → main menu → New Game → skill →
@@ -215,20 +252,30 @@ export async function inLevel(page: Page, nodeId: string): Promise<boolean> {
  * any tic rate. Extra Enters once in the level are inert (Enter is unbound in
  * gameplay), so overshooting is safe.
  *
+ * ⚠ `minPresses` IS NOT A COSMETIC DEFAULT — IT IS AN ANTI-VACUITY GUARD.
+ * DOOM's ATTRACT DEMO is a real level with a real player mobj, so "the marine
+ * exists" is TRUE while the game is playing itself. A loop that checked before
+ * pressing would return 0 presses the moment the demo rolled, and hand the
+ * caller a marine that MOVES ON ITS OWN — which silently passes any "an input
+ * moved the marine" leg and silently fails any "nothing moved" control leg.
+ * Issuing the canonical walk unconditionally aborts the demo and lands a real
+ * New Game before the observable is consulted at all.
+ *
  * @returns the number of Enter presses it actually took (reported in the
  *          caller's assertion message — a sudden jump is a real finding).
  */
 export async function pressUntilInLevel(
   page: Page,
   nodeId: string,
-  opts: { maxPresses?: number; timeoutMs?: number } = {},
+  opts: { maxPresses?: number; minPresses?: number; timeoutMs?: number } = {},
 ): Promise<number> {
   const maxPresses = opts.maxPresses ?? 24;
+  const minPresses = opts.minPresses ?? 4;
   const timeoutMs = opts.timeoutMs ?? 60_000;
   const deadline = Date.now() + timeoutMs;
   let presses = 0;
   while (presses < maxPresses && Date.now() < deadline) {
-    if (await inLevel(page, nodeId)) return presses;
+    if (presses >= minPresses && (await inLevel(page, nodeId))) return presses;
     await page.keyboard.press('Enter');
     presses++;
     // A menu selection is consumed on the next tic; 4 gives the level-load a
