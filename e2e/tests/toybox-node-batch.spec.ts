@@ -336,7 +336,7 @@ const OPS: Array<{ kind: string; ports: number; params: Record<string, number>; 
   { kind: 'datamosh', ports: 1, params: { flowScale: 0.7, decay: 0.9 }, steps: 10, moving: true },
 ];
 
-test.describe('TOYBOX batch op nodes — registry + menu', () => {
+test.describe('TOYBOX batch op nodes — registry + menu @webgl-serial', () => {
   test('every new op appears in the ADD row + the right-click Add submenu', async ({ page }) => {
     test.setTimeout(180_000);
     const errors: string[] = [];
@@ -476,7 +476,7 @@ const RENDER_BATCHES: Array<{ name: string; ops: Op[] }> = [
   },
 ].filter((b) => b.ops.length > 0);
 
-test.describe('TOYBOX batch op nodes — render + output delta', () => {
+test.describe('TOYBOX batch op nodes — render + output delta @webgl-serial', () => {
   for (const batch of RENDER_BATCHES) {
     test(`${batch.name} render non-black + visibly affect the output`, async ({ page }) => {
       // Budget = a single boot + Σ(per-op converge cost). Base 60s for the boot,
@@ -514,7 +514,7 @@ test.describe('TOYBOX batch op nodes — render + output delta', () => {
   }
 });
 
-test.describe('TOYBOX batch op nodes — multi-input exercise', () => {
+test.describe('TOYBOX batch op nodes — multi-input exercise @webgl-serial', () => {
   // For the 2-input ops, swapping which layer feeds in0 vs in1 must change the
   // composite (proves BOTH inputs are read, not just in0).
   //
@@ -735,7 +735,7 @@ test.describe('TOYBOX batch op nodes — multi-input exercise', () => {
 // engine-internal read the toybox-cv-routing e2e asserts on — and fails if the
 // cv wiring is broken (no render needed).
 
-test.describe('TOYBOX combine graph — resizable view persists', () => {
+test.describe('TOYBOX combine graph — resizable view persists @webgl-serial', () => {
   test('the node-graph panel resizes + the height persists in node.data', async ({ page }) => {
     test.setTimeout(180_000);
     const errors: string[] = [];

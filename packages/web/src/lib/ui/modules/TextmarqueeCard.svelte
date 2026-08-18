@@ -352,7 +352,9 @@
     if (!e || !node || !previewEl) return;
     try {
       const ve = e.getDomain<VideoEngine>('video');
-      ve.blitOutputToDrawingBuffer(id);
+      // #1802 — gated preview blit (see VideoEngine.blitOutputForPreview).
+      // The rAF is re-armed at the TOP of pump(), so a bare return is safe.
+      if (!ve.blitOutputForPreview(id)) return;
       const src = ve.canvas as unknown as CanvasImageSource;
       const c2d = previewEl.getContext('2d');
       if (c2d) c2d.drawImage(src, 0, 0, ENGINE_W, ENGINE_H, 0, 0, previewEl.width, previewEl.height);

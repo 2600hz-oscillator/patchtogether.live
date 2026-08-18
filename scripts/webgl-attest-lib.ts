@@ -127,6 +127,21 @@ export const WEBGL_SERIAL_SPECS = [
   // 15 s re-stepping poll still reads zero bright pixels. See the rationale
   // block above the first describe in the spec.
   'video-orientation.spec.ts',
+  // #1836 — the SAME output-FBO readback race, MEASURED under the real Pass A
+  // filter (E2E_WEBGL_HEAVY=only, --workers=5) and green in isolation on the
+  // same tree: REPEAT=3 on the real GPU, `3 passed` / `30 passed` / `6 passed`
+  // respectively, --retries=0. They are NOT the #1836 preview-gate regression —
+  // that one reproduced at --workers=1 and is fixed in the product (a one-shot
+  // present is no longer eaten by the preview cadence cap); these three only
+  // ever failed under parallel GPU load.
+  //
+  // ⚠ `toybox-layer-input.spec.ts` is deliberately NOT here. It failed at
+  // workers=1 in isolation, which is entry-criterion 3's exact disqualifier: a
+  // spec that fails in isolation is BROKEN, and parking it here would have
+  // hidden a live regression behind a quiet GPU.
+  'toybox-layer-selector.spec.ts',
+  'toybox-node-batch.spec.ts',
+  'toybox-shadertoy.spec.ts',
 ];
 
 /** Toolchain pins that can change bundled/rendered WebGL output (a bundler or

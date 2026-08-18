@@ -205,11 +205,19 @@
     if (!videoEngine) return;
     const ctx2d = canvasEl.getContext('2d', { alpha: false });
     if (!ctx2d) return;
+    // #1802 — gated preview blit (see VideoEngine.blitOutputForPreview). The
+    // rAF is re-armed at the TOP of this function, so a bare return is safe.
+    // ⚠ The return also skips `drawSliceReadout()` below. That is intended:
+    // the slice readout is a SECOND preview of the same node, and gating one
+    // preview while leaving the other repainting every frame would be half a
+    // fix. Both resume together on the next un-gated frame.
+    let blitted = false;
     try {
-      videoEngine.blitOutputToDrawingBuffer(id);
+      blitted = videoEngine.blitOutputForPreview(id);
     } catch {
       // Don't let engine errors nuke the rAF loop.
     }
+    if (!blitted) return;
     const src = videoEngine.canvas as CanvasImageSource;
     const cw = canvasEl.width;
     const ch = canvasEl.height;

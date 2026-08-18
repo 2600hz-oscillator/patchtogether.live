@@ -419,26 +419,35 @@
   // is ZERO. (The previous card rationed an in-rack thumbnail blit to ~8fps;
   // removing the thumbnail removes the last of it.)
   //
-  // markWatched still fires every rAF while the tab is visible and no test
-  // harness has frozen/paused the engine. That keeps the node a PULL ROOT, so
-  // the engine goes on advancing the feedback nest even when nothing downstream
-  // is patched — a feedback module that stops rendering loses its history, and
-  // the first Full Frame after that would open on a cold picture. It is a Map
-  // write, not GL work. (Off-screen cards are still handled centrally by
-  // video-card-visibility.ts → engine.setCardVisibility.)
+  // ── #1802: markWatched NO LONGER FIRES FROM THE COLLAPSED BRANCH ──────────
   //
-  // The harness gate is not a test hack, it is the honest condition: when
-  // `__videoEnginePause` is set the specs drive `vid.step()` themselves, and
-  // when `__videoEngineFreezeRender` is set nothing renders at all.
+  // It used to, every rAF, deliberately: keeping the node a PULL ROOT meant the
+  // engine went on advancing the feedback nest even with nothing downstream
+  // patched, so the first Full Frame opened on a WARM picture instead of a cold
+  // one. That reasoning was sound and the cost was described as "a Map write,
+  // not GL work".
+  //
+  // The Map write is not the cost. Being a pull root is: it pulls the whole
+  // UPSTREAM CHAIN into the frame. MEASURED (#1802), `toybox → backdraft` with
+  // backdraft's output patched NOWHERE and this card not expanded: both nodes
+  // drew 481 frames in 4 s, rendering a picture presented on no surface at all,
+  // on the same main thread the audio scheduler dispatches on (#1803).
+  //
+  // ⚠ THE TRADE, stated rather than hidden: opening Full Frame now starts the
+  // feedback nest from cold and it takes a beat to build its trail, in the
+  // specific case where NOTHING ELSE was observing the node. If anything is —
+  // a downstream OUTPUT card, a render lease (fullscreen / projector /
+  // full-frame), an export — pull evaluation keeps the chain warm through that
+  // root, which is the correct reason to keep rendering. A collapsed card
+  // presenting nothing is not one.
+  //
+  // The blit IS a GL readback, and in the rack there is now no surface to blit
+  // INTO, so it is skipped entirely: this card's per-frame GL cost in the rack
+  // is ZERO. (The previous card rationed an in-rack thumbnail blit to ~8fps;
+  // removing the thumbnail removes the last of it.) Off-screen cards are
+  // handled centrally by video-card-visibility.ts → engine.setCardVisibility,
+  // and now also by the preview gate itself.
   let rafId: number | null = null;
-
-  function harnessFrozen(): boolean {
-    const g = globalThis as {
-      __videoEngineFreezeRender?: boolean;
-      __videoEnginePause?: boolean;
-    };
-    return g.__videoEngineFreezeRender === true || g.__videoEnginePause === true;
-  }
 
   function tick() {
     rafId = null;
@@ -454,10 +463,26 @@
       const eh = videoEngine.canvas.height || ENGINE_H;
       if (ew !== engineW) engineW = ew;
       if (eh !== engineH) engineH = eh;
+      // #1802 — "OFF" NOW MEANS "NOT THERE".
+      //
+      // This used to read `else if (!harnessFrozen() && !document.hidden)
+      // videoEngine.markWatched?.(id);` — a collapsed card that presents
+      // nothing still declared itself an OBSERVER of its node every frame,
+      // which made the node a pull root, which dragged its whole upstream
+      // chain in with it.
+      //
+      // MEASURED, `toybox → backdraft` with backdraft's output patched
+      // NOWHERE and its card not expanded: both nodes drew 481 frames in 4 s
+      // for a picture presented on no surface at all.
+      //
+      // Nothing is watched from here now. If something ELSE is looking — a
+      // downstream OUTPUT card, a render lease (fullscreen / projector /
+      // full-frame), an export — pull evaluation keeps the chain alive
+      // through THAT root, which is the correct reason. If nothing is, the
+      // chain stops, and re-expanding restarts it (`drawOutput` blits, the
+      // blit marks watched, the next engine step renders).
       if (expanded) {
         drawOutput(videoEngine);
-      } else if (!harnessFrozen() && !document.hidden) {
-        videoEngine.markWatched?.(id);
       }
     }
     try { syncFromEngine(e, node); } catch { /* defensive — never kill the loop */ }
@@ -468,11 +493,19 @@
     if (!canvasEl) return;
     const ctx2d = canvasEl.getContext('2d', { alpha: false });
     if (!ctx2d) return;
+    // #1802 — gated preview blit (see VideoEngine.blitOutputForPreview).
+    // BACKDRAFT only reaches here while `expanded`, and expanded takes a render
+    // LEASE (attachRenderLease below), which bypasses both gates — so the
+    // presented picture is never throttled. The call is still routed through
+    // the gated method so this card cannot become the one place that marks a
+    // node watched without presenting it.
+    let blitted = false;
     try {
-      videoEngine.blitOutputToDrawingBuffer(id);
+      blitted = videoEngine.blitOutputForPreview(id);
     } catch {
       // Never let an engine error nuke the rAF loop.
     }
+    if (!blitted) return;
     const src = videoEngine.canvas as CanvasImageSource;
     const cw = canvasEl.width;
     const ch = canvasEl.height;
