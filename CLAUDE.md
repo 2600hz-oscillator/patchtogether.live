@@ -108,6 +108,15 @@ the `vrt-update.yml` capture job on ubuntu-latest. **You never commit a baseline
 dispatch with `flox activate -- task vrt:commit`. A local macOS run compares Metal
 text against a linux baseline, so it is **not a verification**.
 
+**The capture is SCOPED to the branch's diff by default** (#1795) — measured 41-56 min
+unscoped against ~3 min scoped. A bare `task vrt:commit` derives the token and prints
+the scope, the files that produced it and the test count it selects before dispatching;
+`ALL=1 task vrt:commit` is the deliberate full sweep. The derivation is deny-by-default:
+two modules, an unattributable renderable file, or an unrecognized path all fall back to
+the full sweep **loudly**, and nothing-that-can-move-a-pixel refuses to dispatch at all.
+Scoping is safe because it cannot silently under-capture **where it gates** — `vrt-strict`
+reddens on the next CI run and names the file.
+
 Three hazards, none of them about platforms:
 
 - ⚠ **`--update-snapshots` CANNOT regenerate a PASSING-but-stale baseline** — it

@@ -23,7 +23,15 @@
 # it does not always (2 of 3, #1694). The verification, the retry and the loud
 # failure all live in scripts/vrt-revalidate-gate.mjs.
 #
-# Usage:  gh workflow run vrt-update.yml -f ref=<branch>
+# ⚠ SCOPE IT. THE CAPTURE IS ONE UNSHARDED JOB over the whole FULL_MATCH spec
+# set, and MEASURED on 2026-08-17 that is 41-56 min unscoped against ~3 min with
+# a `grep` (#1795). `task vrt:commit` now DERIVES the token from the branch's
+# diff and dispatches with it; a full sweep is `ALL=1 task vrt:commit`, i.e. a
+# choice rather than the default. Sharding this job is the other half and is
+# deliberately NOT done here (#1824): a half-working fan-in that dropped
+# baselines would be far worse than a slow capture.
+#
+# Usage:  gh workflow run vrt-update.yml -f ref=<branch> [-f grep=<token>]
 name: VRT update baselines
 
 on:
@@ -34,7 +42,7 @@ on:
         required: true
         type: string
       grep:
-        description: Optional Playwright --grep to scope capture to specific cards (leaves other baselines untouched)
+        description: SINGLE token ([A-Za-z0-9_.-]+) scoping the capture to matching cards; empty = full sweep (41-56 min)
         required: false
         default: ''
         type: string
@@ -151,6 +159,29 @@ jobs:
       - name: Build DOOM WASM (emcc)
         if: steps.cache-doom-wasm.outputs.cache-hit != 'true'
         run: flox activate -- bash packages/web/native/build-doom-wasm.sh
+
+      # ── SAY WHAT THIS RUN WILL COST, BEFORE IT COSTS IT (#1795) ───────────
+      #
+      # Three jobs in one cheap step (~1 min: one registry-manifest emit plus a
+      # browserless `playwright --list`):
+      #
+      #   1. REFUSE A MANGLED TOKEN. `task vrt:update -- --grep "$GREP"` puts
+      #      the value through go-task's UNQUOTED CLI_ARGS join, so a space or a
+      #      `|` is word-split into something else — most likely a capture with
+      #      no grep at all, silently rewriting every baseline. A dispatch can
+      #      come from any `gh workflow run`, so the check lives HERE and not
+      #      only in the Taskfile.
+      #   2. REFUSE A GREP THAT SELECTS NOTHING. A capture that renders nothing
+      #      commits nothing and SUCCEEDS, which is indistinguishable from a
+      #      capture that ran and found no drift (#1809 lost a round trip to
+      #      exactly that ambiguity). A typo'd token is caught here instead of
+      #      45 minutes later.
+      #   3. STATE THE SCOPE in the job summary, so "what did this capture even
+      #      look at" is answered on the run page rather than reconstructed.
+      - name: Resolve capture scope (refuse a mangled or empty grep)
+        env:
+          GREP: ${{ inputs.grep }}
+        run: flox activate -- node scripts/vrt-scope.mjs check --grep "$GREP"
 
       - name: Regenerate VRT baselines
         env:
