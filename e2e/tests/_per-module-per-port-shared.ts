@@ -790,7 +790,8 @@ export type InputSource = {
  *                                       inputs required)
  *   mono-video → RASTERIZE.out         (needs an audio input — supplied
  *                                       via extraNode NOISE)
- *   image  → RASTERIZE.out (upcasts via canConnect mono-video → image)
+ *   image  → (none — no self-running STILL source exists; mono-video
+ *             does NOT widen into image, that is a motion reduction)
  *   polyPitchGate → SEQUENCER.pitch    (the only self-running ppg source)
  */
 export function pickInputSource(inputType: string, idPrefix: string): InputSource | null {
@@ -837,14 +838,13 @@ export function pickInputSource(inputType: string, idPrefix: string): InputSourc
         sourceType: 'mono-video',
         extraNode: { id: `${idPrefix}-noiseR`, type: 'noise', position: { x: 60, y: 60 }, domain: 'audio', params: { level: 0.6 } },
       };
-    case 'image':
-      // image upcasts from mono-video.
-      return {
-        node: { id: `${idPrefix}-rast`, type: 'rasterize', position: { x: 280, y: 60 }, domain: 'audio' },
-        outPort: 'out',
-        sourceType: 'mono-video',
-        extraNode: { id: `${idPrefix}-noiseR`, type: 'noise', position: { x: 60, y: 60 }, domain: 'audio', params: { level: 0.6 } },
-      };
+    // `image` deliberately has NO entry — see the doc block above. It used to
+    // reuse the mono-video source "because image upcasts from mono-video",
+    // which is false and always was: mono-video is ANIMATED and image is
+    // STILL, so that is a reduction on the motion axis and `canConnect`
+    // refuses it (#1780). Unreachable today (no def declares an `image`
+    // input), so nothing ever failed — but it would have built a forbidden
+    // edge the first time one appeared. `null` is the loud path.
     case 'polyPitchGate':
       return {
         node: { id: `${idPrefix}-seq`, type: 'sequencer', position: { x: 60, y: 60 }, domain: 'audio', params: { bpm: 240, length: 4, isPlaying: 1, gateLength: 0.5 } },

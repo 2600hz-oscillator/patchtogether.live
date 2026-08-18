@@ -1223,8 +1223,20 @@ export class PatchEngine {
         // the asset_pitch input declares NO cvScale) so the card reads the
         // raw V/oct. SCOPED to a CV-family TARGET so a pitch source can never
         // accidentally hit the texture/stream bridge below.
+        //
+        // `modsignal` joins that target set (#1780 finding 5): canConnect now
+        // admits the WHOLE CV family into a modulation input, and without this
+        // arm a `pitch → modsignal` edge fell past every cross-domain branch
+        // into single-domain dispatch and silently did nothing — a permitted
+        // patch with no consumer. It is the same sample-and-hold path cv/gate
+        // already take (VideoEngine.addCvBridge envelope-follows an `audio`
+        // source ONLY), and `modsignal` is a param input, never a texture/stream
+        // port, so the scoping argument above is unchanged. The polyPitchGate
+        // arm cannot reach `modsignal` — canConnect refuses poly→modsignal,
+        // since a poly bus is an ADAPTER rather than a CV-family member.
         || ((edge.sourceType === 'pitch' || edge.sourceType === 'polyPitchGate')
-          && (edge.targetType === 'cv' || edge.targetType === 'pitch' || edge.targetType === 'gate'))
+          && (edge.targetType === 'cv' || edge.targetType === 'pitch'
+            || edge.targetType === 'gate' || edge.targetType === 'modsignal'))
         // AUDIO → a `modsignal` modulation input (TOYBOX's 6-input section). An
         // audio-rate source patched into a modsignal input is ENVELOPE-FOLLOWED
         // by the sample-and-hold bridge (see VideoEngine.tickCvBridges) to a

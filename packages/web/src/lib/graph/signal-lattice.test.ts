@@ -1,12 +1,22 @@
-// ⛔ MOCK / PROPOSAL — covers the derived predicate the /dev/video-patch-drop
-// mocks render. Nothing in the engine imports the subject.
+// Covers the VIDEO WIDENING RULE — the predicate `canConnect` derives its video
+// quadrant from, and the one the drop modal renders.
 //
-// The load-bearing test here is `pins the ONLY divergence from the shipped
-// rule`: it does not restate the lattice, it DIFFERENCES the proposal against
-// the live `canConnect` over every ordered pair and asserts the exact set of
-// pairs where they disagree. If the proposal drifts, or if someone edits
-// canConnect's upcast table, this reddens with the offending pair named — and
-// it can never go stale the way a hand-copied expectation would.
+// ⚠ READ THIS BEFORE TRUSTING THE DIVERGENCE TEST. Until #1780 the lattice was a
+// PROPOSAL and `canConnect` had its own hand-written edge table, so differencing
+// the two over every ordered pair was an empirical measurement — and it found
+// exactly one disagreement, `keys -> video`, the un-closed diagonal. Now that
+// canConnect CALLS `videoWidensTo`, that same assertion measures something
+// weaker: it proves canConnect's video quadrant adds NOTHING of its own. It can
+// still redden (a special case slipped in above or below the lattice branch,
+// canConnect ceasing to route video pairs through it at all) but it can no
+// longer discover a rule disagreement, because there is only one rule left.
+//
+// So the load-bearing tests are now the ones ABOVE it — the partial-order
+// properties and the owner's rule stated directly — plus the pinned `keys ->
+// video` regression, which names the artifact rather than the relation and
+// therefore cannot go quiet. The `cv -> video` case at the bottom stays for the
+// same reason it always did: it is the clause the lattice deliberately does not
+// model, so "the lattice IS canConnect" can never be assumed from a green run.
 import { describe, it, expect } from 'vitest';
 import { canConnect } from '$lib/graph/types';
 import {
@@ -82,30 +92,62 @@ describe("the owner's rule, stated directly", () => {
 });
 
 describe('difference against the SHIPPED rule', () => {
-  it('pins the ONLY divergence from canConnect: the un-closed diagonal', () => {
+  it('canConnect and the lattice agree on EVERY video pair — no divergence left', () => {
     const divergent = PAIRS.filter(
       ([s, d]) => videoWidensTo(s, d) !== canConnect(s, d),
     ).map(([s, d]) => `${s} -> ${d}`);
 
-    // keys is mono+still; video is colour+animated. It is a widening on BOTH
-    // axes, which is free, and it is legal in two hops today. The shipped
-    // edge table simply never wrote the diagonal down. Adopting the lattice
-    // ADDS this patch and changes nothing else — that is the whole diff, and
-    // it is stated here as the set it is rather than as a count.
-    expect(divergent).toEqual(['keys -> video']);
+    // Before #1780 this set was exactly ['keys -> video'] — the diagonal the
+    // hand-written edge table never wrote down, measured rather than guessed.
+    // canConnect's video quadrant is now the lattice itself, so the set is
+    // EMPTY, and it is stated as the set it is rather than as a count.
+    expect(divergent).toEqual([]);
+  });
+
+  it('pins the fix at the ARTIFACT: keys -> video is patchable through canConnect', () => {
+    // The regression the issue is about, asserted on the SHIPPED entry point in
+    // its own terms. Unlike the sweep above this does not restate the relation,
+    // so it survives any future re-shaping of how canConnect reaches the rule.
+    // keys is mono+still, video is colour+animated: a widening on BOTH axes,
+    // free at the shader layer, and legal in two hops even before the fix.
+    expect(canConnect('keys', 'video')).toBe(true);
+    // …and the fix did not open the lossy direction on the way past.
+    expect(canConnect('video', 'keys')).toBe(false);
+  });
+
+  it('canConnect is TRANSITIVELY CLOSED over video pairs — the defect class, on the shipped rule', () => {
+    // The property the edge table failed, asserted against canConnect rather
+    // than against the lattice: a two-hop patch is always a one-hop patch. This
+    // is what a re-introduced special case in canConnect's video quadrant would
+    // break, and it is stated over the whole relation so a fifth video type is
+    // covered without editing the test.
+    const gaps: string[] = [];
+    for (const a of TYPES) {
+      for (const b of TYPES) {
+        if (!canConnect(a, b)) continue;
+        for (const c of TYPES) {
+          if (canConnect(b, c) && !canConnect(a, c)) gaps.push(`${a} -> ${b} -> ${c}`);
+        }
+      }
+    }
+    expect(gaps).toEqual([]);
   });
 
   it('negative control: the difference is really being measured', () => {
-    // If videoWidensTo were (say) always-true or always-false, the assertion
-    // above would still be an assertion — it just would not be about the
-    // lattice. Perturb the subject and confirm the divergence set MOVES.
+    // If videoWidensTo were (say) always-true or always-false, the sweep above
+    // would still be an assertion — it just would not be about the lattice.
+    // Perturb the subject and confirm the divergence set MOVES: a degenerate
+    // answer disagrees with canConnect on real pairs, so neither one can
+    // produce the EMPTY set the real predicate produces.
     const alwaysTrue = PAIRS.filter(([s, d]) => true !== canConnect(s, d));
     const alwaysFalse = PAIRS.filter(([s, d]) => false !== canConnect(s, d));
     expect(alwaysTrue.length).toBeGreaterThan(0);
     expect(alwaysFalse.length).toBeGreaterThan(0);
-    // …and neither degenerate answer produces the real one-element set.
-    expect(alwaysTrue.length).not.toBe(1);
-    expect(alwaysFalse.length).not.toBe(1);
+    // Both directions named, so the control cannot pass by canConnect having
+    // collapsed to a constant itself: canConnect refuses SOME video pair and
+    // permits SOME video pair.
+    expect(alwaysTrue.map(([s, d]) => `${s} -> ${d}`)).toContain('video -> keys');
+    expect(alwaysFalse.map(([s, d]) => `${s} -> ${d}`)).toContain('keys -> video');
   });
 });
 

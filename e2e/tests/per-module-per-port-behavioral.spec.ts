@@ -1782,13 +1782,15 @@ function pickInputSource(inputType: string, idPrefix: string): InputSource | nul
         sourceType: 'mono-video',
         extraNode: { id: `${idPrefix}-noiseR`, type: 'noise', position: { x: 60, y: 60 }, domain: 'audio', params: { level: 0.6 } },
       };
-    case 'image':
-      return {
-        node: { id: `${idPrefix}-rast`, type: 'rasterize', position: { x: 280, y: 60 }, domain: 'audio' },
-        outPort: 'out',
-        sourceType: 'mono-video',
-        extraNode: { id: `${idPrefix}-noiseR`, type: 'noise', position: { x: 60, y: 60 }, domain: 'audio', params: { level: 0.6 } },
-      };
+    // `image` deliberately has NO entry. It used to reuse the mono-video
+    // source "because image upcasts from mono-video" — it does not, and never
+    // did: mono-video is ANIMATED and image is STILL, so that is a reduction on
+    // the motion axis, which `canConnect` refuses (#1780). The case was
+    // unreachable (no def declares an `image` input today) so nothing failed,
+    // but it would have built an edge the type rule forbids the first time one
+    // appeared. Falling to `null` is the loud path: the caller either extends
+    // this picker with a REAL still-image source or earns an
+    // EXEMPT_INPUT_DRIVE entry with a reason.
     case 'polyPitchGate':
       return {
         node: { id: `${idPrefix}-seq`, type: 'sequencer', position: { x: 60, y: 60 }, domain: 'audio', params: { bpm: 240, length: 4, isPlaying: 1, gateLength: 0.5 } },

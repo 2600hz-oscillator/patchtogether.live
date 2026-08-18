@@ -405,27 +405,34 @@
       </div>
 
       <div class="callout">
-        <h3>the compatibility predicate, and the gap it closes</h3>
+        <h3>the compatibility predicate, and the gap it closed</h3>
         <p>
-          The mono/colour rule the owner asked for <b>is already derived</b> — it is not a list of
-          module names anywhere. <code>canConnect</code> permits <code>mono-video → video</code> and
-          refuses the reverse. What is a list is the <i>shape</i>: a hand-written table of upcast
-          edges, which has to be transitively closed by hand and <b>is not</b>.
+          The mono/colour rule the owner asked for <b>was already derived</b> — it was never a list
+          of module names anywhere. <code>canConnect</code> permits <code>mono-video → video</code>
+          and refuses the reverse. What was a list is the <i>shape</i>: a hand-written table of
+          upcast edges, which has to be transitively closed by hand and <b>was not</b>.
         </p>
         <p>
           The four video types are two independent axes — <b>channels</b> (mono ⊑ colour) and
           <b>motion</b> (still ⊑ animated) — and the union's own comment says so. Compatibility is
           the product order over those axes, which is transitively closed by construction. Measured
-          against the shipped rule over all 16 ordered pairs, the derived predicate agrees on
-          everything except one: <code>keys → video</code>, the diagonal the edge table never wrote
-          down.
+          against the old edge table over all 16 ordered pairs, the derived predicate agreed on
+          everything except one: <code>keys → video</code>, the diagonal the table never wrote down.
+        </p>
+        <p>
+          <b>Shipped in #1780.</b> <code>signal-lattice.ts</code> moved to <code>lib/graph/</code>
+          and <code>canConnect</code> now calls <code>videoWidensTo</code> for the video quadrant, so
+          the modal and every other patch surface — cable drag, patch menus, rear card, auto-wire —
+          read one rule. The divergence sweep still runs; its set is now empty.
         </p>
         <p class="warn">
-          ⚠ No port in the repo is typed <code>keys</code>, so the gap looks free. It is not:
+          ⚠ No port in the repo is typed <code>keys</code>, so the gap looked free. It was not:
           backdraft's two <b>key-mask</b> inputs are declared <code>video</code> with the def saying
           why — <i>"'video' so any source (LINES / SHAPES / a key) patches in"</i>. The type rule did
-          not just refuse a patch; it bent a contract around itself, and every gate that reads that
-          contract now reads the bent version. <code>mapper.key</code> is the same.
+          not just refuse a patch; it bent a contract around itself. Note the fix runs the OTHER
+          way: those <i>inputs</i> are correct as <code>video</code> (an input typed <code>keys</code>
+          would accept only <code>keys</code> sources — a narrowing), and what was broken is that a
+          <code>keys</code> <i>source</i> could not reach them. <code>mapper.key</code> is the same.
         </p>
         <p class="warn">
           ⚠ <b>The direction asymmetry.</b> <code>compatibleTargetPorts</code> honours a port's
@@ -492,10 +499,11 @@
           <li>
             <b>Audio/CV.</b> The predicate is written to extend, and the CV family falls out of it,
             but no audio scene is rendered and <code>modsignal</code>/<code>polyPitchGate</code> are
-            modelled as adapters on paper only. ⚠ Note <code>pitch → modsignal</code> is refused
-            today while <code>cv →</code> and <code>gate → modsignal</code> are allowed, though all
-            three are declared freely interchangeable — adopting a derived rule forces a decision
-            there.
+            modelled as adapters on paper only. The <code>pitch → modsignal</code> question this
+            page raised is <b>decided</b> (#1780): a modsignal input now takes the whole CV family
+            read off <code>CV_FAMILY</code>, and the cross-domain dispatch was extended with it so
+            the permission has a consumer. <code>polyPitchGate</code> stays out — it is an adapter,
+            not a family member.
           </li>
           <li>
             <b>Stereo collapse.</b> <code>collapseStereoPorts</code> is a no-op for video (no video
