@@ -44,7 +44,7 @@ guards (`test.skip(cond, …)`) are env gates, not disables, and are excluded.
 ### art — declaration-level disables (0)
 _none_
 
-### spawn-smoke QUARANTINE map (e2e/tests/modules.spec.ts) — 1
+### spawn-smoke QUARANTINE map (e2e/tests/io-spec-consistency.spec.ts) — 1
 - `toybox` — task #102: SwiftShader software-renderer timeout (heavy WebGL)
 
 ## Runtime skips — in-body env gates (79)
@@ -119,8 +119,8 @@ those at spec granularity and the lane audit checks the realized string.
 - `e2e/tests/patch-load-leak.spec.ts:309` — DOM retention is not measurable under vite dev — HMR retains destroyed component instances by design
 - `e2e/tests/peertube.spec.ts:326` — (dynamic: ``renderer could not decode the AVC/AAC HLS clip (state=${state})``)
 - `e2e/tests/per-module-per-port-inputs.spec.ts:113` — DOOM WASM/WAD not built — see static/doom/DOWNLOAD_INSTRUCTIONS.md
-- `e2e/tests/per-module.spec.ts:233` — DOOM WASM not built — run `bash packages/web/native/build-doom-wasm.sh`
-- `e2e/tests/per-module.spec.ts:243` — DOOM1.WAD missing — see static/doom/DOWNLOAD_INSTRUCTIONS.md
+- `e2e/tests/per-module.spec.ts:235` — DOOM WASM not built — run `bash packages/web/native/build-doom-wasm.sh`
+- `e2e/tests/per-module.spec.ts:245` — DOOM1.WAD missing — see static/doom/DOWNLOAD_INSTRUCTIONS.md
 - `e2e/tests/picturebox-gif.spec.ts:89` — WebCodecs ImageDecoder(image/gif) unavailable — app degrades to a static first frame here
 - `e2e/tests/recording-survives-card-collapse.spec.ts:126` — #1574: no real H.264 encoder in this runtime — no recording can start
 - `e2e/tests/recording-survives-card-collapse.spec.ts:216` — #1574: negative control — no real H.264 encoder in this runtime
