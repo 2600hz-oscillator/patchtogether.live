@@ -3925,6 +3925,21 @@ test.describe.configure({ mode: 'parallel' });
 // analysis further down this file: a race against the async wavetable load in the
 // TEST SETUP, not a budget). That note is the shape a root cause should take here.
 //
+// ⚠⚠ TWO OF THESE ARE IN THE REQUIRED behavioral-smoke SUBSET: `analogVco` and
+// `lfo`. That job's grep in ci.yml is `\b(adsr|analogVco|filter|lfo|noise|
+// stereovca|vca): each declared`, and `noise` is a known-dead alternative, so
+// the subset resolves to SIX modules — parking these two leaves it running
+// FOUR. behavioral-smoke is a REQUIRED pre-merge check with NO JSON audit step,
+// so the two skips surface NOWHERE: the lane stays green and nothing says a
+// third of the core signal-path behavioral coverage stopped running.
+// packages/web/src/lib/dev/behavioral-smoke-subset.test.ts cannot catch it
+// either — it pins which rows the grep SELECTS, never whether they EXECUTE, and
+// a parked row still contributes its title. That blind spot is now stated in
+// that file's scope note.
+// ⚠ So these two are the highest-priority un-parks in this map: every other
+// entry costs coverage the full lane already lost when it was deleted, but
+// these two cost coverage a REQUIRED lane still claims to provide.
+//
 // The value is the report-row reason string; keep the `FLAKE-PARK #1847` prefix,
 // which is what scripts/e2e-skip-budget.mjs names.
 const FLAKE_PARK_1847: Record<string, string> = {

@@ -89,6 +89,20 @@ This is the class the poly/MIDI rule exists for. The standing finding is that en
 ### Registry sweeps
 
 - **`per-module-per-port-behavioral.spec.ts` — 15 modules** (`analogVco`, `clap`, `cloudseed`, `colorizer`, `cube`, `flipper`, `lfo`, `lines`, `moog911`, `moog921Vco`, `moog962`, `moog995`, `shimmershine`, `treeohvox`, `wavecel`). This is the only dead-input detection outside the behavioral smoke subset, and **`ci.yml` already records that deleting the full behavioral lane left the modules outside that subset with no CI dead-input coverage.** Parking these removes the last of it for those fifteen: a module that exists in the def, accepts a wire, and then silently IGNORES every value that arrives is now unobservable for them. `wavecel` is the one with a written-down hypothesis already — a race against the async wavetable load in the TEST SETUP, documented in the spec's own `spread_cv` analysis. That note is the shape a root cause should take here.
+
+  > ### ⚠ Two of those fifteen are inside the REQUIRED `behavioral-smoke` subset
+  >
+  > **This is the most consequential thing the campaign found, and it was not in the issue's framing.** #1847 describes this spec as *"the only dead-input detection **outside** the 7-module smoke subset"*. For 13 of the 15 that is right. For two of them it is not.
+  >
+  > `behavioral-smoke` is a **REQUIRED pre-merge check**. Its `ci.yml` grep is `\b(adsr|analogVco|filter|lfo|noise|stereovca|vca): each declared`, and `noise` is a documented dead alternative (it declares zero inputs, so the sweep registers no row). So the subset resolves to **six** modules — and **`analogVco` and `lfo` are two of them**. Parking them leaves that required lane executing **four**.
+  >
+  > Three things make this worse than a normal park:
+  >
+  > 1. **`behavioral-smoke` has no JSON audit step.** The skip-budget gate that catches this class runs only on the `e2e` lane. These two skips surface nowhere.
+  > 2. **`behavioral-smoke-subset.test.ts` is green and blind to it.** That guard exists precisely to stop the subset drifting — but it reconstructs titles from the live registry and asserts which ones the regex **selects**. It never asks whether a selected row **executes**, and a parked row still contributes its title. A blind spot of exactly the shape CLAUDE.md warns about: a gate reading one side of a two-sided contract. It is now stated in that file's scope note.
+  > 3. **The lane will stay green.** Nothing anywhere reports that a third of the core signal-path behavioral coverage stopped running.
+  >
+  > It was **not** asserted as a failure, deliberately: reddening the required unit lane on a park the owner ordered is the gate arguing with the ruling rather than reporting it. But it is a decision worth revisiting. **`analogVco` and `lfo` are the highest-priority un-parks in the whole campaign** — every other entry costs coverage the full behavioral lane already lost when it was deleted; these two cost coverage a required lane still claims to provide. If their root cause stalls, the honest alternative is to widen the subset to modules that actually run.
 - **`modules.spec.ts` — `bluebox`, `buggles`, `quadralogical`.** The per-module spawn smoke: card render, registry-derived handle count, clean console. It is the only per-module render gate outside the VRT lanes.
 
 ### Workflow shell, dock, and the heavy-WebGL floor

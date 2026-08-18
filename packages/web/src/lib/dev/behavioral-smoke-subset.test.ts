@@ -37,6 +37,27 @@
 //
 // Editing the grep in ci.yml means editing INTENDED_SUBSET here in the SAME
 // commit; that pairing is the whole safety argument.
+//
+// ── ⚠ WHAT THIS GATE IS STRUCTURALLY UNABLE TO SEE (#1847) ──────────────────
+//
+// It reconstructs titles from the LIVE REGISTRY and asks which ones the regex
+// SELECTS. It never asks whether a selected row EXECUTES. So a subset module
+// whose row is disabled at declaration — `test.fixme`, or an entry in the
+// sweep's own FLAKE_PARK_1847 / SKIP_SPAWN maps — still contributes its title,
+// still gets selected, and this gate stays GREEN while the required job runs a
+// skip in its place.
+//
+// THAT IS THE LIVE STATE, NOT A HYPOTHETICAL. The #1847 flake park disabled
+// `analogVco` and `lfo`, which are TWO OF THE SIX modules this subset resolves
+// to. `behavioral-smoke` is a REQUIRED pre-merge check and has no JSON audit
+// step, so those two skips surface nowhere: the lane is green, this gate is
+// green, and a third of the core signal-path behavioral coverage is not running.
+//
+// It is deliberately NOT asserted here. Doing so would redden the required unit
+// lane on a park the owner ordered, which is the gate arguing with the ruling
+// rather than reporting it. The correct fix is to un-park those two with a root
+// cause (#1847); if that stalls, the honest alternative is to widen the subset
+// to modules that DO run, and this note is what should prompt that conversation.
 
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
