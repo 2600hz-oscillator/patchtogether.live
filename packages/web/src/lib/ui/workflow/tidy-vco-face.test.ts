@@ -103,7 +103,7 @@ describe('tidyVco face — the LANE ladder (what the player rides)', () => {
     // the 6-cell budget, not an accident of it, and it is why the wave screen
     // is a mini/compact affordance. Nothing about the ranking can buy it back:
     // at 3 columns, anything past 3 cells is already two rows.
-    expect(laneBodyPlan(keysAt('full').length, true, 'full')).toEqual({
+    expect(laneBodyPlan(keysAt('full').length, 'trace', 'full')).toEqual({
       layout: 'plate',
       cellCount: 6,
       glyph: false,
@@ -116,7 +116,7 @@ describe('tidyVco face — the LANE ladder (what the player rides)', () => {
       // FADERS reports 96 here and gets one row of three.
       rowTracks: [PLATE_ROW_H, PLATE_ROW_H],
     });
-    expect(laneBodyPlan(4, true, 'full').glyph, 'even 4 cells is two rows').toBe(false);
+    expect(laneBodyPlan(4, 'trace', 'full').glyph, 'even 4 cells is two rows').toBe(false);
   });
 
   it('FOLD and ENV are rank 7-8 — dock-only, and that is deliberate', () => {

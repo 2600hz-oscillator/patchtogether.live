@@ -178,6 +178,67 @@ export function hasVideoSurface(def: ShellDefLike | undefined): boolean {
   return def?.domain === 'video';
 }
 
+// ── ONE NOTION OF "DOES THIS TILE HAVE A GLYPH", AND WHAT KIND (#1785) ──────
+//
+// There used to be TWO, and a video face was exactly where they diverged:
+//
+//   ModuleShell    `hasGlyph = glyphKind !== 'none' || hasVideoSurface(def)`
+//   curatedFace    `faceTierCap(tier, glyph !== 'none', …)`
+//
+// `backdraft` declares `glyph: 'none'` (mandatory — it has no audio port, so
+// any other literal is a DEAD glyph the face lint refuses) and gets its picture
+// from `hasVideoSurface`. So the SELECTOR sized the tile as glyph-less while
+// the SHELL rendered it glyph-bearing, and the two answers were both used:
+// MEASURED on backdraft at the `compact` tier, `curatedFace` selected THREE
+// controls (the glyph-less row cap) and the tile painted TWO (the with-glyph
+// cap) — a silent truncation of exactly the kind `faceTierCap` was built to
+// make impossible. `module-face-lint`'s cap↔plan drift gate could not see it,
+// because it re-derived `hasGlyph` from `face.glyph` a THIRD time.
+//
+// The type is three-valued rather than a boolean because the fit plan needs
+// more than "is there one": a TRACE is decoration that yields to ranked cells,
+// a PICTURE is the module's identity and outranks them (see `laneBodyPlan`).
+// One value, one derivation, every consumer downstream of it.
+/**
+ * What the glyph slot of a module's tile holds.
+ *
+ * - `'none'`    — no glyph cell renders.
+ * - `'trace'`   — the face's declared glyph (scope / meter / envelope /
+ *                 waveform / topology): a decorative read-out of an audio
+ *                 module, which YIELDS to ranked controls when the lane runs
+ *                 out of room.
+ * - `'picture'` — the live `VideoTileThumb` of a video-domain module's own
+ *                 output. It is not decoration: for a video module the picture
+ *                 IS the module's identity in a rack, so it OUTRANKS ranked
+ *                 controls (owner ruling, #1785).
+ */
+export type LaneGlyph = 'none' | 'trace' | 'picture';
+
+/** A def, as far as the glyph question is concerned: its domain (which decides
+ *  the live video surface) plus its face's declared glyph — and NOTHING else.
+ *  Deliberately not `extends ShellDefLike`: the lint gate's own def shape has
+ *  looser `inputs`, and widening the predicate's input to accept it would be
+ *  the tail wagging the dog. It reads two fields; it asks for two fields. */
+export interface LaneGlyphDefLike {
+  domain?: string;
+  face?: { glyph?: string };
+}
+
+/**
+ * THE glyph predicate — the single derivation `ModuleShell`, `curatedFace` and
+ * the lint gate all read. Pure.
+ *
+ * A video surface WINS over a declared glyph, mirroring the render: the shell's
+ * glyph cell branches `{#if videoThumb} <VideoTileThumb/> {:else if glyphKind
+ * …}`, so a video-domain def that also declared a trace would paint the
+ * picture. (No def does — the face lint's dead-glyph clause refuses a trace on
+ * a def with no audio output — but the order is the render's, not a guess.)
+ */
+export function laneGlyphFor(def: LaneGlyphDefLike | undefined): LaneGlyph {
+  if (hasVideoSurface(def)) return 'picture';
+  return (def?.face?.glyph ?? 'none') !== 'none' ? 'trace' : 'none';
+}
+
 /** Thumbnail render policy: a SMALL fixed-res 2D canvas (aspect-fit blit of the
  *  engine frame, engine is 1024×768 4:3 by default) at a THROTTLED fps. The
  *  legacy cards run their previews at full rAF over card-sized buffers; the
@@ -465,6 +526,60 @@ export function plateRowTracks(cellHeights: readonly number[]): number[] {
   return rows.length ? rows : [Math.max(PLATE_ROW_H, cellHeights[0] ?? PLATE_ROW_H)];
 }
 
+/**
+ * The same row admission as {@link plateRowTracks}, into an ARBITRARY height
+ * budget and WITHOUT the never-empty floor — the shape the PICTURE precedence
+ * needs (#1785).
+ *
+ * ⚠ THE TWO DIFFERENCES ARE THE WHOLE POINT, and both are consequences of the
+ * picture having already been reserved:
+ *
+ *   * the budget is what is LEFT after the strip, not the whole body;
+ *   * EMPTY is a legal answer. `plateRowTracks` admits its first row
+ *     unconditionally because "a tile that renders nothing is worse than one
+ *     over-tall row" — but a picture tile is not rendering nothing, it is
+ *     rendering the module's identity, and admitting an over-tall row there
+ *     would paint cells straight over the picture that outranked them.
+ *
+ * An empty answer is not a dead end: `laneBodyPlan` reads it as "the plate
+ * cannot hold both" and falls back to the ROW layout, where the picture sits
+ * BESIDE the cells instead of under them. Pure.
+ */
+export function plateRowTracksWithin(
+  cellHeights: readonly number[],
+  budgetH: number,
+): number[] {
+  const rows: number[] = [];
+  let used = 0;
+  for (let i = 0; i < cellHeights.length; i += PLATE_COLS) {
+    const h = Math.max(PLATE_ROW_H, ...cellHeights.slice(i, i + PLATE_COLS));
+    const cost = (rows.length ? PLATE_GAP_Y : 0) + h;
+    if (used + cost > budgetH) break;
+    used += cost;
+    rows.push(h);
+  }
+  return rows;
+}
+
+/**
+ * The body height a PICTURE strip claims before any cell row is admitted, gap
+ * included (px).
+ *
+ * Derived from the strip geometry already in this file rather than typed: one
+ * design row plus the gap that separates it from the cells above — EXACTLY the
+ * room `plateGlyphFitsRows` asks for at the other end of the plate. The only
+ * thing #1785 changes is WHEN the question is asked, not what it costs, so the
+ * two directions cannot answer differently about the same pixels.
+ *
+ * ⚠ It is deliberately NOT `--video-thumb-h` (72 px, the well the ROW layout
+ * and the placeholder tile give a picture). Reserving 72 leaves 36 px, which is
+ * less than one design row, so EVERY picture face would drop to zero in-lane
+ * cells — a bigger trade than the issue asks for. Modelling the strip's real
+ * per-glyph-kind height is the follow-up `plateGlyphFitsRows` already names,
+ * with its own measured numbers; this constant is the conservative half of it.
+ */
+export const PLATE_PICTURE_RESERVE_H = PLATE_ROW_H + PLATE_GAP_Y;
+
 /** The stacked height of `rows` tracks including the gaps between them (px). */
 export function plateRowsHeight(rows: readonly number[]): number {
   if (!rows.length) return 0;
@@ -550,16 +665,22 @@ export interface LaneBodyPlan {
  * For convenience it also accepts the historic form — a COUNT, with an optional
  * uniform `uniformCellH` — which means "this many cells, all this tall". Same
  * answers as before for every caller that has only same-height cells; the list
- * form is the one the shell uses. `hasGlyph` = face.glyph !== 'none'. Pure —
- * geometry constants only, so the guarantee is unit-testable. The 'dock' tier
- * never reaches this (the dock faceplate renders pages / wraps freely).
+ * form is the one the shell uses. Pure — geometry constants only, so the
+ * guarantee is unit-testable. The 'dock' tier never reaches this (the dock
+ * faceplate renders pages / wraps freely).
+ *
+ * `glyph` is a {@link LaneGlyph}, not a boolean, and the third value is #1785:
+ * a `'trace'` yields to ranked cells, a `'picture'` outranks them. Every caller
+ * gets it from {@link laneGlyphFor}, so "does this tile have a glyph" has ONE
+ * answer instead of the two that made a promoted video module lose its picture.
  */
 export function laneBodyPlan(
   cells: number | readonly number[],
-  hasGlyph: boolean,
+  glyph: LaneGlyph,
   tier: FaceTier,
   uniformCellH: number = PLATE_ROW_H,
 ): LaneBodyPlan {
+  const hasGlyph = glyph !== 'none';
   // The historic form — a COUNT of cells that are all the same height — is kept
   // because it is what most callers mean and it is exactly what this function
   // used to take. It is synthesized into the list form so there is ONE code
@@ -594,6 +715,49 @@ export function laneBodyPlan(
       glyph: hasGlyph,
       knobSize: 'md',
       rowTracks: [],
+    };
+  }
+  // ── 'full', PICTURE: THE PRECEDENCE IS INVERTED (#1785) ──────────────────
+  //
+  // For a video module the glyph is not decoration, it is the module — "the
+  // picture IS a video module's identity in a rack" (owner, #1785). So the
+  // strip is reserved FIRST and the cell rows are admitted into what is LEFT,
+  // which is the same arithmetic run in the opposite order.
+  //
+  // ⚠ IT IS DERIVED FROM THE DOMAIN, NOT FROM A NAME LIST — `laneGlyphFor`
+  // returns 'picture' for `domain === 'video'`, so every video module gets this
+  // including the ones that have no face yet, and no face can declare its way
+  // into or out of it.
+  //
+  // MEASURED on `backdraft`, the first video face, at the `full` tier: its six
+  // lane-reachable ranks are ALL declared `fader`, i.e. 96 px per cell
+  // (LANE_CELL_H.fader). Reserving 46 px leaves 66, and 96 > 66, so NO whole
+  // cell row fits under the picture → the ROW layout, where the picture sits
+  // BESIDE the cells rather than under them and one 96 px fader clears the
+  // 112 px body on its own (measured in the browser: a 190 px body row holding
+  // two 94 px fader columns and an 82×72 picture well, nothing overlapping). The
+  // trade is stated rather than hidden: the tile goes from 3 cells + NO picture
+  // to 2 cells + the live picture, which is exactly what its own `compact` tile
+  // has painted all along. Every control stays reachable in the dock.
+  if (glyph === 'picture') {
+    const budget = LANE_BODY_H - PLATE_PICTURE_RESERVE_H;
+    const pictureRows = plateRowTracksWithin(cellHeights, budget);
+    if (!pictureRows.length) {
+      return {
+        layout: 'row',
+        cellCount: Math.min(controlCount, rowMax),
+        glyph: true,
+        knobSize: 'md',
+        rowTracks: [],
+      };
+    }
+    const cellCount = Math.min(controlCount, PLATE_COLS * pictureRows.length);
+    return {
+      layout: 'plate',
+      cellCount,
+      glyph: true,
+      knobSize: 'sm',
+      rowTracks: pictureRows.slice(0, Math.ceil(cellCount / PLATE_COLS)),
     };
   }
   // 'full' with a face too big for the row → the 3-col plate grid, whole rows

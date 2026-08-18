@@ -67,7 +67,7 @@ describe('kickdrum face — the tier ladder (order = PRIORITY)', () => {
   it('compact adds SUB DEC beside the glyph — pitch, then pulse LENGTH', () => {
     const face = curatedFace(def, 'compact')!;
     expect(face.glyph, 'the compact tile keeps its live trace').toBe('scope');
-    expect(faceTierCap('compact', true), 'a glyph-bearing compact tile fits two whole cells').toBe(2);
+    expect(faceTierCap('compact', 'trace'), 'a glyph-bearing compact tile fits two whole cells').toBe(2);
     expect(keysAt('compact')).toEqual(['tune', 'sub_decay']);
   });
 
@@ -91,7 +91,7 @@ describe('kickdrum face — the tier ladder (order = PRIORITY)', () => {
 
     // The claim, checked against the FIT PLAN rather than restated: the plate
     // renders exactly what the cap selects, on design-height rows.
-    const plan = laneBodyPlan(curatedFace(def, 'full')!.cellHeights, true, 'full');
+    const plan = laneBodyPlan(curatedFace(def, 'full')!.cellHeights, 'trace', 'full');
     expect(plan.cellCount, 'the plate paints every selected cell (no silent truncation)').toBe(6);
     expect(plan.rowTracks, 'TWO rows, both at the 42 px design height').toEqual([42, 42]);
     expect(
@@ -316,7 +316,7 @@ describe('kickdrum face — the primitives each cell resolves to', () => {
     // face. The registry-wide claim belongs to shell-control-kind's own test;
     // what THIS file can honestly say is that the cell kickdrum actually
     // renders is a toggle, and that the lane never has to render it at all.
-    expect(faceOrder().indexOf('hard')).toBeGreaterThanOrEqual(faceTierCap('full', true));
+    expect(faceOrder().indexOf('hard')).toBeGreaterThanOrEqual(faceTierCap('full', 'trace'));
     expect(keysAt('full')).not.toContain('hard');
   });
 
