@@ -85,7 +85,6 @@ on:
     branches: [main, first-mvp]
     paths-ignore:
       - '**/*.md'
-      - '!docs/testing/test-ledger.generated.md'
       - '!docs/design/face-migration.generated.md'
       - '.myrobots/**'
       - 'LICENSE'
@@ -109,7 +108,6 @@ on:
     branches: [main]
     paths-ignore:
       - '**/*.md'
-      - '!docs/testing/test-ledger.generated.md'
       - '!docs/design/face-migration.generated.md'
       - '.myrobots/**'
       - 'LICENSE'
