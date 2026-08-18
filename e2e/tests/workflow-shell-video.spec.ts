@@ -7,22 +7,23 @@
 // threw outside the SvelteFlow provider, while DOOM, which never calls
 // useStore, worked).
 //
-//   1. videoOut renders its REAL, freely-resizable LEGACY card in the video
-//      zone (NON_SHELL video-surface snowflake): the video surface exists,
-//      corner-resize works under the shell, and the video-zone render override
-//      anchors POSITION while the card sizes ITSELF (a resize repacks the
-//      neighbouring tiles — never overlaps them).
+//   1. videoOut renders a FACE TILE carrying a live picture in the video zone,
+//      and the freely resizable screen is the DETACHED DISPLAY (#1821). ⚠ This
+//      bullet used to read "its REAL, freely-resizable LEGACY card … NON_SHELL
+//      video-surface snowflake"; videoOut now has a `face`, so the swap lands on
+//      a ModuleShell with a live VideoTileThumb rather than the placeholder that
+//      caused the original regression.
 //   2. Video-domain tiles carry a LIVE ANIMATED THUMBNAIL of the module's
 //      actual output (the legacy blitOutputToDrawingBuffer preview seam) in
 //      the glyph slot — the fake wave is GONE for video modules — and the
 //      thumbnail's blit DRIVES the real chain (engine draw counters advance)
 //      and its pixels actually change.
-//   3. The dock full-view shows LIVE video for expanded video legacy cards
-//      (feedback via the tile's EXPAND button; videoOut via the dev seam —
-//      a NON_SHELL legacy lane card has no tile), holding a hard render lease
-//      while open.
-//   4. Preview OFF stays a strict no-op: no tiles, no thumbs, videoOut's card
-//      exactly as today.
+//   3. The dock full-view shows LIVE video for expanded video modules, holding
+//      a hard render lease while open. ⚠ videoOut reaches it through its own
+//      EXPAND pill now (it has a tile); the dev seam it used to need is kept
+//      here only for the modules that still have no tile.
+//   4. `?shell=legacy` stays a strict no-op: no tiles, no thumbs, and videoOut's
+//      verbatim card exactly as before — the escape hatch has to stay honest.
 //
 // DETERMINISM: chain liveness is asserted via ENGINE PROBES (framesDrawnFor —
 // SwiftShader-tolerant); pixel-change asserts poll toDataURL inequality on a
@@ -58,9 +59,36 @@ async function gotoShell(page: Page): Promise<void> {
   await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });
 }
 
-/** The seeded videoOut's LEGACY card in the lane (the carve-out under test). */
-function videoOutCard(page: Page) {
+/**
+ * The seeded videoOut's LANE SURFACE.
+ *
+ * ⚠ IT IS A SHELL TILE NOW, not the legacy card (#1821). This helper used to
+ * return `[data-testid="video-out-card"]` and was named `videoOutCard`, because
+ * videoOut was a NON_SHELL_LANE_TYPE carve-out — held back on its verbatim card
+ * after a PLACEHOLDER tile removed the only user-viewable video output. It now
+ * carries a real `face`, so the swap lands on a `ModuleShell` painting the LIVE
+ * `VideoTileThumb`, and the big picture moved to right-click → DETACH DISPLAY.
+ * Most call sites below use this purely as a "the video zone has mounted" gate.
+ */
+function videoOutLane(page: Page) {
+  return page.locator(`.svelte-flow__node[data-id="${VIDEO_OUT}"] [data-testid="module-shell"]`);
+}
+
+/** The same node under `?shell=legacy`, where the verbatim card still renders —
+ *  the escape hatch, which promotion must NOT change. */
+function videoOutLegacyCard(page: Page) {
   return page.locator(`.svelte-flow__node[data-id="${VIDEO_OUT}"] [data-testid="video-out-card"]`);
+}
+
+/** The videoOut surface that paints in a given mode: the face tile's live thumb
+ *  under the default shell, the legacy card's canvas under `?shell=legacy`.
+ *  ⚠ Mode-dependent BY NECESSITY — the two renderers are the subject of the
+ *  parity claim, so one selector for both would be asserting about whichever
+ *  happened to exist. */
+function videoOutSurfaceSel(url: string): string {
+  return url.includes('shell=legacy')
+    ? `.svelte-flow__node[data-id="${VIDEO_OUT}"] [data-testid="video-out-canvas"]`
+    : `.svelte-flow__node[data-id="${VIDEO_OUT}"] [data-testid="module-shell"] canvas`;
 }
 
 /** Boot the engine via the dev global (same seam spawnPatch uses). */
@@ -207,12 +235,22 @@ async function expectCanvasChanges(page: Page, selector: string, before: string,
 }
 
 test.describe('?shell=1 video visibility', () => {
-  test('videoOut renders its LEGACY resizable card in the video zone; corner-resize works and repacks the tile neighbours', async ({ page }) => {
-    // Software-renderer scale (see SLOW_RENDER): the resize-drag + repack polls
-    // run against live video-zone tiles.
+  test('videoOut renders a FACE TILE with a live picture in the video zone, and DETACH is the resizable display', async ({ page }) => {
+    // ⚠ THIS TEST IS THE INVERSE OF THE ONE IT REPLACES, and the reversal is the
+    // point. It used to assert videoOut kept its verbatim LEGACY card with its
+    // own corner-resize handle, because a PLACEHOLDER tile had removed the only
+    // user-viewable video output (the owner ?shell=1 regression). #1821 removes
+    // the cause instead of the symptom: videoOut carries a real `face`, so the
+    // lane tile is a ModuleShell painting a LIVE picture — and the freely
+    // resizable screen moved to where the owner asked for it, right-click →
+    // DETACH DISPLAY (*"the card does not need the arbitrary resizing on the
+    // card"*).
+    //
+    // ⚠ A GREEN RUN HERE WOULD BE MEANINGLESS WITHOUT THE PICTURE LEG. "the tile
+    // mounted" is true of a placeholder too — which is exactly the regression
+    // the carve-out existed to prevent — so the tile's own live canvas is
+    // asserted, not just its presence.
     test.setTimeout(SLOW_RENDER ? 60_000 : 30_000);
-    // Collect the exact failure class the dock/useStore regression produced —
-    // a provider-context throw must never fire anywhere in this flow.
     const providerErrors: string[] = [];
     page.on('pageerror', (e) => {
       if (/useStore|SvelteFlowProvider/i.test(e.message)) providerErrors.push(e.message);
@@ -220,17 +258,22 @@ test.describe('?shell=1 video visibility', () => {
 
     await gotoShell(page);
 
-    // 1) The REAL card — not the placeholder, with its live video surface +
-    //    its native resize handle.
-    await expect(videoOutCard(page)).toBeVisible({ timeout: 15_000 });
+    // 1) A REAL FACE TILE — not a placeholder, and not the legacy card.
+    await expect(videoOutLane(page)).toBeVisible({ timeout: 15_000 });
     const laneNode = page.locator(`.svelte-flow__node[data-id="${VIDEO_OUT}"]`);
     await expect(laneNode.locator('[data-testid="module-shell-placeholder"]')).toHaveCount(0);
-    await expect(laneNode.locator('[data-testid="video-out-canvas"]')).toBeVisible();
-    await expect(laneNode.locator('[data-testid="video-out-resize-handle"]')).toHaveCount(1);
+    await expect(laneNode.locator('[data-testid="video-out-card"]')).toHaveCount(0);
+    // …carrying a LIVE surface. #1785 evicts a video face's thumbnail when its
+    // ranked cells outgrow a plate row; videoOut ranks NOTHING, so the strip
+    // survives at every tier (pinned purely in `videoout-face-model.test.ts`).
+    await expect(videoOutLane(page).locator('canvas')).toHaveCount(1);
+    // The card's own resize handle is GONE — that is the affordance the owner
+    // said the card does not need.
+    await expect(laneNode.locator('[data-testid="video-out-resize-handle"]')).toHaveCount(0);
 
-    // 2) PACKED zone: recorderbox's tile clears videoOut's ACTUAL width + the
-    //    24px gutter (pre-fix the fixed 216px slots would overlap a 360-wide
-    //    legacy card). Poll: the packed override lands after first measure.
+    // 2) PACKED zone: recorderbox clears videoOut by exactly one gutter. The
+    //    packing derives from each occupant's real width, so a uniform tile
+    //    lands on the same gutter the wide legacy card used to.
     await expect(
       page.locator(`.svelte-flow__node[data-id="${RECORDERBOX}"] [data-testid="module-shell-placeholder"]`),
     ).toBeVisible({ timeout: 15_000 });
@@ -240,57 +283,27 @@ test.describe('?shell=1 video visibility', () => {
         const rb = await nodeRect(page, RECORDERBOX);
         if (!vo || !rb || vo.w === 0) return NaN;
         return rb.x - (vo.x + vo.w);
-      }, { message: 'recorderbox tile sits one 24px gutter right of the legacy videoOut card', timeout: 10_000 })
+      }, { message: 'recorderbox sits one 24px gutter right of the videoOut tile', timeout: 10_000 })
       .toBe(VIDEO_ZONE_GAP);
 
-    // 3) RESIZE under the shell: corner-drag at zoom 1 grows the card by whole
-    //    180px rack tiles (the card's own resize contract) — the zone override
-    //    anchors POSITION but never fights the card's SIZE.
-    const before = await nodeRect(page, VIDEO_OUT);
-    expect(before, 'videoOut internal node resolved').not.toBeNull();
-    await centerOnNode(page, VIDEO_OUT, 1);
-    const handle = laneNode.locator('[data-testid="video-out-resize-handle"]');
-    const hb = await handle.boundingBox();
-    expect(hb, 'resize handle on screen').toBeTruthy();
-    if (!hb) return;
-    const startX = hb.x + hb.width / 2;
-    const startY = hb.y + hb.height / 2;
-    await page.mouse.move(startX, startY);
-    await page.mouse.down();
-    // +170 screen px at zoom 1 → intrinsic 530 → quantized UP to 540 (3 tiles);
-    // dy 0 keeps the height at its 360 default.
-    await page.mouse.move(startX + 170, startY, { steps: 8 });
-    await page.mouse.up();
-
-    // Persisted (Y.Doc-synced) size took the quantized value…
-    await expect
-      .poll(async () =>
-        page.evaluate((id) => {
-          const w = globalThis as unknown as {
-            __patch: { nodes: Record<string, { data?: { width?: number; height?: number } } | undefined> };
-          };
-          const d = w.__patch.nodes[id]?.data;
-          return { w: d?.width ?? null, h: d?.height ?? null };
-        }, VIDEO_OUT),
-      { message: 'persisted node.data.width/height after the corner drag' })
-      .toEqual({ w: 540, h: 360 });
-
-    // …the RENDERED card box followed (its own size — nothing clamped it back
-    // to a tile), and the zone override REPACKED the neighbour to clear it.
-    await expect
-      .poll(async () => (await nodeRect(page, VIDEO_OUT))?.w ?? NaN, { message: 'rendered card width follows the resize' })
-      .toBe(540);
-    await expect
-      .poll(async () => {
-        const vo = await nodeRect(page, VIDEO_OUT);
-        const rb = await nodeRect(page, RECORDERBOX);
-        if (!vo || !rb) return NaN;
-        return rb.x - (vo.x + vo.w);
-      }, { message: 'recorderbox repacked right of the RESIZED card', timeout: 10_000 })
-      .toBe(VIDEO_ZONE_GAP);
-    // Position stayed anchored on the zone slot (x unchanged by the resize).
-    const after = await nodeRect(page, VIDEO_OUT);
-    expect(after!.x, 'zone anchor X unchanged by resize').toBe(before!.x);
+    // 3) THE RESIZABLE DISPLAY, where it lives now: right-click the tile →
+    //    Detach display → a free-floating panel with a corner grip, and NOT a
+    //    flow node (so it can carry no patch wires).
+    await laneNode.click({ button: 'right', position: { x: 6, y: 6 } });
+    await page.getByTestId('ctx-detach-display').click();
+    const panel = page.getByTestId('detached-display');
+    await expect(panel).toHaveCount(1);
+    await expect(page.getByTestId('detached-display-resize')).toHaveCount(1);
+    expect(
+      await page.evaluate(
+        () => !!document.querySelector('[data-testid="detached-display"]')?.closest('.svelte-flow__node'),
+      ),
+      'the detached display is not a flow node, so it has no patch wires',
+    ).toBe(false);
+    // …and re-attach is reachable from the tile, the owner's second entry point.
+    await laneNode.click({ button: 'right', position: { x: 6, y: 6 } });
+    await page.getByTestId('ctx-reattach-display').click();
+    await expect(panel).toHaveCount(0);
 
     expect(providerErrors, `no useStore/provider throws: ${providerErrors.join(' | ')}`).toEqual([]);
   });
@@ -300,7 +313,7 @@ test.describe('?shell=1 video visibility', () => {
     // change polls (20s budgets each) don't fit a flat 30s under contention.
     test.setTimeout(SLOW_RENDER ? 90_000 : 30_000);
     await gotoShell(page);
-    await expect(videoOutCard(page)).toBeVisible({ timeout: 15_000 });
+    await expect(videoOutLane(page)).toBeVisible({ timeout: 15_000 });
 
     // A REAL animated chain: LINES (auto-scrolling procedural source) →
     // BACKDRAFT (the owner-named tile under test). Positioned on the free
@@ -396,7 +409,7 @@ test.describe('?shell=1 video visibility', () => {
     await expectCanvasChanges(page, thumbSel, first, 'g1 tile thumbnail');
   });
 
-  test('dock full-view renders LIVE video for expanded video legacy cards (feedback via EXPAND; videoOut via the dev seam) with a render lease', async ({ page }) => {
+  test('dock full-view renders LIVE video for expanded video modules (feedback and videoOut, each via its own EXPAND pill) with a render lease', async ({ page }) => {
     // Software-renderer scale (see SLOW_RENDER): TWO sequential dock full-views
     // with pixel-change polls + lease polls starved the flat 30s budget on CI
     // shard 10 (run 30179147114, both attempts) while every step completed.
@@ -407,7 +420,7 @@ test.describe('?shell=1 video visibility', () => {
     });
 
     await gotoShell(page);
-    await expect(videoOutCard(page)).toBeVisible({ timeout: 15_000 });
+    await expect(videoOutLane(page)).toBeVisible({ timeout: 15_000 });
 
     // LINES feeds BOTH cards under test so their pictures animate: → FEEDBACK
     // in, and → the seeded videoOut's in (its idle pattern is static).
@@ -455,14 +468,18 @@ test.describe('?shell=1 video visibility', () => {
     await page.keyboard.press('Escape');
     await expect(faceplate).toHaveCount(0);
 
-    // (b) VIDEOOUT via the dev seam (a NON_SHELL legacy lane card has no tile /
-    // EXPAND button). Same assertion DOOM passes: surface present AND rendering.
-    await page.evaluate((id) => {
-      const w = globalThis as unknown as { __openDockFullView: (id: string) => void };
-      w.__openDockFullView(id);
-    }, VIDEO_OUT);
+    // (b) VIDEOOUT through its OWN EXPAND PILL — the user path, which it did
+    // not have until #1821. ⚠ This leg used to go through the `__openDockFullView`
+    // dev seam with the note "a NON_SHELL legacy lane card has no tile / EXPAND
+    // button". It has a tile now, so the seam is no longer the only route and
+    // driving it would be testing a hook instead of the product.
+    await centerOnNode(page, VIDEO_OUT, 0.9);
+    await videoOutLane(page).getByTestId('shell-open-dock').click();
     await expect(faceplate).toBeVisible();
-    const dockOutSel = `[data-dock-card="${VIDEO_OUT}"] [data-testid="video-out-canvas"]`;
+    // ⚠ AND THE SURFACE IS THE FACEPLATE'S OWN, not the legacy card's: promotion
+    // swaps DockFullView's body for <ModuleShell>, whose `fullViewBody`
+    // extension mounts videoOut's picture.
+    const dockOutSel = '[data-testid="videoout-face-canvas"]';
     await expect(faceplate.locator(dockOutSel), 'videoOut video surface mounts in the dock').toBeVisible();
     // The full-view holds a HARD render lease on the video node (the lane copy
     // may be off-screen; pull-eval must not decay the dock's live picture).
@@ -496,10 +513,14 @@ test.describe('?shell=1 video visibility', () => {
     expect(providerErrors, `no useStore/provider throws: ${providerErrors.join(' | ')}`).toEqual([]);
   });
 
-  test('preview OFF (default) stays a strict no-op: no tiles, no thumbs, videoOut legacy card as today', async ({ page }) => {
+  test('?shell=legacy stays a strict no-op: no tiles, no thumbs, videoOut verbatim card as before', async ({ page }) => {
+    // ⚠ THE ESCAPE HATCH MUST STAY HONEST. Promoting videoOut changes the
+    // DEFAULT renderer; `?shell=legacy` means "the verbatim legacy cards inside
+    // the same shell", and a promotion that leaked into it would make the hatch
+    // a lie — so this reads the legacy CARD deliberately, not the shared gate.
     await page.goto('/rack?shell=legacy');
     await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: 15_000 });
-    await expect(videoOutCard(page)).toBeVisible({ timeout: 15_000 });
+    await expect(videoOutLegacyCard(page)).toBeVisible({ timeout: 15_000 });
     await expect(page.locator('[data-testid="module-shell-placeholder"]')).toHaveCount(0);
     await expect(page.locator('[data-testid="module-shell"]')).toHaveCount(0);
     await expect(page.locator('[data-testid="video-tile-thumb"]')).toHaveCount(0);
@@ -566,7 +587,8 @@ test.describe('?shell=1 video CHAIN parity', () => {
     async function buildAndProbe(url: string): Promise<{ nodes: string[] }> {
       await page.goto(url);
       await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: 15_000 });
-      await expect(videoOutCard(page), `${url}: videoOut card mounts`).toBeVisible({ timeout: 15_000 });
+      const lane = url.includes('shell=legacy') ? videoOutLegacyCard(page) : videoOutLane(page);
+      await expect(lane, `${url}: videoOut lane surface mounts`).toBeVisible({ timeout: 15_000 });
 
       await injectPatch(
         page,
@@ -595,7 +617,7 @@ test.describe('?shell=1 video CHAIN parity', () => {
 
       // …and the user-viewable OUTPUT surface actually paints MOVING pixels
       // (not a black canvas — the owner's "nothing renders").
-      const outSel = `.svelte-flow__node[data-id="${VIDEO_OUT}"] [data-testid="video-out-canvas"]`;
+      const outSel = videoOutSurfaceSel(url);
       const first = await canvasData(page, outSel);
       expect(first, `${url}: OUTPUT canvas snapshot captured`).not.toBe('');
       await expectCanvasChanges(page, outSel, first, `${url}: OUTPUT surface`);
@@ -614,7 +636,7 @@ test.describe('?shell=1 video CHAIN parity', () => {
   test('a DOM-SOURCE video module keeps its REAL card alive off-screen when the shell swaps its lane card', async ({ page }) => {
     test.setTimeout(SLOW_RENDER ? 90_000 : 30_000);
     await gotoShell(page);
-    await expect(videoOutCard(page)).toBeVisible({ timeout: 15_000 });
+    await expect(videoOutLane(page)).toBeVisible({ timeout: 15_000 });
 
     // VIDEOBOX: its picture comes from a card-owned <video> handed to the engine
     // via attachExternalSource — the class that went dark under the shell.
@@ -664,7 +686,7 @@ test.describe('?shell=1 video CHAIN parity', () => {
   test('the CAMERA source picker is reachable in the lane under the shell (device list capability-gated)', async ({ page }) => {
     test.setTimeout(SLOW_RENDER ? 90_000 : 30_000);
     await gotoShell(page);
-    await expect(videoOutCard(page)).toBeVisible({ timeout: 15_000 });
+    await expect(videoOutLane(page)).toBeVisible({ timeout: 15_000 });
 
     await injectPatch(page, [{ id: 'cam1', type: 'cameraInput', position: { x: -1200, y: 5100 } }]);
 

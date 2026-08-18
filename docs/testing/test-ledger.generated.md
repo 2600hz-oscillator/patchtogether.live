@@ -137,7 +137,7 @@ those at spec granularity and the lane audit checks the realized string.
 - `e2e/tests/wavesculpt.spec.ts:358` — no usable GL pixel read on this renderer
 - `e2e/tests/wavesculpt.spec.ts:443` — no usable GL pixel read on this renderer
 - `e2e/tests/wavesculpt.spec.ts:718` — no usable GL pixel read on this renderer
-- `e2e/tests/workflow-shell-video.spec.ts:689` — no videoinput device in this runtime — device-list assert not applicable
+- `e2e/tests/workflow-shell-video.spec.ts:711` — no videoinput device in this runtime — device-list assert not applicable
 - `e2e/tests/workflow-video-zone-defaults.spec.ts:141` — IndexedDB unavailable — scratch replica cannot persist the latch
 
 ## Bucket 2 — coverage exemptions (370)

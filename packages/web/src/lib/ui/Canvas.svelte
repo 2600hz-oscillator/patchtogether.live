@@ -411,6 +411,7 @@
   import DetachedDisplay from '$lib/ui/modules/DetachedDisplay.svelte';
   import {
     REATTACH_CLEARS,
+    detachPatch,
     detachedRect,
     isDetached,
     supportsDetachedDisplay,
@@ -4631,6 +4632,19 @@
     });
   }
 
+  /** DETACH: the flag plus its clamped geometry, in ONE transaction so the whole
+   *  gesture is one undo entry. Same helper the module's own surfaces call. */
+  function detachDisplayFor(nodeId: string): void {
+    const live = patch.nodes[nodeId] as ModuleNode | undefined;
+    const rect = detachedRect(live, detachedViewport);
+    const data = detachPatch(rect);
+    mutateNode(nodeId, (n) => {
+      if (!n.data) n.data = {};
+      for (const [k, v] of Object.entries(data)) n.data[k] = v;
+    });
+  }
+
+
   /** True when EITHER direction offers at least one legal edge. */
   function dropHasAnyOffer(droppedId: string, ontoId: string): boolean {
     const a = dropDefOf(droppedId);
@@ -4986,6 +5000,25 @@
     const n = patch.nodes[ctxMenuNodeId];
     return n?.type ?? null;
   });
+
+  /**
+   * The right-clicked node's detach state, for the node menu's two items.
+   *
+   * ⚠ THE LANE TILE HAS NO MENU OF ITS OWN, which is why the entry is here.
+   * A promoted videoOut renders as a generic `ModuleShell`; the module's picture
+   * and its display menu live in the dock faceplate and in the floating panel,
+   * both of which mount `VideoCanvasContextMenu`. The owner asked that re-attach
+   * be reachable from *"the underlying video output card"* too, so the node menu
+   * carries the pair — gated on a DERIVED predicate (`supportsDetachedDisplay`)
+   * rather than a type check, so `NodeContextMenu` still names no module.
+   */
+  let ctxMenuDetachable = $derived(
+    !!ctxMenuNodeId
+      && supportsDetachedDisplay(ctxMenuNodeType ?? '', dropDefOf(ctxMenuNodeId) ?? undefined),
+  );
+  let ctxMenuDetached = $derived(
+    !!ctxMenuNodeId && isDetached(snapshot.nodes.find((n) => n.id === ctxMenuNodeId)),
+  );
 
   // Living-docs: whether the right-clicked module has AUTHORED docs — gates the
   // "Annotate" entry. MODULE_DOCS is the generated authored-docs registry (a build artifact).
@@ -9211,6 +9244,13 @@
     if (ctxMenuNodeType === 'group') deleteGroupAndChildren(ctxMenuNodeId);
     else deleteNode(ctxMenuNodeId);
   }}
+  ondetachdisplay={ctxMenuDetachable && !ctxMenuDetached
+    ? () => ctxMenuNodeId && detachDisplayFor(ctxMenuNodeId)
+    : undefined}
+  onreattachdisplay={ctxMenuDetachable && ctxMenuDetached
+    ? () => ctxMenuNodeId && reattachDisplay(ctxMenuNodeId)
+    : undefined}
+  isDetached={ctxMenuDetached}
   onduplicate={() => ctxMenuNodeId && duplicateNode(ctxMenuNodeId)}
   onunpatch={() => ctxMenuNodeId && unpatchNode(ctxMenuNodeId)}
   onlock={() => ctxMenuNodeId && lockNode(ctxMenuNodeId)}

@@ -12,8 +12,8 @@ Every registered module carries exactly one **disposition**: what kind of work i
 |  | count |
 |---|---|
 | registered modules | 196 |
-| done (faced + promoted) | 51 |
-| remaining (excludes organizational-native) | 142 |
+| done (faced + promoted) | 52 |
+| remaining (excludes organizational-native) | 141 |
 | registered with NO disposition (must be zero) | 0 |
 | inventory entries naming a dead def (must be zero) | 0 |
 
@@ -21,16 +21,16 @@ Every registered module carries exactly one **disposition**: what kind of work i
 
 | disposition | what it means | modules | done |
 |---|---|---|---|
-| `generic-face` | author a `face` and rank the controls — no new platform capability | 140 | 51 |
+| `generic-face` | author a `face` and rank the controls — no new platform capability | 141 | 52 |
 | `blocked` | would be a face today but for the named capability, and nothing else | 3 | — |
-| `bespoke-surface` | the primary interaction is not param-shaped — needs a purpose-built surface | 50 | — |
+| `bespoke-surface` | the primary interaction is not param-shaped — needs a purpose-built surface | 49 | — |
 | `organizational-native` | rack furniture; not a migration at all | 3 | — |
 
 ## What each blocker buys
 
 | blocker | issue | modules waiting |
 |---|---|---|
-| `needs-extension-registry` | #1512 | 50 |
+| `needs-extension-registry` | #1512 | 49 |
 | `needs-media-controller` | #1511 | 12 |
 | `needs-note-entry-cell` | #1509 | 15 |
 
@@ -175,6 +175,7 @@ author a `face` and rank the controls — no new platform capability.
 | `vdelay` | video | — | — |
 | `vfpgaRunner` | video | — | — |
 | `videoMixer` | video | — | — |
+| `videoOut` | video | done | — |
 | `warrensspectrum` | audio | done | — |
 | `warrensvisions` | video | — | — |
 | `wavecel` | audio | — | — |
@@ -244,7 +245,6 @@ the primary interaction is not param-shaped — needs a purpose-built surface.
 | `tvLibrarian` | video | — | `needs-extension-registry` `needs-media-controller` |
 | `twotracks` | audio | — | `needs-extension-registry` |
 | `videobox` | video | — | `needs-extension-registry` `needs-media-controller` |
-| `videoOut` | video | — | `needs-extension-registry` |
 | `videovarispeed` | video | — | `needs-extension-registry` `needs-media-controller` |
 | `writeseq` | audio | — | `needs-extension-registry` `needs-note-entry-cell` |
 

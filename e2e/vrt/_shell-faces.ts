@@ -742,6 +742,27 @@ export const FACES = [
   // `clouds:freeze` is a player-facing latch and writing it would change that
   // module's look on purpose, which is why this is a per-scene DECLARATION with
   // a reason rather than a predicate over param names.
+  // THE SECOND VIDEO FACE, and the first scene in this roster whose module
+  // ranks NOTHING (#1821). `pages: 1` is the single unlabelled `__all` band
+  // `dockFacePlan` returns for a face with no `face.pages` — it renders as one
+  // empty `face-page` section under the extension body, which IS the faceplate
+  // here (videoOut declares `params: []`).
+  //
+  // ⚠ `videoFaceWhy` is MANDATORY and doubly so for this one: the dock body
+  // blits the live engine every rAF, and unlike backdraft the COMPACT tile is a
+  // live picture too (`hasVideoSurface` mounts VideoTileThumb, and a zero-control
+  // face never reaches the plate branch that would evict it — see
+  // videoout-face-model.test.ts). Both scenes are moving targets without the
+  // video freeze; an AudioContext suspend says nothing about either.
+  {
+    type: 'videoOut',
+    pages: 1,
+    videoFaceWhy:
+      'BOTH scenes carry a live picture: the dock faceplate IS a fullViewBody extension blitting '
+      + 'the video engine every rAF, and the compact lane tile paints a live VideoTileThumb because '
+      + 'this face ranks no controls and so keeps its glyph strip at every tier. Neither is '
+      + 'pixel-deterministic without the video freeze.',
+  },
   {
     type: 'backdraft',
     pages: 7,
