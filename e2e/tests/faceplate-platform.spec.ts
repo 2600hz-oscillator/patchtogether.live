@@ -1,7 +1,15 @@
 // e2e/tests/faceplate-platform.spec.ts
 //
-// PF-20 — the DOM gate for the dock faceplate PLATFORM: the value readouts, the
-// page header, the band hints, the hero slot and the sidebar.
+// PF-20 — the DOM gate for the dock faceplate PLATFORM: every dial's resolved
+// value, the page header, the band hints, the hero slot and the sidebar.
+//
+// ⚠ "THE VALUE READOUTS" WAS THIS FILE'S FIRST SUBJECT AND THE OWNER DELETED IT
+// (2026-08-17): no face prints a resting decimal, and the data is REMOVED rather
+// than hidden. What PF-20 was actually protecting — that every dial resolves the
+// def's own vocabulary and that the resolution reaches the screen — survives on
+// `aria-valuetext`, and the one thing that still PAINTS is a bare
+// option/landmark NAME. Both halves are asserted below, in the same place, so
+// neither can drift into the other.
 //
 // WHY AN E2E AND NOT ONLY UNITS. The pure model
 // (dock-faceplate-model.test.ts) proves the ARITHMETIC — the hero split is
@@ -175,32 +183,70 @@ test.describe('PF-20 dock faceplate platform (kickdrum)', () => {
       'the DEFAULT faceplate carries no section title and no prose',
     ).toHaveCount(0);
 
-    // ── 2. A VALUE UNDER EVERY KNOB (the largest single share of the drift). ──
+    // ── 2. EVERY KNOB HAS A VALUE — AND EXACTLY ONE OF THEM PRINTS IT. ──
     //
     // Registry-driven: count the KNOB cells the dock rendered and require the
-    // same number of readouts. A hardcoded list would go stale the moment the
-    // face is re-ranked, and — worse — would still pass if the readout stopped
-    // rendering for a param nobody listed.
+    // same number of resolved values. A hardcoded list would go stale the moment
+    // the face is re-ranked, and — worse — would still pass if the value stopped
+    // resolving for a param nobody listed.
+    //
+    // ⚠ THIS LEG IS THE 2026-08-17 OWNER RULING, INVERTED. It used to require
+    // one PAINTED `readout-` element per knob cell, because "a value under every
+    // knob" was the largest single share of the shell-vs-mock drift. The owner
+    // then removed the resting decimal from every faceplate — *"i want the data
+    // gone, not there but hidden"* — so the same count runs over
+    // `aria-valuetext`, where `knobValueReadout` still resolves. Same ladder,
+    // same strings, different surface. The count is the half that keeps the
+    // removal honest: a dial that stopped SPEAKING its value would be a real
+    // accessibility regression wearing the ruling as cover.
     const knobCells = shell.locator('[data-cell-control="knob"]');
     const knobCount = await knobCells.count();
     expect(knobCount, 'the dock renders kickdrum’s dials').toBeGreaterThan(15);
-    const readouts = shell.locator('[data-cell-control="knob"] [data-testid^="readout-"]');
-    await expect(
-      readouts,
-      'EVERY dock dial prints its value — bare labels were the mock’s biggest complaint',
-    ).toHaveCount(knobCount);
+    const spoken = await shell
+      .locator('[data-cell-control="knob"] [role="slider"]')
+      .evaluateAll((els) =>
+        els.map((e) => ({
+          id: (e.getAttribute('data-testid') ?? '?').replace(/^control-/, ''),
+          text: e.getAttribute('aria-valuetext') ?? '',
+        })),
+      );
+    expect(spoken.length, 'one slider per rendered knob cell').toBe(knobCount);
+    expect(
+      spoken.filter((s) => !s.text.trim()).map((s) => s.id),
+      'EVERY dock dial resolves a value into aria-valuetext — a role="slider" whose value ' +
+        'cannot be announced is the regression the removal was not allowed to cause',
+    ).toEqual([]);
     // …and in the MOCK'S OWN UNITS, through the def's declared `format`, not
     // the generic ladder. `450 ms` not `450.00 ms`; `2.8 kHz` not `2.80k Hz`;
-    // `+3.0 dB` not `3.00 dB` (an EQ move always carries its sign).
-    await expect(shell.getByTestId('readout-sub_decay')).toHaveText('450 ms');
-    await expect(shell.getByTestId('readout-tune')).toHaveText('50 Hz');
-    await expect(shell.getByTestId('readout-click_tone')).toHaveText('2.8 kHz');
-    await expect(shell.getByTestId('readout-body_eq')).toHaveText('+3.0 dB');
+    // `+3.0 dB` not `3.00 dB` (an EQ move always carries its sign). These are
+    // the same four literals the printed readouts carried.
+    await expect(shell.locator('[data-testid="control-sub_decay"]')).toHaveAttribute('aria-valuetext', '450 ms');
+    await expect(shell.locator('[data-testid="control-tune"]')).toHaveAttribute('aria-valuetext', '50 Hz');
+    await expect(shell.locator('[data-testid="control-click_tone"]')).toHaveAttribute('aria-valuetext', '2.8 kHz');
+    await expect(shell.locator('[data-testid="control-body_eq"]')).toHaveAttribute('aria-valuetext', '+3.0 dB');
     // A PF-10 landmark NAME wins over the numeric ladder. SHAPE's default is
     // 0.3, whose nearest landmark is TRI (0.5) — not SINE (0.0). Pinning the
     // NEAREST name rather than the first one is the whole point of landmarks
     // over `options`: the knob's useful travel is the blend between them.
+    //
+    // ⚠ IT IS ALSO THE DISCRIMINATING CASE FOR THE REMOVAL, which is why the
+    // painted assertion stays here and only here. A NAME is not a decimal
+    // representation of state, so it survived the ruling; a `format` did not.
+    // kickdrum is the sharpest place in the repo to say so: every one of its
+    // dials declares a `format` EXCEPT `body_shape`, whose bare `landmarks`
+    // roster makes it the single positive case among a faceplate of negatives.
     await expect(shell.getByTestId('readout-body_shape'), 'a landmark NAME wins').toHaveText('TRI');
+    const painted = await shell
+      .locator('[data-cell-control="knob"] [data-testid^="readout-"]')
+      .evaluateAll((els) =>
+        els.map((e) => (e.getAttribute('data-testid') ?? '?').replace(/^readout-/, '')).sort(),
+      );
+    expect(
+      painted,
+      `exactly the params with a BARE roster paint, and every \`format\`-only dial paints ` +
+        `NOTHING. Seen: ${painted.join(', ') || '(none)'}. A longer list means the resting ` +
+        `number is back; an empty one means names went with it.`,
+    ).toEqual(['body_shape']);
 
     // ── 3. THE HERO — the picture, the promoted dial, and DERIVED readouts. ──
     const hero = shell.getByTestId('face-hero');
@@ -254,19 +300,30 @@ test.describe('PF-20 dock faceplate platform (kickdrum)', () => {
       `the strip starts at the hero's left edge (CSS px): strip x ${stripBox.x} vs graphic x ${picBox.x}`,
     ).toBeLessThanOrEqual(picBox.x + 1);
 
-    // …and the hero VALUE is typeset as a hero value, not at the 9 px lane
-    // size. "A big dial with a big readout" was the claim; this measures it.
-    const heroValueFs = await hero
-      .getByTestId('readout-tune')
-      .evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
-    const bandValueFs = await shell
-      .locator('[data-face-page="sub"]')
-      .getByTestId('readout-sub_decay')
-      .evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
-    expect(
-      heroValueFs,
-      `the hero readout is typographically LARGE (CSS px): hero ${heroValueFs} vs band ${bandValueFs}`,
-    ).toBeGreaterThan(bandValueFs * 1.5);
+    // ⚠ "A BIG DIAL GETS A BIG READOUT" WAS MEASURED HERE AND CANNOT BE ANY
+    // MORE. The deleted assertion read `getComputedStyle().fontSize` off the
+    // hero's `readout-tune` and a band's `readout-sub_decay` and required the
+    // hero's to be more than 1.5× the band's — the DOM gate for
+    // `ModuleShell`'s `.hero-ctl :global(.readout) { font-size: 17px }`, which
+    // exists because a 64 px `xl` dial had inherited the 9 px caption every
+    // 46 px lane dial uses.
+    //
+    // Both of those elements are gone: `tune` and `sub_decay` are `format`-only,
+    // and the owner removed the resting number from every faceplate on
+    // 2026-08-17. The comparison would resolve two empty locators and the test
+    // would fail on a timeout rather than on a finding — so it is deleted, not
+    // softened, and NOT re-pointed at another face (this test's subject is
+    // kickdrum's faceplate, and borrowing another module's dial to keep a CSS
+    // rule under test would move the subject without saying so).
+    //
+    // The 17 px rule itself is NOT dead code, and that is the reason to leave
+    // this note rather than delete the rule too: it still applies to any hero
+    // whose promoted control paints a NAME (a bare `options`/`landmarks` roster
+    // — `filter.mode`, `macrooscillator.model`). It is dead for every hero
+    // promoting a `format`-only dial, which today is most of them, kickdrum's
+    // TUNE included. Nothing in the suite measures it any more; if a face is
+    // ever authored that promotes a naming dial into its hero, that face's own
+    // spec is where this belongs.
 
     // ── 4. THE VU METER — PEAK / ACCENT / V·OCT, and PEAK is a LEVEL. ──
     const meter = hero.getByTestId('kickdrum-meter');
@@ -433,8 +490,14 @@ test.describe('PF-20 dock faceplate platform (kickdrum)', () => {
       .toBe(38);
     expect(await paramValue(page, 'k', 'sub_decay'), 'and stretches the tail to 720 ms').toBe(720);
 
-    // (b) the DIAL followed, so the panel and the control agree.
-    await expect(shell.getByTestId('readout-tune')).toHaveText('38 Hz');
+    // (b) the DIAL followed, so the panel and the control agree. Read off
+    //     `aria-valuetext`: `tune` declares a `format`, so it paints nothing at
+    //     rest and this is where its value lives now. Same string, same
+    //     formatter — the preset claim is untouched.
+    await expect(shell.locator('[data-testid="control-tune"]')).toHaveAttribute(
+      'aria-valuetext',
+      '38 Hz',
+    );
 
     // (c) it LIGHTS — and only it — with NO modified marker yet.
     await expect(boom).toHaveAttribute('aria-pressed', 'true');
@@ -450,7 +513,10 @@ test.describe('PF-20 dock faceplate platform (kickdrum)', () => {
     // moved. Asserting BOTH halves is what stops a later edit from quietly
     // collapsing it back to either one.
     await setNodeParams(page, 'k', { tune: 44 });
-    await expect(shell.getByTestId('readout-tune')).toHaveText('44 Hz');
+    await expect(shell.locator('[data-testid="control-tune"]')).toHaveAttribute(
+      'aria-valuetext',
+      '44 Hz',
+    );
     await expect(boom, 'still lit: this is where the sound came from').toHaveAttribute(
       'aria-pressed',
       'true',
@@ -665,14 +731,31 @@ test.describe('PF-21 row plan — sections share a row, legibly and without over
   // component as built, and is kept only as a cheap guard for a future change
   // that pins a width or drops the `min-width: 0`.
   //
-  // What DOES distinguish the two behaviours is whether a section that no
-  // longer fits MOVES TO THE NEXT LINE or is crushed in place — which is the
-  // whole reason `.dock-row` wraps. So the live negative control is the WRAP
-  // leg below: at 820 px the kit's own floors bind (`.faceplate-body` min-width
-  // 900, `.page.has-sidebar` reserving 288 for the rail) and the column bottoms
-  // out near 548 px, narrower than the widest packed row, so a wrap MUST be
-  // observed. Measured: with `nowrap` forced on, that leg goes red and this
-  // one still passes — which is exactly why it ships as a permanent leg.
+  // ── ⚠ THE ABSORBER CHANGED IN #1796, AND THIS TEST'S OWN GUARD SAID SO ────
+  //
+  // The narrow leg used to require that a packed row WRAPPED. Its precondition
+  // was the kit's floors: *"at 820 px the kit's own floors bind
+  // (`.faceplate-body` min-width 900, `.page.has-sidebar` reserving 288 for the
+  // rail) and the column bottoms out near 548 px, narrower than the widest
+  // packed row, so a wrap MUST be observed."* Owner ruling 2026-08-17 deleted
+  // that 900 px floor — the plate is `width: max-content` now — and a
+  // `max-content` box is sized to the row UNWRAPPED, so the row always fits its
+  // column and the PANE scrolls instead.
+  //
+  // MEASURED across three widths after the change: **wrappedRows = 0 at 820,
+  // 640 AND 480 px**, with 32 packed rows observed each time. So there is no
+  // width at which the old guard can be satisfied — re-pointing the number
+  // would have been a lie, and the guard correctly refused to pass rather than
+  // reporting a green it had not earned. (This is the sixth spec in the family
+  // CLAUDE.md's "a gate whose PRECONDITION is the defect" rule was written for,
+  // and the only one that ANNOUNCED itself instead of going silently green.)
+  //
+  // ⚠ SO `flex-wrap` ON `.dock-row` IS NOW UNREACHABLE, and that is a real
+  // behaviour change worth stating rather than burying: a packed row that does
+  // not fit a narrow pane is now reached by SCROLLING, not by reflowing onto a
+  // second line. The guard below is re-pointed at the absorber that actually
+  // runs — `.faceplate-scroll` taking horizontal overflow — so it stays a live
+  // negative control instead of a number that happens to pass.
   const WIDTHS = [
     { label: 'wide', size: { width: 1280, height: 900 } },
     { label: 'narrow', size: { width: 820, height: 900 } },
@@ -689,6 +772,11 @@ test.describe('PF-21 row plan — sections share a row, legibly and without over
     let packedRows = 0;
     let packedFaces = 0;
     let wrappedRows = 0;
+    /** Faces whose pane genuinely could not show everything — i.e. where the
+     *  SCROLL CONTAINER absorbed the overflow. This is the mechanism that
+     *  replaced `flex-wrap` (see the note above), so it is what the narrow
+     *  leg's vacuity guard now reads. */
+    let scrollAbsorbed = 0;
     const shapes: string[] = [];
 
     for (const spec of faces) {
@@ -758,6 +846,13 @@ test.describe('PF-21 row plan — sections share a row, legibly and without over
         if (row.wrapped) wrappedRows++;
       }
       if (rows.some((r) => r.packed)) packedFaces++;
+
+      // Did the PANE have to scroll to show this face? Read off the real
+      // scroll container, in the same CSS px as everything else here.
+      const overflowed = await fp
+        .locator('.faceplate-scroll')
+        .evaluate((el) => el.scrollWidth > el.clientWidth + 1);
+      if (overflowed) scrollAbsorbed++;
     }
 
     // ⚠ THE NEGATIVE CONTROL, permanent leg. Every assertion above is inside
@@ -771,15 +866,58 @@ test.describe('PF-21 row plan — sections share a row, legibly and without over
     ).toBeGreaterThanOrEqual(10);
     expect(packedRows, 'packed rows observed').toBeGreaterThanOrEqual(10);
 
+    // ⚠ WHAT THE **WIDE** LEG CAN NO LONGER SEE, STATED BECAUSE IT HAS NO GUARD
+    // OF ITS OWN. Its column-fit assertion was already documented above as
+    // unable to fail for this component as built; since #1796 made the plate
+    // `width: max-content`, the column is sized to the row's content BY
+    // CONSTRUCTION, so `scrollW <= clientW` is now true structurally rather
+    // than because anything absorbed anything. At 1280 px this leg therefore
+    // proves exactly two things — every packed row still shows every section's
+    // LABEL, and packing still happens at all — and those are real. It proves
+    // nothing about fit. The narrow leg is where fit is exercised, which is why
+    // the guard lives there and not here.
+
     // …and the SECOND half of the negative control: at the narrow pane the
-    // wrap has to have actually engaged somewhere, or the no-overflow claim
-    // above is again being satisfied by rows that simply fit.
+    // OVERFLOW ABSORBER has to have actually engaged somewhere, or the
+    // column-fit claim above is being satisfied by rows that simply fit and
+    // proves nothing about what happens when they do not.
+    //
+    // ⚠ THE SUBJECT MOVED, THE GUARD DID NOT WEAKEN. It used to read
+    // `wrappedRows` — see the note at the top of this describe for why that is
+    // now unreachable at every width (measured 0 at 820/640/480). It reads the
+    // scroll container instead, which is the thing that absorbs the overflow
+    // today. A pane that showed everything at 820 px would mean the narrow leg
+    // is testing the same situation as the wide one, and this fails rather than
+    // passing quietly.
     if (label === 'narrow') {
+      // ⚠ A PROPORTION OF THE SWEPT ROSTER, NOT A COUNT — and the number was
+      // chosen from the measurement rather than guessed, because the obvious
+      // guard (`scrollAbsorbed > 0`) DOES NOT DISCRIMINATE. Measured over the
+      // 50-face roster:
+      //
+      //     1600 px →  2 faces scroll   (4%)
+      //     1280 px →  2 faces scroll   (4%)
+      //      820 px → 12 faces scroll  (24%)
+      //
+      // Two faces are wide enough to overflow ANY realistic pane (dx7 leads at
+      // 1139 px of content), so `> 0` is satisfied at every width and would
+      // have let the narrow leg silently become a second wide leg — exactly the
+      // failure this guard exists to prevent, reintroduced by its own
+      // replacement. Verified: with the narrow width temporarily set to 1600,
+      // `> 0` still passed and the floor below goes RED.
+      //
+      // A tenth of the roster sits cleanly between 4% and 24%, and it is
+      // expressed against `faces.length` so a growing roster carries it.
+      const constrainedFloor = Math.ceil(faces.length * 0.1);
       expect(
-        wrappedRows,
-        `no packed row WRAPPED at ${size.width}px — the no-overflow assertion is ` +
-          `vacuous at this width, so it cannot prove flex-wrap does anything. shapes:\n${shapes.join('\n')}`,
-      ).toBeGreaterThan(0);
+        scrollAbsorbed,
+        `only ${scrollAbsorbed} of ${faces.length} faces needed the pane to SCROLL at ` +
+          `${size.width}px (floor ${constrainedFloor} = a tenth of the roster). A narrow pane ` +
+          `must constrain materially more faces than a comfortable one — measured 12/50 here ` +
+          `against 2/50 at 1280px — or this leg is measuring the same situation as the wide ` +
+          `one and the column-fit assertion above proves nothing about overflow. ` +
+          `shapes:\n${shapes.join('\n')}`,
+      ).toBeGreaterThanOrEqual(constrainedFloor);
     }
   });
   }
@@ -891,15 +1029,25 @@ test.describe('lane tile geometry — no cell paints over another, at any lane t
     // marbles + noise are the fader faces; adsr and dx7 bring plain knob
     // columns and a declared grid, so "everything is a fader" cannot pass.
     //
-    // ⚠ tidyVco IS HERE FOR THE OTHER HALF OF LEG (b), and without it that leg
-    // is asserted but never exercised. adsr is the face whose tall cell HAS a
-    // row beneath it (row 0, 9.0 px of overlap before the per-row fix);
-    // tidyVco is the face whose tall cell (`oct2`, rank 5) is in the LAST row
-    // with nothing under it, so it overruns a 42 px track by 13 px and collides
-    // with nothing. A leg that only ever sees the first shape cannot show it
-    // discriminates — and a "fix" that flags the second is precisely the
-    // eviction trap the per-row rule exists to avoid.
-    const WANT = ['marbles', 'noise', 'adsr', 'dx7', 'tidyVco'];
+    // ⚠ tidyVco AND macrooscillator ARE HERE FOR LEG (e), THE READOUT-CELL
+    // HEIGHT, and each carries one of its two shapes. tidyVco's tall cell
+    // (`oct2`, rank 5, a bare `options` roster) lands in the LAST row with
+    // nothing beneath it; macrooscillator ranks `model` — a 14-engine roster —
+    // FIRST, so its tall cell has a row under it. Both still PAINT, which is the
+    // property leg (e) needs and the reason the pair is named rather than
+    // counted.
+    //
+    // ⚠ adsr WAS THE FACE THAT SUPPLIED THE SECOND SHAPE AND IT NO LONGER PAINTS
+    // AT ALL. Every adsr param declares a `format`, and the owner removed the
+    // resting number from every faceplate on 2026-08-17, so adsr's plate is now
+    // six design-height cells and contributes NOTHING to `readoutCells`. Leaving
+    // the roster alone would have left leg (e)'s anti-vacuity floor resting on a
+    // single cell on a single face — true, but one re-rank away from measuring
+    // nothing and passing. macrooscillator is added for exactly that reason, and
+    // it is the same subject the forced-overrun test below already names for the
+    // same shape. adsr stays: it is still a plain-knob-column face and still the
+    // module whose plate the per-row rule was written against.
+    const WANT = ['marbles', 'noise', 'adsr', 'dx7', 'tidyVco', 'macrooscillator'];
     const subjects = faced.filter((t) => WANT.includes(t));
     expect(subjects.sort(), 'every subject of this sweep is a migrated face').toEqual(
       [...WANT].sort(),
@@ -922,8 +1070,10 @@ test.describe('lane tile geometry — no cell paints over another, at any lane t
     const seenKinds = new Set<string>();
     const problems: string[] = [];
     /** Every cell that PAINTED a readout line, with its measured height —
-     *  the population leg (e) bounds against `LANE_KNOB_READOUT_H`. */
-    const readoutCells: { where: string; h: number }[] = [];
+     *  the population leg (e) bounds against `LANE_KNOB_READOUT_H`. `face` is
+     *  carried separately from `where` so leg (e) can name WHICH subjects
+     *  exercised the mechanism without re-parsing a message string. */
+    const readoutCells: { where: string; face: string; h: number }[] = [];
     /** Plate cells that OUTGROW their track with NOTHING BENEATH THEM — the
      *  case leg (b) deliberately does not flag. Collected so the exemption
      *  is PROVEN to be exercised rather than merely written down. */
@@ -933,9 +1083,17 @@ test.describe('lane tile geometry — no cell paints over another, at any lane t
      *
      * It used to hold a SECOND defect this sweep found and did not fix: a knob
      * cell is not the 42 px the plate's design row assumes, because `KnobConic`
-     * renders an EARNED readout for any param declaring a vocabulary, making
-     * the cell 55 px (57 under the VRT webfonts). Measured on adsr: 13 px of
-     * track overrun and `knob overlaps knob by 36.0×9.0 CSS px`.
+     * renders an EARNED readout, making the cell 55 px (57 under the VRT
+     * webfonts). Measured on adsr: 13 px of track overrun and `knob overlaps
+     * knob by 36.0×9.0 CSS px`.
+     *
+     * ⚠ "EARNED" MEANT "DECLARES ANY VOCABULARY" WHEN THAT WAS MEASURED, AND
+     * MEANS "DECLARES A BARE ROSTER" SINCE 2026-08-17 (`paintsReadout`; the
+     * owner removed the resting number, so a `format` no longer paints). The
+     * seven-face population below is therefore HISTORY, not a present-tense
+     * count — adsr, delay, kickdrum, lfo and ringback all left it, and adsr in
+     * particular no longer has a tall cell anywhere. The MECHANISM is unchanged
+     * and still live for the name readouts, which is why the legs below stayed.
      *
      * ⚠ AND THE ORIGINAL COUNT WAS WRONG BECAUSE THE INSTRUMENT WAS SINGLE-AXIS.
      * A y-only overlap test reports every same-row sibling as colliding and
@@ -1038,6 +1196,7 @@ test.describe('lane tile geometry — no cell paints over another, at any lane t
           if (c.readout && tile.layout === 'plate') {
             readoutCells.push({
               where: `${tier}/${name(tile.node)} '${c.kind}'`,
+              face: name(tile.node),
               h: c.h,
             });
           }
@@ -1157,13 +1316,22 @@ test.describe('lane tile geometry — no cell paints over another, at any lane t
     // (e) THE READOUT CELL IS BOUNDED BY THE CONSTANT THE PLAN RESERVES FOR IT
     //     — the same ceiling-and-floor shape as leg (c), for the other tall
     //     cell. `faceLaneCellHeights` reserves `LANE_KNOB_READOUT_H` for any
-    //     param that declares a vocabulary, and `plateRowTracks` divides the
-    //     body by that, so a rendered readout cell growing past it would make
-    //     every row track wrong — and the exhaustive unit sweep could not
-    //     notice, because it would still be agreeing with itself. The FLOOR
-    //     stops the ceiling being satisfied by the readout quietly not
-    //     rendering at all, which would make this whole mechanism vacuous while
-    //     every assertion stayed green.
+    //     param that PAINTS (`paintsReadout` — a bare option/landmark roster,
+    //     no `format`), and `plateRowTracks` divides the body by that, so a
+    //     rendered readout cell growing past it would make every row track
+    //     wrong — and the exhaustive unit sweep could not notice, because it
+    //     would still be agreeing with itself. The FLOOR stops the ceiling
+    //     being satisfied by the readout quietly not rendering at all, which
+    //     would make this whole mechanism vacuous while every assertion stayed
+    //     green.
+    //
+    //     ⚠ THE POPULATION THIS LEG MEASURES SHRANK HARD ON 2026-08-17, which
+    //     is why the anti-vacuity check below is NAMED rather than counted. It
+    //     used to see every `format`-bearing dial on every plate; the owner's
+    //     ruling left only the bare rosters, so a `> 0` floor would now be
+    //     satisfied by whichever subject happened to keep one — and would go
+    //     silently vacuous the day that face is re-ranked, with the ceiling and
+    //     floor above still cheerfully green over an empty list.
     const overCeiling = readoutCells.filter((c) => c.h > LANE_KNOB_READOUT_H);
     expect(
       overCeiling.map((c) => `${c.where} at ${c.h.toFixed(1)} CSS px`),
@@ -1178,11 +1346,22 @@ test.describe('lane tile geometry — no cell paints over another, at any lane t
         `readout is supposed to make the column taller, so the mechanism this test exists for is ` +
         `no longer exercised by anything`,
     ).toEqual([]);
-    expect(
-      readoutCells.length,
-      `the sweep must have measured at least one cell PAINTING a readout — that is the cell ` +
-        `whose height broke adsr's plate. Seen: ${readoutCells.map((c) => c.where).join('; ') || '(none)'}`,
-    ).toBeGreaterThan(0);
+    // The NAMED witnesses, each carrying the shape it contributes. Membership,
+    // not equality: another subject gaining a roster is not a defect, a NAMED
+    // one losing its readout is — and that is the direction that turns this leg
+    // vacuous.
+    const painting = new Set(readoutCells.map((c) => c.face));
+    for (const [face, why] of [
+      ['tidyVco', '`oct2` (bare `options`) is rank 5 — the tall cell in the LAST row'],
+      ['macrooscillator', '`model` (a 14-engine roster) is rank 1 — the tall cell WITH a row beneath it'],
+    ] as const) {
+      expect(
+        painting.has(face),
+        `${face} must have painted a readout cell on its plate: ${why}. If it did not, this ` +
+          `leg's ceiling and floor are measuring an EMPTY list and passing. Seen: ` +
+          `${readoutCells.map((c) => c.where).join('; ') || '(none)'}`,
+      ).toBe(true);
+    }
 
     // ── THE NEGATIVE CONTROL, PERMANENT ─────────────────────────────────────
     // Every assertion above is inside a loop over cells, so a shell that

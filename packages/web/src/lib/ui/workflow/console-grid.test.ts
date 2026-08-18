@@ -134,7 +134,14 @@ describe('console grid — which SHIPPED bands it claims (derived membership)', 
       'kickdrum/dynamics=3',
       'mixmstrs/channels=8',
       'mixmstrs/dynamics=8',
-      'mixmstrs/returns=4',
+      // ⚠ `mixmstrs/returns` IS DELIBERATELY ABSENT and used to be here. It
+      // still has two equal-sized clusters, so the SHAPE rule would claim it —
+      // it is refused by the first clause of `consoleGridCols`, because the
+      // band now declares `clusterFlow: 'row'` (owner, 2026-08-17: *"return 1
+      // and return 2 can sit next to each other"*). A console grid aligns
+      // column j ACROSS clusters stacked one above the other; side by side
+      // there is nothing to align, and handing ModuleShell a column ruler for a
+      // flex row is two layout systems disagreeing about one element.
       'mixmstrs/sends=9',
       'pentemelodica/mix=5',
       'tidyVco/envelopes=4',
@@ -147,6 +154,14 @@ describe('console grid — which SHIPPED bands it claims (derived membership)', 
   // listed is byte-identical, which is the whole containment argument for this
   // change: only a face with TWO OR MORE console bands can have the misaligned-
   // columns defect in the first place.
+  // ⚠ THE BAND COUNT MOVED UNDER THIS AND THE RULER DID NOT, which is worth
+  // recording because it is the interesting case. #1805 gave `mixmstrs/returns`
+  // `clusterFlow: 'row'`, so it stopped being a console band and mixmstrs went
+  // from FOUR to THREE — still ≥ `FACE_CONSOLE_MIN_BANDS`, and the width is the
+  // WIDEST remaining band (`sends`, 9), which the returns band never set. So the
+  // answer is unchanged at 9 for a reason, not by luck: had `sends` been the one
+  // to go side-by-side, this number would have moved and the dock baseline with
+  // it.
   it('the FACE-wide ruler claims EXACTLY these faces — a new one is a baseline dispatch', () => {
     const out: string[] = [];
     for (const def of allDefs()) {

@@ -8,6 +8,13 @@
 //      band sized its own `max-content` columns from its own widest cell, so the
 //      face carried three pitches (channels 51.72 / dynamics 62.00 / sends 50.00
 //      CSS px) and by channel 8 the same channel's cells were 90.00 px apart.
+//
+//      ⚠ THE SUBJECT IS THE BANDS ON THE RULER, and `returns` is deliberately
+//      not one of them: #1805 gave it `clusterFlow: 'row'` so return 1 and
+//      return 2 sit side by side, and a console grid aligns clusters STACKED one
+//      above the other. Membership is asserted in both directions below, so the
+//      narrowing is a stated property rather than a filter that could quietly
+//      swallow a band that fell off the ruler by accident.
 //   2. CHANNEL N TAKES LANE N'S COLOUR. Owner, 2026-08-17: *"for mixmstrs only,
 //      ch1-8 instead of neon blue, all controls should match the assigned color
 //      of its lane."*
@@ -73,6 +80,8 @@ interface Cell {
 interface Cluster {
   band: string;
   cluster: string;
+  /** Is this cluster's BAND subgridded onto the face-wide ruler? */
+  onRuler: boolean;
   cells: Cell[];
 }
 
@@ -115,6 +124,7 @@ async function readClusters(page: Page): Promise<Cluster[]> {
     const out: {
       band: string;
       cluster: string;
+      onRuler: boolean;
       cells: { key: string; control: string; cx: number; w: number }[];
     }[] = [];
     const root = document.querySelector('[data-testid="dock-full-view"]');
@@ -126,6 +136,7 @@ async function readClusters(page: Page): Promise<Cluster[]> {
         out.push({
           band: band.getAttribute('data-face-page') ?? '?',
           cluster: c.getAttribute('data-face-cluster') ?? '?',
+          onRuler: band.hasAttribute('data-face-ruler'),
           cells: Array.from(row.children).map((el) => {
             const r = el.getBoundingClientRect();
             return {
@@ -199,8 +210,48 @@ test('every 8-wide row shares ONE column ruler — column N is channel N everywh
   expect(declared, 'mixmstrs must render on a FACE-WIDE console ruler').not.toBeNull();
   const ruler = Number(declared);
 
-  const clusters = await readClusters(page);
-  expect(clusters.length, 'the faceplate must render clustered bands').toBeGreaterThan(0);
+  const all = await readClusters(page);
+  expect(all.length, 'the faceplate must render clustered bands').toBeGreaterThan(0);
+
+  // ── WHICH BANDS ARE ON THE RULER — ASSERTED, NOT ASSUMED ─────────────────
+  //
+  // ⚠ THE SUBJECT IS THE BANDS THAT SUBGRID ONTO THE PAGE, and after #1805 that
+  // is no longer "all of them". `returns` declares `clusterFlow: 'row'` (owner:
+  // *"return 1 and return 2 can sit next to each other"*), and `consoleGridCols`
+  // refuses a side-by-side band outright: a console grid's whole product is that
+  // column j of every cluster shares one centre, which requires the clusters to
+  // sit one ABOVE the other. Placed side by side there is nothing to align, so
+  // return 2's first fader legitimately sits where the channel ruler's column 5
+  // is and must not be measured against it.
+  //
+  // So the filter below is a REAL narrowing of the subject, not a tolerance —
+  // and it is spelled out as membership in BOTH directions so it cannot quietly
+  // grow. A band silently leaving the ruler is exactly how this assertion would
+  // go vacuous.
+  const onRuler = [...new Set(all.filter((c) => c.onRuler).map((c) => c.band))].sort();
+  const offRuler = [...new Set(all.filter((c) => !c.onRuler).map((c) => c.band))].sort();
+  expect(onRuler, 'exactly these bands share the face-wide ruler').toEqual([
+    'channels',
+    'dynamics',
+    'sends',
+  ]);
+  expect(offRuler, 'and exactly this band is laid out side-by-side instead').toEqual(['returns']);
+  // …and the off-ruler band really is the side-by-side one, read off the DOM
+  // rather than inferred from its absence: a band that fell off the ruler for
+  // some OTHER reason would satisfy the two clauses above and be a bug.
+  const returnsBand = page.locator('[data-testid="face-page"][data-face-page="returns"]');
+  await expect(returnsBand, 'the returns band must still render').toHaveCount(1);
+  await expect(
+    returnsBand,
+    'returns is off the ruler because it is a CLUSTER ROW, not because it lost its clusters',
+  ).toHaveClass(/cluster-row/);
+  await expect(
+    returnsBand,
+    'a side-by-side band must not also claim a column ruler — two layout systems, one element',
+  ).not.toHaveAttribute('data-console-cols', /.*/);
+
+  const clusters = all.filter((c) => c.onRuler);
+  expect(clusters.length, 'the ruler must carry clusters to measure').toBeGreaterThan(0);
 
   // A cluster wider than the ruler would be spanning tracks that do not exist.
   for (const c of clusters) {
@@ -231,7 +282,10 @@ test('every 8-wide row shares ONE column ruler — column N is channel N everywh
       }
     }
   }
-  expect(offenders.join('\n'), 'a column must have ONE centre on the whole faceplate').toBe('');
+  expect(
+    offenders.join('\n'),
+    'a column must have ONE centre across every band on the face-wide ruler',
+  ).toBe('');
 
   // ── AND THE PITCH IS ONE NUMBER, not one per band ─────────────────────────
   const pitches = new Set<number>();
@@ -279,6 +333,10 @@ test('NEGATIVE CONTROL: a face with ONE console band gets no face-wide ruler', a
   // not "there was nothing to align".
   const clusters = await readClusters(page);
   expect(clusters.length, 'tidyVco must still render clusters').toBeGreaterThan(0);
+  expect(
+    clusters.filter((c) => c.onRuler),
+    'and no band of a single-console-band face may claim the page ruler',
+  ).toEqual([]);
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

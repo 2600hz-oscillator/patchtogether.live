@@ -310,46 +310,90 @@ test.describe('?shell=1 video visibility', () => {
       [
         { id: 'l1', type: 'lines', position: { x: -1200, y: 4500 } },
         { id: 'b1', type: 'backdraft', position: { x: -700, y: 4500 } },
+        // ⚠ A SECOND DOWNSTREAM NODE, added when `backdraft` was promoted. The
+        // "thumb blit DRIVES the real chain and the picture ANIMATES" half of
+        // this case needs a tile that HAS a thumb, and a faced video module no
+        // longer does (see the pinned gap below). `grainsOfVision` is
+        // un-migrated, video-domain and takes the same `in_a`, so the claim
+        // moves to it verbatim instead of being weakened or deleted.
+        { id: 'g1', type: 'grainsOfVision', position: { x: -200, y: 4500 } },
       ],
       [
         { id: 'e-lb', from: { nodeId: 'l1', portId: 'out' }, to: { nodeId: 'b1', portId: 'in_a' }, sourceType: 'mono-video', targetType: 'video' },
+        { id: 'e-lg', from: { nodeId: 'l1', portId: 'out' }, to: { nodeId: 'g1', portId: 'in_a' }, sourceType: 'mono-video', targetType: 'video' },
       ],
     );
 
-    // Both spawn as placeholder tiles whose glyph slot is the LIVE THUMB —
-    // and the fake dashed-wave SVG is GONE for video modules.
-    for (const id of ['l1', 'b1', RECORDERBOX]) {
+    // Each PLACEHOLDER tile's glyph slot is the LIVE THUMB, and the fake
+    // dashed-wave SVG is GONE for video modules.
+    //
+    // ⚠ `b1` (BACKDRAFT) IS NO LONGER ONE OF THEM, and the reason is a MEASURED
+    // platform gap rather than a test-fixture detail — see the block below.
+    for (const id of ['l1', RECORDERBOX]) {
       const tile = page.locator(`.svelte-flow__node[data-id="${id}"] [data-testid="module-shell-placeholder"]`);
       await expect(tile, `${id} renders a placeholder tile`).toHaveCount(1);
       await expect(tile.locator('[data-testid="video-tile-thumb"]'), `${id} has the live thumb canvas`).toHaveCount(1);
       await expect(tile.locator('.tile-wave'), `${id} fake wave glyph gone`).toHaveCount(0);
     }
+
+    // ⚠ A PROMOTED VIDEO MODULE LOSES ITS LANE THUMBNAIL, and this pins the
+    // fact so it cannot change silently in either direction.
+    //
+    // `backdraft` became the first VIDEO face. `hasVideoSurface` still says yes
+    // (`domain === 'video'`), so `hasGlyph` is true — but the lane tile renders
+    // `hasGlyph && lanePlan.glyph`, and at the `full` tier a face this size
+    // takes the PLATE layout, where "ranked controls outrank the glyph": the
+    // strip renders only if a whole strip-row still fits under the cell rows,
+    // and with 28 lane-eligible controls it never does.
+    //
+    // MEASURED on the live tile, both ways, so the cause is not guessed: WITH
+    // `face.paramCells` declaring the card's 20 faders the tile paints 3 cells
+    // and 0 thumbs; with those declarations REMOVED it paints 6 cells and still
+    // 0 thumbs. So the fader declaration costs lane CELLS (96px vs 42px rows,
+    // exactly the trade the shell-control-kind doc names) and is NOT what
+    // removes the picture — promotion plus face SIZE is.
+    //
+    // The module's own output stays reachable through the dock (`fullViewBody`,
+    // which is the whole reason that slot was wired), so nothing is unreachable
+    // — but the AT-A-GLANCE rack picture is gone for big video faces, and that
+    // is a platform ruling for the owner, not something a face can declare its
+    // way out of. Asserted as-is rather than skipped: if the platform later
+    // gives a video surface priority over ranked cells, this line goes red and
+    // whoever changes it reads this note.
+    const b1Tile = page.locator('.svelte-flow__node[data-id="b1"] [data-testid="module-shell"]');
+    await expect(b1Tile, 'b1 is a FACED tile, not a placeholder').toHaveCount(1);
+    await expect(
+      b1Tile.locator('[data-testid="video-tile-thumb"]'),
+      'a faced video module at the full lane tier currently paints NO thumb (ranked cells outrank the glyph strip)',
+    ).toHaveCount(0);
     // Boundary: synesthesia is AUDIO-domain (no engine surface) — it must NOT
     // get a (necessarily dead/black) video thumb.
     await expect(
       page.locator(`.svelte-flow__node[data-id="${SYNESTHESIA}"] [data-testid="video-tile-thumb"]`),
     ).toHaveCount(0);
 
-    // Bring b1's tile on-screen so the visibility gate ARMS the tap…
-    await centerOnNode(page, 'b1', 0.9);
-    const thumbSel = `.svelte-flow__node[data-id="b1"] [data-testid="video-tile-thumb"]`;
+    // Bring g1's tile on-screen so the visibility gate ARMS the tap…
+    await centerOnNode(page, 'g1', 0.9);
+    const thumbSel = `.svelte-flow__node[data-id="g1"] [data-testid="video-tile-thumb"]`;
     await expect(page.locator(thumbSel)).toBeVisible();
 
     // …the thumbnail's blit DRIVES the real chain (deterministic engine probe:
-    // the per-node draw counter advances — the tap is the only watcher of b1)…
-    const base = await framesDrawn(page, 'b1');
+    // the per-node draw counter advances — the tap is the only watcher of g1)…
+    const base = await framesDrawn(page, 'g1');
     expect(base, 'video engine reachable').toBeGreaterThanOrEqual(0);
     await expect
-      .poll(async () => (await framesDrawn(page, 'b1')) - base, {
-        message: 'backdraft draws frames while its tile thumb is on-screen',
+      .poll(async () => (await framesDrawn(page, 'g1')) - base, {
+        message: 'the downstream video node draws frames while its tile thumb is on-screen',
         timeout: 20_000,
       })
       .toBeGreaterThanOrEqual(2);
 
-    // …and the PICTURE actually animates (two different frames).
+    // …and the PICTURE actually animates (two different frames). ⚠ MOVEMENT,
+    // not non-blackness: a producer can go bright AND FROZEN, and a blackness
+    // check calls that healthy.
     const first = await canvasData(page, thumbSel);
     expect(first, 'thumb canvas snapshot captured').not.toBe('');
-    await expectCanvasChanges(page, thumbSel, first, 'b1 tile thumbnail');
+    await expectCanvasChanges(page, thumbSel, first, 'g1 tile thumbnail');
   });
 
   test('dock full-view renders LIVE video for expanded video legacy cards (feedback via EXPAND; videoOut via the dev seam) with a render lease', async ({ page }) => {

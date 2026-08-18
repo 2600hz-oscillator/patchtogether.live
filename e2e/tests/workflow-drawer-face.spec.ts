@@ -210,7 +210,16 @@ test.describe('workflow · the pinned `m` tray renders the promoted face (#1739)
     // The face's own furniture, by its own testids — not "something painted".
     await expect(card.getByTestId('face-pages')).toBeVisible();
     await expect(card.getByTestId('face-hero')).toBeVisible();
-    await expect(card.getByTestId('face-hero-readouts')).toBeVisible();
+    // ⚠ NO `face-hero-readouts` — the strip was asserted VISIBLE here until the
+    // owner removed it (2026-08-17, see OWNER ITEM 1 below). The hero itself is
+    // still the right furniture check: it carries the promoted MASTER throw,
+    // which is what "the tray mounts the FACE" is about. Replaced rather than
+    // deleted, so this stays a two-sided check on the hero rather than
+    // quietly dropping to one assertion.
+    await expect(
+      card.getByTestId('face-hero').locator('[data-testid="control-master_volume"]'),
+      'the hero still promotes the master throw — the strip went, the control did not',
+    ).toHaveCount(1);
 
     const trayFace = await faceInventory(card);
     expect(trayFace.controls.length, 'the tray face must render control cells at all').toBeGreaterThan(0);
@@ -475,26 +484,51 @@ test.describe('workflow · the pinned `m` tray renders the promoted face (#1739)
         `accumulating to about -138 by ch8.`,
     ).toEqual([]);
 
-    // ── OWNER ITEM 1: the send PRE/POST echoes are OUT of the header …
-    const labels = await card
-      .getByTestId('face-hero-readouts')
-      .evaluate((el: Element) => [...el.querySelectorAll('dt')].map((n) => (n.textContent ?? '').trim()));
-    expect(labels, 'the header keeps only what is NOT visible elsewhere on the face').toEqual([
-      'bus',
-      'asleep',
-    ]);
+    // ── OWNER ITEM 1: the header readouts are gone ENTIRELY …
+    //
+    // ⚠ THIS ASSERTION HAS BEEN NARROWED TWICE BY THE SAME OWNER, and the
+    // history is the point. #1738 removed the two `send N` echoes and this line
+    // then pinned the survivors to `['bus', 'asleep']` — "the header keeps only
+    // what is NOT visible elsewhere on the face", which was a real argument:
+    // BUS was the summed headroom (TWO correlated hot channels clip at the
+    // shipped defaults) and ASLEEP counted the bit-exactly inert faders.
+    // 2026-08-17: *"[MASTER 1.00 / BUS ≤ 8.60× · +18.7 dB / ASLEEP 16 asleep]
+    // these numbers and text should go away"*, and generally *"we don't want
+    // text like that in our faceplates"*. The strip is not narrowed again, it
+    // is removed — so this asserts the ELEMENT is absent rather than pinning a
+    // shorter list that a future readout could quietly rejoin.
+    await expect(
+      card.getByTestId('face-hero-readouts'),
+      'the hero readout strip is REMOVED — a narrowed list would let the next summary value ' +
+        'back in without anyone deciding',
+    ).toHaveCount(0);
     // … and the CONTROLS they echoed are still on the face, still reachable.
     // Removing a readout must not have removed a switch.
     await expect(card.locator('[data-testid="control-send1Pre"]')).toHaveCount(1);
     await expect(card.locator('[data-testid="control-send2Pre"]')).toHaveCount(1);
 
-    // ── OWNER ITEM 3: the levels are the NEON control, and it prints a value
-    //    at rest the way the dials beside it do.
+    // ── OWNER ITEM 3: the levels are the NEON control.
     await expect(
       card.locator('[data-cell-control="fader"][data-cell-key="ch1_volume"]'),
       'a level renders as the neon throw, not the shipped grey one',
     ).toHaveCount(1);
-    await expect(card.locator('[data-testid="readout-ch1_volume"]')).toBeVisible();
+    // ⚠ THE SECOND HALF OF THIS ITEM WAS REVERSED BY A LATER REVIEW, and it is
+    // recorded rather than quietly dropped. It read `readout-ch1_volume` must
+    // be VISIBLE — "it prints a value at rest the way the dials beside it do",
+    // which was the right parity argument while the dials printed. Owner,
+    // 2026-08-17: *"all of our white decimely representatons of fader state ...
+    // should be removed"* and *"i want the data gone, not there but hidden or
+    // something"*. Parity is now restored by neither printing, and the value
+    // moved to `aria-valuetext` — so this asserts BOTH halves: gone from the
+    // page, still readable by anything that reads a slider.
+    await expect(
+      card.locator('[data-testid="readout-ch1_volume"]'),
+      'the resting decimal is REMOVED, not hidden — there is no element to reveal',
+    ).toHaveCount(0);
+    await expect(
+      card.locator('[data-testid="control-ch1_volume"]'),
+      'and the value is still on the slider, so nothing lost the ability to READ it',
+    ).toHaveAttribute('aria-valuetext', /\d/);
 
     // ── OWNER ITEM 4: no band is WIDER than the face — i.e. nothing is being
     //    stretched to a width nothing needs. That is the whole negative-space
@@ -515,6 +549,161 @@ test.describe('workflow · the pinned `m` tray renders the promoted face (#1739)
       stretch.filter((b) => b.slackPx < 0),
       'a console band wider than the face it sits in means it is stretching, not content-sized',
     ).toEqual([]);
+
+    expect(errors, `pageerrors: ${errors.join(' | ')}`).toEqual([]);
+  });
+
+  // ── #1796 — THE DECLUTTER, AND WHAT IT IS NOT ALLOWED TO COST ───────────
+  //
+  // Owner review of the mixmstrs faceplate, 2026-08-17:
+  //
+  //   *"the DB numbers here we should lose entirely, it's cluttered and i don't
+  //   like it. the 1lo 1md 1hi etc labels should also go away because the
+  //   low/mid/high labels above the knob rows convey that fine."*
+  //   *"the "enable" label shoud say "enable compressor" and we do not need a
+  //   1cp etc label under it."*
+  //   *"return 1 and return 2 can sit next to each other, too, saving on
+  //   vertical space and reducing unused horizontal space"*
+  //
+  // ⚠ EVERY ASSERTION BELOW IS PAIRED WITH ITS PARITY LEG, because "the label
+  // is gone" and "the control is gone" look identical in a screenshot and very
+  // different to a player. The GESTURE half — drag reaches the graph,
+  // right-click reaches MIDI-learn — is asserted in the `a control edit and its
+  // MIDI-learn menu` test above, which drives `control-ch1_low`; that param is
+  // in `face.bareCells`, so that test is not merely unaffected by this change,
+  // it is the proof the change costs nothing.
+  test('#1796: the face loses its RESTING NUMBERS and its redundant CAPTIONS, and nothing else', async ({
+    page,
+  }) => {
+    const errors = collectErrors(page);
+    await gotoWorkflow(page);
+    await waitForPin(page, 'pinned-mixmstrs');
+    const card = await openTray(page);
+    await expect(card.locator('[data-testid="module-shell"]')).toBeVisible();
+
+    // ── 1. NOT ONE RESTING NUMBER ON THE WHOLE FACE ─────────────────────
+    // Unconditional, not a ceiling: mixmstrs declares no `options` and no
+    // `landmarks` on any param, so every cell resolves to "paints nothing" and
+    // the correct answer is zero. A ceiling would go stale; this cannot.
+    await expect(
+      card.locator('[data-testid^="readout-"]'),
+      'a resting readout on a face whose params declare no NAME vocabulary — either the ' +
+        'decimal is back, or something new started painting one',
+    ).toHaveCount(0);
+
+    // ── 2. THE CAPTIONS THAT WENT, AND THE ONES THAT DID NOT ────────────
+    //
+    // Swept over the RENDERED cells rather than a list here, so a ninth channel
+    // or a new per-channel control is covered without editing this test.
+    // `face.bareCells` is "every declared param except the ones no heading
+    // names", and there are exactly two kinds of exception.
+    const captions = await card.evaluate((host: Element) => {
+      const out: { key: string; captioned: boolean; named: boolean }[] = [];
+      for (const cell of Array.from(host.querySelectorAll('[data-cell-key]'))) {
+        const key = cell.getAttribute('data-cell-key') ?? '?';
+        // The painted caption, in either primitive's vocabulary.
+        const captioned = !!cell.querySelector('.label, .sw-lab');
+        // The ACCESSIBLE name, which must survive either way.
+        const slider = cell.querySelector('[data-testid^="control-"]');
+        const named = !!(slider?.getAttribute('aria-label') ?? '').trim();
+        out.push({ key, captioned, named });
+      }
+      return out;
+    });
+    expect(captions.length, 'the sweep must have found cells to classify').toBeGreaterThan(0);
+
+    // ⚠ MASTER IS NOT ON THIS LIST, and it was until the same review round.
+    // It heads the hero with no cluster heading above it, which is a good
+    // reason to keep a caption and is why it survived the first pass — the
+    // owner then named it explicitly (*"[MASTER 1.00 ...] these numbers and
+    // text should go away"*). What is left is S1PRE/S2PRE, at the tail of a
+    // cluster whose heading names the send AMOUNT row rather than the tap
+    // point, and whose header echo was already removed in #1738.
+    const KEEP_CAPTION = new Set(['send1Pre', 'send2Pre']);
+    expect(
+      captions
+        .filter((c) => c.captioned && !KEEP_CAPTION.has(c.key))
+        .map((c) => c.key)
+        .sort(),
+      'a per-control caption survived under a section heading that already says it — the ' +
+        '`1LO`/`1CM`/`1TH`/`1S1` class the owner removed',
+    ).toEqual([]);
+    expect(
+      captions
+        .filter((c) => KEEP_CAPTION.has(c.key) && !c.captioned)
+        .map((c) => c.key)
+        .sort(),
+      'a caption that is the ONLY thing naming its control went with the redundant ones',
+    ).toEqual([]);
+
+    // ⚠ THE PARITY LEG. Hiding TEXT must never hide the NAME — `aria-label`,
+    // the annotate menu's title and MIDI-learn's address all read it. A
+    // `label={undefined}` "fix" would pass the clause above and fail this one,
+    // which is exactly why the primitives take a separate `hideCaption` prop.
+    expect(
+      captions
+        .filter((c) => !c.named)
+        .map((c) => c.key)
+        .sort(),
+      'a cell lost its accessible name along with its caption',
+    ).toEqual([]);
+
+    // ── 3. THE ENABLE HEADING SAYS WHAT IT ENABLES ──────────────────────
+    // With `1CP…8CP` gone this heading is the only text naming the row.
+    // Lowercase in the def per the repo convention (`.cluster-label` uppercases
+    // it in CSS), so the DOM attribute carries the authored case.
+    await expect(
+      card.locator('[data-face-cluster="enable compressor"]'),
+      'the compressor ENABLE row must say what it enables',
+    ).toHaveCount(1);
+
+    // ── 4. RETURN 1 AND RETURN 2 SIT SIDE BY SIDE ───────────────────────
+    // Geometry, because "next to each other" is a geometry claim and a
+    // baseline cannot express it — a screenshot goes green on any drift it
+    // happens to capture. Units: CSS px; the drawer is a sibling of xyflow's
+    // zoom transform, not inside it, so no zoom division is involved.
+    const returns = await card.evaluate((host: Element) => {
+      const box = (sel: string) => {
+        const el = host.querySelector(sel);
+        if (!el) return null;
+        const r = el.getBoundingClientRect();
+        return { x: r.x, y: r.y, w: r.width, h: r.height };
+      };
+      return {
+        one: box('[data-face-cluster="return 1"]'),
+        two: box('[data-face-cluster="return 2"]'),
+      };
+    });
+    expect(returns.one, 'return 1 must be on the face').toBeTruthy();
+    expect(returns.two, 'return 2 must be on the face').toBeTruthy();
+    const one = returns.one!;
+    const two = returns.two!;
+    expect(
+      Math.round(two.y - one.y),
+      `the two return strips must share a row (return 1 at y=${one.y.toFixed(1)}, return 2 at ` +
+        `y=${two.y.toFixed(1)} CSS px). Stacked, return 2 sat a whole strip lower and the ` +
+        `space to the right of both was blank — which is the thing the owner asked to reclaim.`,
+    ).toBe(0);
+    expect(
+      two.x,
+      `return 2 must start to the RIGHT of return 1 (return 1 ends at ` +
+        `${(one.x + one.w).toFixed(1)}, return 2 starts at ${two.x.toFixed(1)} CSS px)`,
+    ).toBeGreaterThanOrEqual(one.x + one.w);
+
+    // …and the row they now share must FIT, or side-by-side bought nothing.
+    // `.dock-page.cluster-row` wraps by design, so a pane too narrow degrades
+    // to the stacked layout rather than overflowing — which surfaces as the
+    // y-delta above being non-zero, not as a clip. This is the other half.
+    const overflow = await card.evaluate((host: Element) => {
+      const band = host.querySelector('[data-face-page="returns"]') as HTMLElement | null;
+      if (!band) return null;
+      return { hiddenX: Math.max(0, band.scrollWidth - band.clientWidth) };
+    });
+    expect(overflow, 'the returns band must be on the face').toBeTruthy();
+    expect(
+      overflow!.hiddenX,
+      'the side-by-side returns band overflows its own box — a control is clipped',
+    ).toBe(0);
 
     expect(errors, `pageerrors: ${errors.join(' | ')}`).toEqual([]);
   });

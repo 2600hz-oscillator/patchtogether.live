@@ -38,7 +38,6 @@ import { SAMPLE_RATE } from '../../setup/capture';
 import { vcoTestSignal, C4_HZ } from '../../setup/drivers';
 import { renderFaustOffline } from '../../setup/faust-offline';
 import { MIXMSTRS_CHANNELS, MIXMSTRS_RETURNS, mixmstrsDef } from '$lib/audio/modules/mixmstrs';
-import { busGainLinear, mixmstrsFaceParams } from '$lib/ui/modules/mixmstrs-face-model';
 
 const SR = SAMPLE_RATE;
 const DUR = 0.4;
@@ -125,18 +124,36 @@ describe('ART mixmstrs / the faceplate premises', () => {
     expect(worst, `renders differ by ${fmt(worst)} — every inertness figure below is void`).toBe(0);
   }, CAP);
 
-  it('2 · `bus` — the readout\'s arithmetic IS what the DSP does', async () => {
-    // A JOIN between the shipping readout function and a real render. The
-    // expected number is not typed here; it is computed by the same code the
-    // faceplate prints through, so a change to either side reddens.
+  it('2 · the BUS SUMMING LAW is what the DSP does', async () => {
+    // ⚠ THIS USED TO BE A JOIN AND IS NOW A LAW, and the demotion is recorded
+    // rather than hidden. The expected number was computed by `busGainLinear`,
+    // the same function the faceplate's `bus` readout printed through, so
+    // neither side could drift without reddening. Owner ruling 2026-08-17
+    // removed that readout from the face (*"these numbers and text should go
+    // away"*) and its arithmetic was deleted with it, because a computation
+    // nothing can reach reads like a shipped decision.
+    //
+    // What is asserted is unchanged and still worth asserting: masterL is
+    // `(Σ channel_out + Σ return_out) × master_volume` (`mixmstrs.dsp:329`), so
+    // the correlated worst-case gain at the shipped defaults is the expression
+    // below, and the render must match it. It is now a restatement of the DSP's
+    // own summing law instead of an agreement between two shipping surfaces —
+    // weaker, and the honest description of what remains. Still DERIVED from the
+    // def's declared defaults, never typed, so a re-ranged fader moves it.
     const readDefault = (id: string) =>
-      mixmstrsDef.params?.find((p) => p.id === id)?.defaultValue;
-    const expected = busGainLinear(mixmstrsFaceParams(readDefault));
+      mixmstrsDef.params?.find((p) => p.id === id)?.defaultValue ?? 0;
+    const sum = [
+      ...MIXMSTRS_CHANNELS.map((c) => readDefault(`ch${c}_volume`)),
+      ...MIXMSTRS_RETURNS.map((r) => readDefault(`ret${r}_volume`)),
+    ].reduce((a, b) => a + b, 0);
+    const expected = sum * readDefault('master_volume');
     const got = peak((await render(correlatedPatch())).masterL!);
-    expect(got, `masterL peak ${got.toFixed(4)} (linear) vs readout ${expected.toFixed(4)}`)
+    expect(got, `masterL peak ${got.toFixed(4)} (linear) vs the summing law's ${expected.toFixed(4)}`)
       .toBeCloseTo(expected, 2);
 
-    // THE CONSEQUENCE THE READOUT EXISTS TO STATE: at the shipped defaults the
+    // THE CONSEQUENCE, which is now stated ONLY in the module's authored
+    // `docs` and here — the faceplate no longer warns about it: at the shipped
+    // defaults the
     // bus passes unity with only TWO correlated full-scale channels, and
     // nothing here limits or soft-clips.
     const two: (Float32Array | null)[] = new Array(AUDIO_IN_COUNT).fill(null);

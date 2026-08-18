@@ -129,6 +129,24 @@ export function momentaryParamIds(def: { face?: { momentary?: readonly string[] 
   return new Set(def?.face?.momentary ?? []);
 }
 
+/**
+ * The param ids whose DOCK cell paints no caption (`face.bareCells`), empty
+ * when none. Pure.
+ *
+ * ⚠ A SET OF IDS, NOT A FLAG ON THE FACE, and the shape is the argument. The
+ * rule this serves is "a caption is clutter when a section heading already says
+ * it, and load-bearing when it is the only thing separating four identical
+ * knobs" (owner, 2026-08-17). That is a per-CONTROL fact — tidyVco's `A`/`D`/
+ * `S`/`R` and mixmstrs' `1LO…8LO` sit under equally-labelled cluster headings
+ * and only one of the two pairs is redundant — so a per-face or per-tier
+ * boolean could not express it without being wrong on one of them.
+ */
+export function bareCaptionParamIds(
+  def: { face?: { bareCells?: readonly string[] } } | undefined,
+): ReadonlySet<string> {
+  return new Set(def?.face?.bareCells ?? []);
+}
+
 /** Shared empty map so the common (undeclared) case allocates nothing. */
 const EMPTY_CELLS: ReadonlyMap<string, DeclaredParamCell> = new Map();
 

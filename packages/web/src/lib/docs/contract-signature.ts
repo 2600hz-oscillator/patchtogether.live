@@ -198,6 +198,10 @@ export const FACE_FIELDS_NOT_IN_LOCK: Readonly<
     why: 'Which PRIMITIVE renders a param (grid/color/fader). Not the range or the mapping, which are pinned on the param line; the widget choice.',
     coveredBy: 'shell-cells (every key resolves to a registered cell spec) + param-cell-coverage + faces-parity driveCell.',
   },
+  xyPads: {
+    why: 'Which PAIRS of params are one 2-D gesture rather than two dials. Like paramCells it is a widget choice, not a mapping: each axis keeps its own ParamDef line, and the pad reads its min/max straight off that line per axis — so the RANGES stay pinned in the lock exactly as before and only the affordance moves. Declared rather than inferred because nothing in a pair of ParamDefs says "these two are one gesture".',
+    coveredBy: 'module-face-lint xyPadProblems (both axes declared, ranked, non-momentary, CONTINUOUS, claimed once, x !== y — with a negative control per clause) + param-cell-coverage (the `xy` kind is exercised by a real adopter) + faces-parity driveCell + VRT face-<type>-dock.',
+  },
   momentary: {
     why: 'Marks a param as press-and-release. It changes how a cell is DRIVEN, and the audition ledger is the observable — a text line would restate what the probe measures.',
     coveredBy: 'faces-parity ShellActionCell.probe + audition-ledger (both directions, unit lane, every run).',
@@ -206,6 +210,10 @@ export const FACE_FIELDS_NOT_IN_LOCK: Readonly<
     why: 'WHICH COLOUR a cell paints in — the rack lane colour of the channel it belongs to (#1825). No id in it is new (every one is already a pinned param line) and no I/O changes; what it selects is a CSS custom property. A text golden would restate the def\'s own param list and still say nothing about whether the colour arrives, which is a live DOM question.',
     coveredBy:
       'mixmstrs-face-model.test.ts (the declaration and `mixmstrsChannelIndex` partition the def by channel, both directions, plus the bus-scoped refusal) + module-face-lint (every declared id resolves, no duplicates, the declaring roster) + the mixmstrs-face-grid e2e, which reads the RESOLVED `--_ka` off each control and matches it against `laneColorEff` + VRT face-mixmstrs-dock.',
+  },
+  bareCells: {
+    why: "Which cells paint no CAPTION at the dock. It removes TEXT and nothing else — `aria-label`, the annotate menu's title and MIDI-learn's address all still carry the param's `label`, so no consumer of the contract can observe it. Declared per param rather than per face because it encodes REDUNDANCY against a section heading, which only the module knows (owner, 2026-08-17: mixmstrs' `1LO…8LO` go, tidyVco's `A`/`D`/`S`/`R` stay).",
+    coveredBy: 'module-face-lint (every id is a declared param, ranked in `order`, no duplicates) + face-readout-source.test.ts + VRT face-<type>-dock, where a missing caption is exactly a pixel change.',
   },
   rear: {
     why: 'Rear-card port grouping/clusters/audio-rate ticks. Every PORT it arranges is already a pinned `in`/`out` line; this is the arrangement.',

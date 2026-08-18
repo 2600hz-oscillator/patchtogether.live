@@ -114,162 +114,32 @@ export const returnStripIds = (r: number): string[] => [
 export const isChannelScoped = (paramId: string): boolean =>
   mixmstrsChannelIndex(paramId) !== null;
 
-// ── THE PARAM SNAPSHOT ─────────────────────────────────────────────────────
-
-/** The def's declared default for an id — the fallback for a param a fresh node
- *  has never written. Resolved off the def, never re-typed. */
-function declaredDefault(paramId: string): number {
-  return mixmstrsDef.params?.find((p) => p.id === paramId)?.defaultValue ?? 0;
-}
-
-/** One finite reading, or the declared default. Guards the TOTALITY leg: the
- *  readout functions run on every render, so a NaN from a half-written node
- *  must not reach the arithmetic. */
-function num(read: Read, paramId: string): number {
-  const v = read(paramId);
-  return typeof v === 'number' && Number.isFinite(v) ? v : declaredDefault(paramId);
-}
-
-export interface MixmstrsFaceParams {
-  master: number;
-  chVolume: number[];
-  retVolume: number[];
-  /** Per channel, the COMP macro (0 = bypass). */
-  compMacro: number[];
-  /** Per channel, the MANUAL compressor enable. */
-  compEnable: number[];
-  /** Per bus, then per channel: the send amount. */
-  sendAmount: number[][];
-  /** Per bus: the PRE/POST flag. */
-  sendPre: number[];
-}
-
-export function mixmstrsFaceParams(read: Read): MixmstrsFaceParams {
-  return {
-    master: num(read, 'master_volume'),
-    chVolume: perChannel('volume').map((id) => num(read, id)),
-    retVolume: MIXMSTRS_RETURNS.map((r) => num(read, `ret${r}_volume`)),
-    compMacro: compMacroIds().map((id) => num(read, id)),
-    compEnable: perChannel('compEnable').map((id) => num(read, id)),
-    sendAmount: MIXMSTRS_RETURNS.map((r) =>
-      MIXMSTRS_CHANNELS.map((c) => num(read, `ch${c}_send${r}`)),
-    ),
-    sendPre: sendPreIds().map((id) => num(read, id)),
-  };
-}
-
-// ── READOUT 1 · THE BUS — the number ninety-one faders cannot add up ───────
+// ── THE HERO READOUTS ARE GONE, AND SO IS THEIR ARITHMETIC ─────────────────
 //
-// masterL is `(Σ channel_out + ret1_out + ret2_out) × master_volume`
-// (`mixmstrs.dsp:329`), so the fully-correlated worst-case gain for unit
-// sources on all ten stereo inputs is
+// This file used to continue with a param snapshot (`mixmstrsFaceParams`) and
+// three derived readouts built on it: `busGainText` (the fully-correlated
+// worst-case gain into the master), `compAsleepText` (how many thresh/ratio
+// faders are bit-exactly inert right now) and `sendText` (each send bus's tap
+// point AND whether it is alive). Each was a JOIN over controls no single
+// readback can perform, each was permanently negative-controlled on the input a
+// knob readback is blind to, and the `bus` one was this face's own merit
+// argument — the headroom warning that TWO correlated hot channels already clip
+// the bus at the shipped defaults.
 //
-//     (Σ ch{N}_volume + Σ ret{R}_volume) × master_volume
+// Owner ruling 2026-08-17: *"[MASTER 1.00 / BUS ≤ 8.60× · +18.7 dB / ASLEEP 16
+// asleep] these numbers and text should go away"*, and generally *"we don't
+// want text like that in our faceplates"*.
 //
-// MEASURED against the shipped Faust wasm, ten correlated full-scale saws at
-// the factory defaults: masterL peak **6.7187**, against the formula's
-// (8×0.8 + 2×1.0) × 0.8 = 6.72. Mute both returns and it is **5.1190** against
-// 8×0.8×0.8 = 5.12. The ladder by channel count, all defaults:
+// ⚠ DELETED RATHER THAN ORPHANED. The obvious smaller diff — drop the two
+// entries from `face.hero.readouts` and leave the functions and their registry
+// providers in place — leaves a computation nothing can reach, which reads like
+// a shipped decision to the next person and is exactly the "declaration nobody
+// renders" shape this repo treats as a defect. The measurements those functions
+// carried are preserved verbatim in the def's comment above `hero`, and the
+// clipping behaviour they warned about is stated in the module's authored
+// `docs`, which is where an explanation belongs.
 //
-//     1 ch 0.6399 · 2 ch 1.2797 · 3 ch 1.9196 · 4 ch 2.5595 · 8 ch 5.1190
-//
-// **TWO correlated full-scale sources already clip the bus at the shipped
-// defaults**, nothing in the module limits or soft-clips, and `master_volume`
-// cannot exceed 1.0. Ninety-one faders and not one of them says that.
-//
-// ⚠ IT IS A BOUND, NOT A READING, and the caption says so with `≤`.
-// Decorrelated sources sum in POWER, not amplitude; this is the correlated
-// worst case, which is the number that matters because it is the one that
-// clips.
-
-/** The worst-case (fully correlated) linear gain from a unit source on every
- *  input to the master bus. */
-export function busGainLinear(p: MixmstrsFaceParams): number {
-  const sum = [...p.chVolume, ...p.retVolume].reduce((a, b) => a + b, 0);
-  return sum * p.master;
-}
-
-export function busGainText(p: MixmstrsFaceParams): string {
-  const g = busGainLinear(p);
-  if (!Number.isFinite(g)) return '—';
-  if (g <= 0) return '0× · −∞ dB';
-  const db = 20 * Math.log10(g);
-  return `≤ ${g.toFixed(2)}× · ${db >= 0 ? '+' : '−'}${Math.abs(db).toFixed(1)} dB`;
-}
-
-// ── READOUT 2 · ASLEEP — the module's own argument, counted ────────────────
-//
-// The per-channel compressor rests BYPASSED (`ch{N}_compEnable` default 0,
-// `comp{N}` macro default 0), and while it is bypassed `ch{N}_thresh` and
-// `ch{N}_ratio` do NOTHING. Measured on the shipped DSP with all twenty audio
-// inputs driven: sweeping `ch1_thresh` across its ENTIRE declared travel
-// (−36 → 0 dB) moves masterL by **0.0000e+0**, and `ch1_ratio` (1 → 10) by
-// **0.0000e+0**. Open the enable and the same two sweeps move it by
-// **1.8631e-1** and **1.1563e-1**.
-//
-// Bit-identity alone would not settle it, so the floor is measured from the
-// other side: the smallest move ANY control on this module makes over the same
-// harness is `ch1_volume` 0.800 → 0.801 = **2.9062e-4**. The inert plateau is
-// not two values landing in one bucket — the module's finest audible step is
-// 2.9e-4 and these do exactly 0.0 across their whole range.
-//
-// So **sixteen of ninety-one faders are decoration on a factory-fresh
-// mixmstrs**, the module ships two independent ways to wake them, and no
-// surface says either is required.
-
-/** The two per-channel params the compressor's enable gates. NAMES, not a
- *  count — the readout multiplies by this list's length so the day a third
- *  dependent is added the number follows. Both measured inert above. */
-export const COMP_DEPENDENT_SUFFIXES = ['thresh', 'ratio'] as const;
-
-/**
- * Channel indices (0-based into `MIXMSTRS_CHANNELS`) whose compressor is
- * BYPASSED — nothing on the face claims it is on.
- *
- * ⚠ IT READS BOTH ENABLERS, and that is the whole point. `comp{N}` is a MACRO
- * that writes `compEnable` downstream through `mapCompMacro` (imported, not
- * restated), so a readout that watched only the manual switch would print
- * `16 asleep` while the macro had already woken the pair. The two legs are each
- * other's negative controls in `mixmstrs-face-model.test.ts`.
- */
-export function bypassedChannels(p: MixmstrsFaceParams): number[] {
-  const out: number[] = [];
-  MIXMSTRS_CHANNELS.forEach((_, i) => {
-    const byMacro = mapCompMacro(p.compMacro[i] ?? 0).enable >= 1;
-    const byManual = (p.compEnable[i] ?? 0) >= 0.5;
-    if (!byMacro && !byManual) out.push(i);
-  });
-  return out;
-}
-
-export function compAsleepText(p: MixmstrsFaceParams): string {
-  const n = bypassedChannels(p).length * COMP_DEPENDENT_SUFFIXES.length;
-  return n === 0 ? 'all live' : `${n} asleep`;
-}
-
-// ── READOUT 3/4 · THE SEND BUSES — the tap point, and whether it is alive ──
-//
-// `send{R}Pre` chooses where the bus taps each channel: POST-fader (the
-// default) follows the volume fader; PRE-fader taps after EQ and compressor but
-// BEFORE it, so a RETURN keeps carrying sound while the channel it sits on is
-// muted. Measured, `ch1_send1 = 1`, send1L rms by fader position —
-// POST: −∞ / −22.83 / −12.73 / −10.79 dB at vol 0 / 0.25 / 0.8 / 1.0;
-// PRE: **−10.79 dB at every one of them**. That is the whole feature in one row.
-//
-// ⚠ AND IT IS INERT UNTIL A SEND OPENS. All sixteen send amounts default to 0,
-// and with them shut, flipping `send1Pre` 0 → 1 moves send1L by **0.0000e+0**
-// and masterL by **0.0000e+0**. Open every send to 0.5 and the same flip moves
-// send1L by **3.2138e-1**. The switch is on the panel, it clicks, it changes
-// nothing, and no surface says why — which matters because this is the control
-// the owner's ES-9 send/return rack depends on
-// (`e2e/tests/es9-per-leg-patching.spec.ts:11-14`).
-//
-// So the readout states the ENABLER, not the switch: a caption that merely
-// echoed `PRE` would imply something happened.
-
-export function sendText(busIndex: number, p: MixmstrsFaceParams): string {
-  const amounts = p.sendAmount[busIndex] ?? [];
-  const open = amounts.filter((a) => a > 0).length;
-  const tap = (p.sendPre[busIndex] ?? 0) >= 0.5 ? 'PRE' : 'POST';
-  return open === 0 ? `${tap} · off` : `${tap} · ${open} ch`;
-}
+// What REMAINS in this file is the part that is still load-bearing: the ranking
+// axis (SCOPE), the id builders every list is derived from, and
+// `isChannelScoped` — the predicate `mixmstrs-face-model.test.ts` anchors the
+// face's tie-free ranking against, in both directions.
