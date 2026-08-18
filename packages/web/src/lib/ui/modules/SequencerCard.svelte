@@ -217,7 +217,13 @@
     if (e.key === 'Tab') {
       const dir = e.shiftKey ? -1 : 1;
       const next = stepIdx + dir;
-      if (next < minStep || next > maxStep) return false; // let browser tab out
+      // AT THE PAGE BOUNDS WE DECLINE, AND THE RACK FLIPS. This used to read
+      // "let browser tab out", which has been wrong since #1629 made bare Tab
+      // the rack-flip gesture: nothing tabs out of here any more, and this
+      // repo does no keyboard-traversal work (standing owner ruling). Falling
+      // through to the global flip IS the intended outcome — which is also why
+      // returning false has to keep propagating (#1790).
+      if (next < minStep || next > maxStep) return false;
       return focusCell(next, role);
     }
     return false;

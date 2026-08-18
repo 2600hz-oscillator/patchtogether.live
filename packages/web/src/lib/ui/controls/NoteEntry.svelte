@@ -135,7 +135,32 @@
       e.key === 'Tab'
     ) {
       const handled = onNavKey?.(e) ?? false;
-      if (handled) e.preventDefault();
+      if (!handled) return;
+      e.preventDefault();
+      // #1790 — THE GATE CELL IS A <button>, AND THAT IS THE WHOLE BUG.
+      //
+      // Bare Tab is ALSO the rack-flip gesture (owner ruling #1629), claimed
+      // by two PLAIN `window` keydown listeners in Canvas.svelte (onDockKey +
+      // the canvas-wide onKey). Both bail on `isTypingTarget`, which is why
+      // the PITCH side — an <input> — was never affected. A gate button is
+      // not a typing target, so the flip owner acted on the very keystroke
+      // this card had just consumed: Tab advanced a step AND turned the rack
+      // around. `preventDefault` does not reach a sibling window listener;
+      // only `stopPropagation` does.
+      //
+      // ONLY when this card handled it. At the page bounds `onNavKey` returns
+      // false and the event propagates ON PURPOSE — the rack flips, which is
+      // the global gesture doing its job, not a fallback. (Shift+Tab never
+      // gets here as a flip either: `isRackFlipKey` rejects every modifier,
+      // and the hosts read `e.shiftKey` purely for direction.)
+      //
+      // Scoped to Tab BY NAME rather than "every key we handled": the arrows
+      // have no window claimant, but they DO reach xyflow's NodeWrapper
+      // arrow-move (a SELECTED node walks a pixel per press — `isInputDOMNode`
+      // waves a <button> through exactly like `isTypingTarget` does). That is
+      // a separate, pre-existing seam; closing it here would silently move
+      // node positions with nothing in the suite asserting the change.
+      if (e.key === 'Tab') e.stopPropagation();
     }
   }
 </script>
