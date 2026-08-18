@@ -51,6 +51,9 @@
 /** The minimal band shape this reads — a subset of `DockFaceBand`. */
 export interface ConsoleGridBandLike {
   clusters: readonly { readonly controls: readonly unknown[] }[];
+  /** `DockFaceBand.clusterFlow`. Optional here so every existing caller and
+   *  fixture keeps compiling as a STACKED band, which is what they all were. */
+  clusterFlow?: 'stack' | 'row';
 }
 
 /**
@@ -75,6 +78,14 @@ export const CONSOLE_MIN_CELLS = 2;
  * byte, which is what keeps the rest of the roster's baselines still.
  */
 export function consoleGridCols(band: ConsoleGridBandLike | null | undefined): number | null {
+  // ⚠ A SIDE-BY-SIDE BAND IS NEVER A CONSOLE GRID, and this is the first clause
+  // for a reason. The grid's whole product is that column j of every cluster
+  // shares one centre, which requires the clusters to sit one ABOVE the other;
+  // `clusterFlow: 'row'` asks for the opposite arrangement. Answering `cols`
+  // here would hand ModuleShell a `repeat(N, max-content)` ruler for a band
+  // that is about to be laid out as a flex row — two layout systems disagreeing
+  // about the same element, which resolves as neither.
+  if (band?.clusterFlow === 'row') return null;
   const clusters = band?.clusters ?? [];
   if (clusters.length < CONSOLE_MIN_CLUSTERS) return null;
   const cols = clusters[0]!.controls.length;

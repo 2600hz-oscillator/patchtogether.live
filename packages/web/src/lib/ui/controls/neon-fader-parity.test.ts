@@ -22,7 +22,7 @@
 //     itself, so "delete the row to make the suite pass" costs an explicit
 //     removal of a stated reason rather than a silent line drop.
 //   * The rows that were `ADDITIONS` (the keyboard gesture, `aria-valuetext`,
-//     the persistent readout, lost-pointer-capture recovery) are folded in as
+//     lost-pointer-capture recovery) are folded in as
 //     ordinary requirements. They were only "additions" relative to a control
 //     that no longer exists; against the shipped app they are simply things the
 //     fader does, and the distinction was the last thing anchoring them to
@@ -267,11 +267,21 @@ const REQUIRED_BEHAVIOURS: readonly Behaviour[] = [
     probe: /class="value-tag"/,
     why: 'the only readout at the lane tier, where there is no room for a persistent line; vca-face.spec.ts asserts its text',
   },
-  {
-    name: 'persistent readout at the faceplate tier',
-    probe: /data-testid=\{paramId \? `readout-\$\{paramId\}` : undefined\}/,
-    why: 'a dock band has the row for a value line and a 192px lane tile does not — the same split KnobConic makes, so a faceplate does not print values for its dials and not for its throws',
-  },
+  // ⚠ 'persistent readout at the faceplate tier' WAS A ROW HERE AND IS DELETED
+  // — not to make a suite pass, but because the owner removed the thing it
+  // required. Its `why` was a PARITY argument ("a faceplate does not print
+  // values for its dials and not for its throws"), which was sound while dials
+  // printed. Owner ruling 2026-08-17: *"we should kill the light white decimil
+  // represebtation of knob state in ALL modules"* and, when asked whether a
+  // hover reveal would do, *"i want the data gone, not there but hidden or
+  // something"*. Dials stopped printing too, so parity is restored by NEITHER
+  // having it, and a row demanding the element would be a gate insisting on
+  // exactly what was removed.
+  //
+  // What survives is stronger and is the row directly above: `aria-valuetext`
+  // carries the value at EVERY tier, not just the dock, so the value is still
+  // speakable and still assertable — which is what let the affected specs keep
+  // their subject instead of being weakened.
   {
     name: 'formatValue override honoured',
     probe: /formatValue \? formatValue\(v\) : format\(v, units\)/,

@@ -89,7 +89,14 @@ describe('console grid — which SHIPPED bands it claims (derived membership)', 
       'kickdrum/dynamics=3',
       'mixmstrs/channels=8',
       'mixmstrs/dynamics=8',
-      'mixmstrs/returns=4',
+      // ⚠ `mixmstrs/returns` IS DELIBERATELY ABSENT and used to be here. It
+      // still has two equal-sized clusters, so the SHAPE rule would claim it —
+      // it is refused by the first clause of `consoleGridCols`, because the
+      // band now declares `clusterFlow: 'row'` (owner, 2026-08-17: *"return 1
+      // and return 2 can sit next to each other"*). A console grid aligns
+      // column j ACROSS clusters stacked one above the other; side by side
+      // there is nothing to align, and handing ModuleShell a column ruler for a
+      // flex row is two layout systems disagreeing about one element.
       'mixmstrs/sends=9',
       'pentemelodica/mix=5',
       'tidyVco/envelopes=4',
