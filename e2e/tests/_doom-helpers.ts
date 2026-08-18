@@ -36,7 +36,10 @@
 //    Enter; waitForTimeout(300) }` assumed each Enter lands in a window that
 //    contains enough tics for DOOM to process it; on a slow renderer some
 //    presses fall in windows with ~2 tics and the walk stalls halfway. Pressing
-//    until the observable ("the marine exists") is true needs no such guess.
+//    until the observable is true needs no such guess. ⚠ It still issues the
+//    canonical walk FIRST — read its `minPresses` note before "simplifying"
+//    that away, because DOOM's attract demo makes the observable true while
+//    the game is playing itself.
 //
 // ── AND THE RULE FOR THRESHOLDS ────────────────────────────────────────────
 //
