@@ -112,6 +112,38 @@ async function wire(page: Page, from: string, fromPort: string, to: string, toPo
 
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * Close the Yjs undo CAPTURE WINDOW so the act under test lands in its own stack
+ * item.
+ *
+ * ⚠ WITHOUT THIS, THE UNDO LEGS BELOW MEASURE THE CLOCK. `Y.UndoManager` merges
+ * operations arriving within `captureTimeout` (500 ms) into ONE stack item, so
+ * "arrange, then delete, then undo" only tests the delete if the arrange
+ * happened to finish more than half a second earlier. It did — until #1836 made
+ * the cards cheap enough that spawn + wire + delete all landed inside one
+ * window, and a single Cmd-Z then unwound the whole fixture to an EMPTY rack.
+ * Deterministically, 3/3 — a latent dependency on wall-clock that 42 green runs
+ * had never surfaced.
+ *
+ * `mutate.ts` says the same thing from the other side: delete-plus-bridge is one
+ * entry because the writes NEST inside one transaction, and explicitly *"do NOT
+ * lean on the UndoManager's 500 ms captureTimeout"*. A test leaning on it to
+ * separate its own phases was making exactly that mistake.
+ */
+async function sealArrange(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const w = window as unknown as { __undoManager?: { stopCapturing: () => void } };
+    w.__undoManager?.stopCapturing();
+  });
+}
+
+/** Depth of the local undo stack (-1 when the dev hook is absent). */
+const undoDepth = (page: Page): Promise<number> =>
+  page.evaluate(() => {
+    const w = window as unknown as { __undoManager?: { undoStack: unknown[] } };
+    return w.__undoManager?.undoStack.length ?? -1;
+  });
+
 test.describe('videoOut — detach display', () => {
   test('right-click → detach floats a resizable, draggable picture that is NOT a flow node', async ({ page }) => {
     const errors: string[] = [];
@@ -401,6 +433,75 @@ test.describe('videoOut — detach on the DEFAULT shell (the promoted face)', ()
       .not.toBe(first);
   });
 
+  test('the panel KEEPS PAINTING with its card scrolled off-screen — the lease beats the visibility gate', async ({ page }) => {
+    // ⚠ THE OTHER HALF OF THE #1836 INTERACTION, and it needs a browser because
+    // both mechanisms are real DOM: `video-card-visibility.ts` observes
+    // `.svelte-flow__node[data-id]` elements, and this panel is deliberately NOT
+    // one of those — so the only rect the gate can read for this node is the
+    // CARD's. Detaching then panning the rack away is precisely the case where a
+    // naive gate would blank a window sitting in front of the user.
+    //
+    // The lease is what makes it safe (`preview-gate.ts`: *"A LEASED node
+    // bypasses every gate … no visibility gate, no cadence cap"*), but a lease
+    // that failed to attach looks identical to one that worked until you move
+    // the card. So this moves the card.
+    await page.goto('/rack?seed=none');
+    await page.waitForFunction(() => !!(window as unknown as PatchWindow).__patch);
+    await page.evaluate(() => {
+      const w = window as unknown as PatchWindow;
+      w.__spawnAtFlowPos('lines', { x: 0, y: 0 });
+      w.__spawnAtFlowPos('videoOut', { x: 520, y: 0 });
+    });
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () =>
+            Object.values((window as unknown as PatchWindow).__patch.nodes).filter(
+              (n) => n.type === 'lines' || n.type === 'videoOut',
+            ).length,
+        ),
+      )
+      .toBe(2);
+    const ids = await page.evaluate(() =>
+      Object.entries((window as unknown as PatchWindow).__patch.nodes).map(([id, n]) => ({ id, type: n.type })),
+    );
+    const src = ids.find((n) => n.type === 'lines')!.id;
+    const vo = ids.find((n) => n.type === 'videoOut')!.id;
+    await expect(page.locator(`.svelte-flow__node[data-id="${vo}"] [data-testid="module-shell"]`)).toBeVisible();
+    await wire(page, src, 'out', vo, 'in');
+
+    await page.locator(`.svelte-flow__node[data-id="${vo}"]`).click({ button: 'right', position: { x: 6, y: 6 } });
+    await page.getByTestId('ctx-detach-display').click();
+    await expect(panel(page)).toHaveCount(1);
+
+    // PAN THE RACK FAR AWAY so the card leaves the viewport entirely. The panel
+    // is viewport-fixed, so it stays exactly where it is.
+    await page.evaluate(() => {
+      const w = window as unknown as { __flow: { setViewport: (vp: { x: number; y: number; zoom: number }) => void } };
+      w.__flow.setViewport({ x: -40_000, y: -40_000, zoom: 1 });
+    });
+    await expect(page.locator(`.svelte-flow__node[data-id="${vo}"]`)).not.toBeInViewport();
+    await expect(panel(page), 'the floating window is still on screen').toBeVisible();
+
+    const read = (): Promise<string> =>
+      page.evaluate(() => {
+        const c = document.querySelector('[data-testid="detached-display-canvas"]') as HTMLCanvasElement | null;
+        try {
+          return c?.toDataURL() ?? '';
+        } catch {
+          return '';
+        }
+      });
+    const first = await read();
+    expect(first, 'the panel painted at all with its card off-screen').not.toBe('');
+    await expect
+      .poll(read, {
+        message: 'the panel keeps repainting while its card is off-screen (lease beats the visibility gate)',
+        timeout: 15_000,
+      })
+      .not.toBe(first);
+  });
+
   test('DETACH clears full frame — the card must not stay expanded around a picture that left it', async ({ page }) => {
     // Regression (#1821 review): two of the three detach entry points cleared
     // `fullFrame` and the NODE MENU — the only detach route a rack tile has —
@@ -436,6 +537,10 @@ test.describe('videoOut — bridge on delete', () => {
     const ids = await seed(page, ['lines', 'videoOut', 'sourcery']);
     await wire(page, ids.lines!, 'out', ids.videoOut!, 'in');
     await wire(page, ids.videoOut!, 'out', ids.sourcery!, 'a');
+    // The arrange is DONE — close the capture window so the delete is its own
+    // stack item rather than merging into the fixture (see `sealArrange`).
+    await sealArrange(page);
+    const before = await undoDepth(page);
 
     await nodeMenu(page, ids.videoOut!);
     await deleteViaNodeMenu(page);
@@ -445,7 +550,11 @@ test.describe('videoOut — bridge on delete', () => {
       .poll(() => edgeList(page), { message: 'the chain is maintained across the deleted OUTPUT' })
       .toEqual([`${ids.lines}.out→${ids.sourcery}.a`]);
 
-    // ⚠ ONE undo, not two: the node and the bridge move together.
+    // ⚠ ONE undo entry, MEASURED rather than inferred from the effect: the
+    // node and the bridge are one transaction, so the stack grows by exactly 1.
+    await expect
+      .poll(() => undoDepth(page), { message: 'delete + bridge is ONE undo entry' })
+      .toBe(before + 1);
     await page.keyboard.press('Meta+z');
     await expect.poll(() => nodeIds(page)).toContain(ids.videoOut);
     await expect.poll(() => edgeList(page).then((l) => l.sort())).toEqual(
@@ -460,6 +569,7 @@ test.describe('videoOut — bridge on delete', () => {
     const ids = await seed(page, ['lines', 'videoOut', 'sourcery']);
     await wire(page, ids.lines!, 'out', ids.videoOut!, 'in');
     await wire(page, ids.videoOut!, 'out', ids.sourcery!, 'a');
+    await sealArrange(page);
 
     await page.locator(`.svelte-flow__node[data-id="${ids.videoOut}"]`).click({ position: { x: 6, y: 6 } });
     await page.keyboard.press('Backspace');
@@ -471,6 +581,7 @@ test.describe('videoOut — bridge on delete', () => {
   test('ONE SIDE FREE is an ordinary delete — no invented cable', async ({ page }) => {
     const ids = await seed(page, ['lines', 'videoOut', 'sourcery']);
     await wire(page, ids.lines!, 'out', ids.videoOut!, 'in'); // output left free
+    await sealArrange(page);
 
     await nodeMenu(page, ids.videoOut!);
     await deleteViaNodeMenu(page);
@@ -484,6 +595,7 @@ test.describe('videoOut — bridge on delete', () => {
     // DETECTED rather than fall out of the both-sides-patched precondition.
     const ids = await seed(page, ['videoOut']);
     await wire(page, ids.videoOut!, 'out', ids.videoOut!, 'in');
+    await sealArrange(page);
 
     await nodeMenu(page, ids.videoOut!);
     await deleteViaNodeMenu(page);
@@ -498,6 +610,7 @@ test.describe('videoOut — bridge on delete', () => {
     await wire(page, ids.lines!, 'out', ids.recorderbox!, 'in');
     await wire(page, ids.lines!, 'out', ids.videoOut!, 'in');
     await wire(page, ids.videoOut!, 'out', ids.sourcery!, 'a');
+    await sealArrange(page);
 
     await nodeMenu(page, ids.videoOut!);
     await deleteViaNodeMenu(page);

@@ -315,6 +315,36 @@
     if (!canvasEl) return;
     const ctx2d = canvasEl.getContext('2d', { alpha: false });
     if (!ctx2d) return;
+    // ⚠ `blitOutputToDrawingBuffer`, NOT `blitOutputForPreview` (#1802/#1836) —
+    // a DECISION, not an oversight. The gated call answers "should this CARD
+    // repaint its preview this frame", and both of its gates read things that
+    // are wrong for this surface:
+    //
+    //   · the VISIBILITY gate is fed by an IntersectionObserver over
+    //     `.svelte-flow__node[data-id]` elements (video-card-visibility.ts). This
+    //     panel is deliberately NOT a flow node — that is what makes "no patch
+    //     wires" structural — so the only rect the gate could read is the CARD's,
+    //     and the card's position says nothing about whether this window is on
+    //     screen. Scrolling the rack away would blank a window sitting in front
+    //     of the user.
+    //   · the CADENCE cap exists to halve the cost of a preview thumbnail. This
+    //     is the primary surface for the node, which is exactly the case
+    //     preview-gate.ts exempts.
+    //
+    // The lease this component holds earns both exemptions — a leased node
+    // bypasses every gate — so the two calls are equivalent while it is attached.
+    //
+    // ⚠ THE LEASE IS LOAD-BEARING AND SINGULAR. An earlier version of this note
+    // called the ungated blit "braces" to the lease's "belt". MEASURED, that is
+    // false: with the lease removed and THIS call left in place, the panel still
+    // stops repainting once its card is panned off-screen. The reason is one
+    // level down — the blit marks the node watched, but pull evaluation VETOES a
+    // watch from a node whose card the IntersectionObserver has reported
+    // invisible, so the upstream chain stops and this blit copies a stale FBO.
+    // Ungating the blit buys nothing without the lease; the lease is the whole
+    // mechanism. (Both legs are pinned: the spec's off-screen test fails with the
+    // lease removed, whichever blit call is used.)
+    //
     // ⚠ THE BLIT AND THE READ MUST BE ONE SYNCHRONOUS BLOCK. A WebGL drawing
     // buffer only holds its content until the frame ends, and every OUTPUT
     // surface re-blits its OWN node id immediately before reading — that is how

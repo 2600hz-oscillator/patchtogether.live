@@ -201,28 +201,20 @@
       if (ew !== engineW) engineW = ew;
       if (eh !== engineH) engineH = eh;
       if (!harnessFrozen() && !document.hidden) {
-        // ⚠ markWatched RUNS EVEN WHILE DETACHED, and skipping the blit is
-        // exactly why it has to. `blitOutputToDrawingBuffer` marks the node
-        // watched as its first act — *"a blit IS the 'something is showing this
-        // node' signal for pull evaluation"* (engine.ts) — so a surface that
-        // stops blitting silently stops watching, and pull-eval drops the
-        // upstream chain after WATCH_TTL_MS. Only the READBACK is skipped,
-        // because the floating panel is doing it instead: detaching MOVES the
-        // picture, it does not clone it (the #1802 per-card cost), and it never
-        // stops the engine (the collapse-kills-the-producer class).
-        videoEngine.markWatched?.(nodeId);
-        // ⚠ NO `|| expanded` ESCAPE HATCH. An earlier draft blitted while
-        // detached-and-expanded, on the theory that fullscreen/present need a
-        // live canvas. They do not, and the hatch bought a SECOND blit of the
-        // same node id on top of the floating panel's — the exact double-pay the
-        // panel's header promises does not happen:
-        //   · the `.vo-detached` plate covers this canvas whenever `detached`,
-        //     so "fullscreen while detached" would full-screen a label;
-        //   · the Present popup does its OWN `blitOutputToDrawingBuffer` and
-        //     reads `engine.canvas` (node-present-registry), which is why it
-        //     survives this component unmounting at all.
-        // Detach supersedes, exactly as it does on the card.
-        if (!detached) drawOutput(videoEngine);
+        // ⚠ WHILE DETACHED THIS SURFACE SHOWS THE `display detached` PLATE,
+        // not the picture — so it neither blits NOR marks watched, and drops out
+        // of the observer set. *"A card that is not showing anything must not be
+        // an observer, and the way to stop being one is to stop blitting,
+        // because the blit IS the watch mark"* (preview-gate.ts, #1802/#1836,
+        // measured on a backdraft that kept a chain at 481 frames in 4 s for a
+        // picture on no surface).
+        //
+        // The observer MOVED to `DetachedDisplay`, which blits this node every
+        // frame and holds a render lease. Re-attaching brings it back here.
+        if (!detached) {
+          videoEngine.markWatched?.(nodeId);
+          drawOutput(videoEngine);
+        }
       }
     }
     rafId = requestAnimationFrame(tick);

@@ -298,27 +298,25 @@
       rafId = requestAnimationFrame(draw);
       return;
     }
-    // ⚠ WHILE DETACHED, THIS CARD DOES NOT BLIT — the floating panel does, and
-    // paying twice for one picture is exactly the per-card cost #1802 is about.
+    // ⚠ WHILE DETACHED THIS CARD IS NOT A SURFACE, so it neither blits NOR
+    // marks watched — it drops out of the observer set entirely.
     //
-    // ⚠ BUT `markWatched` MUST STILL RUN, AND SKIPPING THE BLIT IS PRECISELY WHY.
-    // `VideoEngine.blitOutputToDrawingBuffer` marks the node watched as its FIRST
-    // act, and says so: *"a blit IS the 'something is showing this node' signal
-    // for pull evaluation"* (engine.ts, above `markWatched(nodeId)`). So a card
-    // that stops blitting silently stops WATCHING, pull-eval drops the upstream
-    // chain after WATCH_TTL_MS, and the detached panel goes stale — the
-    // collapse-kills-the-producer class (#1721 collapsing a group killed a
-    // CARD_PRODUCER pump; #1728 collapsing a card blanked the Launchpad). Calling
-    // it explicitly here keeps the signal while dropping only the readback.
-    // (The panel independently marks watched AND holds a render lease, so this is
-    // belt-and-braces — but the belt is the one that survives the panel changing.)
-    // Detaching changes what THIS SURFACE paints, never what the engine produces.
+    // ⚠ AN EARLIER VERSION OF THIS BRANCH CALLED `markWatched` HERE, on the
+    // reasoning that "a blit IS the watch mark, so a card that stops blitting
+    // stops watching". That reasoning is right and the conclusion was wrong, and
+    // #1802/#1836 measured exactly why: a backdraft card that skipped its blit
+    // but kept marking watched held `toybox → backdraft` at 481 frames in 4 s
+    // for a picture presented on NO surface. *"A card that is not showing
+    // anything must not be an observer, and the way to stop being one is to stop
+    // blitting, because the blit IS the watch mark"* (preview-gate.ts).
+    //
+    // Detaching does not make the picture unobserved — it MOVES the observer.
+    // `DetachedDisplay` blits this node every frame (which marks it watched) AND
+    // holds a render lease, and a leased node bypasses the visibility gate and
+    // the cadence cap by design. So the chain stays alive because the surface
+    // that is actually showing it says so, which is the invariant #1836 asks
+    // for, rather than because a card that shows nothing votes for it.
     if (detached) {
-      try {
-        videoEngine.markWatched?.(id);
-      } catch {
-        // Never let an engine error nuke the rAF loop.
-      }
       rafId = requestAnimationFrame(draw);
       return;
     }
