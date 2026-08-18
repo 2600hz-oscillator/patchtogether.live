@@ -67,7 +67,7 @@ function knobBand(id: string, n: number, prefix = id): { band: DockFaceBand; par
     paramId: p.id,
     label: p.label!,
   }));
-  return { band: { id, label: id, hint: '', controls, clusters: [] }, params };
+  return { band: { id, label: id, hint: '', controls, clusters: [], clusterFlow: 'stack' }, params };
 }
 
 /** A def + bands from a list of `[bandId, controlCount]` pairs. */
@@ -510,6 +510,7 @@ describe('the live faces', () => {
           ],
         },
       ],
+      clusterFlow: 'stack',
     };
     expect(bandControlCount(band)).toBe(3);
   });
