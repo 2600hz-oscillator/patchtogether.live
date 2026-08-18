@@ -204,8 +204,39 @@ async function readOutputSnapshot(
   }, outNodeId);
 }
 
+// ── ⏸ FLAKE-PARK #1847 ──────────────────────────────────────────────────────
+// tidyVco failed then PASSED ON RETRY at the same SHA on BOTH notes during the
+// 96 h CI census to 2026-08-18 (C4: 4 observations; C5: 11 across 6 SHAs and 6
+// branches). Every one of those jobs reported SUCCESS, so the debt never showed
+// in the green/red signal. Parked with `test.fixme`, not deleted; the assertion
+// body below is untouched and still runs for every other PITCHED_VOICE.
+// LOST WHILE PARKED: the owner guarantee that "default tuning always leads to
+// sequence notes matching reality" FOR TIDYVCO — a sequenced note at SHIPPED
+// DEFAULTS (no param overrides) measuring the right real-world Hz at the AUDIBLE
+// output, through the REAL sequencer→1 V/oct→voice chain. The C5 leg additionally
+// carries the chain-liveness argument (0 V is indistinguishable from unpatched,
+// so only the 1 V case proves the cable is live) — parking it removes the only
+// non-fakeable leg for this voice.
+// Parked per VOICE, so both notes go together; re-enable only on a root cause
+// (#1847), never because "it passes now".
+const FLAKE_PARK_1847: Record<string, string> = {
+  tidyVco:
+    'FLAKE-PARK #1847 — nondeterministic on CI: 15 recovered-on-retry observations across both notes in the 96 h census to 2026-08-18; parked until root-caused',
+};
+
 for (const voice of PITCHED_VOICES) {
   for (const note of NOTES) {
+    const parkReason = FLAKE_PARK_1847[voice.type];
+    if (parkReason) {
+      test.fixme(
+        `${voice.type} @ FACTORY DEFAULTS: sequenced ${note.name} measures ≈ ${note.hz.toFixed(2)} Hz at the audible output`,
+        { annotation: { type: 'fixme', description: parkReason } },
+        () => {
+          /* FLAKE-PARKED — see FLAKE_PARK_1847 and #1847 */
+        },
+      );
+      continue;
+    }
     test(`${voice.type} @ FACTORY DEFAULTS: sequenced ${note.name} measures ≈ ${note.hz.toFixed(2)} Hz at the audible output`, async ({ page, rack, errorWatch }) => {
       void rack;
       await spawnPatch(

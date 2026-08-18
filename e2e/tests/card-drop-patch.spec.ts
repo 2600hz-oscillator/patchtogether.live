@@ -152,7 +152,12 @@ test.describe('drop a card on a card → the patch modal', () => {
     await expect.poll(() => nodePos(page, bdId)).not.toEqual(before);
   });
 
-  test('dropping the CENTRE on another card opens the modal and SNAPS THE CARD BACK', async ({ page }) => {
+  // ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are UNCHANGED.
+  // NONDETERMINISM: 1 recovered-on-retry observation(s) across 1 SHA(s) / 1 branch(es) in the
+  // 96 h CI census to 2026-08-18 — never a hard failure, so every one of those jobs reported SUCCESS.
+  // LOST WHILE PARKED: the entry point of the whole feature — a centre-drop onto another card opens the patch modal at all, and the dragged card returns to its origin instead of being left displaced.
+  // Re-enable only on a root cause (#1847); "it passes now" is not one.
+  test.fixme('dropping the CENTRE on another card opens the modal and SNAPS THE CARD BACK', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 1 recovered-on-retry observation in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page }) => {
     const { camId, bdId } = await seedTwoVideoCards(page);
     const before = await nodePos(page, bdId);
 
@@ -165,7 +170,12 @@ test.describe('drop a card on a card → the patch modal', () => {
     await expect.poll(() => nodePos(page, bdId)).toEqual(before);
   });
 
-  test('refusals are COLLAPSED behind a summary that carries its count', async ({ page }) => {
+  // ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are UNCHANGED.
+  // NONDETERMINISM: 17 recovered-on-retry observation(s) across 17 SHA(s) / 9 branch(es) in the
+  // 96 h CI census to 2026-08-18 — never a hard failure, so every one of those jobs reported SUCCESS.
+  // LOST WHILE PARKED: that incompatible port pairs are refused and summarised rather than silently dropped — the affordance that tells the user WHY a cable they expected did not appear.
+  // Re-enable only on a root cause (#1847); "it passes now" is not one.
+  test.fixme('refusals are COLLAPSED behind a summary that carries its count', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 17 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page }) => {
     const { camId, bdId } = await seedTwoVideoCards(page);
     await dragCardTo(page, bdId, await centreOf(page, camId));
     await expect(scrim(page)).toBeVisible();
@@ -192,7 +202,12 @@ test.describe('drop a card on a card → the patch modal', () => {
     await expect(scrim(page).locator('[data-testid="drop-row"][data-state="offered"]').first()).toBeVisible();
   });
 
-  test('staged rows commit as REAL edges, and ONE undo removes the whole session', async ({ page }) => {
+  // ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are UNCHANGED.
+  // NONDETERMINISM: 27 recovered-on-retry observation(s) across 27 SHA(s) / 11 branch(es) in the
+  // 96 h CI census to 2026-08-18 — never a hard failure, so every one of those jobs reported SUCCESS.
+  // LOST WHILE PARKED: the commit path: staged rows become real edges in the graph, and the whole multi-cable session is a SINGLE undo — broken atomicity here leaves half a patch behind on Cmd-Z.
+  // Re-enable only on a root cause (#1847); "it passes now" is not one.
+  test.fixme('staged rows commit as REAL edges, and ONE undo removes the whole session', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 27 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page }) => {
     const { camId, bdId } = await seedTwoVideoCards(page);
     const startEdges = await edgeIds(page);
     await dragCardTo(page, bdId, await centreOf(page, camId));
@@ -223,7 +238,12 @@ test.describe('drop a card on a card → the patch modal', () => {
     await expect.poll(() => edgeIds(page)).toHaveLength(startEdges.length);
   });
 
-  test('cancelling writes no edge and leaves the card where it started', async ({ page }) => {
+  // ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are UNCHANGED.
+  // NONDETERMINISM: 37 recovered-on-retry observation(s) across 37 SHA(s) / 16 branch(es) in the
+  // 96 h CI census to 2026-08-18 — never a hard failure, so every one of those jobs reported SUCCESS.
+  // LOST WHILE PARKED: the paired 'stayed shut' half of the modal contract: cancelling a drop-to-patch writes NO edge and snaps the card back — without it, a modal that opens on every drag would go unnoticed.
+  // Re-enable only on a root cause (#1847); "it passes now" is not one.
+  test.fixme('cancelling writes no edge and leaves the card where it started', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 37 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page }) => {
     const { camId, bdId } = await seedTwoVideoCards(page);
     const before = await nodePos(page, bdId);
     const startEdges = await edgeIds(page);
@@ -237,7 +257,12 @@ test.describe('drop a card on a card → the patch modal', () => {
     await expect.poll(() => nodePos(page, bdId)).toEqual(before);
   });
 
-  test('"leave it there" is the escape hatch for a drop that really was a move', async ({ page }) => {
+  // ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are UNCHANGED.
+  // NONDETERMINISM: 39 recovered-on-retry observation(s) across 39 SHA(s) / 16 branch(es) in the
+  // 96 h CI census to 2026-08-18 — never a hard failure, so every one of those jobs reported SUCCESS.
+  // LOST WHILE PARKED: the escape hatch that keeps drop-to-patch from hijacking the most-used gesture in the app: a drop that was really a MOVE commits as a move, leaving the card where it landed and writing no edge.
+  // Re-enable only on a root cause (#1847); "it passes now" is not one.
+  test.fixme('"leave it there" is the escape hatch for a drop that really was a move', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 39 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page }) => {
     // Snap-back is the safe default; this is the labelled, explicit override,
     // and it must NOT be what happens by accident.
     const { camId, bdId } = await seedTwoVideoCards(page);
@@ -251,7 +276,12 @@ test.describe('drop a card on a card → the patch modal', () => {
     await expect.poll(() => nodePos(page, bdId)).not.toEqual(before);
   });
 
-  test('TAB inverts the modal and does NOT flip the rack behind it', async ({ page }) => {
+  // ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are UNCHANGED.
+  // NONDETERMINISM: 40 recovered-on-retry observation(s) across 40 SHA(s) / 16 branch(es) in the
+  // 96 h CI census to 2026-08-18 — never a hard failure, so every one of those jobs reported SUCCESS.
+  // LOST WHILE PARKED: that TAB — the app's core flip gesture — is captured by the patch modal and does not leak through to flip the rack behind it (an owner-protected gesture per the no-keyboard-a11y ruling).
+  // Re-enable only on a root cause (#1847); "it passes now" is not one.
+  test.fixme('TAB inverts the modal and does NOT flip the rack behind it', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 40 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page }) => {
     // The third flip-key claimant. Precedence lives in FLIP_KEY_CLAIMANTS, so
     // the modal owns Tab while it is open and the canvas-wide flip must stay
     // put — the phase-divergence class this codebase has already had once.
@@ -269,7 +299,12 @@ test.describe('drop a card on a card → the patch modal', () => {
     expect(await page.locator('.flow').getAttribute('data-rear-view')).toBe(rearBefore);
   });
 
-  test('the pickup ghost draws for a PLAIN carry and is SUPPRESSED under the modal', async ({
+  // ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are UNCHANGED.
+  // NONDETERMINISM: 7 recovered-on-retry observation(s) across 7 SHA(s) / 5 branch(es) in the
+  // 96 h CI census to 2026-08-18 — never a hard failure, so every one of those jobs reported SUCCESS.
+  // LOST WHILE PARKED: the drag-origin capture the `__handleNodeDragStop` hook structurally cannot see — that the pickup ghost draws for a plain carry and is suppressed once the modal owns the gesture.
+  // Re-enable only on a root cause (#1847); "it passes now" is not one.
+  test.fixme('the pickup ghost draws for a PLAIN carry and is SUPPRESSED under the modal', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 7 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({
     page,
   }) => {
     // #1838, owner: "in this view we do not want the dangling dotted patch
@@ -310,7 +345,12 @@ test.describe('drop a card on a card → the patch modal', () => {
     expect(await pickupMode(page)).toBe('pickup');
   });
 
-  test('the rear backpanel is COLLAPSED by default behind a counted chevron', async ({ page }) => {
+  // ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are UNCHANGED.
+  // NONDETERMINISM: 7 recovered-on-retry observation(s) across 7 SHA(s) / 5 branch(es) in the
+  // 96 h CI census to 2026-08-18 — never a hard failure, so every one of those jobs reported SUCCESS.
+  // LOST WHILE PARKED: that the rear backpanel does not open by default — an expanded backpanel on every drop is the difference between one click per cable and the drill-down storm the feature exists to remove.
+  // Re-enable only on a root cause (#1847); "it passes now" is not one.
+  test.fixme('the rear backpanel is COLLAPSED by default behind a counted chevron', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 7 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page }) => {
     // #1838, owner: "i would also like this content collapsed by default, with
     // a chevron to expand it? hiding the unpatchable connections by default.
     // this was part of the original spec" — the spec being the refusal

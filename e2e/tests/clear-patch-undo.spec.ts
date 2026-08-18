@@ -45,7 +45,12 @@ async function readGraph(page: Page): Promise<{ nodes: string[]; edges: string[]
   });
 }
 
-test('Clear patch is undoable: Clear empties the rack, undo restores nodes + edge', async ({ page, rackDefault }) => {
+// ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are UNCHANGED.
+// NONDETERMINISM: 6 recovered-on-retry observation(s) across 6 SHA(s) / 6 branch(es) in the
+// 96 h CI census to 2026-08-18 — never a hard failure, so every one of those jobs reported SUCCESS.
+// LOST WHILE PARKED: the only safety net behind a confirm-less destructive toolbar button — Clear must be UNDOABLE, and the origin-less `ydoc.transact` that made it irreversible is exactly the regression this catches.
+// Re-enable only on a root cause (#1847); "it passes now" is not one.
+test.fixme('Clear patch is undoable: Clear empties the rack, undo restores nodes + edge', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 6 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page, rackDefault }) => {
   // 1. Spawn two real-engine modules + a (cv→cv) edge between them. spawnPatch
   //    bootstraps the engine, mutates the graph in one transact, and waits for
   //    both node wrappers to mount in the DOM (bounded mountTimeout).

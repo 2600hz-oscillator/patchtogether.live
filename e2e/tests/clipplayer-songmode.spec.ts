@@ -63,7 +63,12 @@ async function readData(page: Page, nodeId: string): Promise<CPData> {
   }, nodeId);
 }
 
-test('song mode: arming RECORD captures clip launches into the arrangement', async ({ page, rack }) => {
+// ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are UNCHANGED.
+// NONDETERMINISM: 7 recovered-on-retry observation(s) across 7 SHA(s) / 4 branch(es) in the
+// 96 h CI census to 2026-08-18 — never a hard failure, so every one of those jobs reported SUCCESS.
+// LOST WHILE PARKED: the capture half of song mode: arming RECORD writes clip launches into node.data.arrangement instead of dropping them.
+// Re-enable only on a root cause (#1847); "it passes now" is not one.
+test.fixme('song mode: arming RECORD captures clip launches into the arrangement', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 7 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page, rack }) => {
   // quantize off → launches apply immediately (deterministic capture). No
   // TIMELORDE → free-run.
   await spawnPatch(page, [
@@ -91,7 +96,12 @@ test('song mode: arming RECORD captures clip launches into the arrangement', asy
   for (let i = 1; i < evs.length; i++) expect(evs[i].beat).toBeGreaterThanOrEqual(evs[i - 1].beat);
 });
 
-test('song mode: the SES/ARR button flips clipMode', async ({ page, rack }) => {
+// ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are UNCHANGED.
+// NONDETERMINISM: 7 recovered-on-retry observation(s) across 7 SHA(s) / 4 branch(es) in the
+// 96 h CI census to 2026-08-18 — never a hard failure, so every one of those jobs reported SUCCESS.
+// LOST WHILE PARKED: that the SES/ARR button flips clipMode in synced state — the mode switch the other two song-mode assertions depend on.
+// Re-enable only on a root cause (#1847); "it passes now" is not one.
+test.fixme('song mode: the SES/ARR button flips clipMode', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 7 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page, rack }) => {
   await spawnPatch(page, [{ id: 'cp', type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio' }]);
   const modeBtn = page.getByTestId('clipplayer-mode-cp');
   await expect(modeBtn).toHaveText('SES');
@@ -102,7 +112,12 @@ test('song mode: the SES/ARR button flips clipMode', async ({ page, rack }) => {
   await expect(modeBtn).toHaveText('SES');
 });
 
-test('song mode: ARRANGEMENT playback launches lanes from the recorded log', async ({ page, rack }) => {
+// ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are UNCHANGED.
+// NONDETERMINISM: 4 recovered-on-retry observation(s) across 4 SHA(s) / 3 branch(es) in the
+// 96 h CI census to 2026-08-18 — never a hard failure, so every one of those jobs reported SUCCESS.
+// LOST WHILE PARKED: arrangement playback — that the recorded launch log actually re-launches lanes, which is the entire point of song mode.
+// Re-enable only on a root cause (#1847); "it passes now" is not one.
+test.fixme('song mode: ARRANGEMENT playback launches lanes from the recorded log', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 4 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page, rack }) => {
   await spawnPatch(page, [{ id: 'cp', type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio' }]);
   await seedClips(page, 'cp', [0, 64]);
   // Inject a pre-built arrangement (lane 0 + lane 1 both launch slot 0 at beat 0)

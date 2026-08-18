@@ -188,7 +188,12 @@ async function exportAndRead(page: Page): Promise<ExportedZip> {
 }
 
 test.describe('#1589 — TOYBOX layer media belongs to the NODE', () => {
-  test('a video layer survives the tray being dismissed, and Export still carries its exact bytes', async ({ page }) => {
+  // ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are UNCHANGED.
+  // NONDETERMINISM: 6 recovered-on-retry observation(s) across 3 SHA(s) / 3 branch(es) in the
+  // 96 h CI census to 2026-08-18 — never a hard failure, so every one of those jobs reported SUCCESS.
+  // LOST WHILE PARKED: #1589 — collapsing TOYBOX must not drop its video layers, and Export must never write a preset it knows is incomplete; the card's onDestroy tearing down every layer is the live failure mode.
+  // Re-enable only on a root cause (#1847); "it passes now" is not one.
+  test.fixme('a video layer survives the tray being dismissed, and Export still carries its exact bytes', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 6 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page }) => {
     test.setTimeout(180_000);
     const errors = await boot(page);
 

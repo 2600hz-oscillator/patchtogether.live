@@ -43,7 +43,12 @@ async function setTransport(page: import('@playwright/test').Page, running: numb
   }, running);
 }
 
-test('@clipplayer card note-editor erase RECONCILES a playing clip — added notes sound, clearing silences them', async ({ page, rack, errorWatch }) => {
+// ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are UNCHANGED.
+// NONDETERMINISM: 2 recovered-on-retry observation(s) across 1 SHA(s) / 1 branch(es) in the
+// 96 h CI census to 2026-08-18 — never a hard failure, so every one of those jobs reported SUCCESS.
+// LOST WHILE PARKED: the stale-note class: erasing a note on a PLAYING clip from the card editor must reconcile the scheduler, or the erased voice rings out with nothing on screen to explain it.
+// Re-enable only on a root cause (#1847); "it passes now" is not one.
+test.fixme('@clipplayer card note-editor erase RECONCILES a playing clip — added notes sound, clearing silences them', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 2 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page, rack, errorWatch }) => {
   // ARRANGE — everything up to the CLEAR click is setup, and it is expensive
   // and load-dependent: on run 31833587260 it ran to t=29.6 s of a 30 s budget
   // (eight cell clicks alone cost 13.9 s, 1.0-2.4 s each), so the 15 s silence

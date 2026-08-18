@@ -20,7 +20,12 @@ import { spawnPatch } from './_helpers';
 
 test.describe.configure({ mode: 'parallel' });
 
-test('drumseqz: drop module → 64-cell grid renders + Eucl sliders default to 0', async ({ page, rack }) => {
+// ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are UNCHANGED.
+// NONDETERMINISM: 13 recovered-on-retry observation(s) across 13 SHA(s) / 7 branch(es) in the
+// 96 h CI census to 2026-08-18 — never a hard failure, so every one of those jobs reported SUCCESS.
+// LOST WHILE PARKED: the module's first-paint contract — a full 64-cell grid and every Euclidean slider at its 0 default; a wrong default silently changes every new pattern.
+// Re-enable only on a root cause (#1847); "it passes now" is not one.
+test.fixme('drumseqz: drop module → 64-cell grid renders + Eucl sliders default to 0', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 13 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page, rack }) => {
   await spawnPatch(page, [
     { id: 'drum', type: 'drumseqz', params: { isPlaying: 0 } },
   ]);
@@ -49,7 +54,12 @@ test('drumseqz: drop module → 64-cell grid renders + Eucl sliders default to 0
   }
 });
 
-test('drumseqz: trk1_euclid=4 → steps 0/4/8/12 light up via Bjorklund rewrite', async ({ page, rack }) => {
+// ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are UNCHANGED.
+// NONDETERMINISM: 13 recovered-on-retry observation(s) across 13 SHA(s) / 7 branch(es) in the
+// 96 h CI census to 2026-08-18 — never a hard failure, so every one of those jobs reported SUCCESS.
+// LOST WHILE PARKED: the Bjorklund rewrite itself — that euclid=4 distributes to the right steps, and that hand-toggled steps survive until the next slider move.
+// Re-enable only on a root cause (#1847); "it passes now" is not one.
+test.fixme('drumseqz: trk1_euclid=4 → steps 0/4/8/12 light up via Bjorklund rewrite', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 13 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page, rack }) => {
   await spawnPatch(page, [
     { id: 'drum', type: 'drumseqz', params: { isPlaying: 0 } },
   ]);
@@ -125,7 +135,12 @@ test('drumseqz: trk1_euclid=4 → steps 0/4/8/12 light up via Bjorklund rewrite'
   expect(after).toEqual([true, true, true]);
 });
 
-test('drumseqz → drummergirl → audioOut: gate1 fires audio when trk1 has any pulse', async ({ page, rack }) => {
+// ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are UNCHANGED.
+// NONDETERMINISM: 14 recovered-on-retry observation(s) across 14 SHA(s) / 7 branch(es) in the
+// 96 h CI census to 2026-08-18 — never a hard failure, so every one of those jobs reported SUCCESS.
+// LOST WHILE PARKED: the real gate ConstantSource → CV-into-gate port path end to end (drumseqz → drummergirl → audioOut) — the chain proof behind every drum pattern the module produces.
+// Re-enable only on a root cause (#1847); "it passes now" is not one.
+test.fixme('drumseqz → drummergirl → audioOut: gate1 fires audio when trk1 has any pulse', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 14 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page, rack }) => {
   await spawnPatch(
     page,
     [

@@ -10,7 +10,7 @@ source tree, so they cannot go stale. Prose + roadmap: `docs/testing/README.md`.
 
 | Bucket | What | Count |
 | --- | --- | ---: |
-| 1 | HARD SKIPS / QUARANTINES (backlog → drive to 0) | 6 |
+| 1 | HARD SKIPS / QUARANTINES (backlog → drive to 0) | 79 |
 | 2 | COVERAGE EXEMPTIONS (deliberate auto-enrollment opt-outs) | 370 |
 | 3 | INFORMATIONAL-ONLY CI LANES (run, never block merge) | 1 |
 
@@ -25,7 +25,7 @@ number — a line number is invalidated by any edit above it:
 Jobs gated THROUGH the `ci` umbrella (a failure of any blocks merge) — 12:
 - `actionlint`, `art`, `behavioral-smoke`, `build`, `build-web`, `dsp-build`, `e2e`, `lint`, `typecheck`, `unit`, `webgl-attest`, `webgl-smoke`
 
-## Bucket 1 — hard skips / quarantines (6)
+## Bucket 1 — hard skips / quarantines (79)
 
 Every declaration-level test disable + the spawn-smoke quarantine map. Each is
 BACKLOG: reconcile by fixing (assert real behavior) or deleting (worthless) —
@@ -36,18 +36,91 @@ guards (`test.skip(cond, …)`) are env gates, not disables, and are excluded.
 - `packages/web/src/lib/audio/modules/treeohvox-parity.test.ts:261` — describe.skip — Open303 binary parity (run manually after producing reference WAV)
 - `packages/web/src/lib/audio/modules/treeohvox-parity.test.ts:29` — describe.skip — Open303 binary parity (run manually)
 
-### e2e — declaration-level disables (3)
+### e2e — declaration-level disables (73)
+- `e2e/tests/backdraft-preview-toggle.spec.ts:362` — test.fixme — the choice PERSISTS across a tab switch (the owner\
+- `e2e/tests/backdraft-preview-toggle.spec.ts:425` — test.fixme — ⚠ COLLAPSING DOES NOT KILL THE PRODUCER — the engine keeps advancing, and the picture comes back LIVE
+- `e2e/tests/backdraft-pure-tv.spec.ts:379` — test.fixme — CRITICAL — it breathes at high DRIVE, is still at low DRIVE, and recovers
+- `e2e/tests/blood-audio-output.spec.ts:185` — test.fixme — BLOOD music: in-level OPL3 music produces SUSTAINED audio on audio_l (standing still)
+- `e2e/tests/cable-drag-panel-lock.spec.ts:24` — test.fixme — click opens the menu; hover alone does not; outside-click closes
+- `e2e/tests/card-drop-patch.spec.ts:160` — test.fixme — dropping the CENTRE on another card opens the modal and SNAPS THE CARD BACK
+- `e2e/tests/card-drop-patch.spec.ts:178` — test.fixme — refusals are COLLAPSED behind a summary that carries its count
+- `e2e/tests/card-drop-patch.spec.ts:210` — test.fixme — staged rows commit as REAL edges, and ONE undo removes the whole session
+- `e2e/tests/card-drop-patch.spec.ts:246` — test.fixme — cancelling writes no edge and leaves the card where it started
+- `e2e/tests/card-drop-patch.spec.ts:265` — test.fixme — (no title)
+- `e2e/tests/card-drop-patch.spec.ts:284` — test.fixme — TAB inverts the modal and does NOT flip the rack behind it
+- `e2e/tests/card-drop-patch.spec.ts:307` — test.fixme — the pickup ghost draws for a PLAIN carry and is SUPPRESSED under the modal
+- `e2e/tests/card-drop-patch.spec.ts:353` — test.fixme — the rear backpanel is COLLAPSED by default behind a counted chevron
+- `e2e/tests/clap.spec.ts:68` — test.fixme — CLAP real chain: SEQUENCER → trigger_in → AUDIOOUT — audible RMS + clap-band-dominant spectrum
+- `e2e/tests/clear-patch-undo.spec.ts:53` — test.fixme — Clear patch is undoable: Clear empties the rack, undo restores nodes + edge
+- `e2e/tests/clear.spec.ts:8` — test.fixme — clear after voice demo removes all nodes + edges
+- `e2e/tests/clip-automation.spec.ts:483` — test.fixme — module-assign + per-lane arm: right-click module → lane 1 (card border) → arm lane → record while twisting → unassigned module records nothing → disarm → playback; note clip untouched
+- `e2e/tests/clip-automation.spec.ts:745` — test.fixme — per-clip automation: a MIDI CC on an automated param suspends only that param until the twist idles; CC-idle resumes
+- `e2e/tests/clip-prob-default.spec.ts:165` — test.fixme — @launchpad clip-default prob: SHIFT+clip → PROB page → level tap writes defaultProb; card recolours orange/purple
+- `e2e/tests/clip-prob-default.spec.ts:226` — test.fixme — @clipplayer clip-default prob 0 SILENCES a launched clip through the real chain
+- `e2e/tests/clipplayer-card-erase.spec.ts:51` — test.fixme — @clipplayer card note-editor erase RECONCILES a playing clip — added notes sound, clearing silences them
+- `e2e/tests/clipplayer-clip-view-grid.spec.ts:81` — test.fixme — clip-view: whole editable grid is shown at once, card grows with clip length, no scroll
+- `e2e/tests/clipplayer-controls.spec.ts:25` — test.fixme — clip player: per-lane MONO toggle flips data + replaces-on-add in the editor
+- `e2e/tests/clipplayer-controls.spec.ts:72` — test.fixme — TIMELORDE: the global transport (run) button flips running
+- `e2e/tests/clipplayer-controls.spec.ts:91` — test.fixme — TIMELORDE: the run button hides when an external transport (start_in) owns it
+- `e2e/tests/clipplayer-custom-scale.spec.ts:76` — test.fixme — custom scale: pick rows → APPLY hides the rest → hidden notes SURVIVE → REMOVE restores
+- `e2e/tests/clipplayer-grid-stability.spec.ts:152` — test.fixme — dock full-view: a pad click does not move the grid (and the sampler can see it if it does)
+- `e2e/tests/clipplayer-play-every.spec.ts:46` — test.fixme — @clipplayer card Play Every menu writes playEvery onto the note;
+- `e2e/tests/clipplayer-rate-reset.spec.ts:125` — test.fixme — per-lane rate: card dropdowns set 1/2 : 1 : 2x lanes advancing at a 1:2:4 ratio
+- `e2e/tests/clipplayer-rate-reset.spec.ts:228` — test.fixme — RST button: all active clips snap back to step 1 and keep playing
+- `e2e/tests/clipplayer-songmode.spec.ts:104` — test.fixme — song mode: the SES/ARR button flips clipMode
+- `e2e/tests/clipplayer-songmode.spec.ts:120` — test.fixme — song mode: ARRANGEMENT playback launches lanes from the recorded log
+- `e2e/tests/clipplayer-songmode.spec.ts:71` — test.fixme — song mode: arming RECORD captures clip launches into the arrangement
+- `e2e/tests/clipplayer-transport-no-controller.spec.ts:86` — test.fixme — card transport starts + stops with NO controller connected
+- `e2e/tests/clipplayer-transport-no-controller.spec.ts:96` — test.fixme — the mere presence of a push2Control module does NOT disable card transport
+- `e2e/tests/control-surface.spec.ts:310` — test.fixme — card grows so ALL groups + knobs render within bounds (locked + unlocked)
+- `e2e/tests/coverage-groups-3-4-5.spec.ts:59` — test.fixme — lfo: phase outputs emit cv that crosses zero
+- `e2e/tests/cv-range-uniformity.spec.ts:220` — test.fixme — LFO sweeps MIXMSTRS ch1 EQ low (-12..+12 dB linear) across full range
+- `e2e/tests/drumseqz.spec.ts:143` — test.fixme — drumseqz → drummergirl → audioOut: gate1 fires audio when trk1 has any pulse
+- `e2e/tests/drumseqz.spec.ts:28` — test.fixme — drumseqz: drop module → 64-cell grid renders + Eucl sliders default to 0
+- `e2e/tests/drumseqz.spec.ts:62` — test.fixme — drumseqz: trk1_euclid=4 → steps 0/4/8/12 light up via Bjorklund rewrite
+- `e2e/tests/duplicate-module.spec.ts:37` — test.fixme — right-click → Duplicate creates a clone with same params, fresh id, offset position
+- `e2e/tests/duplicate-module.spec.ts:97` — test.fixme — right-click → Duplicate deep-clones data (mutating dup does not affect source)
 - `e2e/tests/edges.spec.ts:139` — test.fixme — raising THICKNESS increases edge pixels
+- `e2e/tests/illogic-face.spec.ts:427` — test.fixme — IN A REAL BROWSER: the logic jacks are a clean gate, and the knobs do not reach them
 - `e2e/tests/in-card-title.spec.ts:109` — test.fixme — rename in A appears in B inside the in-card title (peer Yjs sync)
+- `e2e/tests/launchpad-keys-record.spec.ts:166` — test.fixme — @launchpad KEYS live audition — playing a keyboard pad is AUDIBLE (empty clip, transport running)
+- `e2e/tests/launchpad-perf-controls.spec.ts:182` — test.fixme — @launchpad RESET pad snaps every active lane back to step 1 (control-deck)
+- `e2e/tests/layers-survive-card-collapse.spec.ts:196` — test.fixme — a video layer survives the tray being dismissed, and Export still carries its exact bytes
+- `e2e/tests/lushgarden.spec.ts:244` — test.fixme — background input passes through the clean output outside plant silhouettes
+- `e2e/tests/mapper.spec.ts:146` — test.fixme — raising THRESHOLD shrinks the keyed area; lowering grows it
+- `e2e/tests/matrixmix.spec.ts:285` — test.fixme — Sequenced VCO: matrix unpatch + re-patch, then Cmd-Z all the way back to the exact starting patch
+- `e2e/tests/nibbles.spec.ts:64` — test.fixme — nibbles: AUTO on → game advances within 5s (length_cv leaves default; snake grows or dies)
+- `e2e/tests/patch-load-leak.spec.ts:267` — test.fixme — five consecutive loads do not accumulate
+- `e2e/tests/patch-panel.spec.ts:211` — test.fixme — edge-alignment: left trigger anchors menu left; right trigger anchors menu right
+- `e2e/tests/peakstate-render-smoke.spec.ts:166` — test.fixme — per-port gate: unconsumed outputs stay dark, patched outputs render
+- `e2e/tests/present-survives-card-collapse.spec.ts:148` — test.fixme — collapsing the expanded card leaves the projector open AND live
 - `e2e/tests/recorderbox.spec.ts:494` — test.fixme — RECORDERBOX records a real VCO + ACIDWARP into a crash-recoverable MP4
+- `e2e/tests/reshaper-shapedramps.spec.ts:95` — test.fixme — linear (h_lin/v_lin) wiring acts like a clean raster passthrough
+- `e2e/tests/scope-tuner.spec.ts:18` — test.fixme — ANALOG-VCO at A4 → pitch=440Hz / note=A4 / center hash visible
+- `e2e/tests/score.spec.ts:250` — test.fixme — score: every triplet position SOUNDS — all three notes of a triplet group
+- `e2e/tests/shapegen-clock.spec.ts:162` — test.fixme — rising edges regenerate; within-hold window holds; stopped clock freezes regen count
+- `e2e/tests/wavecel-video-outs.spec.ts:108` — test.fixme — WAVECEL.scope_out -> OUTPUT renders a structured, frame-stable waveform trace
+- `e2e/tests/workflow-channel-columns.spec.ts:694` — test.fixme — ADDITIVE: adding a CV Buddy tap to an in-app source lane leaves its audio RMS unchanged
+- `e2e/tests/workflow-dock-ux.spec.ts:143` — test.fixme — expanding B while A is open SPLITS the dock; a third replaces the oldest — migrated AND legacy cards
+- `e2e/tests/workflow-dock-ux.spec.ts:207` — test.fixme — patch drill-down opens adjacent to the tile at BOTH screen edges
+- `e2e/tests/workflow-dock-ux.spec.ts:264` — test.fixme — the dock full-view shell renders NO lane rail; the rear card is its patch surface
+- `e2e/tests/workflow-dock.spec.ts:198` — test.fixme — independent zoom: ± steps the discrete scale and resizes the rail frame; ctrl+wheel is guarded
+- `e2e/tests/workflow-shell-faces.spec.ts:72` — test.fixme — adsr renders its SHELL face in-lane (not the placeholder) + the dock shows its pages
+- `e2e/tests/workflow-shell.spec.ts:1018` — test.fixme — 4-stack lane: ≥90px headroom above the top tile, ONE shared band top, badges fully visible
+- `e2e/tests/workflow-shell.spec.ts:504` — test.fixme — tile header: domain-colour rule ── gap ── FULL long name, type badge on row 2
+- `e2e/tests/workflow-shell.spec.ts:746` — test.fixme — port-heavy rail FITS the tile: EXPAND fully visible, surplus dots collapse into
+- `e2e/tests/workflow-surfaces.spec.ts:258` — test.fixme — assign wires the midiclock bridge, disables tap, and unassign round-trips
 
 ### art — declaration-level disables (0)
 _none_
 
-### spawn-smoke QUARANTINE map (e2e/tests/modules.spec.ts) — 1
+### spawn-smoke QUARANTINE map (e2e/tests/modules.spec.ts) — 4
+- `bluebox` — FLAKE-PARK #1847 — nondeterministic on CI: 9 recovered-on-retry observations in the 96 h census to 2026-08-18
+- `buggles` — FLAKE-PARK #1847 — nondeterministic on CI: 2 recovered-on-retry observations in the 96 h census to 2026-08-18
+- `quadralogical` — FLAKE-PARK #1847 — nondeterministic on CI: 3 recovered-on-retry observations in the 96 h census to 2026-08-18
 - `toybox` — task #102: SwiftShader software-renderer timeout (heavy WebGL)
 
-## Runtime skips — in-body env gates (79)
+## Runtime skips — in-body env gates (80)
 
 `test.skip(cond, reason)` guards that skip AT RUNTIME when an environment
 capability is missing (DB, asset, renderer, hardware). NOT disables — the test
@@ -63,8 +136,8 @@ those at spec granularity and the lane audit checks the realized string.
 - `e2e/tests/auth-routes.spec.ts:120` — live-deploy only (E2E_BASE_URL must be a remote host)
 - `e2e/tests/auth-routes.spec.ts:130` — tier has no DATABASE_URL configured — nothing to reach
 - `e2e/tests/blood-audio-output.spec.ts:106` — BLOOD runtime/extras unavailable (prod-preview)
-- `e2e/tests/blood-audio-output.spec.ts:192` — BLOOD engine did not reach ready (renderer/heap-sensitive on CI)
-- `e2e/tests/blood-audio-output.spec.ts:206` — BLOOD runtime unavailable (prod-preview)
+- `e2e/tests/blood-audio-output.spec.ts:197` — BLOOD engine did not reach ready (renderer/heap-sensitive on CI)
+- `e2e/tests/blood-audio-output.spec.ts:211` — BLOOD runtime unavailable (prod-preview)
 - `e2e/tests/blood-audio-output.spec.ts:92` — BLOOD engine did not reach ready (renderer/heap-sensitive on CI)
 - `e2e/tests/blood-ingame.spec.ts:140` — runtime/extras unavailable
 - `e2e/tests/blood-ingame.spec.ts:61` — BLOOD engine did not reach ready (heap/renderer-sensitive)
@@ -116,8 +189,9 @@ those at spec granularity and the lane audit checks the realized string.
 - `e2e/tests/multi-video-playback.spec.ts:440` — decode-capacity probe — excluded from the heavy WebGL attest gate (ceiling-marginal)
 - `e2e/tests/new-rack-return-to-last.spec.ts:108` — IndexedDB unavailable — scratch replica cannot persist
 - `e2e/tests/new-rack-return-to-last.spec.ts:158` — IndexedDB unavailable — scratch replica cannot persist
-- `e2e/tests/patch-load-leak.spec.ts:309` — DOM retention is not measurable under vite dev — HMR retains destroyed component instances by design
+- `e2e/tests/patch-load-leak.spec.ts:314` — DOM retention is not measurable under vite dev — HMR retains destroyed component instances by design
 - `e2e/tests/peertube.spec.ts:326` — (dynamic: ``renderer could not decode the AVC/AAC HLS clip (state=${state})``)
+- `e2e/tests/per-module-per-port-behavioral.spec.ts:4007` — (dynamic: `{ annotation: { type: 'fixme', description: parkReason } }`)
 - `e2e/tests/per-module-per-port-inputs.spec.ts:113` — DOOM WASM/WAD not built — see static/doom/DOWNLOAD_INSTRUCTIONS.md
 - `e2e/tests/per-module.spec.ts:233` — DOOM WASM not built — run `bash packages/web/native/build-doom-wasm.sh`
 - `e2e/tests/per-module.spec.ts:243` — DOOM1.WAD missing — see static/doom/DOWNLOAD_INSTRUCTIONS.md
