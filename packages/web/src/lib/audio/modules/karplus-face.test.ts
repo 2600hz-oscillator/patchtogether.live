@@ -63,7 +63,7 @@ describe('karplus face — the tier ladder (order = PRIORITY)', () => {
   it('compact adds BRIGHT beside the live trace — how long it rings, then what it is made of', () => {
     const face = curatedFace(def, 'compact')!;
     expect(face.glyph, 'the compact tile keeps its live scope').toBe('scope');
-    expect(faceTierCap('compact', true), 'a glyph-bearing compact tile fits two whole cells').toBe(2);
+    expect(faceTierCap('compact', 'trace'), 'a glyph-bearing compact tile fits two whole cells').toBe(2);
     expect(keysAt('compact')).toEqual(['decay', 'brightness']);
   });
 
@@ -74,7 +74,7 @@ describe('karplus face — the tier ladder (order = PRIORITY)', () => {
 
     // The claim that makes rank 7 dock-only, checked against the FIT PLAN
     // rather than restated: the plate paints exactly what the cap selects.
-    const plan = laneBodyPlan(full.length, true, 'full');
+    const plan = laneBodyPlan(full.length, 'trace', 'full');
     expect(plan.cellCount, 'the plate paints every selected cell (no silent truncation)').toBe(6);
 
     // …and every rank past 6 is absent from EVERY lane tier.
@@ -94,14 +94,14 @@ describe('karplus face — the tier ladder (order = PRIORITY)', () => {
     // compact and as the dock hero; at 'full' `glyph = hasGlyph && rows <= 1`
     // is false and the scope simply does not render. Pinned so the prose and
     // the geometry cannot drift apart again.
-    expect(laneBodyPlan(keysAt('full').length, true, 'full').glyph).toBe(false);
-    expect(laneBodyPlan(keysAt('compact').length, true, 'compact').glyph).toBe(true);
-    expect(laneBodyPlan(keysAt('mini').length, true, 'mini').glyph).toBe(true);
+    expect(laneBodyPlan(keysAt('full').length, 'trace', 'full').glyph).toBe(false);
+    expect(laneBodyPlan(keysAt('compact').length, 'trace', 'compact').glyph).toBe(true);
+    expect(laneBodyPlan(keysAt('mini').length, 'trace', 'mini').glyph).toBe(true);
 
     // NEGATIVE CONTROL for the instrument: a 3-cell face DOES keep the strip,
     // so `glyph: false` above is a fact about this face, not about laneBodyPlan
     // always saying no.
-    expect(laneBodyPlan(3, true, 'full').glyph).toBe(true);
+    expect(laneBodyPlan(3, 'trace', 'full').glyph).toBe(true);
   });
 
   it('LEVEL is IN the lane and POS is OUT — the one rank that moved, and why', () => {

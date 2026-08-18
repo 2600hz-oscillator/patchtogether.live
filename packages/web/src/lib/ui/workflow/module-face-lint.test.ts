@@ -63,7 +63,7 @@ import { paintsReadout } from '$lib/ui/controls/knob-vocabulary-model';
 // than typed.
 import { MIXMSTRS_CHANNELS } from '$lib/audio/modules/mixmstrs';
 import { faceReadoutValueIds } from './face-readout-values';
-import { laneBodyPlan } from './module-shell-model';
+import { laneBodyPlan, laneGlyphFor } from './module-shell-model';
 import { looksLikeSwitch } from './shell-control-kind';
 import { panelCellKeys, shellCellFor } from './shell-cells';
 import { GRID_MAX_CELLS } from '$lib/ui/controls/param-grid-model';
@@ -1470,6 +1470,17 @@ describe('module-face lint — LANE tier caps ↔ lane fit plan (authored intent
   // faceTierCap now follows the plan at both; this pins them together over the
   // LIVE registry, for every LANE tier (the 'dock' faceplate wraps freely and
   // never reaches laneBodyPlan).
+  //
+  // ⚠ THIS GATE WAS BLIND, AND IT WAS BLIND BECAUSE IT RE-DERIVED ITS SUBJECT
+  // (#1785). It asked `face.glyph !== 'none'` — a THIRD spelling of "does this
+  // tile have a glyph", beside the shell's and the selector's — and passed a
+  // bare COUNT rather than the cell HEIGHTS. Both errors point the same way on
+  // a video face: `backdraft` declares `glyph: 'none'` and paints a live
+  // picture, so this gate compared a glyph-LESS plan against a glyph-LESS cap,
+  // agreed with itself, and reported green while the compact tile selected
+  // three controls and painted two. It now reads EXACTLY what `ModuleShell`
+  // reads — `laneGlyphFor(def)` and `face.cellHeights` — so there is no third
+  // derivation left for it to be right about.
   const LANE_TIERS = ['mini', 'compact', 'full'] as const;
   it('every faced module SELECTS exactly the cells each LANE tier RENDERS', () => {
     const drift: string[] = [];
@@ -1478,12 +1489,12 @@ describe('module-face lint — LANE tier caps ↔ lane fit plan (authored intent
       for (const tier of LANE_TIERS) {
         const face = curatedFace(def, tier);
         if (!face) continue;
-        const hasGlyph = face.glyph !== 'none';
-        const rendered = laneBodyPlan(face.controls.length, hasGlyph, tier).cellCount;
+        const laneGlyph = laneGlyphFor(def);
+        const rendered = laneBodyPlan(face.cellHeights, laneGlyph, tier).cellCount;
         if (rendered !== face.controls.length) {
           drift.push(
             `${def.type}: ${tier} selects ${face.controls.length} control(s) but the tile ` +
-              `renders ${rendered} (glyph=${face.glyph}) — the cap and the fit plan disagree`,
+              `renders ${rendered} (laneGlyph=${laneGlyph}) — the cap and the fit plan disagree`,
           );
         }
       }

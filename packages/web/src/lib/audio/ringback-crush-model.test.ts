@@ -42,7 +42,7 @@ import {
   readoutWidthPx,
 } from '$lib/ui/workflow/lane-readout-fit';
 import { curatedFace } from '$lib/ui/workflow/curated-face';
-import { laneBodyPlan } from '$lib/ui/workflow/module-shell-model';
+import { laneBodyPlan, laneGlyphFor } from '$lib/ui/workflow/module-shell-model';
 import { rearFieldPlan, rearSectionHoles } from '$lib/ui/workflow/rear-card-model';
 import { RingChannel } from '../../../../dsp/src/lib/ringback-core';
 
@@ -446,7 +446,7 @@ describe('ringback face — the ranking and the glyph are claims about the DSP',
     // Ranked controls outrank the glyph, so the `full` LANE tile paints no
     // glyph at all. That is a design fact the ranking was written against, not
     // a surprise to discover in a screenshot.
-    const plan = laneBodyPlan(full.cellHeights, full.glyph !== 'none', 'full');
+    const plan = laneBodyPlan(full.cellHeights, laneGlyphFor(ringbackDef), 'full');
     expect(plan.layout).toBe('plate');
     expect(plan.cellCount).toBe(4);
     expect(plan.rowTracks, 'TWO rows, both at the 42 px design height').toEqual([42, 42]);
@@ -456,8 +456,8 @@ describe('ringback face — the ranking and the glyph are claims about the DSP',
         'no column for it, which is a RANKING fact and not the row-height one above',
     ).toBe(false);
     // …while the two tiers that DO show it select exactly two cells beside it.
-    expect(laneBodyPlan(compact.controls.length, true, 'compact').glyph).toBe(true);
-    expect(laneBodyPlan(mini.controls.length, true, 'mini').glyph).toBe(true);
+    expect(laneBodyPlan(compact.controls.length, 'trace', 'compact').glyph).toBe(true);
+    expect(laneBodyPlan(mini.controls.length, 'trace', 'mini').glyph).toBe(true);
   });
 
   it('the rear card is total and its input sections read stereo in / crush ring / output blend', () => {
