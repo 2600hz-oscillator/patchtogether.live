@@ -24,11 +24,11 @@
   // to its own GL canvas; this is a `drawImage` of it, exactly as the legacy card
   // and BackdraftOutputBody do, and for the same reason.
   //
-  // ⚠ COMPACT BY DEFAULT. The resting picture is a MODEST buffer, not the engine
-  // resolution: `.faceplate-body` is `width: max-content`, so this canvas'
-  // painted width IS the dock plate's width for a face with no bands. Width has
-  // to be earned, and a live picture earns exactly as much as it needs to be
-  // read — not as much as the engine happens to render.
+  // ⚠ COMPACT BY DEFAULT. The resting DRAWING BUFFER is modest (IDLE_BUFFER),
+  // not the engine resolution — the blit is a GL readback whose cost scales with
+  // it, and expanding promotes it to full engine dims anyway. The painted WIDTH
+  // is a separate question and is handled in CSS: the picture stretches to fill
+  // the plate so no grey space is left beside it (see `.vo-wrap`).
 
   import { untrack } from 'svelte';
   import { useEngine } from '$lib/audio/engine-context';
@@ -331,21 +331,45 @@
 />
 
 <style>
+  /* ⚠ A COLUMN, AND THE REASON IS MEASURED. Side-by-side (picture | buttons)
+   * made the rightmost thing in the face the BUTTON'S TEXT, and a button has
+   * 8 px of inner padding plus a border — so the content extent stopped ~10 px
+   * short of the button's own edge and `face-videoOut-dock` reported 42 CSS px
+   * of empty plate against a 40 px ceiling. Measured across faces, the plate
+   * carries ~32-33 px of chrome slack for everyone (adsr 33, delay 33,
+   * backdraft 32); videoOut was the outlier only because of that trailing
+   * padding.
+   *
+   * Stacking makes the CANVAS the rightmost element — a box the gate measures
+   * directly rather than a text range inside a padded control — so the slack
+   * lands on the same chrome baseline as every sibling. It is also the better
+   * layout: a live picture is the thing that EARNS width, and it now gets the
+   * whole plate instead of sharing a row with two small buttons. */
   .vo-face {
     display: flex;
-    align-items: flex-end;
-    gap: 10px;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
     width: 100%;
     min-width: 0;
   }
   .vo-wrap {
     position: relative;
-    flex: 0 0 auto;
-    /* MODEST BY DEFAULT — this width IS the dock plate's width for a face with
-     * no control bands, so it is the whole of what this face charges the
-     * faceplate. Wide enough to read a video frame, not wide enough to be gray
-     * space. */
-    width: 260px;
+    /* ⚠ THE PICTURE ABSORBS THE PLATE'S SLACK, and that is the fix for a real
+     * gate failure rather than a preference. A fixed 260 px left `face-videoOut-
+     * dock` with 42 CSS px of EMPTY PLATE to the right of the content (measured:
+     * content 354, plate 396, against a 40 px ceiling) — the "reserving width
+     * nothing draws in" defect the owner's compact rule is aimed at.
+     *
+     * Stretching is the RIGHT answer here rather than a tuned width, twice over:
+     * a live picture is the canonical thing that EARNS width, and `flex: 1 1 auto`
+     * makes the slack zero BY CONSTRUCTION instead of by a number that cancels a
+     * padding somebody may change. `min-width: 0` is required or the flex item
+     * refuses to shrink below its content. */
+    /* The picture spans the plate. A floor so it cannot collapse to a stripe
+     * on a narrow pane; the plate follows the content above that. */
+    width: 100%;
+    min-width: 260px;
     max-width: 100%;
     background: #050608;
     border: 1px solid var(--cable-video);
@@ -395,7 +419,7 @@
   }
   .vo-actions {
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
     gap: 6px;
   }
   .vo-btn {

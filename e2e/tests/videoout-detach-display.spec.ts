@@ -343,6 +343,64 @@ test.describe('videoOut — detach on the DEFAULT shell (the promoted face)', ()
     await expect(page.getByTestId('videoout-fs-wrap')).toHaveAttribute('data-detached', 'false');
   });
 
+  test('the floating panel REPAINTS ON A LOOP, not once — so a frame-cadence cap cannot strand it', async ({ page }) => {
+    // ⚠ THIS LEG ANSWERS A SPECIFIC HAZARD, not a feature. The #1836 regression
+    // was NOT starvation: the node kept rendering (12 frames) while only 2 were
+    // PRESENTED, because a 30 fps cadence cap swallowed a ONE-SHOT present — the
+    // caller had frozen its loop, so there was no later frame for the cap to
+    // defer to. A render LEASE protects against the VISIBILITY gate and does not
+    // exempt anything from that cap; only being loop-driven does.
+    //
+    // So the property worth pinning is not "the panel painted" but "the panel
+    // keeps painting". Asserted as pixel INEQUALITY over time against a live
+    // source — renderer-tolerant (any two different frames of the auto-scrolling
+    // LINES pattern differ; no absolute pixel value is named).
+    await page.goto('/rack?seed=none');
+    await page.waitForFunction(() => !!(window as unknown as PatchWindow).__patch);
+    await page.evaluate(() => {
+      const w = window as unknown as PatchWindow;
+      w.__spawnAtFlowPos('lines', { x: 0, y: 0 });
+      w.__spawnAtFlowPos('videoOut', { x: 520, y: 0 });
+    });
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () =>
+            Object.values((window as unknown as PatchWindow).__patch.nodes).filter(
+              (n) => n.type === 'lines' || n.type === 'videoOut',
+            ).length,
+        ),
+      )
+      .toBe(2);
+    const ids = await page.evaluate(() =>
+      Object.entries((window as unknown as PatchWindow).__patch.nodes).map(([id, n]) => ({ id, type: n.type })),
+    );
+    const src = ids.find((n) => n.type === 'lines')!.id;
+    const vo = ids.find((n) => n.type === 'videoOut')!.id;
+    await expect(page.locator(`.svelte-flow__node[data-id="${vo}"] [data-testid="module-shell"]`)).toBeVisible();
+    await wire(page, src, 'out', vo, 'in');
+
+    await page.locator(`.svelte-flow__node[data-id="${vo}"]`).click({ button: 'right', position: { x: 6, y: 6 } });
+    await page.getByTestId('ctx-detach-display').click();
+    await expect(panel(page)).toHaveCount(1);
+
+    const read = (): Promise<string> =>
+      page.evaluate(() => {
+        const c = document.querySelector('[data-testid="detached-display-canvas"]') as HTMLCanvasElement | null;
+        try {
+          return c?.toDataURL() ?? '';
+        } catch {
+          return '';
+        }
+      });
+    const first = await read();
+    expect(first, 'the panel painted at all').not.toBe('');
+    // A LATER, DIFFERENT frame — what a one-shot present could never produce.
+    await expect
+      .poll(read, { message: 'the detached panel keeps repainting (loop-driven, not one-shot)', timeout: 15_000 })
+      .not.toBe(first);
+  });
+
   test('DETACH clears full frame — the card must not stay expanded around a picture that left it', async ({ page }) => {
     // Regression (#1821 review): two of the three detach entry points cleared
     // `fullFrame` and the NODE MENU — the only detach route a rack tile has —

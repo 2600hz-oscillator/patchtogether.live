@@ -1507,16 +1507,48 @@ async function applyFaceSceneStyle(page: Page): Promise<void> {
   });
 }
 
+/** Every node id of `type` currently in the patch. */
+async function idsOfType(page: Page, type: string): Promise<string[]> {
+  return page.evaluate((tt) => {
+    const w = globalThis as unknown as {
+      __patch?: { nodes: Record<string, { type?: string } | undefined> };
+    };
+    return Object.entries(w.__patch?.nodes ?? {})
+      .filter(([, n]) => n?.type === tt)
+      .map(([id]) => id);
+  }, type);
+}
+
 /**
- * Spawn a VIDEO face into the video zone and return its node id.
+ * Spawn a VIDEO face into the video zone and return the id of the node THIS CALL
+ * created.
  *
- * Identified BY TYPE, not by position or recency: the zone is auto-populated
- * with a default `videoOut` on a fresh workflow rack, so "the only node there"
- * is false and "the newest node" is ambiguous under any concurrent reconcile.
- * Asserted to be exactly one, so a second instance is an error rather than a
- * silent arbitrary pick.
+ * ⚠ IDENTIFIED AS "THE NEW ONE", NOT "THE ONLY ONE" — and the difference is a
+ * shipped bug, not a refinement. This function's own doc comment used to warn
+ * that *"the zone is auto-populated with a default `videoOut` … so 'the only node
+ * there' is false"* — and then waited for `filter(type).length === 1` anyway. For
+ * every face that had ever used this path the two readings agreed, because none
+ * of their types pre-existed in the zone. `videoOut` is the first face whose own
+ * type IS the node already sitting there, so spawning it makes the count 2 and a
+ * wait for `=== 1` can never be satisfied: both its scenes timed out at 20 s on
+ * every run, deterministically, and the "every face has baselines" gate failed as
+ * a CONSEQUENCE because the scenes could not reach `toHaveScreenshot`.
+ *
+ * The fix is general rather than a `videoOut` special case — snapshot the ids of
+ * this type BEFORE spawning and take the one that appears — so it is correct for
+ * a type with 0, 1 or N pre-existing instances, and the NEXT colliding type does
+ * not get to rediscover this.
+ *
+ * The property the old code was reaching for is KEPT and strengthened: exactly
+ * ONE new node must appear, so a double-spawn is an error rather than a silent
+ * arbitrary pick, and the returned id is asserted NOT to be a pre-existing one —
+ * which is the assertion that fails if this ever regresses to picking the
+ * default `videoOut` instead of the spawned face.
  */
 async function spawnVideoZoneMember(page: Page, type: string): Promise<string> {
+  // The population BEFORE the spawn — the thing that made `=== 1` wrong.
+  const before = await idsOfType(page, type);
+
   await page.evaluate((tt) => {
     const w = globalThis as unknown as {
       __setSpawnFlowPos: (p: { x: number; y: number }) => void;
@@ -1531,28 +1563,38 @@ async function spawnVideoZoneMember(page: Page, type: string): Promise<string> {
   }, type);
 
   await page.waitForFunction(
-    (tt) => {
+    ({ tt, seen }) => {
       const w = globalThis as unknown as {
         __patch?: { nodes: Record<string, { type?: string } | undefined> };
       };
-      const nodes = w.__patch?.nodes ?? {};
-      return Object.values(nodes).filter((n) => n?.type === tt).length === 1;
+      const known = new Set(seen);
+      return (
+        Object.entries(w.__patch?.nodes ?? {}).filter(
+          ([id, n]) => n?.type === tt && !known.has(id),
+        ).length === 1
+      );
     },
-    type,
+    { tt: type, seen: before },
     { timeout: 20_000 },
   );
 
-  const ids = await page.evaluate((tt) => {
-    const w = globalThis as unknown as {
-      __patch: { nodes: Record<string, { type?: string } | undefined> };
-    };
-    return Object.entries(w.__patch.nodes)
-      .filter(([, n]) => n?.type === tt)
-      .map(([id]) => id);
-  }, type);
+  const after = await idsOfType(page, type);
+  const fresh = after.filter((id) => !before.includes(id));
 
-  expect(ids, `${type}: exactly one video-zone member spawned`).toHaveLength(1);
-  return ids[0]!;
+  expect(
+    fresh,
+    `${type}: exactly one NEW video-zone member spawned ` +
+      `(${before.length} of this type pre-existed: [${before.join(', ')}])`,
+  ).toHaveLength(1);
+  // ⚠ THE PERMANENT NEGATIVE CONTROL for the bug above: returning a pre-existing
+  // node would frame and baseline the wrong tile — the default `videoOut` rather
+  // than the face under test — and every pixel assertion downstream would be
+  // green about the wrong subject.
+  expect(
+    before,
+    `${type}: the returned member must be the SPAWNED node, never a pre-existing one`,
+  ).not.toContain(fresh[0]!);
+  return fresh[0]!;
 }
 
 /** Center the viewport on the lane-1 member (members bottom-anchor toward the
