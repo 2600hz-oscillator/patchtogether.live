@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { NodeProps } from '@xyflow/svelte';
-  import Fader from '$lib/ui/controls/Fader.svelte';
+  import NeonFader from '$lib/ui/controls/NeonFader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import ScopeScreen from '$lib/ui/controls/ScopeScreen.svelte';
   import { adsrDef } from '$lib/audio/modules/adsr';
@@ -64,10 +64,10 @@
       />
     </div>
     <div class="fader-row">
-      <Fader value={attack}  min={pAttack.min}  max={pAttack.max}  defaultValue={pAttack.defaultValue}  label="Attack"  units={pAttack.units}  curve={pAttack.curve}  formatValue={pAttack.format}  onchange={set('attack')}  readLive={live('attack')}  moduleId={id} paramId="attack" />
-      <Fader value={decay}   min={pDecay.min}   max={pDecay.max}   defaultValue={pDecay.defaultValue}   label="Decay"   units={pDecay.units}   curve={pDecay.curve}   formatValue={pDecay.format}   onchange={set('decay')}   readLive={live('decay')}   moduleId={id} paramId="decay" />
-      <Fader value={sustain} min={pSustain.min} max={pSustain.max} defaultValue={pSustain.defaultValue} label="Sustain" units={pSustain.units} curve={pSustain.curve} formatValue={pSustain.format} onchange={set('sustain')} readLive={live('sustain')} moduleId={id} paramId="sustain" />
-      <Fader value={release} min={pRelease.min} max={pRelease.max} defaultValue={pRelease.defaultValue} label="Release" units={pRelease.units} curve={pRelease.curve} formatValue={pRelease.format} onchange={set('release')} readLive={live('release')} moduleId={id} paramId="release" />
+      <NeonFader value={attack}  min={pAttack.min}  max={pAttack.max}  defaultValue={pAttack.defaultValue}  label="Attack"  units={pAttack.units}  curve={pAttack.curve}  formatValue={pAttack.format}  onchange={set('attack')}  readLive={live('attack')}  moduleId={id} paramId="attack" />
+      <NeonFader value={decay}   min={pDecay.min}   max={pDecay.max}   defaultValue={pDecay.defaultValue}   label="Decay"   units={pDecay.units}   curve={pDecay.curve}   formatValue={pDecay.format}   onchange={set('decay')}   readLive={live('decay')}   moduleId={id} paramId="decay" />
+      <NeonFader value={sustain} min={pSustain.min} max={pSustain.max} defaultValue={pSustain.defaultValue} label="Sustain" units={pSustain.units} curve={pSustain.curve} formatValue={pSustain.format} onchange={set('sustain')} readLive={live('sustain')} moduleId={id} paramId="sustain" />
+      <NeonFader value={release} min={pRelease.min} max={pRelease.max} defaultValue={pRelease.defaultValue} label="Release" units={pRelease.units} curve={pRelease.curve} formatValue={pRelease.format} onchange={set('release')} readLive={live('release')} moduleId={id} paramId="release" />
     </div>
   </PatchPanel>
 </div>

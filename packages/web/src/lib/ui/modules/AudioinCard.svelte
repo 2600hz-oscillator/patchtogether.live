@@ -18,7 +18,7 @@
 
   import { onMount, onDestroy, untrack } from 'svelte';
   import type { NodeProps } from '@xyflow/svelte';
-  import Fader from '$lib/ui/controls/Fader.svelte';
+  import NeonFader from '$lib/ui/controls/NeonFader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import { useEngine } from '$lib/audio/engine-context';
   import { patch } from '$lib/graph/store';
@@ -372,7 +372,7 @@
       </div>
 
       <div class="fader-row">
-        <Fader
+        <NeonFader
           value={pGain()}
           min={0}
           max={2}

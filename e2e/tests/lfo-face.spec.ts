@@ -18,9 +18,20 @@
 //     the unit test already pins; the risk it cannot see is the WIRING — a
 //     readout bound to a stale value, a default, or the wrong param prints a
 //     perfectly plausible string forever. So each assertion here reads the LIVE
-//     `__patch` value and requires the printed text to follow it. A DOM-only
+//     `__patch` value and requires the rendered value to follow it. A DOM-only
 //     "the label changed" assertion would pass on a control that never
 //     committed anything, which is the failure this is written against.
+//
+//     ⚠ THE THREE DIALS NOW SPLIT ACROSS TWO SURFACES, and the split IS the
+//     owner's 2026-08-17 ruling made visible on one face. RATE and DEPTH
+//     declare a `format`, so they print NOTHING at rest and their value is
+//     asserted on `aria-valuetext` (`knobValueReadout` — the identical ladder
+//     the line used to print, so no assertion was weakened to survive the
+//     removal). SHAPE declares a bare `landmarks` roster and still PAINTS,
+//     because a name is not a decimal representation of state: 'sine' vs 'saw'
+//     is the only thing distinguishing two otherwise identical dials. Both
+//     halves are asserted here, which is what makes this face the readable
+//     statement of the rule rather than three copies of one case.
 //
 //  3. THE UNIT SWITCH SURVIVES A REAL GESTURE. `lfoRateReadout` flips Hz→s at
 //     1 Hz. The interesting case is a drag that CROSSES that boundary, because
@@ -82,10 +93,18 @@ function readParam(page: Page, nodeId: string, pid: string): Promise<number | nu
   );
 }
 
-// ⚠ THE READOUT'S CASE IS CSS, NOT TEXT. `.readout` carries
-// `text-transform: uppercase`, so the pixels say `SINE` while `textContent` —
-// which is what `toHaveText` compares — still says `sine`. Asserting the SHOWN
-// case is a guaranteed false failure; assert the authored string.
+// ⚠ THE PAINTED READOUT'S CASE IS CSS, NOT TEXT, AND IT STILL BITES ON SHAPE.
+// `.readout` carries `text-transform: uppercase`, so the pixels say `SINE`
+// while `textContent` — which is what `toHaveText` compares — still says
+// `sine`. Asserting the SHOWN case is a guaranteed false failure; assert the
+// authored string.
+//
+// It is now a ONE-PARAM trap on this face: SHAPE is the only lfo dial that
+// paints anything (bare `landmarks`, no `format`). RATE and DEPTH are read off
+// `aria-valuetext`, which no stylesheet touches — same authored string either
+// way, so the two surfaces expect the same literal and neither needs a case
+// fold. That is the accident that makes the port safe, not a reason to stop
+// caring: the moment a `toHaveText` returns here, so does this trap.
 
 /** Drag a KnobConic vertically by `dy` px (negative = up = raise). The dial
  *  maps ~200 px to the whole arc, so the caller sizes the gesture in terms of
@@ -137,11 +156,17 @@ test.describe('lfo curated face', () => {
     const dockShell = await openDock(page, 'lf');
 
     const knob = dockShell.locator('[data-testid="control-rate"]');
-    const readout = dockShell.locator('[data-testid="readout-rate"]');
 
     // Boot state: 1 Hz is exactly the crossover, and it reads as a FREQUENCY.
     expect(await readParam(page, 'lf', 'rate')).toBe(1);
-    await expect(readout, 'the default sits on the crossover and reads in Hz').toHaveText('1.00 Hz');
+    await expect(knob, 'the default sits on the crossover and reads in Hz').toHaveAttribute(
+      'aria-valuetext',
+      '1.00 Hz',
+    );
+    await expect(
+      dockShell.locator('[data-testid="readout-rate"]'),
+      'RATE declares a `format`, so it paints nothing at rest — the case the owner removed',
+    ).toHaveCount(0);
 
     // Drag DOWN ~30 % of the arc. On the log 0.01..100 curve that lands well
     // under 1 Hz — into the region where a frequency readout stops helping.
@@ -157,13 +182,14 @@ test.describe('lfo curated face', () => {
     const committed = (await readParam(page, 'lf', 'rate'))!;
     expect(committed, 'still inside the def range').toBeGreaterThanOrEqual(0.01);
 
-    // …and the readout switched UNITS and agrees with that exact value: it now
-    // prints the PERIOD, 1/rate seconds, to the formatter's own precision.
+    // …and the spoken value switched UNITS and agrees with that exact value: it
+    // is now the PERIOD, 1/rate seconds, to the formatter's own precision.
     const period = 1 / committed;
     const expected = period >= 100 ? period.toFixed(0) : period >= 10 ? period.toFixed(1) : period.toFixed(2);
-    await expect(readout, 'below 1 Hz the readout is the PERIOD of the committed rate').toHaveText(
-      `${expected} s`,
-    );
+    await expect(
+      knob,
+      'below 1 Hz the accessible value is the PERIOD of the committed rate',
+    ).toHaveAttribute('aria-valuetext', `${expected} s`);
   });
 
   test('SHAPE: a drag commits the morph and the readout names the NEAREST anchor', async ({ page }) => {
@@ -171,11 +197,17 @@ test.describe('lfo curated face', () => {
     await spawnPatch(page, [{ id: 'lf', type: 'lfo', position: { x: 460, y: 240 } }]);
     const dockShell = await openDock(page, 'lf');
 
+    // ⚠ THE ONE lfo DIAL THAT STILL PAINTS, and it is asserted on BOTH surfaces
+    // on purpose. The owner's ruling removed the resting NUMBER, not the resting
+    // NAME (`paintsReadout`: a bare roster, no `format`), so a port that quietly
+    // moved this one to `aria-valuetext` too would have made the whole suite
+    // blind to whether names survived at all.
     const knob = dockShell.locator('[data-testid="control-shape"]');
     const readout = dockShell.locator('[data-testid="readout-shape"]');
 
     expect(await readParam(page, 'lf', 'shape')).toBe(0);
-    await expect(readout, 'shape 0 is the SINE anchor').toHaveText('sine');
+    await expect(readout, 'shape 0 is the SINE anchor, PAINTED under the dial').toHaveText('sine');
+    await expect(knob, 'and spoken as the same name').toHaveAttribute('aria-valuetext', 'sine');
 
     // Up ~30 % of a 0..2 linear range ≈ 0.6 — past the midpoint between the
     // SINE and SAW anchors, so the nearest-landmark readout must flip. It is
@@ -204,13 +236,16 @@ test.describe('lfo curated face', () => {
     const dockShell = await openDock(page, 'lf');
 
     const knob = dockShell.locator('[data-testid="control-depth"]');
-    const readout = dockShell.locator('[data-testid="readout-depth"]');
 
-    // The whole reason this readout exists: the graph holds 0.5 and the module
-    // swings ±1. Printing "0.50" is what made depth the most misread control
-    // on the face.
+    // The whole reason this format exists: the graph holds 0.5 and the module
+    // swings ±1. Reading it as "0.50" is what made depth the most misread
+    // control on the face — and the format still answers that, in the
+    // accessibility tree, now that no face prints a resting number.
     expect(await readParam(page, 'lf', 'depth')).toBe(0.5);
-    await expect(readout, 'the default is UNITY, not "half"').toHaveText('±1.00');
+    await expect(knob, 'the default is UNITY, not "half"').toHaveAttribute(
+      'aria-valuetext',
+      '±1.00',
+    );
 
     // Down to the floor: gain = max(0, depth) * 2 is exactly 0 there, all four
     // taps go flat, and that is a MODE rather than a level.
@@ -218,6 +253,15 @@ test.describe('lfo curated face', () => {
     await expect
       .poll(() => readParam(page, 'lf', 'depth'), { message: 'DEPTH commits into the graph' })
       .toBe(0);
-    await expect(readout, 'zero swing reads as a state, not ±0.00').toHaveText('still');
+    await expect(knob, 'zero swing reads as a state, not ±0.00').toHaveAttribute(
+      'aria-valuetext',
+      'still',
+    );
+    // ⚠ AND IT IS STILL NOT PAINTED. `still` is a WORD, so the obvious "well,
+    // that one is a name" reading would put it back on the panel — but it comes
+    // out of `format`, not out of a roster, and `paintsReadout` is deliberately
+    // blind to what a formatter happens to return. Asserting the absence here is
+    // what stops that reading from being re-litigated by a green suite.
+    await expect(dockShell.locator('[data-testid="readout-depth"]')).toHaveCount(0);
   });
 });

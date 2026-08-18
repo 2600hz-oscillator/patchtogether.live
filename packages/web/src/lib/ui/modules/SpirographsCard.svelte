@@ -12,7 +12,7 @@
   // spirographsDef so the CV bridge + persisted edges route unchanged.
   import { onMount, onDestroy } from 'svelte';
   import { type NodeProps } from '@xyflow/svelte';
-  import Fader from '$lib/ui/controls/Fader.svelte';
+  import NeonFader from '$lib/ui/controls/NeonFader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { useEngine } from '$lib/audio/engine-context';
@@ -194,7 +194,7 @@
 
     <!-- COUNT + spiro selector -->
     <div class="top-row">
-      <Fader
+      <NeonFader
         value={p('count')}
         min={1}
         max={SPIRO_COUNT_MAX}
@@ -257,7 +257,7 @@
     <div class="fader-grid">
       {#each FADER_STEMS as stem (stem)}
         {@const pid = spiroParamId(activeSpiro, stem)}
-        <Fader
+        <NeonFader
           value={p(pid)}
           min={SPIRO_RANGES[stem].min}
           max={SPIRO_RANGES[stem].max}

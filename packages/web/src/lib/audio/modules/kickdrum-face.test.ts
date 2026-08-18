@@ -71,28 +71,29 @@ describe('kickdrum face — the tier ladder (order = PRIORITY)', () => {
     expect(keysAt('compact')).toEqual(['tune', 'sub_decay']);
   });
 
-  it('the plate is THREE cells — every kickdrum dial earns a readout, so one row is the budget', () => {
-    // ⚠ THIS SAID SIX UNTIL 2026-08-12, and the number moved for a HEIGHT
-    // reason rather than a ranking one. All six ranked kickdrum params declare
-    // a `format`, so every one of them earns a readout line and every cell is
-    // 57 CSS px instead of the 42 px design row. Two 57 px rows plus the 4 px
-    // gap is 118 px against a 112 px body, so the plate holds ONE row: three
-    // cells, and ranks 4+ join rank 7+ as dock-only.
+  it('the plate is TWO ROWS — no kickdrum dial paints a readout, so the design row is the budget', () => {
+    // ⚠ THIS SAID SIX, THEN THREE, AND IS SIX AGAIN — and every move was a
+    // HEIGHT, never a ranking. `faceLaneCellHeights` reserves
+    // `LANE_KNOB_READOUT_H` (57 px) for a cell that PAINTS a readout and the
+    // 42 px design row otherwise, and two 57 px rows plus the 4 px gap is
+    // 118 px against a 112 px body — so while every ranked kickdrum param
+    // earned a line, the plate held exactly one row.
     //
-    // The plate's tracks are sized PER ROW now, so a tall cell costs only the
-    // rows beneath it — measured across the roster, 4 of the 11 readout-bearing
-    // faces lose nothing because their tall cell is in the last row. kickdrum
-    // is the worst case in the other direction: EVERY cell is tall, so there is
-    // no arrangement of them that fits two rows.
+    // Owner ruling 2026-08-17 removed the printed value from every face, and
+    // 24 of kickdrum's 26 params are `format`-only, so not one ranked cell
+    // paints anything now. The height gate and the render gate are the SAME
+    // predicate (`paintsReadout`, imported by `curated-face` rather than
+    // re-typed), which is what makes this follow automatically instead of the
+    // plate reserving 15 px per cell for a line nothing draws.
     const full = keysAt('full');
-    expect(full).toEqual(['tune', 'sub_decay', 'drive']);
-    expect(full.length).toBe(PLATE_COLS);
+    expect(full).toEqual(['tune', 'sub_decay', 'drive', 'pitch_amt', 'body_level', 'click_level']);
+    expect(full.length, 'two full rows of the plate').toBe(PLATE_COLS * 2);
 
-    // The claim that makes rank 4+ dock-only, checked against the FIT PLAN
-    // rather than restated: the plate renders exactly what the cap selects.
+    // The claim, checked against the FIT PLAN rather than restated: the plate
+    // renders exactly what the cap selects, on design-height rows.
     const plan = laneBodyPlan(curatedFace(def, 'full')!.cellHeights, true, 'full');
-    expect(plan.cellCount, 'the plate paints every selected cell (no silent truncation)').toBe(3);
-    expect(plan.rowTracks, 'ONE row, sized to the readout cells that fill it').toEqual([57]);
+    expect(plan.cellCount, 'the plate paints every selected cell (no silent truncation)').toBe(6);
+    expect(plan.rowTracks, 'TWO rows, both at the 42 px design height').toEqual([42, 42]);
     expect(
       plan.glyph,
       'the strip is refused under a taller-than-design row — its 42 px model is a measured\n' +

@@ -17,7 +17,7 @@
   // which persists + syncs.
   import { onMount, onDestroy } from 'svelte';
   import type { NodeProps } from '@xyflow/svelte';
-  import Fader from '$lib/ui/controls/Fader.svelte';
+  import NeonFader from '$lib/ui/controls/NeonFader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import { useEngine } from '$lib/audio/engine-context';
   import { setNodeParam } from '$lib/graph/mutate';
@@ -111,10 +111,10 @@
       </div>
 
       <div class="fader-grid">
-        <Fader value={p('sel1')} min={0} max={3} defaultValue={fourPlexVidDef.params.find((x) => x.id === 'sel1')!.defaultValue} label="OUT1" curve="discrete" formatValue={selFmt} onchange={setParam('sel1')} moduleId={id} paramId="sel1" />
-        <Fader value={p('sel2')} min={0} max={3} defaultValue={fourPlexVidDef.params.find((x) => x.id === 'sel2')!.defaultValue} label="OUT2" curve="discrete" formatValue={selFmt} onchange={setParam('sel2')} moduleId={id} paramId="sel2" />
-        <Fader value={p('sel3')} min={0} max={3} defaultValue={fourPlexVidDef.params.find((x) => x.id === 'sel3')!.defaultValue} label="OUT3" curve="discrete" formatValue={selFmt} onchange={setParam('sel3')} moduleId={id} paramId="sel3" />
-        <Fader value={p('sel4')} min={0} max={3} defaultValue={fourPlexVidDef.params.find((x) => x.id === 'sel4')!.defaultValue} label="OUT4" curve="discrete" formatValue={selFmt} onchange={setParam('sel4')} moduleId={id} paramId="sel4" />
+        <NeonFader value={p('sel1')} min={0} max={3} defaultValue={fourPlexVidDef.params.find((x) => x.id === 'sel1')!.defaultValue} label="OUT1" curve="discrete" formatValue={selFmt} onchange={setParam('sel1')} moduleId={id} paramId="sel1" />
+        <NeonFader value={p('sel2')} min={0} max={3} defaultValue={fourPlexVidDef.params.find((x) => x.id === 'sel2')!.defaultValue} label="OUT2" curve="discrete" formatValue={selFmt} onchange={setParam('sel2')} moduleId={id} paramId="sel2" />
+        <NeonFader value={p('sel3')} min={0} max={3} defaultValue={fourPlexVidDef.params.find((x) => x.id === 'sel3')!.defaultValue} label="OUT3" curve="discrete" formatValue={selFmt} onchange={setParam('sel3')} moduleId={id} paramId="sel3" />
+        <NeonFader value={p('sel4')} min={0} max={3} defaultValue={fourPlexVidDef.params.find((x) => x.id === 'sel4')!.defaultValue} label="OUT4" curve="discrete" formatValue={selFmt} onchange={setParam('sel4')} moduleId={id} paramId="sel4" />
       </div>
     </div>
   </PatchPanel>

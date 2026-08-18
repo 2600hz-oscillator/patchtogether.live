@@ -48,7 +48,7 @@
   import { cardParams, portsFromDef } from './card-kit';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import VideoTileThumb from './VideoTileThumb.svelte';
-  import { Button, ColorField, Fader, KnobConic, NeonFader, ParamGrid, ScopeScreen, Segmented, Selector, Toggle, VuMeter, XyPad } from '$lib/ui/controls';
+  import { Button, ColorField, KnobConic, NeonFader, ParamGrid, ScopeScreen, Segmented, Selector, Toggle, VuMeter, XyPad } from '$lib/ui/controls';
   import {
     curatedFace,
     dockFacePlan,
@@ -75,6 +75,7 @@
     momentaryValue,
     paramCellKind,
     xyPadsByAnchor,
+    bareCaptionParamIds,
     type DeclaringDefLike,
   } from '$lib/ui/workflow/shell-control-kind';
   import type { MomentaryDefLike } from '$lib/audio/momentary-params';
@@ -567,6 +568,21 @@
 
   /** Declared param cells (`'grid'` / `'color'`) — see ModuleFace.paramCells. */
   let declaredCells = $derived(declaredParamCells(def as DeclaringDefLike | undefined));
+  /**
+   * The params whose DOCK cell paints NO caption (`face.bareCells`).
+   *
+   * ⚠ `faceplateView &&` IS PART OF THE RULE, NOT AN OPTIMISATION. The
+   * declaration means "a section heading already says this" (owner, 2026-08-17:
+   * *"the low/mid/high labels above the knob rows convey that fine"*), and a
+   * LANE TILE HAS NO SECTION HEADINGS — the cluster caption that makes `1LO`
+   * redundant is a dock band header. Hiding it in the lane would remove the
+   * label and leave nothing in its place, which is the opposite of the ruling.
+   */
+  let bareCaptions = $derived(
+    faceplateView
+      ? bareCaptionParamIds(def as { face?: { bareCells?: readonly string[] } } | undefined)
+      : new Set<string>(),
+  );
   /** The declared 2-D pads, keyed by their ANCHOR (x) param id. */
   let xyPads = $derived(xyPadsByAnchor(def as DeclaringDefLike | undefined));
 
@@ -728,6 +744,7 @@
               readLive={params.live(pd.id)}
               moduleId={id}
               paramId={pd.id}
+              hideCaption={bareCaptions.has(pd.id)}
             />
           </div>
         {:else if cellKind === 'segmented'}
@@ -856,36 +873,26 @@
                and a face that draws a knob are not the same control, and
                "preserve today's look" is the owner's constraint on the modules
                this exists for (noise, and clouds/mixer/vca behind it).
-               `Fader.svelte` derives `control-<paramId>` itself, exactly like
-               KnobConic, so the parity multiset is unchanged by the swap. -->
-          <div class="kcol ms-cell-fader" data-cell-kind="param" data-cell-control="fader" data-cell-key={ctl.key}>
-            <Fader
-              value={params.paramVal(pd.id)}
-              min={pd.min}
-              max={pd.max}
-              defaultValue={pd.defaultValue}
-              label={pd.label}
-              units={pd.units ?? ''}
-              curve={pd.curve}
-              onchange={paramWrite(pd.id)}
-              readLive={params.live(pd.id)}
-              moduleId={id}
-              paramId={pd.id}
-              formatValue={pd.format}
-            />
-          </div>
-        {:else if cellKind === 'neon-fader'}
-          <!-- THE SAME THROW, drawn in the conic knob's language (owner review
-               of #1738: *"a new UI control for faders that matches our blue
-               neon controls"*). A separate KIND rather than a prop on `fader`,
-               because `Fader.svelte` is mounted by 93 cards and 8 other faced
-               modules whose baselines must not move for one face's look — the
-               module opts in, one declaration at a time.
+               `NeonFader` derives `control-<paramId>` itself, exactly like
+               KnobConic, so the parity multiset is unchanged by the swap.
 
-               `persistentReadout` is bound to the FACEPLATE tier for the same
-               reason KnobConic's is: a dock band has the row for a value line
-               and a 192px lane tile does not. -->
-          <div class="kcol ms-cell-fader" data-cell-kind="param" data-cell-control="neon-fader" data-cell-key={ctl.key}>
+               ⚠ THIS BRANCH USED TO BE TWO (#1794). `fader` drew the old grey
+               throw and `neon-fader` drew this one, because when #1738 landed
+               the new control the old one was still mounted by ~90 cards whose
+               baselines could not move for one face's look — so the module
+               opted in, one declaration at a time. That migration is now DONE:
+               there is one fader in the app, so a second KIND naming it would
+               be two words for one control and a `data-cell-control` value that
+               distinguishes nothing. `neon-fader` is gone from
+               `DeclaredParamCell`; a def that still declares it fails `tsc`.
+
+               ⚠ NO RESTING READOUT — not here, not on the knob beside it, not
+               on any face. The tier-bound `persistentReadout` this cell used to
+               pass is DELETED, and deliberately not replaced by a hidden one
+               (owner, 2026-08-17: *"i want the data gone, not there but hidden
+               or something"*). The value reaches `aria-valuetext` and the
+               drag/hover tag; nothing paints it at rest. -->
+          <div class="kcol ms-cell-fader" data-cell-kind="param" data-cell-control="fader" data-cell-key={ctl.key}>
             <NeonFader
               value={params.paramVal(pd.id)}
               min={pd.min}
@@ -899,7 +906,7 @@
               moduleId={id}
               paramId={pd.id}
               formatValue={pd.format}
-              persistentReadout={faceplateView}
+              hideCaption={bareCaptions.has(pd.id)}
             />
           </div>
         {:else if cellKind === 'selector'}
@@ -937,7 +944,7 @@
               options={pd.options}
               landmarks={pd.landmarks}
               format={pd.format}
-              persistentReadout={faceplateView}
+              hideCaption={bareCaptions.has(pd.id)}
             />
           </div>
         {/if}
@@ -1334,8 +1341,15 @@
              screen reader announced N tabs controlling nothing. On an untabbed
              face there is no tab to point at, so neither attribute is emitted
              (a dangling `aria-labelledby` is worse than none). -->
+        <!-- CLUSTERS SIDE BY SIDE (`ModuleFacePage.clusterFlow: 'row'`, owner
+             2026-08-17: *"return 1 and return 2 can sit next to each other,
+             too, saving on vertical space and reducing unused horizontal
+             space"*). Mutually exclusive with the console grid by construction
+             — `consoleGridCols` returns null for a 'row' band — so the two
+             layouts can never both apply to one section. -->
         <section
           class="dock-page"
+          class:cluster-row={band.clusterFlow === 'row' && band.clusters.length > 1}
           class:console-band={consoleCols != null}
           style:--console-cols={consoleCols ?? undefined}
           data-testid="face-page"
@@ -1709,8 +1723,29 @@
      split pane must drop the hero dial below the picture instead of squeezing
      a 64px dial. */
   .dock-hero.has-hero {
-    flex-wrap: wrap;
-    align-items: flex-end;
+    /* ⚠ A COLUMN, NOT A WRAPPING ROW — and the RENDER is unchanged by this.
+     *
+     * `.hero-rail` below is `width: 100%`, so in a wrapping ROW it can never
+     * share a line with the glyph: it always wrapped onto its own. The picture
+     * has therefore always sat ABOVE the rail, which is what the comment above
+     * asks for. But a wrapping row's MAX-CONTENT is the sum of its items, and
+     * `.faceplate-body` is `width: max-content` — so the plate reserved
+     * `glyph + gap + rail` of width for a side-by-side arrangement it never
+     * drew, and then painted the difference as blank plate.
+     *
+     * MEASURED on the six faces this hit (owner ruling 2026-08-17, *"we do not
+     * want useless gray horizontal space on cards, ever"*): destroy reserved
+     * 670 px for 409 px of ink, wavetableVco 436 for 250, vca 348 for 247 —
+     * every one of them a face with BOTH a hero glyph and a readout strip,
+     * which is exactly the pair that made the sum large. As a column the
+     * intrinsic width is the MAX of the two instead of their sum, which is what
+     * the layout was already drawing.
+     *
+     * `align-items` flips axis with the direction, so it is restated: in a row
+     * `flex-end` was the vertical baseline of a line box; in a column it would
+     * right-align the picture. */
+    flex-direction: column;
+    align-items: flex-start;
     gap: 14px;
     padding-bottom: 6px;
   }
@@ -1984,6 +2019,42 @@
   .console-band :global(.page-controls) > :global(*) {
     grid-column: auto;
     justify-self: center;
+  }
+
+  /* ── CLUSTERS SIDE BY SIDE (`clusterFlow: 'row'`) ──────────────────────────
+   *
+   * Two cluster groups that are PEERS, laid across instead of down. `wrap` is
+   * the physics escape hatch the row plan relies on everywhere else: a pane too
+   * narrow to hold both degrades to the stacked layout it had before rather
+   * than overflowing the faceplate, so no width budget is written here.
+   *
+   * ⚠ `align-items: flex-start`. The two groups are not the same height — a
+   * return strip's fader track is taller than the knobs beside it — and
+   * stretching them would centre one group's caption against the other's
+   * controls. `width: max-content` keeps the band its content, the same
+   * negative-space rule `.console-band` states above; the `[hidden]` clause is
+   * restated for the same UA-specificity reason it is there. */
+  .dock-page.cluster-row[hidden] {
+    display: none;
+  }
+  .dock-page.cluster-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 8px 18px;
+    width: max-content;
+    max-width: 100%;
+  }
+  /* The band header and any un-clustered row still own a full line. */
+  .dock-page.cluster-row > :global(.page-label),
+  .dock-page.cluster-row > :global(.page-hint-solo),
+  .dock-page.cluster-row > :global(.page-controls) {
+    flex: 1 0 100%;
+  }
+  /* The stacked layout's 6px inter-cluster gutter is the flex `gap` here, so
+     the margin rule below must not also apply. */
+  .dock-page.cluster-row :global(.page-cluster) {
+    margin-top: 0;
   }
 
   /* CLUSTER inside a band (ModuleFacePage.clusters): a quieter, SMALLER

@@ -7,7 +7,7 @@
   // hard standard — NO raw side <Handle> jacks). Port `id`s are byte-identical
   // to chromakeyDef so the CV bridge + persisted edges route unchanged.
   import type { NodeProps } from '@xyflow/svelte';
-  import Fader from '$lib/ui/controls/Fader.svelte';
+  import NeonFader from '$lib/ui/controls/NeonFader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import { patch } from '$lib/graph/store';
   import { setNodeParam } from '$lib/graph/mutate';
@@ -74,9 +74,9 @@
       </div>
 
       <div class="fader-grid">
-        <Fader value={p('threshold')}     min={0} max={1}   defaultValue={chromakeyDef.params.find((x) => x.id === 'threshold')!.defaultValue}     label="Thr"   curve="linear" onchange={setParam('threshold')}     moduleId={id} paramId="threshold" />
-        <Fader value={p('softness')}      min={0} max={0.5} defaultValue={chromakeyDef.params.find((x) => x.id === 'softness')!.defaultValue}      label="Soft"  curve="linear" onchange={setParam('softness')}      moduleId={id} paramId="softness" />
-        <Fader value={p('spillSuppress')} min={0} max={1}   defaultValue={chromakeyDef.params.find((x) => x.id === 'spillSuppress')!.defaultValue} label="Spill" curve="linear" onchange={setParam('spillSuppress')} moduleId={id} paramId="spillSuppress" />
+        <NeonFader value={p('threshold')}     min={0} max={1}   defaultValue={chromakeyDef.params.find((x) => x.id === 'threshold')!.defaultValue}     label="Thr"   curve="linear" onchange={setParam('threshold')}     moduleId={id} paramId="threshold" />
+        <NeonFader value={p('softness')}      min={0} max={0.5} defaultValue={chromakeyDef.params.find((x) => x.id === 'softness')!.defaultValue}      label="Soft"  curve="linear" onchange={setParam('softness')}      moduleId={id} paramId="softness" />
+        <NeonFader value={p('spillSuppress')} min={0} max={1}   defaultValue={chromakeyDef.params.find((x) => x.id === 'spillSuppress')!.defaultValue} label="Spill" curve="linear" onchange={setParam('spillSuppress')} moduleId={id} paramId="spillSuppress" />
       </div>
     </div>
   </PatchPanel>

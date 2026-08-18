@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
   import type { NodeProps } from '@xyflow/svelte';
-  import Fader from '$lib/ui/controls/Fader.svelte';
+  import NeonFader from '$lib/ui/controls/NeonFader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import { setNodeParam } from '$lib/graph/mutate';
   import { modtrisDef, drawModtris, type ModtrisState } from '$lib/audio/modules/modtris';
@@ -85,8 +85,8 @@
       ></canvas>
     </div>
     <div class="fader-row">
-      <Fader value={gravityBpm} min={30} max={240} defaultValue={60} label="Drop" curve="log"    onchange={setParam('gravityBpm')} moduleId={id} paramId="gravityBpm" readLive={readLive('gravityBpm')} />
-      <Fader value={levelStep}  min={1}  max={20}  defaultValue={10} label="Lvl"  curve="linear" onchange={setParam('levelStep')} moduleId={id} paramId="levelStep"  readLive={readLive('levelStep')} />
+      <NeonFader value={gravityBpm} min={30} max={240} defaultValue={60} label="Drop" curve="log"    onchange={setParam('gravityBpm')} moduleId={id} paramId="gravityBpm" readLive={readLive('gravityBpm')} />
+      <NeonFader value={levelStep}  min={1}  max={20}  defaultValue={10} label="Lvl"  curve="linear" onchange={setParam('levelStep')} moduleId={id} paramId="levelStep"  readLive={readLive('levelStep')} />
     </div>
   </PatchPanel>
 </div>

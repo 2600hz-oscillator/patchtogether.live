@@ -149,6 +149,7 @@ import {
   bootWithFace,
   frameMember,
   freezeFaceAudio,
+  freezeFaceVideo,
   lowestBand,
   openDock,
   perturbBand,
@@ -171,8 +172,82 @@ const NC_CHANNEL_DELTA = 26;
 /** The negative control's perturbation: shift one band sideways. CSS px. */
 const NC_SHIFT_PX = 8;
 
+// ── COMPACT BY DEFAULT — THE WIDTH GATE ────────────────────────────────────
+//
+// Owner ruling 2026-08-17: *"we do not want useless gray horizontal space on
+// cards, ever. prefer compact. screen real estate is expensive!"* Width is
+// EARNED and the burden of proof is on the wide face, so the check is
+// deny-by-default over the LIVE layout of every face in the roster.
+//
+// ⚠ WHAT THIS GATE STRUCTURALLY CANNOT SEE. It reads GEOMETRY, so it cannot
+// tell "intentionally roomy" from "accidentally double-wide" — the two are the
+// same number. That is exactly why an exemption is a NAME plus the thing
+// consuming the width, and why no amount of tuning the ceiling would replace
+// them. It also cannot see:
+//   * the LANE tile, which is a fixed 192 px pin by design and whose analogous
+//     guarantee is `laneBodyPlan`'s no-clip rule, asserted elsewhere;
+//   * whether narrowing CLIPPED anything — `hiddenX === 0` above is that leg,
+//     and the two must be read together (a face can be perfectly filled
+//     because its content is spilling out of the pane);
+//   * VERTICAL slack, which is a different question with a different answer.
+//
+// ⚠ THIS SPEC'S LANE IS NON-BLOCKING (vrt-strict covers CARDS, not dock
+// faceplates). The source-level half — `.faceplate-body` may not carry a px
+// width floor — is what runs in the required lane; this is the measurement
+// that says whether the CSS actually produced the result.
+
+/**
+ * The most empty plate a face may carry to the right of its content, CSS px.
+ *
+ * A POLICY THRESHOLD ON A DERIVED MEASUREMENT, not a population count — and it
+ * was CHOSEN FROM THE MEASUREMENT rather than guessed. Swept over the whole
+ * roster after the `min-width: 900px` floor came off, the slack collapses to a
+ * tight bimodal distribution: **15 px** for a face whose widest band defines
+ * the plate, and **32-33 px** for one whose HERO row does (the hero's own
+ * `padding: 4px 10px 0` sits inside `.dock-pages`' 10 px, and the extra ~18 px
+ * is the hero rail's gutter). Every face in the roster lands on one of those
+ * two values or below, except the ones NAMED below.
+ *
+ * 40 px is the first round number above the upper mode, so a face has to be
+ * meaningfully over — not a rounding artefact — to redden.
+ */
+const FACE_WIDTH_SLACK_MAX_PX = 40;
+
+/**
+ * Faces whose empty width is EARNED, each naming what consumes it.
+ *
+ * ⚠ ANCHORED TO THE ROSTER: an entry naming a face that is no longer in `FACES`
+ * is RED (the anchor test at the bottom of this file), so a deleted or renamed
+ * face cannot leave a permission behind for whatever takes its name.
+ *
+ * An exemption you cannot write a concrete reason for is an offender, not an
+ * exemption — "it looks roomier" is not a thing that consumes width.
+ */
+const FACE_WIDTH_EXEMPTIONS: Readonly<Record<string, string>> = {
+  unityscalemathematik:
+    "its HERO READOUT STRIP is intrinsically wider than its ink: four label/value pairs whose " +
+    "columns are sized by the widest of `dt`/`dd` per item plus a 22 px gutter, against a face " +
+    "whose bands are three knob columns. Measured 93 CSS px of slack (content 280, plate 373). " +
+    "⚠ THIS IS A KNOWN DEFECT, NOT AN EARNED WIDTH, and it is exempt only because its fix is " +
+    "the owner's own follow-up ruling — *\"generally we don't want text like that in our " +
+    "faceplates\"* — which removes the strip from every face and takes this entry with it.",
+  vca:
+    "the same hero readout strip, on the narrowest face that has one: measured 90 CSS px of " +
+    "slack (content 247, plate 337) — the strip alone is wider than both of the face's bands. " +
+    "⚠ Same status as unityscalemathematik: a defect held open by a pending global removal, " +
+    "not a width anything consumes.",
+  wavetableVco:
+    "the same hero readout strip: measured 69 CSS px of slack (content 250, plate 319). " +
+    "⚠ Same status — this entry exists to keep the gate GREEN AND HONEST about a known " +
+    "offender rather than to bless it, and it dies with the strip.",
+};
+
 test.describe('VRT: P1 curated faces (?shell=1) — compact lane tile + dock full-view', () => {
-  for (const { type, pages } of FACES) {
+  for (const { type, pages, videoFaceWhy } of FACES as readonly {
+    type: string;
+    pages: number;
+    videoFaceWhy?: string;
+  }[]) {
     test(`face-${type}-compact: the compact lane tile matches baseline`, async ({ page }) => {
       const errors: string[] = [];
       page.on('pageerror', (e) => errors.push(e.message));
@@ -180,7 +255,7 @@ test.describe('VRT: P1 curated faces (?shell=1) — compact lane tile + dock ful
       // The compact tile is pinned at the config viewport — the dock scene's
       // taller one would be a baseline move for no reason.
       await page.setViewportSize(LEGACY_FOLD_VIEWPORT);
-      const memberId = await bootWithFace(page, type);
+      const memberId = await bootWithFace(page, type, videoFaceWhy ? { videoFaceWhy } : {});
       // zoom 0.45 = the LOD 'compact' band [0.30, 0.52) — the design-point tile.
       await frameMember(page, memberId, 0.45, 'compact');
 
@@ -198,6 +273,10 @@ test.describe('VRT: P1 curated faces (?shell=1) — compact lane tile + dock ful
       // two-sided check (state AND a pinned currentTime), with the window
       // closed instead of reported.
       await freezeFaceAudio(page, `face-${type}-compact`);
+      // ── AND THE VIDEO SURFACE, for a scene that declares one ────────────
+      // An AudioContext suspend says nothing about a rAF-driven picture; see
+      // freezeFaceVideo. Opt-in per scene, with the reason on the roster entry.
+      if (videoFaceWhy) await freezeFaceVideo(page, memberId, `face-${type}-compact`);
       const tile = page.locator(`.svelte-flow__node[data-id="${memberId}"] [data-testid="module-shell"]`);
       await expect(tile).toHaveScreenshot(`face-${type}-compact.png`, {
         maxDiffPixels: COMPACT_MAX_DIFF,
@@ -218,7 +297,7 @@ test.describe('VRT: P1 curated faces (?shell=1) — compact lane tile + dock ful
       // was MEASURED to move every other dock scene's pixels (see
       // `foldViewportFor`). `mixmstrs` is the case that found it.
       await page.setViewportSize(foldViewportFor(type));
-      const memberId = await bootWithFace(page, type);
+      const memberId = await bootWithFace(page, type, videoFaceWhy ? { videoFaceWhy } : {});
       // Frame at the 'full' tier so the jack-rail EXPAND affordance is
       // comfortably clickable, then open the dock full-view.
       await frameMember(page, memberId, 0.7, 'full');
@@ -252,6 +331,32 @@ test.describe('VRT: P1 curated faces (?shell=1) — compact lane tile + dock ful
           `in _shell-faces.ts (pane is ${g.captureH} CSS px tall).`,
       ).toBeGreaterThanOrEqual(0);
 
+      // ── COMPACT BY DEFAULT: THE PLATE IS ITS CONTENT ────────────────────
+      //
+      // Owner ruling 2026-08-17: *"we do not want useless gray horizontal
+      // space on cards, ever. prefer compact. screen real estate is
+      // expensive!"*, prompted by *"tidyvco is fully twice as wide as it needs
+      // to be"*. DENY-BY-DEFAULT: a face that does not fill its plate is RED
+      // unless NAMED below with the thing consuming the width.
+      //
+      // ⚠ MEASURED, NEVER LISTED. The offenders are derived from the live
+      // layout on every run, so a face that lands double-wide next month is
+      // caught without anyone maintaining a roster of the ones that are wrong
+      // today. Units: CSS px, and the same CSS px the PNG is in (see
+      // `readFoldGeometry`'s units note) — this pane is not inside xyflow's
+      // zoom transform.
+      const slack = g.plateW - g.contentW;
+      const widthWhy = FACE_WIDTH_EXEMPTIONS[type];
+      expect(
+        widthWhy ? -1 : slack,
+        `face-${type}-dock: ${slack} CSS px of EMPTY PLATE to the right of the content ` +
+          `(content ${g.contentW}, plate ${g.plateW}), against a ${FACE_WIDTH_SLACK_MAX_PX} px ` +
+          `ceiling. Either the face is reserving width nothing draws in — the tidyVco defect, ` +
+          `whose cause was a \`min-width\` floor on \`.faceplate-body\` — or the width is ` +
+          `EARNED, in which case add a FACE_WIDTH_EXEMPTIONS entry naming the thing that ` +
+          `consumes it. "It looks roomier" is not a thing that consumes it.`,
+      ).toBeLessThanOrEqual(FACE_WIDTH_SLACK_MAX_PX);
+
       // ── RESIDUAL SCOPE #1, ASSERTED: the tab rail ───────────────────────
       // A railed face renders ONE band; every other face renders all of them.
       // Derived from the SAME threshold DockFullView and ModuleShell branch on,
@@ -279,6 +384,9 @@ test.describe('VRT: P1 curated faces (?shell=1) — compact lane tile + dock ful
       // interaction between boot and capture, which is exactly where
       // `ensureEngine()` resumes the context.
       await freezeFaceAudio(page, `face-${type}-dock`);
+      // The dock faceplate is where a fullViewBody extension paints, so this is
+      // the scene the video freeze actually exists for.
+      if (videoFaceWhy) await freezeFaceVideo(page, memberId, `face-${type}-dock`);
       await settle(page);
       await expect(faceplate).toHaveScreenshot(`face-${type}-dock.png`, {
         maxDiffPixels: DOCK_MAX_DIFF,
@@ -315,6 +423,28 @@ test.describe('VRT: P1 curated faces (?shell=1) — compact lane tile + dock ful
   // `git rm`-ed baseline silently recreated by a later plain VRT run (the
   // standing hazard in CLAUDE.md) is an UNTRACKED png; this leg reads the
   // filesystem, so it goes green again only when someone commits it.
+  test('ANCHOR: every width exemption still names a face in the roster', () => {
+    // A permission that outlives its subject is worse than no permission: it
+    // silently covers whatever takes the name next. Anchored to the ARTIFACT
+    // (`FACES`), never to a count.
+    const rostered = new Set<string>(FACES.map((f) => f.type));
+    const dead = Object.keys(FACE_WIDTH_EXEMPTIONS).filter((t) => !rostered.has(t));
+    expect(
+      dead,
+      'a FACE_WIDTH_EXEMPTIONS entry names a face that is no longer in the roster — delete it.',
+    ).toEqual([]);
+
+    const thin = Object.entries(FACE_WIDTH_EXEMPTIONS)
+      .filter(([, why]) => why.trim().length < 40)
+      .map(([t]) => t);
+    expect(
+      thin,
+      'a width exemption without a concrete reason is a suppression. Name the thing that ' +
+        'consumes the width (a live picture, a scope trace, a video preview, an XY pad, a ' +
+        'control that only appears in one mode).',
+    ).toEqual([]);
+  });
+
   test('every shipped face has a scene, and every scene has its baselines', () => {
     // Widened to Set<string> so `.has()` accepts entries read from
     // STRICT_FACES (ReadonlySet<string>) — the comparison is the point.

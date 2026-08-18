@@ -17,7 +17,7 @@
   // MAPPING_BOUND_CARDS, and the baseline is re-captured by the same dispatch
   // that authors the two new face scenes.
   import type { NodeProps } from '@xyflow/svelte';
-  import Fader from '$lib/ui/controls/Fader.svelte';
+  import NeonFader from '$lib/ui/controls/NeonFader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import { wavetableVcoDef } from '$lib/audio/modules/wavetable-vco';
   import type { ModuleNode } from '$lib/graph/types';
@@ -50,11 +50,11 @@
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="fader-row">
-      <Fader value={paramVal('tune')} min={P.tune.min} max={P.tune.max} defaultValue={P.tune.defaultValue} label={P.tune.label} units={P.tune.units} curve={P.tune.curve} onchange={set('tune')} moduleId={id} paramId="tune" readLive={live('tune')} />
-      <Fader value={paramVal('fine')} min={P.fine.min} max={P.fine.max} defaultValue={P.fine.defaultValue} label={P.fine.label} units={P.fine.units} curve={P.fine.curve} onchange={set('fine')} moduleId={id} paramId="fine" readLive={live('fine')} />
-      <Fader value={paramVal('wavePos')} min={P.wavePos.min} max={P.wavePos.max} defaultValue={P.wavePos.defaultValue} label={P.wavePos.label} units={P.wavePos.units} curve={P.wavePos.curve} onchange={set('wavePos')} moduleId={id} paramId="wavePos" readLive={live('wavePos')} />
-      <Fader value={paramVal('fmAmount')} min={P.fmAmount.min} max={P.fmAmount.max} defaultValue={P.fmAmount.defaultValue} label={P.fmAmount.label} units={P.fmAmount.units} curve={P.fmAmount.curve} onchange={set('fmAmount')} moduleId={id} paramId="fmAmount" readLive={live('fmAmount')} />
-      <Fader value={paramVal('pmAmount')} min={P.pmAmount.min} max={P.pmAmount.max} defaultValue={P.pmAmount.defaultValue} label={P.pmAmount.label} units={P.pmAmount.units} curve={P.pmAmount.curve} onchange={set('pmAmount')} moduleId={id} paramId="pmAmount" readLive={live('pmAmount')} />
+      <NeonFader value={paramVal('tune')} min={P.tune.min} max={P.tune.max} defaultValue={P.tune.defaultValue} label={P.tune.label} units={P.tune.units} curve={P.tune.curve} onchange={set('tune')} moduleId={id} paramId="tune" readLive={live('tune')} />
+      <NeonFader value={paramVal('fine')} min={P.fine.min} max={P.fine.max} defaultValue={P.fine.defaultValue} label={P.fine.label} units={P.fine.units} curve={P.fine.curve} onchange={set('fine')} moduleId={id} paramId="fine" readLive={live('fine')} />
+      <NeonFader value={paramVal('wavePos')} min={P.wavePos.min} max={P.wavePos.max} defaultValue={P.wavePos.defaultValue} label={P.wavePos.label} units={P.wavePos.units} curve={P.wavePos.curve} onchange={set('wavePos')} moduleId={id} paramId="wavePos" readLive={live('wavePos')} />
+      <NeonFader value={paramVal('fmAmount')} min={P.fmAmount.min} max={P.fmAmount.max} defaultValue={P.fmAmount.defaultValue} label={P.fmAmount.label} units={P.fmAmount.units} curve={P.fmAmount.curve} onchange={set('fmAmount')} moduleId={id} paramId="fmAmount" readLive={live('fmAmount')} />
+      <NeonFader value={paramVal('pmAmount')} min={P.pmAmount.min} max={P.pmAmount.max} defaultValue={P.pmAmount.defaultValue} label={P.pmAmount.label} units={P.pmAmount.units} curve={P.pmAmount.curve} onchange={set('pmAmount')} moduleId={id} paramId="pmAmount" readLive={live('pmAmount')} />
     </div>
   </PatchPanel>
 </div>

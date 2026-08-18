@@ -39,11 +39,12 @@ export type ParamCellKind =
   | 'grid'
   | 'color'
   | 'fader'
-  // The SAME throw gesture as `fader`, drawn in the conic knob's visual
-  // language (`NeonFader.svelte`) — a separate KIND rather than a prop on
-  // `fader` because the choice is the MODULE's, and because `Fader.svelte` is
-  // mounted by 93 cards whose baselines must not move for one face's look.
-  | 'neon-fader'
+  // ⚠ `neon-fader` WAS A SECOND NAME FOR THIS KIND AND IS GONE (#1794). It
+  // existed only for the transition: #1738 introduced `NeonFader.svelte`
+  // while `Fader.svelte` was still mounted by ~90 cards whose baselines could
+  // not move for one face's look, so a module opted into the new throw one
+  // declaration at a time. `Fader.svelte` is deleted, `fader` IS the neon
+  // throw, and a def that still declares `'neon-fader'` no longer typechecks.
   | 'xy';
 
 /**
@@ -92,7 +93,7 @@ export type ParamCellKind =
  * one gesture"), and `declaredParamCells` folds it in so every consumer of
  * "which kind did the module declare" keeps one answer to read.
  */
-export type DeclaredParamCell = 'grid' | 'color' | 'fader' | 'neon-fader' | 'xy';
+export type DeclaredParamCell = 'grid' | 'color' | 'fader' | 'xy';
 
 /** The subset a module writes in `face.paramCells` — the single-id kinds. `xy`
  *  is absent BY CONSTRUCTION: a pad hand-written here would have no partner,
@@ -126,6 +127,24 @@ export function looksLikeSwitch(p: ParamDef): boolean {
 /** The declared momentary param ids for a def (empty when none). Pure. */
 export function momentaryParamIds(def: { face?: { momentary?: readonly string[] } } | undefined): ReadonlySet<string> {
   return new Set(def?.face?.momentary ?? []);
+}
+
+/**
+ * The param ids whose DOCK cell paints no caption (`face.bareCells`), empty
+ * when none. Pure.
+ *
+ * ⚠ A SET OF IDS, NOT A FLAG ON THE FACE, and the shape is the argument. The
+ * rule this serves is "a caption is clutter when a section heading already says
+ * it, and load-bearing when it is the only thing separating four identical
+ * knobs" (owner, 2026-08-17). That is a per-CONTROL fact — tidyVco's `A`/`D`/
+ * `S`/`R` and mixmstrs' `1LO…8LO` sit under equally-labelled cluster headings
+ * and only one of the two pairs is redundant — so a per-face or per-tier
+ * boolean could not express it without being wrong on one of them.
+ */
+export function bareCaptionParamIds(
+  def: { face?: { bareCells?: readonly string[] } } | undefined,
+): ReadonlySet<string> {
+  return new Set(def?.face?.bareCells ?? []);
 }
 
 /** Shared empty map so the common (undeclared) case allocates nothing. */

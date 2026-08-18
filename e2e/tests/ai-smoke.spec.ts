@@ -135,7 +135,15 @@ test.describe('AI smoke check', () => {
       .first()
       .locator('.thumb');
 
-    const initialTop = await tuneThumb.evaluate((el) => (el as HTMLElement).style.top);
+    // ⚠ THE INLINE TRANSFORM, NOT `style.top` (#1794). `NeonFader` positions its
+    // thumb with `style:transform="translateY(…)"`; the control this replaced
+    // used `style:top`. Reading the old property returns '' both times, so
+    // `not.toBe` compares '' to '' and the spec fails claiming the thumb never
+    // moved — a probe bug wearing a product bug's error message. The
+    // non-empty assertions below are what tell the two apart.
+    const readThumb = () => tuneThumb.evaluate((el) => (el as HTMLElement).style.transform);
+    const initialTop = await readThumb();
+    expect(initialTop, 'thumb has no inline transform — this probe is reading the wrong property').not.toBe('');
     const trackBox = await tuneTrack.boundingBox();
     expect(trackBox, 'TUNE track not visible').toBeTruthy();
     if (!trackBox) return;
@@ -150,10 +158,11 @@ test.describe('AI smoke check', () => {
     await page.mouse.up();
     await page.waitForTimeout(100);
 
-    const newTop = await tuneThumb.evaluate((el) => (el as HTMLElement).style.top);
+    const newTop = await readThumb();
+    expect(newTop, 'thumb lost its inline transform mid-drag').not.toBe('');
     expect(
       newTop,
-      `thumb top should change after drag; was ${initialTop}, now ${newTop}`
+      `thumb offset should change after drag; was ${initialTop}, now ${newTop}`
     ).not.toBe(initialTop);
   });
 
