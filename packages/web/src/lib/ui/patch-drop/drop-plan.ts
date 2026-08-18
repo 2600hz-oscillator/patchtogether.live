@@ -83,7 +83,15 @@
 // promise.
 
 import { canConnectToPort } from '$lib/graph/types';
-import { isVideoShape, refusalReason, REFUSAL_TEXT, type RefusalReason } from './signal-lattice';
+// The lattice lives in `graph/` (#1780): `graph/types.ts` derives canConnect's
+// video quadrant from it and must not reach up into `ui/`, so the modal and the
+// type rule now read the SAME predicate rather than two copies of it.
+import {
+  isVideoShape,
+  refusalReason,
+  REFUSAL_TEXT,
+  type RefusalReason,
+} from '$lib/graph/signal-lattice';
 
 /** The minimum a module def has to expose for this model — structurally
  *  satisfied by AudioModuleDef / VideoModuleDef / MetaModuleDef alike, so the

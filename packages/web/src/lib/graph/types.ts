@@ -4,6 +4,12 @@
 // through SyncedStore. Per D18 the type system is registry-based, not closed,
 // so future visual modules can register new domains and cable types without
 // touching this file's union members.
+//
+// ⚠ This file is the BOTTOM of the import graph — it must never reach up into
+// `ui/`. `./signal-lattice` is a pure leaf with no imports of its own, which is
+// why the video widening rule was moved into `graph/` (#1780) rather than
+// imported from the drop modal that first expressed it.
+import { isVideoShape, videoWidensTo } from './signal-lattice';
 
 // ---------------- Domain (D18) ----------------
 // Phase 1 ships 'audio'. The video-domain spike (Phase 0 of the visual
@@ -24,11 +30,14 @@ export type Domain = StandardDomain | (string & {});
 //   image      — RGB still image (no time axis)
 //   mono-video — single-channel animated video stream
 //   video      — RGB animated video stream
-// Implicit upcasting `keys → mono-video`, `image → video`, `keys → image`
-// is allowed; the upcast is free at the shader layer. See `canConnect`.
+// Implicit upcasting is allowed wherever it is FREE at the shader layer —
+// broadcasting one channel to three, or holding one frame over time. The four
+// names above are two independent boolean axes (channels × motion), so the rule
+// is the PRODUCT ORDER over those axes rather than a list of legal pairs: see
+// `videoWidensTo` in ./signal-lattice.ts, which `canConnect` calls directly.
 //
-//   modsignal  — a permissive MODULATION input that accepts EITHER a cv, gate,
-//                OR audio source. Used by TOYBOX's Structure-style 6-input
+//   modsignal  — a permissive MODULATION input that accepts EITHER a CV-family
+//                (cv / pitch / gate) OR an audio source. Used by TOYBOX's 6-input
 //                modulation section: each input has an attenuverter + offset and
 //                auto-detects whether a cv-rate or audio-rate signal is patched
 //                (audio is envelope-followed by the cross-domain bridge). It is
@@ -51,9 +60,14 @@ type StandardCableType =
   | 'video';
 export type CableType = StandardCableType | (string & {});
 
-/** True if `type` is one of the four video-domain cable types. */
+/** True if `type` is one of the video-domain cable types.
+ *
+ *  DERIVED from the lattice (`VIDEO_SHAPE`), not re-listed here: a video type
+ *  that had a row there but not here — or the reverse — is precisely the
+ *  two-lists-one-question defect #1780 removed from `canConnect`. Registering a
+ *  fifth video type means giving it two ranks in ONE place. */
 export function isVideoCableType(type: CableType): boolean {
-  return type === 'keys' || type === 'image' || type === 'mono-video' || type === 'video';
+  return isVideoShape(type as string);
 }
 
 /** The "CV family" — bipolar audio-rate voltages that all flow through the
@@ -73,8 +87,10 @@ const CV_FAMILY = new Set<string>(['cv', 'pitch', 'gate']);
  * Returns true if a cable of `srcType` may legally terminate on a port
  * declaring `dstType`. Equal types always pass; explicit upcasts cover:
  *
- *   * Video-domain "free" conversions: keys→mono-video, keys→image,
- *     image→video, mono-video→video.
+ *   * Video-domain "free" conversions — DERIVED, not listed: `videoWidensTo`
+ *     (./signal-lattice.ts) is the product order over the (channels, motion)
+ *     axes, so every widening that is free at the shader layer passes and
+ *     every reduction is refused, with no edge table to close by hand.
  *   * CV family (cv ↔ pitch ↔ gate): any direction. They're all bipolar
  *     audio-rate voltages flowing through the same AudioParam plumbing,
  *     and rejecting cross-family patches at the UI level (while the engine
@@ -96,13 +112,19 @@ const CV_FAMILY = new Set<string>(['cv', 'pitch', 'gate']);
 export function canConnect(srcType: CableType, dstType: CableType): boolean {
   if (srcType === dstType) return true;
 
-  const upcasts: Record<string, readonly string[]> = {
-    keys: ['mono-video', 'image'],
-    image: ['video'],
-    'mono-video': ['video'],
-  };
-  const ok = upcasts[srcType as string];
-  if (ok && ok.includes(dstType as string)) return true;
+  // VIDEO ↔ VIDEO — the WIDENING clause, derived from the lattice.
+  //
+  // This used to be a hand-written edge table (keys→mono-video, keys→image,
+  // image→video, mono-video→video) which a human had to keep transitively
+  // closed, and did not: `keys → video` was refused although it is legal in two
+  // hops and free at the shader layer (#1780). `videoWidensTo` is the PRODUCT
+  // ORDER over the (channels, motion) axes, so it is closed by construction and
+  // there is no diagonal left to forget. It returns the whole answer for a
+  // video→video pair — nothing below this line can widen one — so this branch
+  // is the decision, not another allow-list.
+  if (isVideoShape(srcType as string) && isVideoShape(dstType as string)) {
+    return videoWidensTo(srcType as string, dstType as string);
+  }
 
   // CV family — cv / pitch / gate all interchange at the type level.
   if (CV_FAMILY.has(srcType as string) && CV_FAMILY.has(dstType as string)) {
@@ -119,15 +141,25 @@ export function canConnect(srcType: CableType, dstType: CableType): boolean {
   // doesn't change call-site type checks.
   if (srcType === 'cv' && isVideoCableType(dstType)) return true;
 
-  // modsignal MODULATION input (TOYBOX's 6-input section) accepts a cv, gate,
-  // OR audio source. This is the ONLY place audio→(non-audio) is permitted: it
-  // is scoped to the `modsignal` TARGET type, so audio→cv / audio→pitch etc.
-  // stay rejected everywhere else. The cross-domain bridge envelope-follows an
-  // audio source to a 0..1 modulation value (engine.ts → tickCvBridges); cv/gate
-  // sample-and-hold as usual. (modsignal→modsignal is covered by the equal-type
-  // check above; no source ever emits `modsignal`.)
+  // modsignal MODULATION input (TOYBOX's + GIBRIBBON's modulation sections)
+  // accepts the CV FAMILY or an audio source. This is the ONLY place
+  // audio→(non-audio) is permitted: it is scoped to the `modsignal` TARGET
+  // type, so audio→cv / audio→pitch etc. stay rejected everywhere else. The
+  // cross-domain bridge envelope-follows an audio source to a 0..1 modulation
+  // value (engine.ts → tickCvBridges); the CV family sample-and-holds as usual.
+  // (modsignal→modsignal is covered by the equal-type check above; no source
+  // ever emits `modsignal`.) `polyPitchGate` stays OUT — it is an ADAPTER (the
+  // engine interposes a splitter), not a member of the family.
   if (dstType === 'modsignal') {
-    return srcType === 'cv' || srcType === 'gate' || srcType === 'audio';
+    // The CV FAMILY (cv / pitch / gate) — read off CV_FAMILY rather than
+    // re-listed, which is what let `pitch` fall out of the set in the first
+    // place (#1780 finding 5). All three are the same bipolar audio-rate
+    // voltage on the same plumbing; a V/oct source into a modulation input is
+    // an ordinary keytracking patch. The consumer agrees: AudioEngine.addEdge
+    // routes a `pitch` source through the SAME sample-and-hold cv bridge, and
+    // VideoEngine.addCvBridge envelope-follows ONLY an `audio` source, so pitch
+    // takes the cv tail-sample path with no new code.
+    return CV_FAMILY.has(srcType as string) || srcType === 'audio';
   }
 
   return false;

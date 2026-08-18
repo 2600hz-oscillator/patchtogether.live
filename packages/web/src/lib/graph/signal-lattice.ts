@@ -1,52 +1,57 @@
-// packages/web/src/lib/dev/video-patch-drop/signal-lattice.ts
+// packages/web/src/lib/graph/signal-lattice.ts
 //
-// ⛔ MOCK / PROPOSAL — NOTHING IN THE ENGINE IMPORTS THIS.
-// It exists so the /dev/video-patch-drop mocks can be RIGHT rather than drawn,
-// and so the owner can see the rule he asked for expressed as a rule.
+// THE VIDEO WIDENING RULE. `canConnect` (./types.ts) derives its video quadrant
+// from `videoWidensTo` below, so this file and every patch surface agree BY
+// CONSTRUCTION rather than by two lists being maintained in step.
+//
+// It lives in `graph/` and not in `ui/` for exactly that reason: `graph/types.ts`
+// is the bottom of the import graph and must never reach up into `ui/`. The file
+// is a pure leaf — it imports NOTHING — so every consumer (the graph type rule,
+// the drop-modal plan, a future patch surface) can depend on it freely.
 //
 // ── THE OWNER'S REQUIREMENT ───────────────────────────────────────────────
 //   "mono video outs can be patched into color ins no problem, but color ins
 //    cannot be patched into the handful of mono ins. i want that to be handled
 //    with intelligent logic and not with a brittle list of what is what."
 //
-// ── WHAT WE FOUND ────────────────────────────────────────────────────────
-// The rule is ALREADY a property of the declarations — it is not a list of
-// module names anywhere. `canConnect` (graph/types.ts) permits `mono-video →
-// video` and refuses `video → mono-video`. So the mono/colour asymmetry is
-// real, derived and shipped.
-//
-// What IS a list is the SHAPE canConnect uses to express it: a hand-written
-// edge table
+// ── WHAT THIS REPLACED (#1780) ───────────────────────────────────────────
+// The mono/colour asymmetry was already derived from the declarations — it was
+// never a list of module names. What WAS a list is the SHAPE `canConnect` used
+// to express it: a hand-written edge table
 //
 //     keys:        ['mono-video', 'image'],
 //     image:       ['video'],
 //     'mono-video':['video'],
 //
-// An edge table has to be TRANSITIVELY CLOSED BY HAND, and this one is not.
-// `keys → video` is refused today (measured — see the divergence test beside
-// this file) even though `keys → mono-video → video` is legal in two hops and
-// the widening is free at the shader layer. That missing diagonal is the
-// brittleness.
+// An edge table has to be TRANSITIVELY CLOSED BY HAND, and that one was not.
+// `keys → video` was refused even though `keys → mono-video → video` was legal
+// in two hops and the widening is free at the shader layer. That missing
+// diagonal is the brittleness the owner named, and it was measured rather than
+// theorised — the divergence test beside this file sweeps every ordered pair and
+// pinned the disagreement at exactly one.
 //
-// ⚠ AND IT HAS ALREADY COST US A DECLARATION. No port anywhere in the repo is
-// typed `keys` — it is a declared-but-unpopulated cable type — so the gap looks
-// harmless. It is not: BACKDRAFT's two KEY-MASK inputs are typed `video`
+// ⚠ AND IT HAD ALREADY COST US A DECLARATION. No port anywhere in the repo is
+// typed `keys` — it is a declared-but-unpopulated cable type — so the gap looked
+// harmless. It was not: BACKDRAFT's two KEY-MASK inputs are typed `video`
 // instead, and the def says why in as many words —
 //
 //     // KEY masks. 'video' so any source (LINES / SHAPES / a key) patches in.
 //     { id: 'lighten', type: 'video' },
 //     { id: 'darken',  type: 'video' },
 //
-// A mask input is declared as full colour because the accurate type could not
-// reach it. The type rule did not merely refuse a patch; it bent the contract
-// around itself, and every gate that reads that contract now reads the bent
-// version. `mapper.key` is typed `video` for the same reason. That is the cost
-// of a hand-closed edge list, and it is already paid.
+// ⚠ Those INPUTS are correct as `video` and must STAY that way: widening runs
+// source→input, so a `video` input accepts EVERY video source while a `keys`
+// input would accept only `keys` ones. Re-typing them to `keys` would NARROW
+// them and break existing patches — the opposite of what the def asked for. The
+// half that was actually broken is the other direction: a `keys` SOURCE could
+// not reach a `video` input. Closing the diagonal fixes that, and it is what
+// makes `keys` a usable type for a future mask OUTPUT. `mapper.key` is the same
+// shape and reads the same way.
 //
 // ── THE DERIVATION ───────────────────────────────────────────────────────
 // The four video cable types are not four things. They are TWO INDEPENDENT
 // BOOLEAN AXES, and the type names already say so — read the union's own
-// comment in graph/types.ts:
+// comment in ./types.ts:
 //
 //     keys       — single-channel still mono image (no time axis)
 //     image      — RGB still image (no time axis)
@@ -59,8 +64,8 @@
 //     colour        image      →      video
 //
 // Widening is free along EITHER axis (broadcast one channel to three; hold one
-// frame over time) and lossy against either (which is exactly why colour →
-// mono is refused: it needs a reduction the patcher never asked for).
+// frame over time) and lossy against either (which is exactly why colour → mono
+// is refused: it needs a reduction the patcher never asked for).
 //
 // So the predicate is the PRODUCT ORDER over the two axes:
 //
@@ -89,15 +94,17 @@
 //      already do exactly this), so the knowledge lives on the port that has
 //      it rather than in a central table.
 //
-// `canConnectToPort` is already (3) layered on (1)+(2). This file only proposes
-// replacing the hand-closed edge table inside (1) with the order it is trying
-// to be.
+// `canConnectToPort` is (3) layered on (1)+(2); `canConnect` is (1)+(2), and
+// this file IS its (1) for the video domain.
 //
 // ── SCOPE: WHAT THIS FILE IS STRUCTURALLY UNABLE TO SEE ──────────────────
 // It knows about CABLE TYPES only. It cannot see a port's `accepts`, cannot see
 // module identity, and cannot see whether a bridge is actually implemented for
 // a pair it calls legal. Callers layer those on — which is the point: the ONE
-// thing that should never be per-module is the type rule itself.
+// thing that should never be per-module is the type rule itself. In particular
+// it deliberately does NOT model the cv→video ADAPTER: `canConnect` allows that
+// pair and `videoWidensTo` refuses it, and the test beside this file pins that
+// disagreement permanently so "the lattice IS canConnect" can never be assumed.
 
 /** Widening axis 1 — how many channels the signal carries. */
 export const CHANNEL_RANK = { mono: 0, colour: 1 } as const;
