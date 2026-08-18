@@ -781,11 +781,13 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
   },
   {
     type: 'videoOut',
-    disposition: 'bespoke-surface',
-    why:
-      'the OUTPUT MONITOR: its card BODY is the live, freely resizable screen at the end of every ' +
-      'video chain — already carved out of the shell swap after swapping it for a tile removed ' +
-      'the only user-viewable video output.',
+    disposition: 'generic-face',
+    note:
+      'DONE (#1821). The OUTPUT MONITOR was the archetypal bespoke surface — its card BODY is the ' +
+      'live screen at the end of every video chain — and it is a GENERIC face now for one reason: ' +
+      'the `fullViewBody` extension slot (#1732) gives the shell a place to mount that screen, so ' +
+      'the surface is a declaration rather than a carve-out. It ranks NOTHING (`params: []`); the ' +
+      'picture plus full frame / full screen / DETACH / present are the whole faceplate.',
   },
   {
     type: 'videobox',

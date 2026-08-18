@@ -100,7 +100,12 @@ async function stepAndReadFrame(
 // (E2E_REAL_GPU=1 REPEAT=3 task e2e:one -- wavecel-video-outs), so the attest
 // runs it in the SERIAL bucket (workers=1) instead. See WEBGL_SERIAL_SPECS.
 test.describe('WAVECEL video outputs (cross-domain bridge) @webgl-serial', () => {
-  test('WAVECEL.scope_out -> OUTPUT renders a structured, frame-stable waveform trace', async ({ page, errorWatch }) => {
+  // ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are UNCHANGED.
+  // NONDETERMINISM: 13 recovered-on-retry observation(s) across 13 SHA(s) / 11 branch(es) in the
+  // 96 h CI census to 2026-08-18 — never a hard failure, so every one of those jobs reported SUCCESS.
+  // LOST WHILE PARKED: WAVECEL's scope_out video port rendering a STRUCTURED and frame-stable trace — independent of the on-card preview toggle, so a dead bridge shows nothing anywhere else.
+  // Re-enable only on a root cause (#1847); "it passes now" is not one.
+  test.fixme('WAVECEL.scope_out -> OUTPUT renders a structured, frame-stable waveform trace', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 13 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page, errorWatch }) => {
     test.setTimeout(60_000);
 
     // Pin the engine clock + pause the rAF loop BEFORE boot so the test owns the

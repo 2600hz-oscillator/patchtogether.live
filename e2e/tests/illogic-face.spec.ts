@@ -419,7 +419,12 @@ test.describe('illogic face — four identical dials, and the four numbers they 
     await expect(panel.locator('[data-testid^="control-"]')).toHaveCount(0);
   });
 
-  test('IN A REAL BROWSER: the logic jacks are a clean gate, and the knobs do not reach them', async ({
+  // ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are UNCHANGED.
+  // NONDETERMINISM: 21 recovered-on-retry observation(s) across 19 SHA(s) / 13 branch(es) in the
+  // 96 h CI census to 2026-08-18 — it also hard-failed 3 time(s) on a branch, but the recovered-on-retry runs stayed green.
+  // LOST WHILE PARKED: the two seams no unit or ART gate can reach — that ILLOGIC's DOM prints and redraws the LIVE graph value, and that the knobs cannot contaminate the logic jacks' clean gate output.
+  // Re-enable only on a root cause (#1847); "it passes now" is not one.
+  test.fixme('IN A REAL BROWSER: the logic jacks are a clean gate, and the knobs do not reach them', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 21 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({
     page,
   }) => {
     // ⚠ THE CROSS-IMPLEMENTATION LEG. Everything else about the logic block was

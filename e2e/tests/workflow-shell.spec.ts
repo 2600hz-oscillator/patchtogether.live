@@ -496,7 +496,12 @@ test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
     expect(positionsByTier.full, 'full positions == mini positions').toEqual(positionsByTier.mini);
   });
 
-  test('tile header: domain-colour rule ── gap ── FULL long name, type badge on row 2', async ({ page }) => {
+  // ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are UNCHANGED.
+  // NONDETERMINISM: 2 recovered-on-retry observation(s) across 1 SHA(s) / 1 branch(es) in the
+  // 96 h CI census to 2026-08-18 — never a hard failure, so every one of those jobs reported SUCCESS.
+  // LOST WHILE PARKED: the tile header composition — domain-colour rule, gap, the FULL long name (not truncated) and the type badge on row 2; the identity a user reads a lane by.
+  // Re-enable only on a root cause (#1847); "it passes now" is not one.
+  test.fixme('tile header: domain-colour rule ── gap ── FULL long name, type badge on row 2', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 2 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page }) => {
     // The owner tile-header redesign: the module NAME no longer shares its row
     // with the type badge (long names truncated as "RECORDE…"/"SYNESTH…"). Row 1
     // is a decorative 2px RULE in the DOMAIN colour (the spine/cable hue) from
@@ -584,12 +589,16 @@ test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
 test.describe('P0.3b workflow-shell ?shell=1 bug fixes', () => {
   const VZONE_IDS = ['workflow-videoOut', 'workflow-recorderbox', 'workflow-synesthesia'];
 
-  /** The video-zone default's LANE FACE under ?shell=1: videoOut renders its
-   *  verbatim LEGACY card (NON_SHELL video-surface snowflake — the shell
-   *  video-visibility fix); recorderbox/synesthesia render placeholder tiles. */
+  /** The video-zone default's LANE FACE under the shell.
+   *
+   *  ⚠ videoOut renders a PROMOTED FACE TILE now (#1821). This used to special-
+   *  case it to `[data-testid="video-out-card"]` — its verbatim LEGACY card,
+   *  because it was a NON_SHELL video-surface snowflake — and the special case
+   *  is gone: it is a `module-shell` like any faced module, while
+   *  recorderbox/synesthesia are still un-migrated placeholders. */
   const vzFaceSelector = (id: string) =>
     id === 'workflow-videoOut'
-      ? `.svelte-flow__node[data-id="${id}"] [data-testid="video-out-card"]`
+      ? `.svelte-flow__node[data-id="${id}"] [data-testid="module-shell"]`
       : `.svelte-flow__node[data-id="${id}"] [data-testid="module-shell-placeholder"]`;
 
   /** Drop `type` at the tight SHELL pitch so the pitch-aware hit-test resolves the
@@ -733,7 +742,12 @@ test.describe('P0.3b workflow-shell ?shell=1 bug fixes', () => {
   // precedence EXPAND pill > jack dots > flow label: surplus dots collapse
   // into the mock's own "···" overflow treatment, which is part of the same
   // drill-down trigger (the menu lists every port — nothing is lost).
-  test('port-heavy rail FITS the tile: EXPAND fully visible, surplus dots collapse into "···" that opens the drill-down', async ({ page }) => {
+  // ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are UNCHANGED.
+  // NONDETERMINISM: 2 recovered-on-retry observation(s) across 1 SHA(s) / 1 branch(es) in the
+  // 96 h CI census to 2026-08-18 — never a hard failure, so every one of those jobs reported SUCCESS.
+  // LOST WHILE PARKED: that a port-heavy module's rail FITS its fixed tile — EXPAND stays fully visible and surplus ports collapse into a '···' that opens the drill-down instead of overflowing the tile.
+  // Re-enable only on a root cause (#1847); "it passes now" is not one.
+  test.fixme('port-heavy rail FITS the tile: EXPAND fully visible, surplus dots collapse into "···" that opens the drill-down', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 2 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page }) => {
     await gotoWorkflow(page, { shell: true });
     const tile = page.locator(
       '.svelte-flow__node[data-id="workflow-synesthesia"] [data-testid="module-shell-placeholder"]',
@@ -1000,7 +1014,12 @@ test.describe('LANE HEADROOM: the band grows with the fullest stack (?shell=1)',
     );
   }
 
-  test('4-stack lane: ≥90px headroom above the top tile, ONE shared band top, badges fully visible', async ({ page }) => {
+  // ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are UNCHANGED.
+  // NONDETERMINISM: 2 recovered-on-retry observation(s) across 1 SHA(s) / 1 branch(es) in the
+  // 96 h CI census to 2026-08-18 — never a hard failure, so every one of those jobs reported SUCCESS.
+  // LOST WHILE PARKED: the lane stacking geometry — headroom above the top tile, a single shared band top, and badges that are not clipped; the layout invariants that keep a 4-module stack readable.
+  // Re-enable only on a root cause (#1847); "it passes now" is not one.
+  test.fixme('4-stack lane: ≥90px headroom above the top tile, ONE shared band top, badges fully visible', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 2 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page }) => {
     await gotoWorkflow(page, { shell: true });
     await waitForHooks(page);
 

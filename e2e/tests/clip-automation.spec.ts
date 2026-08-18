@@ -475,7 +475,12 @@ const ENV_LOW: SeedTrack['events'] = [
 
 // ── Case 1: the full owner workflow — assign MODULE → arm LANE → twist ───────
 
-test('module-assign + per-lane arm: right-click module → lane 1 (card border) → arm lane → record while twisting → unassigned module records nothing → disarm → playback; note clip untouched', async ({ page, rack }) => {
+// ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are UNCHANGED.
+// NONDETERMINISM: 26 recovered-on-retry observation(s) across 26 SHA(s) / 10 branch(es) in the
+// 96 h CI census to 2026-08-18 — never a hard failure, so every one of those jobs reported SUCCESS.
+// LOST WHILE PARKED: the owner-locked FINAL per-clip automation model end to end — module-level assign, per-lane arm, record-while-twisting, the negative leg that an UNASSIGNED module records nothing, and that the note clip is left untouched.
+// Re-enable only on a root cause (#1847); "it passes now" is not one.
+test.fixme('module-assign + per-lane arm: right-click module → lane 1 (card border) → arm lane → record while twisting → unassigned module records nothing → disarm → playback; note clip untouched', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 26 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page, rack }) => {
   void rack;
   await spawnPatch(page, [
     { id: CP, type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio' },
@@ -732,7 +737,12 @@ test('per-clip automation: on stop the param HOLDS its last automated value — 
 
 // ── Case 6: MIDI twist suspends only the twisted param (same seam) ───────────
 
-test('per-clip automation: a MIDI CC on an automated param suspends only that param until the twist idles; CC-idle resumes', async ({ page, rack }) => {
+// ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are UNCHANGED.
+// NONDETERMINISM: 4 recovered-on-retry observation(s) across 2 SHA(s) / 2 branch(es) in the
+// 96 h CI census to 2026-08-18 — never a hard failure, so every one of those jobs reported SUCCESS.
+// LOST WHILE PARKED: the live-grab suspension rule — a MIDI CC on an automated param suspends THAT param only, and playback resumes when the twist idles; a broken scope here means one knob freezes the whole lane.
+// Re-enable only on a root cause (#1847); "it passes now" is not one.
+test.fixme('per-clip automation: a MIDI CC on an automated param suspends only that param until the twist idles; CC-idle resumes', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 4 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page, rack }) => {
   void rack;
   await spawnPatch(page, [
     { id: CP, type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio' },

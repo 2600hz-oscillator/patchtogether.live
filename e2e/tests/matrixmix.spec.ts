@@ -277,7 +277,12 @@ test('GRAY ✕ (outputFanout) is clickable: accept ADDS a cable, the foreign con
   await expect(cell).toHaveAttribute('data-kind', 'direct');
 });
 
-test('Sequenced VCO: matrix unpatch + re-patch, then Cmd-Z all the way back to the exact starting patch', async ({ page, rack }) => {
+// ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are UNCHANGED.
+// NONDETERMINISM: 7 recovered-on-retry observation(s) across 4 SHA(s) / 3 branch(es) in the
+// 96 h CI census to 2026-08-18 — never a hard failure, so every one of those jobs reported SUCCESS.
+// LOST WHILE PARKED: the matrix's undo integrity — unpatch and re-patch from the grid, then Cmd-Z back to the EXACT starting patch; partial undo through the shared validateEdge seam leaves a silently different graph.
+// Re-enable only on a root cause (#1847); "it passes now" is not one.
+test.fixme('Sequenced VCO: matrix unpatch + re-patch, then Cmd-Z all the way back to the exact starting patch', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 7 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page, rack }) => {
   // CI-load robustness: loads a 5-module example then drives a long multi-step
   // matrix patch/unpatch + full Cmd-Z undo chain (each step polls the edge
   // store). The flat 30s default timed out under CI load (main run 1b897a3c,

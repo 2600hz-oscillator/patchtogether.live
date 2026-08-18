@@ -144,7 +144,12 @@ async function setupDockedClipplayer(page: Page): Promise<{ rowPitch: number; pa
 }
 
 test.describe('CLIP PLAYER launch grid — stable geometry across a pad click', () => {
-  test('dock full-view: a pad click does not move the grid (and the sampler can see it if it does)', async ({
+  // ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are UNCHANGED.
+  // NONDETERMINISM: 2 recovered-on-retry observation(s) across 2 SHA(s) / 1 branch(es) in the
+  // 96 h CI census to 2026-08-18 — never a hard failure, so every one of those jobs reported SUCCESS.
+  // LOST WHILE PARKED: the owner-reported +2-row scroll jump — a bare `HTMLElement.focus()` scrolling the launch grid so a double-click lands in the wrong clip; the sampler leg is what makes the movement observable.
+  // Re-enable only on a root cause (#1847); "it passes now" is not one.
+  test.fixme('dock full-view: a pad click does not move the grid (and the sampler can see it if it does)', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 2 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({
     page,
   }) => {
     const { rowPitch, pad0 } = await setupDockedClipplayer(page);
