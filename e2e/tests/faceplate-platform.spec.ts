@@ -1261,6 +1261,17 @@ test.describe('lane tile geometry — no cell paints over another, at any lane t
         //     repo has this exact warning about where a flex row wraps.
         //     Directional is also the honest shape: over-reserving is safe,
         //     under-reserving is the overlap.
+        //
+        //     ⚠ RE-MEASURED AFTER #1794 (the NeonFader migration): a lane fader
+        //     cell is **94.0 CSS px** — 80 px slot + 5 px gap + a 9 px label —
+        //     for mixmstrs AND noise, in the app's own stack. Still inside both
+        //     bounds, so the constant did not move. What DID change is the
+        //     reason for the spread above: `NeonFader`'s label carries
+        //     `line-height: 1` on a 9 px font, so its line box no longer varies
+        //     with the font stack the way the old 0.62rem label did. The
+        //     ceiling/floor shape is kept anyway — it is the correct shape
+        //     whether or not the spread is currently zero, and pinning equality
+        //     is how this clause would start failing on a font change again.
         for (const c of tile.cells) {
           if (c.kind !== 'fader') continue;
           if (c.h > LANE_CELL_H.fader) {

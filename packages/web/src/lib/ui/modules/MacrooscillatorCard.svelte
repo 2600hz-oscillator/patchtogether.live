@@ -24,7 +24,7 @@
   // (card-control-overflow); the card has ~8 px of slack. Sharing the readout
   // row costs zero height because that row is already taller than its text.
   import type { NodeProps } from '@xyflow/svelte';
-  import Fader from '$lib/ui/controls/Fader.svelte';
+  import NeonFader from '$lib/ui/controls/NeonFader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import OssAttribution from '$lib/ui/modules/OssAttribution.svelte';
   import { macrooscillatorDef } from '$lib/audio/modules/macrooscillator';
@@ -96,12 +96,12 @@
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="fader-row">
-      <Fader value={model}     min={P.model.min}     max={P.model.max}     defaultValue={defaultFor('model')}     label={P.model.label}     curve={P.model.curve}     units={P.model.units}     onchange={set('model')}     moduleId={id} paramId="model"     readLive={live('model')} />
-      <Fader value={note}      min={P.note.min}      max={P.note.max}      defaultValue={defaultFor('note')}      label={P.note.label}      curve={P.note.curve}      units={P.note.units}      onchange={set('note')}      moduleId={id} paramId="note"      readLive={live('note')} />
-      <Fader value={harmonics} min={P.harmonics.min} max={P.harmonics.max} defaultValue={defaultFor('harmonics')} label={P.harmonics.label} curve={P.harmonics.curve} units={P.harmonics.units} onchange={set('harmonics')} moduleId={id} paramId="harmonics" readLive={live('harmonics')} />
-      <Fader value={timbre}    min={P.timbre.min}    max={P.timbre.max}    defaultValue={defaultFor('timbre')}    label={P.timbre.label}    curve={P.timbre.curve}    units={P.timbre.units}    onchange={set('timbre')}    moduleId={id} paramId="timbre"    readLive={live('timbre')} />
-      <Fader value={morph}     min={P.morph.min}     max={P.morph.max}     defaultValue={defaultFor('morph')}     label={P.morph.label}     curve={P.morph.curve}     units={P.morph.units}     onchange={set('morph')}     moduleId={id} paramId="morph"     readLive={live('morph')} />
-      <Fader value={level}     min={P.level.min}     max={P.level.max}     defaultValue={defaultFor('level')}     label={P.level.label}     curve={P.level.curve}     units={P.level.units}     onchange={set('level')}     moduleId={id} paramId="level"     readLive={live('level')} />
+      <NeonFader value={model}     min={P.model.min}     max={P.model.max}     defaultValue={defaultFor('model')}     label={P.model.label}     curve={P.model.curve}     units={P.model.units}     onchange={set('model')}     moduleId={id} paramId="model"     readLive={live('model')} />
+      <NeonFader value={note}      min={P.note.min}      max={P.note.max}      defaultValue={defaultFor('note')}      label={P.note.label}      curve={P.note.curve}      units={P.note.units}      onchange={set('note')}      moduleId={id} paramId="note"      readLive={live('note')} />
+      <NeonFader value={harmonics} min={P.harmonics.min} max={P.harmonics.max} defaultValue={defaultFor('harmonics')} label={P.harmonics.label} curve={P.harmonics.curve} units={P.harmonics.units} onchange={set('harmonics')} moduleId={id} paramId="harmonics" readLive={live('harmonics')} />
+      <NeonFader value={timbre}    min={P.timbre.min}    max={P.timbre.max}    defaultValue={defaultFor('timbre')}    label={P.timbre.label}    curve={P.timbre.curve}    units={P.timbre.units}    onchange={set('timbre')}    moduleId={id} paramId="timbre"    readLive={live('timbre')} />
+      <NeonFader value={morph}     min={P.morph.min}     max={P.morph.max}     defaultValue={defaultFor('morph')}     label={P.morph.label}     curve={P.morph.curve}     units={P.morph.units}     onchange={set('morph')}     moduleId={id} paramId="morph"     readLive={live('morph')} />
+      <NeonFader value={level}     min={P.level.min}     max={P.level.max}     defaultValue={defaultFor('level')}     label={P.level.label}     curve={P.level.curve}     units={P.level.units}     onchange={set('level')}     moduleId={id} paramId="level"     readLive={live('level')} />
     </div>
   </PatchPanel>
   <OssAttribution author={macrooscillatorDef.ossAttribution?.author} />

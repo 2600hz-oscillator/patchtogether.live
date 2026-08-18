@@ -14,7 +14,7 @@
   import { onMount } from 'svelte';
   import type { NodeProps } from '@xyflow/svelte';
   import { onMeterFrame } from '$lib/ui/meter-frame';
-  import Fader from '$lib/ui/controls/Fader.svelte';
+  import NeonFader from '$lib/ui/controls/NeonFader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import { dockscopeDef, type DockscopeSnapshot } from '$lib/audio/modules/dockscope';
   import { drawDockscope } from '$lib/audio/modules/dockscope-draw';
@@ -133,8 +133,8 @@
         <canvas bind:this={canvasEl} data-testid="dockscope-canvas"></canvas>
       </div>
       <div class="fader-col">
-        <Fader value={timeMs} min={1} max={200} defaultValue={20} label="Time" units="ms" curve="log" onchange={setParam('timeMs')} moduleId={id} paramId="timeMs" />
-        <Fader value={scale} min={0.1} max={10} defaultValue={1} label="Scale" curve="log" onchange={setParam('scale')} moduleId={id} paramId="scale" />
+        <NeonFader value={timeMs} min={1} max={200} defaultValue={20} label="Time" units="ms" curve="log" onchange={setParam('timeMs')} moduleId={id} paramId="timeMs" />
+        <NeonFader value={scale} min={0.1} max={10} defaultValue={1} label="Scale" curve="log" onchange={setParam('scale')} moduleId={id} paramId="scale" />
       </div>
     </div>
   </PatchPanel>

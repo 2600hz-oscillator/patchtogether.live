@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { NodeProps } from '@xyflow/svelte';
-  import Fader from '$lib/ui/controls/Fader.svelte';
+  import NeonFader from '$lib/ui/controls/NeonFader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import { noiseDef } from '$lib/audio/modules/noise';
   import type { ModuleNode } from '$lib/graph/types';
@@ -48,7 +48,7 @@
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="fader-row">
-      <Fader value={level} min={pLevel.min} max={pLevel.max} defaultValue={pLevel.defaultValue} label="Level" curve={pLevel.curve} units={pLevel.units} onchange={set('level')} moduleId={id} paramId="level" readLive={live('level')} />
+      <NeonFader value={level} min={pLevel.min} max={pLevel.max} defaultValue={pLevel.defaultValue} label="Level" curve={pLevel.curve} units={pLevel.units} onchange={set('level')} moduleId={id} paramId="level" readLive={live('level')} />
     </div>
   </PatchPanel>
 </div>

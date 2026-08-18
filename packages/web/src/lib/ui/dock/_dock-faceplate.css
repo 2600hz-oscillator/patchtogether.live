@@ -188,7 +188,31 @@
   min-width: 0;
   width: max-content;
 }
-/* ⚠ #1809's `:has(.rear-card)` OVERRIDE WAS HERE AND IS DELETED, NOT LOST —
+/* ⚠ #1794's `:has([data-shell-type='mixmstrs'])` OVERRIDE WAS HERE TOO, AND IS
+   GONE WITH THE OTHERS — but the MEASUREMENT it carried is not, because it is
+   about a limiter this rule does not remove.
+
+   That comment (moved into this file when `console.css` was deleted) recorded
+   how far lifting the floor for ONE module actually got: pane 940 → 761.2 px,
+   i.e. 19 %, not the half the owner asked for. It then chased the remainder
+   instead of guessing, and named it:
+
+       div.faceplate-body   w=761.2
+         div.fp-front       w=0.0     ← the flip container
+           div.tabrail      w=761.2   ← …whose widest child is an 89.5 px tab
+
+   ⚠ THE DOCK'S OWN TAB RAIL SETS THE WIDTH, inside a zero-width flip box —
+   shared full-view chrome on every faced module, not something a faceplate can
+   fix from here. Two hero knobs tried against it (`--dock-hero-glyph-w`, a new
+   `--dock-hero-vis-basis`) moved the number by 0.0 px and were REVERTED rather
+   than shipped as decoration. It is filed as its own issue.
+
+   Carried forward because it is still true and still unfixed: content sizing is
+   necessary for a compact plate and is not sufficient while the rail is wider
+   than the content. The per-face slack gate in `workflow-shell-faces.spec.ts`
+   is what will show it if the rail ever becomes the binding constraint again.
+
+   ⚠ #1809's `:has(.rear-card)` OVERRIDE WAS HERE AND IS DELETED, NOT LOST —
    the two PRs arrived at the same fix from opposite ends and this is the merge
    resolution.
 

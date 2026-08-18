@@ -68,7 +68,7 @@
   import { onMount, onDestroy } from 'svelte';
   import { type NodeProps } from '@xyflow/svelte';
   import XyPad from '$lib/ui/controls/XyPad.svelte';
-  import Fader from '$lib/ui/controls/Fader.svelte';
+  import NeonFader from '$lib/ui/controls/NeonFader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { useEngine } from '$lib/audio/engine-context';
@@ -717,10 +717,10 @@
           <section class="bank">
             <h4 class="bank-title">LOOP</h4>
             <div class="bank-faders">
-              <Fader value={p('mix')}      min={pmin('mix')}      max={pmax('mix')}      defaultValue={pdef('mix')}      label="Mix" curve="linear" onchange={setParam('mix')}      moduleId={id} paramId="mix" trackHeight={FADER_H} />
-              <Fader value={p('feedback')} min={pmin('feedback')} max={pmax('feedback')} defaultValue={pdef('feedback')} label="FB"  curve="linear" onchange={setParam('feedback')} moduleId={id} paramId="feedback" trackHeight={FADER_H} />
+              <NeonFader value={p('mix')}      min={pmin('mix')}      max={pmax('mix')}      defaultValue={pdef('mix')}      label="Mix" curve="linear" onchange={setParam('mix')}      moduleId={id} paramId="mix" trackHeight={FADER_H} />
+              <NeonFader value={p('feedback')} min={pmin('feedback')} max={pmax('feedback')} defaultValue={pdef('feedback')} label="FB"  curve="linear" onchange={setParam('feedback')} moduleId={id} paramId="feedback" trackHeight={FADER_H} />
               <div class="delay-cell" class:clk-driven={clockPatched}>
-                <Fader value={p('delay')} min={pmin('delay')} max={pmax('delay')} units="ms" defaultValue={pdef('delay')} label={clockPatched ? 'Dly·CLK' : 'Delay'} curve="linear" onchange={setParam('delay')} moduleId={id} paramId="delay" trackHeight={FADER_H} />
+                <NeonFader value={p('delay')} min={pmin('delay')} max={pmax('delay')} units="ms" defaultValue={pdef('delay')} label={clockPatched ? 'Dly·CLK' : 'Delay'} curve="linear" onchange={setParam('delay')} moduleId={id} paramId="delay" trackHeight={FADER_H} />
                 {#if clockPatched}<span class="clk-badge" data-testid="backdraft-clk-badge" title="DELAY CLOCK is driving the feedback delay (knob overridden)">CLK</span>{/if}
               </div>
             </div>
@@ -729,19 +729,19 @@
           <section class="bank">
             <h4 class="bank-title">COLOUR</h4>
             <div class="bank-faders">
-              <Fader value={p('luma')}   min={pmin('luma')}   max={pmax('luma')}   defaultValue={pdef('luma')}   label="Luma" curve="linear" onchange={setParam('luma')}   moduleId={id} paramId="luma" trackHeight={FADER_H} />
-              <Fader value={p('chroma')} min={pmin('chroma')} max={pmax('chroma')} defaultValue={pdef('chroma')} label="Chr"  curve="linear" onchange={setParam('chroma')} moduleId={id} paramId="chroma" trackHeight={FADER_H} />
-              <Fader value={p('r')}      min={pmin('r')}      max={pmax('r')}      defaultValue={pdef('r')}      label="R"    curve="linear" onchange={setParam('r')}      moduleId={id} paramId="r" trackHeight={FADER_H} />
-              <Fader value={p('g')}      min={pmin('g')}      max={pmax('g')}      defaultValue={pdef('g')}      label="G"    curve="linear" onchange={setParam('g')}      moduleId={id} paramId="g" trackHeight={FADER_H} />
-              <Fader value={p('b')}      min={pmin('b')}      max={pmax('b')}      defaultValue={pdef('b')}      label="B"    curve="linear" onchange={setParam('b')}      moduleId={id} paramId="b" trackHeight={FADER_H} />
+              <NeonFader value={p('luma')}   min={pmin('luma')}   max={pmax('luma')}   defaultValue={pdef('luma')}   label="Luma" curve="linear" onchange={setParam('luma')}   moduleId={id} paramId="luma" trackHeight={FADER_H} />
+              <NeonFader value={p('chroma')} min={pmin('chroma')} max={pmax('chroma')} defaultValue={pdef('chroma')} label="Chr"  curve="linear" onchange={setParam('chroma')} moduleId={id} paramId="chroma" trackHeight={FADER_H} />
+              <NeonFader value={p('r')}      min={pmin('r')}      max={pmax('r')}      defaultValue={pdef('r')}      label="R"    curve="linear" onchange={setParam('r')}      moduleId={id} paramId="r" trackHeight={FADER_H} />
+              <NeonFader value={p('g')}      min={pmin('g')}      max={pmax('g')}      defaultValue={pdef('g')}      label="G"    curve="linear" onchange={setParam('g')}      moduleId={id} paramId="g" trackHeight={FADER_H} />
+              <NeonFader value={p('b')}      min={pmin('b')}      max={pmax('b')}      defaultValue={pdef('b')}      label="B"    curve="linear" onchange={setParam('b')}      moduleId={id} paramId="b" trackHeight={FADER_H} />
             </div>
           </section>
 
           <section class="bank">
             <h4 class="bank-title">KEY</h4>
             <div class="bank-faders">
-              <Fader value={p('lighten')} min={pmin('lighten')} max={pmax('lighten')} defaultValue={pdef('lighten')} label="Lgt" curve="linear" onchange={setParam('lighten')} moduleId={id} paramId="lighten" trackHeight={FADER_H} />
-              <Fader value={p('darken')}  min={pmin('darken')}  max={pmax('darken')}  defaultValue={pdef('darken')}  label="Drk" curve="linear" onchange={setParam('darken')}  moduleId={id} paramId="darken" trackHeight={FADER_H} />
+              <NeonFader value={p('lighten')} min={pmin('lighten')} max={pmax('lighten')} defaultValue={pdef('lighten')} label="Lgt" curve="linear" onchange={setParam('lighten')} moduleId={id} paramId="lighten" trackHeight={FADER_H} />
+              <NeonFader value={p('darken')}  min={pmin('darken')}  max={pmax('darken')}  defaultValue={pdef('darken')}  label="Drk" curve="linear" onchange={setParam('darken')}  moduleId={id} paramId="darken" trackHeight={FADER_H} />
             </div>
           </section>
         </div>
@@ -753,11 +753,11 @@
           <section class="bank">
             <h4 class="bank-title">GEOMETRY</h4>
             <div class="bank-faders">
-              <Fader value={p('zoom')}     min={pmin('zoom')}     max={pmax('zoom')}     defaultValue={pdef('zoom')}     label="Zoom" curve="linear" onchange={setParam('zoom')}     moduleId={id} paramId="zoom" trackHeight={FADER_H} />
-              <Fader value={p('rotate')}   min={pmin('rotate')}   max={pmax('rotate')}   units="°" defaultValue={pdef('rotate')} label="Rot" curve="linear" onchange={setParam('rotate')} moduleId={id} paramId="rotate" trackHeight={FADER_H} />
-              <Fader value={p('offsetX')}  min={pmin('offsetX')}  max={pmax('offsetX')}  defaultValue={pdef('offsetX')}  label="OffX" curve="linear" onchange={setParam('offsetX')}  moduleId={id} paramId="offsetX" trackHeight={FADER_H} />
-              <Fader value={p('offsetY')}  min={pmin('offsetY')}  max={pmax('offsetY')}  defaultValue={pdef('offsetY')}  label="OffY" curve="linear" onchange={setParam('offsetY')}  moduleId={id} paramId="offsetY" trackHeight={FADER_H} />
-              <Fader value={p('pixelate')} min={pmin('pixelate')} max={pmax('pixelate')} defaultValue={pdef('pixelate')} label="Pix"  curve="linear" onchange={setParam('pixelate')} moduleId={id} paramId="pixelate" trackHeight={FADER_H} />
+              <NeonFader value={p('zoom')}     min={pmin('zoom')}     max={pmax('zoom')}     defaultValue={pdef('zoom')}     label="Zoom" curve="linear" onchange={setParam('zoom')}     moduleId={id} paramId="zoom" trackHeight={FADER_H} />
+              <NeonFader value={p('rotate')}   min={pmin('rotate')}   max={pmax('rotate')}   units="°" defaultValue={pdef('rotate')} label="Rot" curve="linear" onchange={setParam('rotate')} moduleId={id} paramId="rotate" trackHeight={FADER_H} />
+              <NeonFader value={p('offsetX')}  min={pmin('offsetX')}  max={pmax('offsetX')}  defaultValue={pdef('offsetX')}  label="OffX" curve="linear" onchange={setParam('offsetX')}  moduleId={id} paramId="offsetX" trackHeight={FADER_H} />
+              <NeonFader value={p('offsetY')}  min={pmin('offsetY')}  max={pmax('offsetY')}  defaultValue={pdef('offsetY')}  label="OffY" curve="linear" onchange={setParam('offsetY')}  moduleId={id} paramId="offsetY" trackHeight={FADER_H} />
+              <NeonFader value={p('pixelate')} min={pmin('pixelate')} max={pmax('pixelate')} defaultValue={pdef('pixelate')} label="Pix"  curve="linear" onchange={setParam('pixelate')} moduleId={id} paramId="pixelate" trackHeight={FADER_H} />
             </div>
           </section>
 
@@ -786,7 +786,7 @@
                 ? 'The bounded-screen model: ROOM is the light in the room the TV stands in, BORDER the screen frame’s thickness (the “bezel” — the only high-contrast edge between one nesting level and the next), PHOSPHOR the display’s glow/persistence, DRIVE the auto-exposure servo (CRITICAL).'
                 : 'ROOM / BORDER (bezel thickness) / PHOSPHOR / DRIVE only act in PURE TV or CRITICAL — cycle TV MODE to bring the bounded screen in.'}
             >
-              <Fader value={p('room')}     min={pmin('room')}     max={pmax('room')}     defaultValue={pdef('room')}     label="Room"  curve="linear" onchange={setParam('room')}     moduleId={id} paramId="room" trackHeight={FADER_H} />
+              <NeonFader value={p('room')}     min={pmin('room')}     max={pmax('room')}     defaultValue={pdef('room')}     label="Room"  curve="linear" onchange={setParam('room')}     moduleId={id} paramId="room" trackHeight={FADER_H} />
               <!-- BORDER, not "Bez". This is the screen-frame WIDTH control —
                    the thing a user hunts for as "border thickness" — and it was
                    reported as MISSING from this card. It never was: it is
@@ -800,9 +800,9 @@
                    dim now carries its own cure (the bank title is a "turn on"
                    button), and the label now says the word. Card-side only: the
                    def keeps `label: 'Bezel'`, so no contract and no re-attest. -->
-              <Fader value={p('bezel')}    min={pmin('bezel')}    max={pmax('bezel')}    defaultValue={pdef('bezel')}    label="Border" curve="linear" onchange={setParam('bezel')}   moduleId={id} paramId="bezel" trackHeight={FADER_H} />
-              <Fader value={p('phosphor')} min={pmin('phosphor')} max={pmax('phosphor')} defaultValue={pdef('phosphor')} label="Phos"  curve="linear" onchange={setParam('phosphor')} moduleId={id} paramId="phosphor" trackHeight={FADER_H} />
-              <Fader value={p('drive')}    min={pmin('drive')}    max={pmax('drive')}    defaultValue={pdef('drive')}    label="Drive" curve="linear" onchange={setParam('drive')}    moduleId={id} paramId="drive" trackHeight={FADER_H} />
+              <NeonFader value={p('bezel')}    min={pmin('bezel')}    max={pmax('bezel')}    defaultValue={pdef('bezel')}    label="Border" curve="linear" onchange={setParam('bezel')}   moduleId={id} paramId="bezel" trackHeight={FADER_H} />
+              <NeonFader value={p('phosphor')} min={pmin('phosphor')} max={pmax('phosphor')} defaultValue={pdef('phosphor')} label="Phos"  curve="linear" onchange={setParam('phosphor')} moduleId={id} paramId="phosphor" trackHeight={FADER_H} />
+              <NeonFader value={p('drive')}    min={pmin('drive')}    max={pmax('drive')}    defaultValue={pdef('drive')}    label="Drive" curve="linear" onchange={setParam('drive')}    moduleId={id} paramId="drive" trackHeight={FADER_H} />
             </div>
           </section>
 
@@ -881,7 +881,7 @@
                    comment: do not spell the literal form out here, or the
                    comment itself trips it. It caught exactly that while this
                    was being written, which is the gate working as intended. -->
-              <Fader value={p('camDist')} min={pmin('camDist')} max={pmax('camDist')} defaultValue={pdef('camDist')} label="Dist" curve="linear" onchange={setParam('camDist')} moduleId={id} paramId="camDist" trackHeight={FADER_H} />
+              <NeonFader value={p('camDist')} min={pmin('camDist')} max={pmax('camDist')} defaultValue={pdef('camDist')} label="Dist" curve="linear" onchange={setParam('camDist')} moduleId={id} paramId="camDist" trackHeight={FADER_H} />
             </div>
           </section>
         </div>

@@ -1,0 +1,251 @@
+// e2e/tests/card-drop-patch.spec.ts
+//
+// DROP ONE CARD ONTO ANOTHER → THE PATCH MODAL.
+//
+// The owner's problem, verbatim: "patching video is very intensive on the patch
+// menus". A video patch costs one drill-down per cable; this makes it one drag
+// plus one click per cable, with every compatible destination visible at once.
+//
+// ── WHY THIS SPEC IS SHAPED THE WAY IT IS ────────────────────────────────
+// `handleNodeDragStop` now serves THREE outcomes from one gesture, and two of
+// them shipped long before this one:
+//
+//   1. drop on empty canvas  → reposition
+//   2. drop into a lane/send → lane assignment
+//   3. drop onto another card → the modal          ← new
+//
+// So every assertion that the modal OPENED is paired with an assertion that it
+// STAYED SHUT for a drag that should not have claimed it, and the pair is
+// driven through the SAME real pointer sequence. A spec that only tested (3)
+// would pass against an implementation that opened the modal on every drag —
+// which is precisely the regression that matters, because plain dragging is the
+// most-used gesture in the app.
+//
+// ⚠ The `moved` / `did not move` legs are load-bearing for the same reason:
+// "the modal did not open" and "the drag did nothing at all" are the same
+// observation from the outside, so the position is read on both paths.
+//
+// Real pointer drags throughout — NOT the `__handleNodeDragStop` hook. The hook
+// passes a synthetic position and would skip the drag-origin capture that
+// snap-back depends on, so it cannot see this feature's main failure mode.
+
+import { test, expect, type Page } from '@playwright/test';
+
+const RACK = '/rack?shell=legacy&seed=none';
+
+/** Two VIDEO modules, far enough apart that nothing overlaps at rest — the
+ *  first overlap in each test is the one the test itself creates. */
+const CAM_AT = { x: 0, y: 0 };
+const BD_AT = { x: 460, y: 0 };
+
+interface PatchWindow {
+  __patch: {
+    nodes: Record<string, { type: string; position: { x: number; y: number }; data?: { channel?: number } }>;
+    edges: Record<string, { source: { nodeId: string; portId: string }; target: { nodeId: string; portId: string } }>;
+  };
+  __spawnAtFlowPos: (type: string, pos: { x: number; y: number }) => void;
+}
+declare const window: Window & PatchWindow;
+
+async function seedTwoVideoCards(page: Page): Promise<{ camId: string; bdId: string }> {
+  await page.goto(RACK);
+  await page.waitForFunction(() => !!(window as unknown as PatchWindow).__patch);
+  await page.evaluate(
+    ([cam, bd]) => {
+      const w = window as unknown as PatchWindow;
+      w.__spawnAtFlowPos('cameraInput', cam);
+      w.__spawnAtFlowPos('backdraft', bd);
+    },
+    [CAM_AT, BD_AT] as const,
+  );
+  await expect
+    .poll(() => page.evaluate(() => Object.keys((window as unknown as PatchWindow).__patch.nodes).length))
+    .toBeGreaterThanOrEqual(2);
+  const ids = await page.evaluate(() =>
+    Object.entries((window as unknown as PatchWindow).__patch.nodes).map(([id, n]) => ({ id, type: n.type })),
+  );
+  const camId = ids.find((n) => n.type === 'cameraInput')!.id;
+  const bdId = ids.find((n) => n.type === 'backdraft')!.id;
+  // The cards must be laid out before any geometry is read.
+  await expect(page.locator(`.svelte-flow__node[data-id="${bdId}"]`)).toBeVisible();
+  return { camId, bdId };
+}
+
+const nodePos = (page: Page, id: string) =>
+  page.evaluate((i) => ({ ...(window as unknown as PatchWindow).__patch.nodes[i]!.position }), id);
+
+const edgeIds = (page: Page) =>
+  page.evaluate(() => Object.keys((window as unknown as PatchWindow).__patch.edges));
+
+/** A REAL pointer drag of a card, grabbed by its header — the realistic grab
+ *  point, and the one that makes the pointer disagree with the card's centre
+ *  (which is why the drop rule tests the CENTRE, not the cursor). */
+async function dragCardTo(page: Page, id: string, to: { x: number; y: number }): Promise<void> {
+  const box = (await page.locator(`.svelte-flow__node[data-id="${id}"]`).boundingBox())!;
+  const gx = box.x + box.width / 2;
+  const gy = box.y + 14;
+  await page.mouse.move(gx, gy);
+  await page.mouse.down();
+  for (let i = 1; i <= 16; i++) {
+    await page.mouse.move(gx + ((to.x - gx) * i) / 16, gy + ((to.y - gy) * i) / 16);
+  }
+  await page.mouse.up();
+}
+
+/** Screen-space centre of a card. */
+async function centreOf(page: Page, id: string): Promise<{ x: number; y: number }> {
+  const b = (await page.locator(`.svelte-flow__node[data-id="${id}"]`).boundingBox())!;
+  return { x: b.x + b.width / 2, y: b.y + b.height / 2 };
+}
+
+const scrim = (page: Page) => page.locator('[data-testid="patch-drop-scrim"]');
+
+test.describe('drop a card on a card → the patch modal', () => {
+  test('a plain drag to empty canvas MOVES the card and opens NOTHING', async ({ page }) => {
+    // OUTCOME 1, unchanged. This is the leg that fails if the drop rule is too
+    // loose — and it is the single most-used gesture in the app.
+    const { bdId } = await seedTwoVideoCards(page);
+    const before = await nodePos(page, bdId);
+    const box = (await page.locator(`.svelte-flow__node[data-id="${bdId}"]`).boundingBox())!;
+
+    await dragCardTo(page, bdId, { x: box.x + box.width / 2 + 150, y: box.y + 14 + 90 });
+
+    await expect.poll(() => nodePos(page, bdId)).not.toEqual(before);
+    await expect(scrim(page)).toHaveCount(0);
+  });
+
+  test('a drag that only CLIPS another card still just moves it', async ({ page }) => {
+    // The threshold's reason for existing. xyflow's own intersection default is
+    // `overlappingArea > 0` — one square pixel — and the app's collision
+    // resolver slides cards in 22.5px steps, so a rule at that default would
+    // fire on ordinary tidying. The gate is the dragged card's CENTRE.
+    const { camId, bdId } = await seedTwoVideoCards(page);
+    const cam = (await page.locator(`.svelte-flow__node[data-id="${camId}"]`).boundingBox())!;
+    const bd = (await page.locator(`.svelte-flow__node[data-id="${bdId}"]`).boundingBox())!;
+    const before = await nodePos(page, bdId);
+
+    // Land backdraft's centre just PAST camera's right edge: the two overlap,
+    // but the centre is outside, so this is a move and not a drop.
+    await dragCardTo(page, bdId, { x: cam.x + cam.width + bd.width / 2 - 60, y: cam.y + cam.height / 2 });
+
+    await expect(scrim(page)).toHaveCount(0);
+    await expect.poll(() => nodePos(page, bdId)).not.toEqual(before);
+  });
+
+  test('dropping the CENTRE on another card opens the modal and SNAPS THE CARD BACK', async ({ page }) => {
+    const { camId, bdId } = await seedTwoVideoCards(page);
+    const before = await nodePos(page, bdId);
+
+    await dragCardTo(page, bdId, await centreOf(page, camId));
+
+    await expect(scrim(page)).toBeVisible();
+    // ⚠ SNAP BACK. Not cosmetic: membership is derived from POSITION, so a card
+    // left where it landed could be reparented into whatever lane it was over.
+    // Restoring first means there is no new position to derive a reparent from.
+    await expect.poll(() => nodePos(page, bdId)).toEqual(before);
+  });
+
+  test('refusals are COLLAPSED behind a summary that carries its count', async ({ page }) => {
+    const { camId, bdId } = await seedTwoVideoCards(page);
+    await dragCardTo(page, bdId, await centreOf(page, camId));
+    await expect(scrim(page)).toBeVisible();
+
+    const toggle = scrim(page).locator('[data-testid="drop-refused-toggle"]');
+    await expect(toggle).toBeVisible();
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+
+    // ⚠ THE COUNT IS THE AFFORDANCE. A bare chevron is indistinguishable from
+    // "nothing here", which is the exact failure dimming-not-hiding prevents.
+    const count = Number(await toggle.getAttribute('data-count'));
+    expect(count).toBeGreaterThan(0);
+    await expect(toggle).toContainText(String(count));
+
+    // Collapsed means collapsed…
+    const refusedRows = scrim(page).locator('[data-testid="drop-target-more"] [data-testid="drop-row"]');
+    await expect(refusedRows).toHaveCount(0);
+    // …and expanding really does produce every one of them, each with a reason.
+    await toggle.click();
+    await expect(refusedRows).toHaveCount(count);
+    await expect(scrim(page).locator('[data-testid="drop-row-why"]').first()).not.toBeEmpty();
+
+    // The offered rows were never hidden.
+    await expect(scrim(page).locator('[data-testid="drop-row"][data-state="offered"]').first()).toBeVisible();
+  });
+
+  test('staged rows commit as REAL edges, and ONE undo removes the whole session', async ({ page }) => {
+    const { camId, bdId } = await seedTwoVideoCards(page);
+    const startEdges = await edgeIds(page);
+    await dragCardTo(page, bdId, await centreOf(page, camId));
+    await expect(scrim(page)).toBeVisible();
+
+    const offered = scrim(page).locator('[data-testid="drop-row"][data-state="offered"]');
+    await expect(offered.first()).toBeVisible();
+    // Stage TWO — the point of the gesture is many cables per trip, and the
+    // undo unit is the SESSION rather than the click.
+    await offered.nth(0).click();
+    await offered.nth(0).click();
+    await expect(scrim(page).locator('[data-testid="drop-commit"]')).toHaveAttribute('data-staged', '2');
+
+    await page.keyboard.press('Enter');
+    await expect(scrim(page)).toHaveCount(0);
+    await expect.poll(() => edgeIds(page)).toHaveLength(startEdges.length + 2);
+
+    // Both edges really run camera → backdraft, in the graph the engine reads.
+    const wired = await page.evaluate(() =>
+      Object.values((window as unknown as PatchWindow).__patch.edges).map(
+        (e) => `${e.source.nodeId}->${e.target.nodeId}`,
+      ),
+    );
+    expect(wired.every((w) => w === `${camId}->${bdId}`)).toBe(true);
+
+    // ⚠ ONE undo, not two. A half-applied patch set is the failure mode.
+    await page.keyboard.press('Meta+z');
+    await expect.poll(() => edgeIds(page)).toHaveLength(startEdges.length);
+  });
+
+  test('cancelling writes no edge and leaves the card where it started', async ({ page }) => {
+    const { camId, bdId } = await seedTwoVideoCards(page);
+    const before = await nodePos(page, bdId);
+    const startEdges = await edgeIds(page);
+
+    await dragCardTo(page, bdId, await centreOf(page, camId));
+    await expect(scrim(page)).toBeVisible();
+    await scrim(page).locator('[data-testid="drop-cancel"]').click();
+
+    await expect(scrim(page)).toHaveCount(0);
+    await expect.poll(() => edgeIds(page)).toHaveLength(startEdges.length);
+    await expect.poll(() => nodePos(page, bdId)).toEqual(before);
+  });
+
+  test('"leave it there" is the escape hatch for a drop that really was a move', async ({ page }) => {
+    // Snap-back is the safe default; this is the labelled, explicit override,
+    // and it must NOT be what happens by accident.
+    const { camId, bdId } = await seedTwoVideoCards(page);
+    const before = await nodePos(page, bdId);
+
+    await dragCardTo(page, bdId, await centreOf(page, camId));
+    await expect(scrim(page)).toBeVisible();
+    await scrim(page).locator('[data-testid="drop-cancel-keep"]').click();
+
+    await expect(scrim(page)).toHaveCount(0);
+    await expect.poll(() => nodePos(page, bdId)).not.toEqual(before);
+  });
+
+  test('TAB inverts the modal and does NOT flip the rack behind it', async ({ page }) => {
+    // The third flip-key claimant. Precedence lives in FLIP_KEY_CLAIMANTS, so
+    // the modal owns Tab while it is open and the canvas-wide flip must stay
+    // put — the phase-divergence class this codebase has already had once.
+    const { camId, bdId } = await seedTwoVideoCards(page);
+    await dragCardTo(page, bdId, await centreOf(page, camId));
+    await expect(scrim(page)).toBeVisible();
+
+    const modal = scrim(page).locator('[data-testid="drop-patch-modal"]');
+    await expect(modal).toHaveAttribute('data-direction', 'downstream');
+    const rearBefore = await page.locator('.flow').getAttribute('data-rear-view');
+
+    await page.keyboard.press('Tab');
+
+    await expect(modal).toHaveAttribute('data-direction', 'upstream');
+    expect(await page.locator('.flow').getAttribute('data-rear-view')).toBe(rearBefore);
+  });
+});

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
   import type { NodeProps } from '@xyflow/svelte';
-  import Fader from '$lib/ui/controls/Fader.svelte';
+  import NeonFader from '$lib/ui/controls/NeonFader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import { patch } from '$lib/graph/store';
   import { setNodeParam } from '$lib/graph/mutate';
@@ -122,9 +122,9 @@
     </div>
 
     <div class="fader-row">
-      <Fader value={cursor}          min={0}  max={rasterizeDef.params[0]!.max} defaultValue={0}   label="Scan"   curve="linear" onchange={setParam('cursor')}          moduleId={id} paramId="cursor" />
-      <Fader value={samplesPerFrame} min={16} max={8000}   defaultValue={800} label="Samp/F" curve="log"    onchange={setParam('samplesPerFrame')} moduleId={id} paramId="samplesPerFrame" />
-      <Fader value={gain}            min={0}  max={8}       defaultValue={1}   label="Gain"   curve="log"    onchange={setParam('gain')}            moduleId={id} paramId="gain" />
+      <NeonFader value={cursor}          min={0}  max={rasterizeDef.params[0]!.max} defaultValue={0}   label="Scan"   curve="linear" onchange={setParam('cursor')}          moduleId={id} paramId="cursor" />
+      <NeonFader value={samplesPerFrame} min={16} max={8000}   defaultValue={800} label="Samp/F" curve="log"    onchange={setParam('samplesPerFrame')} moduleId={id} paramId="samplesPerFrame" />
+      <NeonFader value={gain}            min={0}  max={8}       defaultValue={1}   label="Gain"   curve="log"    onchange={setParam('gain')}            moduleId={id} paramId="gain" />
     </div>
   </PatchPanel>
 </div>

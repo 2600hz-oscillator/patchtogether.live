@@ -228,13 +228,14 @@ describe('mixmstrs face — the SCOPE ranking, asserted from the live def', () =
       ...MIXMSTRS_RETURNS.map((r) => `ret${r}_volume`),
     ];
     for (const id of levels) {
-      // ⚠ `neon-fader`, the conic-knob-language throw (owner review of #1738).
-      // Still asserted as an exact kind rather than "some kind of fader", so a
-      // silent drop back to the plain widget is red.
+      // ⚠ THIS ASSERTED `'neon-fader'` UNTIL #1794, to keep a silent drop back
+      // to the plain widget red. There is no plain widget to drop back TO —
+      // `Fader.svelte` is deleted and `'fader'` IS the conic-knob-language
+      // throw — so the exact-kind assertion now names the surviving kind.
       expect(
         FACE.paramCells?.[id],
         `${id} is a level and must render as the neon throw`,
-      ).toBe('neon-fader');
+      ).toBe('fader');
     }
     // …and nothing else claims to be one: a `fader` is discrete-never, and the
     // ten switch-shaped params on this module would be a real defect there.

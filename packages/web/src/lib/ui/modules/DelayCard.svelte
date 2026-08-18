@@ -24,7 +24,7 @@
   // downgrade. Without it these faders print `0.40` while the curated face,
   // reading the SAME param, prints `8 REP`.
   import type { NodeProps } from '@xyflow/svelte';
-  import Fader from '$lib/ui/controls/Fader.svelte';
+  import NeonFader from '$lib/ui/controls/NeonFader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import { delayDef } from '$lib/audio/modules/delay';
   import type { ModuleNode } from '$lib/graph/types';
@@ -53,9 +53,9 @@
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="fader-row">
-      <Fader value={time}     min={pTime.min}     max={pTime.max}     defaultValue={pTime.defaultValue}     label={pTime.label}     units={pTime.units}     curve={pTime.curve}     formatValue={pTime.format}     onchange={set('time')}     readLive={live('time')}     moduleId={id} paramId="time" />
-      <Fader value={feedback} min={pFeedback.min} max={pFeedback.max} defaultValue={pFeedback.defaultValue} label={pFeedback.label} units={pFeedback.units} curve={pFeedback.curve} formatValue={pFeedback.format} onchange={set('feedback')} readLive={live('feedback')} moduleId={id} paramId="feedback" />
-      <Fader value={mix}      min={pMix.min}      max={pMix.max}      defaultValue={pMix.defaultValue}      label={pMix.label}      units={pMix.units}      curve={pMix.curve}      formatValue={pMix.format}      onchange={set('mix')}      readLive={live('mix')}      moduleId={id} paramId="mix" />
+      <NeonFader value={time}     min={pTime.min}     max={pTime.max}     defaultValue={pTime.defaultValue}     label={pTime.label}     units={pTime.units}     curve={pTime.curve}     formatValue={pTime.format}     onchange={set('time')}     readLive={live('time')}     moduleId={id} paramId="time" />
+      <NeonFader value={feedback} min={pFeedback.min} max={pFeedback.max} defaultValue={pFeedback.defaultValue} label={pFeedback.label} units={pFeedback.units} curve={pFeedback.curve} formatValue={pFeedback.format} onchange={set('feedback')} readLive={live('feedback')} moduleId={id} paramId="feedback" />
+      <NeonFader value={mix}      min={pMix.min}      max={pMix.max}      defaultValue={pMix.defaultValue}      label={pMix.label}      units={pMix.units}      curve={pMix.curve}      formatValue={pMix.format}      onchange={set('mix')}      readLive={live('mix')}      moduleId={id} paramId="mix" />
     </div>
   </PatchPanel>
 </div>

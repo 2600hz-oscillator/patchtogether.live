@@ -11,7 +11,7 @@
   // (the BackdraftCard ±1-into-±0.2 class, CLAUDE.md). The literals are gone;
   // `lfo-face-model.test.ts` greps this file to keep them gone.
   import type { NodeProps } from '@xyflow/svelte';
-  import Fader from '$lib/ui/controls/Fader.svelte';
+  import NeonFader from '$lib/ui/controls/NeonFader.svelte';
   import Knob from '$lib/ui/controls/Knob.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import { lfoDef } from '$lib/audio/modules/lfo';
@@ -78,8 +78,8 @@
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <!-- 1u: Rate + Shape faders with the Depth KNOB to their right, one row. -->
     <div class="control-row">
-      <Fader value={rate}  min={rateP.min}  max={rateP.max}  defaultValue={rateP.defaultValue}  label={rateP.label}  units={rateP.units ?? ''} curve={rateP.curve}  onchange={set('rate')}  readLive={live('rate')}  moduleId={id} paramId="rate" />
-      <Fader value={shape} min={shapeP.min} max={shapeP.max} defaultValue={shapeP.defaultValue} label={shapeP.label} curve={shapeP.curve} onchange={set('shape')} readLive={live('shape')} glyphs={SHAPE_MARKS} moduleId={id} paramId="shape" />
+      <NeonFader value={rate}  min={rateP.min}  max={rateP.max}  defaultValue={rateP.defaultValue}  label={rateP.label}  units={rateP.units ?? ''} curve={rateP.curve}  onchange={set('rate')}  readLive={live('rate')}  moduleId={id} paramId="rate" />
+      <NeonFader value={shape} min={shapeP.min} max={shapeP.max} defaultValue={shapeP.defaultValue} label={shapeP.label} curve={shapeP.curve} onchange={set('shape')} readLive={live('shape')} glyphs={SHAPE_MARKS} moduleId={id} paramId="shape" />
       <Knob value={depth} min={depthP.min} max={depthP.max} defaultValue={depthP.defaultValue} label={depthP.label} curve={depthP.curve} onchange={set('depth')} readLive={live('depth')} moduleId={id} paramId="depth" />
     </div>
   </PatchPanel>

@@ -39,11 +39,12 @@ export type ParamCellKind =
   | 'grid'
   | 'color'
   | 'fader'
-  // The SAME throw gesture as `fader`, drawn in the conic knob's visual
-  // language (`NeonFader.svelte`) — a separate KIND rather than a prop on
-  // `fader` because the choice is the MODULE's, and because `Fader.svelte` is
-  // mounted by 93 cards whose baselines must not move for one face's look.
-  | 'neon-fader'
+  // ⚠ `neon-fader` WAS A SECOND NAME FOR THIS KIND AND IS GONE (#1794). It
+  // existed only for the transition: #1738 introduced `NeonFader.svelte`
+  // while `Fader.svelte` was still mounted by ~90 cards whose baselines could
+  // not move for one face's look, so a module opted into the new throw one
+  // declaration at a time. `Fader.svelte` is deleted, `fader` IS the neon
+  // throw, and a def that still declares `'neon-fader'` no longer typechecks.
   | 'xy';
 
 /**
@@ -92,7 +93,7 @@ export type ParamCellKind =
  * one gesture"), and `declaredParamCells` folds it in so every consumer of
  * "which kind did the module declare" keeps one answer to read.
  */
-export type DeclaredParamCell = 'grid' | 'color' | 'fader' | 'neon-fader' | 'xy';
+export type DeclaredParamCell = 'grid' | 'color' | 'fader' | 'xy';
 
 /** The subset a module writes in `face.paramCells` — the single-id kinds. `xy`
  *  is absent BY CONSTRUCTION: a pad hand-written here would have no partner,

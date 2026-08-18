@@ -3,7 +3,7 @@
   // layout (handles + faders), with a 3-state shape-select button + a
   // tile-on/off toggle as discrete controls.
   import { type NodeProps } from '@xyflow/svelte';
-  import Fader from '$lib/ui/controls/Fader.svelte';
+  import NeonFader from '$lib/ui/controls/NeonFader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import { patch } from '$lib/graph/store';
   import { setNodeParam } from '$lib/graph/mutate';
@@ -59,9 +59,9 @@
   </div>
 
   <div class="fader-grid">
-    <Fader value={p('tileN')}  min={1}        max={16}      defaultValue={shapesDef.params.find((x) => x.id === 'tileN')!.defaultValue}  label="Grid"   curve="linear" onchange={setParam('tileN')} moduleId={id} paramId="tileN" />
-    <Fader value={p('rotate')} min={-3.14159} max={3.14159} defaultValue={shapesDef.params.find((x) => x.id === 'rotate')!.defaultValue} label="Rotate" curve="linear" onchange={setParam('rotate')} moduleId={id} paramId="rotate" />
-    <Fader value={p('zoom')}   min={0.05}     max={10}      defaultValue={shapesDef.params.find((x) => x.id === 'zoom')!.defaultValue}   label="Zoom"   curve="log"    onchange={setParam('zoom')} moduleId={id} paramId="zoom" />
+    <NeonFader value={p('tileN')}  min={1}        max={16}      defaultValue={shapesDef.params.find((x) => x.id === 'tileN')!.defaultValue}  label="Grid"   curve="linear" onchange={setParam('tileN')} moduleId={id} paramId="tileN" />
+    <NeonFader value={p('rotate')} min={-3.14159} max={3.14159} defaultValue={shapesDef.params.find((x) => x.id === 'rotate')!.defaultValue} label="Rotate" curve="linear" onchange={setParam('rotate')} moduleId={id} paramId="rotate" />
+    <NeonFader value={p('zoom')}   min={0.05}     max={10}      defaultValue={shapesDef.params.find((x) => x.id === 'zoom')!.defaultValue}   label="Zoom"   curve="log"    onchange={setParam('zoom')} moduleId={id} paramId="zoom" />
   </div>
   </PatchPanel>
 </div>

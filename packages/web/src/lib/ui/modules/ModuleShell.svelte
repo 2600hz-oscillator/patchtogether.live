@@ -48,7 +48,7 @@
   import { cardParams, portsFromDef } from './card-kit';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import VideoTileThumb from './VideoTileThumb.svelte';
-  import { Button, ColorField, Fader, KnobConic, NeonFader, ParamGrid, ScopeScreen, Segmented, Selector, Toggle, VuMeter, XyPad } from '$lib/ui/controls';
+  import { Button, ColorField, KnobConic, NeonFader, ParamGrid, ScopeScreen, Segmented, Selector, Toggle, VuMeter, XyPad } from '$lib/ui/controls';
   import {
     curatedFace,
     dockFacePlan,
@@ -873,31 +873,18 @@
                and a face that draws a knob are not the same control, and
                "preserve today's look" is the owner's constraint on the modules
                this exists for (noise, and clouds/mixer/vca behind it).
-               `Fader.svelte` derives `control-<paramId>` itself, exactly like
-               KnobConic, so the parity multiset is unchanged by the swap. -->
-          <div class="kcol ms-cell-fader" data-cell-kind="param" data-cell-control="fader" data-cell-key={ctl.key}>
-            <Fader
-              value={params.paramVal(pd.id)}
-              min={pd.min}
-              max={pd.max}
-              defaultValue={pd.defaultValue}
-              label={pd.label}
-              units={pd.units ?? ''}
-              curve={pd.curve}
-              onchange={paramWrite(pd.id)}
-              readLive={params.live(pd.id)}
-              moduleId={id}
-              paramId={pd.id}
-              formatValue={pd.format}
-            />
-          </div>
-        {:else if cellKind === 'neon-fader'}
-          <!-- THE SAME THROW, drawn in the conic knob's language (owner review
-               of #1738: *"a new UI control for faders that matches our blue
-               neon controls"*). A separate KIND rather than a prop on `fader`,
-               because `Fader.svelte` is mounted by 93 cards and 8 other faced
-               modules whose baselines must not move for one face's look — the
-               module opts in, one declaration at a time.
+               `NeonFader` derives `control-<paramId>` itself, exactly like
+               KnobConic, so the parity multiset is unchanged by the swap.
+
+               ⚠ THIS BRANCH USED TO BE TWO (#1794). `fader` drew the old grey
+               throw and `neon-fader` drew this one, because when #1738 landed
+               the new control the old one was still mounted by ~90 cards whose
+               baselines could not move for one face's look — so the module
+               opted in, one declaration at a time. That migration is now DONE:
+               there is one fader in the app, so a second KIND naming it would
+               be two words for one control and a `data-cell-control` value that
+               distinguishes nothing. `neon-fader` is gone from
+               `DeclaredParamCell`; a def that still declares it fails `tsc`.
 
                ⚠ NO RESTING READOUT — not here, not on the knob beside it, not
                on any face. The tier-bound `persistentReadout` this cell used to
@@ -905,7 +892,7 @@
                (owner, 2026-08-17: *"i want the data gone, not there but hidden
                or something"*). The value reaches `aria-valuetext` and the
                drag/hover tag; nothing paints it at rest. -->
-          <div class="kcol ms-cell-fader" data-cell-kind="param" data-cell-control="neon-fader" data-cell-key={ctl.key}>
+          <div class="kcol ms-cell-fader" data-cell-kind="param" data-cell-control="fader" data-cell-key={ctl.key}>
             <NeonFader
               value={params.paramVal(pd.id)}
               min={pd.min}
