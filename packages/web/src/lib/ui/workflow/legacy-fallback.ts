@@ -41,14 +41,27 @@ export type LaneRenderKind = 'legacy' | 'shell' | 'placeholder' | 'stub';
  *     grid / launcher / mapper, not a ranked-knob skeleton (plan §6): they get
  *     bespoke faces in a later spike, and stay on the verbatim legacy card until
  *     then rather than a lossy placeholder,
- *   - videoOut — the VIDEO SURFACE snowflake: its legacy card BODY IS the live,
- *     freely-resizable output screen (the monitor at the end of every video
- *     chain). Swapping it for a placeholder tile removed the ONLY user-viewable
- *     video output from the shell (the owner-reported ?shell=1 regression), so
- *     it keeps its real card verbatim in the video zone — position anchored by
- *     the zone's render override, size its own (node.data.width/height resize).
- *   - cameraInput — the CAPTURE-SOURCE snowflake, for the SAME reason videoOut
- *     is one, at the other end of the chain. Two things live ONLY on its card:
+ *   ⚠ videoOut USED TO BE IN THIS SET and is not any more (#1821). Its entry
+ *     read: "the VIDEO SURFACE snowflake: its legacy card BODY IS the live,
+ *     freely-resizable output screen … swapping it for a placeholder tile
+ *     removed the ONLY user-viewable video output from the shell (the
+ *     owner-reported ?shell=1 regression)". That reasoning was about a
+ *     PLACEHOLDER, and it was right: a tile with no picture is not a monitor.
+ *     It is no longer the alternative. videoOut now carries a real `face`, so
+ *     its lane tile is a `ModuleShell` painting the LIVE `VideoTileThumb`, and
+ *     the big picture moved to where the owner asked for it — right-click →
+ *     DETACH DISPLAY, a free-floating resizable window with no patch wires
+ *     (owner 2026-08-17: *"the card does not need the arbitrary resizing on the
+ *     card, but i want to be able to right-click -> detach display"*).
+ *     ⚠ The picture survives the swap only because the face ranks NOTHING:
+ *     `laneBodyPlan`'s ROW branch returns `glyph: hasGlyph` unconditionally, and
+ *     it is the PLATE branch — reached only by a face with more controls than a
+ *     row holds — where ranked cells evict the glyph (#1785). A future param on
+ *     this def would walk it toward that branch; `videoout-face-model.test.ts`
+ *     asserts the tile keeps its picture at every tier so the day that happens
+ *     is a red test rather than a silent regression.
+ *   - cameraInput — the CAPTURE-SOURCE snowflake, at the other end of the
+ *     chain. Two things live ONLY on its card:
  *       (a) the live SOURCE — the card owns getUserMedia + the `<video>` element
  *           and hands it to the engine via `attachExternalSource` (see
  *           ./dom-source-modules). Swapped for a tile, camera → OUTPUT is
@@ -79,7 +92,6 @@ export const NON_SHELL_LANE_TYPES: ReadonlySet<string> = new Set<string>([
   // legacy-fallback.test.ts: every member of this set must resolve to a
   // registered def, and this entry must equal the def's own exported type.
   'launchpadControlLeft',
-  'videoOut',
   'cameraInput',
 ]);
 

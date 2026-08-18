@@ -68,7 +68,12 @@ async function clipNotes(page: Page, id: string, slot = '0'): Promise<number[]> 
   return (d?.clips?.[slot]?.steps ?? []).map((s) => s.midi).sort((a, b) => a - b);
 }
 
-test('custom scale: pick rows → APPLY hides the rest → hidden notes SURVIVE → REMOVE restores', async ({
+// ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are UNCHANGED.
+// NONDETERMINISM: 1 recovered-on-retry observation(s) across 1 SHA(s) / 1 branch(es) in the
+// 96 h CI census to 2026-08-18 — never a hard failure, so every one of those jobs reported SUCCESS.
+// LOST WHILE PARKED: the per-lane note-row filter's non-destructive contract — hidden rows keep their notes and REMOVE restores them; a filter that eats data silently destroys the user's pattern.
+// Re-enable only on a root cause (#1847); "it passes now" is not one.
+test.fixme('custom scale: pick rows → APPLY hides the rest → hidden notes SURVIVE → REMOVE restores', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 1 recovered-on-retry observation in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({
   page,
   rack,
 }) => {

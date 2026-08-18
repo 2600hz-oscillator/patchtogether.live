@@ -174,7 +174,12 @@ const selectControl = (page: Page) =>
 const nodeData = (page: Page, nodeId: string) =>
   page.evaluate((id) => (globalThis as unknown as EngineW).__patch.nodes[id]?.data ?? null, nodeId);
 
-test('@launchpad RESET pad snaps every active lane back to step 1 (control-deck)', async ({ page, rack }) => {
+// ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are UNCHANGED.
+// NONDETERMINISM: 2 recovered-on-retry observation(s) across 1 SHA(s) / 1 branch(es) in the
+// 96 h CI census to 2026-08-18 — never a hard failure, so every one of those jobs reported SUCCESS.
+// LOST WHILE PARKED: the hardware RESET pad on the single-unit CONTROL view — that it writes resetNonce and every active lane snaps to step 1, a live-performance control with no visual fallback.
+// Re-enable only on a root cause (#1847); "it passes now" is not one.
+test.fixme('@launchpad RESET pad snaps every active lane back to step 1 (control-deck)', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 2 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page, rack }) => {
   await spawnPatch(page, [
     { id: 'cp', type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio',
       params: { quantize: 0, stepDiv: 2, gateLength: 0.9, octave: 0 } },

@@ -99,6 +99,29 @@ export const PENDING_FIRST_MEASUREMENT = [
       'and DELETE this entry — the gate reddens on a stale entry as loudly as on a missing one.',
   },
   {
+    spec: 'videoout-detach-display.spec.ts',
+    why:
+      '#1821 — new with the videoOut detach display + bridge-on-delete. Measured locally, single '
+      + 'worker: 2.0 min wall for 16 tests (it grew from 10 across two review rounds). ⚠ TREAT THAT '
+      + 'AS A FLOOR: backdraft-preview-toggle measured 57.5 s locally and 358.2 CPU-s on CI, ~6x. '
+      + '⚠ AND THE REASON IS THE MACHINE, NOT CONTENTION — a note here previously blamed "ten shards '
+      + 'competing for one software rasterizer" and that is WRONG twice over: each shard is its own '
+      + 'VM so shards never contend, and a local headless run is ALREADY SwiftShader, so '
+      + 'E2E_SWIFTSHADER=1 changes nothing locally. The delta is a 2-core CI VM against a dev '
+      + 'machine. Run `flox activate -- task e2e:timings:accept` on the first green CI run after '
+      + 'this merges and DELETE this entry.',
+  },
+  {
+    spec: 'videoout-drop-patch.spec.ts',
+    why:
+      '#1819 — the per-module drop-gesture coverage that lands with the videoOut face. Measured '
+      + 'locally, single worker: 24.7 s wall for 5 tests. Same ~6x floor caveat as its sibling '
+      + 'above, and the same correction — the gap is the 2-core CI VM, not shard contention. For '
+      + 'calibration the generic card-drop-patch.spec.ts measures 246 CPU-s. Run '
+      + '`flox activate -- task e2e:timings:accept` on the first green CI run after this merges and '
+      + 'DELETE this entry.',
+  },
+  {
     spec: 'main-thread-cost.spec.ts',
     why:
       'lands with #1811 as the instrument that MEASURED AND REJECTED the worker migration, so no ' +
@@ -114,13 +137,13 @@ export const PENDING_FIRST_MEASUREMENT = [
       '⚠ TREAT 10.2 s AS A FLOOR, NOT A PREDICTION. This is a VIDEO spec — it drives a real ' +
       'spirographs -> videoOut chain and asserts on engine frame counts — and the entry deleted ' +
       'directly above this one is the precedent: backdraft-preview-toggle predicted 57.5 s from ' +
-      'exactly this kind of local single-worker run and measured 358.2 CPU-s, 6x, because a local ' +
-      'run cannot see ten shards competing for one software rasterizer. Do not use the local ' +
+      'exactly this kind of local single-worker run and measured 358.2 CPU-s, 6x, because ' +
+      'the CI VM is 2-core where a dev machine is not (⚠ NOT "shards competing for one rasterizer" — every `runs-on:` here is `ubuntu-latest` and a GitHub-hosted job gets its OWN VM, so shards never contend; see the ci.yml note of 2026-08-12. A local headless run is ALREADY SwiftShader too, so E2E_SWIFTSHADER=1 changes nothing locally). Do not use the local ' +
       'number for shard-balance reasoning; it is here to prove the spec was measured at all. ' +
       'Run `task e2e:timings:accept -- <run-id>` on the first green main run after this merges and ' +
       'DELETE this entry — the gate reddens on a stale entry as loudly as on a missing one.',
   },
-  // EMPTY, and that is the point: every entry here is a debt with a deadline.
+  // Every entry here is a debt with a deadline.
   //
   // All six that stood on 2026-08-17 were paid in one accept against ci.yml run
   // 32069537806. `backdraft-preview-toggle.spec.ts` (#1784) was paid the same
@@ -131,8 +154,10 @@ export const PENDING_FIRST_MEASUREMENT = [
   // ⚠ ITS MEASURED COST IS 358.2 CPU-s, against the 57.5 s its entry predicted
   // from a local single-worker `E2E_SWIFTSHADER=1` run — 6x. That is not a
   // regression in the spec, it is the gap this artifact exists to close: a local
-  // measurement of a VIDEO spec cannot see ten shards competing for the same
-  // software rasterizer. It is now the 11th most expensive file in the suite,
+  // measurement runs on a dev machine, and CI runs on a 2-core VM. ⚠ NOT shard
+  // contention — every `runs-on:` here is `ubuntu-latest` and a GitHub-hosted job
+  // gets its OWN VM (ci.yml, checked 2026-08-12), and a local headless run is
+  // already SwiftShader. It is now the 11th most expensive file in the suite,
   // and the planner can finally see that.
   //
   // The gate reddens on a STALE entry exactly as loudly as on a missing one, so

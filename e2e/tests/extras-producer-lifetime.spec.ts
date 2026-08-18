@@ -441,7 +441,36 @@ test.describe('EXTRAS-channel producers are NODE-lifetime (#1720)', () => {
     expect(SUBJECTS.length, 'the subject set must not silently empty').toBeGreaterThan(0);
   });
 
+  // ── ⏸ FLAKE-PARK #1847 ────────────────────────────────────────────────────
+  // toybox failed and then PASSED ON RETRY at the same SHA 48 times across 40
+  // SHAs and 23 branches (including main) in the 96 h CI census to 2026-08-18 —
+  // the single most-flaking row in the whole extras family, and #1757's fix for
+  // it did NOT hold (36 of its 49 observations landed AFTER that fix). Every one
+  // of those jobs reported SUCCESS, so none of it showed in the green/red signal.
+  // Parked with `test.fixme`, not deleted: the assertion body below is untouched
+  // and still runs for every other SUBJECT.
+  // LOST WHILE PARKED: the #1720 node-lifetime producer seam for TOYBOX — that a
+  // SAVED rack renders its persisted Y.Doc content with the card NEVER MOUNTED,
+  // which under the faceplate shell is the DEFAULT state, not an edge case. This
+  // is unique coverage; nothing else asserts it.
+  // Re-enable only on a root cause (#1847); "it passes now" is not one.
+  const FLAKE_PARK_1847: Record<string, string> = {
+    toybox:
+      'FLAKE-PARK #1847 — nondeterministic on CI: 48 recovered-on-retry observations across 40 SHAs / 23 branches in the 96 h census to 2026-08-18; parked until root-caused',
+  };
+
   for (const { type, fixture } of SUBJECTS) {
+    const parkReason = FLAKE_PARK_1847[type];
+    if (parkReason) {
+      test.fixme(
+        `${type}: renders its PERSISTED content with the card never mounted`,
+        { annotation: { type: 'fixme', description: parkReason } },
+        () => {
+          /* FLAKE-PARKED — see FLAKE_PARK_1847 and #1847 */
+        },
+      );
+      continue;
+    }
     test(`${type}: renders its PERSISTED content with the card never mounted`, async ({
       page,
     }) => {

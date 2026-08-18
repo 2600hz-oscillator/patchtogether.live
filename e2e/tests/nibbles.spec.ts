@@ -56,7 +56,12 @@ test('nibbles: card mounts cleanly + canvas renders', async ({ page }) => {
   expect(errors.filter((e) => !e.includes('AudioContext'))).toEqual([]);
 });
 
-test('nibbles: AUTO on → game advances within 5s (length_cv leaves default; snake grows or dies)', async ({ page, rack }) => {
+// ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are UNCHANGED.
+// NONDETERMINISM: 2 recovered-on-retry observation(s) across 2 SHA(s) / 2 branch(es) in the
+// 96 h CI census to 2026-08-18 — never a hard failure, so every one of those jobs reported SUCCESS.
+// LOST WHILE PARKED: that NIBBLES actually advances in AUTO mode — proved through length_cv moving off its construction-time value, which is simultaneously the game loop and the audio-bridge wiring.
+// Re-enable only on a root cause (#1847); "it passes now" is not one.
+test.fixme('nibbles: AUTO on → game advances within 5s (length_cv leaves default; snake grows or dies)', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 2 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page, rack }) => {
   await spawnPatch(page, [
     { id: 'n', type: 'nibbles', position: { x: 200, y: 200 }, domain: 'video', params: { auto: 1 } },
   ]);

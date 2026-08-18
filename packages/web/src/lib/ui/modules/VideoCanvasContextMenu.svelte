@@ -57,6 +57,35 @@
     /** Whether a present popup is currently open, so we can show "Stop
      *  presenting". */
     isPresenting?: boolean;
+
+    // ── DETACH DISPLAY (#1821) ────────────────────────────────────────────
+    //
+    // ⚠ ONE MENU, TWO ENTRY POINTS — that is the whole point of putting these
+    // here rather than in each surface. The owner asked that re-attach be
+    // reachable from "either it OR the underlying video output card"; both
+    // surfaces mount THIS component, so the two entries are the same code and
+    // cannot drift apart. Prop-gated like every item above: a card that does not
+    // wire the handler simply does not show the item.
+
+    /** DETACH — float this module's picture free of its card. Shown only when
+     *  wired AND not already detached. */
+    ondetach?: () => void;
+    /** RE-ATTACH — put the picture back on the card. Shown when wired AND
+     *  `isDetached`. */
+    onreattach?: () => void;
+    /** Whether this module's display is currently detached. Chooses between the
+     *  two items above; both may be wired at once. */
+    isDetached?: boolean;
+    /**
+     * DELETE THE MODULE. Wired by the DETACHED PANEL only, and it must route
+     * into the node's OWN delete path rather than re-implementing one — the
+     * owner's *"if i right click the floating output and delete it the card goes
+     * away"*. The reverse direction needs no handler at all: the panel renders
+     * only while its node is in the graph, so deleting the card takes it with
+     * it by construction.
+     */
+    ondelete?: () => void;
+
     onclose: () => void;
   }
 
@@ -74,6 +103,10 @@
     onpresentall,
     onstoppresent,
     isPresenting = false,
+    ondetach,
+    onreattach,
+    isDetached = false,
+    ondelete,
     onclose,
   }: Props = $props();
 
@@ -150,6 +183,21 @@
     onclose();
   }
 
+  function pickDetach() {
+    ondetach?.();
+    onclose();
+  }
+
+  function pickReattach() {
+    onreattach?.();
+    onclose();
+  }
+
+  function pickDelete() {
+    ondelete?.();
+    onclose();
+  }
+
   // Render the menu + overlay at <body> so they escape SvelteFlow's pane
   // `transform` (zoom/pan). A `position: fixed` element nested inside a
   // transformed ancestor anchors to that ANCESTOR's box, not the viewport —
@@ -179,7 +227,18 @@
       data-testid="video-canvas-context-menu"
     >
       <div class="ctx-header">{title}</div>
-      {#if multiMonitor}
+      <!-- ⚠ FULLSCREEN IS SUPPRESSED WHILE DETACHED. The fullscreen element is
+           the CARD's / faceplate's own wrap, and while detached that wrap paints
+           the `display detached` plate — the picture is in the floating panel,
+           which lives outside that subtree and so is not in the fullscreen view
+           at all. Offering it produced a full-screen "display detached" label
+           with the real window invisible and only Esc to escape. `detachPatch`
+           enforces mutual exclusion with full frame; the Fullscreen API is
+           browser state it cannot reach, so the exclusion is enforced here (and
+           the two detach call sites also call `fs.exit()`). -->
+      {#if isDetached}
+        <div class="ctx-note">picture is detached — re-attach to use fullscreen</div>
+      {:else if multiMonitor}
         {#each availableScreens as screen (screen.id)}
           <button
             class="ctx-item"
@@ -246,6 +305,42 @@
           Stop presenting
         </button>
       {/if}
+      <!-- DETACH DISPLAY (#1821). The pair is EXCLUSIVE by state, not by which
+           surface opened the menu, so the card and the floating panel show the
+           same item for the same node. -->
+      {#if ondetach && !isDetached}
+        <div class="ctx-sep" role="separator"></div>
+        <button
+          class="ctx-item"
+          onclick={pickDetach}
+          role="menuitem"
+          data-testid="ctx-detach-display"
+        >
+          Detach display
+        </button>
+      {/if}
+      {#if onreattach && isDetached}
+        <div class="ctx-sep" role="separator"></div>
+        <button
+          class="ctx-item"
+          onclick={pickReattach}
+          role="menuitem"
+          data-testid="ctx-reattach-display"
+        >
+          Re-attach display
+        </button>
+      {/if}
+      {#if ondelete}
+        {#if !ondetach && !onreattach}<div class="ctx-sep" role="separator"></div>{/if}
+        <button
+          class="ctx-item danger"
+          onclick={pickDelete}
+          role="menuitem"
+          data-testid="ctx-delete-module"
+        >
+          Delete module
+        </button>
+      {/if}
     </div>
   </div>
 {/if}
@@ -293,9 +388,23 @@
     background: rgba(96, 165, 250, 0.1);
     outline: none;
   }
+  .ctx-note {
+    padding: 6px 12px;
+    font-size: 0.72rem;
+    color: var(--text-dim);
+    pointer-events: none;
+  }
   .ctx-sep {
     height: 1px;
     margin: 4px 0;
     background: #404652;
+  }
+  /* Destructive: the one item here that removes a module from the rack. */
+  .ctx-item.danger {
+    color: var(--danger, #f87171);
+  }
+  .ctx-item.danger:hover,
+  .ctx-item.danger:focus-visible {
+    background: rgba(248, 113, 113, 0.12);
   }
 </style>

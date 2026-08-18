@@ -407,7 +407,18 @@
   import DropPatchModal from '$lib/ui/patch-drop/DropPatchModal.svelte';
   import { pickDropTarget, type DropRect } from '$lib/ui/patch-drop/drop-target';
   import { buildDropPlan, dropEdgeKey, type DropDefLike, type DropEdge } from '$lib/ui/patch-drop/drop-plan';
-  import { removePatchNode } from '$lib/graph/mutate';
+  import { removePatchNodeBridging, mutateNode } from '$lib/graph/mutate';
+  import { planDeleteBridge } from '$lib/graph/delete-bridge';
+  import DetachedDisplay from '$lib/ui/modules/DetachedDisplay.svelte';
+  import {
+    DETACHED_KEYS,
+    REATTACH_CLEARS,
+    detachPatch,
+    detachedRect,
+    isDetached,
+    placeDetached,
+    supportsDetachedDisplay,
+  } from '$lib/ui/modules/detached-display';
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import { resetLocalScratchId } from '$lib/storage/local-scratch';
@@ -4425,6 +4436,50 @@
       patch.edges,
       stereoDefForNode,
     );
+    // BRIDGE-ON-DELETE (#1821) — the KEYBOARD half. This path does not call
+    // `removePatchNode`, so the bridge is applied here too; wiring only the
+    // context menu would make Backspace and right-click → Delete do different
+    // things to the same rack.
+    //
+    // ⚠ PLANNED BEFORE ANY WRITE, and that ordering is a MEASURED fix rather
+    // than tidiness. xyflow's `deleteElements` puts the doomed node's CONNECTED
+    // EDGES in `payload.edges` alongside it, so by the time the node loop below
+    // runs the chain has ALREADY been cut by the edge loop — a plan computed
+    // there sees an OUTPUT with nothing patched and correctly declines to
+    // bridge. The e2e caught exactly this: the node vanished and the chain was
+    // left in two pieces while the context-menu path bridged fine.
+    //
+    // ⚠ AND IT IS A SEQUENTIAL FOLD, NOT A MAP, because a multi-select can
+    // contain a CHAIN of pass-throughs. `A ▸ OUT1 ▸ OUT2 ▸ B` with both outputs
+    // selected: planned independently, OUT1 offers `A ▸ OUT2` and OUT2 offers
+    // `OUT1 ▸ B`, and the surviving-node filter below correctly rejects BOTH —
+    // leaving A and B disconnected, while deleting them one at a time gives
+    // `A ▸ B`. Two routes to the same rack must not disagree. So each node is
+    // planned against a WORKING COPY that already reflects the deletions and
+    // bridges decided before it, which reproduces the sequential semantics
+    // exactly; the intermediate bridges then fall out at the survivor filter.
+    let workNodes = Object.values(patch.nodes) as ModuleNode[];
+    let workEdges = Object.values(patch.edges) as (Edge | undefined)[];
+    const bridgePlans: (ReturnType<typeof planDeleteBridge>)[] = [];
+    for (const n of payload.nodes) {
+      if (isPinnedNode(patch.nodes[n.id])) continue;
+      // ⚠ THE SAME `undeletable` REFUSAL `deleteNode` MAKES. The fold's comment
+      // above argues that two routes to the same rack must not disagree, and
+      // this path only ever guarded `isPinnedNode` — so Backspace deleted a def
+      // the right-click menu refuses (TIMELORDE). The surplus sweep resurrects
+      // it, so it self-healed, which is exactly why nobody noticed.
+      if (defLookup(patch.nodes[n.id]?.type ?? '')?.undeletable) continue;
+      const plan = planDeleteBridge(n.id, workNodes, workEdges, defLookup);
+      bridgePlans.push(plan);
+      // Simulate this delete for the NEXT node's plan: drop the node, drop every
+      // cable touching it, then add whatever it bridged.
+      workNodes = workNodes.filter((w) => w.id !== n.id);
+      workEdges = workEdges.filter(
+        (e) => !!e && e.source.nodeId !== n.id && e.target.nodeId !== n.id,
+      );
+      if (plan) workEdges = [...workEdges, ...plan.bridgeEdges];
+    }
+
     ydoc.transact(() => {
       for (const id of edgeIds) {
         const live = patch.edges[id];
@@ -4442,12 +4497,27 @@
         // can't be in a SvelteFlow delete payload — but guard anyway (the
         // shared delete discipline: pinned nodes are undeletable).
         if (isPinnedNode(patch.nodes[n.id])) continue;
+        if (defLookup(patch.nodes[n.id]?.type ?? '')?.undeletable) continue;
         if (patch.nodes[n.id]) delete patch.nodes[n.id];
         // Also drop any edges that referenced the deleted node.
         for (const [edgeId, edge] of Object.entries(patch.edges)) {
           if (edge && (edge.source.nodeId === n.id || edge.target.nodeId === n.id)) {
             delete patch.edges[edgeId];
           }
+        }
+      }
+      // LAST, so the replacement cables are never candidates for the sweeps
+      // above — and still inside the ONE transact this function already opened,
+      // so the whole delete-plus-bridge remains a single undo entry.
+      for (const plan of bridgePlans) {
+        for (const e2 of plan?.bridgeEdges ?? []) {
+          if (!patch.nodes[e2.source.nodeId] || !patch.nodes[e2.target.nodeId]) continue;
+          patch.edges[e2.id] = e2;
+        }
+        // Refusals are TRACED here exactly as `deleteNode` traces them — the
+        // keyboard path used to cut a chain with no signal at all.
+        for (const r of plan?.refused ?? []) {
+          trace(`bridge refused ${r.source.nodeId}.${r.source.portId} → ${r.target.nodeId}.${r.target.portId}: ${r.reason}`);
         }
       }
     }, LOCAL_ORIGIN);
@@ -4574,6 +4644,96 @@
     const def = defLookup(node.type);
     return (def as unknown as DropDefLike) ?? null;
   }
+
+  // ── DETACHED DISPLAYS (#1821) ────────────────────────────────────────────
+  //
+  // The floating picture of a video OUTPUT, rendered HERE — outside
+  // <SvelteFlow>, beside the drop-patch scrim — rather than by the card.
+  //
+  // ⚠ THAT PLACEMENT IS THE FEATURE, TWICE OVER:
+  //
+  //   1. **No patch wires, structurally.** A panel that is not a flow node has
+  //      no handle for a cable and nothing for the edge layer to draw. Styling
+  //      wires away would have been a promise; not being a node is a proof.
+  //   2. **Delete the card → the panel goes with it, BY CONSTRUCTION.** This
+  //      list is derived from the LIVE nodes, so a deleted node is simply not in
+  //      it — there is no teardown to forget, no registry to sweep, and no
+  //      second handler to drift from the first.
+  //
+  // The reverse direction (delete FROM the panel) is `deleteNode(id)` — the very
+  // function the node context menu calls, so "delete" has one implementation.
+  //
+  // ⚠ IT READS `snapshot.nodes`, NOT `patch.nodes`, and that is not a style
+  // choice. Canvas consumes the graph through the SNAPSHOT BUS (`$state.raw`,
+  // id-sorted, fed by `observeDeep` on the two root Y.Maps) so the UI and the
+  // engine see the same tick. A `$derived` reading the SyncedStore proxy
+  // directly does not re-run when a peer — or `mutateNode` — writes a nested
+  // `data` key, so the panel would appear only on the next unrelated re-render.
+  // Measured while landing this: the flag was written and the CARD updated (it
+  // reads its node off its own props) while the panel never mounted at all.
+  //
+  // ⚠ AND THE GEOMETRY IS RESOLVED HERE TOO, for the same reason: the panel is
+  // handed an already-clamped rect rather than reading the node itself. A
+  // `$derived` inside the panel reading `patch.nodes[id]` MEASURED as one-shot —
+  // `node.data.detachedW` moved to 632 while the panel's own box stayed 480 —
+  // because a SyncedStore proxy read registers no Svelte dependency, so the
+  // memo never invalidates. One reactive read, at the one place that has one.
+  let detachedViewport = $state({
+    width: typeof window === 'undefined' ? 1280 : window.innerWidth,
+    height: typeof window === 'undefined' ? 720 : window.innerHeight,
+  });
+  $effect(() => {
+    const onResize = (): void => {
+      detachedViewport = { width: window.innerWidth, height: window.innerHeight };
+    };
+    window.addEventListener('resize', onResize);
+    onResize();
+    return () => window.removeEventListener('resize', onResize);
+  });
+
+  let detachedDisplays = $derived(
+    snapshot.nodes
+      .filter((n): n is ModuleNode => !!n && isDetached(n))
+      // DERIVED capability, not a type check at the render site: the def must be
+      // both scoped and able to publish a picture (see detached-display.ts).
+      .filter((n) => supportsDetachedDisplay(n.type, dropDefOf(n.id) ?? undefined))
+      .map((n) => ({
+        id: n.id,
+        label: patchDropLabel(n.id),
+        // THE DOMAIN CHAIN, resolved from the live def — never a literal violet.
+        domain: spineCableVar(defLookup(n.type) as Parameters<typeof spineCableVar>[0]),
+        rect: detachedRect(n, detachedViewport),
+      })),
+  );
+
+  /** RE-ATTACH: clear the one flag. Called from the panel AND from the card's
+   *  own right-click menu — the owner asked for both, and both land here. */
+  function reattachDisplay(nodeId: string): void {
+    mutateNode(nodeId, (live) => {
+      if (!live.data) return;
+      for (const k of REATTACH_CLEARS) delete live.data[k];
+    });
+  }
+
+  /** DETACH: the flag plus its clamped geometry, in ONE transaction so the whole
+   *  gesture is one undo entry. Same helper the module's own surfaces call. */
+  function detachDisplayFor(nodeId: string): void {
+    const live = patch.nodes[nodeId] as ModuleNode | undefined;
+    // Open clear of the node's own tile — the node menu is one of the two
+    // re-attach entry points, and a panel covering the tile blocks it.
+    const el = document.querySelector(`.svelte-flow__node[data-id="${nodeId}"]`);
+    const box = el?.getBoundingClientRect();
+    const saved = live?.data?.[DETACHED_KEYS.x] !== undefined;
+    const rect = saved
+      ? detachedRect(live, detachedViewport)
+      : placeDetached(detachedViewport, box ? { x: box.x, y: box.y, w: box.width, h: box.height } : undefined);
+    const data = detachPatch(rect);
+    mutateNode(nodeId, (n) => {
+      if (!n.data) n.data = {};
+      for (const [k, v] of Object.entries(data)) n.data[k] = v;
+    });
+  }
+
 
   /** True when EITHER direction offers at least one legal edge. */
   function dropHasAnyOffer(droppedId: string, ontoId: string): boolean {
@@ -4956,6 +5116,25 @@
     const n = patch.nodes[ctxMenuNodeId];
     return n?.type ?? null;
   });
+
+  /**
+   * The right-clicked node's detach state, for the node menu's two items.
+   *
+   * ⚠ THE LANE TILE HAS NO MENU OF ITS OWN, which is why the entry is here.
+   * A promoted videoOut renders as a generic `ModuleShell`; the module's picture
+   * and its display menu live in the dock faceplate and in the floating panel,
+   * both of which mount `VideoCanvasContextMenu`. The owner asked that re-attach
+   * be reachable from *"the underlying video output card"* too, so the node menu
+   * carries the pair — gated on a DERIVED predicate (`supportsDetachedDisplay`)
+   * rather than a type check, so `NodeContextMenu` still names no module.
+   */
+  let ctxMenuDetachable = $derived(
+    !!ctxMenuNodeId
+      && supportsDetachedDisplay(ctxMenuNodeType ?? '', dropDefOf(ctxMenuNodeId) ?? undefined),
+  );
+  let ctxMenuDetached = $derived(
+    !!ctxMenuNodeId && isDetached(snapshot.nodes.find((n) => n.id === ctxMenuNodeId)),
+  );
 
   // Living-docs: whether the right-clicked module has AUTHORED docs — gates the
   // "Annotate" entry. MODULE_DOCS is the generated authored-docs registry (a build artifact).
@@ -7377,9 +7556,27 @@
     // Shared delete primitive (graph/mutate.ts): removes the node + every
     // touching edge in one undoable transact, and REFUSES pinned workflow
     // singletons (node-level data.pinned — the M/E/C drawer trio).
-    if (!removePatchNode(nodeId)) {
+    //
+    // BRIDGE-ON-DELETE (#1821): when the doomed node is a scoped 1-video-in /
+    // 1-video-out PASS-THROUGH with BOTH sides patched, the same transact also
+    // re-joins its upstream straight to each downstream target, so deleting a
+    // monitor out of the middle of a chain maintains the chain. Every ordinary
+    // case (out of scope, not a pass-through, a free side, the SELF-PATCH) plans
+    // to nothing and this is byte-for-byte the old `removePatchNode` call.
+    const outcome = removePatchNodeBridging(nodeId, defLookup);
+    if (!outcome) {
       if (target) trace(`delete refused: ${nodeId} (${target.type}) is pinned`);
       return;
+    }
+    for (const b of outcome.bridged) {
+      trace(`bridged ${b.source.nodeId}.${b.source.portId} → ${b.target.nodeId}.${b.target.portId}`);
+    }
+    // A refused bridge is SILENT to the user, matching every other cable
+    // refusal on this canvas (isValidConnection / commitConvenienceEdges both
+    // discard without a toast) — the delete the user asked for still happened,
+    // and the chain is simply cut where the lattice says it must be.
+    for (const r of outcome.refused) {
+      trace(`bridge refused ${r.source.nodeId}.${r.source.portId} → ${r.target.nodeId}.${r.target.portId}: ${r.reason}`);
     }
     // No defensive flow* sync needed: snapshot bus + one-way prop (B3).
     if (topNodeId === nodeId) topNodeId = null;
@@ -8840,6 +9037,23 @@
            'name-label-error') so existing e2e selectors still resolve. -->
     </SvelteFlow>
 
+    <!-- ── DETACHED DISPLAYS ───────────────────────────────────────────────
+         One free-floating picture per node carrying `data.detached`. Rendered
+         OUTSIDE <SvelteFlow> so it is NOT a flow node — which is what makes the
+         owner's "no patch wires" structural rather than styled — and derived
+         from the live node map, so deleting a card removes its panel with no
+         teardown path at all. See detachedDisplays above. -->
+    {#each detachedDisplays as dd (dd.id)}
+      <DetachedDisplay
+        nodeId={dd.id}
+        label={dd.label}
+        domain={dd.domain}
+        rect={dd.rect}
+        onreattach={() => reattachDisplay(dd.id)}
+        ondelete={() => deleteNode(dd.id)}
+      />
+    {/each}
+
     <!-- ── DROP-TO-PATCH MODAL ─────────────────────────────────────────────
          Opened by dropping one card onto another (handleNodeDragStop →
          resolveCardDrop). Rendered OUTSIDE <SvelteFlow> so it is not a node
@@ -9174,6 +9388,13 @@
     if (ctxMenuNodeType === 'group') deleteGroupAndChildren(ctxMenuNodeId);
     else deleteNode(ctxMenuNodeId);
   }}
+  ondetachdisplay={ctxMenuDetachable && !ctxMenuDetached
+    ? () => ctxMenuNodeId && detachDisplayFor(ctxMenuNodeId)
+    : undefined}
+  onreattachdisplay={ctxMenuDetachable && ctxMenuDetached
+    ? () => ctxMenuNodeId && reattachDisplay(ctxMenuNodeId)
+    : undefined}
+  isDetached={ctxMenuDetached}
   onduplicate={() => ctxMenuNodeId && duplicateNode(ctxMenuNodeId)}
   onunpatch={() => ctxMenuNodeId && unpatchNode(ctxMenuNodeId)}
   onlock={() => ctxMenuNodeId && lockNode(ctxMenuNodeId)}

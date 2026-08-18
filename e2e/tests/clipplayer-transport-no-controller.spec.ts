@@ -78,12 +78,22 @@ async function assertStartsAndStops(page: import('@playwright/test').Page, trans
   await expect(transport).toHaveText('■');
 }
 
-test('card transport starts + stops with NO controller connected', async ({ page, rack }) => {
+// ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are UNCHANGED.
+// NONDETERMINISM: 9 recovered-on-retry observation(s) across 9 SHA(s) / 5 branch(es) in the
+// 96 h CI census to 2026-08-18 — never a hard failure, so every one of those jobs reported SUCCESS.
+// LOST WHILE PARKED: the #1165 P0 regression guard: the clip player's own card transport must work with NO Push or controller present — the owner-reported break a controller integration caused.
+// Re-enable only on a root cause (#1847); "it passes now" is not one.
+test.fixme('card transport starts + stops with NO controller connected', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 9 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page, rack }) => {
   const transport = await seedClipRack(page);
   await assertStartsAndStops(page, transport);
 });
 
-test('the mere presence of a push2Control module does NOT disable card transport', async ({ page, rack }) => {
+// ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are UNCHANGED.
+// NONDETERMINISM: 9 recovered-on-retry observation(s) across 9 SHA(s) / 5 branch(es) in the
+// 96 h CI census to 2026-08-18 — never a hard failure, so every one of those jobs reported SUCCESS.
+// LOST WHILE PARKED: the negative leg of #1165 — spawning a push2Control module must not disable the card's start/stop, which is precisely how the original defect manifested.
+// Re-enable only on a root cause (#1847); "it passes now" is not one.
+test.fixme('the mere presence of a push2Control module does NOT disable card transport', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 9 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page, rack }) => {
   const transport = await seedClipRack(page, [
     { id: 'px', type: 'push2Control', position: { x: 520, y: 80 }, domain: 'meta' },
   ]);

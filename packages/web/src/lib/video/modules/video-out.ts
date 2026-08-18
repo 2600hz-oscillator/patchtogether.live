@@ -83,7 +83,7 @@ export const videoOutDef: VideoModuleDef = {
   params: [],
 
   docs: {
-    explanation: "output is the screen sink of the video chain — the card body itself is the live picture. Whatever video signal you patch into it is copied frame-by-frame into this card's own framebuffer (FBO) and blitted onto the visible canvas, aspect-fit (the engine render is letterboxed into the card; the engine is 4:3 by default). The shader is a plain texture copy: with a signal patched it shows the input verbatim; with nothing patched it draws a static idle pattern — a dark navy field with a subtle vertical brightness gradient (the blue channel rises toward one edge) — so you can tell the card is alive while you drag a cable in. The pattern does not animate; there is no time uniform, so it's a fixed gradient, not a moving sweep. Each output card pulls its OWN input via engine.blitOutputToDrawingBuffer(nodeId) (multiple outputs in a rack each show their own feed, no last-one-wins coupling). Right-click the picture for true fullscreen, in-app full-frame (hides chrome, fills the card), or present-on-a-second-display. Use it as the monitor/projector at the end of a video patch — or mid-chain, since it passes its input straight through. The card body is the live output screen and is resizable by dragging the bottom-right corner handle; the engine render (4:3 by default, 1024×768) is aspect-fit (letterboxed) inside whatever size you choose, and the size (node.data.width/height) syncs to collaborators via Y.Doc.",
+    explanation: "output is the screen sink of the video chain — the card body itself is the live picture. Whatever video signal you patch into it is copied frame-by-frame into this card's own framebuffer (FBO) and blitted onto the visible canvas, aspect-fit (the engine render is letterboxed into the card; the engine is 4:3 by default). The shader is a plain texture copy: with a signal patched it shows the input verbatim; with nothing patched it draws a static idle pattern — a dark navy field with a subtle vertical brightness gradient (the blue channel rises toward one edge) — so you can tell the card is alive while you drag a cable in. The pattern does not animate; there is no time uniform, so it's a fixed gradient, not a moving sweep. Each output card pulls its OWN input via engine.blitOutputToDrawingBuffer(nodeId) (multiple outputs in a rack each show their own feed, no last-one-wins coupling). Use it as the monitor/projector at the end of a video patch — or mid-chain, since it passes its input straight through. In the rack it is a compact tile showing a live thumbnail of its own feed; the tile itself is not resizable. To see the picture bigger, right-click it: DETACH DISPLAY floats the output free of the rack as its own window — resizable by its bottom-right corner, draggable by its title bar, carrying no patch jacks or cables — and RE-ATTACH puts it back. The floating window is owned by the module, so deleting the module removes it and deleting the floating window removes the module. Its size and position live in node.data and sync to collaborators via Y.Doc. Expand the module to its faceplate for the same picture plus the display menu: true fullscreen, in-app full frame, detach, or present-on-a-second-display; right-clicking the picture anywhere opens that menu too. DELETING an output that sits mid-chain, with both its input and its output patched, re-joins the module feeding it directly to whatever it was feeding — so pulling a monitor out of a chain leaves the chain intact rather than cut in two. An output patched to itself is the one shape that cannot be re-joined, and it is deleted plainly.",
     inputs: {
       in: "The video signal to display. Polymorphic video input (type video) — it accepts a full video signal, and the engine implicitly upcasts narrower video-domain sources too (keys → mono-video → video, and image → video), so you can wire essentially any video output into it. With nothing patched, the shader's uHasInput branch draws the static navy idle gradient instead of black.",
     },
@@ -92,6 +92,53 @@ export const videoOutDef: VideoModuleDef = {
     },
     controls: {},
   },
+
+  // ── THE FACE (#1821) ─────────────────────────────────────────────────────
+  //
+  // Owner, 2026-08-17: *"video output face should be prioritized next for face.
+  // the card does not need the arbitrary resizing on the card, but i want to be
+  // able to right-click -> detach display, and the display is now the same
+  // resizable nearly borderless thing we have now."*
+  //
+  // ⚠ THE MOST UNUSUAL FACE IN THE SET: it ranks NOTHING, and that is correct
+  // rather than unfinished. `params: []` — OUTPUT has no controls at all, so
+  // `order` is empty, there are no pages to name, no readout to derive and no
+  // hero to promote. Ranking is the whole of what a `face` normally is, so the
+  // honest question was whether this module MERITS one (`module-faceplates.md`
+  // STOP 1). It does, on the clause that STOP names: it has `node.data`-backed
+  // affordances — full frame, and now DETACH — and its identity is a PICTURE,
+  // which is exactly the thing a ranked-knob face cannot carry. What it needs is
+  // not a ranking but a SURFACE, which is what `extension` declares below.
+  //
+  // ⚠ AND THE EMPTY `order` IS LOAD-BEARING FOR THE LANE TILE. `laneBodyPlan`
+  // takes its ROW branch for any face at or under the row cap, and that branch
+  // returns `glyph: hasGlyph` unconditionally — it is only the PLATE branch
+  // (more controls than a row can hold) where "ranked cells outrank the glyph"
+  // and the picture is evicted. #1785 is that eviction, measured on backdraft's
+  // 28 lane-eligible controls. With ZERO controls this face never reaches the
+  // plate branch at any tier, so the rack tile keeps its live VideoTileThumb —
+  // asserted directly in `videoout-face-model.test.ts`, because `glyph: 'none'`
+  // plus a blank tile and `glyph: 'none'` plus a live thumb are indistinguishable
+  // from this declaration.
+  //
+  // ⚠ `glyph: 'none'` IS MANDATORY FOR A VIDEO DEF, counter-intuitively:
+  // `primaryAudioOutPortId` matches `type === 'audio'` and this def has no audio
+  // port, so ANY other glyph literal resolves to `{kind:'static'}` and reddens
+  // module-face-lint's dead-glyph clause. The picture arrives through a
+  // different seam entirely — `hasVideoSurface(def)` (`domain === 'video'`).
+  //
+  // Contract cost: NIL. `face` is stripped by the attest normalizer before
+  // hashing (HASH_TRANSPARENT_PROPS, scripts/attest-code-basis.ts), so declaring
+  // it on a def inside the WebGL basis is free, and no field here is projected
+  // into contract-lock (no `sidebar`, no `controlFamilies`).
+  face: {
+    order: [],
+    glyph: 'none',
+    // The bespoke output surface — see $lib/ui/modules/videoOut/. This is the
+    // whole faceplate, not an addition to one.
+    extension: 'videoOut',
+  },
+
   factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;
     const program = ctx.compileFragment(COPY_FRAG_SRC);
