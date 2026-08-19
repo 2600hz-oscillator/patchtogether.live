@@ -1050,6 +1050,48 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // picture of a path it is not. `noise` decided the other way on the opposite
   // facts and both decisions are in their face comments.
   'moog923',
+  // THE FACEPLATE QUEUE · Q34 — the contour generator (2026-08-19). Four
+  // params, five inputs, two `cv` outputs, two honest pages, no rail.
+  //
+  // ⚠ THE FINDING IS THAT THREE OF THE FOUR DIALS PRINT A DURATION THE MODULE
+  // DOES NOT DELIVER, and one of the three is wrong by the amount a DIFFERENT
+  // knob is turned. `egCoeff` makes each T a TIME CONSTANT (a ~99.3 % approach)
+  // while each stage exits on its OWN threshold — attack at `level >= 0.999`,
+  // decay at `|level − esus| <= 1e-3`, release at `level <= 1e-4` — so a stage
+  // takes `T · ln(k)/5` and only the attack's `k` is a constant. Measured on
+  // the SHIPPING worklet at 48 kHz, held gate, at the def's own defaults: the
+  // dials read 10 / 200 / 400 ms and the module delivers 13.833 / 239.667 /
+  // 695.958, a 949.458 ms contour against a dial sum of 610 (×1.5565). Holding
+  // T2 at its default and sweeping ESUS moves the delivered settle 276.313 →
+  // 262.063 → 239.667 → 92.104 → 0.021 ms **while the T2 dial reads 200.000 at
+  // every one of them**. Nothing in the product said any of this; the three
+  // hero readouts now print it live, and each is the other two's negative
+  // control because `rise` is exactly ESUS-invariant and the other two are not.
+  //
+  // ⚠ THE INSTRUMENT WAS WRONG FIRST, in the way the queue's own spec records:
+  // detecting the SUSTAIN stage by comparing a `Float32Array` sample to the
+  // float64 literal `0.6` reports ZERO sustain samples, which reads exactly
+  // like "this module never sustains". `Math.fround` fixes it, and what caught
+  // it was the POSITIVE control — a HELD gate certainly sustains, so a probe
+  // reporting 0 there is broken rather than the module (it reports 275 833).
+  //
+  // ⚠ INERTNESS DISCRIMINATES NOTHING HERE, which is worth saying because the
+  // three faces before this one were each carried by a dead-at-spawn finding.
+  // With `gate` unpatched, sweeping EACH of the four across its full declared
+  // range leaves BOTH outputs bit-identical — all four are dead at spawn, so
+  // #1758's habit finds four dead knobs and separates none of them. The ranking
+  // rests on the time law instead. Positive control: with the gate held, T1, T2
+  // and ESUS all move the output and T3 correctly does not (it needs a fall).
+  //
+  // NO GLYPH, and it is forced rather than chosen: both outputs are `cv`, so
+  // `primaryAudioOutPortId` returns null and every kind except `'envelope'`
+  // falls through to the dead `{kind:'static'}` — and `'envelope'` does not
+  // rescue it either, because that arm keys on four HARDCODED param names
+  // (attack/decay/sustain/release) and this module's are t1/t2/esus/t3 by
+  // design. #1888 carries the declaration-shaped fix; ⚠ it is an ENABLER, not
+  // a blocker, and its comment records why a role mapping ALONE would draw the
+  // DIAL contour and so restate the very defect this face exists to expose.
+  'moog911',
   // THE FACEPLATE QUEUE · Q36 — the CP3 mixer (2026-08-19). Five params, five
   // inputs, SEVEN outputs, two pages.
   //

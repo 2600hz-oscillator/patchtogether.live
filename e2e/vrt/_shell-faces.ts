@@ -532,6 +532,25 @@ export const FACES = [
   // identical frame to frame. The AudioContext freeze this file applies is
   // therefore a belt on a brace for this entry, not the thing holding it.
   { type: 'moog923', pages: 2 },
+  // MOOG 911 (2026-08-19) — two declared pages (`times`, `level`), and `pages`
+  // is the POST-hero-split band count: the hero declares READOUTS ONLY, so it
+  // promotes no key out of any band and neither band can be emptied. Both are
+  // knob-only and pack onto one dock row (4 cells, well under
+  // DOCK_ROW_MAX_CONTROLS = 10).
+  //
+  // ⚠ PIXEL-DETERMINISTIC BY CONSTRUCTION, and unusually easy to argue: this
+  // module produces NOTHING until a gate arrives. Its factory's only source is
+  // a ConstantSource pinned at 0 (the silence keepalive), the def declares
+  // `glyph: 'none'` — forced, since both outputs are `cv` — and all three hero
+  // readouts are closed forms over params. So no analyser, no free-running
+  // oscillator and no frame-dependent value feeds any pixel in either scene.
+  // This is the OPPOSITE end of the range from analogVco, which was dropped
+  // from batch 3 for drawing 254/154/315 px across three captures of one tile.
+  //
+  // Measured at spawn, both taps, with the gate unpatched: `env` is bit-exactly
+  // 0 and `env_inv` bit-exactly 1 for a full second, and sweeping any of the
+  // four params changes neither. The scenes cannot move unless the FACE moves.
+  { type: 'moog911', pages: 2 },
   // MOOG CP3 (2026-08-19) — two declared pages (`channels`, `4th input`), and
   // `pages` is the POST-hero-split band count: the hero declares READOUTS ONLY,
   // so no key leaves a band. Five knob cells, one packed dock row.
@@ -1799,12 +1818,45 @@ export interface FoldGeometry {
    * boxes would report every face as perfectly filled and the gate would be
    * blind by construction).
    *
-   * `plateW` is `.faceplate-scroll`'s client width. `plateW - contentW` is the
-   * useless grey space owner ruling 2026-08-17 forbids: *"we do not want
-   * useless gray horizontal space on cards, ever."*
+   * `plateW` is `.faceplate-scroll`'s client width — the whole PANE.
+   *
+   * `bodyW` is `.faceplate-body`'s width from the same origin. That element is
+   * `width: max-content` (see `_dock-faceplate.css`), so it IS the face's own
+   * natural width, and **`bodyW - contentW` is the useless grey space owner
+   * ruling 2026-08-17 forbids**: *"we do not want useless gray horizontal space
+   * on cards, ever."*
+   *
+   * ⚠ USE `bodyW`, NOT `plateW`, TO JUDGE A FACE — and this is a CORRECTION,
+   * measured, not a preference. The pane is `max(the face, the dock TITLE BAR)`,
+   * and the bar (badge + `MOOG911 911 eg · lane 1` + three window buttons) lives
+   * OUTSIDE `.faceplate-scroll`, so `contentW` is structurally blind to it while
+   * `plateW` is driven by it. On a NARROW face the bar wins and `plateW -
+   * contentW` charges the chrome's width to the faceplate. Measured by removing
+   * each element and re-reading the pane:
+   *
+   *   face                    content  body  plate   without BAR   without STRIP
+   *   moog914 (passing)          765    780    780        —              780
+   *   moog911                    270    303    352       303             352
+   *   vca                        247    280    337       280             337
+   *   wavetableVco               250    283    319       283             319
+   *   unityscalemathematik       280    313    373       313             373
+   *
+   * Removing the BAR collapses the pane onto the body every time; removing the
+   * hero READOUT STRIP moves nothing on any of them. So the three faces that
+   * carried a `FACE_WIDTH_EXEMPTIONS` entry blaming that strip were all
+   * mis-attributed — their real waste is **33 px each**, the same "the hero row
+   * defines the plate" mode this file's own threshold note documents as normal,
+   * and the promised global removal of the strip would have left all three red.
+   *
+   * ⚠ WHAT THIS STILL CANNOT SEE: whether the BAR ITSELF is wasting space. A
+   * pane wider than its faceplate because the title bar demands it is not a
+   * face defect, and narrowing it (letting the bar ellipsise instead of setting
+   * the pane's max-content) is a dock-CHROME change that would move every dock
+   * baseline — an owner-visible decision, not a face PR's.
    */
   contentW: number;
   plateW: number;
+  bodyW: number;
   /** The pane's top edge in viewport coords. NEGATIVE = the pane has grown off
    *  the top of the window and Playwright cannot scroll it into view, because
    *  the drawer is absolutely positioned in a non-scrolling container. This is
@@ -1867,9 +1919,19 @@ export async function readFoldGeometry(page: Page): Promise<FoldGeometry> {
       }
     }
 
+    // THE FACE'S OWN BOX, from the SAME origin as `contentW` so the two
+    // subtract. Deny-by-default: no body means the geometry is unreadable, and
+    // a silent 0 would report every face as perfectly filled.
+    const body = (sc.closest('.dock-faceplate') ?? sc).querySelector(
+      '.faceplate-body',
+    ) as HTMLElement | null;
+    if (!body) throw new Error('_shell-faces: the dock faceplate has no .faceplate-body');
+    const bodyRect = body.getBoundingClientRect();
+
     return {
       contentW: Math.round(right - contentLeft),
       plateW: sc.clientWidth,
+      bodyW: Math.round(bodyRect.right - contentLeft),
       captureH: Math.round(er.height),
       scrollH: sc.scrollHeight,
       clientH: sc.clientHeight,

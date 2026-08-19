@@ -15,22 +15,41 @@
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import MoogPanel from './moog/MoogPanel.svelte';
-  import { portsFromDef } from './card-kit';
+  import { paramSpec, portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
 
   const engineCtx = useEngine();
 
-  function def(pid: string) {
-    return moog911Def.params.find((p) => p.id === pid)!;
+  // Every knob carries its own ParamDef rather than re-typed literals. This
+  // card hand-typed `min={0.0001} max={10} defaultValue={0.01}` on all four,
+  // and `moog911` was outside RANGE_BOUND_CARDS, so nothing in the tree could
+  // have SEEN a divergence open up. The four agreed with the def today — which
+  // is exactly the AnalogLogicMathsCard case already in that list, and exactly
+  // the state SwolevcoCard was in the day before one of its labels diverged.
+  // From promotion the DOCK renders these controls straight off the ParamDef
+  // while this card renders off its own literals, so a later edit to one side
+  // would ship two surfaces calling one control two different things. Binding
+  // the def forecloses the numbers, the units and the names in one edit.
+  const P = {
+    t1: paramSpec(moog911Def, 't1'),
+    t2: paramSpec(moog911Def, 't2'),
+    esus: paramSpec(moog911Def, 'esus'),
+    t3: paramSpec(moog911Def, 't3'),
+  } as const;
+  // The panel's two physical rows: contour TIMES on top, LEVEL + release below
+  // (the hardware's layout, and deliberately NOT the face's priority order —
+  // the face ranks by what a player reaches for, this card mirrors Fig 17).
+  const ROWS: readonly (readonly (keyof typeof P)[])[] = [
+    ['t1', 't2'],
+    ['esus', 't3'],
+  ];
+
+  function paramVal(key: keyof typeof P): number {
+    const v = node?.params[P[key].id];
+    return typeof v === 'number' ? v : P[key].defaultValue;
   }
-
-  let t1   = $derived(node?.params.t1   ?? def('t1').defaultValue);
-  let t2   = $derived(node?.params.t2   ?? def('t2').defaultValue);
-  let esus = $derived(node?.params.esus ?? def('esus').defaultValue);
-  let t3   = $derived(node?.params.t3   ?? def('t3').defaultValue);
-
   function setParam(paramId: string) {
     return (v: number) => setNodeParam(id, paramId, v);
   }
@@ -50,17 +69,25 @@
 
 <MoogPanel {id} {data} defaultLabel="911 EG" width={232}>
   <PatchPanel nodeId={id} {inputs} {outputs}>
-    <!-- Contour controls: T1 (attack) + T2 (initial decay). -->
-    <div class="knob-row" data-testid="moog911-time-row">
-      <Knob value={t1} min={0.0001} max={10} defaultValue={0.01} label="T1" units="s" curve="log" onchange={setParam('t1')} moduleId={id} paramId="t1" readLive={readLive('t1')} />
-      <Knob value={t2} min={0.0001} max={10} defaultValue={0.2} label="T2" units="s" curve="log" onchange={setParam('t2')} moduleId={id} paramId="t2" readLive={readLive('t2')} />
-    </div>
-
-    <!-- ESUS (sustain level) + T3 (final decay). -->
-    <div class="knob-row">
-      <Knob value={esus} min={0} max={1} defaultValue={0.6} label="Esus" curve="linear" onchange={setParam('esus')} moduleId={id} paramId="esus" readLive={readLive('esus')} />
-      <Knob value={t3} min={0.0001} max={10} defaultValue={0.4} label="T3" units="s" curve="log" onchange={setParam('t3')} moduleId={id} paramId="t3" readLive={readLive('t3')} />
-    </div>
+    {#each ROWS as row, i (i)}
+      <div class="knob-row" data-testid={i === 0 ? 'moog911-time-row' : undefined}>
+        {#each row as key (key)}
+          <Knob
+            value={paramVal(key)}
+            min={P[key].min}
+            max={P[key].max}
+            defaultValue={P[key].defaultValue}
+            label={P[key].label ?? P[key].id}
+            units={P[key].units ?? ''}
+            curve={P[key].curve}
+            onchange={setParam(P[key].id)}
+            moduleId={id}
+            paramId={P[key].id}
+            readLive={readLive(P[key].id)}
+          />
+        {/each}
+      </div>
+    {/each}
   </PatchPanel>
 </MoogPanel>
 

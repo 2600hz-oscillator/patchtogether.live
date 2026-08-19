@@ -663,6 +663,37 @@ describe('the AUTHORED push cards', () => {
     expect(generic[0]).not.toBe('bipolar');
   });
 
+  it('moog911: promotion moved the card GENERIC → FACE, and ESUS took encoder 2', () => {
+    // THE FACEPLATE QUEUE · Q34. No `PUSH_CARD_CONTROLS` entry, so the card is
+    // resolved by the FACE tier from the moment `moog911` enters STRICT_FACES.
+    // Asserted here for the featurecv reason: nothing else in this file would
+    // have noticed, and a card that changes silently is how the skill's "a
+    // first promotion moves the module from GENERIC to FACE" gets discovered
+    // by a player instead of by a test.
+    //
+    // Stated as a DIFFERENCE, never as a copy of `face.order`.
+    const def = defByType('moog911');
+    const faced = pushCardParams(resolvePushCardControls(def, {})).map((p) => p.id);
+    const generic = pushCardParams(
+      resolvePushCardControls({ ...def, face: undefined }, {}),
+    ).map((p) => p.id);
+    // A re-ORDER, not a re-pick — four params, well inside the eight encoders.
+    expect([...faced].sort()).toEqual([...generic].sort());
+    expect(faced, 'the face must actually move the card, or this promotion is decoration')
+      .not.toEqual(generic);
+    // ⚠ THE CLAIM IS ABOUT ENCODER 2, NOT ENCODER 1. Declaration order already
+    // puts `t1` first, so rank 1 is the one slot where face and generic AGREE
+    // and pinning it would prove nothing. The face's rank-2 argument is the
+    // real difference: ESUS is the only control on this module that changes
+    // what ANOTHER control does (it re-times the delivered T2 stage from
+    // 276.313 ms down to 0.021 ms while the T2 dial never moves), so it belongs
+    // beside the attack rather than behind the dial it re-times.
+    expect(faced[0]).toBe('t1');
+    expect(generic[0]).toBe('t1');
+    expect(faced[1]).toBe('esus');
+    expect(generic[1]).toBe('t2');
+  });
+
   it('moogCp3: promotion moved the card GENERIC → FACE, and it did NOT re-order it', () => {
     // THE FACEPLATE QUEUE · Q36, and it is the entry that shows a face can be
     // worth promoting WITHOUT re-ranking anything. `face.order` IS declaration
