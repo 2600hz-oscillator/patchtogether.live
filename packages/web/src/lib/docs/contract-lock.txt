@@ -2199,7 +2199,7 @@ moog921Vco out triangle audio
 moog921Vco param level 0..2 linear default=1
 moog921Vco param linFmAmount -1..1 linear default=0
 moog921Vco param octave -5..5 linear default=0 unit=oct
-moog921Vco param sync -1..1 linear default=0
+moog921Vco param sync -1..1 discrete default=0
 moog921Vco param tune -12..12 linear default=0 unit=st
 moog921Vco param width 0.02..0.98 linear default=0.5
 moog923 meta domain=audio

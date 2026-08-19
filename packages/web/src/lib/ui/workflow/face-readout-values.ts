@@ -83,6 +83,7 @@ import {
   swolevcoModHzText,
   swolevcoShapeText,
 } from '$lib/ui/modules/swolevco-face-model';
+import { moogCp3BusText, moogCp3FaceParams } from '$lib/ui/modules/moogcp3-face-model';
 import {
   moog911FaceParams,
   moog911FallText,
@@ -323,6 +324,7 @@ import {
   busVoltsText,
   moog921aFaceParams,
   moog921bFaceParams,
+  moog921VcoFaceParams,
   rangeOctSpan,
   slaveDutyText,
   slaveFmText,
@@ -330,6 +332,10 @@ import {
   slaveOutText,
   slavePitchText,
   slaveSyncText,
+  vcoFmText,
+  vcoOutText,
+  vcoPitchText,
+  vcoSyncText,
 } from '$lib/ui/modules/moog921-face-model';
 
 // ⚠ ITS OWN IMPORT BLOCK, deliberately. Concurrent face PRs all append here,
@@ -833,6 +839,21 @@ const FACE_READOUT_VALUES: Readonly<Record<string, FaceReadoutValue>> = {
   // the shipping worklet: art/scenarios/moog911a/face-audit.test.ts.
   'moog911a-max-rate': (read) => moog911aMaxRateText(moog911aFaceParams(read)),
   'moog911a-last-out': (read) => moog911aLastOutText(moog911aFaceParams(read)),
+  // ── MOOG CP3 ─────────────────────────────────────────────────────────────
+  // ONE number, and it is the whole argument for that face. `cp3ChannelGain` is
+  // `knob·2`, so UNITY IS AT THE DIAL'S MIDPOINT and all five knobs SHIP AT
+  // MAX: four correlated unity inputs at the shipped defaults sum to a bus peak
+  // of 8.0000 — +18.062 dB over full scale, 10.0000 with EXT 4 also patched —
+  // with NO clamp or saturator anywhere in the path (measured on the shipping
+  // worklet; the derived figure and the measured worst-case peak AGREE at five
+  // settings).
+  //
+  // The negative control a knob readback fails: sweep ATTENUATOR 4 from 1 to 0
+  // and the bus moves +18.1 -> +15.6 dB while the CH 4 DIAL STAYS AT 1.00.
+  // ⚠ CH 4 and ATT 4 are bit-exactly INTERCHANGEABLE in today's code (the bus
+  // sees only their product), which is why the formula multiplies them; #1884
+  // proposes changing that and is audible, so it is not in the face PR.
+  'moogcp3-bus-db': (read) => moogCp3BusText(moogCp3FaceParams(read)),
 
   // ── MARBLES ──────────────────────────────────────────────────────────────
   // ELEVEN values, every one a BARE number or state — no sentence anywhere on
@@ -1358,6 +1379,22 @@ const FACE_READOUT_VALUES: Readonly<Record<string, FaceReadoutValue>> = {
   'moog921b-out': (read) => slaveOutText(moog921bFaceParams(read)),
   'moog921b-fm': (read) => slaveFmText(moog921bFaceParams(read)),
   'moog921b-sync': (read) => slaveSyncText(moog921bFaceParams(read)),
+
+  // THE MONOLITH — the standalone 921 VCO, the pair's third family member. Its
+  // reach matrix is disjoint in the same way, and it has a FIFTH leg the pair
+  // does not: `width` moves NONE of them, which is the assertion a knob
+  // relabelled could not survive. Measured (steady state, real worklet): the
+  // rectangular tap's RMS is invariant to WIDTH across the whole declared span,
+  // so `out` genuinely must not track it.
+  //   moog921vco-pitch  ← octave, tune  (each dial is blind to the other, and
+  //                                      both read 0 where the answer is 261.63 Hz)
+  //   moog921vco-out    ← level ONLY
+  //   moog921vco-fm     ← linFmAmount ONLY
+  //   moog921vco-sync   ← sync ONLY
+  'moog921vco-pitch': (read) => vcoPitchText(moog921VcoFaceParams(read)),
+  'moog921vco-out': (read) => vcoOutText(moog921VcoFaceParams(read)),
+  'moog921vco-fm': (read) => vcoFmText(moog921VcoFaceParams(read)),
+  'moog921vco-sync': (read) => vcoSyncText(moog921VcoFaceParams(read)),
 
   // ── MIXMSTRS — DELETED, with the computation, 2026-08-17 ─────────────────
   // Four derived values used to live here (`bus-gain`, `comp-asleep`, and one

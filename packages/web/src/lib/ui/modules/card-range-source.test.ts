@@ -110,6 +110,7 @@ import { snaredrumDef } from '$lib/audio/modules/snaredrum';
 import { swolevcoDef } from '$lib/audio/modules/swolevco';
 import { moog911Def } from '$lib/audio/modules/moog911';
 import { moog911aDef } from '$lib/audio/modules/moog911a';
+import { moogCp3Def } from '$lib/audio/modules/moog-cp3';
 import { vcaDef } from '$lib/audio/modules/vca';
 import { warrensspectrumDef } from '$lib/audio/modules/warrensspectrum';
 import { wavetableVcoDef } from '$lib/audio/modules/wavetable-vco';
@@ -372,6 +373,16 @@ const RANGE_BOUND_CARDS: Readonly<Record<string, { params: readonly ParamDef[] }
   // verbatim: a units change wants its own owner preview, not a ride-along in a
   // face PR.
   'Moog911aCard.svelte': moog911aDef,
+  // THE FACEPLATE QUEUE · Q36. Enrolled with its faceplate. All five knobs
+  // re-typed `min={0} max={1} defaultValue={1}` and all five AGREED, so this is
+  // the AnalogLogicMathsCard shape — a maintainability conversion rather than a
+  // bug fix, done WITH the promotion because from there the DOCK renders these
+  // controls off the `ParamDef` and this card off its own literals. Range AND
+  // mapping: every Knob reads `P.<id>.{min,max,defaultValue,label,units,curve}`
+  // off `paramSpec(moogCp3Def, …)`. Pixel-neutral — `moogCp3` is in
+  // EXEMPT_FROM_VRT so it has no committed card baseline, and no param on it
+  // declares `units`, so binding units paints exactly what was painted before.
+  'MoogCp3MixerCard.svelte': moogCp3Def,
   'VcaCard.svelte': vcaDef,
   'WarrensspectrumCard.svelte': warrensspectrumDef,
   // THE FACEPLATE QUEUE · Q9. Enrolled while PAYING a live `OPERATIONAL_DEBT`
@@ -556,6 +567,12 @@ const MAPPING_BOUND_CARDS: readonly string[] = [
   // the face publishes the DELIVERED durations as separate readouts instead of
   // quietly dropping the unit off the dial.
   'Moog911Card.svelte',
+  // THE FACEPLATE QUEUE · Q36. Range AND mapping: every Knob reads
+  // `P.<id>.{min,max,defaultValue,label,units,curve}` off
+  // `paramSpec(moogCp3Def, …)`. `units` is bound rather than merely absent —
+  // no param on this module declares one, and binding is what makes that a
+  // DECLARATION instead of an omission the next editor has to re-derive.
+  'MoogCp3MixerCard.svelte',
   'MacrooscillatorCard.svelte',
   'FilterCard.svelte',
   'MarblesCard.svelte',
