@@ -469,6 +469,24 @@ export const spirographsDef: VideoModuleDef = {
     order: spirographsOrder(),
     glyph: 'none',
     pages: spirographsPages(),
+
+    // ⚠ THE SCREEN ON/OFF SWITCH ARRIVES THROUGH THIS SLOT, AND IT HAD TO
+    // (#1928). The 2026-08-18 owner ruling gives every video module a screen
+    // on/off toggle. This module shipped one — on `SpirographsCard.svelte` —
+    // and was then promoted into STRICT_FACES, which makes `migrated()` true
+    // and stops BOTH surfaces from rendering that card. The required control
+    // was therefore unreachable from the faceplate that replaced it: the ruling
+    // was satisfied on a surface nobody sees any more.
+    //
+    // There is no generic affordance to fall back on — `previewCollapsed`
+    // appears in ZERO shell files — so it comes through `fullViewBody`, the
+    // route `backdraft` and `videoOut` already take, per the owner's
+    // instruction to make this behave the way backdraft does.
+    //
+    // Contract-transparent: `face.extension` is a STRING, not a component, so
+    // the shell never imports a spirographs file, and `face` is stripped from
+    // the attest basis — declaring it costs no re-attest and no contract line.
+    extension: 'spirographs',
     hero: {
       readouts: [
         { label: 'live', valueId: 'spirographs-live' },

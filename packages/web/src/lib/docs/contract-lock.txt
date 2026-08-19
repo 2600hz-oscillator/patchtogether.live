@@ -2326,9 +2326,9 @@ moog993 out env_out2 cv
 moog993 out trig_out1 gate edge=trigger
 moog993 out trig_out2 gate edge=trigger
 moog993 out trig_out3 gate edge=trigger
-moog993 param route1 0..2 linear default=1
-moog993 param route2 0..2 linear default=1
-moog993 param route3 0..2 linear default=1
+moog993 param route1 0..2 discrete default=1
+moog993 param route2 0..2 discrete default=1
+moog993 param route3 0..2 discrete default=1
 moog994 meta domain=audio
 moog994 in a_in audio
 moog994 in b_in audio

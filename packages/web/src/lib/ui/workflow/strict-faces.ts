@@ -1252,6 +1252,24 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // def/factory bug that changes saved-rack audio and is NOT fixed in a face
   // PR — see the note on `applyCompMacro`.
   'mixmstrs',
+  // MOOG 993 TRIGGER & ENVELOPE VOLTAGES (2026-08-19) — promoted on the back of
+  // the #1911 fix, and the NARROWEST merit case in the set, recorded as such.
+  //
+  // Three params, no families, no `node.data`, and the three routers are PEERS,
+  // so the "what does a shrinking tier keep" argument is nearly empty: mini
+  // shows ROUTE 1 because it is the first out on the panel. What earns the two
+  // baselines is the hero readout — the module's CONFIGURATION (a 1→3 trigger
+  // multiple, or three outs split between two clocks, both named in its docs)
+  // is a property of all three switches at once and no switch can print it.
+  //
+  // The cells are SEGMENTED rather than dials as a consequence of the def: each
+  // router declares an `options` roster, which `paramCellKind` renders as a
+  // segmented cell at the dock and which paints OFF / FROM 1 / FROM 2 instead
+  // of a bare number. Before #1911 these were `curve: 'linear'` dials over a
+  // DSP selecting on exact float equality — 149 of 201 dial positions delivered
+  // silence — so promoting this module BEFORE that fix would have shipped the
+  // same continuous dial onto a def-driven faceplate.
+  'moog993',
   // THE FACEPLATE QUEUE · Q14 — SLEWSWITCH, quad slew + 4→1 sequential switch
   // (2026-08-15), and the entry whose argument is that TWO ENGINES IN ONE BOX
   // ARE TWO PAGES, not one ranked list of seven.

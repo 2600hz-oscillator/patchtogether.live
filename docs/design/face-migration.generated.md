@@ -123,7 +123,7 @@ author a `face` and rank the controls — no new platform capability.
 | `moog962` | audio | — | — |
 | `moog984` | audio | — | — |
 | `moog992` | audio | — | — |
-| `moog993` | audio | — | — |
+| `moog993` | audio | done | — |
 | `moog994` | audio | — | — |
 | `moog995` | audio | — | — |
 | `moogCp3` | audio | done | — |
