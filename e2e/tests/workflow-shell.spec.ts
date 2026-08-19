@@ -22,11 +22,20 @@ import {
   fixtureProblems,
   fixtureType,
 } from './_face-fixtures';
+import { BOOT_MS, PLACEHOLDER_PAINT_MS } from '../_helpers/boot-budget';
+
+// Boot and first-paint waits are pure LATENCY BOUNDS, not behavior assertions
+// (#1875 — this spec lost two main push runs in one day to flat ones). The
+// bounds and the whole argument now live at ONE export site, imported above:
+// ../_helpers/boot-budget.ts. They were declared locally here by #1898; the
+// #1904 sweep found the same defect at twenty more sites, and a bound that is
+// re-typed per spec is a bound that drifts — the reason frame waits have
+// exactly one home too.
 
 async function gotoWorkflow(page: Page, opts: { shell: boolean }): Promise<void> {
   await page.goto(opts.shell ? '/rack' : '/rack?shell=legacy');
-  await expect(page.getByTestId('workflow-topbar')).toBeVisible();
-  await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });
+  await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: BOOT_MS });
+  await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible', timeout: BOOT_MS });
 }
 
 /** Read one node param through the dev __patch global. */
@@ -283,7 +292,7 @@ test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
     for (const id of ids) {
       await expect(
         page.locator(`.svelte-flow__node[data-id="${id}"] [data-testid="module-shell-placeholder"]`),
-      ).toBeVisible({ timeout: 15_000 });
+      ).toBeVisible({ timeout: PLACEHOLDER_PAINT_MS });
     }
 
     const metrics = await page.evaluate((nodeIds) => {
@@ -506,7 +515,7 @@ test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
     for (const id of ids) {
       await expect(
         page.locator(`.svelte-flow__node[data-id="${id}"] [data-testid="module-shell-placeholder"]`),
-      ).toBeVisible({ timeout: 15_000 });
+      ).toBeVisible({ timeout: PLACEHOLDER_PAINT_MS });
     }
     // The compact tier (the truncation report's tier) — the tile is 192px wide.
     await setZoomTier(page, 0.45, 'compact');

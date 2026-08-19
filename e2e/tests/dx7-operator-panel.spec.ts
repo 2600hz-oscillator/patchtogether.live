@@ -13,8 +13,13 @@
 
 import { test, expect } from './_fixtures';
 import { type Page } from '@playwright/test';
+import { SLOW_BOOT_TEST_TIMEOUT_MS } from '../_helpers/boot-budget';
 
-test.describe.configure({ mode: 'parallel' });
+// Per-test budget scaled on CI (#1904). `dx7 op detail: STORE appends a named
+// patch, REVERT clears the dirty state` recovered a `timedOut -> passed` flake
+// on the same SHA against the flat 30 s default — on the run that took `main`
+// red on 2026-08-19. A bound, not an assertion: see ../_helpers/boot-budget.ts.
+test.describe.configure({ mode: 'parallel', timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
 
 async function bootDx7Dock(page: Page): Promise<string> {
   await page.goto('/rack');

@@ -1619,6 +1619,68 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // #1792 (the "1 Hz to 40 kHz" prose is wrong at both ends).
   'moog921a',
   'moog921b',
+
+  // THE FACEPLATE QUEUE · the 921 pair's THIRD family member — `moog921Vco`,
+  // the standalone monolith. Same oscillator core, a different instrument: the
+  // driver and the slave packed into one module, with the jack neither half of
+  // the pair has between them — its OWN 1V/oct input. Four simultaneous taps off
+  // one phase, so a keyboard patched straight in feeds four timbres of the same
+  // note to four destinations.
+  //
+  // ⚠ THE MERIT IS A 12-OCTAVE COMPASS PRINTED AS `0 oct` AND `0 st`. RANGE
+  // (±5 oct) and FREQ (±12 st) join into ONE frequency through the shipping
+  // core, and at the def's own declared endpoints that join spans
+  // 4.09 Hz … 16.74 kHz — twelve octaves exactly. Both dials read ZERO at the
+  // factory settings, where the answer is 261.63 Hz, and the C4 reference the
+  // whole thing hangs off appears on no panel. The `pitch` readout is the only
+  // surface in the app that states it.
+  //
+  // ⚠ TWO OF ITS SIX CONTROLS ARE BIT-EXACTLY DEAD AT SPAWN, and that is the
+  // rank argument rather than a taste call. Rendered through the SHIPPING
+  // worklet at 48 kHz with a 200 Hz sine on the jack, comparing against an
+  // unpatched render and reporting the LAST DIVERGENT SAMPLE — the only
+  // window-independent way to ask, and the attack the spec recorded against
+  // itself: `linFmAmount = 0` and `sync = 0` each render BIT-IDENTICAL output.
+  // Positive controls that do diverge: `linFmAmount = 0.01` (a ±20 Hz span) and
+  // `sync = +1`, both through the final sample. So LIN FM and SYNC rank last,
+  // and RANGE — never inert — is the hero.
+  //
+  // ⚠ A SWITCH VOCABULARY RECOVERED FROM CARD MARKUP, and a dead zone closed
+  // with it (#1887). `SOFT`/`OFF`/`HARD` existed only in `Moog921VcoCard`'s
+  // private array, so a def-driven surface painted a continuous rotary printing
+  // `0.00` over a three-position comparator whose `off` state is EXACTLY 50 % of
+  // the declared travel. `curve` went `linear` → `discrete` to make a
+  // `ParamDef.options` roster legal, and the card now MAPS that roster. The dead
+  // zone was reachable before this: a Push 2 encoder maps through
+  // `knobFracToValue(frac, min, max, curve)`, and `sync = 0.3` measured
+  // BIT-IDENTICAL to an unpatched sync jack while all three card buttons
+  // rendered un-selected. ⚠ The names deliberately DIFFER from `moog921b`'s
+  // `LO`/`OFF`/`HI` — each module keeps the vocabulary its own panel has always
+  // painted; renaming a control the player knows would drop an affordance while
+  // claiming to recover one.
+  //
+  // ⚠ THE GLYPH RESOLVES TO ONE TAP OF FOUR, AND THE FOUR ARE NOT LEVEL-MATCHED.
+  // `primaryAudioOutPortId` is `sine` (first declared `audio` output), so the
+  // trace is the sine tap alone — and measured at one LEVEL setting the jacks
+  // sit −0.044 dB (rect), −3.011 dB (sine), −4.771 dB (triangle), −4.834 dB
+  // (saw): a 4.789 dB spread, with the glyph drawing the middle of it. Both
+  // facts are in `docs` and asserted in moog921-face-model.test.ts. It JOINS THE
+  // VRT ROSTER'S FREE-RUNNING SET for the same reason moog921b does — a VCO with
+  // no gate, sounding from sample 0 — so its compact tile exercises #1420's
+  // pre-frame audio freeze. What would silently retire that property: `level`
+  // ceasing to default to unity, and nothing else; there is no engine selector
+  // here that could move the default onto a struck voice.
+  //
+  // DEFECTS FIXED HERE (module-scoped, so folded in rather than sequenced):
+  // #1887 (the comparator's shape, above), #1882 (the docs promised THROUGH-ZERO
+  // linear FM that the core's positive 0.01 Hz floor forecloses) and #1792 (the
+  // "1 Hz to 40 kHz" prose, wrong at both ends, at every one of its sites).
+  // FILED RATHER THAN FOLDED IN, because both change what the module SOUNDS
+  // like: #1883 (SOFT sync is a conditional HARD zero, bit-identical to HARD at
+  // 67.77 % of pitches) and the width_cv over-authority — a ±1 LFO against a
+  // 0.96-wide knob span is 2.08×, so a full-scale modulator spends 68 % of every
+  // cycle pinned at 2 % or 98 % instead of sweeping.
+  'moog921Vco',
   // ⛔ REVIEW-HOLD · THE FIRST VIDEO FACE (2026-08-17) — Q22, `backdraft`.
   //
   // 37 params, 33 inputs (29 paramTarget CV + 4 video), 1 video out: the

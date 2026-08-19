@@ -9,7 +9,9 @@
 // patch a pitch source straight into freq_bus). The hardware 921B is the
 // slaved oscillator: it presents FOUR fixed-level simultaneous waveform
 // outs (Sine / Triangle / Saw / Rectangular) off ONE common core,
-// 1 Hz–40 kHz. A FREQUENCY pot gives 2-octave fine; a RANGE switch sets the
+// 0.01 Hz up to just under Nyquist — 23 520 Hz at 48 kHz, not the hardware's
+// nominal 40 kHz, which would need a sample rate of 81 633 Hz (#1792).
+// A FREQUENCY pot gives 2-octave fine; a RANGE switch sets the
 // octave "footage"; a DC MODULATE input does LINEAR FM (non-1V/oct); an AC
 // MODULATE input does cap-coupled (DC-blocked) linear FM; a SYNC input +
 // 3-position sync switch (off/lo=soft/hi=hard) drives oscillator sync.

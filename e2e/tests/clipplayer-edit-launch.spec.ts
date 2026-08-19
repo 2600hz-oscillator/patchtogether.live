@@ -11,8 +11,31 @@
 
 import { test, expect } from '@playwright/test';
 import { spawnPatch } from './_helpers';
+import { SLOW_BOOT_TEST_TIMEOUT_MS } from '../_helpers/boot-budget';
 
-test.describe.configure({ mode: 'parallel' });
+// ── THE TEST BUDGET IS THIS SPEC'S REAL BOUND, AND IT WAS FLAT (#1904) ──────
+//
+// The poll below was already fixed to accumulate INSIDE the page (see the note
+// on `waitLane0Playing`), and this spec still recovered a flake on 9 of the 31
+// completed `ci.yml` runs in the window to 2026-08-19 — the single most flaky
+// test in the suite. Read off the blob reports, every occurrence is
+// `timedOut -> passed` ON THE SAME SHA, failing in two different places:
+//
+//   Test timeout of 30000ms exceeded.
+//     - waiting for getByTestId('clipplayer-editor') to be visible
+//     - waiting for getByTestId('clipplayer-edit-now')
+//
+// Two different subjects timing out means the test did not hang on either one
+// — it ran out of BUDGET. Playwright's default per-test timeout is 30 s and
+// this suite does not override it, so for any wait that carries no timeout of
+// its own the 30 s test budget IS the bound, and a flat bound on a runner that
+// swings >=2x is a lottery (#1860).
+//
+// Scaling it is a bound change, not an assertion change: nothing here claims
+// how long the editor takes to open, and the wait exits the instant it does.
+// Cost regressions stay gated by scripts/e2e-shard-budget.sh, which is a
+// measurement of the lane rather than of one test.
+test.describe.configure({ mode: 'parallel', timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
 
 /**
  * Wait for lane 0 of the clipplayer's synced `playing` set to reach `expected`,

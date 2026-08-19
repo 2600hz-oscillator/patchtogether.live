@@ -17,7 +17,7 @@ import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 // @ts-expect-error — plain .mjs with JSDoc types, no declaration file
-import { auditReport, formatSummary } from './e2e-report-audit.mjs';
+import { auditReport, formatSummary, isDoomReserved, partitionFlaky } from './e2e-report-audit.mjs';
 
 /** A minimal report in Playwright's real JSON shape, incl. nested suites. */
 const report = {
@@ -94,19 +94,18 @@ describe('the audit finds what a green job hides', () => {
   });
 });
 
-// ── THE GATE ITSELF, EXERCISED BEFORE IT IS ARMED ──────────────────────────
+// ── THE GATE ITSELF ────────────────────────────────────────────────────────
 //
-// `--fail-on-flaky` is the switch ci.yml will eventually pass, and until it
-// does, NOTHING runs this code path — the flag was added, tested by eye and
-// left dark. That is the shape CLAUDE.md warns about: "a gate that cannot fail
-// on CI is decoration", and the day it IS armed is the worst day to discover
-// the exit code never worked.
+// `--fail-on-flaky` is now ARMED on every retrying Playwright lane in ci.yml
+// (#1903). It was written and left dark for a long time, which is the shape
+// CLAUDE.md warns about — "a gate that cannot fail on CI is decoration" — and
+// the day it is armed is the worst day to discover the exit code never worked.
 //
 // So this drives the real CLI, in a subprocess, on both sides of the decision:
 // the same fixture must exit 1 with the flag and 0 without it, and exit 0 with
 // the flag when there is nothing to find. A one-sided check ("it exits 1")
 // would pass just as happily on a script that always exits 1.
-describe('the --fail-on-flaky exit path (armed by ci.yml only after the tail is drained)', () => {
+describe('the --fail-on-flaky exit path (armed on every retrying lane, #1903)', () => {
   const SCRIPT = resolve(dirname(fileURLToPath(import.meta.url)), 'e2e-report-audit.mjs');
   const dir = mkdtempSync(join(tmpdir(), 'e2e-audit-'));
 
@@ -153,8 +152,8 @@ describe('the --fail-on-flaky exit path (armed by ci.yml only after the tail is 
   });
 
   it('NEGATIVE CONTROL (flag off): the same report is report-only', () => {
-    // This is the state ci.yml is in today. If this ever starts failing, the
-    // lane has been armed by accident rather than by decision.
+    // The flag, not the parser, is what gates. A lane can still audit without
+    // arming — and if arming ever becomes implicit, this goes red.
     const { code, out } = run([withFlake]);
     expect(code, `report-only must not fail the job. Output:\n${out}`).toBe(0);
     expect(out).toContain('recovers on retry');
@@ -164,6 +163,89 @@ describe('the --fail-on-flaky exit path (armed by ci.yml only after the tail is 
     const { code, out } = run([clean, '--fail-on-flaky']);
     expect(code, `a clean report must pass even when armed. Output:\n${out}`).toBe(0);
     expect(out).toContain('No flaky or skipped tests');
+  });
+
+  // ── ⚠ DOOM: EXCLUDED FROM GATING, NOT FROM REPORTING ────────────────────
+  //
+  // Three DOOM tests recovered flakes in the 96 h census (#1847) and were
+  // deliberately left UNPARKED — the owner reserved them. They are live tests
+  // that would otherwise trip this gate, and touching DOOM's timing
+  // re-specifies how far the marine walks, so they are excluded BY NAME.
+  //
+  // Both directions are pinned, because the dangerous failure is not "DOOM
+  // fails the job" — it is the exclusion QUIETLY WIDENING until it swallows a
+  // real flake. So: a DOOM-only report must pass AND still print, and a report
+  // with DOOM *and* a normal flake must still fail on the normal one.
+
+  const doomOnly = join(dir, 'doom-only.json');
+  writeFileSync(
+    doomOnly,
+    JSON.stringify({
+      suites: [
+        {
+          file: 'doom-audio-output.spec.ts',
+          specs: [{ title: 'pistol SFX reach a downstream scope', tests: [{ status: 'flaky', results: [{}, {}] }] }],
+        },
+      ],
+    }),
+  );
+
+  const doomPlusReal = join(dir, 'doom-plus-real.json');
+  writeFileSync(
+    doomPlusReal,
+    JSON.stringify({
+      suites: [
+        {
+          file: 'doom-late-join.spec.ts',
+          specs: [{ title: 'B hot-drops into the current map', tests: [{ status: 'flaky', results: [{}, {}] }] }],
+        },
+        {
+          file: 'workflow-shell.spec.ts',
+          specs: [{ title: 'a normal flake', tests: [{ status: 'flaky', results: [{}, {}] }] }],
+        },
+      ],
+    }),
+  );
+
+  it('does NOT fail on an owner-reserved DOOM flake, but DOES print it', () => {
+    const { code, out } = run([doomOnly, '--fail-on-flaky']);
+    expect(code, `DOOM is owner-reserved and must not gate. Output:\n${out}`).toBe(0);
+    // Visible, never silent — a silent exclusion is the failure mode even when
+    // the exclusion is correct.
+    expect(out).toContain('doom-audio-output.spec.ts');
+    expect(out).toContain('::notice');
+    expect(out, 'a DOOM row must not be annotated as a gating error').not.toContain('::error::');
+  });
+
+  it('POSITIVE CONTROL: the DOOM carve-out does not swallow a co-occurring real flake', () => {
+    // The exclusion is per ROW, not per REPORT. If it were per report, one DOOM
+    // flake would grant the whole run an amnesty — which is exactly how a
+    // reasonable-looking filter quietly redefines a gate's subject.
+    const { code, out } = run([doomPlusReal, '--fail-on-flaky']);
+    expect(code, `a non-DOOM flake must still fail the job. Output:\n${out}`).toBe(1);
+    expect(out).toContain('workflow-shell.spec.ts');
+    expect(out).toContain('doom-late-join.spec.ts');
+  });
+
+  it('the DOOM predicate matches DOOM specs and nothing else', () => {
+    // Anchored to shape, both directions: a pattern that matched everything and
+    // a pattern that matched nothing would both leave the gate looking healthy.
+    expect(isDoomReserved('e2e/tests/doom-mp-real.spec.ts')).toBe(true);
+    expect(isDoomReserved('doom-late-join.spec.ts')).toBe(true);
+    expect(isDoomReserved('e2e/tests/workflow-shell.spec.ts')).toBe(false);
+    // ⚠ Not every file with "doom" in the name is a reserved DOOM spec.
+    expect(isDoomReserved('e2e/tests/kingdoom-face.spec.ts')).toBe(false);
+    expect(isDoomReserved('')).toBe(false);
+  });
+
+  it('partitionFlaky splits rows rather than reports', () => {
+    const rows = [
+      { file: 'doom-mp-real.spec.ts', title: 'd', retries: 2 },
+      { file: 'clipplayer-edit-launch.spec.ts', title: 'c', retries: 2 },
+    ];
+    const { gating, doomReserved } = partitionFlaky(rows);
+    expect(gating.map((r) => r.file)).toEqual(['clipplayer-edit-launch.spec.ts']);
+    expect(doomReserved.map((r) => r.file)).toEqual(['doom-mp-real.spec.ts']);
   });
 });
 

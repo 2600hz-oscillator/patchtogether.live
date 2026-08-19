@@ -17,6 +17,7 @@
 //      link → no signed-in/out glitch).
 
 import { test, expect } from '@playwright/test';
+import { BOOT_MS } from '../_helpers/boot-budget';
 
 test.describe('landing routing', () => {
   test('the rack route boots the canvas and is cross-origin isolated', async ({ page }) => {
@@ -24,7 +25,7 @@ test.describe('landing routing', () => {
     expect(resp, 'no response for /rack?shell=legacy&seed=none').toBeTruthy();
     expect(resp!.status(), `/rack?shell=legacy&seed=none status ${resp!.status()}`).toBe(200);
 
-    await expect(page.locator('[data-testid="canvas-root"]')).toBeVisible();
+    await expect(page.locator('[data-testid="canvas-root"]')).toBeVisible({ timeout: BOOT_MS });
 
     // The audio engine needs SharedArrayBuffer, which requires cross-origin
     // isolation. This is the invariant the whole route-move had to preserve.
@@ -58,7 +59,7 @@ test.describe('landing routing', () => {
     // cross-origin ISOLATED — moves onto the one remaining tile.
     await page.getByTestId('tile-new-rack').click();
     await page.waitForURL('**/rack');
-    await expect(page.locator('[data-testid="canvas-root"]')).toBeVisible();
+    await expect(page.locator('[data-testid="canvas-root"]')).toBeVisible({ timeout: BOOT_MS });
     expect(
       await page.evaluate(() => crossOriginIsolated),
       'rack entered via the landing tile must be cross-origin isolated',

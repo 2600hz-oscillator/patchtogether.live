@@ -19,6 +19,7 @@
 // the dashboard create tests + rackspaces.test.ts.
 
 import { test, expect, type Page } from '@playwright/test';
+import { BOOT_MS } from '../_helpers/boot-budget';
 
 const SCRATCH_STORAGE_KEY = 'pt:local-scratch-id';
 const REPLICA_DB_PREFIX = 'pt-rack-v1-';
@@ -122,7 +123,7 @@ test.describe('File → New rack (scratch / logged-out)', () => {
     // then assert: the shell is up, pinned trio present, the marker gone,
     // and the scratch id was rotated (⇒ a distinct, empty replica DB).
     await page.waitForLoadState('networkidle');
-    await expect(page.getByTestId('workflow-topbar')).toBeVisible();
+    await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: BOOT_MS });
     await waitForPinnedTrio(page);
     await expect(page.locator('.svelte-flow__node[data-id="newrack-wf-marker"]')).toHaveCount(0);
 
@@ -181,7 +182,7 @@ test.describe('landing: Return to last rack', () => {
 
     // Clicking it reopens the scratch rack (same id → same replica).
     await card.click();
-    await expect(page.locator('[data-testid="canvas-root"]')).toBeVisible();
+    await expect(page.locator('[data-testid="canvas-root"]')).toBeVisible({ timeout: BOOT_MS });
     expect(new URL(page.url()).pathname).toBe('/rack');
     expect(await readScratchId(page)).toBe(scratchId);
   });

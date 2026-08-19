@@ -38,10 +38,11 @@ import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 import { pressFlipKey } from './_flip-key';
 import { AUDIO_FIXTURE, VIDEO_FIXTURE, fixtureProblems, fixtureType } from './_face-fixtures';
+import { BOOT_MS } from '../_helpers/boot-budget';
 
 async function gotoWorkflow(page: Page): Promise<void> {
   await page.goto('/rack');
-  await expect(page.getByTestId('workflow-topbar')).toBeVisible();
+  await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: BOOT_MS });
   await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });
 }
 
