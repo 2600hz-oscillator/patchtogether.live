@@ -52,9 +52,30 @@ const loadedContexts = new WeakSet<BaseAudioContext>();
  * existed nowhere at all. `Moog904aVcfCard.svelte` built its `role="radiogroup"`
  * from a local `RANGE_POS` array of bare `1` / `2` / `3` — so promotion would
  * have deleted the only place the positions are named, and even the card never
- * said that they are ×1 / ×4 / ×16. The labels keep the panel's exact text
- * (functional parity) and the `title` carries the multiplier and the band it
- * places the dial in.
+ * said that they are ×1 / ×4 / ×16.
+ *
+ * ⚠ THE LABELS ARE NAMES, NOT THE PANEL'S NUMERALS, AND A GATE MADE THAT CALL.
+ * The first draft kept `1` / `2` / `3` for parity with the card's exact text.
+ * `face-readout-source.test.ts` refused it: a param with `options` and no
+ * `format` PAINTS its option label under the dial, so bare numerals would put a
+ * decimal representation of knob state back on the faceplate — the thing the
+ * 2026-08-17 owner ruling removed. The gate's own instruction is *"either name
+ * the state or add a NUMERIC_LABEL_EXEMPTIONS entry saying why the number IS
+ * the name"*.
+ *
+ * Naming it is the better answer here rather than the cheaper one, because THE
+ * INVISIBILITY OF THIS SWITCH IS THE MODULE'S WHOLE FINDING: a faceplate
+ * painting `2` under RANGE tells a player exactly as little as the card did.
+ * `LOW` / `MID` / `HIGH` are the bands the DSP's own comments describe
+ * (`~60–80` / `~260–340` / `~1.0–1.3 k` Hz at the knob's low end), the `title`
+ * carries the position number AND the multiplier, and the delivered frequency
+ * is printed live by `moog904a-cutoff-hz`.
+ *
+ * ⚠ `×1` / `×4` / `×16` was considered and REJECTED. It would pass the gate —
+ * but only because `looksNumeric` anchors its `×` as a SUFFIX while the
+ * function's own comment says a LEADING `×` "counts as part of the number". A
+ * label that slips through a gap between a gate's stated intent and its regex
+ * is not a label that satisfies the rule.
  *
  * ⚠ THE CONSEQUENCE IS PRINTED, NOT JUST DESCRIBED. Because the multiplier
  * lands BEFORE the worklet's 20 Hz / 20 kHz clamp, position 3 makes the top
@@ -66,9 +87,9 @@ const loadedContexts = new WeakSet<BaseAudioContext>();
  * `contract-lock` line.
  */
 export const MOOG904A_RANGE_OPTIONS: readonly ParamOption[] = [
-  { value: 1, label: '1', title: '×1 — the dial reads true; the whole 20 Hz…20 kHz travel is usable' },
-  { value: 2, label: '2', title: '×4 (+2 oct) — the dial delivers four times what it says, and clamps at 20 kHz above 5 kHz' },
-  { value: 3, label: '3', title: '×16 (+4 oct) — sixteen times what the dial says, and everything above 1.25 kHz is the same filter' },
+  { value: 1, label: 'LOW', title: 'position 1, ×1 — the dial reads true; the whole 20 Hz…20 kHz travel is usable' },
+  { value: 2, label: 'MID', title: 'position 2, ×4 (+2 oct) — the dial delivers four times what it says, and clamps at 20 kHz above 5 kHz' },
+  { value: 3, label: 'HIGH', title: 'position 3, ×16 (+4 oct) — sixteen times what the dial says, and everything above 1.25 kHz is the same filter' },
 ];
 
 export const moog904aDef: AudioModuleDef = {
