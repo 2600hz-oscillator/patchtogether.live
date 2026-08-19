@@ -792,6 +792,38 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   'clouds',
   // FACE BATCH 4 · the three-tap noise source (2026-08-10) — see above.
   'noise',
+  // THE FACEPLATE QUEUE · Q29 — the 4x4 hard router (2026-08-18). Four
+  // selectors, eight inputs, four outputs, one idea repeated four times.
+  //
+  // ⚠ THE AUDIT'S FINDING IS A CONTROL LOSS THAT PROMOTION WOULD HAVE CAUSED,
+  // and it is the STOP-2 class the skill's grep is blind to because the
+  // affordance is not a `<button>` — it is a DECLARATION THAT WAS NEVER MADE.
+  // `sel1..sel4` are `curve: 'discrete'` with NO `options` roster, so nothing in
+  // the def says what any of the four positions is CALLED. The legacy card
+  // answered that in markup (`← IN {value + 1}`), and promoting the module
+  // removes that card from both surfaces — so the faceplate would have rendered
+  // four dials reading 0..3, on the module whose entire job is "which input",
+  // with nothing anywhere naming an input. Every gate is green either way:
+  // `contract-lock` pins min/max/curve (a roster is cosmetic and not
+  // projected), `module-face-lint` counts CELLS not names, and the card's own
+  // test asserts the markup it hand-wrote. Fixed in this PR by declaring the
+  // roster ONCE in `fourplexer-select.ts` and having BOTH the def and the card
+  // read it — which also makes `paintsReadout` true, so the dock gets a named
+  // button row and the lane dial paints `IN 2` instead of `2`.
+  //
+  // ⚠ NO GLYPH, AND IT IS FORCED RATHER THAN CHOSEN. Every output is typed
+  // `cv`, so `primaryAudioOutPortId` returns NULL and every glyph kind falls
+  // through to `{ kind: 'static' }` — the #1692 dead-glyph shape the lint
+  // refuses by name. This is `moog921a`'s situation, and like it the assertion
+  // lives in the module's face-model test with a negative control rather than
+  // in a comment.
+  //
+  // NOT CONTROL-HEAVY, measured against the 2026-08-18 tabbed-face ruling: four
+  // params at ONE distinct control shape (`discrete 0..3`), and one honest idea
+  // to group them into. "Lots of controls of different types" is the bar and
+  // this module is the opposite of both halves of it, so it takes a single
+  // unlabelled band rather than a rail.
+  'fourplexer',
   // FACE BATCH 5 · the analog delay (2026-08-10) — see the header note above.
   'cofefve',
   // FACE BATCH 4 · the random source (2026-08-11) — see the header note above.

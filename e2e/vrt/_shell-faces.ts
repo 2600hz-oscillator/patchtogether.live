@@ -210,6 +210,27 @@ export const FACES = [
   // this has not been run against them. Run `vrt-face-audio-probe` on this
   // tile before quoting a number here; a passing scene is not the measurement.
   { type: 'noise', pages: 0 },
+  // 4PLEXER (2026-08-18) — no `pages`, so the dock renders ONE unlabelled band
+  // holding all four selectors (four peers, one idea; see the face comment).
+  // The hero carries readouts only and promotes no control, so nothing is
+  // moved out of that band and it is not emptied — unlike `noise`, whose only
+  // key WAS promoted.
+  //
+  // DETERMINISTIC AT REST, structurally: the module is a pure switch with no
+  // generator in it, its outputs are `cv`, and the face declares `glyph: 'none'`
+  // (forced — every output is `cv`, so no glyph kind can bind). Nothing on
+  // either scene reads an analyser, and the three hero readouts are pure
+  // functions of the four selector params.
+  //
+  // ⚠ `pages: 1`, NOT 0, and the first draft of this entry got it wrong while
+  // the comment above it stated the right reason — the capture caught it
+  // (`face-page` toHaveCount: unexpected value "1"). `noise` is `pages: 0`
+  // because its ONLY ranked key is promoted to `hero.control`, which EMPTIES
+  // the `__all` band and `heroFacePlan` DROPS an emptied band. This hero
+  // promotes NO control, so nothing leaves the band and it renders. Reasoning
+  // "no declared `face.pages` ⇒ 0" is the trap: the roster counts RENDERED
+  // bands, not declared ones.
+  { type: 'fourplexer', pages: 1 },
   // FACE BATCH 5 — the analog delay. SIX declared bands, six rendered: the hero
   // promotes `delayTime` and the echo-train panel out of band 1, which still
   // holds SYNC, CLK SRC and FEEDBACK, so nothing empties.

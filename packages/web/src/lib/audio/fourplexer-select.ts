@@ -9,6 +9,45 @@
 export const FOURPLEXER_INPUTS = 4;
 
 /**
+ * THE DETENT NAMES, and the ONE place they exist.
+ *
+ * `curve: 'discrete'` tells the platform a selector has N states; nothing in a
+ * `ParamDef` says what a state is CALLED. `FourPlexerCard` used to answer that
+ * in markup (`← IN {selectedInput(o)}`), which is fine right up until the
+ * module is promoted and the card stops rendering — so the names moved here,
+ * where the def declares them as a `ParamOption` roster and the card reads the
+ * same array. Cosmetic in the contract sense (ParamOption: the projection reads
+ * only id/min/max/curve/defaultValue/units) and load-bearing in the UI sense:
+ * a bare `options` roster with no `format` is exactly what makes `paintsReadout`
+ * true, so the dock paints a named button row and the lane dial paints `IN 2`
+ * instead of `2`.
+ *
+ * DERIVED from the input count — a hand-written list could disagree with it.
+ */
+export const FOURPLEXER_INPUT_OPTIONS: readonly { value: number; label: string; title: string }[] =
+  Array.from({ length: FOURPLEXER_INPUTS }, (_, i) => ({
+    value: i,
+    label: `IN ${i + 1}`,
+    title: `Carry signal input ${i + 1} on this output.`,
+  }));
+
+/**
+ * The four selectors: which param drives which output, and where each one
+ * ships. DERIVED from the same count, so a selector can never name an output
+ * the module does not have.
+ *
+ * The staggered defaults (0,1,2,3) are what make a fresh 4PLEXER a straight
+ * pass-through — `out{n}` carries `in{n}` — rather than four outputs all
+ * carrying `in1`.
+ */
+export const FOURPLEXER_SELECTORS: readonly { id: string; label: string; defaultValue: number }[] =
+  Array.from({ length: FOURPLEXER_INPUTS }, (_, i) => ({
+    id: `sel${i + 1}`,
+    label: `OUT ${i + 1}`,
+    defaultValue: i,
+  }));
+
+/**
  * Advance a selector index to the NEXT input, wrapping 3 → 0
  * (1-based: 1→2→3→4→1). `cur` is the 0-based index 0..3; non-integer or
  * out-of-range values are normalised first so a corrupt saved value can't
