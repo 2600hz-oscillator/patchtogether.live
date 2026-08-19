@@ -937,6 +937,19 @@ export const FACES = [
   // the dead `{kind:'static'}`. Nothing live is in this scene at all, which
   // makes it the most trivially deterministic capture in the roster.
   { type: 'moog912', pages: 1 },
+  // OUTLINES — three pages (spawn clock / latched at birth / live field), well
+  // under DOCK_TAB_MIN_BANDS, so the dock scene captures stacked bands.
+  {
+    type: 'outlines',
+    pages: 3,
+    videoFaceWhy:
+      'the dock faceplate carries a live thumbnail of the module output via hasVideoSurface, and '
+      + 'this module is a STATEFUL PARTICLE FIELD — every live shape drifts and bounces every '
+      + 'frame, and at the shipped rate a new one spawns every 2250 ms — so the surface is a '
+      + 'different picture on every frame and on every capture. The sim is seeded '
+      + '(__outlinesVrtSeed) but the elapsed-time integration is not stopped by an AudioContext '
+      + 'suspend, which says nothing about a rAF-driven picture.',
+  },
   // THE FIRST VIDEO FACE. Its `pages` are feedback / loop / colour / key /
   // switches / tv screen / virtual camera — enough bands to reach
   // DOCK_TAB_MIN_BANDS, so the dock scene captures a TAB RAIL with one band

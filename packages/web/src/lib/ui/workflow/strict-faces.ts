@@ -1252,6 +1252,28 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // def/factory bug that changes saved-rack audio and is NOT fixed in a face
   // PR — see the note on `applyCompMacro`.
   'mixmstrs',
+  // THE FACEPLATE QUEUE · Q32 — OUTLINES, a stateful particle field, and the
+  // face whose PAGES carry the module's hardest-to-discover property
+  // (2026-08-19).
+  //
+  // FIVE OF ITS SEVEN KNOBS ARE LATCHED AT SPAWN. `d`, `v`, `spd`, `decay` and
+  // `shape` are copied into each shape as it is born; turning them afterwards
+  // changes nothing about what is already on screen. A player who turns SPEED
+  // and sees nothing move is looking at a control that only applies to the
+  // future. So `pages` groups by WHEN a control acts — spawn clock / latched at
+  // birth / live field — rather than by what it affects, and the band labels
+  // are the only place a resting faceplate states it.
+  //
+  // ⚠ `rotation` is the ONLY live control and still ranks sixth, because
+  // `mapAngularVel(0.5)` is BIT-EXACTLY 0 and 0.5 is the shipped default — the
+  // inertness-at-spawn rule beating conceptual importance.
+  //
+  // The four readouts are not joins; each exists because its mapping is
+  // DISCONTINUOUS where the dial is not (`rate`'s engage step from no-clock to
+  // 3996.50 ms; `decay = 0` as a persist MODE with the default sitting exactly
+  // on it; `shape`'s six 0.166667 bands). Two of them are a PARITY requirement
+  // — the card prints shape and spin, and promotion deletes the card.
+  'outlines',
   // THE FACEPLATE QUEUE · Q14 — SLEWSWITCH, quad slew + 4→1 sequential switch
   // (2026-08-15), and the entry whose argument is that TWO ENGINES IN ONE BOX
   // ARE TWO PAGES, not one ranked list of seven.

@@ -224,6 +224,146 @@ export const outlinesDef: VideoModuleDef = {
     { id: OUTLINES_COLLIDE_PARAM_ID, label: 'COLLIDE', defaultValue: 0, min: 0, max: 1, curve: 'linear' },
   ],
 
+  // Two SYNTHETIC params that exist only so the CV bridge has somewhere to
+  // write a gate level. Neither is a control: the card hides both, and without
+  // this declaration `module-face-lint`'s completeness loop demands an
+  // interactive cell for each and the face paints two continuous rotaries over
+  // raw gate levels. `writer` is checked against THIS def's own `inputs` in
+  // both directions by `no-user-control.test.ts`.
+  noUserControl: [
+    {
+      param: OUTLINES_GATE_PARAM_ID,
+      writer: 'cv-port',
+      why: 'written by the gate bridge as a raw 0..1 level; the module edge-detects it and each RISING EDGE spawns one shape, latching the live D/V/Spd/Decay/Shape values at that instant. The player controls it by patching a clock, never by turning it',
+    },
+    {
+      param: OUTLINES_COLLIDE_PARAM_ID,
+      writer: 'cv-port',
+      why: 'written by the collide bridge as a raw 0..1 level and read LIVE every frame (not latched): while high, shapes bounce off each other elastically. It is a patched-cable mode switch, not a dial anyone sets by hand',
+    },
+  ],
+
+  // ── THE FACEPLATE ──────────────────────────────────────────────────────────
+  //
+  // WHAT IT IS FOR. Most video modules transform the frame you give them.
+  // outlines GENERATES one, and it does so as a STATEFUL PARTICLE FIELD: a gate
+  // edge (or its own clock) spawns a shape that drifts, bounces off the walls
+  // forever, and piles up with the others into a per-pixel overlap count that
+  // four different pictures are derived from. The verb is STOCKING A POND —
+  // you set what the next thing dropped in will be, and how often.
+  //
+  // ⚠ THE ONE FACT THE WHOLE FACE IS ORGANISED AROUND: FIVE OF THE SEVEN KNOBS
+  // ARE LATCHED AT SPAWN. `d`, `v`, `spd`, `decay` and `shape` are copied into
+  // each shape as it is born, and turning them afterwards changes NOTHING about
+  // the shapes already on screen. A player who turns SPEED and sees nothing
+  // move is not looking at a broken control — they are looking at a control
+  // that only applies to the future. Only `rotation` is live, and `rate` is
+  // neither: it is GENERATIVE, deciding whether there is a future at all.
+  //
+  // That is why `pages` groups by WHEN A CONTROL ACTS rather than by what it
+  // affects, which is the more obvious grouping and the less useful one. The
+  // band labels are the only place this module's hardest-to-discover property
+  // is stated on a resting faceplate.
+  //
+  // THE LADDER, read back as a sentence: mini gives RATE, because it is the
+  // control that decides whether the module is a source at all (below its
+  // engage threshold the clock is OFF entirely and nothing spawns without a
+  // patched gate). Compact adds SHAPE, the most visible identity of what gets
+  // dropped in. Plate adds D, SPD, DECAY and ROT. V is dock-only — it is the
+  // launch ANGLE, and on a field where everything bounces off four walls
+  // forever the initial direction is the least consequential of the five
+  // latched values.
+  //
+  // ⚠ ROTATION RANKS SIXTH DESPITE BEING THE ONLY LIVE CONTROL, and that is the
+  // inertness-at-spawn rule doing real work: `mapAngularVel(0.5)` is BIT-EXACTLY
+  // 0, and 0.5 is the shipped default. A control that does nothing on a
+  // freshly-spawned node has no business high in a six-cell lane budget,
+  // however conceptually important it is.
+  //
+  // No `paramCells`: the card draws plain `<Knob>`s, so the shell's default
+  // dial is already the right primitive and there is nothing to declare.
+  face: {
+    order: ['rate', 'shape', 'd', 'spd', 'decay', 'rotation', 'v'],
+
+    pages: [
+      {
+        id: 'clock',
+        label: 'spawn clock',
+        hint: 'how often a shape is born — and at the very bottom of the dial, not at all: below the engage threshold the internal clock is OFF and only a patched GATE spawns',
+        controls: ['rate'],
+      },
+      {
+        id: 'birth',
+        label: 'latched at birth',
+        hint: 'copied into each shape as it spawns — turning these changes the NEXT shape, never the ones already on screen',
+        controls: ['shape', 'd', 'spd', 'decay', 'v'],
+      },
+      {
+        id: 'field',
+        label: 'live field',
+        hint: 'applied to every shape at once, every frame',
+        controls: ['rotation'],
+      },
+    ],
+
+    // ⚠ MANDATORY for a video def: `primaryAudioOutPortId` matches
+    // `type === 'audio'` and this def has none, so any other glyph literal
+    // resolves to the dead `{kind:'static'}` module-face-lint refuses by name.
+    // The live picture arrives via `hasVideoSurface` (lane) and the
+    // `fullViewBody` extension (dock).
+    glyph: 'none',
+
+    // The SCREEN ON/OFF switch (#1928). Promotion stops both surfaces from
+    // rendering `OutlinesCard.svelte`, so the toggle cannot live there.
+    extension: 'outlines',
+
+    // ── STOP 2: ONE CARD AFFORDANCE IS NOT REPRODUCED, AND THIS IS ITS
+    //    WRITTEN EXEMPTION ──────────────────────────────────────────────────
+    //
+    // `OutlinesCard.svelte` paints a `[GATED]` badge (`outlines-gated-badge`)
+    // whenever the GATE input is the target of any edge. The face does not,
+    // and CANNOT as a readout: a `FaceReadoutValue` is
+    // `(read: (paramId) => number | undefined) => string` — it sees PARAMS and
+    // nothing else, while `gatePatched` is derived from the EDGE LIST. This is
+    // the same structural blindness that made five specced samsloop readouts
+    // underivable, and freezeframe's gate caption impossible.
+    //
+    // ⚠ THE INFORMATION IS NOT LOST, WHICH IS WHY THIS IS AN EXEMPTION RATHER
+    // THAN A BLOCKER. "Is the gate patched" is a CABLE — the rear card renders
+    // the GATE jack with its cable attached, so the fact is on the faceplate,
+    // one flip gesture away instead of printed on the front. What is lost is
+    // the at-a-glance version, and the honest trade is that a badge restating
+    // a visible cable is weaker than a readout naming something invisible —
+    // which is what the four `hero.readouts` above do instead.
+    //
+    // Recorded rather than quietly dropped, because a card affordance that
+    // disappears in a promotion with no argument is exactly what STOP 2 exists
+    // to catch.
+
+    // FOUR readouts. None of them is a JOIN — each is a pure function of one
+    // param — and each earns its place for a different reason: ITS MAPPING IS
+    // DISCONTINUOUS WHERE THE DIAL IS NOT. `rate` steps from "no clock at all"
+    // to 3996.50 ms across a thousandth of a turn; `decay = 0` is a MODE
+    // (persist forever) rather than a duration, and the DEFAULT SITS EXACTLY ON
+    // IT, so a face printing "0.0 s" would be actively lying; `shape` bands six
+    // ways at 0.166667, so two visually identical dials are two shapes.
+    //
+    // ⚠ SHAPE and SPIN are a PARITY REQUIREMENT, not an addition — the card
+    // already prints both, and promotion deletes the card. The spin one is
+    // CORRECTED rather than reproduced: the card applies a ±0.02 deadband that
+    // `mapAngularVel` does not have, so it prints "no spin" while the field
+    // turns a full revolution every 12.5 s. This face asks the sim's own
+    // function instead.
+    hero: {
+      readouts: [
+        { label: 'shape', valueId: 'outlines-shape' },
+        { label: 'every', valueId: 'outlines-spawn' },
+        { label: 'life', valueId: 'outlines-decay' },
+        { label: 'spin', valueId: 'outlines-spin' },
+      ],
+    },
+  },
+
   docs: {
     explanation: "A stateful particle video SOURCE in the LZX tradition. Each gate edge (or the internal rate clock) spawns a shape — a circle or a regular N-gon — at a seeded-random position; it drifts in a latched direction at a latched speed and BOUNCES when its center hits a wall, accumulating into a 1024px field. From the per-pixel overlap COUNT of all live shapes it derives four pictures: overlap (white where any shape covers a pixel), contour (just the shape outlines, so stacking shapes read as ripples in a pond), combine (the overlap region colorized by stack depth via a hue ramp with brightness and saturation rising as more shapes pile up), and mapped (the patched video input shown only where two or more shapes overlap). Usage: leave RATE up for a self-running generator, or set RATE to 0 and clock the GATE input to spawn one shape per pulse; patch COMBINE or CONTOUR into a screen and use the CV inputs to animate size, drift, and spin.",
     inputs: {

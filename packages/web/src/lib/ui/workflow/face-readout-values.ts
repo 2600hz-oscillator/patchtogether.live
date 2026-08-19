@@ -85,6 +85,12 @@ import {
 } from '$lib/ui/modules/swolevco-face-model';
 import { moogCp3BusText, moogCp3FaceParams } from '$lib/ui/modules/moogcp3-face-model';
 import {
+  outlinesShapeText,
+  outlinesSpinText,
+  outlinesSpawnText,
+  outlinesDecayText,
+} from '$lib/ui/modules/outlines-face-model';
+import {
   moog911FaceParams,
   moog911FallText,
   moog911RiseText,
@@ -729,6 +735,21 @@ const FACE_READOUT_VALUES: Readonly<Record<string, FaceReadoutValue>> = {
   'spirographs-figure-1': (read) => spirographsFigureText(1, read),
   'spirographs-figure-2': (read) => spirographsFigureText(2, read),
   'spirographs-figure-3': (read) => spirographsFigureText(3, read),
+  // ── OUTLINES ─────────────────────────────────────────────────────────────
+  // FOUR readouts, none of them a JOIN — each is a pure function of one param,
+  // and each earns its place because ITS MAPPING IS DISCONTINUOUS WHERE THE
+  // DIAL IS NOT. `rate` steps from "no clock at all" to 3996.50 ms across a
+  // thousandth of a turn; `decay = 0` is a MODE (persist forever) and the
+  // DEFAULT SITS EXACTLY ON IT, so printing "0.0 s" would be a lie; `shape`
+  // bands six ways at 0.166667.
+  // ⚠ shape + spin are a PARITY requirement — the card prints both and
+  // promotion deletes the card. Spin is CORRECTED rather than copied: the card
+  // applies a ±0.02 deadband `mapAngularVel` does not have, so it says "no
+  // spin" while the field turns a revolution every 12.5 s.
+  'outlines-shape': (read) => outlinesShapeText(read),
+  'outlines-spawn': (read) => outlinesSpawnText(read),
+  'outlines-decay': (read) => outlinesDecayText(read),
+  'outlines-spin': (read) => outlinesSpinText(read),
   // ── MOOG 923 ─────────────────────────────────────────────────────────────
   // TWO INSTRUMENTS ON ONE PANEL SHARING NO SIGNAL PATH, so the readouts split
   // the same way and each half is the other's negative control: `lpCutoff` /
