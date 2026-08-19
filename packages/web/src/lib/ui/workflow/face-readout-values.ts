@@ -348,6 +348,13 @@ import {
   moog904aStateText,
 } from '$lib/ui/modules/moog904a-face-model';
 
+// (its own block, same reason)
+import {
+  moog912FaceParams,
+  moog912GateText,
+  moog912ResponseText,
+} from '$lib/ui/modules/moog912-face-model';
+
 // ⚠ ITS OWN IMPORT BLOCK, deliberately. Concurrent face PRs all append here,
 // and two branches inserting into the SAME multi-line block conflict on the
 // shared `import {` / `} from` lines even though the additions are disjoint.
@@ -1398,6 +1405,22 @@ const FACE_READOUT_VALUES: Readonly<Record<string, FaceReadoutValue>> = {
   // rather than rounding.
   'moog904a-cutoff-hz': (read) => moog904aCutoffText(moog904aFaceParams(read)),
   'moog904a-state': (read) => moog904aStateText(moog904aFaceParams(read)),
+
+  // THE 912 ENVELOPE FOLLOWER — and here the readouts ARE the merit: moog912
+  // has two params, no families and no node.data, so it clears STOP 1 on the
+  // derived-quantity clause ALONE. Disjoint reach again:
+  //   moog912-response-hz  ← smoothing ONLY
+  //   moog912-gate-dbfs    ← sensitivity ONLY
+  // `response` exists because the SMOOTH dial is a bare 0..1 over an INVERTED
+  // logarithmic map (50 Hz at 0, 1 Hz at 1 — 5.64 octaves, and turning it up
+  // lowers the number); 7.07 Hz at the shipped 0.5. `gate` prints how loud the
+  // input must be to HOLD the gate open, confirmed on a rendered graph
+  // (art/scenarios/moog912/face-audit.test.ts) rather than derived — and it
+  // prints `—` below sens 0.157080, where the required level passes full scale
+  // and the gate becomes unreachable on any signal (#1914). That dash is the
+  // only place in the product where that dead zone is visible.
+  'moog912-response-hz': (read) => moog912ResponseText(moog912FaceParams(read)),
+  'moog912-gate-dbfs': (read) => moog912GateText(moog912FaceParams(read)),
 
   // ── MIXMSTRS — DELETED, with the computation, 2026-08-17 ─────────────────
   // Four derived values used to live here (`bus-gain`, `comp-asleep`, and one

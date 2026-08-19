@@ -1759,6 +1759,61 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // `target.params.range = v` write still exists and removing the entry would
   // redden `mutate.guard`'s deny-by-default direction.
   'moog904a',
+  // THE FACEPLATE QUEUE · Q40 — `moog912`, the rack's only ANALYSIS module, and
+  // ⚠ THE CLOSEST STOP-1 CALL IN THE COHORT. Two params, no control families, no
+  // `node.data` — three of the four refuse conditions. It is promoted on the
+  // FOURTH clause alone (a derived quantity worth a readout), and if the
+  // readouts are ever cut the answer flips to NO FACE ON MERIT rather than
+  // degrading to a thin face. The moogCp3 precedent: the merit is the READOUT.
+  //
+  // WHAT THE READOUTS SAY THAT NOTHING ELSE DOES:
+  //   response  the detector's cutoff in Hz. The SMOOTH dial is a bare 0..1 over
+  //             an INVERTED logarithmic map — 50 Hz at 0, 1 Hz at 1, 5.64
+  //             octaves, and turning the knob UP makes the number go DOWN.
+  //             7.07 Hz at the shipped 0.5, which nothing on the module says.
+  //   gate      how loud the input must be, in dBFS, to HOLD the gate open —
+  //             −12.980 dBFS at the shipped sensitivity — and `—` once that
+  //             passes full scale.
+  //
+  // ⚠ THAT DASH IS #1914 MADE VISIBLE. `GATE_THRESHOLD` is a bare constant that
+  // does NOT scale with SENS, so below sens = 0.157080 no input can hold the
+  // gate open — the bottom 15.71 % of a dial whose whole job is to open that
+  // output. FILED, NOT FIXED (it changes behaviour); the face is where a player
+  // can now see it.
+  //
+  // ⚠ THE NUMBER RANK 1 RESTS ON WAS UNVERIFIED, AND THIS PR VERIFIES IT. §27.6
+  // derived the gate threshold arithmetically and said in terms that no
+  // BiquadFilterNode had been run. `art/scenarios/moog912/face-audit.test.ts`
+  // now drives the SHIPPING factory through a real node-web-audio-api
+  // OfflineAudioContext: the settled envelope lands on 0.100001 against a
+  // threshold of 0.100000. The arithmetic was right.
+  //
+  // ⚠ AND THE FIRST INSTRUMENT WAS WRONG, which is why that file keeps the
+  // failure as a permanent leg. Bisecting on "did the gate EVER open" reported
+  // −14.488 dBFS and read as though the spec were wrong by 1.5 dB. It was not:
+  // the envelope OVERSHOOTS its steady state on attack by a constant 1.1861×, so
+  // the module has TWO thresholds — a transient one and a sustained one — and
+  // the readout prints the sustained one. Both are asserted, in both directions.
+  //
+  // ⚠ NO MILLISECOND READOUT, rejected on a measurement rather than skipped.
+  // §27.6 proposed the ONE-POLE 10–90 % rise; the shipping filter is a BIQUAD at
+  // Q = 0.5, measured 30 % away from it — and the rendered figure is itself
+  // ripple-contaminated at the fast end. Two uncertain numbers are not a
+  // readout, so the face prints the EXACT cutoff instead.
+  //
+  // FOLDED IN (behaviour-preserving, per the brief): the NaN guard from #1914.
+  // `smoothingToCutoffHz`'s clamp was `v < 0 ? 0 : v > 1 ? 1 : v`, and BOTH
+  // comparisons are false for NaN, so NaN fell through, `Math.exp` of it is NaN,
+  // and that NaN reached `envFilter.frequency` — after which ENV and GATE were
+  // both dead until something wrote a finite value. Every FINITE input maps
+  // exactly as before.
+  //
+  // FILED SEPARATELY: #1918 — `buildRectifyCurve(1024)` has an EVEN length, so
+  // x = 0 is never sampled and the curve's minimum is 9.7752e-4 rather than 0. A
+  // silenced 912 therefore emits a small constant DC on ENV forever. Found by
+  // this module's own POSITIVE CONTROL failing, which is the argument for
+  // writing them.
+  'moog912',
   // ⛔ REVIEW-HOLD · THE FIRST VIDEO FACE (2026-08-17) — Q22, `backdraft`.
   //
   // 37 params, 33 inputs (29 paramTarget CV + 4 video), 1 video out: the
