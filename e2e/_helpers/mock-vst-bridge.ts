@@ -21,6 +21,13 @@
 // The mock records every MIDI event per session, keyed by hello.clientId —
 // the note-number / velocity / gate-pairing assertions read that log.
 
+// ⚠ `ws` is deliberately declared in the ROOT package.json, NOT
+// e2e/package.json: e2e/package.json is a TOOLCHAIN PIN inside the
+// webgl-attest basis (scripts/webgl-attest-lib.ts TOOLCHAIN_PIN_FILES — it
+// pins @playwright/test, the renderer), so adding a dep there moves the
+// WebGL content hash and demands a real-GPU re-attest for a Node-side test
+// server that cannot touch a pixel. Root devDependencies resolve here fine
+// (Node walks up to the root node_modules) and are outside the basis.
 import { WebSocketServer, type WebSocket, type RawData } from 'ws';
 import {
   decodeBlock,
