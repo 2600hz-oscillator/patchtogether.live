@@ -1166,11 +1166,34 @@ jobs:
       # 2026-08-16) reported `Merge Playwright reports` SUCCESS with the budget
       # armed, as has every completed run since the budget landed.
       #
-      # ⚠ `--fail-on-flaky` STAYS OFF, for the measured reason in #1502: 16 of 18
-      # consecutive runs recovered at least one flake, so arming it would redden
-      # a required lane on ~89 % of runs and get the gate reverted rather than
-      # the tests fixed. Flakes are still PRINTED here (step summary + the JSON
-      # artifact); only the skip budget is armed.
+      # ── `--fail-on-flaky` IS NOW ARMED (#1903) ──────────────────────────────
+      #
+      # It was deliberately OFF, for the measured reason in #1502: 16 of 18
+      # consecutive runs recovered at least one flake, so arming it would have
+      # reddened a required lane on ~89 % of runs and been reverted rather than
+      # obeyed. `e2e/playwright.config.ts` states the exit condition — arm it
+      # once the tail is drained, on the evidence of "a FRESH series of >=10
+      # runs measured after the fixes land".
+      #
+      # THAT SERIES WAS MEASURED. The `e2e-report-audit-*` artifacts of every
+      # completed ci.yml run in the window to 2026-08-19 — 31 runs x 10 shards,
+      # ALL of them after the #1847 flake park merged in d5378b891 — put the
+      # rate at 26/31 = 84 %, i.e. #1502's refusal still held. But the tail was
+      # no longer diffuse: it was EIGHT spec files, and it drained to
+      # 0/31 = 0 % once they were fixed. #1898 fixed the biggest
+      # (workflow-shell, 16/31) and #1904 fixed the rest.
+      #
+      # So this is armed on a drained tail, not on optimism. If it reddens your
+      # PR: FIX the test, or PARK it (#1847). Never re-run until green — a
+      # retry that rescues a test is the same evidence the green runs before a
+      # break provided.
+      #
+      # ⚠ WHY THE JOB, NOT THE UMBRELLA: the flake belongs to the shard that
+      # observed it, and `e2e` is in the umbrella's needs+env+failing-if, so a
+      # red shard already blocks the merge. Reporting it here keeps the roster
+      # next to the run that produced it.
+      #
+      # CI WALL-TIME DELTA: zero. This is a flag on a step that already runs.
       - name: Audit shard report for flaky + skipped (lane e2e skip budget)
         if: always()
         run: |
@@ -1184,7 +1207,8 @@ jobs:
             --reporter json \
             ./blob-report > shard-report.json
           flox activate -- node scripts/e2e-report-audit.mjs shard-report.json \
-            --lane e2e --json-out e2e-report-audit-${{ matrix.shard }}.json
+            --lane e2e --json-out e2e-report-audit-${{ matrix.shard }}.json \
+            --fail-on-flaky
 
       # The machine-readable audit (rows + classifications + budget verdicts) —
       # uploaded even when the audit step above exits non-zero, so a red audit is
@@ -1389,14 +1413,28 @@ jobs:
       # job `env:`; retries=1 (playwright.config) stays as a transient-blip net.
       # PLAYWRIGHT_HTML_OPEN=never keeps the html reporter from auto-serving the
       # report (which would hang the job in CI).
+      # `json` joins the reporter list so the FLAKE GATE (#1903) can read this
+      # lane too. It writes to the file named by PLAYWRIGHT_JSON_OUTPUT_FILE and
+      # therefore prints nothing — `list` remains the console output, unchanged.
       - name: Run @collab specs (single non-sharded runner, html report)
         env:
           PLAYWRIGHT_HTML_OPEN: never
+          PLAYWRIGHT_JSON_OUTPUT_FILE: ${{ github.workspace }}/collab-report.json
         run: |
           flox activate -- npx --workspace e2e playwright test \
             --grep "@collab|@capacity" \
             --workers=1 \
-            --reporter=list,html
+            --reporter=list,html,json
+
+      # THE FLAKE GATE for this lane (#1903). Same parser as every other lane —
+      # one semantic, one negative control, one place to fix it. `if: always()`
+      # so a lane that failed for another reason still reports its flakes.
+      - name: Flake gate (@collab)
+        if: always()
+        run: |
+          set -euo pipefail
+          flox activate -- node scripts/e2e-report-audit.mjs \
+            "${{ github.workspace }}/collab-report.json" --fail-on-flaky
 
       # Always upload the browsable HTML report. @collab is single-runner so it
       # writes html directly, rather than emitting a blob for a cross-shard
@@ -1503,12 +1541,18 @@ jobs:
       # SwiftShader, 1 worker. Fast (~4 tests). retries=1 absorbs a cold-GL
       # hiccup without masking a real break (the asserts are non-pixel-exact).
       - name: Run WebGL smoke floor (@webgl-smoke, SwiftShader)
+        env:
+          # Its own file: this job runs Playwright TWICE, and one output path
+          # would mean the second run silently overwrote the first one's
+          # evidence — a flake gate reading a report that no longer describes
+          # the run it is gating.
+          PLAYWRIGHT_JSON_OUTPUT_FILE: ${{ github.workspace }}/webgl-smoke-floor.json
         run: |
           flox activate -- npx --workspace e2e playwright test \
             --grep "@webgl-smoke" \
             --workers=1 \
             --retries=1 \
-            --reporter=list
+            --reporter=list,json
 
       # EXPANDED FLOOR (2026-06-23): the bounded-step deterministic render-smoke
       # (DRS) specs render only ~6 frames + read pixels once, so they're cheap +
@@ -1523,6 +1567,8 @@ jobs:
       # Playwright with cwd = e2e/, so the bare spec filenames below resolve
       # under e2e/tests/ (testDir) rather than against the repo root.
       - name: Run cheap render-smoke floor (SwiftShader)
+        env:
+          PLAYWRIGHT_JSON_OUTPUT_FILE: ${{ github.workspace }}/webgl-smoke-render.json
         run: |
           flox activate -- npx --workspace e2e playwright test \
             acidwarp-render-smoke.spec.ts \
@@ -1541,7 +1587,23 @@ jobs:
             wavecel-video-outs.spec.ts \
             --workers=2 \
             --retries=1 \
-            --reporter=list
+            --reporter=list,json
+
+      # THE FLAKE GATE for this lane (#1903). BOTH invocations above are
+      # audited — a gate that read only the first would be green on a flake in
+      # the second, which is the "filter that quietly redefines the subject"
+      # shape CLAUDE.md warns about. `-e` means the first failure exits, and
+      # that is fine: either way the job is red and both reports are printed by
+      # the audits that did run.
+      - name: Flake gate (webgl-smoke, both invocations)
+        if: always()
+        run: |
+          set -euo pipefail
+          for f in webgl-smoke-floor.json webgl-smoke-render.json; do
+            echo "── auditing $f"
+            flox activate -- node scripts/e2e-report-audit.mjs \
+              "${{ github.workspace }}/$f" --fail-on-flaky
+          done
 
       - name: Upload Playwright test-results on failure (webgl-smoke)
         if: failure()
@@ -1764,13 +1826,25 @@ jobs:
       - name: Run behavioral smoke subset (core signal-path modules)
         env:
           E2E_USE_PREVIEW: '1'
+          PLAYWRIGHT_JSON_OUTPUT_FILE: ${{ github.workspace }}/behavioral-smoke-report.json
         run: |
           flox activate -- npx --workspace e2e playwright test \
             per-module-per-port-behavioral.spec.ts \
             --grep "\b(adsr|analogVco|filter|lfo|noise|stereovca|vca): each declared" \
             --workers=4 \
             --retries=1 \
-            --reporter=line
+            --reporter=line,json
+
+      # THE FLAKE GATE for this lane (#1903). This lane's own comment above
+      # already states the policy — "if this ever flakes, fix or narrow the
+      # subset — do NOT bump retries to mask it" — and this is the line that
+      # makes that statement enforceable rather than advisory.
+      - name: Flake gate (behavioral smoke)
+        if: always()
+        run: |
+          set -euo pipefail
+          flox activate -- node scripts/e2e-report-audit.mjs \
+            "${{ github.workspace }}/behavioral-smoke-report.json" --fail-on-flaky
 
   # -----------------------------------------------------------------------
   # ci (umbrella) — gates branch protection. Required status check named
