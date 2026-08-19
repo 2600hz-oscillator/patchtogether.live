@@ -152,7 +152,7 @@ const BEHAVIORAL_MODULE_EXEMPT: Record<string, string> = {
   // for this entry: a mock vst-bridge WebSocket fixture feeding
   // deterministic frames. CV→MIDI conversion is pinned by the dsp
   // vst-bridge-core suite; wire codecs by vst/vst-transport tests; live
-  // flow owner-verified per .myrobots/2026-08-19-vst-card-plan.md.
+  // flow owner-verified per #1953 (the checklist lands with its M4 PR).
   vstInstrument: 'outputs source from a mounted AU plugin via the vst-bridge helper (absent in CI) — control + patched arms both read rms 0.000, so no note input can show a delta; re-enable via a mock bridge WebSocket fixture; CV→MIDI pinned by dsp vst-bridge-core tests, codecs by vst-transport tests, live flow owner-verified',
 
   // ── MIDI-driven: same as hardware — no MIDI device in test browser.

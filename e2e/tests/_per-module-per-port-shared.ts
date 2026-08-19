@@ -109,7 +109,7 @@ export const EXEMPT_OUTPUT_EMIT_MODULES: Record<string, string> = {
   // does not wire — the fader precedent). Handle-presence + input-accept
   // still run. CV→MIDI conversion is pinned by dsp vst-bridge-core tests,
   // the wire codecs by vst/vst-transport tests; live-helper flow is
-  // owner-verified per the plan (.myrobots/2026-08-19-vst-card-plan.md).
+  // owner-verified per #1953 (the checklist lands with its M4 PR).
   vstInstrument: 'outputs source from a mounted AU plugin via the vst-bridge helper (absent in CI); CV→MIDI pinned by dsp vst-bridge-core tests, codecs by vst-transport tests, live flow owner-verified',
   vstFx: 'outputs are the helper round trip (absent in CI) or a local bypass of inputs the emit sweep does not drive (fader precedent); codecs/bypass pinned by vst-transport + dsp vst-bridge tests, live flow owner-verified',
   // FADER is a two-source video MIXER: both outputs (OUT = dry/wet of the A/B
