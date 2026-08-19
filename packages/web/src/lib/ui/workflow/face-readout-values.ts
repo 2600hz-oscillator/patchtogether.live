@@ -78,6 +78,12 @@ import {
   swolevcoShapeText,
 } from '$lib/ui/modules/swolevco-face-model';
 import {
+  moog911FaceParams,
+  moog911FallText,
+  moog911RiseText,
+  moog911SettleText,
+} from '$lib/ui/modules/moog911-face-model';
+import {
   NINELIVES_TAP_MULTIPLIERS,
   ninelivesFaceParams,
   ninelivesFastTapsText,
@@ -728,6 +734,36 @@ const FACE_READOUT_VALUES: Readonly<Record<string, FaceReadoutValue>> = {
   'swolevco-mod-hz': (read) => swolevcoModHzText(swolevcoFaceParams(read)),
   'swolevco-mod-lock': (read) => swolevcoLockText(swolevcoFaceParams(read)),
   'swolevco-shape': (read) => swolevcoShapeText(swolevcoFaceParams(read)),
+
+  // ── MOOG 911 ─────────────────────────────────────────────────────────────
+  // THREE DELIVERED DURATIONS, against three dials that print something else.
+  // The 911's T knobs are exponential TIME CONSTANTS and each stage exits on
+  // its own threshold, so a stage takes `T · ln(k)/5` and only the attack's `k`
+  // is constant. At the shipped defaults the dials read 10 / 200 / 400 ms and
+  // the module delivers 13.83 / 240 / 696 — a 949 ms contour against a dial sum
+  // of 610 (×1.5565), measured on the shipping worklet.
+  //
+  //   `rise`   T1 × 1.38155. The ONE that is a pure function of its own dial,
+  //            and therefore the instrument's own negative control: it is
+  //            EXACTLY invariant to ESUS while the other two are not.
+  //   `settle` set by ESUS as much as by T2 — 276 / 240 / 92 / 0 ms at ESUS
+  //            0 / 0.6 / 0.99 / ≥0.999 with the T2 dial fixed at 200. The 0 is
+  //            the bit-exact null region #1885 bisected, printed rather than
+  //            hidden.
+  //   `fall`   the release FROM THE SUSTAIN SHELF, so ESUS sets the height it
+  //            falls from: 0 / 640 / 696 / 737 ms at ESUS 0 / 0.3 / 0.6 / 1
+  //            with the T3 dial fixed at 400.
+  //
+  // This is the kick-drum TAIL trap with numbers on it: the nearest dial to
+  // "decay" reads 200 ms at every ESUS position while the truth spans 276.313
+  // to 0.021 ms, so a reviewer checking "does it move when I turn the decay
+  // knob" gets a green from a readout blind to the input that swings it 13 800×.
+  // The permanent negative controls live in moog911-face-model.test.ts (ESUS
+  // moves `settle` and `fall` and NEVER `rise`); the closed forms are
+  // re-derived from the shipping DSP in art/scenarios/moog911/face-audit.test.ts.
+  'moog911-rise': (read) => moog911RiseText(moog911FaceParams(read)),
+  'moog911-settle': (read) => moog911SettleText(moog911FaceParams(read)),
+  'moog911-fall': (read) => moog911FallText(moog911FaceParams(read)),
 
   // ── MARBLES ──────────────────────────────────────────────────────────────
   // ELEVEN values, every one a BARE number or state — no sentence anywhere on

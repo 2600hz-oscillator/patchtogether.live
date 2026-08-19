@@ -108,6 +108,7 @@ import { sidecarDef } from '$lib/audio/modules/sidecar';
 import { slewSwitchDef } from '$lib/audio/modules/slewswitch';
 import { snaredrumDef } from '$lib/audio/modules/snaredrum';
 import { swolevcoDef } from '$lib/audio/modules/swolevco';
+import { moog911Def } from '$lib/audio/modules/moog911';
 import { vcaDef } from '$lib/audio/modules/vca';
 import { warrensspectrumDef } from '$lib/audio/modules/warrensspectrum';
 import { wavetableVcoDef } from '$lib/audio/modules/wavetable-vco';
@@ -340,6 +341,20 @@ const RANGE_BOUND_CARDS: Readonly<Record<string, { params: readonly ParamDef[] }
   // `P.<id>.{min,max,defaultValue,label,units,curve}` off
   // `paramSpec(swolevcoDef, …)`, so the def is the only copy of any of them.
   'SwolevcoCard.svelte': swolevcoDef,
+  // THE FACEPLATE QUEUE · Q34. Enrolled with its faceplate. All four knobs
+  // re-typed `min={0.0001} max={10} defaultValue={0.01}` and all four AGREED
+  // with the def, labels and units included — so this is the
+  // AnalogLogicMathsCard shape, a maintainability conversion rather than a bug
+  // fix, done WITH the promotion for the reason the agreement clause cannot
+  // cover: from `moog911` entering STRICT_FACES the DOCK renders these controls
+  // straight off the `ParamDef` and this card off its own literals, so a later
+  // edit to one copy ships two surfaces calling one control two different
+  // things. It is also PIXEL-NEUTRAL to do here (`moog911` has no committed
+  // card baseline — it is in EXEMPT_FROM_VRT — and every bound value equals the
+  // literal it replaces, so no handle moves). Range AND mapping: every Knob
+  // reads `P.<id>.{min,max,defaultValue,label,units,curve}` off
+  // `paramSpec(moog911Def, …)`.
+  'Moog911Card.svelte': moog911Def,
   'VcaCard.svelte': vcaDef,
   'WarrensspectrumCard.svelte': warrensspectrumDef,
   // THE FACEPLATE QUEUE · Q9. Enrolled while PAYING a live `OPERATIONAL_DEBT`
@@ -513,6 +528,17 @@ const MAPPING_BOUND_CARDS: readonly string[] = [
   // four of the eight params declare one (`st` / `¢`) and four do not, and
   // binding is what makes the empty four a DECLARATION instead of an omission.
   'SwolevcoCard.svelte',
+  // THE FACEPLATE QUEUE · Q34. Range AND mapping: every Knob reads
+  // `P.<id>.{min,max,defaultValue,label,units,curve}` off
+  // `paramSpec(moog911Def, …)`. `units` is bound rather than merely absent —
+  // the three T params declare `s` and `esus` does not, and binding is what
+  // makes the empty one a DECLARATION instead of an omission the next editor
+  // has to re-derive. ⚠ And on this module the units line is load-bearing
+  // prose, not decoration: `s` is the honest unit of the SETTING while the
+  // stage it names is delivered ×1.38 longer (#1885), which is precisely why
+  // the face publishes the DELIVERED durations as separate readouts instead of
+  // quietly dropping the unit off the dial.
+  'Moog911Card.svelte',
   'MacrooscillatorCard.svelte',
   'FilterCard.svelte',
   'MarblesCard.svelte',
