@@ -345,22 +345,38 @@
     min-height: 320px;
     padding-bottom: 12px;
   }
+  /* ⚠ THE SCREEN SWITCH COSTS ZERO LAYOUT HEIGHT, AND THAT IS A FIX RATHER
+     THAN A STYLE CHOICE. Stacking it under the canvas (column + 4px gap) added
+     ~18.8px to a card that had ~11px of slack, and `io-spec-consistency`'s card
+     sweep caught the result: `.fader-grid` overhanging the card's bottom edge
+     by 7.8 CSS px against a tolerance of 6. The control is REQUIRED (owner
+     ruling 2026-08-18) so it cannot be dropped, and the honest fix is neither a
+     wider tolerance nor a taller card — it is to stop the button occupying a
+     row of its own. It OVERLAYS the picture's bottom-right corner, so the
+     expanded card is byte-for-byte the height it was before this feature. */
   .preview-wrap {
+    position: relative;
     margin: 6px auto 0;
     width: 160px;
     display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 4px;
+    justify-content: center;
+    /* Only ever load-bearing when the canvas is GONE: with SCREEN off the wrap
+       would otherwise collapse to zero and take the absolutely-positioned
+       button off-card with it. Smaller than the 120px canvas, so it is inert
+       whenever the picture is showing. */
+    min-height: 16px;
   }
-  /* SCREEN OFF reclaims the picture's height — the button is all that stays. */
   .screen-btn {
+    position: absolute;
+    right: 2px;
+    bottom: 2px;
     font-size: 0.55rem;
     letter-spacing: 0.06em;
     padding: 2px 8px;
     border: 1px solid var(--border);
     border-radius: 2px;
-    background: transparent;
+    /* Legible over a live picture, unlike the transparent original. */
+    background: rgba(5, 6, 8, 0.72);
     color: var(--text-dim);
     cursor: pointer;
   }
