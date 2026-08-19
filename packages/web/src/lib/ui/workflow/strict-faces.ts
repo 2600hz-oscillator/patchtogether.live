@@ -1292,6 +1292,30 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // auditioned note is never accented and ACCENT does nothing on the only
   // surface that can sound the module unpatched.
   'treeohvox',
+  // MOOG 984 4×4 MATRIX MIXER (2026-08-19) — the first face whose subject is a
+  // TABLE, and the entry that retires a "needs a MATRIX cell" blocker as stale.
+  //
+  // It needed no platform work. `consoleGridCols` already turns a band into a
+  // fixed-column CONSOLE GRID when its clusters are equal-sized and stacked, so
+  // ONE band of four 4-cell clusters renders the matrix with column j sharing a
+  // centre down all four input rows — the mechanism shipping on mixmstrs.
+  // (Declaring FOUR bands instead is the trap: `packRun` packs `[4,4,4,4]` into
+  // two rows of eight and there is no matrix left.)
+  //
+  // ⚠ ITS SIXTEEN CONTROLS ARE BIT-EXACTLY SYMMETRIC — one generator loop, one
+  // identical GainNode each — so unlike every other entry here the RANKING
+  // carries nothing, and the face says so instead of dressing it up. What earns
+  // the two baselines is the four hero readouts: `out_j = Σ_i in_i · m_ij`, so
+  // an output's gain is a JOIN over a column that no cross-point can print. The
+  // matrix makes that blindness geometric — a readback of `m11` moves
+  // convincingly while being invariant to `m21`/`m31`/`m41`, three quarters of
+  // what OUT 1 actually carries — and both negative-control legs are permanent
+  // in `moog984-face-model.test.ts`.
+  //
+  // Its lane tile today is the un-migrated PLACEHOLDER (`laneRenderKind`
+  // returns `'placeholder'`, not `'legacy'`, because faceplates are the
+  // default), so promotion takes that surface from zero controls to six.
+  'moog984',
   // THE FACEPLATE QUEUE · Q14 — SLEWSWITCH, quad slew + 4→1 sequential switch
   // (2026-08-15), and the entry whose argument is that TWO ENGINES IN ONE BOX
   // ARE TWO PAGES, not one ranked list of seven.

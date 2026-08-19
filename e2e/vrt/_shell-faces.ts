@@ -961,6 +961,27 @@ export const FACES = [
   // readouts, each a pure function of cutoff/envelope/accent, all of which read
   // their declared defaults in the capture: 533 Hz / 3.76 kHz / 5.31 kHz.
   { type: 'treeohvox', pages: 3 },
+  // MOOG 984 — the 4×4 matrix, and the roster's first CONSOLE GRID that is not
+  // mixmstrs. ONE band (`cross-points`) holding four equal clusters, so
+  // `consoleGridCols` answers 4 and the dock scene frames a real table: column
+  // j has one centre down all four input rows.
+  //
+  // ⚠ THIS SCENE IS THE ONLY PIXEL EVIDENCE THAT THE GRID ENGAGED. The unit
+  // gates read the PLAN — `module-face-lint` and `dock-row-plan` both see four
+  // clusters of four and pass identically whether the shell laid them out on a
+  // shared ruler or as four independent flex-wrap rows, which is precisely the
+  // defect `console-grid.ts` was written for (measured there: cluster drift
+  // accumulating to ~138 px across eight channels on mixmstrs). Alignment is a
+  // pixel fact, so this is where it is gated.
+  //
+  // Deterministic for the strongest reason in the roster: the module is PASSIVE
+  // — 24 GainNodes, no worklet, no oscillator, no scheduler — and every
+  // cross-point DEFAULTS TO 0, so the graph is bit-exactly silent at spawn. The
+  // glyph is a declared 'none', so nothing live is framed at all, and the only
+  // text is the four column-sum readouts, each a pure function of four params
+  // that all read their declared default. All four therefore print `silent` in
+  // the baseline, which is the true statement about an unpatched matrix.
+  { type: 'moog984', pages: 1 },
   // THE FIRST VIDEO FACE. Its `pages` are feedback / loop / colour / key /
   // switches / tv screen / virtual camera — enough bands to reach
   // DOCK_TAB_MIN_BANDS, so the dock scene captures a TAB RAIL with one band
