@@ -3206,6 +3206,7 @@ swolevco param ratio 0..8 linear default=1
 swolevco param symmetry 0..1 linear default=0.5
 swolevco param timbre 0..1 linear default=0
 swolevco param tune -36..36 linear default=0 unit=st
+swolevco face sidebar 0 kind=readouts label=what M.TUNE / M.FINE do here entries=RATIO = 0:text,RATIO > 0:text
 synesthesia meta domain=audio
 synesthesia in a_in audio
 synesthesia in a_video_in video

@@ -77,6 +77,12 @@ import {
   freezeframeFaceParams,
 } from '$lib/ui/modules/freezeframe-face-model';
 import {
+  swolevcoFaceParams,
+  swolevcoLockText,
+  swolevcoModHzText,
+  swolevcoShapeText,
+} from '$lib/ui/modules/swolevco-face-model';
+import {
   NINELIVES_TAP_MULTIPLIERS,
   ninelivesFaceParams,
   ninelivesFastTapsText,
@@ -702,6 +708,31 @@ const FACE_READOUT_VALUES: Readonly<Record<string, FaceReadoutValue>> = {
   'fourplexer-map': (read) => fourplexerMapText(fourplexerRouting(read)),
   'fourplexer-fan': (read) => fourplexerFanText(fourplexerRouting(read)),
   'fourplexer-idle': (read) => fourplexerIdleText(fourplexerRouting(read)),
+
+  // ── SWOLEVCO ─────────────────────────────────────────────────────────────
+  // THREE values, and the pair `mod` / `lock` is its own instrument check.
+  //
+  //   `mod`    the modulator's REAL frequency. Derived because it is
+  //            `primary x RATIO` in one mode and `M.TUNE / M.FINE` in the
+  //            other, so the nearest dial is wrong half the time — and it is
+  //            wrong in the mode the module SPAWNS in (`ratio = 1`), where
+  //            M.TUNE is measured bit-exactly inert on all three outputs.
+  //   `lock`   which of those two modes is live. A NAME, not a number: a dial
+  //            reading `0.00` vs `1.00` distinguishes the positions but not
+  //            what they MEAN, and "M.TUNE is asleep" is the meaning.
+  //   `shape`  where SYMMETRY is, computed from the def's OWN `symmetryGains`
+  //            crossfade helper so the caption cannot drift from the weights
+  //            the graph applies. It exists because the measured centroid says
+  //            `triangle` is a single POINT (637 Hz at exactly 0.5, 1986 Hz at
+  //            0.4) and a linear fader offers no detent to find it by.
+  //
+  // The permanent negative controls live in swolevco-face-model.test.ts:
+  // M.TUNE must move `mod` at `ratio = 0` and NEVER at `ratio = 1`, must never
+  // move `lock` at all, and FOLD — which moves the measured centroid 5.12x —
+  // must move NONE of the three.
+  'swolevco-mod-hz': (read) => swolevcoModHzText(swolevcoFaceParams(read)),
+  'swolevco-mod-lock': (read) => swolevcoLockText(swolevcoFaceParams(read)),
+  'swolevco-shape': (read) => swolevcoShapeText(swolevcoFaceParams(read)),
 
   // ── MARBLES ──────────────────────────────────────────────────────────────
   // ELEVEN values, every one a BARE number or state — no sentence anywhere on

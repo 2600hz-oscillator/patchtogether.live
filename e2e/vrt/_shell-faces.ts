@@ -866,6 +866,30 @@ export const FACES = [
       + 'continuous live passthrough of whatever the video zone is producing, so an unpinned '
       + 'scene would be sampling a moving source rather than the faceplate.',
   },
+  // THE FACEPLATE QUEUE · Q5 — the Buchla-259-style complex oscillator.
+  //
+  // `pages: 2` is the POST-hero-split count: the face declares two bands
+  // (`primary`, `modulator`) and `hero.control` promotes `fold` OUT of the
+  // first, which leaves it at 3 cells rather than emptying it, so no band is
+  // dropped.
+  //
+  // ⚠ THIS IS THE THIRD FREE-RUNNING MODULE IN THE ROSTER, and it is the only
+  // reason its COMPACT scene is interesting. swolevco starts three
+  // OscillatorNodes at factory time and declares `glyph: 'scope'`, so its lane
+  // tile taps an analyser on a graph that is making full-scale sound from the
+  // instant it spawns — measured peak 0.99863 on `out` at the defaults, with
+  // no gate and no note to wait for. Every other face in this roster is struck
+  // or silent, and their analysers read zeros whether or not the freeze works.
+  // `analogVco` (#1420) is the precedent and carries the derivation; this entry
+  // extends that coverage rather than repeating it, so if the pre-frame
+  // AudioContext suspend or its ORDERING regresses, two scenes go red instead
+  // of one.
+  //
+  // NOT `videoFaceWhy` — the `scope` port is `mono-video`, but that is an
+  // OUTPUT a video cable can consume, not a video surface on this module. The
+  // face is audio-domain, boots into a channel column, and paints no live
+  // picture beyond the glyph the audio freeze already covers.
+  { type: 'swolevco', pages: 2 },
 ] as const;
 
 /** TIGHT per-scene diff budgets (absolute pixels; Playwright takes the MIN of
