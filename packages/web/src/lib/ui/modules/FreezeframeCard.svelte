@@ -161,24 +161,27 @@
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <!-- video_out live preview (enlarged to fill the card body) -->
     <div class="preview-wrap" class:collapsed={previewCollapsed}>
-      <canvas
-        bind:this={canvasEl}
-        width={PREVIEW_W}
-        height={PREVIEW_H}
-        data-testid="freezeframe-preview"
-        data-node-id={id}
-      ></canvas>
-      <div class="preview-foot">
-        <span class="preview-label">OUT</span>
-        <!-- SCREEN ON/OFF — owner ruling 2026-08-18: every video module's card
-             carries this. backdraft's BackdraftOutputBody is the reference.
-             ⚠ It rides the EXISTING label row rather than adding one. This card
-             is 3u and the rack clamps it to a hard 540 CSS px, of which
-             `card-control-overflow` measured only 30.2 px of slack (see
-             DECAY_TRACK_PX above) — a new row would have spent all of it. The
-             button is capped to the label's own line height so the ON state
-             costs nothing vertically, and the OFF state RECLAIMS the 171 px
-             canvas. -->
+      <!-- SCREEN ON/OFF — owner ruling 2026-08-18: every video module's card
+           carries this.
+           ⚠ IT OVERLAYS THE PICTURE; IT DOES NOT TAKE A ROW. That is the house
+           pattern (SpirographsCard) and it is a FIX rather than a style choice:
+           spirographs stacked this button under its canvas, which added
+           ~18.8 px to a card with ~11 px of slack and produced a measured
+           7.8 px bottom overflow the card sweep caught. This card has more
+           slack (30.2 px) and an earlier draft did ride the OUT caption row for
+           ~6 px, which measured clean — but "clean today" is still slack spent
+           on a control the owner has made universal, and two cards carrying the
+           same required control should not carry it two different ways. The
+           overlay costs ZERO layout height, so the expanded card is exactly the
+           height it was before this feature. -->
+      <div class="canvas-holder">
+        <canvas
+          bind:this={canvasEl}
+          width={PREVIEW_W}
+          height={PREVIEW_H}
+          data-testid="freezeframe-preview"
+          data-node-id={id}
+        ></canvas>
         <button
           type="button"
           class="screen-btn nodrag"
@@ -191,6 +194,7 @@
           onclick={togglePreview}
         >{previewCollapsed ? 'SCREEN OFF' : 'SCREEN ON'}</button>
       </div>
+      <span class="preview-label">OUT</span>
     </div>
 
     <div class="fader-grid">
@@ -262,33 +266,47 @@
     display: block;
   }
   .preview-label { font-size: 0.55rem; color: var(--text-dim); letter-spacing: 0.1em; font-family: ui-monospace, monospace; }
-  /* The OUT caption and the SCREEN button share ONE row, so the toggle costs
-     no vertical space in the ON state — see the markup note. */
-  .preview-foot {
+  /* ⚠ THE SCREEN SWITCH COSTS ZERO LAYOUT HEIGHT, and on this card that is a
+     deliberate match to SpirographsCard rather than an independent choice.
+     Stacking the button in a row of its own is what produced a measured 7.8 px
+     bottom overflow there; overlaying it on the picture's bottom-right corner
+     means the expanded card is exactly the height it was before the feature.
+     This card has 30.2 px of slack and could have afforded a row — the reason
+     not to is that a control the owner has made universal should look and
+     behave the same on every video card. */
+  .canvas-holder {
+    position: relative;
     display: flex;
-    align-items: center;
     justify-content: center;
-    gap: 8px;
-    width: 100%;
+    /* Load-bearing ONLY when the canvas is gone: with SCREEN off the holder
+       would otherwise collapse to zero height and carry the absolutely
+       positioned button off the card with it. Far smaller than the 171 px
+       canvas, so it is inert whenever the picture is showing. */
+    min-height: 16px;
   }
   .screen-btn {
+    position: absolute;
+    right: 2px;
+    bottom: 2px;
     font-size: 0.55rem;
-    letter-spacing: 0.1em;
+    letter-spacing: 0.06em;
     font-family: ui-monospace, monospace;
     line-height: 1;
-    padding: 3px 6px;
-    border-radius: 3px;
+    padding: 2px 8px;
+    border-radius: 2px;
     cursor: pointer;
     border: 1px solid var(--border, #2a3040);
-    background: transparent;
+    /* Legible over a LIVE picture — a transparent background is not. */
+    background: rgba(5, 6, 8, 0.72);
     color: var(--text-dim);
   }
   .screen-btn.on {
     color: var(--text, #cfd6e4);
     border-color: var(--cable-video, #7a5cff);
   }
-  /* OFF collapses the canvas and RECLAIMS its height. The caption row stays,
-     so the control that turns it back on never disappears with the picture. */
+  /* OFF collapses the canvas and RECLAIMS its height. The holder's min-height
+     and the OUT caption both stay, so the control that turns the picture back
+     on never disappears with it. */
   .preview-wrap.collapsed canvas {
     display: none;
   }

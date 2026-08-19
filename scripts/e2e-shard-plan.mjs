@@ -150,6 +150,26 @@ export const PENDING_FIRST_MEASUREMENT = [
       + 'Run `task e2e:timings:accept -- <run-id>` on the first green main run after this merges '
       + 'and DELETE this entry — the gate reddens on a stale entry as loudly as on a missing one.',
   },
+  {
+    spec: 'b3ntb0x-hue-claim.spec.ts',
+    why:
+      'lands with #1901 as the acceptance test for the GLSL readout harness ' +
+      '(e2e/_helpers/glsl-claim.ts), so no ci.yml run containing it has completed green and there ' +
+      'is no blob report to accept a cost from. MEASURED locally, single worker: 10.7 s for both ' +
+      'tests (4.1 s + 6.1 s) across a 3/3 flake-check. ' +
+      '⚠ TREAT THAT AS A FLOOR, NOT A PREDICTION — and this entry exists because the FIRST version ' +
+      'of this spec proved the point the hard way. It cost 34.6 s locally and BLEW THE 180 s TEST ' +
+      'TIMEOUT on CI, i.e. worse than the 6x that backdraft-preview-toggle (57.5 s local vs ' +
+      '358.2 CPU-s) calibrated: a video spec driving a real 4-pass NTSC float pipeline pays the ' +
+      '2-core CI VM on EVERY frame, so cost scales with frames driven and nothing else. The fix ' +
+      'was to stop paying a fixed 8-frame warm-up per read: bootRig now warms ONCE by observation ' +
+      '(warmUntilMeasurable) and each subsequent read drives 2 frames, because a param change was ' +
+      'measured to settle in 1. Frames driven per test fell ~4x. ' +
+      'Do not use the local number for shard-balance reasoning; it is here to prove the spec was ' +
+      'measured at all. Run `task e2e:timings:accept -- <run-id>` on the first green main run ' +
+      'after this merges and DELETE this entry — the gate reddens on a stale entry as loudly as ' +
+      'on a missing one.',
+  },
   // Every entry here is a debt with a deadline.
   //
   // All six that stood on 2026-08-17 were paid in one accept against ci.yml run

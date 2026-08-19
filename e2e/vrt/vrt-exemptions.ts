@@ -135,9 +135,15 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
   // preview canvas (each spiro's center drifts + bounces every frame off the
   // engine clock). Mask the canvas so the deterministic chrome (COUNT fader +
   // 1/2/3 spiro selector + IN/OUT toggle + chroma colorwheel + per-spiro fader
-  // bank + the sectioned PatchPanel) is the regression gate. Currently in
-  // EXEMPT_FROM_VRT below; the mask covers the live preview if promoted into
-  // MODULES once darwin/linux baselines are captured.
+  // bank + the sectioned PatchPanel) is the regression gate.
+  //
+  // ⚠ THE "Currently in EXEMPT_FROM_VRT below" NOTE THAT USED TO SIT HERE WAS
+  // STALE AND IT COST A WRONG PREDICTION (2026-08-18). `spirographs` is NOT in
+  // that list — it has a real card baseline (`vrt.spec.ts/spirographs.png`) and
+  // this mask is what makes it deterministic. Predicting a capture off this
+  // comment rather than off the list gave "2 committed" against an actual 3,
+  // which is exactly the reconciliation the vrt-watch red flag exists to force.
+  // Read the LIST, not the prose next to it.
   spirographs: [
     { selector: 'canvas', why: 'live spirograph preview — each spiro\'s centre drifts and bounces every frame off the engine clock; the COUNT fader, selector, colorwheel and fader bank are the gate.' },
   ],

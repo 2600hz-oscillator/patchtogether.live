@@ -792,6 +792,60 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   'clouds',
   // FACE BATCH 4 · the three-tap noise source (2026-08-10) — see above.
   'noise',
+  // THE FACEPLATE QUEUE · Q23 — the first TABBED face, and the first VIDEO
+  // module promoted here (2026-08-18). 31 params, 31 CV ports, 3 outputs.
+  //
+  // TABBED UNDER THE 2026-08-18 OWNER RULING, and the bar was MEASURED rather
+  // than eyeballed: 31 params across TEN distinct control shapes (`discrete
+  // 1..3` · `linear 1..12` · `0.5..11` · `0..8` · `discrete 0..1` · `0..2pi` ·
+  // `4..60` · `-1..1` · `0.5..12` · `0..1`). Ten pages — `count`, then
+  // figure/place/look per spiro — clear DOCK_TAB_MIN_BANDS = 7 without padding.
+  // The four-page alternative (one page per spiro) was rejected on the ruling's
+  // own words: it does not reach the rail AND it puts ten controls in a band,
+  // which is `DOCK_ROW_MAX_CONTROLS` exactly — the dense-band shape the ruling
+  // names.
+  //
+  // ⚠ THE AUDIT'S FINDING IS THAT TWENTY OF THE THIRTY-ONE PARAMS ARE
+  // BIT-EXACTLY INERT AT SPAWN. `count` ships at 1, so spiro 2 and spiro 3
+  // render nothing at all while carrying full, plausible-looking banks of ten
+  // dials each. Nothing in the product said so, and it is the single most
+  // expensive thing about the module to discover by hand. All three hero
+  // readouts are gated on it — which is also what makes them un-fakeable by a
+  // knob readback: at `count = 1`, perturbing any of spiro 3's ten dials moves
+  // NONE of them while its own dial happily reports the new value.
+  //
+  // ⚠ SECOND FINDING: `inside` had NO `options` ROSTER — the fourplexer class
+  // again, on the choice between a HYPOTROCHOID and an EPITROCHOID. The card
+  // named the two states in a local `formatInside()`, and promotion removes the
+  // card, so the faceplate would have rendered a two-position dial reading
+  // `0`/`1` for the most visible decision on a spiro. Roster declared on the
+  // def; cosmetic, so `contract-lock` does not move.
+  //
+  // ⚠ THIRD FINDING, and it is the one worth printing: WHETHER A FIGURE CLIPS
+  // IS SCALE-INVARIANT. Only the FIXED circle is bound-constrained — its centre
+  // bounces inside a box inset by its own screen radius `R * scale` — while the
+  // drawn curve may overflow, which the module intends. So the curve reaches
+  // past the frame exactly when `curveMaxReach > R`, and `scale` multiplies
+  // BOTH sides and cancels. A zoom control that cannot change whether the
+  // picture clips is not what a player assumes. Measured at the shipped
+  // defaults: spiro 1 reaches 4.2 against R = 5 and always fits; spiro 2
+  // reaches 7.5 against R = 7 and spiro 3 reaches 9.0 against R = 5, so both
+  // can clip.
+  //
+  // ⚠ `glyph: 'none'` IS REQUIRED AND COUNTER-INTUITIVE. A video def has no
+  // `audio` output, so `primaryAudioOutPortId` returns null and any other glyph
+  // resolves to `{kind:'static'}` and reddens the dead-glyph clause. The
+  // picture arrives from `hasVideoSurface(def)` instead, so `'none' + blank
+  // tile` and `'none' + live picture` are indistinguishable from the
+  // declaration — the face test asserts `hasVideoSurface`, which is the only
+  // thing that tells them apart.
+  //
+  // The card also gains the SCREEN ON/OFF preview toggle (owner ruling
+  // 2026-08-18), persisted in `node.data` like backdraft's so it survives a tab
+  // switch. It can never tear down a producer here: the picture is produced by
+  // the VIDEO ENGINE's module instance and this card only READS it, so
+  // collapsing stops a BLIT and nothing else.
+  'spirographs',
   // THE FACEPLATE QUEUE · Q29 — the 4x4 hard router (2026-08-18). Four
   // selectors, eight inputs, four outputs, one idea repeated four times.
   //
