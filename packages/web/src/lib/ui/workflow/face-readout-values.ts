@@ -65,6 +65,7 @@ import {
   spirographsFigureText,
   spirographsLiveText,
 } from '$lib/ui/modules/spirographs-face-model';
+import {
   fourplexerFanText,
   fourplexerIdleText,
   fourplexerMapText,
