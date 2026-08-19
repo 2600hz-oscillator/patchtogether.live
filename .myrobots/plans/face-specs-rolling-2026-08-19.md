@@ -106,6 +106,21 @@ branch right now".**
    therefore be fixed with `face.paramCells: 'toggle'` (free on both counts)
    rather than `curve: 'discrete'`.
 
+### ✅ BOTH OPEN QUESTIONS ARE NOW RULED ON (owner, 2026-08-19)
+
+1. **`ruttetra` SHIPS UNTABBED, at its 4 honest pages.** No page padding, no
+   change to `DOCK_TAB_MIN_BANDS`. The tabbed ruling named ruttetra as its first
+   application, but the honest grouping — one page per shader expression — lands
+   at 4, and the ruling's own text forbids padding pages to force the rail. So
+   the ruling stands as a *principle* and ruttetra simply is not the module that
+   demonstrates it; **`spirographs` already is**, at 7+ pages and shipped. Do not
+   re-open this by "finding" two more pages in ruttetra.
+2. **The SCREEN toggle reaches a FACE through `fullViewBody`** — backdraft's
+   behaviour is the reference, confirmed by the owner. Applied to `spirographs`
+   in #1930; the defect and the missing gate are #1928.
+
+The original statement of both, kept because the reasoning is the useful part:
+
 ### ⚠ TWO THINGS THE OWNER MUST RULE ON, both raised by the ruttetra/GOV spec
 
 1. **The tabbed ruling names `ruttetra` as its first application, and `ruttetra`
