@@ -281,55 +281,8 @@ export const filterDef: AudioModuleDef = {
     // the band-1 annotation and on the sidebar plot's legend instead.
     hero: {
       control: 'cutoff',
-      readouts: [
-        { label: 'peak', valueId: 'filter-peak-db' },
-        { label: 'cv reach', valueId: 'filter-cutoff-reach' },
-        { label: 'res reach', valueId: 'filter-res-reach' },
-      ],
     },
 
-    // THE SIDEBAR. `custom` carries the one picture a VCF IS, and unlike the
-    // `scope` glyph — which binds to this insert's own output and is therefore
-    // a flat line on a silent rack, in both committed baselines — it is
-    // param-derived and alive with nothing patched.
-    //
-    // NOT `readouts`: it would restate the hero strip.
-    sidebar: [
-      {
-        kind: 'custom',
-        label: 'response',
-        panelId: 'filter-response',
-        props: {
-          cutoffParam: 'cutoff',
-          resParam: 'resonance',
-          modeParam: 'mode',
-          depthParam: 'cutoff_cv_amt',
-        },
-      },
-      {
-        // FOUR COMPLETE RECALLS. Five params means "complete param set" is
-        // trivially reachable here, so there is no excuse for a partial recall
-        // that leaves a knob from the last preset lying under the new one.
-        //
-        // `eg sweep` is the entry that earns the block: `cutoff_cv_amt: 0.2` is
-        // EXACTLY the ±1-octave trim (2^(5·0.2) = 2) that the module's headline
-        // hazard needs, and one click teaches it where three paragraphs of docs
-        // have not. `rumble cut` deliberately zeroes both depths, so selecting
-        // it demonstrates the strip collapsing to `120 Hz · muted`.
-        kind: 'presets',
-        label: 'starting points',
-        entries: [
-          { id: 'gentle', label: 'gentle lp', note: '12 db/oct',
-            values: { cutoff: 1200, resonance: 0.05, mode: 0, cutoff_cv_amt: 1, res_cv_amt: 1 } },
-          { id: 'squelch', label: 'squelch', note: '+24 db peak',
-            values: { cutoff: 400, resonance: 0.85, mode: 0, cutoff_cv_amt: 0.4, res_cv_amt: 0.3 } },
-          { id: 'rumble', label: 'rumble cut', note: 'hp @ 120',
-            values: { cutoff: 120, resonance: 0.3, mode: 1, cutoff_cv_amt: 0, res_cv_amt: 0 } },
-          { id: 'eg-ready', label: 'eg sweep', note: '±1 oct',
-            values: { cutoff: 500, resonance: 0.45, mode: 0, cutoff_cv_amt: 0.2, res_cv_amt: 0 } },
-        ],
-      },
-    ],
   },
 
   docs: {

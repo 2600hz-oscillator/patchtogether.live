@@ -158,14 +158,6 @@ export const moog984Def: AudioModuleDef = {
       ...[1, 2, 3, 4].flatMap((j) => [1, 2, 3, 4].map((i) => crossId(i, j))),
     ],
     glyph: 'none',
-    hero: {
-      readouts: [
-        { label: 'out 1', valueId: 'moog984-out1-sum' },
-        { label: 'out 2', valueId: 'moog984-out2-sum' },
-        { label: 'out 3', valueId: 'moog984-out3-sum' },
-        { label: 'out 4', valueId: 'moog984-out4-sum' },
-      ],
-    },
     pages: [
       {
         // ROW-MAJOR, one cluster per input — the physical matrix. The band

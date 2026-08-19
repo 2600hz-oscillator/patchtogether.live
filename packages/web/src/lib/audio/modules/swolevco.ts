@@ -421,26 +421,8 @@ export const swolevcoDef: AudioModuleDef = {
 
     hero: {
       control: 'fold',
-      readouts: [
-        { label: 'mod', valueId: 'swolevco-mod-hz' },
-        { label: 'lock', valueId: 'swolevco-mod-lock' },
-        { label: 'shape', valueId: 'swolevco-shape' },
-      ],
     },
 
-    // The one thing the panel cannot say and a readout cannot either: what
-    // M.TUNE / M.FINE are FOR, given that they do nothing in the mode the
-    // module spawns in. Two states, named — not a sentence about the module.
-    sidebar: [
-      {
-        kind: 'readouts',
-        label: 'what M.TUNE / M.FINE do here',
-        entries: [
-          { label: 'RATIO = 0', text: "the modulator's own pitch" },
-          { label: 'RATIO > 0', text: 'nothing — primary x RATIO wins' },
-        ],
-      },
-    ],
   },
 
   docs: {

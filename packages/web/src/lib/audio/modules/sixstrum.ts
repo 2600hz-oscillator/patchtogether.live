@@ -276,38 +276,7 @@ export const sixstrumDef: AudioModuleDef = {
     hero: {
       control: 'ring',
       action: 'sixstrum-strum-{n}',
-      readouts: [
-        { label: 'rings for', valueId: 'sixstrum-ring-t60' },
-        { label: 'damps above', valueId: 'sixstrum-damp-partial' },
-        { label: 'roll', valueId: 'sixstrum-roll-ms' },
-      ],
     },
-
-    sidebar: [
-      {
-        kind: 'readouts',
-        // ⚠ THE BLOCK LABEL IS THE RULE. Every number here is a NEXT-STRIKE
-        // quantity — the pitches are latched at the strike, and the comb notch
-        // and the burst length are both resolved when the burst is fired — so
-        // the label teaches the module's governing fact without spending a
-        // hint on it. It is also what stops the next author widening the hero
-        // strip: a value that cannot move under the hand belongs here.
-        label: 'next strike',
-        entries: [
-          { label: 'open strings', valueId: 'sixstrum-open-strings' },
-          // ⚠ `low string` IS THE ONE THAT FINDS THE SHIPPED BUG. The BASS
-          // recall (tuning 1, register −12, spread 0.15) puts strings 1-3 at
-          // 15.4 / 20.6 / 27.5 Hz — all under KARPLUS_F0_MIN = 30 — so
-          // karplusF0's clamp collapses three of six bass strings onto one
-          // pitch. `open strings` prints `B0 B0 B0 D1 G1 C2` and this prints
-          // `30 Hz`, sitting exactly on the floor. Pinned as a DEFECT, not
-          // approved: the model test fails the day the preset is fixed.
-          { label: 'low string', valueId: 'sixstrum-low-string-hz' },
-          { label: 'pick notch', valueId: 'sixstrum-pick-notch' },
-          { label: 'burst', valueId: 'sixstrum-burst-ms' },
-        ],
-      },
-    ],
 
     // REAR CARD curation — UNCHANGED from the shipped face (the rear was
     // already right): the leading band is "how you play it" (the three global

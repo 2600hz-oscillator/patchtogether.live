@@ -167,58 +167,7 @@ export const moog914Def: AudioModuleDef = {
       SECTIONS_LOW_TO_HIGH.map((id) => [id, 'fader' as const]),
     ),
 
-    // THE HERO: three derived readouts and no control, because promoting one of
-    // fourteen interchangeable levels would be an arbitrary claim (the attenumix
-    // precedent). Each is a JOIN over every level that no single readback can
-    // perform, and each is negative-controlled PERMANENTLY on the input a knob
-    // readback is blind to (moog-filterbank-face-model.test.ts):
-    //
-    //   peak   where the summed spectrum is LOUDEST and by how much. At the
-    //          shipped defaults `1.0k -3.9 dB` — not 0.5, and not any knob:
-    //          fourteen sections at half gain sum COHERENTLY.
-    //   notch  its DEEPEST hole. `6.5k -24.8 dB` here; on the 907A it is
-    //          `209 Hz -21.6 dB`, a null between the 175 Hz shelf and the
-    //          250 Hz first band that the 914's extra low bands fill in. That
-    //          difference between the two modules is invisible from any knob on
-    //          either of them.
-    //   tilt   the summed response at the TOP band centre minus the BOTTOM one:
-    //          `+0.8 dB` here, `+5.0 dB` on the 907A. It reads only the two end
-    //          centres, so it is EXACTLY invariant to a uniform level change
-    //          (measured 8.88e-16 dB across a x2) while `peak` and `notch` both
-    //          move by exactly +6.021 dB — which is why the three are each
-    //          other's negative controls on every run.
-    hero: {
-      readouts: [
-        { label: 'peak', valueId: 'moog914-peak' },
-        { label: 'notch', valueId: 'moog914-notch' },
-        { label: 'tilt', valueId: 'moog914-tilt' },
-      ],
-    },
 
-    // THE TABLE — one row per section, GENERATED from the shared centre grid
-    // rather than typed fourteen times, so a row can never name a section that
-    // does not exist and a section can never go missing a row.
-    //
-    // Each row prints what that section's own frequency ACTUALLY reads at the
-    // output, neighbours included — which is the one thing its knob cannot say.
-    // At every knob identically 0.5 the rows span 7.1 dB (125 Hz reads
-    // -10.97 dB, 1 kHz reads -3.85 dB) because a band at the end of the grid has
-    // overlapping neighbours on one side and a band in the middle has them on
-    // both. The knob says 0.50 for all twelve.
-    sidebar: [
-      {
-        kind: 'readouts',
-        label: 'summed level',
-        entries: [
-          { label: filterbankLpLabel(FILTERBANK_914_LP_HZ), valueId: 'moog914-section-lp' },
-          ...CENTERS.map((freq, i) => ({
-            label: filterbankHzLabel(freq),
-            valueId: `moog914-section-${bandParamId(i + 1)}`,
-          })),
-          { label: filterbankHpLabel(FILTERBANK_914_HP_HZ), valueId: 'moog914-section-hp' },
-        ],
-      },
-    ],
   },
 
   docs: {

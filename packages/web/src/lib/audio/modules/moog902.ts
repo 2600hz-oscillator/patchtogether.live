@@ -218,10 +218,6 @@ export const moog902Def: AudioModuleDef = {
     // different quantity, and it is the one the docs got wrong (#1912).
     hero: {
       control: 'gain',
-      readouts: [
-        { label: 'gain', valueId: 'moog902-gain-db' },
-        { label: 'ceiling', valueId: 'moog902-ceiling' },
-      ],
     },
   },
 

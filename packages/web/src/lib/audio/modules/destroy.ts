@@ -152,12 +152,6 @@ export const destroyDef: AudioModuleDef = {
     //           floor by 20log10(wet) and moves this by nothing.
     hero: {
       control: 'decimate',
-      readouts: [
-        { label: 'rate', valueId: 'destroy-rate' },
-        { label: 'stream', valueId: 'destroy-stream' },
-        { label: 'floor', valueId: 'destroy-bit-floor' },
-        { label: 'mute', valueId: 'destroy-mute' },
-      ],
     },
   },
 

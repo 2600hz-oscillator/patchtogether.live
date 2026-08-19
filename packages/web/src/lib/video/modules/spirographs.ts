@@ -487,24 +487,6 @@ export const spirographsDef: VideoModuleDef = {
     // the shell never imports a spirographs file, and `face` is stripped from
     // the attest basis — declaring it costs no re-attest and no contract line.
     extension: 'spirographs',
-    hero: {
-      readouts: [
-        { label: 'live', valueId: 'spirographs-live' },
-        { label: 'closes', valueId: 'spirographs-closes' },
-        { label: 'clip', valueId: 'spirographs-clip' },
-      ],
-    },
-    sidebar: [
-      {
-        kind: 'readouts',
-        label: 'figures',
-        entries: [
-          { label: '1', valueId: 'spirographs-figure-1' },
-          { label: '2', valueId: 'spirographs-figure-2' },
-          { label: '3', valueId: 'spirographs-figure-3' },
-        ],
-      },
-    ],
   },
 
   docs: {

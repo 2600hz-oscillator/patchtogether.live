@@ -1021,66 +1021,7 @@ export const macrooscillatorDef: AudioModuleDef = {
     hero: {
       cell: 'macro-hero-{n}',
       action: 'macro-strike-{n}',
-      // ⚠ ALL THREE ARE DERIVED, and each because the nearest knob is BLIND to
-      // something that genuinely changes the answer:
-      //
-      //   harmonics — a `paramId: 'harmonics'` readout prints the SAME 0.30 in
-      //     all fourteen states. This flips from `1:2 · 2/8` on FM 2OP to
-      //     `detune` on VA to `bar · 1/4` on MODAL with the fader untouched —
-      //     and, on a stepped engine, does NOT move when the fader crosses
-      //     inside a bucket. That difference IS the module's worst usability
-      //     problem, made visible.
-      //   out — a `paramId: 'level'` readout prints 0.80 while the actual
-      //     output moves 76.6 dB across the MODEL fader (FM 2OP −5.0 dBFS,
-      //     MODAL −81.6). LEVEL cannot fix that; the number at least names it.
-      //   aux vs out — AUX is NOT level-scaled (:1557-1560). At LEVEL 0 a
-      //     `level` readout prints 0.00 and says nothing about an output still
-      //     running at full scale; this prints that OUT is silent.
-      readouts: [
-        { label: 'harmonics', valueId: 'macro-harmonics-here' },
-        { label: 'out', valueId: 'macro-out-level' },
-        { label: 'aux vs out', valueId: 'macro-aux-offset' },
-      ],
     },
-
-    sidebar: [
-      {
-        // The GENERIC presets block, not a bespoke roster panel: the MODEL
-        // selector already lists all fourteen by name (`ParamDef.options`), so
-        // what a second list would add is not names — it is the per-engine
-        // CAVEAT. `FacePreset.note` paints unconditionally, which makes it the
-        // right surface for a fact that must not be lost (unlike `face.hint`).
-        kind: 'presets',
-        label: 'engines worth knowing',
-        entries: [
-          { id: 'va', label: 'VA', note: 'band-limited', values: { model: 0, harmonics: 0.3, timbre: 0.3, morph: 0.5 } },
-          { id: 'fm2', label: 'FM 2-OP', note: 'loudest · 8 ratios', values: { model: 2, harmonics: 0.3, timbre: 0.5, morph: 0.2 } },
-          { id: 'chord', label: 'CHORD', note: '8 shapes', values: { model: 4, harmonics: 0.45, timbre: 0.4, morph: 0.6 } },
-          { id: 'speech', label: 'SPEECH', note: '6 vowels', values: { model: 13, harmonics: 0.1, timbre: 0.5, morph: 0.2 } },
-          { id: 'wavetable', label: 'WAVETABLE', note: '⚠ dead morph half', values: { model: 11, harmonics: 0.4, timbre: 0.7, morph: 0.75 } },
-          { id: 'granular', label: 'GRANULAR', note: '⚠ 3-step morph', values: { model: 12, harmonics: 0.5, timbre: 0.3, morph: 0.5 } },
-          { id: 'modal', label: 'MODAL', note: '⚠ −82 dBFS', values: { model: 7, harmonics: 0.1, timbre: 0, morph: 0.5 } },
-          { id: 'kick', label: 'KICK', note: 'needs a strike', values: { model: 8, harmonics: 0.5, timbre: 0.4, morph: 0.35 } },
-        ],
-      },
-      {
-        kind: 'readouts',
-        label: 'this engine',
-        // ⚠ EVERY VALUE HERE STAYS UNDER ~26 CHARACTERS. The sidebar content
-        // column is 258 px and a longer value pushed the dock 78 CSS px past
-        // its right edge (measured). That is a layout constraint on the MODEL,
-        // which is why the formatter enforces it and the model test asserts it
-        // across all fourteen engines rather than at the defaults.
-        entries: [
-          { label: 'timbre', valueId: 'macro-timbre-here' },
-          { label: 'morph', valueId: 'macro-morph-here' },
-          { label: 'aux tap', valueId: 'macro-aux-tap' },
-          { label: 'vs loudest', valueId: 'macro-level-gap' },
-          { label: 'unpatched', valueId: 'macro-strike-need' },
-          { label: 'band-limiting', valueId: 'macro-alias' },
-        ],
-      },
-    ],
 
     // REAR CARD. Derivation covers the eight holes already (six CV jacks into
     // their page bands, `pitch` + `trig` into the leading band), so only two

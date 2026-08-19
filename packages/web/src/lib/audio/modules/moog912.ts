@@ -218,10 +218,6 @@ export const moog912Def: AudioModuleDef = {
     //              which is the only place #1914's dead zone is visible.
     hero: {
       control: 'sensitivity',
-      readouts: [
-        { label: 'response', valueId: 'moog912-response-hz' },
-        { label: 'gate', valueId: 'moog912-gate-dbfs' },
-      ],
     },
   },
 
