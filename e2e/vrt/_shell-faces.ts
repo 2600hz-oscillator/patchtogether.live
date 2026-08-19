@@ -551,6 +551,27 @@ export const FACES = [
   // 0 and `env_inv` bit-exactly 1 for a full second, and sweeping any of the
   // four params changes neither. The scenes cannot move unless the FACE moves.
   { type: 'moog911', pages: 2 },
+  // MOOG 911A (2026-08-19) — two declared pages (`delays`, `coupling`), and
+  // `pages` is the POST-hero-split band count: the hero declares READOUTS ONLY,
+  // so no key leaves a band and neither can be emptied. Three cells, one packed
+  // dock row.
+  //
+  // ⚠ THE ONE MEMBER OF ITS COHORT IN `STRICT_VRT_MODULES` — it has a COMMITTED
+  // legacy-card baseline, unlike moog911/moogCp3/moog921Vco which are exempt.
+  // That card baseline is NOT expected to move: `vrt.spec.ts` navigates to
+  // `/rack?shell=legacy`, so promotion does not change what it captures, and the
+  // `options[]` roster this face adds is read by the SHELL — the card builds its
+  // own mode name from `MOOG911A_MODE_NAMES` and is untouched. Verified by
+  // capturing the card scene on this branch and against `main` on the same
+  // machine and diffing the two actuals, which is the only same-platform
+  // comparison a local run can honestly make.
+  //
+  // PIXEL-DETERMINISTIC: the module emits nothing until a trigger arrives (its
+  // factory's only source is a ConstantSource pinned at 0), `glyph: 'none'` is
+  // forced because both outputs are `gate`, and both readouts are closed forms
+  // over params. Measured at spawn: with both TRIG jacks unpatched, sweeping any
+  // of the three params leaves both outputs bit-identical.
+  { type: 'moog911a', pages: 2 },
   // MOOG CP3 (2026-08-19) — two declared pages (`channels`, `4th input`), and
   // `pages` is the POST-hero-split band count: the hero declares READOUTS ONLY,
   // so no key leaves a band. Five knob cells, one packed dock row.
