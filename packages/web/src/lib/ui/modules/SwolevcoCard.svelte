@@ -10,7 +10,7 @@
   import { swolevcoDef } from '$lib/audio/modules/swolevco';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
-  import { cardParams, portsFromDef } from './card-kit';
+  import { cardParams, paramSpec, portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -20,6 +20,30 @@
     const v = node?.params?.[id_];
     return typeof v === 'number' ? v : fallback;
   }
+
+  // Every fader carries its own ParamDef rather than re-typed literals. This
+  // card hand-typed all eight ranges, and `swolevco` was outside
+  // RANGE_BOUND_CARDS, so nothing could see a divergence — and one had already
+  // opened: the card labelled `timbre` "Timbr" where the def says "Tbr".
+  // Harmless while the legacy card was the only surface; from promotion the
+  // DOCK renders these controls straight off the ParamDef, so one fader would
+  // have had two names depending on which surface you reached it through
+  // (the DestroyCard precedent). Binding the whole def forecloses the numbers
+  // and the names in one edit.
+  const P = {
+    tune: paramSpec(swolevcoDef, 'tune'),
+    fine: paramSpec(swolevcoDef, 'fine'),
+    mod_tune: paramSpec(swolevcoDef, 'mod_tune'),
+    mod_fine: paramSpec(swolevcoDef, 'mod_fine'),
+    ratio: paramSpec(swolevcoDef, 'ratio'),
+    timbre: paramSpec(swolevcoDef, 'timbre'),
+    symmetry: paramSpec(swolevcoDef, 'symmetry'),
+    fold: paramSpec(swolevcoDef, 'fold'),
+  } as const;
+  const FADERS: readonly (readonly (keyof typeof P)[])[] = [
+    ['tune', 'fine', 'mod_tune', 'mod_fine'],
+    ['ratio', 'timbre', 'symmetry', 'fold'],
+  ];
 
   // Inputs + outputs feed the PatchPanel. The patch-panel auto-grouper
   // sorts by cable type — pitches first, then audio, then cv. Outputs
@@ -34,18 +58,25 @@
 
   <PatchPanel nodeId={id} {inputs} {outputs} panelWidth={280}>
     <div class="grid">
-      <div class="row">
-        <NeonFader value={paramVal('tune', 0)}      min={-36}  max={36}   defaultValue={0}   label="Tune"  units="st" curve="linear" onchange={set('tune')} moduleId={id} paramId="tune"     readLive={live('tune')} />
-        <NeonFader value={paramVal('fine', 0)}      min={-100} max={100}  defaultValue={0}   label="Fine"  units="¢"  curve="linear" onchange={set('fine')} moduleId={id} paramId="fine"     readLive={live('fine')} />
-        <NeonFader value={paramVal('mod_tune', 0)}  min={-36}  max={36}   defaultValue={0}   label="M.Tn"  units="st" curve="linear" onchange={set('mod_tune')} moduleId={id} paramId="mod_tune" readLive={live('mod_tune')} />
-        <NeonFader value={paramVal('mod_fine', 0)}  min={-100} max={100}  defaultValue={0}   label="M.Fn"  units="¢"  curve="linear" onchange={set('mod_fine')} moduleId={id} paramId="mod_fine" readLive={live('mod_fine')} />
-      </div>
-      <div class="row">
-        <NeonFader value={paramVal('ratio', 1.0)}    min={0}    max={8}    defaultValue={1.0} label="Ratio"            curve="linear" onchange={set('ratio')} moduleId={id} paramId="ratio"    readLive={live('ratio')} />
-        <NeonFader value={paramVal('timbre', 0)}     min={0}    max={1}    defaultValue={0}   label="Timbr"            curve="linear" onchange={set('timbre')} moduleId={id} paramId="timbre"   readLive={live('timbre')} />
-        <NeonFader value={paramVal('symmetry', 0.5)} min={0}    max={1}    defaultValue={0.5} label="Sym"              curve="linear" onchange={set('symmetry')} moduleId={id} paramId="symmetry" readLive={live('symmetry')} />
-        <NeonFader value={paramVal('fold', 0)}       min={0}    max={1}    defaultValue={0}   label="Fold"             curve="linear" onchange={set('fold')} moduleId={id} paramId="fold"     readLive={live('fold')} />
-      </div>
+      {#each FADERS as row, i (i)}
+        <div class="row">
+          {#each row as key (key)}
+            <NeonFader
+              value={paramVal(P[key].id, P[key].defaultValue)}
+              min={P[key].min}
+              max={P[key].max}
+              defaultValue={P[key].defaultValue}
+              label={P[key].label ?? P[key].id}
+              units={P[key].units ?? ''}
+              curve={P[key].curve}
+              onchange={set(P[key].id)}
+              moduleId={id}
+              paramId={P[key].id}
+              readLive={live(P[key].id)}
+            />
+          {/each}
+        </div>
+      {/each}
     </div>
   </PatchPanel>
 </div>

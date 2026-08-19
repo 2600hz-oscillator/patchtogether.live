@@ -107,6 +107,7 @@ import { ringsDef } from '$lib/audio/modules/rings';
 import { sidecarDef } from '$lib/audio/modules/sidecar';
 import { slewSwitchDef } from '$lib/audio/modules/slewswitch';
 import { snaredrumDef } from '$lib/audio/modules/snaredrum';
+import { swolevcoDef } from '$lib/audio/modules/swolevco';
 import { vcaDef } from '$lib/audio/modules/vca';
 import { warrensspectrumDef } from '$lib/audio/modules/warrensspectrum';
 import { wavetableVcoDef } from '$lib/audio/modules/wavetable-vco';
@@ -328,6 +329,17 @@ const RANGE_BOUND_CARDS: Readonly<Record<string, { params: readonly ParamDef[] }
   // renders rather than restates.
   'SlewSwitchCard.svelte': slewSwitchDef,
   'SnaredrumCard.svelte': snaredrumDef,
+  // THE FACEPLATE QUEUE · Q5. Enrolled with its faceplate. All EIGHT ranges
+  // were re-typed and all eight AGREED, so this is the SidecarCard shape — a
+  // maintainability fix, not a bug fix — with one exception that had already
+  // slipped: the card labelled `timbre` "Timbr" where the def declares "Tbr".
+  // Promotion is what makes that cost something, because the dock renders the
+  // control straight off the ParamDef while the legacy card renders what it
+  // typed, so one fader would answer to two names depending on the surface
+  // (the `Feedback`/`Fbk` shape, #1689). Range AND mapping — every Fader reads
+  // `P.<id>.{min,max,defaultValue,label,units,curve}` off
+  // `paramSpec(swolevcoDef, …)`, so the def is the only copy of any of them.
+  'SwolevcoCard.svelte': swolevcoDef,
   'VcaCard.svelte': vcaDef,
   'WarrensspectrumCard.svelte': warrensspectrumDef,
   // THE FACEPLATE QUEUE · Q9. Enrolled while PAYING a live `OPERATIONAL_DEBT`
@@ -495,6 +507,12 @@ const MAPPING_BOUND_CARDS: readonly string[] = [
   // declares one, and binding is what makes that a DECLARATION instead of an
   // omission the next editor has to re-derive.
   'AnalogLogicMathsCard.svelte',
+  // THE FACEPLATE QUEUE · Q5. Range AND mapping: every Fader reads
+  // `P.<id>.{min,max,defaultValue,label,units,curve}` off
+  // `paramSpec(swolevcoDef, …)`. `units` is bound rather than merely absent —
+  // four of the eight params declare one (`st` / `¢`) and four do not, and
+  // binding is what makes the empty four a DECLARATION instead of an omission.
+  'SwolevcoCard.svelte',
   'MacrooscillatorCard.svelte',
   'FilterCard.svelte',
   'MarblesCard.svelte',
