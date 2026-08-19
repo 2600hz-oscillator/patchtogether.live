@@ -37,7 +37,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 import { pressFlipKey } from './_flip-key';
-import { UNMIGRATED_AUDIO_MODULE, UNMIGRATED_VIDEO_MODULE } from './_face-fixtures';
+import { AUDIO_FIXTURE, VIDEO_FIXTURE, fixtureProblems, fixtureType } from './_face-fixtures';
 
 async function gotoWorkflow(page: Page): Promise<void> {
   await page.goto('/rack');
@@ -74,17 +74,38 @@ async function panTileTo(
   await page.waitForTimeout(120);
 }
 
+// ── THE VIDEO FIXTURE IS HEALTHY (#1864) ────────────────────────────────────
+//
+// ⚠ IT RUNS EVEN THOUGH ITS CONSUMER IS PARKED, AND THAT IS THE POINT. The
+// split-pane case below is the only test that spawns the video fixture and it
+// is `test.fixme` (FLAKE-PARK #1847) — so while the old hand-picked list was
+// draining, nothing in this file could have reddened on it. What it would have
+// done instead is worse: the list resolved at IMPORT and threw when empty, so
+// the notification was every spec importing `_face-fixtures.ts` failing before
+// it ran a line, for a reason none of them had anything to do with.
+//
+// Deriving the pool removed the throw. This is what replaces it: one named
+// test, in the suite that owns the fixture, red at the point of promotion.
+// (The DENIED map's artifact anchor is asserted once for BOTH domains, in
+// workflow-shell.spec.ts, where the audio half's gate lives.)
+test('the derived video legacy-fallback fixture is healthy', () => {
+  expect(fixtureProblems(VIDEO_FIXTURE), VIDEO_FIXTURE.why).toEqual([]);
+});
+
 test.describe('P1 dock/expand UX fixes (?shell=1)', () => {
   // FIX 1 — the tile pill is a TOGGLE: EXPAND opens the full-view and flips to
   // CLOSE; CLOSE closes it and flips back. Covers the migrated shell AND the
   // un-migrated placeholder (both route through the same PatchPanel rail).
   test('EXPAND toggles to CLOSE while expanded, and CLOSE closes the full-view', async ({ page }) => {
+    // When every audio module is promoted the un-migrated half of this case has
+    // no subject BY DESIGN — a NAMED skip, never a silent pass (#1864).
+    test.skip(AUDIO_FIXTURE.kind === 'migration-complete', AUDIO_FIXTURE.why);
     await gotoWorkflow(page);
     await spawnPatch(page, [
       { id: 'm1', type: 'vca', position: { x: 30, y: 40 } }, // migrated
       // DERIVED, not named — a hard-coded un-migrated fixture rots as each P1
       // wave promotes more modules (delay was consumed by batch 3).
-      { id: 'u1', type: UNMIGRATED_AUDIO_MODULE, position: { x: 250, y: 40 } }, // un-migrated
+      { id: 'u1', type: fixtureType(AUDIO_FIXTURE), position: { x: 250, y: 40 } }, // un-migrated
     ]);
     const shellTile = page.locator('.svelte-flow__node[data-id="m1"] [data-testid="module-shell"]');
     const placeholderTile = page.locator('.svelte-flow__node[data-id="u1"] [data-testid="module-shell-placeholder"]');
@@ -129,9 +150,11 @@ test.describe('P1 dock/expand UX fixes (?shell=1)', () => {
   // ⚠ B IS DERIVED, NOT NAMED. It was hard-coded to `backdraft` until the first
   // VIDEO face promoted it, at which point B rendered a curated face and the
   // "placeholder is visible" assertion failed for a reason that is not a bug —
-  // the exact rot `UNMIGRATED_AUDIO_MODULE` already existed to prevent one
-  // domain over. `UNMIGRATED_VIDEO_MODULE` checks un-promoted + domain:video
-  // with the predicates these assertions depend on.
+  // the exact rot the AUDIO fixture already existed to prevent one domain over.
+  // Its first replacement was a four-deep hand-picked list that the video face
+  // cohort then spent in full (#1864); `VIDEO_FIXTURE` derives the CANDIDATE
+  // SET from the contract golden — un-promoted + domain=video + a card
+  // component that resolves — so a promotion cannot empty it.
   // Then migrated C: it replaces the least-recently-opened pane (A). ESC
   // closes the whole view. Every step is a REAL click on the lane pill; zero
   // pageerrors allowed (the crash class stays shut across pane mounts).
@@ -141,12 +164,15 @@ test.describe('P1 dock/expand UX fixes (?shell=1)', () => {
   // LOST WHILE PARKED: the owner split extension: two side-by-side dock panes with LRU replacement, asserted for BOTH migrated faces and legacy cards — the shell-parity leg is what stops a fix landing for one shell only.
   // Re-enable only on a root cause (#1847); "it passes now" is not one.
   test.fixme('expanding B while A is open SPLITS the dock; a third replaces the oldest — migrated AND legacy cards', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 1 recovered-on-retry observation in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page }) => {
+    // The legacy half loses its subject BY DESIGN once every video module is
+    // promoted — a NAMED skip carrying the reason, never a silent pass (#1864).
+    test.skip(VIDEO_FIXTURE.kind === 'migration-complete', VIDEO_FIXTURE.why);
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(String(e)));
     await gotoWorkflow(page);
     await spawnPatch(page, [
       { id: 'a1', type: 'tidyVco', position: { x: 30, y: 40 } }, // migrated
-      { id: 'b1', type: UNMIGRATED_VIDEO_MODULE, position: { x: 250, y: 40 } }, // un-migrated legacy (video)
+      { id: 'b1', type: fixtureType(VIDEO_FIXTURE), position: { x: 250, y: 40 } }, // un-migrated legacy (video)
       { id: 'c1', type: 'vca', position: { x: 470, y: 40 } }, // migrated
     ]);
     const tileA = page.locator('.svelte-flow__node[data-id="a1"] [data-testid="module-shell"]');
