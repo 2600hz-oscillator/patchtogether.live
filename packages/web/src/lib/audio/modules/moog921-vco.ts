@@ -199,7 +199,8 @@ export const moog921VcoDef: AudioModuleDef = {
         id: 'out',
         label: 'out',
         // Measured: the rect tap's RMS is INVARIANT to WIDTH across the whole
-        // declared span (−0.044 dB at 2 % duty and −0.045 dB at 98 %), so these
+        // declared span — every setting from 2 % to 98 % duty lands between
+        // −0.044 and −0.045 dB, a spread of one thousandth of a dB — so these
         // two controls genuinely do different jobs — WIDTH is pure timbre on one
         // tap, LEVEL is gain on all four — and neither leaks into the other.
         hint: 'the duty of the rectangular tap, and the gain on all four',
