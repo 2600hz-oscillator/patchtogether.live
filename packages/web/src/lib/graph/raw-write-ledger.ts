@@ -197,11 +197,19 @@ export const RAW_WRITE_LEDGER: Readonly<Record<string, RawWriteEntry>> = {
     kind: 'debt',
     why: 'card button write — user gesture, should be undoable + synced',
   },
-  'ui/modules/JoystickCard.svelte': {
-    keys: ['pos_x', 'pos_y'],
-    kind: 'debt',
-    why: 'joystick drag — per-frame-ish, but it persists; needs the transient-first treatment (midi-cc-write-storm)',
-  },
+  // ⚠ `ui/modules/JoystickCard.svelte` WAS HERE AND IS PAID (queue Q43,
+  // 2026-08-19). Its entry read *"joystick drag — per-frame-ish, but it
+  // persists; needs the transient-first treatment (midi-cc-write-storm)"*, and
+  // that treatment is `createDragCommit` — the same rAF-coalescing pump
+  // Fader/Knob/XyPad use. The card now writes through the tracked param path,
+  // so the raw write is gone from the ARTIFACT and this entry had to go with it
+  // (an entry naming a write that no longer exists is RED).
+  //
+  // ⚠ `ui/modules/QuadralogicalCard.svelte` BELOW IS THE IDENTICAL PATTERN and
+  // is DELIBERATELY LEFT ALONE — `quadralogical` is face-queue Q27 and gated,
+  // so its card is not being touched in this wave. Its `why` used to point here
+  // ("see JoystickCard"); it now carries the mechanism itself, because a
+  // cross-reference to a deleted entry is worse than no cross-reference.
   'ui/modules/LumakeyCard.svelte': {
     keys: ['invert'],
     kind: 'debt',
@@ -255,7 +263,7 @@ export const RAW_WRITE_LEDGER: Readonly<Record<string, RawWriteEntry>> = {
   'ui/modules/QuadralogicalCard.svelte': {
     keys: ['pos_x', 'pos_y'],
     kind: 'debt',
-    why: 'joystick drag — see JoystickCard',
+    why: 'XY pad drag — per-frame-ish, but it persists; needs the transient-first treatment (createDragCommit, as JoystickCard now does). Held: quadralogical is face-queue Q27 and gated.',
   },
   'ui/modules/RasterizeCard.svelte': {
     keys: ['wrap'],

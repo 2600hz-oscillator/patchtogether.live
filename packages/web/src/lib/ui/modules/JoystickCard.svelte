@@ -1,36 +1,61 @@
 <script lang="ts">
   // JoystickCard — XY pad emitting four bipolar CV outputs.
   //
-  // The user drags a virtual stick inside a square pad. Pad-center maps
-  // to (0, 0) CV; pad-edge maps to ±1. On pointer-up the stick snaps
-  // back to center (set both params to 0) — a v1 simplification of
-  // spring-back animation that keeps the implementation tiny.
+  // ⚠ THIS IS THE LEGACY SURFACE. joystick is in STRICT_FACES (queue Q43), so
+  // both the lane and the dock render `ModuleShell` and its shared `xy` cell;
+  // this card only paints under `?shell=legacy`. It is kept in step with the
+  // face rather than frozen, because the two must not disagree about what the
+  // module DOES.
+  //
+  // The user drags a virtual stick inside a square pad. Pad-center maps to
+  // (0, 0) CV; pad-edge maps to ±1.
+  //
+  // ⚠ NO SNAP-BACK. Releasing the pointer leaves the stick where you dropped
+  // it (owner ruling, 2026-08-19 on #1963, verbatim "1 - persist"), which is
+  // what `XyPad.svelte` has always done and what makes this module's own
+  // "it survives a patch reload" promise true for the first time.
+  //
+  // ⚠ THE WRITES ARE rAF-COALESCED AND TRACKED. They used to go straight into
+  // `patch.nodes[id].params` on every pointermove — a ledgered raw-write DEBT
+  // whose stated remedy was "the transient-first treatment". `createDragCommit`
+  // IS that treatment (it is what Fader/Knob/XyPad use), so the debt is PAID
+  // HERE, in the artifact, and the ledger entry is deleted in the same diff.
+  // Deleting the entry alone would have been RED in the other direction: the
+  // guard is anchored to the source, so an unlisted raw write fails it.
   //
   // The Y axis is FLIPPED relative to screen-y so dragging UP yields
   // y = +1 (the musically/spatially expected direction for "up" cv).
   //
   // Visual: a small square with the stick indicator + crosshair guides.
-  // The current x/y values are shown in a tiny readout below the pad.
+  // The current x/y values are shown in a tiny readout below the pad. (The
+  // 2026-08-17 resting-decimal ruling is about FACEPLATES; the legacy cards are
+  // untouched, and the face carries the value in `aria-valuetext` instead.)
 
   import type { NodeProps } from '@xyflow/svelte';
+  import { onDestroy } from 'svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import { patch } from '$lib/graph/store';
   import { joystickDef, clampJoy } from '$lib/audio/modules/joystick';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
-  import { portsFromDef } from './card-kit';
+  import { cardParams, portsFromDef } from './card-kit';
+  import { createDragCommit } from '$lib/ui/controls/drag-commit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
+  const { set } = cardParams(joystickDef, () => id, () => node);
 
   let pos_x = $derived(clampJoy(node?.params.pos_x ?? joystickDef.params[0]!.defaultValue));
   let pos_y = $derived(clampJoy(node?.params.pos_y ?? joystickDef.params[1]!.defaultValue));
 
+  // One pump per axis, exactly as XyPad does it: N pointermoves per frame
+  // coalesce into ONE tracked param write each.
+  const commitX = createDragCommit((v) => set('pos_x')(v));
+  const commitY = createDragCommit((v) => set('pos_y')(v));
+  onDestroy(() => { commitX.dispose(); commitY.dispose(); });
+
   function write(x: number, y: number) {
-    const t = patch.nodes[id];
-    if (!t) return;
-    t.params.pos_x = clampJoy(x);
-    t.params.pos_y = clampJoy(y);
+    commitX.commit(clampJoy(x));
+    commitY.commit(clampJoy(y));
   }
 
   // ---- pointer drag ----
@@ -63,9 +88,21 @@
   function onPointerUp(ev: PointerEvent) {
     if (!dragging) return;
     dragging = false;
+    // Flush before teardown can cancel a trailing rAF — the final drag
+    // position has to reach the store, exactly as XyPad's pointerup does.
+    commitX.flush();
+    commitY.flush();
     try { padEl?.releasePointerCapture(ev.pointerId); } catch { /* */ }
-    // Snap back to center on release (spring-back is a v1 simplification).
-    write(0, 0);
+    // No snap-back: a 2-D position control stays where you put it (#1963).
+  }
+
+  /** Double-click re-centres — the gesture that REPLACES the snap-back, and the
+   *  same one `XyPad.svelte` binds, so the two surfaces agree. */
+  function onDblClick() {
+    commitX.commit(0);
+    commitY.commit(0);
+    commitX.flush();
+    commitY.flush();
   }
 
   // ---- pad geometry helpers ----
@@ -100,6 +137,7 @@
         onpointermove={onPointerMove}
         onpointerup={onPointerUp}
         onpointercancel={onPointerUp}
+        ondblclick={onDblClick}
       >
         <div class="crosshair-h"></div>
         <div class="crosshair-v"></div>

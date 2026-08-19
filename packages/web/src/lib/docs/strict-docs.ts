@@ -27,6 +27,11 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   // ES-9 native-bridge I/O module (2026-07-10): born strict — every jack and
   // class selector documented from day one (46 ports, 22 controls).
   'es9',
+  // VST BRIDGE cards (2026-08-19): born strict — the vst-bridge helper's
+  // in-graph faces (instrument voice + stereo FX insert), every port
+  // documented from day one.
+  'vstInstrument',
+  'vstFx',
   // CV BUDDY (2026-07-21): born strict — the ES-9 note-lane sink. Every port
   // (gate/pitch/velocity in; pitchCv/gate/velCv/run/clock out) + both clock
   // params documented from day one.

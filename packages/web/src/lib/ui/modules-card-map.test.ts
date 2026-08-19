@@ -60,6 +60,7 @@ const EXPECTED_NODE_TYPES = [
   'videobox', 'videocube', 'videovarispeed', 'warrensspectrum', 'warrensvisions', 'wavecel', 'wavesculpt',
   'twotracks', 'wavetableVco', 'writeseq', 'textmarquee', 'tiler', 'spirographs',
   'milkdrop',
+  'vstInstrument', 'vstFx',
 ].sort();
 
 function allDefs(): CardDefLike[] {

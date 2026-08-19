@@ -127,6 +127,7 @@ const KNOWN_MONO_NORMALS: readonly string[] = [
   'stereovca.ts:input:1',               // MAIN  in_r → in_l
   'stereovca.ts:input:3',               // STRENGTH strength_r → strength_l
   'twotracks.ts:input:inputOffset + 1', // symbolic — see SYMBOLIC_INDEX_EXPANSIONS
+  'vst-bridge.ts:input:IN_R',           // symbolic — see SYMBOLIC_INDEX_EXPANSIONS
 ];
 
 /**
@@ -144,6 +145,12 @@ const SYMBOLIC_INDEX_EXPANSIONS: Readonly<Record<string, { indices: number[]; wh
     why: 'twotracks runs ONE reel routine twice — `processReel(…, inputs, 0, …)` for reel A '
       + '(twotracks.ts:904) and `…, inputs, 2, …` for reel B (twotracks.ts:916) — so '
       + '`inputOffset + 1` is worklet input 1 and input 3. Both are checked.',
+  },
+  'vst-bridge.ts:input:IN_R': {
+    indices: [1],
+    why: 'vst-bridge names its worklet input indices as consts (IN_L = 0, IN_R = 1, … — the '
+      + 'header I/O map); `inputs[IN_R]?.[0] ?? inL` is worklet input 1, the fx right channel. '
+      + 'The normal feeds BOTH the bridge ring write and the not-connected local bypass.',
   },
 };
 

@@ -154,8 +154,6 @@ e2e/tests/illogic.spec.ts :: illogic: LFO → in1 → att1 (gain=1) produces aud
 e2e/tests/illogic.spec.ts :: illogic: att1_amount=-1 still produces audible signal (sign-flipped) :: waitForTimeout(1000) #1
 e2e/tests/illogic.spec.ts :: illogic: att1_amount=0 mutes the att1 output :: waitForTimeout(700) #1
 e2e/tests/illogic.spec.ts :: illogic: two LFOs → in1+in2 → sum produces summed audible signal :: waitForTimeout(1500) #1
-e2e/tests/joystick.spec.ts :: drag updates pos_x + pos_y; pointer-up snaps back :: waitForTimeout(120) #1
-e2e/tests/joystick.spec.ts :: spawns + pad mounts + no console errors :: waitForTimeout(80) #1
 e2e/tests/karplus-face.spec.ts :: maxHold :: waitForTimeout(60) #1
 e2e/tests/karplus.spec.ts :: KARPLUS real chain: SEQUENCER gate+pitch → pluck → AUDIOOUT — audible RMS + in-tune fundamental :: waitForTimeout(60) #1
 e2e/tests/kickdrum-face.spec.ts :: maxHold :: waitForTimeout(60) #1

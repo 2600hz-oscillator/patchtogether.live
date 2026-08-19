@@ -101,6 +101,17 @@ export const EXEMPT_OUTPUT_EMIT_MODULES: Record<string, string> = {
   // underrun policies) + on-hardware verification steps in the native repo
   // (patchtogether.es9/docs/inet-modular-es9-module-plan.md).
   es9: 'all outputs source from physical ES-9 hardware via the native bridge (absent in CI); ring/scaling/policy logic covered by dsp es9-bridge-core tests, flow verified on hardware per the native repo plan',
+  // VST BRIDGE cards — outputs carry the mounted PLUGIN's audio via the
+  // vst-bridge native helper's localhost WebSocket (patchtogether.nativeapps,
+  // ws://127.0.0.1:9309); neither helper nor plugins exist in CI, so a bare
+  // spawn emits nothing (vstInstrument: silence without the helper; vstFx:
+  // local bypass of its own UNDRIVEN inputs, which the generic emit sweep
+  // does not wire — the fader precedent). Handle-presence + input-accept
+  // still run. CV→MIDI conversion is pinned by dsp vst-bridge-core tests,
+  // the wire codecs by vst/vst-transport tests; live-helper flow is
+  // owner-verified per #1953 (the checklist lands with its M4 PR).
+  vstInstrument: 'outputs source from a mounted AU plugin via the vst-bridge helper (absent in CI); CV→MIDI pinned by dsp vst-bridge-core tests, codecs by vst-transport tests, live flow owner-verified',
+  vstFx: 'outputs are the helper round trip (absent in CI) or a local bypass of inputs the emit sweep does not drive (fader precedent); codecs/bypass pinned by vst-transport + dsp vst-bridge tests, live flow owner-verified',
   // FADER is a two-source video MIXER: both outputs (OUT = dry/wet of the A/B
   // mix; SEND = a copy of the A/B mix) are a blend of in_a/in_b/return, so with
   // nothing patched they are opaque black — there is no signal to emit until an
@@ -531,7 +542,7 @@ export const PINNED_MODULE_EXEMPT_KEYS: readonly string[] = Object.freeze([
   'moog911a', 'moog956', 'moog962', 'moog992', 'moog993', 'numpadPlus',
   'peertube', 'polyseqz', 'pong', 'samsloop', 'score', 'sequencer',
   'slewSwitch', 'synesthesia', 'timelorde', 'tvLibrarian', 'twotracks',
-  'videobox', 'videocube', 'videovarispeed',
+  'videobox', 'videocube', 'videovarispeed', 'vstFx', 'vstInstrument',
 ]);
 
 // The EXACT key set of EXEMPT_OUTPUT_EMIT, sorted. `<moduleType>.<outputPortId>`

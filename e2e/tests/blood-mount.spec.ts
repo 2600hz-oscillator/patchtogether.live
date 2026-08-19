@@ -23,6 +23,17 @@
 
 import { test, expect } from '@playwright/test';
 import { spawnPatch } from './_helpers';
+import { BOOT_MS, SLOW_BOOT_TEST_TIMEOUT_MS } from '../_helpers/boot-budget';
+
+// BOUNDS, not assertions (boot-budget.ts): this spec rode the DEFAULT 30 s
+// test timeout with a flat 20 s poll, and a COLD Build-WASM boot (LFS-served
+// shareware fetch + wasm compile + heap-sensitive Build init) does not fit
+// that on a 2-core SwiftShader VM. Measured on #1967: when two new specs
+// re-packed the shard plan, this spec retry-recovered on THREE consecutive
+// runs (attempt 1 cut at 30 s, warm attempt 2 green in seconds; 3/3 green
+// locally in ~4 s) — the runner lottery boot-budget.ts documents, so it takes
+// the shared bounds like every other boot-heavy spec. No assertion changed.
+test.setTimeout(SLOW_BOOT_TEST_TIMEOUT_MS);
 
 test('BLOOD card mounts, idle surface paints, and boots out-of-box from bundled shareware', async ({
   page,
@@ -58,7 +69,9 @@ test('BLOOD card mounts, idle surface paints, and boots out-of-box from bundled 
         const idle = await page.getByTestId('blood-load').isVisible().catch(() => false);
         return ready || error || idle;
       },
-      { timeout: 20_000 },
+      // The cold-boot bound (see header): BOOT_MS scales for the CI renderer;
+      // the wait exits the instant a terminal state paints.
+      { timeout: BOOT_MS * 2 },
     )
     .toBe(true);
 
