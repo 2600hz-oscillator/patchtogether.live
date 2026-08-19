@@ -77,6 +77,7 @@ import {
   swolevcoModHzText,
   swolevcoShapeText,
 } from '$lib/ui/modules/swolevco-face-model';
+import { moogCp3BusText, moogCp3FaceParams } from '$lib/ui/modules/moogcp3-face-model';
 import {
   NINELIVES_TAP_MULTIPLIERS,
   ninelivesFaceParams,
@@ -728,6 +729,22 @@ const FACE_READOUT_VALUES: Readonly<Record<string, FaceReadoutValue>> = {
   'swolevco-mod-hz': (read) => swolevcoModHzText(swolevcoFaceParams(read)),
   'swolevco-mod-lock': (read) => swolevcoLockText(swolevcoFaceParams(read)),
   'swolevco-shape': (read) => swolevcoShapeText(swolevcoFaceParams(read)),
+
+  // ── MOOG CP3 ─────────────────────────────────────────────────────────────
+  // ONE number, and it is the whole argument for that face. `cp3ChannelGain` is
+  // `knob·2`, so UNITY IS AT THE DIAL'S MIDPOINT and all five knobs SHIP AT
+  // MAX: four correlated unity inputs at the shipped defaults sum to a bus peak
+  // of 8.0000 — +18.062 dB over full scale, 10.0000 with EXT 4 also patched —
+  // with NO clamp or saturator anywhere in the path (measured on the shipping
+  // worklet; the derived figure and the measured worst-case peak AGREE at five
+  // settings).
+  //
+  // The negative control a knob readback fails: sweep ATTENUATOR 4 from 1 to 0
+  // and the bus moves +18.1 -> +15.6 dB while the CH 4 DIAL STAYS AT 1.00.
+  // ⚠ CH 4 and ATT 4 are bit-exactly INTERCHANGEABLE in today's code (the bus
+  // sees only their product), which is why the formula multiplies them; #1884
+  // proposes changing that and is audible, so it is not in the face PR.
+  'moogcp3-bus-db': (read) => moogCp3BusText(moogCp3FaceParams(read)),
 
   // ── MARBLES ──────────────────────────────────────────────────────────────
   // ELEVEN values, every one a BARE number or state — no sentence anywhere on

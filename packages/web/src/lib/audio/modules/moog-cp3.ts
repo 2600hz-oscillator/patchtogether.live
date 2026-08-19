@@ -83,6 +83,139 @@ export const moogCp3Def: AudioModuleDef = {
     { id: 'attenuator4', label: 'Att 4', defaultValue: 1, min: 0, max: 1, curve: 'linear' },
   ],
 
+  // ── THE FACEPLATE (PF-20) ────────────────────────────────────────────────
+  //
+  // WHAT THE CP3 IS FOR. It is the console: four things in, one bus out, plus
+  // the same bus inverted, plus a splitter, plus two fixed reference voltages.
+  // The verb is BALANCING. What it does that `attenumix` does not: it can
+  // BOOST — its knobs are gain, not attenuation — and it publishes the inverted
+  // bus at the same time.
+  //
+  // ⚠ THE MERIT IS THE READOUT, NOT THE RANKING, and this comment says so
+  // plainly rather than dressing a channel-numbered mixer's channel order up as
+  // a redesign. `order` IS declaration order. Channel identity is the only
+  // ordering a mixer has, and inventing another would make the face disagree
+  // with the panel for no gain. The one thing worth adding is that CH 1 is rank
+  // 1 on merit and not merely on being first: IN 1 is ALSO the MULTIPLE source
+  // — measured, `multiple_one/two/three` are bit-identical to each other and to
+  // `in1` (max abs diff 0.000000000000) — so channel 1 is the only channel with
+  // a second job.
+  //
+  // THE NUMBER THE FACE EXISTS TO PRINT. Measured on the SHIPPING worklet with
+  // a 1 kHz sine, Hann-windowed single-bin DFT past the 80 Hz knob smoother
+  // (instrument controls first: a known 0.5 sine reads 0.500000 at its own bin
+  // and 0.000000 at a wrong one, and a zero-crossing estimate agrees):
+  //
+  //   ch1 0.00 -> 0.00000      ch1 0.75 -> 1.50000  (+3.522 dB)
+  //   ch1 0.25 -> 0.50000      ch1 1.00 -> 2.00000  (+6.021 dB)  <- the DEFAULT
+  //   ch1 0.50 -> 1.00000  (UNITY — the dial's MIDPOINT)
+  //
+  // `cp3ChannelGain(k) = clamp(k,0,1)·2`, so UNITY IS AT THE MIDPOINT AND ALL
+  // FIVE KNOBS SHIP AT MAX. Four correlated unity inputs at the shipped
+  // defaults sum to a bus peak of 8.0000 — +18.062 dB over full scale, 10.0000
+  // with EXT 4 also patched — and there is NO CLAMP OR SATURATOR anywhere in
+  // the path (checked: peak > 1 is true). Nothing in the app said this.
+  //
+  // TIER LADDER AS A SENTENCE. `primaryAudioOutPortId` resolves to
+  // `out_positive`, so the glyph BINDS as `{kind:'live-audio'}` on the (+) BUS
+  // — and naming WHICH tap matters (#1692 / Q20). It is the right one: the
+  // meter is the surface that shows the +18 dB while it is happening. Compact
+  // cap is therefore LANE_ROW_MAX_CELLS_WITH_GLYPH = 2: at mini CH 1; at
+  // compact CH 1 + CH 2 beside the live bus meter; at plate and dock all five.
+  //
+  // PAGES (2): `channels` = ch1..ch4 · `4th input` = attenuator4. The second
+  // page is ONE control and earns its header on identity — the attenuated
+  // external 4th is the CP3's distinguishing feature and the reason this module
+  // is not just `attenumix`.
+  //
+  // ⚠ AND THE FACE IS DRAWN AGAINST TODAY'S CODE, WHICH SHIPS A REDUNDANT
+  // CONTROL DIMENSION. `cp3Mix` applies `(in4+ext4)·atten4·g4`, so the bus sees
+  // only the PRODUCT of CH 4 and ATT 4 — the two knobs are BIT-EXACTLY
+  // INTERCHANGEABLE. Measured with different signals on the two jacks (300 Hz
+  // on IN 4, 700 Hz on EXT 4), swapping the pair at (0.5,1), (0.25,0.8),
+  // (0.2,0.9) and (0,1): bit-identical every time, max abs diff
+  // 0.000000000000. NEGATIVE CONTROL on a genuinely non-interchangeable pair
+  // (CH 1 vs CH 4): not bit-identical, max abs diff 2.106857. ⚠ This CORRECTS
+  // the earlier reading that the two "look the same and are not" — they look
+  // the same and ARE. #1884 proposes changing the equation so they are not; that
+  // is AUDIBLE on any saved rack with IN 4 patched and ATT 4 off unity and it
+  // moves `art/baselines/moog-cp3/out_positive.f32`, so it is deliberately NOT
+  // in this PR. The page for ATT 4 is honest either way — it is the 4th input's
+  // trim — and the redundancy is stated here rather than hidden.
+  //
+  // NO `bareCells`: under a `channels` heading `Ch1`..`Ch4` are the only thing
+  // separating four identical linear knobs (the tidyVco A/D/S/R case).
+  // NO SIDEBAR: it is the one contract-projected `face` field and everything a
+  // sidebar would say here is one number.
+  face: {
+    order: ['ch1', 'ch2', 'ch3', 'ch4', 'attenuator4'],
+
+    pages: [
+      {
+        id: 'channels',
+        label: 'channels',
+        hint: 'four gains into one bus — unity is the MIDPOINT, and they ship at max',
+        controls: ['ch1', 'ch2', 'ch3', 'ch4'],
+      },
+      {
+        id: 'fourth',
+        label: '4th input',
+        hint: 'trims IN 4 + EXT 4 before the channel gain',
+        controls: ['attenuator4'],
+      },
+    ],
+
+    // The live (+) BUS. Named rather than assumed: `primaryAudioOutPortId`
+    // takes the first `audio` output, which is `out_positive` — the tap that
+    // carries the mix. Silent at spawn (nothing patched → the bus is
+    // bit-exactly zero), which is the mixer/reverb determinism case the VRT
+    // roster already names, NOT the analogVco free-running one: it needs no
+    // mask and no freeze argument.
+    glyph: 'meter',
+
+    // THE HERO: one derived readout and no promoted control — promoting one of
+    // four interchangeable channel gains would be an arbitrary claim (the
+    // attenumix precedent).
+    //
+    // ⚠ ONE NUMBER, IN dB, AND THE SHAPE IS DELIBERATE. The obvious form is
+    // `x8.00 · +18.1 dB`, and that is very close to the composite the owner
+    // deleted from mixmstrs — *"[MASTER 1.00 / BUS <= 8.60x · +18.7 dB / ASLEEP
+    // 16 asleep] these numbers and text should go away"*. What the faces merged
+    // since then carry is a BARE VALUE (moog923's `-24.8 dB`, swolevco's
+    // `261.6 Hz`), so this prints one number with one unit and the gain ratio
+    // lives in this comment and in `docs`, which is where an explanation
+    // belongs. If a reviewer wants the strip gone entirely, deleting this one
+    // entry is the whole change.
+    //
+    // It is a JOIN over all five knobs that no single readback can perform, and
+    // it is validated against the instrument rather than derived on paper:
+    // `2·(ch1+ch2+ch3+ch4·attenuator4)` vs the measured worst-case bus peak at
+    // five settings — x8.0000 / x4.0000 / x2.0000 / x6.0000 / x3.0000 — AGREE
+    // at every one.
+    hero: {
+      readouts: [{ label: 'bus', valueId: 'moogcp3-bus-db' }],
+    },
+
+    // ⚠ THE REAR CARD IS AUTHORED HERE BECAUSE THE DERIVED DEFAULT WOULD SPLIT
+    // BY CABLE DOMAIN, and the domains are not what a player needs to know.
+    // Measured bit-exactly: sweeping EVERY one of the five knobs 1.0 → 0.0
+    // leaves `multiple_one`, `multiple_two`, `multiple_three`, `plus_twelve`
+    // and `minus_six` BIT-IDENTICAL. So of seven jacks, TWO carry the mix,
+    // THREE are one passthrough of IN 1 copied three times, and TWO are
+    // constants (+2.400000 and −1.200000, ratio exactly −2 — i.e. 240 % and
+    // 120 % of the rack's own ±1 full-scale CV convention, on no dial). A rail
+    // grouped by domain would put the bus and the splitter in one section and
+    // send someone hunting for the knob that changes a multiple. These three
+    // groups say which jacks the panel controls and which it does not.
+    rear: {
+      groups: [
+        { id: 'bus', label: 'bus', direction: 'output', ports: ['out_positive', 'out_negative'] },
+        { id: 'multiple', label: 'multiple (in 1)', direction: 'output', ports: ['multiple_one', 'multiple_two', 'multiple_three'] },
+        { id: 'reference', label: 'reference', direction: 'output', ports: ['plus_twelve', 'minus_six'] },
+      ],
+    },
+  },
+
   docs: {
     explanation:
       "A clean-room recreation of the Moog CP3 / CP3A Console Panel mixer — the System's multi-function summing mixer. Four channels (IN 1–4) each have their own level fader and are summed to a (+) OUTPUT; a (−) OUTPUT carries the same mix phase-inverted (for difference/cancellation patches or feeding a second chain out of phase). The 4th channel adds an EXTERNAL jack (EXT 4) that's summed with IN 4 then trimmed by its own attenuator. The panel also provides a 1→3 MULTIPLE (IN 1 fanned, unaltered, to three jacks for splitting a signal) and two constant trunk reference voltages (+12 V and −6 V, normalized) for offsetting CVs. It mixes audio AND CV transparently (the sum is DC- and polarity-correct). Mental model: a four-into-one mixer with a built-in inverter, a signal splitter, and a couple of fixed-voltage 'rails' on the side.",

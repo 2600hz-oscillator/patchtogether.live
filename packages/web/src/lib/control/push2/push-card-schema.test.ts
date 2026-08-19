@@ -663,6 +663,30 @@ describe('the AUTHORED push cards', () => {
     expect(generic[0]).not.toBe('bipolar');
   });
 
+  it('moogCp3: promotion moved the card GENERIC → FACE, and it did NOT re-order it', () => {
+    // THE FACEPLATE QUEUE · Q36, and it is the entry that shows a face can be
+    // worth promoting WITHOUT re-ranking anything. `face.order` IS declaration
+    // order here, deliberately: channel identity is the only ordering a mixer
+    // has, and inventing another would make the face disagree with the panel.
+    //
+    // So the assertion is the INVERSE of featurecv's: the tier CHANGES (the
+    // card is now resolved from the face) while the roster is identical. Both
+    // halves matter — if the ids ever diverge, someone has re-ranked a
+    // channel-numbered mixer and that wants review, not absorption.
+    const def = defByType('moogCp3');
+    const faced = resolvePushCardControls(def, {});
+    const generic = resolvePushCardControls({ ...def, face: undefined }, {});
+    expect(faced.source, 'a promoted module resolves through the FACE tier').toBe('face');
+    expect(generic.source).toBe('generic');
+    expect(pushCardParams(faced).map((p) => p.id)).toEqual(
+      pushCardParams(generic).map((p) => p.id),
+    );
+    // …and CH 1 leads either way, which is the one rank with a DSP argument:
+    // IN 1 is also the MULTIPLE source, so channel 1 is the only channel with a
+    // second job.
+    expect(pushCardParams(faced).map((p) => p.id)[0]).toBe('ch1');
+  });
+
   it('adsr REORDERS the face ranking into ENVELOPE order', () => {
     const ENVELOPE = ['attack', 'decay', 'sustain', 'release'];
     expect(ids('adsr')).toEqual(ENVELOPE);

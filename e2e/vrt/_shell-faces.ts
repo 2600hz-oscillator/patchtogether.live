@@ -532,6 +532,18 @@ export const FACES = [
   // identical frame to frame. The AudioContext freeze this file applies is
   // therefore a belt on a brace for this entry, not the thing holding it.
   { type: 'moog923', pages: 2 },
+  // MOOG CP3 (2026-08-19) — two declared pages (`channels`, `4th input`), and
+  // `pages` is the POST-hero-split band count: the hero declares READOUTS ONLY,
+  // so no key leaves a band. Five knob cells, one packed dock row.
+  //
+  // ⚠ ITS GLYPH BINDS `live-audio` ON `out_positive` — the (+) bus — and it is
+  // SILENT AT SPAWN, which is the mixer/reverb determinism case this file
+  // already names and NOT the analogVco free-running one. The module has no
+  // generator in it: with nothing patched the bus is bit-exactly zero, so the
+  // meter reads zero whether the graph is frozen or running. No mask, and the
+  // AudioContext freeze is a belt on a brace here rather than the thing holding
+  // the scene.
+  { type: 'moogCp3', pages: 2 },
   // MIXMSTRS — the full mixer, and the largest face in this roster by 1.86x
   // (91 cells against pentemelodica's 49).
   //

@@ -1050,6 +1050,38 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // picture of a path it is not. `noise` decided the other way on the opposite
   // facts and both decisions are in their face comments.
   'moog923',
+  // THE FACEPLATE QUEUE · Q36 — the CP3 mixer (2026-08-19). Five params, five
+  // inputs, SEVEN outputs, two pages.
+  //
+  // ⚠ THE MERIT IS THE READOUT, NOT THE RANKING, and the face comment says so
+  // plainly rather than presenting a channel-numbered mixer's channel order as
+  // a redesign. `order` IS declaration order.
+  //
+  // THE FINDING: `cp3ChannelGain(k) = clamp(k,0,1)·2`, so UNITY IS AT THE DIAL'S
+  // MIDPOINT and every one of the five knobs SHIPS AT MAX. Measured on the
+  // shipping worklet (1 kHz sine, Hann-windowed single-bin DFT past the 80 Hz
+  // smoother, with the instrument's own positive control first — a known 0.5
+  // sine reads 0.500000 at its bin and 0.000000 at a wrong one): four
+  // correlated unity inputs sum to a bus peak of 8.0000, i.e. +18.062 dB OVER
+  // FULL SCALE, 10.0000 with EXT 4 also patched, and there is NO clamp or
+  // saturator anywhere in the path. Nothing in the app said so.
+  //
+  // ⚠ OF SEVEN JACKS, TWO ARE THE KNOBS' BUSINESS. Sweeping every one of the
+  // five knobs 1.0 -> 0.0 leaves `multiple_one/two/three`, `plus_twelve` and
+  // `minus_six` BIT-IDENTICAL; the three multiples are bit-identical to each
+  // other and to `in1`; the two references are constants (+2.400000 /
+  // -1.200000, ratio exactly -2). The face groups them on the rear card so
+  // nobody hunts for the knob that changes a multiple.
+  //
+  // ⚠ AND THE 4TH CHANNEL SHIPS A REDUNDANT CONTROL DIMENSION. `cp3Mix` applies
+  // `(in4+ext4)·atten4·g4`, so the bus sees only the PRODUCT: swapping CH 4 and
+  // ATT 4 with different signals on the two jacks is BIT-IDENTICAL at every
+  // pair tried (max abs diff 0.000000000000), against a non-interchangeable
+  // control pair that differs by 2.106857. This CORRECTS the earlier reading
+  // that the two "look the same and are not". #1884 would change the equation;
+  // that is audible on any saved rack and moves an ART baseline, so the face is
+  // drawn against TODAY'S code with the redundancy stated rather than hidden.
+  'moogCp3',
   // THE FACEPLATE QUEUE · Q7 — the full mixer (2026-08-15). 91 params, 111
   // input ports: 1.86x the previous largest face (pentemelodica, 49 cells).
   //
