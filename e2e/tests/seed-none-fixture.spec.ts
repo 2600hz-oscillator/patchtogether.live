@@ -15,6 +15,7 @@
 // like "the tests pass" from one side only.
 
 import { test, expect } from './_fixtures';
+import { BOOT_MS } from '../_helpers/boot-budget';
 
 /** Every node id on the graph. */
 async function nodeIds(page: import('@playwright/test').Page): Promise<string[]> {
@@ -79,7 +80,7 @@ test('?seed=none suppresses SEEDING ONLY — the shell chrome is untouched', asy
   // remove starter CONTENT, not to change what the app looks like.
   await page.goto('/rack?shell=legacy&seed=none');
   await page.waitForLoadState('networkidle');
-  await expect(page.getByTestId('workflow-topbar')).toBeVisible();
+  await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: BOOT_MS });
   await expect(page.getByTestId('workflow-file-trigger')).toBeVisible();
   await expect(page.getByTestId('workflow-leftbar')).toBeVisible();
 });

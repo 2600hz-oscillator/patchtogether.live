@@ -28,6 +28,7 @@ import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 import { pressFlipKey } from './_flip-key';
 import { readScopePeakOverWindow, runFor } from './_module-coverage-helpers';
+import { BOOT_MS } from '../_helpers/boot-budget';
 
 /** Collect page errors + console errors for the zero-pageerror asserts. */
 function collectErrors(page: Page): string[] {
@@ -55,7 +56,7 @@ async function answerWidthChooser(page: Page, mode: 'left' | 'right' | 'both'): 
 
 async function gotoWorkflow(page: Page): Promise<void> {
   await page.goto('/rack?shell=legacy');
-  await expect(page.getByTestId('workflow-topbar')).toBeVisible();
+  await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: BOOT_MS });
   await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });
 }
 
@@ -364,7 +365,7 @@ test.describe('canvas cards keep their full PatchPanel handle stack', () => {
   test('a legacy-card lane node mounts every handle and offers the dock menu', async ({ page }) => {
     const errors = collectErrors(page);
     await page.goto('/rack?shell=legacy');
-    await expect(page.getByTestId('workflow-topbar')).toBeVisible();
+    await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: BOOT_MS });
     await page.locator('.svelte-flow__pane').waitFor({ state: 'visible' });
 
     await spawnPatch(page, [{ id: 'mx', type: 'mixer', position: { x: 300, y: 200 } }]);

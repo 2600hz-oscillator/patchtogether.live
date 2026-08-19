@@ -30,6 +30,7 @@
 
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
+import { BOOT_MS } from '../_helpers/boot-budget';
 
 /** Read the live graph value of one param (null when unset). */
 function readParam(page: Page, nodeId: string, pid: string): Promise<number | null> {
@@ -75,7 +76,7 @@ test.describe('adsr curated face — the ranked tiers', () => {
     page,
   }) => {
     await page.goto('/rack');
-    await expect(page.getByTestId('workflow-topbar')).toBeVisible();
+    await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: BOOT_MS });
     await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });
     await spawnPatch(page, [{ id: 'env', type: 'adsr', position: { x: 460, y: 240 } }]);
 

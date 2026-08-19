@@ -33,6 +33,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 import { pressFlipKey } from './_flip-key';
+import { BOOT_MS } from '../_helpers/boot-budget';
 
 /** The two representative migrations. `pages` = declared face.pages; `holes` =
  *  declared inputs + outputs (the rear renders exactly one hole per port). */
@@ -74,7 +75,7 @@ const NODE = 'b2';
 
 async function gotoWorkflow(page: Page, opts: { shell: boolean }): Promise<void> {
   await page.goto(opts.shell ? '/rack' : '/rack?shell=legacy');
-  await expect(page.getByTestId('workflow-topbar')).toBeVisible();
+  await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: BOOT_MS });
   await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });
 }
 
