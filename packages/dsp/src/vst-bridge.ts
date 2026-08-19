@@ -153,6 +153,12 @@ class VstBridgeProcessor extends AudioWorkletProcessor {
     const outL = outputs[0]?.[0];
     const outR = outputs[1]?.[0];
     const frames = outL?.length ?? 128;
+    // MONO NORMAL (fx path): a mono patch into IN L must not leave the
+    // plugin's right input — and therefore OUT R — at digital silence.
+    // The right channel falls back to the left when unpatched, in BOTH the
+    // ring write and the local bypass (mono-normal-not-defeated gate).
+    const inL = inputs[IN_L]?.[0];
+    const inR = inputs[IN_R]?.[0] ?? inL;
 
     // ---- 1. poly/mono CV → MIDI (BEFORE the audio ring write — §5c) -------
     if (this.midiRing) {
@@ -197,8 +203,6 @@ class VstBridgeProcessor extends AudioWorkletProcessor {
 
     // ---- 2. graph → bridge (audio-out ring; the frame clock) --------------
     if (this.outRing && this.outRing.free >= frames) {
-      const inL = inputs[IN_L]?.[0];
-      const inR = inputs[IN_R]?.[0];
       this.outRing.write(frames, (ch, i) =>
         ch === 0 ? (inL?.[i] ?? 0) : (inR?.[i] ?? 0),
       );
@@ -227,8 +231,6 @@ class VstBridgeProcessor extends AudioWorkletProcessor {
       }
     } else if (this.mode === 'fx') {
       // LOCAL bypass: transport down must not mute the lane.
-      const inL = inputs[IN_L]?.[0];
-      const inR = inputs[IN_R]?.[0];
       for (let i = 0; i < frames; i++) {
         if (outL) outL[i] = inL?.[i] ?? 0;
         if (outR) outR[i] = inR?.[i] ?? 0;

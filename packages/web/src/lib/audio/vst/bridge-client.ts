@@ -75,6 +75,14 @@ const CHANNELS = 2;
 const MIDI_RING_EVENTS = 1024;
 
 export function vstBridgeUrl(): string {
+  // E2E seam: a page-injected override (addInitScript in the mocked-helper
+  // specs, so the mock server can bind an ephemeral port) wins, then the
+  // build-time env, then the localhost default. Read on the main thread at
+  // start() time — the worker receives the resolved URL.
+  const g = globalThis as unknown as { __vstBridgeUrlOverride?: string };
+  if (typeof g.__vstBridgeUrlOverride === 'string' && g.__vstBridgeUrlOverride.length > 0) {
+    return g.__vstBridgeUrlOverride;
+  }
   const env = (import.meta as unknown as { env?: Record<string, string> }).env;
   return env?.VITE_VST_BRIDGE_URL || VST_DEFAULT_URL;
 }

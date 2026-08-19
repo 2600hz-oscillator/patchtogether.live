@@ -22,12 +22,17 @@
   let {
     id,
     kinds,
+    sendPlanes,
     sampleRate,
   }: {
     /** The graph node id (= the helper-side clientId). */
     id: string;
     /** Plugin kinds this card lists in its picker. */
     kinds: readonly VstPluginKind[];
+    /** This card's transport mode (fx sends audio planes; instrument sends
+     *  clock blocks) — lets CONNECT create the connection when the engine
+     *  entry does not exist yet (the es9 dead-button lesson). */
+    sendPlanes: boolean;
     /** The engine AudioContext rate — a reconnect must hello at the SAME
      *  rate the worklet runs at (the bridge renders at hello.rate). */
     sampleRate: () => number;
@@ -99,7 +104,7 @@
     {#if connState === 'connected'}
       <button class="linkish" onclick={() => stopVstBridge(id)}>disconnect</button>
     {:else if connState !== 'connecting' && connState !== 'unsupported'}
-      <button class="linkish" data-testid="vst-connect-{id}" onclick={() => restartVstBridge(id, sampleRate())}>connect</button>
+      <button class="linkish" data-testid="vst-connect-{id}" onclick={() => restartVstBridge(id, sampleRate(), { clientId: id, sendPlanes })}>connect</button>
     {/if}
   </div>
 

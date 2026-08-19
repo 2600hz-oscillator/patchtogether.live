@@ -37,7 +37,7 @@
   <ModuleTitle {id} {data} defaultLabel="VST INSTRUMENT" />
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
-    <VstBridgePanel {id} kinds={['instrument', 'generator', 'musicEffect']} {sampleRate} />
+    <VstBridgePanel {id} kinds={['instrument', 'generator', 'musicEffect']} sendPlanes={false} {sampleRate} />
   </PatchPanel>
 </div>
 

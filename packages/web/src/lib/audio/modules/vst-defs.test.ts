@@ -88,7 +88,7 @@ describe('both defs — docs completeness at the surface (STRICT_DOCS backs this
   for (const def of [vstInstrumentDef, vstFxDef]) {
     it(`${def.type}: every port carries an authored docs entry + a real explanation`, () => {
       const docs = def.docs!;
-      expect(docs.explanation.length).toBeGreaterThan(200);
+      expect(docs.explanation?.length ?? 0).toBeGreaterThan(200);
       // The multiplayer caveat is a required disclosure (plan §7): audio
       // renders only on the machine running the helper + plugin.
       expect(docs.explanation).toMatch(/helper/i);

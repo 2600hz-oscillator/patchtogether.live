@@ -79,6 +79,8 @@ export const vstInstrumentDef: AudioModuleDef = {
   },
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
-    return createVstHandle(ctx, node, 'instrument');
+    // The 'vst-bridge' literal lives HERE (typed — only the real name
+    // compiles) so this def's source names its worklet (see vst-fx.ts).
+    return createVstHandle(ctx, node, 'instrument', 'vst-bridge');
   },
 };

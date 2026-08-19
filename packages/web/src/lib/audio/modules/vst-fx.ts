@@ -63,6 +63,10 @@ export const vstFxDef: AudioModuleDef = {
   },
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
-    return createVstHandle(ctx, node, 'fx');
+    // The 'vst-bridge' literal lives HERE (typed — only the real name
+    // compiles) so this def's source names its worklet: mono-normal-scan
+    // attributes the worklet's in_r→in_l mono normal to this module by
+    // finding the processor name in the def file.
+    return createVstHandle(ctx, node, 'fx', 'vst-bridge');
   },
 };

@@ -30,8 +30,15 @@ import {
 import { createWorkletNode } from '$lib/audio/worklet-guard';
 import workletUrl from '@patchtogether.live/dsp/dist/vst-bridge.js?url';
 
-const PROCESSOR_NAME = 'vst-bridge';
 const loadedContexts = new WeakSet<BaseAudioContext>();
+
+/** The one registered processor. Each DEF passes this literal at its call
+ *  site (typed to refuse anything else) so the def file carries the
+ *  def→worklet link in its own source — mono-normal-scan.ts resolves a
+ *  stereo def to its DSP file by finding the processor-name literal in the
+ *  def's code, and a def relying on a constant hidden here would break that
+ *  attribution (findStereoModules → dspFile null). */
+export type VstProcessorName = 'vst-bridge';
 
 /** Worklet input indices — must mirror packages/dsp/src/vst-bridge.ts. */
 export const VST_IN_L = 0;
@@ -55,6 +62,7 @@ export async function createVstHandle(
   ctx: AudioContext,
   node: ModuleNode,
   mode: VstCardMode,
+  processorName: VstProcessorName,
 ): Promise<AudioDomainNodeHandle> {
   if (!loadedContexts.has(ctx)) {
     await ctx.audioWorklet.addModule(workletUrl);
@@ -66,7 +74,7 @@ export async function createVstHandle(
   // inputs deliver EMPTY channel arrays, which is how the worklet detects
   // "vel unpatched → DEFAULT_VELOCITY" — so liveness comes from a zero-gain
   // pin (below), never from a silence fan-in.
-  const worklet = createWorkletNode(node, ctx, PROCESSOR_NAME, {
+  const worklet = createWorkletNode(node, ctx, processorName, {
     numberOfInputs: NUM_INPUTS,
     numberOfOutputs: 2,
     outputChannelCount: [1, 1],
@@ -132,6 +140,9 @@ export async function createVstHandle(
     setParam() {
       // No numeric params — the card drives the bridge over the control
       // plane (mount/editor/state), not through ParamDefs.
+    },
+    readParam() {
+      return undefined;
     },
     read(key) {
       if (key === 'sampleRate') return ctx.sampleRate;

@@ -1388,6 +1388,10 @@ export function buildModuleManifest(
       // SAVE/LOAD/QUEUE plumbing used by Sequencer / DRUMSEQZ / SCORE.
       // Not a ModuleDef.
       if (file === 'transport-helpers.ts') return false;
+      // Shared factory plumbing for the two VST BRIDGE cards (worklet loader
+      // + rings + owner wiring, used by vst-instrument.ts / vst-fx.ts).
+      // Not a ModuleDef.
+      if (file === 'vst-bridge-shared.ts') return false;
       if (file === 'transport-cv.ts') return false;
       if (file === 'transport-card.ts') return false;
       // Shared lookahead-vs-sounding-now playhead helper used by Sequencer /

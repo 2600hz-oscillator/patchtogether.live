@@ -248,9 +248,20 @@ export function stopVstBridge(nodeId: string): void {
   entries.get(nodeId)?.client.stop();
 }
 
-export function restartVstBridge(nodeId: string, sampleRate: number): void {
+export function restartVstBridge(
+  nodeId: string,
+  sampleRate: number,
+  config?: VstBridgeConfigLike,
+): void {
   const e = entries.get(nodeId);
-  if (!e) return; // no engine node yet — nothing to reconnect
+  if (!e) {
+    // No connection yet (the engine has not reconciled this node, or the
+    // user hit CONNECT after a release). "Connect" must CONNECT — silently
+    // doing nothing here is half of what made the es9 button look dead.
+    // Needs the caller's config, since only the card knows its mode.
+    if (config) acquireVstBridge(nodeId, sampleRate, config);
+    return;
+  }
   if (!e.client.supported) return;
   e.client.stop();
   e.client.start(sampleRate, e.config);
