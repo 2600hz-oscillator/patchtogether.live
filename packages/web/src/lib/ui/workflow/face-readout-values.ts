@@ -84,6 +84,7 @@ import {
   swolevcoShapeText,
 } from '$lib/ui/modules/swolevco-face-model';
 import { moogCp3BusText, moogCp3FaceParams } from '$lib/ui/modules/moogcp3-face-model';
+import { moog993RoutingText } from '$lib/ui/modules/moog993-face-model';
 import {
   moog911FaceParams,
   moog911FallText,
@@ -729,6 +730,14 @@ const FACE_READOUT_VALUES: Readonly<Record<string, FaceReadoutValue>> = {
   'spirographs-figure-1': (read) => spirographsFigureText(1, read),
   'spirographs-figure-2': (read) => spirographsFigureText(2, read),
   'spirographs-figure-3': (read) => spirographsFigureText(3, read),
+  // ── MOOG 993 ─────────────────────────────────────────────────────────────
+  // HOW THE SWITCHBOARD IS PATCHED — a join over all three routers, naming the
+  // two uses the docs describe (a 1→3 multiple, or three outs split between two
+  // clocks). No single switch can print it: hold `route1` at FROM 1 and the
+  // module is in two genuinely different states depending on the other two.
+  // ⚠ It reads through the def's own `moog993RouteState` banding, so it cannot
+  // disagree with the audio for the values #1911 was about.
+  'moog993-routing': (read) => moog993RoutingText(read),
   // ── MOOG 923 ─────────────────────────────────────────────────────────────
   // TWO INSTRUMENTS ON ONE PANEL SHARING NO SIGNAL PATH, so the readouts split
   // the same way and each half is the other's negative control: `lpCutoff` /
