@@ -1050,6 +1050,86 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // picture of a path it is not. `noise` decided the other way on the opposite
   // facts and both decisions are in their face comments.
   'moog923',
+  // THE FACEPLATE QUEUE · Q34 — the contour generator (2026-08-19). Four
+  // params, five inputs, two `cv` outputs, two honest pages, no rail.
+  //
+  // ⚠ THE FINDING IS THAT THREE OF THE FOUR DIALS PRINT A DURATION THE MODULE
+  // DOES NOT DELIVER, and one of the three is wrong by the amount a DIFFERENT
+  // knob is turned. `egCoeff` makes each T a TIME CONSTANT (a ~99.3 % approach)
+  // while each stage exits on its OWN threshold — attack at `level >= 0.999`,
+  // decay at `|level − esus| <= 1e-3`, release at `level <= 1e-4` — so a stage
+  // takes `T · ln(k)/5` and only the attack's `k` is a constant. Measured on
+  // the SHIPPING worklet at 48 kHz, held gate, at the def's own defaults: the
+  // dials read 10 / 200 / 400 ms and the module delivers 13.833 / 239.667 /
+  // 695.958, a 949.458 ms contour against a dial sum of 610 (×1.5565). Holding
+  // T2 at its default and sweeping ESUS moves the delivered settle 276.313 →
+  // 262.063 → 239.667 → 92.104 → 0.021 ms **while the T2 dial reads 200.000 at
+  // every one of them**. Nothing in the product said any of this; the three
+  // hero readouts now print it live, and each is the other two's negative
+  // control because `rise` is exactly ESUS-invariant and the other two are not.
+  //
+  // ⚠ THE INSTRUMENT WAS WRONG FIRST, in the way the queue's own spec records:
+  // detecting the SUSTAIN stage by comparing a `Float32Array` sample to the
+  // float64 literal `0.6` reports ZERO sustain samples, which reads exactly
+  // like "this module never sustains". `Math.fround` fixes it, and what caught
+  // it was the POSITIVE control — a HELD gate certainly sustains, so a probe
+  // reporting 0 there is broken rather than the module (it reports 275 833).
+  //
+  // ⚠ INERTNESS DISCRIMINATES NOTHING HERE, which is worth saying because the
+  // three faces before this one were each carried by a dead-at-spawn finding.
+  // With `gate` unpatched, sweeping EACH of the four across its full declared
+  // range leaves BOTH outputs bit-identical — all four are dead at spawn, so
+  // #1758's habit finds four dead knobs and separates none of them. The ranking
+  // rests on the time law instead. Positive control: with the gate held, T1, T2
+  // and ESUS all move the output and T3 correctly does not (it needs a fall).
+  //
+  // NO GLYPH, and it is forced rather than chosen: both outputs are `cv`, so
+  // `primaryAudioOutPortId` returns null and every kind except `'envelope'`
+  // falls through to the dead `{kind:'static'}` — and `'envelope'` does not
+  // rescue it either, because that arm keys on four HARDCODED param names
+  // (attack/decay/sustain/release) and this module's are t1/t2/esus/t3 by
+  // design. #1888 carries the declaration-shaped fix; ⚠ it is an ENABLER, not
+  // a blocker, and its comment records why a role mapping ALONE would draw the
+  // DIAL contour and so restate the very defect this face exists to expose.
+  'moog911',
+  // THE FACEPLATE QUEUE · Q35 — the dual trigger delay (2026-08-19). Three
+  // params, two `gate` in, two `gate` out, two honest pages, no rail.
+  //
+  // ⚠ THE MERIT IS ONE NUMBER THE MODULE COULD NOT PRINT: the clock rate above
+  // which the output is COMPLETELY SILENT. There is no trigger queue — an edge
+  // arriving inside a running countdown RE-ARMS it — so a clock at or above
+  // `1/delay` never lets one finish. Measured on the SHIPPING worklet at the
+  // 0.1 s default, rising edges on `out1` over a 3.0 s render: 4 Hz -> 12/12,
+  // 8 Hz -> 24/24, 9.9 Hz -> 29/30, then 10 Hz -> 0/30, 16 Hz -> 0/48,
+  // 32 Hz -> 0/96. A CLIFF, bisected to 9.998958 Hz against a predicted
+  // 10.000000. Positive control: the same 16 and 32 Hz clocks at the 0.002 s
+  // minimum give 48/48 and 96/96. That is #1886 — FILED, NOT FIXED here, because
+  // adding a queue changes what the module sounds like and belongs to the
+  // owner's ears; the face makes it visible and the docs now state it.
+  //
+  // ⚠ STOP 2 HAD A REAL ITEM AND `options[]` PAID IT FOR FREE. The card renders
+  // a live three-state NAME (OFF / PARALLEL / SERIES) from an exported const the
+  // shell never reads, so a def-driven face would have printed `0.00` — a
+  // functional-parity regression, which is a hard requirement rather than a
+  // trade. `mode` was already `curve: 'discrete'`, so declaring the roster costs
+  // no contract line and no attest, and the names come back from the
+  // DECLARATION instead of from card markup.
+  //
+  // ⚠ AND THE OBVIOUS DISCRETE-MISMATCH FINDING IS FALSE HERE. `Knob.svelte` has
+  // no `discrete` branch and the pure core clamps `mode <= 0 … >= 2`, which
+  // together predict the card's name disagreeing with the DSP over HALF the
+  // dial. Measured: 0 of 41 sampled positions disagree, because the WORKLET
+  // rounds first and the boundaries bisect to 0.4999999851 / 1.4999999404 —
+  // exactly `Math.round`. Promotion is behaviour-preserving on `mode`. The same
+  // reasoning is CORRECT for `moog921b.range`; only reading the consumer
+  // separates them.
+  //
+  // Ranking `delay1, mode, delay2`, and rank 2 is measured rather than asserted:
+  // driving TRIG 2 ALONE gives one pulse in OFF and NONE in PARALLEL or SERIES,
+  // so MODE turns an input JACK on and off while DELAY 1 is never conditional.
+  // All three params are bit-exactly inert at spawn, so — as on moog911 —
+  // inertness discriminates nothing and the ranking rests on the gating.
+  'moog911a',
   // THE FACEPLATE QUEUE · Q7 — the full mixer (2026-08-15). 91 params, 111
   // input ports: 1.86x the previous largest face (pentemelodica, 49 cells).
   //
