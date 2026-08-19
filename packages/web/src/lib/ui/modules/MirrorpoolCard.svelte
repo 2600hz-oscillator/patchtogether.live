@@ -17,7 +17,7 @@
   import NeonFader from '$lib/ui/controls/NeonFader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import { useEngine } from '$lib/audio/engine-context';
-  import { setNodeParam } from '$lib/graph/mutate';
+  import { setNodeParam, mutateNode } from '$lib/graph/mutate';
   import { mirrorpoolDef } from '$lib/video/modules/mirrorpool';
   import type { VideoEngine } from '$lib/video/engine';
   import { VIDEO_RES } from '$lib/video/engine';
@@ -53,14 +53,48 @@
   let canvasEl: HTMLCanvasElement | null = $state(null);
   let rafId: number | null = null;
 
+  // ── SCREEN ON / OFF (owner ruling, 2026-08-18) ────────────────────────────
+  //
+  // "'screen on / off' on the card like that is a thing all video modules
+  // should have moving forward." OFF collapses the preview and reclaims its
+  // space while the module KEEPS RENDERING.
+  //
+  // ⚠ THE STATE LIVES ON `node.data`, and the key is shared with the FACE's
+  // `fullViewBody` switch on purpose — one rack setting, whichever surface the
+  // player is looking at. Absent ⇒ false ⇒ ON, so an existing rack opens
+  // unchanged.
+  let previewCollapsed = $derived<boolean>(
+    (node?.data?.previewCollapsed as boolean | undefined) ?? false,
+  );
+  function togglePreview(): void {
+    const next = !previewCollapsed;
+    mutateNode(id, (live) => {
+      if (!live.data) live.data = {};
+      live.data.previewCollapsed = next;
+    });
+  }
+
   function draw() {
     rafId = null;
     const e = engineCtx.get();
-    if (!e || !canvasEl) { rafId = requestAnimationFrame(draw); return; }
+    if (!e) { rafId = requestAnimationFrame(draw); return; }
     let videoEngine: VideoEngine | undefined;
     try { videoEngine = e.getDomain<VideoEngine>('video'); }
     catch { rafId = requestAnimationFrame(draw); return; }
     if (!videoEngine) { rafId = requestAnimationFrame(draw); return; }
+    // ⚠ SCREEN OFF SKIPS THE COPY AND KEEPS THE WATCH MARK. The preview blit
+    // IS the engine's "someone is watching" signal (it calls `markWatched`
+    // itself, `video/engine.ts:1632`), and a node is a pull root only while
+    // that mark is younger than `WATCH_TTL_MS = 1500`. Simply not blitting
+    // would therefore stop the PRODUCER 1.5 s later — turning this switch into
+    // the #1720/#1721 kill-switch the ruling exists to forbid — so the mark is
+    // renewed directly, which `markWatched` is public for.
+    if (previewCollapsed) {
+      try { videoEngine.markWatched(id); } catch { /* never nuke the rAF loop */ }
+      rafId = requestAnimationFrame(draw);
+      return;
+    }
+    if (!canvasEl) { rafId = requestAnimationFrame(draw); return; }
     const ctx2d = canvasEl.getContext('2d', { alpha: false });
     if (ctx2d) {
       // #1802 — gated preview blit (see VideoEngine.blitOutputForPreview).
@@ -246,15 +280,29 @@
   <ModuleTitle {id} {data} defaultLabel="MIRRORPOOL" />
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
-    <!-- OUT live preview -->
-    <div class="preview-wrap">
-      <canvas
-        bind:this={canvasEl}
-        width={160}
-        height={120}
-        data-testid="mirrorpool-preview"
-        data-node-id={id}
-      ></canvas>
+    <!-- OUT live preview + the SCREEN switch, which OVERLAYS the picture's
+         bottom-right corner rather than taking a row of its own (see the
+         overlay paragraph in module-faceplates.md — a stacked row cost 18.8 px
+         on a card with 11 px of slack and overflowed it). -->
+    <div class="preview-wrap" data-preview-collapsed={previewCollapsed ? 'true' : 'false'}>
+      {#if !previewCollapsed}
+        <canvas
+          bind:this={canvasEl}
+          width={160}
+          height={120}
+          data-testid="mirrorpool-preview"
+          data-node-id={id}
+        ></canvas>
+      {/if}
+      <button
+        type="button"
+        class="screen-btn nodrag"
+        class:on={!previewCollapsed}
+        onclick={togglePreview}
+        data-testid="mirrorpool-screen-toggle"
+        aria-pressed={!previewCollapsed}
+        title="SCREEN: turn the preview off to reclaim its space. The module keeps rendering."
+      >SCREEN {previewCollapsed ? 'OFF' : 'ON'}</button>
     </div>
 
     <!-- CAMERA — two X-Y pads: POSITION (orbit × elevation) + LOOK (yaw × pitch). -->
@@ -334,7 +382,30 @@
     flex-direction: column;
     align-items: center;
     gap: 3px;
+    /* The SCREEN switch is absolutely positioned inside this box, so it costs
+       ZERO layout height — the card is exactly as tall as it was before the
+       control existed. */
+    position: relative;
+    /* Only load-bearing with SCREEN OFF: the canvas is gone, and without a
+       floor the wrap would collapse to zero and take the button with it. */
+    min-height: 18px;
   }
+  .screen-btn {
+    position: absolute;
+    right: 2px;
+    bottom: 2px;
+    font-size: 0.5rem;
+    letter-spacing: 0.05em;
+    padding: 1px 5px;
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    /* Legible over a live picture — a transparent button was not. */
+    background: rgba(5, 6, 8, 0.72);
+    color: var(--text-dim);
+    cursor: pointer;
+  }
+  .screen-btn.on { color: var(--text); border-color: var(--accent-dim); }
+  .screen-btn:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px; }
   .preview-wrap canvas {
     width: 160px;
     height: 120px;
