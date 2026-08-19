@@ -927,7 +927,10 @@ async function driveCell(
     // pointer maths was inverted, off by a quarter turn, or dead. Pressing at a
     // known point on the ring and asserting the ANGLE THAT IMPLIES is the only
     // form that can fail on those.
-    const box = await el.boundingBox();
+    const pid = cell.key;
+    const ring = host.locator(`[data-testid="control-${pid}"]`);
+    await ring.scrollIntoViewIfNeeded();
+    const box = await ring.boundingBox();
     expect(box, `${where}: the ring must have a layout box to press`).toBeTruthy();
     const cx = box!.x + box!.width / 2;
     const cy = box!.y + box!.height / 2;
@@ -958,7 +961,7 @@ async function driveCell(
     // lives: the resting faceplate paints no number, so `aria-valuetext` is the
     // only readable surface and a spec that did not check it would let the
     // control go silent for a screen reader without failing.
-    await expect(el, `${where}: aria-valuetext tracks the committed angle`).toHaveAttribute(
+    await expect(ring, `${where}: aria-valuetext tracks the committed angle`).toHaveAttribute(
       'aria-valuetext',
       /^\d+°$/,
     );
