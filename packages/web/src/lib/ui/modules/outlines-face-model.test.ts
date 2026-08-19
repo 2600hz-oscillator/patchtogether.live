@@ -154,16 +154,39 @@ describe('outlines face declaration', () => {
     }
   });
 
-  it('declares the two synthetic gate params as noUserControl, each with its port', () => {
+  it('declares every non-control param as noUserControl, and each writer matches its ports', () => {
     // Without this, module-face-lint's completeness loop demands an interactive
-    // cell for each and the face paints two continuous rotaries over raw gate
-    // levels.
+    // cell for each and the face paints continuous rotaries over raw gate
+    // levels and over the VRT freeze.
     const declared = (outlinesDef.noUserControl ?? []).map((n) => n.param).sort();
-    expect(declared).toEqual(['cv_collide', 'cv_gate']);
+    expect(declared).toEqual(['cv_collide', 'cv_gate', 'freeze']);
+
+    // ⚠ BOTH DIRECTIONS, because `writer` is a claim about the ports: a
+    // 'cv-port' param MUST have a port targeting it, and an 'internal' one must
+    // have NONE — otherwise the declaration describes a module that is not this
+    // one. (The same check `no-user-control.test.ts` runs registry-wide.)
     for (const n of outlinesDef.noUserControl ?? []) {
-      expect(n.writer).toBe('cv-port');
-      expect(outlinesDef.inputs.some((i) => i.paramTarget === n.param), `${n.param} port`).toBe(true);
+      const hasPort = outlinesDef.inputs.some((i) => i.paramTarget === n.param);
+      if (n.writer === 'cv-port') {
+        expect(hasPort, `${n.param} is written by a cv-port and needs one`).toBe(true);
+      } else {
+        expect(n.writer, `${n.param} writer`).toBe('internal');
+        expect(hasPort, `${n.param} is internal and must have NO port`).toBe(false);
+      }
     }
+  });
+
+  it('the VRT freeze is seeded in the live param record, or the harness write is a NO-OP', () => {
+    // The trap spirographs documents: `setParam` writes through
+    // `if (paramId in params)`, and `params` is built from the module's
+    // DEFAULTS record — so a freeze that is declared but not seeded would make
+    // `freezeFaceVideo`'s write silently do nothing while the store agreed it
+    // had happened, and the surface would go on moving.
+    const freeze = outlinesDef.params.find((p) => p.id === 'freeze');
+    expect(freeze, 'freeze ParamDef').toBeTruthy();
+    expect(freeze!.defaultValue).toBe(0);
+    // It must never be ranked — it is not a control.
+    expect(face.order).not.toContain('freeze');
   });
 
   it('routes its SCREEN toggle through the extension slot, not the card', () => {

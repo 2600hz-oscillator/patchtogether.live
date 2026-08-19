@@ -125,6 +125,8 @@ interface OutlinesParams {
   // Synthetic COLLIDE gate LEVEL — written by the CV-bridge; hidden from the
   // card. Read live each frame as the inter-shape collision on/off switch.
   cv_collide: number;
+  // Hidden VRT determinism toggle — see its ParamDef.
+  freeze: number;
 }
 
 const DEFAULTS: OutlinesParams = {
@@ -137,6 +139,12 @@ const DEFAULTS: OutlinesParams = {
   rate: 0.5, // internal clock on by default so the source is alive on spawn
   cv_gate: 0,
   cv_collide: 0, // collide OFF by default (pass-through) until the gate goes HIGH
+  // ⚠ `freeze` MUST BE SEEDED HERE, not only declared in `params`. `setParam`
+  // below writes through `if (paramId in params)`, and `params` is built from
+  // THIS record — so a key missing here makes the VRT harness's write a SILENT
+  // NO-OP: the store would agree that freeze=1 and the surface would go on
+  // moving. Same trap spirographs documents on its own freeze param.
+  freeze: 0,
 };
 
 // Fullscreen-quad shader: sample the scene texture (top-left-origin canvas →
@@ -219,6 +227,25 @@ export const outlinesDef: VideoModuleDef = {
     { id: 'rate',     label: 'Rate',  defaultValue: DEFAULTS.rate,     min: 0, max: 1, curve: 'linear' },
     // Synthetic gate param — hidden from the card; rendered as the gate jack.
     { id: OUTLINES_GATE_PARAM_ID, label: 'GATE', defaultValue: 0, min: 0, max: 1, curve: 'linear' },
+    // ── freeze — the hidden VRT/determinism toggle ────────────────────────
+    // ⚠ IT EXISTS BECAUSE THIS MODULE ANIMATES BY CONSTRUCTION, and the face
+    // scene cannot be captured without it. Every live shape drifts and bounces
+    // every frame as a function of ELAPSED TIME, and at the shipped rate a new
+    // one spawns every 2250 ms — so two captures of identical settings are
+    // never the same pixels. The seeded RNG (`__outlinesVrtSeed`) fixes WHERE
+    // things spawn; it does nothing about WHEN, and an AudioContext suspend
+    // says nothing about a rAF-driven picture.
+    //
+    // Measured: without this, `workflow-shell-faces.spec.ts` refuses both
+    // outlines scenes with "the video surface was still MOVING after writing
+    // freeze=1" — `freezeFaceVideo` writes `params.freeze = 1` and there was no
+    // such param for it to reach. Same mechanism spirographs added for the same
+    // reason.
+    //
+    // NO CONTROL ANYWHERE — not on the card, not on the faceplate, not on the
+    // patch surface: it is `noUserControl` with `writer: 'internal'` and is
+    // absent from `face.order`. The harness writes it; nothing else ever does.
+    { id: 'freeze', label: 'Freeze', defaultValue: 0, min: 0, max: 1, curve: 'linear' },
     // Synthetic COLLIDE gate param — hidden from the card; rendered as the
     // collide jack. Read live as the inter-shape collision on/off level.
     { id: OUTLINES_COLLIDE_PARAM_ID, label: 'COLLIDE', defaultValue: 0, min: 0, max: 1, curve: 'linear' },
@@ -235,6 +262,11 @@ export const outlinesDef: VideoModuleDef = {
       param: OUTLINES_GATE_PARAM_ID,
       writer: 'cv-port',
       why: 'written by the gate bridge as a raw 0..1 level; the module edge-detects it and each RISING EDGE spawns one shape, latching the live D/V/Spd/Decay/Shape values at that instant. The player controls it by patching a clock, never by turning it',
+    },
+    {
+      param: 'freeze',
+      writer: 'internal',
+      why: 'determinism toggle for VRT capture: at >=0.5 the draw step is a no-op so the field holds its last frame instead of going black. No port targets it and no card or face control sets it — the visual-regression harness writes it before comparing a screenshot, and nothing else ever does',
     },
     {
       param: OUTLINES_COLLIDE_PARAM_ID,
@@ -390,6 +422,7 @@ export const outlinesDef: VideoModuleDef = {
       decay: "FADE-OUT time. 0..1 maps to 0..10s; latched per shape. 0 = persist (oldest shapes FIFO-culled at the cap); above 0 fades alpha to 0 and removes the shape over that many seconds.",
       shape: "SHAPE SELECTOR, 0..1 quantised to six shapes: circle, triangle, square, pentagon, hexagon, octagon. Latched per shape at spawn; the card shows the current shape name.",
       rotation: "ROTATION, a LIVE GLOBAL bipolar spin: center (0.5) = no rotation, left = fast counter-clockwise, right = fast clockwise. Every live shape shares one rotation angle (not latched); the card shows CCW / dot / CW.",
+      freeze: "Freeze (0/1, default 0): a hidden determinism toggle with NO control anywhere — not on the card, not on the faceplate, not on the patch surface. At 0.5 or above the draw step is a no-op, so the field HOLDS its last frame rather than going black. It exists because this module animates by construction: every live shape drifts and bounces as a function of elapsed time, and at the shipped rate a new one spawns every 2250 ms, so two captures of identical settings are never the same pixels. The seeded spawn RNG fixes WHERE shapes appear and says nothing about WHEN. The visual-regression harness writes it before comparing a screenshot; nothing else ever does.",
       rate: "Internal spawn CLOCK (knob only, no CV input). 0 = gate-only; turning it up engages a clock that tightens from slow toward a cap of one shape every 500ms.",
       cv_gate: "Hidden synthetic gate param backing the GATE jack (not a knob). The engine CV-bridge writes the gate input's sample here; a rising edge spawns ONE shape, latching the live D / V / Spd / Decay / Shape at the moment of the edge.",
       cv_collide: "Hidden synthetic gate param backing the COLLIDE jack (not a knob). The engine CV-bridge writes the collide input's LEVEL here; read live every frame, HIGH (>=0.5) makes shapes bounce off each other elastically, LOW passes through.",
@@ -649,6 +682,12 @@ export const outlinesDef: VideoModuleDef = {
       texture: fboCombine.texture,
       draw(frame) {
         const g = frame.gl;
+
+        // VRT determinism: hold the last frame rather than going black. See the
+        // `freeze` ParamDef for why this module needs one at all. Read straight
+        // off the live params so the harness's write reaches it on the very next
+        // frame.
+        if (params.freeze >= 0.5) return;
 
         // dt from the engine clock (seconds → ms). First frame: assume 1/60.
         const t = frame.time;
