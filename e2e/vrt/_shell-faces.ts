@@ -937,6 +937,17 @@ export const FACES = [
   // the dead `{kind:'static'}`. Nothing live is in this scene at all, which
   // makes it the most trivially deterministic capture in the roster.
   { type: 'moog912', pages: 1 },
+  // MOOG 993 — three peer routers, declared as ONE band (no `pages`): three
+  // switches for the same idea, and a page per switch would be three headers
+  // over three controls.
+  //
+  // Deterministic for the same reason moog912 is, and more so: every output is
+  // gate/cv so `primaryAudioOutPortId` is null and the glyph is a forced
+  // 'none', and the module is PASSIVE ROUTING — GainNodes only, no worklet, no
+  // oscillator, nothing that advances with time. The only live text in the
+  // scene is the hero routing readout, which is a pure function of the three
+  // switch positions.
+  { type: 'moog993', pages: 1 },
   // OUTLINES — three pages (spawn clock / latched at birth / live field), well
   // under DOCK_TAB_MIN_BANDS, so the dock scene captures stacked bands.
   {
