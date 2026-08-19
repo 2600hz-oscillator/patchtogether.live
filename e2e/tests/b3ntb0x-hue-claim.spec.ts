@@ -19,8 +19,8 @@
 // chroma plane and a rigid 162° rotation there arrives WARPED here. Measured
 // through this harness at three input hues, full Hue travel delivers:
 //
-//     input hue ~15°   ->  172.2°        input hue ~102°  ->  157.7°
-//     input hue ~216°  ->  162.2°
+//     input hue ~15°   ->  172.5°        input hue ~102°  ->  157.7°
+//     input hue ~216°  ->  161.9°
 //
 // It CLUSTERS around 162 and is not equal to it, and WHICH value you get depends
 // on the colour you fed in. So a face readout printing "162°" would be printing
@@ -29,7 +29,7 @@
 // #1896's comparison: **it never reaches 180°.**
 //
 // ⚠ AND THE NAIVE MEASUREMENT GETS IT BACKWARDS. Comparing hue at 0 against hue
-// at 1 directly returns 187.8° — the shortest-arc ALIAS of −172.2°, i.e. a
+// at 1 directly returns 187.5° — the shortest-arc ALIAS of −172.5°, i.e. a
 // rotation reported in the wrong direction and over-large, from an instrument
 // showing no sign of trouble. Only walking the sweep finely enough that no
 // single step is ambiguous recovers the true figure, which is why this spec
@@ -126,7 +126,10 @@ async function bootRig(page: Page): Promise<void> {
  * purpose and with a reason: NTSC does not carry every hue with equal
  * coherence — chroma near the I/Q axes survives the encode/decode round trip
  * more cleanly than chroma between them — so a bar tuned to the best case would
- * be rejecting real signal rather than noise. The tight bar still applies where
+ * be rejecting real signal rather than noise. MEASURED, same rig and same crop:
+ * red-ish holds a spread of 0.141 while green-ish reaches 0.361, and cropping
+ * does NOT close that gap (it is the input hue, not the sampling region). The
+ * tight bar still applies where
  * coherence is the thing being claimed (test 1); the looser one applies where
  * the claim is about the ROTATION and coherence is only a precondition.
  */

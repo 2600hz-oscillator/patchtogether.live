@@ -119,27 +119,83 @@ export interface ReadDeliveredOpts {
    *
    * ⚠ TWO reasons, and the second is about correctness, not speed. (1) A full
    * 1280×720 `readPixels` moves 3.7 MB per measurement and a sweep does dozens.
-   * (2) The EDGES ARE NOT THE PICTURE: b3ntb0x's overscan, barrel and tube-bloom
-   * all act at the frame's border, so edge pixels carry geometry artefacts whose
-   * hue is not the signal — measured, they lift the circular spread from 0.14 to
-   * 0.37 on the same input. Reading the centre is the more honest sample AND the
-   * cheaper one. Pass a number ≥ the frame size to read everything.
+   * (2) The EDGES ARE NOT THE PICTURE: b3ntb0x's overscan and barrel leave a
+   * BLACK BORDER, and black pixels carry no hue at all. Measured on the same
+   * input: reading the full frame qualifies 2274 of 3072 sampled pixels (74 % —
+   * the rest are the unlit border), while the centred box qualifies 3856 of 3856
+   * (100 %). Reading the centre is the more honest sample AND the cheaper one.
+   * Pass a number ≥ the frame size to read everything.
+   *
+   * ⚠ WHAT IT DOES **NOT** DO, because the first draft of this comment claimed
+   * it did and the measurement refuted it: cropping does NOT materially improve
+   * the circular SPREAD. Same input, full frame vs centred box — 0.142 → 0.141
+   * (red-ish) and 0.366 → 0.361 (green-ish). The large spread differences are
+   * BETWEEN INPUT HUES, not between sampling regions: NTSC carries chroma near
+   * the I/Q axes more coherently than chroma between them. Cropping buys
+   * qualifying pixels and bytes, not coherence.
    */
   box?: number;
 }
 
 /**
- * Drive `steps` frames synchronously and reduce `nodeId`'s output texture to a
- * circular mean hue. ONE `page.evaluate` with no await inside, so rAF, decode
- * and blit cannot interleave with the read — the same discipline the DRS
- * harness established, for the same reason.
+ * Advance the video engine by exactly `n` frames, ONE PER JS TURN.
+ *
+ * ⚠ THE YIELD IS LOAD-BEARING AND THIS IS THE OPPOSITE OF WHAT DRS DOES.
+ * `_render-smoke.ts` drives its whole burst inside a single `page.evaluate`
+ * with no await, deliberately, so rAF/decode/blit cannot interleave. That is
+ * right for its subjects and WRONG for a multi-pass float pipeline:
+ *
+ * MEASURED, b3ntb0x under `E2E_SWIFTSHADER=1` — 8 `step()` calls in ONE turn
+ * leave the output BIT-EXACTLY BLACK (0 of 3856 sampled pixels above the
+ * saturation floor), while the SAME 8 steps taken one per turn render a clean
+ * field (3856 of 3856, hue 15.01°, spread 0.0178 — identical to the real GPU).
+ * On a real GPU the single-turn form happens to work, so this is invisible
+ * until something runs under software rendering.
+ *
+ * ⚠ CONSEQUENCE FOR THE EXISTING HARNESS, worth knowing before you copy it:
+ * `b3ntb0x.spec.ts` uses the DRS single-turn form and therefore FAILS under
+ * `E2E_SWIFTSHADER=1` today. It does not run there — `webgl-smoke` is
+ * `--grep "@webgl-smoke"` and that spec carries no such tag — so nothing has
+ * ever reported it.
+ *
+ * ⚠ AND IT COSTS NO DETERMINISM. Yielding would matter if the frame content
+ * depended on elapsed time, but both clocks are PINNED (the engine's and the
+ * module's own), so a frame is a pure function of the step index. What the
+ * single turn actually bought was "no rAF frames sneak in" — and the rAF loop
+ * is PAUSED, so there are none to sneak. The read itself stays atomic, which
+ * is the part that has to be.
+ */
+async function stepFrames(page: Page, n: number): Promise<void> {
+  for (let i = 0; i < n; i++) {
+    await page.evaluate(() => {
+      const w = globalThis as unknown as {
+        __engine: () => { getDomain: (d: string) => { step: () => void } };
+      };
+      w.__engine().getDomain('video').step();
+    });
+  }
+}
+
+/**
+ * Drive `steps` frames and reduce `nodeId`'s output texture to a circular mean
+ * hue. The frames are driven one per turn (see `stepFrames`); the READ is a
+ * single `page.evaluate` with no await inside, so nothing interleaves between
+ * binding the framebuffer and reading the pixels back.
  */
 export async function readDeliveredColour(
   page: Page,
   opts: ReadDeliveredOpts,
 ): Promise<DeliveredColour> {
+  const before = await page.evaluate(() => {
+    const w = globalThis as unknown as {
+      __engine: () => { getDomain: (d: string) => { currentFrameCount: () => number } };
+    };
+    return w.__engine().getDomain('video').currentFrameCount();
+  });
+  await stepFrames(page, opts.steps);
+
   return page.evaluate(
-    ({ nodeId, portId, steps, stride, minSat, box }) => {
+    ({ nodeId, portId, framesBefore, stride, minSat, box }) => {
       const w = globalThis as unknown as {
         __engine: () => {
           getDomain: (d: string) => {
@@ -155,9 +211,10 @@ export async function readDeliveredColour(
       const gl = vid.gl;
       while (gl.getError() !== gl.NO_ERROR) { /* drain pre-existing */ }
 
-      const before = vid.currentFrameCount();
-      for (let i = 0; i < steps; i++) vid.step();
-      const framesDelta = vid.currentFrameCount() - before;
+      // The frames were driven by stepFrames() before this evaluate; the delta
+      // is still asserted, so a step that silently did not advance the engine
+      // reddens exactly as it did when the loop lived in here.
+      const framesDelta = vid.currentFrameCount() - framesBefore;
 
       const glErrors: number[] = [];
       let e: number;
@@ -233,7 +290,7 @@ export async function readDeliveredColour(
     {
       nodeId: opts.nodeId,
       portId: opts.portId,
-      steps: opts.steps,
+      framesBefore: before,
       box: opts.box ?? 256,
       stride: opts.stride ?? 17,
       minSat: opts.minSat ?? 0.15,
