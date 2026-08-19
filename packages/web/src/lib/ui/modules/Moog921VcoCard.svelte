@@ -13,7 +13,7 @@
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import { patch } from '$lib/graph/store';
   import { setNodeParam } from '$lib/graph/mutate';
-  import { moog921VcoDef } from '$lib/audio/modules/moog921-vco';
+  import { moog921VcoDef, MOOG921VCO_SYNC_OPTIONS } from '$lib/audio/modules/moog921-vco';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import MoogPanel from './moog/MoogPanel.svelte';
@@ -47,11 +47,11 @@
   }
 
   // SYNC is a 3-position switch (soft / off / hard) → -1 / 0 / +1.
-  const SYNC_POS: Array<{ v: number; label: string }> = [
-    { v: -1, label: 'SOFT' },
-    { v: 0, label: 'OFF' },
-    { v: 1, label: 'HARD' },
-  ];
+  // The names come off the DEF's own `options` roster (#1887) rather than a
+  // private array here, so the vocabulary has exactly ONE copy and the
+  // faceplate's segmented cell and this button row cannot drift apart. Ordered
+  // for the PANEL (soft on the left) rather than by value.
+  const SYNC_POS = [-1, 0, 1].map((v) => MOOG921VCO_SYNC_OPTIONS.find((o) => o.value === v)!);
   function setSync(v: number) {
     const target = patch.nodes[id];
     if (target) target.params.sync = v;
@@ -83,15 +83,16 @@
     <div class="sync-row" data-testid="moog921-sync-switch">
       <span class="sync-label">SYNC</span>
       <div class="sync-seg" role="radiogroup" aria-label="Sync mode">
-        {#each SYNC_POS as pos (pos.v)}
+        {#each SYNC_POS as pos (pos.value)}
           <button
             type="button"
             class="sync-btn"
-            class:active={sync === pos.v}
+            class:active={sync === pos.value}
             role="radio"
-            aria-checked={sync === pos.v}
-            data-sync-value={pos.v}
-            onclick={() => setSync(pos.v)}
+            aria-checked={sync === pos.value}
+            data-sync-value={pos.value}
+            title={pos.title}
+            onclick={() => setSync(pos.value)}
           >{pos.label}</button>
         {/each}
       </div>
