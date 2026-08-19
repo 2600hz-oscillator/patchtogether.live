@@ -1,8 +1,29 @@
 // e2e/tests/freezeframe-screen-toggle.spec.ts
 //
-// SCREEN ON / OFF on the FREEZEFRAME card (owner ruling, 2026-08-18:
-// "'screen on / off' on the card like that is a thing all video modules should
-// have moving forward").
+// SCREEN ON / OFF on FREEZEFRAME — on BOTH surfaces it ships with (owner
+// ruling, 2026-08-18: "'screen on / off' on the card like that is a thing all
+// video modules should have moving forward").
+//
+// ⚠ THIS FILE USED TO TEST ONE SURFACE, AND IT WAS THE WRONG ONE (#1934).
+// Every leg opened `/rack?shell=legacy`, which renders the LEGACY CARD — and
+// `?shell=legacy` is precisely the surface that promotion does NOT change.
+// freezeframe entered `STRICT_FACES` in the same change that added this
+// toggle, which makes `migrated()` true and stops BOTH default surfaces from
+// rendering the card (`DockFullView.svelte:319` mounts `<ModuleShell>`
+// instead). So the control was deleted by its own promotion, and this spec
+// PASSED THROUGHOUT and would have gone on passing — a gate whose precondition
+// is the defect cannot fail on the defect (CLAUDE.md, the #1796 class).
+//
+// The fix is to test the shell the feature SHIPS ON, not only the one that is
+// convenient to drive. Two describes below:
+//   * THE FACE (default `/rack`) — the shipping surface. The toggle arrives
+//     through the `fullViewBody` shell extension. These legs FAIL if the
+//     extension is missing, which is the regression #1934 names.
+//   * THE LEGACY CARD (`?shell=legacy`) — still a real surface while the
+//     legacy UI exists, and the card half of the ruling. Kept, not deleted.
+//
+// The source-level companion is `video-face-screen-source.test.ts` (#1935),
+// which refuses a faced video module with no reachable SCREEN switch by name.
 //
 // THE OWNER'S STATED FLOOR IS PERSISTENCE — the on/off state must survive a tab
 // switch — and nothing tested that on backdraft either, so it is the first leg
@@ -23,6 +44,7 @@ import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 import { SLOW_BOOT_TEST_TIMEOUT_MS } from '../_helpers/boot-budget';
 import { measureOverflow, describeReport, settleLayout } from './_card-overflow';
+import { waitFrames } from '../_helpers/frames';
 
 const CARD = '[data-testid="freezeframe-card"]';
 const TOGGLE = '[data-testid="freezeframe-preview-toggle"]';
@@ -83,7 +105,7 @@ async function persistedCollapsed(page: import('@playwright/test').Page): Promis
   });
 }
 
-test.describe('freezeframe: SCREEN ON / OFF', () => {
+test.describe('freezeframe: SCREEN ON / OFF — the LEGACY CARD surface', () => {
   // The SwiftShader budget, from the ONE export site rather than a literal —
   // a flat wall-clock number is a different assertion on every runner, and
   // CI's two-core boxes swing >=2x run-to-run on identical code (#1860/#1906).

@@ -953,6 +953,33 @@ export const freezeframeDef: VideoModuleDef = {
 
     glyph: 'none',
 
+    // ⚠ THE SCREEN ON/OFF SWITCH ARRIVES THROUGH THIS SLOT, AND IT HAD TO
+    // (#1934, the #1928 class). The 2026-08-18 owner ruling gives every video
+    // module a screen on/off toggle. This module shipped one — on
+    // `FreezeframeCard.svelte` — in the SAME change that promoted it into
+    // STRICT_FACES, and promotion is precisely what stops both surfaces from
+    // rendering that card (`migrated()` becomes true;
+    // `DockFullView.svelte:319` mounts `<ModuleShell>` instead). The required
+    // control was therefore deleted by the promotion meant to keep it.
+    //
+    // ⚠ AND THE SPEC THAT PROVED IT WORKED COULD NOT HAVE CAUGHT THAT: it was
+    // pinned to `/rack?shell=legacy`, the one surface promotion does not
+    // change, so it passed and would have gone on passing while the shipping UI
+    // had no toggle at all. Both halves are covered now —
+    // `freezeframe-screen-toggle.spec.ts` exercises the legacy CARD and the
+    // faced DOCK surface, and `video-face-screen-source.test.ts` (#1935)
+    // refuses this shape by name so the next module cannot repeat it.
+    //
+    // There is no generic affordance to fall back on — `previewCollapsed`
+    // appears in ZERO shell files — so it comes through `fullViewBody`, the
+    // route `backdraft`, `videoOut`, `spirographs` and `mirrorpool` take.
+    //
+    // Contract-transparent: `face.extension` is a STRING, not a component, so
+    // the shell never imports a freezeframe file, and a def's own top-level
+    // `face` is stripped from the attest basis — declaring it costs no
+    // re-attest and no contract-lock line.
+    extension: 'freezeframe',
+
     // TWO readouts, and the THIRD one was deliberately not written.
     //
     // ⚠ THERE IS NO GATE READOUT, because a `FaceReadoutValue` receives only a
