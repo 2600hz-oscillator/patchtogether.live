@@ -4685,3 +4685,1674 @@ end-of-row wrap first) · `mirrorpool` (11) · `outlines` (9) · `freezeframe` (
 its `quant_luma` default is not the passthrough the docs claim) · `4plexvid` (8)
 · `moog911` + `moog911a` (the two strongest small audio candidates left) ·
 `moogCp3` and `moog921Vco` (spec'd inside Q28, not folded into it).
+
+---
+
+## 25. THE NEXT COHORT — spec lane, 2026-08-18
+
+**Measured against `main` @ `8d34f1f1`.** Every number below was produced by driving
+the module's OWN exported functions (the def's factory-side pure mirrors, the sim,
+the core) through `tsx` against the live tree — not read off a description. Where a
+figure is derived by reading rather than measured, it says so.
+
+⚠ **Two owner rulings landed mid-spec (2026-08-18) and both are folded into every
+entry below.** They are codified in `.claude/skills/module-faceplates.md`:
+
+1. **A CONTROL-HEAVY module gets a TABBED face**, backdraft-style — "heavy" meaning
+   lots of controls of DIFFERENT types. Mechanism is `face.pages` → dock bands →
+   `dockTabPlan`, which engages the rail at `DOCK_TAB_MIN_BANDS = 7`. Pages must
+   still be different IDEAS; **do not pad pages to force the rail** — if the honest
+   grouping lands under 7, raise the threshold to the owner instead.
+2. **Every video module's card gets a SCREEN ON/OFF toggle.** Reference:
+   `BackdraftOutputBody.svelte:~314`. OFF collapses the preview and reclaims its
+   vertical space while the module **keeps rendering**; ON shows the LIVE picture,
+   never a stale frame (the #1720/#1721 class). The owner's stated floor is that the
+   choice **persists through tab switches**.
+
+**⚠ The honest answer on the tab rail, stated once here rather than four times:
+NONE of these four reaches 7 honest pages.** Ruttetra — the owner's named first
+application — tops out at **6**. The ruling's own instruction for that case is to
+raise it rather than pad, so it is raised, in §25.5.
+
+### 25.1 What all four share (measured, so it is not restated per entry)
+
+| property | ruttetra | mirrorpool | outlines | freezeframe |
+|---|---|---|---|---|
+| params (total / user-facing) | 12 / 12 | 11 / 11 | 9 / **7** | 8 / **7** |
+| inputs (video / cv / gate) | 1 / 7 / 0 | 2 / 11 / 0 | 1 / 6 / **2** | 1 / 0 / **1** |
+| outputs | 1 | 1 | **4** | **5** |
+| declares `face` | no | no | no | no |
+| declares `noUserControl` | n/a | n/a | **needed (2)** | **needed (1)** |
+| in `STRICT_DOCS` | yes (`:343`) | yes (`:306`) | yes (`:334`) | yes (`:320`) |
+| card passes `readLive` | **0** | **0** | **0** | **0** |
+| multi-state enum lacking `options[]` | 0 | 0 | **1 (`shape`)** | 0 |
+
+- **`noUserControl` has exactly ONE adopter in the whole tree — `backdraft`.**
+  `outlines` needs it for `cv_gate` + `cv_collide`, `freezeframe` for `gateLevel`.
+  It is hash-transparent, so declaring it costs **zero attest**. Neither of the
+  other two needs it: every ruttetra and mirrorpool param is a real knob.
+- **All four cards pass ZERO `readLive` props**, so on all four a CV-driven param
+  moves the picture while every fader stays parked. This is Q26's `grainsOfVision`
+  finding, and it is not module-specific — it is the fourth and fifth and sixth and
+  seventh instance. **A face binding `readLive` fixes a live defect on each.** Cite
+  it as merit, in all four PRs.
+- **The options price is ZERO for three of the four.** Only `outlines.shape` is a
+  named enum rendered as a bare number (#1866). ruttetra, mirrorpool and freezeframe
+  carry no multi-state discrete param at all, so none of them owes the real-GPU
+  re-attest that §20.3 prices for the rest of the video pool.
+- **Attest: NIL for all four faces.** `face`, `docs`, `controlFamilies` and
+  `noUserControl` are all in `HASH_TRANSPARENT_PROPS`.
+- **`DESCRIPTIONS`: not owed** (§20.5) — `describeModule` falls back to
+  `docs.explanation`, and all four are in `STRICT_DOCS` already. The face PR owes
+  docs ACCURACY, and §25.2–§25.5 are where the inaccuracies are.
+
+### 25.2 THE SCREEN ON/OFF CELL — spec it ONCE, adopt it four times
+
+All four cards already own a preview canvas, so all four are in scope for ruling 2:
+
+| module | preview testid | blit seam |
+|---|---|---|
+| ruttetra | `ruttetra-canvas` | `blitOutputToDrawingBuffer` (280×158, or resizable) |
+| mirrorpool | `mirrorpool-preview` | engine canvas `drawImage` |
+| outlines | `outlines-screen` | `read(node,'sceneCanvas')` — a 2D canvas, NOT a GL blit |
+| freezeframe | `freezeframe-preview` | `blitOutputForPreview(id)` (#1802-gated), 228×171 |
+
+⚠ **`outlines` is the odd one and it matters for this cell**: its preview reads a
+`sceneCanvas` through `read()` rather than blitting a GL output, so whatever the
+SCREEN cell does must not assume the `blitOutputToDrawingBuffer` seam. Build the
+cell against the *declared* video surface (`hasVideoSurface(def)`), not against one
+module's blit.
+
+⚠ **The `markWatched` hazard from Q26 applies here and is the reason the ruling says
+"keeps rendering".** `blitOutputToDrawingBuffer` is also the engine's
+"someone is watching" signal (`video/engine.ts:1444`). A SCREEN-OFF state that stops
+calling it turns the toggle into a producer kill switch on any module that is not
+`pullExempt` — which is the #1720/#1721 class the ruling names. **None of these four
+declares `pullExempt`** (checked: `pullExempt` appears only in `engine.ts:1118-1129`,
+no video def sets it). So the cell must keep the node a pull root while collapsed,
+exactly as backdraft does.
+
+**The test plan for the cell — and how NOT to inherit #1847's flake.**
+`backdraft-preview-toggle.spec.ts` has two tests parked under #1847
+(`.myrobots/2026-08-18-flake-park-coverage-lost.md`), and the parked pair is
+precisely the two legs any new video face would naively copy. Read the bodies before
+writing yours:
+
+- **The tab-persistence test (21 recovered-on-retry observations)** clicks EVERY tab
+  in a loop and re-asserts `data-preview-collapsed` after each. With *n* tabs that
+  is *n* chances to lose one coin flip, so its failure rate is multiplied by the tab
+  count — and it is the leg guarding the owner's stated floor.
+  **Spec instead:** put the invariant in a PURE unit (`<mod>-face-model.test.ts` /
+  `dock-tabs-model`) — the collapsed flag is NODE-keyed and is not part of per-band
+  render state, asserted directly on the model over every declared page. Keep
+  **exactly one** e2e leg, a single switch away and back, as the integration check.
+  One coin flip, not *n*.
+- **The producer-liveness test (11 observations)** gates on `previewMoves(page, N)`
+  — "how many DISTINCT frames did I see in N" — as its positive control. That is a
+  renderer-dependent sampler: under `E2E_SWIFTSHADER=1` at ~7.9 fps, N frames can
+  legitimately contain repeats. Its *other* half, the `framesDrawn` engine counter
+  delta, is a monotone integer and is renderer-independent.
+  **Spec instead:** make the **counter delta** the gate and the pixel-distinctness an
+  additional, capability-probed leg — never the precondition the whole test hangs
+  from. Keep the spec's own excellent rule that the counter being unreachable is a
+  FAILURE, not a skip (a skip converts a broken instrument into a green run).
+- Both parked tests already use `waitFrames`, so **frames-vs-ms is not the flake
+  here** — do not "fix" it by touching waits.
+
+### 25.3 Q30 · `ruttetra` — the owner's named first TABBED face, over a raster that draws 180 flyback streaks it never meant to
+
+**Merit: YES, and it is the strongest of the four.** 12 params, 8 inputs (1 video
+`z` + 7 `paramTarget` CV), 1 output. A real line-geometry Rutt/Etra scan processor —
+a 320×180 = 57,600-point grid drawn as 57,420 additive LINE segments, not a
+fragment-shader remap. `label: 'xyz'`, `category: 'output'`.
+
+**Control-heavy: YES** — this is the owner's named application. 12 params across
+four genuinely different ideas (relief / scan geometry / beam / colour), and the
+card already concedes the point by hiding a third of them behind an ADVANCED
+disclosure.
+
+**⚠ THE PAGE COUNT IS 6, NOT 7 — AND PER THE RULING THAT IS ESCALATED, NOT PADDED.**
+Two honest groupings were derived; neither reaches the rail:
+
+| grouping | pages | bands |
+|---|---|---|
+| **(a) BY FUNCTION** — recommended | **6** | relief (`xDisp`,`yDisp`) · shape (`xShape`,`yShape`) · frequency (`xFreq`,`yFreq`) · phase (`xPhase`,`yPhase`) · beam (`intensity`) · tint (`tintR`,`tintG`,`tintB`) |
+| (b) BY AXIS | 5 | x scan (`xShape`,`xFreq`,`xPhase`) · y scan (`yShape`,`yFreq`,`yPhase`) · relief (`xDisp`,`yDisp`) · beam (`intensity`) · tint (R,G,B) |
+
+Grouping (a) is recommended because every page is one idea applied to both axes,
+which is how the DSP is written (`h` and `v` are the same `shapedRamp` call with
+different arguments) and how a player thinks about a scan processor. **There is no
+honest 7th idea**: ruttetra has one video input, no source params, no modes, and no
+state. Manufacturing a seventh page would be exactly the padding the ruling forbids.
+**See §25.5 — this is the escalation.**
+
+**THE RANKING ARGUMENT, FROM THE DSP.** The vertex shader is
+`x = shapedRamp(h0·xFreq + xPhase, uv, xShape) + (lum − 0.5)·xDisp`, and the same
+for `y`. So the module's ONE identity move is `(lum − 0.5)·yDisp` — luma becomes
+height. Everything else positions or colours the raster that displacement acts on.
+
+Measured, bit-exact geometry travel at spawn over a sampled grid (flat mid-grey
+source, 154 sample points), min → max of each param:
+
+| param | range | default | geometry moved | CV in |
+|---|---|---|---|---|
+| `yDisp` | −1..1 | **−0.3** | 154/154 | yes |
+| `xDisp` | −1..1 | 0 | 154/154 | yes |
+| `xShape` | 0..1 | 0 | 154/154 | yes |
+| `yShape` | 0..1 | 0 | 154/154 | yes |
+| `xFreq` | 0.25..8 | 1 | 143/154 | yes |
+| `yFreq` | 0.25..8 | 1 | 140/154 | yes |
+| `xPhase` | 0..1 | 0 | 110/154 | **NO** |
+| `yPhase` | 0..1 | 0 | 84/154 | **NO** |
+| `intensity` | 0..2 | 1.5 | 0/154 (colour, not geometry) | yes |
+| `tintR/G/B` | 0..1 | 1 | 0/154 (colour, not geometry) | **NO** |
+
+⚠ **That probe measures GEOMETRY ONLY and is structurally blind to the colour
+path** — which is why `intensity` and the tints read 0/154 and are NOT dead. A
+separate colour probe confirms all four move `vColor`: `intensity` 0→2 takes a grey
+source from `0.0000` to `1.0039`, and each tint zeroes its own channel. Stating the
+probe's blind spot is the point; a reader who saw only the table would have
+concluded four params were inert.
+
+**`yDisp` is the hero.** It is the only control whose default is off-centre
+(**−0.3**, deliberately, matching XYZState.swift) — the def spent its one non-neutral
+default on it, which is the strongest ranking evidence in the module. It is the
+"relief depth" knob and it is what makes the picture a heightmap instead of a
+picture.
+
+**Tier ladder as a sentence:** at mini you get RELIEF; at compact you get RELIEF and
+its X partner; at plate you get the whole geometry story (relief ×2, shape ×2,
+frequency ×2); the phase pair, the beam and the tint are dock-only. Rank order:
+`yDisp, xDisp, yShape, xShape, yFreq, xFreq | intensity, tintR, tintG, tintB, yPhase, xPhase`.
+
+⚠ Note `order` and `pages` deliberately DISAGREE: `order` interleaves the axes by
+priority (Y before X, because Y is the relief axis), `pages` groups them by idea.
+Say so in the comment.
+
+**GLYPH.** `glyph: 'none'` — counter-intuitively required, because
+`primaryAudioOutPortId` matches `type === 'audio'` and ruttetra has none, so any
+other glyph resolves to `{kind:'static'}` and reddens the dead-glyph clause. The
+picture arrives from `hasVideoSurface(def)`. **Assert `hasVideoSurface`, not the
+glyph declaration** — `'none' + blank tile` and `'none' + live thumb` are
+indistinguishable from the declaration alone.
+
+**READOUTS / `paintsReadout`.** ⚠ The one genuine case in this module, and it is a
+NAME, not a number, so it survives the no-resting-decimals ruling:
+`RuttetraCard.svelte:56-65` prints a shape name (`linear` / `linear↔triangle` /
+`triangle` / … / `radial`) that a def-driven face would lose entirely.
+
+⚠ **But do NOT port the card's table.** It re-types its own 7-band thresholds
+(0.083 / 0.25 / 0.416 / 0.583 / 0.75 / 0.916) which do not correspond to the DSP's
+arm boundaries (0.333 / 0.666), and it prints **"radial" over the whole top 8.4 %**
+of the travel where the DSP is between 75 % and 100.2 % of the way there. Derive the
+name from `shapedRamp`'s OWN arms, exported from the def, or the face ships the same
+disagreement with a fresh coat of paint. This is the `card-def-agreement` /
+`RANGE_BOUND_CARDS` shape one level up: not a re-typed range, a re-typed *mapping*.
+
+No other derived readout is defensible here. A "grid points" or "segments" number is
+a constant. A "flyback count" would be a readout of a defect (#1862).
+
+**`bareCells`.** The tint page is the candidate: under a `tint` heading, `Tint R` /
+`Tint G` / `Tint B` restate the heading three times, and mixmstrs is the precedent
+(`1LO…8LO` under a `LOW` heading). Declare `face.bareCells` for `tintR/G/B` — and
+remember it is dock-only, because a lane tile has no section heading to make the
+caption redundant. Hide the TEXT, never the accessible name: pass `hideCaption`, do
+not drop `label`.
+
+**⚠ STOP 2 — THIS IS THE ONE THAT COULD BLOCK THE FACE, AND IT IS FILED AS #1865.**
+`RuttetraCard.svelte` owns three `node.data` affordances, none of them a `ParamDef`:
+
+- `data.hideControls` — the `–`/`+` button (`:224-231`, testid `ruttetra-hide-toggle`)
+- `data.resizedWidth` / `data.resizedHeight` — corner drag (`:176-190`, testid `ruttetra-resize-handle`)
+- double-click-to-restore (`:202-204`)
+
+and the module's own docs advertise it: *"hiding the controls turns it into a
+resizable monitor (drag the bottom-right corner, double-click to restore)"*.
+
+**The `hideControls` half is now answered by ruling 2** — SCREEN ON/OFF is the same
+affordance done properly. **The RESIZE half is not**, and #1865 shows it is a
+population of 8 pool modules, not a ruttetra quirk. The face PR must either land a
+resizable video-surface cell or carry a **written exemption with an argument**.
+Functional parity is a hard requirement; silence is not an acceptable outcome.
+
+⚠ ALL 12 faders are dead to CV (no `readLive`) — the face fixes that.
+
+**DEFECTS FILED — fold both into this module's face PR:**
+
+- **#1862 — the end-of-row FLYBACK.** At the shipped defaults **180 of 57,420
+  segments span 0.9969 frame widths** — one per row — because `fract(1.0) = 0` snaps
+  each row's last column (`h0 = 319/319 = 1.0`) back to `x = 0`. It scales as
+  `ceil(xFreq)` per row: 360 at `xFreq=2`, **1440 at `xFreq=8`**, and **0 at
+  `xFreq=0.25`** (the ramp never reaches 1). Independently on Y: row 179 has
+  `v0 = 1.0` and is drawn at `y = −0.000588`, i.e. **the bottom scanline is at the
+  top of the frame**. ⚠ The current VRT baseline contains the streaks, so it pins the
+  defect as correct.
+  ⚠ **This is what §24's "end-of-row wrap" note was pointing at — and per ruling 1
+  it is now purely a DEFECT, not a design input. The face is paginated; nothing in
+  this spec designs around wrapping.**
+- **#1863 — SHAPE = 1 is not the declared "radial".** Sampled AT the declared
+  anchors: morph 0 → linear, 0.333 → triangle, 0.666 → soft-fold are all
+  **bit-exact**; morph 1 → radial is **not** (delta −5.125e-4). The arm-3 coefficient
+  `(m − 0.666)·3` is **1.002** at m=1 — an extrapolation 0.2 % PAST the endpoint.
+  Max deviation 0.002 of a frame = **2.05 px at 1024 wide**, worst at the frame
+  CENTRE where it goes **negative** (−0.002 vs radial's 0). Knock-on: `xFreq`/`xPhase`
+  should be bit-exactly inert at Shape=1 (radial has no `t` term) and instead carry a
+  1.992e-3 residue — the fingerprint of the overshoot.
+- #1865 — the resize affordance (above).
+
+**RISK: MEDIUM-HIGH.** Two look-affecting defects, a tabbed-face first, a new
+platform cell (SCREEN ON/OFF), and a STOP 2 population blocker. **Do not auto-merge.**
+Consider landing #1862/#1863 as their own owner-preview PR BEFORE the face, per the
+standing rule that a behaviour fix is its own commit — the face then re-baselines
+once instead of twice.
+
+**MEASURE BEFORE RANKING:** the flyback count on a REAL render (the numbers above
+are the pure `shapedRamp` mirror — confirm the GL path agrees); `markWatched` while
+SCREEN is OFF; and `hasVideoSurface(ruttetraDef)` before trusting `glyph:'none'`.
+
+### 25.4 Q31 · `mirrorpool` — two X-Y pads over a real wave equation, and a camera that can go underwater without saying so
+
+**Merit: YES.** 11 params, 13 inputs (2 video `pool`/`scene` + 11 `paramTarget` CV),
+1 video output. A hemisphere pool with a genuine velocity-form wave-equation height
+field, Schlick-Fresnel reflect/refract split, and an orbit + free-look camera.
+
+**Control-heavy: BORDERLINE-YES on TYPE, NO on the rail.** It is the only one of the
+four with genuinely different control *types* — **two X-Y pads plus seven knobs** —
+which is the ruling's stated test. But the honest page count is **4–5**, well under
+7:
+
+| page | controls |
+|---|---|
+| weather | `wind_speed`, `wind_dir`, `rain` |
+| surface | `surface_mode`, `brightness` |
+| camera position | `orbit_az` + `orbit_el` (pad 1), `orbit_dist` |
+| camera look | `look_yaw` + `look_pitch` (pad 2), `zoom` |
+
+Four pages. Splitting `rain` out as its own page (it is a whole sub-simulation with
+its own seeded Poisson scheduler) gives five. **Neither reaches the rail, and
+padding to 7 would be dishonest** — so mirrorpool ships UNTABBED unless the
+threshold moves (§25.5).
+
+**⚠ THE XY CELL EXISTS — DO NOT INVENT A BLOCKER.** `'xy'` is a real
+`ParamCellKind` (`shell-control-kind.ts:48`) and is declared through
+**`face.xyPads`**, NOT `face.paramCells` — `AuthoredParamCell` explicitly excludes
+`'xy'`, and `shell-control-kind.ts:196-200` folds a pad's X param in as the anchor.
+So the two pads are:
+
+```ts
+face: { xyPads: [{ x: 'orbit_az', y: 'orbit_el' }, { x: 'look_yaw', y: 'look_pitch' }], … }
+```
+
+This is the §4 `joystick` deferral ("pending `<XyPad>` consolidation") **resolved** —
+the consolidation landed. ⚠ Two independent agents once invented a platform blocker
+that did not exist (`getActiveEngine`); assume a third would here. **Verify
+`face.xyPads` resolves before ordering any PR around it.**
+
+**⚠ AND THE FACE IS A MIGRATION OPPORTUNITY THE GATE ASKS FOR BY NAME.**
+`card-primitive-parity.test.ts:520-537` records that the shared `<XyPad>` is mounted
+by only two cards while **eight** hand-clone a `div.pad` + `onpointerdown` +
+pointer-capture — and it names `MirrorpoolCard` in that list. A clone is invisible to
+the scan, so "migrating a clone onto it makes that card visible to the gate rather
+than hiding it". Moving MirrorpoolCard's pads onto `<XyPad>` (or onto the face's `xy`
+cells) **brings the module into a gate it currently escapes**. Cite as merit.
+
+**THE RANKING ARGUMENT, FROM THE PHYSICS.** Measured against the core's own exports:
+
+| measurement | result |
+|---|---|
+| `surfaceReflectivity(F, 0)` (the default) | **=== F bit-exactly** at every incidence sampled — Mode 0 is pure Fresnel |
+| normal-incidence Fresnel | **0.0200** (`WATER_F0`) — looking straight down, the surface reflects 2 % and the POOL dominates |
+| `surfaceReflectivity(F, 1)` at cos=1 | 0.980400 — a near-full mirror |
+| `wind_speed` peak height 0 / 0.3 (default) / 1 | 0 / **0.015787** / 0.052623 world units |
+| `wind_speed` peak slope 0.3 / 1 | 0.0787 (**4.50°**) / 0.2622 (**14.69°**) |
+| `wind_speed = 0` exactly | hard flat — early return, a true null |
+| `rainLambda` 0 / 0.1 / **0.2 (default)** / 0.5 / 1 | 0 / 0.08 / **0.28** / 1.6 / 6.2 drops per FRAME |
+| default rain in real time | **16.8 drops/s at 60 fps**, 2.21/s under SwiftShader |
+| measured mean vs λ (20 000 frames) | 0.2738 vs 0.2800 at rain=0.2; 6.1806 vs 6.2000 at rain=1 |
+| frames hitting the 12-drop CAP at rain=1 | **2.515 %** — the top of the knob is clipped |
+| camera at defaults | eye = (0, **1.3590**, 2.2166), **ABOVE** the plane; fovY **45.00°** |
+| `zoom` 0 / 0.5 / 1 | 70.0000° / 45.0000° / 20.0000° — **exactly as documented** |
+
+**`surface_mode` is the hero.** It is the one control that changes what the module
+IS — a refractive pool or a mirror — and at its default it is bit-exactly the raw
+Fresnel term, i.e. the physics with no thumb on the scale. Then the camera position
+pad (it is the only way to reach the underwater render path at all), then `wind_speed`.
+
+⚠ **`wind_dir` is BIT-EXACTLY INERT whenever `wind_speed` is 0** (measured:
+identical `{height:0,dhdx:0,dhdz:0}` at dir 0 and dir π/2). It is a MODIFIER of
+Wind, not a peer — rank it immediately after `wind_speed`, never above it, and never
+promote it to a tier where its master is absent. This is the "check hero candidates
+for inertness at spawn" clause doing real work: at the shipped `wind_speed = 0.3` it
+is live, but one knob turn away it is dead, and a lane tile showing `Dir` without
+`Wind` would be a dead control.
+
+**Tier ladder as a sentence:** mini gives MODE; compact adds the position pad; plate
+gives mode, both pads, wind and rain; `wind_dir`, `brightness`, `orbit_dist` and
+`zoom` are dock-only.
+
+⚠ **A pad is a WIDE cell, so a band carrying one is SOLO** (`bandIsPackable`,
+`cellWidthClass` is deny-by-default). The two camera pages therefore each take a row
+alone regardless of packing — which is fine, and is exactly the "width must be
+EARNED" case the owner ruling allows by name (*"an XY pad"* is a listed earner).
+**Do not also make the plate wide**; the earner is the pad, not the plate.
+
+**READOUTS — the strongest derived-readout case in this cohort.** Two candidates,
+both genuinely underivable from any single knob:
+
+1. **`mirrorpool-eye-side`** — ABOVE / BELOW the surface. Measured: the underwater
+   Snell's-window branch is gated on `eye.y < 0`, i.e. `orbit_el < 0` **exactly**;
+   at `orbit_el = 0` the eye is ON the plane and takes the ABOVE path
+   (measured `eye.y = 0.000000` → above). A whole render path switches on the sign
+   of one pad axis and **nothing on the card says so.** ⚠ Its negative control: the
+   readout must be invariant to `orbit_dist`, `orbit_az`, `look_*` and `zoom` — all
+   of which move the eye — and must flip on `orbit_el` alone. Sample AT `orbit_el = 0`
+   and at `−0.0001` (measured `eye.y = −0.000260`, UNDERWATER); a readout that reads
+   "below" at exactly 0 is wrong.
+2. **`mirrorpool-rain-rate`** — drops per second. `rain` is a unitless 0..1 dial over
+   a **quadratic** λ (`6r² + 0.2r`), so the dial is nothing like linear in what you
+   see: half the dial is 1.6 drops/frame and the top is 6.2. ⚠ Its negative control:
+   a knob readback of `rain` is blind to the **12-drop cap**, which truncates
+   2.515 % of frames at the top of the travel — publish the capped rate, not λ, so
+   the readout stops rising where the picture stops changing.
+
+⚠ **A readout must NOT be authored for `orbit_dist` in world units.** Measured: at
+`dist = 0.4` and `dist = 1` the eye's horizontal radius is 0.3410 and 0.8525, both
+**INSIDE `POOL_RADIUS = 1`** — the "distance" dial puts the camera inside the bowl
+over its bottom 20 %, which is interesting but is a picture fact, not a number
+anyone wants printed under a dial.
+
+**`bareCells`.** No strong candidate. The knobs are all differently named
+(`Wind`/`Dir`/`Rain`/`Bright`/`Mode`/`Dist`/`Zoom`) and none is redundant with its
+heading. Do not declare it just to have declared it.
+
+**STOP 2: CLEAN.** `MirrorpoolCard.svelte` mounts one preview canvas
+(`mirrorpool-preview`) and two pointer pads (`mirrorpool-pad-position`,
+`mirrorpool-pad-look`) driving `setNodeParam` through an rAF-coalesced flush. **No
+buttons, no `<select>`, no `node.data`, no fullscreen menu** — verified by grep. The
+pads are params, so they survive as `face.xyPads`. The only new affordance the face
+owes is the SCREEN ON/OFF cell (§25.2).
+
+**⚠ ATTEST WARNING, AND IT IS IN THE DEF'S OWN HEADER.** *"this def lives in the
+WebGL attest basis by construction… Its real shader/def flips `computeWebglHash` → a
+ONE-TIME re-attest on a trusted GPU is required… Do NOT auto-merge (maximally
+look-affecting)."* The **face itself is free** (hash-transparent), and this cohort
+adds no `options[]`/`curve` edit here — so **the face PR should cost zero attest.
+Confirm that rather than assume it**, because the header's warning will read as if
+it applies.
+
+**RISK: MEDIUM.** No defect found — this is the one module of the four where the
+audit's answer is *"zero un-exposed DSP capability"*, which is a finding, not a
+shortfall. The risks are the pad cell being a first-of-kind adopter and the attest
+false alarm.
+
+**MEASURE BEFORE RANKING:** that `face.xyPads` actually resolves two `xy` cells;
+`hasVideoSurface(mirrorpoolDef)`; and the eye-side readout at exactly
+`orbit_el = 0` before writing its negative control.
+
+### 25.5 ⚠ THE ESCALATION — the rail threshold, raised rather than padded
+
+Ruling 1 says: *if a heavy module's honest semantic grouping lands at 5–6 pages —
+under the rail threshold — do not pad pages to force the rail; raise it to the owner
+instead.* That case is now measured, and it is not one module:
+
+| module | honest pages | best grouping | reaches `DOCK_TAB_MIN_BANDS = 7`? |
+|---|---|---|---|
+| **`ruttetra`** (owner's named first application) | **6** | relief / shape / frequency / phase / beam / tint | **no — one short** |
+| `mirrorpool` | 4–5 | weather / surface / camera position / camera look | no |
+| `outlines` | 3–4 | see §25.6 | no |
+| `freezeframe` | 2 | see §25.7 | no |
+
+**The question for the owner, stated plainly:** the module you named as the first
+tabbed face groups honestly into **six** ideas, and the rail engages at seven. Three
+options, and this lane is not choosing between them:
+
+1. **Lower `DOCK_TAB_MIN_BANDS` to 6.** One-line change; it is the declared lever.
+   ⚠ It is also **baseline-moving for every already-faced module with exactly 6
+   bands** — a tabbed face never packs rows (`dock-row-plan.ts:288`), so any such
+   module's dock layout changes and its VRT baseline moves. **Count them before
+   quoting a price; do not assume it is only ruttetra.**
+2. **Accept ruttetra as a 6-band untabbed face** and revisit when a genuinely
+   7-idea video module arrives (`spirographs` at 31 params and `quadralogical` at 21
+   are the obvious candidates already in the bank).
+3. **Declare that ruttetra's tint page splits** into something the DSP does not
+   support. This lane recommends AGAINST it — it is the padding the ruling forbids.
+
+**Recommendation: (2) for this cohort, with (1) evaluated on `spirographs`/
+`quadralogical` where the page count is not marginal.** Shipping ruttetra untabbed
+costs nothing that a later threshold change cannot recover, whereas moving the
+threshold now re-baselines faces this cohort never touched.
+
+### 25.6 Q32 · `outlines` — five knobs that only affect shapes that do not exist yet
+
+**Merit: YES.** 9 params (**7 user-facing + 2 hidden synthetic gates**), 9 inputs
+(1 video + 6 `paramTarget` CV + **2 gate**), **4 outputs** — `overlap`/`contour`
+(mono-video) and `combine`/`mapped` (video). A stateful particle generator: a gate
+edge (or an internal clock) spawns a shape that moves, bounces, and accumulates into
+a 1024 px field.
+
+**Control-heavy: NO.** Seven knobs of ONE type over 3–4 ideas. It does not meet the
+ruling's "controls of different types" test and should not be tabbed.
+
+**THE ONE THING NO DIAL SHOWS, AND IT IS THE WHOLE RANKING ARGUMENT.**
+**Five of the seven knobs are LATCHED AT SPAWN.** `d`, `v`, `spd`, `decay` and
+`shape` are copied into each shape as it is born; turning them afterwards changes
+**nothing** about the shapes already on screen. Only `rotation` and `collide` are
+LIVE. So a player who turns SPEED and sees nothing move is not looking at a broken
+control — they are looking at a control that only applies to the future.
+
+| param | 0..1 maps to (measured off the SIM) | default | latched? | CV |
+|---|---|---|---|---|
+| `d` | **5 .. 270 px** circumdiameter | 0.3 → **84.50 px** (field is 1024) | LATCHED | yes |
+| `v` | 0 .. 2π rad | 0.125 → **45.00°** | LATCHED | yes |
+| `spd` | 0 .. 300 px/s | 0.4 → **120.0 px/s** = 11.72 % of the field per second | LATCHED | yes |
+| `decay` | 0 .. 10 s | **0 → PERSIST** (see below) | LATCHED | yes |
+| `shape` | 6 states, bands of **0.166667** | 0 → circle | LATCHED | yes |
+| `rotation` | ∓12.5664 rad/s (**±2 rev/s**) | 0.5 → **0 bit-exactly** | **LIVE** | yes |
+| `rate` | clock interval | 0.5 → **2250 ms** between shapes | n/a | **NO CV** |
+
+**`rate` is the hero, and it is the only knob that is not latched, not live, but
+GENERATIVE.** Measured, it does NOT ramp in from infinity: below
+`RATE_ENGAGE_THRESHOLD = 0.001` it returns **null** (gate-only, clock off), and the
+instant it engages it is at **3996 ms**, tightening linearly to **500 ms** at 1.0.
+So the knob has a hard on/off step at its very bottom and then a 4000→500 ms sweep.
+At the shipped default the field reaches its `MAX_CIRCLES = 200` cull in
+**7.5 minutes** with `decay = 0`.
+
+⚠ **`decay = 0` is a MODE, not a time, and the default sits exactly ON the
+discontinuity.** Measured `alphaFor(age = 5 s)`: **1.0000** at `decay = 0`
+(persist forever, FIFO-culled) and **0.0000** at `decay = 0.0001` (a 1 ms fade).
+The docs do state it (`outlines.ts:48-50`), so this is a readout job, not a defect —
+but a face that prints "0.0 s" under DECAY is actively lying, and per the
+no-resting-decimals ruling it should print the NAME (`persist`) instead.
+
+**Tier ladder as a sentence:** mini gives RATE (the thing that makes it a source at
+all); compact adds SHAPE; plate gives rate, shape, size, speed, decay and rotation;
+`v` is dock-only. Rank: `rate, shape, d, spd, decay, rotation | v`.
+
+**READOUTS.** Three, and all three are NAMES or real units rather than restatements:
+
+1. **`outlines-shape-name`** (`paintsReadout`) — CIRCLE / TRI / SQUARE / PENTA /
+   HEXA / OCTA. ⚠ **See the correction on #1866: the CARD ALREADY DOES THIS
+   CORRECTLY**, deriving from the sim's own `mapShape`, so promotion REMOVES a
+   working affordance unless the face reproduces it. Free route: a `valueId` naming
+   the shape. Expensive route: `options[]` + `curve: 'discrete'` (a real-GPU
+   re-attest). **Do the free one in the face PR and let #1866 land separately.**
+2. **`outlines-spawn-interval`** — the clock in ms, or `gate only` below the
+   threshold. Negative control: it must read `gate only` at `rate = 0.001` and
+   **3996 ms** at `0.001001`, because a linear readback of the knob is blind to the
+   engage step entirely.
+3. **`outlines-decay`** — `persist` at 0, seconds above it. Negative control: it must
+   NOT read "0 s".
+
+**`bareCells`.** No. Seven differently-named knobs; nothing is redundant with a heading.
+
+**⚠ STOP 2 — two card-only affordances, and one of them is structurally
+unreachable from a face readout.**
+
+- `outlines-shape-readout` and `outlines-rot-readout` — recoverable as `valueId`s
+  (above), since both derive from params.
+- **`outlines-gated-badge` (`:99`) is NOT recoverable.** It renders `[GATED]` from
+  `gatePatched`, derived from the **edge list**. A `FaceReadoutValue` receives
+  `(read: (paramId) => number | undefined)` and is therefore **structurally blind to
+  patch state** — the same class as the five underivable samsloop readouts. The face
+  PR must either find a different seam or carry a written exemption. It is recorded
+  on #1866.
+- No buttons, no `<select>`, no `node.data`, no fullscreen menu — verified by grep.
+
+**`noUserControl` IS OWED HERE (2 params).** `cv_gate` and `cv_collide` are hidden
+synthetic params that exist only so the CV bridge has somewhere to write a gate
+edge. `backdraft` is the ONLY adopter in the tree, so there is one precedent to copy
+and it is a good one. **Zero attest cost.** ⚠ Without it, `module-face-lint`'s
+completeness loop will demand an interactive cell for each and paint two continuous
+rotaries over raw gate levels.
+
+**⚠ THE PREVIEW SEAM IS DIFFERENT HERE** — `outlines-screen` is a 2D canvas fed by
+`read(node, 'sceneCanvas')`, not a GL blit. Build the SCREEN ON/OFF cell against
+`hasVideoSurface`, not against `blitOutputToDrawingBuffer` (§25.2).
+
+**⚠ Four outputs, and the card previews ONE.** Like Q26's `grains`, three of the four
+derived pictures (`contour`, `combine`, `mapped`) have no on-card view. A face is
+the first surface that could show them. Merit argument, not a requirement.
+
+**RISK: LOW-MEDIUM.** No new defect beyond #1866. The work is the `noUserControl`
+declaration, three readouts and the unreachable `[GATED]` badge.
+
+**MEASURE BEFORE RANKING:** whether a `valueId` shape name is accepted by
+`paintsReadout` (the rule is "a declared option/landmark NAME with no `format`" —
+confirm a `valueId` qualifies, not just a `paramId` with options); and the engage
+step at exactly `rate = 0.001` vs `0.001001`.
+
+### 25.7 Q33 · `freezeframe` — a passthrough that is not one, and the promotion that empties the video fixture list
+
+**Merit: YES, though it is the smallest of the four.** 8 params (**7 user-facing +
+1 hidden**), 2 inputs (1 video + **1 gate**), **5 outputs**
+(`video_out` + `r_out`/`g_out`/`b_out`/`luma_out`). Video sample-&-hold with
+per-channel posterize and phosphor decay.
+
+**Control-heavy: NO — clearly.** Four identical QUANT knobs plus a three-control
+decay group is **2 honest pages**, and 4 of the 7 controls are the same control
+four times. This is the opposite end of the ruling from ruttetra.
+
+**⚠ THE IDENTITY OF THIS MODULE IS NOT A PARAM.** Measured `shouldCapture` at
+spawn: with the gate UNPATCHED it returns **true** (live passthrough); with a
+patched, LOW gate it returns **false** (frozen). So the module does nothing at all
+until a cable arrives, and **three of its seven knobs are inert until then**:
+`decay`, `decay_invert` and `decay_time` are only observable while the image is
+FROZEN, because a captured frame is age zero. The docs say so out loud, to their
+credit. This is the Q23 "a clock nobody can see" shape — the hero is a jack.
+
+Measured, decay-off is provably a no-op rather than a rounding perturbation:
+`applyDecay(v, 1, 0) === v` for **all 256** code values; `decayEnvelope(0) = 1`
+and `decayEnvelope(1) = 0` exactly.
+
+**Thresholds sampled AT their declared values, not around them:**
+
+| quantity | at the boundary | just below | just above |
+|---|---|---|---|
+| `holdQualified` (`HOLD_QUALIFY_MS = 75`) | **75 ms → true** | 74.999 → false | 75.001 → true |
+| …at `DEFAULT_GATE_LEN_S` (50 ms) | 50 ms → **false** (a GATEMAIDEN-derived gate is a TRIGGER, deterministically) | | |
+| `gateIsPatched` ms grace (500) | 500 → true | | 500.001 → **false** |
+| `gateIsPatched` frame grace (3) | 3 → true | | 4 → **false** |
+
+Renderer independence holds by construction — 1, 8, 60 and 600 steps across the same
+0.5 s all give `progress = 1`, `k = 0`.
+
+**RANKING.** `quant_luma` first — it is the only QUANT that touches BOTH the main
+output and its own isolate tap (the other three each drive one channel), and it is
+where the defect is. Then `quant_r/g/b`, then the decay group. Rank:
+`quant_luma, quant_r, quant_g, quant_b, decay, decay_time | decay_invert`.
+
+**Tier ladder as a sentence:** mini gives QUANT LUMA; compact adds QUANT R; plate
+gives all four QUANTs plus the DECAY switch and its time; INVERT is dock-only.
+
+**Pages (2):** `quantize` (`quant_r`,`quant_g`,`quant_b`,`quant_luma`) ·
+`decay` (`decay`, `decay_invert`, `decay_time`).
+
+**`bareCells` — the strongest candidate in this cohort.** Under a `quantize`
+heading, `QUANT R` / `QUANT G` / `QUANT B` / `QUANT LUMA` say "QUANT" four times.
+This is exactly mixmstrs' `1LO…8LO`-under-`LOW` case. Declare `face.bareCells` for
+all four so the captions read `R` / `G` / `B` / `LUMA`. Dock-only; `hideCaption`,
+never a dropped `label`.
+
+**CONTROL SHAPES ARE ALREADY CORRECT — a rare clean bill.** `decay` and
+`decay_invert` are `curve: 'discrete', min 0, max 1`, so `looksLikeToggle` is TRUE
+and they render as toggles. They are **not** §20.3's inverse defect (unlike
+`grainsOfVision`'s three `linear` booleans). `decay_time` is `curve: 'log'` with
+`units: 's'`. **The options price for this module is ZERO.**
+
+**`noUserControl` IS OWED (1 param):** `gateLevel`, the hidden synthetic the CV
+bridge writes. Free.
+
+**READOUTS.** Weak, and that is the honest answer. A "levels" readout for each QUANT
+would restate a dial through a known monotone map (256 / 32 / 2 at 0 / 0.5 / 1,
+verified exact). The one defensible readout is a **gate-state name** —
+`live` / `frozen` / `held` — but it depends on `gatePatched`, which is derived from
+the CV bridge's write recency and is **not a param**, so it is the `[GATED]` class
+again: structurally unreachable from a `FaceReadoutValue`. **Recommend: no derived
+readout, stated as a decision rather than an omission.** Do not invent one to have
+one; the kickdrum TAIL trap is what that produces.
+
+**STOP 2: CLEAN.** `FreezeframeCard.svelte` mounts 4 NeonFaders + 2 Toggles + 1
+NeonFader (all params), one preview canvas, and a PatchPanel. No buttons, no
+`<select>`, no `node.data`. Only the SCREEN ON/OFF cell is newly owed.
+
+**DEFECT FILED — fold into this module's face PR:**
+
+- **#1861 — `quant_luma` at its DEFAULT is not the passthrough the docs claim.**
+  Measured over the ENTIRE 16,777,216-triplet 8-bit RGB cube with every param at its
+  declared default: **only 61.34 % of colours pass through bit-exactly; 38.66 %
+  (6,485,727) move by ≥1 code value.** Worst error **8 code values** at
+  `src(0,0,8) → out(0,0,0)`. **25 non-black colours are driven to exactly black.**
+  Luma gain ranges 0.000000 .. 1.003922 and 130,388 triplets clamp. The r/g/b path is
+  fine — **0 of 256** code values move — because `posterize(k/255, 256)` IS identity
+  on the 8-bit grid. The luma path is not, because luma is a weighted sum of three
+  8-bit values and is therefore OFF that grid; the combined branch then multiplies the
+  whole pixel by `posterize(luma,256)/luma`. One-line demonstration:
+  `posterizeChannel(0.5, 256) = 0.5019607843137255`.
+  ⚠ Fixing it is a look change on `video_out` for every patch → owner preview, and it
+  moves the `freezeframe` VRT baseline.
+
+**⚠⚠ THE BLOCKING HAZARD, AND IT IS NOT ABOUT THIS MODULE — #1864.**
+`freezeframe` is one of only FOUR members of `UNMIGRATED_VIDEO_CANDIDATES`
+(`e2e/tests/_face-fixtures.ts:315`), and **this cohort spends all four**:
+
+| event | list after |
+|---|---|
+| today | bentbox, b3ntb0x, freezeframe, grainsOfVision — 4 |
+| **Q26 `grainsOfVision` promotes** (build lane, today) | 3 |
+| **Q24 `b3ntb0x` + `bentbox` promote** (next in the bank) | **1** |
+| **Q33 `freezeframe` promotes** (this entry) | **0 → THROWS AT IMPORT TIME** |
+
+The IIFE throws at module load, so it does not fail one spec — it takes down **every
+spec that imports `_face-fixtures.ts`** before any of them runs a line. This is
+§20.6's finding one domain over; §20.6 only ever swept the AUDIO list.
+**#1864 must be paid BEFORE Q24 lands, not before Q33** — Q24 alone takes the list
+from 3 to 1.
+
+**Other registry touchpoints (checked, not assumed):** masked in
+`vrt-exemptions.ts:164-166` (the live preview canvas); listed in
+`vrt-live-surfaces.test.ts:149` at 20.1 % live area; has per-port drivers; in
+`STRICT_DOCS:320`.
+
+**RISK: MEDIUM**, entirely because of #1864 and #1861 — the face itself is the
+simplest of the four.
+
+**MEASURE BEFORE RANKING:** re-run the cube probe against the REAL GL path (the
+numbers above are the float64 CPU mirror; float32 could move a few boundary pixels,
+though not the `luma < 1/256` crush, which is a factor-of-256 effect); and confirm
+`hasVideoSurface(freezeframeDef)`.
+
+### 25.8 THE ADVERSARIAL PASS — what I attacked in my own spec, and what survived
+
+Per `module-adversarial-audit.md`, every claim above was attacked. Recorded because
+*"verified X by measuring Y"* beats *"X is true"* — and because **two of these
+attacks succeeded**.
+
+**⚠ ATTACK 1 — SUCCEEDED. My own instrument was wrong, and it read as a finding.**
+The first `swellField` probe passed `(x, z, windSpeed, windDir, t)` against a
+signature of `(x, z, windDir, windSpeed, t)`. It reported a **bit-exactly flat
+height field at every wind value**, which looks exactly like the cube-MORPH class of
+dead-control defect and would have been written up as one. The tell was that it was
+flat at `wind_speed = 1` too — a defect that total should have been caught by the
+module's own tests. Re-run with the correct order: peak height 0.015787 world units
+at the default, 0.052623 at max, peak slope 14.69°. **The module is fine; the probe
+was not.** This is CLAUDE.md's "a wrong metric reads exactly like a finding", and it
+happened on the first module I probed with a multi-arg core function. Any builder
+re-deriving these numbers should check argument order FIRST.
+
+**⚠ ATTACK 2 — SUCCEEDED. A claim in a filed issue was false and is corrected.**
+#1866 asserted that `OutlinesCard` "has no shape-name formatter at all". It has one
+(`SHAPE_NAMES` + the sim's own `mapShape`, `outlines-shape-readout`). The correction
+is posted on the issue. It **inverts the conclusion**: this is not a pre-existing gap
+the face merely exposes, it is an affordance the face would REMOVE — a
+functional-parity regression, which is a hard requirement rather than a nice-to-have.
+The cause was a grep pattern (`<button|<select|<input|node.data|…`) that does not
+match a `<span>` readout. **A STOP 2 grep is a necessary condition, not a sufficient
+one — read the card.**
+
+**ATTACK 3 — my radial-collapse hypothesis, DISPROVEN, and the disproof found
+#1863.** I predicted that at `xShape = 1` and `yShape = 1` both axes would evaluate
+the same `radial` expression and the entire raster would collapse onto one diagonal
+line. Measured: **0 of 57,600 points** satisfy the collapse identity (max residual
+3.18e-3). The reason is the finding — the arm-3 coefficient is 1.002, not 1, so
+`morph = 1` is not radial at all. Had I written the spec from the reasoning I would
+have shipped a confident, wrong, dramatic claim and missed the real (smaller) defect
+underneath it.
+
+**ATTACK 4 — "the geometry probe shows `intensity` and the three tints are dead."**
+It shows 0/154 for all four. They are NOT dead; the probe measures vertex POSITION
+and those four params write vertex COLOUR. A separate colour probe moves all four.
+**Recorded in §25.3 with the probe's blind spot stated inline**, because the table
+alone would mislead. This is the "state what the gate is structurally unable to see"
+rule applied to a measurement rather than a gate.
+
+**ATTACK 5 — "is the freezeframe cube result just float64-vs-float32 noise?"**
+No, and the numbers separate the two cleanly. An ULP difference between the JS mirror
+and the GLSL would move boundary pixels by ≤1 code value. The measured worst error is
+**8 code values**, and the mechanism at `luma < 1/256` is `floor(x) = 0` producing a
+gain of **exactly 0** — a factor-of-256 effect. The float32 caveat is recorded on
+#1861 rather than hidden, and it bounds only the 1-code-value tail.
+
+**ATTACK 6 — "the XY pad cell doesn't exist; mirrorpool is blocked."** This is the
+`getActiveEngine` shape and I expected to find a blocker. It does not exist:
+`'xy'` is a real `ParamCellKind` and is declared through `face.xyPads`, a field
+distinct from `face.paramCells` (`AuthoredParamCell` excludes `'xy'` by type).
+**Recorded because the near-miss is the lesson** — I nearly wrote "blocked pending
+`<XyPad>` consolidation" from §4's stale `joystick` deferral without checking that
+the consolidation had landed.
+
+**ATTACK 7 — "is the ruttetra flyback actually visible, or is it sub-pixel?"**
+0.9969 frame widths is 1020 px on a 1024 px frame; 180 of them, additively blended.
+Not sub-pixel. ⚠ **But it is measured off the pure `shapedRamp` mirror, not off a
+render** — which is why #1862 and §25.3 both say to confirm on the GL path. **This is
+the claim a builder should re-check FIRST**, because the whole issue rests on the
+mirror agreeing with the vertex shader, and the vertex shader is the one place in
+this cohort where a `textureLod`-vs-`texture` driver difference has already caused a
+real owner-reported bug (`ruttetra.ts:155-163`).
+
+**ATTACK 8 — "does the 8-page backdraft precedent mean ruttetra must reach 7?"**
+No, and this is the attack I most wanted to lose. I could reach 7 by splitting tint
+into R/G and B, or by giving `intensity` and the tints separate pages from a
+"colour" parent. Both are the padding ruling 1 forbids in the same paragraph that
+mandates the rail. **The honest number is 6 and it is escalated in §25.5 rather than
+engineered away.**
+
+**WHAT I DID NOT MEASURE — stated so a builder knows the edges of this spec:**
+
+- **Nothing was rendered.** Every figure is from the pure CPU mirrors and the defs'
+  own exports, per the constraint against running e2e/VRT/ART. §5.2 applies at full
+  strength: a spec's arithmetic is a hypothesis.
+- **No dock layout was measured.** Page counts, band counts and the `bandIsPackable`
+  consequences are derived by reading `dock-row-plan.ts`, not observed.
+- **The SCREEN ON/OFF cell does not exist yet**, so §25.2 specifies its contract
+  from backdraft's implementation and the ruling — it is not a measurement of a
+  working cell.
+- **`markWatched` behaviour while collapsed was NOT measured on any of the four.**
+  Q26 flagged it as the platform hazard and it is still DERIVED-BY-READING here.
+- **Push 2 card impact was not computed.** Each of these four moves from the GENERIC
+  tier to the FACE tier on promotion, so `push-card-schema.test.ts`'s golden will
+  diff. Accept it deliberately with the reason written in, or pin an explicit
+  `PUSH_CARD_CONTROLS` entry.
+
+### 25.9 THE COHORT AT A GLANCE
+
+| Q | module | dom | par | tabbed? | why it earns a face, in one line |
+|---|---|---|---|---|---|
+| **Q30** | `ruttetra` | V | 12 | **6 pages — one short, escalated §25.5** | The owner's named first tabbed face, over a raster that draws **180 full-width flyback streaks per frame** at the shipped defaults (#1862) and whose "radial" endpoint is a 0.2 % overshoot (#1863). |
+| **Q31** | `mirrorpool` | V | 11 | no (4–5 pages) | The cohort's only different-TYPE control set — **two X-Y pads** via `face.xyPads` — over a real wave equation whose **underwater render path switches on the sign of one pad axis** and is printed nowhere. Zero un-exposed DSP capability. |
+| **Q32** | `outlines` | V | 9 (7+2) | no (3–4 pages) | **Five of seven knobs are LATCHED AT SPAWN** and affect only shapes that do not exist yet — and promotion would REMOVE a working shape-name readout the card gets right (#1866). |
+| **Q33** | `freezeframe` | V | 8 (7+1) | no (2 pages) | A "passthrough" that moves **38.66 % of the 8-bit RGB cube** at its shipped defaults and crushes 25 near-black colours to black (#1861) — and the promotion that **empties the video fixture list** (#1864). |
+
+**Issues filed by this lane:** #1861 (freezeframe `quant_luma`) · #1862 (ruttetra
+flyback) · #1863 (ruttetra crossfade overshoot) · #1864 (`_face-fixtures` video list
+exhaustion — **pay before Q24**) · #1865 (the resizable-monitor STOP 2 population,
+8 modules) · #1866 (outlines `shape` enum, **plus a posted correction inverting one
+of its claims**).
+
+**Next after this cohort, in order** (unchanged from §24 minus what is now spec'd):
+`4plexvid` (8) · `moog911` + `moog911a` (the two strongest small audio candidates
+left) · `moogCp3` and `moog921Vco` (spec'd inside Q28, not folded into it).
+
+---
+
+## 26. THE NEXT COHORT — spec lane, 2026-08-19 (the §24 AUDIO cluster)
+
+**Measured against `main` @ `9f95f3a3`.** Every number below was produced by driving
+the **SHIPPING `AudioWorkletProcessor` class** — captured through the same
+`registerProcessor` shim `art/setup/worklet.ts` uses, then pumped through
+`process()` in 128-sample blocks at 48 kHz. That is the ART capture path, so these
+are the shipping DSP's own numbers, not a mirror's. Where a figure is derived by
+reading rather than measured, it says so.
+
+**Why this cohort.** §25.9's "next after this cohort" list, in its own order, minus
+`4plexvid` (video, and it inherits §25.2's unbuilt SCREEN ON/OFF cell). The bank's
+AUDIO half was exhausted — batch 2 consumed Q5, and Q21/`moog905` is
+answered-but-marginal (#1881) — so these four restock it.
+
+### 26.1 What all four share (measured, so it is not restated per entry)
+
+| property | `moog911` | `moog911a` | `moogCp3` | `moog921Vco` |
+|---|---|---|---|---|
+| params | 4 | 3 | 5 | 6 |
+| inputs | 1 `gate` + 4 `cv` | 2 `gate` | 4 `audio` + 1 `cv` | 1 `pitch` + 2 `audio` + 5 `cv` |
+| outputs | 2 `cv` | 2 `gate` | 5 `audio` + 2 `cv` | 4 `audio` |
+| declares `face` | no | no | no | no |
+| `primaryAudioOutPortId` | **null** → `glyph:'none'` | **null** → `glyph:'none'` | `out_positive` — a glyph BINDS | `sine` — a glyph BINDS |
+| card passes `readLive` | **yes, all 4** | **yes, all 3** | **yes, all 5** | yes on the 5 knobs; **no** on the SYNC buttons |
+| in `STRICT_DOCS` | yes (`:130`) | yes (`:131`) | yes (`:137`) | yes (`:112`) |
+| ART baseline | `env` (and `env_inv` asserted bit-exactly `1−env`) | `out1` + `out2` | `out_positive` only, of 5 audio outs | **all 4 taps** |
+| VRT | EXEMPT (`:906`) | ⚠ **`STRICT_VRT_MODULES` (`:1169`)** | EXEMPT (`:890`) | EXEMPT (`:882`) |
+| `raw-write-ledger` | — | — | — | ⚠ **`sync` (`:230`)** |
+| `rack-sizes` | 1u / 2hp | 1u / 1hp | 1u / 2hp | 2u / 2hp |
+| `INTERACTIVE_DOC_MODULES` | yes (`:106`) | no (`card:` override) | no (`card:` override) | yes (`:94`) |
+| multi-state enum with no `options[]` | 0 | 1 (`mode` — **harmless, see Q35**) | 0 | ⚠ **1 (`sync`, #1887)** |
+
+- **⚠ ALL FOUR CARDS ALREADY PASS `readLive`.** This is the INVERSE of §25.1's video
+  result, where all four cards passed zero. **So "a face fixes a live CV defect"
+  is NOT available as a merit argument here** — do not carry it across from the
+  video cohort. It is the same shape as §23-18: check that a finding survives the
+  domain boundary instead of quoting it.
+- **All four cards wrap `ui/modules/moog/MoogPanel.svelte`, and a def-driven face
+  inherits NEITHER of its two accessibility fixes.** `:165-177` re-points
+  `.knob-wrap .label` / `.fader-wrap .label` / `.sync-label` / `.range-label` /
+  `.mode-label` from the washed-out `--text-dim` to the engraved `--text`;
+  `:190-199` re-points the patch-panel subtree tokens (the *"921b has no labels"*
+  report). ⚠ Note the selector list includes **`.mode-label`**, which is
+  `moog911a`'s mode-name readout — so promotion drops both the readout and its
+  contrast fix. Q28 raised this for the 921 pair; it is unresolved and it now
+  applies to four more modules. **State what replaces them, in every one of these
+  PRs.**
+- **`options[]` is FREE on an audio def.** `contract-signature.ts`'s whitelisted
+  projection reads `id/min/max/curve/defaultValue/units`, so a `ParamOption`
+  roster costs **no `contract-lock.txt` line** — and audio defs are outside the
+  WebGL basis, so **attest is NIL**. ⚠ But `curve` **is** projected, so a
+  `linear → discrete` edit costs a `docs:accept`. That asymmetry is the whole
+  sequencing story in Q37.
+- **`_face-fixtures.ts` cannot be harmed by any of these four**, checked rather
+  than assumed. §20.6's "one entry deep" hazard was for the OLD hand-listed
+  `UNMIGRATED_CANDIDATES`; the audio pool is now `derivePool()` and requires the
+  picked module to render `.faceplate.audio` **and** mount a `<NeonFader>`. All
+  four Moog cards mount `Knob`, never `NeonFader`, so none is a candidate and
+  promoting them cannot empty the pool. (The VIDEO list is still a hand-written
+  four-name array — §25.9's #1864 — and is untouched by this cohort.)
+- **`DESCRIPTIONS`: not owed** (§20.5) — all four are already in
+  `module-manifest.ts`. The face PR owes docs ACCURACY, and §26.3–§26.6 is where
+  the inaccuracies are.
+- **CI wall-time, priced.** `faces-parity` budgets CI at roughly `10 s + 0.8 s/cell`:
+  911 → 13.2 s, 911a → 12.4 s, CP3 → 14.0 s, 921Vco → 14.8 s. **All four in one
+  wave ≈ 54.4 s**, plus 8 new face VRT scenes. Under the ~2 min bar, but
+  `faceplate-platform.spec.ts`'s `sweepBudgetMs(adopterCount)` scales with the
+  ANNOTATION/SIDEBAR adopter roster — so **declare no `face.sidebar` on any of
+  the four** (it is the one contract-projected `face` field) and the budget does
+  not move.
+
+### 26.2 ⚠ THE §24 PAIRING QUESTION, ANSWERED: `moog911` + `moog911a` ARE **TWO** ENTRIES
+
+§24 listed them together and Q28 set the precedent for pairing, so the question had
+to be settled rather than inherited. **They do not pair.** Four checks, all negative:
+
+1. **No shared DSP.** `moog911` runs `lib/moog911-eg-dsp.ts` (`Moog911Eg`);
+   `moog911a` runs `lib/trigger-delay-dsp.ts` (`DualTriggerDelay`). Nothing in
+   common but a `0.5` gate threshold each declares separately.
+2. **No shared bus, and no cross-reference in either direction.** Q28's argument
+   was that `moog921a` emits `freq_bus`/`width_bus` and `moog921b` reads them **by
+   port id**, with three files saying so. Grepping `moog911` in `moog911a`'s def
+   and worklet, and `911a` in `moog911`'s def, worklet and core: **zero hits, both
+   ways.**
+3. **Opposite merit arguments.** Q12 paired `moog914`+`moog907a` because their merit
+   argument was *identical*. The 911's merit is a TIME LAW (the dial does not mean
+   what it says); the 911A's is a QUEUE (there isn't one). A single entry would have
+   to argue both and would rank neither.
+4. **Different glyph answers are NOT the discriminator here** — unlike Q28, both
+   resolve to `null` and both must declare `glyph: 'none'`. So the one thing that
+   *forced* Q28's pairing is absent.
+
+**But there IS one genuinely paired fact, and it belongs in BOTH entries as a
+cross-reference rather than in a merged one.** The 911A's outputs declare
+`edge: 'trigger'`; the 911's input declares `edge: 'gate'` and is level-sensitive.
+Patched 911A → 911 — which is what the 911A is *for*, and the pair sits in one
+palette bucket — **at both modules' shipped defaults the envelope peaks at 0.3935
+(39.35 % of full scale) and reaches its SUSTAIN level on 0 of 144 000 samples.**
+
+| `moog911` T1 | peak `env` from a 48-sample (1.0000 ms) 911A pulse |
+|---|---|
+| 0.0001 (min) | **1.0000** |
+| 0.0007238 | **1.0000** |
+| 0.001 | 0.9933 |
+| **0.01 (shipped default)** | **0.3935** |
+| 0.1 | 0.0488 |
+| 1 | 0.0050 |
+
+**Positive control:** the same patch with a HELD gate gives peak 1.0000 and
+**131 633** samples sitting exactly at Esus. So the contour is fine; the pulse is
+1 ms. T1 must be ≤ ~0.72 ms — the bottom **17.2 %** of a five-decade log dial — for
+a 911A trigger to open the envelope fully. This is CLAUDE.md's triggers-vs-gates
+seam with a measured number on it, it is **not a defect** (both declarations are
+correct), and **nothing on either module's surface says it.** Both faces should.
+
+### 26.3 Q34 · `moog911` — an envelope whose three time dials are each wrong by a different amount, and one of them is wrong by the OTHER knob
+
+**Merit: YES.** 4 params, 5 inputs (1 `gate` + 4 `cv` `paramTarget`), 2 `cv` outputs.
+
+**What it is FOR, musically.** It is the rack's only THREE-TIME-CONSTANT contour
+generator: not attack-decay-sustain-release but *rise → settle → (hold) → fall*,
+where the settle and the level it settles to are separate controls. The verb a
+player performs is **shaping the front of a note** — how fast it arrives, how fast
+it backs off, and where it sits while the key is down. The one thing it does that
+`adsr` does not: **its settle TIME and its sustain LEVEL are coupled**, so moving
+the level re-times the stage.
+
+**Control-heavy: NO.** Four controls of ONE type. Honest page count **2**. Nowhere
+near `DOCK_TAB_MIN_BANDS = 7`, and there is no honest third idea — the module has
+one gate, one contour, no modes and no state. **No padding, no escalation**
+(§25.5's escalation was for a 6 against a 7; this is a 2 and the ruling does not
+reach it).
+
+**THE RANKING ARGUMENT, FROM THE DSP.** `egCoeff(timeS, sr) = 1 − exp(−5/(timeS·sr))`
+with `TAU_DECADES = 5`, and each stage exits on **its own** threshold — attack at
+`level >= 0.999`, decay at `|level − esus| <= 1e-3`, release at `level <= 1e-4`. So
+the delivered duration is `T · ln(k)/5` and only the attack's `k` is a constant.
+
+Measured, shipping worklet, held gate, reading each stage's own exit sample:
+
+| param | range | default | delivered at the default | authority |
+|---|---|---|---|---|
+| `t1` | 1e-4 … 10 s, log | **0.01** | **13.833 ms** (dial says 10.000) | ×1.3816 across the whole travel |
+| `t2` | 1e-4 … 10 s, log | **0.2** | **239.667 ms** (dial says 200.000) | ×1.3816 … **×0.0001**, set by `esus` |
+| `esus` | 0 … 1, linear | **0.6** | the held level | re-times BOTH `t2` and `t3` |
+| `t3` | 1e-4 … 10 s, log | **0.4** | **695.958 ms** from sustain, 736.792 from peak | ×0 … ×1.8421, set by `esus` |
+
+⚠ **ALL FOUR ARE BIT-EXACTLY INERT AT SPAWN.** With the `gate` jack unpatched,
+sweeping each param across its full declared range leaves BOTH outputs bit-identical
+to the default render. **So inertness cannot discriminate the ranking here** — say
+so, because #1758's "sample AT the declared value" habit would otherwise be read as
+finding four dead knobs. Positive control: with the gate held, `t1`/`t2`/`esus` all
+move the output and `t3` correctly does not (it needs a falling edge).
+
+**Rank order: `t1, esus, t2, t3`.**
+
+- **`t1` is rank 1 on UNCONDITIONAL APPLICABILITY.** Every gate, however short, runs
+  ATTACK. Measured (§26.2): under a trigger-length gate — the 911A patch, i.e. the
+  module's own bank-mate — T1 is the only *time* control that shapes anything before
+  the release, because the contour never reaches peak and so never enters DECAY.
+- **`esus` is rank 2 because it is the only control that changes the MEANING of
+  another control.** Holding T2 at its default and sweeping ESUS moves the delivered
+  decay **276.313 → 239.667 → 92.104 → 0.021 ms** while the T2 dial does not move,
+  and it alone decides the contour's SHAPE CLASS (pluck at 0, plateau at 1).
+  ⚠ **This argument would be WRONG for `adsr`**, and that is the test: `adsr.dsp:13`
+  is `en.adsr(...)`, the Faust stdlib's straight-linear-segment envelope, whose decay
+  segment takes exactly `decay` seconds regardless of the sustain level
+  (DERIVED-BY-READING — the wasm was not driven). The coupling is a property of the
+  911's exponential-with-fixed-threshold design, not of envelopes.
+- `t2`, then `t3`: the fine slopes, and `t3` last because it is the only one that
+  needs the gate to have already fallen.
+
+**Tier ladder as a sentence:** with `glyph: 'none'` the compact cap is
+`LANE_ROW_MAX_CELLS = 3` — at mini you get the ATTACK; at compact the attack, the
+level and the settle; at plate and dock all four. **Ranks 1–3 are the entire lane
+budget** and rank 4 is effectively dock-only.
+
+**Pages (2):** `times` = `t1, t2, t3` · `level` = `esus`. ⚠ `order` and `pages`
+DISAGREE deliberately — `order` interleaves the level between the times by priority,
+`pages` separates by kind (three log seconds vs one linear ratio). Say so in the
+comment. The `level` page is a 1-control band and earns its header on the skill's
+"1 that is the module's identity" clause: *three time constants and ONE level* is
+what a 911 is.
+
+**GLYPH: `'none'`, and there is a NEW mechanical finding behind it (#1888).**
+`primaryAudioOutPortId` (`shell-glyph-live.ts:95-97`) matches `type === 'audio'`;
+both of this module's outputs are `cv`, so it returns **null** and every glyph
+except `'envelope'` falls through to `{kind:'static'}` — the dead-glyph state.
+⚠ **And `'envelope'` does NOT rescue it.** `glyphBinding` (`:119-124`) resolves
+`env-params` only when the def carries four params literally NAMED `attack`,
+`decay`, `sustain`, `release`; the 911's are `t1`/`t2`/`esus`/`t3` **by design**
+(*"NOT a literal ADSR"*, stated in the def header and in `docs.explanation`). So the
+one module in this cohort that visually IS an envelope **cannot draw one**, and
+renaming its params to satisfy the resolver is exactly CLAUDE.md's "before fixing a
+declaration to satisfy a gate, check the consumer reads it" inverted.
+Counted, not assumed: **`glyph: 'envelope'` has exactly ONE adopter (`adsr.ts:151`)**,
+and six defs carry the ADSR quadruple. **#1888** proposes the declaration-shaped fix
+(a role mapping under `face`, hash-transparent, no lock line). **It is an ENABLER,
+not a blocker** — Q34 ships with `glyph: 'none'` and a compact cap of 3; #1888 would
+trade one control for a live contour picture.
+
+**READOUTS — the strongest part of this entry, and every one is params-only so
+`FaceReadoutValue` can see it.** All four quantities are `ParamDef`s, so nothing is
+structurally unreachable (contrast samsloop, where five of six died on `node.data`).
+
+| `valueId` | formula (sample-rate-independent) | at the defaults | the negative control that a KNOB READBACK fails |
+|---|---|---|---|
+| `moog911-decay-ms` | `1000·t2·ln((1−esus)/1e-3)/5`, → 0 for `esus ≥ 0.999` | **239.667 ms** | hold `t2` at 0.2, sweep ESUS 0 → 0.999: **276.313 → 0.021 ms while the T2 dial never moves** |
+| `moog911-release-ms` | `1000·t3·ln(esus/1e-4)/5`, → 0 for `esus ≤ 1e-4` | **695.958 ms** | hold `t3` at 0.4, sweep ESUS: **0.000 / 640.500 / 695.958 / 736.813 ms** at ESUS 0 / 0.3 / 0.6 / 1 |
+| `moog911-contour-ms` | attack + decay + release | **949.458 ms** vs a dial sum of **610 ms** (×1.5565) | must move on ESUS, which no single dial shows |
+| *(optional)* `moog911-attack-ms` | `1000·t1·1.38155` | 13.833 ms | invariant to ESUS — publish it as the instrument's OWN negative control, the `clap-q`/`clap-bandwidth-hz` pattern |
+
+⚠ **This is the kick-drum TAIL trap with the numbers filled in.** The nearest knob
+to "decay" reads 200 ms at every ESUS position; the truth spans 276.313 → 0.021 ms.
+A reviewer checking *"does it move when I turn the decay knob"* gets a green.
+⚠ **Do NOT read the no-resting-decimals ruling as banning these.** That ruling
+deleted `persistentReadout` (verified: zero occurrences remain in `packages/web/src/lib`)
+— the PER-CONTROL decimal. `FaceReadout.valueId` and the readout ROW below the hero
+are alive and are the mechanism batch 3 shipped. Different field, different surface.
+Totality legs are mandatory: `esus` at exactly 1 and exactly 0, a fresh node, NaN and
+±Infinity — the function runs on every render.
+
+**`bareCells`: NO, decided rather than skipped.** Under a `times` heading, `T1`/`T2`/`T3`
+are the ONLY thing separating three identical log knobs — the tidyVco `A`/`D`/`S`/`R`
+case the owner explicitly kept, not the mixmstrs `1LO…8LO` case he removed.
+
+**STOP 2: CLEAN, and the card was READ, not just grepped.** `Moog911Card.svelte` is
+4 `<Knob>` + `<PatchPanel>` + `<MoogPanel>`; the grep finds no `<button|<select|<input|
+oncontextmenu|manualTrigger|Toggle|Selector|accept=`, and reading it line by line
+finds no `<span>` readout and no `node.data` (§25.8's ATTACK 2: the grep is
+necessary, not sufficient). The only losses are MoogPanel's two a11y fixes (§26.1).
+
+**⚠ ENROL `Moog911Card.svelte` IN `RANGE_BOUND_CARDS`.** It hand-types
+`min={0.0001} max={10} defaultValue={0.01}` on all four Knobs. They AGREE with the
+def today, so `card-def-agreement` is green — which is precisely the
+`AnalogLogicMathsCard` case already in the list: promotion makes the dock render off
+the `ParamDef` and the card off its own literals, so a later edit to one ships two
+surfaces calling one control two things.
+
+**Push 2:** no `PUSH_CARD_CONTROLS` entry, so it is GENERIC today and promotion moves
+it to the FACE tier. The golden diffs by a swap of slots 2 and 3 (declaration order
+`t1,t2,esus,t3` → face order `t1,esus,t2,t3`). Accept deliberately, with the reason
+written in the test.
+
+**VRT:** `EXEMPT_FROM_VRT:906` with the reason *"deterministic beige Moog faceplate
+(4 knobs T1/T2/ESUS/T3…)"*. ⚠ **That reason names a card that stops rendering on
+promotion** — a ledger entry describing an artifact that no longer exists is RED per
+CLAUDE.md. Re-word it or capture, in the face PR. The two NEW `face-moog911-*.png`
+scenes need a `FACES` entry `{ type: 'moog911', pages: 2 }` in `e2e/vrt/_shell-faces.ts`.
+
+**Rear card:** 5 input holes (`gate` + 4 `_cv`) and 2 outputs, both `cv`. The four CV
+holes map 1:1 onto params so they land in their params' page sections; **`gate` has
+no `paramTarget` and is the orphan to check** against `rearFieldPlan` before
+declaring `face.rear.groups`. Outputs take the derived default (one section, one
+cable domain).
+
+**DEFECT FILED, not folded in: #1885** — the three T knobs declare `units: 's'` and
+none delivers it, plus two bit-exact null REGIONS bisected to their boundaries
+(`t2` inert for `esus ≥ 0.999000`, the top 0.1 % of that dial; `t3`-from-sustain
+inert for `esus ≤ 0.00010000`, the bottom 0.01 %) and a 7× discontinuity AT the
+declared minimum (`T1 = 0.0001` completes in **1 sample**; `T1 = 0.000100001` in
+**7**, because `MIN_TIME_S` equals the def's own `min` and the guard is `<=`).
+⚠ **#1885 CORRECTS §22.6**, which said *"`esus = 0` makes T3 and `t3_cv` bit-exactly
+inert"* without the qualifier: it is inert only when the release starts **from
+SUSTAIN**. Positive control — release mid-attack (a 3-sample gate) at ESUS 0 and
+`t3` 0.0001 vs 10 s are NOT bit-identical (peak 0.0308).
+
+**Also measured, not a defect, and worth one sentence of boy-scout docs:**
+`env_inv` sits at **exactly 1.0 for all 48 000 samples** of an unpatched second — a
+full-scale DC source on a `cv` output, on no dial. Intentional and `adsr` documents
+it (`adsr.ts:194`, *"it sits at 1 at rest"*); `moog911`'s own
+`docs.outputs.env_inv` does not.
+
+**RISK: LOW.** No look-affecting DSP change, no ART move, no committed VRT baseline
+moved, attest NIL, `docs:accept` not required (nothing in the contract projection
+changes). **The face is a pure surface addition over a module that works.**
+
+### 26.4 Q35 · `moog911a` — a delay whose most consequential number is the clock rate above which it emits NOTHING
+
+**Merit: YES**, and the merit is one number the module cannot currently print.
+3 params, 2 `gate` inputs, 2 `gate` outputs.
+
+**What it is FOR, musically.** It is the rack's only TIME-SHIFTER FOR EVENTS: a
+trigger goes in, the same trigger comes out later. The verb is **offsetting a hit**
+— a flam, a second voice a beat behind, a delayed strike. Its siblings shift
+*signal*; this one shifts *when*.
+
+**Control-heavy: NO.** Three controls. Honest page count **2**. No rail, no
+escalation.
+
+**THE RANKING ARGUMENT, FROM THE DSP.** Measured, shipping worklet:
+
+| param | range | default | measured behaviour |
+|---|---|---|---|
+| `delay1` | 0.002 … 10 s, log | **0.1** | delivered **exactly** — 0-sample error at 0.002 / 0.01 / 0.1 / 0.5 / 1 / 10 s |
+| `delay2` | 0.002 … 10 s, log | **0.1** | same, but **live in 2 of 3 modes only** |
+| `mode` | 0 … 2, discrete | **0 (OFF)** | decides whether `trig2` and `delay2` mean anything |
+
+⚠ **All three are bit-exactly inert at spawn** (both TRIG jacks unpatched): every
+output stays bit-identical across each param's full range. Positive control with one
+trigger on TRIG 1: `delay1` 0.1 vs 1.0 s → not bit-identical.
+
+**Rank order: `delay1, mode, delay2`.**
+
+- **`delay1` is rank 1 on unconditional applicability, and it is MEASURED, not
+  asserted.** In all three modes `trig1 → delay1 → out1`. Driving TRIG 2 alone:
+  mode OFF → 1 pulse on `out2`; **PARALLEL → 0; SERIES → 0.** So `delay2` is
+  conditional on a switch in a way `delay1` never is.
+- **`mode` is rank 2 because it turns a JACK on and off** — the measurement above is
+  the argument. That would be wrong for a module whose mode only re-voices a filter.
+- `delay2` third.
+
+**Tier ladder:** `glyph: 'none'` (both outputs are `gate`, so `primaryAudioOutPortId`
+is null), compact cap 3 → **every tier from compact up shows all three**; the only
+tier decision is mini, and mini is `delay1`.
+
+**Pages (2):** `delays` = `delay1, delay2` · `coupling` = `mode`. `mode` is
+categorically different (a switch among log-time knobs) and it gates the other two;
+that is a different IDEA, not a header for its own sake.
+
+**⚠ STOP 2 — THE ONE REAL ITEM, AND `options[]` PAYS IT FOR FREE.**
+`Moog911aCard.svelte:94` renders `<div class="mode-label" data-testid="moog911a-mode-name">{modeName}</div>`
+— a live three-state NAME (`OFF` / `PARALLEL` / `SERIES`) whose vocabulary exists
+only in `MOOG911A_MODE_NAMES`, an exported const the shell never reads. A def-driven
+face DELETES it and prints `0.00`. **That is a functional-parity regression, which
+is a hard requirement, not a trade** — and it is #1866's exact shape, found the same
+way §25.8's ATTACK 2 was: by READING the card, because a `<span>`/`<div>` readout
+does not match the STOP-2 grep.
+
+**The fix is free and it is already legal.** `mode` is ALREADY `curve: 'discrete'`,
+so `param-vocabulary.test.ts`'s "options requires discrete" precondition is
+satisfied today — unlike Q37's `sync`, which needs a `curve` edit first. Declare
+
+```ts
+options: [{ value: 0, label: 'OFF' }, { value: 1, label: 'PARALLEL' }, { value: 2, label: 'SERIES' }]
+```
+
+and `paramCellKind` returns `'segmented'` at the dock (3 ≤ `SEGMENTED_MAX_OPTIONS` = 6)
+and `'knob'` with a named readout at the lane tiers. **No `contract-lock.txt` line,
+no attest, no ART move.** The card's readout comes back from the declaration instead
+of from markup.
+
+**⚠ WHAT I EXPECTED TO FIND AND DID NOT — recorded so nobody re-derives it wrongly
+from the lib.** `Knob.svelte` (the LEGACY card's control) has **no `discrete` branch**:
+its `fracToValue` (`:191-201`) handles `log` and `exp` and falls through to linear.
+And `DualTriggerDelay.step` (`trigger-delay-dsp.ts:144-148`) clamps with
+`mode <= 0 ? Off : mode >= 2 ? Series : Parallel`. Composed, that predicts PARALLEL
+over the entire open interval, OFF and SERIES as single points, and the card's
+`Math.round` name disagreeing over **50 %** of the dial — a dramatic finding.
+**Measured: 0/41 sampled dial positions disagree.** The WORKLET rounds first
+(`packages/dsp/src/moog911a.ts:92`, `Math.round(this.kval(parameters,'mode',0))`), so
+the effective boundaries bisect to **0.4999999851** and **1.4999999404** — exactly
+`Math.round`, exactly what the card prints. The lib's clamp is dead code for this
+caller. **No defect.** ⚠ Contrast `moog921b.range` (Q28), where the identical-looking
+reasoning is CORRECT because that DSP smooths the value as a float. *Same
+declaration, opposite answer — read the consumer, not the sibling.*
+
+Consequence for promotion: because the worklet already rounds, `KnobConic`'s discrete
+rounding (`knob-conic-model.ts:71`) changes **nothing observable**. Promotion is
+behaviour-preserving on `mode`.
+
+**READOUTS — params-only, and the second one needs THREE params, which is what makes
+it undeniable.**
+
+| `valueId` | formula | at the defaults | negative control |
+|---|---|---|---|
+| `moog911a-max-rate` | `1/delay1` Hz | **10.0 Hz** | — (single-param; it is the *number*, not the derivation, that earns it) |
+| `moog911a-total-ms` | mode-dependent: OFF/PARALLEL → `max(d1,d2)`; SERIES → `d1+d2` | **100 ms** | hold BOTH delay dials, sweep MODE 0 → 2: **100 → 200 ms while neither delay dial moves** |
+| *(optional)* `moog911a-duty` | `0.001/delay1 · 100` % | **1.000 %** | 50.000 % at the 2 ms min, **0.010 %** at the 10 s max |
+
+**`moog911a-max-rate` is the entry's headline** and it is why this module earns a
+face at three params: it is the clock rate above which the channel emits **nothing
+at all**, and it appears on no surface in the app.
+
+**DEFECT FILED: #1886 — there is NO trigger queue and no doc says so.** Measured,
+shipping worklet, `delay1` at the shipped 0.1 s default, counting rising edges on
+`out1` over a 3.0 s render:
+
+| clock | triggers IN | pulses OUT |
+|---|---|---|
+| 8 Hz | 24 | 24 |
+| 9.9 Hz | 30 | 29 |
+| **10 Hz** | 30 | **0** |
+| **16 Hz** | 48 | **0** |
+| **32 Hz** | 96 | **0** |
+
+A **cliff at `clock period == delay`**, not a rolloff. Positive control: the same
+16 Hz and 32 Hz clocks with `delay1` at its 0.002 s minimum give **48/48** and
+**96/96**. ⚠ **The repo already knew and only a test comment says so** —
+`per-module-per-port-behavioral.spec.ts:2367-2375` pins both delays to the 2 ms
+minimum *"so each trig1 rising edge … fires 2 ms later … At the DEFAULT 100 ms delay
+a 50-Hz edge train would RE-ARM the countdown … so out1 would never pulse."*
+Accurate, and it never reaches a user. #1886 also carries: the **1.0000 ms / 48-sample**
+pulse width on no dial (duty 50.000 % at the delay minimum, 0.010 % at the maximum);
+the delay knob being read **only at the rising edge** (armed at 0.1 s and yanked to
+2.0 s 40 ms in, the pulse still lands at edge + 4800); and `docs.outputs.out2`
+stating the SERIES total as an exact equality that is **+1 sample = 20.83 µs**
+(measured at three delay pairs: 9601 vs 9600, 193 vs 192, 144 001 vs 144 000).
+
+**⚠ VRT: THIS IS THE ONE THAT MOVES A COMMITTED BASELINE.** `moog911a` is in
+`STRICT_VRT_MODULES` (`vrt-exemptions.ts:1169`) — the only member of this cohort
+that is — so promotion changes what the lane tile renders and the card scene goes
+red. It must ride a PR carrying the `vrt-update.yml` dispatch, plus the two new
+`face-moog911a-*.png` scenes. **Do not assume the Q34/Q36/Q37 shape**, which is
+exempt.
+
+**Enrol `Moog911aCard.svelte` in `RANGE_BOUND_CARDS`.** ⚠ It is ALREADY fully
+def-bound in source (`min={def('delay1').min}` …) and is **not** in the list — the
+"QUIET half of comment blindness" the file's own header describes: a card outside
+the set that certifies it, free to be delisted or to regress. Enrol it as-is; no code
+moves.
+
+**Push 2:** GENERIC → FACE, order `delay1, mode, delay2` vs declaration
+`delay1, delay2, mode`. One swap. Accept deliberately.
+
+**RISK: MEDIUM.** One committed VRT baseline moves; everything else is additive. No
+DSP change, no ART move, attest NIL, and `options[]` costs no lock line.
+
+### 26.5 Q36 · `moogCp3` — seven jacks, five knobs, and only TWO of the jacks respond to any of them
+
+**Merit: YES — and the merit is the READOUT, not the ranking. Say so plainly rather
+than dressing the channel order up as a redesign** (§18's anti-pattern 3). 5 params,
+5 inputs, 7 outputs.
+
+**STOP 1, checked rather than waved past.** The refusal needs ALL of: ≤2 params · no
+control families · no `node.data` affordances · no derived quantity worth a readout.
+It has 5 params and a real derived quantity (below), so it does not refuse — and Q6
+(`attenumix`, a plain 4-channel attenuating mixer) is the shipped precedent.
+
+**What it is FOR, musically.** It is the console: four things in, one bus out, plus
+the same bus inverted, plus a splitter, plus two fixed voltages. The verb is
+**balancing**. What it does that `attenumix` does not: **it can BOOST** — its knobs
+are gain, not attenuation — and it publishes the inverted bus at the same time.
+
+**THE RANKING ARGUMENT, FROM THE DSP.**
+
+Measured, shipping worklet, 1 kHz sine, Hann-windowed single-bin DFT past the
+smoother (**instrument controls**: the same probe on a known 0.5-amplitude sine reads
+**0.500000** at the right bin and **0.000000** at a wrong one, and a zero-crossing
+estimate agrees at 1000.00 Hz):
+
+| `ch1` | delivered amplitude |
+|---|---|
+| 0.00 | 0.00000 |
+| 0.25 | 0.50000 (−6.021 dB) |
+| **0.50** | **1.00000 (unity — the dial's MIDPOINT)** |
+| 0.75 | 1.50000 (+3.522 dB) |
+| **1.00 (the shipped default)** | **2.00000 (+6.021 dB)** |
+
+`cp3ChannelGain(k) = clamp(k,0,1) · 2`. **Unity is at the midpoint and all five knobs
+ship at their MAX.** Four correlated unity inputs at the defaults sum to a bus
+amplitude of **8.0000 — +18.062 dB over full scale**, peak **10.0000** with EXT 4
+also patched, and **there is no clamp or saturator anywhere in the path** (checked:
+peak > 1 is true).
+
+**Rank order: `ch1, ch2, ch3, ch4, attenuator4` — declaration order, deliberately,
+and rank 1 has a DSP argument the others do not.** Channel identity is the only
+ordering a mixer has, and inventing another would make the face lie about the panel.
+But `ch1` is rank 1 on merit, not just on being first: **IN 1 is also the MULTIPLE
+source** — measured, `multiple_one/two/three` are bit-identical to each other and to
+`in1` — so channel 1 is the only channel with a second job.
+
+**Tier ladder:** `primaryAudioOutPortId` = **`out_positive`**, so a glyph BINDS →
+`{kind:'live-audio'}` on the (+) bus. **Say which output, per #1692 / Q20** — here it
+is the right one and it is genuinely useful, because the meter is the surface that
+shows the +18 dB. Compact cap is therefore `LANE_ROW_MAX_CELLS_WITH_GLYPH = 2`: at
+mini CH 1; at compact CH 1 + CH 2 and the live bus meter; at plate all five; dock all
+five.
+
+**Pages (2):** `channels` = `ch1..ch4` · `4th input` = `attenuator4`. The second page
+is one control and earns its header on identity: the attenuated external 4th is the
+CP3's distinguishing feature and the reason the module is not just `attenumix`.
+
+**`bareCells`: NO.** Under a `channels` heading, `Ch1`…`Ch4` are the only thing
+separating four identical linear knobs — tidyVco's `A/D/S/R`, not mixmstrs' `1LO…8LO`.
+
+**READOUT — one, and it is the whole argument for the face.**
+
+| `valueId` | formula (params only) | at the defaults | negative control |
+|---|---|---|---|
+| `moogcp3-bus-gain` | `2·(ch1+ch2+ch3+ch4·attenuator4)` | **×8.0000 = +18.06 dB** | sweep `attenuator4` 1 → 0: **8.0000 → 6.0000 while the CH4 dial stays at 1.0** |
+
+Validated against the instrument at four settings — derived `8.0000 / 4.0000 /
+2.0000 / 6.0000` vs measured worst-case bus peak `8.0000 / 4.0000 / 2.0000 / 6.0000`,
+**AGREE** at every one. It is the first surface in the app that would tell a player
+the console is 18 dB over full scale at its own defaults.
+
+**⚠ AND THE OUTPUTS ARE MOSTLY NOT CONTROLS' BUSINESS — measured bit-exactly.**
+Every one of the five knobs, swept 1.0 → 0.0, leaves `multiple_one`, `multiple_two`,
+`multiple_three`, `plus_twelve` and `minus_six` **bit-identical**. `out_negative` is
+the bit-exact negation of `out_positive` (max abs diff `0.000000000000`).
+**So of 7 jacks, 2 carry the mix, 3 are one passthrough copied three times, and 2 are
+constants** — `plus_twelve` = **+2.400000** and `minus_six` = **−1.200000**, i.e.
+**240 %** and 120 % of the rack's own ±1 full-scale CV convention, ratio exactly −2,
+on no dial. A face's rear card should group them so nobody hunts for the knob.
+
+**DEFECT FILED: #1884 — the def's `docs` state the mix equation two different ways,
+in ONE file.** `docs.outputs.out_positive` (`:98`) and `docs.controls.attenuator4`
+(`:111`) describe `CH4·(in4 + ext4·ATT4)`; `docs.inputs.in4` (`:93`) and
+`module-manifest.ts:469` describe the code, `(in4+ext4)·ATT4`. Measured, the wrong
+form overstates the delivered level by `g4·in4·(1−ATT4)` — **50 %** at IN 4 patched
+with ATT 4 at 0.5 and **100 %** at ATT 4 = 0, and **zero at the shipped default**,
+which is why nothing noticed.
+
+⚠ **#1884 CORRECTS Q28**, which read `ch4` and `attenuator4` as *"two controls that
+look the same and are not"*. Measured, they look the same and **ARE** the same: the
+bus sees only their PRODUCT. Swap test with different signals on the two jacks
+(300 Hz on IN 4, 700 Hz on EXT 4) — `(0.5,1)↔(1,0.5)`, `(0.25,0.8)↔(0.8,0.25)`,
+`(0.2,0.9)↔(0.9,0.2)`, `(0,1)↔(1,0)` — **bit-identical every time, max abs diff
+`0.000000000000`**. Negative control on a genuinely non-interchangeable pair
+(`ch1` vs `ch4`): bit-identical **false**, max abs diff **1.915324**. **The module
+ships a redundant control dimension**, and the two wrong doc sentences are exactly
+the ones describing a module in which it would not exist. ⚠ **A face must decide
+which reading it draws**: today's code (two knobs, one job — so ATT 4's page is
+honest but its control is redundant) or #1884's fix (two knobs, two jobs). **Do not
+land the face and the fix in the same PR**; the fix is audio-audible on any saved
+rack with IN 4 patched and ATT 4 off unity, and it moves `art/baselines/moog-cp3/out_positive.f32`.
+
+**STOP 2: CLEAN.** `MoogCp3MixerCard.svelte` is 5 `<Knob>` + `<PatchPanel>` +
+`<MoogPanel>`; read line by line, no readout element and no `node.data`.
+**Enrol it in `RANGE_BOUND_CARDS`** — it hand-types `min={0} max={1} defaultValue={1}`
+five times (agreeing, so `card-def-agreement` is green today).
+
+**Also measured:** the 80 Hz knob smoother settles a CH1 1.0 → 0.0 move to 63 % in
+**95 samples (1.979 ms)** and 99 % in **439 samples (9.146 ms)** — the number to use
+if any e2e leg needs to wait for a knob write to land.
+
+**VRT:** `EXEMPT_FROM_VRT:890`, same stale-reason problem as Q34 (its reason names
+*"5 knobs, no canvas/animation"* on a card that stops rendering). Two new
+`face-moogCp3-*.png` scenes; `{ type: 'moogCp3', pages: 2 }`.
+⚠ **Its glyph is `live-audio` on `out_positive`, which is SILENT at spawn** (nothing
+patched → the bus is bit-exactly zero). That is the *mixer/reverb* determinism
+reason `_shell-faces.ts:129,182` already names, **not** the analogVco free-running
+one — so it needs no mask and no freeze argument.
+
+**RISK: LOW-MEDIUM.** No baseline moved, attest NIL, no `docs:accept`. The one real
+decision is which side of #1884 the face is drawn against, and it should be *today's
+code*, with the redundancy stated in the face comment.
+
+### 26.6 Q37 · `moog921Vco` — a 12-octave compass the panel never prints, and two of its six knobs are bit-exactly dead as delivered
+
+**Merit: YES**, and it is the strongest of the four. 6 params, 8 inputs
+(1 `pitch` + 2 `audio` + 5 `cv`), 4 `audio` outputs.
+
+**What it is FOR, musically.** One oscillator core, four simultaneous waveform jacks,
+phase-coherent. The verb is **tuning** — and the thing it does that its siblings do
+not is let you take a pure sine to one destination and a buzzing saw to another *from
+the same voice at the same pitch*. Q28 packed the 921A driver and the 921B slave into
+two defs; this is the same instrument in one, with its own dials (`octave`+`tune`
+rather than `frequency`+`freqRange`+`range`+`fine`) and a `pitch` jack the 921B lacks.
+**Spec'd as a third member of that layout vocabulary, not folded into the pair** —
+Q28 said so, and the dial sets confirm it.
+
+**Control-heavy: NO.** Six params of two types (5 knobs + 1 three-position switch).
+Honest page count **4**: `pitch` (`octave`,`tune`) · `shape` (`width`) ·
+`modulation` (`linFmAmount`,`sync`) · `out` (`level`). Four is not near 7 and there is
+no honest fifth idea, so **no padding and no escalation** — §25.5's escalation was
+argued for a 6; this is a 4 and the ruling's own instruction does not reach it.
+
+**THE RANKING ARGUMENT, FROM THE DSP.** Measured, shipping worklet, frequency by
+positive-going zero-crossing count with a Hann-windowed single-bin DFT as the
+cross-check (amplitudes 0.9997–1.0001 at every measured frequency, so the estimate is
+in the right bin rather than an alias):
+
+| param | range | default | measured authority at spawn |
+|---|---|---|---|
+| `octave` | −5…5 oct | 0 | pitch of **all four taps** |
+| `tune` | −12…12 st | 0 | pitch of **all four taps** |
+| `level` | 0…2 | 1 | **all four taps** — at LEVEL 0 every tap peaks 0.0000 |
+| `width` | 0.02…0.98 | 0.5 | **`rectangular` ONLY** — sine/triangle/sawtooth are bit-identical across 0.02→0.98 |
+| `linFmAmount` | −1…1 | **0** | ⚠ **bit-exactly DEAD at spawn** — all four outputs bit-identical across the full range |
+| `sync` | −1…1 | **0** | ⚠ **bit-exactly DEAD at spawn** — same |
+
+**Positive controls for the two dead knobs**, so "dead" means "needs a cable", not
+"broken": with a 50 Hz sine on `lin_fm`, `linFmAmount` 0 vs 1 → not bit-identical;
+with an 80 Hz sine on `sync`, `sync` 0 vs +1 → not bit-identical.
+
+**Rank order: `octave, tune, level, width, sync, linFmAmount`.**
+
+- `octave`, `tune` rank 1–2: pitch is the module's entire identity and they are the
+  only controls that move all four taps' pitch.
+- **`level` ranks 3 on REACH, measured**: it is the only remaining control that
+  touches every tap. `width` ranks 4 because it is bit-exactly confined to one of the
+  four outputs — a demotion argument that would be wrong on any single-output
+  oscillator and is right here precisely because the module's point is four taps.
+- **`sync` and `linFmAmount` rank last on UNCONDITIONAL APPLICABILITY, and it is
+  measured rather than asserted**: both are bit-exactly inert as the module is
+  delivered, each waiting on a jack that ships unpatched. ⚠ `linFmAmount` is doubly
+  so — the jack needs the knob AND the knob needs the jack.
+
+**Tier ladder as a sentence:** `primaryAudioOutPortId` = **`sine`**, so a glyph binds
+to `{kind:'live-audio'}` — **name SINE in the comment**, per #1692 and Q20's warning,
+because it is one of four taps and the picture is not "the module's output". Compact
+cap is therefore 2: at mini RANGE; at compact RANGE and FREQ beside a live sine
+trace; at plate and dock all six.
+
+**Pages (4)** as above. `order` and `pages` DISAGREE: `order` promotes `level` to
+rank 3 on reach, `pages` files it under `out` with the other output concerns. Say so.
+
+**THE READOUT STORY — Q28's headline, generalised, and it is what earns the face.**
+Q28's finding was that the 921A/921B pair prints `0.50` and `SEMI`/`OCT` and **no Hz,
+no octave count and no volts**, and that neither face could print it alone. **The
+monolith has the same hole and CAN close it alone**, because both pitch controls are
+its own params.
+
+Measured panel-only compass (no `pitch` cable):
+
+| RANGE / FREQ | measured |
+|---|---|
+| −5 / −12 (both min) | **4.0879 Hz** |
+| 0 / −12 | 130.8123 Hz |
+| **0 / 0 (spawn)** | **261.6268 Hz** |
+| 0 / +12 | 523.2427 Hz |
+| +5 / +12 (both max) | **16 744.0465 Hz** |
+
+**A 12-octave compass, 4.0879 Hz … 16 744.05 Hz, and the panel prints `0 oct` and
+`0 st`.**
+
+| `valueId` | formula (params only) | at the defaults | negative control |
+|---|---|---|---|
+| `moog921vco-panel-hz` | `261.626 · 2^(octave + tune/12)` | **261.6260 Hz** | must move on FREQ while RANGE is unchanged: **261.6260 → 391.9961 Hz** at +7 st. Validated against the instrument at 5 settings, agreement < 0.02 % |
+| `moog921vco-fm-span` | `±2000 · abs(linFmAmount)` Hz | **0 Hz** | the readout that SAYS the jack is dead — the `analogvco-fm-span` shape |
+| `moog921vco-pw-authority` | `min(width−0.02, 0.98−width)`, then the pinned fraction `1 − (2/π)·asin(min(1,span))` | **0.48 → 68.13 % pinned** | goes to **zero at BOTH endpoints** (width 0.02 and 0.98), which a one-sided readback misses |
+
+⚠ **DO NOT REUSE `analogvco-*`'s HELPERS.** `analogvco-knob-hz`, `analogvco-fm-span`
+and `analogvco-pw-authority` already exist at `face-readout-values.ts:365-372` and are
+the right SHAPE — but the 921's law is different (C4 base with ±5 oct + ±12 st,
+±2000 Hz FM, a 0.02…0.98 width). Reusing them is §18's anti-pattern 4 (*"the same
+platform pattern as module X"* without checking X's invariant).
+
+The `pw-authority` figure is confirmed two ways: derived `68.13 %` from
+`1 − (2/π)·asin(0.48)`, and **68.13 % measured** by counting the samples of a
+full-scale ±1 sine LFO for which `0.5 + cv` falls outside `[0.02, 0.98]`. `width_cv`
+is `PASSTHROUGH_BY_DESIGN` (`cv-scale-registry.test.ts:54`) with no `cvScale`, so a
+±1 LFO writes ±1 straight onto a dial with ±0.48 of room.
+
+**Also measured — the four taps are NOT level-matched**, at an identical LEVEL knob:
+`rectangular` **−0.011 dB** RMS, `sine` **−3.010 dB**, `triangle` **−4.770 dB**,
+`sawtooth` **−4.770 dB** — a **4.759 dB** spread between the loudest and quietest
+jack. And `rectangular`'s RMS is invariant to WIDTH (−0.011 dB at 0.02, 0.5 and 0.98),
+because a ±1 square has unit RMS at any duty. Nothing prints this either; patching a
+different tap changes level by up to 4.76 dB with no dial moving.
+
+**⚠ STOP 2 — THIS ONE HAS A REAL BLOCKER, AND IT IS #1887.**
+`Moog921VcoCard.svelte:83-98` renders a `role="radiogroup"` of **three
+`<button role="radio">`** (`SOFT`/`OFF`/`HARD`) whose names live only in that card's
+`SYNC_POS` array, and whose handler writes the store **raw**
+(`patch.nodes[id].params.sync = v`, `:55-58`). Promotion deletes a working named
+three-state switch and replaces it with a continuous rotary printing `0.00`, over a
+comparator in which **OFF occupies 49.85 % of the travel** (measured by
+bit-classifying 21 dial positions against the three known modes; SOFT and HARD
+25.07 % each). **That is a functional-parity regression, which is a hard requirement
+— so #1887 is a PREREQUISITE for this face, not a follow-up.**
+
+⚠ **And it has an ORDERING CONSTRAINT**: `param-vocabulary.test.ts` requires
+`curve: 'discrete'` for a param carrying `options` and rejects a def with both, so
+`linear → discrete` must land FIRST (and `curve` **is** in the contract projection →
+a reviewed `task docs:accept`), then `options[]` (free). Behaviour check, done rather
+than assumed: `discrete` rounds in `knobFracToValue`, the reachable set becomes
+{−1, 0, +1}, the DSP's ±0.5 thresholds already map those three correctly, and the
+card only ever writes those three values — **so no card user's behaviour changes**.
+⚠ Contrast `moog921b.range` (Q28), where the same edit would make currently-reachable
+values unreachable. **Same declaration, opposite answer.**
+
+**⚠ A FACE PAYS A LEDGERED RAW-WRITE DEBT AUTOMATICALLY — a citable merit argument.**
+`raw-write-ledger.ts:230-233` carries `Moog921VcoCard.svelte → ['sync']`,
+*"panel switch write — user gesture, should be undoable + synced"*. As shipped, **the
+SYNC switch is not undoable and does not sync to collaborators.** A def-driven face
+writes through the param pipeline and pays it. **And there is a live consequence
+today**: `push-card-encoder.ts:86` maps encoder motion through
+`knobFracToValue(frac, min, max, curve)` with `curve === 'linear'`, so **a Push 2
+encoder can already land on `sync = 0.3`** — a silent OFF that all three card buttons
+render un-selected, because each tests `sync === pos.v`.
+
+**⚠ VRT — AND THE SKILL'S WARNING ON THIS EXACT HAZARD IS STALE. Correct it.**
+`module-faceplates.md` trap 3 says a live surface is not pixel-deterministic, cites
+analogVco at *"254 / 154 / 315 px across three consecutive captures"*, and says such
+modules *"belong in `VRT_LIVE_SURFACES` with a mask — not in a face PR"*. Measured
+against the artifact:
+
+- **`analogVco` IS FACED and IS in the roster** — `_shell-faces.ts:84`,
+  `{ type: 'analogVco', pages: 2 }` — with **committed** `face-analogVco-compact.png`
+  and `face-analogVco-dock.png`.
+- **It carries NO mask, and its mask was DELETED.** `vrt-live-surfaces.ts` round 4
+  re-derived every entry under a corrected instrument (N separate Playwright
+  processes, not `--repeat-each`; fresh unmasked baselines): **analogVco 10/10
+  processes PASS**, and the round-2 masking of it is recorded as having *"cost
+  130 224 px of real coverage"*.
+- The mechanism is the **audio freeze pre-frame** (#1420): analogVco's tile measures
+  **0 px within-run and 0 px across two independent boots** frozen, against **394 px**
+  with `AUDIT_NO_FREEZE=1` and **337 px** with `PROBE_FREEZE_LATE=1`.
+
+**So a free-running oscillator's face scene is deterministic, and moog921Vco would
+become the THIRD such witness** after analogVco and macrooscillator — which
+`_shell-faces.ts` explicitly wants as *"complementary witnesses, not a duplicate
+pair"*. **Do not mask it. Verify with `vrt-face-audio-probe` and use
+`AUDIT_NO_FREEZE=1` as the positive control**, exactly as those two entries did.
+Roster line: `{ type: 'moog921Vco', pages: 4 }`. Its card scene is
+`EXEMPT_FROM_VRT:882`, so no committed baseline moves.
+
+**Enrol `Moog921VcoCard.svelte` in `RANGE_BOUND_CARDS`** (hand-typed `min={-5}
+max={5}` etc., agreeing today).
+
+**Push 2:** GENERIC → FACE. Order `octave, tune, level, width, sync, linFmAmount`
+vs declaration `octave, tune, width, linFmAmount, sync, level` — **three slots move**,
+the largest golden diff in this cohort. Accept deliberately with the reason written in.
+
+**DEFECTS FILED — three, plus one pre-existing, none folded in:**
+
+- **#1882** — `docs.explanation` and `DESCRIPTIONS` both promise **through-zero-style
+  linear FM**; `moogFreqHz` clamps at a positive **0.01 Hz** floor and `MoogVco.step`
+  only ever advances the phase, so it is foreclosed in two independent places.
+  Measured: the positive arm is exact (`+2000 Hz` at depth 1 — 2261.613 Hz measured
+  vs 2261.626 predicted), and at depth −1 the `sine` tap has **peak 0.125332, RMS
+  −20.37 dB** — the first eighth of one cycle of a 0.01 Hz ramp.
+- **#1883 (⚠ owner ears)** — SOFT sync is a conditional HARD zero, not the documented
+  *nudge*/*reflect*. Reporting the LAST divergent sample: at slave/master fractional
+  ratios **> 0.5** the two modes converge to **bit-identical** output after **5–10 ms**
+  (370.00 Hz → sample 240; 523.25 Hz → 480; 739.99 Hz → 240; 130.81 Hz → 240), and at
+  ratios < 0.5 they never converge (261.63 Hz and 1046.50 Hz). Over a 121-point ±1-octave
+  sweep: **82/121 = 67.77 % converge, median 15.00 ms.** Positive control: HARD vs OFF
+  identical at **0/21**. Negative control: with the jack unpatched all three modes are
+  bit-identical.
+- **#1887** — the `sync` param shape (above). PREREQUISITE.
+- **#1792 (pre-existing, OPEN)** — the *"1 Hz to 40 kHz"* claim. **Commented with the
+  new measurement** rather than duplicated: the clamp first bites at **pitch ≈ +0.49
+  V/oct with both dials pinned** (23 519.96 Hz measured against 23 520 predicted), and
+  the **panel alone reaches neither bound** — 4.0879 Hz … 16 744.05 Hz.
+
+**RISK: MEDIUM-HIGH.** A prerequisite issue with a two-step contract-touching edit,
+the largest Push golden diff, a live-audio glyph that must be verified rather than
+assumed, and an owner-ears DSP question sitting next to it. **Do not auto-merge.**
+Land #1887 first, on its own.
+
+### 26.7 THE ADVERSARIAL PASS — what I attacked in my own spec, and what survived
+
+Per `module-adversarial-audit.md`. Recorded because *"verified X by measuring Y"*
+beats *"X is true"* — and because **four of these attacks succeeded against me.**
+
+**⚠ ATTACK 1 — SUCCEEDED, TWICE, AND MY OWN CONTROL LEG CAUGHT BOTH.** The first
+`moog911` probe compared a `Float32Array` sample to a float64 literal (`=== 0.6`) to
+detect the SUSTAIN stage. It reported **0 sustain samples**, which reads exactly like
+"the module never sustains". **The tell was that the POSITIVE CONTROL — a held gate,
+which certainly sustains — also reported 0.** `Math.fround(esus)` fixes it; the held
+gate then reports **131 633** samples. The same run's "negative control" for the T2
+null was placed at `esus = 0.9999`, which is INSIDE the null region, so it passed and
+proved nothing. **A control that agrees with the subject is not a control — check
+that it is on the other side of the boundary you claim to have found.**
+
+**⚠ ATTACK 2 — SUCCEEDED. I nearly shipped a dramatic, false, 50 %-of-the-dial
+finding.** From `Knob.svelte` having no `discrete` branch and
+`trigger-delay-dsp.ts`'s `mode <= 0 ? Off : mode >= 2 ? Series : Parallel`, I
+predicted `moog911a`'s card and DSP disagree over half the MODE travel. **Measured:
+0/41.** The worklet — a file I had not yet read — calls `Math.round` first, so the
+boundaries bisect to 0.4999999851 / 1.4999999404. Recorded in §26.4 in full, because
+the reasoning is correct for `moog921b.range` and wrong here, and the only thing that
+separates them is reading the consumer. This is §23-17 verbatim: *a precedent is a
+case, not a predicate.*
+
+**⚠ ATTACK 3 — SUCCEEDED, and it is the subtlest.** Two of my own `moog921Vco` sync
+probes returned opposite answers: a tail-only comparison said HARD ≡ SOFT at 3 of 5
+pitches, a whole-buffer comparison said 0/241. I could have picked either and written
+a confident spec. **Both were right about their own window** — the modes diverge for
+5–15 ms and then converge — and the question is only answerable by reporting the LAST
+divergent SAMPLE, which is what #1883 does. This is anti-pattern 3.4 (*"the
+observation window was structurally outside the effect"*) appearing in **both
+directions at once**, and it is the claim in this cohort a builder should re-check
+first.
+
+**⚠ ATTACK 4 — SUCCEEDED, against a claim I inherited rather than made.** I was about
+to carry `module-faceplates.md`'s VRT trap 3 (*"analogVco … 254 / 154 / 315 px …
+belongs in `VRT_LIVE_SURFACES` with a mask, not in a face PR"*) into Q37's risk
+section as a reason to fear the live glyph. **The artifact says otherwise**:
+analogVco is faced, in the roster at `pages: 2`, has committed compact and dock
+baselines, and its mask was DELETED after 10/10 unmasked passes under round 4's
+corrected instrument. §26.6 records the correction. **The skill needs updating**, and
+the general lesson is §23-20's: *an inventory note is a hypothesis too — including the
+ones this repo writes about itself.*
+
+**ATTACK 5 — my `moogCp3` "two knobs, different laws" leg, DISPROVEN, and the
+disproof INVERTS Q28's conclusion.** The first probe measured CH4 and ATT 4 with the
+other parked at its max and reported ratio 1.000 at every point — which cannot
+distinguish "different laws" from "interchangeable", because `ch4gain(v)·1 = 2v` and
+`2·att(v) = 2v` coincide. Asking directly (swap the two values, different signals on
+the two jacks) gives **bit-identical at every pair, max abs diff `0.000000000000`**,
+with a genuinely non-interchangeable pair as the negative control at **1.915324**.
+Q28's *"look the same and are not"* becomes *"look the same and ARE"*, and #1884
+carries the correction.
+
+**ATTACK 6 — "the four modules' cards are dead to CV, like §25.1's four video ones."**
+**False, and checked before it was written.** All four Moog cards pass `readLive` on
+every knob. §26.1 states it as a shared property specifically so nobody reuses the
+video cohort's strongest merit line here. (The one genuine gap is `moog921Vco`'s SYNC
+*buttons*, which are not knobs and do not take `readLive`.)
+
+**ATTACK 7 — "the pairing is obvious; §24 already listed them together."** Attacked
+by looking for what made Q28's pairing *forced* — a named bus, a cross-reference in
+three files, and two different correct glyph answers. `moog911`/`moog911a` have none
+of the three (zero cross-references either way, both `glyph: 'none'`). §26.2 records
+the four checks and splits them, keeping the one genuinely paired fact as a
+cross-reference. **The near-miss is the lesson**: inheriting a grouping is not the
+same as verifying one.
+
+**ATTACK 8 — "`moogCp3` is NO FACE ON MERIT: five identical linear knobs."** It
+survives STOP 1 on the derived-quantity clause and on the Q6 `attenumix` precedent,
+but the attack changed the entry: §26.5 now says outright that the merit is the
+READOUT and not the ranking, and that the rank IS declaration order. Presenting a
+channel-numbered mixer's channel order as a redesign would have been §18's
+anti-pattern 3.
+
+**ATTACK 9 — "`glyph: 'envelope'` obviously works on an envelope generator."**
+Disproven by reading the resolver: the arm keys on four hardcoded param NAMES.
+Counted the population before filing (#1888): one adopter, six defs with the
+quadruple, and `moog911` deliberately not among them. ⚠ **And I checked that this is
+an ENABLER and not a blocker before ordering a PR around it** — §18's anti-pattern 7,
+the `getActiveEngine` shape, which two independent agents have already got wrong.
+Q34 ships today with `glyph: 'none'`.
+
+**WHAT I DID NOT MEASURE — stated so a builder knows the edges of this spec:**
+
+- **Nothing was rendered in a browser.** Every figure is from the shipping worklet
+  classes driven in Node. No dock layout, no band packing, no tier truncation and no
+  VRT pixel was observed — the page counts and `bandIsPackable` consequences are
+  DERIVED-BY-READING `dock-row-plan.ts`.
+- **`adsr`'s decay/sustain independence is DERIVED-BY-READING** (`adsr.dsp:13` is
+  `en.adsr(...)`, the Faust stdlib's linear-segment envelope). The wasm was not
+  driven. It is load-bearing for Q34's rank-2 argument, so check it if you doubt it.
+- **The `env_inv`, `out_negative` and MULTIPLE redundancies were measured; the
+  `plus_twelve`/`minus_six` rails' behaviour THROUGH the CV bridge was not.** A +2.4
+  constant is 240 % of the ±1 convention and what a `cvScale`d destination does with
+  it is unmeasured here.
+- **The 911A → 911 chain was measured as a SIGNAL** (a 48-sample buffer into the
+  911's gate input), not through the real engine graph. The cable type is `gate` on
+  both sides and the connection is sample-accurate, so the arithmetic should carry —
+  but it is not an e2e.
+- **Push 2 golden diffs were predicted from `push-card-config.ts`'s tier rules, not
+  computed** by running `push-card-schema.test.ts`.
+- **Zero-crossing frequency estimates return NaN below ~1 Hz** (fewer than two
+  crossings in the window). The sub-1 Hz rows in §26.6's low-end sweep are an
+  instrument limit, not a silent module.
+
+### 26.8 THE COHORT AT A GLANCE
+
+| Q | module | dom | par | pages | why it earns a face, in one line |
+|---|---|---|---|---|---|
+| **Q34** | `moog911` | A | 4 | 2 | Three dials declare `units:'s'` and **none delivers it** — T1 is ×1.3816 and T2 swings ×1.3816…×0.0001 **driven by the ESUS knob**, so the delivered 949.458 ms contour is a params-only readout against a dial sum of 610 (#1885, #1888). |
+| **Q35** | `moog911a` | A | 3 | 2 | Its most consequential number is the clock rate above which it emits **nothing** — 48 triggers in, **0 pulses out** at 16 Hz on the shipped defaults — and promotion would delete a working three-state name that `options[]` restores for free (#1886). |
+| **Q36** | `moogCp3` | A | 5 | 2 | **7 jacks, 2 of which respond to any control**; unity is at the dial MIDPOINT while all five knobs ship at MAX, so the defaults sum to **+18.06 dB with no saturator** — and two of its knobs are bit-exactly interchangeable (#1884). |
+| **Q37** | `moog921Vco` | A | 6 | 4 | A **12-octave compass (4.0879 Hz … 16 744.05 Hz)** the panel prints as `0 oct`/`0 st`, two knobs bit-exactly dead as delivered, four taps **4.759 dB apart**, and a SYNC switch whose face is blocked on #1887 (#1882, #1883, #1792). |
+
+**Issues filed by this lane:** #1882 (921Vco through-zero FM) · #1883 (921Vco SOFT
+sync, **owner ears**) · #1884 (CP3 equation + the interchangeability that **corrects
+Q28**) · #1885 (911 `units:'s'` + two null regions, **corrects §22.6**) · #1886 (911A
+no queue) · #1887 (921Vco `sync` param shape — **prerequisite for Q37**) · #1888
+(the `envelope` glyph's hardcoded names — **enabler for Q34**). Plus a measurement
+comment on the pre-existing #1792.
+
+**Build order, if the wave is taken as one:** Q34 → Q36 → Q35 → Q37. Q34 and Q36
+move no baseline and touch no contract; Q35 moves one committed STRICT VRT baseline;
+Q37 needs #1887 landed first and carries the largest Push diff.
+
+**Next after this cohort, in order:** `4plexvid` (8, video — inherits §25.2's unbuilt
+SCREEN ON/OFF cell) · then the §22 "next-after" names not yet spec'd
+(`warrensvisions`, and the §22.1/§22.4 deferrals if their conditions have moved).
+
+### 26.9 GLYPH RESOLUTION — RUN, NOT REASONED
+
+§23-15's rule is *"a glyph that resolves is not a glyph that reads — resolve it, then
+follow the TAP"*, and §26.3/§26.5/§26.6 each make a glyph claim. Those claims were
+**run through the real resolver** rather than derived from it, via a throwaway
+`test:one` against `$lib/ui/workflow/shell-glyph-live` (the probe file was deleted
+after the run; `packages/` is read-only to this lane). Every candidate glyph, on
+every def:
+
+| def | `primaryAudioOutPortId` | `'meter'` | `'waveform'` | `'envelope'` | `'algorithm'` |
+|---|---|---|---|---|---|
+| `moog911` | **null** | `static` | `static` | **`static`** | `static` |
+| `moog911a` | **null** | `static` | `static` | `static` | `static` |
+| `moogCp3` | **`out_positive`** | `live-audio` → `out_positive` | `live-audio` → `out_positive` | `static` | `static` |
+| `moog921Vco` | **`sine`** | `live-audio` → `sine` | `live-audio` → `sine` | `static` | `static` |
+
+(`'none'` returns `{kind:'none'}` on all four, as the first arm.)
+
+Three consequences, all now MEASURED rather than DERIVED-BY-READING:
+
+1. **`moog911` and `moog911a` must declare `glyph: 'none'`.** Every other value
+   resolves to `{kind:'static'}`, which reddens the dead-glyph clause. Their compact
+   cap is `LANE_ROW_MAX_CELLS = 3`.
+2. **#1888's central claim is now an ASSERTION, not an argument**: `glyphBinding` on
+   `moog911` with `glyph: 'envelope'` returns exactly `{ kind: 'static' }`. The
+   module the glyph exists to serve cannot resolve it.
+3. **`moogCp3` and `moog921Vco` bind `live-audio`, and the resolver names the PORT** —
+   `out_positive` and **`sine`** respectively. That is the #1692 / Q20 "say WHICH
+   tap" warning answered from the code rather than from the def's output list, and it
+   confirms the compact cap of `LANE_ROW_MAX_CELLS_WITH_GLYPH = 2` for both.
+
+⚠ **What this still does not prove**: that the tap MOVES. All four are
+`domain: 'audio'` nodes, so the `mandelbulb` failure mode (§23-15 — a `live-audio`
+binding whose tap calls `AudioEngine.getOutputNode`, which never sees a video-domain
+node) is structurally absent here. But *"resolves"* and *"reads"* are still two
+questions, and only the first was answered. The second needs a browser.
