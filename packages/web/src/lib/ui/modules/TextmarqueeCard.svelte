@@ -51,6 +51,7 @@
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
   import { portsFromDef } from './card-kit';
+  import { drawPreviewDownscaled } from './preview-downscale';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -357,7 +358,13 @@
       if (!ve.blitOutputForPreview(id)) return;
       const src = ve.canvas as unknown as CanvasImageSource;
       const c2d = previewEl.getContext('2d');
-      if (c2d) c2d.drawImage(src, 0, 0, ENGINE_W, ENGINE_H, 0, 0, previewEl.width, previewEl.height);
+      if (c2d)
+        drawPreviewDownscaled(c2d, src, 0, 0, previewEl.width, previewEl.height, {
+          x: 0,
+          y: 0,
+          w: ENGINE_W,
+          h: ENGINE_H,
+        });
     } catch {
       /* engine not ready */
     }

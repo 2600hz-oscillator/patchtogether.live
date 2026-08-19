@@ -23,6 +23,7 @@
   import { onMount, onDestroy } from 'svelte';
   import ModuleTitle from './ModuleTitle.svelte';
   import { cardParams, portsFromDef } from './card-kit';
+  import { drawPreviewDownscaled } from './preview-downscale';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -47,7 +48,7 @@
       const c2d = previewEl.getContext('2d');
       if (!c2d) return;
       // Scale the engine-res scene (640×480 by default) into the preview.
-      c2d.drawImage(scene as CanvasImageSource, 0, 0, previewEl.width, previewEl.height);
+      drawPreviewDownscaled(c2d, scene as CanvasImageSource, 0, 0, previewEl.width, previewEl.height);
     }, 33); // ~30 Hz
   });
   onDestroy(() => { if (pollTimer) clearInterval(pollTimer); });

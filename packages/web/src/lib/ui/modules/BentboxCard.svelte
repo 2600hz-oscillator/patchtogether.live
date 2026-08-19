@@ -34,6 +34,7 @@
   import { liveEngineAspect } from './video-card-aspect';
   import ModuleTitle from './ModuleTitle.svelte';
   import { captureFlowStore, cardParams, portsFromDef } from './card-kit';
+  import { drawPreviewDownscaled } from './preview-downscale';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -223,7 +224,7 @@
         // browser accounts for GL's bottom-left origin). A straight blit is
         // correct — the manual scale(1,-1) that used to be here flipped the
         // image upside down. See VideoOutCard for the full rationale.
-        ctx2d.drawImage(src, r.x, r.y, r.w, r.h);
+        drawPreviewDownscaled(ctx2d, src, r.x, r.y, r.w, r.h);
       }
     }
     // Reflect gate-toggled mirror state from the engine back into the store

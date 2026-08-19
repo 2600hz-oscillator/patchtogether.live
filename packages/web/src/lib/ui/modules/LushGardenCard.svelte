@@ -30,6 +30,7 @@
   import type { VideoEngine } from '$lib/video/engine';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
+  import { drawPreviewDownscaled } from './preview-downscale';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -70,7 +71,8 @@
         try {
           // #1802 — gated preview blit (see VideoEngine.blitOutputForPreview).
           if (videoEngine.blitOutputForPreview(id)) {
-            c2d.drawImage(
+            drawPreviewDownscaled(
+              c2d,
               videoEngine.canvas as CanvasImageSource,
               0, 0, previewEl.width, previewEl.height,
             );

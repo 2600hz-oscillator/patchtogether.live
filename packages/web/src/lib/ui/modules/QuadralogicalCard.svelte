@@ -312,6 +312,7 @@
   // not the transformed SvelteFlow viewport (same rationale as ControlContextMenu).
   // clampMenu keeps the whole menu (incl. the Electra cascade growth) in view.
   import { clampMenu, portal } from '$lib/ui/menu-viewport-action';
+  import { drawPreviewDownscaled } from './preview-downscale';
 
   // ---- on-card MIX preview canvas ----
   const ENGINE_W = VIDEO_RES.width;
@@ -353,7 +354,7 @@
       ctx2d.fillStyle = '#050608';
       ctx2d.fillRect(0, 0, cw, ch);
       const r = fitRect(cw, ch);
-      ctx2d.drawImage(src, r.x, r.y, r.w, r.h);
+      drawPreviewDownscaled(ctx2d, src, r.x, r.y, r.w, r.h);
     }
     drawRaf = requestAnimationFrame(draw);
   }

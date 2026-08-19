@@ -27,6 +27,7 @@
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
   import { portsFromDef } from './card-kit';
+  import { drawPreviewDownscaled } from './preview-downscale';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -235,7 +236,7 @@
     let w = cw, h = ch, x = 0, y = 0;
     if (dstAspect > srcAspect) { h = ch; w = Math.round(h * srcAspect); x = Math.round((cw - w) / 2); }
     else { w = cw; h = Math.round(w / srcAspect); y = Math.round((ch - h) / 2); }
-    ctx2d.drawImage(src, x, y, w, h);
+    drawPreviewDownscaled(ctx2d, src, x, y, w, h);
     if (label) {
       ctx2d.fillStyle = 'rgba(255,255,255,0.55)';
       ctx2d.font = '9px ui-monospace, monospace';

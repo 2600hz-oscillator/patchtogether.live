@@ -33,8 +33,18 @@ interface PatchWindow {
   __spawnAtFlowPos: (type: string, pos: { x: number; y: number }) => void;
 }
 
+// CI is a 2-core SwiftShader VM, and every seeded video producer slows EVERY
+// round-trip, not just paints. Measured off the shard-6 trace of run
+// 32204001553 (FAN-OUT, 4 modules): node click 5.2 s, menu click 6.5 s, each
+// page.evaluate 0.6–1.0 s — the scene had already reached its EXPECTED final
+// state when the flat 30 s budget expired mid-assertion. The budget therefore
+// scales with the scene's module count; the cap bounds the failure, it is not
+// the gate.
+const sceneTimeout = (modules: number): number => 30_000 + modules * 15_000;
+
 /** Spawn `types` through the REAL palette path and return their assigned ids. */
 async function seed(page: Page, types: readonly string[]): Promise<Record<string, string>> {
+  test.setTimeout(sceneTimeout(types.length));
   await page.goto(RACK);
   await page.waitForFunction(() => !!(window as unknown as PatchWindow).__patch);
   await page.evaluate((list) => {
@@ -311,6 +321,7 @@ test.describe('videoOut — detach on the DEFAULT shell (the promoted face)', ()
   // face. These legs are what make that citation true.
 
   async function seedDefaultShell(page: Page): Promise<string> {
+    test.setTimeout(sceneTimeout(1));
     await page.goto('/rack?seed=none');
     await page.waitForFunction(() => !!(window as unknown as PatchWindow).__patch);
     await page.evaluate(() => {
@@ -387,6 +398,7 @@ test.describe('videoOut — detach on the DEFAULT shell (the promoted face)', ()
     // keeps painting". Asserted as pixel INEQUALITY over time against a live
     // source — renderer-tolerant (any two different frames of the auto-scrolling
     // LINES pattern differ; no absolute pixel value is named).
+    test.setTimeout(sceneTimeout(2));
     await page.goto('/rack?seed=none');
     await page.waitForFunction(() => !!(window as unknown as PatchWindow).__patch);
     await page.evaluate(() => {
@@ -445,6 +457,7 @@ test.describe('videoOut — detach on the DEFAULT shell (the promoted face)', ()
     // bypasses every gate … no visibility gate, no cadence cap"*), but a lease
     // that failed to attach looks identical to one that worked until you move
     // the card. So this moves the card.
+    test.setTimeout(sceneTimeout(2));
     await page.goto('/rack?seed=none');
     await page.waitForFunction(() => !!(window as unknown as PatchWindow).__patch);
     await page.evaluate(() => {
@@ -514,6 +527,7 @@ test.describe('videoOut — detach on the DEFAULT shell (the promoted face)', ()
     // Attached: no lease (the card is not presenting) — the node is a pull root
     // because a surface BLITS it. Detached: the panel's lease is what holds it,
     // and every card-side observer has withdrawn.
+    test.setTimeout(sceneTimeout(2));
     await page.goto('/rack?seed=none');
     await page.waitForFunction(() => !!(window as unknown as PatchWindow).__patch);
     await page.evaluate(() => {

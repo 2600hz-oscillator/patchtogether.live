@@ -29,6 +29,7 @@
     toggleSurfaceFit,
   } from './mappy-edit';
   import { hitTestSurfaces } from './mappy-hit';
+  import { drawPreviewDownscaled } from './preview-downscale';
 
   let {
     id,
@@ -155,7 +156,7 @@
       const src = videoEngine.canvas as CanvasImageSource;
       ctx2d.fillStyle = '#050608';
       ctx2d.fillRect(0, 0, canvasEl.width, canvasEl.height);
-      ctx2d.drawImage(src, 0, 0, canvasEl.width, canvasEl.height);
+      drawPreviewDownscaled(ctx2d, src, 0, 0, canvasEl.width, canvasEl.height);
     }
     drawRaf = requestAnimationFrame(draw);
   }

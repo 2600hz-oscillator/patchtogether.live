@@ -25,6 +25,7 @@
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
   import { cardParams, portsFromDef } from './card-kit';
+  import { drawPreviewDownscaled } from './preview-downscale';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -55,7 +56,7 @@
       if (!ctx2d) return;
       ctx2d.fillStyle = '#000';
       ctx2d.fillRect(0, 0, canvasEl.width, canvasEl.height);
-      try { ctx2d.drawImage(src as CanvasImageSource, 0, 0, canvasEl.width, canvasEl.height); }
+      try { drawPreviewDownscaled(ctx2d, src as CanvasImageSource, 0, 0, canvasEl.width, canvasEl.height); }
       catch { /* never crash the rAF loop on a transient draw failure */ }
     }, 33); // ~30 Hz
   });
