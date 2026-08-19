@@ -37,7 +37,6 @@
 
 import { describe, expect, it } from 'vitest';
 import { analogLogicMathsDef } from '$lib/audio/modules/analog-logic-maths';
-import { readoutText } from '$lib/ui/workflow/dock-faceplate-model';
 import { glyphBinding, primaryAudioOutPortId } from '$lib/ui/workflow/shell-glyph-live';
 import {
   ALM_ATT_PARAM_IDS,

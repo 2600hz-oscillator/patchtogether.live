@@ -20,7 +20,6 @@
 
 import { describe, expect, it } from 'vitest';
 import { destroyDef } from '$lib/audio/modules/destroy';
-import { readoutText } from '$lib/ui/workflow/dock-faceplate-model';
 import { glyphBinding, primaryAudioOutPortId } from '$lib/ui/workflow/shell-glyph-live';
 import {
   DESTROY_REFERENCE_SR,

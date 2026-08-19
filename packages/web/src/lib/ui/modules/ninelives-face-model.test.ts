@@ -35,7 +35,6 @@ import {
   glyphBinding,
   primaryAudioOutPortId,
 } from '$lib/ui/workflow/shell-glyph-live';
-import { isUsableReadout, readoutText } from '$lib/ui/workflow/dock-faceplate-model';
 import { STRICT_FACES } from '$lib/ui/workflow/strict-faces';
 import { NINE_LIVES_RATE_MULTIPLIERS } from '../../../../../dsp/src/lib/ninelives-dsp';
 import {

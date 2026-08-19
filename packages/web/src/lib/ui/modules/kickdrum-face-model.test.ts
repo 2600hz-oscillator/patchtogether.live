@@ -12,8 +12,6 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 import { kickdrumDef } from '$lib/audio/modules/kickdrum';
-import type { FacePreset, FaceSidebarBlock } from '$lib/graph/types';
-import { readoutText } from '$lib/ui/workflow/dock-faceplate-model';
 import {
   KICK_TAIL_FLOOR_DB,
   fmtAmount,

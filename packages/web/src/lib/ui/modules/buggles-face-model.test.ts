@@ -49,7 +49,6 @@ import {
   bugglesMath,
   bugglesPrng,
 } from '$lib/audio/modules/buggles';
-import { isUsableReadout, readoutText } from '$lib/ui/workflow/dock-faceplate-model';
 import { glyphBinding, primaryAudioOutPortId } from '$lib/ui/workflow/shell-glyph-live';
 import { STRICT_FACES } from '$lib/ui/workflow/strict-faces';
 import {
@@ -83,10 +82,6 @@ const P = (over: Record<string, number> = {}) => bugglesFaceParams(reader({ ...D
 const PARAM_IDS = bugglesDef.params.map((p) => p.id);
 /** The registered ids, DERIVED from the def's own declaration rather than
  *  typed — so a renamed readout is red from both directions. */
-const VALUE_IDS = [
-  ...(bugglesDef.face?.hero?.readouts ?? []),
-  ...(bugglesDef.face?.sidebar ?? []).flatMap((b) => (b.kind === 'readouts' ? [...b.entries] : [])),
-]
   .map((r) => r.valueId)
   .filter((v): v is string => !!v);
 

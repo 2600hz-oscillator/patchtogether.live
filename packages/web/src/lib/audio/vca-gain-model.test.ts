@@ -24,10 +24,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { curatedFace } from '$lib/ui/workflow/curated-face';
-import {
-  sidebarPlan,
-  type FaceplateDefLike,
-} from '$lib/ui/workflow/dock-faceplate-model';
+import { type FaceplateDefLike } from '$lib/ui/workflow/dock-faceplate-model';
 import { faceReadoutValueFor } from '$lib/ui/workflow/face-readout-values';
 import {
   LANE_KCOL_MAX_PX,

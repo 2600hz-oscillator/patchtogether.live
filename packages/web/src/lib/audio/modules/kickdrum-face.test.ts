@@ -34,18 +34,7 @@ import { paramCellKind, momentaryParamIds } from '$lib/ui/workflow/shell-control
 import { shellCellFor } from '$lib/ui/workflow/shell-cells';
 import { PLATE_COLS, laneBodyPlan } from '$lib/ui/workflow/module-shell-model';
 import { DOCK_TAB_MIN_BANDS, dockTabPlan } from '$lib/ui/workflow/dock-tabs-model';
-import {
-  activePresetId,
-  faceAnnotationTally,
-  faceAnnotations,
-  facePageHeader,
-  heroFacePlan,
-  heroFacePlanIsTotal,
-  presetWrites,
-  readoutText,
-  sidebarPlan,
-  type FaceplateDefLike,
-} from '$lib/ui/workflow/dock-faceplate-model';
+import { faceAnnotationTally, faceAnnotations, facePageHeader, heroFacePlan, heroFacePlanIsTotal, type FaceplateDefLike } from '$lib/ui/workflow/dock-faceplate-model';
 
 const def = kickdrumDef as unknown as FaceDefLike;
 
