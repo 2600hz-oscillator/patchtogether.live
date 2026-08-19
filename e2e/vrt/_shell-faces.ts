@@ -495,6 +495,22 @@ export const FACES = [
   // moog-filterbank-face-model.test.ts.
   { type: 'moog907a', pages: 1 },
   { type: 'moog914', pages: 1 },
+  // MOOG 923 (2026-08-18) — two declared pages (`noise`, `filter`), which pack
+  // onto one dock row; no hero control, so no band is emptied and neither page
+  // is dropped (heroFacePlan only drops an EMPTIED band — the `noise` case).
+  //
+  // ⚠ IT IS A FREE-RUNNING NOISE SOURCE AND IT IS STILL SAFE HERE, for a reason
+  // that is specific rather than hopeful. `moog923`'s factory `.start()`s two
+  // looping noise buffers unconditionally, so it is the `noise`/analogVco
+  // family — a live tap would be a moving picture, and analogVco was dropped
+  // from batch 3 for exactly that (254/154/315 px across three captures of one
+  // tile). What removes the hazard here is the FACE, not the freeze: the def
+  // declares `glyph: 'none'` (see its face comment — every glyph kind binds to
+  // `white`, and a compact tile cannot afford one), so no analyser feeds any
+  // pixel in either scene. The readouts are closed forms over params, which are
+  // identical frame to frame. The AudioContext freeze this file applies is
+  // therefore a belt on a brace for this entry, not the thing holding it.
+  { type: 'moog923', pages: 2 },
   // MIXMSTRS — the full mixer, and the largest face in this roster by 1.86x
   // (91 cells against pentemelodica's 49).
   //
