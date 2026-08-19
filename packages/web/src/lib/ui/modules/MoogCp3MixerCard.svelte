@@ -17,12 +17,26 @@
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import MoogPanel from './moog/MoogPanel.svelte';
-  import { portsFromDef } from './card-kit';
+  import { paramSpec, portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
 
   const engineCtx = useEngine();
+
+  // Every knob carries its own ParamDef rather than re-typed literals. All five
+  // hand-typed `min={0} max={1} defaultValue={1}` and AGREED, so this is the
+  // AnalogLogicMathsCard shape — a maintainability conversion, done WITH the
+  // promotion because from here the dock renders these controls off the
+  // `ParamDef` while this card renders off its own literals, and a later edit to
+  // one side would ship two surfaces calling one control two things.
+  const P = {
+    ch1: paramSpec(moogCp3Def, 'ch1'),
+    ch2: paramSpec(moogCp3Def, 'ch2'),
+    ch3: paramSpec(moogCp3Def, 'ch3'),
+    ch4: paramSpec(moogCp3Def, 'ch4'),
+    attenuator4: paramSpec(moogCp3Def, 'attenuator4'),
+  } as const;
 
   function def(pid: string) {
     return moogCp3Def.params.find((p) => p.id === pid)!;
@@ -58,15 +72,15 @@
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <!-- Four input level knobs (25K-LIN, shown 0–10). -->
     <div class="knob-row" data-testid="moog-cp3-levels">
-      <Knob value={ch1} min={0} max={1} defaultValue={1} label="Ch1" curve="linear" onchange={setParam('ch1')} moduleId={id} paramId="ch1" readLive={readLive('ch1')} />
-      <Knob value={ch2} min={0} max={1} defaultValue={1} label="Ch2" curve="linear" onchange={setParam('ch2')} moduleId={id} paramId="ch2" readLive={readLive('ch2')} />
-      <Knob value={ch3} min={0} max={1} defaultValue={1} label="Ch3" curve="linear" onchange={setParam('ch3')} moduleId={id} paramId="ch3" readLive={readLive('ch3')} />
-      <Knob value={ch4} min={0} max={1} defaultValue={1} label="Ch4" curve="linear" onchange={setParam('ch4')} moduleId={id} paramId="ch4" readLive={readLive('ch4')} />
+      <Knob value={ch1} min={P.ch1.min} max={P.ch1.max} defaultValue={P.ch1.defaultValue} label={P.ch1.label ?? P.ch1.id} units={P.ch1.units ?? ''} curve={P.ch1.curve} onchange={setParam(P.ch1.id)} moduleId={id} paramId={P.ch1.id} readLive={readLive(P.ch1.id)} />
+      <Knob value={ch2} min={P.ch2.min} max={P.ch2.max} defaultValue={P.ch2.defaultValue} label={P.ch2.label ?? P.ch2.id} units={P.ch2.units ?? ''} curve={P.ch2.curve} onchange={setParam(P.ch2.id)} moduleId={id} paramId={P.ch2.id} readLive={readLive(P.ch2.id)} />
+      <Knob value={ch3} min={P.ch3.min} max={P.ch3.max} defaultValue={P.ch3.defaultValue} label={P.ch3.label ?? P.ch3.id} units={P.ch3.units ?? ''} curve={P.ch3.curve} onchange={setParam(P.ch3.id)} moduleId={id} paramId={P.ch3.id} readLive={readLive(P.ch3.id)} />
+      <Knob value={ch4} min={P.ch4.min} max={P.ch4.max} defaultValue={P.ch4.defaultValue} label={P.ch4.label ?? P.ch4.id} units={P.ch4.units ?? ''} curve={P.ch4.curve} onchange={setParam(P.ch4.id)} moduleId={id} paramId={P.ch4.id} readLive={readLive(P.ch4.id)} />
     </div>
 
     <!-- 4th-input ATTENUATOR (at "10" = unity / direct patch). -->
     <div class="knob-row" data-testid="moog-cp3-atten4">
-      <Knob value={attenuator4} min={0} max={1} defaultValue={1} label="Att 4" curve="linear" onchange={setParam('attenuator4')} moduleId={id} paramId="attenuator4" readLive={readLive('attenuator4')} />
+      <Knob value={attenuator4} min={P.attenuator4.min} max={P.attenuator4.max} defaultValue={P.attenuator4.defaultValue} label={P.attenuator4.label ?? P.attenuator4.id} units={P.attenuator4.units ?? ''} curve={P.attenuator4.curve} onchange={setParam(P.attenuator4.id)} moduleId={id} paramId={P.attenuator4.id} readLive={readLive(P.attenuator4.id)} />
     </div>
   </PatchPanel>
 </MoogPanel>
