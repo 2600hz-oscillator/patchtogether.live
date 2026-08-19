@@ -83,10 +83,6 @@ import {
   freezeframeFaceParams,
 } from '$lib/ui/modules/freezeframe-face-model';
 import {
-  b3ntb0xLineShiftText,
-  b3ntb0xRippleGainText,
-} from '$lib/ui/modules/b3ntb0x-face-model';
-import {
   swolevcoFaceParams,
   swolevcoLockText,
   swolevcoModHzText,
@@ -1799,35 +1795,33 @@ const FACE_READOUT_VALUES: Readonly<Record<string, FaceReadoutValue>> = {
   'freezeframe-depth': (read) => freezeframeDepthText(freezeframeFaceParams(read)),
   'freezeframe-decay': (read) => freezeframeDecayText(freezeframeFaceParams(read)),
 
-  // ── B3NTB0X ──────────────────────────────────────────────────────────────
-  // TWO joins, both over controls the face puts on DIFFERENT PAGES.
+  // ── B3NTB0X — REGISTERED NOTHING, DELIBERATELY ───────────────────────────
   //
-  //   `ripple gain`  `sync_crush · (1 + 2·enhance) · (1 + 0.8·bend_d)` — the
-  //                  gain the picture's HF content receives through the bend
-  //                  circuit. Verified against a numeric replay of the shader
-  //                  to 1.776e-15 over 972 points. It is not recoverable by
-  //                  reading dials: the product carries a real `1.6·d·E` cross
-  //                  term, so at enhance = bend_d = 1 it is ×5.40 where two
-  //                  independent controls would give ×3.80. ⚠ And `bias` is
-  //                  NOT in it — a readout that moved with BIAS would be
-  //                  wrong, which is the trap for anyone who reasons "the bend
-  //                  stages interact, so everything does".
-  //   `line shift`   `1 - tbc`. How much of the recovered sync offset and the
-  //                  analog timebase wobble reaches the picture. ⚠ Reads
-  //                  `locked` at the SHIPPED DEFAULT (`tbc: 1`), where the
-  //                  answer is bit-exactly zero and the module's own
-  //                  documented "crank Sync Crush + Bias to tear and roll"
-  //                  cannot happen at all (#1946). No dial on this face can
-  //                  say that; this is where a player meets it.
+  // This face declared two readouts (`ripple gain`, `line shift`) and both are
+  // GONE under the owner ruling of 2026-08-19: the resting face paints no
+  // derived-state text of any shape. Deleted, not hidden — the
+  // `persistentReadout` lesson.
   //
-  // ⚠ THERE IS DELIBERATELY NO HUE READOUT. Printing degrees would print the
-  // uniform's argument, not the rotation delivered: measured through the GLSL
-  // harness at three input hues, full HUE travel delivers 172.5° / 157.7° /
-  // 161.9° (#1909). It depends on the picture, so it is not a face's number.
+  // ⚠ THE TWO DID NOT SURVIVE EQUALLY, and the asymmetry is a property of the
+  // RULE rather than of this module, so it is recorded HERE, where the next
+  // author of a readout will look:
   //
-  // Both negative-controlled permanently in b3ntb0x-face-model.test.ts.
-  'b3ntb0x-ripple-gain': (read) => b3ntb0xRippleGainText(read),
-  'b3ntb0x-line-shift': (read) => b3ntb0xLineShiftText(read),
+  //   `aria-valuetext` is a PER-CONTROL attribute. A readout that is a pure
+  //   function of ONE param has a host — `line shift` = `1 - tbc` becomes
+  //   `tbc`'s own value text. A readout that is a JOIN has NONE: `ripple gain`
+  //   = `sync_crush · (1 + 2·enhance) · (1 + 0.8·bend_d)` reads three params
+  //   across two pages, and there is no single control whose value it is. It
+  //   is REMOVED from the product, not relocated.
+  //
+  // That matters beyond this module: a join is exactly what the queue's STOP-1
+  // criterion has been selecting for ("a readout that says something no single
+  // knob can say"), so the entries in this file with the STRONGEST merit
+  // argument are the ones with nothing to fall back on.
+  //
+  // The arithmetic survives in `b3ntb0x-face-model.ts`, pinned by
+  // `b3ntb0x-face-model.test.ts` — it is the derivation that refutes #1940's
+  // "bend_d IS enhance" reading, and that is worth keeping whether or not a
+  // pixel prints it.
 };
 
 /** The derived value for a declared id, or `null` (⇒ the readout prints `—`

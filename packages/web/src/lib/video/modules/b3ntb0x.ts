@@ -931,12 +931,38 @@ export const b3ntb0xDef: VideoModuleDef = {
       'feedback', 'tube_bloom', 'overscan', 'barrel',
       'mirrorX', 'mirrorY',
     ],
-    hero: {
-      readouts: [
-        { label: 'ripple gain', valueId: 'b3ntb0x-ripple-gain' },
-        { label: 'line shift', valueId: 'b3ntb0x-line-shift' },
-      ],
-    },
+    // ── NO HERO READOUT ROW ────────────────────────────────────────────────
+    //
+    // Owner ruling, 2026-08-19 (the fourth statement of the day, widening the
+    // sidebar ruling): the RESTING face paints NO derived-state text of any
+    // shape — no sidebars, no hero readout rows or banners, no state words, no
+    // decimals. The permitted resting text is exhaustively: the module name,
+    // tab/section labels, control captions, and option/landmark NAMES under a
+    // control. Derived values live in `aria-valuetext`.
+    //
+    // This face declared two readouts and they are DELETED, not hidden — the
+    // `persistentReadout` lesson (a hover reveal is "there but hidden", which
+    // was refused by name).
+    //
+    // ⚠ AND THE TWO DID NOT SURVIVE EQUALLY, which is worth recording because
+    // it is a property of the RULE rather than of this module:
+    //
+    //   `line shift` = 1 - tbc          ONE param, so it RELOCATES: the value
+    //                                   is `tbc`'s own aria-valuetext.
+    //   `ripple gain` = sync_crush
+    //                 * (1 + 2*enhance)
+    //                 * (1 + 0.8*bend_d) THREE params across TWO pages. There
+    //                                   is no single control whose value this
+    //                                   is, and `aria-valuetext` is a
+    //                                   per-control attribute — so it has no
+    //                                   host. It is REMOVED from the product,
+    //                                   not relocated.
+    //
+    // The arithmetic is KEPT in `b3ntb0x-face-model.ts` and stays pinned by
+    // `b3ntb0x-face-model.test.ts`: it is the derivation that refutes #1940's
+    // "bend_d IS enhance" reading (they share `neighborAvg` but ENHANCE lands
+    // before the sync_crush multiply and the bias add, BEND D after both), and
+    // that refutation is worth keeping whether or not a pixel prints it.
     pages: [
       // 1 — THE BEND CIRCUIT, in the order the voltage meets it: how it is
       // coupled in, the master gain, the offset, then the HF peaking.

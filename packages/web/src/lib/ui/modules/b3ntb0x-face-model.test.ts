@@ -30,7 +30,7 @@ import {
   b3ntb0xRippleGain,
   b3ntb0xRippleGainText,
 } from './b3ntb0x-face-model';
-import { faceReadoutValueFor } from '$lib/ui/workflow/face-readout-values';
+import { faceReadoutValueFor, faceReadoutValueIds } from '$lib/ui/workflow/face-readout-values';
 
 function reader(patch: Readonly<Record<string, number>> = {}) {
   return (paramId: string): number | undefined => {
@@ -248,18 +248,55 @@ describe('b3ntb0x readouts: TOTALITY (they run on every render)', () => {
 });
 
 describe('b3ntb0x face: the declaration', () => {
-  it('registers both readouts, and the face declares exactly them', () => {
+  // ── THE RESTING FACE PRINTS NO DERIVED-STATE TEXT ─────────────────────────
+  //
+  // Owner ruling 2026-08-19. This assertion REPLACES "registers both readouts,
+  // and the face declares exactly them", which asserted the opposite — and it
+  // is strictly stronger, because the old one could only fail if a readout
+  // CHANGED, while this one fails if any readout comes BACK.
+  //
+  // ⚠ THE PRECONDITION IT USED TO RIDE ON IS GONE, which is why the test is
+  // re-pointed rather than deleted: a test whose subject no longer exists goes
+  // green and blind, and a green-and-blind gate certifies the next defect in
+  // its area.
+  it('declares NO hero readouts — the resting face prints no derived text', () => {
     const declared = (b3ntb0xDef.face?.hero?.readouts ?? []).map((r) => r.valueId);
-    expect(declared).toEqual(['b3ntb0x-ripple-gain', 'b3ntb0x-line-shift']);
-    for (const id of declared) expect(faceReadoutValueFor(id!), `${id}`).toBeTruthy();
+    expect(
+      declared,
+      'the resting face paints no derived-state text of any shape (owner ruling ' +
+        '2026-08-19): no sidebars, no hero readout rows or banners, no state words, no ' +
+        'decimals. Permitted resting text is exhaustively the module name, tab/section ' +
+        'labels, control captions and option/landmark NAMES. A derived value lives in ' +
+        '`aria-valuetext` — which is a PER-CONTROL attribute, so a single-param value has ' +
+        'a host and a JOIN does not.',
+    ).toEqual([]);
   });
 
-  it('prints NO hue readout — a delivered rotation is input-dependent (#1909)', () => {
-    // Measured through the GLSL harness, full HUE travel delivers 172.5 /
-    // 157.7 / 161.9 degrees at three input hues. A face number would be the
-    // uniform's argument, not what the viewer receives.
-    const ids = (b3ntb0xDef.face?.hero?.readouts ?? []).map((r) => r.valueId ?? '');
-    expect(ids.some((i) => i.includes('hue'))).toBe(false);
+  it('registers no readout VALUE either — deleted, not hidden', () => {
+    // Two-sided: the declaration above is one half, the registry is the other.
+    // A face could declare nothing while the ids stayed registered, which is
+    // the "there but hidden" shape the persistentReadout ruling refused by
+    // name — so the registry is checked directly.
+    for (const id of ['b3ntb0x-ripple-gain', 'b3ntb0x-line-shift']) {
+      expect(faceReadoutValueFor(id), `${id} is still registered`).toBeFalsy();
+    }
+  });
+
+  it('the registry lookup can still say YES (positive control)', () => {
+    // ⚠ WITHOUT THIS, the two assertions above pass for a `faceReadoutValueFor`
+    // that returns falsy for EVERYTHING — a broken import, a renamed export, a
+    // registry that failed to build. Then "no readout is registered" would be
+    // true of the whole fleet and this file would report it as compliance.
+    // Anchored to a face OTHER than this one, and re-pointed if that face's
+    // readouts are removed too.
+    const known = faceReadoutValueIds()[0];
+    expect(
+      known,
+      'no readout id is registered ANYWHERE, so the two checks above are vacuous — ' +
+        'either the fleet-wide removal is complete (in which case delete this control ' +
+        'and the two checks with it) or the registry did not build.',
+    ).toBeTruthy();
+    expect(faceReadoutValueFor(known!), `${known}`).toBeTruthy();
   });
 
   it('ranks TBC into the same tier as the pair it gates (#1946)', () => {
