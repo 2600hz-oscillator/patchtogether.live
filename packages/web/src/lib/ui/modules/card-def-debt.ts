@@ -175,7 +175,20 @@ export const VOCABULARY_DEBT: Readonly<Record<string, readonly string[]>> = {
   'SixstrumCard.svelte': ['attack.label', 'envDecay.label', 'level.label', 'material.label', 'pickGrain.label', 'pickPos.label', 'pickTone.label', 'register.label', 'release.label', 'spread.label', 'stiffness.label', 'strumSpread.label', 'sustain.label', 'tuning.label'],
   'SourceryCard.svelte': ['colorSkew.label', 'rotate.label'],
   'SpectrographCard.svelte': ['gain.label'],
-  'SwolevcoCard.svelte': ['timbre.label'],
+  // ⚠ `SwolevcoCard.svelte` USED TO BE HERE with `timbre.label`: the card
+  // painted `Timbr` where the def declares `Tbr`. PAID by the faceplate PR
+  // (queue Q5), not worked around — the card now binds every fader to its
+  // `ParamDef` through `paramSpec`, so the label has exactly one source and the
+  // divergence is unrepresentable rather than merely absent.
+  //
+  // It is worth recording WHY the entry had to go rather than be left alone.
+  // Promotion is what made the divergence cost something: a faced module
+  // renders the DOCK straight off the ParamDef and the legacy card off whatever
+  // it typed, so one fader would have answered to two names depending on the
+  // surface. And the ledger is anchored to the ARTIFACT — with the divergence
+  // gone, the entry named something that no longer exists, which is RED by
+  // design. That is the gate working: it caught this on CI the moment the fix
+  // landed without the entry being deleted in the same commit.
   'SynesthesiaCard.svelte': ['a_master.label', 'b_master.label'],
   'TempestCard.svelte': ['rim.label'],
   'TextmarqueeCard.svelte': ['posX.label', 'posY.label', 'scrollX.label', 'scrollY.label'],

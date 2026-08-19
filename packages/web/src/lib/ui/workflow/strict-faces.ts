@@ -1569,6 +1569,51 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // extension at `$lib/ui/modules/videoOut/` — the second adopter of that slot.
   // For backdraft the slot AUGMENTS a faceplate; here it IS the faceplate.
   'videoOut',
+  // THE FACEPLATE QUEUE · Q5 — the Buchla-259-style complex oscillator
+  // (2026-08-19). The full ranking argument is a comment on the def itself;
+  // what belongs HERE is the one finding that made it worth building and the
+  // one instrument bug that nearly wrote the wrong face.
+  //
+  // ⚠ TWO OF ITS EIGHT KNOBS ARE BIT-EXACTLY INERT IN THE STATE A RACK SPAWNS
+  // IN. At the shipped default `ratio = 1`, sweeping `mod_tune` or `mod_fine`
+  // across its FULL declared range (±36 st, ±100 ¢) gives
+  // `max|x − x_ref| = 0.000e+0` on ALL THREE audio outputs — the modulator's
+  // free-run leg is gated off and those two dials reach nothing. `docs.controls`
+  // has always said so in prose; NOTHING on the panel did, and the legacy card
+  // renders them as two ordinary faders identical to the six live ones. The
+  // face answers it three ways at once: they rank 7 and 8 (dock-only, since
+  // `faceTierCap('full')` is 6), the LOCK readout names the live mode, and the
+  // sidebar says what they would do in the other one. Positive control, so the
+  // probe is not blind: at `ratio = 0` the same sweep moves `mod_out` from
+  // 33 Hz to 2093 Hz.
+  //
+  // ⚠ THE INSTRUMENT WAS WRONG FIRST, AND IT LOOKED AUTHORITATIVE. The whole
+  // ranking rests on spectral centroid, and the first pass measured it with a
+  // RECTANGULAR window — which read this module's own `mod_out`, a pure
+  // 261.626 Hz sine, as 2904 Hz. A frequency-weighted centroid is dominated by
+  // 1/f leakage sidelobes, so every number was inflated and FOLD and TIMBRE
+  // came out nearly equal. What caught it was a POSITIVE control that the
+  // module hands you for free — a known pure sine must read as itself — not a
+  // negative one. With a Hann window the same tap reads 261.8 Hz and the
+  // ranking separates cleanly: FOLD +412 % of centroid across its travel
+  // against TIMBRE's +23 %.
+  //
+  // ⚠ IT IS THE THIRD FREE-RUNNING MODULE TO HOLD A FACE (after `analogVco` and
+  // `macrooscillator`), so its `scope` glyph is live from spawn and its lane
+  // baseline is REAL roster coverage for #1420's pre-frame AudioContext freeze.
+  // That is why this face keeps the glyph instead of suppressing it with a
+  // `hero.cell` picture: a hero cell would have made the tile silent-by-
+  // construction and bought nothing the readouts do not already say.
+  //
+  // Two claims in the banked spec are REFUTED here rather than carried
+  // forward, and both failed the same way — a measurement window shorter than
+  // the thing measured. There is no DC rail at low `ratio` (at 0.005 the
+  // modulator is a 1.3082 Hz sine at full scale, exactly the locked
+  // prediction; the "+0.574 DC" is a 0.25 s window over a 0.76 s period, and
+  // reads −0.052 over 2 s), and the 15.2 dB `sum_out` swing with TUNE is not a
+  // beat — measured by interpolated zero-crossing over 4 s, the modulator sits
+  // at EXACTLY the primary's frequency at `ratio = 1`, detune 0.000000 Hz.
+  'swolevco',
 ]);
 
 /**
