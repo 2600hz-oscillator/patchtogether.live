@@ -22,6 +22,52 @@
   // axis (Left/Right = x, Up/Down = y; Shift = fine). Double-click resets both
   // axes to their defaults.
   //
+  // ── ⚠ THERE IS NO READOUT LINE HERE ANY MORE ───────────────────────────────
+  //
+  // The pad used to paint `X -0.50  Y 0.25` under itself. Owner, 2026-08-17,
+  // generalised to the whole roster: *"we should kill the light white decimil
+  // represebtation of knob state in ALL modules"* / *"i want the data gone, not
+  // there but hidden or something"*. `KnobConic` and `NeonFader` were brought to
+  // that bar; this file was missed, and `face-readout-source.test.ts` could not
+  // see it because its primitive list was hand-written and this file was not on
+  // it (#1972). The element is DELETED, not switched off — there is no
+  // `persistentReadout`-shaped prop to put it back, by design.
+  //
+  // WHERE THE VALUE WENT — AND WHY IT IS NOT `aria-valuetext` HERE.
+  //
+  // `KnobConic:271` and `NeonFader:414` put their value in `aria-valuetext`.
+  // This pad does NOT, and that is measured rather than chosen: svelte-check
+  // reports *"The attribute 'aria-valuetext' is not supported by the role
+  // 'application'"* (`a11y_role_supports_aria_props`), and `task typecheck` runs
+  // `--fail-on-warnings`. `aria-valuetext` belongs to the RANGE roles; on this
+  // one it is inert markup that AT ignores. Writing it anyway and silencing the
+  // rule would be a green gate certifying a dead attribute — the exact shape
+  // CLAUDE.md warns about with `curve="linear"`.
+  //
+  // So the value lives in `aria-label`, the pad's accessible NAME — which is the
+  // attribute this role DOES support, is what AT actually reads here, is
+  // unpainted, and has carried the live value since the pad shipped. Keeping it
+  // is also the ruling's own instruction: the removal is of painted TEXT, and
+  // the sibling `bareCells` ruling is explicit that the accessible name is never
+  // what gets dropped. `valueText` is derived once and reused, so a future
+  // consumer cannot drift from what the label says.
+  //
+  // ⚠ SO A SPEC READS A PAD'S VALUE FROM `aria-label`, NOT `aria-valuetext`.
+  // That divergence is real and is why it is written here.
+  //
+  // WHAT WAS DELIBERATELY NOT DONE: the spec-correct structure — a `role="group"`
+  // wrapper over two `role="slider"` axis children, where `aria-valuetext` would
+  // be genuinely supported. Measured blast radius, which is why not:
+  //   * `DockCardHost.svelte:116` leaves ctrl/meta-wheel alone for
+  //     `.knob-wrap, .fader-wrap, [role="slider"]`, so two new slider elements
+  //     per pad silently change the fine-adjust-vs-dock-zoom gesture over it;
+  //   * e2e specs COUNT sliders inside a card (`toHaveCount(3)` and friends), so
+  //     every card holding a pad gains two;
+  //   * a slider is expected to be focusable, and that is +2 tab stops on a
+  //     surface where TAB IS THE CARD-FLIP GESTURE.
+  // Each of those is an owner-sign-off change. None of them is something a
+  // readout fix gets to smuggle in.
+  //
   // MIDI / Electra ASSIGN (per axis): a 2-D pad isn't a single-CC <Knob>, but its
   // TWO axes each ARE single params, so when the caller passes `moduleId` +
   // `xParamId`/`yParamId` the pad renders a tiny per-axis ASSIGN BUTTON (X / Y).
@@ -46,7 +92,8 @@
     xMax: number;
     yMin: number;
     yMax: number;
-    /** Short label shown for each axis in the readout. */
+    /** Short name for each axis. Reaches the accessible name and
+     *  `aria-valuetext`; nothing paints it (see the header). */
     xLabel: string;
     yLabel: string;
     /** Default values for the double-click reset (fall back to min if absent). */
@@ -59,7 +106,9 @@
     size?: number;
     /** Group caption drawn above the pad. */
     title?: string;
-    /** data-testid base: `<testid>-pad` / `-dot` / `-readout` / `-assign-x` / `-assign-y`. */
+    /** data-testid base: `<testid>-pad` / `-dot` / `-assign-x` / `-assign-y`.
+     *  ⚠ There is no `-readout` any more — the element it named is gone, and the
+     *  value is read from the pad's `aria-valuetext` (see the header). */
     testid?: string;
     /** Patch-graph node id. When set together with xParamId + yParamId, the pad
      *  renders per-axis MIDI/Electra ASSIGN buttons (the axes become learnable). */
@@ -270,9 +319,10 @@
     const a = Math.abs(v);
     return a >= 100 ? v.toFixed(0) : a >= 10 ? v.toFixed(1) : v.toFixed(2);
   }
-  let ariaLabel = $derived(
-    `${title ?? 'XY pad'}: ${xLabel} ${fmt(dispX)}, ${yLabel} ${fmt(dispY)}`,
-  );
+  // What the pad is WORTH, for the accessible NAME only. Not painted — see the
+  // header for why this role's value home is `aria-label`, not `aria-valuetext`.
+  let valueText = $derived(`${xLabel} ${fmt(dispX)}, ${yLabel} ${fmt(dispY)}`);
+  let ariaLabel = $derived(`${title ?? 'XY pad'}: ${valueText}`);
 </script>
 
 <div class="xy-pad-wrap">
@@ -309,10 +359,6 @@
       style="left: {dotLeft}px; top: {dotTop}px;"
       data-testid={testid ? `${testid}-dot` : undefined}
     ></div>
-  </div>
-  <div class="xy-readout" data-testid={testid ? `${testid}-readout` : undefined}>
-    <span>{xLabel} <strong>{fmt(dispX)}</strong></span>
-    <span>{yLabel} <strong>{fmt(dispY)}</strong></span>
   </div>
 
   {#if assignable}
@@ -417,16 +463,6 @@
     background: var(--accent, #8aa2ef);
     box-shadow: 0 0 6px rgba(138, 162, 239, 0.9);
   }
-  .xy-readout {
-    display: flex;
-    gap: 6px;
-    font-size: 0.5rem;
-    font-family: ui-monospace, monospace;
-    letter-spacing: 0.02em;
-    color: var(--text-dim);
-  }
-  .xy-readout strong { color: var(--text); font-weight: 600; }
-
   /* Per-axis MIDI/Electra assign handles — tiny so they stay within the card
      control-overflow bounds. They are pure assign handles (no value change). */
   .xy-assign {
