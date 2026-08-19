@@ -66,7 +66,7 @@ import { MIXMSTRS_CHANNELS } from '$lib/audio/modules/mixmstrs';
 // for the same reason as the mixmstrs channels — see the entry itself.
 import { SPIRO_COUNT_MAX, spiroParamId } from '$lib/video/modules/spirographs';
 import { faceReadoutValueIds } from './face-readout-values';
-import { laneBodyPlan, laneGlyphFor } from './module-shell-model';
+import { hasVideoSurface, laneBodyPlan, laneGlyphFor } from './module-shell-model';
 import { looksLikeSwitch } from './shell-control-kind';
 import { panelCellKeys, shellCellFor } from './shell-cells';
 import { GRID_MAX_CELLS } from '$lib/ui/controls/param-grid-model';
@@ -2542,5 +2542,97 @@ describe('module-face lint — STRICT_FACES is DERIVED FROM THE ARTIFACT, not fl
       [...STRICT_FACES].filter((t) => !faced.has(t)).sort(),
       'STRICT_FACES name(s) with no co-located `face` on a live def — delete them',
     ).toEqual([]);
+  });
+});
+
+// ── A PROMOTED FACE NEVER RENDERS AN EMPTY LANE PLATE ──────────────────────
+//
+// Found while costing the `joystick` promotion (Q43, #1972's sibling). The
+// module's only controls are `pos_x` / `pos_y`, declared as one `xy` pad. Two
+// pure functions then remove both of them from every LANE tier:
+//
+//   * `laneOrder` drops each pad's ANCHOR unconditionally (`curated-face.ts:135`
+//     — a pad is square and a lane knob column is 46 px), and
+//   * `foldedOrder` drops each pad's PARTNER, because one cell covers two params.
+//
+// Measured on the real functions with a joystick-shaped def:
+//
+//   laneOrder      = ["pos_y"]      foldedOrder = ["pos_x"]
+//   curatedFace(mini|compact|full).controls = []          dock = ["pos_x"]
+//
+// So the promotion would leave the canvas tile with a title, a patch panel and
+// NO CONTROL AT ALL, on a module whose entire purpose is a performance gesture.
+// `JoystickCard` renders the draggable pad at every zoom today, so that is a
+// functional-parity LOSS, not a look change — and the parity rule is that such
+// a loss is never surfaced as a choice after the build.
+//
+// ⚠ IT IS NOT A JOYSTICK BUG. Any face whose lane-reachable set is empty has
+// it, which is why this is a lint clause and not a note on one module.
+//
+// ⚠ `videoOut` LOOKS like a counter-example and is not. It ships `order: []`
+// and resolves to zero controls at EVERY tier including dock — but it declares
+// `extension: 'videoOut'`, a bespoke surface that IS the whole faceplate. That
+// is the discriminator this clause uses: something has to PAINT.
+
+describe('module-face lint — a promoted face always paints something in the lane', () => {
+  /** What can carry a lane tier when no control cell can: a bespoke shell
+   *  extension, a hero, or a live video surface. */
+  function paintsWithoutControls(def: FaceDef): boolean {
+    const face = def.face as { extension?: string; hero?: unknown } | undefined;
+    return !!face?.extension || !!face?.hero || hasVideoSurface(def as never);
+  }
+
+  function emptyLaneTiers(def: FaceDef): string[] {
+    return (['mini', 'compact', 'full'] as const).filter(
+      (t) => (curatedFace(def as unknown as FaceDefLike, t)?.controls.length ?? 0) === 0,
+    );
+  }
+
+  it('no faced module resolves to an empty LANE plate', () => {
+    const offenders = allDefs()
+      .filter((d) => d.face && !paintsWithoutControls(d))
+      .map((d) => ({ type: d.type, empty: emptyLaneTiers(d) }))
+      .filter((r) => r.empty.length > 0)
+      .map((r) => `${r.type} (${r.empty.join(', ')})`);
+    expect(
+      offenders,
+      'a promoted face paints NOTHING at a lane tier — no control cell, no hero, no extension, ' +
+        'no video surface. The canvas tile is then a title and a patch panel, and every ' +
+        'affordance the legacy card offered there is gone. Either the face keeps a ' +
+        'lane-reachable control, or it declares something that paints, or the module is not ' +
+        'promoted.',
+    ).toEqual([]);
+  });
+
+  it('NEGATIVE CONTROL: a pad-only face FAILS the clause, and an extension rescues it', () => {
+    // The joystick shape, built here so the finding survives whether or not
+    // that module is ever promoted. Both directions on one def.
+    const padOnly = {
+      type: 'zz-pad-only',
+      params: [
+        { id: 'pos_x', label: 'X', min: -1, max: 1, defaultValue: 0 },
+        { id: 'pos_y', label: 'Y', min: -1, max: 1, defaultValue: 0 },
+      ],
+      face: { order: ['pos_x', 'pos_y'], xyPads: [{ x: 'pos_x', y: 'pos_y', label: 'XY' }], glyph: 'none' },
+    } as unknown as FaceDef;
+
+    expect(
+      emptyLaneTiers(padOnly),
+      'a face whose only cell is a dock-only pad must resolve to NO lane controls — if this is ' +
+        'no longer true the platform changed and the clause above is now vacuous',
+    ).toEqual(['mini', 'compact', 'full']);
+    expect(paintsWithoutControls(padOnly), 'nothing paints it').toBe(false);
+
+    const rescued = {
+      ...padOnly,
+      face: { ...(padOnly.face as object), extension: 'somethingThatPaints' },
+    } as unknown as FaceDef;
+    expect(paintsWithoutControls(rescued), 'a declared extension is what rescues videoOut').toBe(true);
+
+    // And the DOCK is unaffected either way — the pad is reachable there, which
+    // is why this is a lane clause and not a "do not declare pads" clause.
+    expect(
+      curatedFace(padOnly as unknown as FaceDefLike, 'dock')?.controls.map((c) => c.key),
+    ).toEqual(['pos_x']);
   });
 });
