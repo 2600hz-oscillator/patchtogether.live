@@ -1252,6 +1252,31 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // def/factory bug that changes saved-rack audio and is NOT fixed in a face
   // PR — see the note on `applyCompMacro`.
   'mixmstrs',
+  // THE FACEPLATE QUEUE · Q31 — MIRRORPOOL, the fourth VIDEO face and the
+  // second adopter of `face.xyPads` (2026-08-19).
+  //
+  // The audit's answer was "ZERO un-exposed DSP capability", which is a finding
+  // rather than a shortfall — every one of the eleven params reaches the
+  // shader, and every one has a matching CV input. What the face adds is not
+  // access, it is ORIENTATION.
+  //
+  // ⚠ THREE OF THE QUEUE'S OWN PRESCRIPTIONS WERE REFUTED BY RE-MEASUREMENT,
+  // and they are recorded on the def beside the declarations they changed:
+  //   * "compact adds the position pad" — no lane tier EVER shows a pad;
+  //     `laneOrder` excludes every pad anchor by construction.
+  //   * an ABOVE/BELOW `eye-side` readout "genuinely underivable from any
+  //     single knob" — it is `sign(orbit_el)` relabelled, since `dist` is
+  //     clamped strictly positive (729 camera settings, zero disagreements).
+  //     The shipped readout joins `orbit_el` with `orbit_dist` instead, which
+  //     genuinely is a join: the eye's horizontal radius is `dist·cos el`.
+  //   * the spec did not mention `paramCells` at all, and all seven non-pad
+  //     controls are `<NeonFader>` throws on the card — undeclared, promotion
+  //     would have silently repainted every one of them as a dial.
+  //
+  // The measurements it did make all reproduced exactly (fovY 70/45/20°, eye.y
+  // −0.00026000 at `orbit_el = −0.0001`, `surfaceReflectivity(F, 0) === F`
+  // bit-exactly, `wind_dir` bit-exactly inert at `wind_speed = 0`).
+  'mirrorpool',
   // THE FACEPLATE QUEUE · Q14 — SLEWSWITCH, quad slew + 4→1 sequential switch
   // (2026-08-15), and the entry whose argument is that TWO ENGINES IN ONE BOX
   // ARE TWO PAGES, not one ranked list of seven.

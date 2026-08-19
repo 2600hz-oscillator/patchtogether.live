@@ -84,6 +84,7 @@ import {
   swolevcoShapeText,
 } from '$lib/ui/modules/swolevco-face-model';
 import { moogCp3BusText, moogCp3FaceParams } from '$lib/ui/modules/moogcp3-face-model';
+import { mirrorpoolEyePlaceText } from '$lib/ui/modules/mirrorpool-face-model';
 import {
   moog911FaceParams,
   moog911FallText,
@@ -729,6 +730,15 @@ const FACE_READOUT_VALUES: Readonly<Record<string, FaceReadoutValue>> = {
   'spirographs-figure-1': (read) => spirographsFigureText(1, read),
   'spirographs-figure-2': (read) => spirographsFigureText(2, read),
   'spirographs-figure-3': (read) => spirographsFigureText(3, read),
+  // ── MIRRORPOOL ───────────────────────────────────────────────────────────
+  // WHERE THE EYE IS STANDING — a JOIN over `orbit_el` and `orbit_dist`, since
+  // the eye's horizontal radius is `dist·cos el` and a readback of either dial
+  // is blind to the other. It asks `cameraBasis`, the renderer's OWN function,
+  // so the faceplate cannot describe a camera the module stopped rendering.
+  // ⚠ An ABOVE/BELOW readout was refused instead: `sign(eye.y)` is exactly
+  // `sign(orbit_el)`, so it would be one dial's sign relabelled. See
+  // mirrorpool-face-model.ts.
+  'mirrorpool-eye-place': (read) => mirrorpoolEyePlaceText(read),
   // ── MOOG 923 ─────────────────────────────────────────────────────────────
   // TWO INSTRUMENTS ON ONE PANEL SHARING NO SIGNAL PATH, so the readouts split
   // the same way and each half is the other's negative control: `lpCutoff` /

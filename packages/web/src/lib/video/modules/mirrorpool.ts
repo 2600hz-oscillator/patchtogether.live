@@ -444,6 +444,163 @@ export const mirrorpoolDef: VideoModuleDef = {
     { id: 'zoom', label: 'Zoom', defaultValue: DEFAULTS.zoom, min: 0, max: 1, curve: 'linear' },
   ],
 
+  // ── THE FACEPLATE ──────────────────────────────────────────────────────────
+  //
+  // WHAT IT IS FOR. Every other video module in the fleet TRANSFORMS AN
+  // INCOMING FRAME — feedback, keying, quantising, warping. mirrorpool renders
+  // a WORLD: a hemisphere of water carrying a real velocity-form wave equation,
+  // where the two video inputs are not the subject but the OPTICS (what lies
+  // under the surface, and what the surface reflects). So the verb is not
+  // "process a picture", it is STAND SOMEWHERE AND LOOK AT WATER — place the
+  // eye, set the weather, and the picture is whatever the physics does. Every
+  // rank below descends from that one sentence.
+  //
+  // THE PADS RANK FIRST, AND THEY COST NOTHING TO DO SO. A declared 2-D pad is
+  // dock-only (`laneOrder` excludes each pad's anchor: a pad is square and a
+  // lane knob column is 46 px), so it takes no lane slot and ranking it first
+  // is free. It is also the honest ranking for a module whose main control IS
+  // its camera. ⚠ This corrects the queue's §25.4 tier sentence, which had
+  // "compact adds the position pad" — no tier below the dock ever shows a pad.
+  //
+  // THE LANE LADDER, read back as a sentence (the seven throws, pads excluded):
+  // at mini you get MODE — the one control that changes what the module IS, a
+  // refractive pool or a mirror, and at its default it is BIT-EXACTLY the raw
+  // Fresnel term (`surfaceReflectivity(F, 0) === F` at every incidence
+  // sampled), i.e. the physics with no thumb on the scale. At compact, add WIND
+  // — with it at 0 the height field early-returns hard flat, a true null, so it
+  // decides whether there is any surface motion at all. Then RAIN, the second
+  // and independent source of surface motion (its own seeded Poisson
+  // scheduler). At plate, add DIR, BRIGHT and ZOOM. DIST is dock-only.
+  //
+  // ⚠ DIR RANKS BELOW WIND ON PURPOSE. `wind_dir` is BIT-EXACTLY INERT whenever
+  // `wind_speed` is 0 — measured, identical `{height:0,dhdx:0,dhdz:0}` at dir 0
+  // and dir π/2 — so it is a MODIFIER of Wind, not a peer, and must never reach
+  // a tier its master has not. (It is live as shipped, at `wind_speed = 0.3`,
+  // but one knob turn away it is dead.) The queue asked for it immediately
+  // after WIND; it sits one lower, behind RAIN, because RAIN is unconditionally
+  // live and DIR is not — which is the same rule applied, not a departure from
+  // it.
+  //
+  // `order` and `pages` DISAGREE deliberately. `order` is PRIORITY — what a
+  // shrinking tier keeps. `pages` is the ORDER OF THE PICTURE'S CAUSES: what
+  // the water is doing, then how light leaves it, then where the eye stands,
+  // then where it points. Four bands, under `DOCK_TAB_MIN_BANDS = 7`, so this
+  // face is UNTABBED and its band labels paint. It is not padded to reach the
+  // rail — there are four ideas here and inventing three more is the thing the
+  // tabbed ruling forbids in the same paragraph that mandates the rail.
+  face: {
+    order: [
+      // The two pads first: dock-only, and they cost no lane rank.
+      'orbit_az', 'orbit_el',
+      'look_yaw', 'look_pitch',
+      // The lane budget, in priority order.
+      'surface_mode',
+      'wind_speed',
+      'rain',
+      'wind_dir',
+      'brightness',
+      'zoom',
+      // Dock-only.
+      'orbit_dist',
+    ],
+
+    pages: [
+      {
+        id: 'weather',
+        label: 'weather',
+        hint: 'the two independent sources of surface motion — a directional swell, and rain impacts that expand into rings',
+        controls: ['wind_speed', 'wind_dir', 'rain'],
+      },
+      {
+        id: 'surface',
+        label: 'surface',
+        hint: 'how light leaves the water: MODE sweeps the Fresnel split from a refractive pool to a near-full mirror',
+        controls: ['surface_mode', 'brightness'],
+      },
+      {
+        id: 'position',
+        label: 'position',
+        hint: 'where the eye STANDS — the pad rides a sphere around the pool, and below the centre line it goes underwater',
+        controls: ['orbit_az', 'orbit_el', 'orbit_dist'],
+      },
+      {
+        id: 'look',
+        label: 'look',
+        hint: 'where the eye POINTS, as an offset from the aim-at-centre framing',
+        controls: ['look_yaw', 'look_pitch', 'zoom'],
+      },
+    ],
+
+    // ⚠ MANDATORY, and counter-intuitively so — the same trap backdraft and
+    // spirographs both document. `primaryAudioOutPortId` matches
+    // `type === 'audio'` and this def has no audio port, so ANY other glyph
+    // literal resolves to `{kind:'static'}` and reddens module-face-lint's
+    // dead-glyph clause. The live picture arrives through a different seam
+    // entirely — `hasVideoSurface(def)` (`domain === 'video'`) mounting
+    // VideoTileThumb at the lane, and the `fullViewBody` extension at the dock.
+    glyph: 'none',
+
+    // ⚠ THE SCREEN ON/OFF SWITCH ARRIVES THROUGH THIS SLOT, AND IT HAS TO
+    // (#1928). The 2026-08-18 ruling gives every video module a screen on/off
+    // toggle. A toggle authored on `MirrorpoolCard.svelte` would be DELETED BY
+    // THIS PROMOTION: `migrated()` becomes true and neither surface renders the
+    // card again. There is no generic shell affordance to fall back on —
+    // `previewCollapsed` appears in zero shell files — so it comes through
+    // `fullViewBody`, the route backdraft, videoOut and spirographs take.
+    //
+    // Contract-transparent: `face.extension` is a STRING, not a component, so
+    // the shell never imports a mirrorpool file (`module-shell-import-guard`),
+    // and a def's top-level `face` is stripped from the attest basis — so
+    // declaring it costs no re-attest and no contract-lock line.
+    extension: 'mirrorpool',
+
+    // All seven non-pad controls are `<NeonFader>` THROWS on the card. Nothing
+    // in a ParamDef separates "a throw" from any other continuous scalar, so a
+    // face that does not declare them silently repaints all seven as dials — a
+    // look regression the shell cannot infer. (The queue's §25.4 did not
+    // mention this; it was found by reading the card, per its own ATTACK 2.)
+    paramCells: {
+      wind_speed: 'fader', wind_dir: 'fader', rain: 'fader',
+      brightness: 'fader', surface_mode: 'fader',
+      orbit_dist: 'fader', zoom: 'fader',
+    },
+
+    // THE TWO CAMERA PADS. The card has always drawn these as 2-D pads; four
+    // dials would keep every value and lose the GESTURE, which is the whole
+    // point of a camera you aim. Ranges come off each axis's own ParamDef, so
+    // the card/def divergence class is unrepresentable here by construction.
+    //
+    // ⚠ This also MIGRATES A HAND-CLONE ONTO THE SHARED CELL.
+    // `card-primitive-parity.test.ts` records that eight cards hand-roll a
+    // `div.pad` + `onpointerdown` instead of mounting the shared `<XyPad>`, and
+    // names `MirrorpoolCard` among them — a clone is invisible to that scan, so
+    // moving these onto the declared cell brings the module INTO a gate it
+    // currently escapes rather than hiding it there.
+    xyPads: [
+      { x: 'orbit_az', y: 'orbit_el', label: 'position' },
+      { x: 'look_yaw', y: 'look_pitch', label: 'look' },
+    ],
+
+    // ONE readout: WHERE THE EYE IS STANDING, as a name.
+    //
+    // It is a JOIN over `orbit_el` and `orbit_dist` — the eye's horizontal
+    // radius is `dist·cos el`, so a readback of either dial is blind to the
+    // other. Hold DIST at 1 and the same camera is inside the bowl at
+    // `el = 0.55` and exactly on its rim at `el = 0`.
+    //
+    // ⚠ THE QUEUE'S PROPOSED `eye-side` (ABOVE/BELOW) READOUT WAS REFUSED, and
+    // the refusal is the useful part: `eye.y = dist·sin el` with `dist` clamped
+    // strictly positive, so `sign(eye.y) === sign(orbit_el)` EXACTLY — measured
+    // across 729 camera settings with zero disagreements. That readout would be
+    // one dial's sign relabelled, which is the one thing a derived readout must
+    // not be, and no honest negative control could have been written for it.
+    // The refuted identity is kept as a permanent leg in
+    // `mirrorpool-face-model.test.ts` so it cannot go stale unnoticed.
+    hero: {
+      readouts: [{ label: 'eye', valueId: 'mirrorpool-eye-place' }],
+    },
+  },
+
   docs: {
     explanation: "mirrorpool renders a hemisphere pool of liquid sitting in a box, viewed by a repositionable ORBIT camera you fly around the pool. Two video inputs feed the optics: POOL is surface-mapped to the INSIDE of the hemisphere (the underwater view you see refracted through the water) and SCENE is the surroundings, reflected off the surface as an overhead backdrop. A single real height field drives everything: WIND raises a set of directional swell waves (bigger waves are genuinely taller and travel faster — dispersion, not a flat normal-map trick) and RAIN spawns raindrop impacts that punch one-shot dimples which expand into propagating rings, denser and deeper from drizzle up to a downpour. The surface normal reconstructed from that height field drives a physically-based Fresnel split: in the default REFRACT mode you see the reflected scene layered over the refracted, caustic-lit, colour-absorbed pool beneath; sweep MODE toward MIRROR and the surface becomes a near-full mirror of the sky/scene that the ripples shatter and distort. BRIGHT is a virtual sun that scales overall scene light (no sun disc is drawn yet). The camera is the card's TWO X-Y pads: pad 1 POSITIONS the eye on a sphere around the pool (Orbit = azimuth around it, Elev = elevation from straight overhead down BELOW the surface for an underwater Snell's-window view) with a Dist dial for how far out it sits; pad 2 is the free-LOOK (Look X = yaw, Look Y = pitch) that swings the view off the default aim-at-centre so you can look any direction, and Zoom sets the field of view. Every control has a matching CV input, so patch an LFO into orbit_az_cv for a slow orbit, a noise source into rain_cv to gust the storm, or an envelope into surface_mode_cv to melt between a clear refractive pool and a hard mirror. With nothing patched it still renders a live procedural sky + water, so it works as a standalone generative source.",
     inputs: {
