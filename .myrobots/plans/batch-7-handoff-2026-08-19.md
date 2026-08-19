@@ -16,12 +16,17 @@ and treat every prescription as a hypothesis about a gate you have not run yet.*
 | `moog905` (Q21 filler) | — | not reached |
 
 Also handled at the end of the batch: **#1939 (`feat/outlines-face`)**, which both
-merges re-conflicted. Its main-merge is complete, verified and green, parked on
-**`chore/outlines-face-merged-tree`** (`e59b8cf31`) rather than pushed, because a
-`vrt-update` capture was still in flight on that branch and a merge commit on
-top of the tip it checked out risks the bot's baseline push being rejected. Full
-completion recipe is a comment on #1939. Attest verified UNMOVED at `a37dbdda…`
-on the merged tree, both before and after the treeohvox merge.
+merges re-conflicted. Its main-merge is **PUSHED** (`d6c353b4d`), `MERGEABLE`,
+attest verified UNMOVED at `a37dbdda…`.
+
+⚠ **AND THE WAIT WAS THE WHOLE POINT.** A `vrt-update` capture was in flight on
+that branch, so the merge was prepared, verified, and deliberately NOT pushed —
+a merge commit on top of the tip the bot checked out would have made its push
+non-fast-forward. That capture then landed `32c9a663a`: exactly one file,
+`face-outlines-dock.png`, the determinism re-capture the #1931 fix and the
+simPin phase pin exist to make possible. The merge was redone on top of it and
+pushed. **Racing it would have destroyed an hour of CI work to save one
+command** — the failure `vrt-watch` warns about in its own output.
 
 ⚠ **#1952 (main red) is RETIRED** — the coordinator reports the class was
 already root-caused as webgl-smoke's timeout-kill-reporting-as-CANCELLED
