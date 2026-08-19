@@ -294,11 +294,33 @@ describe('b3ntb0x face: the declaration', () => {
     expect(new Set(paged).size).toBe(paged.length);
   });
 
-  it('the two SYNTHETIC gate params are declared noUserControl, not ranked', () => {
+  it('the THREE params a player never sets are declared noUserControl, not ranked', () => {
+    // Two synthetic CV-bridge levels plus the VRT determinism toggle. Painting
+    // any of them would put a rotary over a voltage nobody sets by hand — and
+    // for `freeze`, a control that stops the module rendering.
     const order = b3ntb0xDef.face?.order ?? [];
     const declared = (b3ntb0xDef.noUserControl ?? []).map((n) => n.param).sort();
-    expect(declared).toEqual(['mirrorXGate', 'mirrorYGate']);
+    expect(declared).toEqual(['freeze', 'mirrorXGate', 'mirrorYGate']);
     for (const id of declared) expect(order).not.toContain(id);
+    // Each names a REAL param and states who writes it instead.
+    for (const n of b3ntb0xDef.noUserControl ?? []) {
+      expect(b3ntb0xDef.params.some((p) => p.id === n.param), n.param).toBe(true);
+      expect(n.why.length, `${n.param} needs an argument`).toBeGreaterThan(40);
+    }
+    expect((b3ntb0xDef.noUserControl ?? []).find((n) => n.param === 'freeze')?.writer)
+      .toBe('internal');
+  });
+
+  it('the freeze param exists and rests OFF, so nothing is frozen in production', () => {
+    // ⚠ The scene-settle mechanism, and the reason the first VRT dispatch of
+    // this face timed out at 90 s and committed zero baselines: the harness
+    // writes `params.freeze`, and this module previously had only a globalThis
+    // time-pin the harness never sets (#1941).
+    const p = b3ntb0xDef.params.find((q) => q.id === 'freeze');
+    expect(p, 'freeze must be a ParamDef — the harness writes it through the graph').toBeTruthy();
+    expect(p!.defaultValue).toBe(0);
+    expect(p!.min).toBe(0);
+    expect(p!.max).toBe(1);
   });
 
   it('mirrorX / mirrorY are DISCRETE, so the face paints toggles and not rotaries', () => {

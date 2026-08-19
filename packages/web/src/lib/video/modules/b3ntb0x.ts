@@ -701,6 +701,7 @@ interface B3ntb0xParams {
   mirrorY: number;
   mirrorXGate: number;
   mirrorYGate: number;
+  freeze: number;
 }
 
 const DEFAULTS: B3ntb0xParams = {
@@ -726,6 +727,7 @@ const DEFAULTS: B3ntb0xParams = {
   mirrorY: 0,
   mirrorXGate: 0,
   mirrorYGate: 0,
+  freeze: 0,
 };
 
 export const b3ntb0xDef: VideoModuleDef = {
@@ -782,6 +784,30 @@ export const b3ntb0xDef: VideoModuleDef = {
     { id: 'mirrorY',      label: 'Mirror Y',    defaultValue: DEFAULTS.mirrorY,      min: 0,  max: 1, curve: 'discrete' },
     { id: 'mirrorXGate',  label: 'Mir X Gate',  defaultValue: DEFAULTS.mirrorXGate,  min: 0,  max: 1, curve: 'linear' },
     { id: 'mirrorYGate',  label: 'Mir Y Gate',  defaultValue: DEFAULTS.mirrorYGate,  min: 0,  max: 1, curve: 'linear' },
+    // ── freeze — the hidden VRT/determinism toggle ─────────────────────
+    //
+    // ⚠ THIS MODULE ANIMATES BY CONSTRUCTION and had no way to stop for a
+    // PARAM-driven harness. The subcarrier phase and the sync wobble both
+    // advance with uTime (the wobble is literally
+    // `sin(y*47 + uTime*3.3) * sin(y*11 - uTime*1.7)`), and the CRT
+    // persistence path feeds the previous frame back on top of that — so every
+    // rendered frame differs from the last. Fine for a player, fatal for a
+    // pixel baseline: without this the faceplate's scenes are a moving target
+    // and their capture can NEVER SETTLE. Measured: the first dispatch of this
+    // face timed out at 90 s on BOTH scenes, inside the screenshot's own
+    // stability retry, and committed zero baselines.
+    //
+    // ⚠ THE EXISTING `__b3ntb0xFreezeTimeSec` SEAM DOES NOT COVER IT. That is a
+    // globalThis flag read in `draw`, used by the render-smoke specs; the face
+    // VRT harness writes `params.freeze` through the Y.Doc and sets no globals,
+    // so the pin was dead for it (#1941 — grep the setters). And pinning time
+    // alone would still leave the persistence feedback evolving.
+    //
+    // Written ONLY by the VRT harness — see `videoFaceWhy` on this module's
+    // FACES roster entry, and `noUserControl` above. At >= 0.5 `draw` is a
+    // no-op so every surface holds its last frame, which is the same shape
+    // `spirographs`, `backdraft` and `grainsOfVision` already use.
+    { id: 'freeze',       label: 'Freeze',      defaultValue: DEFAULTS.freeze,       min: 0,  max: 1, curve: 'linear' },
   ],
 
   // #1726 — the two SYNTHETIC params. Neither is a control: each exists so the
@@ -804,6 +830,11 @@ export const b3ntb0xDef: VideoModuleDef = {
       param: 'mirrorYGate',
       writer: 'cv-port',
       why: "The mirror_y_gate input's raw level. A RISING EDGE on it toggles Mirror Y; the level itself is never a setting, and the face paints the mirrorY toggle it drives instead.",
+    },
+    {
+      param: 'freeze',
+      writer: 'internal',
+      why: "A determinism toggle for VRT capture, with NO control anywhere - not on the card, not on the faceplate, not on the patch surface. This module animates by construction (subcarrier phase and sync wobble both advance with uTime, and CRT persistence feeds the previous frame back), so a screenshot can never settle without it. The visual-regression harness writes it before comparing; nothing else ever does.",
     },
   ],
 
@@ -974,6 +1005,7 @@ export const b3ntb0xDef: VideoModuleDef = {
       mirrorY: "Mirror Y (0/1): kaleidoscope toggle that folds the top half over the bottom. Driven by the card's MIRROR Y button and by a rising edge on the Mir Y Gate input.",
       mirrorXGate: "Mir X Gate (0–1): the synthetic gate level fed by the mirror_x_gate input; a rising edge on it toggles Mirror X. Read for edge detection, not as a continuous control.",
       mirrorYGate: "Mir Y Gate (0–1): the synthetic gate level fed by the mirror_y_gate input; a rising edge on it toggles Mirror Y. Read for edge detection, not as a continuous control.",
+      freeze: "Freeze (0/1, default 0): a hidden determinism toggle with NO control anywhere — not on the card, not on the faceplate, not on the patch surface. At 0.5 or above the draw step is a no-op, so every surface holds its last frame instead of going black. It exists because this module animates by construction: the subcarrier phase and the sync wobble both advance with elapsed time, and the CRT persistence path feeds the previous frame back on top of that, so two captures of the same settings are never the same pixels. The visual-regression harness writes it before comparing a screenshot; nothing else ever does.",
     },
   },
   factory(ctx, node): VideoNodeHandle {
@@ -1078,6 +1110,19 @@ export const b3ntb0xDef: VideoModuleDef = {
       get fbo() { return crtFrontIsA ? fboCrtA.fbo : fboCrtB.fbo; },
       get texture() { return crtFrontIsA ? fboCrtA.texture : fboCrtB.texture; },
       draw(frame) {
+        // FREEZE — hold the last frame. Every surface this module owns keeps
+        // whatever it last held, so the picture does not go black; it stops.
+        // See the `freeze` ParamDef for why this module needs one at all.
+        //
+        // ⚠ THIS IS NOT THE SAME SEAM AS `__b3ntb0xFreezeTimeSec` BELOW, and the
+        // difference is the whole reason this param exists. That one is a
+        // globalThis flag that PINS uTime for the render-smoke specs; the face
+        // VRT harness (`freezeFaceVideo`) writes a PARAM and never touches a
+        // global, so the existing seam was dead for it — a pin gated on a flag
+        // nothing sets (#1941). Pinning time would also not be enough on its own:
+        // the CRT persistence path feeds the previous frame back, so the picture
+        // keeps evolving at a fixed uTime. Stopping the draw stops both.
+        if ((params.freeze ?? 0) >= 0.5) return;
         const g = frame.gl;
         const inputTex = frame.getInputTexture(node.id, 'in');
         // Subcarrier-drift clock (subcarrier phase + sync wobble advance with

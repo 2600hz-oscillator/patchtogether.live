@@ -154,6 +154,7 @@ b3ntb0x param burst_starve 0..1 linear default=0
 b3ntb0x param chroma_leak 0..1 linear default=0.15
 b3ntb0x param enhance 0..1 linear default=0
 b3ntb0x param feedback 0..1 linear default=0
+b3ntb0x param freeze 0..1 linear default=0
 b3ntb0x param hue -1..1 linear default=0
 b3ntb0x param luma_peak 0..1 linear default=0
 b3ntb0x param mirrorX 0..1 discrete default=0
