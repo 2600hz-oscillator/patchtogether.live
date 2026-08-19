@@ -222,25 +222,36 @@ const FACE_WIDTH_SLACK_MAX_PX = 40;
  *
  * An exemption you cannot write a concrete reason for is an offender, not an
  * exemption — "it looks roomier" is not a thing that consumes width.
+ *
+ * ── ⚠ IT IS EMPTY, AND THE THREE ENTRIES IT HELD WERE ALL MIS-ATTRIBUTED ────
+ *
+ * `unityscalemathematik`, `vca` and `wavetableVco` each carried an entry
+ * blaming the HERO READOUT STRIP, exempt "only because its fix is the owner's
+ * pending global removal of the strip". Measured on the live layout by removing
+ * each element and re-reading the pane, that cause is DISPROVEN by its own
+ * removal — hiding the strip moves the pane on NONE of them:
+ *
+ *   face                    content  body  plate   without BAR   without STRIP
+ *   moog914 (was passing)      765    780    780        —              780
+ *   moog911                    270    303    352       303             352
+ *   vca                        247    280    337       280             337
+ *   wavetableVco               250    283    319       283             319
+ *   unityscalemathematik       280    313    373       313             373
+ *
+ * What actually made those panes wide is the dock TITLE BAR, which sits OUTSIDE
+ * `.faceplate-scroll` — so `contentW` cannot see it while `plateW` is set by
+ * it, and the old `plateW - contentW` charged the chrome's width to the face.
+ * Every one of the four is a NARROW face whose bar out-measures its faceplate;
+ * `moog914`, whose body drives its own pane, was never affected.
+ *
+ * Against the corrected subject (`bodyW - contentW`, the face's own box against
+ * the face's own ink) all three land on **33 px** — the same "the hero row
+ * defines the plate" mode the threshold note above documents as normal, and
+ * comfortably inside the ceiling. So the debt is PAID rather than re-described:
+ * the entries are DELETED, not narrowed, and the pending strip removal that was
+ * supposed to fix them would in fact have left all three red.
  */
-const FACE_WIDTH_EXEMPTIONS: Readonly<Record<string, string>> = {
-  unityscalemathematik:
-    "its HERO READOUT STRIP is intrinsically wider than its ink: four label/value pairs whose " +
-    "columns are sized by the widest of `dt`/`dd` per item plus a 22 px gutter, against a face " +
-    "whose bands are three knob columns. Measured 93 CSS px of slack (content 280, plate 373). " +
-    "⚠ THIS IS A KNOWN DEFECT, NOT AN EARNED WIDTH, and it is exempt only because its fix is " +
-    "the owner's own follow-up ruling — *\"generally we don't want text like that in our " +
-    "faceplates\"* — which removes the strip from every face and takes this entry with it.",
-  vca:
-    "the same hero readout strip, on the narrowest face that has one: measured 90 CSS px of " +
-    "slack (content 247, plate 337) — the strip alone is wider than both of the face's bands. " +
-    "⚠ Same status as unityscalemathematik: a defect held open by a pending global removal, " +
-    "not a width anything consumes.",
-  wavetableVco:
-    "the same hero readout strip: measured 69 CSS px of slack (content 250, plate 319). " +
-    "⚠ Same status — this entry exists to keep the gate GREEN AND HONEST about a known " +
-    "offender rather than to bless it, and it dies with the strip.",
-};
+const FACE_WIDTH_EXEMPTIONS: Readonly<Record<string, string>> = {};
 
 test.describe('VRT: P1 curated faces (?shell=1) — compact lane tile + dock full-view', () => {
   for (const { type, pages, videoFaceWhy } of FACES as readonly {
@@ -345,17 +356,33 @@ test.describe('VRT: P1 curated faces (?shell=1) — compact lane tile + dock ful
       // today. Units: CSS px, and the same CSS px the PNG is in (see
       // `readFoldGeometry`'s units note) — this pane is not inside xyflow's
       // zoom transform.
-      const slack = g.plateW - g.contentW;
+      // ⚠ THE SUBJECT IS THE FACE'S OWN BOX, NOT THE PANE. `.faceplate-body` is
+      // `width: max-content`, so it is what the face ASKED FOR; the pane is
+      // `max(that, the dock title bar)` and the bar lives outside the element
+      // `contentW` walks. Measuring against the pane charged the chrome's width
+      // to the faceplate and produced three mis-attributed exemptions — see the
+      // measurement table on FACE_WIDTH_EXEMPTIONS. Units: CSS px.
+      const slack = g.bodyW - g.contentW;
       const widthWhy = FACE_WIDTH_EXEMPTIONS[type];
       expect(
         widthWhy ? -1 : slack,
         `face-${type}-dock: ${slack} CSS px of EMPTY PLATE to the right of the content ` +
-          `(content ${g.contentW}, plate ${g.plateW}), against a ${FACE_WIDTH_SLACK_MAX_PX} px ` +
-          `ceiling. Either the face is reserving width nothing draws in — the tidyVco defect, ` +
-          `whose cause was a \`min-width\` floor on \`.faceplate-body\` — or the width is ` +
-          `EARNED, in which case add a FACE_WIDTH_EXEMPTIONS entry naming the thing that ` +
-          `consumes it. "It looks roomier" is not a thing that consumes it.`,
+          `(content ${g.contentW}, face body ${g.bodyW}; the pane around it is ${g.plateW}, ` +
+          `which the dock TITLE BAR may legitimately set and which is NOT this assertion's ` +
+          `subject), against a ${FACE_WIDTH_SLACK_MAX_PX} px ceiling. Either the face is ` +
+          `reserving width nothing draws in — the tidyVco defect, whose cause was a ` +
+          `\`min-width\` floor on \`.faceplate-body\` — or the width is EARNED, in which case ` +
+          `add a FACE_WIDTH_EXEMPTIONS entry naming the thing that consumes it. "It looks ` +
+          `roomier" is not a thing that consumes it.`,
       ).toBeLessThanOrEqual(FACE_WIDTH_SLACK_MAX_PX);
+
+      // The pane never CLIPS the face — stated because the subject moved off it.
+      // (`hiddenX` above is the scroll-overflow half; this is the box half.)
+      expect(
+        g.plateW,
+        `face-${type}-dock: the pane (${g.plateW}) is narrower than the faceplate it holds ` +
+          `(${g.bodyW}) — the face is being squeezed, not merely surrounded.`,
+      ).toBeGreaterThanOrEqual(g.bodyW);
 
       // ── RESIDUAL SCOPE #1, ASSERTED: the tab rail ───────────────────────
       // A railed face renders ONE band; every other face renders all of them.
@@ -443,6 +470,69 @@ test.describe('VRT: P1 curated faces (?shell=1) — compact lane tile + dock ful
         'consumes the width (a live picture, a scope trace, a video preview, an XY pad, a ' +
         'control that only appears in one mode).',
     ).toEqual([]);
+  });
+
+  test('face width negative control: the corrected subject still catches a body FLOOR', async ({
+    page,
+  }) => {
+    // ⚠ THE PERMANENT NEGATIVE CONTROL FOR A CORRECTED INSTRUMENT. The width
+    // assertion's subject moved from the PANE to `.faceplate-body`, which made
+    // four faces stop reporting slack they never had — and a measurement that
+    // stops failing is exactly the shape that "goes green and blind" (CLAUDE.md:
+    // a gate whose precondition is the defect). So this leg re-creates the
+    // FOUNDING defect on a live face and asserts the corrected number sees it.
+    //
+    // The defect is the real one, verbatim: `.dock-faceplate .faceplate-body`
+    // carried `min-width: 900px`, which became the faceplate's width because
+    // everything above it shrink-wraps. Injected here rather than described.
+    //
+    // BOTH DIRECTIONS, on the SAME face in the SAME boot: clean must pass and
+    // floored must fail, so "the instrument cannot move" and "the face is fine"
+    // stay distinguishable. Derived from the roster (FACES[0]) rather than
+    // naming a module, so it cannot outlive its subject.
+    const subject = FACES[0]!;
+    test.setTimeout(60_000);
+    await page.setViewportSize(foldViewportFor(subject.type));
+    const memberId = await bootWithFace(page, subject.type);
+    await frameMember(page, memberId, 0.7, 'full');
+    await openDock(page, memberId, subject.pages);
+    await unfoldDockPane(page);
+
+    const clean = await readFoldGeometry(page);
+    expect(
+      clean.bodyW - clean.contentW,
+      `${subject.type}: the control face must be clean BEFORE the floor is injected, or the ` +
+        `failing half below proves nothing (content ${clean.contentW}, body ${clean.bodyW})`,
+    ).toBeLessThanOrEqual(FACE_WIDTH_SLACK_MAX_PX);
+
+    const FLOOR_PX = 900;
+    await page.evaluate((px) => {
+      const style = document.createElement('style');
+      style.id = 'aa-face-width-negative-control';
+      style.textContent = `.dock-faceplate .faceplate-body { min-width: ${px}px; }`;
+      document.head.appendChild(style);
+    }, FLOOR_PX);
+    const floored = await readFoldGeometry(page);
+    await page.evaluate(() =>
+      document.getElementById('aa-face-width-negative-control')?.remove(),
+    );
+
+    expect(
+      floored.bodyW,
+      `the injected ${FLOOR_PX}px floor must actually reach the faceplate — if it does not, ` +
+        `this control is testing nothing (body ${floored.bodyW})`,
+    ).toBeGreaterThanOrEqual(FLOOR_PX);
+    expect(
+      floored.bodyW - floored.contentW,
+      `${subject.type}: with the tidyVco floor re-injected the corrected measurement MUST ` +
+        `exceed the ${FACE_WIDTH_SLACK_MAX_PX} px ceiling (content ${floored.contentW}, body ` +
+        `${floored.bodyW}). If it does not, the width gate has gone green and blind.`,
+    ).toBeGreaterThan(FACE_WIDTH_SLACK_MAX_PX);
+
+    // …and the face is back to clean once the floor is gone, so the injection
+    // cannot leak into any scene that follows.
+    const after = await readFoldGeometry(page);
+    expect(after.bodyW).toBe(clean.bodyW);
   });
 
   test('every shipped face has a scene, and every scene has its baselines', () => {
