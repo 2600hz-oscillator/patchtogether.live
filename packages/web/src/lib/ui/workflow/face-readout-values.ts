@@ -60,6 +60,12 @@ import {
 } from '$lib/ui/modules/clouds-face-model';
 import { noiseFaceParams, noiseTapDbText } from '$lib/ui/modules/noise-face-model';
 import {
+  spirographsClipText,
+  spirographsClosesText,
+  spirographsFigureText,
+  spirographsLiveText,
+} from '$lib/ui/modules/spirographs-face-model';
+import {
   moog923FaceParams,
   moog923MinusThreeDbText,
   moog923SplitText,
@@ -674,6 +680,41 @@ const FACE_READOUT_VALUES: Readonly<Record<string, FaceReadoutValue>> = {
   'noise-pink-db': (read) => noiseTapDbText('pink', noiseFaceParams(read)),
   'noise-brown-db': (read) => noiseTapDbText('brown', noiseFaceParams(read)),
 
+  // ── SPIROGRAPHS ──────────────────────────────────────────────────────────
+  // THE FIRST VIDEO FACE IN THIS REGISTRY, and its three readouts are all
+  // JOINS gated on the SAME thing: `count`.
+  //
+  // ⚠ `count` SHIPS AT 1, SO TWENTY OF THE THIRTY-ONE PARAMS ARE BIT-EXACTLY
+  // INERT AT SPAWN. Spiro 2 and spiro 3 carry full, plausible-looking banks
+  // that draw nothing. Every readout here filters on `live`, which is what
+  // makes them blind to a dial that is genuinely doing nothing and what a
+  // per-knob readback structurally cannot be — the permanent control is that
+  // perturbing spiro 3 at `count = 1` moves NONE of them, and raising `count`
+  // makes the same perturbation visible.
+  //
+  //   `live`    how many spiros draw. The dial says `1`; it cannot say that
+  //             twenty other dials are therefore doing nothing.
+  //   `closes`  which live figures NEVER close. R and r are CONTINUOUS and a
+  //             trochoid closes only on a RATIONAL ratio — at R = 5, r = 3
+  //             closes in 3 revolutions while r = 2.4142 hits the module's own
+  //             200-cap and never closes. A millimetre of dial travel apart.
+  //   `clip`    which live figures reach past the frame. ⚠ SCALE-INVARIANT:
+  //             only the FIXED circle is kept in frame (radius `R * scale`
+  //             bounced off an inset of its own size), so the curve overflows
+  //             exactly when `curveMaxReach > R` and `scale` cancels out of
+  //             both sides. A zoom control that cannot change whether the
+  //             picture clips is worth saying out loud.
+  //
+  // The arithmetic is the MODULE'S OWN — `revolutionsToClose` and
+  // `curveMaxReach` from `spirographs-math`, the same functions the draw path
+  // calls — so the faceplate cannot describe a curve the module stopped
+  // drawing.
+  'spirographs-live': (read) => spirographsLiveText(read),
+  'spirographs-closes': (read) => spirographsClosesText(read),
+  'spirographs-clip': (read) => spirographsClipText(read),
+  'spirographs-figure-1': (read) => spirographsFigureText(1, read),
+  'spirographs-figure-2': (read) => spirographsFigureText(2, read),
+  'spirographs-figure-3': (read) => spirographsFigureText(3, read),
   // ── MOOG 923 ─────────────────────────────────────────────────────────────
   // TWO INSTRUMENTS ON ONE PANEL SHARING NO SIGNAL PATH, so the readouts split
   // the same way and each half is the other's negative control: `lpCutoff` /
