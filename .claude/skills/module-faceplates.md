@@ -152,6 +152,33 @@ with SCREEN **off**, where the canvas is gone and an absolutely-positioned butto
 would otherwise leave the card. **The stacked row is the named anti-pattern** —
 if you are measuring whether a row "fits", you are already building the wrong one.
 
+**⚠ THE PARAGRAPH ABOVE IS ABOUT A *CARD*. A *FACE* NEEDS A DIFFERENT ROUTE, AND
+FORGETTING THAT SHIPPED A MERGED FACE WITHOUT THE CONTROL (#1928).** Promotion
+sets `migrated(type)` true, and neither surface renders the module's card after
+that — so a toggle that lives only on the card is **deleted by the very promotion
+that was supposed to keep it**. `spirographs` shipped exactly that: the switch was
+on `SpirographsCard.svelte`, the module entered `STRICT_FACES`, and the ruling was
+then satisfied only on a surface nobody can reach.
+
+There is **no generic shell affordance** for it — `previewCollapsed` appears in
+zero shell files. A faced video module gets the toggle through the
+**`fullViewBody` shell-extension slot** (`face.extension: '<id>'` →
+`$lib/ui/modules/<id>/shell-extension.ts`). Adopters: `backdraft`, `videoOut`,
+`spirographs`. It is dock-only by `dockFullViewHeadPlan`, because a 192 px lane
+tile cannot carry a module surface — the lane keeps the generic `VideoTileThumb`.
+
+So: **card → overlay the preview's corner; face → `fullViewBody`.** Both are
+required of a video module that has both surfaces, and the face one is the half
+that is easy to lose, because nothing asserts it — a deny-by-default check over
+`STRICT_FACES ∩ video defs` is the honest close and does not exist yet (#1928).
+
+Two details that are load-bearing wherever it renders: **state lives on
+`node.data`**, never component `$state` (the component unmounts on dock collapse
+/ LRU eviction — the #1531 / #1574 / #1583 class — and `node.data` is what
+survives a tab switch, a remount, a reload and syncs to collaborators); and
+**reuse the same `previewCollapsed` key** the card used, or every rack saved
+before the promotion silently re-opens its collapsed preview.
+
 ### The authoring consequence: WRITE FOR THE HINT-OFF STATE
 
 Annotations are OFF by default, per node, and never synced. **So the resting
