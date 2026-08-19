@@ -58,6 +58,7 @@ load-bearing ones against the code before designing against them.**
 |---|---|---|---|
 | `2026-08-19-spec-moog904bc.md` | `moog904b`, `moog904c` | YES (904b narrowly, on ONE readout) | ⚠ **The queue's "proper subsets of Q39" premise is WRONG in four ways** — 904c has no RANGE param at all, 904b's multiplier is ×1/×2^1.5 (module-local, not the lib's ×1/×4/×16), 904b's dead travel is at BOTH ends, and 904c's cutoff CV is a `cvScale: log` AudioParam sum (±4.98 oct), not a per-sample 1 V/oct multiply. Same `MoogLadder` class, three unrelated findings. |
 | `2026-08-19-spec-mandelbulb-face.md` | `mandelbulb` (the FACE build) | YES | The slice-readout question is resolved as a `custom` **sidebar block**, because `hero.cell` would DELETE the live fractal preview at the dock (`module-shell-model.ts:876`) — a parity regression, not a layout choice. |
+| `2026-08-19-spec-b3ntb0x-bentbox.md` | `b3ntb0x`, `bentbox` | YES both | ⚠ **They are a FAMILY, not a superset pair** — the param-id intersection is exactly FOUR, and of bentbox's 12 bending knobs **zero** exist on b3ntb0x. And `b3ntb0x`'s `bend_d` is **`enhance` wearing a different name**: both read the same `neighborAvg` and multiply the same chroma carrier, so they compound (×5.40 at both full). The module's own "no dead control" guard proves each uniform is *consumed* and is structurally unable to see that two of them are one operation. |
 
 ### ⚠ Two "missing file" notes in the mandelbulb spec are BRANCH ARTEFACTS, not findings
 
@@ -87,6 +88,30 @@ branch right now".**
    ceiling, killing the top **12.207 %**. **No RANGE position has a fully live
    dial, and the two dead ends are at opposite ends** — which is why the 904a
    analogy fails.
+3. **`b3ntb0x`'s `tbc` defaults to 1, which makes the module's own documented
+   headline gesture impossible at factory settings.** `(rawOffset + wobble) *
+   (1.0 - tbc)` is then exactly `0.0`, while the docs instruct *"Crank Sync
+   Crush + Bias to tear and roll"*. Same class as `mandelbulb`'s DETAIL default
+   sitting in its dead band, and as `moog921Vco`'s two bit-inert controls.
+4. **`b3ntb0x` binds a sampler it never samples.** `uEncode` is declared,
+   cached, and bound EVERY FRAME, and two comments assert it is read; no shader
+   stage samples it. A per-frame bind for a texture nothing reads.
+5. **A cost asymmetry that reads BACKWARDS on video defs, and it changes the
+   cheap fix.** `HASH_TRANSPARENT_PROPS` covers `docs` / `controlFamilies` /
+   `face` / `noUserControl` — **`params` is not on it**, and both defs sit in the
+   WebGL basis. So on a VIDEO def an `options[]` roster is free in the CONTRACT
+   but costs a **real-GPU re-attest**, the inverse of the audio rule this batch
+   worked under. The boolean-as-`linear` defect on `mirrorX`/`mirrorY` should
+   therefore be fixed with `face.paramCells: 'toggle'` (free on both counts)
+   rather than `curve: 'discrete'`.
+
+### ⚠ Four §24 claims about these two are REFUTED by the spec
+
+Recorded so they are not carried forward: `readLive` is now on **all** knobs of
+both cards; `card-def-debt` no longer ledgers `b3ntb0x`; **`fullViewBody` is
+WIRED with two adopters** (backdraft + videoOut), so §24's *"a platform PR
+wearing a face"* risk is withdrawn; and §24's `sin ≈ −3.07e−10` could not be
+reproduced by reading.
 
 ## What is deliberately NOT here
 
