@@ -58,6 +58,7 @@ load-bearing ones against the code before designing against them.**
 |---|---|---|---|
 | `2026-08-19-spec-moog904bc.md` | `moog904b`, `moog904c` | YES (904b narrowly, on ONE readout) | ⚠ **The queue's "proper subsets of Q39" premise is WRONG in four ways** — 904c has no RANGE param at all, 904b's multiplier is ×1/×2^1.5 (module-local, not the lib's ×1/×4/×16), 904b's dead travel is at BOTH ends, and 904c's cutoff CV is a `cvScale: log` AudioParam sum (±4.98 oct), not a per-sample 1 V/oct multiply. Same `MoogLadder` class, three unrelated findings. |
 | `2026-08-19-spec-mandelbulb-face.md` | `mandelbulb` (the FACE build) | YES | The slice-readout question is resolved as a `custom` **sidebar block**, because `hero.cell` would DELETE the live fractal preview at the dock (`module-shell-model.ts:876`) — a parity regression, not a layout choice. |
+| `2026-08-19-spec-ruttetra-grainsofvision.md` | `ruttetra`, `grainsOfVision` | YES both (GOV the stronger) | ⚠ **`ruttetra`'s honest page count is 4, not 6** — the queue's 6 requires splitting `h0·xFreq + xPhase`, which is ONE expression, and leaves a 1-control page. So it does **not** reach the tab rail, which **contradicts the owner ruling that named it as the first tabbed application**. Owner decision needed. |
 | `2026-08-19-spec-b3ntb0x-bentbox.md` | `b3ntb0x`, `bentbox` | YES both | ⚠ **They are a FAMILY, not a superset pair** — the param-id intersection is exactly FOUR, and of bentbox's 12 bending knobs **zero** exist on b3ntb0x. And `b3ntb0x`'s `bend_d` is **`enhance` wearing a different name**: both read the same `neighborAvg` and multiply the same chroma carrier, so they compound (×5.40 at both full). The module's own "no dead control" guard proves each uniform is *consumed* and is structurally unable to see that two of them are one operation. |
 
 ### ⚠ Two "missing file" notes in the mandelbulb spec are BRANCH ARTEFACTS, not findings
@@ -104,6 +105,34 @@ branch right now".**
    worked under. The boolean-as-`linear` defect on `mirrorX`/`mirrorY` should
    therefore be fixed with `face.paramCells: 'toggle'` (free on both counts)
    rather than `curve: 'discrete'`.
+
+### ⚠ TWO THINGS THE OWNER MUST RULE ON, both raised by the ruttetra/GOV spec
+
+1. **The tabbed ruling names `ruttetra` as its first application, and `ruttetra`
+   does not reach the rail.** Its honest page count is **4** (relief / shape /
+   scan / beam — one page per shader expression). The queue's 6 is reachable only
+   by splitting `h0·xFreq + xPhase`, which is a single expression, and by keeping
+   a one-control `intensity` page. Lowering `DOCK_TAB_MIN_BANDS` from 7 to 6
+   costs **exactly 3 moved dock baselines** (`cube`, `cofefve`, `marbles` are the
+   only faces declaring 6 pages) — and **still would not reach ruttetra at 4**.
+   So the options are: ship it untabbed, or revisit which module the ruling meant.
+2. **SCREEN ON/OFF has NO faced implementation anywhere (D-8).**
+   `previewCollapsed` appears in **zero** shell files. `backdraft` and `videoOut`
+   reach it through a `fullViewBody` shell extension; `spirographs` is in
+   `STRICT_FACES` yet its switch lives **only on its card**, which the face
+   replaces. ⚠ This directly qualifies the OVERLAY paragraph added to the skill in
+   #1925: that paragraph documents the **card** pattern correctly, but a *faced*
+   video module needs the `fullViewBody` route, and spirographs currently has the
+   gap. Confirm `fullViewBody` is the intended home, and close spirographs.
+
+### ⚠ A promotion that would make an existing spec GREEN AND BLIND (D-9)
+
+`e2e/tests/workflow-shell-video.spec.ts:444-450, 516-536` uses `grainsOfVision`
+**because it is un-migrated**, as its placeholder-thumb host. Promoting GOV leaves
+every assertion in that spec passing while the thing it proves quietly stops
+being proven. It must be re-pointed **in the same diff** as the promotion — the
+`#1796` class, where a fix removes the condition a gate depended on and the gate
+goes green rather than red.
 
 ### ⚠ Four §24 claims about these two are REFUTED by the spec
 
