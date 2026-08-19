@@ -143,6 +143,17 @@ describe('console grid — which SHIPPED bands it claims (derived membership)', 
       // there is nothing to align, and handing ModuleShell a column ruler for a
       // flex row is two layout systems disagreeing about one element.
       'mixmstrs/sends=9',
+      // ⚠ THE FIRST BAND WHOSE COLUMNS ARE NOT CHANNELS. moog984 is a 4×4
+      // MATRIX: its four clusters are the four INPUT rows and column j is
+      // OUTPUT j, so the property this rule tests for — "column j means the
+      // same thing in every cluster" — is here the definition of the module
+      // rather than a mixer convention it happens to satisfy. It arrived with
+      // its face (#1942) and its baseline was dispatched with it.
+      //
+      // It is a ONE-console-band face, so `faceConsoleGridCols` correctly does
+      // not engage (below `FACE_CONSOLE_MIN_BANDS`) and it is absent from the
+      // face-wide list below — a lone console band has nothing to align to.
+      'moog984/crosspoints=4',
       'pentemelodica/mix=5',
       'tidyVco/envelopes=4',
     ]);
@@ -187,6 +198,11 @@ describe('console grid — which SHIPPED bands it claims (derived membership)', 
     }
     expect(singles.sort(), 'the roster must still contain single-console-band faces').toEqual([
       'kickdrum',
+      // moog984 is the STRONGEST member of this control: it is the only face
+      // whose console band is the module's entire surface, so if the face-wide
+      // ruler ever engaged below its declared minimum it would engage here
+      // first and most visibly.
+      'moog984',
       'pentemelodica',
       'tidyVco',
     ]);

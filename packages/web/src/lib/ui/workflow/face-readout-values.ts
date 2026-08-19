@@ -90,6 +90,7 @@ import {
 } from '$lib/ui/modules/swolevco-face-model';
 import { moogCp3BusText, moogCp3FaceParams } from '$lib/ui/modules/moogcp3-face-model';
 import { moog993RoutingText } from '$lib/ui/modules/moog993-face-model';
+import { MOOG984_COLUMN_READOUTS } from '$lib/ui/modules/moog984-face-model';
 import {
   moog911FaceParams,
   moog911FallText,
@@ -891,6 +892,28 @@ const FACE_READOUT_VALUES: Readonly<Record<string, FaceReadoutValue>> = {
   // sees only their product), which is why the formula multiplies them; #1884
   // proposes changing that and is audible, so it is not in the face PR.
   'moogcp3-bus-db': (read) => moogCp3BusText(moogCp3FaceParams(read)),
+
+  // ── MOOG 984 ─────────────────────────────────────────────────────────────
+  // FOUR entries, one per output bus, and they are the reason that face exists.
+  //
+  // The 984's sixteen cross-points are BIT-EXACTLY SYMMETRIC by construction —
+  // the def emits them from one loop, so every `min`/`max`/`defaultValue`/
+  // `curve` is identical and the factory gives each an identical GainNode.
+  // Nothing about any ONE knob distinguishes it, so the whole informational
+  // content of the surface is in the JOINS: `out_j = Σ_i in_i · m_ij`.
+  //
+  // The negative control a knob readback fails, in BOTH directions — this is
+  // the kickdrum-TAIL trap made geometric, since the matrix puts the blind
+  // params in plain sight next to the ones a reviewer would perturb:
+  //   OUT 1 MOVES with m21 / m31 / m41   (its column; a `m11` readback is blind)
+  //   OUT 1 is INVARIANT to m12/m13/m14  (its ROW; a `m11` readback moves)
+  // Both legs are permanent in `moog984-face-model.test.ts`.
+  //
+  // Registered from the model's DERIVED roster rather than four hand-written
+  // lines, so the ids cannot drift from the def's output ports.
+  ...Object.fromEntries(
+    MOOG984_COLUMN_READOUTS.map((r): [string, FaceReadoutValue] => [r.valueId, r.text]),
+  ),
 
   // ── MARBLES ──────────────────────────────────────────────────────────────
   // ELEVEN values, every one a BARE number or state — no sentence anywhere on

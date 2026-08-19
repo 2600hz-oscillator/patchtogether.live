@@ -305,6 +305,36 @@ describe('resolvePushCardControls — tier 2, the curated face', () => {
     ]);
   });
 
+  it('a FIRST PROMOTION re-orders the encoders into COLUMNS — moog984', () => {
+    // moog984, promoted 2026-08-19 (#1942). The third variant of the same
+    // hazard, and the one where the permutation carries the most meaning.
+    //
+    // The def declares its sixteen cross-points ROW-MAJOR (one generator loop,
+    // `for i { for j { m_ij } }`), so the GENERIC tier put input 1's whole fan
+    // -out plus input 2's on the eight encoders. The face ranks COLUMN-MAJOR,
+    // because on this module a shrinking budget should keep a complete OUTPUT
+    // BUS. So the Push card now carries two ENTIRE buses — encoders 1-4 are
+    // everything reaching OUT 1, encoders 5-8 everything reaching OUT 2 —
+    // instead of two entire input rows.
+    //
+    // Both arrangements are coherent, which is exactly why this is accepted
+    // deliberately here rather than frozen with a PUSH_CARD_CONTROLS override:
+    // the card is a permutation of the same set and should keep following the
+    // face if the face is ever re-ranked.
+    const spec = resolvePushCardControls(defByType('moog984'));
+    expect(spec.source).toBe('face');
+    expect(spec.skipped, 'no families and no momentary pads on this module').toEqual([]);
+    expect(pushCardParams(spec).map((q) => q.id)).toEqual([
+      'm11', 'm21', 'm31', 'm41', 'm12', 'm22', 'm32', 'm42',
+    ]);
+    // The negative control: declaration order is genuinely different, so this
+    // cannot pass vacuously and a future re-rank is distinguishable from a
+    // no-op. (The first eight of the def's own roster are input rows 1 and 2.)
+    expect((defByType('moog984').params ?? []).slice(0, 8).map((q) => q.id)).toEqual([
+      'm11', 'm12', 'm13', 'm14', 'm21', 'm22', 'm23', 'm24',
+    ]);
+  });
+
   it('a FIRST PROMOTION can move the TIER and leave the CARD identical — ninelives', () => {
     // ninelives, promoted 2026-08-15 (faceplate queue Q11). The counterpart to
     // the leg above, and the reason both are worth having: a promotion moves
