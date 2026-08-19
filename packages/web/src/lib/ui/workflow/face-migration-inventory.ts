@@ -316,7 +316,25 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
   { type: 'lumakey', disposition: 'generic-face' },
   { type: 'lushgarden', disposition: 'generic-face', note: 'the def declares more params than the card exposes — a face ranks ALL of them, so check each one is real' },
   { type: 'macrooscillator', disposition: 'generic-face' },
-  { type: 'mandelbulb', disposition: 'generic-face', note: 'the orbit drag over the preview is a 2-D camera gesture → the `xy` cell, not two knobs' },
+  // ⚠ THE PREVIOUS NOTE HERE NAMED THE WRONG GESTURE AND THE WRONG PARAMS, and
+  // a face built to it would have wired the wrong pair to its pad. It read:
+  // "the orbit drag over the preview is a 2-D camera gesture → the `xy` cell,
+  // not two knobs". Checked against `MandelbulbCard.svelte`:
+  //
+  //   * there IS no orbit drag — the pointer handlers write `slice_y` +
+  //     `slice_ry` (`:136-137`), and only fire when SLICE is ON (`:140`);
+  //   * `rotate_x`/`rotate_y` are knob-only, so it is not a CAMERA gesture at
+  //     all — it is a slice-PLANE selector.
+  //
+  // Its third clause was RIGHT and is kept: a 2-D pad is the correct shape, and
+  // "the `xy` cell" is this file's own shorthand for it (see the header's cell
+  // list and the derivation note). The implementation is `face.xyPads`, named
+  // here so the next reader does not go looking for an `xy` KIND in
+  // `shell-cells.ts`, where there isn't one.
+  //
+  // A disposition note is a hypothesis like any other — verify it against the
+  // code before designing against it.
+  { type: 'mandelbulb', disposition: 'generic-face', note: 'the drag over the preview writes slice_y + slice_ry and only when SLICE is on — a slice-plane selector, NOT a camera orbit; rotate_x/rotate_y are knob-only. A 2-D pad is still the right shape: declare it as `face.xyPads` (there is no `xy` KIND in shell-cells.ts). ⚠ glyph MUST be `none`: this is the one video def with an `audio` output, so primaryAudioOutPortId resolves and a live glyph would bind to a tap that cannot see a video-domain node (mandelbulb-glyph-tap.test.ts). The slice WAVEFORM readout canvas is a second bespoke picture with no shell cell yet.' },
   { type: 'mandleblot', disposition: 'generic-face' },
   { type: 'mapper', disposition: 'generic-face' },
   { type: 'marbles', disposition: 'generic-face' },
