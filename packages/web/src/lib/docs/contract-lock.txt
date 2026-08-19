@@ -2211,6 +2211,7 @@ moog923 out white audio
 moog923 param hpCutoff 0..1 linear default=0.5
 moog923 param level 0..1 linear default=0.8
 moog923 param lpCutoff 0..1 linear default=0.5
+moog923 face sidebar 0 kind=readouts label=filter −3 dB entries=lp:value=moog923-lp-hz,hp:value=moog923-hp-hz
 moog956 meta domain=audio
 moog956 out gate gate edge=gate
 moog956 out pitch pitch

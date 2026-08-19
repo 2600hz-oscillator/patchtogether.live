@@ -1064,6 +1064,46 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // live.
   'moog907a',
   'moog914',
+  // THE FACEPLATE QUEUE · Q20 — the noise + filter utility drawer (2026-08-18).
+  // Three params, one input, FOUR outputs, and two instruments sharing a panel
+  // and no signal path (measured: a 200 Hz sine through `audio` leaves `lp`/`hp`
+  // bit-identical at LEVEL 1 and LEVEL 0). Merit is the `noise` argument with
+  // more of it — four unprintable facts over four taps, not three over three.
+  //
+  // ⚠ THE AUDIT'S FINDING IS THE FILTER'S Q, AND NO GATE IN THE TREE COULD HAVE
+  // SEEN IT. `moog923.ts` creates two `BiquadFilterNode`s and never assigns
+  // `Q`. For `lowpass`/`highpass` the Web Audio API reads `Q` in DECIBELS
+  // (`α = sin ω0 / (2·10^(Q/20))`) and defaults it to 1 — so the frequency the
+  // knob sets, which the def called "the corner" in five places, is where the
+  // filter reads +1.00 dB. Measured on the shipping factory at knob 0, 0.25,
+  // 0.5, 0.75 and 1: the real −3 dB point is 1.3293x the declared corner on
+  // `lp` and 0.7520x on `hp`, and each tap carries a +1.96 dB hump 0.36 oct
+  // inside its own passband. Every closed form matches the analog prototype at
+  // Q = 10^(1/20) exactly, which is how we know it is the platform default
+  // showing through rather than a modelling choice. `contract-lock` pins
+  // min/max/curve and is structurally blind to a filter coefficient; the
+  // module's own unit test asserts `cutoffToHz` and the biquad's `.frequency`
+  // agree, which they do — the number is simply not the corner. The DOCS are
+  // corrected in this PR and the face publishes the real −3 dB points live;
+  // whether the clone should CARRY 2 dB of unchosen resonance is an audio
+  // question for the owner's ears and is filed separately, because an audio
+  // change does not belong in a face PR that self-merges on green.
+  //
+  // ⚠ AND THE SECOND FINDING IS THE SHIPPED DEFAULT. Both dials default to 0.5,
+  // so a reader concludes the two taps meet in a clean crossover at 894 Hz.
+  // They do not: the −3 dB points move as x and 1/x off that shared corner, so
+  // the taps OVERLAP by 0.82 oct — a band that arrives at both jacks. That is
+  // the `split` readout, and it is the one number on this module that no single
+  // dial can even approximate.
+  //
+  // ⚠ NO GLYPH, which is the #1692 finding answered rather than repeated.
+  // `primaryAudioOutPortId` takes the first `audio` output — `white` — so every
+  // glyph kind resolves to a live tap on the NOISE half and nothing can point
+  // one at `lp`/`hp`. A glyph also costs a compact cell (three knob columns, or
+  // two plus the glyph), so a filter patch would trade a dial it is using for a
+  // picture of a path it is not. `noise` decided the other way on the opposite
+  // facts and both decisions are in their face comments.
+  'moog923',
   // THE FACEPLATE QUEUE · Q7 — the full mixer (2026-08-15). 91 params, 111
   // input ports: 1.86x the previous largest face (pentemelodica, 49 cells).
   //

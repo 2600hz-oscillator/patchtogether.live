@@ -66,6 +66,12 @@ import {
   spirographsLiveText,
 } from '$lib/ui/modules/spirographs-face-model';
 import {
+  moog923FaceParams,
+  moog923MinusThreeDbText,
+  moog923SplitText,
+  moog923TapDbText,
+} from '$lib/ui/modules/moog923-face-model';
+import {
   fourplexerFanText,
   fourplexerIdleText,
   fourplexerMapText,
@@ -677,6 +683,46 @@ const FACE_READOUT_VALUES: Readonly<Record<string, FaceReadoutValue>> = {
   'spirographs-figure-1': (read) => spirographsFigureText(1, read),
   'spirographs-figure-2': (read) => spirographsFigureText(2, read),
   'spirographs-figure-3': (read) => spirographsFigureText(3, read),
+  // ── MOOG 923 ─────────────────────────────────────────────────────────────
+  // TWO INSTRUMENTS ON ONE PANEL SHARING NO SIGNAL PATH, so the readouts split
+  // the same way and each half is the other's negative control: `lpCutoff` /
+  // `hpCutoff` move NEITHER tap level, and `level` moves NEITHER filter number
+  // (measured on the shipping factory — a 200 Hz sine through `audio` gives a
+  // bit-identical `lp`/`hp` RMS at LEVEL 1 and LEVEL 0).
+  //
+  //   `white-db` / `pink-db`
+  //              the noise half's `noise` problem verbatim, because it IS the
+  //              same generators: ONE gain writes both tap gains and the two
+  //              tables leave 12.30 dB apart, so the dial prints `0.80` for
+  //              two jacks that are not the same loudness. Reusing
+  //              `NOISE_TAP_RMS` rather than restating it is what keeps the two
+  //              modules from drifting to two answers for one table.
+  //   `lp-hz` / `hp-hz`
+  //              WHERE THE FILTER ACTUALLY TURNS OVER, which is NOT
+  //              `cutoffToHz` of the dial. Web Audio reads `Q` in dB on a
+  //              lowpass/highpass and defaults it to 1; `moog923.ts` never sets
+  //              it, so the declared corner is a +1.00 dB point and the −3 dB
+  //              point is 1.3293x it on `lp` and 0.7520x on `hp`. A relabelled
+  //              dial would print the declared corner and be wrong by a third —
+  //              the kick-drum TAIL shape, so the model test pins the printed
+  //              value AGAINST that wrong answer rather than merely near the
+  //              right one.
+  //   `split`    the octaves between those two points, signed: the band that
+  //              arrives at BOTH jacks (overlap) or NEITHER (gap). A join over
+  //              both dials, and the only readout here that no single dial can
+  //              approximate — at the shipped defaults BOTH read 0.50 and the
+  //              naive answer is "aligned, 0 oct" while the truth is +0.82 oct,
+  //              because the two points move as x and 1/x off the shared
+  //              corner.
+  //
+  // Every closed form is re-derived from the SHIPPING factory on every ART run
+  // by art/scenarios/moog923/face-audit.test.ts — the real biquads swept for
+  // their real −3 dB points, the real tables measured for their real RMS.
+  'moog923-white-db': (read) => moog923TapDbText('white', moog923FaceParams(read)),
+  'moog923-pink-db': (read) => moog923TapDbText('pink', moog923FaceParams(read)),
+  'moog923-lp-hz': (read) => moog923MinusThreeDbText('lp', moog923FaceParams(read)),
+  'moog923-hp-hz': (read) => moog923MinusThreeDbText('hp', moog923FaceParams(read)),
+  'moog923-split': (read) => moog923SplitText(moog923FaceParams(read)),
   // ── 4PLEXER ──────────────────────────────────────────────────────────────
   // FOUR IDENTICAL DIALS, and every question about a router is about the WHOLE
   // MAP. `sel2` reads `IN 1`; what it cannot say is that IN 2 now reaches

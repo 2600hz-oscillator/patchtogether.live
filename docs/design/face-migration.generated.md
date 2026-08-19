@@ -117,7 +117,7 @@ author a `face` and rank the controls — no new platform capability.
 | `moog921a` | audio | done | — |
 | `moog921b` | audio | done | — |
 | `moog921Vco` | audio | — | — |
-| `moog923` | audio | — | — |
+| `moog923` | audio | done | — |
 | `moog960` | audio | — | — |
 | `moog961` | audio | — | — |
 | `moog962` | audio | — | — |
