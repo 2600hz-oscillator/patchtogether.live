@@ -43,6 +43,7 @@
 
 import type { VideoModuleDef } from '$lib/video/module-registry';
 import type { VideoNodeHandle, VideoNodeSurface } from '$lib/video/engine';
+import { patch as livePatch } from '$lib/graph/store';
 import {
   PLEX_INPUTS,
   advanceSelector,
@@ -50,6 +51,31 @@ import {
   makeGateState,
   type GateState,
 } from '$lib/video/plex-select';
+
+/**
+ * A persisted selector value → a REAL input index, total over every number.
+ *
+ * ⚠ THE `% PLEX_INPUTS` WRAP ALONE IS NOT TOTAL, AND THE GAP BLACKS AN OUTPUT
+ * FOREVER (#1959). The wrap handles out-of-range fine — `7 → 3`, `-1 → 3` — but
+ * every arm of it is NaN-preserving:
+ *
+ *     Math.round(NaN)      = NaN      ((NaN % 4) + 4) % 4      = NaN
+ *     Math.round(Infinity) = Infinity ((Inf % 4) + 4) % 4      = NaN
+ *
+ * and `INPUT_IDS[NaN]` is `undefined`, so `getInputTexture` returns nothing,
+ * `uHas` goes to 0 and the shader takes its BLACK branch — on that output, on
+ * every frame, for the life of the patch. Nothing recovers it either: the gate
+ * path advances `selIndex(...)`, which is NaN, so `advanceSelector` cannot walk
+ * it back into range. Measured on the live factory: a node persisting
+ * `{ sel1: NaN }` reads `readParam('sel1') === NaN`.
+ *
+ * A non-finite selector therefore resolves to 0 (IN 1) — the same value a fresh
+ * spawn gets, so the recovery state is the one the player already understands.
+ */
+export function plexSelIndex(raw: number): number {
+  if (!Number.isFinite(raw)) return 0;
+  return ((Math.round(raw) % PLEX_INPUTS) + PLEX_INPUTS) % PLEX_INPUTS;
+}
 
 // Passthrough copy shader: write the selected input texture straight
 // through, or black when that input is unpatched.
@@ -201,11 +227,61 @@ export const fourPlexVidDef: VideoModuleDef = {
     const gateStates = new Map<string, GateState>();
     for (const id of GATE_IDS) gateStates.set(id, makeGateState());
 
-    // Clamp a persisted selector into a valid 0..PLEX_INPUTS-1 index.
-    const selIndex = (selId: (typeof SEL_IDS)[number]): number => {
-      const raw = (params as unknown as Record<string, number>)[selId] ?? 0;
-      const n = ((Math.round(raw) % PLEX_INPUTS) + PLEX_INPUTS) % PLEX_INPUTS;
-      return n;
+    // Clamp a persisted selector into a valid 0..PLEX_INPUTS-1 index. Total
+    // over every number, non-finite included — see `plexSelIndex` (#1959).
+    const selIndex = (selId: (typeof SEL_IDS)[number]): number =>
+      plexSelIndex((params as unknown as Record<string, number>)[selId] ?? 0);
+
+    // SANITISE AT LOAD, not only at read. A persisted non-finite selector is
+    // corrected in the working copy the moment the node spawns, so `readParam`
+    // — which every gate, the card and the faceplate read — never hands anyone
+    // a NaN to reason about. Doing it only inside `selIndex` would leave the
+    // bad value visible everywhere except the one place that draws.
+    for (const selId of SEL_IDS) {
+      const rec = params as unknown as Record<string, number>;
+      if (!Number.isFinite(rec[selId])) rec[selId] = plexSelIndex(rec[selId] ?? 0);
+    }
+
+    /**
+     * Reflect a gate-advanced selector back into the STORE (#1959).
+     *
+     * ⚠ WITHOUT THIS THE MODULE'S HEADLINE FEATURE IS INVISIBLE AND DOES NOT
+     * PERSIST. `params` above is `{ ...DEFAULTS, ...node.params }` — a FRESH
+     * OBJECT — and the gate path mutates only that copy. Measured on the live
+     * factory by holding the node:
+     *
+     *     two rising edges on gate1:
+     *       handle.readParam('sel1') = 2          <- what the router draws
+     *       node.params.sel1         = undefined  <- what the card renders
+     *
+     * so `FourPlexVidCard` (which reads `node.params[...]` and passes no
+     * `readLive`) shows IN 1 while OUT 1 carries IN 3, permanently — and a
+     * reload snaps the router back to the stale stored index.
+     *
+     * ⚠ THE EXISTING UNIT SUITE CANNOT SEE ANY OF THAT: every assertion in
+     * `4plexvid.test.ts` goes through `readParam`, which reads the very copy
+     * that is right. `spawn()` does not even keep the node. The regression legs
+     * added with this fix HOLD THE NODE OBJECT, which is the only way the two
+     * sides can be compared at all.
+     *
+     * ⚠ IT IS A STORE WRITE FROM AN ENGINE, AND IT IS THE SANCTIONED SHAPE, NOT
+     * THE WRITE-STORM ONE. This fires on a RISING EDGE — at most once per gate
+     * pulse, never per frame — and the router position is a persisted setting
+     * rather than transient modulation, so it MUST reach the Y.Doc. That is
+     * `drumseqz`'s `isPlaying` reflect exactly, and it is ledgered the same way
+     * (`raw-write-ledger`, kind `sanctioned`). It is NOT the
+     * cv-modulation-live-store-write-storm class, which is a continuous value
+     * arriving every frame.
+     */
+    const reflectSelector = (selId: (typeof SEL_IDS)[number], value: number): void => {
+      const live = livePatch.nodes[node.id];
+      // Sanctioned engine → store reflect, exactly the drumseqz `isPlaying`
+      // shape. Annotated INLINE rather than ledgered because the key is a
+      // VARIABLE (`selId`) and `raw-write-ledger` matches literal key names: an
+      // entry naming sel1..sel4 could not be tied back to this line, so the
+      // guard reported it stale AND reported the write unlisted, both at once.
+      // The trailing marker is the documented idiom for a new write.
+      if (live?.params) live.params[selId] = value; // guard:allow-raw-write
     };
 
     const surface: VideoNodeSurface = {
@@ -255,7 +331,17 @@ export const fourPlexVidDef: VideoModuleDef = {
             const selId = ('sel' + paramId.slice(4)) as (typeof SEL_IDS)[number];
             const next = advanceSelector(selIndex(selId));
             (params as unknown as Record<string, number>)[selId] = next;
+            // ...and tell the STORE, or the card and the saved patch keep the
+            // index the router left behind two edges ago (#1959).
+            reflectSelector(selId, next);
           }
+          return;
+        }
+        // A selector written directly (a knob, a faceplate cell, automation)
+        // is sanitised on the way in for the same reason it is at load: a
+        // non-finite write must not be able to black an output (#1959).
+        if ((SEL_IDS as readonly string[]).includes(paramId)) {
+          (params as unknown as Record<string, number>)[paramId] = plexSelIndex(value);
           return;
         }
         (params as unknown as Record<string, number>)[paramId] = value;
