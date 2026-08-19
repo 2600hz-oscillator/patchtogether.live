@@ -23,10 +23,24 @@ import {
   fixtureType,
 } from './_face-fixtures';
 
+// Boot and first-paint waits are pure LATENCY BOUNDS, not behavior assertions,
+// and CI's 2-core runners swing ≥2× run-to-run on identical code (#1860,
+// measured off blob reports). This spec lost two main push runs in one day to
+// flat waits on that lottery (#1875): the topbar at a flat 5 s (:568) and the
+// placeholder tiles at a flat 15 s (:271) — while every sibling test on the
+// SAME boot path passed. Scale the bounds on CI; assertions are untouched.
+// The local bound is not 5 s either: a sibling agent's install/suite load can
+// push first paint past 5 s on a dev box (measured: 5.3 s against the old 5 s
+// bound while 13/14 tests passed) — and a generous bound costs nothing on the
+// green path, because the wait exits on paint.
+const SLOW_RENDER = process.env.E2E_SWIFTSHADER === '1' || !!process.env.CI;
+const BOOT_MS = SLOW_RENDER ? 30_000 : 15_000;
+const PLACEHOLDER_PAINT_MS = SLOW_RENDER ? 45_000 : 15_000;
+
 async function gotoWorkflow(page: Page, opts: { shell: boolean }): Promise<void> {
   await page.goto(opts.shell ? '/rack' : '/rack?shell=legacy');
-  await expect(page.getByTestId('workflow-topbar')).toBeVisible();
-  await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });
+  await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: BOOT_MS });
+  await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible', timeout: BOOT_MS });
 }
 
 /** Read one node param through the dev __patch global. */
@@ -283,7 +297,7 @@ test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
     for (const id of ids) {
       await expect(
         page.locator(`.svelte-flow__node[data-id="${id}"] [data-testid="module-shell-placeholder"]`),
-      ).toBeVisible({ timeout: 15_000 });
+      ).toBeVisible({ timeout: PLACEHOLDER_PAINT_MS });
     }
 
     const metrics = await page.evaluate((nodeIds) => {
@@ -506,7 +520,7 @@ test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
     for (const id of ids) {
       await expect(
         page.locator(`.svelte-flow__node[data-id="${id}"] [data-testid="module-shell-placeholder"]`),
-      ).toBeVisible({ timeout: 15_000 });
+      ).toBeVisible({ timeout: PLACEHOLDER_PAINT_MS });
     }
     // The compact tier (the truncation report's tier) — the tile is 192px wide.
     await setZoomTier(page, 0.45, 'compact');
