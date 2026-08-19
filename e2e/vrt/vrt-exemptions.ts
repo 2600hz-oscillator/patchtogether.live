@@ -902,7 +902,22 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // (moog-ladder-dsp.test.ts + moog904a.test.ts worklet) + ART (source-SHA-
   // pinned .f32 self-osc) + per-module-per-port e2e provide functional
   // coverage. Promote into MODULES once the darwin + linux PNGs are captured.
-  moog904a: 'VRT baseline pending — deterministic beige Moog faceplate (2 knobs + 3-position RANGE switch, no canvas/animation); capture via `task vrt:update` on each platform. DSP unit + ART (SHA-pinned self-osc) + per-module-per-port e2e provide coverage. Promote into MODULES once darwin + linux baselines land.',
+  // ⚠ REWRITTEN WITH THE FACE PR (Q39). Two things in the old reason no longer
+  // held, and the second was already true when it was written:
+  //
+  //  1. It described the SUBJECT as "2 knobs + a 3-position RANGE switch" —
+  //     i.e. `Moog904aVcfCard.svelte`. `moog904a` is now in STRICT_FACES, so
+  //     `migrated()` is true and NEITHER surface renders that card: the lane
+  //     draws a ModuleShell tile and the dock a ModuleShell full view.
+  //  2. It credited "ART (SHA-pinned self-osc)" as functional coverage of this
+  //     module. `art/scenarios/moog904a/profile.test.ts` exists — but it
+  //     imports `MoogLadder` from the shared lib and drives it directly, with
+  //     `DRIVE = 0.5 + REGEN * 0.8` HAND-COPIED out of the worklet (its `:47`
+  //     even names the line it was copied from). So it pins the LADDER LIB, not
+  //     `moog904a`'s processor, and a change to the worklet's drive law, its
+  //     RANGE handling, its clamp or its dither would not move that baseline at
+  //     all (#1913). Real coverage, narrower than the sentence claimed.
+  moog904a: 'No card VRT baseline — and the card is unreachable: moog904a is in STRICT_FACES, so both surfaces render ModuleShell instead of Moog904aVcfCard. Pixel coverage is the two face scenes (face-moog904a-compact / face-moog904a-dock) in the shell-faces roster. Functional coverage: moog904a.test.ts (the real worklet), moog-ladder-dsp.test.ts, moog904a-face-model.ts (the delivered-cutoff join + the measured self-oscillation threshold), per-module-per-port e2e. ⚠ The ART profile pins the shared LADDER LIB driven directly with a hand-copied drive expression, NOT this worklet — so it cannot see a worklet-level drift (#1913).',
   // MOOG 911 EG — Moog System 55/35 contour generator. Deterministic beige
   // faceplate (4 knobs: T1 / T2 / ESUS / T3, no canvas / animation) like the
   // 921; baselines pending a `task vrt:update` run on each platform. DSP unit
