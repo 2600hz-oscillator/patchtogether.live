@@ -30,6 +30,7 @@
 
 import { test, expect } from '@playwright/test';
 import { SYNC_BUDGET_MS, SYNC_POLL_INTERVALS } from './_collab-helpers';
+import { BOOT_MS } from '../_helpers/boot-budget';
 
 interface CollabContexts {
   pageA: import('@playwright/test').Page;
@@ -43,7 +44,7 @@ async function attachWorkflow(
   rackspaceId: string,
 ): Promise<void> {
   await page.goto('/rack?shell=legacy');
-  await expect(page.getByTestId('workflow-topbar')).toBeVisible();
+  await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: BOOT_MS });
   await page.waitForLoadState('networkidle');
   await page.waitForFunction(
     () =>
