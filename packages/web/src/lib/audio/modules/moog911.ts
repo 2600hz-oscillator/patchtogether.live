@@ -77,6 +77,140 @@ export const moog911Def: AudioModuleDef = {
     { id: 't3',   label: 'T3',   defaultValue: 0.4,  min: 0.0001, max: 10, curve: 'log', units: 's' },
   ],
 
+  // ── THE FACEPLATE (PF-20) ────────────────────────────────────────────────
+  //
+  // WHAT THE 911 IS FOR. It is the rack's only THREE-TIME-CONSTANT contour
+  // generator: not attack-decay-sustain-release but rise -> settle -> (hold) ->
+  // fall, where the level it settles to is its own control. The verb a player
+  // performs is SHAPING THE FRONT OF A NOTE — how fast it arrives, how fast it
+  // backs off, and where it sits while the key is down. The one thing it does
+  // that `adsr` does not: its settle TIME and its sustain LEVEL are COUPLED, so
+  // moving the level re-times the stage.
+  //
+  // THE RANKING, and it is a measurement rather than a preference. Every number
+  // is from the SHIPPING worklet class at 48 kHz, held gate, read at the exact
+  // sample each stage's own exit condition latches (#1889;
+  // art/scenarios/moog911/face-audit.test.ts is the permanent anchor):
+  //
+  //   1 T1    UNCONDITIONAL APPLICABILITY. Every gate, however short, runs
+  //           ATTACK. Under a TRIGGER-length gate — 1 ms, which is exactly what
+  //           this module's own bank-mate the 911A emits — the contour never
+  //           reaches peak, so DECAY never runs at all and T1 is the only time
+  //           control shaping anything before the release. Peak from a 1 ms
+  //           pulse: 1.0000 / 0.9933 / 0.3935 / 0.0488 / 0.0050 at T1 =
+  //           0.0007238 / 0.001 / 0.01 (the DEFAULT) / 0.1 / 1. Full opening
+  //           needs T1 <= 0.724 ms — the bottom 17.2 % of a five-decade dial.
+  //   2 ESUS  THE ONLY CONTROL THAT CHANGES THE MEANING OF ANOTHER CONTROL.
+  //           Holding T2 at its default and sweeping ESUS moves the delivered
+  //           decay 276.313 -> 262.063 -> 239.667 -> 92.104 -> 0.021 ms while
+  //           the T2 dial reads 200.000 at every one of them, and it alone
+  //           picks the contour's shape class (pluck at 0, plateau at 1).
+  //           ⚠ THE SAME ARGUMENT WOULD BE WRONG FOR `adsr`, which is what
+  //           makes it an argument: `adsr.dsp:13` is `en.adsr(...)`, the Faust
+  //           stdlib's LINEAR-segment envelope, whose decay segment takes
+  //           exactly `decay` seconds at any sustain level. The coupling is a
+  //           property of THIS module's exponential-with-fixed-threshold
+  //           design, not of envelopes.
+  //   3 T2    the settle slope — real, and second to the level that re-times it.
+  //   4 T3    last, because it is the only control that needs the gate to have
+  //           already FALLEN. Nothing it does is visible while a key is held.
+  //
+  // ⚠ INERTNESS CANNOT DISCRIMINATE THIS RANKING, and saying so is part of the
+  // audit rather than an omission from it. With the `gate` jack unpatched,
+  // sweeping EACH of the four across its full declared range leaves BOTH
+  // outputs BIT-IDENTICAL to the default render — all four are dead at spawn,
+  // so #1758's "sample AT the declared value" habit finds four dead knobs here
+  // and separates none of them. Positive control: with the gate held, T1, T2
+  // and ESUS all move the output and T3 correctly does not.
+  //
+  // TIER LADDER AS A SENTENCE. With `glyph: 'none'` the compact cap is
+  // LANE_ROW_MAX_CELLS = 3, so: at mini you get the ATTACK; at compact the
+  // attack, the level and the settle; at plate and dock all four. Ranks 1-3 are
+  // the entire lane budget and T3 is effectively dock-only.
+  //
+  // ⚠ `order` AND `pages` DISAGREE, DELIBERATELY. `order` is PRIORITY, so it
+  // interleaves the level between the times (T1, ESUS, T2, T3) — that is the
+  // sequence the tiers truncate. `pages` is SIGNAL ORDER, so it separates by
+  // KIND: three log seconds in one band, one linear ratio in the other. The
+  // `level` band is a single control and earns its header on the skill's "1
+  // that is the module's identity" clause — three time constants and ONE level
+  // is what a 911 IS, and it is the whole difference from an ADSR.
+  //
+  // GLYPH: 'none', and it is the only correct declaration rather than a
+  // shrug. `primaryAudioOutPortId` matches `type === 'audio'` and BOTH of this
+  // module's outputs are `cv`, so it returns null and every glyph kind except
+  // 'envelope' falls through to `{kind:'static'}` — the dead-glyph state.
+  // ⚠ AND 'envelope' DOES NOT RESCUE IT: `glyphBinding` resolves `env-params`
+  // only for a def carrying four params literally NAMED attack/decay/sustain/
+  // release, and this module's are t1/t2/esus/t3 BY DESIGN. Renaming them to
+  // satisfy the resolver is CLAUDE.md's "check the consumer reads it" inverted.
+  // Filed as #1888 — an ENABLER, not a blocker. ⚠ Read the comment on that
+  // issue before implementing it: a role mapping ALONE would feed the drawing
+  // the DIAL times, and `envelopeCurvePoints` normalises to their sum, so the
+  // picture would restate exactly the defect the readouts below exist to
+  // expose (at ESUS 0.999 it would draw a settle ramp a quarter of the screen
+  // wide for a stage that lasts 0.021 ms).
+  //
+  // NO SIDEBAR, decided rather than skipped: `face.sidebar` is the one
+  // contract-PROJECTED field of `face`, and it is also what scales
+  // `faceplate-platform.spec.ts`'s `sweepBudgetMs(adopterCount)`. Everything a
+  // sidebar would say here is a number, and a number belongs in the readout row.
+  //
+  // NO `bareCells`: under a `times` heading, T1/T2/T3 are the ONLY thing
+  // separating three identical log knobs — the tidyVco A/D/S/R case the owner
+  // explicitly KEPT, not the mixmstrs `1LO..8LO` case he removed.
+  //
+  // REAR CARD: checked against `rearFieldPlan` rather than authored. The four
+  // `_cv` holes carry `paramTarget`, so each lands in its own param's page
+  // section; `gate` has no `paramTarget` and therefore takes the VOICE/SIGNAL
+  // slot, which is the derived default and not an orphan. Both outputs are one
+  // cable domain, so the outputs take their derived single section too. Nothing
+  // to declare — `face.rear.groups` would only restate it.
+  face: {
+    order: ['t1', 'esus', 't2', 't3'],
+
+    pages: [
+      {
+        id: 'times',
+        label: 'times',
+        hint: 'rise, settle and fall — each a TIME CONSTANT, not a duration',
+        controls: ['t1', 't2', 't3'],
+      },
+      {
+        id: 'level',
+        label: 'level',
+        hint: 'where the contour sits while the gate is held — and it re-times T2 and T3',
+        controls: ['esus'],
+      },
+    ],
+
+    glyph: 'none',
+
+    // THE HERO: three derived readouts and NO promoted control — the readouts
+    // ARE the finding, and promoting T1 out of `times` would split the three
+    // dials whose side-by-side disagreement with these three numbers is the
+    // whole point. (The readouts-only hero is the `moog914` / `moog907a` /
+    // `attenumix` shape, and two of those are this module's own bank.)
+    //
+    // Each prints what its dial does NOT: the delivered duration, in a
+    // five-decade ladder. At the defaults `13.83 ms / 240 ms / 696 ms` against
+    // dials reading 10 / 200 / 400, summing to 949 ms against 610.
+    //
+    // The three are EACH OTHER'S negative controls on every render, which is
+    // what makes this more than a relabelled knob: `rise` is EXACTLY invariant
+    // to ESUS (its gap ratio is a constant 1000) while `settle` and `fall` are
+    // both functions of it. The permanent legs live in
+    // moog911-face-model.test.ts, and the closed forms are re-derived from the
+    // shipping DSP in art/scenarios/moog911/face-audit.test.ts.
+    hero: {
+      readouts: [
+        { label: 'rise', valueId: 'moog911-rise' },
+        { label: 'settle', valueId: 'moog911-settle' },
+        { label: 'fall', valueId: 'moog911-fall' },
+      ],
+    },
+  },
+
   docs: {
     explanation:
       "A clean-room recreation of the Moog 911 Envelope Generator — the classic Moog 'contour generator', NOT a literal ADSR. It's a unipolar (0..1) envelope shaped by three time constants and one sustain LEVEL: when the TRIG gate goes high it rises to full over the ATTACK time (T1), then falls to the SUSTAIN level over the INITIAL-DECAY time (T2) and holds there for as long as the gate stays high; when the gate falls it returns to zero over the FINAL-DECAY time (T3). So the contour is attack → initial-decay-to-sustain → (hold) → final-decay, rather than A-D-S-R. Patch the OUT envelope into a VCA or filter cutoff to shape a note, and use the inverted OUT to duck or sidechain. Mental model: a transient-shaping contour fired by a gate, with separate up/settle/release slopes and a held middle.",
@@ -96,13 +230,13 @@ export const moog911Def: AudioModuleDef = {
       env:
         "The contour itself, a unipolar 0..1 control voltage. Patch it into a VCA's gain or a filter's cutoff to shape each note's loudness/brightness over time.",
       env_inv:
-        "The inverted contour (1 − env): high when the envelope is low and vice-versa. The standard Eurorack ducking/sidechain tap — patch it into a VCA to pull a level DOWN whenever the envelope fires.",
+        "The inverted contour (1 − env): high when the envelope is low and vice-versa. The standard Eurorack ducking/sidechain tap — patch it into a VCA to pull a level DOWN whenever the envelope fires. Note that it therefore SITS AT FULL SCALE (exactly 1.0) at rest, with nothing patched and no gate — measured bit-exactly over a full unpatched second — so it is a live DC source the moment you patch it, not a silent jack waiting for a trigger.",
     },
     controls: {
-      t1: "ATTACK time (T1): how long the envelope takes to rise to full when the gate opens — from an instant click to a slow ~10 s swell (log taper).",
-      t2: "INITIAL-DECAY time (T2): how long the envelope takes to fall from its peak down to the SUSTAIN level after the attack completes (log taper). This is the 'decay' stage of the contour.",
-      esus: "SUSTAIN LEVEL (Esus): the level the envelope holds at while the gate is held, from 0 (decays all the way to silence, an AD-style pluck) to 1 (holds at full, no initial decay).",
-      t3: "FINAL-DECAY time (T3): the release — how long the envelope takes to fall back to zero after the gate falls (log taper). A trigger close forces T3 from whatever stage the contour was in.",
+      t1: "ATTACK time (T1): how fast the envelope rises when the gate opens — from an instant click to a slow ~10 s swell (log taper). ⚠ It is a TIME CONSTANT, not the stage's duration: the rise actually completes in T1 × 1.38, so the 10 ms default delivers 13.8 ms. It also decides whether a short TRIGGER opens the envelope at all — a 1 ms pulse (what the 911A emits) reaches only 39 % of full scale at the default, and needs T1 at or below about 0.7 ms to open the contour fully.",
+      t2: "INITIAL-DECAY time (T2): how fast the envelope settles from its peak onto the SUSTAIN level after the attack completes (log taper). ⚠ Its real duration is set by SUSTAIN LEVEL as much as by this dial, because the stage ends when the envelope gets within 0.001 of the shelf: at T2 = 0.2 s the settle takes 276 ms at Esus 0, 240 ms at the 0.6 default and 92 ms at Esus 0.99, and above Esus 0.999 the contour is already there — the stage is skipped and this dial does nothing at all.",
+      esus: "SUSTAIN LEVEL (Esus): the level the envelope holds at while the gate is held, from 0 (decays all the way to silence, an AD-style pluck) to 1 (holds at full, no initial decay). ⚠ It is the module's only control that changes what ANOTHER control does: it sets how far both the initial decay and the final decay have to travel, so it re-times T2 and T3 without either of those dials moving.",
+      t3: "FINAL-DECAY time (T3): the release — how fast the envelope falls back to zero after the gate falls (log taper). A trigger close forces T3 from whatever stage the contour was in. ⚠ Like T2 its real duration depends on SUSTAIN LEVEL, because that is the height it falls FROM: at T3 = 0.4 s a release off the shelf takes 640 ms at Esus 0.3, 696 ms at the 0.6 default and 737 ms at Esus 1, and at Esus 0 there is nothing left on the shelf to decay (a release caught mid-attack still uses T3 normally).",
     },
   },
 

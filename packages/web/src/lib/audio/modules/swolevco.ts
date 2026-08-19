@@ -313,8 +313,138 @@ export const swolevcoDef: AudioModuleDef = {
     { id: 'fold',     label: 'Fold',  defaultValue: 0,   min: 0,    max: 1,   curve: 'linear' },
   ],
 
+  // ── THE FACEPLATE (PF-20) ────────────────────────────────────────────────
+  //
+  // WHAT SWOLEVCO IS FOR. It is the COMPLEX (West-Coast) oscillator: one pitch
+  // goes in, and instead of choosing a waveform you BUILD a timbre by warping
+  // it — crossfade the shape (SYMMETRY), fold it back on itself (FOLD), and
+  // pour audio-rate FM into it from a second oscillator (TIMBRE) that is
+  // either locked to a RATIO of the first or running free at its own pitch.
+  // The verb a player performs is riding FOLD and SYMMETRY with one hand while
+  // RATIO decides whether the modulator is a harmonic partner or a second
+  // voice. Every rank below descends from that sentence, and every one of them
+  // is a MEASURED number rather than a preference.
+  //
+  // THE RANKING, and why it is not the declaration order. Measured against the
+  // real factory under an OfflineAudioContext (48 kHz, tail half of a 0.5 s
+  // render; spectral centroid via a HANN-WINDOWED 8192-pt FFT — a rectangular
+  // window read this module's own pure-sine `mod_out` as 2904 Hz against a
+  // truth of 261.626, because a frequency-weighted centroid is dominated by
+  // 1/f leakage sidelobes, and the windowed instrument reads 261.8):
+  //
+  //   1 FOLD      the largest timbral travel on the module by a distance —
+  //               centroid 637 -> 3264 Hz (5.12x, +412 %) across 0..1, while
+  //               the level moves only 1.8 dB. This is what a hand rides, so
+  //               it is rank 1 AND the hero control.
+  //   2 SYMMETRY  the waveform identity and a real level hazard: 4.8 dB of
+  //               NON-MONOTONIC rms swing (-4.87 / -5.38 / -4.77 / -2.36 /
+  //               -0.07 dB at 0 / 0.25 / 0.5 / 0.75 / 1) and over-full-scale
+  //               at BOTH ends (peak 1.0286 saw, 1.0428 square) with no output
+  //               stage anywhere in the module. Tracked as #1877 — it is an
+  //               audio change and deliberately NOT in this PR.
+  //   3 RATIO     decides the modulator's entire behaviour, including whether
+  //               ranks 7 and 8 exist at all.
+  //   4 TIMBRE    the marquee FM control, ranked 4 ON MEASUREMENT rather than
+  //               on branding: +23 % of centroid (637 -> 786 Hz) for its whole
+  //               travel, against FOLD's +412 %. The declared law is +-200 Hz
+  //               at full knob, a modulation index of 0.76 on a 261.6 Hz
+  //               carrier — modest BY CONSTRUCTION. It also costs 4.1 dB on
+  //               `sum_out` (-8.44 -> -12.52 dB) while leaving `out` alone.
+  //   5 TUNE      pitch.
+  //   6 FINE      pitch.
+  //   7 M.TUNE    DOCK-ONLY, and this is an argument rather than a leftover.
+  //   8 M.FINE    Both are BIT-EXACTLY INERT in the state a rack spawns in:
+  //               at the shipped default `ratio = 1`, sweeping either across
+  //               its full declared range (+-36 st, +-100 c) gives
+  //               `max|x - x_ref| = 0.000e+0` on ALL THREE audio outputs.
+  //               `faceTierCap('full')` is 6, so ranks 7+ are dock-only by
+  //               construction — and a 192x180 lane tile that paints two dead
+  //               dials is a tile that lies. In the dock they are live, the
+  //               LOCK readout says which mode is on, and the sidebar says the
+  //               one sentence that makes them make sense.
+  //               Positive control, so the probe is not blind: at `ratio = 0`
+  //               the same sweep moves `mod_out` from 33 Hz to 2093 Hz.
+  //
+  // WHY `order` AND `pages` DISAGREE, deliberately. `order` is PRIORITY (it is
+  // what the tiers showing a SUBSET cut against), so it leads with the two
+  // timbre controls. `pages` is SIGNAL ORDER — primary oscillator first, then
+  // the modulator that cross-modulates it — because the tier showing
+  // EVERYTHING should read like the block diagram. FOLD is rank 1 and lives in
+  // the `primary` page; M.TUNE is rank 7 and sits beside the RATIO that gates
+  // it.
+  //
+  // NOT CONTROL-HEAVY, measured against the tabbed-face ruling. Eight params
+  // at ONE control shape (a linear fader, every one of them) and two honest
+  // ideas to group them into. "Lots of controls of DIFFERENT types" is the
+  // bar; this is the opposite of both halves of it, so it takes two bands and
+  // no tab rail. The two bands are 3 + 4 cells after the hero promotes FOLD,
+  // which packs to a single row (`DOCK_ROW_MAX_CONTROLS` is 10) and stays well
+  // under `DOCK_TAB_MIN_BANDS` (7), so the band hints actually render.
+  //
+  // NO AUDITION, and no `hero.cell`. swolevco FREE-RUNS — three OscillatorNodes
+  // started at factory time, full scale the instant it spawns — so there is
+  // nothing to strike, and an `action` cell would need a probe reaching a
+  // callable that does not exist. Keeping the `scope` glyph (rather than
+  // suppressing it with a hero picture) is deliberate: it makes swolevco the
+  // third faced module that is free-running, so its lane tile is REAL roster
+  // coverage for #1420's pre-frame AudioContext freeze rather than another
+  // silent graph that would read zeros either way.
+  face: {
+    order: [
+      'fold',
+      'symmetry',
+      'ratio',
+      'timbre',
+      'tune',
+      'fine',
+      // Dock-only by construction — see ranks 7/8 above.
+      'mod_tune',
+      'mod_fine',
+    ],
+
+    pages: [
+      {
+        id: 'primary',
+        label: 'primary oscillator',
+        hint: 'saw -> tri -> sqr crossfade, then the folder',
+        controls: ['tune', 'fine', 'symmetry', 'fold'],
+      },
+      {
+        id: 'modulator',
+        label: 'modulator + cross-mod',
+        hint: 'RATIO 0 = free-run; above 0 M.TUNE / M.FINE are ignored',
+        controls: ['ratio', 'timbre', 'mod_tune', 'mod_fine'],
+      },
+    ],
+
+    glyph: 'scope',
+
+    hero: {
+      control: 'fold',
+      readouts: [
+        { label: 'mod', valueId: 'swolevco-mod-hz' },
+        { label: 'lock', valueId: 'swolevco-mod-lock' },
+        { label: 'shape', valueId: 'swolevco-shape' },
+      ],
+    },
+
+    // The one thing the panel cannot say and a readout cannot either: what
+    // M.TUNE / M.FINE are FOR, given that they do nothing in the mode the
+    // module spawns in. Two states, named — not a sentence about the module.
+    sidebar: [
+      {
+        kind: 'readouts',
+        label: 'what M.TUNE / M.FINE do here',
+        entries: [
+          { label: 'RATIO = 0', text: "the modulator's own pitch" },
+          { label: 'RATIO > 0', text: 'nothing — primary x RATIO wins' },
+        ],
+      },
+    ],
+  },
+
   docs: {
-    explanation: "A complex / West-Coast-style dual oscillator: two oscillators in one module that interact to build harmonically rich timbres rather than just stacking simple shapes. A PRIMARY oscillator (crossfaded across saw / triangle / square by Symmetry, then run through a wavefolder) is the main voice; a sine MODULATOR oscillator, tuned either to a Ratio of the primary's pitch or to its own M.Tune / M.Fine, cross-modulates the primary via audio-rate FM (the Timbre amount). Mental model: start from a near-sine, then warp the wave with Symmetry, fold it with Fold, and pour FM in with Timbre to climb from sweet to screaming — all from one pitch. You can tap the primary alone (OUT), the clean modulator sine alone (MOD OUT), or the two summed together (SUM OUT), and a mono-video oscilloscope of the primary is available on SCOPE.",
+    explanation: "A complex / West-Coast-style dual oscillator: two oscillators in one module that interact to build harmonically rich timbres rather than just stacking simple shapes. A PRIMARY oscillator (crossfaded across saw / triangle / square by Symmetry, then run through a wavefolder) is the main voice; a sine MODULATOR oscillator, tuned either to a Ratio of the primary's pitch or to its own M.Tune / M.Fine, cross-modulates the primary via audio-rate FM (the Timbre amount). Mental model: start from a near-sine, warp the wave with Symmetry, then FOLD it — the folder is the big move on this module, worth about +412% of spectral brightness across its travel, where Timbre's audio-rate FM adds about +23% of colour on top. One caution worth knowing before you patch: RATIO decides the modulator's whole behaviour, and at its default of 1 the M.Tune and M.Fine controls do exactly nothing — the modulator is locked to the primary's pitch. Bring Ratio to 0 to hand the modulator back its own tuning. You can tap the primary alone (OUT), the clean modulator sine alone (MOD OUT), or the two summed together (SUM OUT, which is exactly half of OUT plus MOD OUT), and a mono-video oscilloscope of the primary is available on SCOPE.",
     inputs: {
       pitch: "1V/oct pitch CV for the PRIMARY oscillator (0V = C4 = 261.626 Hz), summed on top of the Tune / Fine knobs. When Ratio is greater than 0 the modulator tracks this pitch (modulator frequency = primary × Ratio), so a sequencer or keyboard patched here moves both oscillators together.",
       mod_pitch: "1V/oct pitch CV for the MODULATOR oscillator (0V = C4), summed on top of M.Tune / M.Fine. Most useful in free-run mode (Ratio = 0) where the modulator has its own pitch; with Ratio greater than 0 the modulator is largely slaved to the primary and this adds on top of that base.",
@@ -336,7 +466,7 @@ export const swolevcoDef: AudioModuleDef = {
       mod_tune: "Coarse tuning of the MODULATOR oscillator in semitones (±3 octaves). Active when Ratio = 0 (free-run); when Ratio is greater than 0 the modulator follows the primary × Ratio and this is ignored.",
       mod_fine: "Fine tuning of the MODULATOR oscillator in cents (±1 semitone), for free-run detune. Like M.Tune, it only takes effect when Ratio = 0.",
       ratio: "Modulator-to-primary frequency ratio (0 to 8). At 0 the modulator free-runs at its own M.Tune / M.Fine pitch; above 0 the modulator frequency is the primary's frequency × this value (1 = unison, 2 = octave up, etc.), so it tracks the primary's pitch for harmonically related FM.",
-      timbre: "Audio-rate FM amount: how much the modulator deviates the primary's frequency (0 to 1, where 1 ≈ ±200 Hz at C4). 0 leaves the primary clean; turning it up grows the sidebands from a gentle vibrato-like shimmer into clangorous, bell-like and noisy Buchla-style timbres.",
+      timbre: "Audio-rate FM amount: how much the modulator deviates the primary's frequency (0 to 1, where 1 ≈ ±200 Hz at C4). 0 leaves the primary clean; turning it up adds FM sidebands for a bell-like, slightly metallic edge. Measured, it is the GENTLEST of the four timbre controls, not the biggest: a full 0→1 sweep moves the spectral centroid by about +23% (637 → 786 Hz), where Fold moves it by +412% over the same travel. ±200 Hz on a 261.6 Hz carrier is a modulation index of about 0.76 — modest by design. Reach for Fold when you want the dramatic move and Timbre when you want to colour it. Note also that Timbre makes SUM OUT about 4 dB quieter (−8.4 → −12.5 dB) while leaving OUT's level alone, because the FM'd primary and the modulator sine partially cancel in the sum.",
       symmetry: "Morphs the PRIMARY waveform across a three-way crossfade (0 to 1): 0 = saw, 0.5 = triangle, 1 = square, with a linear blend of the two neighboring shapes in between. Default 0.5 (pure triangle).",
       fold: "West-Coast wavefolder amount on the primary (0 to 1): 0 is no folding; raising it folds the wave back on itself, adding harmonics and that characteristic complex-oscillator brightness/buzz even on a plain triangle.",
     },
