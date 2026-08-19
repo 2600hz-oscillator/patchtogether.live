@@ -35,6 +35,9 @@ import { patch as livePatch } from '$lib/graph/store';
 import {
   createSelectorCommitter,
   fourplexerClampSelector,
+  FOURPLEXER_INPUT_OPTIONS,
+  FOURPLEXER_INPUTS,
+  FOURPLEXER_SELECTORS,
 } from '$lib/audio/fourplexer-select';
 import workletUrl from '@patchtogether.live/dsp/dist/fourplexer.js?url';
 
@@ -72,14 +75,112 @@ export const fourplexerDef: AudioModuleDef = {
     { id: 'out3', type: 'cv' },
     { id: 'out4', type: 'cv' },
   ],
-  params: [
-    // Selector per output. Discrete 0..3 (UI shows 1..4). Defaults make a
-    // pass-through router: out1=in1, out2=in2, out3=in3, out4=in4.
-    { id: 'sel1', label: 'OUT 1', defaultValue: 0, min: 0, max: 3, curve: 'discrete' },
-    { id: 'sel2', label: 'OUT 2', defaultValue: 1, min: 0, max: 3, curve: 'discrete' },
-    { id: 'sel3', label: 'OUT 3', defaultValue: 2, min: 0, max: 3, curve: 'discrete' },
-    { id: 'sel4', label: 'OUT 4', defaultValue: 3, min: 0, max: 3, curve: 'discrete' },
-  ],
+  // Selector per output. Discrete 0..3 (UI shows 1..4). Defaults make a
+  // pass-through router: out1=in1, out2=in2, out3=in3, out4=in4.
+  //
+  // ⚠ THE `options` ROSTER IS LOAD-BEARING, NOT DECORATION, and it was missing.
+  // `curve: 'discrete'` says the param has N states; it does not say what any
+  // of them is called, and `FourPlexerCard` hand-wrote the answer as markup
+  // (`← IN {selectedInput(o)}`). Promoting the module REMOVES that card from
+  // both surfaces, so without a declared roster the faceplate would render four
+  // dials reading 0..3 with nothing anywhere saying which input a position
+  // selects — a real control loss, invisible to every gate, on the module whose
+  // ENTIRE job is "which input". With the roster declared, `paintsReadout` is
+  // true (a bare `options` name and no `format`), so the dock paints a named
+  // button row and the lane dial paints the state name — and the card now reads
+  // the SAME roster instead of restating it.
+  //
+  // COSMETIC IN THE CONTRACT SENSE: `serializeModuleContract` projects only
+  // id/min/max/curve/defaultValue/units, so naming the detents costs no
+  // `contract-lock` movement (see ParamOption). The value→meaning mapping is
+  // already pinned by min/max/curve.
+  params: FOURPLEXER_SELECTORS.map((sel) => ({
+    id: sel.id,
+    label: sel.label,
+    defaultValue: sel.defaultValue,
+    min: 0,
+    max: FOURPLEXER_INPUTS - 1,
+    curve: 'discrete' as const,
+    options: FOURPLEXER_INPUT_OPTIONS,
+  })),
+
+  // ── THE FACEPLATE ─────────────────────────────────────────────────────────
+  //
+  // WHAT IT IS FOR. A hard 4x4 switch. Four sources in, four destinations out,
+  // and each destination picks exactly ONE source — never a blend, which is the
+  // whole difference between this and every mixer in the rack. The verb is
+  // ROUTE; patch the gates and it becomes STEP, each destination walking its
+  // own four-source cycle at its own clock. What it does that its siblings do
+  // not is let the SAME source arrive at several destinations at once, and let
+  // each destination be walked independently.
+  //
+  // ── THE RANK IS THE OUTPUT AXIS, BECAUSE THERE IS NO OTHER ORDER ──────────
+  //
+  // Four selectors, one per output, identical in kind (discrete 0..3), and each
+  // one affects exactly its own output and nothing else. There is no authority
+  // to measure and no priority to express — ranking OUT 3 above OUT 2 would be
+  // a claim about the module that is simply not true. So `order` expresses the
+  // ONE order these controls genuinely have: the output they drive. That is
+  // moog914's axis law reached from the same place.
+  //
+  // THE TIER LADDER: mini shows OUT 1; compact shows OUT 1-3 (three knob
+  // columns, no glyph — see below); the plate and the dock show all four, the
+  // dock adding the hero row.
+  //
+  // ⚠ COMPACT DROPS OUT 4, and there is no rank that avoids it — four
+  // interchangeable controls into a three-cell tile drops one whichever way
+  // they are ordered. The axis at least makes WHICH one predictable.
+  //
+  // ── NO GLYPH, AND IT IS FORCED RATHER THAN CHOSEN ────────────────────────
+  //
+  // Every output is typed `cv`, so `primaryAudioOutPortId` returns NULL and
+  // every glyph kind falls through to `{ kind: 'static' }` — the #1692
+  // dead-glyph shape, which `module-face-lint` refuses by name. `'none'` is the
+  // only legal declaration here. Asserted, with a negative control, in
+  // fourplexer-face-model.test.ts rather than left as a comment.
+  //
+  // ── NO PAGES ─────────────────────────────────────────────────────────────
+  //
+  // One idea, four times. A page per output would be four bands of one control
+  // each — padding a rail rather than grouping ideas — and any other split
+  // (odds/evens, first two/last two) would be a distinction the module does not
+  // have. The dock renders one unlabelled band, which is what four peers are.
+  //
+  // ── THE READOUTS: THE MAP, AND THE TWO WAYS IT GOES WRONG ────────────────
+  //
+  // Every dial answers "what does MY output carry". None of them can answer
+  // either question a player actually has about a router, because both are
+  // properties of the four selectors TOGETHER:
+  //
+  //   map    the whole routing, in output order. `1·2·3·4` is the shipped
+  //          straight-through, and it is the thing you want to read back at a
+  //          glance after clocking the gates for a while.
+  //   fan    an input arriving at several outputs at once. Free to do and easy
+  //          to do by accident.
+  //   idle   an input arriving at NOTHING. Cable in, source running, silence
+  //          downstream — on four identical-looking inputs this is the most
+  //          expensive thing on the module to debug, and no dial hints at it.
+  //
+  // ⚠ AND THEY ARE INVARIANT TO A CHANGE THAT MOVES EVERY DIAL. Any PERMUTATION
+  // of the four selectors is a completely different patch with all four knobs in
+  // new positions, and it still fans nothing and idles nothing — so `fan` and
+  // `idle` correctly stay `none` while `map` changes. That is the permanent
+  // negative control, and it is the one a "does it move when I turn the knob"
+  // review would fail.
+  face: {
+    order: FOURPLEXER_SELECTORS.map((s) => s.id),
+
+    // Forced, not chosen — see the glyph paragraph above.
+    glyph: 'none',
+
+    hero: {
+      readouts: [
+        { label: 'map', valueId: 'fourplexer-map' },
+        { label: 'fan', valueId: 'fourplexer-fan' },
+        { label: 'idle', valueId: 'fourplexer-idle' },
+      ],
+    },
+  },
 
   docs: {
     explanation:
@@ -101,7 +202,7 @@ export const fourplexerDef: AudioModuleDef = {
       out4: "Output 4 — carries the single input selected by OUT 4.",
     },
     controls: {
-      sel1: "Which input (1–4) output 1 carries. Turn it to route by hand; GATE 1's rising edges also advance it. A readout shows the current source (e.g. '← IN 2').",
+      sel1: "Which input (1–4) output 1 carries. Turn it to route by hand; GATE 1's rising edges also advance it. Its four positions are NAMED states rather than bare numbers, so the control reads out the source it currently points at (e.g. 'IN 2') on the card and on the faceplate alike. Note what no single selector can tell you: whether some input is now arriving at several outputs at once, or at none at all — the faceplate prints both.",
       sel2: "Which input (1–4) output 2 carries — set by hand or advanced by GATE 2.",
       sel3: "Which input (1–4) output 3 carries — set by hand or advanced by GATE 3.",
       sel4: "Which input (1–4) output 4 carries — set by hand or advanced by GATE 4.",
