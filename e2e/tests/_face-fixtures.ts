@@ -345,6 +345,26 @@ function deriveFixture(
     return ma.params - mb.params || ports(ma) - ports(mb) || a.localeCompare(b);
   });
 
+  // ⚠ AN EMPTY POPULATION IS AN INSTRUMENT FAILURE, NEVER A MIGRATION STATE, and
+  // this arm exists because without it the two are the SAME VALUE. If the golden
+  // failed to parse, or `meta domain=` stopped saying `audio`/`video`, then
+  // `population` is empty, `unpromoted` is empty with it, and the arm below would
+  // report "every module is promoted" — so every consuming spec would SKIP and the
+  // suite would go green while reading nothing at all. "The migration finished" and
+  // "the instrument went blind" must not be indistinguishable from the output.
+  if (population.length === 0) {
+    return {
+      kind: 'no-candidate',
+      why:
+        `contract-lock.txt declares NO module with domain=${domain} at all. That is not a ` +
+        'migration state — a domain with no modules in the committed golden means the golden ' +
+        'did not parse, moved, or stopped spelling its domains this way. Fix the READER before ' +
+        'reading anything into the result.',
+      pool,
+      rejections,
+      unpromoted,
+    };
+  }
   if (unpromoted.length === 0) {
     return {
       kind: 'migration-complete',
