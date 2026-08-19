@@ -44,6 +44,21 @@ Specs go in `.myrobots/plans/`, alongside `face-specs-batch-3-*.md`,
 `face-redo-*.md` and `face-spec-cube-rebuild-2026-08-09.md`. Dated notes at the
 `.myrobots/` root are session evidence, not specs.
 
+## ⚠ THE "§27" THIS BATCH WAS BRIEFED FROM IS NOT IN THIS FILE
+
+Recorded first, because several commit messages and the specs below cite
+"§27.4–§27.6" and a reader will not find it. **This file ends at `### 26.9`
+(6358 lines). There is no §27 on `main`.** The batch-5 brief (Q38/Q39/Q40 →
+`moog902` / `moog904a` / `moog912`, and Q25 → `mandelbulb`) came from a §27 that
+exists only in an uncommitted working copy.
+
+Nothing built on it is compromised — every load-bearing figure in that batch was
+re-measured against the shipping code before use, and three of those
+re-measurements found the §27 prose **wrong** (the −29.40 % corner formula, the
+"proper subsets" premise, the mandelbulb inventory note). But it is the sharpest
+possible illustration of this file's own rule: **a spec that is not committed is
+not a source of truth, it is one machine's opinion.** Cite §26.x, which exists.
+
 ⚠ **A spec is a HYPOTHESIS, not an instruction.** This is the rule this batch
 learned by being burned: batch 5's queue entry proposed a `-3 dB corner` readout
 formula for `moog904a` that measured **−29.40 %** wrong at RANGE 3, and the
@@ -59,6 +74,8 @@ load-bearing ones against the code before designing against them.**
 | `2026-08-19-spec-moog904bc.md` | `moog904b`, `moog904c` | YES (904b narrowly, on ONE readout) | ⚠ **The queue's "proper subsets of Q39" premise is WRONG in four ways** — 904c has no RANGE param at all, 904b's multiplier is ×1/×2^1.5 (module-local, not the lib's ×1/×4/×16), 904b's dead travel is at BOTH ends, and 904c's cutoff CV is a `cvScale: log` AudioParam sum (±4.98 oct), not a per-sample 1 V/oct multiply. Same `MoogLadder` class, three unrelated findings. |
 | `2026-08-19-spec-mandelbulb-face.md` | `mandelbulb` (the FACE build) | YES | The slice-readout question is resolved as a `custom` **sidebar block**, because `hero.cell` would DELETE the live fractal preview at the dock (`module-shell-model.ts:876`) — a parity regression, not a layout choice. |
 | `2026-08-19-spec-ruttetra-grainsofvision.md` | `ruttetra`, `grainsOfVision` | YES both (GOV the stronger) | ⚠ **`ruttetra`'s honest page count is 4, not 6** — the queue's 6 requires splitting `h0·xFreq + xPhase`, which is ONE expression, and leaves a 1-control page. So it does **not** reach the tab rail, which **contradicts the owner ruling that named it as the first tabbed application**. Owner decision needed. |
+| `2026-08-19-spec-moog961-moog984.md` | `moog961`, `moog984` | **961 NO** / 984 YES | `moog961`'s rejection SURVIVES but its recorded reason is false — the routing is hard-wired in the DSP, on no control. `moog984`'s grid **is representable today with zero platform work**: the CONSOLE GRID (shipping on mixmstrs' 32-cell band), as **ONE band of four clusters** — four *bands* is the trap, since `packRun` packs `[4,4,4,4]` into two rows of eight and the matrix is gone. |
+| `2026-08-19-spec-timelorde-treeohvox-scope.md` | `timelorde`, `treeohvox`, `scope` | YES all three | **All three "plan-blocked" claims were stale.** `treeohvox`'s blocker (#1658) is fixed and gated; `scope`'s was settled by `fullViewBody` being wired. `scope` is a **`bespoke-surface`**, not a generic face — all nine params are display-only and four would have no observable at all. |
 | `2026-08-19-spec-b3ntb0x-bentbox.md` | `b3ntb0x`, `bentbox` | YES both | ⚠ **They are a FAMILY, not a superset pair** — the param-id intersection is exactly FOUR, and of bentbox's 12 bending knobs **zero** exist on b3ntb0x. And `b3ntb0x`'s `bend_d` is **`enhance` wearing a different name**: both read the same `neighborAvg` and multiply the same chroma carrier, so they compound (×5.40 at both full). The module's own "no dead control" guard proves each uniform is *consumed* and is structurally unable to see that two of them are one operation. |
 
 ### ⚠ Two "missing file" notes in the mandelbulb spec are BRANCH ARTEFACTS, not findings
