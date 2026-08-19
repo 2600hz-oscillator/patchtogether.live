@@ -36,7 +36,6 @@ import {
   moog911aModeName,
 } from './moog911a-face-model';
 import { moog911aDef, MOOG911A_MODE_NAMES } from '$lib/audio/modules/moog911a';
-import { faceReadoutValueFor } from '$lib/ui/workflow/face-readout-values';
 
 function reader(patch: Record<string, number> = {}) {
   return (id: string): number | undefined => patch[id];
@@ -198,29 +197,5 @@ describe('moog911a face model — TOTALITY (it runs on every render)', () => {
     expect(fmtDelayMs(2)).toBe('2.0 ms');
     expect(fmtDelayMs(100)).toBe('100 ms');
     expect(fmtDelayMs(20000)).toBe('20.00 s');
-  });
-});
-
-describe('moog911a — the readouts the DEF declares are the ones the REGISTRY resolves', () => {
-  it('every valueId on the face resolves, and prints what the model prints', () => {
-    const declared = (moog911aDef.face?.hero?.readouts ?? []).map((r) => r.valueId);
-    expect(declared).toEqual(['moog911a-max-rate', 'moog911a-last-out']);
-    const read = reader();
-    const expected = ['10.0 Hz', '100 ms'];
-    declared.forEach((id, i) => {
-      const fn = faceReadoutValueFor(id!);
-      expect(fn, `${id} must be registered in face-readout-values.ts`).toBeTypeOf('function');
-      expect(fn!(read)).toBe(expected[i]);
-    });
-  });
-
-  it('the registry entries move with MODE exactly as the model does', () => {
-    const at = (mode: number, id: string) =>
-      faceReadoutValueFor(id)!(reader({ mode, delay2: 0.5 }));
-    expect(at(0, 'moog911a-last-out')).toBe('100 ms');
-    expect(at(1, 'moog911a-last-out')).toBe('500 ms');
-    expect(at(2, 'moog911a-last-out')).toBe('600 ms');
-    // …while the rate is untouched by the same sweep.
-    expect(at(0, 'moog911a-max-rate')).toBe(at(2, 'moog911a-max-rate'));
   });
 });

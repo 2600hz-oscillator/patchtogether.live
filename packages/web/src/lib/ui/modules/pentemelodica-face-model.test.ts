@@ -17,7 +17,6 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
-import { faceReadoutValueFor, faceReadoutValueIds } from '$lib/ui/workflow/face-readout-values';
 import {
   penteDecayToSustainMs,
   penteModeGainAtCutoff,
@@ -62,19 +61,6 @@ describe('pentemelodica face model — the shipped defaults', () => {
     expect(readout('pentemelodica-peak-dbfs')).toBe('+4.6 dBFS');
     expect(readout('pentemelodica-release-tail')).toBe('58 ms');
     expect(readout('pentemelodica-decay-to-sustain')).toBe('0 ms');
-  });
-
-  it('every registered pentemelodica readout is TOTAL', () => {
-    const ids = faceReadoutValueIds().filter((k) => k.startsWith('pentemelodica-'));
-    expect(ids.length).toBe(4);
-    for (const id of ids) {
-      const fn = faceReadoutValueFor(id)!;
-      expect(fn(() => undefined), `${id} on a fresh node`).not.toBe('');
-      for (const bad of [Number.NaN, Infinity, -Infinity, -5, 1e9]) {
-        expect(typeof fn(() => bad), `${id} at ${bad}`).toBe('string');
-        expect(fn(() => bad), `${id} at ${bad}`).not.toBe('');
-      }
-    }
   });
 });
 

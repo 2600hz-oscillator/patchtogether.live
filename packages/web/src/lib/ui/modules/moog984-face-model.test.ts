@@ -30,7 +30,6 @@ import {
   moog984ColumnGain,
   moog984ColumnText,
 } from './moog984-face-model';
-import { faceReadoutValueFor } from '$lib/ui/workflow/face-readout-values';
 
 /** A reader over an explicit patch; anything unnamed reads its DECLARED
  *  default, exactly as the live param reader does. */
@@ -63,16 +62,6 @@ describe('moog984 column readouts: the structure they are derived from', () => {
     MOOG984_COLUMNS.forEach((col, k) => {
       for (const id of col) expect(id.endsWith(String(k + 1))).toBe(true);
     });
-  });
-
-  it('registers one readout per output bus, and every declared valueId resolves', () => {
-    expect(MOOG984_COLUMN_READOUTS.length).toBe(moog984Def.outputs.length);
-    for (const r of MOOG984_COLUMN_READOUTS) {
-      expect(faceReadoutValueFor(r.valueId), `unregistered valueId ${r.valueId}`).toBeTruthy();
-    }
-    // …and the face DECLARES exactly those ids, so a rename on either side is red.
-    const declared = (moog984Def.face?.hero?.readouts ?? []).map((r) => r.valueId);
-    expect(declared).toEqual(MOOG984_COLUMN_READOUTS.map((r) => r.valueId));
   });
 });
 

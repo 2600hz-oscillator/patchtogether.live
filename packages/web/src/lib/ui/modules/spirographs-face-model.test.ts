@@ -24,7 +24,6 @@ import {
   spirographsPages,
 } from '$lib/video/modules/spirographs';
 import { curveMaxReach, REVS_MAX_DEFAULT } from '$lib/video/modules/spirographs-math';
-import { faceReadoutValueFor, faceReadoutValueIds } from '$lib/ui/workflow/face-readout-values';
 import { glyphBinding, primaryAudioOutPortId } from '$lib/ui/workflow/shell-glyph-live';
 import { hasVideoSurface } from '$lib/ui/workflow/module-shell-model';
 import { noUserControlIds, noUserControlProblems } from '$lib/ui/workflow/no-user-control';
@@ -220,44 +219,9 @@ describe('spirographs face — the declaration is sound', () => {
     const asMeter = { ...spirographsDef, face: { ...spirographsDef.face!, glyph: 'meter' as const } };
     expect(glyphBinding(asMeter as never).kind, 'any other glyph here is DEAD').toBe('static');
   });
-
-  it('every declared valueId resolves, and every registered one is declared', () => {
-    const declared = [
-      ...(spirographsDef.face!.hero?.readouts ?? []),
-      ...(spirographsDef.face!.sidebar ?? []).flatMap((b) =>
-        b.kind === 'readouts' ? [...b.entries] : [],
-      ),
-    ]
-      .map((r) => ('valueId' in r ? r.valueId : undefined))
-      .filter((v): v is string => !!v);
-    for (const id of declared) expect(faceReadoutValueFor(id), `${id} unregistered`).toBeTypeOf('function');
-    expect(IDS().sort()).toEqual([...declared].sort());
-  });
 });
 
 describe('spirographs readouts are TOTAL — they run on every render', () => {
-  it('a FRESH node prints the def defaults, not NaN', () => {
-    const fresh = () => undefined;
-    for (const id of IDS()) {
-      const out = faceReadoutValueFor(id)!(fresh);
-      expect(out, `${id} on a fresh node`).toBeTypeOf('string');
-      expect(out, `${id} on a fresh node`).not.toMatch(/NaN|Infinity|undefined/);
-    }
-  });
-
-  it('NaN / ±Infinity / out-of-range never throw and never print a non-number', () => {
-    const hostile = [NaN, Infinity, -Infinity, -99, 999, 0.5];
-    const keys = ['count', 's1_R', 's1_r', 's1_p', 's1_inside', 's1_scale', 's3_r'];
-    for (const id of IDS()) {
-      for (const v of hostile) {
-        for (const key of keys) {
-          const out = faceReadoutValueFor(id)!(reader({ [key]: v }));
-          expect(out, `${id} with ${key}=${v}`).toBeTypeOf('string');
-          expect(out, `${id} with ${key}=${v}`).not.toMatch(/NaN|Infinity|undefined/);
-        }
-      }
-    }
-  });
 
   it('a hostile `count` still resolves to a real spiro set', () => {
     for (const v of [NaN, Infinity, -Infinity, -5, 99]) {

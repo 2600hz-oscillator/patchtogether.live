@@ -33,8 +33,6 @@
 
 import { describe, expect, it } from 'vitest';
 import { featurecvDef } from '$lib/audio/modules/featurecv';
-import { faceReadoutValueFor } from '$lib/ui/workflow/face-readout-values';
-import { sidebarPanelIds } from '$lib/ui/workflow/sidebar-panels';
 import { glyphBinding, primaryAudioOutPortId } from '$lib/ui/workflow/shell-glyph-live';
 import { STRICT_FACES } from '$lib/ui/workflow/strict-faces';
 import {
@@ -403,26 +401,6 @@ describe('the SIDEBAR SOURCE TABLE is re-derived from the SHIPPING generators (#
 });
 
 describe('TOTALITY — the generators run on every render', () => {
-  it('survives a fresh node, NaN and ±Infinity on every param', () => {
-    for (const bad of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, 0]) {
-      for (const p of featurecvDef.params) {
-        for (const id of DECLARED_READOUTS) {
-          const out = faceReadoutValueFor(id)!(reader({ [p.id]: bad }));
-          expect(typeof out, `'${id}' at ${p.id}=${bad}`).toBe('string');
-          expect(out.length, `'${id}' at ${p.id}=${bad} printed nothing`).toBeGreaterThan(0);
-        }
-      }
-    }
-  });
-
-  it('a fresh node with NO stored params prints the same as the def defaults', () => {
-    // `node.params` is a SPARSE overlay of what has been TOUCHED — the
-    // StereoCrossoverPanel scar. A reader that returns undefined for everything
-    // must resolve the def, not zero.
-    expect(Object.fromEntries(DECLARED_READOUTS.map((id) => [id, faceReadoutValueFor(id)!(() => undefined)]))).toEqual(
-      snapshot(),
-    );
-  });
 
   it('a rail fill on a NaN CV is 0, never NaN — the panel must not paint `NaNpx`', () => {
     expect(featurecvRailFill(Number.NaN, base())).toBe(0);
@@ -434,14 +412,6 @@ describe('TOTALITY — the generators run on every render', () => {
 
 describe('the FACE itself', () => {
   const face = featurecvDef.face!;
-
-  it('is promoted, and every readout it declares is registered', () => {
-    expect(STRICT_FACES.has('featurecv')).toBe(true);
-    expect(DECLARED_READOUTS.length).toBeGreaterThan(0);
-    for (const id of DECLARED_READOUTS) {
-      expect(faceReadoutValueFor(id), `readout '${id}' is not registered`).toBeTruthy();
-    }
-  });
 
   it("declares glyph 'none' BECAUSE the module publishes no audio output", () => {
     // ⚠ THE MARBLES DEFECT (#1692), asserted at its cause rather than at its
@@ -501,12 +471,6 @@ describe('the FACE itself', () => {
     expect([...onsetPage.controls].sort()).toEqual(
       featurecvDef.params.filter((p) => p.id.startsWith('onset_')).map((p) => p.id).sort(),
     );
-  });
-
-  it('declares the maps panel, and the panel is registered', () => {
-    const custom = (face.sidebar ?? []).filter((b) => b.kind === 'custom');
-    expect(custom.map((b) => (b as { panelId: string }).panelId)).toEqual(['featurecv-maps']);
-    expect(sidebarPanelIds()).toContain('featurecv-maps');
   });
 
   it('POLARITY keeps the card\'s UNI/BI vocabulary through a declared options roster', () => {

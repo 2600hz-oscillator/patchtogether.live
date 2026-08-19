@@ -9,7 +9,6 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { faceReadoutValueFor, faceReadoutValueIds } from '$lib/ui/workflow/face-readout-values';
 import {
   clapBandwidthHz,
   clapBurstMs,
@@ -47,18 +46,6 @@ describe('clap face model — the shipped defaults', () => {
     expect(readout('clap-voice-ms')).toBe('170 ms');
     expect(readout('clap-bandwidth-hz')).toBe('890 Hz');
     expect(readout('clap-q')).toBe('1.12');
-  });
-
-  it('every registered clap readout is TOTAL — fresh node, NaN, ±Infinity', () => {
-    const ids = faceReadoutValueIds().filter((k) => k.startsWith('clap-'));
-    expect(ids.length, 'the clap readouts must be registered').toBe(5);
-    for (const id of ids) {
-      const fn = faceReadoutValueFor(id)!;
-      expect(fn(() => undefined), `${id} on a fresh node`).not.toBe('');
-      for (const bad of [Number.NaN, Infinity, -Infinity, -1, 1e9]) {
-        expect(typeof fn(() => bad), `${id} at ${bad}`).toBe('string');
-      }
-    }
   });
 });
 

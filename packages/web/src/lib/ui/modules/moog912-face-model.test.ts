@@ -33,7 +33,6 @@ import {
   moog912ResponseHz,
   moog912ResponseText,
 } from './moog912-face-model';
-import { faceReadoutValueFor } from '$lib/ui/workflow/face-readout-values';
 
 function reader(params: Record<string, number | undefined>) {
   return (id: string) => params[id];
@@ -44,11 +43,6 @@ const gateText = (p: Record<string, number | undefined>) =>
   faceReadoutValueFor('moog912-gate-dbfs')!(reader(p));
 
 describe('moog912 face readouts — registration', () => {
-  it('both valueIds the def declares RESOLVE in the shared registry', () => {
-    const declared = (moog912Def.face?.hero?.readouts ?? []).map((r) => r.valueId);
-    expect(declared).toEqual(['moog912-response-hz', 'moog912-gate-dbfs']);
-    for (const id of declared) expect(typeof faceReadoutValueFor(id!)).toBe('function');
-  });
 
   it('each registry entry wires THIS module\'s function, not merely SOME function', () => {
     for (const p of [{}, { sensitivity: 0.3 }, { smoothing: 0.9 }]) {

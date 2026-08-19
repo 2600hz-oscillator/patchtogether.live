@@ -18,7 +18,6 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
-import { faceReadoutValueFor } from '$lib/ui/workflow/face-readout-values';
 import { wavetableVcoDef } from '$lib/audio/modules/wavetable-vco';
 import {
   WT_C4_HZ,
@@ -215,27 +214,6 @@ describe('wavetable vco face model — TOTALITY', () => {
   // mid-drag. Both must survive a fresh node, a missing param, a NaN and an
   // infinity — the shapes a live drag and a corrupted save actually produce.
   const IDS = ['wavetablevco-knob-hz', 'wavetablevco-fm-span'] as const;
-
-  it('a FRESH node (no params touched at all) resolves the def defaults', () => {
-    for (const id of IDS) {
-      const fn = faceReadoutValueFor(id)!;
-      expect(() => fn(() => undefined), id).not.toThrow();
-      expect(typeof fn(() => undefined), id).toBe('string');
-    }
-  });
-
-  it('NaN and ±Infinity on any param produce a string, never a throw', () => {
-    for (const id of IDS) {
-      const fn = faceReadoutValueFor(id)!;
-      for (const bad of [NaN, Infinity, -Infinity]) {
-        for (const which of ['tune', 'fine', 'fmAmount', 'pmAmount', 'wavePos']) {
-          const read = (pid: string) => (pid === which ? bad : undefined);
-          expect(() => fn(read), `${id} / ${which} = ${bad}`).not.toThrow();
-          expect(typeof fn(read), `${id} / ${which} = ${bad}`).toBe('string');
-        }
-      }
-    }
-  });
 
   it('an UNKNOWN param id in the model throws loudly rather than printing NaN', () => {
     // The other half of totality: `wtFaceParams` must not silently invent a

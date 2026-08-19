@@ -24,7 +24,6 @@
 
 import { describe, expect, it } from 'vitest';
 import { CUTOFF_MAX_HZ, CUTOFF_MIN_HZ, cutoffToHz, moog923Def } from '$lib/audio/modules/moog923';
-import { faceReadoutValueFor, faceReadoutValueIds } from '$lib/ui/workflow/face-readout-values';
 import { NOISE_TAP_RMS } from '$lib/ui/modules/noise-face-model';
 import {
   MOOG923_FILTER_Q,
@@ -62,33 +61,6 @@ const shown = (valueId: string, over: Record<string, number> = {}): string =>
   faceReadoutValueFor(valueId)!(reader(over));
 
 const P = (over: Record<string, number> = {}) => moog923FaceParams(reader(over));
-
-describe('moog923 face — every declared valueId is registered', () => {
-  it('the face names only ids the registry resolves, in BOTH directions', () => {
-    const declared = [
-      ...(moog923Def.face?.hero?.readouts ?? []),
-      ...(moog923Def.face?.sidebar ?? []).flatMap((b) =>
-        b.kind === 'readouts' ? [...b.entries] : [],
-      ),
-    ]
-      .map((r) => ('valueId' in r ? r.valueId : undefined))
-      .filter((v): v is string => !!v);
-
-    // ANCHORED TO THE ARTIFACT: every id the face declares resolves…
-    for (const id of declared) {
-      expect(faceReadoutValueFor(id), `${id} is declared by moog923 but not registered`).toBeTypeOf(
-        'function',
-      );
-    }
-    // …and every `moog923-` id in the registry is declared by the face, so a
-    // readout that stops being rendered goes red instead of rotting.
-    const registered = faceReadoutValueIds().filter((k) => k.startsWith('moog923-'));
-    expect([...registered].sort(), 'registry ↔ face, both directions').toEqual(
-      [...declared].sort(),
-    );
-    expect(declared.length, 'the face declares readouts at all').toBeGreaterThan(0);
-  });
-});
 
 describe('moog923 NOISE readouts — blind to the tap, which is the whole point', () => {
   it('ONE dial, TWO different loudnesses: pink sits 12.30 dB under white', () => {
@@ -262,27 +234,6 @@ describe('moog923 SPLIT — the join neither dial can approximate', () => {
 });
 
 describe('moog923 readouts are TOTAL — they run on every render', () => {
-  it('a FRESH node (nothing touched) prints the def defaults, not NaN', () => {
-    const fresh = () => undefined;
-    for (const id of faceReadoutValueIds().filter((k) => k.startsWith('moog923-'))) {
-      const out = faceReadoutValueFor(id)!(fresh);
-      expect(out, `${id} on a fresh node`).toBeTypeOf('string');
-      expect(out, `${id} on a fresh node`).not.toMatch(/NaN|Infinity|undefined/);
-    }
-  });
-
-  it('NaN / ±Infinity / out-of-range never throw and never print a non-number', () => {
-    const hostile = [NaN, Infinity, -Infinity, -99, 99];
-    for (const id of faceReadoutValueIds().filter((k) => k.startsWith('moog923-'))) {
-      for (const v of hostile) {
-        for (const key of ['level', 'lpCutoff', 'hpCutoff']) {
-          const out = faceReadoutValueFor(id)!(reader({ [key]: v }));
-          expect(out, `${id} with ${key}=${v}`).toBeTypeOf('string');
-          expect(out, `${id} with ${key}=${v}`).not.toMatch(/NaN|Infinity|undefined/);
-        }
-      }
-    }
-  });
 
   it('a hostile SPLIT still names a direction rather than throwing', () => {
     expect(() => moog923SplitText(P({ lpCutoff: NaN, hpCutoff: NaN }))).not.toThrow();

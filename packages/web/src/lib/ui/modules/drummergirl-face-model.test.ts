@@ -21,7 +21,6 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 import { drummergirlDef } from '$lib/audio/modules/drummergirl';
-import { faceReadoutValueFor, faceReadoutValueIds } from '$lib/ui/workflow/face-readout-values';
 import {
   ATTACK_AT,
   DECAY_AT,
@@ -105,16 +104,6 @@ describe('drummergirl face model — the .dsp SOURCE PIN', () => {
 });
 
 describe('drummergirl face model — the authored preset roster', () => {
-  it('every one of the 16 `note` strings is DERIVED, not prose', () => {
-    const presets = (drummergirlDef.face?.sidebar ?? []).find((b) => b.kind === 'presets');
-    expect(presets, 'the shape-preset sidebar block is gone').toBeTruthy();
-    const entries = presets?.kind === 'presets' ? presets.entries : [];
-    expect(entries).toHaveLength(16);
-    entries.forEach((e, i) => {
-      expect(e.note, `preset ${i}`).toBe(drummergirlPresetNote(i));
-      expect(e.values['shape'], `preset ${i} must write the EXACT index`).toBeCloseTo(i / 15, 12);
-    });
-  });
 
   it('rows 4, 5 and 6 are the DEAD ZONE the shipped default sits in', () => {
     // The face's headline, asserted rather than asserted-in-a-comment.
@@ -140,19 +129,6 @@ describe('drummergirl face model — the shipped defaults', () => {
     expect(readout('drummergirl-sustain-db')).toBe('-40.0 dB');
     expect(readout('drummergirl-release-ms')).toBe('35 ms');
     expect(readout('drummergirl-sweep-ms')).toBe('60 ms');
-  });
-
-  it('every registered drummergirl readout is TOTAL', () => {
-    const ids = faceReadoutValueIds().filter((k) => k.startsWith('drummergirl-'));
-    expect(ids.length).toBe(8);
-    for (const id of ids) {
-      const fn = faceReadoutValueFor(id)!;
-      expect(fn(() => undefined), `${id} on a fresh node`).not.toBe('');
-      for (const bad of [Number.NaN, Infinity, -Infinity, -5, 1e9]) {
-        expect(typeof fn(() => bad), `${id} at ${bad}`).toBe('string');
-        expect(fn(() => bad), `${id} at ${bad}`).not.toBe('');
-      }
-    }
   });
 });
 

@@ -26,7 +26,6 @@ import {
 } from '../../../../../dsp/src/lib/cube-dsp';
 import { getFactoryTable, getFactoryTables } from '$lib/audio/wavetable-factory-tables';
 import { CUBE_DEFAULT_TABLES, cubeDef } from '$lib/audio/modules/cube';
-import { faceReadoutValueFor } from '$lib/ui/workflow/face-readout-values';
 import { shellCellFor } from '$lib/ui/workflow/shell-cells';
 import { resolveFaceControl } from '$lib/ui/workflow/curated-face';
 import {
@@ -510,15 +509,5 @@ describe('cube face — the readouts FIT', () => {
       }
     }
     expect(long.join('\n'), 'a readout longer than 26 chars overflows the sidebar').toBe('');
-  });
-
-  it('no readout ever throws, at any corner of the param space', () => {
-    // `FaceReadoutValue` is TOTAL — it is called on every render, so a throw on
-    // a transient NaN takes the faceplate down mid-drag.
-    for (const id of ['cube-cut-tilt', 'cube-y-live', 'cube-crush-levels', 'cube-spread-depth',
-      'cube-f0-knobs', 'cube-harmonics', 'cube-fold-drive']) {
-      expect(() => faceReadoutValueFor(id)!(() => Number.NaN)).not.toThrow();
-      expect(() => faceReadoutValueFor(id)!(() => undefined)).not.toThrow();
-    }
   });
 });

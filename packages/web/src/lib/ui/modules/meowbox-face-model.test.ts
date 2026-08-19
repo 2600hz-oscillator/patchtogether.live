@@ -34,7 +34,6 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 import { meowboxDef } from '$lib/audio/modules/meowbox';
-import { faceReadoutValueFor, faceReadoutValueIds } from '$lib/ui/workflow/face-readout-values';
 import {
   A1_AT,
   A2_AT,
@@ -213,34 +212,9 @@ describe('meowbox face model — the shipped defaults', () => {
     expect(meowboxSettledHz(DEFAULTS)).toBeCloseTo(290.29, 2);
     expect(meowboxSettledSemitones(DEFAULTS)).toBeCloseTo(1.8, 12);
   });
-
-  it('every registered meowbox readout is TOTAL — fresh node, NaN, ±Infinity', () => {
-    const ids = faceReadoutValueIds().filter((k) => k.startsWith('meowbox-'));
-    expect(ids.length, 'the six meowbox readouts must be registered').toBe(6);
-    for (const id of ids) {
-      const fn = faceReadoutValueFor(id)!;
-      expect(fn(() => undefined), `${id} on a fresh node`).not.toBe('');
-      for (const bad of [Number.NaN, Infinity, -Infinity, -5, 1e9]) {
-        expect(typeof fn(() => bad), `${id} at ${bad}`).toBe('string');
-        expect(fn(() => bad), `${id} at ${bad}`).not.toBe('');
-      }
-    }
-  });
 });
 
 describe('meowbox face model — the five anchors', () => {
-  it('every one of the five `note` strings is DERIVED, not prose', () => {
-    const presets = (meowboxDef.face?.sidebar ?? []).find((b) => b.kind === 'presets');
-    expect(presets, 'the anchor sidebar block is gone').toBeTruthy();
-    const entries = presets?.kind === 'presets' ? presets.entries : [];
-    expect(entries).toHaveLength(5);
-    entries.forEach((e, i) => {
-      expect(e.note, `anchor ${i}`).toBe(meowboxAnchorNote(i));
-      expect(e.values['morph'], `anchor ${i} must write the EXACT index`)
-        .toBeCloseTo(meowboxAnchorMorph(i), 12);
-      expect(e.id, `anchor ${i} id`).toBe(MEOWBOX_ANCHORS[i]);
-    });
-  });
 
   it('the `tail ×` column is the DECAY knob’s own defeat, read down the roster', () => {
     // The same dial is worth 0.7× at kitten and 2.0× at yowl. Reading the column

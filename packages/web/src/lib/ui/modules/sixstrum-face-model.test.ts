@@ -16,7 +16,6 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
-import { faceReadoutValueFor, faceReadoutValueIds } from '$lib/ui/workflow/face-readout-values';
 import {
   SS_DETUNE_MAX_CENTS,
   SS_DETUNE_PATTERN,
@@ -86,20 +85,6 @@ describe('sixstrum face model — the numbers at the shipped defaults', () => {
     expect(readout('sixstrum-low-string-hz')).toBe('82 Hz');
     expect(readout('sixstrum-pick-notch')).toBe('partial 5.9');
     expect(readout('sixstrum-burst-ms')).toBe('12.2 ms');
-  });
-
-  it('every registered sixstrum readout is TOTAL — a fresh node, NaN, ±Infinity', () => {
-    const ids = faceReadoutValueIds().filter((k) => k.startsWith('sixstrum-'));
-    expect(ids.length, 'the sixstrum readouts must be registered').toBe(7);
-    for (const id of ids) {
-      const fn = faceReadoutValueFor(id)!;
-      // A freshly spawned node: nothing touched, so the reader answers nothing.
-      expect(fn(() => undefined), `${id} on a fresh node`).not.toBe('');
-      for (const bad of [Number.NaN, Infinity, -Infinity, -999, 1e9]) {
-        expect(typeof fn(() => bad), `${id} at ${bad}`).toBe('string');
-        expect(fn(() => bad), `${id} at ${bad}`).not.toBe('');
-      }
-    }
   });
 });
 

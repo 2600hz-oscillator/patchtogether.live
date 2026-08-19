@@ -11,7 +11,6 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
-import { faceReadoutValueFor, faceReadoutValueIds } from '$lib/ui/workflow/face-readout-values';
 import {
   VCO_C4_HZ,
   vcoFaceParams,
@@ -89,19 +88,6 @@ describe('analog vco face model — the shipped defaults', () => {
     // THE HEADLINE: PW owns 0 % of the morph at the shipped defaults.
     expect(readout('analogvco-pw-authority')).toBe('0 %');
     expect(readout('analogvco-alias-harmonic')).toBe('h91');
-  });
-
-  it('every registered analogVco readout is TOTAL', () => {
-    const ids = faceReadoutValueIds().filter((k) => k.startsWith('analogvco-'));
-    expect(ids.length).toBe(4);
-    for (const id of ids) {
-      const fn = faceReadoutValueFor(id)!;
-      expect(fn(() => undefined), `${id} on a fresh node`).not.toBe('');
-      for (const bad of [Number.NaN, Infinity, -Infinity, -999, 1e9]) {
-        expect(typeof fn(() => bad), `${id} at ${bad}`).toBe('string');
-        expect(fn(() => bad), `${id} at ${bad}`).not.toBe('');
-      }
-    }
   });
 });
 

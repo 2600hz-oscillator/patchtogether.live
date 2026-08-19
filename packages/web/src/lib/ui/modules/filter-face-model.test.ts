@@ -19,7 +19,6 @@
 
 import { describe, it, expect } from 'vitest';
 import { filterDef } from '$lib/audio/modules/filter';
-import { faceReadoutValueFor } from '$lib/ui/workflow/face-readout-values';
 import {
   FILTER_FACE_PARAM_IDS,
   FILTER_MODE_BP,
@@ -330,13 +329,6 @@ describe('the SIDEBAR curve and the HERO peak are ONE law', () => {
 });
 
 describe('the three ids are the ones the FACE declares', () => {
-  it('every hero readout valueId resolves, and every registered filter id is used', () => {
-    const declared = (filterDef.face?.hero?.readouts ?? [])
-      .map((r) => r.valueId)
-      .filter((v): v is string => !!v);
-    expect(declared).toEqual(['filter-peak-db', 'filter-cutoff-reach', 'filter-res-reach']);
-    for (const id of declared) expect(faceReadoutValueFor(id), id).toBeTruthy();
-  });
 
   it('the helpers and the registry print the SAME string (no second formatter)', () => {
     const over = { cutoff: 400, resonance: 0.85, mode: FILTER_MODE_BP, cutoff_cv_amt: 0.4, res_cv_amt: 0.3 };

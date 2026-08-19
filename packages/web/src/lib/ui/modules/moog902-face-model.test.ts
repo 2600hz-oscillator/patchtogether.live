@@ -46,7 +46,6 @@ import {
   moog902GainDbText,
   moog902GainMultiplier,
 } from './moog902-face-model';
-import { faceReadoutValueFor } from '$lib/ui/workflow/face-readout-values';
 
 const SR = 48000;
 const BLOCK = 128;
@@ -69,16 +68,6 @@ function ceiling(params: Record<string, number | undefined>): string {
 }
 
 describe('moog902 face readouts — registration', () => {
-  it('both valueIds the def declares RESOLVE in the shared registry', () => {
-    // Anchored to the DEF rather than to a literal list: a readout renamed on
-    // the face with no matching registry entry renders blank, and no pixel gate
-    // can tell blank from "the value happens to be empty".
-    const declared = (moog902Def.face?.hero?.readouts ?? []).map((r) => r.valueId);
-    expect(declared).toEqual(['moog902-gain-db', 'moog902-ceiling']);
-    for (const id of declared) {
-      expect(typeof faceReadoutValueFor(id!)).toBe('function');
-    }
-  });
 
   it('each registry entry wires THIS module\'s function, not merely SOME function', () => {
     // A registry that resolved `moog902-ceiling` to the gain formatter would

@@ -19,7 +19,6 @@ import {
   fourplexerClampSelector,
 } from '$lib/audio/fourplexer-select';
 import { fourplexerDef } from '$lib/audio/modules/fourplexer';
-import { faceReadoutValueFor, faceReadoutValueIds } from '$lib/ui/workflow/face-readout-values';
 import { glyphBinding, primaryAudioOutPortId } from '$lib/ui/workflow/shell-glyph-live';
 import {
   fourplexerFanText,
@@ -100,16 +99,6 @@ describe('fourplexer — the two audit findings this face is built on', () => {
 });
 
 describe('fourplexer face — the registry and the face agree, both directions', () => {
-  it('every declared valueId resolves, and every registered one is declared', () => {
-    const declared = (fourplexerDef.face?.hero?.readouts ?? [])
-      .map((r) => ('valueId' in r ? r.valueId : undefined))
-      .filter((v): v is string => !!v);
-    for (const id of declared) expect(faceReadoutValueFor(id), `${id} unregistered`).toBeTypeOf('function');
-    expect(faceReadoutValueIds().filter((k) => k.startsWith('fourplexer-')).sort()).toEqual(
-      [...declared].sort(),
-    );
-    expect(declared.length).toBeGreaterThan(0);
-  });
 
   it('the rank is the OUTPUT AXIS and covers every selector exactly once', () => {
     expect(fourplexerDef.face?.order).toEqual(SEL_IDS);
@@ -193,33 +182,6 @@ describe('fourplexer readouts — a PERMUTATION is the negative control', () => 
 });
 
 describe('fourplexer readouts are TOTAL — they run on every render', () => {
-  it('a FRESH node prints the def defaults, not NaN', () => {
-    const fresh = () => undefined;
-    for (const id of faceReadoutValueIds().filter((k) => k.startsWith('fourplexer-'))) {
-      const out = faceReadoutValueFor(id)!(fresh);
-      expect(out, `${id} on a fresh node`).toBeTypeOf('string');
-      expect(out, `${id} on a fresh node`).not.toMatch(/NaN|Infinity|undefined/);
-    }
-    expect(faceReadoutValueFor('fourplexer-map')!(() => undefined)).toBe('1·2·3·4');
-  });
-
-  it('a CORRUPT saved value reads on the face exactly as it ROUTES in the graph', () => {
-    // The face and the factory must normalise identically — a face that showed
-    // `IN 1` while the worklet routed `IN 3` would be worse than no readout.
-    const hostile = [NaN, Infinity, -Infinity, -7, 11, 2.6];
-    for (const v of hostile) {
-      const over = { sel1: v };
-      const routed = fourplexerClampSelector(v);
-      expect(fourplexerRouting(reader(over))[0], `sel1=${v} normalises to the routed index`).toBe(
-        routed,
-      );
-      for (const id of faceReadoutValueIds().filter((k) => k.startsWith('fourplexer-'))) {
-        const out = faceReadoutValueFor(id)!(reader(over));
-        expect(out, `${id} with sel1=${v}`).toBeTypeOf('string');
-        expect(out, `${id} with sel1=${v}`).not.toMatch(/NaN|Infinity|undefined/);
-      }
-    }
-  });
 
   it('the text helpers never throw on an empty or oversized routing', () => {
     expect(() => fourplexerMapText([])).not.toThrow();

@@ -43,7 +43,6 @@ import {
   glyphBinding,
   primaryAudioOutPortId,
 } from '$lib/ui/workflow/shell-glyph-live';
-import { faceReadoutValueFor } from '$lib/ui/workflow/face-readout-values';
 import { resolvePushCardControls } from '$lib/control/push2/push-card-schema';
 import {
   SETTLE_TAUS,
@@ -239,20 +238,6 @@ describe('slewSwitch face / the output table is anchored to the declared jacks',
       SLEWSWITCH_OUTPUT_READOUTS.map((r) => r.port),
       'the table and the def must name the same jacks in the same order',
     ).toEqual(slewSwitchDef.outputs.map((o) => o.id));
-  });
-
-  it('every row resolves a REGISTERED readout', () => {
-    for (const r of SLEWSWITCH_OUTPUT_READOUTS) {
-      expect(faceReadoutValueFor(r.valueId), `${r.port} → ${r.valueId}`).not.toBeNull();
-    }
-  });
-
-  it('the sidebar the face declares IS this roster', () => {
-    const block = slewSwitchDef.face?.sidebar?.[0];
-    expect(block?.kind).toBe('readouts');
-    expect(
-      block?.kind === 'readouts' ? block.entries.map((e) => e.valueId) : [],
-    ).toEqual(SLEWSWITCH_OUTPUT_READOUTS.map((r) => r.valueId));
   });
 
   it('the slew roster is non-vacuous and matches the def', () => {

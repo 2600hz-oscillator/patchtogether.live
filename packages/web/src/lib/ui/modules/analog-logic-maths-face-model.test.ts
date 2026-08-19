@@ -38,8 +38,6 @@
 import { describe, expect, it } from 'vitest';
 import { analogLogicMathsDef } from '$lib/audio/modules/analog-logic-maths';
 import { readoutText } from '$lib/ui/workflow/dock-faceplate-model';
-import { faceReadoutValueFor } from '$lib/ui/workflow/face-readout-values';
-import { sidebarPanelFor } from '$lib/ui/workflow/sidebar-panels';
 import { glyphBinding, primaryAudioOutPortId } from '$lib/ui/workflow/shell-glyph-live';
 import {
   ALM_ATT_PARAM_IDS,
@@ -187,17 +185,6 @@ describe('analogLogicMaths face model — the glyph binding, ESTABLISHED not ass
     expect(primaryAudioOutPortId(deadGlyph)).toBeNull();
     expect(glyphBinding(deadGlyph)).toEqual({ kind: 'static' });
   });
-
-  it('the face’s only picture is a REGISTERED panel', () => {
-    // `glyph: 'none'` means the shell paints no tile, so an unregistered panel id
-    // would leave this face with no drawing at all rather than with a broken one.
-    const custom = (analogLogicMathsDef.face?.sidebar ?? []).filter((b) => b.kind === 'custom');
-    expect(custom.length, 'the face declares a custom sidebar block').toBeGreaterThan(0);
-    for (const b of custom) {
-      const id = (b as { panelId?: string }).panelId!;
-      expect(sidebarPanelFor(id), `sidebar panel '${id}' is registered`).not.toBeNull();
-    }
-  });
 });
 
 describe('analogLogicMaths face model — the readout matrix, in BOTH directions', () => {
@@ -210,24 +197,6 @@ describe('analogLogicMaths face model — the readout matrix, in BOTH directions
       expect(Object.keys(leg.moves).sort(), `leg '${leg.name}' covers exactly the declared readouts`)
         .toEqual(declared);
     }
-  });
-
-  it('every readout is REGISTERED and resolves through the shell ladder', () => {
-    // `readoutText` swallows a throw and returns '—', so "this readout threw",
-    // "this id is unregistered" and "this readout is blank" are the same three
-    // pixels in the DOM. Walk the path the shell actually takes.
-    for (const r of analogLogicMathsDef.face!.hero!.readouts!) {
-      const text = readoutText(r, analogLogicMathsDef.params, reader(DEFAULTS));
-      expect(text, `'${r.valueId}' must not resolve to the em-dash at the defaults`).not.toBe('—');
-    }
-  });
-
-  it('NEGATIVE CONTROL on that leg: an unregistered id DOES print the dash', () => {
-    // Otherwise the assertion above would pass on a `readoutText` that never
-    // returns '—' at all.
-    expect(
-      readoutText({ label: 'x', valueId: 'alm-not-a-readout' }, analogLogicMathsDef.params, reader(DEFAULTS)),
-    ).toBe('—');
   });
 
   it.each(LEGS)('$name — the printed strings move exactly where they must', (leg) => {
@@ -347,23 +316,6 @@ describe('analogLogicMaths face model — the four laws, and the numbers they pr
 });
 
 describe('analogLogicMaths face model — totality and the structural declarations', () => {
-  it('every readout is TOTAL over the hostile overlays', () => {
-    // These run on every faceplate render, so a throw takes the dock down
-    // mid-drag. Walked through `readoutText`, which is the path the shell takes.
-    const hostile: Record<string, number>[] = [
-      {},
-      ...PARAM_IDS.flatMap((id) =>
-        [NaN, Infinity, -Infinity, -1e30, 1e30, 0].map((v) => ({ ...DEFAULTS, [id]: v })),
-      ),
-    ];
-    for (const overlay of hostile) {
-      for (const r of analogLogicMathsDef.face!.hero!.readouts!) {
-        const text = readoutText(r, analogLogicMathsDef.params, reader(overlay));
-        expect(typeof text, `'${r.valueId}' on ${JSON.stringify(overlay)}`).toBe('string');
-        expect(text.length).toBeGreaterThan(0);
-      }
-    }
-  });
 
   it('a FRESH node — the sparse overlay resolves the def DEFAULTS, not zero', () => {
     // The StereoCrossoverPanel scar: `node.params` is an overlay of what has

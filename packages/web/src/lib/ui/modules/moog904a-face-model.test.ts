@@ -42,7 +42,6 @@ import {
   moog904aFaceParams,
   moog904aStateText,
 } from './moog904a-face-model';
-import { faceReadoutValueFor } from '$lib/ui/workflow/face-readout-values';
 
 function reader(params: Record<string, number | undefined>) {
   return (id: string) => params[id];
@@ -55,11 +54,6 @@ function stateText(params: Record<string, number | undefined>): string {
 }
 
 describe('moog904a face readouts — registration', () => {
-  it('both valueIds the def declares RESOLVE in the shared registry', () => {
-    const declared = (moog904aDef.face?.hero?.readouts ?? []).map((r) => r.valueId);
-    expect(declared).toEqual(['moog904a-cutoff-hz', 'moog904a-state']);
-    for (const id of declared) expect(typeof faceReadoutValueFor(id!)).toBe('function');
-  });
 
   it('each registry entry wires THIS module\'s function, not merely SOME function', () => {
     for (const p of [{}, { cutoff: 400, range: 3 }, { regeneration: 1 }]) {

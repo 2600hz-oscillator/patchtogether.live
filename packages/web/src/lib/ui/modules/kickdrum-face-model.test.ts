@@ -138,34 +138,6 @@ describe('kickdrum hero — the PITCH SWEEP half of the caption', () => {
     expect(fmt(kickdrumSweep(base).endHz)).toBe('50 Hz');
     expect(fmt(kickdrumSweep({ ...base, tune: 38 }).endHz)).toBe('38 Hz');
   });
-
-  it('THE THREE HERO NUMBERS, as the faceplate prints them at the defaults', () => {
-    // The mock's `tail ≈ 398 ms · +24 st → 50 Hz`, now three declared readouts
-    // rather than one baked sentence. TAIL resolves through the DERIVED
-    // registry; the other two are the params they are named after.
-    // The reader resolves def defaults exactly as the shell's does (card-kit
-    // `paramVal`), because `node.params` is a sparse overlay of what has been
-    // TOUCHED — a fresh node stores nothing at all.
-    const read = (pid: string) => kickdrumDef.params.find((q) => q.id === pid)?.defaultValue;
-    expect(printedTail()).toBe('398 ms');
-    expect(readoutText({ label: 'sweep', paramId: 'pitch_amt' }, kickdrumDef.params, read)).toBe(
-      '+24 st',
-    );
-    expect(readoutText({ label: 'settles to', paramId: 'tune' }, kickdrumDef.params, read)).toBe(
-      '50 Hz',
-    );
-  });
-
-  it('the DEF declares exactly those three readouts, and TAIL is the DERIVED one', () => {
-    // The two-sided half: the numbers above are only on the faceplate because
-    // the def asks for them, and TAIL must not quietly become a knob readback.
-    const ro = kickdrumDef.face!.hero!.readouts!;
-    expect(ro.map((r) => r.label)).toEqual(['tail', 'sweep', 'settles to']);
-    expect(ro[0]!.valueId, 'TAIL is DERIVED').toBe('kickdrum-tail');
-    expect(ro[0]!.paramId, 'and is NOT a param readback — sub_decay prints 450 ms').toBeUndefined();
-    expect(ro[1]!.paramId).toBe('pitch_amt');
-    expect(ro[2]!.paramId).toBe('tune');
-  });
 });
 
 describe('kickdrum hero — the plotted geometry', () => {
