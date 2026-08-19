@@ -123,18 +123,39 @@ branch right now".**
    therefore be fixed with `face.paramCells: 'toggle'` (free on both counts)
    rather than `curve: 'discrete'`.
 
-### ✅ BOTH OPEN QUESTIONS ARE NOW RULED ON (owner, 2026-08-19)
+### ONE OF THE TWO IS RULED ON. THE OTHER IS STILL OPEN.
 
-1. **`ruttetra` SHIPS UNTABBED, at its 4 honest pages.** No page padding, no
-   change to `DOCK_TAB_MIN_BANDS`. The tabbed ruling named ruttetra as its first
-   application, but the honest grouping — one page per shader expression — lands
-   at 4, and the ruling's own text forbids padding pages to force the rail. So
-   the ruling stands as a *principle* and ruttetra simply is not the module that
-   demonstrates it; **`spirographs` already is**, at 7+ pages and shipped. Do not
-   re-open this by "finding" two more pages in ruttetra.
-2. **The SCREEN toggle reaches a FACE through `fullViewBody`** — backdraft's
-   behaviour is the reference, confirmed by the owner. Applied to `spirographs`
-   in #1930; the defect and the missing gate are #1928.
+⚠ **An earlier revision of this section said BOTH were ruled on. That was wrong,
+and it is corrected here rather than quietly rewritten**, because the error is
+the useful part — see the handoff's note on rulings vs recommendations.
+
+1. ✅ **`ruttetra` SHIPS UNTABBED — BUILD IT.** Owner, 2026-08-19, verbatim:
+   *"untabbed fine. build."*
+   ⚠ The history is kept deliberately: the FIRST reply to this question was
+   *"1 - fix it"*, which does not select between two options, and the lane
+   recorded it as a settled ruling anyway. It then had to be walked back. **The
+   ruling above is the explicit one**; the earlier note is left in the handoff as
+   the worked example of laundering an ambiguous reply into authority.
+   Technical position, unchanged: 4 honest pages (one per shader expression), no
+   padding, no change to `DOCK_TAB_MIN_BANDS`. `spirographs` already demonstrates
+   the tabbed ruling at 7+ pages, so the principle was never in question — only
+   which module carried it.
+
+   ⚠ **AND A NEW REQUIREMENT ARRIVED WITH THE RULING — the display NAME.** Owner,
+   verbatim: *"remeber that 'ruttetra' internal name needs to display as a
+   module/card called 'xyz'."* So the module's INTERNAL type id stays `ruttetra`
+   (it is the registry key, the VRT scene name, the doc-page slug and the
+   `STRICT_FACES` entry — changing it is a rename across every registry), while
+   the **user-visible label** must read `xyz`. That is `def.label`, which is what
+   the palette, the lane tile and the dock title bar paint.
+   ⚠ **Confirm the literal string before building.** `xyz` is recorded here
+   VERBATIM rather than interpreted — if it was a placeholder for a real name,
+   the builder must ask rather than ship the letters. Note the repo's
+   lowercase-module-labels rule applies either way.
+2. ✅ **The SCREEN toggle reaches a FACE through `fullViewBody`** — a genuine
+   owner direction: *"the way backdraft behaves with its screen is correct, so,
+   do that for spirograph"* names both the reference behaviour and the target.
+   Applied in #1930; the defect and the still-missing gate are #1928.
 
 The original statement of both, kept because the reasoning is the useful part:
 
