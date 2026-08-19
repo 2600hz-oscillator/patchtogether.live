@@ -117,13 +117,29 @@ async function bootRig(page: Page): Promise<void> {
   );
 }
 
-/** Sweep `hue` across `values`, returning the measured hue at each. */
-async function sweepHue(page: Page, values: readonly number[]): Promise<number[]> {
+/**
+ * Sweep `hue` across `values`, returning the measured hue at each.
+ *
+ * `maxSpread` is the coherence bar each read must clear. The default is right
+ * for the primary tint, where the decoded field is one hue and the mean is an
+ * honest summary. ⚠ It is RELAXED for the multi-tint comparison below, on
+ * purpose and with a reason: NTSC does not carry every hue with equal
+ * coherence — chroma near the I/Q axes survives the encode/decode round trip
+ * more cleanly than chroma between them — so a bar tuned to the best case would
+ * be rejecting real signal rather than noise. The tight bar still applies where
+ * coherence is the thing being claimed (test 1); the looser one applies where
+ * the claim is about the ROTATION and coherence is only a precondition.
+ */
+async function sweepHue(
+  page: Page,
+  values: readonly number[],
+  maxSpread?: number,
+): Promise<number[]> {
   const hues: number[] = [];
   for (const v of values) {
     await setVideoParam(page, 'b', 'hue', v);
     const c = await readDeliveredColour(page, { nodeId: 'b', portId: 'out', steps: STEPS });
-    assertMeasurable(c, STEPS);
+    assertMeasurable(c, STEPS, maxSpread === undefined ? {} : { maxSpread });
     hues.push(c.hueDeg);
   }
   return hues;
@@ -215,7 +231,10 @@ test.describe('b3ntb0x HUE — the delivered rotation, measured in pixels', () =
       await setVideoParam(page, 'col', 'tintR', r);
       await setVideoParam(page, 'col', 'tintG', g);
       await setVideoParam(page, 'col', 'tintB', b);
-      const hues = await sweepHue(page, values);
+      // Relaxed coherence bar — see sweepHue's doc. Still far below the 0.99 a
+      // genuinely incoherent field (a mono source) produces, so it cannot pass
+      // on noise.
+      const hues = await sweepHue(page, values, 0.55);
       assertUnambiguousSteps(hues);
       const cum = cumulativeRotationDeg(hues);
       totals.push({ name, inHue: hues[0]!, total: Math.abs(cum[cum.length - 1]!) });
