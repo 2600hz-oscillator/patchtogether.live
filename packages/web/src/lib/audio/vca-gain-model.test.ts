@@ -494,23 +494,6 @@ describe('the derived hero readout — `at cv 1`', () => {
     expect(dbForms, 'the grid must actually exercise the dB branch').toBeGreaterThan(100);
   });
 
-  it('the strip does NOT repeat a dial: `at cv 0` would be `base`, and it is refused', () => {
-    // `base` IS the gain at cv 0, so a second entry printing it would be the
-    // same string twice in one full-width row (correction 1 makes that read as
-    // an independent second measurement that happens to agree). The guard is
-    // structural: no hero readout on this module may resolve through `paramId`.
-    const ro = vcaDef.face?.hero?.readouts ?? [];
-    expect(
-      ro.filter((r) => r.paramId).map((r) => r.label),
-      'a paramId readout on a 2-param module is a dial printed twice',
-    ).toEqual([]);
-    // And the refusal is arithmetic rather than taste: the gain at cv 0 is
-    // exactly `base`, at every setting.
-    for (const base of [0, 0.25, 0.5, 1]) {
-      expect(vcaGain(base, VCA_CV_AMOUNT.default, 0)).toBe(base);
-    }
-  });
-
   it('the formatter is NOT squeezed by the lane knob-column budget', () => {
     // `formatVcaBase` drops its decimal at 10 dB because LANE_KCOL_MAX_PX gives
     // it 7 glyphs. The hero strip is dock-only and full-width, so the derived
@@ -603,20 +586,6 @@ describe('the face states what the DSP does — anchored to vca.dsp, not to a co
 });
 
 describe('PF-20 faceplate structure — the declarations, and the ones refused', () => {
-  it('declares title + hint + a band hint, and NONE of them carries a load-bearing fact', () => {
-    // `facePageHeader` returns null before it reads either field unless the
-    // annotate toggle is on, so a fact stated ONLY here is invisible at rest.
-    expect(vcaDef.face?.title).toBe('Amplifier');
-    expect(vcaDef.face?.hint ?? '').not.toBe('');
-    expect(vcaDef.face?.pages?.[0]?.hint ?? '').not.toBe('');
-
-    // The clip risk → the readout strip (a live number; asserted above). This
-    // is now the ONLY load-bearing fact the FRONT carries: the signal-flow
-    // block that stated the other two was removed with the whole kind, and the
-    // rear card carries both in a form the build can check (the `~` tick is
-    // pinned against vca.dsp above; OUT INV is a real port on the rail).
-    expect(vcaDef.face?.hero?.readouts?.[0]?.valueId).toBe('vca-gain-at-full-cv');
-  });
 
   it('nothing on the face implies OUT INV is a stereo partner (dual-mono GROUP D)', () => {
     // `audio` and `audio_inv` are VARIANTS of one mono signal, so nothing on

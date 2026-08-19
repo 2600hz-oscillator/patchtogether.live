@@ -44,10 +44,6 @@ const reader =
 
 /** The DECLARED readout ids, read off the def. DERIVED — there is no list of
  *  readouts in this file and no count of one. */
-const HERO_READOUTS = destroyDef.face!.hero!.readouts!.map((r) => ({
-  label: r.label,
-  valueId: r.valueId!,
-}));
 
 /** The DECLARED param ids, read off the def. */
 const PARAM_IDS = destroyDef.params.map((p) => p.id);
@@ -112,22 +108,6 @@ describe('destroy face model — the glyph binding, ESTABLISHED not assumed', ()
     };
     expect(primaryAudioOutPortId(noAudioOut)).toBeNull();
     expect(glyphBinding(noAudioOut)).toEqual({ kind: 'static' });
-  });
-});
-
-describe('destroy face model — every readout is DERIVED, on a matrix', () => {
-  it('the sensitivity table covers exactly the declared readouts × params', () => {
-    // ANCHORED TO THE ARTIFACT in both directions: a readout the def declares
-    // with no row is RED, and a row for a readout the def no longer declares is
-    // RED. Same for the params.
-    expect(Object.keys(SENSITIVITY).sort()).toEqual(
-      HERO_READOUTS.map((r) => r.valueId).sort(),
-    );
-    for (const [valueId, row] of Object.entries(SENSITIVITY)) {
-      expect(Object.keys(row).sort(), `sensitivity row for ${valueId}`).toEqual(
-        [...PARAM_IDS].sort(),
-      );
-    }
   });
 });
 

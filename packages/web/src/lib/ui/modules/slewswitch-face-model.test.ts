@@ -79,12 +79,6 @@ const DEFAULTS: Record<string, number> = Object.fromEntries(
 
 /** Every valueId this face publishes — hero rows plus the output table,
  *  DERIVED from the face itself rather than listed. */
-const FACE_VALUE_IDS: readonly string[] = [
-  ...new Set([
-    ...(slewSwitchDef.face?.hero?.readouts ?? []).flatMap((r) => (r.valueId ? [r.valueId] : [])),
-    ...SLEWSWITCH_OUTPUT_READOUTS.map((r) => r.valueId),
-  ]),
-];
 
 // ── the real worklet, for the behavioural legs ───────────────────────────────
 

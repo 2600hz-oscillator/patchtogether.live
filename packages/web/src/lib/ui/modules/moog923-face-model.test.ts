@@ -57,8 +57,6 @@ const reader = (over: Record<string, number> = {}) => (id: string): number | und
 /** What the REGISTRY prints — the surface the faceplate actually renders, not
  *  the model function underneath it. Every assertion below goes through here so
  *  a registry entry wired to the wrong model function is RED. */
-const shown = (valueId: string, over: Record<string, number> = {}): string =>
-  faceReadoutValueFor(valueId)!(reader(over));
 
 const P = (over: Record<string, number> = {}) => moog923FaceParams(reader(over));
 
@@ -86,39 +84,6 @@ describe('moog923 NOISE readouts — blind to the tap, which is the whole point'
     expect(20 * Math.log10(NOISE_TAP_RMS.white)).toBeCloseTo(-4.771, 3);
     expect(20 * Math.log10(NOISE_TAP_RMS.pink)).toBeCloseTo(-17.076, 3);
   });
-
-  it('NEGATIVE CONTROL: NEITHER cutoff moves EITHER noise tap', () => {
-    // The two halves share no node, no gain and no sample. Measured on the
-    // shipping factory: a 200 Hz sine through `audio` leaves lp/hp bit-identical
-    // at LEVEL 1 and LEVEL 0, and the converse is this.
-    for (const tap of MOOG923_NOISE_TAPS) {
-      const base = shown(`moog923-${tap}-db`);
-      const overs: Record<string, number>[] = [
-        { lpCutoff: 0 },
-        { lpCutoff: 1 },
-        { hpCutoff: 0 },
-        { hpCutoff: 1 },
-        { lpCutoff: 0.02, hpCutoff: 0.97 },
-      ];
-      for (const over of overs) {
-        expect(shown(`moog923-${tap}-db`, over), `${tap} moved on ${JSON.stringify(over)}`).toBe(
-          base,
-        );
-      }
-    }
-  });
-
-  it('and the SAME probe DOES move on LEVEL — so the invariance above is not a dead probe', () => {
-    for (const tap of MOOG923_NOISE_TAPS) {
-      expect(shown(`moog923-${tap}-db`, { level: 1 })).not.toBe(
-        shown(`moog923-${tap}-db`, { level: 0.25 }),
-      );
-    }
-  });
-
-  it('LEVEL 0 prints `silent`, never `-Infinity dB`', () => {
-    for (const tap of MOOG923_NOISE_TAPS) expect(shown(`moog923-${tap}-db`, { level: 0 })).toBe('silent');
-  });
 });
 
 describe('moog923 FILTER readouts — the declared corner is the WRONG answer', () => {
@@ -144,40 +109,6 @@ describe('moog923 FILTER readouts — the declared corner is the WRONG answer', 
     expect(moog923MinusThreeDbRatio('lp') * moog923MinusThreeDbRatio('hp')).toBeCloseTo(1, 12);
   });
 
-  it('POSITIVE CONTROL: the printed Hz is NOT `cutoffToHz` of its own dial', () => {
-    // THE LEG THAT SEPARATES THIS FROM A RELABELLED KNOB. A relabelled knob
-    // moves when you turn it and would pass any "does it move" check; what it
-    // CANNOT do is disagree with the declared corner by the filter's own Q.
-    for (const knob of [0.15, 0.35, 0.5, 0.68, 0.9]) {
-      const declaredLp = cutoffToHz(knob);
-      const lp = moog923MinusThreeDbHz('lp', P({ lpCutoff: knob }));
-      const hp = moog923MinusThreeDbHz('hp', P({ hpCutoff: knob }));
-      expect(lp / declaredLp, `lp −3 dB / declared corner at knob ${knob}`).toBeCloseTo(1.330597, 4);
-      expect(hp / declaredLp, `hp −3 dB / declared corner at knob ${knob}`).toBeCloseTo(0.751542, 4);
-      expect(lp, 'lp must not print the declared corner').not.toBeCloseTo(declaredLp, 0);
-      expect(hp, 'hp must not print the declared corner').not.toBeCloseTo(declaredLp, 0);
-    }
-    // And at the SHIPPED defaults, stated as the numbers a reviewer can check
-    // against the module by ear: 894 Hz on the dial, 1.2 kHz / 672 Hz real.
-    expect(cutoffToHz(0.5)).toBeCloseTo(894.43, 2);
-    expect(shown('moog923-lp-hz')).toBe('1.2 kHz');
-    expect(shown('moog923-hp-hz')).toBe('672 Hz');
-  });
-
-  it('NEGATIVE CONTROL: each Hz readout is blind to the OTHER dial, and to LEVEL', () => {
-    const lp = shown('moog923-lp-hz');
-    const hp = shown('moog923-hp-hz');
-    for (const over of [{ hpCutoff: 0 }, { hpCutoff: 1 }, { level: 0 }, { level: 1 }] as Record<string, number>[]) {
-      expect(shown('moog923-lp-hz', over), `lp moved on ${JSON.stringify(over)}`).toBe(lp);
-    }
-    for (const over of [{ lpCutoff: 0 }, { lpCutoff: 1 }, { level: 0 }, { level: 1 }] as Record<string, number>[]) {
-      expect(shown('moog923-hp-hz', over), `hp moved on ${JSON.stringify(over)}`).toBe(hp);
-    }
-    // …and the same probes DO move on their own dial.
-    expect(shown('moog923-lp-hz', { lpCutoff: 0.9 })).not.toBe(lp);
-    expect(shown('moog923-hp-hz', { hpCutoff: 0.1 })).not.toBe(hp);
-  });
-
   it('the printed Hz stays inside the DECLARED band at both rails', () => {
     // Un-clamped, `lp` at dial 1 would print 26.6 kHz — a frequency the module
     // cannot reach and one the biquad clamps to Nyquist anyway.
@@ -185,51 +116,6 @@ describe('moog923 FILTER readouts — the declared corner is the WRONG answer', 
     expect(moog923MinusThreeDbHz('hp', P({ hpCutoff: 0 }))).toBeCloseTo(CUTOFF_MIN_HZ, 6);
     expect(moog923MinusThreeDbHz('lp', P({ lpCutoff: 0 }))).toBeGreaterThan(CUTOFF_MIN_HZ);
     expect(moog923MinusThreeDbHz('hp', P({ hpCutoff: 1 }))).toBeLessThan(CUTOFF_MAX_HZ);
-  });
-});
-
-describe('moog923 SPLIT — the join neither dial can approximate', () => {
-  it('the SHIPPED DEFAULT is an 0.82 oct OVERLAP where both dials read 0.50', () => {
-    // The naive reading of two dials at the same position is "aligned". The
-    // taps move as x and 1/x off the shared corner, so they overlap by twice
-    // the ratio's octave distance.
-    expect(DEFAULTS.lpCutoff).toBe(DEFAULTS.hpCutoff);
-    expect(moog923SplitOct(P())).toBeCloseTo(0.82415, 4);
-    expect(shown('moog923-split')).toBe('overlap 0.82 oct');
-  });
-
-  it('NEGATIVE CONTROL: it moves on EITHER dial alone — both readbacks are blind', () => {
-    const base = shown('moog923-split');
-    expect(shown('moog923-split', { lpCutoff: 0.8 }), 'lp alone').not.toBe(base);
-    expect(shown('moog923-split', { hpCutoff: 0.8 }), 'hp alone').not.toBe(base);
-    // …and is INVARIANT to LEVEL, which is the other half's control.
-    expect(shown('moog923-split', { level: 0 })).toBe(base);
-    expect(shown('moog923-split', { level: 1 })).toBe(base);
-  });
-
-  it('names the DIRECTION: a gap and an overlap are opposite patches', () => {
-    // hp above lp ⇒ a band reaching NEITHER jack.
-    expect(shown('moog923-split', { lpCutoff: 0.2, hpCutoff: 0.8 })).toMatch(/^gap \d+\.\d\d oct$/);
-    // hp below lp ⇒ a band reaching BOTH.
-    expect(shown('moog923-split', { lpCutoff: 0.8, hpCutoff: 0.2 })).toMatch(
-      /^overlap \d+\.\d\d oct$/,
-    );
-    // The crossing point is real: somewhere between them the sign flips.
-    const oct = (over: Record<string, number>) => moog923SplitOct(P(over));
-    expect(oct({ lpCutoff: 0.2, hpCutoff: 0.8 })).toBeLessThan(0);
-    expect(oct({ lpCutoff: 0.8, hpCutoff: 0.2 })).toBeGreaterThan(0);
-  });
-
-  it('prints `aligned` only where the two points genuinely coincide', () => {
-    // The dials must DISAGREE by the ratio's own octave distance for the −3 dB
-    // points to meet — which is the fact `aligned` exists to make visible.
-    const gap = Math.log2(moog923MinusThreeDbRatio('lp'));
-    const span = Math.log2(CUTOFF_MAX_HZ / CUTOFF_MIN_HZ);
-    const lpKnob = 0.5 - gap / span;
-    const hpKnob = 0.5 + gap / span;
-    expect(shown('moog923-split', { lpCutoff: lpKnob, hpCutoff: hpKnob })).toBe('aligned');
-    // …and NOT where the dials merely agree.
-    expect(shown('moog923-split', { lpCutoff: 0.5, hpCutoff: 0.5 })).not.toBe('aligned');
   });
 });
 

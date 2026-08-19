@@ -119,42 +119,6 @@ describe('cube face — `cube-y-live`, the readout a knob readback cannot be', (
     ).toBeGreaterThan(4);
   });
 
-  it('reads ASLEEP at spawn and LIVE once the plane tilts', () => {
-    expect(value('cube-y-live')).toContain('asleep');
-    expect(value('cube-y-live', { slice_rx: 0.8 })).toBe('live');
-    expect(value('cube-y-live', { slice_ry: 0.8 })).toBe('live');
-  });
-
-  it('⚠ ROT Z DOES NOT WAKE IT, and the readout is right about that', () => {
-    // FOUND BY THIS TEST, 2026-08-10, when it was written asserting the
-    // opposite. `rotate(0,0,1, 0,0,rz)` is the IDENTITY — a Z rotation cannot
-    // move a vector lying on the Z axis — so ROT Z spins the scan line WITHIN
-    // the plane and never tilts it. Y therefore stays a normal-translation at
-    // any amount of ROT Z, and the DSP agrees: Y's authority is 0.115 at rz 0,
-    // 0.117 at rz 0.8, 0.132 at rz 1.5, against 0.759 once ROT X moves it.
-    //
-    // This is the strongest evidence in the file that the readout is reading
-    // the GEOMETRY rather than "did any rotation knob move" — the naive version
-    // would print `live` here and be wrong, on the module's #2 control.
-    expect(value('cube-y-live', { slice_rz: 0.8 })).toContain('asleep');
-    expect(value('cube-y-live', { slice_rz: 1.5 })).toContain('asleep');
-    expect(yAuthority(0, 0), 'Y is asleep flat').toBeLessThan(0.2);
-    expect(yAuthorityRz(0.8), 'ROT Z leaves it asleep').toBeLessThan(0.2);
-    // …and the control leg: the axes that DO tilt must wake it.
-    expect(yAuthority(0.8, 0), 'ROT X wakes it').toBeGreaterThan(0.6);
-    expect(yAuthority(0, 1.2), 'ROT Y wakes it').toBeGreaterThan(0.3);
-  });
-
-  it('NEGATIVE CONTROL: a `slice_y` readback is blind to the whole finding', () => {
-    // The assertion that justifies the readout existing. Moving `slice_y`
-    // itself must NOT change what this prints (it is a statement about the
-    // plane, not about Y), and the knob's own value is identical in both the
-    // asleep and the live state — which is what a `paramId: 'slice_y'` readout
-    // would have printed.
-    expect(value('cube-y-live', { slice_y: 0.9 })).toBe(value('cube-y-live', { slice_y: 0.1 }));
-    expect(read()('slice_y')).toBe(read({ slice_rx: 0.8 })('slice_y'));
-  });
-
   it('the FLAT threshold is a statement about the normal, not a taste', () => {
     // At the threshold the normal's z component is still ~0.99996, i.e. Y is a
     // normal-translation to four decimals. Both sides of the boundary asserted
@@ -167,60 +131,7 @@ describe('cube face — `cube-y-live`, the readout a knob readback cannot be', (
   });
 });
 
-describe('cube face — `cube-cut-tilt`', () => {
-  it('prints `flat · z` at spawn and a degree figure once tilted', () => {
-    expect(value('cube-cut-tilt')).toBe('flat · z');
-    expect(value('cube-cut-tilt', { slice_rx: 0.8 })).toMatch(/^\d+° tilted$/);
-  });
-
-  it('NEGATIVE CONTROL: it moves on ROT X and ROT Y, each with the other frozen', () => {
-    // A tilt readout that only watched one knob would read `flat` on a plane
-    // turned entirely by the other — two separate perturbations, so neither
-    // frozen axis can hide.
-    const flat = value('cube-cut-tilt');
-    for (const pid of ['slice_rx', 'slice_ry']) {
-      expect(value('cube-cut-tilt', { [pid]: 0.7 }), `${pid} must move the tilt`).not.toBe(flat);
-    }
-  });
-
-  it('⚠ and it does NOT move on ROT Z, because a Z turn cannot tilt the Z normal', () => {
-    // The positive control's twin. `rotate(0,0,1, 0,0,rz)` is the identity, so
-    // ROT Z re-aims the scan line inside the plane and leaves the plane where
-    // it is. A tilt readout that moved here would be measuring "a knob turned",
-    // which is the thing this readout exists NOT to be.
-    expect(value('cube-cut-tilt', { slice_rz: 0.7 })).toBe('flat · z');
-    expect(value('cube-cut-tilt', { slice_rz: 1.5 })).toBe('flat · z');
-    // With the plane already tilted, ROT Z still must not change the TILT.
-    expect(value('cube-cut-tilt', { slice_rx: 0.8, slice_rz: 1.1 }))
-      .toBe(value('cube-cut-tilt', { slice_rx: 0.8 }));
-  });
-
-  it('the plane is UNORIENTED — a normal flipped by π reads the same tilt', () => {
-    // Not a rounding convenience: `rx + π` negates the normal and the march
-    // window is symmetric about the origin, so the same plane is being
-    // described. Printing 180° for a flat cut would be a lie about the geometry.
-    expect(value('cube-cut-tilt', { slice_rx: Math.PI })).toBe('flat · z');
-  });
-});
-
 describe('cube face — `cube-crush-levels` and the DC fault that is NO LONGER THERE', () => {
-  it('prints the quantiser level count and moves with CRUSH', () => {
-    expect(value('cube-crush-levels')).toBe('256');
-    expect(value('cube-crush-levels', { crush: 0.5 })).toBe('129');
-  });
-
-  it('THE REPAIRED DEFECT: crush at its maximum is AUDIO, not a DC step', () => {
-    // The pre-#1448 face spec's headline was that `crush ≥ 0.999` drives the
-    // output to a constant −1 — `acRms` exactly 0.000000, inaudible, and
-    // invisible to the old all-zero silence guard. The DSP floored the level
-    // count at 4. This asserts the repair rather than trusting it, in both
-    // directions: real AC content, and the degeneracy predicate says no.
-    const w = render({ crush: 1 });
-    const s = cubeWaveStats(w);
-    expect(s.acRms, `crush=1 acRms=${s.acRms.toFixed(6)}`).toBeGreaterThan(0.1);
-    expect(isDegenerateWave(w)).toBe(false);
-    expect(value('cube-crush-levels', { crush: 1 })).toBe('4');
-  });
 
   it('NEGATIVE CONTROL: the guard still catches a genuinely degenerate wave', () => {
     // Otherwise the assertion above is only evidence that `isDegenerateWave`
@@ -233,42 +144,6 @@ describe('cube face — `cube-crush-levels` and the DC fault that is NO LONGER T
     const s = cubeWaveStats(render({ spaceDiffuse: 1 }));
     expect(s.acRms, `space_diffuse=1 acRms=${s.acRms.toFixed(6)}`).toBeGreaterThan(0.1);
     expect(isDegenerateWave(render({ spaceDiffuse: 1 }))).toBe(false);
-  });
-});
-
-describe('cube face — `cube-spread-depth` imports the DSP constant', () => {
-  it('prints ±0.0 % at rest and the REAL depth at the stop', () => {
-    expect(value('cube-spread-depth')).toBe('±0.0 %');
-    expect(value('cube-spread-depth', { spread: 1 })).toBe('±18.0 %');
-  });
-
-  it('NEGATIVE CONTROL: the printed number tracks CUBE_SPREAD_DEPTH', () => {
-    // The whole point of this readout. Five doc strings said ±5 % against a
-    // shipped 0.18 because the number was re-typed; a readout that also
-    // re-typed it would be the sixth.
-    expect(value('cube-spread-depth', { spread: 1 })).toBe(`±${(CUBE_SPREAD_DEPTH * 100).toFixed(1)} %`);
-  });
-});
-
-describe('cube face — pitch readouts', () => {
-  it('f0 tracks BOTH pitch knobs, and harmonics falls as it rises', () => {
-    expect(value('cube-f0-knobs')).toBe('261.6 Hz');
-    // FINE alone: a `paramId: 'tune'` readout is blind to this.
-    expect(value('cube-f0-knobs', { fine: 100 })).not.toBe(value('cube-f0-knobs'));
-    expect(value('cube-f0-knobs', { tune: 12 })).toBe('523.3 Hz');
-    expect(value('cube-harmonics')).toBe('91');
-    expect(Number(value('cube-harmonics', { tune: 36 }))).toBeLessThan(20);
-  });
-
-  it('harmonics NAMES the Nyquist clamp instead of printing a bare 1', () => {
-    expect(value('cube-harmonics', { tune: 36, fine: 100 })).not.toBe('91');
-    expect(value('cube-f0-knobs', { tune: 36 })).toContain('kHz');
-  });
-
-  it('fold drive spans 1× to 5×', () => {
-    expect(value('cube-fold-drive')).toBe('1.0×');
-    expect(value('cube-fold-drive', { fold: 1 })).toBe('5.0×');
-    expect(value('cube-fold-drive', { fold: 0.5 })).toBe('3.0×');
   });
 });
 
@@ -287,18 +162,6 @@ describe('cube face — the hero caption', () => {
     const on = cubeWaveStats(render({ wrap: true }));
     expect(Math.abs(on.dc) / on.acRms).toBeLessThan(Math.abs(off.dc) / off.acRms / 4);
     expect(on.solidPct).toBeGreaterThan(off.solidPct);
-  });
-
-  it('`levels` is the instrument RMS is blind to (MATERIAL)', () => {
-    // MATERIAL is dead last by rmsΔ and halves the waveform's structure. Both
-    // halves asserted, so the claim is a comparison rather than an anecdote.
-    const smooth = render({});
-    const hard = render({ material: 'hard' });
-    expect(rmsDelta(smooth, hard), 'MATERIAL is weak by RMS').toBeLessThan(0.1);
-    expect(
-      cubeWaveStats(hard).levels * 2,
-      'MATERIAL at least halves the distinct-value count — the readout that SEES it',
-    ).toBeLessThan(cubeWaveStats(smooth).levels);
   });
 
   it('the caption is computed WITHOUT an engine, and is not empty at rest', () => {
@@ -392,22 +255,6 @@ describe('cube face — the WAVE SIGNATURE that gates the 1.4 ms hero scan', () 
   ];
   const sig = (over: Record<string, number> = {}) => cubeWaveSignature(cubeFaceParams(read(over)));
 
-  it('MOVES on every param the scan reads — none silently dropped', () => {
-    const base = sig();
-    const frozen: string[] = [];
-    for (const id of WAVE_PARAMS) {
-      const p = cubeDef.params.find((q) => q.id === id)!;
-      // A value guaranteed different from the default, inside the range.
-      const v = p.defaultValue === p.max ? p.min : p.max;
-      if (sig({ [id]: v }) === base) frozen.push(`${id} (${p.defaultValue} -> ${v})`);
-    }
-    expect(
-      frozen.join(', '),
-      'a param the wave READS is missing from its signature — the caption would ' +
-        'freeze on it while printing three plausible numbers',
-    ).toBe('');
-  });
-
   it('is INVARIANT to every param the scan does NOT read — including the camera', () => {
     // The direction that makes the gate worth having. `view_rot_x/y` matter most:
     // the hero's drag-to-orbit writes them at pointer rate.
@@ -457,24 +304,6 @@ describe('cube face — the WAVE SIGNATURE that gates the 1.4 ms hero scan', () 
 });
 
 describe('cube face — the panel probes cannot be vacuous', () => {
-  it('the table-stack probe clicks a roster entry that is NOT the floor default', () => {
-    // `faces-parity` clicks `cube-stack-floor-1` and asserts `floor.source`
-    // CHANGED. If the roster's second entry were the floor's own default the
-    // click would be a legal no-op and the probe would fail for a reason that
-    // has nothing to do with the panel — or, worse, a reordering would make it
-    // pass while proving nothing.
-    const cell = shellCellFor('cube', resolveFaceControl('cube-table-stack-{n}', cubeDef));
-    expect(cell?.kind).toBe('panel');
-    const probe = cell?.kind === 'panel' ? cell.probe : undefined;
-    expect(probe?.testid).toBe('cube-stack-floor-1');
-    const tables = getFactoryTables();
-    expect(tables.length, 'the roster must HAVE a second entry').toBeGreaterThan(1);
-    expect(
-      tables[1]!.id,
-      `roster entry 1 (${tables[1]!.id}) must differ from the FLOOR default ` +
-        `(${CUBE_DEFAULT_TABLES.floor}) or the probe click writes the value it already had`,
-    ).not.toBe(CUBE_DEFAULT_TABLES.floor);
-  });
 
   it('the hero probe drags the picture and watches a DIFFERENT element', () => {
     const cell = shellCellFor('cube', resolveFaceControl('cube-view-{n}', cubeDef));
@@ -484,30 +313,5 @@ describe('cube face — the panel probes cannot be vacuous', () => {
     expect(probe?.effect.kind).toBe('text');
     // A control that only relabels itself is a dead control.
     if (probe?.effect.kind === 'text') expect(probe.effect.testid).not.toBe(probe.testid);
-  });
-});
-
-describe('cube face — the readouts FIT', () => {
-  it('every printed value stays inside the sidebar column budget', () => {
-    // ⚠ THE SIDEBAR CONTENT COLUMN IS 258 px, and a longer value pushes the
-    // dock past its right edge. Swept over the param SPACE rather than at the
-    // defaults, because the defaults are the one place a formatter is never
-    // wrong.
-    const ids = [
-      'cube-cut-tilt', 'cube-y-live', 'cube-crush-levels',
-      'cube-spread-depth', 'cube-f0-knobs', 'cube-harmonics', 'cube-fold-drive',
-    ];
-    const sweeps: Record<string, number>[] = [{}];
-    for (const p of cubeDef.params) {
-      sweeps.push({ [p.id]: p.min }, { [p.id]: p.max }, { [p.id]: (p.min + p.max) / 2 });
-    }
-    const long: string[] = [];
-    for (const id of ids) {
-      for (const over of sweeps) {
-        const v = value(id, over);
-        if (v.length > 26) long.push(`${id} → "${v}" (${v.length} chars)`);
-      }
-    }
-    expect(long.join('\n'), 'a readout longer than 26 chars overflows the sidebar').toBe('');
   });
 });

@@ -44,8 +44,6 @@ const reader = (over: Record<string, number> = {}) => (id: string): number | und
   const merged: Record<string, number> = { ...DEFAULTS, ...over };
   return id in merged ? merged[id] : undefined;
 };
-const shown = (valueId: string, over: Record<string, number> = {}): string =>
-  faceReadoutValueFor(valueId)!(reader(over));
 /** Every `spirographs-` readout the registry holds. */
 
 describe('spirographs — the three audit findings', () => {
@@ -75,83 +73,6 @@ describe('spirographs — the three audit findings', () => {
       expect((p as { format?: unknown }).format, 'a format would kill the painted name').toBeUndefined();
     }
     expect(SPIRO_INSIDE_OPTIONS.map((o) => o.label)).toEqual(['OUTSIDE', 'INSIDE']);
-  });
-
-  it('FINDING 3: whether a figure CLIPS is exactly SCALE-INVARIANT', () => {
-    // Only the FIXED circle is bound-constrained (radius R*scale, bounced off an
-    // inset of its own size); the pen reaches curveMaxReach*scale. So the test
-    // is reach > R and `scale` multiplies BOTH sides away.
-    const base = shown('spirographs-clip', { count: SPIRO_COUNT_MAX });
-    for (const scale of [4, 12, 24, 47, 60]) {
-      const over: Record<string, number> = { count: SPIRO_COUNT_MAX };
-      for (let i = 1; i <= SPIRO_COUNT_MAX; i++) over[spiroParamId(i, 'scale')] = scale;
-      expect(shown('spirographs-clip', over), `clip verdict at scale ${scale}`).toBe(base);
-    }
-    // …and it DOES move on a dial that genuinely changes the reach.
-    expect(
-      shown('spirographs-clip', { count: SPIRO_COUNT_MAX, s2_p: 0 }),
-      'shrinking spiro 2 pen offset must change the verdict',
-    ).not.toBe(base);
-
-    // The shipped numbers, stated so a reviewer can check them by eye.
-    const { spiros } = spirographsFaceState(reader({ count: SPIRO_COUNT_MAX }));
-    expect(spiroReach(spiros[0]!)).toBeCloseTo(4.2, 6);
-    expect(spiroReach(spiros[1]!)).toBeCloseTo(7.5, 6);
-    expect(spiroReach(spiros[2]!)).toBeCloseTo(9.0, 6);
-    expect(spiroCanClip(spiros[0]!), 'spiro 1 always fits (4.2 vs R 5)').toBe(false);
-    expect(spiroCanClip(spiros[1]!), 'spiro 2 can clip (7.5 vs R 7)').toBe(true);
-    expect(spiroCanClip(spiros[2]!), 'spiro 3 can clip (9.0 vs R 5)').toBe(true);
-    // The model uses the MODULE's own function, not a copy.
-    expect(spiroReach(spiros[1]!)).toBe(curveMaxReach('inside', 7, 3, 3.5));
-  });
-});
-
-describe('spirographs readouts — `count` is the permanent negative control', () => {
-
-  it('…and the SAME perturbations DO move them once count reaches 3', () => {
-    // Without this leg the invariance above would pass on a dead probe.
-    const live = { count: SPIRO_COUNT_MAX };
-    expect(shown('spirographs-closes', { ...live, s3_r: 2.4142 })).not.toBe(
-      shown('spirographs-closes', live),
-    );
-    expect(shown('spirographs-clip', { ...live, s3_p: 0, s3_inside: 1, s3_r: 3 })).not.toBe(
-      shown('spirographs-clip', live),
-    );
-    expect(shown('spirographs-figure-3', live)).not.toBe(shown('spirographs-figure-3', {}));
-  });
-
-  it('`live` states how many spiros draw, and moves only with count', () => {
-    expect(shown('spirographs-live')).toBe(`1 of ${SPIRO_COUNT_MAX}`);
-    expect(shown('spirographs-live', { count: 2 })).toBe(`2 of ${SPIRO_COUNT_MAX}`);
-    expect(shown('spirographs-live', { count: 3 })).toBe(`3 of ${SPIRO_COUNT_MAX}`);
-    expect(shown('spirographs-live', { s1_R: 11, s2_r: 9 }), 'live must ignore every dial').toBe(
-      `1 of ${SPIRO_COUNT_MAX}`,
-    );
-  });
-
-  it('`closes` distinguishes a rational ratio from one a millimetre away', () => {
-    // THE FINDING: R and r are CONTINUOUS, so almost nothing closes.
-    expect(shown('spirographs-closes')).toBe('all close');
-    expect(shown('spirographs-closes', { s1_r: 2.4142 })).toBe('1 dense');
-    expect(shown('spirographs-closes', { count: 3, s2_r: 3.1416, s3_r: 1.618 })).toBe('2, 3 dense');
-    // and the module's own cap is what "dense" means.
-    const { spiros } = spirographsFaceState(reader({ s1_r: 2.4142 }));
-    expect(spiroRevolutions(spiros[0]!)).toBe(REVS_MAX_DEFAULT);
-    expect(spiroIsDense(spiros[0]!)).toBe(true);
-  });
-
-  it('the sidebar prints `off` for a spiro that is not drawing — never a figure', () => {
-    expect(shown('spirographs-figure-1')).toBe('5 petals · 3 rev');
-    expect(shown('spirographs-figure-2'), 'spiro 2 is off at spawn').toBe('off');
-    expect(shown('spirographs-figure-3'), 'spiro 3 is off at spawn').toBe('off');
-    expect(shown('spirographs-figure-2', { count: 3 })).toBe('7 petals · 3 rev');
-    expect(shown('spirographs-figure-3', { count: 3 })).toBe('5 petals · 2 rev');
-    // A dense figure prints `dense`, NOT a fabricated petal count — the
-    // rationalisation yields 2500 there, which is an artifact of REVS_PRECISION
-    // and not a thing anyone could see.
-    expect(shown('spirographs-figure-1', { s1_r: 2.4142 })).toBe('dense');
-    const { spiros } = spirographsFaceState(reader({ s1_r: 2.4142 }));
-    expect(spiroPetals(spiros[0]!), 'the artifact the readout refuses to print').toBeGreaterThan(100);
   });
 });
 

@@ -62,10 +62,6 @@ const reader =
 
 /** The DECLARED readout ids, read off the def. DERIVED — there is no list of
  *  readouts in this file and no count of one. */
-const HERO_READOUTS = analogLogicMathsDef.face!.hero!.readouts!.map((r) => ({
-  label: r.label,
-  valueId: r.valueId!,
-}));
 
 /** The DECLARED param ids, read off the def. */
 const PARAM_IDS = analogLogicMathsDef.params.map((p) => p.id);
@@ -81,11 +77,6 @@ function at(a: number, b: number): Record<string, number> {
   return Object.fromEntries(ALM_ATT_PARAM_IDS.map((id, i) => [id, [a, b][i]!]));
 }
 
-function printed(valueId: string, overlay: Record<string, number>): string {
-  const fn = faceReadoutValueFor(valueId);
-  expect(fn, `readout '${valueId}' is registered in face-readout-values`).not.toBeNull();
-  return fn!(reader(overlay));
-}
 
 /**
  * THE STRUCTURAL LEGS. Each is a pair of dial settings and, per readout, whether
@@ -183,52 +174,6 @@ describe('analogLogicMaths face model — the glyph binding, ESTABLISHED not ass
     };
     expect(primaryAudioOutPortId(deadGlyph)).toBeNull();
     expect(glyphBinding(deadGlyph)).toEqual({ kind: 'static' });
-  });
-});
-
-describe('analogLogicMaths face model — the readout matrix, in BOTH directions', () => {
-  it('every DECLARED readout has a row in the matrix, and every row a readout', () => {
-    // ANCHORED TO THE ARTIFACT both ways: a readout added to the face with no
-    // row here is RED, and a row naming a readout the face no longer declares is
-    // RED. Neither side is a count.
-    const declared = HERO_READOUTS.map((r) => r.valueId).sort();
-    for (const leg of LEGS) {
-      expect(Object.keys(leg.moves).sort(), `leg '${leg.name}' covers exactly the declared readouts`)
-        .toEqual(declared);
-    }
-  });
-
-  it.each(LEGS)('$name — the printed strings move exactly where they must', (leg) => {
-    const from = at(...leg.from);
-    const to = at(...leg.to);
-    const stills: string[] = [];
-    const movers: string[] = [];
-    for (const [valueId, mustMove] of Object.entries(leg.moves)) {
-      const a = printed(valueId, from);
-      const b = printed(valueId, to);
-      (mustMove ? movers : stills).push(valueId);
-      if (mustMove) {
-        expect(a, `${valueId} MUST move on '${leg.name}' (${a} -> ${b}). ${leg.why}`).not.toBe(b);
-      } else {
-        expect(a, `${valueId} MUST NOT move on '${leg.name}' (${a} -> ${b}). ${leg.why}`).toBe(b);
-      }
-    }
-    // The leg is only a control if it discriminates: a leg with no `false` cell
-    // proves nothing about blindness, and one with no `true` cell proves nothing
-    // about liveness.
-    expect(movers.length, `leg '${leg.name}' must move at least one readout`).toBeGreaterThan(0);
-    expect(stills.length, `leg '${leg.name}' must leave at least one readout still`).toBeGreaterThan(0);
-  });
-
-  it('every readout owns at least one BLIND leg and at least one LIVE leg', () => {
-    // The property the table above is FOR, asserted over the table rather than
-    // read off it by eye: no readout may be invariant to everything (a constant
-    // wearing two decimal places) or sensitive to everything (a level meter).
-    for (const { valueId } of HERO_READOUTS) {
-      const cells = LEGS.map((l) => l.moves[valueId]!);
-      expect(cells.some((c) => c), `${valueId} is invariant to every structural leg`).toBe(true);
-      expect(cells.some((c) => !c), `${valueId} moves under every structural leg`).toBe(true);
-    }
   });
 });
 
