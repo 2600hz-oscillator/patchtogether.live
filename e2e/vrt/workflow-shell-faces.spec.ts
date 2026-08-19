@@ -159,6 +159,7 @@ import {
   refoldDockPane,
   settle,
   unfoldDockPane,
+  type BootFaceOptions,
 } from './_shell-faces';
 import { readAudioClock, resumeAudioContext } from './vrt-audio-freeze';
 
@@ -254,11 +255,22 @@ const FACE_WIDTH_SLACK_MAX_PX = 40;
 const FACE_WIDTH_EXEMPTIONS: Readonly<Record<string, string>> = {};
 
 test.describe('VRT: P1 curated faces (?shell=1) — compact lane tile + dock full-view', () => {
-  for (const { type, pages, videoFaceWhy } of FACES as readonly {
+  for (const { type, pages, videoFaceWhy, simPin } of FACES as readonly {
     type: string;
     pages: number;
     videoFaceWhy?: string;
+    simPin?: BootFaceOptions['simPin'];
   }[]) {
+    // ONE opts object for BOTH tiers, deliberately. The compact tile and the
+    // dock faceplate are two captures of the SAME module, so a determinism
+    // declaration that reached only one of them would leave the other
+    // non-deterministic — the "isolation mechanism only half the entry points
+    // honour" shape. Building it once here makes that structural rather than a
+    // thing each call site has to remember.
+    const bootOpts: BootFaceOptions = {
+      ...(videoFaceWhy ? { videoFaceWhy } : {}),
+      ...(simPin ? { simPin } : {}),
+    };
     test(`face-${type}-compact: the compact lane tile matches baseline`, async ({ page }) => {
       const errors: string[] = [];
       page.on('pageerror', (e) => errors.push(e.message));
@@ -266,7 +278,7 @@ test.describe('VRT: P1 curated faces (?shell=1) — compact lane tile + dock ful
       // The compact tile is pinned at the config viewport — the dock scene's
       // taller one would be a baseline move for no reason.
       await page.setViewportSize(LEGACY_FOLD_VIEWPORT);
-      const memberId = await bootWithFace(page, type, videoFaceWhy ? { videoFaceWhy } : {});
+      const memberId = await bootWithFace(page, type, bootOpts);
       // zoom 0.45 = the LOD 'compact' band [0.30, 0.52) — the design-point tile.
       await frameMember(page, memberId, 0.45, 'compact');
 
@@ -308,7 +320,7 @@ test.describe('VRT: P1 curated faces (?shell=1) — compact lane tile + dock ful
       // was MEASURED to move every other dock scene's pixels (see
       // `foldViewportFor`). `mixmstrs` is the case that found it.
       await page.setViewportSize(foldViewportFor(type));
-      const memberId = await bootWithFace(page, type, videoFaceWhy ? { videoFaceWhy } : {});
+      const memberId = await bootWithFace(page, type, bootOpts);
       // Frame at the 'full' tier so the jack-rail EXPAND affordance is
       // comfortably clickable, then open the dock full-view.
       await frameMember(page, memberId, 0.7, 'full');
