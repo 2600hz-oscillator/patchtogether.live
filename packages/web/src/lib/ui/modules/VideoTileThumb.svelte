@@ -25,6 +25,7 @@
   import { onMount } from 'svelte';
   import { useEngine } from '$lib/audio/engine-context';
   import type { VideoEngine } from '$lib/video/engine';
+  import { drawPreviewDownscaled } from './preview-downscale';
   import {
     VIDEO_THUMB_W,
     VIDEO_THUMB_H,
@@ -83,7 +84,7 @@
                 el.width,
                 el.height,
               );
-              ctx2d.drawImage(src, r.x, r.y, r.w, r.h);
+              drawPreviewDownscaled(ctx2d, src, r.x, r.y, r.w, r.h);
             }
           } catch {
             /* engine mid-teardown — keep looping, next tick recovers */

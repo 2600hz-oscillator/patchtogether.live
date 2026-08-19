@@ -105,6 +105,7 @@
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
   import { portsFromDef } from './card-kit';
+  import { drawPreviewDownscaled } from './preview-downscale';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -514,7 +515,7 @@
     const r = fitRect(cw, ch);
     // drawImage() from a WebGL canvas already presents upright (the browser
     // accounts for GL's bottom-left origin). A straight blit is correct.
-    ctx2d.drawImage(src, r.x, r.y, r.w, r.h);
+    drawPreviewDownscaled(ctx2d, src, r.x, r.y, r.w, r.h);
   }
 
   // Only writes when the engine value differs from the store, so user clicks
