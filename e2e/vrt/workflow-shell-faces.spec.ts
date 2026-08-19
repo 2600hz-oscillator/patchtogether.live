@@ -159,9 +159,15 @@ import {
   refoldDockPane,
   settle,
   unfoldDockPane,
+  FREEZE_RACE_FRAMES,
   type BootFaceOptions,
 } from './_shell-faces';
-import { readAudioClock, resumeAudioContext } from './vrt-audio-freeze';
+import {
+  armOneShotResume,
+  oneShotResumeFired,
+  readAudioClock,
+  resumeAudioContext,
+} from './vrt-audio-freeze';
 
 test.describe.configure({ mode: 'default' });
 
@@ -624,6 +630,62 @@ test.describe('VRT: P1 curated faces (?shell=1) — compact lane tile + dock ful
   //
   // The source is asserted to still be free-running rather than assumed, so a
   // module change cannot leave the control quietly measuring silence.
+  test('face audio freeze RECOVERY control: a one-shot resume inside the VERIFY window is absorbed', async ({
+    page,
+  }) => {
+    // ⚠ THE POSITIVE CONTROL FOR #1931, and the leg the negative control below
+    // structurally cannot provide. That one proves the freeze assertion can
+    // REJECT a running graph. This one proves the freeze LOOP can SURVIVE a
+    // resume — a different claim, and the one that was false: the loop read
+    // back 'suspended', then called an assertion that re-reads the clock, and a
+    // resume landing between those two reads threw out of the loop with five of
+    // six attempts unused. One losing face aborts the entire capture (#1810).
+    //
+    // The window is aimed at, not hoped for: the resume is armed to fire
+    // FREEZE_RACE_FRAMES + 1 frames out, i.e. one frame AFTER the settle the
+    // loop waits before reading state — so it lands while the clock check is in
+    // flight. Derived from the harness constant, so it cannot drift from the
+    // code it targets.
+    //
+    // ⚠ AND IT IS ANCHORED TO THE ARTIFACT: a control whose injection silently
+    // failed to arm would pass while proving nothing, so the resume must be
+    // observed to have REACHED the context before any conclusion is drawn.
+    test.setTimeout(90_000);
+    const subject = FACES[0]!;
+    await page.setViewportSize(LEGACY_FOLD_VIEWPORT);
+    const memberId = await bootWithFace(page, subject.type);
+    await frameMember(page, memberId, 0.45, 'compact');
+
+    const clean = await readAudioClock(page);
+    expect(
+      clean.state,
+      `${subject.type}: the graph must be SUSPENDED before the resume is injected, or ` +
+        `"the loop recovered" below is measuring a context that was never frozen.`,
+    ).toBe('suspended');
+
+    await armOneShotResume(page, FREEZE_RACE_FRAMES + 1);
+
+    // THE CLAIM: this call must RECOVER rather than throw. Before the fix it
+    // threw `assertFaceAudioFrozen`'s "not 'suspended', at CAPTURE time" —
+    // under bootWithFace's label, which is how the abort read as a capture-time
+    // failure when it was a boot-time one.
+    await freezeFaceAudio(page, `${subject.type} (recovery control)`);
+
+    expect(
+      await oneShotResumeFired(page),
+      `the injected resume never reached the AudioContext, so this control did not exercise ` +
+        `the race at all — it would pass identically against the unfixed loop.`,
+    ).toBe(true);
+
+    const after = await readAudioClock(page);
+    expect(
+      after.state,
+      `${subject.type}: the freeze loop returned but the graph is '${after.state}' — recovering ` +
+        `must mean SUSPENDED, not merely "stopped throwing".`,
+    ).toBe('suspended');
+    await assertFaceAudioFrozen(page, `${subject.type} (recovery control, effect)`);
+  });
+
   test('face audio freeze negative control: a sounding face is unstable RUNNING, identical FROZEN', async ({
     page,
   }) => {

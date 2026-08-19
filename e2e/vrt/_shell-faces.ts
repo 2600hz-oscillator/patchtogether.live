@@ -1482,7 +1482,7 @@ const FREEZE_ATTEMPTS = 6;
  *  land. Frames, not ms — renderer-independent by construction, and kept small
  *  because this runs 43× per VRT run on a renderer whose frame rate is unknown:
  *  correctness comes from the RETRY, not from the length of this window. */
-const FREEZE_RACE_FRAMES = 3;
+export const FREEZE_RACE_FRAMES = 3;
 
 /**
  * Suspend the audio graph for a face scene and PROVE it, in both the declared
@@ -1596,14 +1596,49 @@ export async function freezeFaceAudio(page: Page, label: string): Promise<void> 
     await waitFrames(page, FREEZE_RACE_FRAMES);
     const clock = await readAudioClock(page);
     seen.push(`${attempt}:${clock.state}`);
-    if (clock.state === 'suspended') {
+    if (clock.state !== 'suspended') continue;
+
+    // ── THE VERIFICATION IS PART OF THE RETRY, NOT A STEP AFTER IT ────────
+    //
+    // ⚠ THIS IS THE #1931 DEFECT, AND IT IS NOT WHERE THE ERROR MESSAGE
+    // POINTS. `assertFaceAudioFrozen` says "at CAPTURE time", so the family
+    // (#1810 / #1835 / #1931) reads as a capture-time race — but BOTH capture
+    // paths in workflow-shell-faces.spec.ts already re-freeze immediately
+    // before screenshotting, and the run that aborted #1939's full sweep
+    // (face-destroy-compact, job 96157688266) failed under the label
+    // `face-destroy`, not `face-destroy-compact`. That label is THIS
+    // function's, called from `bootWithFace` — i.e. the abort happened at
+    // BOOT, inside the retry loop that exists to absorb exactly this race.
+    //
+    // The loop checked `state === 'suspended'` and then called an assertion
+    // that RE-READS the clock. `ensureEngine()` resumes on every call, so a
+    // resume landing in the window between those two reads threw straight out
+    // of the loop with FIVE of six attempts unused. The retry could not retry
+    // the one thing most likely to lose the race.
+    //
+    // ⚠ AND ONE LOSING FACE ABORTS THE WHOLE CAPTURE (#1810), so this is not a
+    // per-scene flake: it is why full sweeps were near-certain to fail. Three
+    // distinct faces lost it in one day (videoOut, reverb, destroy), which is
+    // the signature of a scheduler-timed window rather than a bad module.
+    //
+    // The assertion itself is UNCHANGED and stays the authority — it caught
+    // exactly what it exists to catch. It is simply now allowed to fail and be
+    // re-driven, and on the LAST attempt it throws its own message verbatim so
+    // a genuinely repeating resumer still reports as itself rather than as a
+    // retry count.
+    try {
       await assertFaceAudioFrozen(page, label);
       return;
+    } catch (err) {
+      seen.push(`${attempt}:resumed-during-verify`);
+      if (attempt === FREEZE_ATTEMPTS) throw err;
     }
   }
   throw new Error(
     `${label}: the AudioContext would not STAY suspended — ${FREEZE_ATTEMPTS} attempts, ` +
-      `states after each (${seen.join(', ')}). Something is resuming it repeatedly. The known ` +
+      `states after each (${seen.join(', ')}); a 'resumed-during-verify' entry means the ` +
+      `suspend held long enough to read back 'suspended' and was undone before the clock ` +
+      `check finished. Something is resuming it repeatedly. The known ` +
       `one-shot racer is the pinned recorderbox factory (recorderbox.ts, ` +
       `\`if (ac.state === 'suspended') void ac.resume()\`), which the palette spawn's reconcile ` +
       `triggers; a REPEATING resume is a new one and needs finding, not more attempts.`,
