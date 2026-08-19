@@ -22,20 +22,15 @@ import {
   fixtureProblems,
   fixtureType,
 } from './_face-fixtures';
+import { BOOT_MS, PLACEHOLDER_PAINT_MS } from '../_helpers/boot-budget';
 
-// Boot and first-paint waits are pure LATENCY BOUNDS, not behavior assertions,
-// and CI's 2-core runners swing ≥2× run-to-run on identical code (#1860,
-// measured off blob reports). This spec lost two main push runs in one day to
-// flat waits on that lottery (#1875): the topbar at a flat 5 s (:568) and the
-// placeholder tiles at a flat 15 s (:271) — while every sibling test on the
-// SAME boot path passed. Scale the bounds on CI; assertions are untouched.
-// The local bound is not 5 s either: a sibling agent's install/suite load can
-// push first paint past 5 s on a dev box (measured: 5.3 s against the old 5 s
-// bound while 13/14 tests passed) — and a generous bound costs nothing on the
-// green path, because the wait exits on paint.
-const SLOW_RENDER = process.env.E2E_SWIFTSHADER === '1' || !!process.env.CI;
-const BOOT_MS = SLOW_RENDER ? 30_000 : 15_000;
-const PLACEHOLDER_PAINT_MS = SLOW_RENDER ? 45_000 : 15_000;
+// Boot and first-paint waits are pure LATENCY BOUNDS, not behavior assertions
+// (#1875 — this spec lost two main push runs in one day to flat ones). The
+// bounds and the whole argument now live at ONE export site, imported above:
+// ../_helpers/boot-budget.ts. They were declared locally here by #1898; the
+// #1904 sweep found the same defect at twenty more sites, and a bound that is
+// re-typed per spec is a bound that drifts — the reason frame waits have
+// exactly one home too.
 
 async function gotoWorkflow(page: Page, opts: { shell: boolean }): Promise<void> {
   await page.goto(opts.shell ? '/rack' : '/rack?shell=legacy');

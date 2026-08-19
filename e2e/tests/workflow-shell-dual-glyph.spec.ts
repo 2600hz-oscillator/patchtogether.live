@@ -22,13 +22,14 @@
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 import { setNodeParams } from './_module-coverage-helpers';
+import { BOOT_MS } from '../_helpers/boot-budget';
 
 /** The dock hero glyph width cap (mirrors DOCK_HERO_GLYPH_W). */
 const DOCK_HERO_GLYPH_W = 214;
 
 async function gotoWorkflowShell(page: Page): Promise<void> {
   await page.goto('/rack');
-  await expect(page.getByTestId('workflow-topbar')).toBeVisible();
+  await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: BOOT_MS });
   await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });
 }
 

@@ -61,6 +61,16 @@
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 import { pressFlipKey } from './_flip-key';
+import { BOOT_MS, SLOW_BOOT_TEST_TIMEOUT_MS } from '../_helpers/boot-budget';
+
+// Per-test budget scaled on CI (#1904). Two tests here recovered `timedOut ->
+// passed` flakes on the same SHA across the 31-run window to 2026-08-19,
+// against the flat 30 s default — and they timed out on DIFFERENT subjects
+// (`dock-height`, and a `boundingBox` on a `dock-zone-bottom` the log shows
+// had ALREADY "resolved to visible"). A wait that times out on an element it
+// has already found is not waiting for that element; the test ran out of
+// budget. A bound, not an assertion: see ../_helpers/boot-budget.ts.
+test.describe.configure({ timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
 
 /** Collect page errors + console errors for the zero-pageerror asserts. */
 function collectErrors(page: Page): string[] {
@@ -75,7 +85,7 @@ function collectErrors(page: Page): string[] {
 /** The DEFAULT shell — no `?shell=legacy`. That is the whole point of the file. */
 async function gotoWorkflow(page: Page): Promise<void> {
   await page.goto('/rack');
-  await expect(page.getByTestId('workflow-topbar')).toBeVisible();
+  await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: BOOT_MS });
   await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });
 }
 
@@ -766,7 +776,7 @@ test.describe('workflow · the pinned `m` tray renders the promoted face (#1739)
     // control. (LOCAL, per rackspace: it rides the same `railSize` the grabber
     // writes, never the Y.Doc, so a rack-mate's drawer is untouched.)
     await page.reload();
-    await expect(page.getByTestId('workflow-topbar')).toBeVisible();
+    await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: BOOT_MS });
     await waitForPin(page, 'pinned-mixmstrs');
     await page.keyboard.press('m');
     await expect(page.getByTestId('dock-zone-bottom')).toBeVisible();
