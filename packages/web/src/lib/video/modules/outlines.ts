@@ -86,6 +86,28 @@ import {
   type Circle,
 } from './outlines-sim';
 
+/**
+ * THE VRT PHASE PIN — how far the sim is advanced, deterministically, before a
+ * capture, and in what size steps. Consumed only when `__outlinesVrtSeed` is
+ * set (i.e. by the capture harness); see the pin in `draw()`.
+ *
+ * ⚠ THE STEP SIZE IS A FIXED 60 fps TICK ON PURPOSE. The pin must reproduce a
+ * trajectory the live module could actually draw, and the integrator moves each
+ * shape by `v * dt` then bounces it off the field walls — so one large step
+ * would tunnel shapes straight through the edges. Equal small steps give the
+ * real path.
+ *
+ * ⚠ THE COUNT IS CHOSEN TO POPULATE THE FIELD, which is what makes the baseline
+ * worth having. 480 steps is 8.0 s of simulated time; at the shipped
+ * `rate` default the internal clock spawns one shape every 2250 ms, so the
+ * captured scene holds a handful of shapes that have moved and begun to
+ * overlap — the thing the four outputs are derived FROM. A pin of ~0 steps
+ * would be perfectly deterministic and would show an empty field, which is the
+ * "blind the gate to its own subject" outcome this fix exists to avoid.
+ */
+const VRT_PIN_STEP_MS = 1000 / 60;
+const VRT_PIN_STEPS = 480;
+
 /** The synthetic param the engine's CV-bridge writes the gate value into
  *  (mirrors SHAPEGEN's cv_clock). The port id is the human-readable `gate`;
  *  the param id carries the `cv_` prefix. */
@@ -448,6 +470,10 @@ export const outlinesDef: VideoModuleDef = {
     // ---- Seeded sim ----
     const vrtSeed = (globalThis as unknown as { __outlinesVrtSeed?: number }).__outlinesVrtSeed;
     const sim = new OutlinesSim(typeof vrtSeed === 'number' ? vrtSeed >>> 0 : undefined);
+    // A VRT seed is present ONLY under the capture harness, so this is the one
+    // switch that separates a captured render from a live one. See the phase
+    // pin in draw().
+    const vrtPinned = typeof vrtSeed === 'number';
     const gateState: GateState = makeGateState();
 
     // ---- 2D scene canvases (one for the colour combine + per-mono outputs +
@@ -648,6 +674,11 @@ export const outlinesDef: VideoModuleDef = {
     }
 
     let lastTime = -1;
+
+    // ── THE VRT PHASE PIN (see VRT_PIN_STEPS) ────────────────────────────────
+    // Set once the deterministic warm-up has run, after which the sim is not
+    // advanced again while pinned.
+    let vrtPinWarmed = false;
     let framesElapsed = 0;
 
     // Reused across frames so the combine derive-once path allocates nothing
@@ -689,9 +720,50 @@ export const outlinesDef: VideoModuleDef = {
         // frame.
         if (params.freeze >= 0.5) return;
 
-        // dt from the engine clock (seconds → ms). First frame: assume 1/60.
+        // ── THE VRT PHASE PIN ────────────────────────────────────────────
+        //
+        // ⚠ WHAT IS PINNED: the sim's ELAPSED TIME, and nothing else. While a
+        // VRT seed is present the sim is advanced by a FIXED number of FIXED-dt
+        // steps on the first frame and then never again (dt = 0), so the
+        // rendered picture is a pure function of (seed, params) — independent
+        // of wall clock, frame count, boot speed, and of whether `freeze` was
+        // ever written.
+        //
+        // ⚠ WHY IT IS NOT ENOUGH TO FREEZE. `freeze` holds the LAST DRAWN
+        // frame, so the frozen picture is whatever the field happened to look
+        // like when the harness got around to writing it — a different number
+        // of elapsed frames on every boot, hence a different set of shape
+        // positions. Measured: `face-outlines-dock` missed its own freshly
+        // captured baseline by 6724 px against a `DOCK_MAX_DIFF` of 1500 —
+        // 4.5x the tolerance, so this is structural, not noise. Re-capturing
+        // could not fix it; it would only re-roll the dice, and a capture that
+        // passed BY LUCK would convert a red gate into a flaky one.
+        //
+        // ⚠ WHY IT IS INVISIBLE LIVE, which is the property that makes this a
+        // pin and not a behaviour change: `vrtSeed` is `globalThis
+        // .__outlinesVrtSeed`, set by the capture harness BEFORE the module
+        // mounts and undefined everywhere else. In normal use this branch does
+        // not exist and the module integrates the real engine clock exactly as
+        // before. It is deliberately NOT keyed on `freeze`, so the live module
+        // and the captured module are the same module.
         const t = frame.time;
-        const dtMs = lastTime < 0 ? 1000 / 60 : Math.max(0, (t - lastTime) * 1000);
+        let dtMs: number;
+        if (vrtPinned) {
+          if (vrtPinWarmed) {
+            dtMs = 0;
+          } else {
+            // Advance in FIXED sub-steps rather than one large dt: the
+            // integrator moves each shape by `v * dt` and bounces it off the
+            // walls, so a single multi-second step would tunnel shapes through
+            // the field edges and produce a picture the live module never
+            // draws. Small equal steps reproduce the real trajectory exactly.
+            for (let i = 0; i < VRT_PIN_STEPS; i++) sim.step(VRT_PIN_STEP_MS);
+            vrtPinWarmed = true;
+            dtMs = 0;
+          }
+        } else {
+          dtMs = lastTime < 0 ? 1000 / 60 : Math.max(0, (t - lastTime) * 1000);
+        }
         lastTime = t;
 
         // Push live params into the sim. d/v/spd/decay/shape latch per-shape at
