@@ -138,7 +138,14 @@ function clampStem(stem: SpiroParamStem, v: number): number {
 // `count` (1..3 discrete) + s{i}_{stem} for i in 1..3 × the ten stems.
 
 function buildDefaults(): Record<string, number> {
-  const d: Record<string, number> = { count: 1 };
+  // ⚠ `freeze` MUST BE HERE, not only in `PARAMS`. The factory seeds one live
+  // `params` object from this map and its `setParam` is guarded by
+  // `if (paramId in params)`, so a key absent here is a param whose writes are
+  // SILENTLY DROPPED — the VRT freeze would appear to be written, the store
+  // would agree, and the surface would go on moving. `freeze` is the param
+  // whose whole job is to be written by something other than a knob, so it is
+  // exactly the one that guard would have swallowed.
+  const d: Record<string, number> = { count: 1, freeze: 0 };
   for (let i = 1; i <= SPIRO_COUNT_MAX; i++) {
     const def = SPIRO_DEFAULTS[i]!;
     for (const stem of SPIRO_PARAM_STEMS) {
@@ -152,8 +159,37 @@ const DEFAULTS = buildDefaults();
 
 // ── Param defs + CV input ports ─────────────────────────────────────────────
 
+/**
+ * THE NAMES OF `inside`'s TWO STATES, and the one place they exist.
+ *
+ * `curve: 'discrete'` says the param has two states; nothing in a `ParamDef`
+ * says what either one is CALLED, and `SpirographsCard` answered that in a
+ * local `formatInside()`. Promoting the module removes that card from both
+ * surfaces, so without a roster the faceplate would render a two-position dial
+ * reading `0` / `1` for the choice between a HYPOTROCHOID and an EPITROCHOID —
+ * the single most visible decision on a spiro. Declared here, `paintsReadout`
+ * is true (a bare `options` roster and no `format`), so the dock paints a named
+ * button row and the lane dial paints the word.
+ *
+ * COSMETIC IN THE CONTRACT SENSE (see ParamOption): the projection reads only
+ * id/min/max/curve/defaultValue/units, so naming the detents moves nothing in
+ * `contract-lock.txt`.
+ */
+export const SPIRO_INSIDE_OPTIONS: readonly { value: number; label: string; title: string }[] = [
+  { value: 0, label: 'OUTSIDE', title: 'Epitrochoid — the rolling circle rolls OUTSIDE the fixed one.' },
+  { value: 1, label: 'INSIDE', title: 'Hypotrochoid — the rolling circle rolls INSIDE the fixed one.' },
+];
+
 const PARAMS: VideoModuleDef['params'] = (() => {
-  const out: Array<{ id: string; label: string; defaultValue: number; min: number; max: number; curve: 'linear' | 'discrete' }> = [
+  const out: Array<{
+    id: string;
+    label: string;
+    defaultValue: number;
+    min: number;
+    max: number;
+    curve: 'linear' | 'discrete';
+    options?: readonly { value: number; label: string; title?: string }[];
+  }> = [
     { id: 'count', label: 'Count', defaultValue: 1, min: 1, max: SPIRO_COUNT_MAX, curve: 'discrete' },
   ];
   for (let i = 1; i <= SPIRO_COUNT_MAX; i++) {
@@ -166,11 +202,78 @@ const PARAMS: VideoModuleDef['params'] = (() => {
         min: rng.min,
         max: rng.max,
         curve: stem === 'inside' ? 'discrete' : 'linear',
+        ...(stem === 'inside' ? { options: SPIRO_INSIDE_OPTIONS } : {}),
       });
     }
   }
+  // ── freeze — the hidden VRT/determinism toggle, and it is NEW here ────────
+  //
+  // ⚠ THIS MODULE ANIMATES BY CONSTRUCTION and had no way to stop. Each spiro's
+  // centre drifts and bounces off the frame edges as a pure function of
+  // `frame.time` (`advanceCenter`), so every rendered frame differs from the
+  // last — the analogVco non-determinism class, in video. That is fine for a
+  // player and fatal for a pixel baseline: without this the faceplate's dock
+  // scene is a moving target and its capture can never settle.
+  //
+  // The value is written ONLY by the VRT harness (see `videoFaceWhy` on this
+  // module's FACES roster entry, and `noUserControl` below). At >= 0.5 `draw`
+  // is a no-op so the surface holds its last frame — the same shape backdraft
+  // and grainsOfVision already use.
+  out.push({ id: 'freeze', label: 'Freeze', defaultValue: 0, min: 0, max: 1, curve: 'linear' });
   return out;
 })();
+
+// ── THE FACE'S PAGE GROUPING ────────────────────────────────────────────────
+//
+// Lives HERE rather than in `spirographs-face-model.ts` purely to keep the
+// import one-way: the face model reads the def (for its defaults), so the def
+// cannot read the face model back.
+//
+// THREE IDEAS PER SPIRO, and they are genuinely three questions rather than one
+// question split to fill a rail:
+//
+//   figure  WHAT CURVE IS TRACED — the trochoid itself (R, r, pen, in/out).
+//           Change any of these and it is a different shape.
+//   place   WHERE IT SITS AND HOW BIG (rotation, scale, X, Y). Change these and
+//           it is the same shape, moved.
+//   look    HOW IT IS DRAWN (thickness, hue). Change these and it is the same
+//           shape in the same place, rendered differently.
+//
+// Repeated per spiro because the module genuinely has three INDEPENDENT
+// figures, not because three is a nice number.
+export const SPIRO_PAGE_GROUPS: readonly {
+  id: string;
+  label: string;
+  stems: readonly SpiroParamStem[];
+}[] = [
+  { id: 'figure', label: 'figure', stems: ['R', 'r', 'p', 'inside'] },
+  { id: 'place', label: 'place', stems: ['rotation', 'scale', 'xOffset', 'yOffset'] },
+  { id: 'look', label: 'look', stems: ['thickness', 'chroma'] },
+];
+
+/** The face's pages: `count` first, then figure/place/look for each spiro.
+ *  DERIVED, so a page can never name a param the module does not have and a
+ *  new spiro cannot arrive without its pages. */
+export function spirographsPages(): readonly { id: string; label: string; controls: string[] }[] {
+  const pages: { id: string; label: string; controls: string[] }[] = [
+    { id: 'count', label: 'count', controls: ['count'] },
+  ];
+  for (let i = 1; i <= SPIRO_COUNT_MAX; i++) {
+    for (const g of SPIRO_PAGE_GROUPS) {
+      pages.push({
+        id: `s${i}-${g.id}`,
+        label: `${i} ${g.label}`,
+        controls: g.stems.map((stem) => spiroParamId(i, stem)),
+      });
+    }
+  }
+  return pages;
+}
+
+/** `face.order` — every page's controls, in page order. */
+export function spirographsOrder(): readonly string[] {
+  return spirographsPages().flatMap((p) => p.controls);
+}
 
 const INPUTS: VideoModuleDef['inputs'] = (() => {
   const out: VideoModuleDef['inputs'] = [
@@ -261,6 +364,131 @@ export const spirographsDef: VideoModuleDef = {
   ],
   params: PARAMS,
 
+  // `freeze` is a ParamDef because the engine's param plumbing is how the VRT
+  // harness reaches it, and it is declared here because a player never sets it.
+  // `writer: 'internal'` is asserted against this def's OWN ports: nothing in
+  // `INPUTS` targets `freeze`, so the day a CV port is added for it this entry
+  // stops being true and `no-user-control.test.ts` says so. Face completeness
+  // then requires it to render exactly ZERO cells, which is why it is absent
+  // from `face.order` — and `module-face-lint` refuses a `noUserControl` param
+  // that IS ranked, so the two declarations cannot drift apart.
+  noUserControl: [
+    {
+      param: 'freeze',
+      writer: 'internal',
+      why:
+        'the VRT capture harness writes it to hold the last frame; this module animates by '
+        + 'construction (every spiro centre drifts and bounces as a pure function of frame.time), '
+        + 'so without it the faceplate scenes are moving targets and no baseline can settle. '
+        + 'Nothing on the card, the faceplate or the patch surface exposes it.',
+    },
+  ],
+
+  // ── THE FACEPLATE ─────────────────────────────────────────────────────────
+  //
+  // WHAT IT IS FOR. Three independent classic spirographs on one frame. The
+  // verb is DIAL A FIGURE — pick a ratio, watch the petals fall out of it — and
+  // what it does that its siblings do not is give you three of them, each with
+  // its own complete parameter bank and its own drifting centre, composited in
+  // its own hue.
+  //
+  // ── TABBED, UNDER THE 2026-08-18 OWNER RULING ────────────────────────────
+  //
+  // MEASURED against the ruling's bar ("lots of controls of DIFFERENT types"):
+  // 31 params across TEN distinct control shapes — `discrete 1..3`, `linear
+  // 1..12`, `0.5..11`, `0..8`, `discrete 0..1`, `0..2pi`, `4..60`, `-1..1`,
+  // `0.5..12`, `0..1`. Both halves of the bar are met with room to spare, so
+  // this face is TABBED rather than crammed into dense bands.
+  //
+  // TEN PAGES: `count`, then figure/place/look for each of the three spiros.
+  // `dockTabPlan` engages the rail at DOCK_TAB_MIN_BANDS = 7, so ten pages rail
+  // comfortably — and they are not padded to get there. The alternative
+  // grouping (one page per spiro, four pages total) was rejected on the
+  // ruling's own words: it does not reach the rail AND it puts TEN controls in
+  // a band, which is `DOCK_ROW_MAX_CONTROLS` exactly — the dense-band shape the
+  // ruling names. figure/place/look are three different questions (what curve /
+  // where it sits / how it is drawn), and the repetition across spiros is the
+  // module's own structure rather than a way to reach a threshold.
+  //
+  // `count` EARNS A PAGE ON ONE CONTROL because it is the module's identity
+  // control in the strongest possible sense: it ships at 1, so TWENTY OF THE
+  // THIRTY-ONE PARAMS ARE BIT-EXACTLY INERT AT SPAWN. Spiro 2 and spiro 3 have
+  // full, plausible-looking banks that draw nothing at all until it rises.
+  //
+  // ── THE RANK ─────────────────────────────────────────────────────────────
+  //
+  // `order` and `pages` AGREE here, which is unusual and is the honest answer.
+  // `count` first, because nothing else on the module does anything until it is
+  // set. Then, within a spiro, figure before place before look — a strict
+  // dependency order rather than a taste: `place` moves a shape that `figure`
+  // decides, and `look` renders a shape that both have already fixed. And spiro
+  // 1 before 2 before 3 because that is the order `count` brings them to life
+  // in, so the lane tiers surface exactly the ones that are drawing.
+  //
+  // THE TIER LADDER: mini shows COUNT; compact shows COUNT + spiro 1's R and r
+  // (three columns, no glyph); the plate shows the top six — COUNT plus spiro
+  // 1's whole figure page and its rotation; the dock shows all thirty-one on a
+  // ten-tab rail, with the live picture and the readouts above it.
+  //
+  // ── glyph: 'none' — REQUIRED, and counter-intuitively so ──────────────────
+  //
+  // A video def has NO `audio` output, so `primaryAudioOutPortId` returns null
+  // and any glyph other than `'none'` resolves to `{kind:'static'}` and reddens
+  // the dead-glyph clause. The picture arrives from a DIFFERENT seam entirely —
+  // `hasVideoSurface(def)` gives the shell a live thumbnail of the module's own
+  // output — so `'none' + blank tile` and `'none' + live picture` are
+  // indistinguishable from this declaration alone. The face test therefore
+  // asserts `hasVideoSurface`, not the glyph, which is the only way to tell
+  // them apart.
+  //
+  // ── THE READOUTS: three joins, none of them a dial ───────────────────────
+  //
+  //   live    how many spiros are drawing. The dial says `1`; what it cannot
+  //           say is that twenty other dials are therefore inert.
+  //   closes  which LIVE figures never close. R and r are CONTINUOUS, and a
+  //           trochoid closes only on a RATIONAL ratio: at R = 5, r = 3 closes
+  //           in 3 revolutions and r = 2.4142 hits the module's own 200-cap and
+  //           never closes. The two dial positions are a millimetre apart.
+  //   clip    which LIVE figures reach past the frame. ⚠ SCALE-INVARIANT, which
+  //           is the opposite of what a zoom control suggests: only the FIXED
+  //           circle is kept in frame (radius `R * scale`, bounced off an inset
+  //           of its own size), so the curve overflows exactly when
+  //           `curveMaxReach > R` — and `scale` multiplies both sides away.
+  //
+  // ⚠ ALL THREE ARE COMPUTED OVER THE LIVE SPIROS ONLY, and that is the
+  // permanent negative control: at `count = 1`, perturbing ANY of spiro 3's ten
+  // dials must move NONE of them, while its own knob readback happily reports
+  // the new value. Raising `count` must then make the same perturbation
+  // visible. Both directions are asserted in spirographs-face-model.test.ts.
+  //
+  // Every derivation is the module's OWN — `revolutionsToClose` and
+  // `curveMaxReach` are the same functions the draw path calls, imported rather
+  // than re-implemented, so the faceplate cannot describe a curve the module
+  // stopped drawing.
+  face: {
+    order: spirographsOrder(),
+    glyph: 'none',
+    pages: spirographsPages(),
+    hero: {
+      readouts: [
+        { label: 'live', valueId: 'spirographs-live' },
+        { label: 'closes', valueId: 'spirographs-closes' },
+        { label: 'clip', valueId: 'spirographs-clip' },
+      ],
+    },
+    sidebar: [
+      {
+        kind: 'readouts',
+        label: 'figures',
+        entries: [
+          { label: '1', valueId: 'spirographs-figure-1' },
+          { label: '2', valueId: 'spirographs-figure-2' },
+          { label: '3', valueId: 'spirographs-figure-3' },
+        ],
+      },
+    ],
+  },
+
   docs: {
     explanation: "A pure video source (no input) that renders 1-3 independent classic spirographs and uploads them to the GPU each frame. Each spiro is a trochoid traced by a pen at offset p inside a rolling circle of radius r that rolls without slipping on a fixed circle of radius R: inside=hypotrochoid (rolling circle inside the fixed one), outside=epitrochoid (rolling circle outside it). The R:r ratio sets how many petals/loops the figure makes and how many revolutions it takes to close (a rational ratio closes; a near-irrational one densely fills the annulus, capped at a sane max). Each spiro has its own full parameter bank (R, r, pen, in/out, rotation, scale, X/Y, thickness, hue) and its own center that drifts independently across the frame, with the fixed-radius circle bouncing elastically off the four edges (only the fixed circle is kept fully in-frame; the drawn curve may overflow and clip, which is intended). The COLOR out composites each curve in its hue additively (lighter blend) on black so crossings glow toward white; switch its output port to get a white-on-black matte or a density-mapped rainbow \"candy\" overlap instead. Usage: pick a count, then use the per-spiro tabs to dial each figure (try a 5:2 inside spiro for a 5-petal star), and feed an LFO into a rotation or scale CV for slow living motion.",
     inputs: {
@@ -333,6 +561,7 @@ export const spirographsDef: VideoModuleDef = {
       s3_yOffset: "Spiro 3 Y (-1..1): nudges the drift home position vertically (center still drifts and bounces).",
       s3_thickness: "Spiro 3 Width (0.5-12 px): stroke line width, drawn with round joins and caps.",
       s3_chroma: "Spiro 3 Hue (0-1 colorwheel): the curve's color in the COLOR output (MONO and CANDY ignore it).",
+      freeze: "Freeze (0/1, default 0): a hidden determinism toggle with NO control anywhere — not on the card, not on the faceplate, not on the patch surface. At 0.5 or above the draw step is a no-op, so every output holds its last frame instead of going black. It exists because this module animates by construction: each spiro's centre drifts and bounces off the frame edges as a function of elapsed time, so two captures of the same settings are never the same pixels. The visual-regression harness writes it before comparing a screenshot; nothing else ever does.",
     },
   },
   factory(ctx, node): VideoNodeHandle {
@@ -451,6 +680,10 @@ export const spirographsDef: VideoModuleDef = {
       texture: colorFbo.texture,
       draw(frame) {
         const g = frame.gl;
+        // FREEZE — hold the last frame. Every surface this module owns keeps
+        // whatever it last held, so the picture does not go black; it stops.
+        // See the `freeze` ParamDef for why this module needs one at all.
+        if ((params.freeze ?? 0) >= 0.5) return;
         const timeSec = frame.time;
         const spiros = resolveSpiros(timeSec);
         const W = ctx.res.width;

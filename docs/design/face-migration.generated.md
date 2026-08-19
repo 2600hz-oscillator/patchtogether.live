@@ -159,7 +159,7 @@ author a `face` and rank the controls — no new platform capability.
 | `snaredrum` | audio | done | — |
 | `sourcery` | video | — | — |
 | `spectrograph` | audio | — | — |
-| `spirographs` | video | — | — |
+| `spirographs` | video | done | — |
 | `stereovca` | audio | — | — |
 | `swolevco` | audio | done | — |
 | `synesthesia` | audio | — | — |

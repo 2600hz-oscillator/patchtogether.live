@@ -103,6 +103,37 @@ the gate.**
 | tier caps are GEOMETRY, not an authored ladder | `curated-face.ts:62-79` | mini 1 · compact 2 with a glyph / 3 without · plate 6 · dock all. **Ranks 1–6 are the entire lane budget; rank 7+ is dock-only.** |
 | ≥7 bands ⇒ TAB RAIL | `dock-tabs-model.ts:56,72` | `DOCK_TAB_MIN_BANDS = 7`. A tabbed face never packs rows and prints no band hints where the rail names them. |
 
+### Owner ruling (2026-08-18): a CONTROL-HEAVY module gets a TABBED face, like backdraft
+
+"Heavy" means **lots of controls of DIFFERENT types** — not render weight. The
+reference is backdraft's dock face: eight semantic pages (`feedback / loop /
+colour / key / switches / tv screen / virtual camera / …`) on the tab rail, with
+the one persistent element (its preview screen) present in every view (owner:
+*"the preview screen can stay present in all views"*). First named application:
+**ruttetra** (12 params).
+
+- The mechanism is `face.pages` → dock bands → `dockTabPlan` engages the rail at
+  `DOCK_TAB_MIN_BANDS = 7`. **Do not cram a heavy module into few dense bands to
+  stay under the threshold**, and do not solve heaviness with row wrapping — a
+  page per IDEA, like backdraft's.
+- This does not repeal "do not add a page just to get a header" (below): pages
+  must still be different IDEAS. On a genuinely heavy module they are. If a
+  heavy module's honest semantic grouping lands at 5–6 pages — under the rail
+  threshold — **do not pad pages to force the rail**; raise it to the owner
+  instead (the threshold is the lever, and moving it is a deliberate,
+  baseline-moving decision per `dock-tabs-model.ts`'s own header).
+
+### Owner ruling (2026-08-18): EVERY video module's card gets a SCREEN ON/OFF toggle
+
+*"'screen on / off' on the card like that is a thing all video modules should
+have moving forward."* Reference: backdraft's
+`BackdraftOutputBody.svelte` (~:314) — the button toggles `previewCollapsed`;
+OFF collapses the preview and **reclaims its vertical space** while the module
+KEEPS RENDERING (ON again shows the LIVE picture, never a stale frame — do not
+tear the producer down; that is the #1720/#1721 bug class). The owner's stated
+floor: the on/off state **persists through tab switches**. Every new video face
+ships with it.
+
 ### The authoring consequence: WRITE FOR THE HINT-OFF STATE
 
 Annotations are OFF by default, per node, and never synced. **So the resting
