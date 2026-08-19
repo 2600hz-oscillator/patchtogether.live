@@ -948,6 +948,19 @@ export const FACES = [
   // scene is the hero routing readout, which is a pure function of the three
   // switch positions.
   { type: 'moog993', pages: 1 },
+  // TREE.oh.VOX — three bands (filter / osc / play), and the roster's only
+  // GATE-AUDITION voice whose pad is inside the LANE budget, so the compact
+  // scene frames a momentary action cell beside two knobs.
+  //
+  // Deterministic, and for a stronger reason than most: the voice is BIT-SILENT
+  // until a gate arrives (measured 0.000e+0 on `audio_out` over 145 frames with
+  // nothing patched, #1658). Its `scope` glyph therefore taps an analyser that
+  // reads zeros on the scene's frozen graph exactly like every struck voice in
+  // the roster — it is not free-running, and it does not exercise the audio
+  // freeze the way analogVco does. The only live text is the three sweep
+  // readouts, each a pure function of cutoff/envelope/accent, all of which read
+  // their declared defaults in the capture: 533 Hz / 3.76 kHz / 5.31 kHz.
+  { type: 'treeohvox', pages: 3 },
   // THE FIRST VIDEO FACE. Its `pages` are feedback / loop / colour / key /
   // switches / tv screen / virtual camera — enough bands to reach
   // DOCK_TAB_MIN_BANDS, so the dock scene captures a TAB RAIL with one band
