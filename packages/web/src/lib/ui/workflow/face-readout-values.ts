@@ -332,6 +332,15 @@ import {
   vcoSyncText,
 } from '$lib/ui/modules/moog921-face-model';
 
+// ⚠ ITS OWN IMPORT BLOCK, per the note below: concurrent face PRs all append
+// here, and two branches inserting into one multi-line block conflict on the
+// shared `import {` / `} from` lines even when the additions are disjoint.
+import {
+  moog902CeilingText,
+  moog902FaceParams,
+  moog902GainDbText,
+} from '$lib/ui/modules/moog902-face-model';
+
 // ⚠ ITS OWN IMPORT BLOCK, deliberately. Concurrent face PRs all append here,
 // and two branches inserting into the SAME multi-line block conflict on the
 // shared `import {` / `} from` lines even though the additions are disjoint.
@@ -1354,6 +1363,21 @@ const FACE_READOUT_VALUES: Readonly<Record<string, FaceReadoutValue>> = {
   'moog921vco-out': (read) => vcoOutText(moog921VcoFaceParams(read)),
   'moog921vco-fm': (read) => vcoFmText(moog921VcoFaceParams(read)),
   'moog921vco-sync': (read) => vcoSyncText(moog921VcoFaceParams(read)),
+
+  // THE 902 VCA — two readouts with DISJOINT reach, so each is the other's
+  // control on every render:
+  //   moog902-gain-db   ← gain AND mode   (what the amplifier is doing, in dB)
+  //   moog902-ceiling   ← mode ONLY       (INVARIANT to the gain pot)
+  // The load-bearing one is the RESPONSE switch. Measured on the shipping
+  // worklet, flipping it costs −2.9841 dB at the shipped pot position and
+  // −5.4525 dB near the bottom of the dial WITH NO DIAL MOVEMENT, so a knob
+  // readback of `gain` reads the same 0.50 across a level change of up to 5.45
+  // dB. `moog902-ceiling` is the other half: it names the control voltage where
+  // the amplifier stops rising — 9.0 V LINEAR, 7.5 V EXPONENTIAL — which is
+  // exactly the figure three doc sites stated unconditionally and wrongly
+  // (#1912), and which no dial on the module prints in any unit.
+  'moog902-gain-db': (read) => moog902GainDbText(moog902FaceParams(read)),
+  'moog902-ceiling': (read) => moog902CeilingText(moog902FaceParams(read)),
 
   // ── MIXMSTRS — DELETED, with the computation, 2026-08-17 ─────────────────
   // Four derived values used to live here (`bus-gain`, `comp-asleep`, and one

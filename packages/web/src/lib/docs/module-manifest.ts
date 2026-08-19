@@ -485,7 +485,7 @@ const PORT_NOTES: Record<string, string> = {
   'moog911.env_inv': 'Inverted envelope output (1 - env) for ducking / sidechain-style modulation.',
   'moog902.audio': 'SIGNAL input (the audio to be amplified) / OUT — the amplified signal (signal x gain, where gain follows the LIN/EXP law against the control sum).',
   'moog902.cv': 'Summing CONTROL INPUT. Scaled by the CV-amount knob (sign + depth) and summed onto the control voltage per-sample in the worklet (PASSTHROUGH_BY_DESIGN — the worklet owns the gain-law map + x3 clamp). CV = 6 V alone yields x2 (+6 dB).',
-  'moog902.fcv': 'Fixed-control-voltage bias — a second summing CONTROL INPUT added straight onto the control sum per-sample (PASSTHROUGH_BY_DESIGN). Push the FCV + signal sum toward ~7.5 V to reach the x3 ceiling.',
+  'moog902.fcv': 'Fixed-control-voltage bias — a second summing CONTROL INPUT added straight onto the control sum per-sample (PASSTHROUGH_BY_DESIGN). Push the FCV + pot sum to 9 V to reach the x3 ceiling in the shipped LINEAR mode, or to 7.5 V in EXPONENTIAL (#1912: this line used to name 7.5 V for both, which is the EXP arm figure).',
   'moog902.audio_inv': 'OUT- — the differential - output: a sample-accurate phase-inverted twin of OUT (for stereo widening / sidechain / mid-side).',
   'audioOut.L': 'Mono L -> host destination L.',
   'audioOut.R': 'Mono R -> host destination R.',

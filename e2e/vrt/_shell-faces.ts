@@ -847,6 +847,22 @@ export const FACES = [
   // Those exact strings are pinned in `moog921-face-model.test.ts`, so a
   // formatter change reddens the unit lane before it reddens a baseline.
   { type: 'moog921Vco', pages: 3 },
+  // THE 902 VCA — two pages (`gain` = the pot + its CV depth, `response` = the
+  // law selector), so the dock scene frames two bands, not one.
+  //
+  // ⚠ ITS HERO READOUTS ARE PURE FUNCTIONS OF `node.params` and print at the
+  // spawn defaults, so they are IN the dock image and a formatter change moves
+  // this baseline: `0.0 dB · 9.0 V`. Both strings are pinned in
+  // `moog902-face-model.test.ts`, so a formatter edit reddens the unit lane
+  // before it reddens a pixel.
+  //
+  // ⚠ AND THE GLYPH IS A LIVE-AUDIO METER ON A MODULE THAT IS SILENT AT SPAWN,
+  // which is why it baselines at all: the 902 is an AMPLIFIER, not a source, so
+  // with nothing patched its `audio` tap is zeros and the meter draws its floor.
+  // This is the mirror image of the `analogVco` non-determinism class — that one
+  // was a FREE-RUNNING voice whose glyph drew a moving saw — and it does not
+  // exercise #1420's pre-frame audio freeze, because there is nothing to freeze.
+  { type: 'moog902', pages: 2 },
   // THE FIRST VIDEO FACE. Its `pages` are feedback / loop / colour / key /
   // switches / tv screen / virtual camera — enough bands to reach
   // DOCK_TAB_MIN_BANDS, so the dock scene captures a TAB RAIL with one band
