@@ -22,6 +22,7 @@
   import { oneToNineDef, OUTPUT_IDS } from '$lib/video/modules/onetonine';
   import ModuleTitle from './ModuleTitle.svelte';
   import { portsFromDef } from './card-kit';
+  import { drawPreviewDownscaled } from './preview-downscale';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -67,7 +68,7 @@
       const src = videoEngine.canvas as CanvasImageSource;
       ctx2d.fillStyle = '#050608';
       ctx2d.fillRect(0, 0, canvasEl.width, canvasEl.height);
-      ctx2d.drawImage(src, 0, 0, canvasEl.width, canvasEl.height);
+      drawPreviewDownscaled(ctx2d, src, 0, 0, canvasEl.width, canvasEl.height);
     }
     drawRaf = requestAnimationFrame(draw);
   }

@@ -29,11 +29,6 @@ import { defineConfig, devices } from '@playwright/test';
 // silently adopted a sibling checkout's dev server and swept the wrong branch.
 // APP_PORT feeds the webServer command below so url/command cannot disagree.
 import { localBaseUrl } from '../worktree-port';
-// The VRT lane opts OUT of the audio gate entirely — see the long header there
-// for the measured resume-on-click this prevents, and for why a capture-time
-// stylesheet could not.
-import { vrtStandDownStorageState } from './vrt-stand-down';
-
 
 const { baseUrl: BASE_URL, port: APP_PORT } = localBaseUrl('dev');
 const IS_LOCAL_TARGET =
@@ -403,10 +398,6 @@ export default defineConfig({
 
   use: {
     baseURL: BASE_URL,
-    // Seeded before the first paint of every scene, for every context this
-    // config creates. Delivery is VERIFIED on every freeze (freezeAudioContext
-    // throws if the overlay is present), not assumed.
-    storageState: vrtStandDownStorageState(BASE_URL),
     // Fixed viewport: 1280x720 @ 1x DPR. The main e2e config inherits
     // devices['Desktop Chrome'] which is also 1280x720 today, but we
     // pin it here so a future Playwright device-preset change can't

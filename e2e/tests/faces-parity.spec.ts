@@ -106,8 +106,15 @@ const SLOW_RENDER = process.env.E2E_SWIFTSHADER === '1' || !!process.env.CI;
 //
 // Repo rule (ci-swiftshader-video-e2e-timeouts / CLAUDE.md): scale by the work,
 // never flat; grow failure bounds only — no assertion or window below moves.
+//
+// The CI per-cell rate is sized for INTER-RUN VM VARIANCE, not the typical run
+// (#1860 class, measured 2026-08-19 off blob reports): backdraft (28 cells)
+// ran 41.9 s on main's green run and 47.9 s on the next branch run, then blew
+// the old 1_800/cell ceiling (95.4 s) TWICE on the run after that — identical
+// code, a ≥2× swing, the same slow-runner lottery that hit the videoout specs
+// the same night. 3_000/cell puts backdraft at 129 s ≈ 2.7× its typical run.
 const FACE_FIXED_MS = SLOW_RENDER ? 45_000 : 30_000;
-const FACE_PER_CELL_MS = SLOW_RENDER ? 1_800 : 600;
+const FACE_PER_CELL_MS = SLOW_RENDER ? 3_000 : 600;
 
 interface SpecParam {
   id: string;

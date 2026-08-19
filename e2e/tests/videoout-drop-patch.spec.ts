@@ -44,10 +44,40 @@ interface PatchWindow {
   __spawnAtFlowPos: (type: string, pos: { x: number; y: number }) => void;
 }
 
+// CI is a 2-core SwiftShader VM. The trace that answered this spec's open
+// question (run 32190696197 shard 2, REFUSED ROWS): nothing hangs — every
+// pointer step and round-trip runs 0.5–1 s, the 17-step rAF-paced drag alone
+// costs ~16.5 s, and the modal was up with its assertions PASSING at ~27 s
+// when the flat 30 s budget expired. Scale the budget with the scene — two
+// spawned modules plus one real pointer drag per test; the cap bounds the
+// failure, it is not the gate.
+const sceneTimeout = (modules: number): number => 30_000 + modules * 15_000 + 20_000;
+
 /** Spawn `partner` and a `videoOut` through the REAL palette path. */
 async function seedPair(page: Page, partner: string): Promise<{ partnerId: string; voId: string }> {
+  test.setTimeout(sceneTimeout(2));
   await page.goto(RACK);
   await page.waitForFunction(() => !!(window as unknown as PatchWindow).__patch);
+
+  // Boot the engine BEFORE any interaction, so engine state is deterministic
+  // rather than racing the first pointer gesture. #1844 mounted AudioGate on
+  // /rack, and the first gesture now dismisses it through ensureEngine() —
+  // AudioContext, AWAIT resume(), then the VideoEngine. Doing it here removes
+  // that async work from inside the drag.
+  //
+  // ⚠ The engine pre-boot alone was NOT the fix for the CI-only REFUSED ROWS
+  // failure (30 s timeout, BOTH attempts, 0 flaky, all five passing locally).
+  // The Tab-swallowing-gate hypothesis was DISPROVEN by a positive control:
+  // asserting the gate is present here fails locally 15/15. The shard-2 trace
+  // then attributed the mechanism — uniform 2-core SwiftShader slowness, not a
+  // hang — which is what `sceneTimeout` above is sized from.
+  await page.waitForFunction(() => {
+    const w = globalThis as unknown as { __ensureEngine?: () => Promise<unknown> };
+    return typeof w.__ensureEngine === 'function';
+  });
+  await page.evaluate(async () => {
+    await (globalThis as unknown as { __ensureEngine: () => Promise<unknown> }).__ensureEngine();
+  });
   await page.evaluate(
     ([p, a, b]) => {
       const w = window as unknown as PatchWindow;

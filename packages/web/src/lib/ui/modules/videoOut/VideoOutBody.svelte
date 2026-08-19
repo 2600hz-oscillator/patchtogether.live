@@ -31,6 +31,7 @@
   // the plate so no grey space is left beside it (see `.vo-wrap`).
 
   import { untrack } from 'svelte';
+  import { drawPreviewDownscaled } from '../preview-downscale';
   import { useEngine } from '$lib/audio/engine-context';
   import { patch } from '$lib/graph/store';
   import { mutateNode } from '$lib/graph/mutate';
@@ -248,7 +249,7 @@
     ctx2d.fillRect(0, 0, cw, ch);
     const r = fitRect(cw, ch);
     // drawImage() from a WebGL canvas already presents upright.
-    ctx2d.drawImage(src, r.x, r.y, r.w, r.h);
+    drawPreviewDownscaled(ctx2d, src, r.x, r.y, r.w, r.h);
   }
 
   $effect(() => {

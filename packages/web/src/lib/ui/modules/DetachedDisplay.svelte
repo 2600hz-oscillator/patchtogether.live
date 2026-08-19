@@ -37,6 +37,7 @@
   // Detaching MOVES the picture; it does not clone it.
 
   import { untrack } from 'svelte';
+  import { drawPreviewDownscaled } from './preview-downscale';
   import { useEngine } from '$lib/audio/engine-context';
   import { mutateNode } from '$lib/graph/mutate';
   import { startCornerResize } from './card-resize';
@@ -405,7 +406,7 @@
     ctx2d.fillRect(0, 0, cw, ch);
     const r = fitRect(cw, ch);
     // drawImage() from a WebGL canvas already presents upright.
-    ctx2d.drawImage(src, r.x, r.y, r.w, r.h);
+    drawPreviewDownscaled(ctx2d, src, r.x, r.y, r.w, r.h);
   }
 
   $effect(() => {

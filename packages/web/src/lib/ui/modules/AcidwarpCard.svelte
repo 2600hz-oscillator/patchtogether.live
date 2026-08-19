@@ -23,6 +23,7 @@
   import { onMount, onDestroy } from 'svelte';
   import ModuleTitle from './ModuleTitle.svelte';
   import { cardParams, portsFromDef } from './card-kit';
+  import { drawPreviewDownscaled } from './preview-downscale';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -60,7 +61,8 @@
           // false ⇒ off-screen or inside the cadence window; skip the
           // drawImage, which is the synchronising half.
           if (videoEngine.blitOutputForPreview(id)) {
-            c2d.drawImage(
+            drawPreviewDownscaled(
+              c2d,
               videoEngine.canvas as CanvasImageSource,
               0, 0, canvasEl.width, canvasEl.height,
             );

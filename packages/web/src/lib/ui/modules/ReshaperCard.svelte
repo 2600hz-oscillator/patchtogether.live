@@ -20,6 +20,7 @@
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
   import { captureFlowStore, portsFromDef } from './card-kit';
+  import { drawPreviewDownscaled } from './preview-downscale';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -126,7 +127,7 @@
       // drawImage() from a WebGL canvas already presents upright; a
       // straight blit is correct. The old scale(1,-1) flipped it upside
       // down. See VideoOutCard for the full rationale.
-      ctx2d.drawImage(src, r.x, r.y, r.w, r.h);
+      drawPreviewDownscaled(ctx2d, src, r.x, r.y, r.w, r.h);
     }
     rafId = requestAnimationFrame(draw);
   }
