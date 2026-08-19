@@ -201,6 +201,25 @@ function earnsReadout(p: FaceParamLike): boolean {
  * a fader parked at rank 9 is dock-only and must not shrink the lane plate.
  * `laneOrder` for the same reason one step further out: a hero picture never
  * reaches the lane either, so it must not displace a cell that does.
+ *
+ * ⚠ `foldedOrder` ON TOP OF `laneOrder`, AND THE OMISSION WAS A LATENT BUG.
+ * This used to call `laneOrder` alone, which is a THIRD answer to "which keys
+ * reach the lane" beside `curatedFace`'s — and `curatedFace` composes BOTH
+ * (`foldedOrder({...face, order: laneOrder(face)})`). A pad's PARTNER axis
+ * renders no cell of its own by `foldedOrder`'s own contract, so reserving a
+ * cell height for it was never right; the paragraph above already said this
+ * function is scanned over "the ranked prefix that can REACH the lane", and a
+ * folded partner cannot.
+ *
+ * It went unnoticed because the TIER CAP masked it: the discrepancy is one
+ * entry per declared pad, and on a face with enough controls the `slice` and
+ * the per-tier cap take the same prefix either way. Measured over the live
+ * registry at the time of the fix: `backdraft` is the only shipped pad-bearing
+ * face, its partners (`camTiltY`, `camPosY`) rank outside the first six, and
+ * its height list is byte-identical before and after — so this moves no pixel
+ * on anything that ships today. It is `joystick` (a pad and nothing else) that
+ * unmasks it, because there the cap cannot hide a one-entry difference from
+ * ZERO, and `module-face-lint`'s cap-vs-fit-plan gate says so by name.
  */
 export function faceLaneCellHeights(def: FaceDefLike): number[] {
   const face = def.face;
@@ -208,7 +227,7 @@ export function faceLaneCellHeights(def: FaceDefLike): number[] {
   const declared = face.paramCells ?? {};
   const momentary = new Set(face.momentary ?? []);
   const byId = new Map((def.params ?? []).map((p) => [p.id, p]));
-  return laneOrder(face)
+  return foldedOrder({ ...face, order: laneOrder(face) })
     .slice(0, LANE_PLATE_MAX_CELLS)
     .map((key) => {
       const kind = declared[key as keyof typeof declared];
