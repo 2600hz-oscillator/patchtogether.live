@@ -868,6 +868,47 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
       probe: { effect: { kind: 'audition', seam: 'manual-gate' } },
     },
   },
+  treeohvox: {
+    // THE AUDITION, and this one was ORDERED BY THE DEF. `treeohvox.ts:125-137`
+    // carries a note addressed to whoever authors this faceplate: its card's
+    // gate pad reaches the dock ONLY while the module has no `face`, because an
+    // un-faced dock full view renders the legacy card. The moment a face lands,
+    // the dock renders the face instead and the pad disappears unless the face
+    // ranks a gate cell of its own. That is the sixstrum defect verbatim — the
+    // card's STRUM button always worked while the FACE offered twenty controls
+    // over an instrument that could not be sounded — and this cell is the
+    // instruction being carried out.
+    //
+    // MEASURED (#1658): with nothing patched and every pressable on the card
+    // clicked, `audio_out` peaked at exactly 0.000e+0 over 145 frames, while
+    // the same analyser read 3.390e-1 the moment a gate reached `gate_in`.
+    //
+    // ⚠ `mode: 'gate'`, and the def is emphatic about why. `gate_in` declares
+    // `edge: 'gate'` and the processor acts on BOTH edges — rising starts the
+    // note, FALLING ends it, so gate length IS note length. The shared one-shot
+    // is a 5 ms pulse, which would end every auditioned note 5 ms after it
+    // began. The factory answers `manualGate` and DELIBERATELY NOT
+    // `manualTrigger`, so a caller reaching for the one-shot gets `undefined`
+    // and the ledger records `delivered: false` — the honest answer, and
+    // distinguishable from a press that never happened.
+    //
+    // ⚠ AND IT SOUNDS AN UN-ACCENTED NOTE, by design. The gate ConstantSource
+    // is connected to worklet input 1 alone; driving the shared `silence`
+    // source instead would also drive PITCH and ACCENT, transposing the voice
+    // and latching an accent on every audition. So ACCENT does nothing on this
+    // surface, which is the measured reason the face ranks it dock-only.
+    'treeohvox-gate-{n}': {
+      kind: 'action',
+      mode: 'gate',
+      label: 'gate',
+      title: 'Audition: HOLD to sound the voice (identical to holding gate_in high)',
+      onGate: (nodeId, high) => { setManualGate(nodeId, high); },
+      // Both edges, for the reason the siblings give: a gate that opens and
+      // never closes is a note that never ends, and a one-edge probe is blind
+      // to exactly it.
+      probe: { effect: { kind: 'audition', seam: 'manual-gate' } },
+    },
+  },
   pentemelodica: {
     // THE FIVE-VOICE PICTURE, promoted into the hero slot. It exists because
     // this faceplate is TABBED (eight bands trip DOCK_TAB_MIN_BANDS), so four

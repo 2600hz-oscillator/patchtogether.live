@@ -983,6 +983,19 @@ export const FACES = [
         + 'flag engages the fixed-dt phase pin already in the module.',
     },
   },
+  // TREE.oh.VOX — three bands (filter / osc / play), and the roster's only
+  // GATE-AUDITION voice whose pad is inside the LANE budget, so the compact
+  // scene frames a momentary action cell beside two knobs.
+  //
+  // Deterministic, and for a stronger reason than most: the voice is BIT-SILENT
+  // until a gate arrives (measured 0.000e+0 on `audio_out` over 145 frames with
+  // nothing patched, #1658). Its `scope` glyph therefore taps an analyser that
+  // reads zeros on the scene's frozen graph exactly like every struck voice in
+  // the roster — it is not free-running, and it does not exercise the audio
+  // freeze the way analogVco does. The only live text is the three sweep
+  // readouts, each a pure function of cutoff/envelope/accent, all of which read
+  // their declared defaults in the capture: 533 Hz / 3.76 kHz / 5.31 kHz.
+  { type: 'treeohvox', pages: 3 },
   // MOOG 984 — the 4×4 matrix, and the roster's first CONSOLE GRID that is not
   // mixmstrs. ONE band (`cross-points`) holding four equal clusters, so
   // `consoleGridCols` answers 4 and the dock scene frames a real table: column

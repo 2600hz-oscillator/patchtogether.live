@@ -138,6 +138,107 @@ export const treeohvoxDef: AudioModuleDef = {
     { id: 'treeohvox-gate', label: 'Gate — hold to sound the voice', kind: 'other', testidPrefix: 'treeohvox-gate' },
   ],
 
+  // ── THE FACEPLATE (queue Q3, unblocked by #1658) ──────────────────────────
+  //
+  // WHAT IT IS FOR. Every other voice in the tree gives you an oscillator and
+  // then a filter to taste. On a 303 THE FILTER ENVELOPE IS THE INSTRUMENT: one
+  // decay envelope sweeps the ladder by a hardware-measured law on every single
+  // note, so what a player performs is not a pitch line but a SQUELCH — how far
+  // the filter jumps and how fast it falls back. The verb is setting that fall,
+  // and stabbing ACCENT to make one note in the bar jump higher than the rest.
+  //
+  // THE LADDER, read back as a sentence: mini shows CUTOFF, because where the
+  // sweep is centred is the one control a 303 player never stops touching;
+  // compact adds RESO (the scream — without it there is no acid) and then the
+  // GATE pad, so the smallest tile that shows more than one thing can already
+  // SOUND the voice; the plate adds ENVMOD and DECAY, completing the squelch
+  // engine, plus WAVE; and the dock adds ACCENT and TUNE.
+  //
+  // ⚠ THE GATE PAD RANKS THIRD, AND THAT IS THE #1658 LESSON RATHER THAN A
+  // PREFERENCE. This module is bit-silent with nothing patched (measured:
+  // 0.000e+0 on `audio_out` over 145 frames with every card pressable clicked,
+  // against 3.390e-1 with a gate on `gate_in`). Ranking the only affordance
+  // that can sound it below the lane budget would ship exactly the sixstrum
+  // defect — a tier full of timbre controls over an instrument the player
+  // cannot hear. It sits at 3 rather than 1 because the mini tier's job is
+  // identification and CUTOFF is what names a 303.
+  //
+  // ⚠ ACCENT RANKS SEVENTH — DOCK-ONLY — AND THE ARGUMENT IS MEASURED, not
+  // taste. `accentGain` is non-zero only when the gate edge finds `accent_in`
+  // high (dsp/src/treeohvox.ts:196), and the audition ConstantSource is
+  // connected to worklet input 1 ALONE, deliberately (driving the shared
+  // `silence` source would also drive pitch and accent). So ACCENT does nothing
+  // on the only surface that can sound this module without a patch, and the
+  // operational form of the inert-control rule — no LANE TIER may paint a
+  // control that does nothing in the state a player meets it in — puts it below
+  // every lane budget. Its value is stated instead by the `accent top` readout,
+  // which is on the same face.
+  //
+  // TUNE ranks last for the ordinary reason: a 303 is played from a pitch
+  // source, and TUNE is a ±12 st offset on top of it.
+  //
+  // PAGES BY FUNCTION, and they disagree with `order` in one place. `filter`
+  // holds the four squelch controls in the order the DSP applies them (where
+  // the sweep starts, how hard it resonates, how far it travels, how fast it
+  // falls); `osc` holds the two note-shaping controls; `play` holds the two
+  // things that are about a NOTE EVENT rather than a timbre — the accent
+  // amount and the pad that fires a note. `order` interleaves the gate pad into
+  // the middle of the squelch controls, because ranking is about what a
+  // shrinking tier keeps and grouping is about what belongs together. Three
+  // pages, well under DOCK_TAB_MIN_BANDS, so this face is not tabbed.
+  //
+  // THE READOUTS ARE THE MERIT CASE, and they are not knobs relabelled. The
+  // voice sweeps `instCutoff = cutoff · 2^(scaler·(env − offset) + accent·env)`
+  // with (scaler, offset) from Robin Schmidt's measured mapping, so at the
+  // defaults the CUTOFF DIAL SAYS 1000 Hz while the filter rests at 533.4 Hz
+  // and peaks at 3757.6 Hz — a frequency the dial's number is never at. Holding
+  // CUTOFF still and sweeping ENVMOD moves the peak 1463 → 9651 Hz (6.6×) while
+  // REST moves the OPPOSITE way, 835 → 341 Hz, and the dial cannot see either.
+  // See treeohvox-face-model.ts; both directions are permanent in its test.
+  //
+  // GLYPH: `scope`, on the module's own `audio_out`. A filter sweep is a
+  // visible change in the waveform, so the picture is about the thing the face
+  // is about — and it is deterministic for VRT for the strongest reason
+  // available: the voice is bit-silent until gated, so the scene's analyser
+  // reads zeros on a frozen graph like every other faced module's.
+  face: {
+    order: [
+      'cutoff',
+      'resonance',
+      'treeohvox-gate-{n}',
+      'envelope',
+      'decay',
+      'waveform',
+      'accent',
+      'tune',
+    ],
+    glyph: 'scope',
+    hero: {
+      readouts: [
+        { label: 'rest', valueId: 'treeohvox-rest-hz' },
+        { label: 'sweep top', valueId: 'treeohvox-peak-hz' },
+        { label: 'accent top', valueId: 'treeohvox-accent-peak-hz' },
+      ],
+    },
+    pages: [
+      {
+        id: 'filter',
+        label: 'filter',
+        controls: ['cutoff', 'resonance', 'envelope', 'decay'],
+      },
+      {
+        id: 'osc',
+        label: 'osc',
+        controls: ['waveform', 'tune'],
+      },
+      {
+        id: 'play',
+        label: 'play',
+        controls: ['accent', 'treeohvox-gate-{n}'],
+      },
+    ],
+  },
+
   docs: {
     explanation:
       "A TB-303 acid-bass voice in one card: a band-limited saw↔square oscillator into the classic 303 ladder-style resonant low-pass, with the cutoff swept by a snappy decay envelope. It's a port of Robin Schmidt's Open303, so the squelch, the resonance scream, and the accent boost behave like the real 303 voice. Play it from a pitch + gate source (a sequencer, keyboard, or MIDI lane): the gate's rising edge starts the note and its falling edge ends it (so gate length is note length), and the dedicated ACCENT gate latches an accent on that note for the louder, brighter, more resonant 303 accent character. This card is the VOICE only — the full 303 sequencer/slide/transpose lives in the planned 404 module.",

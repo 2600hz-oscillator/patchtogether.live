@@ -305,6 +305,35 @@ describe('resolvePushCardControls — tier 2, the curated face', () => {
     ]);
   });
 
+  it('a FIRST PROMOTION re-orders AND steps over a family — treeohvox', () => {
+    // treeohvox, promoted 2026-08-19 (#1944, queue Q3). The variant that
+    // exercises both behaviours at once on a newly promoted module: the window
+    // must step over the GATE audition family AND land the re-ranked set.
+    //
+    // What moved: the GENERIC tier is declaration order, which leads with TUNE
+    // — a ±12 st offset on a voice that is played from a pitch source, i.e. the
+    // control a 303 player touches least. The face ranks CUTOFF first (where
+    // the filter sweep is centred) and pushes TUNE to last, so the encoders now
+    // lead with the squelch instead of with a transpose.
+    //
+    // Seven turnable params and one family, so nothing falls off the 8-wide
+    // window and the card is a permutation of the same set — the case an
+    // override would be wrong to freeze.
+    const spec = resolvePushCardControls(defByType('treeohvox'));
+    expect(spec.source).toBe('face');
+    expect(spec.skipped, 'the GATE is a family — an encoder cannot hold a pad').toEqual([
+      'treeohvox-gate-{n}',
+    ]);
+    expect(pushCardParams(spec).map((q) => q.id)).toEqual([
+      'cutoff', 'resonance', 'envelope', 'decay', 'waveform', 'accent', 'tune',
+    ]);
+    // The negative control: declaration order genuinely differs, so this cannot
+    // pass vacuously.
+    expect((defByType('treeohvox').params ?? []).map((q) => q.id)).toEqual([
+      'tune', 'cutoff', 'resonance', 'envelope', 'decay', 'accent', 'waveform',
+    ]);
+  });
+
   it('a FIRST PROMOTION re-orders the encoders into COLUMNS — moog984', () => {
     // moog984, promoted 2026-08-19 (#1942). The third variant of the same
     // hazard, and the one where the permutation carries the most meaning.

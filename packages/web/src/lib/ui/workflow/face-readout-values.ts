@@ -98,6 +98,11 @@ import {
   outlinesDecayText,
 } from '$lib/ui/modules/outlines-face-model';
 import {
+  treeohvoxAccentPeakText,
+  treeohvoxPeakText,
+  treeohvoxRestText,
+} from '$lib/ui/modules/treeohvox-face-model';
+import {
   moog911FaceParams,
   moog911FallText,
   moog911RiseText,
@@ -914,6 +919,28 @@ const FACE_READOUT_VALUES: Readonly<Record<string, FaceReadoutValue>> = {
   // proposes changing that and is audible, so it is not in the face PR.
   'moogcp3-bus-db': (read) => moogCp3BusText(moogCp3FaceParams(read)),
 
+  // ── TREE.oh.VOX ──────────────────────────────────────────────────────────
+  // THREE frequencies, and the CUTOFF DIAL IS NONE OF THEM. The voice sweeps
+  // `instCutoff = cutoff · 2^(scaler·(env − offset) + accentGain·env)` with
+  // (scaler, offset) from Open303's hardware-measured mapping, so at the def's
+  // own defaults the dial reads 1000 Hz while the filter rests at 533.4 Hz and
+  // peaks at 3757.6 Hz. The knob's number is a frequency the filter is never
+  // at, except in passing as the envelope crosses `offset`.
+  //
+  // The negative control a `cutoff` readback fails — hold CUTOFF at 1000 and
+  // sweep ENVMOD, which the dial cannot see:
+  //   envelope 0.00 → rest 834.7  peak 1463.0
+  //   envelope 1.00 → rest 340.8  peak 9650.6
+  // 6.6× on the peak, and REST MOVES THE OPPOSITE WAY, which is what proves
+  // these are two numbers rather than one number rescaled twice.
+  //
+  // ⚠ `accent top` is the only statement of ACCENT's worth anywhere on the
+  // face, because ACCENT is unreachable from the module's own audition pad
+  // (that drives `gate_in` alone, so an auditioned note is never accented) and
+  // is ranked dock-only for that measured reason.
+  'treeohvox-rest-hz': (read) => treeohvoxRestText(read),
+  'treeohvox-peak-hz': (read) => treeohvoxPeakText(read),
+  'treeohvox-accent-peak-hz': (read) => treeohvoxAccentPeakText(read),
   // ── MOOG 984 ─────────────────────────────────────────────────────────────
   // FOUR entries, one per output bus, and they are the reason that face exists.
   //
