@@ -76,13 +76,26 @@ import {
   hueDeltaDeg,
   cumulativeRotationDeg,
   assertUnambiguousSteps,
+  warmUntilMeasurable,
 } from '../_helpers/glsl-claim';
 
-/** 4-pass pipeline + ping-pong. 8 is the figure b3ntb0x.spec.ts established as
- *  "well past warm to steady state" — and it is load-bearing, not padding: at 4
- *  steps this module's output is still bit-exactly BLACK, which reads as "the
- *  module is broken" rather than "you did not wait". */
-const STEPS = 8;
+/**
+ * Frames driven per READ, once the pipeline is warm.
+ *
+ * ⚠ THIS IS A COST NUMBER AND IT WAS THE DIFFERENCE BETWEEN GREEN AND A CI
+ * TIMEOUT. The first version used 8 per read — b3ntb0x.spec.ts's "well past
+ * warm" figure — across a 3-tint sweep, i.e. ~136 full 4-pass renders in one
+ * test. That is ~34 s on a dev machine and **exceeded the 180 s test timeout on
+ * CI**, because CI is a 2-core VM measured at roughly 6x a dev machine
+ * (`PENDING_FIRST_MEASUREMENT` in e2e-shard-plan.mjs carries the calibration:
+ * backdraft-preview-toggle, 57.5 s local vs 358.2 CPU-s on CI).
+ *
+ * The 8 was only ever needed to reach the FIRST measurable frame. `bootRig`
+ * now pays that once via `warmUntilMeasurable`, and a param change settles in
+ * ONE frame (measured), so 2 here is a frame of margin over the observation
+ * rather than a guess with a factor of 4 in it.
+ */
+const STEPS = 2;
 
 /** Held OFF so the only thing moving across a sweep is the uniform under test.
  *  tbc=1 is the shipped rock-steady setting; feedback and sub_drift are the two
@@ -115,6 +128,8 @@ async function bootRig(page: Page): Promise<void> {
       { id: 'e2', from: { nodeId: 'col', portId: 'out' }, to: { nodeId: 'b', portId: 'in' }, sourceType: 'video', targetType: 'video' },
     ],
   );
+  // Pay the cold-start ONCE, by observation rather than by a fixed count.
+  await warmUntilMeasurable(page, { nodeId: 'b', portId: 'out' });
 }
 
 /**
@@ -154,8 +169,17 @@ test.describe('b3ntb0x HUE — the delivered rotation, measured in pixels', () =
     await bootRig(page);
 
     // Fine enough that no single step approaches 180deg, so the unwrap below is
-    // measuring a branch rather than choosing one.
-    const values = [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0];
+    // measuring a branch rather than choosing one — and NO FINER, because every
+    // extra point is another full 4-pass render on a 2-core CI VM. The first
+    // version swept 11 points at 8 frames each and blew the 180 s test timeout.
+    // `assertUnambiguousSteps` is what makes this a CHECKED trade rather than a
+    // hopeful one: it fails loudly, naming every step, if the sweep is ever too
+    // coarse for the unwrap to be honest.
+    // 0.5 is present EXPLICITLY because the positive control below reads it; an
+    // evenly-spaced sweep that straddles half-travel would make that leg
+    // approximate for no reason.
+    const values = [0, 0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1.0];
+    const HALF_INDEX = 4;
     const hues = await sweepHue(page, values);
     assertUnambiguousSteps(hues);
 
@@ -190,7 +214,7 @@ test.describe('b3ntb0x HUE — the delivered rotation, measured in pixels', () =
     // half the travel moves the picture, and moves it by roughly half. NOT
     // exactly half — the warp again — so this asserts a band, and a band that
     // EXCLUDES both 0 (dead control) and 1 (the instrument saturating).
-    const half = Math.abs(cum[5]!) / total;
+    const half = Math.abs(cum[HALF_INDEX]!) / total;
     expect(
       half,
       `fraction of the full rotation delivered at HALF travel (cumulative: ${trace}) — ` +

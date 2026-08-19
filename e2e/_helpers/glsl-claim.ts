@@ -299,6 +299,49 @@ export async function readDeliveredColour(
 }
 
 /**
+ * Step the pipeline until its output is MEASURABLE, and return how many frames
+ * that took. Call this ONCE after spawning; subsequent reads then need only the
+ * frames a param change takes to settle.
+ *
+ * ⚠ THIS EXISTS BECAUSE A FIXED WARM-UP COUNT IS A COST BUG, and the cost is
+ * paid on a 2-core CI VM rather than a dev machine. Every frame is a full
+ * 4-pass render, so "use 8 steps per read because 8 is safely warm" multiplies
+ * the whole sweep by 8 when only the FIRST read needed it. Measured on
+ * b3ntb0x: the pipeline is measurable after 2 frames from cold, and a param
+ * change settles in 1.
+ *
+ * ⚠ AND IT REPLACES A GUESS WITH AN OBSERVATION. A hard-coded count is a
+ * different number on a different module, and being wrong is silent — a cold
+ * pipeline reads BLACK, which is indistinguishable from "this module renders
+ * nothing". This steps until the output actually qualifies, and FAILS LOUDLY
+ * with the frame count it reached if it never does.
+ */
+export async function warmUntilMeasurable(
+  page: Page,
+  opts: { nodeId: string; portId?: string; maxFrames?: number; minSat?: number; box?: number },
+): Promise<number> {
+  const maxFrames = opts.maxFrames ?? 24;
+  let used = 0;
+  for (let i = 0; i < maxFrames; i++) {
+    const c = await readDeliveredColour(page, {
+      nodeId: opts.nodeId,
+      portId: opts.portId,
+      steps: 1,
+      minSat: opts.minSat,
+      box: opts.box,
+    });
+    used++;
+    if (c.qualifying > c.sampledPixels * 0.5) return used;
+  }
+  expect(
+    used,
+    `warmUntilMeasurable: ${opts.nodeId} never produced a measurable frame in ${maxFrames} frames — ` +
+      `a cold pipeline reads BLACK, which is NOT the same as a module that renders nothing`,
+  ).toBeLessThan(0);
+  return used;
+}
+
+/**
  * Write one param on a spawned node through the VIDEO DOMAIN's `setParam` — the
  * same hot path the UI drives (control → `engine.setParam` → uniform).
  *
