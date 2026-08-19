@@ -96,6 +96,17 @@ const EXPECTED_AUDITIONS: Record<string, string[]> = {
   // not read. The factory answers `manualTrigger` and deliberately not
   // `manualGate`.
   'rings:rings-strum-{n}': [MANUAL_STRIKE_KEY],
+  // TREE.oh.VOX (#1944) — a HELD pad, so two resolutions like meowbox's and
+  // snaredrum's ROLL. The 303 voice has no internal exciter: measured 0.000e+0
+  // on `audio_out` over 145 frames with nothing patched and every card
+  // pressable clicked, against 3.390e-1 with a gate on `gate_in` (#1658).
+  // ⚠ THE SHAPE IS THE DEF'S. `gate_in` declares edge:'gate' and the processor
+  // acts on BOTH edges — rising starts the note, FALLING ends it, so gate
+  // length IS note length. The shared one-shot is a 5 ms pulse, which would end
+  // every auditioned note 5 ms after it began; the factory answers `manualGate`
+  // and deliberately NOT `manualTrigger`, so a caller reaching for the wrong
+  // shape gets a recorded non-delivery instead of a blip.
+  'treeohvox:treeohvox-gate-{n}': [MANUAL_GATE_KEY, MANUAL_GATE_KEY],
 };
 
 interface Drive {

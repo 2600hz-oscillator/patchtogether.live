@@ -96,6 +96,17 @@ import { moogCp3BusText, moogCp3FaceParams } from '$lib/ui/modules/moogcp3-face-
 import { moog993RoutingText } from '$lib/ui/modules/moog993-face-model';
 import { MOOG984_COLUMN_READOUTS } from '$lib/ui/modules/moog984-face-model';
 import {
+  outlinesShapeText,
+  outlinesSpinText,
+  outlinesSpawnText,
+  outlinesDecayText,
+} from '$lib/ui/modules/outlines-face-model';
+import {
+  treeohvoxAccentPeakText,
+  treeohvoxPeakText,
+  treeohvoxRestText,
+} from '$lib/ui/modules/treeohvox-face-model';
+import {
   moog911FaceParams,
   moog911FallText,
   moog911RiseText,
@@ -748,6 +759,21 @@ const FACE_READOUT_VALUES: Readonly<Record<string, FaceReadoutValue>> = {
   // ⚠ It reads through the def's own `moog993RouteState` banding, so it cannot
   // disagree with the audio for the values #1911 was about.
   'moog993-routing': (read) => moog993RoutingText(read),
+  // ── OUTLINES ─────────────────────────────────────────────────────────────
+  // FOUR readouts, none of them a JOIN — each is a pure function of one param,
+  // and each earns its place because ITS MAPPING IS DISCONTINUOUS WHERE THE
+  // DIAL IS NOT. `rate` steps from "no clock at all" to 3996.50 ms across a
+  // thousandth of a turn; `decay = 0` is a MODE (persist forever) and the
+  // DEFAULT SITS EXACTLY ON IT, so printing "0.0 s" would be a lie; `shape`
+  // bands six ways at 0.166667.
+  // ⚠ shape + spin are a PARITY requirement — the card prints both and
+  // promotion deletes the card. Spin is CORRECTED rather than copied: the card
+  // applies a ±0.02 deadband `mapAngularVel` does not have, so it says "no
+  // spin" while the field turns a revolution every 12.5 s.
+  'outlines-shape': (read) => outlinesShapeText(read),
+  'outlines-spawn': (read) => outlinesSpawnText(read),
+  'outlines-decay': (read) => outlinesDecayText(read),
+  'outlines-spin': (read) => outlinesSpinText(read),
   // ── MOOG 923 ─────────────────────────────────────────────────────────────
   // TWO INSTRUMENTS ON ONE PANEL SHARING NO SIGNAL PATH, so the readouts split
   // the same way and each half is the other's negative control: `lpCutoff` /
@@ -897,6 +923,28 @@ const FACE_READOUT_VALUES: Readonly<Record<string, FaceReadoutValue>> = {
   // proposes changing that and is audible, so it is not in the face PR.
   'moogcp3-bus-db': (read) => moogCp3BusText(moogCp3FaceParams(read)),
 
+  // ── TREE.oh.VOX ──────────────────────────────────────────────────────────
+  // THREE frequencies, and the CUTOFF DIAL IS NONE OF THEM. The voice sweeps
+  // `instCutoff = cutoff · 2^(scaler·(env − offset) + accentGain·env)` with
+  // (scaler, offset) from Open303's hardware-measured mapping, so at the def's
+  // own defaults the dial reads 1000 Hz while the filter rests at 533.4 Hz and
+  // peaks at 3757.6 Hz. The knob's number is a frequency the filter is never
+  // at, except in passing as the envelope crosses `offset`.
+  //
+  // The negative control a `cutoff` readback fails — hold CUTOFF at 1000 and
+  // sweep ENVMOD, which the dial cannot see:
+  //   envelope 0.00 → rest 834.7  peak 1463.0
+  //   envelope 1.00 → rest 340.8  peak 9650.6
+  // 6.6× on the peak, and REST MOVES THE OPPOSITE WAY, which is what proves
+  // these are two numbers rather than one number rescaled twice.
+  //
+  // ⚠ `accent top` is the only statement of ACCENT's worth anywhere on the
+  // face, because ACCENT is unreachable from the module's own audition pad
+  // (that drives `gate_in` alone, so an auditioned note is never accented) and
+  // is ranked dock-only for that measured reason.
+  'treeohvox-rest-hz': (read) => treeohvoxRestText(read),
+  'treeohvox-peak-hz': (read) => treeohvoxPeakText(read),
+  'treeohvox-accent-peak-hz': (read) => treeohvoxAccentPeakText(read),
   // ── MOOG 984 ─────────────────────────────────────────────────────────────
   // FOUR entries, one per output bus, and they are the reason that face exists.
   //

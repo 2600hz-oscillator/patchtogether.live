@@ -948,6 +948,54 @@ export const FACES = [
   // scene is the hero routing readout, which is a pure function of the three
   // switch positions.
   { type: 'moog993', pages: 1 },
+  // OUTLINES — three pages (spawn clock / latched at birth / live field), well
+  // under DOCK_TAB_MIN_BANDS, so the dock scene captures stacked bands.
+  {
+    type: 'outlines',
+    pages: 3,
+    videoFaceWhy:
+      'the dock faceplate carries a live thumbnail of the module output via hasVideoSurface, and '
+      + 'this module is a STATEFUL PARTICLE FIELD — every live shape drifts and bounces every '
+      + 'frame, and at the shipped rate a new one spawns every 2250 ms — so the surface is a '
+      + 'different picture on every frame and on every capture. The sim is seeded '
+      + '(__outlinesVrtSeed) but the elapsed-time integration is not stopped by an AudioContext '
+      + 'suspend, which says nothing about a rAF-driven picture.',
+    // ⚠ AND THE FREEZE ABOVE IS NOT ENOUGH ON ITS OWN — see BootFaceOptions.simPin.
+    // `freezeFaceVideo` stops the picture; it does not choose WHICH picture. This
+    // module's field is a STATEFUL integration of elapsed time, so the frozen
+    // frame was a different set of shape positions on every boot: measured 6724 px
+    // against a 1500 px tolerance, both captures on ubuntu CI. Setting the flag
+    // engages the phase pin `outlines.ts` already carries (fixed count of fixed-dt
+    // steps on frame 1, then dt=0), making the picture a pure function of
+    // (seed, params) — independent of wall clock, boot speed and frame count.
+    //
+    // The value is the seed `outlines-render-smoke.spec.ts` already pins, reused
+    // deliberately: one seed for the module's two deterministic capture paths
+    // means a shape layout a human has already looked at in one of them.
+    simPin: {
+      global: '__outlinesVrtSeed',
+      value: 0x0c1c1e5,
+      why:
+        'OUTLINES is a stateful particle sim: every live shape integrates and bounces per '
+        + 'frame, so the picture is a function of ELAPSED TIME, not just of (seed, params). '
+        + 'The video freeze holds the last drawn frame but cannot choose which frame that is, '
+        + 'so the capture drifted by 4.5x the dock tolerance between two ubuntu CI boots. This '
+        + 'flag engages the fixed-dt phase pin already in the module.',
+    },
+  },
+  // TREE.oh.VOX — three bands (filter / osc / play), and the roster's only
+  // GATE-AUDITION voice whose pad is inside the LANE budget, so the compact
+  // scene frames a momentary action cell beside two knobs.
+  //
+  // Deterministic, and for a stronger reason than most: the voice is BIT-SILENT
+  // until a gate arrives (measured 0.000e+0 on `audio_out` over 145 frames with
+  // nothing patched, #1658). Its `scope` glyph therefore taps an analyser that
+  // reads zeros on the scene's frozen graph exactly like every struck voice in
+  // the roster — it is not free-running, and it does not exercise the audio
+  // freeze the way analogVco does. The only live text is the three sweep
+  // readouts, each a pure function of cutoff/envelope/accent, all of which read
+  // their declared defaults in the capture: 533 Hz / 3.76 kHz / 5.31 kHz.
+  { type: 'treeohvox', pages: 3 },
   // MOOG 984 — the 4×4 matrix, and the roster's first CONSOLE GRID that is not
   // mixmstrs. ONE band (`cross-points`) holding four equal clusters, so
   // `consoleGridCols` answers 4 and the dock scene frames a real table: column
@@ -1431,6 +1479,51 @@ export interface BootFaceOptions {
    * false.
    */
   videoFaceWhy?: string;
+  /**
+   * PIN A STATEFUL SIM'S PHASE — a boot-time global installed via
+   * `addInitScript` BEFORE `goto`, so it is set before any module factory runs
+   * and can be read at CONSTRUCTION.
+   *
+   * ⚠ THIS IS A DIFFERENT AXIS FROM `videoFaceWhy`, AND THE DIFFERENCE IS THE
+   * WHOLE BUG. `freezeFaceVideo` holds the LAST DRAWN frame — it makes the
+   * picture STOP, and says nothing about WHICH picture it stopped on. For a
+   * module whose field is a pure function of frame.time that is enough. For a
+   * STATEFUL sim it is not: the frozen frame is whatever the field had
+   * integrated to when the harness got around to writing `freeze`, which is a
+   * different number of elapsed milliseconds on every boot.
+   *
+   * ⚠ MEASURED (outlines, #1939): `face-outlines-dock` missed its OWN freshly
+   * captured baseline by 6724 px against a `DOCK_MAX_DIFF` of 1500 — 4.5x the
+   * tolerance, capture and comparison both on ubuntu CI. The diff PNG showed
+   * ONLY the spawned shapes' POSITIONS moving: chrome, labels and knobs were
+   * pixel-identical and the shape COUNT was roughly equal. That is the exact
+   * signature of a phase difference, NOT of an unseeded RNG — the spawn RNG
+   * already defaults to a fixed seed, so WHERE shapes appear was never in
+   * question. Re-capturing could only re-roll the dice; a capture that passed
+   * BY LUCK would convert a red gate into a flaky one.
+   *
+   * ⚠ WHY IT LIVES HERE AND NOT IN THE MODULE. `outlines.ts` ALREADY CONTAINS
+   * THE PHASE PIN and has since 1b24033a — it advances a fixed count of
+   * fixed-dt steps on the first frame and then holds dt=0, so the picture
+   * becomes a pure function of (seed, params). It is gated on
+   * `globalThis.__outlinesVrtSeed`, and the ONLY setter in the tree was one
+   * render-smoke spec. The face harness never set it, so in this scene the pin
+   * was DEAD CODE and the module integrated wall-clock elapsed time exactly as
+   * before. The fix is to SET THE FLAG THE PIN ALREADY WAITS FOR, which is why
+   * nothing under `packages/web/src/lib/video/**` changes and the WebGL attest
+   * hash does not move.
+   *
+   * `why` is required BY THE TYPE, so `tsc` refuses an undeclared pin: a bare
+   * `{ global, value }` will not compile.
+   */
+  simPin?: {
+    /** The `globalThis` property the module reads at construction. */
+    readonly global: string;
+    /** The value to install. */
+    readonly value: number;
+    /** Why this scene needs its sim phase pinned. */
+    readonly why: string;
+  };
 }
 
 /** How many times the suspend may be re-applied before the scene gives up. The
@@ -1444,7 +1537,7 @@ const FREEZE_ATTEMPTS = 6;
  *  land. Frames, not ms — renderer-independent by construction, and kept small
  *  because this runs 43× per VRT run on a renderer whose frame rate is unknown:
  *  correctness comes from the RETRY, not from the length of this window. */
-const FREEZE_RACE_FRAMES = 3;
+export const FREEZE_RACE_FRAMES = 3;
 
 /**
  * Suspend the audio graph for a face scene and PROVE it, in both the declared
@@ -1558,14 +1651,49 @@ export async function freezeFaceAudio(page: Page, label: string): Promise<void> 
     await waitFrames(page, FREEZE_RACE_FRAMES);
     const clock = await readAudioClock(page);
     seen.push(`${attempt}:${clock.state}`);
-    if (clock.state === 'suspended') {
+    if (clock.state !== 'suspended') continue;
+
+    // ── THE VERIFICATION IS PART OF THE RETRY, NOT A STEP AFTER IT ────────
+    //
+    // ⚠ THIS IS THE #1931 DEFECT, AND IT IS NOT WHERE THE ERROR MESSAGE
+    // POINTS. `assertFaceAudioFrozen` says "at CAPTURE time", so the family
+    // (#1810 / #1835 / #1931) reads as a capture-time race — but BOTH capture
+    // paths in workflow-shell-faces.spec.ts already re-freeze immediately
+    // before screenshotting, and the run that aborted #1939's full sweep
+    // (face-destroy-compact, job 96157688266) failed under the label
+    // `face-destroy`, not `face-destroy-compact`. That label is THIS
+    // function's, called from `bootWithFace` — i.e. the abort happened at
+    // BOOT, inside the retry loop that exists to absorb exactly this race.
+    //
+    // The loop checked `state === 'suspended'` and then called an assertion
+    // that RE-READS the clock. `ensureEngine()` resumes on every call, so a
+    // resume landing in the window between those two reads threw straight out
+    // of the loop with FIVE of six attempts unused. The retry could not retry
+    // the one thing most likely to lose the race.
+    //
+    // ⚠ AND ONE LOSING FACE ABORTS THE WHOLE CAPTURE (#1810), so this is not a
+    // per-scene flake: it is why full sweeps were near-certain to fail. Three
+    // distinct faces lost it in one day (videoOut, reverb, destroy), which is
+    // the signature of a scheduler-timed window rather than a bad module.
+    //
+    // The assertion itself is UNCHANGED and stays the authority — it caught
+    // exactly what it exists to catch. It is simply now allowed to fail and be
+    // re-driven, and on the LAST attempt it throws its own message verbatim so
+    // a genuinely repeating resumer still reports as itself rather than as a
+    // retry count.
+    try {
       await assertFaceAudioFrozen(page, label);
       return;
+    } catch (err) {
+      seen.push(`${attempt}:resumed-during-verify`);
+      if (attempt === FREEZE_ATTEMPTS) throw err;
     }
   }
   throw new Error(
     `${label}: the AudioContext would not STAY suspended — ${FREEZE_ATTEMPTS} attempts, ` +
-      `states after each (${seen.join(', ')}). Something is resuming it repeatedly. The known ` +
+      `states after each (${seen.join(', ')}); a 'resumed-during-verify' entry means the ` +
+      `suspend held long enough to read back 'suspended' and was undone before the clock ` +
+      `check finished. Something is resuming it repeatedly. The known ` +
       `one-shot racer is the pinned recorderbox factory (recorderbox.ts, ` +
       `\`if (ac.state === 'suspended') void ac.resume()\`), which the palette spawn's reconcile ` +
       `triggers; a REPEATING resume is a new one and needs finding, not more attempts.`,
@@ -1736,10 +1864,50 @@ export async function bootWithFace(
   opts: BootFaceOptions = {},
 ): Promise<string> {
   await pinVrtFonts(page);
+
+  // ── SIM PHASE PIN — INSTALLED BEFORE `goto`, WHICH IS THE ENTIRE POINT ────
+  // See BootFaceOptions.simPin. The module reads this global at CONSTRUCTION
+  // (in its factory), so an init script is the only placement that can work: a
+  // post-goto `evaluate` lands after the factory has already built an unseeded,
+  // unpinned sim. Ordering is the defect class here, so it is asserted below
+  // rather than assumed.
+  if (opts.simPin) {
+    const { global, value } = opts.simPin;
+    await page.addInitScript(
+      ([g, v]) => {
+        (globalThis as unknown as Record<string, unknown>)[g as string] = v;
+      },
+      [global, value] as [string, number],
+    );
+  }
+
   await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await awaitVrtFonts(page);
   await waitForHooks(page);
+
+  // ⚠ TWO-SIDED, AND ANCHORED TO THE PAGE RATHER THAN TO THE CALL. Asserting
+  // that we CALLED addInitScript would prove nothing — the failure mode this
+  // guards is an init script that never reached the document (moved after
+  // `goto` by a later refactor, or dropped by a navigation), and from a
+  // capture's output "the pin was installed" and "the pin was never set" are
+  // indistinguishable: both produce a plausible picture, one of them a
+  // different one per boot. A dead pin is exactly how this bug shipped, so it
+  // fails loudly here instead of as a 4.5x-over-tolerance pixel diff weeks
+  // later.
+  if (opts.simPin) {
+    const { global, value } = opts.simPin;
+    const seen = await page.evaluate(
+      (g) => (globalThis as unknown as Record<string, unknown>)[g],
+      global,
+    );
+    expect(
+      seen,
+      `simPin ${global} did not reach the page before boot — the module reads it at `
+        + `construction, so an unset flag means this scene captured an UNPINNED sim whose `
+        + `phase differs on every boot. Check that addInitScript still runs BEFORE goto.`,
+    ).toBe(value);
+  }
 
   // ── VIDEO FACES BOOT INTO THE VIDEO ZONE, not a channel column ──────────
   // See BootFaceOptions.videoFaceWhy. Only the MEMBER RESOLUTION differs; the

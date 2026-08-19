@@ -1270,6 +1270,50 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // silence — so promoting this module BEFORE that fix would have shipped the
   // same continuous dial onto a def-driven faceplate.
   'moog993',
+  // THE FACEPLATE QUEUE · Q32 — OUTLINES, a stateful particle field, and the
+  // face whose PAGES carry the module's hardest-to-discover property
+  // (2026-08-19).
+  //
+  // FIVE OF ITS SEVEN KNOBS ARE LATCHED AT SPAWN. `d`, `v`, `spd`, `decay` and
+  // `shape` are copied into each shape as it is born; turning them afterwards
+  // changes nothing about what is already on screen. A player who turns SPEED
+  // and sees nothing move is looking at a control that only applies to the
+  // future. So `pages` groups by WHEN a control acts — spawn clock / latched at
+  // birth / live field — rather than by what it affects, and the band labels
+  // are the only place a resting faceplate states it.
+  //
+  // ⚠ `rotation` is the ONLY live control and still ranks sixth, because
+  // `mapAngularVel(0.5)` is BIT-EXACTLY 0 and 0.5 is the shipped default — the
+  // inertness-at-spawn rule beating conceptual importance.
+  //
+  // The four readouts are not joins; each exists because its mapping is
+  // DISCONTINUOUS where the dial is not (`rate`'s engage step from no-clock to
+  // 3996.50 ms; `decay = 0` as a persist MODE with the default sitting exactly
+  // on it; `shape`'s six 0.166667 bands). Two of them are a PARITY requirement
+  // — the card prints shape and spin, and promotion deletes the card.
+  'outlines',
+  // TREE.oh.VOX (2026-08-19, queue Q3) — promoted on the back of #1658, and the
+  // entry whose READOUTS refute its own CUTOFF knob.
+  //
+  // The voice sweeps its ladder per sample by Open303's hardware-measured law,
+  // `instCutoff = cutoff · 2^(scaler·(env − offset) + accentGain·env)`. At the
+  // def's own defaults the CUTOFF DIAL SAYS 1000 Hz while the filter rests at
+  // 533.4 Hz and peaks at 3757.6 Hz — the dial's number is a frequency the
+  // filter is never at. Holding CUTOFF still and sweeping ENVMOD moves the peak
+  // 1463 → 9651 Hz while REST moves the OPPOSITE way, 835 → 341 Hz, and no knob
+  // readback can see either.
+  //
+  // ⚠ ITS AUDITION IS NOT OPTIONAL AND THE DEF SAYS SO. treeohvox is bit-silent
+  // with nothing patched (0.000e+0 over 145 frames), and its card's gate pad
+  // reached the dock only while it had no face. `treeohvox-gate-{n}` is ranked
+  // THIRD — inside the compact lane budget — so the smallest tile showing more
+  // than one control can already sound the voice.
+  //
+  // ⚠ ACCENT IS RANKED DOCK-ONLY on a measurement, not a preference: the
+  // audition ConstantSource drives worklet input 1 (`gate_in`) alone, so an
+  // auditioned note is never accented and ACCENT does nothing on the only
+  // surface that can sound the module unpatched.
+  'treeohvox',
   // MOOG 984 4×4 MATRIX MIXER (2026-08-19) — the first face whose subject is a
   // TABLE, and the entry that retires a "needs a MATRIX cell" blocker as stale.
   //

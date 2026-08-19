@@ -2448,6 +2448,7 @@ outlines param cv_collide 0..1 linear default=0
 outlines param cv_gate 0..1 linear default=0
 outlines param d 0..1 linear default=0.3
 outlines param decay 0..1 linear default=0
+outlines param freeze 0..1 linear default=0
 outlines param rate 0..1 linear default=0.5
 outlines param rotation 0..1 linear default=0.5
 outlines param shape 0..1 linear default=0

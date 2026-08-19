@@ -174,10 +174,16 @@ async function settleToSilence(page: Page, capMs = 6000): Promise<{ peak: number
 
 test.describe('treeohvox — THE AUDITION (the voice could not be sounded before it)', () => {
   test('the CARD gate pad SOUNDS the voice — held high, and silent before the press', async ({ page }) => {
-    // `?shell=legacy` is the surface this defect was THEIRS first, and it is
-    // also what the dock full-view renders for this module (treeohvox is not in
-    // STRICT_FACES — measured: `dock-full-view` contains one `.mod-card`), so
-    // this one pad is BOTH surfaces a player can reach.
+    // `?shell=legacy` is the surface this defect was theirs first, and it is
+    // now the ONLY surface this pad appears on. It used to be both: while
+    // treeohvox had no curated face the dock full-view rendered this same card
+    // (measured then — `dock-full-view` contained one `.mod-card`). Since the
+    // promotion (#1944) the dock renders the FACEPLATE, so the two surfaces are
+    // two components and the leg below tests the other one.
+    //
+    // This leg is kept rather than folded into that one: `?shell=legacy` is a
+    // shipped escape hatch, so the card remains a surface a player can reach,
+    // and it is the surface every assertion in #1658 was originally measured on.
     await goto(page, '?shell=legacy&seed=none');
     await spawnAlone(page);
 
@@ -216,27 +222,56 @@ test.describe('treeohvox — THE AUDITION (the voice could not be sounded before
     await expect(pad, 'the release un-holds the pad').toHaveAttribute('aria-pressed', 'false');
   });
 
-  test('the DOCK full-view carries the SAME pad, and it delivers there too', async ({ page }) => {
-    // The default rack renders a generic shell face on the canvas whose EXPAND
-    // opens the dock; for a module with no curated face the dock full-view is
-    // the legacy card. So this is the path a default-rack player actually walks,
-    // and it must reach the same seam — not a second implementation.
+  test('the DOCK FACEPLATE carries its OWN gate cell, and it delivers there too', async ({ page }) => {
+    // ⚠ THIS TEST'S SUBJECT CHANGED WITH THE PROMOTION (#1944), and the change
+    // is the point rather than maintenance. It used to read:
+    //
+    //   "for a module with no curated face the dock full-view is the legacy
+    //    card … treeohvox has no curated face, and its canvas node carries
+    //    `shell-open-dock` without one (measured — the `module-shell` locator
+    //    matches 0 elements here)"
+    //
+    // Both premises were TRUE and are now FALSE: treeohvox is in STRICT_FACES,
+    // so `DockFullView` renders `<ModuleShell view="dock-full">` INSTEAD of
+    // `TreeohvoxCard.svelte`. The old locator (`treeohvox-gate-<id>-1`) is the
+    // CARD's family testid, which `ModuleShell` deliberately does not emit —
+    // `cellTestId` returns `shell-cell-<familyId>` precisely so the two
+    // surfaces cannot be confused for one another. So this test went RED on the
+    // promotion rather than green-and-blind, which is the outcome the def's own
+    // note to the faceplate author predicted, and it is re-pointed at the
+    // surface that now exists rather than "fixed" by relaxing it.
+    //
+    // It is STRICTLY STRONGER than the version it replaces. Before, the dock
+    // leg and the card leg exercised the SAME component through the same
+    // testid, so the dock leg proved only that the card could be reached from
+    // the dock. Now it proves the FACE — a different component, a different
+    // cell, resolving `setManualGate` through `shell-cells.ts` — can sound the
+    // voice. That is exactly the sixstrum defect's habitat: a promoted module
+    // whose card button still works while its FACE offers controls over an
+    // instrument nobody can hear.
     await goto(page, '?seed=none');
     await spawnAlone(page);
 
-    // ⚠ The EXPAND button, not a `module-shell` testid: treeohvox has no
-    // curated face, and its canvas node carries `shell-open-dock` without one
-    // (measured — the `module-shell` locator matches 0 elements here). Keying
-    // on the affordance a player actually presses is also the thing that must
-    // not vanish.
     const expand = page.locator(`.svelte-flow__node[data-id="${NID}"] [data-testid="shell-open-dock"]`);
     await expect(expand, 'the canvas node offers a way into the dock').toBeVisible();
     await expand.click();
     const dock = page.getByTestId('dock-full-view');
     await expect(dock).toBeVisible();
 
-    const pad = dock.getByTestId(`treeohvox-gate-${NID}-1`);
-    await expect(pad, 'the dock surface offers a way to sound the voice').toBeVisible();
+    // The faceplate, NOT the card — asserted rather than assumed, so that a
+    // regression to the legacy card in the dock is a named failure here instead
+    // of an invisible change of subject.
+    await expect(
+      dock.getByTestId('module-shell'),
+      'the promoted module must render its FACEPLATE in the dock, not its card',
+    ).toBeVisible();
+    await expect(
+      dock.locator('.mod-card'),
+      'and the legacy card must be gone from this surface',
+    ).toHaveCount(0);
+
+    const pad = dock.getByTestId('shell-cell-treeohvox-gate');
+    await expect(pad, 'the dock FACEPLATE offers a way to sound the voice').toBeVisible();
 
     const before = lastSeq(await readAuditionLog(page));
     await padDown(pad);
