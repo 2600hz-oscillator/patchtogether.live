@@ -1769,6 +1769,50 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // removed while the write remains. `moog921Vco` is the precedent — promoted,
   // card retained, ledger entry retained, green on main.
   'moog902',
+  // THE FACEPLATE QUEUE · Q39 — `moog904a`, the transistor-ladder 24 dB/oct
+  // low-pass: the one filter that stops being a filter and becomes an oscillator.
+  //
+  // THE FINDING: a cutoff dial that DECLARES `units: 'Hz'` and delivers three
+  // different frequencies for the same number. RANGE multiplies the dial by
+  // ×1 / ×4 / ×16 before the ladder sees it, so a dial pinned at 1000 Hz places
+  // the filter at 1000 / 4000 / 16000 Hz — and nothing on the module said so.
+  //
+  // ⚠ AND THE CLAMP MAKES THE TOP OF THE DIAL BIT-EXACTLY DEAD. The 20 kHz
+  // ceiling applies to the PRODUCT, so at RANGE 2 every dial position from
+  // 5000 Hz up and at RANGE 3 every position from 1250 Hz up renders IDENTICALLY
+  // to the maximum — the top 20.07 % and 40.14 % of the log taper, boundaries
+  // landing exactly on 20000 ÷ ×4 and 20000 ÷ ×16, with a negative control 2 %
+  // below each correctly differing. The `moog904a-cutoff-hz` readout pins at
+  // `20.0 kHz` across precisely that span, so the face SHOWS the dead zone.
+  // (Measured on the settled TAIL. Comparing whole buffers reports 0.00 / 0.00 /
+  // 6.17 % instead, because `smCutoff` smooths the RAW dial in Hz BEFORE the
+  // multiply-and-clamp — two dials that settle to one filter travel there
+  // differently.)
+  //
+  // ⚠ THE SPEC'S PROPOSED CORNER READOUT WAS REJECTED ON A MEASUREMENT, not
+  // skipped. `cutoff · rangeMultiplier · 0.43419` was described as carrying a
+  // 0.19 % bias; that constant is the 4-pole cascade's LOW-FREQUENCY limit and
+  // the ladder is a TPT design whose `tan` prewarp compresses toward Nyquist, so
+  // the real error is −0.04 % / −1.70 % / −29.40 % at RANGE 1 / 2 / 3. Shipping
+  // it would have printed a confident number nearly half an octave wrong exactly
+  // where the module's headline claim lives.
+  //
+  // #1913 IS FILED, NOT FIXED — it is OWNER EARS (pitch and level), and no audio
+  // changes here. What this PR does owe it is NAMING WHICH QUANTITY: as a FILTER
+  // the module IS 1 V/oct (+0.998 / +1.999 / +3.002 oct at +1 / +2 / +3 V), and
+  // as an OSCILLATOR it is NOT (+0.981 / +1.946 / +2.880 oct) — so "moog904a is
+  // 1 V/oct" and "moog904a is not 1 V/oct" are BOTH true and the question is only
+  // answerable by saying which. The docs now say which. ⚠ The first probe to ask
+  // this got the FILTER answer wrong (×2.12 at +1 V) by bisecting with the corner
+  // near Nyquist, where the TPT prewarp dominates — an instrument artefact, not
+  // the DSP; re-measured at dial 200 Hz / RANGE 1 with a dial-doubling positive
+  // control reproducing the same residual.
+  //
+  // ⚠ RAW-WRITE LEDGER: the `Moog904aVcfCard` entry STAYS, for the reason
+  // measured on moog902 — promotion does not delete the card FILE, so its
+  // `target.params.range = v` write still exists and removing the entry would
+  // redden `mutate.guard`'s deny-by-default direction.
+  'moog904a',
   // ⛔ REVIEW-HOLD · THE FIRST VIDEO FACE (2026-08-17) — Q22, `backdraft`.
   //
   // 37 params, 33 inputs (29 paramTarget CV + 4 video), 1 video out: the

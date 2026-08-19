@@ -51,6 +51,9 @@ import {
 } from '../../../../../../e2e/vrt/vrt-exemptions';
 import { VRT_SCENES } from '../../../../../../e2e/vrt/vrt-scenes';
 import { VRT_LIVE_SURFACES } from '../../../../../../e2e/vrt/vrt-live-surfaces';
+// The hand-maintained face-scene roster + the promoted set it must equal.
+import { FACES } from '../../../../../../e2e/vrt/_shell-faces';
+import { STRICT_FACES } from '$lib/ui/workflow/strict-faces';
 
 function repoRoot(): string {
   // This file lives at packages/web/src/lib/audio/modules/. Six `..`
@@ -572,5 +575,104 @@ describe('vrt-meta — the face-scene AUDIO FREEZE is deny-by-default', () => {
       'no VRT_SCENES entry opts out of the freeze at all — if that is now true the guard ' +
         'should be retired deliberately, not left scanning for a shape that cannot occur.',
     ).toBeGreaterThan(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// FACE SCENE COVERAGE — the roster was HAND-MAINTAINED and nothing checked it
+// ---------------------------------------------------------------------------
+//
+// ⚠ THE GAP THIS CLOSES IS ONE THE SKILL DOCUMENTS AND NO GATE ENFORCED.
+// `module-faceplates.md` lists `e2e/vrt/_shell-faces.ts`'s `FACES` roster under
+// "NOT registry-driven — you must edit them by hand", and states the
+// consequence outright: **"A promoted module missing from this list simply has
+// no VRT scene, silently."**
+//
+// Promotion itself is already airtight in both directions — `module-face-lint`
+// asserts STRICT_FACES equals the set of defs declaring a `face`. The PIXEL side
+// was not: a module could be promoted, ship a live faceplate to every
+// workflow-mode user, and have zero baseline behind it, with every other gate
+// green. That is the same shape as the defect this suite exists for, one layer
+// out.
+//
+// ⚠ AND IT IS NOT HYPOTHETICAL — it was hit while landing moog904a (2026-08-19).
+// A local branch merged `main` while BEHIND its own origin, silently dropping
+// the capture bot's baseline commit. The roster entry stayed, the two PNGs
+// vanished, and nothing failed: the face lint was green (the def still declares
+// a face), the promotion set was green, and the VRT lane does not fail on a
+// baseline it was never told to expect. It was caught by a hand-run audit.
+//
+// Three assertions, deny-by-default in both directions, so neither list can
+// drift from the other or from the committed pixels.
+describe('face VRT scenes — every promoted face is rostered AND captured', () => {
+  const faceBaseline = (type: string, tier: 'compact' | 'dock'): string =>
+    resolve(
+      repoRoot(),
+      'e2e/vrt/__screenshots__/workflow-shell-faces.spec.ts',
+      `face-${type}-${tier}.png`,
+    );
+
+  // `Set<string>`, deliberately: `STRICT_FACES` is a narrow union type, so an
+  // inferred set of literals refuses `.has(someString)` at the type level.
+  const rostered = new Set<string>(FACES.map((f) => f.type));
+
+  it('the FACES roster is EXACTLY the promoted set (both directions)', () => {
+    const promoted = new Set<string>(STRICT_FACES);
+    const unrostered = [...promoted].filter((t) => !rostered.has(t)).sort();
+    const unpromoted = [...rostered].filter((t) => !promoted.has(t)).sort();
+
+    expect(
+      unrostered,
+      'PROMOTED BUT NOT ROSTERED — these modules render a live faceplate to every ' +
+        'workflow-mode user with NO VRT scene behind them, and nothing else can see it: ' +
+        'module-face-lint only checks that the def declares a face. Add ' +
+        `{ type, pages } to FACES in e2e/vrt/_shell-faces.ts: ${unrostered.join(', ')}`,
+    ).toEqual([]);
+
+    expect(
+      unpromoted,
+      'ROSTERED BUT NOT PROMOTED — a scene naming a module that is not in STRICT_FACES ' +
+        'captures a legacy card under a face-scene name, which is a baseline nobody can ' +
+        `interpret. Remove it or promote the module: ${unpromoted.join(', ')}`,
+    ).toEqual([]);
+  });
+
+  it('every rostered face has BOTH committed baselines', () => {
+    // ⚠ ANCHORED TO THE ARTIFACT, not to the list — the rule this repo applies
+    // to every ledger. A roster entry whose PNGs are absent is exactly the
+    // moog904a case above, and it is invisible to a comparison run that was
+    // never told the file should exist.
+    const missing: string[] = [];
+    for (const type of [...rostered].sort()) {
+      for (const tier of ['compact', 'dock'] as const) {
+        if (!existsSync(faceBaseline(type, tier))) missing.push(`face-${type}-${tier}.png`);
+      }
+    }
+    expect(
+      missing,
+      'a rostered face scene has no committed baseline. Capture with ' +
+        '`flox activate -- task vrt:commit` (vrt-update.yml on linux CI) and check the bot ' +
+        'commit actually landed on the branch you are pushing — a merge of main onto a ' +
+        `STALE local branch drops it silently: ${missing.join(', ')}`,
+    ).toEqual([]);
+  });
+
+  it('NEGATIVE CONTROL: the checks can FAIL — on a fabricated roster and a fabricated name', () => {
+    // Without this, "no gaps" is indistinguishable from a predicate that cannot
+    // find one. Both legs are exercised against synthetic inputs so the real
+    // ones stay untouched.
+    const promoted = new Set<string>(STRICT_FACES);
+    const fakeRoster = new Set([...rostered, 'definitelyNotAPromotedModule']);
+    expect([...fakeRoster].filter((t) => !promoted.has(t))).toEqual([
+      'definitelyNotAPromotedModule',
+    ]);
+    expect([...promoted].filter((t) => !fakeRoster.has(t))).toEqual([]);
+    expect(existsSync(faceBaseline('definitelyNotAPromotedModule', 'dock'))).toBe(false);
+    // ...and the positive half: a REAL rostered face resolves a real file, so
+    // the existence probe is reading the right directory.
+    const known = [...rostered].sort()[0];
+    expect(existsSync(faceBaseline(known, 'dock')), `${known} dock baseline should exist`).toBe(
+      true,
+    );
   });
 });

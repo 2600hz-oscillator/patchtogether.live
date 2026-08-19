@@ -889,6 +889,24 @@ export const FACES = [
   // was a FREE-RUNNING voice whose glyph drew a moving saw — and it does not
   // exercise #1420's pre-frame audio freeze, because there is nothing to freeze.
   { type: 'moog902', pages: 2 },
+  // THE 904A LADDER FILTER — two pages (`filter` = the corner + RANGE,
+  // `resonance` = regeneration).
+  //
+  // ⚠ ITS HERO READOUTS PRINT AT THE SPAWN DEFAULTS and are therefore IN the
+  // dock image: `4.0 kHz · filter`. The first of those is the finding — the
+  // CUTOFF dial reads 1000 Hz at spawn while RANGE 2 places the filter at 4 kHz
+  // — so a formatter or a rangeMultiplier change moves this baseline. Both
+  // strings are pinned in `moog904a-face-model.test.ts`.
+  //
+  // ⚠ AND THE `waveform` GLYPH IS DETERMINISTIC HERE FOR A MODULE-SPECIFIC
+  // REASON, not because the harness freezes it: a 904a is a FILTER with no
+  // source, and `regeneration` ships at 0 — below the measured 0.665231
+  // self-oscillation threshold — so an unpatched, freshly spawned 904a emits
+  // nothing and the trace is a flat centreline. The thermal dither that would
+  // make it non-deterministic is scaled by `regen⁴`, i.e. exactly 0 at spawn.
+  // ⚠ A future default above that threshold would turn this scene into the
+  // `analogVco` non-determinism case overnight.
+  { type: 'moog904a', pages: 2 },
   // THE FIRST VIDEO FACE. Its `pages` are feedback / loop / colour / key /
   // switches / tv screen / virtual camera — enough bands to reach
   // DOCK_TAB_MIN_BANDS, so the dock scene captures a TAB RAIL with one band
