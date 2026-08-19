@@ -12,8 +12,8 @@ Every registered module carries exactly one **disposition**: what kind of work i
 |  | count |
 |---|---|
 | registered modules | 196 |
-| done (faced + promoted) | 61 |
-| remaining (excludes organizational-native) | 132 |
+| done (faced + promoted) | 63 |
+| remaining (excludes organizational-native) | 130 |
 | registered with NO disposition (must be zero) | 0 |
 | inventory entries naming a dead def (must be zero) | 0 |
 
@@ -21,7 +21,7 @@ Every registered module carries exactly one **disposition**: what kind of work i
 
 | disposition | what it means | modules | done |
 |---|---|---|---|
-| `generic-face` | author a `face` and rank the controls — no new platform capability | 141 | 61 |
+| `generic-face` | author a `face` and rank the controls — no new platform capability | 141 | 63 |
 | `blocked` | would be a face today but for the named capability, and nothing else | 3 | — |
 | `bespoke-surface` | the primary interaction is not param-shaped — needs a purpose-built surface | 49 | — |
 | `organizational-native` | rack furniture; not a migration at all | 3 | — |
@@ -105,14 +105,14 @@ author a `face` and rank the controls — no new platform capability.
 | `monoglitch` | video | — | — |
 | `moog902` | audio | done | — |
 | `moog903a` | audio | — | — |
-| `moog904a` | audio | — | — |
+| `moog904a` | audio | done | — |
 | `moog904b` | audio | — | — |
 | `moog904c` | audio | — | — |
 | `moog905` | audio | — | — |
 | `moog907a` | audio | done | — |
 | `moog911` | audio | done | — |
 | `moog911a` | audio | done | — |
-| `moog912` | audio | — | — |
+| `moog912` | audio | done | — |
 | `moog914` | audio | done | — |
 | `moog921a` | audio | done | — |
 | `moog921b` | audio | done | — |
