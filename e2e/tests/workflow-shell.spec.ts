@@ -16,10 +16,11 @@
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 import {
+  AUDIO_FIXTURE,
   CONTRACT_MODULE_TYPES,
   DENIED,
-  UNMIGRATED_AUDIO_MODULE,
-  UNMIGRATED_AUDIO_POOL,
+  fixtureProblems,
+  fixtureType,
 } from './_face-fixtures';
 
 async function gotoWorkflow(page: Page, opts: { shell: boolean }): Promise<void> {
@@ -43,7 +44,7 @@ async function readParam(page: Page, nodeId: string, paramId: string): Promise<n
 
 /** The node's WHOLE param map. The legacy-fallback test drives the docked
  *  card's first fader and asserts *some* param moved — module-agnostic, since
- *  the fixture module is derived (UNMIGRATED_AUDIO_MODULE) rather than named,
+ *  the fixture module is derived (AUDIO_FIXTURE) rather than named,
  *  so no specific param id like delay's 'time' can be assumed. */
 async function readParams(page: Page, nodeId: string): Promise<Record<string, number>> {
   return page.evaluate((nodeId) => {
@@ -152,36 +153,24 @@ async function setZoomTier(page: Page, zoom: number, expectTier: string): Promis
   );
 }
 
-// ── THE FIXTURE POOL HAS SLACK (#1789) ──────────────────────────────────────
+// ── THE AUDIO FIXTURE IS HEALTHY (#1789, #1864) ─────────────────────────────
 //
-// `UNMIGRATED_AUDIO_MODULE` throws at import time when the derived pool is
-// EMPTY, which is correct but is help that arrives too late: by then every spec
-// importing `_face-fixtures.ts` is already failing before it runs a line. This
-// asserts the pool is not merely non-empty but has ROOM — so the next face wave
-// reddens ONE named test while a replacement fixture still exists, rather than
-// taking the suite down at the moment the last candidate is consumed.
+// The derivation resolving to nothing used to THROW AT IMPORT, which is help
+// that arrives too late and in the wrong place: by then every spec importing
+// `_face-fixtures.ts` is failing before it runs a line, including the ones with
+// a perfectly good fixture of their own. Resolution is now a VALUE, and this is
+// where the audio half's value is checked — one named test, in the suite that
+// would lose its subject.
 //
-// It is deliberately a `>` and not an `=`: the number of un-promoted audio
-// modules is a population, not a target, and pinning it would be the ratchet
-// this repo forbids. What is being asserted is the PROPERTY "a promotion from
-// here is survivable", which needs exactly two members to be true.
-test('the derived legacy-fallback pool has more than one candidate', () => {
-  expect(
-    UNMIGRATED_AUDIO_POOL.length,
-    `the legacy-fallback fixture pool is down to ${UNMIGRATED_AUDIO_POOL.length} ` +
-      `(${UNMIGRATED_AUDIO_POOL.join(', ') || 'nothing'}). The NEXT face promotion empties it, ` +
-      'and an empty pool throws at import time in every spec that imports ' +
-      'e2e/tests/_face-fixtures.ts. Either land an un-promoted audio module whose card ' +
-      'mounts a <NeonFader>, or re-home these bridge specs on a purpose-built fixture ' +
-      'module instead of borrowing a real one.',
-  ).toBeGreaterThan(1);
-  // …and the pool is really the PREDICATES' output, not an empty scan that
-  // happens to satisfy nothing: the pick must be a member of it.
-  expect(UNMIGRATED_AUDIO_POOL, 'the pick must come from the pool').toContain(UNMIGRATED_AUDIO_MODULE);
+// `fixtureProblems` carries the checks (pick ∈ pool, `pool ∪ rejections ===
+// unpromoted`, and slack), so the audio and video gates cannot drift apart.
+test('the derived audio legacy-fallback fixture is healthy', () => {
+  expect(fixtureProblems(AUDIO_FIXTURE), AUDIO_FIXTURE.why).toEqual([]);
 
   // ANCHORED TO THE ARTIFACT: a deny entry naming a module the contract golden
   // does not know is a licence nobody is watching — the module was renamed or
-  // deleted and the exclusion silently stopped excluding anything.
+  // deleted and the exclusion silently stopped excluding anything. Checked here
+  // for the WHOLE map (both domains share it), so a video entry is anchored too.
   expect(
     Object.keys(DENIED).filter((t) => !CONTRACT_MODULE_TYPES.includes(t)),
     'these DENIED entries name modules that are not in contract-lock.txt (renamed? deleted?)',
@@ -197,10 +186,14 @@ test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
     // A still-UN-migrated module, DERIVED from STRICT_FACES rather than named:
     // a hard-coded fixture rots as each P1 wave promotes more modules (vca was
     // consumed by batch 1, delay by batch 3 — both turned this red for a
-    // non-bug). See UNMIGRATED_AUDIO_MODULE in _helpers.ts.
+    // non-bug). See AUDIO_FIXTURE in _face-fixtures.ts.
+    //
+    // When every audio module is promoted this case has no subject BY DESIGN —
+    // a NAMED skip carrying the reason, never a silent pass (#1864).
+    test.skip(AUDIO_FIXTURE.kind === 'migration-complete', AUDIO_FIXTURE.why);
     await gotoWorkflow(page, { shell: true });
     await spawnPatch(page, [
-      { id: NODE, type: UNMIGRATED_AUDIO_MODULE, position: { x: 460, y: 240 } },
+      { id: NODE, type: fixtureType(AUDIO_FIXTURE), position: { x: 460, y: 240 } },
     ]);
 
     const laneNode = page.locator(`.svelte-flow__node[data-id="${NODE}"]`);
@@ -265,7 +258,7 @@ test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
     await page.mouse.up();
     await expect
       .poll(async () => JSON.stringify(await readParams(page, NODE)), {
-        message: `${UNMIGRATED_AUDIO_MODULE}: driving the docked card's first fader commits a param change`,
+        message: `${fixtureType(AUDIO_FIXTURE)}: driving the docked card's first fader commits a param change`,
       })
       .not.toBe(JSON.stringify(before));
 
@@ -705,12 +698,13 @@ test.describe('P0.3b workflow-shell ?shell=1 bug fixes', () => {
   // only button (undiscoverable). It is now a clear, LABELLED pill; the wired path
   // (onExpand → dockStore.openFullView → the .dock-faceplate full view) is unchanged.
   test('the EXPAND affordance is a labelled button that opens the dock faceplate + ESC closes', async ({ page }) => {
-    // A still-UN-migrated module (DERIVED — see UNMIGRATED_AUDIO_MODULE), so
-    // this stays the PLACEHOLDER's expand path; the migrated shell's expand is
-    // covered by workflow-shell-faces.spec.ts.
+    // A still-UN-migrated module (DERIVED — see AUDIO_FIXTURE), so this stays
+    // the PLACEHOLDER's expand path; the migrated shell's expand is covered by
+    // workflow-shell-faces.spec.ts.
+    test.skip(AUDIO_FIXTURE.kind === 'migration-complete', AUDIO_FIXTURE.why);
     await gotoWorkflow(page, { shell: true });
     await spawnPatch(page, [
-      { id: NODE, type: UNMIGRATED_AUDIO_MODULE, position: { x: 460, y: 240 } },
+      { id: NODE, type: fixtureType(AUDIO_FIXTURE), position: { x: 460, y: 240 } },
     ]);
 
     const laneNode = page.locator(`.svelte-flow__node[data-id="${NODE}"]`);

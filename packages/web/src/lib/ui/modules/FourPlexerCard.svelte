@@ -11,7 +11,12 @@
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import { setNodeParam } from '$lib/graph/mutate';
   import { fourplexerDef } from '$lib/audio/modules/fourplexer';
-  import { fourplexerClampSelector } from '$lib/audio/fourplexer-select';
+  import {
+    fourplexerClampSelector,
+    FOURPLEXER_INPUT_OPTIONS,
+    FOURPLEXER_INPUTS,
+    FOURPLEXER_SELECTORS,
+  } from '$lib/audio/fourplexer-select';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
@@ -49,10 +54,17 @@
     out1: 'OUT 1', out2: 'OUT 2', out3: 'OUT 3', out4: 'OUT 4',
   });
 
-  const outs = [1, 2, 3, 4] as const;
-  // 1-based input label for the current selector position of output o.
-  function selectedInput(o: number): number {
-    return paramVal(`sel${o}`) + 1;
+  // The four selectors, DERIVED from the def rather than listed here — the
+  // card can no longer disagree with the module about how many outputs it has.
+  const outs = FOURPLEXER_SELECTORS;
+  // The name of the input a selector currently points at. Read off the SAME
+  // `options` roster the def declares (fourplexer-select.ts), so the card and
+  // the faceplate say the same word — this used to be `← IN {value + 1}`
+  // computed in markup, which is exactly the kind of restatement that survives
+  // right up until the card stops rendering.
+  function selectedLabel(paramId: string): string {
+    const v = paramVal(paramId);
+    return FOURPLEXER_INPUT_OPTIONS.find((o) => o.value === v)?.label ?? '';
   }
 </script>
 
@@ -64,18 +76,18 @@
     <div class="body">
       <div class="hint">each OUT carries 1 of 4 INs · GATE advances</div>
       <div class="selectors">
-        {#each outs as o (o)}
-          <div class="sel" data-testid={`fourplexer-sel${o}`}>
+        {#each outs as sel (sel.id)}
+          <div class="sel" data-testid={`fourplexer-${sel.id}`}>
             <Knob
-              value={paramVal(`sel${o}`)}
-              min={0} max={3} defaultValue={defaultFor(`sel${o}`)}
-              label={`OUT ${o}`}
+              value={paramVal(sel.id)}
+              min={0} max={FOURPLEXER_INPUTS - 1} defaultValue={defaultFor(sel.id)}
+              label={sel.label}
               curve="discrete"
-              onchange={set(`sel${o}`)} moduleId={id} paramId={`sel${o}`}
-              readLive={live(`sel${o}`)}
+              onchange={set(sel.id)} moduleId={id} paramId={sel.id}
+              readLive={live(sel.id)}
             />
-            <div class="readout" data-testid={`fourplexer-sel${o}-readout`}>
-              ← IN {selectedInput(o)}
+            <div class="readout" data-testid={`fourplexer-${sel.id}-readout`}>
+              ← {selectedLabel(sel.id)}
             </div>
           </div>
         {/each}
