@@ -30,6 +30,49 @@
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
+import type { ParamOption } from '$lib/graph/types';
+
+/**
+ * The three ROUTE states, DECLARED once and consumed by every surface (#1911).
+ *
+ * The 993's router is a three-position SWITCH on the real panel, and it was
+ * declared `curve: 'linear'` — the only 3-state selector in the Moog family
+ * that was. Measured on the shipping code: of 201 evenly-spaced positions
+ * across the 0..2 travel, **149 delivered something other than their nearest
+ * state** — every position between the integers muted both select gains, so a
+ * persisted `1.4` came back SILENT on reload and one wheel notch off the
+ * default silenced a trigger out.
+ *
+ * The roster is what carries the state NAMES onto a surface: the dock face
+ * renders an `options` param of ≤6 states as a SEGMENTED cell
+ * (`paramCellKind`, `shell-control-kind.ts:266-268`), and the card's switch
+ * below is driven from this same array — so the names cannot drift from the
+ * def the way a re-typed literal does.
+ */
+export const MOOG993_ROUTE_OPTIONS: readonly ParamOption[] = [
+  { value: 0, label: 'OFF', title: 'the output carries nothing — both source select gains muted' },
+  { value: 1, label: 'FROM 1', title: 'the output carries trigger SOURCE 1' },
+  { value: 2, label: 'FROM 2', title: 'the output carries trigger SOURCE 2' },
+];
+
+/**
+ * A dial position → the state it MEANS: the nearest declared state, clamped to
+ * the declared travel.
+ *
+ * Exported because the banding is a property of the CONTROL, not of one
+ * writer: the segmented switch and the face's segmented cell can only emit
+ * 0/1/2, but MIDI learn, automation, a preset load and any persisted patch
+ * written before this fix all reach `setParam` with arbitrary floats. Rounding
+ * at the seam is what makes every one of those paths land on a state instead
+ * of on silence.
+ */
+export function moog993RouteState(route: number): number {
+  // A NaN / Infinity write must not silence the out; fall back to the DECLARED
+  // default rather than a re-typed literal.
+  if (!Number.isFinite(route)) return moog993Def.params.find((p) => p.id === 'route1')!.defaultValue;
+  const { min, max } = moog993Def.params.find((p) => p.id === 'route1')!;
+  return Math.round(Math.max(min, Math.min(max, route)));
+}
 
 export const moog993Def: AudioModuleDef = {
   type: 'moog993',
@@ -55,9 +98,9 @@ export const moog993Def: AudioModuleDef = {
   params: [
     // 0 = OFF, 1 = FROM 1, 2 = FROM 2. Default 1 (FROM 1) so a freshly
     // spawned panel routes source 1 to every trigger out.
-    { id: 'route1', label: 'Route 1', defaultValue: 1, min: 0, max: 2, curve: 'linear' },
-    { id: 'route2', label: 'Route 2', defaultValue: 1, min: 0, max: 2, curve: 'linear' },
-    { id: 'route3', label: 'Route 3', defaultValue: 1, min: 0, max: 2, curve: 'linear' },
+    { id: 'route1', label: 'Route 1', defaultValue: 1, min: 0, max: 2, curve: 'discrete', options: MOOG993_ROUTE_OPTIONS },
+    { id: 'route2', label: 'Route 2', defaultValue: 1, min: 0, max: 2, curve: 'discrete', options: MOOG993_ROUTE_OPTIONS },
+    { id: 'route3', label: 'Route 3', defaultValue: 1, min: 0, max: 2, curve: 'discrete', options: MOOG993_ROUTE_OPTIONS },
   ],
 
   docs: {
@@ -101,11 +144,18 @@ export const moog993Def: AudioModuleDef = {
     const sel1: Record<RouteId, GainNode> = {} as Record<RouteId, GainNode>;
     const sel2: Record<RouteId, GainNode> = {} as Record<RouteId, GainNode>;
 
-    /** route → [source-1 gain, source-2 gain]: 0=OFF, 1=FROM 1, 2=FROM 2. */
+    /**
+     * route → [source-1 gain, source-2 gain]: 0=OFF, 1=FROM 1, 2=FROM 2.
+     *
+     * BANDS the incoming value first (#1911). This used to select on exact
+     * float equality, so anything between the integers muted BOTH gains — the
+     * one outcome a three-position switch has no position for.
+     */
     function selectGains(route: number): [number, number] {
-      if (route === 1) return [1, 0];
-      if (route === 2) return [0, 1];
-      return [0, 0]; // 0 (OFF) or any out-of-range value mutes both
+      const state = moog993RouteState(route);
+      if (state === 1) return [1, 0];
+      if (state === 2) return [0, 1];
+      return [0, 0]; // OFF
     }
 
     const initial = node.params ?? {};
