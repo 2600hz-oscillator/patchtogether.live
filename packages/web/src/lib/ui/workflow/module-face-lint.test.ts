@@ -603,6 +603,28 @@ describe('module-face lint — MOMENTARY pads (face.momentary)', () => {
     'backdraft:mirrorX',
     'backdraft:mirrorY',
     'backdraft:pureGeo',
+    // FREEZEFRAME, 2026-08-19. Both switches are LEVELS read every frame, and
+    // the module's own gate machinery is what makes the distinction sharp
+    // rather than a judgement call.
+    //
+    // ⚠ THE MODULE DOES HAVE AN EDGE CONSUMER, AND IT IS NEITHER OF THESE. The
+    // one thing on freezeframe that fires on a rising edge is the GATE — a
+    // trigger at `gate_in` updates exactly one frame — and that arrives through
+    // `gateLevel`, which is declared `noUserControl` and carries no cell at
+    // all. So the params a player can actually switch are precisely the ones
+    // that do NOT edge-detect, which is the opposite of the tomtom `strike`
+    // mistake this ratchet exists for.
+    //
+    // `decay` gates the phosphor persistence: the draw loop computes a
+    // surviving fraction from ELAPSED TIME and pushes it as the `uDecayK`
+    // uniform every frame, so the switch is sampled continuously and a
+    // momentary render would end the fade on pointer-release — the trail is
+    // the effect, and it is exactly what you leave switched on.
+    // `decay_invert` only chooses that fade's TARGET (black or white) and is
+    // read the same way, through `uDecayTarget`. Neither has any edge
+    // behaviour anywhere in the module.
+    'freezeframe:decay',
+    'freezeframe:decay_invert',
     // pointerup, the worklet ORs it into the mono gate like tomtom's `strike`,
     // and the def's own doc says "released = note-off (no latch)". It is now
     // declared on `face.momentary`. The cross-check below is what stops that

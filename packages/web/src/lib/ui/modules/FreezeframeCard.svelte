@@ -26,7 +26,7 @@
   import Toggle from '$lib/ui/controls/Toggle.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import { useEngine } from '$lib/audio/engine-context';
-  import { setNodeParam } from '$lib/graph/mutate';
+  import { mutateNode, setNodeParam } from '$lib/graph/mutate';
   import { freezeframeDef } from '$lib/video/modules/freezeframe';
   import type { VideoEngine } from '$lib/video/engine';
   import { VIDEO_RES } from '$lib/video/engine';
@@ -72,6 +72,35 @@
   // anything else here — 30 px is one short row's worth of slack and no more.
   const DECAY_TRACK_PX = 44;
 
+  // ── SCREEN ON / OFF (owner ruling, 2026-08-18) ──────────────────────────
+  //
+  // "'screen on / off' on the card like that is a thing all video modules
+  // should have moving forward." backdraft's BackdraftOutputBody is the
+  // reference and this is the same mechanism, deliberately: the state lives on
+  // `node.data`, so it PERSISTS across tab switches (the owner's stated floor),
+  // survives remount and reload, and syncs to collaborators.
+  //
+  // ⚠ IT IS NOT TRANSIENT RENDER STATE. One boolean per CLICK, never per frame
+  // — the Y.Doc write-storm rule is about per-frame CV writes, and a click is
+  // exactly what `node.data` is for.
+  //
+  // ⚠ OFF DOES NOT STOP THE MODULE. The rAF `draw()` loop below is untouched
+  // and the video engine goes on rendering; only the BLIT into this card's
+  // canvas is skipped. That is the #1720/#1721 bug class — tearing the producer
+  // down means switching the screen back on shows a STALE frame (or black)
+  // instead of the live picture. Absent ⇒ false ⇒ preview ON, so every existing
+  // rack opens unchanged.
+  let previewCollapsed = $derived<boolean>(
+    (node?.data?.previewCollapsed as boolean | undefined) ?? false,
+  );
+  function togglePreview(): void {
+    const next = !previewCollapsed;
+    mutateNode(id, (live) => {
+      if (!live.data) live.data = {};
+      live.data.previewCollapsed = next;
+    });
+  }
+
   const inputs = portsFromDef(freezeframeDef.inputs, { video_in: 'VIDEO', gate_in: 'GATE' });
   const outputs = portsFromDef(freezeframeDef.outputs, {
     video_out: 'OUT', r_out: 'R', g_out: 'G', b_out: 'B', luma_out: 'LUMA',
@@ -90,6 +119,12 @@
     rafId = null;
     const e = engineCtx.get();
     if (!e || !canvasEl) { rafId = requestAnimationFrame(draw); return; }
+    // SCREEN OFF — skip the BLIT, never the LOOP. Re-arming the rAF here is the
+    // whole point: the module and the video engine go on rendering, so turning
+    // the screen back on paints the LIVE frame on the very next tick instead of
+    // whatever was left in the canvas (#1720/#1721). Returning without
+    // re-arming would be the stale-frame bug wearing a performance costume.
+    if (previewCollapsed) { rafId = requestAnimationFrame(draw); return; }
     let videoEngine: VideoEngine | undefined;
     try { videoEngine = e.getDomain<VideoEngine>('video'); }
     catch { rafId = requestAnimationFrame(draw); return; }
@@ -125,7 +160,7 @@
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <!-- video_out live preview (enlarged to fill the card body) -->
-    <div class="preview-wrap">
+    <div class="preview-wrap" class:collapsed={previewCollapsed}>
       <canvas
         bind:this={canvasEl}
         width={PREVIEW_W}
@@ -133,7 +168,29 @@
         data-testid="freezeframe-preview"
         data-node-id={id}
       ></canvas>
-      <span class="preview-label">OUT</span>
+      <div class="preview-foot">
+        <span class="preview-label">OUT</span>
+        <!-- SCREEN ON/OFF — owner ruling 2026-08-18: every video module's card
+             carries this. backdraft's BackdraftOutputBody is the reference.
+             ⚠ It rides the EXISTING label row rather than adding one. This card
+             is 3u and the rack clamps it to a hard 540 CSS px, of which
+             `card-control-overflow` measured only 30.2 px of slack (see
+             DECAY_TRACK_PX above) — a new row would have spent all of it. The
+             button is capped to the label's own line height so the ON state
+             costs nothing vertically, and the OFF state RECLAIMS the 171 px
+             canvas. -->
+        <button
+          type="button"
+          class="screen-btn nodrag"
+          class:on={!previewCollapsed}
+          data-testid="freezeframe-preview-toggle"
+          aria-pressed={!previewCollapsed}
+          title={previewCollapsed
+            ? 'SCREEN is OFF — the preview is collapsed and its space reclaimed. FREEZEFRAME keeps rendering: switching it back on shows the LIVE picture, not a stale frame.'
+            : 'SCREEN — turn the preview off to collapse it and reclaim the vertical space. The module goes on rendering either way.'}
+          onclick={togglePreview}
+        >{previewCollapsed ? 'SCREEN OFF' : 'SCREEN ON'}</button>
+      </div>
     </div>
 
     <div class="fader-grid">
@@ -205,6 +262,36 @@
     display: block;
   }
   .preview-label { font-size: 0.55rem; color: var(--text-dim); letter-spacing: 0.1em; font-family: ui-monospace, monospace; }
+  /* The OUT caption and the SCREEN button share ONE row, so the toggle costs
+     no vertical space in the ON state — see the markup note. */
+  .preview-foot {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+  }
+  .screen-btn {
+    font-size: 0.55rem;
+    letter-spacing: 0.1em;
+    font-family: ui-monospace, monospace;
+    line-height: 1;
+    padding: 3px 6px;
+    border-radius: 3px;
+    cursor: pointer;
+    border: 1px solid var(--border, #2a3040);
+    background: transparent;
+    color: var(--text-dim);
+  }
+  .screen-btn.on {
+    color: var(--text, #cfd6e4);
+    border-color: var(--cable-video, #7a5cff);
+  }
+  /* OFF collapses the canvas and RECLAIMS its height. The caption row stays,
+     so the control that turns it back on never disappears with the picture. */
+  .preview-wrap.collapsed canvas {
+    display: none;
+  }
   .fader-grid {
     /* 22px→12px margin and 26px→16px row gap: 20px reclaimed for the DECAY row
        inside the 3u card's hard 540px clamp. See DECAY_TRACK_PX above. */
