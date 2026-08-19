@@ -147,6 +147,7 @@ import {
   LEGACY_FOLD_VIEWPORT,
   assertFaceAudioFrozen,
   bootWithFace,
+  faceSceneTimeout,
   frameMember,
   freezeFaceAudio,
   freezeFaceVideo,
@@ -317,6 +318,13 @@ test.describe('VRT: P1 curated faces (?shell=1) — compact lane tile + dock ful
       ...(simPin ? { simPin } : {}),
     };
     test(`face-${type}-compact: the compact lane tile matches baseline`, async ({ page }) => {
+      // PER-SCENE, never the config's flat cap — the `foldViewportFor` shape
+      // applied to TIME instead of height (#1949). Returns the shared 90 s
+      // unless the roster entry declares a measured `sceneWeight`. This is a
+      // BOUND: it moves no assertion, and convergence is still gated at
+      // `expect.timeout` (30 s), which is where a scene that never settles
+      // fails. See the note on `faceSceneTimeout`.
+      test.setTimeout(faceSceneTimeout(type, 'compact'));
       const errors: string[] = [];
       page.on('pageerror', (e) => errors.push(e.message));
 
@@ -357,6 +365,12 @@ test.describe('VRT: P1 curated faces (?shell=1) — compact lane tile + dock ful
     });
 
     test(`face-${type}-dock: the dock full-view faceplate matches baseline`, async ({ page }) => {
+      // PER-SCENE — see the compact scene above. The dock scene is the more
+      // expensive of the two for every face measured (it mounts the whole
+      // faceplate, and for a video face the `fullViewBody` extension too), so
+      // `sceneWeight` carries the two durations separately rather than one
+      // number scaled by a guess.
+      test.setTimeout(faceSceneTimeout(type, 'dock'));
       const errors: string[] = [];
       page.on('pageerror', (e) => errors.push(e.message));
 
