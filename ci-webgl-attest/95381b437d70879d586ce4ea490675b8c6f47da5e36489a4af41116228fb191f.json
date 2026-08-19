@@ -1,36 +1,42 @@
 {
   "schemaVersion": 1,
-  "webglContentHash": "0394a3ec4860f63d1ced22540c32fd96422ea2c59fce4ffc08cdc8bb0217f04f",
-  "attestedAt": "2026-08-19T09:09:43.850Z",
+  "webglContentHash": "95381b437d70879d586ce4ea490675b8c6f47da5e36489a4af41116228fb191f",
+  "attestedAt": "2026-08-19T12:46:01.642Z",
   "attestedBy": "patchtogether-maintainer",
-  "gitHeadAtAttest": "c224f8eac4b89ac7a37545b800b1b030fce8b2e5",
+  "gitHeadAtAttest": "7ed0b049ee4ea88ab4f73b6f46a9e334b79df3e8",
   "playwrightVersion": "1.50.0",
   "os": "darwin 25.4.0 (arm64)",
   "machineClass": "local-trusted-gpu-workstation",
   "preflight": {
     "samples": 7,
     "windowMs": 10204,
-    "maxForeignCpu": 0.1,
+    "maxForeignCpu": 0,
     "thresholdCpu": 25,
-    "load1": 4.49267578125,
+    "load1": 1.42333984375,
     "cores": 10
   },
   "gpu": "ANGLE (Apple, ANGLE Metal Renderer: Apple M5, Unspecified Version)",
   "appServer": {
-    "url": "http://127.0.0.1:57842",
+    "url": "http://127.0.0.1:65497",
     "mode": "dev",
-    "root": "/Users/2600hz/Documents/workspace/inet.modular/.claude/worktrees/agent-a026d23ba7c717296",
-    "commit": "c224f8eac4b89ac7a37545b800b1b030fce8b2e5"
+    "root": "/Users/2600hz/Documents/workspace/inet.modular/.claude/worktrees/agent-a1be04120c8fece0c",
+    "commit": "7ed0b049ee4ea88ab4f73b6f46a9e334b79df3e8"
   },
   "repeatEach": 1,
   "suites": {
     "A-heavy": {
       "specFiles": 57,
-      "passed": 199,
+      "passed": 198,
       "failed": 0,
-      "flaky": 0,
+      "flaky": 1,
       "skipped": 5,
-      "flakyDetails": []
+      "flakyDetails": [
+        {
+          "test": "per-target menu items are correct + Escape closes",
+          "file": "toybox-node-menu.spec.ts",
+          "firstError": "Error: expect(locator).toBeVisible() failed |  | Locator: locator('[data-testid=\"toybox-menu-patch-output\"]') | Expected: visible"
+        }
+      ]
     },
     "A-serial": {
       "specFiles": 6,
@@ -57,5 +63,5 @@
       "flakyDetails": []
     }
   },
-  "durationSec": 290
+  "durationSec": 234
 }

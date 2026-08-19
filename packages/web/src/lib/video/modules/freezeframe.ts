@@ -203,9 +203,18 @@ export function quantLevels(knob: number): number {
  * Mirrors the GLSL `floor(c * levels) / (levels - 1)` with the same
  * clamping. `levels` is clamped to ≥ 2 so we never divide by 0.
  *
- * At levels = 256 this is effectively identity for 8-bit input (the only
- * difference is values land on the 256-step grid, which 8-bit input
- * already sits on). At levels = 2 it's a hard threshold to {0, 1}.
+ * ⚠ THE IDENTITY CLAIM IS CONDITIONAL, AND THE CONDITION IS THE INPUT'S GRID.
+ * At `levels = 256` this is EXACTLY identity for input already on the 8-bit
+ * grid: for `v = k/255`, `v * 256 = k + k/255`, which floors to `k`, so the
+ * result is `k/255 = v`. Verified over all 256 code values, 0 of which move.
+ *
+ * It is NOT identity for an input OFF that grid — and `posterizeChannel(0.5,
+ * 256) = 0.5019607843137255` is the one-line demonstration. That mattered
+ * because the combined-output branch fed it a LUMA (a weighted sum of three
+ * 8-bit values, i.e. an arbitrary real), which is #1861: see
+ * `quantizeCombined` below for the measurement and the fix.
+ *
+ * At `levels = 2` it is a hard threshold to {0, 1}.
  */
 export function posterizeChannel(value: number, levels: number): number {
   const v = Math.min(1, Math.max(0, value));
@@ -220,6 +229,93 @@ export function posterizeChannel(value: number, levels: number): number {
 /** Rec.601 luma of a normalized RGB triplet (each 0..1). */
 export function lumaOf(r: number, g: number, b: number): number {
   return LUMA_WEIGHTS.r * r + LUMA_WEIGHTS.g * g + LUMA_WEIGHTS.b * b;
+}
+
+/**
+ * Is a luma level count at FULL DEPTH — i.e. has the player asked for no luma
+ * reduction at all?
+ *
+ * `quantLevels(0)` is exactly `QUANT_MAX_LEVELS`, and the knob only ever
+ * reduces from there, so this is true at the knob's minimum and nowhere else.
+ * The epsilon absorbs float32 wobble in the uniform, not a range of knob
+ * positions: the next representable knob value already asks for real
+ * quantization and gets it.
+ */
+export function lumaIsFullDepth(levels: number): boolean {
+  return levels >= QUANT_MAX_LEVELS - 0.5;
+}
+
+/**
+ * THE COMBINED `video_out` PIXEL — the JS mirror of the shader's `uMode < 0.5`
+ * branch, which until #1861 DID NOT EXIST.
+ *
+ * ⚠ THAT ABSENCE IS WHY THE DEFECT SHIPPED, and it is the more useful half of
+ * this fix. `posterizeChannel` was unit-tested against the levels it is GIVEN,
+ * and its identity claim was checked on the 8-bit grid where it holds. Nothing
+ * joined that grid assumption to the combined branch's LUMA call site, whose
+ * input is off-grid by construction — a gate reading one side of a two-sided
+ * contract. The mirror is the missing side, so the claim is now checkable over
+ * the whole cube (`freezeframe-quant.test.ts`).
+ *
+ * ── #1861, MEASURED ────────────────────────────────────────────────────────
+ *
+ * Before the guard below, at EVERY param's declared default (all four QUANT
+ * knobs at 0, i.e. "full depth / passthrough" per the docs), over the entire
+ * 8-bit RGB cube (16,777,216 triplets, comparing 8-bit code values in and out
+ * — the FBO is RGBA8, so GL rounds to the same grid):
+ *
+ *   bit-exactly unchanged     10,291,489  (61.34 %)
+ *   moved by >= 1 code value   6,485,727  (38.66 %)
+ *   worst error                        8  code values, at src(0,0,8) -> (0,0,0)
+ *   mean absolute error           0.4324  code values
+ *   luma gain range           0.000000 .. 1.003922
+ *   non-black inputs driven to EXACTLY black          25
+ *
+ *   by luma band:  < 1/256   n=26          96.15 % moved, worst 8
+ *                  .0039-.05 n=19,337      77.71 %,       worst 8
+ *                  .05-.25   n=1,830,720   62.20 %,       worst 8
+ *                  .25-.75   n=13,077,016  35.40 %,       worst 3
+ *                  .75-1     n=1,850,117   37.97 %,       worst 1
+ *
+ * The mechanism is the grid, not a rounding wobble. `lq / luma` is the gain,
+ * and for `luma < 1/256` the floor takes `lq` to ZERO — so the gain is 0 and a
+ * legitimate near-black like (0,0,8) is forced to (0,0,0). That is a
+ * factor-of-256 effect, which is also why the float64-mirror /
+ * float32-shader difference cannot explain it.
+ *
+ * ── THE FIX ────────────────────────────────────────────────────────────────
+ *
+ * At full depth the luma ratio is SKIPPED entirely, which is what the docs
+ * have always claimed the knob's minimum does. Nothing changes at any other
+ * knob position: once the player asks for luma quantization, crushing the
+ * near-blacks toward black is the effect, not a bug.
+ *
+ * The alternative — making `posterizeChannel` round instead of floor — was
+ * rejected: it would shift the bucket boundaries by half a step at EVERY
+ * level, moving every posterized image on every patch, to fix a defect that
+ * only exists at one end of one knob.
+ */
+export function quantizeCombined(
+  rgb: readonly [number, number, number],
+  levels: { r: number; g: number; b: number; luma: number },
+): [number, number, number] {
+  const q: [number, number, number] = [
+    posterizeChannel(rgb[0], levels.r),
+    posterizeChannel(rgb[1], levels.g),
+    posterizeChannel(rgb[2], levels.b),
+  ];
+  // #1861 — full depth means NO luma reduction, so there is no ratio to apply
+  // and the per-channel result (which IS exact on the 8-bit grid) stands.
+  if (lumaIsFullDepth(levels.luma)) return q;
+
+  const luma = lumaOf(q[0], q[1], q[2]);
+  const lq = posterizeChannel(luma, levels.luma);
+  const gain = lq / Math.max(luma, 1e-5);
+  return [
+    Math.min(1, Math.max(0, q[0] * gain)),
+    Math.min(1, Math.max(0, q[1] * gain)),
+    Math.min(1, Math.max(0, q[2] * gain)),
+  ];
 }
 
 // ----------------------------------------------------------------------
@@ -472,6 +568,15 @@ float posterize(float c, float levels) {
   return idx / (n - 1.0);
 }
 
+// FULL DEPTH — INJECTED from QUANT_MAX_LEVELS rather than re-typed, so the
+// shader's #1861 guard and its JS mirror (lumaIsFullDepth) cannot drift
+// apart. A literal here would be a second copy of the same number in a string
+// no typechecker reads.
+//
+// (No backticks in this comment on purpose: the whole shader is a template
+// literal, so one would end it. esbuild is the only gate that sees that.)
+const float FULL_DEPTH_LEVELS = ${QUANT_MAX_LEVELS.toFixed(1)};
+
 // PHOSPHOR PERSISTENCE — the CPU mirror is applyDecay().
 //
 // Applied LAST, i.e. AFTER posterize, and the order is a decision: posterize is
@@ -506,10 +611,26 @@ void main() {
       posterize(src.b, uLevelsB)
     );
     // Apply the luma-depth reduction as a ratio so it can't shift hue.
-    float luma = dot(q, vec3(0.299, 0.587, 0.114));
-    float lumaSafe = max(luma, 1e-5);
-    float lq = posterize(luma, uLevelsLuma);
-    vec3 outRgb = clamp(q * (lq / lumaSafe), 0.0, 1.0);
+    //
+    // #1861 — AT FULL DEPTH THERE IS NO REDUCTION, SO THERE IS NO RATIO.
+    // posterize() is exact only for input already on the 8-bit grid, and a
+    // luma is a weighted sum of three 8-bit values, so it is off-grid by
+    // construction. Applying the ratio at full depth moved 38.66 % of the RGB
+    // cube (worst 8 code values) and, because floor() takes lq to ZERO below
+    // luma 1/256, forced 25 legitimate near-blacks to exactly black — while
+    // every doc string promised the knob's minimum was a passthrough. Skipping
+    // it here IS that passthrough. Every other knob position is untouched:
+    // once luma quantization is asked for, crushing toward black is the
+    // effect. Mirrored exactly by quantizeCombined() / lumaIsFullDepth().
+    vec3 outRgb;
+    if (uLevelsLuma >= FULL_DEPTH_LEVELS - 0.5) {
+      outRgb = q;
+    } else {
+      float luma = dot(q, vec3(0.299, 0.587, 0.114));
+      float lumaSafe = max(luma, 1e-5);
+      float lq = posterize(luma, uLevelsLuma);
+      outRgb = clamp(q * (lq / lumaSafe), 0.0, 1.0);
+    }
     outColor = persist(outRgb);
     return;
   }
@@ -732,6 +853,153 @@ export const freezeframeDef: VideoModuleDef = {
     // Hidden synthetic gate param — the cv jack renders but no knob.
     { id: 'gateLevel',  label: 'GATE',       defaultValue: 0, min: 0, max: 1, curve: 'linear' },
   ],
+
+  // #1726 — the one param here that exists so the GRAPH has somewhere to write,
+  // not so a player has something to turn. The def's own comment above already
+  // said "the cv jack renders but no knob"; this is that sentence in a form the
+  // face rules can read, and it is anchored in both directions (a 'cv-port'
+  // entry asserts a port targeting the param EXISTS, so renaming `gate_in`'s
+  // target reddens rather than quietly leaving a rotary over a gate swing).
+  noUserControl: [
+    {
+      param: 'gateLevel',
+      writer: 'cv-port',
+      why: "written by the gate_in bridge as a raw 0..1 swing; the module reads its LEVEL for the freeze and edge-detects it for the one-frame update, so a player sets it with a cable and never with a dial",
+    },
+  ],
+
+  // ── THE FACEPLATE (PF-20) ────────────────────────────────────────────────
+  //
+  // WHAT FREEZEFRAME IS FOR. It is the rack's SAMPLE & HOLD for pictures: a
+  // gate decides WHEN the image updates, and everything else decides what the
+  // held image looks like while it sits there. The verb is CLOCK IT — patch a
+  // trigger or an LFO at GATE and the module becomes a strobe whose every
+  // other control is about the still frame between updates.
+  //
+  // THE RANKING. Two ideas, and the measurement says which one leads.
+  //
+  //   1 quant_luma  ⚠ RANKED FIRST BECAUSE IT IS THE ONE THAT WAS BROKEN.
+  //                 It is the only QUANT knob that touches the COMBINED output
+  //                 through a path the other three do not (a hue-preserving
+  //                 luma ratio rather than a per-channel posterize), and that
+  //                 asymmetry is exactly where #1861 lived: at its own
+  //                 declared minimum it was moving 38.66 % of the 8-bit RGB
+  //                 cube and crushing 25 near-blacks to black, while every doc
+  //                 string called it a passthrough. It is also the knob with
+  //                 the widest reach — it scales all three channels at once,
+  //                 where R/G/B each move a third of the picture.
+  //   2 decay       the module's second engine, and the only control that is
+  //                 about TIME rather than colour. It is a switch, so it reads
+  //                 at a glance, and it is what turns a freeze into a trail.
+  //   3 decay_time  the number DECAY needs to mean anything (0.05..2 s, log).
+  //   4 quant_r
+  //   5 quant_g     the three per-channel posterizers. They rank BELOW the
+  //   6 quant_b     luma knob and below decay because each reaches exactly one
+  //                 channel, and because — unlike quant_luma — they are
+  //                 bit-exact identity at their defaults, so a fresh module
+  //                 shows nothing for them until they are moved.
+  //   7 decay_invert  the smallest idea on the module: which colour DECAY
+  //                 fades TO. It qualifies rank 2 and is meaningless without
+  //                 it, so it sits last rather than beside it.
+  //
+  // ⚠ `gateLevel` IS NOT RANKED, and that is a declaration rather than an
+  // omission — see `noUserControl` above. It is the gate cable's landing site;
+  // ranking it would paint a continuous rotary over a raw gate swing.
+  //
+  // WHY `order` AND `pages` DISAGREE. `order` is PRIORITY, so it interleaves
+  // the two engines (luma, decay, decay_time, then the three channels). `pages`
+  // is the SIGNAL PATH — a frame is quantized and then persisted, which is also
+  // the order the shader applies them — so the tier showing everything reads
+  // `colour depth` then `phosphor decay`. Two bands of 4 + 3 cells, which packs
+  // to one row and stays well under DOCK_TAB_MIN_BANDS, so the hints render.
+  //
+  // NOT CONTROL-HEAVY per the tabbed-face ruling: seven controls across two
+  // shapes (four faders, two switches, one time fader) and two honest ideas.
+  // No tab rail.
+  //
+  // ⚠ GLYPH IS `'none'`, AND IT IS FORCED RATHER THAN CHOSEN. Every output on
+  // this def is `type: 'video'`, so `primaryAudioOutPortId` returns null and
+  // any other glyph kind falls through to `{ kind: 'static' }` — the #1692
+  // dead-glyph shape the lint refuses by name. The picture arrives from a
+  // different seam entirely (`hasVideoSurface`, which mounts VideoTileThumb),
+  // so `'none' + blank tile` and `'none' + live thumb` are indistinguishable
+  // from this declaration alone. The face-model test asserts `hasVideoSurface`
+  // rather than trusting the word `'none'`.
+  face: {
+    order: [
+      'quant_luma',
+      'decay',
+      'decay_time',
+      'quant_r',
+      'quant_g',
+      'quant_b',
+      'decay_invert',
+    ],
+
+    pages: [
+      {
+        id: 'depth',
+        label: 'colour depth',
+        hint: '256 levels at min, 32 at midway, 2 at max',
+        controls: ['quant_luma', 'quant_r', 'quant_g', 'quant_b'],
+      },
+      {
+        id: 'decay',
+        label: 'phosphor decay',
+        hint: 'only visible while the frame is HELD',
+        controls: ['decay', 'decay_time', 'decay_invert'],
+      },
+    ],
+
+    glyph: 'none',
+
+    // ⚠ THE SCREEN ON/OFF SWITCH ARRIVES THROUGH THIS SLOT, AND IT HAD TO
+    // (#1934, the #1928 class). The 2026-08-18 owner ruling gives every video
+    // module a screen on/off toggle. This module shipped one — on
+    // `FreezeframeCard.svelte` — in the SAME change that promoted it into
+    // STRICT_FACES, and promotion is precisely what stops both surfaces from
+    // rendering that card (`migrated()` becomes true;
+    // `DockFullView.svelte:319` mounts `<ModuleShell>` instead). The required
+    // control was therefore deleted by the promotion meant to keep it.
+    //
+    // ⚠ AND THE SPEC THAT PROVED IT WORKED COULD NOT HAVE CAUGHT THAT: it was
+    // pinned to `/rack?shell=legacy`, the one surface promotion does not
+    // change, so it passed and would have gone on passing while the shipping UI
+    // had no toggle at all. Both halves are covered now —
+    // `freezeframe-screen-toggle.spec.ts` exercises the legacy CARD and the
+    // faced DOCK surface, and `video-face-screen-source.test.ts` (#1935)
+    // refuses this shape by name so the next module cannot repeat it.
+    //
+    // There is no generic affordance to fall back on — `previewCollapsed`
+    // appears in ZERO shell files — so it comes through `fullViewBody`, the
+    // route `backdraft`, `videoOut`, `spirographs` and `mirrorpool` take.
+    //
+    // Contract-transparent: `face.extension` is a STRING, not a component, so
+    // the shell never imports a freezeframe file, and a def's own top-level
+    // `face` is stripped from the attest basis — declaring it costs no
+    // re-attest and no contract-lock line.
+    extension: 'freezeframe',
+
+    // TWO readouts, and the THIRD one was deliberately not written.
+    //
+    // ⚠ THERE IS NO GATE READOUT, because a `FaceReadoutValue` receives only a
+    // param reader (`face-readout-values.ts`) and the fact that matters here is
+    // not a param. `gateLevel` reads 0 both when NOTHING IS PATCHED (live
+    // passthrough — the module is a wire) and when a gate IS patched and
+    // currently low (frozen — the module is a still). Those are the two most
+    // important states this module has, they are opposites, and they are
+    // indistinguishable from every input a readout can see. Publishing a `gate`
+    // caption would print a confident word that is wrong half the time — the
+    // kick-drum TAIL trap. It is the `sidecar` precedent (its two enabler
+    // CABLES are unreachable the same way): the finding is carried by the band
+    // labels and by `docs`, never by a readout.
+    hero: {
+      readouts: [
+        { label: 'depth', valueId: 'freezeframe-depth' },
+        { label: 'decay', valueId: 'freezeframe-decay' },
+      ],
+    },
+  },
 
   docs: {
     explanation: "FREEZEFRAME fuses two video effects in one card. First, a SAMPLE & HOLD \"freeze\": with nothing patched to GATE the source passes through live; patch a gate and the image FREEZES, and the GATE jack then honours both readings of the gate cable at once. Send a TRIGGER at it and each rising edge updates EXACTLY ONE frame, after which it is still again. Hold the gate HIGH (level >= 0.5) and you get that same one-frame update at the edge, and then — once the level has STOOD high for about 75 ms — continuous live updating for as long as it stays high. That 75 ms is deliberate and is the shortest honest answer available: the patch bridge does not stream the gate waveform to a video module, it re-reports the level roughly every 25 ms, so for the first tick or two a 5 ms trigger and a gate that has just opened are literally the same bytes. Anything held shorter than the window is therefore classified as a TRIGGER and updates exactly one frame — including a gate DERIVED from a trigger by GATEMAIDEN, whose default width is 50 ms, so inserting GATEMAIDEN into the path does not change the frame count. In practice a square LFO below roughly 6.6 Hz plays while open and stutter-freezes the instant it closes (at 1 Hz about 44 percent of frames update, at 4 Hz about 26 percent); faster than that knee each cycle contributes only its one edge frame and the module reads as a strobe, which is the frame-rate-independent reading anyway. Short pulses cannot be missed or double-counted — the rising edge is detected as the gate value arrives rather than sampled once per rendered frame, and the one-shot is a latch a single frame consumes. The first frame always captures so the buffer seeds with real content instead of black. Second, a PER-CHANNEL POSTERIZE: four QUANT knobs each reduce one channel's colour depth, mapping the sweep geometrically in log2 from 256 levels (full depth) at min, through 32 at midway, to 2 (on/off) at max — crank all four for a hard few-bit posterized look. The shader posterizes each channel with floor(c*levels)/(levels-1); the combined output also applies the QUANT-luma reduction as a hue-preserving luma ratio so that knob still shapes the main out. Third, PHOSPHOR DECAY: switch DECAY on and a held frame no longer just sits there — it fades exponentially to black over the DECAY TIME knob's 0.05 to 2 seconds, the way a CRT phosphor gives up once the beam stops refreshing it, and INVERT sends it to white instead. DECAY TIME reads as \"gone by\": at the time you dial in the frame has reached the target exactly and stays there, rather than the 37 percent a 1/e time constant would leave behind. It is only visible WHILE THE IMAGE IS FROZEN, which is not a limitation but what the effect IS — decay is the age of the held frame, so with GATE unpatched (live passthrough) or held open every frame is brand new and the switch legitimately does nothing. The fade is evaluated from elapsed TIME rather than accumulated per frame, so it takes the same real half-second whether the renderer is managing 8 frames a second or 240, and it is applied after the posterizer (a signal is quantized, then a display persists it) so it still fades smoothly even with all four QUANT knobs at max. Five outputs let you tap the recombined image, each isolated channel as a grey intensity image, or the Rec.601 luma. Usage hint: drive GATE from an LFO or clock to strobe/freeze a video feed, then dial the QUANT knobs for VHS/8-bit colour crushing; add DECAY for trailing strobe ghosts; fan the R/G/B/LUMA taps into separate processors for channel-split effects.",

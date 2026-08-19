@@ -78,6 +78,11 @@ import {
   fourplexerRouting,
 } from '$lib/ui/modules/fourplexer-face-model';
 import {
+  freezeframeDecayText,
+  freezeframeDepthText,
+  freezeframeFaceParams,
+} from '$lib/ui/modules/freezeframe-face-model';
+import {
   swolevcoFaceParams,
   swolevcoLockText,
   swolevcoModHzText,
@@ -1693,6 +1698,31 @@ const FACE_READOUT_VALUES: Readonly<Record<string, FaceReadoutValue>> = {
   'backdraft-tv-fill': (read) => backdraftFillText(read),
   'backdraft-tv-bands': (read) => backdraftBandsText(read),
   'backdraft-delay-frames': (read) => backdraftTapText(read),
+
+  // ── FREEZEFRAME ──────────────────────────────────────────────────────────
+  // TWO values, each spanning several knobs, and each printing a NAME (`off`)
+  // where the dial's own number is actively misleading.
+  //
+  //   `depth`  the COARSEST of the four channels' level counts — what governs
+  //            the visible banding. A QUANT dial reads `0.50` where the picture
+  //            has 32 levels (the sweep is geometric in log2), and at the
+  //            defaults every dial reads `0.00` where the answer is FULL depth.
+  //            ⚠ It includes `quant_luma`, which reaches the combined output
+  //            through a different path from R/G/B and is the widest-reaching
+  //            knob on the module — an R/G/B-only readout would be blind to it,
+  //            in exactly the place #1861's defect lived.
+  //   `decay`  the switch FIRST, then the duration. `decay_time` reads
+  //            `0.50 s` whether or not DECAY is on, so a knob readback prints a
+  //            live-looking duration for an effect that is switched off.
+  //
+  // ⚠ THERE IS DELIBERATELY NO `gate` VALUE — see the note on the def's `hero`.
+  // `gateLevel` reads 0 both when nothing is patched (live) and when a gate is
+  // patched and low (frozen), and those are opposite states.
+  //
+  // Permanently negative-controlled in freezeframe-face-model.test.ts, both
+  // ways: the two readouts must be invariant to each other's params.
+  'freezeframe-depth': (read) => freezeframeDepthText(freezeframeFaceParams(read)),
+  'freezeframe-decay': (read) => freezeframeDecayText(freezeframeFaceParams(read)),
 };
 
 /** The derived value for a declared id, or `null` (⇒ the readout prints `—`
