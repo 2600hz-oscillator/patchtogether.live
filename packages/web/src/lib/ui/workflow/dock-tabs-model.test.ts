@@ -14,14 +14,17 @@
 
 import { describe, expect, it } from 'vitest';
 import { listModuleDefs } from '$lib/audio/module-registry';
+import { listVideoModuleDefs } from '$lib/video/module-registry';
 import { dockFacePlan, type DockFaceBand, type FaceDefLike } from './curated-face';
 import {
   activeDockTab,
   dockBandVisible,
   dockTabPlan,
+  faceForcesTabs,
   DOCK_TAB_MIN_BANDS,
 } from './dock-tabs-model';
 import '$lib/audio/modules';
+import '$lib/video/modules';
 
 const band = (id: string, label = id): DockFaceBand => ({
   id,
@@ -101,10 +104,17 @@ describe('the LIVE registry — which faces are tabbed today', () => {
   // The clause that turns the threshold into a decision instead of a constant:
   // if a face crosses it, its dock BASELINE moves, and that must be a thing
   // somebody chose. cloudseed (8 bands) is the only face over the line.
-  it('cloudseed + pentemelodica are tabbed; every other faced module is one column', () => {
+  it('backdraft + cloudseed + pentemelodica + spirographs are tabbed; every other faced module is one column', () => {
     const tabbed: string[] = [];
     const counts: string[] = [];
-    for (const def of listModuleDefs() as unknown as (FaceDefLike & { type: string })[]) {
+    // ⚠ VIDEO DEFS ARE IN THE SWEEP NOW, and they had to be: `face.tabbed`'s
+    // first and only adopter is a VIDEO module, so an audio-only sweep would
+    // have been structurally blind to the very mechanism this file gained.
+    const allDefs = [
+      ...(listModuleDefs() as unknown as (FaceDefLike & { type: string })[]),
+      ...(listVideoModuleDefs() as unknown as (FaceDefLike & { type: string })[]),
+    ];
+    for (const def of allDefs) {
       if (!def.face) continue;
       // `dockFacePlan` is `FaceBand[] | null` — a faced def with nothing
       // rankable plans no dock at all. Resolve it ONCE and narrow, rather than
@@ -112,7 +122,12 @@ describe('the LIVE registry — which faces are tabbed today', () => {
       const plan = dockFacePlan(def);
       if (!plan) continue;
       counts.push(`${def.type}=${plan.length}`);
-      if (dockTabPlan(plan)) tabbed.push(def.type);
+      // ⚠ THE DEF GOES IN. Passing only the bands asks the THRESHOLD question,
+      // which stopped being the whole question when `face.tabbed` landed — a
+      // def-less call here would report spirographs as untabbed while the app
+      // rails it, i.e. the tripwire would be measuring something the user never
+      // sees.
+      if (dockTabPlan(plan, 'dock-full', def)) tabbed.push(def.type);
     }
     expect(
       tabbed.sort(),
@@ -131,7 +146,144 @@ describe('the LIVE registry — which faces are tabbed today', () => {
       // IDENTICAL strips of eight, which neither a flat `order` nor a flat
       // `pages` list can express as "this group, five times". Its dock baseline
       // is captured as a tabbed face from the start.
-    ).toEqual(['cloudseed', 'pentemelodica']);
+      // ⚠ backdraft (7 bands) WAS ALREADY RAILED AND THIS TRIPWIRE COULD NOT
+      // SEE IT. The sweep read `listModuleDefs()` only — audio — so every VIDEO
+      // face was outside its subject, and backdraft has been over the threshold
+      // since it was authored. Adding video defs here (needed anyway, because
+      // the tab opt-in's only adopter is a video module) surfaced it. Nothing
+      // about backdraft changed; what changed is that the gate now looks.
+    ).toEqual(['backdraft', 'cloudseed', 'pentemelodica', 'spirographs']);
+  });
+
+  it('every tabbed face is EITHER over the threshold OR a named opt-in — never neither', () => {
+    // The two routes to a rail, joined. A face that is tabbed for no reason
+    // either route explains is the case this clause exists to make impossible.
+    const allDefs = [
+      ...(listModuleDefs() as unknown as (FaceDefLike & { type: string })[]),
+      ...(listVideoModuleDefs() as unknown as (FaceDefLike & { type: string })[]),
+    ];
+    const unexplained: string[] = [];
+    for (const def of allDefs) {
+      if (!def.face) continue;
+      const plan = dockFacePlan(def);
+      if (!plan || !dockTabPlan(plan, 'dock-full', def)) continue;
+      const overThreshold = plan.length >= DOCK_TAB_MIN_BANDS;
+      const optedIn = faceForcesTabs(def);
+      if (!overThreshold && !optedIn) unexplained.push(`${def.type} (${plan.length} bands)`);
+    }
+    expect(unexplained, 'a face is railed with neither route explaining it').toEqual([]);
+  });
+});
+
+// ── THE PER-FACE OPT-IN — NAMED, WITH PROVENANCE ────────────────────────────
+//
+// `face.tabbed` forces the rail on below the band threshold. The fence (see the
+// header of dock-tabs-model.ts) is that it is declared ONLY on explicit owner
+// instruction, PER MODULE — it is not a layout preference and it does NOT
+// reopen "should this face be tabbed?" for anything else. The owner separately
+// ruled `ruttetra` ships UNTABBED, and the default is unchanged: honest pages,
+// rail at `DOCK_TAB_MIN_BANDS`.
+//
+// ⚠ THE PROVENANCE FIELD IS THE POINT, NOT BOOKKEEPING. The risk here is not a
+// typo — it is an agent adding `tabbed: true` because a face "reads better as
+// tabs" and writing a plausible sentence about what the owner wanted. Requiring
+// the instruction VERBATIM, per module, makes the licence checkable against
+// something that was actually said.
+
+interface TabOptIn {
+  /** The module type that declares `face.tabbed`. */
+  type: string;
+  /** The owner's instruction, VERBATIM. Not a paraphrase. */
+  instruction: string;
+  /** Why the rail is this module's own STRUCTURE rather than a density fix. */
+  why: string;
+}
+
+const FACE_TAB_OPT_IN: readonly TabOptIn[] = [
+  {
+    type: 'spirographs',
+    instruction: '"this should just be 3 tabs, one per spiro"',
+    why:
+      "The three spiros are INDEPENDENT FIGURES, not three sections of one idea: each has its own complete ten-param bank and its own centre drifting across the frame. The module's own legacy card already shipped a role=\"tablist\" with a 1/2/3 selector and edited one spiro at a time, so the rail restores a structure the module had rather than compressing a column that was merely tall.",
+  },
+];
+
+describe('face.tabbed — the opt-in is NAMED, and cannot be taken quietly', () => {
+  const declaring = (): string[] => {
+    const all = [
+      ...(listModuleDefs() as unknown as (FaceDefLike & { type: string })[]),
+      ...(listVideoModuleDefs() as unknown as (FaceDefLike & { type: string })[]),
+    ];
+    return all.filter((d) => faceForcesTabs(d)).map((d) => d.type).sort();
+  };
+
+  it('no def declares face.tabbed without a NAMED entry', () => {
+    const named = new Set(FACE_TAB_OPT_IN.map((e) => e.type));
+    const rogue = declaring().filter((t) => !named.has(t));
+    expect(
+      rogue,
+      'a face forces the tab rail on with no FACE_TAB_OPT_IN entry. This is an OWNER-INSTRUCTION-ONLY ' +
+        'declaration: author honest pages and let the rail engage at DOCK_TAB_MIN_BANDS instead. If the ' +
+        'owner really did ask for tabs on this module, add an entry quoting the instruction VERBATIM.',
+    ).toEqual([]);
+  });
+
+  it('ANCHOR: every entry names a def that still declares it — a dead licence is RED', () => {
+    const live = new Set(declaring());
+    const dead = FACE_TAB_OPT_IN.map((e) => e.type).filter((t) => !live.has(t));
+    expect(
+      dead,
+      'an opt-in entry names a module that no longer forces tabs. Delete it — a stale licence ' +
+        'silently pre-approves whatever takes its name next.',
+    ).toEqual([]);
+  });
+
+  it('every entry quotes an instruction and states why the rail is structural', () => {
+    for (const e of FACE_TAB_OPT_IN) {
+      expect(e.instruction.trim().length, `${e.type}: instruction must be quoted verbatim`).toBeGreaterThan(10);
+      expect(e.instruction, `${e.type}: the instruction must be a QUOTE`).toMatch(/["“”]/);
+      expect(e.why.trim().length, `${e.type}: why must be a real argument`).toBeGreaterThan(80);
+    }
+  });
+
+  it('THE FENCE: the opt-in does not leak — every OTHER face still answers to the threshold', () => {
+    // ⚠ THE CLAUSE THAT KEEPS THIS FROM BECOMING "tabs on request". Named
+    // explicitly because the owner ruled it for a specific module and ruled
+    // ruttetra the other way in the same breath.
+    const named = new Set(FACE_TAB_OPT_IN.map((e) => e.type));
+    expect([...named], 'the opt-in roster is exactly its owner-instructed members').toEqual([
+      'spirographs',
+    ]);
+    const all = [
+      ...(listModuleDefs() as unknown as (FaceDefLike & { type: string })[]),
+      ...(listVideoModuleDefs() as unknown as (FaceDefLike & { type: string })[]),
+    ];
+    const ruttetra = all.find((d) => d.type === 'ruttetra');
+    if (ruttetra) {
+      expect(faceForcesTabs(ruttetra), 'ruttetra ships UNTABBED by owner ruling ("2 - a")').toBe(false);
+    }
+  });
+
+  it('NEGATIVE CONTROL: the opt-in genuinely forces a rail the threshold refuses', () => {
+    // Both directions on the SAME band count, so neither leg can pass vacuously.
+    const few = bands(3);
+    expect(dockTabPlan(few, 'dock-full', undefined), '3 bands, no opt-in').toBeNull();
+    expect(
+      dockTabPlan(few, 'dock-full', { face: { tabbed: true } }),
+      '3 bands, opted in',
+    ).toHaveLength(3);
+    // …and it does NOT override the host: a drawer still paints no rail, so a
+    // forced-tabs face there would be a hide with no rail.
+    expect(
+      dockTabPlan(few, 'drawer', { face: { tabbed: true } }),
+      'the drawer host refuses the rail even when forced',
+    ).toBeNull();
+    // …and the hide side moves with it, which is the property that matters.
+    const tabs = dockTabPlan(few, 'dock-full', { face: { tabbed: true } });
+    expect(few.filter((b) => !dockBandVisible(b.id, tabs, 'p0')).map((b) => b.id)).toEqual([
+      'p1',
+      'p2',
+    ]);
   });
 });
 

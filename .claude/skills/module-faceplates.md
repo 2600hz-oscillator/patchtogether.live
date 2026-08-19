@@ -100,6 +100,7 @@ the gate.**
 | a `hero.cell` **suppresses the shell glyph at the dock** | `ModuleFaceHero` doc, `graph/types.ts:698-703` | painting both put an empty black rectangle beside the graph on a silent rack. Untouched at every other tier. |
 | `hero.cell/control/action` **MOVE** a key, never duplicate | `heroFacePlan`, `dock-faceplate-model.ts:276` | a duplicate emits a second `control-<paramId>` and fails faces-parity's exact multiset. `heroFacePlanIsTotal` (`:336`) pins the move. The key must already be claimed by a band. |
 | tier caps are GEOMETRY, not an authored ladder | `curated-face.ts:62-79` | mini 1 · compact 2 with a glyph / 3 without · plate 6 · dock all. **Ranks 1–6 are the entire lane budget; rank 7+ is dock-only.** |
+| a HUE is its own primitive (`paramCells: 'hue'`) | `HueWheel.svelte`, `shell-control-kind.ts` | the conic ring, for a CONTINUOUS `0..1` angle. **Not `'color'`** (that is a DISCRETE packed-RGB picker) and **not a knob** — a hue wraps, so a dial's end stops fall mid-space. It paints NO value; the angle is in `aria-valuetext`. module-face-lint refuses it on any other param shape. |
 | ≥7 bands ⇒ TAB RAIL | `dock-tabs-model.ts:56,72` | `DOCK_TAB_MIN_BANDS = 7`. A tabbed face never packs rows and prints no band hints where the rail names them. |
 
 ### Owner ruling (2026-08-18): a CONTROL-HEAVY module gets a TABBED face, like backdraft
@@ -115,6 +116,29 @@ the one persistent element (its preview screen) present in every view (owner:
   `DOCK_TAB_MIN_BANDS = 7`. **Do not cram a heavy module into few dense bands to
   stay under the threshold**, and do not solve heaviness with row wrapping — a
   page per IDEA, like backdraft's.
+
+### ⛔ `face.tabbed` — the per-face rail opt-in is OWNER-INSTRUCTION ONLY
+
+A face can force the rail on below the threshold. **You may not reach for it.**
+
+- **It is declared only on an EXPLICIT OWNER INSTRUCTION, per module**, and the
+  instruction goes into `FACE_TAB_OPT_IN` (`dock-tabs-model.test.ts`) **verbatim**,
+  beside an argument for why the rail is that module's own STRUCTURE. A def that
+  declares `tabbed` with no entry is RED; an entry whose module no longer
+  declares it is RED. Provenance is the point: the risk is an agent adding it
+  because a face "reads better as tabs" and writing a plausible sentence about
+  what the owner wanted.
+- **It does NOT reopen the threshold question for anything else.** The default
+  stands: author honest pages, and the rail engages at 7. A 3–6 page face
+  renders as one column and that is CORRECT — the owner ruled `ruttetra` ships
+  **untabbed** in the same breath as ruling spirographs tabbed.
+- **Today's only adopter is `spirographs`** (*"this should just be 3 tabs, one
+  per spiro"*): three independent figures, one editable at a time — the
+  structure its own legacy card already had.
+- ⚠ **A hero that empties its band changes the tab count.** `heroFacePlan` drops
+  a band whose every control was promoted, so the rail must be computed from the
+  POST-hero bands — `DockFullView` does this, and a def-less or pre-hero
+  `dockTabPlan` call is the "rail with no matching hide" blank-faceplate class.
 - This does not repeal "do not add a page just to get a header" (below): pages
   must still be different IDEAS. On a genuinely heavy module they are. If a
   heavy module's honest semantic grouping lands at 5–6 pages — under the rail

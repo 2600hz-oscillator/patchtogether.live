@@ -251,28 +251,55 @@ export const SPIRO_PAGE_GROUPS: readonly {
   { id: 'look', label: 'look', stems: ['thickness', 'chroma'] },
 ];
 
-/** The face's pages: `count` first, then figure/place/look for each spiro.
- *  DERIVED, so a page can never name a param the module does not have and a
- *  new spiro cannot arrive without its pages. */
-export function spirographsPages(): readonly { id: string; label: string; controls: string[] }[] {
-  const pages: { id: string; label: string; controls: string[] }[] = [
-    { id: 'count', label: 'count', controls: ['count'] },
-  ];
+/**
+ * The face's pages: ONE PER SPIRO, each carrying that spiro's whole bank.
+ *
+ * ⚠ THIS USED TO BE TEN PAGES — `count` plus figure/place/look × 3 — and the
+ * owner replaced it by name: *"this should just be 3 tabs, one per spiro"*.
+ * The three IDEAS did not go away, they demoted: figure/place/look are now
+ * CLUSTERS inside their spiro's page, which is the right grammar for them
+ * (a page costs a ~81 px band, a cluster a ~14 px sub-header — and these three
+ * are the same idea asked three times, not three different pages).
+ *
+ * `count` is NOT a page. It is the only true global on the module and it
+ * decides how many of the three tabs mean anything, so it belongs in the face's
+ * shared chrome — it is promoted to `face.hero.control` and therefore paints
+ * ABOVE the rail, present in every view. A tab of its own would have been a
+ * rail entry holding exactly one dial.
+ *
+ * DERIVED, so a page can never name a param the module does not have and a
+ * fourth spiro could not arrive without its page.
+ */
+export function spirographsPages(): readonly {
+  id: string;
+  label: string;
+  controls: string[];
+  clusters?: { label: string; controls: string[] }[];
+}[] {
+  const pages: {
+    id: string;
+    label: string;
+    controls: string[];
+    clusters?: { label: string; controls: string[] }[];
+  }[] = [];
   for (let i = 1; i <= SPIRO_COUNT_MAX; i++) {
-    for (const g of SPIRO_PAGE_GROUPS) {
-      pages.push({
-        id: `s${i}-${g.id}`,
-        label: `${i} ${g.label}`,
+    pages.push({
+      id: `s${i}`,
+      label: `${i}`,
+      controls: SPIRO_PAGE_GROUPS.flatMap((g) => g.stems.map((stem) => spiroParamId(i, stem))),
+      clusters: SPIRO_PAGE_GROUPS.map((g) => ({
+        label: g.label,
         controls: g.stems.map((stem) => spiroParamId(i, stem)),
-      });
-    }
+      })),
+    });
   }
   return pages;
 }
 
-/** `face.order` — every page's controls, in page order. */
+/** `face.order` — `count` first (it is the hero, and a hero key must already be
+ *  claimed by a band), then every page's controls in page order. */
 export function spirographsOrder(): readonly string[] {
-  return spirographsPages().flatMap((p) => p.controls);
+  return ['count', ...spirographsPages().flatMap((p) => p.controls)];
 }
 
 const INPUTS: VideoModuleDef['inputs'] = (() => {
@@ -428,7 +455,8 @@ export const spirographsDef: VideoModuleDef = {
   // THE TIER LADDER: mini shows COUNT; compact shows COUNT + spiro 1's R and r
   // (three columns, no glyph); the plate shows the top six — COUNT plus spiro
   // 1's whole figure page and its rotation; the dock shows all thirty-one on a
-  // ten-tab rail, with the live picture and the readouts above it.
+  // THREE-TAB rail, one tab per spiro, with COUNT and the live picture above it
+  // in the shared chrome.
   //
   // ── glyph: 'none' — REQUIRED, and counter-intuitively so ──────────────────
   //
@@ -441,34 +469,68 @@ export const spirographsDef: VideoModuleDef = {
   // asserts `hasVideoSurface`, not the glyph, which is the only way to tell
   // them apart.
   //
-  // ── THE READOUTS: three joins, none of them a dial ───────────────────────
+  // ── THE LAYOUT: THREE TABS, ONE PER SPIRO (owner, 2026-08-19) ────────────
   //
-  //   live    how many spiros are drawing. The dial says `1`; what it cannot
-  //           say is that twenty other dials are therefore inert.
-  //   closes  which LIVE figures never close. R and r are CONTINUOUS, and a
-  //           trochoid closes only on a RATIONAL ratio: at R = 5, r = 3 closes
-  //           in 3 revolutions and r = 2.4142 hits the module's own 200-cap and
-  //           never closes. The two dial positions are a millimetre apart.
-  //   clip    which LIVE figures reach past the frame. ⚠ SCALE-INVARIANT, which
-  //           is the opposite of what a zoom control suggests: only the FIXED
-  //           circle is kept in frame (radius `R * scale`, bounced off an inset
-  //           of its own size), so the curve overflows exactly when
-  //           `curveMaxReach > R` — and `scale` multiplies both sides away.
+  // *"this should just be 3 tabs, one per spiro"*, against the CARD as the
+  // reference layout: *"this is all it needs and it needs all this including
+  // the color picker"*.
   //
-  // ⚠ ALL THREE ARE COMPUTED OVER THE LIVE SPIROS ONLY, and that is the
-  // permanent negative control: at `count = 1`, perturbing ANY of spiro 3's ten
-  // dials must move NONE of them, while its own knob readback happily reports
-  // the new value. Raising `count` must then make the same perturbation
-  // visible. Both directions are asserted in spirographs-face-model.test.ts.
+  // The face this replaced had TEN pages — `count` plus figure/place/look for
+  // each of the three spiros — which put nine rail chips in front of a player
+  // who thinks in figures, not in categories. The three ideas survive as
+  // CLUSTERS inside each spiro's page (a ~14 px sub-header against a page's
+  // ~81 px band), which is the right grammar for them: they are the same idea
+  // asked three times, not three different pages.
   //
-  // Every derivation is the module's OWN — `revolutionsToClose` and
-  // `curveMaxReach` are the same functions the draw path calls, imported rather
-  // than re-implemented, so the faceplate cannot describe a curve the module
-  // stopped drawing.
+  // `count` is the only true global and it decides how many tabs mean anything,
+  // so it is the HERO CONTROL — shared chrome above the rail, present in every
+  // view, rather than a rail chip holding one dial.
+  //
+  // ⚠ THE RAIL IS AN OWNER-INSTRUCTED OPT-IN (`face.tabbed`), NOT A THRESHOLD
+  // WIN. Three bands is well under `DOCK_TAB_MIN_BANDS` (7), so without the
+  // declaration this face would render as one column. The opt-in is fenced:
+  // see `FACE_TAB_OPT_IN` in dock-tabs-model.test.ts, which requires the
+  // instruction VERBATIM per module and refuses an undeclared adopter. It does
+  // NOT generalise — the default is still honest pages and a rail at 7.
+  //
+  // ⚠ AND THE HERO EMPTIES ITS OWN BAND, which is why DockFullView now computes
+  // the rail from the POST-hero bands. `count` is ranked but on no page, so it
+  // lands in the defensive `__unpaged` band; promoting it to the hero empties
+  // that band and `heroFacePlan` drops it. A rail built from the PRE-hero plan
+  // would have painted a fourth chip opening onto nothing.
+  //
+  // ── THE HUE WHEEL ────────────────────────────────────────────────────────
+  //
+  // Each spiro's `chroma` declares `paramCells: 'hue'` — the conic ring, the
+  // control the legacy card drew by hand. It is a distinct primitive from
+  // `'color'` (which is a DISCRETE packed-RGB picker): a hue is CONTINUOUS over
+  // one turn and WRAPS, so a KnobConic would put its end stops in the middle of
+  // a continuous space and make two adjacent reds a full drag apart.
+  //
+  // ⚠ THE READOUTS ARE GONE. This face declared a hero strip (`live / closes /
+  // clip`) and a sidebar `figures` block, and both are deleted platform-wide by
+  // the resting-text ruling — it was THIS module's sidebar the owner was looking
+  // at when he gave it. The three facts they printed (how many spiros are live,
+  // which never close, which overflow the frame) still exist as pure functions;
+  // they have no renderer, and per the ruling they are not to get one.
+  //
   face: {
     order: spirographsOrder(),
     glyph: 'none',
     pages: spirographsPages(),
+
+    // OWNER-INSTRUCTED TAB OPT-IN — see the note above and the fenced
+    // FACE_TAB_OPT_IN registry. Three bands is under the threshold; this is
+    // what makes the rail appear anyway.
+    tabbed: true,
+
+    // COUNT is the shared chrome: the one global, above the rail, in every view.
+    hero: { control: 'count' },
+
+    // Each spiro's HUE as the conic wheel the card drew by hand.
+    paramCells: Object.fromEntries(
+      Array.from({ length: SPIRO_COUNT_MAX }, (_, i) => [spiroParamId(i + 1, 'chroma'), 'hue']),
+    ) as Record<string, 'hue'>,
 
     // ⚠ THE SCREEN ON/OFF SWITCH ARRIVES THROUGH THIS SLOT, AND IT HAD TO
     // (#1928). The 2026-08-18 owner ruling gives every video module a screen
