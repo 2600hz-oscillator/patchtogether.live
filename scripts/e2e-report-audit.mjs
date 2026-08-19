@@ -32,6 +32,42 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { budgetViolations, classifySkipRow, AUDITED_LANES } from './e2e-skip-budget.mjs';
 
+// ── ⚠ DOOM IS EXCLUDED BY NAME FROM THE FLAKE GATE (#1903) ─────────────────
+//
+// Three DOOM tests recovered flakes in the 96 h census (#1847: doom-audio-output
+// x4, doom-late-join x1, doom-mp-real x1) and were DELIBERATELY LEFT UNPARKED —
+// the owner reserved them for their own decision. They are therefore live tests
+// that would trip this gate.
+//
+// The reason is mechanical, not preference. `video/modules/doom.ts` calls
+// `runtime.runTic()` inside `surface.draw`, and `runTic` runs exactly one
+// `dgpt_tick`, so DOOM's game clock IS the frame clock: one rendered frame is
+// one game tic. Anything that changes DOOM's timing re-specifies how far the
+// marine walks, in a suite that then asserts on where he ended up. Standing
+// owner ruling: "do not fuck with doom in any way without specific approval".
+//
+// ⚠ EXCLUDED FROM FAILING THE JOB, NOT FROM BEING REPORTED. A DOOM flake still
+// prints, under its own heading naming the ruling. A silent exclusion is the
+// failure mode even when the exclusion is correct.
+const DOOM_SPEC = /(^|\/)doom-[^/]*\.spec\.ts$/;
+
+/** True when a row belongs to an owner-reserved DOOM spec. */
+export function isDoomReserved(file) {
+  return DOOM_SPEC.test(String(file ?? ''));
+}
+
+/**
+ * Split flaky rows into the ones that GATE and the ones that are owner-reserved.
+ * Exported so the gate and its tests call the SAME predicate — a control that
+ * re-implements the split proves nothing about the split.
+ */
+export function partitionFlaky(flaky) {
+  return {
+    gating: (flaky ?? []).filter((r) => !isDoomReserved(r.file)),
+    doomReserved: (flaky ?? []).filter((r) => isDoomReserved(r.file)),
+  };
+}
+
 /**
  * @typedef {Object} Row
  * @property {string} file
@@ -103,10 +139,40 @@ export function formatSummary({ flaky, skipped, total }, violations = null) {
       + `(${placeholders.length} exemption placeholders · ${surfaced.length} runtime)`,
     '',
   );
-  if (flaky.length) {
-    out.push(`### Flaky — passed only on retry`, '');
-    out.push(`A green job is hiding these. Each one failed at least once on this run.`, '');
-    for (const r of flaky) out.push(`- \`${r.file}\` — ${r.title} _(${r.retries} attempts)_`);
+  const { gating, doomReserved } = partitionFlaky(flaky);
+  if (gating.length) {
+    out.push(`### ✗ FLAKY — passed only on retry`, '');
+    out.push(
+      `**This run is RED because of these.** Each one FAILED at least once and then `
+        + `passed on a retry, on THIS commit. Without the gate the job would report `
+        + `SUCCESS and the flake would merge — which is how #1875 and #1860 took \`main\` `
+        + `red twice in one day after riding green PR runs.`,
+      '',
+    );
+    for (const r of gating) {
+      out.push(`- \`${r.file}\` — ${r.title} _(${r.retries} attempts)_`);
+    }
+    out.push('');
+    out.push(
+      `**Fix it, or park it (#1847) — never merge it, and never re-run until green.** `
+        + `A retry that rescues a test is the same evidence the green runs before a break `
+        + `provided. Parking is \`test.fixme\` with a NAMED reason plus its `
+        + `\`scripts/e2e-skip-budget.mjs\` entry, so the debt is greppable and not anonymous.`,
+      '',
+    );
+  }
+  if (doomReserved.length) {
+    out.push(`### ⏸ DOOM — flaky, reported, NOT gating (owner-reserved)`, '');
+    out.push(
+      `DOOM's game clock IS its frame clock, so a timing change re-specifies how far `
+        + `the marine walks. Standing owner ruling: do not touch DOOM without specific `
+        + `approval. These are printed so the exclusion is visible, never silent — they `
+        + `do NOT fail this job.`,
+      '',
+    );
+    for (const r of doomReserved) {
+      out.push(`- \`${r.file}\` — ${r.title} _(${r.retries} attempts)_`);
+    }
     out.push('');
   }
   if (surfaced.length) {
@@ -130,6 +196,22 @@ export function formatSummary({ flaky, skipped, total }, violations = null) {
     }
   }
   if (!flaky.length && !skipped.length) out.push('No flaky or skipped tests. ✓');
+  // ── ⚠ WHAT THIS GATE STRUCTURALLY CANNOT SEE ────────────────────────────
+  // Stated inside the gate, because an unstated scope reads as full coverage.
+  // A green run here does NOT mean "this commit has no nondeterminism".
+  out.push(
+    '',
+    '<sub>Flake-gate scope: this reads ONE report from ONE job. It cannot see — '
+      + '(a) a flake that recovers across a whole-JOB re-run rather than a test retry, '
+      + 'because that is a second report nothing compares to the first; '
+      + '(b) a test killed by the job or global timeout, which reports as a hard '
+      + 'failure or as nothing at all, never as `flaky`; '
+      + '(c) a test that failed BOTH attempts — that is a red job on its own merits, not a flake; '
+      + '(d) nondeterminism that happened to pass twice, which is the whole population this '
+      + 'gate is blind to by construction; and '
+      + '(e) any lane whose Playwright invocation does not run this audit — which is why '
+      + '`scripts/ci-flake-gate.test.ts` denies that at the source.</sub>',
+  );
   return out.join('\n');
 }
 
@@ -174,9 +256,30 @@ if (isMain) {
     );
     fail = true;
   }
-  if (process.argv.includes('--fail-on-flaky') && audit.flaky.length > 0) {
-    console.log(`::error::${audit.flaky.length} test(s) passed only on retry — a required lane must not go green on a recovered flake.`);
-    fail = true;
+  if (process.argv.includes('--fail-on-flaky')) {
+    const { gating, doomReserved } = partitionFlaky(audit.flaky);
+    // One annotation PER TEST, not one for the population: a count tells you
+    // there is a problem, a name tells you whose it is. GitHub surfaces these
+    // on the job page, so the roster is readable without opening an artifact.
+    for (const r of gating) {
+      console.log(
+        `::error file=${r.file}::FLAKE (${r.retries} attempts) — "${r.title}" failed then `
+          + `passed on retry. Fix it or park it per #1847; never merge a flake.`,
+      );
+    }
+    for (const r of doomReserved) {
+      console.log(
+        `::notice file=${r.file}::DOOM flake (${r.retries} attempts) — "${r.title}". `
+          + `Owner-reserved, NOT gating. Do not touch DOOM without specific approval.`,
+      );
+    }
+    if (gating.length > 0) {
+      console.log(
+        `::error::${gating.length} test(s) passed only on retry — a lane must not go `
+          + `green on a recovered flake (#1903).`,
+      );
+      fail = true;
+    }
   }
   if (fail) process.exit(1);
 }
