@@ -907,6 +907,36 @@ export const FACES = [
   // ⚠ A future default above that threshold would turn this scene into the
   // `analogVco` non-determinism case overnight.
   { type: 'moog904a', pages: 2 },
+  // THE 912 ENVELOPE FOLLOWER — SINGLE PAGE (both knobs are the same idea), so
+  // `pages: 1` here is the absence of a `face.pages` declaration, not a count of
+  // one.
+  //
+  // ⚠ THIS ONE MOVES A COMMITTED STRICT BASELINE, unlike the other two in this
+  // wave. `moog912` is in STRICT_VRT_MODULES, so `vrt.spec.ts/moog912.png` is a
+  // committed capture of a surface the promotion REPLACES: that scene now frames
+  // a ModuleShell tile instead of `Moog912Card.svelte`.
+  //
+  // ⚠ THE BASELINE IS RE-CAPTURED, NOT DELETED, and the distinction was checked
+  // against the tree rather than assumed. The queue spec said to `git rm` it
+  // first, on the skill's "--update-snapshots cannot regenerate a
+  // PASSING-but-stale baseline" hazard. That hazard does not apply here and the
+  // deletion would be actively wrong: `vrt-meta.test.ts` asserts EVERY
+  // STRICT_VRT_MODULES entry HAS a committed baseline, so removing it reddens a
+  // gate. `moog923` is the precedent — promoted, in STRICT_VRT_MODULES, and its
+  // `moog923.png` is still there. The `git rm`-first discipline is for a stale
+  // baseline whose diff falls UNDER the tolerance; a legacy beige Moog card
+  // becoming a shell tile is nowhere near that, so the comparison fails loudly
+  // and the capture rewrites it.
+  //
+  // ⚠ ITS HERO READOUTS PRINT AT THE SPAWN DEFAULTS and are IN the dock image:
+  // `7.07 Hz · -13.0 dBFS`. Both strings are pinned in
+  // `moog912-face-model.test.ts`.
+  //
+  // Glyph is 'none' and FORCED — every output is cv/gate, so
+  // `primaryAudioOutPortId` is null and no glyph kind resolves to anything but
+  // the dead `{kind:'static'}`. Nothing live is in this scene at all, which
+  // makes it the most trivially deterministic capture in the roster.
+  { type: 'moog912', pages: 1 },
   // THE FIRST VIDEO FACE. Its `pages` are feedback / loop / colour / key /
   // switches / tv screen / virtual camera — enough bands to reach
   // DOCK_TAB_MIN_BANDS, so the dock scene captures a TAB RAIL with one band
