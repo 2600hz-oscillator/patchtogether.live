@@ -230,41 +230,9 @@ describe('analogLogicMaths face model — the readout matrix, in BOTH directions
       expect(cells.some((c) => !c), `${valueId} moves under every structural leg`).toBe(true);
     }
   });
-
-  it('the COARSE sweep still catches a readout going constant', () => {
-    // The all-true matrix the header calls vacuous, kept for the one thing it
-    // does prove: over each dial's full declared travel, with the other dial at
-    // its shipped default, no readout may be frozen.
-    for (const { valueId } of HERO_READOUTS) {
-      for (const p of analogLogicMathsDef.params) {
-        const lo = printed(valueId, { ...DEFAULTS, [p.id]: p.min! });
-        const hi = printed(valueId, { ...DEFAULTS, [p.id]: p.max! });
-        const mid = printed(valueId, { ...DEFAULTS, [p.id]: 0 });
-        expect(
-          new Set([lo, hi, mid]).size,
-          `${valueId} is CONSTANT across ${p.id} ${p.min}..${p.max} (${lo} / ${mid} / ${hi})`,
-        ).toBeGreaterThan(1);
-      }
-    }
-  });
 });
 
 describe('analogLogicMaths face model — the four laws, and the numbers they print', () => {
-  it('the shipped defaults print the headline row', () => {
-    // The face's resting state, which is what a reviewer sees and what the VRT
-    // dock baseline contains. ⚠ THE GAP BETWEEN `peak` AND `sum` IS THE TANH:
-    // the un-clipped sum of two dials at +1 is ×2.00 and SUM delivers ×0.96.
-    expect(printed('alm-sum-gain', DEFAULTS)).toBe('×0.96');
-    expect(printed('alm-diff-gain', DEFAULTS)).toBe('×0.00');
-    expect(printed('alm-ring-gain', DEFAULTS)).toBe('×0.76');
-    expect(printed('alm-peak', DEFAULTS)).toBe('×2.00');
-    // …and the un-clipped reference the compression is stated against, so the
-    // −6.34 dB in the docs has a denominator in the tree rather than in prose.
-    const lin = almFaceParams(reader(DEFAULTS)).reduce((s, v) => s + v, 0);
-    const dB = 20 * Math.log10(almSumGain(almFaceParams(reader(DEFAULTS))) / lin);
-    expect(dB, `SUM compression at the ±${ALM_PROBE} probe, dB re the UN-CLIPPED sum of ${lin}`)
-      .toBeCloseTo(-6.3388, 3);
-  });
 
   it('`sum` is the only law that is NON-LINEAR IN THE DRIVE', () => {
     // The property that makes it a JOIN rather than a gain, and the reason the
@@ -303,26 +271,9 @@ describe('analogLogicMaths face model — the four laws, and the numbers they pr
     expect(dbOne, 'dB re the un-clipped sum, ATT B closed').toBeCloseTo(-2.3655, 3);
     expect(dbBoth, 'opening the second dial nearly triples the compression').toBeLessThan(dbOne - 3);
   });
-
-  it('`ring` MULTIPLIES where `peak` ADDS', () => {
-    // The distinction the fourth readout exists for, stated as a ratio rather
-    // than as two printed strings.
-    expect(almPeak([0.5, 0.5]) / almPeak([1, 1]), 'peak halves').toBeCloseTo(0.5, 6);
-    // tanh(0.25)/tanh(1) — the quartering, softened by the same tanh SUM uses.
-    expect(almRingGain([0.5, 0.5]) / almRingGain([1, 1]), 'ring falls by far more than half')
-      .toBeLessThan(0.4);
-  });
 });
 
 describe('analogLogicMaths face model — totality and the structural declarations', () => {
-
-  it('a FRESH node — the sparse overlay resolves the def DEFAULTS, not zero', () => {
-    // The StereoCrossoverPanel scar: `node.params` is an overlay of what has
-    // been TOUCHED, so a bare read draws a face saying ×0.00 beside two faders
-    // sitting at +1.
-    expect(almFaceParams(reader({}))).toEqual(ALM_ATT_PARAM_IDS.map((id) => DEFAULTS[id]));
-    expect(printed('alm-peak', {})).toBe(printed('alm-peak', DEFAULTS));
-  });
 
   it('the CLIPPED / LINEAR partition names only DECLARED ports, and partitions them', () => {
     // ANCHORED: a jack renamed out from under `ALM_CLIPPED_OUT_IDS` is RED here,

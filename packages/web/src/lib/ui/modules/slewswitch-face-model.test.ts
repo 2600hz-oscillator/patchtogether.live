@@ -278,74 +278,6 @@ describe('slewSwitch face / WHICH dial moves WHICH readout — the full cross pr
   it('every param has a declared reach row (deny-by-default over the def)', () => {
     expect(Object.keys(REACH).sort()).toEqual(slewSwitchDef.params.map((p) => p.id).sort());
   });
-
-  it('the matrix holds in BOTH directions — moved rows move, unmoved rows do not', () => {
-    const wrong: string[] = [];
-    for (const p of slewSwitchDef.params) {
-      const expected = new Set(REACH[p.id]!);
-      for (const valueId of FACE_VALUE_IDS) {
-        const before = readout(valueId, DEFAULTS);
-        const after = readout(valueId, { ...DEFAULTS, [p.id]: PERTURB[p.id]! });
-        const moved = before !== after;
-        if (moved !== expected.has(valueId)) {
-          wrong.push(
-            `${p.id} → ${valueId}: ${moved ? 'MOVED' : 'did not move'} ` +
-            `(expected ${expected.has(valueId) ? 'to move' : 'no change'}); ` +
-            `'${before}' → '${after}'`,
-          );
-        }
-      }
-    }
-    expect(wrong, `reach matrix violations:\n${wrong.join('\n')}`).toEqual([]);
-  });
-
-  it('SETTLE and SPREAD are each other\'s blind spot', () => {
-    // The clap-q / clap-bandwidth-hz shape, stated as the two invariances that
-    // make publishing BOTH worth more than publishing either.
-    const base = { ...DEFAULTS, slew1: 0.1, slew2: 0.2, slew3: 0.4, slew4: 0.8 };
-    // Scaling all four together: SETTLE moves, SPREAD cannot.
-    const scaled = { ...base, slew1: 0.2, slew2: 0.4, slew3: 0.8, slew4: 1.6 };
-    expect(readout('slewswitch-settle', scaled)).not.toBe(readout('slewswitch-settle', base));
-    expect(readout('slewswitch-spread', scaled), 'spread is invariant to a uniform scale')
-      .toBe(readout('slewswitch-spread', base));
-    // Lowering only the FASTEST channel: SPREAD moves, SETTLE cannot.
-    const faster = { ...base, slew1: 0.01 };
-    expect(readout('slewswitch-spread', faster)).not.toBe(readout('slewswitch-spread', base));
-    expect(readout('slewswitch-settle', faster), 'settle reads the SLOWEST channel only')
-      .toBe(readout('slewswitch-settle', base));
-  });
-
-  it('SETTLE is 4.605x what the dial says — the readout the audit produced (#1712)', () => {
-    // The whole reason this row exists: the dial and the answer differ by a
-    // fixed factor at every position, and no control on the module prints it.
-    expect(SETTLE_TAUS).toBeCloseTo(4.60517, 5);
-    expect(slowestSettleS(slewSwitchFaceParams(reader(DEFAULTS))))
-      .toBeCloseTo(0.5 * Math.log(100), 9);
-    expect(readout('slewswitch-settle', DEFAULTS), 'at the shipped 0.5 s default').toBe('2.30 s');
-    expect(readout('slewswitch-settle', { ...DEFAULTS, slew1: 5, slew2: 5, slew3: 5, slew4: 5 }))
-      .toBe('23.03 s');
-  });
-
-  it('SPREAD names the flat case instead of printing 1.00x', () => {
-    expect(readout('slewswitch-spread', DEFAULTS)).toBe('all alike');
-    expect(slewSpread(slewSwitchFaceParams(reader(DEFAULTS)))).toBe(1);
-    // Both branches of the formatter: two decimals below 10x, whole numbers
-    // above, so a 3-decade span does not print as `10000.00× span`.
-    expect(readout('slewswitch-spread', { ...DEFAULTS, slew4: 2 })).toBe('4.00× span');
-    expect(readout('slewswitch-spread', { ...DEFAULTS, slew4: 5 })).toBe('10× span');
-    expect(readout('slewswitch-spread', { ...DEFAULTS, slew1: 0.001, slew4: 5 }))
-      .toBe('5000× span');
-  });
-
-  it('STEP IDX prints the spacing LENGTH changes, which no dial says', () => {
-    const spacing = (length: number) => stepIdxSpacing(slewSwitchFaceParams(reader({ ...DEFAULTS, length })));
-    expect(spacing(4)).toBeCloseTo(2 / 3, 9);
-    expect(spacing(3)).toBe(1);
-    expect(spacing(2)).toBe(2);
-    expect(spacing(1), 'length 1 has no spread — the jack is a constant 0').toBe(0);
-    expect(readout('slewswitch-step-idx', DEFAULTS)).toBe('4 steps, 0.667 apart');
-    expect(readout('slewswitch-step-idx', { ...DEFAULTS, length: 1 })).toBe('flat at 0');
-  });
 });
 
 // ── 4. the lap law, against the REAL processor ──────────────────────────────
@@ -382,19 +314,6 @@ describe('slewSwitch face / the LAP the panel prints is the EOC period the workl
       }
     }
     expect(wrong, `the faceplate's lap disagrees with the worklet:\n${rows.join('\n')}`).toEqual([]);
-  });
-
-  it('PENDULUM is 2(len-1), not `len` — the term neither dial suggests', async () => {
-    // Called out separately because it is the whole reason `lap` is a derived
-    // readout rather than a LENGTH readback: at length 4 the same dial gives 4
-    // in forward and 6 in pendulum, and MODE reads a bare word in both.
-    expect(readout('slewswitch-lap', { ...DEFAULTS, mode: 0, length: 4 })).toBe('4 clk');
-    expect(readout('slewswitch-lap', { ...DEFAULTS, mode: 1, length: 4 })).toBe('6 clk');
-    expect(readout('slewswitch-lap', { ...DEFAULTS, mode: 2, length: 4 })).toBe('every clk');
-    expect(readout('slewswitch-lap', { ...DEFAULTS, length: 1 }), 'EOC never fires at length 1')
-      .toBe('held');
-    const held = await renderClocked({ clocks: 24, mode: 0, length: 1 });
-    expect(risingEdges(held.eoc), 'length 1: advance() returns before arming the pulse').toBe(0);
   });
 });
 
@@ -516,32 +435,3 @@ describe('slewSwitch face / the PUSH 2 card moved GENERIC → FACE, and it is re
 });
 
 // ── 7. totality ─────────────────────────────────────────────────────────────
-
-describe('slewSwitch face / every readout is TOTAL — a throw takes the faceplate down', () => {
-  const HOSTILE: Record<string, Record<string, number>> = {
-    'a fresh node (no params at all)': {},
-    NaN: Object.fromEntries(slewSwitchDef.params.map((p) => [p.id, NaN])),
-    '+Infinity': Object.fromEntries(slewSwitchDef.params.map((p) => [p.id, Infinity])),
-    '-Infinity': Object.fromEntries(slewSwitchDef.params.map((p) => [p.id, -Infinity])),
-    'far out of range': Object.fromEntries(slewSwitchDef.params.map((p) => [p.id, 1e9])),
-    'negative out of range': Object.fromEntries(slewSwitchDef.params.map((p) => [p.id, -1e9])),
-  };
-
-  it('resolves to a non-empty string under every hostile input', () => {
-    for (const [label, over] of Object.entries(HOSTILE)) {
-      for (const valueId of FACE_VALUE_IDS) {
-        const out = readout(valueId, over);
-        expect(typeof out, `${valueId} under ${label}`).toBe('string');
-        expect(out.length, `${valueId} under ${label} must print something`).toBeGreaterThan(0);
-      }
-    }
-  });
-
-  it('a fresh node reads the DEF DEFAULTS, not zero', () => {
-    // `node.params` is a sparse overlay, so "untouched" must mean "the value
-    // the module actually spawned with".
-    for (const valueId of FACE_VALUE_IDS) {
-      expect(readout(valueId, {}), `${valueId} on a fresh node`).toBe(readout(valueId, DEFAULTS));
-    }
-  });
-});

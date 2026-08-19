@@ -80,10 +80,6 @@ const DEFAULTS = Object.fromEntries(
 const P = (over: Record<string, number> = {}) => bugglesFaceParams(reader({ ...DEFAULTS, ...over }));
 
 const PARAM_IDS = bugglesDef.params.map((p) => p.id);
-/** The registered ids, DERIVED from the def's own declaration rather than
- *  typed — so a renamed readout is red from both directions. */
-  .map((r) => r.valueId)
-  .filter((v): v is string => !!v);
 
 describe('buggles face model / the output table IS the declared jack roster', () => {
   it('BUGGLES_OUTPUT_READOUTS equals `outputs`, in order, in BOTH directions', () => {

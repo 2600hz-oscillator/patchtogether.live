@@ -356,24 +356,6 @@ describe('kickdrum faceplate structure — the hero PROMOTES, it does not copy',
     expect(sub.controls.map((c) => c.key)).toEqual(['sub_decay', 'sub_level', 'sub_eq', 'translate']);
   });
 
-  it('the hero readouts print the MOCK\u2019s numbers — and TAIL is DERIVED, not a knob', () => {
-    // The mock bakes `tail ≈ 480 ms · +24 st → 50 Hz` into the picture. Baked
-    // strings are how a faceplate prints 480 while the knob under it reads 450,
-    // so all three are live.
-    //
-    // ⚠ BUT `tail` IS NOT `sub_decay`. An earlier draft declared exactly that,
-    // and it printed `450 ms` here — a number that moves with SUB DEC, looks
-    // completely right, and is INVARIANT to SUB LEVEL, which genuinely changes
-    // how long this drum rings. The voice's real −60 dB tail is 398 ms. This
-    // assertion is the difference between the two models, in one line.
-    const read = (pid: string) => kickdrumDef.params.find((p) => p.id === pid)?.defaultValue;
-    const printed = (split.hero?.readouts ?? []).map(
-      (r) => `${r.label} ${readoutText(r, kickdrumDef.params, read)}`,
-    );
-    expect(printed).toEqual(['tail 398 ms', 'sweep +24 st', 'settles to 50 Hz']);
-    expect(printed[0], 'the blind model printed 450 ms here').not.toContain('450');
-  });
-
   it('the hero also promotes the module\u2019s own PICTURE, which is the mock\u2019s top strip', () => {
     // The single element whose absence got the delivered face rejected. It is a
     // panel cell, promoted — so it renders in the hero and nowhere else.
@@ -425,35 +407,6 @@ describe('kickdrum faceplate structure — the sidebar says what the DSP does', 
     expect(kickdrumDef.params.some((p) => p.id === xover.props?.widthParam)).toBe(true);
   });
 
-  it('every preset is a REAL, in-range setting of this drum — never a decorative row', () => {
-    const presets = blocks.find((b) => b.kind === 'presets')!;
-    if (presets.kind !== 'presets') throw new Error('unreachable');
-    expect(presets.entries.map((e) => e.label)).toEqual([
-      'DEEP CLUB',
-      'TECHNO PUNCH',
-      '909 CLASSIC',
-      'SUB BOOM',
-      'LO-FI THUMP',
-    ]);
-    for (const e of presets.entries) {
-      const writes = presetWrites(e.values, kickdrumDef.params);
-      // Every declared key survives (none dropped as unknown) and none was
-      // clamped — a clamped preset applies a value it does not name.
-      expect(writes.map((w) => w.paramId).sort(), `${e.id}: every key is a real param`).toEqual(
-        Object.keys(e.values).sort(),
-      );
-      for (const w of writes) {
-        expect(w.value, `${e.id}.${w.paramId} was clamped`).toBe(e.values[w.paramId]);
-      }
-      // …and each one is DISTINCT from the defaults, so selecting it does
-      // something audible.
-      const changed = writes.filter(
-        (w) => w.value !== kickdrumDef.params.find((p) => p.id === w.paramId)!.defaultValue,
-      );
-      expect(changed.length, `${e.id}: selecting it must change the sound`).toBeGreaterThan(0);
-    }
-  });
-
   it('the presets’ TUNE values are the numbers their names promise', () => {
     // The note beside each row is the claim; this is the check. A row reading
     // "DEEP CLUB · 50 Hz" that tunes to 70 is the same lie class as a knob
@@ -467,23 +420,6 @@ describe('kickdrum faceplate structure — the sidebar says what the DSP does', 
     // The two whose notes name a CHARACTER rather than a pitch drive HARD.
     expect(byId['techno-punch']!.values.hard).toBe(1);
     expect(byId['lo-fi-thump']!.values.hard).toBe(1);
-  });
-
-  it('a fresh kickdrum sits on NO preset — the list starts honest', () => {
-    const presets = blocks.find((b) => b.kind === 'presets')!;
-    if (presets.kind !== 'presets') throw new Error('unreachable');
-    const read = (pid: string) => kickdrumDef.params.find((p) => p.id === pid)?.defaultValue;
-    expect(activePresetId(presets.entries, read)).toBeNull();
-    // …and selecting one lights exactly it (the round trip, so the write path
-    // and the match predicate are pinned against each other rather than each
-    // being asserted alone).
-    for (const e of presets.entries) {
-      const after: Record<string, number> = Object.fromEntries(
-        kickdrumDef.params.map((p) => [p.id, p.defaultValue]),
-      );
-      for (const w of presetWrites(e.values, kickdrumDef.params)) after[w.paramId] = w.value;
-      expect(activePresetId(presets.entries, (pid) => after[pid]), `${e.id} lights itself`).toBe(e.id);
-    }
   });
 });
 

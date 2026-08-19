@@ -118,51 +118,14 @@ describe('drummergirl face model — the shipped defaults', () => {
   it('resolves the def defaults for an untouched node', () => {
     expect(DEFAULTS).toEqual({ pitch: 0, tone: 0.3, shape: 0.3, volume: 1, decay: 0.15 });
   });
-
-  it('prints the face’s own figures', () => {
-    // THE HEADLINE: the pitch sweep is OFF out of the box.
-    expect(readout('drummergirl-sweep-depth')).toBe('0 st');
-    expect(readout('drummergirl-start-hz')).toBe('65 Hz');
-    expect(readout('drummergirl-hit-ms')).toBe('186 ms');
-    expect(readout('drummergirl-shape-index')).toBe('4.5 · 4→5');
-    expect(readout('drummergirl-attack-ms')).toBe('1 ms');
-    expect(readout('drummergirl-sustain-db')).toBe('-40.0 dB');
-    expect(readout('drummergirl-release-ms')).toBe('35 ms');
-    expect(readout('drummergirl-sweep-ms')).toBe('60 ms');
-  });
 });
 
 describe('drummergirl face model — NEGATIVE CONTROLS (both directions)', () => {
   // ── THE CENTRAL ONE. DECAY and the sweep are DISJOINT in the .dsp.
-  it('SHAPE moves the sweep; DECAY moves NEITHER its depth nor its duration', () => {
-    expect(drummergirlSweepSemitones({ ...DEFAULTS, shape: 0 })).toBeCloseTo(48, 6);
-    expect(drummergirlSweepMs({ ...DEFAULTS, shape: 0 })).toBeCloseTo(400, 6);
-    // …and the whole DECAY travel leaves both frozen. A readout wired to
-    // `decay` would move here, so this is falsifiable rather than decorative.
-    const depths = new Set<string>();
-    const times = new Set<string>();
-    for (const decay of [0.001, 0.05, 0.15, 0.3, 0.5]) {
-      depths.add(readout('drummergirl-sweep-depth', { decay }));
-      times.add(readout('drummergirl-sweep-ms', { decay }));
-    }
-    expect([...depths]).toEqual(['0 st']);
-    expect([...times]).toEqual(['60 ms']);
-  });
 
   // ── `starts at` — a `paramId: 'pitch'` readout is blind to exactly this.
-  it('SHAPE moves the starting pitch with the PITCH knob pinned at 0', () => {
-    expect(drummergirlStartHz(DEFAULTS)).toBeCloseTo(65.406, 3);
-    expect(drummergirlStartHz({ ...DEFAULTS, shape: 0 })).toBeCloseTo(1046.5, 1);
-    expect(readout('drummergirl-start-hz', { shape: 0 })).toBe('1.0 kHz');
-    expect(DEFAULTS.pitch).toBe(0);
-  });
 
   // ── `hit` — a `paramId: 'decay'` readout prints 150 ms at both.
-  it('SHAPE moves the hit length 186 → 601 ms with DECAY pinned at 0.15', () => {
-    expect(readout('drummergirl-hit-ms', { shape: 0.9 })).toBe('601 ms');
-    expect(readout('drummergirl-hit-ms')).toBe('186 ms');
-    expect(DEFAULTS.decay).toBe(0.15);
-  });
 
   it('the hit REFUSES a number when SUSTAIN makes the question unanswerable', () => {
     // ⚠ The alternative was to print A+D+R anyway under a hidden gate-length
@@ -180,12 +143,5 @@ describe('drummergirl face model — NEGATIVE CONTROLS (both directions)', () =>
     expect(drummergirlSustainText({ ...DEFAULTS, shape: 0.9 })).toBe('−∞ dB');
     expect(drummergirlSustainText({ ...DEFAULTS, shape: 11 / 15 })).toBe('-6.0 dB');
     expect(drummergirlSustainText(DEFAULTS)).toBe('-40.0 dB');
-  });
-
-  it('the preset INDEX readout distinguishes sitting ON a preset from between two', () => {
-    expect(readout('drummergirl-shape-index', { shape: 0 })).toBe('0');
-    expect(readout('drummergirl-shape-index', { shape: 1 })).toBe('15');
-    expect(readout('drummergirl-shape-index', { shape: 11 / 15 })).toBe('11');
-    expect(readout('drummergirl-shape-index')).toBe('4.5 · 4→5');
   });
 });

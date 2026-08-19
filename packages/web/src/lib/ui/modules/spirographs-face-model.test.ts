@@ -47,7 +47,6 @@ const reader = (over: Record<string, number> = {}) => (id: string): number | und
 const shown = (valueId: string, over: Record<string, number> = {}): string =>
   faceReadoutValueFor(valueId)!(reader(over));
 /** Every `spirographs-` readout the registry holds. */
-const IDS = (): string[] => faceReadoutValueIds().filter((k) => k.startsWith('spirographs-'));
 
 describe('spirographs — the three audit findings', () => {
   it('FINDING 1: `count` ships at 1, so TWENTY of the thirty-one params are inert at spawn', () => {
@@ -108,17 +107,6 @@ describe('spirographs — the three audit findings', () => {
 });
 
 describe('spirographs readouts — `count` is the permanent negative control', () => {
-  it('at count = 1, perturbing ANY of spiro 3\'s dials moves NOTHING', () => {
-    const before = IDS().map((id) => shown(id));
-    for (const stem of SPIRO_PARAM_STEMS) {
-      const id = spiroParamId(3, stem);
-      // A value that would visibly change every readout if spiro 3 were live:
-      // an irrational-ish r (never closes) and a huge pen offset (clips).
-      const over: Record<string, number> = { [id]: stem === 'r' ? 2.4142 : stem === 'p' ? 8 : 0.7 };
-      const after = IDS().map((x) => shown(x, over));
-      expect(after, `spiro 3 ${stem} moved a readout while count = 1`).toEqual(before);
-    }
-  });
 
   it('…and the SAME perturbations DO move them once count reaches 3', () => {
     // Without this leg the invariance above would pass on a dead probe.

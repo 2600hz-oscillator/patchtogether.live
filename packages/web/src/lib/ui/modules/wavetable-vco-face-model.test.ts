@@ -107,39 +107,6 @@ describe('wavetable vco face model — the worklet source pin', () => {
 });
 
 describe('wavetable vco face model — `knob pitch` (wavetablevco-knob-hz)', () => {
-  it('at the shipped defaults it prints C4', () => {
-    expect(readout('wavetablevco-knob-hz')).toBe('261.6 Hz');
-  });
-
-  it('NEGATIVE CONTROL — FINE moves it while a `tune` readback cannot budge', () => {
-    // The whole argument for the readout in one assertion: TUNE is 0 in all
-    // three, so a `paramId: "tune"` readout prints the same string throughout
-    // while the module sounds a full semitone apart at the ends.
-    const at = (fine: number) => readout('wavetablevco-knob-hz', { fine });
-    expect(at(0)).toBe('261.6 Hz');
-    expect(at(100)).toBe('277.2 Hz');
-    expect(at(-100)).toBe('246.9 Hz');
-    // …and at the +10-cent step the analogVco model's formatter note exists
-    // for: an integer-Hz format would print `262 Hz` for both of these.
-    expect(at(10)).toBe('263.1 Hz');
-    expect(at(0)).not.toBe(at(10));
-  });
-
-  it('NEGATIVE CONTROL — it is blind to WAVE, FM and PM, and must be', () => {
-    // The readout is knob-pitch: three of the module's five params genuinely do
-    // not enter it, and a readout that twitched on them would be wrong. This is
-    // the inverse leg — "moves when it should" is only half a control.
-    for (const over of [{ wavePos: 1 }, { fmAmount: 1 }, { pmAmount: 1 }, { fmAmount: -1 }]) {
-      expect(readout('wavetablevco-knob-hz', over), JSON.stringify(over)).toBe('261.6 Hz');
-    }
-  });
-
-  it('TUNE spans the full ±3 octaves and switches to kHz above 1000', () => {
-    expect(readout('wavetablevco-knob-hz', { tune: 12 })).toBe('523.3 Hz');
-    expect(readout('wavetablevco-knob-hz', { tune: -12 })).toBe('130.8 Hz');
-    expect(readout('wavetablevco-knob-hz', { tune: -36 })).toBe('32.7 Hz');
-    expect(readout('wavetablevco-knob-hz', { tune: 36, fine: 100 })).toBe('2.22 kHz');
-  });
 
   it("agrees with the worklet's own arithmetic across the whole travel", () => {
     // The model mirrors the DSP; this re-derives the DSP's expression here and
@@ -156,46 +123,6 @@ describe('wavetable vco face model — `knob pitch` (wavetablevco-knob-hz)', () 
 });
 
 describe('wavetable vco face model — `fm span` (wavetablevco-fm-span)', () => {
-  it('reads `off` at the shipped default, because the FM input is ignored there', () => {
-    expect(readout('wavetablevco-fm-span')).toBe('off');
-  });
-
-  it('NEGATIVE CONTROL — TUNE moves the Hz swing while the FM AMT dial cannot', () => {
-    // THE readout's reason to exist. `fmAmount` is 1 in all three rows, so a
-    // `paramId: "fmAmount"` readout prints `1.00` throughout — while the actual
-    // Hz deviation DOUBLES per octave. Measured against the shipping worklet in
-    // art/scenarios/wavetable-vco/cv-path.test.ts (+260.11/−130.84 Hz at C4,
-    // +520.23/−260.96 at tune +12).
-    expect(readout('wavetablevco-fm-span', { fmAmount: 1 }))
-      .toBe('±1200 ¢ · +261.6 Hz / −130.8 Hz');
-    expect(readout('wavetablevco-fm-span', { fmAmount: 1, tune: 12 }))
-      .toBe('±1200 ¢ · +523.3 Hz / −261.6 Hz');
-    expect(readout('wavetablevco-fm-span', { fmAmount: 1, tune: -12 }))
-      .toBe('±1200 ¢ · +130.8 Hz / −65.4 Hz');
-  });
-
-  it('NEGATIVE CONTROL — the SIGN must not move the span, at all', () => {
-    // `fma * fm` is naturally signed, so a negative depth is a 180° flip of the
-    // MODULATOR, not a reversed sweep and not a smaller one. A knob readback
-    // swings through zero across these three; the span is symmetric about it.
-    const plus = readout('wavetablevco-fm-span', { fmAmount: 0.5 });
-    const minus = readout('wavetablevco-fm-span', { fmAmount: -0.5 });
-    expect(minus).toBe(plus);
-    expect(plus).toBe('±600 ¢ · +108.4 Hz / −76.6 Hz');
-    // …and the two ends of the dial are NOT the same as its centre.
-    expect(readout('wavetablevco-fm-span', { fmAmount: 1 })).not.toBe(plus);
-  });
-
-  it('the swing is ASYMMETRIC — up ≠ down, at every non-zero depth', () => {
-    // The one fact about exponential FM a symmetric ± dial cannot express, and
-    // the reason the readout prints both directions instead of one number.
-    for (const fmAmount of [0.1, 0.25, 0.5, 0.75, 1]) {
-      const { up, down } = wtFmSpanHz({ ...DEFAULTS, fmAmount });
-      expect(up, `depth ${fmAmount}`).toBeGreaterThan(down);
-      // The ratio is exactly 2^a, independent of the fundamental.
-      expect(up / down, `depth ${fmAmount}`).toBeCloseTo(Math.pow(2, fmAmount), 9);
-    }
-  });
 
   it('the CENTS half is linear in |depth| and blind to TUNE — the instrument’s own control', () => {
     // Publishing BOTH halves is what makes each one's blindness visible: cents

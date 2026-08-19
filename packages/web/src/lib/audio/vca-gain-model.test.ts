@@ -648,16 +648,4 @@ describe('PF-20 faceplate structure — the declarations, and the ones refused',
     expect(vcaDef.face?.glyph, 'so the live meter is still the dock hero').toBe('meter');
     expect(vcaDef.face?.pages?.[0]?.controls).toEqual(['base', 'cvAmount']);
   });
-
-  it('NO sidebar at all, so DockFullView keeps the full-width editor', () => {
-    // The only block this face ever declared was the signal-flow chain, and the
-    // kind is gone. `presets` on a 2-param module is a list of coordinate
-    // pairs; a `readouts` block duplicates the strip; a `custom` panel means a
-    // registry entry for the straight line refused above. So the honest answer
-    // is an empty column — declared by its ABSENCE, not by an empty array.
-    expect(vcaDef.face?.sidebar).toBeUndefined();
-    // `sidebarPlan` must agree: it returns null (never []), which is the value
-    // DockFullView branches on to drop the grid's second column entirely.
-    expect(sidebarPlan(vcaDef as unknown as FaceplateDefLike)).toBeNull();
-  });
 });

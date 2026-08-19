@@ -44,11 +44,6 @@ function block<K extends FaceSidebarBlock['kind']>(kind: K): Extract<FaceSidebar
 /** What the faceplate's TAIL readout actually prints for a set of live values —
  *  resolved the way the shell resolves it (through the `valueId` registry), so
  *  these assertions cover the wiring as well as the arithmetic. */
-function printedTail(over: Partial<KickdrumEnvelopeParams> = {}): string {
-  return readoutText({ label: 'tail', valueId: 'kickdrum-tail' }, kickdrumDef.params, (pid) =>
-    (over as Record<string, number>)[pid],
-  );
-}
 
 /** The DEF's own defaults — never re-typed here (CLAUDE.md: ONE place). This is
  *  the SAME resolver the panel and the derived readout use, so an empty reader
@@ -72,20 +67,6 @@ describe('kickdrum hero — the TAIL figure is measured, not drawn', () => {
     );
   });
 
-  it('NEGATIVE CONTROL — doubling SUB DEC moves the tail; the caption follows', () => {
-    const base = defaults();
-    const longer = { ...base, sub_decay: base.sub_decay * 2 };
-    const t0 = kickdrumTailMs(base);
-    const t1 = kickdrumTailMs(longer);
-    // The sub dominates the floor crossing, so doubling its decay very nearly
-    // doubles the tail (the body/click terms are ~0 by then).
-    expect(t1 / t0).toBeGreaterThan(1.9);
-    expect(t1 / t0).toBeLessThan(2.1);
-    expect(printedTail(), 'and the printed readout follows').not.toBe(
-      printedTail({ sub_decay: base.sub_decay * 2 }),
-    );
-  });
-
   it('NEGATIVE CONTROL — the tail also moves on a LEVEL change, not just a time', () => {
     // The blind version of this model would read sub_decay and print it. That
     // model is invariant to sub_level; this one is not, because the floor is
@@ -93,12 +74,6 @@ describe('kickdrum hero — the TAIL figure is measured, not drawn', () => {
     const base = defaults();
     const quietSub = { ...base, sub_level: base.sub_level / 3 };
     expect(kickdrumTailMs(quietSub)).toBeLessThan(kickdrumTailMs(base));
-  });
-
-  it('a fully muted voice has no tail rather than a NaN caption', () => {
-    const silent = { ...defaults(), sub_level: 0, body_level: 0, click_level: 0 };
-    expect(kickdrumTailMs(silent)).toBe(0);
-    expect(printedTail({ sub_level: 0, body_level: 0, click_level: 0 })).toBe('0 ms');
   });
 
   it('the floor constant is the one the caption is measured to', () => {

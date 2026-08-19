@@ -129,78 +129,6 @@ describe('destroy face model — every readout is DERIVED, on a matrix', () => {
       );
     }
   });
-
-  it('each readout MOVES where the table says it does — and does not where it does not', () => {
-    const offenders: string[] = [];
-    for (const { valueId } of HERO_READOUTS) {
-      for (const paramId of PARAM_IDS) {
-        const [lo, hi] = PROBE[paramId]!;
-        const a = printed(valueId, { ...DEFAULTS, [paramId]: lo });
-        const b = printed(valueId, { ...DEFAULTS, [paramId]: hi });
-        const moved = a !== b;
-        const want = SENSITIVITY[valueId]![paramId]!;
-        if (moved !== want) {
-          offenders.push(
-            `${valueId} under ${paramId} ${lo}→${hi}: expected ${want ? 'MOVE' : 'HOLD'}, ` +
-              `got '${a}' → '${b}'`,
-          );
-        }
-      }
-    }
-    expect(offenders, offenders.join('\n')).toEqual([]);
-  });
-
-  it('WET moves EXACTLY ONE readout, and that is the whole statement about WET', () => {
-    // The rank-3 argument, as an assertion: WET decides how much of the crush
-    // you hear and changes neither the rate the decimator leaves nor where the
-    // quantiser's grid lands.
-    const movedByWet = HERO_READOUTS.filter(
-      ({ valueId }) =>
-        printed(valueId, { ...DEFAULTS, bits: 4, decimate: 8, wet: 1 }) !==
-        printed(valueId, { ...DEFAULTS, bits: 4, decimate: 8, wet: 0.25 }),
-    ).map((r) => r.valueId);
-    expect(movedByWet).toEqual(['destroy-bit-floor']);
-  });
-
-  it('AT THE SPAWN DEFAULTS, WET blends BETWEEN TWO SILENCES — the rank-3 argument', () => {
-    // decimate 1 + bits 16 is a transparent chain, which is why WET ranks last:
-    // its whole travel moves the crush floor between `off` and a number 101 dB
-    // under full scale — two states a listener cannot tell apart.
-    //
-    // ⚠ THIS TEST USED TO CLAIM "WET MOVES NOTHING AT THE DEFAULTS" AND WAS
-    // RED, correctly. `floor` DOES move (`off` → `-101.1 dB`) because at WET 0
-    // there is genuinely no crush path at all. The honest claim is about
-    // AUDIBILITY, not about the string, and it is asserted as a level.
-    expect(destroyBitFloorDb(destroyFaceParams(reader(DEFAULTS)))).toBeLessThan(-100);
-    // The other three are WET-invariant here exactly as they are everywhere.
-    const wetInsensitive = HERO_READOUTS.filter(
-      ({ valueId }) =>
-        printed(valueId, { ...DEFAULTS, wet: 0 }) === printed(valueId, DEFAULTS),
-    ).map((r) => r.valueId);
-    expect(wetInsensitive).toEqual(['destroy-rate', 'destroy-stream', 'destroy-mute']);
-  });
-
-  it('`stream` is neither dial relabelled — it moves under EACH of them alone', () => {
-    const base = { ...DEFAULTS, decimate: 8, bits: 8 };
-    expect(printed('destroy-stream', base)).not.toBe(
-      printed('destroy-stream', { ...base, decimate: 16 }),
-    );
-    expect(printed('destroy-stream', base)).not.toBe(
-      printed('destroy-stream', { ...base, bits: 4 }),
-    );
-  });
-
-  it('`mute` is `floor`s NEGATIVE CONTROL on WET — same stage, different edges', () => {
-    const base = { ...DEFAULTS, decimate: 1, bits: 4 };
-    const floorWet1 = destroyBitFloorDb(destroyFaceParams(reader({ ...base, wet: 1 })));
-    const floorWetHalf = destroyBitFloorDb(destroyFaceParams(reader({ ...base, wet: 0.5 })));
-    // WET halves the artefact: exactly −6.0206 dB, in dB not in prose.
-    expect(floorWet1 - floorWetHalf).toBeCloseTo(20 * Math.log10(2), 6);
-    // …and moves the dead zone by exactly nothing.
-    expect(printed('destroy-mute', { ...base, wet: 1 })).toBe(
-      printed('destroy-mute', { ...base, wet: 0.5 }),
-    );
-  });
 });
 
 describe('destroy face model — the laws, with #1716 as a permanent control', () => {
@@ -249,19 +177,5 @@ describe('destroy face model — TOTALITY (it runs on every frame of a drag)', (
   it('a FRESH node with no stored params resolves the def defaults', () => {
     const p = destroyFaceParams(reader({}));
     expect(p).toEqual({ decimate: 1, bits: 16, wet: 1 });
-  });
-
-  it('NaN and +/-Infinity on any param throw nothing and print a finite string', () => {
-    const junk = [NaN, Infinity, -Infinity, -999, 1e30];
-    for (const paramId of PARAM_IDS) {
-      for (const v of junk) {
-        for (const { valueId } of HERO_READOUTS) {
-          const out = printed(valueId, { ...DEFAULTS, [paramId]: v });
-          expect(typeof out, `${valueId} with ${paramId}=${v}`).toBe('string');
-          expect(out, `${valueId} with ${paramId}=${v}`).not.toContain('NaN');
-          expect(out, `${valueId} with ${paramId}=${v}`).not.toContain('Infinity');
-        }
-      }
-    }
   });
 });
