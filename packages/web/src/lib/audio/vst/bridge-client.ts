@@ -125,6 +125,16 @@ export class VstBridgeClient {
     this.worker = new Worker(new URL('./bridge.worker.ts', import.meta.url), {
       type: 'module',
     });
+    // A dedicated worker whose script response fails the page's embedder
+    // policy (or 404s) dies with a PLAIN error Event — no exception, no
+    // console line, no status message, the card just sits at 'idle'
+    // forever. Measured (#1953): `vite preview` served /_app assets without
+    // COEP, silently killing this worker AND the es9 one in every preview/CI
+    // e2e run until a spec finally asserted on a live worker. Surface it.
+    this.worker.onerror = () => {
+      this.lastState = 'disconnected';
+      this.events.onState?.('disconnected', 'transport worker failed to load');
+    };
     this.worker.onmessage = (e: MessageEvent) => this.handleWorkerMessage(e.data);
     this.worker.postMessage({
       type: 'start',

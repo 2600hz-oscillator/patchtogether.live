@@ -542,7 +542,7 @@ export const PINNED_MODULE_EXEMPT_KEYS: readonly string[] = Object.freeze([
   'moog911a', 'moog956', 'moog962', 'moog992', 'moog993', 'numpadPlus',
   'peertube', 'polyseqz', 'pong', 'samsloop', 'score', 'sequencer',
   'slewSwitch', 'synesthesia', 'timelorde', 'tvLibrarian', 'twotracks',
-  'videobox', 'videocube', 'videovarispeed',
+  'videobox', 'videocube', 'videovarispeed', 'vstFx', 'vstInstrument',
 ]);
 
 // The EXACT key set of EXEMPT_OUTPUT_EMIT, sorted. `<moduleType>.<outputPortId>`

@@ -8,6 +8,7 @@
   // node owns the connection via $lib/audio/vst/bridge-owner; this panel
   // only SUBSCRIBES and sends control messages. Mount/unmount of the card
   // never touches the socket.
+  import { onMount } from 'svelte';
   import type { VstPluginKind } from '$lib/audio/vst/vst-protocol';
   import type { VstConnectionState } from '$lib/audio/vst/bridge-client';
   import {
@@ -38,15 +39,26 @@
     sampleRate: () => number;
   } = $props();
 
-  // svelte-ignore state_referenced_locally -- SEED only; the $effect below
-  // re-reads vstSnapshot(id) and subscribes, replacing this before paint.
+  // svelte-ignore state_referenced_locally -- SEED only; onMount re-reads
+  // vstSnapshot(id) and subscribes, replacing this before first paint the
+  // user can act on.
   let snap = $state<VstOwnerSnapshot>(vstSnapshot(id));
   let connState = $derived<VstConnectionState>(snap.state);
 
-  $effect(() => {
-    const nodeId = id;
-    snap = vstSnapshot(nodeId);
-    return subscribeVst(nodeId, (s) => { snap = s; });
+  // SUBSCRIBE IN onMount, NOT $effect. The es9-style
+  // `$effect(() => { snap = …; return subscribe(...) })` form is one
+  // tracked read away from an infinite loop: the subscription's SYNCHRONOUS
+  // first delivery writes `snap` inside the still-tracking effect, so any
+  // read of `snap` that later creeps into the effect body re-triggers it
+  // until effect_update_depth_exceeded aborts the whole flush — taking the
+  // canvas reconciler's effects down with it (measured while debugging
+  // #1953: one added log line reading snap.state produced exactly that).
+  // onMount runs once, outside tracking; a card's node id never changes
+  // while mounted (xyflow remounts on id change), so the
+  // re-subscribe-on-id-change generality is not needed.
+  onMount(() => {
+    snap = vstSnapshot(id);
+    return subscribeVst(id, (s) => { snap = s; });
   });
 
   let filter = $state('');
@@ -59,12 +71,21 @@
 
   let listed = $derived.by(() => {
     const q = filter.trim().toLowerCase();
-    return snap.plugins
-      .filter((p) => (kinds as readonly string[]).includes(p.kind))
-      .filter((p) =>
-        q === '' ||
-        p.name.toLowerCase().includes(q) ||
-        p.manufacturer.toLowerCase().includes(q));
+    // DEDUPE by id: the wire spec treats plugin ids as opaque and does NOT
+    // promise uniqueness — a real AU registry can list one component twice
+    // (measured against the live helper: the duplicate key threw Svelte's
+    // each_key_duplicate and killed the card). First occurrence wins; two
+    // options with the same value would be redundant in a <select> anyway.
+    const seen = new Set<string>();
+    const out: typeof snap.plugins = [];
+    for (const p of snap.plugins) {
+      if (!(kinds as readonly string[]).includes(p.kind)) continue;
+      if (q !== '' && !p.name.toLowerCase().includes(q) && !p.manufacturer.toLowerCase().includes(q)) continue;
+      if (seen.has(p.id)) continue;
+      seen.add(p.id);
+      out.push(p);
+    }
+    return out;
   });
 
   const stateLabel = $derived.by(() => {

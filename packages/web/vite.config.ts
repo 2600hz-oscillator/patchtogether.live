@@ -190,8 +190,45 @@ function worktreeIdentity(): Plugin {
 
 // COOP/COEP headers required for SharedArrayBuffer (Faust may want it).
 // Phase 1 dev sets these; Phase 2 sets them in production via _headers.
+
+/**
+ * COI headers on EVERY `vite preview` response — measured necessity (#1953):
+ * `preview.headers` below never reaches STATIC ASSETS (SvelteKit's sirv and
+ * the SSR middleware answer first; documents get their COI headers from
+ * hooks.server.ts instead), so under `vite preview` every asset — including
+ * `/_app/immutable/workers/*` — was served with NO Cross-Origin-Embedder-
+ * Policy. A crossOriginIsolated page refuses to START a dedicated worker
+ * whose script response lacks a compatible COEP: the load fails with a
+ * plain error Event, silently without an onerror handler. That killed BOTH
+ * bridge workers (vst + es9) in every preview/CI e2e run — unnoticed until
+ * the vst specs became the first to assert on a live worker. Dev is fine
+ * (`server.headers` applies to all vite-dev responses) and prod is fine
+ * (CF `_headers` covers /_app/*); this plugin closes the preview gap with
+ * the DIRECT configurePreviewServer form, which installs BEFORE the
+ * internal middlewares. Keep the values in sync with server.headers /
+ * hooks.server.ts / packages/web/_headers.
+ */
+function coiPreviewAssetHeaders() {
+  return {
+    name: 'coi-preview-asset-headers',
+    configurePreviewServer(server: {
+      middlewares: {
+        use(fn: (req: unknown, res: {
+          setHeader(n: string, v: string): void;
+        }, next: () => void) => void): void;
+      };
+    }) {
+      server.middlewares.use((_req, res, next) => {
+        res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
+        res.setHeader('Cross-Origin-Embedder-Policy', 'credentialless');
+        next();
+      });
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [ensureModuleDocs(), ssrDropCardComponents(), worktreeIdentity(), sveltekit()],
+  plugins: [ensureModuleDocs(), ssrDropCardComponents(), worktreeIdentity(), coiPreviewAssetHeaders(), sveltekit()],
   // Inline the product version as a compile-time constant (see APP_VERSION
   // above). Applies in both `dev` (serve) and `build`, so the topbar heading
   // renders the real X.Y.Z locally, in e2e, and in the deployed bundle.
