@@ -1136,6 +1136,147 @@ export const FACES = [
 export const COMPACT_MAX_DIFF = 150;
 export const DOCK_MAX_DIFF = 1500;
 
+// ── THE PER-SCENE TIME BUDGET ───────────────────────────────────────────────
+//
+// `vrt.config.ts` sets ONE per-test `timeout: 90_000` for every test in the VRT
+// lane, and its own header says "Do NOT 'fix' a slow scene by raising this
+// further. Past ~90 s the answer is that the scene is not converging, which is a
+// determinism finding."
+//
+// ⚠ THAT SENTENCE CONFLATES TWO DIFFERENT BUDGETS, and separating them is what
+// this mechanism is (#1949). Convergence is bounded by `expect.timeout`
+// (30_000), which caps the `toHaveScreenshot` retry loop — the
+// screenshot-until-two-consecutive-captures-agree loop. A scene that never
+// settles fails THERE, with the px ladder ("Failed to take two consecutive
+// stable screenshots", `4082 / 3954 / 3936 px`), and it does so at 30 s no
+// matter what the outer cap says. The outer per-test cap bounds everything else
+// — page load, font decode, spawnPatch, the freeze retries, the height-settle
+// loop, the companion diffs — i.e. SCENE WEIGHT. Raising the outer bound
+// therefore cannot buy a non-converging scene a pass: the determinism gate is a
+// different number and it is NOT moved here.
+//
+// MEASURED, and it is what falsifies the config's stated diagnosis for one face.
+// Capture run 32288252788 (ubuntu-latest, SwiftShader), b3ntb0x:
+//
+//   face-b3ntb0x-compact   55.6 s   ✓ passed, snapshot written
+//   face-b3ntb0x-dock      ~88.6 s to the snapshot WRITE, killed at the 90 s cap
+//                          1.4 s later
+//
+// Both scenes CONVERGED and both wrote their actual PNG. Neither tripped
+// `expect.timeout`. So this is not a determinism finding — it is one module that
+// costs 2.6x the next-heaviest scene in the roster.
+//
+// THE POPULATION IT IS SIZED AGAINST — every face scene of the full sweep in
+// capture run 32286329756 (ubuntu-latest, SwiftShader, 67 faces x 2 scenes):
+//
+//   class                       compact          dock
+//   no live video surface       7.0 - 7.7 s      9.0 - 10.4 s
+//   declares videoFaceWhy      13.2 - 21.3 s    19.5 - 36.7 s
+//     (spirographs, outlines, videoOut, backdraft, freezeframe)
+//
+// So 90 s is 8.6x the heaviest non-video scene and 2.45x the heaviest video one.
+// It is a comfortable bound for EVERY face in the roster and it is not moved.
+// What this adds is a per-face escape hatch above it, for the one shape the flat
+// number cannot express: a scene whose own measured cost is already near the
+// cap.
+//
+// ⚠ DENY BY DEFAULT, AND THE WHY IS IN THE TYPE. A face gets a bigger bound only
+// by declaring `sceneWeight` with the two measured durations, the capture run
+// they were read off, and what makes the module expensive — `tsc` refuses a
+// partial declaration, so the undeclared form cannot appear. The BOUND is then
+// DERIVED from the measurement (`measured x FACE_SCENE_HEADROOM`) rather than
+// typed, so re-measuring updates the numbers and the budget follows.
+//
+// ⚠ WHAT THIS DOES NOT DO: it changes no assertion, no tolerance, no viewport
+// and no baseline. `expect.timeout`, `COMPACT_MAX_DIFF`, `DOCK_MAX_DIFF` and the
+// config's `threshold` / `maxDiffPixelRatio` are all untouched.
+//
+// CI WALL-TIME: zero on green. A timeout is a cap, not a sleep — only a test
+// that is ALREADY failing runs to it. The cost of a declared weight is paid on
+// the FAILING path only, and it is `budget - 90 s` for that one scene.
+
+/**
+ * The per-test bound every face scene gets, ms. MUST equal `vrt.config.ts`'s
+ * `timeout` — anchored by `vrt-config-budget.test.ts`, so the two cannot drift.
+ *
+ * This is a FLOOR, never lowered per scene: `faceSceneTimeout` returns the max
+ * of this and the derived budget.
+ */
+export const FACE_SCENE_BASE_MS = 90_000;
+
+/**
+ * The multiple of a scene's MEASURED cost its bound must clear.
+ *
+ * 2x is the config's own stated standard for this budget — it chose 90 s so the
+ * outer bound "EXCEEDS the sum of its own inner budgets ... with better than 2x
+ * headroom". A bound sitting ON the measurement is a coin flip, which is the
+ * exact defect the config's header documents about the old 30 s cap ("A budget
+ * at p99 is not a margin, it is a coin flip, and it is the reason a *different*
+ * scene failed each dispatch").
+ */
+export const FACE_SCENE_HEADROOM = 2;
+
+/**
+ * A face's MEASURED scene cost. Every field is required, so a weight cannot be
+ * declared without the evidence for it.
+ */
+export interface FaceSceneWeight {
+  /** the compact scene's measured duration, ms, on the named run */
+  readonly compactMs: number;
+  /** the dock scene's measured duration, ms, on the named run */
+  readonly dockMs: number;
+  /** the linux capture run the two durations were read off */
+  readonly measuredOn: string;
+  /** what makes this module expensive to render — not "it is slow" */
+  readonly why: string;
+}
+
+/**
+ * Declare a face's measured scene cost. A plain identity function whose only job
+ * is to put `FaceSceneWeight` in front of `tsc`: the `FACES` roster is an
+ * un-annotated `as const` array, so a bare object literal would be inferred
+ * rather than checked and a missing `why` would compile.
+ */
+export function measuredSceneWeight(w: FaceSceneWeight): FaceSceneWeight {
+  return w;
+}
+
+/**
+ * The ARITHMETIC, separated from the roster lookup so it can be controlled in
+ * BOTH directions against a synthetic weight the test builds itself — a
+ * negative control ("no weight ⇒ exactly the base") proves the function can
+ * return the floor, not that it computes the right thing above it.
+ */
+export function sceneBudgetMs(
+  weight: FaceSceneWeight | undefined,
+  scene: 'compact' | 'dock',
+): number {
+  if (!weight) return FACE_SCENE_BASE_MS;
+  const measured = scene === 'compact' ? weight.compactMs : weight.dockMs;
+  return Math.max(FACE_SCENE_BASE_MS, Math.ceil(measured * FACE_SCENE_HEADROOM));
+}
+
+/** The `sceneWeight` a face declares, or undefined. Exported so a gate can walk
+ *  the roster's declarations without re-deriving the cast. */
+export function faceSceneWeight(type: string): FaceSceneWeight | undefined {
+  const entry = FACES.find((f) => f.type === type) as
+    | { sceneWeight?: FaceSceneWeight }
+    | undefined;
+  return entry?.sceneWeight;
+}
+
+/**
+ * The per-test bound for ONE face scene, ms.
+ *
+ * ⚠ ROUTE EVERY CALLER THROUGH THIS, for the `foldViewportFor` reason: an
+ * isolation mechanism half the entry points honour is not isolation. A scene
+ * that reached for `FACE_SCENE_BASE_MS` directly would silently put a heavy face
+ * back under the flat cap.
+ */
+export function faceSceneTimeout(type: string, scene: 'compact' | 'dock'): number {
+  return sceneBudgetMs(faceSceneWeight(type), scene);
+}
+
 // ── THE FOLD ────────────────────────────────────────────────────────────────
 //
 // The dock pane is `max-height: min(60vh, 680px)` — declared TWICE, on
