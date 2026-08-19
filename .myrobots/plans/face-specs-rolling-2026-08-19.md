@@ -54,9 +54,39 @@ load-bearing ones against the code before designing against them.**
 
 ## The specs in this PR
 
-| spec | modules | state |
-|---|---|---|
-| _(appended as each lands)_ | | |
+| spec | modules | merit | headline |
+|---|---|---|---|
+| `2026-08-19-spec-moog904bc.md` | `moog904b`, `moog904c` | YES (904b narrowly, on ONE readout) | ⚠ **The queue's "proper subsets of Q39" premise is WRONG in four ways** — 904c has no RANGE param at all, 904b's multiplier is ×1/×2^1.5 (module-local, not the lib's ×1/×4/×16), 904b's dead travel is at BOTH ends, and 904c's cutoff CV is a `cvScale: log` AudioParam sum (±4.98 oct), not a per-sample 1 V/oct multiply. Same `MoogLadder` class, three unrelated findings. |
+| `2026-08-19-spec-mandelbulb-face.md` | `mandelbulb` (the FACE build) | YES | The slice-readout question is resolved as a `custom` **sidebar block**, because `hero.cell` would DELETE the live fractal preview at the dock (`module-shell-model.ts:876`) — a parity regression, not a layout choice. |
+
+### ⚠ Two "missing file" notes in the mandelbulb spec are BRANCH ARTEFACTS, not findings
+
+Recorded here so nobody re-investigates them. That spec reports
+`mandelbulb-glyph-tap.test.ts` as absent and the SCREEN **overlay** paragraph as
+absent from the skill. Both exist — in **PR #1925**, unmerged at the time it
+looked, while the worktree sat on a different branch. The glyph mechanism it
+re-derived by reading four seams is the same one that test pins, so the two agree;
+it is the *file* that was invisible, not the conclusion. **When an agent reads a
+shared worktree during concurrent branch work, "not found" means "not on this
+branch right now".**
+
+### The two findings from these specs that are NOT yet filed and should be
+
+1. **`moog904b` cannot be promoted as-is — its RANGE would render as an ANONYMOUS
+   ROTARY.** `looksLikeToggle` requires `min 0 / max 1` (`group-controls.ts:54-56`)
+   and `range` is `1..2`, so `paramCellKind` falls through to `'knob'`
+   (`shell-control-kind.ts:264-271`); with no `options[]` roster `paintsReadout`
+   is false, so **nothing paints at all** — a two-position switch as an unlabelled
+   dial. ⚠ **Both existing gates are blind to it**, which is the interesting half.
+   The fix is the roster, and the labels must be `LOW`/`HIGH`: `'×2.83'` and
+   `'+1.5 oct'` both trip `looksNumeric` in `face-readout-source.test.ts`.
+2. **`moog904b`'s declared cutoff minimum is unreachable.** The def declares
+   `min: 4` while `ladderCutoffToG` floors at `fmin = 10`
+   (`moog-ladder-dsp.ts:115`), so the bottom **10.758 %** of the dial is bit-exactly
+   one filter — and at RANGE HIGH the ×2.8284 multiplier lands before the 20 kHz
+   ceiling, killing the top **12.207 %**. **No RANGE position has a fully live
+   dial, and the two dead ends are at opposite ends** — which is why the 904a
+   analogy fails.
 
 ## What is deliberately NOT here
 
