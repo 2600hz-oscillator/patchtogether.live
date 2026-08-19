@@ -17,6 +17,8 @@
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch } from '$lib/graph/store';
+  import { mutateNode } from '$lib/graph/mutate';
+  import type { VideoEngine } from '$lib/video/engine';
   import { outlinesDef, OUTLINES_GATE_PORT_ID, OUTLINES_COLLIDE_PORT_ID } from '$lib/video/modules/outlines';
   import { mapShape, ROT_CENTER } from '$lib/video/modules/outlines-sim';
   import { useEngine } from '$lib/audio/engine-context';
@@ -53,7 +55,18 @@
       previewEl.height = 168;
     }
     pollTimer = setInterval(() => {
-      const e = engineCtx.get(); if (!e || !node || !previewEl) return;
+      const e = engineCtx.get(); if (!e || !node) return;
+      // ⚠ SCREEN OFF SKIPS THE COPY AND KEEPS THE WATCH MARK. `engine.read`
+      // marks the node watched, and a node is a pull root only while that mark
+      // is younger than WATCH_TTL_MS (1500). Bailing out here — which is what
+      // the old `!previewEl` guard did once the canvas was removed — would stop
+      // the PRODUCER 1.5s later and make this switch a kill switch, the
+      // #1720/#1721 class the ruling forbids by saying the module KEEPS
+      // RENDERING.
+      if (!previewEl) {
+        try { e.getDomain<VideoEngine>('video')?.markWatched(id); } catch { /* keep polling */ }
+        return;
+      }
       const scene = e.read(node, 'sceneCanvas') as
         | OffscreenCanvas | HTMLCanvasElement | undefined;
       if (!scene) return;
@@ -70,6 +83,22 @@
       (e) => e?.target?.nodeId === id && e?.target?.portId === OUTLINES_GATE_PORT_ID,
     ),
   );
+
+  // ── SCREEN ON / OFF (owner ruling, 2026-08-18) ──────────────────────────
+  // OFF collapses the 168px preview and RECLAIMS its space while the module
+  // keeps rendering. State on `node.data`, sharing the `previewCollapsed` key
+  // with the FACE's fullViewBody switch — one rack setting, whichever surface
+  // the player is on.
+  let previewCollapsed = $derived<boolean>(
+    (node?.data?.previewCollapsed as boolean | undefined) ?? false,
+  );
+  function togglePreview(): void {
+    const next = !previewCollapsed;
+    mutateNode(id, (live) => {
+      if (!live.data) live.data = {};
+      live.data.previewCollapsed = next;
+    });
+  }
 
   // Left rail: gate spawn + collide gate + D/V/SPD/DECAY/SHAPE/ROT CV + video.
   // Both gate/collide are declared `type: 'gate'` on the def.
@@ -95,11 +124,26 @@
   <ModuleTitle {id} {data} defaultLabel="outlines" />
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
-  <div class="screen-wrap">
-    {#if gatePatched}
+  <div
+    class="screen-wrap"
+    class:collapsed={previewCollapsed}
+    data-preview-collapsed={previewCollapsed ? 'true' : 'false'}
+  >
+    {#if gatePatched && !previewCollapsed}
       <span class="gated-badge" data-testid="outlines-gated-badge">[GATED]</span>
     {/if}
-    <canvas bind:this={previewEl} class="screen" data-testid="outlines-screen"></canvas>
+    {#if !previewCollapsed}
+      <canvas bind:this={previewEl} class="screen" data-testid="outlines-screen"></canvas>
+    {/if}
+    <button
+      type="button"
+      class="screen-btn nodrag"
+      class:on={!previewCollapsed}
+      onclick={togglePreview}
+      data-testid="outlines-screen-toggle"
+      aria-pressed={!previewCollapsed}
+      title="SCREEN: turn the preview off to reclaim its space. The module keeps rendering."
+    >SCREEN {previewCollapsed ? 'OFF' : 'ON'}</button>
   </div>
 
   <div class="row">
@@ -167,6 +211,32 @@
     pointer-events: none;
     z-index: 2;
   }
+  /* SCREEN OFF reclaims the picture's vertical space — the whole point of the
+     switch. The button OVERLAYS the corner (see the overlay paragraph in
+     module-faceplates.md), so with the screen ON the card is exactly the height
+     it was before the control existed. */
+  .screen-wrap.collapsed {
+    height: 18px;
+    border-color: transparent;
+    box-shadow: none;
+    background: transparent;
+  }
+  .screen-btn {
+    position: absolute;
+    right: 3px;
+    bottom: 3px;
+    z-index: 2;
+    font-size: 0.5rem;
+    letter-spacing: 0.05em;
+    padding: 1px 5px;
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    background: rgba(5, 6, 8, 0.72);
+    color: var(--text-dim);
+    cursor: pointer;
+  }
+  .screen-btn.on { color: var(--text); border-color: var(--accent-dim); }
+  .screen-btn:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px; }
   .screen { width: 168px; height: 168px; display: block; }
   .row {
     display: flex;
