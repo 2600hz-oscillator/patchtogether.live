@@ -1,19 +1,28 @@
 <script lang="ts">
   // MOOG 993 TRIGGER & ENVELOPE VOLTAGES PANEL card — a patch-bay convenience
-  // panel of the Moog System 55 clone family. Three ROUTE knobs select each
-  // trigger out's source (0 = OFF / 1 = FROM 1 / 2 = FROM 2); the patch panel
-  // carries the two trigger SOURCE jacks + two envelope-CV inputs on the left
-  // and the three routed trigger outs + two envelope passthroughs on the right.
+  // panel of the Moog System 55 clone family. Three ROUTE SWITCHES select each
+  // trigger out's source (OFF / FROM 1 / FROM 2); the patch panel carries the
+  // two trigger SOURCE jacks + two envelope-CV inputs on the left and the three
+  // routed trigger outs + two envelope passthroughs on the right.
+  //
+  // ⚠ THE ROUTERS ARE SWITCHES, NOT KNOBS (#1911). They were three continuous
+  // <Knob curve="linear"> dials over a DSP that selected on exact float
+  // equality: of 201 positions across the travel, 149 delivered something other
+  // than their nearest state, and every one of those was SILENCE. Declaring
+  // `curve: 'discrete'` alone would NOT have fixed this surface — Knob.svelte
+  // has no discrete branch (its fracToValue is continuous for anything that is
+  // not log/exp), so the dial would have gone on emitting floats while the def
+  // read as fixed. The control itself had to change: a segmented switch whose
+  // only reachable values are the roster's, driven from the DEF's own exported
+  // MOOG993_ROUTE_OPTIONS so the state names cannot drift from the contract.
   //
   // Uses the SHARED beige <MoogPanel> wrapper (re-bound control palette) so the
-  // stock Knob / PatchPanel controls inherit the Moog-era look — same pattern
-  // as MoogCp3MixerCard / Moog921aCard.
+  // stock PatchPanel controls inherit the Moog-era look — same pattern as
+  // MoogCp3MixerCard / Moog921aCard.
   import type { NodeProps } from '@xyflow/svelte';
-  import Knob from '$lib/ui/controls/Knob.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import { setNodeParam } from '$lib/graph/mutate';
-  import { moog993Def } from '$lib/audio/modules/moog993';
-  import { useEngine } from '$lib/audio/engine-context';
+  import { moog993Def, MOOG993_ROUTE_OPTIONS } from '$lib/audio/modules/moog993';
   import type { ModuleNode } from '$lib/graph/types';
   import MoogPanel from './moog/MoogPanel.svelte';
   import { portsFromDef } from './card-kit';
@@ -21,26 +30,21 @@
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
 
-  const engineCtx = useEngine();
-
   function def(pid: string) {
     return moog993Def.params.find((p) => p.id === pid)!;
   }
 
-  let route1 = $derived(node?.params.route1 ?? def('route1').defaultValue);
-  let route2 = $derived(node?.params.route2 ?? def('route2').defaultValue);
-  let route3 = $derived(node?.params.route3 ?? def('route3').defaultValue);
+  // The three routers, in def order — the row list is DERIVED from the params
+  // rather than typed out, so a fourth router would appear here on its own.
+  const ROUTE_PARAMS = moog993Def.params
+    .filter((p) => p.id.startsWith('route'))
+    .map((p) => ({ id: p.id, caption: p.label.toUpperCase() }));
 
-  function setParam(paramId: string) {
-    return (v: number) => setNodeParam(id, paramId, v);
-  }
-  function readLive(paramId: string) {
-    return () => {
-      const eng = engineCtx.get();
-      if (!eng || !node) return undefined;
-      return eng.readParam(node, paramId);
-    };
-  }
+  let routes = $derived(
+    Object.fromEntries(
+      ROUTE_PARAMS.map((r) => [r.id, node?.params[r.id] ?? def(r.id).defaultValue]),
+    ) as Record<string, number>,
+  );
 
   const inputs = portsFromDef(moog993Def.inputs, {
     trig_from1: 'TRIG 1', trig_from2: 'TRIG 2', env_in1: 'ENV 1', env_in2: 'ENV 2',
@@ -53,20 +57,85 @@
 
 <MoogPanel {id} {data} defaultLabel="993 Trig" width={220}>
   <PatchPanel nodeId={id} {inputs} {outputs}>
-    <!-- Three ROUTE selectors: 0 = OFF / 1 = FROM 1 / 2 = FROM 2. -->
-    <div class="knob-row" data-testid="moog993-routes">
-      <Knob value={route1} min={0} max={2} defaultValue={1} label="Route 1" curve="linear" onchange={setParam('route1')} moduleId={id} paramId="route1" readLive={readLive('route1')} />
-      <Knob value={route2} min={0} max={2} defaultValue={1} label="Route 2" curve="linear" onchange={setParam('route2')} moduleId={id} paramId="route2" readLive={readLive('route2')} />
-      <Knob value={route3} min={0} max={2} defaultValue={1} label="Route 3" curve="linear" onchange={setParam('route3')} moduleId={id} paramId="route3" readLive={readLive('route3')} />
+    <!-- Three ROUTE switches, one per trigger out. Every button writes a value
+         straight off the def's roster, so no intermediate float exists. -->
+    <div class="routes" data-testid="moog993-routes">
+      {#each ROUTE_PARAMS as r (r.id)}
+        <div class="route-row" data-testid="moog993-{r.id}-switch">
+          <span class="route-label">{r.caption}</span>
+          <div class="route-seg" role="radiogroup" aria-label={r.caption}>
+            {#each MOOG993_ROUTE_OPTIONS as opt (opt.value)}
+              <button
+                type="button"
+                class="route-btn"
+                class:active={routes[r.id] === opt.value}
+                role="radio"
+                aria-checked={routes[r.id] === opt.value}
+                title={opt.title}
+                data-route-value={opt.value}
+                onclick={() => setNodeParam(id, r.id, opt.value)}
+              >{opt.label}</button>
+            {/each}
+          </div>
+        </div>
+      {/each}
     </div>
   </PatchPanel>
 </MoogPanel>
 
 <style>
-  .knob-row {
+  .routes {
     display: flex;
-    gap: 12px;
-    padding: 8px 18px 4px;
-    justify-content: center;
+    flex-direction: column;
+    gap: 5px;
+    padding: 8px 14px 4px;
+  }
+  .route-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    justify-content: space-between;
+  }
+  .route-label {
+    font-size: 0.55rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    color: var(--text-dim);
+    white-space: nowrap;
+  }
+  .route-seg {
+    display: inline-flex;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .route-btn {
+    appearance: none;
+    border: none;
+    background: var(--module-bg-deep);
+    color: var(--text-dim);
+    font: inherit;
+    font-size: 0.55rem;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    padding: 3px 6px;
+    cursor: pointer;
+    border-right: 1px solid var(--border);
+    transition: background 80ms ease-out, color 80ms ease-out;
+    white-space: nowrap;
+  }
+  .route-btn:last-child {
+    border-right: none;
+  }
+  .route-btn:hover {
+    color: var(--text);
+  }
+  .route-btn.active {
+    background: var(--accent);
+    color: var(--text-on-accent);
+  }
+  .route-btn:focus-visible {
+    outline: 1px solid var(--accent);
+    outline-offset: -1px;
   }
 </style>
