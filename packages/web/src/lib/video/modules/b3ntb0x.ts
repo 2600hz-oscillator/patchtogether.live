@@ -778,11 +778,152 @@ export const b3ntb0xDef: VideoModuleDef = {
     { id: 'barrel',       label: 'Barrel',      defaultValue: DEFAULTS.barrel,       min: 0,  max: 1, curve: 'linear' },
     { id: 'hue',          label: 'Hue',         defaultValue: DEFAULTS.hue,          min: -1, max: 1, curve: 'linear' },
     { id: 'sub_drift',    label: 'Drift',       defaultValue: DEFAULTS.sub_drift,    min: 0,  max: 1, curve: 'linear' },
-    { id: 'mirrorX',      label: 'Mirror X',    defaultValue: DEFAULTS.mirrorX,      min: 0,  max: 1, curve: 'linear' },
-    { id: 'mirrorY',      label: 'Mirror Y',    defaultValue: DEFAULTS.mirrorY,      min: 0,  max: 1, curve: 'linear' },
+    { id: 'mirrorX',      label: 'Mirror X',    defaultValue: DEFAULTS.mirrorX,      min: 0,  max: 1, curve: 'discrete' },
+    { id: 'mirrorY',      label: 'Mirror Y',    defaultValue: DEFAULTS.mirrorY,      min: 0,  max: 1, curve: 'discrete' },
     { id: 'mirrorXGate',  label: 'Mir X Gate',  defaultValue: DEFAULTS.mirrorXGate,  min: 0,  max: 1, curve: 'linear' },
     { id: 'mirrorYGate',  label: 'Mir Y Gate',  defaultValue: DEFAULTS.mirrorYGate,  min: 0,  max: 1, curve: 'linear' },
   ],
+
+  // #1726 — the two SYNTHETIC params. Neither is a control: each exists so the
+  // `mirror_*_gate` CV bridge has somewhere to write a raw gate swing that the
+  // module edge-detects into a mirror TOGGLE. Painting them would put a
+  // continuous rotary over a voltage nobody sets by hand, on a face whose
+  // MIRROR X / MIRROR Y toggles are right beside them — two controls that look
+  // like four, with the two fakes indistinguishable from the real pair.
+  //
+  // Hash-transparent (`HASH_TRANSPARENT_PROPS`), so declaring this costs no
+  // re-attest — which is the whole reason #1726 put it here rather than on
+  // `params`.
+  noUserControl: [
+    {
+      param: 'mirrorXGate',
+      writer: 'cv-port',
+      why: "The mirror_x_gate input's raw level. A RISING EDGE on it toggles Mirror X; the level itself is never a setting, and the face paints the mirrorX toggle it drives instead.",
+    },
+    {
+      param: 'mirrorYGate',
+      writer: 'cv-port',
+      why: "The mirror_y_gate input's raw level. A RISING EDGE on it toggles Mirror Y; the level itself is never a setting, and the face paints the mirrorY toggle it drives instead.",
+    },
+  ],
+
+  // ── THE FACEPLATE (queue Q24) ─────────────────────────────────────────────
+  //
+  // WHAT IT IS FOR. Every other video module in the rack applies an EFFECT to a
+  // picture. B3NTB0X does not have effects — it has a SIGNAL PATH. It encodes
+  // the picture into a composite voltage on a 3.58 MHz subcarrier, abuses that
+  // voltage as an analog electrician would, and decodes whatever survives. Every
+  // artefact a player wants from it — tearing, dot crawl, rainbow swim, rolling
+  // — EMERGES from that abuse rather than being drawn. So the verb is not
+  // "choose a look", it is BREAKING A CIRCUIT AND WATCHING WHAT THE DECODER
+  // MAKES OF THE WRECKAGE, and the face is organised as the path itself.
+  //
+  // THE LADDER, read back as a sentence: mini shows SYNC CRUSH, the master gain
+  // that drives the signal into the clip; compact adds BIAS, the other half of
+  // the module's own documented headline gesture; the plate completes the
+  // wrecking set with TBC, BURST STARVE, ENHANCE and BEND D; the dock shows the
+  // whole path, six pages of it.
+  //
+  // ⚠ TBC RANKS THIRD BECAUSE IT IS AN ENABLER, AND THAT IS A MEASUREMENT
+  // (#1946). The docs tell a player to "crank Sync Crush + Bias to tear and roll
+  // the picture". At the shipped defaults they cannot: `recoverLineOffset`
+  // returns `(rawOffset + wobble) * (1.0 - tbc)` and `tbc` DEFAULTS TO 1, so the
+  // returned offset is bit-exactly 0.0 and the picture never moves sideways no
+  // matter how far the sync tip is crushed. Ranking TBC into the same tier as
+  // the pair it gates is the surface-level half of that finding: no lane tier
+  // can show "crank these two" without also showing the control that permits it.
+  // (The pixel-level half is an owner decision and is NOT taken here — this face
+  // moves no pixels.)
+  //
+  // ⚠ ENHANCE AND BEND D ARE RANKED TOGETHER, ALSO ON A MEASUREMENT. They are
+  // not independent: both scale the same `neighborAvg` ripple, and the ripple
+  // gain is `sync_crush · (1 + 2·enhance) · (1 + 0.8·bend_d)` — verified against
+  // a numeric replay of the shader to 1.8e-15 over 972 points. The product
+  // carries a real `1.6·d·E` cross term, so at both full the gain is ×5.40 where
+  // two independent controls would give ×3.80. A tier that showed one without
+  // the other would hide the entire interaction; they sit at 5 and 6 so the
+  // plate is the first tier to show either, and it shows both.
+  //
+  // ⚠ THEY ARE NOT ONE CONTROL, THOUGH — the earlier "bend_d IS enhance" reading
+  // is refuted (#1940). The two act at different points in the chain: ENHANCE is
+  // applied before the `sync_crush` multiply and the `bias` add, BEND D after
+  // both. So ENHANCE is purely a ripple-gain control, while BEND D is a
+  // ripple-gain control AND a pedestal multiplier — it scales `bias` by
+  // `(1+0.8d)` where ENHANCE does not touch it at all.
+  //
+  // PAGES ARE THE SIGNAL PATH, one per stage of the module's own architecture:
+  // the bend circuit, its four patch points, the demodulator, the timebase, the
+  // CRT, and the mirror fold. `order` and `pages` therefore disagree throughout
+  // — the ranking is "what wrecks the picture most", the pages are "where in the
+  // circuit this happens", and neither is a reordering of the other.
+  //
+  // ⚠ SIX PAGES, WHICH DOES NOT REACH THE TAB RAIL, AND NO PAGE IS PADDED TO
+  // MAKE IT. `DOCK_TAB_MIN_BANDS` is 7. This module is control-heavy (20 painted
+  // params) and the 2026-08-18 ruling says a control-heavy module gets a tabbed
+  // face — but the same ruling says NOT to pad pages to force the rail, and to
+  // raise the threshold to the owner instead. Six is the honest count: FEEDBACK
+  // is grouped with the CRT controls because it is literally a uniform of the
+  // `crtProgram` (phosphor persistence, beside `tube_bloom`), not to avoid a
+  // seventh page. The threshold question is raised in the PR and is NOT settled
+  // here.
+  //
+  // GLYPH: `'none'`, which is the counter-intuitive but required declaration for
+  // a video def — `primaryAudioOutPortId` is null with no audio out, so any
+  // other kind resolves to a dead `{kind:'static'}`. The picture arrives through
+  // `hasVideoSurface`, not through the glyph.
+  //
+  // THE READOUTS. Two, and neither is a knob relabelled:
+  //   `ripple gain`  the JOIN above, over THREE params. A readback of ENHANCE is
+  //                  blind to both `sync_crush` and `bend_d`, and the cross term
+  //                  means it cannot even be recovered by reading two dials.
+  //   `line shift`   how much of the recovered sync offset and timebase wobble
+  //                  actually reaches the picture — `(1 - tbc)`. It reads
+  //                  `locked` at the shipped default, which is the one-word
+  //                  statement of #1946 that no dial on this face can make.
+  //
+  // ⚠ AND THERE IS DELIBERATELY NO HUE READOUT. Printing a rotation in degrees
+  // here would print the UNIFORM'S ARGUMENT rather than the rotation a viewer
+  // receives: `theta` rotates the recovered (I,Q) vector, and the YIQ basis is
+  // not isotropic, so a rigid rotation there arrives in the RGB chroma plane
+  // warped by the input colour. Measured through the GLSL harness at three input
+  // hues, full HUE travel delivers 172.5° / 157.7° / 161.9° — it clusters around
+  // the shader's 162 constant, equals it at no input, and depends on the picture
+  // (#1909). The only input-independent statement is that it never reaches 180°,
+  // which is a property for a gate to assert, not a number for a face to print.
+  face: {
+    extension: 'b3ntb0x',
+    glyph: 'none',
+    order: [
+      'sync_crush', 'bias', 'tbc', 'burst_starve', 'enhance', 'bend_d',
+      'ac_dc', 'bend_a', 'bend_b', 'bend_c',
+      'chroma_leak', 'luma_peak', 'hue', 'sub_drift',
+      'feedback', 'tube_bloom', 'overscan', 'barrel',
+      'mirrorX', 'mirrorY',
+    ],
+    hero: {
+      readouts: [
+        { label: 'ripple gain', valueId: 'b3ntb0x-ripple-gain' },
+        { label: 'line shift', valueId: 'b3ntb0x-line-shift' },
+      ],
+    },
+    pages: [
+      // 1 — THE BEND CIRCUIT, in the order the voltage meets it: how it is
+      // coupled in, the master gain, the offset, then the HF peaking.
+      { id: 'bend', label: 'bend', controls: ['ac_dc', 'sync_crush', 'bias', 'enhance'] },
+      // 2 — THE FOUR PATCH POINTS. One idea (a circuit-bend tap) four times, so
+      // one page rather than four.
+      { id: 'taps', label: 'taps', controls: ['bend_a', 'bend_b', 'bend_c', 'bend_d'] },
+      // 3 — THE DEMODULATOR: what the decoder recovers, and how badly.
+      { id: 'decode', label: 'decode', controls: ['burst_starve', 'chroma_leak', 'luma_peak', 'hue'] },
+      // 4 — THE TIMEBASE. Distinct from `decode` because it recovers TIMING
+      // rather than colour, and because #1946 makes TBC load-bearing.
+      { id: 'lock', label: 'lock', controls: ['tbc', 'sub_drift'] },
+      // 5 — THE DISPLAY. All four are uniforms of `crtProgram`.
+      { id: 'crt', label: 'crt', controls: ['feedback', 'tube_bloom', 'overscan', 'barrel'] },
+      // 6 — THE FOLD, which happens after everything else, on the sampled uv.
+      { id: 'mirror', label: 'mirror', controls: ['mirrorX', 'mirrorY'] },
+    ],
+  },
 
   docs: {
     explanation: "A circuit-level NTSC/composite video destroyer. Where the original BENTBOX does one symbolic RGB/YIQ pass, B3NTB0X runs a real four-stage analog pipeline: it ENCODES the incoming picture into a per-column composite VOLTAGE on a 3.58 MHz subcarrier (with sync tip, blanking, colour burst, and active video), runs that voltage through an analog BEND CIRCUIT (AC/DC coupling, gain, bias, soft-clip + diode clamp, plus four circuit-bend taps), DECODES it back to RGB with a quadrature demodulator and recovered sync, then renders it on a curved CRT (beam blur, phosphor grille, scanlines/interlace, bloom, persistence, overscan, barrel). Sync crush, dot-crawl, rainbow swim and rolling all EMERGE from the signal path — they are not cosmetic filters. Patch a video source into IN and it is the chainable, CRT-rendered OUT. Crank Sync Crush + Bias to tear and roll the picture, starve the Burst to kill colour and bring on herringbone, push Drift for swimming rainbow, and use Bend A–D for wavefold/comb/crush/bleed mangling. The preview is a resizable CRT screen (drag the bottom-right handle; default 540x540, min 360x540) that letterboxes at the live engine aspect with the 4:3 active area, overscan and barrel applied inside the shader; right-click for fullscreen / full-frame / present-on-second-display, and a \"reduced precision\" badge appears if the GPU cannot allocate the float buffers the composite voltage needs.",

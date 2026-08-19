@@ -1078,6 +1078,27 @@ export const FACES = [
       + 'continuous live passthrough of whatever the video zone is producing, so an unpinned '
       + 'scene would be sampling a moving source rather than the faceplate.',
   },
+  // THE FACEPLATE QUEUE · Q24 — the composite-video destroyer, and the widest
+  // video face in the roster at six bands and 20 painted params.
+  //
+  // `pages: 6` is the declared band count; this face promotes no control into
+  // the hero (its hero carries READOUTS only), so no band is emptied and the
+  // count is exactly `face.pages.length`. Six is also the number that keeps it
+  // OFF the tab rail — `DOCK_TAB_MIN_BANDS` is 7 — so the dock scene frames
+  // stacked bands rather than a rail, and this entry is what would go red if a
+  // seventh page were ever added to force one.
+  {
+    type: 'b3ntb0x',
+    pages: 6,
+    videoFaceWhy:
+      'both scenes carry a LIVE picture: the compact tile paints a VideoTileThumb through '
+      + 'hasVideoSurface, and the dock body is the module\'s own fullViewBody extension — the '
+      + 'CRT preview plus its SCREEN switch. b3ntb0x is the strongest case in the roster for a '
+      + 'pinned capture, because its whole subject is a signal path whose artefacts EMERGE over '
+      + 'time: the subcarrier phase and the timebase wobble both advance with uTime (the wobble '
+      + 'is literally sin(y*47 + uTime*3.3)), so an unfrozen scene would sample a different '
+      + 'point of an animating raster on every run.',
+  },
   // THE FACEPLATE QUEUE · Q5 — the Buchla-259-style complex oscillator.
   //
   // `pages: 2` is the POST-hero-split count: the face declares two bands
