@@ -591,7 +591,7 @@ test.describe('PF-21 row plan — sections share a row, legibly and without over
   // negative control instead of a number that happens to pass.
   const WIDTHS = [
     { label: 'wide', size: { width: 1280, height: 900 } },
-    { label: 'narrow', size: { width: 820, height: 900 } },
+    { label: 'narrow', size: { width: 640, height: 900 } },
   ] as const;
 
   for (const { label, size } of WIDTHS) {
@@ -725,29 +725,36 @@ test.describe('PF-21 row plan — sections share a row, legibly and without over
     if (label === 'narrow') {
       // ⚠ A PROPORTION OF THE SWEPT ROSTER, NOT A COUNT — and the number was
       // chosen from the measurement rather than guessed, because the obvious
-      // guard (`scrollAbsorbed > 0`) DOES NOT DISCRIMINATE. Measured over the
-      // 50-face roster:
+      // guard (`scrollAbsorbed > 0`) DOES NOT DISCRIMINATE. Two faces are wide
+      // enough to overflow ANY realistic pane (dx7 leads at 1139 px of
+      // content), so `> 0` is satisfied at every width and would have let the
+      // narrow leg silently become a second wide leg — exactly the failure this
+      // guard exists to prevent, reintroduced by its own replacement.
       //
-      //     1600 px →  2 faces scroll   (4%)
-      //     1280 px →  2 faces scroll   (4%)
-      //      820 px → 12 faces scroll  (24%)
+      // ⚠ THE NARROW WIDTH MOVED FROM 820 px TO 640 px, AND THE REASON IS A
+      // FEATURE, NOT A THRESHOLD DODGE. Deleting the dock SIDEBAR (2026-08-19)
+      // gave every faceplate back the 288 px column it used to reserve, so
+      // faces genuinely stopped overflowing at 820 px — re-measured over the
+      // 68-face roster:
       //
-      // Two faces are wide enough to overflow ANY realistic pane (dx7 leads at
-      // 1139 px of content), so `> 0` is satisfied at every width and would
-      // have let the narrow leg silently become a second wide leg — exactly the
-      // failure this guard exists to prevent, reintroduced by its own
-      // replacement. Verified: with the narrow width temporarily set to 1600,
-      // `> 0` still passed and the floor below goes RED.
+      //      820 px →  4 faces scroll   (6%)   ← was 12/50 (24%) WITH the sidebar
+      //      640 px → 13 faces scroll  (19%)
       //
-      // A tenth of the roster sits cleanly between 4% and 24%, and it is
-      // expressed against `faces.length` so a growing roster carries it.
+      // The condition this leg needs is "a pane that constrains materially more
+      // faces than a comfortable one". At 820 px that condition no longer
+      // exists on its own merits, so the SUBJECT is what moved: the pane is
+      // narrower, rather than the floor being lowered to fit a leg that had
+      // stopped measuring anything (CLAUDE.md: fix the subject, never the
+      // threshold). A tenth of the roster still sits cleanly below the measured
+      // 19%, and it is expressed against `faces.length` so a growing roster
+      // carries it.
       const constrainedFloor = Math.ceil(faces.length * 0.1);
       expect(
         scrollAbsorbed,
         `only ${scrollAbsorbed} of ${faces.length} faces needed the pane to SCROLL at ` +
           `${size.width}px (floor ${constrainedFloor} = a tenth of the roster). A narrow pane ` +
-          `must constrain materially more faces than a comfortable one — measured 12/50 here ` +
-          `against 2/50 at 1280px — or this leg is measuring the same situation as the wide ` +
+          `must constrain materially more faces than a comfortable one — measured 13/68 here ` +
+          `against 4/68 at 820px — or this leg is measuring the same situation as the wide ` +
           `one and the column-fit assertion above proves nothing about overflow. ` +
           `shapes:\n${shapes.join('\n')}`,
       ).toBeGreaterThanOrEqual(constrainedFloor);
