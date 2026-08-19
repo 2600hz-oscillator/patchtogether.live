@@ -112,7 +112,7 @@ author a `face` and rank the controls — no new platform capability.
 | `moog907a` | audio | done | — |
 | `moog911` | audio | done | — |
 | `moog911a` | audio | done | — |
-| `moog912` | audio | — | — |
+| `moog912` | audio | done | — |
 | `moog914` | audio | done | — |
 | `moog921a` | audio | done | — |
 | `moog921b` | audio | done | — |
