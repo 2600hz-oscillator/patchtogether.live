@@ -663,6 +663,27 @@ describe('the AUTHORED push cards', () => {
     expect(generic[0]).not.toBe('bipolar');
   });
 
+  it('moog911a: promotion moved the card GENERIC → FACE, and MODE took encoder 2', () => {
+    // THE FACEPLATE QUEUE · Q35. No `PUSH_CARD_CONTROLS` entry, so the FACE tier
+    // resolves this card from the moment `moog911a` enters STRICT_FACES.
+    // Asserted for the featurecv reason: nothing else here would have noticed.
+    const def = defByType('moog911a');
+    const faced = pushCardParams(resolvePushCardControls(def, {})).map((p) => p.id);
+    const generic = pushCardParams(
+      resolvePushCardControls({ ...def, face: undefined }, {}),
+    ).map((p) => p.id);
+    // A re-ORDER, not a re-pick — three params, well inside the eight encoders.
+    expect([...faced].sort()).toEqual([...generic].sort());
+    expect(faced, 'the face must actually move the card, or this promotion is decoration')
+      .not.toEqual(generic);
+    // The face's rank-2 argument, and it is MEASURED: driving TRIG 2 alone gives
+    // one pulse in OFF and NONE in PARALLEL or SERIES, so MODE turns an input
+    // JACK on and off — it belongs beside the delay it gates rather than behind
+    // the one it does not.
+    expect(faced[1]).toBe('mode');
+    expect(generic[1]).toBe('delay2');
+  });
+
   it('adsr REORDERS the face ranking into ENVELOPE order', () => {
     const ENVELOPE = ['attack', 'decay', 'sustain', 'release'];
     expect(ids('adsr')).toEqual(ENVELOPE);

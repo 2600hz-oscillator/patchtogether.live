@@ -108,6 +108,7 @@ import { sidecarDef } from '$lib/audio/modules/sidecar';
 import { slewSwitchDef } from '$lib/audio/modules/slewswitch';
 import { snaredrumDef } from '$lib/audio/modules/snaredrum';
 import { swolevcoDef } from '$lib/audio/modules/swolevco';
+import { moog911aDef } from '$lib/audio/modules/moog911a';
 import { vcaDef } from '$lib/audio/modules/vca';
 import { warrensspectrumDef } from '$lib/audio/modules/warrensspectrum';
 import { wavetableVcoDef } from '$lib/audio/modules/wavetable-vco';
@@ -340,6 +341,22 @@ const RANGE_BOUND_CARDS: Readonly<Record<string, { params: readonly ParamDef[] }
   // `P.<id>.{min,max,defaultValue,label,units,curve}` off
   // `paramSpec(swolevcoDef, …)`, so the def is the only copy of any of them.
   'SwolevcoCard.svelte': swolevcoDef,
+  // THE FACEPLATE QUEUE · Q35. ⚠ ENROLLED WITHOUT MOVING A LINE OF CARD CODE,
+  // which is the case this list's own header calls the QUIET half of comment
+  // blindness: `Moog911aCard.svelte` was ALREADY fully def-bound in source
+  // (`min={def('delay1').min}` and so on) and simply was not in the set that
+  // certifies it — free to be delisted, or to regress, with nothing red. Its
+  // faceplate PR is when that stops being free, because from promotion the dock
+  // renders these three controls off the `ParamDef`.
+  //
+  // ⚠ RANGE ONLY — deliberately NOT in MAPPING_BOUND_CARDS. The card passes no
+  // `units`, while the def declares `units: 's'` on both delays, so binding the
+  // mapping would start printing `0.10 s` where the card prints `0.10` today.
+  // That is a VISIBLE card change on a module that HAS a committed baseline
+  // (`moog911a` is in STRICT_VRT_MODULES), so it is the SidecarCard case
+  // verbatim: a units change wants its own owner preview, not a ride-along in a
+  // face PR.
+  'Moog911aCard.svelte': moog911aDef,
   'VcaCard.svelte': vcaDef,
   'WarrensspectrumCard.svelte': warrensspectrumDef,
   // THE FACEPLATE QUEUE · Q9. Enrolled while PAYING a live `OPERATIONAL_DEBT`

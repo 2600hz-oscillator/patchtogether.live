@@ -78,6 +78,11 @@ import {
   swolevcoShapeText,
 } from '$lib/ui/modules/swolevco-face-model';
 import {
+  moog911aFaceParams,
+  moog911aLastOutText,
+  moog911aMaxRateText,
+} from '$lib/ui/modules/moog911a-face-model';
+import {
   NINELIVES_TAP_MULTIPLIERS,
   ninelivesFaceParams,
   ninelivesFastTapsText,
@@ -728,6 +733,30 @@ const FACE_READOUT_VALUES: Readonly<Record<string, FaceReadoutValue>> = {
   'swolevco-mod-hz': (read) => swolevcoModHzText(swolevcoFaceParams(read)),
   'swolevco-mod-lock': (read) => swolevcoLockText(swolevcoFaceParams(read)),
   'swolevco-shape': (read) => swolevcoShapeText(swolevcoFaceParams(read)),
+
+  // ── MOOG 911A ────────────────────────────────────────────────────────────
+  // A trigger delay whose most consequential number is not a knob: there is NO
+  // QUEUE, so a rising edge inside a running countdown RE-ARMS it, and a clock
+  // at or above `1/delay` never lets one finish. Measured on the shipping
+  // worklet at the 0.1 s default over a 3.0 s render: 8 Hz -> 24 of 24 through,
+  // 9.9 Hz -> 29 of 30, then 10 Hz -> 0 of 30 and 32 Hz -> 0 of 96. A CLIFF,
+  // bisected to 9.998958 Hz. (#1886 — filed, not fixed here: adding a queue is
+  // an audio-semantics change for the owner's ears.)
+  //
+  //   `max-rate`  1/delay1, the ceiling above which OUT 1 is silent. Invariant
+  //               to DELAY 2 and to MODE, which is what makes it the other
+  //               readout's negative control rather than a second copy of it.
+  //   `last-out`  when the LAST output lands after one trigger on TRIG 1, which
+  //               needs all THREE params because MODE decides which outputs
+  //               fire: OFF -> delay1 (OUT 2 never fires from TRIG 1 there,
+  //               measured), PARALLEL -> max, SERIES -> sum. With DELAY 2 at
+  //               0.5 s the three modes read 100 / 500 / 600 ms while neither
+  //               delay dial moves.
+  //
+  // Permanent negative controls: moog911a-face-model.test.ts. Re-derived from
+  // the shipping worklet: art/scenarios/moog911a/face-audit.test.ts.
+  'moog911a-max-rate': (read) => moog911aMaxRateText(moog911aFaceParams(read)),
+  'moog911a-last-out': (read) => moog911aLastOutText(moog911aFaceParams(read)),
 
   // ── MARBLES ──────────────────────────────────────────────────────────────
   // ELEVEN values, every one a BARE number or state — no sentence anywhere on

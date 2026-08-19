@@ -1050,6 +1050,44 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // picture of a path it is not. `noise` decided the other way on the opposite
   // facts and both decisions are in their face comments.
   'moog923',
+  // THE FACEPLATE QUEUE · Q35 — the dual trigger delay (2026-08-19). Three
+  // params, two `gate` in, two `gate` out, two honest pages, no rail.
+  //
+  // ⚠ THE MERIT IS ONE NUMBER THE MODULE COULD NOT PRINT: the clock rate above
+  // which the output is COMPLETELY SILENT. There is no trigger queue — an edge
+  // arriving inside a running countdown RE-ARMS it — so a clock at or above
+  // `1/delay` never lets one finish. Measured on the SHIPPING worklet at the
+  // 0.1 s default, rising edges on `out1` over a 3.0 s render: 4 Hz -> 12/12,
+  // 8 Hz -> 24/24, 9.9 Hz -> 29/30, then 10 Hz -> 0/30, 16 Hz -> 0/48,
+  // 32 Hz -> 0/96. A CLIFF, bisected to 9.998958 Hz against a predicted
+  // 10.000000. Positive control: the same 16 and 32 Hz clocks at the 0.002 s
+  // minimum give 48/48 and 96/96. That is #1886 — FILED, NOT FIXED here, because
+  // adding a queue changes what the module sounds like and belongs to the
+  // owner's ears; the face makes it visible and the docs now state it.
+  //
+  // ⚠ STOP 2 HAD A REAL ITEM AND `options[]` PAID IT FOR FREE. The card renders
+  // a live three-state NAME (OFF / PARALLEL / SERIES) from an exported const the
+  // shell never reads, so a def-driven face would have printed `0.00` — a
+  // functional-parity regression, which is a hard requirement rather than a
+  // trade. `mode` was already `curve: 'discrete'`, so declaring the roster costs
+  // no contract line and no attest, and the names come back from the
+  // DECLARATION instead of from card markup.
+  //
+  // ⚠ AND THE OBVIOUS DISCRETE-MISMATCH FINDING IS FALSE HERE. `Knob.svelte` has
+  // no `discrete` branch and the pure core clamps `mode <= 0 … >= 2`, which
+  // together predict the card's name disagreeing with the DSP over HALF the
+  // dial. Measured: 0 of 41 sampled positions disagree, because the WORKLET
+  // rounds first and the boundaries bisect to 0.4999999851 / 1.4999999404 —
+  // exactly `Math.round`. Promotion is behaviour-preserving on `mode`. The same
+  // reasoning is CORRECT for `moog921b.range`; only reading the consumer
+  // separates them.
+  //
+  // Ranking `delay1, mode, delay2`, and rank 2 is measured rather than asserted:
+  // driving TRIG 2 ALONE gives one pulse in OFF and NONE in PARALLEL or SERIES,
+  // so MODE turns an input JACK on and off while DELAY 1 is never conditional.
+  // All three params are bit-exactly inert at spawn, so — as on moog911 —
+  // inertness discriminates nothing and the ranking rests on the gating.
+  'moog911a',
   // THE FACEPLATE QUEUE · Q7 — the full mixer (2026-08-15). 91 params, 111
   // input ports: 1.86x the previous largest face (pentemelodica, 49 cells).
   //
