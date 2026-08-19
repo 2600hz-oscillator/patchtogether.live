@@ -1479,7 +1479,12 @@ jobs:
     name: webgl-smoke (SwiftShader WebGL floor)
     needs: [dsp-build, build-web]
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # 20, not 10 (#1854/#1917): the job's typical run is well under 10 min, but
+    # the slow-runner lottery pushed it to 10m07s four times on 2026-08-19 —
+    # and a job-level timeout reports as CANCELLED, which the aggregate treats
+    # as red while every real leg is green. The timeout is a failure BOUND, not
+    # a gate (the #1860 rule); 20 matches build-web's bound.
+    timeout-minutes: 20
 
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/patchtogether_test
