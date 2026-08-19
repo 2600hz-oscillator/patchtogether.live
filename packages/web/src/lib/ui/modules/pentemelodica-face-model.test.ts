@@ -40,11 +40,6 @@ function withParams(over: Partial<PenteFaceParams>): (id: string) => number | un
   };
 }
 
-function readout(id: string, over: Partial<PenteFaceParams> = {}): string {
-  const fn = faceReadoutValueFor(id);
-  expect(fn, `${id} is not registered in face-readout-values.ts`).not.toBeNull();
-  return fn!(withParams(over));
-}
 
 describe('pentemelodica face model — the shipped defaults', () => {
   it('resolves the def defaults for an untouched node', () => {

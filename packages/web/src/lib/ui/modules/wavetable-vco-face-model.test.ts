@@ -39,11 +39,6 @@ function withParams(over: Partial<WtFaceParams>): (id: string) => number | undef
   return (id) => (p as unknown as Record<string, number>)[id];
 }
 
-function readout(id: string, over: Partial<WtFaceParams> = {}): string {
-  const fn = faceReadoutValueFor(id);
-  expect(fn, `${id} is not registered in face-readout-values.ts`).not.toBeNull();
-  return fn!(withParams(over));
-}
 
 function dspSource(): string {
   return readFileSync(

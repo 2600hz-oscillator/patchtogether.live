@@ -45,11 +45,6 @@ function withParams(over: Partial<DrummergirlParams>): (id: string) => number | 
   return (id) => (p as unknown as Record<string, number>)[id];
 }
 
-function readout(id: string, over: Partial<DrummergirlParams> = {}): string {
-  const fn = faceReadoutValueFor(id);
-  expect(fn, `${id} is not registered in face-readout-values.ts`).not.toBeNull();
-  return fn!(withParams(over));
-}
 
 describe('drummergirl face model — the .dsp SOURCE PIN', () => {
   it('the five preset tables still match the .dsp, sixteen values each', () => {

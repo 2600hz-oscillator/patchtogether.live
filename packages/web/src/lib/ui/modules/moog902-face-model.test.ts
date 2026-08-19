@@ -60,9 +60,6 @@ function reader(params: Record<string, number | undefined>) {
 }
 
 /** The readout text for a given param map, through the REGISTERED entry. */
-function ceiling(params: Record<string, number | undefined>): string {
-  return faceReadoutValueFor('moog902-ceiling')!(reader(params));
-}
 
 describe('moog902-gain-db — the RESPONSE switch a knob readback cannot see', () => {
 

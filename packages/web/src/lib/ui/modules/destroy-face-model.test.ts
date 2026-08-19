@@ -81,11 +81,6 @@ const SENSITIVITY: Record<string, Record<string, boolean>> = {
   'destroy-mute': { decimate: false, bits: true, wet: false },
 };
 
-function printed(valueId: string, overlay: Record<string, number>): string {
-  const fn = faceReadoutValueFor(valueId);
-  expect(fn, `readout '${valueId}' is registered in face-readout-values`).not.toBeNull();
-  return fn!(reader(overlay));
-}
 
 describe('destroy face model — the glyph binding, ESTABLISHED not assumed', () => {
   it('resolves a LIVE audio tap, not the dead `static` binding', () => {

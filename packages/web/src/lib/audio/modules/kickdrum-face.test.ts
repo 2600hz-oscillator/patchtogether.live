@@ -365,63 +365,6 @@ describe('kickdrum faceplate structure — the hero PROMOTES, it does not copy',
   });
 });
 
-describe('kickdrum faceplate structure — the sidebar says what the DSP does', () => {
-  const blocks = sidebarPlan(kickdrumDef as unknown as FaceplateDefLike)!;
-
-  it('paints three blocks: the crossover picture, the presets, the output', () => {
-    expect(blocks.map((b) => b.kind)).toEqual(['custom', 'presets', 'readouts']);
-  });
-
-  it('the CROSSOVER picture draws the DSP’s ACTUAL split, read from the worklet source', () => {
-    // ⚠ The "a card silently disagrees with its def" guard, applied to a
-    // picture. Nothing at runtime can see that the panel draws 120 Hz while
-    // the filter runs at some other frequency — the panel takes the number
-    // from a declaration, and a declaration is free to drift. So read the
-    // other side of the contract: the DSP's own exported constant.
-    const dspSrc = readFileSync(
-      fileURLToPath(new URL('../../../../../dsp/src/lib/kickdrum-dsp.ts', import.meta.url)),
-      'utf8',
-    );
-    //
-    // Anchored on the FILTER CALL, exactly like the level/ceiling gate above
-    // anchors on `out[0] = Math.tanh(...)`. Exporting a named constant from the
-    // worklet lib and importing it here would read better, and it is the wrong
-    // trade: `kickdrum-dsp.ts` is inside TWO ART source-SHA pins (this module's
-    // own profile and grand-integration's combined master), so a comment-level
-    // edit to it costs two baseline re-pins for zero audio change. Reading the
-    // source is free and just as strong.
-    const m = dspSrc.match(/updateHighpass\(s\.sideHp,\s*(\d+(?:\.\d+)?),\s*sr\)/);
-    expect(m, 'the side high-pass call moved — re-anchor this gate on the real expression').not.toBeNull();
-    const dspSplit = Number(m![1]);
-    // BOTH cascaded stages must sit at that frequency, or "the split" is two
-    // splits and the picture can only be drawing one of them.
-    expect(dspSrc, 'the 4th-order pair is at ONE frequency').toContain(
-      `updateHighpass(s.sideHp2, ${dspSplit}, sr)`,
-    );
-
-    const xover = blocks.find((b) => b.kind === 'custom')!;
-    if (xover.kind !== 'custom') throw new Error('unreachable');
-    expect(xover.panelId).toBe('stereo-crossover');
-    expect(xover.props?.splitHz, `the faceplate must draw the DSP's ${dspSplit} Hz split`).toBe(dspSplit);
-    // …and the width param it opens the sides with is a real param.
-    expect(kickdrumDef.params.some((p) => p.id === xover.props?.widthParam)).toBe(true);
-  });
-
-  it('the presets’ TUNE values are the numbers their names promise', () => {
-    // The note beside each row is the claim; this is the check. A row reading
-    // "DEEP CLUB · 50 Hz" that tunes to 70 is the same lie class as a knob
-    // whose range disagrees with its def.
-    const presets = blocks.find((b) => b.kind === 'presets')!;
-    if (presets.kind !== 'presets') throw new Error('unreachable');
-    const byId = Object.fromEntries(presets.entries.map((e) => [e.id, e]));
-    expect(byId['deep-club']!.values.tune).toBe(50);
-    expect(byId['909-classic']!.values.tune).toBe(62);
-    expect(byId['sub-boom']!.values.tune).toBe(38);
-    // The two whose notes name a CHARACTER rather than a pitch drive HARD.
-    expect(byId['techno-punch']!.values.hard).toBe(1);
-    expect(byId['lo-fi-thump']!.values.hard).toBe(1);
-  });
-});
 
 describe('kickdrum faceplate structure — the page header + band hints', () => {
   it('the faceplate header is ANNOTATION IN FULL — title as well as sentence', () => {

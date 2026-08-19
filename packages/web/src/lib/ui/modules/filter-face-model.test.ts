@@ -52,11 +52,6 @@ const withParams = (over: Partial<FilterFaceParams>): FilterFaceParams => ({
 /** What the registry actually prints for a declared `valueId`, so these
  *  assertions are about the SHIPPED surface rather than about a helper the face
  *  might not be wired to. */
-function printed(valueId: string, over: Partial<FilterFaceParams>): string {
-  const fn = faceReadoutValueFor(valueId);
-  expect(fn, `${valueId} is registered in face-readout-values.ts`).toBeTruthy();
-  return fn!(reader(over as Partial<Record<string, number>>));
-}
 
 describe('filter face model — the params reader', () => {
   it('resolves the DEF DEFAULT for every untouched param', () => {

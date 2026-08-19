@@ -42,11 +42,6 @@ function withParams(over: Partial<SixstrumFaceParams>): (id: string) => number |
 
 /** Run a registered readout id over a param overlay — the EXACT path the
  *  faceplate uses, so a registry typo fails here rather than printing `—`. */
-function readout(id: string, over: Partial<SixstrumFaceParams> = {}): string {
-  const fn = faceReadoutValueFor(id);
-  expect(fn, `${id} is not registered in face-readout-values.ts`).not.toBeNull();
-  return fn!(withParams(over));
-}
 
 describe('sixstrum face model — the DSP-source pin', () => {
   // The four constants the model RE-TYPES because they are module-private in

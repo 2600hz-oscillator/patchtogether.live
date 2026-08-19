@@ -27,11 +27,6 @@ function withParams(over: Partial<ClapVoiceParams>): (id: string) => number | un
   return (id) => (p as unknown as Record<string, number>)[id];
 }
 
-function readout(id: string, over: Partial<ClapVoiceParams> = {}): string {
-  const fn = faceReadoutValueFor(id);
-  expect(fn, `${id} is not registered in face-readout-values.ts`).not.toBeNull();
-  return fn!(withParams(over));
-}
 
 describe('clap face model — the shipped defaults', () => {
   it('resolves the def defaults for an untouched node', () => {

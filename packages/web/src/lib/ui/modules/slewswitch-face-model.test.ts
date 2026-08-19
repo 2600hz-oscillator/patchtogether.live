@@ -64,15 +64,6 @@ const BLOCK = 128;
 /** A param reader over a SPARSE overlay — the shape `node.params` really has. */
 const reader = (over: Record<string, number> = {}) => (id: string) => over[id];
 
-/** Resolve a readout through the REGISTRY, not by calling the model directly:
- *  that is the path ModuleShell takes, so a readout registered under the wrong
- *  id fails here rather than passing on a function nothing renders. */
-function readout(valueId: string, over: Record<string, number> = {}): string {
-  const fn = faceReadoutValueFor(valueId);
-  if (!fn) throw new Error(`readout '${valueId}' is not registered`);
-  return fn(reader(over));
-}
-
 const DEFAULTS: Record<string, number> = Object.fromEntries(
   slewSwitchDef.params.map((p) => [p.id, p.defaultValue]),
 );

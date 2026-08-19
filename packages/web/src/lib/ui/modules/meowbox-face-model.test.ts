@@ -78,11 +78,6 @@ function withParams(over: Partial<MeowboxParams>): (id: string) => number | unde
 /** ⚠ DRIVES THE REGISTRY, NOT THE MODEL FUNCTION. That is what makes the
  *  registration itself falsifiable: a readout dropped from
  *  face-readout-values.ts fails here, not just a maths change. */
-function readout(id: string, over: Partial<MeowboxParams> = {}): string {
-  const fn = faceReadoutValueFor(id);
-  expect(fn, `${id} is not registered in face-readout-values.ts`).not.toBeNull();
-  return fn!(withParams(over));
-}
 
 const DSP = (): string =>
   readFileSync(fileURLToPath(new URL('../../../../../dsp/src/meowbox.dsp', import.meta.url)), 'utf8');

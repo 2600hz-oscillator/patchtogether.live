@@ -50,8 +50,6 @@ function read(over: Record<string, number> = {}): (id: string) => number | undef
     return cubeDef.params.find((p) => p.id === id)?.defaultValue;
   };
 }
-const value = (id: string, over: Record<string, number> = {}): string =>
-  faceReadoutValueFor(id)!(read(over));
 
 // ── the DSP, at the shipped defaults ───────────────────────────────────────
 const FLOOR = getFactoryTable(CUBE_DEFAULT_TABLES.floor)!.frames;
