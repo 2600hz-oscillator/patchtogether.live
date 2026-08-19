@@ -132,6 +132,10 @@ const DESCRIPTIONS: Record<string, string> = {
   analogVco:
     'One phase accumulator, six taps: saw / square / triangle / sine, a saw→sine→square morph, and a sync pulse. Exponential FM and phase modulation, plus hard sync in.',
   es9: 'Full 16×16 audio+CV I/O with a real Eurorack system via the Expert Sleepers ES-9 and the es9-bridge native companion app — every DC-coupled jack individually patchable, with per-jack audio/cv/pitch/gate voltage scaling.',
+  vstInstrument:
+    "Plays one of YOUR installed instrument plugins (AU builds of your VSTs) as a first-class rack voice via the vst-bridge native helper — poly/gate/vel CV converted to sample-accurate MIDI in the worklet, plugin audio returned into the lane, native editor window on your machine.",
+  vstFx:
+    "Runs one of YOUR installed effect plugins (AU builds of your VSTs) as a stereo insert via the vst-bridge native helper — 100% wet, bit-transparent bypass while nothing is mounted, local bypass when the helper is off so a lane never goes silent.",
   cvBuddy: 'Sends a clip lane out to a real Eurorack voice through an ES-9. Hand-patch a lane\'s pitch / gate / velocity into its inputs and CV Buddy passes them through to CV/gate outputs, which the CV-Buddy↔ES-9 reconciler auto-routes to the ES-9\'s physical output jacks by slot (first instance → jacks 1-3, second → 4-6) and sets each jack\'s voltage class (pitch → 1 V/oct, gate → +5 V, velocity → ±5 V). The v/oct rides a plain CV cable (not a pitch/poly cable) so CV Buddy stays a note SINK a lane can drive — the 1 V/octave scaling happens on the ES-9 jack. The id-smallest (owner) instance also generates two transport signals: RUN on jack 7 (a gate held high while the rack transport plays) and CLOCK on jack 8 (a DIN-sync pulse train at a selectable PPQN, phase-locked to TIMELORDE) — patch RUN + CLOCK into a Pam\'s New Workout to slave it to the rack. A third+ CV Buddy sits inert (no free ES-9 jacks). No audio output, so it never appears as a mixer send; with no ES-9 in the rack it is idle and harmless.',
   cvBuddyMini:
     'The two-jack CV BUDDY: pitch and gate only, no velocity. The full CV Buddy spends THREE of the ES-9\'s eight outputs per voice, so two of them fill the device; a mini spends two. That buys the two layouts that matter — THREE minis fit in outputs 1-6 and leave jacks 7 and 8 doing RUN and CLOCK (three voices and still a clock for Pam\'s), or a SINGLE mini takes 1, 2, 7 and 8 and leaves four outputs free for audio sends and returns. Hand-patch a clip lane\'s pitch and gate into its inputs; the CV-Buddy↔ES-9 reconciler auto-routes them to physical jacks and sets each jack\'s voltage class (pitch → 1 V/oct, gate → +5 V). Slots are shared with any full CV BUDDYs on the rack — both kinds draw from ONE pool in node-id order, so they can never claim the same physical jack. The id-smallest instance of either kind owns RUN (jack 7, held high while the transport plays) and CLOCK (jack 8, a DIN-sync pulse train at a selectable PPQN locked to TIMELORDE). An instance that does not fit in the remaining outputs sits inert and says so. No audio output, so it never appears as a mixer send; with no ES-9 in the rack it is idle and harmless.',
@@ -1384,6 +1388,10 @@ export function buildModuleManifest(
       // SAVE/LOAD/QUEUE plumbing used by Sequencer / DRUMSEQZ / SCORE.
       // Not a ModuleDef.
       if (file === 'transport-helpers.ts') return false;
+      // Shared factory plumbing for the two VST BRIDGE cards (worklet loader
+      // + rings + owner wiring, used by vst-instrument.ts / vst-fx.ts).
+      // Not a ModuleDef.
+      if (file === 'vst-bridge-shared.ts') return false;
       if (file === 'transport-cv.ts') return false;
       if (file === 'transport-card.ts') return false;
       // Shared lookahead-vs-sounding-now playhead helper used by Sequencer /

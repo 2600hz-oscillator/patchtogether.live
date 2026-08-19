@@ -82,6 +82,25 @@ export function loadContention(dir = join(ROOT, 'e2e/tests')) {
  */
 export const PENDING_FIRST_MEASUREMENT = [
   {
+    spec: 'vst-bridge.spec.ts',
+    why:
+      '#1953 — new with the VST BRIDGE cards. Measured locally, single worker, warm server: '
+      + '5.2 s wall for 2 tests (15.2 s across a REPEAT=3 flake-check). Audio-only against a '
+      + 'Node-side mock WebSocket helper — no WebGL, so the usual ~6x SwiftShader floor does not '
+      + 'apply; budget the 2-core CI VM at ~3-4x. Run `flox activate -- task e2e:timings:accept` '
+      + 'on the first green CI run after this merges and DELETE this entry.',
+  },
+  {
+    spec: 'vst-lane-autowire.spec.ts',
+    why:
+      '#1953 — the lane-drop acceptance leg for the VST BRIDGE cards (pinned trio + palette-drop '
+      + 'pipeline + a 12 s in-page RMS window, so it is wall-clock-bound by design). Measured '
+      + 'locally, single worker, warm server: 13.9 s wall for 1 test (41.8 s across REPEAT=3). '
+      + 'Audio-only + mocked helper, same CI-VM caveat as its sibling above. Run '
+      + '`flox activate -- task e2e:timings:accept` on the first green CI run after this merges '
+      + 'and DELETE this entry.',
+  },
+  {
     spec: 'videoout-detach-display.spec.ts',
     why:
       '#1821 — new with the videoOut detach display + bridge-on-delete. Measured locally, single '

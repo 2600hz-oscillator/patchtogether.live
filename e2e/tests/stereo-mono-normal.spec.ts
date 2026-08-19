@@ -124,6 +124,11 @@ const SUTS: readonly Sut[] = [
   // packages/web/src/lib/audio/mono-normal-not-defeated.test.ts requires every
   // normal-bearing module to appear here or carry a named exemption.
   { type: 'stereovca',       inL: 'in_l',  outL: 'out_l', outR: 'out_r', openPath: { offset: 1 }, mechanism: 'never defeated — the normal is spelled through intermediate consts, so the source gate could not see it' },
+  // vstFx routes audio through the vst-bridge helper when connected, but with
+  // no helper (CI, this sweep) its worklet LOCAL BYPASS carries in→out, and
+  // the mono normal (`inputs[IN_R]?.[0] ?? inL`) applies to both paths — so
+  // the bypass leg is what this row measures, and it needs no helper.
+  { type: 'vstFx',           inL: 'in_l',  outL: 'out_l', outR: 'out_r', mechanism: 'worklet-local normal (inputs[IN_R] ?? inL) feeding both the bridge ring write and the not-connected local bypass' },
 ];
 
 interface Probe { outL: AnalyserNode; outR: AnalyserNode; sameEdge: boolean }

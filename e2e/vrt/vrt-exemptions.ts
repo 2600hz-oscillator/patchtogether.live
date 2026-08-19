@@ -424,6 +424,18 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // class scaling, gate hysteresis, underrun policies) + es9.test.ts (def
   // shape, class→worklet mapping) + the per-module handle-presence sweep.
   es9: 'VRT baseline pending; es9-bridge-core (dsp) + es9.test.ts unit suites cover the logic, card is static chrome. Promote + capture darwin/linux baselines in a follow-up PR.',
+  // VST BRIDGE cards — the connection pill is a LIVE state machine: with no
+  // vst-bridge helper on the runner the transport worker cycles
+  // "connecting…" ↔ "helper not found" on its 1-5 s reconnect backoff
+  // forever, so a captured PNG is a lottery on which phase the settle lands
+  // in — a baseline here would flake vrt-strict on unrelated PRs (the cvBuddy
+  // hardware-facing precedent). Coverage: vst-defs + vst-transport +
+  // dsp vst-bridge-core unit suites, and the mocked-helper e2e
+  // (vst-bridge.spec.ts / vst-lane-autowire.spec.ts) exercises the real card
+  // UI (picker/mount/editor testids). Promote + capture once the status row
+  // is masked or the look is owner-locked.
+  vstInstrument: 'VRT baseline pending — the connection pill cycles connecting/helper-not-found on the reconnect backoff with no helper on CI, so a PNG is phase-dependent; card UI is exercised by the mocked-helper e2e (vst-bridge.spec.ts) and the logic by vst-defs/vst-transport/vst-bridge-core suites. Promote + capture with the status row masked once the look is owner-locked.',
+  vstFx: 'VRT baseline pending — same live connection pill as vstInstrument (connecting/helper-not-found backoff cycle on a helperless runner); card UI exercised by the mocked-helper e2e (vst-bridge.spec.ts / vst-lane-autowire.spec.ts), logic by the vst unit suites. Promote + capture with the status row masked once the look is owner-locked.',
   // ONE TO NINE — 1-in/9-out fixed 3×3 splitter. The card is a live MONITOR
   // preview canvas (input + grid + numbers) + a GRID toggle + the IN/OUT1..OUT9
   // patch panel; nothing patched is a black preview, and the live render is
@@ -1069,7 +1081,7 @@ export const ALLOWED_PERMANENT_EXEMPT: ReadonlySet<string> = new Set([
   'chroma', 'luma', 'fourplexer', 'treeohvox',
   'bluebox', 'moog921Vco', 'moogCp3', 'moog904a',
   'moog911', 'moog902', 'painter', 'twotracks',
-  'backdraft',
+  'backdraft', 'vstInstrument', 'vstFx',
 ]);
 
 /** Strict VRT subset — the deterministic, pure-DOM/CSS knob-and-fader cards
