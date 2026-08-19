@@ -104,9 +104,6 @@ async function setParam(page: Page, nodeId: string, key: string, value: number):
  * rendering shrinks the set rather than being skipped.
  */
 
-/** The routing picture — rendered OUTSIDE the ModuleShell subtree (DockFullView
- *  owns the `.page.has-sidebar` grid), so it is scoped to the dock view. */
-
 interface GateStats {
   /** ch1 peak — the boolean jack under test. */
   peak: number;
