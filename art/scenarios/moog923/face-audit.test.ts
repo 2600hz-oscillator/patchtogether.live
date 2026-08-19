@@ -40,6 +40,9 @@ import { describe, expect, it } from 'vitest';
 import { OfflineAudioContext } from 'node-web-audio-api';
 import { CUTOFF_MAX_HZ, CUTOFF_MIN_HZ, cutoffToHz, moog923Def } from '$lib/audio/modules/moog923';
 import { noiseGenerators } from '$lib/audio/modules/noise';
+// The generators' OWN PRNG, so a pinned table is pinned by the same arithmetic
+// the shipping code would use if the factory passed a seed (it does not).
+import { mulberry32 } from '../../../packages/dsp/src/lib/noise-dsp';
 import { NOISE_TAP_RMS } from '$lib/ui/modules/noise-face-model';
 import {
   moog923CornerGainDb,
@@ -75,6 +78,17 @@ async function render(opts: {
   sineHz?: number;
   amp?: number;
   secs?: number;
+  /**
+   * PIN THE NOISE TABLES. The factory builds both tables inside `factory()`
+   * from `noiseGenerators`, which fall back to `Math.random` when handed no
+   * seed — and the factory hands them none. Installing a seeded PRNG for the
+   * duration of that call makes the two tables bit-identical run to run
+   * WITHOUT touching the shipping code path: the generators still run their
+   * real algorithm, they just draw from a pinned uniform stream. This is the
+   * `PROFILE_NOISE_SEED` discipline the ART drivers already use ("profiles
+   * never touch Math.random"), applied to a factory that seeds itself.
+   */
+  seed?: number;
 }): Promise<Render> {
   const secs = opts.secs ?? 0.5;
   const ctx = new OfflineAudioContext({
@@ -88,7 +102,14 @@ async function render(opts: {
     position: { x: 0, y: 0 },
     params: { ...DEFAULTS, ...(opts.params ?? {}) },
   } as unknown as ModuleNode;
-  const handle = await moog923Def.factory(ctx as unknown as AudioContext, node);
+  const realRandom = Math.random;
+  if (opts.seed !== undefined) Math.random = mulberry32(opts.seed);
+  let handle;
+  try {
+    handle = await moog923Def.factory(ctx as unknown as AudioContext, node);
+  } finally {
+    Math.random = realRandom;
+  }
 
   if (opts.sineHz !== undefined) {
     const osc = ctx.createOscillator();
@@ -396,26 +417,101 @@ describe('M3 · what the faceplate prints is what the module does', () => {
     expect(w.mean - p.mean, 'measured population spread, dB').toBeGreaterThan(closedSpread);
   });
 
+  it('⚠ THE SEED ACTUALLY BITES — without this leg the one below is luck', async () => {
+    // THE INSTRUMENT'S OWN CONTROL, and it is permanent because it has to be:
+    // the seeded legs below pin `Math.random` for the duration of `factory()`,
+    // and if that stub failed to reach the generators — captured reference,
+    // changed call site, a future factory that seeds itself — every assertion
+    // there would go on passing on UNSEEDED tables until the day one of them
+    // drew a tail. "The seed works" and "the seed does nothing" are
+    // indistinguishable from a green run, so both directions are asserted.
+    const a = await render({ params: { level: 1 }, secs: 0.2, seed: 0xc0ffee });
+    const b = await render({ params: { level: 1 }, secs: 0.2, seed: 0xc0ffee });
+    expect(bitIdentical(a.out.white, b.out.white), 'same seed, different white table').toBe(true);
+    expect(bitIdentical(a.out.pink, b.out.pink), 'same seed, different pink table').toBe(true);
+
+    // …and it is not that EVERYTHING is identical: a different seed must draw a
+    // different table. (M0 already proves the UNSEEDED case differs, which is
+    // the other half of the pair and the state CI was measuring.)
+    const c = await render({ params: { level: 1 }, secs: 0.2, seed: 0x0badbeef });
+    expect(bitIdentical(a.out.white, c.out.white), 'a different seed gave the SAME table').toBe(
+      false,
+    );
+    expect(bitIdentical(a.out.pink, c.out.pink), 'a different seed gave the SAME table').toBe(false);
+
+    // …and the stub is RESTORED, so no later test inherits a pinned Math.random.
+    expect(Math.random === Math.random, 'sanity').toBe(true);
+    const d = await render({ params: { level: 1 }, secs: 0.2 });
+    const e = await render({ params: { level: 1 }, secs: 0.2 });
+    expect(bitIdentical(d.out.white, e.out.white), 'Math.random stayed pinned after the render').toBe(
+      false,
+    );
+  });
+
   it('the FACTORY reaches those generators and scales both taps by ONE level', async () => {
-    // The factory half of the split above: no statistics, just "is the tap the
-    // generator, times LEVEL". Two spawns is plenty because the assertion is a
-    // RATIO between two taps of the SAME render, which cancels the per-spawn
-    // table draw entirely — the thing that made the population leg need 256.
-    for (const level of [1, 0.5]) {
-      const r = await render({ params: { level }, secs: 2 });
-      expect(db(rms(r.out.white)), `white at LEVEL ${level}, dBFS`).toBeCloseTo(
-        db(level * NOISE_TAP_RMS.white),
-        1,
-      );
+    // ⚠ THIS LEG WENT RED ON CI AND ITS COMMENT WAS THE BUG. It used to assert
+    // `white − pink > 11` on UNSEEDED renders, and claimed the ratio between
+    // two taps of one render "cancels the per-spawn table draw entirely". IT
+    // DOES NOT. White and pink are INDEPENDENT tables: white's per-table RMS sd
+    // is 0.0126 dB, pink's is 0.551 dB (both measured in the population leg
+    // above), so their difference carries pink's variance in full. Against a
+    // ~12.49 dB mean the floor of 11 sat 2.7 sigma out — about one run in 300
+    // per assertion, twice per test, on every PR's art lane. CI read 10.883.
+    //
+    // ⚠ AND A LONGER WINDOW WOULD NOT HAVE FIXED IT, which is the part worth
+    // writing down: the factory builds a 2 s table and LOOPS it, so rendering
+    // 20 s re-measures the SAME table ten times. The variance is ACROSS SPAWNS,
+    // not within a render — window length cannot touch it, and "widen the
+    // window" would have looked like a fix while changing nothing.
+    //
+    // THE SUBJECT IS FIXED INSTEAD OF THE THRESHOLD, two ways at once:
+    //
+    //   1. THE TABLES ARE PINNED (`seed`), so every number below is exactly
+    //      reproducible rather than a draw from a distribution.
+    //   2. THE LOAD-BEARING CLAIM IS NOW THE INVARIANCE, not an absolute
+    //      floor. "ONE gain, TWO loudnesses" is a statement about LEVEL: the
+    //      spread between the taps must not depend on it. With the tables
+    //      pinned that is an EXACT equality — one multiplier on both gains —
+    //      so it is asserted to 12 decimals instead of a 1.3 dB cushion. A
+    //      per-tap gain would break it at any LEVEL; the old floor could only
+    //      have caught a break larger than the noise.
+    const SEED = 0xc0ffee;
+    const spread = (r: Render) => db(rms(r.out.white)) - db(rms(r.out.pink));
+
+    const hot = await render({ params: { level: 1 }, secs: 2, seed: SEED });
+    const dim = await render({ params: { level: 0.5 }, secs: 2, seed: SEED });
+
+    // (1) THE CLAIM: the tap spread is EXACTLY LEVEL-invariant.
+    expect(
+      spread(dim) - spread(hot),
+      'white−pink must be IDENTICAL at LEVEL 1 and LEVEL 0.5 — one gain drives both taps',
+    ).toBeCloseTo(0, 12);
+
+    // (2) …and LEVEL is one multiplier: each tap moves by exactly 6.0206 dB.
+    for (const tap of ['white', 'pink'] as const) {
       expect(
-        db(rms(r.out.white)) - db(rms(r.out.pink)),
-        `white − pink at LEVEL ${level}, dB — ONE gain, TWO loudnesses`,
-      ).toBeGreaterThan(11);
+        db(rms(hot.out[tap])) - db(rms(dim.out[tap])),
+        `${tap} at LEVEL 1 minus LEVEL 0.5, dB`,
+      ).toBeCloseTo(20 * Math.log10(2), 9);
     }
-    // ONE multiplier: halving LEVEL moves both taps by the same 6.02 dB.
-    const hot = await render({ params: { level: 1 }, secs: 2 });
-    const dim = await render({ params: { level: 0.5 }, secs: 2 });
-    expect(db(rms(hot.out.white)) - db(rms(dim.out.white)), 'white x0.5, dB').toBeCloseTo(6.02, 1);
+
+    // (3) The spread is the physical one, bounded by the SINGLE-TABLE spread
+    // rather than by a guess. Derivation: pink's per-table RMS sd is 0.551 dB
+    // (measured over 256 tables in the population leg); one pinned table is one
+    // draw from that, so a +-3 sigma envelope is +-1.65 dB. The bound below is
+    // 2.0 dB — comfortably outside 3 sigma, and still far too tight to admit a
+    // level-matched pair (0 dB) or a swapped tap (-12.3 dB).
+    const closedSpread = db(NOISE_TAP_RMS.white) - db(NOISE_TAP_RMS.pink);
+    expect(closedSpread, 'the closed-form spread the faceplate prints, dB').toBeCloseTo(12.304, 2);
+    expect(
+      Math.abs(spread(hot) - closedSpread),
+      `seeded spread ${spread(hot).toFixed(3)} dB vs closed form ${closedSpread.toFixed(3)} dB ` +
+        `(bound 2.0 = 3.6x pink's 0.551 dB single-table sd)`,
+    ).toBeLessThan(2.0);
+
+    // (4) …and the taps are the right way round, which no tolerance above can
+    // say: white is the LOUD one.
+    expect(spread(hot), 'white must be ABOVE pink').toBeGreaterThan(0);
   });
 
   it('the SHIPPED DEFAULT really is an overlap, not the crossover it looks like', async () => {
