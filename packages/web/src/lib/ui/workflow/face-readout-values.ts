@@ -352,6 +352,13 @@ import {
   moog902GainDbText,
 } from '$lib/ui/modules/moog902-face-model';
 
+// (its own block, same reason)
+import {
+  moog904aCutoffText,
+  moog904aFaceParams,
+  moog904aStateText,
+} from '$lib/ui/modules/moog904a-face-model';
+
 // ⚠ ITS OWN IMPORT BLOCK, deliberately. Concurrent face PRs all append here,
 // and two branches inserting into the SAME multi-line block conflict on the
 // shared `import {` / `} from` lines even though the additions are disjoint.
@@ -1424,6 +1431,19 @@ const FACE_READOUT_VALUES: Readonly<Record<string, FaceReadoutValue>> = {
   // (#1912), and which no dial on the module prints in any unit.
   'moog902-gain-db': (read) => moog902GainDbText(moog902FaceParams(read)),
   'moog902-ceiling': (read) => moog902CeilingText(moog902FaceParams(read)),
+
+  // THE 904A LADDER FILTER — again a disjoint pair:
+  //   moog904a-cutoff-hz  ← cutoff AND range   (the frequency the dial lies about)
+  //   moog904a-state      ← regeneration ONLY  (a NAME, at the class change)
+  // `cutoff` declares `units: 'Hz'`, so its dial prints a number that reads like
+  // an answer while RANGE multiplies it by ×1/×4/×16 first: dial 1000 places the
+  // filter at 1000 / 4000 / 16000 Hz. And because the worklet's 20 kHz clamp
+  // applies to the PRODUCT, the readout PINS at `20.0 kHz` across the top
+  // 20.07 % (RANGE 2) and 40.14 % (RANGE 3) of the dial — which is measured to
+  // be bit-exactly one filter, so the readout is showing a real dead zone
+  // rather than rounding.
+  'moog904a-cutoff-hz': (read) => moog904aCutoffText(moog904aFaceParams(read)),
+  'moog904a-state': (read) => moog904aStateText(moog904aFaceParams(read)),
 
   // ── MIXMSTRS — DELETED, with the computation, 2026-08-17 ─────────────────
   // Four derived values used to live here (`bus-gain`, `comp-asleep`, and one

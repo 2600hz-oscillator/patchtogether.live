@@ -105,7 +105,7 @@ author a `face` and rank the controls — no new platform capability.
 | `monoglitch` | video | — | — |
 | `moog902` | audio | done | — |
 | `moog903a` | audio | — | — |
-| `moog904a` | audio | — | — |
+| `moog904a` | audio | done | — |
 | `moog904b` | audio | — | — |
 | `moog904c` | audio | — | — |
 | `moog905` | audio | — | — |
