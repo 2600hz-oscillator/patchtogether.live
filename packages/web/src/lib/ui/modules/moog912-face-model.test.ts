@@ -89,8 +89,6 @@ describe('moog912 readouts — TOTALITY (they run on every render)', () => {
     ['sensitivity exactly 0', { sensitivity: 0 }],
     ['sensitivity exactly 1', { sensitivity: 1 }],
   ];
-  for (const [name, params] of hostile) {
-  }
 
   it('the response frequency is always inside the declared span', () => {
     for (const v of [NaN, Infinity, -Infinity, -9, 0, 0.5, 1, 99]) {

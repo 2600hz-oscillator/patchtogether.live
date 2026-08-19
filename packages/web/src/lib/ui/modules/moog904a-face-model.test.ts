@@ -58,8 +58,6 @@ describe('moog904a readouts — TOTALITY (they run on every render)', () => {
     ['out of range high', { cutoff: 1e9, range: 99, regeneration: 99 }],
     ['a fractional RANGE the switch cannot produce', { cutoff: 1000, range: 2.5 }],
   ];
-  for (const [name, params] of hostile) {
-  }
 
   it('never prints outside the worklet\'s own clamp, for ANY input', () => {
     // The clamp is the DSP's, so the readout must not be able to promise a
