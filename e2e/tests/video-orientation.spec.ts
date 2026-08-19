@@ -224,9 +224,25 @@ async function analyzeTriangleOrientation(
   const r = await handle.evaluate((el, MIN_BRIGHT_TOTAL) => {
     const c = el as HTMLCanvasElement;
     const ctx = c.getContext('2d');
-    if (!ctx) return { topBright: 0, bottomBright: 0, total: 0, verdict: 'ambiguous' as const };
+    if (!ctx) return { topBright: 0, bottomBright: 0, total: 0, thr: 0, maxLuma: 0, verdict: 'ambiguous' as const };
     const w = c.width, h = c.height;
     const img = ctx.getImageData(0, 0, w, h).data;
+    // ── THE BRIGHT THRESHOLD IS ADAPTIVE — DOWNWARD ONLY (#1851 recalibration).
+    // The card preview this reads is box-filtered by drawPreviewDownscaled
+    // since #1851, and CORRECT filtering legitimately dims thin-line content:
+    // RUTTETRA's 1-px scanlines at a ~3× reduction average with the black
+    // between them and land BELOW the old fixed 90 (measured on the first
+    // real-GPU run after #1851: apex visibly up, 0 pixels above 90). Area
+    // content (solid triangles, bright image halves) stays near full luma, so
+    // every historically-passing leg keeps the proven 90 — the threshold only
+    // SCALES DOWN with the frame's own maximum, and the 45 floor keeps the
+    // #141414 background (luma 20) structurally invisible exactly as before.
+    let maxLuma = 0;
+    for (let i = 0; i < img.length; i += 4) {
+      const v = (img[i]! + img[i + 1]! + img[i + 2]!) / 3;
+      if (v > maxLuma) maxLuma = v;
+    }
+    const thr = Math.min(90, Math.max(45, 0.55 * maxLuma));
     // Per-row bright-pixel width. For an up-pointing triangle the width
     // grows from near-zero at the apex row to a maximum at the base row.
     // We compare the bright width in the top eighth vs the bottom eighth
@@ -240,7 +256,7 @@ async function analyzeTriangleOrientation(
       for (let x = 0; x < w; x++) {
         const i = (y * w + x) * 4;
         const v = (img[i]! + img[i + 1]! + img[i + 2]!) / 3;
-        if (v > 90) {
+        if (v > thr) {
           cnt++;
           if (y < half) topBright++;
           else bottomBright++;
@@ -252,9 +268,10 @@ async function analyzeTriangleOrientation(
     // displayed frame and its wide base toward the BOTTOM, so the bottom
     // half carries more bright pixels than the top half. We use the
     // top/bottom bright-pixel counts directly — robust to the small
-    // centered shape and to BENTBOX's scanline speckle (the v>90
-    // threshold rejects the speckle). The rowW profile is kept for
-    // debugging but the count ratio is the decision.
+    // centered shape and to BENTBOX's scanline speckle (the adaptive
+    // threshold rejects the speckle at >= the old bar on bright frames).
+    // The rowW profile is kept for debugging but the count ratio is the
+    // decision.
     void rowW;
     let verdict: 'up' | 'down' | 'ambiguous' = 'ambiguous';
     const total = topBright + bottomBright;
@@ -262,7 +279,7 @@ async function analyzeTriangleOrientation(
       if (bottomBright > topBright * 1.08) verdict = 'up';
       else if (topBright > bottomBright * 1.08) verdict = 'down';
     }
-    return { topBright, bottomBright, total, verdict };
+    return { topBright, bottomBright, total, thr, maxLuma, verdict };
   }, MIN_BRIGHT_TOTAL);
 
   // ── THE PRECONDITION, ASSERTED WHERE EVERY LEG PASSES THROUGH ────────────
@@ -290,7 +307,8 @@ async function analyzeTriangleOrientation(
   expect(
     r.total,
     `${testid}: THE SOURCE NEVER PRODUCED BRIGHT CONTENT (top=${r.topBright} bottom=${r.bottomBright} ` +
-      `bright-pixel total=${r.total}, threshold luma>90). This is a FIXTURE-READINESS failure, ` +
+      `bright-pixel total=${r.total}, adaptive threshold luma>${r.thr.toFixed(1)} from frame maxLuma=${r.maxLuma.toFixed(1)}, ` +
+      `floor 45 > background 20). This is a FIXTURE-READINESS failure, ` +
       `NOT an orientation failure — there is nothing in the frame to be the right way up. ` +
       `Look at whether the source actually loaded (the injected image / video / shader), not at ` +
       `flips, uploads or transfer paths. Note that a canvas showing only a dark background ` +

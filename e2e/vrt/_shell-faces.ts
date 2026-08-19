@@ -210,6 +210,32 @@ export const FACES = [
   // this has not been run against them. Run `vrt-face-audio-probe` on this
   // tile before quoting a number here; a passing scene is not the measurement.
   { type: 'noise', pages: 0 },
+  // SPIROGRAPHS (2026-08-18) — the first TAB-RAILED face in this roster to
+  // declare more than eight bands, and a video module.
+  //
+  // `pages: 10` is the DECLARED band count (`count`, then figure/place/look per
+  // spiro), which is what this roster carries for a railed face — the spec
+  // derives `railed = pages >= DOCK_TAB_MIN_BANDS` from it and then asserts
+  // exactly ONE band renders. ⚠ So the nine inactive tabs are NOT in either
+  // image; that is the rail blind spot this file already names, and band
+  // structure here is held by `faceplate-platform` and the pure
+  // `dock-row-plan` / `module-face-lint` units instead.
+  //
+  // ⚠ `videoFaceWhy` IS MANDATORY AND THIS MODULE HAD NO WAY TO HONOUR IT
+  // until this PR. Every spiro's centre drifts and bounces off the frame edges
+  // as a pure function of `frame.time`, so the picture is different on every
+  // rendered frame — the analogVco class, in video. It carried no `freeze`
+  // param at all, so one was added (declared `noUserControl`, `writer:
+  // 'internal'`, and absent from `face.order`) purely so this scene can settle.
+  {
+    type: 'spirographs',
+    pages: 10,
+    videoFaceWhy:
+      'the dock faceplate carries a live thumbnail of the module output via hasVideoSurface, and '
+      + 'this module ANIMATES BY CONSTRUCTION — each spiro centre drifts and bounces as a pure '
+      + 'function of frame.time — so the surface is a different picture on every frame. An '
+      + 'AudioContext suspend says nothing about a rAF-driven picture; only the freeze stops it.',
+  },
   // 4PLEXER (2026-08-18) — no `pages`, so the dock renders ONE unlabelled band
   // holding all four selectors (four peers, one idea; see the face comment).
   // The hero carries readouts only and promotes no control, so nothing is

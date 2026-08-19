@@ -62,6 +62,9 @@ import { paintsReadout } from '$lib/ui/controls/knob-vocabulary-model';
 // see the entry itself for why eight identical enables are generated rather
 // than typed.
 import { MIXMSTRS_CHANNELS } from '$lib/audio/modules/mixmstrs';
+// The spiro count spirographs' ACKNOWLEDGED_LATCHING entries are DERIVED from,
+// for the same reason as the mixmstrs channels — see the entry itself.
+import { SPIRO_COUNT_MAX, spiroParamId } from '$lib/video/modules/spirographs';
 import { faceReadoutValueIds } from './face-readout-values';
 import { laneBodyPlan, laneGlyphFor } from './module-shell-model';
 import { looksLikeSwitch } from './shell-control-kind';
@@ -574,6 +577,24 @@ describe('module-face lint — MOMENTARY pads (face.momentary)', () => {
     // level read; the compressor is a stage you switch into the channel and
     // leave there.
     ...MIXMSTRS_CHANNELS.map((c) => `mixmstrs:ch${c}_compEnable`),
+    // SPIROGRAPHS, 2026-08-18. `s{N}_inside` picks which CURVE a spiro traces:
+    // HYPOTROCHOID (rolling circle inside the fixed one) against EPITROCHOID
+    // (outside). `0..1 discrete` is the press-pad shape by coincidence of arity
+    // — it is the most consequential single choice on a spiro and you make it
+    // once and leave it. The draw path reads its LEVEL every frame
+    // (`insideV >= 0.5` selects which of the two point functions is sampled),
+    // never an edge, so a momentary render would flip the figure back the
+    // instant you released the pad. It also declares `options`, so the dock
+    // paints a captioned pair rather than an anonymous switch — a different
+    // question from this classification, per the cofefve precedent above.
+    //
+    // DERIVED from the spiro count, like the mixmstrs channels above: three
+    // identical instances of ONE control, so a fourth spiro cannot arrive
+    // carrying an unacknowledged switch.
+    ...Array.from(
+      { length: SPIRO_COUNT_MAX },
+      (_, i) => `spirographs:${spiroParamId(i + 1, 'inside')}`,
+    ),
     // The two SEND-BUS tap-point switches, spelled out because they are two
     // DIFFERENT buses rather than eight instances of one control. POST (0) is
     // the default; PRE re-taps the whole bus ahead of the fader so a return

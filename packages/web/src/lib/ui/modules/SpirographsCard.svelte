@@ -10,13 +10,13 @@
   // grouping so the CV inputs break down per-spiro: a `count` section plus
   // spiro1 / spiro2 / spiro3 sections. Port ids are byte-identical to
   // spirographsDef so the CV bridge + persisted edges route unchanged.
-  import { onMount, onDestroy } from 'svelte';
   import { type NodeProps } from '@xyflow/svelte';
   import NeonFader from '$lib/ui/controls/NeonFader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { useEngine } from '$lib/audio/engine-context';
-  import { setNodeParam } from '$lib/graph/mutate';
+  import { mutateNode, setNodeParam } from '$lib/graph/mutate';
+  import { patch } from '$lib/graph/store';
   import {
     spirographsDef,
     spiroParamId,
@@ -124,8 +124,43 @@
   let rafId: number | null = null;
   const engineCtx = useEngine();
 
+  // ── SCREEN ON/OFF (owner ruling, 2026-08-18) ──────────────────────────────
+  //
+  // Every video module's card carries this, and it behaves exactly as
+  // BACKDRAFT's does. OFF collapses the preview and RECLAIMS its vertical
+  // space; ON shows the LIVE picture again, never a stale frame.
+  //
+  // ⚠ IT MUST NOT TOUCH THE PRODUCER, and on this module that is structural
+  // rather than careful: SPIROGRAPHS' picture is produced by the VIDEO ENGINE's
+  // module instance, which the engine owns. This card only READS it, through
+  // `blitOutputForPreview`. So collapsing stops a BLIT and can never tear down
+  // a producer — the #1720/#1721 class has no purchase here. The rAF loop is
+  // still cancelled while collapsed (there is nothing to draw into), and
+  // because the engine kept rendering the whole time, the first frame after
+  // switching back ON is current by construction.
+  //
+  // STATE LIVES IN `node.data`, like backdraft's, so it survives a tab switch
+  // (the owner's stated floor), a remount, a reload, and syncs to
+  // collaborators. One boolean per CLICK — not per frame — which is exactly
+  // what `node.data` is for and nowhere near the per-frame CV write-storm rule.
+  //
+  // Absent ⇒ false ⇒ preview ON, so every existing rack opens unchanged.
+  let previewCollapsed = $derived<boolean>(
+    (patch.nodes[id]?.data?.previewCollapsed as boolean | undefined) ?? false,
+  );
+  function togglePreview(): void {
+    const next = !previewCollapsed;
+    mutateNode(id, (live) => {
+      if (!live.data) live.data = {};
+      live.data.previewCollapsed = next;
+    });
+  }
+
   function draw() {
     rafId = null;
+    // Collapsed: nothing to draw into. The ENGINE goes on rendering — this
+    // only stops the copy — so re-opening shows the live picture.
+    if (previewCollapsed) return;
     const e = engineCtx.get();
     if (!e || !canvasEl) { rafId = requestAnimationFrame(draw); return; }
     let videoEngine: VideoEngine | undefined;
@@ -153,8 +188,22 @@
     rafId = requestAnimationFrame(draw);
   }
 
-  onMount(() => { rafId = requestAnimationFrame(draw); });
-  onDestroy(() => { if (rafId !== null) cancelAnimationFrame(rafId); });
+  // The copy loop starts and stops WITH the SCREEN state. `draw` returns
+  // without rescheduling while collapsed, so switching back ON needs an
+  // explicit restart — without one the picture would never come back, which is
+  // precisely the failure the toggle exists to avoid. Replaces the old
+  // onMount/onDestroy pair so there is exactly ONE place the loop is owned and
+  // it cannot be started twice.
+  $effect(() => {
+    if (previewCollapsed) {
+      if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null; }
+      return;
+    }
+    if (rafId === null) rafId = requestAnimationFrame(draw);
+    return () => {
+      if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null; }
+    };
+  });
 
   // --- PatchPanel ports: SECTIONED so the CV inputs break down per-spiro. ---
   function spiroSection(i: number): { label: string; inputs: PortDescriptor[] } {
@@ -185,15 +234,28 @@
   <ModuleTitle {id} {data} defaultLabel="SPIROGRAPHS" />
 
   <PatchPanel nodeId={id} groupingStrategy="sectioned" {sections} panelWidth={300}>
-    <!-- OUT live preview -->
-    <div class="preview-wrap">
-      <canvas
-        bind:this={canvasEl}
-        width={160}
-        height={120}
-        data-testid="spirographs-preview"
-        data-node-id={id}
-      ></canvas>
+    <!-- OUT live preview + its SCREEN switch (owner ruling 2026-08-18) -->
+    <div class="preview-wrap" data-preview-collapsed={previewCollapsed ? 'true' : 'false'}>
+      {#if !previewCollapsed}
+        <canvas
+          bind:this={canvasEl}
+          width={160}
+          height={120}
+          data-testid="spirographs-preview"
+          data-node-id={id}
+        ></canvas>
+      {/if}
+      <button
+        type="button"
+        class="screen-btn nodrag"
+        class:on={!previewCollapsed}
+        data-testid="spirographs-preview-toggle"
+        aria-pressed={!previewCollapsed}
+        title={previewCollapsed
+          ? 'SCREEN is OFF — the preview is collapsed and its space reclaimed. The module keeps rendering: switching it back on shows the LIVE picture, not a stale frame.'
+          : 'SCREEN — turn the preview off to collapse it and reclaim the vertical space. The module goes on rendering either way.'}
+        onclick={togglePreview}
+      >{previewCollapsed ? 'SCREEN OFF' : 'SCREEN ON'}</button>
     </div>
 
     <!-- COUNT + spiro selector -->
@@ -283,12 +345,42 @@
     min-height: 320px;
     padding-bottom: 12px;
   }
+  /* ⚠ THE SCREEN SWITCH COSTS ZERO LAYOUT HEIGHT, AND THAT IS A FIX RATHER
+     THAN A STYLE CHOICE. Stacking it under the canvas (column + 4px gap) added
+     ~18.8px to a card that had ~11px of slack, and `io-spec-consistency`'s card
+     sweep caught the result: `.fader-grid` overhanging the card's bottom edge
+     by 7.8 CSS px against a tolerance of 6. The control is REQUIRED (owner
+     ruling 2026-08-18) so it cannot be dropped, and the honest fix is neither a
+     wider tolerance nor a taller card — it is to stop the button occupying a
+     row of its own. It OVERLAYS the picture's bottom-right corner, so the
+     expanded card is byte-for-byte the height it was before this feature. */
   .preview-wrap {
+    position: relative;
     margin: 6px auto 0;
     width: 160px;
     display: flex;
     justify-content: center;
+    /* Only ever load-bearing when the canvas is GONE: with SCREEN off the wrap
+       would otherwise collapse to zero and take the absolutely-positioned
+       button off-card with it. Smaller than the 120px canvas, so it is inert
+       whenever the picture is showing. */
+    min-height: 16px;
   }
+  .screen-btn {
+    position: absolute;
+    right: 2px;
+    bottom: 2px;
+    font-size: 0.55rem;
+    letter-spacing: 0.06em;
+    padding: 2px 8px;
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    /* Legible over a live picture, unlike the transparent original. */
+    background: rgba(5, 6, 8, 0.72);
+    color: var(--text-dim);
+    cursor: pointer;
+  }
+  .screen-btn.on { color: var(--text); border-color: var(--accent-dim); }
   .preview-wrap canvas {
     width: 160px;
     height: 120px;
