@@ -532,6 +532,25 @@ export const FACES = [
   // identical frame to frame. The AudioContext freeze this file applies is
   // therefore a belt on a brace for this entry, not the thing holding it.
   { type: 'moog923', pages: 2 },
+  // MOOG 911 (2026-08-19) — two declared pages (`times`, `level`), and `pages`
+  // is the POST-hero-split band count: the hero declares READOUTS ONLY, so it
+  // promotes no key out of any band and neither band can be emptied. Both are
+  // knob-only and pack onto one dock row (4 cells, well under
+  // DOCK_ROW_MAX_CONTROLS = 10).
+  //
+  // ⚠ PIXEL-DETERMINISTIC BY CONSTRUCTION, and unusually easy to argue: this
+  // module produces NOTHING until a gate arrives. Its factory's only source is
+  // a ConstantSource pinned at 0 (the silence keepalive), the def declares
+  // `glyph: 'none'` — forced, since both outputs are `cv` — and all three hero
+  // readouts are closed forms over params. So no analyser, no free-running
+  // oscillator and no frame-dependent value feeds any pixel in either scene.
+  // This is the OPPOSITE end of the range from analogVco, which was dropped
+  // from batch 3 for drawing 254/154/315 px across three captures of one tile.
+  //
+  // Measured at spawn, both taps, with the gate unpatched: `env` is bit-exactly
+  // 0 and `env_inv` bit-exactly 1 for a full second, and sweeping any of the
+  // four params changes neither. The scenes cannot move unless the FACE moves.
+  { type: 'moog911', pages: 2 },
   // MIXMSTRS — the full mixer, and the largest face in this roster by 1.86x
   // (91 cells against pentemelodica's 49).
   //
