@@ -245,71 +245,26 @@ test.describe('rings face — THE AUDITION (the module could not be sounded befo
   });
 });
 
-test.describe('rings face — the three hero readouts say what no knob on the panel can', () => {
-  test('each readout prints the MODEL value, and they are not knob readbacks', async ({ page }) => {
-    await gotoShell(page);
-    const nodeId = await spawnRings(page);
-    const dock = await openDock(page, nodeId);
+// ⚠ THE THREE HERO READOUTS ARE DELETED WITH THE STRIP (owner, 2026-08-19 — the
+// resting faceplate paints no derived-state text), and the two tests that stood
+// here went with them. Naming what they proved, because it is gone rather than
+// relocated:
+//
+//   * `rings-body` / `rings-partial2-hz` — the SECOND PARTIAL changes IDENTITY
+//     with MODEL (partial 2 in MODAL, a detuned second string in SYMPATHETIC).
+//     A readout hard-wired to 2·f0·(1+s/2) prints the same number in both and
+//     would have passed every other assertion; the model switch was the leg
+//     that could tell them apart.
+//   * `rings-even-tap-state` — the EVEN output is at DIGITAL ZERO at POSITION
+//     0.25 and 0.75 (measured peak 5.028e-16 / 1.302e-15), while 0.30 and 0.70
+//     are bit-identical to each other. The POSITION knob prints four different
+//     numbers across those four points and says nothing about any of it.
+//
+// The arithmetic is still pinned in `rings-face-model.test.ts` (unit lane, with
+// its own negative controls). What is gone is the JOIN: nothing now asserts that
+// either fact reaches a surface a player can see, because no such surface
+// remains on this module.
 
-    // A state the three readouts distinguish: SYMPATHETIC, off a node.
-    await setParams(page, nodeId, { model: 0, structure: 0.25, note: 0, position: 0.5 });
-
-    const hero = dock.locator('[data-testid="face-hero"]');
-    await expect(hero).toBeVisible();
-
-    // Keyed by the readout's `valueId` — the shell writes
-    // `data-hero-readout={paramId ?? valueId ?? label}` — so a readout silently
-    // re-pointed at a PARAM would change this attribute and fail to resolve,
-    // which is the substitution these assertions most need to catch.
-    const readout = (valueId: string) => hero.locator(`[data-hero-readout="${valueId}"] dd`).first();
-
-    // MODAL at the defaults.
-    const p0 = { model: 0, note: 0, structure: 0.25, brightness: 0.5, damping: 0.5, position: 0.5, level: 0.8 };
-    await expect(readout('rings-body')).toHaveText(ringsBodyText(p0));
-    await expect(readout('rings-partial2-hz')).toHaveText(ringsSecondPartialText(p0));
-    await expect(readout('rings-even-tap-state')).toHaveText(ringsEvenTapText(p0));
-
-    // ⚠ THE SEAM THIS SPEC EXISTS FOR: switch MODEL and the `2nd` readout must
-    // change, because the QUANTITY changes identity (partial 2 → a detuned
-    // second string). A readout hard-wired to `2*f0*(1+s/2)` prints the same
-    // number in both models and passes every assertion above.
-    const p1 = { ...p0, model: 1 };
-    await setParams(page, nodeId, { model: 1 });
-    await expect(readout('rings-body')).toHaveText(ringsBodyText(p1));
-    await expect(readout('rings-partial2-hz')).toHaveText(ringsSecondPartialText(p1));
-    expect(
-      ringsSecondPartialText(p1),
-      'the two models must give different answers, or the leg above is vacuous',
-    ).not.toBe(ringsSecondPartialText(p0));
-  });
-
-  test('the EVEN tap readout goes SILENT at the two pickup nodes — POSITION cannot say so', async ({ page }) => {
-    await gotoShell(page);
-    const nodeId = await spawnRings(page);
-    const dock = await openDock(page, nodeId);
-
-    const hero = dock.locator('[data-testid="face-hero"]');
-    const evenTap = hero.locator('[data-hero-readout="rings-even-tap-state"] dd').first();
-
-    await setParams(page, nodeId, { position: 0.5 });
-    await expect(evenTap).toHaveText('live');
-
-    // 0.25 and 0.75 put the EVEN output at DIGITAL ZERO (measured peak 5.028e-16
-    // and 1.302e-15 against an unaffected ODD). A `paramId: 'position'` readout
-    // prints `0.25` and `0.75` here and says nothing.
-    for (const position of [0.25, 0.75]) {
-      await setParams(page, nodeId, { position });
-      await expect(evenTap, `POSITION ${position} is a node`).toHaveText('silent');
-    }
-
-    // …and 0.30 / 0.70 are the SAME bank as each other (bit-identical, measured)
-    // while the knob prints two different numbers — both must read live.
-    for (const position of [0.3, 0.7]) {
-      await setParams(page, nodeId, { position });
-      await expect(evenTap, `POSITION ${position} is live`).toHaveText('live');
-    }
-  });
-});
 
 test.describe('rings face — the hero picture is alive on a silent module', () => {
   test('the comb panel renders and its VIEW toggle changes the caption', async ({ page }) => {

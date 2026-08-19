@@ -77,9 +77,6 @@ async function openDock(page: Page): Promise<Locator> {
   return dockShell;
 }
 
-const readout = (dock: Locator, id: string): Locator =>
-  dock.locator(`[data-hero-readout="resofilter-${id}"] dd`);
-
 /** Write params straight into the graph. The GESTURE is covered by
  *  faces-parity (which drags every cell); what is needed here is an EXACT
  *  value, so the expected string can be a literal the model computes. */
