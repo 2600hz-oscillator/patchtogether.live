@@ -12,28 +12,64 @@
 // is the #1720/#1721 bug class, and tearing the producer down is the tempting
 // wrong implementation.
 //
-// ⚠ NO WALL-CLOCK WAITS. The one place this spec needs to know the renderer has
-// advanced, it counts FRAMES through the shared `waitFrames` helper — a
-// millisecond budget is a different number of frames on every renderer, and
-// this is a video card.
+// ⚠ NO WALL-CLOCK WAITS AND NO FRAME COUNTS EITHER. Every subject here is a
+// DOM or LAYOUT fact, so every wait is an auto-retrying `expect` / `expect.poll`
+// on the real subject. An earlier draft counted frames; those counts backed no
+// assertion once the "keeps rendering" claim moved to the source gate, and the
+// rAF promise they injected was exactly what CI starved. The only wall-clock
+// number in the file is the test BUDGET, taken from `boot-budget.ts`.
 
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
-import { waitFrames } from '../_helpers/frames';
+import { SLOW_BOOT_TEST_TIMEOUT_MS } from '../_helpers/boot-budget';
 import { measureOverflow, describeReport, settleLayout } from './_card-overflow';
 
 const CARD = '[data-testid="freezeframe-card"]';
 const TOGGLE = '[data-testid="freezeframe-preview-toggle"]';
 const CANVAS = '[data-testid="freezeframe-preview"]';
 
-async function spawnFreezeframe(page: import('@playwright/test').Page) {
+/**
+ * ⚠ FREEZE THE PER-FRAME GL DRAW. This is a VIDEO card, and the first version
+ * of this spec was the only video-card spec in the suite that did not do this.
+ * It passed locally and TIMED OUT ON CI — both failing legs at 30 s, in a
+ * `page.evaluate` that is nothing but a double rAF.
+ *
+ * The mechanism is not "CI is slower" in the ordinary sense, and the
+ * distinction matters because the two need opposite fixes. FreezeframeCard's
+ * rAF loop calls `blitOutputForPreview` + `drawPreviewDownscaled` EVERY FRAME,
+ * for the whole life of the test. On CI's two-core runner under a software
+ * rasterizer that work saturates the main thread, and an injected
+ * `page.evaluate` promise — which resolves on that same thread — gets starved
+ * past the test budget. A wall-clock bump would only have bought a slower
+ * failure.
+ *
+ * Freezing costs these tests NOTHING, and that is worth stating rather than
+ * assuming: every subject below is a DOM or LAYOUT fact — is the canvas
+ * visible, does its box have height, is it the same element, does any control
+ * escape the card. None of them reads a pixel. The one claim that IS about the
+ * render continuing to run lives in `freezeframe-screen-source.test.ts`, where
+ * it is checked at the source precisely because no runtime gate here can see
+ * it. Same lever `card-control-overflow.spec.ts` pulls for backdraft.
+ */
+async function freezeVideoRender(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    (globalThis as unknown as { __videoEngineFreezeRender?: boolean })
+      .__videoEngineFreezeRender = true;
+  });
+}
+
+async function spawnFreezeframe(page: Page) {
+  await freezeVideoRender(page);
   await page.goto('/rack?shell=legacy&seed=none');
   await spawnPatch(
     page,
     [{ id: 'sut', type: 'freezeframe', position: { x: 400, y: 60 }, domain: 'video', params: {} }],
     [],
   );
-  await expect(page.locator(CARD), 'freezeframe card visible').toBeVisible();
+  // BOUNDED, not asserted: a bare `toBeVisible()` takes Playwright's 5 s expect
+  // default, which is a different assertion on every runner (#1875/#1906).
+  await expect(page.locator(CARD), 'freezeframe card visible')
+    .toBeVisible({ timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
   await settleLayout(page);
 }
 
@@ -48,6 +84,12 @@ async function persistedCollapsed(page: import('@playwright/test').Page): Promis
 }
 
 test.describe('freezeframe: SCREEN ON / OFF', () => {
+  // The SwiftShader budget, from the ONE export site rather than a literal —
+  // a flat wall-clock number is a different assertion on every runner, and
+  // CI's two-core boxes swing >=2x run-to-run on identical code (#1860/#1906).
+  // This BOUNDS the failure; it is not what any test here asserts.
+  test.setTimeout(SLOW_BOOT_TEST_TIMEOUT_MS);
+
   test('the toggle starts ON, collapses the picture, and RECLAIMS its space', async ({ page }) => {
     await spawnFreezeframe(page);
 
@@ -109,20 +151,32 @@ test.describe('freezeframe: SCREEN ON / OFF', () => {
     // SOURCE in `freezeframe-screen-source.test.ts`. That is the repo's
     // standing answer for an invariant no runtime gate can observe
     // (`card-range-source`, `face-readout-source`).
+    // ⚠ THE FRAME WAITS THAT USED TO BE HERE ARE GONE, and their absence is the
+    // fix rather than a shortcut. `waitFrames(30)` / `waitFrames(10)` were
+    // left over from the draft that carried the vacuous `__videoEngine.hasNode`
+    // probe: once that claim moved to the source gate, the frames backed NO
+    // assertion at all — nothing between them and the next `expect` read a
+    // rendered pixel. What each `expect` below actually needs is STATE
+    // readiness, and CLAUDE.md is explicit that state readiness is an
+    // auto-retrying `expect` on the real subject, never a frame count and
+    // never a wall-clock wait. Auto-retry also cannot be starved by the card's
+    // own render loop the way an injected rAF promise was.
     await spawnFreezeframe(page);
 
     await page.locator(TOGGLE).click();
-    await settleLayout(page);
-    await waitFrames(page, 30);
     await expect(page.locator(CANVAS), 'collapsed while off').toBeHidden();
 
     await page.locator(TOGGLE).click();
-    await settleLayout(page);
-    await waitFrames(page, 10);
-
     await expect(page.locator(CANVAS), 'the picture returns').toBeVisible();
-    const box = await page.locator(CANVAS).evaluate((el) => el.getBoundingClientRect().height);
-    expect(box, 'the preview has its space back').toBeGreaterThan(50);
+
+    // the box has real height again — polled on the subject, not on a clock
+    await expect
+      .poll(
+        async () => (await page.locator(CANVAS).boundingBox())?.height ?? 0,
+        { message: 'the preview has its space back' },
+      )
+      .toBeGreaterThan(50);
+
     await expect(page.locator(TOGGLE)).toHaveAttribute('aria-pressed', 'true');
     // the canvas is still the same live element, not a remounted blank one
     await expect(page.locator(CANVAS)).toHaveAttribute('data-node-id', 'sut');

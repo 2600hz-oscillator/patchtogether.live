@@ -29,6 +29,7 @@
 
 import { test, expect, type Page, type Locator } from '@playwright/test';
 import { spawnPatch } from './_helpers';
+import { BOOT_MS } from '../_helpers/boot-budget';
 
 test.describe.configure({ mode: 'parallel' });
 
@@ -74,7 +75,7 @@ async function gotoClassic(page: Page): Promise<void> {
 
 async function gotoWorkflowShell(page: Page): Promise<void> {
   await page.goto('/rack');
-  await expect(page.getByTestId('workflow-topbar')).toBeVisible();
+  await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: BOOT_MS });
   await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });
   await page.waitForFunction(() => {
     const w = window as unknown as { __patch?: unknown; __flow?: unknown };

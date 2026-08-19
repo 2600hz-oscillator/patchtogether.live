@@ -904,16 +904,32 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // .f32) + per-module-per-port e2e (gate-driven env emit) provide functional
   // coverage. Promote into MODULES once darwin + linux PNGs are captured.
   moog911: 'VRT baseline pending — deterministic beige Moog faceplate (4 knobs T1/T2/ESUS/T3, no canvas/animation); capture via `task vrt:update` on each platform. DSP unit + ART (SHA-pinned) + per-module-per-port e2e provide coverage. Promote into MODULES once darwin + linux baselines land.',
-  // MOOG 902 VCA — Moog System 55/35 clone slice 3. Same shape as the 921 +
-  // 904A: a deterministic beige faceplate (2 knobs + a 2-position LIN/EXP
-  // switch, no canvas / animation), so a good VRT candidate; baselines are
-  // pending a `task vrt:update` run on each platform (this authoring worktree
-  // can't reliably boot the full dev server for capture). DSP unit
-  // (moog902.test.ts: gain-law + ×2-at-6V + ×3-ceiling + CV summing + inverted
-  // output) + ART (source-SHA-pinned .f32) + per-module-per-port e2e provide
-  // functional coverage. Promote into MODULES once the darwin + linux PNGs are
-  // captured.
-  moog902: 'VRT baseline pending — deterministic beige Moog faceplate (2 knobs + 2-position LIN/EXP switch, no canvas/animation); capture via `task vrt:update` on each platform. DSP unit + ART (SHA-pinned) + per-module-per-port e2e provide coverage. Promote into MODULES once darwin + linux baselines land.',
+  // MOOG 902 VCA — Moog System 55/35 clone slice 3.
+  //
+  // ⚠ THIS ENTRY CARRIED TWO FALSE CLAIMS UNTIL THE FACE PR (#1912), and they
+  // failed in opposite directions — one described an artifact that no longer
+  // exists, the other credited coverage that never did:
+  //
+  //  1. It described the SUBJECT as "2 knobs + a 2-position LIN/EXP switch",
+  //     i.e. `Moog902VcaCard.svelte`. `moog902` is now in STRICT_FACES, so
+  //     `migrated()` is true and neither surface renders that card any more —
+  //     the lane draws a ModuleShell tile and the dock a ModuleShell full view.
+  //     An exemption reason naming a card nobody can reach is an exemption
+  //     nobody is watching.
+  //  2. It claimed "ART (source-SHA-pinned .f32)" coverage. There is NO
+  //     `art/scenarios/moog902/` in the tree and `moog902` is listed in the ART
+  //     BACKLOG (`art/setup/profile-coverage.ts`), so that leg of the argument
+  //     was empty — checked, not assumed.
+  //
+  // What is actually true: the module has no committed card baseline, and its
+  // real pixel coverage now comes from the two FACE scenes
+  // (`face-moog902-compact` / `face-moog902-dock`, rostered in
+  // `e2e/vrt/_shell-faces.ts`) rather than from a card capture that was never
+  // taken. Functional coverage is the DSP worklet unit (gain law, the ×2-at-6V
+  // anchor, the mode-dependent ×3 ceiling, CV summing, the bit-exact inverted
+  // output), the face model's own negative controls, and per-module-per-port
+  // e2e.
+  moog902: 'No card VRT baseline — and the card is unreachable: moog902 is in STRICT_FACES, so both surfaces render ModuleShell instead of Moog902VcaCard. Pixel coverage is the two face scenes (face-moog902-compact / face-moog902-dock) in the shell-faces roster. Functional coverage: DSP worklet unit (gain law + x2-at-6V anchor + the mode-dependent x3 ceiling + CV summing + bit-exact inverted output), moog902-face-model unit, per-module-per-port e2e. NOT ART-covered — moog902 is in the ART backlog and has no scenario (this reason previously claimed otherwise, #1912).',
   // PAINTER (new video module) — VRT baseline pending (the new-module pattern).
   // The card is an interactive MS-Paint surface; its drawing canvas content is
   // user/op-driven (not deterministic at first paint), and CI runs linux-only so

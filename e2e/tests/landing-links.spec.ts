@@ -11,6 +11,7 @@
 // (network-dependent + slow).
 
 import { test, expect } from '@playwright/test';
+import { BOOT_MS } from '../_helpers/boot-budget';
 
 const GH_PAGES = 'https://2600hz-oscillator.github.io/patchtogether.live';
 
@@ -44,7 +45,7 @@ test.describe('landing links', () => {
     await page.goto('/');
     await page.getByTestId('tile-new-rack').click();
     await expect(page).toHaveURL(/\/rack$/);
-    await expect(page.locator('[data-testid="canvas-root"]')).toBeVisible();
+    await expect(page.locator('[data-testid="canvas-root"]')).toBeVisible({ timeout: BOOT_MS });
   });
 
   test('the rack tile boots the SHELL without auth', async ({ page }) => {
@@ -55,7 +56,7 @@ test.describe('landing links', () => {
     await page.goto('/');
     await page.getByTestId('tile-new-rack').click();
     await expect(page).toHaveURL(/\/rack$/);
-    await expect(page.getByTestId('workflow-topbar')).toBeVisible();
+    await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: BOOT_MS });
     await expect(page.getByTestId('workflow-file-trigger')).toBeVisible();
   });
 

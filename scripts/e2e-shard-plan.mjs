@@ -126,6 +126,30 @@ export const PENDING_FIRST_MEASUREMENT = [
       'Run `task e2e:timings:accept -- <run-id>` on the first green main run after this merges and ' +
       'DELETE this entry — the gate reddens on a stale entry as loudly as on a missing one.',
   },
+  {
+    spec: 'freezeframe-screen-toggle.spec.ts',
+    why:
+      '#1861 — new with the freezeframe faceplate: the SCREEN ON/OFF preview-collapse toggle '
+      + '(owner ruling 2026-08-18, every video module gets one). MEASURED locally, single worker, '
+      + 'in the configuration CI runs: 8.8 s cold for 4 tests, 4.5 s warm, across a 3/3 '
+      + 'flake-check (12/12, zero flaky). '
+      + '⚠ TREAT 8.8 s AS A FLOOR, NOT A PREDICTION — this is a VIDEO spec and the entries above '
+      + 'are the precedent (backdraft-preview-toggle predicted 57.5 s locally and measured '
+      + '358.2 CPU-s on CI, ~6x, because the CI VM is 2-core; a local headless run is ALREADY '
+      + 'SwiftShader so E2E_SWIFTSHADER=1 changes nothing locally). '
+      + '⚠ AND THIS SPEC HAS ALREADY BEEN BITTEN BY EXACTLY THAT GAP, which is why the number '
+      + 'above is lower than the first version of this entry would have carried. Its first CI run '
+      + 'TIMED OUT two legs at 30 s while passing locally: FreezeframeCard drives a per-frame '
+      + 'GL blit + canvas downscale, and on a two-core box under a software rasterizer that '
+      + 'saturates the main thread, so an injected page.evaluate promise (a double rAF) never got '
+      + 'scheduled. The spec now freezes the per-frame draw (__videoEngineFreezeRender, the lever '
+      + 'card-control-overflow.spec.ts already pulls for backdraft) and waits only on '
+      + 'auto-retrying expects, which is what brought the two failing legs from 2.4 s / 1.7 s to '
+      + '1.0 s / 0.98 s locally. The CI cost should therefore be far below the 6x floor, but it '
+      + 'has not been MEASURED on CI yet, which is the whole reason this entry exists. '
+      + 'Run `task e2e:timings:accept -- <run-id>` on the first green main run after this merges '
+      + 'and DELETE this entry — the gate reddens on a stale entry as loudly as on a missing one.',
+  },
   // Every entry here is a debt with a deadline.
   //
   // All six that stood on 2026-08-17 were paid in one accept against ci.yml run

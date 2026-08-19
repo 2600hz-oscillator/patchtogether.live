@@ -572,6 +572,18 @@ export const FACES = [
   // over params. Measured at spawn: with both TRIG jacks unpatched, sweeping any
   // of the three params leaves both outputs bit-identical.
   { type: 'moog911a', pages: 2 },
+  // MOOG CP3 (2026-08-19) — two declared pages (`channels`, `4th input`), and
+  // `pages` is the POST-hero-split band count: the hero declares READOUTS ONLY,
+  // so no key leaves a band. Five knob cells, one packed dock row.
+  //
+  // ⚠ ITS GLYPH BINDS `live-audio` ON `out_positive` — the (+) bus — and it is
+  // SILENT AT SPAWN, which is the mixer/reverb determinism case this file
+  // already names and NOT the analogVco free-running one. The module has no
+  // generator in it: with nothing patched the bus is bit-exactly zero, so the
+  // meter reads zero whether the graph is frozen or running. No mask, and the
+  // AudioContext freeze is a belt on a brace here rather than the thing holding
+  // the scene.
+  { type: 'moogCp3', pages: 2 },
   // MIXMSTRS — the full mixer, and the largest face in this roster by 1.86x
   // (91 cells against pentemelodica's 49).
   //
@@ -797,6 +809,60 @@ export const FACES = [
   // unit lane before it reddens a baseline.
   { type: 'moog921a', pages: 1 },
   { type: 'moog921b', pages: 1 },
+  // THE PAIR'S THIRD FAMILY MEMBER — `moog921Vco`, the standalone monolith.
+  //
+  // `pages: 3` and it is the POST-hero split count, which is where this entry
+  // differs from the two above: this face DOES declare `pages` (pitch / mod /
+  // out), the hero promotes `octave` OUT of `pitch`, and all three bands
+  // survive — `pitch` with FREQ alone, `mod` with LIN FM + SYNC, `out` with
+  // WIDTH + LEVEL.
+  //
+  // ⚠ THE `mod` BAND IS SOLO ON ITS ROW, AND THAT IS DERIVED RATHER THAN
+  // AUTHORED: SYNC is a 3-option discrete param, so `paramCellKind` returns
+  // `segmented` at the dock tier and `PARAM_CELL_WIDTH_CLASS.segmented` is
+  // `'wide'` (dock-row-plan.ts:130), which makes `bandIsPackable` refuse to pack
+  // it. A reviewer seeing three rows where two would fit is looking at the
+  // packing rule, not at a layout mistake.
+  //
+  // ⚠ IT JOINS THE ROSTER'S FREE-RUNNING SET, so this scene EXERCISES #1420's
+  // pre-frame audio freeze rather than being indifferent to it — same property
+  // as moog921b and for the same mechanical reason: no gate, no note to wait
+  // for, the factory feeds silence to all four inputs purely to keep the worklet
+  // processing, and `level` defaults to unity, so `sine` is a full-scale
+  // 261.626 Hz tone from sample 0. It carries NO mask: with the graph frozen
+  // before the tile is framed the analyser reads zeros and the glyph draws the
+  // same flat centreline everything else does. ⚠ WHAT WOULD SILENTLY RETIRE THE
+  // PROPERTY: `level` ceasing to default to unity, and nothing else — there is
+  // no engine selector here that could move the default onto a struck voice.
+  //
+  // ⚠ ITS GLYPH IS A LIVE TRACE OF ONE TAP OF FOUR (`sine`, the first declared
+  // `audio` output), and the four taps are not level-matched — a 4.789 dB spread
+  // measured at one LEVEL setting — so the picture is not a proxy for what the
+  // patch hears. Sweeping WIDTH cannot move it at all, because WIDTH reaches
+  // only the rectangular tap.
+  //
+  // ⚠ THE FOUR HERO READOUTS ARE PURE FUNCTIONS OF `node.params` and print at
+  // the spawn defaults, so they are IN the dock image and a re-rank or a
+  // formatter change moves this baseline: `261.6 Hz · +0.0 dB · off · off`.
+  // Those exact strings are pinned in `moog921-face-model.test.ts`, so a
+  // formatter change reddens the unit lane before it reddens a baseline.
+  { type: 'moog921Vco', pages: 3 },
+  // THE 902 VCA — two pages (`gain` = the pot + its CV depth, `response` = the
+  // law selector), so the dock scene frames two bands, not one.
+  //
+  // ⚠ ITS HERO READOUTS ARE PURE FUNCTIONS OF `node.params` and print at the
+  // spawn defaults, so they are IN the dock image and a formatter change moves
+  // this baseline: `0.0 dB · 9.0 V`. Both strings are pinned in
+  // `moog902-face-model.test.ts`, so a formatter edit reddens the unit lane
+  // before it reddens a pixel.
+  //
+  // ⚠ AND THE GLYPH IS A LIVE-AUDIO METER ON A MODULE THAT IS SILENT AT SPAWN,
+  // which is why it baselines at all: the 902 is an AMPLIFIER, not a source, so
+  // with nothing patched its `audio` tap is zeros and the meter draws its floor.
+  // This is the mirror image of the `analogVco` non-determinism class — that one
+  // was a FREE-RUNNING voice whose glyph drew a moving saw — and it does not
+  // exercise #1420's pre-frame audio freeze, because there is nothing to freeze.
+  { type: 'moog902', pages: 2 },
   // THE FIRST VIDEO FACE. Its `pages` are feedback / loop / colour / key /
   // switches / tv screen / virtual camera — enough bands to reach
   // DOCK_TAB_MIN_BANDS, so the dock scene captures a TAB RAIL with one band

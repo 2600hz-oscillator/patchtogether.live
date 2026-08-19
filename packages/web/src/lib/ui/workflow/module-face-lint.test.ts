@@ -629,6 +629,24 @@ describe('module-face lint — MOMENTARY pads (face.momentary)', () => {
     // and the def's own doc says "released = note-off (no latch)". It is now
     // declared on `face.momentary`. The cross-check below is what stops that
     // mistake from being made silently again.
+    //
+    // MOOG 902, 2026-08-19. The RESPONSE switch — LINEAR / EXPONENTIAL — and it
+    // is latching on all three available authorities rather than on its shape:
+    //   * THE DSP. `mode` is declared `automationRate: 'k-rate'` and read ONCE
+    //     PER BLOCK as `modeArr[0] >= 0.5` (`packages/dsp/src/moog902.ts`). It
+    //     selects which of two gain LAWS runs for that block. There is no edge
+    //     detector anywhere in the processor, so a momentary render would
+    //     select the exponential law only while a finger was down — i.e. the
+    //     control would be unusable rather than merely wrong.
+    //   * THE CARD IT REPLACES. `Moog902VcaCard.svelte` drew it as a
+    //     `role="radiogroup"` of two `role="radio"` buttons with
+    //     `aria-checked` — a latching 2-position selector by construction, and
+    //     the shape this face reproduces through `options[]`.
+    //   * THE HARDWARE. A 902's RESPONSE is a panel toggle you set for the
+    //     patch, not a gesture you perform.
+    // A stuck momentary value here would also be audible rather than cosmetic:
+    // the two laws differ by up to 5.45 dB between their anchors.
+    'moog902:mode',
   ]);
 
   it('no ACKNOWLEDGED_LATCHING param is DOCUMENTED as momentary (the cross-check)', () => {

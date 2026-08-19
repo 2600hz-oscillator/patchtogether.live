@@ -16,6 +16,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 import { installRenderSmokeHooks } from './_render-smoke';
+import { BOOT_MS } from '../_helpers/boot-budget';
 
 /** The pinned trio's deterministic node ids (graph/workflow-pins.ts). */
 const PINNED_IDS = ['pinned-mixmstrs', 'pinned-electraControl', 'pinned-clipplayer'] as const;
@@ -73,7 +74,7 @@ test.describe('workflow shell', () => {
 
   test('boots the workflow topbar + left rail, replaces the slot bar, spawns the pinned trio off-canvas', async ({ page }) => {
     await page.goto('/rack?shell=legacy');
-    await expect(page.getByTestId('workflow-topbar')).toBeVisible();
+    await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: BOOT_MS });
     await expect(page.getByTestId('workflow-leftbar')).toBeVisible();
     // There is no second topbar: the slot bar was deleted with the old shell
     // and File.. carries every action it had.
