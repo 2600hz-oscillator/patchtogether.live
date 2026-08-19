@@ -48,6 +48,27 @@ interface PatchWindow {
 async function seedPair(page: Page, partner: string): Promise<{ partnerId: string; voId: string }> {
   await page.goto(RACK);
   await page.waitForFunction(() => !!(window as unknown as PatchWindow).__patch);
+
+  // Boot the engine BEFORE any interaction, so engine state is deterministic
+  // rather than racing the first pointer gesture. #1844 mounted AudioGate on
+  // /rack, and the first gesture now dismisses it through ensureEngine() —
+  // AudioContext, AWAIT resume(), then the VideoEngine. Doing it here removes
+  // that async work from inside the drag.
+  //
+  // ⚠ THIS IS NOT A CONFIRMED FIX for the CI-only failure of the REFUSED ROWS
+  // case (30 s timeout, BOTH attempts, 0 flaky, while all five pass locally).
+  // The hypothesis that a still-present focusable gate swallowed the Tab was
+  // DISPROVEN by a positive control: asserting the gate is present here fails
+  // locally 15/15, so the gate is not up at this point. The mechanism is still
+  // unknown. Get the trace artifact from the failing CI job before theorising
+  // further — do not raise the timeout.
+  await page.waitForFunction(() => {
+    const w = globalThis as unknown as { __ensureEngine?: () => Promise<unknown> };
+    return typeof w.__ensureEngine === 'function';
+  });
+  await page.evaluate(async () => {
+    await (globalThis as unknown as { __ensureEngine: () => Promise<unknown> }).__ensureEngine();
+  });
   await page.evaluate(
     ([p, a, b]) => {
       const w = window as unknown as PatchWindow;
