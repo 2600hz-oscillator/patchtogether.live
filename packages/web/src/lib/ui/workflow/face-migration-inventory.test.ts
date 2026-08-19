@@ -16,9 +16,17 @@
 //      pins `STRICT_FACES` ≡ "the defs declaring a face", in both directions,
 //      and this keys off that set rather than forking a second derivation.
 //
-//   3. BLOCKERS RESOLVE, BOTH WAYS — every blocker a module or a disposition
-//      names is declared with the issue that lands it, and every declaration is
-//      named by something. A capability nothing waits on is a stale entry.
+//   3. BLOCKERS RESOLVE, BOTH WAYS — every blocker a module names is declared
+//      with the issue that lands it, and every declaration is named by
+//      something. A capability nothing waits on is a stale entry.
+//
+//   3b. BLOCKERS ARE STILL TRUE — the leg 3 was missing (#1799). Both halves of
+//      leg 3 are INTERNAL referential integrity, and a blocker satisfies them
+//      just as happily after its capability SHIPS. `needs-extension-registry`
+//      did exactly that: #1512 landed shell-extensions.ts with two adopters, the
+//      blanket 'bespoke-surface' blocker stayed, and a third of the migration
+//      read as un-startable behind a green suite. Every blocker now declares a
+//      CAPABILITY PROBE that reads the TREE, and a probe that fires is RED.
 //
 //   4. DERIVED FROM THE TREE, NOT FROM THE LIST — the two judgements that can be
 //      made mechanically are re-derived here from the cards and from the
@@ -35,6 +43,18 @@
 // positively controlled below (if the card reader silently stopped resolving
 // cards, every derived clause would pass on an empty set — so the resolution
 // itself is asserted, per module).
+//
+// Leg 3b has two blind spots of its own, both deliberate and both bounded:
+//   - ISSUE STATE. This is a unit lane with no network, and a source gate that
+//     needed github.com could not run on CI at all. The probe is the stronger
+//     anchor regardless: an issue can be closed with nothing shipped, and a
+//     capability can ship with its issue open. What a module WAITS ON is in the
+//     tree, not in an issue's status field.
+//   - PARTIAL or DIFFERENTLY-SHAPED shipment. Each probe reads ONE structural
+//     signal, so a capability that lands somewhere the probe does not look stays
+//     invisible to it. That is why every probe must also prove it CAN fire (the
+//     `landed` leg) — a probe that never fires is the defect being replaced, and
+//     it is refused rather than trusted.
 //
 // NO POPULATION COUNTS. Every assertion is membership or identity; the counts a
 // human wants live in the GENERATED artifact (docs/design/face-migration.generated.md),
@@ -57,14 +77,17 @@ import { readCardSourceWithDelegates } from '$lib/ui/card-source';
 import type { ModuleFace } from '$lib/graph/types';
 
 import { STRICT_FACES } from './strict-faces';
-import { DOM_SOURCE_LANE_TYPES } from './dom-source-modules';
+import { DOM_SOURCE_LANE_TYPES, HEADLESS_MOUNT_LANE_TYPES } from './dom-source-modules';
+import { shellExtensionIds, WIRED_SHELL_EXTENSION_SLOTS } from './shell-extensions';
 import {
   FACE_MIGRATION_INVENTORY,
   MIGRATION_BLOCKERS,
-  DISPOSITION_BLOCKER,
   inventoryEntry,
   migrationBlockers,
   migrationDone,
+  staleBlockers,
+  type CapabilityEvidence,
+  type MigrationBlocker,
   type MigrationBlockerId,
 } from './face-migration-inventory';
 import { renderFaceMigrationReport, type ReportModule } from './face-migration-report';
@@ -258,11 +281,34 @@ describe('face-migration inventory — blockers resolve, in both directions', ()
     expect(offenders.sort()).toEqual([]);
   });
 
+  it('NEGATIVE CONTROL: a blocker comes from the ENTRY and from nowhere else', () => {
+    // There is no DISPOSITION-DERIVED blocker any more (#1799). One used to fan
+    // `needs-extension-registry` onto every 'bespoke-surface' entry from a single
+    // declaration, which is how one stale line marked a third of the migration
+    // un-startable. Assert the derivation is ABSENT, not merely unused: a bespoke
+    // entry that types nothing must carry nothing.
+    const offenders: string[] = [];
+    for (const entry of FACE_MIGRATION_INVENTORY) {
+      const typed = [...new Set('blockers' in entry ? (entry.blockers ?? []) : [])].sort();
+      const resolved = [...migrationBlockers(entry)];
+      if (typed.join('|') !== resolved.join('|')) {
+        offenders.push(`${entry.type}: types [${typed.join(', ')}] but resolves to [${resolved.join(', ')}]`);
+      }
+    }
+    expect(
+      offenders.sort(),
+      'blocker(s) attached to a module by something other than the module. A fan-out declaration ' +
+        'goes stale invisibly — if one is genuinely wanted again, it comes back WITH a capability ' +
+        'probe, which is what makes such a claim falsifiable.',
+    ).toEqual([]);
+  });
+
   it('every declared blocker resolves to a GitHub issue and says what it buys', () => {
-    // Cheap by design (#1510: "checked by the test via a committed list, or at
-    // review time"). The test pins the SHAPE — a real issue number, a stated
-    // capability, a stated payoff; that the issues are OPEN is checked at review
-    // (#1509 note-entry, #1511 media lifecycle, #1512 extension registry).
+    // The SHAPE only — a real issue number, a stated capability, a stated
+    // payoff. ⚠ This leg used to add "that the issues are OPEN is checked at
+    // review", and #1799 is what that sentence cost: #1512 closed, the review
+    // never happened, and nothing mechanical could tell. Whether the capability
+    // is still MISSING is now measured from the tree, one describe below.
     const bad: string[] = [];
     for (const [id, b] of Object.entries(MIGRATION_BLOCKERS)) {
       if (!Number.isInteger(b.issue) || b.issue <= 0) bad.push(`${id}: issue ${b.issue}`);
@@ -272,6 +318,154 @@ describe('face-migration inventory — blockers resolve, in both directions', ()
     expect(bad.sort()).toEqual([]);
     const issues = Object.values(MIGRATION_BLOCKERS).map((b) => b.issue);
     expect(new Set(issues).size, 'two blockers pointing at the same issue').toBe(issues.length);
+  });
+});
+
+describe('face-migration inventory — blockers are LIVE, measured against the TREE', () => {
+  // The legs above check the blocker list against ITSELF: is it declared with an
+  // issue, and does anything name it. Both stay true after a capability SHIPS,
+  // and that is the whole of #1799 — `needs-extension-registry` outlived #1512
+  // by days, with two modules already plugged into the seam it claimed was
+  // absent. These legs ask the question the other two structurally cannot: IS
+  // THIS SEAM ALREADY IN THE TREE? See the file header for what they cannot see.
+
+  /** ModuleShell.svelte's rendered markup — the ONE renderer every face cell is
+   *  painted by (module-shell-import-guard keeps it that way), read with the
+   *  same template/predicate pair the gate applies to the legacy cards. */
+  function moduleShellTemplate(): string {
+    return cardTemplate(readFileSync(join(CARD_DIR, 'ModuleShell.svelte'), 'utf8'));
+  }
+
+  /** The live tree, reduced to the facts the probes read. Every field comes off
+   *  a REAL artifact — the extension registry's own glob, the shared renderer's
+   *  source, the grep-gated headless-mount set — never off another declaration. */
+  function treeEvidence(): CapabilityEvidence {
+    return {
+      shellExtensionIds: shellExtensionIds(),
+      wiredShellExtensionSlots: [...WIRED_SHELL_EXTENSION_SLOTS],
+      faceShellMountsTypedEntry: mountsTypedEntry(moduleShellTemplate()),
+      cardOwnedSourceTypes: [...HEADLESS_MOUNT_LANE_TYPES].sort(),
+    };
+  }
+
+  it('POSITIVE CONTROL: every evidence field READ a real artifact', () => {
+    // Validate the instrument before believing it. A probe reading an artifact
+    // that silently failed to resolve returns "not shipped" forever — which is
+    // indistinguishable from the truth, and is the exact blindness these legs
+    // exist to remove. Membership, never a size.
+    expect(
+      moduleShellTemplate(),
+      'ModuleShell.svelte did not resolve (or stopped being the renderer) — the typed-entry probe ' +
+        'would then read FALSE forever, whatever the shell actually mounts',
+    ).toContain('<PatchPanel');
+    const tree = treeEvidence();
+    expect(
+      tree.shellExtensionIds,
+      "the extension glob discovered no dx7 extension — dx7's algorithm glyph is #1512's own proof " +
+        'of the seam, so its absence means the glob (not the fleet) changed',
+    ).toContain('dx7');
+    expect(
+      tree.wiredShellExtensionSlots,
+      'ModuleShell renders no glyph extension slot — WIRED_SHELL_EXTENSION_SLOTS is anchored to its ' +
+        'source by shell-extensions.test.ts, so this reading empty means the wiring moved',
+    ).toContain('glyph');
+    expect(
+      tree.cardOwnedSourceTypes,
+      'the headless-mount set read without archivist — it is the canonical card-owned <video> source',
+    ).toContain('archivist');
+  });
+
+  it('NO STALE BLOCKER: every declared blocker names a capability the tree does NOT have', () => {
+    const stale = staleBlockers(treeEvidence()).map((id) => {
+      const b = MIGRATION_BLOCKERS[id as MigrationBlockerId];
+      return `${id} (#${b.issue}) — its probe FIRED: ${b.probe.evidence}`;
+    });
+    expect(
+      stale,
+      'blocker(s) whose capability is ALREADY IN THE TREE, so nothing is actually waiting on them. ' +
+        'Delete the declaration and every `blockers` entry naming it, then re-run ' +
+        '`flox activate -- task face:inventory:accept`. If some NARROWER capability is genuinely ' +
+        'still missing, declare THAT with its own issue and its own probe — never leave the shipped ' +
+        'claim standing, which is how a fifth of the registry read as un-startable (#1799).',
+    ).toEqual([]);
+  });
+
+  it('BOTH WAYS: every probe reads FALSE on the real tree and TRUE in the world where it lands', () => {
+    const tree = treeEvidence();
+    const cannotFire = Object.entries(MIGRATION_BLOCKERS)
+      .filter(([, b]) => !b.probe.shipped(b.probe.landed(tree)))
+      .map(([id]) => `${id}: stays FALSE even on the tree its own \`landed\` describes`);
+    expect(
+      cannotFire.sort(),
+      'capability probe(s) that cannot fire. A probe that can never go red is decoration: it makes ' +
+        'the blocker look measured while measuring nothing.',
+    ).toEqual([]);
+  });
+
+  it('every probe states its EVIDENCE in prose a stranger can check by hand', () => {
+    const thin = Object.entries(MIGRATION_BLOCKERS)
+      .filter(([, b]) => b.probe.evidence.trim().length < 60)
+      .map(([id, b]) => `${id}: probe evidence is ${b.probe.evidence.trim().length} chars`);
+    expect(
+      thin.sort(),
+      'probe(s) whose evidence line is too thin — a reader must be able to check the claim without ' +
+        'reading the predicate.',
+    ).toEqual([]);
+  });
+
+  it('REGRESSION (#1799): the probe `needs-extension-registry` never had catches it', () => {
+    // The blocker AS IT STOOD, plus the one field it lacked. This is a PERMANENT
+    // leg, not a re-enactment: it runs the SAME predicate the gate above runs,
+    // against the SAME real tree, so it reddens if the blocker ever comes back
+    // AND if the #1512 seam it names is ever removed.
+    const asItStood: MigrationBlocker = {
+      issue: 1512,
+      capability:
+        'a ModuleShell extension registry — a def-declared, lazily resolved slot for a bespoke ' +
+        'component (glyph, editor surface, full-view body)',
+      unblocks: 'the whole bespoke-surface cohort, which otherwise lands as N special cases',
+      probe: {
+        evidence:
+          'shell-extensions.ts discovers extension modules by glob AND ModuleShell renders at ' +
+          'least one of the declared slots',
+        shipped: (t) => t.shellExtensionIds.length > 0 && t.wiredShellExtensionSlots.length > 0,
+        landed: (t) => ({ ...t, shellExtensionIds: ['dx7'], wiredShellExtensionSlots: ['glyph'] }),
+      },
+    };
+    const record = { 'needs-extension-registry': asItStood };
+    expect(
+      staleBlockers(treeEvidence(), record),
+      'the extension seam (#1512) is no longer detectable in the tree — either it was removed, or ' +
+        'this probe stopped reading it. This leg is what proves the gate CAN fire on the real tree.',
+    ).toEqual(['needs-extension-registry']);
+    // ...and the same probe reads LIVE where the seam does not exist, so it is
+    // measuring the seam rather than returning true unconditionally.
+    const seamless: CapabilityEvidence = {
+      ...treeEvidence(),
+      shellExtensionIds: [],
+      wiredShellExtensionSlots: [],
+    };
+    expect(
+      staleBlockers(seamless, record),
+      'the probe fires with no extension registry at all — it is not measuring the seam',
+    ).toEqual([]);
+  });
+
+  it('NEGATIVE CONTROL: the stale check runs the PROBE, not the declaration', () => {
+    // Same predicate, synthetic record: `staleBlockers` must answer from the
+    // probe and nothing else, whichever blockers happen to be declared today —
+    // so this control survives the last real blocker being deleted.
+    const tree = treeEvidence();
+    const live: MigrationBlocker = {
+      issue: 1,
+      capability: 'a capability nothing in the tree satisfies',
+      unblocks: 'nothing',
+      probe: { evidence: 'never present', shipped: () => false, landed: (t) => t },
+    };
+    const shipped: MigrationBlocker = { ...live, probe: { ...live.probe, shipped: () => true } };
+    expect(staleBlockers(tree, { 'probe-live': live, 'probe-stale': shipped })).toEqual([
+      'probe-stale',
+    ]);
   });
 });
 
@@ -382,21 +576,6 @@ describe('face-migration inventory — DERIVED from the tree, not from this list
     expect(offenders.sort()).toEqual([]);
   });
 
-  it('NEGATIVE CONTROL: the disposition-derived blocker reaches every bespoke entry', () => {
-    // DISPOSITION_BLOCKER is the one blocker nobody types per module, so the
-    // derivation is the only thing carrying it. Assert it both ways.
-    expect(DISPOSITION_BLOCKER['bespoke-surface']).toBe('needs-extension-registry');
-    const bespoke = FACE_MIGRATION_INVENTORY.filter((e) => e.disposition === 'bespoke-surface');
-    const missing = bespoke
-      .filter((e) => !migrationBlockers(e).includes('needs-extension-registry'))
-      .map((e) => e.type);
-    expect(missing.sort(), 'bespoke entr(ies) the disposition-derived blocker did not reach').toEqual([]);
-    const generic = FACE_MIGRATION_INVENTORY.filter((e) => e.disposition === 'generic-face');
-    const leaked = generic
-      .filter((e) => migrationBlockers(e).includes('needs-extension-registry'))
-      .map((e) => e.type);
-    expect(leaked.sort(), 'generic-face entr(ies) the seam blocker leaked onto').toEqual([]);
-  });
 });
 
 describe('face-migration inventory — the GENERATED progress artifact', () => {

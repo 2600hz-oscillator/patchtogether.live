@@ -12,12 +12,15 @@ what's left. Each group below maps to one PR.
 
 ## Existing coverage we build on
 
-- `e2e/tests/modules.spec.ts` — per-module spawn + handle-count + label
-  + bounding-box render check (already covers every type). This is the
-  cheap-and-fast smoke layer. Stays as-is.
-- `e2e/tests/io-spec-consistency.spec.ts` — strict equivalence between
-  `AudioModuleDef.inputs/outputs` and the rendered Svelte Flow Handle
-  ids. Stays as-is.
+- `e2e/tests/io-spec-consistency.spec.ts` — THE registry-wide card sweep.
+  One spawn per module, then six assertion groups over that one card:
+  strict equivalence between `AudioModuleDef.inputs/outputs` and the
+  rendered Svelte Flow Handle ids (plus a per-port pinpoint message),
+  handle count, card identity, bounding box, control bounds, and no
+  console/page errors. Absorbed `modules.spec.ts`,
+  `per-module-per-port-handles.spec.ts` and the registry half of
+  `card-control-overflow.spec.ts` in #1861 — those three were paying a
+  full page load each to read a different property of the same card.
 - `e2e/tests/voice-chain.spec.ts` — Sequencer -> AnalogVCO + ADSR ->
   VCA -> Scope -> Out, with a sounding-step assertion. Already covers
   the canonical signal-flow integration.
@@ -74,7 +77,7 @@ Tests:
   non-silence + ch2 is silent (only ch1 wired); verifies `ch1_out`
   passthrough also carries audio.
 - sticky: spawn + render check (meta, zero ports; covered by
-  modules.spec.ts already — we still emit a "no-engine binding"
+  io-spec-consistency.spec.ts already — we still emit a "no-engine binding"
   invariant here so the meta domain has a dedicated test of its own).
 
 ### Group 2 — Sources (audio VCOs + noise)

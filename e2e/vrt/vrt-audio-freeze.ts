@@ -146,9 +146,49 @@ export async function tryFreezeAudioContext(page: Page): Promise<FreezeVerdict> 
  * baseline captured from a running graph, which is the flake it was meant to
  * prevent — and it looks identical to success from the call site.
  */
+/**
+ * THE FREEZE IS ONLY REAL IF NOTHING WILL UNDO IT — AND THE AUDIO GATE WILL.
+ *
+ * ⚠ This is the DELIVERY CHECK for `vrt-stand-down.ts`, and it exists because a
+ * flag that fails to arrive is INVISIBLE: everything stays green and the scenes
+ * quietly go back to being captured off a graph that a later click resumed.
+ *
+ * The mechanism, measured (#1826 review): suspending the context makes the gate
+ * overlay correct to show; the overlay arms a first-gesture listener; and the next
+ * click a dock scene makes (`openDock`) resumes the graph —
+ * `suspended@0.40 -> running@0.44`, on every face probed. The scene then
+ * re-freezes, so the FROZEN assertions still pass. What moves is the PHASE of every
+ * analyser-fed trace, and two dock faceplates reddened vrt-strict on exactly those
+ * pixels and nothing else.
+ *
+ * Checking it HERE means every freeze in the lane re-verifies the stand-down,
+ * rather than one spec asserting it once. This repo has twice shipped a Playwright
+ * config knob that was silently ignored; this is the leg that stops the third.
+ */
+async function assertAudioGateStoodDown(page: Page, label: string): Promise<void> {
+  const present = await page.locator('[data-testid="audio-gate"]').count();
+  if (present === 0) return;
+  throw new Error(
+    `${label}: the AUDIO GATE overlay is mounted in a VRT scene. The freeze about to ` +
+      'run makes that overlay correct to show, and it resumes the AudioContext on the ' +
+      'first gesture — so the next click in this scene silently undoes the freeze and ' +
+      'moves the phase of every analyser-fed trace. The lane opts out via ' +
+      '`use.storageState` (e2e/vrt/vrt-stand-down.ts); this says the flag did not ' +
+      'arrive. Check the config still spreads it, that its origin matches baseURL, and ' +
+      'that VITE_E2E_HOOKS is set on the server under test (the app ignores the key ' +
+      'without it, by design).',
+  );
+}
+
 export async function freezeAudioContext(page: Page, label = 'vrt scene'): Promise<void> {
   const v = await tryFreezeAudioContext(page);
-  if (v.ok) return;
+  if (v.ok) {
+    // ⚠ AFTER the suspend, never before. Before it the context is RUNNING, so the
+    // gate is legitimately absent and this would pass in the one state where it
+    // cannot fail — a guard whose precondition is the absence of the defect.
+    await assertAudioGateStoodDown(page, label);
+    return;
+  }
   throw new Error(
     `${label}: AUDIO FREEZE DID NOT LAND (${v.reason}; ctx.state=${v.state ?? 'n/a'}). ` +
       'The scene asked to suspend the AudioContext so its analyser-fed canvases stop ' +

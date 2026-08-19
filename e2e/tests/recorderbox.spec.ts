@@ -246,8 +246,13 @@ test('RECORDERBOX captures patched audio at an ENCODABLE (AAC-LC) sample rate', 
   expect(await readEdgeIds(page)).toContain('e-vco-al');
 
   // The audio gate must be resumed for the AudioContext to pull anything.
+  //
+  // ⚠ CLICK THE PAGE, NOT THE OVERLAY (#1826). The gate is `pointer-events: none`
+  // and resumes off a WINDOW-level first-gesture listener — clicking the notice
+  // itself can no longer work, and a `gate.click()` here would burn its timeout
+  // and then be swallowed by the catch, which reads as "already resumed".
   const gate = page.locator('[data-testid="audio-gate"]');
-  if (await gate.count()) { try { await gate.click({ timeout: 2_000 }); } catch { /* already resumed */ } }
+  if (await gate.count()) await page.mouse.click(10, 400);
   await page.waitForFunction(() => {
     const w = window as unknown as { __engine?: () => { getDomain?: (d: string) => { ctx?: AudioContext } } | null };
     const ctx = w.__engine?.()?.getDomain?.('audio')?.ctx;

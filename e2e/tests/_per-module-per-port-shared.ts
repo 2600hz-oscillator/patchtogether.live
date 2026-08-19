@@ -56,7 +56,7 @@ import { perPortDriverFor } from './_per-port-drivers';
 
 // ────────── Module-level skips ──────────
 // Modules whose card body can't be rendered under bare spawnPatch (mirrors
-// modules.spec.ts SKIP_RENDER). For these modules we skip ALL three dims —
+// io-spec-consistency.spec.ts SKIP_DEF_VS_UI). For these we skip ALL three dims —
 // the dedicated specs at the cited paths cover their I/O.
 export const SKIP_SPAWN: Record<string, string> = {
   group: 'requires data.children; covered by e2e/tests/grouping-phase1.spec.ts',

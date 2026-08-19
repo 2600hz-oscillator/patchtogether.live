@@ -36,7 +36,7 @@ the period** — vary the lag, or measure amplitude rather than correlation.
 
 ## Pattern 2 — the instrument reports different units than you think
 
-**Case.** `card-control-overflow` reported a 228.8 px overflow. The real figure
+**Case.** the card-overflow gate reported a 228.8 px overflow. The real figure
 was **~310 CSS px**. It measures via `getBoundingClientRect()`, and xyflow
 applies a **CSS transform scale** for viewport zoom — so every number it prints
 (`cardW`, `cardH`, overflow) is in **scaled screen pixels**.
@@ -54,7 +54,7 @@ and 530 px wide in two spawns purely from different fit-view zooms.
 
 ## Pattern 3 — the gate never reaches the state that breaks
 
-**Case.** `card-control-overflow` sweeps every module **at its default params**.
+**Case.** the registry card sweep spawns every module **at its default params**.
 BACKDRAFT's default is `tvMode: 0`, and the new controls were behind
 `{#if tvOn}`. So the gate that had caught a real 56.7 px overflow on that exact
 module hours earlier **could not see** the controls added afterwards — which
@@ -416,16 +416,25 @@ was verified once by disconnecting karplus's `manualTrigger` read key and
 watching `faces-parity` go red at the probe — with `toBeEnabled()` and `click()`
 both still passing, which is the finding in one line.
 
-**The sibling hole, same card, same day.** `card-control-overflow` only ever
+**The sibling hole, same card, same day.** the card-overflow gate only ever
 spawned the module in its DEFAULT state, so controls revealed by a mode switch
 were never measured — it missed a ~310 px overflow for hours. When a module has
 modes, the sweep must enter them, and **assert the mode's controls are actually
 mounted** so it cannot silently re-measure the default layout.
 
-⚠ **That spec reports VIEWPORT-SCALED pixels, not CSS pixels** —
-`measureOverflow` uses `getBoundingClientRect()` and xyflow applies a CSS
-transform for viewport zoom. Pass/fail is scale-invariant (0 is 0), but every
-*magnitude* is scaled: a 720 px card reads as ~530 at 0.736 zoom, and a ~310 px
-CSS overflow prints as ~230. **Never size a card from the printed number**, and
-never compare overflow figures across spawns unless the zoom matches.
+⚠ **That warning is now HISTORY, and the fix is the thing to preserve.** The
+gate once reported VIEWPORT-SCALED pixels: `measureOverflow` reads
+`getBoundingClientRect()` and xyflow applies a CSS transform for viewport zoom,
+so pass/fail was scale-invariant (0 is 0) while every *magnitude* was scaled — a
+720 px card read as ~530 at 0.736 zoom, and a ~310 px CSS overflow printed as
+~230. It now divides every client-rect figure by `rect.width / offsetWidth` and
+labels the result CSS px in the assertion message. **Do not "simplify" that
+normalisation away**, and keep the unit in the message: the printed number is
+what people size cards from.
+
+📍 The instrument lives in `e2e/tests/_card-overflow.ts` (#1861). The
+registry-wide sweep that consumes it is `io-spec-consistency.spec.ts` — one
+spawn per module feeding six assertion groups; `card-control-overflow.spec.ts`
+keeps the BACKDRAFT per-TV-mode cases, which is the half a default-params sweep
+structurally cannot see.
 

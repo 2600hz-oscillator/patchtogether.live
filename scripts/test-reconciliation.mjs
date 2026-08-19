@@ -378,7 +378,7 @@ function splitPlusTopLevel(expr) {
 
 /** Pull a `description:` out of a details-object argument. A literal string
  *  is fully resolvable; any other expression (e.g. a reason imported from a
- *  QUARANTINE map — modules.spec.ts derives the description from the map so
+ *  QUARANTINE map — the registry card sweep derives the description from the map so
  *  the reason has ONE source) is present-but-dynamic. */
 function detailsDescription(objText) {
   const lit = /description\s*:\s*(['"`])((?:[^\\]|\\.)*?)\1/.exec(objText);

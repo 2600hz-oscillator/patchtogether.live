@@ -38,7 +38,8 @@ const CHAIN_FRAMES = 10;
 // SHAPES + TILER + videoOut are WebGL canvas cards whose first paint is slow on
 // CI's SwiftShader software renderer (markedly slower at 1024×768). spawnPatch's
 // generic 5s node-mount wait is enough on a real GPU but times out on a loaded
-// CI shard. Grant the established WebGL-heavy headroom (matches modules.spec.ts).
+// CI shard. Grant the established WebGL-heavy headroom (matches the registry card
+// sweep in io-spec-consistency.spec.ts).
 const HEAVY_MOUNT_TIMEOUT = 30_000;
 
 // Two full re-spawn + render + read cycles (passthrough vs 8×8). On CI's

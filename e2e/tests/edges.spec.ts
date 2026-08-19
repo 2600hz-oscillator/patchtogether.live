@@ -31,7 +31,7 @@ import { spawnPatch } from './_helpers';
 // CI shard — exactly the failure this spec hit (the THICKNESS sweep does two
 // full re-spawns, so it's the last/most-loaded spawn and was the first to trip
 // the 5s mount wait). Grant the established WebGL-heavy headroom (matches
-// modules.spec.ts's HEAVY_MOUNT_TIMEOUT). This is a setup-timing fix, NOT a
+// io-spec-consistency.spec.ts's HEAVY_MOUNT_TIMEOUT). This is a setup-timing fix, NOT a
 // shader/behaviour change: the dilation correctly widens edges across renderers
 // (verified under --use-angle=swiftshader: whiteFrac thin≈0.010 → thick≈0.037).
 const HEAVY_MOUNT_TIMEOUT = 30_000;

@@ -78,9 +78,11 @@
   </li>
   <li>
     <strong>E2E — UI matches def:</strong>
-    <code>e2e/tests/io-spec-consistency.spec.ts</code> spawns each module type, reads
-    <code>window.__moduleSpecs</code>, and asserts every Handle&rsquo;s
-    <code>data-handleid</code> matches the def.
+    <code>e2e/tests/io-spec-consistency.spec.ts</code> is the registry-wide card sweep: it
+    spawns each module type once and asserts every Handle&rsquo;s
+    <code>data-handleid</code> set equals the def&rsquo;s port ids (both directions, with a
+    per-port failure message), plus handle count, card identity, card box, control bounds
+    and no console/page errors — all off that one spawn.
   </li>
   <li>
     <strong>E2E — CV range uniformity:</strong>
@@ -92,9 +94,9 @@
   </li>
 </ul>
 <p>
-  <strong>Adding a new module:</strong> the unit test iterates the registry automatically — no
-  edit needed. For the E2E test, add the new <code>ModuleType</code> string to the
-  <code>MODULE_TYPES</code> array in <code>io-spec-consistency.spec.ts</code> and make sure the
+  <strong>Adding a new module:</strong> both tests iterate the registry automatically — no
+  edit needed. The E2E sweep reads the synthesised registry manifest
+  (<code>e2e/.generated/registry-manifest.json</code>), so just make sure the
   card&rsquo;s <code>&lt;Handle&gt;</code> <code>id=</code> values match the def&rsquo;s port ids
   exactly. If the UI is intentionally lagging the def (e.g. some CV ports kept off-card to avoid
   chrome overload), add an entry to <code>SKIP_DEF_VS_UI</code> with a TODO pointing at the

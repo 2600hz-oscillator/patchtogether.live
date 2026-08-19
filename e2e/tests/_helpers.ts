@@ -351,14 +351,16 @@ export async function readPaneScrollUndo(page: Page): Promise<number[]> {
 // that already passes `mountTimeout` (15 s / 20 s / 30 s) keeps the cap it
 // chose.
 //
-// ⚠ NOT taken here, deliberately: `modules.spec.ts` still carries a private
-// hand-typed `HEAVY_RENDER` set naming six modules. The slowest-to-mount
-// module measured above was never on it, while `b3ntb0x` (4× faster) was; and
-// no other registry-driven sweep can even read the list, which is why
-// `per-module-per-port.spec.ts` auto-enrolled it on the bare default. That set
-// is no longer load-bearing now the default is frame-gated, but it is still a
-// fact about modules living in one spec's literal. Consolidating it is its own
-// change.
+// ⚠ NOT taken here, deliberately: the registry card sweep
+// (`io-spec-consistency.spec.ts`, which absorbed `modules.spec.ts` in #1861)
+// still carries a private hand-typed `HEAVY_RENDER` set naming seven modules.
+// The slowest-to-mount module measured above was never on it, while `b3ntb0x`
+// (4× faster) was; and no other registry-driven sweep can even read the list,
+// which is why the per-port sweeps auto-enrol on the bare default. That set is
+// no longer load-bearing now the default is frame-gated, but it is still a
+// fact about modules living in one spec's literal (it is at least ANCHORED to
+// REGISTRY now, so a name that stops resolving reddens). Consolidating it into
+// something every sweep can read is its own change.
 
 /** Frames of main-thread progress a node gets to appear in. ~5 s at 60 fps —
  *  identical to the old wall-clock gate on a healthy renderer — and 75× the

@@ -204,7 +204,7 @@ Three port-surface consistency gates run inside the unit + e2e layers:
 
 - `module-manifest.test.ts` — published manifest input/output ids match each registered `ModuleDef`.
 - `cv-range-uniformity.spec.ts` — every `cv` input declares a `cvScale` hint; LFO at ±1 sweeps the slider edge-to-edge.
-- `io-spec-consistency.spec.ts` — every UI `<Handle>`'s `data-handleid` matches the module def's port ids.
+- `io-spec-consistency.spec.ts` — the registry-wide card sweep: every UI `<Handle>`'s `data-handleid` matches the module def's port ids (set equality, both directions), plus handle count, card identity, card box, control bounds and console errors — all off ONE spawn per module.
 
 The PR gate (`flox activate -- task ci`) runs typecheck + unit + ART + E2E inside Flox so the toolchain matches local. Postgres 17 is a CI service container.
 
