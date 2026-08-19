@@ -10,10 +10,26 @@ and treat every prescription as a hypothesis about a gate you have not run yet.*
 | module | PR | state |
 |---|---|---|
 | `moog984` | #1943 | **MERGED** |
-| `treeohvox` | #1945 | open, green pending the audition-inventory fix |
+| `treeohvox` | #1945 | **MERGED** (31 checks green on its final SHA `64c29e344`) |
 | `b3ntb0x` | #1950 | **DRAFT, blocked on #1949** (VRT scene weight) |
 | `bentbox` | — | **NOT STARTED** — see §6 |
 | `moog905` (Q21 filler) | — | not reached |
+
+Also handled at the end of the batch: **#1939 (`feat/outlines-face`)**, which both
+merges re-conflicted. Its main-merge is complete, verified and green, parked on
+**`chore/outlines-face-merged-tree`** (`e59b8cf31`) rather than pushed, because a
+`vrt-update` capture was still in flight on that branch and a merge commit on
+top of the tip it checked out risks the bot's baseline push being rejected. Full
+completion recipe is a comment on #1939. Attest verified UNMOVED at `a37dbdda…`
+on the merged tree, both before and after the treeohvox merge.
+
+⚠ **#1952 (main red) is RETIRED** — the coordinator reports the class was
+already root-caused as webgl-smoke's timeout-kill-reporting-as-CANCELLED
+(#1854/#1917) and fixed by #1948 (timeout 10 → 20 min), now merged. My filing
+was a duplicate; recorded here so nobody re-investigates it. ⚠ **It does NOT
+retire #1949**, which is a different budget — `vrt.config.ts`'s per-TEST
+`timeout: 90_000` in the capture workflow, not the job's `timeout-minutes`. The
+distinction is written on #1949 so it is not closed as a duplicate.
 
 Issues filed: **#1942** (moog984 face), **#1944** (treeohvox face), **#1946**
 (b3ntb0x TBC defect), **#1947** (b3ntb0x dead sampler), **#1949** (the VRT
