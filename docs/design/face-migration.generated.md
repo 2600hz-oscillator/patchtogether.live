@@ -11,9 +11,9 @@ Every registered module carries exactly one **disposition**: what kind of work i
 
 |  | count |
 |---|---|
-| registered modules | 196 |
+| registered modules | 198 |
 | done (faced + promoted) | 68 |
-| remaining (excludes organizational-native) | 125 |
+| remaining (excludes organizational-native) | 127 |
 | registered with NO disposition (must be zero) | 0 |
 | inventory entries naming a dead def (must be zero) | 0 |
 
@@ -23,7 +23,7 @@ Every registered module carries exactly one **disposition**: what kind of work i
 |---|---|---|---|
 | `generic-face` | author a `face` and rank the controls — no new platform capability | 141 | 68 |
 | `blocked` | would be a face today but for the named capability, and nothing else | 3 | — |
-| `bespoke-surface` | the primary interaction is not param-shaped — needs a purpose-built surface | 49 | — |
+| `bespoke-surface` | the primary interaction is not param-shaped — needs a purpose-built surface | 51 | — |
 | `organizational-native` | rack furniture; not a migration at all | 3 | — |
 
 ## What each blocker buys
@@ -31,7 +31,7 @@ Every registered module carries exactly one **disposition**: what kind of work i
 | blocker | issue | modules waiting |
 |---|---|---|
 | `needs-media-controller` | #1511 | 12 |
-| `needs-note-entry-cell` | #1509 | 15 |
+| `needs-note-entry-cell` | #1509 | 17 |
 
 ## `generic-face`
 
@@ -245,6 +245,8 @@ the primary interaction is not param-shaped — needs a purpose-built surface.
 | `twotracks` | audio | — | — |
 | `videobox` | video | — | `needs-media-controller` |
 | `videovarispeed` | video | — | `needs-media-controller` |
+| `vstFx` | audio | — | `needs-note-entry-cell` |
+| `vstInstrument` | audio | — | `needs-note-entry-cell` |
 | `writeseq` | audio | — | `needs-note-entry-cell` |
 
 ## `organizational-native`

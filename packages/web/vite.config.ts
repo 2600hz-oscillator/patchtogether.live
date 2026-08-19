@@ -190,8 +190,56 @@ function worktreeIdentity(): Plugin {
 
 // COOP/COEP headers required for SharedArrayBuffer (Faust may want it).
 // Phase 1 dev sets these; Phase 2 sets them in production via _headers.
+
+/**
+ * COEP on `vite preview` WORKER-SCRIPT responses — measured necessity
+ * (#1953/#1976): `preview.headers` below never reaches STATIC ASSETS
+ * (SvelteKit's sirv and the SSR middleware answer first; documents get
+ * their COI headers from hooks.server.ts), so under `vite preview` the
+ * `/_app/immutable/workers/*` scripts were served with NO Cross-Origin-
+ * Embedder-Policy. A crossOriginIsolated page refuses to START a dedicated
+ * worker whose SCRIPT RESPONSE lacks a compatible COEP: the load fails
+ * with a plain error Event — silent without an onerror handler. That
+ * killed BOTH bridge workers (vst + es9) in every preview/CI e2e run,
+ * unnoticed until the vst specs became the first to assert on a live
+ * worker.
+ *
+ * ⚠ SCOPED TO /_app/immutable/workers/ ON PURPOSE. The first version
+ * stamped EVERY preview response and broke the product's route semantics:
+ * only the /rack routes are isolated (hooks.server.ts), the LANDING is
+ * deliberately NOT (third-party media), and landing-routing.spec.ts pins
+ * that a landing→rack click is a full-page nav BETWEEN those two isolation
+ * states — its "landing must be non-isolated" precondition went red on CI.
+ * Worker scripts are the one asset class whose RESPONSE must carry COEP,
+ * and they are only ever loaded from the isolated routes, so this scope
+ * fixes the workers without touching any document's isolation. Dev is fine
+ * (`server.headers` applies to all vite-dev responses) and prod is fine
+ * (CF `_headers`); the DIRECT configurePreviewServer form installs before
+ * the internal middlewares. Keep the value in sync with server.headers /
+ * hooks.server.ts / packages/web/_headers.
+ */
+function coiPreviewWorkerHeaders() {
+  return {
+    name: 'coi-preview-worker-headers',
+    configurePreviewServer(server: {
+      middlewares: {
+        use(fn: (req: { url?: string }, res: {
+          setHeader(n: string, v: string): void;
+        }, next: () => void) => void): void;
+      };
+    }) {
+      server.middlewares.use((req, res, next) => {
+        if (String(req.url ?? '').includes('/_app/immutable/workers/')) {
+          res.setHeader('Cross-Origin-Embedder-Policy', 'credentialless');
+        }
+        next();
+      });
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [ensureModuleDocs(), ssrDropCardComponents(), worktreeIdentity(), sveltekit()],
+  plugins: [ensureModuleDocs(), ssrDropCardComponents(), worktreeIdentity(), coiPreviewWorkerHeaders(), sveltekit()],
   // Inline the product version as a compile-time constant (see APP_VERSION
   // above). Applies in both `dev` (serve) and `build`, so the topbar heading
   // renders the real X.Y.Z locally, in e2e, and in the deployed bundle.
