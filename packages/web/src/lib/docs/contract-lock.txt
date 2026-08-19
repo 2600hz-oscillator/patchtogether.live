@@ -3145,6 +3145,7 @@ spirographs out mono_out mono-video
 spirographs out out video
 spirographs out overlap video
 spirographs param count 1..3 discrete default=1
+spirographs param freeze 0..1 linear default=0
 spirographs param s1_chroma 0..1 linear default=0
 spirographs param s1_inside 0..1 discrete default=1
 spirographs param s1_p 0..8 linear default=2.2
@@ -3175,6 +3176,7 @@ spirographs param s3_scale 4..60 linear default=20
 spirographs param s3_thickness 0.5..12 linear default=2
 spirographs param s3_xOffset -1..1 linear default=0
 spirographs param s3_yOffset -1..1 linear default=0
+spirographs face sidebar 0 kind=readouts label=figures entries=1:value=spirographs-figure-1,2:value=spirographs-figure-2,3:value=spirographs-figure-3
 stereovca meta domain=audio
 stereovca in in_l audio
 stereovca in in_r audio
