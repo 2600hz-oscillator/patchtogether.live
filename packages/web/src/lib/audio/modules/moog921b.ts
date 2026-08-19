@@ -4,7 +4,10 @@
 // 921A driver). The slaved VCO: driven by a 921A's freq_bus / width_bus
 // CONTROL INPUTS (it has no 1V/oct jack of its own — the 921A is the master
 // driver). Presents FOUR fixed-level simultaneous waveform outs off one
-// common core, 1 Hz–40 kHz. Shared by SYS55 + SYS35 → categorized under
+// common core. Its span is the shared core's: a 0.01 Hz floor and a ceiling
+// just under Nyquist (23 520 Hz at 48 kHz), NOT the hardware's nominal
+// "1 Hz–40 kHz" — 40 kHz needs a sample rate of 81 633 Hz (#1792).
+// Shared by SYS55 + SYS35 → categorized under
 // Ports → moogafakkin (the shared bucket, mirroring the 921 VCO + 904A).
 //
 // DSP forks the shared own-code Moog VCO core (the same clean-room
@@ -197,7 +200,7 @@ export const moog921bDef: AudioModuleDef = {
 
   docs: {
     explanation:
-      "A clean-room recreation of the Moog 921B Oscillator — the slaved (sound-making) half of the System 55/35 two-part oscillator. It has NO 1V/oct jack of its own: its pitch comes from a 921A driver's FREQ BUS, so several 921Bs sharing one 921A play in unison and you tune the whole bank from the driver. Off one core it presents four fixed-level simultaneous waveform outputs — sine, triangle, saw, rectangular — across ~1 Hz to 40 kHz, with two linear-FM inputs (a DC-coupled and an AC/cap-coupled one) and a hard/soft sync input. The FREQ (fine) and RANGE (octave footage) knobs offset its pitch relative to the bus, so each 921B in a bank can be detuned or octave-shifted off the shared pitch. Mental model: a 921 VCO whose pitch is fed by the bus instead of a knob, built for stacked unison/detune voices. WHAT IT SINGS IS A SUM OF TWO PANELS AND NEITHER ONE CAN SHOW YOU THE ANSWER: 261.626 Hz x 2^(bus volts + range + fine/12), where the bus volts come from the 921A's FREQUENCY pot times its RANGE compass and this module contributes only the offset. Its faceplate prints that offset in octaves and the pitch it would sing with the bus at rest; the driver's faceplate prints the volts it is sending; the two terms add. Everything else on this panel is asleep as delivered — FM ships at 0, so both linear-FM jacks are silent until it is raised, and SYNC ships OFF — which is why the faceplate prints their state rather than their dial position.",
+      "A clean-room recreation of the Moog 921B Oscillator — the slaved (sound-making) half of the System 55/35 two-part oscillator. It has NO 1V/oct jack of its own: its pitch comes from a 921A driver's FREQ BUS, so several 921Bs sharing one 921A play in unison and you tune the whole bank from the driver. Off one core it presents four fixed-level simultaneous waveform outputs — sine, triangle, saw, rectangular — clamped to 0.01 Hz at the bottom and to just under Nyquist at the top (23 520 Hz at a 48 kHz sample rate, 21 609 Hz at 44.1 kHz), with two linear-FM inputs (a DC-coupled and an AC/cap-coupled one) and a hard/soft sync input. The FREQ (fine) and RANGE (octave footage) knobs offset its pitch relative to the bus, so each 921B in a bank can be detuned or octave-shifted off the shared pitch. Mental model: a 921 VCO whose pitch is fed by the bus instead of a knob, built for stacked unison/detune voices. WHAT IT SINGS IS A SUM OF TWO PANELS AND NEITHER ONE CAN SHOW YOU THE ANSWER: 261.626 Hz x 2^(bus volts + range + fine/12), where the bus volts come from the 921A's FREQUENCY pot times its RANGE compass and this module contributes only the offset. Its faceplate prints that offset in octaves and the pitch it would sing with the bus at rest; the driver's faceplate prints the volts it is sending; the two terms add. Everything else on this panel is asleep as delivered — FM ships at 0, so both linear-FM jacks are silent until it is raised, and SYNC ships OFF — which is why the faceplate prints their state rather than their dial position.",
     inputs: {
       freq_bus:
         "1V/oct pitch CV from a 921A driver's freq bus (0 = C4) — this is how the 921B gets its pitch. Patch the driver's FREQ BUS output here; the FREQ + RANGE knobs offset on top of it.",

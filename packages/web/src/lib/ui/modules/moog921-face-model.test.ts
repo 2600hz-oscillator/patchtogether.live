@@ -34,6 +34,7 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { moog921aDef, MOOG921A_RANGE_OPTIONS } from '$lib/audio/modules/moog921a';
 import { moog921bDef, MOOG921B_SYNC_OPTIONS } from '$lib/audio/modules/moog921b';
+import { moog921VcoDef, MOOG921VCO_SYNC_OPTIONS } from '$lib/audio/modules/moog921-vco';
 import { glyphBinding } from '$lib/ui/workflow/shell-glyph-live';
 import { faceReadoutValueFor } from '$lib/ui/workflow/face-readout-values';
 import {
@@ -65,6 +66,16 @@ import {
   slavePitchHz,
   slavePitchText,
   slaveSyncText,
+  MOOG921VCO_LIN_FM_FULL_HZ,
+  moog921VcoFaceParams,
+  vcoCompassHz,
+  vcoFmText,
+  vcoOutDb,
+  vcoOutText,
+  vcoPitchHz,
+  vcoPitchText,
+  vcoSyncMode,
+  vcoSyncText,
 } from './moog921-face-model';
 
 const SR = MOOG921_MODEL_SR;
@@ -90,7 +101,7 @@ const captured = new Map<string, ProcCtor>();
 
 /** Capture a worklet's Processor class through the registerProcessor shim — the
  *  only way in, since the entry files top-level-export nothing on purpose. */
-async function loadProcessor(name: 'moog921a' | 'moog921b'): Promise<ProcCtor> {
+async function loadProcessor(name: 'moog921a' | 'moog921b' | 'moog921Vco'): Promise<ProcCtor> {
   const hit = captured.get(name);
   if (hit) return hit;
   const g = globalThis as unknown as { registerProcessor?: (n: string, c: ProcCtor) => void };
@@ -98,7 +109,8 @@ async function loadProcessor(name: 'moog921a' | 'moog921b'): Promise<ProcCtor> {
   let registered: ProcCtor | null = null;
   g.registerProcessor = (_n, ctor) => { registered = ctor; };
   if (name === 'moog921a') await import('../../../../../dsp/src/moog921a');
-  else await import('../../../../../dsp/src/moog921b');
+  else if (name === 'moog921b') await import('../../../../../dsp/src/moog921b');
+  else await import('../../../../../dsp/src/moog921-vco');
   g.registerProcessor = prev;
   if (!registered) throw new Error(`${name} processor did not register`);
   captured.set(name, registered);
@@ -647,5 +659,377 @@ describe('moog921 face model — TOTALITY (a readout runs on every render)', () 
     expect(at48k, 'the compass top must sit under the 44.1 kHz Nyquist clamp too').toBeLessThan(
       44100 * 0.49,
     );
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// THE MONOLITH — moog921Vco, the family's third member.
+//
+// Same three jobs as above, against a DIFFERENT worklet: validate the mirrored
+// constant, negative-control every readout permanently, pin the glyph. Plus one
+// this face needs and the pair did not — the two controls whose rank argument is
+// "bit-exactly dead at spawn" are ASSERTED dead, with positive controls, because
+// a rank defended by a measurement should redden when the measurement stops
+// being true.
+//
+// ⚠ EVERY SYNC / LIN-FM COMPARISON BELOW REPORTS THE **LAST DIVERGENT SAMPLE**,
+// never a windowed RMS. That is the spec's own recorded adversarial attack
+// (window sensitivity): a window can only ever say "not much happened HERE", and
+// two renders that converge after 5 ms look identical to one that never diverged
+// if you average over 2 s. The last index at which two renders differ is
+// window-independent by construction — the whole buffer IS the window.
+// ════════════════════════════════════════════════════════════════════════════
+
+/** Render the REAL 921 VCO. Returns every tap SETTLED, plus the raw unsettled
+ *  buffers the bit-comparisons need — a settle window would hide an early
+ *  divergence, which is exactly what the last-divergent-sample form exists to
+ *  prevent. */
+async function runVco(opts: {
+  params?: Record<string, number>;
+  linFm?: (n: number) => number;
+  sync?: (n: number) => number;
+}): Promise<{ raw: Record<string, Float32Array>; settled: Record<string, Float32Array> }> {
+  const V = await loadProcessor('moog921Vco');
+  const v = new V();
+  const p = paramBlock(moog921VcoDef, opts.params ?? {});
+  const taps = ['sine', 'triangle', 'sawtooth', 'rectangular'] as const;
+  const raw: Record<string, Float32Array> = {};
+  const settled: Record<string, Float32Array> = {};
+  for (const t of taps) {
+    raw[t] = new Float32Array(BLOCKS * BLOCK);
+    settled[t] = new Float32Array((BLOCKS - SETTLE_BLOCKS) * BLOCK);
+  }
+  for (let blk = 0; blk < BLOCKS; blk++) {
+    const base = blk * BLOCK;
+    const linBuf = zeros();
+    const syncBuf = zeros();
+    for (let i = 0; i < BLOCK; i++) {
+      const n = base + i;
+      if (opts.linFm) linBuf[i] = opts.linFm(n);
+      if (opts.sync) syncBuf[i] = opts.sync(n);
+    }
+    const out: Float32Array[][] = [[zeros()], [zeros()], [zeros()], [zeros()]];
+    v.process([[zeros()], [linBuf], [syncBuf], [zeros()]], out, p);
+    for (let t = 0; t < taps.length; t++) {
+      raw[taps[t]!]!.set(out[t]![0]!, base);
+      if (blk >= SETTLE_BLOCKS) settled[taps[t]!]!.set(out[t]![0]!, (blk - SETTLE_BLOCKS) * BLOCK);
+    }
+  }
+  return { raw, settled };
+}
+
+/** The LAST index at which two renders differ; -1 when they are bit-identical
+ *  everywhere. THE window-independent question — see the block comment above. */
+function lastDivergentSample(a: Float32Array, b: Float32Array): number {
+  if (a.length !== b.length) throw new Error('lastDivergentSample: length mismatch');
+  for (let i = a.length - 1; i >= 0; i--) if (a[i] !== b[i]) return i;
+  return -1;
+}
+
+function rmsOf(a: Float32Array): number {
+  let s = 0;
+  for (let i = 0; i < a.length; i++) s += a[i]! * a[i]!;
+  return Math.sqrt(s / a.length);
+}
+
+/** Fundamental in Hz from a rising zero-crossing census on a settled tap. */
+function hzOf(tap: Float32Array): number {
+  let crossings = 0;
+  let prev = 0;
+  for (let i = 0; i < tap.length; i++) {
+    const x = tap[i]!;
+    if (prev <= 0 && x > 0) crossings++;
+    prev = x;
+  }
+  return crossings / (tap.length / SR);
+}
+
+/** A 200 Hz full-scale sine — the master this module is asked to sync to, and
+ *  the modulator its LIN FM jack is asked to track. */
+const master200 = (n: number) => Math.sin((2 * Math.PI * 200 * n) / SR);
+
+const vParams = (over: Partial<Record<string, number>> = {}) =>
+  moog921VcoFaceParams((id) => over[id]);
+
+describe('moog921Vco face model — the MIRROR is measured off the real worklet', () => {
+  it('LIN_FM_FULL_HZ is 2000 Hz on THIS worklet, measured rather than inherited from the 921B', async () => {
+    // A DC offset of +1 on lin_fm at full depth shifts the pitch by the full
+    // span. Read by zero-crossing census, stated against the window's own
+    // resolution rather than a guessed tolerance.
+    const { settled } = await runVco({ params: { linFmAmount: 1 }, linFm: () => 1 });
+    const hz = hzOf(settled.sine!);
+    // The base is the MODEL's own C4 rather than a literal, so this leg chains
+    // the thing under test instead of restating a number beside it.
+    const expected = vcoPitchHz(vParams()) + MOOG921VCO_LIN_FM_FULL_HZ;
+    expect(
+      Math.abs(hz - expected),
+      `measured ${hz.toFixed(2)} Hz vs mirrored C4+${MOOG921VCO_LIN_FM_FULL_HZ} = ${expected.toFixed(2)} Hz, tolerance ${(HZ_TOLERANCE * 2).toFixed(3)} Hz`,
+    ).toBeLessThan(HZ_TOLERANCE * 2);
+  });
+
+  it('THE HEADLINE: RANGE + FREQ span exactly 12 octaves, and the endpoints come off the DEF', () => {
+    const c = vcoCompassHz();
+    expect(c.lo, 'the bottom of the compass, Hz').toBeCloseTo(4.0879, 3);
+    expect(c.hi, 'the top of the compass, Hz').toBeCloseTo(16744.06, 1);
+    expect(
+      Math.log2(c.hi / c.lo),
+      `octaves between the two dial extremes (${c.lo.toFixed(4)} Hz … ${c.hi.toFixed(2)} Hz)`,
+    ).toBeCloseTo(12, 6);
+    // NEITHER DIAL PRINTS IT: both default to zero, which is the entire reason
+    // the `pitch` readout exists.
+    const oct = moog921VcoDef.params.find((p) => p.id === 'octave')!;
+    const tune = moog921VcoDef.params.find((p) => p.id === 'tune')!;
+    expect([oct.defaultValue, tune.defaultValue], 'both pitch dials read 0 at spawn').toEqual([0, 0]);
+    expect(vcoPitchHz(vParams()), 'and the answer there is C4, in Hz').toBeCloseTo(261.626, 3);
+    // The compass is DERIVED from the def's own bounds — widening the def
+    // widens the readout's claim with no edit here.
+    expect([oct.min, oct.max, tune.min, tune.max]).toEqual([-5, 5, -12, 12]);
+  });
+
+  it('the pitch model matches the REAL worklet at every RANGE / FREQ corner', async () => {
+    for (const [octave, tune] of [[0, 0], [1, 0], [-1, 0], [0, 12], [0, -12], [2, 7]] as const) {
+      const { settled } = await runVco({ params: { octave, tune } });
+      const measured = hzOf(settled.sine!);
+      const model = vcoPitchHz(vParams({ octave, tune }));
+      expect(
+        Math.abs(measured - model),
+        `octave=${octave} tune=${tune}: worklet ${measured.toFixed(2)} Hz vs model ${model.toFixed(2)} Hz, tolerance ${(HZ_TOLERANCE * 2).toFixed(3)} Hz`,
+      ).toBeLessThan(HZ_TOLERANCE * 2);
+    }
+  });
+
+  it('the SYNC roster names exactly the states the DSP comparator has, at the DSP’s own thresholds', () => {
+    const sync = moog921VcoDef.params.find((p) => p.id === 'sync')!;
+    expect(sync.curve, 'a roster is only legal on a discrete curve').toBe('discrete');
+    expect(sync.options?.map((o) => o.value), 'the roster values').toEqual([-1, 0, 1]);
+    expect(sync.options?.map((o) => o.label), 'this module’s OWN vocabulary, not the 921B’s').toEqual([
+      'SOFT', 'OFF', 'HARD',
+    ]);
+    // Every declared detent resolves to a DISTINCT comparator state, and the
+    // roster is exhaustive over them.
+    const states = MOOG921VCO_SYNC_OPTIONS.map((o) => vcoSyncMode(vParams({ sync: o.value })));
+    expect(states).toEqual(['soft', 'off', 'hard']);
+    expect(new Set(states).size, 'no two detents mean the same thing').toBe(states.length);
+  });
+});
+
+describe('moog921Vco face model — the RANK ARGUMENT is a measurement (last divergent sample)', () => {
+  it('LIN FM: the jack is BIT-EXACTLY dead at the shipped depth, and the control proves the probe can see', async () => {
+    const unpatched = await runVco({});
+    const patched = await runVco({ linFm: master200 });
+    expect(
+      lastDivergentSample(unpatched.raw.sine!, patched.raw.sine!),
+      'a 200 Hz sine on lin_fm at the shipped linFmAmount=0: last divergent sample (-1 = bit-identical)',
+    ).toBe(-1);
+
+    // POSITIVE CONTROL — and a SMALL one, so this asserts "a ±20 Hz span
+    // registers", not the much weaker "any change at all registers".
+    const open = await runVco({ linFm: master200, params: { linFmAmount: 0.01 } });
+    expect(
+      lastDivergentSample(unpatched.raw.sine!, open.raw.sine!),
+      'linFmAmount=0.01 (a ±20 Hz span) must diverge, and through the END of the render',
+    ).toBe(unpatched.raw.sine!.length - 1);
+  });
+
+  it('SYNC: the jack is BIT-EXACTLY dead at OFF, including everywhere in the dead zone (#1887)', async () => {
+    const unpatched = await runVco({});
+    const off = await runVco({ sync: master200 });
+    expect(
+      lastDivergentSample(unpatched.raw.sine!, off.raw.sine!),
+      'a 200 Hz sine on the sync jack at the shipped sync=0 (OFF): last divergent sample',
+    ).toBe(-1);
+
+    // ⚠ THE DEAD ZONE, WHICH IS WHY #1887 WAS A DEFECT AND NOT A COSMETIC. The
+    // card's three buttons cannot produce 0.3, but a Push 2 encoder maps through
+    // `knobFracToValue(frac, min, max, curve)` and could land here. Now that the
+    // curve is discrete both the faceplate and the encoder step to the detents —
+    // this leg pins what the value MEANT while it was reachable, so a revert to
+    // `linear` reddens with the reason attached.
+    const dead = await runVco({ sync: master200, params: { sync: 0.3 } });
+    expect(
+      lastDivergentSample(unpatched.raw.sine!, dead.raw.sine!),
+      'sync=0.3 is a SILENT OFF — bit-identical to an unpatched sync jack',
+    ).toBe(-1);
+
+    // POSITIVE CONTROL, both live detents.
+    for (const v of [1, -1]) {
+      const live = await runVco({ sync: master200, params: { sync: v } });
+      expect(
+        lastDivergentSample(unpatched.raw.sine!, live.raw.sine!),
+        `sync=${v} (${vcoSyncMode(vParams({ sync: v }))}) must diverge through the END of the render`,
+      ).toBe(unpatched.raw.sine!.length - 1);
+    }
+  });
+
+  it('the four taps are NOT level-matched, which is what the docs now say and the glyph cannot show', async () => {
+    const { settled } = await runVco({});
+    const dbOf = (x: number) => 20 * Math.log10(x);
+    const levels = {
+      rectangular: dbOf(rmsOf(settled.rectangular!)),
+      sine: dbOf(rmsOf(settled.sine!)),
+      triangle: dbOf(rmsOf(settled.triangle!)),
+      sawtooth: dbOf(rmsOf(settled.sawtooth!)),
+    };
+    // The ORDER is the claim; the dB are pinned to one decimal because polyBLEP
+    // residuals move them in the third.
+    expect(levels.rectangular, 'rect is the loudest tap, dB').toBeCloseTo(-0.044, 1);
+    expect(levels.sine, 'sine, dB').toBeCloseTo(-3.011, 1);
+    expect(levels.triangle, 'triangle, dB').toBeCloseTo(-4.771, 1);
+    expect(levels.sawtooth, 'saw is the quietest tap, dB').toBeCloseTo(-4.834, 1);
+    const spread = Math.max(...Object.values(levels)) - Math.min(...Object.values(levels));
+    expect(
+      spread,
+      `dB between the loudest and quietest jack at ONE level setting (${JSON.stringify(levels)})`,
+    ).toBeCloseTo(4.789, 1);
+    // AND THE GLYPH DRAWS THE MIDDLE OF IT — stated so the picture is never read
+    // as a proxy for what the patch hears.
+    expect(levels.sine).toBeLessThan(levels.rectangular);
+    expect(levels.sine).toBeGreaterThan(levels.sawtooth);
+  });
+
+  it('WIDTH is a pure TIMBRE control: the rect tap’s level does not move across the whole span', async () => {
+    const at = async (width: number) => rmsOf((await runVco({ params: { width } })).settled.rectangular!);
+    const dbOf = (x: number) => 20 * Math.log10(x);
+    const lo = dbOf(await at(0.02));
+    const mid = dbOf(await at(0.5));
+    const hi = dbOf(await at(0.98));
+    expect(
+      Math.abs(lo - hi),
+      `dB between a 2% sliver and a 98% pulse (${lo.toFixed(3)} vs ${hi.toFixed(3)})`,
+    ).toBeLessThan(0.01);
+    expect(Math.abs(mid - lo), `and against the 50% square (${mid.toFixed(3)})`).toBeLessThan(0.01);
+  });
+});
+
+describe('moog921Vco face model — the READOUT REACH MATRIX (width is the fifth leg)', () => {
+  const IDS = ['moog921vco-pitch', 'moog921vco-out', 'moog921vco-fm', 'moog921vco-sync'] as const;
+  /** The params each readout is DECLARED to move on. Everything not listed must
+   *  leave it EXACTLY unchanged — asserted in both directions below. */
+  const REACH: Record<string, readonly string[]> = {
+    'moog921vco-pitch': ['octave', 'tune'],
+    'moog921vco-out': ['level'],
+    'moog921vco-fm': ['linFmAmount'],
+    'moog921vco-sync': ['sync'],
+  };
+  /** A value for each param DIFFERENT from its default — the perturbation. */
+  const PERTURB: Record<string, number> = {
+    octave: 2, tune: 7, width: 0.2, linFmAmount: 0.5, sync: 1, level: 0.5,
+  };
+
+  it('every readout moves on its OWN params and is EXACTLY invariant to the rest', () => {
+    const base = Object.fromEntries(IDS.map((id) => [id, faceReadoutValueFor(id)!(() => undefined)]));
+    for (const param of Object.keys(PERTURB)) {
+      for (const id of IDS) {
+        const fn = faceReadoutValueFor(id)!;
+        const moved = fn((p) => (p === param ? PERTURB[param] : undefined));
+        if (REACH[id]!.includes(param)) {
+          expect(moved, `${id} must MOVE when ${param}=${PERTURB[param]} (was ${base[id]})`).not.toBe(base[id]);
+        } else {
+          expect(moved, `${id} must be EXACTLY invariant to ${param}=${PERTURB[param]}`).toBe(base[id]);
+        }
+      }
+    }
+  });
+
+  it('⚠ WIDTH MOVES NONE OF THEM — the leg a knob relabelled could not survive', () => {
+    // It is a real control with a real audible job (the duty of one tap of
+    // four), it is ON the face, and it is measured LEVEL-INVARIANT above — so a
+    // readout that tracked it would be reporting something the module does not
+    // do. This is the whole set's permanent negative control.
+    for (const id of IDS) {
+      const fn = faceReadoutValueFor(id)!;
+      const base = fn(() => undefined);
+      for (const w of [0.02, 0.25, 0.75, 0.98]) {
+        expect(fn((p) => (p === 'width' ? w : undefined)), `${id} at width=${w}`).toBe(base);
+      }
+    }
+  });
+
+  it('`out` is the dB a LINEAR level dial cannot print, and it tracks the real output', async () => {
+    expect(vcoOutText(vParams()), 'the shipped level of 1.00 IS 0 dB').toBe('+0.0 dB');
+    expect(vcoOutText(vParams({ level: 2 }))).toBe('+6.0 dB');
+    expect(vcoOutText(vParams({ level: 0 })), 'and zero is silent, not "-Inf dB"').toBe('silent');
+    // Against the instrument: the model's dB delta must equal the worklet's.
+    const unity = rmsOf((await runVco({})).settled.sine!);
+    const half = rmsOf((await runVco({ params: { level: 0.5 } })).settled.sine!);
+    const measured = 20 * Math.log10(half / unity);
+    const modelled = vcoOutDb(vParams({ level: 0.5 })) - vcoOutDb(vParams());
+    expect(measured, `worklet ${measured.toFixed(3)} dB vs model ${modelled.toFixed(3)} dB`).toBeCloseTo(modelled, 2);
+    // ⚠ AND ZERO REALLY IS BIT-EXACT SILENCE at steady state. A whole-render RMS
+    // reads the 80 Hz smoother's ramp down from unity instead and says about
+    // −30 dB — that was a real instrument fault during this audit, so the
+    // settled window is a load-bearing part of the measurement, not hygiene.
+    const silent = await runVco({ params: { level: 0 } });
+    expect(rmsOf(silent.settled.sine!), 'settled RMS at level=0').toBe(0);
+  });
+
+  it('`fm` prints `off` at the shipped depth, and `sync` prints the comparator’s own state', () => {
+    expect(vcoFmText(vParams()), 'the shipped depth').toBe('off');
+    expect(vcoFmText(vParams({ linFmAmount: 1 }))).toBe('± 2.00k');
+    expect(vcoFmText(vParams({ linFmAmount: -1 })), 'depth is a MAGNITUDE here').toBe('± 2.00k');
+    expect(vcoSyncText(vParams()), 'the shipped switch position').toBe('off');
+    expect(vcoSyncText(vParams({ sync: 1 }))).toBe('hard');
+    expect(vcoSyncText(vParams({ sync: -1 }))).toBe('soft');
+    // The comparator's thresholds, sampled AT the boundary rather than around it.
+    expect(vcoSyncText(vParams({ sync: 0.5 })), '+0.5 is INSIDE hard').toBe('hard');
+    expect(vcoSyncText(vParams({ sync: 0.4999 })), 'and one step below is off').toBe('off');
+    expect(vcoSyncText(vParams({ sync: -0.5 })), '−0.5 is INSIDE soft').toBe('soft');
+  });
+});
+
+describe('moog921Vco face model — the glyph, and TOTALITY', () => {
+  it('the glyph binds LIVE, to `sine` — one tap of four, named', () => {
+    expect(glyphBinding(moog921VcoDef), 'four audio outputs, so it resolves').toEqual({
+      kind: 'live-audio',
+      portId: 'sine',
+    });
+    // NEGATIVE CONTROL: it is the FIRST DECLARED audio output that wins, not a
+    // preference for sines — reverse the order and the trace follows.
+    const swapped = {
+      ...moog921VcoDef,
+      outputs: [...moog921VcoDef.outputs].reverse(),
+    } as typeof moog921VcoDef;
+    expect(glyphBinding(swapped), 'the binding follows declaration order').toEqual({
+      kind: 'live-audio',
+      portId: 'rectangular',
+    });
+  });
+
+  it('every id this face declares is REGISTERED (a typo would silently print a dash)', () => {
+    const declared = (moog921VcoDef.face?.hero?.readouts ?? [])
+      .map((r) => r.valueId)
+      .filter((x): x is string => typeof x === 'string');
+    expect(declared.length, 'the face declares readouts at all').toBeGreaterThan(0);
+    for (const id of declared) {
+      expect(faceReadoutValueFor(id), `${id} must resolve`).toBeTypeOf('function');
+    }
+  });
+
+  it('no readout throws or prints an empty string on a fresh node, a NaN or an infinity', () => {
+    const hostile: Array<(p: string) => number | undefined> = [
+      () => undefined,
+      () => NaN,
+      () => Infinity,
+      () => -Infinity,
+      (p) => (p === 'level' ? NaN : undefined),
+      (p) => (p === 'octave' ? Infinity : undefined),
+    ];
+    for (const id of ['moog921vco-pitch', 'moog921vco-out', 'moog921vco-fm', 'moog921vco-sync']) {
+      const fn = faceReadoutValueFor(id)!;
+      for (const read of hostile) {
+        const out = fn(read);
+        expect(typeof out, `${id} must return a string`).toBe('string');
+        expect(out.length, `${id} must never print an empty string`).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  it('the SPAWN-DEFAULT strings are pinned — they are what the dock VRT baseline captures', () => {
+    expect([
+      vcoPitchText(vParams()),
+      vcoOutText(vParams()),
+      vcoFmText(vParams()),
+      vcoSyncText(vParams()),
+    ]).toEqual(['261.6 Hz', '+0.0 dB', 'off', 'off']);
   });
 });

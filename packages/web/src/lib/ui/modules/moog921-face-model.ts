@@ -1,9 +1,13 @@
 // packages/web/src/lib/ui/modules/moog921-face-model.ts
 //
-// THE PURE MODEL BEHIND BOTH HALVES OF THE MOOG 921 OSCILLATOR — the 921A
-// driver and the 921B slave. ONE file for TWO modules, for the same reason they
-// are one queue entry: they are ONE INSTRUMENT split across two defs, and the
-// number that matters is a product of both.
+// THE PURE MODEL BEHIND THE MOOG 921 OSCILLATOR FAMILY — the 921A driver, the
+// 921B slave, and the standalone 921 VCO that packs both into one module. The
+// driver and the slave share a file because they are ONE INSTRUMENT split
+// across two defs and the number that matters is a product of both; the
+// monolith joins them because it runs the SAME core (`moogFreqHz`,
+// `syncModeFromParam`, `MoogVco`) and prints its pitch through the same
+// formatters. One copy of the arithmetic, one copy of the formatting, one test
+// file measuring all of it against the real worklets.
 //
 // ── WHY A MODEL AT ALL, FOR EIGHT ORDINARY KNOBS ────────────────────────────
 //
@@ -57,6 +61,7 @@
 import type { AudioModuleDef } from '$lib/audio/module-registry';
 import { moog921aDef } from '$lib/audio/modules/moog921a';
 import { moog921bDef } from '$lib/audio/modules/moog921b';
+import { moog921VcoDef } from '$lib/audio/modules/moog921-vco';
 import {
   MOOG_C4_HZ,
   type MoogSyncMode,
@@ -379,4 +384,146 @@ export function slaveFmText(p: Moog921bParams): string {
 /** `sync` — the comparator's state, named. */
 export function slaveSyncText(p: Moog921bParams): string {
   return slaveSyncMode(p);
+}
+
+// ── THE MONOLITH: moog921Vco, the third member of the family ────────────────
+//
+// Same oscillator core (`moogFreqHz` / `syncModeFromParam` / `MoogVco`), a
+// DIFFERENT instrument: the 921A driver and the 921B slave packed into one
+// module, with the jack neither half of the pair has — its OWN 1V/oct input. So
+// it needs its own arithmetic rather than a rename of the slave's:
+//
+//   * its dials are `octave` + `tune` (±5 oct, ±12 st) where the pair splits the
+//     job across `frequency`/`freqRange` on one def and `range`/`fine` on the
+//     other, so the pitch join is over TWO dials on ONE face and there is no bus
+//     term to leave unprinted;
+//   * it owns `width` directly (the pair passes duty over a bus and normals it,
+//     which is #1791) — and WIDTH here is level-invariant, so it is deliberately
+//     NOT a term in any readout below. That is what makes it the whole set's
+//     permanent negative control;
+//   * its `linFmAmount` is a control on the SAME face as the jack it gates,
+//     where the slave's `modAmount` gates two.
+//
+// Every function below is a pure function of `node.params` — no bus, no CV, no
+// engine — which is the whole of what a `FaceReadoutValue` can see.
+
+/**
+ * Full-scale linear-FM depth in Hz at `linFmAmount = 1` against a full-scale
+ * (±1) modulator — MIRRORED from `packages/dsp/src/moog921-vco.ts:155`
+ * (`linFmAmt * linFm * 2000`), which is a worklet ENTRY file and by design
+ * exports nothing at the top level.
+ *
+ * ⚠ MEASURED off the real processor in `moog921-face-model.test.ts` and asserted
+ * equal to this mirror, for the reason the header gives: a mirrored constant
+ * nobody measures is just a second copy of a number.
+ *
+ * It happens to equal the 921B's `MOOG921B_LIN_FM_FULL_HZ`, and they are still
+ * two constants — they live in two worklets that could diverge, and the test
+ * measures each against its own processor rather than asserting they agree.
+ */
+export const MOOG921VCO_LIN_FM_FULL_HZ = 2000;
+
+export interface Moog921VcoParams {
+  readonly octave: number;
+  readonly tune: number;
+  readonly width: number;
+  readonly linFmAmount: number;
+  readonly sync: number;
+  readonly level: number;
+}
+
+export function moog921VcoFaceParams(read: (paramId: string) => number | undefined): Moog921VcoParams {
+  return {
+    octave: readOr(moog921VcoDef, read, 'octave'),
+    tune: readOr(moog921VcoDef, read, 'tune'),
+    width: readOr(moog921VcoDef, read, 'width'),
+    linFmAmount: readOr(moog921VcoDef, read, 'linFmAmount'),
+    sync: readOr(moog921VcoDef, read, 'sync'),
+    level: readOr(moog921VcoDef, read, 'level'),
+  };
+}
+
+/**
+ * What it sings with the PITCH jack at rest (0 V = C4) — the join over both
+ * dials, evaluated through the SHIPPING core so the 0.01 Hz floor and the
+ * Nyquist ceiling are the DSP's rather than a second opinion.
+ *
+ * ⚠ THIS IS THE NUMBER NEITHER DIAL CAN PRINT, and the blindness is mutual: a
+ * RANGE readback is invariant to FREQ and vice versa, while the answer is a
+ * product of both and of a C4 reference that appears on no panel. Both read `0`
+ * at the factory settings, where this is 261.63 Hz.
+ *
+ * Excludes the `pitch` jack itself, which a param reader cannot see — the
+ * readout prints what the module contributes, and the patch adds the rest.
+ */
+export function vcoPitchHz(p: Moog921VcoParams): number {
+  return moogFreqHz(0, p.octave, p.tune, 0, MOOG921_MODEL_SR);
+}
+
+/**
+ * The FULL COMPASS the two pitch dials reach — evaluated at the DEF'S OWN
+ * declared endpoints, so it cannot drift from the contract and no bound is
+ * re-typed here.
+ *
+ * ⚠ NOT PUBLISHED AS A READOUT, deliberately, and the reason is this function's
+ * own shape: it takes no params and is invariant to every dial, so as a readout
+ * it could never move. It exists for `docs`, for the def's rank argument and for
+ * the test that pins the span — the places a constant belongs.
+ */
+export function vcoCompassHz(): { readonly lo: number; readonly hi: number } {
+  const oct = moog921VcoDef.params.find((p) => p.id === 'octave')!;
+  const tune = moog921VcoDef.params.find((p) => p.id === 'tune')!;
+  return {
+    lo: moogFreqHz(0, oct.min, tune.min, 0, MOOG921_MODEL_SR),
+    hi: moogFreqHz(0, oct.max, tune.max, 0, MOOG921_MODEL_SR),
+  };
+}
+
+/** Output gain in dB — `level` is a 0..2 LINEAR multiplier, so its own readback
+ *  says `1.00` where the answer is `0.0 dB` and `2.00` where it is `+6.0 dB`.
+ *  −Infinity at zero; the formatter prints `silent`, and the worklet really does
+ *  render bit-exact zeros there (measured at steady state — a whole-render RMS
+ *  reads the 80 Hz smoother's ramp instead and says −30 dB). */
+export function vcoOutDb(p: Moog921VcoParams): number {
+  return 20 * Math.log10(Math.max(p.level, 0));
+}
+
+/** The linear-FM swing in Hz a FULL-SCALE (±1) modulator buys at the current
+ *  depth. Ships at 0, and that is not an approximation: with a 200 Hz sine on
+ *  `lin_fm` the render is BIT-IDENTICAL to leaving the jack unpatched. */
+export function vcoFmSpanHz(p: Moog921VcoParams): number {
+  return Math.abs(p.linFmAmount) * MOOG921VCO_LIN_FM_FULL_HZ;
+}
+
+/** The SYNC comparator's actual state, through the DSP's own thresholds
+ *  (`syncModeFromParam`: ≥ +0.5 hard, ≤ −0.5 soft, else off). */
+export function vcoSyncMode(p: Moog921VcoParams): MoogSyncMode {
+  return syncModeFromParam(p.sync);
+}
+
+/** `pitch` — what it sings with the pitch jack at rest. */
+export function vcoPitchText(p: Moog921VcoParams): string {
+  return fmtOscHz(vcoPitchHz(p));
+}
+
+/** `out` — the output gain in dB, on all four taps. */
+export function vcoOutText(p: Moog921VcoParams): string {
+  const db = vcoOutDb(p);
+  if (!Number.isFinite(db)) return 'silent';
+  const r = db.toFixed(1);
+  return `${db >= 0 && !r.startsWith('-') ? '+' : ''}${r} dB`;
+}
+
+/** `fm` — the ±Hz a full-scale modulator buys. `off` when the depth is zero,
+ *  because `± 0.00 Hz` reads like a rounding artefact rather than a dead jack. */
+export function vcoFmText(p: Moog921VcoParams): string {
+  const hz = vcoFmSpanHz(p);
+  if (!Number.isFinite(hz)) return '—';
+  if (hz === 0) return 'off';
+  return `± ${fmtOscHz(hz)}`;
+}
+
+/** `sync` — the comparator's state, named. */
+export function vcoSyncText(p: Moog921VcoParams): string {
+  return vcoSyncMode(p);
 }
