@@ -60,6 +60,12 @@ import {
 } from '$lib/ui/modules/clouds-face-model';
 import { noiseFaceParams, noiseTapDbText } from '$lib/ui/modules/noise-face-model';
 import {
+  fourplexerFanText,
+  fourplexerIdleText,
+  fourplexerMapText,
+  fourplexerRouting,
+} from '$lib/ui/modules/fourplexer-face-model';
+import {
   NINELIVES_TAP_MULTIPLIERS,
   ninelivesFaceParams,
   ninelivesFastTapsText,
@@ -629,6 +635,22 @@ const FACE_READOUT_VALUES: Readonly<Record<string, FaceReadoutValue>> = {
   'noise-white-db': (read) => noiseTapDbText('white', noiseFaceParams(read)),
   'noise-pink-db': (read) => noiseTapDbText('pink', noiseFaceParams(read)),
   'noise-brown-db': (read) => noiseTapDbText('brown', noiseFaceParams(read)),
+
+  // ── 4PLEXER ──────────────────────────────────────────────────────────────
+  // FOUR IDENTICAL DIALS, and every question about a router is about the WHOLE
+  // MAP. `sel2` reads `IN 1`; what it cannot say is that IN 2 now reaches
+  // nothing and IN 1 now arrives three times over. Both change the moment ANY
+  // selector moves, and neither is visible from any single readback.
+  //
+  // ⚠ THE CONTROL IS A PERMUTATION, not a knob wiggle. Any permutation of the
+  // four selectors is a completely different patch with all four dials in new
+  // positions, and it is still a bijection — so `fan` and `idle` must stay
+  // `none` while `map` changes. A readout that merely tracked "did a knob move"
+  // would fail that, which is exactly why it is the permanent leg in
+  // fourplexer-face-model.test.ts.
+  'fourplexer-map': (read) => fourplexerMapText(fourplexerRouting(read)),
+  'fourplexer-fan': (read) => fourplexerFanText(fourplexerRouting(read)),
+  'fourplexer-idle': (read) => fourplexerIdleText(fourplexerRouting(read)),
 
   // ── MARBLES ──────────────────────────────────────────────────────────────
   // ELEVEN values, every one a BARE number or state — no sentence anywhere on
