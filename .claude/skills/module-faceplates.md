@@ -134,6 +134,24 @@ tear the producer down; that is the #1720/#1721 bug class). The owner's stated
 floor: the on/off state **persists through tab switches**. Every new video face
 ships with it.
 
+**WHERE it goes is settled, and it is a measurement rather than a taste: OVERLAY
+the preview's BOTTOM-RIGHT CORNER on a translucent backplate, NEVER a row of its
+own.** Precedent: spirographs (`592ca4f6b`). A stacked toggle — the button under
+the canvas in a `flex-direction: column` with a gap — cost **~18.8 px on a card
+carrying ~11 px of slack**, and `io-spec-consistency`'s card sweep caught the
+result: `.fader-grid` overhanging the card's bottom edge by 7.8 CSS px against a
+tolerance of 6 (18.8 − 11 = the 7.8 measured). The control is REQUIRED so it
+cannot be dropped, and neither a wider tolerance nor a taller card is the fix —
+both just hide the next control that does this. An overlay sits inside the
+picture's own box, so the expanded card is **exactly** the height it was before
+the feature existed: the delta is ZERO, not merely small. Two details that are
+load-bearing rather than decorative: the backplate (`rgba(5,6,8,0.72)`) exists
+because a transparent button over a live picture was never legible, and the
+wrap keeps a small `min-height` that is inert behind the canvas and only matters
+with SCREEN **off**, where the canvas is gone and an absolutely-positioned button
+would otherwise leave the card. **The stacked row is the named anti-pattern** —
+if you are measuring whether a row "fits", you are already building the wrong one.
+
 ### The authoring consequence: WRITE FOR THE HINT-OFF STATE
 
 Annotations are OFF by default, per node, and never synced. **So the resting
