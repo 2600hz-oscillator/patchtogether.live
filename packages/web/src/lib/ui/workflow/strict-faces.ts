@@ -1681,6 +1681,40 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // 0.96-wide knob span is 2.08×, so a full-scale modulator spends 68 % of every
   // cycle pinned at 2 % or 98 % instead of sweeping.
   'moog921Vco',
+  // THE FACEPLATE QUEUE · Q38 — `moog902`, the rack's only DIFFERENTIAL VCA
+  // (level as a voltage, with a bit-exact phase-inverted twin on a second jack).
+  //
+  // THE FINDING THIS FACE SHIPS: its RESPONSE switch is a LEVEL CONTROL wearing
+  // a character switch's clothes, and nothing on the module said so. Measured on
+  // the shipping worklet with a CHANNEL-AWARE probe, the LINEAR and EXPONENTIAL
+  // laws coincide at ONLY two points — 0 V and the 6 V anchor — so between them
+  // flipping the switch moves the output by −2.9841 dB at the shipped pot
+  // position and by −5.4525 dB near the bottom of the dial, WITH NO DIAL
+  // MOVEMENT. Unity itself moves with it (pot 0.499999985 → 0.641521305). The
+  // face prints that as `moog902-gain-db`, whose permanent negative control is
+  // exactly the switch a knob readback is blind to.
+  //
+  // ⚠ AND ITS DOCS WERE WRONG ABOUT THE CEILING, IN THE DEFAULT MODE (#1912,
+  // FIXED IN THIS PR RATHER THAN FILED — it is prose, so it changes no audio).
+  // "the ×3 ceiling near ~7.5 V" appeared unconditionally at five sites; 7.5 V
+  // is the EXPONENTIAL curve's fitted anchor, and the LINEAR arm — WHICH IS THE
+  // SHIPPED DEFAULT — reaches ×3 at 9.000000 V, delivering only ×2.500000 at
+  // 7.5 V. The second readout (`moog902-ceiling`) prints the mode's real
+  // ceiling, and it is INVARIANT to the gain pot, which is what keeps the two
+  // readouts each other's control.
+  //
+  // Its VRT exemption reason carried two more falsehoods, both fixed here: it
+  // described the legacy card this promotion makes unreachable, and it credited
+  // ART coverage that does not exist (no `art/scenarios/moog902/`; the module is
+  // in the ART backlog).
+  //
+  // ⚠ THE RAW-WRITE LEDGER ENTRY STAYS, against the spec's instruction, and the
+  // reason is measured rather than argued: promotion does not delete
+  // `Moog902VcaCard.svelte`, so its `target.params.mode = v` write still exists
+  // and `mutate.guard`'s deny-by-default direction would redden on an entry
+  // removed while the write remains. `moog921Vco` is the precedent — promoted,
+  // card retained, ledger entry retained, green on main.
+  'moog902',
   // ⛔ REVIEW-HOLD · THE FIRST VIDEO FACE (2026-08-17) — Q22, `backdraft`.
   //
   // 37 params, 33 inputs (29 paramTarget CV + 4 video), 1 video out: the
