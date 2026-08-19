@@ -1970,6 +1970,42 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // extension at `$lib/ui/modules/videoOut/` — the second adopter of that slot.
   // For backdraft the slot AUGMENTS a faceplate; here it IS the faceplate.
   'videoOut',
+  // THE FACEPLATE QUEUE · Q33 — the video sample-and-hold (2026-08-19), and the
+  // THIRD video module to hold a face.
+  //
+  // ⚠ THE FACE SHIPS WITH A FIX, AND THE FIX IS WHY THE RANKING LEADS WHERE IT
+  // DOES. `quant_luma` reaches the combined output through a different path
+  // from R/G/B — a hue-preserving luma ratio rather than a per-channel
+  // posterize — and #1861 lived in exactly that asymmetry: AT ITS OWN DECLARED
+  // MINIMUM, which three separate doc strings called a passthrough, it was
+  // moving 38.66 % of the 8-bit RGB cube (6,485,727 of 16,777,216 triplets,
+  // worst 8 code values) and forcing 25 legitimate near-blacks to EXACTLY
+  // black. So the knob the docs said did nothing was the one doing the most.
+  // It ranks 1.
+  //
+  // ⚠ THE DEFECT'S CAUSE AND ITS INVISIBILITY ARE THE SAME FACT.
+  // `posterizeChannel` is EXACTLY identity on the 8-bit grid (all 256 code
+  // values verified), and it was tested there. Nothing joined that grid
+  // assumption to the LUMA call site, whose input is a weighted sum of three
+  // 8-bit values and therefore off-grid by construction — one side of a
+  // two-sided contract, gated; the other side, not. The fix adds the missing
+  // side: `quantizeCombined`, the JS mirror of the shader's combined branch
+  // that did not previously exist, walked over the WHOLE cube rather than a
+  // sample, because "38.66 % of colours move" is not a property any sample can
+  // establish.
+  //
+  // ⚠ NO GATE READOUT, DELIBERATELY. A `FaceReadoutValue` receives only a param
+  // reader, and `gateLevel` reads 0 both when NOTHING is patched (live
+  // passthrough) and when a gate IS patched and low (frozen). Those are the two
+  // states this module exists to distinguish, they are opposites, and no input
+  // a readout can see separates them. This is the `sidecar` precedent — the
+  // finding is carried by the band labels and by `docs`, never by a caption
+  // that would be confidently wrong half the time.
+  //
+  // `gateLevel` itself is the first `noUserControl` declaration outside
+  // backdraft: the cv jack renders, the knob never did, and #1726's mechanism
+  // is what lets a face say so instead of painting a rotary over a gate swing.
+  'freezeframe',
   // THE FACEPLATE QUEUE · Q5 — the Buchla-259-style complex oscillator
   // (2026-08-19). The full ranking argument is a comment on the def itself;
   // what belongs HERE is the one finding that made it worth building and the

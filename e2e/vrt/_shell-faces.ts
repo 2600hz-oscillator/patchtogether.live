@@ -1077,6 +1077,21 @@ export const FACES = [
     // feedback/zoom/mix. The dock scene, by contrast, failed on a DIMENSION
     // mismatch (900x523 -> 657x509), which no diff budget can absorb.
   },
+  // THE FACEPLATE QUEUE · Q33 — the video sample-and-hold, and the third video
+  // face. `pages: 2` is the declared band count; this face promotes no control
+  // into the hero, so neither band is emptied and the count is exactly
+  // `face.pages.length`.
+  {
+    type: 'freezeframe',
+    pages: 2,
+    videoFaceWhy:
+      'both scenes carry a LIVE picture: the compact tile paints a VideoTileThumb through '
+      + 'hasVideoSurface, and the dock faceplate shows the same live surface beside the bands. '
+      + 'freezeframe is additionally the worst case for an unfrozen capture, because its whole '
+      + 'purpose is to decide WHEN the image updates — with nothing patched to GATE it is a '
+      + 'continuous live passthrough of whatever the video zone is producing, so an unpinned '
+      + 'scene would be sampling a moving source rather than the faceplate.',
+  },
   // THE FACEPLATE QUEUE · Q5 — the Buchla-259-style complex oscillator.
   //
   // `pages: 2` is the POST-hero-split count: the face declares two bands

@@ -78,7 +78,7 @@ author a `face` and rank the controls — no new platform capability.
 | `flipper` | audio | — | — |
 | `fourplexer` | audio | done | — |
 | `foxy` | audio | — | — |
-| `freezeframe` | video | — | — |
+| `freezeframe` | video | done | — |
 | `gatemaiden` | audio | — | — |
 | `grainsOfVision` | video | — | — |
 | `graphicEq` | video | — | — |
