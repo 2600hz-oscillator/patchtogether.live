@@ -64,7 +64,8 @@ import {
   type CvBuddyKind,
   type CvBuddyInstance,
 } from '$lib/audio/cv-buddy/slot-alloc';
-import type { ModuleNode } from '$lib/graph/types';
+import type { ModuleNode, ParamDef } from '$lib/graph/types';
+import { snapToOptions } from '$lib/ui/controls/knob-vocabulary-model';
 
 /**
  * Card-readable shape exposed via `handle.read('state')`, so the Svelte card
@@ -95,6 +96,18 @@ export interface CvBuddyClockState {
  *  DIN-sync default. */
 export const CV_BUDDY_PPQN_CHOICES: readonly number[] = [1, 2, 4, 8, 12, 24, 48];
 export const CV_BUDDY_DEFAULT_PPQN = 24;
+
+/**
+ * Land a PPQN on a legal division — the module's use of the ONE shared
+ * `snapToOptions`, so the value the clock runs at and the value the selector
+ * shows can never be two different answers.
+ *
+ * Exported because `cv-buddy-node-lifetime.test.ts` and the vocabulary gate both
+ * assert the snap rather than trusting it.
+ */
+export function snapPpqn(v: number): number {
+  return snapToOptions(v, CV_BUDDY_PPQN_PARAM.options ?? []);
+}
 
 /** Clock look-ahead window (s). ≥ the 25 ms scheduler tick so pulses BETWEEN
  *  ticks are pre-scheduled (the step-scheduler discipline: schedule a window,
@@ -177,7 +190,22 @@ export async function createCvBuddyHandle(
 
     // ---- params (owner-only in effect) ----
     const savedParams = (node.params ?? {}) as Record<string, number>;
-    let ppqn = savedParams.ppqn ?? CV_BUDDY_DEFAULT_PPQN;
+    // ⚠ SNAPPED AT THE POINT OF USE, AND DELIBERATELY NOT WRITTEN BACK.
+    // `ppqn` declares an EXHAUSTIVE roster, so the clock must divide by a legal
+    // number — but a rack saved before that declaration can hold any of the 48
+    // positions the old range allowed, and it arrives by routes that pass
+    // through no loader at all (an IndexedDB replica restore, a peer's Y update,
+    // an undo). Snapping HERE covers every one of them, because it is the point
+    // of use rather than a point of arrival.
+    //
+    // It does NOT repair the stored value: correcting the live node from the
+    // engine would be an untagged Y.Doc write, which `momentary-params` refuses
+    // by name, and a silent repair of a data-integrity bug is indistinguishable
+    // from no bug. So a legacy rack CLOCKS at its nearest legal division and
+    // DISPLAYS that same division (the selector and the readout both resolve
+    // through the same `nearestByValue`), and the graph is normalized by the
+    // first ordinary, tagged, undoable write the player makes.
+    let ppqn = snapPpqn(savedParams.ppqn ?? CV_BUDDY_DEFAULT_PPQN);
     let clockOffsetMs = savedParams.clockOffsetMs ?? 0;
 
     // ---- clock/run runtime state ----
@@ -275,7 +303,9 @@ export async function createCvBuddyHandle(
         ['clock', { node: clockSrc, output: 0 }],
       ]),
       setParam(paramId, value) {
-        if (paramId === 'ppqn') ppqn = value;
+        // Snapped on the way in too — a CV/automation/preset write reaches this
+        // seam without passing the selector, and the roster is the legal set.
+        if (paramId === 'ppqn') ppqn = snapPpqn(value);
         else if (paramId === 'clockOffsetMs') clockOffsetMs = value;
       },
       readParam(paramId) {
@@ -311,6 +341,51 @@ export async function createCvBuddyHandle(
 }
 
 
+/**
+ * THE PPQN PARAM, declared ONCE and shared by both kinds.
+ *
+ * ⚠ `cvBuddy` and `cvBuddyMini` are the same module minus a jack, and they
+ * render ONE shared body. Two copies of this declaration would be two rosters
+ * free to drift — and the drift would be invisible until a user noticed one
+ * card offering a division the other refused, which is the exact argument
+ * `CvBuddyBody.svelte`'s own header makes for sharing the component.
+ */
+export const CV_BUDDY_PPQN_PARAM: ParamDef = {
+  id: 'ppqn',
+  label: 'PPQN',
+  defaultValue: CV_BUDDY_DEFAULT_PPQN,
+  min: 1,
+  max: 48,
+  curve: 'discrete',
+  // ── LEGAL SETTINGS ONLY (owner ruling, 2026-08-20) ────────────────────
+  // This param declared `1..48 discrete` with NO roster, so 48 positions
+  // were reachable and only SEVEN were legal — the card's `<select>` could
+  // not produce the other forty-one, and nothing rejected them
+  // (`setParam` fed the value straight to the clock scheduler). A face made
+  // it visible: the resolver returned `knob` at every tier, i.e. a
+  // 48-position dial over a seven-position control (#2024).
+  //
+  // ⚠ THE ROSTER IS THE LEGAL SET, not a naming of the steps — see
+  // `optionsExhaustive` below. Derived from the same exported constant the
+  // card's menu is built from, so the two cannot disagree.
+  options: CV_BUDDY_PPQN_CHOICES.map((n) => ({
+    value: n,
+    label: String(n),
+    title:
+      n === CV_BUDDY_DEFAULT_PPQN
+        ? `${n} pulses per quarter note — the DIN-sync standard`
+        : `${n} pulse${n === 1 ? '' : 's'} per quarter note`,
+  })),
+  optionsExhaustive: {
+    why:
+      'a clock divides by a whole number of pulses per quarter note, and these seven are the divisions the '
+      + 'generator and the downstream gear share (24 is DIN-sync). The forty-one integers in between are not '
+      + 'unnamed states — they are values this module has no meaning for: the card could never produce them, '
+      + 'the scheduler would accept them, and a rack holding one would clock Pam\'s at a rate nothing else in '
+      + 'the room agrees on.',
+  },
+};
+
 export const cvBuddyDef: AudioModuleDef = {
   type: 'cvBuddy',
   palette: { top: 'Audio modules', sub: 'I/O' },
@@ -339,8 +414,7 @@ export const cvBuddyDef: AudioModuleDef = {
     { id: 'clock', type: 'gate', edge: 'trigger' },
   ],
   params: [
-    // Discrete PPQN menu; the card renders a select over CV_BUDDY_PPQN_CHOICES.
-    { id: 'ppqn', label: 'PPQN', defaultValue: CV_BUDDY_DEFAULT_PPQN, min: 1, max: 48, curve: 'discrete' },
+    CV_BUDDY_PPQN_PARAM,
     // Manual clock latency trim, ±20 ms.
     { id: 'clockOffsetMs', label: 'Clock offset', defaultValue: 0, min: -20, max: 20, curve: 'linear', units: 'ms' },
   ],

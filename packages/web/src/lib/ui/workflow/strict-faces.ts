@@ -2420,6 +2420,84 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // NOT CONTROL-HEAVY: four honest pages against DOCK_TAB_MIN_BANDS = 7, and
   // per the 2026-08-18 ruling they are not padded to reach it.
   'warrensvisions',
+  // THE FACEPLATE QUEUE · Q49 — the self-building wavetable oscillator
+  // (2026-08-20). THE POOL'S ONE HONESTLY CONTROL-HEAVY MODULE: 33 params in
+  // seven genuine groups, which is roughly triple the faced median.
+  //
+  // ⚠ CONTROL-HEAVY, AND THE RAIL ENGAGES ON ITS OWN. Seven honest pages reach
+  // `DOCK_TAB_MIN_BANDS = 7`, so the tab rail turns on through the ordinary
+  // threshold and there is NO `face.tabbed` here. That field is
+  // OWNER-INSTRUCTION-ONLY and its gate's own failure message says to author
+  // honest pages and let the rail engage instead; no owner instruction exists
+  // for foxy, so declaring it would mean inventing one. The seven are five
+  // WAVECEL surface params, three SEPARATE sources, the XYZ combination, the
+  // two generator modes and the four freezes — nothing padded to reach seven,
+  // nothing crammed to avoid it. foxy is the FOURTH module to reach the rail
+  // (cloudseed 8, pentemelodica 8, backdraft 7), i.e. a user of a settled
+  // mechanism rather than a first anything.
+  //
+  // ⚠ THE STOP-2 FINDING IS FIVE PICTURES, and it is `rasterize`'s argument
+  // multiplied. `hasVideoSurface` is `def.domain === 'video'`; foxy is
+  // `domain: 'audio'` with three video OUTs painted in JS, so no generic seam
+  // reaches the three rasters, the XYZ field or the animated wavetable.
+  // Promotion without a surface would delete the module's entire proposition —
+  // that you WATCH the table being built — and leave 33 knobs. Resolved through
+  // `face.extension: 'foxy'` → `fullViewBody`, which also carries the two
+  // affordances no param cell can reach (the SCOPE/3D flip and EXPORT TABLE).
+  // ⚠ The committed inventory predicted "a registered panel (cube is the
+  // precedent)"; that half is DELIBERATELY NOT TAKEN, for the blind-gate reason
+  // rasterize wrote down — a panel REQUIRES a probe, and a read-only picture's
+  // only probe watches a DIFFERENT control.
+  //
+  // ⚠ AND THE COLLAPSE RULE INVERTS HERE TOO, for the same mechanical reason
+  // and NOT by inheritance: `bridgeTick()` runs inside the engine handle's
+  // `read()` seam, so with nothing patched downstream the preview loop is the
+  // only thing advancing the rasters AND the table. SCREEN OFF skips the five
+  // BLITS and never the `read('tick')`.
+  //
+  // ⚠ THE GLYPH IS SUPPRESSED AT THE DOCK, NOT ABSENT. `'waveform'` resolves
+  // `{kind:'live-audio'}` on `out_l` — a real trace of the real output, unlike
+  // rasterize's THRU — so it is the lane's identity mark, and
+  // `dockFullViewHeadPlan` hands the dock head to the extension body so the two
+  // pictures never paint at once.
+  //
+  // NO READOUT, NO SIDEBAR, NO HERO — the 2026-08-19 rulings removed the
+  // fields, and this module's two mode NAMES arrive as `options[]` rosters
+  // (#2007), which is the declared-name route rather than derived text.
+  'foxy',
+
+  // FACE BATCH 16 · gatemaiden (2026-08-20) — the gate↔trigger converter, and
+  // the cheapest promotion the programme has made: two params, eleven lines of
+  // card markup, and BOTH of the silent build bugs batch 13's reconciliation
+  // caught sitting on it at once (#2025).
+  //
+  // It is promoted on the defects rather than on the tier ladder, and the
+  // difference is worth stating because two params is where STOP 1 says to
+  // refuse. The ladder here is genuinely trivial — glyph `'none'` caps compact
+  // at 3, there are 2 controls, so every tier shows everything. What the face
+  // changes is that both controls were rendered WRONG:
+  //
+  //   · `trigShape` declared no roster, so `looksLikeToggle` resolved an
+  //     anonymous two-state switch and the only names for its states — card
+  //     literals — had no faced home. It now declares `options`, so the dock
+  //     paints a SEGMENTED pair (both states visible, one click away, where the
+  //     card needed a click to discover the second) and the lane paints the
+  //     NAME through `paintsReadout`. ⚠ Those names are load-bearing, not
+  //     cosmetic: TRI carries half SQR's area and clears the 0.5 threshold for
+  //     half as long (re-measured on the pure DSP core, 120 vs 240 sample-units
+  //     and 2.5 ms vs 5.0 ms at 48 kHz), which is a difference a player must be
+  //     able to see the two ends of. The docs claim that it was "display/feel
+  //     only" is corrected in the same diff; whether the BEHAVIOUR should
+  //     change is #2008 and stays open.
+  //   · `gateLen` is a `NeonFader` on the card and no `ParamDef` field says so,
+  //     so the shell would have substituted a dial. `face.paramCells`.
+  //
+  // And the promotion pays a ledgered raw write rather than only re-skinning:
+  // the card's shape button poked the store directly, so the gesture was
+  // neither undoable nor synced. ⚠ That was paid by EDITING THE CARD, not by
+  // facing the module — see the note left in `raw-write-ledger.ts`, where #2025
+  // had the mechanism backwards.
+  'gatemaiden',
   // RUTTETRA (`label: 'xyz'`) — 12 params, 4 pages, no rail. The authentic
   // forward-scatter Rutt/Etra scan processor: a 320x180 grid walks the Z
   // source, reads luma at each point, lays it along an internally generated

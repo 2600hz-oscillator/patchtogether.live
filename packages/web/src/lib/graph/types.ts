@@ -429,6 +429,50 @@ export interface ParamDef {
   units?: string;
   /** PF-1 — named detents of a DISCRETE param. Cosmetic (see ParamOption). */
   options?: readonly ParamOption[];
+  /**
+   * THE ROSTER **IS** THE LEGAL SET — a SPARSE `options` roster, declared.
+   *
+   * ⚠ NOT COSMETIC, unlike `options` itself, and that is the whole reason it is
+   * a separate declaration rather than an inference from "the roster is short".
+   * The ordinary rule is that a discrete param's reachable values are exactly
+   * its integer steps, so `param-vocabulary` requires a roster to name EVERY
+   * one of them — its stated reason being that *"a roster that skips one leaves
+   * a state the dial can reach and the picker cannot name"*.
+   *
+   * A few params invert that premise: the skipped values are precisely the ones
+   * that must NOT be reachable. `cvBuddy.ppqn` is the case this exists for — a
+   * clock divides by 1, 2, 4, 8, 12, 24 or 48 pulses per quarter note, and the
+   * forty-one integers in between are not "unnamed states", they are values the
+   * module has no meaning for. Declaring the roster EXHAUSTIVE says so, and the
+   * gate then enforces the stronger property the ordinary rule was reaching
+   * for: **no reachable state is unnameable** — because the reachable set is
+   * the roster.
+   *
+   * ⚠ DENY BY DEFAULT, AND THE `why` IS THE POINT. Making this a bare boolean
+   * would let any author quietly opt out of the every-step rule the moment it
+   * inconveniences them, which is the rule's whole value. A required `why`
+   * means `tsc` refuses the casually-sparse roster before a test runs, and the
+   * reviewer sees the ARGUMENT next to the exemption. Say why the gaps are
+   * meaningless, not that they are unused.
+   *
+   * WHAT IT DOES NOT DO: it does not make the value safe on its own. A param
+   * declaring this must SNAP — a write of an off-roster value lands on a named
+   * member — and `param-vocabulary` asserts that in both directions (a legal
+   * value passes through EXACT; an illegal one lands on a member). See
+   * `snapToOptions`, which is the one implementation.
+   *
+   * ⚠ A STORED off-roster value from before the declaration is NOT rewritten
+   * behind the user's back. It DISPLAYS as its nearest legal member (the same
+   * `nearestByValue` every readout already uses) and is normalized in the graph
+   * by the first ordinary, tagged, undoable write. A silent engine-side repair
+   * of a data-integrity bug is indistinguishable from no bug — the rule
+   * `momentary-params` states and this follows.
+   */
+  optionsExhaustive?: {
+    /** Why the values BETWEEN the roster entries are meaningless for this
+     *  param — not merely unused. Prose, reviewed, required by the type. */
+    why: string;
+  };
   /** PF-10 — named waypoints of a CONTINUOUS param. Cosmetic (see ParamLandmark). */
   landmarks?: readonly ParamLandmark[];
   /**

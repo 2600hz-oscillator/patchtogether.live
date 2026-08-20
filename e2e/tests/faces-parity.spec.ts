@@ -54,8 +54,11 @@
 // /rack?shell=legacy (no DB/relay) — the normal e2e lane.
 
 import { test, expect, type Locator, type Page } from '@playwright/test';
+import { existsSync, readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { idsCoveredBy, paramsCoveredByCell } from './support/cell-coverage';
 import { spawnPatch } from './_helpers';
+import { FACE_QUIESCE } from './_face-quiesce';
 import { STRICT_FACES } from '../../packages/web/src/lib/ui/workflow/strict-faces';
 // The COLOUR probe's "pick a different one" + its formatter, imported from the
 // same pure model the component renders through — so the expected value and
@@ -182,7 +185,46 @@ interface RenderedCell {
   page: string | null;
 }
 
-async function gotoShell(page: Page): Promise<void> {
+/**
+ * The module def's source, for anchoring a FACE_QUIESCE global against the code
+ * that actually reads it. Audio and video defs live in sibling directories and
+ * the type IS the basename, so this needs no per-module knowledge. Returns null
+ * when neither exists, which the anchoring test fails on.
+ */
+function moduleSourceFor(type: string): string | null {
+  for (const domain of ['audio', 'video']) {
+    const p = fileURLToPath(
+      new URL(`../../packages/web/src/lib/${domain}/modules/${type}.ts`, import.meta.url),
+    );
+    if (existsSync(p)) return readFileSync(p, 'utf8');
+  }
+  return null;
+}
+
+/**
+ * Boot the workflow shell, optionally QUIESCING the module under test first.
+ *
+ * ⚠ THE INSTALL HAPPENS BEFORE `goto`, and that ordering is the whole
+ * mechanism: `addInitScript` runs at document_start, so the flag is set before
+ * any module factory constructs and can be read at construction time. Setting
+ * it after navigation would be a race against the first frame.
+ *
+ * `type` is optional because the other tests in this file boot the shell
+ * without a module under test; those get no quiesce, which is the deny-by-
+ * default behaviour. See `_face-quiesce.ts` for what a quiesce may and may not
+ * stop — in short, a module's own animation, never the cell surface this sweep
+ * asserts on.
+ */
+async function gotoShell(page: Page, type?: string): Promise<void> {
+  const quiesce = type ? FACE_QUIESCE[type] : undefined;
+  if (quiesce) {
+    await page.addInitScript(
+      ({ global, value }) => {
+        (globalThis as unknown as Record<string, number>)[global] = value;
+      },
+      { global: quiesce.global, value: quiesce.value },
+    );
+  }
   await page.goto('/rack');
   // 15 s (not the 5 s default): this is the BOOT wait, and the FIRST test of a
   // run pays SvelteKit's on-demand /rack?shell=legacy&seed=none route compilation before the workflow
@@ -196,6 +238,30 @@ async function gotoShell(page: Page): Promise<void> {
     timeout: SLOW_RENDER ? 30_000 : 15_000,
   });
   await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });
+
+  // ⚠ THIS PROVES `addInitScript` RAN AND SURVIVED NAVIGATION — AND NOTHING
+  // MORE, which is worth stating precisely because the first version of this
+  // comment claimed more. Setting a name and then reading the SAME name back is
+  // a tautology: it returns the value whatever the name is, so it cannot tell a
+  // correct global from a typo. Measured — renaming the roster's global to
+  // nonsense left this GREEN while the row ran unquiesced.
+  //
+  // It is kept because it CAN still fail on the one thing it does cover (a
+  // Playwright change that stops applying init scripts, or a navigation that
+  // drops them), and it fails LOUDLY rather than as a slow row. The check that
+  // the global is one the module actually READS is anchored against the module
+  // SOURCE in the roster test above, which is where a typo dies.
+  if (quiesce) {
+    const landed = await page.evaluate(
+      (g) => (globalThis as unknown as Record<string, unknown>)[g],
+      quiesce.global,
+    );
+    expect(
+      landed,
+      `${type}: the declared quiesce ${quiesce.global} did not reach the page — `
+        + 'the row is running UNQUIESCED and its budget no longer means what it says',
+    ).toBe(quiesce.value);
+  }
 }
 
 async function readSpec(page: Page, type: string): Promise<SpecShape> {
@@ -1191,13 +1257,54 @@ async function driveCell(
 }
 
 test.describe('faces render-parity: every STRICT_FACES dock full-view carries the def’s FULL control surface', () => {
+  // ⚠ ANCHORED TO THE ARTIFACT, BOTH DIRECTIONS. A quiesce makes a row cheaper,
+  // which is exactly the kind of knob that rots into a blanket opt-out if
+  // nothing watches it. Two properties keep it honest, and neither names a
+  // module: every entry must name a module this sweep actually drives (a face
+  // that was renamed or un-promoted cannot leave a silent entry behind), and
+  // the `why` must be substantive rather than a placeholder. The REQUIRED `why`
+  // on the type is the third leg — `tsc` refuses an entry without one before
+  // this test ever runs.
+  test('every FACE_QUIESCE entry names a live STRICT_FACES module AND a global that module READS', () => {
+    const stale = Object.keys(FACE_QUIESCE).filter((t) => !STRICT_FACES.has(t));
+    expect(
+      stale,
+      'FACE_QUIESCE names a module this sweep does not drive — delete the entry or restore the face',
+    ).toEqual([]);
+    for (const [type, q] of Object.entries(FACE_QUIESCE)) {
+      expect(q.global, `${type}: quiesce global looks like a page hook`).toMatch(/^__\w+$/);
+      expect(
+        q.why.length,
+        `${type}: a quiesce must say what it stops AND what it leaves alone`,
+      ).toBeGreaterThan(200);
+      // ⚠ ANCHOR THE GLOBAL TO THE MODULE THAT READS IT, and this clause exists
+      // because its absence was MEASURED as a vacuous gate. The runtime check in
+      // `gotoShell` reads the flag back off the page — which is a TAUTOLOGY:
+      // `addInitScript` sets the name, so reading the same name returns it
+      // whatever the name is. Renaming this entry's global to a deliberate
+      // nonsense string left that check GREEN while the row silently ran
+      // unquiesced (and took 1.0 min instead of 45 s, so only the clock knew).
+      // A quiesce whose global no module reads is a no-op wearing a
+      // declaration, so the name is checked against the SOURCE.
+      const src = moduleSourceFor(type);
+      expect(src, `${type}: no module source found to anchor the quiesce against`).toBeTruthy();
+      expect(
+        src,
+        `${type}: nothing in the module reads ${q.global} — the quiesce is a no-op`,
+      ).toContain(q.global);
+    }
+  });
+
   for (const type of [...STRICT_FACES].sort()) {
     test(`${type}: dock control set === def param set (+families, no extras) and EVERY cell operates`, async ({ page }) => {
       // Stage 1 of the derived budget (see FACE_FIXED_MS): covers boot + spawn
       // + dock open + the parity reads, i.e. everything before the cell count
       // is even knowable.
       test.setTimeout(FACE_FIXED_MS);
-      await gotoShell(page);
+      // The type is passed so a face that DECLARES a quiesce gets it installed
+      // before boot. The sweep names no module: it hands over the type it is
+      // already iterating and the roster decides (deny-by-default).
+      await gotoShell(page, type);
       await spawnPatch(page, [{ id: 'm', type, position: { x: 460, y: 240 } }]);
 
       const spec = await readSpec(page, type);
