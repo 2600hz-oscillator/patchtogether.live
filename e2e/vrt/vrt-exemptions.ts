@@ -425,7 +425,19 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // suite (selector-advance + gate edge-detect) + 4plexvid.test.ts (the #1959
   // store-reflect legs, which hold the node object).
   '4plexvid': 'the legacy card no longer renders — 4plexvid is in STRICT_FACES, so both surfaces mount ModuleShell and the card scene has no subject. Pixel coverage moved to the committed face-4plexvid-compact / face-4plexvid-dock scenes in the FACES roster; behaviour is covered by e2e/tests/4plexvid.spec.ts + plex-select + 4plexvid.test.ts.',
-  cvBuddy: 'VRT baseline pending — hardware-facing card whose look is NOT yet owner-locked (Part A preview; the slot/clock readout + ES-9 mirror will likely change on owner feedback), so a baseline now would just churn. Card behavior is covered by cv-buddy slot-alloc/clock-math/es9-reconcile unit tests; promote + capture darwin/linux baselines once the look is approved.',
+  // ⚠ `cvBuddy` WAS HERE AND IS DRAINED (owner ruling, 2026-08-20: *"vrt it,
+  // note is wrong"*). Its entry read *"VRT baseline pending — hardware-facing
+  // card whose look is NOT yet owner-locked … so a baseline now would just
+  // churn"*, and the note was refuted by the repo itself: `cvBuddyMini` was
+  // never exempt and carries a committed baseline of the SAME shared body
+  // (`CvBuddyBody.svelte`, one component, a `kind` prop). So the look was
+  // already pinned for one of its two consumers, and *"a baseline now would
+  // churn"* could not be true of a body that already churned the mini's
+  // baseline on every change. Both cannot be right, and the mini's was.
+  //   ⚠ THE GENERAL SHAPE, worth more than this entry: two modules sharing one
+  // component can hold CONTRADICTORY VRT positions and no gate compares them.
+  // An exemption is a claim about a RENDER, not about a module id — so when a
+  // component is shared, check its siblings before believing one.
   // OUT TO LAUNCH — Launchpad Mini Mk3 as a live 9×9 RGB video monitor. The
   // card is a live MONITOR preview canvas (the 9×9 grid) driven by the module's
   // per-frame GPU readback + a device-picker; nothing patched is a black grid,
@@ -1081,7 +1093,10 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
  *  re-exempt itself lying around. */
 export const ALLOWED_PERMANENT_EXEMPT: ReadonlySet<string> = new Set([
   'milkdrop', 'graphicEq', 'archivist', '4plexvid',
-  'cvBuddy', 'outToLaunch', 'es9', 'onetonine',
+  // ⚠ `cvBuddy` REMOVED 2026-08-20 — it is no longer in EXEMPT_FROM_VRT, and
+  // this list is ANCHORED: an entry naming a module that is not exempt is RED,
+  // so a drained module cannot leave a stale licence to re-exempt itself.
+  'outToLaunch', 'es9', 'onetonine',
   'shapegen', 'sixstrum', 'mirrorpool', 'grainsOfVision',
   'frametable', 'videocube', 'sourcery', 'scoreboard',
   'cameraInput', 'loopback', 'audioIn', 'group',
