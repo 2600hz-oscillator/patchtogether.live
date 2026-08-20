@@ -213,10 +213,6 @@ export const wavetableVcoDef: AudioModuleDef = {
     //     exponential FM that no symmetric ± dial can express.
     hero: {
       control: 'wavePos',
-      readouts: [
-        { label: 'knob pitch', valueId: 'wavetablevco-knob-hz' },
-        { label: 'fm span', valueId: 'wavetablevco-fm-span' },
-      ],
     },
 
     // No `title`, no `hint`, no band hints, no sidebar — owner ruling

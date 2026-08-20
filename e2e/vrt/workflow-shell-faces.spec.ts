@@ -259,7 +259,46 @@ const FACE_WIDTH_SLACK_MAX_PX = 40;
  * the entries are DELETED, not narrowed, and the pending strip removal that was
  * supposed to fix them would in fact have left all three red.
  */
-const FACE_WIDTH_EXEMPTIONS: Readonly<Record<string, string>> = {};
+const FACE_WIDTH_EXEMPTIONS: Readonly<Record<string, string>> = {
+  // ── moog912 — THE NAME ROW IS WIDER THAN THE MODULE'S TWO CONTROLS ────────
+  //
+  // MEASURED on this branch (dock full view, CSS px, by walking every
+  // descendant of `.faceplate-body`):
+  //
+  //   .faceplate-body   194   ← the face's own max-content box
+  //     .editor         194   = .module-shell 150 + the editor's 22px L/R padding
+  //       .module-shell 150
+  //         .tile-top   148   ← THE DRIVER: .tile-rule 14 + gap + .tile-name 117
+  //         .dock-hero  148   (stretched; its rail asks for 128)
+  //         .dock-pages 148   (stretched; its one knob cell asks for 40)
+  //   contentW          120   ← the gate's ink measure
+  //
+  // So the plate is sized by THE MODULE'S OWN NAME ROW, not by empty reserve:
+  // every one of the control-bearing children asks for LESS than the name does.
+  // The 74 px of slack is the name row's decorative `.tile-rule` plus its gaps
+  // (drawn, but not "ink" by this gate's definition) and the editor's right
+  // padding. Nothing here can be reclaimed without ellipsising the module's
+  // name, which is not a width decision.
+  //
+  // ⚠ WHY IT APPEARED NOW, AND WHY THAT IS NOT A REGRESSION. moog912 used to
+  // carry a two-value hero READOUT STRIP; the strip was the widest thing on the
+  // face, so `contentW` cleared the name row and the slack fell under the
+  // ceiling. The owner deleted every readout strip (2026-08-19), and what is
+  // left is a face with exactly TWO params — one promoted to the hero, one in a
+  // band. The face did not get wider; its CONTENT got narrower than its own
+  // title. This is the inverse of the tidyVco defect the ceiling was written
+  // for: there, a `min-width` floor reserved space nothing drew; here, every
+  // pixel is drawn and the widest drawn thing is the name.
+  //
+  // ⚠ THE REAL QUESTION THIS RAISES IS NOT WIDTH, and it is recorded rather
+  // than silently exempted: with its readouts gone moog912 is a TWO-PARAM face,
+  // which is at the "NO FACE ON MERIT" line in module-faceplates.md (≤2 params,
+  // no families, no derived quantity left to state). Whether it should still be
+  // in STRICT_FACES at all is an owner call, not a thing to decide inside a
+  // width ceiling — so the face stays and this entry names the cost.
+  moog912:
+    'the module NAME ROW (.tile-rule + .tile-name = 148 CSS px) is wider than either of its two remaining controls (hero rail 128, band cell 40). Measured driver of .faceplate-body; not reclaimable without ellipsising the module name. See the table above.',
+};
 
 test.describe('VRT: P1 curated faces (?shell=1) — compact lane tile + dock full-view', () => {
   for (const { type, pages, videoFaceWhy, simPin } of FACES as readonly {

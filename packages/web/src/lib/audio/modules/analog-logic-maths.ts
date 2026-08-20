@@ -219,43 +219,8 @@ export const analogLogicMathsDef: AudioModuleDef = {
 
     hero: {
       control: 'attA',
-      readouts: [
-        // FOUR LAWS OVER TWO DIALS, chosen so each is BLIND to something the
-        // next one sees — the property that makes them each other's negative
-        // control on every render rather than four spellings of one number.
-        //
-        // ⚠ `sum` IS THE ONLY NON-LINEAR ROW, and the whole merit claim. It
-        // reads ×0.96 beside a `peak` of ×2.00, and that GAP is the tanh.
-        { label: 'sum', valueId: 'alm-sum-gain' },
-        // ⚠ READS ×0.00 AT THE SHIPPED DEFAULTS. The module leaves the factory
-        // with one of its five jacks configured as a common-mode null, beneath
-        // two faders both at maximum — patch one LFO into both inputs and DIFF
-        // is silent until you unbalance a dial. Inverting ATT B swaps this row
-        // with `sum`, which is the single most useful gesture on the module.
-        { label: 'diff', valueId: 'alm-diff-gain' },
-        // THE MULTIPLICATIVE ROW. Halve both dials and this QUARTERS while
-        // `peak` merely halves — a distinction no additive readout can make.
-        { label: 'ring', valueId: 'alm-ring-gain' },
-        // THE CEILING, SIGN-BLIND: Σ|attN| = ×2.00 at the defaults on a bus
-        // whose convention is ±1. It is DIFF's alone (SUM and PRODUCT are
-        // tanh-bounded under 1; MIN/MAX cannot exceed their own inputs), and it
-        // is the row that stays still when the sign flip moves the other three.
-        { label: 'peak', valueId: 'alm-peak' },
-      ],
     },
 
-    // THE PICTURE. `glyph: 'none'` means the shell paints no tile here, so this
-    // is the module's only drawing — and it is the one representation in which
-    // the readout row is obvious instead of surprising: under ONE common-mode
-    // drive, SUM bends over and DIFF does not, and it is the STRAIGHT line that
-    // crosses the ±1 rail.
-    //
-    // A `custom` sidebar block rather than a `hero.cell`, for the structural
-    // reason meowbox / noise / illogic all hit: `module-face-lint` refuses a
-    // PANEL cell selected at a lane tier and the `full` cap is 6, so a panel's
-    // first legal rank is 7 — unreachable on a module with two keys. A sidebar
-    // block carries no `face.order` key and therefore no rank at all.
-    sidebar: [{ kind: 'custom', label: 'transfer', panelId: 'alm-transfer' }],
   },
 
   docs: {

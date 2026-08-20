@@ -1,10 +1,16 @@
 // packages/web/src/lib/ui/workflow/dock-faceplate-model.ts
 //
 // PF-20 — the PURE model for the DOCK FACEPLATE's structure: the hero slot, the
-// page header, the sidebar blocks, and the preset selection arithmetic.
+// page header and the annotation layer.
+//
+// ⚠ THIS FILE USED TO OWN THREE MORE SECTIONS — readout text, the sidebar plan
+// and the preset-selection arithmetic — and all three are DELETED, not moved.
+// The owner ruled that the resting faceplate paints no derived-state text in
+// any shape; `ModuleFaceHero` in graph/types.ts carries the rulings verbatim
+// and `face-resting-text-source.test.ts` is the gate that keeps the shape out.
 //
 // WHY THIS FILE EXISTS. The shell could not render the mocked faceplate at all:
-// it had no title, no hint, no hero, no sidebar and no per-band description, so
+// it had no title, no hint, no hero and no per-band description, so
 // every face built on it drifted from its mock in the SAME six ways. That was
 // reported as per-card drift six times running; it was never per-card. The
 // declaration surface is `ModuleFace` (types.ts); this is the arithmetic that
@@ -23,18 +29,11 @@
 // across the hero boundary.
 //
 // PURE + browser-safe: no DOM, no engine, no store, no fs. It reads only a
-// passed def and a passed param-value reader. (It does resolve ONE registry —
-// `face-readout-values` for a `valueId` readout — which is itself pure
-// arithmetic over the same reader; see the note on `readoutText`.)
+// passed def. It resolves NO registry — the one it used to resolve
+// (`face-readout-values`) existed solely to print a readout's derived number,
+// and both the registry and the readout are gone.
 
-import type {
-  FaceReadout,
-  FaceSidebarBlock,
-  ModuleFace,
-  ParamDef,
-} from '$lib/graph/types';
-import { knobValueReadout } from '$lib/ui/controls/knob-vocabulary-model';
-import { faceReadoutValueFor } from './face-readout-values';
+import type { ModuleFace, ParamDef } from '$lib/graph/types';
 import {
   dockPlanControls,
   type DockFaceBand,
@@ -224,8 +223,12 @@ export function faceHasAnnotations(def: FaceplateDefLike | undefined): boolean {
 
 // ── 2. THE HERO SLOT ────────────────────────────────────────────────────────
 
-/** The resolved hero slot: the promoted cells (already REMOVED from the bands)
- *  plus its readouts. */
+/** The resolved hero slot: the promoted cells, already REMOVED from the bands.
+ *
+ *  ⚠ THERE IS NO `readouts` MEMBER. The hero readout strip is deleted platform
+ *  wide (owner, 2026-08-19 — see `ModuleFaceHero` in graph/types.ts); a hero is
+ *  now exactly the module's picture, its big control and its audition, so a
+ *  hero that resolves NO cell resolves to `null` and paints nothing. */
 export interface HeroPlan {
   /** The module's own PICTURE (a PF-14 panel cell), promoted out of its band. */
   cell: FaceControl | null;
@@ -233,8 +236,6 @@ export interface HeroPlan {
   control: FaceControl | null;
   /** The audition/action cell beside it, promoted out of its band. */
   action: FaceControl | null;
-  /** Labelled values printed beside the hero picture. */
-  readouts: readonly FaceReadout[];
 }
 
 /** `heroFacePlan`'s answer: the hero, and the bands with the promoted cells
@@ -297,12 +298,11 @@ export function heroFacePlan(
   const control = claim(decl.control);
   const action = claim(decl.action);
 
-  const readouts = (decl.readouts ?? []).filter((r) => isUsableReadout(r));
   // A hero with NOTHING resolved paints nothing — no empty hero rail.
-  if (!promoted.size && !readouts.length) return { hero: null, bands: [...bands] };
+  if (!promoted.size) return { hero: null, bands: [...bands] };
 
   return {
-    hero: { cell, control, action, readouts },
+    hero: { cell, control, action },
     // ⚠ AND THE BAND ITSELF GOES when the promotion empties it. `withoutKeys`
     // already drops an emptied CLUSTER for exactly this reason — "a sub-header
     // over zero cells is a caption for nothing" — and then left the identical
@@ -350,246 +350,3 @@ export function heroFacePlanIsTotal(
   return a.every((k, i) => k === b[i]);
 }
 
-// ── 3. READOUTS ─────────────────────────────────────────────────────────────
-
-/** A readout declaration is usable when it names EXACTLY ONE of its three
- *  sources (`paramId` / `valueId` / `text`). None, or more than one, is an
- *  authoring error — the lint fails it and the render skips it, so a typo never
- *  paints a caption over a blank. */
-export function isUsableReadout(r: FaceReadout): boolean {
-  let n = 0;
-  if (typeof r.paramId === 'string' && r.paramId.length > 0) n++;
-  if (typeof r.valueId === 'string' && r.valueId.length > 0) n++;
-  if (typeof r.text === 'string' && r.text.length > 0) n++;
-  return n === 1;
-}
-
-/**
- * The printed VALUE of a readout.
- *
- *   `text`    — its literal.
- *   `paramId` — the param's value through the SAME ladder the dial prints:
- *               `format` first, then `options`/`landmarks` names, then the
- *               numeric ladder with units (`knobValueReadout`). One ladder is
- *               the whole point — a faceplate whose hero readout says `50 Hz`
- *               while the knob under it says `50.00` is two surfaces
- *               disagreeing about one number.
- *   `valueId` — a DERIVED value from `face-readout-values`, computed from the
- *               live params by a registered pure function. For a quantity that
- *               is not any single knob (see the `FaceReadout` doc: printing the
- *               nearest knob is the blind-metric trap).
- *
- * An unresolvable source prints `'—'` rather than throwing or printing
- * `undefined` — the lint is where a stale id goes red, and a faceplate must
- * keep rendering meanwhile.
- */
-export function readoutText(
-  r: FaceReadout,
-  params: readonly ParamDef[],
-  read: (paramId: string) => number | undefined,
-): string {
-  if (r.text) return r.text;
-  if (r.valueId) {
-    const fn = faceReadoutValueFor(r.valueId);
-    if (!fn) return '—';
-    try {
-      return fn(read);
-    } catch {
-      // TOTAL by contract, but a registered function is third-party code from
-      // this file's point of view and it runs on every frame of a knob drag.
-      return '—';
-    }
-  }
-  if (!r.paramId) return '—';
-  const pd = params.find((p) => p.id === r.paramId);
-  const v = read(r.paramId);
-  if (pd === undefined || v === undefined || !Number.isFinite(v)) return '—';
-  return knobValueReadout(
-    v,
-    { options: pd.options, landmarks: pd.landmarks, format: pd.format },
-    pd.units ?? '',
-  );
-}
-
-// ── 4. THE SIDEBAR ──────────────────────────────────────────────────────────
-
-/**
- * The sidebar blocks a face actually paints: declared blocks minus the ones
- * that would render EMPTY (a `presets` block with no entries, a `readouts`
- * whose every entry is malformed, a `custom` with a blank panel id). An empty
- * block is a labelled void — worse than no block — and dropping it here means
- * the shell never has to ask.
- *
- * Returns `null` (never `[]`) when nothing survives, because `null` is the
- * answer DockFullView branches on to decide whether the `.page` grid gets its
- * sidebar COLUMN at all. A face with no sidebar must keep the full-width
- * editor it has today.
- */
-export function sidebarPlan(def: FaceplateDefLike | undefined): FaceSidebarBlock[] | null {
-  const blocks = def?.face?.sidebar ?? [];
-  const kept = blocks.filter((b) => {
-    switch (b.kind) {
-      case 'presets':
-        return b.entries.length > 0;
-      case 'readouts':
-        return b.entries.some((r) => isUsableReadout(r));
-      case 'custom':
-        return b.panelId.trim().length > 0;
-      default:
-        return false;
-    }
-  });
-  return kept.length ? kept : null;
-}
-
-// ── 5. PRESET SELECTION ─────────────────────────────────────────────────────
-
-/**
- * The relative tolerance a saved param value may sit off a preset's value and
- * still count as "this preset is loaded".
- *
- * It is RELATIVE (scaled by the preset value's magnitude) because a preset
- * spans wildly different units in one entry — 50 Hz next to 0.42 mix next to
- * 480 ms. A single absolute epsilon is either far too coarse for the mix or far
- * too fine for the frequency, so it would report the wrong answer on one of
- * them whichever number you pick. The floor keeps a preset value of exactly 0
- * comparable.
- */
-export const PRESET_MATCH_REL = 1e-3;
-export const PRESET_MATCH_FLOOR = 1e-6;
-
-/** Is `actual` close enough to `want` to read as the same setting? */
-export function presetValueMatches(actual: number, want: number): boolean {
-  if (!Number.isFinite(actual) || !Number.isFinite(want)) return false;
-  const tol = Math.max(PRESET_MATCH_FLOOR, Math.abs(want) * PRESET_MATCH_REL);
-  return Math.abs(actual - want) <= tol;
-}
-
-/**
- * Which preset the module's LIVE VALUES currently ARE: the FIRST entry whose
- * every declared param matches. `null` once anything has been edited away.
- *
- * FIRST rather than best-match: entries are an authored, ordered roster, and
- * two entries that both match are identical settings under two names, so the
- * earlier name wins deterministically instead of flickering.
- *
- * ⚠ THIS IS ONE OF TWO QUESTIONS, NOT THE WHOLE ANSWER — see `presetRowStates`.
- * On its own it un-lights the row the moment a knob moves, which throws away
- * where the sound came from.
- */
-export function activePresetId(
-  entries: readonly { id: string; values: Readonly<Record<string, number>> }[],
-  read: (paramId: string) => number | undefined,
-): string | null {
-  for (const e of entries) {
-    const pairs = Object.entries(e.values);
-    if (!pairs.length) continue;
-    let ok = true;
-    for (const [pid, want] of pairs) {
-      const got = read(pid);
-      if (got === undefined || !presetValueMatches(got, want)) {
-        ok = false;
-        break;
-      }
-    }
-    if (ok) return e.id;
-  }
-  return null;
-}
-
-/**
- * The param WRITES that applying a preset performs — a pure list, so the caller
- * runs them through the ordinary write path (`setNodeParam` / the PF-13
- * override) and a preset inherits undo, Y.Doc sync and MIDI parity for free.
- *
- * Values are CLAMPED to each param's declared range, and a key naming no
- * declared param is DROPPED. Both are load-bearing rather than defensive: a
- * preset is UI metadata that is not in the contract, so nothing stops a
- * contract edit from narrowing a range or deleting a param under it. Writing
- * out-of-range would let a decorative list push the model somewhere the def
- * forbids — the exact "the control lied about its own range" class CLAUDE.md
- * documents. (module-face-lint fails both cases loudly; this keeps the render
- * honest in the meantime.)
- */
-export function presetWrites(
-  values: Readonly<Record<string, number>>,
-  params: readonly ParamDef[],
-): { paramId: string; value: number }[] {
-  const out: { paramId: string; value: number }[] = [];
-  for (const [paramId, raw] of Object.entries(values)) {
-    const pd = params.find((p) => p.id === paramId);
-    if (!pd || !Number.isFinite(raw)) continue;
-    out.push({ paramId, value: Math.max(pd.min, Math.min(pd.max, raw)) });
-  }
-  return out;
-}
-
-/** The right-aligned annotation a preset row prints. Declared `note` wins;
- *  otherwise nothing (a derived summary of 6 param values is noise, not a
- *  note). Exported so the row markup has no formatting logic of its own. */
-export function presetNote(entry: { note?: string }): string {
-  return entry.note?.trim() ?? '';
-}
-
-/**
- * The generic `node.data` key a sidebar `presets` block records its last RECALL
- * under. ONE key for every module — a preset roster is platform, so the state
- * behind it is platform too, and no module invents its own field name.
- */
-export const FACE_PRESET_DATA_KEY = 'facePreset';
-
-/** The preset a node last RECALLED, or null. Validated against the live roster,
- *  so a saved id whose entry a later build removed reads as "none" instead of
- *  lighting a row that no longer exists. */
-export function recalledPresetId(
-  entries: readonly { id: string }[],
-  data: Record<string, unknown> | undefined,
-): string | null {
-  const v = data?.[FACE_PRESET_DATA_KEY];
-  if (typeof v !== 'string') return null;
-  return entries.some((e) => e.id === v) ? v : null;
-}
-
-/** How one preset row paints. */
-export interface PresetRowState {
-  id: string;
-  /** Paint this row as the selected one. */
-  lit: boolean;
-  /** …and mark it MODIFIED: it is where the sound came from, but the values
-   *  have since been edited away from it. */
-  modified: boolean;
-}
-
-/**
- * THE PRESET ROW STATES — and this is a DESIGN DECISION with a stated reason,
- * because the two obvious answers are each wrong in one direction.
- *
- *   "un-light on the first knob move" — honest about the values, and it THROWS
- *   AWAY the single most useful thing the roster knows: which voice this sound
- *   started as. Nudging DRIVE by 0.01 erases the word `909 CLASSIC` from the
- *   panel, and nothing on the faceplate can tell you where you are any more.
- *
- *   "stay lit forever" — keeps the provenance and LIES about the state: the
- *   panel asserts a voice the patch is no longer set to, which is exactly the
- *   class of "a surface disagreeing with the model" this whole platform exists
- *   to end.
- *
- * So a row carries BOTH facts. `lit` says where the sound came from (the last
- * RECALL, or — with nothing recalled — an exact value match, so a patch that
- * loads sitting on a preset still shows it). `modified` says the values have
- * moved since. A recalled row that still matches exactly is lit and NOT
- * modified; edit one knob and it stays lit and gains the marker.
- *
- * Pure: the caller supplies the recalled id (off `node.data`) and the reader.
- */
-export function presetRowStates(
-  entries: readonly { id: string; values: Readonly<Record<string, number>> }[],
-  recalled: string | null,
-  read: (paramId: string) => number | undefined,
-): PresetRowState[] {
-  const matched = activePresetId(entries, read);
-  return entries.map((e) => {
-    const lit = recalled ? e.id === recalled : e.id === matched;
-    return { id: e.id, lit, modified: lit && e.id !== matched };
-  });
-}

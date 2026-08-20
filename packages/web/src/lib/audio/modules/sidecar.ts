@@ -267,33 +267,6 @@ export const sidecarDef: AudioModuleDef = {
       // out of the `detect` band (heroFacePlan), leaving knee + sc_hpf there —
       // still two controls, so the band keeps its header.
       control: 'threshold',
-      // STILL NO `cell`, now that the transfer-curve picture has actually
-      // landed (queue Q1b) — and the reason changed from "it is not built yet"
-      // to a measured trade. `hero.cell` MOVES its key out of its band into the
-      // hero slot AND SUPPRESSES the shell glyph at the dock (`graph/types.ts`
-      // ModuleFaceHero). Promoting the curve would therefore cost this face the
-      // THRESHOLD dial in the hero — the one control the picture exists to
-      // explain — and the output meter with it. So the curve ranks 7 and paints
-      // in the `detect` band, which is a dock-only gain that takes nothing
-      // away. (It COULD have been the hero: nine other keys means rank 7 is
-      // reachable here, unlike meowbox and noise, which had to take the sidebar
-      // consolation. Reachable is not the same as right.)
-      readouts: [
-        // FOUR derived values, each negative-controlled PERMANENTLY on the
-        // input a knob readback is blind to (sidecar-face-model.test.ts), and
-        // the first two are additionally each OTHER'S control: `onset` moves
-        // with KNEE and `duck` structurally cannot, because a detector at
-        // +6.02 dB is past the knee at every width.
-        //
-        // `threshold` prints -18.00 in every state this pair separates.
-        { label: 'onset', valueId: 'sidecar-onset' },
-        { label: 'duck @ FS', valueId: 'sidecar-duck' },
-        // `makeup` is invariant to INPUT LVL and vice versa; only their sum is
-        // the sidechain's gain, and only this readout can print `silent`.
-        { label: 'sc gain', valueId: 'sidecar-sc-gain' },
-        // `envMag` prints 1.00 whether ENV is a dead 0 or an unclamped 1.70.
-        { label: 'env @ FS', valueId: 'sidecar-env' },
-      ],
     },
   },
 
