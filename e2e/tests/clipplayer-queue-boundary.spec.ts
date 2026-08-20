@@ -21,8 +21,45 @@
 import type { Page } from '@playwright/test';
 import { test, expect } from '@playwright/test';
 import { spawnPatch } from './_helpers';
+import { BOOT_MS, SLOW_BOOT_TEST_TIMEOUT_MS } from '../_helpers/boot-budget';
 
-test.describe.configure({ mode: 'parallel' });
+// ── the per-test BUDGET is a BOUND, and the default one is unreachable ──────
+//
+// #1990. This spec recovered `timedOut -> passed` on CI (shard 4 of #1983, job
+// 96284278875). The error was NOT the 5 s poll below timing out — it was
+// `Test timeout of 30000ms exceeded` pointing at line 322, i.e. Playwright's
+// INVISIBLE default per-test budget, which this suite does not override in
+// `e2e/playwright.config.ts`.
+//
+// The arithmetic that makes 30 s unreachable here, from this file's own
+// constants — nothing new is guessed:
+//
+//   * BOOT is bounded at BOOT_MS = 30 s on CI, and that number is not padding:
+//     it is what a loaded 2-core runner needs for first paint (`boot-budget.ts`,
+//     #1875). So boot ALONE may legitimately consume the entire default budget.
+//   * On top of boot this test spends IRREDUCIBLE REAL TIME on the transport
+//     clock, which does not go faster on a faster machine: arming waits for the
+//     LONG clip to reach step ARM_LO..ARM_HI of its 16-step / 2 s bar (up to
+//     ~1.9 s), then the drop-in waits (LONG_STEPS - armStep) steps for the
+//     boundary (1.0-1.6 s). ~2-3.5 s of wall clock that no runner can compress.
+//
+// So the green path needs boot + ~3.5 s against a budget sized for boot alone.
+// MEASURED locally on a warm server: 7.0 s of the 30 s — 23 %. CI blew all 30,
+// i.e. >4.3x the local figure, which is inside the documented CI swing (>=2x
+// run-to-run, #1860) with ten shards competing on top.
+//
+// `SLOW_BOOT_TEST_TIMEOUT_MS` is the shared remedy for exactly this shape
+// ("a spec whose WHOLE test timed out on a slow runner while waiting on a
+// post-boot subject") and is already carried by clipplayer-edit-launch,
+// dx7-operator-panel, blood-mount, freezeframe-screen-toggle and
+// workflow-drawer-face. It is 90 s on CI and UNCHANGED at 30 s locally, so this
+// alters nothing about a local run.
+//
+// ⚠ This raises a BOUND, never an assertion. Every timing claim below is
+// untouched, and a budget only pays out on a run that was going to be a false
+// red — the test exits the moment the drop-in is seen, so a green run costs
+// exactly what it cost before.
+test.describe.configure({ mode: 'parallel', timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
 
 const CP = 'qb-cp';
 
@@ -131,7 +168,18 @@ async function spawnClipPlayer(page: import('@playwright/test').Page, quantize: 
     { id: CP, type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio',
       params: { quantize, stepDiv: 2, gateLength: 0.9, octave: 0 } },
   ]);
-  await page.locator('.svelte-flow__node-clipplayer').first().waitFor({ state: 'visible' });
+  // ⚠ `locator.waitFor()` documents "Defaults to 0 - no timeout" and is bounded
+  // ONLY by the per-test budget — it is the form `e2e-boot-bound-source.test.ts`
+  // deliberately does NOT read (see its scope note). Unbounded, a slow spawn
+  // silently spends the whole budget here and the timeout then surfaces at
+  // whatever line happened to be awaiting when it ran out — which is exactly how
+  // #1990 reported at line 322 (a 5 s poll) rather than at the spawn that ate it.
+  // An explicit BOOT_MS makes the failure ATTRIBUTABLE; it does not make the test
+  // wait any longer on a green run.
+  await page
+    .locator('.svelte-flow__node-clipplayer')
+    .first()
+    .waitFor({ state: 'visible', timeout: BOOT_MS });
   // Seed the three clips.
   await page.evaluate(({ long, short, target }) => {
     const w = globalThis as unknown as {

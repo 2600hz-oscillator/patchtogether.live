@@ -25,7 +25,6 @@ import {
   freezeframeIsPassthrough,
 } from './freezeframe-face-model';
 import { QUANT_MAX_LEVELS, freezeframeDef, quantLevels } from '$lib/video/modules/freezeframe';
-import { faceReadoutValueFor } from '$lib/ui/workflow/face-readout-values';
 import { hasVideoSurface } from '$lib/ui/workflow/module-shell-model';
 
 function reader(patch: Record<string, number> = {}) {
@@ -191,36 +190,5 @@ describe('freezeframe face — the VIDEO declarations, asserted not assumed', ()
       .filter((id) => !freezeframeDef.noUserControl?.some((n) => n.param === id));
     expect([...order].sort()).toEqual([...declared].sort());
     expect(new Set(order).size, 'no key ranked twice').toBe(order.length);
-  });
-
-  it('NO gate readout is declared — the state it would name is unreachable', () => {
-    // A regression guard on a DELIBERATE omission: `gateLevel` reads 0 both
-    // unpatched (live) and patched-and-low (frozen), so any caption naming the
-    // freeze state would be confidently wrong half the time.
-    const ids = (freezeframeDef.face?.hero?.readouts ?? []).map((r) => r.valueId);
-    expect(ids).not.toContain('freezeframe-gate');
-    expect(faceReadoutValueFor('freezeframe-gate')).toBeNull();
-  });
-});
-
-describe('freezeframe readouts — REGISTERED and reached through the shell seam', () => {
-  const DECLARED = ['freezeframe-depth', 'freezeframe-decay'] as const;
-
-  it('the ids the face declares are exactly the ids registered for it', () => {
-    const onFace = (freezeframeDef.face?.hero?.readouts ?? [])
-      .map((r) => r.valueId)
-      .filter((v): v is string => typeof v === 'string')
-      .sort();
-    expect(onFace).toEqual([...DECLARED].sort());
-    for (const id of DECLARED) expect(faceReadoutValueFor(id), `${id}`).toBeTruthy();
-  });
-
-  it('the seam is LIVE — a param change reaches the registered function', () => {
-    const at = (patch: Record<string, number>, id: (typeof DECLARED)[number]) =>
-      faceReadoutValueFor(id)!(reader(patch));
-    expect(at({}, 'freezeframe-depth')).toBe('off');
-    expect(at({ quant_luma: 0.5 }, 'freezeframe-depth')).toBe('32 lv');
-    expect(at({}, 'freezeframe-decay')).toBe('off');
-    expect(at({ decay: 1, decay_invert: 1 }, 'freezeframe-decay')).toBe('0.50 s white');
   });
 });

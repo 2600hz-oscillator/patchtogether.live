@@ -186,29 +186,6 @@ export const moog911Def: AudioModuleDef = {
 
     glyph: 'none',
 
-    // THE HERO: three derived readouts and NO promoted control — the readouts
-    // ARE the finding, and promoting T1 out of `times` would split the three
-    // dials whose side-by-side disagreement with these three numbers is the
-    // whole point. (The readouts-only hero is the `moog914` / `moog907a` /
-    // `attenumix` shape, and two of those are this module's own bank.)
-    //
-    // Each prints what its dial does NOT: the delivered duration, in a
-    // five-decade ladder. At the defaults `13.83 ms / 240 ms / 696 ms` against
-    // dials reading 10 / 200 / 400, summing to 949 ms against 610.
-    //
-    // The three are EACH OTHER'S negative controls on every render, which is
-    // what makes this more than a relabelled knob: `rise` is EXACTLY invariant
-    // to ESUS (its gap ratio is a constant 1000) while `settle` and `fall` are
-    // both functions of it. The permanent legs live in
-    // moog911-face-model.test.ts, and the closed forms are re-derived from the
-    // shipping DSP in art/scenarios/moog911/face-audit.test.ts.
-    hero: {
-      readouts: [
-        { label: 'rise', valueId: 'moog911-rise' },
-        { label: 'settle', valueId: 'moog911-settle' },
-        { label: 'fall', valueId: 'moog911-fall' },
-      ],
-    },
   },
 
   docs: {

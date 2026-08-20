@@ -12,8 +12,6 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 import { kickdrumDef } from '$lib/audio/modules/kickdrum';
-import type { FacePreset, FaceSidebarBlock } from '$lib/graph/types';
-import { readoutText } from '$lib/ui/workflow/dock-faceplate-model';
 import {
   KICK_TAIL_FLOOR_DB,
   fmtAmount,
@@ -31,26 +29,6 @@ import {
   warpX,
   type KickdrumEnvelopeParams,
 } from './kickdrum-face-model';
-
-/** The three sidebar blocks the DEF declares — the source of truth for the
- *  chain, the crossover and the roster now that they are platform DATA rather
- *  than a per-module component. Reading them here is what keeps the assertions
- *  two-sided: they run the DECLARATION through the model/DSP, never restate it. */
-const SIDEBAR = (kickdrumDef.face!.sidebar ?? []) as readonly FaceSidebarBlock[];
-function block<K extends FaceSidebarBlock['kind']>(kind: K): Extract<FaceSidebarBlock, { kind: K }> {
-  const b = SIDEBAR.find((x) => x.kind === kind);
-  if (!b) throw new Error(`kickdrum's face declares no '${kind}' sidebar block`);
-  return b as Extract<FaceSidebarBlock, { kind: K }>;
-}
-
-/** What the faceplate's TAIL readout actually prints for a set of live values —
- *  resolved the way the shell resolves it (through the `valueId` registry), so
- *  these assertions cover the wiring as well as the arithmetic. */
-function printedTail(over: Partial<KickdrumEnvelopeParams> = {}): string {
-  return readoutText({ label: 'tail', valueId: 'kickdrum-tail' }, kickdrumDef.params, (pid) =>
-    (over as Record<string, number>)[pid],
-  );
-}
 
 /** The DEF's own defaults — never re-typed here (CLAUDE.md: ONE place). This is
  *  the SAME resolver the panel and the derived readout use, so an empty reader
@@ -74,20 +52,6 @@ describe('kickdrum hero — the TAIL figure is measured, not drawn', () => {
     );
   });
 
-  it('NEGATIVE CONTROL — doubling SUB DEC moves the tail; the caption follows', () => {
-    const base = defaults();
-    const longer = { ...base, sub_decay: base.sub_decay * 2 };
-    const t0 = kickdrumTailMs(base);
-    const t1 = kickdrumTailMs(longer);
-    // The sub dominates the floor crossing, so doubling its decay very nearly
-    // doubles the tail (the body/click terms are ~0 by then).
-    expect(t1 / t0).toBeGreaterThan(1.9);
-    expect(t1 / t0).toBeLessThan(2.1);
-    expect(printedTail(), 'and the printed readout follows').not.toBe(
-      printedTail({ sub_decay: base.sub_decay * 2 }),
-    );
-  });
-
   it('NEGATIVE CONTROL — the tail also moves on a LEVEL change, not just a time', () => {
     // The blind version of this model would read sub_decay and print it. That
     // model is invariant to sub_level; this one is not, because the floor is
@@ -95,12 +59,6 @@ describe('kickdrum hero — the TAIL figure is measured, not drawn', () => {
     const base = defaults();
     const quietSub = { ...base, sub_level: base.sub_level / 3 };
     expect(kickdrumTailMs(quietSub)).toBeLessThan(kickdrumTailMs(base));
-  });
-
-  it('a fully muted voice has no tail rather than a NaN caption', () => {
-    const silent = { ...defaults(), sub_level: 0, body_level: 0, click_level: 0 };
-    expect(kickdrumTailMs(silent)).toBe(0);
-    expect(printedTail({ sub_level: 0, body_level: 0, click_level: 0 })).toBe('0 ms');
   });
 
   it('the floor constant is the one the caption is measured to', () => {
@@ -137,34 +95,6 @@ describe('kickdrum hero — the PITCH SWEEP half of the caption', () => {
     const fmt = kickdrumDef.params.find((q) => q.id === 'tune')!.format!;
     expect(fmt(kickdrumSweep(base).endHz)).toBe('50 Hz');
     expect(fmt(kickdrumSweep({ ...base, tune: 38 }).endHz)).toBe('38 Hz');
-  });
-
-  it('THE THREE HERO NUMBERS, as the faceplate prints them at the defaults', () => {
-    // The mock's `tail ≈ 398 ms · +24 st → 50 Hz`, now three declared readouts
-    // rather than one baked sentence. TAIL resolves through the DERIVED
-    // registry; the other two are the params they are named after.
-    // The reader resolves def defaults exactly as the shell's does (card-kit
-    // `paramVal`), because `node.params` is a sparse overlay of what has been
-    // TOUCHED — a fresh node stores nothing at all.
-    const read = (pid: string) => kickdrumDef.params.find((q) => q.id === pid)?.defaultValue;
-    expect(printedTail()).toBe('398 ms');
-    expect(readoutText({ label: 'sweep', paramId: 'pitch_amt' }, kickdrumDef.params, read)).toBe(
-      '+24 st',
-    );
-    expect(readoutText({ label: 'settles to', paramId: 'tune' }, kickdrumDef.params, read)).toBe(
-      '50 Hz',
-    );
-  });
-
-  it('the DEF declares exactly those three readouts, and TAIL is the DERIVED one', () => {
-    // The two-sided half: the numbers above are only on the faceplate because
-    // the def asks for them, and TAIL must not quietly become a knob readback.
-    const ro = kickdrumDef.face!.hero!.readouts!;
-    expect(ro.map((r) => r.label)).toEqual(['tail', 'sweep', 'settles to']);
-    expect(ro[0]!.valueId, 'TAIL is DERIVED').toBe('kickdrum-tail');
-    expect(ro[0]!.paramId, 'and is NOT a param readback — sub_decay prints 450 ms').toBeUndefined();
-    expect(ro[1]!.paramId).toBe('pitch_amt');
-    expect(ro[2]!.paramId).toBe('tune');
   });
 });
 
@@ -323,101 +253,6 @@ describe('kickdrum — the TRANSLATE branch is stated where a reader can check i
   // which is what the doc gates already read.
   it('docs.explanation still names TRANSLATE as a PARALLEL branch off the raw sub', () => {
     expect(kickdrumDef.docs!.explanation!).toContain('PARALLEL branch');
-  });
-});
-
-describe('kickdrum sidebar — the STEREO CROSSOVER number is the worklet’s', () => {
-  const xover = block('custom');
-
-  it('declares the registered crossover panel and its split', () => {
-    expect(xover.panelId).toBe('stereo-crossover');
-    expect(xover.props?.widthParam).toBe('width');
-    expect(typeof xover.props?.splitHz).toBe('number');
-  });
-
-  it('the DSP source still splits at the frequency the picture draws', () => {
-    // ⚠ THE DECLARED NUMBER IS ONE SIDE OF A TWO-SIDED CONTRACT. `kickdrum-dsp
-    // .ts` sits inside two ART source-SHA pins, so exporting a constant from it
-    // would cost two baseline re-pins for zero audio change. Reading the SOURCE
-    // is the guard instead: if the worklet's split moves, the sidebar's
-    // "mono ‹ 120 Hz" becomes a lie and this goes red.
-    const src = readFileSync(
-      fileURLToPath(new URL('../../../../../dsp/src/lib/kickdrum-dsp.ts', import.meta.url)),
-      'utf8',
-    );
-    expect(src).toContain(`${xover.props!.splitHz} Hz`);
-  });
-});
-
-describe('kickdrum presets — five voices that SELECT, declared on the face', () => {
-  const presets = block('presets').entries as readonly FacePreset[];
-
-  it('is exactly the mock roster, in the mock order', () => {
-    expect(presets.map((p) => p.label)).toEqual([
-      'DEEP CLUB',
-      'TECHNO PUNCH',
-      '909 CLASSIC',
-      'SUB BOOM',
-      'LO-FI THUMP',
-    ]);
-    expect(presets.map((p) => p.note)).toEqual(['50 Hz', 'hard', '62 Hz', '38 Hz', 'crush']);
-  });
-
-  it('every stamped key is a DECLARED param and every value is inside its range', () => {
-    const byId = new Map(kickdrumDef.params.map((p) => [p.id, p]));
-    for (const preset of presets) {
-      for (const [id, value] of Object.entries(preset.values)) {
-        const pd = byId.get(id);
-        expect(pd, `${preset.id} stamps '${id}', which kickdrum does not declare`).toBeDefined();
-        expect(
-          value,
-          `${preset.id}.${id} = ${value} is outside the def's ${pd!.min}..${pd!.max}`,
-        ).toBeGreaterThanOrEqual(pd!.min);
-        expect(value).toBeLessThanOrEqual(pd!.max);
-      }
-    }
-  });
-
-  it('each entry is a COMPLETE voice, and the doc says exactly that', () => {
-    // ⚠ THIS PINS THE PROSE TO THE DATA. An earlier draft stamped 24 of the 25
-    // params while its shipped doc said a preset "stamps only the values that
-    // make it that voice and leaves the rest of your settings alone" — a
-    // sentence that was false at 24/25, with nothing able to see it. Either
-    // answer is defensible; a doc that disagrees with the table is not.
-    const declared = kickdrumDef.params.map((p) => p.id).sort();
-    for (const preset of presets) {
-      expect(Object.keys(preset.values).sort(), `${preset.id} recalls every param`).toEqual(
-        declared,
-      );
-    }
-    expect(kickdrumDef.docs!.explanation!).toContain('a COMPLETE voice — all 25 params');
-  });
-
-  it('the notes are not decoration — each names its own TUNE or character', () => {
-    const byLabel = new Map(presets.map((p) => [p.label, p]));
-    expect(byLabel.get('DEEP CLUB')!.values.tune).toBe(50);
-    expect(byLabel.get('909 CLASSIC')!.values.tune).toBe(62);
-    expect(byLabel.get('SUB BOOM')!.values.tune).toBe(38);
-    expect(byLabel.get('TECHNO PUNCH')!.values.hard).toBe(1);
-    expect(byLabel.get('LO-FI THUMP')!.values.drive).toBeGreaterThan(0.8);
-  });
-
-  it('the five voices are AUDIBLY different where the roster says they are', () => {
-    // Not "the objects differ" — the derived tail figures do, which is what a
-    // player hears and what the hero readout prints.
-    const tails = presets.map((p) =>
-      Math.round(kickdrumTailMs({ ...defaults(), ...(p.values as Partial<KickdrumEnvelopeParams>) })),
-    );
-    expect(new Set(tails).size, `tails: ${tails.join(', ')}`).toBe(presets.length);
-    // SUB BOOM must be the longest and LO-FI THUMP the shortest, by design.
-    expect(Math.max(...tails)).toBe(tails[3]);
-    expect(Math.min(...tails)).toBe(tails[4]);
-  });
-
-  it('the preset ids are unique and stable (they are what `node.data` records)', () => {
-    const ids = presets.map((p) => p.id);
-    expect(new Set(ids).size).toBe(ids.length);
-    expect(ids).toContain('909-classic');
   });
 });
 

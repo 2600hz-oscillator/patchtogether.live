@@ -83,54 +83,8 @@ async function setLevel(page: Page, nodeId: string, value: number): Promise<void
 }
 
 /** The text of one hero readout, by its registered `valueId`. */
-function heroReadout(dock: Locator, tap: NoiseTap): Locator {
-  return dock.locator(`[data-hero-readout="noise-${tap}-db"] dd`);
-}
 
 test.describe('noise face — three derived readouts from one knob', () => {
-  test('the hero prints THREE DIFFERENT levels, and every one follows the graph', async ({
-    page,
-  }) => {
-    await gotoShell(page);
-    const id = await spawnNoise(page);
-    const dock = await openDock(page, id);
-
-    // 1 · AT THE DEFAULT. A fresh spawn has NO stored `level` — `node.params`
-    // is a sparse overlay — so this also proves the def-default fallback in
-    // `noiseFaceParams` is wired, not just the live read.
-    for (const tap of NOISE_TAPS) {
-      await expect(heroReadout(dock, tap)).toHaveText(noiseTapDbText(tap, at(0.5)));
-    }
-
-    // 2 · THE PROPERTY THE WRONG IMPLEMENTATION CANNOT HAVE. A
-    // `{ paramId: 'level' }` readout prints one string three times; these are
-    // three strings, because the three tables have different RMS.
-    const texts = await Promise.all(
-      NOISE_TAPS.map((t) => heroReadout(dock, t).textContent()),
-    );
-    expect(new Set(texts).size, `three distinct readouts, got ${texts.join(' / ')}`).toBe(3);
-
-    // 3 · THEY FOLLOW THE GRAPH. Doubling LEVEL is +6.02 dB on all three at
-    // once, and the SPREAD between them is unchanged — one gain, three tables.
-    await setLevel(page, id, 1);
-    for (const tap of NOISE_TAPS) {
-      await expect(heroReadout(dock, tap)).toHaveText(noiseTapDbText(tap, at(1)));
-    }
-    // …and DOWN again, so a readout that only ever grew (a peak-hold wired by
-    // mistake) cannot pass.
-    await setLevel(page, id, 0.25);
-    for (const tap of NOISE_TAPS) {
-      await expect(heroReadout(dock, tap)).toHaveText(noiseTapDbText(tap, at(0.25)));
-    }
-
-    // 4 · LEVEL 0 PRINTS `silent`, NOT `-Infinity dB`. `fmtDb` returns
-    // `${v}` for a non-finite input, and a rack automated to zero is an
-    // ordinary state, not an edge case.
-    await setLevel(page, id, 0);
-    for (const tap of NOISE_TAPS) {
-      await expect(heroReadout(dock, tap)).toHaveText('silent');
-    }
-  });
 
   test('LEVEL is a FADER at every tier, not a dial — the owner constraint, gated', async ({
     page,
@@ -173,61 +127,10 @@ test.describe('noise face — three derived readouts from one knob', () => {
     // unchanged by the swap and MIDI-learn reachable on the face.
     await expect(dock.locator('[data-testid="control-level"]')).toBeVisible();
   });
-
-  test('the TAPS panel paints the corner and a ladder that moves with LEVEL', async ({ page }) => {
-    await gotoShell(page);
-    const id = await spawnNoise(page);
-    const dock = await openDock(page, id);
-
-    // The sidebar is rendered OUTSIDE the ModuleShell subtree (DockFullView owns
-    // the `.page.has-sidebar` grid), so it is scoped to the dock view, not the
-    // shell — the same reason a sidebar panel can never be mistaken for a
-    // control cell by faces-parity.
-    const dockView = page.getByTestId('dock-full-view');
-    const panel = dockView.getByTestId('sidebar-panel-noise-taps');
-    await expect(panel).toBeVisible();
-
-    // The one annotation on the picture, WITH its sample rate. A bare "77 Hz"
-    // would be wrong on a 44.1 k or 96 k interface, which is precisely why the
-    // corner is not a live `valueId` readout.
-    await expect(panel.getByTestId('noise-corner-note')).toContainText('77 Hz');
-    await expect(panel.getByTestId('noise-corner-note')).toContainText('48 kHz');
-
-    const fill = async (tap: NoiseTap): Promise<number> =>
-      Number(await panel.getByTestId(`noise-ladder-${tap}`).getAttribute('data-fill'));
-
-    // THE ORDER IS THE FACT. white is loudest, brown 7.1 dB under it, pink
-    // 12.3 dB under WHITE — from the same knob. A ladder drawn off `level`
-    // itself would give three identical bars.
-    const white = await fill('white');
-    const brown = await fill('brown');
-    const pink = await fill('pink');
-    expect(white, `white ${white} > brown ${brown}`).toBeGreaterThan(brown);
-    expect(brown, `brown ${brown} > pink ${pink}`).toBeGreaterThan(pink);
-    for (const [tap, v] of [
-      ['white', white],
-      ['brown', brown],
-      ['pink', pink],
-    ] as const) {
-      expect(v, `${tap} matches the model at the def default`).toBeCloseTo(
-        noiseLadderFill(tap, at(0.5)),
-        4,
-      );
-    }
-
-    // IT MOVES — and the negative control runs the other way: at LEVEL 0 every
-    // bar is empty, so a ladder hard-coded to a constant cannot pass either leg.
-    await setLevel(page, id, 1);
-    for (const tap of NOISE_TAPS) {
-      await expect
-        .poll(() => fill(tap), { message: `${tap} ladder grows with LEVEL` })
-        .toBeCloseTo(noiseLadderFill(tap, at(1)), 4);
-    }
-    await setLevel(page, id, 0);
-    for (const tap of NOISE_TAPS) {
-      await expect.poll(() => fill(tap), { message: `${tap} ladder empties at LEVEL 0` }).toBe(0);
-    }
-  });
+  // ⚠ REMOVED WITH THE SIDEBAR (owner ruling, 2026-08-19): "the TAPS panel paints the corner and a ladder that moves with LEVEL".
+  // Its subject was a dock sidebar panel; `face.sidebar` is deleted
+  // platform-wide, so there is no element left to assert on. See
+  // ModuleFaceHero in graph/types.ts for the ruling set.
 
   test('the lane METER is live, not decoration — and it reads WHITE', async ({ page }) => {
     // ⚠ WHY THIS LEG EXISTS AT ALL. NOISE is the FIRST module in the roster

@@ -11,6 +11,8 @@
   import { onMount } from 'svelte';
   import type { VstPluginKind } from '$lib/audio/vst/vst-protocol';
   import type { VstConnectionState } from '$lib/audio/vst/bridge-client';
+  import type { VstPersisted } from '$lib/audio/vst/vst-persistence';
+  import type { ModuleNode } from '$lib/graph/types';
   import {
     restartVstBridge,
     sendVstControl,
@@ -22,12 +24,16 @@
 
   let {
     id,
+    node,
     kinds,
     sendPlanes,
     sampleRate,
   }: {
     /** The graph node id (= the helper-side clientId). */
     id: string;
+    /** The live graph node — the persisted `data.vst` record renders the
+     *  state-size indicator / too-large warning. */
+    node: ModuleNode | undefined;
     /** Plugin kinds this card lists in its picker. */
     kinds: readonly VstPluginKind[];
     /** This card's transport mode (fx sends audio planes; instrument sends
@@ -38,6 +44,8 @@
      *  rate the worklet runs at (the bridge renders at hello.rate). */
     sampleRate: () => number;
   } = $props();
+
+  let persisted = $derived((node?.data as { vst?: VstPersisted } | undefined)?.vst);
 
   // svelte-ignore state_referenced_locally -- SEED only; onMount re-reads
   // vstSnapshot(id) and subscribes, replacing this before first paint the
@@ -179,6 +187,15 @@
       {#if snap.rtt !== null}· rtt {snap.rtt.toFixed(1)} ms{/if}
       {#if snap.mounted}· latency {snap.mounted.latencySamples} smp{/if}
     </div>
+    {#if persisted?.stateBytes !== undefined}
+      <div class="detail" data-testid="vst-state-size-{id}">
+        {#if persisted.stateB64 !== undefined}
+          state saved in patch · {(persisted.stateBytes / 1024).toFixed(1)} KB
+        {:else}
+          state too large to keep in the patch ({(persisted.stateBytes / 1024).toFixed(0)} KB) — plugin id only; save presets in the plugin
+        {/if}
+      </div>
+    {/if}
   {/if}
 </div>
 

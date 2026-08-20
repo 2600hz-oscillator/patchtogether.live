@@ -229,50 +229,6 @@ export const vcaDef: AudioModuleDef = {
       'arrives or BASE is raised, and a phase-inverted copy of the output is always live on ' +
       'OUT INV.',
 
-    // THE HERO — READOUTS ONLY. No `cell`, no `control`, no `action`, and each
-    // refusal is an argument rather than an omission:
-    //
-    //   * NO PICTURE. Every candidate graph on this module is a STRAIGHT LINE.
-    //     The input→output transfer of a pure multiplier is a line through the
-    //     origin of slope `gain`, for every setting, because the module is
-    //     linear in its input by construction; the cv→gain curve is also a line
-    //     (slope `cvAmount`, intercept `base`). A picture whose only two degrees
-    //     of freedom are the two dials directly beneath it is the derived-
-    //     readout trap wearing a graphic. It would also COST the live meter —
-    //     `heroGlyph = hasGlyph && !(view === 'dock-full' && hero?.cell)`, so a
-    //     hero cell suppresses the dock glyph, and trading a live RMS trace of
-    //     the actual output on a module whose entire job is "how loud right
-    //     now" for a static line-graph of two knob values is a downgrade. A
-    //     readouts-only hero keeps the meter. (The graph earns its place the day
-    //     a lin/exp RESPONSE param exists — that is a DSP change and belongs to
-    //     its own owner-audition PR, never to a face wave.)
-    //   * NO `control`. `heroFacePlan` MOVES a promoted key, it never copies, so
-    //     promoting `base` would leave a one-knob band and break the reason the
-    //     page keeps FUNCTION order: the band reads left-to-right in the same
-    //     order as the law printed above it.
-    //   * NO `action`. A VCA makes no sound of its own; auditioning it would
-    //     mean synthesising a test tone inside the module whose whole job is
-    //     transparency.
-    hero: {
-      // ONE entry, and the padding was REFUSED twice rather than not considered:
-      //
-      //   * a `CV 0` entry is `base` printed a second time — `base` IS the gain
-      //     at cv 0, and correction 1 put the strip in its own full-width row
-      //     where a duplicate reads as an independent second measurement that
-      //     happens to agree;
-      //   * a `PHASE: NORMAL / INVERTS` entry is fully redundant. `base` is
-      //     never negative, so the sweep crosses zero IFF `base + cvAmount < 0`
-      //     — i.e. exactly when the entry below prints ` INV`.
-      //
-      // A third candidate died with the DSP fix and is named so it is not
-      // re-derived: `{ text: '-3 dB at 7 Hz' }` for the CV's tracking bandwidth.
-      // That was true only while `si.smoo` sat on the SUM. #1313 moved it onto
-      // the two sliders, so the cv path is full-bandwidth and the number is now
-      // FALSE — and a fixed `text` never moves under the hand anyway, which is
-      // the strip's whole job. It belongs in the sidebar as reference, and that
-      // is where the corrected version of the fact now lives.
-      readouts: [{ label: 'at cv 1', valueId: 'vca-gain-at-full-cv' }],
-    },
 
     // NO SIDEBAR. The only block this face ever declared was the signal-flow
     // diagram, and the whole kind is gone (see the union in graph/types.ts), so

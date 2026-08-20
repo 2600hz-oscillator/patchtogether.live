@@ -621,23 +621,6 @@ export const ringsDef: AudioModuleDef = {
       cell: 'rings-comb-{n}',
       control: 'position',
       action: 'rings-strum-{n}',
-      // THREE VALUES, each one a fact no knob on this panel can report, each
-      // stripped to the value itself. All three are SAMPLE-RATE INDEPENDENT,
-      // which is what ruled out the ring time (rings-face-model.ts).
-      //   `model`     the MODEL param paints as an anonymous 0/1 <Toggle>, so
-      //               nothing else on the panel names which of two instruments
-      //               is loaded.
-      //   `2nd`       where the second resonance sits — a partial in MODAL, a
-      //               detuned string in SYMPATHETIC, so it is not `2*f0` and
-      //               no readback gives it.
-      //   `even tap`  live or silent. At POSITION 0.25 / 0.75 the EVEN output
-      //               is at digital zero and a `paramId: 'position'` readout
-      //               prints `0.25` without a hint of it.
-      readouts: [
-        { label: 'model', valueId: 'rings-body' },
-        { label: '2nd', valueId: 'rings-partial2-hz' },
-        { label: 'even tap', valueId: 'rings-even-tap-state' },
-      ],
     },
 
     // ⚠ NO `sidebar`, AND THE EMPTINESS IS THE POINT — no filler was invented

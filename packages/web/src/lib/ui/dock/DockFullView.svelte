@@ -49,12 +49,10 @@
   import { activeDockTab, dockTabPlan } from '$lib/ui/workflow/dock-tabs-model';
   import {
     faceHasAnnotations,
-    sidebarPlan,
     type FaceplateDefLike,
   } from '$lib/ui/workflow/dock-faceplate-model';
   import { isAnnotating, toggleAnnotate } from '$lib/ui/annotate-mode.svelte';
   import ModuleShell from '$lib/ui/modules/ModuleShell.svelte';
-  import FaceSidebar from '$lib/ui/workflow/FaceSidebar.svelte';
   import RearCard from '$lib/ui/workflow/RearCard.svelte';
   import type { RearDefLike } from '$lib/ui/workflow/rear-card-model';
 
@@ -127,21 +125,19 @@
   let requestedTab = $state<string | undefined>(undefined);
   let activeTab = $derived(tabs ? activeDockTab(tabs, requestedTab) : undefined);
 
-  // ── PF-20: THE CONTEXT SIDEBAR ──────────────────────────────────────────
+  // ── PF-20: THE CONTEXT SIDEBAR — DELETED, 2026-08-19 ────────────────────
   //
-  // The kit has carried `.page.has-sidebar` + `.sidebar` + `.side-h` since the
-  // faceplate was ported; nothing ever filled them, so every migrated face
-  // shipped as a full-width wall of knobs where the mock is an instrument with
-  // a context column. It mounts HERE, as the `.page` grid's second column and a
-  // SIBLING of `.editor` — deliberately OUTSIDE <ModuleShell>, because
-  // faces-parity scopes its exact `control-<paramId>` multiset and its
-  // per-cell operability sweep to the module-shell element. A sidebar that
-  // lived inside the shell would have to teach that gate a new cell kind for
-  // every block; out here a preset button is just a button.
+  // There is no sidebar column, no `sidebarPlan`, and no `.page.has-sidebar`
+  // grid. The owner refused the surface by name — "I DO NOT WANT THESE RIGHT
+  // HAND TEXT AREAS I DO NOT WANT EXTRA TEXT. i explicitly already dictated
+  // that several times" — and the editor now gets the full width of the page
+  // unconditionally, which is what "we reclaim the vertical space" asked for:
+  // a tall text column forced the whole `.page` row to its own height.
   //
-  // Un-migrated occupants never get one: their content is a verbatim legacy
-  // card with no declared face to read.
-  let sidebar = $derived(migrated && def ? sidebarPlan(def as FaceplateDefLike) : null);
+  // ⚠ Do not re-introduce a second column here for context, presets or
+  // measurements. `ModuleFaceHero` in graph/types.ts carries the ruling set and
+  // `face-resting-text-source.test.ts` denies the SHAPE, not just this
+  // mechanism.
 
   // ── ANNOTATIONS — the DOCK-LEVEL toggle ─────────────────────────────────
   //
@@ -167,8 +163,8 @@
   // rack-mate turning annotations on never touches this view.
   //
   // It renders ONLY for a face that HAS annotation prose. A toggle that
-  // reveals nothing is the same labelled void `sidebarPlan`'s empty-block drop
-  // refuses — and gating on the DECLARATION (never on a module id) is what
+  // reveals nothing is a labelled void — and gating on the DECLARATION (never
+  // on a module id) is what
   // makes the affordance appear for adopter #2 without an edit here.
   let annotatable = $derived(migrated && def ? faceHasAnnotations(def as FaceplateDefLike) : false);
   let annotationsOn = $derived(isAnnotating(node.id));
@@ -314,7 +310,7 @@
             {/if}
           </div>
 
-          <div class="page" class:has-sidebar={!!sidebar}>
+          <div class="page">
             <div class="editor" data-testid="faceplate-editor">
               {#if migrated}
                 <ModuleShell id={node.id} data={{ node, view: 'dock-full', activePage: activeTab }} />
@@ -338,9 +334,6 @@
                 </section>
               {/if}
             </div>
-            {#if sidebar && def}
-              <FaceSidebar nodeId={node.id} blocks={sidebar} params={def.params ?? []} />
-            {/if}
           </div>
           </div>
         </div>

@@ -647,16 +647,15 @@ export interface ModuleFacePage {
  * living-docs ratchet (consistency for every faced module, completeness for
  * the STRICT_FACES set).
  *
- * ⚠ `sidebar` IS PROJECTED INTO THE GOLDEN, AND THE REST IS NO LONGER LEFT TO
- * THIS PARAGRAPH. #1468 deleted a whole sidebar block from twelve modules and
- * `task docs:accept` produced an EMPTY DIFF — because "is it I/O?" was the
- * wrong question. The right one is "if this vanished, is there any review
- * surface on which a human would see it?", and for a sidebar the answer was
- * no: module-face-lint's `sidebarProblems()` returns early on absence, the
- * faceplate-platform e2e sweeps only the modules that HAVE one, and the dock
- * VRT baseline is re-pinned by whoever removes it.
+ * ⚠ WHICH FIELDS PROJECT IS DECIDED FIELD BY FIELD, NOT BY THIS PARAGRAPH.
+ * `sidebar` used to be the one projected field, for a reason worth keeping now
+ * that the field itself is gone: #1468 deleted a whole sidebar block from
+ * twelve modules and `task docs:accept` produced an EMPTY DIFF — because "is it
+ * I/O?" was the wrong question. The right one is "if this vanished, is there
+ * any review surface on which a human would see it?" Ask that of every new
+ * field.
  *
- * So the decision is now made field by field and enforced:
+ * So the decision is made field by field and enforced:
  * `FACE_FIELDS_NOT_IN_LOCK` (contract-signature.ts) names every unprojected
  * field with a `why` and the gate that DOES cover it, and contract-lock.test.ts
  * walks the keys live defs actually declare — a key that is neither projected
@@ -929,21 +928,19 @@ export interface ModuleFace {
   //
   // Everything below exists because the shell was STRUCTURALLY INCAPABLE of
   // rendering a designed instrument panel: it painted bands of bare knobs and
-  // a spine, where the mocks are a titled page with a hero, described sections
-  // and a context sidebar. That was reported six times as per-card drift; it
-  // was never per-card. These four fields are the declaration surface that
-  // closes it, and they are GENERIC by construction — no field names a module.
+  // a spine, where the mocks are a titled page with a hero and described
+  // sections. That was reported six times as per-card drift; it was never
+  // per-card. These fields are the declaration surface that closes it, and they
+  // are GENERIC by construction — no field names a module.
   //
-  // ALL FOUR ARE DOCK-ONLY. Ranks 1-6 are the LANE budget (faceTierCap); the
-  // dock shows everything, so the title, the hint, the hero and the sidebar
-  // never reach a 192×180 tile.
+  // ALL ARE DOCK-ONLY. Ranks 1-6 are the LANE budget (faceTierCap); the dock
+  // shows everything, so the title, the hint and the hero never reach a
+  // 192×180 tile.
   //
-  // ⚠ THREE OF THE FOUR are UI metadata out of contract-lock.txt and linted by
-  // module-face-lint.test.ts. `sidebar` IS NOT: it is projected into the
-  // golden, one line per block, because nothing else in the repo could see one
-  // disappear (#1468 removed twelve and every gate stayed green). See
-  // FACE_FIELDS_NOT_IN_LOCK in contract-signature.ts, where title / hint / hero
-  // each name the gate that covers them instead.
+  // ⚠ THE FOURTH FIELD WAS `sidebar`, AND IT IS DELETED — see ModuleFaceHero
+  // for the owner rulings and the gate that replaced it. All three survivors
+  // are UI metadata out of contract-lock.txt; FACE_FIELDS_NOT_IN_LOCK in
+  // contract-signature.ts names the gate that covers each instead.
 
   /** The faceplate's PAGE TITLE — the mock's "Voice". A short category word,
    *  above the hint. Omitted = no title row. */
@@ -951,54 +948,33 @@ export interface ModuleFace {
   /** The one-line description under the title ("three decoupled generators
    *  through one serial bus"). Omitted = no hint row. */
   hint?: string;
-  /** The HERO SLOT — the module PICTURE, a promoted control, its audition and
-   *  a few live readouts, above the bands. */
+  /** The HERO SLOT — the module PICTURE, a promoted control and its audition,
+   *  above the bands. */
   hero?: ModuleFaceHero;
-  /** The dock SIDEBAR — typed context blocks down the faceplate's right edge.
-   *  DOCK-ONLY and rendered OUTSIDE the ModuleShell (DockFullView owns the
-   *  `.page.has-sidebar` grid), so a sidebar block can never be mistaken for a
-   *  control cell by the parity gates. */
-  sidebar?: readonly FaceSidebarBlock[];
-}
-
-/**
- * A labelled VALUE for the hero slot or a `readouts` sidebar block. EXACTLY
- * ONE of three sources; declaring none, or more than one, is an authoring error
- * the face lint fails and the render skips.
- *
- *   `paramId` — the param's live value through the same `ParamDef.format` /
- *               `units` ladder the dial under it prints.
- *   `valueId` — a DERIVED number: a pure function of the module's live params,
- *               registered in face-readout-values.ts.
- *   `text`    — a fixed string the def wants to state.
- *
- * ⚠ `valueId` EXISTS BECAUSE `paramId` IS NOT ALWAYS THE ANSWER, and mistaking
- * one for the other is the blind-metric trap in miniature. Kick drum's hero
- * wants to print how long the voice RINGS. The first draft declared
- * `{ label: 'tail', paramId: 'sub_decay' }` — which prints 450 ms, moves when
- * you turn SUB DEC, and reads entirely correct — while being INVARIANT to SUB
- * LEVEL, which genuinely changes the answer (the real −60 dB tail at those
- * defaults is 398 ms, because it is a sum of three layers at their own mix
- * levels). A readout is not a knob relabelled; when the quantity is derived,
- * DERIVE it, and negative-control the derivation on the input the knob
- * readback would be blind to.
- */
-export interface FaceReadout {
-  /** Caption ("PEAK", "TAIL"). */
-  label: string;
-  /** Print this param's live value. Must be a declared param on the def. */
-  paramId?: string;
-  /** …or print a DERIVED value: an id registered in face-readout-values.ts.
-   *  The def declares a STRING, never a function, so `face` stays serialisable
-   *  data (the sidebar-panels precedent). An unregistered id fails the lint. */
-  valueId?: string;
-  /** …or print this literal ("≈ 480 ms"). */
-  text?: string;
 }
 
 /**
  * The HERO SLOT — the top of the faceplate: the module's biggest control, its
- * audition, its own picture and a few live readouts.
+ * audition and its own picture.
+ *
+ * ⚠ THERE IS NO `readouts` FIELD, AND THERE IS NO `sidebar` ON `ModuleFace`.
+ * Both are DELETED, not deprecated, and re-adding either — under any name — is
+ * the mistake this note exists to prevent. The owner ruled four times in one
+ * day that the RESTING faceplate paints no derived-state text: "I DO NOT WANT
+ * THESE RIGHT HAND TEXT AREAS I DO NOT WANT EXTRA TEXT. i explicitly already
+ * dictated that several times" (the spirographs sidebar), then "you don't need
+ * to have the out-silent text at all … we absolutely have to stop doing shit
+ * like that. i said minimal, and good use of screen real estate" (moog984's
+ * hero readout row, #1957).
+ *
+ * The two mechanisms were structurally different and BOTH passed every gate
+ * that existed, which is why the replacement gate denies the SHAPE rather than
+ * either mechanism: `face-resting-text-source.test.ts`. The permitted resting
+ * text on a faceplate is exhaustively the module NAME, tab/section LABELS,
+ * control CAPTIONS, and option/landmark NAMES that disambiguate a control's own
+ * position. A derived value's home is `aria-valuetext` on the control it
+ * describes — which every spec proving a face tracks the graph already reads,
+ * so nothing had to be weakened to delete these.
  *
  * ⚠ A face that promotes a PICTURE (`cell`) suppresses the shell glyph at the
  * dock — the glyph is a live trace of the OUTPUT and the picture is a picture
@@ -1017,8 +993,8 @@ export interface ModuleFaceHero {
    * — a PF-14 `panel` cell (an envelope graph, a scale ring, a routing map).
    *
    * ⚠ THE PICTURE IS THE ONE HALF OF A FACEPLATE THAT CANNOT BE PLATFORM. A
-   * title, a hint, a sidebar, a preset roster and a readout are the same shape
-   * on every instrument, so they are DATA declared here. What a kick drum's
+   * title and a hint are the same shape on every instrument, so they are DATA
+   * declared here. What a kick drum's
    * envelope looks like is not — no amount of def introspection synthesises it.
    * Promoting the module's panel into the hero is how the platform makes room
    * for that without any module needing to touch the shell. A face that
@@ -1029,56 +1005,7 @@ export interface ModuleFaceHero {
   control?: string;
   /** A second `face.order` key beside it — typically the audition button. */
   action?: string;
-  /** Labelled live values printed beside the hero picture, at hero size. */
-  readouts?: readonly FaceReadout[];
 }
-
-/**
- * One entry of a `presets` sidebar block. `values` is a param-id → value map
- * applied through the ORDINARY param write path when the entry is selected —
- * so a preset is a real action with real undo/sync, never a decorative list.
- * Every key must be a declared param whose value is in range (face lint).
- */
-export interface FacePreset {
-  id: string;
-  label: string;
-  /** Optional right-aligned annotation ("50 Hz", "hard"). */
-  note?: string;
-  values: Readonly<Record<string, number>>;
-}
-
-/**
- * A typed SIDEBAR block. The kinds are deliberately few and generic: two that
- * cover what a faceplate's context column actually says (the presets, the
- * numbers) plus `custom` for the genuinely bespoke picture, which resolves
- * through a REGISTRY (sidebar-panels.ts) exactly like PF-14's panel cells —
- * the def declares an id, never a component, so `face` stays data.
- *
- * ⚠ THERE IS NO `signal-flow` KIND, and re-adding one is the mistake this note
- * exists to prevent. Twelve modules declared a hand-authored stage list
- * modelling their own DSP chain, and NOTHING verified any of them against the
- * DSP — not contract-lock, not module-face-lint, not ART. They were prose in a
- * diagram's clothes, free to drift the moment a worklet changed, and the owner
- * removed the kind rather than correct twelve snapshots that would start
- * drifting again the same day. A future chain picture must be DERIVED from
- * something the build can check, or it must not exist.
- */
-export type FaceSidebarBlock =
-  | { kind: 'presets'; label: string; entries: readonly FacePreset[] }
-  | { kind: 'readouts'; label: string; entries: readonly FaceReadout[] }
-  | {
-      kind: 'custom';
-      label: string;
-      /** A key registered in sidebar-panels.ts. The def declares a STRING, not
-       *  a component, so `face` stays serialisable data and the shell never
-       *  imports a module. An unregistered id fails module-face-lint. */
-      panelId: string;
-      /** Declared inputs for the panel (a split frequency, a param id to
-       *  read). Keeping them here rather than inside the component is what
-       *  makes a `custom` panel REUSABLE — the picture is generic, the numbers
-       *  are the module's. Values must be primitives so `face` stays data. */
-      props?: Readonly<Record<string, string | number>>;
-    };
 
 /** Rear-card curation block (see ModuleFace.rear). */
 export interface ModuleFaceRear {

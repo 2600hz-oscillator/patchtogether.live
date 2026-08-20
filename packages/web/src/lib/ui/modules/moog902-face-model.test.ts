@@ -46,7 +46,6 @@ import {
   moog902GainDbText,
   moog902GainMultiplier,
 } from './moog902-face-model';
-import { faceReadoutValueFor } from '$lib/ui/workflow/face-readout-values';
 
 const SR = 48000;
 const BLOCK = 128;
@@ -61,58 +60,8 @@ function reader(params: Record<string, number | undefined>) {
 }
 
 /** The readout text for a given param map, through the REGISTERED entry. */
-function gainDb(params: Record<string, number | undefined>): string {
-  return faceReadoutValueFor('moog902-gain-db')!(reader(params));
-}
-function ceiling(params: Record<string, number | undefined>): string {
-  return faceReadoutValueFor('moog902-ceiling')!(reader(params));
-}
-
-describe('moog902 face readouts — registration', () => {
-  it('both valueIds the def declares RESOLVE in the shared registry', () => {
-    // Anchored to the DEF rather than to a literal list: a readout renamed on
-    // the face with no matching registry entry renders blank, and no pixel gate
-    // can tell blank from "the value happens to be empty".
-    const declared = (moog902Def.face?.hero?.readouts ?? []).map((r) => r.valueId);
-    expect(declared).toEqual(['moog902-gain-db', 'moog902-ceiling']);
-    for (const id of declared) {
-      expect(typeof faceReadoutValueFor(id!)).toBe('function');
-    }
-  });
-
-  it('each registry entry wires THIS module\'s function, not merely SOME function', () => {
-    // A registry that resolved `moog902-ceiling` to the gain formatter would
-    // pass every "it resolves" check and print a plausible wrong string. The
-    // whole test file reads through the registry, so this is the one leg that
-    // pins registry ↔ implementation, in both directions.
-    for (const params of [{}, { gain: 0.25, mode: 1 }, { gain: 1, mode: 0 }]) {
-      expect(gainDb(params)).toBe(moog902GainDbText(moog902FaceParams(reader(params))));
-      expect(ceiling(params)).toBe(moog902CeilingText(moog902FaceParams(reader(params))));
-    }
-    // ...and the two are not the same function wearing two ids.
-    expect(gainDb({})).not.toBe(ceiling({}));
-  });
-});
 
 describe('moog902-gain-db — the RESPONSE switch a knob readback cannot see', () => {
-  it('prints unity at the shipped defaults, where the GAIN dial reads 0.50', () => {
-    expect(gainDb({})).toBe('0.0 dB');
-    // The dial's own readback is the same number in both modes — that is the
-    // blindness this readout exists to cover.
-    expect(moog902FaceParams(reader({})).gain).toBe(0.5);
-  });
-
-  it('MOVES on MODE alone: 0.0 dB → −3.0 dB with the pot untouched', () => {
-    const lin = gainDb({ gain: 0.5, mode: 0 });
-    const exp = gainDb({ gain: 0.5, mode: 1 });
-    expect(lin).toBe('0.0 dB');
-    expect(exp).toBe('-3.0 dB');
-    expect(exp).not.toBe(lin);
-    // ⚠ the pot is bit-identical across that change.
-    expect(moog902FaceParams(reader({ gain: 0.5, mode: 0 })).gain).toBe(
-      moog902FaceParams(reader({ gain: 0.5, mode: 1 })).gain,
-    );
-  });
 
   it('the mode delta WIDENS toward the bottom of the pot and VANISHES at the anchor', () => {
     // Measured on the shipping worklet (see the `worklet agreement` block):
@@ -135,106 +84,6 @@ describe('moog902-gain-db — the RESPONSE switch a knob readback cannot see', (
     expect(deltaAt(0.25)).toBeLessThan(deltaAt(0.5));
     expect(deltaAt(0.5)).toBeLessThan(deltaAt(0.75));
     expect(deltaAt(0.75)).toBeLessThan(deltaAt(1));
-  });
-
-  it('also moves on GAIN — so it is not secretly a mode label', () => {
-    expect(gainDb({ gain: 0.25 })).toBe('-6.0 dB');
-    expect(gainDb({ gain: 0.75 })).toBe('+3.5 dB');
-    expect(gainDb({ gain: 1 })).toBe('+6.0 dB');
-  });
-
-  it('is INVARIANT to cvAmount, which is bit-exactly inert with cv unpatched', () => {
-    // 41 of 41 sampled positions render bit-identically on the real worklet with
-    // nothing patched to `cv`; the readout is a function of the same param set,
-    // so it must not pretend otherwise.
-    const base = gainDb({ gain: 0.5, cvAmount: 1 });
-    for (let i = 0; i <= 40; i++) {
-      expect(gainDb({ gain: 0.5, cvAmount: -1 + i / 20 })).toBe(base);
-    }
-  });
-});
-
-describe('moog902-ceiling — INVARIANT to the pot, and it is the #1912 number', () => {
-  it('names the mode-dependent ceiling: 9.0 V LINEAR, 7.5 V EXPONENTIAL', () => {
-    expect(ceiling({ mode: 0 })).toBe('9.0 V');
-    expect(ceiling({ mode: 1 })).toBe('7.5 V');
-    // LINEAR is the SHIPPED DEFAULT — the mode the wrong "~7.5 V" prose was
-    // most wrong about.
-    expect(ceiling({})).toBe('9.0 V');
-  });
-
-  it('DOES NOT MOVE across the entire GAIN pot — the permanent negative control', () => {
-    // If this ever starts tracking the pot, the readout has stopped being the
-    // law's property and become a second opinion on the dial.
-    for (const mode of [0, 1]) {
-      const at0 = ceiling({ gain: 0, mode });
-      for (let i = 0; i <= 40; i++) {
-        expect(ceiling({ gain: i / 40, mode })).toBe(at0);
-      }
-    }
-    // ...and it is not merely constant: the two modes disagree.
-    expect(ceiling({ gain: 0.3, mode: 0 })).not.toBe(ceiling({ gain: 0.3, mode: 1 }));
-  });
-
-  it('the ceiling voltage is the true inverse of the gain law, in BOTH arms', () => {
-    for (const exp of [false, true]) {
-      const v = moog902CeilingVolts(exp);
-      // AT the ceiling voltage the law delivers exactly ×3...
-      expect(moog902Gain(v, exp)).toBeCloseTo(MOOG902_GAIN_CEILING, 9);
-      // ...and a hair BELOW it, strictly less (so it is the FIRST such voltage,
-      // not merely some voltage in the clamped region).
-      expect(moog902Gain(v * 0.999, exp)).toBeLessThan(MOOG902_GAIN_CEILING);
-    }
-    expect(moog902CeilingVolts(false)).toBeCloseTo(9, 9);
-    expect(moog902CeilingVolts(true)).toBeCloseTo(7.5, 4);
-    // THE DEFECT, stated as an assertion: 7.5 V is NOT the linear ceiling.
-    expect(moog902Gain(7.5, false)).toBeCloseTo(2.5, 9);
-  });
-
-  it('reads the mode threshold the WORKLET uses (>= 0.5), not a rounding of it', () => {
-    expect(ceiling({ mode: 0.49 })).toBe('9.0 V');
-    expect(ceiling({ mode: 0.5 })).toBe('7.5 V');
-  });
-});
-
-describe('moog902 readouts — TOTALITY (they run on every render)', () => {
-  // A throw here takes the faceplate down mid-drag, so the hostile inputs are
-  // a permanent leg rather than an authoring-time spot check.
-  const hostile: Array<[string, Record<string, number | undefined>]> = [
-    ['a fresh node (nothing touched)', {}],
-    ['undefined everywhere', { gain: undefined, cvAmount: undefined, mode: undefined }],
-    ['NaN', { gain: NaN, cvAmount: NaN, mode: NaN }],
-    ['+Infinity', { gain: Infinity, cvAmount: Infinity, mode: Infinity }],
-    ['-Infinity', { gain: -Infinity, cvAmount: -Infinity, mode: -Infinity }],
-    ['out of range low', { gain: -5, mode: -3 }],
-    ['out of range high', { gain: 99, mode: 99 }],
-  ];
-  for (const [name, params] of hostile) {
-    it(`survives ${name} and prints a finite string`, () => {
-      const a = gainDb(params);
-      const b = ceiling(params);
-      for (const s of [a, b]) {
-        expect(typeof s).toBe('string');
-        expect(s.length).toBeGreaterThan(0);
-        expect(s).not.toMatch(/NaN|Infinity|undefined/);
-      }
-    });
-  }
-
-  it('a fully closed pot prints `mute`, not `-Infinity dB`', () => {
-    // gain = 0 is TRUE silence on this module: the worklet reaches bit-exact
-    // zero 10375 samples (216.146 ms) after spawn, so the readout must name
-    // that state rather than print a divergent logarithm.
-    expect(gainDb({ gain: 0 })).toBe('mute');
-    expect(gainDb({ gain: 0, mode: 1 })).toBe('mute');
-  });
-
-  it('never prints a signed zero', () => {
-    // `(-0.04).toFixed(1)` is "-0.0"; a faceplate that prints "-0.0 dB" at unity
-    // looks like a bug even though the arithmetic is right.
-    for (let i = 0; i <= 200; i++) {
-      expect(gainDb({ gain: 0.49 + i / 20000 })).not.toBe('-0.0 dB');
-    }
   });
 });
 

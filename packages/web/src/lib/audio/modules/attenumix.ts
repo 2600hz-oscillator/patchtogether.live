@@ -222,29 +222,6 @@ export const attenumixDef: AudioModuleDef = {
       att1: 'fader', att2: 'fader', att3: 'fader', att4: 'fader', master: 'fader',
     },
 
-    // THE HERO: three derived readouts and nothing else. Each is a JOIN over
-    // knobs that no single readback can perform, and each is negative-
-    // controlled permanently on the input a knob readback is BLIND to
-    // (attenumix-face-model.test.ts):
-    //
-    //   peak    tanh(Σatt · master) — MASTER is blind to it: at the defaults it
-    //           reads a confident 1.00 (unity) while the bus is exactly muted,
-    //           and it does not move when a channel opens.
-    //   drive   Σatt · master, plus what the tanh charges in dB — MASTER is
-    //           INVARIANT to the channel count: 1.00x whether the drive is 1.0
-    //           (-2.2 dB) or 4.0 (-12.0 dB).
-    //   cv room Σ(1 − att)/Σspan — this module's CV law is
-    //           `att = clamp(knob + cv, 0, 1)`, so a knob parked at unity is
-    //           CV-DEAF while the jack still lights. INVARIANT TO MASTER, which
-    //           is what makes it the orthogonal third rather than a third view
-    //           of the first two.
-    hero: {
-      readouts: [
-        { label: 'peak', valueId: 'attenumix-peak' },
-        { label: 'drive', valueId: 'attenumix-drive' },
-        { label: 'cv room', valueId: 'attenumix-cv-room' },
-      ],
-    },
 
     // REAR CARD (rear-card-model). The derivation cannot group this field on
     // its own: `rearTargetParamId` resolves a per-param CV from `paramTarget`
