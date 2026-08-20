@@ -2465,6 +2465,39 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // fields, and this module's two mode NAMES arrive as `options[]` rosters
   // (#2007), which is the declared-name route rather than derived text.
   'foxy',
+
+  // FACE BATCH 16 · gatemaiden (2026-08-20) — the gate↔trigger converter, and
+  // the cheapest promotion the programme has made: two params, eleven lines of
+  // card markup, and BOTH of the silent build bugs batch 13's reconciliation
+  // caught sitting on it at once (#2025).
+  //
+  // It is promoted on the defects rather than on the tier ladder, and the
+  // difference is worth stating because two params is where STOP 1 says to
+  // refuse. The ladder here is genuinely trivial — glyph `'none'` caps compact
+  // at 3, there are 2 controls, so every tier shows everything. What the face
+  // changes is that both controls were rendered WRONG:
+  //
+  //   · `trigShape` declared no roster, so `looksLikeToggle` resolved an
+  //     anonymous two-state switch and the only names for its states — card
+  //     literals — had no faced home. It now declares `options`, so the dock
+  //     paints a SEGMENTED pair (both states visible, one click away, where the
+  //     card needed a click to discover the second) and the lane paints the
+  //     NAME through `paintsReadout`. ⚠ Those names are load-bearing, not
+  //     cosmetic: TRI carries half SQR's area and clears the 0.5 threshold for
+  //     half as long (re-measured on the pure DSP core, 120 vs 240 sample-units
+  //     and 2.5 ms vs 5.0 ms at 48 kHz), which is a difference a player must be
+  //     able to see the two ends of. The docs claim that it was "display/feel
+  //     only" is corrected in the same diff; whether the BEHAVIOUR should
+  //     change is #2008 and stays open.
+  //   · `gateLen` is a `NeonFader` on the card and no `ParamDef` field says so,
+  //     so the shell would have substituted a dial. `face.paramCells`.
+  //
+  // And the promotion pays a ledgered raw write rather than only re-skinning:
+  // the card's shape button poked the store directly, so the gesture was
+  // neither undoable nor synced. ⚠ That was paid by EDITING THE CARD, not by
+  // facing the module — see the note left in `raw-write-ledger.ts`, where #2025
+  // had the mechanism backwards.
+  'gatemaiden',
 ]);
 
 /**

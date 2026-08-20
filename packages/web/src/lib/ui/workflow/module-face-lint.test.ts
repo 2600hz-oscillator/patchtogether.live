@@ -772,6 +772,29 @@ describe('module-face lint — MOMENTARY pads (face.momentary)', () => {
     // correct: the roster is cosmetic and could be removed without changing
     // what the DSP does with the value.
     'foxy:gen_mode',
+    // GATEMAIDEN, 2026-08-20. The TRIG output's waveform, and it reaches this
+    // gate by a different route from every entry above it: no `curve` needed
+    // correcting. `trigShape` has been `discrete 0..1 default 0` since the
+    // module shipped — it is switch-shaped, correctly declared, and simply had
+    // no promoted module around it until now.
+    //
+    // LATCHING, and the card is unambiguous about it: the control is a CYCLE
+    // BUTTON whose caption IS the current state (it read `△ TRI` / `▭ SQR`),
+    // so each click SETS a mode that is then left alone. There is no CV port
+    // and nothing pulses it. A momentary render would snap the pulse back to
+    // TRI the instant the pad was released, which would make SQR unreachable
+    // in practice — and SQR is not a flourish: it carries twice TRI's area and
+    // clears the 0.5 threshold for twice as long (measured on the pure core in
+    // `gatemaiden-dsp.test.ts`), so it is the setting a player leaves engaged
+    // when a downstream trigger input is missing edges.
+    //
+    // ⚠ THE DOCS CROSS-CHECK BELOW IS LOAD-BEARING HERE RATHER THAN
+    // CEREMONIAL. This param's authored prose was WRONG until this same diff —
+    // it claimed the two shapes were "display/feel only", which is exactly the
+    // kind of sentence that makes a reviewer wave a classification through
+    // without asking what the control does. The prose now states the measured
+    // difference, and the acknowledgement rests on the cycle-button gesture.
+    'gatemaiden:trigShape',
   ]);
 
   it('no ACKNOWLEDGED_LATCHING param is DOCUMENTED as momentary (the cross-check)', () => {
