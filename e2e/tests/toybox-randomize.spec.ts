@@ -357,6 +357,100 @@ test.describe('toybox randomize — heavy proofs', () => {
     await expectAlive(page, 'dock roll seed 71');
   });
 
+  test('DOCK editor stays LIVE after rolls: labels painted, panel follows selection — no reload', async ({ page }) => {
+    // Named for the 2026-08-20 round-two owner report: "after randomize the
+    // labels vanish and the controls under the node graph do not update when
+    // i change nodes … until f5". Root cause: `graph` returned the live store
+    // proxy, whose reference never changes across a roll's in-place splice —
+    // nothing downstream invalidated, and the dock (which, unlike the rack
+    // canvas, pushes no fresh node snapshot on doc writes) kept rendering the
+    // spliced-out nodes as DETACHED proxies: six `toybox-gnode-undefined`
+    // boxes with blank labels over an 8-node data graph. The SECOND roll is
+    // the load-bearing one here (the first roll from a fresh node changes the
+    // reference and repaints even under the bug — which is exactly how the
+    // original owner-report leg stayed green while the owner's session broke).
+    test.setTimeout(240_000);
+    await page.goto('/rack?seed=none');
+    await page.waitForLoadState('networkidle');
+    await spawnPatch(page, [{ id: 'tb', type: 'toybox', position: { x: 300, y: 60 }, domain: 'video' }]);
+    await page.getByText('EXPAND', { exact: true }).first().click({ timeout: 10_000 });
+    await expect
+      .poll(() => page.evaluate(() => typeof (globalThis as unknown as G).__toyboxRoll), {
+        message: '__toyboxRoll hook must be installed in the dock full view',
+      })
+      .toBe('function');
+    const toggle = page.locator('[data-testid="toybox-combine-toggle"]').last();
+    if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.click();
+    await page.locator('[data-testid="toybox-graph-svg"]').last().waitFor({ state: 'visible', timeout: 10_000 });
+
+    /** (a) every painted node id matches data AND its visible label is
+     *  non-empty (a detached-proxy render is `gnode-undefined` + blank). */
+    const editorSync = () =>
+      page.evaluate(() => {
+        const labels = [...document.querySelectorAll('.gnode-label')].map((t) => (t.textContent ?? '').trim());
+        const domIds = [...document.querySelectorAll('[data-testid^="toybox-gnode-"]')]
+          .map((el) => el.getAttribute('data-testid')!.slice('toybox-gnode-'.length))
+          .filter((id) => !id.startsWith('lock-'))
+          .sort();
+        const n = (globalThis as unknown as G).__patch.nodes['tb'];
+        const combine = (n?.data as { combine?: RollResultShape['blob']['combine'] })?.combine;
+        return {
+          domIds,
+          dataIds: (combine?.nodes ?? []).map((x) => x.id).sort(),
+          emptyLabels: labels.filter((l) => l.length === 0).length,
+        };
+      });
+
+    // TWO rolls: the second exercises the reference-stable (stale-proxy) case.
+    for (const seed of [821, 822]) {
+      await roll(page, seed);
+      await expect
+        .poll(async () => {
+          const s = await editorSync();
+          return { inSync: JSON.stringify(s.domIds) === JSON.stringify(s.dataIds), emptyLabels: s.emptyLabels };
+        }, { message: `seed ${seed}: dock editor must repaint ids AND labels (no detached-proxy render)` })
+        .toEqual({ inSync: true, emptyLabels: 0 });
+    }
+
+    // (b) the under-graph panel FOLLOWS selection, same page, no reload. The
+    // expectation is DERIVED from each clicked node's own data params — never
+    // a hand-typed per-op list.
+    const opIds: string[] = await page.evaluate(() => {
+      const n = (globalThis as unknown as G).__patch.nodes['tb'];
+      const combine = (n?.data as { combine?: RollResultShape['blob']['combine'] })?.combine;
+      return (combine?.nodes ?? [])
+        .filter((x) => x.kind !== 'source' && x.kind !== 'output')
+        .map((x) => x.id);
+    });
+    expect(opIds.length, 'rolled graph must contain op nodes to select').toBeGreaterThan(0);
+    for (const nid of opIds.slice(0, 2)) {
+      await page
+        .locator(`[data-testid="toybox-gnode-${nid}"]`)
+        .last()
+        .locator('rect')
+        .click({ force: true, noWaitAfter: true });
+      await expect
+        .poll(
+          () =>
+            page.evaluate((nid) => {
+              const panel = [...document.querySelectorAll('.combine-knob-cell')]
+                .map((el) => el.getAttribute('data-param'))
+                .sort();
+              const n = (globalThis as unknown as G).__patch.nodes['tb'];
+              const combine = (n?.data as { combine?: { nodes: Array<{ id: string; params?: Record<string, number> }> } })?.combine;
+              const own = Object.keys(combine?.nodes.find((x) => x.id === nid)?.params ?? {})
+                .filter((k) => !k.startsWith('_'))
+                .sort();
+              // `match` is the assertion; panel/own ride along so a failure
+              // PRINTS both sides (which params the panel showed vs the node's).
+              return { match: JSON.stringify(panel) === JSON.stringify(own), panel, own };
+            }, nid),
+          { message: `selecting ${nid} must show ITS OWN params in the under-graph panel (no reload)` },
+        )
+        .toMatchObject({ match: true });
+    }
+  });
+
   test('REAL source chain: a patched video feed + LFO cv are load-bearing in every roll', async ({ page }) => {
     test.setTimeout(240_000);
     await spawnToybox(
@@ -592,11 +686,16 @@ test.describe('toybox randomize — heavy proofs', () => {
           .map((el) => el.getAttribute('data-testid')!.slice('toybox-gnode-'.length))
           // lock badges share the prefix (toybox-gnode-lock-<id>) — not nodes.
           .filter((id) => !id.startsWith('lock-'));
+        const labels = [...document.querySelectorAll('.gnode-label')].map((t) => (t.textContent ?? '').trim());
         const n = (globalThis as unknown as G).__patch.nodes['tb'];
         const combine = (n?.data as { combine?: RollResultShape['blob']['combine'] })?.combine;
         return {
           domIds: els.sort(),
           dataIds: (combine?.nodes ?? []).map((x) => x.id).sort(),
+          // A detached-proxy render paints a node but a BLANK label (the
+          // round-two owner report) — count empties so the seeded-roll loop
+          // below catches the stale-reference case in THIS mount too.
+          emptyLabels: labels.filter((l) => l.length === 0).length,
           opKinds: (combine?.nodes ?? [])
             .filter((x) => x.kind !== 'source' && x.kind !== 'output')
             .map((x) => x.kind)
@@ -634,9 +733,13 @@ test.describe('toybox randomize — heavy proofs', () => {
       await expect
         .poll(async () => {
           const g = await domGraph();
-          return JSON.stringify(g.domIds) === JSON.stringify(g.dataIds) && g.outWired;
-        }, { message: `seed ${seed}: editor must repaint the rolled graph completely` })
-        .toBe(true);
+          return {
+            inSync: JSON.stringify(g.domIds) === JSON.stringify(g.dataIds),
+            emptyLabels: g.emptyLabels,
+            outWired: g.outWired,
+          };
+        }, { message: `seed ${seed}: editor must repaint the rolled graph completely, labels included` })
+        .toEqual({ inSync: true, emptyLabels: 0, outWired: true });
       shapes.push(JSON.stringify((await domGraph()).opKinds));
     }
     expect(shapes[0], `graph must visibly REROLL across seeds (both: ${shapes[0]})`).not.toEqual(shapes[1]);

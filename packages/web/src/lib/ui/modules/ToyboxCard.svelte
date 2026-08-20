@@ -914,7 +914,22 @@
    *  when nodes are added/removed/retyped. */
   let graph = $derived.by<ToyboxCombineGraph>(() => {
     const c = readLiveCombine();
-    return isCombineGraph(c) ? (c as ToyboxCombineGraph) : makeDefaultCombineGraph();
+    // ⚠ MINT A FRESH PLAIN CLONE per evaluation — never return the live store
+    // proxy. Returning the proxy shipped the 2026-08-20 owner-black-editor
+    // bug: a RANDOMIZE roll replaces combine.nodes/edges IN PLACE, so the
+    // proxy reference never changes, `graph` "re-evaluates" to an Object.is-
+    // equal value, and NOTHING downstream invalidates — in the dock the
+    // each-block kept rendering the spliced-out node objects, which are
+    // DETACHED Yjs proxies whose every read returns undefined (measured:
+    // six `toybox-gnode-undefined` boxes with blank labels over an 8-node
+    // data graph, and a selection panel frozen until F5). A fresh clone is a
+    // fresh reference on every layersRev/node trigger, so the editor, the
+    // labels map, and the selection panel all re-derive in lockstep with the
+    // data. Cost: one small JSON round-trip per bump (the combine graph is a
+    // few KB; the CV target lists already re-derive at the same cadence).
+    return isCombineGraph(c)
+      ? (JSON.parse(JSON.stringify(c)) as ToyboxCombineGraph)
+      : makeDefaultCombineGraph();
   });
 
   /** Node ids LOCKED against randomize (#1576 ws3) — a FRESH Set per
