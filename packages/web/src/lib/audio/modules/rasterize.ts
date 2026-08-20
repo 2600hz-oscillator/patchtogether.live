@@ -206,6 +206,16 @@ export const rasterizeDef: AudioModuleDef = {
   // parity loss even though the value semantics are identical. `wrap` is NOT in
   // the map: it is a button on the card and a named `segmented` cell here.
   face: {
+    // ⚠ REVISIT THIS RANK WHEN #2000 IS DECIDED. `cursor` sits last because
+    // that issue documents it as a change detector that cannot be returned to
+    // the value it is displaying — i.e. the rank encodes a DEFECT, not a
+    // judgement about what a scan-position control is worth. If #2000 is fixed
+    // so SCAN re-seats on any write and addresses a sane unit, it becomes an
+    // ordinary position control and belongs well above `wrap`; the B10.2 spec
+    // ranked it third for exactly that reading of the module. Left last for now
+    // because a 3-cell compact tile must not lead with an untrustworthy
+    // control. Pointer left deliberately so this is re-decided rather than
+    // fossilised by inheritance.
     order: ['samplesPerFrame', 'gain', 'wrap', 'cursor'],
     glyph: 'none',
     paramCells: { samplesPerFrame: 'fader', gain: 'fader', cursor: 'fader' },

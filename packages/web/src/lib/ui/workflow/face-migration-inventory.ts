@@ -389,7 +389,12 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
       '`domain === "video"` and this is an AUDIO def with a mono-video OUT painted in JS by ' +
       'RasterPainter, so the shell has no generic route to the picture at all. Four params rank ' +
       'normally around it; SCAN ranks LAST because it is a change detector rather than a position ' +
-      'control (#2000, left open).',
+      'control (#2000, left open — revisit the rank if that issue is fixed). ' +
+      '⚠ THE "registered panel" HALF OF THE PREDICTION WAS DELIBERATELY NOT TAKEN, and the reason ' +
+      'is a blind-gate one rather than a preference: a PF-14 panel cell REQUIRES a probe, and the ' +
+      'only probe available here reads a DIFFERENT control (the WRAP caption) — a picture whose ' +
+      'aliveness check cannot observe the picture. `fullViewBody` needs no such proxy, and ' +
+      '`videoOut` is the precedent it matches exactly: a card whose BODY is the live screen.',
   },
   { type: 'reshaper', disposition: 'generic-face' },
   { type: 'resofilter', disposition: 'generic-face' },
