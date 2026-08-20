@@ -5,20 +5,28 @@
 //
 // WHY ONE FILE. The reason to read these four together is a CONTRAST that no
 // single-module file could state. `moog962` and `sampleHold` each have exactly
-// one DISCRETE param, and only one of them gains a named picker:
+// one DISCRETE param, and the pair separates TWO questions that look like one:
 //
-//   · sampleHold's ten scale NAMES already existed — the legacy card renders
-//     them in its own element above the knob — and the shell could not reach
-//     them, so they are PROMOTED into `options`.
-//   · moog962's STAGES has no names at all. Its values ARE their own labels
-//     (2 stages; 3 stages), so declaring a roster would print under the control
-//     the very number the control already is, and change the I/O contract to
-//     do it.
+//   · WHAT ARE THE STATES CALLED? sampleHold's ten scale NAMES already existed
+//     — the legacy card renders them in its own element above the knob — and
+//     the shell could not reach them, so they are PROMOTED into `options`.
+//     moog962's two states have no semantic names, so they are labelled with
+//     their own values ('2', '3'), which invents nothing.
+//   · CAN A PLAYER REACH EACH STATE? Both get a roster, because the roster is
+//     also the ONLY mechanism that yields a segmented cell — `face.paramCells`
+//     has no segmented kind to declare.
 //
-// The rule the pair establishes — PROMOTE names that exist, never INVENT names
-// to justify a nicer cell — is only visible when both are asserted in one
-// place, and it is the rule most likely to be eroded by a later "consistency"
-// pass that gives moog962 a roster because sampleHold has one.
+// ⚠ THE SECOND QUESTION WAS MISSED ON THE FIRST PASS AND CI CAUGHT IT. moog962
+// originally shipped with NO roster, on the reasoning that its values are their
+// own labels; `faces-parity` then failed both attempts with *"moog962 cell
+// 'stages' (param/knob): dragging the knob commits a param change into the
+// graph"*. A `2..3 discrete` param has exactly two reachable positions across
+// the dial's whole travel, so a drag quantises back to where it started and the
+// control is INERT — a real usability defect the legacy card shares.
+//
+// So the rule is: a roster makes states SELECTABLE, and its labels must be the
+// module's real names where it has them and never fabricated semantics. That is
+// the clause most likely to erode in a later pass, in either direction.
 //
 // The same contrast runs through the glyphs: two of these modules take a live
 // meter and two refuse one, for reasons that are properties of their PORTS.
@@ -105,7 +113,7 @@ describe('one-knob faces — promotion, ranking and the defaults they were built
   });
 });
 
-describe('one-knob faces — PROMOTE names that exist, never INVENT them', () => {
+describe('one-knob faces — rosters make states SELECTABLE; labels are never invented', () => {
   it('sampleHold: the scale roster is TOTAL and DERIVED from the quantiser table', () => {
     const opts = param(sampleHoldDef, 'scale').options;
     expect(opts, 'sampleHold must declare its scale names').toBeDefined();
@@ -135,22 +143,34 @@ describe('one-knob faces — PROMOTE names that exist, never INVENT them', () =>
     expect(paramCellKind(scale, NO_MOMENTARY, 'lane')).toBe('knob');
   });
 
-  it('moog962: STAGES declares NO roster, and that ABSENCE is doing work', () => {
+  it('moog962: STAGES is SELECTABLE — a two-state param gets a two-state control', () => {
+    // ⚠ THIS CLAUSE IS INVERTED FROM ITS FIRST VERSION, AND THE INVERSION IS
+    // THE LESSON. It originally asserted moog962 declared NO roster, on the
+    // reasoning that its values are their own labels so a roster would only
+    // restate the dial. `faces-parity` refuted that on CI: *"moog962 cell
+    // 'stages' (param/knob): dragging the knob commits a param change into the
+    // graph"*, failed on both attempts.
+    //
+    // A `2..3 discrete` param has exactly TWO reachable positions across the
+    // dial's whole travel, so an ordinary drag quantises back to where it
+    // started and the control is INERT. Naming and SELECTABILITY are different
+    // questions, and only the first one was being answered.
     const stages = param(moog962Def, 'stages');
-    expect(stages.options, 'moog962 STAGES must NOT declare options').toBeUndefined();
-    expect(paramCellKind(stages, NO_MOMENTARY, 'dock')).toBe('knob');
+    expect(stages.options, 'moog962 STAGES must declare its two positions').toBeDefined();
+    expect(stages.options!.map((o) => o.label)).toEqual(['2', '3']);
+    expect(stages.options!.map((o) => o.value)).toEqual(
+      Array.from({ length: stages.max - stages.min + 1 }, (_, i) => stages.min + i),
+    );
+    expect(stages.options!.length).toBeLessThanOrEqual(SEGMENTED_MAX_OPTIONS);
+    expect(paramCellKind(stages, NO_MOMENTARY, 'dock')).toBe('segmented');
+  });
 
-    // NEGATIVE CONTROL: the only thing separating this from sampleHold is the
-    // roster. Add one and the dock cell changes kind — which is exactly why the
-    // absence is a decision worth pinning rather than an oversight.
-    const withRoster: ParamDef = {
-      ...stages,
-      options: [
-        { value: 2, label: '2' },
-        { value: 3, label: '3' },
-      ],
-    };
-    expect(paramCellKind(withRoster, NO_MOMENTARY, 'dock')).toBe('segmented');
+  it('NEGATIVE CONTROL: without the roster it degrades to the inert knob CI caught', () => {
+    // Both directions, so the clause above cannot pass vacuously — and so the
+    // regression has a name if anyone removes the roster as "redundant".
+    const stripped: ParamDef = { ...param(moog962Def, 'stages') };
+    delete (stripped as { options?: unknown }).options;
+    expect(paramCellKind(stripped, NO_MOMENTARY, 'dock')).toBe('knob');
   });
 });
 
