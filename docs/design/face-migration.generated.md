@@ -160,7 +160,7 @@ author a `face` and rank the controls — no new platform capability.
 | `sourcery` | video | — | — |
 | `spectrograph` | audio | — | — |
 | `spirographs` | video | done | — |
-| `stereovca` | audio | — | — |
+| `stereovca` | audio | done | — |
 | `swolevco` | audio | done | — |
 | `synesthesia` | audio | — | — |
 | `tempest` | video | — | — |

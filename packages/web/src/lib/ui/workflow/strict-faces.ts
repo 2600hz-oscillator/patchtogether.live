@@ -2126,6 +2126,33 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // beat — measured by interpolated zero-crossing over 4 s, the modulator sits
   // at EXACTLY the primary's frequency at `ratio = 1`, detune 0.000000 Hz.
   'swolevco',
+  // THE FACEPLATE QUEUE · Q42 — the stereo VCA / ring modulator (2026-08-19).
+  //
+  // A TWO-PARAM MODULE, so STOP 1 is the whole question and the answer is
+  // narrow enough to write down. `noise` is the refusal precedent (one param,
+  // every tier renders the identical control, nothing to rank). This module
+  // clears that bar on ONE fact, measured off the shipping worklet rather than
+  // argued: with nothing patched into `strength_*` the multiplier is `0 +
+  // offset`, so at the shipped defaults every output sample is a multiply by a
+  // literal zero. `level` is therefore bit-exactly INERT at spawn and `offset`
+  // is the only control that can un-mute the module — which is a ranking
+  // argument that WOULD BE WRONG for a different module, and it inverts
+  // declaration order. A face is also the only surface that can say so: the
+  // legacy card's two faders can render neither a landmark tick nor a state
+  // name, so `MUTE at the centre, UNITY at both ends` has nowhere to appear.
+  //
+  // ⚠ THE MERIT ARGUMENT MOVED, AND THIS COMMENT RECORDS THE MOVE RATHER THAN
+  // HIDING IT. The Q42 spec staked the merit on a DERIVED READOUT (a quiescent
+  // `MUTE` / dB line) and said outright that cutting it flips the verdict to NO
+  // FACE ON MERIT. The owner then ruled that legibility onto the CONTROL
+  // instead (#1962, verbatim *"2 - b"*), so the readout is gone and a landmark
+  // roster carries it. That is a NARROWER claim — a name on `offset` cannot see
+  // `level` — and it is the half worth keeping: a level fader at zero is
+  // self-evidently silent, an OFFSET at centre is not.
+  //
+  // NOT CONTROL-HEAVY (2026-08-18 tabbed ruling): two controls, one honest
+  // page, no rail. See the def for the tier ladder and the fader/knob split.
+  'stereovca',
 ]);
 
 /**

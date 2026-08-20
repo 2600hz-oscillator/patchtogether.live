@@ -342,12 +342,8 @@ e2e/tests/vfpga-p3-composite.spec.ts :: chroma-rot: clip B (vin2) chroma transpl
 e2e/tests/vfpga-p3-composite.spec.ts :: chroma-rot: clip B (vin2) chroma transplants onto image A (Y/C, two-source) :: waitForTimeout(600) #2
 e2e/tests/vfpga-p3-composite.spec.ts :: framestore-howl: sustained feedback does not leak (FBOs swapped in place) :: waitForTimeout(4_000) #1
 e2e/tests/vfpga-p3-composite.spec.ts :: pollStats :: waitForTimeout(150) #1
-e2e/tests/vfpga-p4-early-hd.spec.ts :: ${}: bends the smpte source into distinct non-black output :: waitForTimeout(150) #1
 e2e/tests/vfpga-p4-early-hd.spec.ts :: ${}: bends the smpte source into distinct non-black output :: waitForTimeout(300) #1
 e2e/tests/vfpga-p4-early-hd.spec.ts :: macroblock-mosh: clip B (vin2) motion transfers onto image A (two-clip datamosh) :: waitForTimeout(1500) #1
-e2e/tests/vfpga-p4-early-hd.spec.ts :: macroblock-mosh: clip B (vin2) motion transfers onto image A (two-clip datamosh) :: waitForTimeout(250) #1
-e2e/tests/vfpga-p4-early-hd.spec.ts :: macroblock-mosh: clip B (vin2) motion transfers onto image A (two-clip datamosh) :: waitForTimeout(600) #1
-e2e/tests/vfpga-p4-early-hd.spec.ts :: macroblock-mosh: clip B (vin2) motion transfers onto image A (two-clip datamosh) :: waitForTimeout(600) #2
 e2e/tests/vfpga-p4-early-hd.spec.ts :: macroblock-mosh: sustained feedback does not leak (FBOs swapped in place) :: waitForTimeout(4_000) #1
 e2e/tests/vfpga-p4-early-hd.spec.ts :: pollStats :: waitForTimeout(150) #1
 e2e/tests/vfpga-patchpanel-presets.spec.ts :: BUG 2: loading a non-default preset visibly changes OUTPUT away from the smpte test pattern :: waitForTimeout(150) #1
