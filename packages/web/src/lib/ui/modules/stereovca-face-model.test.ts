@@ -238,14 +238,28 @@ describe('the GLYPH binds live, and the face declares the one that reads', () =>
   });
 });
 
-describe('the face declares nothing the resting-text ruling forbids', () => {
-  it('declares NO readouts — the ruling put the legibility on the control instead', () => {
-    expect(face().hero?.readouts ?? []).toEqual([]);
-  });
-
-  it('declares NO sidebar — the one contract-projected face field, and a sweep-budget input', () => {
-    expect(face().sidebar).toBeUndefined();
-  });
+describe('the face declaration', () => {
+  // ── THE TWO RESTING-TEXT CASES ARE GONE: THE TYPES ENFORCE THEM NOW ───────
+  //
+  // This block used to open with `declares NO readouts` (`face.hero.readouts`
+  // empty) and `declares NO sidebar` (`face.sidebar` undefined). #1971 deleted
+  // BOTH FIELDS — `readouts` from `ModuleFaceHero`, `sidebar` from
+  // `ModuleFace` — so neither expression typechecks any more, and the claim
+  // each made is now made by `tsc` for every module before a test runs.
+  // `graph/types.ts` says so at the declaration site: *"THERE IS NO `readouts`
+  // FIELD, AND THERE IS NO `sidebar` ON `ModuleFace`. Both are DELETED, not
+  // deprecated, and re-adding either — under any name — is the mistake this
+  // note exists to prevent."*
+  //
+  // ⚠ DELETED, NOT LAPSED, and the direction is the point: a per-module
+  // runtime check that a field is empty is strictly WEAKER than a type that
+  // refuses the field. The fleet-wide SHAPE is denied by
+  // `face-resting-text-source.test.ts`, which enumerates the permitted text
+  // roles and reddens on the TYPE — the formulation chosen precisely because
+  // four different mechanisms had each passed the gate written for the one
+  // before it. This module declared neither field to begin with (its def says
+  // so, and says it was the RULING rather than an omission), so nothing about
+  // stereovca changed here; only the place the guarantee is enforced.
 
   it('is ONE page holding BOTH controls, so no control is unreachable at the dock', () => {
     const pages = face().pages ?? [];
