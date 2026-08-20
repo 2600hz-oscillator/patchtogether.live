@@ -2182,6 +2182,42 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // NOT CONTROL-HEAVY (2026-08-18 tabbed ruling): two controls, one honest
   // page, no rail. See the def for the tier ladder and the fader/knob split.
   'stereovca',
+  // 4PLEXVID (queue Q44) — the 4-in / 4-out video cross-point switch, and the
+  // video sibling of the already-faced audio `fourplexer`.
+  //
+  // ⚠ THE MERIT IS NOT THE RANKING — THERE ISN'T ONE — IT IS THAT PROMOTION
+  // REPAIRS A CONTROL THAT WAS SHOWING THE WRONG ANSWER. The four selectors are
+  // bit-identically symmetric, so the rank IS declaration order and the def's
+  // own comment says so rather than inventing a priority. What earns the face is
+  // measured: the factory took `{ ...DEFAULTS, ...node.params }` — a FRESH
+  // OBJECT — and the gate path advanced only that copy, so after two rising
+  // edges `handle.readParam('sel1')` was 2 while `node.params.sel1` was
+  // untouched, and `FourPlexVidCard` reads the latter with no `readLive`. The
+  // card showed IN 1 while OUT 1 carried IN 3, permanently, and a reload snapped
+  // the router back — i.e. the module's headline feature neither displayed nor
+  // persisted (#1959, fixed at the seam in the commit below this one).
+  //
+  // ⚠ AND THE FACE COULD NOT BE AUTHORED UNTIL FOUR "PARAMS" STOPPED BEING
+  // OFFERED AS KNOBS (#1958). `gate1..4` are `linear 0..1` synthetic params
+  // holding the edge detector's last level; `listExposableControls` returned all
+  // eight, so a collapsed rack offered four dials where a drag past
+  // `GATE_RISE = 0.6` rotates the router. They are declared `noUserControl`
+  // (`writer: 'cv-port'`, anchored to the four `paramTarget` jacks), which is
+  // both the live fix and the reason face completeness has something to satisfy.
+  //
+  // ⚠ THE INPUT NAMES EXISTED ONLY IN THE CARD, AND PROMOTION DELETES THE CARD.
+  // `IN1…IN4` came from a card-local formatter, so a face authored without an
+  // `options` roster would paint a four-position ANONYMOUS dial on a module
+  // whose whole job is naming which input reaches which output. The roster now
+  // lives on the def, which is also the one edit in this PR that MOVES THE WEBGL
+  // ATTEST HASH — `face` and `noUserControl` are hash-transparent, `params` is
+  // not. It is batched here so the re-attest is paid once.
+  //
+  // NO READOUT, NO SIDEBAR, NO HERO: the 2026-08-19 ruling removed the fields,
+  // and the routing state is each selector's own named position plus
+  // `aria-valuetext`. NOT CONTROL-HEAVY — four controls, one idea, one
+  // unlabelled band, no rail.
+  '4plexvid',
 ]);
 
 /**
