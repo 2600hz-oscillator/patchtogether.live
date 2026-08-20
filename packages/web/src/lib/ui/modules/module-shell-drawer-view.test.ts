@@ -123,9 +123,15 @@ describe('ModuleShell: the faceplate question is `view !== lane`, never `=== doc
       /let\s+jackRail\s*=\s*\$derived\(\s*view\s*!==\s*'dock-full'\s*\)/,
     );
     expect(code, 'the jack rail must actually be GATED on that flag').toMatch(/\{#if\s+jackRail\}/);
-    // The tab roster is asked with the VIEW, so "is this face tabbed" keeps one
-    // authority (a hide with no rail is a blank faceplate — dock-tabs-model).
-    expect(code, 'dockTabPlan must receive the view').toMatch(/dockTabPlan\(\s*dockBands\s*,\s*view\s*\)/);
+    // The tab roster is asked with the VIEW **and the DEF**, so "is this face
+    // tabbed" keeps one authority (a hide with no rail is a blank faceplate —
+    // dock-tabs-model). ⚠ THE DEF JOINED THE CALL when `face.tabbed` landed: a
+    // def-less call here would compute the THRESHOLD answer while DockFullView
+    // computes the opt-in one, which is the same two-consumer disagreement this
+    // assertion exists to prevent — just one argument further along.
+    expect(code, 'dockTabPlan must receive the view AND the def').toMatch(
+      /dockTabPlan\(\s*dockBands\s*,\s*view\s*,\s*def\b/,
+    );
     // The host is identifiable from the DOM, which is what the e2e selects on.
     expect(code).toContain('data-shell-view={view}');
   });

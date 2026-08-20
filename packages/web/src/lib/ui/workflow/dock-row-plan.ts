@@ -117,6 +117,11 @@ export const PARAM_CELL_WIDTH_CLASS: Record<ParamCellKind, DockCellWidthClass> =
   momentary: 'column',
   // A 56px swatch at hero — narrower than a knob's 64px column.
   color: 'column',
+  // A 64px RING at hero, 44px in a lane column — the same order as a knob's
+  // 64px column and drawn inside one `.kcol`, so it packs like a dial rather
+  // than holding a row. Stated rather than inherited, per this Record's own
+  // reason for existing.
+  hue: 'column',
   // `ModuleShell`'s fader branch renders `<div class="kcol ms-cell-fader">` and
   // `NeonFader`'s slot is 12px wide inside it. noise could not surface this
   // (one param, promoted to the hero, zero bands, so no fader ever reached a
@@ -150,6 +155,9 @@ export interface RowPlanDefLike {
     // here, because it binds a pair and this map is keyed by one id.
     paramCells?: Readonly<Record<string, AuthoredParamCell>>;
     xyPads?: readonly { x: string; y: string; label?: string }[];
+    /** The owner-instructed tab opt-in — read so packing asks the SAME question
+     *  the rail does (a railed face never packs). */
+    tabbed?: boolean;
   };
 }
 
@@ -324,8 +332,14 @@ export function packRun(counts: readonly number[], cap = DOCK_ROW_MAX_CONTROLS):
  * to lose a section — that would be the `dockFacePlan` control-loss class one
  * level up.
  *
- * `tabbed` defaults to reading `dockTabPlan(bands)` so the two consumers cannot
- * disagree about whether a face is railed; pass it explicitly only in tests.
+ * `tabbed` defaults to reading `dockTabPlan(bands, 'dock-full', def)` so the
+ * three consumers cannot disagree about whether a face is railed; pass it
+ * explicitly only in tests.
+ *
+ * ⚠ THE DEF GOES IN, and it must: since `face.tabbed` can force the rail on
+ * below the band threshold, a `dockTabPlan` call here that omitted the def
+ * would pack the bands of a face the shell renders ONE AT A TIME — rows built
+ * for a layout that is not on screen.
  */
 export function dockRowPlan(
   bands: readonly DockFaceBand[] | null | undefined,
@@ -339,7 +353,7 @@ export function dockRowPlan(
     controls: bs.reduce((n, b) => n + bandControlCount(b), 0),
   });
 
-  const tabbed = opts?.tabbed ?? dockTabPlan(bands) !== null;
+  const tabbed = opts?.tabbed ?? dockTabPlan(bands, 'dock-full', def) !== null;
   // A RAIL shows one band at a time — there is no "beside" to pack into.
   if (tabbed) return bands.map((b) => row([b]));
 

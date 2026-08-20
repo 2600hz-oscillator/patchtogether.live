@@ -132,6 +132,11 @@ const FACE_ANSWER: Readonly<Record<string, FaceAnswer>> = {
   Selector: { via: 'param-cell', kind: 'selector', note: 'and ShellSelectorCell for a data roster' },
   ParamGrid: { via: 'param-cell', kind: 'grid' },
   ColorField: { via: 'param-cell', kind: 'color' },
+  HueWheel: {
+    via: 'param-cell',
+    kind: 'hue',
+    note: 'The conic hue ring. A SEPARATE kind from ColorField beside it: that primitive is a native picker over a DISCRETE packed-RGB param, this is a CONTINUOUS 0..1 angle that WRAPS.',
+  },
 
   // ── read-only pictures ──
   ScopeScreen: { via: 'glyph', kind: 'scope' },

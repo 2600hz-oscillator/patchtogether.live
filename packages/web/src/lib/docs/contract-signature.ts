@@ -164,6 +164,11 @@ export const FACE_FIELDS_NOT_IN_LOCK: Readonly<
     why: 'Which keys are PROMOTED into the hero slot. A promotion removes the key from its band rather than duplicating it, so the move is already gated by an exact multiset comparison that a text line could not improve on.',
     coveredBy: "faces-parity's exact param multiset (a duplicate/unknown is an unbacked extra) + dock-faceplate-model heroFacePlan pins + VRT face-<type>-dock.",
   },
+  tabbed: {
+    why: 'Forces the dock TAB RAIL on below the band threshold. It changes no I/O and no control — the same params render either way, one band at a time instead of a column — so it is a LAYOUT decision whose failure mode is pixels, not contract. It is also the field with the tightest non-golden gate in the repo, which is why a golden line would add nothing: it is OWNER-INSTRUCTION-ONLY and every adopter is named with the instruction verbatim.',
+    coveredBy:
+      'dock-tabs-model.test.ts FACE_TAB_OPT_IN (deny-by-default per module, anchored both directions, instruction quoted) + the live-registry tabbed roster + VRT face-<type>-dock.',
+  },
 };
 
 /** One INPUT/OUTPUT port → a canonical line body (sans the `<type> in/out`

@@ -77,13 +77,68 @@ describe('spirographs — the three audit findings', () => {
 });
 
 describe('spirographs face — the declaration is sound', () => {
-  it('is TABBED: ten pages, past the rail threshold, with no padding', () => {
+  it('is THREE TABS — one per spiro — and the rail is an OWNER OPT-IN, not a threshold win', () => {
+    // ⚠ THIS ASSERTED "ten pages, past the rail threshold" UNTIL 2026-08-19.
+    // The owner replaced the layout by name — *"this should just be 3 tabs, one
+    // per spiro"* — so the page count is now BELOW the threshold and the rail
+    // comes from `face.tabbed`. Both halves are asserted, because either one
+    // alone would be satisfied by a face that is not railed at all.
     const pages = spirographsDef.face!.pages!;
-    expect(pages.length).toBe(1 + SPIRO_COUNT_MAX * SPIRO_PAGE_GROUPS.length);
-    expect(pages.length).toBeGreaterThanOrEqual(DOCK_TAB_MIN_BANDS);
-    // No page is empty, and only `count` is a single-control page.
-    for (const p of pages) expect(p.controls.length, `page ${p.id}`).toBeGreaterThan(0);
-    expect(pages.filter((p) => p.controls.length === 1).map((p) => p.id)).toEqual(['count']);
+    expect(pages.length, 'one page per spiro, and nothing else').toBe(SPIRO_COUNT_MAX);
+    expect(
+      pages.length,
+      'the point of the opt-in: this face is UNDER the threshold and railed anyway',
+    ).toBeLessThan(DOCK_TAB_MIN_BANDS);
+    expect(spirographsDef.face!.tabbed, 'the rail is declared, not derived').toBe(true);
+
+    // Each page carries its spiro's WHOLE bank, and the three ideas survive as
+    // CLUSTERS rather than as pages of their own.
+    for (const [i, page] of pages.entries()) {
+      expect(page.id, 'pages are per-spiro, in spiro order').toBe(`s${i + 1}`);
+      expect(page.controls.length, `page ${page.id} carries the whole bank`).toBe(
+        SPIRO_PARAM_STEMS.length,
+      );
+      const clusters = (page as { clusters?: { label: string; controls: string[] }[] }).clusters;
+      expect(clusters?.map((c) => c.label), `page ${page.id} keeps figure/place/look`).toEqual(
+        SPIRO_PAGE_GROUPS.map((g) => g.label),
+      );
+      // …and the clusters partition the page: every control, exactly once.
+      expect([...(clusters ?? []).flatMap((c) => c.controls)].sort()).toEqual(
+        [...page.controls].sort(),
+      );
+    }
+  });
+
+  it('COUNT is the shared chrome — hero, not a tab of its own', () => {
+    // The owner's instruction was three tabs, one per spiro. `count` is the
+    // module's only true global and decides how many of those tabs mean
+    // anything, so it sits above the rail in every view instead of holding a
+    // rail chip by itself.
+    expect(spirographsDef.face!.hero?.control).toBe('count');
+    const pages = spirographsDef.face!.pages!;
+    expect(
+      pages.flatMap((p) => p.controls),
+      'count is on NO page — it is promoted out of the defensive unpaged band',
+    ).not.toContain('count');
+  });
+
+  it('each spiro HUE is the colour WHEEL, not a dial', () => {
+    // The owner, on the card as the reference layout: *"this is all it needs and
+    // it needs all this including the color picker"*. Asserted per spiro so a
+    // partial declaration (one wheel, two dials) is red.
+    const cells = spirographsDef.face!.paramCells ?? {};
+    for (let i = 1; i <= SPIRO_COUNT_MAX; i++) {
+      expect(cells[spiroParamId(i, 'chroma')], `spiro ${i} hue`).toBe('hue');
+    }
+    // …and the param really is the shape that primitive requires — a
+    // CONTINUOUS single turn. module-face-lint refuses 'hue' on anything else,
+    // so this is the module-side half of that two-sided contract.
+    for (let i = 1; i <= SPIRO_COUNT_MAX; i++) {
+      const pd = spirographsDef.params.find((p) => p.id === spiroParamId(i, 'chroma'))!;
+      expect(pd.min, `spiro ${i} hue min`).toBe(0);
+      expect(pd.max, `spiro ${i} hue max`).toBe(1);
+      expect(pd.curve, `spiro ${i} hue is continuous`).not.toBe('discrete');
+    }
   });
 
   it('every param except `freeze` is ranked exactly once, and `freeze` never is', () => {
@@ -93,8 +148,9 @@ describe('spirographs face — the declaration is sound', () => {
     const rankable = spirographsDef.params.filter((p) => !noControl.has(p.id)).map((p) => p.id);
     expect([...order].sort()).toEqual([...rankable].sort());
     expect(order).not.toContain('freeze');
-    // pages and order carry the SAME keys, in the same order.
-    expect(spirographsPages().flatMap((p) => p.controls)).toEqual([...order]);
+    // `order` is `count` + every page's controls: the hero key must be RANKED
+    // (heroFacePlan resolves it out of the plan) even though it is on no page.
+    expect(['count', ...spirographsPages().flatMap((p) => p.controls)]).toEqual([...order]);
   });
 
   it('the page grouping covers every stem exactly once', () => {
