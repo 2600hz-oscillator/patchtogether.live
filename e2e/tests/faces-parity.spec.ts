@@ -147,6 +147,7 @@ type CellControl =
   | 'selector'
   | 'grid'
   | 'color'
+  | 'hue'
   | 'fader'
   | 'xy'
   | 'action'
@@ -910,6 +911,60 @@ async function driveCell(
         `shows the chosen colour whether or not anything was written — only this element ` +
         `reads the graph back, so a swatch that is decoration fails HERE and nowhere else.`,
     ).toHaveText(wantHex);
+    return;
+  }
+
+  if (cell.control === 'hue') {
+    // A HUE RING (`face.paramCells['x'] = 'hue'`). Like the colour swatch above
+    // it, this kind exists because the alternative — a KnobConic over a 0..1
+    // angle — would have PASSED the knob branch: dragging it commits a param
+    // change. So the probe has to prove more than "a control moved".
+    //
+    // ⚠ IT IS DRIVEN BY A REAL POINTER GESTURE AT A KNOWN ANGLE, not by setting
+    // a value. The whole reason this primitive exists is that the mapping from
+    // POSITION to hue wraps, and a probe that wrote the param directly would
+    // exercise none of that — it would pass just as happily on a ring whose
+    // pointer maths was inverted, off by a quarter turn, or dead. Pressing at a
+    // known point on the ring and asserting the ANGLE THAT IMPLIES is the only
+    // form that can fail on those.
+    const pid = cell.key;
+    const ring = host.locator(`[data-testid="control-${pid}"]`);
+    await ring.scrollIntoViewIfNeeded();
+    const box = await ring.boundingBox();
+    expect(box, `${where}: the ring must have a layout box to press`).toBeTruthy();
+    const cx = box!.x + box!.width / 2;
+    const cy = box!.y + box!.height / 2;
+    const before = (await readParam(page, nodeId, pid)) ?? 0;
+
+    // Press at the THREE O'CLOCK position — a quarter turn clockwise from the
+    // top, i.e. hue 0.25 on a 0..1 ring. Chosen because it is far from both the
+    // default and the 0/1 seam, so neither a stuck control nor a wrap bug can
+    // land on it by accident.
+    const radius = Math.min(box!.width, box!.height) / 2;
+    await page.mouse.move(cx + radius * 0.8, cy);
+    await page.mouse.down();
+    await page.mouse.up();
+
+    const want = 0.25;
+    await expect
+      .poll(() => readParam(page, nodeId, pid), {
+        message:
+          `${where}: pressing at three o'clock on the ring must commit hue ${want} ` +
+          `(was ${before}). A miss of ~0.25 is a quarter-turn offset in the angle maths; ` +
+          `a miss of ~0.5 is an inverted sweep; no change at all is a decorative ring.`,
+      })
+      // The press lands within a pixel or two of the exact angle, so allow a
+      // small tolerance — but far tighter than any of the failure modes above.
+      .toBeCloseTo(want, 1);
+
+    // …and the ACCESSIBLE value follows, which is where this primitive's value
+    // lives: the resting faceplate paints no number, so `aria-valuetext` is the
+    // only readable surface and a spec that did not check it would let the
+    // control go silent for a screen reader without failing.
+    await expect(ring, `${where}: aria-valuetext tracks the committed angle`).toHaveAttribute(
+      'aria-valuetext',
+      /^\d+°$/,
+    );
     return;
   }
 

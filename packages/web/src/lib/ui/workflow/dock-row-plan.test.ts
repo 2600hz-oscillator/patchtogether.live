@@ -362,6 +362,10 @@ describe('cellWidthClass — the instrument, perturbed in both directions', () =
       },
       { kind: 'grid', def: { type: 'x', params: [knobParam('p')], face: { paramCells: { p: 'grid' } } } },
       { kind: 'color', def: { type: 'x', params: [knobParam('p')], face: { paramCells: { p: 'color' } } } },
+      // The HUE RING — a separate kind from `color` beside it, because the two
+      // take opposite param shapes (continuous 0..1 turn vs discrete packed
+      // RGB) and module-face-lint refuses each on the other's.
+      { kind: 'hue', def: { type: 'x', params: [knobParam('p')], face: { paramCells: { p: 'hue' } } } },
       // The throw, in the conic knob's language. ONE row since #1794 collapsed
       // the transitional `neon-fader` kind into this one — the second row here
       // asserted that a second NAME reached the same width class, and there is

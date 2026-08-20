@@ -1105,6 +1105,24 @@ describe('module-face lint — DECLARED param cells (face.paramCells) + PANEL ti
           }
           break;
         }
+        case 'hue': {
+          // ⚠ THE MIRROR OF THE `color` CLAUSE, AND DELIBERATELY NOT SHARED
+          // WITH IT. A hue is CONTINUOUS over exactly one turn (0..1); a packed
+          // RGB is DISCRETE over 0..0xffffff. Each clause rejects the other's
+          // shape, so a `paramCells` typo between two colour-ish kinds is RED
+          // rather than a picker that writes values outside anything the module
+          // can render.
+          const isHue = p.curve !== 'discrete' && p.min === 0 && p.max === 1;
+          if (!isHue) {
+            problems.push(
+              `${def.type}: face.paramCells['${key}'] = 'hue' but the param is ${shape} — a hue ` +
+                `wheel needs a CONTINUOUS param spanning EXACTLY one turn (0..1). The wheel maps ` +
+                `the full ring onto the declared span, so any other range makes one revolution ` +
+                `write values the module never asked for, and no def-reading gate can see that.`,
+            );
+          }
+          break;
+        }
         case 'color': {
           if (!isPackedRgbParam(p)) {
             problems.push(

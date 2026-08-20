@@ -26,6 +26,7 @@ export { default as Selector } from './Selector.svelte';
 export { default as Segmented } from './Segmented.svelte';
 export { default as ParamGrid } from './ParamGrid.svelte';
 export { default as ColorField } from './ColorField.svelte';
+export { default as HueWheel } from './HueWheel.svelte';
 export { default as Toggle } from './Toggle.svelte';
 export { default as Button } from './Button.svelte';
 export { default as Readout } from './Readout.svelte';

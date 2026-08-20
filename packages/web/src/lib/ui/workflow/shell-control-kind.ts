@@ -38,6 +38,7 @@ export type ParamCellKind =
   | 'selector'
   | 'grid'
   | 'color'
+  | 'hue'
   | 'fader'
   // ⚠ `neon-fader` WAS A SECOND NAME FOR THIS KIND AND IS GONE (#1794). It
   // existed only for the transition: #1738 introduced `NeonFader.svelte`
@@ -56,9 +57,26 @@ export type ParamCellKind =
  *   'grid'  — the states are PICTURES (dx7's 32 algorithm topologies).
  *   'color' — the integer is a PACKED 0xRRGGBB, not a position on a scale
  *             (wavesculpt's `red_color`/`grn_color`/`blu_color`).
+ *   'hue'   — the scalar is an ANGLE ON THE COLOUR WHEEL, and it WRAPS
+ *             (spirographs' `chroma`). See the note below: it is a different
+ *             kind from `color`, not a variant of it.
  *   'fader' — the param is a LEVEL the player expects to see as a THROW, not a
  *             dial. Nothing in a ParamDef distinguishes "level" from any other
  *             continuous scalar, so it can only be declared.
+ *
+ * ⚠ 'hue' IS NOT 'color', AND THE DIFFERENCE IS THE PARAM'S SHAPE. `color` is
+ * DISCRETE over the packed-RGB space (0..0xffffff) and picks an arbitrary
+ * sRGB triple; `hue` is CONTINUOUS over 0..1 and picks a position on a ring at
+ * full saturation. Handing a 0..1 hue to `ColorField` would clamp a 16.7-million
+ * state picker onto two values; handing a packed RGB to the wheel would make one
+ * turn sweep the whole 24-bit space. They are declared separately because no
+ * property of the ParamDef distinguishes them from a plain scalar, and
+ * `module-face-lint` refuses each on the other's shape.
+ *
+ * ⚠ AND 'hue' IS NOT A KNOB. A hue is CIRCULAR — 0.99 and 0.01 are adjacent
+ * reds — so a linear dial puts the cut at an arbitrary place in the middle of a
+ * continuous space and makes the player travel the long way round. The wheel is
+ * the affordance the module's own legacy card already used.
  *
  * ⚠ 'grid' AND 'color' ARE INDISTINGUISHABLE TO EVERY RESOLVER IN THE REPO,
  * and that is the argument for declaring rather than sniffing. `1..32 discrete`
@@ -93,7 +111,7 @@ export type ParamCellKind =
  * one gesture"), and `declaredParamCells` folds it in so every consumer of
  * "which kind did the module declare" keeps one answer to read.
  */
-export type DeclaredParamCell = 'grid' | 'color' | 'fader' | 'xy';
+export type DeclaredParamCell = 'grid' | 'color' | 'hue' | 'fader' | 'xy';
 
 /** The subset a module writes in `face.paramCells` — the single-id kinds. `xy`
  *  is absent BY CONSTRUCTION: a pad hand-written here would have no partner,
