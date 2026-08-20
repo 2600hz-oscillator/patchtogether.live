@@ -1,36 +1,42 @@
 {
   "schemaVersion": 1,
-  "webglContentHash": "5e488a0c3b8385351c50117809b5f70100ca2db2190713009c123992e8502603",
-  "attestedAt": "2026-08-20T02:47:15.511Z",
+  "webglContentHash": "d9447b887d9f503b68c6c15631f139f4f296ae07ba0afbbbd842bd64093394df",
+  "attestedAt": "2026-08-19T23:42:09.890Z",
   "attestedBy": "patchtogether-maintainer",
-  "gitHeadAtAttest": "2ba4ce60021284bf03a4f708cd0db84c9a52a3dc",
+  "gitHeadAtAttest": "807a9ae7bdc91db3952c5d4d6d4f3eff0d1b16b1",
   "playwrightVersion": "1.50.0",
   "os": "darwin 25.4.0 (arm64)",
   "machineClass": "local-trusted-gpu-workstation",
   "preflight": {
     "samples": 7,
     "windowMs": 10204,
-    "maxForeignCpu": 1,
+    "maxForeignCpu": 2.1,
     "thresholdCpu": 25,
-    "load1": 1.4931640625,
+    "load1": 3.291015625,
     "cores": 10
   },
   "gpu": "ANGLE (Apple, ANGLE Metal Renderer: Apple M5, Unspecified Version)",
   "appServer": {
-    "url": "http://127.0.0.1:61362",
+    "url": "http://127.0.0.1:53533",
     "mode": "dev",
-    "root": "/Users/2600hz/Documents/workspace/inet.modular/.claude/worktrees/agent-ad207878aebd982bf",
-    "commit": "2ba4ce60021284bf03a4f708cd0db84c9a52a3dc"
+    "root": "/Users/2600hz/Documents/workspace/inet.modular/.claude/worktrees/agent-a9cee50b2065b7757",
+    "commit": "807a9ae7bdc91db3952c5d4d6d4f3eff0d1b16b1"
   },
   "repeatEach": 1,
   "suites": {
     "A-heavy": {
       "specFiles": 57,
-      "passed": 200,
+      "passed": 198,
       "failed": 0,
-      "flaky": 0,
+      "flaky": 1,
       "skipped": 5,
-      "flakyDetails": []
+      "flakyDetails": [
+        {
+          "test": "flag ON: TOYBOX gen layer renders in the worker; downstream OUTPUT is non-black",
+          "file": "render-worker-toybox.spec.ts",
+          "firstError": "Error: TOYBOX OUTPUT is not all-black (nonZeroFrac=0.000) |  | expect(received).toBeGreaterThan(expected) | "
+        }
+      ]
     },
     "A-serial": {
       "specFiles": 6,
@@ -57,5 +63,5 @@
       "flakyDetails": []
     }
   },
-  "durationSec": 232
+  "durationSec": 239
 }

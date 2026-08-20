@@ -1126,6 +1126,52 @@ export const FACES = [
       + 'continuous live passthrough of whatever the video zone is producing, so an unpinned '
       + 'scene would be sampling a moving source rather than the faceplate.',
   },
+  // THE FACEPLATE QUEUE · Q24 — the composite-video destroyer, and the widest
+  // video face in the roster at six bands and 20 painted params.
+  //
+  // `pages: 6` is the declared band count; this face promotes no control into
+  // the hero (its hero carries READOUTS only), so no band is emptied and the
+  // count is exactly `face.pages.length`. Six is also the number that keeps it
+  // OFF the tab rail — `DOCK_TAB_MIN_BANDS` is 7 — so the dock scene frames
+  // stacked bands rather than a rail, and this entry is what would go red if a
+  // seventh page were ever added to force one.
+  {
+    type: 'b3ntb0x',
+    pages: 6,
+    videoFaceWhy:
+      'both scenes carry a LIVE picture: the compact tile paints a VideoTileThumb through '
+      + 'hasVideoSurface, and the dock body is the module\'s own fullViewBody extension — the '
+      + 'CRT preview plus its SCREEN switch. b3ntb0x is the strongest case in the roster for a '
+      + 'pinned capture, because its whole subject is a signal path whose artefacts EMERGE over '
+      + 'time: the subcarrier phase and the timebase wobble both advance with uTime (the wobble '
+      + 'is literally sin(y*47 + uTime*3.3)), so an unfrozen scene would sample a different '
+      + 'point of an animating raster on every run.',
+    // ⚠ THE FIRST AND ONLY DECLARANT of a per-scene time budget (#1949 / #1955),
+    // and the entry that made the mechanism necessary.
+    //
+    // Both scenes CONVERGED under the flat 90 s cap and both wrote their actual
+    // PNG; the dock one was then killed 1.4 s after its snapshot write. Neither
+    // tripped `expect.timeout`, which is the budget that gates DETERMINISM and
+    // is not moved by this. So this is weight, not a determinism finding — see
+    // the note above `FACE_SCENE_BASE_MS`.
+    //
+    // ⚠ THESE NUMBERS ARE NOW SLIGHTLY CONSERVATIVE, deliberately: they were
+    // measured with a hero readout row that the 2026-08-19 owner ruling has
+    // since removed from this face. A cheaper scene under an unchanged bound is
+    // the safe direction, and re-measuring to shave a bound nobody reaches on
+    // green would buy nothing — a timeout is a cap, not a sleep.
+    sceneWeight: measuredSceneWeight({
+      compactMs: 55_600,
+      dockMs: 88_600,
+      measuredOn: 'vrt-update capture run 32288252788 (ubuntu-latest, SwiftShader)',
+      why:
+        'four GLSL programs over six FBOs (two of them RGBA16F), an oversampled composite line, '
+        + 'and a 24-iteration per-pixel sync scan in the decode pass. Measured at 2.6x the '
+        + 'next-heaviest scene in the roster, and the COMPACT scene — which does not render the '
+        + 'dock body at all — already costs 55.6 s against a 7.0-7.7 s non-video / 13.2-21.3 s '
+        + 'video population, so the weight is the module\'s own rather than the faceplate\'s.',
+    }),
+  },
   // THE FACEPLATE QUEUE · Q5 — the Buchla-259-style complex oscillator.
   //
   // `pages: 2` is the POST-hero-split count: the face declares two bands

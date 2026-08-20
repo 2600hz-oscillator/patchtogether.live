@@ -2052,6 +2052,35 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // backdraft: the cv jack renders, the knob never did, and #1726's mechanism
   // is what lets a face say so instead of painting a rotary over a gate swing.
   'freezeframe',
+  // B3NTB0X (2026-08-19, queue Q24) — the composite-video destroyer, and the
+  // most control-heavy video face in the set at 20 painted params.
+  //
+  // ⚠ ITS TWO READOUTS ARE THE MERIT CASE AND BOTH ARE JOINS THE PAGES SPLIT.
+  // The bend circuit's ripple gain is `sync_crush · (1 + 2·enhance) ·
+  // (1 + 0.8·bend_d)` — verified against a numeric replay of the shader to
+  // 1.776e-15 over 972 points — and the face puts those three on two different
+  // pages. It carries a real `1.6·d·E` cross term, so at both full it is ×5.40
+  // where independent controls would give ×3.80, which is why no pair of dials
+  // recovers it. And `bias` is deliberately NOT in it.
+  //
+  // ⚠ `enhance` AND `bend_d` ARE TWO STAGES, NOT ONE (#1940 corrected). ENHANCE
+  // lands before the sync_crush multiply and the bias add, BEND D after both,
+  // so ENHANCE is purely a ripple-gain control while BEND D also multiplies the
+  // bias term by `(1+0.8d)`. The face ranks them adjacent (5 and 6) so no tier
+  // shows one without the other and hides the interaction.
+  //
+  // ⚠ `line shift` STATES A LIVE DEFECT WITHOUT MOVING A PIXEL (#1946). `tbc`
+  // defaults to 1 and `recoverLineOffset` returns `(rawOffset + wobble) *
+  // (1 - tbc)`, so at the shipped settings the picture cannot tear or roll
+  // however hard the sync tip is crushed — which is exactly what the module's
+  // own docs instruct a player to do. The readout prints `locked` there, and
+  // TBC is ranked third, into the same tier as the pair it gates.
+  //
+  // SIX pages, which does NOT reach `DOCK_TAB_MIN_BANDS = 7`, and no page is
+  // padded to make it: FEEDBACK groups with the CRT controls because it is
+  // literally a `crtProgram` uniform. The threshold question is raised, not
+  // settled, in the PR.
+  'b3ntb0x',
   // THE FACEPLATE QUEUE · Q5 — the Buchla-259-style complex oscillator
   // (2026-08-19). The full ranking argument is a comment on the def itself;
   // what belongs HERE is the one finding that made it worth building and the
