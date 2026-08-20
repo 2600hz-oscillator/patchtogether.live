@@ -137,7 +137,7 @@ author a `face` and rank the controls — no new platform capability.
 | `posterbox` | video | — | — |
 | `qbrt` | audio | done | — |
 | `quadralogical` | video | — | — |
-| `rasterize` | audio | — | — |
+| `rasterize` | audio | done | — |
 | `reshaper` | video | — | — |
 | `resofilter` | audio | done | — |
 | `reverb` | audio | done | — |
