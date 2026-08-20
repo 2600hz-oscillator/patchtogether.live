@@ -32,6 +32,35 @@
 
 import { test, expect, type Page } from '@playwright/test';
 import { VIDEO_THUMB_FPS } from '../../packages/web/src/lib/ui/workflow/module-shell-model';
+import {
+  VIDEO_SINK_FIXTURE,
+  fixtureProblems,
+  fixtureType,
+  videoInPortId,
+} from './_face-fixtures';
+
+// ── THE PLACEHOLDER-HOST SUBJECT IS DERIVED, NOT NAMED (#1929) ─────────────
+//
+// This spec used to spawn a literal `grainsOfVision` as `g1`, with a comment
+// explaining that the pick was load-bearing: it had to be UN-MIGRATED, because
+// the assertions on it are the PLACEHOLDER host of `VideoTileThumb` (`b1`,
+// backdraft, is the faced host). Promoting that module leaves all three
+// assertions passing while the thing they prove quietly stops being proven —
+// green and blind, not red.
+//
+// The pick is now resolved from the contract golden by the predicates the
+// assertions actually need, so a future promotion drops the subject out of the
+// pool automatically and the pool refills as new video modules land. See
+// `VIDEO_SINK_FIXTURE`; the health of that resolution is asserted below rather
+// than assumed.
+// ⚠ NEGATIVE-CONTROLLED BY HAND BEFORE MERGE, and the result is recorded here
+// because the control cannot live in the tree: pointing SINK_TYPE at a FACED
+// module (`backdraft`) makes the placeholder assertion below fail with
+// "the derived subject 'backdraft' must render a PLACEHOLDER tile". So this
+// case now goes RED when its subject is promoted, which is exactly what it did
+// NOT do before — that is the whole of #1929.
+const SINK_TYPE = VIDEO_SINK_FIXTURE.kind === 'ok' ? fixtureType(VIDEO_SINK_FIXTURE) : '';
+const SINK_IN_PORT = SINK_TYPE ? videoInPortId(SINK_TYPE) : null;
 
 // CI (and a local E2E_SWIFTSHADER=1 flake-check) rasterize WebGL on the
 // SwiftShader SOFTWARE renderer. With several live video surfaces churning
@@ -474,10 +503,29 @@ test.describe('?shell=1 video visibility', () => {
     expect(providerErrors, `no useStore/provider throws: ${providerErrors.join(' | ')}`).toEqual([]);
   });
 
+  // ⚠ THE FIXTURE'S OWN HEALTH, as a named test rather than an import-time
+  // throw (the #1864 shape). Red at the point a promotion empties the pool,
+  // in the suite that owns it, naming what it lost — never a suite-wide crash
+  // for a reason none of the other cases has anything to do with.
+  test('the derived video-SINK fixture is healthy', () => {
+    expect(fixtureProblems(VIDEO_SINK_FIXTURE), VIDEO_SINK_FIXTURE.why).toEqual([]);
+    // And it must be WIRABLE, which is the half `VIDEO_FIXTURE` does not
+    // promise: a resolved subject with no video input port would fail at
+    // injectPatch with an edge to a port that does not exist.
+    expect(SINK_IN_PORT, `the derived sink '${SINK_TYPE}' exposes a video input port`).not.toBeNull();
+  });
+
   test('video-domain tiles show LIVE ANIMATED thumbnails via the real chain; the fake wave glyph is GONE for them', async ({ page }) => {
     // Software-renderer scale (see SLOW_RENDER): the frames-drawn + pixel-
     // change polls (20s budgets each) don't fit a flat 30s under contention.
     test.setTimeout(SLOW_RENDER ? 90_000 : 30_000);
+    // An exhausted pool is a MIGRATION state, not a failure — the named test
+    // above is what goes red for it. Skipping here keeps the failure in one
+    // place instead of two.
+    test.skip(
+      VIDEO_SINK_FIXTURE.kind !== 'ok' || SINK_IN_PORT === null,
+      VIDEO_SINK_FIXTURE.why,
+    );
     await gotoShell(page);
     await expect(videoOutLane(page)).toBeVisible({ timeout: 15_000 });
 
@@ -493,17 +541,35 @@ test.describe('?shell=1 video visibility', () => {
         // promoted and lost its thumb (#1785), because the "thumb blit DRIVES
         // the real chain and the picture ANIMATES" half of this case needs a
         // tile that HAS one. #1785 gave the faced tile its picture back, so
-        // that is no longer the reason to keep it — this one is:
-        // `grainsOfVision` is UN-MIGRATED, so it exercises the PLACEHOLDER
-        // thumb loop, and b1 now exercises the FACED one. Two hosts, one
-        // `VideoTileThumb`; dropping either would leave a host unproven.
-        { id: 'g1', type: 'grainsOfVision', position: { x: -200, y: 4500 } },
+        // that is no longer the reason to keep it — this one is: `g1` is
+        // UN-MIGRATED, so it exercises the PLACEHOLDER thumb loop, and b1 now
+        // exercises the FACED one. Two hosts, one `VideoTileThumb`; dropping
+        // either would leave a host unproven.
+        //
+        // ⚠ AND THE TYPE IS DERIVED (#1929) — it was the literal
+        // `grainsOfVision` until that module was promoted, which would have
+        // turned this into the FACED host twice over with every assertion still
+        // green. See SINK_TYPE at the top of this file.
+        { id: 'g1', type: SINK_TYPE, position: { x: -200, y: 4500 } },
       ],
       [
         { id: 'e-lb', from: { nodeId: 'l1', portId: 'out' }, to: { nodeId: 'b1', portId: 'in_a' }, sourceType: 'mono-video', targetType: 'video' },
-        { id: 'e-lg', from: { nodeId: 'l1', portId: 'out' }, to: { nodeId: 'g1', portId: 'in_a' }, sourceType: 'mono-video', targetType: 'video' },
+        { id: 'e-lg', from: { nodeId: 'l1', portId: 'out' }, to: { nodeId: 'g1', portId: SINK_IN_PORT! }, sourceType: 'mono-video', targetType: 'video' },
       ],
     );
+
+    // ⚠ THE SUBJECT MUST STILL BE A PLACEHOLDER, ASSERTED ON THE PAGE. The
+    // fixture derives an UN-PROMOTED type from the golden, but the golden is a
+    // committed file and `STRICT_FACES` is code — if they ever disagree, every
+    // assertion below would silently move to the faced host and this case would
+    // duplicate `b1` while reading green. This is the one leg that cannot be
+    // replaced by a stronger derivation, because it is the derivation's own
+    // negative control.
+    await expect(
+      page.locator(`.svelte-flow__node[data-id="g1"] [data-testid="module-shell-placeholder"]`),
+      `the derived subject '${SINK_TYPE}' must render a PLACEHOLDER tile — if it is faced, this ` +
+        `case is a second copy of b1 and the placeholder thumb host is no longer proven anywhere`,
+    ).toHaveCount(1);
 
     // Each PLACEHOLDER tile's glyph slot is the LIVE THUMB, and the fake
     // dashed-wave SVG is GONE for video modules.

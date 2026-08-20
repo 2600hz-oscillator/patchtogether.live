@@ -576,17 +576,202 @@ export const grainsOfVisionDef: VideoModuleDef = {
     { id: 'fb_decay',    label: 'FB Dec',  defaultValue: GRAINS_OF_VISION_DEFAULTS.fb_decay,    min: 0,   max: 1,    curve: 'linear' },
     { id: 'fb_zoom',     label: 'FB Zoom', defaultValue: GRAINS_OF_VISION_DEFAULTS.fb_zoom,     min: GOV_FB_ZOOM_MIN,   max: GOV_FB_ZOOM_MAX,   curve: 'linear' },
     { id: 'fb_rotate',   label: 'FB Rot',  defaultValue: GRAINS_OF_VISION_DEFAULTS.fb_rotate,   min: GOV_FB_ROTATE_MIN, max: GOV_FB_ROTATE_MAX, curve: 'linear' },
-    { id: 'fb_dry',      label: 'FB Dry',  defaultValue: GRAINS_OF_VISION_DEFAULTS.fb_dry,      min: 0,   max: 1,    curve: 'linear' },
+    // ⚠ `discrete`, NOT `linear`, AND THE CARD ALREADY CLAIMED IT WAS. This is
+    // consumed as `fbDry >= 0.5` (one branch, two states), and the card's own
+    // comment says "fb_dry / rev_dry render as 2-step DRY toggles" — which the
+    // code did not honour: the card passes `curve={pcurve(k.id)}`, `pcurve`
+    // returns the def's value, and `NeonFader.fracToValue` rounds ONLY for
+    // `discrete`. So everything in [0, 0.5) looked set and did nothing, and
+    // `docs` compounded it by stating "0/1". Promotion makes it worse rather
+    // than better: `looksLikeToggle` is `curve === 'discrete' && min === 0 &&
+    // max === 1`, so a def-driven faceplate would paint a continuous rotary
+    // over a two-state value. The declaration now matches the consumer.
+    { id: 'fb_dry',      label: 'FB Dry',  defaultValue: GRAINS_OF_VISION_DEFAULTS.fb_dry,      min: 0,   max: 1,    curve: 'discrete' },
     { id: 'rev_mix',     label: 'Rev Mix', defaultValue: GRAINS_OF_VISION_DEFAULTS.rev_mix,     min: 0,   max: 1,    curve: 'linear' },
     { id: 'rev_size',    label: 'Rev Sz',  defaultValue: GRAINS_OF_VISION_DEFAULTS.rev_size,    min: 0,   max: 1,    curve: 'linear' },
     { id: 'rev_decay',   label: 'Rev Dec', defaultValue: GRAINS_OF_VISION_DEFAULTS.rev_decay,   min: 0,   max: 0.99, curve: 'linear' },
     { id: 'rev_diffuse', label: 'Rev Dif', defaultValue: GRAINS_OF_VISION_DEFAULTS.rev_diffuse, min: 0,   max: 1,    curve: 'linear' },
-    { id: 'rev_dry',     label: 'Rev Dry', defaultValue: GRAINS_OF_VISION_DEFAULTS.rev_dry,     min: 0,   max: 1,    curve: 'linear' },
-    { id: 'composite',   label: 'Comp',    defaultValue: GRAINS_OF_VISION_DEFAULTS.composite,   min: 0,   max: GOV_COMPOSITE_MODE_COUNT - 1, curve: 'discrete' },
+    // Same defect as `fb_dry` above, same fix — consumed as `revDry >= 0.5`.
+    { id: 'rev_dry',     label: 'Rev Dry', defaultValue: GRAINS_OF_VISION_DEFAULTS.rev_dry,     min: 0,   max: 1,    curve: 'discrete' },
+    // ⚠ THE `options[]` ROSTER IS WHAT STOPS THIS PAINTING A BARE NUMBER. The
+    // curve was already `discrete` and the range already 0..4, but with no
+    // roster `paintsReadout` has no NAME to show, so a faceplate would render
+    // an unlabelled 5-position dial over five differently-behaving modes. The
+    // card hid this with a card-local `formatValue={formatComp}` — which dies
+    // with the card at promotion, so the face must carry the names itself.
+    //
+    // Derived from `GOV_COMPOSITE_MODES`, never re-typed: a sixth mode arrives
+    // here without an edit, and cannot disagree with the mode the shader picks.
+    // 5 states is within `SEGMENTED_MAX_OPTIONS`, so the dock paints a named
+    // button row; `options` deliberately outranks `looksLikeToggle`.
+    {
+      id: 'composite',   label: 'Comp',    defaultValue: GRAINS_OF_VISION_DEFAULTS.composite,   min: 0,   max: GOV_COMPOSITE_MODE_COUNT - 1, curve: 'discrete',
+      options: GOV_COMPOSITE_MODES.map((name, i) => ({ value: i, label: name })),
+    },
     { id: 'comp_amount', label: 'Cmp Amt', defaultValue: GRAINS_OF_VISION_DEFAULTS.comp_amount, min: 0,   max: 1,    curve: 'linear' },
     // freeze — hidden VRT/determinism toggle (no card control).
     { id: 'freeze',      label: 'Freeze',  defaultValue: GRAINS_OF_VISION_DEFAULTS.freeze,      min: 0,   max: 1,    curve: 'linear' },
   ],
+
+  // #1726 — the ONE synthetic param, declared now that a FACE exists to be
+  // protected from it. `module-face-lint` requires every ParamDef to render
+  // exactly one interactive cell on a promoted face; without this entry
+  // `freeze` would paint as a continuous rotary over a flag nobody sets by
+  // hand, and the dock render-plan parity gate inverts to require EXACTLY ZERO
+  // cells once it is declared.
+  //
+  // ⚠ `writer: 'internal'` IS CHECKED AGAINST THE PORT LIST IN BOTH DIRECTIONS
+  // (`no-user-control.ts`): the entry is RED if any input declares
+  // `paramTarget: 'freeze'`. None does, and the def says so at the top of
+  // `inputs` — "No CV for the two dry toggles or freeze (hidden)".
+  //
+  // Hash-transparent (`HASH_TRANSPARENT_PROPS`), so this block costs no
+  // re-attest — which is the whole reason #1726 put it here rather than
+  // inventing a `hidden` field on `params`.
+  noUserControl: [
+    {
+      param: 'freeze',
+      writer: 'internal',
+      why: "A determinism toggle for VRT capture, with NO control anywhere - not on the card, not on the faceplate, not on the patch surface. At 0.5 or above draw() is a no-op so the history ring, the feedback buffer and the reverb accumulator all hold their last state. This module cannot be pinned by a clock: its picture is a function of how many frames have been integrated, not of elapsed time. The visual-regression harness writes it before comparing a screenshot; nothing else ever does.",
+    },
+  ],
+
+  // ── THE FACEPLATE (queue Q26) ─────────────────────────────────────────────
+  //
+  // WHAT IT IS FOR. Every other video module in the bank rearranges SPACE —
+  // bentbox bends it, cellshade quantises it, chroma keys it. This one is the
+  // only module in the bank that GRAINS TIME: a grain is a windowed patch
+  // sampled at a jittered POSITION and a jittered MOMENT from an 8-frame
+  // history ring, scattered into the output and then run through a feedback
+  // block and a real video reverb on one fixed chain. The verb is SCATTER, and
+  // the thing being scattered includes WHEN.
+  //
+  // THE HERO IS `rate`, AND THE ARGUMENT IS EXCLUSIVITY RATHER THAN SIZE.
+  // `density`, `spray`, `window` and `orient` all have spatial analogues
+  // elsewhere in the bank, and `feedback`/`reverb` have one in backdraft.
+  // `rate` — how far back into the frame history a grain may reach — is the
+  // only control here that no sibling has. ⚠ The test that this argument is not
+  // a template: on backdraft it selects NOTHING, because backdraft's identity
+  // is its feedback GEOMETRY and its `delay` is a consumer of that idea rather
+  // than the module's point.
+  //
+  // ⚠ AND THE HERO SHIPS NEARLY OFF. `govDelayFrames(rate) = round(rate·7)`,
+  // so the shipped `rate = 0.15` is ONE frame of the ring's eight, and
+  // `rate < 1/14` is bit-exactly zero frames — a hard no-op. Ranking it first
+  // is a statement about what the module IS, not about what the defaults do.
+  //
+  // `order` and `pages` DISAGREE deliberately. `order` is PRIORITY: the two
+  // TIME controls lead, because a tier showing three cells should show the
+  // thing that distinguishes the module. `pages` is the SIGNAL CHAIN — what a
+  // grain is, where it lands, when it comes from, then the two post blocks and
+  // the modulator. Six bands, under `DOCK_TAB_MIN_BANDS = 7`, so this face is
+  // UNTABBED and its band labels paint.
+  //
+  // ⚠ THE SEVENTH PAGE WAS REFUSED ON PURPOSE. `fb_zoom`/`fb_rotate` are
+  // defensibly their own idea (how the returning frame is TRANSFORMED, vs how
+  // much of it returns) and splitting them would reach the rail exactly. That
+  // is the reason not to: a page authored because the threshold is 7 is the
+  // padding the tabbed ruling forbids in the same paragraph that mandates the
+  // rail. They sit in `feedback`, which is a 5-control band and legible.
+  face: {
+    order: [
+      // TIME first — the only thing this module does that its siblings do not.
+      'rate', 'time_spray',
+      // What a grain IS, then where it lands.
+      'density', 'grain_size', 'spray', 'window', 'orient',
+      // The two post blocks, then the modulator.
+      'feedback', 'fb_decay', 'fb_zoom', 'fb_rotate', 'fb_dry',
+      'rev_mix', 'rev_size', 'rev_decay', 'rev_diffuse', 'rev_dry',
+      'composite', 'comp_amount',
+    ],
+
+    pages: [
+      {
+        id: 'grain',
+        label: 'grain',
+        hint: 'what a grain IS — how many pack the frame, how big each patch is, and how hard or soft its edge',
+        controls: ['density', 'grain_size', 'window'],
+      },
+      {
+        id: 'scatter',
+        label: 'scatter',
+        hint: 'where a grain lands and where it reads from; at Spray 0 the picture is reconstructed faithfully',
+        controls: ['spray', 'orient'],
+      },
+      {
+        id: 'time',
+        label: 'time',
+        hint: 'how far back into the 8-frame history a grain may reach, and how far the swarm is spread across it',
+        controls: ['rate', 'time_spray'],
+      },
+      {
+        id: 'feedback',
+        label: 'feedback',
+        hint: 'how much of the previous OUTPUT returns, and how it is zoomed and rotated on the way so the transform compounds into tunnels',
+        controls: ['feedback', 'fb_decay', 'fb_zoom', 'fb_rotate', 'fb_dry'],
+      },
+      {
+        id: 'reverb',
+        label: 'reverb',
+        hint: 'a real video reverb — a decaying, spatially diffused accumulator where bright grains bloom outward and linger',
+        controls: ['rev_mix', 'rev_size', 'rev_decay', 'rev_diffuse', 'rev_dry'],
+      },
+      {
+        id: 'composite',
+        label: 'composite',
+        hint: 'how a second source at B modulates A region-by-region — INERT with only A patched, which is the shipped mono-source case',
+        controls: ['composite', 'comp_amount'],
+      },
+    ],
+
+    // ⚠ MANDATORY AND COUNTER-INTUITIVE, the same trap backdraft, spirographs
+    // and mirrorpool all document. `primaryAudioOutPortId` matches
+    // `type === 'audio'` and this def has none, so ANY other glyph literal
+    // resolves to `{kind:'static'}` and reddens module-face-lint's dead-glyph
+    // clause. The live picture arrives from a different seam entirely —
+    // `hasVideoSurface(def)` mounting VideoTileThumb at the lane, and the
+    // `fullViewBody` extension at the dock.
+    glyph: 'none',
+
+    // THE SCREEN ON/OFF SWITCH ARRIVES THROUGH THIS SLOT, AND IT HAS TO
+    // (#1928). Promotion sets `migrated()` true and neither surface renders
+    // `GrainsOfVisionCard.svelte` again, so a toggle authored on the card would
+    // be deleted by the promotion meant to keep it. `previewCollapsed` appears
+    // in zero shell files, so there is no generic affordance to fall back on.
+    extension: 'grainsOfVision',
+
+    // The card draws all 19 as `<NeonFader>` THROWS, and nothing in a ParamDef
+    // separates "a throw" from any other continuous scalar — undeclared, the
+    // face silently repaints every one as a dial.
+    //
+    // ⚠ THREE ARE DELIBERATELY ABSENT. `composite` resolves to a SEGMENTED
+    // named button row from its `options[]` roster, and `fb_dry`/`rev_dry` to
+    // TOGGLES from `curve: 'discrete'`; declaring a cell kind for any of them
+    // would override the thing that makes them legible.
+    paramCells: {
+      rate: 'fader', time_spray: 'fader',
+      density: 'fader', grain_size: 'fader', spray: 'fader', window: 'fader', orient: 'fader',
+      feedback: 'fader', fb_decay: 'fader', fb_zoom: 'fader', fb_rotate: 'fader',
+      rev_mix: 'fader', rev_size: 'fader', rev_decay: 'fader', rev_diffuse: 'fader',
+      comp_amount: 'fader',
+    },
+
+    // ⚠ THERE IS NO `hero` AND NO READOUT ROW. Three derived readouts were
+    // specced for this face — the smear depth in FRAMES (a step function over a
+    // dial that looks continuous), the feedback block's effective gain, and the
+    // reverb's tail length. The 2026-08-19 owner ruling (#1957) deleted the hero
+    // readout strip from the platform: the resting faceplate paints no
+    // derived-state text in any shape.
+    //
+    // WHICH FINDING LOST ITS SURFACE, said out loud rather than left to lapse:
+    // `govDelayFrames(rate) = clamp(round(clamp01(rate)·7), 0, 7)` is a STEP
+    // function, so the whole bottom 1/14 of the RATE dial is bit-exactly zero
+    // frames — the module's headline gesture switched off — and the dial gives
+    // no hint of the boundary. Nothing painted says that now. The arithmetic and
+    // its permanent negative controls live in
+    // `grains-of-vision-face-model.test.ts`, and the value reaches
+    // `aria-valuetext` on the dial itself.
+  },
 
   docs: {
     explanation: "grains of vision is a granular VIDEO synthesizer: it shatters the incoming picture into a swarm of tiny windowed patches (grains) and re-scatters them into a new frame, then runs that through a feedback block and a video-reverb block on ONE fixed linear chain (video -> granular engine -> feedback -> reverb -> out) — not a node graph. A grain is a small windowed patch of source A sampled at a jittered position AND a jittered moment in time (from a short history of recent frames), so grains have a real temporal axis — the novel part of GRANULAR video. Density sets how many grains pack the frame; Size sets each grain's radius (>=1 cell = overlapping, blended); Window morphs the grain edge from a hard chip to a soft gaussian bloom; Spray scatters where each grain sits and where in the source it grabs from (at 0 it reconstructs the picture faithfully, rising it clouds into abstraction); Rate sets how far back in the frame-history grains reach and T-Spray scatters them across time for a shimmering time-smear; Orient tumbles each patch. The FEEDBACK block mixes the previous OUTPUT back in, zoomed/rotated a touch each pass so it compounds into tunnels and trails (FB amount 0 = a transparent dry passthrough). The REVERB block is a true video reverb — a decaying, spatially-diffused accumulator (the image analogue of a reverb tail): each bright grain blooms outward (Rev Size = room size, Rev Diffuse = how it scatters) and lingers, fading over frames (Rev Decay = tail length), mixed dry/wet by Rev Mix (0 = a transparent dry passthrough). Patch a second source into B and pick a COMPOSITE mode to have B modulate A's grains region-by-region: density-map (B brightness thins/thickens grains), displace (B warps where grains grab from), size-map (B scales grain size), rate-map (B scrubs the per-region time). With only A patched it runs mono-source (composite off). Like every video processor an unpatched input renders black; the defaults are tuned so any patched source is immediately alive — a mid-density overlapping grain field with a little temporal smear, gentle feedback trails and a soft reverb bloom.",
@@ -608,7 +793,7 @@ export const grainsOfVisionDef: VideoModuleDef = {
       rev_size: "CV that modulates Rev Sz (reverb spatial spread / room size), swept linearly over 0..1.",
       rev_decay: "CV that modulates Rev Dec (reverb tail length / temporal persistence), swept linearly over 0..0.99.",
       rev_diffuse: "CV that modulates Rev Dif (reverb tap scatter — how isotropic the smear is), swept linearly over 0..1.",
-      composite: "CV that modulates Comp (the composite mode) using a discrete cvScale, snapping to the 5 modes (off / density / displace / size / rate). Inert while B is unpatched.",
+      composite: "CV that SELECTS Comp (the composite mode) using a discrete cvScale, snapping to the 5 modes (off / density / displace / size / rate). Inert while B is unpatched. NOTE the discrete cvScale REPLACES the control rather than offsetting it: while a cable is patched here the Comp buttons on the card and the faceplate are inert, and a cable resting at 0 V selects mode 2 (displace), not the dial's setting.",
       comp_amount: "CV that modulates Cmp Amt (composite modulation depth), swept linearly over 0..1.",
     },
     outputs: {

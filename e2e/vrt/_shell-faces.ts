@@ -1172,6 +1172,28 @@ export const FACES = [
         + 'video population, so the weight is the module\'s own rather than the faceplate\'s.',
     }),
   },
+  // THE FACEPLATE QUEUE · Q26 — the granular video synth.
+  //
+  // `pages: 6` is the declared band count and also the post-split count: this
+  // face promotes nothing into the hero (it declares no `hero` at all), so no
+  // band is emptied. Six is what keeps it OFF the tab rail
+  // (`DOCK_TAB_MIN_BANDS` is 7) — and the seventh page was available and
+  // REFUSED, because splitting `fb_zoom`/`fb_rotate` out purely to reach the
+  // threshold is the padding the tabbed ruling forbids. This entry is what
+  // would go red if a seventh page were ever added to force a rail.
+  {
+    type: 'grainsOfVision',
+    pages: 6,
+    videoFaceWhy:
+      'both scenes carry a LIVE picture: the compact tile paints a VideoTileThumb through '
+      + 'hasVideoSurface, and the dock body is the module\'s own fullViewBody extension. ⚠ AND IT '
+      + 'IS THE WORST CASE IN THE ROSTER FOR AN UNPINNED CAPTURE, because ALL THREE of its '
+      + 'stateful blocks integrate per DRAW rather than per unit of time: an 8-frame history ring '
+      + 'that grains sample a jittered MOMENT from, a feedback buffer that folds the previous '
+      + 'output back in zoomed and rotated so the transform compounds, and a reverb accumulator '
+      + 'that decays over frames. Pinning a clock would not settle any of them; only the freeze '
+      + 'param, which returns out of draw() before any of it advances, does.',
+  },
   // THE FACEPLATE QUEUE · Q5 — the Buchla-259-style complex oscillator.
   //
   // `pages: 2` is the POST-hero-split count: the face declares two bands
