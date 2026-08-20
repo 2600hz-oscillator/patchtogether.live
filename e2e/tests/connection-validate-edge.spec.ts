@@ -26,7 +26,7 @@
 //      visually rejects the drag BEFORE commit.
 
 import { test, expect, type Page } from '@playwright/test';
-import { spawnPatch } from './_helpers';
+import { spawnPatch, type SpawnNode } from './_helpers';
 
 test.describe.configure({ mode: 'parallel' });
 
@@ -103,27 +103,56 @@ async function isValidConnection(
   );
 }
 
-/** Boot + spawn an analogVco and a filter (no edges). analogVco.saw is an
- *  audio OUTPUT; filter has an `audio` INPUT (audio) and a `cutoff` INPUT
- *  (cv). audioOut gives us a port to exercise the direction check. */
+/** The rack every test here boots: analogVco.saw is an audio OUTPUT; filter has
+ *  an `audio` INPUT and a `cutoff` INPUT (cv); audioOut gives us a port to
+ *  exercise the direction check.
+ *
+ *  Declared once so the BUDGET below derives from the real spawn list rather
+ *  than a number typed beside it — adding a module raises the budget by itself. */
+const SETUP_NODES: SpawnNode[] = [
+  { id: 'vco-1', type: 'analogVco', position: { x: 100, y: 100 }, domain: 'audio' },
+  { id: 'flt-1', type: 'filter',    position: { x: 500, y: 100 }, domain: 'audio' },
+  { id: 'out-1', type: 'audioOut',  position: { x: 900, y: 100 }, domain: 'audio' },
+];
+
+/**
+ * Budget SCALED BY SPAWN COUNT, not flat — the `videoout-detach-display`
+ * `sceneTimeout` shape (`30_000 + modules * 15_000`), and the same constants.
+ *
+ * ⚠ THIS IS NOT A RAISED CEILING HIDING A SLOW TEST, and the distinction is the
+ * whole reason it is written this way. The default 30 s was FLAT: it never knew
+ * this file spawns three audio modules, so it charged a three-module rack the
+ * same budget as a one-module one.
+ *
+ * MEASURED (#2056 sibling; trace from job 96563369700, shard 4). The run that
+ * flaked spent **28 172 ms inside ONE `page.evaluate` in `spawnPatch`** —
+ * constructing `analogVco` + `filter` + `audioOut` and their worklets on a
+ * 2-core runner — of a 30 s budget. Everything around it was healthy and fast:
+ * `goto` 713 ms, `waitForLoadState('networkidle')` **settled in 1563 ms**, and
+ * the final page snapshot shows all three nodes mounted. Nothing was missing
+ * and nothing hung; the construction simply cost 94 % of a flat budget.
+ *
+ * ⚠ AND THE COST ITSELF IS FILED, NOT ABSORBED (#2060):
+ * 28 s to build three modules is a cost a player on low-end hardware pays on
+ * rack load. When the spawn path gets cheaper, the real number drops and this
+ * derivation documents exactly what that bought — which a flat raise could
+ * never do.
+ */
+const spawnTimeout = (modules: number): number => 30_000 + modules * 15_000;
+/** This file's budget: derived from `SETUP_NODES`, never typed. */
+const SETUP_TIMEOUT_MS = spawnTimeout(SETUP_NODES.length);
+
 async function setup(page: Page): Promise<void> {
   await page.goto('/rack?shell=legacy&seed=none');
   await page.waitForLoadState('networkidle');
-  await spawnPatch(
-    page,
-    [
-      { id: 'vco-1', type: 'analogVco', position: { x: 100, y: 100 }, domain: 'audio' },
-      { id: 'flt-1', type: 'filter',    position: { x: 500, y: 100 }, domain: 'audio' },
-      { id: 'out-1', type: 'audioOut',  position: { x: 900, y: 100 }, domain: 'audio' },
-    ],
-    [],
-  );
+  await spawnPatch(page, SETUP_NODES, []);
   // spawnPatch already waited for every node wrapper to mount
   // (.svelte-flow__node[data-id=...]) so __patch + __handleConnect are live.
   expect(await readEdges(page)).toHaveLength(0);
 }
 
 test('INCOMPATIBLE cable (audio out → cv in) is rejected at commit — no edge created', async ({ page }) => {
+  test.setTimeout(SETUP_TIMEOUT_MS);
   await setup(page);
 
   // audio OUTPUT (vco saw) dropped onto a cv INPUT (filter cutoff).
@@ -148,6 +177,7 @@ test('INCOMPATIBLE cable (audio out → cv in) is rejected at commit — no edge
 });
 
 test('COMPATIBLE cable (audio out → audio in) still connects', async ({ page }) => {
+  test.setTimeout(SETUP_TIMEOUT_MS);
   await setup(page);
 
   // audio OUTPUT (vco saw) → audio INPUT (filter audio). canConnect ok.
@@ -170,6 +200,7 @@ test('COMPATIBLE cable (audio out → audio in) still connects', async ({ page }
 });
 
 test('WRONG-DIRECTION cable (input used as source) is rejected', async ({ page }) => {
+  test.setTimeout(SETUP_TIMEOUT_MS);
   await setup(page);
 
   // audioOut.L is an INPUT, not an output. Using it as a connection source

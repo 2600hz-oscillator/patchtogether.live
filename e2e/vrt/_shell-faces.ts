@@ -1560,6 +1560,51 @@ export const FACES = [
       + 'bank is empty and the composite outputs black on every frame by construction rather '
       + 'than by the flag.',
   },
+  // MANDELBULB — three pages (camera / shape / slice) against
+  // DOCK_TAB_MIN_BANDS = 7, so the dock scene captures STACKED bands under the
+  // extension body. The dock body carries TWO canvases: the ray-marched preview
+  // and the SLICE WAVEFORM trace.
+  //
+  // ⚠ THIS ENTRY'S FIRST DRAFT SAID THIS MODULE NEEDED NO `freeze` PARAM, AND
+  // IT WAS WRONG. Recorded because the wrong reading is the NATURAL one and the
+  // next person will reach for it too. The reasoning was: the fragment shader
+  // has no `uTime` uniform at all and takes its camera from PARAMS, so a scene
+  // that spawns one node and writes nothing should be a still picture.
+  //
+  // Every clause of that is true and the conclusion is still false. The one
+  // time term is AUTOSPIN — and `autospin` DEFAULTS TO 1. The def's own docs
+  // say so outright ("default 1 (on) … keeping the bulb tumbling (and the
+  // scene perpetually re-rendering)"), and `draw` advances
+  // `spinPhase += dt * AUTOSPIN_RATE` off `frame.time` every frame. So the
+  // capture is a MOVING TARGET at the shipped defaults, and only a
+  // param-default check caught it — reading the draw path alone did not.
+  //
+  // Hence a real `freeze` param, declared `noUserControl` (`writer: 'internal'`)
+  // so it paints nowhere, and taken BEFORE the spin tick so `spinPhase` is held
+  // too. This is the spirographs / backdraft / b3ntb0x / grainsOfVision shape,
+  // and it is what `freezeFaceVideo` already writes.
+  //
+  // ⚠ THE SLICE TRACE IS STATIC FOR A SEPARATE REASON, and it does not depend
+  // on the freeze: it is fed by `read('sliceWave')`, which is null until SLICE
+  // has been ON at least once. `slice` defaults to 0, so both scenes capture
+  // the empty centre-line — the honest picture of "no cross-section has been
+  // read yet" rather than a waveform whose shape would depend on when the
+  // screenshot landed.
+  {
+    type: 'mandelbulb',
+    pages: 3,
+    videoFaceWhy:
+      'a VIDEO module, so it must boot into the video zone rather than a mixer channel column — '
+      + 'without this field bootWithFace waits out the full 90 s test timeout for a column '
+      + 'membership a video node never acquires. Both scenes also carry a live picture: the '
+      + 'compact tile paints a VideoTileThumb through hasVideoSurface, and the dock body is the '
+      + "module's own fullViewBody extension (the raymarched preview, its SCREEN switch, and "
+      + 'the slice waveform trace). ⚠ AND THE FREEZE IS LOAD-BEARING HERE, unlike the other '
+      + 'video faces in this roster: AUTOSPIN defaults to ON and advances the camera yaw from '
+      + 'frame.time on every frame, so the bulb tumbles at the shipped defaults and an unfrozen '
+      + 'scene would sample a different rotation on every run. The `freeze` param this module '
+      + 'declares holds the draw BEFORE the spin tick, so the phase is held too.',
+  },
   // THE FACEPLATE QUEUE · Q49 — the self-building wavetable oscillator, and the
   // first RAILED face in this batch.
   //
