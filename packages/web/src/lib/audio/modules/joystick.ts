@@ -101,19 +101,32 @@ export const joystickDef: AudioModuleDef = {
   // that is still right; what is not ready is the cell. Measured 2026-08-19
   // while building the promotion:
   //
-  //   * `XyPad.svelte:313` paints a `.xy-readout` row — `x <n> / y <n>`, two
+  //   * `XyPad.svelte` painted a `.xy-readout` row — `x <n> / y <n>`, two
   //     resting decimals — which is exactly the text the 2026-08-17 ruling
   //     removes, so promoting would MOVE this module's decimal from the card to
   //     the faceplate rather than delete it (the stated point of the migration);
-  //   * the pad exposes NO `aria-valuetext` (it is `role="application"`), so
-  //     the value the ruling says must survive in the accessibility tree does
-  //     not survive at all; and
+  //   * the pad exposed NO value in the accessibility tree that the ruling's
+  //     "the number survives where it is speakable" half could point at; and
   //   * `face-readout-source.test.ts` lists only `KnobConic` and `NeonFader` in
-  //     its `PRIMITIVES`, so the gate that enforces the ruling is BLIND to the
+  //     its `PRIMITIVES`, so the gate that enforces the ruling was BLIND to the
   //     pad — which is why none of this was already red.
   //
-  // Everything else Q43 needs is done and shipped in this diff: the #1963
-  // ruling (no snap-back, the docs corrected), the raw-write debt paid, and a
+  // ✅ ALL THREE ARE CLEARED BY #2038, and this comment is updated rather than
+  // deleted so the next reader can see WHY the blocker lifted rather than
+  // finding a promotion with no recorded reason. The readout row is DELETED
+  // from the primitive (not hidden, and with no prop to re-enable it); the
+  // values live in the pad's `aria-label`, which is where a `role="application"`
+  // control's value belongs — there is no `aria-valuetext` on that role, so the
+  // middle bullet's original wording was asking for the wrong attribute; and
+  // `xy-pad-readout-source.test.ts` now denies the class at the PRIMITIVE level,
+  // so the gate is no longer blind to it.
+  //
+  // ⚠ THIS DOES NOT PROMOTE THE MODULE — #2038 is a primitive fix and stops at
+  // the primitive. Q43 is now UNBLOCKED rather than done, and the promotion is
+  // still its own piece of work.
+  //
+  // Everything else Q43 needs was done and shipped earlier: the #1963 ruling
+  // (no snap-back, the docs corrected), the raw-write debt paid, and a
   // `faceLaneCellHeights` fold bug that attempting the promotion exposed.
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     const initial = node.params ?? {};

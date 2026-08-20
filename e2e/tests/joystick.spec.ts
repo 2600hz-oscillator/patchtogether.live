@@ -10,10 +10,20 @@
 // broken write path produces, while "the value I dragged to is still there
 // after release" can only be true if the write landed and stuck.
 //
-// ⚠ joystick is NOT faced — Q43 was built and HELD on the shared `xy` cell
-// (it paints a resting decimal and exposes no `aria-valuetext`; see the note on
-// the def). So this spec covers the LEGACY card only, which is still what both
-// surfaces render. The face legs arrive with the promotion.
+// ⚠ joystick is NOT faced — Q43 was built and HELD on the shared `xy` cell,
+// which painted a resting decimal and put the value nowhere speakable. ⚠ THAT
+// HOLD IS LIFTED (#2038): the pad's readout row is deleted and its values live
+// in `aria-label`. Q43 is UNBLOCKED, not done — the promotion is still its own
+// work, and until it lands this spec covers the LEGACY card, which is what both
+// surfaces still render.
+//
+// ⚠ `joystick-readout` BELOW IS THE CARD'S OWN ROW, NOT THE SHARED PAD'S, and
+// the distinction is why #2038 did not touch it. This card hand-rolls its pad
+// (its own `role="application"` div, a STATIC aria-label, its own `.readout`)
+// rather than mounting `XyPad`. The resting-text ruling is about FACEPLATES —
+// legacy cards print values and are deliberately untouched — so removing this
+// row would be scope the ruling does not ask for. It goes when the FACE lands
+// and replaces the card, not before.
 
 import { test, expect } from './_fixtures';
 import { spawnPatch } from './_helpers';
