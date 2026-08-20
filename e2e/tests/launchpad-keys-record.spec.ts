@@ -296,7 +296,7 @@ test('@launchpad single-unit KEYS — enter from the Clip KEYS button, live keys
 
 });
 
-test('@launchpad KEYS record — queue-record captures played notes into the clip; they SOUND on the next loop', async ({ page, rack, errorWatch }) => {
+test.fixme('@launchpad KEYS record — queue-record captures played notes into the clip; they SOUND on the next loop', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 1 recovered-on-retry observation on 2026-08-20 (PR #1995 e2e shard 9, job 96355201252) under the live fail-on-flaky gate; same transport family as this file\'s already-parked sibling; parked until root-caused' } }, async ({ page, rack, errorWatch }) => {
   await buildChain(page, 'r');
   await seedEmptyClip(page, 'r-cp');
 
