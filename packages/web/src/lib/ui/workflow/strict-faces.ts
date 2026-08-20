@@ -2210,6 +2210,58 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // NOT CONTROL-HEAVY (2026-08-18 tabbed ruling): two controls, one honest
   // page, no rail. See the def for the tier ladder and the fader/knob split.
   'stereovca',
+  // THE FACEPLATE QUEUE · Q47 — the stereo wavetable oscillator (2026-08-20).
+  //
+  // ⚠ THE RECORDED BLOCKER WAS STALE IN BOTH HALVES, and the def had already
+  // said so. The inventory rejected this module because wavetable selection
+  // lives in `node.data`, which `FaceReadoutValue` cannot see. True, and
+  // irrelevant: that type is a PARAM READER and is correctly blind to
+  // node.data — while `shell-cells` specs are NODE-TAKING CLOSURES, by design
+  // and by their own comments ("a dropdown over a NAMED roster that lives in
+  // node.data"). The precedent is this def's own header, which describes the
+  // wavetable pattern as the "same shape as the DX7 preset pattern" — and dx7
+  // is a registered adopter of BOTH a `selector` and a `file` cell today.
+  // #2010 reached the same conclusion from the documentation side in the same
+  // week, which is the measure of how much of the remaining pool is gated on
+  // prose rather than on platform.
+  //
+  // ⚠ NOT THE FIRST `toggle` CELL ADOPTER, WHICH IS WHERE THE BUILD ESTIMATE
+  // WAS WRONG. The viz toggle looked like it needed the data-backed `toggle`
+  // cell (zero adopters, real first-adopter cost) because the card reads
+  // "from node.data so the choice persists across page reloads + multiplayer"
+  // right beside it. That sentence is about `wavetableSource`.
+  // `WavecelCard.svelte:54` holds the toggle as `$state<'scope'|'3d'>`, and
+  // both video OUTPUTS render their own view regardless of it — so it is a
+  // private view preference over the on-card picture, and it belongs INSIDE
+  // the panel. Read the line before pricing the cell.
+  //
+  // ⚠ THE PICTURE IS A PANEL, NOT AN EXTENSION — `analogVco`'s shape, not
+  // `rasterize`'s. Both of those are audio defs the shell cannot draw
+  // generically, but rasterize's raster is PRODUCED inside `read('imageData')`
+  // (its surface must carry a per-frame push, and has no probe of its own),
+  // while this picture is DERIVED from `node.data` + params + CV taps. The
+  // panel's probe reads the view toggle that lives INSIDE it, so it observes
+  // its own subject rather than a neighbour's caption.
+  //
+  // GLYPH `'waveform'`, with the rejected option recorded because the next
+  // module with an ADSR will ask: this is the only def in its cohort that can
+  // resolve `'envelope'` (that arm is checked before the audio-out
+  // short-circuit and needs literal A/D/S/R, which this has). Declined — the
+  // contour would draw a control set that is bit-exactly INERT in the default
+  // ungated state. `out_l` free-runs at 0.9999845624 peak, so the trace shows
+  // what is actually being heard. Deterministic under the harness's audio
+  // freeze, the `swolevco` case, and this makes a third free-running module
+  // covering that freeze.
+  //
+  // NOT CONTROL-HEAVY (2026-08-18 tabbed ruling): ten params in three genuine
+  // groups — tone / amp env / table. Three bands, well under the rail's seven.
+  //
+  // ⚠ #1999 IS LEFT OPEN (owner ears) and the face is built AROUND it rather
+  // than over it: SPREAD ships bit-exactly MONO (side energy 0.00000000, and
+  // −34.08 dB even at maximum), FOLD moves −0.0017 dB at the shipped MORPH,
+  // and five of ten params are bit-inert at spawn. The rank says so; no audio
+  // behaviour changed here.
+  'wavecel',
   // THE FACEPLATE QUEUE · Q46 — the audio→video raster mapper (2026-08-20).
   //
   // ⚠ THE STOP-2 FINDING IS A PICTURE, AND NO GENERIC SEAM REACHES IT. Every
@@ -2292,6 +2344,45 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // `aria-valuetext`. NOT CONTROL-HEAVY — four controls, one idea, one
   // unlabelled band, no rail.
   '4plexvid',
+  // BENTBOX — 16 params (14 controls + 2 synthetic gates), 6 pages, no rail.
+  // A virtual CRT fed a hand-bent NTSC composite line: resample to 240 lines,
+  // encode to YIQ, abuse the "voltage" (wavefold → soft-clip), decode, blend
+  // against the previous frame, then paint through a phosphor pipeline. The
+  // pages ARE that chain — sync / chroma / bend / feedback / crt / mirror.
+  //
+  // ⚠ IT IS THE SIBLING OF `b3ntb0x`, NOT A SUBSET OF IT. The two share exactly
+  // FOUR param ids (`mirrorX`, `mirrorY` + their two gates); `b3ntb0x.ts:51`
+  // states outright that NOTHING is imported from bentbox, and the shared mirror
+  // logic is duplicated rather than shared. Their two identically-labelled "Hue"
+  // dials are not even interchangeable — bentbox's spans a FULL TURN (so both
+  // ends return to the centre colour and 0.5 is the real maximum shift) while
+  // b3ntb0x's tops out at 0.9π and never wraps.
+  //
+  // ⚠ WHAT PROMOTION WOULD HAVE DELETED, and it is the largest STOP-2 inventory
+  // in the video pool so far: `BentboxCard.svelte` is the SOLE home of the live
+  // CRT picture, fullscreen, in-app full-frame, present-on-a-second-display and
+  // the resize handle. On a module whose entire output IS a screen, that is not
+  // a lost preview — it is losing every way to watch the television. All five
+  // move to `face.extension: 'bentbox'` → `fullViewBody`.
+  //
+  // ⚠ TWO PARAM-SHAPE CORRECTIONS LAND WITH THE FACE, and only one is free.
+  // `mirrorX`/`mirrorY` were declared `curve: 'linear'` while the shader
+  // hard-thresholds both at `>= 0.5`, so a def-driven face would have painted
+  // two continuous rotaries over a switch (the card renders BUTTONS — the
+  // def-vs-card divergence class). Corrected to `discrete`, which is what
+  // `looksLikeToggle` keys on: pixel-neutral, because the READ is a threshold
+  // either way, but a `params` edit and therefore a real-GPU re-attest. The two
+  // synthetic `mirror*Gate` params are declared `noUserControl` in the same
+  // diff and cost NOTHING — measured both ways on this branch.
+  //
+  // ⚠ NO `freeze` PARAM, unlike b3ntb0x: bentbox returns early when nothing is
+  // patched (a static gradient with no time term), so its face VRT scenes are
+  // deterministic by construction rather than by a flag.
+  //
+  // NO READOUT, NO SIDEBAR, NO HERO — the 2026-08-19 rulings removed the fields.
+  // NOT CONTROL-HEAVY: six honest stages against DOCK_TAB_MIN_BANDS = 7, not
+  // padded to reach it.
+  'bentbox',
   // WARREN'S VISIONS — 12 params, 4 pages, no rail. The 2D spectral video
   // resynthesizer: FFT a 128² luma plane, track the strongest wavevector peaks
   // as gratings, replay everything unclaimed as 16 log-spaced residual rings,

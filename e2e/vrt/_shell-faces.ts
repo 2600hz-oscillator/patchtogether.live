@@ -1257,6 +1257,38 @@ export const FACES = [
   // flat-line stable and the scene needs no mask and no VRT_LIVE_SURFACES
   // entry, for the same reason the struck voices above need none.
   { type: 'stereovca', pages: 1 },
+  // THE FACEPLATE QUEUE · Q47 — the stereo wavetable oscillator.
+  //
+  // `pages: 3` is the POST-hero-split count: the face declares three bands
+  // (`tone`, `amp env`, `table`) and `hero.cell` promotes the wavetable PANEL
+  // out of `table`, which leaves it at three cells rather than emptying it, so
+  // no band is dropped. Three is also comfortably under `DOCK_TAB_MIN_BANDS`,
+  // so the dock stacks bands rather than showing a rail.
+  //
+  // ⚠ THE FOURTH FREE-RUNNING MODULE IN THIS ROSTER, and that is the whole
+  // determinism story for its COMPACT scene. `wavecel` declares
+  // `glyph: 'waveform'`, which binds `live-audio` on `out_l` — and this
+  // oscillator makes sound from the instant it spawns, with no gate and no
+  // note to wait for (measured peak 0.9999845624 at the defaults, because with
+  // nothing in POLY or TRIGGER the amp envelope has nothing to shape and the
+  // voice free-runs as a drone). `analogVco` (#1420) carries the derivation and
+  // `swolevco` extends it; this is a third witness, so a regression in the
+  // pre-frame AudioContext suspend or its ORDERING reddens three scenes.
+  //
+  // ⚠ ITS DOCK SCENE IS DETERMINISTIC FOR A DIFFERENT REASON, worth stating
+  // because the two are unrelated. The hero is a PANEL, not a live trace: the
+  // picture is drawn from the wavetable in `node.data` plus the morph/spread
+  // knobs plus the CV taps, and the component draws in an EFFECT over those
+  // inputs rather than a `requestAnimationFrame` loop (the legacy card uses
+  // rAF; the panel deliberately does not). With the graph frozen the taps read
+  // 0 and every input is pinned, so the picture is a pure function of its
+  // declared state and needs no mask — which matters, because a masked hero
+  // picture asserts nothing.
+  //
+  // NOT `videoFaceWhy` — `scope_out` and `wave3d_out` are video ports a cable
+  // can consume, not a video surface on this module. It is an audio def and
+  // boots into a channel column like any other audio face.
+  { type: 'wavecel', pages: 3 },
   // THE FACEPLATE QUEUE · Q46 — the audio→video raster mapper.
   //
   // `pages: 1` — the face declares no `pages` at all (four params, one honest
@@ -1398,6 +1430,59 @@ export const FACES = [
       + 'freeze write itself is a NO-OP on this def (it declares no `freeze` param) and that is '
       + 'deliberate: the surface is a pure passthrough of unpatched inputs, so it is solid black '
       + 'and identical frame to frame by construction rather than by the flag.',
+  },
+  // BENTBOX — six pages (sync / chroma / bend / feedback / crt / mirror), one
+  // per stage of the NTSC chain, against DOCK_TAB_MIN_BANDS = 7, so the dock
+  // scene captures STACKED bands under the extension body rather than a rail.
+  //
+  // ⚠ ITS SIBLING NEEDED A `freeze` PARAM AND THIS ONE DOES NOT — the same
+  // question, answered the other way, on measurement rather than by family
+  // resemblance. `b3ntb0x` animates by construction (subcarrier phase and a
+  // literal `sin(y*47 + uTime*3.3)` wobble, plus CRT persistence feeding the
+  // previous frame back), so its capture can never settle and #1941's
+  // "a pin gated on a flag nothing sets" applies. BENTBOX's fragment shader
+  // RETURNS EARLY when nothing is patched:
+  //
+  //     if (uHasInput < 0.5) {
+  //       float v = vUv.y * 0.05;
+  //       outColor = vec4(0.04, 0.06, 0.10 + v, 1.0);
+  //       return;
+  //     }
+  //
+  // — a pure function of `vUv` with NO time term, taken BEFORE the mirror fold
+  // and before every uTime-driven stage below it. `bootWithFace` spawns exactly
+  // one node with nothing patched, so both scenes are a STATIC gradient.
+  //
+  // ⚠ THE COMMENT ON THAT BRANCH CALLS IT "a dim sweeping color bar field" AND
+  // THE CODE DOES NOT SWEEP — there is no time term and no bars, just a vertical
+  // ramp. Recorded because the comment is exactly what would talk a later reader
+  // out of this scene's determinism argument; the CODE is the evidence.
+  //
+  // So `freezeFaceVideo`'s `params.freeze = 1` write lands nowhere (no such
+  // param) and needs to land nowhere. ⚠ Do NOT "fix" that by adding one: it is a
+  // `params` edit on a def inside the WebGL attest basis — an owner-machine
+  // re-attest — to buy an assertion that already holds.
+  //
+  // ⚠ WHAT WOULD CHANGE THE ANSWER: patch anything into IN. Every uTime term in
+  // the sync, chroma and feedback stages comes alive at once, and the module
+  // becomes the b3ntb0x case exactly. That is also why its CARD scene sits in
+  // EXEMPT_FROM_VRT as "animated … defeats deterministic capture" — that scene
+  // has a source; this one does not, and the two must not be reasoned about
+  // together.
+  {
+    type: 'bentbox',
+    pages: 6,
+    videoFaceWhy:
+      'a VIDEO module, so it must boot into the video zone rather than a mixer channel column — '
+      + 'without this field bootWithFace waits out the full 90 s test timeout for a column '
+      + 'membership a video node never acquires. Both scenes also carry a live picture: the '
+      + 'compact tile paints a VideoTileThumb through hasVideoSurface, and the dock body is the '
+      + "module's own fullViewBody extension (the CRT preview, its SCREEN switch, and the "
+      + 'fullscreen / full-frame / present affordances promotion would otherwise delete). The '
+      + 'freeze write itself is a NO-OP on this def — it declares no `freeze` param, unlike its '
+      + 'sibling b3ntb0x — and that is deliberate: the fragment shader returns early when '
+      + 'nothing is patched into IN, emitting a static vUv-only gradient with no time term, so '
+      + 'both scenes are identical frame to frame by construction rather than by the flag.',
   },
   // WARREN'S VISIONS — the 2D spectral video resynthesizer, and the roster's
   // first video face with real `pages`: analysis / motion / grating / output,
