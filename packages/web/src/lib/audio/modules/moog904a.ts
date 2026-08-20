@@ -227,10 +227,6 @@ export const moog904aDef: AudioModuleDef = {
     // `FaceReadoutValue` cannot reach. Full working in moog904a-face-model.ts.
     hero: {
       control: 'cutoff',
-      readouts: [
-        { label: 'cutoff', valueId: 'moog904a-cutoff-hz' },
-        { label: 'state', valueId: 'moog904a-state' },
-      ],
     },
   },
 

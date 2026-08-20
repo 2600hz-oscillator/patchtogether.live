@@ -182,6 +182,43 @@ export const SKIP_BUDGET = [
       'WebGL2 capability probes. CI SwiftShader provides WebGL2, so a row on an audited lane means the '
       + 'software renderer regressed and every WebGL2 assertion silently stopped asserting.',
   },
+
+  // ── #1905 render-worker producer-init race: the REAL-GPU control ──────────
+  // Two guards in ONE test, deliberately separate entries: they fire in
+  // different places for opposite reasons, and one shared entry would let
+  // either go dark behind the other.
+  {
+    specs: ['render-worker-toybox.spec.ts'],
+    reason: /REAL-GPU control: under SwiftShader/,
+    lanes: [],
+    homeLane: 'local',
+    why:
+      'The #1905 two-directional control arms the producer-init race (a worker frame posted before the node '
+      + 'had a picture) and needs the worker to be the LIVE render path to hold that window open. Under '
+      + 'SwiftShader the TOYBOX worker context dies mid-run — a separate, pre-existing gap, which is why '
+      + 'toybox is renderLocus:worker-experimental — so the window cannot be held and the control would be a '
+      + 'slow unstable red saying nothing about the defect. It is deliberately NOT tagged @webgl-smoke '
+      + '(that tag would enrol it in the one CI lane where it cannot speak), and render-worker-*.spec.ts is '
+      + 'in WEBGL_HEAVY_GLOBS so it is testIgnored out of the sharded matrix: lanes:[] because this guard '
+      + 'cannot reach an audited lane at all. It resolves on a developer SwiftShader flake-check; the test '
+      + 'itself RUNS on the real-GPU attest pass (E2E_WEBGL_HEAVY=only + E2E_REAL_GPU=1), which is the lane '
+      + 'every #1905 sighting came from and the one this control exists to protect.',
+  },
+  {
+    specs: ['render-worker-toybox.spec.ts'],
+    reason: /worker-WebGL2 did not initialize on this renderer/,
+    lanes: [],
+    homeLane: 'webgl-attest',
+    why:
+      'Dynamic capability guard inside the same #1905 control: if worker-WebGL2 never initializes there is no '
+      + 'race window to arm, so it skips LOUDLY (carrying the full handshake diagnosis in the reason) rather '
+      + 'than passing vacuously against a main-thread fallback — the exact "green and blind to the whole thing '
+      + 'it covers" failure this spec family already hit once. homeLane webgl-attest because that is the pass '
+      + 'where the test actually runs on CI infrastructure and where a worker that stops initializing on a real '
+      + 'GPU would surface; a row there means the worker path went dark and the control silently stopped '
+      + 'exercising it. Not audited (scope note 3), so this is a resolution record, not a checked claim.',
+  },
+
   {
     specs: ['picturebox-gif.spec.ts'],
     reason: /ImageDecoder\(image\/gif\) unavailable/,

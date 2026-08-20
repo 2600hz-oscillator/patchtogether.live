@@ -58,6 +58,12 @@ const SKIP_OUTPUT_ALIVE: Record<string, string> = {
   // MIDI-CV-BUDDY / MIDICLOCK — depend on connected MIDI device.
   midiCvBuddy: 'requires MIDI device; covered by midi-cv-buddy.spec.ts',
   midiclock: 'requires MIDI device; covered by midiclock.spec.ts',
+  // VST INSTRUMENT — its audio IS a mounted AU plugin's render via the
+  // vst-bridge helper (absent in CI); a bare spawn emits nothing by design.
+  // The REAL chain (POLYSEQZ → card → audible RMS, with the helper mocked at
+  // the WebSocket seam and only the plugin faked) is exercised in
+  // vst-bridge.spec.ts + vst-lane-autowire.spec.ts.
+  vstInstrument: 'audio comes from the vst-bridge helper (absent in CI); covered by vst-bridge.spec.ts + vst-lane-autowire.spec.ts',
   // AUDIO IN — captures live microphone input; no real audio device in CI.
   audioIn: 'requires live mic input; no audio device in CI',
   // SCOPE — itself the canonical receiver. Wiring it into another

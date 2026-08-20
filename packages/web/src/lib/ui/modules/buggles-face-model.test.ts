@@ -49,8 +49,6 @@ import {
   bugglesMath,
   bugglesPrng,
 } from '$lib/audio/modules/buggles';
-import { faceReadoutValueFor } from '$lib/ui/workflow/face-readout-values';
-import { isUsableReadout, readoutText } from '$lib/ui/workflow/dock-faceplate-model';
 import { glyphBinding, primaryAudioOutPortId } from '$lib/ui/workflow/shell-glyph-live';
 import { STRICT_FACES } from '$lib/ui/workflow/strict-faces';
 import {
@@ -82,14 +80,6 @@ const DEFAULTS = Object.fromEntries(
 const P = (over: Record<string, number> = {}) => bugglesFaceParams(reader({ ...DEFAULTS, ...over }));
 
 const PARAM_IDS = bugglesDef.params.map((p) => p.id);
-/** The registered ids, DERIVED from the def's own declaration rather than
- *  typed — so a renamed readout is red from both directions. */
-const VALUE_IDS = [
-  ...(bugglesDef.face?.hero?.readouts ?? []),
-  ...(bugglesDef.face?.sidebar ?? []).flatMap((b) => (b.kind === 'readouts' ? [...b.entries] : [])),
-]
-  .map((r) => r.valueId)
-  .filter((v): v is string => !!v);
 
 describe('buggles face model / the output table IS the declared jack roster', () => {
   it('BUGGLES_OUTPUT_READOUTS equals `outputs`, in order, in BOTH directions', () => {
@@ -98,86 +88,6 @@ describe('buggles face model / the output table IS the declared jack roster', ()
     // the module-manifest docs parser reads the def's source (the ninelives
     // finding), so the two are joined here instead.
     expect(BUGGLES_OUTPUT_READOUTS.map((r) => r.port)).toEqual(bugglesDef.outputs.map((o) => o.id));
-  });
-
-  it('every jack has a row and every row resolves a registered readout', () => {
-    const block = bugglesDef.face?.sidebar?.find((b) => b.kind === 'readouts');
-    expect(block, 'the face declares a readouts sidebar block').toBeDefined();
-    const entries = (block as { entries: readonly { label: string; valueId?: string }[] }).entries;
-    // Row labels ARE the port ids — a table of five holes, named for the holes.
-    expect(entries.map((e) => e.label)).toEqual(bugglesDef.outputs.map((o) => o.id));
-    for (const e of entries) {
-      expect(faceReadoutValueFor(e.valueId!), `${e.valueId} must be registered`).not.toBeNull();
-    }
-    for (const r of bugglesDef.face?.hero?.readouts ?? []) {
-      expect(faceReadoutValueFor(r.valueId!), `${r.valueId} must be registered`).not.toBeNull();
-    }
-  });
-
-  it('EVERY declared readout PAINTS a value through the shell’s own resolver, not `—`', () => {
-    // ⚠ THE LEG THAT CATCHES A REGISTRATION THAT IS PRESENT BUT WRONG.
-    // `readoutText` prints `'—'` for an unresolvable id AND swallows a throw
-    // into the same `'—'`, deliberately — a faceplate must keep rendering — so
-    // a mis-registered or throwing readout is INVISIBLE at the pixel lane,
-    // where the sidebar sweep only asks whether a block "renders a BODY".
-    const read = reader({ ...DEFAULTS });
-    const declared = [
-      ...(bugglesDef.face?.hero?.readouts ?? []),
-      ...(bugglesDef.face?.sidebar ?? []).flatMap((b) =>
-        b.kind === 'readouts' ? [...b.entries] : [],
-      ),
-    ];
-    // Non-vacuity: the walk must find the hero row AND one row per jack.
-    expect(declared.length).toBe(
-      (bugglesDef.face?.hero?.readouts ?? []).length + bugglesDef.outputs.length,
-    );
-    for (const r of declared) {
-      expect(isUsableReadout(r), `${r.label}: exactly one of paramId/valueId/text`).toBe(true);
-      const printed = readoutText(r, bugglesDef.params, read);
-      expect(printed, `${r.label} must paint a value, not the unresolvable placeholder`).not.toBe(
-        '—',
-      );
-      expect(printed.length, `${r.label} must not paint an empty string`).toBeGreaterThan(0);
-    }
-    // NEGATIVE CONTROL on this very leg: the same resolver DOES say `—` for an
-    // id nobody registered, so the green above is a fact about the readouts
-    // rather than about a resolver that never refuses.
-    expect(readoutText({ label: 'x', valueId: 'buggles-nope' }, bugglesDef.params, read)).toBe('—');
-  });
-});
-
-describe('buggles face model / LEVEL is the table’s own negative control', () => {
-  it('LEVEL moves NONE of the five readouts, across its whole travel', () => {
-    // It scales SMOOTH, STEPPED and RING and reaches neither gate jack, so it
-    // changes no timing, no character and no derived quantity. A readout that
-    // twitched here would be reading the wrong thing.
-    const levelDef = bugglesDef.params.find((p) => p.id === 'level')!;
-    for (const id of VALUE_IDS) {
-      const fn = faceReadoutValueFor(id)!;
-      const baseline = fn(reader({ ...DEFAULTS }));
-      for (const level of [levelDef.min, 0.1, 0.5, 0.9, levelDef.max]) {
-        expect(fn(reader({ ...DEFAULTS, level })), `${id} at LEVEL ${level}`).toBe(baseline);
-      }
-    }
-  });
-
-  it('INVERSE — every OTHER param moves at least one readout, so the pair is total', () => {
-    // Without this leg an always-constant registry would pass the invariance
-    // above. Deny-by-default over the module's whole param roster: a new param
-    // with no derived consequence has to be argued for here.
-    for (const paramId of PARAM_IDS) {
-      const def = bugglesDef.params.find((p) => p.id === paramId)!;
-      const moved = VALUE_IDS.filter((id) => {
-        const fn = faceReadoutValueFor(id)!;
-        const a = fn(reader({ ...DEFAULTS }));
-        return [def.min, def.max].some((v) => fn(reader({ ...DEFAULTS, [paramId]: v })) !== a);
-      });
-      if (paramId === 'level') {
-        expect(moved, 'LEVEL is the declared exception — see the leg above').toEqual([]);
-      } else {
-        expect(moved.length, `${paramId} must move at least one readout`).toBeGreaterThan(0);
-      }
-    }
   });
 });
 
@@ -464,27 +374,6 @@ describe('buggles face model / the ranking’s premises, asserted', () => {
     expect(bugglesDef.docs?.controls?.level).toMatch(/CLOCK and BURST gates keep a clean/);
     expect(bugglesDef.face?.order.at(-1)).toBe('level');
   });
-
-  it('RANK 1 — RATE is the only control every readout in the table depends on', () => {
-    // The identity claim, as a sweep: RATE moves ALL FIVE rows; no other param
-    // moves more than two.
-    const movedBy = (paramId: string) => {
-      const def = bugglesDef.params.find((p) => p.id === paramId)!;
-      return VALUE_IDS.filter((id) => {
-        const fn = faceReadoutValueFor(id)!;
-        const a = fn(reader({ ...DEFAULTS }));
-        return [def.min, def.max].some((v) => fn(reader({ ...DEFAULTS, [paramId]: v })) !== a);
-      }).length;
-    };
-    expect(movedBy('rate'), 'RATE must move every row').toBe(VALUE_IDS.length);
-    for (const other of PARAM_IDS.filter((p) => p !== 'rate')) {
-      expect(movedBy(other), `${other} must move fewer rows than RATE`).toBeLessThan(
-        VALUE_IDS.length,
-      );
-    }
-    expect(bugglesDef.face?.order[0]).toBe('rate');
-    expect(bugglesDef.face?.hero?.control).toBe('rate');
-  });
 });
 
 describe('buggles face model / TOTALITY (a throw takes the faceplate down mid-drag)', () => {
@@ -497,23 +386,6 @@ describe('buggles face model / TOTALITY (a throw takes the faceplate down mid-dr
     0,
     undefined,
   ];
-
-  it('a FRESH node, a NaN mid-drag and an out-of-range save all print a finite string', () => {
-    for (const id of VALUE_IDS) {
-      const fn = faceReadoutValueFor(id)!;
-      expect(fn(reader({})), `'${id}' on a fresh node`).toMatch(/\S/);
-      for (const hostile of HOSTILE) {
-        for (const paramId of PARAM_IDS) {
-          const over = hostile === undefined ? {} : { [paramId]: hostile };
-          const out = fn(reader(over as Record<string, number>));
-          expect(out, `'${id}' with ${paramId}=${hostile}`).toMatch(/\S/);
-          expect(out, `'${id}' must never leak a raw non-finite`).not.toMatch(
-            /NaN|Infinity|undefined/,
-          );
-        }
-      }
-    }
-  });
 
   it('an UNTOUCHED param reads its DEF DEFAULT, and an out-of-range one is CLAMPED', () => {
     // `node.params` is a sparse overlay of what has been touched; reading it

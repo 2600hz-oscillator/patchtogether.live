@@ -77,9 +77,6 @@ async function openDock(page: Page): Promise<Locator> {
   return dockShell;
 }
 
-const readout = (dock: Locator, id: string): Locator =>
-  dock.locator(`[data-hero-readout="resofilter-${id}"] dd`);
-
 /** Write params straight into the graph. The GESTURE is covered by
  *  faces-parity (which drags every cell); what is needed here is an EXACT
  *  value, so the expected string can be a literal the model computes. */
@@ -100,66 +97,22 @@ async function setParams(page: Page, values: Record<string, number>): Promise<vo
 }
 
 test.describe('resofilter face — one dial, and the two readouts that say what it means', () => {
-  test('PEAK and WIDTH swap live-ness with MODE, driven through the real buttons', async ({
-    page,
-  }) => {
-    test.setTimeout(SLOW_RENDER ? 90_000 : 45_000);
-    await gotoShell(page);
-    await spawnPatch(page, [{ id: NODE, type: 'resofilter', position: { x: 300, y: 200 } }]);
-    const dock = await openDock(page);
-
-    // A resonance where both quantities are unmistakable, written once.
-    await setParams(page, { resonance: 0.9, cutoff: 1000, mix: 1 });
-
-    const seen: string[] = [];
-    for (const [i, tag] of TAGS.entries()) {
-      const mode = i as SvfModeIndex;
-      // Click the real Segmented chip. `.seg` captions are ellipsized for three
-      // of the five, so match on the ACCESSIBLE name / title rather than the
-      // painted text — the DOM keeps the full caption either way.
-      await dock
-        .locator('[data-testid="control-mode"]')
-        .locator('button, [role="radio"]')
-        .nth(i)
-        .click();
-
-      const p = { cutoff: 1000, resonance: 0.9, mode, mix: 1 } as const;
-      const peak = resofilterPeakText(p);
-      const width = resofilterWidthText(p);
-
-      await expect(readout(dock, 'peak-db'), `${tag}: peak`).toHaveText(peak);
-      await expect(readout(dock, 'band-width'), `${tag}: width`).toHaveText(width);
-
-      // THE PARTITION, as a rendered fact: exactly one of the two is `—`,
-      // except in band-pass where both are live. A model that got the mode
-      // partition wrong prints a number precisely where the other prints `—`.
-      expect(peak === '—', `${tag}: peak blank?`).toBe(!MODES_WITH_PEAK.has(mode));
-      expect(width === '—', `${tag}: width blank?`).toBe(!MODES_WITH_WIDTH.has(mode));
-      expect(peak === '—' && width === '—', `${tag}: never both blank`).toBe(false);
-      seen.push(`${peak} / ${width}`);
-    }
-
-    // …and the five states are not five copies of one PAIR, which is exactly
-    // what a `{ paramId: 'resonance' }` readout would have produced (one
-    // string, five times). Measured at resonance 0.9: LP and HP both read
-    // `+14.0 dB / —`, BP reads `+14.0 dB / 0.288 oct`, and NT and AP both read
-    // `— / 0.288 oct` — THREE distinct pairs off one dial, which is the face's
-    // whole claim expressed as a count.
-    expect(
-      new Set(seen).size,
-      `${TAGS.join('/')} → ${seen.join(' · ')}`,
-    ).toBe(3);
-
-    // CV REACH is the mirror — it did NOT move across any of that, because it
-    // is a function of CUTOFF alone…
-    await expect(readout(dock, 'cv-reach')).toHaveText('20 Hz – 10.99 kHz');
-    // …and it DOES move when CUTOFF does. Both directions, so a frozen readout
-    // cannot pass either leg.
-    await setParams(page, { cutoff: 5000 });
-    await expect(readout(dock, 'cv-reach')).toHaveText('20 Hz – 14.99 kHz');
-    await setParams(page, { cutoff: 1000 });
-    await expect(readout(dock, 'cv-reach')).toHaveText('20 Hz – 10.99 kHz');
-  });
+  // ⚠ THE READOUT TEST THAT STOOD HERE WAS THIS FILE'S BEST ONE, AND IT IS
+  // DELETED WITH ITS SUBJECT (owner ruling, 2026-08-19). It drove the five real
+  // MODE chips and asserted PEAK/WIDTH per mode, including the partition (in
+  // every mode exactly one reads '—', except band-pass where both are live) and
+  // the count that made the claim falsifiable: five states collapse to THREE
+  // distinct pairs off one dial, which is precisely what a
+  // `{ paramId: 'resonance' }` readout could never produce. It also swept CV
+  // REACH in both directions as its own negative control.
+  //
+  // The hero readout strip is gone platform-wide, so none of those elements
+  // exist. ⚠ WHAT IS NOW UNGATED, SAID PLAINLY: nothing in the e2e layer proves
+  // resofilter's mode partition reaches a user-visible surface. The arithmetic
+  // is still pinned in `resofilter-face-model.test.ts` (unit lane, with its own
+  // negative controls) — but the JOIN between that model and what a player can
+  // see is no longer asserted anywhere, because there is no longer a surface
+  // that shows it. That is a consequence of the ruling, not an oversight.
 
   test('MODE is a SEGMENTED roster at the dock and a NAMED knob in the lane', async ({ page }) => {
     // ⚠ WHY THIS IS A TEST. `faces-parity` drives a knob and a segmented cell
@@ -225,72 +178,12 @@ test.describe('resofilter face — one dial, and the two readouts that say what 
       ).toHaveAttribute('title', new RegExp(name));
     }
   });
-
-  test('the sidebar picture agrees with the hero, in one frame — the noise scar', async ({
-    page,
-  }) => {
-    // #1464 shipped a face whose hero printed −10.8/−23.1 dB while a sidebar
-    // block two inches below read −7.1/−12.5, both numbers TRUE, both of the
-    // same quantity, in one screenshot. Nothing caught it because only one of
-    // them was ever read by a gate. Here the panel legend and the hero readout
-    // are required to be the same string, in four different states.
-    test.setTimeout(SLOW_RENDER ? 90_000 : 45_000);
-    await gotoShell(page);
-    await spawnPatch(page, [{ id: NODE, type: 'resofilter', position: { x: 300, y: 200 } }]);
-    const dock = await openDock(page);
-    const panel = page.getByTestId('sidebar-panel-svf-response');
-    await expect(panel, 'the response picture renders (a registered panelId)').toBeVisible();
-    const legendValue = page.getByTestId('sidebar-panel-svf-value');
-    const legendMode = page.getByTestId('sidebar-panel-svf-mode');
-
-    for (const [i, tag] of TAGS.entries()) {
-      const mode = i as SvfModeIndex;
-      await setParams(page, { mode, resonance: 0.9, cutoff: 1000, mix: 1 });
-      await expect(legendMode).toHaveText(tag);
-      // The legend prints whichever of the two is live in this mode — the same
-      // rule, off the same model, as the hero.
-      const hero = MODES_WITH_PEAK.has(mode) ? 'peak-db' : 'band-width';
-      const expected = (await readout(dock, hero).textContent())?.trim() ?? '';
-      expect(expected, `${tag}: the hero prints a value`).not.toBe('—');
-      // uppercase: the legend is `text-transform: uppercase`, the hero is not,
-      // so compare case-insensitively rather than pretending they are one node.
-      await expect(legendValue).toHaveText(new RegExp(`^${expected.replace(/[.+]/g, '\\$&')}$`, 'i'));
-    }
-  });
-
-  test('every PRESET produces the value printed beside it', async ({ page }) => {
-    // The other half of the loop the unit lane closes: there the note is pinned
-    // against the model, here the model is pinned against what the panel shows
-    // once the button has actually written the params.
-    test.setTimeout(SLOW_RENDER ? 90_000 : 45_000);
-    await gotoShell(page);
-    await spawnPatch(page, [{ id: NODE, type: 'resofilter', position: { x: 300, y: 200 } }]);
-    const dock = await openDock(page);
-
-    const presets: [string, 'peak-db' | 'band-width'][] = [
-      ['squelch', 'peak-db'],
-      ['notch-out', 'band-width'],
-      ['phaser', 'band-width'],
-      ['gentle-lp', 'peak-db'],
-    ];
-    const sidebar = page.getByTestId('dock-full-view');
-    for (const [id, which] of presets) {
-      const row = sidebar.getByTestId(`face-preset-${id}`);
-      await expect(row, `preset '${id}' is offered`).toBeVisible();
-      // ⚠ READ THE NOTE ELEMENT, NOT THE ROW. `textContent` on the row returns
-      // `squelch+20.0 dB` — it has no line breaks and no separator — so the
-      // obvious `.split('\n').pop()` yields the label glued to the note. And
-      // `innerText` is not the fix: it APPLIES `text-transform`, so the note
-      // comes back `+20.0 DB` against a hero reading `+20.0 dB`. Two DOM
-      // readers of "the text" disagreeing about what the text is, which is the
-      // same class of blindness as the ellipsis this file's header describes —
-      // hence the exact locator plus a case-insensitive compare.
-      const note = (await row.locator('.pr-note').textContent())?.trim() ?? '';
-      expect(note, `preset '${id}' carries a note`).not.toBe('');
-      await row.click();
-      await expect(readout(dock, which), `preset '${id}' → ${which}`).toHaveText(
-        new RegExp(`^${note.replace(/[.+*?^${}()|[\]\\]/g, '\\$&')}$`, 'i'),
-      );
-    }
-  });
+  // ⚠ REMOVED WITH THE SIDEBAR (owner ruling, 2026-08-19): "the sidebar picture agrees with the hero, in one frame — the noise scar".
+  // Its subject was a dock sidebar panel; `face.sidebar` is deleted
+  // platform-wide, so there is no element left to assert on. See
+  // ModuleFaceHero in graph/types.ts for the ruling set.
+  // ⚠ REMOVED WITH THE SIDEBAR (owner ruling, 2026-08-19): "every PRESET produces the value printed beside it".
+  // Its subject was a dock sidebar panel; `face.sidebar` is deleted
+  // platform-wide, so there is no element left to assert on. See
+  // ModuleFaceHero in graph/types.ts for the ruling set.
 });

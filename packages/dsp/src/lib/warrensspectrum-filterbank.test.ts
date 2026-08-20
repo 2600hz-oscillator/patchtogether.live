@@ -586,11 +586,33 @@ describe('warrensspectrum filterbank — the per-QUANTUM CPU deadline', () => {
     // Without this, the assertion above passes just as happily against a
     // timer that returns a constant, or against a bank whose `process` was
     // optimised out entirely.
-    const one = p99QuantumMs(bankQuantum(1), 200, 1000);
-    const twelve = p99QuantumMs(bankQuantum(12), 200, 1000);
+    //
+    // ⚠ SCALING is checked on the MEDIAN of BATCHED samples, not the p99 of
+    // single calls (which the deadline leg above rightly uses — tails ARE its
+    // subject). A single 1-bank quantum is ~0.04 ms, so a single-call p99 is
+    // scheduler-jitter-bound, not work-bound: main went red at ratio 2.62 vs
+    // a floor of 3 on a loaded runner (2026-08-19, job 96258184256) with the
+    // work itself unchanged. Batching 8 quanta per sample makes the work
+    // dominate timer overhead, and the median discards the jitter tail — the
+    // true work ratio is ~12×, so the floor of 3 now has real margin instead
+    // of sitting inside the instrument's noise.
+    const BATCH = 8;
+    const medianBatchedMs = (work: () => void): number => {
+      for (let q = 0; q < 200; q++) work();
+      const times: number[] = [];
+      for (let s = 0; s < 300; s++) {
+        const t0 = performance.now();
+        for (let b = 0; b < BATCH; b++) work();
+        times.push((performance.now() - t0) / BATCH);
+      }
+      times.sort((a, b) => a - b);
+      return times[Math.floor(times.length / 2)]!;
+    };
+    const one = medianBatchedMs(bankQuantum(1));
+    const twelve = medianBatchedMs(bankQuantum(12));
     expect(
       twelve / Math.max(one, 1e-6),
-      `p99 ratio for 12 banks vs 1 (one=${one.toFixed(4)} ms, twelve=${twelve.toFixed(4)} ms) — must scale, or the timer is blind`,
+      `median batched ratio for 12 banks vs 1 (one=${one.toFixed(4)} ms, twelve=${twelve.toFixed(4)} ms, batch=${BATCH}) — must scale, or the timer is blind`,
     ).toBeGreaterThan(3);
   });
 });

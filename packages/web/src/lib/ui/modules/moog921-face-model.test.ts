@@ -36,7 +36,6 @@ import { moog921aDef, MOOG921A_RANGE_OPTIONS } from '$lib/audio/modules/moog921a
 import { moog921bDef, MOOG921B_SYNC_OPTIONS } from '$lib/audio/modules/moog921b';
 import { moog921VcoDef, MOOG921VCO_SYNC_OPTIONS } from '$lib/audio/modules/moog921-vco';
 import { glyphBinding } from '$lib/ui/workflow/shell-glyph-live';
-import { faceReadoutValueFor } from '$lib/ui/workflow/face-readout-values';
 import {
   MOOG921A_OCT_OCT_SPAN,
   MOOG921A_SEMI_OCT_SPAN,
@@ -578,53 +577,6 @@ describe('moog921 face model — TOTALITY (a readout runs on every render)', () 
     'moog921b-sync',
   ];
 
-  it('every id this pair declares is REGISTERED (a typo would print a dash)', () => {
-    const declared = [
-      ...(moog921aDef.face?.hero?.readouts ?? []),
-      ...(moog921aDef.face?.sidebar ?? []).flatMap((b) => (b.kind === 'readouts' ? b.entries : [])),
-      ...(moog921bDef.face?.hero?.readouts ?? []),
-    ].map((r) => r.valueId!);
-    expect(declared.filter(Boolean).sort()).toEqual([...IDS].sort());
-    for (const id of IDS) expect(faceReadoutValueFor(id), `${id} must be registered`).toBeTypeOf('function');
-  });
-
-  it('no readout throws or prints an empty string on a fresh node, a NaN or an infinity', () => {
-    const readers: Array<[string, (id: string) => number | undefined]> = [
-      ['fresh node (nothing touched)', () => undefined],
-      ['NaN', () => Number.NaN],
-      ['+Infinity', () => Number.POSITIVE_INFINITY],
-      ['-Infinity', () => Number.NEGATIVE_INFINITY],
-      ['far below every declared min', () => -1e9],
-      ['far above every declared max', () => 1e9],
-      ['zero', () => 0],
-    ];
-    for (const [what, read] of readers) {
-      for (const id of IDS) {
-        const fn = faceReadoutValueFor(id)!;
-        let out = '';
-        expect(() => { out = fn(read); }, `${id} threw on ${what}`).not.toThrow();
-        expect(out.length, `${id} printed an EMPTY string on ${what}`).toBeGreaterThan(0);
-      }
-    }
-  });
-
-  it('the sidebar comparison rows are indexed off the def’s own roster', () => {
-    // No count anywhere: a third RANGE position upstream grows the roster, the
-    // sidebar and this assertion together.
-    const rows = (moog921aDef.face?.sidebar ?? []).flatMap((b) =>
-      b.kind === 'readouts' ? b.entries : [],
-    );
-    expect(rows.map((r) => r.label)).toEqual(MOOG921A_RANGE_OPTIONS.map((o) => o.label));
-    expect(rows.map((r) => r.valueId)).toEqual(
-      MOOG921A_RANGE_OPTIONS.map((o) => `moog921a-pitch-${o.value}`),
-    );
-    // …and each row prints THAT position's pitch, not the selected one — which
-    // is the point of showing both at once.
-    const p = aParams({ frequency: 0.5, freqRange: 1 });
-    expect(busPitchHzAtSpan(p, rangeOctSpan(1)), 'SEMI row, Hz').toBeCloseTo(370.0, 0);
-    expect(busPitchHzAtSpan(p, rangeOctSpan(2)), 'OCT row, Hz').toBeCloseTo(2093.01, 0);
-  });
-
   it('the SPAWN-DEFAULT strings are pinned — they are what the dock VRT baselines capture', () => {
     // Every readout on both faces is a pure function of `node.params`, so all
     // eight print at the spawn defaults and are IN the dock image. Pinned here
@@ -916,35 +868,6 @@ describe('moog921Vco face model — the READOUT REACH MATRIX (width is the fifth
     octave: 2, tune: 7, width: 0.2, linFmAmount: 0.5, sync: 1, level: 0.5,
   };
 
-  it('every readout moves on its OWN params and is EXACTLY invariant to the rest', () => {
-    const base = Object.fromEntries(IDS.map((id) => [id, faceReadoutValueFor(id)!(() => undefined)]));
-    for (const param of Object.keys(PERTURB)) {
-      for (const id of IDS) {
-        const fn = faceReadoutValueFor(id)!;
-        const moved = fn((p) => (p === param ? PERTURB[param] : undefined));
-        if (REACH[id]!.includes(param)) {
-          expect(moved, `${id} must MOVE when ${param}=${PERTURB[param]} (was ${base[id]})`).not.toBe(base[id]);
-        } else {
-          expect(moved, `${id} must be EXACTLY invariant to ${param}=${PERTURB[param]}`).toBe(base[id]);
-        }
-      }
-    }
-  });
-
-  it('⚠ WIDTH MOVES NONE OF THEM — the leg a knob relabelled could not survive', () => {
-    // It is a real control with a real audible job (the duty of one tap of
-    // four), it is ON the face, and it is measured LEVEL-INVARIANT above — so a
-    // readout that tracked it would be reporting something the module does not
-    // do. This is the whole set's permanent negative control.
-    for (const id of IDS) {
-      const fn = faceReadoutValueFor(id)!;
-      const base = fn(() => undefined);
-      for (const w of [0.02, 0.25, 0.75, 0.98]) {
-        expect(fn((p) => (p === 'width' ? w : undefined)), `${id} at width=${w}`).toBe(base);
-      }
-    }
-  });
-
   it('`out` is the dB a LINEAR level dial cannot print, and it tracks the real output', async () => {
     expect(vcoOutText(vParams()), 'the shipped level of 1.00 IS 0 dB').toBe('+0.0 dB');
     expect(vcoOutText(vParams({ level: 2 }))).toBe('+6.0 dB');
@@ -993,35 +916,6 @@ describe('moog921Vco face model — the glyph, and TOTALITY', () => {
       kind: 'live-audio',
       portId: 'rectangular',
     });
-  });
-
-  it('every id this face declares is REGISTERED (a typo would silently print a dash)', () => {
-    const declared = (moog921VcoDef.face?.hero?.readouts ?? [])
-      .map((r) => r.valueId)
-      .filter((x): x is string => typeof x === 'string');
-    expect(declared.length, 'the face declares readouts at all').toBeGreaterThan(0);
-    for (const id of declared) {
-      expect(faceReadoutValueFor(id), `${id} must resolve`).toBeTypeOf('function');
-    }
-  });
-
-  it('no readout throws or prints an empty string on a fresh node, a NaN or an infinity', () => {
-    const hostile: Array<(p: string) => number | undefined> = [
-      () => undefined,
-      () => NaN,
-      () => Infinity,
-      () => -Infinity,
-      (p) => (p === 'level' ? NaN : undefined),
-      (p) => (p === 'octave' ? Infinity : undefined),
-    ];
-    for (const id of ['moog921vco-pitch', 'moog921vco-out', 'moog921vco-fm', 'moog921vco-sync']) {
-      const fn = faceReadoutValueFor(id)!;
-      for (const read of hostile) {
-        const out = fn(read);
-        expect(typeof out, `${id} must return a string`).toBe('string');
-        expect(out.length, `${id} must never print an empty string`).toBeGreaterThan(0);
-      }
-    }
   });
 
   it('the SPAWN-DEFAULT strings are pinned — they are what the dock VRT baseline captures', () => {

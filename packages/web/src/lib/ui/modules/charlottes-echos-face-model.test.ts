@@ -53,7 +53,6 @@ import {
   ceTailText,
   charlottesEchosFaceParams,
 } from './charlottes-echos-face-model';
-import { faceReadoutValueFor } from '$lib/ui/workflow/face-readout-values';
 
 /** A param reader over an explicit override map — the shape `FaceReadoutValue`
  *  is handed, including `undefined` for untouched params. */
@@ -335,27 +334,6 @@ describe('charlottes-echos face.order: FEEDBACK is ranked FIRST', () => {
     expect(paged.slice().sort(), 'every ranked key appears on exactly one page')
       .toEqual(order.slice().sort());
   });
-
-  it("every PRESET's note is a claim this model agrees with", () => {
-    // A preset note is prose on the faceplate; here it is a gate.
-    const presets = (charlottesEchosDef.face?.sidebar ?? []).flatMap((b) =>
-      b.kind === 'presets' ? [...b.entries] : [],
-    );
-    const byId = new Map(presets.map((p) => [p.id, at({ ...p.values })]));
-    expect([...byId.keys()].sort()).toEqual(['drone', 'dub', 'shimmer', 'slap']);
-
-    expect(ceTailSeconds(byId.get('slap')!), 'units: seconds — "gone in 0.2 s"')
-      .toBeLessThan(0.25);
-    expect(ceTailText(byId.get('dub')!), '"the shipped loop, 1.9 s"').toBe('1.9 s');
-    // "up a minor 6th" — an equal-tempered minor sixth is 800 ¢ and PITCH 0.08
-    // gives 799.4 ¢, so the note is true to within 0.6 of a cent.
-    expect(
-      Math.abs(ceClimbCents(byId.get('shimmer')!) - 800),
-      'units: cents away from an equal-tempered minor sixth — "up a minor 6th"',
-    ).toBeLessThan(1);
-    expect(ceDecays(byId.get('drone')!), '"past the boundary — on purpose"').toBe(false);
-    expect(ceTailText(byId.get('drone')!)).toMatch(/^NEVER DECAYS/);
-  });
 });
 
 describe('charlottes-echos readouts are TOTAL — they run on every frame', () => {
@@ -368,39 +346,6 @@ describe('charlottes-echos readouts are TOTAL — they run on every frame', () =
     0,
     undefined,
   ];
-
-  it('every registered id resolves through the shared registry', () => {
-    for (const id of IDS) {
-      expect(faceReadoutValueFor(id), `'${id}' must be registered in face-readout-values`)
-        .not.toBeNull();
-    }
-    // …and the face declares exactly these — anchored to the artifact, so a
-    // renamed valueId that nobody registered is red from both directions.
-    const declared = [
-      ...(charlottesEchosDef.face?.hero?.readouts ?? []),
-      ...(charlottesEchosDef.face?.sidebar ?? []).flatMap((b) =>
-        b.kind === 'readouts' ? [...b.entries] : [],
-      ),
-    ]
-      .map((r) => r.valueId)
-      .filter((v): v is string => !!v);
-    expect(declared.slice().sort()).toEqual([...IDS].sort());
-  });
-
-  it('a fresh node, a NaN mid-drag and an out-of-range save all print a FINITE string', () => {
-    for (const id of IDS) {
-      const fn = faceReadoutValueFor(id)!;
-      expect(fn(reader()), `'${id}' on a fresh node`).toMatch(/\S/);
-      for (const hostile of HOSTILE) {
-        for (const paramId of PARAM_IDS) {
-          const over = hostile === undefined ? {} : { [paramId]: hostile };
-          const out = fn(reader(over as Record<string, number>));
-          expect(out, `'${id}' with ${paramId}=${hostile}`).toMatch(/\S/);
-          expect(out, `'${id}' must never print a non-finite number`).not.toMatch(/NaN|Infinity/);
-        }
-      }
-    }
-  });
 
   it('the tail model TERMINATES on every corner of the param space', () => {
     // It runs a bounded recurrence, so an unreachable −60 dB point must return

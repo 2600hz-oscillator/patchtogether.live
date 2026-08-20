@@ -33,6 +33,8 @@ import {
   liveEmitOutputs,
   PER_OUTPUT_MS,
   emitBudgetMs,
+  HEAVY_GL_RENAV_MS,
+  MEASURED_HEAVY_EMIT_NAV_MS,
 } from './_per-module-per-port-shared';
 import type {
   SpawnEdge,
@@ -409,6 +411,87 @@ test.describe('per-port heavy-GL budget: DERIVED, not floored', () => {
         `${JOB_TIMEOUT_MS / 60_000}-minute shard job, for ONE test. If this trips, the fix is a ` +
         `CHEAPER PLAN — fewer spawns per port — not a bigger job timeout.`,
     ).toBeLessThan(CEILING);
+    // ── THE PER-NAVIGATION FLOOR (#1984) ──────────────────────────────────
+    //
+    // The gate above prices the worst plan against the SHARD. It is structurally
+    // blind to the defect #1984 found, which is the opposite end: a plan priced
+    // below its OWN cost. `emitBudgetMs` is a whole-test budget, but the emit
+    // sweep spends it on `liveEmitOutputs(mod)` SEPARATE navigations, so the
+    // quantity that has to clear the measured cost is the budget PER NAVIGATION
+    // — and that number FALLS as the output count rises. Under the pre-#1984
+    // model freezeframe's five navigations were budgeted 23 s each against a
+    // measured 20.6–24.7 s, and the test expired ~1 s short on its fifth.
+    //
+    // Deny by default over every heavy-GL emit plan, and name the offenders
+    // rather than counting them. This is the assertion that goes RED on the
+    // pre-fix model, which is the only reason to believe it can see anything.
+    const MIN_NAV_MARGIN = 1.5;
+    const thinPlans = REGISTRY
+      .filter((m) => emitBudgetMs(m) > 0 && touchesVideo(m))
+      .map((m) => ({ type: m.type, live: liveEmitOutputs(m), perNav: emitBudgetMs(m) / liveEmitOutputs(m) }))
+      .filter((r) => r.perNav < MEASURED_HEAVY_EMIT_NAV_MS * MIN_NAV_MARGIN)
+      .map((r) => `${r.type} (${r.live} live outputs → ${Math.round(r.perNav / 1000)} s per navigation)`);
+    expect(
+      thinPlans,
+      `every heavy-GL emit plan must budget at least ${MIN_NAV_MARGIN}× the measured worst ` +
+        `navigation (${MEASURED_HEAVY_EMIT_NAV_MS / 1000} s, #1984) for EACH of the navigations it ` +
+        `makes — the emit sweep re-navigates once per visited output, so a whole-test budget that ` +
+        `does not scale with the output count prices the widest modules below their own cost. ` +
+        `⚠ SCOPE: this checks heavy-GL plans only. Non-heavy plans re-navigate too, but their ` +
+        `measured per-navigation cost is ~10× smaller (see PER_OUTPUT_MS) and no CI failure has ` +
+        `been observed for one, so there is no measured floor to hold them to.`,
+    ).toEqual([]);
+
+    // The equality invariant that keeps the #1984 change from being a silent
+    // loosening of the case HEAVY_GL_MOUNT_MS was actually calibrated on: a
+    // heavy-GL module with ONE live output makes ONE navigation, so it pays the
+    // cold mount and no re-navigation tax, and its budget is UNCHANGED.
+    const oneOutputHeavy = REGISTRY.find(
+      (m) => touchesVideo(m) && emitBudgetMs(m) > 0 && liveEmitOutputs(m) === 1,
+    );
+    expect(
+      oneOutputHeavy,
+      'no heavy-GL module with exactly ONE live emit output exists, so the equality invariant ' +
+        'below would be vacuous — re-point it at a case that still exercises the cold-mount path.',
+    ).toBeDefined();
+    expect(
+      emitBudgetMs(oneOutputHeavy!),
+      `a heavy-GL module with ONE live output (${oneOutputHeavy?.type}) makes ONE navigation, so ` +
+        `the per-navigation tax must not apply and its budget must equal the historical ` +
+        `${PER_PORT_BASE_MS + PER_OUTPUT_MS + HEAVY_GL_MOUNT_MS} ms exactly. If this moved, the ` +
+        `#1984 change stopped being purely additive.`,
+    ).toBe(PER_PORT_BASE_MS + PER_OUTPUT_MS + HEAVY_GL_MOUNT_MS);
+
+    // …and that the tax is additive, so no module's budget SHRANK. A flake fix
+    // that tightens a currently-passing budget trades one flake for others.
+    const shrunk = REGISTRY
+      .filter((m) => emitBudgetMs(m) > 0)
+      .filter((m) => {
+        const live = liveEmitOutputs(m);
+        const legacy = touchesVideo(m)
+          ? heavyVideoTimeout(live * PER_OUTPUT_MS + PER_PORT_BASE_MS)
+          : live * PER_OUTPUT_MS + PER_PORT_BASE_MS;
+        return emitBudgetMs(m) < legacy;
+      })
+      .map((m) => m.type);
+    expect(
+      shrunk,
+      'the #1984 re-navigation tax is ADDITIVE and non-negative, so every module\'s emit budget ' +
+        'must be >= what the pre-#1984 model gave it. A module listed here got a SMALLER budget ' +
+        'than before, which is how a flake fix creates new flakes elsewhere.',
+    ).toEqual([]);
+
+    // The tax has to actually BIND somewhere, or it is decoration that would
+    // pass just as green if HEAVY_GL_RENAV_MS were 0.
+    const taxed = REGISTRY.filter(
+      (m) => emitBudgetMs(m) > 0 && touchesVideo(m) && liveEmitOutputs(m) > 1,
+    ).map((m) => m.type);
+    expect(
+      taxed.length,
+      `no heavy-GL module makes more than one emit navigation, so HEAVY_GL_RENAV_MS ` +
+        `(${HEAVY_GL_RENAV_MS} ms) is never charged and this whole mechanism is inert.`,
+    ).toBeGreaterThan(0);
+
     // …and the headroom, expressed as the port count the envelope carries, which
     // is the number a future author actually needs.
     const capacityPorts = Math.floor(

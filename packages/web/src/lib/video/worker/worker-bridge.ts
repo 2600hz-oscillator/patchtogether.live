@@ -15,7 +15,46 @@
 // closes the stale one) so we never queue-and-leak bitmaps under back-pressure.
 
 import type { ModuleNode } from '$lib/graph/types';
-import type { WorkerInboundMsg, WorkerOutboundMsg } from './protocol';
+import type { WorkerInboundMsg, WorkerOutboundMsg, WorkerTraceSnapshot } from './protocol';
+
+/** #1905 — the MAIN thread's half of the handshake. Paired with the worker's
+ *  half (WorkerTraceSnapshot) by `RenderWorkerBridge.trace()`. */
+export interface BridgeNodeTrace {
+  id: string;
+  /** ms (main clock) the addNode message was posted. */
+  addNodeSentAt: number;
+  /** toybox-sync snapshots posted for this node. */
+  syncsSent: number;
+  /** Frames accepted into the pending map. */
+  framesReceived: number;
+  /** Frames CLOSED ON ARRIVAL because the bridge did not know the node — the
+   *  silent drop that a per-node frame counter cannot show (#1905). */
+  framesDroppedUnknown: number;
+  /** Frames closed on arrival because the worker was not (or no longer) ok. */
+  framesDroppedNotReady: number;
+  /** ---- filled in by VideoEngine.workerHandshakeTrace from the PROXY ---- */
+  /** Bitmaps successfully uploaded into the main-GL texture. */
+  framesDelivered?: number;
+  /** Bitmaps that arrived and FAILED to upload — `framesReceived` high with
+   *  `framesDelivered` at 0 is this, and it reads identically to "the worker
+   *  never sent anything" without this field. */
+  framesDroppedUpload?: number;
+  lastUploadError?: string | null;
+}
+
+export interface BridgeTrace {
+  constructedAt: number;
+  /** ms the init message was posted; null = the worker never constructed. */
+  initSentAt: number | null;
+  /** ms the worker's `ready` landed; null = STILL WAITING (or never coming). */
+  readyAt: number | null;
+  glOk: boolean;
+  /** ms the bridge gave up on the worker, and why (construction throw, worker
+   *  onerror, glOk:false — including a post-init context loss). */
+  failedAt: number | null;
+  failReason: string | null;
+  nodes: BridgeNodeTrace[];
+}
 
 /** The Fix E worker flag, TRI-STATE (stack-study adoption item 1, PR V2):
  *  - 'on'      — explicitly enabled: EVERY worker-locus module uses the worker,
@@ -126,6 +165,30 @@ export class RenderWorkerBridge {
   /** Last determinism state forwarded to the worker ("<freeze>|<paused>"),
    *  so syncDeterminism only posts on change. */
   private lastDeterminismKey = '';
+  /**
+   * #1905 — THE LAST TOYBOX SNAPSHOT PER NODE, so a sync that raced ahead of
+   * its node is replayed instead of lost.
+   *
+   * The sync originates in a card `$effect` that fires ONCE PER `node.data`
+   * CHANGE. Its two consumers both drop it silently when they are not ready
+   * yet: `syncNodeData` is a no-op while `workerBridge` is still null (the
+   * bridge is constructed lazily by the first worker-locus add), and the
+   * worker's `syncToyboxState` returns early when the node is not materialized
+   * there yet. Either drop is PERMANENT — nothing re-sends a snapshot for an
+   * unchanged `node.data` — so the worker renders default layers for the rest
+   * of the session while the card shows the user's real ones.
+   */
+  private lastToyboxSync = new Map<string, unknown>();
+
+  /** ---- #1905 handshake trace (main half) ---- */
+  private readonly constructedAt = now();
+  private initSentAt: number | null = null;
+  private readyAt: number | null = null;
+  private failedAt: number | null = null;
+  private failReason: string | null = null;
+  private nodeTrace = new Map<string, BridgeNodeTrace>();
+  private traceSeq = 0;
+  private pendingTrace = new Map<number, (s: WorkerTraceSnapshot | null) => void>();
 
   constructor(opts: WorkerBridgeOpts) {
     this.res = { ...opts.res };
@@ -133,6 +196,8 @@ export class RenderWorkerBridge {
     this._supported = workerCapable();
     if (!this._supported) {
       this.trace?.('[render-worker] unsupported runtime — main-thread fallback');
+      this.failReason = 'unsupported runtime (no Worker/OffscreenCanvas/createImageBitmap)';
+      this.failedAt = now();
       return;
     }
     try {
@@ -143,16 +208,17 @@ export class RenderWorkerBridge {
       this.worker.onmessage = (e: MessageEvent<WorkerOutboundMsg>) => this.onMessage(e.data);
       this.worker.onerror = (e) => {
         this.trace?.(`[render-worker] worker error: ${e.message} — main-thread fallback`);
-        this.fail();
+        this.fail(`worker onerror: ${e.message}`);
       };
       this.send({ type: 'init', res: this.res });
+      this.initSentAt = now();
       // Forward the CURRENT determinism globals right away — e2e harnesses set
       // them via addInitScript BEFORE the app boots, and the worker's clock
       // must honor them from its very first frame.
       this.syncDeterminism();
     } catch (err) {
       this.trace?.(`[render-worker] construct failed: ${err instanceof Error ? err.message : err} — main-thread fallback`);
-      this.fail();
+      this.fail(`construct failed: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
@@ -179,10 +245,24 @@ export class RenderWorkerBridge {
     // matches the cv-modulation render-local-clone discipline).
     this.knownNodes.set(node.id, snapshot(node));
     this.send({ type: 'addNode', node: snapshot(node) });
+    this.nodeTrace.set(node.id, {
+      id: node.id,
+      addNodeSentAt: now(),
+      syncsSent: 0,
+      framesReceived: 0,
+      framesDroppedUnknown: 0,
+      framesDroppedNotReady: 0,
+    });
+    // #1905 — a snapshot that arrived BEFORE this node existed in the worker was
+    // dropped there; re-send it now that the node is on its way. Ordering is
+    // FIFO per port, so this lands after the addNode above.
+    this.replayToyboxSync(node.id);
   }
 
   removeNode(nodeId: string): void {
     this.knownNodes.delete(nodeId);
+    this.lastToyboxSync.delete(nodeId);
+    this.nodeTrace.delete(nodeId);
     const stale = this.pending.get(nodeId);
     if (stale) { try { stale.close(); } catch { /* */ } this.pending.delete(nodeId); }
     if (!this.supported) return;
@@ -208,7 +288,22 @@ export class RenderWorkerBridge {
    */
   sendToyboxSync(nodeId: string, state: unknown): void {
     if (!this.supported) return;
+    // Remember it EVEN IF the node is not known yet — that is exactly the case
+    // the worker used to drop on the floor (#1905). `replayToyboxSync` re-sends
+    // it from addNode and from the ready handshake.
+    this.lastToyboxSync.set(nodeId, state);
     this.send({ type: 'toybox-sync', nodeId, state });
+    const t = this.nodeTrace.get(nodeId);
+    if (t) t.syncsSent++;
+  }
+
+  /** #1905 — re-post the last known TOYBOX snapshot for a node, if any. */
+  private replayToyboxSync(nodeId: string): void {
+    if (!this.supported) return;
+    if (!this.lastToyboxSync.has(nodeId)) return;
+    this.send({ type: 'toybox-sync', nodeId, state: this.lastToyboxSync.get(nodeId) });
+    const t = this.nodeTrace.get(nodeId);
+    if (t) t.syncsSent++;
   }
 
   /**
@@ -258,6 +353,11 @@ export class RenderWorkerBridge {
     for (const bmp of this.pending.values()) { try { bmp.close(); } catch { /* */ } }
     this.pending.clear();
     this.knownNodes.clear();
+    this.lastToyboxSync.clear();
+    // Never leave a trace request hanging on a worker that is going away — an
+    // unresolved probe is indistinguishable from a wedged worker.
+    for (const resolve of this.pendingTrace.values()) resolve(null);
+    this.pendingTrace.clear();
     if (this.worker) {
       // Give the worker a tick to process the dispose, then terminate.
       const w = this.worker;
@@ -277,14 +377,24 @@ export class RenderWorkerBridge {
     switch (msg.type) {
       case 'ready': {
         this.workerGlOk = msg.glOk;
+        // FIRST ready only. The worker reuses this message to report a POST-INIT
+        // context loss, and overwriting `readyAt` with the failure's timestamp
+        // erased the very interval the trace exists to show (how long the
+        // handshake took) — measured on a SwiftShader run that read
+        // `readyAt: 93823` for a worker that had been live since 2228 ms.
+        if (this.readyAt === null) this.readyAt = now();
         if (!msg.glOk) {
           this.trace?.(`[render-worker] worker WebGL2 unavailable (${msg.initErr ?? '?'}) — main-thread fallback`);
-          this.fail();
+          this.fail(`ready glOk=false: ${msg.initErr ?? '?'}`);
         } else {
           this.trace?.('[render-worker] worker WebGL2 ready');
           // Replay any nodes added before the worker confirmed ready.
           for (const node of this.knownNodes.values()) {
             this.send({ type: 'addNode', node });
+            // …and the state snapshot that went with it (#1905). The worker's
+            // addNode is idempotent, so a node that WAS already there keeps its
+            // handle and simply re-applies the snapshot.
+            this.replayToyboxSync(node.id);
           }
         }
         break;
@@ -292,22 +402,79 @@ export class RenderWorkerBridge {
       case 'frame': {
         // Latest-wins: a not-yet-drained previous bitmap for this node is stale.
         if (!this.workerGlOk || !this.knownNodes.has(msg.nodeId)) {
+          const t = this.nodeTrace.get(msg.nodeId);
+          if (t) {
+            if (!this.workerGlOk) t.framesDroppedNotReady++;
+            else t.framesDroppedUnknown++;
+          }
           try { msg.bitmap.close(); } catch { /* */ }
           break;
         }
         const prev = this.pending.get(msg.nodeId);
         if (prev) { try { prev.close(); } catch { /* */ } }
         this.pending.set(msg.nodeId, msg.bitmap);
+        const t = this.nodeTrace.get(msg.nodeId);
+        if (t) t.framesReceived++;
+        break;
+      }
+      case 'trace': {
+        const resolve = this.pendingTrace.get(msg.seq);
+        if (resolve) {
+          this.pendingTrace.delete(msg.seq);
+          resolve(msg.snapshot);
+        }
         break;
       }
     }
   }
 
+  /** #1905 — the MAIN thread's half of the handshake (synchronous). */
+  bridgeTrace(): BridgeTrace {
+    return {
+      constructedAt: this.constructedAt,
+      initSentAt: this.initSentAt,
+      readyAt: this.readyAt,
+      glOk: this.workerGlOk,
+      failedAt: this.failedAt,
+      failReason: this.failReason,
+      nodes: [...this.nodeTrace.values()].map((n) => ({ ...n })),
+    };
+  }
+
+  /**
+   * #1905 — ask the WORKER for its half. Resolves `null` when the worker does
+   * not answer within `timeoutMs`, and THAT IS A READING, not an error: a
+   * worker whose message loop is wedged (or that was terminated under us)
+   * cannot reply, while a worker whose RENDER loop died replies promptly with a
+   * frozen `loopTicks` and a populated `lastError`. Both present to every other
+   * instrument as "no frames".
+   */
+  workerTrace(timeoutMs = 2000): Promise<WorkerTraceSnapshot | null> {
+    if (!this.supported || !this.worker) return Promise.resolve(null);
+    const seq = ++this.traceSeq;
+    return new Promise<WorkerTraceSnapshot | null>((resolve) => {
+      const done = (s: WorkerTraceSnapshot | null) => {
+        clearTimeout(timer);
+        resolve(s);
+      };
+      const timer = setTimeout(() => {
+        this.pendingTrace.delete(seq);
+        resolve(null);
+      }, timeoutMs);
+      this.pendingTrace.set(seq, done);
+      this.send({ type: 'trace-request', seq });
+    });
+  }
+
   /** Permanently disable the worker path (the engine's already-installed proxy
    *  handles fall back to main render on their next draw via ready()===false). */
-  private fail(): void {
+  private fail(reason = 'unspecified'): void {
     this._supported = false;
     this.workerGlOk = false;
+    if (this.failedAt === null) {
+      this.failedAt = now();
+      this.failReason = reason;
+    }
     for (const bmp of this.pending.values()) { try { bmp.close(); } catch { /* */ } }
     this.pending.clear();
     if (this.worker) {
@@ -318,6 +485,16 @@ export class RenderWorkerBridge {
 
   private send(msg: WorkerInboundMsg): void {
     this.worker?.postMessage(msg);
+  }
+}
+
+/** Monotonic ms for the trace. `performance.now()` where it exists (every
+ *  browser realm), `Date.now()` in a bare test realm that stubs globals out. */
+function now(): number {
+  try {
+    return typeof performance !== 'undefined' ? performance.now() : Date.now();
+  } catch {
+    return Date.now();
   }
 }
 

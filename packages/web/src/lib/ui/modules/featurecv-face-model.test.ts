@@ -33,8 +33,6 @@
 
 import { describe, expect, it } from 'vitest';
 import { featurecvDef } from '$lib/audio/modules/featurecv';
-import { faceReadoutValueFor } from '$lib/ui/workflow/face-readout-values';
-import { sidebarPanelIds } from '$lib/ui/workflow/sidebar-panels';
 import { glyphBinding, primaryAudioOutPortId } from '$lib/ui/workflow/shell-glyph-live';
 import { STRICT_FACES } from '$lib/ui/workflow/strict-faces';
 import {
@@ -85,16 +83,8 @@ const base = () => featurecvFaceParams(reader());
 
 /** Every readout id the face declares, in declaration order — DERIVED off the
  *  def rather than typed, so a new readout enrols itself in the sweeps below. */
-const DECLARED_READOUTS: readonly string[] = [
-  ...(featurecvDef.face?.hero?.readouts ?? []),
-  ...(featurecvDef.face?.sidebar ?? []).flatMap((b) => (b.kind === 'readouts' ? b.entries : [])),
-]
-  .map((r) => r.valueId)
-  .filter((v): v is string => typeof v === 'string');
 
 /** Print every declared readout at a given param overlay. */
-const snapshot = (over: Record<string, number> = {}): Record<string, string> =>
-  Object.fromEntries(DECLARED_READOUTS.map((id) => [id, faceReadoutValueFor(id)!(reader(over))]));
 
 describe('featurecv face model — the shipped defaults', () => {
   it('resolves the def defaults for anything untouched', () => {
@@ -108,24 +98,6 @@ describe('featurecv face model — the shipped defaults', () => {
       bipolar: declared.bipolar,
       onsetSens: declared.onset_sens,
       onsetDebounce: declared.onset_debounce,
-    });
-  });
-
-  it('prints the numbers the docs and the def comment state', () => {
-    expect(snapshot()).toEqual({
-      // BIPOLAR default: silence maps to the BOTTOM rail, not the centre.
-      'featurecv-idle': '−1.00',
-      // −12.04 dBFS RMS × makeup 2 × gain 1 = 0.5 unipolar = 0.00 bipolar.
-      'featurecv-probe': '0.00',
-      // SENS 0.50 → 2.60× the running mean flux, and the map is INVERTED.
-      'featurecv-thresh': '2.60×',
-      // DEBNCE 80 ms → a 12.5 Hz ceiling on the trigger.
-      'featurecv-max-rate': '12.5 Hz',
-      // ATK/REL are one-pole TIME CONSTANTS; ln(9) ≈ 2.197× is the 10→90 move.
-      'featurecv-atk-rise': '22 ms',
-      'featurecv-rel-fall': '220 ms',
-      // LOUD pins at full scale above rms 0.5 at unity trim.
-      'featurecv-loud-clip': '-6.0 dBFS',
     });
   });
 });
@@ -143,19 +115,6 @@ describe('CONTROL 1 — the two probes: `idle` is GAIN-blind and `−12 dB` is n
     // "the jacks rest at the bottom rail" a property of POLARITY rather than of
     // whatever the trim happened to be.
     for (const r of rows) expect(r.idle, `GAIN ${r.gain} moved the idle level`).toBe('−1.00');
-  });
-
-  it('POLARITY moves BOTH, which is what makes it rank 1', () => {
-    const bi = snapshot();
-    const uni = snapshot({ bipolar: 0 });
-    expect(uni['featurecv-idle']).toBe('0.00');
-    expect(uni['featurecv-probe']).toBe('+0.50');
-    expect(bi['featurecv-idle']).not.toBe(uni['featurecv-idle']);
-    expect(bi['featurecv-probe']).not.toBe(uni['featurecv-probe']);
-    // A FULL RAIL with nothing patched — the measurement the rank-1 argument
-    // rests on. Every other control is inert on silence and this one is not.
-    expect(featurecvIdleCv(base())).toBeCloseTo(-1, 9);
-    expect(featurecvIdleCv(featurecvFaceParams(reader({ bipolar: 0 })))).toBeCloseTo(0, 9);
   });
 
   it('the CLAMP is a real ceiling, and `loud clip` is where it lands', () => {
@@ -176,78 +135,6 @@ describe('CONTROL 1 — the two probes: `idle` is GAIN-blind and `−12 dB` is n
     // answer is not a number.
     expect(featurecvClipText(featurecvFaceParams(reader({ gain: 0.25 })))).toBe('never');
     expect(featurecvClipText(featurecvFaceParams(reader({ gain: 0.5 })))).toBe('0.0 dBFS');
-  });
-});
-
-describe('CONTROL 2 — the two halves of the module are independent, in both directions', () => {
-  const FEATURE_READOUTS = [
-    'featurecv-idle',
-    'featurecv-probe',
-    'featurecv-atk-rise',
-    'featurecv-rel-fall',
-    'featurecv-loud-clip',
-  ] as const;
-  const ONSET_READOUTS = ['featurecv-thresh', 'featurecv-max-rate'] as const;
-
-  it('the two lists PARTITION the declared readouts — no readout is unwatched', () => {
-    // Derived from the def so a new readout cannot slip past both sweeps below.
-    expect([...FEATURE_READOUTS, ...ONSET_READOUTS].sort()).toEqual([...DECLARED_READOUTS].sort());
-  });
-
-  it('the FEATURE dials move no ONSET readout', () => {
-    const before = snapshot();
-    for (const [id, to] of [
-      ['gain', 4],
-      ['attack', 500],
-      ['release', 2000],
-      ['bipolar', 0],
-    ] as const) {
-      const after = snapshot({ [id]: to });
-      for (const r of ONSET_READOUTS) {
-        expect(after[r], `'${id}' → ${to} moved '${r}'`).toBe(before[r]);
-      }
-      // …and it moved at least one feature readout, so the sweep is not vacuous.
-      expect(
-        FEATURE_READOUTS.some((r) => after[r] !== before[r]),
-        `'${id}' → ${to} moved NOTHING — the sweep is measuring nothing`,
-      ).toBe(true);
-    }
-  });
-
-  it('the ONSET dials move no FEATURE readout', () => {
-    const before = snapshot();
-    for (const [id, to] of [
-      ['onset_sens', 1],
-      ['onset_debounce', 1000],
-    ] as const) {
-      const after = snapshot({ [id]: to });
-      for (const r of FEATURE_READOUTS) {
-        expect(after[r], `'${id}' → ${to} moved '${r}'`).toBe(before[r]);
-      }
-      expect(
-        ONSET_READOUTS.some((r) => after[r] !== before[r]),
-        `'${id}' → ${to} moved NOTHING — the sweep is measuring nothing`,
-      ).toBe(true);
-    }
-  });
-
-  it('every declared param moves at least one readout — deny-by-default over the roster', () => {
-    // The other half of the pair above. A dial that moves nothing on the
-    // faceplate is either an un-modelled quantity or a dead control, and both
-    // should be loud.
-    const before = snapshot();
-    const far: Record<string, number> = {
-      gain: 4,
-      attack: 500,
-      release: 2000,
-      bipolar: 0,
-      onset_sens: 1,
-      onset_debounce: 1000,
-    };
-    for (const p of featurecvDef.params) {
-      const after = snapshot({ [p.id]: far[p.id]! });
-      expect(after, `'${p.id}' moved no readout at all`).not.toEqual(before);
-    }
   });
 });
 
@@ -403,26 +290,6 @@ describe('the SIDEBAR SOURCE TABLE is re-derived from the SHIPPING generators (#
 });
 
 describe('TOTALITY — the generators run on every render', () => {
-  it('survives a fresh node, NaN and ±Infinity on every param', () => {
-    for (const bad of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, 0]) {
-      for (const p of featurecvDef.params) {
-        for (const id of DECLARED_READOUTS) {
-          const out = faceReadoutValueFor(id)!(reader({ [p.id]: bad }));
-          expect(typeof out, `'${id}' at ${p.id}=${bad}`).toBe('string');
-          expect(out.length, `'${id}' at ${p.id}=${bad} printed nothing`).toBeGreaterThan(0);
-        }
-      }
-    }
-  });
-
-  it('a fresh node with NO stored params prints the same as the def defaults', () => {
-    // `node.params` is a SPARSE overlay of what has been TOUCHED — the
-    // StereoCrossoverPanel scar. A reader that returns undefined for everything
-    // must resolve the def, not zero.
-    expect(Object.fromEntries(DECLARED_READOUTS.map((id) => [id, faceReadoutValueFor(id)!(() => undefined)]))).toEqual(
-      snapshot(),
-    );
-  });
 
   it('a rail fill on a NaN CV is 0, never NaN — the panel must not paint `NaNpx`', () => {
     expect(featurecvRailFill(Number.NaN, base())).toBe(0);
@@ -434,14 +301,6 @@ describe('TOTALITY — the generators run on every render', () => {
 
 describe('the FACE itself', () => {
   const face = featurecvDef.face!;
-
-  it('is promoted, and every readout it declares is registered', () => {
-    expect(STRICT_FACES.has('featurecv')).toBe(true);
-    expect(DECLARED_READOUTS.length).toBeGreaterThan(0);
-    for (const id of DECLARED_READOUTS) {
-      expect(faceReadoutValueFor(id), `readout '${id}' is not registered`).toBeTruthy();
-    }
-  });
 
   it("declares glyph 'none' BECAUSE the module publishes no audio output", () => {
     // ⚠ THE MARBLES DEFECT (#1692), asserted at its cause rather than at its
@@ -501,12 +360,6 @@ describe('the FACE itself', () => {
     expect([...onsetPage.controls].sort()).toEqual(
       featurecvDef.params.filter((p) => p.id.startsWith('onset_')).map((p) => p.id).sort(),
     );
-  });
-
-  it('declares the maps panel, and the panel is registered', () => {
-    const custom = (face.sidebar ?? []).filter((b) => b.kind === 'custom');
-    expect(custom.map((b) => (b as { panelId: string }).panelId)).toEqual(['featurecv-maps']);
-    expect(sidebarPanelIds()).toContain('featurecv-maps');
   });
 
   it('POLARITY keeps the card\'s UNI/BI vocabulary through a declared options roster', () => {

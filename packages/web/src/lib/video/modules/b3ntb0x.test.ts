@@ -552,8 +552,13 @@ describe('B3NTB0X param→uniform wiring (no dead controls)', () => {
 
   it('every visual param id (minus mirror gates) appears in the wiring table', () => {
     const gateOnly = new Set(['mirrorXGate', 'mirrorYGate']);
+    // `freeze` is the VRT capture-freeze param (noUserControl): it pins the
+    // sim clock and deliberately drives NO shader uniform, so the wiring
+    // guard has nothing to check for it. It is NOT a visual control — the
+    // def declares it noUserControl, which the no-user-control gate asserts.
+    const nonVisual = new Set(['freeze']);
     for (const p of b3ntb0xDef.params) {
-      if (gateOnly.has(p.id)) continue;
+      if (gateOnly.has(p.id) || nonVisual.has(p.id)) continue;
       expect(Object.keys(WIRING), `${p.id} is covered by the wiring guard`).toContain(p.id);
     }
   });

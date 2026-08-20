@@ -154,8 +154,6 @@ e2e/tests/illogic.spec.ts :: illogic: LFO → in1 → att1 (gain=1) produces aud
 e2e/tests/illogic.spec.ts :: illogic: att1_amount=-1 still produces audible signal (sign-flipped) :: waitForTimeout(1000) #1
 e2e/tests/illogic.spec.ts :: illogic: att1_amount=0 mutes the att1 output :: waitForTimeout(700) #1
 e2e/tests/illogic.spec.ts :: illogic: two LFOs → in1+in2 → sum produces summed audible signal :: waitForTimeout(1500) #1
-e2e/tests/joystick.spec.ts :: drag updates pos_x + pos_y; pointer-up snaps back :: waitForTimeout(120) #1
-e2e/tests/joystick.spec.ts :: spawns + pad mounts + no console errors :: waitForTimeout(80) #1
 e2e/tests/karplus-face.spec.ts :: maxHold :: waitForTimeout(60) #1
 e2e/tests/karplus.spec.ts :: KARPLUS real chain: SEQUENCER gate+pitch → pluck → AUDIOOUT — audible RMS + in-tune fundamental :: waitForTimeout(60) #1
 e2e/tests/kickdrum-face.spec.ts :: maxHold :: waitForTimeout(60) #1
@@ -344,12 +342,8 @@ e2e/tests/vfpga-p3-composite.spec.ts :: chroma-rot: clip B (vin2) chroma transpl
 e2e/tests/vfpga-p3-composite.spec.ts :: chroma-rot: clip B (vin2) chroma transplants onto image A (Y/C, two-source) :: waitForTimeout(600) #2
 e2e/tests/vfpga-p3-composite.spec.ts :: framestore-howl: sustained feedback does not leak (FBOs swapped in place) :: waitForTimeout(4_000) #1
 e2e/tests/vfpga-p3-composite.spec.ts :: pollStats :: waitForTimeout(150) #1
-e2e/tests/vfpga-p4-early-hd.spec.ts :: ${}: bends the smpte source into distinct non-black output :: waitForTimeout(150) #1
 e2e/tests/vfpga-p4-early-hd.spec.ts :: ${}: bends the smpte source into distinct non-black output :: waitForTimeout(300) #1
 e2e/tests/vfpga-p4-early-hd.spec.ts :: macroblock-mosh: clip B (vin2) motion transfers onto image A (two-clip datamosh) :: waitForTimeout(1500) #1
-e2e/tests/vfpga-p4-early-hd.spec.ts :: macroblock-mosh: clip B (vin2) motion transfers onto image A (two-clip datamosh) :: waitForTimeout(250) #1
-e2e/tests/vfpga-p4-early-hd.spec.ts :: macroblock-mosh: clip B (vin2) motion transfers onto image A (two-clip datamosh) :: waitForTimeout(600) #1
-e2e/tests/vfpga-p4-early-hd.spec.ts :: macroblock-mosh: clip B (vin2) motion transfers onto image A (two-clip datamosh) :: waitForTimeout(600) #2
 e2e/tests/vfpga-p4-early-hd.spec.ts :: macroblock-mosh: sustained feedback does not leak (FBOs swapped in place) :: waitForTimeout(4_000) #1
 e2e/tests/vfpga-p4-early-hd.spec.ts :: pollStats :: waitForTimeout(150) #1
 e2e/tests/vfpga-patchpanel-presets.spec.ts :: BUG 2: loading a non-default preset visibly changes OUTPUT away from the smpte test pattern :: waitForTimeout(150) #1

@@ -23,7 +23,6 @@
 
 import { describe, expect, it } from 'vitest';
 import { unityscalemathematikDef } from '$lib/audio/modules/unityscalemathematik';
-import { faceReadoutValueFor } from '$lib/ui/workflow/face-readout-values';
 import { glyphBinding, primaryAudioOutPortId } from '$lib/ui/workflow/shell-glyph-live';
 import { STRICT_FACES } from '$lib/ui/workflow/strict-faces';
 import {
@@ -206,26 +205,6 @@ describe('TOTALITY — the generator runs on every render', () => {
 
 describe('the FACE itself', () => {
   const face = unityscalemathematikDef.face!;
-
-  it('is promoted, and every readout it declares is registered', () => {
-    expect(STRICT_FACES.has('unityscalemathematik')).toBe(true);
-    const declared = (face.hero?.readouts ?? []).map((r) => r.valueId!).filter(Boolean);
-    expect(declared.length).toBeGreaterThan(0);
-    for (const id of declared) {
-      expect(faceReadoutValueFor(id), `readout '${id}' is not registered`).toBeTruthy();
-    }
-  });
-
-  it('the registered generators produce the SAME strings the model does', () => {
-    // Joins the registry to the model, so a mis-wired id (a `-half` bound to
-    // the `-over` generator) is red rather than plausible.
-    const read = reader({ aCurve: 1, aAtten: 0.5, bCurve: 0.5, bAtten: -1 });
-    const p = unityscaleFaceParams(read);
-    for (const s of UNITYSCALE_SHAPED_SECTIONS) {
-      expect(faceReadoutValueFor(`unityscale-${s}-half`)!(read)).toBe(unityscaleHalfText(s, p));
-      expect(faceReadoutValueFor(`unityscale-${s}-over`)!(read)).toBe(unityscaleOverText(s, p));
-    }
-  });
 
   it('the readout roster is DERIVED from the def, not typed', () => {
     // A third shaped channel would register its two ids without a list to

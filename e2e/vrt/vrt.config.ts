@@ -252,10 +252,38 @@ export default defineConfig({
   // 30 s. The required lane (`VRT_STRICT=1`) is the deterministic pure-DOM
   // subset whose median is 5.6 s, so it never approaches either number.
   //
-  // ⚠ Do NOT "fix" a slow scene by raising this further. Past ~90 s the answer
-  // is that the scene is not converging, which is a determinism finding — see
-  // the frame-count convergence loop in vrt-toybox.spec.ts for what that fix
-  // looks like when it is real.
+  // ⚠ Do NOT "fix" a slow scene by raising THIS number. It is the bound for
+  // every test in the lane, and moving it moves the bound for scenes nobody
+  // measured.
+  //
+  // ⚠ AND THE SENTENCE THAT USED TO FOLLOW WAS WRONG, so it is corrected rather
+  // than repeated (#1949). It read: "Past ~90 s the answer is that the scene is
+  // not converging, which is a determinism finding." That conflates two
+  // different budgets:
+  //
+  //   * CONVERGENCE is bounded by `expect.timeout` (30_000, below) — the
+  //     screenshot-until-two-consecutive-captures-agree retry loop. A scene that
+  //     never settles fails THERE, with the px ladder, at 30 s, regardless of
+  //     what this number says.
+  //   * THIS number bounds everything else: page load, font decode, spawnPatch,
+  //     the freeze retries, the height-settle loop, the companion diffs. That is
+  //     SCENE WEIGHT.
+  //
+  // MEASURED, capture run 32288252788: b3ntb0x's two face scenes both CONVERGED
+  // and both wrote their actual PNG (55.6 s and ~88.6 s), and the dock one was
+  // then killed by this cap 1.4 s after its snapshot write. Neither tripped
+  // `expect.timeout`. "It is not converging" was falsified by the scene's own
+  // output, and raising this number would not have made a non-converging scene
+  // pass anyway — the determinism gate is the other budget.
+  //
+  // So a genuinely heavy scene gets a PER-SCENE bound instead, declared with the
+  // measurement that justifies it and derived from it: see `faceSceneTimeout` /
+  // `FaceSceneWeight` in `e2e/vrt/_shell-faces.ts`. Deny-by-default, `why` in
+  // the type, and this number stays the floor for everything that does not
+  // declare one.
+  //
+  // For what a REAL determinism fix looks like, see the frame-count convergence
+  // loop in vrt-toybox.spec.ts.
   timeout: 90_000,
 
   // Snapshot path template. Default would scatter PNGs under

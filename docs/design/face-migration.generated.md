@@ -11,9 +11,9 @@ Every registered module carries exactly one **disposition**: what kind of work i
 
 |  | count |
 |---|---|
-| registered modules | 196 |
-| done (faced + promoted) | 63 |
-| remaining (excludes organizational-native) | 130 |
+| registered modules | 198 |
+| done (faced + promoted) | 70 |
+| remaining (excludes organizational-native) | 125 |
 | registered with NO disposition (must be zero) | 0 |
 | inventory entries naming a dead def (must be zero) | 0 |
 
@@ -21,9 +21,9 @@ Every registered module carries exactly one **disposition**: what kind of work i
 
 | disposition | what it means | modules | done |
 |---|---|---|---|
-| `generic-face` | author a `face` and rank the controls — no new platform capability | 141 | 63 |
+| `generic-face` | author a `face` and rank the controls — no new platform capability | 141 | 70 |
 | `blocked` | would be a face today but for the named capability, and nothing else | 3 | — |
-| `bespoke-surface` | the primary interaction is not param-shaped — needs a purpose-built surface | 49 | — |
+| `bespoke-surface` | the primary interaction is not param-shaped — needs a purpose-built surface | 51 | — |
 | `organizational-native` | rack furniture; not a migration at all | 3 | — |
 
 ## What each blocker buys
@@ -31,7 +31,7 @@ Every registered module carries exactly one **disposition**: what kind of work i
 | blocker | issue | modules waiting |
 |---|---|---|
 | `needs-media-controller` | #1511 | 12 |
-| `needs-note-entry-cell` | #1509 | 15 |
+| `needs-note-entry-cell` | #1509 | 17 |
 
 ## `generic-face`
 
@@ -45,7 +45,7 @@ author a `face` and rank the controls — no new platform capability.
 | `analogLogicMaths` | audio | done | — |
 | `analogVco` | audio | done | — |
 | `attenumix` | audio | done | — |
-| `b3ntb0x` | video | — | — |
+| `b3ntb0x` | video | done | — |
 | `backdraft` | video | done | — |
 | `bentbox` | video | — | — |
 | `bluebox` | audio | done | — |
@@ -78,7 +78,7 @@ author a `face` and rank the controls — no new platform capability.
 | `flipper` | audio | — | — |
 | `fourplexer` | audio | done | — |
 | `foxy` | audio | — | — |
-| `freezeframe` | video | — | — |
+| `freezeframe` | video | done | — |
 | `gatemaiden` | audio | — | — |
 | `grainsOfVision` | video | — | — |
 | `graphicEq` | video | — | — |
@@ -121,16 +121,16 @@ author a `face` and rank the controls — no new platform capability.
 | `moog960` | audio | — | — |
 | `moog961` | audio | — | — |
 | `moog962` | audio | — | — |
-| `moog984` | audio | — | — |
+| `moog984` | audio | done | — |
 | `moog992` | audio | — | — |
-| `moog993` | audio | — | — |
+| `moog993` | audio | done | — |
 | `moog994` | audio | — | — |
 | `moog995` | audio | — | — |
 | `moogCp3` | audio | done | — |
 | `ninelives` | audio | done | — |
 | `noise` | audio | done | — |
 | `onetonine` | video | — | — |
-| `outlines` | video | — | — |
+| `outlines` | video | done | — |
 | `peakstate` | video | — | — |
 | `pentemelodica` | audio | done | — |
 | `polarizer` | audio | — | — |
@@ -160,7 +160,7 @@ author a `face` and rank the controls — no new platform capability.
 | `sourcery` | video | — | — |
 | `spectrograph` | audio | — | — |
 | `spirographs` | video | done | — |
-| `stereovca` | audio | — | — |
+| `stereovca` | audio | done | — |
 | `swolevco` | audio | done | — |
 | `synesthesia` | audio | — | — |
 | `tempest` | video | — | — |
@@ -168,7 +168,7 @@ author a `face` and rank the controls — no new platform capability.
 | `tiler` | video | — | — |
 | `timelorde` | audio | — | — |
 | `tomtom` | audio | done | — |
-| `treeohvox` | audio | — | — |
+| `treeohvox` | audio | done | — |
 | `unityscalemathematik` | audio | done | — |
 | `vca` | audio | done | — |
 | `vdelay` | video | — | — |
@@ -245,6 +245,8 @@ the primary interaction is not param-shaped — needs a purpose-built surface.
 | `twotracks` | audio | — | — |
 | `videobox` | video | — | `needs-media-controller` |
 | `videovarispeed` | video | — | `needs-media-controller` |
+| `vstFx` | audio | — | `needs-note-entry-cell` |
+| `vstInstrument` | audio | — | `needs-note-entry-cell` |
 | `writeseq` | audio | — | `needs-note-entry-cell` |
 
 ## `organizational-native`

@@ -305,6 +305,85 @@ describe('resolvePushCardControls — tier 2, the curated face', () => {
     ]);
   });
 
+  it('a FIRST PROMOTION on a TWO-PARAM module still moves the card — stereovca', () => {
+    // stereovca, promoted 2026-08-19 (queue Q42). The smallest possible form of
+    // the drift CLAUDE.md's push-card note warns about, and the reason it is
+    // written down rather than shrugged at: with only two params the whole card
+    // is a SWAP, which is the easiest kind of change to mistake for a no-op.
+    //
+    // What moved: the GENERIC tier is declaration order — `level, offset` — so
+    // LEVEL sat on encoder 1. The face ranks OFFSET first, because with nothing
+    // patched into STRENGTH the multiplier is `0 + offset` and LEVEL is
+    // multiplying a term that is exactly zero: encoder 1 was the one control on
+    // this module that could not make a sound. Accepted deliberately.
+    const spec = resolvePushCardControls(defByType('stereovca'));
+    expect(spec.source).toBe('face');
+    expect(spec.skipped, 'no families and no momentary pads on this module').toEqual([]);
+    expect(pushCardParams(spec).map((q) => q.id)).toEqual(['offset', 'level']);
+    // The negative control: the DEF's own declaration order is genuinely the
+    // other way round, so this cannot pass vacuously.
+    expect((defByType('stereovca').params ?? []).map((q) => q.id)).toEqual(['level', 'offset']);
+  });
+
+  it('a FIRST PROMOTION re-orders AND steps over a family — treeohvox', () => {
+    // treeohvox, promoted 2026-08-19 (#1944, queue Q3). The variant that
+    // exercises both behaviours at once on a newly promoted module: the window
+    // must step over the GATE audition family AND land the re-ranked set.
+    //
+    // What moved: the GENERIC tier is declaration order, which leads with TUNE
+    // — a ±12 st offset on a voice that is played from a pitch source, i.e. the
+    // control a 303 player touches least. The face ranks CUTOFF first (where
+    // the filter sweep is centred) and pushes TUNE to last, so the encoders now
+    // lead with the squelch instead of with a transpose.
+    //
+    // Seven turnable params and one family, so nothing falls off the 8-wide
+    // window and the card is a permutation of the same set — the case an
+    // override would be wrong to freeze.
+    const spec = resolvePushCardControls(defByType('treeohvox'));
+    expect(spec.source).toBe('face');
+    expect(spec.skipped, 'the GATE is a family — an encoder cannot hold a pad').toEqual([
+      'treeohvox-gate-{n}',
+    ]);
+    expect(pushCardParams(spec).map((q) => q.id)).toEqual([
+      'cutoff', 'resonance', 'envelope', 'decay', 'waveform', 'accent', 'tune',
+    ]);
+    // The negative control: declaration order genuinely differs, so this cannot
+    // pass vacuously.
+    expect((defByType('treeohvox').params ?? []).map((q) => q.id)).toEqual([
+      'tune', 'cutoff', 'resonance', 'envelope', 'decay', 'accent', 'waveform',
+    ]);
+  });
+
+  it('a FIRST PROMOTION re-orders the encoders into COLUMNS — moog984', () => {
+    // moog984, promoted 2026-08-19 (#1942). The third variant of the same
+    // hazard, and the one where the permutation carries the most meaning.
+    //
+    // The def declares its sixteen cross-points ROW-MAJOR (one generator loop,
+    // `for i { for j { m_ij } }`), so the GENERIC tier put input 1's whole fan
+    // -out plus input 2's on the eight encoders. The face ranks COLUMN-MAJOR,
+    // because on this module a shrinking budget should keep a complete OUTPUT
+    // BUS. So the Push card now carries two ENTIRE buses — encoders 1-4 are
+    // everything reaching OUT 1, encoders 5-8 everything reaching OUT 2 —
+    // instead of two entire input rows.
+    //
+    // Both arrangements are coherent, which is exactly why this is accepted
+    // deliberately here rather than frozen with a PUSH_CARD_CONTROLS override:
+    // the card is a permutation of the same set and should keep following the
+    // face if the face is ever re-ranked.
+    const spec = resolvePushCardControls(defByType('moog984'));
+    expect(spec.source).toBe('face');
+    expect(spec.skipped, 'no families and no momentary pads on this module').toEqual([]);
+    expect(pushCardParams(spec).map((q) => q.id)).toEqual([
+      'm11', 'm21', 'm31', 'm41', 'm12', 'm22', 'm32', 'm42',
+    ]);
+    // The negative control: declaration order is genuinely different, so this
+    // cannot pass vacuously and a future re-rank is distinguishable from a
+    // no-op. (The first eight of the def's own roster are input rows 1 and 2.)
+    expect((defByType('moog984').params ?? []).slice(0, 8).map((q) => q.id)).toEqual([
+      'm11', 'm12', 'm13', 'm14', 'm21', 'm22', 'm23', 'm24',
+    ]);
+  });
+
   it('a FIRST PROMOTION can move the TIER and leave the CARD identical — ninelives', () => {
     // ninelives, promoted 2026-08-15 (faceplate queue Q11). The counterpart to
     // the leg above, and the reason both are worth having: a promotion moves

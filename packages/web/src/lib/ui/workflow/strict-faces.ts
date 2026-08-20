@@ -1252,6 +1252,92 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // def/factory bug that changes saved-rack audio and is NOT fixed in a face
   // PR — see the note on `applyCompMacro`.
   'mixmstrs',
+  // MOOG 993 TRIGGER & ENVELOPE VOLTAGES (2026-08-19) — promoted on the back of
+  // the #1911 fix, and the NARROWEST merit case in the set, recorded as such.
+  //
+  // Three params, no families, no `node.data`, and the three routers are PEERS,
+  // so the "what does a shrinking tier keep" argument is nearly empty: mini
+  // shows ROUTE 1 because it is the first out on the panel. What earns the two
+  // baselines is the hero readout — the module's CONFIGURATION (a 1→3 trigger
+  // multiple, or three outs split between two clocks, both named in its docs)
+  // is a property of all three switches at once and no switch can print it.
+  //
+  // The cells are SEGMENTED rather than dials as a consequence of the def: each
+  // router declares an `options` roster, which `paramCellKind` renders as a
+  // segmented cell at the dock and which paints OFF / FROM 1 / FROM 2 instead
+  // of a bare number. Before #1911 these were `curve: 'linear'` dials over a
+  // DSP selecting on exact float equality — 149 of 201 dial positions delivered
+  // silence — so promoting this module BEFORE that fix would have shipped the
+  // same continuous dial onto a def-driven faceplate.
+  'moog993',
+  // THE FACEPLATE QUEUE · Q32 — OUTLINES, a stateful particle field, and the
+  // face whose PAGES carry the module's hardest-to-discover property
+  // (2026-08-19).
+  //
+  // FIVE OF ITS SEVEN KNOBS ARE LATCHED AT SPAWN. `d`, `v`, `spd`, `decay` and
+  // `shape` are copied into each shape as it is born; turning them afterwards
+  // changes nothing about what is already on screen. A player who turns SPEED
+  // and sees nothing move is looking at a control that only applies to the
+  // future. So `pages` groups by WHEN a control acts — spawn clock / latched at
+  // birth / live field — rather than by what it affects, and the band labels
+  // are the only place a resting faceplate states it.
+  //
+  // ⚠ `rotation` is the ONLY live control and still ranks sixth, because
+  // `mapAngularVel(0.5)` is BIT-EXACTLY 0 and 0.5 is the shipped default — the
+  // inertness-at-spawn rule beating conceptual importance.
+  //
+  // The four readouts are not joins; each exists because its mapping is
+  // DISCONTINUOUS where the dial is not (`rate`'s engage step from no-clock to
+  // 3996.50 ms; `decay = 0` as a persist MODE with the default sitting exactly
+  // on it; `shape`'s six 0.166667 bands). Two of them are a PARITY requirement
+  // — the card prints shape and spin, and promotion deletes the card.
+  'outlines',
+  // TREE.oh.VOX (2026-08-19, queue Q3) — promoted on the back of #1658, and the
+  // entry whose READOUTS refute its own CUTOFF knob.
+  //
+  // The voice sweeps its ladder per sample by Open303's hardware-measured law,
+  // `instCutoff = cutoff · 2^(scaler·(env − offset) + accentGain·env)`. At the
+  // def's own defaults the CUTOFF DIAL SAYS 1000 Hz while the filter rests at
+  // 533.4 Hz and peaks at 3757.6 Hz — the dial's number is a frequency the
+  // filter is never at. Holding CUTOFF still and sweeping ENVMOD moves the peak
+  // 1463 → 9651 Hz while REST moves the OPPOSITE way, 835 → 341 Hz, and no knob
+  // readback can see either.
+  //
+  // ⚠ ITS AUDITION IS NOT OPTIONAL AND THE DEF SAYS SO. treeohvox is bit-silent
+  // with nothing patched (0.000e+0 over 145 frames), and its card's gate pad
+  // reached the dock only while it had no face. `treeohvox-gate-{n}` is ranked
+  // THIRD — inside the compact lane budget — so the smallest tile showing more
+  // than one control can already sound the voice.
+  //
+  // ⚠ ACCENT IS RANKED DOCK-ONLY on a measurement, not a preference: the
+  // audition ConstantSource drives worklet input 1 (`gate_in`) alone, so an
+  // auditioned note is never accented and ACCENT does nothing on the only
+  // surface that can sound the module unpatched.
+  'treeohvox',
+  // MOOG 984 4×4 MATRIX MIXER (2026-08-19) — the first face whose subject is a
+  // TABLE, and the entry that retires a "needs a MATRIX cell" blocker as stale.
+  //
+  // It needed no platform work. `consoleGridCols` already turns a band into a
+  // fixed-column CONSOLE GRID when its clusters are equal-sized and stacked, so
+  // ONE band of four 4-cell clusters renders the matrix with column j sharing a
+  // centre down all four input rows — the mechanism shipping on mixmstrs.
+  // (Declaring FOUR bands instead is the trap: `packRun` packs `[4,4,4,4]` into
+  // two rows of eight and there is no matrix left.)
+  //
+  // ⚠ ITS SIXTEEN CONTROLS ARE BIT-EXACTLY SYMMETRIC — one generator loop, one
+  // identical GainNode each — so unlike every other entry here the RANKING
+  // carries nothing, and the face says so instead of dressing it up. What earns
+  // the two baselines is the four hero readouts: `out_j = Σ_i in_i · m_ij`, so
+  // an output's gain is a JOIN over a column that no cross-point can print. The
+  // matrix makes that blindness geometric — a readback of `m11` moves
+  // convincingly while being invariant to `m21`/`m31`/`m41`, three quarters of
+  // what OUT 1 actually carries — and both negative-control legs are permanent
+  // in `moog984-face-model.test.ts`.
+  //
+  // Its lane tile today is the un-migrated PLACEHOLDER (`laneRenderKind`
+  // returns `'placeholder'`, not `'legacy'`, because faceplates are the
+  // default), so promotion takes that surface from zero controls to six.
+  'moog984',
   // THE FACEPLATE QUEUE · Q31 — MIRRORPOOL, the fourth VIDEO face and the
   // second adopter of `face.xyPads` (2026-08-19).
   //
@@ -1267,8 +1353,12 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   //   * an ABOVE/BELOW `eye-side` readout "genuinely underivable from any
   //     single knob" — it is `sign(orbit_el)` relabelled, since `dist` is
   //     clamped strictly positive (729 camera settings, zero disagreements).
-  //     The shipped readout joins `orbit_el` with `orbit_dist` instead, which
-  //     genuinely is a join: the eye's horizontal radius is `dist·cos el`.
+  //     The `orbit_el`×`orbit_dist` JOIN that replaced it is real — the eye's
+  //     horizontal radius is `dist·cos el`, so a readback of either dial is
+  //     blind to the other — but it PAINTS NOWHERE: the resting-text ruling
+  //     (#1957) landed after this face was built and deleted `hero.readouts`
+  //     outright, so the arithmetic survives only in the unit lane
+  //     (`mirrorpool-face-model.test.ts`) and in `aria-valuetext`.
   //   * the spec did not mention `paramCells` at all, and all seven non-pad
   //     controls are `<NeonFader>` throws on the card — undeclared, promotion
   //     would have silently repainted every one of them as a dial.
@@ -1955,6 +2045,71 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // extension at `$lib/ui/modules/videoOut/` — the second adopter of that slot.
   // For backdraft the slot AUGMENTS a faceplate; here it IS the faceplate.
   'videoOut',
+  // THE FACEPLATE QUEUE · Q33 — the video sample-and-hold (2026-08-19), and the
+  // THIRD video module to hold a face.
+  //
+  // ⚠ THE FACE SHIPS WITH A FIX, AND THE FIX IS WHY THE RANKING LEADS WHERE IT
+  // DOES. `quant_luma` reaches the combined output through a different path
+  // from R/G/B — a hue-preserving luma ratio rather than a per-channel
+  // posterize — and #1861 lived in exactly that asymmetry: AT ITS OWN DECLARED
+  // MINIMUM, which three separate doc strings called a passthrough, it was
+  // moving 38.66 % of the 8-bit RGB cube (6,485,727 of 16,777,216 triplets,
+  // worst 8 code values) and forcing 25 legitimate near-blacks to EXACTLY
+  // black. So the knob the docs said did nothing was the one doing the most.
+  // It ranks 1.
+  //
+  // ⚠ THE DEFECT'S CAUSE AND ITS INVISIBILITY ARE THE SAME FACT.
+  // `posterizeChannel` is EXACTLY identity on the 8-bit grid (all 256 code
+  // values verified), and it was tested there. Nothing joined that grid
+  // assumption to the LUMA call site, whose input is a weighted sum of three
+  // 8-bit values and therefore off-grid by construction — one side of a
+  // two-sided contract, gated; the other side, not. The fix adds the missing
+  // side: `quantizeCombined`, the JS mirror of the shader's combined branch
+  // that did not previously exist, walked over the WHOLE cube rather than a
+  // sample, because "38.66 % of colours move" is not a property any sample can
+  // establish.
+  //
+  // ⚠ NO GATE READOUT, DELIBERATELY. A `FaceReadoutValue` receives only a param
+  // reader, and `gateLevel` reads 0 both when NOTHING is patched (live
+  // passthrough) and when a gate IS patched and low (frozen). Those are the two
+  // states this module exists to distinguish, they are opposites, and no input
+  // a readout can see separates them. This is the `sidecar` precedent — the
+  // finding is carried by the band labels and by `docs`, never by a caption
+  // that would be confidently wrong half the time.
+  //
+  // `gateLevel` itself is the first `noUserControl` declaration outside
+  // backdraft: the cv jack renders, the knob never did, and #1726's mechanism
+  // is what lets a face say so instead of painting a rotary over a gate swing.
+  'freezeframe',
+  // B3NTB0X (2026-08-19, queue Q24) — the composite-video destroyer, and the
+  // most control-heavy video face in the set at 20 painted params.
+  //
+  // ⚠ ITS TWO READOUTS ARE THE MERIT CASE AND BOTH ARE JOINS THE PAGES SPLIT.
+  // The bend circuit's ripple gain is `sync_crush · (1 + 2·enhance) ·
+  // (1 + 0.8·bend_d)` — verified against a numeric replay of the shader to
+  // 1.776e-15 over 972 points — and the face puts those three on two different
+  // pages. It carries a real `1.6·d·E` cross term, so at both full it is ×5.40
+  // where independent controls would give ×3.80, which is why no pair of dials
+  // recovers it. And `bias` is deliberately NOT in it.
+  //
+  // ⚠ `enhance` AND `bend_d` ARE TWO STAGES, NOT ONE (#1940 corrected). ENHANCE
+  // lands before the sync_crush multiply and the bias add, BEND D after both,
+  // so ENHANCE is purely a ripple-gain control while BEND D also multiplies the
+  // bias term by `(1+0.8d)`. The face ranks them adjacent (5 and 6) so no tier
+  // shows one without the other and hides the interaction.
+  //
+  // ⚠ `line shift` STATES A LIVE DEFECT WITHOUT MOVING A PIXEL (#1946). `tbc`
+  // defaults to 1 and `recoverLineOffset` returns `(rawOffset + wobble) *
+  // (1 - tbc)`, so at the shipped settings the picture cannot tear or roll
+  // however hard the sync tip is crushed — which is exactly what the module's
+  // own docs instruct a player to do. The readout prints `locked` there, and
+  // TBC is ranked third, into the same tier as the pair it gates.
+  //
+  // SIX pages, which does NOT reach `DOCK_TAB_MIN_BANDS = 7`, and no page is
+  // padded to make it: FEEDBACK groups with the CRT controls because it is
+  // literally a `crtProgram` uniform. The threshold question is raised, not
+  // settled, in the PR.
+  'b3ntb0x',
   // THE FACEPLATE QUEUE · Q5 — the Buchla-259-style complex oscillator
   // (2026-08-19). The full ranking argument is a comment on the def itself;
   // what belongs HERE is the one finding that made it worth building and the
@@ -2000,6 +2155,33 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // beat — measured by interpolated zero-crossing over 4 s, the modulator sits
   // at EXACTLY the primary's frequency at `ratio = 1`, detune 0.000000 Hz.
   'swolevco',
+  // THE FACEPLATE QUEUE · Q42 — the stereo VCA / ring modulator (2026-08-19).
+  //
+  // A TWO-PARAM MODULE, so STOP 1 is the whole question and the answer is
+  // narrow enough to write down. `noise` is the refusal precedent (one param,
+  // every tier renders the identical control, nothing to rank). This module
+  // clears that bar on ONE fact, measured off the shipping worklet rather than
+  // argued: with nothing patched into `strength_*` the multiplier is `0 +
+  // offset`, so at the shipped defaults every output sample is a multiply by a
+  // literal zero. `level` is therefore bit-exactly INERT at spawn and `offset`
+  // is the only control that can un-mute the module — which is a ranking
+  // argument that WOULD BE WRONG for a different module, and it inverts
+  // declaration order. A face is also the only surface that can say so: the
+  // legacy card's two faders can render neither a landmark tick nor a state
+  // name, so `MUTE at the centre, UNITY at both ends` has nowhere to appear.
+  //
+  // ⚠ THE MERIT ARGUMENT MOVED, AND THIS COMMENT RECORDS THE MOVE RATHER THAN
+  // HIDING IT. The Q42 spec staked the merit on a DERIVED READOUT (a quiescent
+  // `MUTE` / dB line) and said outright that cutting it flips the verdict to NO
+  // FACE ON MERIT. The owner then ruled that legibility onto the CONTROL
+  // instead (#1962, verbatim *"2 - b"*), so the readout is gone and a landmark
+  // roster carries it. That is a NARROWER claim — a name on `offset` cannot see
+  // `level` — and it is the half worth keeping: a level fader at zero is
+  // self-evidently silent, an OFFSET at centre is not.
+  //
+  // NOT CONTROL-HEAVY (2026-08-18 tabbed ruling): two controls, one honest
+  // page, no rail. See the def for the tier ladder and the fader/knob split.
+  'stereovca',
 ]);
 
 /**

@@ -188,13 +188,6 @@ export const moog921bDef: AudioModuleDef = {
     //   sync    the comparator's state through the DSP's own ±0.5 thresholds.
     hero: {
       control: 'range',
-      readouts: [
-        { label: 'pitch', valueId: 'moog921b-pitch' },
-        { label: 'offset', valueId: 'moog921b-offset' },
-        { label: 'out', valueId: 'moog921b-out' },
-        { label: 'fm', valueId: 'moog921b-fm' },
-        { label: 'sync', valueId: 'moog921b-sync' },
-      ],
     },
   },
 

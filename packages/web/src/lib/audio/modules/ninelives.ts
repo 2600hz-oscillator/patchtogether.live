@@ -192,38 +192,8 @@ export const ninelivesDef: AudioModuleDef = {
     // explanation lives in `docs`, one right-click away.
     hero: {
       control: 'rate',
-      readouts: [
-        // BOTH ENDS OF THE LADDER as cycle times, which is the one string the
-        // dial is structurally unable to produce: it is a single number and
-        // this is a span of 6561×. Negative-controlled on WAVEFORM, which must
-        // not move it.
-        { label: 'ladder', valueId: 'ninelives-ladder-span' },
-        // WHICH TAPS STILL READ AS MOVEMENT — the taps whose cycle is a minute
-        // or less. It is `out 1–4` at the shipped Rate and NONE below
-        // Rate 0.0167, where the fastest output takes longer than a minute to
-        // come round. A dial stepping 0.02 → 0.016 Hz looks like nothing.
-        { label: '≤ 1 min', valueId: 'ninelives-fast-taps' },
-        // The WAVEFORM the 0..2 dial cannot name. RATE-invariant — the two
-        // above are WAVEFORM-invariant, so each is the other's negative
-        // control on every run.
-        { label: 'wave', valueId: 'ninelives-wave' },
-      ],
     },
 
-    // THE TABLE. One row per declared tap, GENERATED from the ladder rather
-    // than typed nine times — the ids come from the same `TAP_PORT_IDS` the
-    // `outputs` roster is built from, so a row can never name a port that does
-    // not exist and a port can never go missing a row.
-    sidebar: [
-      {
-        kind: 'readouts',
-        label: 'cycle time',
-        entries: TAP_PORT_IDS.map((id, n) => ({
-          label: `out ${n + 1}`,
-          valueId: `ninelives-tap-${n + 1}`,
-        })),
-      },
-    ],
   },
 
   docs: {

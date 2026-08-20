@@ -147,6 +147,7 @@ import {
   LEGACY_FOLD_VIEWPORT,
   assertFaceAudioFrozen,
   bootWithFace,
+  faceSceneTimeout,
   frameMember,
   freezeFaceAudio,
   freezeFaceVideo,
@@ -159,8 +160,15 @@ import {
   refoldDockPane,
   settle,
   unfoldDockPane,
+  FREEZE_RACE_FRAMES,
+  type BootFaceOptions,
 } from './_shell-faces';
-import { readAudioClock, resumeAudioContext } from './vrt-audio-freeze';
+import {
+  armOneShotResume,
+  oneShotResumeFired,
+  readAudioClock,
+  resumeAudioContext,
+} from './vrt-audio-freeze';
 
 test.describe.configure({ mode: 'default' });
 
@@ -251,22 +259,79 @@ const FACE_WIDTH_SLACK_MAX_PX = 40;
  * the entries are DELETED, not narrowed, and the pending strip removal that was
  * supposed to fix them would in fact have left all three red.
  */
-const FACE_WIDTH_EXEMPTIONS: Readonly<Record<string, string>> = {};
+const FACE_WIDTH_EXEMPTIONS: Readonly<Record<string, string>> = {
+  // ── moog912 — THE NAME ROW IS WIDER THAN THE MODULE'S TWO CONTROLS ────────
+  //
+  // MEASURED on this branch (dock full view, CSS px, by walking every
+  // descendant of `.faceplate-body`):
+  //
+  //   .faceplate-body   194   ← the face's own max-content box
+  //     .editor         194   = .module-shell 150 + the editor's 22px L/R padding
+  //       .module-shell 150
+  //         .tile-top   148   ← THE DRIVER: .tile-rule 14 + gap + .tile-name 117
+  //         .dock-hero  148   (stretched; its rail asks for 128)
+  //         .dock-pages 148   (stretched; its one knob cell asks for 40)
+  //   contentW          120   ← the gate's ink measure
+  //
+  // So the plate is sized by THE MODULE'S OWN NAME ROW, not by empty reserve:
+  // every one of the control-bearing children asks for LESS than the name does.
+  // The 74 px of slack is the name row's decorative `.tile-rule` plus its gaps
+  // (drawn, but not "ink" by this gate's definition) and the editor's right
+  // padding. Nothing here can be reclaimed without ellipsising the module's
+  // name, which is not a width decision.
+  //
+  // ⚠ WHY IT APPEARED NOW, AND WHY THAT IS NOT A REGRESSION. moog912 used to
+  // carry a two-value hero READOUT STRIP; the strip was the widest thing on the
+  // face, so `contentW` cleared the name row and the slack fell under the
+  // ceiling. The owner deleted every readout strip (2026-08-19), and what is
+  // left is a face with exactly TWO params — one promoted to the hero, one in a
+  // band. The face did not get wider; its CONTENT got narrower than its own
+  // title. This is the inverse of the tidyVco defect the ceiling was written
+  // for: there, a `min-width` floor reserved space nothing drew; here, every
+  // pixel is drawn and the widest drawn thing is the name.
+  //
+  // ⚠ THE REAL QUESTION THIS RAISES IS NOT WIDTH, and it is recorded rather
+  // than silently exempted: with its readouts gone moog912 is a TWO-PARAM face,
+  // which is at the "NO FACE ON MERIT" line in module-faceplates.md (≤2 params,
+  // no families, no derived quantity left to state). Whether it should still be
+  // in STRICT_FACES at all is an owner call, not a thing to decide inside a
+  // width ceiling — so the face stays and this entry names the cost.
+  moog912:
+    'the module NAME ROW (.tile-rule + .tile-name = 148 CSS px) is wider than either of its two remaining controls (hero rail 128, band cell 40). Measured driver of .faceplate-body; not reclaimable without ellipsising the module name. See the table above.',
+};
 
 test.describe('VRT: P1 curated faces (?shell=1) — compact lane tile + dock full-view', () => {
-  for (const { type, pages, videoFaceWhy } of FACES as readonly {
+  for (const { type, pages, videoFaceWhy, simPin } of FACES as readonly {
     type: string;
     pages: number;
     videoFaceWhy?: string;
+    simPin?: BootFaceOptions['simPin'];
   }[]) {
+    // ONE opts object for BOTH tiers, deliberately. The compact tile and the
+    // dock faceplate are two captures of the SAME module, so a determinism
+    // declaration that reached only one of them would leave the other
+    // non-deterministic — the "isolation mechanism only half the entry points
+    // honour" shape. Building it once here makes that structural rather than a
+    // thing each call site has to remember.
+    const bootOpts: BootFaceOptions = {
+      ...(videoFaceWhy ? { videoFaceWhy } : {}),
+      ...(simPin ? { simPin } : {}),
+    };
     test(`face-${type}-compact: the compact lane tile matches baseline`, async ({ page }) => {
+      // PER-SCENE, never the config's flat cap — the `foldViewportFor` shape
+      // applied to TIME instead of height (#1949). Returns the shared 90 s
+      // unless the roster entry declares a measured `sceneWeight`. This is a
+      // BOUND: it moves no assertion, and convergence is still gated at
+      // `expect.timeout` (30 s), which is where a scene that never settles
+      // fails. See the note on `faceSceneTimeout`.
+      test.setTimeout(faceSceneTimeout(type, 'compact'));
       const errors: string[] = [];
       page.on('pageerror', (e) => errors.push(e.message));
 
       // The compact tile is pinned at the config viewport — the dock scene's
       // taller one would be a baseline move for no reason.
       await page.setViewportSize(LEGACY_FOLD_VIEWPORT);
-      const memberId = await bootWithFace(page, type, videoFaceWhy ? { videoFaceWhy } : {});
+      const memberId = await bootWithFace(page, type, bootOpts);
       // zoom 0.45 = the LOD 'compact' band [0.30, 0.52) — the design-point tile.
       await frameMember(page, memberId, 0.45, 'compact');
 
@@ -300,6 +365,12 @@ test.describe('VRT: P1 curated faces (?shell=1) — compact lane tile + dock ful
     });
 
     test(`face-${type}-dock: the dock full-view faceplate matches baseline`, async ({ page }) => {
+      // PER-SCENE — see the compact scene above. The dock scene is the more
+      // expensive of the two for every face measured (it mounts the whole
+      // faceplate, and for a video face the `fullViewBody` extension too), so
+      // `sceneWeight` carries the two durations separately rather than one
+      // number scaled by a guess.
+      test.setTimeout(faceSceneTimeout(type, 'dock'));
       const errors: string[] = [];
       page.on('pageerror', (e) => errors.push(e.message));
 
@@ -308,7 +379,7 @@ test.describe('VRT: P1 curated faces (?shell=1) — compact lane tile + dock ful
       // was MEASURED to move every other dock scene's pixels (see
       // `foldViewportFor`). `mixmstrs` is the case that found it.
       await page.setViewportSize(foldViewportFor(type));
-      const memberId = await bootWithFace(page, type, videoFaceWhy ? { videoFaceWhy } : {});
+      const memberId = await bootWithFace(page, type, bootOpts);
       // Frame at the 'full' tier so the jack-rail EXPAND affordance is
       // comfortably clickable, then open the dock full-view.
       await frameMember(page, memberId, 0.7, 'full');
@@ -612,6 +683,62 @@ test.describe('VRT: P1 curated faces (?shell=1) — compact lane tile + dock ful
   //
   // The source is asserted to still be free-running rather than assumed, so a
   // module change cannot leave the control quietly measuring silence.
+  test('face audio freeze RECOVERY control: a one-shot resume inside the VERIFY window is absorbed', async ({
+    page,
+  }) => {
+    // ⚠ THE POSITIVE CONTROL FOR #1931, and the leg the negative control below
+    // structurally cannot provide. That one proves the freeze assertion can
+    // REJECT a running graph. This one proves the freeze LOOP can SURVIVE a
+    // resume — a different claim, and the one that was false: the loop read
+    // back 'suspended', then called an assertion that re-reads the clock, and a
+    // resume landing between those two reads threw out of the loop with five of
+    // six attempts unused. One losing face aborts the entire capture (#1810).
+    //
+    // The window is aimed at, not hoped for: the resume is armed to fire
+    // FREEZE_RACE_FRAMES + 1 frames out, i.e. one frame AFTER the settle the
+    // loop waits before reading state — so it lands while the clock check is in
+    // flight. Derived from the harness constant, so it cannot drift from the
+    // code it targets.
+    //
+    // ⚠ AND IT IS ANCHORED TO THE ARTIFACT: a control whose injection silently
+    // failed to arm would pass while proving nothing, so the resume must be
+    // observed to have REACHED the context before any conclusion is drawn.
+    test.setTimeout(90_000);
+    const subject = FACES[0]!;
+    await page.setViewportSize(LEGACY_FOLD_VIEWPORT);
+    const memberId = await bootWithFace(page, subject.type);
+    await frameMember(page, memberId, 0.45, 'compact');
+
+    const clean = await readAudioClock(page);
+    expect(
+      clean.state,
+      `${subject.type}: the graph must be SUSPENDED before the resume is injected, or ` +
+        `"the loop recovered" below is measuring a context that was never frozen.`,
+    ).toBe('suspended');
+
+    await armOneShotResume(page, FREEZE_RACE_FRAMES + 1);
+
+    // THE CLAIM: this call must RECOVER rather than throw. Before the fix it
+    // threw `assertFaceAudioFrozen`'s "not 'suspended', at CAPTURE time" —
+    // under bootWithFace's label, which is how the abort read as a capture-time
+    // failure when it was a boot-time one.
+    await freezeFaceAudio(page, `${subject.type} (recovery control)`);
+
+    expect(
+      await oneShotResumeFired(page),
+      `the injected resume never reached the AudioContext, so this control did not exercise ` +
+        `the race at all — it would pass identically against the unfixed loop.`,
+    ).toBe(true);
+
+    const after = await readAudioClock(page);
+    expect(
+      after.state,
+      `${subject.type}: the freeze loop returned but the graph is '${after.state}' — recovering ` +
+        `must mean SUSPENDED, not merely "stopped throwing".`,
+    ).toBe('suspended');
+    await assertFaceAudioFrozen(page, `${subject.type} (recovery control, effect)`);
+  });
+
   test('face audio freeze negative control: a sounding face is unstable RUNNING, identical FROZEN', async ({
     page,
   }) => {

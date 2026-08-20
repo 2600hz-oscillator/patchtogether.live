@@ -135,85 +135,13 @@ describe('contract-signature — canonical + change-detecting', () => {
     expect(sig(redefaulted)).not.toBe(sig(base));
   });
 
-  it('detects a sidebar block APPEARING and VANISHING', () => {
-    // THE REGRESSION TEST FOR #1468. Twelve modules lost a whole sidebar
-    // block and `task docs:accept` produced an EMPTY DIFF, because the golden
-    // did not project `face` at all. Both directions, because the deletion is
-    // the direction that actually happened and the harder one to notice.
-    const withSidebar = {
-      ...base,
-      face: {
-        order: ['amount'],
-        sidebar: [
-          {
-            kind: 'readouts' as const,
-            label: 'Measured',
-            entries: [{ label: 'PEAK', valueId: 'fixturePeak' }],
-          },
-        ],
-      },
-    };
-    expect(sig(withSidebar)).not.toBe(sig(base));
-    expect(sig(withSidebar)).toContain(
-      'fixturemod face sidebar 0 kind=readouts label=Measured entries=PEAK:value=fixturePeak',
-    );
-    // ...and removing it returns to the bare signature, i.e. the diff is real
-    // in both directions rather than an additive-only line.
-    expect(sig({ ...withSidebar, face: { order: ['amount'] } })).toBe(sig(base));
-  });
-
-  it('detects a sidebar RELABEL, REORDER, PANEL REBIND and a LOST ENTRY', () => {
-    // Each of these is a change a `blocks.length` count would have missed, and
-    // three of them are changes a kind-only line would have missed too.
-    const two = {
-      ...base,
-      face: {
-        order: ['amount'],
-        sidebar: [
-          {
-            kind: 'presets' as const,
-            label: 'Presets',
-            entries: [
-              { id: 'soft', label: 'Soft', values: { amount: 0.2 } },
-              { id: 'hard', label: 'Hard', values: { amount: 0.9 } },
-            ],
-          },
-          {
-            kind: 'custom' as const,
-            label: 'Response',
-            panelId: 'svf-response',
-            props: { split: 400 },
-          },
-        ],
-      },
-    };
-    const relabel = structuredClone(two);
-    relabel.face.sidebar[0]!.label = 'Voicings';
-    expect(sig(relabel)).not.toBe(sig(two));
-
-    const reorder = {
-      ...two,
-      face: { ...two.face, sidebar: [two.face.sidebar[1]!, two.face.sidebar[0]!] },
-    };
-    expect(
-      sig(reorder as never),
-      'the column renders top-to-bottom; order is not cosmetic',
-    ).not.toBe(sig(two));
-
-    const rebind = structuredClone(two);
-    (rebind.face.sidebar[1] as { panelId: string }).panelId = 'filter-response';
-    expect(sig(rebind), 'which component the shell resolves is a behaviour change').not.toBe(
-      sig(two),
-    );
-
-    const lostEntry = structuredClone(two);
-    (lostEntry.face.sidebar[0] as { entries: unknown[] }).entries.pop();
-    expect(sig(lostEntry), 'a preset row that vanished must be a readable line diff').not.toBe(
-      sig(two),
-    );
-    expect(sig(lostEntry)).toContain('entries=soft');
-    expect(sig(two)).toContain('entries=soft,hard');
-  });
+  // ⚠ TWO SIDEBAR-DETECTION TESTS USED TO SIT HERE — the #1468 regression pair
+  // that proved a `face.sidebar` block appearing, vanishing, being relabelled,
+  // reordered, rebound or losing an entry all moved the golden. `face.sidebar`
+  // is deleted platform-wide (owner, 2026-08-19), so both had no subject left.
+  // The scope gate below is what carries their real value forward: it asserts
+  // that EVERY live face key is projected or explicitly excused, so the next
+  // field to need a golden line cannot slip in unnoticed the way sidebar did.
 
   it('detects a new control family', () => {
     const withFamily = {
@@ -305,14 +233,22 @@ describe('contract-lock scope - every face field is projected or declared', () =
     // that is in neither list. A `toEqual([])` over a scan that matched
     // nothing reads identically green, and this gate's whole job is to notice
     // an absence.
-    expect(undeclaredIn({ order: [], sidebar: [], hero: {} }), 'a fully declared face').toEqual([]);
+    expect(undeclaredIn({ order: [], hero: {} }), 'a fully declared face').toEqual([]);
     expect(undeclaredIn({ order: [], footer: {} }), 'a hypothetical new field').toEqual(['footer']);
     // ...and `undefined` is not a declaration: an optional field left unset
     // must not count as live, or the ghost check above would never fire.
     expect(undeclaredIn({ order: [], footer: undefined })).toEqual([]);
-    // The projected field must genuinely be treated as projected, not merely
-    // absent from the excuse list by luck.
-    expect(FACE_FIELDS_IN_LOCK).toContain('sidebar');
+    // ⚠ THIS USED TO ASSERT `FACE_FIELDS_IN_LOCK` CONTAINS 'sidebar', WHICH WAS
+    // THE ONLY PROJECTED FACE FIELD. `face.sidebar` is deleted platform-wide
+    // (owner, 2026-08-19), so the projected list is legitimately EMPTY and the
+    // property worth pinning is the one that keeps an empty list honest: a
+    // field named in NEITHER list is still reported. That is asserted directly
+    // above, and this leg now pins that the two lists cannot overlap — the
+    // failure mode an empty projected list would otherwise hide.
+    expect(
+      FACE_FIELDS_IN_LOCK.filter((k) => k in FACE_FIELDS_NOT_IN_LOCK),
+      'a field cannot be both projected and excused',
+    ).toEqual([]);
   });
 
   it('every excuse names a gate, not a shrug', () => {

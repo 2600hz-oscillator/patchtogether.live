@@ -937,6 +937,86 @@ export const FACES = [
   // the dead `{kind:'static'}`. Nothing live is in this scene at all, which
   // makes it the most trivially deterministic capture in the roster.
   { type: 'moog912', pages: 1 },
+  // MOOG 993 — three peer routers, declared as ONE band (no `pages`): three
+  // switches for the same idea, and a page per switch would be three headers
+  // over three controls.
+  //
+  // Deterministic for the same reason moog912 is, and more so: every output is
+  // gate/cv so `primaryAudioOutPortId` is null and the glyph is a forced
+  // 'none', and the module is PASSIVE ROUTING — GainNodes only, no worklet, no
+  // oscillator, nothing that advances with time. The only live text in the
+  // scene is the hero routing readout, which is a pure function of the three
+  // switch positions.
+  { type: 'moog993', pages: 1 },
+  // OUTLINES — three pages (spawn clock / latched at birth / live field), well
+  // under DOCK_TAB_MIN_BANDS, so the dock scene captures stacked bands.
+  {
+    type: 'outlines',
+    pages: 3,
+    videoFaceWhy:
+      'the dock faceplate carries a live thumbnail of the module output via hasVideoSurface, and '
+      + 'this module is a STATEFUL PARTICLE FIELD — every live shape drifts and bounces every '
+      + 'frame, and at the shipped rate a new one spawns every 2250 ms — so the surface is a '
+      + 'different picture on every frame and on every capture. The sim is seeded '
+      + '(__outlinesVrtSeed) but the elapsed-time integration is not stopped by an AudioContext '
+      + 'suspend, which says nothing about a rAF-driven picture.',
+    // ⚠ AND THE FREEZE ABOVE IS NOT ENOUGH ON ITS OWN — see BootFaceOptions.simPin.
+    // `freezeFaceVideo` stops the picture; it does not choose WHICH picture. This
+    // module's field is a STATEFUL integration of elapsed time, so the frozen
+    // frame was a different set of shape positions on every boot: measured 6724 px
+    // against a 1500 px tolerance, both captures on ubuntu CI. Setting the flag
+    // engages the phase pin `outlines.ts` already carries (fixed count of fixed-dt
+    // steps on frame 1, then dt=0), making the picture a pure function of
+    // (seed, params) — independent of wall clock, boot speed and frame count.
+    //
+    // The value is the seed `outlines-render-smoke.spec.ts` already pins, reused
+    // deliberately: one seed for the module's two deterministic capture paths
+    // means a shape layout a human has already looked at in one of them.
+    simPin: {
+      global: '__outlinesVrtSeed',
+      value: 0x0c1c1e5,
+      why:
+        'OUTLINES is a stateful particle sim: every live shape integrates and bounces per '
+        + 'frame, so the picture is a function of ELAPSED TIME, not just of (seed, params). '
+        + 'The video freeze holds the last drawn frame but cannot choose which frame that is, '
+        + 'so the capture drifted by 4.5x the dock tolerance between two ubuntu CI boots. This '
+        + 'flag engages the fixed-dt phase pin already in the module.',
+    },
+  },
+  // TREE.oh.VOX — three bands (filter / osc / play), and the roster's only
+  // GATE-AUDITION voice whose pad is inside the LANE budget, so the compact
+  // scene frames a momentary action cell beside two knobs.
+  //
+  // Deterministic, and for a stronger reason than most: the voice is BIT-SILENT
+  // until a gate arrives (measured 0.000e+0 on `audio_out` over 145 frames with
+  // nothing patched, #1658). Its `scope` glyph therefore taps an analyser that
+  // reads zeros on the scene's frozen graph exactly like every struck voice in
+  // the roster — it is not free-running, and it does not exercise the audio
+  // freeze the way analogVco does. The only live text is the three sweep
+  // readouts, each a pure function of cutoff/envelope/accent, all of which read
+  // their declared defaults in the capture: 533 Hz / 3.76 kHz / 5.31 kHz.
+  { type: 'treeohvox', pages: 3 },
+  // MOOG 984 — the 4×4 matrix, and the roster's first CONSOLE GRID that is not
+  // mixmstrs. ONE band (`cross-points`) holding four equal clusters, so
+  // `consoleGridCols` answers 4 and the dock scene frames a real table: column
+  // j has one centre down all four input rows.
+  //
+  // ⚠ THIS SCENE IS THE ONLY PIXEL EVIDENCE THAT THE GRID ENGAGED. The unit
+  // gates read the PLAN — `module-face-lint` and `dock-row-plan` both see four
+  // clusters of four and pass identically whether the shell laid them out on a
+  // shared ruler or as four independent flex-wrap rows, which is precisely the
+  // defect `console-grid.ts` was written for (measured there: cluster drift
+  // accumulating to ~138 px across eight channels on mixmstrs). Alignment is a
+  // pixel fact, so this is where it is gated.
+  //
+  // Deterministic for the strongest reason in the roster: the module is PASSIVE
+  // — 24 GainNodes, no worklet, no oscillator, no scheduler — and every
+  // cross-point DEFAULTS TO 0, so the graph is bit-exactly silent at spawn. The
+  // glyph is a declared 'none', so nothing live is framed at all, and the only
+  // text is the four column-sum readouts, each a pure function of four params
+  // that all read their declared default. All four therefore print `silent` in
+  // the baseline, which is the true statement about an unpatched matrix.
+  { type: 'moog984', pages: 1 },
   // THE FIRST VIDEO FACE. Its `pages` are feedback / loop / colour / key /
   // switches / tv screen / virtual camera — enough bands to reach
   // DOCK_TAB_MIN_BANDS, so the dock scene captures a TAB RAIL with one band
@@ -1031,6 +1111,67 @@ export const FACES = [
     // feedback/zoom/mix. The dock scene, by contrast, failed on a DIMENSION
     // mismatch (900x523 -> 657x509), which no diff budget can absorb.
   },
+  // THE FACEPLATE QUEUE · Q33 — the video sample-and-hold, and the third video
+  // face. `pages: 2` is the declared band count; this face promotes no control
+  // into the hero, so neither band is emptied and the count is exactly
+  // `face.pages.length`.
+  {
+    type: 'freezeframe',
+    pages: 2,
+    videoFaceWhy:
+      'both scenes carry a LIVE picture: the compact tile paints a VideoTileThumb through '
+      + 'hasVideoSurface, and the dock faceplate shows the same live surface beside the bands. '
+      + 'freezeframe is additionally the worst case for an unfrozen capture, because its whole '
+      + 'purpose is to decide WHEN the image updates — with nothing patched to GATE it is a '
+      + 'continuous live passthrough of whatever the video zone is producing, so an unpinned '
+      + 'scene would be sampling a moving source rather than the faceplate.',
+  },
+  // THE FACEPLATE QUEUE · Q24 — the composite-video destroyer, and the widest
+  // video face in the roster at six bands and 20 painted params.
+  //
+  // `pages: 6` is the declared band count; this face promotes no control into
+  // the hero (its hero carries READOUTS only), so no band is emptied and the
+  // count is exactly `face.pages.length`. Six is also the number that keeps it
+  // OFF the tab rail — `DOCK_TAB_MIN_BANDS` is 7 — so the dock scene frames
+  // stacked bands rather than a rail, and this entry is what would go red if a
+  // seventh page were ever added to force one.
+  {
+    type: 'b3ntb0x',
+    pages: 6,
+    videoFaceWhy:
+      'both scenes carry a LIVE picture: the compact tile paints a VideoTileThumb through '
+      + 'hasVideoSurface, and the dock body is the module\'s own fullViewBody extension — the '
+      + 'CRT preview plus its SCREEN switch. b3ntb0x is the strongest case in the roster for a '
+      + 'pinned capture, because its whole subject is a signal path whose artefacts EMERGE over '
+      + 'time: the subcarrier phase and the timebase wobble both advance with uTime (the wobble '
+      + 'is literally sin(y*47 + uTime*3.3)), so an unfrozen scene would sample a different '
+      + 'point of an animating raster on every run.',
+    // ⚠ THE FIRST AND ONLY DECLARANT of a per-scene time budget (#1949 / #1955),
+    // and the entry that made the mechanism necessary.
+    //
+    // Both scenes CONVERGED under the flat 90 s cap and both wrote their actual
+    // PNG; the dock one was then killed 1.4 s after its snapshot write. Neither
+    // tripped `expect.timeout`, which is the budget that gates DETERMINISM and
+    // is not moved by this. So this is weight, not a determinism finding — see
+    // the note above `FACE_SCENE_BASE_MS`.
+    //
+    // ⚠ THESE NUMBERS ARE NOW SLIGHTLY CONSERVATIVE, deliberately: they were
+    // measured with a hero readout row that the 2026-08-19 owner ruling has
+    // since removed from this face. A cheaper scene under an unchanged bound is
+    // the safe direction, and re-measuring to shave a bound nobody reaches on
+    // green would buy nothing — a timeout is a cap, not a sleep.
+    sceneWeight: measuredSceneWeight({
+      compactMs: 55_600,
+      dockMs: 88_600,
+      measuredOn: 'vrt-update capture run 32288252788 (ubuntu-latest, SwiftShader)',
+      why:
+        'four GLSL programs over six FBOs (two of them RGBA16F), an oversampled composite line, '
+        + 'and a 24-iteration per-pixel sync scan in the decode pass. Measured at 2.6x the '
+        + 'next-heaviest scene in the roster, and the COMPACT scene — which does not render the '
+        + 'dock body at all — already costs 55.6 s against a 7.0-7.7 s non-video / 13.2-21.3 s '
+        + 'video population, so the weight is the module\'s own rather than the faceplate\'s.',
+    }),
+  },
   // THE FACEPLATE QUEUE · Q5 — the Buchla-259-style complex oscillator.
   //
   // `pages: 2` is the POST-hero-split count: the face declares two bands
@@ -1055,6 +1196,14 @@ export const FACES = [
   // face is audio-domain, boots into a channel column, and paints no live
   // picture beyond the glyph the audio freeze already covers.
   { type: 'swolevco', pages: 2 },
+  // THE FACEPLATE QUEUE · Q42. One band, two cells — and the two cells are
+  // DIFFERENT KINDS on purpose (`level` is a declared 96 px fader throw,
+  // `offset` a knob), so this is the roster's smallest scene that still proves
+  // the mixed-kind row geometry. Its glyph is a `meter` on `out_l`, which reads
+  // exactly zero at spawn because the module ships muted — so the tap is
+  // flat-line stable and the scene needs no mask and no VRT_LIVE_SURFACES
+  // entry, for the same reason the struck voices above need none.
+  { type: 'stereovca', pages: 1 },
 ] as const;
 
 /** TIGHT per-scene diff budgets (absolute pixels; Playwright takes the MIN of
@@ -1075,6 +1224,147 @@ export const FACES = [
  *  did NOT loosen the budget. */
 export const COMPACT_MAX_DIFF = 150;
 export const DOCK_MAX_DIFF = 1500;
+
+// ── THE PER-SCENE TIME BUDGET ───────────────────────────────────────────────
+//
+// `vrt.config.ts` sets ONE per-test `timeout: 90_000` for every test in the VRT
+// lane, and its own header says "Do NOT 'fix' a slow scene by raising this
+// further. Past ~90 s the answer is that the scene is not converging, which is a
+// determinism finding."
+//
+// ⚠ THAT SENTENCE CONFLATES TWO DIFFERENT BUDGETS, and separating them is what
+// this mechanism is (#1949). Convergence is bounded by `expect.timeout`
+// (30_000), which caps the `toHaveScreenshot` retry loop — the
+// screenshot-until-two-consecutive-captures-agree loop. A scene that never
+// settles fails THERE, with the px ladder ("Failed to take two consecutive
+// stable screenshots", `4082 / 3954 / 3936 px`), and it does so at 30 s no
+// matter what the outer cap says. The outer per-test cap bounds everything else
+// — page load, font decode, spawnPatch, the freeze retries, the height-settle
+// loop, the companion diffs — i.e. SCENE WEIGHT. Raising the outer bound
+// therefore cannot buy a non-converging scene a pass: the determinism gate is a
+// different number and it is NOT moved here.
+//
+// MEASURED, and it is what falsifies the config's stated diagnosis for one face.
+// Capture run 32288252788 (ubuntu-latest, SwiftShader), b3ntb0x:
+//
+//   face-b3ntb0x-compact   55.6 s   ✓ passed, snapshot written
+//   face-b3ntb0x-dock      ~88.6 s to the snapshot WRITE, killed at the 90 s cap
+//                          1.4 s later
+//
+// Both scenes CONVERGED and both wrote their actual PNG. Neither tripped
+// `expect.timeout`. So this is not a determinism finding — it is one module that
+// costs 2.6x the next-heaviest scene in the roster.
+//
+// THE POPULATION IT IS SIZED AGAINST — every face scene of the full sweep in
+// capture run 32286329756 (ubuntu-latest, SwiftShader, 67 faces x 2 scenes):
+//
+//   class                       compact          dock
+//   no live video surface       7.0 - 7.7 s      9.0 - 10.4 s
+//   declares videoFaceWhy      13.2 - 21.3 s    19.5 - 36.7 s
+//     (spirographs, outlines, videoOut, backdraft, freezeframe)
+//
+// So 90 s is 8.6x the heaviest non-video scene and 2.45x the heaviest video one.
+// It is a comfortable bound for EVERY face in the roster and it is not moved.
+// What this adds is a per-face escape hatch above it, for the one shape the flat
+// number cannot express: a scene whose own measured cost is already near the
+// cap.
+//
+// ⚠ DENY BY DEFAULT, AND THE WHY IS IN THE TYPE. A face gets a bigger bound only
+// by declaring `sceneWeight` with the two measured durations, the capture run
+// they were read off, and what makes the module expensive — `tsc` refuses a
+// partial declaration, so the undeclared form cannot appear. The BOUND is then
+// DERIVED from the measurement (`measured x FACE_SCENE_HEADROOM`) rather than
+// typed, so re-measuring updates the numbers and the budget follows.
+//
+// ⚠ WHAT THIS DOES NOT DO: it changes no assertion, no tolerance, no viewport
+// and no baseline. `expect.timeout`, `COMPACT_MAX_DIFF`, `DOCK_MAX_DIFF` and the
+// config's `threshold` / `maxDiffPixelRatio` are all untouched.
+//
+// CI WALL-TIME: zero on green. A timeout is a cap, not a sleep — only a test
+// that is ALREADY failing runs to it. The cost of a declared weight is paid on
+// the FAILING path only, and it is `budget - 90 s` for that one scene.
+
+/**
+ * The per-test bound every face scene gets, ms. MUST equal `vrt.config.ts`'s
+ * `timeout` — anchored by `vrt-config-budget.test.ts`, so the two cannot drift.
+ *
+ * This is a FLOOR, never lowered per scene: `faceSceneTimeout` returns the max
+ * of this and the derived budget.
+ */
+export const FACE_SCENE_BASE_MS = 90_000;
+
+/**
+ * The multiple of a scene's MEASURED cost its bound must clear.
+ *
+ * 2x is the config's own stated standard for this budget — it chose 90 s so the
+ * outer bound "EXCEEDS the sum of its own inner budgets ... with better than 2x
+ * headroom". A bound sitting ON the measurement is a coin flip, which is the
+ * exact defect the config's header documents about the old 30 s cap ("A budget
+ * at p99 is not a margin, it is a coin flip, and it is the reason a *different*
+ * scene failed each dispatch").
+ */
+export const FACE_SCENE_HEADROOM = 2;
+
+/**
+ * A face's MEASURED scene cost. Every field is required, so a weight cannot be
+ * declared without the evidence for it.
+ */
+export interface FaceSceneWeight {
+  /** the compact scene's measured duration, ms, on the named run */
+  readonly compactMs: number;
+  /** the dock scene's measured duration, ms, on the named run */
+  readonly dockMs: number;
+  /** the linux capture run the two durations were read off */
+  readonly measuredOn: string;
+  /** what makes this module expensive to render — not "it is slow" */
+  readonly why: string;
+}
+
+/**
+ * Declare a face's measured scene cost. A plain identity function whose only job
+ * is to put `FaceSceneWeight` in front of `tsc`: the `FACES` roster is an
+ * un-annotated `as const` array, so a bare object literal would be inferred
+ * rather than checked and a missing `why` would compile.
+ */
+export function measuredSceneWeight(w: FaceSceneWeight): FaceSceneWeight {
+  return w;
+}
+
+/**
+ * The ARITHMETIC, separated from the roster lookup so it can be controlled in
+ * BOTH directions against a synthetic weight the test builds itself — a
+ * negative control ("no weight ⇒ exactly the base") proves the function can
+ * return the floor, not that it computes the right thing above it.
+ */
+export function sceneBudgetMs(
+  weight: FaceSceneWeight | undefined,
+  scene: 'compact' | 'dock',
+): number {
+  if (!weight) return FACE_SCENE_BASE_MS;
+  const measured = scene === 'compact' ? weight.compactMs : weight.dockMs;
+  return Math.max(FACE_SCENE_BASE_MS, Math.ceil(measured * FACE_SCENE_HEADROOM));
+}
+
+/** The `sceneWeight` a face declares, or undefined. Exported so a gate can walk
+ *  the roster's declarations without re-deriving the cast. */
+export function faceSceneWeight(type: string): FaceSceneWeight | undefined {
+  const entry = FACES.find((f) => f.type === type) as
+    | { sceneWeight?: FaceSceneWeight }
+    | undefined;
+  return entry?.sceneWeight;
+}
+
+/**
+ * The per-test bound for ONE face scene, ms.
+ *
+ * ⚠ ROUTE EVERY CALLER THROUGH THIS, for the `foldViewportFor` reason: an
+ * isolation mechanism half the entry points honour is not isolation. A scene
+ * that reached for `FACE_SCENE_BASE_MS` directly would silently put a heavy face
+ * back under the flat cap.
+ */
+export function faceSceneTimeout(type: string, scene: 'compact' | 'dock'): number {
+  return sceneBudgetMs(faceSceneWeight(type), scene);
+}
 
 // ── THE FOLD ────────────────────────────────────────────────────────────────
 //
@@ -1363,6 +1653,51 @@ export interface BootFaceOptions {
    * false.
    */
   videoFaceWhy?: string;
+  /**
+   * PIN A STATEFUL SIM'S PHASE — a boot-time global installed via
+   * `addInitScript` BEFORE `goto`, so it is set before any module factory runs
+   * and can be read at CONSTRUCTION.
+   *
+   * ⚠ THIS IS A DIFFERENT AXIS FROM `videoFaceWhy`, AND THE DIFFERENCE IS THE
+   * WHOLE BUG. `freezeFaceVideo` holds the LAST DRAWN frame — it makes the
+   * picture STOP, and says nothing about WHICH picture it stopped on. For a
+   * module whose field is a pure function of frame.time that is enough. For a
+   * STATEFUL sim it is not: the frozen frame is whatever the field had
+   * integrated to when the harness got around to writing `freeze`, which is a
+   * different number of elapsed milliseconds on every boot.
+   *
+   * ⚠ MEASURED (outlines, #1939): `face-outlines-dock` missed its OWN freshly
+   * captured baseline by 6724 px against a `DOCK_MAX_DIFF` of 1500 — 4.5x the
+   * tolerance, capture and comparison both on ubuntu CI. The diff PNG showed
+   * ONLY the spawned shapes' POSITIONS moving: chrome, labels and knobs were
+   * pixel-identical and the shape COUNT was roughly equal. That is the exact
+   * signature of a phase difference, NOT of an unseeded RNG — the spawn RNG
+   * already defaults to a fixed seed, so WHERE shapes appear was never in
+   * question. Re-capturing could only re-roll the dice; a capture that passed
+   * BY LUCK would convert a red gate into a flaky one.
+   *
+   * ⚠ WHY IT LIVES HERE AND NOT IN THE MODULE. `outlines.ts` ALREADY CONTAINS
+   * THE PHASE PIN and has since 1b24033a — it advances a fixed count of
+   * fixed-dt steps on the first frame and then holds dt=0, so the picture
+   * becomes a pure function of (seed, params). It is gated on
+   * `globalThis.__outlinesVrtSeed`, and the ONLY setter in the tree was one
+   * render-smoke spec. The face harness never set it, so in this scene the pin
+   * was DEAD CODE and the module integrated wall-clock elapsed time exactly as
+   * before. The fix is to SET THE FLAG THE PIN ALREADY WAITS FOR, which is why
+   * nothing under `packages/web/src/lib/video/**` changes and the WebGL attest
+   * hash does not move.
+   *
+   * `why` is required BY THE TYPE, so `tsc` refuses an undeclared pin: a bare
+   * `{ global, value }` will not compile.
+   */
+  simPin?: {
+    /** The `globalThis` property the module reads at construction. */
+    readonly global: string;
+    /** The value to install. */
+    readonly value: number;
+    /** Why this scene needs its sim phase pinned. */
+    readonly why: string;
+  };
 }
 
 /** How many times the suspend may be re-applied before the scene gives up. The
@@ -1376,7 +1711,7 @@ const FREEZE_ATTEMPTS = 6;
  *  land. Frames, not ms — renderer-independent by construction, and kept small
  *  because this runs 43× per VRT run on a renderer whose frame rate is unknown:
  *  correctness comes from the RETRY, not from the length of this window. */
-const FREEZE_RACE_FRAMES = 3;
+export const FREEZE_RACE_FRAMES = 3;
 
 /**
  * Suspend the audio graph for a face scene and PROVE it, in both the declared
@@ -1490,14 +1825,49 @@ export async function freezeFaceAudio(page: Page, label: string): Promise<void> 
     await waitFrames(page, FREEZE_RACE_FRAMES);
     const clock = await readAudioClock(page);
     seen.push(`${attempt}:${clock.state}`);
-    if (clock.state === 'suspended') {
+    if (clock.state !== 'suspended') continue;
+
+    // ── THE VERIFICATION IS PART OF THE RETRY, NOT A STEP AFTER IT ────────
+    //
+    // ⚠ THIS IS THE #1931 DEFECT, AND IT IS NOT WHERE THE ERROR MESSAGE
+    // POINTS. `assertFaceAudioFrozen` says "at CAPTURE time", so the family
+    // (#1810 / #1835 / #1931) reads as a capture-time race — but BOTH capture
+    // paths in workflow-shell-faces.spec.ts already re-freeze immediately
+    // before screenshotting, and the run that aborted #1939's full sweep
+    // (face-destroy-compact, job 96157688266) failed under the label
+    // `face-destroy`, not `face-destroy-compact`. That label is THIS
+    // function's, called from `bootWithFace` — i.e. the abort happened at
+    // BOOT, inside the retry loop that exists to absorb exactly this race.
+    //
+    // The loop checked `state === 'suspended'` and then called an assertion
+    // that RE-READS the clock. `ensureEngine()` resumes on every call, so a
+    // resume landing in the window between those two reads threw straight out
+    // of the loop with FIVE of six attempts unused. The retry could not retry
+    // the one thing most likely to lose the race.
+    //
+    // ⚠ AND ONE LOSING FACE ABORTS THE WHOLE CAPTURE (#1810), so this is not a
+    // per-scene flake: it is why full sweeps were near-certain to fail. Three
+    // distinct faces lost it in one day (videoOut, reverb, destroy), which is
+    // the signature of a scheduler-timed window rather than a bad module.
+    //
+    // The assertion itself is UNCHANGED and stays the authority — it caught
+    // exactly what it exists to catch. It is simply now allowed to fail and be
+    // re-driven, and on the LAST attempt it throws its own message verbatim so
+    // a genuinely repeating resumer still reports as itself rather than as a
+    // retry count.
+    try {
       await assertFaceAudioFrozen(page, label);
       return;
+    } catch (err) {
+      seen.push(`${attempt}:resumed-during-verify`);
+      if (attempt === FREEZE_ATTEMPTS) throw err;
     }
   }
   throw new Error(
     `${label}: the AudioContext would not STAY suspended — ${FREEZE_ATTEMPTS} attempts, ` +
-      `states after each (${seen.join(', ')}). Something is resuming it repeatedly. The known ` +
+      `states after each (${seen.join(', ')}); a 'resumed-during-verify' entry means the ` +
+      `suspend held long enough to read back 'suspended' and was undone before the clock ` +
+      `check finished. Something is resuming it repeatedly. The known ` +
       `one-shot racer is the pinned recorderbox factory (recorderbox.ts, ` +
       `\`if (ac.state === 'suspended') void ac.resume()\`), which the palette spawn's reconcile ` +
       `triggers; a REPEATING resume is a new one and needs finding, not more attempts.`,
@@ -1668,10 +2038,50 @@ export async function bootWithFace(
   opts: BootFaceOptions = {},
 ): Promise<string> {
   await pinVrtFonts(page);
+
+  // ── SIM PHASE PIN — INSTALLED BEFORE `goto`, WHICH IS THE ENTIRE POINT ────
+  // See BootFaceOptions.simPin. The module reads this global at CONSTRUCTION
+  // (in its factory), so an init script is the only placement that can work: a
+  // post-goto `evaluate` lands after the factory has already built an unseeded,
+  // unpinned sim. Ordering is the defect class here, so it is asserted below
+  // rather than assumed.
+  if (opts.simPin) {
+    const { global, value } = opts.simPin;
+    await page.addInitScript(
+      ([g, v]) => {
+        (globalThis as unknown as Record<string, unknown>)[g as string] = v;
+      },
+      [global, value] as [string, number],
+    );
+  }
+
   await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await awaitVrtFonts(page);
   await waitForHooks(page);
+
+  // ⚠ TWO-SIDED, AND ANCHORED TO THE PAGE RATHER THAN TO THE CALL. Asserting
+  // that we CALLED addInitScript would prove nothing — the failure mode this
+  // guards is an init script that never reached the document (moved after
+  // `goto` by a later refactor, or dropped by a navigation), and from a
+  // capture's output "the pin was installed" and "the pin was never set" are
+  // indistinguishable: both produce a plausible picture, one of them a
+  // different one per boot. A dead pin is exactly how this bug shipped, so it
+  // fails loudly here instead of as a 4.5x-over-tolerance pixel diff weeks
+  // later.
+  if (opts.simPin) {
+    const { global, value } = opts.simPin;
+    const seen = await page.evaluate(
+      (g) => (globalThis as unknown as Record<string, unknown>)[g],
+      global,
+    );
+    expect(
+      seen,
+      `simPin ${global} did not reach the page before boot — the module reads it at `
+        + `construction, so an unset flag means this scene captured an UNPINNED sim whose `
+        + `phase differs on every boot. Check that addInitScript still runs BEFORE goto.`,
+    ).toBe(value);
+  }
 
   // ── VIDEO FACES BOOT INTO THE VIDEO ZONE, not a channel column ──────────
   // See BootFaceOptions.videoFaceWhy. Only the MEMBER RESOLUTION differs; the

@@ -73,27 +73,12 @@ export interface ModuleSpec {
    *  when the def declares families. */
   controlFamilies?: string[];
   /**
-   * PF-20 — the dock SIDEBAR blocks the face declares, as `{kind,label}` pairs
-   * in declaration order. Emitted only when the def declares a sidebar.
-   *
-   * ⚠ THIS EXISTS SO THE SIDEBAR IS REGISTRY-DRIVEN LIKE EVERYTHING ELSE. The
-   * sidebar mounts OUTSIDE `[data-testid="module-shell"]`, which is what keeps
-   * a preset button from having to be taught to faces-parity's cell sweep —
-   * and it also puts every block out of reach of that sweep entirely. Without
-   * this projection the ONLY DOM coverage a sidebar could have would be a spec
-   * hardcoded to one module type, so adopter #2 could ship a sidebar that
-   * renders blank and nothing would notice. Publishing the DECLARATION lets
-   * `faceplate-platform.spec.ts` enumerate it and assert every declared block
-   * actually painted, for every module, with no per-module test edit.
-   */
-  faceSidebar?: { kind: string; label: string }[];
-  /**
    * PF-20 ANNOTATIONS — the count of prose strings this face declares, split by
    * the SURFACE each one paints on: the section `face.title` (0 or 1), the
    * page-level `face.hint` (0 or 1), and the per-band `hint`s. Emitted only when
    * the face declares any.
    *
-   * ⚠ SAME REASON AS `faceSidebar`, one layer over. Annotation prose is OUT of
+   * ⚠ REGISTRY-DRIVEN, one layer over. Annotation prose is OUT of
    * the DOM until the viewer turns the dock toggle on, so the only thing a
    * hardcoded spec can prove is that ONE module's prose appears — and the
    * failure that matters is the opposite one: a face that declares prose the
@@ -216,14 +201,6 @@ export function getAllModuleSpecs(): ModuleSpec[] {
       const rawNoControl = (def as { noUserControl?: readonly { param: string }[] }).noUserControl;
       const noUserControl: string[] | undefined =
         rawNoControl && rawNoControl.length ? rawNoControl.map((e) => e.param) : undefined;
-      // PF-20 — the DECLARED sidebar blocks (kind + label only: the sweep asks
-      // "did every declared block paint", never "what is inside it").
-      const rawSidebar = (def as { face?: { sidebar?: readonly { kind: string; label: string }[] } })
-        .face?.sidebar;
-      const faceSidebar: { kind: string; label: string }[] | undefined =
-        rawSidebar && rawSidebar.length
-          ? rawSidebar.map((b) => ({ kind: b.kind, label: b.label }))
-          : undefined;
       // PF-20 — the ANNOTATION counts, resolved through the SAME pure function
       // the shell and the dock toggle read (`faceAnnotationTally`), never a
       // second walk of `face.title` + `face.hint` + `pages[].hint` here: two
@@ -252,7 +229,6 @@ export function getAllModuleSpecs(): ModuleSpec[] {
         params,
         ...(stereoPairs ? { stereoPairs } : {}),
         ...(controlFamilies ? { controlFamilies } : {}),
-        ...(faceSidebar ? { faceSidebar } : {}),
         ...(faceAnnotations ? { faceAnnotations } : {}),
         ...(noUserControl ? { noUserControl } : {}),
         ...(strictFace ? { strictFace } : {}),
