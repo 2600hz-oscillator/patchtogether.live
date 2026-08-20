@@ -1399,6 +1399,59 @@ export const FACES = [
       + 'deliberate: the surface is a pure passthrough of unpatched inputs, so it is solid black '
       + 'and identical frame to frame by construction rather than by the flag.',
   },
+  // BENTBOX — six pages (sync / chroma / bend / feedback / crt / mirror), one
+  // per stage of the NTSC chain, against DOCK_TAB_MIN_BANDS = 7, so the dock
+  // scene captures STACKED bands under the extension body rather than a rail.
+  //
+  // ⚠ ITS SIBLING NEEDED A `freeze` PARAM AND THIS ONE DOES NOT — the same
+  // question, answered the other way, on measurement rather than by family
+  // resemblance. `b3ntb0x` animates by construction (subcarrier phase and a
+  // literal `sin(y*47 + uTime*3.3)` wobble, plus CRT persistence feeding the
+  // previous frame back), so its capture can never settle and #1941's
+  // "a pin gated on a flag nothing sets" applies. BENTBOX's fragment shader
+  // RETURNS EARLY when nothing is patched:
+  //
+  //     if (uHasInput < 0.5) {
+  //       float v = vUv.y * 0.05;
+  //       outColor = vec4(0.04, 0.06, 0.10 + v, 1.0);
+  //       return;
+  //     }
+  //
+  // — a pure function of `vUv` with NO time term, taken BEFORE the mirror fold
+  // and before every uTime-driven stage below it. `bootWithFace` spawns exactly
+  // one node with nothing patched, so both scenes are a STATIC gradient.
+  //
+  // ⚠ THE COMMENT ON THAT BRANCH CALLS IT "a dim sweeping color bar field" AND
+  // THE CODE DOES NOT SWEEP — there is no time term and no bars, just a vertical
+  // ramp. Recorded because the comment is exactly what would talk a later reader
+  // out of this scene's determinism argument; the CODE is the evidence.
+  //
+  // So `freezeFaceVideo`'s `params.freeze = 1` write lands nowhere (no such
+  // param) and needs to land nowhere. ⚠ Do NOT "fix" that by adding one: it is a
+  // `params` edit on a def inside the WebGL attest basis — an owner-machine
+  // re-attest — to buy an assertion that already holds.
+  //
+  // ⚠ WHAT WOULD CHANGE THE ANSWER: patch anything into IN. Every uTime term in
+  // the sync, chroma and feedback stages comes alive at once, and the module
+  // becomes the b3ntb0x case exactly. That is also why its CARD scene sits in
+  // EXEMPT_FROM_VRT as "animated … defeats deterministic capture" — that scene
+  // has a source; this one does not, and the two must not be reasoned about
+  // together.
+  {
+    type: 'bentbox',
+    pages: 6,
+    videoFaceWhy:
+      'a VIDEO module, so it must boot into the video zone rather than a mixer channel column — '
+      + 'without this field bootWithFace waits out the full 90 s test timeout for a column '
+      + 'membership a video node never acquires. Both scenes also carry a live picture: the '
+      + 'compact tile paints a VideoTileThumb through hasVideoSurface, and the dock body is the '
+      + "module's own fullViewBody extension (the CRT preview, its SCREEN switch, and the "
+      + 'fullscreen / full-frame / present affordances promotion would otherwise delete). The '
+      + 'freeze write itself is a NO-OP on this def — it declares no `freeze` param, unlike its '
+      + 'sibling b3ntb0x — and that is deliberate: the fragment shader returns early when '
+      + 'nothing is patched into IN, emitting a static vUv-only gradient with no time term, so '
+      + 'both scenes are identical frame to frame by construction rather than by the flag.',
+  },
 ] as const;
 
 /** TIGHT per-scene diff budgets (absolute pixels; Playwright takes the MIN of

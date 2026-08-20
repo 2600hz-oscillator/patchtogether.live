@@ -325,6 +325,46 @@ describe('resolvePushCardControls — tier 2, the curated face', () => {
     expect((defByType('stereovca').params ?? []).map((q) => q.id)).toEqual(['level', 'offset']);
   });
 
+  it('a FIRST PROMOTION can put a whole STAGE on the hardware — bentbox', () => {
+    // bentbox, promoted 2026-08-20 (queue Q24). Fourteen ranked controls over
+    // eight encoders, so like warrensvisions the window TRUNCATES rather than
+    // permutes — but here what it drops and gains is a semantic block, which is
+    // the variant worth its own golden.
+    //
+    // ⚠ THE GENERIC TIER NEVER REACHED THE BEND STAGE AT ALL. Declaration order
+    // is timing then chroma then feedback, so the first eight encoders were
+    // `hsync_drift, hsync_loss, vsync_drift, scan_wobble, chroma_phase,
+    // chroma_instability, feedback_gain, feedback_delay` — SOLARIZE and GAIN,
+    // the two controls that abuse the composite voltage this module exists to
+    // abuse, were off the end of the card. The face ranks them 3rd and 4th (the
+    // module's own docs name solarization as a headline outcome, and `wavefold`
+    // carries 0.7 of the luma blend weight against master_gain's 0.1), so both
+    // reach the hardware and `scan_wobble` / `feedback_delay` fall off instead.
+    //
+    // Accepted deliberately rather than pinned by a PUSH_CARD_CONTROLS override:
+    // an override REPLACES, which would freeze a ranking the def argues for.
+    const spec = resolvePushCardControls(defByType('bentbox'));
+    expect(spec.source).toBe('face');
+    expect(pushCardParams(spec).map((q) => q.id)).toEqual([
+      'hsync_loss', 'feedback_gain', 'wavefold', 'master_gain',
+      'chroma_phase', 'chroma_instability', 'hsync_drift', 'vsync_drift',
+    ]);
+    // The negative control, and here it names what the promotion BOUGHT: the
+    // def's own order genuinely reaches neither bend control in eight slots.
+    const declared = (defByType('bentbox').params ?? []).map((q) => q.id);
+    expect(declared.slice(0, 8)).toEqual([
+      'hsync_drift', 'hsync_loss', 'vsync_drift', 'scan_wobble',
+      'chroma_phase', 'chroma_instability', 'feedback_gain', 'feedback_delay',
+    ]);
+    expect(declared.slice(0, 8), 'the GENERIC card could not reach SOLARIZE').not.toContain('wavefold');
+    expect(declared.slice(0, 8), 'nor GAIN').not.toContain('master_gain');
+    // ⚠ AND THE TWO MIRROR TOGGLES ARE NOT ON THE CARD, which is the correct
+    // outcome of this PR's `curve` correction: an encoder cannot turn a switch.
+    // They rank 13th/14th, so the window fills before it reaches them.
+    expect(pushCardParams(spec).map((q) => q.id)).not.toContain('mirrorX');
+    expect(pushCardParams(spec).map((q) => q.id)).not.toContain('mirrorY');
+  });
+
   it('a FIRST PROMOTION re-orders AND steps over a family — treeohvox', () => {
     // treeohvox, promoted 2026-08-19 (#1944, queue Q3). The variant that
     // exercises both behaviours at once on a newly promoted module: the window
