@@ -36,6 +36,24 @@
 import { describe, expect, it } from 'vitest';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
+// ⚠ THE SIDE-EFFECT IMPORTS ARE LOAD-BEARING, AND THEIR ABSENCE WAS A LATENT
+// BLIND SPOT IN THIS FILE. `list*ModuleDefs()` reads a registry that is
+// populated by IMPORTING the module barrels; without these three lines this
+// file was relying on some TRANSITIVE import to have registered them first.
+// That held for the full-file run and BROKE under a `-t` filter, where
+// `listVideoModuleDefs()` returned an EMPTY array.
+//
+// An empty registry does not fail — it makes every sweep keyed on it cover
+// NOTHING and pass, which is the blind-gate shape exactly. Four pre-existing
+// sweeps in this file already depended on it (the registered-vs-exempt
+// reconciliation, the mask reconciliation, and the STRICT_VRT cross-checks), so
+// this hardens them too rather than only the video-face gate added below.
+// Caught by that gate's own vacuity control, which is what a vacuity control is
+// for. `push-card-schema.test.ts` and `video-face-screen-source.test.ts` both
+// already do this; this file was the copy that did not.
+import '$lib/audio/modules';
+import '$lib/video/modules';
+import '$lib/meta/modules';
 import { listModuleDefs } from '$lib/audio/module-registry';
 import { listVideoModuleDefs } from '$lib/video/module-registry';
 import { listMetaModuleDefs } from '$lib/meta/module-registry';
@@ -634,6 +652,91 @@ describe('face VRT scenes — every promoted face is rostered AND captured', () 
       'ROSTERED BUT NOT PROMOTED — a scene naming a module that is not in STRICT_FACES ' +
         'captures a legacy card under a face-scene name, which is a baseline nobody can ' +
         `interpret. Remove it or promote the module: ${unpromoted.join(', ')}`,
+    ).toEqual([]);
+  });
+
+  // ── EVERY FACED VIDEO MODULE DECLARES `videoFaceWhy` ─────────────────────
+  //
+  // ⚠ THE GAP THIS CLOSES COST A FULL CI SHARD AND A 90-SECOND HANG. `FACES`
+  // and the video registry were joined by NOTHING: a video module could be
+  // promoted, rostered, and pass every unit gate in this file while its scene
+  // was structurally incapable of booting.
+  //
+  // The mechanism, from `bootWithFace`: without `videoFaceWhy` a face takes the
+  // AUDIO boot path, which spawns the node and then waits — with NO explicit
+  // timeout, so it inherits the 90 s TEST timeout — for it to appear in
+  // `pinned-mixmstrs.data.columns['1']`. A VIDEO module never joins a mixer
+  // channel column; it joins the video zone. The predicate can therefore never
+  // become true, and the scene dies at `page.waitForFunction: Test timeout of
+  // 90000ms exceeded` WITHOUT EVER REACHING THE SCREENSHOT.
+  //
+  // ⚠ AND IT IS INDISTINGUISHABLE FROM A SLOW SCENE FROM THE OUTPUT ALONE — a
+  // timeout at a `waitForFunction` reads as "CI is slow, raise the budget",
+  // and raising it buys another 90 s of waiting for a condition that cannot
+  // become true. That is why this is a UNIT gate: it answers "never" vs
+  // "slower" before a shard is spent, which no e2e budget change can do.
+  //
+  // `backdraft` hit this as the first video face and the option's own
+  // doc-comment records it in caps; `4plexvid` hit it again anyway, by reading
+  // the `freezeFaceVideo` helper (which the flag ALSO gates) and concluding the
+  // flag was a freeze opt-in it could decline. A doc-comment is not a gate, so
+  // two independent agents made the same call. This is the gate.
+  //
+  // DENY BY DEFAULT with a NAMED, ANCHORED exemption — empty, and it should
+  // stay empty: there is no such thing as a video face that boots into a mixer
+  // column, so an entry here is almost certainly a misdiagnosis of some other
+  // failure.
+  const NO_VIDEO_FACE_WHY: readonly { type: string; why: string }[] = [];
+
+  it('every faced VIDEO module declares `videoFaceWhy` on its roster entry', () => {
+    const videoTypes = new Set(listVideoModuleDefs().map((d) => d.type));
+    const exempt = new Set(NO_VIDEO_FACE_WHY.map((e) => e.type));
+    const offenders = FACES.filter((f) => videoTypes.has(f.type) && !exempt.has(f.type))
+      .filter((f) => !(f as { videoFaceWhy?: string }).videoFaceWhy?.trim())
+      .map((f) => f.type)
+      .sort();
+    expect(
+      offenders,
+      'a VIDEO module is rostered without `videoFaceWhy`, so `bootWithFace` will send it down '
+        + 'the AUDIO path and wait out the full 90 s test timeout for a mixer-column membership '
+        + 'a video node never acquires. Both of its scenes fail, and they fail as a TIMEOUT '
+        + 'rather than an error. Declare it — the field is the video-zone boot selector first '
+        + 'and the freeze opt-in second.',
+    ).toEqual([]);
+  });
+
+  it('the videoFaceWhy check has a SUBJECT, and its predicate can FAIL', () => {
+    // Vacuity: a gate over an empty set is green and proves nothing. If the
+    // video registry or the roster stopped resolving, THIS fails rather than
+    // the sweep above passing silently.
+    const videoTypes = new Set(listVideoModuleDefs().map((d) => d.type));
+    const facedVideo = FACES.filter((f) => videoTypes.has(f.type)).map((f) => f.type);
+    expect(facedVideo.length, 'faced VIDEO modules found in the roster').toBeGreaterThan(0);
+
+    // ...and the predicate must be able to say NO. A rostered video entry with
+    // the field absent, or blank, is the exact shape that shipped.
+    const bad = [{ type: facedVideo[0]!, pages: 1 }, { type: facedVideo[0]!, pages: 1, videoFaceWhy: '  ' }];
+    for (const entry of bad) {
+      expect(
+        !(entry as { videoFaceWhy?: string }).videoFaceWhy?.trim(),
+        `a ${JSON.stringify((entry as { videoFaceWhy?: string }).videoFaceWhy)} videoFaceWhy must be REFUSED`,
+      ).toBe(true);
+    }
+    // ...and a real declaration must be ACCEPTED, or the gate would refuse
+    // everything and be equally useless.
+    const good = { type: facedVideo[0]!, pages: 1, videoFaceWhy: 'a real reason, stated' };
+    expect(!good.videoFaceWhy.trim()).toBe(false);
+  });
+
+  it('every videoFaceWhy exemption still names a faced video module', () => {
+    const videoTypes = new Set(listVideoModuleDefs().map((d) => d.type));
+    const dead = NO_VIDEO_FACE_WHY.filter(
+      (e) => !videoTypes.has(e.type) || !rostered.has(e.type),
+    ).map((e) => e.type);
+    expect(
+      dead,
+      'an exemption naming a module that is no longer a rostered video face is stale — delete '
+        + 'it, or it will quietly permit the next module that takes the same name.',
     ).toEqual([]);
   });
 
