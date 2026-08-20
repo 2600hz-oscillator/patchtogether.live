@@ -2105,7 +2105,7 @@ jobs:
   # 1.02x) and selects via an anchored `--grep`.
   # -----------------------------------------------------------------------
   vrt-strict-shard:
-    name: vrt-strict shard ${{ matrix.shard }}/6
+    name: vrt-strict shard ${{ matrix.shard }}/${{ strategy.job-total }}
     needs: dsp-build
     runs-on: ubuntu-latest
     # 15, against a prediction this file does not restate — re-derive it with
@@ -2275,9 +2275,18 @@ jobs:
           set -euo pipefail
           flox activate -- npx --workspace e2e playwright test \
             --config=vrt/vrt.config.ts --list --reporter=json > vrt-strict-list.json
-          flox activate -- node scripts/vrt-shard-plan.mjs ${{ matrix.shard }} 4 \
+          # ⚠ THE COUNT IS DERIVED (`strategy.job-total`), NEVER RE-TYPED.
+          # It was the literal `4` until 2026-08-20, and bumping the matrix to
+          # 6 in #2039 left it behind: shards 5 and 6 called `vrt-shard-plan.mjs
+          # 5 4` / `6 4`, which is out of range, so they died on the planner's
+          # usage error. Coverage was never at risk — shards 1-4 still planned a
+          # complete 4-way partition and the union assertion held — but two jobs
+          # went red for a reason that had nothing to do with any baseline.
+          # `scripts/vrt-shard-plan.test.ts` now DENIES a literal here, so this
+          # cannot drift from the matrix again.
+          flox activate -- node scripts/vrt-shard-plan.mjs ${{ matrix.shard }} ${{ strategy.job-total }} \
             --list vrt-strict-list.json --out vrt-shard-planned.txt > vrt-shard-grep.txt
-          echo "shard ${{ matrix.shard }}/4 plans $(wc -l < vrt-shard-planned.txt) scenes:"
+          echo "shard ${{ matrix.shard }}/${{ strategy.job-total }} plans $(wc -l < vrt-shard-planned.txt) scenes:"
           sed 's/^/  /' vrt-shard-planned.txt
 
       # ⚠ Playwright is invoked DIRECTLY, not through `task vrt:strict`. The
@@ -2293,11 +2302,11 @@ jobs:
       # only record of WHICH tests executed, and that is what the coverage check
       # below diffs against the plan. `PIPESTATUS` preserves Playwright's exit
       # code across the tee.
-      - name: Run VRT (strict subset — shard ${{ matrix.shard }}/6)
+      - name: Run VRT (strict subset — shard ${{ matrix.shard }}/${{ strategy.job-total }})
         env:
           # Names this lane in the wrapper's one-line budget report, so the
           # percentage in the log says WHICH shard it belongs to.
-          E2E_SHARD_BUDGET_LABEL: vrt-strict shard ${{ matrix.shard }}/6
+          E2E_SHARD_BUDGET_LABEL: vrt-strict shard ${{ matrix.shard }}/${{ strategy.job-total }}
         run: |
           set -uo pipefail
           GREP="$(cat vrt-shard-grep.txt)"
