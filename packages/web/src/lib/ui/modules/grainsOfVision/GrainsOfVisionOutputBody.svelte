@@ -94,7 +94,7 @@
   // this decay naturally once the dock closes and this component unmounts.
   //
   // ⚠ THIS DIVERGES FROM `SpirographsOutputBody.svelte`, DELIBERATELY AND WITH
-  // AN ISSUE FILED. That one returns from `draw` without rescheduling while
+  // AN ISSUE FILED (#2015). That one returns from `draw` without rescheduling while
   // collapsed and renews no mark; its comment argues the engine renders
   // throughout, which holds only while something ELSE is pulling the node. On a
   // rack where the faceplate is the only observer it does not, and on a module
