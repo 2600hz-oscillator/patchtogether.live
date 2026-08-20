@@ -49,7 +49,7 @@
   import { cardParams, portsFromDef } from './card-kit';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import VideoTileThumb from './VideoTileThumb.svelte';
-  import { Button, ColorField, KnobConic, NeonFader, ParamGrid, ScopeScreen, Segmented, Selector, Toggle, VuMeter, XyPad } from '$lib/ui/controls';
+  import { Button, ColorField, HueWheel, KnobConic, NeonFader, ParamGrid, ScopeScreen, Segmented, Selector, Toggle, VuMeter, XyPad } from '$lib/ui/controls';
   import {
     curatedFace,
     dockFacePlan,
@@ -559,7 +559,7 @@
    *  `'drawer'` face is never tabbed — the plan answers that, this file does not
    *  re-test it. Passing the view rather than `null`-ing the result here is what
    *  keeps ONE authority for "is this face tabbed". */
-  let dockTabs = $derived(dockTabPlan(dockBands, view));
+  let dockTabs = $derived(dockTabPlan(dockBands, view, def as FaceplateDefLike | undefined));
 
   /**
    * PF-21 — the ROW PLAN: which section bands share a horizontal row.
@@ -898,6 +898,34 @@
               paramId={pd.id}
               hero={faceplateView}
               compact={!faceplateView}
+            />
+          </div>
+        {:else if cellKind === 'hue'}
+          <!-- DECLARED HUE ANGLE (`face.paramCells['x'] = 'hue'`): the colour
+               WHEEL. Separate from `color` beside it because the param shapes
+               are different — `color` is DISCRETE packed RGB, this is a
+               CONTINUOUS 0..1 angle — and because a hue WRAPS, which is the one
+               scalar a KnobConic cannot present: its end stops would fall in the
+               middle of a continuous space, so travelling between two adjacent
+               reds means dragging back through every other colour.
+
+               The RANGE comes from the DEF (`pd.min`/`pd.max`), never re-typed
+               in the primitive, and module-face-lint separately asserts the span
+               is the 0..1 turn — so the two cannot drift (the backdraft class).
+
+               ⚠ IT PAINTS NO VALUE. The angle lives in `aria-valuetext` and the
+               ring marker is the visual readout, which is what the resting-text
+               ruling requires of every faceplate control. -->
+          <div class="kcol ms-cell-hue" data-cell-kind="param" data-cell-control="hue" data-cell-key={ctl.key} style:--ka={ka}>
+            <HueWheel
+              value={params.paramVal(pd.id)}
+              min={pd.min}
+              max={pd.max}
+              label={pd.label}
+              onchange={paramWrite(pd.id)}
+              readLive={params.live(pd.id)}
+              paramId={pd.id}
+              hero={faceplateView}
             />
           </div>
         {:else if cellKind === 'xy' && xyPads.get(pd.id) && paramDef(xyPads.get(pd.id)!.y)}

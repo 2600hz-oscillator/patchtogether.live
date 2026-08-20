@@ -171,6 +171,10 @@ const FACE_FIELDS: Readonly<Record<string, FaceFieldRule>> = {
     role: 'none',
     why: 'A per-channel hue for console bands. Colour, not text.',
   },
+  tabbed: {
+    role: 'section-label',
+    why: 'Forces the dock TAB RAIL on below the band threshold. It adds no text of its own — the rail paints each band\'s own LABEL, which is a section label and already a permitted role; the flag only decides whether those labels appear as a rail or as headers down a column. ⚠ OWNER-INSTRUCTION ONLY per module: the named FACE_TAB_OPT_IN registry in dock-tabs-model.test.ts carries the instruction verbatim and refuses an undeclared adopter.',
+  },
   rear: {
     role: 'section-label',
     why: 'Rear-card patch-field curation: section headings over jack groups. A heading is a SECTION LABEL, and the rear card is a different surface from the resting front face in any case.',

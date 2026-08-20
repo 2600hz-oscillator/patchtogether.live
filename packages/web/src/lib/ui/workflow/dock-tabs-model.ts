@@ -47,8 +47,52 @@
 // SIX, both far past the ~3.3 the window holds. The rail is still the right
 // trade for them, so the number stays where it is.
 
+// ── THE PER-FACE OPT-IN (`face.tabbed`) — AND ITS FENCE ─────────────────────
+//
+// A face may force the rail on regardless of band count. ⚠ THIS IS NOT A
+// SECOND WAY TO ASK THE THRESHOLD QUESTION, and the fence is the whole point:
+//
+//   * IT IS DECLARED ONLY ON EXPLICIT OWNER INSTRUCTION, PER MODULE. Not
+//     "this face feels crowded", not "three pages read better as tabs".
+//   * THE DEFAULT STANDS UNCHANGED: author honest pages, and the rail engages
+//     at `DOCK_TAB_MIN_BANDS`. A 3-6 page face renders as one column and that
+//     is CORRECT — the owner separately ruled `ruttetra` ships UNTABBED
+//     ("2 - a"), so this opt-in does not reopen that question for it or for
+//     any other face.
+//   * EVERY ADOPTER IS NAMED, WITH PROVENANCE. `FACE_TAB_OPT_IN` in
+//     `dock-tabs-model.test.ts` carries the owner instruction VERBATIM per
+//     module; a declaration with no entry is RED and an entry whose module no
+//     longer declares is RED. An agent cannot quietly opt a face in, which is
+//     the failure mode that matters here — a plausible-sounding "the owner
+//     wanted tabs" is exactly the fabrication class this repo has already been
+//     bitten by, so the instruction has to be written down next to the licence.
+//
+// WHY AN OPT-IN RATHER THAN LOWERING THE THRESHOLD. Lowering
+// `DOCK_TAB_MIN_BANDS` re-pins EVERY dock baseline it newly captures (68 faces
+// today) and changes how every 3-6 page face reads, to solve one module's
+// structure. The opt-in moves exactly the face that declares it and leaves the
+// measured argument above intact.
+//
+// WHY spirographs EARNS IT, stated so the next reader can judge the precedent:
+// its three spiros are INDEPENDENT FIGURES, not three sections of one idea —
+// its own legacy card shipped a `role="tablist"` with a `1 / 2 / 3` selector
+// and edited one spiro at a time. The rail here restores a structure the module
+// already had, rather than compressing a column that was merely tall.
+
 import type { DockFaceBand } from './curated-face';
 import type { ShellView } from './module-shell-model';
+
+/** The slice of a def this model reads: the per-face tab opt-in. */
+export interface TabDefLike {
+  face?: { tabbed?: boolean };
+}
+
+/** Does this def force the rail on? ONE authority, read by all three consumers
+ *  (DockFullView's rail, ModuleShell's hide, dock-row-plan's packing) so they
+ *  cannot disagree — a rail with no matching hide is a blank faceplate. */
+export function faceForcesTabs(def: TabDefLike | undefined): boolean {
+  return def?.face?.tabbed === true;
+}
 
 /** Measured section-band pitch in the dock faceplate (px). See the header. */
 export const DOCK_BAND_PX = 90;
@@ -87,9 +131,15 @@ export interface DockTab {
 export function dockTabPlan(
   bands: readonly DockFaceBand[] | null | undefined,
   view: ShellView = 'dock-full',
+  def?: TabDefLike,
 ): DockTab[] | null {
   if (view === 'drawer') return null;
-  if (!bands || bands.length < DOCK_TAB_MIN_BANDS) return null;
+  if (!bands || !bands.length) return null;
+  // ⚠ THE OPT-IN IS CHECKED AFTER THE `drawer` ARM, DELIBERATELY. The pinned
+  // tray paints no rail at all, so a forced-tabs face there would be a hide
+  // with no rail — the blank faceplate this file exists to prevent. The opt-in
+  // overrides the THRESHOLD, never the host's ability to show a rail.
+  if (!faceForcesTabs(def) && bands.length < DOCK_TAB_MIN_BANDS) return null;
   return bands.map((b) => ({ id: b.id, label: b.label || b.id }));
 }
 

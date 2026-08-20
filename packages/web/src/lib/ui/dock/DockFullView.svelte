@@ -49,6 +49,7 @@
   import { activeDockTab, dockTabPlan } from '$lib/ui/workflow/dock-tabs-model';
   import {
     faceHasAnnotations,
+    heroFacePlan,
     type FaceplateDefLike,
   } from '$lib/ui/workflow/dock-faceplate-model';
   import { isAnnotating, toggleAnnotate } from '$lib/ui/annotate-mode.svelte';
@@ -121,7 +122,25 @@
   //
   // Un-migrated (legacy-card) occupants keep the single MODULE chip: their
   // content is one verbatim card with no declared sections to tab.
-  let tabs = $derived(migrated && def ? dockTabPlan(dockFacePlan(def as FaceDefLike)) : null);
+  // ⚠ THE RAIL IS COMPUTED FROM THE POST-HERO BANDS, and it MUST be. This used
+  // to read `dockTabPlan(dockFacePlan(def))` — the bands BEFORE the hero split —
+  // while ModuleShell hides bands using the bands AFTER it (`heroSplit.bands`).
+  // The two agree only while no hero EMPTIES its band, and `heroFacePlan` drops
+  // a band whose every control was promoted (a labelled void otherwise). The
+  // first face to promote a lone control out of its own band would therefore
+  // paint N tabs against N-1 hideable bands: one rail chip opening onto nothing,
+  // which is exactly the "rail with no matching hide" this model's header calls
+  // a blank faceplate. spirographs is that face (`count` is its whole hero), and
+  // the fix is to ask the SAME question both consumers ask.
+  let tabs = $derived(
+    migrated && def
+      ? dockTabPlan(
+          heroFacePlan(def as FaceplateDefLike, dockFacePlan(def as FaceDefLike)).bands,
+          'dock-full',
+          def as FaceplateDefLike,
+        )
+      : null,
+  );
   let requestedTab = $state<string | undefined>(undefined);
   let activeTab = $derived(tabs ? activeDockTab(tabs, requestedTab) : undefined);
 
