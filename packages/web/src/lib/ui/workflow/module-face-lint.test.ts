@@ -484,6 +484,26 @@ describe('module-face lint — MOMENTARY pads (face.momentary)', () => {
     // of the control.
     'b3ntb0x:mirrorX',
     'b3ntb0x:mirrorY',
+    // GRAINS OF VISION, 2026-08-20. The two block BYPASSES, visible to this
+    // gate for the same reason as b3ntb0x's folds and cloudseed's enables:
+    // their `curve` was corrected `linear` → `discrete` when the face landed,
+    // because both are consumed as `>= 0.5` (`fbDry >= 0.5`, `revDry >= 0.5`)
+    // so `linear` was always a lie and the faceplate would have painted a
+    // two-state bypass as a continuous rotary.
+    //
+    // ⚠ THE CARD ALREADY CLAIMED THIS WAS THE BEHAVIOUR AND IT WAS NOT — its
+    // comment reads "fb_dry / rev_dry render as 2-step DRY toggles" while it
+    // passed `curve={pcurve(k.id)}`, which returns the def's `linear`, and
+    // `NeonFader.fracToValue` rounds only for `discrete`. So everything in
+    // [0, 0.5) looked set and did nothing. The prose was right and the
+    // declaration was wrong; this makes them agree.
+    //
+    // LATCHING, not momentary: each one is a hard bypass you switch the block
+    // out with and LEAVE out — a momentary render would re-engage the feedback
+    // or reverb block the instant you let go, which is the opposite of a
+    // bypass. Neither has a CV port, so nothing pulses them either.
+    'grainsOfVision:fb_dry',
+    'grainsOfVision:rev_dry',
     'kickdrum:hard',   // hard-clip mode switch — a bus state you leave engaged
     'snaredrum:hard',  // same clipper switch, the KICK sibling's precedent
     // CLOUDSEED, 2026-08-01. The five stage ENABLES that rest at 0. They only

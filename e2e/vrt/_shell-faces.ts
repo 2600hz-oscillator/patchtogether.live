@@ -1172,6 +1172,28 @@ export const FACES = [
         + 'video population, so the weight is the module\'s own rather than the faceplate\'s.',
     }),
   },
+  // THE FACEPLATE QUEUE · Q26 — the granular video synth.
+  //
+  // `pages: 6` is the declared band count and also the post-split count: this
+  // face promotes nothing into the hero (it declares no `hero` at all), so no
+  // band is emptied. Six is what keeps it OFF the tab rail
+  // (`DOCK_TAB_MIN_BANDS` is 7) — and the seventh page was available and
+  // REFUSED, because splitting `fb_zoom`/`fb_rotate` out purely to reach the
+  // threshold is the padding the tabbed ruling forbids. This entry is what
+  // would go red if a seventh page were ever added to force a rail.
+  {
+    type: 'grainsOfVision',
+    pages: 6,
+    videoFaceWhy:
+      'both scenes carry a LIVE picture: the compact tile paints a VideoTileThumb through '
+      + 'hasVideoSurface, and the dock body is the module\'s own fullViewBody extension. ⚠ AND IT '
+      + 'IS THE WORST CASE IN THE ROSTER FOR AN UNPINNED CAPTURE, because ALL THREE of its '
+      + 'stateful blocks integrate per DRAW rather than per unit of time: an 8-frame history ring '
+      + 'that grains sample a jittered MOMENT from, a feedback buffer that folds the previous '
+      + 'output back in zoomed and rotated so the transform compounds, and a reverb accumulator '
+      + 'that decays over frames. Pinning a clock would not settle any of them; only the freeze '
+      + 'param, which returns out of draw() before any of it advances, does.',
+  },
   // THE FACEPLATE QUEUE · Q31 — the hemisphere pool, and the fifth video face.
   //
   // `pages: 4` is the declared band count and also the post-split count: this
@@ -1284,6 +1306,91 @@ export const FACES = [
         + 'shifted by tens of rows. This flag engages the deterministic single-fill seed already '
         + 'in the module, which its own VRT comment was written for and which nothing set.',
     },
+  },
+  // THE FACEPLATE QUEUE · Q44 — the 4-in / 4-out video cross-point switch, and
+  // the video twin of `fourplexer` five entries up.
+  //
+  // `pages: 1`, and for the SAME reason spelled out on the fourplexer entry:
+  // this face declares NO `face.pages` at all, so the dock renders ONE
+  // UNLABELLED band holding all four selectors, and this roster counts RENDERED
+  // bands rather than declared ones. Its hero promotes nothing (there is no
+  // hero), so no band is emptied and none is dropped. Reasoning "no declared
+  // `face.pages` ⇒ 0" is the trap that caught the first draft of the fourplexer
+  // entry; `noise` is `pages: 0` only because its ONLY key is promoted into
+  // `hero.control`, which empties its band.
+  //
+  // ⚠⚠ `videoFaceWhy` IS THE VIDEO-ZONE BOOT SELECTOR FIRST AND THE FREEZE
+  // OPT-IN SECOND, AND THIS ENTRY SHIPPED WITHOUT IT AND HUNG FOR 90 SECONDS.
+  // Recorded in full because the mistake is one a careful reader makes.
+  //
+  // The first draft DECLINED it, with an argument built entirely on
+  // `freezeFaceVideo`: this module has no `freeze` param, so writing
+  // `params.freeze = 1` is a no-op the factory's `if (!(paramId in params))
+  // return` guard rejects, and the still-picture assertion would then pass for
+  // a reason unrelated to the flag — a manufactured vacuous negative control.
+  // Every fact in that argument is TRUE. It is simply about the WRONG HALF of a
+  // two-purpose flag, and the flag's name says which half is primary: it is
+  // `videoFaceWhy`, not `freezeWhy`.
+  //
+  // The other half is `bootWithFace`. Without this field a video module takes
+  // the AUDIO path, which spawns at `{x:30, y:4280}` and then waits — with NO
+  // explicit timeout, so it inherits the 90 s TEST timeout — for the node to
+  // appear in `pinned-mixmstrs.data.columns['1']`. A video module NEVER joins a
+  // mixer channel column; it joins the purple VIDEO ZONE. The predicate is
+  // therefore never true and the scene dies as
+  // `page.waitForFunction: Test timeout of 90000ms exceeded`, having never
+  // reached the screenshot at all.
+  //
+  // ⚠ THIS IS ALREADY DOCUMENTED ON THE FIELD ITSELF, in caps, with backdraft
+  // named as the measured precedent ("both its scenes timed out in that
+  // waitForFunction"). The draft read the `freezeFaceVideo` HELPER's doc and
+  // its call sites and never read the OPTION's own declaration — so the
+  // conclusion was reached from two thirds of the evidence and looked
+  // well-supported. ⚠ AND THE FAILURE IS INDISTINGUISHABLE FROM A SLOW SCENE
+  // FROM THE OUTPUT ALONE: a 90 s timeout at a `waitForFunction` reads as "CI
+  // is slow, raise the budget", and raising it would have bought another 90 s
+  // of waiting for a condition that can never become true. "Slower" and
+  // "never" need opposite fixes.
+  //
+  // So: A VIDEO FACE ALWAYS DECLARES THIS. There is no such thing as a video
+  // face that opts out, and the first entry to try became the proof.
+  //
+  // ── The freeze question, kept because it is real and must not be re-litigated
+  //
+  // The freeze half of the flag genuinely IS a no-op here, and that is fine:
+  // the assertion it guards (the surface held still) is satisfied STRUCTURALLY
+  // rather than by the flag. Measured on the def, not inferred from a green
+  // capture: `uTime`, `Date.now`, `performance.now`, `Math.random`,
+  // `frame.time`, `frame.frameIndex`, `elapsed` and `accum` occur ZERO times,
+  // and `FRAG_SRC` declares exactly two uniforms — `uTex` and `uHas`. The
+  // fragment shader is a pure passthrough copy, so the output is a pure
+  // function of (four inputs, four indices); with nothing patched every output
+  // takes the `uHas < 0.5` branch and is solid black on every frame.
+  //
+  // ⚠ DO NOT "FIX" THAT BY ADDING A `freeze` PARAM. It would be a `params` edit
+  // on a def in the WebGL attest basis — an owner-machine re-attest — to buy an
+  // assertion that already holds. And do NOT remove `videoFaceWhy` again on the
+  // grounds that the freeze is inert: that is exactly the reasoning above, and
+  // it costs both scenes.
+  //
+  // ⚠ WHAT WOULD CHANGE THE ANSWER: give 4plexvid any accumulator or clock — a
+  // crossfade on a gate edge, a tally animation, a `uTime` wipe — and the
+  // structural argument dies, the freeze stops being inert, and a real `freeze`
+  // param (declared `noUserControl` / `writer: 'internal'`; spirographs and
+  // b3ntb0x are the template) becomes required. Do NOT reach for `simPin`: that
+  // is for a STATEFUL sim whose frozen frame depends on elapsed time.
+  {
+    type: '4plexvid',
+    pages: 1,
+    videoFaceWhy:
+      'a VIDEO module, so it must boot into the video zone rather than a mixer channel column — '
+      + 'without this field bootWithFace waits out the full 90 s test timeout for a column '
+      + 'membership a video node never acquires. Both scenes also carry a live picture: the '
+      + 'compact tile paints a VideoTileThumb through hasVideoSurface, and the dock body is the '
+      + "module's own fullViewBody extension (the OUT 1 preview plus its SCREEN switch). The "
+      + 'freeze write itself is a NO-OP on this def (it declares no `freeze` param) and that is '
+      + 'deliberate: the surface is a pure passthrough of unpatched inputs, so it is solid black '
+      + 'and identical frame to frame by construction rather than by the flag.',
   },
 ] as const;
 
