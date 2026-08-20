@@ -670,9 +670,41 @@ describe('face VRT scenes — every promoted face is rostered AND captured', () 
     expect(existsSync(faceBaseline('definitelyNotAPromotedModule', 'dock'))).toBe(false);
     // ...and the positive half: a REAL rostered face resolves a real file, so
     // the existence probe is reading the right directory.
-    const known = [...rostered].sort()[0];
-    expect(existsSync(faceBaseline(known, 'dock')), `${known} dock baseline should exist`).toBe(
-      true,
-    );
+    //
+    // ⚠ THIS USED TO PIN `[...rostered].sort()[0]`, AND THAT MEASURED THE WRONG
+    // THING. The claim here is "the probe reads the right DIRECTORY". Pinning
+    // the alphabetically-first entry instead asks "does that ONE face have a
+    // baseline yet" — a different question, and one whose answer is legitimately
+    // NO during the documented window in which a face is rostered but its
+    // capture has not landed. Every new face passes through that window by
+    // design (`--update-snapshots` cannot write a baseline the roster has not
+    // asked for yet), so this control was one sort order away from failing for a
+    // reason that has nothing to do with the instrument.
+    //
+    // It survived only by luck: the previous new faces did not sort first.
+    // `4plexvid` does — a leading digit sorts before every letter — so it became
+    // the subject of the control the moment it was rostered, and the control
+    // reported "the existence probe is reading the wrong directory" about a
+    // probe that was working perfectly.
+    //
+    // ⚠ AND THE FALSE DIAGNOSIS IS THE REAL COST. The sweep above ALREADY
+    // reports an uncaptured baseline, by name, with the command that fixes it.
+    // This leg firing too says the opposite thing — that the harness is
+    // misconfigured — and sends the next author to the wrong place.
+    //
+    // Fixed at the SUBJECT: resolve across the WHOLE roster and require that at
+    // least one real face resolves. That is exactly the "right directory" claim
+    // and it stays falsifiable — a wrong directory resolves NOTHING, so this
+    // goes red on the condition it names. It is a vacuity floor with enormous
+    // slack (one, against the whole faced population), not a population count.
+    const resolvable = [...rostered]
+      .sort()
+      .filter((t) => existsSync(faceBaseline(t, 'dock')));
+    expect(
+      resolvable.length,
+      'the existence probe resolved NO rostered face at all. That is the DIRECTORY being wrong ' +
+        '(a moved snapshot root, a bad faceBaseline join) — not a missing capture, which the ' +
+        '"every rostered face has BOTH committed baselines" test above reports by name.',
+    ).toBeGreaterThan(0);
   });
 });
