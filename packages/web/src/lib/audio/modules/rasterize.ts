@@ -92,7 +92,29 @@ export const rasterizeDef: AudioModuleDef = {
     // Linear gain applied to each sample before the luminance map.
     { id: 'gain',            label: 'Gain',   defaultValue: 1,   min: 0,   max: 8,      curve: 'log' },
     // 0 = wrap (toroidal drift), 1 = clamp (top-to-bottom repaint sweep).
-    { id: 'wrap',            label: 'Wrap',   defaultValue: 0,   min: 0,   max: 1,      curve: 'discrete' },
+    //
+    // ⚠ THE ROSTER IS WHAT KEEPS THE STATE NAMED THROUGH PROMOTION, and without
+    // it this is the `fourplexer` control loss exactly. `paintsReadout` is
+    // `!format && (options || landmarks)`, so an undeclared discrete param
+    // paints an ANONYMOUS switch — while the card it replaces prints the state
+    // itself as the button's caption (`{wrap ? 'CLAMP' : 'WRAP'}`). Promotion
+    // would therefore have deleted the only place either word appears, on a
+    // control whose two states are the module's two looks. With the roster the
+    // dock renders a captioned `segmented` pair (2 ≤ SEGMENTED_MAX_OPTIONS) and
+    // the lane dial paints the NAME — verbatim parity with the card.
+    //
+    // A NAME, NOT A NUMBER: option labels are permitted resting text precisely
+    // because they disambiguate a control's own position, which `0`/`1` cannot.
+    // The behaviour behind them is real rather than cosmetic — measured at the
+    // frame boundary, CLAMP discards 700 of an 800-sample run where WRAP paints
+    // all 800 and continues toroidally.
+    {
+      id: 'wrap', label: 'Wrap', defaultValue: 0, min: 0, max: 1, curve: 'discrete',
+      options: [
+        { value: 0, label: 'WRAP',  title: 'Wrap around and keep accumulating — toroidal drift.' },
+        { value: 1, label: 'CLAMP', title: 'Clear on wrap — a clean top-to-bottom repaint sweep.' },
+      ],
+    },
   ],
 
   // ── THE FACEPLATE (PF-20) ────────────────────────────────────────────
@@ -148,15 +170,25 @@ export const rasterizeDef: AudioModuleDef = {
   // — splitting 4 cells into "scan"/"image" bands would buy two headers at
   // ~81 px each and say nothing the captions do not.
   //
-  // ⚠ `glyph: 'none'` IS A CHOICE HERE, NOT A FORCED ONE, so the reason is
-  // written down. This module HAS an `audio` output (THRU), so a `scope` or
-  // `meter` trace would resolve live and legally — but THRU is the untouched
-  // passthrough, so that trace would show the input signal while the module's
-  // actual output is a picture the trace cannot draw. It would also be a live
-  // moving surface in the compact VRT baseline, which is what got `analogVco`
-  // dropped from batch 3. The picture arrives at the dock through
-  // `fullViewBody` instead (below); the lane tile shows controls, which is
-  // strictly more than the placeholder an un-promoted module shows today.
+  // ⚠ `glyph: 'none'` IS A CHOICE HERE, NOT A FORCED ONE, and the reason is a
+  // NEW FAILURE CLASS worth naming. This module HAS an `audio` output, so
+  // `primaryAudioOutPortId` returns `thru` and a `scope`/`meter` glyph would
+  // resolve `live-audio` — legally, and looking perfectly healthy.
+  //
+  // But `thru` is the factory's `inGain` output, a bare `ctx.createGain()`
+  // whose `.gain` `setParam` never writes (it writes the four CV shadows
+  // instead). So THRU is BIT-EXACTLY THE MODULE'S INPUT, and that trace would
+  // be INVARIANT TO ALL FOUR OF THIS MODULE'S CONTROLS: it would move with the
+  // music, look alive, and say nothing whatsoever about the module. Every
+  // previous glyph refused here resolved `static` and was caught by the
+  // dead-glyph clause; this is the first that resolves LIVE AND IS STILL BLIND,
+  // which no gate looks for. It would also be a live moving surface in the
+  // compact VRT baseline — what got `analogVco` dropped from batch 3.
+  //
+  // The picture that IS this module is the raster frame; it is `mono-video` and
+  // matches no glyph kind, so it arrives at the dock through `fullViewBody`
+  // (below). The lane tile shows controls, strictly more than the placeholder
+  // an un-promoted module shows today.
   //
   // ⚠ THE PREVIEW NEEDS THE EXTENSION SLOT, AND WITHOUT IT PROMOTION IS A
   // LOOK LOSS. `hasVideoSurface(def)` is literally `domain === 'video'`, and
@@ -167,9 +199,16 @@ export const rasterizeDef: AudioModuleDef = {
   // `videoOut` and `backdraft` already use. Contract- and attest-transparent:
   // `face` is a stripped property and `extension` is a STRING, so the shell
   // imports nothing from this module.
+  // ⚠ THE THREE CONTINUOUS CONTROLS ARE FADERS, DECLARED, because the card
+  // mounts three `<NeonFader>`s and nothing in a `ParamDef` separates "a throw"
+  // from any other continuous scalar. An undeclared face silently swaps the
+  // throw for a dial — the `noise` regression `'fader'` exists for, and a real
+  // parity loss even though the value semantics are identical. `wrap` is NOT in
+  // the map: it is a button on the card and a named `segmented` cell here.
   face: {
     order: ['samplesPerFrame', 'gain', 'wrap', 'cursor'],
     glyph: 'none',
+    paramCells: { samplesPerFrame: 'fader', gain: 'fader', cursor: 'fader' },
     extension: 'rasterize',
   },
 

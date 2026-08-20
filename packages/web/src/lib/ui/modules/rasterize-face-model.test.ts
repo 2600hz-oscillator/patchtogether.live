@@ -23,6 +23,7 @@
 // structural claims that would go quietly false if a port type, a predicate or
 // a rank changed underneath them.
 
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { rasterizeDef } from '$lib/audio/modules/rasterize';
 import { glyphBinding, primaryAudioOutPortId } from '$lib/ui/workflow/shell-glyph-live';
@@ -152,6 +153,109 @@ describe('rasterize — the Push 2 card moved GENERIC → FACE, accepted deliber
       'wrap',
       'cursor',
     ]);
+  });
+});
+
+describe('rasterize — the cvCombined PUSH is the face body\'s real build risk', () => {
+  // ⚠ THE GAP THIS CLOSES, NAMED BEFORE IT IS ASSERTED. The legacy card runs a
+  // per-rAF loop that reads `eng.readParam` for all four params and writes them
+  // back through `eng.write(node, 'cvCombined', …)` BEFORE `read('imageData')`,
+  // because the painter runs inside that read (#1664). That push is not
+  // decoration: it is THE ONLY THING that makes a patched CV cable reach the
+  // picture. A face has no rAF of its own, so the extension body must carry it
+  // — and nothing in the tree would have noticed it disappearing, because
+  // rasterize has no bespoke spec and the per-port sweeps only ever observe
+  // `thru`, which is the untouched passthrough and is blind to the picture by
+  // construction.
+  //
+  // Asserted at SOURCE level for the same reason the range and readout gates
+  // are: there is no runtime observable for "the picture is deaf to CV" short
+  // of a pixel diff on a deliberately non-deterministic frame.
+  const BODY = readFileSync(
+    new URL('./rasterize/RasterizeOutputBody.svelte', import.meta.url),
+    'utf8',
+  );
+
+  it('the face body PUSHES the combined value before reading the frame', () => {
+    expect(BODY).toMatch(/cvCombined/);
+    expect(BODY).toMatch(/readParam/);
+    const pushAt = BODY.indexOf('cvCombined');
+    const readAt = BODY.indexOf("read(node, 'imageData')");
+    expect(readAt, "the body must read('imageData') — that is what advances the painter")
+      .toBeGreaterThan(-1);
+    // ORDER IS THE ASSERTION, not mere presence: reading before pushing paints
+    // the frame with last frame's CV, which is the #1664 bug wearing a fix.
+    expect(pushAt, 'cvCombined must be written BEFORE imageData is read').toBeLessThan(readAt);
+  });
+
+  it('and it reads the frame UNCONDITIONALLY — collapse skips the BLIT, never the advance', () => {
+    // ⚠ THE INVERSION THIS MODULE FORCES. In `spirographs` / `backdraft` the
+    // VIDEO ENGINE owns the producer, so SCREEN OFF stops a copy. Here the
+    // painter is advanced INSIDE `read('imageData')`, so with nothing patched
+    // downstream this loop is the only thing advancing the raster — gating the
+    // read on the toggle would freeze the module, the #1720/#1721 class.
+    //
+    // The negative control is the SHAPE: `previewCollapsed` must not appear as
+    // an early return before the read. It gates the blit on the same line as
+    // the draw instead.
+    const readAt = BODY.indexOf("read(node, 'imageData')");
+    const before = BODY.slice(0, readAt);
+    expect(
+      /if\s*\(\s*previewCollapsed\s*\)\s*return/.test(before),
+      'an early return on previewCollapsed ABOVE the read would freeze the painter',
+    ).toBe(false);
+    // And the blit IS gated — otherwise the toggle would do nothing at all.
+    expect(BODY).toMatch(/!previewCollapsed\s*&&\s*canvasEl/);
+  });
+
+  it('state lives on node.data, not component $state (the #1531/#1574/#1583 class)', () => {
+    expect(BODY).toMatch(/data\?\.previewCollapsed/);
+    expect(BODY).toMatch(/mutateNode\(/);
+  });
+});
+
+describe('rasterize — WRAP keeps its STATE NAMES through promotion', () => {
+  const wrap = rasterizeDef.params.find((p) => p.id === 'wrap')!;
+
+  it('declares the roster the card printed as its button caption', () => {
+    // Without this the face paints an ANONYMOUS switch: `paintsReadout` is
+    // `!format && (options || landmarks)`, and the card is the only place the
+    // words WRAP and CLAMP ever appeared. The fourplexer (Q29) control loss,
+    // reached on a two-state param instead of a four-state one.
+    expect(wrap.options?.map((o) => o.label)).toEqual(['WRAP', 'CLAMP']);
+  });
+
+  it('ANCHORED: every detent is a reachable value of the param', () => {
+    for (const o of wrap.options ?? []) {
+      expect(o.value).toBeGreaterThanOrEqual(wrap.min);
+      expect(o.value).toBeLessThanOrEqual(wrap.max);
+    }
+  });
+
+  it('NEGATIVE CONTROL: the labels are NAMES, not numbers wearing a label', () => {
+    // The resting-text rule permits an option NAME and refuses a value. A
+    // roster of '0'/'1' would satisfy the assertion above and still paint a
+    // number, so the shape of the label is its own check.
+    for (const o of wrap.options ?? []) {
+      expect(o.label).not.toMatch(/^[-+0-9.]+$/);
+    }
+  });
+});
+
+describe('rasterize — the three continuous controls are FADERS, like the card', () => {
+  it('declares fader for exactly the params the card mounts as NeonFaders', () => {
+    // Nothing in a ParamDef separates a THROW from any other continuous
+    // scalar, so an undeclared face silently renders three dials — the `noise`
+    // regression the kind exists for.
+    expect(FACE.paramCells).toEqual({
+      samplesPerFrame: 'fader',
+      gain: 'fader',
+      cursor: 'fader',
+    });
+  });
+
+  it('and WRAP is NOT among them — a switch is not a throw', () => {
+    expect(FACE.paramCells?.wrap).toBeUndefined();
   });
 });
 
