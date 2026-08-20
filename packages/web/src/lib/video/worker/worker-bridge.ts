@@ -32,6 +32,14 @@ export interface BridgeNodeTrace {
   framesDroppedUnknown: number;
   /** Frames closed on arrival because the worker was not (or no longer) ok. */
   framesDroppedNotReady: number;
+  /** ---- filled in by VideoEngine.workerHandshakeTrace from the PROXY ---- */
+  /** Bitmaps successfully uploaded into the main-GL texture. */
+  framesDelivered?: number;
+  /** Bitmaps that arrived and FAILED to upload — `framesReceived` high with
+   *  `framesDelivered` at 0 is this, and it reads identically to "the worker
+   *  never sent anything" without this field. */
+  framesDroppedUpload?: number;
+  lastUploadError?: string | null;
 }
 
 export interface BridgeTrace {
@@ -369,7 +377,12 @@ export class RenderWorkerBridge {
     switch (msg.type) {
       case 'ready': {
         this.workerGlOk = msg.glOk;
-        this.readyAt = now();
+        // FIRST ready only. The worker reuses this message to report a POST-INIT
+        // context loss, and overwriting `readyAt` with the failure's timestamp
+        // erased the very interval the trace exists to show (how long the
+        // handshake took) — measured on a SwiftShader run that read
+        // `readyAt: 93823` for a worker that had been live since 2228 ms.
+        if (this.readyAt === null) this.readyAt = now();
         if (!msg.glOk) {
           this.trace?.(`[render-worker] worker WebGL2 unavailable (${msg.initErr ?? '?'}) — main-thread fallback`);
           this.fail(`ready glOk=false: ${msg.initErr ?? '?'}`);

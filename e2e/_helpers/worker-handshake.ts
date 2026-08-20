@@ -30,6 +30,9 @@ export interface HandshakeTrace {
       framesReceived: number;
       framesDroppedUnknown: number;
       framesDroppedNotReady: number;
+      framesDelivered?: number;
+      framesDroppedUpload?: number;
+      lastUploadError?: string | null;
     }>;
   } | null;
   worker: {
@@ -100,6 +103,11 @@ export function describeHandshake(t: HandshakeTrace, nodeId: string): string {
   if (m && m.framesReceived === 0) {
     return `worker posted ${n.posted} frames for '${nodeId}' but the bridge accepted none ` +
       `(droppedUnknown=${m.framesDroppedUnknown}, droppedNotReady=${m.framesDroppedNotReady})`;
+  }
+  if (m && (m.framesDroppedUpload ?? 0) > 0 && (m.framesDelivered ?? 0) === 0) {
+    return `the bridge received ${m.framesReceived} frames for '${nodeId}' and EVERY ONE failed to upload ` +
+      `into the main-GL texture (${m.framesDroppedUpload} errors, last: ${m.lastUploadError}) — ` +
+      'the worker is fine; the main-thread upload is the broken link';
   }
   return `node '${nodeId}' posted ${n.posted} frames (withheld ${n.withheld}, firstContent at ${n.firstContentAt?.toFixed(0)}ms) — ` +
     'the handshake completed, so a black picture here is a RENDER bug, not an init race';

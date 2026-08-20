@@ -1001,7 +1001,19 @@ export class VideoEngine implements DomainEngine {
     const b = this.workerBridge;
     if (!b) return { main: null, worker: null, workerReplied: false };
     const worker = await b.workerTrace();
-    return { main: b.bridgeTrace(), worker, workerReplied: worker !== null };
+    const main = b.bridgeTrace();
+    // Enrich each bridge node with the PROXY-side counters, so one trace covers
+    // the whole chain: worker draw → post → bridge receive → main-GL upload.
+    // The upload is the last silent drop, and `framesReceived` ≫
+    // `framesDelivered` is its only signature.
+    for (const n of main.nodes) {
+      const h = this.nodes.get(n.id);
+      if (!h?.read) continue;
+      n.framesDelivered = (h.read('workerFramesDelivered') as number) ?? 0;
+      n.framesDroppedUpload = (h.read('workerUploadErrors') as number) ?? 0;
+      n.lastUploadError = (h.read('workerLastUploadError') as string | null) ?? null;
+    }
+    return { main, worker, workerReplied: worker !== null };
   }
 
   /**
