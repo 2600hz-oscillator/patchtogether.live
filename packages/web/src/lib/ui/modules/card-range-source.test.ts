@@ -104,6 +104,7 @@ import { meowboxDef } from '$lib/audio/modules/meowbox';
 import { resofilterDef } from '$lib/audio/modules/resofilter';
 import { ringbackDef } from '$lib/audio/modules/ringback';
 import { ringsDef } from '$lib/audio/modules/rings';
+import { rasterizeDef } from '$lib/audio/modules/rasterize';
 import { sidecarDef } from '$lib/audio/modules/sidecar';
 import { slewSwitchDef } from '$lib/audio/modules/slewswitch';
 import { snaredrumDef } from '$lib/audio/modules/snaredrum';
@@ -524,6 +525,26 @@ const RANGE_BOUND_CARDS: Readonly<Record<string, { params: readonly ParamDef[] }
   // re-ordering the panel would move a strict baseline for nothing.)
   'Moog921aCard.svelte': moog921aDef,
   'Moog921bCard.svelte': moog921bDef,
+  // THE FACEPLATE QUEUE · Q46. Enrolled with its faceplate. The card was
+  // HALF-BOUND, which is the state worth naming: SCAN already read
+  // `rasterizeDef.params[0]!.max` while SAMP/F and GAIN hand-typed `16..8000`
+  // and `0..8`. All three AGREED with the def, so this is a maintainability fix
+  // rather than a bug fix — but the def is the artifact that just moved (the
+  // `wrap` roster landed with the promotion), and half-bound is the shape that
+  // reads as bound at a glance.
+  //
+  // ⚠ AND THE BOUND HALF WAS ITSELF FRAGILE: `params[0]` is POSITIONAL, so it
+  // silently re-points if a param is ever reordered — a way for a def-reading
+  // prop to start reading the wrong def entry while still looking correct.
+  // Now looked up by id.
+  //
+  // ⚠ THE CARD IS NOT DEAD CODE AFTER PROMOTION, which is why enrolling it is
+  // worth anything at all: `?shell=legacy` still renders the verbatim card, so
+  // its ranges still reach a user. (The Q46 spec assumed the opposite and
+  // concluded the literals could simply retire with the card; the same premise
+  // made its raw-write-ledger instruction wrong, and both were checked against
+  // the tree rather than taken.)
+  'RasterizeCard.svelte': rasterizeDef,
 };
 
 /**

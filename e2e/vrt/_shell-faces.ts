@@ -1289,6 +1289,63 @@ export const FACES = [
   // can consume, not a video surface on this module. It is an audio def and
   // boots into a channel column like any other audio face.
   { type: 'wavecel', pages: 3 },
+  // THE FACEPLATE QUEUE · Q46 — the audio→video raster mapper.
+  //
+  // `pages: 1` — the face declares no `pages` at all (four params, one honest
+  // idea), so the dock renders a single unlabelled band and this is the
+  // post-hero-split count. It promotes nothing into the hero.
+  //
+  // ⚠ NOT `videoFaceWhy`, AND THE REASON IS THE SAME ONE THAT MADE THIS MODULE
+  // NEED AN EXTENSION IN THE FIRST PLACE. That option boots the face into the
+  // purple VIDEO ZONE, because a video-DOMAIN module never joins a channel
+  // column. `rasterize` is `domain: 'audio'` — it boots into a column like any
+  // other audio face, and declaring `videoFaceWhy` here would hang the scene in
+  // `bootWithFace`'s column wait for the full 90 s, which is `backdraft`'s
+  // measured failure read backwards. Its mono-video OUT is a port a video cable
+  // consumes, not a video surface on this module (the `swolevco` distinction
+  // above, reached from the other side).
+  //
+  // ⚠ SO THE DOCK PICTURE IS *NOT* COVERED BY `freezeFaceVideo`, AND THE AUDIO
+  // FREEZE ALONE IS NOT ENOUGH EITHER — which is exactly the `outlines` shape.
+  // The raster is painted in JS by `RasterPainter` on the AUDIO side, so the
+  // video freeze has no purchase on it. `rasterize.ts` DOES stop painting when
+  // the AudioContext suspends, so the picture stops — but it cannot choose
+  // WHERE. The running cursor advances ~0.78 scanlines per frame and how many
+  // rAFs land before the suspend varies run to run, so the bands would sit tens
+  // of rows apart between two boots: the module's own comment measures ~50
+  // lines of wander over a 900 ms settle, which is what put a seed hook in the
+  // module to begin with.
+  //
+  // ⚠ THE HOOK IS NOT DEAD CODE — AND CHECKING THAT IS THE POINT. The
+  // `outlines` entry above found a pin whose only setter was one render-smoke
+  // spec, so the honest move here was to grep `__rasterizeVrtSeed`'s SETTERS
+  // rather than assume the same story twice. It has one: the module's own CARD
+  // scene (`vrt-scenes.ts`, set in `afterSpawn`). What it does NOT have is a
+  // setter on the FACE boot path — a different harness with a different
+  // lifecycle — so the pin is live, correct, and simply unreached from here.
+  // `simPin` installs it via `addInitScript` BEFORE `goto`, which is strictly
+  // earlier than the card scene manages: the flag is set before any module
+  // factory runs, so the very first paint is the seeded one and there is no
+  // pre-seed frame to race. Setting it engages the pin the module already
+  // carries — RESET, then ONE deterministic full-frame fill from a fixed
+  // synthetic 261 Hz sine, with every later advance short-circuited — so the
+  // picture becomes a pure function of the module's own constants. Nothing
+  // under `packages/web/src/lib/video/**` changes and no attest hash moves.
+  {
+    type: 'rasterize',
+    pages: 1,
+    simPin: {
+      global: '__rasterizeVrtSeed',
+      value: 1,
+      why:
+        'RASTERIZE paints its picture on the AUDIO side (RasterPainter in JS), so freezeFaceVideo '
+        + 'never reaches it, and the audio suspend stops the scan without choosing where it '
+        + 'stops. The running cursor advances ~0.78 scanlines every frame and the number of rAFs '
+        + 'before the suspend varies per boot, so two captures would frame the same band pattern '
+        + 'shifted by tens of rows. This flag engages the deterministic single-fill seed already '
+        + 'in the module, which its own VRT comment was written for and which nothing set.',
+    },
+  },
   // THE FACEPLATE QUEUE · Q44 — the 4-in / 4-out video cross-point switch, and
   // the video twin of `fourplexer` five entries up.
   //

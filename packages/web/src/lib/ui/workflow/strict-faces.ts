@@ -2262,6 +2262,52 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // and five of ten params are bit-inert at spawn. The rank says so; no audio
   // behaviour changed here.
   'wavecel',
+  // THE FACEPLATE QUEUE · Q46 — the audio→video raster mapper (2026-08-20).
+  //
+  // ⚠ THE STOP-2 FINDING IS A PICTURE, AND NO GENERIC SEAM REACHES IT. Every
+  // previous "the shell can draw this" argument leaned on `hasVideoSurface`,
+  // which is literally `def.domain === 'video'`. This module is
+  // `domain: 'audio'` with a `mono-video` OUT and a frame painted in JS by
+  // `RasterPainter` — a case that predicate's own doc-comment names as
+  // deliberately excluded, because there is no VideoEngine surface FBO to
+  // blit. So promoting it would have swapped a live raster for four knobs on
+  // the one module whose entire job is to make a picture. The committed
+  // face-migration inventory had already called this: "the scan preview is a
+  // read-only picture with no glyph kind — it needs a registered panel or it
+  // is a look loss". Resolved through `fullViewBody` (#1726), the slot
+  // `videoOut` and `backdraft` use — a declaration, not a carve-out.
+  //
+  // ⚠ AND THE COLLAPSE RULE INVERTS ON THIS MODULE, which is the detail most
+  // likely to be copied wrongly from the other adopters. Their producer is the
+  // VIDEO ENGINE and the body only reads it, so SCREEN OFF stops a blit.
+  // RASTERIZE's painter is advanced INSIDE `read('imageData')`, so with nothing
+  // patched downstream the preview loop is the ONLY thing advancing the raster
+  // — stopping it on collapse would freeze the module, the #1720/#1721 class.
+  // The body therefore skips the BLIT and never the advance.
+  //
+  // ⚠ NO GLYPH IS A CHOICE HERE, NOT A FORCED ONE, unlike `moog921a` /
+  // `fourplexer` where every output is `cv` and the dead-glyph clause decides
+  // it. This def HAS an `audio` output, so a `scope` trace would resolve
+  // legally — but THRU is the untouched passthrough, so the trace would draw
+  // the INPUT while the module's real output is a picture it cannot draw, and
+  // a live moving trace in a compact baseline is what got `analogVco` dropped
+  // from batch 3. Asserted in the face-model test with a negative control
+  // rather than trusted to this comment.
+  //
+  // ⚠ THE RANK INVERTS DECLARATION ORDER, and the reason is a live defect.
+  // SCAN is declared first and ranks LAST: it is a CHANGE DETECTOR, not a
+  // position control (#2000) — re-selecting a value it already displays is a
+  // no-op, the knob diverges permanently from the real cursor (measured: knob
+  // 1000, cursor 49 800), and the finest gesture moves ~39 px of a 786 432 px
+  // range, so it cannot address its own declared `px` unit. #2000 and #2002
+  // are LEFT OPEN deliberately: both propose behaviour changes to a
+  // performance control and both say in their own bodies that they want a
+  // decision before a build. This PR carries only #2001, which is a factual
+  // docs error with no behaviour attached.
+  //
+  // NOT CONTROL-HEAVY (2026-08-18 tabbed ruling): four params, one honest
+  // idea, one unlabelled band, no rail.
+  'rasterize',
   // 4PLEXVID (queue Q44) — the 4-in / 4-out video cross-point switch, and the
   // video sibling of the already-faced audio `fourplexer`.
   //
