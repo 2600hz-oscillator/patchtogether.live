@@ -452,7 +452,27 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
   { type: 'videoMixer', disposition: 'generic-face' },
   { type: 'warrensspectrum', disposition: 'generic-face', note: 'the ws-filterbank family is a bank of param faders — a family cell/panel, the same shape as the faced modules already register' },
   { type: 'warrensvisions', disposition: 'generic-face' },
-  { type: 'wavecel', disposition: 'generic-face', note: 'source/preset rosters → selector cells, .wav import → file cell, viz toggle → toggle; the wavetable view is a panel' },
+  {
+    type: 'wavecel',
+    disposition: 'generic-face',
+    note:
+      'DONE. This entry mapped it correctly except for ONE word, and that word was the whole ' +
+      'build estimate: "viz toggle → toggle" would have made wavecel the FIRST adopter of the ' +
+      'data-backed `toggle` shell cell (zero entries, real first-adopter cost). It is not. ' +
+      '`WavecelCard.svelte:54` holds the view mode in component `$state`; the def\'s "persists ' +
+      'across page reloads + multiplayer" sentence two lines below is about `wavetableSource`, ' +
+      'not about the toggle, and both video OUTPUTS render their own view regardless of it. So ' +
+      'it is a private view preference over the picture and lives INSIDE the panel — where ' +
+      'shell-cells then forced it onto `node.data` anyway, by refusing a probe whose witness ' +
+      'was the button\'s own caption ("a control that only relabels itself is indistinguishable ' +
+      'from a dead one"). The rosters and the .wav import are `selector` + `file` cells exactly ' +
+      'as predicted, and the RECORDED BLOCKER (wavetable selection lives in node.data, which ' +
+      '`FaceReadoutValue` cannot see) was stale in both halves: that type is a param reader and ' +
+      'is correctly blind to node.data, while shell-cell specs are node-taking closures — dx7 ' +
+      'ships both kinds today (#2010 reached this from the docs side the same week). ' +
+      'SPREAD ships bit-exactly MONO and five of ten params are inert at spawn (#1999, owner ' +
+      'ears, left open); the rank is built around that rather than over it.',
+  },
   { type: 'wavesculpt', disposition: 'generic-face', note: 'two HAND-CLONED camera pads (#1509 §3) and the largest order after mixmstrs; a face was authored for it once and shipped both pads as knobs — do not repeat that' },
   { type: 'wavetableVco', disposition: 'generic-face' },
 

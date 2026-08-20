@@ -69,6 +69,42 @@ export interface WavecelData {
   wavetableFrames?: number[][];
   /** Optional friendly name for an uploaded table — shown in the card. */
   wavetableLabel?: string;
+  /**
+   * Which view the FACEPLATE's wavetable panel draws: the 3D frame stack or a
+   * single-frame scope trace. Absent ⇒ `'3d'`, the card's default, so a rack
+   * saved before the faceplate existed opens unchanged.
+   *
+   * ⚠ THE LEGACY CARD DOES NOT USE THIS KEY — it holds the same choice in
+   * component `$state` (`WavecelCard.svelte:54`), so its view resets on every
+   * remount (the #1531 / #1574 / #1583 class). The faceplate persists it
+   * instead, matching the owner's ruling for the analogous SCREEN toggle:
+   * view state on `node.data` survives a tab switch, a remount and a reload,
+   * and syncs to collaborators. It is also what lets the panel cell declare a
+   * probe that watches the state the picture is drawn FROM rather than the
+   * button's own caption — see `shell-cells.ts`.
+   *
+   * Purely a VIEW preference: both video OUTPUTS (`scope_out`, `wave3d_out`)
+   * always render their own view regardless of it.
+   */
+  vizMode?: 'scope' | '3d';
+  /**
+   * Which built-in PRESET is loaded, when one is. Absent ⇒ none (a factory
+   * table or a user WAV).
+   *
+   * ⚠ IT EXISTS BECAUSE THE FACE'S PRESET SELECTOR HAS TO SHOW ITS OWN STATE.
+   * The legacy card resets its preset `<select>` to '' the moment a load
+   * finishes, so the control never displays what it loaded — a "cheap UX for
+   * did-it-take" that works on a card because re-picking the same row re-fires.
+   * `faces-parity` refuses that shape by name: it picks an option and asserts
+   * the selection CHANGED, because a selector that always reads the same thing
+   * is indistinguishable from a dead one. So the face records which preset is
+   * loaded and shows it, and the panel picture is the did-it-take feedback the
+   * reset was standing in for.
+   *
+   * Cleared by both other acquisition paths (a factory table and a WAV upload),
+   * so it can never name a preset that is no longer loaded.
+   */
+  wavetablePresetId?: string;
 }
 
 interface ResolvedFrames {
@@ -202,6 +238,98 @@ export const wavecelDef: AudioModuleDef = {
     { id: 'wavecel-wav-input',     label: 'WAV upload',                  kind: 'other', testidPrefix: 'wavecel-wav-input' },
     { id: 'wavecel-viz-toggle',    label: 'Scope / 3D view toggle',      kind: 'other', testidPrefix: 'wavecel-viz-toggle' },
   ],
+
+  // ── THE FACEPLATE (PF-20) ────────────────────────────────────────────
+  //
+  // WHAT IT IS FOR: a stereo WAVETABLE oscillator. MORPH scans a stack of
+  // single-cycle frames with cross-fading, SPREAD layers copies reading
+  // NEIGHBOURING frames across the stereo field, FOLD wavefolds the result.
+  // The verb a player performs is "sweep the table and open it up".
+  //
+  // THE TIER LADDER, as a sentence: a glyph binds, so compact shows MORPH and
+  // SPREAD — which is exactly the right pair; mini shows MORPH; the dock shows
+  // all ten knobs, the three table cells, and the wavetable picture as its hero.
+  //
+  // THE RANKING, argued against the shipping worklet rather than declaration
+  // order:
+  //
+  //  1 MORPH  — the only control that changes the timbre AND the level. ⚠ It
+  //    is NOT timbre-only and the face must not imply that: across 21
+  //    positions its rms spans −4.802 dB … −0.250 dB, a 4.552 dB swing.
+  //  2 SPREAD — the module's headline gesture, and it ships SWITCHED OFF. At
+  //    the default of 1 the side channel is bit-exactly 0.00000000 and
+  //    `out_l === out_r` on all 48 000 samples; even at max the width is
+  //    −34.08 dB. Ranked second because it is the thing this module does that
+  //    its siblings cannot, not because it is loud (#1999, owner ears).
+  //  3 FOLD   — real, but its authority is a FUNCTION OF MORPH: fold 0 → 1
+  //    moves rms by −0.0017 dB at the shipped `morph = 0`, against −4.5244 dB
+  //    at `morph = 0.25`. It ranks below the control that gives it authority.
+  //  4 TUNE / 5 FINE — pitch, always live, never surprising.
+  //  6+ THE AMP ADSR — attack, decay, sustain, release, base_vol. ⚠ All five
+  //    are bit-exactly INERT AT SPAWN, because with nothing in POLY or TRIGGER
+  //    there is no note to shape. They rank last for that reason and for no
+  //    other. ⚠ Do NOT read that as "five dead controls": gated, attack,
+  //    sustain and base_vol all move, while decay and release correctly do NOT
+  //    under a HELD gate (decay is a no-op at the default sustain of 1, and
+  //    release needs a falling edge). Inert-at-spawn, two needing a second
+  //    condition to demonstrate — the distinction between a finding and an
+  //    over-claim.
+  //
+  // PAGES (3): `tone` / `env` / `table` — three genuine ideas, well under
+  // `DOCK_TAB_MIN_BANDS = 7`, so this face stacks bands and takes no tab rail.
+  //
+  // ⚠ GLYPH `'waveform'`, AND THE REJECTED OPTION IS RECORDED because the next
+  // module with an ADSR will ask. `wavecel` is the only module in its cohort
+  // that can resolve `'envelope'` — that arm is checked BEFORE the audio-out
+  // short-circuit and needs literal attack/decay/sustain/release, which this
+  // def has. It is declined anyway: the env-params contour would draw a
+  // picture of a control set that is bit-exactly DOING NOTHING in the module's
+  // default ungated state. `'waveform'` binds `live-audio` on `out_l`, which
+  // free-runs at 0.9999845624 peak from spawn, so the lane trace shows the
+  // wavetable the player is actually hearing.
+  //
+  // ⚠ THE PICTURE IS A PANEL, NOT A `fullViewBody` EXTENSION, and the sibling
+  // that decides it is `analogVco` rather than `rasterize`. Both of those are
+  // audio defs whose picture the shell cannot draw generically, but the
+  // resemblance stops there: rasterize's raster is PRODUCED by the engine
+  // inside `read('imageData')`, so its surface must carry a per-frame push and
+  // has no probe of its own. This picture is DERIVED — it reads the wavetable
+  // from `node.data`, the live morph/spread from the params and the CV taps,
+  // and draws. That is the `analogvco-cycle` shape exactly, down to the reason
+  // its glyph cannot serve: a `hero.cell` suppresses the dock glyph so a
+  // knob-INVARIANT trace never sits beside a knob-DERIVED picture.
+  //
+  // ⚠ AND THE VIZ TOGGLE LIVES INSIDE THAT PANEL RATHER THAN BECOMING THE
+  // FIRST `toggle` SHELL CELL. `WavecelCard.svelte:54` declares
+  // `let vizMode = $state<'scope' | '3d'>('3d')` — component state, not
+  // `node.data`. The def's "persists across page reloads + multiplayer"
+  // sentence two lines below is about `wavetableSource`, NOT about this
+  // toggle, and reading it as the latter is what makes this module look like
+  // it needs a data-backed toggle cell. It does not: both video OUTPUTS render
+  // their own view regardless of it (see the `scope_out`/`wave3d_out` docs),
+  // so it is a private view preference over the on-card picture — the `foxy`
+  // case, and the bluebox precedent puts it inside the panel.
+  face: {
+    order: [
+      'morph', 'spread', 'fold', 'tune', 'fine',
+      'attack', 'decay', 'sustain', 'release', 'base_vol',
+      'wavecel-viz-toggle-{n}',
+      'wavecel-source-select-{n}', 'wavecel-preset-select-{n}', 'wavecel-wav-input-{n}',
+    ],
+    glyph: 'waveform',
+    pages: [
+      { id: 'tone',  label: 'tone',  controls: ['morph', 'spread', 'fold', 'tune', 'fine'] },
+      { id: 'env',   label: 'amp env', controls: ['attack', 'decay', 'sustain', 'release', 'base_vol'] },
+      { id: 'table', label: 'table', controls: [
+        'wavecel-viz-toggle-{n}',
+        'wavecel-source-select-{n}', 'wavecel-preset-select-{n}', 'wavecel-wav-input-{n}',
+      ] },
+    ],
+    // The picture is the module's identity, so it is promoted OUT of `table`
+    // and into the hero. `table` keeps its three selection cells, so no band is
+    // emptied and the post-split page count is still 3.
+    hero: { cell: 'wavecel-viz-toggle-{n}' },
+  },
 
   docs: {
     explanation:

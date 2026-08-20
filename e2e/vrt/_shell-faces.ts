@@ -1257,6 +1257,38 @@ export const FACES = [
   // flat-line stable and the scene needs no mask and no VRT_LIVE_SURFACES
   // entry, for the same reason the struck voices above need none.
   { type: 'stereovca', pages: 1 },
+  // THE FACEPLATE QUEUE · Q47 — the stereo wavetable oscillator.
+  //
+  // `pages: 3` is the POST-hero-split count: the face declares three bands
+  // (`tone`, `amp env`, `table`) and `hero.cell` promotes the wavetable PANEL
+  // out of `table`, which leaves it at three cells rather than emptying it, so
+  // no band is dropped. Three is also comfortably under `DOCK_TAB_MIN_BANDS`,
+  // so the dock stacks bands rather than showing a rail.
+  //
+  // ⚠ THE FOURTH FREE-RUNNING MODULE IN THIS ROSTER, and that is the whole
+  // determinism story for its COMPACT scene. `wavecel` declares
+  // `glyph: 'waveform'`, which binds `live-audio` on `out_l` — and this
+  // oscillator makes sound from the instant it spawns, with no gate and no
+  // note to wait for (measured peak 0.9999845624 at the defaults, because with
+  // nothing in POLY or TRIGGER the amp envelope has nothing to shape and the
+  // voice free-runs as a drone). `analogVco` (#1420) carries the derivation and
+  // `swolevco` extends it; this is a third witness, so a regression in the
+  // pre-frame AudioContext suspend or its ORDERING reddens three scenes.
+  //
+  // ⚠ ITS DOCK SCENE IS DETERMINISTIC FOR A DIFFERENT REASON, worth stating
+  // because the two are unrelated. The hero is a PANEL, not a live trace: the
+  // picture is drawn from the wavetable in `node.data` plus the morph/spread
+  // knobs plus the CV taps, and the component draws in an EFFECT over those
+  // inputs rather than a `requestAnimationFrame` loop (the legacy card uses
+  // rAF; the panel deliberately does not). With the graph frozen the taps read
+  // 0 and every input is pinned, so the picture is a pure function of its
+  // declared state and needs no mask — which matters, because a masked hero
+  // picture asserts nothing.
+  //
+  // NOT `videoFaceWhy` — `scope_out` and `wave3d_out` are video ports a cable
+  // can consume, not a video surface on this module. It is an audio def and
+  // boots into a channel column like any other audio face.
+  { type: 'wavecel', pages: 3 },
   // THE FACEPLATE QUEUE · Q46 — the audio→video raster mapper.
   //
   // `pages: 1` — the face declares no `pages` at all (four params, one honest
