@@ -69,6 +69,7 @@ const ALL_KINDS = [
   'selector',
   'grid',
   'color',
+  'hue',
   'fader',
   'xy',
 ] as const satisfies readonly ParamCellKind[];
@@ -109,7 +110,7 @@ interface FaceDefLike {
   params?: readonly ParamDef[];
   face?: {
     momentary?: readonly string[];
-    paramCells?: Readonly<Record<string, 'grid' | 'color' | 'fader'>>;
+    paramCells?: Readonly<Record<string, 'grid' | 'color' | 'hue' | 'fader'>>;
     xyPads?: readonly { x: string; y: string; label?: string }[];
   };
 }

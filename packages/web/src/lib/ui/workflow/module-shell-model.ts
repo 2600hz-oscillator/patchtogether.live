@@ -410,6 +410,10 @@ export const LANE_CELL_H: Record<ParamCellKind, number> = {
   selector: PLATE_ROW_H,
   grid: PLATE_ROW_H,
   color: PLATE_ROW_H,
+  // The 44px ring plus its caption sits inside one plate row, exactly like the
+  // colour swatch above it — the wheel is drawn in the knob column, not beside
+  // it, so it reserves no more height than a dial.
+  hue: PLATE_ROW_H,
   // The throw plus its 9px persistent readout line at the dock tier. The
   // readout occupies the hover tag's space rather than adding to it, which is
   // why one budget covers both tiers. (#1794 folded the transitional

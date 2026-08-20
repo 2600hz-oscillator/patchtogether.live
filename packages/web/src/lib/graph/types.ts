@@ -798,7 +798,7 @@ export interface ModuleFace {
    * can chart; the exact packed-RGB space for a colour; a CONTINUOUS scale for
    * a fader — the first two are discrete-only, the third discrete-never).
    */
-  paramCells?: Readonly<Record<string, 'grid' | 'color' | 'fader'>>;
+  paramCells?: Readonly<Record<string, 'grid' | 'color' | 'hue' | 'fader'>>;
   /**
    * DECLARED 2-D PADS — the one cell that binds a PAIR of params.
    *
@@ -951,6 +951,28 @@ export interface ModuleFace {
   /** The HERO SLOT — the module PICTURE, a promoted control and its audition,
    *  above the bands. */
   hero?: ModuleFaceHero;
+  /**
+   * Force the DOCK TAB RAIL on, whatever the band count.
+   *
+   * ⚠⚠ OWNER-INSTRUCTION ONLY, PER MODULE. This is NOT a layout preference an
+   * author may reach for, and it does NOT reopen "should my face be tabbed?".
+   * The DEFAULT STANDS: author honest pages and let the rail engage at
+   * `DOCK_TAB_MIN_BANDS` (7). A face with 3-6 honest pages renders as a column,
+   * and that is correct — the owner separately ruled `ruttetra` ships UNTABBED
+   * for exactly that reason.
+   *
+   * Declaring it requires a NAMED entry in `FACE_TAB_OPT_IN`
+   * (`dock-tabs-model.test.ts`) carrying the owner instruction it came from,
+   * VERBATIM. A def that declares this without an entry is RED, and an entry
+   * naming a module that no longer declares it is RED too — so nobody can
+   * quietly opt a face in, and no licence outlives its instruction.
+   *
+   * Today's only adopter is `spirographs` (owner: *"this should just be 3 tabs,
+   * one per spiro"*), where the rail is not a density workaround but the
+   * module's own structure: three INDEPENDENT figures, one editable at a time,
+   * which is exactly what its legacy card's own tablist did.
+   */
+  tabbed?: true;
 }
 
 /**

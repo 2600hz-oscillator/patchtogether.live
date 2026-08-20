@@ -229,7 +229,14 @@ export const FACES = [
   // 'internal'`, and absent from `face.order`) purely so this scene can settle.
   {
     type: 'spirographs',
-    pages: 10,
+    // ⚠ THREE, one per spiro (owner, 2026-08-19: *"this should just be 3 tabs,
+    // one per spiro"*). It was TEN — count + figure/place/look x3 — and the rail
+    // came from the band THRESHOLD. It now comes from the owner-instructed
+    // `face.tabbed` opt-in, because 3 is under DOCK_TAB_MIN_BANDS.
+    pages: 3,
+    // The rail is DECLARED, not derived — 3 is under DOCK_TAB_MIN_BANDS. Joined
+    // to the live def by shell-faces-roster.test.ts in both directions.
+    tabbedOptIn: true,
     videoFaceWhy:
       'the dock faceplate carries a live thumbnail of the module output via hasVideoSurface, and '
       + 'this module ANIMATES BY CONSTRUCTION — each spiro centre drifts and bounces as a pure '

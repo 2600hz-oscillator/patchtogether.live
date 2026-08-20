@@ -301,11 +301,12 @@ const FACE_WIDTH_EXEMPTIONS: Readonly<Record<string, string>> = {
 };
 
 test.describe('VRT: P1 curated faces (?shell=1) — compact lane tile + dock full-view', () => {
-  for (const { type, pages, videoFaceWhy, simPin } of FACES as readonly {
+  for (const { type, pages, videoFaceWhy, simPin, tabbedOptIn } of FACES as readonly {
     type: string;
     pages: number;
     videoFaceWhy?: string;
     simPin?: BootFaceOptions['simPin'];
+    tabbedOptIn?: true;
   }[]) {
     // ONE opts object for BOTH tiers, deliberately. The compact tile and the
     // dock faceplate are two captures of the SAME module, so a determinism
@@ -457,13 +458,32 @@ test.describe('VRT: P1 curated faces (?shell=1) — compact lane tile + dock ful
 
       // ── RESIDUAL SCOPE #1, ASSERTED: the tab rail ───────────────────────
       // A railed face renders ONE band; every other face renders all of them.
-      // Derived from the SAME threshold DockFullView and ModuleShell branch on,
-      // so a new railed face auto-enrols and cannot drift.
-      const railed = pages >= DOCK_TAB_MIN_BANDS;
+      // Derived from the SAME answer DockFullView and ModuleShell branch on, so
+      // a new railed face auto-enrols and cannot drift.
+      //
+      // ⚠ THE THRESHOLD IS NO LONGER THE WHOLE QUESTION. This read
+      // `pages >= DOCK_TAB_MIN_BANDS` until `face.tabbed` landed — an
+      // owner-instruction-only opt-in that rails a face BELOW the threshold
+      // (spirographs: 3 bands, railed by declaration). A threshold-only
+      // derivation here would call that face unrailed and fail on the rail it
+      // was asked for, which is the same two-answer split this whole file warns
+      // about, one layer out. Both routes, joined.
+      //
+      // ⚠ THE OPT-IN IS A ROSTER FLAG, NOT A LIVE DEF READ, AND THAT IS A
+      // RUNTIME CONSTRAINT RATHER THAN A CHOICE. Importing the module registry
+      // here pulls in `import.meta.glob`, which does not exist in Playwright's
+      // runtime (measured: "TypeError: (intermediate value).glob is not a
+      // function"). So the flag is declared beside `pages` — and, exactly like
+      // `pages`, it is a copy that could drift. `shell-faces-roster.test.ts`
+      // is what stops it: it runs in the UNIT lane, where the live defs ARE
+      // importable, and joins the two in BOTH directions.
+      const optedIn = tabbedOptIn === true;
+      const railed = pages >= DOCK_TAB_MIN_BANDS || optedIn;
       expect(
         g.tabs > 0,
         `face-${type}-dock: ${pages} declared bands vs DOCK_TAB_MIN_BANDS=${DOCK_TAB_MIN_BANDS} ` +
-          `says railed=${railed}, but the faceplate rendered ${g.tabs} tab chips.`,
+          `(opt-in: ${optedIn}) says railed=${railed}, but the faceplate rendered ${g.tabs} ` +
+          `tab chips.`,
       ).toBe(railed);
       expect(
         g.renderedBands,
