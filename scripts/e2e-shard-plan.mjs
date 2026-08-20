@@ -82,6 +82,33 @@ export function loadContention(dir = join(ROOT, 'e2e/tests')) {
  */
 export const PENDING_FIRST_MEASUREMENT = [
   {
+    spec: 'foxy-face-surface.spec.ts',
+    why:
+      '#2007 — new with the FOXY faceplate: the FACE-surface legs (five live pictures, the tab '
+      + 'rail, SCREEN, the SCOPE/3D flip, and EXPORT gated on FREEZE TABLE), which exist because '
+      + "foxy's two existing specs both drive `?shell=legacy` and stay green while proving nothing "
+      + 'about what promotion ships. Measured locally, single worker, warm server: 8.2 s wall for '
+      + '6 tests (24.4 s across a REPEAT=3 flake-check); with E2E_SWIFTSHADER=1, 1.1 min across '
+      + 'REPEAT=3, i.e. ~22 s per pass. '
+      + '⚠ BUDGET THIS ONE ABOVE ITS WALL CLOCK, because the module is main-thread heavy in a way '
+      + 'the test count hides: each leg opens a dock faceplate over a module that recomputes a '
+      + '256x256 volumetric field ~24x/second and paints five canvases, all on the page main '
+      + 'thread. On the first CI run that cost took the SIBLING `faces-parity` foxy row past a '
+      + '144 s test timeout at cell 18 of 33 — a bare `locator.evaluate` starving behind the '
+      + "render loop — and flaked this spec's own tab-rail leg. Both were fixed (the paint is now "
+      + "throttled to the module's BRIDGE_MS, and the leg uses a `:visible` locator instead of an "
+      + '8-round-trip poll), and both shards passed on the next run — but the headroom is thinner '
+      + 'here than 6 tests suggests. '
+      + '⚠ ONE CAVEAT ON THE NUMBERS ABOVE, stated because a sibling entry in this file says the '
+      + 'opposite: that note claims a local headless run is ALREADY SwiftShader so '
+      + 'E2E_SWIFTSHADER=1 changes nothing locally. On this macOS dev machine it changed the '
+      + 'REPEAT=3 wall from 24.4 s to 66 s (2.7x), so the flag is NOT inert here — most likely '
+      + 'because headless Chromium takes Metal/ANGLE on darwin. Neither number reproduced the CI '
+      + 'failure, which is a 2-core VM effect I could not reproduce at all. Run '
+      + '`flox activate -- task e2e:timings:accept` on the first green CI run after this merges '
+      + 'and DELETE this entry.',
+  },
+  {
     spec: 'vst-bridge.spec.ts',
     why:
       '#1953 — new with the VST BRIDGE cards. Measured locally, single worker, warm server: '
