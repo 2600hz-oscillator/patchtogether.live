@@ -107,6 +107,7 @@ import { ringsDef } from '$lib/audio/modules/rings';
 import { sidecarDef } from '$lib/audio/modules/sidecar';
 import { slewSwitchDef } from '$lib/audio/modules/slewswitch';
 import { snaredrumDef } from '$lib/audio/modules/snaredrum';
+import { stereovcaDef } from '$lib/audio/modules/stereovca';
 import { swolevcoDef } from '$lib/audio/modules/swolevco';
 import { moog911Def } from '$lib/audio/modules/moog911';
 import { moog911aDef } from '$lib/audio/modules/moog911a';
@@ -332,6 +333,14 @@ const RANGE_BOUND_CARDS: Readonly<Record<string, { params: readonly ParamDef[] }
   // renders rather than restates.
   'SlewSwitchCard.svelte': slewSwitchDef,
   'SnaredrumCard.svelte': snaredrumDef,
+  // THE FACEPLATE QUEUE · Q42. Enrolled with its faceplate, and it is the
+  // SidecarCard shape — both ranges were re-typed and both AGREED, so nothing
+  // was red and nothing is being fixed except the exposure itself. What makes
+  // it worth the edit now is that the def grew a `landmarks` roster in the same
+  // PR: this card's faders cannot render one (NeonFader takes no landmarks),
+  // so the def and the card have just become genuinely different surfaces over
+  // one contract, which is exactly when a re-typed number stops being harmless.
+  'StereovcaCard.svelte': stereovcaDef,
   // THE FACEPLATE QUEUE · Q5. Enrolled with its faceplate. All EIGHT ranges
   // were re-typed and all eight AGREED, so this is the SidecarCard shape — a
   // maintainability fix, not a bug fix — with one exception that had already
@@ -600,6 +609,11 @@ const MAPPING_BOUND_CARDS: readonly string[] = [
   // which this card never printed at all before binding.
   'SlewSwitchCard.svelte',
   'SnaredrumCard.svelte',
+  // THE FACEPLATE QUEUE · Q42. `curve` is bound off `paramSpec` (`linear` on
+  // both); `units` is ABSENT ON BOTH SIDES — neither stereovca param declares
+  // one and the card passes none — which the anchor reads as "nothing left to
+  // drift", correctly.
+  'StereovcaCard.svelte',
   'VcaCard.svelte',
   'WarrensspectrumCard.svelte',
   // THE FACEPLATE QUEUE · Q9. `units` is bound too, not merely absent: `tune`

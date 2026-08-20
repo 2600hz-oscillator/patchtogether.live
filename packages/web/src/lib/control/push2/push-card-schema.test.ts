@@ -305,6 +305,26 @@ describe('resolvePushCardControls — tier 2, the curated face', () => {
     ]);
   });
 
+  it('a FIRST PROMOTION on a TWO-PARAM module still moves the card — stereovca', () => {
+    // stereovca, promoted 2026-08-19 (queue Q42). The smallest possible form of
+    // the drift CLAUDE.md's push-card note warns about, and the reason it is
+    // written down rather than shrugged at: with only two params the whole card
+    // is a SWAP, which is the easiest kind of change to mistake for a no-op.
+    //
+    // What moved: the GENERIC tier is declaration order — `level, offset` — so
+    // LEVEL sat on encoder 1. The face ranks OFFSET first, because with nothing
+    // patched into STRENGTH the multiplier is `0 + offset` and LEVEL is
+    // multiplying a term that is exactly zero: encoder 1 was the one control on
+    // this module that could not make a sound. Accepted deliberately.
+    const spec = resolvePushCardControls(defByType('stereovca'));
+    expect(spec.source).toBe('face');
+    expect(spec.skipped, 'no families and no momentary pads on this module').toEqual([]);
+    expect(pushCardParams(spec).map((q) => q.id)).toEqual(['offset', 'level']);
+    // The negative control: the DEF's own declaration order is genuinely the
+    // other way round, so this cannot pass vacuously.
+    expect((defByType('stereovca').params ?? []).map((q) => q.id)).toEqual(['level', 'offset']);
+  });
+
   it('a FIRST PROMOTION re-orders AND steps over a family — treeohvox', () => {
     // treeohvox, promoted 2026-08-19 (#1944, queue Q3). The variant that
     // exercises both behaviours at once on a newly promoted module: the window

@@ -51,8 +51,38 @@ const SLOW_RENDER = process.env.E2E_SWIFTSHADER === '1' || !!process.env.CI;
  *  noise, not the answer) and short enough that two of them plus a settle stay
  *  inside the software-renderer budget. */
 const COST_WINDOW_MS = 1500;
+/**
+ * Minimum rAF ticks a cost window must OBSERVE before it is a measurement at
+ * all. The window ends on `COST_WINDOW_MS` **and** this, whichever is later.
+ *
+ * ⚠ A SAMPLE-SIZE FLOOR IS A FRAME QUANTITY, AND IT USED TO BE SPENT IN
+ * MILLISECONDS. Measured (#1982; caught on PR #1980's e2e shard 5, job
+ * 96261657927 — the first wild catch of the #1907 fail-on-flaky gate): with backdraft
+ * on-screen under SwiftShader on a contended CI runner the page ran at
+ * **1.30 rAF/s**, so the flat 1500 ms window collected **2** samples; the retry
+ * ran at 1.76 rAF/s and collected **3**. The floor was `> 2`, i.e. it demanded
+ * a frame rate above 2/1.5 s = **1.33 rAF/s** — a threshold sitting INSIDE the
+ * range that runner actually produces, so it was a coin flip, not a gate. The
+ * identical window on a local `E2E_SWIFTSHADER=1` Mac collects **94**: same
+ * assertion, 47× the evidence, which is the "a wall-clock budget is a different
+ * assertion per machine" rule with the usual sign flipped — here it starved the
+ * SAMPLE COUNT rather than the effect under test.
+ *
+ * Only the RATE below stays wall-clock; see the sampler's note.
+ */
+const MIN_COST_SAMPLES = 8;
+/** Hard ceiling on ONE cost window, MILLISECONDS. It BOUNDS THE FAILURE, it is
+ *  never the gate — the same shape the sibling samplers in
+ *  `video-preview-gate.spec.ts` already use ("wall-clock cap bounds the failure;
+ *  the frame count is the gate"). At the 1.30 rAF/s the CI runner produced,
+ *  `MIN_COST_SAMPLES` costs ~6.2 s, so this is ~5× the slowest window yet
+ *  observed; a page that has genuinely stopped painting trips it and fails on
+ *  the sample floor with its own numbers printed. */
+const COST_WINDOW_MAX_MS = 30_000;
 /** A short probe window used only to WAIT for the off-screen release to settle
- *  — the gate is the observable (`drawn === 0`), this is just its sample size. */
+ *  — the gate is the observable (`drawn === 0`), this is just its sample size.
+ *  Deliberately NOT frame-floored: it runs inside a poll, so extending each
+ *  iteration would spend the poll's budget instead of the window's. */
 const SETTLE_WINDOW_MS = 400;
 /**
  * Head-room over `VIDEO_THUMB_FPS` the cap assertion allows.
@@ -248,6 +278,16 @@ async function framesDrawn(page: Page, id: string): Promise<number> {
  * which is exactly what the cap must NOT be. A software renderer can only come
  * in UNDER the cap, so the assertion is one-sided and renderer-safe.
  *
+ * ⚠ BUT THE WINDOW'S *LENGTH* IS NOT PURELY WALL-CLOCK, AND THAT IS THE #1982
+ * FIX. The RATE is per-second and stays that way — `elapsedMs` is its real
+ * denominator however long the window ran. What is renderer-dependent is how
+ * many SAMPLES a given stretch of wall clock buys, and the sanity floor on that
+ * count is a FRAME quantity. So the window closes when it has BOTH spent
+ * `windowMs` AND seen `minSamples` ticks, bounded by `COST_WINDOW_MAX_MS`. On a
+ * fast renderer the wall clock binds (unchanged behaviour: ~94 samples in
+ * 1500 ms); on a 1.3 rAF/s CI runner the sample count binds and the window
+ * simply takes longer, which costs the rate nothing.
+ *
  * Everything is accumulated in ONE `page.evaluate` (never a Playwright-side
  * poll of a page-side quantity), and the window reports its own `rafSamples` /
  * `elapsedMs` so a starved runner is visible in the failure message instead of
@@ -267,9 +307,15 @@ interface ThumbCostSample {
   elapsedMs: number;
 }
 
-async function sampleThumbCost(page: Page, nodeId: string, windowMs: number): Promise<ThumbCostSample> {
+async function sampleThumbCost(
+  page: Page,
+  nodeId: string,
+  windowMs: number,
+  minSamples = 1,
+  maxMs = COST_WINDOW_MAX_MS,
+): Promise<ThumbCostSample> {
   return page.evaluate(
-    async ({ nodeId, windowMs }) => {
+    async ({ nodeId, windowMs, minSamples, maxMs }) => {
       const w = globalThis as unknown as {
         __engine: () => {
           getDomain: (d: string) => {
@@ -289,7 +335,11 @@ async function sampleThumbCost(page: Page, nodeId: string, windowMs: number): Pr
       await new Promise<void>((resolve) => {
         const tick = (): void => {
           rafSamples++;
-          if (performance.now() - t0 >= windowMs) {
+          const elapsed = performance.now() - t0;
+          // Wall clock AND sample count — the rate needs the first, the sanity
+          // floor needs the second, and a renderer decides which one binds. The
+          // ceiling only bounds the failure.
+          if ((elapsed >= windowMs && rafSamples >= minSamples) || elapsed >= maxMs) {
             resolve();
             return;
           }
@@ -305,7 +355,7 @@ async function sampleThumbCost(page: Page, nodeId: string, windowMs: number): Pr
         elapsedMs: performance.now() - t0,
       };
     },
-    { nodeId, windowMs },
+    { nodeId, windowMs, minSamples, maxMs },
   );
 }
 
@@ -594,13 +644,16 @@ test.describe('?shell=1 video visibility', () => {
         timeout: 20_000,
       })
       .toBeGreaterThan(0);
-    const on = await sampleThumbCost(page, 'bcost', COST_WINDOW_MS);
+    const on = await sampleThumbCost(page, 'bcost', COST_WINDOW_MS, MIN_COST_SAMPLES);
     console.log(`[1785] lane thumb ON-screen ${JSON.stringify(on)}`);
     expect(
       on.rafSamples,
       `the window ran at all — ${on.rafSamples} rAF samples over ${on.elapsedMs.toFixed(0)} ms. ` +
-        'A starved runner and a frozen subject are indistinguishable from the counters alone.',
-    ).toBeGreaterThan(2);
+        'A starved runner and a frozen subject are indistinguishable from the counters alone. ' +
+        `Units are FRAMES: the window SELF-EXTENDS until it has seen ${MIN_COST_SAMPLES}, so ` +
+        `coming up short means it hit the ${COST_WINDOW_MAX_MS} ms ceiling and the page is not ` +
+        'painting — it does NOT mean the runner was merely slow.',
+    ).toBeGreaterThanOrEqual(MIN_COST_SAMPLES);
     expect(on.drawn, 'POSITIVE CONTROL: the chain renders while the tile is on screen').toBeGreaterThan(0);
     expect(on.blitCalls, 'and preview blits are happening at all').toBeGreaterThan(0);
 
@@ -619,7 +672,7 @@ test.describe('?shell=1 video visibility', () => {
         },
       )
       .toBe(0);
-    const off = await sampleThumbCost(page, 'bcost', COST_WINDOW_MS);
+    const off = await sampleThumbCost(page, 'bcost', COST_WINDOW_MS, MIN_COST_SAMPLES);
     console.log(`[1785] lane thumb OFF-screen ${JSON.stringify(off)}`);
     expect(
       off.drawn,
@@ -646,18 +699,51 @@ test.describe('?shell=1 video visibility', () => {
     // the ON window's count is this thumb's count.
     const thumbBlits = on.blitCalls;
     const rate = (thumbBlits / on.elapsedMs) * 1000;
-    console.log(`[1785] lane thumb blit rate ${rate.toFixed(1)}/s over ${thumbBlits} blits`);
+    // ⚠ WHICH LIMIT WAS ACTUALLY BINDING — the gate states its own scope,
+    // because the cadence cap CAN ONLY BITE where the page paints faster than
+    // the cadence. Where rAF itself is slower than VIDEO_THUMB_FPS the thumb is
+    // due on every tick, so the rate assertion below is satisfied by the
+    // RENDERER rather than by the throttle. Both regimes are real and both were
+    // measured: 61–70 rAF/s locally under E2E_SWIFTSHADER=1 (CADENCE-BOUND —
+    // one run's 94 ticks produced only 19 blits, the throttle dropping 75) and
+    // 1.3 rAF/s on a contended CI runner (rAF-BOUND — 3 ticks, 3 blits, so the
+    // throttle never engaged at all). So on CI the cadence
+    // cap is a green that certifies nothing, and the per-frame bound at the
+    // bottom of this block is what holds the line there.
+    const rafRate = (on.rafSamples / on.elapsedMs) * 1000;
+    const regime = rafRate > VIDEO_THUMB_FPS ? 'CADENCE-BOUND' : 'rAF-BOUND';
+    console.log(
+      `[1785] lane thumb blit rate ${rate.toFixed(1)}/s over ${thumbBlits} blits ` +
+        `(${rafRate.toFixed(1)} rAF/s — ${regime})`,
+    );
     expect(
       rate,
       `an ON-SCREEN lane thumbnail is CAPPED: ${rate.toFixed(1)} blits/s (${thumbBlits} blits over ` +
         `${on.elapsedMs.toFixed(0)} ms, ${on.rafSamples} rAF samples). Units are BLITS PER SECOND, ` +
         `against the component's own VIDEO_THUMB_FPS cadence — a wall-clock product interval, not ` +
         `a frame budget. Exceeding it means the thumb is repainting at full rAF, which is the ` +
-        `pre-#1802 behaviour.`,
+        `pre-#1802 behaviour. This window was ${regime} at ${rafRate.toFixed(1)} rAF/s.`,
     ).toBeLessThanOrEqual(VIDEO_THUMB_FPS * COST_RATE_SLACK);
     // NEGATIVE CONTROL on the instrument itself: a cap assertion that a DEAD
     // loop would also satisfy proves nothing.
     expect(rate, 'and the capped loop is actually running, not merely slow').toBeGreaterThan(0);
+    // THE BOUND THAT SURVIVES A SLOW RENDERER. The thumb repaints from ONE rAF
+    // registration, so it cannot blit more than once per frame at ANY frame
+    // rate — unlike the cadence cap, this holds in the rAF-BOUND regime, which
+    // is the regime CI runs in. It is what would catch a SECOND blitter there:
+    // the "two capped thumbs measured 21.3 blits/s and read as a broken cap"
+    // error the header note describes, arriving on a runner too slow for that
+    // number to ever appear. `+1` is the window-edge allowance — the sampler's
+    // rAF loop and the thumb's are separate registrations, so the thumb can
+    // catch one extra tick at an edge. A policy allowance on a derived
+    // measurement, not a population count.
+    expect(
+      on.blitCalls,
+      `ONE rAF loop means AT MOST ONE BLIT PER FRAME: ${on.blitCalls} blits against ` +
+        `${on.rafSamples} rAF samples (${regime}). More than that many blits means a SECOND ` +
+        `thumbnail — or a second loop on this one — is blitting into the engine-wide counter, ` +
+        `which breaks the one-blitter attribution every number in this test rests on.`,
+    ).toBeLessThanOrEqual(on.rafSamples + 1);
   });
 
   test('dock full-view renders LIVE video for expanded video modules (feedback and videoOut, each via its own EXPAND pill) with a render lease', async ({ page }) => {

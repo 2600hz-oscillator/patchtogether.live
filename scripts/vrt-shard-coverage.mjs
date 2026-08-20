@@ -32,8 +32,14 @@ import { basename } from 'node:path';
 
 // `  ✓  12 [chromium-vrt] › vrt/vrt.spec.ts:64:5 › <describe> › <title> (5.1s)`
 // The duration is absent on skipped lines, so it is optional.
+// ⚠ The unit group MUST include bare `m`: Playwright prints `(1.5m)` for tests
+// ≥60 s, and a unit the regex can't match makes the LAZY title group swallow
+// the suffix — the title then mismatches its plan entry and the audit reports
+// the SAME scene as both MISSING and EXTRA. Measured on #1950's shard 4
+// (job 96276129946): face-b3ntb0x-dock at (1.5m) was the strict lane's first
+// ≥60 s scene, 49/49 tests passed, and this audit alone took the shard red.
 const LINE =
-  /^\s*(✓|✘|✗|-|°)\s+\d+\s+\[[^\]]+\]\s+›\s+(\S+?):\d+:\d+\s+›\s+(.+?)(?:\s+\((\d+(?:\.\d+)?)(m?s)\))?\s*$/;
+  /^\s*(✓|✘|✗|-|°)\s+\d+\s+\[[^\]]+\]\s+›\s+(\S+?):\d+:\d+\s+›\s+(.+?)(?:\s+\((\d+(?:\.\d+)?)(ms|s|m)\))?\s*$/;
 
 /** @returns {{ran: Map<string, number>, skipped: string[]}} */
 export function parseRunLog(text) {
@@ -51,7 +57,10 @@ export function parseRunLog(text) {
       skipped.push(key);
       continue;
     }
-    ran.set(key, n === undefined ? 0 : unit === 'ms' ? Number(n) / 1000 : Number(n));
+    ran.set(
+      key,
+      n === undefined ? 0 : unit === 'ms' ? Number(n) / 1000 : unit === 'm' ? Number(n) * 60 : Number(n),
+    );
   }
   return { ran, skipped };
 }

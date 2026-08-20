@@ -1150,6 +1150,14 @@ export const FACES = [
   // face is audio-domain, boots into a channel column, and paints no live
   // picture beyond the glyph the audio freeze already covers.
   { type: 'swolevco', pages: 2 },
+  // THE FACEPLATE QUEUE · Q42. One band, two cells — and the two cells are
+  // DIFFERENT KINDS on purpose (`level` is a declared 96 px fader throw,
+  // `offset` a knob), so this is the roster's smallest scene that still proves
+  // the mixed-kind row geometry. Its glyph is a `meter` on `out_l`, which reads
+  // exactly zero at spawn because the module ships muted — so the tap is
+  // flat-line stable and the scene needs no mask and no VRT_LIVE_SURFACES
+  // entry, for the same reason the struck voices above need none.
+  { type: 'stereovca', pages: 1 },
 ] as const;
 
 /** TIGHT per-scene diff budgets (absolute pixels; Playwright takes the MIN of

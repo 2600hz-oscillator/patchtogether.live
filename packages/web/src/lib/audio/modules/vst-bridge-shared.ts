@@ -24,9 +24,12 @@ import type { ModuleNode } from '$lib/graph/types';
 import {
   acquireVstBridge,
   releaseVstBridge,
+  sendVstControl,
   subscribeVst,
   vstBridgeAvailable,
 } from '$lib/audio/vst/bridge-owner';
+import { VstPersistenceDriver, type VstPersisted } from '$lib/audio/vst/vst-persistence';
+import { patch as livePatch, ydoc } from '$lib/graph/store';
 import { createWorkletNode } from '$lib/audio/worklet-guard';
 import workletUrl from '@patchtogether.live/dsp/dist/vst-bridge.js?url';
 
@@ -105,9 +108,38 @@ export async function createVstHandle(
     });
   }
 
+  // Persistence + auto-remount (M4, plan §7): a pure driver fed every owner
+  // snapshot. It writes `node.data.vst = { pluginId, stateB64?, stateBytes }`
+  // on DISCRETE events only (mount / unmount / state reply / editor close —
+  // never per-tick), cold-mounts the persisted plugin when a fresh session
+  // replays no parked instance, and applies the persisted blob ONLY to a
+  // mount it initiated itself (an adopt's live state always wins). The
+  // engine factory is the one per-node seam that runs on every load path
+  // (the clipplayer migration precedent), which is what makes this the
+  // right home for "refresh keeps the plugin".
+  const persistence = vstBridgeAvailable()
+    ? new VstPersistenceDriver({
+        read: () => (livePatch.nodes[node.id]?.data as { vst?: VstPersisted } | undefined)?.vst,
+        write: (next) => {
+          ydoc.transact(() => {
+            const live = livePatch.nodes[node.id];
+            if (!live) return;
+            if (!live.data) live.data = {};
+            const data = live.data as { vst?: VstPersisted };
+            if (next === undefined) delete data.vst;
+            else data.vst = next; // fresh PLAIN object every write — never re-parent a live Y child
+          });
+        },
+        send: (msg) => sendVstControl(node.id, msg),
+        setTimer: (fn, ms) => setTimeout(fn, ms),
+        clearTimer: (t) => clearTimeout(t as ReturnType<typeof setTimeout>),
+      })
+    : null;
+
   // Live-state relay: the worklet needs to know when the transport is down
   // (fx → local bypass, instrument → silence, both → skip the jitter
   // buffer). Only forward CHANGES — snapshots tick at meter rate (~8 Hz).
+  // The SAME subscription feeds the persistence driver.
   let lastLive: boolean | null = null;
   const unsubscribe = vstBridgeAvailable()
     ? subscribeVst(node.id, (s) => {
@@ -116,6 +148,7 @@ export async function createVstHandle(
           lastLive = live;
           worklet.port.postMessage({ type: 'live', live });
         }
+        persistence?.onSnapshot(s);
       })
     : null;
 
@@ -151,6 +184,7 @@ export async function createVstHandle(
     dispose() {
       // The node is leaving the graph — the ONLY place the connection is
       // torn down. A card unmount must never reach here.
+      persistence?.dispose();
       unsubscribe?.();
       releaseVstBridge(node.id);
       worklet.port.postMessage({ type: 'detach' });
