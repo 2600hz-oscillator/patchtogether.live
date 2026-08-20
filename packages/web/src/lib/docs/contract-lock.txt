@@ -1626,6 +1626,7 @@ mandelbulb out audio_out audio
 mandelbulb out video_out mono-video
 mandelbulb param autospin 0..1 discrete default=1
 mandelbulb param detail 4..30 discrete default=20
+mandelbulb param freeze 0..1 linear default=0
 mandelbulb param hue 0..1 linear default=0.55
 mandelbulb param power 1..12 linear default=8
 mandelbulb param rotate_x -3.141592653589793..3.141592653589793 linear default=0.5

@@ -2381,6 +2381,48 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // NOT CONTROL-HEAVY: four honest pages against DOCK_TAB_MIN_BANDS = 7, and
   // per the 2026-08-18 ruling they are not padded to reach it.
   'warrensvisions',
+  // MANDELBULB — 13 params, 3 pages, no rail. A ray-marched 3D fractal that
+  // DOUBLES AS AN OSCILLATOR: turn SLICE on and a plane is marched through the
+  // bulb's distance field, its cross-section played on `audio_out` as a
+  // 256-sample wavetable. Pages are the three ideas: camera / shape / slice.
+  //
+  // ⚠ THE GLYPH IS THE REASON THIS MODULE IS INTERESTING, and it is already
+  // proven permanently in `mandelbulb-glyph-tap.test.ts`. This is the ONE video
+  // def in the fleet with a `type: 'audio'` output, so `primaryAudioOutPortId`
+  // RESOLVES and the video rule's stated mechanism ("a video def has no audio
+  // output, so any glyph goes static") does not fire. A `meter`/`waveform`
+  // glyph here binds `{kind:'live-audio'}` — not static, so the dead-glyph
+  // clause stays GREEN — through a tap that searches only the AUDIO engine's
+  // node map, which a `domain:'video'` node never enters. A live-looking
+  // readout of nothing that EVERY def-reading gate passes. Hence `'none'`.
+  //
+  // ⚠ WHAT PROMOTION WOULD HAVE DELETED: TWO pictures, not one.
+  // `MandelbulbCard.svelte` owns the ray-marched preview AND the slice waveform
+  // readout — the module's audio half made visible. Both move to
+  // `face.extension: 'mandelbulb'`, and the waveform is READ from the engine
+  // (`read('sliceWave')`, a seam added with this face) rather than re-derived:
+  // `mbSampleSlice` is 16,384 distance-estimate calls on the MAIN THREAD, the
+  // card already runs it a second time, and a third pass would have made a
+  // slice move cost 3x. Retaining the array the engine already computes takes
+  // it the other way — 2x to 1x.
+  //
+  // ⚠ TWO SCREEN CONTROLS, DELIBERATELY, AND NOT DUPLICATES. `screen_on` is a
+  // PARAM and product behaviour: at 0 the factory skips the raymarch, but only
+  // while `video_out` is unpatched, so it can never starve a downstream
+  // consumer (the faced `cube` ships identical semantics, and it is NOT the
+  // #2015 producer-kill class). The preview's switch is
+  // `node.data.previewCollapsed` — pure view layer, fleet-standard corner
+  // chrome. One asks whether to compute a picture at all; the other whether to
+  // look at it now.
+  //
+  // ⚠ `detail` IS RANKED LOW ON MEASUREMENT, not taste: the GLSL loop caps at
+  // MAX_ITER = 16 while the param is declared 4..30, so 15 of its 27 positions
+  // render bit-identically and the shipped default of 20 sits in that dead band
+  // (#2036). It still moves `audio_out`, so it stays a real control.
+  //
+  // NO READOUTS, NO SIDEBAR, NO HERO — the 2026-08-19 rulings removed the
+  // fields; the slice trace survives as a live PICTURE, not as text.
+  'mandelbulb',
 ]);
 
 /**
