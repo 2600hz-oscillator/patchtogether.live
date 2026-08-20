@@ -177,7 +177,7 @@ author a `face` and rank the controls — no new platform capability.
 | `videoOut` | video | done | — |
 | `warrensspectrum` | audio | done | — |
 | `warrensvisions` | video | done | — |
-| `wavecel` | audio | — | — |
+| `wavecel` | audio | done | — |
 | `wavesculpt` | audio | — | — |
 | `wavetableVco` | audio | done | — |
 

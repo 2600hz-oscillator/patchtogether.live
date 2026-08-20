@@ -57,8 +57,13 @@
 //     (a synthetic action id) is NOT covered anywhere and stays card-scoped —
 //     see the header of `$lib/midi/graph-param-dispatch.ts`.
 //   * The RANGE a mounted control uses. Phase A and phase B agreeing here says
-//     wavecel's Knob and wavecel's def agree; a card that re-typed a different
-//     range would diverge, and no runtime gate sees that.
+//     the subject's Knob and the subject's def agree; a card that re-typed a
+//     different range would diverge, and no runtime gate sees that. ⚠ For the
+//     CURRENT subject that hole is smaller than this sentence implies:
+//     `depolarizer` declares its one param `min: 0, max: 1` and the card passes
+//     the same, so the two agree by inspection — but it is NOT in
+//     `RANGE_BOUND_CARDS`, so nothing gates that agreement, and the caveat
+//     stands as written.
 
 // `_fixtures` (not bare @playwright/test) for `errorWatch`: this spec expands,
 // collapses and LRU-evicts real cards, which is exactly the flow a lifetime bug
@@ -91,14 +96,36 @@ const PROMOTED = strictFaces();
 
 /** The subject: an UN-MIGRATED audio module with a plain [0,1] param and a
  *  legacy card that renders it as a Knob. Its un-migrated-ness is ASSERTED
- *  below, not assumed. */
+ *  below, not assumed.
+ *
+ *  ⚠ RE-POINTED FROM `wavecel` (faceplate queue Q47, 2026-08-20), BY THIS
+ *  SPEC'S OWN INSTRUCTION. wavecel was promoted into STRICT_FACES, the
+ *  `beforeAll` precondition fired exactly as designed — *"Re-point this spec at
+ *  a module that is still un-migrated (the defect class is not
+ *  module-specific)"* — and this is that re-point. The guard working is the
+ *  reason this spec did not silently go vacuous against a `<ModuleShell>`.
+ *
+ *  ⚠ AND THE NEW SUBJECT IS CHOSEN TO BE STRUCTURALLY UN-PROMOTABLE, rather
+ *  than merely un-promoted today, because "pick another un-migrated module" is
+ *  advice that expires. `depolarizer` declares ONE param, no control families
+ *  and no `node.data` affordances — which is the faceplate skill's STOP 1
+ *  refusal case stated exactly ("≤2 params, no control families, no
+ *  node.data-backed affordances"), the same grounds on which `noise` is
+ *  refused. A module the face queue is committed to REFUSING cannot be
+ *  promoted out from under this spec, so the next agent does not pay this tax
+ *  again. If that ever changes the `beforeAll` still fires — the guard is the
+ *  backstop, this reasoning is just what stops it firing.
+ *
+ *  Its `depth` is `min: 0, max: 1, curve: 'linear'` — the plain [0,1] shape
+ *  this spec needs — and `DepolarizerCard.svelte` renders it as a single
+ *  `<Knob label="DEPTH">`. */
 const SUBJECT = {
-  nodeId: 'mb-wc',
-  type: 'wavecel',
-  paramId: 'morph',
+  nodeId: 'mb-dp',
+  type: 'depolarizer',
+  paramId: 'depth',
   /** The Knob's aria-label on the legacy card — how the mounted-control count
    *  is taken. */
-  ariaLabel: 'Morph',
+  ariaLabel: 'DEPTH',
   channel: 0,
   cc: 21,
 } as const;
