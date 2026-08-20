@@ -29,6 +29,9 @@ import { listVideoModuleDefs } from '$lib/video/module-registry';
 import { listMetaModuleDefs } from '$lib/meta/module-registry';
 import type { ParamDef } from '$lib/graph/types';
 import { paramCellKind, SEGMENTED_MAX_OPTIONS } from './shell-control-kind';
+// The ONE snap implementation, and the readout resolver it shares — the
+// exhaustive-roster clauses assert the two agree rather than trusting it.
+import { snapToOptions, knobNameReadout } from '$lib/ui/controls/knob-vocabulary-model';
 import '$lib/audio/modules';
 import '$lib/video/modules';
 import '$lib/meta/modules';
@@ -122,15 +125,150 @@ describe('ParamDef vocabulary — options (PF-1) vs landmarks (PF-10)', () => {
     // roster that skips one leaves a state the dial can reach and the picker
     // cannot name — the off-detent case, created by the author rather than by
     // a legacy save.
+    //
+    // ⚠ UNLESS THE ROSTER **IS** THE REACHABLE SET. A param declaring
+    // `optionsExhaustive` inverts the premise above: its gaps are not unnamed
+    // states, they are values the module has no meaning for, and it SNAPS so
+    // they cannot be held. That satisfies this rule's actual purpose — no
+    // reachable state is unnameable — by shrinking the reachable set instead of
+    // growing the roster. The exemption is DECLARED (a required `why` on the
+    // type), and the clauses below are what make it stronger than this one
+    // rather than a way around it.
     const bad: string[] = [];
     for (const { type, p } of allParams()) {
       if (!p.options?.length) continue;
+      if (p.optionsExhaustive) continue;
       const steps = Math.round(p.max - p.min) + 1;
       if (p.options.length !== steps) {
         bad.push(`${type}.${p.id}: ${p.options.length} options for ${steps} discrete steps (${p.min}..${p.max})`);
       }
     }
     expect(bad, 'every reachable state of a discrete param must be named').toEqual([]);
+  });
+
+  // ── THE EXHAUSTIVE-ROSTER FORM (sparse `options`) ─────────────────────────
+  //
+  // Deny-by-default: the declaration buys an exemption from the every-step rule
+  // and pays for it with stricter obligations, asserted here. ⚠ A param that
+  // declares it and does NOT snap is worse than one that never declared it —
+  // it would hold values its own roster says do not exist while the picker
+  // claims otherwise.
+
+  it('an exhaustive roster is SPARSE, in-range, unique and fully labeled', () => {
+    const bad: string[] = [];
+    for (const { type, p } of allParams()) {
+      if (!p.optionsExhaustive) continue;
+      const opts = p.options ?? [];
+      if (!opts.length) {
+        bad.push(`${type}.${p.id}: declares optionsExhaustive with NO options roster`);
+        continue;
+      }
+      if (p.curve !== 'discrete') bad.push(`${type}.${p.id}: exhaustive roster on a ${p.curve} curve`);
+      const steps = Math.round(p.max - p.min) + 1;
+      if (opts.length === steps) {
+        // Not an error in spirit, but it means the declaration bought nothing —
+        // and an exemption nobody needs is one nobody is watching.
+        bad.push(
+          `${type}.${p.id}: roster covers every step (${opts.length}/${steps}), so optionsExhaustive is redundant — delete it`,
+        );
+      }
+      for (const o of opts) {
+        if (o.value < p.min || o.value > p.max) bad.push(`${type}.${p.id}: option ${o.label}=${o.value} ∉ [${p.min},${p.max}]`);
+        if (!o.label.trim()) bad.push(`${type}.${p.id}: blank label on ${o.value}`);
+        if (!Number.isInteger(o.value)) bad.push(`${type}.${p.id}: non-integer option ${o.value} on a discrete param`);
+      }
+      if (new Set(opts.map((o) => o.value)).size !== opts.length) {
+        bad.push(`${type}.${p.id}: duplicate option value`);
+      }
+      // The `why` is required by the type; this refuses the one-word placeholder
+      // that satisfies tsc and says nothing.
+      const why = p.optionsExhaustive.why ?? '';
+      if (why.trim().split(/\s+/).length < 8) {
+        bad.push(`${type}.${p.id}: optionsExhaustive.why is a placeholder — say why the GAPS are meaningless`);
+      }
+    }
+    expect(bad.join('\n')).toBe('');
+  });
+
+  it('SNAPPING is TOTAL and EXACT — both directions, on every exhaustive roster', () => {
+    // The obligation the exemption buys. Asserted on the live defs rather than
+    // a fixture, so a real roster that stopped snapping is what goes red.
+    const bad: string[] = [];
+    for (const { type, p } of allParams()) {
+      if (!p.optionsExhaustive) continue;
+      const opts = p.options ?? [];
+      if (!opts.length) continue;
+
+      // DIRECTION 1 — a legal value passes through EXACT, by identity. If this
+      // failed, snapping would perturb settings a user deliberately chose.
+      for (const o of opts) {
+        const out = snapToOptions(o.value, opts);
+        if (out !== o.value) bad.push(`${type}.${p.id}: legal ${o.value} snapped to ${out}`);
+      }
+
+      // DIRECTION 2 — EVERY integer in the declared span lands on a MEMBER.
+      // This is the leg that makes "the roster is the legal set" true rather
+      // than asserted: it walks the whole reachable span, including the 41
+      // illegal ppqn positions this form exists for.
+      const members = new Set(opts.map((o) => o.value));
+      for (let v = p.min; v <= p.max; v++) {
+        const out = snapToOptions(v, opts);
+        if (!members.has(out)) bad.push(`${type}.${p.id}: ${v} snapped to ${out}, which is not a roster member`);
+      }
+      // …and outside it, since CV/automation/a legacy save can hand over
+      // anything at all.
+      for (const v of [p.min - 100, p.max + 100, 0, -1, NaN]) {
+        const out = snapToOptions(v, opts);
+        if (!Number.isNaN(v) && !members.has(out)) {
+          bad.push(`${type}.${p.id}: out-of-range ${v} snapped to ${out}, not a member`);
+        }
+      }
+    }
+    expect(bad.join('\n')).toBe('');
+  });
+
+  it('NEGATIVE CONTROL — the snap clauses fire on a roster that does NOT snap', () => {
+    // ⚠ Every leg above passes vacuously if no def declares the form, and would
+    // pass identically against a `snapToOptions` that returned its input. Both
+    // failure modes are closed here: a synthetic sparse roster is walked with
+    // the REAL resolver, and an identity "snap" is shown to be caught.
+    const roster = [1, 2, 4, 8, 12, 24, 48].map((v) => ({ value: v, label: String(v) }));
+    const members = new Set(roster.map((o) => o.value));
+
+    // The real one lands every illegal integer on a member…
+    const offRoster = [3, 5, 6, 7, 9, 13, 25, 47];
+    for (const v of offRoster) expect(members.has(snapToOptions(v, roster)), `snap(${v})`).toBe(true);
+    // …and leaves legal ones untouched.
+    for (const o of roster) expect(snapToOptions(o.value, roster)).toBe(o.value);
+
+    // The identity stand-in does NOT — which is what the sweep above would be
+    // silently accepting if `snapToOptions` ever regressed to a passthrough.
+    const identity = (v: number) => v;
+    expect(offRoster.some((v) => !members.has(identity(v)))).toBe(true);
+
+    // NON-VACUITY: at least one live param actually declares the form, or the
+    // sweeps above probed nothing at all.
+    const adopters = allParams().filter(({ p }) => p.optionsExhaustive);
+    expect(
+      adopters.length,
+      'no param declares optionsExhaustive — the sweeps above are vacuous',
+    ).toBeGreaterThan(0);
+  });
+
+  it('NEAREST, not floor — display and snap resolve identically', () => {
+    // The documented rounding decision, held so it cannot drift apart from the
+    // readout. A floor-snapping value would SHOW one member and STORE another.
+    const roster = [1, 2, 4, 8, 12, 24, 48].map((v) => ({ value: v, label: String(v) }));
+    expect(snapToOptions(7, roster)).toBe(8);   // nearest (1 away) not floor (4)
+    expect(snapToOptions(5, roster)).toBe(4);   // nearest below
+    expect(snapToOptions(30, roster)).toBe(24);
+    expect(snapToOptions(40, roster)).toBe(48);
+    // A tie resolves to the EARLIER member, deterministically.
+    expect(snapToOptions(3, roster)).toBe(2);   // 2 and 4 are both 1 away
+    // And the readout agrees with the snap on every one of those.
+    for (const v of [7, 5, 30, 40, 3]) {
+      expect(knobNameReadout(v, { options: roster })).toBe(String(snapToOptions(v, roster)));
+    }
   });
 
   it('a declared `format` (PF-3) is TOTAL — never throws, never returns empty', () => {
