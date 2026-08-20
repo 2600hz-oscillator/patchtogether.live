@@ -1431,6 +1431,74 @@ export const FACES = [
       + 'deliberate: the surface is a pure passthrough of unpatched inputs, so it is solid black '
       + 'and identical frame to frame by construction rather than by the flag.',
   },
+  // WARREN'S VISIONS — the 2D spectral video resynthesizer, and the roster's
+  // first video face with real `pages`: analysis / motion / grating / output,
+  // four bands against DOCK_TAB_MIN_BANDS = 7, so the dock scene captures
+  // STACKED bands under the extension body rather than a tab rail. The OUTPUT
+  // band is SOLO by construction — `engineFreeze` declares an `options` roster,
+  // so it resolves `segmented`, which `PARAM_CELL_WIDTH_CLASS` classes 'wide'.
+  //
+  // ⚠ THIS SCENE GATES THE PICTURE, WHICH THE MODULE'S CARD BASELINE DOES NOT.
+  // `vrt.spec.ts` masks `warrensvisions-canvas` through `VRT_MODULE_MASKS`, so
+  // on that scene the picture is not compared at all. THIS file applies no
+  // masks (see the header) — a deliberate choice, not an oversight: the honest
+  // test of the determinism seam below is to let it be compared, and the
+  // structural argument is strong enough to carry it.
+  //
+  // ── THE FREEZE WRITE IS A NO-OP HERE, TWICE OVER, AND BOTH REASONS MATTER ──
+  //
+  // `freezeFaceVideo` writes `params.freeze = 1`. This def declares no param by
+  // that name, so the write lands nowhere — the 4plexvid case.
+  //
+  // ⚠ AND THE PARAM THAT *LOOKS* LIKE THE ANSWER IS NOT ONE. `engineFreeze` is
+  // a PLAYER control, not a determinism toggle, and the def says so in its own
+  // docs: FREEZE stops the ANALYSIS while *"slew, drift and rendering all keep
+  // running"*. Renaming it to `freeze`, or teaching the harness to write it,
+  // would hold the component bank and leave the picture moving — a freeze that
+  // reports success and pins nothing. "Has a freeze param" and "is
+  // deterministic" are independent in both directions. Do NOT add a real
+  // `freeze` param either: that is a `params` edit on a def inside the WebGL
+  // attest basis, i.e. an owner-machine re-attest, to buy an assertion that
+  // already holds.
+  //
+  // ── WHY IT HOLDS STILL ANYWAY, STRUCTURALLY ────────────────────────────────
+  //
+  // WARREN'S VISIONS is an EFFECT, not a source, and `bootWithFace` spawns one
+  // node with nothing patched. With no texture on `video_in` the luma plane is
+  // zero, the FFT finds no peaks, the tracker claims nothing, every ring energy
+  // is zero, and the composite's `uHasSrc` branch outputs black. The module's
+  // own e2e already measures this leg — *"unpatched input renders black without
+  // erroring"*, `nonZeroFrac < 0.02` (`e2e/tests/warrensvisions.spec.ts`). An
+  // empty bank has no envelope to advance and no phase to drift (DRIFT ships at
+  // 0), so the surface is identical frame to frame for the same reason
+  // 4plexvid's is: there is nothing in it.
+  //
+  // ⚠ WHAT WOULD CHANGE THE ANSWER: patch anything into this scene's VIDEO IN,
+  // or ship a non-zero DRIFT/RESIDUAL default, and the structural argument dies
+  // — the bank starts tracking and slewing per drawn frame and the picture is a
+  // function of the FRAME COUNT the capture happened to reach. The fix then is
+  // NOT a bigger budget and NOT `engineFreeze`: it is `simPin` on the engine
+  // clock, which this module is already wired for — `warrensvisions.ts` reads
+  // `dt` from `frame.time` (the clock `__videoEngineFreezeTime` pins) and
+  // explicitly NOT from `frame.timeDelta`, with the reason on the line, and its
+  // residual RNG is the fixed `WV_NOISE_SEED`. So every envelope is a function
+  // of the frame count the test drove, on any renderer.
+  {
+    type: 'warrensvisions',
+    pages: 4,
+    videoFaceWhy:
+      'a VIDEO module, so it must boot into the video zone rather than a mixer channel column — '
+      + 'without this field bootWithFace waits out the full 90 s test timeout for a column '
+      + 'membership a video node never acquires. Both scenes also carry a live picture: the '
+      + 'compact tile paints a VideoTileThumb through hasVideoSurface, and the dock body is the '
+      + "module's own fullViewBody extension (the resynthesis preview plus its SCREEN switch), "
+      + 'which this file does NOT mask even though the card baseline does. The freeze write '
+      + 'itself is a NO-OP on this def — it declares `engineFreeze`, a player control that stops '
+      + 'the ANALYSIS while slew, drift and rendering keep going, and no param named `freeze` at '
+      + 'all. That is deliberate: this is an EFFECT with nothing patched into VIDEO IN, so the '
+      + 'bank is empty and the composite outputs black on every frame by construction rather '
+      + 'than by the flag.',
+  },
 ] as const;
 
 /** TIGHT per-scene diff budgets (absolute pixels; Playwright takes the MIN of
