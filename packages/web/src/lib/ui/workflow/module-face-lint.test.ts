@@ -505,6 +505,21 @@ describe('module-face lint — MOMENTARY pads (face.momentary)', () => {
     'mandelbulb:slice',
     'mandelbulb:autospin',
     'mandelbulb:screen_on',
+    // BENTBOX, 2026-08-20 — the SIBLING pair, and they became visible to this
+    // gate by the identical route: `curve` corrected `linear` → `discrete` when
+    // this face landed, because `mirrorUv` hard-thresholds both
+    // (`mirrorX ? … : …` over a `>= 0.5` reduction at :659-660) so `linear` was
+    // always a lie about a two-state value. Pixel-neutral by construction — the
+    // READ is a threshold either way, so every value a card, a face, automation
+    // or a persisted patch could already hold lands on the same side of it.
+    //
+    // LATCHING, not momentary, for the same reason b3ntb0x's are: the card's
+    // MIRROR X / MIRROR Y buttons flip a persisted state you leave engaged, and
+    // the `mirror_*_gate` CV inputs TOGGLE it on a RISING EDGE rather than
+    // holding it. A momentary render would un-fold the picture the instant you
+    // let go, which is the opposite of the control.
+    'bentbox:mirrorX',
+    'bentbox:mirrorY',
     // GRAINS OF VISION, 2026-08-20. The two block BYPASSES, visible to this
     // gate for the same reason as b3ntb0x's folds and cloudseed's enables:
     // their `curve` was corrected `linear` → `discrete` when the face landed,
