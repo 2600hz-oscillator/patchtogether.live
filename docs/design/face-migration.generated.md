@@ -93,7 +93,7 @@ author a `face` and rank the controls — no new platform capability.
 | `lumakey` | video | — | — |
 | `lushgarden` | video | — | — |
 | `macrooscillator` | audio | done | — |
-| `mandelbulb` | video | — | — |
+| `mandelbulb` | video | done | — |
 | `mandleblot` | video | — | — |
 | `mapper` | video | — | — |
 | `marbles` | audio | done | — |

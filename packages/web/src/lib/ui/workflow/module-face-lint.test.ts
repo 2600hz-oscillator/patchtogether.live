@@ -488,6 +488,27 @@ describe('module-face lint — MOMENTARY pads (face.momentary)', () => {
     // of the control.
     'b3ntb0x:mirrorX',
     'b3ntb0x:mirrorY',
+    // MANDELBULB, 2026-08-20. Three params share the press-pad SHAPE
+    // (`0..1 discrete`) by coincidence of arity, and all three are states you
+    // set and leave — the card renders all three as latching BUTTONS
+    // (SPIN / SCRN / SLICE). None is edge-detected: every one is read as a
+    // LEVEL, verified line by line rather than inferred from the shape.
+    //
+    // SLICE (`params.slice >= 0.5`, :759) arms the whole audio half — it stands
+    // the oscillator chain up and keeps it running. A momentary render would
+    // tear the audio down on release, i.e. the module's headline feature could
+    // never be held: the `clouds:freeze` case reached by a simpler mechanism.
+    //
+    // AUTOSPIN (`:771`) is a level the draw path re-reads every frame to decide
+    // whether to advance `spinPhase`; releasing a pad would stop the rotation.
+    //
+    // SCREEN (`:778`) is the raymarch PERF gate — off means "do not compute a
+    // picture nobody is looking at", guarded by `frame.isOutputConnected` so it
+    // can never starve a patched consumer. It is a setting you leave, exactly
+    // like `cube:screen_on` above, and for the same reason.
+    'mandelbulb:slice',
+    'mandelbulb:autospin',
+    'mandelbulb:screen_on',
     // BENTBOX, 2026-08-20 — the SIBLING pair, and they became visible to this
     // gate by the identical route: `curve` corrected `linear` → `discrete` when
     // this face landed, because `mirrorUv` hard-thresholds both
