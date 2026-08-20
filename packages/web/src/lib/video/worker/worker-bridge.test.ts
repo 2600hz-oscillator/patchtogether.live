@@ -299,4 +299,134 @@ describe('RenderWorkerBridge frame queue + lifecycle', () => {
     expect(f.closed).toBe(true);
     expect(b.supported).toBe(false);
   });
+
+  // ── #1905: a state message that arrives before its node must not be lost ────
+  //
+  // The TOYBOX snapshot originates in a card `$effect` that fires ONCE PER
+  // `node.data` CHANGE. Both of its consumers used to drop it silently when
+  // they were not ready — `syncNodeData` is a no-op while the bridge is still
+  // null, and the worker's `syncToyboxState` returns early for a node it has
+  // not materialized yet. Nothing re-sends a snapshot for unchanged data, so
+  // either drop was PERMANENT: the worker rendered default layers for the rest
+  // of the session while the card showed the user's real ones.
+  describe('#1905 toybox-sync replay', () => {
+    const syncsFor = (w: MockWorker, id: string) =>
+      w.sent.filter((m) => m.type === 'toybox-sync' && m.nodeId === id);
+
+    it('a sync sent BEFORE addNode is re-sent after it (and lands after, per FIFO)', () => {
+      const b = new RenderWorkerBridge({ res: { width: 320, height: 240 } });
+      const w = MockWorker.instances[0]!;
+      w.emit({ type: 'ready', glOk: true });
+
+      // The card pushes state for a node the worker does not have yet.
+      b.sendToyboxSync('n1', { layers: ['real'] });
+      b.addNode(node('n1'));
+
+      const syncs = syncsFor(w, 'n1');
+      expect(syncs.length, 'the snapshot is sent again after addNode').toBe(2);
+      // Ordering is what makes the replay effective: the last toybox-sync must
+      // come AFTER the addNode, or the worker drops it exactly as before.
+      const addIdx = w.sent.findIndex((m) => m.type === 'addNode');
+      const lastSyncIdx = w.sent.map((m) => m.type).lastIndexOf('toybox-sync');
+      expect(lastSyncIdx).toBeGreaterThan(addIdx);
+      expect((syncs[1] as { state: unknown }).state).toEqual({ layers: ['real'] });
+      b.dispose();
+    });
+
+    it('the ready handshake replays the snapshot alongside the node', () => {
+      const b = new RenderWorkerBridge({ res: { width: 320, height: 240 } });
+      const w = MockWorker.instances[0]!;
+      // Node + state both pushed while the worker is still initialising.
+      b.addNode(node('n1'));
+      b.sendToyboxSync('n1', { layers: ['real'] });
+      w.emit({ type: 'ready', glOk: true });
+
+      const addNodes = w.sent.filter((m) => m.type === 'addNode');
+      expect(addNodes.length, 'node replayed on ready').toBe(2);
+      const syncs = syncsFor(w, 'n1');
+      expect(syncs.length, 'state replayed on ready too').toBe(2);
+      const lastAddIdx = w.sent.map((m) => m.type).lastIndexOf('addNode');
+      const lastSyncIdx = w.sent.map((m) => m.type).lastIndexOf('toybox-sync');
+      expect(lastSyncIdx, 'the replayed state lands after the replayed node').toBeGreaterThan(lastAddIdx);
+      b.dispose();
+    });
+
+    it('NEGATIVE CONTROL: a node with no snapshot never fabricates one', () => {
+      const b = new RenderWorkerBridge({ res: { width: 320, height: 240 } });
+      const w = MockWorker.instances[0]!;
+      w.emit({ type: 'ready', glOk: true });
+      b.addNode(node('n1'));
+      expect(syncsFor(w, 'n1').length).toBe(0);
+      b.dispose();
+    });
+
+    it('removeNode forgets the snapshot (no resurrection on a later re-add)', () => {
+      const b = new RenderWorkerBridge({ res: { width: 320, height: 240 } });
+      const w = MockWorker.instances[0]!;
+      w.emit({ type: 'ready', glOk: true });
+      b.sendToyboxSync('n1', { layers: ['old'] });
+      b.addNode(node('n1'));
+      b.removeNode('n1');
+      const before = syncsFor(w, 'n1').length;
+      b.addNode(node('n1'));
+      expect(syncsFor(w, 'n1').length, 'a removed node carries no stale state forward').toBe(before);
+      b.dispose();
+    });
+  });
+
+  // ── #1905: a worker that dies AFTER init must still fail over ──────────────
+  //
+  // The render worker reports a post-init GL context loss with the SAME
+  // `ready:{glOk:false}` it uses for a failed init, so the bridge takes its
+  // existing documented path and the proxy re-materializes the main-thread
+  // fallback. Before, a context loss inside the render loop threw, voided the
+  // reschedule, and left `ready()` TRUE forever — a live worker delivering
+  // nothing, which is the #1905 signature exactly.
+  it('#1905: a glOk:false arriving AFTER a successful ready still fails over', () => {
+    const b = new RenderWorkerBridge({ res: { width: 320, height: 240 } });
+    const w = MockWorker.instances[0]!;
+    w.emit({ type: 'ready', glOk: true });
+    b.addNode(node('n1'));
+    expect(b.ready()).toBe(true);
+
+    w.emit({ type: 'ready', glOk: false, initErr: 'worker GL context lost after init' });
+    expect(b.ready(), 'the proxy must stop consuming worker frames').toBe(false);
+    expect(b.supported, 'and must not come back on its own').toBe(false);
+    expect(b.bridgeTrace().failReason).toContain('context lost');
+  });
+
+  // ── #1905: the trace makes the silent drops countable ─────────────────────
+  it('#1905: bridgeTrace counts frames dropped for an unknown node', () => {
+    const b = new RenderWorkerBridge({ res: { width: 320, height: 240 } });
+    const w = MockWorker.instances[0]!;
+    w.emit({ type: 'ready', glOk: true });
+    b.addNode(node('n1'));
+
+    const f = new FakeBitmap();
+    // A frame for n1 that arrives after the bridge forgot it (removeNode
+    // clears the trace entry, so use a live node whose knownNodes entry is
+    // dropped by a remove-then-frame ordering).
+    b.removeNode('n1');
+    b.addNode(node('n1'));
+    w.emit({ type: 'frame', nodeId: 'n1', bitmap: f as unknown as ImageBitmap });
+    expect(b.bridgeTrace().nodes.find((n) => n.id === 'n1')?.framesReceived).toBe(1);
+
+    // A frame for a node the bridge never knew is closed, not queued.
+    const orphan = new FakeBitmap();
+    w.emit({ type: 'frame', nodeId: 'ghost', bitmap: orphan as unknown as ImageBitmap });
+    expect(orphan.closed, 'an orphan bitmap is closed, never leaked').toBe(true);
+    expect(b.takeFrame('ghost')).toBeNull();
+    b.dispose();
+  });
+
+  it('#1905: workerTrace resolves null when the worker never answers', async () => {
+    const b = new RenderWorkerBridge({ res: { width: 320, height: 240 } });
+    const w = MockWorker.instances[0]!;
+    w.emit({ type: 'ready', glOk: true });
+    // MockWorker never replies to trace-request.
+    const snap = await b.workerTrace(20);
+    expect(snap, 'no reply is a READING (wedged message loop), not an error').toBeNull();
+    expect(w.sent.some((m) => m.type === 'trace-request')).toBe(true);
+    b.dispose();
+  });
 });
