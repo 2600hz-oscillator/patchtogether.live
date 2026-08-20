@@ -461,9 +461,9 @@ export const colourofmagicDef: VideoModuleDef = {
     { id: 'over_ycc_cr', label: 'cr wrap', defaultValue: DEFAULTS.over_ycc_cr, min: 0, max: 1, curve: 'discrete' },
     { id: 'mode_hsl', label: 'hsl', defaultValue: DEFAULTS.mode_hsl, min: 0, max: 1, curve: 'discrete' },
     { id: 'replace', label: 'replace', defaultValue: DEFAULTS.replace, min: 0, max: 1, curve: 'discrete' },
-    { id: 'pal_r', label: 'pal r', defaultValue: DEFAULTS.pal_r, min: 0, max: 0xffffff, curve: 'discrete' },
-    { id: 'pal_g', label: 'pal g', defaultValue: DEFAULTS.pal_g, min: 0, max: 0xffffff, curve: 'discrete' },
-    { id: 'pal_b', label: 'pal b', defaultValue: DEFAULTS.pal_b, min: 0, max: 0xffffff, curve: 'discrete' },
+    { id: 'pal_r', label: 'r', defaultValue: DEFAULTS.pal_r, min: 0, max: 0xffffff, curve: 'discrete' },
+    { id: 'pal_g', label: 'g', defaultValue: DEFAULTS.pal_g, min: 0, max: 0xffffff, curve: 'discrete' },
+    { id: 'pal_b', label: 'b', defaultValue: DEFAULTS.pal_b, min: 0, max: 0xffffff, curve: 'discrete' },
     {
       id: 'preview',
       label: 'preview',

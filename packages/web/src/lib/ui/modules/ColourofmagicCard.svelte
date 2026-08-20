@@ -96,7 +96,15 @@
 
   // ── palette colour pickers (ChromaCard idiom: swatch + hidden <input color>) ──
   const PAL_IDS = ['pal_r', 'pal_g', 'pal_b'] as const;
-  const PAL_LABELS: Record<string, string> = { pal_r: 'R', pal_g: 'G', pal_b: 'B' };
+  // ⚠ READ FROM THE DEF, not re-typed. The card has always painted `R`/`G`/`B`
+  // here while the def said `pal r`/`pal g`/`pal b` — so the FACE (which renders
+  // straight off the `ParamDef`) painted `PAL R` and the card painted `R` for
+  // the same control. The owner asked for the short form (2026-08-20), which
+  // makes the def agree with what this card already showed; binding it here is
+  // what stops the two surfaces drifting apart again.
+  const PAL_LABELS: Record<string, string> = Object.fromEntries(
+    PAL_IDS.map((pid) => [pid, paramSpec(colourofmagicDef, pid).label.toUpperCase()]),
+  );
   function colorHex(pid: string): string {
     const [r, g, b] = unpackColor01(pget(pid));
     const h = (v: number) => Math.round(v * 255).toString(16).padStart(2, '0');
