@@ -44,6 +44,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { STRICT_FACES } from '../../packages/web/src/lib/ui/workflow/strict-faces';
 import { domainClassForCable } from '../../packages/web/src/lib/ui/workflow/module-shell-model';
+import { NON_SHELL_LANE_TYPES } from '../../packages/web/src/lib/ui/workflow/legacy-fallback';
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const repoPath = (...segments: string[]): string => resolve(REPO, ...segments);
@@ -101,6 +102,14 @@ interface LockedModule {
   domain: string;
   outputs: string[];
   inputs: string[];
+  /** INPUT ports as `(id, cable)` pairs, in golden order.
+   *
+   *  ⚠ `inputs` above keeps only the CABLE, which is enough to ask "does this
+   *  module accept video?" and NOT enough to WIRE one — an edge needs the port
+   *  ID. A fixture that resolves a subject but cannot name the port it feeds is
+   *  half a fixture, and the half it is missing is the half that made
+   *  `workflow-shell-video` hard-code a module name. */
+  inPorts: { id: string; cable: string }[];
   params: number;
 }
 
@@ -116,10 +125,12 @@ function readContractLock(): Map<string, LockedModule> {
     if (!line || line.startsWith('#')) continue;
     const [type, kind, third, cable] = line.split(/\s+/);
     if (!type || !kind) continue;
-    const entry = byType.get(type) ?? { domain: '', outputs: [], inputs: [], params: 0 };
+    const entry = byType.get(type) ?? { domain: '', outputs: [], inputs: [], inPorts: [], params: 0 };
     if (kind === 'out' && cable) entry.outputs.push(cable);
-    else if (kind === 'in' && cable) entry.inputs.push(cable);
-    else if (kind === 'param') entry.params += 1;
+    else if (kind === 'in' && cable) {
+      entry.inputs.push(cable);
+      if (third) entry.inPorts.push({ id: third, cable });
+    } else if (kind === 'param') entry.params += 1;
     else if (kind === 'meta' && third?.startsWith('domain=')) entry.domain = third.slice('domain='.length);
     byType.set(type, entry);
   }
@@ -488,6 +499,80 @@ export const VIDEO_FIXTURE: FixtureResolution = deriveFixture(
   (type) => {
     if (cardSource(type) === null) {
       return `no card component resolves (${cardComponentName(type)}.svelte is not in lib/ui/modules), so SvelteFlow falls back to its default node renderer and there is no [data-dock-card] to assert on`;
+    }
+    return null;
+  },
+);
+
+/** The first `video`-cabled INPUT port of a type, or null. Reads the golden, so
+ *  it cannot disagree with the contract the engine wires. */
+export function videoInPortId(type: string): string | null {
+  return CONTRACT.get(type)?.inPorts.find((p) => p.cable === 'video')?.id ?? null;
+}
+
+/**
+ * A still-UN-MIGRATED **VIDEO SINK** — an un-promoted video module that can be
+ * FED by a source, for the PLACEHOLDER-host half of `workflow-shell-video`'s
+ * live-thumb case.
+ *
+ * ⚠ IT EXISTS BECAUSE THAT SPEC HARD-CODED `grainsOfVision`, AND THIS PR
+ * PROMOTES IT (#1929). The spec spawns `lines → g1` and then proves three
+ * things ABOUT A PLACEHOLDER TILE: the tile carries a live `video-tile-thumb`,
+ * the thumb's blit DRIVES the real chain (`framesDrawn` advances while it is the
+ * only watcher), and the picture ANIMATES across frames. A faced tile also has a
+ * thumb (#1785), and `b1` already covers that host — so promoting the hard-coded
+ * subject leaves **every assertion passing while the placeholder host stops
+ * being proven**. That is CLAUDE.md's "a gate whose PRECONDITION is the defect"
+ * class, and it goes GREEN rather than red, which is why the re-point is
+ * mandatory in the promoting diff rather than a follow-up.
+ *
+ * ⚠ WHY A SECOND FIXTURE AND NOT `VIDEO_FIXTURE`. That one resolves a subject
+ * for the *dock legacy-card* case, whose only requirement is that a card
+ * component renders. This case must also **wire an edge into it**, so it needs a
+ * module with a `video`-cabled INPUT PORT — and it needs that port's ID, which
+ * is why `LockedModule` now records `inPorts`. `VIDEO_FIXTURE`'s pick is free to
+ * be a source with no inputs at all, and reusing it would resolve happily and
+ * then fail at `injectPatch` with an edge to a port that does not exist.
+ *
+ * The predicates are the assertions' own, and every one of them was READ OFF
+ * `laneRenderKind` rather than guessed — `laneRenderKind` is
+ * `if (!shellFaces || !hasCard) return 'legacy'; return migrated ? 'shell' :
+ * 'placeholder'`, so **two** independent things route a module away from the
+ * placeholder tile and only one of them is promotion:
+ *
+ *   * un-promoted — else it renders a FACE (`'shell'`), which is `b1`'s host;
+ *   * `domain: 'video'`;
+ *   * a resolvable card AND not a `NON_SHELL_LANE_TYPES` snowflake — either
+ *     makes `hasCard` false, which renders the VERBATIM LEGACY CARD and not a
+ *     placeholder at all. ⚠ This is the predicate a "just pick an un-migrated
+ *     video module" rule would have missed, and it fails in the confusing
+ *     direction: a legacy card has no `module-shell-placeholder` for the loop
+ *     to find;
+ *   * a `video` INPUT port to receive the chain — and its ID, so the edge can
+ *     actually be built;
+ *   * a `video` OUTPUT — without one the node is never pulled, `framesDrawn`
+ *     has nothing to advance, and the "blit drives the chain" leg would pass
+ *     vacuously.
+ *
+ * `doom` cannot be selected: the shared `DENIED` map excludes it BY NAME with
+ * the owner ruling, so this pool inherits the exclusion rather than relying on
+ * it sorting last.
+ */
+export const VIDEO_SINK_FIXTURE: FixtureResolution = deriveFixture(
+  'video',
+  'the PLACEHOLDER lane tile whose live thumb drives a real upstream chain',
+  (type) => {
+    if (cardSource(type) === null) {
+      return `no card component resolves (${cardComponentName(type)}.svelte is not in lib/ui/modules), so laneRenderKind returns 'legacy' and there is no module-shell-placeholder to assert on`;
+    }
+    if (NON_SHELL_LANE_TYPES.has(type)) {
+      return "a NON_SHELL_LANE_TYPES snowflake: laneRenderKind returns 'legacy' for it, so it renders its verbatim card rather than the placeholder tile";
+    }
+    if (videoInPortId(type) === null) {
+      return 'declares no `video`-cabled INPUT port, so the lines→subject edge has nothing to land on';
+    }
+    if (!(CONTRACT.get(type)?.outputs ?? []).includes('video')) {
+      return 'declares no `video` OUTPUT, so it is never pulled and `framesDrawn` could not advance — the thumb-drives-the-chain leg would pass vacuously';
     }
     return null;
   },
