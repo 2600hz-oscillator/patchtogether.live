@@ -17,8 +17,11 @@ import {
   SKIP_SPAWN,
   collectPageErrors,
   driverFor,
-  freezeVideoRender,
-  heavyVideoTimeout,
+  // NB: `freezeVideoRender` and `heavyVideoTimeout` were imported here and never
+  // called — leftovers from the #1538 split. Removed with #1984 because the first
+  // one is actively misleading: this sweep is the one that does NOT freeze the GL
+  // draw (it reads real pixels), and that is exactly what makes its per-output
+  // cost what it is. See the budget derivation in _per-module-per-port-shared.ts.
   observeScopePeak,
   perPortDriverFor,
   pickOutputSink,
