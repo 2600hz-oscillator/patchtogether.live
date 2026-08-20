@@ -185,31 +185,7 @@ export const moog923Def: AudioModuleDef = {
       { id: 'filter', label: 'filter', controls: ['lpCutoff', 'hpCutoff'] },
     ],
 
-    // THE HERO: three readouts and no control. Promoting LEVEL here would move
-    // it out of its own band for no gain — it is already rank 1, and the hero's
-    // job on this module is the row of things the dials cannot say.
-    hero: {
-      readouts: [
-        { label: 'white', valueId: 'moog923-white-db' },
-        { label: 'pink', valueId: 'moog923-pink-db' },
-        { label: 'split', valueId: 'moog923-split' },
-      ],
-    },
 
-    // THE FILTER NUMBERS, in the sidebar rather than the hero, because they
-    // belong to the half of the module that is silent until something is
-    // patched — a hero row that reads `1.2 kHz / 672 Hz` beside two live noise
-    // levels would give equal billing to a jack carrying nothing.
-    sidebar: [
-      {
-        kind: 'readouts',
-        label: 'filter −3 dB',
-        entries: [
-          { label: 'lp', valueId: 'moog923-lp-hz' },
-          { label: 'hp', valueId: 'moog923-hp-hz' },
-        ],
-      },
-    ],
   },
 
   docs: {

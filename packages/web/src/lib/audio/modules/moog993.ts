@@ -136,9 +136,6 @@ export const moog993Def: AudioModuleDef = {
   face: {
     order: ['route1', 'route2', 'route3'],
     glyph: 'none',
-    hero: {
-      readouts: [{ label: 'routing', valueId: 'moog993-routing' }],
-    },
   },
 
   docs: {

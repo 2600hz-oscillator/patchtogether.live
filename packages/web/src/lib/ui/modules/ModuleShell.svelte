@@ -61,7 +61,6 @@
     bandHeaderPlan,
     facePageHeader,
     heroFacePlan,
-    readoutText,
     type FaceplateDefLike,
   } from '$lib/ui/workflow/dock-faceplate-model';
   import { isAnnotating } from '$lib/ui/annotate-mode.svelte';
@@ -551,24 +550,6 @@
   /** The resolved bespoke body component, or null. Read through the plan so
    *  the "dock only" half of the policy cannot be forgotten at the call site. */
   let extBody = $derived(headPlan.extBody ? (ext?.fullViewBody ?? null) : null);
-
-  /**
-   * The value a hero/sidebar READOUT prints.
-   *
-   * ⚠ READS THE DURABLE PARAM, deliberately — the same call the topology
-   * caption makes and for the same reason. `params.live` asks the ENGINE, and
-   * an engine reader polled from MARKUP is not reactive: Svelte tracks the
-   * signals read during render, and `readParam` is a plain function call, so
-   * the readout would freeze at whatever the first render happened to see.
-   * Worse, with no audio engine booted it hands back a construction-time shadow
-   * that is a NUMBER, so the `??` fallback never fires and the panel prints a
-   * value the patch abandoned. The durable param re-derives on `nodeVersion`,
-   * which is what a local edit, a remote edit and MIDI-learn all bump.
-   */
-  function readoutValue(pid: string): number | undefined {
-    void nodeVersion(id);
-    return params.paramVal(pid);
-  }
 
   /** PF-16 — the tab roster (null for a face that renders as one column), and
    *  the SAME pure answer DockFullView's rail computes. A rail without the
@@ -1327,20 +1308,20 @@
     {/if}
 
     <!-- PF-20 — the HERO RAIL: the module's own PICTURE + the promoted control
-         beside it (a big dial with a big readout) and its audition, then the
-         labelled readouts UNDER them as a full-width strip. Every piece is
-         optional and the rail only renders when at least one is present — a
-         face that declares no hero keeps the bare capped glyph band it has
-         today.
+         beside it and its audition. Every piece is optional and the rail only
+         renders when at least one is present — a face that declares no hero
+         keeps the bare capped glyph band it has today.
 
-         ⚠ THE READOUTS ARE A ROW BELOW THE STAGE, NOT A COLUMN BESIDE IT
-         (owner, 2026-08-02: "generally this row of controls should be below
-         the graphic"). They were the tail of `.hero-side`, so a face's derived
-         values competed with its own picture for horizontal room and dropped
-         to a second line at exactly the widths where the graph mattered most.
-         Below, they get the full faceplate width — which is also the reading
-         order the numbers want: the graphic states what the voice IS, the
-         strip states what it MEASURES. -->
+         ⚠ THERE IS NO READOUT STRIP HERE ANY MORE, and re-adding one — under
+         this name or another — is the mistake this note exists to prevent. A
+         full-width row of labelled derived values used to sit under the stage
+         on fifty of the faces. The owner removed the shape outright (2026-08-19,
+         on moog984: "you don't need to have the out-silent text at all … we
+         absolutely have to stop doing shit like that. i said minimal, and good
+         use of screen real estate"). The value belongs on the control it
+         describes, in `aria-valuetext`. See `ModuleFaceHero` in graph/types.ts
+         for the full ruling set and `face-resting-text-source.test.ts` for the
+         gate that denies the SHAPE rather than this one mechanism. -->
     {#if heroGlyph || hero}
       <div
         class="tile-body dock-hero"
@@ -1376,16 +1357,6 @@
                   </div>
                 {/if}
               </div>
-            {/if}
-            {#if hero.readouts.length}
-              <dl class="hero-readouts" data-testid="face-hero-readouts">
-                {#each hero.readouts as r (r.label)}
-                  <div class="hero-ro" data-hero-readout={r.paramId ?? r.valueId ?? r.label}>
-                    <dt>{r.label}</dt>
-                    <dd>{readoutText(r, (def?.params ?? []), readoutValue)}</dd>
-                  </div>
-                {/each}
-              </dl>
             {/if}
           </div>
         {/if}
@@ -1939,57 +1910,6 @@
   }
   .hero-ctl :global(.label) {
     font-size: 10px;
-  }
-  /* Labelled hero values. A <dl> because that is what a label→value list is;
-     the visual is a row of caption-over-number pairs, at the same typographic
-     weight as the hero dial's own readout.
-     A FULL-WIDTH STRIP under the stage: it starts at the faceplate's left edge
-     and gets the whole width, so a three-value strip reads as one line of
-     instrumentation rather than as the overflow of the row above it. The
-     hairline is the same 1px `--border` rule `.dock-page` uses to separate a
-     band — this strip is the hero's own footer in that same vocabulary. */
-  .hero-readouts {
-    display: flex;
-    align-items: flex-end;
-    gap: 22px;
-    margin: 0;
-    width: 100%;
-    min-width: 0;
-    flex-wrap: wrap;
-  }
-  /* ⚠ THE HAIRLINE IS CONDITIONAL, and it has to be: a hero may be READOUTS
-     ONLY (no picture, no promoted control — a bare measurement strip, which
-     `heroFacePlan` explicitly supports and the batch-3 mocks propose). Then the
-     strip IS the whole hero and a rule above it would separate it from the page
-     header — i.e. draw a line under the title. The adjacent-sibling combinator
-     says exactly what is meant: the hairline belongs BETWEEN the stage and the
-     strip, so no stage means no hairline. */
-  .hero-stage + .hero-readouts {
-    padding-top: 8px;
-    border-top: 1px solid var(--border, #2c3037);
-  }
-  .hero-ro {
-    display: flex;
-    flex-direction: column;
-    gap: 3px;
-    min-width: 0;
-  }
-  .hero-ro dt {
-    font-family: var(--mono, ui-monospace, monospace);
-    font-size: 9px;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    color: var(--text-dim, #9aa3ad);
-  }
-  .hero-ro dd {
-    margin: 0;
-    font-family: var(--mono, ui-monospace, monospace);
-    font-size: 17px;
-    line-height: 1.05;
-    font-weight: 700;
-    letter-spacing: 0.01em;
-    color: var(--domain, var(--accent));
-    white-space: nowrap;
   }
   .dock-pages {
     display: flex;

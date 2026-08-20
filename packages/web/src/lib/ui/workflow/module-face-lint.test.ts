@@ -46,17 +46,7 @@ import { STRICT_FACES } from './strict-faces';
 import { curatedFace, dockFacePlan, dockPlanControls, type FaceDefLike } from './curated-face';
 import { DOCK_TAB_MIN_BANDS, dockTabPlan } from './dock-tabs-model';
 import { glyphBinding } from './shell-glyph-live';
-import {
-  bandHeaderPlan,
-  faceAnnotations,
-  facePageHeader,
-  heroFacePlan,
-  heroFacePlanIsTotal,
-  isUsableReadout,
-  sidebarPlan,
-  type FaceplateDefLike,
-} from './dock-faceplate-model';
-import { sidebarPanelIds } from './sidebar-panels';
+import { bandHeaderPlan, faceAnnotations, facePageHeader, heroFacePlan, heroFacePlanIsTotal, type FaceplateDefLike } from './dock-faceplate-model';
 import { paintsReadout } from '$lib/ui/controls/knob-vocabulary-model';
 // The channel list mixmstrs' ACKNOWLEDGED_LATCHING entries are DERIVED from —
 // see the entry itself for why eight identical enables are generated rather
@@ -65,7 +55,6 @@ import { MIXMSTRS_CHANNELS } from '$lib/audio/modules/mixmstrs';
 // The spiro count spirographs' ACKNOWLEDGED_LATCHING entries are DERIVED from,
 // for the same reason as the mixmstrs channels — see the entry itself.
 import { SPIRO_COUNT_MAX, spiroParamId } from '$lib/video/modules/spirographs';
-import { faceReadoutValueIds } from './face-readout-values';
 import { laneBodyPlan, laneGlyphFor } from './module-shell-model';
 import { looksLikeSwitch } from './shell-control-kind';
 import { panelCellKeys, shellCellFor } from './shell-cells';
@@ -1928,107 +1917,9 @@ describe('module-face lint — FACEPLATE STRUCTURE (PF-20: hero / sidebar / hint
         }
       }
     }
-    problems.push(...readoutProblems(def, hero.readouts ?? [], 'face.hero.readouts'));
     return problems;
   }
 
-  /** Shared readout clause — used by the hero AND by every `readouts` sidebar
-   *  block, because "exactly one source, and it resolves" is the same rule
-   *  wherever a labelled value is declared. */
-  function readoutProblems(
-    def: StructFaceDef,
-    readouts: readonly { label: string; paramId?: string; valueId?: string; text?: string }[],
-    where: string,
-  ): string[] {
-    const problems: string[] = [];
-    const paramIds = new Set((def.params ?? []).map((p) => p.id));
-    const values = new Set(faceReadoutValueIds());
-    for (const r of readouts) {
-      if (!isUsableReadout(r)) {
-        problems.push(
-          `${def.type}: ${where}['${r.label}'] must name EXACTLY ONE source — a paramId, a ` +
-            `valueId or a text, never two and never none (it renders as '—')`,
-        );
-        continue;
-      }
-      if (r.paramId && !paramIds.has(r.paramId)) {
-        problems.push(
-          `${def.type}: ${where}['${r.label}'].paramId = '${r.paramId}' is not a declared param — ` +
-            `it prints '—' forever`,
-        );
-      }
-      if (r.valueId && !values.has(r.valueId)) {
-        problems.push(
-          `${def.type}: ${where}['${r.label}'].valueId = '${r.valueId}' is not registered in ` +
-            `face-readout-values.ts (have: ${[...values].join(', ') || 'none'}) — it prints ` +
-            `'—' forever`,
-        );
-      }
-    }
-    return problems;
-  }
-
-  /**
-   * Every problem with one def's SIDEBAR:
-   *   (a) a `presets` entry's every value key is a declared param, and the
-   *       value is INSIDE that param's declared range. Out-of-range is the
-   *       "the control lied about its own range" class: `presetWrites` clamps
-   *       at render time, so an out-of-range preset would silently apply a
-   *       DIFFERENT setting than the one it names;
-   *   (b) a `custom` block's `panelId` is REGISTERED (sidebar-panels.ts) — an
-   *       unregistered id renders nothing, i.e. a labelled blank column;
-   *   (c) `readouts` entries obey the shared readout clause;
-   *   (d) no block would render EMPTY (sidebarPlan drops it, so declaring it
-   *       is a no-op the author should know about).
-   */
-  function sidebarProblems(def: StructFaceDef, registered: ReadonlySet<string>): string[] {
-    const blocks = def.face?.sidebar;
-    if (!blocks) return [];
-    const problems: string[] = [];
-    const byId = new Map((def.params ?? []).map((p) => [p.id, p]));
-    const kept = new Set(sidebarPlan(def as FaceplateDefLike) ?? []);
-
-    for (const b of blocks) {
-      if (!kept.has(b)) {
-        problems.push(
-          `${def.type}: face.sidebar '${b.label}' (${b.kind}) renders EMPTY and is dropped — ` +
-            `a labelled void is worse than no block`,
-        );
-      }
-      if (b.kind === 'presets') {
-        for (const e of b.entries) {
-          for (const [pid, v] of Object.entries(e.values)) {
-            const p = byId.get(pid);
-            if (!p) {
-              problems.push(
-                `${def.type}: preset '${e.id}' writes '${pid}', which is not a declared param — ` +
-                  `presetWrites DROPS it, so the preset silently applies a different sound`,
-              );
-              continue;
-            }
-            if (!Number.isFinite(v) || v < p.min || v > p.max) {
-              problems.push(
-                `${def.type}: preset '${e.id}' sets ${pid} = ${v}, outside its declared ` +
-                  `${p.min}..${p.max} — presetWrites CLAMPS it, so the preset applies a value ` +
-                  `it does not name`,
-              );
-            }
-          }
-        }
-      } else if (b.kind === 'custom') {
-        if (!registered.has(b.panelId)) {
-          problems.push(
-            `${def.type}: face.sidebar custom panelId '${b.panelId}' is not registered in ` +
-              `sidebar-panels.ts (have: ${[...registered].join(', ') || 'none'}) — it paints a ` +
-              `labelled blank column`,
-          );
-        }
-      } else if (b.kind === 'readouts') {
-        problems.push(...readoutProblems(def, b.entries, `face.sidebar['${b.label}']`));
-      }
-    }
-    return problems;
-  }
 
   /**
    * EVERY DECLARED ANNOTATION MUST BE PAINTABLE with the switch on — the
@@ -2110,13 +2001,26 @@ describe('module-face lint — FACEPLATE STRUCTURE (PF-20: hero / sidebar / hint
     expect(problems.join('\n'), 'hero split totality').toBe('');
   });
 
-  it('every face.sidebar block paints: real params, in-range presets, registered panels', () => {
-    const registered = new Set(sidebarPanelIds());
-    const problems: string[] = [];
+  it('NO def declares a sidebar or a hero readout strip — the shapes are deleted', () => {
+    // ⚠ THIS REPLACED THE `face.sidebar` PAINT CLAUSE, WHICH HAD A SUBJECT
+    // UNTIL 2026-08-19. Both mechanisms are gone (owner ruling; see
+    // ModuleFaceHero in graph/types.ts), so the honest lint is no longer "does
+    // every declared block paint?" but "is anything declared at all?" — asserted
+    // over the LIVE registry rather than over the type, because a cast is how
+    // one would come back.
+    const offenders: string[] = [];
     for (const def of allDefs()) {
-      problems.push(...sidebarProblems(def as unknown as StructFaceDef, registered));
+      const face = def.face as Record<string, unknown> | undefined;
+      if (!face) continue;
+      if (face.sidebar) offenders.push(`${def.type}: declares face.sidebar`);
+      const hero = face.hero as Record<string, unknown> | undefined;
+      if (hero?.readouts) offenders.push(`${def.type}: declares face.hero.readouts`);
     }
-    expect(problems.join('\n'), 'face.sidebar drift').toBe('');
+    expect(
+      offenders,
+      'a deleted resting-text shape is declared again. The value belongs in aria-valuetext on ' +
+        'the control it describes; face-resting-text-source.test.ts is the gate that owns this rule.',
+    ).toEqual([]);
   });
 
   it('every declared ANNOTATION is reachable — title, page hint and band hints all paint', () => {
@@ -2260,27 +2164,11 @@ describe('module-face lint — FACEPLATE STRUCTURE (PF-20: hero / sidebar / hint
     };
   }
 
-  it('NEGATIVE CONTROL: a well-formed hero + sidebar passes every clause', () => {
+  it('NEGATIVE CONTROL: a well-formed hero passes every clause', () => {
     const def = structSynthetic({
-      face: {
-        order: ['tune'],
-        hero: {
-          control: 'tune',
-          readouts: [
-            { label: 'pitch', paramId: 'tune' },
-            { label: 'derived', valueId: 'kickdrum-tail' },
-            { label: 'fixed', text: 'x' },
-          ],
-        },
-        sidebar: [
-          { kind: 'presets', label: 'p', entries: [{ id: 'a', label: 'A', values: { tune: 60 } }] },
-          { kind: 'readouts', label: 'r', entries: [{ label: 'pitch', paramId: 'tune' }] },
-          { kind: 'custom', label: 'c', panelId: 'stereo-crossover' },
-        ],
-      },
+      face: { order: ['tune'], hero: { control: 'tune' } },
     });
     expect(heroProblems(def)).toEqual([]);
-    expect(sidebarProblems(def, new Set(sidebarPanelIds()))).toEqual([]);
   });
 
   it('NEGATIVE CONTROL (hero a): an UNRANKED hero key FAILS', () => {
@@ -2318,99 +2206,29 @@ describe('module-face lint — FACEPLATE STRUCTURE (PF-20: hero / sidebar / hint
     expect(problems[0]).toContain('is a PARAM control, not a panel');
   });
 
-  it('NEGATIVE CONTROL (hero d): an UNREGISTERED readout valueId FAILS', () => {
-    // The derived-readout registry is the mechanism that stops `tail` being a
-    // `sub_decay` readback; a typo'd id would silently print '—' and the
-    // faceplate would look almost right.
-    const problems = heroProblems(
-      structSynthetic({
-        face: {
-          order: ['tune'],
-          hero: { control: 'tune', readouts: [{ label: 'tail', valueId: 'no-such-derivation' }] },
-        },
-      }),
-    );
-    expect(problems).toHaveLength(1);
-    expect(problems[0]).toContain('is not registered in face-readout-values.ts');
-
-    // …and the registered one passes, which is what makes the clause a check
-    // rather than a blanket rejection of `valueId`.
+  it('NEGATIVE CONTROL: the deleted-shape sweep can actually FAIL', () => {
+    // The clause above is an ABSENCE over the live registry, so it would stay
+    // green if the sweep looked at nothing. Drive the same predicate with defs
+    // that DO declare each deleted shape and confirm both legs fire, then with
+    // a clean one to confirm it does not fire on everything.
+    const sweep = (defs: { type: string; face?: Record<string, unknown> }[]): string[] => {
+      const out: string[] = [];
+      for (const def of defs) {
+        const face = def.face;
+        if (!face) continue;
+        if (face.sidebar) out.push(`${def.type}: declares face.sidebar`);
+        const hero = face.hero as Record<string, unknown> | undefined;
+        if (hero?.readouts) out.push(`${def.type}: declares face.hero.readouts`);
+      }
+      return out;
+    };
     expect(
-      heroProblems(
-        structSynthetic({
-          face: {
-            order: ['tune'],
-            hero: { control: 'tune', readouts: [{ label: 'tail', valueId: 'kickdrum-tail' }] },
-          },
-        }),
-      ),
-    ).toEqual([]);
-  });
-
-  it('NEGATIVE CONTROL (hero e): a readout with two sources, or an unknown param, FAILS', () => {
-    const both = heroProblems(
-      structSynthetic({
-        face: { order: ['tune'], hero: { control: 'tune', readouts: [{ label: 'x', paramId: 'tune', text: 'y' }] } },
-      }),
-    );
-    expect(both).toHaveLength(1);
-    expect(both[0]).toContain('EXACTLY ONE source');
-
-    const ghost = heroProblems(
-      structSynthetic({
-        face: { order: ['tune'], hero: { control: 'tune', readouts: [{ label: 'x', paramId: 'ghost' }] } },
-      }),
-    );
-    expect(ghost).toHaveLength(1);
-    expect(ghost[0]).toContain('is not a declared param');
-  });
-
-  it('NEGATIVE CONTROL (sidebar a): a preset naming an unknown param, or out of range, FAILS', () => {
-    const ghost = sidebarProblems(
-      structSynthetic({
-        face: {
-          order: ['tune'],
-          sidebar: [{ kind: 'presets', label: 'p', entries: [{ id: 'a', label: 'A', values: { ghost: 1 } }] }],
-        },
-      }),
-      new Set(sidebarPanelIds()),
-    );
-    expect(ghost).toHaveLength(1);
-    expect(ghost[0]).toContain('is not a declared param');
-
-    const oor = sidebarProblems(
-      structSynthetic({
-        face: {
-          order: ['tune'],
-          sidebar: [{ kind: 'presets', label: 'p', entries: [{ id: 'a', label: 'A', values: { tune: 999 } }] }],
-        },
-      }),
-      new Set(sidebarPanelIds()),
-    );
-    expect(oor).toHaveLength(1);
-    expect(oor[0]).toContain('outside its declared');
-  });
-
-  it('NEGATIVE CONTROL (sidebar b): an UNREGISTERED custom panelId FAILS', () => {
-    const problems = sidebarProblems(
-      structSynthetic({
-        face: { order: ['tune'], sidebar: [{ kind: 'custom', label: 'c', panelId: 'no-such-panel' }] },
-      }),
-      new Set(sidebarPanelIds()),
-    );
-    expect(problems).toHaveLength(1);
-    expect(problems[0]).toContain('is not registered in sidebar-panels.ts');
-  });
-
-  it('NEGATIVE CONTROL (sidebar d): an EMPTY block FAILS', () => {
-    const problems = sidebarProblems(
-      structSynthetic({
-        face: { order: ['tune'], sidebar: [{ kind: 'presets', label: 'p', entries: [] }] },
-      }),
-      new Set(sidebarPanelIds()),
-    );
-    expect(problems).toHaveLength(1);
-    expect(problems[0]).toContain('renders EMPTY');
+      sweep([{ type: 'x', face: { sidebar: [{ kind: 'readouts', label: 'r', entries: [] }] } }]),
+    ).toHaveLength(1);
+    expect(
+      sweep([{ type: 'y', face: { hero: { control: 'tune', readouts: [{ label: 'tail' }] } } }]),
+    ).toHaveLength(1);
+    expect(sweep([{ type: 'clean', face: { order: [] } }])).toEqual([]);
   });
 
   /** A TABBED face (DOCK_TAB_MIN_BANDS pages, so `dockTabPlan` returns a rail)

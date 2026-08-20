@@ -366,37 +366,6 @@ describe('bluebox face model — §3 the bank picture and the keypad ranking', (
     );
   });
 
-  it('THE FACE DECLARES NO hero.readouts, and that is the measured consequence', () => {
-    // ⚠ THE ONE DECLARATION THIS FACE GAVE UP, pinned so it cannot creep back.
-    // `ModuleShell.readoutValue` reads the DURABLE param. Every param here is
-    // momentary, so a press writes the engine only — AND any durable write is
-    // scrubbed to rest within a frame by ModuleShell's own
-    // `clearStuckMomentaryParams` `$effect`, which reads `node.params` and thus
-    // re-fires on every write. A `hero.readouts` entry on this module would
-    // print `silent` on every render forever. The live numbers are inside the
-    // hero PANEL, which polls the engine handle.
-    //
-    // If a future platform change gives `FaceReadout` a live-engine reader,
-    // this is the assertion to delete — deliberately, not by accident.
-    expect(blueboxDef.face?.hero?.cell).toBe('bluebox-tonebank-{n}');
-    expect(blueboxDef.face?.hero?.readouts ?? []).toEqual([]);
-    // Every param of this module is momentary — the property that makes the
-    // durable reader useless. Asserted from the def rather than restated.
-    const momentary = new Set(blueboxDef.face?.momentary ?? []);
-    expect(blueboxDef.params.every((p) => momentary.has(p.id))).toBe(true);
-    // …and the sidebar's readouts are therefore all FIXED TEXT, never a
-    // `valueId`/`paramId` that the durable reader would answer with zero.
-    const readoutBlocks = (blueboxDef.face?.sidebar ?? []).filter((b) => b.kind === 'readouts');
-    expect(readoutBlocks.length).toBe(1);
-    for (const b of readoutBlocks) {
-      for (const e of b.entries) {
-        expect(typeof e.text, `sidebar readout '${e.label}' must be fixed text`).toBe('string');
-        expect(e.valueId).toBeUndefined();
-        expect(e.paramId).toBeUndefined();
-      }
-    }
-  });
-
   it('the READ is total over the def’s params, and rest-safe', () => {
     // A node with no stored params (fresh spawn) must read as silence, not NaN.
     expect(blueboxHeld(() => undefined).size).toBe(0);

@@ -242,70 +242,7 @@ export const slewSwitchDef: AudioModuleDef = {
     // declining the picture is what puts S3 on the tile.
     glyph: 'none',
 
-    // THE HERO IS READOUTS ONLY — no promoted control, the attenumix /
-    // moog907a / moog914 shape, and for their reason. Those three are the other
-    // interchangeable-channel modules in the set, and promoting one of N
-    // identical dials to hero size paints a false claim: it says "this channel
-    // is the big one" when what is actually true is only that it is FIRST.
-    // Channel 1's inclusion argument is enough to rank it; it is not enough to
-    // draw it four times larger than its siblings.
-    //
-    // ⚠ ALL THREE ROWS ARE DERIVED, and the first two are EACH OTHER'S NEGATIVE
-    // CONTROL — the clap-q / clap-bandwidth-hz shape, on the four dials a
-    // single readback cannot summarise:
-    //   settle  THE AUDIT'S FINDING ON THE PANEL (#1712). The slew dials are
-    //           the TAU of a one-pole, not the arrival time: 63.2 % of the way
-    //           at t = tau, and 99 % at ln(100) = 4.605 taus. So S1 reads
-    //           `0.5 s` and the channel arrives in 2.30 s, at every position on
-    //           the dial. It prints the SLOWEST of the four, so raising S3 past
-    //           S1 moves it while an S1 readback does not.
-    //   spread  slowest/fastest across the four — "are these four doing the
-    //           same thing". INVARIANT to scaling all four together, which is
-    //           precisely the dimension `settle` is most sensitive to; and
-    //           `settle` is invariant to lowering the FASTEST channel, which is
-    //           precisely what moves `spread`. Neither alone sees both.
-    //           `all alike` at spawn, which is the shipped state and worth
-    //           saying out loud.
-    //   lap     MODE and LENGTH TOGETHER, and neither dial can print it. The
-    //           pendulum term is 2(length-1) — it walks up and back down
-    //           without repeating either end — which is not a number either
-    //           control suggests. At the shipped length 4: forward 4, pendulum
-    //           6, random every clock, and `held` at length 1 where EOC never
-    //           fires at all because `advance()` returns before it can arm the
-    //           pulse. Measured over 19 clocks: 4 / 3 / 19 EOC pulses.
-    hero: {
-      readouts: [
-        { label: 'settle', valueId: 'slewswitch-settle' },
-        { label: 'spread', valueId: 'slewswitch-spread' },
-        { label: 'lap', valueId: 'slewswitch-lap' },
-      ],
-    },
 
-    // THE OUTPUT TABLE — the answer to "which jack does the picture show" on a
-    // module with SEVEN of them: all of them, as numbers, instead of one of
-    // them as a trace. One row per DECLARED jack, GENERATED from
-    // SLEWSWITCH_OUTPUT_READOUTS rather than typed seven times, and that roster
-    // is asserted equal to `outputs` in both directions and in order.
-    //
-    // Each row reads a DIFFERENT subset of the seven dials, which is what makes
-    // this seven readouts rather than seven views of one: out1..out4 each read
-    // exactly ONE slew dial and no other row reads it; `switched` reads LENGTH
-    // and XFADE; `step_idx` reads LENGTH alone; `eoc` reads MODE and LENGTH.
-    // MODE therefore moves exactly one row and XFADE moves exactly one row —
-    // the whole reach matrix is asserted, both the cells that must move and the
-    // cells that must not.
-    //
-    // ⚠ `eoc` PRINTS THE SAME valueId THE HERO'S `lap` ROW DOES, deliberately.
-    // The EOC period IS the lap; publishing it under two names would be two
-    // copies of one derivation, free to drift. (buggles shares
-    // `buggles-woggle-hz` between its hero and its table for the same reason.)
-    sidebar: [
-      {
-        kind: 'readouts',
-        label: 'outputs',
-        entries: SLEWSWITCH_OUTPUT_READOUTS.map((r) => ({ label: r.port, valueId: r.valueId })),
-      },
-    ],
 
     // No `title`, no `hint`, no band hints — owner ruling 2026-08-11: plain
     // labels and values on the face; the explanation lives in `docs`, one

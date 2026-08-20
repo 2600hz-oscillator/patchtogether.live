@@ -42,7 +42,6 @@
   --r: 9px;
   --r-dock: 11px;
   --pspine-w: 6px;
-  --dock-sidebar-w: 288px;
   --tab-radius: 8px 8px 0 0;
   --shadow: 0 18px 44px -18px rgba(0, 0, 0, 0.75);
 
@@ -413,35 +412,20 @@
   box-shadow: 0 0 8px var(--domain);
 }
 
-/* ---- PAGE grid: main editor + optional context sidebar ---- */
+/* ---- PAGE grid: the editor, full width ----
+   ⚠ ONE COLUMN, unconditionally. The `.has-sidebar` modifier, the `.sidebar`
+   column and its `.side-h` heading are DELETED (2026-08-19): the owner refused
+   the right-hand context column outright. Do not re-add a second track here.
+   See `ModuleFaceHero` in graph/types.ts for the ruling set. */
 .dock-faceplate .page {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 0;
 }
-.dock-faceplate .page.has-sidebar {
-  grid-template-columns: minmax(0, 1fr) var(--dock-sidebar-w);
-}
 .dock-faceplate .editor {
   padding: 18px 22px 22px;
   min-width: 0;
   overflow: auto;
-}
-.dock-faceplate .sidebar {
-  border-left: 1px solid var(--line);
-  background: linear-gradient(180deg, #12161e, #0e1219);
-  padding: 16px 15px 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-.dock-faceplate .side-h {
-  font-family: var(--f-mono);
-  font-size: 10px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--faint);
-  margin-bottom: 8px;
 }
 
 /* ============================================================

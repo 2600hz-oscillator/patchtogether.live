@@ -30,7 +30,6 @@ import {
   b3ntb0xRippleGain,
   b3ntb0xRippleGainText,
 } from './b3ntb0x-face-model';
-import { faceReadoutValueFor, faceReadoutValueIds } from '$lib/ui/workflow/face-readout-values';
 
 function reader(patch: Readonly<Record<string, number>> = {}) {
   return (paramId: string): number | undefined => {
@@ -248,56 +247,54 @@ describe('b3ntb0x readouts: TOTALITY (they run on every render)', () => {
 });
 
 describe('b3ntb0x face: the declaration', () => {
-  // ── THE RESTING FACE PRINTS NO DERIVED-STATE TEXT ─────────────────────────
+  // ── THE RESTING-TEXT CASES ARE GONE: THE TYPE ENFORCES THEM NOW ───────────
   //
-  // Owner ruling 2026-08-19. This assertion REPLACES "registers both readouts,
-  // and the face declares exactly them", which asserted the opposite — and it
-  // is strictly stronger, because the old one could only fail if a readout
-  // CHANGED, while this one fails if any readout comes BACK.
+  // This block used to carry `it('declares NO hero readouts …')`, asserting
+  // `face.hero.readouts` was empty. #1971 deleted the `readouts` FIELD from
+  // `ModuleFaceHero` outright, so that expression no longer typechecks — and
+  // the assertion behind it is now made by `tsc`, for every module, before a
+  // test runs. `graph/types.ts` states it at the declaration site: *"THERE IS
+  // NO `readouts` FIELD … re-adding either — under any name — is the mistake
+  // this note exists to prevent."*
   //
-  // ⚠ THE PRECONDITION IT USED TO RIDE ON IS GONE, which is why the test is
-  // re-pointed rather than deleted: a test whose subject no longer exists goes
-  // green and blind, and a green-and-blind gate certifies the next defect in
-  // its area.
-  it('declares NO hero readouts — the resting face prints no derived text', () => {
-    const declared = (b3ntb0xDef.face?.hero?.readouts ?? []).map((r) => r.valueId);
-    expect(
-      declared,
-      'the resting face paints no derived-state text of any shape (owner ruling ' +
-        '2026-08-19): no sidebars, no hero readout rows or banners, no state words, no ' +
-        'decimals. Permitted resting text is exhaustively the module name, tab/section ' +
-        'labels, control captions and option/landmark NAMES. A derived value lives in ' +
-        '`aria-valuetext` — which is a PER-CONTROL attribute, so a single-param value has ' +
-        'a host and a JOIN does not.',
-    ).toEqual([]);
-  });
+  // ⚠ THIS IS A DELETION, NOT A COVERAGE LAPSE, and the direction matters: a
+  // per-module runtime check that a field is empty is strictly WEAKER than a
+  // type that refuses the field. The fleet-wide SHAPE is denied by
+  // `face-resting-text-source.test.ts`, which enumerates the permitted text
+  // roles and reddens on the TYPE — the formulation chosen precisely because
+  // four different mechanisms had each passed the gate written for the
+  // previous one.
+  //
+  // What b3ntb0x specifically lost a SURFACE for is recorded rather than left
+  // to lapse: `ripple gain` = `sync_crush · (1 + 2·enhance) · (1 + 0.8·bend_d)`
+  // is a JOIN across three params on two pages, so unlike a single-param value
+  // it has no host control whose `aria-valuetext` could carry it — it is
+  // removed from the product, not relocated. The arithmetic and the derivation
+  // that refutes #1940's "bend_d IS enhance" reading both survive above, in
+  // this file's own model cases.
 
-  it('registers no readout VALUE either — deleted, not hidden', () => {
-    // Two-sided: the declaration above is one half, the registry is the other.
-    // A face could declare nothing while the ids stayed registered, which is
-    // the "there but hidden" shape the persistentReadout ruling refused by
-    // name — so the registry is checked directly.
-    for (const id of ['b3ntb0x-ripple-gain', 'b3ntb0x-line-shift']) {
-      expect(faceReadoutValueFor(id), `${id} is still registered`).toBeFalsy();
-    }
-  });
-
-  it('the registry lookup can still say YES (positive control)', () => {
-    // ⚠ WITHOUT THIS, the two assertions above pass for a `faceReadoutValueFor`
-    // that returns falsy for EVERYTHING — a broken import, a renamed export, a
-    // registry that failed to build. Then "no readout is registered" would be
-    // true of the whole fleet and this file would report it as compliance.
-    // Anchored to a face OTHER than this one, and re-pointed if that face's
-    // readouts are removed too.
-    const known = faceReadoutValueIds()[0];
-    expect(
-      known,
-      'no readout id is registered ANYWHERE, so the two checks above are vacuous — ' +
-        'either the fleet-wide removal is complete (in which case delete this control ' +
-        'and the two checks with it) or the registry did not build.',
-    ).toBeTruthy();
-    expect(faceReadoutValueFor(known!), `${known}`).toBeTruthy();
-  });
+  // ── THE REGISTRY CHECK AND ITS POSITIVE CONTROL ARE GONE, ON THE CONTROL'S
+  //    OWN INSTRUCTION ─────────────────────────────────────────────────────
+  //
+  // This file used to carry two more cases: "registers no readout VALUE either
+  // — deleted, not hidden" (asserting `faceReadoutValueFor` returned falsy for
+  // `b3ntb0x-ripple-gain` / `b3ntb0x-line-shift`) and a positive control
+  // proving that lookup could still say YES for some OTHER face. The control
+  // named its own exit condition: *"either the fleet-wide removal is complete
+  // (in which case delete this control and the two checks with it) or the
+  // registry did not build."*
+  //
+  // #1971 completed the fleet-wide removal — `face-readout-values.ts` and every
+  // id in it are DELETED, so `faceReadoutValueIds()` has no first element and
+  // the disjunction resolves to its first branch. Both cases go, together, as
+  // the control instructed. Keeping the negative half alone was the one
+  // outcome it explicitly ruled out: with the registry gone it would pass for
+  // EVERY id ever written and report that as compliance.
+  //
+  // Nothing is left uncovered. The registry is no longer a thing a face can
+  // register into, and the SHAPE is now denied fleet-wide at the type level by
+  // `face-resting-text-source.test.ts` — RED before a module adopts it, which
+  // is strictly stronger than this module asserting its own absence.
 
   it('ranks TBC into the same tier as the pair it gates (#1946)', () => {
     const order = b3ntb0xDef.face?.order ?? [];

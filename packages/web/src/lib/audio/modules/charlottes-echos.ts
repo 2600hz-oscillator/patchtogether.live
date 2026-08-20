@@ -214,70 +214,7 @@ export const charlottesEchosDef: AudioModuleDef = {
       // FEEDBACK is promoted because it is the control two of the three readouts
       // are about and the one with the largest measured authority.
       control: 'feedback',
-      readouts: [
-        // Each is blind in a DIFFERENT direction from the dial nearest it:
-        //   tail    is a join over FEEDBACK, DECAY *and* DELAY. A FEEDBACK
-        //           readback is blind to DECAY (0.2 → 0.35 turns a 1.9 s tail
-        //           into a drone with FEEDBACK untouched) and vice versa, and
-        //           DELAY changes the answer 76× across its travel with the
-        //           loop gain bit-identical.
-        //   climb   is the interval no 0..0.2 dial prints: (1+PITCH)^6 by the
-        //           last head — +990 ¢ at PITCH 0.1.
-        //   spacing is the EFFECTIVE first echo. A `paramId: 'delay'` readout
-        //           prints the same number on both sides of the +45 ms step
-        //           PITCH introduces and is wrong by 45 ms on one of them.
-        { label: 'tail', valueId: 'ce-tail' },
-        { label: 'climb', valueId: 'ce-climb' },
-        { label: 'spacing', valueId: 'ce-spacing' },
-      ],
     },
-
-    sidebar: [
-      // TWO NUMBERS AND A FACT. The two numbers are different KINDS of number
-      // and the captions say so: `stage 4 gain` is the closed form, exactly
-      // derivable from the source; `margin` is the same law expressed in the
-      // units of the dials you would actually turn. The fact is fixed because
-      // it is a property of the DSP, not of the params — the two channels are
-      // independent cascades and `FaceReadoutValue` cannot see a cable anyway.
-      {
-        kind: 'readouts',
-        label: 'the loop',
-        entries: [
-          { label: 'stage 4 gain', valueId: 'ce-loop-gain' },
-          { label: 'margin', valueId: 'ce-margin' },
-          { label: 'stereo', text: 'dual mono — no width, no ping-pong' },
-        ],
-      },
-      // FOUR OPENERS, and the last one is the point: "never stops" is a
-      // legitimate setting on this module, so the sidebar offers it deliberately
-      // rather than leaving a player to find the boundary by accident.
-      {
-        kind: 'presets',
-        label: 'openers',
-        entries: [
-          // ⚠ EVERY `note` BELOW IS A CLAIM THE MODEL CAN CHECK, and
-          // charlottes-echos-face-model.test.ts checks each one against the same
-          // arithmetic the readouts use — so a preset whose note stopped being
-          // true would go red rather than sit on the faceplate lying quietly.
-          {
-            id: 'slap', label: 'clean slapback', note: 'gone in 0.2 s',
-            values: { delay: 0.09, feedback: 0.1, decay: 0.05, pitchUp: 0, mix: 0.3 },
-          },
-          {
-            id: 'dub', label: 'dub tail', note: 'the shipped loop, 1.9 s',
-            values: { delay: 0.15, feedback: 0.5, decay: 0.2, pitchUp: 0, mix: 0.5 },
-          },
-          {
-            id: 'shimmer', label: 'ascending', note: 'up a minor 6th by head 4',
-            values: { delay: 0.15, feedback: 0.5, decay: 0.2, pitchUp: 0.08, mix: 0.6 },
-          },
-          {
-            id: 'drone', label: 'never stops', note: 'past the boundary — on purpose',
-            values: { delay: 0.15, feedback: 0.5, decay: 0.45, pitchUp: 0, mix: 0.7 },
-          },
-        ],
-      },
-    ],
   },
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {

@@ -92,8 +92,35 @@ test('vstFx: helper echo carries lane audio; a mounted mute plugin is IN the pat
     )
     .toBeLessThan(AUDIBLE_FLOOR);
 
-  // 3. UNMOUNT: back to the echo, lane audio returns.
+  // 2b. PERSISTENCE (M4): the mount + captured state land in node.data.vst
+  //     (the driver's discrete-event writes), and the card paints the size.
+  const persisted = () =>
+    page.evaluate(() => {
+      const w = globalThis as unknown as {
+        __patch: { nodes: Record<string, { data?: { vst?: { pluginId: string; stateB64?: string } } } | undefined> };
+      };
+      return w.__patch.nodes['fx']?.data?.vst ?? null;
+    });
+  await expect
+    .poll(async () => (await persisted())?.pluginId ?? null, {
+      timeout: 10_000,
+      message: 'mounting must persist { pluginId } into node.data.vst',
+    })
+    .toBe('mock:mute');
+  await expect
+    .poll(async () => typeof (await persisted())?.stateB64, {
+      timeout: 10_000,
+      message: 'the driver must capture the plugin state blob after mount',
+    })
+    .toBe('string');
+  await expect(page.getByTestId('vst-state-size-fx')).toContainText('state saved in patch');
+
+  // 3. UNMOUNT: back to the echo, lane audio returns — and the persisted
+  //    record clears (explicit unmount is the ONLY clearing signal).
   await page.getByTestId('vst-unmount-fx').click();
+  await expect
+    .poll(async () => await persisted(), { timeout: 10_000, message: 'explicit unmount clears node.data.vst' })
+    .toBeNull();
   const back = await readScopePeakOverWindow(page, 'sc', AUDIBLE_CAP_MS, { untilPeak: AUDIBLE_FLOOR });
   expect(
     back.peak,
