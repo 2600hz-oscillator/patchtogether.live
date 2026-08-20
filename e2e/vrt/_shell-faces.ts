@@ -1552,6 +1552,60 @@ export const FACES = [
       + 'bank is empty and the composite outputs black on every frame by construction rather '
       + 'than by the flag.',
   },
+  // COLOUROFMAGIC (2026-08-20) — the multi-colorspace processor, and the
+  // largest face in the roster by param count (37).
+  //
+  // `pages: 5` is the POST-HERO-SPLIT band count, and here the two numbers
+  // genuinely differ: `face.pages` declares SIX entries, and the hero promotes
+  // `preview` out of the `output` page, which was its only control. So
+  // `heroFacePlan` DROPS that emptied band — the `noise` case — and the dock
+  // renders the five colorspace blocks. Reading the declared length here would
+  // pin 6 and be wrong.
+  //
+  // ⚠ IT DOES NOT REACH THE TAB RAIL, which is the counter-intuitive part of a
+  // 37-param module: `DOCK_TAB_MIN_BANDS = 7` counts BANDS. Five honest blocks
+  // render as one column, and padding to seven to force the rail is refused by
+  // the owner ruling.
+  //
+  // PIXEL DETERMINISM, and this module is the EASY case rather than the hard
+  // one. The shader is a pure per-frame function of its input — five colorspace
+  // encode/bias/decode passes, no feedback buffer, no accumulator, no RNG and
+  // no time term. Nothing is patched into VIDEO IN in this scene, so `uHasInput`
+  // is 0 and every frame is identical by construction, not by the flag. The
+  // `freeze` write is therefore a belt on a brace here, unlike freezeframe or
+  // warrensvisions where it (or `simPin`) is the thing holding the scene.
+  //
+  // ⚠ AND `freeze` IS WHY THAT PARAM STILL EXISTS ON A FACED MODULE.
+  // `freezeFaceVideo` writes `params.freeze = 1` directly into the patch, so
+  // the harness needs the param — but the def now declares it `noUserControl`
+  // (`writer: 'internal'`), so face completeness no longer PAINTS it. Without
+  // that, promotion would have put a "hold the last rendered frame" switch on
+  // the player's faceplate, where a frozen picture reads as a broken module.
+  // The harness keeps its hook; the player never sees it.
+  //
+  // NOT MASKED. The dock body is the module's own `fullViewBody` extension (the
+  // preview canvas plus its SCREEN switch) and the compact tile is a
+  // VideoTileThumb — both black-and-stable with nothing patched, for the reason
+  // above. This is the `warrensvisions` position: the CARD baseline masks its
+  // canvas (`VRT_MODULE_MASKS`, because the card is captured on a live rack),
+  // and the FACE scenes do not need to.
+  {
+    type: 'colourofmagic',
+    pages: 5,
+    videoFaceWhy:
+      'a VIDEO module, so it must boot into the video zone rather than a mixer channel column — '
+      + 'without this field bootWithFace waits out the full 90 s test timeout for a column '
+      + 'membership a video node never acquires. Both scenes carry a live picture: the compact '
+      + 'tile paints a VideoTileThumb through hasVideoSurface, and the dock body is the '
+      + "module's own fullViewBody extension (the preview canvas plus its SCREEN ON/OFF switch, "
+      + 'which a faced video module can only reach through that slot — #1928). Neither is '
+      + 'masked: the shader is a pure per-frame function of VIDEO IN with no feedback, '
+      + 'accumulator, RNG or time term, and nothing is patched in this scene, so the picture is '
+      + 'identical on every frame by construction. The freeze write DOES land on this def — it '
+      + 'declares a real `freeze` param, which is why that param survives promotion as '
+      + '`noUserControl` rather than being deleted — but it is holding an already-static '
+      + 'picture, so it is a belt on a brace rather than the thing making the scene capturable.',
+  },
 ] as const;
 
 /** TIGHT per-scene diff budgets (absolute pixels; Playwright takes the MIN of

@@ -55,6 +55,10 @@ import { MIXMSTRS_CHANNELS } from '$lib/audio/modules/mixmstrs';
 // The spiro count spirographs' ACKNOWLEDGED_LATCHING entries are DERIVED from,
 // for the same reason as the mixmstrs channels — see the entry itself.
 import { SPIRO_COUNT_MAX, spiroParamId } from '$lib/video/modules/spirographs';
+// The fifteen OVER/CLAMP channel switches colourofmagic's ACKNOWLEDGED_LATCHING
+// entries are DERIVED from — see the entry itself for why they are generated
+// rather than typed.
+import { COLOUROFMAGIC_OVER_PARAMS } from '$lib/video/modules/colourofmagic';
 import { laneBodyPlan, laneGlyphFor } from './module-shell-model';
 import { looksLikeSwitch } from './shell-control-kind';
 import { panelCellKeys, shellCellFor } from './shell-cells';
@@ -744,6 +748,43 @@ describe('module-face lint — MOMENTARY pads (face.momentary)', () => {
     // sweep could never be left running, which is one of the module's two
     // looks.
     'rasterize:wrap',
+    // COLOUROFMAGIC, 2026-08-20 — eighteen switch-shaped params on one module,
+    // and the repetitive fifteen are GENERATED rather than typed (the mixmstrs
+    // channels / spirographs spiro-count precedent). `COLOUROFMAGIC_OVER_PARAMS`
+    // is derived from the def's own `params`, so a renamed or deleted channel
+    // changes this list instead of leaving a dead exemption behind.
+    //
+    // LATCHING, all fifteen: each is that channel's OVER/CLAMP mode — CLAMP
+    // clips to the legal range, OVER wraps it through `fract()` (the LZX
+    // chroma-wrap look). It is a mode you set for a picture and LEAVE; a
+    // momentary render would snap the channel back to CLAMP the instant you let
+    // go, which would put the wrap look out of reach. None has a CV port, so
+    // nothing pulses them either.
+    ...COLOUROFMAGIC_OVER_PARAMS.map((id) => `colourofmagic:${id}`),
+    // The three that are NOT channel switches, written out because each latches
+    // for its own reason:
+    //   `replace` — the RGB palette REPLACE mode. Persisted state you leave
+    //   engaged, and the card auto-enables it when a swatch is picked, which
+    //   only makes sense for a latch.
+    'colourofmagic:replace',
+    //   `mode_hsl` — picks HSV or HSL for that whole block. A colorspace
+    //   choice, not a gesture.
+    'colourofmagic:mode_hsl',
+    //   ⚠ `freeze` — and this entry records a GAP rather than a decision. The
+    //   param is declared `noUserControl` (`writer: 'internal'`), so the player
+    //   has no control over it at all and "does releasing this pad write REST
+    //   back" — the question this ratchet exists to answer — does not apply.
+    //   THIS GATE DOES NOT READ `noUserControl`: it walks every param through
+    //   `looksLikeSwitch` and nothing else.
+    //   ⚠ AND WHETHER IT FIRES IS AN ACCIDENT OF AN UNRELATED FIELD. backdraft
+    //   declares the same VRT `freeze` in its own `noUserControl` and is NOT
+    //   listed here — only because its param says `curve: 'linear'`, so
+    //   `looksLikeToggle` returns false and the gate never asks. Same role,
+    //   same invisibility to the player, opposite treatment, decided by a curve
+    //   declaration that has nothing to do with latching. Filed rather than
+    //   patched, because narrowing a platform ratchet does not belong in a face
+    //   PR. It does latch, so the classification is at least true.
+    'colourofmagic:freeze',
   ]);
 
   it('no ACKNOWLEDGED_LATCHING param is DOCUMENTED as momentary (the cross-check)', () => {

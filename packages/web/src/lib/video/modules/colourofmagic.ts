@@ -464,8 +464,78 @@ export const colourofmagicDef: VideoModuleDef = {
     { id: 'pal_r', label: 'pal r', defaultValue: DEFAULTS.pal_r, min: 0, max: 0xffffff, curve: 'discrete' },
     { id: 'pal_g', label: 'pal g', defaultValue: DEFAULTS.pal_g, min: 0, max: 0xffffff, curve: 'discrete' },
     { id: 'pal_b', label: 'pal b', defaultValue: DEFAULTS.pal_b, min: 0, max: 0xffffff, curve: 'discrete' },
-    { id: 'preview', label: 'preview', defaultValue: DEFAULTS.preview, min: 0, max: 21, curve: 'discrete' },
+    {
+      id: 'preview',
+      label: 'preview',
+      defaultValue: DEFAULTS.preview,
+      min: 0,
+      max: 21,
+      curve: 'discrete',
+      // ── THE 22 TAP NAMES LIVE HERE, NOT ON THE CARD ───────────────────────
+      // They were `PREVIEW_LABELS` inside ColourofmagicCard, which made a
+      // faceplate paint a 22-position ANONYMOUS dial: `preview` chooses WHICH
+      // OF 22 PICTURES you are looking at, and with no roster the resolver
+      // returns `knob` at every tier, so the one control the module is unusable
+      // without had no readable state (#2022).
+      //
+      // The index IS the value IS `uOutMode` — the shader's output selector —
+      // so this roster is ordered by mode number and must stay that way.
+      //
+      // ⚠ THIS IS A DELIBERATE LOOK CHANGE, DECIDED RATHER THAN DISCOVERED.
+      // 22 > SEGMENTED_MAX_OPTIONS (6), so the DOCK resolves `selector` — a
+      // portaled dropdown — where the card paints 22 pills. That is the
+      // platform-standard resolution above the button-row budget, it is MORE
+      // compact than a 22-pill grid (the direction the width ruling points),
+      // and the alternative is the anonymous dial this wave exists to delete.
+      // Option NAMES are permitted resting text precisely because they
+      // disambiguate otherwise-identical states, which is this control exactly.
+      //
+      // ⚠ Unlike `face`, `params` is NOT stripped by the attest normalizer and
+      // this def IS in the WebGL basis — so this roster costs an owner-machine
+      // re-attest. It is the only edit in this face that does.
+      options: [
+        { value: 0, label: 'PASS', title: 'the untouched source picture' },
+        { value: 1, label: 'RGB', title: 'the RGB block composite' },
+        { value: 2, label: 'YDbDr', title: 'the YDbDr (SECAM) block composite' },
+        { value: 3, label: 'HSV', title: 'the HSV/HSL block composite' },
+        { value: 4, label: 'R', title: 'RGB block — red channel, as grayscale' },
+        { value: 5, label: 'G', title: 'RGB block — green channel, as grayscale' },
+        { value: 6, label: 'B', title: 'RGB block — blue channel, as grayscale' },
+        { value: 7, label: 'LUMA', title: 'RGB block — luminance, as grayscale' },
+        { value: 8, label: 'dY', title: 'YDbDr block — luma channel' },
+        { value: 9, label: 'Db', title: 'YDbDr block — blue-difference channel' },
+        { value: 10, label: 'Dr', title: 'YDbDr block — red-difference channel' },
+        { value: 11, label: 'H', title: 'HSV block — hue channel' },
+        { value: 12, label: 'S', title: 'HSV block — saturation channel' },
+        { value: 13, label: 'V', title: 'HSV block — value channel' },
+        { value: 14, label: 'YIQ', title: 'the YIQ (NTSC composite) block composite' },
+        { value: 15, label: 'iY', title: 'YIQ block — luma channel' },
+        { value: 16, label: 'I', title: 'YIQ block — in-phase channel' },
+        { value: 17, label: 'Q', title: 'YIQ block — quadrature channel' },
+        { value: 18, label: 'YCC', title: 'the YCbCr BT.601 studio-swing block composite' },
+        { value: 19, label: 'cY', title: 'YCbCr block — luma channel' },
+        { value: 20, label: 'Cb', title: 'YCbCr block — blue-difference channel' },
+        { value: 21, label: 'Cr', title: 'YCbCr block — red-difference channel' },
+      ],
+    },
     { id: 'freeze', label: 'freeze', defaultValue: DEFAULTS.freeze, min: 0, max: 1, curve: 'discrete' },
+  ],
+
+  // ⚠ `freeze` IS A VRT HARNESS SWITCH AND WOULD HAVE SHIPPED TO PLAYERS.
+  // It is a declared `ParamDef`, so face completeness ranks and paints every
+  // one — which would have put "hold the last rendered frame" on the faceplate
+  // as an ordinary two-state toggle, where freezing the picture reads as a
+  // broken module. The def's own docs already said "no card control"; this is
+  // that sentence made enforceable. `writer: 'internal'` is asserted against
+  // this def's ports to have no `paramTarget`, so the day a CV port targets it
+  // the entry stops being true and says so. Free even on a basis file —
+  // `noUserControl` is one of the hash-transparent def properties.
+  noUserControl: [
+    {
+      param: 'freeze',
+      writer: 'internal',
+      why: 'determinism toggle for VRT capture: at >=0.5 the renderer holds its last frame so a scene is byte-stable. No port targets it and no card control sets it — the backdraft `freeze` precedent verbatim',
+    },
   ],
 
   docs: {
@@ -566,6 +636,159 @@ export const colourofmagicDef: VideoModuleDef = {
       pal_b: "pal b: the palette colour the RGB blue channel maps to under REPLACE (packed 0xRRGGBB, default violet). Set via the card's colour picker.",
       preview: "preview: which of the 22 outputs the on-card preview canvas shows (discrete 0..21: 0 pass, 1 rgb, 2 ydbdr, 3 hsvhsl, 4 r, 5 g, 6 b, 7 luma, 8 ydb_y, 9 ydb_db, 10 ydb_dr, 11 hsv_h, 12 hsv_s, 13 hsv_v, 14 yiq, 15 yiq_y, 16 yiq_i, 17 yiq_q, 18 ycc, 19 ycc_y, 20 ycc_cb, 21 ycc_cr). Default 1 (rgb). The previewed output is always rendered even when unpatched; other outputs render only when patched downstream.",
       freeze: "freeze: hidden determinism toggle — at 1 the renderer holds its last rendered frame (no redraw) for stable VRT capture. Default 0; no card control.",
+    },
+  },
+
+  // ── THE FACEPLATE ─────────────────────────────────────────────────────────
+  //
+  // WHAT IT IS FOR: one picture, five colorspaces at once. The source runs
+  // through RGB, YDbDr (SECAM), HSV/HSL, YIQ (NTSC) and YCbCr BT.601 in
+  // parallel; each block encodes into its space, BIASES each component, and
+  // decodes back. Per channel there is a bias knob, a MONO OVERRIDE input that
+  // REPLACES that channel from a patched grayscale stream, and an OVER/CLAMP
+  // toggle for out-of-range behaviour (CLAMP clips legal, OVER wraps via
+  // fract() — the LZX chroma-wrap look). The verb is "bias a channel and watch
+  // what that colorspace does with it".
+  //
+  // RANK: `preview` FIRST, and it is not close. Twenty-two outputs run in
+  // parallel and this control chooses WHICH ONE you are looking at — every
+  // other control adjusts a picture, this one selects it, and the module is
+  // unusable without it. Then the five blocks in the card's own order (RGB
+  // first: it is the only block with a palette REPLACE mode), and within a
+  // block BIAS above its OVER toggle, because bias is the continuous gesture
+  // and OVER is a mode for its edges.
+  //
+  // FIVE PAGES, ONE PER COLORSPACE BLOCK — which is how the card is built
+  // (`colourofmagic-block-rgb` / `-ydbdr` / `-hsv` / `-yiq` / `-ycc`) and how
+  // the module is documented. ⚠ IT DOES NOT REACH THE TAB RAIL, and that is the
+  // easy thing to get wrong here: `DOCK_TAB_MIN_BANDS = 7` counts BANDS, not
+  // params. Thirty-seven params is not thirty-seven bands. Getting to 7 would
+  // mean splitting each block's biases from its OVER toggles, which is padding,
+  // and the owner ruling is explicit that pages are never padded to force the
+  // rail. Five honest pages render as one column and that is correct.
+  //
+  // HERO: `preview` alone, no `cell`. The live picture arrives through the
+  // `fullViewBody` extension below rather than a hero panel — declaring both
+  // would put TWO pictures on one faceplate. ⚠ The hero MOVES a key out of a
+  // band rather than duplicating it (a duplicate emits a second
+  // `control-preview` and fails faces-parity's exact multiset), and the key
+  // must already be claimed by a band — so `preview` is declared on its own
+  // `output` page, which `heroFacePlan` then EMPTIES and drops. That is the
+  // `noise` case, and it is why the VRT roster entry says `pages: 5` while
+  // `face.pages` has six entries. No hint on that page: a hint on a band the
+  // hero orphans is authored, reviewed and rendered nowhere.
+  //
+  // `glyph: 'none'` is FORCED, not chosen — `primaryAudioOutPortId` matches
+  // `type === 'audio'` and a video def has none, so every other kind resolves
+  // `{kind:'static'}` and reddens the dead-glyph clause. The picture arrives
+  // from a different seam entirely (`hasVideoSurface`).
+  face: {
+    order: [
+      'preview',
+      // rgb — the only block with a palette mode, so it leads.
+      'bias_r', 'bias_g', 'bias_b', 'over_r', 'over_g', 'over_b',
+      'replace', 'pal_r', 'pal_g', 'pal_b',
+      'bias_y', 'bias_db', 'bias_dr', 'over_y', 'over_db', 'over_dr',
+      'bias_h', 'bias_s', 'bias_v', 'over_h', 'over_s', 'over_v', 'mode_hsl',
+      'bias_yiq_y', 'bias_yiq_i', 'bias_yiq_q', 'over_yiq_y', 'over_yiq_i', 'over_yiq_q',
+      'bias_ycc_y', 'bias_ycc_cb', 'bias_ycc_cr', 'over_ycc_y', 'over_ycc_cb', 'over_ycc_cr',
+    ],
+
+    // ⚠ THREE PACKED-RGB INTEGERS, AND THIS DECLARATION IS THE WHOLE FIX.
+    // `pal_r/g/b` are `0..16777215 discrete` — structurally identical to any
+    // other discrete param, differing only in MAGNITUDE, and nothing in the
+    // repo reads magnitude. Undeclared they resolve to a KNOB SWEEPING 16.7
+    // MILLION VALUES, and `faces-parity` PASSES that (it drags the knob and the
+    // param moves), so the absence of the declaration is invisible to every
+    // gate. The card has always drawn them as native colour swatches.
+    //
+    // ⚠ FIRST ADOPTER: `'color'` has a type, a documented contract and a live
+    // `<ColorField>` renderer (ModuleShell.svelte:876-892) and ZERO modules
+    // declaring it. Verified the consumer reads it before declaring — a
+    // declaration nothing renders would be a green gate certifying a live bug.
+    paramCells: { pal_r: 'color', pal_g: 'color', pal_b: 'color' },
+
+    glyph: 'none',
+
+    hero: { control: 'preview' },
+
+    // ⚠ SCREEN ON/OFF, and on a FACE it cannot live on the card. Promotion sets
+    // `migrated()` true and neither surface renders `ColourofmagicCard` after
+    // that, so a toggle left there is deleted by the very promotion meant to
+    // keep it (#1928, the spirographs bug). There is no generic shell
+    // affordance — `previewCollapsed` appears in zero shell files — so it comes
+    // through the `fullViewBody` slot, the route backdraft / videoOut /
+    // spirographs already take. SCREEN OFF stops the preview COPY, never the
+    // engine (#2015): the video engine owns the render and this component only
+    // blits from it, so the first frame back ON is current by construction.
+    extension: 'colourofmagic',
+
+    pages: [
+      // Emptied by the hero and dropped — see the HERO note above.
+      { id: 'output', label: 'output', controls: ['preview'] },
+      {
+        id: 'rgb',
+        label: 'rgb',
+        hint: 'the plain additive block, and the only one with a palette. REPLACE remaps R/G/B to the three swatches for a duotone/tritone recolour; the biases are ordinary channel lifts.',
+        controls: ['bias_r', 'bias_g', 'bias_b', 'over_r', 'over_g', 'over_b', 'replace', 'pal_r', 'pal_g', 'pal_b'],
+      },
+      {
+        id: 'ydbdr',
+        label: 'ydbdr',
+        hint: 'SECAM. Luma plus two colour-difference channels — biasing Db or Dr pushes the picture along the broadcast chroma axes rather than through RGB.',
+        controls: ['bias_y', 'bias_db', 'bias_dr', 'over_y', 'over_db', 'over_dr'],
+      },
+      {
+        id: 'hsv',
+        label: 'hsv',
+        hint: 'the perceptual block, and the one with a mode switch: HSV or HSL. Hue biases in degrees, so OVER here is the classic hue wrap.',
+        controls: ['bias_h', 'bias_s', 'bias_v', 'over_h', 'over_s', 'over_v', 'mode_hsl'],
+      },
+      {
+        id: 'yiq',
+        label: 'yiq',
+        hint: 'NTSC composite. The I/Q axes are tilted relative to Db/Dr, so the same bias lands somewhere different from the SECAM block — which is the reason both exist.',
+        controls: ['bias_yiq_y', 'bias_yiq_i', 'bias_yiq_q', 'over_yiq_y', 'over_yiq_i', 'over_yiq_q'],
+      },
+      {
+        id: 'ycc',
+        label: 'ycc',
+        hint: 'YCbCr BT.601 at studio swing, so its legal range is narrower than the others — CLAMP bites sooner here, and OVER wraps sooner.',
+        controls: ['bias_ycc_y', 'bias_ycc_cb', 'bias_ycc_cr', 'over_ycc_y', 'over_ycc_cb', 'over_ycc_cr'],
+      },
+    ],
+
+    // ⚠ THE REAR CARD IS CURATED BECAUSE THE DERIVED PLAN WAS MEASURED AND IS
+    // WRONG FOR THIS SHAPE. Run at this module's 31x22 — the second-largest
+    // port field the face programme has met — `rearFieldPlan` puts every one of
+    // the FIFTEEN mono-override inputs into ONE undifferentiated 16-hole
+    // `signal` section, because only the `_cv` ports carry a `paramTarget` that
+    // projects them onto a page. So the block identity that the
+    // `{block}_{ch}_in` naming encodes was visible to a reader and invisible to
+    // the layout: fifteen identically-typed jacks in one pile.
+    //
+    // Curated, each block owns its own six holes (3 CV + 3 mono override) and
+    // the outputs group by producing block instead of one 22-hole `out`
+    // section. Measured both ways; totality holds in both (53 holes addressing
+    // 53 declared ports, no duplicates, nothing unreachable).
+    //
+    // ⚠ 53 holes is past `REAR_DENSE_ROWS` (40), so this card renders DENSE —
+    // tighter rows and the endpoint chip degrading to a plug mark. That is the
+    // documented high-port-count ladder doing its job, not a fallback to avoid.
+    rear: {
+      groups: [
+        { id: 'rgb', label: 'rgb', ports: ['rgb_r_cv', 'rgb_g_cv', 'rgb_b_cv', 'rgb_r_in', 'rgb_g_in', 'rgb_b_in'] },
+        { id: 'ydbdr', label: 'ydbdr', ports: ['ydb_y_cv', 'ydb_db_cv', 'ydb_dr_cv', 'ydb_y_in', 'ydb_db_in', 'ydb_dr_in'] },
+        { id: 'hsv', label: 'hsv', ports: ['hsv_h_cv', 'hsv_s_cv', 'hsv_v_cv', 'hsv_h_in', 'hsv_s_in', 'hsv_v_in'] },
+        { id: 'yiq', label: 'yiq', ports: ['yiq_y_cv', 'yiq_i_cv', 'yiq_q_cv', 'yiq_y_in', 'yiq_i_in', 'yiq_q_in'] },
+        { id: 'ycc', label: 'ycc', ports: ['ycc_y_cv', 'ycc_cb_cv', 'ycc_cr_cv', 'ycc_y_in', 'ycc_cb_in', 'ycc_cr_in'] },
+        { id: 'source', label: 'source', direction: 'output', ports: ['pass'] },
+        { id: 'out_rgb', label: 'rgb', direction: 'output', ports: ['rgb', 'r', 'g', 'b', 'luma'] },
+        { id: 'out_ydbdr', label: 'ydbdr', direction: 'output', ports: ['ydbdr', 'ydb_y', 'ydb_db', 'ydb_dr'] },
+        { id: 'out_hsv', label: 'hsv', direction: 'output', ports: ['hsvhsl', 'hsv_h', 'hsv_s', 'hsv_v'] },
+        { id: 'out_yiq', label: 'yiq', direction: 'output', ports: ['yiq', 'yiq_y', 'yiq_i', 'yiq_q'] },
+        { id: 'out_ycc', label: 'ycc', direction: 'output', ports: ['ycc', 'ycc_y', 'ycc_cb', 'ycc_cr'] },
+      ],
     },
   },
 
@@ -766,3 +989,21 @@ export const colourofmagicDef: VideoModuleDef = {
     };
   },
 };
+
+/**
+ * The fifteen OVER/CLAMP switches — one per colorspace channel.
+ *
+ * ⚠ DERIVED FROM THE DEF, NEVER TYPED. `module-face-lint`'s momentary/latching
+ * ratchet needs every switch-shaped param named, and typing fifteen
+ * near-identical ids there would be fifteen chances to drift from a def that
+ * gains or loses a channel — the mixmstrs / spirographs precedent, where the
+ * repetitive half of an ACKNOWLEDGED_LATCHING block is generated from the
+ * module's own exported structure and only the genuinely distinct entries are
+ * written out by hand.
+ *
+ * Anchored by construction: it reads the live `params`, so a renamed or deleted
+ * `over_*` param changes this list rather than leaving a dead exemption behind.
+ */
+export const COLOUROFMAGIC_OVER_PARAMS: readonly string[] = colourofmagicDef.params
+  .filter((p) => p.id.startsWith('over_'))
+  .map((p) => p.id);

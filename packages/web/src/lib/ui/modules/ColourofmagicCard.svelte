@@ -20,7 +20,7 @@
   import { VIDEO_RES } from '$lib/video/engine';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
-  import { cardParams } from './card-kit';
+  import { cardParams, paramSpec } from './card-kit';
   import { drawPreviewDownscaled } from './preview-downscale';
 
   let { id, data }: NodeProps = $props();
@@ -104,12 +104,14 @@
   }
 
   // ── preview select (22 outputs; index === uOutMode === preview value) ──
-  const PREVIEW_LABELS = [
-    'PASS', 'RGB', 'YDbDr', 'HSV', 'R', 'G', 'B', 'LUMA',
-    'dY', 'Db', 'Dr', 'H', 'S', 'V',
-    'YIQ', 'iY', 'I', 'Q',
-    'YCC', 'cY', 'Cb', 'Cr',
-  ];
+  // ⚠ THE TAP NAMES COME FROM THE DEF, NOT FROM A LITERAL HERE. They used to be
+  // a card-local array, which made this card the ONLY place the 22 outputs were
+  // named — so a faceplate resolved `preview` to a 22-position ANONYMOUS dial
+  // (#2022). The roster now lives on the `ParamDef` (`preview.options`, ordered
+  // by `uOutMode`, which IS the param value), and both surfaces read it, so a
+  // rename cannot leave the card and the face disagreeing about which tap is
+  // which. The pill INDEX is still the param value, exactly as before.
+  const PREVIEW_LABELS = (paramSpec(colourofmagicDef, 'preview').options ?? []).map((o) => o.label);
   let previewSel = $derived(Math.round(pget('preview')));
   function selectPreview(n: number): void {
     setNodeParam(id, 'preview', n);

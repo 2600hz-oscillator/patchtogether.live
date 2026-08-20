@@ -2420,6 +2420,50 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // NOT CONTROL-HEAVY: four honest pages against DOCK_TAB_MIN_BANDS = 7, and
   // per the 2026-08-18 ruling they are not padded to reach it.
   'warrensvisions',
+
+  // FACE BATCH 16 · colourofmagic (2026-08-20) — the largest module in the
+  // unfaced pool by a wide margin (37 params, 31 in, 22 out) and the FIRST
+  // ADOPTER of the `'color'` cell kind, which had a type, a documented contract
+  // and a live `<ColorField>` renderer and zero modules declaring it.
+  //
+  // THREE DEFECTS FIXED BY THE PROMOTION (#2022), and two of them were
+  // invisible to every gate in the tree:
+  //
+  //   · `pal_r/g/b` are packed `0xRRGGBB` integers. Undeclared they resolve to
+  //     a KNOB SWEEPING 16.7 MILLION VALUES — and `faces-parity` PASSES that,
+  //     because it drags the knob and the param moves. The platform's own
+  //     `ModuleFace.paramCells` doc-comment names this exact situation as the
+  //     reason `'color'` is DECLARED rather than sniffed: a packed RGB differs
+  //     from any other discrete param only in MAGNITUDE, and nothing in the
+  //     repo reads magnitude.
+  //   · `preview` chooses WHICH of the 22 outputs you are looking at and its
+  //     names lived in the card, so a face painted a 22-position ANONYMOUS
+  //     dial. Now a declared roster; ⚠ 22 > SEGMENTED_MAX_OPTIONS so the dock
+  //     resolves `selector` where the card paints pills — a deliberate look
+  //     change, argued in the def.
+  //   · `freeze` is a VRT harness switch with no card control, and face
+  //     completeness would have PAINTED IT — putting "hold the last frame" on
+  //     the player's faceplate, where a frozen picture reads as a broken
+  //     module. Now `noUserControl`, `writer: 'internal'`.
+  //
+  // NOT CONTROL-HEAVY, and this is the counter-intuitive part: 37 params is not
+  // 37 bands. `DOCK_TAB_MIN_BANDS = 7` counts BANDS, and the honest count is
+  // FIVE — one per colorspace block. Reaching 7 would mean splitting each
+  // block's biases from its OVER toggles, which is padding, and the owner
+  // ruling forbids padding pages to force the rail.
+  //
+  // SCREEN ON/OFF ships through `face.extension: 'colourofmagic'`
+  // (`fullViewBody`), not the card — the card is unreachable after promotion,
+  // which is the bug spirographs shipped (#1928). OFF stops the preview COPY
+  // and never the engine (#2015).
+  //
+  // ⚠ REAR CARD IS CURATED ON A MEASUREMENT. At 31x22 — the second-largest
+  // port field the programme has met — the DERIVED plan drops all fifteen
+  // mono-override inputs into one undifferentiated 16-hole `signal` section,
+  // because only the `_cv` ports carry a `paramTarget` that projects onto a
+  // page. Curated, each block owns its six holes. 53 holes is past
+  // `REAR_DENSE_ROWS` (40), so it renders dense by design.
+  'colourofmagic',
 ]);
 
 /**
