@@ -44,6 +44,12 @@ import { paramCellKind } from '$lib/ui/workflow/shell-control-kind';
 import { dockFullViewHeadPlan, hasVideoSurface } from '$lib/ui/workflow/module-shell-model';
 import { glyphBinding, primaryAudioOutPortId } from '$lib/ui/workflow/shell-glyph-live';
 import { STRICT_FACES, migrated } from '$lib/ui/workflow/strict-faces';
+import { PUSH_CARD_CONTROLS } from '$lib/control/push2/push-card-config';
+import {
+  pushCardParams,
+  resolvePushCardControls,
+  type PushCardDefLike,
+} from '$lib/control/push2/push-card-schema';
 import type { ParamDef } from '$lib/graph/types';
 
 /** The face, unwrapped once so every case reads off the LIVE declaration. */
@@ -247,6 +253,50 @@ describe('foxy — #2007: THE MODE ROSTERS', () => {
     expect(genKnob, 'the gen_mode Knob line vanished — re-point this assertion').toBeTruthy();
     expect(genKnob).toContain('curve="discrete"');
     expect(genKnob).not.toContain('curve="linear"');
+  });
+});
+
+describe('foxy — THE PUSH 2 CARD IS PINNED, not inherited', () => {
+  /** The face's own ranks 1-8 — the thing the override is a LOCK on. */
+  const PINNED = ['morph', 'fold', 'tune', 'spread', 'fine', 'xyz_zoom', 'xyz_smooth', 'xyz_warp'];
+
+  it('has an explicit PUSH_CARD_CONTROLS entry at all', () => {
+    // ⚠ THE REGRESSION THIS CATCHES IS A DELETION. Without an entry foxy falls
+    // back to the FACE tier, which is correct TODAY and silently re-ranks the
+    // hardware surface the next time `face.order` moves. An override REPLACES,
+    // so it cannot drift.
+    expect(PUSH_CARD_CONTROLS.foxy, 'foxy lost its pinned Push card').toBeDefined();
+    expect([...PUSH_CARD_CONTROLS.foxy!]).toEqual(PINNED);
+  });
+
+  it('the pin AGREES with the face today — it is a lock, not a divergence', () => {
+    // Resolving with NO overrides exercises the FACE tier (first 8 turnable
+    // ranks). That it returns the same eight is what makes the entry a lock on
+    // a decision rather than a second, competing ranking to keep in step.
+    const faceTier = pushCardParams(
+      resolvePushCardControls(foxyDef as unknown as PushCardDefLike, {}),
+    ).map((p) => p.id);
+    expect(faceTier).toEqual(PINNED);
+    const pinned = pushCardParams(
+      resolvePushCardControls(foxyDef as unknown as PushCardDefLike),
+    ).map((p) => p.id);
+    expect(pinned).toEqual(PINNED);
+  });
+
+  it('NEGATIVE CONTROL: promotion really did change the card (the silent move)', () => {
+    // ⚠ THE THING THAT SHIPPED UNOBSERVED. Before the face, foxy resolved the
+    // GENERIC tier — declaration order — and no golden pinned it, so the move
+    // was invisible to every gate. Reproducing the un-faced resolution proves
+    // the two cards genuinely differ, which is what makes pinning worth doing
+    // rather than ceremony.
+    const unfaced = { ...foxyDef, face: undefined };
+    const generic = pushCardParams(
+      resolvePushCardControls(unfaced as unknown as PushCardDefLike, {}),
+    ).map((p) => p.id);
+    expect(generic, 'the generic card is declaration order').toEqual(
+      ['tune', 'fine', 'morph', 'spread', 'fold', 'src_tune', 'src_fine', 'src_timbre'],
+    );
+    expect(generic).not.toEqual(PINNED);
   });
 });
 
