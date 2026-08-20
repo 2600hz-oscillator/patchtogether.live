@@ -56,6 +56,12 @@ export interface VstOwnerSnapshot {
   meters: VstMeters | null;
   rtt: number | null;
   supported: boolean;
+  /** Monotonic count of EXPLICIT `unmounted` messages. The persistence
+   *  driver clears the patch record on this, never on a mounted→null
+   *  transition — `mounted` also nulls transiently when a fresh session's
+   *  helperInfo invalidates a stale mount (helper restarted), and that must
+   *  not erase the record auto-remount is about to use. */
+  unmounts: number;
 }
 
 export type VstBridgeConfigLike = VstBridgeConfig;
@@ -82,6 +88,7 @@ const IDLE: VstOwnerSnapshot = {
   meters: null,
   rtt: null,
   supported: true,
+  unmounts: 0,
 };
 
 const entries = new Map<string, Entry>();
@@ -144,7 +151,15 @@ export function acquireVstBridge(
       emit(nodeId, entry.snap);
     },
     onHelperInfo: (helper) => {
-      entry.snap = { ...entry.snap, helper };
+      // A helperInfo is a FRESH session acceptance. If the instance was
+      // parked and adopted, the bridge replays `mounted` immediately after
+      // the plugin list; if the helper RESTARTED, no replay comes and a
+      // kept `mounted` would be a stale lie (silent card claiming a live
+      // plugin). Clear it here — an adopt replay re-sets it a message
+      // later, and the persistence driver only clears the patch record on
+      // an explicit unmount (snap.unmounts), so this transient null is
+      // harmless to persistence.
+      entry.snap = { ...entry.snap, helper, mounted: null, editorOpen: false };
       emit(nodeId, entry.snap);
     },
     onPluginList: (msg) => {
@@ -160,7 +175,13 @@ export function acquireVstBridge(
       emit(nodeId, entry.snap);
     },
     onUnmounted: () => {
-      entry.snap = { ...entry.snap, mounted: null, mountError: null, editorOpen: false };
+      entry.snap = {
+        ...entry.snap,
+        mounted: null,
+        mountError: null,
+        editorOpen: false,
+        unmounts: entry.snap.unmounts + 1,
+      };
       emit(nodeId, entry.snap);
     },
     onEditor: (msg) => {

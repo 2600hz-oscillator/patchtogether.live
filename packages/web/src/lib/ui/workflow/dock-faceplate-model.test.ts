@@ -14,10 +14,9 @@
 // heroFacePlanIsTotal, and module-face-lint asserts it over the whole registry.
 
 import { describe, it, expect } from 'vitest';
-import type { FaceSidebarBlock, ParamDef } from '$lib/graph/types';
+import type { ParamDef } from '$lib/graph/types';
 import { dockFacePlan, dockPlanControls, type DockFaceBand, type FaceDefLike } from './curated-face';
 import {
-  activePresetId,
   bandHeaderPlan,
   faceAnnotationProse,
   faceAnnotationTally,
@@ -26,16 +25,6 @@ import {
   facePageHeader,
   heroFacePlan,
   heroFacePlanIsTotal,
-  isUsableReadout,
-  presetNote,
-  presetRowStates,
-  presetValueMatches,
-  presetWrites,
-  readoutText,
-  recalledPresetId,
-  sidebarPlan,
-  FACE_PRESET_DATA_KEY,
-  PRESET_MATCH_REL,
   type FaceplateDefLike,
 } from './dock-faceplate-model';
 
@@ -378,27 +367,34 @@ describe('heroFacePlan — PROMOTES a control, never copies it', () => {
     expect(heroFacePlanIsTotal(before, after)).toBe(true);
   });
 
-  it('a hero of READOUTS ALONE still renders, and moves no control', () => {
-    const def = fixture({ hero: { readouts: [{ label: 'tail', paramId: 'decay' }] } } as never);
+  it('a hero that PROMOTES NOTHING resolves to null — there is no readouts-only hero', () => {
+    // ⚠ THIS IS THE INVERSION, AND IT IS WHY THIS TEST REPLACED TWO OTHERS.
+    // A hero used to be able to consist of a READOUT STRIP alone — no picture,
+    // no promoted control, just a row of labelled derived values. That shape is
+    // deleted (owner, 2026-08-19; see ModuleFaceHero in graph/types.ts), so a
+    // hero declaring anything other than `cell`/`control`/`action` now paints
+    // NOTHING rather than an empty rail. The two tests this replaces asserted
+    // the strip rendered and that malformed entries were dropped from it;
+    // neither has a subject any more, and asserting the absence here is what
+    // keeps a future `readouts`-shaped field from quietly rendering again.
+    const def = fixture({ hero: {} } as never);
     const before = bandsOf(def);
     const after = heroFacePlan(def, before);
-    expect(after.hero?.control).toBeNull();
-    expect(after.hero?.readouts).toHaveLength(1);
+    expect(after.hero, 'a hero with no promotable key paints no rail').toBeNull();
     expect(dockPlanControls(after.bands).length).toBe(dockPlanControls(before).length);
     expect(heroFacePlanIsTotal(before, after)).toBe(true);
   });
 
-  it('drops MALFORMED readouts rather than painting a caption over a blank', () => {
+  it('an UNKNOWN hero field is inert — it cannot resurrect the strip', () => {
+    // The declaration surface is typed, so this shape is refused by `tsc`; the
+    // cast is what a future mechanism would have to do to get past it. Even
+    // then the plan must ignore it rather than paint it.
     const def = fixture({
-      hero: {
-        readouts: [
-          { label: 'ok', paramId: 'tune' },
-          { label: 'both', paramId: 'tune', text: '5' },
-          { label: 'neither' },
-        ],
-      },
+      hero: { readouts: [{ label: 'tail', paramId: 'decay' }] },
     } as never);
-    expect(heroFacePlan(def, bandsOf(def)).hero?.readouts.map((r) => r.label)).toEqual(['ok']);
+    const after = heroFacePlan(def, bandsOf(def));
+    expect(after.hero, 'an unrecognised hero field promotes nothing').toBeNull();
+    expect(JSON.stringify(after)).not.toContain('tail');
   });
 
   it('NEGATIVE CONTROL: a split that DROPPED a control fails heroFacePlanIsTotal', () => {
@@ -491,226 +487,3 @@ describe('heroFacePlan — PROMOTES a control, never copies it', () => {
 
 // ── 3. READOUTS ─────────────────────────────────────────────────────────────
 
-describe('readoutText — one ladder for the panel and the dial', () => {
-  const read = (pid: string) => ({ tune: 50, decay: 450, mix: 0.5, mode: 2 })[pid];
-
-  it('prints a literal `text` readout verbatim', () => {
-    expect(readoutText({ label: 't', text: '≈ 480 ms' }, PARAMS, read)).toBe('≈ 480 ms');
-  });
-
-  it('prints a param through the SAME ladder the dial prints (units included)', () => {
-    expect(readoutText({ label: 't', paramId: 'tune' }, PARAMS, read)).toBe('50.0 Hz');
-    expect(readoutText({ label: 't', paramId: 'decay' }, PARAMS, read)).toBe('450 ms');
-  });
-
-  it('prints the option NAME for a param that declared one, never the number', () => {
-    expect(readoutText({ label: 'm', paramId: 'mode' }, PARAMS, read)).toBe('BP');
-  });
-
-  it('prints an em dash rather than `undefined` for an unresolvable source', () => {
-    expect(readoutText({ label: 'x', paramId: 'gone' }, PARAMS, read)).toBe('—');
-    expect(readoutText({ label: 'x' }, PARAMS, read)).toBe('—');
-    expect(readoutText({ label: 'x', paramId: 'tune' }, PARAMS, () => NaN)).toBe('—');
-  });
-
-  it('isUsableReadout demands EXACTLY one of the THREE sources', () => {
-    expect(isUsableReadout({ label: 'a', paramId: 'tune' })).toBe(true);
-    expect(isUsableReadout({ label: 'a', text: 'x' })).toBe(true);
-    expect(isUsableReadout({ label: 'a', valueId: 'kickdrum-tail' })).toBe(true);
-    expect(isUsableReadout({ label: 'a', paramId: 'tune', text: 'x' })).toBe(false);
-    expect(isUsableReadout({ label: 'a', paramId: 'tune', valueId: 'kickdrum-tail' })).toBe(false);
-    expect(isUsableReadout({ label: 'a', valueId: 'kickdrum-tail', text: 'x' })).toBe(false);
-    expect(isUsableReadout({ label: 'a' })).toBe(false);
-  });
-
-  // ── the DERIVED source, and why it exists ────────────────────────────────
-  //
-  // A readout is not always a knob relabelled. `valueId` is what lets a face
-  // print a quantity that no single param carries, and the registry keeps the
-  // def declaring a STRING rather than importing a function.
-
-  it('resolves a registered valueId through the SAME param reader', () => {
-    // kickdrum's tail at the def defaults is 398 ms — NOT the 450 ms `sub_decay`
-    // knob. Reading defaults (the reader returns undefined for everything) is
-    // the case a faceplate actually renders on a freshly spawned node.
-    expect(readoutText({ label: 'tail', valueId: 'kickdrum-tail' }, PARAMS, () => undefined)).toBe(
-      '398 ms',
-    );
-  });
-
-  it('NEGATIVE CONTROL: the derived tail moves on a LEVEL change — a knob readback would not', () => {
-    // This is the assertion that distinguishes a derived readout from
-    // `{ paramId: 'sub_decay' }`. A time-only perturbation cannot: BOTH models
-    // move when SUB DEC moves. Halving SUB LEVEL is the input the blind model
-    // is structurally invariant to.
-    const at = (over: Record<string, number>): string =>
-      readoutText({ label: 'tail', valueId: 'kickdrum-tail' }, PARAMS, (pid) => over[pid]);
-    const base = at({});
-    expect(at({ sub_level: 0.2 }), `LEVEL must move the tail (base ${base})`).not.toBe(base);
-    expect(at({ sub_decay: 800 }), 'and so must TIME, obviously').not.toBe(base);
-  });
-
-  it('an UNREGISTERED valueId prints an em dash — the lint is what reddens', () => {
-    expect(readoutText({ label: 'x', valueId: 'no-such-value' }, PARAMS, () => undefined)).toBe('—');
-  });
-});
-
-// ── 4. THE SIDEBAR PLAN ─────────────────────────────────────────────────────
-
-describe('sidebarPlan — an EMPTY block is worse than no block', () => {
-  const withSidebar = (sidebar: FaceSidebarBlock[]) => fixture({ sidebar } as never);
-
-  it('is null for a face with no sidebar, so the editor keeps its full width', () => {
-    expect(sidebarPlan(fixture())).toBeNull();
-  });
-
-  it('drops every kind of empty block, and returns null when NONE survive', () => {
-    const def = withSidebar([
-      { kind: 'presets', label: 'p', entries: [] },
-      { kind: 'readouts', label: 'r', entries: [{ label: 'bad' }] },
-      { kind: 'custom', label: 'c', panelId: '  ' },
-    ]);
-    expect(sidebarPlan(def)).toBeNull();
-  });
-
-  it('keeps the blocks that will actually paint, in declaration order', () => {
-    const def = withSidebar([
-      { kind: 'presets', label: 'p', entries: [] },
-      { kind: 'readouts', label: 'r', entries: [{ label: 'bad' }, { label: 'good', paramId: 'tune' }] },
-      { kind: 'custom', label: 'c', panelId: 'stereo-crossover' },
-      { kind: 'presets', label: 'p2', entries: [{ id: 'a', label: 'A', values: { tune: 50 } }] },
-    ]);
-    expect(sidebarPlan(def)!.map((b) => b.kind)).toEqual(['readouts', 'custom', 'presets']);
-  });
-});
-
-// ── 5. PRESETS ──────────────────────────────────────────────────────────────
-
-describe('preset selection', () => {
-  const ENTRIES: { id: string; values: Readonly<Record<string, number>> }[] = [
-    { id: 'deep', values: { tune: 50, decay: 620 } },
-    { id: 'punch', values: { tune: 55, decay: 320 } },
-    { id: 'empty', values: {} },
-  ];
-
-  it('lights the entry the module is actually sitting on', () => {
-    expect(activePresetId(ENTRIES, (p) => ({ tune: 50, decay: 620 })[p])).toBe('deep');
-    expect(activePresetId(ENTRIES, (p) => ({ tune: 55, decay: 320 })[p])).toBe('punch');
-  });
-
-  it('lights NOTHING once a knob moves off the preset (no stale lit row)', () => {
-    expect(activePresetId(ENTRIES, (p) => ({ tune: 50, decay: 610 })[p])).toBeNull();
-  });
-
-  it('never lights an entry that declares no values', () => {
-    expect(activePresetId([{ id: 'empty', values: {} }], () => 0)).toBeNull();
-  });
-
-  it('an unreadable param never matches', () => {
-    expect(activePresetId(ENTRIES, () => undefined)).toBeNull();
-  });
-
-  it('tolerance is RELATIVE, so one entry can span Hz and a 0..1 mix', () => {
-    // Same relative slack at both magnitudes: inside passes, outside fails.
-    expect(presetValueMatches(50 * (1 + PRESET_MATCH_REL * 0.5), 50)).toBe(true);
-    expect(presetValueMatches(50 * (1 + PRESET_MATCH_REL * 3), 50)).toBe(false);
-    expect(presetValueMatches(0.42 * (1 + PRESET_MATCH_REL * 0.5), 0.42)).toBe(true);
-    expect(presetValueMatches(0.42 * (1 + PRESET_MATCH_REL * 3), 0.42)).toBe(false);
-    // …and an exact-zero target stays comparable via the floor.
-    expect(presetValueMatches(0, 0)).toBe(true);
-    expect(presetValueMatches(0.01, 0)).toBe(false);
-  });
-
-  it('presetWrites CLAMPS to the declared range and DROPS unknown params', () => {
-    expect(presetWrites({ tune: 999, mix: -3, ghost: 1 }, PARAMS)).toEqual([
-      { paramId: 'tune', value: 120 },
-      { paramId: 'mix', value: 0 },
-    ]);
-  });
-
-  it('presetWrites drops a non-finite value rather than writing NaN into the model', () => {
-    expect(presetWrites({ tune: Number.NaN }, PARAMS)).toEqual([]);
-  });
-
-  it('presetNote prints the declared note, trimmed, else nothing', () => {
-    expect(presetNote({ note: ' 50 Hz ' })).toBe('50 Hz');
-    expect(presetNote({})).toBe('');
-  });
-});
-
-// ── 6. PRESET ROW STATE — lit AND modified, because one fact is not enough ──
-//
-// The owner arbitrated this: the row STAYS LIT after a knob move and carries a
-// MODIFIED marker. Both alternatives are wrong in one direction — un-lighting
-// throws away where the sound came from, staying silently lit asserts a voice
-// the patch no longer is — so the model returns both facts and the tests pin
-// both. A test that only checked `lit` would pass on the "stays lit forever"
-// bug this design exists to avoid.
-
-describe('presetRowStates — provenance AND honesty', () => {
-  const ENTRIES: { id: string; values: Readonly<Record<string, number>> }[] = [
-    { id: 'deep', values: { tune: 50, decay: 620 } },
-    { id: 'punch', values: { tune: 55, decay: 320 } },
-  ];
-  const at = (v: Record<string, number>) => (p: string) => v[p];
-
-  it('with nothing recalled, an exact VALUE match lights (a patch loaded onto a preset)', () => {
-    const rows = presetRowStates(ENTRIES, null, at({ tune: 50, decay: 620 }));
-    expect(rows).toEqual([
-      { id: 'deep', lit: true, modified: false },
-      { id: 'punch', lit: false, modified: false },
-    ]);
-  });
-
-  it('with nothing recalled and no match, NOTHING is lit', () => {
-    const rows = presetRowStates(ENTRIES, null, at({ tune: 44, decay: 620 }));
-    expect(rows.every((r) => !r.lit && !r.modified)).toBe(true);
-  });
-
-  it('a RECALLED row whose values still match is lit and NOT modified', () => {
-    expect(presetRowStates(ENTRIES, 'punch', at({ tune: 55, decay: 320 }))[1]).toEqual({
-      id: 'punch',
-      lit: true,
-      modified: false,
-    });
-  });
-
-  it('THE DECISION: editing off a recalled preset keeps it LIT and marks it MODIFIED', () => {
-    const rows = presetRowStates(ENTRIES, 'punch', at({ tune: 44, decay: 320 }));
-    expect(rows[1], 'the row that was recalled').toEqual({
-      id: 'punch',
-      lit: true,
-      modified: true,
-    });
-    expect(rows[0]!.lit, 'and no other row lights up in its place').toBe(false);
-  });
-
-  it('exactly ONE row is ever lit, in every combination above', () => {
-    for (const [recalled, vals] of [
-      [null, { tune: 50, decay: 620 }],
-      ['punch', { tune: 55, decay: 320 }],
-      ['punch', { tune: 44, decay: 320 }],
-      ['deep', { tune: 55, decay: 320 }],
-    ] as const) {
-      const lit = presetRowStates(ENTRIES, recalled, at(vals as Record<string, number>)).filter(
-        (r) => r.lit,
-      );
-      expect(lit.length, `recalled=${recalled} values=${JSON.stringify(vals)}`).toBeLessThanOrEqual(1);
-    }
-  });
-
-  it('NEGATIVE CONTROL: a row is never modified while it is not lit', () => {
-    // The failure this rules out is a marker that tracks "has anything been
-    // edited" globally rather than "this row's values have moved" — which would
-    // paint MODIFIED beside four presets nobody recalled.
-    const rows = presetRowStates(ENTRIES, 'punch', at({ tune: 44, decay: 320 }));
-    for (const r of rows) if (!r.lit) expect(r.modified).toBe(false);
-  });
-
-  it('recalledPresetId rejects a STALE id — a removed preset must not light a ghost row', () => {
-    expect(recalledPresetId(ENTRIES, { [FACE_PRESET_DATA_KEY]: 'punch' })).toBe('punch');
-    expect(recalledPresetId(ENTRIES, { [FACE_PRESET_DATA_KEY]: 'deleted-in-a-later-build' })).toBeNull();
-    expect(recalledPresetId(ENTRIES, { [FACE_PRESET_DATA_KEY]: 7 })).toBeNull();
-    expect(recalledPresetId(ENTRIES, undefined)).toBeNull();
-  });
-});

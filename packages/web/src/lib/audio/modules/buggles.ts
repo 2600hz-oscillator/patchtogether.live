@@ -454,32 +454,8 @@ export const bugglesDef: AudioModuleDef = {
     // future reader "fixes".
     hero: {
       control: 'rate',
-      readouts: [
-        { label: 'woggle', valueId: 'buggles-woggle-hz' },
-        { label: 'glide', valueId: 'buggles-smooth-glide' },
-        { label: 'burst', valueId: 'buggles-burst-rate' },
-      ],
     },
 
-    // THE OUTPUT TABLE — the answer to "which jack does the picture show" on a
-    // module with five of them: all of them, as numbers, instead of one of them
-    // as a trace. One row per DECLARED jack, GENERATED from
-    // BUGGLES_OUTPUT_READOUTS rather than typed five times, and that roster is
-    // asserted equal to `outputs` in both directions.
-    //
-    // Each row depends on a DIFFERENT subset of the knobs, which is what makes
-    // the table five readouts rather than five views of one: smooth = SMOOTH x
-    // RATE, stepped = RATE x CHAOS, clock = RATE, burst = BURST x RATE x
-    // truncation, ring = RATE / 4. And LEVEL moves NONE of them, permanently
-    // asserted — the one control with no derived consequence, which is the
-    // table's own negative control on every run.
-    sidebar: [
-      {
-        kind: 'readouts',
-        label: 'outputs',
-        entries: BUGGLES_OUTPUT_READOUTS.map((r) => ({ label: r.port, valueId: r.valueId })),
-      },
-    ],
 
     // No `title`, no `hint`, no band hints — owner ruling 2026-08-11
     // (marbles / resofilter): plain labels and values on the face; the

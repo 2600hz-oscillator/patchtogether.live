@@ -224,49 +224,7 @@ export const analogVcoDef: AudioModuleDef = {
     hero: {
       cell: 'analogvco-cycle-{n}',
       control: 'tune',
-      // ⚠ ALL THREE ARE DERIVED, and each one is derived because the nearest
-      // knob is BLIND to something that genuinely changes the answer:
-      //
-      //   knob pitch  — two params, not one. Move FINE alone and a `tune`
-      //     readback does not budge while the sounding pitch does (261.6 ->
-      //     263.1 Hz at +10 cents). ⚠ THE LABEL SAYS `knob` DELIBERATELY: this
-      //     is blind to the `pitch` jack, to FM, and to CV on tune/fine (the
-      //     same blindness the factory's own `currentFreqHz()` has). A readout
-      //     captioned `pitch` while a sequencer drives the module two octaves
-      //     away is a lie the platform would happily paint.
-      //   fm span     — invariant to the FM DIAL in one direction and to TUNE
-      //     in the other. Move TUNE and the dial does not twitch while the Hz
-      //     deviation scales with the fundamental (+108/-77 Hz at C4 becomes
-      //     +217/-153 an octave up); flip fmAmount's SIGN and a knob readback
-      //     swings through zero while the span must NOT move at all, because
-      //     analog-vco.dsp:10-12 makes the sign a modulator inversion, not a
-      //     direction. Both legs are permanent in the model test.
-      //   pw on morph — a `paramId: 'pw'` readout prints 0.50 whether PW owns
-      //     100 % of the morph or 0 % of it. This one is a function of SHAPE
-      //     and nothing else, and it reads `0 %` at the shipped defaults, which
-      //     is the single most useful sentence this faceplate can say.
-      readouts: [
-        { label: 'knob pitch', valueId: 'analogvco-knob-hz' },
-        { label: 'fm span', valueId: 'analogvco-fm-span' },
-        { label: 'pw on morph', valueId: 'analogvco-pw-authority' },
-      ],
     },
-
-    sidebar: [
-      {
-        kind: 'readouts',
-        label: 'naive oscillator',
-        // The honest consequence of a 105-line .dsp with no PolyBLEP, no
-        // oversampling, no anti-alias filter and no DC blocker anywhere. The
-        // harmonic number is `floor(SR / 2f0)` and it is SAMPLE-RATE dependent
-        // — `FaceReadoutValue` cannot see the sample rate today, so the LABEL
-        // states the assumption rather than the value hiding it.
-        entries: [
-          { label: 'first aliased harmonic · 48 kHz', valueId: 'analogvco-alias-harmonic' },
-          { label: 'band-limiting', text: 'none — no BLEP, no oversampling' },
-        ],
-      },
-    ],
 
     // REAR CARD. Derivation is already total here (four non-CV inputs into the
     // leading band, the five CV holes into their page bands, the six outputs

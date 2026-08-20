@@ -37,9 +37,6 @@
 
 import { describe, expect, it } from 'vitest';
 import { analogLogicMathsDef } from '$lib/audio/modules/analog-logic-maths';
-import { readoutText } from '$lib/ui/workflow/dock-faceplate-model';
-import { faceReadoutValueFor } from '$lib/ui/workflow/face-readout-values';
-import { sidebarPanelFor } from '$lib/ui/workflow/sidebar-panels';
 import { glyphBinding, primaryAudioOutPortId } from '$lib/ui/workflow/shell-glyph-live';
 import {
   ALM_ATT_PARAM_IDS,
@@ -65,10 +62,6 @@ const reader =
 
 /** The DECLARED readout ids, read off the def. DERIVED — there is no list of
  *  readouts in this file and no count of one. */
-const HERO_READOUTS = analogLogicMathsDef.face!.hero!.readouts!.map((r) => ({
-  label: r.label,
-  valueId: r.valueId!,
-}));
 
 /** The DECLARED param ids, read off the def. */
 const PARAM_IDS = analogLogicMathsDef.params.map((p) => p.id);
@@ -84,11 +77,6 @@ function at(a: number, b: number): Record<string, number> {
   return Object.fromEntries(ALM_ATT_PARAM_IDS.map((id, i) => [id, [a, b][i]!]));
 }
 
-function printed(valueId: string, overlay: Record<string, number>): string {
-  const fn = faceReadoutValueFor(valueId);
-  expect(fn, `readout '${valueId}' is registered in face-readout-values`).not.toBeNull();
-  return fn!(reader(overlay));
-}
 
 /**
  * THE STRUCTURAL LEGS. Each is a pair of dial settings and, per readout, whether
@@ -187,116 +175,9 @@ describe('analogLogicMaths face model — the glyph binding, ESTABLISHED not ass
     expect(primaryAudioOutPortId(deadGlyph)).toBeNull();
     expect(glyphBinding(deadGlyph)).toEqual({ kind: 'static' });
   });
-
-  it('the face’s only picture is a REGISTERED panel', () => {
-    // `glyph: 'none'` means the shell paints no tile, so an unregistered panel id
-    // would leave this face with no drawing at all rather than with a broken one.
-    const custom = (analogLogicMathsDef.face?.sidebar ?? []).filter((b) => b.kind === 'custom');
-    expect(custom.length, 'the face declares a custom sidebar block').toBeGreaterThan(0);
-    for (const b of custom) {
-      const id = (b as { panelId?: string }).panelId!;
-      expect(sidebarPanelFor(id), `sidebar panel '${id}' is registered`).not.toBeNull();
-    }
-  });
-});
-
-describe('analogLogicMaths face model — the readout matrix, in BOTH directions', () => {
-  it('every DECLARED readout has a row in the matrix, and every row a readout', () => {
-    // ANCHORED TO THE ARTIFACT both ways: a readout added to the face with no
-    // row here is RED, and a row naming a readout the face no longer declares is
-    // RED. Neither side is a count.
-    const declared = HERO_READOUTS.map((r) => r.valueId).sort();
-    for (const leg of LEGS) {
-      expect(Object.keys(leg.moves).sort(), `leg '${leg.name}' covers exactly the declared readouts`)
-        .toEqual(declared);
-    }
-  });
-
-  it('every readout is REGISTERED and resolves through the shell ladder', () => {
-    // `readoutText` swallows a throw and returns '—', so "this readout threw",
-    // "this id is unregistered" and "this readout is blank" are the same three
-    // pixels in the DOM. Walk the path the shell actually takes.
-    for (const r of analogLogicMathsDef.face!.hero!.readouts!) {
-      const text = readoutText(r, analogLogicMathsDef.params, reader(DEFAULTS));
-      expect(text, `'${r.valueId}' must not resolve to the em-dash at the defaults`).not.toBe('—');
-    }
-  });
-
-  it('NEGATIVE CONTROL on that leg: an unregistered id DOES print the dash', () => {
-    // Otherwise the assertion above would pass on a `readoutText` that never
-    // returns '—' at all.
-    expect(
-      readoutText({ label: 'x', valueId: 'alm-not-a-readout' }, analogLogicMathsDef.params, reader(DEFAULTS)),
-    ).toBe('—');
-  });
-
-  it.each(LEGS)('$name — the printed strings move exactly where they must', (leg) => {
-    const from = at(...leg.from);
-    const to = at(...leg.to);
-    const stills: string[] = [];
-    const movers: string[] = [];
-    for (const [valueId, mustMove] of Object.entries(leg.moves)) {
-      const a = printed(valueId, from);
-      const b = printed(valueId, to);
-      (mustMove ? movers : stills).push(valueId);
-      if (mustMove) {
-        expect(a, `${valueId} MUST move on '${leg.name}' (${a} -> ${b}). ${leg.why}`).not.toBe(b);
-      } else {
-        expect(a, `${valueId} MUST NOT move on '${leg.name}' (${a} -> ${b}). ${leg.why}`).toBe(b);
-      }
-    }
-    // The leg is only a control if it discriminates: a leg with no `false` cell
-    // proves nothing about blindness, and one with no `true` cell proves nothing
-    // about liveness.
-    expect(movers.length, `leg '${leg.name}' must move at least one readout`).toBeGreaterThan(0);
-    expect(stills.length, `leg '${leg.name}' must leave at least one readout still`).toBeGreaterThan(0);
-  });
-
-  it('every readout owns at least one BLIND leg and at least one LIVE leg', () => {
-    // The property the table above is FOR, asserted over the table rather than
-    // read off it by eye: no readout may be invariant to everything (a constant
-    // wearing two decimal places) or sensitive to everything (a level meter).
-    for (const { valueId } of HERO_READOUTS) {
-      const cells = LEGS.map((l) => l.moves[valueId]!);
-      expect(cells.some((c) => c), `${valueId} is invariant to every structural leg`).toBe(true);
-      expect(cells.some((c) => !c), `${valueId} moves under every structural leg`).toBe(true);
-    }
-  });
-
-  it('the COARSE sweep still catches a readout going constant', () => {
-    // The all-true matrix the header calls vacuous, kept for the one thing it
-    // does prove: over each dial's full declared travel, with the other dial at
-    // its shipped default, no readout may be frozen.
-    for (const { valueId } of HERO_READOUTS) {
-      for (const p of analogLogicMathsDef.params) {
-        const lo = printed(valueId, { ...DEFAULTS, [p.id]: p.min! });
-        const hi = printed(valueId, { ...DEFAULTS, [p.id]: p.max! });
-        const mid = printed(valueId, { ...DEFAULTS, [p.id]: 0 });
-        expect(
-          new Set([lo, hi, mid]).size,
-          `${valueId} is CONSTANT across ${p.id} ${p.min}..${p.max} (${lo} / ${mid} / ${hi})`,
-        ).toBeGreaterThan(1);
-      }
-    }
-  });
 });
 
 describe('analogLogicMaths face model — the four laws, and the numbers they print', () => {
-  it('the shipped defaults print the headline row', () => {
-    // The face's resting state, which is what a reviewer sees and what the VRT
-    // dock baseline contains. ⚠ THE GAP BETWEEN `peak` AND `sum` IS THE TANH:
-    // the un-clipped sum of two dials at +1 is ×2.00 and SUM delivers ×0.96.
-    expect(printed('alm-sum-gain', DEFAULTS)).toBe('×0.96');
-    expect(printed('alm-diff-gain', DEFAULTS)).toBe('×0.00');
-    expect(printed('alm-ring-gain', DEFAULTS)).toBe('×0.76');
-    expect(printed('alm-peak', DEFAULTS)).toBe('×2.00');
-    // …and the un-clipped reference the compression is stated against, so the
-    // −6.34 dB in the docs has a denominator in the tree rather than in prose.
-    const lin = almFaceParams(reader(DEFAULTS)).reduce((s, v) => s + v, 0);
-    const dB = 20 * Math.log10(almSumGain(almFaceParams(reader(DEFAULTS))) / lin);
-    expect(dB, `SUM compression at the ±${ALM_PROBE} probe, dB re the UN-CLIPPED sum of ${lin}`)
-      .toBeCloseTo(-6.3388, 3);
-  });
 
   it('`sum` is the only law that is NON-LINEAR IN THE DRIVE', () => {
     // The property that makes it a JOIN rather than a gain, and the reason the
@@ -335,43 +216,9 @@ describe('analogLogicMaths face model — the four laws, and the numbers they pr
     expect(dbOne, 'dB re the un-clipped sum, ATT B closed').toBeCloseTo(-2.3655, 3);
     expect(dbBoth, 'opening the second dial nearly triples the compression').toBeLessThan(dbOne - 3);
   });
-
-  it('`ring` MULTIPLIES where `peak` ADDS', () => {
-    // The distinction the fourth readout exists for, stated as a ratio rather
-    // than as two printed strings.
-    expect(almPeak([0.5, 0.5]) / almPeak([1, 1]), 'peak halves').toBeCloseTo(0.5, 6);
-    // tanh(0.25)/tanh(1) — the quartering, softened by the same tanh SUM uses.
-    expect(almRingGain([0.5, 0.5]) / almRingGain([1, 1]), 'ring falls by far more than half')
-      .toBeLessThan(0.4);
-  });
 });
 
 describe('analogLogicMaths face model — totality and the structural declarations', () => {
-  it('every readout is TOTAL over the hostile overlays', () => {
-    // These run on every faceplate render, so a throw takes the dock down
-    // mid-drag. Walked through `readoutText`, which is the path the shell takes.
-    const hostile: Record<string, number>[] = [
-      {},
-      ...PARAM_IDS.flatMap((id) =>
-        [NaN, Infinity, -Infinity, -1e30, 1e30, 0].map((v) => ({ ...DEFAULTS, [id]: v })),
-      ),
-    ];
-    for (const overlay of hostile) {
-      for (const r of analogLogicMathsDef.face!.hero!.readouts!) {
-        const text = readoutText(r, analogLogicMathsDef.params, reader(overlay));
-        expect(typeof text, `'${r.valueId}' on ${JSON.stringify(overlay)}`).toBe('string');
-        expect(text.length).toBeGreaterThan(0);
-      }
-    }
-  });
-
-  it('a FRESH node — the sparse overlay resolves the def DEFAULTS, not zero', () => {
-    // The StereoCrossoverPanel scar: `node.params` is an overlay of what has
-    // been TOUCHED, so a bare read draws a face saying ×0.00 beside two faders
-    // sitting at +1.
-    expect(almFaceParams(reader({}))).toEqual(ALM_ATT_PARAM_IDS.map((id) => DEFAULTS[id]));
-    expect(printed('alm-peak', {})).toBe(printed('alm-peak', DEFAULTS));
-  });
 
   it('the CLIPPED / LINEAR partition names only DECLARED ports, and partitions them', () => {
     // ANCHORED: a jack renamed out from under `ALM_CLIPPED_OUT_IDS` is RED here,

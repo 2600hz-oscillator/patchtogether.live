@@ -137,27 +137,6 @@ export const moog907aDef: AudioModuleDef = {
     paramCells: Object.fromEntries(
       SECTIONS_LOW_TO_HIGH.map((id) => [id, 'fader' as const]),
     ),
-    hero: {
-      readouts: [
-        { label: 'peak', valueId: 'moog907a-peak' },
-        { label: 'notch', valueId: 'moog907a-notch' },
-        { label: 'tilt', valueId: 'moog907a-tilt' },
-      ],
-    },
-    sidebar: [
-      {
-        kind: 'readouts',
-        label: 'summed level',
-        entries: [
-          { label: filterbankLpLabel(FILTERBANK_907A_LP_HZ), valueId: 'moog907a-section-lp' },
-          ...CENTERS.map((freq, i) => ({
-            label: filterbankHzLabel(freq),
-            valueId: `moog907a-section-${bandParamId(i + 1)}`,
-          })),
-          { label: filterbankHpLabel(FILTERBANK_907A_HP_HZ), valueId: 'moog907a-section-hp' },
-        ],
-      },
-    ],
   },
 
   docs: {
