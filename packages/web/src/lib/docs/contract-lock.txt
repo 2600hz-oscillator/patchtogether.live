@@ -1766,6 +1766,7 @@ mirrorpool in wind_speed_cv cv param=wind_speed cvScale=linear
 mirrorpool in zoom_cv cv param=zoom cvScale=linear
 mirrorpool out video_out video
 mirrorpool param brightness 0..2 linear default=1
+mirrorpool param freeze 0..1 linear default=0
 mirrorpool param look_pitch -1.45..1.45 linear default=0
 mirrorpool param look_yaw -3.141592653589793..3.141592653589793 linear default=0
 mirrorpool param orbit_az -3.141592653589793..3.141592653589793 linear default=0
