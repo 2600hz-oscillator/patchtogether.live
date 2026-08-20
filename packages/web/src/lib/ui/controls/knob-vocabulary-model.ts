@@ -86,6 +86,36 @@ export function nearestByValue<T extends { value: number }>(
 }
 
 /**
+ * SNAP A VALUE ONTO AN EXHAUSTIVE ROSTER — the ONE implementation.
+ *
+ * For a param declaring `optionsExhaustive`, the roster IS the legal set, so
+ * every write has to land on a member. This is that landing.
+ *
+ * ⚠ NEAREST, NOT FLOOR, AND THE REASON IS AGREEMENT RATHER THAN TASTE. The
+ * value a control DISPLAYS for an off-roster number is already decided — every
+ * readout in the repo resolves it through `nearestByValue` (`knobNameReadout`
+ * below). If snapping floored instead, a rack holding a legacy `ppqn: 7` would
+ * SHOW `8` and WRITE `4` the moment anyone touched it: the number on screen
+ * before the gesture and the number stored after it would disagree, which is a
+ * worse bug than either rounding direction. Sharing the resolver makes the two
+ * agree by construction rather than by two authors remembering.
+ *
+ * Ties resolve to the EARLIER entry, inherited from `nearestByValue` — a
+ * rounding-dependent answer would make a CV-driven or motorized value flicker
+ * between two members at the midpoint.
+ *
+ * Returns the value UNCHANGED (by `===`) when it is already a member, so a
+ * caller can cheaply tell "legal" from "repaired" — the `restedParams`
+ * discipline, and what lets the write path report a normalization instead of
+ * performing one silently.
+ */
+export function snapToOptions(value: number, options: readonly ParamOption[]): number {
+  if (options.length === 0) return value;
+  for (const o of options) if (o.value === value) return value;
+  return nearestByValue(value, options)?.value ?? value;
+}
+
+/**
  * DOES THIS PARAM PAINT ANYTHING AT REST? The whole gate, as one named
  * predicate — because the RENDER (`knobNameReadout` → `KnobConic`) and the
  * lane cell's reserved HEIGHT (`curated-face`'s `faceLaneCellHeights`, which
