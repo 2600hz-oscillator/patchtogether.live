@@ -68,6 +68,27 @@ export const moog903aDef: AudioModuleDef = {
     },
   },
 
+  // ONE PARAM, ONE RANK, ONE BAND. A noise source with a single output trim is
+  // exactly as wide as one knob, and nothing is added to make the plate look
+  // like more of an instrument than it is.
+  //
+  // `glyph: 'meter'` is RUN through the real resolver, not argued:
+  // `primaryAudioOutPortId` resolves `white` (the first `audio` output in
+  // declaration order), so the binding is LIVE rather than the dead `static`
+  // one that shipped on marbles.
+  //
+  // ⚠ IT READS THE WHITE TAP ONLY, and that is acceptable HERE for exactly the
+  // reason it was refused on `moog994` in this same batch. White and pink are
+  // the SAME generator at different filter slopes, and this one LEVEL knob
+  // scales both, so either tap is representative of what the module is doing: a
+  // rack using only PINK sees a meter that tracks its level faithfully, merely
+  // brighter. A one-port meter is only dishonest when the ports are
+  // INDEPENDENT, which is the 994's dual-group case and not this one.
+  face: {
+    order: ['level'],
+    glyph: 'meter',
+  },
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     const sampleRate = ctx.sampleRate;
     const bufferLen = Math.floor(BUFFER_SECONDS * sampleRate);

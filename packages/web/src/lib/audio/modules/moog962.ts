@@ -79,6 +79,29 @@ export const moog962Def: AudioModuleDef = {
     },
   },
 
+  // ONE PARAM, ONE RANK, ONE BAND.
+  //
+  // NO `options`, DELIBERATELY — the judgement call on this face. STAGES is
+  // `2..3 discrete`, a two-position control, which is usually the shape that
+  // wants a segmented cell. It does not get one because THERE ARE NO NAMES TO
+  // PROMOTE: the card draws a bare `<Knob>`, and the values ARE their own
+  // labels (2 stages; 3 stages). Declaring `options: [{value:2,label:'2'}, …]`
+  // would print under the control the very number the control already is — a
+  // readout restating the dial — and would change the I/O CONTRACT to do it.
+  //
+  // ⚠ THIS IS THE EXACT CONTRAST WITH `sampleHold` IN THIS SAME BATCH, where
+  // ten scale NAMES already exist and the shell had no way to reach them. The
+  // rule the pair establishes: PROMOTE names that exist; never invent names to
+  // justify a nicer cell.
+  //
+  // `glyph: 'none'` is RUN, not argued: the single output is `type: 'cv'`, so
+  // `primaryAudioOutPortId` is null and any glyph would resolve to a dead
+  // `static` binding.
+  face: {
+    order: ['stages'],
+    glyph: 'none',
+  },
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     if (!loadedContexts.has(ctx)) {
       await ctx.audioWorklet.addModule(workletUrl);
