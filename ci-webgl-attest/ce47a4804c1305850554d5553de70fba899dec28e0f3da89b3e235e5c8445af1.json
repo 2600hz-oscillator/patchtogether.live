@@ -1,42 +1,36 @@
 {
   "schemaVersion": 1,
-  "webglContentHash": "d9447b887d9f503b68c6c15631f139f4f296ae07ba0afbbbd842bd64093394df",
-  "attestedAt": "2026-08-19T23:42:09.890Z",
+  "webglContentHash": "ce47a4804c1305850554d5553de70fba899dec28e0f3da89b3e235e5c8445af1",
+  "attestedAt": "2026-08-20T07:20:52.656Z",
   "attestedBy": "patchtogether-maintainer",
-  "gitHeadAtAttest": "807a9ae7bdc91db3952c5d4d6d4f3eff0d1b16b1",
+  "gitHeadAtAttest": "a06d29876fe109f84db9f97da6911ba6a0522b2a",
   "playwrightVersion": "1.50.0",
   "os": "darwin 25.4.0 (arm64)",
   "machineClass": "local-trusted-gpu-workstation",
   "preflight": {
     "samples": 7,
     "windowMs": 10204,
-    "maxForeignCpu": 2.1,
+    "maxForeignCpu": 1.1,
     "thresholdCpu": 25,
-    "load1": 3.291015625,
+    "load1": 2.76708984375,
     "cores": 10
   },
   "gpu": "ANGLE (Apple, ANGLE Metal Renderer: Apple M5, Unspecified Version)",
   "appServer": {
-    "url": "http://127.0.0.1:53533",
+    "url": "http://127.0.0.1:53509",
     "mode": "dev",
-    "root": "/Users/2600hz/Documents/workspace/inet.modular/.claude/worktrees/agent-a9cee50b2065b7757",
-    "commit": "807a9ae7bdc91db3952c5d4d6d4f3eff0d1b16b1"
+    "root": "/Users/2600hz/Documents/workspace/inet.modular/.claude/worktrees/agent-ad207878aebd982bf",
+    "commit": "a06d29876fe109f84db9f97da6911ba6a0522b2a"
   },
   "repeatEach": 1,
   "suites": {
     "A-heavy": {
       "specFiles": 57,
-      "passed": 198,
+      "passed": 200,
       "failed": 0,
-      "flaky": 1,
+      "flaky": 0,
       "skipped": 5,
-      "flakyDetails": [
-        {
-          "test": "flag ON: TOYBOX gen layer renders in the worker; downstream OUTPUT is non-black",
-          "file": "render-worker-toybox.spec.ts",
-          "firstError": "Error: TOYBOX OUTPUT is not all-black (nonZeroFrac=0.000) |  | expect(received).toBeGreaterThan(expected) | "
-        }
-      ]
+      "flakyDetails": []
     },
     "A-serial": {
       "specFiles": 6,
@@ -63,5 +57,5 @@
       "flakyDetails": []
     }
   },
-  "durationSec": 239
+  "durationSec": 237
 }
