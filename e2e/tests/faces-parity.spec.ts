@@ -134,6 +134,55 @@ interface SpecShape {
    *  render ZERO cells; every other param exactly one. */
   noUserControl?: string[];
   strictFace?: boolean;
+  /** `face.bandFocus` — the param whose value decides which bands render. See
+   *  `showAllBands` below for why this sweep needs it. */
+  bandFocus?: { param: string; showAllOn: number[]; bands: Record<string, number[]> };
+}
+
+/**
+ * Drive a BAND-FOCUSED face into its show-all state before the parity read.
+ *
+ * ⚠ WITHOUT THIS THE SWEEP IS WRONG, NOT MERELY WEAK — and the direction is
+ * worth stating because the usual hazard here is the opposite one. This test
+ * asserts the dock's control set EQUALS the def's param set. A face that hides
+ * bands renders FEWER controls at most values, so the assertion would FAIL on a
+ * correctly-working module. It does not go vacuous; it goes red for the wrong
+ * reason.
+ *
+ * So the sweep opens the face at a value the def declares as show-all, which is
+ * the one state where "every param renders exactly one cell" is the intended
+ * behaviour. The value is DECLARED, never guessed: a face that hides bands has
+ * nothing in the DOM to derive it from, because the hidden bands leave nothing
+ * behind to read.
+ *
+ * ⚠ AND IT MUST NOT SILENTLY NO-OP. Proving the controls are all reachable at
+ * show-all says nothing about whether the feature does anything at all — that is
+ * the companion leg (`hides every other band…`), which drives a FOCUSED value
+ * and asserts the other bands are genuinely gone. The two together are the
+ * claim; either alone is satisfied by a face that ignores its own declaration.
+ */
+async function showAllBands(page: Page, nodeId: string, spec: SpecShape): Promise<void> {
+  const focus = spec.bandFocus;
+  if (!focus) return; // faces without the feature are untouched
+  const value = focus.showAllOn[0];
+  expect(
+    value,
+    `${spec.type}: declares bandFocus with an EMPTY showAllOn — there would be no state in ` +
+      `which a player can reach every control`,
+  ).not.toBeUndefined();
+  await page.evaluate(
+    ({ id, param, v }) => {
+      const w = globalThis as unknown as {
+        __patch: { nodes: Record<string, { params: Record<string, number> } | undefined> };
+        __ydoc: { transact: (fn: () => void) => void };
+      };
+      w.__ydoc.transact(() => {
+        const n = w.__patch.nodes[id];
+        if (n) n.params[param] = v;
+      });
+    },
+    { id: nodeId, param: focus.param, v: value! },
+  );
 }
 
 /** The shell's per-cell interaction contract (`data-cell-control`).
@@ -1318,6 +1367,11 @@ test.describe('faces render-parity: every STRICT_FACES dock full-view carries th
       // is migrated (guards a stale import path / set drift).
       expect(spec.strictFace, `${type}: __moduleSpecs agrees it is STRICT_FACES-migrated`).toBe(true);
 
+      // A band-focused face renders only ONE band at its default value, so the
+      // multiset equality below is only the intended behaviour in its declared
+      // show-all state. No-op on every other face.
+      await showAllBands(page, 'm', spec);
+
       const dockShell = await openDock(page, 'm');
 
       // ── 1. PARAM PARITY: exact id-multiset equality, DOM vs live def. ──
@@ -1421,6 +1475,72 @@ test.describe('faces render-parity: every STRICT_FACES dock full-view carries th
       for (const cell of cells) {
         await openTabFor(page, cell, tabs);
         await driveCell(page, dockShell, 'm', spec, cell);
+      }
+
+      // ── 4. BAND FOCUS: the feature must actually HIDE something. ──
+      //
+      // ⚠ THE COMPANION TO `showAllBands`, AND NEITHER LEG MEANS ANYTHING
+      // ALONE. Everything above ran in the declared show-all state, so it proves
+      // every control is reachable — and it would pass identically against a
+      // face that declared `bandFocus` and then ignored it. This drives a
+      // FOCUSED value and asserts the other bands are genuinely gone from the
+      // DOM, which is the half that can only pass if the declaration is wired.
+      //
+      // Registry-driven and skip-free: a face without the feature simply has no
+      // `bandFocus` to read, so this costs it nothing and reports no skip — a
+      // skipped row would read as coverage it does not have.
+      if (spec.bandFocus) {
+        const focus = spec.bandFocus;
+        const entries = Object.entries(focus.bands);
+        expect(
+          entries.length,
+          `${type}: declares bandFocus with NO bands — a face that hides nothing`,
+        ).toBeGreaterThan(0);
+
+        const [focusedBand, values] = entries[0]!;
+        const otherBands = entries.slice(1).map(([b]) => b);
+        expect(
+          values.length,
+          `${type}: band '${focusedBand}' is revealed by no value, so it is unreachable`,
+        ).toBeGreaterThan(0);
+
+        await page.evaluate(
+          ({ id, param, v }) => {
+            const w = globalThis as unknown as {
+              __patch: { nodes: Record<string, { params: Record<string, number> } | undefined> };
+              __ydoc: { transact: (fn: () => void) => void };
+            };
+            w.__ydoc.transact(() => {
+              const n = w.__patch.nodes[id];
+              if (n) n.params[param] = v;
+            });
+          },
+          { id: 'm', param: focus.param, v: values[0]! },
+        );
+
+        // The focused band stays…
+        await expect(
+          dockShell.locator(`[data-face-page="${focusedBand}"]`),
+          `${type}: focusing '${focusedBand}' must keep its own band on the plate`,
+        ).toBeVisible();
+
+        // …and every other declared band goes. ⚠ Asserted ABSENT rather than
+        // hidden: the point of the feature is reclaimed space, and a band left
+        // in the DOM with `visibility: hidden` would still hold its row.
+        for (const other of otherBands) {
+          await expect(
+            dockShell.locator(`[data-face-page="${other}"]`),
+            `${type}: '${other}' must be GONE while '${focusedBand}' is focused — the whole ` +
+              `point is that the picture and the controls steering it share the plate`,
+          ).toHaveCount(0);
+        }
+
+        // NON-VACUITY: prove the two states actually DIFFER, so a face whose
+        // bands were absent for some unrelated reason cannot pass this.
+        expect(
+          otherBands.length,
+          `${type}: only one band declared, so "the others are hidden" asserts nothing`,
+        ).toBeGreaterThan(0);
       }
     });
   }

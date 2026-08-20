@@ -116,6 +116,26 @@ export interface ModuleSpec {
    *  module auto-enrolls in the dock render-parity sweep. Emitted only when
    *  true. */
   strictFace?: boolean;
+  /**
+   * BAND FOCUS (`face.bandFocus`) — the param whose VALUE decides which control
+   * bands the dock renders, plus the values that reveal each band.
+   *
+   * ⚠ PUBLISHED FOR THE PARITY SWEEP, and it is not a convenience. `faces-parity`
+   * asserts the dock's control set EQUALS the def's param set. On a face that
+   * hides bands, that is FALSE at most values — not vacuously true, actually
+   * false — so the sweep would fail on a working module unless it can first
+   * drive the face into its show-all state. It cannot do that without knowing
+   * WHICH param and WHICH value, and neither is derivable from the DOM: a
+   * hidden band leaves nothing behind to read.
+   *
+   * Emitted only when the def declares it, so a face without the feature is
+   * byte-unchanged here.
+   */
+  bandFocus?: {
+    param: string;
+    showAllOn: number[];
+    bands: Record<string, number[]>;
+  };
   /** Derived hints used by manifest-driven test generators (per-module
    *  spec stamper, pair-patch integration, full-system render). Set
    *  here so every downstream test layer sees the same answer for
@@ -198,6 +218,29 @@ export function getAllModuleSpecs(): ModuleSpec[] {
       const controlFamilies: string[] | undefined =
         rawFamilies && rawFamilies.length ? rawFamilies.map((f) => f.id) : undefined;
       const strictFace = STRICT_FACES.has(def.type as string);
+      // ⚠ CAST-READ, like `noUserControl` above. `face.bandFocus` is declared on
+      // `ModuleFace` in the same round that wires its render site; reading it
+      // structurally here lets this projection land ahead of that without
+      // depending on the field existing yet, and it keeps working unchanged
+      // afterwards.
+      const rawFocus = (def as {
+        face?: {
+          bandFocus?: {
+            param: string;
+            showAllOn: readonly number[];
+            bands: Readonly<Record<string, readonly number[]>>;
+          };
+        };
+      }).face?.bandFocus;
+      const bandFocus = rawFocus
+        ? {
+            param: rawFocus.param,
+            showAllOn: [...rawFocus.showAllOn],
+            bands: Object.fromEntries(
+              Object.entries(rawFocus.bands).map(([b, vs]) => [b, [...vs]]),
+            ),
+          }
+        : undefined;
       const rawNoControl = (def as { noUserControl?: readonly { param: string }[] }).noUserControl;
       const noUserControl: string[] | undefined =
         rawNoControl && rawNoControl.length ? rawNoControl.map((e) => e.param) : undefined;
@@ -232,6 +275,7 @@ export function getAllModuleSpecs(): ModuleSpec[] {
         ...(faceAnnotations ? { faceAnnotations } : {}),
         ...(noUserControl ? { noUserControl } : {}),
         ...(strictFace ? { strictFace } : {}),
+        ...(bandFocus ? { bandFocus } : {}),
         hasAudioOutput: hasOutputType(outputs, 'audio'),
         hasCvOutput: hasOutputType(outputs, 'cv'),
         hasGateOutput: hasOutputType(outputs, 'gate'),
