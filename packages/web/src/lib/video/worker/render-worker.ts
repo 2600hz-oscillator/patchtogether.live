@@ -19,6 +19,7 @@
 
 import { WORKER_FACTORIES } from './worker-factories';
 import { WorkerRenderEngine } from './worker-engine';
+import { WORKER_FRAME_MS } from './protocol';
 import type { WorkerInboundMsg, WorkerOutboundMsg, WorkerTraceSnapshot } from './protocol';
 
 // Minimal worker-global surface. The project tsconfig uses the DOM lib (not
@@ -60,8 +61,11 @@ let lastError: string | null = null;
  *  is actually presented/composited, and ours is never transferred to a visible
  *  canvas (its output goes back as ImageBitmaps). The MAIN thread paces
  *  presentation by draining the latest-wins frame in its own rAF, so a fixed
- *  worker cadence is the right model + portable across browsers. */
-const FRAME_MS = 16;
+ *  worker cadence is the right model + portable across browsers.
+ *
+ *  The value lives in `protocol.ts` so the #1905 race-window control can derive
+ *  its perturbation from the real cadence instead of re-typing it. */
+const FRAME_MS = WORKER_FRAME_MS;
 
 function post(msg: WorkerOutboundMsg, transfer?: Transferable[]): void {
   if (transfer && transfer.length) ctx.postMessage(msg, transfer);

@@ -10,6 +10,16 @@
 
 import type { ModuleNode } from '$lib/graph/types';
 
+/**
+ * Target worker render cadence in ms (~60fps). Lives HERE, not in
+ * `render-worker.ts`, because that module installs an `onmessage` handler on
+ * the worker global at import time — anything importing it to read a constant
+ * installs that handler on its own realm. This file is the side-effect-free
+ * contract both sides (and the #1905 race-window control, which derives its
+ * perturbation from this number) can import.
+ */
+export const WORKER_FRAME_MS = 16;
+
 // ---- main → worker ----
 
 export interface MsgInit {
