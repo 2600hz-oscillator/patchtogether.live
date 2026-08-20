@@ -152,7 +152,20 @@ describe('the LIVE registry — which faces are tabbed today', () => {
       // since it was authored. Adding video defs here (needed anyway, because
       // the tab opt-in's only adopter is a video module) surfaced it. Nothing
       // about backdraft changed; what changed is that the gate now looks.
-    ).toEqual(['backdraft', 'cloudseed', 'pentemelodica', 'spirographs']);
+      // ⚠ foxy (queue Q49, 2026-08-20) is the FOURTH rail and the first to
+      // arrive by the THRESHOLD route since the opt-in existed — which is the
+      // distinction this array is here to keep visible. It declares NO
+      // `face.tabbed`: 33 params fall into seven honest groups (five WAVECEL
+      // surface params · three separate sources whose defaults differ musically
+      // · the XYZ combination · the two generator modes · the four freezes) and
+      // seven IS the threshold. Nothing was padded to reach it and nothing was
+      // crammed to avoid it, per the 2026-08-18 ruling. Its dock baseline is
+      // captured as a tabbed face from the start, so no existing baseline moves.
+      // ⚠ AND `foxy=7` IS ITSELF A COMPLETENESS PROOF worth reading off the
+      // message above: `dockFacePlan` appends a `__unpaged` band for any ranked
+      // control no page mentions, so a forgotten param would report 8 here, not
+      // 7. The count matching the page count is what says all 33 are paged.
+    ).toEqual(['backdraft', 'cloudseed', 'foxy', 'pentemelodica', 'spirographs']);
   });
 
   it('every tabbed face is EITHER over the threshold OR a named opt-in — never neither', () => {
