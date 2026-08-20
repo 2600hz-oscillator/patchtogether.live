@@ -564,6 +564,22 @@ describe('module-face lint — MOMENTARY pads (face.momentary)', () => {
     // the module's headline feature could never be held — the `clouds:freeze`
     // case, reached by the simpler mechanism.
     'warrensspectrum:engineFreeze',
+    // WARREN'S VISIONS, 2026-08-20 — the VISUAL analogue of the entry directly
+    // above, and it reaches the same answer by the same mechanism rather than
+    // by inheriting it. `params.engineFreeze >= 0.5` is read as a LEVEL once
+    // per drawn frame (`warrensvisions.ts:647` sets the engine's frozen state,
+    // `:667` re-reads it in the draw path), and the def declares its `gate`
+    // input `edge: 'gate'` with `paramTarget: 'engineFreeze'` — level-sensitive
+    // on purpose, per CLAUDE.md's rule against converting a gate consumer to
+    // edge-only. A momentary render would thaw the ANALYSIS the instant the pad
+    // was released, so the freeze could never be held.
+    //
+    // ⚠ AND IT IS NOT A DETERMINISM TOGGLE, which is the trap next door: this
+    // FREEZE stops the analysis while the bank goes on slewing, drifting and
+    // rendering (the def's own docs say so). It declares `options`, so the dock
+    // paints a captioned LIVE/FREEZE pair rather than an anonymous switch — a
+    // different question from this classification, per the cofefve precedent.
+    'warrensvisions:engineFreeze',
     // MIXMSTRS, 2026-08-15. Ten params share the press-pad SHAPE
     // (`0..1 discrete resting at 0`) and every one is a console state you set
     // and leave. None is read on an edge: the Faust DSP takes all ten through

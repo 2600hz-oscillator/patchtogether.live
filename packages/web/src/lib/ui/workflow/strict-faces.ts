@@ -2218,6 +2218,43 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // `aria-valuetext`. NOT CONTROL-HEAVY — four controls, one idea, one
   // unlabelled band, no rail.
   '4plexvid',
+  // WARREN'S VISIONS — 12 params, 4 pages, no rail. The 2D spectral video
+  // resynthesizer: FFT a 128² luma plane, track the strongest wavevector peaks
+  // as gratings, replay everything unclaimed as 16 log-spaced residual rings,
+  // and sum it back through an inverse FFT against the source.
+  //
+  // ⚠ WHAT EARNS THE FACE IS MEASURED, AND IT IS TWO LIVE DEFECTS IN ITS CARD,
+  // both of which promotion closes structurally rather than by editing the card.
+  //
+  // 1. ELEVEN KNOBS DEAD TO CV, AGAINST SEVEN CV INPUTS.
+  //    `WarrensvisionsCard.svelte` passes `readLive` on NONE of its eleven
+  //    `<Knob>`s, while the def declares seven `cv` inputs each with a
+  //    `paramTarget` and a working `cvScale`. Patch a modulator into
+  //    `coherence_cv` — the module's own main gesture, per its docs — and the
+  //    card shows the stored value while the engine renders a different one.
+  //    `ModuleShell` passes `readLive={params.live(pd.id)}` at every param call
+  //    site, so the face is live by construction.
+  //
+  // 2. A DECLARED VOCABULARY NOTHING READ. This is the only module in the
+  //    unfaced pool declaring BOTH `options[]` and `landmarks`, and the card
+  //    consumed neither: it RE-TYPED `'FREEZE'`/`'LIVE'` as string literals in
+  //    its own button and never passed the SINE/SAW/SQUARE landmarks to its
+  //    Knob at all. The face reads both off the def — `engineFreeze` resolves
+  //    to a SEGMENTED cell from its own `options` roster, and SHAPE paints its
+  //    nearest landmark NAME. ⚠ Note `contract-lock.txt` records neither
+  //    `options` nor `landmarks`, so a pool derived from the lock alone is
+  //    structurally blind to this whole class.
+  //
+  // The SCREEN ON/OFF switch reaches the dock through `face.extension:
+  // 'warrensvisions'` (#1928/#1935), and its SCREEN OFF renews the watch mark:
+  // this module's bank TRACKS, ramps over STABILITY commits and slews per drawn
+  // frame, so dropping it out of the pull set would stop the bank rather than
+  // just the copy (#2015's stateful case).
+  //
+  // NO READOUT, NO SIDEBAR, NO HERO — the 2026-08-19 rulings removed the fields.
+  // NOT CONTROL-HEAVY: four honest pages against DOCK_TAB_MIN_BANDS = 7, and
+  // per the 2026-08-18 ruling they are not padded to reach it.
+  'warrensvisions',
 ]);
 
 /**

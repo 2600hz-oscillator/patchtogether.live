@@ -325,6 +325,43 @@ describe('resolvePushCardControls — tier 2, the curated face', () => {
     expect((defByType('stereovca').params ?? []).map((q) => q.id)).toEqual(['level', 'offset']);
   });
 
+  it('a FIRST PROMOTION TRUNCATES when the module out-runs the encoders — warrensvisions', () => {
+    // warrensvisions, promoted 2026-08-20 (queue Q45). The variant neither
+    // golden above can show: TWELVE params over EIGHT encoders, so the window
+    // does not merely permute the card — it DROPS FOUR CONTROLS, and which four
+    // is now decided by `face.order` instead of by declaration order.
+    //
+    // ⚠ SO THE INTERESTING ASSERTION IS THE ONE ABOUT WHAT IS *NOT* HERE.
+    // The GENERIC tier is declaration order, which reaches SHAPE at rank 8 and
+    // stops. The face ranks MIX third — it is the only control that can take
+    // the module out of the picture entirely — so MIX takes an encoder and
+    // SHAPE is the control pushed off the end. Both cards are eight wide and
+    // both look complete on the hardware; the difference is invisible unless it
+    // is written down, which is exactly the drift CLAUDE.md's push-card note
+    // warns about. Accepted deliberately: an override would freeze a ranking
+    // this module's own def argues for in a comment ("COHERENCE first: it is
+    // the control that changes the module's identity").
+    const spec = resolvePushCardControls(defByType('warrensvisions'));
+    expect(spec.source).toBe('face');
+    expect(spec.skipped, 'no families and no momentary pads on this module').toEqual([]);
+    expect(pushCardParams(spec).map((q) => q.id)).toEqual([
+      'visionsCoherence', 'visionsComponents', 'visionsMix', 'visionsFloor',
+      'visionsStability', 'visionsSlew', 'visionsSlice', 'visionsResidual',
+    ]);
+    // The negative control, and here it carries more than "the two orders
+    // differ": it names the control the promotion COST the hardware. Declaration
+    // order would have spent encoder 8 on SHAPE and never reached MIX at all.
+    const declared = (defByType('warrensvisions').params ?? []).map((q) => q.id);
+    expect(declared.slice(0, 8)).toEqual([
+      'visionsCoherence', 'visionsComponents', 'visionsFloor', 'visionsStability',
+      'visionsSlew', 'visionsSlice', 'visionsResidual', 'visionsShape',
+    ]);
+    expect(
+      pushCardParams(spec).map((q) => q.id),
+      'MIX reached the encoders and SHAPE fell off — the whole point of this golden',
+    ).not.toContain('visionsShape');
+  });
+
   it('a FIRST PROMOTION re-orders AND steps over a family — treeohvox', () => {
     // treeohvox, promoted 2026-08-19 (#1944, queue Q3). The variant that
     // exercises both behaviours at once on a newly promoted module: the window
