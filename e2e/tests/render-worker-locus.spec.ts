@@ -51,6 +51,9 @@
 import { test, expect } from './_fixtures';
 import { type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
+// #1905 — turn a timeout on "nobody painted" into a sentence naming the stage
+// that stalled. ONE export site, shared with render-worker-toybox.spec.ts.
+import { withHandshakeDiagnosis } from '../_helpers/worker-handshake';
 
 interface WorkerLocusDef {
   type: string;
@@ -466,18 +469,36 @@ test.describe('#1811 render-locus parity', () => {
     // frame before the fallback had painted, and reported "acidwarp RENDERS
     // BLACK".
     const types = roster.map((r) => r.type);
+    // #1993 — the readiness sweep accumulates IN THE PAGE and returns over ONE
+    // round trip. ⚠ Do NOT reintroduce an `expect.poll` here (see
+    // watchProbesUntilReady's header): a Playwright-side poll samples the GL
+    // subject over one CDP round trip per sample, on the same main thread it is
+    // measuring. This file's verified invariant is ZERO live Playwright-side
+    // poll call sites.
     const watch = await watchProbesUntilReady(page, types, { timeoutMs: 60_000 });
     const last: ModuleProbe[] = watch.probes;
-    expect(
-      watch.notReady,
-      'every worker-locus module has a picture at its OUTPUT and its worker has reached a ' +
-        'TERMINAL state: `active` with >=2 delivered bitmaps, or `unsupported` (CI ' +
-        'SwiftShader, where the proxy falls back to the main thread — the documented ' +
-        'degradation). `initialising` is deliberately NOT accepted: taking the fallback ' +
-        'while the worker is still spinning up is how this spec passed without ever ' +
-        `exercising the worker. ${watchDump(watch)}`,
-    ).toEqual([]);
-    expectInstrumentLooked(watch);
+    // #1905 — name the node that is stuck and the STAGE it is stuck at, rather
+    // than leaving a list that says only "nobody painted". The thunk is
+    // evaluated at THROW time off the last probe pass the page took, so the
+    // diagnosis names an actual offender instead of a healthy sibling. It wraps
+    // the ASSERTIONS, not a sampling loop — the in-page shape above is
+    // untouched.
+    await withHandshakeDiagnosis(
+      page,
+      () => last.find((p) => p.nonZeroFrac <= 0.02 || p.state === 'initialising')?.type ?? types[0]!,
+      async () => {
+        expect(
+          watch.notReady,
+          'every worker-locus module has a picture at its OUTPUT and its worker has reached a ' +
+            'TERMINAL state: `active` with >=2 delivered bitmaps, or `unsupported` (CI ' +
+            'SwiftShader, where the proxy falls back to the main thread — the documented ' +
+            'degradation). `initialising` is deliberately NOT accepted: taking the fallback ' +
+            'while the worker is still spinning up is how this spec passed without ever ' +
+            `exercising the worker. ${watchDump(watch)}`,
+        ).toEqual([]);
+        expectInstrumentLooked(watch);
+      },
+    );
 
     // ── the picture, per module ───────────────────────────────────────────────
     //
@@ -596,16 +617,24 @@ test.describe('#1811 render-locus parity', () => {
       w.__renderLocusLeases = [vid.acquireRenderLease('out-0'), vid.acquireRenderLease('out-1')];
     });
 
+    // #1993 in-page sampling (see above — no Playwright-side poll here either).
     const watch = await watchProbesUntilReady(page, ['acidwarp#a', 'acidwarp#b'], {
       timeoutMs: 60_000,
     });
     const probes: ModuleProbe[] = watch.probes;
-    expect(
-      watch.notReady,
-      'both ACIDWARP nodes are painting AND their workers have reached a terminal state ' +
-        `(active with delivered bitmaps, or unsupported). ${watchDump(watch)}`,
-    ).toEqual([]);
-    expectInstrumentLooked(watch);
+    // #1905 — attach the handshake diagnosis to the readiness assertions.
+    await withHandshakeDiagnosis(
+      page,
+      () => probes.find((p) => p.nonZeroFrac <= 0.02 || p.state === 'initialising')?.type ?? 'acidwarp#a',
+      async () => {
+        expect(
+          watch.notReady,
+          'both ACIDWARP nodes are painting AND their workers have reached a terminal state ' +
+            `(active with delivered bitmaps, or unsupported). ${watchDump(watch)}`,
+        ).toEqual([]);
+        expectInstrumentLooked(watch);
+      },
+    );
 
     const [a, b] = probes;
     console.log(

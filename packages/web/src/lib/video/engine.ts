@@ -45,6 +45,8 @@ import {
 } from './toybox-cv-math';
 import { VIDEO_RES } from './video-res';
 import { RenderWorkerBridge, workerFlagState, workerLocusEligible } from './worker/worker-bridge';
+import type { BridgeTrace } from './worker/worker-bridge';
+import type { WorkerTraceSnapshot } from './worker/protocol';
 import { WorkerProxyHandle } from './worker/worker-proxy-handle';
 import { computeActiveSet, isPullEvalOn } from './pull-eval';
 import {
@@ -967,6 +969,51 @@ export class VideoEngine implements DomainEngine {
    */
   syncNodeData(nodeId: string, data: unknown): void {
     this.workerBridge?.sendToyboxSync(nodeId, data);
+  }
+
+  /**
+   * #1905 — THE RENDER-WORKER HANDSHAKE, AS STATE.
+   *
+   * The producer-init race family (toybox ×2 specs, acidwarp locus) always
+   * presented as ONE number: zero pixels. That number is the same for four
+   * different situations, which need four different responses:
+   *
+   *   | reading                                   | what actually happened      |
+   *   |-------------------------------------------|-----------------------------|
+   *   | `main.readyAt === null`                    | worker never confirmed GL   |
+   *   | `workerReplied === false`                  | worker message loop wedged  |
+   *   | `worker.loopTicks` unchanged across 2 reads| RENDER LOOP DEAD (see       |
+   *   |                                            | `worker.lastError`)         |
+   *   | node `drawn > 0, posted === 0`             | withheld — `contentNote`    |
+   *   |                                            | names the asset            |
+   *   | node `posted > 0` and still black          | a real RENDER bug          |
+   *
+   * Await it twice to read the heartbeat; one call is enough for the rest.
+   * Returns nulls when no worker bridge was ever constructed (flag off, no
+   * worker-locus node in the rack, or an unsupported runtime).
+   */
+  async workerHandshakeTrace(): Promise<{
+    main: BridgeTrace | null;
+    worker: WorkerTraceSnapshot | null;
+    /** FALSE is a reading, not an error — see RenderWorkerBridge.workerTrace. */
+    workerReplied: boolean;
+  }> {
+    const b = this.workerBridge;
+    if (!b) return { main: null, worker: null, workerReplied: false };
+    const worker = await b.workerTrace();
+    const main = b.bridgeTrace();
+    // Enrich each bridge node with the PROXY-side counters, so one trace covers
+    // the whole chain: worker draw → post → bridge receive → main-GL upload.
+    // The upload is the last silent drop, and `framesReceived` ≫
+    // `framesDelivered` is its only signature.
+    for (const n of main.nodes) {
+      const h = this.nodes.get(n.id);
+      if (!h?.read) continue;
+      n.framesDelivered = (h.read('workerFramesDelivered') as number) ?? 0;
+      n.framesDroppedUpload = (h.read('workerUploadErrors') as number) ?? 0;
+      n.lastUploadError = (h.read('workerLastUploadError') as string | null) ?? null;
+    }
+    return { main, worker, workerReplied: worker !== null };
   }
 
   /**
