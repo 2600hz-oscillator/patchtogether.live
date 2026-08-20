@@ -167,4 +167,32 @@ describe('e2e-shard-budget.sh', () => {
       /--global-timeout[=\s]+\d+/,
     );
   });
+
+  it('EVERY wrapped command carries a budget the wrapper can read', () => {
+    // The check above reads the FIRST occurrence only. A second lane wired in
+    // without a `--global-timeout` on the same continued command would make the
+    // wrapper REFUSE (exit 2) at runtime — a red gate, but discovered on CI
+    // instead of here. Deny by default over all occurrences, so wiring a third
+    // lane in is checked the moment it is written.
+    const ci = readFileSync(join(ROOT, '.github', 'workflows', 'ci.yml'), 'utf8');
+    const NEEDLE = 'bash scripts/e2e-shard-budget.sh --';
+    const offenders: string[] = [];
+    for (let i = ci.indexOf(NEEDLE); i !== -1; i = ci.indexOf(NEEDLE, i + 1)) {
+      const window = ci.slice(i, i + 400);
+      if (!/--global-timeout[=\s]+\d+/.test(window)) offenders.push(window.split('\n')[0].trim());
+    }
+    expect(offenders, 'a wrapped command with no --global-timeout for the wrapper to derive from').toEqual([]);
+    // NON-VACUITY: the loop above passes trivially if the needle is absent.
+    // Anchored to the LANES that must be wrapped, by the step names that
+    // identify them — never to how many occurrences there are.
+    expect(ci, 'the e2e shard must route through the budget wrapper').toMatch(
+      /Run E2E \(shard[\s\S]{0,4000}?bash scripts\/e2e-shard-budget\.sh --/,
+    );
+    // vrt-strict joined 2026-08-20 (#2039): its shard 2 hit `--global-timeout`
+    // with 49 passed, 0 failed and 4 planned scenes never reached, and no line
+    // in the log said the lane was out of room, because nothing measured it.
+    expect(ci, 'the vrt-strict shard must route through the budget wrapper').toMatch(
+      /Run VRT \(strict subset[\s\S]{0,4000}?bash scripts\/e2e-shard-budget\.sh --/,
+    );
+  });
 });
