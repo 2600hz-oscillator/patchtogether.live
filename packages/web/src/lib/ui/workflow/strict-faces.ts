@@ -2498,6 +2498,21 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // facing the module — see the note left in `raw-write-ledger.ts`, where #2025
   // had the mechanism backwards.
   'gatemaiden',
+  // BATCH 18 (2026-08-20) — the THIN AUDIO TAIL. Owner: *"if there are a lot of
+  // audio modules with <4 params can't we just fly through them really quickly?
+  // they still need to be done, <4 params or not."* Utilities whose entire
+  // control surface is one knob or nothing at all. Thin is not sloppy: each
+  // still ships an honest band count (never padded to look substantial), a
+  // glyph RUN through `glyphBinding` rather than argued from the module's
+  // description, and a face-model test.
+  //
+  // The two zero-param entries are the first faces in the registry to rank
+  // NOTHING and carry no shell extension, and they are why `dockFacePlan` now
+  // refuses to emit an empty `__all` band — see the note there.
+  'depolarizer',
+  'flipper',
+  'moog994',
+  'polarizer',
 ]);
 
 /**

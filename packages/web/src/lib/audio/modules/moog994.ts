@@ -71,6 +71,29 @@ export const moog994Def: AudioModuleDef = {
     controls: {},
   },
 
+  // A PASSIVE MULTIPLE HAS NO CONTROLS, so `order` is empty and the faceplate
+  // is the fan-out jack field itself — two group inputs on the left, six
+  // copies on the right. A mult is a solder junction; padding a control in to
+  // fill the plate would be inventing a feature the hardware does not have.
+  //
+  // `glyph: 'none'` DESPITE A LIVE BINDING BEING AVAILABLE, and this is the
+  // one judgement call on this face. `primaryAudioOutPortId` resolves `a1`, so
+  // `glyph: 'meter'` WOULD bind live (unlike flipper next door, where it would
+  // be dead). It is refused because the 994 is TWO INDEPENDENT groups and the
+  // glyph binds exactly ONE port: a rack patched through group B only would
+  // show a FLAT METER over a module that is passing signal perfectly well.
+  // A false "silent" is worse than no picture — it is a readout that is wrong
+  // half the time by construction, and no per-group glyph is expressible.
+  //
+  // ⚠ NOT THE SAME CASE AS `noise`, which accepted a one-port meter: its three
+  // outputs carry the SAME source at different filter slopes, so any one of
+  // them is representative of the module. Group A tells you nothing about
+  // group B.
+  face: {
+    order: [],
+    glyph: 'none',
+  },
+
   async factory(ctx): Promise<AudioDomainNodeHandle> {
     // One unity GainNode per group. The input jack feeds it; its single
     // output is exposed by all three of the group's output jacks (Web Audio
