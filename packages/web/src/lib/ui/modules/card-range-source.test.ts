@@ -99,6 +99,7 @@ import { noiseDef } from '$lib/audio/modules/noise';
 import { warrensvisionsDef } from '$lib/video/modules/warrensvisions';
 import { charlottesEchosDef } from '$lib/audio/modules/charlottes-echos';
 import { filterDef } from '$lib/audio/modules/filter';
+import { gatemaidenDef } from '$lib/audio/modules/gatemaiden';
 import { karplusDef } from '$lib/audio/modules/karplus';
 import { meowboxDef } from '$lib/audio/modules/meowbox';
 import { resofilterDef } from '$lib/audio/modules/resofilter';
@@ -255,6 +256,17 @@ import type { ParamDef } from '$lib/graph/types';
  */
 const RANGE_BOUND_CARDS: Readonly<Record<string, { params: readonly ParamDef[] }>> = {
   'AdsrCard.svelte': adsrDef,
+  // Converted with its FACEPLATE (queue Q53, 2026-08-20), and it is the entry
+  // that shows the conversion can be worth doing when NOTHING is wrong yet and
+  // the card is only two controls. Both of its literals (`min={0.005}`,
+  // `max={2}`) already agreed with the def and its `defaultValue` was already
+  // bound. What promotion changes is the consequence of the second copy: the
+  // dock now renders LEN straight off the `ParamDef` while the card renders
+  // what it typed, so a later edit to either side would give one fader two
+  // travels depending on the surface. Range-bound only — it still hand-types
+  // `curve="log"` (which AGREES with the def) and passes no `units`, so it
+  // stays out of MAPPING_BOUND_CARDS, the AnalogVcoCard position.
+  'GatemaidenCard.svelte': gatemaidenDef,
   // Converted with its FACEPLATE (queue Q18), and it is the entry that shows
   // this list is not only about NUMBERS. All three of DestroyCard's ranges
   // already agreed with the def; what diverged was a NAME (`Decimate` on the
