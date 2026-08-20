@@ -765,6 +765,57 @@ describe('module-face lint — MOMENTARY pads (face.momentary)', () => {
     // sweep could never be left running, which is one of the module's two
     // looks.
     'rasterize:wrap',
+    // FOXY, 2026-08-20. FIVE params share the press-pad SHAPE and every one of
+    // them LATCHES. The four FREEZEs are the module's state pins: each holds a
+    // raster (or the whole wavetable) at its current frame so that axis stops
+    // evolving while the others keep moving. A momentary render would un-freeze
+    // the instant the pad was released, which is not a weaker version of the
+    // control — it is the control deleted, since the entire point is to walk
+    // away and leave one axis pinned while you dial the others.
+    //
+    // ⚠ AND THE FACTORY READS THEM AS LEVELS, WHICH IS THE HALF THE SHAPE
+    // CANNOT TELL YOU. `bridgeTick` gates on the mirrored booleans every tick
+    // (`if (!freezeA) { … }`, `if (!freezeT) { … }`), and `setParam` mirrors
+    // each with `value >= 0.5` — a per-tick LEVEL read, never an edge. There is
+    // no rising-edge consumer anywhere in this module.
+    'foxy:freezeRasterA',
+    'foxy:freezeRasterB',
+    'foxy:freezeRasterC',
+    'foxy:freezeTable',
+    // `gen_mode` is switch-SHAPED only by arity: it picks which of two
+    // raster→wavetable ALGORITHMS runs (the continuous XYZ heightfield, or the
+    // discrete 3D Shape Gen path), which is a mode you choose and leave. The
+    // bridge reads its level every tick (`if (genMode >= 0.5)`), so a momentary
+    // render would switch the generator back on release and the second path
+    // would be unreachable. ⚠ It now declares an `options[]` roster (#2007), so
+    // the dock paints it as a named `segmented` rather than any kind of pad —
+    // but this gate reads the param SHAPE, not the resolved cell, which is
+    // correct: the roster is cosmetic and could be removed without changing
+    // what the DSP does with the value.
+    'foxy:gen_mode',
+    // GATEMAIDEN, 2026-08-20. The TRIG output's waveform, and it reaches this
+    // gate by a different route from every entry above it: no `curve` needed
+    // correcting. `trigShape` has been `discrete 0..1 default 0` since the
+    // module shipped — it is switch-shaped, correctly declared, and simply had
+    // no promoted module around it until now.
+    //
+    // LATCHING, and the card is unambiguous about it: the control is a CYCLE
+    // BUTTON whose caption IS the current state (it read `△ TRI` / `▭ SQR`),
+    // so each click SETS a mode that is then left alone. There is no CV port
+    // and nothing pulses it. A momentary render would snap the pulse back to
+    // TRI the instant the pad was released, which would make SQR unreachable
+    // in practice — and SQR is not a flourish: it carries twice TRI's area and
+    // clears the 0.5 threshold for twice as long (measured on the pure core in
+    // `gatemaiden-dsp.test.ts`), so it is the setting a player leaves engaged
+    // when a downstream trigger input is missing edges.
+    //
+    // ⚠ THE DOCS CROSS-CHECK BELOW IS LOAD-BEARING HERE RATHER THAN
+    // CEREMONIAL. This param's authored prose was WRONG until this same diff —
+    // it claimed the two shapes were "display/feel only", which is exactly the
+    // kind of sentence that makes a reviewer wave a classification through
+    // without asking what the control does. The prose now states the measured
+    // difference, and the acknowledgement rests on the cycle-button gesture.
+    'gatemaiden:trigShape',
   ]);
 
   it('no ACKNOWLEDGED_LATCHING param is DOCUMENTED as momentary (the cross-check)', () => {
