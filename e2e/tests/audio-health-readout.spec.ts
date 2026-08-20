@@ -39,6 +39,38 @@ import { spawnPatch } from './_helpers';
 
 test('audio health readout is live, and playbackStats exists in this browser', async ({ page }) => {
   await page.goto('/rack?shell=legacy&seed=none');
+  // ⚠ THE FIRST ASSERTION IN A SPEC PAYS FOR THE APP'S LOAD, and `expect`'s
+  // default budget is 5 s. `[data-testid="audio-health"]` is UNCONDITIONAL
+  // markup in `footer.bottombar` (Canvas.svelte) — there is no state that can
+  // withhold it — so "element(s) not found" here never means the readout is
+  // broken, only that the bundle had not finished arriving. Measured on
+  // ci.yml run 32408464982, e2e shard 1/10: `toBeVisible` failed with
+  // `element(s) not found` after exactly 5000 ms, then PASSED on retry, which
+  // reddens the whole lane through the flake gate (#1847 — a recovered flake
+  // is a failure, not a pass).
+  //
+  // Settling the network moves the download OUT of the assertion budget
+  // instead of enlarging the budget: 229 of the 305 specs that `goto('/rack')`
+  // already do exactly this, and raising the timeout would leave the same race
+  // with a bigger number in front of it. The `toBeVisible` below is then
+  // measuring the READOUT, which is what it claims to measure.
+  //
+  // ⚠ VALIDATED, because "settle first" is only a fix if the settle lands
+  // AFTER the element exists — otherwise it is theatre that changes nothing.
+  // Raced against each other on ONE page load (two loads would compare
+  // different samples and could invert by luck), 3 runs each, ms since `goto`
+  // returned:
+  //   · `vite preview` bundle — THE CI CONFIGURATION: readout attached at
+  //     236/222/224 ms, networkidle at 631/625/623 ms → +395 to +403 ms AFTER.
+  //   · dev server: readout at 796/802/802 ms, networkidle at 942/941/936 ms
+  //     → +134 to +146 ms AFTER. (Also the answer to the obvious worry: the
+  //     HMR websocket does NOT stop networkidle resolving here. The
+  //     `domcontentloaded` in `_helpers.ts` `spawnPatch` is for a narrower
+  //     case — retrying after an HMR full-reload tore the context down.)
+  // It holds by construction too: the footer cannot render before the chunk
+  // that renders it has arrived, and networkidle is 500 ms after the LAST
+  // request.
+  await page.waitForLoadState('networkidle');
 
   const readout = page.locator('[data-testid="audio-health"]');
   await expect(readout).toBeVisible();

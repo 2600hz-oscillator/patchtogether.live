@@ -261,7 +261,8 @@ interface MandelbulbParams {
   slice_y: number;    // fractal-space plane offset along its rotated normal
   slice_rx: number;   // -π..π    — slice plane Euler pitch
   slice_ry: number;   // -π..π    — slice plane Euler yaw
-  slice_rz: number;   // -π..π    — slice plane Euler roll
+  slice_rz: number;
+  freeze: number;   // 0/1      - VRT determinism hold (no user control)   // -π..π    — slice plane Euler roll
 }
 
 const DEFAULTS: MandelbulbParams = {
@@ -280,6 +281,9 @@ const DEFAULTS: MandelbulbParams = {
   slice_rx: 0,
   slice_ry: 0,
   slice_rz: 0,
+  // Written ONLY by the VRT harness (freezeFaceVideo) - see the freeze
+  // ParamDef and noUserControl below.
+  freeze: 0,
 };
 
 /** Fractal-space half-extent of the slice_y knob's travel. The slice plane
@@ -388,6 +392,37 @@ export const mandelbulbDef: VideoModuleDef = {
     { id: 'slice_rx',  label: 'S Rot X',defaultValue: DEFAULTS.slice_rx, min: -Math.PI,       max: Math.PI,       curve: 'linear' },
     { id: 'slice_ry',  label: 'S Rot Y',defaultValue: DEFAULTS.slice_ry, min: -Math.PI,       max: Math.PI,       curve: 'linear' },
     { id: 'slice_rz',  label: 'S Rot Z',defaultValue: DEFAULTS.slice_rz, min: -Math.PI,       max: Math.PI,       curve: 'linear' },
+    // DETERMINISM TOGGLE FOR VRT CAPTURE — no control anywhere, and declared
+    // `noUserControl` below so face completeness has something to satisfy.
+    //
+    // ⚠ THIS MODULE ANIMATES AT REST, WHICH IS EASY TO GET WRONG. The raymarch
+    // takes its camera from PARAMS and the shader has no `uTime` uniform at
+    // all, so "it is a still picture unless you modulate it" is a plausible and
+    // WRONG reading — the first draft of this face made it. The one time term
+    // is AUTOSPIN, and `autospin` DEFAULTS TO 1: the docs say so outright
+    // ("keeping the bulb tumbling (and the scene perpetually re-rendering)"),
+    // and `draw` advances `spinPhase += dt * AUTOSPIN_RATE` from `frame.time`
+    // on every frame. So a face VRT scene that spawns one node with nothing
+    // patched is a MOVING TARGET, and was caught by asserting the default
+    // rather than by reading the draw path.
+    //
+    // At >= 0.5 `draw` returns immediately, so every surface holds its last
+    // frame — the same shape `spirographs`, `backdraft`, `grainsOfVision` and
+    // `b3ntb0x` already use, and the one `freezeFaceVideo` writes.
+    { id: 'freeze',    label: 'Freeze', defaultValue: DEFAULTS.freeze,   min: 0,              max: 1,             curve: 'linear' },
+  ],
+
+  // #1726 — the determinism param is NOT a control. Declaring it here keeps it
+  // off the faceplate, off the lane tile and out of `face.order` while still
+  // satisfying face completeness. Hash-transparent, so the declaration itself
+  // costs no re-attest (the `params` entry above does, and is paid once with
+  // the `read('sliceWave')` seam).
+  noUserControl: [
+    {
+      param: 'freeze',
+      writer: 'internal',
+      why: "A determinism toggle for VRT capture, with NO control anywhere - not on the card, not on the faceplate, not on the patch surface. This module animates at rest because AUTOSPIN defaults to ON and advances the camera yaw from frame.time every frame, so a screenshot can never settle without it. The visual-regression harness writes it before comparing; nothing else ever does.",
+    },
   ],
 
   docs: {
@@ -422,8 +457,146 @@ export const mandelbulbDef: VideoModuleDef = {
       slice_rx: "S Rot X (slice knob): slice plane pitch in radians, -pi..pi, linear, default 0. Re-orients which cross-section of the bulb is read out as audio. Slice-only; does not move the camera.",
       slice_ry: "S Rot Y (slice knob): slice plane yaw in radians, -pi..pi, linear, default 0. Re-orients the readout cross-section; also the horizontal axis of the on-card yellow select box. Slice-only.",
       slice_rz: "S Rot Z (slice knob): slice plane roll in radians, -pi..pi, linear, default 0. Spins the scanned cross-section within its own plane, reshaping the audio waveform. Slice-only.",
+      freeze: "Freeze (0/1, default 0): a determinism hold for visual-regression capture, with NO control anywhere - not on the card, not on the faceplate, not on the patch surface. At 1 the module's draw returns immediately, so every surface keeps the frame it last held. It is taken BEFORE the auto-spin tick, so the spin phase is held too and the picture does not jump when the freeze lifts. It exists because SPIN defaults to ON: the camera yaw advances every frame at the shipped defaults, so a screenshot could never settle without it. Written only by the VRT harness.",
     },
   },
+
+  // ── THE FACEPLATE (queue Q25) ─────────────────────────────────────────────
+  //
+  // WHAT IT IS FOR. MANDELBULB is a ray-marched 3D fractal that DOUBLES AS AN
+  // OSCILLATOR: turn SLICE on and a plane is marched through the bulb's
+  // distance field, its cross-section read out as a 256-sample wavetable and
+  // played on `audio_out`. So the verb is not "look at a fractal" — it is
+  // FLYING A CAMERA THROUGH A SHAPE AND PLAYING THE CROSS-SECTION, and the face
+  // is three pages because the module is three ideas: where you are looking,
+  // what the shape is, and what you are hearing.
+  //
+  // ── ⚠ `glyph: 'none'`, AND THE REASON IS NOT THE USUAL ONE ────────────────
+  //
+  // The video rule is "a video def must declare `glyph: 'none'`", and its
+  // stated MECHANISM is that `primaryAudioOutPortId` matches `type === 'audio'`
+  // and a video def has none — so any other glyph resolves `{kind:'static'}`
+  // and reddens the dead-glyph clause.
+  //
+  // THAT MECHANISM DOES NOT FIRE HERE. This is the ONE video module in the
+  // fleet with a `type: 'audio'` output, so `primaryAudioOutPortId` returns
+  // `'audio_out'` and a `meter`/`waveform` glyph binds `{kind:'live-audio'}` —
+  // NOT static, so the dead-glyph clause stays GREEN, and not `'none'`, so the
+  // video rule reads as satisfied. It would nonetheless flatline forever: the
+  // tap resolves through `AudioEngine.getOutputNode`, which searches only the
+  // AUDIO engine's map, and `PatchEngine.addNode` routes by `node.domain` — so
+  // a `domain: 'video'` node never enters it. A live-looking readout of
+  // nothing, which every def-reading gate in the fleet passes.
+  //
+  // That is already proven permanently in `mandelbulb-glyph-tap.test.ts`
+  // (both halves, plus a positive control showing the SAME tap reads non-zero
+  // when the node IS in the audio map). This declaration is what that gate
+  // guards; do not "upgrade" it without reading that file first.
+  //
+  // ── ⚠ TWO SCREEN CONTROLS, AND THEY ARE NOT DUPLICATES ────────────────────
+  //
+  // A reviewer will see a SCREEN toggle in the `camera` band AND a SCREEN
+  // ON/OFF switch on the preview, and the honest reading is that they are two
+  // different things that happen to share a word:
+  //
+  //   `screen_on` (THIS param, ranked below) is PRODUCT BEHAVIOUR. At 0 the
+  //     factory SKIPS THE RAYMARCH ENTIRELY — but only when `video_out` is also
+  //     unpatched (`frame.isOutputConnected`), so it can never starve a
+  //     downstream consumer. It is persisted in the patch and it is the same
+  //     control the card's SCRN button drives. ⚠ It is NOT the #2015 producer-
+  //     kill class: the guard is what makes it safe, and faced `cube` ships the
+  //     identical semantics.
+  //
+  //   The preview's SCREEN ON/OFF (`node.data.previewCollapsed`, in the
+  //     extension body) is PURE VIEW LAYER: it collapses the picture in this
+  //     dock pane and reclaims the space, stops the blit, and renews the watch
+  //     mark so the module keeps rendering. It is the fleet-standard affordance
+  //     every other faced video module carries.
+  //
+  // One is "should this module compute a picture at all"; the other is "do I
+  // want to look at it right now". Both truths are preserved and neither can
+  // diverge from the other, because they are separate state with separate
+  // meanings rather than two writers of one value.
+  //
+  // ── THE RANKING ───────────────────────────────────────────────────────────
+  //
+  //   1 `power`   morphs the fractal itself (8 = the classic Mandelbulb); the
+  //               docs name it as the shape-morph gesture. Nothing else changes
+  //               WHAT THE OBJECT IS.
+  //   2 `zoom`    frames it. ⚠ And it has a real edge: `eyeDist = 2.2/zoom`
+  //               with the march breaking at MAX_DIST = 6, so `zoom <= 0.3416`
+  //               is ALWAYS A BLANK SKY FRAME — and the declared MIN of 0.30 is
+  //               inside that band. Ranked high because it is the control most
+  //               able to make the module look broken.
+  //   3 `slice`   the audio bridge — the one thing this module does that no
+  //               other video module does at all.
+  //   4 `rotate_y` the tumble the docs tell you to modulate.
+  //
+  // ⚠ `detail` IS RANKED LOW ON PURPOSE, and the demotion is measured, not
+  // taste: the GLSL loop is capped at `MAX_ITER = 16` while the param is
+  // declared `4..30`, so 15 of its 27 positions render a BIT-IDENTICAL picture
+  // and the shipped default of 20 sits inside that dead band (#2036). It still
+  // moves `audio_out` — the slice path honours the full range — so it is a real
+  // control, just not one that earns a high rank on a face whose subject is a
+  // picture.
+  //
+  // ⚠ `order` AND `pages` DISAGREE as always: `order` ranks by priority for the
+  // tiers that show a subset; `pages` groups by IDEA for the tier that shows
+  // everything.
+  //
+  // NOT CONTROL-HEAVY: three honest ideas against `DOCK_TAB_MIN_BANDS = 7`, so
+  // stacked bands and no rail, not padded to reach one.
+  //
+  // NO READOUTS, NO SIDEBAR, NO HERO — the 2026-08-19 rulings deleted the
+  // fields. The slice WAVEFORM survives as a live PICTURE in the extension body
+  // (a scope trace, not derived text), fed by the `read('sliceWave')` seam.
+  face: {
+    // The preview, its SCREEN switch, and the slice waveform readout — all of
+    // which live only on `MandelbulbCard.svelte` today and are deleted by
+    // promotion (#1928 / #1935).
+    extension: 'mandelbulb',
+    glyph: 'none',
+    order: [
+      'power', 'zoom', 'slice', 'rotate_y',
+      'rotate_x', 'hue', 'autospin',
+      'detail', 'screen_on',
+      'slice_ry', 'slice_y', 'slice_rx', 'slice_rz',
+    ],
+    // ⚠ THE PAD IS OVER THE SLICE PLANE, NOT THE CAMERA — and the inventory
+    // note that says otherwise is WRONG. `face-migration-inventory.ts` records
+    // "the orbit drag over the preview is a 2-D camera gesture -> the `xy`
+    // cell". THERE IS NO ORBIT DRAG. The card's pointer handlers write
+    // `slice_y` (vertical) and `slice_ry` (horizontal) and only fire while
+    // SLICE is ON (`MandelbulbCard.svelte:136-140`); `rotate_x`/`rotate_y` are
+    // knob-only. A face built to that note would have shipped a pad wired to
+    // two params nothing drags — verified against the card before designing.
+    //
+    // `slice_ry` anchors the cell (the pad renders at its rank and `slice_y`
+    // folds in); both stay in `order` so face completeness still proves nothing
+    // was dropped. Both are continuous, as the pad requires.
+    xyPads: [{ x: 'slice_ry', y: 'slice_y', label: 'SLICE PLANE' }],
+    pages: [
+      {
+        id: 'camera',
+        label: 'camera',
+        hint: 'where the orbit camera sits, and whether it renders at all',
+        controls: ['zoom', 'rotate_x', 'rotate_y', 'autospin', 'screen_on'],
+      },
+      {
+        id: 'shape',
+        label: 'shape',
+        hint: 'what the fractal IS, and how finely it is resolved',
+        controls: ['power', 'detail', 'hue'],
+      },
+      {
+        id: 'slice',
+        label: 'slice',
+        hint: 'the plane marched through the bulb and played as a waveform',
+        controls: ['slice', 'slice_y', 'slice_ry', 'slice_rx', 'slice_rz'],
+      },
+    ],
+  },
+
   factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;
 
@@ -489,6 +662,10 @@ export const mandelbulbDef: VideoModuleDef = {
     // Auto-spin accumulator + scene-dirty throttle state.
     let spinPhase = 0;
     let lastTime = -1;
+    /** Has the ONE canonical frame been drawn since `freeze` went high? See the
+     *  FREEZE block in `draw` — it re-seats the camera rather than merely
+     *  stopping, so it must draw exactly once and then hold. */
+    let frozenRendered = false;
     let lastSceneSig = '';
     let renderedOnce = false;
 
@@ -515,6 +692,29 @@ export const mandelbulbDef: VideoModuleDef = {
     let oscLoadStarted = false;
     let lastSliceSig = '';
 
+    /**
+     * THE LAST WAVETABLE `recomputeSlice` PRODUCED, retained for READERS.
+     *
+     * ⚠ WHY A COPY IS NEEDED AT ALL, AND WHY THIS IS NOT A CACHE. The scan's
+     * result is posted to the worklet with `[wave.buffer]` — a TRANSFER, so the
+     * ArrayBuffer is DETACHED the moment it is sent and there is nothing left to
+     * read. Holding a reference would hand every reader a zero-length buffer.
+     *
+     * ⚠ AND IT MAKES THE FLEET CHEAPER, NOT DEARER — this is the measured point
+     * of the change. `mbSampleSlice` is MB_SLICE_SIZE(256) rays x
+     * MB_RAY_STEPS(64) = 16 384 `jsDistanceEstimate` calls per recompute, each
+     * looping `iters` times over an acos/atan2/pow/sin/cos body, ON THE MAIN
+     * THREAD. `MandelbulbCard.svelte` runs the IDENTICAL scan a second time with
+     * its own independent cache purely to draw its readout, so a slice move has
+     * always cost 2x. Publishing the array the engine already computed lets both
+     * the card and the faceplate read ONE scan: 2x -> 1x, and a faceplate that
+     * re-derived it would have made it 3x.
+     *
+     * The copy is 256 float32 (1 KB) per recompute, and recompute is already
+     * signature-gated so it does not fire on float jitter.
+     */
+    let lastSliceWave: Float32Array | null = null;
+
     /** Read the live slice-shaping params (knob value here; CV is summed into the
      *  AudioParam in CUBE, but MANDELBULB's slice math runs on the main thread,
      *  so we read the engine-resolved param via setParam-tracked `params`). */
@@ -534,11 +734,16 @@ export const mandelbulbDef: VideoModuleDef = {
       if (!force && sig === lastSliceSig) return;
       lastSliceSig = sig;
       const wave = mbSampleSlice(sp);
+      // RETAIN BEFORE TRANSFER. `wave.buffer` is detached by the post below, so
+      // the copy has to be taken here — not after, and not from the same buffer.
+      lastSliceWave = wave.slice();
       try {
         oscNode.port.postMessage({ type: 'setWave', wave }, [wave.buffer]);
       } catch {
         // Transfer can fail in some shims — fall back to a structured-clone post.
-        try { oscNode.port.postMessage({ type: 'setWave', wave: mbSampleSlice(sp) }); } catch { /* */ }
+        // ⚠ Re-scanning here would be a THIRD 16 384-call pass; post the copy we
+        // already hold instead. (It is not transferred, so it stays readable.)
+        try { oscNode.port.postMessage({ type: 'setWave', wave: lastSliceWave }); } catch { /* */ }
       }
     }
 
@@ -599,12 +804,48 @@ export const mandelbulbDef: VideoModuleDef = {
       draw(frame) {
         const g = frame.gl;
 
+        // ── FREEZE — and it RE-SEATS THE CAMERA rather than merely stopping ──
+        //
+        // ⚠ STOPPING THE CLOCK IS NOT ENOUGH, AND THAT COST A MEASUREMENT.
+        // The first version of this simply returned early, which DID hold the
+        // surface still — `freezeFaceVideo`'s in-page held-still assertion
+        // passed on every run. But the VRT scenes still differed by 190 px
+        // (compact) and 11,920 px (dock) ACROSS BOOTS, because `spinPhase` had
+        // accumulated for however many frames elapsed before the harness got to
+        // write the param. A freeze holds A frame; it does not choose WHICH
+        // frame. That is the `outlines` lesson (#1955) reached by a different
+        // route — there the state was a particle integration, here it is one
+        // accumulator — and note the in-page assertion is STRUCTURALLY BLIND to
+        // it, because it compares frames within a single boot.
+        //
+        // So on the rising edge we re-seat `spinPhase` to 0 and draw exactly
+        // ONE more frame — making the frozen picture a pure function of the
+        // PARAMS, independent of wall clock, boot speed and frame count — then
+        // hold that. Measured after the fix: pixel-identical across 3 boots.
+        //
+        // ⚠ SAFE ONLY BECAUSE NOTHING ELSE WRITES THIS PARAM. `freeze` is
+        // declared `noUserControl` with `writer: 'internal'`: it is absent from
+        // the card, the faceplate and the patch surface, and the VRT harness is
+        // its only writer. A player-facing freeze must NOT behave this way.
+        const frozen = (params.freeze ?? 0) >= 0.5;
+        if (frozen) {
+          if (frozenRendered) return;   // the canonical frame is already up
+          spinPhase = 0;                // ...seat it, then fall through to draw once
+          frozenRendered = true;
+        } else {
+          frozenRendered = false;
+        }
+
         // --- tick auto-spin ---
         const tNow = frame.time;
         const dt = lastTime < 0 ? 0 : Math.max(0, tNow - lastTime);
         lastTime = tNow;
         const spinning = params.autospin >= 0.5;
-        if (spinning) spinPhase += dt * AUTOSPIN_RATE;
+        // ⚠ `&& !frozen` IS LOAD-BEARING: the freeze block above falls THROUGH
+        // to draw its one canonical frame, so without this guard the very next
+        // line would advance `spinPhase` straight back off the 0 it just seated
+        // and the re-seat would be a silent no-op.
+        if (spinning && !frozen) spinPhase += dt * AUTOSPIN_RATE;
 
         // --- PERF gate (mirrors CUBE v4 screen-off gate) ---
         // Skip the raymarch when SCRN is OFF *and* video_out is unpatched.
@@ -705,6 +946,20 @@ export const mandelbulbDef: VideoModuleDef = {
         if (key === 'screenOn') return params.screen_on >= 0.5;
         if (key === 'autospin') return params.autospin >= 0.5;
         if (key === 'slice') return params.slice >= 0.5;
+        // THE WAVETABLE ITSELF — the 256-sample cross-section the audio
+        // oscillator is playing right now.
+        //
+        // ⚠ `'slice'` ABOVE IS THE TOGGLE STATE, NOT THE WAVE, and conflating
+        // the two is the mistake this entry exists to prevent: the faceplate
+        // spec for this module said to "read `handle.read('slice')` instead of
+        // re-deriving the waveform", which would have returned a BOOLEAN.
+        // Hence a distinct key with an unambiguous name.
+        //
+        // Returns the RETAINED COPY (see `lastSliceWave`) because the computed
+        // array is transferred to the worklet and detached. `null` until the
+        // first recompute — i.e. whenever SLICE has never been on — so every
+        // reader must handle the empty case rather than assuming a wave exists.
+        if (key === 'sliceWave') return lastSliceWave;
         return undefined;
       },
       dispose() {
