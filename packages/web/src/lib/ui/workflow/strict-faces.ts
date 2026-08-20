@@ -2344,6 +2344,45 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // `aria-valuetext`. NOT CONTROL-HEAVY — four controls, one idea, one
   // unlabelled band, no rail.
   '4plexvid',
+  // BENTBOX — 16 params (14 controls + 2 synthetic gates), 6 pages, no rail.
+  // A virtual CRT fed a hand-bent NTSC composite line: resample to 240 lines,
+  // encode to YIQ, abuse the "voltage" (wavefold → soft-clip), decode, blend
+  // against the previous frame, then paint through a phosphor pipeline. The
+  // pages ARE that chain — sync / chroma / bend / feedback / crt / mirror.
+  //
+  // ⚠ IT IS THE SIBLING OF `b3ntb0x`, NOT A SUBSET OF IT. The two share exactly
+  // FOUR param ids (`mirrorX`, `mirrorY` + their two gates); `b3ntb0x.ts:51`
+  // states outright that NOTHING is imported from bentbox, and the shared mirror
+  // logic is duplicated rather than shared. Their two identically-labelled "Hue"
+  // dials are not even interchangeable — bentbox's spans a FULL TURN (so both
+  // ends return to the centre colour and 0.5 is the real maximum shift) while
+  // b3ntb0x's tops out at 0.9π and never wraps.
+  //
+  // ⚠ WHAT PROMOTION WOULD HAVE DELETED, and it is the largest STOP-2 inventory
+  // in the video pool so far: `BentboxCard.svelte` is the SOLE home of the live
+  // CRT picture, fullscreen, in-app full-frame, present-on-a-second-display and
+  // the resize handle. On a module whose entire output IS a screen, that is not
+  // a lost preview — it is losing every way to watch the television. All five
+  // move to `face.extension: 'bentbox'` → `fullViewBody`.
+  //
+  // ⚠ TWO PARAM-SHAPE CORRECTIONS LAND WITH THE FACE, and only one is free.
+  // `mirrorX`/`mirrorY` were declared `curve: 'linear'` while the shader
+  // hard-thresholds both at `>= 0.5`, so a def-driven face would have painted
+  // two continuous rotaries over a switch (the card renders BUTTONS — the
+  // def-vs-card divergence class). Corrected to `discrete`, which is what
+  // `looksLikeToggle` keys on: pixel-neutral, because the READ is a threshold
+  // either way, but a `params` edit and therefore a real-GPU re-attest. The two
+  // synthetic `mirror*Gate` params are declared `noUserControl` in the same
+  // diff and cost NOTHING — measured both ways on this branch.
+  //
+  // ⚠ NO `freeze` PARAM, unlike b3ntb0x: bentbox returns early when nothing is
+  // patched (a static gradient with no time term), so its face VRT scenes are
+  // deterministic by construction rather than by a flag.
+  //
+  // NO READOUT, NO SIDEBAR, NO HERO — the 2026-08-19 rulings removed the fields.
+  // NOT CONTROL-HEAVY: six honest stages against DOCK_TAB_MIN_BANDS = 7, not
+  // padded to reach it.
+  'bentbox',
   // WARREN'S VISIONS — 12 params, 4 pages, no rail. The 2D spectral video
   // resynthesizer: FFT a 128² luma plane, track the strongest wavevector peaks
   // as gratings, replay everything unclaimed as 16 log-spaced residual rings,
