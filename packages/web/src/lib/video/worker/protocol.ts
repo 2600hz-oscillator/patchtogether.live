@@ -76,6 +76,20 @@ export interface MsgDeterminism {
   paused: boolean;
 }
 
+/**
+ * #1905 — HANDSHAKE TRACE REQUEST. Ask the worker for a snapshot of its own
+ * init/attach/produce state. Request/response (rather than a periodic push) so
+ * a dead worker costs nothing and — crucially — so NO REPLY is itself a
+ * reading: a worker whose MESSAGE loop is wedged cannot answer, while a worker
+ * whose RENDER loop died answers with a frozen `loopTicks` and a `lastError`.
+ * Those two are opposite facts that a frame counter reports identically (as 0).
+ */
+export interface MsgTraceRequest {
+  type: 'trace-request';
+  /** Correlates the reply; a stale reply to an abandoned request is dropped. */
+  seq: number;
+}
+
 export type WorkerInboundMsg =
   | MsgInit
   | MsgAddNode
@@ -84,7 +98,8 @@ export type WorkerInboundMsg =
   | MsgSetResolution
   | MsgDispose
   | MsgToyboxSync
-  | MsgDeterminism;
+  | MsgDeterminism
+  | MsgTraceRequest;
 
 // ---- worker → main ----
 
@@ -106,4 +121,68 @@ export interface MsgFrame {
   bitmap: ImageBitmap;
 }
 
-export type WorkerOutboundMsg = MsgReady | MsgFrame;
+/**
+ * #1905 — per-node production state inside the worker.
+ *
+ * `drawn` vs `posted` vs `withheld` is the whole point: before this existed,
+ * "the OUTPUT is black" collapsed four distinct states into one number.
+ *   - drawn 0                     → the node was never attached / never stepped
+ *   - drawn > 0, posted 0         → attached and drawing, WITHHELD (no content
+ *                                   yet — an async shader/asset is still in
+ *                                   flight, or failed: read `contentNote`)
+ *   - posted > 0, black on screen → the picture itself is black (a real render
+ *                                   bug, not a handshake one)
+ */
+export interface WorkerNodeTrace {
+  id: string;
+  /** ms (worker clock) at which the node was materialized. */
+  addedAt: number;
+  /** surface.draw() calls that returned without throwing. */
+  drawn: number;
+  /** frames transferred to the main thread. */
+  posted: number;
+  /** frames NOT transferred because the node reported no content yet. */
+  withheld: number;
+  /** ms at which the node first reported content — null while still warming. */
+  firstContentAt: number | null;
+  /** The node's own words for why it is withholding (e.g. which asset is in
+   *  flight, or which one failed). Null when the node exposes no reason. */
+  contentNote: string | null;
+  /** surface.draw() throws swallowed by the per-node guard in step(). */
+  drawErrors: number;
+}
+
+/**
+ * #1905 — the worker's half of the handshake, as state rather than as silence.
+ */
+export interface WorkerTraceSnapshot {
+  /** Worker-realm performance.now() when the snapshot was taken. */
+  now: number;
+  /** ms at which the init message was handled; null = init never arrived. */
+  initAt: number | null;
+  /** ms at which WebGL2 came up; null with a non-null initAt = GL failed. */
+  glOkAt: number | null;
+  /** Init failure text (mirrors MsgReady.initErr). */
+  glError: string | null;
+  /** RENDER-LOOP HEARTBEAT. Two traces with an identical value = the loop is
+   *  DEAD. Before #1905 a dead loop and a never-started one were both "no
+   *  frames", and a single throw inside loop() produced the first silently. */
+  loopTicks: number;
+  lastTickAt: number | null;
+  /** Throws caught by the loop guard. Non-zero means the loop WOULD have died. */
+  loopErrors: number;
+  lastError: string | null;
+  /** Determinism forwarding state (a paused worker posts no frames BY DESIGN —
+   *  without this, "paused" reads exactly like "broken"). */
+  paused: boolean;
+  frozenTimeSec: number | null;
+  nodes: WorkerNodeTrace[];
+}
+
+export interface MsgTrace {
+  type: 'trace';
+  seq: number;
+  snapshot: WorkerTraceSnapshot;
+}
+
+export type WorkerOutboundMsg = MsgReady | MsgFrame | MsgTrace;

@@ -19,7 +19,7 @@
 
 import { WORKER_FACTORIES } from './worker-factories';
 import { WorkerRenderEngine } from './worker-engine';
-import type { WorkerInboundMsg, WorkerOutboundMsg } from './protocol';
+import type { WorkerInboundMsg, WorkerOutboundMsg, WorkerTraceSnapshot } from './protocol';
 
 // Minimal worker-global surface. The project tsconfig uses the DOM lib (not
 // WebWorker), so `DedicatedWorkerGlobalScope` isn't in scope here — we type just
@@ -42,6 +42,17 @@ let timerId: ReturnType<typeof setTimeout> | null = null;
  *  resume into a later engine. NOT a population count — it is a generation
  *  token whose only meaningful operation is equality. */
 let loopGen = 0;
+
+/** ---- #1905 handshake trace state (see protocol.WorkerTraceSnapshot) ---- */
+let initAt: number | null = null;
+let glOkAt: number | null = null;
+let glError: string | null = null;
+/** Loop heartbeat. NOT a population count — a monotonic liveness token whose
+ *  only meaningful operation is "did it move between two traces?". */
+let loopTicks = 0;
+let lastTickAt: number | null = null;
+let loopErrors = 0;
+let lastError: string | null = null;
 
 /** Target render cadence (~60fps). The worker is a HEADLESS compute unit with
  *  no display to vsync to, so we drive it with a timer rather than
@@ -82,21 +93,60 @@ function post(msg: WorkerOutboundMsg, transfer?: Transferable[]): void {
  */
 async function loop(gen: number): Promise<void> {
   if (gen !== loopGen || !running || !engine) return;
-  if (!paused && engine.hasNodes()) {
-    const ready = engine.step();
-    for (let i = 0; i < ready.length; i++) {
-      // Re-check EVERY iteration. `dispose` (and a subsequent re-`init`) can
-      // land inside one of the yields below; touching a disposed engine would
-      // throw on a dead context, and a stale frame resuming after a re-init
-      // would schedule a SECOND concurrent loop. The generation counter is
-      // what makes that second case impossible rather than merely unlikely.
-      if (gen !== loopGen || !running || !engine) return;
-      const bitmap = engine.transferNodeFrame(ready[i]!);
-      if (bitmap) post({ type: 'frame', nodeId: ready[i]!, bitmap }, [bitmap]);
-      if (i < ready.length - 1) await nextTask();
+  loopTicks++;
+  lastTickAt = performance.now();
+  // ⚠ #1905 — THE LOOP RESCHEDULES ITSELF, SO ONE THROW USED TO END IT FOREVER.
+  //
+  // `schedule()` was the last statement of this function and the ONLY thing
+  // that queues the next frame. `transferNodeFrame` (which compiles the copy
+  // program on first use and calls `transferToImageBitmap`) and `post` (a
+  // structured clone) can both throw; the call site is `setTimeout(() => void
+  // loop(gen))`, so an async throw became a VOIDED rejection — no console
+  // entry, no `onerror`, no `ready:{glOk:false}`.
+  //
+  // The resulting state is precisely #1905's signature: the worker is alive and
+  // answers messages, `bridge.ready()` stays TRUE so the main thread never
+  // re-materializes its fallback, and the node is black FOREVER — zero output
+  // ever, not wrong output. Recovery required a reload, which is why every
+  // sighting "passed on a retry of the identical tree".
+  //
+  // So: the frame is now guarded and `schedule()` moved into a `finally`. A
+  // frame may fail; the LOOP may not die.
+  try {
+    if (!paused && engine.hasNodes()) {
+      const ready = engine.step();
+      for (let i = 0; i < ready.length; i++) {
+        // Re-check EVERY iteration. `dispose` (and a subsequent re-`init`) can
+        // land inside one of the yields below; touching a disposed engine would
+        // throw on a dead context, and a stale frame resuming after a re-init
+        // would schedule a SECOND concurrent loop. The generation counter is
+        // what makes that second case impossible rather than merely unlikely.
+        if (gen !== loopGen || !running || !engine) return;
+        const bitmap = engine.transferNodeFrame(ready[i]!);
+        if (bitmap) post({ type: 'frame', nodeId: ready[i]!, bitmap }, [bitmap]);
+        if (i < ready.length - 1) await nextTask();
+      }
     }
+  } catch (err) {
+    loopErrors++;
+    lastError = err instanceof Error ? err.message : String(err);
+    // A LOST CONTEXT IS TERMINAL, and it is the one failure the main thread can
+    // still recover from — but only if it is TOLD. Report it exactly like a
+    // failed init so the bridge takes its documented path (`fail()` → the proxy
+    // re-materializes the main-thread fallback → the node paints again).
+    // Silence here is what turned a recoverable GPU event into a dead node.
+    if (engine && engine.gl.isContextLost()) {
+      glError = `worker GL context lost after init (${lastError})`;
+      post({ type: 'ready', glOk: false, initErr: glError });
+      stopLoop();
+      return;
+    }
+  } finally {
+    // `gen` is re-checked inside schedule()'s callback via the generation token,
+    // and stopLoop() clears `running` — so a dispose that landed mid-frame still
+    // wins, exactly as before.
+    if (gen === loopGen && running) schedule();
   }
-  schedule();
 }
 
 /** Yield to a fresh macrotask. `setTimeout(0)` and not a microtask: a
@@ -124,18 +174,44 @@ function stopLoop(): void {
   }
 }
 
+/** #1905 — the worker's half of the handshake, on demand. Reading it costs one
+ *  message; NOT being able to read it (no reply) is itself the diagnosis. */
+function traceSnapshot(): WorkerTraceSnapshot {
+  return {
+    now: performance.now(),
+    initAt,
+    glOkAt,
+    glError,
+    loopTicks,
+    lastTickAt,
+    loopErrors,
+    lastError,
+    paused,
+    frozenTimeSec: engine ? engine.frozenTime : null,
+    nodes: engine ? engine.traceNodes() : [],
+  };
+}
+
 ctx.onmessage = (e: MessageEvent<WorkerInboundMsg>) => {
   const m = e.data;
   switch (m.type) {
     case 'init': {
+      initAt = performance.now();
       try {
         engine = new WorkerRenderEngine(WORKER_FACTORIES, m.res);
         running = true;
         schedule();
+        glOkAt = performance.now();
+        glError = null;
         post({ type: 'ready', glOk: true });
       } catch (err) {
-        post({ type: 'ready', glOk: false, initErr: err instanceof Error ? err.message : String(err) });
+        glError = err instanceof Error ? err.message : String(err);
+        post({ type: 'ready', glOk: false, initErr: glError });
       }
+      break;
+    }
+    case 'trace-request': {
+      post({ type: 'trace', seq: m.seq, snapshot: traceSnapshot() });
       break;
     }
     case 'addNode': {
