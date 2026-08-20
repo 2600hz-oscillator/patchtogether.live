@@ -18,7 +18,7 @@
   import { packColor01, unpackColor01 } from '$lib/video/colourofmagic-colorspace';
   import type { VideoEngine } from '$lib/video/engine';
   import { VIDEO_RES } from '$lib/video/engine';
-  import type { ModuleNode } from '$lib/graph/types';
+  import type { ModuleNode, ParamDef } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
   import { cardParams, paramSpec } from './card-kit';
   import { drawPreviewDownscaled } from './preview-downscale';
@@ -33,9 +33,19 @@
   function pget(key: string): number {
     return (node?.params?.[key] ?? defaultFor(key)) as number;
   }
-  function paramRange(pid: string): { min: number; max: number } {
+  // ⚠ RETURNS THE CURVE TOO, and that is not tidiness. This card is enrolled in
+  // `RANGE_BOUND_CARDS`, whose curve-agreement clause refuses a HAND-TYPED
+  // `curve` it cannot check — and it cannot check these, because every knob here
+  // is inside an `{#each}` with a DYNAMIC `paramId={ch.bias}`, so a source-level
+  // gate has no literal param id to resolve the def against. Binding the curve
+  // removes the unverifiable claim instead of asserting one: there is no second
+  // copy left to disagree.
+  //   Value-identical by construction — the def declares `linear` for every one
+  // of these biases, which is what the card typed. The point is provenance, not
+  // a behaviour change.
+  function paramRange(pid: string): { min: number; max: number; curve: ParamDef['curve'] } {
     const p = colourofmagicDef.params.find((x) => x.id === pid)!;
-    return { min: p.min, max: p.max };
+    return { min: p.min, max: p.max, curve: p.curve };
   }
   // Motorized live-CV read so a patched LFO / bound CC rotates the tick.
 
@@ -306,7 +316,7 @@
                 max={r.max}
                 defaultValue={defaultFor(ch.bias)}
                 label={ch.label}
-                curve="linear"
+                curve={r.curve}
                 onchange={set(ch.bias)}
                 readLive={live(ch.bias)}
                 moduleId={id}
@@ -355,7 +365,7 @@
                 max={r.max}
                 defaultValue={defaultFor(ch.bias)}
                 label={ch.label}
-                curve="linear"
+                curve={r.curve}
                 onchange={set(ch.bias)}
                 readLive={live(ch.bias)}
                 moduleId={id}
@@ -396,7 +406,7 @@
                 defaultValue={defaultFor(ch.bias)}
                 label={ch.label}
                 units={ch.deg ? 'deg' : ''}
-                curve="linear"
+                curve={r.curve}
                 onchange={set(ch.bias)}
                 readLive={live(ch.bias)}
                 moduleId={id}
@@ -436,7 +446,7 @@
                 max={r.max}
                 defaultValue={defaultFor(ch.bias)}
                 label={ch.label}
-                curve="linear"
+                curve={r.curve}
                 onchange={set(ch.bias)}
                 readLive={live(ch.bias)}
                 moduleId={id}
@@ -469,7 +479,7 @@
                 max={r.max}
                 defaultValue={defaultFor(ch.bias)}
                 label={ch.label}
-                curve="linear"
+                curve={r.curve}
                 onchange={set(ch.bias)}
                 readLive={live(ch.bias)}
                 moduleId={id}
