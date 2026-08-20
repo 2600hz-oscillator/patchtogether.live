@@ -244,6 +244,50 @@ export function applyDataBlobToNode(nodeId: string, blob: Record<string, unknown
   return applied;
 }
 
+/** The node.data fields a RANDOMIZE roll writes — and therefore the ONLY
+ *  fields its session-restore may touch (#1576, honest scope / prior-art R25).
+ *  name / combineView / cvInputs are outside the dice's reach in BOTH
+ *  directions: a roll never writes them, a revert never rewinds them. */
+export const TOYBOX_ROLL_SCOPE_KEYS = ['layers', 'combine', 'cvRoutes'] as const;
+
+/**
+ * Restore the RANDOMIZE roll scope from a pre-roll snapshot, VERBATIM — in one
+ * LOCAL_ORIGIN transaction. Unlike applyDataBlobToNode (which only writes the
+ * fields PRESENT on a blob), this also DELETES a scope key the snapshot did
+ * not have: a node whose pre-roll data carried no `combine` must come back
+ * with no `combine` (the factory then rebuilds its default), not with the
+ * last roll's graph stuck underneath the restored layers. `pre` may be null
+ * (the node had no data before the first roll) — every scope key is then
+ * removed. Returns true if the node existed.
+ */
+export function restoreToyboxRollScope(
+  nodeId: string,
+  pre: Record<string, unknown> | null,
+): boolean {
+  let applied = false;
+  ydoc.transact(() => {
+    const target = patch.nodes[nodeId];
+    if (!target) return;
+    if (!target.data) (target as { data: Record<string, unknown> }).data = {};
+    const data = target.data as Record<string, unknown>;
+    const scoped: Record<string, unknown> = {};
+    for (const key of TOYBOX_ROLL_SCOPE_KEYS) {
+      const v = pre?.[key];
+      if (v === undefined || v === null) {
+        // The key did not exist before the session's first roll — remove it
+        // (a plain Y.Map key delete; the in-place trap is about REASSIGNING
+        // live containers, not deleting keys).
+        delete data[key];
+      } else {
+        scoped[key] = v;
+      }
+    }
+    applyDataBlobToData(data, scoped);
+    applied = true;
+  }, LOCAL_ORIGIN);
+  return applied;
+}
+
 /**
  * Apply a (already-resolved) preset onto the live node IN PLACE, inside one Yjs
  * transaction tagged LOCAL_ORIGIN. Returns true if the node existed. Separated

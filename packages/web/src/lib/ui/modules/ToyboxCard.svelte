@@ -29,7 +29,7 @@
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import Knob from '$lib/ui/controls/Knob.svelte';
   import { useEngine } from '$lib/audio/engine-context';
-  import { patch } from '$lib/graph/store';
+  import { patch, undoManager } from '$lib/graph/store';
   import {
     downscaleAndEncode,
     TARGET_W as SYNC_IMG_W,
@@ -127,7 +127,17 @@
     drawToyboxInputScope,
     type ToyboxScopeColors,
   } from '$lib/video/toybox-scope-draw';
-  import { loadToyboxPreset, applyDataBlobToNode } from '$lib/graph/toybox-presets';
+  import {
+    loadToyboxPreset,
+    applyDataBlobToNode,
+    restoreToyboxRollScope,
+  } from '$lib/graph/toybox-presets';
+  import {
+    ANTI_REPEAT_MEMORY,
+    rollToyboxPatch,
+    type ToyboxRandomContext,
+    type ToyboxRollResult,
+  } from '$lib/video/toybox-random';
   import {
     listUserPresets,
     saveUserPreset,
@@ -1964,6 +1974,105 @@
     presetSel = '';
   }
 
+  // ── RANDOMIZE (#1576, workstream 5): the dice button ──────────────────────
+  // One gesture, no dialog (R15): probe what the user has patched → generate a
+  // curated random patch (pure seeded engine, toybox-random.ts) → apply it in
+  // ONE LOCAL_ORIGIN transact (applyDataBlobToNode), split into its own undo
+  // capture so ONE Cmd-Z reverts ONE roll (R18). A session RESTORE point is
+  // captured before the first roll (R22) and re-applied by the REVERT button.
+
+  /** Archetype ids of the most recent rolls — the anti-repeat memory (R7). */
+  let recentArchetypes: string[] = [];
+  /** node.data as it stood BEFORE the first roll of this session (R22).
+   *  null until the first roll; survives across rolls (session restore point,
+   *  NOT a per-roll undo — that is the undo manager's job). */
+  let preRollBlob: Record<string, unknown> | null = null;
+  /** True once the restore point was captured (even if it captured null — a
+   *  node with no data yet restores to "no data"; the SECOND roll must not
+   *  mistake the FIRST roll's output for the pre-session state). Drives the
+   *  REVERT button's visibility. */
+  let preRollCaptured = $state(false);
+
+  /** Read what the user has patched into THIS node off the live rack graph —
+   *  the same inbound-edge predicate the engine factory uses (kindFor at
+   *  modules/toybox.ts). READ-ONLY: a roll never creates/moves/severs cables. */
+  function probeRandomContext(): ToyboxRandomContext {
+    const ctx: ToyboxRandomContext = { videoIn: { inA: false, inB: false }, cv: {} };
+    const edges = patch.edges as
+      | Record<string, { target?: { nodeId?: string; portId?: string }; sourceType?: string } | undefined>
+      | undefined;
+    if (!edges) return ctx;
+    for (const eid of Object.keys(edges)) {
+      const e = edges[eid];
+      if (!e || e.target?.nodeId !== id) continue;
+      const port = e.target?.portId;
+      if (port === 'inA') ctx.videoIn.inA = true;
+      else if (port === 'inB') ctx.videoIn.inB = true;
+      else if (port && CV_PORT_IDS.includes(port)) {
+        const st = e.sourceType;
+        ctx.cv[port] = st === 'audio' ? 'audio' : st === 'gate' ? 'gate' : 'cv';
+      }
+    }
+    return ctx;
+  }
+
+  /** Roll a new random patch and apply it atomically. `seed` is for tests /
+   *  replay (__toyboxRoll); a live press mints its own. Returns the roll result
+   *  (or null when the node vanished / assets are unavailable). */
+  async function rollRandom(seed?: number): Promise<ToyboxRollResult | null> {
+    presetError = null;
+    presetNotice = null;
+    // The card awaits the catalog at mount, but the button can be pressed
+    // earlier; the roll needs the provider lists populated.
+    try {
+      await ensureToyboxCatalog();
+    } catch {
+      // Offline / non-browser: the registry may still hold runtime assets.
+    }
+    if (!preRollCaptured) {
+      preRollBlob = readLiveDataBlob();
+      preRollCaptured = true;
+    }
+    let result: ToyboxRollResult;
+    try {
+      result = rollToyboxPatch({
+        seed,
+        context: probeRandomContext(),
+        // A SEEDED roll is a REPLAY (R19): it must not depend on this card's
+        // press history, or a shared seed reproduces a different patch here
+        // than it did for the person who shared it. Anti-repeat memory shapes
+        // live presses only.
+        exclude: seed === undefined ? recentArchetypes : [],
+      });
+    } catch {
+      presetError = 'Randomize needs the content catalog (still loading?)';
+      return null;
+    }
+    // Split the undo capture so this roll is ITS OWN Cmd-Z step, then apply in
+    // one LOCAL_ORIGIN transaction (atomic: a roll lands fully or not at all).
+    undoManager.stopCapturing();
+    const ok = applyDataBlobToNode(id, result.blob as Record<string, unknown>);
+    if (!ok) return null;
+    recentArchetypes = [result.archetypeId, ...recentArchetypes].slice(0, ANTI_REPEAT_MEMORY);
+    bumpRev();
+    return result;
+  }
+
+  /** Re-apply the pre-session state (R22) — SCOPED to the fields a roll
+   *  writes (layers/combine/cvRoutes), deleting a key that did not exist
+   *  pre-roll. name/combineView/cvInputs are untouched in both directions
+   *  (honest scope, R25). Applied as its own undo step; the restore point is
+   *  KEPT so the user can roll on and come back again. */
+  function revertToPreRoll(): void {
+    if (!preRollCaptured) return;
+    undoManager.stopCapturing();
+    const ok = restoreToyboxRollScope(id, preRollBlob);
+    if (ok) {
+      bumpRev();
+      presetNotice = 'Restored the pre-randomize patch';
+    }
+  }
+
   // ----- Live preview pull (MANDELBULB pattern) -----
   let canvasEl: HTMLCanvasElement | null = $state(null);
   let rafId: number | null = null;
@@ -2138,10 +2247,15 @@
       __toyboxFreeze?: (time?: number, seed?: number) => void;
       __toyboxFreezeTime?: number | null;
       __toyboxLoadPreset?: (presetId: string) => Promise<boolean>;
+      __toyboxRoll?: (seed?: number) => Promise<ToyboxRollResult | null>;
     };
     // VRT/e2e determinism hook: load a bundled preset by id into THIS node's
     // data (in place) + prefetch its assets. Returns the apply verdict.
     g.__toyboxLoadPreset = (presetId: string) => loadPreset(presetId);
+    // e2e determinism hook (#1576): roll the dice with an explicit seed so CI
+    // and bug reports can replay a roll exactly (R19/R24). Same code path as
+    // the button — probe, generate, one-transact apply.
+    g.__toyboxRoll = (seed?: number) => rollRandom(seed);
     g.__toyboxFreeze = (time?: number, seed?: number) => {
       if (typeof time === 'number') {
         g.__toyboxFreezeTime = time;
@@ -2272,6 +2386,24 @@
       </div>
     {:else}
       <div class="preset-actions" data-testid="toybox-preset-actions">
+        <button
+          type="button"
+          class="preset-btn"
+          data-testid="toybox-randomize"
+          aria-label="randomize patch"
+          title="Roll a new random patch (uses whatever you have patched in; Cmd-Z undoes a roll)"
+          onclick={() => void rollRandom()}
+        >🎲 RANDOM</button>
+        {#if preRollCaptured}
+          <button
+            type="button"
+            class="preset-btn"
+            data-testid="toybox-randomize-revert"
+            aria-label="restore pre-randomize patch"
+            title="Restore the patch as it was before the first roll of this session"
+            onclick={revertToPreRoll}
+          >REVERT</button>
+        {/if}
         <button
           type="button"
           class="preset-btn"

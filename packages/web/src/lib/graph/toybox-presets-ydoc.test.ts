@@ -19,6 +19,7 @@ import {
   loadToyboxPreset,
   applyDataBlobToData,
   applyDataBlobToNode,
+  restoreToyboxRollScope,
 } from './toybox-presets';
 import { LAYER_COUNT, type ToyboxPreset } from '$lib/video/toybox-content';
 import type { ModuleNode } from './types';
@@ -337,5 +338,94 @@ describe('toybox preset loader — real Y.Doc', () => {
     expect(layers[1]!.contentId).toBe('cos-gradient');
     const routes = d.cvRoutes as Record<string, { nodeId?: string }>;
     expect(routes.cv1).toMatchObject({ target: 'combine', nodeId: 'fade1', param: 'amount' });
+  });
+});
+
+describe('restoreToyboxRollScope (#1576 — the RANDOMIZE session restore)', () => {
+  // The pre-roll snapshot a card captures before the first roll: layers but NO
+  // combine/cvRoutes keys (the shape that exposed the original bug: a restore
+  // that only *writes* fields left the last roll's graph underneath).
+  const PRE = {
+    name: 'pre-roll toybox',
+    combineView: { h: 154 },
+    layers: [
+      { kind: 'gen', contentId: 'noise-fbm', params: { warp: 0.5 } },
+      { kind: 'off', contentId: null, params: {} },
+      { kind: 'off', contentId: null, params: {} },
+      { kind: 'off', contentId: null, params: {} },
+    ],
+  };
+
+  /** A minimal rolled blob (what a dice press writes). */
+  const ROLLED = {
+    layers: [
+      { kind: 'gen', contentId: 'worley-cells', params: {} },
+      { kind: 'gen', contentId: 'hsv-plasma', params: {} },
+      { kind: 'off', contentId: null, params: {} },
+      { kind: 'off', contentId: null, params: {} },
+    ],
+    combine: {
+      nodes: [
+        { id: 'src0', kind: 'source', layer: 0, x: 14, y: 14 },
+        { id: 'src1', kind: 'source', layer: 1, x: 14, y: 66 },
+        { id: 'op1', kind: 'fade', x: 120, y: 14, params: { amount: 0.6 } },
+        { id: 'out', kind: 'output', x: 286, y: 66 },
+      ],
+      edges: [
+        { id: 'e1', from: 'src0', to: 'op1', toPort: 'in0' },
+        { id: 'e2', from: 'src1', to: 'op1', toPort: 'in1' },
+        { id: 'e3', from: 'op1', to: 'out', toPort: 'in0' },
+      ],
+    },
+    cvRoutes: { cv1: { target: 'combine', nodeId: 'op1', param: 'amount' } },
+  };
+
+  const clone = <T,>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
+
+  it('DELETES scope keys the snapshot never had, restores the ones it did, and leaves name/combineView alone', () => {
+    makeToybox(clone(PRE) as unknown as Record<string, unknown>);
+    expect(applyDataBlobToNode(TID, clone(ROLLED) as unknown as Record<string, unknown>)).toBe(true);
+    const rolled = patch.nodes[TID]!.data as Record<string, unknown>;
+    expect(rolled.combine).toBeDefined();
+    expect(rolled.cvRoutes).toBeDefined();
+
+    expect(restoreToyboxRollScope(TID, PRE as unknown as Record<string, unknown>)).toBe(true);
+    const d = clone(patch.nodes[TID]!.data) as Record<string, unknown>;
+    expect(d.layers).toEqual(PRE.layers);
+    expect(d.combine, 'combine did not exist pre-roll — must be GONE').toBeUndefined();
+    expect(d.cvRoutes, 'cvRoutes did not exist pre-roll — must be GONE').toBeUndefined();
+    expect(d.name).toBe('pre-roll toybox');
+    expect(d.combineView).toEqual({ h: 154 });
+  });
+
+  it('a null snapshot (node had no data pre-roll) removes the whole roll scope', () => {
+    makeToybox();
+    expect(applyDataBlobToNode(TID, clone(ROLLED) as unknown as Record<string, unknown>)).toBe(true);
+    expect(restoreToyboxRollScope(TID, null)).toBe(true);
+    const d = clone(patch.nodes[TID]!.data) as Record<string, unknown>;
+    expect(d.layers).toBeUndefined();
+    expect(d.combine).toBeUndefined();
+    expect(d.cvRoutes).toBeUndefined();
+  });
+
+  it('survives repeated roll → restore cycles against LIVE Y types (the in-place trap)', () => {
+    const withGraph: Record<string, unknown> = {
+      ...(clone(PRE) as unknown as Record<string, unknown>),
+      combine: clone(ROLLED.combine) as unknown as Record<string, unknown>,
+      cvRoutes: {},
+    };
+    makeToybox(clone(withGraph));
+    for (let cycle = 0; cycle < 3; cycle++) {
+      expect(applyDataBlobToNode(TID, clone(ROLLED) as unknown as Record<string, unknown>)).toBe(true);
+      expect(restoreToyboxRollScope(TID, withGraph)).toBe(true);
+      const d = clone(patch.nodes[TID]!.data) as Record<string, unknown>;
+      expect(d.layers, `cycle ${cycle}`).toEqual(withGraph.layers);
+      expect(d.combine, `cycle ${cycle}`).toEqual(withGraph.combine);
+      expect(d.cvRoutes, `cycle ${cycle}`).toEqual({});
+    }
+  });
+
+  it('returns false for a missing node and writes nothing', () => {
+    expect(restoreToyboxRollScope('no-such-node', PRE as unknown as Record<string, unknown>)).toBe(false);
   });
 });
