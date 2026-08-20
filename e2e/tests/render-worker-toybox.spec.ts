@@ -31,6 +31,7 @@ import { type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 import { stepAndReadStats, assertRenderStats } from './_render-smoke';
 import { WORKER_FRAME_MS } from '../../packages/web/src/lib/video/worker/protocol';
+import { handshakeTrace, describeHandshake, withHandshakeDiagnosis, type HandshakeTrace } from '../_helpers/worker-handshake';
 
 const FIXED_STEPS = 6;
 
@@ -57,51 +58,6 @@ const WORKER_PROVEN_FRAMES = 2;
  * the user sees during it.
  */
 const CONTENT_STALL_MS = WORKER_FRAME_MS * 40;
-
-/** The full render-worker handshake, both halves (VideoEngine.workerHandshakeTrace). */
-type HandshakeTrace = {
-  main: {
-    readyAt: number | null;
-    glOk: boolean;
-    failedAt: number | null;
-    failReason: string | null;
-    nodes: Array<{ id: string; syncsSent: number; framesReceived: number; framesDroppedUnknown: number; framesDroppedNotReady: number }>;
-  } | null;
-  worker: {
-    initAt: number | null;
-    glOkAt: number | null;
-    glError: string | null;
-    loopTicks: number;
-    loopErrors: number;
-    lastError: string | null;
-    paused: boolean;
-    nodes: Array<{ id: string; drawn: number; posted: number; withheld: number; firstContentAt: number | null; contentNote: string | null; drawErrors: number }>;
-  } | null;
-  workerReplied: boolean;
-};
-
-async function handshakeTrace(page: Page): Promise<HandshakeTrace> {
-  return page.evaluate(async () => {
-    const w = globalThis as unknown as {
-      __engine: () => { getDomain: (d: string) => { workerHandshakeTrace: () => Promise<unknown> } };
-    };
-    return (await w.__engine().getDomain('video').workerHandshakeTrace()) as never;
-  });
-}
-
-/** One-line diagnosis for an assertion message — the whole point of #1905. */
-function describeTrace(t: HandshakeTrace, nodeId: string): string {
-  if (!t.main) return 'no worker bridge was ever constructed (flag off / no worker-locus node)';
-  if (t.main.failedAt !== null) return `worker FAILED: ${t.main.failReason}`;
-  if (t.main.readyAt === null) return 'worker never confirmed WebGL2 (no ready message)';
-  if (!t.workerReplied) return 'worker did NOT answer a trace request — its message loop is wedged';
-  const wn = t.worker?.nodes.find((n) => n.id === nodeId);
-  if (!wn) return `worker has no node '${nodeId}' (addNode never arrived or was refused)`;
-  if (t.worker!.loopErrors > 0) return `worker render loop threw ${t.worker!.loopErrors}× — last: ${t.worker!.lastError}`;
-  if (wn.drawn === 0) return `node attached but never drawn (loopTicks=${t.worker!.loopTicks}, paused=${t.worker!.paused})`;
-  if (wn.posted === 0) return `node drawn ${wn.drawn}× but WITHHELD every frame: ${wn.contentNote}`;
-  return `node posted ${wn.posted} frames (withheld ${wn.withheld}) — a posted-but-black picture is a RENDER bug, not a handshake one`;
-}
 
 /** Read the OUTPUT canvas pixel statistics (non-black fraction + variance).
  *  `outNodeId` scopes the read to ONE output — required once a rack holds more
@@ -214,26 +170,21 @@ test.describe('Fix E render worker — toybox', () => {
     // this brings the toybox leg into line with it.
     let delivered = 0;
     let active = false;
-    await expect
-      .poll(async () => {
-        active = await workerActive(page, 'tb');
-        delivered = await workerFramesDelivered(page, 'tb');
-        const s = await outputStats(page);
-        const nonBlack = (s?.nonZeroFrac ?? 0) > 0.02;
-        return nonBlack && (!active || delivered >= WORKER_PROVEN_FRAMES);
-      }, {
-        message: 'TOYBOX OUTPUT is painting AND (if the worker is the active path) it delivered bitmaps',
-        timeout: 45_000,
-      })
-      .toBe(true)
-      .catch(async (err: Error) => {
-        // #1905 — a zero tells you nothing on its own. Say WHICH zero this is.
-        const t = await handshakeTrace(page);
-        throw new Error(
-          `${err.message}\n[#1905 handshake] ${describeTrace(t, 'tb')}\n` +
-            `[#1905 raw] ${JSON.stringify(t)}`,
-        );
-      });
+    // #1905 — on failure, say WHICH zero this is instead of just "0.000".
+    await withHandshakeDiagnosis(page, 'tb', () =>
+      expect
+        .poll(async () => {
+          active = await workerActive(page, 'tb');
+          delivered = await workerFramesDelivered(page, 'tb');
+          const s = await outputStats(page);
+          const nonBlack = (s?.nonZeroFrac ?? 0) > 0.02;
+          return nonBlack && (!active || delivered >= WORKER_PROVEN_FRAMES);
+        }, {
+          message: 'TOYBOX OUTPUT is painting AND (if the worker is the active path) it delivered bitmaps',
+          timeout: 45_000,
+        })
+        .toBe(true),
+    );
 
     const stats = await outputStats(page);
     expect(stats, 'OUTPUT canvas readable').not.toBeNull();
@@ -388,7 +339,7 @@ test.describe('Fix E render worker — toybox', () => {
 
     const t0 = inWindow as HandshakeTrace | null;
     if (!reached || !t0?.main?.glOk) {
-      test.skip(true, `worker-WebGL2 did not initialize on this renderer — no race window to arm (${t0 ? describeTrace(t0, 'tb') : 'no trace'})`);
+      test.skip(true, `worker-WebGL2 did not initialize on this renderer — no race window to arm (${t0 ? describeHandshake(t0, 'tb') : 'no trace'})`);
       return;
     }
 
@@ -425,20 +376,18 @@ test.describe('Fix E render worker — toybox', () => {
     // Withholding forever would satisfy the two assertions above and still be a
     // broken worker path, so require the worker to take over once its content
     // lands, with the OUTPUT still painting.
-    await expect
-      .poll(async () => {
-        const d = await workerFramesDelivered(page, 'tb');
-        const s = await outputStats(page, 'out');
-        return d >= WORKER_PROVEN_FRAMES && (s?.nonZeroFrac ?? 0) > 0.02;
-      }, {
-        message: 'after the stall the worker delivers real frames and the OUTPUT keeps painting',
-        timeout: 60_000,
-      })
-      .toBe(true)
-      .catch(async (err: Error) => {
-        const t = await handshakeTrace(page);
-        throw new Error(`${err.message}\n[#1905 handshake] ${describeTrace(t, 'tb')}`);
-      });
+    await withHandshakeDiagnosis(page, 'tb', () =>
+      expect
+        .poll(async () => {
+          const d = await workerFramesDelivered(page, 'tb');
+          const s = await outputStats(page, 'out');
+          return d >= WORKER_PROVEN_FRAMES && (s?.nonZeroFrac ?? 0) > 0.02;
+        }, {
+          message: 'after the stall the worker delivers real frames and the OUTPUT keeps painting',
+          timeout: 60_000,
+        })
+        .toBe(true),
+    );
 
     const t1 = await handshakeTrace(page);
     const n1 = t1.worker!.nodes.find((n) => n.id === 'tb')!;

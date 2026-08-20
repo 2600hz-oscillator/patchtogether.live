@@ -51,6 +51,9 @@
 import { test, expect } from './_fixtures';
 import { type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
+// #1905 — turn a timeout on "nobody painted" into a sentence naming the stage
+// that stalled. ONE export site, shared with render-worker-toybox.spec.ts.
+import { withHandshakeDiagnosis } from '../_helpers/worker-handshake';
 
 interface WorkerLocusDef {
   type: string;
@@ -296,7 +299,13 @@ test.describe('#1811 render-locus parity', () => {
     // BLACK".
     const types = roster.map((r) => r.type);
     let last: ModuleProbe[] = [];
-    await expect
+    // #1905 — name the node that is stuck, and the STAGE it is stuck at, rather
+    // than leaving a timeout that says only "nobody painted". The thunk is
+    // evaluated at throw time so the diagnosis names an actual offender.
+    await withHandshakeDiagnosis(
+      page,
+      () => last.find((p) => p.nonZeroFrac <= 0.02 || p.state === 'initialising')?.type ?? types[0]!,
+      () => expect
       .poll(
         async () => {
           last = await probeAll(page, types);
@@ -321,7 +330,8 @@ test.describe('#1811 render-locus parity', () => {
           timeout: 60_000,
         },
       )
-      .toEqual([]);
+      .toEqual([]),
+    );
 
     // ── the picture, per module ───────────────────────────────────────────────
     //
@@ -441,7 +451,10 @@ test.describe('#1811 render-locus parity', () => {
     });
 
     let probes: ModuleProbe[] = [];
-    await expect
+    await withHandshakeDiagnosis(
+      page,
+      () => probes.find((p) => p.nonZeroFrac <= 0.02 || p.state === 'initialising')?.type ?? 'acidwarp#a',
+      () => expect
       .poll(
         async () => {
           probes = await probeAll(page, ['acidwarp#a', 'acidwarp#b']);
@@ -458,7 +471,8 @@ test.describe('#1811 render-locus parity', () => {
           timeout: 60_000,
         },
       )
-      .toBe(true);
+      .toBe(true),
+    );
 
     const [a, b] = probes;
     console.log(
