@@ -702,6 +702,13 @@ export interface ToyboxLayer {
     common?: string;
     passes: Array<{ id: string; src: string; channels: unknown[]; float?: boolean }>;
   };
+  /** LOCKED against RANDOMIZE (#1576 ws3): when true, the dice treat this
+   *  layer as a fixed constraint — byte-copied to the same index in every
+   *  roll, and REVERT keeps its CURRENT state too (locks constrain the whole
+   *  dice loop). Rides the layer object, so it syncs to rack-mates and
+   *  round-trips presets/zip export with the content it locks. Locks
+   *  constrain the DICE only — manual edits and cv modulation stay allowed. */
+  locked?: boolean;
   /** PRESET-ONLY lazy descriptor for a multi-buffer project: instead of inlining
    *  the (large) GLSL in the manifest, a preset layer carries the pass FILE URLs
    *  + channel wiring here; the preset loader fetches each `url` and assembles

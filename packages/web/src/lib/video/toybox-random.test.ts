@@ -12,17 +12,20 @@
 import { describe, it, expect, afterAll } from 'vitest';
 import {
   ANTI_REPEAT_MEMORY,
+  DIM_GEN_CONTENT,
   EMPTY_TOYBOX_CONTEXT,
   MAX_BUILD_ATTEMPTS,
   TOYBOX_ARCHETYPES,
   generateToyboxPatch,
+  mergeRevertWithLocks,
   mulberry32,
   rollToyboxPatch,
+  type ToyboxCurrentState,
   type ToyboxRandomAssets,
   type ToyboxRandomContext,
   type ToyboxRollBlob,
 } from './toybox-random';
-import { LAYER_COUNT, type ToyboxContent, type ToyboxModel } from './toybox-content';
+import { LAYER_COUNT, type ToyboxContent, type ToyboxLayer, type ToyboxModel } from './toybox-content';
 import {
   OP_PARAMS,
   outputNode,
@@ -88,8 +91,18 @@ const FRAG_A: ToyboxContent = {
 const MODEL_A: ToyboxModel = { id: 'fix-cube', label: 'FIX CUBE', builtin: 'cube' };
 const MODEL_B: ToyboxModel = { id: 'fix-sphere', label: 'FIX SPHERE', builtin: 'sphere', matcap: 1 };
 
+// A DIM-listed content entry (the real registered id, so the engine's
+// DIM_GEN_CONTENT gate applies to it): may never CARRY the frame alone.
+const GEN_DIM: ToyboxContent = {
+  id: 'star-field',
+  label: 'STAR FIELD (FIXTURE)',
+  family: 'GEN',
+  glsl: 'fixture://star-field',
+  params: [param('density', 2, 24, 10)],
+};
+
 const ASSETS: ToyboxRandomAssets = {
-  content: [GEN_A, GEN_B, GEN_C, FX_A, FRAG_A],
+  content: [GEN_A, GEN_B, GEN_C, FX_A, FRAG_A, GEN_DIM],
   models: [MODEL_A, MODEL_B],
 };
 
@@ -370,6 +383,231 @@ describe('fallback (R24)', () => {
 
   it('MAX_BUILD_ATTEMPTS bounds the search (cost is a policy threshold, not a count)', () => {
     expect(MAX_BUILD_ATTEMPTS).toBeGreaterThan(0);
+  });
+});
+
+describe('DIM content never carries the frame (the owner-black class, R5)', () => {
+  it('every roll keeps at least one load-bearing NON-DIM carrier layer', () => {
+    for (const seed of SEEDS) {
+      const { blob } = generateToyboxPatch(seed, EMPTY_TOYBOX_CONTEXT, ASSETS);
+      const bearing = loadBearingLayers(blob);
+      const carrier = [...bearing].some((i) => {
+        const l = blob.layers[i]!;
+        if (l.kind === 'obj') return true;
+        if (!['gen', 'shader', 'frag'].includes(l.kind)) return false;
+        return !(l.contentId && DIM_GEN_CONTENT.has(l.contentId));
+      });
+      expect(carrier, `seed ${seed}: only DIM/feed layers reach OUT`).toBe(true);
+    }
+  });
+
+  it('every DIM entry names its measurement (why is real prose)', () => {
+    for (const [id, why] of DIM_GEN_CONTENT) {
+      expect(id.length).toBeGreaterThan(0);
+      expect(why.length).toBeGreaterThan(40);
+    }
+  });
+});
+
+describe('graph restructuring (owner demand: randomize the GRAPH)', () => {
+  it('rolled graphs vary in OP-NODE COUNT across the sweep, not just in content', () => {
+    const opCounts = new Set<number>();
+    for (const seed of SEEDS) {
+      const { blob } = generateToyboxPatch(seed, EMPTY_TOYBOX_CONTEXT, ASSETS);
+      opCounts.add(blob.combine.nodes.filter((n) => n.kind !== 'source' && n.kind !== 'output').length);
+    }
+    expect(opCounts.size, `distinct op counts: ${[...opCounts].join(',')} (units: op nodes per roll)`).toBeGreaterThan(2);
+  });
+
+  it('the sweep exercises ops beyond the blend family', () => {
+    const kinds = new Set<string>();
+    for (const seed of SEEDS) {
+      const { blob } = generateToyboxPatch(seed, EMPTY_TOYBOX_CONTEXT, ASSETS);
+      for (const n of blob.combine.nodes) {
+        if (n.kind !== 'source' && n.kind !== 'output') kinds.add(n.kind);
+      }
+    }
+    const beyondBlends = [...kinds].filter((k) => !['fade', 'over', 'lumakey'].includes(k));
+    expect(beyondBlends.length, `non-blend ops seen: ${beyondBlends.join(',')}`).toBeGreaterThan(2);
+  });
+
+  it("'branch-merge' rolls a DIAMOND: one op fed by TWO op arms", () => {
+    const exclude = TOYBOX_ARCHETYPES.filter((a) => a.id !== 'branch-merge').map((a) => a.id);
+    let sawDiamond = false;
+    for (const seed of SEEDS) {
+      const res = generateToyboxPatch(seed, EMPTY_TOYBOX_CONTEXT, ASSETS, exclude);
+      expect(res.archetypeId).toBe('branch-merge');
+      const g = res.blob.combine;
+      const opIds = new Set(g.nodes.filter((n) => n.kind !== 'source' && n.kind !== 'output').map((n) => n.id));
+      for (const n of g.nodes) {
+        if (!opIds.has(n.id)) continue;
+        const inbound = g.edges.filter((e) => e.to === n.id && opIds.has(e.from));
+        if (inbound.length >= 2) sawDiamond = true;
+      }
+    }
+    expect(sawDiamond, 'no branch-merge roll produced an op fed by two op arms').toBe(true);
+  });
+});
+
+describe('locks (R12 / ws3 — absolute, engine-honored)', () => {
+  const LOCKED_LAYER: ToyboxLayer = {
+    kind: 'gen',
+    contentId: 'fix-gen-a',
+    params: { speed: 1.25, scale: 4 },
+    locked: true,
+  };
+
+  it('a locked LAYER is byte-identical at its index in EVERY roll, and stays load-bearing', () => {
+    const current: ToyboxCurrentState = {
+      layers: [GEN_LAYER_FREE(), LOCKED_LAYER, GEN_LAYER_FREE(), GEN_LAYER_FREE()],
+    };
+    for (const seed of SEEDS) {
+      const { blob } = generateToyboxPatch(seed, CTX_FULL, ASSETS, [], current);
+      expect(JSON.stringify(blob.layers[1])).toEqual(JSON.stringify(LOCKED_LAYER));
+      expect(loadBearingLayers(blob).has(1), `seed ${seed}: locked layer not load-bearing`).toBe(true);
+    }
+  });
+
+  it('a locked NODE survives with params/position AND its upstream feeds (implied layer locks)', () => {
+    const lockedNode = {
+      id: 'op9',
+      kind: 'lumakey' as const,
+      x: 120,
+      y: 66,
+      params: { amount: 0.42, soft: 0.2, invert: 1 },
+      locked: true,
+    };
+    const current: ToyboxCurrentState = {
+      layers: [
+        GEN_LAYER_FREE(),
+        GEN_LAYER_FREE(),
+        { kind: 'gen', contentId: 'fix-gen-b', params: { hue: 0.7 } },
+        { kind: 'gen', contentId: 'fix-gen-c', params: {} },
+      ],
+      combine: {
+        nodes: [
+          { id: 'src0', kind: 'source', layer: 0, x: 14, y: 14 },
+          { id: 'src1', kind: 'source', layer: 1, x: 14, y: 66 },
+          { id: 'src2', kind: 'source', layer: 2, x: 14, y: 118 },
+          { id: 'src3', kind: 'source', layer: 3, x: 14, y: 170 },
+          lockedNode,
+          { id: 'out', kind: 'output', x: 286, y: 66 },
+        ],
+        edges: [
+          { id: 'e1', from: 'src2', to: 'op9', toPort: 'in0' },
+          { id: 'e2', from: 'src3', to: 'op9', toPort: 'in1' },
+          { id: 'e3', from: 'op9', to: 'out', toPort: 'in0' },
+        ],
+      },
+    };
+    for (const seed of SEEDS.slice(0, 10)) {
+      const { blob } = generateToyboxPatch(seed, EMPTY_TOYBOX_CONTEXT, ASSETS, [], current);
+      const got = blob.combine.nodes.find((n) => n.id === 'op9');
+      expect(JSON.stringify(got), `seed ${seed}`).toEqual(JSON.stringify(lockedNode));
+      const hasFeed = (from: string, port: string) =>
+        blob.combine.edges.some((e) => e.from === from && e.to === 'op9' && e.toPort === port);
+      expect(hasFeed('src2', 'in0'), `seed ${seed}: locked feed src2→op9 lost`).toBe(true);
+      expect(hasFeed('src3', 'in1'), `seed ${seed}: locked feed src3→op9 lost`).toBe(true);
+      // Implied locks: the layers the locked node consumes are byte-kept.
+      expect(JSON.stringify(blob.layers[2])).toEqual(JSON.stringify(current.layers![2]));
+      expect(JSON.stringify(blob.layers[3])).toEqual(JSON.stringify(current.layers![3]));
+      // And the locked chain reaches OUT (load-bearing, not decoration).
+      const reach = reachesOut(blob.combine);
+      expect(reach.has('op9'), `seed ${seed}: locked node stranded`).toBe(true);
+    }
+  });
+
+  it('existing cv routes to LOCKED targets survive; fresh routes avoid locked elements', () => {
+    const current: ToyboxCurrentState = {
+      layers: [GEN_LAYER_FREE(), LOCKED_LAYER, GEN_LAYER_FREE(), GEN_LAYER_FREE()],
+      cvRoutes: {
+        cv2: { target: 'layer', layer: 1, param: 'speed' }, // locked target, UNPATCHED port
+        cv5: { target: 'layer', layer: 0, param: 'speed' }, // unlocked target — dropped
+      },
+    };
+    for (const seed of SEEDS.slice(0, 10)) {
+      const { blob } = generateToyboxPatch(seed, CTX_FULL, ASSETS, [], current);
+      expect(blob.cvRoutes.cv2).toEqual({ target: 'layer', layer: 1, param: 'speed' });
+      expect(blob.cvRoutes.cv5).toBeUndefined();
+      for (const port of Object.keys(CTX_FULL.cv)) {
+        const r = blob.cvRoutes[port];
+        expect(r, `seed ${seed}: ${port} unrouted`).toBeTruthy();
+        if (r && r.target === 'layer') {
+          expect(r.layer, `seed ${seed}: fresh route targets the locked layer`).not.toBe(1);
+        }
+      }
+    }
+  });
+
+  it('ALL layers locked + patched video: locks WIN, roll still valid, layers untouched', () => {
+    const all: ToyboxLayer[] = [
+      { ...clone(LOCKED_LAYER) },
+      { kind: 'gen', contentId: 'fix-gen-b', params: {}, locked: true },
+      { kind: 'off', contentId: null, params: {}, locked: true },
+      { kind: 'off', contentId: null, params: {}, locked: true },
+    ];
+    const ctx: ToyboxRandomContext = { videoIn: { inA: true, inB: false }, cv: {} };
+    for (const seed of SEEDS.slice(0, 6)) {
+      const { blob } = generateToyboxPatch(seed, ctx, ASSETS, [], { layers: all });
+      expect(JSON.stringify(blob.layers)).toEqual(JSON.stringify(all));
+      expect(blob.layers.some((l) => l.kind === 'video')).toBe(false);
+    }
+  });
+
+  function GEN_LAYER_FREE(): ToyboxLayer {
+    return { kind: 'gen', contentId: 'fix-gen-c', params: {} };
+  }
+  const clone = <T,>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
+});
+
+describe('mergeRevertWithLocks (REVERT honors locks like a roll)', () => {
+  const PRE = {
+    layers: [
+      { kind: 'gen', contentId: 'fix-gen-a', params: { speed: 0.5 } },
+      { kind: 'off', contentId: null, params: {} },
+      { kind: 'off', contentId: null, params: {} },
+      { kind: 'off', contentId: null, params: {} },
+    ],
+  } as Record<string, unknown>;
+
+  it('no locks → the snapshot passes through untouched', () => {
+    expect(mergeRevertWithLocks(PRE, { layers: [] })).toBe(PRE);
+    expect(mergeRevertWithLocks(null, undefined)).toBeNull();
+  });
+
+  it('a locked layer keeps its CURRENT content through the revert', () => {
+    const lockedNow: ToyboxLayer = { kind: 'gen', contentId: 'fix-gen-b', params: { hue: 0.9 }, locked: true };
+    const merged = mergeRevertWithLocks(PRE, {
+      layers: [{ kind: 'gen', contentId: 'fix-gen-c', params: {} }, lockedNow],
+    })!;
+    const layers = merged.layers as ToyboxLayer[];
+    expect(JSON.stringify(layers[1])).toEqual(JSON.stringify(lockedNow));
+    // Unlocked scope restored from the snapshot.
+    expect(JSON.stringify(layers[0])).toEqual(JSON.stringify((PRE.layers as ToyboxLayer[])[0]));
+  });
+
+  it('a locked node absent from the snapshot graph is carried over WITH its feeds', () => {
+    const lockedNode = { id: 'op4', kind: 'tile', x: 120, y: 14, params: { tilesX: 3, tilesY: 3, mirror: 0, offX: 0, offY: 0, rotate: 0 }, locked: true };
+    const merged = mergeRevertWithLocks(null, {
+      layers: [{ kind: 'gen', contentId: 'fix-gen-a', params: {}, locked: false }],
+      combine: {
+        nodes: [
+          { id: 'src0', kind: 'source', layer: 0, x: 14, y: 14 },
+          { id: 'src1', kind: 'source', layer: 1, x: 14, y: 66 },
+          { id: 'src2', kind: 'source', layer: 2, x: 14, y: 118 },
+          { id: 'src3', kind: 'source', layer: 3, x: 14, y: 170 },
+          lockedNode,
+          { id: 'out', kind: 'output', x: 286, y: 66 },
+        ],
+        edges: [
+          { id: 'e1', from: 'src0', to: 'op4', toPort: 'in0' },
+          { id: 'e2', from: 'op4', to: 'out', toPort: 'in0' },
+        ],
+      },
+    })!;
+    const g = merged.combine as { nodes: Array<{ id: string }>; edges: Array<{ from: string; to: string }> };
+    expect(g.nodes.some((n) => n.id === 'op4')).toBe(true);
+    expect(g.edges.some((e) => e.from === 'src0' && e.to === 'op4')).toBe(true);
   });
 });
 

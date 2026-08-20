@@ -44,8 +44,12 @@
     dir?: 'in' | 'out';
     /** PORT (input) only: which input port. */
     port?: ToyboxInPort;
+    /** NODE (op) only: is this node LOCKED against randomize (#1576 ws3)? */
+    nodeLocked?: boolean;
     // ---- action callbacks (ToyboxCard wires these to the mutators) ----
     onpatchtooutput: () => void;
+    /** NODE (op) only: toggle the randomize lock. */
+    ontogglelock: () => void;
     /** NODE (stateful op) only: clear this node's ping-pong / ring buffers. */
     onresetfeedback: () => void;
     ondisconnect: () => void;
@@ -68,7 +72,9 @@
     nodeKind,
     dir,
     port,
+    nodeLocked = false,
     onpatchtooutput,
+    ontogglelock,
     onresetfeedback,
     ondisconnect,
     onduplicate,
@@ -188,6 +194,15 @@
         onclick={() => pick(ondisconnect)}
       >Disconnect</button>
       {#if isOp}
+        <!-- Randomize LOCK (#1576 ws3): a TOGGLE (aria-pressed), not a plain
+             action — locked nodes are immune from the dice + REVERT, with
+             their upstream feeds preserved. Manual edits stay allowed. -->
+        <button
+          class="ctx-item"
+          data-testid="toybox-menu-lock-node"
+          aria-pressed={nodeLocked}
+          onclick={() => pick(ontogglelock)}
+        >{nodeLocked ? '🔒 Unlock (allow randomize)' : '🔓 Lock against randomize'}</button>
         <button
           class="ctx-item"
           role="menuitem"

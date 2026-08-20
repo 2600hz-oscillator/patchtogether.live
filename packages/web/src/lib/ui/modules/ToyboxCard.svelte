@@ -103,6 +103,7 @@
     resetCombineToDefault,
     duplicateCombineNode,
     resetFeedbackNode,
+    setCombineNodeLocked,
   } from '$lib/graph/toybox-combine';
   import { FEEDBACK_MODES } from '$lib/video/toybox-feedback';
   import ToyboxNodeMenu from './ToyboxNodeMenu.svelte';
@@ -134,7 +135,10 @@
   } from '$lib/graph/toybox-presets';
   import {
     ANTI_REPEAT_MEMORY,
+    DIM_GEN_CONTENT,
+    mergeRevertWithLocks,
     rollToyboxPatch,
+    type ToyboxCurrentState,
     type ToyboxRandomContext,
     type ToyboxRollResult,
   } from '$lib/video/toybox-random';
@@ -166,6 +170,7 @@
     setLayerObjSource,
     setLayerVideoName,
     setLayerVideoSource,
+    setLayerLocked,
   } from '$lib/graph/toybox-layers';
   import { nodeMedia } from '$lib/ui/media/node-media-registry';
   import { drawPreviewDownscaled } from './preview-downscale';
@@ -291,6 +296,15 @@
     return live?.combine ?? (node?.data as { combine?: unknown } | undefined)?.combine;
   }
 
+  /** Is a combine op node LOCKED against randomize (#1576 ws3)? Drives the
+   *  right-click menu's toggle label + the SVG badge state. */
+  function combineNodeIsLocked(nodeId: string | undefined): boolean {
+    if (!nodeId) return false;
+    const c = readLiveCombine() as { nodes?: Array<{ id: string; locked?: boolean }> } | undefined;
+    if (!c || !Array.isArray(c.nodes)) return false;
+    return c.nodes.find((n) => n.id === nodeId)?.locked === true;
+  }
+
   /** Which layers are populated (kind !== 'off') — drives the tab dots. Read
    *  every entry so adding content to any layer re-evaluates the badges. */
   let layerPopulated = $derived.by<boolean[]>(() => {
@@ -300,6 +314,15 @@
       const k = ls?.[i]?.kind;
       out.push(!!k && k !== 'off');
     }
+    return out;
+  });
+
+  /** Which layers are LOCKED against randomize (#1576 ws3) — drives the tab
+   *  padlock toggles + badges. */
+  let layerLocked = $derived.by<boolean[]>(() => {
+    const ls = readLiveLayers();
+    const out: boolean[] = [];
+    for (let i = 0; i < LAYER_COUNT; i++) out.push(ls?.[i]?.locked === true);
     return out;
   });
 
@@ -892,6 +915,23 @@
   let graph = $derived.by<ToyboxCombineGraph>(() => {
     const c = readLiveCombine();
     return isCombineGraph(c) ? (c as ToyboxCombineGraph) : makeDefaultCombineGraph();
+  });
+
+  /** Node ids LOCKED against randomize (#1576 ws3) — a FRESH Set per
+   *  evaluation, deliberately, with the reactive triggers read DIRECTLY
+   *  (readLiveCombine inside this body, the layerPopulated pattern): `graph`
+   *  above returns the live store proxy, so its reference never changes and a
+   *  deep property ADD (`n.locked = true`) invalidates nothing that hangs off
+   *  it — the lock badge never painted (measured on this exact bug during
+   *  review round 2). A new Set is a new reference on every trigger, so
+   *  `lockedNodeIds.has(n.id)` re-renders. */
+  let lockedNodeIds = $derived.by<Set<string>>(() => {
+    const c = readLiveCombine();
+    const ids = new Set<string>();
+    if (isCombineGraph(c)) {
+      for (const n of (c as ToyboxCombineGraph).nodes) if (n.locked === true) ids.add(n.id);
+    }
+    return ids;
   });
 
   // ── Resizable node-graph view (persisted in node.data.combineView.h) ──────
@@ -2016,6 +2056,23 @@
     return ctx;
   }
 
+  /** The node.data slice the ENGINE may read: lock flags ride the layer/node
+   *  objects in here, and existing routes to locked targets are preserved
+   *  from here. Plain JSON clones (never the live Y proxies). */
+  function readRollCurrent(): ToyboxCurrentState {
+    const live = (patch.nodes[id]?.data ?? node?.data) as
+      | { layers?: unknown; combine?: unknown; cvRoutes?: unknown }
+      | undefined;
+    if (!live) return {};
+    try {
+      return JSON.parse(
+        JSON.stringify({ layers: live.layers, combine: live.combine, cvRoutes: live.cvRoutes }),
+      ) as ToyboxCurrentState;
+    } catch {
+      return {};
+    }
+  }
+
   /** Roll a new random patch and apply it atomically. `seed` is for tests /
    *  replay (__toyboxRoll); a live press mints its own. Returns the roll result
    *  (or null when the node vanished / assets are unavailable). */
@@ -2041,8 +2098,11 @@
         // A SEEDED roll is a REPLAY (R19): it must not depend on this card's
         // press history, or a shared seed reproduces a different patch here
         // than it did for the person who shared it. Anti-repeat memory shapes
-        // live presses only.
+        // live presses only. (Locks DO apply to seeded rolls — a replay under
+        // different locks is a different, documented, patch.)
         exclude: seed === undefined ? recentArchetypes : [],
+        // Locks + preserved routes come off the CURRENT state (#1576 ws3).
+        current: readRollCurrent(),
       });
     } catch {
       presetError = 'Randomize needs the content catalog (still loading?)';
@@ -2061,15 +2121,19 @@
   /** Re-apply the pre-session state (R22) — SCOPED to the fields a roll
    *  writes (layers/combine/cvRoutes), deleting a key that did not exist
    *  pre-roll. name/combineView/cvInputs are untouched in both directions
-   *  (honest scope, R25). Applied as its own undo step; the restore point is
-   *  KEPT so the user can roll on and come back again. */
+   *  (honest scope, R25). LOCKS are honored exactly like a roll honors them:
+   *  a locked layer/node keeps its CURRENT state through the revert — locks
+   *  constrain the whole dice loop, not just its forward direction. Applied
+   *  as its own undo step; the restore point is KEPT so the user can roll on
+   *  and come back again. */
   function revertToPreRoll(): void {
     if (!preRollCaptured) return;
     undoManager.stopCapturing();
-    const ok = restoreToyboxRollScope(id, preRollBlob);
+    const merged = mergeRevertWithLocks(preRollBlob, readRollCurrent());
+    const ok = restoreToyboxRollScope(id, merged);
     if (ok) {
       bumpRev();
-      presetNotice = 'Restored the pre-randomize patch';
+      presetNotice = 'Restored the pre-randomize patch (locked parts kept)';
     }
   }
 
@@ -2256,6 +2320,11 @@
     // and bug reports can replay a roll exactly (R19/R24). Same code path as
     // the button — probe, generate, one-transact apply.
     g.__toyboxRoll = (seed?: number) => rollRandom(seed);
+    // e2e audit hook: the engine's DIM content list, so the catalog audit in
+    // toybox-randomize.spec.ts can assert BOTH directions (every under-floor
+    // GEN is listed; every listed entry is actually under floor) against the
+    // ONE list the dice actually consult.
+    (g as { __toyboxDimGen?: string[] }).__toyboxDimGen = [...DIM_GEN_CONTENT.keys()];
     g.__toyboxFreeze = (time?: number, seed?: number) => {
       if (typeof time === 'number') {
         g.__toyboxFreezeTime = time;
@@ -2480,6 +2549,20 @@
         L{i + 1}
         {#if layerPopulated[i]}<span class="layer-dot" data-testid={`toybox-layer-dot-${i}`}></span>{/if}
       </button>
+      <!-- LOCK toggle (#1576 ws3): randomize treats a locked layer as a fixed
+           constraint (byte-identical across rolls, kept through REVERT).
+           Locks the DICE only — manual edits and cv modulation stay allowed. -->
+      <button
+        type="button"
+        class="layer-lock {layerLocked[i] ? 'locked' : ''}"
+        data-testid={`toybox-layer-lock-${i}`}
+        aria-pressed={layerLocked[i]}
+        aria-label={`lock layer ${i + 1} against randomize`}
+        title={layerLocked[i]
+          ? `LAYER ${i + 1} is LOCKED — randomize and revert keep it as-is`
+          : `Lock LAYER ${i + 1} so randomize cannot change it`}
+        onclick={() => { setLayerLocked(id, i, !layerLocked[i]); bumpRev(); }}
+      >{layerLocked[i] ? '🔒' : '🔓'}</button>
     {/each}
   </div>
 
@@ -2941,6 +3024,18 @@
               <text x={xy.x + NODE_W / 2} y={xy.y + NODE_H / 2 + 3} class="gnode-label">
                 {nodeLabel(n)}
               </text>
+              {#if lockedNodeIds.has(n.id)}
+                <!-- LOCK badge (#1576 ws3): this node is immune from randomize
+                     (toggled via the right-click menu). Driven off the
+                     lockedNodeIds derived, NOT n.locked — see its comment. -->
+                <text
+                  x={xy.x + NODE_W - 6}
+                  y={xy.y + 9}
+                  class="gnode-lock"
+                  data-testid={`toybox-gnode-lock-${n.id}`}
+                  aria-label={`node ${n.id} locked against randomize`}
+                >🔒</text>
+              {/if}
 
               <!-- input ports (left) -->
               {#each inPortsFor(n.kind) as port (port)}
@@ -3064,6 +3159,13 @@
     nodeKind={toyboxMenu?.nodeKind}
     dir={toyboxMenu?.dir}
     port={toyboxMenu?.port}
+    nodeLocked={combineNodeIsLocked(toyboxMenu?.nodeId)}
+    ontogglelock={() => {
+      if (toyboxMenu?.nodeId) {
+        setCombineNodeLocked(id, toyboxMenu.nodeId, !combineNodeIsLocked(toyboxMenu.nodeId));
+        bumpRev();
+      }
+    }}
     onpatchtooutput={() => { if (toyboxMenu?.nodeId) doPatchToOutput(toyboxMenu.nodeId); }}
     onresetfeedback={() => { if (toyboxMenu?.nodeId) doResetFeedback(toyboxMenu.nodeId); }}
     ondisconnect={() => { if (toyboxMenu?.nodeId) doDisconnect(toyboxMenu.nodeId); }}
@@ -3288,6 +3390,25 @@
     gap: 4px;
     padding: 0 14px;
     margin-bottom: 8px;
+  }
+  /* LOCK toggle beside each layer tab (#1576 ws3). Dimmed until locked so the
+     strip stays quiet; the padlock glyph is the state, aria-pressed speaks it. */
+  .layer-lock {
+    flex: 0 0 auto;
+    background: var(--module-bg);
+    color: var(--text-dim);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    font-size: 0.55rem;
+    line-height: 1;
+    padding: 3px 4px;
+    opacity: 0.45;
+    cursor: pointer;
+  }
+  .layer-lock.locked {
+    opacity: 1;
+    color: var(--text);
+    border-color: var(--cable-video);
   }
   .layer-tab {
     position: relative;
@@ -3586,6 +3707,13 @@
     font-family: ui-monospace, monospace;
     font-size: 9px;
     text-anchor: middle;
+    pointer-events: none;
+    user-select: none;
+  }
+  /* LOCK badge on a randomize-immune node (#1576 ws3). */
+  .gnode-lock {
+    font-size: 8px;
+    text-anchor: end;
     pointer-events: none;
     user-select: none;
   }

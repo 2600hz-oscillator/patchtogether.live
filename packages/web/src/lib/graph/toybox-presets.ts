@@ -199,7 +199,15 @@ export function applyDataBlobToData(
       'edges',
       Array.isArray(srcCombine.edges) ? (srcCombine.edges as unknown[]) : [],
     );
-    // Carry any other combine fields (none today, but keep it lossless).
+    // Carry any other combine fields (none today, but keep it lossless) —
+    // and DELETE dst-side combine keys the blob does not carry. Without the
+    // delete, restoring a GRAPH blob onto a node still holding the LEGACY
+    // linear `{steps}` shape left the stale `steps` array beside the new
+    // nodes/edges (found by inspection during the 2026-08-20 owner-black
+    // audit — the same "restore that only WRITES" family as the REVERT bug).
+    for (const k of Object.keys(dstCombine)) {
+      if (k !== 'nodes' && k !== 'edges' && !(k in srcCombine)) delete dstCombine[k];
+    }
     for (const [k, v] of Object.entries(srcCombine)) {
       if (k === 'nodes' || k === 'edges') continue;
       dstCombine[k] = v;

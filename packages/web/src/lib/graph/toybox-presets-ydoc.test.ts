@@ -429,3 +429,28 @@ describe('restoreToyboxRollScope (#1576 — the RANDOMIZE session restore)', () 
     expect(restoreToyboxRollScope('no-such-node', PRE as unknown as Record<string, unknown>)).toBe(false);
   });
 });
+
+describe('applyDataBlobToData — combine is restored VERBATIM (stale-key deletion)', () => {
+  it('drops a LEGACY {steps} array when the blob carries a graph combine', () => {
+    // Found by inspection during the 2026-08-20 owner-black audit: a graph
+    // blob applied onto a legacy linear combine left `steps` beside the new
+    // nodes/edges — the same "restore that only WRITES" family as the REVERT
+    // bug. The blob is the FULL intended combine state.
+    const data: Record<string, unknown> = {
+      combine: { steps: [{ layer: 1, op: 'fade', amount: 0.5 }] },
+    };
+    applyDataBlobToData(data, {
+      combine: {
+        nodes: [
+          { id: 'src0', kind: 'source', layer: 0, x: 14, y: 14 },
+          { id: 'out', kind: 'output', x: 286, y: 66 },
+        ],
+        edges: [{ id: 'e1', from: 'src0', to: 'out', toPort: 'in0' }],
+      },
+    });
+    const combine = data.combine as Record<string, unknown>;
+    expect(combine.steps, 'stale legacy steps must be DELETED').toBeUndefined();
+    expect(Array.isArray(combine.nodes)).toBe(true);
+    expect(Array.isArray(combine.edges)).toBe(true);
+  });
+});
