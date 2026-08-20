@@ -38,6 +38,58 @@ const TL = 'tl'; // explicit TIMELORDE node id (spawnPatch clears the rack first
 const SLOW_GAP_MS = 600;
 const FAST_GAP_MS = 300;
 
+/**
+ * How closely the locked BPM must match the one DERIVED from the measured
+ * interval, as a fraction of the expected value.
+ *
+ * ⚠ IT IS RELATIVE, AND IT IS NOT ZERO, because the stamps this spec collects
+ * are a PROXY for the ones the module used. `tapInPage` records
+ * `performance.now()` immediately before `btn.click()`; `tap()` records its own
+ * `performance.now()` INSIDE the synchronous handler. The gap between them is
+ * the click-dispatch cost — sub-millisecond, but never zero, and it grows on a
+ * starved main thread.
+ *
+ * MEASURED ON CI (#2056, the run that caught this): the module locked
+ * 99.40357852883088 BPM where this spec's stamps implied 99.34268258357663 —
+ * a 604.0 ms proxy interval against a 603.63 ms real one, i.e. **0.37 ms of
+ * dispatch** showing up as **0.061 BPM**. The first version of this leg asked
+ * for agreement within 0.05 BPM and was therefore asserting that the dispatch
+ * cost is zero.
+ *
+ * ⚠ AND THE FIRST VERSION ASKED FOR THAT BY ACCIDENT, which is the part worth
+ * remembering: it used `toBeCloseTo(expected, 1)` meaning to allow 1 BPM.
+ * Jest/Playwright precision is `0.5 x 10^-n`, so `1` is ±0.05 — twenty times
+ * tighter than intended, in an assertion whose own message printed "units:
+ * BPM". A units error inside the units annotation.
+ *
+ * 1 % is ~16x the measured proxy error at these tempi and ~50x smaller than the
+ * smallest defect worth catching (the negative control halves the BPM), so it
+ * discriminates the thing under test without asserting anything about the
+ * runner.
+ */
+const BPM_MATCH_TOLERANCE = 0.01;
+
+/** Assert a locked BPM matches the one implied by the interval ACTUALLY tapped,
+ *  printing both sides, the delta and the allowance — so a future drift is
+ *  legible from the failure line alone rather than needing a re-run. */
+function expectBpmMatchesInterval(
+  actualBpm: number,
+  intervalMs: number,
+  label: string,
+  detail = '',
+): void {
+  const expected = clampBpm(60000 / intervalMs);
+  const allowed = expected * BPM_MATCH_TOLERANCE;
+  const delta = Math.abs(actualBpm - expected);
+  expect(
+    delta,
+    `${label}: locked ${actualBpm.toFixed(4)} BPM, interval ${intervalMs.toFixed(2)} ms implies `
+      + `${expected.toFixed(4)} BPM — delta ${delta.toFixed(4)} BPM, allowed `
+      + `${allowed.toFixed(4)} (${(BPM_MATCH_TOLERANCE * 100).toFixed(0)}% of expected). `
+      + `Units: BPM either side; the allowance covers click-dispatch cost, not runner speed.${detail}`,
+  ).toBeLessThan(allowed);
+}
+
 /** Read TIMELORDE's live `bpm` param from the patch store. */
 async function readBpm(page: Page, nodeId: string): Promise<number | null> {
   return page.evaluate((id) => {
@@ -159,11 +211,7 @@ test.describe('TIMELORDE tap tempo', () => {
       .poll(() => readBpm(page, TL), { timeout: 3000, message: 'a 2-tap sets the bpm off the spawn' })
       .not.toBe(50);
     const bpmSlow = (await readBpm(page, TL))!;
-    expect(
-      bpmSlow,
-      `2-tap BPM (${bpmSlow}) should equal clampBpm(60000 / ${slowInterval.toFixed(1)} ms) `
-        + `= ${clampBpm(60000 / slowInterval).toFixed(3)} — units: BPM against a measured ms interval`,
-    ).toBeCloseTo(clampBpm(60000 / slowInterval), 1);
+    expectBpmMatchesInterval(bpmSlow, slowInterval, '2-tap lock');
 
     // ── 2. TAPPING FASTER RE-LOCKS HIGHER ─────────────────────────────────
     //
@@ -187,12 +235,12 @@ test.describe('TIMELORDE tap tempo', () => {
       .poll(() => readBpm(page, TL), { timeout: 3000, message: 'a faster tap re-locks the bpm' })
       .not.toBe(bpmSlow);
     const bpmFast = (await readBpm(page, TL))!;
-    expect(
+    expectBpmMatchesInterval(
       bpmFast,
-      `fast BPM (${bpmFast}) should equal clampBpm(60000 / median ${fastMedian.toFixed(1)} ms) `
-        + `= ${clampBpm(60000 / fastMedian).toFixed(3)} — intervals: `
-        + `[${intervalsOf(fastStamps).map((v) => v.toFixed(1)).join(', ')}] ms`,
-    ).toBeCloseTo(clampBpm(60000 / fastMedian), 1);
+      fastMedian,
+      'fast re-lock (median of the ring)',
+      ` Intervals: [${intervalsOf(fastStamps).map((v) => v.toFixed(1)).join(', ')}] ms.`,
+    );
 
     // The relative claim, kept because it is the one a PLAYER cares about —
     // now a consequence of two derived facts rather than the only assertion.
