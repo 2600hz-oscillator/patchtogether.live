@@ -1552,6 +1552,33 @@ export const FACES = [
       + 'bank is empty and the composite outputs black on every frame by construction rather '
       + 'than by the flag.',
   },
+  // GATEMAIDEN (2026-08-20) — the gate↔trigger converter. ONE declared page and
+  // no hero, so nothing is promoted out of a band and `pages: 1` is both the
+  // declared count and the post-hero-split count.
+  //
+  // PIXEL-DETERMINISTIC, and for the strongest of the reasons this file
+  // distinguishes: the module has NO GENERATOR IN IT. Both outputs are pure
+  // functions of the INPUT's level and rising edges (`GateMaidenState.step`),
+  // and the scene patches nothing in, so `wasHigh` never flips, `sinceRise`
+  // stays at its −1 rest and both jacks are bit-exactly zero on every sample
+  // regardless of how far the clock ran. This is the silent-at-spawn case this
+  // file already names for moogCp3, not the analogVco free-running one — the
+  // AudioContext freeze is a belt on a brace here rather than the thing holding
+  // the scene.
+  //
+  // ⚠ NO LIVE GLYPH TO GO WRONG EITHER, and the reason is a trap worth having
+  // written down: `glyph: 'none'` is FORCED, because `primaryAudioOutPortId`
+  // matches `type === 'audio'` and BOTH of this module's outputs are `gate`.
+  // `domain: 'audio'` does not imply an audio glyph. The same split is why this
+  // face renders `.faceplate.gate` and NOT `.faceplate.audio` — a selector
+  // keyed on the audio class silently matches nothing here, which is already
+  // recorded against this module in `e2e/tests/_face-fixtures.ts`.
+  //
+  // Both cells are ASCII-only by construction (`TRI` / `SQR`, and a `·` in the
+  // band label) — deliberately, because the fonts this suite pins are ~230
+  // codepoint Latin subsets and a geometric-shape glyph would render through an
+  // unpinned fontconfig fallback in these two new baselines.
+  { type: 'gatemaiden', pages: 1 },
 ] as const;
 
 /** TIGHT per-scene diff budgets (absolute pixels; Playwright takes the MIN of
