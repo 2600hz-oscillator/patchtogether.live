@@ -414,6 +414,156 @@ export const warrensvisionsDef: VideoModuleDef = {
     },
   },
 
+  // ─────────────────────────── face ───────────────────────────
+  //
+  // THE FACEPLATE. Hash-transparent by construction — `scripts/attest-code-
+  // basis.ts` strips a def's own top-level `face` before hashing, so this block
+  // costs no WebGL re-attest. (Verified on this branch, not assumed: the
+  // content hash is 7df4a85a… before and after.)
+  //
+  // ⚠ WHAT PROMOTION FIXES, AND IT IS NOT A LOOK. `WarrensvisionsCard.svelte`
+  // passes NO `readLive` on any of its eleven knobs, so every dial on the card
+  // is DEAD TO CV — against SEVEN cv inputs, each with a declared `paramTarget`
+  // and a working `cvScale`. Patch a modulator into `coherence_cv` and the card
+  // shows the stored value while the engine renders a different one. The face
+  // is live by construction: `ModuleShell.svelte` passes `readLive={params.
+  // live(pd.id)}` on every param cell it renders, at every one of its six call
+  // sites. The knobs are not re-styled — they start telling the truth.
+  //
+  // ⚠ AND THE MODULE'S DECLARED VOCABULARY REACHES A SURFACE FOR THE FIRST
+  // TIME. This def is the only one in the unfaced pool that declares BOTH
+  // `options[]` (engineFreeze: LIVE / FREEZE, each with a `title`) AND
+  // `landmarks` (visionsShape: SINE / SAW / SQUARE). The card consumed
+  // NEITHER — it re-typed the two freeze words as string literals in its own
+  // button (`{frozen ? 'FREEZE' : 'LIVE'}`) and never passed the landmarks to
+  // its `<Knob>` at all. A face reads both off the def: `engineFreeze`
+  // resolves to a SEGMENTED cell at the dock (its `options` roster is what
+  // `paramCellKind` keys on), and `visionsShape` paints its nearest landmark
+  // NAME. That is the one text a resting faceplate is still allowed to paint —
+  // an option/landmark name disambiguates a control's own position, where a
+  // decimal would merely restate the dial.
+  //
+  // ⚠ ONE CAVEAT ON THAT READOUT, so nobody reads it as a claim about the
+  // harmonic series: `knobNameReadout` is documented NEAREST-MATCH, so `SAW`
+  // prints across the whole (0.25, 0.75] half of the SHAPE dial (ties resolve
+  // to the earlier entry — exactly 0.25 prints `SINE`). The morph really is an
+  // exact ideal saw at exactly 0.5 — `max |w(n, shape) − 1/n|` over n = 2…8 is
+  // 0.000000 there and 0.249900 at 0.2501, measured through this module's own
+  // `wvHarmonicWeight` — but the label is a name for a REGION, not a
+  // measurement of one point. Platform behaviour, not a defect.
+  //
+  // NO READOUTS, NO SIDEBAR, NO HERO. The 2026-08-19 rulings deleted both
+  // fields (`face-readout-values.ts` no longer exists), and there is nothing
+  // here that wants them back: every derived quantity this module has is
+  // already the subject of a control, and the values live in `aria-valuetext`.
+  //
+  // ── THE RANKING, AND THE DEF MADE THIS ARGUMENT BEFORE THE FACE DID ───────
+  //
+  // `order` opens COHERENCE / COMPONENTS / MIX. COHERENCE is first on the
+  // authority of the comment above `params` — "it is the control that changes
+  // the module's identity, and no other control on it moves more" — and the
+  // docs say the same thing twice ("This is the control that decides whether
+  // the module is a camera or an instrument"). A rank that contradicted the
+  // def's own stated priority would need an argument; this one does not
+  // deviate, so it does not need one. COMPONENTS is second because it is the
+  // other control that changes WHAT YOU SEE rather than how it moves (and it
+  // is the module's CPU dial besides); MIX is third because it is the only
+  // control that can take the module out of the picture entirely. Everything
+  // after those three follows DECLARATION order, which is already grouped.
+  //
+  // `glyph: 'none'` is MANDATORY and it is counter-intuitive:
+  // `primaryAudioOutPortId` matches `type === 'audio'` and a video def has
+  // none, so every other value resolves `{kind:'static'}` and reddens the
+  // dead-glyph clause.
+  //
+  // ⚠ BUT DO NOT DERIVE THE TIER CAPS FROM THAT DECLARATION — MEASURE THEM.
+  // This is #1785's trap ("never a hand-rolled glyph predicate"), and the
+  // spec this face was built from fell into it: it reasoned "no glyph binds ⇒
+  // compact cap 3 ⇒ plate and dock carry all twelve". Run through the real
+  // resolvers instead — `laneGlyphFor(def)` answers **`'picture'`**, not
+  // `'none'`, because `hasVideoSurface` mounts a live thumbnail of this
+  // module's own output and that thumbnail SPENDS A LANE CELL. So the
+  // declared glyph and the lane budget are two different questions with two
+  // different answers, which is exactly why `faceTierCap` takes
+  // `laneGlyphFor(def)` rather than `face.glyph`.
+  //
+  // Tier ladder as a sentence, MEASURED through `curatedFace`:
+  //
+  //   mini    cap 1  → COHERENCE
+  //   compact cap 2  → COHERENCE, COMPONENTS      (LANE_ROW_MAX_CELLS_WITH_GLYPH)
+  //   plate   cap 3  → + MIX
+  //   dock    all 12
+  //
+  // So the picture costs one control at every lane tier, and MIX — the only
+  // control that can take this module out of the shot — arrives at the PLATE
+  // rather than at compact. That is the def's own priority order paying off
+  // under a tighter budget than the spec predicted, and it is pinned in
+  // `warrensvisions-face-model.test.ts` so a later platform change to the
+  // video-thumbnail budget cannot move it silently.
+  //
+  // ⚠ `order` AND `pages` DISAGREE ON PURPOSE. `order` ranks by PRIORITY, for
+  // the tiers that show a subset; `pages` groups by KIND, for the tier that
+  // shows everything. COHERENCE is rank 1 and sits in the THIRD band, because
+  // the thing it belongs WITH (drift, slew — how the bank behaves over time)
+  // is not the thing it is more important THAN.
+  //
+  // NOT CONTROL-HEAVY, and the count is not the argument: four honest pages
+  // against `DOCK_TAB_MIN_BANDS = 7`, so no tab rail. Per the 2026-08-18
+  // ruling, pages are NOT padded to reach it — there is no fifth idea here,
+  // and unlike `ruttetra` this module was never named as the tabbed
+  // application.
+  //
+  // `bareCells`: NO. Twelve differently-named controls across four sections;
+  // every caption disambiguates its neighbours.
+  face: {
+    // The SCREEN ON/OFF body (owner ruling, 2026-08-18). See
+    // $lib/ui/modules/warrensvisions/shell-extension.ts — promotion is what
+    // stops `WarrensvisionsCard.svelte` rendering, and that card owns the only
+    // live picture this module has ever had.
+    extension: 'warrensvisions',
+    glyph: 'none',
+    order: [
+      'visionsCoherence',
+      'visionsComponents',
+      'visionsMix',
+      'visionsFloor',
+      'visionsStability',
+      'visionsSlew',
+      'visionsSlice',
+      'visionsResidual',
+      'visionsShape',
+      'visionsCenter',
+      'visionsDrift',
+      'engineFreeze',
+    ],
+    pages: [
+      {
+        id: 'analysis',
+        label: 'ANALYSIS',
+        hint: 'which gratings earn a slot in the bank, and how often the picture is re-read',
+        controls: ['visionsSlice', 'visionsFloor', 'visionsStability', 'visionsComponents'],
+      },
+      {
+        id: 'motion',
+        label: 'MOTION',
+        hint: 'how the bank behaves over time — assembling, boiling, or melting',
+        controls: ['visionsCoherence', 'visionsDrift', 'visionsSlew'],
+      },
+      {
+        id: 'grating',
+        label: 'GRATING',
+        hint: 'what one individual grating looks like, and where the whole lattice sits',
+        controls: ['visionsShape', 'visionsCenter'],
+      },
+      {
+        id: 'output',
+        label: 'OUTPUT',
+        hint: 'what actually reaches the screen',
+        controls: ['visionsResidual', 'visionsMix', 'engineFreeze'],
+      },
+    ],
+  },
+
   factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;
     const N = WV_GRID;
