@@ -523,11 +523,52 @@ describe('resolvePushCardControls — tier 3, the GENERIC card', () => {
   });
 
   it('VIDEO: the SAME rule, carrying its own domain', () => {
-    const def = listVideoModuleDefs().find((d) => (d.params ?? []).length >= 3) as unknown as PushCardDefLike;
+    // ⚠ `!d.face` IS LOAD-BEARING AND IT WAS MISSING HERE WHILE ITS AUDIO TWIN
+    // ABOVE ALREADY HAD IT. The two legs are the same test in two domains, and
+    // only one of them had been hardened against promotion — so this one was
+    // asserting `source === 'generic'` about whichever video def happened to
+    // sort first, with no guarantee that def was still un-faced. Promoting
+    // `4plexvid` (queue Q44) is what collected it: 4plexvid has 8 params, sorted
+    // first, and moved to the FACE tier, so the leg failed with
+    // `expected 'face' to be 'generic'` — a true statement about the module and
+    // a false one about the tier this test exists to cover.
+    //
+    // Fixed at the SUBJECT, not the threshold: the predicate now selects an
+    // un-faced def the way the audio leg does, so the assertion keeps measuring
+    // the GENERIC rule instead of measuring which module was promoted last.
+    //
+    // ⚠ AND THE DEF MUST HAVE NO SWITCH IN IT, which is the second thing this
+    // predicate learned the hard way. The GENERIC ranking is not a plain
+    // declaration-order slice: it PARTITIONS, putting `discrete 0..1` switches
+    // BELOW the continuous params (the 'demotes plain on/off switches' case
+    // below). Re-implementing that partition here would make the assertion a
+    // copy of the implementation and prove nothing, so this leg instead selects
+    // a def where the partition is a NO-OP — every turnable param continuous —
+    // and then declaration order genuinely IS the whole answer, which is what
+    // the leg claims. The first draft skipped this and selected a def carrying a
+    // `freeze` switch; it failed with `freeze` demoted to last, correctly.
+    const isPlainSwitch = (q: ParamDef): boolean =>
+      q.curve === 'discrete' && q.min === 0 && q.max === 1;
+    const def = listVideoModuleDefs().find(
+      (d) =>
+        !d.face
+        && (d.params ?? []).length >= 3
+        && !(d.params ?? []).some((q) => isTurnable(q) && isPlainSwitch(q))
+        && noUserControlIds(d as NoUserControlDefLike).size === 0
+        && momentaryParamIds(d as { face?: { momentary?: readonly string[] } }).size === 0,
+    ) as unknown as PushCardDefLike;
+    expect(
+      def,
+      'expected an un-faced video module whose turnable params are all continuous',
+    ).toBeTruthy();
     const spec = resolvePushCardControls(def, {});
     expect(spec.source).toBe('generic');
     expect(spec.domain).toBe('video');
     // Same selection rule, not a second one: declaration order.
+    //
+    // The def was selected to have no momentary pad, no `noUserControl` and no
+    // plain switch, so eligibility here reduces to `isTurnable` and the ranking
+    // reduces to declaration order.
     const expected = (def.params ?? []).filter((q) => isTurnable(q)).slice(0, 8).map((q) => q.id);
     expect(pushCardParams(spec).map((q) => q.id)).toEqual(expected);
   });
@@ -816,6 +857,54 @@ describe('the AUTHORED push cards', () => {
     // IN 1 is also the MULTIPLE source, so channel 1 is the only channel with a
     // second job.
     expect(pushCardParams(faced).map((p) => p.id)[0]).toBe('ch1');
+  });
+
+  it('4plexvid: `noUserControl` REMOVES four params from the encoders, and that is the proof it is consumed', () => {
+    // THE FACEPLATE QUEUE · Q44, and this is the CHEAPEST AVAILABLE PROOF that
+    // the #1958 declaration reaches a real consumer rather than only quieting a
+    // lint. `gate1..4` are the edge detector's cached level — `linear 0..1`, so
+    // `isTurnable` says yes and the GENERIC tier would hand all eight to the
+    // encoders, where turning one past `GATE_RISE = 0.6` rotates the router.
+    //
+    // Both directions, because "the face re-ranked it" and "the declaration
+    // removed them" are different claims and only the second is about #1958:
+    //   * WITHOUT the declaration the four gates are candidates;
+    //   * WITH it they are gone, and the four selectors are untouched.
+    //
+    // ⚠ ASSERTED AS IDENTITIES, NEVER AS A COUNT. "8 became 4" is a population
+    // count and would go stale the day a fifth output is added; the ids are the
+    // property that is actually true.
+    const def = defByType('4plexvid');
+    const faced = resolvePushCardControls(def, {});
+    expect(faced.source, 'a promoted module resolves through the FACE tier').toBe('face');
+    expect(pushCardParams(faced).map((p) => p.id)).toEqual(['sel1', 'sel2', 'sel3', 'sel4']);
+
+    // ⚠ THE ASSERTION ABOVE IS TRUE AND, ON ITS OWN, BLIND — and the negative
+    // control is what established that rather than a review catching it. The
+    // FACE tier ranks `face.order`, which lists only the four selectors, so the
+    // gate params were never candidates THERE and stripping `noUserControl`
+    // with the face still attached changes nothing. A first draft of this test
+    // did exactly that and "passed" while measuring the face, not #1958.
+    //
+    // So the declaration has to be isolated at the tier where it actually binds:
+    // GENERIC, which ranks the def's own `params` in declaration order and is
+    // what an UNPROMOTED 4plexvid resolved through. Face removed in BOTH arms,
+    // so the only difference between them is the declaration.
+    const genericDeclared = resolvePushCardControls({ ...def, face: undefined }, {});
+    const genericUndeclared = resolvePushCardControls(
+      { ...def, face: undefined, noUserControl: undefined },
+      {},
+    );
+    expect(genericDeclared.source).toBe('generic');
+    expect(
+      pushCardParams(genericDeclared).map((p) => p.id),
+      'the GENERIC tier must honour the declaration too — this is the tier the module shipped on',
+    ).toEqual(['sel1', 'sel2', 'sel3', 'sel4']);
+    expect(
+      pushCardParams(genericUndeclared).map((p) => p.id).filter((id) => id.startsWith('gate')),
+      'with the declaration removed the synthetic gate params MUST reappear — if they do not, ' +
+        'something other than `noUserControl` is filtering them and this test proves nothing',
+    ).toEqual(['gate1', 'gate2', 'gate3', 'gate4']);
   });
 
   it('adsr REORDERS the face ranking into ENVELOPE order', () => {

@@ -1204,6 +1204,54 @@ export const FACES = [
   // flat-line stable and the scene needs no mask and no VRT_LIVE_SURFACES
   // entry, for the same reason the struck voices above need none.
   { type: 'stereovca', pages: 1 },
+  // THE FACEPLATE QUEUE · Q44 — the 4-in / 4-out video cross-point switch, and
+  // the video twin of `fourplexer` five entries up.
+  //
+  // `pages: 1`, and for the SAME reason spelled out on the fourplexer entry:
+  // this face declares NO `face.pages` at all, so the dock renders ONE
+  // UNLABELLED band holding all four selectors, and this roster counts RENDERED
+  // bands rather than declared ones. Its hero promotes nothing (there is no
+  // hero), so no band is emptied and none is dropped. Reasoning "no declared
+  // `face.pages` ⇒ 0" is the trap that caught the first draft of the fourplexer
+  // entry; `noise` is `pages: 0` only because its ONLY key is promoted into
+  // `hero.control`, which empties its band.
+  //
+  // ⚠ NO `videoFaceWhy`, AND THAT IS A DELIBERATE REFUSAL RATHER THAN AN
+  // OMISSION — this is the first video face in the roster to decline it, so the
+  // argument is written here in full.
+  //
+  // `freezeFaceVideo` writes `params.freeze = 1` and then requires the surface
+  // to hold still. Declaring it would assert a MECHANISM THIS MODULE DOES NOT
+  // HAVE: 4plexvid has no `freeze` param, so the write lands on a key the
+  // factory's `if (!(paramId in params)) return` guard rejects, and the
+  // still-picture assertion would then pass for a reason unrelated to the flag
+  // it just wrote. That is the vacuous-negative-control shape the helper's own
+  // scope note warns about, manufactured on purpose.
+  //
+  // It needs no freeze because it CANNOT be non-deterministic on its own, and
+  // that was measured structurally on the def rather than inferred from a green
+  // capture: `uTime`, `Date.now`, `performance.now`, `Math.random`,
+  // `frame.time`, `frame.frameIndex`, `elapsed` and `accum` occur ZERO times,
+  // and `FRAG_SRC` declares exactly two uniforms — `uTex` and `uHas`. The
+  // fragment shader is a pure passthrough copy. Its output is therefore a pure
+  // function of (its four inputs, its four indices), and with nothing patched
+  // every output takes the shader's `uHas < 0.5` branch: solid black, identical
+  // on every frame, with no clock to stop.
+  //
+  // ⚠ WHAT WOULD FALSIFY THIS, named so the next author does not have to
+  // re-derive it: give 4plexvid ANY accumulator or clock — a crossfade between
+  // the old and new input on a gate edge, a tally animation, a `uTime` wipe —
+  // and this entry becomes wrong. The symptom would be a `toHaveScreenshot`
+  // that never converges, and the fix would be a real `freeze` param declared
+  // `noUserControl` / `writer: 'internal'` (spirographs and b3ntb0x are the
+  // template) plus a `videoFaceWhy` here. Do NOT reach for `simPin`: that is
+  // for a STATEFUL sim whose frozen frame depends on elapsed time, which is a
+  // different axis again.
+  //
+  // The determinism argument is the `fourplexer` / `moog984` one — a passive
+  // switch with no generator in it — carried across the domain boundary and
+  // re-measured rather than inherited.
+  { type: '4plexvid', pages: 1 },
 ] as const;
 
 /** TIGHT per-scene diff budgets (absolute pixels; Playwright takes the MIN of

@@ -125,6 +125,24 @@ const SEL_IDS = ['sel1', 'sel2', 'sel3', 'sel4'] as const;
 const INPUT_IDS = ['in1', 'in2', 'in3', 'in4'] as const;
 const GATE_IDS = ['gate1', 'gate2', 'gate3', 'gate4'] as const;
 
+/**
+ * The four selector detents, shared by all four selectors — ONE roster object,
+ * not four copies, because the four selectors are bit-identically symmetric and
+ * four literals would be four places for `IN3` to become `IN4`.
+ *
+ * DERIVED FROM `INPUT_IDS`, so the roster cannot outlive its subject: a fifth
+ * video input would extend this automatically rather than leaving a four-name
+ * legend on a five-way switch. The label is 1-BASED because the jacks, the
+ * docs and the card's old formatter all are (`in1` is `IN1`), while the stored
+ * value stays the 0-based index the shader samples — the off-by-one lives in
+ * exactly one expression.
+ */
+const SEL_OPTIONS = INPUT_IDS.map((portId, i) => ({
+  value: i,
+  label: `IN${i + 1}`,
+  title: `Carry video input ${i + 1} (port '${portId}') on this output.`,
+}));
+
 export const fourPlexVidDef: VideoModuleDef = {
   // Type id is '4plexvid'. ModuleType accepts arbitrary strings.
   type: '4plexvid',
@@ -153,18 +171,102 @@ export const fourPlexVidDef: VideoModuleDef = {
   ],
   params: [
     // Selector knobs — discrete 0..3 (in1..in4). curve 'discrete' so the
-    // fader snaps to integer indices.
-    { id: 'sel1', label: 'OUT 1', defaultValue: DEFAULTS.sel1, min: 0, max: PLEX_INPUTS - 1, curve: 'discrete' },
-    { id: 'sel2', label: 'OUT 2', defaultValue: DEFAULTS.sel2, min: 0, max: PLEX_INPUTS - 1, curve: 'discrete' },
-    { id: 'sel3', label: 'OUT 3', defaultValue: DEFAULTS.sel3, min: 0, max: PLEX_INPUTS - 1, curve: 'discrete' },
-    { id: 'sel4', label: 'OUT 4', defaultValue: DEFAULTS.sel4, min: 0, max: PLEX_INPUTS - 1, curve: 'discrete' },
-    // Synthetic gate params — hidden from the card (rendered as cv jacks
-    // via the standard handle row). curve 'linear' so setParam values
-    // arrive raw for the edge detector.
+    // control snaps to integer indices.
+    //
+    // ⚠ THE `options` ROSTER IS WHERE THE INPUT NAMES NOW LIVE, AND IT HAD TO
+    // MOVE HERE FOR THE FACE TO BE HONEST. Before this, `IN1…IN4` existed ONLY
+    // inside `FourPlexVidCard.svelte` (`selFmt(v) = \`IN${Math.round(v)+1}\``)
+    // — card-local text no def-driven surface can see. Promotion stops that
+    // card rendering on BOTH surfaces, so a face authored without this roster
+    // would paint a four-position ANONYMOUS dial: the player would be choosing
+    // between `0`, `1`, `2` and `3` on a router whose entire job is naming
+    // which input reaches which output.
+    //
+    // With the roster declared, two different surfaces get the names from ONE
+    // place: the dock renders a `segmented` row of named buttons (4 <=
+    // `SEGMENTED_MAX_OPTIONS`), and the lane renders a KnobConic whose painted
+    // readout is the state NAME (`paintsReadout` is true for a bare roster with
+    // no `format`, verified against the real predicate). That name is permitted
+    // resting text under the 2026-08-19 ruling precisely because it
+    // disambiguates the control's OWN position — four otherwise-identical
+    // indices — rather than restating a dial as a decimal.
+    //
+    // ⚠ AND IT IS WHY THIS FACE DECLARES NO `paramCells: 'fader'`. The card
+    // mounts four `<NeonFader>`s, and `paramCellKind` returns a DECLARED cell
+    // before it ever looks at `options` — so the two are mutually exclusive.
+    // The throw was traded for the names deliberately: on a cross-point switch
+    // the value IS a name, and a 4-position fader with no legend is the state
+    // this module shipped in.
+    { id: 'sel1', label: 'OUT 1', defaultValue: DEFAULTS.sel1, min: 0, max: PLEX_INPUTS - 1, curve: 'discrete', options: SEL_OPTIONS },
+    { id: 'sel2', label: 'OUT 2', defaultValue: DEFAULTS.sel2, min: 0, max: PLEX_INPUTS - 1, curve: 'discrete', options: SEL_OPTIONS },
+    { id: 'sel3', label: 'OUT 3', defaultValue: DEFAULTS.sel3, min: 0, max: PLEX_INPUTS - 1, curve: 'discrete', options: SEL_OPTIONS },
+    { id: 'sel4', label: 'OUT 4', defaultValue: DEFAULTS.sel4, min: 0, max: PLEX_INPUTS - 1, curve: 'discrete', options: SEL_OPTIONS },
+    // Synthetic gate params — the edge detector's MEMORY, not controls. See
+    // the `noUserControl` declaration below for what stops them rendering.
+    // curve 'linear' so setParam values arrive raw for the edge detector.
     { id: 'gate1', label: 'G1', defaultValue: DEFAULTS.gate1, min: 0, max: 1, curve: 'linear' },
     { id: 'gate2', label: 'G2', defaultValue: DEFAULTS.gate2, min: 0, max: 1, curve: 'linear' },
     { id: 'gate3', label: 'G3', defaultValue: DEFAULTS.gate3, min: 0, max: 1, curve: 'linear' },
     { id: 'gate4', label: 'G4', defaultValue: DEFAULTS.gate4, min: 0, max: 1, curve: 'linear' },
+  ],
+
+  // ── #1958 — THE FOUR "PARAMS" A PLAYER MUST NEVER BE HANDED ────────────────
+  //
+  // `gate1..4` exist so the cross-domain CV bridge has somewhere to write a raw
+  // 0..1 gate swing that `setParam` edge-detects; they are an edge detector's
+  // cached level, not a value anyone sets. That was true before this face and
+  // it was true of the LEGACY CARD too — which is exactly why the declaration
+  // lives on the def rather than inside `face`.
+  //
+  // ⚠ IT IS A LIVE DEFECT TODAY, NOT A FACE PREREQUISITE. Measured on the real
+  // resolver: `listExposableControls('4plexvid')` returns all EIGHT params, so
+  // collapsing a rack containing this module offers four knobs that are the
+  // edge detector's memory — and dragging one past `GATE_RISE = 0.6` rotates
+  // the router. The declaration is what removes them from that bar.
+  //
+  // ⚠ AND THE FACE COULD NOT HAVE BEEN AUTHORED WITHOUT IT. `module-face-lint`
+  // completeness is deny-by-default over every `ParamDef`, and `paramCellKind`
+  // answers `'knob'` for these at BOTH tiers (`looksLikeToggle` needs
+  // `discrete`, and these are `linear` on purpose). So the only two shapes
+  // available were "declare them" and "paint four operable dials over internal
+  // state"; there is no skip.
+  //
+  // `writer: 'cv-port'` is checked against this def's OWN inputs in both
+  // directions — each `gate{N}` port declares `paramTarget: 'gate{N}'` above,
+  // so the claim is anchored to the wiring rather than asserted.
+  noUserControl: [
+    {
+      param: 'gate1',
+      writer: 'cv-port',
+      why:
+        'the gate1 CV jack writes it through the cross-domain bridge and setParam edge-detects '
+        + 'the rising edge to rotate sel1; the stored number is the detector\'s last level, so a '
+        + 'knob over it would let a drag past 0.6 rotate the router',
+    },
+    {
+      param: 'gate2',
+      writer: 'cv-port',
+      why:
+        'the gate2 CV jack writes it through the cross-domain bridge and setParam edge-detects '
+        + 'the rising edge to rotate sel2; the stored number is the detector\'s last level, so a '
+        + 'knob over it would let a drag past 0.6 rotate the router',
+    },
+    {
+      param: 'gate3',
+      writer: 'cv-port',
+      why:
+        'the gate3 CV jack writes it through the cross-domain bridge and setParam edge-detects '
+        + 'the rising edge to rotate sel3; the stored number is the detector\'s last level, so a '
+        + 'knob over it would let a drag past 0.6 rotate the router',
+    },
+    {
+      param: 'gate4',
+      writer: 'cv-port',
+      why:
+        'the gate4 CV jack writes it through the cross-domain bridge and setParam edge-detects '
+        + 'the rising edge to rotate sel4; the stored number is the detector\'s last level, so a '
+        + 'knob over it would let a drag past 0.6 rotate the router',
+    },
   ],
 
   docs: {
@@ -186,16 +288,85 @@ export const fourPlexVidDef: VideoModuleDef = {
       out4: "Video output 4 — a discrete tap carrying exactly the input chosen by the sel4 selector (black if that input is unpatched).",
     },
     controls: {
-      sel1: "OUT 1 selector — a discrete fader choosing which input (IN1..IN4, raw index 0..3) output 1 carries. Snaps to integer indices and displays as IN1..IN4; gate1 rotates it on each rising edge.",
-      sel2: "OUT 2 selector — a discrete fader choosing which input (IN1..IN4, raw index 0..3) output 2 carries. Snaps to integer indices and displays as IN1..IN4; gate2 rotates it on each rising edge.",
-      sel3: "OUT 3 selector — a discrete fader choosing which input (IN1..IN4, raw index 0..3) output 3 carries. Snaps to integer indices and displays as IN1..IN4; gate3 rotates it on each rising edge.",
-      sel4: "OUT 4 selector — a discrete fader choosing which input (IN1..IN4, raw index 0..3) output 4 carries. Snaps to integer indices and displays as IN1..IN4; gate4 rotates it on each rising edge.",
-      gate1: "Hidden synthetic param (linear 0..1) caching the gate1 CV level for output 1's rising-edge detector; driven by the gate1 jack via the CV bridge, not a knob on the card.",
-      gate2: "Hidden synthetic param (linear 0..1) caching the gate2 CV level for output 2's rising-edge detector; driven by the gate2 jack via the CV bridge, not a knob on the card.",
-      gate3: "Hidden synthetic param (linear 0..1) caching the gate3 CV level for output 3's rising-edge detector; driven by the gate3 jack via the CV bridge, not a knob on the card.",
-      gate4: "Hidden synthetic param (linear 0..1) caching the gate4 CV level for output 4's rising-edge detector; driven by the gate4 jack via the CV bridge, not a knob on the card.",
+      sel1: "OUT 1 selector — a discrete control choosing which input (IN1..IN4, raw index 0..3) output 1 carries. It has four named detents rather than a scale: the faceplate renders them as a row of IN1..IN4 buttons, and gate1 rotates the selection on each rising edge. A non-finite value resolves to IN1.",
+      sel2: "OUT 2 selector — a discrete control choosing which input (IN1..IN4, raw index 0..3) output 2 carries. Four named detents rendered as an IN1..IN4 button row on the faceplate; gate2 rotates the selection on each rising edge. A non-finite value resolves to IN1.",
+      sel3: "OUT 3 selector — a discrete control choosing which input (IN1..IN4, raw index 0..3) output 3 carries. Four named detents rendered as an IN1..IN4 button row on the faceplate; gate3 rotates the selection on each rising edge. A non-finite value resolves to IN1.",
+      sel4: "OUT 4 selector — a discrete control choosing which input (IN1..IN4, raw index 0..3) output 4 carries. Four named detents rendered as an IN1..IN4 button row on the faceplate; gate4 rotates the selection on each rising edge. A non-finite value resolves to IN1.",
+      gate1: "NOT A CONTROL — a synthetic param (linear 0..1) holding the gate1 rising-edge detector's last level. The gate1 CV jack writes it through the cross-domain bridge; nothing in the UI offers it, because setting it by hand past the 0.6 rise threshold would rotate the router. Declared noUserControl (writer: cv-port).",
+      gate2: "NOT A CONTROL — a synthetic param (linear 0..1) holding the gate2 rising-edge detector's last level, written by the gate2 CV jack through the cross-domain bridge. Declared noUserControl (writer: cv-port), so no knob, encoder or group instrument bar offers it.",
+      gate3: "NOT A CONTROL — a synthetic param (linear 0..1) holding the gate3 rising-edge detector's last level, written by the gate3 CV jack through the cross-domain bridge. Declared noUserControl (writer: cv-port), so no knob, encoder or group instrument bar offers it.",
+      gate4: "NOT A CONTROL — a synthetic param (linear 0..1) holding the gate4 rising-edge detector's last level, written by the gate4 CV jack through the cross-domain bridge. Declared noUserControl (writer: cv-port), so no knob, encoder or group instrument bar offers it.",
     },
   },
+  // ── THE FACE (Q44) ─────────────────────────────────────────────────────────
+  //
+  // WHAT IT IS FOR, VISUALLY: the video sibling of the audio `fourplexer` — a
+  // 4x4 DISCRETE CROSS-POINT SWITCH, never a blend. Each output carries exactly
+  // one input, chosen by its own selector, and each output's gate jack rotates
+  // that selector one step per rising edge. The verb the player performs is
+  // CHOOSING WHICH FEED REACHES WHICH SCREEN.
+  //
+  // ⚠ THE RANKING ARGUMENT IS THAT THERE ISN'T ONE, AND SAYING SO IS THE
+  // ARGUMENT. The four selectors are bit-identically symmetric: same range,
+  // same curve, same default, same law, one per output. This is the
+  // moog992/moog995/moog984 shape — the rank IS declaration order, and any
+  // invented priority ("OUT 1 matters most") would be a fiction that reads as
+  // defended because it is written down. The merit of this face lives in the
+  // `options` roster and in what promotion FIXES, not in the ordering.
+  //
+  // NO `pages`, DELIBERATELY, and this is the same call the already-faced audio
+  // sibling made. One idea, four peers: a single band holding all four
+  // selectors. Declaring `pages: [{ id: 'routing', ... }]` would buy exactly one
+  // thing — a section heading over the ONLY section — which is "adding a page
+  // just to get a header", and it would spend ~81 px of a dock that folds at
+  // 720p to restate what the module's own name already says. The dock therefore
+  // renders ONE UNLABELLED band; `_shell-faces.ts` still records `pages: 1`,
+  // because that roster counts RENDERED bands rather than declared ones.
+  //
+  // NOT CONTROL-HEAVY: four real controls, one idea. Honest page count 1
+  // against `DOCK_TAB_MIN_BANDS = 7`, so no tab rail and no padding toward one.
+  //
+  // NO HERO. There is no panel to promote (the module's picture is its OUTPUT,
+  // which arrives through the `fullViewBody` extension below, not through a
+  // `hero.cell` diagram of the patch), and promoting one of four symmetric
+  // selectors into a hero would manufacture the priority the paragraph above
+  // refuses to invent.
+  //
+  // NO DERIVED READOUT, AND THE SPEC THAT COMMISSIONED THIS FACE ASKED FOR ONE.
+  // The B9.4 spec proposed a `4plexvid-routing` value printing the four live
+  // indices as `1·3·1·1`. It is not built, for two independent reasons and
+  // either alone would be decisive:
+  //   1. The 2026-08-19 owner ruling deleted the hero readout strip and the
+  //      sidebar outright — there is no `readouts` field on `ModuleFace` to
+  //      declare it in, and re-adding one under a new name is the specific
+  //      mistake `face-resting-text-source.test.ts` denies BY SHAPE.
+  //   2. `FaceReadoutValue` resolves from STORED params, which on this module
+  //      were the wrong half of #1959 — so before the reflect landed the
+  //      readout would have printed a confidently wrong string. The spec said
+  //      to verify that before promising it; verified, and the answer removes
+  //      the readout rather than qualifying it.
+  // The routing state is not lost: it is each selector's OWN POSITION, named by
+  // the `options` roster, with the full value in `aria-valuetext`.
+  //
+  // GLYPH: 'none', and it is FORCED rather than chosen. `primaryAudioOutPortId`
+  // matches `type === 'audio'` and every output here is `video`, so every other
+  // glyph kind resolves `{kind:'static'}` and reddens the dead-glyph clause.
+  // The picture arrives through `hasVideoSurface` instead.
+  //
+  // ⚠ THE TIER LADDER TRUNCATES ASYMMETRICALLY, AND IT IS ACCEPTED ON PURPOSE.
+  // With `glyph: 'none'` the compact cap is `LANE_ROW_MAX_CELLS = 3`: mini
+  // shows OUT 1, compact shows OUT 1-3 and **OUT 4 disappears**, plate and dock
+  // show all four. Hiding one of four symmetric outputs is a genuinely odd tier
+  // state and the alternative was worse — capping the face at three selectors
+  // would delete a real output everywhere, and there is no honest basis for
+  // ranking OUT 4 last other than that the lane budget is three. The dock is
+  // where routing gets done; the lane tile is a reminder of what is patched.
+  face: {
+    extension: '4plexvid',
+    glyph: 'none',
+    order: [...SEL_IDS],
+  },
+
   factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;
     const program = ctx.compileFragment(FRAG_SRC);
