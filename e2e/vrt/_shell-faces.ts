@@ -1552,6 +1552,58 @@ export const FACES = [
       + 'bank is empty and the composite outputs black on every frame by construction rather '
       + 'than by the flag.',
   },
+  // RUTTETRA (`label: 'xyz'`) — the authentic forward-scatter Rutt/Etra scan
+  // processor, and the roster's first MONITOR-MODE face (#2009).
+  //
+  // `pages: 4` is the declared band count and also the rendered one: relief /
+  // shape / scan / beam, and this face promotes NOTHING into the hero (it
+  // declares no `hero` at all — the two readouts it was specced with were
+  // deleted by the 2026-08-19 rulings), so no band is emptied and none is
+  // dropped by `heroFacePlan`. Four is also what keeps it OFF the tab rail
+  // (`DOCK_TAB_MIN_BANDS` is 7, and the owner ruled it untabbed), so the dock
+  // scene frames STACKED bands under the extension body. They pack to TWO ROWS
+  // under `DOCK_ROW_MAX_CONTROLS = 10` — (2+2) then (4+4) — which is what the
+  // dock capture should show.
+  //
+  // ⚠ WHAT THESE TWO SCENES CAPTURE AT REST IS THE MODE **OFF**, and that is
+  // not a gap in the coverage, it is the only honest resting state.
+  // `hideControls` is a per-NODE runtime key and `bootWithFace` spawns a fresh
+  // node, so it is absent ⇒ false ⇒ controls showing. The dock baseline
+  // therefore pins the ORDINARY faceplate — extension body, then four bands —
+  // and a monitor-mode capture would be pinning a state no freshly opened
+  // faceplate is ever in. The suppression itself is proven where it can be:
+  // `faceMonitorPlan` in the unit lane (exhaustively, including "never a blank
+  // plate") and the faced leg of `video-hide-controls.spec.ts` in the browser,
+  // which is the only thing that can see the bands actually leave.
+  //
+  // ⚠ NO `freeze` PARAM, AND UNLIKE ITS SIBLINGS THAT IS TRUE WITH A SOURCE
+  // PATCHED TOO. bentbox and warrensvisions both argue determinism from having
+  // NOTHING patched — patch their inputs and every uTime term wakes up. This
+  // def has no `uTime` uniform anywhere in `VERT_SRC`/`FRAG_SRC`, no ping-pong,
+  // no accumulator and no feedback: `draw` clears to black and redraws from the
+  // input texture and the params every frame, so the output is a pure function
+  // of (source frame, params). `bootWithFace` patches nothing, so `z` binds the
+  // constant 1x1 mid-grey sentinel and the raster is flat scanlines — identical
+  // frame to frame for a strictly stronger reason than its siblings'. Do NOT
+  // add a `freeze` param to "make it safe": that is a `params` edit on a def
+  // inside the WebGL attest basis, i.e. an owner-machine re-attest, to buy an
+  // assertion that already holds.
+  {
+    type: 'ruttetra',
+    pages: 4,
+    videoFaceWhy:
+      'a VIDEO module, so it must boot into the video zone rather than a mixer channel column — '
+      + 'without this field bootWithFace waits out the full 90 s test timeout for a column '
+      + 'membership a video node never acquires. Both scenes also carry a live picture: the '
+      + 'compact tile paints a VideoTileThumb through hasVideoSurface, and the dock body is the '
+      + "module's own fullViewBody extension — the raster preview plus the THREE affordances "
+      + 'promotion would otherwise delete (SCREEN ON/OFF, the MONITOR toggle that hides the '
+      + 'control bands, and the corner resize). The freeze write itself is a NO-OP on this def — '
+      + 'it declares no `freeze` param at all — and that is deliberate rather than an omission: '
+      + 'there is no uTime uniform in either shader stage, no ping-pong and no accumulator, so '
+      + 'the render is a pure function of (source frame, params) and is identical frame to frame '
+      + 'by construction. With nothing patched, `z` binds a constant mid-grey sentinel.',
+  },
 ] as const;
 
 /** TIGHT per-scene diff budgets (absolute pixels; Playwright takes the MIN of
