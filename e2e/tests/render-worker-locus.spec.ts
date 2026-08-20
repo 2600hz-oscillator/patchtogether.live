@@ -119,91 +119,262 @@ interface ModuleProbe {
   glErrors: number[];
 }
 
-/**
- * ONE in-page pass over the WHOLE roster: worker probe + presented picture for
- * every module, in a single round trip.
- *
- * One evaluate and not one per module, deliberately. This is polled until the
- * set is ready, and a per-module round trip would make the poll cost scale with
- * the roster — on the same main thread as the subject, which is the sampling
- * shape CLAUDE.md rules out. The loop and the accumulation happen in the page;
- * Playwright receives a finished summary.
- */
-async function probeAll(page: Page, types: string[]): Promise<ModuleProbe[]> {
-  return page.evaluate((types) => {
-    const w = globalThis as unknown as {
-      __engine: () => {
-        getDomain: (d: string) => {
-          gl: WebGL2RenderingContext;
-          res: { width: number; height: number };
-          read: (n: string, k: string) => unknown;
-          blitOutputToDrawingBuffer: (n: string) => void;
-        };
-      };
-    };
-    const vid = w.__engine().getDomain('video');
-    const gl = vid.gl;
-    const { width: W, height: H } = vid.res;
-    const px = new Uint8Array(W * H * 4);
-    const out: ModuleProbeLike[] = [];
-    type ModuleProbeLike = {
-      type: string;
-      state: string;
-      active: boolean;
-      delivered: number;
-      nonZeroFrac: number;
-      variance: number;
-      mean: number;
-      glErrors: number[];
-    };
-    for (let i = 0; i < types.length; i++) {
-      while (gl.getError() !== gl.NO_ERROR) { /* drain pre-existing */ }
-      // ⚠ CLEAR FIRST. The engine canvas is created with
-      // `preserveDrawingBuffer: true`, and `blitOutputToDrawingBuffer` is a
-      // NO-OP when the node has no texture yet — so without this clear a
-      // not-yet-painted OUTPUT reads back the PREVIOUS module's picture and
-      // reports it as its own.
-      //
-      // This is not hypothetical: the 3× flake-check caught it, and the tell
-      // was that all four modules reported byte-identical stats
-      // (nonBlack 0.864, var 2544.7, mean 53.2 — four different shaders).
-      // Clearing makes a no-op blit read BLACK, which the readiness poll then
-      // correctly keeps waiting on instead of passing on a neighbour's frame.
-      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-      gl.viewport(0, 0, W, H);
-      gl.clearColor(0, 0, 0, 1);
-      gl.clear(gl.COLOR_BUFFER_BIT);
-      // The PRODUCT's own present path: the call every video card makes right
-      // before `drawImage(engine.canvas, …)`, then a read of the default
-      // framebuffer.
-      vid.blitOutputToDrawingBuffer(`out-${i}`);
-      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-      gl.readPixels(0, 0, W, H, gl.RGBA, gl.UNSIGNED_BYTE, px);
-      const glErrors: number[] = [];
-      let e: number;
-      while ((e = gl.getError()) !== gl.NO_ERROR) glErrors.push(e);
-      let n = 0, sum = 0, sumSq = 0, nonZero = 0;
-      for (let p = 0; p < px.length; p += 4 * 16) {
-        const v = (px[p]! + px[p + 1]! + px[p + 2]!) / 3;
-        sum += v; sumSq += v * v; n++;
-        if (v > 8) nonZero++;
-      }
-      const mean = n ? sum / n : 0;
-      out.push({
-        type: types[i]!,
-        state: String(vid.read(`src-${i}`, 'workerState') ?? 'unknown'),
-        active: vid.read(`src-${i}`, 'workerActive') === true,
-        delivered: (vid.read(`src-${i}`, 'workerFramesDelivered') as number) ?? 0,
-        nonZeroFrac: n ? nonZero / n : 0,
-        variance: n ? sumSq / n - mean * mean : 0,
-        mean,
-        glErrors,
-      });
-    }
-    return out;
-  }, types);
+/** What the in-page readiness watcher returns — ONE round trip, whatever it saw. */
+interface ProbeWatch {
+  /** Empty when the whole roster is ready; otherwise one descriptor per laggard. */
+  notReady: string[];
+  /** Readiness samples the PAGE took (not round trips Playwright made). */
+  samples: number;
+  /** How many of those samples went as far as a pixel readback. */
+  pixelReads: number;
+  elapsedMs: number;
+  /** The last FULL probe pass — the numbers a failure has to print. */
+  probes: ModuleProbe[];
 }
 
+/**
+ * Wait for the whole roster to reach a terminal worker state WITH a picture —
+ * accumulating IN THE PAGE, and returning over exactly ONE round trip.
+ *
+ * ── why this is not an `expect.poll` (#1987) ────────────────────────────────
+ *
+ * It used to be. `expect.poll` re-invoked a Playwright-side callback that did
+ * `await probeAll(page, …)`, i.e. ONE CDP round trip per sample, on the same
+ * main thread as the GL subject — the sampling shape CLAUDE.md rule 5 names
+ * outright: "a loaded runner starves both, and 'frozen' and 'never looked' are
+ * indistinguishable from the output."
+ *
+ * That is not theoretical arithmetic here. #1173 measured a CDP `evaluate` at
+ * ~1.5 s under CI load. `expect.poll`'s default cadence gives ~60-70 attempts
+ * across a 60 s window, so the TRANSPORT alone can consume the entire budget
+ * before the renderer is starved — and the old failure message reported
+ * neither the sample count nor the elapsed time, so a starved run and a
+ * genuinely aliased/frozen one printed identically. That is the meta-tell
+ * CLAUDE.md warns about: the two need opposite fixes and looked the same.
+ *
+ * ── two things this changes, both deliberate ───────────────────────────────
+ *
+ * 1. The LOOP moves into the page. Playwright makes one round trip and gets a
+ *    finished summary, so transport cost no longer scales with sample count.
+ * 2. The CHEAP half of the predicate gates the EXPENSIVE half. Worker state is
+ *    three plain `vid.read` calls; the picture needs a full-canvas
+ *    `readPixels` (W x H x 4) per node. The old poll paid the readback on
+ *    EVERY attempt, including all the early ones where the worker had
+ *    self-evidently not delivered yet. Now the readback runs only once the
+ *    workers report terminal — strictly less GL work on the subject's own
+ *    thread than before, in both the passing and the failing path.
+ *
+ * The PREDICATE is unchanged: every module needs `nonZeroFrac > 0.02` AND
+ * (`unsupported`, or `active` with >= 2 delivered bitmaps). `initialising` is
+ * still refused. On timeout it takes one final full probe so the failure
+ * message carries the same numbers it always did, plus `samples` /
+ * `pixelReads` / `elapsedMs` — which is what makes a starved instrument
+ * legible as an instrument fault instead of a product one.
+ */
+async function watchProbesUntilReady(
+  page: Page,
+  types: string[],
+  opts: { timeoutMs: number; sampleMs?: number },
+): Promise<ProbeWatch> {
+  return page.evaluate(
+    ({ types, timeoutMs, sampleMs }) =>
+      new Promise<ProbeWatch>((resolve) => {
+        const w = globalThis as unknown as {
+          __engine: () => {
+            getDomain: (d: string) => {
+              gl: WebGL2RenderingContext;
+              res: { width: number; height: number };
+              read: (n: string, k: string) => unknown;
+              blitOutputToDrawingBuffer: (n: string) => void;
+            };
+          };
+        };
+        type ModuleProbeLike = {
+          type: string;
+          state: string;
+          active: boolean;
+          delivered: number;
+          nonZeroFrac: number;
+          variance: number;
+          mean: number;
+          glErrors: number[];
+        };
+
+        const t0 = performance.now();
+        let samples = 0;
+        let pixelReads = 0;
+        let probes: ModuleProbeLike[] = [];
+        let timer = 0;
+
+        /** The CHEAP half: worker state only, no GL readback. */
+        const readWorker = (i: number): { state: string; active: boolean; delivered: number } => {
+          const vid = w.__engine().getDomain('video');
+          return {
+            state: String(vid.read(`src-${i}`, 'workerState') ?? 'unknown'),
+            active: vid.read(`src-${i}`, 'workerActive') === true,
+            delivered: (vid.read(`src-${i}`, 'workerFramesDelivered') as number) ?? 0,
+          };
+        };
+        const terminal = (s: { state: string; delivered: number }): boolean =>
+          s.state === 'unsupported' || (s.state === 'active' && s.delivered >= 2);
+
+        /** The EXPENSIVE half: the product's own present path + a readback. */
+        const fullProbe = (): ModuleProbeLike[] => {
+          pixelReads++;
+          const vid = w.__engine().getDomain('video');
+          const gl = vid.gl;
+          const { width: W, height: H } = vid.res;
+          const px = new Uint8Array(W * H * 4);
+          const out: ModuleProbeLike[] = [];
+          for (let i = 0; i < types.length; i++) {
+            while (gl.getError() !== gl.NO_ERROR) { /* drain pre-existing */ }
+            // ⚠ CLEAR FIRST. The engine canvas is created with
+            // `preserveDrawingBuffer: true`, and `blitOutputToDrawingBuffer` is a
+            // NO-OP when the node has no texture yet — so without this clear a
+            // not-yet-painted OUTPUT reads back the PREVIOUS module's picture and
+            // reports it as its own.
+            //
+            // This is not hypothetical: the 3× flake-check caught it, and the tell
+            // was that all four modules reported byte-identical stats
+            // (nonBlack 0.864, var 2544.7, mean 53.2 — four different shaders).
+            // Clearing makes a no-op blit read BLACK, which the readiness watcher
+            // then correctly keeps waiting on instead of passing on a neighbour's
+            // frame.
+            gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+            gl.viewport(0, 0, W, H);
+            gl.clearColor(0, 0, 0, 1);
+            gl.clear(gl.COLOR_BUFFER_BIT);
+            // The PRODUCT's own present path: the call every video card makes right
+            // before `drawImage(engine.canvas, …)`, then a read of the default
+            // framebuffer.
+            vid.blitOutputToDrawingBuffer(`out-${i}`);
+            gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+            gl.readPixels(0, 0, W, H, gl.RGBA, gl.UNSIGNED_BYTE, px);
+            const glErrors: number[] = [];
+            let e: number;
+            while ((e = gl.getError()) !== gl.NO_ERROR) glErrors.push(e);
+            let n = 0, sum = 0, sumSq = 0, nonZero = 0;
+            for (let p = 0; p < px.length; p += 4 * 16) {
+              const v = (px[p]! + px[p + 1]! + px[p + 2]!) / 3;
+              sum += v; sumSq += v * v; n++;
+              if (v > 8) nonZero++;
+            }
+            const mean = n ? sum / n : 0;
+            const ws = readWorker(i);
+            out.push({
+              type: types[i]!,
+              state: ws.state,
+              active: ws.active,
+              delivered: ws.delivered,
+              nonZeroFrac: n ? nonZero / n : 0,
+              variance: n ? sumSq / n - mean * mean : 0,
+              mean,
+              glErrors,
+            });
+          }
+          return out;
+        };
+
+        const laggards = (ps: ModuleProbeLike[]): string[] =>
+          ps
+            .filter(
+              (p) =>
+                !(
+                  p.nonZeroFrac > 0.02 &&
+                  (p.state === 'unsupported' || (p.state === 'active' && p.delivered >= 2))
+                ),
+            )
+            .map(
+              (p) =>
+                `${p.type}(${p.state},delivered=${p.delivered},nonBlack=${p.nonZeroFrac.toFixed(3)})`,
+            );
+
+        const finish = (notReady: string[]): void => {
+          clearTimeout(timer);
+          resolve({
+            notReady,
+            samples,
+            pixelReads,
+            elapsedMs: performance.now() - t0,
+            probes: probes as ModuleProbe[],
+          });
+        };
+
+        const tick = (): void => {
+          samples++;
+          let ready = false;
+          try {
+            // Cheap gate: don't pay a readback until every worker says terminal.
+            const states = types.map((_, i) => readWorker(i));
+            if (states.every(terminal)) {
+              probes = fullProbe();
+              ready = laggards(probes).length === 0;
+            }
+          } catch {
+            // The engine/domain may not exist yet on the first ticks — that is a
+            // NOT-READY sample, not an error. It still counts as a sample, so a
+            // run that never saw an engine is visible as samples>0, probes=[].
+          }
+          if (ready) {
+            finish([]);
+            return;
+          }
+          if (performance.now() - t0 >= timeoutMs) {
+            // One last FULL probe so the failure prints real numbers even if the
+            // cheap gate never opened.
+            try {
+              probes = fullProbe();
+            } catch { /* leave the last probes (possibly empty) */ }
+            finish(
+              probes.length
+                ? laggards(probes)
+                : [`no probe could be taken (samples=${samples})`],
+            );
+            return;
+          }
+          timer = setTimeout(tick, sampleMs) as unknown as number;
+        };
+        tick();
+      }),
+    { types, timeoutMs: opts.timeoutMs, sampleMs: opts.sampleMs ?? 250 },
+  );
+}
+
+/** Instrument reading for an assertion message — see CLAUDE.md rule 5. */
+function watchDump(watch: ProbeWatch): string {
+  return `[instrument] samples=${watch.samples} pixelReads=${watch.pixelReads} elapsedMs=${Math.round(watch.elapsedMs)}`;
+}
+
+/**
+ * PERMANENT INSTRUMENT LEG — the standing half of the #1987 negative control.
+ *
+ * CLAUDE.md: "When the fix is to the INSTRUMENT, negative-control it in BOTH
+ * directions, and make one of those a PERMANENT leg of the test."
+ *
+ * The readiness watcher can return `notReady: []` for two very different
+ * reasons: it looked and everything was ready, or it never got as far as
+ * looking at a picture. Those are the "frozen vs never looked" pair that the
+ * old `expect.poll` could not tell apart — and an empty list is the PASSING
+ * value, so nothing else here would notice the second case.
+ *
+ * So: a pass must be backed by at least one real pixel readback. This cannot
+ * go stale (it is a liveness floor on the instrument, not a count of anything)
+ * and it is the assertion that would have made #1987 legible on sight.
+ *
+ * The MOVING half of the control is not committed: perturbing the predicate to
+ * `delivered >= 999999` fails as expected and prints
+ * `samples=16 pixelReads=5 elapsedMs=5671` with both nodes' real readings —
+ * i.e. the loop demonstrably runs in the page, and the cheap worker-state gate
+ * demonstrably saves 11 of 16 readbacks.
+ */
+function expectInstrumentLooked(watch: ProbeWatch): void {
+  expect(
+    watch.pixelReads,
+    `the readiness watcher actually READ A PICTURE before passing — a pass with zero ` +
+      `pixel readbacks means the instrument never looked, which is indistinguishable ` +
+      `from a real pass in the notReady list alone. ${watchDump(watch)}`,
+  ).toBeGreaterThan(0);
+}
 test.describe('#1811 render-locus parity', () => {
   test('every renderLocus:\'worker\' module produces a live picture through the worker @webgl-smoke', async ({
     page,
@@ -298,39 +469,35 @@ test.describe('#1811 render-locus parity', () => {
     // frame before the fallback had painted, and reported "acidwarp RENDERS
     // BLACK".
     const types = roster.map((r) => r.type);
-    let last: ModuleProbe[] = [];
-    // #1905 — name the node that is stuck, and the STAGE it is stuck at, rather
-    // than leaving a timeout that says only "nobody painted". The thunk is
-    // evaluated at throw time so the diagnosis names an actual offender.
+    // #1993 — the readiness sweep accumulates IN THE PAGE and returns over ONE
+    // round trip. ⚠ Do NOT reintroduce an `expect.poll` here (see
+    // watchProbesUntilReady's header): a Playwright-side poll samples the GL
+    // subject over one CDP round trip per sample, on the same main thread it is
+    // measuring. This file's verified invariant is ZERO live Playwright-side
+    // poll call sites.
+    const watch = await watchProbesUntilReady(page, types, { timeoutMs: 60_000 });
+    const last: ModuleProbe[] = watch.probes;
+    // #1905 — name the node that is stuck and the STAGE it is stuck at, rather
+    // than leaving a list that says only "nobody painted". The thunk is
+    // evaluated at THROW time off the last probe pass the page took, so the
+    // diagnosis names an actual offender instead of a healthy sibling. It wraps
+    // the ASSERTIONS, not a sampling loop — the in-page shape above is
+    // untouched.
     await withHandshakeDiagnosis(
       page,
       () => last.find((p) => p.nonZeroFrac <= 0.02 || p.state === 'initialising')?.type ?? types[0]!,
-      () => expect
-      .poll(
-        async () => {
-          last = await probeAll(page, types);
-          return last
-            .filter(
-              (p) =>
-                !(
-                  p.nonZeroFrac > 0.02 &&
-                  (p.state === 'unsupported' || (p.state === 'active' && p.delivered >= 2))
-                ),
-            )
-            .map((p) => `${p.type}(${p.state},delivered=${p.delivered},nonBlack=${p.nonZeroFrac.toFixed(3)})`);
-        },
-        {
-          message:
-            'every worker-locus module has a picture at its OUTPUT and its worker has reached a ' +
+      async () => {
+        expect(
+          watch.notReady,
+          'every worker-locus module has a picture at its OUTPUT and its worker has reached a ' +
             'TERMINAL state: `active` with >=2 delivered bitmaps, or `unsupported` (CI ' +
             'SwiftShader, where the proxy falls back to the main thread — the documented ' +
             'degradation). `initialising` is deliberately NOT accepted: taking the fallback ' +
             'while the worker is still spinning up is how this spec passed without ever ' +
-            'exercising the worker.',
-          timeout: 60_000,
-        },
-      )
-      .toEqual([]),
+            `exercising the worker. ${watchDump(watch)}`,
+        ).toEqual([]);
+        expectInstrumentLooked(watch);
+      },
     );
 
     // ── the picture, per module ───────────────────────────────────────────────
@@ -450,28 +617,23 @@ test.describe('#1811 render-locus parity', () => {
       w.__renderLocusLeases = [vid.acquireRenderLease('out-0'), vid.acquireRenderLease('out-1')];
     });
 
-    let probes: ModuleProbe[] = [];
+    // #1993 in-page sampling (see above — no Playwright-side poll here either).
+    const watch = await watchProbesUntilReady(page, ['acidwarp#a', 'acidwarp#b'], {
+      timeoutMs: 60_000,
+    });
+    const probes: ModuleProbe[] = watch.probes;
+    // #1905 — attach the handshake diagnosis to the readiness assertions.
     await withHandshakeDiagnosis(
       page,
       () => probes.find((p) => p.nonZeroFrac <= 0.02 || p.state === 'initialising')?.type ?? 'acidwarp#a',
-      () => expect
-      .poll(
-        async () => {
-          probes = await probeAll(page, ['acidwarp#a', 'acidwarp#b']);
-          return probes.every(
-            (p) =>
-              p.nonZeroFrac > 0.02 &&
-              (p.state === 'unsupported' || (p.state === 'active' && p.delivered >= 2)),
-          );
-        },
-        {
-          message:
-            'both ACIDWARP nodes are painting AND their workers have reached a terminal state ' +
-            '(active with delivered bitmaps, or unsupported)',
-          timeout: 60_000,
-        },
-      )
-      .toBe(true),
+      async () => {
+        expect(
+          watch.notReady,
+          'both ACIDWARP nodes are painting AND their workers have reached a terminal state ' +
+            `(active with delivered bitmaps, or unsupported). ${watchDump(watch)}`,
+        ).toEqual([]);
+        expectInstrumentLooked(watch);
+      },
     );
 
     const [a, b] = probes;
