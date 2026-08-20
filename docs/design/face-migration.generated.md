@@ -39,7 +39,7 @@ author a `face` and rank the controls — no new platform capability.
 
 | module | domain | state | blockers |
 |---|---|---|---|
-| `4plexvid` | video | — | — |
+| `4plexvid` | video | done | — |
 | `acidwarp` | video | — | — |
 | `adsr` | audio | done | — |
 | `analogLogicMaths` | audio | done | — |
