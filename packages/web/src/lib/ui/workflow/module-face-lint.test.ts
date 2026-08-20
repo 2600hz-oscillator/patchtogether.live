@@ -469,6 +469,21 @@ describe('module-face lint — MOMENTARY pads (face.momentary)', () => {
    *  an id here ONLY after confirming against the module's DSP/card that the
    *  control latches; a press-pad goes on `face.momentary` instead. */
   const ACKNOWLEDGED_LATCHING = new Set<string>([
+    // B3NTB0X, 2026-08-19. The two kaleidoscope FOLDS, and they became visible
+    // to this gate the same way cloudseed's enables did: their `curve` was
+    // corrected `linear` → `discrete` when the face landed, because the shader
+    // hard-thresholds both (`if (uMirrorX > 0.5)`) so `linear` was always a
+    // lie and the faceplate would have painted a two-state fold as a
+    // continuous rotary. Pixel-neutral by construction — every value the card
+    // or the face can write already sat on the same side of that threshold.
+    //
+    // LATCHING, not momentary: the card's MIRROR X / MIRROR Y buttons flip a
+    // persisted state you leave engaged, and the `mirror_*_gate` CV inputs
+    // TOGGLE it on a rising edge rather than holding it. A momentary render
+    // would un-fold the picture the instant you let go, which is the opposite
+    // of the control.
+    'b3ntb0x:mirrorX',
+    'b3ntb0x:mirrorY',
     'kickdrum:hard',   // hard-clip mode switch — a bus state you leave engaged
     'snaredrum:hard',  // same clipper switch, the KICK sibling's precedent
     // CLOUDSEED, 2026-08-01. The five stage ENABLES that rest at 0. They only
