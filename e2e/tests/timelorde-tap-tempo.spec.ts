@@ -18,8 +18,25 @@
 
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch, type SpawnNode, type SpawnEdge } from './_helpers';
+// ⚠ THE MODULE'S OWN MATH, IMPORTED RATHER THAN RESTATED. `clampBpm` and
+// `median` are the exact functions `TapTempo` runs, and `TAP_HISTORY` is the
+// ring depth the eviction argument below depends on. Re-implementing any of the
+// three here would let this spec agree with a stale copy of the product while
+// the product changed underneath it.
+import {
+  TAP_HISTORY,
+  clampBpm,
+  median,
+} from '../../packages/web/src/lib/electra/tap-tempo';
 
 const TL = 'tl'; // explicit TIMELORDE node id (spawnPatch clears the rack first)
+
+/** The two tap tempi this spec contrasts, as PAGE-SIDE gaps in ms.
+ *  A clean 2x (100 vs 200 BPM) so the "faster locks higher" ordering has 300 ms
+ *  of headroom instead of the 125 ms that made it flake, and both land well
+ *  inside the module's 10-300 clamp. */
+const SLOW_GAP_MS = 600;
+const FAST_GAP_MS = 300;
 
 /** Read TIMELORDE's live `bpm` param from the patch store. */
 async function readBpm(page: Page, nodeId: string): Promise<number | null> {
@@ -50,18 +67,55 @@ async function selectTimelorde(page: Page, nodeId: string): Promise<void> {
   }).toPass({ timeout: 15000 });
 }
 
-/** Tap the TAP button N times with `gapMs` between presses. */
-async function tapButton(
+/**
+ * Tap the TAP button N times, `gapMs` apart, DRIVEN FROM INSIDE THE PAGE, and
+ * return the real `performance.now()` stamp of each tap.
+ *
+ * ⚠ WHY IN-PAGE, AND WHY IT RETURNS THE STAMPS (#1847 flake, root-caused).
+ * `tap()` timestamps with `performance.now()` AT HANDLER INVOCATION, so the
+ * interval this module measures is the wall-clock between two `onclick`s in the
+ * page. The previous driver produced that interval from the PLAYWRIGHT side —
+ * `waitForTimeout(gap)` then `locator.click()` — so every tap carried one CDP
+ * round trip of latency INTO the quantity under test, and on a loaded shard that
+ * latency is variable rather than constant. Driving the whole sequence in one
+ * `evaluate` removes the round trips from between the taps: the spacing is the
+ * page's own timer against the same clock the handler reads.
+ *
+ * ⚠ AND THE STAMPS ARE THE POINT, not a diagnostic. Returning them lets the
+ * assertions be DERIVED from the interval that actually happened instead of the
+ * one that was intended — which is what makes this leg immune to timing drift
+ * rather than merely less exposed to it. A slow runner then changes the input,
+ * not the verdict.
+ */
+async function tapInPage(
   page: Page,
   nodeId: string,
   n: number,
   gapMs: number,
-): Promise<void> {
-  const btn = page.locator(`[data-testid="timelorde-tap-${nodeId}"]`);
-  for (let i = 0; i < n; i++) {
-    if (i > 0) await page.waitForTimeout(gapMs);
-    await btn.click();
-  }
+): Promise<number[]> {
+  return page.evaluate(
+    async ({ id, count, gap }) => {
+      const btn = document.querySelector<HTMLButtonElement>(
+        `[data-testid="timelorde-tap-${id}"]`,
+      );
+      if (!btn) throw new Error(`TAP button for ${id} not found in page`);
+      const stamps: number[] = [];
+      for (let i = 0; i < count; i++) {
+        if (i > 0) await new Promise((r) => { setTimeout(r, gap); });
+        // Stamped immediately before the synchronous handler runs, so this
+        // tracks the handler's own `performance.now()` to well under a ms.
+        stamps.push(performance.now());
+        btn.click();
+      }
+      return stamps;
+    },
+    { id: nodeId, count: n, gap: gapMs },
+  );
+}
+
+/** The inter-tap intervals implied by a stamp list. */
+function intervalsOf(stamps: readonly number[]): number[] {
+  return stamps.slice(1).map((t, i) => t - stamps[i]!);
 }
 
 /** Press Space N times with `gapMs` between presses. */
@@ -89,25 +143,64 @@ test.describe('TIMELORDE tap tempo', () => {
     await expect(tap, 'TAP button present').toHaveCount(1);
     await expect(tap, 'TAP enabled with no external clock').toBeEnabled();
 
-    // Two taps lock the bpm to the tapped tempo — i.e. CHANGE it off the 50 spawn.
-    // We assert "changed + within clamp", NOT an absolute bpm: the gap is REAL
-    // wall-clock between Playwright clicks and CI click latency stretches it (the
-    // exact interval→BPM math is unit-tested in electra/tap-tempo.test.ts).
-    await tapButton(page, TL, 2, 500);
+    // ── 1. A 2-TAP LOCKS THE BPM TO THE INTERVAL THAT WAS ACTUALLY TAPPED ──
+    //
+    // ⚠ ASSERTED AGAINST THE MEASURED INTERVAL, NOT THE REQUESTED ONE, and that
+    // is the whole repair. The old version asserted only "changed off 50, inside
+    // the clamp" because it could not know what interval had really been tapped
+    // — the Playwright-side gap carried CDP latency into it. With the taps
+    // driven in-page the real interval comes back, and with two taps the module's
+    // math is exactly `clampBpm(60000 / interval)` (one interval, so the median
+    // is that interval). So this now proves the claim in the test's NAME —
+    // "locks the BPM to the tapped interval" — instead of proving it moved.
+    const slowStamps = await tapInPage(page, TL, 2, SLOW_GAP_MS);
+    const slowInterval = intervalsOf(slowStamps)[0]!;
     await expect
       .poll(() => readBpm(page, TL), { timeout: 3000, message: 'a 2-tap sets the bpm off the spawn' })
       .not.toBe(50);
     const bpmSlow = (await readBpm(page, TL))!;
-    expect(bpmSlow, 'tapped bpm within clamp').toBeGreaterThan(20);
-    expect(bpmSlow, 'tapped bpm within clamp').toBeLessThan(300);
+    expect(
+      bpmSlow,
+      `2-tap BPM (${bpmSlow}) should equal clampBpm(60000 / ${slowInterval.toFixed(1)} ms) `
+        + `= ${clampBpm(60000 / slowInterval).toFixed(3)} — units: BPM against a measured ms interval`,
+    ).toBeCloseTo(clampBpm(60000 / slowInterval), 1);
 
-    // Keep tapping FASTER (~375 ms gap) → re-locks to a HIGHER bpm than the slower
-    // tap. RELATIVE (faster gap ⇒ higher bpm), so it's immune to CI click latency
-    // (which stretches both the 500 ms and 375 ms gaps by the same amount).
-    await tapButton(page, TL, 4, 375);
+    // ── 2. TAPPING FASTER RE-LOCKS HIGHER ─────────────────────────────────
+    //
+    // ⚠ `TAP_HISTORY` TAPS, AND THE COUNT IS THE MECHANISM RATHER THAN A ROUND
+    // NUMBER. The module keeps a ring of the last `TAP_HISTORY` stamps, so
+    // tapping exactly that many times EVICTS the slow phase completely and the
+    // median is over fast intervals alone. The old version tapped 4 of a
+    // 5-deep ring, so the slow tap could still sit in the buffer — and whether
+    // it did depended on whether the ~2 s reset had fired, i.e. on how long the
+    // PRECEDING ASSERTIONS took. The subject of the comparison changed with
+    // runner speed, which is a property no amount of tolerance fixes.
+    //
+    // ⚠ AND THE CONTRAST IS WIDER ON PURPOSE. 500 vs 375 ms left 125 ms between
+    // the two phases, so ~125 ms of jitter on either side could invert the
+    // claim. 600 vs 300 is a clean 2x (100 vs 200 BPM, both well inside the
+    // 10-300 clamp), so the ordering survives far more drift than a loaded
+    // shard produces — and the derived assertion below does not depend on it.
+    const fastStamps = await tapInPage(page, TL, TAP_HISTORY, FAST_GAP_MS);
+    const fastMedian = median(intervalsOf(fastStamps));
     await expect
-      .poll(() => readBpm(page, TL), { timeout: 3000, message: 'a faster tap re-locks higher than the slower tap' })
-      .toBeGreaterThan(bpmSlow);
+      .poll(() => readBpm(page, TL), { timeout: 3000, message: 'a faster tap re-locks the bpm' })
+      .not.toBe(bpmSlow);
+    const bpmFast = (await readBpm(page, TL))!;
+    expect(
+      bpmFast,
+      `fast BPM (${bpmFast}) should equal clampBpm(60000 / median ${fastMedian.toFixed(1)} ms) `
+        + `= ${clampBpm(60000 / fastMedian).toFixed(3)} — intervals: `
+        + `[${intervalsOf(fastStamps).map((v) => v.toFixed(1)).join(', ')}] ms`,
+    ).toBeCloseTo(clampBpm(60000 / fastMedian), 1);
+
+    // The relative claim, kept because it is the one a PLAYER cares about —
+    // now a consequence of two derived facts rather than the only assertion.
+    expect(
+      bpmFast,
+      `faster taps must lock HIGHER: ${fastMedian.toFixed(1)} ms median vs `
+        + `${slowInterval.toFixed(1)} ms single interval`,
+    ).toBeGreaterThan(bpmSlow);
 
     expect(errors).toEqual([]);
   });
