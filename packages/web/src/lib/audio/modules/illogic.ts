@@ -212,44 +212,8 @@ export const illogicDef: AudioModuleDef = {
 
     hero: {
       control: 'att1_amount',
-      readouts: [
-        // THE TWO MIX BUSES' GAIN on a signal patched into every input at once
-        // — a join over all four dials that no single readback can perform, and
-        // they are each other's control: DIFF inverts the back half, so
-        // att3 −1 → +1 moves them in OPPOSITE directions.
-        //
-        // ⚠ `diff` READS ×0.00 AT THE SHIPPED DEFAULTS. The module leaves the
-        // factory with one of its two mix buses configured as a common-mode
-        // NULL, underneath four faders all sitting at maximum. That is the
-        // single most useful sentence this faceplate says.
-        { label: 'sum', valueId: 'illogic-sum-gain' },
-        { label: 'diff', valueId: 'illogic-diff-gain' },
-        // THE WORST CASE either bus reaches for full-scale ±1 inputs, Σ|aN|.
-        // SIGN-BLIND, which is exactly what the two above are not — so an
-        // inversion moves them and leaves this one still. ×4.00 at the
-        // defaults, on a bus whose convention is ±1: measured, a modest
-        // 0.9/0.9/0.6/0.4 stimulus already leaves the rail on 26.8 % of SUM's
-        // samples and 39.2 % of DIFF's.
-        { label: 'peak', valueId: 'illogic-bus-ceiling' },
-        // THE GAIN THE LOGIC BLOCK APPLIES — ×1.00, at every setting of every
-        // knob, because AND / NAND / OR / NOT threshold the RAW inputs. It is
-        // in the same row and the same units as the three above precisely so
-        // the module's biggest surprise is visible as a NUMBER rather than as
-        // prose the resting faceplate would not paint anyway.
-        { label: 'logic', valueId: 'illogic-logic-gain' },
-      ],
     },
 
-    // THE PICTURE. The one representation in which the readout above is obvious
-    // instead of surprising: the boolean taps visibly leave each input line
-    // UPSTREAM of its attenuverter triangle, on a separate, lighter path.
-    //
-    // A `custom` sidebar block rather than a `hero.cell` for the structural
-    // reason meowbox and noise both hit: `module-face-lint` refuses a PANEL
-    // cell selected at a lane tier and the 'full' cap is 6, so a panel's first
-    // legal rank is 7 — unreachable on a module with four keys. A sidebar block
-    // carries no `face.order` key and therefore no rank at all.
-    sidebar: [{ kind: 'custom', label: 'routing', panelId: 'illogic-routing' }],
   },
 
   docs: {

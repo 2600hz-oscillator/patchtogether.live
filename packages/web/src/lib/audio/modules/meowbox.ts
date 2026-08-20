@@ -246,66 +246,7 @@ export const meowboxDef: AudioModuleDef = {
     hero: {
       control: 'morph',
       action: 'meowbox-meow-{n}',
-      readouts: [
-        { label: 'formants', valueId: 'meowbox-formants' },
-        { label: 'settles',  valueId: 'meowbox-settled-hz' },
-        { label: 'tail',     valueId: 'meowbox-tail-s' },
-      ],
     },
-
-    sidebar: [
-      {
-        // THE FIVE ANCHORS, AS A REAL SELECTION. `morph` is a continuous fader
-        // over a five-entry table and every hand-set value is a crossfade between
-        // two of them, so these rows are the only way to land exactly ON one.
-        // Each writes `morph = k/4` through the ORDINARY param path (undoable,
-        // synced, immediately editable).
-        //
-        // ⚠ ONE PARAM PER ROW IS A COMPLETE RECALL HERE. `morph` is the ONLY
-        // input to all thirteen tables, so writing it recalls the whole anchor
-        // axis by construction; pitch/decay/level are orthogonal and are
-        // deliberately left where the player put them.
-        //
-        // ⚠ EVERY `note` IS DERIVED DATA, NOT PROSE — `F1_AT[i]`, `VOICED_AT[i]`
-        // and `DECAY_SCALE_AT[i]` through `meowboxAnchorNote`. Pinned by
-        // meowbox-face-model.test.ts, which parses the tables out of
-        // packages/dsp/src/meowbox.dsp and fails if any of the three drifts.
-        // Read the `tail ×` column down: the SAME decay dial is worth 0.7× at
-        // kitten and 2.0× at yowl, which is the fact the DECAY knob cannot state.
-        kind: 'presets',
-        label: 'the five anchors',
-        entries: [
-          { id: 'kitten', label: 'kitten', note: '700 Hz · 85 % voiced · tail ×0.7', values: { morph: 0 } },
-          { id: 'adult',  label: 'adult meow', note: '450 Hz · 85 % voiced · tail ×1.0', values: { morph: 0.25 } },
-          { id: 'purr',   label: 'purr',   note: '180 Hz · 60 % voiced · tail ×1.5', values: { morph: 0.5 } },
-          { id: 'yowl',   label: 'yowl',   note: '380 Hz · 80 % voiced · tail ×2.0', values: { morph: 0.75 } },
-          { id: 'hiss',   label: 'hiss',   note: '100 Hz · 15 % voiced · tail ×0.6', values: { morph: 1 } },
-        ],
-      },
-      {
-        // THE PICTURE. Three resonance peaks on a LOG frequency axis with the
-        // four source partials marked underneath, so "which harmonic is inside
-        // which formant" is visible — and each peak is drawn at its EFFECTIVE
-        // `a·Q` height, which is what turns the readout below into a shape.
-        // See the ⚠ on `face` above for why it is here and not `hero.cell`.
-        kind: 'custom',
-        label: 'formant bank',
-        panelId: 'formant-bank',
-      },
-      {
-        // REFERENCE, not performance — the hero strip is what you read while
-        // playing. Two of these three are pinned DEFECTS in the .dsp's comments
-        // rather than approved behaviour, and the model test fails the day either
-        // is made true.
-        kind: 'readouts',
-        label: 'derived',
-        entries: [
-          { label: 'peak gain F1·F2·F3', valueId: 'meowbox-formant-gain' },
-          { label: 'tremolo depth',      valueId: 'meowbox-tremolo' },
-          { label: 'mono-sum null',      valueId: 'meowbox-comb-null' },
-        ],
-      },
-    ],
 
     // REAR CARD curation. The three per-knob CVs need none — each one's
     // paramTarget files it under its own face page. GATE and PITCH have no

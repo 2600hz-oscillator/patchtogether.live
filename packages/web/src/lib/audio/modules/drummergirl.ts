@@ -180,79 +180,7 @@ export const drummergirlDef: AudioModuleDef = {
     // plain `scope` glyph band at the dock.
     hero: {
       control: 'shape',
-      // ⚠ ALL THREE ARE `valueId`, NOT `paramId`, AND THAT IS THE WHOLE POINT.
-      // Every one of these numbers is a function of SHAPE through the preset
-      // tables, and SHAPE's own readback (`0.30`) is blind to all three. A
-      // `paramId: 'pitch'` "starts at" readout would print `0 st` while the hit
-      // genuinely starts 48 semitones higher; a `paramId: 'decay'` "hit"
-      // readout would print `150 ms` at both shape 0.30 (186 ms) and shape 0.90
-      // (601 ms). Each derivation is negative-controlled on the knob a naive
-      // readout would follow — see drummergirl-face-model.test.ts.
-      readouts: [
-        { label: 'sweep',     valueId: 'drummergirl-sweep-depth' },
-        { label: 'starts at', valueId: 'drummergirl-start-hz' },
-        { label: 'hit',       valueId: 'drummergirl-hit-ms' },
-      ],
     },
-
-    sidebar: [
-      {
-        // THE UNBUNDLING, AS FIVE LIVE NUMBERS. One fader is claimed to move
-        // five independent quantities; this block is that claim made falsifiable
-        // — drag SHAPE and watch all five move, drag DECAY and watch none of
-        // them move. That second half is the negative control, and it is the
-        // reason this is a block of five rather than a sentence.
-        kind: 'readouts',
-        label: 'what SHAPE is doing',
-        entries: [
-          { label: 'preset',     valueId: 'drummergirl-shape-index' },
-          { label: 'attack',     valueId: 'drummergirl-attack-ms' },
-          { label: 'sustain',    valueId: 'drummergirl-sustain-db' },
-          { label: 'release',    valueId: 'drummergirl-release-ms' },
-          { label: 'sweep time', valueId: 'drummergirl-sweep-ms' },
-        ],
-      },
-      {
-        // THE 16 PRESETS, AS A REAL SELECTION. `shape` is a continuous fader
-        // over a 16-entry table, so landing exactly on a preset by hand is
-        // impossible — every hand-set value is a crossfade between two of them.
-        // Each row writes `shape = k/15`, the exact index, through the ORDINARY
-        // param path (undoable, synced, immediately editable).
-        //
-        // ⚠ ONE PARAM PER ROW IS A COMPLETE RECALL HERE, unlike kickdrum's
-        // 25-param voices. `shape` is the ONLY input to all five tables, so
-        // writing it recalls the whole preset axis by construction;
-        // tone/pitch/decay/volume are orthogonal to it and are deliberately left
-        // where the player put them.
-        //
-        // ⚠ EVERY `note` IS DERIVED DATA, NOT PROSE — `round(48 · sweepAt[i])`
-        // and `round(1000 · releaseAt[i])`. It is pinned by
-        // drummergirl-face-model.test.ts, which parses the tables out of
-        // packages/dsp/src/drummergirl.dsp and fails if either number drifts.
-        // Read rows 4, 5 and 6 together: `0 st` three times in a row is the
-        // dead zone the shipped default sits in the middle of.
-        kind: 'presets',
-        label: 'shape presets',
-        entries: [
-          { id: 'shape-0', label: '0', note: '48 st · 100 ms', values: { shape: 0 / 15 } },
-          { id: 'shape-1', label: '1', note: '41 st · 100 ms', values: { shape: 1 / 15 } },
-          { id: 'shape-2', label: '2', note: '29 st · 120 ms', values: { shape: 2 / 15 } },
-          { id: 'shape-3', label: '3', note: '24 st · 100 ms', values: { shape: 3 / 15 } },
-          { id: 'shape-4', label: '4', note: '0 st · 20 ms', values: { shape: 4 / 15 } },
-          { id: 'shape-5', label: '5', note: '0 st · 50 ms', values: { shape: 5 / 15 } },
-          { id: 'shape-6', label: '6', note: '0 st · 100 ms', values: { shape: 6 / 15 } },
-          { id: 'shape-7', label: '7', note: '34 st · 120 ms', values: { shape: 7 / 15 } },
-          { id: 'shape-8', label: '8', note: '38 st · 150 ms', values: { shape: 8 / 15 } },
-          { id: 'shape-9', label: '9', note: '29 st · 180 ms', values: { shape: 9 / 15 } },
-          { id: 'shape-10', label: '10', note: '19 st · 150 ms', values: { shape: 10 / 15 } },
-          { id: 'shape-11', label: '11', note: '0 st · 200 ms', values: { shape: 11 / 15 } },
-          { id: 'shape-12', label: '12', note: '0 st · 180 ms', values: { shape: 12 / 15 } },
-          { id: 'shape-13', label: '13', note: '0 st · 400 ms', values: { shape: 13 / 15 } },
-          { id: 'shape-14', label: '14', note: '0 st · 500 ms', values: { shape: 14 / 15 } },
-          { id: 'shape-15', label: '15', note: '0 st · 600 ms', values: { shape: 15 / 15 } },
-        ],
-      },
-    ],
   },
 
   docs: {

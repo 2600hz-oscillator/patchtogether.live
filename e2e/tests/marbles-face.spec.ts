@@ -110,124 +110,27 @@ async function setParams(
   );
 }
 
-/** One hero readout, by its registered `valueId`. */
-const hero = (dock: Locator, valueId: string): Locator =>
-  dock.locator(`[data-hero-readout="${valueId}"] dd`);
-
-/** One SIDEBAR readout, by its LABEL.
- *
- * ⚠ THE ATTRIBUTE IS THE LABEL, NOT THE `valueId` — `FaceSidebar` emits
- * `data-side-readout={r.paramId ?? r.label}`, unlike the hero, which emits the
- * `valueId`. That is why this face's two loop rows are labelled `T loop` and
- * `X loop` rather than `loop` twice: two blocks sharing a label would collide
- * on one selector. The sidebar also renders OUTSIDE the ModuleShell
- * (DockFullView owns the grid), so it is scoped to the dock pane. */
-const side = (page: Page, label: string): Locator =>
-  page.getByTestId('dock-full-view').locator(`[data-side-readout="${label}"] dd`);
 
 test.describe('marbles face — the values that carry a faceplate with no prose', () => {
-  test('T/X RANDOM is non-monotone: 1.0 reads like 0.0, and the middle is the extreme', async ({
-    page,
-  }) => {
-    await gotoShell(page);
-    const id = await spawnMarbles(page);
-    const dock = await openDock(page, id);
-
-    // 1 · AT THE SHIPPED DEFAULT. A fresh spawn has NO stored params —
-    // `node.params` is a sparse overlay — so this also proves the def-default
-    // fallback in `marblesFaceParams` is wired, not just the live read.
-    await expect(hero(dock, 'marbles-t-random')).toHaveText(marblesRandomText(0));
-    await expect(hero(dock, 'marbles-x-random')).toHaveText(marblesRandomText(0));
-    await expect(hero(dock, 'marbles-bpm')).toHaveText(marblesBpmText(at()));
-    await expect(hero(dock, 'marbles-step')).toHaveText(marblesStepText(at()));
-
-    const readTRandom = () => hero(dock, 'marbles-t-random').textContent();
-    const atZero = await readTRandom();
-
-    // 2 · THE MIDDLE IS THE EXTREME. `p = (2·dv − 1)²` is 0 at the lock.
-    await setParams(page, id, { deja_vu: 0.5, x_deja_vu: 0.5 });
-    await expect(hero(dock, 'marbles-t-random')).toHaveText(marblesRandomText(0.5));
-    await expect(hero(dock, 'marbles-x-random')).toHaveText(marblesRandomText(0.5));
-    const atHalf = await readTRandom();
-    expect(atHalf, 'the lock must not read the same as free').not.toBe(atZero);
-
-    // 3 · THE PROPERTY A MONOTONE IMPLEMENTATION CANNOT HAVE. At the TOP of the
-    // knob the value returns to its BOTTOM reading. A readout that scaled with
-    // the knob would print its maximum here and its minimum at step 1.
-    await setParams(page, id, { deja_vu: 1, x_deja_vu: 1 });
-    await expect(hero(dock, 'marbles-t-random')).toHaveText(marblesRandomText(1));
-    expect(
-      await readTRandom(),
-      'DÉJÀ VU 1 and DÉJÀ VU 0 are equally disordered — that IS this module',
-    ).toBe(atZero);
-
-    // 4 · AND IT COMES BACK DOWN, so a value that only ever grew cannot pass.
-    await setParams(page, id, { deja_vu: 0.5 });
-    await expect(hero(dock, 'marbles-t-random')).toHaveText(marblesRandomText(0.5));
-  });
-
-  test('the LOOP readout refuses to print a length it cannot honour', async ({ page }) => {
-    await gotoShell(page);
-    const id = await spawnMarbles(page);
-    const dock = await openDock(page, id);
-
-    // At the shipped DÉJÀ VU 0, LENGTH is BIT-EXACTLY inert (asserted against
-    // the real DSP in marbles-face-model.test.ts), so the faceplate must not
-    // advertise it. `8` is the def default and would be the wrong answer.
-    await expect(side(page, 'T loop')).toHaveText('free');
-    await expect(side(page, 'T loop')).not.toHaveText(/\d/);
-
-    // Moving LENGTH alone changes NOTHING, because there is no loop to be that
-    // long — the same invariance the DSP has.
-    await setParams(page, id, { length: 3 });
-    await expect(side(page, 'T loop')).toHaveText('free');
-
-    // Open the loop and the length appears — so the clause above is a real
-    // condition and not a hard-coded string.
-    await setParams(page, id, { deja_vu: 0.5 });
-    await expect(side(page, 'T loop')).toHaveText(marblesLoopText(0.5, 3));
-    await expect(side(page, 'T loop')).toHaveText('3 steps');
-  });
-
-  test('GLIDE and QUANTISER read 0 % / off together — the gap the module ships in', async ({
-    page,
-  }) => {
-    await gotoShell(page);
-    const id = await spawnMarbles(page);
-    const dock = await openDock(page, id);
-
-    // THE SHIPPED STATE: the portamento has ended (STEPS 0.49) and the
-    // quantiser has not started (STEPS 0.536), so both halves of that dial are
-    // doing nothing at its default of 0.50, and SCALE has nothing to act on.
-    await expect(side(page, 'glide')).toHaveText('0 %');
-    await expect(side(page, 'quantiser')).toHaveText('off');
-    await expect(side(page, 'scales')).toHaveText('1 of 6');
-
-    // BELOW the gap it is a portamento…
-    await setParams(page, id, { steps: 0 });
-    await expect(side(page, 'glide')).toHaveText(marblesGlideText(at({ steps: 0 })));
-    await expect(side(page, 'glide')).not.toHaveText('0 %');
-    await expect(side(page, 'quantiser')).toHaveText('off');
-
-    // …and ABOVE it a quantiser, with the glide gone.
-    await setParams(page, id, { steps: 0.79 });
-    await expect(side(page, 'glide')).toHaveText('0 %');
-    await expect(side(page, 'quantiser')).toHaveText(
-      marblesQuantiserText(at({ steps: 0.79 })),
-    );
-    await expect(side(page, 'quantiser')).toHaveText('7 of 12');
-    await expect(side(page, 'scales')).toHaveText('6 of 6');
-
-    // ⚠ AND THE `scales` VALUE MUST NOT MOVE WITH `scale` — it counts how many
-    // of the six DIFFER at this STEPS, which is a property of the quantiser
-    // level and not of the selection. A readout wired to the selected scale
-    // would change here.
-    await setParams(page, id, { scale: 4 });
-    await expect(side(page, 'scales')).toHaveText('6 of 6');
-    await expect(side(page, 'quantiser')).toHaveText(
-      marblesQuantiserText(at({ steps: 0.79, scale: 4 })),
-    );
-  });
+  // ⚠ THREE READOUT TESTS STOOD HERE AND ALL THREE ARE DELETED WITH THEIR
+  // SURFACE (owner ruling, 2026-08-19 — the hero strip and the dock sidebar are
+  // both gone). Naming them, because each carried a real finding that no longer
+  // has anywhere to be shown:
+  //
+  //   * "T/X RANDOM is non-monotone" — DÉJÀ VU's travel prints p = (2·dv − 1)²,
+  //     so 1.0 reads like 0.0 and the MIDDLE of the dial is the extreme. That is
+  //     the whole reason the readout existed rather than a dial readback.
+  //   * "the LOOP readout refuses to print a length it cannot honour" — at the
+  //     shipped DÉJÀ VU 0, LENGTH is bit-exactly inert, so the face printed
+  //     'free' rather than the def default of 8.
+  //   * "GLIDE and QUANTISER read 0 % / off together" — the shipped state sits
+  //     in the dead gap between STEPS 0.49 and 0.536, so both halves of that
+  //     dial do nothing at its default.
+  //
+  // ⚠ THE ARITHMETIC SURVIVES in marbles-face-model.test.ts (unit lane, with
+  // its own negative controls). What is gone is the JOIN — nothing now asserts
+  // that any of those three facts reaches a surface a player can see, because
+  // no such surface remains. Stated rather than quietly absorbed.
 
   test('the two GRID cells show NAMES, not 0.00…5.00, and CLUSTERS says what it runs as', async ({
     page,
@@ -254,17 +157,19 @@ test.describe('marbles face — the values that carry a faceplate with no prose'
     await setParams(page, id, { scale: 4 });
     await expect(scale).toContainText(MARBLES_SCALE_NAMES[4]);
 
-    // THE STUB. `t_model` 1 is named CLUSTERS and the DSP runs the COIN
-    // generator for it — a two-line commented fall-through in marbles-core. The
-    // faceplate refuses to paint it as its own model.
-    await setParams(page, id, { t_model: 1 });
-    await expect(side(page, 'model')).toHaveText(
-      marblesModelText(at({ t_model: 1 })),
-    );
-    await expect(side(page, 'model')).toHaveText(/CLUSTERS.*COIN/);
-    // NEGATIVE CONTROL: a model that IS implemented prints its bare name.
-    await setParams(page, id, { t_model: 2 });
-    await expect(side(page, 'model')).toHaveText(MARBLES_T_MODEL_NAMES[2]);
+    // ⚠ THE STUB FINDING LOST ITS SURFACE HERE, and it is worth naming because
+    // it is a live DEFECT rather than a nicety: `t_model` 1 is called CLUSTERS
+    // but the DSP runs the COIN generator for it (a two-line commented
+    // fall-through in marbles-core). The face used to say so through a sidebar
+    // readout printing `CLUSTERS … COIN`, with a negative control on an
+    // implemented model printing its bare name. The sidebar is deleted (owner,
+    // 2026-08-19), so the module now presents CLUSTERS as though it were
+    // implemented and nothing on any surface contradicts that.
+    //
+    // `marblesModelText` still computes the disclosure and is still pinned in
+    // marbles-face-model.test.ts; it simply has no renderer. That is a real
+    // regression in what the instrument TELLS you, caused by the ruling and
+    // recorded here rather than lost.
   });
 
   test('THE FACEPLATE CARRIES NO SENTENCES — bare values and plain band labels', async ({
@@ -293,16 +198,28 @@ test.describe('marbles face — the values that carry a faceplate with no prose'
     }
 
     // EVERY READOUT IS A VALUE, NOT A CLAUSE. The longest legitimate value on
-    // this face is `DC -5.00 V` (10 characters) — anything sentence-shaped is
-    // longer and contains a verb or an em-dash.
-    const values = await dock
-      .getByTestId('face-hero-readouts')
-      .locator('dd')
-      .allTextContents();
-    expect(values.length).toBe(4);
-    for (const v of values) {
-      expect(v.trim().length, `hero readout "${v}" must be a bare value`).toBeLessThanOrEqual(16);
-      expect(v, `hero readout "${v}" must not be a sentence`).not.toMatch(/—|,\s/);
+    // ⚠ THE SECOND HALF USED TO READ THE HERO READOUT STRIP, and it is
+    // RE-POINTED rather than deleted, because this test enforces the owner's
+    // rule directly and the rule got STRONGER, not weaker: the strip is gone
+    // entirely (2026-08-19), so the surviving question is whether the text that
+    // remains on the faceplate is still nothing but names.
+    //
+    // The subject is now every CONTROL CAPTION — the one text role a resting
+    // faceplate is allowed besides band labels — asserted the same way: a
+    // caption is a NAME, so it is short and carries no clause punctuation.
+    await expect(
+      dock.getByTestId('face-hero-readouts'),
+      'the hero readout strip is deleted platform-wide, not merely empty here',
+    ).toHaveCount(0);
+
+    const captions = await dock.locator('[data-cell-key] .label').allTextContents();
+    expect(
+      captions.length,
+      'the sweep found no control captions — it would pass vacuously',
+    ).toBeGreaterThan(0);
+    for (const c of captions) {
+      expect(c.trim().length, `control caption "${c}" must be a bare name`).toBeLessThanOrEqual(16);
+      expect(c, `control caption "${c}" must not be a sentence`).not.toMatch(/—|,\s/);
     }
   });
 });

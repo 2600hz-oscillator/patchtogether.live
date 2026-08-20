@@ -198,13 +198,6 @@ const REGISTRY_BOUNDARIES: readonly RegistryBoundary[] = [
       'shell-cells.test.ts (spec shape; a panel/action must declare an operability probe) + module-face-lint (panel tier rules, inert-cell coverage) + the faces-parity e2e.',
   },
   {
-    file: 'workflow/face-readout-values.ts',
-    why:
-      'The derived-readout registry — face hero/sidebar valueIds resolve here to pure per-module derivations, which live beside the module code they read (their def imports are co-location, not shell coupling).',
-    coveredBy:
-      'module-face-lint (every declared valueId is registered; totality) + the per-module <mod>-face-model.test.ts negative controls.',
-  },
-  {
     file: 'workflow/shell-param-writes.ts',
     why:
       'The PF-13 param-write-override registry — maps one (module type, param) pair to a replacement durable writer (a MACRO commit like cloudseed preset recall), so the redirect is declared here instead of branching inside ModuleShell.',

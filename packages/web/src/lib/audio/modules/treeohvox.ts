@@ -213,13 +213,6 @@ export const treeohvoxDef: AudioModuleDef = {
       'tune',
     ],
     glyph: 'scope',
-    hero: {
-      readouts: [
-        { label: 'rest', valueId: 'treeohvox-rest-hz' },
-        { label: 'sweep top', valueId: 'treeohvox-peak-hz' },
-        { label: 'accent top', valueId: 'treeohvox-accent-peak-hz' },
-      ],
-    },
     pages: [
       {
         id: 'filter',

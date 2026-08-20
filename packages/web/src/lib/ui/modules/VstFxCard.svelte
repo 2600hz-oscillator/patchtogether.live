@@ -32,7 +32,7 @@
   <ModuleTitle {id} {data} defaultLabel="VST FX" />
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
-    <VstBridgePanel {id} kinds={['effect', 'musicEffect']} sendPlanes={true} {sampleRate} />
+    <VstBridgePanel {id} {node} kinds={['effect', 'musicEffect']} sendPlanes={true} {sampleRate} />
   </PatchPanel>
 </div>
 

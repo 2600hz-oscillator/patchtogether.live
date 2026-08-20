@@ -21,7 +21,6 @@ import {
   treeohvoxRestHz,
   treeohvoxRestText,
 } from './treeohvox-face-model';
-import { faceReadoutValueFor } from '$lib/ui/workflow/face-readout-values';
 
 function reader(patch: Readonly<Record<string, number>> = {}) {
   return (paramId: string): number | undefined => {
@@ -57,12 +56,6 @@ describe('treeohvox sweep readouts: the DEFAULTS, and what the dial claims inste
     expect(treeohvoxRestText(reader())).toBe('533 Hz');
     expect(treeohvoxPeakText(reader())).toBe('3.76 kHz');
     expect(treeohvoxAccentPeakText(reader())).toBe('5.31 kHz');
-  });
-
-  it('every declared valueId resolves in the registry', () => {
-    for (const r of treeohvoxDef.face?.hero?.readouts ?? []) {
-      expect(faceReadoutValueFor(r.valueId!), `unregistered ${r.valueId}`).toBeTruthy();
-    }
   });
 });
 

@@ -394,28 +394,6 @@ export const outlinesDef: VideoModuleDef = {
     // disappears in a promotion with no argument is exactly what STOP 2 exists
     // to catch.
 
-    // FOUR readouts. None of them is a JOIN — each is a pure function of one
-    // param — and each earns its place for a different reason: ITS MAPPING IS
-    // DISCONTINUOUS WHERE THE DIAL IS NOT. `rate` steps from "no clock at all"
-    // to 3996.50 ms across a thousandth of a turn; `decay = 0` is a MODE
-    // (persist forever) rather than a duration, and the DEFAULT SITS EXACTLY ON
-    // IT, so a face printing "0.0 s" would be actively lying; `shape` bands six
-    // ways at 0.166667, so two visually identical dials are two shapes.
-    //
-    // ⚠ SHAPE and SPIN are a PARITY REQUIREMENT, not an addition — the card
-    // already prints both, and promotion deletes the card. The spin one is
-    // CORRECTED rather than reproduced: the card applies a ±0.02 deadband that
-    // `mapAngularVel` does not have, so it prints "no spin" while the field
-    // turns a full revolution every 12.5 s. This face asks the sim's own
-    // function instead.
-    hero: {
-      readouts: [
-        { label: 'shape', valueId: 'outlines-shape' },
-        { label: 'every', valueId: 'outlines-spawn' },
-        { label: 'life', valueId: 'outlines-decay' },
-        { label: 'spin', valueId: 'outlines-spin' },
-      ],
-    },
   },
 
   docs: {

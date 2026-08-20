@@ -209,52 +209,8 @@ export const noiseDef: AudioModuleDef = {
     // sidebar — the meowbox route, at the far end of the same constraint.
     hero: {
       control: 'level',
-      readouts: [
-        { label: 'white', valueId: 'noise-white-db' },
-        { label: 'pink', valueId: 'noise-pink-db' },
-        { label: 'brown', valueId: 'noise-brown-db' },
-      ],
     },
 
-    // TWO BLOCKS. A chain diagram was drafted here and cut after looking at
-    // the render — it was four stages of the same straight line, three times
-    // over, and it cost ~130 px of sidebar on a ONE-CONTROL module. The whole
-    // block kind has since been removed for the more basic reason (nothing
-    // verified any of them against the DSP), so there is no third block to
-    // reconsider.
-    sidebar: [
-      {
-        // THE PICTURE: the three spectra relative to white on a log ruler, over
-        // a level ladder at the live LEVEL. See sidebar-panels.ts for why it is
-        // a sidebar block and not a hero cell, and NoiseTapsPanel for why it is
-        // drawn from the generators' coefficients rather than traced off an
-        // analyser (this module is free-running; a trace would never baseline).
-        kind: 'custom',
-        label: 'the three taps',
-        panelId: 'noise-taps',
-      },
-      {
-        // SIX FIXED FACTS — every one a constant of the design rather than a
-        // live value, which is exactly what a `text` readout is for. The three
-        // LIVE numbers are the hero's, because they are the ones LEVEL moves.
-        //
-        // ⚠ THE CORNER CARRIES ITS SAMPLE RATE, and that is not pedantry: it is
-        // 70.5 Hz at 44.1 k and 153.6 Hz at 96 k. A `valueId` readout cannot
-        // print the live one — `FaceReadoutValue` is `(read) => string` and
-        // gets no rate — so printing a bare "77 Hz" would be silently wrong on
-        // every other interface. Stated with its condition instead.
-        kind: 'readouts',
-        label: 'the tables',
-        entries: [
-          { label: 'the three', text: 'parallel · never summed' },
-          { label: 'brown −3 dB at', text: '77 Hz · 48 kHz' },
-          { label: 'vs white', text: 'brown −7.1 · pink −12.3 dB' },
-          { label: 'brown peak', text: 'past 0 dBFS from LEVEL 0.78' },
-          { label: 'lane meter', text: 'reads WHITE only' },
-          { label: 'each table', text: '2 s, new per spawn' },
-        ],
-      },
-    ],
   },
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {

@@ -28,7 +28,6 @@ import {
   swolevcoShapeText,
 } from './swolevco-face-model';
 import { swolevcoDef } from '$lib/audio/modules/swolevco';
-import { faceReadoutValueFor } from '$lib/ui/workflow/face-readout-values';
 
 /** A reader over an explicit patch. Anything unset falls through to the def's
  *  own default, exactly like a fresh `node.params` overlay. */
@@ -223,40 +222,5 @@ describe('swolevco readouts — TOTALITY (they run on every render)', () => {
         expect(fn(P(patch)), JSON.stringify(patch)).not.toMatch(/NaN|Infinity|undefined/);
       }
     }
-  });
-});
-
-describe('swolevco readouts — REGISTERED, and reached through the shell seam', () => {
-  // ANCHORED TO THE ARTIFACT: the face declares these three ids, so a rename on
-  // either side is RED rather than a silently blank readout.
-  const DECLARED = ['swolevco-mod-hz', 'swolevco-mod-lock', 'swolevco-shape'] as const;
-
-  it('the ids the face declares are exactly the ids registered for it', () => {
-    const onFace = (swolevcoDef.face?.hero?.readouts ?? [])
-      .map((r) => r.valueId)
-      .filter((v): v is string => typeof v === 'string')
-      .sort();
-    expect(onFace).toEqual([...DECLARED].sort());
-  });
-
-  it('each resolves through face-readout-values and returns the model\'s own answer', () => {
-    for (const id of DECLARED) {
-      const fn = faceReadoutValueFor(id);
-      expect(fn, `${id} must be registered`).toBeTruthy();
-    }
-    expect(faceReadoutValueFor('swolevco-mod-hz')!(reader())).toBe(swolevcoModHzText(P()));
-    expect(faceReadoutValueFor('swolevco-mod-lock')!(reader())).toBe(swolevcoLockText(P()));
-    expect(faceReadoutValueFor('swolevco-shape')!(reader())).toBe(swolevcoShapeText(P()));
-  });
-
-  it('the seam is LIVE — a param change reaches the registered function', () => {
-    // Negative control on the REGISTRY, not just the model: if the registry
-    // entry were wired to a constant, the two legs above would still pass.
-    const at = (patch: Record<string, number>, id: (typeof DECLARED)[number]) =>
-      faceReadoutValueFor(id)!(reader(patch));
-    expect(at({ ratio: 0 }, 'swolevco-mod-lock')).toBe('free-run');
-    expect(at({ ratio: 2 }, 'swolevco-mod-lock')).toBe('x2.00');
-    expect(at({ symmetry: 0 }, 'swolevco-shape')).toBe('saw');
-    expect(at({ ratio: 0, mod_tune: 36 }, 'swolevco-mod-hz')).toBe('2.09 kHz');
   });
 });

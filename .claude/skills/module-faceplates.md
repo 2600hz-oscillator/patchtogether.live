@@ -1,6 +1,6 @@
 ---
 name: module-faceplates
-description: Author a PF-20 dock FACEPLATE for an audio module and promote it to STRICT_FACES — the platform contract (what paints and what does not), the two STOP checks before promoting, derived readouts, ACTION probes, band packing, every gate by name, the shared registries a face collides on, and the per-module batch checklist. Use whenever adding/reworking a module `face`, promoting to STRICT_FACES, or debugging a dock faceplate.
+description: Author a PF-20 dock FACEPLATE for an audio module and promote it to STRICT_FACES — the platform contract (what paints and what does not, including the resting-text ruling that deleted the sidebar and the hero readout strip), the two STOP checks before promoting, ACTION probes, band packing, every gate by name, the shared registries a face collides on, and the per-module batch checklist. Use whenever adding/reworking a module `face`, promoting to STRICT_FACES, or debugging a dock faceplate.
 ---
 
 # Authoring a module FACEPLATE (PF-20) and promoting it
@@ -42,13 +42,13 @@ module that does not work is a prettier broken module.
 `noise` (`lib/audio/modules/noise.ts:60-68`): `inputs: []`, three outputs, and
 **one** param. `faceTierCap` (`curated-face.ts:76`) gives mini 1 / compact 2–3 /
 plate 6 / dock all — with one control every tier renders the identical single
-knob, and `face.hero`, `face.pages`, band packing and the sidebar all have
+knob, and `face.hero`, `face.pages` and band packing all have
 nothing to organise. A face there is pure churn: 2 new VRT baselines per
 platform, a faces-parity row, a Push-card tier change, and zero user-visible
 gain.
 
 Refuse when **all** of these hold: ≤2 params, no control families, no
-`node.data`-backed affordances, no derived quantity worth a readout. When in
+`node.data`-backed affordances. When in
 doubt, write the one-paragraph "what is it FOR" (audit step 2) — if it does not
 produce a ranking argument, there is nothing to rank.
 
@@ -96,10 +96,9 @@ the gate.**
 | a band LABEL is suppressed only when TABBED | same | `label: opts.tabbed ? '' : …` — the rail already says it. The two suppressions are INDEPENDENT; coupling them was a real bug. |
 | annotations are per-node + local | `annotate-mode.svelte.ts:20-30` | never synced to Yjs |
 | **no type/description text on a card** | owner quote, `dock-faceplate-model.ts:69-81` | *"no 'voice' etc section, no text on the module… the name of the module as text is fine, it's the type/description text that needs to go away."* |
-| readouts are a **row BELOW the hero**, full width | `ModuleShell.svelte:1010-1019`, CSS `:1464` | owner 2026-08-02: *"this row of controls should be below the graphic"*. They were a column beside it and competed with the picture for width. |
+| **no readout row, and no sidebar** | `ModuleShell.svelte` hero rail, `DockFullView.svelte` `.page` | owner 2026-08-19. The resting faceplate paints NO derived-state text in any shape — see the ⛔ section below and `face-resting-text-source.test.ts`. |
 | a `hero.cell` **suppresses the shell glyph at the dock** | `ModuleFaceHero` doc, `graph/types.ts:698-703` | painting both put an empty black rectangle beside the graph on a silent rack. Untouched at every other tier. |
 | `hero.cell/control/action` **MOVE** a key, never duplicate | `heroFacePlan`, `dock-faceplate-model.ts:276` | a duplicate emits a second `control-<paramId>` and fails faces-parity's exact multiset. `heroFacePlanIsTotal` (`:336`) pins the move. The key must already be claimed by a band. |
-| a `FaceReadoutValue` sees **ONLY params** | `face-readout-values.ts:83` | `(read: (paramId) => number \| undefined) => string`. `node.data` is structurally unreachable — five of six specced samsloop readouts were underivable for this reason. |
 | tier caps are GEOMETRY, not an authored ladder | `curated-face.ts:62-79` | mini 1 · compact 2 with a glyph / 3 without · plate 6 · dock all. **Ranks 1–6 are the entire lane budget; rank 7+ is dock-only.** |
 | ≥7 bands ⇒ TAB RAIL | `dock-tabs-model.ts:56,72` | `DOCK_TAB_MIN_BANDS = 7`. A tabbed face never packs rows and prints no band hints where the rail names them. |
 
@@ -222,34 +221,53 @@ bands, in order — `module-face-lint` runs it over every faced module.
 
 ---
 
-## Derived readouts — the one thing that is NOT a knob relabelled
+## ⛔ DERIVED READOUTS ARE DELETED — and so is the whole sidebar
 
-`FaceReadout` declares **exactly one** of `paramId` / `valueId` / `text`
-(`graph/types.ts:680-691`). Reach for `valueId` whenever the number the mock
-prints is not any single knob.
+**Owner ruling, 2026-08-19. Do not author either. There is nothing to migrate
+to.** Both mechanisms are removed from the platform, not deprecated:
 
-**The canonical trap** (`face-readout-values.ts:12-30`): kick drum's TAIL. The
-nearest knob is SUB DEC (450 ms). It moves when you turn SUB DEC. It looks
-right. It is **invariant to SUB LEVEL**, which genuinely shortens the tail, and
-the true answer at the def defaults is **398 ms**. A reviewer checking "does it
-move when I turn the decay knob" gets a green.
+- **`face.sidebar`** — the right-hand context column, all three kinds
+  (`presets`, `readouts`, `custom` panels). *"this should go away and we reclaim
+  the vertical space. I DO NOT WANT THESE RIGHT HAND TEXT AREAS I DO NOT WANT
+  EXTRA TEXT. i explicitly already dictated that several times."*
+- **`face.hero.readouts`** — the labelled strip under the hero. *"you don't need
+  to have the out-silent text at all … we absolutely have to stop doing shit
+  like that. i said minimal, and good use of screen real estate."* (#1957)
 
-**The bar for adding one — non-negotiable:** a derived readout is
-negative-controlled on the input a knob readback would be BLIND to,
-**permanently**, in a per-module `<mod>-face-model.test.ts`. Not once at
-authoring time. Working examples and their controls:
+`FaceReadout`, `FacePreset`, `FaceSidebarBlock`, `sidebarPlan`, `readoutText`,
+the preset arithmetic, `sidebar-panels.ts`, `face-readout-values.ts`,
+`FaceSidebar.svelte` and the nine sidebar panel components are all gone.
 
-- `clap-voice-ms`: 170 ms at SNAP 0.5, 40 ms at SNAP 1 — while `tail` reads 150
-  at both (`clap-face-model.test.ts`).
-- `clap-q` is TONE-invariant, `clap-bandwidth-hz` is not — publishing both is the
-  instrument's own negative control.
-- `drummergirl-*`: DECAY must move **none** of the five, because
-  `drummergirl.dsp:69` contains no `decayKnob` at all.
-- `sixstrum-ring-t60`: hold RING at 10 s, sweep MATERIAL to 0 → collapses to
-  775 ms while the dial still says 10.
+**THE RULE, and it is a SHAPE rather than a mechanism:** the resting faceplate
+paints no derived-state text. The permitted resting text is exhaustively the
+module NAME (dock title bar), TAB/SECTION labels, CONTROL CAPTIONS, and
+OPTION/LANDMARK NAMES that disambiguate a control's own position. A value, a
+measurement, a state word or a sentence has no place — its home is
+`aria-valuetext` on the control it describes.
 
-Also assert TOTALITY (fresh node / NaN / ±Infinity) — the function runs on every
-render, so a throw takes the faceplate down mid-drag (`face-readout-values.ts:80`).
+⚠ **Three separate mechanisms have now passed the letter of a prior gate while
+violating this** (the resting decimal under a dial → the sidebar `readouts`
+block → the hero strip). That is why the gate,
+`face-resting-text-source.test.ts`, enumerates the PERMITTED ROLES and denies
+everything else: adding any new `ModuleFace` field means writing down which
+permitted role its text plays, and a field with no entry is RED on the type
+alone, before any module adopts it.
+
+**What was genuinely lost, so nobody re-derives it as a fresh idea:** kick
+drum's TAIL really is 398 ms rather than the 450 ms SUB DEC knob; resofilter's
+five modes really do collapse to three distinct PEAK/WIDTH pairs; marbles'
+CLUSTERS model really does run the COIN generator. Those derivations are still
+pinned in the `<mod>-face-model.test.ts` unit lane — they simply have no
+renderer, and the owner has ruled that they should not get one. **Do not propose
+a "compact" or "hover" version; "there but hidden" was refused by name.**
+
+⚠ **The eight `custom` sidebar PANELS were pictures, not text** (a filter
+response curve, illogic's routing map, analogLogicMaths' transfer curve — that
+face's only picture, since its `glyph` is `'none'`). They went with the column
+because keeping it alive for eight modules would leave the mechanism standing.
+There is no in-face home for them today: a PF-14 panel cell's first legal rank
+is 7 and these modules have too few rankable keys to reach it. That gap is
+filed, not faked.
 
 ## ACTION cells REQUIRE a probe
 
@@ -305,9 +323,7 @@ extension is its LAST rung — reach for the earlier ones first:
 2. **A PF-14 `panel` cell** — ONE picture-you-edit *inside* the generic face
    (an operator map, an envelope editor). Registered in `shell-cells.ts`,
    probe required, dock-only by lint.
-3. **A `custom` sidebar block** (`sidebar-panels.ts`) — a context picture with
-   no `face.order` rank at all.
-4. **A SHELL EXTENSION** — the module needs to fill one of the SHELL'S OWN
+3. **A SHELL EXTENSION** — the module needs to fill one of the SHELL'S OWN
    SLOTS with bespoke code: the glyph, a whole editor surface, or the entire
    dock full-view body. This is the seam the bespoke-surface cohort
    (clipplayer, controlSurface, electraControl, launchpadControl, videoOut,
@@ -354,9 +370,8 @@ the DOM contract did not move — the DX7 VRT scenes are the check.
 - **`module-shell-import-guard.test.ts`** — deny-by-default: ModuleShell plus
   its static import closure across the shell layer may not reference a
   module-owned directory, a module def path, or a module-named root file. The
-  declared registries (`shell-cells`, `face-readout-values`,
-  `shell-param-writes`) are typed BOUNDARY entries carrying the lints that own
-  them; everything else reddens. Negative-controlled with the exact dx7 import
+  declared registries (`shell-cells`, `shell-param-writes`) are typed BOUNDARY
+  entries carrying the lints that own them; everything else reddens. Negative-controlled with the exact dx7 import
   the seam removed.
 - **`shell-extensions.test.ts`** — declared id ↔ discovered module in BOTH
   directions; an `'algorithm'` glyph must resolve an extension exporting
@@ -373,9 +388,10 @@ this section costs no re-attest.
 Pure unit lane (~0 CI cost) — run these on every face:
 
 ```sh
-flox activate -- task test:one -- module-face-lint    # order/pages/hero/sidebar/momentary/paramCells/rear
+flox activate -- task test:one -- module-face-lint    # order/pages/hero/momentary/paramCells/rear
+flox activate -- task test:one -- face-resting-text-source # NO resting derived-state text, any shape
 flox activate -- task test:one -- dock-row-plan       # PF-21 packing + totality
-flox activate -- task test:one -- dock-faceplate-model # hero split totality, readout resolution
+flox activate -- task test:one -- dock-faceplate-model # hero split totality
 flox activate -- task test:one -- shell-cells         # no inert cell on a promoted face; probe shape
 flox activate -- task test:one -- shell-extensions    # extension registry: declared ↔ discovered, slot shape
 flox activate -- task test:one -- module-shell-import-guard # the shared shell stays module-free
@@ -402,7 +418,7 @@ flox activate -- task e2e:stop
 **Registry-driven, so they auto-enrol your module the moment it enters
 `STRICT_FACES`:** `faces-parity.spec.ts:857` · `module-face-lint` completeness
 (`:228`) · dock render-plan parity (`:276`) · `shell-cells.test.ts:58` ·
-`faceplate-platform.spec.ts` sidebar + annotation sweeps.
+`faceplate-platform.spec.ts` annotation sweep.
 
 **NOT registry-driven — you must edit them by hand:**
 
@@ -410,7 +426,7 @@ flox activate -- task e2e:stop
   per-scene `pages` count. **Nothing ties it to `STRICT_FACES`.** A promoted
   module missing from this list simply has no VRT scene, silently.
 - `e2e/tests/faceplate-platform.spec.ts:151` — `sweepBudgetMs(adopterCount)`
-  scales with the roster. Batch 3 took the annotation/sidebar adopter count from
+  scales with the roster. Batch 3 took the annotation adopter count from
   1 to 5 and a flat 30 s budget went red on shard 3/10 (measured 6.1 s on a real
   GPU, **14.4 s under `E2E_SWIFTSHADER=1`**).
 
@@ -422,9 +438,7 @@ surface — run `flox activate -- task pr:conflict-sweep` after any merge:
 | file | why |
 |---|---|
 | `$lib/ui/workflow/strict-faces.ts` | the promotion set (append) |
-| `$lib/ui/workflow/face-readout-values.ts` | one map, every module's `valueId`s |
 | `$lib/ui/workflow/shell-cells.ts` | one `SHELL_CELLS` record |
-| `$lib/ui/workflow/sidebar-panels.ts` | `custom` sidebar block registry |
 | `e2e/vrt/workflow-shell-faces.spec.ts` | the `FACES` roster |
 | `packages/web/src/lib/audio/modules/vrt-meta.test.ts` | only if you touch `STRICT_VRT_MODULES` |
 | `$lib/control/push2/push-card-config.ts` + `push-card-schema.test.ts` | see below |
@@ -446,21 +460,21 @@ Three tiers, first match wins (`push-card-config.ts:20-33`): OVERRIDE → **FACE
   override REPLACES, so it cannot drift. Otherwise **accept the golden diff
   deliberately, with the reason written in the test.**
 
-### ⚠ `face` is MOSTLY contract-transparent — `sidebar` and `controlFamilies` are NOT
+### ⚠ `face` is now FULLY contract-transparent — but `controlFamilies` is NOT
 
 `serializeModuleContract` projects id/min/max/curve/defaultValue/units/ports/
 flags, so a re-rank, a page relabel, a hero, a `paramCells` declaration, a
 `ParamOption` detent roster and a hint are all free.
 
-⚠ **`face.sidebar` IS PROJECTED and this section used to say it was not.**
-`contract-lock.txt` carries a `<type> face sidebar <i> kind=… label=… …` line
-per block (`serializeFaceSidebar`, `contract-signature.ts:142`), in declaration
-ORDER, because #1468 removed a sidebar block from twelve modules with every
-non-pixel gate green. So **declaring, reordering, relabelling or removing a
-sidebar block costs a `task docs:accept`** — and the diff is the review surface
-that incident did not have. The rest of `face` is enumerated in
-`FACE_FIELDS_NOT_IN_LOCK`, which `tsc` requires you to extend when you add a
-field, so "not in the lock" is a declaration rather than an omission.
+**`FACE_FIELDS_IN_LOCK` is now EMPTY.** `face.sidebar` was the one projected
+field — it earned its line because #1468 removed a sidebar block from twelve
+modules with every non-pixel gate green — and the field itself is deleted, so
+there is no block left to pin. That is safe only because the COVERAGE GATE
+survives: `contract-lock.test.ts` walks the keys live defs actually declare and
+requires each to be projected **or** named in `FACE_FIELDS_NOT_IN_LOCK` with a
+`why` and a `coveredBy`, which `tsc` requires you to extend when you add a
+field. An empty projected list therefore means "every face key is covered by a
+named non-golden gate", asserted — not "nobody checked".
 
 **But a new `controlFamilies` entry IS in the contract.** Batch 3 added three
 lines — `clap family clap-hero kind=cell prefix=clap-hero`,
@@ -566,10 +580,11 @@ geometry is real code and stays in the hash, deliberately.)
    identity. Never merge two distinct engines into one band to save height.
 8. **Write the face**, co-located on the def, with the argument in the comment.
    `clap.ts` (`2d111616`) is the reference: tier ladder read back as a sentence,
-   why `order` and `pages` disagree, why each derived readout is not a knob.
-9. **Hero + readouts.** Every `valueId` gets a permanent negative control in
-   `<mod>-face-model.test.ts` on the input a knob readback is blind to, plus a
-   totality leg.
+   why `order` and `pages` disagree.
+9. **Hero.** `cell` / `control` / `action` only — a hero promotes CONTROLS, and
+   there is no readout strip to author (see the ⛔ section). If the module has a
+   derived quantity worth knowing, it belongs in `aria-valuetext` on the control
+   it describes, or in the `docs` prose — never as resting text on the plate.
 10. **Rear card is a PROJECTION of `face.pages`** — re-derive it on paper for
     every page edit (which CV holes land in which section, orphan `_cv` stems, a
     curated group id colliding with a page id), then check `rear-card-model.test.ts`.

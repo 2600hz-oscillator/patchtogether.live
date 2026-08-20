@@ -19,7 +19,6 @@ import {
   fourplexerClampSelector,
 } from '$lib/audio/fourplexer-select';
 import { fourplexerDef } from '$lib/audio/modules/fourplexer';
-import { faceReadoutValueFor, faceReadoutValueIds } from '$lib/ui/workflow/face-readout-values';
 import { glyphBinding, primaryAudioOutPortId } from '$lib/ui/workflow/shell-glyph-live';
 import {
   fourplexerFanText,
@@ -43,8 +42,6 @@ const reader = (over: Record<string, number> = {}) => (id: string): number | und
   return id in merged ? merged[id] : undefined;
 };
 /** What the REGISTRY prints — the surface the faceplate renders. */
-const shown = (valueId: string, over: Record<string, number> = {}): string =>
-  faceReadoutValueFor(valueId)!(reader(over));
 /** An overlay setting the four selectors to a given 0-based routing. */
 const patch = (routing: readonly number[]): Record<string, number> =>
   Object.fromEntries(SEL_IDS.map((id, i) => [id, routing[i]!]));
@@ -100,16 +97,6 @@ describe('fourplexer — the two audit findings this face is built on', () => {
 });
 
 describe('fourplexer face — the registry and the face agree, both directions', () => {
-  it('every declared valueId resolves, and every registered one is declared', () => {
-    const declared = (fourplexerDef.face?.hero?.readouts ?? [])
-      .map((r) => ('valueId' in r ? r.valueId : undefined))
-      .filter((v): v is string => !!v);
-    for (const id of declared) expect(faceReadoutValueFor(id), `${id} unregistered`).toBeTypeOf('function');
-    expect(faceReadoutValueIds().filter((k) => k.startsWith('fourplexer-')).sort()).toEqual(
-      [...declared].sort(),
-    );
-    expect(declared.length).toBeGreaterThan(0);
-  });
 
   it('the rank is the OUTPUT AXIS and covers every selector exactly once', () => {
     expect(fourplexerDef.face?.order).toEqual(SEL_IDS);
@@ -118,54 +105,6 @@ describe('fourplexer face — the registry and the face agree, both directions',
 });
 
 describe('fourplexer readouts — a PERMUTATION is the negative control', () => {
-  it('the SHIPPED default is a straight pass-through with nothing fanned or idle', () => {
-    expect(shown('fourplexer-map')).toBe('1·2·3·4');
-    expect(shown('fourplexer-fan')).toBe('none');
-    expect(shown('fourplexer-idle')).toBe('none');
-    expect(fourplexerIsBijection(fourplexerRouting(reader()))).toBe(true);
-  });
-
-  it('⚠ THE PERMANENT CONTROL: a permutation moves ALL FOUR DIALS and neither hazard', () => {
-    // Every one of these is a completely different patch. Every one moves all
-    // four (or three) selectors. Every one is still a bijection, so `fan` and
-    // `idle` must not budge — while `map` must, because it is the same four
-    // dials read as a whole.
-    const permutations: readonly number[][] = [
-      [3, 2, 1, 0],
-      [1, 0, 3, 2],
-      [2, 3, 0, 1],
-      [1, 2, 3, 0],
-    ];
-    for (const perm of permutations) {
-      const over = patch(perm);
-      expect(shown('fourplexer-fan', over), `fan under permutation ${perm}`).toBe('none');
-      expect(shown('fourplexer-idle', over), `idle under permutation ${perm}`).toBe('none');
-      expect(shown('fourplexer-map', over), `map under permutation ${perm}`).not.toBe(
-        shown('fourplexer-map'),
-      );
-      // The dials really did move — otherwise the invariance above is vacuous.
-      const moved = SEL_IDS.filter((id, i) => perm[i] !== DEFAULTS[id]).length;
-      expect(moved, `permutation ${perm} moved no dial`).toBeGreaterThan(2);
-    }
-  });
-
-  it('and ONE dial off a permutation lights BOTH hazards at once', () => {
-    // out2 stops carrying in2 and carries in1 instead: IN 1 now arrives twice
-    // and IN 2 arrives nowhere. `sel2`'s own readback says `IN 1` and can state
-    // neither half.
-    const over = patch([0, 0, 2, 3]);
-    expect(shown('fourplexer-map', over)).toBe('1·1·3·4');
-    expect(shown('fourplexer-fan', over)).toBe('IN 1 x2');
-    expect(shown('fourplexer-idle', over)).toBe('IN 2');
-    expect(fourplexerIsBijection(fourplexerRouting(reader(over)))).toBe(false);
-  });
-
-  it('the worst case: every output on one input', () => {
-    const over = patch([1, 1, 1, 1]);
-    expect(shown('fourplexer-map', over)).toBe('2·2·2·2');
-    expect(shown('fourplexer-fan', over)).toBe(`IN 2 x${FOURPLEXER_INPUTS}`);
-    expect(shown('fourplexer-idle', over)).toBe('IN 1, IN 3, IN 4');
-  });
 
   it('fan is ordered busiest-first, and load sums to the output count', () => {
     const routing = fourplexerRouting(reader(patch([0, 0, 0, 1])));
@@ -176,50 +115,9 @@ describe('fourplexer readouts — a PERMUTATION is the negative control', () => 
     );
     expect(fourplexerIdleInputs(routing)).toEqual([3, 4]);
   });
-
-  it('every readout responds to a change in EVERY selector — none is wired to one dial', () => {
-    // The complement of the permutation leg: prove the join reads all four
-    // positions, not just the first. Moving each selector ALONE to a value that
-    // collides changes the map, and lights the hazards.
-    for (const [i, id] of SEL_IDS.entries()) {
-      const collide = (DEFAULTS[id]! + 1) % FOURPLEXER_INPUTS;
-      const over = { [id]: collide };
-      expect(shown('fourplexer-map', over), `map is blind to ${id}`).not.toBe(shown('fourplexer-map'));
-      expect(shown('fourplexer-fan', over), `fan is blind to ${id}`).not.toBe('none');
-      expect(shown('fourplexer-idle', over), `idle is blind to ${id}`).not.toBe('none');
-      expect(i).toBeGreaterThanOrEqual(0);
-    }
-  });
 });
 
 describe('fourplexer readouts are TOTAL — they run on every render', () => {
-  it('a FRESH node prints the def defaults, not NaN', () => {
-    const fresh = () => undefined;
-    for (const id of faceReadoutValueIds().filter((k) => k.startsWith('fourplexer-'))) {
-      const out = faceReadoutValueFor(id)!(fresh);
-      expect(out, `${id} on a fresh node`).toBeTypeOf('string');
-      expect(out, `${id} on a fresh node`).not.toMatch(/NaN|Infinity|undefined/);
-    }
-    expect(faceReadoutValueFor('fourplexer-map')!(() => undefined)).toBe('1·2·3·4');
-  });
-
-  it('a CORRUPT saved value reads on the face exactly as it ROUTES in the graph', () => {
-    // The face and the factory must normalise identically — a face that showed
-    // `IN 1` while the worklet routed `IN 3` would be worse than no readout.
-    const hostile = [NaN, Infinity, -Infinity, -7, 11, 2.6];
-    for (const v of hostile) {
-      const over = { sel1: v };
-      const routed = fourplexerClampSelector(v);
-      expect(fourplexerRouting(reader(over))[0], `sel1=${v} normalises to the routed index`).toBe(
-        routed,
-      );
-      for (const id of faceReadoutValueIds().filter((k) => k.startsWith('fourplexer-'))) {
-        const out = faceReadoutValueFor(id)!(reader(over));
-        expect(out, `${id} with sel1=${v}`).toBeTypeOf('string');
-        expect(out, `${id} with sel1=${v}`).not.toMatch(/NaN|Infinity|undefined/);
-      }
-    }
-  });
 
   it('the text helpers never throw on an empty or oversized routing', () => {
     expect(() => fourplexerMapText([])).not.toThrow();

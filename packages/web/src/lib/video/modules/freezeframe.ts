@@ -980,25 +980,6 @@ export const freezeframeDef: VideoModuleDef = {
     // re-attest and no contract-lock line.
     extension: 'freezeframe',
 
-    // TWO readouts, and the THIRD one was deliberately not written.
-    //
-    // ⚠ THERE IS NO GATE READOUT, because a `FaceReadoutValue` receives only a
-    // param reader (`face-readout-values.ts`) and the fact that matters here is
-    // not a param. `gateLevel` reads 0 both when NOTHING IS PATCHED (live
-    // passthrough — the module is a wire) and when a gate IS patched and
-    // currently low (frozen — the module is a still). Those are the two most
-    // important states this module has, they are opposites, and they are
-    // indistinguishable from every input a readout can see. Publishing a `gate`
-    // caption would print a confident word that is wrong half the time — the
-    // kick-drum TAIL trap. It is the `sidecar` precedent (its two enabler
-    // CABLES are unreachable the same way): the finding is carried by the band
-    // labels and by `docs`, never by a readout.
-    hero: {
-      readouts: [
-        { label: 'depth', valueId: 'freezeframe-depth' },
-        { label: 'decay', valueId: 'freezeframe-decay' },
-      ],
-    },
   },
 
   docs: {

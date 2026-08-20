@@ -33,37 +33,12 @@ import {
   moog912ResponseHz,
   moog912ResponseText,
 } from './moog912-face-model';
-import { faceReadoutValueFor } from '$lib/ui/workflow/face-readout-values';
 
 function reader(params: Record<string, number | undefined>) {
   return (id: string) => params[id];
 }
-const responseText = (p: Record<string, number | undefined>) =>
-  faceReadoutValueFor('moog912-response-hz')!(reader(p));
-const gateText = (p: Record<string, number | undefined>) =>
-  faceReadoutValueFor('moog912-gate-dbfs')!(reader(p));
-
-describe('moog912 face readouts — registration', () => {
-  it('both valueIds the def declares RESOLVE in the shared registry', () => {
-    const declared = (moog912Def.face?.hero?.readouts ?? []).map((r) => r.valueId);
-    expect(declared).toEqual(['moog912-response-hz', 'moog912-gate-dbfs']);
-    for (const id of declared) expect(typeof faceReadoutValueFor(id!)).toBe('function');
-  });
-
-  it('each registry entry wires THIS module\'s function, not merely SOME function', () => {
-    for (const p of [{}, { sensitivity: 0.3 }, { smoothing: 0.9 }]) {
-      expect(responseText(p)).toBe(moog912ResponseText(moog912FaceParams(reader(p))));
-      expect(gateText(p)).toBe(moog912GateText(moog912FaceParams(reader(p))));
-    }
-    expect(responseText({})).not.toBe(gateText({}));
-  });
-});
 
 describe('moog912-response-hz — the frequency a bare 0..1 dial cannot suggest', () => {
-  it('prints 7.07 Hz at the shipped default, where the dial reads 0.50', () => {
-    expect(moog912FaceParams(reader({})).smoothing).toBe(0.5);
-    expect(responseText({})).toBe('7.07 Hz');
-  });
 
   it('is INVERTED — turning SMOOTH up makes the frequency go DOWN', () => {
     // The single most misleading thing about this control, and the readout's
@@ -82,44 +57,9 @@ describe('moog912-response-hz — the frequency a bare 0..1 dial cannot suggest'
     const oct = Math.log2(SMOOTH_MAX_HZ / SMOOTH_MIN_HZ);
     expect(oct).toBeCloseTo(5.6439, 3);
   });
-
-  it('is INVARIANT to SENSITIVITY — the permanent negative control', () => {
-    // If this ever starts tracking SENS it has stopped describing the filter.
-    const base = responseText({ smoothing: 0.5, sensitivity: 0.7 });
-    for (let i = 0; i <= 20; i++) {
-      expect(responseText({ smoothing: 0.5, sensitivity: i / 20 })).toBe(base);
-    }
-  });
 });
 
 describe('moog912-gate-dbfs — the dead zone a SENS readback cannot see (#1914)', () => {
-  it('prints the sustained threshold at the shipped default', () => {
-    // Confirmed on a REAL rendered graph: the settled envelope lands on
-    // 0.100001 against a threshold of 0.100000 at this sensitivity.
-    expect(moog912FaceParams(reader({})).sensitivity).toBe(0.7);
-    expect(moog912GateDbfs({ sensitivity: 0.7, smoothing: 0.5 })).toBeCloseTo(-12.980, 3);
-    expect(gateText({})).toBe('-13.0 dBFS');
-  });
-
-  it('MOVES on SENS across the usable span', () => {
-    expect(gateText({ sensitivity: 1 })).toBe('-16.1 dBFS');
-    expect(gateText({ sensitivity: 0.5 })).toBe('-10.1 dBFS');
-    expect(gateText({ sensitivity: 0.3 })).toBe('-5.6 dBFS');
-  });
-
-  it('⚠ PRINTS `—` BELOW THE DEAD-ZONE SENSITIVITY, where the gate is unreachable', () => {
-    // THE FINDING. Below this the required input amplitude passes full scale, so
-    // a dBFS number would be a promise the module cannot keep.
-    expect(MOOG912_GATE_DEAD_SENS).toBeCloseTo(0.157080, 6);
-    expect(gateText({ sensitivity: MOOG912_GATE_DEAD_SENS * 0.99 })).toBe('—');
-    expect(gateText({ sensitivity: 0.1 })).toBe('—');
-    expect(gateText({ sensitivity: 0 })).toBe('—');
-
-    // ...and NOT a dash just above it — the leg that stops this passing for a
-    // readout that always says `—`.
-    expect(gateText({ sensitivity: MOOG912_GATE_DEAD_SENS * 1.05 })).not.toBe('—');
-    expect(gateText({ sensitivity: 0.2 })).not.toBe('—');
-  });
 
   it('the dead zone is exactly the bottom 15.71 % of the dial', () => {
     // Derived from the def's own declared range, not typed as a fraction.
@@ -128,15 +68,6 @@ describe('moog912-gate-dbfs — the dead zone a SENS readback cannot see (#1914)
     expect(frac).toBeCloseTo(0.157080, 5);
     // And the boundary is where the required amplitude is exactly full scale.
     expect(moog912GateDbfs({ sensitivity: MOOG912_GATE_DEAD_SENS, smoothing: 0.5 })).toBeCloseTo(0, 9);
-  });
-
-  it('is INVARIANT to SMOOTHING — the permanent negative control', () => {
-    // The threshold is a level, not a time; if SMOOTH ever moves it, the
-    // readout has started describing the wrong filter.
-    const base = gateText({ sensitivity: 0.7, smoothing: 0.5 });
-    for (let i = 0; i <= 20; i++) {
-      expect(gateText({ sensitivity: 0.7, smoothing: i / 20 })).toBe(base);
-    }
   });
 
   it('the threshold constant it reads is the module\'s own', () => {
@@ -158,15 +89,6 @@ describe('moog912 readouts — TOTALITY (they run on every render)', () => {
     ['sensitivity exactly 0', { sensitivity: 0 }],
     ['sensitivity exactly 1', { sensitivity: 1 }],
   ];
-  for (const [name, params] of hostile) {
-    it(`survives ${name} and prints a finite string`, () => {
-      for (const s of [responseText(params), gateText(params)]) {
-        expect(typeof s).toBe('string');
-        expect(s.length).toBeGreaterThan(0);
-        expect(s).not.toMatch(/NaN|Infinity|undefined/);
-      }
-    });
-  }
 
   it('the response frequency is always inside the declared span', () => {
     for (const v of [NaN, Infinity, -Infinity, -9, 0, 0.5, 1, 99]) {
