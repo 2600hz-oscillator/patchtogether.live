@@ -1467,6 +1467,48 @@ export const FACES = [
       + 'bank is empty and the composite outputs black on every frame by construction rather '
       + 'than by the flag.',
   },
+  // THE FACEPLATE QUEUE · Q49 — the self-building wavetable oscillator, and the
+  // first RAILED face in this batch.
+  //
+  // `pages: 7` is the POST-hero band count, and there is no hero to subtract:
+  // the face declares seven pages and promotes nothing out of them, so seven
+  // bands reach `dockTabPlan` and the rail engages at `DOCK_TAB_MIN_BANDS`.
+  // ⚠ THE DOCK SCENE THEREFORE FRAMES ONE BAND, NOT SEVEN — a railed face
+  // renders only the active tab, and the six inactive bands have no layout box
+  // at any viewport height. That is scope note 1 of this spec's own header, and
+  // it means the dock baseline here proves the picture head, the rail and the
+  // `vco` page; the other six pages are gated by `faceplate-platform` and the
+  // pure `dock-row-plan` / `module-face-lint` units, which read the whole
+  // faceplate. Do NOT read a green dock baseline as evidence that a change to
+  // `src b` was a no-op.
+  //
+  // ⚠ THE HOOK IS NOT DEAD CODE, CHECKED THE SAME WAY `rasterize` CHECKED ITS
+  // OWN. Grepping `__foxyVrtSeed`'s SETTERS finds exactly one — the module's
+  // own CARD scene in `vrt-scenes.ts` — and none on the FACE boot path, which
+  // is a different harness with a different lifecycle. So the pin is live and
+  // correct and simply unreached from here, the same shape as rasterize's and
+  // NOT the `outlines` story where the only setter was a render-smoke spec.
+  {
+    type: 'foxy',
+    pages: 7,
+    simPin: {
+      global: '__foxyVrtSeed',
+      value: 1,
+      why:
+        'FOXY builds its picture on the AUDIO side — three RasterPainters plus the XYZ and '
+        + 'wavetable renderers, all in JS — so freezeFaceVideo never reaches it, and suspending '
+        + 'the AudioContext stops the bridge without choosing WHERE it stops. The bridge is '
+        + 'throttled to ~24Hz and each tick advances three independent raster cursors at three '
+        + 'different strides (6000 / 4500 / 5200 samples), so the number of ticks landing before '
+        + 'the suspend varies per boot and two captures would frame three different band '
+        + 'patterns feeding a different heightfield and therefore a different 64x256 table — the '
+        + 'drift compounds through every stage rather than shifting one picture. This flag '
+        + 'engages the deterministic seed already in the module (`paintSeeded`: reset all three '
+        + 'cursors, then ONE full-frame fill from three fixed synthetic waveforms, with every '
+        + 'later advance short-circuited), making all five pictures a pure function of the '
+        + "module's own constants. It is an AUDIO def, so no attest hash moves.",
+    },
+  },
 ] as const;
 
 /** TIGHT per-scene diff budgets (absolute pixels; Playwright takes the MIN of

@@ -323,7 +323,19 @@ export const foxyDef: AudioModuleDef = {
     // (B slaved to A), 2 = XYZ (B + C slaved to A). swoleA is always the
     // master. Each slave's base Hz is snapped to the nearest integer ratio
     // of A's base Hz so the rasters/audio stay phase-stable.
-    { id: 'sync_mode', label: 'Sync', defaultValue: 0, min: 0, max: FOXY_SYNC_MODE_MAX, curve: 'discrete' },
+    // ⚠ THE ROSTER IS DERIVED FROM `FOXY_SYNC_MODE_NAMES`, NEVER RE-TYPED (#2007).
+    // The names existed in this file all along and the PARAM MODEL COULD NOT SEE
+    // THEM: `looksLikeToggle` needs min 0 / max 1, so a `discrete 0..2` fell
+    // through to `'knob'`, and with no roster `paintsReadout` is false — so a
+    // THREE-POSITION MODE SWITCH rendered as an unlabelled dial while
+    // 'Off' / 'X & Y' / 'XYZ' sat forty lines up. Declaring `options` resolves
+    // `'segmented'` at the dock (3 ≤ SEGMENTED_MAX_OPTIONS) and paints the names.
+    // Mapping the exported constant is what keeps ONE source of truth: the card
+    // indexes the same array, so a renamed mode cannot disagree between surfaces.
+    {
+      id: 'sync_mode', label: 'Sync', defaultValue: 0, min: 0, max: FOXY_SYNC_MODE_MAX, curve: 'discrete',
+      options: FOXY_SYNC_MODE_NAMES.map((label, value) => ({ value, label })),
+    },
     // Freeze toggles (0 = live, 1 = frozen). FREEZE RASTER A/B/C hold each
     // raster's current frame so the source SWOLEVCOs no longer drive that
     // axis of the wavetable. FREEZE TABLE holds the wavetable: stops
@@ -339,8 +351,159 @@ export const foxyDef: AudioModuleDef = {
     //                       foxy-shapes.ts)
     // Discrete picker — the card displays FOXY_GEN_MODE_NAMES[gen_mode]
     // next to the knob, mirroring the RESOFILTER mode-name pattern.
-    { id: 'gen_mode', label: 'GEN', defaultValue: 0, min: 0, max: FOXY_GEN_MODE_MAX, curve: 'discrete' },
+    // Roster derived from `FOXY_GEN_MODE_NAMES`, same rule as `sync_mode` (#2007).
+    // ⚠ THIS ONE ALSO FIXES A LATENT WRITE BUG. `gen_mode` DID resolve a
+    // `'toggle'` (0..1 satisfies `looksLikeToggle`), so it was never an
+    // anonymous dial the way `sync_mode` was — but `FoxyCard.svelte` passed
+    // `curve="linear"` against this def's `discrete`, so `knobFracToValue` never
+    // rounded and the CARD could persist `gen_mode: 0.37` into the Y.Doc. Nothing
+    // observable broke because every consumer re-rounds independently (`clampGen`
+    // in the card, `Math.round` in `applySync`), which is exactly why no gate ever
+    // reddened. The card is corrected in this same PR; a `'segmented'` cell writes
+    // an option's own `value`, so the face cannot reintroduce it.
+    {
+      id: 'gen_mode', label: 'GEN', defaultValue: 0, min: 0, max: FOXY_GEN_MODE_MAX, curve: 'discrete',
+      options: FOXY_GEN_MODE_NAMES.map((label, value) => ({ value, label })),
+    },
   ],
+
+  // ── PF-20 FACEPLATE ───────────────────────────────────────────────────────
+  //
+  // WHAT FOXY IS FOR, in one paragraph, because every rank below descends from
+  // it: it is a wavetable oscillator that BUILDS ITS OWN TABLE. Three mini
+  // SWOLEVCOs paint three rasters, the rasters become a volumetric heightfield,
+  // and that field is scanned — ~24×/second, live — into the 64×256 table an
+  // internal WAVECEL plays. So the player does TWO different things here, and
+  // the face is organised around that split: you PLAY the WAVECEL surface
+  // (tune/fine/morph/spread/fold), and you SCULPT the world that gives it its
+  // timbre (three sources, the XYZ combination, the generator mode). The verb
+  // no sibling oscillator offers is "re-shape the wavetable while it sounds".
+  //
+  // THE RANKING ARGUMENT. `morph` is rank 1 and it is the one rank that would be
+  // WRONG on any other oscillator: on a fixed-table VCO, MORPH picks a frame out
+  // of a table someone else authored, whereas here the table underneath it is
+  // being rewritten 24× a second, so MORPH is how you move through an EVOLVING
+  // surface — the module's whole proposition in one dial. `fold` follows because
+  // it is the only other control that shapes what is HEARD rather than what is
+  // GENERATED. The remaining 28 shape the world, and they rank by REACH: one
+  // control that restructures the entire field outranks one that adjusts a
+  // single source's brightness. `xyz_zoom` takes the last lane slot on that
+  // rule — it crops the scanned field to a centred sub-region, so it changes how
+  // many peaks the table HAS (its default of 4 is the module's headline look),
+  // which is a larger move than any single `src*` knob can make.
+  //
+  // The four `freeze*` toggles rank LAST, together, and it is deliberate: they
+  // are state pins, not sound controls. Nothing about their position says they
+  // are unimportant — FREEZE TABLE is the difference between a drifting pad and
+  // a stable tone — but a lane cell spent on a latch is a lane cell not spent on
+  // a control that moves the sound continuously.
+  //
+  // ⚠ `order` AND `pages` DISAGREE, DELIBERATELY. `order` is PRIORITY (it feeds
+  // the tiers that show a subset); `pages` is the tab rail, where all 33 render
+  // and the reader needs the SIGNAL to be legible. So the pages run
+  // sources → combination → generator, which is the direction the audio actually
+  // flows — except that `vco` LEADS rather than trailing. That one inversion is
+  // the tab you land on: a railed face opens on its first page, and opening a
+  // wavetable oscillator on the controls you PLAY is worth more than opening it
+  // at the head of its own signal chain, which the picture head above the rail
+  // is already showing you.
+  //
+  // ⚠ SEVEN PAGES TRIPS THE TAB RAIL AT `DOCK_TAB_MIN_BANDS`, AND THAT IS THE
+  // WHOLE MECHANISM — there is no `tabbed: true` here and there must not be.
+  // That field is OWNER-INSTRUCTION-ONLY (its gate's own message says to author
+  // honest pages and let the rail engage on its own), and no owner instruction
+  // exists for foxy. The seven are honest: five WAVECEL params, three SEPARATE
+  // sources whose defaults differ musically (A at 0, B a fifth up at +7, C an
+  // octave down at −12 — so they must stay visually parallel and must NOT be
+  // collapsed into one page), the XYZ combination, the generator modes, and the
+  // freezes. Nothing was padded to reach seven and nothing was crammed to avoid
+  // it. foxy is the FOURTH module to reach the rail, after cloudseed (8),
+  // pentemelodica (8) and backdraft (7) — a user of a settled mechanism.
+  //
+  // ⚠ NO `hint` ON ANY PAGE, BY CONSTRUCTION. A band hint is never rendered on a
+  // TABBED face — the rail already names the band — so authoring seven of them
+  // would be writing text that cannot paint at any setting.
+  //
+  // TIER LADDER AS A SENTENCE: a glyph binds (`primaryAudioOutPortId` is `out_l`
+  // and `'waveform'` resolves `{kind:'live-audio'}` on it), so mini shows MORPH,
+  // compact shows MORPH + FOLD, the in-lane plate shows ranks 1-6, and the dock
+  // shows all 33 across seven tabs beneath the live picture head.
+  //
+  // GLYPH `'waveform'` over `'meter'`: both resolve the same live tap, and this
+  // module's identity is a generated WAVE, not a level. ⚠ The glyph is
+  // SUPPRESSED AT THE DOCK — `dockFullViewHeadPlan` gives the head to the
+  // extension body — so it is the lane's identity mark and the dock's picture is
+  // the real thing, never both at once.
+  //
+  // EXTENSION, and it is the rasterize precedent rather than a panel cell:
+  // `hasVideoSurface(def)` is `def.domain === 'video'`, and foxy is an AUDIO def
+  // whose pictures are painted in JS. So the shell has NO generic route to them
+  // and promoting without a surface would replace three live rasters, the XYZ
+  // field and the animated wavetable with knobs. A PF-14 panel is the wrong seam
+  // for the same reason rasterize declined it: a panel REQUIRES an operability
+  // probe, and a read-only picture's only available probe watches a DIFFERENT
+  // control — an aliveness check that cannot observe the thing it certifies.
+  // `fullViewBody` needs no such proxy. It also carries the two affordances the
+  // legacy card owns and a param cell cannot reach (the SCOPE/3D view flip and
+  // EXPORT TABLE), so nothing on that card becomes unreachable at the dock.
+  face: {
+    order: [
+      // ── the lane budget: ranks 1-6 (mini 1 · compact 2 with a glyph · plate 6)
+      'morph',          // 1  mini — the evolving table's read position
+      'fold',           // 2  compact — the other control that shapes what is HEARD
+      'tune',           // 3
+      'spread',         // 4
+      'fine',           // 5
+      'xyz_zoom',       // 6  ← the lane budget ends HERE (widest-reach world control)
+      // ── dock-only from here down: the world, by reach ────────────────────
+      'xyz_smooth',     // 7  jagged spikes → continuous mesh
+      'xyz_warp',       // 8  C twists A laterally
+      'xyz_zheight',    // 9  C's secondary Z on top of B's
+      'xyz_ydisp',      // 10
+      'xyz_xshape',     // 11
+      'xyz_yshape',     // 12
+      // the two mode pickers — they decide how the world is BUILT, so they
+      // outrank any individual source knob
+      'sync_mode',      // 13 the only control that changes the RELATIONSHIP
+                        //    between the three sources (foxyRatioLock)
+      'gen_mode',       // 14 which raster→wavetable algorithm runs
+      // the three sources, A first: A is the terrain AND the sync master
+      'src_tune',       // 15
+      'src_fine',       // 16
+      'src_timbre',     // 17
+      'src_symmetry',   // 18
+      'src_fold',       // 19
+      'src2_tune',      // 20
+      'src2_fine',      // 21
+      'src2_timbre',    // 22
+      'src2_symmetry',  // 23
+      'src2_fold',      // 24
+      'src3_tune',      // 25
+      'src3_fine',      // 26
+      'src3_timbre',    // 27
+      'src3_symmetry',  // 28
+      'src3_fold',      // 29
+      // state pins, last and together (see the argument above)
+      'freezeRasterA',  // 30
+      'freezeRasterB',  // 31
+      'freezeRasterC',  // 32
+      'freezeTable',    // 33
+    ],
+    // SEVEN pages. Labels are short because on a railed face they are TAB
+    // CAPTIONS sharing one rail — cloudseed measured descriptive band headers
+    // pushing its eighth tab into the rail's overflow scroll.
+    pages: [
+      { id: 'vco',    label: 'vco',    controls: ['morph', 'fold', 'tune', 'fine', 'spread'] },
+      { id: 'srca',   label: 'src a',  controls: ['src_tune', 'src_fine', 'src_timbre', 'src_symmetry', 'src_fold'] },
+      { id: 'srcb',   label: 'src b',  controls: ['src2_tune', 'src2_fine', 'src2_timbre', 'src2_symmetry', 'src2_fold'] },
+      { id: 'srcc',   label: 'src c',  controls: ['src3_tune', 'src3_fine', 'src3_timbre', 'src3_symmetry', 'src3_fold'] },
+      { id: 'xyz',    label: 'xyz',    controls: ['xyz_zoom', 'xyz_smooth', 'xyz_warp', 'xyz_zheight', 'xyz_ydisp', 'xyz_xshape', 'xyz_yshape'] },
+      { id: 'gen',    label: 'gen',    controls: ['sync_mode', 'gen_mode'] },
+      { id: 'freeze', label: 'freeze', controls: ['freezeRasterA', 'freezeRasterB', 'freezeRasterC', 'freezeTable'] },
+    ],
+    glyph: 'waveform',
+    extension: 'foxy',
+  },
 
   docs: (() => {
     const inputs: Record<string, string> = {

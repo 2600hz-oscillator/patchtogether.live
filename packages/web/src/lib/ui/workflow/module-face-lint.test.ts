@@ -729,6 +729,34 @@ describe('module-face lint — MOMENTARY pads (face.momentary)', () => {
     // sweep could never be left running, which is one of the module's two
     // looks.
     'rasterize:wrap',
+    // FOXY, 2026-08-20. FIVE params share the press-pad SHAPE and every one of
+    // them LATCHES. The four FREEZEs are the module's state pins: each holds a
+    // raster (or the whole wavetable) at its current frame so that axis stops
+    // evolving while the others keep moving. A momentary render would un-freeze
+    // the instant the pad was released, which is not a weaker version of the
+    // control — it is the control deleted, since the entire point is to walk
+    // away and leave one axis pinned while you dial the others.
+    //
+    // ⚠ AND THE FACTORY READS THEM AS LEVELS, WHICH IS THE HALF THE SHAPE
+    // CANNOT TELL YOU. `bridgeTick` gates on the mirrored booleans every tick
+    // (`if (!freezeA) { … }`, `if (!freezeT) { … }`), and `setParam` mirrors
+    // each with `value >= 0.5` — a per-tick LEVEL read, never an edge. There is
+    // no rising-edge consumer anywhere in this module.
+    'foxy:freezeRasterA',
+    'foxy:freezeRasterB',
+    'foxy:freezeRasterC',
+    'foxy:freezeTable',
+    // `gen_mode` is switch-SHAPED only by arity: it picks which of two
+    // raster→wavetable ALGORITHMS runs (the continuous XYZ heightfield, or the
+    // discrete 3D Shape Gen path), which is a mode you choose and leave. The
+    // bridge reads its level every tick (`if (genMode >= 0.5)`), so a momentary
+    // render would switch the generator back on release and the second path
+    // would be unreachable. ⚠ It now declares an `options[]` roster (#2007), so
+    // the dock paints it as a named `segmented` rather than any kind of pad —
+    // but this gate reads the param SHAPE, not the resolved cell, which is
+    // correct: the roster is cosmetic and could be removed without changing
+    // what the DSP does with the value.
+    'foxy:gen_mode',
   ]);
 
   it('no ACKNOWLEDGED_LATCHING param is DOCUMENTED as momentary (the cross-check)', () => {

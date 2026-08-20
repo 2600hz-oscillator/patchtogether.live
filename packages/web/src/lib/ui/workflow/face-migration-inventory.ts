@@ -300,7 +300,25 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
   { type: 'filter', disposition: 'generic-face' },
   { type: 'flipper', disposition: 'generic-face', note: 'declares no params — its face is a title, a glyph and the rear; nothing to rank' },
   { type: 'fourplexer', disposition: 'generic-face' },
-  { type: 'foxy', disposition: 'generic-face', note: 'knobs only; the raster/XYZ/wavetable previews are read-only pictures needing a registered panel (cube is the precedent)' },
+  {
+    type: 'foxy',
+    disposition: 'generic-face',
+    note:
+      'DONE (#2007). This entry predicted the blocker correctly — "the raster/XYZ/wavetable ' +
+      'previews are read-only pictures" — and, like rasterize, the RESOLUTION half of the ' +
+      'prediction ("needing a registered panel, cube is the precedent") was deliberately NOT ' +
+      'taken. Two reasons, both structural rather than preference. First the blind-gate one ' +
+      'rasterize wrote down: a PF-14 panel REQUIRES an operability probe, and a read-only ' +
+      'picture has none of its own, so the probe would watch a DIFFERENT control — an aliveness ' +
+      'check that cannot observe the thing it certifies. Second, ARITY: cube is one picture and ' +
+      'foxy is five, so panels would have meant five cells consuming five ranks and five probes ' +
+      'for pictures that belong together. `fullViewBody` needs no proxy and keeps all five ' +
+      'PERSISTENT across the seven tabs, which is the owner backdraft ruling and is what lets a ' +
+      'player watch raster B while turning SRC B one tab over. 33 params rank normally around ' +
+      'it across seven pages, which reaches DOCK_TAB_MIN_BANDS and engages the tab rail with no ' +
+      '`face.tabbed` declaration. The two exported mode-name rosters became `options[]` (#2007), ' +
+      'so `sync_mode` stopped rendering as an anonymous three-state rotary.',
+  },
   { type: 'freezeframe', disposition: 'generic-face' },
   { type: 'gatemaiden', disposition: 'generic-face' },
   { type: 'grainsOfVision', disposition: 'generic-face' },
