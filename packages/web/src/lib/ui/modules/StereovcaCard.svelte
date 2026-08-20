@@ -14,14 +14,25 @@
   import { stereovcaDef } from '$lib/audio/modules/stereovca';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
-  import { cardParams, portsFromDef } from './card-kit';
+  import { cardParams, paramSpec, portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
-  const { set, live } = cardParams(stereovcaDef, () => id, () => node);
+  const { paramVal, set, live } = cardParams(stereovcaDef, () => id, () => node);
 
-  let level  = $derived(node?.params.level  ?? stereovcaDef.params[0]!.defaultValue);
-  let offset = $derived(node?.params.offset ?? stereovcaDef.params[1]!.defaultValue);
+  /** THE ONE COPY of every number, curve and label this card paints. Bound
+   *  with the FACEPLATE (queue Q42): this card re-typed `min={0} max={1}
+   *  defaultValue={1.0}` / `min={-1} max={1} defaultValue={0}` beside a def
+   *  declaring exactly those numbers. They agreed, so nothing was red — and
+   *  that is the point: every range gate reads the DEF, so a card that drifts
+   *  is invisible to the whole gate set (the backdraft class, CLAUDE.md). */
+  const P = {
+    level: paramSpec(stereovcaDef, 'level'),
+    offset: paramSpec(stereovcaDef, 'offset'),
+  };
+
+  let level  = $derived(paramVal('level'));
+  let offset = $derived(paramVal('offset'));
 
 
   const inputs = portsFromDef(stereovcaDef.inputs, {
@@ -36,8 +47,8 @@
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="fader-row">
-      <NeonFader value={level}  min={0}  max={1} defaultValue={1.0} label="Level"  curve="linear" onchange={set('level')} moduleId={id} paramId="level"  readLive={live('level')} />
-      <NeonFader value={offset} min={-1} max={1} defaultValue={0}   label="Offset" curve="linear" onchange={set('offset')} moduleId={id} paramId="offset" readLive={live('offset')} />
+      <NeonFader value={level}  min={P.level.min}  max={P.level.max}  defaultValue={P.level.defaultValue}  label={P.level.label}  curve={P.level.curve}  onchange={set('level')}  moduleId={id} paramId="level"  readLive={live('level')} />
+      <NeonFader value={offset} min={P.offset.min} max={P.offset.max} defaultValue={P.offset.defaultValue} label={P.offset.label} curve={P.offset.curve} onchange={set('offset')} moduleId={id} paramId="offset" readLive={live('offset')} />
     </div>
   </PatchPanel>
 </div>
