@@ -1366,6 +1366,35 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // as an unlabelled 0..4 dial once the card's card-local formatter died with
   // the card.
   'grainsOfVision',
+  // THE FACEPLATE QUEUE · Q31 — MIRRORPOOL, the fourth VIDEO face and the
+  // second adopter of `face.xyPads` (2026-08-19).
+  //
+  // The audit's answer was "ZERO un-exposed DSP capability", which is a finding
+  // rather than a shortfall — every one of the eleven params reaches the
+  // shader, and every one has a matching CV input. What the face adds is not
+  // access, it is ORIENTATION.
+  //
+  // ⚠ THREE OF THE QUEUE'S OWN PRESCRIPTIONS WERE REFUTED BY RE-MEASUREMENT,
+  // and they are recorded on the def beside the declarations they changed:
+  //   * "compact adds the position pad" — no lane tier EVER shows a pad;
+  //     `laneOrder` excludes every pad anchor by construction.
+  //   * an ABOVE/BELOW `eye-side` readout "genuinely underivable from any
+  //     single knob" — it is `sign(orbit_el)` relabelled, since `dist` is
+  //     clamped strictly positive (729 camera settings, zero disagreements).
+  //     The `orbit_el`×`orbit_dist` JOIN that replaced it is real — the eye's
+  //     horizontal radius is `dist·cos el`, so a readback of either dial is
+  //     blind to the other — but it PAINTS NOWHERE: the resting-text ruling
+  //     (#1957) landed after this face was built and deleted `hero.readouts`
+  //     outright, so the arithmetic survives only in the unit lane
+  //     (`mirrorpool-face-model.test.ts`) and in `aria-valuetext`.
+  //   * the spec did not mention `paramCells` at all, and all seven non-pad
+  //     controls are `<NeonFader>` throws on the card — undeclared, promotion
+  //     would have silently repainted every one of them as a dial.
+  //
+  // The measurements it did make all reproduced exactly (fovY 70/45/20°, eye.y
+  // −0.00026000 at `orbit_el = −0.0001`, `surfaceReflectivity(F, 0) === F`
+  // bit-exactly, `wind_dir` bit-exactly inert at `wind_speed = 0`).
+  'mirrorpool',
   // THE FACEPLATE QUEUE · Q14 — SLEWSWITCH, quad slew + 4→1 sequential switch
   // (2026-08-15), and the entry whose argument is that TWO ENGINES IN ONE BOX
   // ARE TWO PAGES, not one ranked list of seven.
