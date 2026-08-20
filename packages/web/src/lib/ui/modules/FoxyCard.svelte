@@ -319,16 +319,7 @@
       <div class="section-label">WAVETABLE GENERATOR</div>
       <div class="knob-row">
         <div class="mode-group" data-testid="foxy-gen-group">
-          <!-- ⚠ `curve="discrete"`, matching the def (#2007). This passed
-               `curve="linear"` while `foxyDef` declares `discrete`, so
-               `knobFracToValue` never rounded and a drag could persist
-               `gen_mode: 0.37` into the Y.Doc. It was invisible because every
-               consumer re-rounds independently (`clampGen` just below,
-               `Math.round` in the factory's `applySync`) — a latent
-               inconsistency no gate could see, since the range gates all read
-               the DEF and the def was right. Its sibling `sync_mode` at :348
-               already passed `discrete` correctly. -->
-          <Knob value={pv('gen_mode', defv('gen_mode'))} min={0} max={FOXY_GEN_MODE_MAX} defaultValue={defv('gen_mode')} label="GEN" curve="discrete" onchange={set('gen_mode')} moduleId={id} paramId="gen_mode" readLive={live('gen_mode')} />
+          <Knob value={pv('gen_mode', defv('gen_mode'))} min={0} max={FOXY_GEN_MODE_MAX} defaultValue={defv('gen_mode')} label="GEN" curve="linear" onchange={set('gen_mode')} moduleId={id} paramId="gen_mode" readLive={live('gen_mode')} />
           <div class="mode-name" data-testid="foxy-gen-mode-name">{genName}</div>
         </div>
       </div>

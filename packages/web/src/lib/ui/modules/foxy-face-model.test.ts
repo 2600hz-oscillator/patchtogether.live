@@ -45,6 +45,7 @@ import { dockFullViewHeadPlan, hasVideoSurface } from '$lib/ui/workflow/module-s
 import { glyphBinding, primaryAudioOutPortId } from '$lib/ui/workflow/shell-glyph-live';
 import { STRICT_FACES, migrated } from '$lib/ui/workflow/strict-faces';
 import { PUSH_CARD_CONTROLS } from '$lib/control/push2/push-card-config';
+import { OPERATIONAL_DEBT } from '$lib/ui/modules/card-def-debt';
 import {
   pushCardParams,
   resolvePushCardControls,
@@ -238,21 +239,46 @@ describe('foxy — #2007: THE MODE ROSTERS', () => {
     expect(paramCellKind(strippedGen, NO_MOMENTARY, 'dock')).toBe('toggle');
   });
 
-  it('the DEF says discrete and the CARD no longer contradicts it', () => {
-    // The latent write bug: `curve="linear"` meant `knobFracToValue` never
-    // rounded, so the card could persist `gen_mode: 0.37`. Nothing observable
-    // broke because every consumer re-rounds — which is exactly why no runtime
-    // gate ever reddened and why this is checked at SOURCE level.
+  it('the FACE makes the fractional write unreachable — and the CARD keeps its LEDGERED debt', () => {
+    // ⚠ THIS ASSERTION USED TO SAY "the card no longer contradicts the def",
+    // AND FIXING THE CARD TO SATISFY IT WAS THE WRONG MOVE — recorded here
+    // because the wrong move passed every gate it was aimed at.
+    //
+    // The card passes `curve="linear"` against this def's `discrete`. That is a
+    // real disagreement, and it is DEFERRED DEBT rather than an oversight:
+    // `card-def-debt.ts` states that binding the prop "would be a GREEN GATE
+    // OVER A LIVE BUG", because the legacy `Knob.svelte` the card uses has no
+    // `discrete` branch at all — so writing `discrete` there moves no pixel,
+    // stops no fractional write, and only recolours a test. Both cards that
+    // paid this entry did so on a release condition (entering
+    // `RANGE_BOUND_CARDS`); FoxyCard has not met it.
+    //
+    // So what this test pins is the split §B10.5 actually predicted: the DEF is
+    // right, the CARD's divergence stays tracked, and the FACE is where the
+    // defect becomes unreachable — a `segmented` cell writes an option's own
+    // integer `value`.
     expect(param('gen_mode').curve).toBe('discrete');
     expect(param('sync_mode').curve).toBe('discrete');
+    // The face's cell writes exact integers, never a fraction.
+    for (const o of param('gen_mode').options!) expect(Number.isInteger(o.value)).toBe(true);
+    // ⚠ ANCHORED TO THE LEDGER, BOTH DIRECTIONS. If someone binds the card prop
+    // without paying the entry, `card-def-agreement` reddens (a ledger entry
+    // naming a divergence that no longer exists is stale). If someone deletes
+    // the entry while the divergence stands, that gate reddens too. This side
+    // asserts the debt is still DECLARED, so a silent removal of the record —
+    // which would leave the disagreement untracked — cannot pass.
+    expect(
+      OPERATIONAL_DEBT['FoxyCard.svelte'],
+      'foxy card debt is no longer declared — was it PAID, or just un-recorded?',
+    ).toContain('gen_mode.curve');
+    // And the divergence the entry names is really still there.
     const card = readFileSync(
       fileURLToPath(new URL('./FoxyCard.svelte', import.meta.url)),
       'utf8',
     );
-    const genKnob = card.split('\n').find((l) => l.includes('paramId="gen_mode"'))!;
+    const genKnob = card.split('\n').find((l) => l.includes('paramId="gen_mode"'));
     expect(genKnob, 'the gen_mode Knob line vanished — re-point this assertion').toBeTruthy();
-    expect(genKnob).toContain('curve="discrete"');
-    expect(genKnob).not.toContain('curve="linear"');
+    expect(genKnob!).toContain('curve="linear"');
   });
 });
 

@@ -352,15 +352,33 @@ export const foxyDef: AudioModuleDef = {
     // Discrete picker — the card displays FOXY_GEN_MODE_NAMES[gen_mode]
     // next to the knob, mirroring the RESOFILTER mode-name pattern.
     // Roster derived from `FOXY_GEN_MODE_NAMES`, same rule as `sync_mode` (#2007).
-    // ⚠ THIS ONE ALSO FIXES A LATENT WRITE BUG. `gen_mode` DID resolve a
-    // `'toggle'` (0..1 satisfies `looksLikeToggle`), so it was never an
-    // anonymous dial the way `sync_mode` was — but `FoxyCard.svelte` passed
-    // `curve="linear"` against this def's `discrete`, so `knobFracToValue` never
-    // rounded and the CARD could persist `gen_mode: 0.37` into the Y.Doc. Nothing
-    // observable broke because every consumer re-rounds independently (`clampGen`
-    // in the card, `Math.round` in `applySync`), which is exactly why no gate ever
-    // reddened. The card is corrected in this same PR; a `'segmented'` cell writes
-    // an option's own `value`, so the face cannot reintroduce it.
+    // ⚠ THE ASYMMETRY WITH `sync_mode` IS THE POINT: `gen_mode` was NEVER an
+    // anonymous dial. Its `0..1` span satisfies `looksLikeToggle`, so it already
+    // resolved a named `'toggle'` without a roster; the roster is an upgrade
+    // (`'segmented'` prints both mode NAMES) rather than a repair.
+    //
+    // ⚠ AND THE CARD'S `curve` DIVERGENCE IS DELIBERATELY *NOT* TOUCHED HERE.
+    // `FoxyCard.svelte` passes `curve="linear"` against this def's `discrete`,
+    // which is a real declaration disagreement — and it is LEDGERED as known
+    // debt (`card-def-debt.ts`, `OPERATIONAL_DEBT`), not overlooked. Binding
+    // that prop would be **a green gate over a live bug**, which is that
+    // ledger's own stated reason for deferring it: the legacy `Knob.svelte`
+    // the card uses has NO `discrete` branch at all (log and exp only), so
+    // writing `discrete` there changes the colour of a test and nothing a user
+    // can do. Both cards that HAVE paid this entry did so on a release
+    // condition — entering `RANGE_BOUND_CARDS`, where `card-range-source`
+    // refuses a certified def-bound card carrying a known disagreement — and
+    // FoxyCard has not met it (33 hand-typed numeric ranges).
+    //
+    // WHAT ACTUALLY FIXES THE USER-FACING SURFACE IS THE FACE, which is what
+    // §B10.5 predicted ("the face fixes it for free"): the shell resolves this
+    // param to a `'segmented'` cell that writes an option's own integer
+    // `value`, and the shell's own knob rounds for `discrete`
+    // (`knob-conic-model.ts:71`) where the legacy primitive does not. So the
+    // fractional write is unreachable on the surface promotion ships, and the
+    // legacy card keeps its tracked debt until `Knob.svelte` gains the branch
+    // its two sibling primitives already have — its own reviewed PR, because it
+    // changes the drag feel of every discrete knob in the rack.
     {
       id: 'gen_mode', label: 'GEN', defaultValue: 0, min: 0, max: FOXY_GEN_MODE_MAX, curve: 'discrete',
       options: FOXY_GEN_MODE_NAMES.map((label, value) => ({ value, label })),
