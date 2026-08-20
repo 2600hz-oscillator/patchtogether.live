@@ -1172,6 +1172,30 @@ export const FACES = [
         + 'video population, so the weight is the module\'s own rather than the faceplate\'s.',
     }),
   },
+  // THE FACEPLATE QUEUE · Q31 — the hemisphere pool, and the fifth video face.
+  //
+  // `pages: 4` is the declared band count and also the post-split count: this
+  // face promotes NOTHING into the hero (it declares no `hero` at all — the
+  // readout row it was authored with was deleted by the 2026-08-19 ruling), so
+  // no band is emptied. Four is also what keeps it OFF the tab rail
+  // (`DOCK_TAB_MIN_BANDS` is 7), so the dock scene frames stacked bands.
+  //
+  // ⚠ The face's two X-Y PADS are DOCK-ONLY — `laneOrder` excludes every pad
+  // anchor because a pad is square and a lane knob column is 46 px — so the
+  // COMPACT scene shows the fader ladder (MODE / WIND / RAIN) and the dock
+  // scene is the only one that can ever move when a pad declaration changes.
+  {
+    type: 'mirrorpool',
+    pages: 4,
+    videoFaceWhy:
+      'both scenes carry a LIVE picture: the compact tile paints a VideoTileThumb through '
+      + 'hasVideoSurface, and the dock body is the module\'s own fullViewBody extension — the pool '
+      + 'preview plus its SCREEN switch. ⚠ AND TIME ALONE CANNOT PIN IT, which is why this entry '
+      + 'exists rather than a clock seam: the height field is a PING-PONG SIMULATION integrated '
+      + 'once per draw (read front / write back over two float FBOs) and the rain scheduler spawns '
+      + 'fresh impacts from a FRAME COUNTER, so the surface keeps evolving with the clock held '
+      + 'still. The `freeze` param returns out of `draw` before any of that advances.',
+  },
   // THE FACEPLATE QUEUE · Q5 — the Buchla-259-style complex oscillator.
   //
   // `pages: 2` is the POST-hero-split count: the face declares two bands
