@@ -1338,6 +1338,34 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // returns `'placeholder'`, not `'legacy'`, because faceplates are the
   // default), so promotion takes that surface from zero controls to six.
   'moog984',
+  // THE FACEPLATE QUEUE · Q26 — GRAINS OF VISION, the granular video synth, and
+  // the promotion that had to REPAIR AN EXISTING SPEC IN THE SAME DIFF.
+  //
+  // ⚠ THAT IS THE HEADLINE, NOT THE FACE. `workflow-shell-video.spec.ts` spawned
+  // a literal `grainsOfVision` and said why in its own comment: the module is
+  // UN-MIGRATED, so it exercises the PLACEHOLDER host of `VideoTileThumb` while
+  // `backdraft` exercises the FACED one. A faced tile also has a thumb (#1785),
+  // so promoting the hard-coded subject leaves all three of its assertions —
+  // the tile has a thumb, the thumb's blit drives the real chain, the picture
+  // animates — PASSING, while the host they exist to prove stops being covered.
+  // Green, not red: CLAUDE.md's "a gate whose PRECONDITION is the defect" class.
+  // The subject is now DERIVED (`VIDEO_SINK_FIXTURE`), so the next promotion
+  // re-points it automatically and the pool refills (#1929).
+  //
+  // WHAT THE FACE IS. Six bands, untabbed, one per stage of a fixed chain:
+  // grain / scatter / time / feedback / reverb / composite. `rate` is the hero
+  // rank because it is the only control in the video bank that reaches into a
+  // frame HISTORY — every other granular knob has a spatial analogue elsewhere.
+  //
+  // ⚠ TWO DEFECTS FIXED HERE BECAUSE THE FACE WOULD HAVE PAINTED THEM.
+  // `fb_dry`/`rev_dry` are consumed as `>= 0.5` and were declared
+  // `curve: 'linear'`, so a def-driven faceplate renders a continuous rotary
+  // over a two-state value — and the CARD'S OWN COMMENT already claimed they
+  // "render as 2-step DRY toggles" while the code did not honour it. And
+  // `composite` had no `options[]`, so its five named modes would have painted
+  // as an unlabelled 0..4 dial once the card's card-local formatter died with
+  // the card.
+  'grainsOfVision',
   // THE FACEPLATE QUEUE · Q31 — MIRRORPOOL, the fourth VIDEO face and the
   // second adopter of `face.xyPads` (2026-08-19).
   //

@@ -80,7 +80,7 @@ author a `face` and rank the controls — no new platform capability.
 | `foxy` | audio | — | — |
 | `freezeframe` | video | done | — |
 | `gatemaiden` | audio | — | — |
-| `grainsOfVision` | video | — | — |
+| `grainsOfVision` | video | done | — |
 | `graphicEq` | video | — | — |
 | `illogic` | audio | done | — |
 | `inwards` | video | — | — |
