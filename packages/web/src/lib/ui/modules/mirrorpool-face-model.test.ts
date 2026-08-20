@@ -1,10 +1,18 @@
 // packages/web/src/lib/ui/modules/mirrorpool-face-model.test.ts
 //
-// THE PERMANENT NEGATIVE CONTROLS for mirrorpool's one derived readout.
+// THE PERMANENT NEGATIVE CONTROLS for mirrorpool's eye-place join.
 //
-// The bar (module-faceplates.md): a derived readout is negative-controlled on
+// ⚠ THIS JOIN NO LONGER PAINTS ANYWHERE, AND THAT IS WHY THIS FILE MATTERS
+// MORE, NOT LESS. The face was authored with `hero.readouts: [{ label: 'eye' }]`
+// printing UNDER / OVER / OUTSIDE. The 2026-08-19 owner ruling (#1957) deleted
+// the hero readout row from the platform — the resting faceplate paints no
+// derived-state text in any shape — and `ModuleFaceHero` no longer carries a
+// `readouts` field. So this unit lane is now the ONLY thing that holds the
+// arithmetic, exactly as `moog984-face-model.test.ts` is for its column sums.
+//
+// The bar (module-faceplates.md): a derived quantity is negative-controlled on
 // the input a knob readback would be BLIND to, permanently — not once at
-// authoring time. `mirrorpool-eye-place` is a JOIN over `orbit_el` and
+// authoring time. `mirrorpoolEyePlace` is a JOIN over `orbit_el` and
 // `orbit_dist` (the eye's horizontal radius is `dist·cos el`), so the control
 // is that each dial moves it while the OTHER is held, and that nothing else on
 // the module moves it at all.
@@ -177,10 +185,44 @@ describe('mirrorpool face declaration', () => {
   it('declares FADER for every non-pad control — the card draws throws, not dials', () => {
     // A face that does not declare them silently repaints all seven as knobs,
     // which is a look regression the shell cannot infer from a ParamDef.
+    //
+    // ⚠ The INTERNAL params are excluded, and the exclusion is DERIVED from the
+    // def's own `noUserControl` roster rather than named here: the VRT `freeze`
+    // toggle paints no cell of any kind, so demanding a `paramCells` entry for
+    // it would be demanding a look for something that has none.
     const padKeys = new Set((face.xyPads ?? []).flatMap((p) => [p.x, p.y]));
-    const nonPad = mirrorpoolDef.params.map((p) => p.id).filter((id) => !padKeys.has(id));
+    const internal = new Set((mirrorpoolDef.noUserControl ?? []).map((n) => n.param));
+    const nonPad = mirrorpoolDef.params
+      .map((p) => p.id)
+      .filter((id) => !padKeys.has(id) && !internal.has(id));
     const undeclared = nonPad.filter((id) => face.paramCells?.[id] !== 'fader');
     expect(undeclared, 'non-pad params not declared as faders').toEqual([]);
+  });
+
+  it('the VRT freeze toggle is a real PARAM, seeded, and ranked NOWHERE', () => {
+    // ⚠ THE #1941 SHAPE, asserted rather than assumed. `freezeFaceVideo` writes
+    // `params.freeze = 1` into the node's param map through the Y.Doc; a module
+    // that carries only a globalThis time seam looks identical from the store
+    // and the scene never settles. Three things have to hold together, and each
+    // one alone is satisfiable while the pin is dead:
+    //
+    //   1. the param EXISTS on the def (otherwise nothing consumes the write);
+    //   2. it is SEEDED in the defaults the node's param map is built from
+    //      (a declared-but-unseeded id is a write that silently no-ops);
+    //   3. it is a control NOWHERE — not ranked, not paged, declared
+    //      `noUserControl` — or promotion paints a rotary over a flag.
+    const def = mirrorpoolDef.params.find((p) => p.id === 'freeze');
+    expect(def, 'a `freeze` ParamDef').toBeTruthy();
+    expect(def!.defaultValue).toBe(0);
+    expect(MIRRORPOOL_DEFAULTS.freeze, 'seeded in the defaults map').toBe(0);
+    expect(
+      (mirrorpoolDef.noUserControl ?? []).find((n) => n.param === 'freeze')?.writer,
+    ).toBe('internal');
+    expect(face.order, 'freeze must not be ranked').not.toContain('freeze');
+    expect(
+      (face.pages ?? []).flatMap((p) => p.controls),
+      'freeze must not be paged',
+    ).not.toContain('freeze');
   });
 
   it('routes its SCREEN toggle through the extension slot, not the card', () => {

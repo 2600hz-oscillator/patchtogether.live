@@ -347,6 +347,9 @@ interface MirrorpoolParams {
   look_yaw: number;    // free-look yaw (rad)                       [pad 2 X]
   look_pitch: number;  // free-look pitch (rad)                     [pad 2 Y]
   zoom: number;        // 0..1 → FOV 70°..20°
+  /** Hidden determinism toggle for VRT capture. NOT a control — see the
+   *  ParamDef and the `noUserControl` entry. */
+  freeze: number;
 }
 
 const DEFAULTS: MirrorpoolParams = {
@@ -362,6 +365,12 @@ const DEFAULTS: MirrorpoolParams = {
   look_yaw: 0,
   look_pitch: 0,
   zoom: 0.5,
+  // ⚠ SEEDED HERE ON PURPOSE, not merely declared on `params`. The node's param
+  // map is built from the def's defaults, and every write path guards on the id
+  // already EXISTING in it — a `freeze` that is declared but not seeded is a
+  // write that silently no-ops, which is the #1941 shape (a pin gated on
+  // something nothing sets) wearing a different mask.
+  freeze: 0,
 };
 
 export const MIRRORPOOL_DEFAULTS: Readonly<MirrorpoolParams> = DEFAULTS;
@@ -442,6 +451,48 @@ export const mirrorpoolDef: VideoModuleDef = {
     { id: 'look_yaw', label: 'Look X', defaultValue: DEFAULTS.look_yaw, min: -Math.PI, max: Math.PI, curve: 'linear' },
     { id: 'look_pitch', label: 'Look Y', defaultValue: DEFAULTS.look_pitch, min: -1.45, max: 1.45, curve: 'linear' },
     { id: 'zoom', label: 'Zoom', defaultValue: DEFAULTS.zoom, min: 0, max: 1, curve: 'linear' },
+    // ── freeze — the hidden VRT/determinism toggle ────────────────────────
+    //
+    // ⚠ THIS MODULE CANNOT BE PINNED BY TIME ALONE, and the existing seam is
+    // exactly the trap the b3ntb0x face hit (#1941 — grep the setters). Two
+    // independent things advance here:
+    //
+    //   * `__videoEngineFreezeTime` pins `tSec`, and only `tSec`. It is a
+    //     globalThis flag read in `draw`, used by the render-smoke specs and by
+    //     `e2e/vrt/mirrorpool-composite.spec.ts`. The FACE VRT harness
+    //     (`freezeFaceVideo`) writes `params.freeze` through the Y.Doc and sets
+    //     NO GLOBALS, so that seam is dead for it.
+    //   * The wave field is a PING-PONG SIMULATION (`simA`/`simB`, read front /
+    //     write back every draw) fed by `spawnDrops(rain, seed, frameIndex)`,
+    //     and `frameIndex` advances per frame regardless of the clock. So even
+    //     with time pinned the height field keeps integrating and new rain
+    //     impacts keep landing — the analytic fallback keeps its own
+    //     `activeRings` history for the same reason. A screenshot can never
+    //     settle against that.
+    //
+    // Written ONLY by the VRT harness — see `videoFaceWhy` on this module's
+    // FACES roster entry, and the `noUserControl` entry below. At >= 0.5 `draw`
+    // is a no-op, so every surface holds its last frame instead of going black,
+    // which is the same shape `spirographs`, `backdraft`, `freezeframe`,
+    // `grainsOfVision` and `b3ntb0x` already use.
+    { id: 'freeze', label: 'Freeze', defaultValue: DEFAULTS.freeze, min: 0, max: 1, curve: 'linear' },
+  ],
+
+  // #1726 — the ONE synthetic param. It is not a control: `module-face-lint`
+  // requires every ParamDef to render exactly one interactive cell on a
+  // promoted face, and a `curve: 'linear'` freeze would paint as a continuous
+  // rotary over a flag nobody sets by hand. Declaring it here is what exempts
+  // it, and `face.order` does not rank it.
+  //
+  // Hash-transparent (`HASH_TRANSPARENT_PROPS`), so this block costs no
+  // re-attest — ⚠ unlike the `params` entry above it describes, which is real
+  // code on a def inside the WebGL basis and DOES move the attest hash.
+  noUserControl: [
+    {
+      param: 'freeze',
+      writer: 'internal',
+      why: "A determinism toggle for VRT capture, with NO control anywhere - not on the card, not on the faceplate, not on the patch surface. At 0.5 or above the draw step is a no-op so every surface holds its last frame. This module animates by construction and time alone cannot pin it: the height field is a ping-pong wave simulation that integrates once per draw and spawns new rain impacts from a frame counter, so two captures of the same settings are never the same pixels. The visual-regression harness writes it before comparing a screenshot; nothing else ever does.",
+    },
   ],
 
   // ── THE FACEPLATE ──────────────────────────────────────────────────────────
@@ -581,24 +632,32 @@ export const mirrorpoolDef: VideoModuleDef = {
       { x: 'look_yaw', y: 'look_pitch', label: 'look' },
     ],
 
-    // ONE readout: WHERE THE EYE IS STANDING, as a name.
+    // ⚠ THERE IS NO `hero` HERE, AND THE READOUT THIS FACE WAS DESIGNED AROUND
+    // IS GONE. It declared `hero.readouts: [{ label: 'eye', … }]` printing
+    // UNDER / OVER / OUTSIDE — where the eye is standing relative to the water
+    // and the bowl's rim. The owner ruling of 2026-08-19 (#1957) deleted the
+    // hero readout row from the platform outright: the resting faceplate paints
+    // no derived-state text in ANY shape, and `ModuleFaceHero` no longer carries
+    // a `readouts` field for one to be declared in.
     //
-    // It is a JOIN over `orbit_el` and `orbit_dist` — the eye's horizontal
-    // radius is `dist·cos el`, so a readback of either dial is blind to the
-    // other. Hold DIST at 1 and the same camera is inside the bowl at
-    // `el = 0.55` and exactly on its rim at `el = 0`.
+    // WHICH FINDING LOST ITS SURFACE, stated rather than left to lapse (the
+    // CLAUDE.md rule on deleting a readout): the eye's horizontal radius is
+    // `dist·cos el`, so a readback of EITHER camera dial is blind to the other
+    // — hold DIST at 1 and the same camera is inside the bowl at `el = 0.55`
+    // and exactly on its rim at `el = 0`, and crossing `eye.y < 0` switches the
+    // shader to a whole different underwater branch. Nothing a player can SEE
+    // on the resting faceplate says that any more; the picture does, and the
+    // arithmetic survives in `mirrorpool-face-model.ts` with its permanent
+    // negative controls in the unit lane.
     //
-    // ⚠ THE QUEUE'S PROPOSED `eye-side` (ABOVE/BELOW) READOUT WAS REFUSED, and
-    // the refusal is the useful part: `eye.y = dist·sin el` with `dist` clamped
-    // strictly positive, so `sign(eye.y) === sign(orbit_el)` EXACTLY — measured
-    // across 729 camera settings with zero disagreements. That readout would be
-    // one dial's sign relabelled, which is the one thing a derived readout must
-    // not be, and no honest negative control could have been written for it.
+    // ⚠ THE QUEUE'S PROPOSED `eye-side` (ABOVE/BELOW) READOUT WAS ALREADY
+    // REFUSED BEFORE THE RULING, and the refusal is still the useful part:
+    // `eye.y = dist·sin el` with `dist` clamped strictly positive, so
+    // `sign(eye.y) === sign(orbit_el)` EXACTLY — measured across 729 camera
+    // settings with zero disagreements. That readout would have been one dial's
+    // sign relabelled, which is the one thing a derived readout must not be.
     // The refuted identity is kept as a permanent leg in
     // `mirrorpool-face-model.test.ts` so it cannot go stale unnoticed.
-    hero: {
-      readouts: [{ label: 'eye', valueId: 'mirrorpool-eye-place' }],
-    },
   },
 
   docs: {
@@ -633,6 +692,7 @@ export const mirrorpoolDef: VideoModuleDef = {
       look_yaw: "Look X (-pi..pi, default 0): free-LOOK yaw — the X axis of look pad 2. 0 aims straight at the pool centre so the pool is always framed at rest; sweeping it swings the view left/right so the camera can look away from the pool.",
       look_pitch: "Look Y (-1.45..1.45 rad, default 0): free-LOOK pitch — the Y axis of look pad 2. 0 aims at the centre; positive tilts the view up, negative down, off the aim-at-centre. Clamped to about +/-83 degrees.",
       zoom: "Zoom (0..1, default 0.5): maps to a 70..20 degree vertical field of view; higher zooms the camera in.",
+      freeze: "Freeze (0/1, default 0): a hidden determinism toggle with NO control anywhere - not on the card, not on the faceplate, not on the patch surface. At 0.5 or above the draw step is a no-op, so every surface holds its last frame instead of going black. It exists because pinning the clock is not enough here: the height field is a ping-pong wave simulation that integrates once per draw, and the rain scheduler spawns new impacts from a frame counter, so two captures of the same settings are never the same pixels however the time seam is set. The visual-regression harness writes it before comparing a screenshot; nothing else ever does.",
     },
   },
 
@@ -714,6 +774,14 @@ export const mirrorpoolDef: VideoModuleDef = {
       draw(frame) {
         const g = frame.gl;
         if (!ensurePrograms() || !renderProgram) return;
+
+        // ⚠ FIRST, AND BEFORE ANY STATE ADVANCES. See the `freeze` ParamDef for
+        // why this module needs a PARAM and not just the time seam below: the
+        // ping-pong sim integrates and `frameIndex` spawns new drops on every
+        // draw, so returning here — rather than pinning `tSec` — is the only
+        // thing that holds the picture. `renderTarget.texture` keeps its last
+        // contents, so the surface holds its frame instead of going black.
+        if ((params.freeze ?? 0) >= 0.5) return;
 
         const freezeT = (globalThis as unknown as { __videoEngineFreezeTime?: number }).__videoEngineFreezeTime;
         const tSec = typeof freezeT === 'number' && Number.isFinite(freezeT)

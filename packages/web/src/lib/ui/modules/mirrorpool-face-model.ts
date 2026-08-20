@@ -3,6 +3,14 @@
 // The PURE model behind the MIRRORPOOL faceplate — WHERE THE EYE IS STANDING,
 // which is the one thing about this module no single dial can tell you.
 //
+// ⚠ IT HAS NO PAINTED SURFACE, BY OWNER RULING (#1957, 2026-08-19). This was
+// authored as a `hero.readouts` entry; the hero readout row is DELETED from the
+// platform and the resting faceplate paints no derived-state text in any shape.
+// What survives is this arithmetic plus its permanent negative controls in
+// `mirrorpool-face-model.test.ts` — the same disposition `moog984-face-model.ts`
+// took when its four column sums lost their row — and `aria-valuetext` on the
+// controls themselves, which is speakable and assertable but unpainted.
+//
 // WHY IT EXISTS. mirrorpool's camera rides a sphere around the pool, and two
 // different dials decide where that puts you relative to the water:
 //
@@ -104,9 +112,14 @@ export function mirrorpoolEyePlace(read: Read): MirrorpoolEyePlace {
   return Math.hypot(x, z) < POOL_RADIUS ? 'OVER' : 'OUTSIDE';
 }
 
-/** The hero readout's text. A NAME for a placement, never a coordinate — the
- *  owner ruling removed resting decimals from faces, and "you are underwater"
- *  is exactly the kind of thing a number would fail to say. */
+/** The placement as TEXT. A NAME, never a coordinate.
+ *
+ *  ⚠ NOTHING PAINTS THIS. It had one consumer — the deleted
+ *  `face-readout-values.ts` registry — and it is kept, like
+ *  `MOOG984_COLUMN_READOUTS`, so the string form stays under the totality and
+ *  negative-control legs beside it: those legs assert a STATE is produced for a
+ *  fresh node, for NaN and for ±Infinity, and a caller that re-derives the
+ *  string somewhere else would escape them. */
 export function mirrorpoolEyePlaceText(read: Read): string {
   return mirrorpoolEyePlace(read);
 }
