@@ -1233,6 +1233,43 @@ export function liveEmitOutputs(mod: RegistryModule): number {
 export const PER_OUTPUT_MS = 5_000;
 
 /**
+ * The worst per-NAVIGATION cost the emit sweep has been MEASURED at, for a
+ * heavy-GL module, ON CI UNDER REAL SHARD LOAD.
+ *
+ * From the #1984 trace (freezeframe, shard 8/10, SwiftShader, preview bundle):
+ * its five navigations cost 20.6, 21.9, 23.9, 24.2 and ~24.7 s. Each is a full
+ * `goto` → engine boot → spawn of the SUT's GL chain (ACIDWARP → FREEZEFRAME →
+ * VIDEOOUT) → canvas read, with the GL draw running throughout.
+ *
+ * ⚠ This is a CI-UNDER-LOAD number and is ~10× the per-output figures quoted on
+ * `PER_OUTPUT_MS`, which were measured with ONE worker on a developer machine
+ * and on modules whose outputs read a SCOPE. Do not reconcile the two by
+ * picking the smaller — they measure different plans on different hardware.
+ */
+export const MEASURED_HEAVY_EMIT_NAV_MS = 24_700;
+
+/**
+ * What each ADDITIONAL navigation costs a heavy-GL module on the emit sweep.
+ *
+ * 35 000 ms = 1.42× `MEASURED_HEAVY_EMIT_NAV_MS`. The first navigation is not
+ * charged this — it keeps the full `HEAVY_GL_MOUNT_MS` cold-mount tax, which is
+ * 2.4× the measured navigation and covers first-paint shader compilation.
+ *
+ * WHY NOT SIMPLY 60 000 (the cold tax, per navigation). Because the shard
+ * envelope will not carry it: the widest heavy-GL emit plans (`foxy` and
+ * `freezeframe`, 5 live outputs each) would budget 355 s, and the gate prices
+ * the worst plan across `ATTEMPTS = 2` against half the 20-minute shard job —
+ * 710 s against a 600 s ceiling, RED. At 35 000 the worst plan is 255 s → 510 s,
+ * 85 % of that ceiling. The remaining headroom is deliberate: the gate's own
+ * message says the fix for a plan that no longer fits is a CHEAPER PLAN, not a
+ * bigger job timeout, and the cheaper plan is real but out of scope here — see
+ * the follow-up named in #1984 (freeze the GL draw during the SETUP phase of
+ * each iteration and unfreeze only for the pixel read; ~19 s of every 24.7 s
+ * navigation is main-thread starvation from a draw nothing is observing yet).
+ */
+export const HEAVY_GL_RENAV_MS = 35_000;
+
+/**
  * The emit sweep's budget for ONE module — the SINGLE definition, used by the
  * test that spends it and by the shard-envelope gate that prices it.
  *
@@ -1263,7 +1300,60 @@ export function emitBudgetMs(mod: RegistryModule): number {
   // no longer bind: doom is touchesVideo, and a heavy-GL module with even ONE
   // live output already budgets 5 000 + 30 000 + 60 000 = 95 000 > 90 000. That
   // is asserted in the gate below rather than asserted about here.
-  return touchesVideo(mod) ? heavyVideoTimeout(scaled) : scaled;
+  if (!touchesVideo(mod)) return scaled;
+  // ── THE MOUNT TAX IS PER NAVIGATION, NOT PER TEST (#1984) ──────────────────
+  //
+  // `HEAVY_GL_MOUNT_MS` describes itself as "a fixed per-TEST cost that does not
+  // care how many ports the module has". That is TRUE at the wire-up call site
+  // and FALSE here, and the constant was calibrated there and reused verbatim.
+  //
+  // The two sweeps have opposite SHAPES:
+  //   * wire-up (-inputs): ONE `page.goto` before the loop, and it calls
+  //     `freezeVideoRender`. The GL pipeline mounts once, then never draws.
+  //   * emit (-outputs): `page.goto` INSIDE the loop — a deliberate fresh
+  //     navigation per output so a previous iteration's sticky audio source
+  //     cannot turn a dead port green — and it never freezes. So EVERY visited
+  //     output re-mounts the whole GL chain on SwiftShader and keeps it drawing.
+  //
+  // Charging a per-navigation cost once per test makes the budget per navigation
+  // COLLAPSE as the output count rises — the opposite of what the cost does:
+  //
+  //     1 live output  → 95 000 ms budget → 95 s per navigation
+  //     5 live outputs → 115 000 ms       → 23 s per navigation
+  //
+  // MEASURED (#1984), freezeframe, CI shard 8/10 under load, SwiftShader,
+  // E2E_USE_PREVIEW=1 — TWO traces, on OPPOSITE SIDES of the #1971 merge that
+  // touched freezeframe.ts, which is what rules out a code regression:
+  //
+  //   PR #1983 (freezeframe.ts PRE-#1971):  20.6 21.9 23.9 24.2 ~24.8 s  (mean 23.1)
+  //   PR #1969 (freezeframe.ts POST-#1971): 22.7 24.2 22.2 22.7 ~24.0 s  (mean 23.2)
+  //
+  // Same cost either side, so #1971 is not implicated: its 19 deleted lines are
+  // all inside the def's `face:` object (a `hero.readouts` pair), and this sweep
+  // navigates to `?shell=legacy`, which does not render a faceplate at all.
+  //
+  // In both, the test needed ~116 s against a 115 s budget and expired on the
+  // FIFTH of five iterations. NOT a hang — no step stalled in either trace, and
+  // every action completed with an ordinary duration; the plan is simply priced
+  // below its own cost. The two sightings differ only in luck: #1983 squeaked
+  // under on its retry (reported `flaky`), #1969 missed on both attempts
+  // (reported `failed`). One boundary, two samples — not an escalation.
+  //
+  // ⚠ Do NOT read a leak into this. The cost drifts up ~20 % across #1983's five
+  // navigations and is FLAT across #1969's, so "each fresh page leaks the
+  // previous GL context" is NOT established by these two traces. If a
+  // super-linear term is ever needed, measure it first.
+  //
+  // So the first navigation keeps the full cold-mount tax and each ADDITIONAL
+  // navigation pays `HEAVY_GL_RENAV_MS`. Two properties this shape has on
+  // purpose:
+  //   * it is ADDITIVE and non-negative, so NO module's budget shrinks — a flake
+  //     fix must never tighten a budget that is currently passing;
+  //   * equality at ONE live output (30 000 + 5 000 + 60 000 = 95 000, exactly
+  //     today's number), mirroring `wireUpBudgetMs`'s equality-at-zero-ports
+  //     invariant, so this cannot be a silent loosening of the calibrated case.
+  // Both are asserted in the gate in `per-module-per-port-inputs.spec.ts`.
+  return heavyVideoTimeout(scaled) + (live - 1) * HEAVY_GL_RENAV_MS;
 }
 
 // Re-exported so the three split spec files have ONE import site for everything
