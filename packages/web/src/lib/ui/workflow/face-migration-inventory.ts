@@ -413,6 +413,24 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
   { type: 'unityscalemathematik', disposition: 'generic-face' },
   { type: 'vca', disposition: 'generic-face' },
   { type: 'vdelay', disposition: 'generic-face' },
+  {
+    type: 'vstInstrument',
+    disposition: 'bespoke-surface',
+    blockers: ['needs-note-entry-cell'],
+    why:
+      'a VST BRIDGE card (the es9 shape): connection state machine, plugin picker with text ' +
+      'filter (the typed entry), mount/unmount/swap gestures, native-editor toggle, and ' +
+      'meter/rtt/latency telemetry. Zero params — the surface IS the bridge control plane.',
+  },
+  {
+    type: 'vstFx',
+    disposition: 'bespoke-surface',
+    blockers: ['needs-note-entry-cell'],
+    why:
+      'the VST BRIDGE stereo-insert card — the same bridge control plane as vstInstrument ' +
+      '(shared VstBridgePanel: picker with its typed filter entry, mount/unmount, editor, ' +
+      'meters) with zero params; nothing to rank into a generic face.',
+  },
   { type: 'vfpgaRunner', disposition: 'generic-face', note: 'preset roster → selector cell, fabric floorplan → a toggled read-only panel; the params are def-declared, so rank those and not the manifest' },
   { type: 'videoMixer', disposition: 'generic-face' },
   { type: 'warrensspectrum', disposition: 'generic-face', note: 'the ws-filterbank family is a bank of param faders — a family cell/panel, the same shape as the faced modules already register' },

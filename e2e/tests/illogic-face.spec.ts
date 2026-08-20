@@ -95,18 +95,6 @@ async function setParam(page: Page, nodeId: string, key: string, value: number):
   );
 }
 
-/** One hero readout, by its registered `valueId`. */
-
-/**
- * Every readout the hero ACTUALLY PAINTED, read off the rendered faceplate.
- * DERIVED FROM THE ARTIFACT, not from a list — so a fifth readout enrols itself
- * in the distinctness clause below and a readout that silently stopped
- * rendering shrinks the set rather than being skipped.
- */
-
-/** The routing picture — rendered OUTSIDE the ModuleShell subtree (DockFullView
- *  owns the `.page.has-sidebar` grid), so it is scoped to the dock view. */
-
 interface GateStats {
   /** ch1 peak — the boolean jack under test. */
   peak: number;

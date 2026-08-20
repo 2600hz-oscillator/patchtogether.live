@@ -132,6 +132,8 @@ tvLibrarian output:audio_l+audio_r:token
 twotracks input:audio_l_in_a+audio_r_in_a input:audio_l_in_b+audio_r_in_b output:out_l+out_r
 videobox output:audio_l+audio_r:token
 videovarispeed output:audio_l+audio_r:token
+vstFx input:in_l+in_r output:out_l+out_r
+vstInstrument output:out_l+out_r
 wavecel output:out_l+out_r
 wavesculpt output:L+R:token
 `.trim();

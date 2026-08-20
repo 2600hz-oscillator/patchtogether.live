@@ -3631,6 +3631,21 @@ videovarispeed param speed 0..1 linear default=0.5
 videovarispeed param speedCv -1..1 linear default=0
 videovarispeed param start 0..1 linear default=0
 videovarispeed param startCv -1..1 linear default=0
+vstFx meta domain=audio
+vstFx in in_l audio
+vstFx in in_r audio
+vstFx out out_l audio
+vstFx out out_r audio
+vstFx stereo in_l+in_r
+vstFx stereo out_l+out_r
+vstInstrument meta domain=audio
+vstInstrument in gate gate edge=gate
+vstInstrument in pitch cv
+vstInstrument in poly polyPitchGate
+vstInstrument in vel cv
+vstInstrument out out_l audio
+vstInstrument out out_r audio
+vstInstrument stereo out_l+out_r
 warrensspectrum meta domain=audio
 warrensspectrum in audio_in audio
 warrensspectrum in center_cv cv param=spectralCenter cvScale=linear

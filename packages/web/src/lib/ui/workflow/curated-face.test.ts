@@ -8,7 +8,9 @@ import {
   curatedFace,
   dockFacePlan,
   dockPlanControls,
+  faceLaneCellHeights,
   faceTierCap,
+  foldedOrder,
   laneOrder,
   resolveFaceControl,
   FACE_TIER_CAPS,
@@ -375,5 +377,66 @@ describe('faceTierCap — the cap RECONCILED with the lane fit plan', () => {
         ).toBe(selected);
       }
     }
+  });
+
+  // ── faceLaneCellHeights and curatedFace must answer ONE question ONCE ──────
+  //
+  // The heights list and the selected-control list are two derivations of
+  // "which keys reach the lane". They used to differ by exactly the folded
+  // PARTNER axis of every declared pad, because `faceLaneCellHeights` applied
+  // `laneOrder` alone while `curatedFace` composes `foldedOrder(laneOrder(…))`.
+  // The TIER CAP hid it on every face with enough other controls — measured
+  // over the live registry, `backdraft`'s partners rank outside the first six
+  // and its height list did not move — so the drift could only ever surface on
+  // a face whose lane order the fold EMPTIES. These legs make the agreement a
+  // property instead of a coincidence of the current roster.
+
+  it('reserves NO cell height for a pad PARTNER — it renders no cell of its own', () => {
+    const padded: FaceDefLike = {
+      params: [
+        { id: 'ax', label: 'AX' },
+        { id: 'ay', label: 'AY' },
+        { id: 'gain', label: 'Gain' },
+      ],
+      face: {
+        order: ['ax', 'ay', 'gain'],
+        glyph: 'none',
+        xyPads: [{ x: 'ax', y: 'ay' }],
+      },
+    };
+    // The pad ANCHOR is dock-only and the PARTNER is folded, so the one key
+    // that reaches the lane is `gain` — and the heights list is length 1.
+    expect(laneOrder(padded.face!)).toEqual(['ay', 'gain']);
+    expect(foldedOrder({ ...padded.face!, order: laneOrder(padded.face!) })).toEqual(['gain']);
+    expect(faceLaneCellHeights(padded)).toHaveLength(1);
+  });
+
+  it('a PAD-ONLY face reaches the lane with NOTHING, and both derivations say so', () => {
+    // The case that unmasked the bug: with no third control the cap cannot hide
+    // a one-entry difference from ZERO. module-face-lint's registry-wide
+    // cap-vs-fit-plan gate is the twin of this, and it named `joystick`.
+    const padOnly: FaceDefLike = {
+      params: [
+        { id: 'ax', label: 'AX' },
+        { id: 'ay', label: 'AY' },
+      ],
+      face: { order: ['ax', 'ay'], glyph: 'none', xyPads: [{ x: 'ax', y: 'ay' }] },
+    };
+    expect(faceLaneCellHeights(padOnly)).toEqual([]);
+    for (const tier of ['mini', 'compact', 'full'] as FaceTier[]) {
+      const face = curatedFace(padOnly, tier)!;
+      expect(face.controls, tier).toEqual([]);
+      expect(laneBodyPlan(face.cellHeights, laneGlyphFor(padOnly), tier).cellCount, tier).toBe(0);
+    }
+    // ...and the DOCK still paints the pad, so nothing was lost — only unreserved.
+    expect(curatedFace(padOnly, 'dock')!.controls.map((c) => c.key)).toEqual(['ax']);
+  });
+
+  it('NEGATIVE CONTROL — with NO pad declared the fold is the identity', () => {
+    // Guards against "fix it by filtering something else": on a pad-less face
+    // the heights list must be exactly what laneOrder gives, unchanged.
+    expect(faceLaneCellHeights(DEF)).toHaveLength(
+      Math.min(laneOrder(DEF.face!).length, LANE_PLATE_MAX_CELLS),
+    );
   });
 });
