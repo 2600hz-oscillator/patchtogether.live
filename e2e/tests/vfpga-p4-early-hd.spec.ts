@@ -69,6 +69,136 @@ function fpDelta(a: number[], b: number[]): number {
   return d / n;
 }
 
+/** What the in-page temporal-change observer returns, over ONE round trip. */
+interface DeltaWatch {
+  /** The DECIDING delta — the first to clear `stopAbove`, else the last taken. */
+  delta: number;
+  /** The largest delta seen (diagnostic; the assertion uses `delta`). */
+  maxDelta: number;
+  samples: number;
+  elapsedMs: number;
+}
+
+/**
+ * Watch the OUTPUT canvas for frame-to-frame change, ACCUMULATING IN THE PAGE.
+ *
+ * ── why (#1988) ────────────────────────────────────────────────────────────
+ *
+ * This replaces a Playwright-side loop that ran up to 30 times, and on each
+ * pass did `outputFingerprint` -> `waitForTimeout(250)` -> `outputFingerprint`.
+ * Two things made that the dominant, and unbounded, cost of the test:
+ *
+ *   * it is a Playwright-side sampler of a page-side quantity — CLAUDE.md
+ *     rule 5 — so every sample is a CDP round trip on the same main thread as
+ *     the GL subject;
+ *   * `outputFingerprint` does not return a number, it returns the whole
+ *     fingerprint ARRAY. MEASURED locally under `E2E_SWIFTSHADER=1`:
+ *     `fp.length = 6460` numbers per call, at 151 ms per `evaluate` on an IDLE
+ *     many-core machine.
+ *
+ * So the worst case the code PERMITTED was 60 such round trips. #1173 measured
+ * a CDP `evaluate` at ~1.5 s under CI load: 60 x 1.5 s = 90 s of transport,
+ * plus 30 x 250 ms of waiting — ~97.5 s, against a `test.setTimeout(75_000)`
+ * budget, BEFORE boot, three vfpga-runner mounts and three preset loads are
+ * counted. The budget was sized against the OBSERVED path, which early-exits:
+ * measured here, the loop ran exactly ONE iteration (dOff=0.17, dOn=7.84). One
+ * iteration and thirty differ by 30x in cost, and only the first was ever
+ * timed. That is why bumping 75_000 was the wrong move — the number was not
+ * slightly small, it was measuring a path the test does not always take.
+ *
+ * Moving the loop into the page collapses 60 round trips to ONE and drops the
+ * 6460-number payload to a scalar, so the worst case becomes ~30 x 250 ms of
+ * in-page waiting. The MEASURED QUANTITY is unchanged: the mean absolute
+ * difference of two subsampled luma fingerprints taken `gapMs` apart, by the
+ * same arithmetic as `fpDelta` above.
+ */
+async function observeOutputDelta(
+  page: Page,
+  opts: {
+    gapMs: number;
+    maxSamples: number;
+    /** Early-out once a sample EXCEEDS this (the "it moved" question). */
+    stopAbove: number;
+    /**
+     * Early-out once a sample DROPS BELOW this (the "it has settled" question).
+     *
+     * This is how a CONVERGENCE wait is expressed without a wall clock. The
+     * macroblock-mosh reference is a feedback loop, so "settled" is a property
+     * of the picture, not an elapsed time — and a fixed settle is a different
+     * number of frames on every renderer, which is the CLAUDE.md defect. A run
+     * that never settles simply spends its sample budget and returns its real
+     * (large) delta, so the assertion still fails on a genuinely moving
+     * baseline.
+     */
+    stopBelow?: number;
+    /**
+     * Compare every sample against THIS fixed fingerprint instead of against
+     * the previous sample. Used by the per-program distinctness tests, whose
+     * question is "does the bent picture differ from the UN-BENT reference",
+     * not "does the picture move". Crossing CDP once with the reference is
+     * still 30x cheaper than the round trip per sample it replaces.
+     */
+    reference?: number[] | null;
+  },
+): Promise<DeltaWatch> {
+  const canvas = page.locator('[data-testid="video-out-canvas"]');
+  return canvas.evaluate(
+    (el, { gapMs, maxSamples, stopAbove, stopBelow, reference }) =>
+      new Promise<DeltaWatch>((resolve) => {
+        const c = el as HTMLCanvasElement;
+        const ctx = c.getContext('2d');
+        const t0 = performance.now();
+        if (!ctx) {
+          resolve({ delta: 0, maxDelta: 0, samples: 0, elapsedMs: 0 });
+          return;
+        }
+        // Same subsampling as `outputFingerprint`, and same arithmetic as
+        // `fpDelta` — only the place it runs has changed.
+        const fingerprint = (): number[] => {
+          const data = ctx.getImageData(0, 0, c.width, c.height).data;
+          const out: number[] = [];
+          for (let i = 0; i < data.length; i += 64) {
+            out.push((data[i]! + data[i + 1]! + data[i + 2]!) / 3);
+          }
+          return out;
+        };
+        const diff = (a: number[], b: number[]): number => {
+          const n = Math.min(a.length, b.length);
+          if (!n) return 0;
+          let d = 0;
+          for (let i = 0; i < n; i++) d += Math.abs(a[i]! - b[i]!);
+          return d / n;
+        };
+
+        // Against a FIXED reference, or against the previous sample.
+        let prev = reference && reference.length ? reference : fingerprint();
+        const fixed = !!(reference && reference.length);
+        let samples = 0;
+        let last = 0;
+        let max = 0;
+        const tick = (): void => {
+          const cur = fingerprint();
+          const d = diff(prev, cur);
+          if (!fixed) prev = cur;
+          samples++;
+          last = d;
+          if (d > max) max = d;
+          // Early-out the instant the change clears the bar (the normal path),
+          // else run the sample budget out — a genuinely STATIC output pays the
+          // full count and still reports its real, small delta.
+          const settled = typeof stopBelow === 'number' && d < stopBelow;
+          if (d > stopAbove || settled || samples >= maxSamples) {
+            resolve({ delta: last, maxDelta: max, samples, elapsedMs: performance.now() - t0 });
+            return;
+          }
+          setTimeout(tick, gapMs);
+        };
+        setTimeout(tick, gapMs);
+      }),
+    { ...opts, reference: opts.reference ?? null, stopBelow: opts.stopBelow ?? null },
+  );
+}
+
 /** Set a node's loaded VFPGA via its card preset menu + wait for the loaded readout. */
 async function loadPreset(page: Page, nodeId: string, vfpga: string, name: string): Promise<void> {
   const sel = page.locator(`.svelte-flow__node[data-id="${nodeId}"] [data-testid="vfpga-preset"]`);
@@ -134,14 +264,21 @@ test.describe('vfpga P4 early-HD-era bent VFPGAs', () => {
       // is well above renderer noise but easily met by any bend. mosh is a feedback
       // loop (the reference accumulates over frames) and the scaler/tmds animate, so
       // poll a few frames to let the bend settle off the reference frame.
-      let bentFp = await outputFingerprint(page);
-      let delta = bentFp ? fpDelta(refFp!, bentFp) : 0;
-      for (let i = 0; i < 30 && delta < 6; i++) {
-        await page.waitForTimeout(150);
-        bentFp = await outputFingerprint(page);
-        delta = bentFp ? fpDelta(refFp!, bentFp) : 0;
-      }
-      expect(delta, `${program}: bent output is DISTINCT from the un-bent reference (Δluma=${delta.toFixed(2)}/255)`).toBeGreaterThan(6);
+      // Same loop bound (30) and same stop condition (Δ > 6) as before, but run
+      // IN THE PAGE against the reference: one round trip instead of thirty.
+      // See `observeOutputDelta` for the measured reason (#1988).
+      const bent = await observeOutputDelta(page, {
+        gapMs: 150,
+        maxSamples: 30,
+        stopAbove: 6,
+        reference: refFp,
+      });
+      const delta = bent.delta;
+      expect(
+        delta,
+        `${program}: bent output is DISTINCT from the un-bent reference (Δluma=${delta.toFixed(2)}/255) — ` +
+          `[instrument] samples=${bent.samples} max=${bent.maxDelta.toFixed(2)} ms=${Math.round(bent.elapsedMs)}`,
+      ).toBeGreaterThan(6);
 
     });
   }
@@ -164,6 +301,12 @@ test.describe('vfpga P4 early-HD-era bent VFPGAs', () => {
   // decisively larger with mvectB on than off — a renderer-tolerant causal proof that
   // clip B's motion reaches the picture (a dead vin2 binding would leave it static).
   test('macroblock-mosh: clip B (vin2) motion transfers onto image A (two-clip datamosh)', async ({ page, rack, errorWatch }) => {
+    // A pure FAILURE BOUND, not the gate. What made 75_000 unreachable was the
+    // Playwright-side capture loop (up to 60 CDP round trips, ~1.5 s each under
+    // CI load per #1173 — see `observeOutputDelta`); that loop now runs in the
+    // page over ONE round trip, so the worst case is ~30 x 250 ms of in-page
+    // waiting rather than ~97.5 s of transport. The number is kept only to stop
+    // a genuinely broken render hanging the shard.
     test.setTimeout(75_000); // 3 runners + output on SwiftShader, two capture phases
 
     await spawnPatch(
@@ -209,11 +352,24 @@ test.describe('vfpga P4 early-HD-era bent VFPGAs', () => {
 
     // Phase 1 — mvectB OFF: B's motion is ignored and there is no synthetic storm,
     // so once the reference has settled the output is static frame-to-frame.
-    const a0 = await outputFingerprint(page);
-    await page.waitForTimeout(600);
-    const a1 = await outputFingerprint(page);
-    expect(a0, 'phase-1 fingerprints readable').not.toBeNull();
-    const dOff = a0 && a1 ? fpDelta(a0, a1) : 0;
+    // ONE sample pair, 600 ms apart — same measurement as before, taken in-page.
+    // ⚠ "once settled" is asserted as a PROPERTY OF THE PICTURE, not as an
+    // elapsed time. macroblock-mosh's reference is a feedback loop, so how far
+    // it has converged after the fixed settle above is a function of how many
+    // FRAMES the renderer managed — the classic ms-vs-frames defect. Measured
+    // across five local runs the single-sample baseline read 0.08, 0.16, 1.71
+    // and 5.09 against a `< 5` bar: 1-in-5 red, on a value that is supposed to
+    // be ~0. So sample until the output actually stops changing, and give up
+    // after a bounded number of tries — a baseline that never settles keeps its
+    // real (large) delta and still fails the assertion below.
+    const off = await observeOutputDelta(page, {
+      gapMs: 600,
+      maxSamples: 10,
+      stopAbove: Infinity,
+      stopBelow: 5,
+    });
+    expect(off.samples, `phase-1 fingerprints readable (${JSON.stringify(off)})`).toBeGreaterThan(0);
+    const dOff = off.delta;
 
     // Phase 2 — mvectB ON: B's per-frame motion now warps image A; the output must
     // animate. Poll a few frames so the warp accumulates off the settled reference.
@@ -224,23 +380,46 @@ test.describe('vfpga P4 early-HD-era bent VFPGAs', () => {
       };
       w.__ydoc.transact(() => { const m = w.__patch.nodes['bent']; if (m) m.params.p5 = 0.3; });
     });
-    await page.waitForTimeout(600);
-    let dOn = 0;
-    for (let i = 0; i < 30 && dOn <= dOff + 5; i++) {
-      const b0 = await outputFingerprint(page);
-      await page.waitForTimeout(250);
-      const b1 = await outputFingerprint(page);
-      dOn = b0 && b1 ? fpDelta(b0, b1) : 0;
-    }
+    // Up to 30 sample pairs 250 ms apart, early-exiting the moment the output
+    // moves decisively more than the phase-1 baseline — the SAME loop bound and
+    // the SAME stop condition as before, now run entirely in the page.
+    // ⚠ The early-exit bar is the HIGHER of the two bars the assertions below
+    // set, and that is a FIX, not a tuning.
+    //
+    // The loop used to stop at `dOff + 5` while the second assertion demands
+    // `> 6`. Those disagree whenever dOff < 1 — which is the NORMAL case, since
+    // phase 1 is asserted to be under 5 and measures ~0.1-1.7 in practice. So
+    // the loop could stop sampling at, say, 5.17 (clearing dOff+5 = 5.08) and
+    // then fail `> 6` with 29 of its 30 samples unspent: it stopped looking
+    // BELOW its own bar. Caught by the 3x flake-check — 1 of 3 runs, at
+    // `Δon=5.17, samples=1`, with the warp still accumulating.
+    //
+    // Raising the loop's stop condition to `max(dOff + 5, 6)` changes NO
+    // threshold — both assertions are untouched — it only stops the sampler
+    // quitting before the thing it is sampling for could have happened. A
+    // genuinely static output still spends all 30 samples and still fails:
+    // measured with the B-transfer forced off, `Δon=0.00 max=0.00 samples=30`.
+    const on = await observeOutputDelta(page, {
+      gapMs: 250,
+      maxSamples: 30,
+      stopAbove: Math.max(dOff + 5, 6),
+    });
+    const dOn = on.delta;
 
     // The baseline really is (near) static — proof the comparison is meaningful (a
     // perpetually-animating output would make any Δon trivially pass).
-    expect(dOff, `baseline (mvectB=0) is ~static once settled (Δoff=${dOff.toFixed(2)}/255)`).toBeLessThan(5);
+    const dump =
+      `[instrument] off{Δ=${off.delta.toFixed(2)} samples=${off.samples} ms=${Math.round(off.elapsedMs)}} ` +
+      `on{Δ=${on.delta.toFixed(2)} max=${on.maxDelta.toFixed(2)} samples=${on.samples} ms=${Math.round(on.elapsedMs)}}`;
+    expect(
+      dOff,
+      `baseline (mvectB=0) is ~static once settled (Δoff=${dOff.toFixed(2)}/255) — ${dump}`,
+    ).toBeLessThan(5);
     // The output animates decisively MORE with the transfer on — clip B's motion is
     // reaching the picture (renderer-tolerant: a coarse Δluma comparison, not pixel
     // equality). dOn also clears an absolute floor (it really moves under B).
-    expect(dOn, `B-transfer animates the output (Δon=${dOn.toFixed(2)} vs Δoff=${dOff.toFixed(2)} /255)`).toBeGreaterThan(dOff + 5);
-    expect(dOn, `output visibly animates under B's motion (Δon=${dOn.toFixed(2)}/255)`).toBeGreaterThan(6);
+    expect(dOn, `B-transfer animates the output (Δon=${dOn.toFixed(2)} vs Δoff=${dOff.toFixed(2)} /255) — ${dump}`).toBeGreaterThan(dOff + 5);
+    expect(dOn, `output visibly animates under B's motion (Δon=${dOn.toFixed(2)}/255) — ${dump}`).toBeGreaterThan(6);
   });
 
   // macroblock-mosh LEAK AUDIT (the flagship's reference frame-store FBOs): under

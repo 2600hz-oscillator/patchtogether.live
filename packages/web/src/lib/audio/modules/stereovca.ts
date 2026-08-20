@@ -46,6 +46,7 @@
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
+import type { ParamLandmark } from '$lib/graph/types';
 import workletUrl from '@patchtogether.live/dsp/dist/stereovca.js?url';
 
 import { createWorkletNode } from '$lib/audio/worklet-guard';
@@ -90,6 +91,57 @@ export const stereoVcaMath = {
   },
 };
 
+/**
+ * OFFSET's three named waypoints — the QUIESCENT FLOOR this dial sets.
+ *
+ * ⚠ THE OWNER RULED THIS MECHANISM BY NAME (#1962, 2026-08-19, verbatim
+ * *"2 - b"*): stereovca KEEPS its behaviour — mute at centre, unity at both
+ * rails, no default change and no audible change — and the mute-at-centre fact
+ * is made LEGIBLE **on the control**, as a landmark NAME at the centre
+ * position. Not a readout row: the 2026-08-17 resting-text ruling permits an
+ * option/landmark NAME under a control and forbids every other derived-state
+ * shape, and a `MUTE` tick at 12 o'clock is the permitted class.
+ *
+ * WHAT EACH NAME IS TRUE OF, and it is the FLOOR, not the module's audibility.
+ * `offset` is the DC term added to `strength` before the multiply, so with
+ * nothing patched the multiplier IS `offset` — but with a cable in `strength_*`
+ * the gain is `(strength + offset) × level` and no label on this dial could
+ * track it. Naming the FLOOR is therefore true unconditionally, where naming
+ * the module's output level would become a lie the moment a modulator arrives:
+ *
+ *   −1 `INV`   the floor is unity with the polarity flipped (|gain| = level)
+ *    0 `MUTE`  the floor is closed — the shipped default, and the whole point
+ *   +1 `UNITY` the floor is open at unity with no modulator patched
+ *
+ * ⚠ NEAREST-MATCH SPREAD, MEASURED AND ACCEPTED. `knobNameReadout` resolves by
+ * NEAREST value by design (`knob-vocabulary-model.ts` says so, and ties go to
+ * the earlier entry), so `MUTE` prints across |offset| ≤ 0.5 — where the
+ * quiescent gain reaches ×0.5, i.e. −6.02 dB, which is quiet but not muted.
+ * The alternative measured against it was a five-tick roster adding `HALF` at
+ * ±0.5, which halves the band to |offset| ≤ 0.25 (−12.04 dB) and doubles the
+ * text on a 46 px lane knob. Three ticks is what every existing landmark
+ * roster in the repo declares (kickdrum `body_shape`, lfo `shape`,
+ * warrensspectrum) and compact-by-default is the standing ruling, so the band
+ * is PINNED by `stereovca-face-model.test.ts` rather than narrowed here.
+ *
+ * ⚠ AND `format` IS DELIBERATELY NOT DECLARED. `paintsReadout` is
+ * `!format && (options || landmarks)`, so declaring a formatter — the shape
+ * `vca` uses for its own attenuverter — would paint NOTHING at rest and delete
+ * the exact legibility the ruling asks for. The distinction is real rather
+ * than stylistic: vca's `cvAmount` means its SIGN (a BOUNDARY, where a nearest
+ * lookup genuinely lies — see vca-gain-model's header), while this dial means
+ * its MAGNITUDE, which is a proximity question and is what landmarks answer.
+ *
+ * UI VOCABULARY, so contract-transparent: `contract-signature` projects only
+ * id/min/max/curve/defaultValue/units, and this def is audio, so the attest is
+ * NIL on both counts.
+ */
+export const STEREOVCA_OFFSET_LANDMARKS: readonly ParamLandmark[] = [
+  { value: -1, label: 'INV' },
+  { value: 0, label: 'MUTE' },
+  { value: 1, label: 'UNITY' },
+];
+
 export const stereovcaDef: AudioModuleDef = {
   type: 'stereovca',
   palette: { top: 'Audio modules', sub: 'Utility' },
@@ -112,7 +164,11 @@ export const stereovcaDef: AudioModuleDef = {
   ],
   params: [
     { id: 'level',  label: 'Level',  defaultValue: 1.0, min:  0, max: 1, curve: 'linear' },
-    { id: 'offset', label: 'Offset', defaultValue: 0.0, min: -1, max: 1, curve: 'linear' },
+    // The landmark roster is the #1962 ruling's whole implementation — see
+    // STEREOVCA_OFFSET_LANDMARKS above for what each name is true OF and why
+    // no `format` may join it.
+    { id: 'offset', label: 'Offset', defaultValue: 0.0, min: -1, max: 1, curve: 'linear',
+      landmarks: STEREOVCA_OFFSET_LANDMARKS },
   ],
 
   docs: {
@@ -130,8 +186,99 @@ export const stereovcaDef: AudioModuleDef = {
     },
     controls: {
       level: "Master output gain applied after the per-channel multiply (0 to 1, default unity) — a final trim on both channels at once without touching the modulation depth.",
-      offset: "A bipolar DC term added to each strength signal before multiplying (-1 to +1, default 0). At 0 an unpatched strength (0 V) mutes the channel; turn offset up toward +1 to lift the floor so the channel stays open at unity even with no modulator, and a strength signal then only ducks it — handy for 'always on with optional duck' patches.",
+      offset: "A bipolar DC term added to each strength signal before multiplying (-1 to +1, default 0). It sets the QUIESCENT FLOOR — the gain the channel has with nothing patched into STRENGTH — and the dial is marked with that floor's three named waypoints: MUTE at the centre, UNITY at +1, and INV at -1 (also unity, with the polarity flipped, so the two ends differ in phase and not in level). The shipped default is the centre, so a freshly patched stereovca with no modulator is SILENT until you move this control or send it some strength; turn it up toward +1 to lift the floor so the channel stays open at unity even with no modulator, and a strength signal then only ducks it — handy for 'always on with optional duck' patches. With a cable in STRENGTH the gain is (strength + offset) x level, so the marks name where this dial sits rather than how loud the module is.",
     },
+  },
+
+  // RACKLINE curation (face queue Q42). Two controls, so almost nothing about
+  // this face is a layout decision — the whole of it is WHICH CONTROL IS RANK 1
+  // and WHAT THE DIAL SAYS AT REST, and both descend from one measurement.
+  //
+  // WHAT IT IS FOR, musically: the rack's stereo VCA *and* its ring modulator,
+  // with no mode switch — `out = in × (strength + offset) × level` per channel,
+  // and the perceptual difference is purely how fast the control signal is.
+  //
+  // THE RANKING ARGUMENT, AND IT INVERTS DECLARATION ORDER. Read straight off
+  // the shipping worklet (`packages/dsp/src/stereovca.ts:62-71`): with nothing
+  // patched into `strength_*` the multiplier is `0 + offset`, so
+  //
+  //     stL = 0 + offset   ⇒   outL[i] = xL * offset * level
+  //
+  // and at the shipped defaults (`offset = 0`) that is `xL * 0 * level` — zero
+  // for EVERY sample and for EVERY value of `level`. So at spawn:
+  //
+  //   * `offset` is the ONLY control that can un-mute the module, and
+  //   * `level` is bit-exactly INERT — it multiplies a term already exactly 0.
+  //
+  // The inertness is structural rather than statistical: it is a multiply by a
+  // literal zero, not a small number. That is why `offset` takes rank 1 even
+  // though `level` is declared first, and it is the same shape as vca's `base`
+  // ranking (REACHABILITY FROM THE SPAWN STATE) arrived at independently.
+  //
+  // WHAT IS GIVEN UP, stated because it is real: at `mini` (cap 1) the tile
+  // shows OFFSET alone, so the master trim is one zoom step away. That is the
+  // right trade — a tile whose one control cannot make the module audible is a
+  // tile with nothing to do.
+  //
+  // THE TIER LADDER AS A SENTENCE: a glyph BINDS (`meter` resolves
+  // `{kind:'live-audio', portId:'out_l'}` — `primaryAudioOutPortId` returns
+  // `out_l`), so the compact cap is `LANE_ROW_MAX_CELLS_WITH_GLYPH = 2`, and
+  // the module has exactly two controls. Everything fits from compact upward
+  // and only `mini` truncates. ⚠ The meter reads EXACTLY ZERO at spawn, for
+  // the reason above — so it is also the fastest surface on which a player
+  // sees the silent-at-spawn state, and any live-glyph assertion has to drive
+  // `offset` or patch `strength_l` first or it is asserting on silence.
+  //
+  // `glyph: 'meter'` rather than `'waveform'`: both resolve to the same live
+  // tap, and this module's entire job is LEVEL — its sharpest property is a
+  // level of zero, which is exactly what a meter shows.
+  face: {
+    order: ['offset', 'level'],
+    glyph: 'meter',
+    // ⚠ `level` IS DECLARED A FADER AND `offset` IS DELIBERATELY NOT, AND THAT
+    // ASYMMETRY IS THE ONE NON-OBVIOUS LINE IN THIS FILE.
+    //
+    // The legacy card mounts `<NeonFader>` for BOTH (StereovcaCard.svelte), so
+    // declaring the kind for both is what "preserve today's look" would ask
+    // for. Measured against the shell instead of assumed: the `fader` branch of
+    // ModuleShell (`:990-1005`) passes NO `landmarks` and no `ticks`, and
+    // `NeonFader` has no resting readout element at all — its own source says
+    // why, verbatim: *"A fader's readout is a number by construction — there is
+    // no option/landmark NAME a level could print — so the whole element went"*.
+    // Only the KNOB branch (`:1044-1046`) forwards `landmarks`, and only
+    // `KnobConic` paints `knobNameReadout` plus the labeled `knobMarks` ticks.
+    //
+    // So declaring `offset: 'fader'` would silently delete the `MUTE` name the
+    // owner ruled for on #1962 — a face that looks complete and satisfies the
+    // ruling nowhere. `offset` therefore takes the swap from throw to dial
+    // DELIBERATELY, buying three labeled ticks and a resting state name; and
+    // `level`, which has no vocabulary to print and would gain nothing, keeps
+    // its throw. ⚠ Price the lane consequence: `LANE_CELL_H.fader` is 96 px
+    // against a 42 px plate row, so one cell of this plate is a throw.
+    paramCells: { level: 'fader' },
+    // ONE PAGE, and this face says so rather than inventing a second idea: a
+    // level and the bias that decides what it multiplies are one thought.
+    // Membership is in FUNCTION order — the band reads the same way the law
+    // printed at the top of this file does.
+    //
+    // ⚠ NO `hero.readouts`, AND THAT IS THE RULING RATHER THAN AN OMISSION.
+    // The Q42 spec proposed a derived `quiescent gain` line; the owner ruled
+    // the legibility onto the CONTROL instead (#1962). A landmark name is
+    // strictly narrower than that readout would have been — it cannot see
+    // `level`, so it says "OFFSET is at its MUTE position", not "the module is
+    // muted" — and that narrowness is the right half to keep: a level fader at
+    // zero is self-evidently silent, while an OFFSET at centre is not, and the
+    // non-obvious half is the one worth naming.
+    //
+    // ⚠ NO `face.sidebar`: it is the one contract-projected `face` field, and
+    // `sweepBudgetMs(adopterCount)` scales with the roster.
+    pages: [
+      {
+        id: 'level',
+        label: 'out = in × (strength + offset) × level',
+        controls: ['offset', 'level'],
+      },
+    ],
   },
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
