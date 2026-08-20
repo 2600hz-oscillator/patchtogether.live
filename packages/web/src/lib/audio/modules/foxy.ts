@@ -234,7 +234,7 @@ export function foxyRatioLock(masterHz: number, slaveHz: number): number {
 
 /** Bridge update throttle. ~24 Hz (well under 60fps) keeps the
  *  loadWavetable posts + the field recompute cheap. */
-const BRIDGE_MS = 42;
+export const BRIDGE_MS = 42;
 
 /** SWOLEVCO timbre→FM-deviation scaling (mirrors swolevco.ts TIMBRE_MAX_HZ). */
 const TIMBRE_MAX_HZ = 200;

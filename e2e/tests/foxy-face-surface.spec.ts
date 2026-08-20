@@ -149,15 +149,18 @@ test.describe('foxy: the FACE surface (what ships)', () => {
     // it is checked on the shipping surface: a railed face shows ONE band at a
     // time, so a regression that stopped railing would paint all seven at once.
     const fv = await openFace(page);
-    const pages = fv.locator('[data-testid="face-page"]');
-    await expect(pages, 'seven declared pages').toHaveCount(7);
-    await expect
-      .poll(async () => {
-        let shown = 0;
-        for (const p of await pages.all()) if (await p.isVisible()) shown++;
-        return shown;
-      }, { message: 'a railed face renders exactly ONE band at a time' })
-      .toBe(1);
+    await expect(fv.locator('[data-testid="face-page"]'), 'seven declared pages').toHaveCount(7);
+    // ⚠ ONE ROUND TRIP PER SAMPLE, and the first draft got this wrong in a way
+    // that recovered-on-retry on CI (#1847). It polled `pages.all()` and called
+    // `isVisible()` per band — EIGHT round trips per sample, each hopping the
+    // same main thread this module's own render loop was saturating, so the
+    // instrument was competing with its subject and timed out at 5 s. `:visible`
+    // is resolved IN THE PAGE by Playwright's selector engine and `toHaveCount`
+    // auto-retries, so one sample is one hop.
+    await expect(
+      fv.locator('[data-testid="face-page"]:visible'),
+      'a railed face renders exactly ONE band at a time',
+    ).toHaveCount(1);
   });
 
   test('SCREEN starts ON, collapses the pictures, RECLAIMS the space, and comes back', async ({ page }) => {

@@ -37,6 +37,7 @@
   import { mutateNode } from '$lib/graph/mutate';
   import { useEngine } from '$lib/audio/engine-context';
   import {
+    BRIDGE_MS,
     FOXY_GEN_MODE_NAMES,
     buildWavetableExport,
     buildWavetableExportFilename,
@@ -175,15 +176,44 @@
     return sig;
   }
 
+  // ⚠ PAINT AT THE RATE THE CONTENT CAN CHANGE, NOT AT THE RATE rAF FIRES —
+  // and this is a correctness fix, not a micro-optimisation. `bridgeTick` is
+  // throttled to BRIDGE_MS inside the module, so every picture here is a pure
+  // function of state that cannot move faster than ~24 Hz. Painting all five at
+  // 60 Hz therefore re-rasterised identical pixels roughly two frames in three.
+  //
+  // MEASURED, and it is why this is here rather than in a follow-up: at 60 Hz
+  // the five scale-draws saturate the page's main thread on CI's two-core
+  // SwiftShader runners, and everything Playwright injects onto that SAME
+  // thread starves behind them. It took `faces-parity`'s `centreOf` — a bare
+  // `locator.evaluate` returning a bounding box — past a 144 s test timeout
+  // while the locator had already resolved to a visible element, and it made a
+  // tab-rail poll recover-on-retry. Neither is a slow test; both are the
+  // instrument competing with its own subject (CLAUDE.md's "never sample a
+  // page-side quantity with a Playwright-side poll loop", arriving from the
+  // product side).
+  //
+  // BRIDGE_MS is IMPORTED from the module rather than restated, so the paint
+  // rate cannot drift from the rate the data actually changes.
+  let lastPaintMs = -1;
+
   function draw(): void {
     rafId = null;
     const eng = engineCtx.get();
     const node = patch.nodes[nodeId] as ModuleNode | undefined;
     if (eng && node) {
       // ⚠ ADVANCE UNCONDITIONALLY — see the pull-driven note at the top. This is
-      // the ONE call that must not be gated on `previewCollapsed`.
+      // the ONE call that must not be gated on `previewCollapsed`, and it must
+      // not be gated on the paint throttle either: the module's own tick is
+      // what keeps the rasters and the table evolving.
       eng.read(node, 'tick');
-      if (!previewCollapsed) {
+      const now =
+        typeof performance !== 'undefined' && typeof performance.now === 'function'
+          ? performance.now()
+          : Date.now();
+      const paintDue = now - lastPaintMs >= BRIDGE_MS;
+      if (paintDue) lastPaintMs = now;
+      if (!previewCollapsed && paintDue) {
         const imgA = eng.read(node, 'rasterImageDataA') as ImageData | undefined;
         const imgB = eng.read(node, 'rasterImageDataB') as ImageData | undefined;
         const imgC = eng.read(node, 'rasterImageDataC') as ImageData | undefined;

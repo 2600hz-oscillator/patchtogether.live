@@ -341,10 +341,35 @@ describe('foxy — SCREEN OFF MUST NOT STOP THE MODULE (the pull-driven inversio
 
   it('reads the tick BEFORE the collapse branch, never inside it', () => {
     const tickAt = body.indexOf(`read(node, 'tick')`);
-    const guardAt = body.indexOf('if (!previewCollapsed)');
+    // ⚠ MATCHES THE BRANCH PREFIX, not its exact text. The guard grew a second
+    // clause (`&& paintDue`) when the paint was throttled, and an exact-string
+    // probe would have gone quietly un-findable — `indexOf` returning -1 while
+    // the assertion below still "passed" against a -1 it never checked. The
+    // explicit `toBeGreaterThan(-1)` on BOTH indices is what makes this
+    // structural rather than incidental.
+    const guardAt = body.indexOf('if (!previewCollapsed');
     expect(tickAt, "the unconditional tick is gone — foxy stops when SCREEN is off").toBeGreaterThan(-1);
     expect(guardAt, 'the collapse branch is gone — re-point this assertion').toBeGreaterThan(-1);
     expect(tickAt, 'the tick moved INSIDE the collapse branch (#1720/#1721)').toBeLessThan(guardAt);
+  });
+
+  it('the PAINT is throttled to the module\'s own bridge rate, imported not restated', () => {
+    // The starvation fix. Painting five canvases at 60 Hz re-rasterised
+    // identical pixels ~2 frames in 3 (the pictures cannot change faster than
+    // BRIDGE_MS) and saturated the page main thread on CI, which is what took
+    // faces-parity's `centreOf` past a 144 s timeout. Importing the constant is
+    // what keeps the paint rate from drifting away from the data rate.
+    expect(body).toContain("BRIDGE_MS");
+    expect(body).toContain('paintDue');
+    expect(body, 'the bridge rate must be IMPORTED, never re-typed').not.toMatch(
+      /const\s+\w*(PAINT|BRIDGE)\w*_MS\s*=\s*\d+/,
+    );
+    // ⚠ AND THE THROTTLE MUST NOT REACH THE TICK. Gating the advance on the
+    // paint clock would re-introduce the #1720/#1721 freeze by a side door.
+    const tickAt = body.indexOf(`read(node, 'tick')`);
+    const dueAt = body.indexOf('const paintDue');
+    expect(dueAt, 'the paint throttle is gone — re-point this assertion').toBeGreaterThan(-1);
+    expect(tickAt, 'the tick fell behind the paint throttle').toBeLessThan(dueAt);
   });
 
   it('keeps both switches on node.data, which survives the unmount', () => {
