@@ -243,7 +243,7 @@ export const VRT_SCENES: Record<string, VrtScene> = {
   // VRT determinism (task #198): freeze-on-AudioContext-suspend alone leaves
   // the cursor at a wall-clock-dependent position (how many rAF ticks land
   // before suspend resolves varies run-to-run by ±a few frames; at default
-  // samplesPerFrame each frame advances the cursor ~1.25 scanlines, so over
+  // samplesPerFrame each frame advances the cursor ~0.78 scanlines (#2001), so over
   // a settle window the cursor wanders by tens of rows → same band pattern
   // shifted vertically → 16%-pixel diffs busting the tolerance budget).
   //

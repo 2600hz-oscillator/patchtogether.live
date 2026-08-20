@@ -14,6 +14,8 @@ import {
   wrapModeFromParam,
   type RasterFrameParams,
 } from './rasterize-map';
+import { VIDEO_RES } from '$lib/video/engine';
+import { rasterizeDef } from './rasterize';
 
 describe('sampleToLuminance', () => {
   it.each([
@@ -212,8 +214,35 @@ describe('mapRasterFrame — degenerate frames', () => {
 });
 
 describe('scanlinesPerFrame', () => {
-  it('reports ~1.25 scanlines/frame at the spec default (800 samp / 640 px)', () => {
+  // ⚠ THIS BLOCK USED TO BE GREEN AND BLIND (#2001). It asserted
+  // `scanlinesPerFrame(800, 640) ≈ 1.25` and CALLED THAT "the spec default".
+  // The arithmetic was right and the label was wrong: the engine frame has
+  // been `VIDEO_RES` (1024×768) throughout, so the real default figure is
+  // 800/1024 = 0.78125. Because the width was hand-typed into the call, the
+  // test could never notice — it pinned a number for a frame size the product
+  // does not use, and the same "640×480 / ~1.25 scanlines" prose had spread to
+  // the def, the map, the draw layer and the public module manifest.
+  //
+  // The repair is to ANCHOR TO THE ARTIFACT: the default case now reads its
+  // width off `VIDEO_RES` and its samples off the def's own `defaultValue`, so
+  // a resolution change moves this assertion instead of silently invalidating
+  // its name. The pure-arithmetic leg is kept separately, with its width
+  // written out, because that one IS about the function and not about the
+  // product's configuration.
+  it('reports the DEFAULT scanlines/frame from the live engine res + def default', () => {
+    const samples = rasterizeDef.params.find((p) => p.id === 'samplesPerFrame')!.defaultValue;
+    const expected = samples / VIDEO_RES.width;
+    expect(scanlinesPerFrame(samples, VIDEO_RES.width)).toBeCloseTo(expected, 10);
+    // The measured figure at the shipped configuration, stated so a reviewer
+    // sees the number and not only the formula. Units: SCANLINES per frame.
+    expect(expected).toBeCloseTo(0.78125, 5);
+    // NEGATIVE CONTROL, and it is the leg that would have caught #2001: the
+    // stale prose figure must NOT be what the live configuration produces.
+    expect(expected).not.toBeCloseTo(1.25, 2);
+  });
+  it('is pure arithmetic — samples over line width, whatever the width', () => {
     expect(scanlinesPerFrame(800, 640)).toBeCloseTo(1.25, 5);
+    expect(scanlinesPerFrame(2048, 1024)).toBeCloseTo(2, 5);
   });
   it('is 0 for a 0-width frame', () => {
     expect(scanlinesPerFrame(800, 0)).toBe(0);

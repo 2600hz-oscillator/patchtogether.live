@@ -672,6 +672,27 @@ describe('module-face lint — MOMENTARY pads (face.momentary)', () => {
     // A stuck momentary value here would also be audible rather than cosmetic:
     // the two laws differ by up to 5.45 dB between their anchors.
     'moog902:mode',
+    // RASTERIZE, 2026-08-20. WRAP chooses what happens when the scan cursor
+    // runs off the end of the frame: 0 wraps and keeps accumulating (toroidal
+    // drift), 1 clears on wrap for a clean top-to-bottom repaint sweep.
+    //
+    // ⚠ THE LEVEL READ IS ONE HOP AND IT IS WORTH NAMING, because this module
+    // DOES contain an edge detector and it is not this param. `RasterPainter.
+    // paint` calls `wrapModeFromParam(params.wrap)` on EVERY frame and hands
+    // the result to `mapRasterFrame`, which branches on it when the run passes
+    // `total` — a continuous per-frame level read, no edge anywhere. The thing
+    // that IS a change detector on this module is `cursor`, which re-seats only
+    // when its FLOORED value differs from the last one seen (#2000) — so the
+    // one param with edge-ish behaviour is a continuous knob, and the one with
+    // the press-pad shape is a pure level. That is the freezeframe inversion
+    // again, and it is why the shape alone could not have answered this.
+    //
+    // The card it replaces drew it as a single latching WRAP/CLAMP button whose
+    // caption IS the current state, so a momentary render would snap the frame
+    // back to accumulate-mode the instant the pad was released — the repaint
+    // sweep could never be left running, which is one of the module's two
+    // looks.
+    'rasterize:wrap',
   ]);
 
   it('no ACKNOWLEDGED_LATCHING param is DOCUMENTED as momentary (the cross-check)', () => {
