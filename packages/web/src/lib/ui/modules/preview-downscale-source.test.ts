@@ -81,6 +81,20 @@ const EXEMPT_CALLS: readonly ExemptCall[] = [
       'RASTERIZE renders a coarse pixel grid on purpose; smoothing it is the bug, not the fix.',
   },
   {
+    file: 'rasterize/RasterizeOutputBody.svelte',
+    receiver: 'ctx2d',
+    firstArg: 'stage',
+    why:
+      'DELIBERATELY CRISP — the RasterizeCard entry above, on the FACE surface. Promotion ' +
+      'moves this module from its card to a fullViewBody extension, and the picture is the ' +
+      'same coarse pixel grid for the same reason, so the same exemption applies: ' +
+      'imageSmoothingEnabled = false two lines above, and smoothing it is the bug. ⚠ It is ' +
+      'also OUT of scope for the #1846 defect on its merits, not merely by preference — that ' +
+      'bug is aliasing when a card resamples the SHARED WebGL DRAWING BUFFER, and these ' +
+      'pixels never come from it: they are a Uint8ClampedArray painted by RasterPainter on ' +
+      'the audio side and handed over as ImageData.',
+  },
+  {
     file: 'SynesthesiaCard.svelte',
     receiver: 'ctx2d',
     firstArg: 'imageSource',
@@ -182,9 +196,21 @@ const REPORTED_IN_1846 = [
   'VideoTileThumb.svelte',
 ] as const;
 
-/** Cards whose whole point is hard pixels. Named here so "foxy and rasterize
- *  are unchanged" is a PERMANENT assertion rather than a claim in a PR body. */
-const DELIBERATELY_CRISP = ['FoxyCard.svelte', 'RasterizeCard.svelte'] as const;
+/** Surfaces whose whole point is hard pixels. Named here so "foxy and rasterize
+ *  are unchanged" is a PERMANENT assertion rather than a claim in a PR body.
+ *
+ *  ⚠ THE FACE BODY IS IN THIS LIST FOR A REASON THAT WOULD OTHERWISE HAVE BEEN
+ *  LOST. Promoting a module makes `migrated()` true, and neither surface renders
+ *  its card after that — so from the promotion onward `RasterizeCard.svelte` is
+ *  code nobody looks at, and an assertion about ITS smoothing stops protecting
+ *  anything a user can see. The face body is where the guarantee has to live to
+ *  keep meaning what it meant. The card stays listed too: it is still the
+ *  `?shell=legacy` surface, and dropping it would quietly narrow the claim. */
+const DELIBERATELY_CRISP = [
+  'FoxyCard.svelte',
+  'RasterizeCard.svelte',
+  'rasterize/RasterizeOutputBody.svelte',
+] as const;
 
 // ---------------------------------------------------------------------------
 // The scanner. ONE predicate, used by the sweep AND by its negative controls.
