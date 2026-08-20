@@ -28,6 +28,11 @@ const LOG = [
   '2026-08-13T19:36:17.0419606Z   ✓    2 [chromium-vrt] › vrt/vrt.spec.ts:64:5 › VRT: every module card matches its baseline › buggles card matches baseline (5.1s)',
   '2026-08-13T19:44:03.0000000Z   ✓   50 [chromium-vrt] › vrt/workflow-shell-faces.spec.ts:187:5 › VRT: P1 curated faces (?shell=1) — compact lane tile + dock full-view › face-tidyVco-dock: the dock full-view faceplate matches baseline (10.1s)',
   '2026-08-13T19:45:03.0000000Z   ✓   99 [chromium-vrt] › vrt/workflow-shell-faces.spec.ts:370:3 › VRT: P1 curated faces (?shell=1) — compact lane tile + dock full-view › every shipped face has a scene, and every scene has its baselines (6ms)',
+  // Verbatim shape from #1950's shard 4 (job 96276129946): Playwright prints
+  // MINUTES for tests ≥60s, and the audit's unit group missing bare `m` made
+  // the lazy title swallow the suffix — the same scene reported MISSING and
+  // EXTRA at once, redding a shard whose 49/49 tests had all passed.
+  '2026-08-20T00:57:26.6068065Z   ✓   46 [chromium-vrt] › vrt/workflow-shell-faces.spec.ts:367:5 › VRT: P1 curated faces (?shell=1) — compact lane tile + dock full-view › face-b3ntb0x-dock: the dock full-view faceplate matches baseline (1.5m)',
 ].join('\n');
 
 const KEYS = [
@@ -35,6 +40,7 @@ const KEYS = [
   'vrt.spec.ts :: buggles card matches baseline',
   'workflow-shell-faces.spec.ts :: face-tidyVco-dock: the dock full-view faceplate matches baseline',
   'workflow-shell-faces.spec.ts :: every shipped face has a scene, and every scene has its baselines',
+  'workflow-shell-faces.spec.ts :: face-b3ntb0x-dock: the dock full-view faceplate matches baseline',
 ];
 
 describe('parsing what the shard actually executed', () => {
@@ -44,10 +50,13 @@ describe('parsing what the shard actually executed', () => {
     expect(skipped).toEqual([]);
   });
 
-  it('keeps seconds, and converts a millisecond duration', () => {
+  it('keeps seconds, and converts millisecond AND minute durations', () => {
     const { ran } = parseRunLog(LOG);
     expect(ran.get('vrt.spec.ts :: adsr card matches baseline')).toBe(17.1);
     expect(ran.get('workflow-shell-faces.spec.ts :: every shipped face has a scene, and every scene has its baselines')).toBeCloseTo(0.006);
+    // Minutes convert to seconds — and, more importantly, the TITLE stays
+    // clean: a `(1.5m)` suffix left in the key is the missing+extra bug.
+    expect(ran.get('workflow-shell-faces.spec.ts :: face-b3ntb0x-dock: the dock full-view faceplate matches baseline')).toBe(90);
   });
 
   it('a FAILED test still counts as executed — red and blind are different diagnoses', () => {
