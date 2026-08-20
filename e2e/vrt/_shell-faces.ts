@@ -1552,6 +1552,75 @@ export const FACES = [
       + 'bank is empty and the composite outputs black on every frame by construction rather '
       + 'than by the flag.',
   },
+  // THE FACEPLATE QUEUE · Q49 — the self-building wavetable oscillator, and the
+  // first RAILED face in this batch.
+  //
+  // `pages: 7` is the POST-hero band count, and there is no hero to subtract:
+  // the face declares seven pages and promotes nothing out of them, so seven
+  // bands reach `dockTabPlan` and the rail engages at `DOCK_TAB_MIN_BANDS`.
+  // ⚠ THE DOCK SCENE THEREFORE FRAMES ONE BAND, NOT SEVEN — a railed face
+  // renders only the active tab, and the six inactive bands have no layout box
+  // at any viewport height. That is scope note 1 of this spec's own header, and
+  // it means the dock baseline here proves the picture head, the rail and the
+  // `vco` page; the other six pages are gated by `faceplate-platform` and the
+  // pure `dock-row-plan` / `module-face-lint` units, which read the whole
+  // faceplate. Do NOT read a green dock baseline as evidence that a change to
+  // `src b` was a no-op.
+  //
+  // ⚠ THE HOOK IS NOT DEAD CODE, CHECKED THE SAME WAY `rasterize` CHECKED ITS
+  // OWN. Grepping `__foxyVrtSeed`'s SETTERS finds exactly one — the module's
+  // own CARD scene in `vrt-scenes.ts` — and none on the FACE boot path, which
+  // is a different harness with a different lifecycle. So the pin is live and
+  // correct and simply unreached from here, the same shape as rasterize's and
+  // NOT the `outlines` story where the only setter was a render-smoke spec.
+  {
+    type: 'foxy',
+    pages: 7,
+    simPin: {
+      global: '__foxyVrtSeed',
+      value: 1,
+      why:
+        'FOXY builds its picture on the AUDIO side — three RasterPainters plus the XYZ and '
+        + 'wavetable renderers, all in JS — so freezeFaceVideo never reaches it, and suspending '
+        + 'the AudioContext stops the bridge without choosing WHERE it stops. The bridge is '
+        + 'throttled to ~24Hz and each tick advances three independent raster cursors at three '
+        + 'different strides (6000 / 4500 / 5200 samples), so the number of ticks landing before '
+        + 'the suspend varies per boot and two captures would frame three different band '
+        + 'patterns feeding a different heightfield and therefore a different 64x256 table — the '
+        + 'drift compounds through every stage rather than shifting one picture. This flag '
+        + 'engages the deterministic seed already in the module (`paintSeeded`: reset all three '
+        + 'cursors, then ONE full-frame fill from three fixed synthetic waveforms, with every '
+        + 'later advance short-circuited), making all five pictures a pure function of the '
+        + "module's own constants. It is an AUDIO def, so no attest hash moves.",
+    },
+  },
+  // GATEMAIDEN (2026-08-20) — the gate↔trigger converter. ONE declared page and
+  // no hero, so nothing is promoted out of a band and `pages: 1` is both the
+  // declared count and the post-hero-split count.
+  //
+  // PIXEL-DETERMINISTIC, and for the strongest of the reasons this file
+  // distinguishes: the module has NO GENERATOR IN IT. Both outputs are pure
+  // functions of the INPUT's level and rising edges (`GateMaidenState.step`),
+  // and the scene patches nothing in, so `wasHigh` never flips, `sinceRise`
+  // stays at its −1 rest and both jacks are bit-exactly zero on every sample
+  // regardless of how far the clock ran. This is the silent-at-spawn case this
+  // file already names for moogCp3, not the analogVco free-running one — the
+  // AudioContext freeze is a belt on a brace here rather than the thing holding
+  // the scene.
+  //
+  // ⚠ NO LIVE GLYPH TO GO WRONG EITHER, and the reason is a trap worth having
+  // written down: `glyph: 'none'` is FORCED, because `primaryAudioOutPortId`
+  // matches `type === 'audio'` and BOTH of this module's outputs are `gate`.
+  // `domain: 'audio'` does not imply an audio glyph. The same split is why this
+  // face renders `.faceplate.gate` and NOT `.faceplate.audio` — a selector
+  // keyed on the audio class silently matches nothing here, which is already
+  // recorded against this module in `e2e/tests/_face-fixtures.ts`.
+  //
+  // Both cells are ASCII-only by construction (`TRI` / `SQR`, and a `·` in the
+  // band label) — deliberately, because the fonts this suite pins are ~230
+  // codepoint Latin subsets and a geometric-shape glyph would render through an
+  // unpinned fontconfig fallback in these two new baselines.
+  { type: 'gatemaiden', pages: 1 },
   // COLOUROFMAGIC (2026-08-20) — the multi-colorspace processor, and the
   // largest face in the roster by param count (37).
   //

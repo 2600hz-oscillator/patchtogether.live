@@ -95,6 +95,22 @@ const EXEMPT_CALLS: readonly ExemptCall[] = [
       'the audio side and handed over as ImageData.',
   },
   {
+    file: 'foxy/FoxyOutputBody.svelte',
+    receiver: 'ctx2d',
+    firstArg: 'stage',
+    why:
+      'DELIBERATELY CRISP — the FoxyCard entry above, on the FACE surface, and it is here for ' +
+      'the reason the DELIBERATELY_CRISP header states rather than by analogy: promotion makes ' +
+      "`migrated()` true, so from this PR onward nothing renders FoxyCard on either default " +
+      'surface and an assertion about ITS smoothing stops protecting anything a player can ' +
+      'see. The three rasters are a 256x256 Uint8ClampedArray of hard pixels painted by ' +
+      'RasterPainter, scaled into 72x72 with imageSmoothingEnabled = false two lines above; a ' +
+      'box-filtered downscale would soften exactly the banding the picture exists to show. ' +
+      'It is also OUT of scope for the #1846 defect on its merits: that bug is aliasing when a ' +
+      'card resamples the SHARED WebGL DRAWING BUFFER, and these pixels never touch it — foxy ' +
+      'is an AUDIO def whose rasters are painted on the audio side and handed over as ImageData.',
+  },
+  {
     file: 'SynesthesiaCard.svelte',
     receiver: 'ctx2d',
     firstArg: 'imageSource',
@@ -208,6 +224,7 @@ const REPORTED_IN_1846 = [
  *  `?shell=legacy` surface, and dropping it would quietly narrow the claim. */
 const DELIBERATELY_CRISP = [
   'FoxyCard.svelte',
+  'foxy/FoxyOutputBody.svelte',
   'RasterizeCard.svelte',
   'rasterize/RasterizeOutputBody.svelte',
 ] as const;
