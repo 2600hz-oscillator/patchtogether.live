@@ -1321,15 +1321,28 @@ export function emitBudgetMs(mod: RegistryModule): number {
   //     1 live output  → 95 000 ms budget → 95 s per navigation
   //     5 live outputs → 115 000 ms       → 23 s per navigation
   //
-  // MEASURED (#1984 trace, freezeframe, CI shard 8/10 under load, SwiftShader,
-  // E2E_USE_PREVIEW=1): its five navigations cost 20.6, 21.9, 23.9, 24.2 and
-  // ~24.7 s — so the test needed ~116 s against a 115 s budget and expired ~1 s
-  // (0.9 %) short, on the FIFTH of five iterations, then passed on retry. Not a
-  // hang: no step stalled, the whole plan was simply priced below its own cost.
-  // (Note the per-navigation cost also DRIFTS UP ~20 % across the five — each
-  // fresh page leaves the previous GL context to be reclaimed. Named in #1984;
-  // the margin below covers it, but a super-linear term is the real successor
-  // if it ever grows.)
+  // MEASURED (#1984), freezeframe, CI shard 8/10 under load, SwiftShader,
+  // E2E_USE_PREVIEW=1 — TWO traces, on OPPOSITE SIDES of the #1971 merge that
+  // touched freezeframe.ts, which is what rules out a code regression:
+  //
+  //   PR #1983 (freezeframe.ts PRE-#1971):  20.6 21.9 23.9 24.2 ~24.8 s  (mean 23.1)
+  //   PR #1969 (freezeframe.ts POST-#1971): 22.7 24.2 22.2 22.7 ~24.0 s  (mean 23.2)
+  //
+  // Same cost either side, so #1971 is not implicated: its 19 deleted lines are
+  // all inside the def's `face:` object (a `hero.readouts` pair), and this sweep
+  // navigates to `?shell=legacy`, which does not render a faceplate at all.
+  //
+  // In both, the test needed ~116 s against a 115 s budget and expired on the
+  // FIFTH of five iterations. NOT a hang — no step stalled in either trace, and
+  // every action completed with an ordinary duration; the plan is simply priced
+  // below its own cost. The two sightings differ only in luck: #1983 squeaked
+  // under on its retry (reported `flaky`), #1969 missed on both attempts
+  // (reported `failed`). One boundary, two samples — not an escalation.
+  //
+  // ⚠ Do NOT read a leak into this. The cost drifts up ~20 % across #1983's five
+  // navigations and is FLAT across #1969's, so "each fresh page leaks the
+  // previous GL context" is NOT established by these two traces. If a
+  // super-linear term is ever needed, measure it first.
   //
   // So the first navigation keeps the full cold-mount tax and each ADDITIONAL
   // navigation pays `HEAVY_GL_RENAV_MS`. Two properties this shape has on
