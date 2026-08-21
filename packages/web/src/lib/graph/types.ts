@@ -1017,6 +1017,66 @@ export interface ModuleFace {
    * which is exactly what its legacy card's own tablist did.
    */
   tabbed?: true;
+  /**
+   * MONITOR MODE — this face's own surface may be watched WITHOUT its control
+   * bands, and `node.data.hideControls` is what does it (#2009).
+   *
+   * ⚠ IT IS THE EXACT INVERSE OF SCREEN ON/OFF, NOT A DUPLICATE OF IT, and
+   * #1865 proposed the opposite. SCREEN OFF hides the PICTURE and keeps the
+   * controls; MONITOR MODE hides the CONTROLS and keeps the picture. Neither
+   * can subsume the other — they are the two directions of one question ("which
+   * half am I looking at right now?"), and a video face wants both.
+   *
+   * ⚠ WHY THIS IS A SHELL CAPABILITY AND NOT A `ShellExtension` SLOT. The gap
+   * #2009 filed is that `fullViewBody` paints ABOVE the bands and CANNOT
+   * suppress them — its own contract says so, deliberately (the
+   * `warrensspectrum` failure, where a body that ate the faceplate would have
+   * deleted every control). `editorSurface` is not the home either: it is
+   * specced for "controls that are not cell-shaped at all" — a clip arranger, a
+   * pad matrix — and it is a STATIC structural choice. Hiding the bands is a
+   * TOGGLE over a face whose controls are perfectly cell-shaped. Different
+   * axis, so wiring `editorSurface` for it would have made ruttetra a fake
+   * first adopter of a slot it does not need, and left the real blocker
+   * standing.
+   *
+   * WHAT PROMOTION WOULD OTHERWISE DELETE: five legacy cards mount
+   * `hideControls` (`ruttetra`, `monoglitch`, `milkdrop`, `reshaper`,
+   * `graphicEq`), and `migrated(type)` stops BOTH surfaces rendering the card.
+   * On ruttetra the def's own `docs` advertise the gesture in the user's words
+   * — "hiding the controls turns it into a resizable monitor" — so promoting
+   * without this makes the shipped documentation describe a control that no
+   * longer exists, and no def-reading gate can see that.
+   *
+   * ⚠ IT CANNOT ENGAGE WITHOUT A SURFACE TO BE A MONITOR OF.
+   * `faceMonitorPlan` requires `dockFullViewHeadPlan().extBody` — the module's
+   * own `fullViewBody` actually painting — because a faceplate with its bands
+   * hidden and no picture is a BLANK PLATE, which is a worse outcome than the
+   * one this fixes. That precondition is asserted directly rather than left to
+   * an author's care.
+   *
+   * Gate: `face-monitor-source.test.ts`, deny-by-default in BOTH directions —
+   * a face declaring this must own a `fullViewBody` that reads and writes
+   * `hideControls` and exposes a button, and a FACED module whose legacy card
+   * still mounts `hideControls` must declare this or carry a named exemption.
+   */
+  monitor?: FaceMonitor;
+}
+
+/**
+ * MONITOR MODE's declaration (`face.monitor`). A record with one REQUIRED
+ * field, so `tsc` refuses the bare `monitor: true` form: the burden of proof is
+ * on the face that claims its picture is worth watching alone.
+ *
+ * ⚠ `why` IS NEVER PAINTED. It is documentation for the reviewer and for
+ * `face-monitor-source.test.ts`, which requires it to be an argument rather
+ * than a label — the same shape every exemption roster in this repo uses. The
+ * shell is asserted never to read it (`face-resting-text-source.test.ts`), so
+ * it cannot become a fifth resting-text mechanism.
+ */
+export interface FaceMonitor {
+  /** Why THIS face's surface is worth watching without its controls — the
+   *  picture a player steers by, not merely a preview beside the knobs. */
+  why: string;
 }
 
 /**
