@@ -1919,6 +1919,64 @@ export const FACES = [
       + '`noUserControl` rather than being deleted — but it is holding an already-static '
       + 'picture, so it is a belt on a brace rather than the thing making the scene capturable.',
   },
+  // MONOGLITCH (2026-08-21) — the luma-driven scanline glitch, and the SECOND
+  // module to carry MONITOR MODE onto its faceplate after `ruttetra` proved the
+  // seam (#2009 / #2053).
+  //
+  // `pages: 4` is both the declared count and the POST-HERO-SPLIT count, and
+  // here the two cannot differ: this face declares NO `hero` at all, so
+  // `heroFacePlan` promotes nothing and empties no band. Four bands — lift /
+  // raster / pan / tint, one per TERM of the fragment shader — sit under
+  // `DOCK_TAB_MIN_BANDS = 7`, so the dock scene frames a COLUMN, not a rail.
+  //
+  // ⚠ AND UNLIKE RUTTETRA'S, ALL FOUR BANDS PACK INTO ONE ROW. Eight controls
+  // is under `DOCK_ROW_MAX_CONTROLS = 10`, so PF-21 emits a single packed row
+  // rather than ruttetra's two — which is what the dock capture should show, and
+  // is pinned in the unit lane by `monoglitch-face-model.test.ts` rather than
+  // left for a pixel diff to discover.
+  //
+  // ⚠ WHAT THESE TWO SCENES CAPTURE AT REST IS MONITOR MODE **OFF**, and that is
+  // the only honest resting state rather than a gap. `hideControls` is a
+  // per-NODE runtime key and `bootWithFace` spawns a fresh node, so it is absent
+  // ⇒ false ⇒ controls showing. The dock baseline therefore pins the ORDINARY
+  // faceplate — extension body, then four bands — and a monitor-mode capture
+  // would be pinning a state no freshly opened faceplate is ever in. The
+  // suppression is proven where it can be: `faceMonitorPlan` in the unit lane,
+  // and the faced leg of `video-hide-controls.spec.ts` in the browser, which is
+  // the only thing that can see the bands actually leave.
+  //
+  // ⚠ NO `freeze` PARAM, AND — as with ruttetra — that is true with a source
+  // patched too, which is the stronger form of the argument. `bentbox` and
+  // `warrensvisions` argue determinism from having NOTHING patched, so every
+  // uTime term wakes up the moment you patch them. `FRAG_SRC` here has no uTime
+  // uniform, no ping-pong, no accumulator and no RNG: the output is a pure
+  // function of (source frame, params). `bootWithFace` patches nothing, so
+  // `uHasInput` is 0 and the shader paints its fixed dark-navy idle gradient —
+  // identical frame to frame by construction. Do NOT add a `freeze` param to
+  // "make it safe": that is a `params` edit on a def inside the WebGL attest
+  // basis, i.e. a real-GPU re-attest, to buy an assertion that already holds.
+  //
+  // ⚠ THE CARD BASELINE MASKS THIS CANVAS AND THESE SCENES DO NOT — the
+  // `warrensvisions` / `colourofmagic` position. `VRT_MODULE_MASKS` masks
+  // `monoglitch`'s canvas because the CARD is captured on a live rack; the face
+  // scenes boot their own node with nothing patched and need no mask.
+  {
+    type: 'monoglitch',
+    pages: 4,
+    videoFaceWhy:
+      'a VIDEO module, so it must boot into the video zone rather than a mixer channel column — '
+      + 'without this field bootWithFace waits out the full 90 s test timeout for a column '
+      + 'membership a video node never acquires. Both scenes also carry a live picture: the '
+      + 'compact tile paints a VideoTileThumb through hasVideoSurface, and the dock body is the '
+      + "module's own fullViewBody extension — the preview canvas plus the MONITOR toggle that "
+      + 'hides the control bands, its corner resize, and a SCREEN ON/OFF switch (which a faced '
+      + 'video module can only reach through that slot — #1928). The freeze write itself is a '
+      + 'NO-OP on this def — it declares no `freeze` param at all — and that is deliberate '
+      + 'rather than an omission: there is no uTime uniform in FRAG_SRC, no ping-pong, no '
+      + 'accumulator and no RNG, so the render is a pure function of (source frame, params) and '
+      + 'is identical frame to frame by construction. With nothing patched `uHasInput` is 0 and '
+      + 'the shader paints a fixed dark-navy idle gradient.',
+  },
 ] as const;
 
 /** TIGHT per-scene diff budgets (absolute pixels; Playwright takes the MIN of
