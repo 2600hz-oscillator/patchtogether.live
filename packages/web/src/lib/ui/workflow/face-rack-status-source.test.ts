@@ -163,6 +163,14 @@ const EXTENSION_BODY_ROLES: Readonly<Record<string, BodyRule>> = {
   grainsOfVision: { role: 'picture', why: 'the video-granulator\'s live preview canvas and its SCREEN switch (#1928 — the toggle a promotion would otherwise delete with the card).' },
   mandelbulb: { role: 'picture', why: 'the raymarched fractal\'s live preview canvas and its SCREEN switch.' },
   mirrorpool: { role: 'picture', why: 'the kaleidoscopic reflector\'s live preview canvas and its SCREEN switch.' },
+  // ⚠ ADDED BY A MERGE, NOT BY THIS PR'S AUTHOR — and that is the roster
+  // earning its keep on its first unrelated encounter. monoglitch (#2081)
+  // landed on main as the second MONITOR MODE adopter while this branch was
+  // open, bringing a new `fullViewBody` with it. The deny-by-default leg went
+  // RED on the merge and named the file, which is exactly the behaviour that
+  // makes this a gate rather than a snapshot: a body cannot enter the tree
+  // without someone writing down what it paints.
+  monoglitch: { role: 'picture', why: 'the luma-driven scanline glitch\'s live preview canvas, its SCREEN switch and the MONITOR toggle it inherited from ruttetra (#2009 / #2053).' },
   outlines: { role: 'picture', why: 'the edge-detector\'s live preview canvas and its SCREEN switch.' },
   rasterize: { role: 'picture', why: 'the rasteriser\'s live preview canvas and its SCREEN switch.' },
   ruttetra: { role: 'picture', why: 'the Rutt/Etra scan processor\'s live raster preview, its SCREEN switch, the MONITOR toggle that hides the control bands (#2009) and the corner resize.' },
