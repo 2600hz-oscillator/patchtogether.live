@@ -45,6 +45,7 @@ import {
   VIDEO_THUMB_H,
   VIDEO_THUMB_FPS,
   dockFullViewHeadPlan,
+  faceMonitorPlan,
   isFaceplateView,
   type ShellDefLike,
   type ShellView,
@@ -812,3 +813,89 @@ describe('dockFullViewHeadPlan — the DRAWER answers like the full view (#1739)
     expect(dockFullViewHeadPlan({ ...ext, view: 'drawer' }).extBody).toBe(true);
   });
 });
+
+// ── faceMonitorPlan — MONITOR MODE (#2009) ──────────────────────────────────
+//
+// WHAT THIS GATE CANNOT SEE, stated inside it: this is the PURE policy, not the
+// paint. It cannot see that ModuleShell actually wraps the hero band and
+// `.dock-pages` in the guard (that is `face-monitor-source.test.ts`, at source
+// level), nor that the bands visibly disappear (that is the faced leg of
+// `video-hide-controls.spec.ts`). What it CAN see, and what nothing else can,
+// is the INVARIANT — that no combination of inputs produces a hidden-band
+// faceplate with no surface left on it.
+describe('faceMonitorPlan — hide the controls, keep the picture', () => {
+  const OFF = { view: 'dock-full', declared: false, extBody: false, hidden: false } as const;
+
+  it('engages only with all three: a faceplate view, the declaration, and a surface', () => {
+    const p = faceMonitorPlan({ ...OFF, declared: true, extBody: true, hidden: true });
+    expect(p.available).toBe(true);
+    expect(p.bandsHidden).toBe(true);
+  });
+
+  it('declared and reachable, but OFF until the player asks', () => {
+    const p = faceMonitorPlan({ ...OFF, declared: true, extBody: true });
+    expect(p.available, 'the toggle is reachable').toBe(true);
+    expect(p.bandsHidden, 'and the controls are still showing').toBe(false);
+  });
+
+  it('an UNDECLARED face is inert even when an old patch carries the flag', () => {
+    // ⚠ THE CASE THAT MOTIVATES THE DECLARATION GATE AT ALL. `hideControls` is
+    // persisted and collab-synced, so a rack saved from the LEGACY card hands
+    // this flag to a faceplate that may never have declared monitor mode. If
+    // the flag alone drove the suppression, that patch would open a blank plate
+    // on a face with no picture to fall back on.
+    const p = faceMonitorPlan({ ...OFF, declared: false, extBody: true, hidden: true });
+    expect(p.available).toBe(false);
+    expect(p.bandsHidden).toBe(false);
+  });
+
+  it('the LANE never hides its bands — no extension body is mounted there to watch', () => {
+    const p = faceMonitorPlan({ view: 'lane', declared: true, extBody: true, hidden: true });
+    expect(p.available).toBe(false);
+    expect(p.bandsHidden).toBe(false);
+  });
+
+  it('the DRAWER answers like the full view (#1739)', () => {
+    for (const declared of [false, true]) {
+      for (const extBody of [false, true]) {
+        for (const hidden of [false, true]) {
+          const args = { declared, extBody, hidden };
+          expect(
+            faceMonitorPlan({ ...args, view: 'drawer' }),
+            `drawer vs dock-full @ decl=${declared} ext=${extBody} hidden=${hidden}`,
+          ).toEqual(faceMonitorPlan({ ...args, view: 'dock-full' }));
+        }
+      }
+    }
+  });
+
+  it('⚠ THE INVARIANT: bandsHidden NEVER without a surface — no blank plate, over every input', () => {
+    // The single assertion this whole design rests on. Hiding the bands is only
+    // ever an improvement while SOMETHING is still painting, and the toggle
+    // that turns monitor mode off lives ON that surface — so a hidden-band
+    // plate with no `extBody` would be an empty rectangle with no way back.
+    // Exhaustive rather than argued: 3 views x 2^3 inputs is 24 cases and they
+    // are free, so this is a proof rather than a sample.
+    let sawHidden = 0;
+    for (const view of ['lane', 'dock-full', 'drawer'] as const) {
+      for (const declared of [false, true]) {
+        for (const extBody of [false, true]) {
+          for (const hidden of [false, true]) {
+            const p = faceMonitorPlan({ view, declared, extBody, hidden });
+            if (!p.bandsHidden) continue;
+            sawHidden++;
+            expect(extBody, `bandsHidden with NO surface @ view=${view}`).toBe(true);
+            expect(declared, `bandsHidden while UNDECLARED @ view=${view}`).toBe(true);
+            expect(hidden, `bandsHidden while UNASKED @ view=${view}`).toBe(true);
+            expect(p.available, 'hidden implies available').toBe(true);
+          }
+        }
+      }
+    }
+    // VACUITY CONTROL: an implementation returning `false` everywhere would
+    // satisfy every implication above without doing anything. It must actually
+    // fire — on the two faceplate hosts, and nowhere else.
+    expect(sawHidden, 'the invariant must have had something to check').toBe(2);
+  });
+});
+

@@ -86,6 +86,7 @@
     laneFaceTier,
     laneBodyPlan,
     dockFullViewHeadPlan,
+    faceMonitorPlan,
     isFaceplateView,
     roleLineForDef,
     DOCK_HERO_GLYPH_W,
@@ -551,6 +552,37 @@
    *  the "dock only" half of the policy cannot be forgotten at the call site. */
   let extBody = $derived(headPlan.extBody ? (ext?.fullViewBody ?? null) : null);
 
+  /**
+   * MONITOR MODE (#2009) — "hide the controls and watch the picture", the
+   * `node.data.hideControls` affordance five legacy cards mount and promotion
+   * would otherwise DELETE from both surfaces at once.
+   *
+   * ⚠ THE FLAG IS READ, NEVER TRUSTED ALONE. `hideControls` is persisted and
+   * collab-synced, so a rack saved from the legacy card hands it to this
+   * faceplate on the very first render of a module that may not have declared
+   * `monitor` at all. `faceMonitorPlan` requires the DECLARATION and a painting
+   * `extBody` alongside it, which is what stops an old patch blanking a face
+   * that has no picture to fall back on. The whole policy is in that one pure
+   * function, unit-tested both ways; nothing here re-decides it.
+   *
+   * ⚠ THE TOGGLE ITSELF IS NOT HERE. It lives on the module's own
+   * `fullViewBody`, beside SCREEN ON/OFF — the same seam, the same
+   * `mutateNode` idiom, and the same reason (`ModuleShell` may not import
+   * module-owned code). Keeping it there is also what removes the LEGACY
+   * CARD'S POINTER TRAP: on the card the `–` button was inside the region it
+   * hid, so the only way back was an undiscoverable double-click on the body.
+   * Here the body always paints, so the button that turned monitor mode on is
+   * the button that turns it off.
+   */
+  let monitorPlan = $derived(
+    faceMonitorPlan({
+      view,
+      declared: !!(def as FaceplateDefLike | undefined)?.face?.monitor,
+      extBody: headPlan.extBody,
+      hidden: !!node?.data?.hideControls,
+    }),
+  );
+
   /** PF-16 — the tab roster (null for a face that renders as one column), and
    *  the SAME pure answer DockFullView's rail computes. A rail without the
    *  matching hide (or a hide without the rail) is a blank faceplate.
@@ -747,7 +779,14 @@
      dock surfaces (#1739) — its CSS is about "this is the full faceplate, not a
      192×180 tile", which is equally true in the pinned tray. `data-shell-view`
      is what distinguishes the two HOSTS, for the gates and for any rule that
-     genuinely needs one and not the other. -->
+     genuinely needs one and not the other.
+
+     `data-face-monitor` is MONITOR MODE's observable ('on' / 'off'), and it is
+     ABSENT on a face that does not declare one — an `undefined` attribute is
+     not emitted, so every existing faceplate's DOM (and therefore every dock
+     VRT baseline) is byte-identical here. Absent vs 'off' is a real
+     distinction and the gates read it: absent means "this face has no monitor
+     mode", 'off' means "it has one and the controls are showing". -->
 <div
   class="module-shell rl-tile"
   class:dock-full={faceplateView}
@@ -756,6 +795,7 @@
   data-shell-type={node.type}
   data-shell-tier={effTier}
   data-shell-view={view}
+  data-face-monitor={monitorPlan.available ? (monitorPlan.bandsHidden ? 'on' : 'off') : undefined}
   style={`--spine:${spine};--domain:${spine}`}
 >
   <span class="rl-spine" aria-hidden="true"></span>
@@ -1350,7 +1390,24 @@
          describes, in `aria-valuetext`. See `ModuleFaceHero` in graph/types.ts
          for the full ruling set and `face-resting-text-source.test.ts` for the
          gate that denies the SHAPE rather than this one mechanism. -->
-    {#if heroGlyph || hero}
+    <!-- ⚠ MONITOR MODE (#2009) SUPPRESSES EVERYTHING BELOW THE EXTENSION BODY
+         — the hero band here and the `.dock-pages` bands after it, which is
+         the whole affordance: "hide the controls and it becomes a monitor".
+         `monitorPlan.bandsHidden` can only be true when `extBody` is painting
+         (faceMonitorPlan), so this can never leave the plate empty.
+
+         ⚠ IT UNMOUNTS RATHER THAN HIDES, and that is the opposite of the
+         TABBED face two blocks down, deliberately. A tab rail hides its
+         inactive bands with CSS because `faces-parity` asserts one cell per
+         param across the WHOLE faceplate and would read an unmount as a face
+         that lost forty controls. Monitor mode is a per-NODE runtime state
+         that no parity gate ever observes — those gates evaluate a freshly
+         opened faceplate, where `hideControls` is absent ⇒ false — and the
+         point of the mode is to RECLAIM the space, which `display:none` on a
+         scrolling plate would do but a hidden-but-mounted band would not. The
+         controls' values live in the graph, not in the cells, so nothing is
+         lost across a flip. -->
+    {#if (heroGlyph || hero) && !monitorPlan.bandsHidden}
       <div
         class="tile-body dock-hero"
         class:has-hero={!!hero}
@@ -1395,6 +1452,7 @@
          compressor switch and send all share one x. Absent (and the DOM
          byte-identical to before) on every face with fewer than two console
          bands. -->
+    {#if !monitorPlan.bandsHidden}
     <div
       class="dock-pages"
       class:face-console={faceConsoleCols != null}
@@ -1427,6 +1485,7 @@
         {/if}
       {/each}
     </div>
+    {/if}
     <!-- `solo` = this band is a DIRECT child of `.dock-pages` (a row of one),
          which is exactly the condition under which it can subgrid onto the
          face-wide ruler. A band inside a `.dock-row` flex wrapper cannot, and
