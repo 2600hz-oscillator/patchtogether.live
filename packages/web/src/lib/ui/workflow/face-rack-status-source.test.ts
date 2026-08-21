@@ -163,6 +163,19 @@ const EXTENSION_BODY_ROLES: Readonly<Record<string, BodyRule>> = {
   grainsOfVision: { role: 'picture', why: 'the video-granulator\'s live preview canvas and its SCREEN switch (#1928 — the toggle a promotion would otherwise delete with the card).' },
   mandelbulb: { role: 'picture', why: 'the raymarched fractal\'s live preview canvas and its SCREEN switch.' },
   mirrorpool: { role: 'picture', why: 'the kaleidoscopic reflector\'s live preview canvas and its SCREEN switch.' },
+  // ⚠ THE THIRD BODY CAUGHT ON A MERGE IN AS MANY ROUNDS — monoglitch (#2081),
+  // reshaper (#2086), now milkdrop (#2087). Three unrelated PRs in two days,
+  // each named on first contact. Membership is derived off the DIRECTORY for
+  // exactly this reason: a hand-kept list of these would have been wrong three
+  // times already.
+  //
+  // ⚠ AND THIS ONE IS THE CASE THAT MOST NEEDS A DECLARED ROLE, because it is
+  // the one VRT cannot see: milkdrop is in `EXEMPT_FROM_VRT` and carries a
+  // `FACES_WITHOUT_SCENES` entry, so NO dock baseline exists for it. The
+  // "residue" this roster's header defers to the baselines — what a canvas
+  // actually paints — has no baseline here at all. The declared role is
+  // therefore the ONLY statement on record about what this surface shows.
+  milkdrop: { role: 'picture', why: 'the butterchurn preset visualiser\'s live preview canvas, its SCREEN switch and the MONITOR toggle from the ruttetra seam. ⚠ Unbaselinable (EXEMPT_FROM_VRT + FACES_WITHOUT_SCENES), so this declaration is the only record of what it paints — no dock baseline can contradict it.' },
   // ⚠ ADDED BY A MERGE, NOT BY THIS PR'S AUTHOR — and that is the roster
   // earning its keep on its first unrelated encounter. monoglitch (#2081)
   // landed on main as the second MONITOR MODE adopter while this branch was

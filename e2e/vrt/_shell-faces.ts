@@ -2053,6 +2053,138 @@ export const FACES = [
   },
 ] as const;
 
+/**
+ * A FACED module whose renderer CANNOT be pixel-baselined, and therefore has no
+ * entry in `FACES` above.
+ *
+ * ⚠ WHY THIS EXISTS AT ALL, since a roster exemption is exactly the shape this
+ * repo is usually suspicious of. `workflow-shell-faces.spec.ts` asserts SET
+ * EQUALITY between `STRICT_FACES` and `FACES` in both directions, so before this
+ * list a module could be promoted only if two pixel-stable scenes could be
+ * captured for it. For a genuinely non-deterministic renderer that is not a bar
+ * to clear, it is a permanent refusal — the module can hold a legacy card
+ * forever and never reach the faceplate, regardless of how cleanly its controls
+ * map.
+ *
+ * ⚠ AND THE CARD ROSTER ALREADY HAS THIS CONCEPT, for the same module, with a
+ * written argument. `e2e/vrt/vrt-exemptions.ts` carries milkdrop in
+ * `EXEMPT_FROM_VRT` because a "continuously-animating multi-pass butterchurn
+ * visualizer (chaotic/time-based) defeats deterministic single-frame capture".
+ * So this is not new policy; it is the FACE roster catching up to a judgement
+ * the CARD roster made long ago about the very same renderer.
+ *
+ * ⚠ WHAT THIS EXEMPTION COSTS, stated plainly because a reader must not have to
+ * infer it: the face's PIXELS GO UNVERIFIED. Nothing in any lane compares what
+ * the faceplate looks like, at either tier, so a layout regression on an exempt
+ * face is invisible to VRT and will be caught only by a human looking. That is
+ * the price, and it is why the type demands `coveredBy` — the non-pixel gates
+ * that DO cover the face have to be named, and are asserted to exist.
+ *
+ * ⚠ IT IS ANCHORED FOUR WAYS (see the gate in `workflow-shell-faces.spec.ts`), so
+ * it cannot outlive its justification: the entry must name a module that is
+ * still FACED, that is still ABSENT from `FACES`, that has NO committed
+ * baselines on disk, and whose def declares NO determinism seam. Any one of
+ * those changing means somebody made the face capturable — at which point the
+ * exemption is a lie rather than a permission, and says so.
+ */
+export interface UnbaselinableFace {
+  /** The module type. Must be in `STRICT_FACES` and absent from `FACES`. */
+  readonly type: string;
+  /** Which scenes cannot be captured. Both, for every case seen so far. */
+  readonly scenes: readonly ('compact' | 'dock')[];
+  /**
+   * Why this renderer cannot be baselined — an ARGUMENT WITH THE MEASUREMENT IN
+   * IT, not a label. "It's animated" is not sufficient: `mirrorpool`,
+   * `outlines`, `warrensvisions` and `freezeframe` are all animated and all
+   * baselined, via `simPin` or a `freeze` param. The bar is evidence that those
+   * mechanisms cannot reach this renderer.
+   */
+  readonly why: string;
+  /**
+   * The gates that DO cover this face, since VRT does not. Every entry is a
+   * repo-relative path and is asserted to EXIST — a `coveredBy` naming a
+   * deleted spec is the exemption quietly becoming uncovered.
+   */
+  readonly coveredBy: readonly string[];
+}
+
+export const FACES_WITHOUT_SCENES: readonly UnbaselinableFace[] = [
+  {
+    type: 'milkdrop',
+    scenes: ['compact', 'dock'],
+    why:
+      'butterchurn is not pixel-deterministic, and the two mechanisms this suite uses to make an '
+      + 'animated renderer capturable both fail on it. MEASURED with the render-smoke harness '
+      + '(`installRenderSmokeHooks` pauses the engine rAF loop and steps an exact frame count), '
+      + "with milkdrop's own seams pinned exactly as milkdrop-render-smoke.spec.ts pins them "
+      + '(__milkdropFixedDelta = 0.05, __milkdropTestAudio = true, both via addInitScript before '
+      + 'goto). (1) FRAME-COUNT DEPENDENT: mean 41.69 / variance 1478.8 at 16 steps, versus mean '
+      + '59.61 / variance 4737.7 eight steps later — so freezeFaceVideo holding the LAST DRAWN '
+      + 'frame holds A frame, never WHICH frame, and the frame it lands on differs per renderer '
+      + 'and per load. (2) NOT DETERMINISTIC ACROSS BOOTS EVEN AT AN IDENTICAL FRAME COUNT: with '
+      + 'framesDelta 16 on both boots (printed as the instrument control, because "nondeterministic" '
+      + 'and "the boots rendered different frame counts" look identical from a mean alone and need '
+      + 'opposite fixes), boot 1 read mean 41.690592 and boot 2 mean 42.132087; boot 1 itself moved '
+      + 'between two runs of the probe (40.8827 -> 41.6906), so it is not a one-off. simPin cannot '
+      + "close either: it pins a CLOCK, and neither butterchurn's per-frame feedback accumulation "
+      + '(a Milkdrop warp mesh samples the previous frame — intrinsic to the format) nor the RNG '
+      + 'behind the cross-boot drift lives in our code. Seeding it would mean patching butterchurn, '
+      + 'which project_milkdrop_module forbids vendoring under lib/video/ precisely because that '
+      + 'whole tree is hashed into the WebGL attest basis. The CARD roster reached the same verdict '
+      + 'about this renderer long ago (EXEMPT_FROM_VRT in vrt-exemptions.ts). See #2083.',
+    coveredBy: [
+      // The renderer itself: freeze + fixed delta + synthetic audio, asserting
+      // non-black / structured / zero GL errors. It cannot pin PIXELS, but it is
+      // what proves the engine still renders at all.
+      'e2e/tests/milkdrop-render-smoke.spec.ts',
+      // The FACE's structure and behaviour, none of which needs pixels:
+      // every param renders exactly one operable cell, and the dock control set
+      // equals the def's param set.
+      'e2e/tests/faces-parity.spec.ts',
+      // MONITOR MODE actually moving the bands, plus the SCREEN switch.
+      'e2e/tests/video-hide-controls.spec.ts',
+      // The face model: order/pages/hero/paramCells/rear + the module-local pins.
+      'packages/web/src/lib/ui/workflow/module-face-lint.test.ts',
+      'packages/web/src/lib/ui/modules/milkdrop-face-model.test.ts',
+    ],
+  },
+];
+
+/**
+ * Every module type the FACE ROSTER ACCOUNTS FOR — by a captured scene, or by a
+ * named `FACES_WITHOUT_SCENES` exemption.
+ *
+ * ⚠ THIS EXISTS BECAUSE **TWO** GATES ASSERT THE SAME RELATIONSHIP, and adding
+ * the exemption to only one of them shipped a red. `workflow-shell-faces.spec.ts`
+ * ("every shipped face has a scene") and `vrt-meta.test.ts` ("the FACES roster
+ * is EXACTLY the promoted set") both answer *is every promoted face accounted
+ * for?* — independently, off the same `FACES` array. Teaching one about the
+ * exemption left the other asserting the pre-exemption invariant, so `milkdrop`
+ * came back as PROMOTED BUT NOT ROSTERED from a gate that had never heard of
+ * `FACES_WITHOUT_SCENES`.
+ *
+ * ⚠ THE FIX IS ONE SOURCE FOR THE RELATIONSHIP, NOT A SECOND COPY OF THE
+ * SUBTRACTION. Each gate computing `promoted − FACES − exemptions` for itself is
+ * the drift machine: the next mechanism that changes what "accounted for" means
+ * has to find every copy, which is exactly the search that failed here. Both
+ * gates now read THIS set, so the relationship is defined once.
+ *
+ * THE LESSON, recorded where the next author of a roster mechanism will meet it:
+ * a platform change must find every gate asserting the invariant it changes —
+ * grep for the INVARIANT (`STRICT_FACES` alongside `FACES`), not for the
+ * filename you happen to be editing.
+ */
+export const ROSTERED_FACE_TYPES: ReadonlySet<string> = new Set<string>([
+  ...FACES.map((f) => f.type),
+  ...FACES_WITHOUT_SCENES.map((e) => e.type),
+]);
+
+/** The exempt subset alone — for a gate that must WORD its message differently
+ *  for a face that has no scene BY DESIGN rather than by omission. */
+export const EXEMPT_FACE_TYPES: ReadonlySet<string> = new Set<string>(
+  FACES_WITHOUT_SCENES.map((e) => e.type),
+);
+
 /** TIGHT per-scene diff budgets (absolute pixels; Playwright takes the MIN of
  *  this and the config ratio budget).
  *

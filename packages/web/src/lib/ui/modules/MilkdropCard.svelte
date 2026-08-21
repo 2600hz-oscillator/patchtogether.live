@@ -18,6 +18,9 @@
   import { patch } from '$lib/graph/store';
   import { setNodeParam } from '$lib/graph/mutate';
   import { milkdropDef, MILKDROP_CURATED_NAMES } from '$lib/video/modules/milkdrop';
+  // ONE source, shared with the faced dock body. Co-located under `ui/` rather
+  // than on the def so it stays out of the WebGL attest basis — see that file.
+  import { MILKDROP_MONITOR_BOX } from './milkdrop/monitor-box';
   import { convertMilkPreset, resolvePresetNames } from '$lib/video/milkdrop-preset-loader';
   import { startCornerResize } from './card-resize';
   import type { VideoEngine } from '$lib/video/engine';
@@ -61,12 +64,16 @@
   const CANVAS_W = 280;
   const CANVAS_H = 158;
 
-  const MIN_WIDTH = 360;
-  const MIN_HEIGHT = 180;
-  const DEFAULT_WIDTH = 360;
-  const DEFAULT_HEIGHT = 360;
-  const HEADER_PX = 56;
-  const PAD_PX = 20;
+  // ⚠ THE MONITOR BOX IS SHARED WITH THE FACED DOCK BODY, not typed here. Both
+  // surfaces read and write the same `node.data.resizedWidth`/`resizedHeight`
+  // keys, so a constant re-typed on two surfaces is one that will disagree on
+  // one of them with nothing at runtime able to see it (the backdraft class).
+  const MIN_WIDTH = MILKDROP_MONITOR_BOX.minW;
+  const MIN_HEIGHT = MILKDROP_MONITOR_BOX.minH;
+  const DEFAULT_WIDTH = MILKDROP_MONITOR_BOX.defW;
+  const DEFAULT_HEIGHT = MILKDROP_MONITOR_BOX.defH;
+  const HEADER_PX = MILKDROP_MONITOR_BOX.headerPx;
+  const PAD_PX = MILKDROP_MONITOR_BOX.padPx;
 
   let hideControls = $derived<boolean>(Boolean(node?.data?.hideControls));
   let resizedWidth = $derived<number>((node?.data?.resizedWidth as number | undefined) ?? DEFAULT_WIDTH);
