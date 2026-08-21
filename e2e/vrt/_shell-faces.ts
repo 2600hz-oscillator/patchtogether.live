@@ -988,16 +988,18 @@ export const FACES = [
     // The value is the seed `outlines-render-smoke.spec.ts` already pins, reused
     // deliberately: one seed for the module's two deterministic capture paths
     // means a shape layout a human has already looked at in one of them.
-    simPin: {
-      global: '__outlinesVrtSeed',
-      value: 0x0c1c1e5,
-      why:
-        'OUTLINES is a stateful particle sim: every live shape integrates and bounces per '
-        + 'frame, so the picture is a function of ELAPSED TIME, not just of (seed, params). '
-        + 'The video freeze holds the last drawn frame but cannot choose which frame that is, '
-        + 'so the capture drifted by 4.5x the dock tolerance between two ubuntu CI boots. This '
-        + 'flag engages the fixed-dt phase pin already in the module.',
-    },
+    simPin: [
+      {
+        global: '__outlinesVrtSeed',
+        value: 0x0c1c1e5,
+        why:
+          'OUTLINES is a stateful particle sim: every live shape integrates and bounces per '
+          + 'frame, so the picture is a function of ELAPSED TIME, not just of (seed, params). '
+          + 'The video freeze holds the last drawn frame but cannot choose which frame that is, '
+          + 'so the capture drifted by 4.5x the dock tolerance between two ubuntu CI boots. This '
+          + 'flag engages the fixed-dt phase pin already in the module.',
+      },
+    ],
   },
   // TREE.oh.VOX — three bands (filter / osc / play), and the roster's only
   // GATE-AUDITION voice whose pad is inside the LANE budget, so the compact
@@ -1241,6 +1243,57 @@ export const FACES = [
       + 'once per draw (read front / write back over two float FBOs) and the rain scheduler spawns '
       + 'fresh impacts from a FRAME COUNTER, so the surface keeps evolving with the clock held '
       + 'still. The `freeze` param returns out of `draw` before any of that advances.',
+    // ⚠ AND THE FREEZE IS NOT ENOUGH ON ITS OWN — the outlines position exactly.
+    // `freezeFaceVideo` makes the picture STOP; it does not choose WHICH picture
+    // it stopped on. This module integrates per DRAW, so the held frame is
+    // whatever the field had reached when the harness got around to writing
+    // `freeze` — a different draw count on every boot.
+    //
+    // MEASURED (2026-08-21), two consecutive local boots of THIS scene through
+    // the real capture path, same machine, same commit: the captured PNGs
+    // differed (sha 1073dff7… vs 9bb55a01…). With the three globals below they
+    // are BYTE-IDENTICAL across boots (6ed0f1d6… twice). Both directions, which
+    // is what makes this a fix rather than a hope. On CI it surfaced as
+    // `face-mirrorpool-dock` 1614 px against the 1500 px dock budget — a
+    // MARGINAL miss, which is why it rode under the tolerance until it did not,
+    // and why no merge in that window is responsible for it.
+    //
+    // ⚠ THREE GLOBALS, NOT ONE, and each is load-bearing: the seed alone fixes
+    // WHICH drops spawn but not HOW MANY frames of them landed, and the clock
+    // alone pins `tSec` while the ping-pong field keeps integrating — the
+    // module's own `freeze` ParamDef comment says so in those words. This is
+    // the same trio `mirrorpool-composite.spec.ts` already installs to call its
+    // chain "bit-stable across renderers"; the face harness simply never set
+    // them, so the seam was dead here exactly as outlines' was.
+    simPin: [
+      {
+        global: '__videoEngineFreezeTime',
+        value: 1.0,
+        why:
+          'pins `tSec`, the wall-clock term every analytic ring ages against. Without it the '
+          + 'ring shapes advance with elapsed milliseconds, which is a different number on every '
+          + 'boot. Necessary but NOT sufficient — the module reads this flag and its own comment '
+          + 'records that pinning time alone leaves the height field integrating.',
+      },
+      {
+        global: '__mirrorpoolVrtSeed',
+        value: 0x51ee,
+        why:
+          'pins the rain scheduler\'s seeded Poisson stream, so `spawnDrops(rain, seed, frame)` '
+          + 'produces the same impacts for the same frame index. Reuses the seed '
+          + 'mirrorpool-composite.spec.ts already pins, deliberately: one seed for both of this '
+          + 'module\'s deterministic capture paths means a surface a human has already reviewed.',
+      },
+      {
+        global: '__mirrorpoolForceAnalytic',
+        value: true,
+        why:
+          'forces the analytic height path, taking the two float FBOs out of the picture. This is '
+          + 'the one that actually removes the accumulated state: the ping-pong sim reads front '
+          + 'and writes back EVERY DRAW, so its contents are a function of how many draws '
+          + 'happened before the freeze landed and nothing short of not using it can settle that.',
+      },
+    ],
   },
   // THE FACEPLATE QUEUE · Q5 — the Buchla-259-style complex oscillator.
   //
@@ -1351,17 +1404,19 @@ export const FACES = [
   {
     type: 'rasterize',
     pages: 1,
-    simPin: {
-      global: '__rasterizeVrtSeed',
-      value: 1,
-      why:
-        'RASTERIZE paints its picture on the AUDIO side (RasterPainter in JS), so freezeFaceVideo '
-        + 'never reaches it, and the audio suspend stops the scan without choosing where it '
-        + 'stops. The running cursor advances ~0.78 scanlines every frame and the number of rAFs '
-        + 'before the suspend varies per boot, so two captures would frame the same band pattern '
-        + 'shifted by tens of rows. This flag engages the deterministic single-fill seed already '
-        + 'in the module, which its own VRT comment was written for and which nothing set.',
-    },
+    simPin: [
+      {
+        global: '__rasterizeVrtSeed',
+        value: 1,
+        why:
+          'RASTERIZE paints its picture on the AUDIO side (RasterPainter in JS), so freezeFaceVideo '
+          + 'never reaches it, and the audio suspend stops the scan without choosing where it '
+          + 'stops. The running cursor advances ~0.78 scanlines every frame and the number of rAFs '
+          + 'before the suspend varies per boot, so two captures would frame the same band pattern '
+          + 'shifted by tens of rows. This flag engages the deterministic single-fill seed already '
+          + 'in the module, which its own VRT comment was written for and which nothing set.',
+      },
+    ],
   },
   // THE FACEPLATE QUEUE · Q44 — the 4-in / 4-out video cross-point switch, and
   // the video twin of `fourplexer` five entries up.
@@ -1638,23 +1693,25 @@ export const FACES = [
   {
     type: 'foxy',
     pages: 7,
-    simPin: {
-      global: '__foxyVrtSeed',
-      value: 1,
-      why:
-        'FOXY builds its picture on the AUDIO side — three RasterPainters plus the XYZ and '
-        + 'wavetable renderers, all in JS — so freezeFaceVideo never reaches it, and suspending '
-        + 'the AudioContext stops the bridge without choosing WHERE it stops. The bridge is '
-        + 'throttled to ~24Hz and each tick advances three independent raster cursors at three '
-        + 'different strides (6000 / 4500 / 5200 samples), so the number of ticks landing before '
-        + 'the suspend varies per boot and two captures would frame three different band '
-        + 'patterns feeding a different heightfield and therefore a different 64x256 table — the '
-        + 'drift compounds through every stage rather than shifting one picture. This flag '
-        + 'engages the deterministic seed already in the module (`paintSeeded`: reset all three '
-        + 'cursors, then ONE full-frame fill from three fixed synthetic waveforms, with every '
-        + 'later advance short-circuited), making all five pictures a pure function of the '
-        + "module's own constants. It is an AUDIO def, so no attest hash moves.",
-    },
+    simPin: [
+      {
+        global: '__foxyVrtSeed',
+        value: 1,
+        why:
+          'FOXY builds its picture on the AUDIO side — three RasterPainters plus the XYZ and '
+          + 'wavetable renderers, all in JS — so freezeFaceVideo never reaches it, and suspending '
+          + 'the AudioContext stops the bridge without choosing WHERE it stops. The bridge is '
+          + 'throttled to ~24Hz and each tick advances three independent raster cursors at three '
+          + 'different strides (6000 / 4500 / 5200 samples), so the number of ticks landing before '
+          + 'the suspend varies per boot and two captures would frame three different band '
+          + 'patterns feeding a different heightfield and therefore a different 64x256 table — the '
+          + 'drift compounds through every stage rather than shifting one picture. This flag '
+          + 'engages the deterministic seed already in the module (`paintSeeded`: reset all three '
+          + 'cursors, then ONE full-frame fill from three fixed synthetic waveforms, with every '
+          + 'later advance short-circuited), making all five pictures a pure function of the '
+          + "module's own constants. It is an AUDIO def, so no attest hash moves.",
+      },
+    ],
   },
   // GATEMAIDEN (2026-08-20) — the gate↔trigger converter. ONE declared page and
   // no hero, so nothing is promoted out of a band and `pages: 1` is both the
@@ -2282,9 +2339,19 @@ export interface BootFaceOptions {
    */
   videoFaceWhy?: string;
   /**
-   * PIN A STATEFUL SIM'S PHASE — a boot-time global installed via
-   * `addInitScript` BEFORE `goto`, so it is set before any module factory runs
-   * and can be read at CONSTRUCTION.
+   * PIN A STATEFUL SIM'S PHASE — boot-time globals installed via
+   * `addInitScript` BEFORE `goto`, so they are set before any module factory
+   * runs and can be read at CONSTRUCTION.
+   *
+   * ⚠ A LIST, BECAUSE DETERMINISM IS NOT ALWAYS ONE FLAG. This was a single pin
+   * until `mirrorpool` needed THREE (clock + seed + the flag that takes the
+   * float ping-pong out of the path), and each is individually insufficient:
+   * seeding fixes WHICH rain drops spawn but not how many frames of them
+   * landed, and pinning the clock leaves the height field integrating per draw.
+   * A one-pin shape would have invited "pin the seed and hope", which is the
+   * dead-seam failure this field exists to end. Every entry is installed AND
+   * verified against the page, so a scene needing three is not silently
+   * two-thirds pinned.
    *
    * ⚠ THIS IS A DIFFERENT AXIS FROM `videoFaceWhy`, AND THE DIFFERENCE IS THE
    * WHOLE BUG. `freezeFaceVideo` holds the LAST DRAWN frame — it makes the
@@ -2318,14 +2385,21 @@ export interface BootFaceOptions {
    * `why` is required BY THE TYPE, so `tsc` refuses an undeclared pin: a bare
    * `{ global, value }` will not compile.
    */
-  simPin?: {
+  simPin?: readonly {
     /** The `globalThis` property the module reads at construction. */
     readonly global: string;
-    /** The value to install. */
-    readonly value: number;
+    /**
+     * The value to install.
+     *
+     * `boolean` is allowed because some seams are FLAGS rather than seeds
+     * (`__mirrorpoolForceAnalytic` is read as `!!x`). Writing `1` there would
+     * work and would read as a magic number; the declaration should say what
+     * the module means.
+     */
+    readonly value: number | boolean;
     /** Why this scene needs its sim phase pinned. */
     readonly why: string;
-  };
+  }[];
 }
 
 /** How many times the suspend may be re-applied before the scene gives up. The
@@ -2673,13 +2747,12 @@ export async function bootWithFace(
   // post-goto `evaluate` lands after the factory has already built an unseeded,
   // unpinned sim. Ordering is the defect class here, so it is asserted below
   // rather than assumed.
-  if (opts.simPin) {
-    const { global, value } = opts.simPin;
+  for (const { global, value } of opts.simPin ?? []) {
     await page.addInitScript(
       ([g, v]) => {
         (globalThis as unknown as Record<string, unknown>)[g as string] = v;
       },
-      [global, value] as [string, number],
+      [global, value] as [string, number | boolean],
     );
   }
 
@@ -2697,8 +2770,12 @@ export async function bootWithFace(
   // different one per boot. A dead pin is exactly how this bug shipped, so it
   // fails loudly here instead of as a 4.5x-over-tolerance pixel diff weeks
   // later.
-  if (opts.simPin) {
-    const { global, value } = opts.simPin;
+  //
+  // ⚠ EVERY PIN IS CHECKED, not just the first. A scene whose determinism needs
+  // THREE globals (mirrorpool) is no more pinned than an unpinned one if two
+  // land and the third does not — and the picture it produces looks entirely
+  // plausible either way.
+  for (const { global, value } of opts.simPin ?? []) {
     const seen = await page.evaluate(
       (g) => (globalThis as unknown as Record<string, unknown>)[g],
       global,
