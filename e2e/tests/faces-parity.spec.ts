@@ -1473,6 +1473,15 @@ test.describe('faces render-parity: every STRICT_FACES dock full-view carries th
       // work actually has.
       const tabs = newTabCursor();
       for (const cell of cells) {
+        // ⚠ RE-ASSERTED PER CELL, and the reason is a real interaction rather
+        // than caution: on a band-focused face the FOCUS PARAM IS ITSELF A CELL.
+        // Driving it (the sweep sets every control) re-focuses the plate
+        // mid-walk, and every band the new value hides takes its cells with it —
+        // so the next `driveCell` looks for a control that is no longer mounted
+        // and reports it as a LOST control. Restoring show-all before each drive
+        // makes the walk independent of the order it happens to visit cells in.
+        // No-op on every face without the feature.
+        await showAllBands(page, 'm', spec);
         await openTabFor(page, cell, tabs);
         await driveCell(page, dockShell, 'm', spec, cell);
       }

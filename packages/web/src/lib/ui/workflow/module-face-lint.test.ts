@@ -59,6 +59,10 @@ import { SPIRO_COUNT_MAX, spiroParamId } from '$lib/video/modules/spirographs';
 // entries are DERIVED from — see the entry itself for why they are generated
 // rather than typed.
 import { COLOUROFMAGIC_OVER_PARAMS } from '$lib/video/modules/colourofmagic';
+// BAND FOCUS — the pure totality checker, so the lint and the model cannot
+// disagree about what "total" means.
+import { bandFocusIsInert, bandFocusIsTotal } from './band-focus-model';
+import type { FaceBandFocus } from '$lib/graph/types';
 import { laneBodyPlan, laneGlyphFor } from './module-shell-model';
 import { looksLikeSwitch } from './shell-control-kind';
 import { panelCellKeys, shellCellFor } from './shell-cells';
@@ -1091,6 +1095,88 @@ describe('module-face lint — MOMENTARY pads (face.momentary)', () => {
 // at runtime can tell a WRONG id from a right one — a stale id simply paints
 // nothing and a duplicated id silently picks whichever channel came last — so
 // the shape is linted here, roster-wide and deny-by-default.
+// ── BAND FOCUS (face.bandFocus) ─────────────────────────────────────────────
+//
+// The declaration buys the right to HIDE controls, so it pays for it here.
+// ⚠ `visibleBandIds` FAILS OPEN — a value nobody claimed shows every band —
+// which is the correct runtime behaviour (it can never lose a control) and
+// exactly why a gap is invisible on screen. Totality is therefore the whole
+// safety argument, and it has to be asserted rather than reviewed.
+describe('module-face lint — BAND FOCUS (face.bandFocus)', () => {
+  const adopters = () =>
+    allDefs().filter((d) => (d.face as { bandFocus?: FaceBandFocus } | undefined)?.bandFocus);
+
+  it('every declaration is TOTAL over its param, and names real pages', () => {
+    const problems: string[] = [];
+    for (const def of adopters()) {
+      const focus = (def.face as { bandFocus?: FaceBandFocus }).bandFocus!;
+      const p = (def.params ?? []).find((q) => q.id === focus.param);
+      if (!p) {
+        problems.push(`${def.type}: face.bandFocus.param '${focus.param}' is not a declared param`);
+        continue;
+      }
+      // The values the param can actually hold: its roster if it declares one,
+      // else every integer step of its range.
+      const legal = p.options?.length
+        ? p.options.map((o) => o.value)
+        : Array.from({ length: Math.round(p.max - p.min) + 1 }, (_, i) => Math.round(p.min) + i);
+      const pageIds = (def.face?.pages ?? []).map((pg) => pg.id);
+
+      if (bandFocusIsInert(focus)) {
+        problems.push(`${def.type}: declares bandFocus but hides nothing (no bands)`);
+      }
+      if (!focus.showAllOn.length) {
+        problems.push(
+          `${def.type}: showAllOn is EMPTY — there is no state in which a player can reach every control`,
+        );
+      }
+      if (focus.why.trim().split(/\s+/).length < 8) {
+        problems.push(`${def.type}: bandFocus.why is a placeholder — say why hiding the others is right HERE`);
+      }
+
+      const t = bandFocusIsTotal(focus, legal, pageIds);
+      if (t.unclaimed.length) {
+        problems.push(
+          `${def.type}: ${focus.param} values [${t.unclaimed.join(', ')}] are claimed by NO band and ` +
+            `no showAllOn entry. visibleBandIds fails OPEN, so they would silently show every band — ` +
+            `the feature would just stop applying, and nothing on screen would say so.`,
+        );
+      }
+      if (t.duplicated.length) {
+        problems.push(`${def.type}: values [${t.duplicated.join(', ')}] are claimed twice`);
+      }
+      if (t.unknownBands.length) {
+        problems.push(
+          `${def.type}: bandFocus.bands names [${t.unknownBands.join(', ')}], which are not declared page ids — ` +
+            `a band id that matches no page focuses nothing`,
+        );
+      }
+      if (t.outOfRange.length) {
+        problems.push(`${def.type}: values [${t.outOfRange.join(', ')}] are outside ${focus.param}'s legal set`);
+      }
+    }
+    expect(problems.join('\n')).toBe('');
+  });
+
+  it('NEGATIVE CONTROL — the totality clause fires on a def built to violate it', () => {
+    // ⚠ Without this the sweep above is green whenever NOBODY adopts, and green
+    // in exactly the same way if `bandFocusIsTotal` regressed to returning
+    // nothing. Both are closed here.
+    const focus: FaceBandFocus = {
+      param: 'sel',
+      why: 'a synthetic declaration used only to prove this clause can fail',
+      showAllOn: [0],
+      bands: { a: [1], b: [2] },
+    };
+    // 0..3 legal, but 3 is claimed by nobody.
+    const t = bandFocusIsTotal(focus, [0, 1, 2, 3], ['a', 'b']);
+    expect(t.unclaimed).toEqual([3]);
+    expect(bandFocusIsTotal(focus, [0, 1, 2], ['a']).unknownBands).toEqual(['b']);
+    // …and the real adopters are non-zero, or the sweep above probed nothing.
+    expect(adopters().length, 'no def declares bandFocus — the sweep is vacuous').toBeGreaterThan(0);
+  });
+});
+
 describe('module-face lint — CHANNEL ACCENT (face.channelAccent)', () => {
   it('every declared id is a real, RANKED param, claimed by exactly one channel', () => {
     const problems: string[] = [];

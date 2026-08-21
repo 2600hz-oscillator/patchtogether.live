@@ -1017,6 +1017,126 @@ export interface ModuleFace {
    * which is exactly what its legacy card's own tablist did.
    */
   tabbed?: true;
+  /**
+   * MONITOR MODE — this face's own surface may be watched WITHOUT its control
+   * bands, and `node.data.hideControls` is what does it (#2009).
+   *
+   * ⚠ IT IS THE EXACT INVERSE OF SCREEN ON/OFF, NOT A DUPLICATE OF IT, and
+   * #1865 proposed the opposite. SCREEN OFF hides the PICTURE and keeps the
+   * controls; MONITOR MODE hides the CONTROLS and keeps the picture. Neither
+   * can subsume the other — they are the two directions of one question ("which
+   * half am I looking at right now?"), and a video face wants both.
+   *
+   * ⚠ WHY THIS IS A SHELL CAPABILITY AND NOT A `ShellExtension` SLOT. The gap
+   * #2009 filed is that `fullViewBody` paints ABOVE the bands and CANNOT
+   * suppress them — its own contract says so, deliberately (the
+   * `warrensspectrum` failure, where a body that ate the faceplate would have
+   * deleted every control). `editorSurface` is not the home either: it is
+   * specced for "controls that are not cell-shaped at all" — a clip arranger, a
+   * pad matrix — and it is a STATIC structural choice. Hiding the bands is a
+   * TOGGLE over a face whose controls are perfectly cell-shaped. Different
+   * axis, so wiring `editorSurface` for it would have made ruttetra a fake
+   * first adopter of a slot it does not need, and left the real blocker
+   * standing.
+   *
+   * WHAT PROMOTION WOULD OTHERWISE DELETE: five legacy cards mount
+   * `hideControls` (`ruttetra`, `monoglitch`, `milkdrop`, `reshaper`,
+   * `graphicEq`), and `migrated(type)` stops BOTH surfaces rendering the card.
+   * On ruttetra the def's own `docs` advertise the gesture in the user's words
+   * — "hiding the controls turns it into a resizable monitor" — so promoting
+   * without this makes the shipped documentation describe a control that no
+   * longer exists, and no def-reading gate can see that.
+   *
+   * ⚠ IT CANNOT ENGAGE WITHOUT A SURFACE TO BE A MONITOR OF.
+   * `faceMonitorPlan` requires `dockFullViewHeadPlan().extBody` — the module's
+   * own `fullViewBody` actually painting — because a faceplate with its bands
+   * hidden and no picture is a BLANK PLATE, which is a worse outcome than the
+   * one this fixes. That precondition is asserted directly rather than left to
+   * an author's care.
+   *
+   * Gate: `face-monitor-source.test.ts`, deny-by-default in BOTH directions —
+   * a face declaring this must own a `fullViewBody` that reads and writes
+   * `hideControls` and exposes a button, and a FACED module whose legacy card
+   * still mounts `hideControls` must declare this or carry a named exemption.
+   */
+  monitor?: FaceMonitor;
+  /**
+   * BAND FOCUS — a param's VALUE decides which control bands render.
+   *
+   * Owner ruling, 2026-08-20, on `colourofmagic`: *"we can rgb by default and
+   * only show rgb controls … if i select passthrough manually that's the only
+   * time i see all controls."* That module runs five colorspace blocks in
+   * parallel and `preview` picks which of twenty-two outputs you are looking
+   * at, so the plate carried thirty-five knobs while you steered six of them.
+   * Focusing brings the picture and the controls that drive it together.
+   *
+   * ⚠ IT IS STRUCTURE, NOT TEXT, which is why it is free under the
+   * resting-text rulings — it decides which bands RENDER and paints nothing.
+   * The same shape `monitor` above uses, one step further: a PER-BAND
+   * predicate rather than a whole-plate boolean.
+   *
+   * ⚠ AND UNLIKE `monitor`, ITS DEFAULT STATE IS FOCUSED, which is the whole
+   * reason it needed a gate change. Monitor mode is a per-node runtime state no
+   * parity gate observes (a freshly opened faceplate has `hideControls` absent
+   * ⇒ false). Band focus is read straight off a PARAM, and `colourofmagic`
+   * defaults to `preview: 1` (RGB) — so a freshly opened faceplate renders ONE
+   * band, and `faces-parity`'s "every param renders exactly one cell" would go
+   * RED on a correctly-working module. The sweep therefore drives the face into
+   * a declared `showAllOn` value first; see `showAllBands` in faces-parity.
+   *
+   * Gate: `band-focus-model.test.ts` for the predicate + totality, and the
+   * parity sweep's focused-absence leg for "the declaration is actually wired".
+   */
+  bandFocus?: FaceBandFocus;
+}
+
+/**
+ * BAND FOCUS's declaration (`face.bandFocus`). Serialisable data like the rest
+ * of `face` — the shell reads it, never a closure.
+ *
+ * ⚠ DECLARED, NOT DERIVED, and the choice is about COUPLING rather than effort.
+ * On the first adopter the map falls out of the output port ids — that is how it
+ * was verified, and every one of the twenty-two `preview` values resolved to
+ * exactly one block. But deriving it would tie band visibility to the REAR
+ * CARD's port grouping, a separate concern a later edit is free to reorganise.
+ * Declared, the coupling is visible and the totality gate can check it.
+ */
+export interface FaceBandFocus {
+  /** The param whose value selects the focused band. */
+  param: string;
+  /**
+   * Why hiding the other bands is right for THIS module — required by the type
+   * so `tsc` refuses the casually-focused face, and an argument rather than a
+   * label. NEVER PAINTED: it is for the reviewer and the gate, and
+   * `face-resting-text-source` asserts the shell cannot reach it.
+   */
+  why: string;
+  /**
+   * Values that show EVERY band — the state a player selects on purpose.
+   *
+   * ⚠ IT MUST BE NON-EMPTY, or the face has no state in which every control is
+   * reachable, and the parity sweep says so by name.
+   */
+  showAllOn: readonly number[];
+  /** band (page) id → the param values that reveal it, and only it. */
+  bands: Readonly<Record<string, readonly number[]>>;
+}
+
+/**
+ * MONITOR MODE's declaration (`face.monitor`). A record with one REQUIRED
+ * field, so `tsc` refuses the bare `monitor: true` form: the burden of proof is
+ * on the face that claims its picture is worth watching alone.
+ *
+ * ⚠ `why` IS NEVER PAINTED. It is documentation for the reviewer and for
+ * `face-monitor-source.test.ts`, which requires it to be an argument rather
+ * than a label — the same shape every exemption roster in this repo uses. The
+ * shell is asserted never to read it (`face-resting-text-source.test.ts`), so
+ * it cannot become a fifth resting-text mechanism.
+ */
+export interface FaceMonitor {
+  /** Why THIS face's surface is worth watching without its controls — the
+   *  picture a player steers by, not merely a preview beside the knobs. */
+  why: string;
 }
 
 /**

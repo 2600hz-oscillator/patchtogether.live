@@ -1,32 +1,56 @@
 {
   "schemaVersion": 1,
+<<<<<<<< HEAD:ci-webgl-attest/ab754b48e5985995d83da0778c4cdc8c44e3142c152029e7fc3456595276185b.json
   "webglContentHash": "ab754b48e5985995d83da0778c4cdc8c44e3142c152029e7fc3456595276185b",
   "attestedAt": "2026-08-20T22:23:36.869Z",
   "attestedBy": "patchtogether-maintainer",
   "gitHeadAtAttest": "d46ca76dfb5aaa927a2a7f00e88fda5316fb573d",
+========
+  "webglContentHash": "6c93b7ea53bb63f4385d83f36a9a91e84e45229862d4c05771b5670f81ab6be2",
+  "attestedAt": "2026-08-20T23:52:41.703Z",
+  "attestedBy": "patchtogether-maintainer",
+  "gitHeadAtAttest": "1963fa5e0312512b182d48d5d852db64242bdd9f",
+>>>>>>>> origin/main:ci-webgl-attest/6c93b7ea53bb63f4385d83f36a9a91e84e45229862d4c05771b5670f81ab6be2.json
   "playwrightVersion": "1.50.0",
   "os": "darwin 25.4.0 (arm64)",
   "machineClass": "local-trusted-gpu-workstation",
   "preflight": {
     "samples": 7,
     "windowMs": 10204,
+<<<<<<<< HEAD:ci-webgl-attest/ab754b48e5985995d83da0778c4cdc8c44e3142c152029e7fc3456595276185b.json
     "maxForeignCpu": 0.5,
     "thresholdCpu": 25,
     "load1": 1.7314453125,
+========
+    "maxForeignCpu": 30.6,
+    "thresholdCpu": 25,
+    "load1": 3.58642578125,
+>>>>>>>> origin/main:ci-webgl-attest/6c93b7ea53bb63f4385d83f36a9a91e84e45229862d4c05771b5670f81ab6be2.json
     "cores": 10
   },
   "gpu": "ANGLE (Apple, ANGLE Metal Renderer: Apple M5, Unspecified Version)",
   "appServer": {
+<<<<<<<< HEAD:ci-webgl-attest/ab754b48e5985995d83da0778c4cdc8c44e3142c152029e7fc3456595276185b.json
     "url": "http://127.0.0.1:55440",
     "mode": "dev",
     "root": "/Users/2600hz/Documents/workspace/inet.modular/.claude/worktrees/agent-a736a834641c3304b",
     "commit": "d46ca76dfb5aaa927a2a7f00e88fda5316fb573d"
+========
+    "url": "http://127.0.0.1:61541",
+    "mode": "dev",
+    "root": "/Users/2600hz/Documents/workspace/inet.modular/.claude/worktrees/agent-aa628a7415051a765",
+    "commit": "1963fa5e0312512b182d48d5d852db64242bdd9f"
+>>>>>>>> origin/main:ci-webgl-attest/6c93b7ea53bb63f4385d83f36a9a91e84e45229862d4c05771b5670f81ab6be2.json
   },
   "repeatEach": 1,
   "suites": {
     "A-heavy": {
       "specFiles": 57,
+<<<<<<<< HEAD:ci-webgl-attest/ab754b48e5985995d83da0778c4cdc8c44e3142c152029e7fc3456595276185b.json
       "passed": 199,
+========
+      "passed": 202,
+>>>>>>>> origin/main:ci-webgl-attest/6c93b7ea53bb63f4385d83f36a9a91e84e45229862d4c05771b5670f81ab6be2.json
       "failed": 0,
       "flaky": 1,
       "skipped": 5,
@@ -63,5 +87,9 @@
       "flakyDetails": []
     }
   },
+<<<<<<<< HEAD:ci-webgl-attest/ab754b48e5985995d83da0778c4cdc8c44e3142c152029e7fc3456595276185b.json
   "durationSec": 231
+========
+  "durationSec": 247
+>>>>>>>> origin/main:ci-webgl-attest/6c93b7ea53bb63f4385d83f36a9a91e84e45229862d4c05771b5670f81ab6be2.json
 }

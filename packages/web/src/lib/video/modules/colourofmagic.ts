@@ -712,6 +712,52 @@ export const colourofmagicDef: VideoModuleDef = {
 
     hero: { control: 'preview' },
 
+    // ⚠ BAND FOCUS — the plate follows the PICTURE (owner ruling, 2026-08-20):
+    // *"we can rgb by default and only show rgb controls (incluing the color
+    // pickers, for RGB only, the other types are not like that). if i select
+    // passthrough manually that's the only time i see all controls."*
+    //
+    // Five blocks run in parallel and `preview` chooses which of 22 outputs you
+    // are looking at, so the dock carried 35 knobs while you steered 6 of them.
+    // Focused, the picture and the controls that drive it share the plate.
+    //
+    // ⚠ THE MAP WAS VERIFIED BEFORE IT WAS WRITTEN, and it is TOTAL: the option
+    // value IS the shader's output mode IS the index into `outputs`, so every
+    // one of the 22 values resolves to exactly one block. The two that needed
+    // deciding rather than assuming:
+    //   · LUMA (7) → `rgb`. It is the RGB block's luminance tap, which is the
+    //     same grouping this face's rear OUTPUT sections already use.
+    //   · the whole YCC family (18-21) → `ycc`, a declared band.
+    // `pass` (0) is the only value belonging to no block, which is exactly the
+    // show-all state the ruling describes.
+    //
+    // ⚠ THE SWATCHES RIDE WITH `rgb` AND THAT IS THE RULING, not an oversight:
+    // the palette is RGB-specific ("the other types are not like that"), so no
+    // equivalent picker is invented for the other families. They sit on the
+    // `rgb` page, so they focus and hide with it for free.
+    //
+    // DECLARED rather than derived: the map DOES fall out of the output port
+    // ids — that is how it was verified — but deriving it would tie band
+    // visibility to the REAR CARD's grouping, a separate concern a later edit
+    // is free to reorganise. Declared, the coupling is visible and
+    // `bandFocusIsTotal` checks it.
+    bandFocus: {
+      param: 'preview',
+      why:
+        'five colorspace blocks run in parallel and PREVIEW selects which one you are looking at, '
+        + 'so showing all five blocks\' controls means hunting six knobs among thirty-five while '
+        + 'steering a picture that only one block produces. Focusing puts the picture and the '
+        + 'controls that drive it on the plate together; PASS is the deliberate all-blocks state.',
+      showAllOn: [0],
+      bands: {
+        rgb: [1, 4, 5, 6, 7],
+        ydbdr: [2, 8, 9, 10],
+        hsv: [3, 11, 12, 13],
+        yiq: [14, 15, 16, 17],
+        ycc: [18, 19, 20, 21],
+      },
+    },
+
     // ⚠ SCREEN ON/OFF, and on a FACE it cannot live on the card. Promotion sets
     // `migrated()` true and neither surface renders `ColourofmagicCard` after
     // that, so a toggle left there is deleted by the very promotion meant to

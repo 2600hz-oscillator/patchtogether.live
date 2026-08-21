@@ -34,23 +34,12 @@
 // once, so a NEW preview tap with no home is RED rather than silently falling
 // through to "show everything".
 
-/** The declaration (`face.bandFocus`). Serialisable data, like the rest of
- *  `face` — the shell reads it, never a closure. */
-export interface FaceBandFocus {
-  /** The param whose value selects the focused band. */
-  param: string;
-  /**
-   * Why hiding the other bands is right for THIS module — required, and an
-   * argument rather than a label. Never painted (see the note in
-   * `face-resting-text-source`'s roster): it is for the reviewer and the gate.
-   */
-  why: string;
-  /** Values that show EVERY band. The escape hatch the player selects on
-   *  purpose — `preview: 0` (PASS) here. */
-  showAllOn: readonly number[];
-  /** band (page) id → the param values that reveal it, and only it. */
-  bands: Readonly<Record<string, readonly number[]>>;
-}
+// ⚠ THE TYPE LIVES ON `ModuleFace` (graph/types.ts), not here. `face` is
+// serialisable declaration data and its shape belongs with the rest of it; this
+// file is the pure LOGIC that reads it. Re-exported so consumers of the model do
+// not need two imports.
+export type { FaceBandFocus } from '$lib/graph/types';
+import type { FaceBandFocus } from '$lib/graph/types';
 
 /**
  * Which bands are visible at `value`.
