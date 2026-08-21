@@ -198,6 +198,19 @@ const EXTENSION_BODY_ROLES: Readonly<Record<string, BodyRule>> = {
   videoOut: { role: 'picture', why: 'the rack video output\'s live preview canvas — the picture the whole module exists to produce.' },
   warrensvisions: { role: 'picture', why: 'the shader-visions preview canvas and its SCREEN switch.' },
 
+  // ── BATCH 22 · GROUP 2a — the video thin tail, card-checked cells ─────────
+  //
+  // Both PICTURES: a live preview canvas plus ONE control caption (the SCREEN
+  // button). Neither card mounts `hideControls`, so neither body carries a
+  // MONITOR toggle or a resize grip to declare. Nothing on either surface is a
+  // derived value in a text node.
+  //
+  // Grouped rather than interleaved alphabetically for the reason this roster
+  // already documents about itself: it has been caught by a merge three rounds
+  // running, and separate alphabetical insertions are separate conflict sites.
+  lumakey: { role: 'picture', why: 'the luminance-key compositor\'s live preview canvas and its SCREEN switch. A KEYER exists to be composited downstream, so its body keeps the engine\'s watch mark alive while the screen is off — a lapsed mark would change what the DOWNSTREAM sees, not just the preview (#2015).' },
+  shapegen: { role: 'picture', why: 'the generative 3-D shape synthesiser\'s live preview canvas and its SCREEN switch. A GENERATOR whose `out` is the reason to patch it, so the retained watch mark is what stops a control labelled SCREEN behaving as a MUTE downstream (#2015).' },
+
   // ── STATUS — the one body whose subject is not a picture.
   cvBuddy: {
     role: 'status-primitive',

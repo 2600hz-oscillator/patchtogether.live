@@ -173,6 +173,29 @@ export const shapegenDef: VideoModuleDef = {
     { id: SHAPEGEN_CLOCK_PARAM_ID, label: 'CLK', defaultValue: 0, min: 0, max: 1, curve: 'linear' },
   ],
 
+  // ⚠ THE CLOCK PARAM IS DECLARED, NOT MERELY LEFT OUT (#1726). Before this it
+  // was a `// hidden from the card UI` comment, which no gate can read — and
+  // module-face-lint's COMPLETENESS clause is deny-by-default, so a param in
+  // neither `face.order` nor here is RED. Declaring it is what lets the face
+  // rank three controls instead of four WITHOUT the fourth silently vanishing:
+  // the DOCK RENDER-PLAN PARITY clause then requires it to render EXACTLY ZERO
+  // cells, so the claim is falsifiable in both directions rather than a skip.
+  //
+  // It also stops the param being auto-exposed as a knob on a GROUP's
+  // instrument bar (`listExposableControls`) and keeps it off a Push 2 encoder
+  // — both real behaviour, not just a gate verdict.
+  noUserControl: [
+    {
+      param: SHAPEGEN_CLOCK_PARAM_ID,
+      writer: 'cv-port',
+      why:
+        'written by the clock_in bridge as a raw 0..1 swing; the module edge-detects the rising '
+        + 'edge to RE-ROLL the shape set (a visual sample-and-hold), so the value while held is '
+        + 'meaningless to a player. The card has never drawn a control for it — its home is the '
+        + 'jack, and SCOREBOARD\'s scoreTrig is the precedent this def already names.',
+    },
+  ],
+
   // ── FACE (batch-22 · the video thin tail) ─────────────────────────────────
   face: {
     order: ['size', 'rotate', 'solids'],
@@ -194,13 +217,14 @@ export const shapegenDef: VideoModuleDef = {
     // TOGGLE, matching the card's `<button>`. ⚠ Giving a 2-state param a knob
     // is the moog962 defect — the control is INERT.
 
-    // ⚠ `SHAPEGEN_CLOCK_PARAM_ID` ('CLK') IS DELIBERATELY UNRANKED. It is a
-    // SYNTHETIC GATE param, hidden from the card by design and surfaced as the
-    // `clock_in` cv jack through the standard port row (the def's own comment
-    // says so, and names SCOREBOARD's `scoreTrig` as the precedent). Ranking it
-    // would put a control on the faceplate that the card deliberately does not
-    // have — inventing an affordance, which the parity rule forbids in exactly
-    // the same breath as it forbids dropping one. Its home is the JACK.
+    // ⚠ `SHAPEGEN_CLOCK_PARAM_ID` ('CLK') IS ABSENT FROM `order` BY
+    // DECLARATION, not by omission — see the `noUserControl` block above.
+    // Ranking it would put a control on the faceplate that the card
+    // deliberately does not have, which is INVENTING an affordance; the parity
+    // rule forbids that in the same breath as it forbids dropping one. Its home
+    // is the JACK. Leaving it merely unranked was RED (completeness is
+    // deny-by-default), which is the gate doing its job: "hidden" had to become
+    // a declaration something could check.
     glyph: 'none',
 
     // SCREEN ON/OFF arrives through this slot (#1928): promotion stops BOTH

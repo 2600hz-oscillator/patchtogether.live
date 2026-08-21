@@ -2051,6 +2051,48 @@ export const FACES = [
       + 'to identity and the source resolves to a constant mid-grey, so the picture is a flat '
       + 'field that is identical on every frame.',
   },
+  // ── BATCH 22 · GROUP 2a — the video thin tail, card-checked cells ─────────
+  //
+  // Both `pages: 1`: each face declares no `pages`, so the dock renders ONE
+  // unlabelled band. ⚠ They do NOT share a primitive — `lumakey` is a fader
+  // pair plus a toggle, `shapegen` is a knob pair plus a toggle — which is the
+  // reason the group exists and why each face was read off its CARD rather than
+  // derived from its def.
+  {
+    type: 'lumakey',
+    pages: 1,
+    videoFaceWhy:
+      'a VIDEO module, so it must boot into the video zone rather than a mixer channel column — '
+      + 'without this field bootWithFace waits out the full 90 s test timeout for a column '
+      + 'membership a video node never acquires. Both scenes also carry a live picture: the '
+      + 'compact tile paints a VideoTileThumb through hasVideoSurface, and the dock body is the '
+      + "module's own fullViewBody extension (the key preview plus its SCREEN switch). The freeze "
+      + 'write is a NO-OP on this def (it declares no `freeze` param) and deliberately so: the '
+      + 'key is a pure per-pixel smoothstep over (foreground luma, threshold, softness, invert) '
+      + 'with no clock, ping-pong or accumulator anywhere in its fragment source. ⚠ AND ITS '
+      + 'UNPATCHED STATE IS NOT BLACK, unlike its batch siblings — the def passes the BACKGROUND '
+      + 'straight through when no foreground is patched ("a half-wired chain is never a black '
+      + 'hole"), so with nothing patched at all the scene is a constant background, still '
+      + 'identical frame to frame.',
+  },
+  {
+    type: 'shapegen',
+    pages: 1,
+    videoFaceWhy:
+      'a VIDEO module, so it must boot into the video zone rather than a mixer channel column — '
+      + 'without this field bootWithFace waits out the full 90 s test timeout for a column '
+      + 'membership a video node never acquires. Both scenes also carry a live picture: the '
+      + 'compact tile paints a VideoTileThumb through hasVideoSurface, and the dock body is the '
+      + "module's own fullViewBody extension (the shape preview plus its SCREEN switch). The "
+      + 'freeze write is a NO-OP on this def (no `freeze` param) and deliberately so: the scene '
+      + 'is a pure function of (raster_a, raster_b, raster_c, size, rotate, solids) — there is no '
+      + 'time uniform and no accumulator, and the camera orbit is driven by the ROT PARAM rather '
+      + 'than by a clock, which is what makes a still frame possible at all. ⚠ WITH NOTHING '
+      + 'PATCHED THE SCENE IS EMPTY BY THE MODULE\'S OWN RULE — raster A below the variance floor '
+      + 'emits NO shapes — so the capture is the bare wireframe box and floor grid, which is '
+      + 'constant. Patch a source into A and that argument dies: the shape set becomes a function '
+      + 'of the incoming raster.',
+  },
 ] as const;
 
 /**
