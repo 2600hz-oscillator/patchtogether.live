@@ -2718,6 +2718,72 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // page. Curated, each block owns its six holes. 53 holes is past
   // `REAR_DENSE_ROWS` (40), so it renders dense by design.
   'colourofmagic',
+
+  // FACE BATCH 19 · monoglitch (2026-08-21) — 8 params, 4 pages, no rail. The
+  // luma-driven scanline-displacement glitch: the picture is quantised into a
+  // stack of horizontal lines and each line is LIFTED by the luma it samples at
+  // its own row centre, so bright rows bow upward out of the flat stack. The
+  // verb is LIFT. Not to be confused with either neighbour — `ruttetra` scatters
+  // a 320x180 GRID into 3D relief, `reshaper` remaps coordinates; this one bends
+  // a stack of 2D lines and tints them like a phosphor.
+  //
+  // ⚠ THE FIRST INHERITOR OF MONITOR MODE, and the reason this module was next.
+  // #2009 named FIVE legacy cards that mount `hideControls` (`ruttetra`,
+  // `monoglitch`, `milkdrop`, `reshaper`, `graphicEq`) with no shell
+  // representation, and `migrated(type)` deletes the affordance from both
+  // surfaces at once. `ruttetra` (#2053) built the seam — `face.monitor` →
+  // `faceMonitorPlan` → the shell suppresses hero + bands, with the toggle on
+  // the module's own `fullViewBody` so the button that turns the mode on is
+  // always still on screen to turn it off. This face is the second adopter and
+  // changes NOTHING about the platform: it declares, it does not extend.
+  //
+  // ⚠ AND THE LOSS WOULD HAVE BEEN A DOCUMENTED ONE HERE TOO. This def's
+  // `docs.explanation` has advertised the gesture since it shipped — "in
+  // hide-controls mode the preview is resizable by dragging the corner handle".
+  // ⚠ THAT SENTENCE IS NOT WHAT ESTABLISHED THE AFFORDANCE EXISTS, and the
+  // distinction is the whole #2009 lesson: prose on a def is the thing that
+  // lies. `MonoglitchCard.svelte` was read line by line and genuinely mounts
+  // the key (the toggle, the resizable canvas branch, the dblclick escape), so
+  // monitor mode is HONEST here rather than invented to match the docs.
+  //
+  // ⚠ IT GAINS A SCREEN SWITCH ITS CARD NEVER HAD. Unlike ruttetra's, the
+  // monoglitch card has no `previewCollapsed` control at all. The 2026-08-18
+  // ruling is that every video FACE ships one, and
+  // `video-face-screen-source.test.ts` denies a faced video module without one
+  // — so this is an ADDITION, not a port, recorded so nobody later "restores
+  // parity" by deleting it. OFF stops the preview COPY and keeps renewing the
+  // watch mark, never the engine (#2015).
+  //
+  // ⚠ UNTABBED, and the arithmetic is not close: four honest pages — one per
+  // TERM of the fragment shader (lift / raster / pan / tint) — against
+  // `DOCK_TAB_MIN_BANDS = 7`. Eight controls total is under
+  // `DOCK_ROW_MAX_CONTROLS = 10`, so PF-21 packs all four bands into ONE row.
+  //
+  // ⚠ THE PLATE TIER SHOWS ONE TINT CHANNEL OF THREE, and the rank was NOT
+  // distorted to avoid it. `LANE_PLATE_MAX_CELLS` is 6 and the module has
+  // exactly five geometry params, so the sixth slot is a tint under any
+  // ordering — the split is forced by arithmetic, not chosen.
+  //
+  // ⚠ NO `freeze` PARAM, and it is structural rather than a judgement — the
+  // ruttetra argument, holding for the same mechanical reason. There is no
+  // `uTime` uniform in `FRAG_SRC`, no ping-pong and no accumulator; the shader
+  // is a pure function of (input texture, params). With nothing patched
+  // `uHasInput` is 0 and it paints a fixed dark-navy gradient, so the face
+  // scenes are deterministic at rest by construction. Do NOT add one: that is a
+  // `params` edit on a def inside the WebGL attest basis, i.e. a real-GPU
+  // re-attest, to buy an assertion that already holds.
+  //
+  // ⚠ ITS LANE VRT BASELINE MOVES, the same way ruttetra's did.
+  // `vrt.spec.ts/monoglitch.png` is a LIVE card scene (masked canvas), not an
+  // `EXEMPT_FROM_VRT` entry, and it captures `.svelte-flow__node-monoglitch` —
+  // which promotion re-renders as the faced lane tile. Predicted and reconciled
+  // in the PR body, not discovered.
+  //
+  // NO READOUT, NO SIDEBAR, NO HERO — the 2026-08-19 rulings removed the fields.
+  // The finding that lost its surface is named in the def's `face` comment (the
+  // band height, which depends on BOTH `lines` and `spacing` and so cannot be
+  // read off either dial).
+  'monoglitch',
 ]);
 
 /**
