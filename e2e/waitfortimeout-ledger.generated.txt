@@ -315,7 +315,6 @@ e2e/tests/timelorde-auto-spawn.spec.ts :: rack that already has TIMELORDE: no du
 e2e/tests/timelorde-tap-tempo.spec.ts :: Spacebar taps the tempo ONLY when TIMELORDE is selected :: waitForTimeout(300) #1
 e2e/tests/timelorde-tap-tempo.spec.ts :: external clock DISABLES tap (button greyed + click & space are no-ops) :: waitForTimeout(400) #1
 e2e/tests/timelorde-tap-tempo.spec.ts :: pressSpace :: waitForTimeout(gapMs) #1
-e2e/tests/timelorde-tap-tempo.spec.ts :: tapButton :: waitForTimeout(gapMs) #1
 e2e/tests/timelorde-video.spec.ts :: VIDEO OUT passes the live feed through to a downstream OUTPUT (in → display → out) :: waitForTimeout(1200) #1
 e2e/tests/timelorde-video.spec.ts :: patching video_in flips the display from the OWL to the LIVE FEED, and back :: waitForTimeout(700) #1
 e2e/tests/timelorde-video.spec.ts :: renders the owl painting when nothing is patched into video_in :: waitForTimeout(700) #1

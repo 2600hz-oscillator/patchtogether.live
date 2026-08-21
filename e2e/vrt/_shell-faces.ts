@@ -1257,6 +1257,38 @@ export const FACES = [
   // flat-line stable and the scene needs no mask and no VRT_LIVE_SURFACES
   // entry, for the same reason the struck voices above need none.
   { type: 'stereovca', pages: 1 },
+  // THE FACEPLATE QUEUE · Q47 — the stereo wavetable oscillator.
+  //
+  // `pages: 3` is the POST-hero-split count: the face declares three bands
+  // (`tone`, `amp env`, `table`) and `hero.cell` promotes the wavetable PANEL
+  // out of `table`, which leaves it at three cells rather than emptying it, so
+  // no band is dropped. Three is also comfortably under `DOCK_TAB_MIN_BANDS`,
+  // so the dock stacks bands rather than showing a rail.
+  //
+  // ⚠ THE FOURTH FREE-RUNNING MODULE IN THIS ROSTER, and that is the whole
+  // determinism story for its COMPACT scene. `wavecel` declares
+  // `glyph: 'waveform'`, which binds `live-audio` on `out_l` — and this
+  // oscillator makes sound from the instant it spawns, with no gate and no
+  // note to wait for (measured peak 0.9999845624 at the defaults, because with
+  // nothing in POLY or TRIGGER the amp envelope has nothing to shape and the
+  // voice free-runs as a drone). `analogVco` (#1420) carries the derivation and
+  // `swolevco` extends it; this is a third witness, so a regression in the
+  // pre-frame AudioContext suspend or its ORDERING reddens three scenes.
+  //
+  // ⚠ ITS DOCK SCENE IS DETERMINISTIC FOR A DIFFERENT REASON, worth stating
+  // because the two are unrelated. The hero is a PANEL, not a live trace: the
+  // picture is drawn from the wavetable in `node.data` plus the morph/spread
+  // knobs plus the CV taps, and the component draws in an EFFECT over those
+  // inputs rather than a `requestAnimationFrame` loop (the legacy card uses
+  // rAF; the panel deliberately does not). With the graph frozen the taps read
+  // 0 and every input is pinned, so the picture is a pure function of its
+  // declared state and needs no mask — which matters, because a masked hero
+  // picture asserts nothing.
+  //
+  // NOT `videoFaceWhy` — `scope_out` and `wave3d_out` are video ports a cable
+  // can consume, not a video surface on this module. It is an audio def and
+  // boots into a channel column like any other audio face.
+  { type: 'wavecel', pages: 3 },
   // THE FACEPLATE QUEUE · Q46 — the audio→video raster mapper.
   //
   // `pages: 1` — the face declares no `pages` at all (four params, one honest
@@ -1398,6 +1430,293 @@ export const FACES = [
       + 'freeze write itself is a NO-OP on this def (it declares no `freeze` param) and that is '
       + 'deliberate: the surface is a pure passthrough of unpatched inputs, so it is solid black '
       + 'and identical frame to frame by construction rather than by the flag.',
+  },
+  // BENTBOX — six pages (sync / chroma / bend / feedback / crt / mirror), one
+  // per stage of the NTSC chain, against DOCK_TAB_MIN_BANDS = 7, so the dock
+  // scene captures STACKED bands under the extension body rather than a rail.
+  //
+  // ⚠ ITS SIBLING NEEDED A `freeze` PARAM AND THIS ONE DOES NOT — the same
+  // question, answered the other way, on measurement rather than by family
+  // resemblance. `b3ntb0x` animates by construction (subcarrier phase and a
+  // literal `sin(y*47 + uTime*3.3)` wobble, plus CRT persistence feeding the
+  // previous frame back), so its capture can never settle and #1941's
+  // "a pin gated on a flag nothing sets" applies. BENTBOX's fragment shader
+  // RETURNS EARLY when nothing is patched:
+  //
+  //     if (uHasInput < 0.5) {
+  //       float v = vUv.y * 0.05;
+  //       outColor = vec4(0.04, 0.06, 0.10 + v, 1.0);
+  //       return;
+  //     }
+  //
+  // — a pure function of `vUv` with NO time term, taken BEFORE the mirror fold
+  // and before every uTime-driven stage below it. `bootWithFace` spawns exactly
+  // one node with nothing patched, so both scenes are a STATIC gradient.
+  //
+  // ⚠ THE COMMENT ON THAT BRANCH CALLS IT "a dim sweeping color bar field" AND
+  // THE CODE DOES NOT SWEEP — there is no time term and no bars, just a vertical
+  // ramp. Recorded because the comment is exactly what would talk a later reader
+  // out of this scene's determinism argument; the CODE is the evidence.
+  //
+  // So `freezeFaceVideo`'s `params.freeze = 1` write lands nowhere (no such
+  // param) and needs to land nowhere. ⚠ Do NOT "fix" that by adding one: it is a
+  // `params` edit on a def inside the WebGL attest basis — an owner-machine
+  // re-attest — to buy an assertion that already holds.
+  //
+  // ⚠ WHAT WOULD CHANGE THE ANSWER: patch anything into IN. Every uTime term in
+  // the sync, chroma and feedback stages comes alive at once, and the module
+  // becomes the b3ntb0x case exactly. That is also why its CARD scene sits in
+  // EXEMPT_FROM_VRT as "animated … defeats deterministic capture" — that scene
+  // has a source; this one does not, and the two must not be reasoned about
+  // together.
+  {
+    type: 'bentbox',
+    pages: 6,
+    videoFaceWhy:
+      'a VIDEO module, so it must boot into the video zone rather than a mixer channel column — '
+      + 'without this field bootWithFace waits out the full 90 s test timeout for a column '
+      + 'membership a video node never acquires. Both scenes also carry a live picture: the '
+      + 'compact tile paints a VideoTileThumb through hasVideoSurface, and the dock body is the '
+      + "module's own fullViewBody extension (the CRT preview, its SCREEN switch, and the "
+      + 'fullscreen / full-frame / present affordances promotion would otherwise delete). The '
+      + 'freeze write itself is a NO-OP on this def — it declares no `freeze` param, unlike its '
+      + 'sibling b3ntb0x — and that is deliberate: the fragment shader returns early when '
+      + 'nothing is patched into IN, emitting a static vUv-only gradient with no time term, so '
+      + 'both scenes are identical frame to frame by construction rather than by the flag.',
+  },
+  // WARREN'S VISIONS — the 2D spectral video resynthesizer, and the roster's
+  // first video face with real `pages`: analysis / motion / grating / output,
+  // four bands against DOCK_TAB_MIN_BANDS = 7, so the dock scene captures
+  // STACKED bands under the extension body rather than a tab rail. The OUTPUT
+  // band is SOLO by construction — `engineFreeze` declares an `options` roster,
+  // so it resolves `segmented`, which `PARAM_CELL_WIDTH_CLASS` classes 'wide'.
+  //
+  // ⚠ THIS SCENE GATES THE PICTURE, WHICH THE MODULE'S CARD BASELINE DOES NOT.
+  // `vrt.spec.ts` masks `warrensvisions-canvas` through `VRT_MODULE_MASKS`, so
+  // on that scene the picture is not compared at all. THIS file applies no
+  // masks (see the header) — a deliberate choice, not an oversight: the honest
+  // test of the determinism seam below is to let it be compared, and the
+  // structural argument is strong enough to carry it.
+  //
+  // ── THE FREEZE WRITE IS A NO-OP HERE, TWICE OVER, AND BOTH REASONS MATTER ──
+  //
+  // `freezeFaceVideo` writes `params.freeze = 1`. This def declares no param by
+  // that name, so the write lands nowhere — the 4plexvid case.
+  //
+  // ⚠ AND THE PARAM THAT *LOOKS* LIKE THE ANSWER IS NOT ONE. `engineFreeze` is
+  // a PLAYER control, not a determinism toggle, and the def says so in its own
+  // docs: FREEZE stops the ANALYSIS while *"slew, drift and rendering all keep
+  // running"*. Renaming it to `freeze`, or teaching the harness to write it,
+  // would hold the component bank and leave the picture moving — a freeze that
+  // reports success and pins nothing. "Has a freeze param" and "is
+  // deterministic" are independent in both directions. Do NOT add a real
+  // `freeze` param either: that is a `params` edit on a def inside the WebGL
+  // attest basis, i.e. an owner-machine re-attest, to buy an assertion that
+  // already holds.
+  //
+  // ── WHY IT HOLDS STILL ANYWAY, STRUCTURALLY ────────────────────────────────
+  //
+  // WARREN'S VISIONS is an EFFECT, not a source, and `bootWithFace` spawns one
+  // node with nothing patched. With no texture on `video_in` the luma plane is
+  // zero, the FFT finds no peaks, the tracker claims nothing, every ring energy
+  // is zero, and the composite's `uHasSrc` branch outputs black. The module's
+  // own e2e already measures this leg — *"unpatched input renders black without
+  // erroring"*, `nonZeroFrac < 0.02` (`e2e/tests/warrensvisions.spec.ts`). An
+  // empty bank has no envelope to advance and no phase to drift (DRIFT ships at
+  // 0), so the surface is identical frame to frame for the same reason
+  // 4plexvid's is: there is nothing in it.
+  //
+  // ⚠ WHAT WOULD CHANGE THE ANSWER: patch anything into this scene's VIDEO IN,
+  // or ship a non-zero DRIFT/RESIDUAL default, and the structural argument dies
+  // — the bank starts tracking and slewing per drawn frame and the picture is a
+  // function of the FRAME COUNT the capture happened to reach. The fix then is
+  // NOT a bigger budget and NOT `engineFreeze`: it is `simPin` on the engine
+  // clock, which this module is already wired for — `warrensvisions.ts` reads
+  // `dt` from `frame.time` (the clock `__videoEngineFreezeTime` pins) and
+  // explicitly NOT from `frame.timeDelta`, with the reason on the line, and its
+  // residual RNG is the fixed `WV_NOISE_SEED`. So every envelope is a function
+  // of the frame count the test drove, on any renderer.
+  {
+    type: 'warrensvisions',
+    pages: 4,
+    videoFaceWhy:
+      'a VIDEO module, so it must boot into the video zone rather than a mixer channel column — '
+      + 'without this field bootWithFace waits out the full 90 s test timeout for a column '
+      + 'membership a video node never acquires. Both scenes also carry a live picture: the '
+      + 'compact tile paints a VideoTileThumb through hasVideoSurface, and the dock body is the '
+      + "module's own fullViewBody extension (the resynthesis preview plus its SCREEN switch), "
+      + 'which this file does NOT mask even though the card baseline does. The freeze write '
+      + 'itself is a NO-OP on this def — it declares `engineFreeze`, a player control that stops '
+      + 'the ANALYSIS while slew, drift and rendering keep going, and no param named `freeze` at '
+      + 'all. That is deliberate: this is an EFFECT with nothing patched into VIDEO IN, so the '
+      + 'bank is empty and the composite outputs black on every frame by construction rather '
+      + 'than by the flag.',
+  },
+  // MANDELBULB — three pages (camera / shape / slice) against
+  // DOCK_TAB_MIN_BANDS = 7, so the dock scene captures STACKED bands under the
+  // extension body. The dock body carries TWO canvases: the ray-marched preview
+  // and the SLICE WAVEFORM trace.
+  //
+  // ⚠ THIS ENTRY'S FIRST DRAFT SAID THIS MODULE NEEDED NO `freeze` PARAM, AND
+  // IT WAS WRONG. Recorded because the wrong reading is the NATURAL one and the
+  // next person will reach for it too. The reasoning was: the fragment shader
+  // has no `uTime` uniform at all and takes its camera from PARAMS, so a scene
+  // that spawns one node and writes nothing should be a still picture.
+  //
+  // Every clause of that is true and the conclusion is still false. The one
+  // time term is AUTOSPIN — and `autospin` DEFAULTS TO 1. The def's own docs
+  // say so outright ("default 1 (on) … keeping the bulb tumbling (and the
+  // scene perpetually re-rendering)"), and `draw` advances
+  // `spinPhase += dt * AUTOSPIN_RATE` off `frame.time` every frame. So the
+  // capture is a MOVING TARGET at the shipped defaults, and only a
+  // param-default check caught it — reading the draw path alone did not.
+  //
+  // Hence a real `freeze` param, declared `noUserControl` (`writer: 'internal'`)
+  // so it paints nowhere, and taken BEFORE the spin tick so `spinPhase` is held
+  // too. This is the spirographs / backdraft / b3ntb0x / grainsOfVision shape,
+  // and it is what `freezeFaceVideo` already writes.
+  //
+  // ⚠ THE SLICE TRACE IS STATIC FOR A SEPARATE REASON, and it does not depend
+  // on the freeze: it is fed by `read('sliceWave')`, which is null until SLICE
+  // has been ON at least once. `slice` defaults to 0, so both scenes capture
+  // the empty centre-line — the honest picture of "no cross-section has been
+  // read yet" rather than a waveform whose shape would depend on when the
+  // screenshot landed.
+  {
+    type: 'mandelbulb',
+    pages: 3,
+    videoFaceWhy:
+      'a VIDEO module, so it must boot into the video zone rather than a mixer channel column — '
+      + 'without this field bootWithFace waits out the full 90 s test timeout for a column '
+      + 'membership a video node never acquires. Both scenes also carry a live picture: the '
+      + 'compact tile paints a VideoTileThumb through hasVideoSurface, and the dock body is the '
+      + "module's own fullViewBody extension (the raymarched preview, its SCREEN switch, and "
+      + 'the slice waveform trace). ⚠ AND THE FREEZE IS LOAD-BEARING HERE, unlike the other '
+      + 'video faces in this roster: AUTOSPIN defaults to ON and advances the camera yaw from '
+      + 'frame.time on every frame, so the bulb tumbles at the shipped defaults and an unfrozen '
+      + 'scene would sample a different rotation on every run. The `freeze` param this module '
+      + 'declares holds the draw BEFORE the spin tick, so the phase is held too.',
+  },
+  // THE FACEPLATE QUEUE · Q49 — the self-building wavetable oscillator, and the
+  // first RAILED face in this batch.
+  //
+  // `pages: 7` is the POST-hero band count, and there is no hero to subtract:
+  // the face declares seven pages and promotes nothing out of them, so seven
+  // bands reach `dockTabPlan` and the rail engages at `DOCK_TAB_MIN_BANDS`.
+  // ⚠ THE DOCK SCENE THEREFORE FRAMES ONE BAND, NOT SEVEN — a railed face
+  // renders only the active tab, and the six inactive bands have no layout box
+  // at any viewport height. That is scope note 1 of this spec's own header, and
+  // it means the dock baseline here proves the picture head, the rail and the
+  // `vco` page; the other six pages are gated by `faceplate-platform` and the
+  // pure `dock-row-plan` / `module-face-lint` units, which read the whole
+  // faceplate. Do NOT read a green dock baseline as evidence that a change to
+  // `src b` was a no-op.
+  //
+  // ⚠ THE HOOK IS NOT DEAD CODE, CHECKED THE SAME WAY `rasterize` CHECKED ITS
+  // OWN. Grepping `__foxyVrtSeed`'s SETTERS finds exactly one — the module's
+  // own CARD scene in `vrt-scenes.ts` — and none on the FACE boot path, which
+  // is a different harness with a different lifecycle. So the pin is live and
+  // correct and simply unreached from here, the same shape as rasterize's and
+  // NOT the `outlines` story where the only setter was a render-smoke spec.
+  {
+    type: 'foxy',
+    pages: 7,
+    simPin: {
+      global: '__foxyVrtSeed',
+      value: 1,
+      why:
+        'FOXY builds its picture on the AUDIO side — three RasterPainters plus the XYZ and '
+        + 'wavetable renderers, all in JS — so freezeFaceVideo never reaches it, and suspending '
+        + 'the AudioContext stops the bridge without choosing WHERE it stops. The bridge is '
+        + 'throttled to ~24Hz and each tick advances three independent raster cursors at three '
+        + 'different strides (6000 / 4500 / 5200 samples), so the number of ticks landing before '
+        + 'the suspend varies per boot and two captures would frame three different band '
+        + 'patterns feeding a different heightfield and therefore a different 64x256 table — the '
+        + 'drift compounds through every stage rather than shifting one picture. This flag '
+        + 'engages the deterministic seed already in the module (`paintSeeded`: reset all three '
+        + 'cursors, then ONE full-frame fill from three fixed synthetic waveforms, with every '
+        + 'later advance short-circuited), making all five pictures a pure function of the '
+        + "module's own constants. It is an AUDIO def, so no attest hash moves.",
+    },
+  },
+  // GATEMAIDEN (2026-08-20) — the gate↔trigger converter. ONE declared page and
+  // no hero, so nothing is promoted out of a band and `pages: 1` is both the
+  // declared count and the post-hero-split count.
+  //
+  // PIXEL-DETERMINISTIC, and for the strongest of the reasons this file
+  // distinguishes: the module has NO GENERATOR IN IT. Both outputs are pure
+  // functions of the INPUT's level and rising edges (`GateMaidenState.step`),
+  // and the scene patches nothing in, so `wasHigh` never flips, `sinceRise`
+  // stays at its −1 rest and both jacks are bit-exactly zero on every sample
+  // regardless of how far the clock ran. This is the silent-at-spawn case this
+  // file already names for moogCp3, not the analogVco free-running one — the
+  // AudioContext freeze is a belt on a brace here rather than the thing holding
+  // the scene.
+  //
+  // ⚠ NO LIVE GLYPH TO GO WRONG EITHER, and the reason is a trap worth having
+  // written down: `glyph: 'none'` is FORCED, because `primaryAudioOutPortId`
+  // matches `type === 'audio'` and BOTH of this module's outputs are `gate`.
+  // `domain: 'audio'` does not imply an audio glyph. The same split is why this
+  // face renders `.faceplate.gate` and NOT `.faceplate.audio` — a selector
+  // keyed on the audio class silently matches nothing here, which is already
+  // recorded against this module in `e2e/tests/_face-fixtures.ts`.
+  //
+  // Both cells are ASCII-only by construction (`TRI` / `SQR`, and a `·` in the
+  // band label) — deliberately, because the fonts this suite pins are ~230
+  // codepoint Latin subsets and a geometric-shape glyph would render through an
+  // unpinned fontconfig fallback in these two new baselines.
+  { type: 'gatemaiden', pages: 1 },
+  // RUTTETRA (`label: 'xyz'`) — the authentic forward-scatter Rutt/Etra scan
+  // processor, and the roster's first MONITOR-MODE face (#2009).
+  //
+  // `pages: 4` is the declared band count and also the rendered one: relief /
+  // shape / scan / beam, and this face promotes NOTHING into the hero (it
+  // declares no `hero` at all — the two readouts it was specced with were
+  // deleted by the 2026-08-19 rulings), so no band is emptied and none is
+  // dropped by `heroFacePlan`. Four is also what keeps it OFF the tab rail
+  // (`DOCK_TAB_MIN_BANDS` is 7, and the owner ruled it untabbed), so the dock
+  // scene frames STACKED bands under the extension body. They pack to TWO ROWS
+  // under `DOCK_ROW_MAX_CONTROLS = 10` — (2+2) then (4+4) — which is what the
+  // dock capture should show.
+  //
+  // ⚠ WHAT THESE TWO SCENES CAPTURE AT REST IS THE MODE **OFF**, and that is
+  // not a gap in the coverage, it is the only honest resting state.
+  // `hideControls` is a per-NODE runtime key and `bootWithFace` spawns a fresh
+  // node, so it is absent ⇒ false ⇒ controls showing. The dock baseline
+  // therefore pins the ORDINARY faceplate — extension body, then four bands —
+  // and a monitor-mode capture would be pinning a state no freshly opened
+  // faceplate is ever in. The suppression itself is proven where it can be:
+  // `faceMonitorPlan` in the unit lane (exhaustively, including "never a blank
+  // plate") and the faced leg of `video-hide-controls.spec.ts` in the browser,
+  // which is the only thing that can see the bands actually leave.
+  //
+  // ⚠ NO `freeze` PARAM, AND UNLIKE ITS SIBLINGS THAT IS TRUE WITH A SOURCE
+  // PATCHED TOO. bentbox and warrensvisions both argue determinism from having
+  // NOTHING patched — patch their inputs and every uTime term wakes up. This
+  // def has no `uTime` uniform anywhere in `VERT_SRC`/`FRAG_SRC`, no ping-pong,
+  // no accumulator and no feedback: `draw` clears to black and redraws from the
+  // input texture and the params every frame, so the output is a pure function
+  // of (source frame, params). `bootWithFace` patches nothing, so `z` binds the
+  // constant 1x1 mid-grey sentinel and the raster is flat scanlines — identical
+  // frame to frame for a strictly stronger reason than its siblings'. Do NOT
+  // add a `freeze` param to "make it safe": that is a `params` edit on a def
+  // inside the WebGL attest basis, i.e. an owner-machine re-attest, to buy an
+  // assertion that already holds.
+  {
+    type: 'ruttetra',
+    pages: 4,
+    videoFaceWhy:
+      'a VIDEO module, so it must boot into the video zone rather than a mixer channel column — '
+      + 'without this field bootWithFace waits out the full 90 s test timeout for a column '
+      + 'membership a video node never acquires. Both scenes also carry a live picture: the '
+      + 'compact tile paints a VideoTileThumb through hasVideoSurface, and the dock body is the '
+      + "module's own fullViewBody extension — the raster preview plus the THREE affordances "
+      + 'promotion would otherwise delete (SCREEN ON/OFF, the MONITOR toggle that hides the '
+      + 'control bands, and the corner resize). The freeze write itself is a NO-OP on this def — '
+      + 'it declares no `freeze` param at all — and that is deliberate rather than an omission: '
+      + 'there is no uTime uniform in either shader stage, no ping-pong and no accumulator, so '
+      + 'the render is a pure function of (source frame, params) and is identical frame to frame '
+      + 'by construction. With nothing patched, `z` binds a constant mid-grey sentinel.',
   },
 ] as const;
 

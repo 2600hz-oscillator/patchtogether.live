@@ -30,6 +30,40 @@ description: Git practices, LFS gotchas, the local pack-file corruption pattern,
 
 ## Local repo hazards
 
+### ⚠ NEVER RESET (OR REBASE) ONTO A MOVING REF — PIN THE SHA
+
+`git reset --soft origin/main` to squash a branch's work into one commit
+**staged a REVERT of a sibling's merged PR.** Hit 2026-08-20 on
+`feat/wavecel-face`: the branch was cut from `origin/main`, #2006 merged while
+the work was in flight, a routine `git fetch` advanced the ref, and the reset
+then moved HEAD to the NEW main while leaving the working tree at the OLD one.
+Everything main had gained in between showed up **staged as deletions** — the
+sibling's new files, plus a rename of `ci-webgl-attest/<hash>.json` back to the
+superseded pin.
+
+**It does not announce itself.** `--soft` leaves the working tree untouched, so
+nothing looks wrong; the damage is entirely in the INDEX, and a `git commit -a`
+or a `git add -A` at that moment ships the revert with a commit message about
+something else. Caught only by reading `git status` before committing.
+
+- **Resolve the base ONCE, to a SHA, and reset to that**: `BASE=$(git
+  merge-base HEAD origin/main)`, or the literal parent (`<wip-sha>~1`). A SHA
+  cannot move under you; `origin/main` can, and will, on any branch older than
+  the last merge.
+- **`git status` before every commit that follows a reset/rebase**, and check
+  the file COUNT against what you changed. A staged set larger than your own
+  work is the tell.
+- The same hazard applies to `git rebase origin/main` and
+  `git reset --hard origin/main` — the latter destroys the working tree too.
+- Recovery is cheap **if you have not committed**: `git reset <your-wip-sha>`
+  restores HEAD and index, and `--soft`/mixed never touched your files. Find it
+  in `git reflog` if you did not note it.
+
+⚠ Merging main is a different operation and stays a MERGE (`git merge
+origin/main`), never a reset — see the post-merge conflict sweep in CLAUDE.md,
+and re-run the accept tasks afterwards because the generated counts auto-merge
+cleanly and wrongly.
+
 ### Pack-file corruption
 
 Symptom: `git status` / `git diff` / `git add` hang on `git-lfs filter-process`

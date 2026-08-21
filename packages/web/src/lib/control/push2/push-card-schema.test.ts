@@ -325,6 +325,126 @@ describe('resolvePushCardControls — tier 2, the curated face', () => {
     expect((defByType('stereovca').params ?? []).map((q) => q.id)).toEqual(['level', 'offset']);
   });
 
+  it('a FIRST PROMOTION can put a whole STAGE on the hardware — bentbox', () => {
+    // bentbox, promoted 2026-08-20 (queue Q24). Fourteen ranked controls over
+    // eight encoders, so like warrensvisions the window TRUNCATES rather than
+    // permutes — but here what it drops and gains is a semantic block, which is
+    // the variant worth its own golden.
+    //
+    // ⚠ THE GENERIC TIER NEVER REACHED THE BEND STAGE AT ALL. Declaration order
+    // is timing then chroma then feedback, so the first eight encoders were
+    // `hsync_drift, hsync_loss, vsync_drift, scan_wobble, chroma_phase,
+    // chroma_instability, feedback_gain, feedback_delay` — SOLARIZE and GAIN,
+    // the two controls that abuse the composite voltage this module exists to
+    // abuse, were off the end of the card. The face ranks them 3rd and 4th (the
+    // module's own docs name solarization as a headline outcome, and `wavefold`
+    // carries 0.7 of the luma blend weight against master_gain's 0.1), so both
+    // reach the hardware and `scan_wobble` / `feedback_delay` fall off instead.
+    //
+    // Accepted deliberately rather than pinned by a PUSH_CARD_CONTROLS override:
+    // an override REPLACES, which would freeze a ranking the def argues for.
+    const spec = resolvePushCardControls(defByType('bentbox'));
+    expect(spec.source).toBe('face');
+    expect(pushCardParams(spec).map((q) => q.id)).toEqual([
+      'hsync_loss', 'feedback_gain', 'wavefold', 'master_gain',
+      'chroma_phase', 'chroma_instability', 'hsync_drift', 'vsync_drift',
+    ]);
+    // The negative control, and here it names what the promotion BOUGHT: the
+    // def's own order genuinely reaches neither bend control in eight slots.
+    const declared = (defByType('bentbox').params ?? []).map((q) => q.id);
+    expect(declared.slice(0, 8)).toEqual([
+      'hsync_drift', 'hsync_loss', 'vsync_drift', 'scan_wobble',
+      'chroma_phase', 'chroma_instability', 'feedback_gain', 'feedback_delay',
+    ]);
+    expect(declared.slice(0, 8), 'the GENERIC card could not reach SOLARIZE').not.toContain('wavefold');
+    expect(declared.slice(0, 8), 'nor GAIN').not.toContain('master_gain');
+    // ⚠ AND THE TWO MIRROR TOGGLES ARE NOT ON THE CARD, which is the correct
+    // outcome of this PR's `curve` correction: an encoder cannot turn a switch.
+    // They rank 13th/14th, so the window fills before it reaches them.
+    expect(pushCardParams(spec).map((q) => q.id)).not.toContain('mirrorX');
+    expect(pushCardParams(spec).map((q) => q.id)).not.toContain('mirrorY');
+  });
+
+  it('a FIRST PROMOTION re-ranks a SYMMETRIC def, where declaration order says nothing — ruttetra', () => {
+    // ruttetra, promoted 2026-08-20 (#2009). TWELVE params over EIGHT encoders,
+    // so like warrensvisions the window TRUNCATES — but the variant worth its
+    // own golden is WHY the generic card was wrong here, and it is a different
+    // reason from either sibling above.
+    //
+    // ⚠ THIS DEF IS SYMMETRIC IN X AND Y, AND DECLARATION ORDER PUTS X FIRST
+    // EVERYWHERE. `xShape, yShape, xDisp, yDisp, …` — so the generic card spent
+    // its first two encoders on the two SHAPE morphs and reached `xDisp` third,
+    // `yDisp` fourth. But the module's relief axis is Y: the def spends its ONE
+    // non-neutral default on `yDisp` (-0.3, "the classic raised terrain look")
+    // while every other geometry param ships at its identity value. So the
+    // generic card led with the two controls that do nothing at their defaults
+    // and buried the module's identity knob at rank 4.
+    //
+    // The face inverts every pair (Y before X, because Y is the relief axis)
+    // and demotes the whole BEAM block, which the vertex shader proves is
+    // disjoint from geometry — `gl_Position` consumes h, v, lum, xDisp, yDisp
+    // and nothing else, so intensity and the three tints move COLOUR only.
+    const spec = resolvePushCardControls(defByType('ruttetra'));
+    expect(spec.source).toBe('face');
+    expect(spec.skipped, 'no families and no momentary pads on this module').toEqual([]);
+    expect(pushCardParams(spec).map((q) => q.id)).toEqual([
+      'yDisp', 'xDisp', 'yShape', 'xShape',
+      'yFreq', 'xFreq', 'intensity', 'tintR',
+    ]);
+    // The negative control, and it names what the promotion BOUGHT the
+    // hardware: declaration order genuinely leads with the shapes and puts the
+    // relief hero fourth.
+    const declared = (defByType('ruttetra').params ?? []).map((q) => q.id);
+    expect(declared.slice(0, 4)).toEqual(['xShape', 'yShape', 'xDisp', 'yDisp']);
+    expect(declared[0], 'the GENERIC card led with a param that is inert at its default').toBe('xShape');
+    expect(
+      pushCardParams(spec)[0].id,
+      'the FACE leads with the only param this def ships off-centre',
+      ).toBe('yDisp');
+    // ⚠ AND THE TWO PHASE CONTROLS FALL OFF, which is the correct outcome:
+    // they rank 11th/12th, have no CV input, and slide a pattern that X/Y FREQ
+    // has to be non-default for you to even see.
+    expect(pushCardParams(spec).map((q) => q.id)).not.toContain('xPhase');
+    expect(pushCardParams(spec).map((q) => q.id)).not.toContain('yPhase');
+  });
+
+  it('a FIRST PROMOTION TRUNCATES when the module out-runs the encoders — warrensvisions', () => {
+    // warrensvisions, promoted 2026-08-20 (queue Q45). The variant neither
+    // golden above can show: TWELVE params over EIGHT encoders, so the window
+    // does not merely permute the card — it DROPS FOUR CONTROLS, and which four
+    // is now decided by `face.order` instead of by declaration order.
+    //
+    // ⚠ SO THE INTERESTING ASSERTION IS THE ONE ABOUT WHAT IS *NOT* HERE.
+    // The GENERIC tier is declaration order, which reaches SHAPE at rank 8 and
+    // stops. The face ranks MIX third — it is the only control that can take
+    // the module out of the picture entirely — so MIX takes an encoder and
+    // SHAPE is the control pushed off the end. Both cards are eight wide and
+    // both look complete on the hardware; the difference is invisible unless it
+    // is written down, which is exactly the drift CLAUDE.md's push-card note
+    // warns about. Accepted deliberately: an override would freeze a ranking
+    // this module's own def argues for in a comment ("COHERENCE first: it is
+    // the control that changes the module's identity").
+    const spec = resolvePushCardControls(defByType('warrensvisions'));
+    expect(spec.source).toBe('face');
+    expect(spec.skipped, 'no families and no momentary pads on this module').toEqual([]);
+    expect(pushCardParams(spec).map((q) => q.id)).toEqual([
+      'visionsCoherence', 'visionsComponents', 'visionsMix', 'visionsFloor',
+      'visionsStability', 'visionsSlew', 'visionsSlice', 'visionsResidual',
+    ]);
+    // The negative control, and here it carries more than "the two orders
+    // differ": it names the control the promotion COST the hardware. Declaration
+    // order would have spent encoder 8 on SHAPE and never reached MIX at all.
+    const declared = (defByType('warrensvisions').params ?? []).map((q) => q.id);
+    expect(declared.slice(0, 8)).toEqual([
+      'visionsCoherence', 'visionsComponents', 'visionsFloor', 'visionsStability',
+      'visionsSlew', 'visionsSlice', 'visionsResidual', 'visionsShape',
+    ]);
+    expect(
+      pushCardParams(spec).map((q) => q.id),
+      'MIX reached the encoders and SHAPE fell off — the whole point of this golden',
+    ).not.toContain('visionsShape');
+  });
+
   it('a FIRST PROMOTION re-orders AND steps over a family — treeohvox', () => {
     // treeohvox, promoted 2026-08-19 (#1944, queue Q3). The variant that
     // exercises both behaviours at once on a newly promoted module: the window

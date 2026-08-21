@@ -261,9 +261,9 @@ bentbox param feedback_gain 0..1 linear default=0
 bentbox param hsync_drift 0..1 linear default=0
 bentbox param hsync_loss 0..1 linear default=0
 bentbox param master_gain 0..2 linear default=1
-bentbox param mirrorX 0..1 linear default=0
+bentbox param mirrorX 0..1 discrete default=0
 bentbox param mirrorXGate 0..1 linear default=0
-bentbox param mirrorY 0..1 linear default=0
+bentbox param mirrorY 0..1 discrete default=0
 bentbox param mirrorYGate 0..1 linear default=0
 bentbox param noise 0..1 linear default=0.05
 bentbox param scan_wobble 0..1 linear default=0
@@ -1626,6 +1626,7 @@ mandelbulb out audio_out audio
 mandelbulb out video_out mono-video
 mandelbulb param autospin 0..1 discrete default=1
 mandelbulb param detail 4..30 discrete default=20
+mandelbulb param freeze 0..1 linear default=0
 mandelbulb param hue 0..1 linear default=0.55
 mandelbulb param power 1..12 linear default=8
 mandelbulb param rotate_x -3.141592653589793..3.141592653589793 linear default=0.5

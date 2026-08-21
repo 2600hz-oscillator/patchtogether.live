@@ -281,19 +281,15 @@ async function nodeRect(page: Page, id: string): Promise<{ x: number; y: number;
   }, id);
 }
 
-/** The engine's per-node draw counter — the SwiftShader-proof liveness probe. */
-async function framesDrawn(page: Page, id: string): Promise<number> {
-  return page.evaluate((id) => {
-    const w = globalThis as unknown as {
-      __engine?: () => { getDomain: (d: string) => { framesDrawnFor: (id: string) => number } };
-    };
-    try {
-      return w.__engine!().getDomain('video').framesDrawnFor(id);
-    } catch {
-      return -1;
-    }
-  }, id);
-}
+// ⚠ `framesDrawn(page, id)` WAS HERE AND IS DELETED (#1993). It read the
+// engine's per-node draw counter in ONE round-trip, which is correct for a
+// single reading and was wrong for the only thing it was used for: an
+// `expect.poll` loop that sampled it repeatedly from the Playwright side, on
+// the subject's own main thread. The counter itself is fine; the SAMPLING
+// PATTERN was the defect. It is deleted rather than left unused so the next
+// author cannot reach for a one-shot reader and rebuild the poll around it —
+// `sampleDrawAdvance` below is the accumulator-in-the-page replacement, and it
+// takes its own baseline, so a caller never needs the one-shot form.
 
 /**
  * BLIT COST of ONE lane tile, over a WALL-CLOCK window, sampled INSIDE the page.
@@ -410,6 +406,97 @@ async function shiftNodes(page: Page, ids: string[], dy: number): Promise<void> 
 }
 
 /** Snapshot a canvas's pixels (2D canvases only — all our preview canvases). */
+/**
+ * FRAME budgets for the two liveness instruments below, and they are FRAMES
+ * because what is being waited for is a per-frame event (a draw, a repaint).
+ *
+ * Sized off the product's own cadence rather than by taste: `VIDEO_THUMB_FPS`
+ * caps a thumb at 15 repaints/s, so on a 60 Hz renderer a repaint lands every
+ * ~4 rAF frames and two draws need ~8. On a software renderer the cadence gate
+ * never bites (frames are already further apart than 1/15 s) so two draws need
+ * ~2. **The worst case is therefore the FAST renderer at ~8 frames**, which is
+ * the whole reason a frame budget is renderer-independent here and a millisecond
+ * budget is not. 90 leaves an order of magnitude of headroom over that worst
+ * case while staying far under any runner's patience.
+ */
+const LIVENESS_FRAME_BUDGET = 90;
+const CHANGE_FRAME_BUDGET = 90;
+/**
+ * ⚠ CEILINGS ONLY — they bound a FAILURE and must never be what decides a
+ * healthy run; the frame budgets above are the gate. Generous under
+ * `SLOW_RENDER` because a starved runner spends real wall clock buying the same
+ * small number of frames, and shortening this would convert "slow" into "red",
+ * which is precisely the confusion #1993 is about.
+ */
+const LIVENESS_MAX_MS = SLOW_RENDER ? 60_000 : 20_000;
+const CHANGE_MAX_MS = SLOW_RENDER ? 60_000 : 20_000;
+
+/**
+ * Wait, INSIDE THE PAGE, for a node's engine draw counter to ADVANCE by
+ * `target`. Returns what it saw rather than throwing, so the caller's assertion
+ * message can carry the evidence.
+ *
+ * ⚠ SAME #1993 FIX AS `expectCanvasChanges` ABOVE, and this is the instrument
+ * that actually went red: main was RED at 7eeccfb30 because an
+ * `expect.poll(() => framesDrawn(page,'g1') - base)` with a flat 20 000 ms
+ * budget timed out on e2e shard 5, then passed on retry. A Playwright-side poll
+ * of a page-side counter is one round-trip per sample on the subject's own main
+ * thread, so under shard contention the instrument starves the rAF loop whose
+ * output it is reading — and a bare `Timeout 20000ms exceeded while waiting on
+ * the predicate` cannot distinguish that from a genuinely dead chain.
+ */
+interface DrawAdvanceSample {
+  /** `framesDrawnFor(node)` minus its baseline, at exit. */
+  delta: number;
+  rafSamples: number;
+  elapsedMs: number;
+  /** -1 when the engine was unreachable, which is a DIFFERENT failure from a
+   *  chain that simply did not draw — and one a bare delta would hide. */
+  base: number;
+}
+
+async function sampleDrawAdvance(
+  page: Page,
+  nodeId: string,
+  target: number,
+  frameBudget: number,
+  maxMs: number,
+): Promise<DrawAdvanceSample> {
+  return page.evaluate(
+    async ({ nodeId, target, frameBudget, maxMs }) => {
+      const w = globalThis as unknown as {
+        __engine?: () => { getDomain: (d: string) => { framesDrawnFor: (id: string) => number } };
+      };
+      const read = (): number => {
+        try {
+          return w.__engine!().getDomain('video').framesDrawnFor(nodeId);
+        } catch {
+          return -1;
+        }
+      };
+      const base = read();
+      const t0 = performance.now();
+      let rafSamples = 0;
+      let delta = 0;
+      await new Promise<void>((resolve) => {
+        const tick = (): void => {
+          rafSamples++;
+          delta = read() - base;
+          const elapsed = performance.now() - t0;
+          if (delta >= target || rafSamples >= frameBudget || elapsed >= maxMs) {
+            resolve();
+            return;
+          }
+          requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      });
+      return { delta, rafSamples, elapsedMs: performance.now() - t0, base };
+    },
+    { nodeId, target, frameBudget, maxMs },
+  );
+}
+
 async function canvasData(page: Page, selector: string): Promise<string> {
   return page.evaluate((sel) => {
     const c = document.querySelector(sel) as HTMLCanvasElement | null;
@@ -417,16 +504,95 @@ async function canvasData(page: Page, selector: string): Promise<string> {
   }, selector);
 }
 
-/** Poll until the canvas's pixels CHANGE from `before` (a live picture). CI's
- *  SwiftShader renders slowly, so the budget is generous; the assert itself is
- *  renderer-tolerant (pure inequality between two frames of the same canvas). */
+/**
+ * Wait for the canvas's pixels to CHANGE from `before` (a live picture),
+ * sampled INSIDE THE PAGE.
+ *
+ * ⚠ THIS USED TO BE A PLAYWRIGHT-SIDE `expect.poll`, AND THAT IS THE #1993
+ * DEFECT, not a budget that was merely too tight. A poll is one round-trip per
+ * sample ON THE SAME MAIN THREAD as the subject — and each sample shipped a
+ * whole `toDataURL()` PNG across the wire — so on a loaded runner the
+ * instrument competed with the rAF loop it was measuring. Worse, its output
+ * could not tell the two apart: "the picture is frozen" and "we never got a
+ * look" both arrive as the same bare timeout. This is the same fix #1982/#1983
+ * made to `sampleThumbCost` in this file; that change left these two helpers
+ * behind, which is why the poll survived to fail on shard 5 at 7eeccfb30.
+ *
+ * ⚠ THE GATE IS A FRAME COUNT, NOT A CLOCK. What is being waited for is a
+ * REPAINT, which is a per-frame event, so the budget is frames. The ms ceiling
+ * exists only to bound a catastrophic failure and is never the thing that
+ * decides a healthy run.
+ *
+ * ⚠ AND THE SAMPLER IS THROTTLED TO THE SUBJECT'S OWN CADENCE, deliberately:
+ * `VIDEO_THUMB_FPS` caps the thumb at 15 repaints/s off `performance.now()`, so
+ * encoding a PNG on every rAF tick would burn main-thread time on frames that
+ * cannot have changed — an instrument slowing the thing it measures. Sampling
+ * no faster than the subject can repaint is the principled rate, not a
+ * hand-tuned one.
+ *
+ * The result carries `rafSamples` / `elapsedMs` / `samples`, so a starved
+ * runner is VISIBLE in the failure message instead of indistinguishable from a
+ * dead producer.
+ */
+interface CanvasChangeSample {
+  changed: boolean;
+  rafSamples: number;
+  /** How many times the canvas was actually encoded + compared. */
+  samples: number;
+  elapsedMs: number;
+}
+
+async function sampleCanvasChange(
+  page: Page,
+  selector: string,
+  before: string,
+  frameBudget: number,
+  maxMs: number,
+): Promise<CanvasChangeSample> {
+  return page.evaluate(
+    async ({ selector, before, frameBudget, maxMs, minGapMs }) => {
+      const t0 = performance.now();
+      let rafSamples = 0;
+      let samples = 0;
+      let changed = false;
+      let lastSampleAt = -Infinity;
+      await new Promise<void>((resolve) => {
+        const tick = (): void => {
+          rafSamples++;
+          const now = performance.now();
+          if (now - lastSampleAt >= minGapMs) {
+            lastSampleAt = now;
+            samples++;
+            const c = document.querySelector(selector) as HTMLCanvasElement | null;
+            if (c && c.toDataURL() !== before) {
+              changed = true;
+              resolve();
+              return;
+            }
+          }
+          if (rafSamples >= frameBudget || now - t0 >= maxMs) {
+            resolve();
+            return;
+          }
+          requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      });
+      return { changed, rafSamples, samples, elapsedMs: performance.now() - t0 };
+    },
+    { selector, before, frameBudget, maxMs, minGapMs: 1000 / VIDEO_THUMB_FPS },
+  );
+}
+
 async function expectCanvasChanges(page: Page, selector: string, before: string, what: string): Promise<void> {
-  await expect
-    .poll(async () => (await canvasData(page, selector)) !== before, {
-      message: `${what}: canvas pixels change between frames`,
-      timeout: 20_000,
-    })
-    .toBe(true);
+  const s = await sampleCanvasChange(page, selector, before, CHANGE_FRAME_BUDGET, CHANGE_MAX_MS);
+  expect(
+    s.changed,
+    `${what}: canvas pixels change between frames — saw NO change over ${s.samples} encoded ` +
+      `sample(s) across ${s.rafSamples} rAF frames in ${Math.round(s.elapsedMs)}ms. ` +
+      `⚠ Read rafSamples FIRST: a low count means the RUNNER was starved (the picture may be ` +
+      `fine); a high count with no change means the producer really is frozen.`,
+  ).toBe(true);
 }
 
 test.describe('?shell=1 video visibility', () => {
@@ -635,14 +801,19 @@ test.describe('?shell=1 video visibility', () => {
 
     // …the thumbnail's blit DRIVES the real chain (deterministic engine probe:
     // the per-node draw counter advances — the tap is the only watcher of g1)…
-    const base = await framesDrawn(page, 'g1');
-    expect(base, 'video engine reachable').toBeGreaterThanOrEqual(0);
-    await expect
-      .poll(async () => (await framesDrawn(page, 'g1')) - base, {
-        message: 'the downstream video node draws frames while its tile thumb is on-screen',
-        timeout: 20_000,
-      })
-      .toBeGreaterThanOrEqual(2);
+    const adv = await sampleDrawAdvance(page, 'g1', 2, LIVENESS_FRAME_BUDGET, LIVENESS_MAX_MS);
+    // The engine-reachable leg stays SEPARATE, because "-1, unreachable" and
+    // "0, reachable but never drew" are different failures and a bare delta
+    // conflates them.
+    expect(adv.base, 'video engine reachable').toBeGreaterThanOrEqual(0);
+    expect(
+      adv.delta,
+      'the downstream video node draws frames while its tile thumb is on-screen — saw ' +
+        `delta=${adv.delta} over ${adv.rafSamples} rAF frames in ${Math.round(adv.elapsedMs)}ms. ` +
+        `⚠ Read rafSamples FIRST: a count near ${LIVENESS_FRAME_BUDGET} means the page really ran ` +
+        'and the chain did not draw; a small count means the RUNNER was starved and this is an ' +
+        'instrument reading, not a product failure (#1993).',
+    ).toBeGreaterThanOrEqual(2);
 
     // …and the PICTURE actually animates (two different frames). ⚠ MOVEMENT,
     // not non-blackness: a producer can go bright AND FROZEN, and a blackness
@@ -704,12 +875,20 @@ test.describe('?shell=1 video visibility', () => {
     // ── ON-SCREEN: the picture is live, and the loop is running ──────────────
     await centerOnNode(page, 'bcost', 0.9);
     await expect(thumb).toBeVisible();
-    await expect
-      .poll(async () => await framesDrawn(page, 'bcost'), {
-        message: 'the thumb has armed and the chain is rendering before the window opens',
-        timeout: 20_000,
-      })
-      .toBeGreaterThan(0);
+    // ⚠ CONVERTED FROM A PLAYWRIGHT-SIDE POLL (#1993) — and the assertion got
+    // STRONGER in the process, which is worth saying because it is a change of
+    // subject and not just of instrument. The poll read the ABSOLUTE counter
+    // and asked for `> 0`, which is satisfied by a chain that drew once at boot
+    // and has since died. What this window needs is that the chain is rendering
+    // NOW, so the replacement waits for the counter to ADVANCE from a baseline
+    // taken here.
+    const armed = await sampleDrawAdvance(page, 'bcost', 1, LIVENESS_FRAME_BUDGET, LIVENESS_MAX_MS);
+    expect(
+      armed.delta,
+      'the thumb has armed and the chain is rendering before the window opens — saw ' +
+        `delta=${armed.delta} over ${armed.rafSamples} rAF frames in ${Math.round(armed.elapsedMs)}ms ` +
+        '(low rafSamples ⇒ starved runner, not a dead chain — #1993)',
+    ).toBeGreaterThanOrEqual(1);
     const on = await sampleThumbCost(page, 'bcost', COST_WINDOW_MS, MIN_COST_SAMPLES);
     console.log(`[1785] lane thumb ON-screen ${JSON.stringify(on)}`);
     expect(
@@ -1009,14 +1188,18 @@ test.describe('?shell=1 video CHAIN parity', () => {
         .toEqual(expect.arrayContaining(['aw1', VIDEO_OUT]));
 
       // The chain RUNS: acidwarp's draw counter advances…
-      const base = await framesDrawn(page, 'aw1');
-      expect(base, `${url}: video engine reachable`).toBeGreaterThanOrEqual(0);
-      await expect
-        .poll(async () => (await framesDrawn(page, 'aw1')) - base, {
-          message: `${url}: acidwarp draws frames while the OUTPUT is watching it`,
-          timeout: 20_000,
-        })
-        .toBeGreaterThanOrEqual(2);
+      // ⚠ THE SAME #1993 POLL AS THE `g1` LEG, on a different node. It is
+      // converted here rather than left for the next red run: this file carried
+      // THREE copies of the pattern and only one of them lost the race at
+      // 7eeccfb30 — fixing that one alone would have left two armed.
+      const aw = await sampleDrawAdvance(page, 'aw1', 2, LIVENESS_FRAME_BUDGET, LIVENESS_MAX_MS);
+      expect(aw.base, `${url}: video engine reachable`).toBeGreaterThanOrEqual(0);
+      expect(
+        aw.delta,
+        `${url}: acidwarp draws frames while the OUTPUT is watching it — saw delta=${aw.delta} ` +
+          `over ${aw.rafSamples} rAF frames in ${Math.round(aw.elapsedMs)}ms ` +
+          '(low rafSamples ⇒ starved runner, not a dead chain — #1993)',
+      ).toBeGreaterThanOrEqual(2);
 
       // …and the user-viewable OUTPUT surface actually paints MOVING pixels
       // (not a black canvas — the owner's "nothing renders").

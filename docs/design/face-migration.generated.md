@@ -12,8 +12,8 @@ Every registered module carries exactly one **disposition**: what kind of work i
 |  | count |
 |---|---|
 | registered modules | 198 |
-| done (faced + promoted) | 74 |
-| remaining (excludes organizational-native) | 121 |
+| done (faced + promoted) | 81 |
+| remaining (excludes organizational-native) | 114 |
 | registered with NO disposition (must be zero) | 0 |
 | inventory entries naming a dead def (must be zero) | 0 |
 
@@ -21,7 +21,7 @@ Every registered module carries exactly one **disposition**: what kind of work i
 
 | disposition | what it means | modules | done |
 |---|---|---|---|
-| `generic-face` | author a `face` and rank the controls — no new platform capability | 141 | 74 |
+| `generic-face` | author a `face` and rank the controls — no new platform capability | 141 | 81 |
 | `blocked` | would be a face today but for the named capability, and nothing else | 3 | — |
 | `bespoke-surface` | the primary interaction is not param-shaped — needs a purpose-built surface | 51 | — |
 | `organizational-native` | rack furniture; not a migration at all | 3 | — |
@@ -47,7 +47,7 @@ author a `face` and rank the controls — no new platform capability.
 | `attenumix` | audio | done | — |
 | `b3ntb0x` | video | done | — |
 | `backdraft` | video | done | — |
-| `bentbox` | video | — | — |
+| `bentbox` | video | done | — |
 | `bluebox` | audio | done | — |
 | `buggles` | audio | done | — |
 | `cellshade` | video | — | — |
@@ -77,9 +77,9 @@ author a `face` and rank the controls — no new platform capability.
 | `filter` | audio | done | — |
 | `flipper` | audio | — | — |
 | `fourplexer` | audio | done | — |
-| `foxy` | audio | — | — |
+| `foxy` | audio | done | — |
 | `freezeframe` | video | done | — |
-| `gatemaiden` | audio | — | — |
+| `gatemaiden` | audio | done | — |
 | `grainsOfVision` | video | done | — |
 | `graphicEq` | video | — | — |
 | `illogic` | audio | done | — |
@@ -93,7 +93,7 @@ author a `face` and rank the controls — no new platform capability.
 | `lumakey` | video | — | — |
 | `lushgarden` | video | — | — |
 | `macrooscillator` | audio | done | — |
-| `mandelbulb` | video | — | — |
+| `mandelbulb` | video | done | — |
 | `mandleblot` | video | — | — |
 | `mapper` | video | — | — |
 | `marbles` | audio | done | — |
@@ -143,7 +143,7 @@ author a `face` and rank the controls — no new platform capability.
 | `reverb` | audio | done | — |
 | `ringback` | audio | done | — |
 | `rings` | audio | done | — |
-| `ruttetra` | video | — | — |
+| `ruttetra` | video | done | — |
 | `sampleHold` | audio | — | — |
 | `samsloop` | audio | — | — |
 | `scaler` | audio | — | — |
@@ -176,8 +176,8 @@ author a `face` and rank the controls — no new platform capability.
 | `videoMixer` | video | — | — |
 | `videoOut` | video | done | — |
 | `warrensspectrum` | audio | done | — |
-| `warrensvisions` | video | — | — |
-| `wavecel` | audio | — | — |
+| `warrensvisions` | video | done | — |
+| `wavecel` | audio | done | — |
 | `wavesculpt` | audio | — | — |
 | `wavetableVco` | audio | done | — |
 

@@ -300,7 +300,25 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
   { type: 'filter', disposition: 'generic-face' },
   { type: 'flipper', disposition: 'generic-face', note: 'declares no params — its face is a title, a glyph and the rear; nothing to rank' },
   { type: 'fourplexer', disposition: 'generic-face' },
-  { type: 'foxy', disposition: 'generic-face', note: 'knobs only; the raster/XYZ/wavetable previews are read-only pictures needing a registered panel (cube is the precedent)' },
+  {
+    type: 'foxy',
+    disposition: 'generic-face',
+    note:
+      'DONE (#2007). This entry predicted the blocker correctly — "the raster/XYZ/wavetable ' +
+      'previews are read-only pictures" — and, like rasterize, the RESOLUTION half of the ' +
+      'prediction ("needing a registered panel, cube is the precedent") was deliberately NOT ' +
+      'taken. Two reasons, both structural rather than preference. First the blind-gate one ' +
+      'rasterize wrote down: a PF-14 panel REQUIRES an operability probe, and a read-only ' +
+      'picture has none of its own, so the probe would watch a DIFFERENT control — an aliveness ' +
+      'check that cannot observe the thing it certifies. Second, ARITY: cube is one picture and ' +
+      'foxy is five, so panels would have meant five cells consuming five ranks and five probes ' +
+      'for pictures that belong together. `fullViewBody` needs no proxy and keeps all five ' +
+      'PERSISTENT across the seven tabs, which is the owner backdraft ruling and is what lets a ' +
+      'player watch raster B while turning SRC B one tab over. 33 params rank normally around ' +
+      'it across seven pages, which reaches DOCK_TAB_MIN_BANDS and engages the tab rail with no ' +
+      '`face.tabbed` declaration. The two exported mode-name rosters became `options[]` (#2007), ' +
+      'so `sync_mode` stopped rendering as an anonymous three-state rotary.',
+  },
   { type: 'freezeframe', disposition: 'generic-face' },
   { type: 'gatemaiden', disposition: 'generic-face' },
   { type: 'grainsOfVision', disposition: 'generic-face' },
@@ -334,7 +352,7 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
   //
   // A disposition note is a hypothesis like any other — verify it against the
   // code before designing against it.
-  { type: 'mandelbulb', disposition: 'generic-face', note: 'the drag over the preview writes slice_y + slice_ry and only when SLICE is on — a slice-plane selector, NOT a camera orbit; rotate_x/rotate_y are knob-only. A 2-D pad is still the right shape: declare it as `face.xyPads` (there is no `xy` KIND in shell-cells.ts). ⚠ glyph MUST be `none`: this is the one video def with an `audio` output, so primaryAudioOutPortId resolves and a live glyph would bind to a tap that cannot see a video-domain node (mandelbulb-glyph-tap.test.ts). The slice WAVEFORM readout canvas is a second bespoke picture with no shell cell yet.' },
+  { type: 'mandelbulb', disposition: 'generic-face', note: 'the drag over the preview writes slice_y + slice_ry and only when SLICE is on — a slice-plane selector, NOT a camera orbit; rotate_x/rotate_y are knob-only. A 2-D pad is still the right shape: declare it as `face.xyPads` (there is no `xy` KIND in shell-cells.ts). ⚠ glyph MUST be `none`: this is the one video def with an `audio` output, so primaryAudioOutPortId resolves and a live glyph would bind to a tap that cannot see a video-domain node (mandelbulb-glyph-tap.test.ts). The slice WAVEFORM readout canvas is a second bespoke picture: it now lives in the `fullViewBody` extension and is fed by the `read("sliceWave")` seam, NOT re-derived — mbSampleSlice is 16,384 DE calls on the main thread and the card already runs it a second time, so a third derivation would have made a slice move cost 3x. ⚠ `read("slice")` is the TOGGLE STATE, not the wave. ⚠ TWO SCREEN CONTROLS AND THEY ARE NOT DUPLICATES: the `screen_on` PARAM is product behaviour (at 0 the factory skips the raymarch, but only while video_out is unpatched, so it never starves a consumer — the faced `cube` precedent, and NOT the #2015 producer-kill class), while the preview switch is `node.data.previewCollapsed`, pure view layer. One asks "compute a picture at all", the other "do I want to look right now"; separate state, separate meanings, neither can diverge from the other.' },
   { type: 'mandleblot', disposition: 'generic-face' },
   { type: 'mapper', disposition: 'generic-face' },
   { type: 'marbles', disposition: 'generic-face' },
@@ -452,7 +470,27 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
   { type: 'videoMixer', disposition: 'generic-face' },
   { type: 'warrensspectrum', disposition: 'generic-face', note: 'the ws-filterbank family is a bank of param faders — a family cell/panel, the same shape as the faced modules already register' },
   { type: 'warrensvisions', disposition: 'generic-face' },
-  { type: 'wavecel', disposition: 'generic-face', note: 'source/preset rosters → selector cells, .wav import → file cell, viz toggle → toggle; the wavetable view is a panel' },
+  {
+    type: 'wavecel',
+    disposition: 'generic-face',
+    note:
+      'DONE. This entry mapped it correctly except for ONE word, and that word was the whole ' +
+      'build estimate: "viz toggle → toggle" would have made wavecel the FIRST adopter of the ' +
+      'data-backed `toggle` shell cell (zero entries, real first-adopter cost). It is not. ' +
+      '`WavecelCard.svelte:54` holds the view mode in component `$state`; the def\'s "persists ' +
+      'across page reloads + multiplayer" sentence two lines below is about `wavetableSource`, ' +
+      'not about the toggle, and both video OUTPUTS render their own view regardless of it. So ' +
+      'it is a private view preference over the picture and lives INSIDE the panel — where ' +
+      'shell-cells then forced it onto `node.data` anyway, by refusing a probe whose witness ' +
+      'was the button\'s own caption ("a control that only relabels itself is indistinguishable ' +
+      'from a dead one"). The rosters and the .wav import are `selector` + `file` cells exactly ' +
+      'as predicted, and the RECORDED BLOCKER (wavetable selection lives in node.data, which ' +
+      '`FaceReadoutValue` cannot see) was stale in both halves: that type is a param reader and ' +
+      'is correctly blind to node.data, while shell-cell specs are node-taking closures — dx7 ' +
+      'ships both kinds today (#2010 reached this from the docs side the same week). ' +
+      'SPREAD ships bit-exactly MONO and five of ten params are inert at spawn (#1999, owner ' +
+      'ears, left open); the rank is built around that rather than over it.',
+  },
   { type: 'wavesculpt', disposition: 'generic-face', note: 'two HAND-CLONED camera pads (#1509 §3) and the largest order after mixmstrs; a face was authored for it once and shipped both pads as knobs — do not repeat that' },
   { type: 'wavetableVco', disposition: 'generic-face' },
 

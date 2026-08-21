@@ -192,11 +192,22 @@ export const RAW_WRITE_LEDGER: Readonly<Record<string, RawWriteEntry>> = {
     kind: 'debt',
     why: 'pad-slot picker write — user gesture, should be undoable + synced',
   },
-  'ui/modules/GatemaidenCard.svelte': {
-    keys: ['trigShape'],
-    kind: 'debt',
-    why: 'card button write — user gesture, should be undoable + synced',
-  },
+  // ⚠ `ui/modules/GatemaidenCard.svelte` WAS HERE AND IS PAID (queue Q53,
+  // 2026-08-20). Its entry read *"card button write — user gesture, should be
+  // undoable + synced"*, and the payment is the plainest form of it: the shape
+  // button now calls the tracked `set('trigShape')` seam instead of poking
+  // `patch.nodes[id].params` directly, so the gesture is undoable and reaches
+  // collaborators. The raw write is gone from the ARTIFACT and this entry had
+  // to go with it.
+  //   ⚠ WORTH RECORDING BECAUSE THE ISSUE THAT FILED IT GOT THIS WRONG. #2025
+  //   argued the debt was "paid by construction" by FACING the module, on the
+  //   reasoning that a faceplate routes the param through the normal path.
+  //   That is not what this ledger measures. It is keyed by CARD PATH and
+  //   anchored to the source, and promotion does not delete the card — the
+  //   per-card VRT sweep still renders it under `?shell=legacy`. The raw write
+  //   would have survived the promotion untouched and deleting this entry
+  //   without touching the card would have gone RED as a stale exemption.
+  //   A face does not pay a card's debt; editing the card does.
   // ⚠ `ui/modules/JoystickCard.svelte` WAS HERE AND IS PAID (queue Q43,
   // 2026-08-19). Its entry read *"joystick drag — per-frame-ish, but it
   // persists; needs the transient-first treatment (midi-cc-write-storm)"*, and

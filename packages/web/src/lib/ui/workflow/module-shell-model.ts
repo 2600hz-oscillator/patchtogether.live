@@ -880,3 +880,64 @@ export function dockFullViewHeadPlan(args: {
     heroGlyph: args.hasGlyph && !(dock && (args.heroCell || args.hasExtensionBody)),
   };
 }
+
+// ── MONITOR MODE (#2009) ────────────────────────────────────────────────────
+//
+// "Hide the controls and watch the picture" is a `node.data.hideControls`
+// affordance that five legacy cards mount (`ruttetra`, `monoglitch`,
+// `milkdrop`, `reshaper`, `graphicEq`) and that promotion DELETES from both
+// surfaces at once, because `migrated(type)` stops the card rendering. #2009
+// filed the gap: `fullViewBody` paints ABOVE the bands and cannot suppress
+// them, and `editorSurface` — the slot the issue nominated — is a static
+// surface for controls that are not cell-shaped, not a toggle over bands that
+// are. So the suppression is the SHELL's, declared per face.
+//
+// ⚠ THE PRECONDITION IS THE WHOLE SAFETY ARGUMENT, and it is checked here
+// rather than trusted. Hiding the bands is only ever an improvement while
+// SOMETHING ELSE is still painting; hide them on a faceplate with no extension
+// body and the player is left with an empty rectangle and no way back, since
+// the toggle lives ON that body. `bandsHidden` therefore cannot be true unless
+// `extBody` is — a single expression, asserted in both directions by
+// module-shell-model.test.ts, so no adopter can reproduce the blank plate by
+// declaring `monitor` without a surface.
+
+/** What MONITOR MODE does to a faceplate this frame. */
+export interface FaceMonitorPlan {
+  /** The hero band and every control band are suppressed; only the module's
+   *  own `fullViewBody` surface paints. */
+  bandsHidden: boolean;
+  /** Monitor mode is REACHABLE on this surface — the face declares it and the
+   *  body that carries its toggle is painting. False on the lane, where there
+   *  is no extension body and therefore nothing to watch. */
+  available: boolean;
+}
+
+/**
+ * Resolve MONITOR MODE. Pure — no def, no engine, no DOM.
+ *
+ * `available` answers "could the player turn this on here?" and `bandsHidden`
+ * answers "is it on?". They are separate because the toggle's own visibility
+ * keys off the first: a body that painted a monitor button on the lane, where
+ * `dockFullViewHeadPlan` never mounts it, would be a button nobody can see.
+ *
+ * ⚠ `hidden` alone is NOT enough and must never be. `node.data.hideControls`
+ * is a persisted key that a rack saved from the LEGACY card already carries, so
+ * a face that has not declared `monitor` can be handed `hidden: true` by an old
+ * patch on its very first render. Reading the flag without the declaration
+ * would blank that faceplate on load. Undeclared ⇒ inert, always.
+ */
+export function faceMonitorPlan(args: {
+  view: ShellView;
+  /** The face declares `face.monitor`. */
+  declared: boolean;
+  /** `dockFullViewHeadPlan().extBody` — the module's own surface IS painting. */
+  extBody: boolean;
+  /** `node.data.hideControls` — the persisted, collab-synced player choice. */
+  hidden: boolean;
+}): FaceMonitorPlan {
+  // `isFaceplateView`, not `=== 'dock-full'`: the pinned drawer paints the same
+  // full faceplate and owes the same affordance (#1739), the same reason
+  // `dockFullViewHeadPlan` collapses the union here.
+  const available = isFaceplateView(args.view) && args.declared && args.extBody;
+  return { available, bandsHidden: available && args.hidden };
+}

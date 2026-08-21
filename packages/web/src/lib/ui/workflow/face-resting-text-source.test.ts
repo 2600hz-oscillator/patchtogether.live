@@ -187,6 +187,17 @@ const FACE_FIELDS: Readonly<Record<string, FaceFieldRule>> = {
     role: 'annotation',
     why: 'The same annotation gate as `title` — a sentence about the page, revealed only by the per-node annotate toggle, never synced and never painted at rest.',
   },
+  monitor: {
+    role: 'none',
+    why:
+      'MONITOR MODE\'s opt-in (#2009) — "hide the control bands and watch the picture", the ' +
+      'inverse of SCREEN ON/OFF. It paints NOTHING: the shell reads it as a boolean through ' +
+      '`faceMonitorPlan` to decide whether to RENDER the bands, and the toggle\'s own text is a ' +
+      'CONTROL CAPTION on a button inside the module\'s `fullViewBody`. Its one field, `why`, is ' +
+      'an argument for the reviewer and for `face-monitor-source.test.ts`; the shell is asserted ' +
+      'below never to read it, so it cannot become a fifth resting-text mechanism. ⚠ What the ' +
+      'extension body itself draws into its canvas is the blind spot named in this file\'s header.',
+  },
   controlFamilies: {
     role: 'control-caption',
     why: 'Not a `face` field itself but reachable beside one; a family renders repeated controls, each painting its own caption.',
@@ -347,6 +358,27 @@ describe('the resting faceplate — the SHELL cannot paint a value', () => {
     expect(shell.includes('heroFacePlan'), 'positive control for the same substring probe').toBe(
       true,
     );
+  });
+
+  it('MONITOR MODE\'s `why` is an ARGUMENT, never a string the shell can paint', () => {
+    // `face.monitor.why` is the newest `ModuleFace` field carrying prose, so it
+    // is the newest candidate for the shape this file exists to deny: a
+    // sentence declared on the def that finds its way onto the resting plate.
+    // The roster entry above says it paints nothing; this is the leg that
+    // CHECKS it, at the only place that could do otherwise.
+    const shell = stripSourceComments(read(SHELL));
+    expect(
+      /monitor\s*[?.]*\.\s*why|monitor\.why/.test(shell),
+      '`face.monitor.why` is reachable from the shell. It is a reviewer-facing argument for why a ' +
+        'face may be watched without its controls — not display text. The shell needs only the ' +
+        'BOOLEAN "is it declared", which is what `faceMonitorPlan({ declared })` takes.',
+    ).toBe(false);
+    // POSITIVE CONTROL for the same probe, so an empty/misread source cannot
+    // green the absence above: the shell DOES reach the declaration itself.
+    expect(
+      /face\?\.monitor/.test(shell),
+      'positive control — the shell must still READ `face.monitor` to gate the bands at all',
+    ).toBe(true);
   });
 
   it('the hero rail no longer declares a readouts strip anywhere', () => {

@@ -429,6 +429,50 @@ export interface ParamDef {
   units?: string;
   /** PF-1 — named detents of a DISCRETE param. Cosmetic (see ParamOption). */
   options?: readonly ParamOption[];
+  /**
+   * THE ROSTER **IS** THE LEGAL SET — a SPARSE `options` roster, declared.
+   *
+   * ⚠ NOT COSMETIC, unlike `options` itself, and that is the whole reason it is
+   * a separate declaration rather than an inference from "the roster is short".
+   * The ordinary rule is that a discrete param's reachable values are exactly
+   * its integer steps, so `param-vocabulary` requires a roster to name EVERY
+   * one of them — its stated reason being that *"a roster that skips one leaves
+   * a state the dial can reach and the picker cannot name"*.
+   *
+   * A few params invert that premise: the skipped values are precisely the ones
+   * that must NOT be reachable. `cvBuddy.ppqn` is the case this exists for — a
+   * clock divides by 1, 2, 4, 8, 12, 24 or 48 pulses per quarter note, and the
+   * forty-one integers in between are not "unnamed states", they are values the
+   * module has no meaning for. Declaring the roster EXHAUSTIVE says so, and the
+   * gate then enforces the stronger property the ordinary rule was reaching
+   * for: **no reachable state is unnameable** — because the reachable set is
+   * the roster.
+   *
+   * ⚠ DENY BY DEFAULT, AND THE `why` IS THE POINT. Making this a bare boolean
+   * would let any author quietly opt out of the every-step rule the moment it
+   * inconveniences them, which is the rule's whole value. A required `why`
+   * means `tsc` refuses the casually-sparse roster before a test runs, and the
+   * reviewer sees the ARGUMENT next to the exemption. Say why the gaps are
+   * meaningless, not that they are unused.
+   *
+   * WHAT IT DOES NOT DO: it does not make the value safe on its own. A param
+   * declaring this must SNAP — a write of an off-roster value lands on a named
+   * member — and `param-vocabulary` asserts that in both directions (a legal
+   * value passes through EXACT; an illegal one lands on a member). See
+   * `snapToOptions`, which is the one implementation.
+   *
+   * ⚠ A STORED off-roster value from before the declaration is NOT rewritten
+   * behind the user's back. It DISPLAYS as its nearest legal member (the same
+   * `nearestByValue` every readout already uses) and is normalized in the graph
+   * by the first ordinary, tagged, undoable write. A silent engine-side repair
+   * of a data-integrity bug is indistinguishable from no bug — the rule
+   * `momentary-params` states and this follows.
+   */
+  optionsExhaustive?: {
+    /** Why the values BETWEEN the roster entries are meaningless for this
+     *  param — not merely unused. Prose, reviewed, required by the type. */
+    why: string;
+  };
   /** PF-10 — named waypoints of a CONTINUOUS param. Cosmetic (see ParamLandmark). */
   landmarks?: readonly ParamLandmark[];
   /**
@@ -973,6 +1017,66 @@ export interface ModuleFace {
    * which is exactly what its legacy card's own tablist did.
    */
   tabbed?: true;
+  /**
+   * MONITOR MODE — this face's own surface may be watched WITHOUT its control
+   * bands, and `node.data.hideControls` is what does it (#2009).
+   *
+   * ⚠ IT IS THE EXACT INVERSE OF SCREEN ON/OFF, NOT A DUPLICATE OF IT, and
+   * #1865 proposed the opposite. SCREEN OFF hides the PICTURE and keeps the
+   * controls; MONITOR MODE hides the CONTROLS and keeps the picture. Neither
+   * can subsume the other — they are the two directions of one question ("which
+   * half am I looking at right now?"), and a video face wants both.
+   *
+   * ⚠ WHY THIS IS A SHELL CAPABILITY AND NOT A `ShellExtension` SLOT. The gap
+   * #2009 filed is that `fullViewBody` paints ABOVE the bands and CANNOT
+   * suppress them — its own contract says so, deliberately (the
+   * `warrensspectrum` failure, where a body that ate the faceplate would have
+   * deleted every control). `editorSurface` is not the home either: it is
+   * specced for "controls that are not cell-shaped at all" — a clip arranger, a
+   * pad matrix — and it is a STATIC structural choice. Hiding the bands is a
+   * TOGGLE over a face whose controls are perfectly cell-shaped. Different
+   * axis, so wiring `editorSurface` for it would have made ruttetra a fake
+   * first adopter of a slot it does not need, and left the real blocker
+   * standing.
+   *
+   * WHAT PROMOTION WOULD OTHERWISE DELETE: five legacy cards mount
+   * `hideControls` (`ruttetra`, `monoglitch`, `milkdrop`, `reshaper`,
+   * `graphicEq`), and `migrated(type)` stops BOTH surfaces rendering the card.
+   * On ruttetra the def's own `docs` advertise the gesture in the user's words
+   * — "hiding the controls turns it into a resizable monitor" — so promoting
+   * without this makes the shipped documentation describe a control that no
+   * longer exists, and no def-reading gate can see that.
+   *
+   * ⚠ IT CANNOT ENGAGE WITHOUT A SURFACE TO BE A MONITOR OF.
+   * `faceMonitorPlan` requires `dockFullViewHeadPlan().extBody` — the module's
+   * own `fullViewBody` actually painting — because a faceplate with its bands
+   * hidden and no picture is a BLANK PLATE, which is a worse outcome than the
+   * one this fixes. That precondition is asserted directly rather than left to
+   * an author's care.
+   *
+   * Gate: `face-monitor-source.test.ts`, deny-by-default in BOTH directions —
+   * a face declaring this must own a `fullViewBody` that reads and writes
+   * `hideControls` and exposes a button, and a FACED module whose legacy card
+   * still mounts `hideControls` must declare this or carry a named exemption.
+   */
+  monitor?: FaceMonitor;
+}
+
+/**
+ * MONITOR MODE's declaration (`face.monitor`). A record with one REQUIRED
+ * field, so `tsc` refuses the bare `monitor: true` form: the burden of proof is
+ * on the face that claims its picture is worth watching alone.
+ *
+ * ⚠ `why` IS NEVER PAINTED. It is documentation for the reviewer and for
+ * `face-monitor-source.test.ts`, which requires it to be an argument rather
+ * than a label — the same shape every exemption roster in this repo uses. The
+ * shell is asserted never to read it (`face-resting-text-source.test.ts`), so
+ * it cannot become a fifth resting-text mechanism.
+ */
+export interface FaceMonitor {
+  /** Why THIS face's surface is worth watching without its controls — the
+   *  picture a player steers by, not merely a preview beside the knobs. */
+  why: string;
 }
 
 /**

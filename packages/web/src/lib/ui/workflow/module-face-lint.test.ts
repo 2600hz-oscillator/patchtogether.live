@@ -484,6 +484,42 @@ describe('module-face lint — MOMENTARY pads (face.momentary)', () => {
     // of the control.
     'b3ntb0x:mirrorX',
     'b3ntb0x:mirrorY',
+    // MANDELBULB, 2026-08-20. Three params share the press-pad SHAPE
+    // (`0..1 discrete`) by coincidence of arity, and all three are states you
+    // set and leave — the card renders all three as latching BUTTONS
+    // (SPIN / SCRN / SLICE). None is edge-detected: every one is read as a
+    // LEVEL, verified line by line rather than inferred from the shape.
+    //
+    // SLICE (`params.slice >= 0.5`, :759) arms the whole audio half — it stands
+    // the oscillator chain up and keeps it running. A momentary render would
+    // tear the audio down on release, i.e. the module's headline feature could
+    // never be held: the `clouds:freeze` case reached by a simpler mechanism.
+    //
+    // AUTOSPIN (`:771`) is a level the draw path re-reads every frame to decide
+    // whether to advance `spinPhase`; releasing a pad would stop the rotation.
+    //
+    // SCREEN (`:778`) is the raymarch PERF gate — off means "do not compute a
+    // picture nobody is looking at", guarded by `frame.isOutputConnected` so it
+    // can never starve a patched consumer. It is a setting you leave, exactly
+    // like `cube:screen_on` above, and for the same reason.
+    'mandelbulb:slice',
+    'mandelbulb:autospin',
+    'mandelbulb:screen_on',
+    // BENTBOX, 2026-08-20 — the SIBLING pair, and they became visible to this
+    // gate by the identical route: `curve` corrected `linear` → `discrete` when
+    // this face landed, because `mirrorUv` hard-thresholds both
+    // (`mirrorX ? … : …` over a `>= 0.5` reduction at :659-660) so `linear` was
+    // always a lie about a two-state value. Pixel-neutral by construction — the
+    // READ is a threshold either way, so every value a card, a face, automation
+    // or a persisted patch could already hold lands on the same side of it.
+    //
+    // LATCHING, not momentary, for the same reason b3ntb0x's are: the card's
+    // MIRROR X / MIRROR Y buttons flip a persisted state you leave engaged, and
+    // the `mirror_*_gate` CV inputs TOGGLE it on a RISING EDGE rather than
+    // holding it. A momentary render would un-fold the picture the instant you
+    // let go, which is the opposite of the control.
+    'bentbox:mirrorX',
+    'bentbox:mirrorY',
     // GRAINS OF VISION, 2026-08-20. The two block BYPASSES, visible to this
     // gate for the same reason as b3ntb0x's folds and cloudseed's enables:
     // their `curve` was corrected `linear` → `discrete` when the face landed,
@@ -584,6 +620,22 @@ describe('module-face lint — MOMENTARY pads (face.momentary)', () => {
     // the module's headline feature could never be held — the `clouds:freeze`
     // case, reached by the simpler mechanism.
     'warrensspectrum:engineFreeze',
+    // WARREN'S VISIONS, 2026-08-20 — the VISUAL analogue of the entry directly
+    // above, and it reaches the same answer by the same mechanism rather than
+    // by inheriting it. `params.engineFreeze >= 0.5` is read as a LEVEL once
+    // per drawn frame (`warrensvisions.ts:647` sets the engine's frozen state,
+    // `:667` re-reads it in the draw path), and the def declares its `gate`
+    // input `edge: 'gate'` with `paramTarget: 'engineFreeze'` — level-sensitive
+    // on purpose, per CLAUDE.md's rule against converting a gate consumer to
+    // edge-only. A momentary render would thaw the ANALYSIS the instant the pad
+    // was released, so the freeze could never be held.
+    //
+    // ⚠ AND IT IS NOT A DETERMINISM TOGGLE, which is the trap next door: this
+    // FREEZE stops the analysis while the bank goes on slewing, drifting and
+    // rendering (the def's own docs say so). It declares `options`, so the dock
+    // paints a captioned LIVE/FREEZE pair rather than an anonymous switch — a
+    // different question from this classification, per the cofefve precedent.
+    'warrensvisions:engineFreeze',
     // MIXMSTRS, 2026-08-15. Ten params share the press-pad SHAPE
     // (`0..1 discrete resting at 0`) and every one is a console state you set
     // and leave. None is read on an edge: the Faust DSP takes all ten through
@@ -713,6 +765,57 @@ describe('module-face lint — MOMENTARY pads (face.momentary)', () => {
     // sweep could never be left running, which is one of the module's two
     // looks.
     'rasterize:wrap',
+    // FOXY, 2026-08-20. FIVE params share the press-pad SHAPE and every one of
+    // them LATCHES. The four FREEZEs are the module's state pins: each holds a
+    // raster (or the whole wavetable) at its current frame so that axis stops
+    // evolving while the others keep moving. A momentary render would un-freeze
+    // the instant the pad was released, which is not a weaker version of the
+    // control — it is the control deleted, since the entire point is to walk
+    // away and leave one axis pinned while you dial the others.
+    //
+    // ⚠ AND THE FACTORY READS THEM AS LEVELS, WHICH IS THE HALF THE SHAPE
+    // CANNOT TELL YOU. `bridgeTick` gates on the mirrored booleans every tick
+    // (`if (!freezeA) { … }`, `if (!freezeT) { … }`), and `setParam` mirrors
+    // each with `value >= 0.5` — a per-tick LEVEL read, never an edge. There is
+    // no rising-edge consumer anywhere in this module.
+    'foxy:freezeRasterA',
+    'foxy:freezeRasterB',
+    'foxy:freezeRasterC',
+    'foxy:freezeTable',
+    // `gen_mode` is switch-SHAPED only by arity: it picks which of two
+    // raster→wavetable ALGORITHMS runs (the continuous XYZ heightfield, or the
+    // discrete 3D Shape Gen path), which is a mode you choose and leave. The
+    // bridge reads its level every tick (`if (genMode >= 0.5)`), so a momentary
+    // render would switch the generator back on release and the second path
+    // would be unreachable. ⚠ It now declares an `options[]` roster (#2007), so
+    // the dock paints it as a named `segmented` rather than any kind of pad —
+    // but this gate reads the param SHAPE, not the resolved cell, which is
+    // correct: the roster is cosmetic and could be removed without changing
+    // what the DSP does with the value.
+    'foxy:gen_mode',
+    // GATEMAIDEN, 2026-08-20. The TRIG output's waveform, and it reaches this
+    // gate by a different route from every entry above it: no `curve` needed
+    // correcting. `trigShape` has been `discrete 0..1 default 0` since the
+    // module shipped — it is switch-shaped, correctly declared, and simply had
+    // no promoted module around it until now.
+    //
+    // LATCHING, and the card is unambiguous about it: the control is a CYCLE
+    // BUTTON whose caption IS the current state (it read `△ TRI` / `▭ SQR`),
+    // so each click SETS a mode that is then left alone. There is no CV port
+    // and nothing pulses it. A momentary render would snap the pulse back to
+    // TRI the instant the pad was released, which would make SQR unreachable
+    // in practice — and SQR is not a flourish: it carries twice TRI's area and
+    // clears the 0.5 threshold for twice as long (measured on the pure core in
+    // `gatemaiden-dsp.test.ts`), so it is the setting a player leaves engaged
+    // when a downstream trigger input is missing edges.
+    //
+    // ⚠ THE DOCS CROSS-CHECK BELOW IS LOAD-BEARING HERE RATHER THAN
+    // CEREMONIAL. This param's authored prose was WRONG until this same diff —
+    // it claimed the two shapes were "display/feel only", which is exactly the
+    // kind of sentence that makes a reviewer wave a classification through
+    // without asking what the control does. The prose now states the measured
+    // difference, and the acknowledgement rests on the cycle-button gesture.
+    'gatemaiden:trigShape',
   ]);
 
   it('no ACKNOWLEDGED_LATCHING param is DOCUMENTED as momentary (the cross-check)', () => {
