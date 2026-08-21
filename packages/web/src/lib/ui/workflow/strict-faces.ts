@@ -2665,11 +2665,18 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // model, graph/types, the extension) is outside it. Batched into one commit
   // so the GPU window is paid once.
   //
-  // ⚠ ITS LANE VRT BASELINE MOVES, unlike every promoted video module before
-  // it. `ruttetra` is the only one with a live `vrt.spec` card scene rather
-  // than an `EXEMPT_FROM_VRT` entry, and that spec captures
-  // `.svelte-flow__node-ruttetra` — which promotion re-renders as the faced
-  // lane tile. Predicted and reconciled in the PR body, not discovered.
+  // ⚠ ITS LANE VRT CARD BASELINE DOES NOT MOVE — this paragraph USED to claim
+  // it does, and that claim was already known to be false when it merged.
+  // CORRECTED 2026-08-21 (#2078), from this commit's own PR body: *"I expected
+  // `ruttetra.png` … to move, since that spec captures
+  // `.svelte-flow__node-ruttetra`. It will NOT: `vrt.spec.ts:86` boots
+  // `?shell=legacy`, so it renders the legacy card regardless of promotion."*
+  // The commit bears that out — `a2b982bd0` committed `face-ruttetra-compact.png`
+  // and `face-ruttetra-dock.png` and did NOT touch `ruttetra.png`. The
+  // correction reached the PR body and never reached this line, so the tree
+  // asserted the opposite of the measurement for three days. Re-measured on the
+  // monoglitch branch, where the same claim about `monoglitch.png` was drafted
+  // from this text and then falsified by an actual run.
   //
   // NO READOUT, NO SIDEBAR, NO HERO — the 2026-08-19 rulings removed the fields.
   // The finding that lost its surface is named in the def's `face` comment.
@@ -2773,11 +2780,33 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // `params` edit on a def inside the WebGL attest basis, i.e. a real-GPU
   // re-attest, to buy an assertion that already holds.
   //
-  // ⚠ ITS LANE VRT BASELINE MOVES, the same way ruttetra's did.
-  // `vrt.spec.ts/monoglitch.png` is a LIVE card scene (masked canvas), not an
-  // `EXEMPT_FROM_VRT` entry, and it captures `.svelte-flow__node-monoglitch` —
-  // which promotion re-renders as the faced lane tile. Predicted and reconciled
-  // in the PR body, not discovered.
+  // ⚠ ITS LANE VRT CARD BASELINE DOES **NOT** MOVE, AND THE SIBLING COMMENT
+  // ABOVE SAYING RUTTETRA'S DID IS WRONG — corrected in this diff (#2078).
+  // `vrt.spec.ts/monoglitch.png` is a LIVE card scene (masked canvas) rather
+  // than an `EXEMPT_FROM_VRT` entry, so the obvious inference is that promotion
+  // re-renders it as the faced lane tile and moves the pixels. It does not:
+  // `vrt.spec.ts:86` boots `/rack?shell=legacy`, where `MonoglitchCard.svelte`
+  // keeps rendering whether or not the module is promoted. MEASURED on this
+  // branch — `task vrt:one -- monoglitch` reports `monoglitch card matches
+  // baseline` PASSING with the face merged.
+  //
+  // ⚠ THE RUTTETRA PR ALREADY FOUND THIS AND THE FIX DID NOT REACH THE TREE,
+  // which is why it is worth this many lines. `a2b982bd0`'s body says it plainly
+  // ("I expected `ruttetra.png` … to move … It will NOT"), and that commit
+  // committed only its two NEW face baselines — `ruttetra.png` is untouched by
+  // it. But the prose beside `'ruttetra'` above kept the pre-correction claim,
+  // so the tree asserts the opposite of what the author measured. A stale TEST
+  // goes red and gets fixed; a stale CLAIM goes quietly green forever, and this
+  // one was about to propagate — the first draft of THIS comment repeated it,
+  // and only a local VRT run caught it.
+  //
+  // ⚠ SO THE CARD BASELINE CANNOT BE USED AS A PROMOTION SIGNAL AT ALL, for any
+  // of the three cards still queued (`milkdrop`, `reshaper`, `graphicEq`). What
+  // WOULD move one is an edit the legacy card actually renders — and note
+  // `MonoglitchCard.svelte` HARDCODES its fader captions (`label="R"`), exactly
+  // as ruttetra's does, so even a def label change does not reach those pixels.
+  // This face changes no card-visible pixel: the card edit is the monitor-box
+  // constants, which are the same six numbers it already had.
   //
   // NO READOUT, NO SIDEBAR, NO HERO — the 2026-08-19 rulings removed the fields.
   // The finding that lost its surface is named in the def's `face` comment (the
