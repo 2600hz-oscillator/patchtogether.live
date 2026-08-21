@@ -75,8 +75,25 @@ export const polarizerDef: AudioModuleDef = {
       out: "The bipolar result, out = (2·in - 1)·depth. At depth 1: in=0 gives -1, in=0.5 gives 0, in=1 gives +1. The mid-point of the input (0.5) always maps to 0, so this is the signal centered on zero and ready to add to / subtract from a destination.",
     },
     controls: {
-      depth: "Sets the bipolar swing on a linear 0..1 fader, scaling BOTH the slope and the offset together so the output stays centered on 0. 1 (default) = the full unipolar→bipolar conversion (±1); 0.5 = a half-size ±0.5 swing; 0 = flat 0 regardless of input. Effectively an attenuator on the polarized signal.",
+      depth: "Sets the bipolar swing on a linear 0..1 knob, scaling BOTH the slope and the offset together so the output stays centered on 0. 1 (default) = the full unipolar→bipolar conversion (±1); 0.5 = a half-size ±0.5 swing; 0 = flat 0 regardless of input. Effectively an attenuator on the polarized signal.",
     },
+  },
+
+  // ONE PARAM, SO ONE RANK AND ONE BAND — the same shape as DEPOLARIZER next
+  // door, which is the inverse transfer function on an identical control
+  // surface. The two faces are deliberately identical: nothing about the
+  // direction of the map changes how the module is operated, and giving the
+  // twins different rankings would be drift dressed up as curation.
+  //
+  // NO `paramCells`: `PolarizerCard` draws DEPTH with `<Knob>`, the shell's
+  // default primitive for a ranked param, so face and card already agree.
+  //
+  // `glyph: 'none'` is RUN, not argued: `out` is `type: 'cv'` and
+  // `primaryAudioOutPortId` matches only `type === 'audio'`, so any glyph
+  // would resolve to a dead `static` binding.
+  face: {
+    order: ['depth'],
+    glyph: 'none',
   },
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {

@@ -365,6 +365,49 @@ describe('resolvePushCardControls — tier 2, the curated face', () => {
     expect(pushCardParams(spec).map((q) => q.id)).not.toContain('mirrorY');
   });
 
+  it('a FIRST PROMOTION re-ranks a SYMMETRIC def, where declaration order says nothing — ruttetra', () => {
+    // ruttetra, promoted 2026-08-20 (#2009). TWELVE params over EIGHT encoders,
+    // so like warrensvisions the window TRUNCATES — but the variant worth its
+    // own golden is WHY the generic card was wrong here, and it is a different
+    // reason from either sibling above.
+    //
+    // ⚠ THIS DEF IS SYMMETRIC IN X AND Y, AND DECLARATION ORDER PUTS X FIRST
+    // EVERYWHERE. `xShape, yShape, xDisp, yDisp, …` — so the generic card spent
+    // its first two encoders on the two SHAPE morphs and reached `xDisp` third,
+    // `yDisp` fourth. But the module's relief axis is Y: the def spends its ONE
+    // non-neutral default on `yDisp` (-0.3, "the classic raised terrain look")
+    // while every other geometry param ships at its identity value. So the
+    // generic card led with the two controls that do nothing at their defaults
+    // and buried the module's identity knob at rank 4.
+    //
+    // The face inverts every pair (Y before X, because Y is the relief axis)
+    // and demotes the whole BEAM block, which the vertex shader proves is
+    // disjoint from geometry — `gl_Position` consumes h, v, lum, xDisp, yDisp
+    // and nothing else, so intensity and the three tints move COLOUR only.
+    const spec = resolvePushCardControls(defByType('ruttetra'));
+    expect(spec.source).toBe('face');
+    expect(spec.skipped, 'no families and no momentary pads on this module').toEqual([]);
+    expect(pushCardParams(spec).map((q) => q.id)).toEqual([
+      'yDisp', 'xDisp', 'yShape', 'xShape',
+      'yFreq', 'xFreq', 'intensity', 'tintR',
+    ]);
+    // The negative control, and it names what the promotion BOUGHT the
+    // hardware: declaration order genuinely leads with the shapes and puts the
+    // relief hero fourth.
+    const declared = (defByType('ruttetra').params ?? []).map((q) => q.id);
+    expect(declared.slice(0, 4)).toEqual(['xShape', 'yShape', 'xDisp', 'yDisp']);
+    expect(declared[0], 'the GENERIC card led with a param that is inert at its default').toBe('xShape');
+    expect(
+      pushCardParams(spec)[0].id,
+      'the FACE leads with the only param this def ships off-centre',
+      ).toBe('yDisp');
+    // ⚠ AND THE TWO PHASE CONTROLS FALL OFF, which is the correct outcome:
+    // they rank 11th/12th, have no CV input, and slide a pattern that X/Y FREQ
+    // has to be non-default for you to even see.
+    expect(pushCardParams(spec).map((q) => q.id)).not.toContain('xPhase');
+    expect(pushCardParams(spec).map((q) => q.id)).not.toContain('yPhase');
+  });
+
   it('a FIRST PROMOTION TRUNCATES when the module out-runs the encoders — warrensvisions', () => {
     // warrensvisions, promoted 2026-08-20 (queue Q45). The variant neither
     // golden above can show: TWELVE params over EIGHT encoders, so the window
