@@ -37,6 +37,41 @@
   font-family: var(--font, sans-serif);
 }
 
+/* ⚠ THE 150px FLOOR ABOVE IS A *LANE-TILE* FLOOR, AND THE DOCK PLATE IS NOT A
+   LANE TILE. `<ModuleShell>` puts `rl-tile` on its root at EVERY view, so the
+   floor followed it into `dock-full` and became a MINIMUM FACEPLATE WIDTH that
+   nothing draws in.
+
+   ⚠ THIS IS THE `min-width: 900px` DEFECT AT A SMALLER SCALE — same shape, same
+   cause, one order of magnitude down: a floor authored for one tier silently
+   sizing another. It stayed invisible because no faceplate was ever narrow
+   enough to reach it; the batch-18 thin audio tail is the first population that
+   is, and the per-face slack gate in `workflow-shell-faces.spec.ts` caught all
+   five on their very first capture.
+
+   MEASURED on `flipper` (0 params — the narrowest face in the fleet), by walking
+   `.faceplate-body`'s children in the page:
+
+       div.faceplate-body   w=194.0
+         div.tabrail        w=194.0
+         div.page           w=194.0
+           div.editor       w=194.0   padL=22 padR=22
+             div.module-shell.rl-tile.dock-full   w=150.0   minW=150px  ← HERE
+
+   150 (this floor) + 44 (the editor's padding) = the 194 px plate the gate
+   reported against 105 px of content: 89 px of empty grey, which is precisely
+   what owner ruling 2026-08-17 forbids — *"we do not want useless gray
+   horizontal space on cards, ever."*
+
+   Scoped to `.dock-full` rather than raised or deleted, because the floor is
+   CORRECT where it was written: a lane tile is a fixed 192×180 box and a shell
+   narrower than 150 px there would collapse its jack rail. Only the dock plate,
+   which is `width: max-content` by design, must be free to shrink to its
+   content. */
+.rl-tile.dock-full {
+  min-width: 0;
+}
+
 /* ---- left signal spine — absolute overlay (mock .mod .spine) ---- */
 .rl-tile .rl-spine {
   position: absolute;

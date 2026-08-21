@@ -2557,6 +2557,91 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   'moog962',
   'sampleHold',
   'scaler',
+  // control surface is one knob or nothing at all. Thin is not sloppy: each
+  // still ships an honest band count (never padded to look substantial), a
+  // glyph RUN through `glyphBinding` rather than argued from the module's
+  // description, and a face-model test.
+  //
+  // The two zero-param entries are the first faces in the registry to rank
+  // NOTHING and carry no shell extension, and they are why `dockFacePlan` now
+  // refuses to emit an empty `__all` band — see the note there.
+  'depolarizer',
+  'flipper',
+  'moog994',
+  'polarizer',
+  // RUTTETRA (`label: 'xyz'`) — 12 params, 4 pages, no rail. The authentic
+  // forward-scatter Rutt/Etra scan processor: a 320x180 grid walks the Z
+  // source, reads luma at each point, lays it along an internally generated
+  // H/V ramp and displaces it by `(lum - 0.5) * disp`, then joins adjacent
+  // points within each row into 57,420 additive LINE segments over black. The
+  // verb is TILT — you are sculpting relief out of a flat image.
+  //
+  // ⚠ THIS FACE EXISTS TO PROVE A PLATFORM SEAM, and that is why it is the
+  // module that landed it. #2009 filed the gap: `hideControls` — "hide the
+  // controls and it becomes a resizable monitor" — is a `node.data` affordance
+  // on FIVE legacy cards (`ruttetra`, `monoglitch`, `milkdrop`, `reshaper`,
+  // `graphicEq`) with NO shell representation, and `migrated(type)` deletes it
+  // from both surfaces at once. `fullViewBody` paints ABOVE the bands and by
+  // contract cannot suppress them, so there was no seam to promote through.
+  //
+  // ⚠ AND ON THIS MODULE THE LOSS WOULD HAVE BEEN A DOCUMENTED ONE. The def's
+  // own `docs.explanation` has advertised the gesture in the player's words
+  // since it shipped — "hiding the controls turns it into a resizable monitor
+  // (drag the bottom-right corner, double-click to restore)". Promoting
+  // without a home for it would have shipped documentation describing a control
+  // that no longer exists, and NO def-reading gate can see that, because every
+  // one of them reads the same def that tells the lie. Resolved by MONITOR MODE
+  // (`face.monitor` → `faceMonitorPlan` → the shell suppresses hero + bands),
+  // with the toggle on the module's own `fullViewBody` so the button that turns
+  // it on is always still on screen to turn it off — which fixes the card's
+  // pointer-only trap rather than porting it.
+  //
+  // ⚠ `editorSurface` WAS THE NOMINATED ROUTE AND IS THE WRONG ONE. It is
+  // specced for "controls that are not cell-shaped at all" and is a STATIC
+  // structural choice; ruttetra's twelve params are ordinary scalars and monitor
+  // mode is a TOGGLE. It stays UNWIRED, and this face is not a fake first
+  // adopter of it.
+  //
+  // ⚠ UNTABBED BY OWNER RULING ("2 - a"), and the arithmetic agrees rather than
+  // merely permitting it: four honest DSP-derived pages against
+  // `DOCK_TAB_MIN_BANDS = 7`, packing to TWO rows under `DOCK_ROW_MAX_CONTROLS`.
+  // Reaching the rail would have meant padding pages to hit a threshold. The
+  // module the tabbed ruling first NAMED is the weakest tab candidate in the
+  // video bank, and the ruling settled the TAB question, not STOP 2.
+  //
+  // ⚠ TWO SHAPE PARAMS STAY DIALS WHILE THE OTHER TEN ARE FADERS, and the
+  // asymmetry is load-bearing. `xShape`/`yShape` gain `landmarks` at the
+  // shader's own morph arms so the linear/triangle/soft/radial name survives
+  // without re-typing the card's seven thresholds — and `landmarks` is read by
+  // `KnobConic` ALONE (`NeonFader` is passed `options`, not `landmarks`), so
+  // declaring `paramCells: 'fader'` for them, which card fidelity would
+  // otherwise argue for, would have silently deleted every name while the
+  // declaration still looked honoured.
+  //
+  // ⚠ NO `freeze` PARAM, and it is structural rather than a judgement: there is
+  // no `uTime` uniform anywhere in `VERT_SRC`/`FRAG_SRC`, no ping-pong and no
+  // accumulator — `draw` clears to black and redraws from the input texture and
+  // params every frame. Unpatched, `z` binds a constant 1x1 grey sentinel, so
+  // the face scenes are deterministic at rest by construction (the `fourplexer`
+  // argument). Its SCREEN OFF still renews the watch mark, but for the OUTPUT
+  // rather than for an accumulator — see the body's own note.
+  //
+  // ⚠ ONE REAL-GPU RE-ATTEST IS OWED, and `face`/`docs` are not why. Both cost
+  // nothing (hash-transparent). The `landmarks` roster, the `R`/`G`/`B` label
+  // shortening and `RUTTETRA_MONITOR_BOX` are real code in a video def, which
+  // IS in the WebGL basis; the entire shell seam (ModuleShell, module-shell-
+  // model, graph/types, the extension) is outside it. Batched into one commit
+  // so the GPU window is paid once.
+  //
+  // ⚠ ITS LANE VRT BASELINE MOVES, unlike every promoted video module before
+  // it. `ruttetra` is the only one with a live `vrt.spec` card scene rather
+  // than an `EXEMPT_FROM_VRT` entry, and that spec captures
+  // `.svelte-flow__node-ruttetra` — which promotion re-renders as the faced
+  // lane tile. Predicted and reconciled in the PR body, not discovered.
+  //
+  // NO READOUT, NO SIDEBAR, NO HERO — the 2026-08-19 rulings removed the fields.
+  // The finding that lost its surface is named in the def's `face` comment.
+  'ruttetra',
 ]);
 
 /**
