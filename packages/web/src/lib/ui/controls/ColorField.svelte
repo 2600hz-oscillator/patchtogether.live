@@ -25,14 +25,28 @@
   // VRT baseline, and to any assertion that only checks a control mounted.
   //
   // So this component publishes a WITNESS that a decorative swatch cannot
-  // fake: `colorhex-<paramId>` prints the hex of the **`value` prop** — the
-  // live param, arriving back from the graph — never of the input's own
-  // internal state. The two are indistinguishable while everything works and
-  // diverge the moment the write path is cut: the native input keeps showing
-  // whatever the user picked (the browser owns that), while the witness keeps
-  // showing the value the graph actually holds. `faces-parity`'s `color` branch
-  // asserts the witness reaches the EXACT expected hex, which is the same
-  // "drive one element, watch a different one" discipline the PANEL cells use.
+  // fake: `aria-valuetext` carries the hex of the **`value` prop** — the live
+  // param, arriving back from the graph — never of the input's own internal
+  // state. The two are indistinguishable while everything works and diverge the
+  // moment the write path is cut: the native input keeps showing whatever the
+  // user picked (the browser owns that), while the witness keeps showing the
+  // value the graph actually holds. `faces-parity`'s `color` branch asserts the
+  // witness reaches the EXACT expected hex.
+  //
+  // ⚠ IT WAS A PAINTED `<span class="cf-hex">` UNTIL 2026-08-20, and that made
+  // this primitive print a VALUE at rest — the #2038 class, second instance
+  // (the first was the XY pad's decimals). It went unnoticed because `'color'`
+  // had ZERO adopters until `colourofmagic`; the hex reached a faceplate for the
+  // first time in that PR and showed up in the captured baseline.
+  //   The witness MOVED rather than went, because it is not decoration: it is
+  // the only thing separating a live swatch from a dead one. `aria-valuetext` is
+  // the home the resting-text ruling names — speakable and assertable, never
+  // painted — and it reads the same `value` prop, so the divergence property is
+  // unchanged.
+  //   ⚠ NOTE WHAT DID NOT CATCH IT. `face-resting-text-source` denies
+  // `ModuleFace` FIELDS and is blind to what a PRIMITIVE paints, by documented
+  // design. Reviewing a rendered baseline is what caught it; the swept audit of
+  // every other primitive is on #2038.
   //
   // ⚠ Deliberately NOT MIDI-assignable, and not an omission. A packed RGB is
   // three values in one integer; a 7-bit CC sweeping it would walk a diagonal
@@ -108,21 +122,35 @@
 
 <div class="cf-wrap" class:hero class:compact class:disabled>
   {#if label && !compact}<span class="cf-lab">{label}</span>{/if}
+  <!-- THE WITNESS, RELOCATED — NOT DELETED (#2038 class, second instance).
+       It used to be a PAINTED `<span class="cf-hex">{hex}</span>`, which made
+       this primitive print a VALUE at rest. That went unnoticed while `'color'`
+       had zero adopters; `colourofmagic` is the first, so the hex reached a
+       faceplate for the first time in this very PR and a captured baseline
+       showed `#ff6a00` sitting under the swatch.
+       ⚠ THE SPAN WAS NOT DECORATION, which is why it moved rather than went:
+       a colour control can be DECORATION in a way a knob cannot — a coloured
+       rectangle that never writes looks correct in a screenshot, in a VRT
+       baseline, and to any assertion that only checks a control mounted. The
+       witness is what a decorative swatch cannot fake.
+       `aria-valuetext` keeps the discipline EXACTLY: still derived from the
+       `value` PROP (the graph), never the input's own state, so a severed
+       write path still makes the two diverge. It is simply speakable and
+       assertable instead of painted — the home the resting-text ruling names.
+       `face-resting-text-source` is blind to primitives BY DESIGN (it denies
+       `ModuleFace` FIELDS), so nothing would have caught this; the audit that
+       did is on #2038. -->
   <input
     type="color"
     class="cf-swatch nodrag"
     value={hex}
     {disabled}
+    aria-valuetext={hex}
     aria-label={label ? `${label}: ${hex}` : hex}
     title={label ? `${label} — pick a colour (${hex})` : `Pick a colour (${hex})`}
     data-testid={paramId ? `control-${paramId}` : undefined}
     oninput={onPick}
   />
-  <!-- THE WITNESS. Derived from the `value` PROP (the graph), never from the
-       input's own state, so a swatch whose write path is severed keeps showing
-       the colour the graph still holds while the native picker shows the one
-       the user chose. That divergence is the whole assertion. -->
-  <span class="cf-hex" data-testid={paramId ? `colorhex-${paramId}` : undefined}>{hex}</span>
 </div>
 
 <style>
@@ -164,15 +192,6 @@
   .cf-wrap.compact .cf-swatch { width: 100%; height: 18px; border-radius: 4px; }
   .cf-wrap.compact { width: 100%; }
 
-  .cf-hex {
-    font-family: var(--mono, ui-monospace, monospace);
-    font-size: 9px;
-    letter-spacing: 0.02em;
-    color: var(--text-dim);
-    white-space: nowrap;
-  }
-  .cf-wrap.hero .cf-hex { font-size: 10px; color: var(--domain, var(--accent)); }
-  .cf-wrap.compact .cf-hex { font-size: 8px; }
 
   .cf-wrap.disabled { opacity: 0.5; }
   .cf-wrap.disabled .cf-swatch { cursor: default; }
