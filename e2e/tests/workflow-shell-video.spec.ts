@@ -432,6 +432,48 @@ const LIVENESS_MAX_MS = SLOW_RENDER ? 60_000 : 20_000;
 const CHANGE_MAX_MS = SLOW_RENDER ? 60_000 : 20_000;
 
 /**
+ * THE TEST ENVELOPE, DERIVED FROM THE BUDGETS THE CASE ACTUALLY SPENDS.
+ *
+ * ⚠ THE DEFECT THIS REMOVES IS ARITHMETIC, NOT "CI IS SLOW". The two ceilings
+ * above are `60_000` each under `SLOW_RENDER`, and the cases below spend BOTH —
+ * yet their `test.setTimeout` was a hand-written literal (`90_000`) that could
+ * not contain them. 60 000 + 60 000 = 120 000 > 90 000, before a single ms of
+ * page load, `injectPatch` or DOM assertion. **A run that was still legitimately
+ * inside every budget it was given would be killed by the envelope around
+ * them** — and it fails as `Test timeout of 90000ms exceeded`, which reads
+ * exactly like "the runner is slow" and gets answered by a retry.
+ *
+ * That is how it presented: `main` went RED at a58ccc846 on e2e shard 5 with
+ * this case failing once and passing on retry, tripping the #1847 flake gate.
+ * ⚠ AND IT HAD HAPPENED BEFORE, one layer down — see `sampleDrawAdvance`'s
+ * header: main was red at 7eeccfb30 for the same case on the same shard, when
+ * the INNER budget was the flat one. #1993 fixed the polls by moving them into
+ * the page and raised these ceilings to 60 s; the OUTER envelopes were left as
+ * literals and silently became too small in the same commit. This closes that
+ * half.
+ *
+ * So the envelope is COMPUTED from what the case spends. A future change to
+ * either ceiling moves every envelope with it, which is the property the
+ * literals did not have — the class, not the instance.
+ *
+ * ⚠ IT IS A BOUND, NEVER A GATE. Enlarging it cannot make a broken case pass:
+ * the gate is the FRAME budget (`LIVENESS_FRAME_BUDGET` / `CHANGE_FRAME_BUDGET`)
+ * and the animated-thumbnail assertions themselves, all of which still fail on
+ * their own terms. It only decides how long a genuinely hung case takes to go
+ * red, so it costs no wall clock on a green run.
+ *
+ * @param liveness how many `sampleDrawAdvance` calls the case makes
+ * @param change   how many `expectCanvasChanges` calls the case makes
+ */
+function videoCaseTimeout(liveness: number, change: number): number {
+  // Page load + `injectPatch` + the 15 s lane-visible waits + DOM assertions.
+  // Deliberately generous under SLOW_RENDER for the same reason the ceilings
+  // are: a starved runner spends real wall clock on the same small work.
+  const SETUP_MS = SLOW_RENDER ? 45_000 : 15_000;
+  return SETUP_MS + liveness * LIVENESS_MAX_MS + change * CHANGE_MAX_MS;
+}
+
+/**
  * Wait, INSIDE THE PAGE, for a node's engine draw counter to ADVANCE by
  * `target`. Returns what it saw rather than throwing, so the caller's assertion
  * message can carry the evidence.
@@ -682,9 +724,13 @@ test.describe('?shell=1 video visibility', () => {
   });
 
   test('video-domain tiles show LIVE ANIMATED thumbnails via the real chain; the fake wave glyph is GONE for them', async ({ page }) => {
-    // Software-renderer scale (see SLOW_RENDER): the frames-drawn + pixel-
-    // change polls (20s budgets each) don't fit a flat 30s under contention.
-    test.setTimeout(SLOW_RENDER ? 90_000 : 30_000);
+    // ⚠ DERIVED, and the stale comment it replaces is why. It read "the
+    // frames-drawn + pixel-change polls (20s budgets each) don't fit a flat 30s"
+    // — but #1993 raised those ceilings to 60 s under SLOW_RENDER and this
+    // literal stayed at 90 000, so the envelope stopped containing the two
+    // budgets it spends (60 + 60 = 120). This case spends ONE
+    // `sampleDrawAdvance` and ONE `expectCanvasChanges`.
+    test.setTimeout(videoCaseTimeout(1, 1));
     // An exhausted pool is a MIGRATION state, not a failure — the named test
     // above is what goes red for it. Skipping here keeps the failure in one
     // place instead of two.
@@ -992,10 +1038,16 @@ test.describe('?shell=1 video visibility', () => {
   });
 
   test('dock full-view renders LIVE video for expanded video modules (feedback and videoOut, each via its own EXPAND pill) with a render lease', async ({ page }) => {
-    // Software-renderer scale (see SLOW_RENDER): TWO sequential dock full-views
-    // with pixel-change polls + lease polls starved the flat 30s budget on CI
-    // shard 10 (run 30179147114, both attempts) while every step completed.
-    test.setTimeout(SLOW_RENDER ? 120_000 : 30_000);
+    // Software-renderer scale: TWO sequential dock full-views with pixel-change
+    // polls + lease polls starved the flat 30s budget on CI shard 10 (run
+    // 30179147114, both attempts) while every step completed.
+    //
+    // ⚠ NOW DERIVED, because the literal was at the limit rather than past it
+    // and would have gone the same way as the case above: this spends TWO
+    // `expectCanvasChanges` (docked feedback, docked videoOut), i.e. 120 000 ms
+    // of ceiling under SLOW_RENDER inside a 120 000 ms envelope — zero room for
+    // two rack boots and two EXPAND interactions.
+    test.setTimeout(videoCaseTimeout(0, 2));
     const providerErrors: string[] = [];
     page.on('pageerror', (e) => {
       if (/useStore|SvelteFlowProvider/i.test(e.message)) providerErrors.push(e.message);
@@ -1160,9 +1212,16 @@ async function engineNodeIds(page: Page): Promise<string[]> {
 
 test.describe('?shell=1 video CHAIN parity', () => {
   test('ACIDWARP → OUTPUT is LIVE under the shell, and the engine node set matches preview-off exactly', async ({ page }) => {
-    // Software-renderer scale (see SLOW_RENDER): two full rack boots, each with
-    // a live acidwarp→videoOut chain and a pixel-change poll.
-    test.setTimeout(SLOW_RENDER ? 120_000 : 60_000);
+    // Software-renderer scale: two full rack boots, each with a live
+    // acidwarp→videoOut chain and a pixel-change poll.
+    //
+    // ⚠ THE WORST OF THE THREE, and only visible once the envelope is written
+    // as arithmetic: `buildAndProbe` is called TWICE (`/rack` and
+    // `/rack?shell=legacy`) and EACH call spends a `sampleDrawAdvance` AND an
+    // `expectCanvasChanges` — 2 x (60 000 + 60 000) = 240 000 ms of ceiling
+    // under SLOW_RENDER, inside a 120 000 ms literal. Half the budget the case
+    // is allowed to spend was unreachable.
+    test.setTimeout(videoCaseTimeout(2, 2));
 
     /** Build the SAME rack in a given mode and report what the engine has +
      *  whether the OUTPUT surface is actually painting moving pixels. */
