@@ -25,8 +25,14 @@
 // belongs here too."* ⚠ AND THE FACED LEG IS PARAMETERISED OVER A ROSTER, the
 // same shape the LEGACY suite above already uses, rather than copied per
 // module. Two hand-copied 80-line browser tests is how the two surfaces of one
-// affordance drift; one roster is how the next of the five #2009 cards
-// (`milkdrop`, `reshaper`, `graphicEq`) is added by writing four testids.
+// affordance drift; one roster is how the next of the five #2009 cards is added
+// by writing four testids — which is exactly what `reshaper` cost (2026-08-21).
+//
+// Of the five that mount `hideControls`: `ruttetra`, `monoglitch` and `reshaper`
+// are faced and covered here. `graphicEq` is still queued. `milkdrop` is BLOCKED
+// by #2083 — not on parity (its STOP 2 maps cleanly and hash-free) but on the
+// FACES VRT roster, which is deny-by-default set-equality with no exemption
+// while butterchurn is not pixel-deterministic even at a fixed frame count.
 // `face-monitor-source.test.ts` turns RED at any such promotion if the face
 // does not declare `monitor` at all — this file is what proves the declaration
 // actually moves the bands.
@@ -368,6 +374,9 @@ const FACED: FacedSpec[] = [
   { type: 'ruttetra', nodeId: 'rt-face', pageIds: ['relief', 'shape', 'scan', 'beam'] },
   // The first inheritor (2026-08-21): one page per TERM of the glitch shader.
   { type: 'monoglitch', nodeId: 'mg-face', pageIds: ['lift', 'raster', 'pan', 'tint'] },
+  // The third adopter (2026-08-21): one page per shader stage that HAS params —
+  // the ramp stage is cables only, so it ranks nothing.
+  { type: 'reshaper', nodeId: 'rs-face', pageIds: ['warp', 'colour'] },
 ];
 
 // ⚠ RENDERER-DEPENDENT, the capability-dependent class. Both tests boot the

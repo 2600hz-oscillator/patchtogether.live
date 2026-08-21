@@ -1,9 +1,9 @@
 <script lang="ts">
-  // packages/web/src/lib/ui/modules/monoglitch/MonoglitchOutputBody.svelte
+  // packages/web/src/lib/ui/modules/reshaper/ReshaperOutputBody.svelte
   //
-  // The MONOGLITCH dock full-view body: the live scanline picture and the
-  // affordances that live only on `MonoglitchCard.svelte`, which promotion
-  // would otherwise delete (`migrated('monoglitch')` stops BOTH surfaces
+  // The RESHAPER dock full-view body: the live remapped picture and the
+  // affordances that live only on `ReshaperCard.svelte`, which promotion
+  // would otherwise delete (`migrated('reshaper')` stops BOTH surfaces
   // rendering the card):
   //
   //   1. MONITOR — `hideControls`, the seam #2009 filed and ruttetra proved;
@@ -11,7 +11,7 @@
   //   3. SCREEN ON/OFF — the 2026-08-18 owner ruling, over `previewCollapsed`.
   //
   // ⚠ 3 IS AN ADDITION, NOT A PORT, AND THAT ASYMMETRY IS DELIBERATE. The
-  // monoglitch CARD has no SCREEN switch — unlike ruttetra's, which had one to
+  // reshaper CARD has no SCREEN switch — unlike ruttetra's, which had one to
   // carry across. The ruling is that EVERY video face ships with it, and
   // `video-face-screen-source.test.ts` denies a faced video module without one,
   // so this face gains a control its card never had. Nothing is lost by that
@@ -36,7 +36,7 @@
   // ⚠ AND THAT FIXES THE CARD'S POINTER TRAP RATHER THAN PORTING IT. On the
   // card the `–` button sits INSIDE the region it hides, so the only way back is
   // an undiscoverable double-click on the body — which is why
-  // `MonoglitchCard.svelte` carries an `a11y_no_static_element_interactions`
+  // `ReshaperCard.svelte` carries an `a11y_no_static_element_interactions`
   // suppression calling it "a real pointer-only trap, not a false positive;
   // tracked as #1572". Here the body always paints, so `onBodyDblClick` has no
   // reason to exist and is deliberately NOT ported. That is parity by a strictly
@@ -50,7 +50,7 @@
   import { useEngine } from '$lib/audio/engine-context';
   import type { VideoEngine } from '$lib/video/engine';
   import { VIDEO_RES } from '$lib/video/engine';
-  import { MONOGLITCH_MONITOR_BOX } from './monitor-box';
+  import { RESHAPER_MONITOR_BOX } from './monitor-box';
   import { drawPreviewDownscaled } from '../preview-downscale';
 
   interface Props {
@@ -98,7 +98,7 @@
   }
 
   // ⚠ TURNING MONITOR OFF CLEARS THE SIZE, exactly as the card's own restore
-  // does (`MonoglitchCard.svelte`'s `toggleHideControls` and `onBodyDblClick`
+  // does (`ReshaperCard.svelte`'s `toggleHideControls` and `onBodyDblClick`
   // both `delete` the two keys). Not a preference: the card DEFINES
   // `resizedWidth`/`resizedHeight` as "the size while the controls are hidden",
   // so leaving them behind would make the two surfaces disagree about whether a
@@ -117,20 +117,20 @@
 
   // ── the MONITOR box + its corner drag ────────────────────────────────────
   //
-  // Floors and default come from `MONOGLITCH_MONITOR_BOX` in `./monitor-box.ts`
-  // — ONE source shared with the card — rather than re-typed here. On this
+  // Floors and default come from `RESHAPER_MONITOR_BOX` in `./monitor-box.ts` —
+  // ONE source shared with the card — rather than re-typed here. On this
   // surface they size the PICTURE (there is no card chrome and no xyflow node to
   // resize), which is the meaning shift that file's own comment records.
   let boxW = $derived<number>(
     Math.max(
-      MONOGLITCH_MONITOR_BOX.minW,
-      (patch.nodes[nodeId]?.data?.resizedWidth as number | undefined) ?? MONOGLITCH_MONITOR_BOX.defW,
+      RESHAPER_MONITOR_BOX.minW,
+      (patch.nodes[nodeId]?.data?.resizedWidth as number | undefined) ?? RESHAPER_MONITOR_BOX.defW,
     ),
   );
   let boxH = $derived<number>(
     Math.max(
-      MONOGLITCH_MONITOR_BOX.minH,
-      (patch.nodes[nodeId]?.data?.resizedHeight as number | undefined) ?? MONOGLITCH_MONITOR_BOX.defH,
+      RESHAPER_MONITOR_BOX.minH,
+      (patch.nodes[nodeId]?.data?.resizedHeight as number | undefined) ?? RESHAPER_MONITOR_BOX.defH,
     ),
   );
 
@@ -153,8 +153,8 @@
     resizing = true;
     const ac = new AbortController();
     const move = (e: PointerEvent): void => {
-      const w = Math.max(MONOGLITCH_MONITOR_BOX.minW, Math.round(w0 + (e.clientX - startX)));
-      const h = Math.max(MONOGLITCH_MONITOR_BOX.minH, Math.round(h0 + (e.clientY - startY)));
+      const w = Math.max(RESHAPER_MONITOR_BOX.minW, Math.round(w0 + (e.clientX - startX)));
+      const h = Math.max(RESHAPER_MONITOR_BOX.minH, Math.round(h0 + (e.clientY - startY)));
       // guard:allow-raw-write — fires per pointermove during a drag; a tracked
       // write per frame would storm the doc and flood the undo stack.
       const target = patch.nodes[nodeId];
@@ -195,11 +195,11 @@
   // ⚠ THE REASON IS THE OUTPUT, NOT AN ACCUMULATOR — the ruttetra argument, and
   // it holds here for the same mechanical reason. `grainsOfVision` and `bentbox`
   // argue from ACCUMULATED STATE (a history ring, a feedback ping-pong) that
-  // empties if the node stops being pulled. MONOGLITCH HAS NONE: there is no
+  // empties if the node stops being pulled. RESHAPER HAS NONE: there is no
   // `uTime` uniform in `FRAG_SRC`, no ping-pong and no accumulator; `draw`
   // re-renders its FBO from the input texture and the params every frame, so it
   // would resume instantly. What the mark protects here is the OUTPUT, and on
-  // this module that is the more pointed case of the two — MONOGLITCH is a
+  // this module that is the more pointed case of the two — RESHAPER is a
   // CHAINABLE `output`-category module whose whole point is that `out` feeds
   // something downstream. A rack where this face is the only observer and `out`
   // runs into a recorder, a second dock pane or a not-yet-opened downstream
@@ -251,7 +251,7 @@
   });
 </script>
 
-<div class="mg-output" class:monitor data-testid="monoglitch-output-body">
+<div class="rs-output" class:monitor data-testid="reshaper-output-body">
   <div
     class="preview-wrap"
     class:resizing
@@ -263,7 +263,7 @@
         bind:this={canvasEl}
         width={viewW}
         height={viewH}
-        data-testid="monoglitch-face-canvas"
+        data-testid="reshaper-face-canvas"
       ></canvas>
     {/if}
 
@@ -277,7 +277,7 @@
       class="face-btn screen-btn nodrag"
       class:on={!previewCollapsed}
       onclick={togglePreview}
-      data-testid="monoglitch-face-screen-toggle"
+      data-testid="reshaper-face-screen-toggle"
       aria-pressed={!previewCollapsed}
       title="SCREEN: turn the preview off to reclaim its space. The module keeps rendering."
     >SCREEN {previewCollapsed ? 'OFF' : 'ON'}</button>
@@ -287,7 +287,7 @@
       class="face-btn monitor-btn nodrag"
       class:on={monitor}
       onclick={toggleMonitor}
-      data-testid="monoglitch-face-monitor-toggle"
+      data-testid="reshaper-face-monitor-toggle"
       aria-pressed={monitor}
       title="MONITOR: hide the control bands and give the picture the whole plate. Drag the corner to size it."
     >MONITOR {monitor ? 'ON' : 'OFF'}</button>
@@ -300,8 +300,8 @@
       <div
         class="resize-handle nodrag"
         role="separator"
-        aria-label="Resize the MONOGLITCH monitor"
-        data-testid="monoglitch-face-resize-handle"
+        aria-label="Resize the RESHAPER monitor"
+        data-testid="reshaper-face-resize-handle"
         onpointerdown={onResizeStart}
       ></div>
     {/if}
@@ -309,7 +309,7 @@
 </div>
 
 <style>
-  .mg-output {
+  .rs-output {
     display: flex;
     justify-content: center;
     padding: 6px 0 2px;
@@ -354,9 +354,9 @@
      exists in MONITOR mode. 16 px of handle + a 6 px gap; without this the
      switch sits ON the drag target and the last few px of the corner stop
      resizing. */
-  .mg-output.monitor .screen-btn { right: 22px; }
+  .rs-output.monitor .screen-btn { right: 22px; }
   /* Left corner, so the two switches never overlap at the narrowest monitor
-     width (`MONOGLITCH_MONITOR_BOX.minW` = 360 px). */
+     width (`RESHAPER_MONITOR_BOX.minW` = 360 px). */
   .monitor-btn { left: 4px; }
   .resize-handle {
     position: absolute;

@@ -173,6 +173,13 @@ const EXTENSION_BODY_ROLES: Readonly<Record<string, BodyRule>> = {
   monoglitch: { role: 'picture', why: 'the luma-driven scanline glitch\'s live preview canvas, its SCREEN switch and the MONITOR toggle it inherited from ruttetra (#2009 / #2053).' },
   outlines: { role: 'picture', why: 'the edge-detector\'s live preview canvas and its SCREEN switch.' },
   rasterize: { role: 'picture', why: 'the rasteriser\'s live preview canvas and its SCREEN switch.' },
+  // ⚠ THE SECOND BODY THIS ROSTER CAUGHT ON A MERGE, one absorbing round after
+  // monoglitch. reshaper (#2086) is the third MONITOR MODE adopter and arrived
+  // on main while this branch was open. Two unrelated PRs in two days, each
+  // caught on first contact — the population really does grow faster than
+  // anyone would remember to update a snapshot, which is the argument for
+  // deriving membership off the directory and denying by default.
+  reshaper: { role: 'picture', why: 'the coordinate-remapper\'s live preview canvas, its SCREEN switch and the MONITOR toggle inherited from the ruttetra seam (#2009 / #2053).' },
   ruttetra: { role: 'picture', why: 'the Rutt/Etra scan processor\'s live raster preview, its SCREEN switch, the MONITOR toggle that hides the control bands (#2009) and the corner resize.' },
   spirographs: { role: 'picture', why: 'the harmonograph\'s live plot canvas and its SCREEN switch — the module whose right-hand TEXT column was deleted by the 2026-08-19 ruling, leaving the picture.' },
   videoOut: { role: 'picture', why: 'the rack video output\'s live preview canvas — the picture the whole module exists to produce.' },
