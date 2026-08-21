@@ -43,6 +43,19 @@ const SLOW_RENDER = process.env.E2E_SWIFTSHADER === '1' || !!process.env.CI;
 const FIRST = 'cv-b';
 const SECOND = 'cv-c';
 
+/**
+ * ⚠ THE TWO NODES MUST BE SPAWNED APART, and this is a real failure rather than
+ * a style point: `spawnPatch` defaults both to the same canvas position, the
+ * tiles overlap, and the upper one's EXPAND label intercepts the click meant
+ * for the lower one — measured as a 30 s "element intercepts pointer events"
+ * timeout on the first run of this spec, in the two tests that spawn a pair.
+ * The distance is arbitrary; only the separation matters.
+ */
+const PAIR_POS = [
+  { x: 80, y: 80 },
+  { x: 560, y: 80 },
+] as const;
+
 async function gotoShell(page: Page): Promise<void> {
   await page.goto('/rack');
   await expect(page.getByTestId('workflow-topbar')).toBeVisible({
@@ -51,20 +64,26 @@ async function gotoShell(page: Page): Promise<void> {
   await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });
 }
 
+/**
+ * Open a node's dock faceplate and return a locator scoped to THAT NODE's dock
+ * shell.
+ *
+ * ⚠ SCOPED BY `data-shell-node`, NOT BY "the dock". Opening a second node's
+ * faceplate SWAPS the dock's occupant, so a locator that only said
+ * "the dock shell" would keep resolving after the swap and quietly assert the
+ * WRONG NODE's bands — and on this module the two plates differ by exactly the
+ * band under test, so a stale locator produces a plausible, wrong pass. This is
+ * also why the pair tests below need no explicit close step.
+ */
 async function openDock(page: Page, nodeId: string): Promise<Locator> {
   const shell = page.locator(`.svelte-flow__node[data-id="${nodeId}"] [data-testid="module-shell"]`);
   await expect(shell).toBeVisible();
   await shell.getByTestId('shell-open-dock').click();
   const dockShell = page
     .getByTestId('dock-full-view')
-    .locator('[data-testid="module-shell"][data-shell-tier="dock"]');
+    .locator(`[data-testid="module-shell"][data-shell-tier="dock"][data-shell-node="${nodeId}"]`);
   await expect(dockShell).toBeVisible();
   return dockShell;
-}
-
-async function closeDock(page: Page): Promise<void> {
-  await page.getByTestId('dock-pane-close').first().click();
-  await expect(page.getByTestId('dock-full-view')).toHaveCount(0);
 }
 
 /** The clock band, by its DECLARED page id — the same string
@@ -96,8 +115,8 @@ test.describe('CV BUDDY face — the rack-global status home (#2024)', () => {
   test('⚠ a SECOND instance loses the clock band — and its plate is NOT blank', async ({ page }) => {
     await gotoShell(page);
     await spawnPatch(page, [
-      { id: FIRST, type: 'cvBuddy' },
-      { id: SECOND, type: 'cvBuddy' },
+      { id: FIRST, type: 'cvBuddy', position: PAIR_POS[0] },
+      { id: SECOND, type: 'cvBuddy', position: PAIR_POS[1] },
     ]);
 
     // ── the non-primary plate ────────────────────────────────────────────
@@ -123,7 +142,6 @@ test.describe('CV BUDDY face — the rack-global status home (#2024)', () => {
     // ── NEGATIVE CONTROL, on the same rack ───────────────────────────────
     // Without this the test above passes just as well against a face that lost
     // its band everywhere — which is a broken module, not a working feature.
-    await closeDock(page);
     const first = await openDock(page, FIRST);
     await expect(
       clockBand(first),
@@ -140,15 +158,14 @@ test.describe('CV BUDDY face — the rack-global status home (#2024)', () => {
     // clock band here, and two nodes would claim ES-9 jacks 7 and 8.
     await gotoShell(page);
     await spawnPatch(page, [
-      { id: FIRST, type: 'cvBuddyMini' },
-      { id: SECOND, type: 'cvBuddy' },
+      { id: FIRST, type: 'cvBuddyMini', position: PAIR_POS[0] },
+      { id: SECOND, type: 'cvBuddy', position: PAIR_POS[1] },
     ]);
 
     const mini = await openDock(page, FIRST);
     await expect(clockBand(mini), 'the mini is id-smallest, so it owns the clock').toHaveCount(1);
     await expect(mini.getByTestId(`cv-buddy-slot-name-${FIRST}`)).toHaveText('JACKS 1–2');
 
-    await closeDock(page);
     const full = await openDock(page, SECOND);
     await expect(
       clockBand(full),
