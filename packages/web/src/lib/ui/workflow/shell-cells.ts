@@ -43,6 +43,13 @@ import {
   wavecelSourceOptions,
   wavecelSourceValue,
 } from '$lib/ui/modules/wavecel-table-actions';
+import {
+  MILK_ACCEPT,
+  loadMilkFile,
+  milkdropPresetOptions,
+  milkdropPresetValue,
+  selectMilkdropPreset,
+} from '$lib/ui/modules/milkdrop-preset-actions';
 import Dx7OperatorMap from '$lib/ui/modules/dx7/Dx7OperatorMap.svelte';
 import Dx7OpDetail from '$lib/ui/modules/dx7/Dx7OpDetail.svelte';
 import AnalogVcoHeroPanel from '$lib/ui/modules/AnalogVcoHeroPanel.svelte';
@@ -362,6 +369,36 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
         action: 'click',
         effect: { kind: 'text', testid: 'cofefve-echo-axis', expect: 'changed' },
       },
+    },
+  },
+  milkdrop: {
+    // THE PRESET PICKER — the only surface on which the preset NAMES exist.
+    // `presetSelect` addresses presets by INDEX, so without this cell a
+    // faceplate could paint only an anonymous ~20-position control (the
+    // `sampleHold` / `colourofmagic` defect). Options come from the ENGINE's
+    // live list rather than a static roster, because the list grows with
+    // in-session `.milk` imports and a frozen roster would be wrong the moment
+    // anyone used the loader below.
+    //
+    // ⚠ IT WRITES `presetSelect`, the same param the PST fader, the PRESET CV
+    // jack and the NEXT trigger drive — which is what keeps all four in sync and
+    // what makes the choice persist with the patch.
+    'milkdrop-preset-select-{n}': {
+      kind: 'selector',
+      tag: 'preset',
+      options: (node) => milkdropPresetOptions(node?.id ?? ''),
+      value: (node) => milkdropPresetValue(node),
+      onchange: (nodeId, value) => selectMilkdropPreset(nodeId, value),
+    },
+    // The `.milk` importer — the same convert/append/crossfade action as the
+    // card's hidden file input, status line included. Custom imports are
+    // in-session only by design; the curated index is what the patch saves.
+    'milkdrop-milk-input-{n}': {
+      kind: 'file',
+      label: 'Load .milk…',
+      title: 'Import a Winamp Milkdrop .milk preset (appended to the picker for this session)',
+      accept: MILK_ACCEPT,
+      onFile: (nodeId, file) => loadMilkFile(nodeId, file),
     },
   },
   dx7: {

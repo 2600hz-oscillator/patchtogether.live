@@ -368,6 +368,12 @@ const FACED: FacedSpec[] = [
   { type: 'ruttetra', nodeId: 'rt-face', pageIds: ['relief', 'shape', 'scan', 'beam'] },
   // The first inheritor (2026-08-21): one page per TERM of the glitch shader.
   { type: 'monoglitch', nodeId: 'mg-face', pageIds: ['lift', 'raster', 'pan', 'tint'] },
+  // ⚠ MILKDROP MATTERS MOST HERE (2026-08-21). It is the ONE faced module with
+  // no VRT scenes at all — butterchurn is not pixel-reproducible, so it carries
+  // a named `FACES_WITHOUT_SCENES` exemption (#2083). Nothing compares its
+  // faceplate's pixels at any tier, which makes this leg and faces-parity the
+  // only things that see its dock face render at all.
+  { type: 'milkdrop', nodeId: 'mk-face', pageIds: ['preset', 'motion'] },
 ];
 
 // ⚠ RENDERER-DEPENDENT, the capability-dependent class. Both tests boot the
