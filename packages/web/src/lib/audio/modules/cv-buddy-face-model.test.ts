@@ -101,6 +101,25 @@ function idsFor(n: number): string[] {
 }
 
 describe('Q52 — the platform PRIMARY is the module CLOCK OWNER (exhaustive)', () => {
+  // ⚠ THE HIDDEN PREMISE, STATED SO IT CAN BE BROKEN LOUDLY.
+  //
+  // These two rules are NOT the same rule. `primaryNodeId` names the
+  // lexicographically smallest peer, full stop. `allocateCvBuddySlots` gives
+  // RUN/CLOCK to the first instance that ACTUALLY GOT NOTE JACKS — a strictly
+  // richer rule, because an instance can be inert.
+  //
+  // They coincide today because of one unstated fact: the note pool is six
+  // jacks and the largest instance costs three, so THE FIRST SORTED INSTANCE
+  // CAN NEVER BE INERT. That is a coincidence of two constants, not a shared
+  // implementation — and it is exactly the kind of premise that stops being
+  // true quietly (shrink the pool, add a kind that costs seven, or hand the
+  // clock to "the first instance with a velocity jack").
+  //
+  // ⚠ SO THE FIX, IF THIS GOES RED, IS TO THE FACE'S RULE — NOT TO THIS TEST.
+  // Deliberately NOT resolved by making the allocator call `primaryNodeId`:
+  // that would change what the MODULE means by clock ownership in order to
+  // satisfy a face, which is backwards. Asserted agreement keeps both rules
+  // free to be what they are and makes a divergence impossible to miss.
   it('agrees for every kind-combination up to four instances', () => {
     const disagreements: string[] = [];
     for (let n = 1; n <= 4; n++) {
