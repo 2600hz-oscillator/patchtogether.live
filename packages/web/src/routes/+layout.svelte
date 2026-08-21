@@ -79,6 +79,41 @@
       const m = await import('$lib/video/toybox-shader-validate');
       return m.validateToyboxShader(src, paramNames ?? []);
     };
+
+    // #2070: register a pack of FIXTURE content entries (data: -URL GLSL,
+    // manifest-shaped) into the runtime asset provider, so SwiftShader e2e
+    // can assert EXACT compositing arithmetic against trivial deterministic
+    // shaders. The fixture DATA lives in e2e/_fixtures/ and arrives here as
+    // an argument at runtime — this hook carries no shader source, ships
+    // nothing to players (testHooksEnabled gate, same as every harness
+    // global above), and each entry passes through the REAL compile probe
+    // (validateToyboxShader) before it may register: a broken fixture is a
+    // loud per-entry refusal, never a silently-black layer. Registered
+    // entries are LISTED, so they ride the entire bundled-content path —
+    // dropdown, getContent's lazy fetch (fetch() resolves data: URLs
+    // natively), program cache, and the randomize pools.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (window as any).__toyboxRegisterFixtureContent = async (entries: unknown[]) => {
+      const [validate, registry] = await Promise.all([
+        import('$lib/video/toybox-shader-validate'),
+        import('$lib/video/toybox-asset-registry'),
+      ]);
+      const results: Array<{ id: string; ok: boolean; errors: unknown[] }> = [];
+      for (const entry of entries as Array<
+        import('$lib/video/toybox-content').ToyboxContent
+      >) {
+        const src = await (await fetch(entry.glsl)).text();
+        const verdict = await validate.validateToyboxShader(
+          src,
+          (entry.params ?? []).map((p) => p.id),
+        );
+        if (verdict.ok) {
+          registry.registerRuntimeToyboxAsset('content', entry, { listed: true });
+        }
+        results.push({ id: entry.id, ok: verdict.ok, errors: verdict.errors });
+      }
+      return results;
+    };
   }
 
   // Stage B PR B-b: expose attachProvider as a dev global so Playwright
