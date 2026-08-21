@@ -12,6 +12,9 @@
   import { patch } from '$lib/graph/store';
   import { setNodeParam } from '$lib/graph/mutate';
   import { monoglitchDef } from '$lib/video/modules/monoglitch';
+  // ONE source, shared with the faced dock body. Co-located under `ui/` rather
+  // than on the def so it stays out of the WebGL attest basis — see that file.
+  import { MONOGLITCH_MONITOR_BOX } from './monoglitch/monitor-box';
   import { startCornerResize } from './card-resize';
   import type { VideoEngine } from '$lib/video/engine';
   import { VIDEO_RES } from '$lib/video/engine';
@@ -52,14 +55,21 @@
   const CANVAS_W = 280;
   const CANVAS_H = 158;
 
-  // Rounded to whole-u (180px) rack tiles (#759) so default + min land on the
-  // grid; this card is user-resizable so the rack CSS doesn't clamp it.
-  const MIN_WIDTH = 360;
-  const MIN_HEIGHT = 180;
-  const DEFAULT_WIDTH = 360;
-  const DEFAULT_HEIGHT = 360;
-  const HEADER_PX = 56;
-  const PAD_PX = 20;
+  // ⚠ THE MONITOR BOX IS THE DEF'S, NOT THIS FILE'S. These six numbers used to
+  // be typed here; they now come from `MONOGLITCH_MONITOR_BOX` because the
+  // FACED dock body (`ui/modules/monoglitch/MonoglitchOutputBody.svelte`) reads
+  // and writes the same `node.data.resizedWidth`/`resizedHeight` keys this card
+  // does. A constant re-typed on two surfaces is a constant that will disagree
+  // on one of them, and nothing at runtime can see the disagreement because
+  // each surface is self-consistent (the backdraft class). Rounded to whole-u
+  // (180px) rack tiles (#759) so default + min land on the grid; this card is
+  // user-resizable so the rack CSS doesn't clamp it.
+  const MIN_WIDTH = MONOGLITCH_MONITOR_BOX.minW;
+  const MIN_HEIGHT = MONOGLITCH_MONITOR_BOX.minH;
+  const DEFAULT_WIDTH = MONOGLITCH_MONITOR_BOX.defW;
+  const DEFAULT_HEIGHT = MONOGLITCH_MONITOR_BOX.defH;
+  const HEADER_PX = MONOGLITCH_MONITOR_BOX.headerPx;
+  const PAD_PX = MONOGLITCH_MONITOR_BOX.padPx;
 
   let hideControls = $derived<boolean>(
     Boolean(node?.data?.hideControls),
