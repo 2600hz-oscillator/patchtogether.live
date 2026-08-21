@@ -12,8 +12,8 @@ Every registered module carries exactly one **disposition**: what kind of work i
 |  | count |
 |---|---|
 | registered modules | 198 |
-| done (faced + promoted) | 82 |
-| remaining (excludes organizational-native) | 113 |
+| done (faced + promoted) | 87 |
+| remaining (excludes organizational-native) | 108 |
 | registered with NO disposition (must be zero) | 0 |
 | inventory entries naming a dead def (must be zero) | 0 |
 
@@ -21,7 +21,7 @@ Every registered module carries exactly one **disposition**: what kind of work i
 
 | disposition | what it means | modules | done |
 |---|---|---|---|
-| `generic-face` | author a `face` and rank the controls — no new platform capability | 141 | 82 |
+| `generic-face` | author a `face` and rank the controls — no new platform capability | 141 | 87 |
 | `blocked` | would be a face today but for the named capability, and nothing else | 3 | — |
 | `bespoke-surface` | the primary interaction is not param-shaped — needs a purpose-built surface | 51 | — |
 | `organizational-native` | rack furniture; not a migration at all | 3 | — |
@@ -64,7 +64,7 @@ author a `face` and rank the controls — no new platform capability.
 | `cvBuddy` | audio | — | — |
 | `cvBuddyMini` | audio | — | — |
 | `delay` | audio | done | — |
-| `depolarizer` | audio | — | — |
+| `depolarizer` | audio | done | — |
 | `destroy` | audio | done | — |
 | `destructor` | video | — | — |
 | `dockscope` | audio | — | — |
@@ -75,7 +75,7 @@ author a `face` and rank the controls — no new platform capability.
 | `featurecv` | audio | done | — |
 | `feedback` | video | — | — |
 | `filter` | audio | done | — |
-| `flipper` | audio | — | — |
+| `flipper` | audio | done | — |
 | `fourplexer` | audio | done | — |
 | `foxy` | audio | done | — |
 | `freezeframe` | video | done | — |
@@ -124,7 +124,7 @@ author a `face` and rank the controls — no new platform capability.
 | `moog984` | audio | done | — |
 | `moog992` | audio | done | — |
 | `moog993` | audio | done | — |
-| `moog994` | audio | — | — |
+| `moog994` | audio | done | — |
 | `moog995` | audio | done | — |
 | `moogCp3` | audio | done | — |
 | `ninelives` | audio | done | — |
@@ -133,7 +133,7 @@ author a `face` and rank the controls — no new platform capability.
 | `outlines` | video | done | — |
 | `peakstate` | video | — | — |
 | `pentemelodica` | audio | done | — |
-| `polarizer` | audio | — | — |
+| `polarizer` | audio | done | — |
 | `posterbox` | video | — | — |
 | `qbrt` | audio | done | — |
 | `quadralogical` | video | — | — |
@@ -143,7 +143,7 @@ author a `face` and rank the controls — no new platform capability.
 | `reverb` | audio | done | — |
 | `ringback` | audio | done | — |
 | `rings` | audio | done | — |
-| `ruttetra` | video | — | — |
+| `ruttetra` | video | done | — |
 | `sampleHold` | audio | — | — |
 | `samsloop` | audio | — | — |
 | `scaler` | audio | — | — |

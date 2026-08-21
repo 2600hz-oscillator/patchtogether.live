@@ -169,6 +169,11 @@ export const FACE_FIELDS_NOT_IN_LOCK: Readonly<
     coveredBy:
       'dock-tabs-model.test.ts FACE_TAB_OPT_IN (deny-by-default per module, anchored both directions, instruction quoted) + the live-registry tabbed roster + VRT face-<type>-dock.',
   },
+  monitor: {
+    why: 'MONITOR MODE (#2009) — the face may hide its control bands and be watched as a picture, driven by the persisted `node.data.hideControls` key. It changes no I/O and no control: the same params render, and the mode is a per-NODE runtime state that is absent (⇒ off) on every freshly opened faceplate, so a text golden of the DECLARATION would say nothing about the thing that can actually break. What CAN break is the pairing — a declaration with no toggle to reach it, or a promotion that drops the toggle a legacy card was carrying — and that is a two-sided source relationship a one-sided golden line cannot express. ⚠ It is deliberately NOT the same field as the SCREEN switch and must never be folded into one: SCREEN hides the PICTURE and keeps the controls, MONITOR hides the CONTROLS and keeps the picture (#1865 proposed the opposite).',
+    coveredBy:
+      'face-monitor-source.test.ts (deny-by-default BOTH ways: a declaring face must own a fullViewBody that reads+writes `hideControls` and exposes a button, AND a faced module whose legacy card still mounts `hideControls` must declare it — anchored exemptions, with the SCREEN/MONITOR key pair pinned as distinguishable) + module-shell-model.test.ts faceMonitorPlan (the exhaustive "never a blank plate" invariant) + video-hide-controls.spec.ts faced leg (the render: bands gone, picture and toggle still there).',
+  },
 };
 
 /** One INPUT/OUTPUT port → a canonical line body (sans the `<type> in/out`
