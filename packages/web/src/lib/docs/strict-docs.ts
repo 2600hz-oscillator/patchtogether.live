@@ -451,4 +451,10 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   // morphed video_out AND a derived cube-slice audio_out. Born strict — docs
   // authored + verified against the source..
   'videocube',
+  // TEMPEST (2026-08-21): BOY-SCOUTED IN, not born strict. It shipped (#935)
+  // with no `docs` block at all and no entry here, which is exactly the debt
+  // the living-docs ratchet says to pay when you next touch a module — so it
+  // was paid alongside its face rather than re-noticed a fourth time. The prose
+  // is written from this def's own header and factory, not from its plan doc.
+  'tempest',
 ]);

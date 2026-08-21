@@ -155,6 +155,54 @@ export const faderDef: VideoModuleDef = {
     },
   ],
 
+  // ── FACE (batch-22 · the video thin tail) ─────────────────────────────────
+  face: {
+    // The card's own reading order, preserved: each crossfader sits next to the
+    // FX shape that steers it. Splitting the two sliders from the two selectors
+    // would group by WIDGET instead of by function, and the pairing is the
+    // thing this module is about.
+    order: ['fader', 'abTransition', 'dryWet', 'dwTransition'],
+
+    // ⚠ NO `pages`, and this one had the strongest case for them in the whole
+    // batch — there IS a real two-stage structure (A/B mix → SEND, then dry/wet
+    // → OUT). Refused anyway: four controls is one row, so paging would add two
+    // headings and their vertical chrome to a face that already fits, and the
+    // pairing above already carries the structure. Width and height must be
+    // EARNED.
+
+    // ⚠ FADERS FOR THE TWO CROSSFADERS, DECLARED. `FaderCard.svelte` draws both
+    // with `<input type="range">` — its own comment says these are "naturally
+    // horizontal" and so do not use the standard Knob control. Nothing in a
+    // ParamDef separates "a level" from any other continuous scalar, so an
+    // undeclared face resolves them to KNOBS: a crossfader rendered as a dial
+    // is a real regression even though the value semantics are identical, and
+    // no def-reading gate can see it.
+    //
+    // ⚠ THE TWO FX PARAMS ARE ABSENT FROM THIS MAP ON PURPOSE. They resolve to
+    // NAMED SELECTORS from the `options` rosters now declared on the params
+    // themselves — `paramCells` exists for primitives that cannot be inferred,
+    // and a declared roster IS the inference.
+    paramCells: { fader: 'fader', dryWet: 'fader' },
+
+    // ⚠ NO `bareCells` — one unlabelled band, so no heading exists to make a
+    // caption redundant, and A/B vs Dry/Wet vs their two Fx selectors are four
+    // genuinely different things.
+
+    // ⚠ MANDATORY FOR A VIDEO DEF — both outputs are `video`, so
+    // `primaryAudioOutPortId` is null and any other glyph literal resolves to a
+    // dead `{kind:'static'}` that reddens module-face-lint.
+    glyph: 'none',
+
+    // SCREEN ON/OFF arrives through this slot (#1928): promotion stops BOTH
+    // surfaces rendering `FaderCard.svelte`. This module is a MIXER whose `out`
+    // is the rack's picture and whose `send` feeds an external FX loop, so the
+    // body keeps the engine's watch mark alive while the screen is off —
+    // otherwise a control labelled SCREEN would stall BOTH outputs, including
+    // one the switch does not even show. See
+    // `$lib/ui/modules/fader/shell-extension.ts`.
+    extension: 'fader',
+  },
+
   docs: {
     explanation: "A two-source video mixer with a built-in send/return FX loop, made of two stacked crossfaders. The first fader crossfades IN A and IN B into a mix that is also copied out the SEND jack (patch it through external video FX and return it); the second fader then blends that dry mix against the wet RETURN into the main OUT. Each fader has its own transition-shape dropdown so the crossfade can be a uniform fade or a wipe/dissolve/star/checkerboard sweep, and the whole thing renders as two GPU passes (pass 1 = A/B mix = SEND, pass 2 = dry/wet = OUT).",
     inputs: {
