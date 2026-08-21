@@ -203,6 +203,12 @@ export interface ToyboxGraphNode {
   layer?: number;
   /** OP nodes: per-op float params (see OP_PARAMS). Missing keys default. */
   params?: Record<string, number>;
+  /** OP nodes: LOCKED against RANDOMIZE (#1576 ws3). A locked node survives
+   *  every roll byte-identical — params, position and its UPSTREAM feeds
+   *  (which implies locks on the source layers it consumes) — and REVERT
+   *  keeps it too. Rides the node object (syncs, saves, exports). Locks
+   *  constrain the DICE only — manual edits and cv modulation stay allowed. */
+  locked?: boolean;
 }
 
 /** An edge: connects the (single) output of `from` to input `toPort` of `to`. */
