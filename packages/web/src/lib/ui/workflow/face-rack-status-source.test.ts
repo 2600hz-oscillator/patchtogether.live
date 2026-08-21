@@ -215,6 +215,18 @@ const EXTENSION_BODY_ROLES: Readonly<Record<string, BodyRule>> = {
   edges: { role: 'picture', why: 'the Sobel outline filter\'s live preview canvas and its SCREEN switch. Stateless — the outline is a pure per-pixel function of (input, threshold, thickness) — so SCREEN OFF costs it nothing but the OUTPUT, which is what the retained watch mark protects (#2015).' },
   inwards: { role: 'picture', why: 'the concentric-ring generator\'s live preview canvas and its SCREEN switch. The only SOURCE of the four: it has no video input, so a lapsed watch mark would mute the generator every downstream node samples rather than merely stalling a preview (#2015).' },
   vdelay: { role: 'picture', why: 'the video delay line\'s live preview canvas and its SCREEN switch. ⚠ The ACCUMULATOR of the four — a 32-slot frame ring advanced by every draw — so SCREEN OFF retaining the watch mark is load-bearing on the PICTURE here, not just the output: a stalled pull would let the echo chain decay out of the ring (#2015).' },
+  // ── BATCH 22 · GROUP 2a — the video thin tail, card-checked cells ─────────
+  //
+  // Both PICTURES: a live preview canvas plus ONE control caption (the SCREEN
+  // button). Neither card mounts `hideControls`, so neither body carries a
+  // MONITOR toggle or a resize grip to declare. Nothing on either surface is a
+  // derived value in a text node.
+  //
+  // Grouped rather than interleaved alphabetically for the reason this roster
+  // already documents about itself: it has been caught by a merge three rounds
+  // running, and separate alphabetical insertions are separate conflict sites.
+  lumakey: { role: 'picture', why: 'the luminance-key compositor\'s live preview canvas and its SCREEN switch. A KEYER exists to be composited downstream, so its body keeps the engine\'s watch mark alive while the screen is off — a lapsed mark would change what the DOWNSTREAM sees, not just the preview (#2015).' },
+  shapegen: { role: 'picture', why: 'the generative 3-D shape synthesiser\'s live preview canvas and its SCREEN switch. A GENERATOR whose `out` is the reason to patch it, so the retained watch mark is what stops a control labelled SCREEN behaving as a MUTE downstream (#2015).' },
 
   // ── STATUS — the one body whose subject is not a picture.
   cvBuddy: {

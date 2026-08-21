@@ -861,6 +861,33 @@ describe('module-face lint — MOMENTARY pads (face.momentary)', () => {
     //   patched, because narrowing a platform ratchet does not belong in a face
     //   PR. It does latch, so the classification is at least true.
     'colourofmagic:freeze',
+    // BATCH 22 · GROUP 2a, 2026-08-21. Two switch-shaped params, one per
+    // module, and both were VERIFIED AT THE READ SITE rather than inferred from
+    // the `0..1 discrete` shape — which is the whole point of this roster, and
+    // the standard the mandelbulb entry above sets.
+    //
+    //   `lumakey.invert`  — `g.uniform1f(uInvert, params.invert)`: the raw
+    //     value is pushed to the fragment shader as a uniform EVERY FRAME, so
+    //     it is read as a LEVEL and never edge-detected. The def's own docs
+    //     describe a state you leave set ("off (0) keeps bright foreground
+    //     opaque; on (1) keeps dark foreground opaque"), and its `invert` CV
+    //     input is documented as level-sensitive too ("a high value flips the
+    //     key"), not as a trigger.
+    //   `shapegen.solids` — `mode: params.solids >= 0.5 ? 'solids' : 'wireframe'`:
+    //     a threshold on the CURRENT value, evaluated per draw. Again a level.
+    //
+    // LATCHING, not momentary, on both: each is a look you switch on and LEAVE
+    // on. A momentary render would un-invert the key, or drop back to
+    // wireframe, the instant the player let go — the opposite of the control
+    // both cards draw as a plain `<button>`.
+    //
+    // ⚠ Neither needed a `curve` correction, unlike b3ntb0x and colourofmagic
+    // above: both defs already declare `discrete`, so the card and the def
+    // agreed before this face existed. Worth recording as the case where the
+    // declaration was ALREADY right — the failures in this roster are loud, and
+    // the quiet agreements are what make them legible as exceptions.
+    'lumakey:invert',
+    'shapegen:solids',
   ]);
 
   it('no ACKNOWLEDGED_LATCHING param is DOCUMENTED as momentary (the cross-check)', () => {

@@ -3058,6 +3058,53 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   'colorizer',
   'inwards',
   'vdelay',
+  // ── BATCH 22 · GROUP 2a — the video thin tail, CARD-CHECKED CELLS ─────────
+  //
+  // Two video modules whose faces could NOT have been derived from their defs
+  // alone — the group exists because each needs a cell the def gets wrong on
+  // its own, and the CARD is what establishes the right answer.
+  //
+  // ⚠ THE PRIMITIVES DIFFER BETWEEN THESE TWO, WHICH IS THE WHOLE POINT.
+  // `lumakey` draws its two continuous controls with `NeonFader`, so its face
+  // DECLARES `paramCells: {threshold:'fader', softness:'fader'}` — nothing in a
+  // ParamDef separates "a level" from any other continuous scalar, so an
+  // undeclared face silently substitutes a KNOB for a throw and no def-reading
+  // gate can see it. `shapegen` draws SIZE and ROT with `Knob`, the shell's
+  // DEFAULT primitive, so its face declares NOTHING — copying lumakey's
+  // declaration onto it would have been a silent regression in the opposite
+  // direction. The rule is "declare the primitive the CARD established, and
+  // only when the def cannot imply it", not "declare faders everywhere".
+  //
+  // ⚠ BOTH TOGGLES NEEDED NO DECLARATION AT ALL, and that was worth checking
+  // rather than assuming: `lumakey.invert` and `shapegen.solids` are each
+  // declared `min: 0, max: 1, curve: 'discrete'` — the genuine 2-state shape —
+  // so `looksLikeToggle` resolves them and both cards agree (each draws a
+  // `<button>`). Had either been declared `linear`, the face would have given a
+  // 2-state param a KNOB, which is the moog962 defect: such a control is INERT,
+  // because a dial cannot reliably land on two values. That is the same
+  // declared-vs-rendered class as #2090; here the defs happen to be right.
+  //
+  // ⚠ `shapegen`'s CLK PARAM IS DELIBERATELY UNRANKED. It is a synthetic gate,
+  // hidden from the card by design and surfaced as the `clock_in` cv jack
+  // (SCOREBOARD's `scoreTrig` is the precedent the def itself names). Ranking
+  // it would INVENT an affordance the card does not have — which the parity
+  // rule forbids in the same breath as dropping one.
+  //
+  // SCREEN OFF keeps the watch mark on both, for the OUTPUT rather than for an
+  // accumulator: neither carries a time uniform, a ping-pong or any history, so
+  // both would resume instantly. `lumakey` is a KEYER that exists to be
+  // composited downstream and `shapegen` is a GENERATOR whose `out` is the
+  // reason to patch it — on either, a lapsed mark turns a control labelled
+  // SCREEN into a MUTE for everything downstream.
+  //
+  // ⚠ ZERO ATTEST, and deliberately so: `face` and `paramCells` are stripped by
+  // `scripts/attest-code-basis.ts`, both bodies live under `ui/`, and NO def's
+  // `params` are touched. The other half of this group (`tempest`, `fader`)
+  // needs `options` rosters to keep its named selectors, which IS a `params`
+  // change — so it is split out rather than dragging an attest window onto
+  // these two.
+  'lumakey',
+  'shapegen',
 ]);
 
 /**
