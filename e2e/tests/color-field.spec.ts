@@ -50,7 +50,16 @@ async function gotoShowcase(page: Page): Promise<void> {
 }
 
 const swatch = (page: Page, pid: string) => page.getByTestId(`control-${pid}`);
-const witness = (page: Page, pid: string) => page.getByTestId(`colorhex-${pid}`);
+// ⚠ THE WITNESS IS `aria-valuetext` ON THE CONTROL, NOT A PAINTED SPAN.
+// It was `colorhex-<pid>` until 2026-08-20, when that span was found printing a
+// VALUE at rest on a faceplate (#2038's class, second instance). It moved to the
+// accessible tree; the DISCIPLINE is unchanged — it still reads the `value` PROP
+// rather than the input's own state, which is what makes the severed-cell test
+// below possible at all.
+const witness = (page: Page, pid: string) => page.getByTestId(`control-${pid}`);
+/** The witness's text, wherever it lives. One helper so the two consumers of this
+ *  contract cannot drift apart again. */
+const witnessHex = (page: Page, pid: string) => witness(page, pid).getAttribute('aria-valuetext');
 
 /** Set the picker to `hex` the way the browser does while a player drags
  *  inside the native dialog. A click would open an OS window Playwright cannot
@@ -88,7 +97,7 @@ test.describe('ColorField — the swatch IS the control', () => {
     // normalises an input's `value` to; an uppercase emitter would make every
     // comparison in this file a coin flip on that normalisation.
     await expect(swatch(page, 'red_color')).toHaveValue('#ff3333');
-    await expect(witness(page, 'red_color')).toHaveText('#ff3333');
+    await expect.poll(() => witnessHex(page, 'red_color')).toBe('#ff3333');
     await expect(page.getByTestId('live-packed')).toHaveText('16724787'); // 0xff3333
   });
 });
@@ -106,7 +115,7 @@ test.describe('ColorField — picking a colour COMMITS it', () => {
     await expect(page.getByTestId('live-packed'), 'the EXACT packed value commits').toHaveText(
       String(want),
     );
-    await expect(witness(page, 'red_color'), 'the witness follows').toHaveText(wantHex);
+    await expect.poll(() => witnessHex(page, 'red_color'), 'the witness follows').toBe(wantHex);
     await expect(swatch(page, 'red_color')).toHaveValue(wantHex);
   });
 
@@ -118,7 +127,7 @@ test.describe('ColorField — picking a colour COMMITS it', () => {
     // 255, so a shift, a mask or a swap all show.
     await pick(swatch(page, 'red_color'), '#123456');
     await expect(page.getByTestId('live-packed')).toHaveText(String(0x123456));
-    await expect(witness(page, 'red_color')).toHaveText('#123456');
+    await expect.poll(() => witnessHex(page, 'red_color')).toBe('#123456');
   });
 });
 
@@ -126,7 +135,7 @@ test.describe('ColorField — ⚠ THE NEGATIVE CONTROL: a swatch that writes not
   test('the witness does NOT follow a severed cell, though the picker does', async ({ page }) => {
     await gotoShowcase(page);
     const input = swatch(page, 'grn_color');
-    await expect(witness(page, 'grn_color')).toHaveText('#33ff4d');
+    await expect.poll(() => witnessHex(page, 'grn_color')).toBe('#33ff4d');
 
     await pick(input, '#123456');
 
@@ -143,11 +152,13 @@ test.describe('ColorField — ⚠ THE NEGATIVE CONTROL: a swatch that writes not
 
     // …and the witness does not move, because it reads the value that came
     // BACK. This is the assertion the parity probe's third leg is made of.
-    await expect(
-      witness(page, 'grn_color'),
-      'a severed colour cell must be DISTINGUISHABLE from a live one — if this followed the ' +
-        'picker, faces-parity could not tell a decorative swatch from a working control',
-    ).toHaveText('#33ff4d');
+    await expect
+      .poll(
+        () => witnessHex(page, 'grn_color'),
+        'a severed colour cell must be DISTINGUISHABLE from a live one — if this followed the ' +
+          'picker, faces-parity could not tell a decorative swatch from a working control',
+      )
+      .toBe('#33ff4d');
     await expect(page.getByTestId('severed-packed')).toHaveText(String(0x33ff4d));
   });
 });
@@ -160,7 +171,7 @@ test.describe('ColorField — the RANGE comes from the def, not from the primiti
     await expect(page.getByTestId('clamped-packed'), 'clamped to the declared max').toHaveText(
       String(0x0000ff),
     );
-    await expect(witness(page, 'blu_color')).toHaveText('#0000ff');
+    await expect.poll(() => witnessHex(page, 'blu_color')).toBe('#0000ff');
   });
 
   test('a pick INSIDE the declared span is untouched', async ({ page }) => {
@@ -168,6 +179,6 @@ test.describe('ColorField — the RANGE comes from the def, not from the primiti
     await gotoShowcase(page);
     await pick(swatch(page, 'blu_color'), '#00007f');
     await expect(page.getByTestId('clamped-packed')).toHaveText(String(0x00007f));
-    await expect(witness(page, 'blu_color')).toHaveText('#00007f');
+    await expect.poll(() => witnessHex(page, 'blu_color')).toBe('#00007f');
   });
 });

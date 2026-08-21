@@ -201,6 +201,18 @@ const NUMERIC_LABEL_EXEMPTIONS: readonly { type: string; param: string; label: s
     why: 'the same four-state channel count — scan all four channels.',
   },
   {
+    type: 'moog962',
+    param: 'stages',
+    label: '2',
+    why: 'a COUNT of sequencer stages, the slewSwitch/length case exactly: STAGES 2 means "alternate IN 1 and IN 2, ignoring IN 3". The integer is what a player says out loud and there is no name for the state that is not the number — naming it would mean inventing one. ⚠ The roster exists for SELECTABILITY, not decoration: a 2..3 discrete param drawn as a knob has two reachable positions across the whole dial, so a drag quantises back to where it started and the control is inert. faces-parity caught exactly that on this param.',
+  },
+  {
+    type: 'moog962',
+    param: 'stages',
+    label: '3',
+    why: 'the other half of the same two-state stage count — rotate IN 1 → IN 2 → IN 3 → IN 1. Same reasoning as its sibling: the number IS the name, and the roster is what makes each state directly reachable rather than a position a drag cannot land on.',
+  },
+  {
     type: 'tidyVco',
     param: 'oct2',
     label: '-1',

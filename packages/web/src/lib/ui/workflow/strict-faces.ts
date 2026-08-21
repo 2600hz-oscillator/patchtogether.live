@@ -2554,9 +2554,41 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // and its `none` is forced.
   'moog992',
   'moog995',
+  // BATCH 18 (2026-08-20) — the THIN AUDIO TAIL, the Moog cluster. Owner: *"if
+  // there are a lot of audio modules with <4 params can't we just fly through
+  // them really quickly? they still need to be done, <4 params or not."*
+  //
+  // `moog904b` is the batch's POSITIVE case of the naming rule: its card drew
+  // LOW / HIGH radiogroup buttons while the def declared a bare `1..2 discrete`
+  // param, so every shared surface could only paint an anonymous two-position
+  // control. The names are promoted into `options` and the CARD now imports
+  // that roster instead of keeping its own copy.
+  //
+  // `moog961` is the batch's clearest FORCED `glyph: 'none'`: it has an audio
+  // INPUT and an audio domain, and every one of its four outputs is a `gate` —
+  // so "it deals with audio, give it a meter" is exactly the wrong inference
+  // and the resolver has to be run.
+  'moog904b',
+  'moog904c',
+  'moog905',
+  'moog961',
   // BATCH 18 (2026-08-20) — the THIN AUDIO TAIL. Owner: *"if there are a lot of
   // audio modules with <4 params can't we just fly through them really quickly?
   // they still need to be done, <4 params or not."* Utilities whose entire
+  // control surface is one knob. Thin is not sloppy: each ships an honest band
+  // count (never padded), a glyph RUN through `glyphBinding` rather than argued
+  // from the module's description, and a model test.
+  //
+  // The pair worth reading together is `sampleHold` and `moog962`. Both have a
+  // single DISCRETE param; only one gains a named picker. sampleHold's ten
+  // scale names already existed and the shell could not reach them, so they are
+  // PROMOTED into `options`. moog962's STAGES has no names at all — its values
+  // are their own labels — so it stays a knob. Promote names that exist; never
+  // invent them to justify a nicer cell.
+  'moog903a',
+  'moog962',
+  'sampleHold',
+  'scaler',
   // control surface is one knob or nothing at all. Thin is not sloppy: each
   // still ships an honest band count (never padded to look substantial), a
   // glyph RUN through `glyphBinding` rather than argued from the module's
@@ -2642,6 +2674,50 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // NO READOUT, NO SIDEBAR, NO HERO — the 2026-08-19 rulings removed the fields.
   // The finding that lost its surface is named in the def's `face` comment.
   'ruttetra',
+
+  // FACE BATCH 16 · colourofmagic (2026-08-20) — the largest module in the
+  // unfaced pool by a wide margin (37 params, 31 in, 22 out) and the FIRST
+  // ADOPTER of the `'color'` cell kind, which had a type, a documented contract
+  // and a live `<ColorField>` renderer and zero modules declaring it.
+  //
+  // THREE DEFECTS FIXED BY THE PROMOTION (#2022), and two of them were
+  // invisible to every gate in the tree:
+  //
+  //   · `pal_r/g/b` are packed `0xRRGGBB` integers. Undeclared they resolve to
+  //     a KNOB SWEEPING 16.7 MILLION VALUES — and `faces-parity` PASSES that,
+  //     because it drags the knob and the param moves. The platform's own
+  //     `ModuleFace.paramCells` doc-comment names this exact situation as the
+  //     reason `'color'` is DECLARED rather than sniffed: a packed RGB differs
+  //     from any other discrete param only in MAGNITUDE, and nothing in the
+  //     repo reads magnitude.
+  //   · `preview` chooses WHICH of the 22 outputs you are looking at and its
+  //     names lived in the card, so a face painted a 22-position ANONYMOUS
+  //     dial. Now a declared roster; ⚠ 22 > SEGMENTED_MAX_OPTIONS so the dock
+  //     resolves `selector` where the card paints pills — a deliberate look
+  //     change, argued in the def.
+  //   · `freeze` is a VRT harness switch with no card control, and face
+  //     completeness would have PAINTED IT — putting "hold the last frame" on
+  //     the player's faceplate, where a frozen picture reads as a broken
+  //     module. Now `noUserControl`, `writer: 'internal'`.
+  //
+  // NOT CONTROL-HEAVY, and this is the counter-intuitive part: 37 params is not
+  // 37 bands. `DOCK_TAB_MIN_BANDS = 7` counts BANDS, and the honest count is
+  // FIVE — one per colorspace block. Reaching 7 would mean splitting each
+  // block's biases from its OVER toggles, which is padding, and the owner
+  // ruling forbids padding pages to force the rail.
+  //
+  // SCREEN ON/OFF ships through `face.extension: 'colourofmagic'`
+  // (`fullViewBody`), not the card — the card is unreachable after promotion,
+  // which is the bug spirographs shipped (#1928). OFF stops the preview COPY
+  // and never the engine (#2015).
+  //
+  // ⚠ REAR CARD IS CURATED ON A MEASUREMENT. At 31x22 — the second-largest
+  // port field the programme has met — the DERIVED plan drops all fifteen
+  // mono-override inputs into one undifferentiated 16-hole `signal` section,
+  // because only the `_cv` ports carry a `paramTarget` that projects onto a
+  // page. Curated, each block owns its six holes. 53 holes is past
+  // `REAR_DENSE_ROWS` (40), so it renders dense by design.
+  'colourofmagic',
 ]);
 
 /**

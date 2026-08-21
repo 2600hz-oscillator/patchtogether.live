@@ -88,6 +88,26 @@ export const sampleHoldDef: AudioModuleDef = {
       min: 0,
       max: SAMPLE_HOLD_MAX_SCALE,
       curve: 'discrete',
+      // THE SCALE NAMES, PROMOTED OUT OF THE CARD (PF-1).
+      //
+      // These names already existed and the shell could not reach them: the
+      // card renders `sampleHoldScaleName(scale)` in its own `.scale-name`
+      // element above the knob, so a player using the LEGACY card has always
+      // seen "Major" / "Dorian", while a faceplate could only ever have shown
+      // an anonymous ten-position dial. That is the gatemaiden shape — the
+      // module's only state names existing nowhere a shared surface can read.
+      //
+      // ⚠ DERIVED FROM THE SCALE TABLE, NEVER RE-TYPED. `SAMPLE_HOLD_SCALES`
+      // is the single source of truth the worklet and the node-ART harness both
+      // run, so mapping it here means a new scale joins the roster with no edit
+      // and no hand-typed count anywhere. Re-typing the names would create a
+      // second place for them to disagree with the quantiser's actual table.
+      //
+      // The roster is TOTAL by construction — one entry per index, `0` through
+      // `SAMPLE_HOLD_MAX_SCALE` — which is what `param-vocabulary` requires of
+      // a non-sparse `options`: a roster that skips a value would leave a state
+      // the dial can reach and the picker cannot name.
+      options: SAMPLE_HOLD_SCALES.map((s, i) => ({ value: i, label: s.name })),
     },
   ],
 
@@ -106,6 +126,31 @@ export const sampleHoldDef: AudioModuleDef = {
     controls: {
       scale: "Selects the quantize scale used by the QUANT output, as a stepped knob cycling through the built-in scales (e.g. Chromatic, Major, and other modes/scales); the active scale's NAME is shown above the knob. It affects only QUANT — the raw HOLD output is never quantized. Default Major.",
     },
+  },
+
+  // ONE PARAM, ONE RANK, ONE BAND — and the one control is the whole module's
+  // vocabulary, so the roster above is what makes this face worth having.
+  //
+  // NO `paramCells`. The cell kind is DERIVED, not declared: `paramCellKind`
+  // reads the `options` roster and returns `'selector'` at the dock (the roster
+  // is longer than `SEGMENTED_MAX_OPTIONS`) and `'knob'` at every lane tier. So
+  // the compact tile keeps the stepped dial the card has always drawn, and only
+  // the faceplate gains a named picker — which is the right split, because a
+  // 192x180 lane tile has no room for a ten-row list.
+  //
+  // ⚠ THE CARD'S `S&H / QUANTIZER` MODE HINT IS DELIBERATELY NOT ON THE FACE.
+  // It is DERIVED STATE — the card computes it by scanning the patch for an
+  // edge into `gate_in` — and a resting faceplate paints no derived-state text
+  // (owner, repeatedly). The permitted resting text is the module name, section
+  // labels, control captions and option NAMES; a mode indicator is none of
+  // those. Nothing is lost that the player cannot see directly: the answer is
+  // whether a cable is in the GATE jack, which the rear jack field shows.
+  //
+  // `glyph: 'none'` is RUN, not argued: both outputs are `type: 'cv'`, so
+  // `primaryAudioOutPortId` is null and any glyph resolves to a dead `static`.
+  face: {
+    order: ['scale'],
+    glyph: 'none',
   },
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {

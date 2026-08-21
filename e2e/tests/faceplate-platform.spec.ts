@@ -34,6 +34,7 @@
 
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
+import { showAllBands, type BandFocusDecl } from './_band-focus';
 import { setNodeParams } from './_module-coverage-helpers';
 import {
   LANE_CELL_H,
@@ -48,6 +49,11 @@ interface FaceSpec {
   type: string;
   strictFace?: boolean;
   faceAnnotations?: { title: number; pageHint: number; bandHints: number };
+  /** `face.bandFocus` — the param whose VALUE decides which bands the dock
+   *  renders. Both registry-driven sweeps below measure the WHOLE face against
+   *  what the def declares, so both open it at a declared show-all value first;
+   *  see `./_band-focus.ts` for the class and the measurement that found it. */
+  bandFocus?: BandFocusDecl;
 }
 
 /** Set the viewport ZOOM and wait for the LOD tier to settle on `nodeId` — the
@@ -467,6 +473,18 @@ test.describe('PF-20 annotations — declared prose ⇔ the toggle that reveals 
     for (const spec of adopters) {
       await gotoShell(page);
       await spawnPatch(page, [{ id: 'an', type: spec.type, position: { x: 460, y: 240 } }]);
+      // ⚠ EVERY COUNT BELOW IS THE DEF'S DECLARED TOTAL, so a BAND-FOCUSED face
+      // has to be opened at its show-all value or this sweep asserts a whole
+      // face's prose against a plate holding one band of it. MEASURED: this is
+      // what reddened `declared 5, received 1` on job 96630258998 the day
+      // `colourofmagic` shipped the feature — a red on a module behaving exactly
+      // as specified, not a vacuous pass. See `./_band-focus.ts` for the class.
+      //
+      // ⚠ And this call CANNOT silently no-op into a green: the counts are the
+      // DECLARED totals, so a pin that failed to land leaves the same red, with
+      // declared-vs-received in the message. (That is not true of every sweep —
+      // PF-21 below carries its own membership leg for exactly that reason.)
+      await showAllBands(page, 'an', spec);
       const fp = await openFaceplate(page, 'an');
       const shell = fp.locator('[data-testid="module-shell"]');
       const { title, pageHint, bandHints } = spec.faceAnnotations!;
@@ -615,6 +633,17 @@ test.describe('PF-21 row plan — sections share a row, legibly and without over
     for (const spec of faces) {
       await gotoShell(page);
       await spawnPatch(page, [{ id: 'rp', type: spec.type, position: { x: 460, y: 240 } }]);
+      // The ROW PLAN is a property of the whole band set, so a band-focused face
+      // is measured at its show-all value — otherwise this sweep would price
+      // `colourofmagic`'s plate as the ONE band its default reveals, forever.
+      //
+      // ⚠ AND HERE A MISSING PIN IS SILENT, unlike PF-20 above: every assertion
+      // in this loop sits behind `if (!row.packed) continue`, so a face reduced
+      // to a single unpacked band contributes nothing and the sweep still goes
+      // green. That is the "gate whose precondition is the defect" shape, so the
+      // pin does not stand on its own — the membership leg below asserts every
+      // declared band actually reached the measurement.
+      await showAllBands(page, 'rp', spec);
       const fp = await openFaceplate(page, 'rp');
       const shell = fp.locator('[data-testid="module-shell"]');
 
@@ -648,6 +677,26 @@ test.describe('PF-21 row plan — sections share a row, legibly and without over
       });
 
       shapes.push(`${spec.type}: ${rows.map((r) => r.ids.join('+')).join(' | ')}`);
+
+      // ── DID THE WHOLE FACE REACH THE MEASUREMENT? (derived membership) ──
+      //
+      // The `showAllBands` pin above is the only thing putting a band-focused
+      // face's other bands on the plate, and if it stopped working every
+      // assertion in this loop would go quiet rather than red. So the claim is
+      // made explicitly, and DERIVED — the declaration names the bands, the DOM
+      // says which ones the sweep actually saw. No count is typed: a band added
+      // to or removed from the declaration moves both sides together.
+      if (spec.bandFocus) {
+        const declared = Object.keys(spec.bandFocus.bands).sort();
+        const seen = new Set(rows.flatMap((r) => r.ids));
+        expect(
+          declared.filter((b) => !seen.has(b)),
+          `${spec.type}: declares bandFocus, and ${[...seen].join('+') || '(nothing)'} reached ` +
+            `the row measurement — a band that never rendered is a band this sweep silently ` +
+            `stopped covering`,
+        ).toEqual([]);
+      }
+
       // ⚠ NOT `faceplate-tabrail` — that element ALWAYS renders (it holds the
       // single MODULE chip below the threshold), so probing it answers 'true'
       // for every face and is invariant to the dimension under test. The rail

@@ -57,7 +57,38 @@ export const moog962Def: AudioModuleDef = {
   params: [
     // STAGES — how many inputs to cycle through. Discrete 2..3 (UI shows the
     // raw count). Default 3 = full 1→2→3→1 rotation.
-    { id: 'stages', label: 'Stages', defaultValue: 3, min: 2, max: 3, curve: 'discrete' },
+    {
+      id: 'stages',
+      label: 'Stages',
+      defaultValue: 3,
+      min: 2,
+      max: 3,
+      curve: 'discrete',
+      // A TWO-STATE PARAM NEEDS A TWO-STATE CONTROL, and this roster is the
+      // only mechanism that gets one (`paramCellKind` derives `'segmented'`
+      // from `options`; `face.paramCells` has no segmented kind to declare).
+      //
+      // ⚠ THIS ROSTER WAS ORIGINALLY REFUSED AND faces-parity CAUGHT THE
+      // MISTAKE: *"moog962 cell 'stages' (param/knob): dragging the knob
+      // commits a param change into the graph"* failed both attempts. A
+      // `2..3 discrete` param rendered as a KNOB has exactly two reachable
+      // positions across the dial's whole travel, so an ordinary drag quantises
+      // straight back to the value it started on and the control reads as
+      // INERT. That is a real usability defect, not a test artifact — the
+      // legacy card has it too, since it draws the same bare `<Knob>`.
+      //
+      // ⚠ AND IT IS NOT A COUNTER-EXAMPLE TO "NEVER INVENT NAMES" (see
+      // `sampleHold`, whose ten scale names were PROMOTED because they already
+      // existed). The distinction is between naming and SELECTABILITY: a roster
+      // exists to make each state directly reachable, and these two states are
+      // literally quantities, so labelling them with their own values invents
+      // nothing. What the rule forbids is fabricating SEMANTIC names a module
+      // does not have.
+      options: [
+        { value: 2, label: '2', title: 'Alternate IN 1 ↔ IN 2, ignoring IN 3' },
+        { value: 3, label: '3', title: 'Rotate IN 1 → IN 2 → IN 3 → IN 1' },
+      ],
+    },
   ],
 
   docs: {
@@ -77,6 +108,27 @@ export const moog962Def: AudioModuleDef = {
       stages:
         "How many inputs the selector cycles through: 2 (alternate IN 1 ↔ IN 2, ignoring IN 3) or 3 (rotate IN 1 → 2 → 3 → 1). Default 3.",
     },
+  },
+
+  // ONE PARAM, ONE RANK, ONE BAND. STAGES renders as a SEGMENTED pair, derived
+  // from the `options` roster on the param above — see the note there for why
+  // the roster exists, and for the faces-parity failure that proved a bare
+  // two-position KNOB is an inert control rather than a minimal one.
+  //
+  // ⚠ THE PAIRING WITH `sampleHold` IN THIS BATCH STILL HOLDS, but it is about
+  // LABELS, not about whether a roster exists. sampleHold's ten scale names
+  // were PROMOTED because they already existed card-side and the shell had no
+  // way to reach them. Here the two states are quantities and are labelled with
+  // their own values, which invents nothing. The rule is: a roster makes states
+  // SELECTABLE, and its labels must be the module's real names where it has
+  // them — never fabricated semantics.
+  //
+  // `glyph: 'none'` is RUN, not argued: the single output is `type: 'cv'`, so
+  // `primaryAudioOutPortId` is null and any glyph would resolve to a dead
+  // `static` binding.
+  face: {
+    order: ['stages'],
+    glyph: 'none',
   },
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {

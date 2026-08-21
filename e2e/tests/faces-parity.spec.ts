@@ -58,6 +58,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { idsCoveredBy, paramsCoveredByCell } from './support/cell-coverage';
 import { spawnPatch } from './_helpers';
+import { showAllBands, type BandFocusDecl } from './_band-focus';
 import { FACE_QUIESCE } from './_face-quiesce';
 import { STRICT_FACES } from '../../packages/web/src/lib/ui/workflow/strict-faces';
 // The COLOUR probe's "pick a different one" + its formatter, imported from the
@@ -134,7 +135,28 @@ interface SpecShape {
    *  render ZERO cells; every other param exactly one. */
   noUserControl?: string[];
   strictFace?: boolean;
+  /** `face.bandFocus` — the param whose value decides which bands render. See
+   *  `_band-focus.ts` for why this sweep needs it. */
+  bandFocus?: BandFocusDecl;
 }
+
+/**
+ * ⚠ `showAllBands` MOVED TO `./_band-focus.ts` and is IMPORTED above.
+ *
+ * It lived here first, because this was the first sweep band focus broke. It is
+ * not the only one: PF-20's annotation sweep (`faceplate-platform.spec.ts`) went
+ * RED the same way — `declared 5, received 1` band hints — because every
+ * registry-driven face sweep measures the whole face against what the def
+ * declares, and a focused face renders less of it. Two copies of the drive would
+ * have been two things to keep in step with the declaration's shape, so there is
+ * one export site and both sweeps import it.
+ *
+ * WHY THIS SWEEP NEEDS IT, kept here at the subject: this test asserts the
+ * dock's control set EQUALS the def's param set. A face that hides bands renders
+ * FEWER controls at most values, so the assertion would FAIL on a
+ * correctly-working module. It does not go vacuous; it goes red for the wrong
+ * reason. The companion half — that the hiding is REAL — is §4 below.
+ */
 
 /** The shell's per-cell interaction contract (`data-cell-control`).
  *
@@ -943,12 +965,18 @@ async function driveCell(
         `swatch is operable by a script and unreachable by a player)`,
     ).toBeGreaterThan(4);
 
-    const witness = host.locator(`[data-testid="colorhex-${pid}"]`);
+    // ⚠ THE WITNESS IS `aria-valuetext` ON THE INPUT, NOT A PAINTED SPAN. It was
+    // `[data-testid="colorhex-<pid>"]` until 2026-08-20, when that span was found
+    // printing a VALUE at rest on a faceplate (#2038's class, second instance —
+    // `colourofmagic` is `'color'`'s first adopter, so the hex reached a plate
+    // for the first time). The element moved to the accessible tree; the
+    // DISCIPLINE is unchanged, because it still reads the `value` PROP rather
+    // than the input's own state, so a severed write path still diverges.
     await expect(
-      witness,
+      input,
       `${where}: publishes a hex WITNESS derived from the live param. Without it a swatch ` +
         `that never commits is indistinguishable from one that does.`,
-    ).toBeVisible();
+    ).toHaveAttribute('aria-valuetext', /^#[0-9a-f]{6}$/i);
 
     const before = (await readParam(page, nodeId, pid)) ?? 0;
     const want = nextProbeColor(before);
@@ -972,11 +1000,11 @@ async function driveCell(
       })
       .toBe(want);
     await expect(
-      witness,
+      input,
       `${where}: the hex witness must follow the LIVE param to ${wantHex}. The native picker ` +
-        `shows the chosen colour whether or not anything was written — only this element ` +
+        `shows the chosen colour whether or not anything was written — only this attribute ` +
         `reads the graph back, so a swatch that is decoration fails HERE and nowhere else.`,
-    ).toHaveText(wantHex);
+    ).toHaveAttribute('aria-valuetext', wantHex);
     return;
   }
 
@@ -1312,6 +1340,11 @@ test.describe('faces render-parity: every STRICT_FACES dock full-view carries th
       // is migrated (guards a stale import path / set drift).
       expect(spec.strictFace, `${type}: __moduleSpecs agrees it is STRICT_FACES-migrated`).toBe(true);
 
+      // A band-focused face renders only ONE band at its default value, so the
+      // multiset equality below is only the intended behaviour in its declared
+      // show-all state. No-op on every other face.
+      await showAllBands(page, 'm', spec);
+
       const dockShell = await openDock(page, 'm');
 
       // ── 1. PARAM PARITY: exact id-multiset equality, DOM vs live def. ──
@@ -1413,8 +1446,83 @@ test.describe('faces render-parity: every STRICT_FACES dock full-view carries th
       // work actually has.
       const tabs = newTabCursor();
       for (const cell of cells) {
+        // ⚠ RE-ASSERTED PER CELL, and the reason is a real interaction rather
+        // than caution: on a band-focused face the FOCUS PARAM IS ITSELF A CELL.
+        // Driving it (the sweep sets every control) re-focuses the plate
+        // mid-walk, and every band the new value hides takes its cells with it —
+        // so the next `driveCell` looks for a control that is no longer mounted
+        // and reports it as a LOST control. Restoring show-all before each drive
+        // makes the walk independent of the order it happens to visit cells in.
+        // No-op on every face without the feature.
+        await showAllBands(page, 'm', spec);
         await openTabFor(page, cell, tabs);
         await driveCell(page, dockShell, 'm', spec, cell);
+      }
+
+      // ── 4. BAND FOCUS: the feature must actually HIDE something. ──
+      //
+      // ⚠ THE COMPANION TO `showAllBands`, AND NEITHER LEG MEANS ANYTHING
+      // ALONE. Everything above ran in the declared show-all state, so it proves
+      // every control is reachable — and it would pass identically against a
+      // face that declared `bandFocus` and then ignored it. This drives a
+      // FOCUSED value and asserts the other bands are genuinely gone from the
+      // DOM, which is the half that can only pass if the declaration is wired.
+      //
+      // Registry-driven and skip-free: a face without the feature simply has no
+      // `bandFocus` to read, so this costs it nothing and reports no skip — a
+      // skipped row would read as coverage it does not have.
+      if (spec.bandFocus) {
+        const focus = spec.bandFocus;
+        const entries = Object.entries(focus.bands);
+        expect(
+          entries.length,
+          `${type}: declares bandFocus with NO bands — a face that hides nothing`,
+        ).toBeGreaterThan(0);
+
+        const [focusedBand, values] = entries[0]!;
+        const otherBands = entries.slice(1).map(([b]) => b);
+        expect(
+          values.length,
+          `${type}: band '${focusedBand}' is revealed by no value, so it is unreachable`,
+        ).toBeGreaterThan(0);
+
+        await page.evaluate(
+          ({ id, param, v }) => {
+            const w = globalThis as unknown as {
+              __patch: { nodes: Record<string, { params: Record<string, number> } | undefined> };
+              __ydoc: { transact: (fn: () => void) => void };
+            };
+            w.__ydoc.transact(() => {
+              const n = w.__patch.nodes[id];
+              if (n) n.params[param] = v;
+            });
+          },
+          { id: 'm', param: focus.param, v: values[0]! },
+        );
+
+        // The focused band stays…
+        await expect(
+          dockShell.locator(`[data-face-page="${focusedBand}"]`),
+          `${type}: focusing '${focusedBand}' must keep its own band on the plate`,
+        ).toBeVisible();
+
+        // …and every other declared band goes. ⚠ Asserted ABSENT rather than
+        // hidden: the point of the feature is reclaimed space, and a band left
+        // in the DOM with `visibility: hidden` would still hold its row.
+        for (const other of otherBands) {
+          await expect(
+            dockShell.locator(`[data-face-page="${other}"]`),
+            `${type}: '${other}' must be GONE while '${focusedBand}' is focused — the whole ` +
+              `point is that the picture and the controls steering it share the plate`,
+          ).toHaveCount(0);
+        }
+
+        // NON-VACUITY: prove the two states actually DIFFER, so a face whose
+        // bands were absent for some unrelated reason cannot pass this.
+        expect(
+          otherBands.length,
+          `${type}: only one band declared, so "the others are hidden" asserts nothing`,
+        ).toBeGreaterThan(0);
       }
     });
   }

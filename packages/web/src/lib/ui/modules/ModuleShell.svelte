@@ -69,6 +69,8 @@
   import { dockBandVisible, dockTabPlan } from '$lib/ui/workflow/dock-tabs-model';
   import { consoleGridCols, faceConsoleGridCols } from '$lib/ui/workflow/console-grid';
   import { dockRowPlan, type RowPlanDefLike } from '$lib/ui/workflow/dock-row-plan';
+  // BAND FOCUS — the pure predicate; the shell never re-derives it.
+  import { visibleBandIds } from '$lib/ui/workflow/band-focus-model';
   import {
     declaredParamCells,
     momentaryParamIds,
@@ -487,7 +489,39 @@
   // hero + bands === the plan that went in, exactly once each — is asserted on
   // every faced module by module-face-lint, not discovered in a browser.
   let heroSplit = $derived(heroFacePlan(def as FaceplateDefLike | undefined, allDockBands));
-  let dockBands = $derived(allDockBands ? heroSplit.bands : null);
+  // ── BAND FOCUS (owner ruling, 2026-08-20) ────────────────────────────────
+  //
+  // A param's VALUE decides which control bands render, so the picture and the
+  // controls steering it share the plate instead of the plate carrying every
+  // block's knobs at once. Read as a PREDICATE — never `why`, which is a
+  // reviewer-facing argument and is asserted unreachable from this file.
+  //
+  // ⚠ FILTERED HERE, BEFORE `dockRowPlan`, NOT AFTER IT. The row plan PACKS
+  // bands into rows; filtering its output would leave rows sized for bands that
+  // are no longer there (a packed pair rendering as a lone band inside a
+  // `.dock-row` wrapper). Filtering the input means the visible set is packed on
+  // its own merits, and a face showing one band gets the plain solo layout.
+  //
+  // ⚠ AND IT UNMOUNTS, like MONITOR MODE and unlike a TAB RAIL. A rail hides
+  // with CSS because faces-parity matches hidden elements and would read an
+  // unmount as a face that lost its controls; the point HERE is to reclaim the
+  // space, which only unmounting does. That is safe for the parity sweep for a
+  // different reason than monitor mode's: monitor mode is a per-node runtime
+  // state no gate ever observes, whereas band focus reads a PARAM whose DEFAULT
+  // is focused — so the sweep explicitly drives the face to a declared
+  // `showAllOn` value first (`showAllBands`), and a companion leg proves the
+  // hiding is real.
+  let bandFocusDecl = $derived((def as FaceplateDefLike | undefined)?.face?.bandFocus);
+  let focusedBandIds = $derived(
+    visibleBandIds(bandFocusDecl, bandFocusDecl ? params.paramVal(bandFocusDecl.param) : undefined),
+  );
+  let dockBands = $derived(
+    allDockBands
+      ? focusedBandIds
+        ? heroSplit.bands.filter((b) => focusedBandIds!.has(b.id))
+        : heroSplit.bands
+      : null,
+  );
   let hero = $derived(heroSplit.hero);
 
   /**

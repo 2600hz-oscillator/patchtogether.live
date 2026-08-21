@@ -198,6 +198,17 @@ const FACE_FIELDS: Readonly<Record<string, FaceFieldRule>> = {
       'below never to read it, so it cannot become a fifth resting-text mechanism. ⚠ What the ' +
       'extension body itself draws into its canvas is the blind spot named in this file\'s header.',
   },
+  bandFocus: {
+    role: 'none',
+    why:
+      'BAND FOCUS (owner ruling, 2026-08-20) — a param VALUE decides which control bands render, ' +
+      'so the picture and the controls steering it share the plate. It paints NOTHING: the shell ' +
+      'reads `param` / `showAllOn` / `bands` as a PREDICATE over which bands to draw, exactly as ' +
+      '`monitor` above is read as a boolean. Its `why` is an argument for the reviewer and for ' +
+      'the totality gate, and the shell is asserted below never to read it. ⚠ Note this field ' +
+      'names a PARAM and some BAND IDS — neither is display text: the param id never reaches the ' +
+      'DOM, and a band id is already painted as a SECTION LABEL under its own permitted role.',
+  },
   controlFamilies: {
     role: 'control-caption',
     why: 'Not a `face` field itself but reachable beside one; a family renders repeated controls, each painting its own caption.',
@@ -378,6 +389,27 @@ describe('the resting faceplate — the SHELL cannot paint a value', () => {
     expect(
       /face\?\.monitor/.test(shell),
       'positive control — the shell must still READ `face.monitor` to gate the bands at all',
+    ).toBe(true);
+  });
+
+  it("BAND FOCUS's `why` is an ARGUMENT, never a string the shell can paint", () => {
+    // Same shape as the `monitor` leg above, for the same reason: `bandFocus`
+    // is the newest `ModuleFace` field carrying prose, so it is the newest
+    // candidate for a sentence declared on a def finding its way onto the
+    // resting plate. The roster entry says it paints nothing; this CHECKS it at
+    // the only place that could do otherwise.
+    const shell = stripSourceComments(read(SHELL));
+    expect(
+      /bandFocus\s*[?.]*\.\s*why|bandFocus\.why/.test(shell),
+      '`face.bandFocus.why` is reachable from the shell. It is a reviewer-facing argument for why ' +
+        'hiding the other bands is right on that module — not display text. The shell needs only ' +
+        'the PREDICATE (`param` / `showAllOn` / `bands`), which is what `visibleBandIds` takes.',
+    ).toBe(false);
+    // POSITIVE CONTROL for the same probe, so an empty or misread source cannot
+    // green the absence above: the shell DOES reach the declaration itself.
+    expect(
+      /face\?\.bandFocus|bandFocus/.test(shell),
+      'positive control — the shell must still READ `face.bandFocus` to gate the bands at all',
     ).toBe(true);
   });
 

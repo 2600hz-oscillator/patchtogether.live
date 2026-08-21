@@ -100,6 +100,7 @@ import { warrensvisionsDef } from '$lib/video/modules/warrensvisions';
 import { charlottesEchosDef } from '$lib/audio/modules/charlottes-echos';
 import { filterDef } from '$lib/audio/modules/filter';
 import { gatemaidenDef } from '$lib/audio/modules/gatemaiden';
+import { colourofmagicDef } from '$lib/video/modules/colourofmagic';
 import { karplusDef } from '$lib/audio/modules/karplus';
 import { meowboxDef } from '$lib/audio/modules/meowbox';
 import { resofilterDef } from '$lib/audio/modules/resofilter';
@@ -267,6 +268,18 @@ const RANGE_BOUND_CARDS: Readonly<Record<string, { params: readonly ParamDef[] }
   // `curve="log"` (which AGREES with the def) and passes no `units`, so it
   // stays out of MAPPING_BOUND_CARDS, the AnalogVcoCard position.
   'GatemaidenCard.svelte': gatemaidenDef,
+  // Enrolled by the ARTIFACT ANCHOR rather than by choice (2026-08-20), which is
+  // the anchor doing exactly what it replaced the deleted floors to do. Facing
+  // `colourofmagic` moved the 22 preview TAP NAMES onto the def and made the
+  // card read them through `paramSpec(colourofmagicDef, 'preview')` — so the
+  // card became def-bound in FACT while this file still said nothing about it,
+  // and "def-bound but unlisted is coverage nobody is claiming" went red. It
+  // re-types no range literal, so the enrolment is free and the claim is true.
+  //   ⚠ The second failure was the NEGATIVE CONTROL on the same predicate — it
+  // delists one card and requires the anchor to name exactly that one, and it
+  // was naming two. Same root cause, one fix; a reviewer seeing both should not
+  // go looking for a second defect.
+  'ColourofmagicCard.svelte': colourofmagicDef,
   // Converted with its FACEPLATE (queue Q18), and it is the entry that shows
   // this list is not only about NUMBERS. All three of DestroyCard's ranges
   // already agreed with the def; what diverged was a NAME (`Decimate` on the
@@ -566,6 +579,18 @@ const RANGE_BOUND_CARDS: Readonly<Record<string, { params: readonly ParamDef[] }
  */
 const MAPPING_BOUND_CARDS: readonly string[] = [
   'AdsrCard.svelte',
+  // Enrolled with its FACEPLATE (2026-08-20), and the anchor walked it here in
+  // two steps rather than one — which is the ratchet being stricter than the
+  // author, not a detour. Facing `colourofmagic` made the card read the preview
+  // TAP NAMES off the def, so it became range-bound and the anchor demanded the
+  // RANGE_BOUND_CARDS row. That surfaced five `curve="linear"` props the curve
+  // clause could not check, because every knob here sits in an `{#each}` with a
+  // DYNAMIC `paramId={ch.bias}` and a source-level gate has no literal id to
+  // resolve. Binding the curve off the def removed the unverifiable claim — and
+  // left the card re-typing NO mapping literal either, which is this list's
+  // entry condition. Value-identical throughout: the def already declared
+  // `linear` for every bias.
+  'ColourofmagicCard.svelte',
   // Range AND mapping: every Fader reads min/max/defaultValue/label/curve off
   // the ParamDef it was derived from, so nothing is restated.
   'AttenumixCard.svelte',
