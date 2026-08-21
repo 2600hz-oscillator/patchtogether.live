@@ -90,6 +90,46 @@ export const colorizerDef: VideoModuleDef = {
     { id: 'tintB', label: 'B', defaultValue: DEFAULTS.tintB, min: 0, max: 1, curve: 'linear' },
   ],
 
+  // ── FACE (batch-22 · the video thin tail) ─────────────────────────────────
+  face: {
+    order: ['tintR', 'tintG', 'tintB'],
+
+    // ⚠ NO `pages`. Three faders for ONE idea — the tint colour — is a single
+    // honest band. A page per channel would be three headings over three
+    // controls, and even a "colour" page would be a heading over the whole
+    // module. The "never pad" half of the compact ruling.
+
+    // ⚠ FADERS, NOT KNOBS — the parity-critical declaration on this face.
+    // `ColorizerCard.svelte` draws all three with `NeonFader`, and this def's
+    // own `docs.explanation` calls them "the R/G/B faders" in the player's
+    // words. Nothing in a ParamDef separates "a level" from any other
+    // continuous scalar, so an undeclared face resolves them to KNOBS —
+    // silently substituting a dial for a throw AND making the shipped
+    // documentation describe a control that no longer exists. ⚠ Every
+    // def-reading gate is blind to both halves, because they all read this same
+    // def; that is why it is DECLARED rather than inferred.
+    paramCells: { tintR: 'fader', tintG: 'fader', tintB: 'fader' },
+
+    // ⚠ NO `bareCells`, and this is the textbook case for refusing it. `R`/`G`/`B`
+    // are the ONLY thing distinguishing three otherwise-identical faders, and
+    // there is no section heading here that conveys which channel is which.
+    // That is the tidyVco A/D/S/R side of the ruling exactly — the same call
+    // `reshaper` records for its own tint triple.
+
+    // ⚠ MANDATORY FOR A VIDEO DEF — no `type: 'audio'` output exists on this def
+    // (`out` is `video`), so `primaryAudioOutPortId` is null and any other glyph
+    // literal falls through `glyphBinding` to a dead `{kind:'static'}`, which
+    // reddens module-face-lint. The live picture comes from `hasVideoSurface`
+    // at the lane and the `fullViewBody` extension at the dock.
+    glyph: 'none',
+
+    // SCREEN ON/OFF arrives through this slot (#1928): promotion stops BOTH
+    // surfaces rendering `ColorizerCard.svelte`, which is the only route a
+    // faced video module has to the switch. See
+    // `$lib/ui/modules/colorizer/shell-extension.ts`.
+    extension: 'colorizer',
+  },
+
   docs: {
     explanation: "colorizer tints a mono (single-channel) video signal into a solid color. Each incoming pixel is reduced to a single brightness value by averaging its R, G and B channels, and that brightness then scales a tint color you set with the R/G/B faders: the output pixel is (mono x R, mono x G, mono x B). The result reads as a one-color image whose intensity follows the input's luma, so dark areas stay black and bright areas hit the full tint. Feed it a luma key, an oscilloscope-style mono shape or any video, then dial the three faders to recolor it; with no input connected the output is solid black.",
     inputs: {
