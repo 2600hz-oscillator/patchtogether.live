@@ -117,7 +117,7 @@
 
   // ── the MONITOR box + its corner drag ────────────────────────────────────
   //
-  // Floors and default come from `RUTTETRA_MONITOR_BOX` on the def — ONE source
+  // Floors and default come from `RUTTETRA_MONITOR_BOX` in `./monitor-box.ts` — ONE source
   // shared with the card — rather than re-typed here. On this surface they size
   // the PICTURE (there is no card chrome and no xyflow node to resize), which
   // is the meaning shift the def's own comment records.

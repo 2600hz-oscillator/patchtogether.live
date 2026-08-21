@@ -154,8 +154,129 @@ export const reshaperDef: VideoModuleDef = {
     { id: 'tintB',     label: 'Tint B',    defaultValue: DEFAULTS.tintB,     min: 0,  max: 1, curve: 'linear' },
   ],
 
+  // ── THE FACEPLATE ────────────────────────────────────────────────────────
+  //
+  // WHAT IT IS. RESHAPER is a CRT raster whose two SWEEPS ARE CABLES. For every
+  // output pixel it reads a horizontal coordinate from the X field and a
+  // vertical one from the Y field and samples Z there, so patching a shaped ramp
+  // into X or Y rebuilds the picture inside a deformed coordinate space. Its
+  // siblings do neighbouring things with internal generators — `ruttetra`
+  // scatters a grid into 3D relief, `monoglitch` bends a stack of drawn
+  // scanlines — and the thing only this one does is let the SAMPLING GRID come
+  // from outside. The verb is REMAP.
+  //
+  // ⚠ THE MODULE'S HEADLINE FEATURE HAS NO CONTROL ON THIS FACE, and that is
+  // correct rather than an omission. The X and Y ramps are `mono-video` INPUTS
+  // with no `ParamDef` behind them: `rampX` is `texture(uX, vUv).r` or the
+  // identity `vUv.x`, and nothing on a panel can substitute for a patched field.
+  // So the whole warp gesture lives on the REAR card, and every ranked control
+  // here is downstream of it. A face cannot rank what a def does not declare —
+  // saying so is what keeps the ladder below from reading as the module's
+  // priorities.
+  //
+  // THE TIER LADDER, MEASURED through `curatedFace` rather than inferred from
+  // `LANE_PLATE_MAX_CELLS`: mini 1 (X DISP) · compact 2 (the displacement PAIR,
+  // which is the entire luma-relief effect) · plate 2 · dock all six.
+  //
+  // ⚠ THE PLATE TIER SHOWS THE SAME TWO AS COMPACT, AND THAT SURPRISED THIS
+  // AUTHOR. `FACE_TIER_CAPS.full` is `LANE_PLATE_MAX_CELLS` = 6, but the cap is
+  // not that constant — `faceTierCap` runs `laneBodyPlan`, which fits CELLS INTO
+  // GEOMETRY, and a `fader` is a TALL cell. With the video surface taking its
+  // share, six fader columns do not fit the 3x2 plate grid and the honest answer
+  // is two. Measured identically on `monoglitch` (8 params) and `ruttetra` (12):
+  // every video fader face resolves plate = compact = 2. So there is no tier at
+  // which "most of the controls" appear between the lane tile and the dock, and
+  // a ladder sentence that implies one is wrong however plausible it reads.
+  // Pinned in `reshaper-face-model.test.ts` against the real resolver.
+  //
+  // ⚠ THE RANK-1 TIE IS BROKEN BY THE SHADER, NOT BY PREFERENCE. `xDisp` and
+  // `yDisp` are symmetric in every respect the def can express — same range,
+  // same default, same expression — so there is no ranking signal of the kind
+  // `ruttetra` has (its `yDisp` is the one param it ships off identity). The
+  // tie-break is evaluation order: `finalU` is computed before `finalV`, and the
+  // def declares `xDisp` first. That invents nothing.
+  //
+  // ⚠ EVERY PARAM SHIPS AT IDENTITY, which is worth stating because it is what
+  // makes the face scenes deterministic at rest and the module a pass-through on
+  // spawn: disp 0/0 (no displacement), intensity 1 and tints 1/1/1 (unity
+  // colour). With X/Y/Z unpatched the shader takes its mid-grey branch and
+  // paints a flat field — a pure function of params with no time term anywhere.
+  face: {
+    order: ['xDisp', 'yDisp', 'intensity', 'tintR', 'tintG', 'tintB'],
+
+    // Two pages, one per STAGE of the fragment shader that has params at all
+    // (the ramp stage has none — see above). Two bands is far below
+    // `DOCK_TAB_MIN_BANDS = 7`, so this renders as one column; six controls is
+    // under `DOCK_ROW_MAX_CONTROLS = 10`, so PF-21 packs both bands into a
+    // single row.
+    pages: [
+      {
+        id: 'warp',
+        label: 'warp',
+        hint: 'the (luma - 0.5) x disp term - how far the source\'s own brightness pushes the sampling coordinate away from the ramp. At 0/0 the lookup is the ramp itself and the module is a pass-through',
+        controls: ['xDisp', 'yDisp'],
+      },
+      {
+        id: 'colour',
+        label: 'colour',
+        hint: 'the whole of the final colour expression - the sampled pixel multiplied by the gain and the R/G/B tint, then clamped. Disjoint from the geometry above: these four move colour and nothing else',
+        controls: ['intensity', 'tintR', 'tintG', 'tintB'],
+      },
+    ],
+
+    // ⚠ MANDATORY FOR A VIDEO DEF — `primaryAudioOutPortId` needs a
+    // `type: 'audio'` output and this def has none, so any other glyph literal
+    // falls through `glyphBinding` to `{kind:'static'}` and reddens
+    // module-face-lint's dead-glyph clause. The live picture arrives from
+    // `hasVideoSurface(def)` at the lane and the `fullViewBody` extension at the
+    // dock, so assert THAT, never this declaration.
+    glyph: 'none',
+
+    // SCREEN ON/OFF, the MONITOR toggle and the corner resize all arrive through
+    // this slot (#1928 / #2009) — promotion stops both surfaces rendering
+    // `ReshaperCard.svelte`, which is their only home today.
+    extension: 'reshaper',
+
+    // ⚠ MONITOR MODE — the third of the five cards #2009 named, after `ruttetra`
+    // proved the seam and `monoglitch` inherited it. VERIFIED AGAINST THE CARD:
+    // `ReshaperCard.svelte` mounts `hideControls`, the corner resize over
+    // `resizedWidth`/`resizedHeight`, and the double-click restore. The def's
+    // `docs` describe the gesture too, but prose on a def is the thing that lies
+    // in this bug class — the card is what established it.
+    monitor: {
+      why:
+        'RESHAPER\'s output is a REMAPPED PICTURE, and the thing a player is judging is whether '
+        + 'the deformed coordinate space still reads as the source image or has folded into '
+        + 'abstraction — a question about the whole frame that no control reports. Its warp comes '
+        + 'from PATCHED FIELDS rather than from any dial here, so the working loop is patch a ramp '
+        + 'into X or Y, then LOOK: the picture is the only place the field\'s shape becomes '
+        + 'visible at all. Its docs have advertised the monitor since it shipped.',
+    },
+
+    // The card draws all six as `<NeonFader>` THROWS, and nothing in a ParamDef
+    // separates "a throw" from any other continuous scalar — so undeclared, the
+    // face would repaint every one as a dial. No param here declares `landmarks`
+    // or `options`, so unlike `ruttetra` there is no carve-out to make: a blanket
+    // `fader` deletes nothing.
+    paramCells: {
+      xDisp: 'fader', yDisp: 'fader', intensity: 'fader',
+      tintR: 'fader', tintG: 'fader', tintB: 'fader',
+    },
+
+    // ⚠ NO `bareCells`. The `colour` heading says these are the colour stage; it
+    // does NOT say which channel is which, and R/G/B are the only thing telling
+    // three otherwise-identical faders apart — the tidyVco side of that ruling.
+    //
+    // ⚠ NO `hero`, NO READOUT, NO SIDEBAR — the 2026-08-19 rulings removed the
+    // shapes. Naming the finding that lost its surface: the module is a
+    // PASS-THROUGH at its shipped defaults (disp 0/0, gain 1, tint 1/1/1), so
+    // "this module is currently doing nothing to the picture" is a real derived
+    // state a readout could have shown. It has no home now; it survives in
+    // `docs.controls`, where each entry names its identity value.
+  },
+
   docs: {
-    explanation: "RESHAPER is a coordinate-remap video processor that emulates a CRT raster scan whose horizontal and vertical sweeps are patchable instead of fixed. For every output pixel it reads a horizontal coordinate from the X field and a vertical coordinate from the Y field (the red channel of each mono-video texture), then samples the Z source video at that remapped position. With X and Y unpatched it falls back to identity ramps (screen-u, screen-v), so Z passes straight through like a normal display. Feed X/Y from shaped ramps (e.g. SHAPEDRAMPS folds, triangles, or radial fields) and the source video is rebuilt inside that deformed coordinate space — folded, mirrored, or circularised. On top of the field remap, the source's own brightness at each screen pixel pushes the lookup: luma above mid-grey lifts, below pushes back, scaled by X Disp / Y Disp — the classic Rutt/Etra \"raised terrain\" displacement. The final color is multiplied by Intensity and the R/G/B tint. Usage: patch a video into Z for a quick scanline display; drive X and/or Y from a ramp generator to warp it, or just dial X Disp / Y Disp for a luma-relief effect from Z alone. Output is a standard video texture, so chain it downstream (e.g. LINES into RESHAPER into MONOGLITCH). The card shows a live preview of the remapped output; in hide-controls mode the preview becomes a resizable screen (drag the bottom-right corner; double-click the frame to restore defaults).",
+    explanation: "RESHAPER is a coordinate-remap video processor that emulates a CRT raster scan whose horizontal and vertical sweeps are patchable instead of fixed. For every output pixel it reads a horizontal coordinate from the X field and a vertical coordinate from the Y field (the red channel of each mono-video texture), then samples the Z source video at that remapped position. With X and Y unpatched it falls back to identity ramps (screen-u, screen-v), so Z passes straight through like a normal display. Feed X/Y from shaped ramps (e.g. SHAPEDRAMPS folds, triangles, or radial fields) and the source video is rebuilt inside that deformed coordinate space — folded, mirrored, or circularised. On top of the field remap, the source's own brightness at each screen pixel pushes the lookup: luma above mid-grey lifts, below pushes back, scaled by X Disp / Y Disp — the classic Rutt/Etra \"raised terrain\" displacement. The final color is multiplied by Intensity and the R/G/B tint. Usage: patch a video into Z for a quick scanline display; drive X and/or Y from a ramp generator to warp it, or just dial X Disp / Y Disp for a luma-relief effect from Z alone. Output is a standard video texture, so chain it downstream (e.g. LINES into RESHAPER into MONOGLITCH). There is a live preview screen showing the remapped output, and two switches beside it that do opposite things: SCREEN turns the preview off to reclaim its space (the module goes on rendering either way), and MONITOR hides the control bands so the picture has the whole plate to itself - drag the bottom-right corner to size it, and click MONITOR again to bring the controls back. Either way it is a viewport only; neither changes the output resolution.",
     inputs: {
       x: "X — mono-video horizontal coordinate field. Its red channel replaces the linear horizontal scan ramp, so each output pixel reads its source u from this texture. Unpatched, it defaults to the identity ramp (no horizontal remap); patch a shaped ramp here to fold, mirror, or warp the image along X.",
       y: "Y — mono-video vertical coordinate field. Its red channel replaces the linear vertical scan ramp, supplying the source v for each output pixel. Unpatched, it defaults to the identity ramp (no vertical remap); patch a shaped ramp here to deform the image along Y.",
