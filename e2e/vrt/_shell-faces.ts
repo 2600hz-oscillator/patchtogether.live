@@ -18,6 +18,15 @@ import { expect, type Locator, type Page } from '@playwright/test';
 import { pinVrtFonts, awaitVrtFonts } from './_fonts';
 import { freezeAudioContext, readAudioClock } from './vrt-audio-freeze';
 import { settle, waitFrames } from '../_helpers/frames';
+// ⚠ IMPORTED, NOT RE-TYPED — and it is importable here for a mechanical reason
+// worth stating, because this file's header says the roster CANNOT read a live
+// def. That limit is about the module REGISTRY (`import.meta.glob`).
+// `band-focus-model.ts` is pure logic whose only imports are TYPE-ONLY, so it
+// transpiles to zero imports and loads fine in the Playwright runtime — the same
+// way `module-shell-model` already does for the platform spec. Deriving the
+// focused band set from the shipped predicate is what stops this harness from
+// growing a second, drifting copy of the rule.
+import { visibleBandIds, type BandFocusPredicate } from '../../packages/web/src/lib/ui/workflow/band-focus-model';
 
 /** The P1 migrated set (= STRICT_FACES). `pages` = the declared face.pages
  *  count the dock scene must render as labeled section bands — a per-scene
@@ -2885,8 +2894,88 @@ export async function frameMember(
   await settle(page);
 }
 
-/** Click the member's jack-rail EXPAND affordance and wait for the dock
- *  full-view to mount at the 'dock' face tier with `pages` section bands. */
+/**
+ * The member's `face.bandFocus` declaration plus the DEFAULT value of the param
+ * it keys on, read off the live registry projection. `null` for a face without
+ * the feature, which is every face but one today.
+ *
+ * The default value is the whole point: it is the state a spawned face is in,
+ * and therefore the plate the dock baseline pins.
+ */
+async function bandFocusOf(
+  page: Page,
+  memberId: string,
+): Promise<{ focus: BandFocusPredicate; defaultValue: number } | null> {
+  return page.evaluate((id) => {
+    const w = globalThis as unknown as {
+      __patch?: { nodes: Record<string, { type?: string } | undefined> };
+      __moduleSpecs?: {
+        type: string;
+        params?: { id: string; defaultValue: number }[];
+        bandFocus?: { param: string; showAllOn: number[]; bands: Record<string, number[]> };
+      }[];
+    };
+    const type = w.__patch?.nodes[id]?.type;
+    const spec = (w.__moduleSpecs ?? []).find((s) => s.type === type);
+    const focus = spec?.bandFocus;
+    if (!focus) return null;
+    const p = (spec?.params ?? []).find((q) => q.id === focus.param);
+    return p ? { focus, defaultValue: p.defaultValue } : null;
+  }, memberId);
+}
+
+/** Write one param on `memberId` through the real durable store, the way a
+ *  player's own click lands. */
+async function setFocusParam(page: Page, memberId: string, param: string, v: number): Promise<void> {
+  await page.evaluate(
+    ({ id, param, v }) => {
+      const w = globalThis as unknown as {
+        __patch: { nodes: Record<string, { params: Record<string, number> } | undefined> };
+        __ydoc: { transact: (fn: () => void) => void };
+      };
+      w.__ydoc.transact(() => {
+        const n = w.__patch.nodes[id];
+        if (n) n.params[param] = v;
+      });
+    },
+    { id: memberId, param, v },
+  );
+}
+
+/**
+ * Click the member's jack-rail EXPAND affordance and wait for the dock
+ * full-view to mount at the 'dock' face tier with `pages` section bands.
+ *
+ * ── BAND FOCUS, AND WHY THE BASELINE PINS THE *FOCUSED* PLATE ──────────────
+ *
+ * A face declaring `face.bandFocus` renders only the bands its focus param's
+ * current value reveals, and `colourofmagic` — the first adopter — DEFAULTS to a
+ * focused value: five declared bands, one on the plate. MEASURED: this function
+ * aborted the whole capture at `toHaveCount(5)` / received 1, so the branch's
+ * own dock baseline could never be rewritten (run 32433398192 failed with zero
+ * commits).
+ *
+ * Two things were true at once and both are kept:
+ *
+ *   1. `pages` is a REAL STRUCTURAL GATE — a dropped band must fail before the
+ *      pixel pin, and weakening it to "however many rendered" would delete that.
+ *      So the face is driven to its declared SHOW-ALL value and the full count is
+ *      asserted there, unchanged, with `pages` still meaning what the roster says.
+ *
+ *   2. ⚠ THE PNG MUST PIN THE DEFAULT, NOT SHOW-ALL. Capturing the show-all
+ *      plate would make this baseline BLIND to the feature it ships beside: if
+ *      band focus regressed to "always show everything", a show-all capture is
+ *      pixel-identical and the gate says nothing, while the DEFAULT capture moves
+ *      the moment the other four bands come back. It is also simply what the
+ *      player is handed (owner, 2026-08-20: rgb by default; everything only on
+ *      an explicit PASS). So the value is restored before the capture.
+ *
+ * The restored expectation is DERIVED TWICE OVER rather than typed: the band ids
+ * are read off the DOM at show-all, and which of them survive is decided by
+ * `visibleBandIds` — the predicate the shell itself renders through. Asserted as
+ * the ID LIST, not a count, so a plate showing the right NUMBER of the wrong
+ * bands is red.
+ */
 export async function openDock(page: Page, memberId: string, pages: number): Promise<Locator> {
   await page
     .locator(`.svelte-flow__node[data-id="${memberId}"] [data-testid="module-shell"]`)
@@ -2898,7 +2987,62 @@ export async function openDock(page: Page, memberId: string, pages: number): Pro
   // The migrated shell mounts at the 'dock' face tier with its curated
   // SECTION BANDS — one per declared face page.
   await expect(faceplate.locator('[data-testid="module-shell"][data-shell-tier="dock"]')).toBeVisible();
-  await expect(faceplate.locator('[data-testid="face-page"]')).toHaveCount(pages);
+
+  const bands = faceplate.locator('[data-testid="face-page"]');
+  const focused = await bandFocusOf(page, memberId);
+  if (!focused) {
+    await expect(bands).toHaveCount(pages);
+  } else {
+    const { focus, defaultValue } = focused;
+    const showAll = focus.showAllOn[0];
+    expect(
+      showAll,
+      `${memberId}: declares bandFocus with an EMPTY showAllOn — no value shows the whole face, ` +
+        `so the roster's structural band gate could never run`,
+    ).not.toBeUndefined();
+
+    await setFocusParam(page, memberId, focus.param, showAll!);
+    await expect(
+      bands,
+      `at the declared show-all value (${focus.param}=${showAll}) every declared band must render ` +
+        `— this is the roster's structural gate and band focus does not excuse a dropped band`,
+    ).toHaveCount(pages);
+    const allIds = await bands.evaluateAll((els) =>
+      els.map((e) => e.getAttribute('data-face-page') ?? '?'),
+    );
+
+    await setFocusParam(page, memberId, focus.param, defaultValue);
+    const visible = visibleBandIds(focus, defaultValue);
+    expect(
+      visible,
+      `the DEFAULT value (${focus.param}=${defaultValue}) is a show-all value, so this face has ` +
+        `no focused resting state and the baseline below would be blind to band focus regressing`,
+    ).not.toBeNull();
+    const want = allIds.filter((id) => visible!.has(id));
+    expect(
+      want.length,
+      `no declared band survives the default value (${focus.param}=${defaultValue}) — the ` +
+        `baseline would pin an EMPTY plate`,
+    ).toBeGreaterThan(0);
+    expect(
+      want.length,
+      `the default value (${focus.param}=${defaultValue}) reveals all ${pages} bands, so the ` +
+        `capture below cannot tell focused from unfocused`,
+    ).toBeLessThan(pages);
+    await expect
+      .poll(
+        async () => (await bands.evaluateAll((els) =>
+          els.map((e) => e.getAttribute('data-face-page') ?? '?'),
+        )).join(','),
+        {
+          message:
+            `back at the default (${focus.param}=${defaultValue}) the plate must hold exactly the ` +
+            `focused bands — the PNG pins THIS state, so that the baseline moves if focus stops ` +
+            `hiding the others`,
+        },
+      )
+      .toBe(want.join(','));
+  }
   await settle(page);
   return faceplate;
 }

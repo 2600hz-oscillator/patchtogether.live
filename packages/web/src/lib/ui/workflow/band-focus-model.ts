@@ -42,6 +42,22 @@ export type { FaceBandFocus } from '$lib/graph/types';
 import type { FaceBandFocus } from '$lib/graph/types';
 
 /**
+ * The half of the declaration the PREDICATE reads — everything except `why`.
+ *
+ * ⚠ THIS IS THE TYPE `visibleBandIds` TAKES, and saying so in the signature
+ * rather than only in prose is the point. `face-resting-text-source.test.ts`
+ * already asserts the shell cannot reach `bandFocus.why` and explains it with
+ * exactly this sentence ("the shell needs only the PREDICATE"); a parameter
+ * typed as the whole `FaceBandFocus` quietly disagreed with that.
+ *
+ * It also has a second consumer that is not a nicety: the `__moduleSpecs`
+ * projection publishes the predicate WITHOUT `why` (prose has no business on a
+ * runtime projection), so a test harness reading a live declaration can pass it
+ * straight in instead of casting or fabricating an empty argument.
+ */
+export type BandFocusPredicate = Pick<FaceBandFocus, 'param' | 'showAllOn' | 'bands'>;
+
+/**
  * Which bands are visible at `value`.
  *
  * Returns `null` for "ALL BANDS" rather than a set containing everything,
@@ -51,7 +67,7 @@ import type { FaceBandFocus } from '$lib/graph/types';
  * treat a missing declaration as `null` therefore degrade to today's behaviour.
  */
 export function visibleBandIds(
-  focus: FaceBandFocus | undefined,
+  focus: BandFocusPredicate | undefined,
   value: number | undefined,
 ): ReadonlySet<string> | null {
   if (!focus) return null;

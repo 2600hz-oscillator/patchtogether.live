@@ -58,6 +58,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { idsCoveredBy, paramsCoveredByCell } from './support/cell-coverage';
 import { spawnPatch } from './_helpers';
+import { showAllBands, type BandFocusDecl } from './_band-focus';
 import { FACE_QUIESCE } from './_face-quiesce';
 import { STRICT_FACES } from '../../packages/web/src/lib/ui/workflow/strict-faces';
 // The COLOUR probe's "pick a different one" + its formatter, imported from the
@@ -135,55 +136,27 @@ interface SpecShape {
   noUserControl?: string[];
   strictFace?: boolean;
   /** `face.bandFocus` — the param whose value decides which bands render. See
-   *  `showAllBands` below for why this sweep needs it. */
-  bandFocus?: { param: string; showAllOn: number[]; bands: Record<string, number[]> };
+   *  `_band-focus.ts` for why this sweep needs it. */
+  bandFocus?: BandFocusDecl;
 }
 
 /**
- * Drive a BAND-FOCUSED face into its show-all state before the parity read.
+ * ⚠ `showAllBands` MOVED TO `./_band-focus.ts` and is IMPORTED above.
  *
- * ⚠ WITHOUT THIS THE SWEEP IS WRONG, NOT MERELY WEAK — and the direction is
- * worth stating because the usual hazard here is the opposite one. This test
- * asserts the dock's control set EQUALS the def's param set. A face that hides
- * bands renders FEWER controls at most values, so the assertion would FAIL on a
+ * It lived here first, because this was the first sweep band focus broke. It is
+ * not the only one: PF-20's annotation sweep (`faceplate-platform.spec.ts`) went
+ * RED the same way — `declared 5, received 1` band hints — because every
+ * registry-driven face sweep measures the whole face against what the def
+ * declares, and a focused face renders less of it. Two copies of the drive would
+ * have been two things to keep in step with the declaration's shape, so there is
+ * one export site and both sweeps import it.
+ *
+ * WHY THIS SWEEP NEEDS IT, kept here at the subject: this test asserts the
+ * dock's control set EQUALS the def's param set. A face that hides bands renders
+ * FEWER controls at most values, so the assertion would FAIL on a
  * correctly-working module. It does not go vacuous; it goes red for the wrong
- * reason.
- *
- * So the sweep opens the face at a value the def declares as show-all, which is
- * the one state where "every param renders exactly one cell" is the intended
- * behaviour. The value is DECLARED, never guessed: a face that hides bands has
- * nothing in the DOM to derive it from, because the hidden bands leave nothing
- * behind to read.
- *
- * ⚠ AND IT MUST NOT SILENTLY NO-OP. Proving the controls are all reachable at
- * show-all says nothing about whether the feature does anything at all — that is
- * the companion leg (`hides every other band…`), which drives a FOCUSED value
- * and asserts the other bands are genuinely gone. The two together are the
- * claim; either alone is satisfied by a face that ignores its own declaration.
+ * reason. The companion half — that the hiding is REAL — is §4 below.
  */
-async function showAllBands(page: Page, nodeId: string, spec: SpecShape): Promise<void> {
-  const focus = spec.bandFocus;
-  if (!focus) return; // faces without the feature are untouched
-  const value = focus.showAllOn[0];
-  expect(
-    value,
-    `${spec.type}: declares bandFocus with an EMPTY showAllOn — there would be no state in ` +
-      `which a player can reach every control`,
-  ).not.toBeUndefined();
-  await page.evaluate(
-    ({ id, param, v }) => {
-      const w = globalThis as unknown as {
-        __patch: { nodes: Record<string, { params: Record<string, number> } | undefined> };
-        __ydoc: { transact: (fn: () => void) => void };
-      };
-      w.__ydoc.transact(() => {
-        const n = w.__patch.nodes[id];
-        if (n) n.params[param] = v;
-      });
-    },
-    { id: nodeId, param: focus.param, v: value! },
-  );
-}
 
 /** The shell's per-cell interaction contract (`data-cell-control`).
  *
