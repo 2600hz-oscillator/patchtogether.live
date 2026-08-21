@@ -68,10 +68,25 @@ const KiB = 1024;
 // as the platform granting it, and believing this line is part of why the
 // overshoot was a surprise.
 const CEILING_KIB = 3 * 1024;
-// The headroom the diet bought (see perf/ssr-worker-diet). Ratcheted DOWNWARD
-// only: if a change needs more than this, that is a decision to make out loud,
-// not a number to bump quietly.
-const BUDGET_KIB = 2700;
+// The headroom the diet bought. Ratcheted DOWNWARD only: if a change needs more
+// than this, that is a decision to make out loud, not a number to bump quietly.
+//
+// ⚠ LOWERED 2700 → 630 (#2088), and the ratchet is what demanded it. Taking the
+// `<Canvas>` edge out of the SSR graph dropped the Worker to 470.93 KiB
+// gzipped, which left 2229 KiB of UNCLAIMED SLACK under the old budget — far
+// past the 400 KiB the slack leg allows, so `--check` failed until this number
+// came down with the win. That is the mechanism working exactly as intended:
+// slack nobody claims is slack that silently absorbs the next regression, so a
+// win is only banked when the budget moves with it.
+//
+// The value is the script's own suggestion (`gzip + 150`, rounded up to 10),
+// not a hand-picked figure. ~159 KiB of headroom over the measured bundle.
+//
+// Measured progression, all via wrangler's own gzip figure:
+//   main, before anything      3249.34 KiB   (177.34 OVER the 3072 ceiling)
+//   + SSR build minified       2595.39 KiB
+//   + <Canvas> out of SSR       470.93 KiB   (15.3 % of the ceiling)
+const BUDGET_KIB = 630;
 
 if (!fs.existsSync(ENTRY)) {
   console.error(`no _worker.js at ${ENTRY} — run \`task build:web\` first`);
