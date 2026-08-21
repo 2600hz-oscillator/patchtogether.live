@@ -170,6 +170,116 @@ export function expectedMap(
   }) as unknown as Rgb01;
 }
 
+// ── Whole-graph fold (graph-structure-through-pixels, #2070 migration) ──────
+//
+// Evaluate a rolled combine graph over FIXTURE-FLAT layers to ONE exact
+// color: sources resolve to their flat params, 2-input blends apply the op
+// math above, and spatial 1-input ops (tile/mirror) are IDENTITY on a
+// uniform field. Returns null when the graph contains anything it cannot
+// compute — the caller treats that as "re-pin the seed", never as a pass.
+
+const glslSmoothstep = (e0: number, e1: number, x: number): number => {
+  const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0)));
+  return t * t * (3 - 2 * t);
+};
+
+/** LUMAKEY (uOp 1) for OPAQUE flats: keep = smoothstep(a-soft, a+soft+1e-4,
+ *  luma(top)), inverted when invert > 0.5; out = mix(base, top, keep). */
+export function expectedLumakey(
+  base: Rgb01,
+  top: Rgb01,
+  amount: number,
+  soft: number,
+  invert: number,
+): Rgb01 {
+  const a = Math.min(1, Math.max(0, amount));
+  const s = Math.max(0, soft);
+  const l = 0.299 * top[0]! + 0.587 * top[1]! + 0.114 * top[2]!;
+  let keep = glslSmoothstep(a - s, a + s + 0.0001, l);
+  if (invert > 0.5) keep = 1 - keep;
+  return [0, 1, 2].map((i) => base[i]! + (top[i]! - base[i]!) * keep) as unknown as Rgb01;
+}
+
+interface FoldNode {
+  id: string;
+  kind: string;
+  layer?: number;
+  params?: Record<string, number>;
+}
+interface FoldEdge {
+  from: string;
+  to: string;
+  toPort: string;
+}
+
+/**
+ * Fold a combine graph over flat layers to the exact OUT color, or null when
+ * any wired layer is not a FIX_FLAT or any op is outside the computable set.
+ * `layers` is the applied blob's layer array (flat colors read off each
+ * layer's own params — DERIVED from the artifact, never hand-typed).
+ */
+export function foldComputableGraph(
+  combine: { nodes: FoldNode[]; edges: FoldEdge[] },
+  layers: Array<{ kind: string; contentId?: string | null; params?: Record<string, number> }>,
+): Rgb01 | null {
+  const byId = new Map(combine.nodes.map((n) => [n.id, n] as const));
+  const memo = new Map<string, Rgb01 | null>();
+  const evalNode = (id: string, stack: Set<string>): Rgb01 | null => {
+    if (memo.has(id)) return memo.get(id)!;
+    if (stack.has(id)) return null; // same-frame cycle — not computable
+    stack.add(id);
+    const n = byId.get(id);
+    let out: Rgb01 | null = null;
+    if (!n) out = null;
+    else if (n.kind === 'source') {
+      const layer = layers[n.layer ?? -1];
+      if (layer && layer.kind === 'gen' && layer.contentId === FIX_FLAT.id) {
+        const p = layer.params ?? {};
+        out = [p.fr ?? 1, p.fg ?? 0, p.fb ?? 0];
+      } else out = null;
+    } else {
+      const inbound = combine.edges.filter((e) => e.to === id);
+      const inAt = (port: string): Rgb01 | null => {
+        const e = inbound.find((x) => x.toPort === port);
+        return e ? evalNode(e.from, stack) : null;
+      };
+      const p = n.params ?? {};
+      if (n.kind === 'output') {
+        out = inAt('in0');
+      } else if (n.kind === 'tile' || n.kind === 'mirror') {
+        // spatial rearrangement of a UNIFORM field is identity
+        out = inAt('in0');
+      } else if (n.kind === 'fade' || n.kind === 'over') {
+        const b = inAt('in0');
+        const t = inAt('in1');
+        out = b && t ? expectedFade(b, t, p.amount ?? 1) : null;
+      } else if (n.kind === 'map') {
+        const b = inAt('in0');
+        const t = inAt('in1');
+        out =
+          b && t
+            ? expectedMap(b, t, p.amount ?? 1, (p.mode ?? 0) > 0.5 ? 'screen' : 'multiply')
+            : null;
+      } else if (n.kind === 'lumakey') {
+        const b = inAt('in0');
+        const t = inAt('in1');
+        out = b && t ? expectedLumakey(b, t, p.amount ?? 0.5, p.soft ?? 0.1, p.invert ?? 0) : null;
+      } else {
+        out = null; // non-computable op kind — caller re-pins the seed
+      }
+    }
+    stack.delete(id);
+    memo.set(id, out);
+    return out;
+  };
+  const outNode = combine.nodes.find((n) => n.kind === 'output');
+  return outNode ? evalNode(outNode.id, new Set()) : null;
+}
+
+/** Per-channel tolerance for a CHAINED fold (two+ ops, one RGBA8 store per
+ *  intermediate FBO), canvas bytes. */
+export const CHAIN_TOLERANCE = 5;
+
 /** 0..1 → 0..255 (the canvas byte the probe reads). */
 export function toBytes(c: Rgb01): [number, number, number] {
   return [Math.round(c[0]! * 255), Math.round(c[1]! * 255), Math.round(c[2]! * 255)];

@@ -21,161 +21,26 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { test, expect, type Page } from '@playwright/test';
-import { spawnPatch } from './_helpers';
+import { test, expect } from '@playwright/test';
 import {
   FIX_FLAT,
   FIX_FRAG_INVERT,
   FIX_GRADIENT,
   FLAT_TOLERANCE,
   GRADIENT_TOLERANCE,
-  TOYBOX_FIXTURE_PACK,
   expectedFade,
-  toBytes,
   type Rgb01,
 } from '../_fixtures/toybox-fixture-shaders';
-
-type G = {
-  __toyboxRegisterFixtureContent?: (
-    entries: unknown[],
-  ) => Promise<Array<{ id: string; ok: boolean; errors: unknown[] }>>;
-  __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
-  __ydoc: { transact: (fn: () => void) => void };
-};
-
-/** Spawn a lone TOYBOX and register the fixture pack through the harness
- *  hook. EVERY entry must validate through the real compile probe — a
- *  broken fixture fails here, per entry, with its compiler diagnostics. */
-async function spawnWithFixtures(page: Page): Promise<void> {
-  await page.goto('/rack?shell=legacy&seed=none');
-  await page.waitForLoadState('networkidle');
-  await spawnPatch(page, [{ id: 'tb', type: 'toybox', position: { x: 420, y: 40 }, domain: 'video' }]);
-  await page.locator('.svelte-flow__node-toybox').first().waitFor({ state: 'visible', timeout: 10_000 });
-  await expect
-    .poll(() => page.evaluate(() => typeof (globalThis as unknown as G).__toyboxRegisterFixtureContent), {
-      message: '__toyboxRegisterFixtureContent hook must be installed (+layout, VITE_E2E_HOOKS build)',
-    })
-    .toBe('function');
-  const results = await page.evaluate(
-    (pack) => (globalThis as unknown as G).__toyboxRegisterFixtureContent!(pack),
-    TOYBOX_FIXTURE_PACK as unknown as unknown[],
-  );
-  // Derived membership over the pack — iterate it, no counts.
-  for (const fix of TOYBOX_FIXTURE_PACK) {
-    const r = results.find((x) => x.id === fix.id);
-    expect(r, `fixture ${fix.id} must be in the registration report`).toBeTruthy();
-    expect(r!.ok, `fixture ${fix.id} must COMPILE (diagnostics: ${JSON.stringify(r!.errors)})`).toBe(true);
-  }
-}
-
-/** Write layers + a combine graph in one transact (the toybox-video-inputs
- *  data-seed shape). */
-async function seedPatch(
-  page: Page,
-  layers: Array<Record<string, unknown>>,
-  combine: Record<string, unknown>,
-): Promise<void> {
-  await page.evaluate(
-    ({ layers, combine }) => {
-      const g = globalThis as unknown as G;
-      g.__ydoc.transact(() => {
-        const n = g.__patch.nodes['tb'];
-        if (!n) return;
-        if (!n.data) n.data = {};
-        (n.data as Record<string, unknown>).layers = layers;
-        (n.data as Record<string, unknown>).combine = combine;
-      });
-    },
-    { layers, combine },
-  );
-}
-
-const OFF = { kind: 'off', contentId: null, params: {} };
-const SRC_NODES = [
-  { id: 'src0', kind: 'source', layer: 0, x: 14, y: 14 },
-  { id: 'src1', kind: 'source', layer: 1, x: 14, y: 66 },
-  { id: 'src2', kind: 'source', layer: 2, x: 14, y: 118 },
-  { id: 'src3', kind: 'source', layer: 3, x: 14, y: 170 },
-];
-const OUT_NODE = { id: 'out', kind: 'output', x: 286, y: 66 };
-
-/** Pass layer `i` straight to OUT. */
-const passThrough = (i: number) => ({
-  nodes: [...SRC_NODES, OUT_NODE],
-  edges: [{ id: 'e1', from: `src${i}`, to: 'out', toPort: 'in0' }],
-});
-
-/** Fold src0+src1 through one FADE at `amount` into OUT. */
-const fadeGraph = (amount: number) => ({
-  nodes: [...SRC_NODES, { id: 'op1', kind: 'fade', x: 120, y: 40, params: { amount } }, OUT_NODE],
-  edges: [
-    { id: 'e1', from: 'src0', to: 'op1', toPort: 'in0' },
-    { id: 'e2', from: 'src1', to: 'op1', toPort: 'in1' },
-    { id: 'e3', from: 'op1', to: 'out', toPort: 'in0' },
-  ],
-});
-
-/**
- * Sample the preview canvas at PROPORTIONAL coords (fx, fy in 0..1, canvas
- * top-left origin), polled IN PAGE until the pixel is within `tol` of
- * `expected` (tolerates async GLSL fetch+compile), reporting the last pixel
- * seen WITH UNITS on failure. The canvas aspect equals the engine aspect
- * (CANVAS_H is derived from ENGINE_W/H), so proportional coords map straight
- * onto engine UV with no letterbox.
- */
-async function expectPixel(
-  page: Page,
-  fx: number,
-  fy: number,
-  expected: Rgb01,
-  tol: number,
-  label: string,
-): Promise<void> {
-  const want = toBytes(expected);
-  try {
-    await page.waitForFunction(
-      ({ fx, fy, want, tol }) => {
-        const c = document.querySelector('[data-testid="toybox-canvas"]') as HTMLCanvasElement | null;
-        if (!c) return false;
-        const c2d = c.getContext('2d');
-        if (!c2d) return false;
-        const x = Math.min(c.width - 1, Math.round(fx * c.width));
-        const y = Math.min(c.height - 1, Math.round(fy * c.height));
-        const { data } = c2d.getImageData(x, y, 1, 1);
-        const w = globalThis as unknown as { __fixPixel?: number[] };
-        w.__fixPixel = [data[0]!, data[1]!, data[2]!];
-        return (
-          Math.abs(data[0]! - want[0]!) <= tol &&
-          Math.abs(data[1]! - want[1]!) <= tol &&
-          Math.abs(data[2]! - want[2]!) <= tol
-        );
-      },
-      { fx, fy, want, tol },
-      { timeout: 20_000 },
-    );
-  } catch (err) {
-    const got = await page
-      .evaluate(() => (globalThis as unknown as { __fixPixel?: number[] }).__fixPixel)
-      .catch(() => undefined);
-    throw new Error(
-      `${label}: pixel at (${fx}, ${fy} of canvas) expected rgb(${want.join(',')}) ±${tol} ` +
-        `but last saw rgb(${(got ?? []).join(',')}) — units: canvas bytes 0..255`,
-      { cause: err },
-    );
-  }
-}
-
-async function waitFramesInPage(page: Page, n: number): Promise<void> {
-  await page.evaluate(
-    (n) =>
-      new Promise<void>((r) => {
-        let i = 0;
-        const t = () => (++i >= n ? r() : requestAnimationFrame(t));
-        requestAnimationFrame(t);
-      }),
-    n,
-  );
-}
+import {
+  OFF,
+  expectPixel,
+  fadeGraph,
+  passThrough,
+  seedPatch,
+  spawnWithFixtures,
+  waitFramesInPage,
+  type FixtureG,
+} from './_toybox-fixture-helpers';
 
 const RED: Rgb01 = [1, 0, 0];
 const GREEN: Rgb01 = [0, 1, 0];
@@ -275,6 +140,10 @@ test.describe('toybox fixture mechanism — heavy proofs', () => {
     const FIXTURE_MARKERS = [
       // the registration seam — presence means the file mutates the roll pools
       '__toybox' + 'RegisterFixtureContent',
+      // the shared helper that CALLS the seam (_toybox-fixture-helpers.ts):
+      // without this, extracting the call into a helper would launder the
+      // marker out of the gate's sight — an importer registers just the same
+      'spawn' + 'WithFixtures',
     ];
     const CURATION_MARKERS = [
       // the perceptual liveness floor — measures REAL content brightness
@@ -324,7 +193,7 @@ test.describe('toybox fixture mechanism — heavy proofs', () => {
     await page.goto('/rack?shell=legacy&seed=none');
     await page.waitForLoadState('networkidle');
     await expect
-      .poll(() => page.evaluate(() => typeof (globalThis as unknown as G).__toyboxRegisterFixtureContent))
+      .poll(() => page.evaluate(() => typeof (globalThis as unknown as FixtureG).__toyboxRegisterFixtureContent))
       .toBe('function');
     const broken = {
       id: 'e2e-fix-broken',
@@ -335,7 +204,7 @@ test.describe('toybox fixture mechanism — heavy proofs', () => {
       glsl: 'data:text/plain;charset=utf-8,' + encodeURIComponent('void mainImage(out vec4 c, in vec2 p) { c = THIS_DOES_NOT_COMPILE; }'),
     };
     const results = await page.evaluate(
-      (b) => (globalThis as unknown as G).__toyboxRegisterFixtureContent!([b]),
+      (b) => (globalThis as unknown as FixtureG).__toyboxRegisterFixtureContent!([b]),
       broken,
     );
     expect(results[0]!.ok, 'a non-compiling fixture must be refused').toBe(false);
