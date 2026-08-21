@@ -188,19 +188,26 @@ export const monoglitchDef: VideoModuleDef = {
   // the thing only this one does is a PER-LINE vertical bend with a phosphor
   // tint. The verb a player performs is LIFT.
   //
-  // THE TIER LADDER, read back as a sentence: at mini you get Z, the luma->lift
-  // scale that IS the effect (at 0 the module is an inert flat line-stack); at
-  // compact, Z and LINES — how hard the picture bends the stack, and how many
-  // lines there are to bend; at plate, GAP and the two pan ramps join them; the
-  // phosphor triple is dock-only.
+  // THE TIER LADDER, MEASURED through `curatedFace`: mini 1 (Z, the luma->lift
+  // scale that IS the effect — at 0 the module is an inert flat line-stack) ·
+  // compact 2 (Z and LINES: how hard the picture bends the stack, and how many
+  // lines there are to bend) · plate 2 · dock all eight.
   //
-  // ⚠ THE PLATE BOUNDARY FALLS INSIDE THE TINT TRIPLE, and the rank is NOT
-  // distorted to avoid it. `LANE_PLATE_MAX_CELLS` is 6 and this module has
-  // exactly five geometry params, so the sixth slot is a tint whatever order is
-  // authored — there is no arrangement that keeps R/G/B whole below the dock.
-  // Promoting a pan offset over the module's colour to tidy the boundary would
-  // rank a default-0, CV-driven convenience above a control that is always
-  // live, which is a worse claim than showing one channel of three.
+  // ⚠ THIS PARAGRAPH WAS WRONG WHEN THIS FACE MERGED, AND IS CORRECTED HERE
+  // (#2085). It read "at plate, GAP and the two pan ramps join them; the
+  // phosphor triple is dock-only", and argued at length that the plate boundary
+  // falls INSIDE the tint triple because `LANE_PLATE_MAX_CELLS` is 6 against
+  // five geometry params. Both claims are false. The cap is NOT that constant:
+  // `faceTierCap` runs `laneBodyPlan`, which fits CELLS INTO GEOMETRY, and a
+  // `fader` is a TALL cell — so with the video surface taking its share the
+  // plate resolves to TWO, not six, and no tint ever reaches it. Measured
+  // identically on `reshaper` (6 params) and `ruttetra` (12): every video fader
+  // face resolves plate = compact = 2.
+  //
+  // The RANK is unaffected and unchanged — the tint triple still sorts last
+  // because colour is the least load-bearing thing here. What was wrong was the
+  // description of where the tiers cut, which is exactly the kind of plausible,
+  // unverifiable-by-reading sentence that survives review.
   //
   // ⚠ ORDER AND PAGES DISAGREE, deliberately. `order` is PRIORITY (what the
   // tiers showing a subset choose); `pages` is SIGNAL ORDER (how the shader

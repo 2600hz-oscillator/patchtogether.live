@@ -1977,6 +1977,53 @@ export const FACES = [
       + 'is identical frame to frame by construction. With nothing patched `uHasInput` is 0 and '
       + 'the shader paints a fixed dark-navy idle gradient.',
   },
+  // RESHAPER (2026-08-21) — the coordinate-remap processor, and the THIRD
+  // adopter of MONITOR MODE after `ruttetra` proved the seam and `monoglitch`
+  // inherited it.
+  //
+  // `pages: 2` is both the declared count and the POST-HERO-SPLIT count: this
+  // face declares NO `hero`, so `heroFacePlan` promotes nothing and empties no
+  // band. Two bands — warp / colour, the two shader stages that HAVE params —
+  // sit far below `DOCK_TAB_MIN_BANDS = 7`, so the dock scene frames a column;
+  // six controls is under `DOCK_ROW_MAX_CONTROLS = 10`, so PF-21 packs both
+  // bands into a single row.
+  //
+  // ⚠ THE EASIEST DETERMINISM CASE IN THE VIDEO BANK, and it is worth saying why
+  // rather than leaving the absence of `simPin` to look like an oversight.
+  // `FRAG_SRC` declares no time uniform, no ping-pong, no accumulator and no
+  // RNG — the output is a pure function of (X, Y, Z, params). `bootWithFace`
+  // patches nothing, so all three samplers take their `uHas* < 0.5` branch: the
+  // ramps fall back to the IDENTITY `vUv.x`/`vUv.y` and the source resolves to a
+  // constant `vec3(0.5)`, painting a flat mid-grey field multiplied by the unity
+  // tint. Every param also ships AT IDENTITY (disp 0/0, gain 1, tint 1/1/1), so
+  // the scene is byte-stable by construction rather than by a flag.
+  //
+  // Corroborated independently: `vrt-live-surfaces.ts` records this module
+  // measured at "10/10 processes PASS — no mask" for its CARD scene.
+  //
+  // ⚠ WHAT THESE TWO SCENES CAPTURE AT REST IS MONITOR MODE **OFF**, the only
+  // honest resting state — `hideControls` is a per-NODE runtime key and
+  // `bootWithFace` spawns a fresh node, so it is absent ⇒ false ⇒ controls
+  // showing. The suppression is proven in the unit lane (`faceMonitorPlan`) and
+  // in the faced leg of `video-hide-controls.spec.ts`, which is the only thing
+  // that can see the bands actually leave.
+  {
+    type: 'reshaper',
+    pages: 2,
+    videoFaceWhy:
+      'a VIDEO module, so it must boot into the video zone rather than a mixer channel column — '
+      + 'without this field bootWithFace waits out the full 90 s test timeout for a column '
+      + 'membership a video node never acquires. Both scenes also carry a live picture: the '
+      + 'compact tile paints a VideoTileThumb through hasVideoSurface, and the dock body is the '
+      + "module's own fullViewBody extension — the preview canvas plus the MONITOR toggle that "
+      + 'hides the control bands, its corner resize, and a SCREEN ON/OFF switch (which a faced '
+      + 'video module can only reach through that slot — #1928). The freeze write itself is a '
+      + 'NO-OP on this def — it declares no `freeze` param — and that is deliberate rather than '
+      + 'an omission: there is no time uniform, ping-pong, accumulator or RNG in FRAG_SRC, so the '
+      + 'render is a pure function of (X, Y, Z, params). With nothing patched the ramps fall back '
+      + 'to identity and the source resolves to a constant mid-grey, so the picture is a flat '
+      + 'field that is identical on every frame.',
+  },
 ] as const;
 
 /** TIGHT per-scene diff budgets (absolute pixels; Playwright takes the MIN of

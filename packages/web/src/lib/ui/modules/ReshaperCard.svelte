@@ -14,6 +14,9 @@
   import { patch } from '$lib/graph/store';
   import { setNodeParam } from '$lib/graph/mutate';
   import { reshaperDef } from '$lib/video/modules/reshaper';
+  // ONE source, shared with the faced dock body. Co-located under `ui/` rather
+  // than on the def so it stays out of the WebGL attest basis — see that file.
+  import { RESHAPER_MONITOR_BOX } from './reshaper/monitor-box';
   import { startCornerResize } from './card-resize';
   import type { VideoEngine } from '$lib/video/engine';
   import { VIDEO_RES } from '$lib/video/engine';
@@ -53,13 +56,17 @@
   // Hide-controls (video-only resizable) defaults. Min keeps the canvas
   // legible at small zoom. Rounded to whole-u (180px) rack tiles (#759) so
   // default + min land on the grid; user-resizable so the rack CSS doesn't clamp.
-  const MIN_WIDTH = 360;
-  const MIN_HEIGHT = 180;
-  const DEFAULT_WIDTH = 360;
-  const DEFAULT_HEIGHT = 360;
+  // ⚠ THE MONITOR BOX IS SHARED WITH THE FACED DOCK BODY, not typed here. Both
+  // surfaces read and write the same `node.data.resizedWidth`/`resizedHeight`
+  // keys, so a constant re-typed on two surfaces is one that will disagree on
+  // one of them with nothing at runtime able to see it (the backdraft class).
+  const MIN_WIDTH = RESHAPER_MONITOR_BOX.minW;
+  const MIN_HEIGHT = RESHAPER_MONITOR_BOX.minH;
+  const DEFAULT_WIDTH = RESHAPER_MONITOR_BOX.defW;
+  const DEFAULT_HEIGHT = RESHAPER_MONITOR_BOX.defH;
   // Letterbox padding when in hide-controls mode (matches VideoOut).
-  const HEADER_PX = 56;
-  const PAD_PX = 20;
+  const HEADER_PX = RESHAPER_MONITOR_BOX.headerPx;
+  const PAD_PX = RESHAPER_MONITOR_BOX.padPx;
 
   let hideControls = $derived<boolean>(
     Boolean(node?.data?.hideControls),
