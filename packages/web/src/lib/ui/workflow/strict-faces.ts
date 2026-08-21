@@ -2897,6 +2897,77 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // module is a PASS-THROUGH at its shipped defaults, which is a real derived
   // state that no longer has anywhere to be shown.
   'reshaper',
+
+  // FACE BATCH 19 · milkdrop (2026-08-21) — 8 params (4 of them CV-only), 2
+  // pages, no rail. The Winamp-era preset visualizer as a CV-instrumented video
+  // SOURCE: butterchurn drives nearly all preset motion from three audio
+  // scalars, and the thing only this module does is let a CABLE REPLACE any of
+  // them, so a patched LFO becomes "the bass" while it is connected.
+  //
+  // ⚠ THIS FACE REQUIRED A PLATFORM CHANGE, AND IT IS THE ONLY ONE IN THE WAVE
+  // THAT DID. `workflow-shell-faces.spec.ts` asserts SET EQUALITY between
+  // `STRICT_FACES` and the `FACES` VRT roster, so before this PR a module could
+  // be promoted only if two pixel-stable scenes could be captured for it.
+  // butterchurn cannot produce them — MEASURED, not asserted: it is
+  // frame-count dependent (mean 41.69 at 16 steps vs 59.61 eight steps later)
+  // AND not reproducible across boots at an IDENTICAL frame count (framesDelta
+  // 16 both times; means 41.690592 vs 42.132087, with boot 1 itself moving
+  // between probe runs). `simPin` pins a CLOCK and cannot reach either cause:
+  // the warp mesh samples the previous frame (intrinsic to the Milkdrop format)
+  // and the RNG lives inside the library, which `project_milkdrop_module`
+  // forbids vendoring under `lib/video/`. So the roster gained a NAMED, ANCHORED
+  // exemption — `FACES_WITHOUT_SCENES` — carrying that measurement in its `why`.
+  // #2083.
+  //
+  // ⚠ THE EXEMPTION IS NOT A DISCOUNT, AND THE COST IS REAL: this face's PIXELS
+  // ARE NEVER COMPARED, at either tier. A layout regression here reaches a human
+  // before it reaches a gate. That is why the exemption type demands
+  // `coveredBy`, why those paths are asserted to exist, and why the entry is
+  // re-validated four ways (still faced · still absent from FACES · no baseline
+  // on disk · no determinism seam on the def) rather than being a permission
+  // that outlives its argument.
+  //
+  // ⚠ AND IT EXTENDS AN OWNER-ACCEPTED PATTERN RATHER THAN INVENTING POLICY. The
+  // CARD roster reached this exact verdict about this exact renderer long ago —
+  // `EXEMPT_FROM_VRT` in `vrt-exemptions.ts` carries milkdrop with a written why
+  // ("continuously-animating multi-pass butterchurn visualizer … defeats
+  // deterministic single-frame capture"). The FACE roster simply lacked the
+  // concept, which is what made an otherwise parity-clean module unpromotable.
+  //
+  // ⚠ FOUR PARAMS GET `noUserControl` (#1726) — `bass`/`mid`/`treb` are CV-only
+  // band overrides the card has never drawn ("no panel knob; the MID jack writes
+  // it"), and `nextTrig` is the synthetic param the NEXT gate writes so the CV
+  // bridge has somewhere to land a rising edge. Painted, they would invite a
+  // player to drag a value a cable overwrites every frame, and to "turn up" a
+  // trigger. `writer: 'cv-port'` for all four, checked against this def's ports.
+  //
+  // ⚠ THE PRESET PICKER IS A FAMILY SELECTOR, NOT AN `options` ROSTER ON THE
+  // PARAM, and that is a truth argument before it is an attest one. A static
+  // roster would name only the ~20 CURATED presets, while the card's picker also
+  // lists whatever `.milk` files were imported this session and the engine
+  // clamps to the LIVE list — so a roster would be wrong the moment anyone used
+  // the loader. It also happens to be free: `controlFamilies` is
+  // hash-transparent and `params` is not. The dx7 pair
+  // (`dx7-preset-select-{n}` + `dx7-syx-input-{n}`) is the precedent, verbatim,
+  // down to the `ShellFileCell` for the importer.
+  //
+  // ⚠ THE PRESET NAME MOVES FROM A READOUT TO A CONTROL. The card prints a live
+  // name/index line; the 2026-08-19 rulings deleted that shape. The name is now
+  // the picker's SELECTED OPTION LABEL — permitted resting text precisely
+  // because it disambiguates the control's own position rather than restating a
+  // value. That is the finding that lost its surface, and where it went.
+  //
+  // ⚠ ZERO ATTEST, verified empirically before/after despite this module's
+  // dependency pin: `face`, `docs`, `controlFamilies` and `noUserControl` are all
+  // stripped by `scripts/attest-code-basis.ts`, the monitor box lives under
+  // `ui/` per #2081, and nothing else in `milkdrop.ts` changes.
+  //
+  // ⚠ SCREEN OFF KEEPS THE WATCH MARK FOR A DIFFERENT REASON THAN ITS SIBLINGS,
+  // and the body says so: `ruttetra` and `monoglitch` argue from having NO
+  // accumulator, so a stalled pull costs them only the OUTPUT. MILKDROP IS the
+  // accumulator case — the warp mesh samples the previous frame — so a stalled
+  // pull loses the evolution the player was watching. Do not copy their comment.
+  'milkdrop',
 ]);
 
 /**

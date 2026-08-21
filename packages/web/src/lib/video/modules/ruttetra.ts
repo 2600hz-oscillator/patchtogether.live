@@ -374,9 +374,21 @@ export const ruttetraDef: VideoModuleDef = {
     // sample — on `mirrorpool` the same argument selects nothing, and on
     // `spirographs` the ranking argument is inertness instead.
     //
-    // The ladder as a sentence: at mini you get RELIEF; at compact, relief and
-    // its X partner; at plate, the whole geometry story; the beam, the tint and
-    // the phase pair are dock-only.
+    // The ladder as a sentence, MEASURED through `curatedFace` rather than
+    // inferred from `LANE_PLATE_MAX_CELLS`: at mini you get RELIEF; at compact,
+    // relief and its X partner; and everything else — the shapes, the scan pair,
+    // the beam, the tint and the phases — is DOCK-ONLY.
+    //
+    // ⚠ THIS SENTENCE USED TO PROMISE "at plate, the whole geometry story" AND
+    // THAT WAS FALSE (corrected 2026-08-21, #2085). `FACE_TIER_CAPS.full` is
+    // `LANE_PLATE_MAX_CELLS` = 6, but `faceTierCap` does not return that
+    // constant — it runs `laneBodyPlan`, which fits CELLS INTO GEOMETRY, and a
+    // `fader` is a TALL cell. With the video surface taking its share this face
+    // resolves plate = compact = 2 (`yDisp`, `xDisp`), so the plate never showed
+    // a "geometry story" at all. Measured identically on `monoglitch` (8 params)
+    // and `reshaper` (6): every video fader face is plate = 2. The same wrong
+    // inference was made independently on both of those and corrected there;
+    // this is the last copy of it.
     order: [
       'yDisp', 'xDisp', 'yShape', 'xShape', 'yFreq', 'xFreq',
       'intensity', 'tintR', 'tintG', 'tintB', 'yPhase', 'xPhase',

@@ -131,7 +131,7 @@
 // `dock-row-plan` / `module-face-lint` units, which read the whole faceplate.
 
 import { test, expect } from '@playwright/test';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { diffRegion } from './vrt-surface-stats';
 import { DOCK_TAB_MIN_BANDS } from '../../packages/web/src/lib/ui/workflow/dock-tabs-model';
@@ -140,7 +140,9 @@ import {
   COMPACT_MAX_DIFF,
   DOCK_MAX_DIFF,
   FACES,
+  FACES_WITHOUT_SCENES,
   FOLD_VIEWPORT,
+  ROSTERED_FACE_TYPES,
   foldViewportFor,
   LEGACY_FOLD_CLAMP_PX,
   LEGACY_FOLD_PX,
@@ -630,7 +632,15 @@ test.describe('VRT: P1 curated faces (?shell=1) — compact lane tile + dock ful
     // Widened to Set<string> so `.has()` accepts entries read from
     // STRICT_FACES (ReadonlySet<string>) — the comparison is the point.
     const rostered = new Set<string>(FACES.map((f) => f.type));
-    const missingScene = [...STRICT_FACES].filter((t) => !rostered.has(t)).sort();
+    // ⚠ ONE SOURCE FOR "ACCOUNTED FOR" — a captured scene OR a named
+    // `FACES_WITHOUT_SCENES` exemption. Read from `ROSTERED_FACE_TYPES` rather
+    // than re-derived here, because `vrt-meta.test.ts` asserts the SAME
+    // relationship and the first version of this exemption taught only THIS
+    // gate about it, leaving that one red on a correctly exempted face. Two
+    // gates computing one subtraction is the drift machine.
+    const missingScene = [...STRICT_FACES]
+      .filter((t) => !ROSTERED_FACE_TYPES.has(t))
+      .sort();
     const orphanScene = [...rostered].filter((t) => !STRICT_FACES.has(t)).sort();
 
     expect(
@@ -639,7 +649,11 @@ test.describe('VRT: P1 curated faces (?shell=1) — compact lane tile + dock ful
         `users — but have NO entry in the FACES roster, so this spec generates no ` +
         `scene for them and no pixel gate covers them at any tier. Add ` +
         `{ type, pages } to FACES in _shell-faces.ts and capture the baselines ` +
-        `(\`task vrt:commit\`).`,
+        `(\`task vrt:commit\`). If the module's RENDERER genuinely cannot be ` +
+        `baselined, add a NAMED entry to FACES_WITHOUT_SCENES with the ` +
+        `measurement in its \`why\` — "it animates" is not sufficient, since ` +
+        `mirrorpool/outlines/warrensvisions/freezeframe all animate and are all ` +
+        `captured via simPin or a freeze param.`,
     ).toEqual([]);
     expect(
       orphanScene,
@@ -669,6 +683,141 @@ test.describe('VRT: P1 curated faces (?shell=1) — compact lane tile + dock ful
         `worse, a plain VRT run recreates a deleted one as an UNTRACKED file that ` +
         `no gate reads. Capture with \`task vrt:commit\` and commit the result.`,
     ).toEqual([]);
+  });
+
+  // ── THE UNBASELINABLE-FACE EXEMPTION, ANCHORED FOUR WAYS ─────────────────
+  //
+  // ⚠ STATE THE GATE'S SCOPE INSIDE THE GATE. What an exempt face COSTS is that
+  // its PIXELS ARE NEVER COMPARED — not at the compact tier, not at the dock
+  // tier, on any platform. A layout regression on one of these faces is
+  // invisible to every VRT lane and reaches a human's eyes first. This block
+  // cannot change that; what it can do is make sure the permission is still
+  // earned, and that the non-pixel gates it leans on actually exist.
+  //
+  // The four anchors, each of which is a DIFFERENT way for the claim to expire:
+  //   1. the module is still FACED          — else it needs no exemption at all
+  //   2. it is still ABSENT from FACES      — else it HAS scenes; contradiction
+  //   3. no baseline exists on disk         — else it was captured after all
+  //   4. its def declares no freeze seam    — else somebody built determinism
+  //
+  // Anchored to the ARTIFACTS (STRICT_FACES, FACES, the filesystem, the live
+  // def), never to a count, so nothing here goes stale silently.
+  test('ANCHOR: every unbaselinable-face exemption is still earned', () => {
+    const rostered = new Set<string>(FACES.map((f) => f.type));
+
+    // 1 — still faced.
+    const notFaced = FACES_WITHOUT_SCENES
+      .filter((e) => !STRICT_FACES.has(e.type))
+      .map((e) => e.type);
+    expect(
+      notFaced,
+      'an exemption names a module that is NOT in STRICT_FACES. An unpromoted module needs no ' +
+        'scene and therefore no exemption — delete the entry, or it silently pre-approves ' +
+        'whatever takes that name next.',
+    ).toEqual([]);
+
+    // 2 — still absent from the roster.
+    const alsoRostered = FACES_WITHOUT_SCENES
+      .filter((e) => rostered.has(e.type))
+      .map((e) => e.type);
+    expect(
+      alsoRostered,
+      'an exemption names a module that ALSO has a FACES entry. It cannot both have scenes and ' +
+        'be exempt from having them — one of the two is wrong.',
+    ).toEqual([]);
+
+    // 3 — nothing was captured behind the exemption's back. ⚠ THE ARTIFACT LEG:
+    // if a baseline exists on disk, the claim "this cannot be captured" is
+    // false no matter how good the argument reads.
+    const capturedAnyway: string[] = [];
+    for (const e of FACES_WITHOUT_SCENES) {
+      for (const variant of e.scenes) {
+        const rel = `./__screenshots__/workflow-shell-faces.spec.ts/face-${e.type}-${variant}.png`;
+        if (existsSync(fileURLToPath(new URL(rel, import.meta.url)))) {
+          capturedAnyway.push(`face-${e.type}-${variant}.png`);
+        }
+      }
+    }
+    expect(
+      capturedAnyway,
+      'a baseline EXISTS for a face declared unbaselinable. Either someone made the renderer ' +
+        'deterministic — in which case delete the exemption and add the FACES entry — or a ' +
+        'local run wrote an untracked PNG that should not have been committed.',
+    ).toEqual([]);
+
+    // 4 — no determinism seam appeared on the def. If one has, the exemption's
+    // central claim (that simPin/freeze cannot reach this renderer) is due a
+    // re-argument rather than an automatic renewal.
+    //
+    // ⚠ READ FROM SOURCE, NOT FROM THE REGISTRY. The video module index is
+    // registered through `import.meta.glob`, a Vite feature the Playwright
+    // runner does not provide — importing it here throws
+    // "(intermediate value).glob is not a function" and the whole spec collects
+    // zero tests, which reads as "no tests found" rather than as a broken gate.
+    // The def's SOURCE is what can be read in this runtime, and it is the same
+    // technique `face-monitor-source.test.ts` uses to resolve cards.
+    const gainedSeam = FACES_WITHOUT_SCENES
+      .filter((e) => {
+        const src = fileURLToPath(
+          new URL(`../../packages/web/src/lib/video/modules/${e.type}.ts`, import.meta.url),
+        );
+        if (!existsSync(src)) return false;
+        return /\bid:\s*'freeze'/.test(readFileSync(src, 'utf8'));
+      })
+      .map((e) => e.type);
+    expect(
+      gainedSeam,
+      "an exempt module's def now declares a `freeze` param — a determinism seam. That is the " +
+        'mechanism the exemption says cannot reach this renderer, so the argument has to be ' +
+        're-made (or the face captured) rather than silently kept.',
+    ).toEqual([]);
+
+    // The argument itself, and the coverage it promises.
+    const thin = FACES_WITHOUT_SCENES
+      .filter((e) => e.why.trim().length < 200)
+      .map((e) => e.type);
+    expect(
+      thin,
+      'an unbaselinable-face exemption needs the MEASUREMENT in its `why`, not a label — the bar ' +
+        'is evidence that simPin and freeze cannot reach the renderer, since several animated ' +
+        'faces are captured with exactly those.',
+    ).toEqual([]);
+
+    const emptyCoverage = FACES_WITHOUT_SCENES
+      .filter((e) => e.coveredBy.length === 0 || e.scenes.length === 0)
+      .map((e) => e.type);
+    expect(
+      emptyCoverage,
+      'an exemption must name the gates that DO cover the face (and the scenes it is exempt ' +
+        'from). VRT is not covering it; something has to be.',
+    ).toEqual([]);
+
+    // ⚠ AND THE COVERAGE CLAIM IS ANCHORED TO THE FILESYSTEM. A `coveredBy`
+    // naming a spec that has since been deleted or renamed is the exemption
+    // quietly becoming uncovered while still reading as covered — the exact
+    // shape of a stale claim this repo keeps meeting.
+    const repoRoot = fileURLToPath(new URL('../../', import.meta.url));
+    const missingCoverage: string[] = [];
+    for (const e of FACES_WITHOUT_SCENES) {
+      for (const rel of e.coveredBy) {
+        if (!existsSync(`${repoRoot}${rel}`)) missingCoverage.push(`${e.type}: ${rel}`);
+      }
+    }
+    expect(
+      missingCoverage,
+      'a `coveredBy` entry names a file that does not exist. The exemption is leaning on ' +
+        'coverage that is gone.',
+    ).toEqual([]);
+
+    // NON-VACUITY: this whole block is green over an empty list too. Today the
+    // list has exactly one member and it is milkdrop (#2083); if it empties,
+    // that is a real event — the face became capturable, or was un-promoted —
+    // and this line is what makes it visible rather than silently permissive.
+    expect(
+      FACES_WITHOUT_SCENES.length > 0,
+      'FACES_WITHOUT_SCENES is empty — if that is intentional (every face is now baselined), ' +
+        'delete this control along with the mechanism rather than leaving a gate over nothing.',
+    ).toBe(true);
   });
 
   // ── THE PERMANENT NEGATIVE CONTROL FOR THE AUDIO FREEZE ───────────────────

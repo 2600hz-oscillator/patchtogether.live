@@ -1751,6 +1751,8 @@ milkdrop param presetSelect 0..19 linear default=0
 milkdrop param reactivity 0..2 linear default=1
 milkdrop param speed 0..2 linear default=1
 milkdrop param treb 0..2 linear default=1
+milkdrop family milkdrop-milk-input kind=other prefix=milkdrop-milk-input
+milkdrop family milkdrop-preset-select kind=other prefix=milkdrop-preset-select
 mirrorpool meta domain=video
 mirrorpool in brightness_cv cv param=brightness cvScale=linear
 mirrorpool in look_pitch_cv cv param=look_pitch cvScale=linear

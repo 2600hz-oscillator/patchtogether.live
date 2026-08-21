@@ -212,8 +212,145 @@ export const milkdropDef: VideoModuleDef = {
     { id: 'nextTrig', label: 'Next Trig', defaultValue: DEFAULTS.nextTrig, min: 0, max: 1, curve: 'linear' },
   ],
 
+  // ⚠ FOUR PARAMS HAVE NO PLAYER CONTROL, and face completeness would have
+  // PAINTED all four (#1726). `bass`/`mid`/`treb` are CV-only band OVERRIDES —
+  // the def's own docs say "no panel knob; the MID jack writes it", and the card
+  // has never drawn them — while `nextTrig` is the synthetic param the `next`
+  // GATE writes so the CV bridge has somewhere to land a rising edge. Rendered
+  // as ordinary continuous rotaries they would invite a player to drag a band
+  // override that a patched cable then overwrites every frame, and to "turn up"
+  // a trigger. `writer: 'cv-port'` rather than `'internal'` because each one IS
+  // targeted by a real port (`bass`/`mid`/`treb` cv, `next` gate), which the
+  // gate checks against this def's own ports — so the day a port stops
+  // targeting one of them, the entry stops being true and says so.
+  //
+  // Free even on a basis file: `noUserControl` is one of the hash-transparent
+  // def properties (`scripts/attest-code-basis.ts`).
+  noUserControl: [
+    {
+      param: 'bass',
+      writer: 'cv-port',
+      why: 'CV-only band override: the BASS jack REPLACES butterchurn\'s bass scalar for as long as it is patched, and an unpatched band follows the live audio. No card control has ever existed for it — a knob here would be overwritten every frame by the cable it exists to receive',
+    },
+    {
+      param: 'mid',
+      writer: 'cv-port',
+      why: 'CV-only band override, exactly as bass: the MID jack replaces the mid scalar while patched, and the docs say "no panel knob; the MID jack writes it". REACT is the control a player actually turns to scale all three',
+    },
+    {
+      param: 'treb',
+      writer: 'cv-port',
+      why: 'CV-only band override, exactly as bass and mid: the TREB jack replaces the treble scalar while patched, otherwise the band follows live audio. Scaled by REACT, which is the panel control for all three',
+    },
+    {
+      param: 'nextTrig',
+      writer: 'cv-port',
+      why: 'SYNTHETIC trigger param: the NEXT gate port targets it so the CV bridge has somewhere to write the gate level, and the factory edge-detects a rising edge to advance the preset. It is a momentary EVENT, not a setting — painted as a 0..1 rotary it would read as "how much next", and holding it high does nothing because the detector fires once per EDGE',
+    },
+  ],
+
+  // The card's two non-param affordances, declared as one-member families so the
+  // docs gate can key authored prose to them and the shell can render a cell.
+  // Both `testidPrefix` values are the ones `MilkdropCard.svelte` actually emits.
+  controlFamilies: [
+    { id: 'milkdrop-preset-select', label: 'Preset picker', kind: 'other', testidPrefix: 'milkdrop-preset-select' },
+    { id: 'milkdrop-milk-input', label: 'Load .milk preset', kind: 'other', testidPrefix: 'milkdrop-milk-input' },
+  ],
+
+  // ── THE FACEPLATE ────────────────────────────────────────────────────────
+  //
+  // WHAT IT IS. MILKDROP is a Winamp-era preset visualizer as a CV-instrumented
+  // video SOURCE. butterchurn drives nearly all preset motion from three audio
+  // scalars, and the thing only this module does is let a CABLE REPLACE any of
+  // them — so a patched LFO becomes "the bass" for as long as it is connected.
+  // The verb is CHOOSE-AND-DRIVE: pick which visual you are inside, then decide
+  // how hard it moves.
+  //
+  // ⚠ THE PRESET PICKER IS A FAMILY CELL, NOT AN `options` ROSTER ON THE PARAM,
+  // and the choice is about TRUTH rather than convenience. A static roster on
+  // `presetSelect` would name only the ~20 CURATED presets; the card's picker
+  // also lists whatever `.milk` files the player imported this session, and the
+  // engine clamps the index to the LIVE list length rather than the declared
+  // max. A roster would therefore be wrong the moment anyone used the loader —
+  // and it would cost a real-GPU re-attest, because `params` is real code while
+  // `controlFamilies` is hash-transparent. The dx7 pair
+  // (`dx7-preset-select-{n}` + `dx7-syx-input-{n}`) is the precedent, verbatim.
+  //
+  // ⚠ SO THE PARAM AND THE PICKER ARE BOTH PRESENT, exactly as on the card,
+  // where the PST fader and the dropdown "stay in sync" because both write
+  // `presetSelect`. That is not duplication to be tidied away: the fader is the
+  // surface CV modulates and the patch saves, and the picker is the only place
+  // the preset NAMES exist at all. Dropping either loses something real.
+  //
+  // ⚠ THE PRESET NAME IS NOT A READOUT HERE. The card prints a live
+  // name/index line (`data-testid="milkdrop-preset"`); the 2026-08-19 rulings
+  // deleted that shape, and the name survives as the SELECTED OPTION LABEL on
+  // the picker — which is permitted resting text precisely because it
+  // disambiguates the control's own position rather than restating a value.
+  //
+  // THE TIER LADDER, MEASURED through `curatedFace` rather than inferred from
+  // `LANE_PLATE_MAX_CELLS` (#2085 — the cap is `laneBodyPlan` geometry, and for
+  // a video face it resolves to 2 at BOTH lane tiers): mini 1 (PRESET — which
+  // visual you are looking at) · compact 2 (PRESET and REACT: which visual, and
+  // how hard the audio drives it) · plate 2 · dock everything, including the
+  // picker and the loader.
+  face: {
+    order: [
+      'presetSelect', 'reactivity', 'speed', 'morph',
+      // The two card affordances. They rank BELOW the params deliberately: both
+      // are WIDE cells that no lane tier can paint, so ranking them higher would
+      // claim lane space they cannot use.
+      'milkdrop-preset-select-{n}', 'milkdrop-milk-input-{n}',
+    ],
+
+    pages: [
+      {
+        id: 'preset',
+        label: 'preset',
+        hint: 'which of the curated visuals is running, how long it takes to cross-fade when that changes, and the loader for your own .milk files. The knob, the picker, the PRESET jack and the NEXT trigger all drive the same selection',
+        controls: ['presetSelect', 'milkdrop-preset-select-{n}', 'morph', 'milkdrop-milk-input-{n}'],
+      },
+      {
+        id: 'motion',
+        label: 'motion',
+        hint: "how hard and how fast the picture moves: REACT scales all three drive bands at once, and SPEED time-warps butterchurn's internal clock (0 freezes it)",
+        controls: ['reactivity', 'speed'],
+      },
+    ],
+
+    // ⚠ MANDATORY FOR A VIDEO DEF — no `type: 'audio'` output exists, so any
+    // other glyph literal falls through `glyphBinding` to `{kind:'static'}` and
+    // reddens module-face-lint's dead-glyph clause. The picture arrives from
+    // `hasVideoSurface(def)` and the `fullViewBody` extension instead.
+    glyph: 'none',
+
+    extension: 'milkdrop',
+
+    // ⚠ MONITOR MODE — the fourth of the five cards #2009 named. VERIFIED
+    // AGAINST THE CARD: `MilkdropCard.svelte` mounts `hideControls`, the corner
+    // resize, and the double-click restore.
+    monitor: {
+      why:
+        'MILKDROP IS the picture — it is a visualizer, so the output is not a by-product of the '
+        + 'controls, it is the entire point of the module, and every control here exists to steer '
+        + 'something you can only judge by watching. Its docs have advertised the monitor since it '
+        + 'shipped ("hiding the controls turns it into a resizable monitor"). It is also the face '
+        + 'most likely to be left running as the visual itself while a player works elsewhere in '
+        + 'the rack, which is exactly what a resizable full-plate picture is for.',
+    },
+
+    // The card draws its four param controls as `<NeonFader>` throws.
+    paramCells: {
+      presetSelect: 'fader', reactivity: 'fader', speed: 'fader', morph: 'fader',
+    },
+
+    // ⚠ NO `hero`, NO READOUT, NO SIDEBAR — the 2026-08-19 rulings. The finding
+    // that lost its surface is the preset name/index line the card prints; it is
+    // re-homed as the picker's selected option, which is the honest place for it.
+  },
+
   docs: {
-    explanation: `MILKDROP is a Winamp-style Milkdrop music visualizer as a fully CV-instrumented video SOURCE. It wraps the open-source butterchurn engine (a WebGL2 reimplementation of Ryan Geiss's Milkdrop) and a curated set of ~20 classic Flexi/Geiss/Martin presets, then exposes the parts that actually drive the look as patchable CV. Patch any audio into the AUDIO input and the visuals react to it: a mono mix plus left/right channels are tapped (the audio is TAP-ONLY and inaudible — a silent gain-0 keep-alive runs the tap without routing to the speakers, so feed AUDIO OUT separately to hear it). The novel part is the per-band CV: butterchurn drives nearly all preset motion from three audio scalars — bass, mid, treb — and MILKDROP lets a cable REPLACE any of them. Patch a CV/LFO/envelope into BASS, MID, or TREB and that band is driven by the cable instead of the live audio (an unpatched band still follows the audio); the REACT control scales all three at once. SPEED is a time-warp (it scales how fast butterchurn's internal clock advances, clamped at zero — turn it down to slow the motion, up to speed it up). PRESET selects which of the curated presets is showing (a quantized index, knob or CV), MORPH sets the crossfade time when the preset changes, and a rising edge on NEXT advances to the next preset hands-free (clock it from a sequencer to switch presets in time). The output is a normal downstream video texture: route OUT into a mixer, keyer, effect, or OUTPUT. With nothing patched it still animates (the preset runs on its own clock) and shows the current preset; the card has a live preview screen and a preset name/index readout, and hiding the controls turns it into a resizable monitor (drag the bottom-right corner, double-click to restore). To LOAD/BROWSE presets directly, the card has a searchable preset PICKER (a dropdown listing every curated preset by name) — picking one loads it with a MORPH-second crossfade and is the same selection the PRESET knob, the PRESET CV jack, and the NEXT trigger drive (they stay in sync). A "Load .milk…" button imports a classic Winamp Milkdrop \`.milk\` preset file straight from disk: the file is converted to butterchurn's format in the browser (via milkdrop-preset-converter) and appended to the picker for the rest of the session (custom imports are in-session only and are not saved with the patch; the curated PRESET index IS saved).`,
+    explanation: `MILKDROP is a Winamp-style Milkdrop music visualizer as a fully CV-instrumented video SOURCE. It wraps the open-source butterchurn engine (a WebGL2 reimplementation of Ryan Geiss's Milkdrop) and a curated set of ~20 classic Flexi/Geiss/Martin presets, then exposes the parts that actually drive the look as patchable CV. Patch any audio into the AUDIO input and the visuals react to it: a mono mix plus left/right channels are tapped (the audio is TAP-ONLY and inaudible — a silent gain-0 keep-alive runs the tap without routing to the speakers, so feed AUDIO OUT separately to hear it). The novel part is the per-band CV: butterchurn drives nearly all preset motion from three audio scalars — bass, mid, treb — and MILKDROP lets a cable REPLACE any of them. Patch a CV/LFO/envelope into BASS, MID, or TREB and that band is driven by the cable instead of the live audio (an unpatched band still follows the audio); the REACT control scales all three at once. SPEED is a time-warp (it scales how fast butterchurn's internal clock advances, clamped at zero — turn it down to slow the motion, up to speed it up). PRESET selects which of the curated presets is showing (a quantized index, knob or CV), MORPH sets the crossfade time when the preset changes, and a rising edge on NEXT advances to the next preset hands-free (clock it from a sequencer to switch presets in time). The output is a normal downstream video texture: route OUT into a mixer, keyer, effect, or OUTPUT. With nothing patched it still animates (the preset runs on its own clock) and shows the current preset; there is a live preview screen, and two switches beside it that do opposite things: SCREEN turns the preview off to reclaim its space (the module goes on rendering either way), and MONITOR hides the control bands so the picture has the whole plate to itself - drag the bottom-right corner to size it, and click MONITOR again to bring the controls back. Either way it is a viewport only; neither changes the output resolution. The legacy card also prints a preset name/index readout; on the faceplate the name is the picker's selected entry instead. To LOAD/BROWSE presets directly, the card has a searchable preset PICKER (a dropdown listing every curated preset by name) — picking one loads it with a MORPH-second crossfade and is the same selection the PRESET knob, the PRESET CV jack, and the NEXT trigger drive (they stay in sync). A "Load .milk…" button imports a classic Winamp Milkdrop \`.milk\` preset file straight from disk: the file is converted to butterchurn's format in the browser (via milkdrop-preset-converter) and appended to the picker for the rest of the session (custom imports are in-session only and are not saved with the patch; the curated PRESET index IS saved).`,
     inputs: {
       audio: 'AUDIO (audio cable) - the signal the visuals react to. A GainNode sink (published for the cross-domain audio bridge) fans into a mono analyser plus a left/right analyser pair (fftSize 1024, butterchurn\'s window); each frame the raw bytes are fed to the engine so it reacts to YOUR audio rather than its own internal sampler. The tap is inaudible (a silent gain-0 keep-alive keeps it running); unpatched, the analyser reads flat silence so the preset animates on its own clock. Patch a stereo or mono mix here.',
       bass: 'BASS (cv) - REPLACES the bass band the visualizer reacts to. While patched, the mapped CV value drives every preset equation that reads bass (low-frequency motion); left unpatched, the bass band follows the live AUDIO input. Centered around an "average" level so an LFO sweeps the band roughly 0..2. Scaled by REACT.',
@@ -229,6 +366,8 @@ export const milkdropDef: VideoModuleDef = {
       out: 'OUT (video) - the rendered visualizer frame, upscaled to the engine output resolution. A normal downstream-usable video texture: chain it into any video input (mixer / keyer / effect / OUTPUT) and it also drives the on-card preview screen.',
     },
     controls: {
+      'milkdrop-preset-select-{n}': 'Preset picker - a dropdown listing every preset by NAME: the ~20 curated ones plus any .milk files imported this session. Picking one loads it with a MORPH-second crossfade. It writes the same `presetSelect` value the PRESET knob, the PRESET CV jack and the NEXT trigger drive, so the selection stays in sync everywhere and is saved with the patch. It is also the only surface on which the preset NAMES appear at all — the knob and the CV jack address presets by index.',
+      'milkdrop-milk-input-{n}': 'Load .milk preset - imports a classic Winamp Milkdrop `.milk` preset file from disk. The file is converted to butterchurn\'s format in the browser (milkdrop-preset-converter) and APPENDED to the picker for the rest of the session, then loaded with a MORPH-second crossfade; a status line reports progress or the failure. Custom imports are in-session only and are NOT saved with the patch (the curated PRESET index IS), so a reloaded rack returns to the curated list.',
       bass: 'Bass (0..2, default 1) - CV-only band override TARGET (no panel knob; the BASS jack writes it). When the BASS input is patched the mapped value REPLACES the bass band the visuals react to; unpatched, the live audio bass flows through. 1 is the "average" level.',
       mid: 'Mid (0..2, default 1) - CV-only band override target for the mid band (no panel knob; the MID jack writes it). Patched = the cable replaces the mid band; unpatched = live audio. 1 is the "average" level.',
       treb: 'Treble (0..2, default 1) - CV-only band override target for the treble band (no panel knob; the TREB jack writes it). Patched = the cable replaces the treble band; unpatched = live audio. 1 is the "average" level.',
