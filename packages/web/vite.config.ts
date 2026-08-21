@@ -115,12 +115,59 @@ export const SSR_CARD_COMPONENTS_STUB =
   '// SSR build stub — see vite.config.ts ssrDropCardComponents().\n' +
   'export const componentByName = {};\n';
 
-function ssrDropCardComponents(): Plugin {
+// ---------------------------------------------------------------------------
+// …AND THE SECOND OCCUPANT: `<Canvas>` ITSELF (#2088).
+//
+// Dropping the ~210 card components was never going to be enough, because the
+// thing that IMPORTS them is itself the biggest single input in the Worker:
+// `chunks/Canvas.js`, 5877 KiB raw in the bundle, dragging
+// `milkdrop-preset-converter` (1236 KiB), `module-docs.generated.js` (1106 KiB),
+// `@webamp/butterchurn` (425 KiB), `@grame/faustwasm` (159 KiB) and mediabunny
+// (~470 KiB) behind it. That is what put the deployed Worker 177 KiB over
+// Cloudflare's hard 3 MiB gzipped ceiling and turned every deploy red.
+//
+// ⚠ THE SAFETY ARGUMENT IS STRICTLY STRONGER THAN THE CARD ONE, and it is worth
+// being precise about why. The card stub rests on a claim about CONTENT — that
+// a server render has zero nodes, so the map is never indexed — which needed
+// `prove-ssr-identical.sh` to test. This stub rests on a claim about REACHABILITY:
+// after `src/routes/r/[id]/+page.ts` landed, **no route server-renders
+// `<Canvas>` at all**. `/rack` has been `ssr = false` since it moved off `/`,
+// `/r/[id]` now matches it, and those are the only two route modules that
+// import the component (every other match under `src/routes/**` is a comment or
+// a CSS selector). A component that is never rendered on the server cannot
+// contribute a byte to server HTML, so there is no HTML to diff.
+//
+// ⚠ THE COMPONENT COULD NOT SURVIVE A NODE-HOSTED SSR ANYWAY — see
+// `prove-ssr-identical.sh`: `Canvas.js` imports a named export
+// `@grame/faustwasm` does not provide under Node's ESM resolution, so any
+// Node-hosted SSR of a Canvas route is a 500. Production only ever worked
+// because wrangler esbuild-bundles the Worker. Stubbing it on the server
+// removes a dependency on that accident rather than creating a new risk.
+//
+// ⚠ IF SOMEONE LATER SERVER-RENDERS A CANVAS ROUTE, THIS STUB MUST GO — and the
+// tell is not subtle: the route will render an empty `<div>` where the canvas
+// belongs. `PT_SSR_KEEP_CARDS=1` disables BOTH stubs, which is the negative
+// control for that, not a fallback.
+const CANVAS_MODULE = 'src/lib/ui/Canvas.svelte';
+
+/** The whole SSR replacement for `<Canvas>`. A component that renders nothing.
+ *  Kept as a string so a test can assert on it, exactly like the card stub. */
+export const SSR_CANVAS_STUB =
+  '<!-- SSR build stub — see vite.config.ts ssrDropBrowserOnlyGraph(). -->\n' +
+  '<script lang="ts">\n' +
+  '  // Accept and ignore every prop: no route server-renders <Canvas>, so this\n' +
+  '  // component exists only to keep the server graph type-correct and small.\n' +
+  '  const _props = $props();\n' +
+  '  void _props;\n' +
+  '</script>\n';
+
+function ssrDropBrowserOnlyGraph(): Plugin {
   const WEB_DIR = fileURLToPath(new URL('.', import.meta.url));
-  const TARGET = path.resolve(WEB_DIR, CARD_COMPONENTS_MODULE);
+  const CARD_TARGET = path.resolve(WEB_DIR, CARD_COMPONENTS_MODULE);
+  const CANVAS_TARGET = path.resolve(WEB_DIR, CANVAS_MODULE);
   let isBuild = false;
   return {
-    name: 'patchtogether:ssr-drop-card-components',
+    name: 'patchtogether:ssr-drop-browser-only-graph',
     enforce: 'pre',
     configResolved(config) {
       isBuild = config.command === 'build';
@@ -130,8 +177,10 @@ function ssrDropCardComponents(): Plugin {
       // Vite 6+ exposes the environment; `options.ssr` is the older signal.
       const ssr = this.environment?.name === 'ssr' || options?.ssr === true;
       if (!ssr) return null;
-      if (path.resolve(id.split('?')[0]) !== TARGET) return null;
-      return SSR_CARD_COMPONENTS_STUB;
+      const resolved = path.resolve(id.split('?')[0]);
+      if (resolved === CARD_TARGET) return SSR_CARD_COMPONENTS_STUB;
+      if (resolved === CANVAS_TARGET) return SSR_CANVAS_STUB;
+      return null;
     },
   };
 }
@@ -239,7 +288,7 @@ function coiPreviewWorkerHeaders() {
 }
 
 export default defineConfig({
-  plugins: [ensureModuleDocs(), ssrDropCardComponents(), worktreeIdentity(), coiPreviewWorkerHeaders(), sveltekit()],
+  plugins: [ensureModuleDocs(), ssrDropBrowserOnlyGraph(), worktreeIdentity(), coiPreviewWorkerHeaders(), sveltekit()],
   // Inline the product version as a compile-time constant (see APP_VERSION
   // above). Applies in both `dev` (serve) and `build`, so the topbar heading
   // renders the real X.Y.Z locally, in e2e, and in the deployed bundle.
