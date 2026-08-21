@@ -80,6 +80,30 @@ export const moog904cDef: AudioModuleDef = {
     },
   },
 
+  // THREE PARAMS, THREE RANKS, ONE BAND. CUTOFF (the band centre) leads; WIDTH
+  // and MODE shape what happens around it.
+  //
+  // NO `landmarks` ON `mode`, DELIBERATELY — and this is the borderline call on
+  // this face, so it is written down rather than left as an omission. `mode` is
+  // `0..1 linear`, a genuine CROSSFADE from band-pass to notch with useful
+  // blends in between, which is the exact shape PF-10 landmarks exist for (qbrt
+  // `mode`, lfo `shape`). What it does NOT have is names a player has ever
+  // seen: `Moog904cCard` renders a bare `<Knob label="Mode">`, and "band-pass"
+  // / "notch" appear only in this def's docs prose and a card comment.
+  //
+  // Adding them would therefore be INVENTING a vocabulary during a face
+  // migration, which is the thing this batch's `moog962` entry refuses on the
+  // same grounds. Landmarks here would be a real improvement to a real morph
+  // param — it is just not a FACE change, and it should arrive as its own
+  // decision rather than riding a batch whose remit is "rank what exists".
+  //
+  // `glyph: 'meter'` is RUN, not argued: `audio` is the only audio output, so
+  // the binding is LIVE and TOTAL.
+  face: {
+    order: ['cutoff', 'width', 'mode'],
+    glyph: 'meter',
+  },
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     if (!loadedContexts.has(ctx)) {
       await ctx.audioWorklet.addModule(workletUrl);

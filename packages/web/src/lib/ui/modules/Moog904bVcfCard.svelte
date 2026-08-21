@@ -14,7 +14,7 @@
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import { patch } from '$lib/graph/store';
   import { setNodeParam } from '$lib/graph/mutate';
-  import { moog904bDef } from '$lib/audio/modules/moog904b';
+  import { moog904bDef, MOOG904B_RANGE_OPTIONS } from '$lib/audio/modules/moog904b';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import MoogPanel from './moog/MoogPanel.svelte';
@@ -44,10 +44,17 @@
   }
 
   // RANGE is a 2-position switch: 1 = LOW (4 Hz–20 kHz) / 2 = HIGH (+1.5 oct).
-  const RANGE_POS: Array<{ v: number; label: string }> = [
-    { v: 1, label: 'LOW' },
-    { v: 2, label: 'HIGH' },
-  ];
+  //
+  // ⚠ THE POSITIONS COME FROM THE DEF, NOT FROM A LITERAL HERE. They used to be
+  // typed in this file, which meant the card and the def's `range` param could
+  // disagree about what the two states are called and no gate would read the
+  // card's copy. The def now declares them as the param's `options` roster —
+  // which is also what lets a faceplate, a Push 2 encoder and MIDI learn show
+  // LOW / HIGH instead of an anonymous two-position control — and this card
+  // renders that same roster.
+  const RANGE_POS: ReadonlyArray<{ v: number; label: string }> = MOOG904B_RANGE_OPTIONS.map(
+    (o) => ({ v: o.value, label: o.label }),
+  );
   function setRange(v: number) {
     const target = patch.nodes[id];
     if (target) target.params.range = v;

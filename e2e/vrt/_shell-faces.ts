@@ -1684,6 +1684,22 @@ export const FACES = [
   // unpinned fontconfig fallback in these two new baselines.
   { type: 'gatemaiden', pages: 1 },
 
+  // ── BATCH 18 — THE THIN AUDIO TAIL (Moog cluster) ───────────────────────
+  //
+  // Two to three controls each, so `pages: 1` throughout: none declares
+  // `face.pages`, and three controls that are all one idea do not become
+  // clearer split under headings.
+  //
+  // NO `videoFaceWhy` and no `simPin`. Three of the four declare
+  // `glyph: 'meter'`, but a meter over a module with nothing patched into it is
+  // a flat bar and the harness's AudioContext freeze holds it there — these are
+  // filters, an interface and a spring reverb, none of which generate signal on
+  // their own. (`moog905` is a reverb with NO input patched in the scene, so its
+  // tail never starts, let alone decays.)
+  { type: 'moog904b', pages: 1 },
+  { type: 'moog904c', pages: 1 },
+  { type: 'moog905', pages: 1 },
+  { type: 'moog961', pages: 1 },
   // ── BATCH 18 — THE THIN AUDIO TAIL ──────────────────────────────────────
   //
   // One-knob utilities. These are among the NARROWEST plates in the fleet and

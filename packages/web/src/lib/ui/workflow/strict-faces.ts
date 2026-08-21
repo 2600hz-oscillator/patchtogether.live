@@ -2540,6 +2540,24 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // facing the module — see the note left in `raw-write-ledger.ts`, where #2025
   // had the mechanism backwards.
   'gatemaiden',
+  // BATCH 18 (2026-08-20) — the THIN AUDIO TAIL, the Moog cluster. Owner: *"if
+  // there are a lot of audio modules with <4 params can't we just fly through
+  // them really quickly? they still need to be done, <4 params or not."*
+  //
+  // `moog904b` is the batch's POSITIVE case of the naming rule: its card drew
+  // LOW / HIGH radiogroup buttons while the def declared a bare `1..2 discrete`
+  // param, so every shared surface could only paint an anonymous two-position
+  // control. The names are promoted into `options` and the CARD now imports
+  // that roster instead of keeping its own copy.
+  //
+  // `moog961` is the batch's clearest FORCED `glyph: 'none'`: it has an audio
+  // INPUT and an audio domain, and every one of its four outputs is a `gate` —
+  // so "it deals with audio, give it a meter" is exactly the wrong inference
+  // and the resolver has to be run.
+  'moog904b',
+  'moog904c',
+  'moog905',
+  'moog961',
   // BATCH 18 (2026-08-20) — the THIN AUDIO TAIL. Owner: *"if there are a lot of
   // audio modules with <4 params can't we just fly through them really quickly?
   // they still need to be done, <4 params or not."* Utilities whose entire
