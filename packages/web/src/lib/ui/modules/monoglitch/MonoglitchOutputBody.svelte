@@ -1,21 +1,28 @@
 <script lang="ts">
-  // packages/web/src/lib/ui/modules/ruttetra/RuttetraOutputBody.svelte
+  // packages/web/src/lib/ui/modules/monoglitch/MonoglitchOutputBody.svelte
   //
-  // The RUTTETRA dock full-view body: the live raster picture and the THREE
-  // affordances that live only on `RuttetraCard.svelte` and that promotion
-  // would otherwise delete (`migrated('ruttetra')` stops BOTH surfaces
+  // The MONOGLITCH dock full-view body: the live scanline picture and the
+  // affordances that live only on `MonoglitchCard.svelte`, which promotion
+  // would otherwise delete (`migrated('monoglitch')` stops BOTH surfaces
   // rendering the card):
   //
-  //   1. SCREEN ON/OFF — the 2026-08-18 owner ruling, over `previewCollapsed`;
-  //   2. MONITOR — `hideControls`, the seam #2009 filed and this face proves;
-  //   3. the corner RESIZE handle, over `resizedWidth` / `resizedHeight`.
+  //   1. MONITOR — `hideControls`, the seam #2009 filed and ruttetra proved;
+  //   2. the corner RESIZE handle, over `resizedWidth` / `resizedHeight`;
+  //   3. SCREEN ON/OFF — the 2026-08-18 owner ruling, over `previewCollapsed`.
   //
-  // ⚠ 1 AND 2 ARE OPPOSITE SWITCHES, NOT A DUPLICATED ONE, and #1865 proposed
-  // that the first subsumes the second. It does not: SCREEN OFF hides the
+  // ⚠ 3 IS AN ADDITION, NOT A PORT, AND THAT ASYMMETRY IS DELIBERATE. The
+  // monoglitch CARD has no SCREEN switch — unlike ruttetra's, which had one to
+  // carry across. The ruling is that EVERY video face ships with it, and
+  // `video-face-screen-source.test.ts` denies a faced video module without one,
+  // so this face gains a control its card never had. Nothing is lost by that
+  // (the card is untouched); it is recorded here so the next reader does not
+  // "restore parity" by deleting it.
+  //
+  // ⚠ 1 AND 3 ARE OPPOSITE SWITCHES, NOT A DUPLICATED ONE, and #1865 proposed
+  // that the second subsumes the first. It does not: SCREEN OFF hides the
   // PICTURE and keeps the controls; MONITOR hides the CONTROLS and keeps the
   // picture. They are the two directions of one question — which half am I
-  // looking at? — and a raster scope wants both, because sculpting the relief
-  // and reading it are different halves of the same session.
+  // looking at?
   //
   // ⚠ THE BANDS ARE THE SHELL'S TO HIDE, NOT THIS FILE'S. `fullViewBody` paints
   // ABOVE the faceplate and by contract cannot suppress it (the
@@ -27,28 +34,23 @@
   // always still on screen to turn it off.
   //
   // ⚠ AND THAT FIXES THE CARD'S POINTER TRAP RATHER THAN PORTING IT. On the
-  // card the `–` button sits INSIDE the region it hides, so the only way back
-  // is an undiscoverable double-click on the body — which is why
-  // `RuttetraCard.svelte:209-211` carries an `a11y_no_static_element_interactions`
-  // suppression calling it "a real pointer-only trap". Here the body always
-  // paints, so `onBodyDblClick` has no reason to exist and is deliberately NOT
-  // ported. That is parity by a strictly better route, not a dropped affordance.
+  // card the `–` button sits INSIDE the region it hides, so the only way back is
+  // an undiscoverable double-click on the body — which is why
+  // `MonoglitchCard.svelte` carries an `a11y_no_static_element_interactions`
+  // suppression calling it "a real pointer-only trap, not a false positive;
+  // tracked as #1572". Here the body always paints, so `onBodyDblClick` has no
+  // reason to exist and is deliberately NOT ported. That is parity by a strictly
+  // better route, not a dropped affordance.
   //
-  // The LANE tile is untouched: `dockFullViewHeadPlan` renders this slot at the
-  // dock only, because a 192 px lane tile cannot carry a module surface. The
-  // lane keeps the generic `VideoTileThumb`.
-  //
-  // Template: `grainsOfVision/GrainsOfVisionOutputBody.svelte` (the sibling from
-  // the same spec document) for the picture + SCREEN half, and
-  // `bentbox/BentboxOutputBody.svelte` for the resize half. Copying them is the
-  // point — a second spelling of `previewCollapsed` or of the drag is how these
-  // fork.
+  // Template: `ruttetra/RuttetraOutputBody.svelte`, the module that proved this
+  // seam. Copying it is the point — a second spelling of `previewCollapsed` or
+  // of the drag is how these fork.
   import { patch } from '$lib/graph/store';
   import { mutateNode } from '$lib/graph/mutate';
   import { useEngine } from '$lib/audio/engine-context';
   import type { VideoEngine } from '$lib/video/engine';
   import { VIDEO_RES } from '$lib/video/engine';
-  import { RUTTETRA_MONITOR_BOX } from './monitor-box';
+  import { MONOGLITCH_MONITOR_BOX } from './monitor-box';
   import { drawPreviewDownscaled } from '../preview-downscale';
 
   interface Props {
@@ -62,13 +64,10 @@
   const ENGINE_W = VIDEO_RES.width;
   const ENGINE_H = VIDEO_RES.height;
 
-  /** The resting preview, matching the video-face fleet (grainsOfVision,
-   *  mirrorpool). MONITOR mode replaces it with the box below. */
+  /** The resting preview, matching the video-face fleet (ruttetra,
+   *  grainsOfVision, mirrorpool). MONITOR mode replaces it with the box below. */
   const RESTING_W = 480;
   const RESTING_H = 360;
-
-  let canvasEl: HTMLCanvasElement | null = $state(null);
-  let rafId: number | null = null;
 
   // ── the two switches, both NODE-keyed ─────────────────────────────────────
   //
@@ -78,11 +77,11 @@
   // `node.data` survives a tab switch (the owner's stated floor), a remount, a
   // reload, and syncs to collaborators.
   //
-  // ⚠ THE SAME KEYS THE CARD USES, all three of them, deliberately. A rack
-  // saved before this promotion already carries them, and reading a different
-  // key would silently re-open every collapsed preview and forget every sized
-  // monitor. It also means the two surfaces agree while both exist: a monitor
-  // opened on `?shell=legacy` is still open on the faceplate.
+  // ⚠ THE SAME KEYS THE CARD USES, deliberately. A rack saved before this
+  // promotion already carries `hideControls` / `resizedWidth` / `resizedHeight`,
+  // and reading a different key would silently forget every monitor a player
+  // already had open. It also means the two surfaces agree while both exist: a
+  // monitor opened on `?shell=legacy` is still open on the faceplate.
   let previewCollapsed = $derived<boolean>(
     (patch.nodes[nodeId]?.data?.previewCollapsed as boolean | undefined) ?? false,
   );
@@ -99,10 +98,11 @@
   }
 
   // ⚠ TURNING MONITOR OFF CLEARS THE SIZE, exactly as the card's own restore
-  // does (`RuttetraCard.svelte:170-173`, `:203-205`). Not a preference: the
-  // card DEFINES `resizedWidth`/`resizedHeight` as "the size while the controls
-  // are hidden", so leaving them behind would make the two surfaces disagree
-  // about whether a size is stored the moment either one restores.
+  // does (`MonoglitchCard.svelte`'s `toggleHideControls` and `onBodyDblClick`
+  // both `delete` the two keys). Not a preference: the card DEFINES
+  // `resizedWidth`/`resizedHeight` as "the size while the controls are hidden",
+  // so leaving them behind would make the two surfaces disagree about whether a
+  // size is stored the moment either one restores.
   function toggleMonitor(): void {
     const next = !monitor;
     mutateNode(nodeId, (live) => {
@@ -117,20 +117,20 @@
 
   // ── the MONITOR box + its corner drag ────────────────────────────────────
   //
-  // Floors and default come from `RUTTETRA_MONITOR_BOX` on the def — ONE source
-  // shared with the card — rather than re-typed here. On this surface they size
-  // the PICTURE (there is no card chrome and no xyflow node to resize), which
-  // is the meaning shift the def's own comment records.
+  // Floors and default come from `MONOGLITCH_MONITOR_BOX` on the def — ONE
+  // source shared with the card — rather than re-typed here. On this surface
+  // they size the PICTURE (there is no card chrome and no xyflow node to
+  // resize), which is the meaning shift the def's own comment records.
   let boxW = $derived<number>(
     Math.max(
-      RUTTETRA_MONITOR_BOX.minW,
-      (patch.nodes[nodeId]?.data?.resizedWidth as number | undefined) ?? RUTTETRA_MONITOR_BOX.defW,
+      MONOGLITCH_MONITOR_BOX.minW,
+      (patch.nodes[nodeId]?.data?.resizedWidth as number | undefined) ?? MONOGLITCH_MONITOR_BOX.defW,
     ),
   );
   let boxH = $derived<number>(
     Math.max(
-      RUTTETRA_MONITOR_BOX.minH,
-      (patch.nodes[nodeId]?.data?.resizedHeight as number | undefined) ?? RUTTETRA_MONITOR_BOX.defH,
+      MONOGLITCH_MONITOR_BOX.minH,
+      (patch.nodes[nodeId]?.data?.resizedHeight as number | undefined) ?? MONOGLITCH_MONITOR_BOX.defH,
     ),
   );
 
@@ -138,6 +138,9 @@
    *  is user-sized; at rest the fleet preview size applies. */
   let viewW = $derived(monitor ? boxW : RESTING_W);
   let viewH = $derived(monitor ? boxH : RESTING_H);
+
+  let canvasEl: HTMLCanvasElement | null = $state(null);
+  let rafId: number | null = null;
 
   let resizing = $state(false);
   function onResizeStart(ev: PointerEvent): void {
@@ -150,8 +153,8 @@
     resizing = true;
     const ac = new AbortController();
     const move = (e: PointerEvent): void => {
-      const w = Math.max(RUTTETRA_MONITOR_BOX.minW, Math.round(w0 + (e.clientX - startX)));
-      const h = Math.max(RUTTETRA_MONITOR_BOX.minH, Math.round(h0 + (e.clientY - startY)));
+      const w = Math.max(MONOGLITCH_MONITOR_BOX.minW, Math.round(w0 + (e.clientX - startX)));
+      const h = Math.max(MONOGLITCH_MONITOR_BOX.minH, Math.round(h0 + (e.clientY - startY)));
       // guard:allow-raw-write — fires per pointermove during a drag; a tracked
       // write per frame would storm the doc and flood the undo stack.
       const target = patch.nodes[nodeId];
@@ -189,16 +192,18 @@
   // #2015 reports against `spirographs`, and the ruling says the module KEEPS
   // RENDERING.
   //
-  // ⚠ THE REASON IS DIFFERENT HERE THAN ON THE SIBLINGS, and saying so matters
-  // because the siblings' reason does NOT apply. `grainsOfVision` and `bentbox`
-  // argue from ACCUMULATED STATE — a history ring, a feedback ping-pong — which
-  // empties if the node stops being pulled. RUTTETRA HAS NONE: no `uTime`
-  // uniform anywhere in `VERT_SRC`/`FRAG_SRC`, no ping-pong, no accumulator; it
-  // clears to black and redraws from the input texture and params every frame,
-  // so it would resume instantly. What the mark protects here is the OUTPUT: a
-  // rack where this face is the only observer and `out` feeds a recorder, a
-  // second dock pane or a not-yet-opened downstream still gets frames. Same
-  // code, honestly different argument.
+  // ⚠ THE REASON IS THE OUTPUT, NOT AN ACCUMULATOR — the ruttetra argument, and
+  // it holds here for the same mechanical reason. `grainsOfVision` and `bentbox`
+  // argue from ACCUMULATED STATE (a history ring, a feedback ping-pong) that
+  // empties if the node stops being pulled. MONOGLITCH HAS NONE: there is no
+  // `uTime` uniform in `FRAG_SRC`, no ping-pong and no accumulator; `draw`
+  // re-renders its FBO from the input texture and the params every frame, so it
+  // would resume instantly. What the mark protects here is the OUTPUT, and on
+  // this module that is the more pointed case of the two — MONOGLITCH is a
+  // CHAINABLE `output`-category module whose whole point is that `out` feeds
+  // something downstream. A rack where this face is the only observer and `out`
+  // runs into a recorder, a second dock pane or a not-yet-opened downstream
+  // still gets frames.
   function draw(): void {
     rafId = null;
     const ve = videoEngine();
@@ -246,7 +251,7 @@
   });
 </script>
 
-<div class="rt-output" class:monitor data-testid="ruttetra-output-body">
+<div class="mg-output" class:monitor data-testid="monoglitch-output-body">
   <div
     class="preview-wrap"
     class:resizing
@@ -258,7 +263,7 @@
         bind:this={canvasEl}
         width={viewW}
         height={viewH}
-        data-testid="ruttetra-face-canvas"
+        data-testid="monoglitch-face-canvas"
       ></canvas>
     {/if}
 
@@ -272,7 +277,7 @@
       class="face-btn screen-btn nodrag"
       class:on={!previewCollapsed}
       onclick={togglePreview}
-      data-testid="ruttetra-face-screen-toggle"
+      data-testid="monoglitch-face-screen-toggle"
       aria-pressed={!previewCollapsed}
       title="SCREEN: turn the preview off to reclaim its space. The module keeps rendering."
     >SCREEN {previewCollapsed ? 'OFF' : 'ON'}</button>
@@ -282,22 +287,21 @@
       class="face-btn monitor-btn nodrag"
       class:on={monitor}
       onclick={toggleMonitor}
-      data-testid="ruttetra-face-monitor-toggle"
+      data-testid="monoglitch-face-monitor-toggle"
       aria-pressed={monitor}
-      title="MONITOR: hide the control bands and give the raster the whole plate. Drag the corner to size it."
+      title="MONITOR: hide the control bands and give the picture the whole plate. Drag the corner to size it."
     >MONITOR {monitor ? 'ON' : 'OFF'}</button>
 
     <!-- The corner drag, present ONLY in MONITOR mode — the same condition the
-         card applies (`RuttetraCard.svelte:245-251` is inside its
-         `{#if hideControls}` branch), so `video-hide-controls.spec.ts`'s
-         "resize handle absent by default" assertion means the same thing on
-         both surfaces. -->
+         card applies (its resize handle is inside the `{#if hideControls}`
+         branch), so `video-hide-controls.spec.ts`'s "resize handle absent by
+         default" assertion means the same thing on both surfaces. -->
     {#if monitor && !previewCollapsed}
       <div
         class="resize-handle nodrag"
         role="separator"
-        aria-label="Resize the RUTTETRA monitor"
-        data-testid="ruttetra-face-resize-handle"
+        aria-label="Resize the MONOGLITCH monitor"
+        data-testid="monoglitch-face-resize-handle"
         onpointerdown={onResizeStart}
       ></div>
     {/if}
@@ -305,7 +309,7 @@
 </div>
 
 <style>
-  .rt-output {
+  .mg-output {
     display: flex;
     justify-content: center;
     padding: 6px 0 2px;
@@ -350,9 +354,9 @@
      exists in MONITOR mode. 16 px of handle + a 6 px gap; without this the
      switch sits ON the drag target and the last few px of the corner stop
      resizing. */
-  .rt-output.monitor .screen-btn { right: 22px; }
+  .mg-output.monitor .screen-btn { right: 22px; }
   /* Left corner, so the two switches never overlap at the narrowest monitor
-     width (`RUTTETRA_MONITOR_BOX.minW` = 360 px). */
+     width (`MONOGLITCH_MONITOR_BOX.minW` = 360 px). */
   .monitor-btn { left: 4px; }
   .resize-handle {
     position: absolute;

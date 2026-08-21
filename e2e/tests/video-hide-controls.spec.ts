@@ -19,9 +19,17 @@
 // So RUTTETRA — the first module to carry MONITOR MODE onto its faceplate —
 // has a FACED leg at the bottom of this file, and it is deliberately in the
 // same file as its legacy sibling so the two can never drift apart unnoticed.
-// MONOGLITCH is still un-faced; when it is promoted its faced leg belongs here
-// too, and `face-monitor-source.test.ts` turns RED at that promotion if the
-// face does not declare `monitor` at all.
+//
+// MONOGLITCH joined it on promotion (2026-08-21), which is what this note used
+// to ask for: *"MONOGLITCH is still un-faced; when it is promoted its faced leg
+// belongs here too."* ⚠ AND THE FACED LEG IS PARAMETERISED OVER A ROSTER, the
+// same shape the LEGACY suite above already uses, rather than copied per
+// module. Two hand-copied 80-line browser tests is how the two surfaces of one
+// affordance drift; one roster is how the next of the five #2009 cards
+// (`milkdrop`, `reshaper`, `graphicEq`) is added by writing four testids.
+// `face-monitor-source.test.ts` turns RED at any such promotion if the face
+// does not declare `monitor` at all — this file is what proves the declaration
+// actually moves the bands.
 //
 // ── the LEGACY suite ───────────────────────────────────────────────────────
 //
@@ -342,7 +350,25 @@ test.describe('dblclick a PatchPanel corner-trigger opens the port cascade', () 
 // disappearance would pass just as happily on a blank plate — which is the
 // failure this mode is one edit away from at all times.
 
-const FACE_NODE = 'rt-face';
+/** One faced adopter of MONITOR MODE.
+ *
+ *  ⚠ `pageIds` IS A ROSTER OF NAMES, NOT A COUNT. It is compared against the
+ *  `data-face-page` attributes the shell actually emits, so a renamed or
+ *  dropped band is RED here and a re-ordered face is RED here — none of which a
+ *  bare `toHaveCount(n)` can see, and it carries no number to go stale. */
+interface FacedSpec {
+  type: string;
+  nodeId: string;
+  pageIds: string[];
+}
+
+const FACED: FacedSpec[] = [
+  // The module that proved the seam (#2009 / #2053): one page per expression of
+  // the scan shader.
+  { type: 'ruttetra', nodeId: 'rt-face', pageIds: ['relief', 'shape', 'scan', 'beam'] },
+  // The first inheritor (2026-08-21): one page per TERM of the glitch shader.
+  { type: 'monoglitch', nodeId: 'mg-face', pageIds: ['lift', 'raster', 'pan', 'tint'] },
+];
 
 // ⚠ RENDERER-DEPENDENT, the capability-dependent class. Both tests boot the
 // workflow shell and a real GL chain, and CI is SwiftShader (measured repo-wide
@@ -437,85 +463,110 @@ async function openFace(page: Page, nodeId: string): Promise<Locator> {
   return fv;
 }
 
-test.describe('RUTTETRA — MONITOR MODE on the FACED dock (#2009)', () => {
-  test('hide the bands, keep the picture, and the way back is still on screen', async ({ page }) => {
-    test.setTimeout(FACE_CASE_MS);
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
+test.describe('MONITOR MODE on the FACED dock (#2009)', () => {
+  for (const m of FACED) {
+    test(`${m.type} — hide the bands, keep the picture, and the way back is still on screen`, async ({ page }) => {
+      test.setTimeout(FACE_CASE_MS);
+      const errors: string[] = [];
+      page.on('pageerror', (e) => errors.push(e.message));
 
-    await gotoShell(page);
-    await addNode(page, FACE_NODE, 'ruttetra');
-    const fv = await openFace(page, FACE_NODE);
+      await gotoShell(page);
+      await addNode(page, m.nodeId, m.type);
+      const fv = await openFace(page, m.nodeId);
 
-    const shellRoot = fv.locator('[data-testid="module-shell"]').first();
-    const bands = fv.getByTestId('face-pages');
-    const canvas = fv.getByTestId('ruttetra-face-canvas');
-    const monitorBtn = fv.getByTestId('ruttetra-face-monitor-toggle');
-    const screenBtn = fv.getByTestId('ruttetra-face-screen-toggle');
-    const handle = fv.getByTestId('ruttetra-face-resize-handle');
+      const shellRoot = fv.locator('[data-testid="module-shell"]').first();
+      const bands = fv.getByTestId('face-pages');
+      const pages = fv.locator('[data-face-page]');
+      const canvas = fv.getByTestId(`${m.type}-face-canvas`);
+      const monitorBtn = fv.getByTestId(`${m.type}-face-monitor-toggle`);
+      const screenBtn = fv.getByTestId(`${m.type}-face-screen-toggle`);
+      const handle = fv.getByTestId(`${m.type}-face-resize-handle`);
 
-    // ── AT REST: the ordinary faceplate ────────────────────────────────────
-    // ⚠ `data-face-monitor="off"` and ABSENT are DIFFERENT states, and the
-    // distinction is load-bearing: absent means the face declares no monitor
-    // mode at all (asserted of a sibling in the negative control below). "off"
-    // is the only correct resting value here.
-    await expect(shellRoot, 'the face DECLARES monitor mode, and it is off at rest')
-      .toHaveAttribute('data-face-monitor', 'off');
-    await expect(bands, 'the control bands paint at rest').toBeVisible();
-    await expect(fv.locator('[data-face-page]'), 'relief / shape / scan / beam').toHaveCount(4);
-    await expect(canvas, 'and so does the picture').toBeVisible();
-    await expect(monitorBtn).toBeVisible();
-    await expect(screenBtn, 'the SCREEN switch is a SEPARATE control, not this one').toBeVisible();
-    await expect(handle, 'resize handle absent until monitor mode — same as the card').toHaveCount(0);
+      // ── AT REST: the ordinary faceplate ──────────────────────────────────
+      // ⚠ `data-face-monitor="off"` and ABSENT are DIFFERENT states, and the
+      // distinction is load-bearing: absent means the face declares no monitor
+      // mode at all (asserted of a sibling in the negative control below).
+      // "off" is the only correct resting value here.
+      await expect(shellRoot, 'the face DECLARES monitor mode, and it is off at rest')
+        .toHaveAttribute('data-face-monitor', 'off');
+      await expect(bands, 'the control bands paint at rest').toBeVisible();
+      // ⚠ THE BAND IDS, NOT A COUNT — so a renamed, dropped or re-ordered page
+      // is red here, and there is no number to go stale. `expect.poll` because
+      // the bands are rendered from an async-resolved plan; a bare read races
+      // the first paint on a loaded runner.
+      await expect
+        .poll(
+          () => pages.evaluateAll((els) => els.map((e) => e.getAttribute('data-face-page'))),
+          { message: `${m.type} paints exactly its declared bands, in order` },
+        )
+        .toEqual(m.pageIds);
+      await expect(canvas, 'and so does the picture').toBeVisible();
+      await expect(monitorBtn).toBeVisible();
+      await expect(screenBtn, 'the SCREEN switch is a SEPARATE control, not this one').toBeVisible();
+      await expect(handle, 'resize handle absent until monitor mode — same as the card')
+        .toHaveCount(0);
 
-    // ── MONITOR ON ─────────────────────────────────────────────────────────
-    await monitorBtn.click();
+      // ── MONITOR ON ───────────────────────────────────────────────────────
+      await monitorBtn.click();
 
-    await expect(shellRoot).toHaveAttribute('data-face-monitor', 'on');
-    await expect(bands, 'the control bands are GONE — the whole affordance').toHaveCount(0);
-    // ⚠ THE THREE THAT MUST SURVIVE.
-    await expect(canvas, 'the PICTURE still paints — otherwise this is a blank plate').toBeVisible();
-    await expect(monitorBtn, 'and the way BACK is still on screen').toBeVisible();
-    await expect(handle, 'the corner drag arrives with the mode').toBeVisible();
+      await expect(shellRoot).toHaveAttribute('data-face-monitor', 'on');
+      await expect(bands, 'the control bands are GONE — the whole affordance').toHaveCount(0);
+      // ⚠ THE THREE THAT MUST SURVIVE.
+      await expect(canvas, 'the PICTURE still paints — otherwise this is a blank plate')
+        .toBeVisible();
+      await expect(monitorBtn, 'and the way BACK is still on screen').toBeVisible();
+      await expect(handle, 'the corner drag arrives with the mode').toBeVisible();
 
-    const hidden = await readNodeData(page, FACE_NODE);
-    expect(hidden.hideControls, 'over the SAME persisted key the legacy card writes').toBe(true);
+      const hidden = await readNodeData(page, m.nodeId);
+      expect(hidden.hideControls, 'over the SAME persisted key the legacy card writes').toBe(true);
 
-    // ── THE CORNER DRAG ────────────────────────────────────────────────────
-    const before = await canvas.boundingBox();
-    expect(before).not.toBeNull();
-    await dragCorner(page, 'ruttetra-face-resize-handle', 160, 120);
-    const after = await canvas.boundingBox();
-    expect(after).not.toBeNull();
-    expect(
-      after!.width,
-      `the monitor grew (${before?.width} -> ${after?.width} CSS px)`,
-    ).toBeGreaterThan(before!.width + 20);
+      // ── THE CORNER DRAG ──────────────────────────────────────────────────
+      const before = await canvas.boundingBox();
+      expect(before).not.toBeNull();
+      await dragCorner(page, `${m.type}-face-resize-handle`, 160, 120);
+      const after = await canvas.boundingBox();
+      expect(after).not.toBeNull();
+      expect(
+        after!.width,
+        `the monitor grew (${before?.width} -> ${after?.width} CSS px)`,
+      ).toBeGreaterThan(before!.width + 20);
 
-    const sized = await readNodeData(page, FACE_NODE);
-    expect(sized.resizedWidth, "resizedWidth persisted — the card's own key").toBeGreaterThan(360);
-    expect(sized.resizedHeight, 'resizedHeight persisted').toBeGreaterThan(180);
+      // ⚠ COMPARED AGAINST THE PICTURE'S OWN STARTING WIDTH, not a re-typed
+      // floor. Both adopters happen to share `minW`/`minH` today, and writing
+      // the number here would be a third copy of a constant the def already
+      // owns (`<MOD>_MONITOR_BOX`) — the exact divergence that constant exists
+      // to prevent.
+      const sized = await readNodeData(page, m.nodeId);
+      expect(sized.resizedWidth, "resizedWidth persisted — the card's own key")
+        .toBeGreaterThan(before!.width);
+      expect(sized.resizedHeight, 'resizedHeight persisted').toBeGreaterThan(0);
 
-    // ── MONITOR OFF, from the button that turned it on ─────────────────────
-    // ⚠ NO DOUBLE-CLICK RESCUE IS NEEDED OR OFFERED, and that is a FIX rather
-    // than a dropped affordance. On the CARD the toggle sits INSIDE the region
-    // it hides, so `ondblclick` on the body is the only way back — a
-    // pointer-only trap the card's own source calls out by name. Here the
-    // extension body always paints, so the button that turned monitor mode on
-    // is the button that turns it off.
-    await monitorBtn.click();
-    await expect(shellRoot).toHaveAttribute('data-face-monitor', 'off');
-    await expect(bands, 'the bands come back').toBeVisible();
-    await expect(fv.locator('[data-face-page]')).toHaveCount(4);
+      // ── MONITOR OFF, from the button that turned it on ───────────────────
+      // ⚠ NO DOUBLE-CLICK RESCUE IS NEEDED OR OFFERED, and that is a FIX rather
+      // than a dropped affordance. On the CARD the toggle sits INSIDE the region
+      // it hides, so `ondblclick` on the body is the only way back — a
+      // pointer-only trap the card's own source calls out by name. Here the
+      // extension body always paints, so the button that turned monitor mode on
+      // is the button that turns it off.
+      await monitorBtn.click();
+      await expect(shellRoot).toHaveAttribute('data-face-monitor', 'off');
+      await expect(bands, 'the bands come back').toBeVisible();
+      await expect
+        .poll(
+          () => pages.evaluateAll((els) => els.map((e) => e.getAttribute('data-face-page'))),
+          { message: 'and they are the SAME bands, not merely the same number of them' },
+        )
+        .toEqual(m.pageIds);
 
-    const restored = await readNodeData(page, FACE_NODE);
-    expect(restored.hideControls, 'hideControls cleared').toBeFalsy();
-    expect(restored.resizedWidth, "and the size with it, exactly as the card's restore does")
-      .toBeUndefined();
-    expect(restored.resizedHeight).toBeUndefined();
+      const restored = await readNodeData(page, m.nodeId);
+      expect(restored.hideControls, 'hideControls cleared').toBeFalsy();
+      expect(restored.resizedWidth, "and the size with it, exactly as the card's restore does")
+        .toBeUndefined();
+      expect(restored.resizedHeight).toBeUndefined();
 
-    expect(errors).toEqual([]);
-  });
+      expect(errors).toEqual([]);
+    });
+  }
 
   test("NEGATIVE CONTROL: a stale hideControls cannot blank a face that declares no monitor", async ({ page }) => {
     // ⚠ THE FAILURE MODE THE DECLARATION GATE EXISTS FOR, exercised end to end

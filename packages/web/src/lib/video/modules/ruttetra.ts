@@ -240,38 +240,13 @@ export function buildRuttetraIndices(cols = COLS, rows = ROWS): Uint32Array {
 
 export const RUTTETRA_GRID = { cols: COLS, rows: ROWS } as const;
 
-/**
- * THE MONITOR BOX — the geometry of "hide the controls and watch the picture",
- * in ONE place because TWO surfaces need it: `RuttetraCard.svelte` (the legacy
- * lane card) and `ui/modules/ruttetra/RuttetraOutputBody.svelte` (the faced
- * dock body). Both read `node.data.resizedWidth` / `resizedHeight`, so both
- * need the same floors and the same starting size.
- *
- * ⚠ IT LIVES ON THE DEF FOR THE BACKDRAFT REASON, not for tidiness: a constant
- * re-typed on two surfaces is a constant that will disagree on one of them, and
- * nothing at runtime can see the disagreement because each surface is
- * self-consistent. The def is the one place neither surface has to import the
- * other to reach. (`bentbox`'s body re-types the card's floors with a comment
- * naming the line number — the fleet precedent, and the weaker half of it.)
- *
- * ⚠ `w`/`h` MEAN DIFFERENT BOXES ON THE TWO SURFACES, deliberately, and the
- * key is shared anyway so a rack reopens at the size its author chose. On the
- * CARD they size the whole xyflow node, and the canvas inside is that minus
- * chrome (`HEADER_PX` / `PAD_PX`). On the FACE there is no card chrome and no
- * xyflow node to resize, so they size the PICTURE directly — the same meaning
- * shift `bentbox` and `videoOut` both document for their own resize keys.
- */
-export const RUTTETRA_MONITOR_BOX = {
-  /** Floors, rounded to whole-u (180 px) rack tiles (#759). */
-  minW: 360,
-  minH: 180,
-  /** The size MONITOR mode opens at before anyone drags the corner. */
-  defW: 360,
-  defH: 360,
-  /** CARD-ONLY chrome the canvas is inset by; the faced body has neither. */
-  headerPx: 56,
-  padPx: 20,
-} as const;
+// ⚠ THE MONITOR BOX MOVED OUT OF THIS DEF (2026-08-21). It is now
+// `$lib/ui/modules/ruttetra/monitor-box.ts`, imported by the card and the
+// faced body exactly as before — the one-source rule is unchanged, only its
+// address. It left because ALL of `lib/video/**` is swept into the WebGL
+// attest basis, so six layout numbers here made every monitor-box edit a
+// real-GPU re-attest; a probe on the monoglitch branch showed those eight lines
+// were the ONLY hash contribution of an entire face. See that file's header.
 
 /**
  * The morph anchors of `shapedRamp`, as NAMED WAYPOINTS on a continuous param

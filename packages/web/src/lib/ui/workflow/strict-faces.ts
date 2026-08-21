@@ -2658,18 +2658,33 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // argument). Its SCREEN OFF still renews the watch mark, but for the OUTPUT
   // rather than for an accumulator — see the body's own note.
   //
-  // ⚠ ONE REAL-GPU RE-ATTEST IS OWED, and `face`/`docs` are not why. Both cost
-  // nothing (hash-transparent). The `landmarks` roster, the `R`/`G`/`B` label
-  // shortening and `RUTTETRA_MONITOR_BOX` are real code in a video def, which
-  // IS in the WebGL basis; the entire shell seam (ModuleShell, module-shell-
-  // model, graph/types, the extension) is outside it. Batched into one commit
-  // so the GPU window is paid once.
+  // ⚠ ITS RE-ATTEST WAS PAID AT PROMOTION, and `face`/`docs` were not why. Both
+  // cost nothing (hash-transparent). What moved the hash was real code in a
+  // video def — the `landmarks` roster, the `R`/`G`/`B` label shortening and
+  // (then) `RUTTETRA_MONITOR_BOX`; the entire shell seam (ModuleShell,
+  // module-shell-model, graph/types, the extension) is outside the basis.
   //
-  // ⚠ ITS LANE VRT BASELINE MOVES, unlike every promoted video module before
-  // it. `ruttetra` is the only one with a live `vrt.spec` card scene rather
-  // than an `EXEMPT_FROM_VRT` entry, and that spec captures
-  // `.svelte-flow__node-ruttetra` — which promotion re-renders as the faced
-  // lane tile. Predicted and reconciled in the PR body, not discovered.
+  // ⚠ THE MONITOR BOX IS NO LONGER ONE OF THEM. It moved to
+  // `$lib/ui/modules/ruttetra/monitor-box.ts` on 2026-08-21, in the monoglitch
+  // face PR, which already owed a window — so the marginal GPU cost of taking
+  // it out of the basis was ZERO. The one-source rule is untouched (card and
+  // faced body both import it); only the address changed, and the basis sheds
+  // six layout numbers that a probe proved cannot change a rendered GL pixel.
+  // `ruttetra-face-model.test.ts` asserts the def stays clean of it, because a
+  // move back would be silent.
+  //
+  // ⚠ ITS LANE VRT CARD BASELINE DOES NOT MOVE — this paragraph USED to claim
+  // it does, and that claim was already known to be false when it merged.
+  // CORRECTED 2026-08-21 (#2078), from this commit's own PR body: *"I expected
+  // `ruttetra.png` … to move, since that spec captures
+  // `.svelte-flow__node-ruttetra`. It will NOT: `vrt.spec.ts:86` boots
+  // `?shell=legacy`, so it renders the legacy card regardless of promotion."*
+  // The commit bears that out — `a2b982bd0` committed `face-ruttetra-compact.png`
+  // and `face-ruttetra-dock.png` and did NOT touch `ruttetra.png`. The
+  // correction reached the PR body and never reached this line, so the tree
+  // asserted the opposite of the measurement for three days. Re-measured on the
+  // monoglitch branch, where the same claim about `monoglitch.png` was drafted
+  // from this text and then falsified by an actual run.
   //
   // NO READOUT, NO SIDEBAR, NO HERO — the 2026-08-19 rulings removed the fields.
   // The finding that lost its surface is named in the def's `face` comment.
@@ -2757,6 +2772,94 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // nothing.
   'cvBuddy',
   'cvBuddyMini',
+
+  // FACE BATCH 19 · monoglitch (2026-08-21) — 8 params, 4 pages, no rail. The
+  // luma-driven scanline-displacement glitch: the picture is quantised into a
+  // stack of horizontal lines and each line is LIFTED by the luma it samples at
+  // its own row centre, so bright rows bow upward out of the flat stack. The
+  // verb is LIFT. Not to be confused with either neighbour — `ruttetra` scatters
+  // a 320x180 GRID into 3D relief, `reshaper` remaps coordinates; this one bends
+  // a stack of 2D lines and tints them like a phosphor.
+  //
+  // ⚠ THE FIRST INHERITOR OF MONITOR MODE, and the reason this module was next.
+  // #2009 named FIVE legacy cards that mount `hideControls` (`ruttetra`,
+  // `monoglitch`, `milkdrop`, `reshaper`, `graphicEq`) with no shell
+  // representation, and `migrated(type)` deletes the affordance from both
+  // surfaces at once. `ruttetra` (#2053) built the seam — `face.monitor` →
+  // `faceMonitorPlan` → the shell suppresses hero + bands, with the toggle on
+  // the module's own `fullViewBody` so the button that turns the mode on is
+  // always still on screen to turn it off. This face is the second adopter and
+  // changes NOTHING about the platform: it declares, it does not extend.
+  //
+  // ⚠ AND THE LOSS WOULD HAVE BEEN A DOCUMENTED ONE HERE TOO. This def's
+  // `docs.explanation` has advertised the gesture since it shipped — "in
+  // hide-controls mode the preview is resizable by dragging the corner handle".
+  // ⚠ THAT SENTENCE IS NOT WHAT ESTABLISHED THE AFFORDANCE EXISTS, and the
+  // distinction is the whole #2009 lesson: prose on a def is the thing that
+  // lies. `MonoglitchCard.svelte` was read line by line and genuinely mounts
+  // the key (the toggle, the resizable canvas branch, the dblclick escape), so
+  // monitor mode is HONEST here rather than invented to match the docs.
+  //
+  // ⚠ IT GAINS A SCREEN SWITCH ITS CARD NEVER HAD. Unlike ruttetra's, the
+  // monoglitch card has no `previewCollapsed` control at all. The 2026-08-18
+  // ruling is that every video FACE ships one, and
+  // `video-face-screen-source.test.ts` denies a faced video module without one
+  // — so this is an ADDITION, not a port, recorded so nobody later "restores
+  // parity" by deleting it. OFF stops the preview COPY and keeps renewing the
+  // watch mark, never the engine (#2015).
+  //
+  // ⚠ UNTABBED, and the arithmetic is not close: four honest pages — one per
+  // TERM of the fragment shader (lift / raster / pan / tint) — against
+  // `DOCK_TAB_MIN_BANDS = 7`. Eight controls total is under
+  // `DOCK_ROW_MAX_CONTROLS = 10`, so PF-21 packs all four bands into ONE row.
+  //
+  // ⚠ THE PLATE TIER SHOWS ONE TINT CHANNEL OF THREE, and the rank was NOT
+  // distorted to avoid it. `LANE_PLATE_MAX_CELLS` is 6 and the module has
+  // exactly five geometry params, so the sixth slot is a tint under any
+  // ordering — the split is forced by arithmetic, not chosen.
+  //
+  // ⚠ NO `freeze` PARAM, and it is structural rather than a judgement — the
+  // ruttetra argument, holding for the same mechanical reason. There is no
+  // `uTime` uniform in `FRAG_SRC`, no ping-pong and no accumulator; the shader
+  // is a pure function of (input texture, params). With nothing patched
+  // `uHasInput` is 0 and it paints a fixed dark-navy gradient, so the face
+  // scenes are deterministic at rest by construction. Do NOT add one: that is a
+  // `params` edit on a def inside the WebGL attest basis, i.e. a real-GPU
+  // re-attest, to buy an assertion that already holds.
+  //
+  // ⚠ ITS LANE VRT CARD BASELINE DOES **NOT** MOVE, AND THE SIBLING COMMENT
+  // ABOVE SAYING RUTTETRA'S DID IS WRONG — corrected in this diff (#2078).
+  // `vrt.spec.ts/monoglitch.png` is a LIVE card scene (masked canvas) rather
+  // than an `EXEMPT_FROM_VRT` entry, so the obvious inference is that promotion
+  // re-renders it as the faced lane tile and moves the pixels. It does not:
+  // `vrt.spec.ts:86` boots `/rack?shell=legacy`, where `MonoglitchCard.svelte`
+  // keeps rendering whether or not the module is promoted. MEASURED on this
+  // branch — `task vrt:one -- monoglitch` reports `monoglitch card matches
+  // baseline` PASSING with the face merged.
+  //
+  // ⚠ THE RUTTETRA PR ALREADY FOUND THIS AND THE FIX DID NOT REACH THE TREE,
+  // which is why it is worth this many lines. `a2b982bd0`'s body says it plainly
+  // ("I expected `ruttetra.png` … to move … It will NOT"), and that commit
+  // committed only its two NEW face baselines — `ruttetra.png` is untouched by
+  // it. But the prose beside `'ruttetra'` above kept the pre-correction claim,
+  // so the tree asserts the opposite of what the author measured. A stale TEST
+  // goes red and gets fixed; a stale CLAIM goes quietly green forever, and this
+  // one was about to propagate — the first draft of THIS comment repeated it,
+  // and only a local VRT run caught it.
+  //
+  // ⚠ SO THE CARD BASELINE CANNOT BE USED AS A PROMOTION SIGNAL AT ALL, for any
+  // of the three cards still queued (`milkdrop`, `reshaper`, `graphicEq`). What
+  // WOULD move one is an edit the legacy card actually renders — and note
+  // `MonoglitchCard.svelte` HARDCODES its fader captions (`label="R"`), exactly
+  // as ruttetra's does, so even a def label change does not reach those pixels.
+  // This face changes no card-visible pixel: the card edit is the monitor-box
+  // constants, which are the same six numbers it already had.
+  //
+  // NO READOUT, NO SIDEBAR, NO HERO — the 2026-08-19 rulings removed the fields.
+  // The finding that lost its surface is named in the def's `face` comment (the
+  // band height, which depends on BOTH `lines` and `spacing` and so cannot be
+  // read off either dial).
+  'monoglitch',
 ]);
 
 /**

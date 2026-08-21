@@ -27,7 +27,8 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { ruttetraDef, shapedRamp, RUTTETRA_MONITOR_BOX } from '$lib/video/modules/ruttetra';
+import { ruttetraDef, shapedRamp } from '$lib/video/modules/ruttetra';
+import { RUTTETRA_MONITOR_BOX } from './ruttetra/monitor-box';
 import type { ParamDef } from '$lib/graph/types';
 import {
   declaredParamCells,
@@ -187,18 +188,48 @@ describe('ruttetra face — the picture, and where it comes from', () => {
     expect(ruttetraDef.face?.extension, 'and the extension that carries its toggle').toBe('ruttetra');
   });
 
-  it('the monitor box is ONE constant, and its floors are usable', () => {
-    // Shared with `RuttetraCard.svelte`, which imports it rather than re-typing
-    // it. A floor above the default would open every monitor at the wrong size.
+  it('the monitor box is ONE constant, and BOTH surfaces read it', () => {
+    // A floor above the default would open every monitor at the wrong size.
     expect(RUTTETRA_MONITOR_BOX.defW).toBeGreaterThanOrEqual(RUTTETRA_MONITOR_BOX.minW);
     expect(RUTTETRA_MONITOR_BOX.defH).toBeGreaterThanOrEqual(RUTTETRA_MONITOR_BOX.minH);
     const card = readFileSync(resolve(HERE, 'RuttetraCard.svelte'), 'utf8');
+    const body = readFileSync(resolve(HERE, 'ruttetra/RuttetraOutputBody.svelte'), 'utf8');
     expect(
-      card.includes('RUTTETRA_MONITOR_BOX'),
+      /import\s*\{\s*RUTTETRA_MONITOR_BOX\s*\}\s*from\s*'\.\/ruttetra\/monitor-box'/.test(card),
       'the legacy card must READ the shared box rather than re-typing its floors — the two ' +
         'surfaces share `node.data.resizedWidth`/`resizedHeight`, so a drifted floor is a ' +
         'divergence nothing at runtime can see',
     ).toBe(true);
+    expect(
+      /import\s*\{\s*RUTTETRA_MONITOR_BOX\s*\}\s*from\s*'\.\/monitor-box'/.test(body),
+      'and so does the faced dock body — the OTHER surface that writes the same keys',
+    ).toBe(true);
+  });
+
+  it('⚠ THE BOX STAYS OUT OF THE WEBGL ATTEST BASIS — anchored, not remembered', () => {
+    // ⚠ RELOCATED 2026-08-21, and this is what keeps it relocated. It shipped on
+    // `ruttetra.ts` with #2053 for the right reason (ONE source, the backdraft
+    // rule) but in the wrong PLACE: `scripts/webgl-attest-lib.ts` sweeps ALL of
+    // `packages/web/src/lib/video` into the attest basis, so six layout numbers
+    // there charged a real-GPU re-attest on a shared machine — measured on the
+    // monoglitch branch, where normalising that def showed the monitor box was
+    // the ONLY hash contribution of an entire face (`face` and `docs` are
+    // stripped by `attest-code-basis.ts`).
+    //
+    // Moving it back would be SILENT — nothing else reddens, the face renders
+    // identically, and the cost surfaces weeks later as an unexplained hash move
+    // on somebody else's branch. Hence an assertion rather than a comment.
+    const def = readFileSync(resolve(HERE, '../../video/modules/ruttetra.ts'), 'utf8');
+    expect(
+      def.includes('RUTTETRA_MONITOR_BOX = '),
+      'the video def must NOT define the monitor box — it belongs at ' +
+        '$lib/ui/modules/ruttetra/monitor-box.ts, which the basis skips because it is a .ts ' +
+        'file (webgl-attest-lib.ts: `if (!f.endsWith(".svelte")) continue`).',
+    ).toBe(false);
+    // POSITIVE CONTROL: the file named above really does hold the definition, so
+    // this pair cannot both pass against a constant that was simply deleted.
+    const boxSrc = readFileSync(resolve(HERE, 'ruttetra/monitor-box.ts'), 'utf8');
+    expect(boxSrc.includes('export const RUTTETRA_MONITOR_BOX = {')).toBe(true);
   });
 });
 
