@@ -11,7 +11,10 @@
   import { useEngine } from '$lib/audio/engine-context';
   import { patch } from '$lib/graph/store';
   import { setNodeParam } from '$lib/graph/mutate';
-  import { monoglitchDef, MONOGLITCH_MONITOR_BOX } from '$lib/video/modules/monoglitch';
+  import { monoglitchDef } from '$lib/video/modules/monoglitch';
+  // ONE source, shared with the faced dock body. Co-located under `ui/` rather
+  // than on the def so it stays out of the WebGL attest basis — see that file.
+  import { MONOGLITCH_MONITOR_BOX } from './monoglitch/monitor-box';
   import { startCornerResize } from './card-resize';
   import type { VideoEngine } from '$lib/video/engine';
   import { VIDEO_RES } from '$lib/video/engine';

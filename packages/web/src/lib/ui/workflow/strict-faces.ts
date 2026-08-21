@@ -2658,12 +2658,20 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // argument). Its SCREEN OFF still renews the watch mark, but for the OUTPUT
   // rather than for an accumulator — see the body's own note.
   //
-  // ⚠ ONE REAL-GPU RE-ATTEST IS OWED, and `face`/`docs` are not why. Both cost
-  // nothing (hash-transparent). The `landmarks` roster, the `R`/`G`/`B` label
-  // shortening and `RUTTETRA_MONITOR_BOX` are real code in a video def, which
-  // IS in the WebGL basis; the entire shell seam (ModuleShell, module-shell-
-  // model, graph/types, the extension) is outside it. Batched into one commit
-  // so the GPU window is paid once.
+  // ⚠ ITS RE-ATTEST WAS PAID AT PROMOTION, and `face`/`docs` were not why. Both
+  // cost nothing (hash-transparent). What moved the hash was real code in a
+  // video def — the `landmarks` roster, the `R`/`G`/`B` label shortening and
+  // (then) `RUTTETRA_MONITOR_BOX`; the entire shell seam (ModuleShell,
+  // module-shell-model, graph/types, the extension) is outside the basis.
+  //
+  // ⚠ THE MONITOR BOX IS NO LONGER ONE OF THEM. It moved to
+  // `$lib/ui/modules/ruttetra/monitor-box.ts` on 2026-08-21, in the monoglitch
+  // face PR, which already owed a window — so the marginal GPU cost of taking
+  // it out of the basis was ZERO. The one-source rule is untouched (card and
+  // faced body both import it); only the address changed, and the basis sheds
+  // six layout numbers that a probe proved cannot change a rendered GL pixel.
+  // `ruttetra-face-model.test.ts` asserts the def stays clean of it, because a
+  // move back would be silent.
   //
   // ⚠ ITS LANE VRT CARD BASELINE DOES NOT MOVE — this paragraph USED to claim
   // it does, and that claim was already known to be false when it merged.

@@ -50,7 +50,7 @@
   import { useEngine } from '$lib/audio/engine-context';
   import type { VideoEngine } from '$lib/video/engine';
   import { VIDEO_RES } from '$lib/video/engine';
-  import { MONOGLITCH_MONITOR_BOX } from '$lib/video/modules/monoglitch';
+  import { MONOGLITCH_MONITOR_BOX } from './monitor-box';
   import { drawPreviewDownscaled } from '../preview-downscale';
 
   interface Props {

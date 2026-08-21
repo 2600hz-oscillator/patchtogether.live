@@ -26,7 +26,8 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { monoglitchDef, MONOGLITCH_MONITOR_BOX } from '$lib/video/modules/monoglitch';
+import { monoglitchDef } from '$lib/video/modules/monoglitch';
+import { MONOGLITCH_MONITOR_BOX } from './monoglitch/monitor-box';
 import type { ParamDef } from '$lib/graph/types';
 import {
   declaredParamCells,
@@ -169,18 +170,50 @@ describe('monoglitch face — the picture, and where it comes from', () => {
       .toBe('monoglitch');
   });
 
-  it('the monitor box is ONE constant, and the legacy card READS it', () => {
-    // Shared with `MonoglitchCard.svelte`, which imports it rather than
-    // re-typing it. The two surfaces share `node.data.resizedWidth`/
-    // `resizedHeight`, so a drifted floor is a divergence nothing at runtime can
-    // see — each surface would be self-consistent and they would disagree.
+  it('the monitor box is ONE constant, and BOTH surfaces read it', () => {
+    // The two surfaces share `node.data.resizedWidth`/`resizedHeight`, so a
+    // drifted floor is a divergence nothing at runtime can see — each surface
+    // would be self-consistent and they would disagree (the backdraft class).
     expect(MONOGLITCH_MONITOR_BOX.defW).toBeGreaterThanOrEqual(MONOGLITCH_MONITOR_BOX.minW);
     expect(MONOGLITCH_MONITOR_BOX.defH).toBeGreaterThanOrEqual(MONOGLITCH_MONITOR_BOX.minH);
+
     const card = readFileSync(resolve(HERE, 'MonoglitchCard.svelte'), 'utf8');
+    const body = readFileSync(resolve(HERE, 'monoglitch/MonoglitchOutputBody.svelte'), 'utf8');
     expect(
-      card.includes('MONOGLITCH_MONITOR_BOX'),
-      'the legacy card must READ the shared box rather than re-typing its floors',
+      /import\s*\{\s*MONOGLITCH_MONITOR_BOX\s*\}\s*from\s*'\.\/monoglitch\/monitor-box'/.test(card),
+      'the legacy card READS the shared box rather than re-typing its floors',
     ).toBe(true);
+    expect(
+      /import\s*\{\s*MONOGLITCH_MONITOR_BOX\s*\}\s*from\s*'\.\/monitor-box'/.test(body),
+      'and so does the faced dock body — the OTHER surface that writes the same keys',
+    ).toBe(true);
+  });
+
+  it('⚠ THE BOX STAYS OUT OF THE WEBGL ATTEST BASIS — anchored, not remembered', () => {
+    // ⚠ THIS IS THE ASSERTION THAT DEFENDS THE RELOCATION. The box lived on the
+    // def until 2026-08-21. `scripts/webgl-attest-lib.ts` sweeps ALL of
+    // `packages/web/src/lib/video` into the basis, and a probe on this branch
+    // showed those eight lines were the ONLY hash contribution of this entire
+    // face — `face` and `docs` are stripped by `attest-code-basis.ts`. So the
+    // def home charged a real-GPU re-attest on a shared machine for six numbers
+    // that cannot change a rendered GL pixel.
+    //
+    // Moving it BACK would be silent: nothing else in the tree would go red, the
+    // face would render identically, and the cost would only show up as an
+    // unexplained hash move on somebody else's branch weeks later. So the def is
+    // asserted CLEAN of the symbol, in both directions with the import above.
+    const def = readFileSync(resolve(HERE, '../../video/modules/monoglitch.ts'), 'utf8');
+    expect(
+      def.includes('MONOGLITCH_MONITOR_BOX = '),
+      'the video def must NOT define the monitor box — `lib/video/**` is swept into the WebGL ' +
+        'attest basis wholesale, so layout geometry there costs a GPU window for nothing. It ' +
+        'belongs at $lib/ui/modules/monoglitch/monitor-box.ts, which the basis skips because it ' +
+        'is a .ts file (webgl-attest-lib.ts: `if (!f.endsWith(".svelte")) continue`).',
+    ).toBe(false);
+    // POSITIVE CONTROL for the reader above: the file it names really does hold
+    // the definition, so this pair cannot both pass against a deleted constant.
+    const boxSrc = readFileSync(resolve(HERE, 'monoglitch/monitor-box.ts'), 'utf8');
+    expect(boxSrc.includes('export const MONOGLITCH_MONITOR_BOX = {')).toBe(true);
   });
 });
 
