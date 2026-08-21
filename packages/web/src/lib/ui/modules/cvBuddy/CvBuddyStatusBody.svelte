@@ -55,6 +55,13 @@
     type CvBuddyInstance,
   } from '$lib/audio/cv-buddy/slot-alloc';
   import type { CvBuddyClockState } from '$lib/audio/modules/cv-buddy';
+  import {
+    cvBuddyRouted,
+    cvBuddyRoutedDetail,
+    cvBuddySkipDetail,
+    cvBuddySlotDetail,
+    cvBuddySlotName,
+  } from './cv-buddy-status-model';
 
   let { nodeId }: { nodeId: string } = $props();
 
@@ -90,53 +97,16 @@
   let alloc = $derived<CvBuddyAlloc | undefined>(allocateCvBuddySlots(instances).get(nodeId));
   let ownsClock = $derived(alloc?.ownsClock === true);
 
-  /** The slot NAME — a landmark, not a measurement. `null` for an instance that
-   *  got no jacks, which has no slot and therefore has no name. */
-  let slotName = $derived<string | null>(
-    alloc == null
-      ? null
-      : `JACKS ${alloc.pitchSlot}–${alloc.velSlot ?? alloc.gateSlot}`,
-  );
-
-  /** The roles behind that name, for the accessible name and the hover title.
-   *  Derived text, so it lives in an attribute and never in a text node. */
-  let slotDetail = $derived<string>(
-    alloc == null
-      ? ''
-      : alloc.velSlot == null
-        ? `ES-9 jacks ${alloc.pitchSlot} and ${alloc.gateSlot} carry this instance's pitch and gate.`
-        : `ES-9 jacks ${alloc.pitchSlot}, ${alloc.gateSlot} and ${alloc.velSlot} carry this instance's pitch, gate and velocity.`,
-  );
-
-  // ── ⚠ THE UNROUTED / CONTENDED COLLAPSE HAPPENS HERE, DELIBERATELY ────────
-  //
-  // The legacy card distinguished two states with two different sentences:
-  // "No ES-9 in rack — add an ES-9 module and run the es9-bridge helper" and
-  // "Inert — the first two CV Buddies own the ES-9 jacks". This lamp collapses
-  // them into ONE dark state, and the argument for that is ACTION IDENTITY:
-  // in both cases this instance's outputs reach no physical jack, and in both
-  // cases the fix is a change to the RACK rather than anything on this plate —
-  // add an ES-9, or remove a CV Buddy that is holding the pool. Nothing the
-  // player can do HERE differs between them.
-  //
-  // And the evidence that distinguishes them is already on screen at full size:
-  // whether an ES-9 module exists in the rack is visible by looking at the
-  // rack, and it is the ES-9's own card that carries the bridge instructions
-  // and the xrun counter. Painting two sentences here duplicated that, in the
-  // one place the ruling forbids prose.
-  //
-  // ⚠ THE DISTINCTION IS NOT LOST, it is MOVED: `routedDetail` below says which
-  // of the two states this is, in the title and the accessible name, so the
-  // hover and every spec can still tell them apart. That is the same home the
-  // deleted readouts moved to, which is why nothing had to be weakened.
-  let routed = $derived(es9Present && alloc != null);
-  let routedDetail = $derived<string>(
-    routed
-      ? slotDetail
-      : !es9Present
-        ? 'Not routed: no ES-9 in this rack. Add an ES-9 module and run the es9-bridge helper.'
-        : 'Not routed: every ES-9 note jack is already allocated to other CV Buddies on this rack.',
-  );
+  // Every STRING this surface can produce comes from the pure model beside this
+  // file — including the ones that are never painted. An unpainted string that
+  // is wrong is invisible to a VRT baseline and to a human reviewing one, so
+  // they are decided where a unit test can read them. The UNROUTED / CONTENDED
+  // collapse and its action-identity argument live there too, at the function
+  // where the collapse actually happens.
+  let slotName = $derived<string | null>(cvBuddySlotName(alloc));
+  let slotDetail = $derived<string>(cvBuddySlotDetail(alloc));
+  let routed = $derived(cvBuddyRouted(es9Present, alloc));
+  let routedDetail = $derived<string>(cvBuddyRoutedDetail(es9Present, alloc));
 
   // ── the late-tick counter, as a LAMP ──────────────────────────────────────
   //
@@ -168,11 +138,7 @@
     return () => clearInterval(timer);
   });
 
-  let skipDetail = $derived<string>(
-    clockSkips === 0
-      ? 'No late clock pulses since this node was created. A rising count here means a main-thread stall; rising xruns on the ES-9 card instead means the jack is starving.'
-      : `${clockSkips} clock pulse${clockSkips === 1 ? '' : 's'} a late scheduler tick could not place. Rising here = main-thread stall; rising xruns on the ES-9 card instead = the jack is starving.`,
-  );
+  let skipDetail = $derived<string>(cvBuddySkipDetail(clockSkips));
 </script>
 
 <div class="cv-buddy-status" data-testid="cv-buddy-status-{nodeId}">
