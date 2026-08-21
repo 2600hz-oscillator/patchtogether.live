@@ -3008,6 +3008,56 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // pull loses the evolution the player was watching. Do not copy their comment.
   'milkdrop',
 
+  // ── BATCH 22 · GROUP 1 — THE VIDEO THIN TAIL, FADER BANKS ─────────────────
+  //
+  // Four video modules with 2-4 params each, promoted together because they are
+  // the SAME SHAPE: one honest band of faders, one live picture, one SCREEN
+  // switch. None declares `pages`, none declares `hero`, none declares
+  // `bareCells`, and none is a MONITOR-mode module — `hideControls` lives on
+  // five legacy cards (`ruttetra`, `monoglitch`, `milkdrop`, `reshaper`,
+  // `graphicEq`) and none of these four is among them, so inventing it here
+  // would be adding an affordance rather than preserving one.
+  //
+  // ⚠ THEY WERE SCOPED AS "KNOB BANKS" AND THEY ARE NOT — every one of the
+  // twelve params is a `NeonFader` on its card. That is the whole reason each
+  // face declares `paramCells: {... 'fader'}`: nothing in a ParamDef separates
+  // "a level" from any other continuous scalar, so an UNDECLARED face resolves
+  // a fader to a KNOB and the promotion silently substitutes a dial for a
+  // throw. ⚠ NO DEF-READING GATE CAN SEE THAT — `contract-lock`,
+  // `module-docs-lint` and the range assertions all read the def, and the def
+  // says nothing about the primitive. It is the backdraft class in a different
+  // field, and the mitigation is the same: declare it, do not infer it.
+  //
+  // ⚠ AND ON COLORIZER THE SILENT SWAP WOULD ALSO HAVE FALSIFIED SHIPPED PROSE
+  // — its `docs.explanation` tells the player to "dial the three faders". A
+  // promotion that turned them into knobs would have left the documentation
+  // describing a control that no longer exists, with every def-reading gate
+  // green, which is the #2009 lesson restated.
+  //
+  // ⚠ SCREEN OFF KEEPS THE WATCH MARK ON ALL FOUR, FOR THREE DIFFERENT REASONS.
+  // Do not flatten these into one comment:
+  //   * `edges` / `colorizer` are STATELESS — pure per-pixel functions of their
+  //     input and params — so a stalled pull costs only the OUTPUT. They are
+  //     chainable mid-graph effects (edges' `mono-video` out is exactly what
+  //     colorizer consumes), which is what makes the output argument bite.
+  //   * `inwards` is a SOURCE with no input at all, so a stalled pull would
+  //     mute the generator every downstream node samples — the switch would
+  //     read SCREEN and behave as MUTE.
+  //   * `vdelay` IS the accumulator case, like `milkdrop` above: a 32-slot ring
+  //     advanced by every draw. A stalled pull lets the echo chain decay OUT of
+  //     the ring, so the picture returns with its trails missing.
+  //
+  // ⚠ ZERO ATTEST for all four: `face` and `paramCells` are stripped by
+  // `scripts/attest-code-basis.ts`, and the four bodies + extensions live under
+  // `ui/`. `inwards` ANIMATES (`uTime`, Speed defaults to 0.5) and still costs
+  // no attest, because its VRT determinism is bought with the engine-level
+  // `__videoEngineFreezeTime` pin through `simPin` rather than with a new
+  // `freeze` ParamDef — a param would have been a contract change to solve a
+  // problem the engine already solves. Verified empirically before/after.
+  'edges',
+  'colorizer',
+  'inwards',
+  'vdelay',
   // ── BATCH 22 · GROUP 2a — the video thin tail, CARD-CHECKED CELLS ─────────
   //
   // Two video modules whose faces could NOT have been derived from their defs

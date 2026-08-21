@@ -12,8 +12,8 @@ Every registered module carries exactly one **disposition**: what kind of work i
 |  | count |
 |---|---|
 | registered modules | 198 |
-| done (faced + promoted) | 103 |
-| remaining (excludes organizational-native) | 92 |
+| done (faced + promoted) | 107 |
+| remaining (excludes organizational-native) | 88 |
 | registered with NO disposition (must be zero) | 0 |
 | inventory entries naming a dead def (must be zero) | 0 |
 
@@ -21,7 +21,7 @@ Every registered module carries exactly one **disposition**: what kind of work i
 
 | disposition | what it means | modules | done |
 |---|---|---|---|
-| `generic-face` | author a `face` and rank the controls — no new platform capability | 141 | 103 |
+| `generic-face` | author a `face` and rank the controls — no new platform capability | 141 | 107 |
 | `blocked` | would be a face today but for the named capability, and nothing else | 3 | — |
 | `bespoke-surface` | the primary interaction is not param-shaped — needs a purpose-built surface | 51 | — |
 | `organizational-native` | rack furniture; not a migration at all | 3 | — |
@@ -58,7 +58,7 @@ author a `face` and rank the controls — no new platform capability.
 | `clouds` | audio | done | — |
 | `cloudseed` | audio | done | — |
 | `cofefve` | audio | done | — |
-| `colorizer` | video | — | — |
+| `colorizer` | video | done | — |
 | `colourofmagic` | video | done | — |
 | `cube` | audio | done | — |
 | `cvBuddy` | audio | done | — |
@@ -70,7 +70,7 @@ author a `face` and rank the controls — no new platform capability.
 | `dockscope` | audio | — | — |
 | `drummergirl` | audio | done | — |
 | `dx7` | audio | done | — |
-| `edges` | video | — | — |
+| `edges` | video | done | — |
 | `fader` | video | — | — |
 | `featurecv` | audio | done | — |
 | `feedback` | video | — | — |
@@ -83,7 +83,7 @@ author a `face` and rank the controls — no new platform capability.
 | `grainsOfVision` | video | done | — |
 | `graphicEq` | video | — | — |
 | `illogic` | audio | done | — |
-| `inwards` | video | — | — |
+| `inwards` | video | done | — |
 | `joystick` | audio | — | — |
 | `karplus` | audio | done | — |
 | `kickdrum` | audio | done | — |
@@ -171,7 +171,7 @@ author a `face` and rank the controls — no new platform capability.
 | `treeohvox` | audio | done | — |
 | `unityscalemathematik` | audio | done | — |
 | `vca` | audio | done | — |
-| `vdelay` | video | — | — |
+| `vdelay` | video | done | — |
 | `vfpgaRunner` | video | — | — |
 | `videoMixer` | video | — | — |
 | `videoOut` | video | done | — |

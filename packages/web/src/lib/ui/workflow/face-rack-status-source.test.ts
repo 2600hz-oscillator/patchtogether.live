@@ -198,6 +198,23 @@ const EXTENSION_BODY_ROLES: Readonly<Record<string, BodyRule>> = {
   videoOut: { role: 'picture', why: 'the rack video output\'s live preview canvas — the picture the whole module exists to produce.' },
   warrensvisions: { role: 'picture', why: 'the shader-visions preview canvas and its SCREEN switch.' },
 
+  // ── BATCH 22 · GROUP 1 — the video thin tail, four fader banks ────────────
+  //
+  // Four bodies at once, all the same shape and all PICTURES: a live preview
+  // canvas plus ONE control caption (the SCREEN button). None is a MONITOR-mode
+  // module — `hideControls` appears in zero of their four cards — so there is no
+  // second switch and no resize grip to declare. Nothing on any of these
+  // surfaces is a derived value in a text node.
+  //
+  // ⚠ THEY ARE GROUPED RATHER THAN INTERLEAVED ALPHABETICALLY ON PURPOSE. This
+  // roster has been caught by a merge three rounds running (monoglitch,
+  // reshaper, milkdrop), and four separate alphabetical insertions are four
+  // separate conflict sites in the file most likely to take a concurrent edit.
+  // One block is one hunk.
+  colorizer: { role: 'picture', why: 'the mono-to-colour tinter\'s live preview canvas and its SCREEN switch. Sits mid-chain by construction (mono-video in, video out), which is why its body keeps the engine\'s watch mark alive while the screen is off (#2015).' },
+  edges: { role: 'picture', why: 'the Sobel outline filter\'s live preview canvas and its SCREEN switch. Stateless — the outline is a pure per-pixel function of (input, threshold, thickness) — so SCREEN OFF costs it nothing but the OUTPUT, which is what the retained watch mark protects (#2015).' },
+  inwards: { role: 'picture', why: 'the concentric-ring generator\'s live preview canvas and its SCREEN switch. The only SOURCE of the four: it has no video input, so a lapsed watch mark would mute the generator every downstream node samples rather than merely stalling a preview (#2015).' },
+  vdelay: { role: 'picture', why: 'the video delay line\'s live preview canvas and its SCREEN switch. ⚠ The ACCUMULATOR of the four — a 32-slot frame ring advanced by every draw — so SCREEN OFF retaining the watch mark is load-bearing on the PICTURE here, not just the output: a stalled pull would let the echo chain decay out of the ring (#2015).' },
   // ── BATCH 22 · GROUP 2a — the video thin tail, card-checked cells ─────────
   //
   // Both PICTURES: a live preview canvas plus ONE control caption (the SCREEN

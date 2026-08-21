@@ -2051,6 +2051,114 @@ export const FACES = [
       + 'to identity and the source resolves to a constant mid-grey, so the picture is a flat '
       + 'field that is identical on every frame.',
   },
+  // ── BATCH 22 · GROUP 1 — the video thin tail, four fader banks ────────────
+  //
+  // All four are `pages: 1`: each face declares no `pages`, so the dock renders
+  // ONE unlabelled band. All four declare every param as a `fader`, so every
+  // scene here is a fader face — measured through `curatedFace`, a video fader
+  // face resolves plate = 2 (the note on reshaper/ruttetra in strict-faces.ts),
+  // so no tint reaches a lane tier and the compact tile is the generic
+  // VideoTileThumb in all four.
+  {
+    type: 'edges',
+    pages: 1,
+    videoFaceWhy:
+      'a VIDEO module, so it must boot into the video zone rather than a mixer channel column — '
+      + 'without this field bootWithFace waits out the full 90 s test timeout for a column '
+      + 'membership a video node never acquires. Both scenes also carry a live picture: the '
+      + 'compact tile paints a VideoTileThumb through hasVideoSurface, and the dock body is the '
+      + "module's own fullViewBody extension (the outline preview plus its SCREEN switch). The "
+      + 'freeze write itself is a NO-OP on this def (it declares no `freeze` param) and that is '
+      + 'deliberate rather than an omission: EDGES is a stateless Sobel filter with no time '
+      + 'uniform, no ping-pong and no accumulator, so its render is a pure per-pixel function of '
+      + '(input, threshold, thickness). With nothing patched into `in` the output is solid black '
+      + 'by construction, identical frame to frame.',
+  },
+  {
+    type: 'colorizer',
+    pages: 1,
+    videoFaceWhy:
+      'a VIDEO module, so it must boot into the video zone rather than a mixer channel column — '
+      + 'without this field bootWithFace waits out the full 90 s test timeout for a column '
+      + 'membership a video node never acquires. Both scenes also carry a live picture: the '
+      + 'compact tile paints a VideoTileThumb through hasVideoSurface, and the dock body is the '
+      + "module's own fullViewBody extension (the tint preview plus its SCREEN switch). The "
+      + 'freeze write is a NO-OP on this def (no `freeze` param) and deliberately so: the tint is '
+      + 'a pure per-pixel function of (input, tintR, tintG, tintB) with no clock or accumulator '
+      + 'anywhere in its fragment source, and with nothing patched into `in` the output is solid '
+      + 'black — the def\'s own docs say so.',
+  },
+  {
+    type: 'inwards',
+    pages: 1,
+    videoFaceWhy:
+      'a VIDEO module, so it must boot into the video zone rather than a mixer channel column — '
+      + 'without this field bootWithFace waits out the full 90 s test timeout for a column '
+      + 'membership a video node never acquires. Both scenes also carry a live picture: the '
+      + 'compact tile paints a VideoTileThumb through hasVideoSurface, and the dock body is the '
+      + "module's own fullViewBody extension (the ring preview plus its SCREEN switch). ⚠ UNLIKE "
+      + 'its three batch siblings this module GENUINELY ANIMATES AT REST — it is a SOURCE with no '
+      + 'video input, and its shader advances `phase = r * uDensity - uTime * uSpeed` with Speed '
+      + 'defaulting to 0.5 — so the surface is a different picture on every rendered frame and '
+      + 'the scene cannot settle on its own. The clock pin below is what stops it.',
+    // ⚠ THE ENGINE CLOCK, NOT A `freeze` ParamDef — and the choice is argued
+    // here because the roster's own 4plexvid note steers the other way ("give
+    // it any accumulator or clock ... a real `freeze` param becomes required.
+    // Do NOT reach for `simPin`: that is for a STATEFUL sim whose frozen frame
+    // depends on elapsed time").
+    //
+    // That advice is aimed at the STATEFUL half of the split, and INWARDS is on
+    // the other half. The distinction is what `mirrorpool` records three
+    // globals to work around: pinning time is NOT sufficient there because its
+    // ping-pong height field keeps integrating, so the frozen frame still
+    // depends on how many draws landed first. INWARDS HAS NO SUCH STATE. Its
+    // render is a pure function of (`frame.time`, params) — no ping-pong, no
+    // accumulator, no RNG — so pinning the clock makes the picture a pure
+    // function of the params alone, which is total determinism rather than a
+    // partial settle.
+    //
+    // That is verbatim the hook's documented purpose: VideoEngine's own comment
+    // on `__videoEngineFreezeTime` reads "the engine clock exposed as
+    // `frame.time` is PINNED to it while draws STILL run — so a time-animated
+    // module renders an identical frame on every step."
+    //
+    // ⚠ AND IT KEEPS THE FACE ZERO-ATTEST, which is the batch's target. A
+    // `freeze` ParamDef is a `params` change, and `params` is IN the attest
+    // basis and IN contract-lock, so it would have cost a real-GPU re-attest
+    // and a contract re-pin to solve a determinism problem the engine already
+    // solves for every video module at once.
+    simPin: [
+      {
+        global: '__videoEngineFreezeTime',
+        value: 1.0,
+        why:
+          'pins `frame.time`, the ONLY time term this module reads — its ring phase is '
+          + '`r * uDensity - uTime * uSpeed`. With it pinned the render is a pure function of the '
+          + 'three params, so the scene is identical across boots, renderers and frame counts. '
+          + 'Sufficient ALONE here, unlike on mirrorpool, because INWARDS carries no ping-pong, '
+          + 'no accumulator and no RNG for the clock pin to leave running.',
+      },
+    ],
+  },
+  {
+    type: 'vdelay',
+    pages: 1,
+    videoFaceWhy:
+      'a VIDEO module, so it must boot into the video zone rather than a mixer channel column — '
+      + 'without this field bootWithFace waits out the full 90 s test timeout for a column '
+      + 'membership a video node never acquires. Both scenes also carry a live picture: the '
+      + 'compact tile paints a VideoTileThumb through hasVideoSurface, and the dock body is the '
+      + "module's own fullViewBody extension (the echo preview plus its SCREEN switch). ⚠ THIS "
+      + 'MODULE DOES CARRY AN ACCUMULATOR — a 32-slot frame ring advanced by every draw — so the '
+      + 'no-accumulator argument its three batch siblings make does NOT apply to it. It settles '
+      + 'anyway, for a stronger reason: with nothing patched into `in` the ring is fed solid '
+      + 'black and the feedback term multiplies black by 0.4, so every slot is black and stays '
+      + 'black no matter how many draws land. The picture is identical frame to frame because '
+      + 'its accumulator has converged, not because it has none. ⚠ PATCH A SOURCE INTO THIS '
+      + 'SCENE AND THAT ARGUMENT DIES — the ring would then hold a different number of frames of '
+      + 'history per boot, and a real `freeze` param (spirographs / b3ntb0x are the template) '
+      + 'would become required.',
+  },
   // ── BATCH 22 · GROUP 2a — the video thin tail, card-checked cells ─────────
   //
   // Both `pages: 1`: each face declares no `pages`, so the dock renders ONE
