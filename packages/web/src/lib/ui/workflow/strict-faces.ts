@@ -2774,10 +2774,14 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // `DOCK_TAB_MIN_BANDS = 7`. Eight controls total is under
   // `DOCK_ROW_MAX_CONTROLS = 10`, so PF-21 packs all four bands into ONE row.
   //
-  // ⚠ THE PLATE TIER SHOWS ONE TINT CHANNEL OF THREE, and the rank was NOT
-  // distorted to avoid it. `LANE_PLATE_MAX_CELLS` is 6 and the module has
-  // exactly five geometry params, so the sixth slot is a tint under any
-  // ordering — the split is forced by arithmetic, not chosen.
+  // ⚠ THIS ENTRY CLAIMED "THE PLATE TIER SHOWS ONE TINT CHANNEL OF THREE" AND
+  // THAT WAS FALSE (corrected 2026-08-21, #2085). It reasoned from
+  // `LANE_PLATE_MAX_CELLS = 6` against five geometry params. But `faceTierCap`
+  // does not return that constant — it runs `laneBodyPlan`, fitting CELLS INTO
+  // GEOMETRY, and a `fader` is a TALL cell. Measured through `curatedFace`, this
+  // face resolves mini 1 · compact 2 · plate 2 · dock 8, so NO tint reaches any
+  // lane tier and the "split triple" it worried about does not exist. Same
+  // result on `reshaper` and `ruttetra`: every video fader face is plate = 2.
   //
   // ⚠ NO `freeze` PARAM, and it is structural rather than a judgement — the
   // ruttetra argument, holding for the same mechanical reason. There is no
@@ -2821,6 +2825,78 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // band height, which depends on BOTH `lines` and `spacing` and so cannot be
   // read off either dial).
   'monoglitch',
+
+  // FACE BATCH 19 · reshaper (2026-08-21) — 6 params, 2 pages, no rail. The
+  // coordinate-remap processor: a CRT raster whose two SWEEPS ARE CABLES. Each
+  // output pixel reads its source u from the X field and its v from the Y field
+  // and samples Z there, so a shaped ramp patched into X or Y rebuilds the
+  // picture inside a deformed coordinate space. The verb is REMAP. Its siblings
+  // do neighbouring things with INTERNAL generators — `ruttetra` scatters a grid
+  // into 3D relief, `monoglitch` bends a stack of drawn scanlines — and the
+  // thing only this one does is take its sampling grid from outside.
+  //
+  // ⚠ THE HEADLINE FEATURE HAS NO CONTROL ON THE FACE, and that is correct
+  // rather than an omission worth fixing. X and Y are `mono-video` INPUTS with
+  // no `ParamDef` behind them, so the entire warp gesture is a PATCHING act and
+  // lives on the rear card; every ranked control on the front is downstream of
+  // it. A face cannot rank what a def does not declare.
+  //
+  // ⚠ ITS TIER LADDER IS mini 1 · compact 2 · plate 2 · dock 6, MEASURED through
+  // `curatedFace` — and the plate tier being the same two as compact is the
+  // thing worth knowing. `faceTierCap` does not return `LANE_PLATE_MAX_CELLS`;
+  // it runs `laneBodyPlan`, fitting CELLS INTO GEOMETRY, and a `fader` is a TALL
+  // cell. Every video fader face measures the same way (monoglitch 8 params,
+  // ruttetra 12 — both plate = 2), so no tint channel reaches any lane tier on
+  // any of them. This corrected a wrong claim in two already-merged faces
+  // (#2085); it is pinned in `reshaper-face-model.test.ts` as a RELATIONSHIP
+  // (plate === compact) rather than as a number.
+  //
+  // ⚠ THE RANK-1 TIE IS BROKEN BY THE SHADER. `xDisp` and `yDisp` are symmetric
+  // in everything the def can express — same range, same default, same
+  // expression — so there is no signal of the kind `ruttetra` has (its `yDisp`
+  // is the one param it ships off identity). The tie-break is evaluation order:
+  // `finalU` before `finalV`, matching the declaration order. That invents
+  // nothing, which is the whole bar for a rank argument.
+  //
+  // ⚠ MONITOR MODE — the THIRD of the five cards #2009 named, after `ruttetra`
+  // proved the seam (#2053) and `monoglitch` inherited it (#2081). Verified
+  // against `ReshaperCard.svelte`, which mounts `hideControls`, the corner
+  // resize and the double-click restore, and carries the same
+  // `a11y_no_static_element_interactions` suppression calling the dblclick "a
+  // real pointer-only trap … tracked as #1572". The faced body fixes that trap
+  // rather than porting it: the body always paints, so the button that turns the
+  // mode on is the button that turns it off.
+  //
+  // ⚠ IT GAINS A SCREEN SWITCH ITS CARD NEVER HAD, exactly as `monoglitch` did —
+  // `previewCollapsed` appears nowhere in `ReshaperCard.svelte`. The 2026-08-18
+  // ruling requires every video FACE to carry one, so this is an ADDITION rather
+  // than a port. Recorded so nobody later "restores parity" by deleting it.
+  //
+  // ⚠ ZERO ATTEST, and this is the first face to prove the #2081 relocation pays
+  // off. Only `face` and `docs` change in `reshaper.ts`, both stripped by
+  // `scripts/attest-code-basis.ts`; the monitor box lives at
+  // `$lib/ui/modules/reshaper/monitor-box.ts`, outside the WebGL basis. Verified
+  // empirically by normalising the def before and after, not assumed.
+  //
+  // ⚠ ITS LANE VRT CARD BASELINE DOES NOT MOVE. `vrt.spec.ts/reshaper.png` is a
+  // live card scene, but `vrt.spec.ts:86` boots `?shell=legacy`, where
+  // `ReshaperCard.svelte` renders whether or not the module is promoted — the
+  // #2078 correction, applied rather than re-derived. The card edit here is the
+  // monitor-box constants, which are the same six numbers it already had.
+  //
+  // ⚠ NO `freeze` PARAM AND NO `simPin`, and unlike its siblings that is true
+  // with sources PATCHED too. `FRAG_SRC` declares no time uniform, no
+  // ping-pong, no accumulator and no RNG: the output is a pure function of
+  // (X, Y, Z, params). `vrt-live-surfaces.ts` records reshaper measured at
+  // "10/10 processes PASS — no mask". Unpatched, all three samplers take their
+  // mid-grey branch and the identity ramps apply, so the face scenes paint a
+  // flat field that is byte-stable by construction.
+  //
+  // NO READOUT, NO SIDEBAR, NO HERO — the 2026-08-19 rulings removed the fields.
+  // The finding that lost its surface is named in the def's `face` comment: the
+  // module is a PASS-THROUGH at its shipped defaults, which is a real derived
+  // state that no longer has anywhere to be shown.
+  'reshaper',
 ]);
 
 /**
