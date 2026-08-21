@@ -2123,6 +2123,41 @@ export const FACES_WITHOUT_SCENES: readonly UnbaselinableFace[] = [
   },
 ];
 
+/**
+ * Every module type the FACE ROSTER ACCOUNTS FOR — by a captured scene, or by a
+ * named `FACES_WITHOUT_SCENES` exemption.
+ *
+ * ⚠ THIS EXISTS BECAUSE **TWO** GATES ASSERT THE SAME RELATIONSHIP, and adding
+ * the exemption to only one of them shipped a red. `workflow-shell-faces.spec.ts`
+ * ("every shipped face has a scene") and `vrt-meta.test.ts` ("the FACES roster
+ * is EXACTLY the promoted set") both answer *is every promoted face accounted
+ * for?* — independently, off the same `FACES` array. Teaching one about the
+ * exemption left the other asserting the pre-exemption invariant, so `milkdrop`
+ * came back as PROMOTED BUT NOT ROSTERED from a gate that had never heard of
+ * `FACES_WITHOUT_SCENES`.
+ *
+ * ⚠ THE FIX IS ONE SOURCE FOR THE RELATIONSHIP, NOT A SECOND COPY OF THE
+ * SUBTRACTION. Each gate computing `promoted − FACES − exemptions` for itself is
+ * the drift machine: the next mechanism that changes what "accounted for" means
+ * has to find every copy, which is exactly the search that failed here. Both
+ * gates now read THIS set, so the relationship is defined once.
+ *
+ * THE LESSON, recorded where the next author of a roster mechanism will meet it:
+ * a platform change must find every gate asserting the invariant it changes —
+ * grep for the INVARIANT (`STRICT_FACES` alongside `FACES`), not for the
+ * filename you happen to be editing.
+ */
+export const ROSTERED_FACE_TYPES: ReadonlySet<string> = new Set<string>([
+  ...FACES.map((f) => f.type),
+  ...FACES_WITHOUT_SCENES.map((e) => e.type),
+]);
+
+/** The exempt subset alone — for a gate that must WORD its message differently
+ *  for a face that has no scene BY DESIGN rather than by omission. */
+export const EXEMPT_FACE_TYPES: ReadonlySet<string> = new Set<string>(
+  FACES_WITHOUT_SCENES.map((e) => e.type),
+);
+
 /** TIGHT per-scene diff budgets (absolute pixels; Playwright takes the MIN of
  *  this and the config ratio budget).
  *

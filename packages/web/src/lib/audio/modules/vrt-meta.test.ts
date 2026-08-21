@@ -70,7 +70,11 @@ import {
 import { VRT_SCENES } from '../../../../../../e2e/vrt/vrt-scenes';
 import { VRT_LIVE_SURFACES } from '../../../../../../e2e/vrt/vrt-live-surfaces';
 // The hand-maintained face-scene roster + the promoted set it must equal.
-import { FACES } from '../../../../../../e2e/vrt/_shell-faces';
+import {
+  EXEMPT_FACE_TYPES,
+  FACES,
+  ROSTERED_FACE_TYPES,
+} from '../../../../../../e2e/vrt/_shell-faces';
 import { STRICT_FACES } from '$lib/ui/workflow/strict-faces';
 
 function repoRoot(): string {
@@ -635,23 +639,53 @@ describe('face VRT scenes — every promoted face is rostered AND captured', () 
   const rostered = new Set<string>(FACES.map((f) => f.type));
 
   it('the FACES roster is EXACTLY the promoted set (both directions)', () => {
+    // ⚠ THE SUBJECT IS "ACCOUNTED FOR", NOT "HAS A SCENE" — and this gate used
+    // to conflate them. A face can be accounted for by a captured scene OR by a
+    // named `FACES_WITHOUT_SCENES` exemption (a renderer that cannot be
+    // baselined at all; `milkdrop`/#2083 is the first). When that exemption
+    // landed, `workflow-shell-faces.spec.ts` learned about it and THIS FILE DID
+    // NOT — two gates asserting one relationship off two lists — so a correctly
+    // exempted face reported as PROMOTED BUT NOT ROSTERED here.
+    //
+    // Both gates now read `ROSTERED_FACE_TYPES`, which is the union, defined
+    // once beside the rosters it unions. Do not re-derive it locally.
     const promoted = new Set<string>(STRICT_FACES);
-    const unrostered = [...promoted].filter((t) => !rostered.has(t)).sort();
-    const unpromoted = [...rostered].filter((t) => !promoted.has(t)).sort();
+    const unaccounted = [...promoted].filter((t) => !ROSTERED_FACE_TYPES.has(t)).sort();
+    const unpromoted = [...ROSTERED_FACE_TYPES].filter((t) => !promoted.has(t)).sort();
 
     expect(
-      unrostered,
-      'PROMOTED BUT NOT ROSTERED — these modules render a live faceplate to every ' +
+      unaccounted,
+      'PROMOTED BUT NOT ACCOUNTED FOR — these modules render a live faceplate to every ' +
         'workflow-mode user with NO VRT scene behind them, and nothing else can see it: ' +
-        'module-face-lint only checks that the def declares a face. Add ' +
-        `{ type, pages } to FACES in e2e/vrt/_shell-faces.ts: ${unrostered.join(', ')}`,
+        'module-face-lint only checks that the def declares a face. Either add ' +
+        '{ type, pages } to FACES in e2e/vrt/_shell-faces.ts and capture the baselines, or — ' +
+        'if the RENDERER genuinely cannot be baselined — add a named FACES_WITHOUT_SCENES ' +
+        `entry carrying the measurement and its replacement coverage: ${unaccounted.join(', ')}`,
+    ).toEqual([]);
+
+    // ⚠ THE REVERSE DIRECTION SPLITS, because the two halves are different
+    // mistakes and deserve different sentences. A stale SCENE captures a legacy
+    // card under a face-scene name; a stale EXEMPTION silently pre-approves
+    // whatever takes that name next. Telling an author to "remove the scene" for
+    // an entry that has no scene is the kind of misdirection that costs a
+    // debugging session.
+    const staleScenes = unpromoted.filter((t) => !EXEMPT_FACE_TYPES.has(t));
+    const staleExemptions = unpromoted.filter((t) => EXEMPT_FACE_TYPES.has(t));
+
+    expect(
+      staleScenes,
+      'ROSTERED BUT NOT PROMOTED — a scene naming a module that is not in STRICT_FACES ' +
+        'captures a legacy card under a face-scene name, which is a baseline nobody can ' +
+        `interpret. Remove it or promote the module: ${staleScenes.join(', ')}`,
     ).toEqual([]);
 
     expect(
-      unpromoted,
-      'ROSTERED BUT NOT PROMOTED — a scene naming a module that is not in STRICT_FACES ' +
-        'captures a legacy card under a face-scene name, which is a baseline nobody can ' +
-        `interpret. Remove it or promote the module: ${unpromoted.join(', ')}`,
+      staleExemptions,
+      'EXEMPTED BUT NOT PROMOTED — a FACES_WITHOUT_SCENES entry names a module that is not ' +
+        'faced. It has no scene BY DESIGN, so there is nothing to remove and nothing to ' +
+        'capture; the entry itself is what is stale. An unpromoted module needs no exemption, ' +
+        'and leaving one behind quietly pre-approves whatever takes that name next — delete ' +
+        `it, or promote the module and re-argue its coveredBy: ${staleExemptions.join(', ')}`,
     ).toEqual([]);
   });
 
@@ -765,7 +799,15 @@ describe('face VRT scenes — every promoted face is rostered AND captured', () 
     // find one. Both legs are exercised against synthetic inputs so the real
     // ones stay untouched.
     const promoted = new Set<string>(STRICT_FACES);
-    const fakeRoster = new Set([...rostered, 'definitelyNotAPromotedModule']);
+    // ⚠ FABRICATED FROM THE UNION, NOT FROM `FACES` — this control was the THIRD
+    // site asserting promoted↔accounted-for, and it went red on the first
+    // correctly-exempted face for the same reason the real check did: it
+    // subtracted a set that had never heard of `FACES_WITHOUT_SCENES`, so
+    // `milkdrop` read as a gap in a fabricated roster that was supposed to have
+    // none. The control's INTENT is unchanged — an invented name must be caught,
+    // and the real set must show no gaps — but it now measures that against the
+    // same `ROSTERED_FACE_TYPES` the two live gates read.
+    const fakeRoster = new Set([...ROSTERED_FACE_TYPES, 'definitelyNotAPromotedModule']);
     expect([...fakeRoster].filter((t) => !promoted.has(t))).toEqual([
       'definitelyNotAPromotedModule',
     ]);

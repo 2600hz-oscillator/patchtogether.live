@@ -142,6 +142,7 @@ import {
   FACES,
   FACES_WITHOUT_SCENES,
   FOLD_VIEWPORT,
+  ROSTERED_FACE_TYPES,
   foldViewportFor,
   LEGACY_FOLD_CLAMP_PX,
   LEGACY_FOLD_PX,
@@ -631,12 +632,14 @@ test.describe('VRT: P1 curated faces (?shell=1) — compact lane tile + dock ful
     // Widened to Set<string> so `.has()` accepts entries read from
     // STRICT_FACES (ReadonlySet<string>) — the comparison is the point.
     const rostered = new Set<string>(FACES.map((f) => f.type));
-    // ⚠ NAMED, ANCHORED EXEMPTIONS — faces whose RENDERER cannot be baselined at
-    // all. Not a bucket: every entry is re-validated by the four legs below, so
-    // an exemption that stops being true reddens instead of quietly persisting.
-    const exempt = new Set(FACES_WITHOUT_SCENES.map((e) => e.type));
+    // ⚠ ONE SOURCE FOR "ACCOUNTED FOR" — a captured scene OR a named
+    // `FACES_WITHOUT_SCENES` exemption. Read from `ROSTERED_FACE_TYPES` rather
+    // than re-derived here, because `vrt-meta.test.ts` asserts the SAME
+    // relationship and the first version of this exemption taught only THIS
+    // gate about it, leaving that one red on a correctly exempted face. Two
+    // gates computing one subtraction is the drift machine.
     const missingScene = [...STRICT_FACES]
-      .filter((t) => !rostered.has(t) && !exempt.has(t))
+      .filter((t) => !ROSTERED_FACE_TYPES.has(t))
       .sort();
     const orphanScene = [...rostered].filter((t) => !STRICT_FACES.has(t)).sort();
 
