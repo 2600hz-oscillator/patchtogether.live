@@ -2540,6 +2540,20 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // facing the module — see the note left in `raw-write-ledger.ts`, where #2025
   // had the mechanism backwards.
   'gatemaiden',
+  // BATCH 18 (2026-08-20) — the THIN AUDIO TAIL, the attenuator pair. Owner:
+  // *"if there are a lot of audio modules with <4 params can't we just fly
+  // through them really quickly? they still need to be done, <4 params or
+  // not."*
+  //
+  // These two close the batch and they are its cleanest statement of the
+  // one-port-meter rule, because they differ ONLY in that respect. `moog995`
+  // has a live meter available (`out1` is audio) and REFUSES it: three
+  // independent channels, so a meter on channel 1 is a false silence for anyone
+  // patched through 2 or 3. `moog992` SUMS its four channels into one `cv_out`,
+  // so it has no independence problem at all — it simply has no audio output,
+  // and its `none` is forced.
+  'moog992',
+  'moog995',
   // BATCH 18 (2026-08-20) — the THIN AUDIO TAIL, the Moog cluster. Owner: *"if
   // there are a lot of audio modules with <4 params can't we just fly through
   // them really quickly? they still need to be done, <4 params or not."*

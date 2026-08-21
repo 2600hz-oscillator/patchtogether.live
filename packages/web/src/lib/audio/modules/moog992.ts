@@ -84,6 +84,27 @@ export const moog992Def: AudioModuleDef = {
     },
   },
 
+  // FOUR PARAMS, FOUR RANKS, ONE BAND — four attenuators in channel order.
+  // Captions stay for the same reason as the 995's: they are the only thing
+  // distinguishing four identical knobs.
+  //
+  // NO `pages` and no cluster splitting off channel 4. It is the INVERTING
+  // channel and it is genuinely different in what it does, but it is operated
+  // identically to the other three, and a band exists to separate IDEAS rather
+  // than to annotate one control. The inversion is documented on the param
+  // itself, where a player meets it.
+  //
+  // `glyph: 'none'` is FORCED here, unlike its sibling the 995 next door, and
+  // the contrast is worth keeping: the 992 SUMS its four attenuated channels
+  // into a single `cv_out`, so it has no independence problem at all — it has
+  // no AUDIO output. `primaryAudioOutPortId` matches `type === 'audio'` and the
+  // only output is `cv`, so any glyph resolves to the DEAD `static` binding
+  // that shipped on marbles through three passes.
+  face: {
+    order: ['atten1', 'atten2', 'atten3', 'atten4'],
+    glyph: 'none',
+  },
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     // One attenuating GainNode per channel. Channel 4 inverts (−atten4).
     const initial = node.params ?? {};

@@ -1741,6 +1741,20 @@ export const FACES = [
   // unpinned fontconfig fallback in these two new baselines.
   { type: 'gatemaiden', pages: 1 },
 
+  // ── BATCH 18 — THE THIN AUDIO TAIL (attenuator pair) ────────────────────
+  //
+  // Three and four identical knobs respectively, one band each (`pages: 1`):
+  // neither declares `face.pages`, because a row of channel attenuators is ONE
+  // idea and splitting it under headings would spend vertical space to say
+  // nothing.
+  //
+  // NO `videoFaceWhy` and no `simPin`. Both are PASSIVE — pure GainNode graphs
+  // with no worklet, no oscillator and no analyser tap — and both declare
+  // `glyph: 'none'`, so there is no live picture in either scene and nothing to
+  // converge. With nothing patched in, a passive attenuator is bit-exactly
+  // silent by construction rather than by the AudioContext freeze.
+  { type: 'moog992', pages: 1 },
+  { type: 'moog995', pages: 1 },
   // ── BATCH 18 — THE THIN AUDIO TAIL (Moog cluster) ───────────────────────
   //
   // Two to three controls each, so `pages: 1` throughout: none declares

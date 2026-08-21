@@ -74,6 +74,31 @@ export const moog995Def: AudioModuleDef = {
     },
   },
 
+  // THREE PARAMS, THREE RANKS, ONE BAND — three identical attenuators in
+  // channel order. Their per-control captions ("Att 1".."Att 3") STAY: they are
+  // the only thing separating three otherwise-identical knobs, which is the
+  // tidyVco A/D/S/R case rather than the mixmstrs one, and no section heading
+  // conveys the channel number here.
+  //
+  // `glyph: 'none'` DESPITE A LIVE BINDING BEING AVAILABLE — the same judgement
+  // as `moog994` in this batch, for the same structural reason.
+  // `primaryAudioOutPortId` resolves `out1`, so `glyph: 'meter'` WOULD bind
+  // live. It is refused because the 995 is THREE INDEPENDENT CHANNELS
+  // (in_N → attenuator → out_N, no summing anywhere) and the glyph binds
+  // exactly ONE port: a rack patched through channel 2 or 3 alone would show a
+  // FLAT METER over a module that is passing signal perfectly well. A false
+  // "silent" is worse than no picture.
+  //
+  // ⚠ THE TEST FOR THIS IS INDEPENDENCE, NOT PORT COUNT. `moog903a` also has a
+  // one-port meter over two audio outputs and KEEPS it, because white and pink
+  // are the same generator at different filter slopes — either tap represents
+  // the module. Channel 1 of a passive attenuator bank represents nothing but
+  // channel 1.
+  face: {
+    order: ['atten1', 'atten2', 'atten3'],
+    glyph: 'none',
+  },
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     // Three independent passive attenuator channels: in_N → GainNode → out_N.
     const gain1 = ctx.createGain();
