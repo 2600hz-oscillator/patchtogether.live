@@ -1047,10 +1047,18 @@ export const FACES = [
   // module's look on purpose, which is why this is a per-scene DECLARATION with
   // a reason rather than a predicate over param names.
   // THE SECOND VIDEO FACE, and the first scene in this roster whose module
-  // ranks NOTHING (#1821). `pages: 1` is the single unlabelled `__all` band
-  // `dockFacePlan` returns for a face with no `face.pages` — it renders as one
-  // empty `face-page` section under the extension body, which IS the faceplate
-  // here (videoOut declares `params: []`).
+  // ranks NOTHING (#1821). `pages: 0` — a face that ranks nothing now renders
+  // NO section band at all, so the whole faceplate here is the `fullViewBody`
+  // extension (videoOut declares `params: []`).
+  //
+  // ⚠ THIS ENTRY WAS `pages: 1` AND THAT NUMBER WAS PINNING A DEFECT. The band
+  // it counted was an EMPTY `face-page` section, and `.dock-page` carries
+  // `border-top: 1px solid` + `padding-top: 6px` — so it painted a bare
+  // divider rule under the extension body with nothing beneath it. Harmless
+  // enough to miss here, because the extension fills the plate above it; not
+  // harmless on the zero-param AUDIO utilities that hit the same branch with
+  // no extension at all, where the rule IS the entire faceplate. `dockFacePlan`
+  // now refuses the empty band and this scene counts what is really rendered.
   //
   // ⚠ `videoFaceWhy` is MANDATORY and doubly so for this one: the dock body
   // blits the live engine every rAF, and unlike backdraft the COMPACT tile is a
@@ -1060,7 +1068,7 @@ export const FACES = [
   // video freeze; an AudioContext suspend says nothing about either.
   {
     type: 'videoOut',
-    pages: 1,
+    pages: 0,
     videoFaceWhy:
       'BOTH scenes carry a live picture: the dock faceplate IS a fullViewBody extension blitting '
       + 'the video engine every rAF, and the compact lane tile paints a live VideoTileThumb because '
@@ -1666,6 +1674,32 @@ export const FACES = [
   // codepoint Latin subsets and a geometric-shape glyph would render through an
   // unpinned fontconfig fallback in these two new baselines.
   { type: 'gatemaiden', pages: 1 },
+
+  // ── BATCH 18 — THE THIN AUDIO TAIL ──────────────────────────────────────
+  //
+  // Utilities whose whole control surface is one knob or nothing at all. These
+  // are the NARROWEST plates in the fleet and that is the correct result, not a
+  // capture bug: compact is the default and width is earned, so a module with
+  // one knob gets a plate the size of one knob.
+  //
+  // ⚠ `pages: 0` ON THE TWO ZERO-PARAM ENTRIES IS THE INTERESTING NUMBER, and
+  // it is NOT "no scene". Both modules declare `params: []` — a gate flip-flop
+  // whose alternation lives in the worklet, and a passive multiple that is a
+  // solder junction — so `face.order` is empty, `dockFacePlan` returns NO band,
+  // and the dock faceplate is the TITLE plus the jack field with no section
+  // between them. Before this batch that branch emitted an EMPTY `face-page`
+  // section, which `.dock-page`'s `border-top` painted as a bare divider rule
+  // over nothing; the planner now refuses it (see `curated-face.ts`), which is
+  // also why `videoOut` above moved from 1 to 0.
+  //
+  // NO `videoFaceWhy` and no `simPin` on any of the four: every one is a
+  // silent-at-spawn audio utility with `glyph: 'none'`, so there is no live
+  // picture, no free-running oscillator and no analyser tap to converge. The
+  // AudioContext freeze the harness applies is a belt on a brace here.
+  { type: 'depolarizer', pages: 1 },
+  { type: 'flipper', pages: 0 },
+  { type: 'moog994', pages: 0 },
+  { type: 'polarizer', pages: 1 },
   // RUTTETRA (`label: 'xyz'`) — the authentic forward-scatter Rutt/Etra scan
   // processor, and the roster's first MONITOR-MODE face (#2009).
   //

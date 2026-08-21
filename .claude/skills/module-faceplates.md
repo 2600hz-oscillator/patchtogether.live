@@ -35,22 +35,59 @@ module that does not work is a prettier broken module.
 
 ---
 
-## STOP 1 — does this module MERIT a face?
+## STOP 1 — is promoting this module a PARITY LOSS?
 
-**"NO FACE ON MERIT" is a legitimate, expected verdict. Report it and move on.**
+⚠ **THIS STOP USED TO REFUSE THIN MODULES, AND THAT REFUSAL IS OVERRIDDEN.** It
+read: *"Refuse when all of these hold: ≤2 params, no control families, no
+`node.data`-backed affordances"*, with `noise` as the worked example. Owner
+directive, 2026-08-20, which supersedes it:
 
-`noise` (`lib/audio/modules/noise.ts:60-68`): `inputs: []`, three outputs, and
-**one** param. `faceTierCap` (`curated-face.ts:76`) gives mini 1 / compact 2–3 /
-plate 6 / dock all — with one control every tier renders the identical single
-knob, and `face.hero`, `face.pages` and band packing all have
-nothing to organise. A face there is pure churn: 2 new VRT baselines per
-platform, a faces-parity row, a Push-card tier change, and zero user-visible
-gain.
+> *"if there are a lot of audio modules with <4 params can't we just fly through
+> them really quickly? they still need to be done, <4 params or not."*
 
-Refuse when **all** of these hold: ≤2 params, no control families, no
-`node.data`-backed affordances. When in
-doubt, write the one-paragraph "what is it FOR" (audit step 2) — if it does not
-produce a ranking argument, there is nothing to rank.
+**Thinness is not a reason to refuse.** A one-knob module gets a one-knob face:
+one honest band, nothing padded, and it is among the narrowest plates in the
+fleet — which is the correct outcome of "compact is the default and width must be
+earned", not a defect.
+
+⚠ **And the old example was FALSE WHEN WRITTEN.** `noise` is *in* `STRICT_FACES`
+— it ships a face with `paramCells: { level: 'fader' }`. The text cited it as the
+canonical refusal while the module had already been promoted, so anyone reasoning
+"the same grounds on which `noise` is refused" inherited a premise the registry
+contradicts. That mistake propagated: a sibling lane re-pointed
+`midi-binding-node-lifetime.spec.ts` onto `depolarizer` on 2026-08-20 *because*
+this section called such modules structurally un-promotable, and the batch-18
+blitz promoted `depolarizer` hours later.
+
+### What actually earns a refusal
+
+Not the control count — whether the promoted face **drops something the player
+can do or see today**. Promoting removes the legacy card from both surfaces, so
+anything living only there becomes unreachable. Two measured examples, both filed
+rather than shipped:
+
+- **#1974 (`joystick`)** — its only controls are one `xy` pad. `laneOrder` drops
+  the pad's anchor and `foldedOrder` drops its partner, so **every lane tier
+  resolves to zero controls**: a title, a patch panel, and no stick, on a module
+  whose entire purpose is a performance gesture.
+- **#2065 (`spectrograph`)** — its headline feature is a live scrolling sonogram
+  the card draws on its own canvas. `hasVideoSurface` is `domain === 'video'`, so
+  an audio-domain module with `mono-video` ports has **no engine surface** for
+  the shell to paint; the face would be one GAIN knob and a static glyph.
+
+Both are functional-parity losses, which are never surfaced as an owner choice
+after the build — file the blocker and move on to the next module. That is the
+verdict this stop exists to produce now.
+
+⚠ **A thin module can still have a real trap, and it is SELECTABILITY, not
+merit.** A `2..3 discrete` param rendered as a knob has two reachable positions
+across the dial's whole travel, so a drag quantises back to where it started and
+the control is **inert** — `faces-parity` caught exactly this on `moog962`
+(*"dragging the knob commits a param change into the graph"*, both attempts). Give
+a few-state discrete param an `options` roster so `paramCellKind` derives a
+segmented cell. Labels are the module's real names where it has them, and the
+states' own values where they are literally quantities; never fabricate
+semantics. See "rosters make states SELECTABLE" below.
 
 ## STOP 2 — does every way of getting DATA IN survive promotion?
 
@@ -346,6 +383,43 @@ UNREPRESENTABLE?") is still an opt-in list of 7.
 
 ---
 
+## Rosters make states SELECTABLE — the labels question is a DIFFERENT question
+
+Two questions look like one when you meet a discrete param, and answering only
+the first ships an inert control (batch 18, 2026-08-20):
+
+1. **What are the states CALLED?** Promote names that already exist and the shell
+   cannot otherwise reach — the gatemaiden shape. `sampleHold`'s ten scale names
+   were rendered by its card in its own element above the knob, so a faceplate
+   could only ever paint an anonymous ten-position dial; `moog904b`'s LOW/HIGH
+   lived in a literal array inside the card. Both are now `options` on the def.
+   **Never fabricate semantics a module does not have** — `moog904c`'s `mode` is
+   a continuous band-pass↔notch morph whose endpoint names appear only in docs
+   prose, so it gets no landmarks from a face migration.
+2. **Can a player REACH each state?** A `2..3 discrete` param drawn as a KNOB has
+   exactly two reachable positions across the dial's whole travel, so an ordinary
+   drag quantises back to where it started. ⚠ **`moog962` shipped that way and
+   `faces-parity` failed it on both attempts** — *"moog962 cell 'stages'
+   (param/knob): dragging the knob commits a param change into the graph"*. The
+   legacy card has the same defect, since it draws the same bare `<Knob>`.
+
+`options` is the ONLY mechanism for (2): `paramCellKind` derives `'segmented'`
+from a roster (`'selector'` past `SEGMENTED_MAX_OPTIONS`, and `'knob'` at every
+non-dock tier), and `face.paramCells` has no segmented kind to declare. So a
+few-state discrete param gets a roster **even when its states have no names** —
+label them with their own values, which invents nothing.
+
+⚠ **Export the roster from the def and import it in the card** when the card
+renders its own picker — the same ONE-PLACE rule as the ranges above, and for the
+same reason: no runtime gate reads a literal in a `.svelte` file, so guard it at
+the SOURCE level. `MOOG904B_RANGE_OPTIONS` is the worked example.
+
+A roster is TOTAL by default: assert it against the param's own `min`/`max` span,
+never a typed length. `param-vocabulary`'s reason is that a roster skipping a
+value leaves a state the dial can reach and the picker cannot name.
+
+---
+
 ## Bespoke surfaces — the EXTENSION registry (#1512)
 
 When a module needs more than the generic cells, there is a ladder, and the
@@ -593,7 +667,10 @@ geometry is real code and stays in the hash, deliberately.)
 
 1. **Audit first** (`module-adversarial-audit.md`). Fix what you find, in its
    own commit, with its own gate. Never fold a DSP change into a face wave.
-2. **STOP 1** — merit. If no, report "NO FACE ON MERIT" with the numbers and stop.
+2. **STOP 1** — parity, NOT merit. Thinness never refuses (owner, 2026-08-20:
+   *"they still need to be done, <4 params or not"*). Refuse only when the face
+   would DROP an affordance the card has — file the blocker (#1974, #2065) and
+   stop.
 3. **STOP 2** — grep the legacy card. Every affordance maps to a face key, a
    shell cell, a `momentary` id, or a written exemption. If an input path cannot
    survive, do not promote.
