@@ -173,6 +173,45 @@ export const shapegenDef: VideoModuleDef = {
     { id: SHAPEGEN_CLOCK_PARAM_ID, label: 'CLK', defaultValue: 0, min: 0, max: 1, curve: 'linear' },
   ],
 
+  // ── FACE (batch-22 · the video thin tail) ─────────────────────────────────
+  face: {
+    order: ['size', 'rotate', 'solids'],
+
+    // ⚠ NO `pages`. Three controls over one scene — how big the primitives
+    // are, where the camera is, and whether they are shaded or wireframe — is
+    // one honest band.
+
+    // ⚠ NO `paramCells`, AND THAT IS A DECISION RATHER THAN AN OMISSION.
+    // `ShapegenCard.svelte` draws SIZE and ROT with `Knob`, not `NeonFader` —
+    // unlike its batch siblings — and a KNOB is the shell's default primitive,
+    // so declaring anything here would either be redundant or would silently
+    // change the control the player has. The rule is not "declare faders
+    // everywhere"; it is "declare the primitive the CARD established, and only
+    // when the def cannot imply it".
+    //
+    // `solids` needs no declaration either: `min: 0, max: 1, curve: 'discrete'`
+    // is the genuine 2-state shape, so `looksLikeToggle` resolves it to a
+    // TOGGLE, matching the card's `<button>`. ⚠ Giving a 2-state param a knob
+    // is the moog962 defect — the control is INERT.
+
+    // ⚠ `SHAPEGEN_CLOCK_PARAM_ID` ('CLK') IS DELIBERATELY UNRANKED. It is a
+    // SYNTHETIC GATE param, hidden from the card by design and surfaced as the
+    // `clock_in` cv jack through the standard port row (the def's own comment
+    // says so, and names SCOREBOARD's `scoreTrig` as the precedent). Ranking it
+    // would put a control on the faceplate that the card deliberately does not
+    // have — inventing an affordance, which the parity rule forbids in exactly
+    // the same breath as it forbids dropping one. Its home is the JACK.
+    glyph: 'none',
+
+    // SCREEN ON/OFF arrives through this slot (#1928): promotion stops BOTH
+    // surfaces rendering `ShapegenCard.svelte`. This module is a GENERATOR
+    // whose `out` is the whole reason to patch it, so the body keeps the
+    // engine's watch mark alive while the screen is off — otherwise a control
+    // labelled SCREEN would behave as a MUTE downstream. See
+    // `$lib/ui/modules/shapegen/shell-extension.ts`.
+    extension: 'shapegen',
+  },
+
   docs: {
     explanation:
       "shapegen is a generative 3D-shape video synthesizer (extracted from FOXY's shape path). It has no straight video pass-through input: instead it reads three incoming rasters as control surfaces and synthesizes a scene of up to 8 lit primitives (sphere, cube, cone, cylinder, ring/torus, tetrahedron) floating inside a vaporwave wireframe bounding box with a faint perspective floor grid. Each raster is downsampled to an 80x60 RGBA buffer and fed to generateShapes: A's 16x16 mean-luma feature grid yields the top-8 peaks (non-max-suppressed) that place shapes in XY (if A is flat below the variance floor, NO shapes are drawn), B's luma at each peak sets Z depth, and C's luma picks the primitive type bucket (floor(c*6)), the baseline radius (0.05+c*0.25) and the hue (=c). The product of A and B luma at each peak gives a per-shape size factor of 0.5x-2x. The whole scene is painted to an OffscreenCanvas, uploaded as a texture, and blitted out a fullscreen quad. Usage: patch any three video sources into A/B/C, twist ROT to orbit the camera, raise SIZE to fatten the primitives, and flip SOLIDS for shaded vs neon-wireframe looks; patch a gate into CLK to freeze the shape set and only re-roll it on each rising edge (a visual sample-and-hold) while the camera keeps rotating.",
