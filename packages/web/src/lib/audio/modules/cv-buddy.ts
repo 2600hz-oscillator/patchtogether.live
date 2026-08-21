@@ -64,7 +64,7 @@ import {
   type CvBuddyKind,
   type CvBuddyInstance,
 } from '$lib/audio/cv-buddy/slot-alloc';
-import type { ModuleNode, ParamDef } from '$lib/graph/types';
+import type { ModuleFace, ModuleNode, ParamDef } from '$lib/graph/types';
 import { snapToOptions } from '$lib/ui/controls/knob-vocabulary-model';
 
 /**
@@ -386,6 +386,75 @@ export const CV_BUDDY_PPQN_PARAM: ParamDef = {
   },
 };
 
+/**
+ * THE FACE, declared ONCE and shared by both kinds — the same argument
+ * `CV_BUDDY_PPQN_PARAM` above makes, one level up.
+ *
+ * ⚠ IT IS THE SAME OBJECT, not two identical literals, and the difference is
+ * the whole point: `cvBuddyDef.face === cvBuddyMiniDef.face` is asserted BY
+ * IDENTITY in `cv-buddy-face-model.test.ts`. Two copies would be two faces free
+ * to drift — one gaining a band, one keeping an old label — and the drift would
+ * be invisible until a player noticed two plates for one module disagreeing,
+ * which is exactly what `CvBuddyBody.svelte`'s header says about the card.
+ *
+ * The face is legal for both because the two defs differ ONLY in ports: the
+ * params are the same two (`ppqn`, `clockOffsetMs`, both from the shared
+ * declarations above), and `face.order` names params, never ports.
+ *
+ * ⚠ BOTH PARAMS ARE CLOCK PARAMS, so the single band IS the whole control
+ * surface — which is why `rackStatus` below could not be a shell-only feature.
+ * Suppressing this band on a non-primary instance leaves NOTHING but the
+ * module's own status body, and `rackStatusPlan` refuses to suppress at all
+ * unless that body is painting.
+ */
+export const CV_BUDDY_FACE: ModuleFace = {
+  order: ['ppqn', 'clockOffsetMs'],
+
+  // No glyph. `primaryAudioOutPortId` resolves nothing here — every output is
+  // cv/gate — so `'meter'` would give a static tap and twelve segments that can
+  // never light (the marbles defect), and there is no waveform to draw either:
+  // this module PASSES a note through and emits a pulse train. The picture on
+  // this plate is the status body's lamps, which are pictures of the RACK.
+  glyph: 'none',
+
+  // The module's own rack-global status surface at the head of the dock view:
+  // the slot NAME plus the ROUTED / LATE lamps. See the directory's
+  // shell-extension.ts for why both kinds resolve to one extension.
+  extension: 'cvBuddy',
+
+  rackStatus: {
+    why:
+      'RUN and CLOCK are SINGLE-SOURCE: ES-9 jacks 7 and 8 are driven by the id-smallest CV Buddy '
+      + 'of either kind, and every other instance is a note voice only. So on a non-primary '
+      + 'instance PPQN and CLOCK OFFSET are dials wired to nothing — the scheduler they configure '
+      + 'belongs to a different node — and the legacy card has hidden them since the module '
+      + 'shipped, telling the player instead that "PPQN / clock is driven by the first CV Buddy". '
+      + 'That sentence cannot be painted on a faceplate, and the ruling it falls under is also '
+      + 'the reason it does not need to be: removing the band IS the statement, and it is '
+      + 'structure rather than text. Nothing else on this face can express the fact, because it '
+      + 'is not a property of this node at all — it changes when a DIFFERENT CV Buddy is added '
+      + 'or deleted, which no ParamDef can represent.',
+    peers: ['cvBuddy', 'cvBuddyMini'],
+    primaryOnlyBands: ['clock'],
+  },
+
+  pages: [
+    {
+      id: 'clock',
+      label: 'clock',
+      hint:
+        'PPQN is how many pulses the CLOCK jack emits per quarter note — 24 is DIN-sync and what '
+        + "most gear expects; drop to 4 or 8 for a Pam's-style divided clock, raise to 48 for "
+        + 'finer resolution. OFFSET is a manual timing trim in milliseconds: nudge it negative to '
+        + 'send the pulse train early when downstream gear is triggering late. Both belong to the '
+        + 'clock-owner instance, which is the id-smallest CV Buddy of either kind on this rack; '
+        + 'on any other instance this band is not shown, because it would configure a clock that '
+        + 'node does not drive.',
+      controls: ['ppqn', 'clockOffsetMs'],
+    },
+  ],
+};
+
 export const cvBuddyDef: AudioModuleDef = {
   type: 'cvBuddy',
   palette: { top: 'Audio modules', sub: 'I/O' },
@@ -427,6 +496,9 @@ export const cvBuddyDef: AudioModuleDef = {
     laneTap: { pitchIn: 'pitch', gateIn: 'gate', velIn: 'velocity' },
     returnsAudio: true,
   },
+
+  // ⚠ THE SAME OBJECT the mini declares. See CV_BUDDY_FACE.
+  face: CV_BUDDY_FACE,
 
   docs: {
     explanation:

@@ -71,6 +71,7 @@
   import { dockRowPlan, type RowPlanDefLike } from '$lib/ui/workflow/dock-row-plan';
   // BAND FOCUS — the pure predicate; the shell never re-derives it.
   import { visibleBandIds } from '$lib/ui/workflow/band-focus-model';
+  import { rackStatusPlan } from '$lib/ui/workflow/rack-status-model';
   import {
     declaredParamCells,
     momentaryParamIds,
@@ -515,11 +516,41 @@
   let focusedBandIds = $derived(
     visibleBandIds(bandFocusDecl, bandFocusDecl ? params.paramVal(bandFocusDecl.param) : undefined),
   );
+  // ── RACK-GLOBAL STATUS (#2024) ───────────────────────────────────────────
+  //
+  // A THIRD axis, and the only one whose input is not this node: which OTHER
+  // nodes exist. `cvBuddy`'s RUN + CLOCK are single-source — the id-smallest
+  // instance of either kind drives ES-9 jacks 7/8 — so on every other instance
+  // the clock band is dials wired to nothing, and the legacy card has always
+  // hidden it. Read as a PREDICATE, never `why`, which is a reviewer-facing
+  // argument asserted unreachable from this file.
+  //
+  // ⚠ `nodesStructuralVersion()` IS THE DEPENDENCY, not `patch.nodes` alone.
+  // The answer changes when a SIBLING is added or deleted, which is a
+  // structural edit to a map this component otherwise only reads by key — the
+  // same subscription `CvBuddyBody` has always used for the identical read.
+  //
+  // ⚠ AND IT IS FILTERED HERE, BEFORE `dockRowPlan`, for the reason band focus
+  // states next door: the row plan PACKS bands, so filtering its output leaves
+  // rows sized for bands that are no longer there.
+  let rackStatus = $derived(
+    rackStatusPlan({
+      view,
+      declared: (def as FaceplateDefLike | undefined)?.face?.rackStatus,
+      extBody: headPlan.extBody,
+      nodeId: id,
+      nodes: (void nodesStructuralVersion(), patch.nodes) as Record<
+        string,
+        { type?: string } | undefined
+      >,
+    }),
+  );
   let dockBands = $derived(
     allDockBands
-      ? focusedBandIds
-        ? heroSplit.bands.filter((b) => focusedBandIds!.has(b.id))
-        : heroSplit.bands
+      ? (focusedBandIds
+          ? heroSplit.bands.filter((b) => focusedBandIds!.has(b.id))
+          : heroSplit.bands
+        ).filter((b) => !rackStatus.hiddenBands.has(b.id))
       : null,
   );
   let hero = $derived(heroSplit.hero);

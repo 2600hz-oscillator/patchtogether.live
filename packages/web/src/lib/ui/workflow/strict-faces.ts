@@ -2718,6 +2718,45 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // page. Curated, each block owns its six holes. 53 holes is past
   // `REAR_DENSE_ROWS` (40), so it renders dense by design.
   'colourofmagic',
+  // THE FACEPLATE QUEUE · Q52 — CV BUDDY + CV BUDDY MINI (2026-08-21), the pair
+  // that had to move TOGETHER and the first face whose blocker was not a
+  // control at all.
+  //
+  // ⚠ ONE FACE OBJECT FOR TWO ENTRIES. Both defs reference the SAME
+  // `CV_BUDDY_FACE`, asserted by IDENTITY in `cv-buddy-face-model.test.ts`.
+  // They differ only in ports (the mini has no velocity jack), and `face.order`
+  // names params — so a second literal would buy nothing and could drift, the
+  // argument their shared card body and their shared PPQN roster already make.
+  //
+  // ⚠ THE INTERESTING PART IS WHAT ALMOST BLOCKED IT. #2024 measured that
+  // nearly everything the card showed was RACK-GLOBAL derived text — the ES-9
+  // slots this instance owns (a function of every CV Buddy on the rack, of
+  // either kind), an ES-9 presence prompt, and a late-tick counter whose own
+  // card comment argued a ZERO must always render. None of it is a param, so no
+  // resolver could produce it and no def-reading gate could see it go; and all
+  // of it is text a resting faceplate may not paint. The resolution is
+  // `face.rackStatus` plus the `StatusLed` primitive, and it did NOT relax the
+  // rulings — it re-shaped each item into a permitted form:
+  //
+  //   * the SLOT NAME paints, as a NAME — the owner's own disambiguation test,
+  //     since two CV Buddies are otherwise identical plates;
+  //   * the CLOCK BAND is REMOVED on a non-primary instance rather than
+  //     explained by a sentence, which is STRUCTURE and therefore free;
+  //   * `clockSkips` becomes a dark/lit LAMP with the count in `title` /
+  //     `aria-label` — strictly more informative at rest than the card's `0
+  //     skipped`, because a present-and-dark lamp is what "healthy, and
+  //     instrumented" looks like;
+  //   * the two ES-9 prose sentences collapse into the ROUTED lamp on an
+  //     ACTION-IDENTITY argument, stated where the collapse happens.
+  //
+  // ⚠ `pages: 1` AND THAT ONE BAND IS THE WHOLE CONTROL SURFACE — both params
+  // are clock params. So the non-primary plate is the status body ALONE, which
+  // is why `rackStatusPlan` refuses to suppress anything unless that body is
+  // painting (`faceMonitorPlan`'s never-a-blank-plate precondition, sharper
+  // here). The lane tile is the named blind spot: it has no body, so it hides
+  // nothing.
+  'cvBuddy',
+  'cvBuddyMini',
 ]);
 
 /**

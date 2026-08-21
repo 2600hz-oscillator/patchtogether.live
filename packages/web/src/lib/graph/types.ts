@@ -1088,6 +1088,82 @@ export interface ModuleFace {
    * parity sweep's focused-absence leg for "the declaration is actually wired".
    */
   bandFocus?: FaceBandFocus;
+  /**
+   * RACK-GLOBAL STATUS — this face shows state that belongs to THE RACK rather
+   * than to this node (#2024 item 3; owner ruling 2026-08-21, *"close the
+   * gap"*).
+   *
+   * ⚠ IT IS A THIRD AXIS, not a spelling of the two above. `monitor` is a
+   * per-node RUNTIME TOGGLE; `bandFocus` is a per-node PARAM VALUE. This one is
+   * a property of the PATCH — which other nodes exist — and no param-reading
+   * resolver can see it, because there is no `ParamDef` whose value is "am I
+   * the instance that owns the shared hardware", and there cannot be: the
+   * answer changes when a DIFFERENT node is added or deleted.
+   *
+   * The worked case is `cvBuddy`/`cvBuddyMini`. RUN and CLOCK are single-source
+   * — the id-smallest instance of either kind drives ES-9 jacks 7 and 8 — so on
+   * every other instance the PPQN and OFFSET controls are dials wired to
+   * nothing, and the legacy card has always hidden them. `primaryOnlyBands`
+   * carries that forward; without it, promotion turns two hidden controls into
+   * two live-looking ones that change nothing, which is a worse surface than
+   * the card it replaced.
+   *
+   * ⚠ IT IS STRUCTURE, NOT TEXT — free under the resting-text rulings for the
+   * same reason `bandFocus` is: it decides which bands RENDER and paints
+   * nothing at all. The rack-global state a player actually READS (which jacks
+   * this instance owns, whether the clock is dropping pulses) is painted by the
+   * module's own `fullViewBody` through the `StatusLed` primitive, where a
+   * caption is static, a state is a lamp, and the measurement reaches
+   * `aria-label`/`title` and never a text node.
+   *
+   * ⚠ IT CANNOT BLANK A PLATE. `rackStatusPlan` refuses to hide anything unless
+   * the module's own body is painting — the `faceMonitorPlan` precondition, and
+   * sharper here, since `cvBuddy`'s only two params are BOTH in the suppressed
+   * band. The lane tile is the named blind spot: no status body fits there, so
+   * nothing is suppressed there either.
+   *
+   * Gate: `face-rack-status-source.test.ts`, deny-by-default in both
+   * directions — a declaring face must own a `fullViewBody` that reads the
+   * patch and paints through `StatusLed`, its `primaryOnlyBands` must name real
+   * bands and its `peers` real registered types; and every extension body in
+   * the tree must declare what its own canvas paints, which is what converts
+   * `face-resting-text-source`'s largest named blind spot into a
+   * deny-by-default roster.
+   */
+  rackStatus?: FaceRackStatus;
+}
+
+/**
+ * RACK-GLOBAL STATUS's declaration (`face.rackStatus`). Serialisable data like
+ * the rest of `face` — the shell reads it, never a closure.
+ *
+ * ⚠ `peers` IS DECLARED, NOT DERIVED, and the reason is that the platform
+ * cannot know which modules share a resource. `cvBuddy` and `cvBuddyMini` draw
+ * from ONE ES-9 jack pool across both types — that is a fact about the ES-9,
+ * not about either def — and a derivation over "modules with the same category"
+ * or "the same palette group" would be a guess that reads as a rule.
+ */
+export interface FaceRackStatus {
+  /**
+   * Why THIS face's controls depend on which OTHER nodes exist — required by
+   * the type so `tsc` refuses the bare form, and an argument rather than a
+   * label. NEVER PAINTED: it is for the reviewer and the gate, and
+   * `face-resting-text-source` asserts the shell cannot reach it.
+   */
+  why: string;
+  /**
+   * The module types sharing the rack-global resource, INCLUDING this one. The
+   * PRIMARY is the lexicographically smallest node id among them — the same
+   * converged tie-break every collab peer computes identically.
+   */
+  peers: readonly string[];
+  /**
+   * Band (page) ids that render ONLY on the primary instance. Anchored by the
+   * gate to the face's own declared pages, so a renamed band cannot leave a
+   * suppression pointing at nothing — which would fail SILENTLY OPEN, painting
+   * the dead controls this field exists to hide.
+   */
+  primaryOnlyBands: readonly string[];
 }
 
 /**
