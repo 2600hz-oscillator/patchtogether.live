@@ -30,7 +30,7 @@
 
 import type { VideoModuleDef } from '$lib/video/module-registry';
 import type { VideoNodeHandle, VideoNodeSurface } from '$lib/video/engine';
-import { coerceMode, type TransitionMode } from './fader-transitions';
+import { coerceMode, TRANSITION_NAMES, type TransitionMode } from './fader-transitions';
 
 const clamp01 = (x: number): number => (x < 0 ? 0 : x > 1 ? 1 : x);
 
@@ -101,9 +101,58 @@ export const faderDef: VideoModuleDef = {
   ],
   params: [
     { id: 'fader',        label: 'A/B',     defaultValue: 0.5, min: 0, max: 1, curve: 'linear' },
-    { id: 'abTransition', label: 'A/B Fx',  defaultValue: 0,   min: 0, max: 4, curve: 'linear' },
+    // ⚠ DECLARED `curve: 'linear'` OVER `0..4` AND RENDERED AS A 5-OPTION NAMED
+    // `<select>`. That is the card-vs-def class (#2090's relative, and worse
+    // than it): the card writes integer indices and reads `TRANSITION_NAMES`,
+    // while the def described a continuous ramp. Facing it as-declared would
+    // have resolved it to a KNOB sweeping a continuous 0..4 range — and the FX
+    // NAMES would simply have DISAPPEARED, which is an affordance loss, not a
+    // cosmetic one. `coerceMode` has always rounded and clamped, so every value
+    // between the integers was already a lie.
+    //
+    // Both halves are fixed together, because either alone is still wrong:
+    // `curve: 'discrete'` is what the consumer has always done, and `options`
+    // is what makes the names survive promotion.
+    //
+    // ⚠ ROSTER AND `max` BOTH DERIVE FROM `TRANSITION_NAMES` — the same array
+    // `FaderCard.svelte` builds its `<option>`s from and `coerceMode` indexes,
+    // so the face cannot disagree with the shader's mode numbering, and the
+    // hand-typed `4` is gone.
+    //
+    // ⚠ THIS IS THE EDIT THAT COSTS AN ATTEST on this module: `params` is in
+    // the WebGL content basis (unlike `face`/`docs`), so the two rosters and
+    // the two curve corrections move the hash and need an owner-machine
+    // re-attest.
+    {
+      id: 'abTransition',
+      label: 'A/B Fx',
+      defaultValue: 0,
+      min: 0,
+      max: TRANSITION_NAMES.length - 1,
+      curve: 'discrete',
+      options: TRANSITION_NAMES.map((name, i) => ({
+        value: i,
+        label: name,
+        title: `the A/B crossfade sweeps as a ${name}`,
+      })),
+    },
     { id: 'dryWet',       label: 'Dry/Wet', defaultValue: 0,   min: 0, max: 1, curve: 'linear' },
-    { id: 'dwTransition', label: 'D/W Fx',  defaultValue: 0,   min: 0, max: 4, curve: 'linear' },
+    // The dry/wet twin of `abTransition` above — same roster, same reasoning,
+    // same attest cost. Kept in its original declaration position so the
+    // param ORDER is unchanged by this PR.
+    {
+      id: 'dwTransition',
+      label: 'D/W Fx',
+      defaultValue: 0,
+      min: 0,
+      max: TRANSITION_NAMES.length - 1,
+      curve: 'discrete',
+      options: TRANSITION_NAMES.map((name, i) => ({
+        value: i,
+        label: name,
+        title: `the dry/wet blend sweeps as a ${name}`,
+      })),
+    },
   ],
 
   docs: {

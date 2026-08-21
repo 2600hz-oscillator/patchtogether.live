@@ -200,7 +200,41 @@ export const tempestDef: VideoModuleDef = {
   outputs: [{ id: 'out', type: 'video' }],
   params: [
     { id: 'rim', label: 'Rim', defaultValue: DEFAULTS.rim, min: 0, max: 1, curve: 'linear' },
-    { id: 'shape', label: 'Shape', defaultValue: DEFAULTS.shape, min: 0, max: TUBE_SHAPES.length - 1, curve: 'discrete' },
+    {
+      id: 'shape',
+      label: 'Shape',
+      defaultValue: DEFAULTS.shape,
+      min: 0,
+      max: TUBE_SHAPES.length - 1,
+      curve: 'discrete',
+      // ⚠ THE ROSTER IS DERIVED FROM `TUBE_SHAPES`, NOT RE-TYPED. It is the same
+      // array the factory indexes (`tubeShapeFor`) and the same one
+      // `TempestCard.svelte` cycles, so the face cannot disagree with the
+      // engine about which tube is which, and a shape added to the core cannot
+      // leave a face naming two of three. That is also why there is no hand-
+      // written count here: `max` already derives from `TUBE_SHAPES.length`.
+      //
+      // ⚠ WHY IT HAS TO EXIST AT ALL — this is the FUNCTIONAL-PARITY half.
+      // Without a roster the face resolves `shape` to a bare 3-step stepper and
+      // the player loses the NAMES the card has always shown (its button reads
+      // the live `shapeName`). A number is not a name: "2" does not tell you
+      // the tube is a star. Nothing in the def implies the names, so they have
+      // to be promoted here or they are simply gone.
+      //
+      // ⚠ AND THE LABEL IS THE NAME VERBATIM, lower-case, exactly as the card
+      // prints it. Upper-casing would read as tidier and would be a different
+      // string from the one players have been looking at.
+      //
+      // ⚠ THIS IS THE EDIT THAT COSTS AN ATTEST. `params` is IN the WebGL
+      // content basis (unlike `face`, `docs` and `noUserControl`), so this
+      // roster moves the hash and needs an owner-machine re-attest —
+      // `colourofmagic` records the identical trade for the identical reason.
+      options: TUBE_SHAPES.map((name, i) => ({
+        value: i,
+        label: name,
+        title: `the ${name} tube cross-section`,
+      })),
+    },
   ],
   factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;
