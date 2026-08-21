@@ -1686,6 +1686,23 @@ export const FACES = [
 
   // ── BATCH 18 — THE THIN AUDIO TAIL ──────────────────────────────────────
   //
+  // One-knob utilities. These are among the NARROWEST plates in the fleet and
+  // that is the correct result, not a capture bug: compact is the default and
+  // width is earned, so a module with one control gets a plate the size of one
+  // control.
+  //
+  // `pages: 1` throughout — each ranks exactly one param and declares no
+  // `face.pages`, so `dockFacePlan` returns the single unlabelled `__all` band.
+  //
+  // NO `videoFaceWhy` and no `simPin` on any of them: all four are audio
+  // utilities that are SILENT AT SPAWN. moog903a and scaler declare
+  // `glyph: 'meter'`, but a meter over a module with nothing patched in is a
+  // flat bar, and the harness's AudioContext freeze holds it there — there is
+  // no free-running oscillator and no analyser tap that needs to converge.
+  { type: 'moog903a', pages: 1 },
+  { type: 'moog962', pages: 1 },
+  { type: 'sampleHold', pages: 1 },
+  { type: 'scaler', pages: 1 },
   // Utilities whose whole control surface is one knob or nothing at all. These
   // are the NARROWEST plates in the fleet and that is the correct result, not a
   // capture bug: compact is the default and width is earned, so a module with

@@ -12,8 +12,8 @@ Every registered module carries exactly one **disposition**: what kind of work i
 |  | count |
 |---|---|
 | registered modules | 198 |
-| done (faced + promoted) | 86 |
-| remaining (excludes organizational-native) | 109 |
+| done (faced + promoted) | 90 |
+| remaining (excludes organizational-native) | 105 |
 | registered with NO disposition (must be zero) | 0 |
 | inventory entries naming a dead def (must be zero) | 0 |
 
@@ -21,7 +21,7 @@ Every registered module carries exactly one **disposition**: what kind of work i
 
 | disposition | what it means | modules | done |
 |---|---|---|---|
-| `generic-face` | author a `face` and rank the controls — no new platform capability | 141 | 86 |
+| `generic-face` | author a `face` and rank the controls — no new platform capability | 141 | 90 |
 | `blocked` | would be a face today but for the named capability, and nothing else | 3 | — |
 | `bespoke-surface` | the primary interaction is not param-shaped — needs a purpose-built surface | 51 | — |
 | `organizational-native` | rack furniture; not a migration at all | 3 | — |
@@ -104,7 +104,7 @@ author a `face` and rank the controls — no new platform capability.
 | `mixmstrs` | audio | done | — |
 | `monoglitch` | video | — | — |
 | `moog902` | audio | done | — |
-| `moog903a` | audio | — | — |
+| `moog903a` | audio | done | — |
 | `moog904a` | audio | done | — |
 | `moog904b` | audio | — | — |
 | `moog904c` | audio | — | — |
@@ -120,7 +120,7 @@ author a `face` and rank the controls — no new platform capability.
 | `moog923` | audio | done | — |
 | `moog960` | audio | — | — |
 | `moog961` | audio | — | — |
-| `moog962` | audio | — | — |
+| `moog962` | audio | done | — |
 | `moog984` | audio | done | — |
 | `moog992` | audio | — | — |
 | `moog993` | audio | done | — |
@@ -144,9 +144,9 @@ author a `face` and rank the controls — no new platform capability.
 | `ringback` | audio | done | — |
 | `rings` | audio | done | — |
 | `ruttetra` | video | done | — |
-| `sampleHold` | audio | — | — |
+| `sampleHold` | audio | done | — |
 | `samsloop` | audio | — | — |
-| `scaler` | audio | — | — |
+| `scaler` | audio | done | — |
 | `scope` | audio | — | — |
 | `scoreboard` | video | — | — |
 | `shapedramps` | video | — | — |

@@ -81,8 +81,27 @@ export const scalerDef: AudioModuleDef = {
       out: "The scaled signal, out = in · amount. Type-transparent: the emitted cable type adopts whatever is patched into IN (a CV source makes this emit CV, an audio source makes it emit audio); with nothing patched it presents as an audio jack.",
     },
     controls: {
-      amount: "The scale factor, on a log fader so unity (×1.0) sits at the knob CENTER and the taper is symmetric: full left = ×0.1 (attenuate to a tenth), full right = ×10 (boost ten-fold). Defaults to ×1.0, so a freshly spawned SCALER is a transparent direct patch until you move it.",
+      amount: "The scale factor, on a log-tapered knob so unity (×1.0) sits at the knob CENTER and the taper is symmetric: full left = ×0.1 (attenuate to a tenth), full right = ×10 (boost ten-fold). Defaults to ×1.0, so a freshly spawned SCALER is a transparent direct patch until you move it.",
     },
+  },
+
+  // ONE PARAM, ONE RANK, ONE BAND.
+  //
+  // `glyph: 'meter'` is RUN, not argued: `out` is this module's ONLY `audio`
+  // output, so `primaryAudioOutPortId` resolves it and the binding is both LIVE
+  // and TOTAL — there is no second signal path for the meter to misrepresent,
+  // which is precisely the objection that took the meter off `moog994` in this
+  // same batch. A gain stage is also the module where "is anything coming out,
+  // and how much" is the whole question, so the picture earns its slot.
+  //
+  // NO `paramCells`: `ScalerCard` draws AMOUNT with `<Knob>`, the shell's
+  // default primitive for a ranked param, so face and card already agree.
+  // (The docs above used to call it a "fader" — corrected, because that prose
+  // is exactly what would invite a later `paramCells: {amount:'fader'}` and a
+  // silent primitive swap.)
+  face: {
+    order: ['amount'],
+    glyph: 'meter',
   },
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {

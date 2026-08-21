@@ -2543,6 +2543,20 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // BATCH 18 (2026-08-20) — the THIN AUDIO TAIL. Owner: *"if there are a lot of
   // audio modules with <4 params can't we just fly through them really quickly?
   // they still need to be done, <4 params or not."* Utilities whose entire
+  // control surface is one knob. Thin is not sloppy: each ships an honest band
+  // count (never padded), a glyph RUN through `glyphBinding` rather than argued
+  // from the module's description, and a model test.
+  //
+  // The pair worth reading together is `sampleHold` and `moog962`. Both have a
+  // single DISCRETE param; only one gains a named picker. sampleHold's ten
+  // scale names already existed and the shell could not reach them, so they are
+  // PROMOTED into `options`. moog962's STAGES has no names at all — its values
+  // are their own labels — so it stays a knob. Promote names that exist; never
+  // invent them to justify a nicer cell.
+  'moog903a',
+  'moog962',
+  'sampleHold',
+  'scaler',
   // control surface is one knob or nothing at all. Thin is not sloppy: each
   // still ships an honest band count (never padded to look substantial), a
   // glyph RUN through `glyphBinding` rather than argued from the module's
