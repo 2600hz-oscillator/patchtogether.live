@@ -1919,6 +1919,33 @@ export const FACES = [
       + '`noUserControl` rather than being deleted — but it is holding an already-static '
       + 'picture, so it is a belt on a brace rather than the thing making the scene capturable.',
   },
+  // CV BUDDY + CV BUDDY MINI (2026-08-21) — the Q52 pair, and the roster's
+  // first AUDIO faces whose dock head is an extension `fullViewBody`.
+  //
+  // `pages: 1` on both: ONE declared band (`clock`), no hero, nothing dropped.
+  // That single band is also the entire control surface — both params are clock
+  // params — which is what makes the dock scene worth looking at: the head is
+  // the module's own status body (the slot NAME plus the ROUTED / LATE lamps),
+  // and the band sits under it.
+  //
+  // ⚠ BOTH SCENES CAPTURE THE PRIMARY INSTANCE, and that is the only state a
+  // fresh spawn can be in: `bootWithFace` spawns ONE node, so it is trivially
+  // the id-smallest of its peer set and `rackStatusPlan` suppresses nothing.
+  // A non-primary capture would be pinning a state no freshly opened faceplate
+  // is ever in — the `ruttetra` monitor-mode argument verbatim. The suppression
+  // is proven where it can be: `rack-status-model.test.ts` exhaustively in the
+  // unit lane, and `cv-buddy-face.spec.ts` in the browser with a real SECOND
+  // instance, which is the only thing that can see the band actually leave.
+  //
+  // ⚠ NO MASK, AND NO LIVE SURFACE. The status body is DOM — two lamps and a
+  // name — with no canvas, no analyser tap and no rAF. The one moving part is a
+  // 1 Hz `setInterval` reading the clock-skip counter, and with no ES-9 and no
+  // transport running it reads 0 on every poll, so the lamp is dark and static.
+  // The ROUTED lamp is dark too (this scene has no ES-9 node), which is the
+  // resting state of a CV Buddy on any rack that has not been wired to
+  // hardware yet.
+  { type: 'cvBuddy', pages: 1 },
+  { type: 'cvBuddyMini', pages: 1 },
   // MONOGLITCH (2026-08-21) — the luma-driven scanline glitch, and the SECOND
   // module to carry MONITOR MODE onto its faceplate after `ruttetra` proved the
   // seam (#2009 / #2053).

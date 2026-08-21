@@ -82,6 +82,25 @@ export function loadContention(dir = join(ROOT, 'e2e/tests')) {
  */
 export const PENDING_FIRST_MEASUREMENT = [
   {
+    spec: 'cv-buddy-face.spec.ts',
+    why:
+      '#2024 — new with the CV BUDDY / CV BUDDY MINI faceplate and the rack-global status home. '
+      + 'Measured locally, single worker, warm server: 10.6 s wall for 6 tests + 1 skip '
+      + '(27.5 s across a REPEAT=3 flake-check, i.e. ~9 s per pass). '
+      + '⚠ BUDGET THIS ONE AT ROUGHLY ITS WALL CLOCK, unlike the foxy entry below. There is no '
+      + 'WebGL here at all and no canvas of any kind: the module is audio, its faceplate is two '
+      + 'param cells, and the status surface this spec exercises is a slot name and two DOM '
+      + 'lamps. So the ~6x SwiftShader floor does not apply and the renderer is not a variable — '
+      + 'budget the 2-core CI VM at the usual ~2.5-3x unit-lane factor, i.e. ~30 s. '
+      + '⚠ THE ONE COST WORTH NAMING is that three of the six tests spawn TWO module nodes and '
+      + 'open a dock faceplate on each, so the per-test setup is roughly doubled against a '
+      + 'single-instance face spec — that is inherent (the whole subject is what a SECOND '
+      + 'instance does) rather than something to trim. The skipped seventh test is the ES-9 '
+      + 'hardware leg, which probes `destination.maxChannelCount` and costs nothing on CI. '
+      + 'Run `flox activate -- task e2e:timings:accept` on the first green CI run after this '
+      + 'merges and DELETE this entry.',
+  },
+  {
     spec: 'foxy-face-surface.spec.ts',
     why:
       '#2007 — new with the FOXY faceplate: the FACE-surface legs (five live pictures, the tab '

@@ -381,6 +381,21 @@ export const SKIP_BUDGET = [
       + 'lane today. The skip names both env vars so arming the guard is a secrets change, not a code hunt.',
   },
   {
+    specs: ['cv-buddy-face.spec.ts'],
+    reason: /multichannel output device|E2E_ES9_HARDWARE=1/,
+    lanes: ['e2e'],
+    homeLane: 'local',
+    why:
+      'Hardware-in-the-loop, #2024: the CV BUDDY face\'s last leg needs a physical ES-9, and the probe is '
+      + 'real rather than an env check — it reads `destination.maxChannelCount` and requires >= 8. CI can '
+      + 'never satisfy it twice over (no device, and Chrome caps the destination at 2 channels), so the '
+      + 'reason NAMES the measured number it saw. ⚠ Unlike its es9-hardware sibling this guard INVERTS on '
+      + 'the opt-in flag: with E2E_ES9_HARDWARE=1 a missing rig THROWS instead of skipping, so in the lane '
+      + 'that promises hardware "the rig is unplugged" cannot green the same way "the code is fine" does. '
+      + 'Everything about the face that a browser can prove is covered unskipped by the six other tests in '
+      + 'this spec; only voltage at a physical jack is deferred to the owner recipe in the PR body.',
+  },
+  {
     specs: ['es9-hardware.spec.ts'],
     reason: /real ES-9|ES9_HW=1/,
     lanes: ['e2e'],

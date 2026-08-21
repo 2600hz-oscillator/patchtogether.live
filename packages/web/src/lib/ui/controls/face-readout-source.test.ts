@@ -70,6 +70,9 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { stripSourceComments } from '$lib/source-guards/strip-source-comments';
 import { paintsReadout } from './knob-vocabulary-model';
+// The PPQN roster itself, so the exemptions below are derived from the same
+// constant the param is built from rather than re-typed beside it.
+import { CV_BUDDY_PPQN_CHOICES } from '$lib/audio/modules/cv-buddy';
 import { listModuleDefs } from '$lib/audio/module-registry';
 import { listVideoModuleDefs } from '$lib/video/module-registry';
 import { listMetaModuleDefs } from '$lib/meta/module-registry';
@@ -170,6 +173,38 @@ describe('face readouts — the resting decimal is REMOVED, not hidden', () => {
  * is four lines of the same two predicates whenever it needs re-running.
  */
 const NUMERIC_LABEL_EXEMPTIONS: readonly { type: string; param: string; label: string; why: string }[] = [
+  // ── CV BUDDY / CV BUDDY MINI · `ppqn` (2026-08-21, Q52) ──────────────────
+  //
+  // ⚠ DERIVED FROM THE ROSTER, not typed out seven times per kind, and that is
+  // the stronger form rather than the lazier one. The labels here are
+  // `String(n)` BY CONSTRUCTION — `CV_BUDDY_PPQN_PARAM` builds its options by
+  // mapping the exported `CV_BUDDY_PPQN_CHOICES` — so a hand-typed list would
+  // be a second copy of a roster that already exists, free to go stale in the
+  // direction that FAILS OPEN: a value added to the roster and forgotten here
+  // reddens, but a value REMOVED leaves a dead entry the anchor leg then has to
+  // catch. Deriving makes both impossible.
+  //
+  // What it pre-approves is exactly right and no more: every label in THIS
+  // roster, because that roster's labels cannot be anything but the number.
+  // ⚠ It does NOT pre-approve the param — `optionsExhaustive` (#2055) declares
+  // these seven to be the whole legal set, so a new member is a deliberate
+  // contract edit that lands with its own argument, not a quiet addition.
+  ...CV_BUDDY_PPQN_CHOICES.flatMap((n) =>
+    (['cvBuddy', 'cvBuddyMini'] as const).map((type) => ({
+      type,
+      param: 'ppqn',
+      label: String(n),
+      why:
+        `PULSES PER QUARTER NOTE — ${n} is not a reading of the dial, it is what the division is `
+        + 'CALLED. A player says "run it at 24 ppqn" out loud, gear is sold with "24 ppqn" printed '
+        + 'on it, and 24 in particular IS the DIN-sync standard; there is no name for the state '
+        + 'that is not the integer, and inventing one ("standard", "half") would be the '
+        + 'vocabulary-invention the moog904c review declined. The roster is also what makes each '
+        + 'state reachable at all: it is a sparse legal set inside a 1..48 range, so without it '
+        + 'the control is a 48-position dial of which 41 positions are values this module has no '
+        + 'meaning for (#2024, fixed by #2055).',
+    })),
+  ),
   {
     type: 'cofefve',
     param: 'tempoSync',

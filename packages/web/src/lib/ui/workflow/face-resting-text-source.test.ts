@@ -67,6 +67,17 @@
 //     their own bodies. The VRT dock baselines are the only thing that sees
 //     those pixels, and a human reviewing them is the only thing that judges
 //     them.
+//
+//     ⚠ NARROWED, NOT CLOSED, BY `face-rack-status-source.test.ts` (2026-08-21).
+//     That gate enumerates every `fullViewBody` in the tree and requires each
+//     to carry a DECLARED TEXT ROLE with an argument — so the POPULATION is now
+//     named and anchored (a roster entry for a body that no longer exists is
+//     RED, and a new body with no entry is RED), and a body whose declared role
+//     is `status-primitive` is checked to route its status through `StatusLed`,
+//     where a measurement cannot reach a text node. What remains genuinely
+//     unseeable is unchanged and is stated there too: what a canvas PAINTS. A
+//     body declared `picture` is taken at its word, and only the dock VRT
+//     baseline can contradict it.
 //   * LEGACY CARDS. The ~200 hand-authored `*Card.svelte` files print values
 //     everywhere and are untouched by the ruling, which was about FACEPLATES.
 //   * A CONTROL PRIMITIVE's own readout. That is a different offence with its
@@ -208,6 +219,22 @@ const FACE_FIELDS: Readonly<Record<string, FaceFieldRule>> = {
       'the totality gate, and the shell is asserted below never to read it. ⚠ Note this field ' +
       'names a PARAM and some BAND IDS — neither is display text: the param id never reaches the ' +
       'DOM, and a band id is already painted as a SECTION LABEL under its own permitted role.',
+  },
+  rackStatus: {
+    role: 'none',
+    why:
+      'RACK-GLOBAL STATUS (#2024) — state that is a property of the PATCH rather than of this '
+      + 'node, and the third axis beside `monitor` (a runtime toggle) and `bandFocus` (a param '
+      + 'value). It paints NOTHING: the shell reads `peers` + `primaryOnlyBands` as a PREDICATE '
+      + 'over which bands to draw — exactly as `bandFocus` above is read — and `rackStatusPlan` '
+      + 'returns a boolean and a set of band ids, never a string. Its `why` is an argument for '
+      + 'the reviewer and for `face-rack-status-source.test.ts`, and the shell is asserted below '
+      + 'never to read it. ⚠ Note this field names TYPES and BAND IDS: a type id never reaches '
+      + 'the DOM, and a band id is already painted as a SECTION LABEL under its own permitted '
+      + 'role. ⚠ AND THE TEXT THIS FEATURE DOES PAINT IS NOT HERE — the slot NAME and the '
+      + 'indicator lamps live on the module\'s own `fullViewBody`, which is this file\'s canvas '
+      + 'blind spot; `face-rack-status-source.test.ts` is what converts that blind spot from '
+      + 'unnamed to a deny-by-default roster with a declared role per body.',
   },
   controlFamilies: {
     role: 'control-caption',
@@ -410,6 +437,28 @@ describe('the resting faceplate — the SHELL cannot paint a value', () => {
     expect(
       /face\?\.bandFocus|bandFocus/.test(shell),
       'positive control — the shell must still READ `face.bandFocus` to gate the bands at all',
+    ).toBe(true);
+  });
+
+  it("RACK STATUS's `why` is an ARGUMENT, never a string the shell can paint", () => {
+    // Same shape as the `monitor` and `bandFocus` legs above, and the newest
+    // candidate for the offence this file exists to deny: `rackStatus` is the
+    // third `ModuleFace` field carrying prose, and its subject — "why do this
+    // face's controls depend on which OTHER nodes exist" — is exactly the kind
+    // of explanation an author would be tempted to show the player.
+    const shell = stripSourceComments(read(SHELL));
+    expect(
+      /rackStatus\s*[?.]*\.\s*why|rackStatus\.why/.test(shell),
+      '`face.rackStatus.why` is reachable from the shell. It is a reviewer-facing argument for '
+        + 'why a band belongs to one instance only — not display text. The shell needs the '
+        + 'PREDICATE (`peers` / `primaryOnlyBands`), which is what `rackStatusPlan` takes, and '
+        + 'the player learns the fact from the band being ABSENT, which is structure.',
+    ).toBe(false);
+    // POSITIVE CONTROL for the same probe, so an empty or misread source cannot
+    // green the absence above: the shell DOES reach the declaration itself.
+    expect(
+      /face\?\.rackStatus|rackStatus/.test(shell),
+      'positive control — the shell must still READ `face.rackStatus` to filter the bands at all',
     ).toBe(true);
   });
 

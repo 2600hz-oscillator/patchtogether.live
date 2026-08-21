@@ -372,7 +372,24 @@ describe('M3 · what the faceplate prints is what the module does', () => {
     // tables to resolve it (SE at 256 is 0.034 dB, ~5.4 sigma). The FACTORY legs
     // below then only have to prove the factory reaches those generators and
     // scales them by LEVEL, which is a bit-level question needing no N.
-    const TABLES = 256;
+    // ⚠ 256 → 1024 (2026-08-21). THE SAME DIAGNOSIS AS THE NOTE ABOVE, ONE
+    // ITERATION LATER: at 256 this leg failed a CI run at 2.87 sigma
+    // (deficit 0.1031 dB against a 3-sigma bound of 0.1077, SE 0.0359) while
+    // passing 5/5 locally. The note above sized the effect at 0.187 dB and
+    // therefore called 256 "~5.4 sigma" — but the effect the shipped generators
+    // actually produce runs nearer 0.10 dB, so the true margin was ~2.9 sigma
+    // against a 3-sigma test. That is a direction asserted at the edge of its
+    // own resolving power: the same coin-toss shape the first draft had, just
+    // with a longer odds.
+    //
+    // ⚠ THE THRESHOLD IS UNTOUCHED, DELIBERATELY. Relaxing 3 sigma to 2 would
+    // "fix" this by making the assertion weaker than the claim it defends, and
+    // the claim — pink measures UNDER its steady state because Voss row 15 is
+    // still filling — is the whole point of the leg. Raising N attacks the
+    // standard error instead: at 1024 the SE is ~0.018 dB, so the same effect
+    // resolves at ~5.7 sigma and the direction is a finding again.
+    // Cost is one ART test going from ~1.2 s to ~5 s.
+    const TABLES = 1024;
     const LEN = 96000; // 2 s at 48 kHz — `BUFFER_SECONDS * sampleRate`
     const stats = (tap: 'white' | 'pink') => {
       const seen: number[] = [];

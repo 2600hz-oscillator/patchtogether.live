@@ -284,8 +284,26 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
   { type: 'colorizer', disposition: 'generic-face' },
   { type: 'colourofmagic', disposition: 'generic-face', note: 'large control count — the face will need page splitting past the hero slots' },
   { type: 'cube', disposition: 'generic-face' },
-  { type: 'cvBuddy', disposition: 'generic-face', note: 'the PPQN roster + offset are params; SLOTS / LATE / ES-9-present are readouts to register, not knobs' },
-  { type: 'cvBuddyMini', disposition: 'generic-face', note: 'renders the same shared CvBuddyBody as cvBuddy — migrate the pair together' },
+  // ⚠ THE ORIGINAL NOTE HERE SAID "SLOTS / LATE / ES-9-present are READOUTS to
+  // register, not knobs", and that plan was overturned before it was built:
+  // `readouts` and `sidebar` were DELETED by the 2026-08-19 resting-text
+  // rulings, so the thing this entry named as the route no longer exists.
+  // #2024 re-opened the pair with measurements and the owner ruled "close the
+  // gap" — the resolution is `face.rackStatus` (the shell removes a band that
+  // belongs to another instance) plus the `StatusLed` primitive on the module's
+  // own fullViewBody (a static caption, a lamp, and the measurement in
+  // aria-label/title). The slot LABEL paints because it is a NAME.
+  //
+  // ⚠ KNOWN, DELIBERATE DIVERGENCE FROM THE CARD — recorded here rather than
+  // left to be rediscovered as a bug: on a 192px LANE TILE a non-primary
+  // instance STILL paints its clock controls. The legacy card hid them at every
+  // tier. Suppression requires the status body that explains the absence, and
+  // that body is dock-only (`dockFullViewHeadPlan`), so a tile would be left
+  // with neither controls nor body — blank, which is worse. This is the same
+  // trade MONITOR MODE already makes. If the owner wants tiles suppressed too,
+  // that is a rebuild on a ruling, not a defect.
+  { type: 'cvBuddy', disposition: 'generic-face', note: 'DONE (#2024): rackStatus + StatusLed; the clock band is primary-only, and a non-primary LANE TILE keeps its clock controls by design — see the note above' },
+  { type: 'cvBuddyMini', disposition: 'generic-face', note: 'DONE (#2024): renders the same shared CvBuddyBody as cvBuddy and now shares ONE face object with it, asserted by identity — the pair migrated together' },
   { type: 'delay', disposition: 'generic-face' },
   { type: 'depolarizer', disposition: 'generic-face' },
   { type: 'destroy', disposition: 'generic-face' },
