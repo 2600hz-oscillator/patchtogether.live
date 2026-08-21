@@ -547,6 +547,38 @@ jobs:
       - name: Run production build (dsp + web)
         run: flox activate -- task build
 
+      # ---------------------------------------------------------------------
+      # The Cloudflare Worker SIZE RATCHET (#2088).
+      #
+      # WHY IT IS HERE AND NOT IN `build-web`. This gate must measure the
+      # bundle that actually DEPLOYS. `build-web` produces the PREVIEW bundle
+      # with VITE_E2E_HOOKS=1 baked in — a different artifact that never ships
+      # — so gauging it would ratchet a number no deploy is subject to. This
+      # job runs `task build`, the production bundler, which is the same path
+      # `deploy.yml` takes. That is the whole reason the step lives in the
+      # slower job rather than the one that already had artifacts to hand.
+      #
+      # WHY IT IS NEEDED AT ALL. #2088: main went 177 KiB OVER Cloudflare's
+      # 3 MiB gzipped ceiling and NOTHING in CI could see it. The failure
+      # surfaced only in `deploy.yml` — which is NOT a required check — so a
+      # Worker that could not be published merged to main and took
+      # dev.patchtogether.live down with it. The measurement script existed and
+      # its own header recorded that it was not wired up; this is that gap.
+      #
+      # COST: ~1.3 s measured locally on a warm build. It shells out to
+      # `wrangler deploy --dry-run`, which needs NO Cloudflare token (it bundles
+      # locally and prints the size), and wrangler is already on disk as a
+      # transitive dep of @sveltejs/adapter-cloudflare — so there is no network
+      # fetch and no secret in this job. Both properties are load-bearing: this
+      # job is deliberately token-free.
+      #
+      # ⚠ IT FAILS IN BOTH DIRECTIONS. Over budget is the obvious half. The
+      # other half fails when too much slack opens up, forcing the budget DOWN
+      # in the commit that earned it — otherwise a win silently becomes room for
+      # the next regression, and the ratchet stops meaning anything.
+      - name: Check Cloudflare Worker size (gzipped, ratchet)
+        run: flox activate -- task worker:size:check
+
   # -----------------------------------------------------------------------
   # dsp-build — compile the DSP worklets (Faust + esbuild) ONCE per run and
   # publish packages/dsp/dist/** as an artifact for every downstream job to

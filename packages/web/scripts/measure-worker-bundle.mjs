@@ -27,10 +27,19 @@
 //   node scripts/measure-worker-bundle.mjs --check    # + fail if over the ceiling
 //   node scripts/measure-worker-bundle.mjs --json out.json
 //
-// `--check` is NOT wired into CI: it needs a full production build, and the
-// build job does not currently run wrangler. It is the command to run by hand
-// when a PR plausibly grows the server graph — and the number it prints is the
-// one to quote.
+// ⚠ `--check` IS NOW WIRED INTO CI (#2088) — this comment used to say it was
+// not, and that gap is exactly what let a Worker 177 KiB over the ceiling reach
+// `main`. It runs in the REQUIRED `build` job in ci.yml, as
+// `task worker:size:check`, straight after `task build`.
+//
+// It lives in `build` and not `build-web` on purpose: `build-web` emits the
+// PREVIEW bundle with VITE_E2E_HOOKS=1 baked in, which never deploys, so
+// ratcheting it would gauge an artifact nothing is subject to. `build` runs the
+// production bundler — the same path deploy.yml takes.
+//
+// It needs no Cloudflare token (`--dry-run` bundles locally) and no network
+// (wrangler is already a transitive dep of @sveltejs/adapter-cloudflare), which
+// is what makes it safe to run in that deliberately token-free job. ~1.3 s.
 
 import { build } from 'esbuild';
 import { execFileSync } from 'node:child_process';
@@ -43,8 +52,21 @@ const WEB = fileURLToPath(new URL('..', import.meta.url));
 const ENTRY = path.join(WEB, '.svelte-kit/cloudflare/_worker.js');
 const KiB = 1024;
 
-// Cloudflare's free-plan Worker ceiling, gzipped. The paid plan is 10 MiB; the
-// project is on paid, so this is a self-imposed budget, not a hard blocker.
+// Cloudflare's free-plan Worker ceiling, gzipped.
+//
+// ⚠ THIS COMMENT USED TO READ "the project is on paid, so this is a self-imposed
+// budget, not a hard blocker." THAT IS FALSE AND IT MATTERED (#2088). Cloudflare
+// enforced 3 MiB against this project on 2026-08-21 and took `main`'s deploys
+// down with it:
+//
+//   Failed to publish your Function. Got error: Your Worker exceeded the size
+//   limit of 3 MiB. Please upgrade to a paid plan to deploy Workers up to 10 MiB.
+//
+// So whatever the account's Workers plan says, the number the deploy path
+// applies to THIS project is 3 MiB. Treat the ceiling as HARD until a green
+// deploy proves otherwise — a comment asserting an entitlement is not the same
+// as the platform granting it, and believing this line is part of why the
+// overshoot was a surprise.
 const CEILING_KIB = 3 * 1024;
 // The headroom the diet bought (see perf/ssr-worker-diet). Ratcheted DOWNWARD
 // only: if a change needs more than this, that is a decision to make out loud,
