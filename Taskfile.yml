@@ -194,6 +194,27 @@ tasks:
       - npm run build -w {{.SERVER}}
 
   # ---------------- Build ----------------
+  worker:size:
+    desc: >
+      [read-only] Measure the deployed Cloudflare Pages Worker the way Cloudflare
+      does — shells out to `wrangler deploy --dry-run` for the authoritative
+      "Total Upload / gzip" figure, then attributes the weight to individual
+      source files with esbuild. Requires a production build first
+      (`task build` / `task build:web`). Changes nothing.
+    cmds:
+      - node {{.WEB}}/scripts/measure-worker-bundle.mjs {{.CLI_ARGS}}
+
+  worker:size:check:
+    desc: >
+      [CI gate] The Worker SIZE RATCHET (#2088). Same measurement as
+      `worker:size`, but FAILS the build in BOTH directions: over the gzipped
+      budget, and — deliberately — when there is more unclaimed slack under it
+      than the ratchet allows, so a big win is banked by lowering the budget in
+      the same commit instead of silently absorbing the next regression. Run
+      after a production build; the `build` CI job runs exactly this.
+    cmds:
+      - node {{.WEB}}/scripts/measure-worker-bundle.mjs --check
+
   build:
     desc: Production build (DSP + web)
     cmds:

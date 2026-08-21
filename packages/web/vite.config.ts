@@ -261,6 +261,43 @@ export default defineConfig({
     // unset (local dev, CI, every deploy before the token is wired) this is
     // `false`, so the default build output is byte-for-byte unchanged.
     sourcemap: process.env.VITE_SENTRY_SOURCEMAPS === '1' ? 'hidden' : false,
+    // ⚠ MINIFY THE **SSR** BUILD (#2088). The Worker was shipping as
+    // UNMINIFIED SOURCE, and nothing made that visible.
+    //
+    // Two defaults compose into the bug, neither wrong on its own:
+    //   * Vite does not minify SSR builds by default (minification can break
+    //     `Function.prototype.toString` tricks, and a server bundle is
+    //     normally not size-constrained), and
+    //   * `wrangler pages deploy` re-bundles `_worker.js` with esbuild but
+    //     does NOT minify it either.
+    // On Cloudflare the server bundle IS size-constrained — 3 MiB gzipped on
+    // the free tier — so the two defaults meet at a hard ceiling.
+    //
+    // MEASURED, via `node scripts/measure-worker-bundle.mjs` (which reads
+    // wrangler's own "Total Upload / gzip" number, i.e. the figure Cloudflare
+    // actually enforces), same tree, same commit, only this flag moved:
+    //
+    //   | build            | raw KiB  | gzip KiB | vs 3072 KiB ceiling |
+    //   |------------------|----------|----------|---------------------|
+    //   | without (before) | 13163.42 |  3249.34 | −177.34  (OVER)     |
+    //   | with    (after)  | 10557.10 |  2595.39 | +476.61  (under)    |
+    //
+    // −653.95 KiB gzipped, −20.1%. That is what turns a RED deploy green: the
+    // failure in #2088 is `Your Worker exceeded the size limit of 3 MiB`, and
+    // 3249.34 KiB is 177 KiB past it.
+    //
+    // ⚠ THIS IS THE THRESHOLD, NOT THE SUBJECT. It buys headroom; it does not
+    // fix why a browser-only render graph is reachable from the server at all
+    // (Canvas.js alone is 5877 KiB raw in the bundle, pulled in by
+    // `/r/[id]/+page.svelte`). #2088 tracks that structural work; this flag
+    // exists so the ceiling stops blocking every deploy while it happens.
+    //
+    // ⚠ MINIFICATION HAS BITTEN THIS REPO BEFORE — see the note above about
+    // the Faust worklet that broke under minification. That hazard is already
+    // sidestepped by pre-bundling the worklet at DSP build time, and the
+    // prerender pass (which EXECUTES this SSR bundle at build time, over 392
+    // module doc pages) is a real exercise of it on every build.
+    minify: true,
   },
   optimizeDeps: {
     // Pre-bundle deps that Vite's startup dep-scanner can't reach. The
