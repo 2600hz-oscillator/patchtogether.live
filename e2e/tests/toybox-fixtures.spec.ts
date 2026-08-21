@@ -18,6 +18,9 @@
 // dud-tail catalog audit, the real-shader smoke) stay real-shader; migrating
 // the APP-behavior parts is sequenced behind a coordinator checkpoint.
 
+import { readFileSync, readdirSync } from 'node:fs';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 import {
@@ -256,6 +259,61 @@ test.describe('toybox fixture mechanism — heavy proofs', () => {
     );
     // invert(scene) of a flat (r,g,b) is exactly (1-r, 1-g, 1-b).
     await expectPixel(page, 0.5, 0.5, [0.2, 0.8, 0.6], FLAT_TOLERANCE, 'frag invert of flat base');
+  });
+
+  test('@webgl-smoke GATE: fixture-registering specs and engine-curation specs stay DISJOINT', () => {
+    // The coordinator-approved boundary rule (#2070), enforced rather than
+    // remembered: registering fixtures ALTERS the randomize roll pools
+    // (fixtures are listed GEN content), so a spec file that registers them
+    // must never assert engine-CURATION properties (perceptual floors, the
+    // DIM catalog classification) — those measure the REAL content
+    // population — and the real-shader suite must never register fixtures.
+    // File-level disjointness, scanned over the ARTIFACT (every
+    // toybox-*.spec.ts that exists, so a future migration file auto-enrolls;
+    // a later "consistency" edit that merges the two concerns reddens here).
+    // Marker literals are concatenated so this gate cannot flag itself.
+    const FIXTURE_MARKERS = [
+      // the registration seam — presence means the file mutates the roll pools
+      '__toybox' + 'RegisterFixtureContent',
+    ];
+    const CURATION_MARKERS = [
+      // the perceptual liveness floor — measures REAL content brightness
+      'expect' + 'Alive(',
+      // the DIM catalog audit hook — classifies the REAL GEN population
+      '__toybox' + 'DimGen',
+      // the perceptual floor constants — only meaningful over real content
+      'LIT40' + '_FLOOR',
+    ];
+    const classify = (src: string) => ({
+      registers: FIXTURE_MARKERS.some((m) => src.includes(m)),
+      curates: CURATION_MARKERS.some((m) => src.includes(m)),
+    });
+
+    // NEGATIVE CONTROLS, both directions, through the SAME predicate the
+    // gate calls (house style): the classifier must flag a merged source and
+    // must pass each concern alone.
+    const merged = classify(
+      `await (globalThis).${FIXTURE_MARKERS[0]}(pack); await ${CURATION_MARKERS[0]}page, 'x');`,
+    );
+    expect(merged.registers && merged.curates, 'classifier must FLAG a merged source').toBe(true);
+    const regOnly = classify(`await (globalThis).${FIXTURE_MARKERS[0]}(pack);`);
+    expect(regOnly.registers && !regOnly.curates, 'registration alone must classify clean').toBe(true);
+    const curOnly = classify(`await ${CURATION_MARKERS[0]}page, 'x');`);
+    expect(curOnly.curates && !curOnly.registers, 'curation alone must classify clean').toBe(true);
+
+    // The gate proper — deny-by-default over every toybox spec that exists.
+    const testsDir = dirname(fileURLToPath(import.meta.url));
+    const offenders: string[] = [];
+    for (const f of readdirSync(testsDir)) {
+      if (!f.startsWith('toybox-') || !f.endsWith('.spec.ts')) continue;
+      const c = classify(readFileSync(join(testsDir, f), 'utf8'));
+      if (c.registers && c.curates) offenders.push(f);
+    }
+    expect(
+      offenders,
+      'these spec files BOTH register fixtures AND assert engine-curation properties — ' +
+        'split them: fixture pools and real-content measurements must stay disjoint (#2070)',
+    ).toEqual([]);
   });
 
   test('a fixture that fails to COMPILE is refused per-entry, loudly, and never registers', async ({ page }) => {
