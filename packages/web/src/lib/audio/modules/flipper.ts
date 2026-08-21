@@ -44,6 +44,24 @@ export const flipperDef: AudioModuleDef = {
     controls: {},
   },
 
+  // ONE BAND WOULD BE ONE BAND TOO MANY. flipper declares `params: []` — the
+  // alternation lives entirely in the worklet — so there is nothing to rank,
+  // and `dockFacePlan` returns NO section rather than an empty one. The
+  // faceplate IS the jack field: two gate inputs sharing one toggle, two
+  // anti-phase gate outputs. Nothing is invented to give the plate something
+  // to show; a flip-flop with a knob on it would be a different module.
+  //
+  // `glyph: 'none'` is RUN through the real resolver, not argued from the
+  // module's description: `primaryAudioOutPortId` matches `type === 'audio'`
+  // and flipper declares none (flip/flop are both `gate`), so `glyphBinding`
+  // would fall through to `static` and paint a picture that can never move.
+  // That is exactly the shape marbles shipped through three passes — a meter
+  // whose tap was undefined — which is why the choice is measured here.
+  face: {
+    order: [],
+    glyph: 'none',
+  },
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     void node;
     if (!loadedContexts.has(ctx)) {

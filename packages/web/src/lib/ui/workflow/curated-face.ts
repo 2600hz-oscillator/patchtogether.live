@@ -596,6 +596,29 @@ export function dockFacePlan(def: FaceDefLike): DockFaceBand[] | null {
 
   const pages = dock.pages ?? [];
   if (!pages.length) {
+    // A FACE THAT RANKS NOTHING GETS NO BAND — an empty `__all` is a SECTION
+    // WITH NOTHING IN IT, and `.dock-page` is `border-top: 1px solid` +
+    // `padding-top: 6px`, so it paints as a bare divider rule under the title
+    // with no content beneath it. That is resting chrome which says nothing,
+    // and it is the same "labelled void" `heroFacePlan` already refuses when a
+    // hero promotion empties a band ("a labelled void where they were").
+    //
+    // ⚠ THIS IS THE `__unpaged` GUARD'S MISSING TWIN, not a new policy. The
+    // paged branch below has ALWAYS refused to append an empty tail band
+    // (`if (unpaged.length)`); the page-less branch simply never got the same
+    // check, because until a zero-control face existed it could not be reached.
+    //
+    // Measured before changing it: of the faced roster, exactly ONE module
+    // (`videoOut`) hit this branch with an empty band — its plate is a
+    // `fullViewBody` extension, so the stray rule sat under the real surface.
+    // The zero-param audio utilities (a gate flip-flop, a passive multiple)
+    // have no extension body, so the rule would be the ONLY thing on the plate.
+    //
+    // Returning `[]` rather than `null` is load-bearing: `null` means UN-FACED
+    // and sends the caller to the legacy card. An empty array is truthy, so
+    // `ModuleShell`'s `allDockBands ? …` guard and `dockTabPlan` both keep
+    // treating the module as faced and simply render no sections.
+    if (!dock.controls.length) return [];
     return [
       {
         id: DOCK_ALL_BAND_ID,
