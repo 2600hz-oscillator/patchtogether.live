@@ -23,6 +23,49 @@ export const SCENE_COUNT = 41;
 /** Palette types (4 base × 2 sparkle variants = 8 total). */
 export const PALETTE_COUNT = 8;
 
+/**
+ * The four BASE palettes, in `type & 3` order — the encoding `buildPalette`
+ * switches on, so this array's index IS the low two bits of a `paletteType`.
+ */
+export const PALETTE_BASE_NAMES = ['RGBW', 'GREY', 'HALF', 'PASTEL'] as const;
+
+/** The mark appended for the `type & 4` sparkle ("lightning") pass. */
+export const PALETTE_SPARKLE_MARK = '✨';
+
+/**
+ * All eight palette names, as a DETENT ROSTER for `paletteType`.
+ *
+ * ⚠ DERIVED FROM THE ENCODING, NOT TYPED OUT. `buildPalette` reads a palette
+ * type as `type & 3` for the base and `type & 4` for the sparkle pass, so the
+ * roster is generated from exactly those two facts and CANNOT disagree with the
+ * builder — not even in principle. A hand-written list of eight would be a
+ * second copy of a mapping that already exists, free to drift in the direction
+ * that fails silently: a wrong name paints a wrong word and no gate reads it.
+ *
+ * ⚠ WHY IT LIVES HERE AND NOT ON THE DEF: this file owns the encoding. The def
+ * imports it, and `AcidwarpCard.svelte` imports it too — it previously carried
+ * its OWN `PALETTE_NAMES` const, which is the backdraft one-place violation
+ * (a control's vocabulary must come from ONE place; no runtime gate reads a
+ * literal in a `.svelte` file).
+ *
+ * ⚠ THE CARD'S OLD LIST ABBREVIATED THE LAST ENTRY as `PSTL✨` to fit its
+ * button; the derived form is `PASTEL✨` for all four sparkle variants. That is
+ * a deliberate consequence of deriving rather than transcribing — the base name
+ * is the same word in both halves of the roster, which is the property that
+ * makes "RGBW vs RGBW✨" legible as one base plus a variant.
+ */
+export const ACIDWARP_PALETTE_OPTIONS = Array.from({ length: PALETTE_COUNT }, (_, value) => {
+  const base = PALETTE_BASE_NAMES[value & 3]!;
+  const sparkle = (value & 4) !== 0;
+  return {
+    value,
+    label: sparkle ? `${base}${PALETTE_SPARKLE_MARK}` : base,
+    title: sparkle
+      ? `${base} with the lightning pass — every 4th palette slot brightened`
+      : `${base} base palette`,
+  };
+});
+
 /** Match the original's sin amplitude: the C code's `lut_sin` returns
  *  values scaled to ~±511, so a formula like `lut_sin(x) / 32` contributes
  *  ±16 to the running colour. We multiply Math.sin by the same factor so

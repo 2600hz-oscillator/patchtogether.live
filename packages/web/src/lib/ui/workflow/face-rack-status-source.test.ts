@@ -214,6 +214,16 @@ const EXTENSION_BODY_ROLES: Readonly<Record<string, BodyRule>> = {
   colorizer: { role: 'picture', why: 'the mono-to-colour tinter\'s live preview canvas and its SCREEN switch. Sits mid-chain by construction (mono-video in, video out), which is why its body keeps the engine\'s watch mark alive while the screen is off (#2015).' },
   edges: { role: 'picture', why: 'the Sobel outline filter\'s live preview canvas and its SCREEN switch. Stateless — the outline is a pure per-pixel function of (input, threshold, thickness) — so SCREEN OFF costs it nothing but the OUTPUT, which is what the retained watch mark protects (#2015).' },
   inwards: { role: 'picture', why: 'the concentric-ring generator\'s live preview canvas and its SCREEN switch. The only SOURCE of the four: it has no video input, so a lapsed watch mark would mute the generator every downstream node samples rather than merely stalling a preview (#2015).' },
+  // ── ACIDWARP (2026-08-22, #2111) — the module that IS its display ────────
+  //
+  // TEXT ON THE SURFACE, exhaustively: the SCREEN button's own caption. Nothing
+  // else. ⚠ NOT on it, deliberately, and this is the entry where that absence
+  // is the interesting part — the legacy card printed TWO resting readouts
+  // (`SCENE n/41` and a live speed multiplier like `2.4x`), and neither is
+  // ported. The scene index is spoken by its control's `aria-valuetext`; the
+  // speed mapping's one non-obvious fact (NATIVE 1x is the knob's MIDPOINT)
+  // moved onto the param as landmark NAMES.
+  acidwarp: { role: 'picture', why: 'the 320x240 plasma generator\'s live display and its SCREEN switch — on this module the picture is not a monitor of the work, it IS the work: a pure-GPU SOURCE with no input and no audio path. ⚠ SCREEN OFF keeping the watch mark alive matters more here than on a filter (#2015): acidwarp is the ORIGIN of the signal, so a lapsed mark would not stall a preview, it would MUTE the generator every downstream node is sampling. ⚠ It is also the first body whose module\'s own `freeze` param is a USER CONTROL rather than a determinism hook, which is why this face is unbaselinable and lives in FACES_WITHOUT_SCENES.' },
   vdelay: { role: 'picture', why: 'the video delay line\'s live preview canvas and its SCREEN switch. ⚠ The ACCUMULATOR of the four — a 32-slot frame ring advanced by every draw — so SCREEN OFF retaining the watch mark is load-bearing on the PICTURE here, not just the output: a stalled pull would let the echo chain decay out of the ring (#2015).' },
   // ── BATCH 22 · GROUP 2a — the video thin tail, card-checked cells ─────────
   //

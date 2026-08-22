@@ -756,20 +756,55 @@ test.describe('VRT: P1 curated faces (?shell=1) — compact lane tile + dock ful
     // zero tests, which reads as "no tests found" rather than as a broken gate.
     // The def's SOURCE is what can be read in this runtime, and it is the same
     // technique `face-monitor-source.test.ts` uses to resolve cards.
+    //
+    // ⚠ AND THE LEG'S OWN PREMISE NEEDED CORRECTING (#2111). It read a `freeze`
+    // param as PROOF of a determinism seam, which held for every def that had
+    // one until `acidwarp` — whose `freeze` is a real, documented USER CONTROL
+    // that halts only the scene cycler while the palette keeps rotating, so
+    // writing it does not stop the picture at all. Under the blanket rule that
+    // module could never hold an exemption however true its argument was.
+    //
+    // So the claim became SAYABLE (`freezeIsNotASeam`) and is now checked in
+    // BOTH directions. Deny-by-default is intact: `freeze` with no declaration
+    // is still red, exactly as before.
+    const declaresFreeze = (type: string): boolean => {
+      const src = fileURLToPath(
+        new URL(`../../packages/web/src/lib/video/modules/${type}.ts`, import.meta.url),
+      );
+      if (!existsSync(src)) return false;
+      return /\bid:\s*'freeze'/.test(readFileSync(src, 'utf8'));
+    };
     const gainedSeam = FACES_WITHOUT_SCENES
-      .filter((e) => {
-        const src = fileURLToPath(
-          new URL(`../../packages/web/src/lib/video/modules/${e.type}.ts`, import.meta.url),
-        );
-        if (!existsSync(src)) return false;
-        return /\bid:\s*'freeze'/.test(readFileSync(src, 'utf8'));
-      })
+      .filter((e) => declaresFreeze(e.type) && !e.freezeIsNotASeam)
       .map((e) => e.type);
     expect(
       gainedSeam,
-      "an exempt module's def now declares a `freeze` param — a determinism seam. That is the " +
-        'mechanism the exemption says cannot reach this renderer, so the argument has to be ' +
-        're-made (or the face captured) rather than silently kept.',
+      "an exempt module's def declares a `freeze` param — normally a determinism seam, and the " +
+        'mechanism the exemption says cannot reach this renderer. Either capture the face, or ' +
+        'declare `freezeIsNotASeam` saying what that param actually does and citing the read ' +
+        'site. Silently keeping the exemption is the one option this refuses.',
+    ).toEqual([]);
+
+    // The INVERSE, so the declaration cannot outlive the thing it describes: a
+    // face claiming its `freeze` is not a seam, on a def that no longer has one.
+    const staleNotASeam = FACES_WITHOUT_SCENES
+      .filter((e) => e.freezeIsNotASeam && !declaresFreeze(e.type))
+      .map((e) => e.type);
+    expect(
+      staleNotASeam,
+      'a `freezeIsNotASeam` declaration names a def with NO `freeze` param. The argument it ' +
+        'makes is about a param that no longer exists — delete it, or it silently pre-approves ' +
+        'the next `freeze` to appear on that def, which is exactly the seam this leg watches for.',
+    ).toEqual([]);
+
+    // …and the declaration has to be an ARGUMENT, on the same bar as `why`.
+    const thinNotASeam = FACES_WITHOUT_SCENES
+      .filter((e) => e.freezeIsNotASeam && e.freezeIsNotASeam.trim().length < 120)
+      .map((e) => e.type);
+    expect(
+      thinNotASeam,
+      '`freezeIsNotASeam` must say what the param DOES and where it is read, not assert that it ' +
+        'is harmless. "It is not a seam" with no mechanism is a suppression.',
     ).toEqual([]);
 
     // The argument itself, and the coverage it promises.
@@ -940,12 +975,45 @@ test.describe('VRT: P1 curated faces (?shell=1) — compact lane tile + dock ful
     await frameMember(page, runId, 0.45, 'compact');
 
     // LEG 0 — ANCHORED TO THE ARTIFACT.
-    const live = await readFaceAudio(page, runId);
-    expect(
-      live.tapped,
-      `${NC_AUDIO_FACE}: no analyser could attach to its '${live.portId}' output — the control ` +
-        `cannot see the signal it is about to reason about.`,
-    ).toBe(true);
+    //
+    // ⚠ THE ATTACH IS POLLED, NOT SAMPLED ONCE (#2114). This read used to fire
+    // immediately after `bootWithFace` + `frameMember`, and analyser attach is
+    // ASYNCHRONOUS READINESS — so a single sample races it. On vrt-strict shard
+    // 5/8 it lost that race and the control died on its own precondition
+    // ("no analyser could attach"), before either of the two assertions it
+    // exists to make had run. The shard was at 64 % of budget, so this was
+    // never a capacity problem; it is the documented state-readiness pattern
+    // being missing.
+    //
+    // ⚠ THIS CANNOT WEAKEN THE GATE, which is the property that makes polling
+    // the right answer rather than a bigger budget. If the analyser never
+    // attaches, the poll still fails with the same message and the same
+    // meaning; all that changes is that "sampled before ready" becomes "waited
+    // for ready, then asserted". The peak / moving legs below are untouched and
+    // still read the SAME reading this loop settles on.
+    //
+    // ⚠ AND IT IS A READINESS BOOLEAN, NOT AN ACCUMULATOR — which is why an
+    // `expect.poll` is legitimate here and is NOT the "Playwright-side poll
+    // starves its own subject" defect. That rule is about sampling a
+    // page-side quantity that ADVANCES (a frame counter), where each
+    // round-trip competes with the thing being measured. `tapped` latches once
+    // and stops changing, so re-reading it neither perturbs nor races anything.
+    let live = await readFaceAudio(page, runId);
+    await expect
+      .poll(
+        async () => {
+          live = await readFaceAudio(page, runId);
+          return live.tapped;
+        },
+        {
+          message:
+            `${NC_AUDIO_FACE}: no analyser could attach to its '${live.portId}' output — the ` +
+            `control cannot see the signal it is about to reason about. Polled to let the ` +
+            `attach settle; still false, so this is a real wiring failure rather than a race.`,
+          timeout: 15_000,
+        },
+      )
+      .toBe(true);
     expect(
       live.peak,
       `${NC_AUDIO_FACE} downstream of ${NC_SOURCE}: peak amplitude is ${live.peak} — the chain is ` +
