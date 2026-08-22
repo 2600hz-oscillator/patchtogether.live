@@ -215,10 +215,32 @@ async function centerOnNode(page: Page, nodeId: string, zoom = 0.9): Promise<voi
   await waitFrames(page, 4);
 }
 
-/** Spawn one subject on the DEFAULT shell (what actually ships) and open its dock
- *  faceplate. ⚠ NOT `?shell=legacy`: that is precisely the surface promotion does
- *  NOT change, and testing it is the #1934 mistake this file must not repeat. */
-async function openFace(page: Page, type: string, domain: 'audio' | 'video') {
+/** The node id for a subject inside a shared batch rack — unique per module so one
+ *  rack can hold a whole batch. */
+function nodeId(type: string): string {
+  return `sut-${type}`;
+}
+
+/**
+ * Boot the DEFAULT shell (what actually ships) ONCE and spawn a whole BATCH of
+ * subjects into one rack. ⚠ NOT `?shell=legacy`: that is precisely the surface
+ * promotion does NOT change, and testing it is the #1934 mistake this file must not
+ * repeat.
+ *
+ * ⚠ ONE BOOT PER BATCH, NOT PER MODULE — and the number is MEASURED, not guessed.
+ * Every leg used to run its own `goto /rack` + spawn + dock open. Measured locally
+ * under `E2E_SWIFTSHADER=1`: one test alone is 11.6 s wall, the full file at 2
+ * workers was 51.2 s ⇒ a fixed ~8.6 s and a MARGINAL ~3.0 s per test, nearly all of
+ * it page boot. With 27 module legs that is ~81 s of booting to prove 27 DOM facts.
+ *
+ * That cost is not just this file's problem, which is the real reason it changed:
+ * the spec rides the 22 s MEDIAN in `e2e-timings.generated.json` until its first
+ * accept, and a 28-test lump costed at 22 s perturbs the whole e2e bin-packing —
+ * measured, adding this one file changes the composition of NINE of the TEN shards.
+ * Batching amortises the boot without weakening a single assertion: every module
+ * still gets its own dock open, its own toggle, and its own named failure.
+ */
+async function bootBatch(page: Page, batch: readonly Subject[]) {
   await freezeVideoRender(page);
   await page.goto('/rack');
   await expect(page.getByTestId('workflow-topbar'))
@@ -227,40 +249,93 @@ async function openFace(page: Page, type: string, domain: 'audio' | 'video') {
 
   await spawnPatch(
     page,
-    [{ id: 'sut', type, position: { x: 400, y: 60 }, domain, params: {} }],
+    batch.map((s, i) => ({
+      id: nodeId(s.type),
+      type: s.type,
+      // Spread so tiles do not overlap; `centerOnNode` re-frames before each dock
+      // open regardless, and only one dock is open at a time.
+      position: { x: 400 + (i % 4) * 420, y: 60 + Math.floor(i / 4) * 320 },
+      domain: s.domain,
+      params: {},
+    })),
     [],
   );
-  await centerOnNode(page, 'sut');
+}
 
-  const shell = page.locator('.svelte-flow__node[data-id="sut"] [data-testid="module-shell"]');
+/** Open ONE subject's dock faceplate inside an already-booted batch rack. */
+async function openDockFor(page: Page, type: string) {
+  await centerOnNode(page, nodeId(type));
+  const shell = page.locator(`.svelte-flow__node[data-id="${nodeId(type)}"] [data-testid="module-shell"]`);
   await expect(shell, `the ${type} shell tile`)
     .toBeVisible({ timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
   await shell.getByTestId('shell-open-dock').click();
   await expect(page.getByTestId('dock-full-view'), `the ${type} dock full view`).toBeVisible();
 }
 
+/** Close the dock and PROVE it closed — so a module that fails to release the pane
+ *  fails HERE, naming itself, rather than corrupting the next module in the batch
+ *  with a confusing locator error. This is what keeps a batched test's failures as
+ *  legible as the one-test-per-module version's were. */
+async function closeDock(page: Page, type: string) {
+  await page.keyboard.press('Escape');
+  await expect(
+    page.getByTestId('dock-full-view'),
+    `${type}: the dock must close before the next module in this batch opens`,
+  ).toHaveCount(0);
+}
+
+/** Boot a rack holding exactly ONE subject and open its dock. */
+async function openFaceSolo(page: Page, s: Subject) {
+  await bootBatch(page, [s]);
+  await openDockFor(page, s.type);
+}
+
+/** The SUBJECTS split into batches that share one page boot.
+ *
+ * ⚠ THE BATCH SIZE IS A COST KNOB, NOT A GROUPING CLAIM. Modules are chunked in
+ * declaration order; no batch means anything, and nothing may be asserted about
+ * which modules share one. If a module's placement ever starts to matter, that is a
+ * bug in the test, not a fact about the batch. */
+const BATCH_SIZE = 7;
+const BATCHES: Subject[][] = [];
+for (let i = 0; i < SUBJECTS.length; i += BATCH_SIZE) {
+  BATCHES.push(SUBJECTS.slice(i, i + BATCH_SIZE));
+}
+
 /** The persisted flag, read off the LIVE PATCH rather than off the DOM — the DOM is
  *  the thing under test, so reading it back would prove nothing about whether the
  *  state landed anywhere durable. */
-async function persistedCollapsed(page: Page): Promise<unknown> {
-  return page.evaluate(() => {
+async function persistedCollapsed(page: Page, id: string): Promise<unknown> {
+  return page.evaluate((nid) => {
     const w = window as unknown as {
       __patch?: { nodes?: Record<string, { data?: Record<string, unknown> }> };
     };
-    return w.__patch?.nodes?.sut?.data?.previewCollapsed;
-  });
+    return w.__patch?.nodes?.[nid]?.data?.previewCollapsed;
+  }, id);
 }
 
-for (const { type, prefix, domain, why } of SUBJECTS) {
-  test.describe(`${type}: the SCREEN switch on the FACE`, () => {
+for (const [batchIdx, batch] of BATCHES.entries()) {
+  test.describe(`SCREEN switch on the FACE — batch ${batchIdx + 1}/${BATCHES.length}`, () => {
     // The SwiftShader budget, from the ONE export site rather than a literal — a
     // flat wall-clock number is a different assertion on every runner, and CI's
     // two-core boxes swing >=2x run-to-run on identical code (#1860/#1906). This
     // BOUNDS the failure; it is not what any test here asserts.
-    test.setTimeout(SLOW_BOOT_TEST_TIMEOUT_MS);
+    //
+    // ⚠ SCALED BY BATCH SIZE, because one test now covers several modules. A batch
+    // does the SAME per-module work the one-test-per-module version did; only the
+    // page boot is shared, so the ceiling has to grow with the module count or it
+    // becomes a different assertion than it was.
+    test.setTimeout(SLOW_BOOT_TEST_TIMEOUT_MS * batch.length);
 
-    test(`is REACHABLE, collapses the picture, RECLAIMS its space, and comes back — ${why}`, async ({ page }) => {
-      await openFace(page, type, domain);
+    test(`${batch.map((s) => s.type).join(', ')} — each is REACHABLE, collapses the picture, RECLAIMS its space, and comes back`, async ({ page }) => {
+      await bootBatch(page, batch);
+
+      for (const { type, prefix, why } of batch) {
+        // Every assertion below names its module, so a batched failure is exactly
+        // as legible as a per-module one. `why` rides into the step name so the
+        // reason this module is covered survives into the trace.
+        await test.step(`${type} — ${why}`, async () => {
+          await openDockFor(page, type);
 
       // ⚠ SCOPED TO THE FACEPLATE, NOT TO THE PAGE, and this is the correction the
       // fleet-wide run forced. The first draft ended with
@@ -337,6 +412,11 @@ for (const { type, prefix, domain, why } of SUBJECTS) {
       // …and it is THIS faceplate's canvas, not a stray sharing the testid — see
       // the scoping note above. Exactly one, so a duplicate mount is RED too.
       await expect(canvas, 'exactly one preview canvas in this faceplate').toHaveCount(1);
+
+          // Leave the pane clean for the next module in the batch, and PROVE it.
+          await closeDock(page, type);
+        });
+      }
     });
   });
 }
@@ -367,22 +447,22 @@ test.describe(`${PERSISTENCE_SUBJECT}: the SCREEN state PERSISTS`, () => {
     expect(subject, `${PERSISTENCE_SUBJECT} must be in SUBJECTS`).toBeDefined();
     const TOGGLE = `[data-testid="${subject!.prefix}-face-screen-toggle"]`;
 
-    await openFace(page, subject!.type, subject!.domain);
-    expect(await persistedCollapsed(page), 'nothing written before the first click').toBeFalsy();
+    const id = nodeId(subject!.type);
+    await openFaceSolo(page, subject!);
+    expect(await persistedCollapsed(page, id), 'nothing written before the first click').toBeFalsy();
 
     await page.locator(TOGGLE).click();
     await expect(page.locator(TOGGLE)).toHaveAttribute('aria-pressed', 'false');
-    expect(await persistedCollapsed(page), 'OFF is persisted to the patch').toBe(true);
+    expect(await persistedCollapsed(page, id), 'OFF is persisted to the patch').toBe(true);
 
-    await page.keyboard.press('Escape');
-    await expect(page.getByTestId('dock-full-view')).toHaveCount(0);
+    await closeDock(page, subject!.type);
 
-    const shell = page.locator('.svelte-flow__node[data-id="sut"] [data-testid="module-shell"]');
+    const shell = page.locator(`.svelte-flow__node[data-id="${id}"] [data-testid="module-shell"]`);
     await shell.getByTestId('shell-open-dock').click();
     await expect(page.getByTestId('dock-full-view')).toBeVisible();
 
     await expect(page.locator(TOGGLE), 'still OFF after a remount')
       .toHaveAttribute('aria-pressed', 'false');
-    expect(await persistedCollapsed(page), 'and still persisted').toBe(true);
+    expect(await persistedCollapsed(page, id), 'and still persisted').toBe(true);
   });
 });
