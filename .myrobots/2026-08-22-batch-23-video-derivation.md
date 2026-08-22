@@ -62,13 +62,23 @@ honest cut is **≤5**, which yields exactly four available modules — `acidwar
 `lines`, `peakstate`, `shapes` — with `graphicEq` (also 5p) excluded only because it is
 parked in another lane's tree.
 
-⚠ **This is a policy question, not an agent decision.** The owner's batching rule is
-*"simple modules with <4 controls get batched 4 per PR; big modules needing complex
-design go 1 PR at a time."* Moving the cut to ≤5 is a redefinition of "simple" and
-should be confirmed rather than assumed. The alternative — go to AUDIO — is worse right
-now: the `_face-fixtures` AUDIO pool is down to **2** candidates (`dockscope`,
-`samsloop`) against a `> 1` slack assertion, so any audio promotion must widen that pool
-in the same PR.
+### ✅ DECIDED (coordinator, 2026-08-22): the cut is ≤5 for SIMPLE modules
+
+Raised as a policy question rather than assumed, and **approved by the coordinator, who
+flagged it to the owner for veto.** The recorded reasoning, because the next lane will
+ask the same question:
+
+> The owner's *"<4 controls get batched"* line divides SIMPLE from
+> COMPLEX-NEEDING-DESIGN — **the number was a proxy**, and a 5-identical-knobs module
+> is on the simple side of that line by any reading. What stays owner-sacred is the
+> other half: **complex modules ride alone.**
+
+So the ≤5 cut is a clarification of the proxy, not a relaxation of the rule. The half
+that did NOT move is the half that decides `acidwarp` below.
+
+The alternative — go to AUDIO — was rejected as worse right now: the `_face-fixtures`
+AUDIO pool is down to **2** candidates (`dockscope`, `samsloop`) against a `> 1` slack
+assertion, so any audio promotion must widen that pool in the same PR.
 
 ## The four, with LIVE-VERIFIED card primitives
 
@@ -122,13 +132,24 @@ Every param has exactly one control.
   every param be ranked and render exactly one interactive cell, so ranking `fmDepth`
   would paint a control the shader multiplies by zero — "a faceplate must not paint a
   dead control as a working one" (the macrooscillator rule). It wants `noUserControl`
-  (#1726). ⚠ **OPEN:** milkdrop's precedent uses `writer: 'cv-port'`, and `fmDepth` has
-  **no CV port** (`lines in fm` is `mono-video`; there is no `lines in fmDepth cv`), so
-  the existing writer vocabulary may not have a value that fits. Check
-  `no-user-control.ts` before building; this may need a new writer kind, which is a
-  platform-shaped decision rather than a face one.
-- **Attest: NIL** if `noUserControl` is the answer (it is stripped by
-  `attest-code-basis.ts`, verified for milkdrop in #2083).
+  (#1726).
+- ✅ **RESOLVED — `writer: 'internal'`, and NO vocabulary extension is needed.** Checked
+  `no-user-control.ts` + `NoUserControlParam` in `graph/types.ts` before building, as
+  instructed. The union is `'cv-port' | 'internal'`, and `'internal'` is defined
+  MECHANICALLY, not by example: *"NOTHING on the patch surface targets it… Asserted to
+  have no such port, so the day one is added this entry stops being true and says so."*
+  That is `fmDepth` exactly. (The parenthetical "a determinism or harness toggle" is an
+  example of the class, not the definition — a forward-compat param with no port is the
+  same mechanical case.)
+- ⚠ **AND THE WRONG ANSWER WAS STRUCTURALLY IMPOSSIBLE TO SHIP QUIETLY**, which is worth
+  recording because it is why the coordinator's "do not shoehorn `cv-port`" instruction
+  could not have been violated by accident: `writer` is anchored to the def's own ports
+  in BOTH directions — *"'cv-port' asserts a port targeting the param EXISTS, 'internal'
+  asserts one does NOT."* `cvWritersOf(linesDef, 'fmDepth')` returns `[]`, so a
+  `'cv-port'` declaration here would have gone RED on the first lint run. The typed
+  field does the job it exists for.
+- **Attest: NIL.** `noUserControl` is in `HASH_TRANSPARENT_PROPS`
+  (`attest-code-basis.ts`), verified for milkdrop in #2083.
 
 ### `shapes` (5p) — TWO declared-vs-rendered defects, ATTEST MOVEMENT
 
@@ -200,24 +221,27 @@ separate decisions:
 (`SCENE_COUNT` / `PALETTE_COUNT` are imported constants, not hand-typed — leave them
 alone; they are not population-count violations.)
 
-## Recommended packaging
+## Packaging — ✅ APPROVED (coordinator, 2026-08-22)
 
-**Split on the ATTEST line, exactly as batch-22 split G2a from G2b.** That split was
-made for this reason and it paid: G2a shipped zero-attest while G2b needed a real GPU
-pin, and dragging them together would have put an attest window on modules that did not
-need one.
+### SPLIT-ON-THE-ATTEST-LINE — now the standing pattern, by name
+
+Batch-22 split G2a from G2b on exactly this line and it paid: G2a shipped zero-attest
+while G2b needed a real GPU pin, and dragging them together would have put an attest
+window on modules that did not need one. **The coordinator has named this the standing
+pattern for face batches: group by whether the PR moves `params`, never by module
+count.** Use the name in future PR bodies so it is greppable.
 
 - **batch-23a — ZERO ATTEST: `peakstate` + `lines`.** No `params` change on either.
   Ships the knob/fader distinction cleanly (peakstate declares nothing, lines declares
   four faders), and `peakstate` is the first of this wave whose preview is a PORT rather
-  than an addition.
+  than an addition. **Needs no attest-window coordination, so it can start the moment
+  the G4 PR is open.**
 - **batch-23b — ATTEST: `shapes`.** Two `params` fixes, both real defects, one attest
-  window, one `docs:accept`.
-- **`acidwarp` RIDES ALONE**, alongside `scoreboard` (#2089), under the owner's
-  complex-module rule.
-
-If the coordinator prefers one PR of four regardless, it is buildable — but then
-`peakstate` and `lines` inherit an attest window they do not need.
+  window, one `docs:accept`. Full handoff protocol (clean committed tree, report the
+  expected refusal hash, never run `task webgl:attest` yourself).
+- **`acidwarp` RIDES ALONE.** Approved on the owner-sacred half of the rule: *"it isn't
+  'a 5-param module', it's four control shapes + a live display + buttons + a readout
+  deletion, i.e. a module needing design, and policy says those never batch."*
 
 ## Carried-forward obligations (do not re-derive these)
 
@@ -239,13 +263,21 @@ If the coordinator prefers one PR of four regardless, it is buildable — but th
   `controlSurface`, `electraControl`, `launchpadControlLeft`, `cameraInput`), so all
   four take the shell lane tile.
 
-## Open questions for the coordinator / owner
+## Questions — three ANSWERED 2026-08-22, one still open
 
-1. **Is a ≤5-param cut acceptable for "simple"?** The ≤4 tail is empty; this is the
-   blocking question for the whole batch.
-2. **`acidwarp`: batch it or ride it alone?** This derivation recommends alone.
-3. **`lines.fmDepth`: what `writer` does `noUserControl` take** for a param written by
-   neither a card nor a CV port? May need a new kind — check `no-user-control.ts` before
-   committing to the approach.
-4. **`graphicEq`(5p) and `cellshade`(6p) are parked in other lanes' trees.** If either
-   lane is finished, `graphicEq` would make the ≤5 set five modules deep.
+1. ✅ **Is a ≤5-param cut acceptable for "simple"?** **YES** — coordinator's call,
+   flagged to the owner for veto. The number was a proxy for SIMPLE-vs-NEEDS-DESIGN; the
+   complex-modules-ride-alone half is untouched. See the decision block above.
+2. ✅ **`acidwarp`: batch or alone?** **ALONE**, on the untouched half of the rule.
+3. ✅ **`lines.fmDepth` writer vocabulary?** **`writer: 'internal'`; no extension
+   needed.** Resolved against the real type before building — see the `lines` section.
+4. ⏳ **STILL OPEN — `graphicEq`(5p) and `cellshade`(6p) are parked in other lanes'
+   trees.** If either lane is finished, `graphicEq` joins the ≤5 set and makes it five
+   deep. Worth a check before batch-23a is scoped, since it would change what 23a
+   contains.
+
+## Sequencing (coordinator, 2026-08-22)
+
+G4 PR first (capture reconcile → open). **Then batch-23a can start immediately** — it is
+zero-attest, so it needs no window coordination. 23b and `acidwarp` follow, and only
+those two need an attest window.
