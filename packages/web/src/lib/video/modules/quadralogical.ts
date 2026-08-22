@@ -677,13 +677,52 @@ const DEFAULTS: QuadParams = {
   diamond_margin: QUADRALOGICAL_DEFAULT_MARGIN,
   blend_sharp: QUADRALOGICAL_DEFAULT_SHARP,
   // All edges default to DISSOLVE (fx=0) so the out-of-box behaviour is the
-  // Phase-1 joystick cross-dissolve. amount default 1, param (softness/feather)
-  // default 0.1 — a usable starting point once an edge is switched to a keyed /
-  // spatial effect.
-  edge1_fx: 0, edge1_amount: 1, edge1_param: 0.1,
-  edge2_fx: 0, edge2_amount: 1, edge2_param: 0.1,
-  edge3_fx: 0, edge3_amount: 1, edge3_param: 0.1,
-  edge4_fx: 0, edge4_amount: 1, edge4_param: 0.1,
+  // Phase-1 joystick cross-dissolve.
+  //
+  // ⚠ `amount` DEFAULTS TO 0.5, NOT 1, AND THE OLD 1 WAS A LIVE DEFECT (#1880).
+  // `amount` is ONE param with EIGHT meanings — mix amount for ADD/MULTIPLY/
+  // DIFF, angle for WIPE, threshold for CHROMA/LUMA, radius bias for IRIS — so
+  // its default has to be a value at which none of the eight is DEAD. 1 is not
+  // that value:
+  //
+  //   CHROMA computes `tol = clamp01(amount) * 0.5`, so amount = 1 gives
+  //   tol = 0.5 — and `hueDistance` is itself CAPPED at 0.5, so every possible
+  //   hue lands inside tolerance and `smoothstep(tol, tol + sft, hd)` is pinned
+  //   at 0 whatever the key is. The three key colours AND the softness are
+  //   bit-exactly unreadable at that one value.
+  //
+  // MEASURED with the issue's own instrument (perturb one BlendParams field
+  // over a 10x10 colour grid x 10 partners x 5 ratios x 49 UVs, compare to
+  // 1e-12) — `quadralogical-face-model.test.ts` runs a reduced form of it
+  // permanently:
+  //
+  //   amount      CHROMA key    CHROMA param
+  //   0 .. 0.99   LIVE          LIVE
+  //   1           DEAD          DEAD          <- the shipped default
+  //
+  // ⚠ IT IS A KNIFE EDGE AT EXACTLY 1, which is SHARPER than #1880 reported
+  // (it listed 0.99 as dead too, and 0.8 as dead for softness). Re-measuring
+  // with a wider probe puts the cliff at 1 alone. The correction matters
+  // because it says the bug is the DEFAULT sitting on a degenerate point, not
+  // a broad dead band a player would feel their way out of.
+  //
+  // At 0.5 every effect reads every control it can read (DISSOLVE excepted —
+  // it reads nothing by design, which is finding 1 and is inherent to the
+  // effect rather than to any default). So the player who selects CHROMA, sees
+  // the key row, and turns the key colour now gets a picture.
+  //
+  // ⚠ AND THE IRIS ROW OF THAT TABLE WAS A PROBE ARTIFACT FIRST TIME ROUND.
+  // With only 3 UVs the probe reported IRIS as not reading `amount` at 1.0;
+  // widening to 49 showed it does. That is the same false-negative class
+  // #1880's own instrument note records against a narrow colour grid — a
+  // parameter that only acts inside a band is invisible to a probe that
+  // samples outside it. Recorded so the next reader does not "re-find" it.
+  //
+  // param (softness/feather) stays 0.1.
+  edge1_fx: 0, edge1_amount: 0.5, edge1_param: 0.1,
+  edge2_fx: 0, edge2_amount: 0.5, edge2_param: 0.1,
+  edge3_fx: 0, edge3_amount: 0.5, edge3_param: 0.1,
+  edge4_fx: 0, edge4_amount: 0.5, edge4_param: 0.1,
   keyR: 0,
   keyG: 1, // green-screen default key colour
   keyB: 0,

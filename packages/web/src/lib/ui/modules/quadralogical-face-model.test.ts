@@ -302,6 +302,76 @@ describe('quadralogical — `invert` is a SWITCH, and the curve change is pixel-
   });
 });
 
+describe('quadralogical — #1880: no control is DEAD at its own default', () => {
+  // The permanent form of #1880's probe. A field whose change moves NO sample
+  // is not read; the issue's own instrument note is that a NARROW probe gives
+  // FALSE NEGATIVES, so the grid is the instrument rather than an optimisation.
+  const GRID: RGB[] = [];
+  for (let i = 0; i < 6; i++) for (let j = 0; j < 6; j++) GRID.push([i / 5, j / 5, ((i + j) % 6) / 5]);
+  const UVS: [number, number][] = [];
+  for (let i = 0; i <= 4; i++) for (let j = 0; j <= 4; j++) UVS.push([i / 4, j / 4]);
+  const RATIOS = [0.1, 0.3, 0.5, 0.7, 0.9];
+
+  /** Does perturbing `field` move ANY sample of this effect at `amount`? */
+  function reads(fx: number, field: 'amount' | 'param' | 'key' | 'invert', amount: number): boolean {
+    const base = { amount, param: 0.1, key: [0, 1, 0] as RGB, invert: 0, uv: [0.5, 0.5] as [number, number] };
+    for (const a of GRID) for (const b of GRID.slice(0, 6)) for (const t of RATIOS) for (const uv of UVS) {
+      const p1 = { ...base, uv };
+      const p2 = { ...base, uv };
+      if (field === 'key') p2.key = [1, 0, 0];
+      else if (field === 'param') p2.param = 0.5;
+      else if (field === 'invert') p2.invert = 1;
+      else p2.amount = Math.max(0, amount - 0.3);
+      const r1 = blend2(fx, a, b, t, p1);
+      const r2 = blend2(fx, a, b, t, p2);
+      for (let c = 0; c < 3; c++) if (Math.abs(r1[c]! - r2[c]!) > 1e-12) return true;
+    }
+    return false;
+  }
+
+  const CHROMA = 4;
+
+  it('⚠ THE DEFECT: at the OLD default of 1, CHROMA\'s key and softness are BIT-EXACTLY DEAD', () => {
+    // This is the leg that proves the fix was a fix. `tol = amount * 0.5` = 0.5,
+    // and `hueDistance` is capped at 0.5, so every hue is inside tolerance and
+    // the smoothstep is pinned — the key cannot change the picture.
+    expect(reads(CHROMA, 'key', 1), 'key at amount=1').toBe(false);
+    expect(reads(CHROMA, 'param', 1), 'softness at amount=1').toBe(false);
+  });
+
+  it('at the SHIPPED default, every control CHROMA has is live', () => {
+    const shipped = param('edge1_amount').defaultValue;
+    expect(shipped, 'the default moved off the degenerate point').not.toBe(1);
+    for (const field of ['amount', 'param', 'key', 'invert'] as const) {
+      expect(reads(CHROMA, field, shipped), `CHROMA reads '${field}' at the default`).toBe(true);
+    }
+  });
+
+  it('all four edges share the corrected default — not just the one that was measured', () => {
+    for (const n of [1, 2, 3, 4]) {
+      expect(param(`edge${n}_amount`).defaultValue, `edge${n}_amount`).toBe(
+        param('edge1_amount').defaultValue,
+      );
+    }
+  });
+
+  it('⚠ NEGATIVE CONTROL: the probe discriminates, and DISSOLVE reading nothing is REAL', () => {
+    // Two ways the legs above pass while measuring nothing: a probe that always
+    // says LIVE (then the amount=1 leg could not have failed) or one that always
+    // says DEAD (then the shipped-default leg could not have passed). Both are
+    // excluded here — plus the finding-1 half of #1880, which is NOT a default
+    // bug and cannot be fixed by one: DISSOLVE reads none of the four, at ANY
+    // amount, because its branch is `mix(a, b, t)`. That is why the face's
+    // answer to finding 1 is RANK (all twelve rank below every unconditional
+    // control) rather than a different number.
+    for (const field of ['amount', 'param', 'key', 'invert'] as const) {
+      expect(reads(0, field, 0.5), `DISSOLVE must read nothing — '${field}'`).toBe(false);
+    }
+    // …and the same probe says ADD DOES read amount, so "false" means something.
+    expect(reads(1, 'amount', 0.5), 'ADD reads amount').toBe(true);
+  });
+});
+
 describe('quadralogical — the joystick FIELD geometry', () => {
   it('the toggle re-aspects on the WIDTH; the HEIGHT never moves', () => {
     // The property that stops the four EDGE boxes below the screen jumping
