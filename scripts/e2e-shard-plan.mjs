@@ -104,6 +104,30 @@ export const PENDING_FIRST_MEASUREMENT = [
       + 'merges and DELETE this entry.',
   },
   {
+    spec: 'acidwarp-face-screen.spec.ts',
+    why:
+      '#2111 — new with the ACIDWARP faceplate. Three legs: the plasma display paints on the '
+      + 'faceplate, SCREEN OFF unmounts it and persists on `node.data` and it comes back LIVE, '
+      + "and — the unusual one — that the module's own `freeze` param does NOT stop the picture, "
+      + 'which is the EVIDENCE for its `FACES_WITHOUT_SCENES` entry rather than a behaviour '
+      + 'check. '
+      + '⚠ MEASURED UNDER `E2E_SWIFTSHADER=1`, and on this module that is the only number worth '
+      + 'quoting: acidwarp is a pure-GPU plasma generator rendering in a WORKER, so the software '
+      + 'renderer is the subject rather than a multiplier applied afterwards. Warm server, '
+      + 'single worker: 33.3 s for a REPEAT=3 flake-check of all three legs, i.e. **~11.1 s per '
+      + 'pass** (SCREEN ON ~4.9 s, SCREEN OFF ~3.1 s, freeze-evidence ~2.7 s). On a real GPU the '
+      + 'same three run in 10.3 s, so the SwiftShader penalty here is mild — the legs are '
+      + 'dominated by boot and by waiting for the FIRST painted frame, not by fill rate. Budget '
+      + 'the 2-core CI VM at roughly the SwiftShader figure plus VM overhead. '
+      + '⚠ NO ANIMATED-GEOMETRY RACE IN THIS ONE, deliberately, and it is worth recording next '
+      + "to quadralogical's entry: that spec's SCREEN leg read a bounding box once while a CSS "
+      + 'width transition ran, passed on a GPU and failed 3/3 under SwiftShader. This body '
+      + 'collapses its canvas outright — no transition, no intermediate state to sample — and '
+      + 'every wait here is a FRAME COUNT taken inside the page, never a wall-clock budget. '
+      + 'Run `flox activate -- task e2e:timings:accept` on the first green CI run after this '
+      + 'merges and DELETE this entry.',
+  },
+  {
     spec: 'cv-buddy-face.spec.ts',
     why:
       '#2024 — new with the CV BUDDY / CV BUDDY MINI faceplate and the rack-global status home. '
