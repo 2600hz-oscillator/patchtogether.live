@@ -21,7 +21,11 @@
 // `backdraft-preview-toggle.spec.ts` / `video-hide-controls.spec.ts`. Every other
 // faced module's switch was proven only at the source. ENUMERATED at authoring
 // time by walking every `face.extension` → `fullViewBody` → toggle testid and
-// subtracting the ones an existing spec references: **25 uncovered surfaces**.
+// subtracting the ones an existing spec references: **25 uncovered surfaces** — plus 2
+// more (`tempest`, `fader`) that landed on main while this file was in review and were
+// caught when the branch absorbed it. See their block below: the "future face PRs extend
+// this table" convention above is not aspirational, it earned its keep on this file's
+// FIRST merge.
 //
 // ⚠ THE ENUMERATION HAD TO CROSS BOTH DOMAINS, and a video-only scan gets it
 // wrong. `foxy` and `rasterize` are `AudioModuleDef`s that carry video surfaces
@@ -133,6 +137,23 @@ const SUBJECTS: readonly Subject[] = [
   { type: 'outlines', prefix: 'outlines', domain: 'video', why: 'the edge-detector\'s preview; the module whose hard-coded `mapped` output MAPPER generalises.' },
   { type: 'spirographs', prefix: 'spirographs', domain: 'video', why: 'the harmonograph\'s plot canvas — the module whose right-hand TEXT column the 2026-08-19 ruling deleted, leaving the picture as the surface.' },
   { type: 'warrensvisions', prefix: 'warrensvisions', domain: 'video', why: 'the shader-visions preview canvas.' },
+
+  // ── batch 22 · group 2b — landed on main WHILE THIS FILE WAS IN REVIEW ────
+  //
+  // ⚠ ADDED BY A MERGE, NOT BY THIS FILE'S AUTHOR, and that is the convention in
+  // this file's header working on its very first encounter. G2b (#2100) merged
+  // `tempest` + `fader` after this table was enumerated, so absorbing main into
+  // the G4 branch brought two faced video modules with SCREEN switches and no
+  // render leg. Leaving them out would have shipped a file whose own header
+  // claims to cover "every faced module with a SCREEN switch that had no
+  // render-level leg" while two already fell outside it.
+  //
+  // Verified before adding rather than assumed: both declare
+  // `<type>-face-screen-toggle` + `<type>-face-canvas`, and both use the same
+  // `{#if !previewCollapsed}` REMOVES mechanism as the other 25, so the
+  // `toHaveCount(0)` leg is correct for them too.
+  { type: 'tempest', prefix: 'tempest', domain: 'video', why: 'the geometry well\'s preview. One of the two G2b faces that cost an attest for their `options` rosters — its named SHAPE selector is resolved from the def, so the picture is where you confirm the selection did something.' },
+  { type: 'fader', prefix: 'fader', domain: 'video', why: 'the A/B transition mixer\'s main OUT preview. ⚠ The strongest watch-mark case in the roster: it has TWO outputs — `out` and the `send` feeding an external FX loop — so a lapsed mark stalls an output the switch does not even show.' },
 
   // ── the AUDIO-def outlier ─────────────────────────────────────────────────
   { type: 'rasterize', prefix: 'rasterize', domain: 'audio', why: '⚠ an AudioModuleDef that carries a VIDEO surface, so it lives in lib/audio/modules and a video-only enumeration misses it entirely. Spawns with domain: audio. It is the reason this file\'s derivation crosses both domains.' },
