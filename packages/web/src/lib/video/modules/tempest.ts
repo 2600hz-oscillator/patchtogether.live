@@ -200,8 +200,126 @@ export const tempestDef: VideoModuleDef = {
   outputs: [{ id: 'out', type: 'video' }],
   params: [
     { id: 'rim', label: 'Rim', defaultValue: DEFAULTS.rim, min: 0, max: 1, curve: 'linear' },
-    { id: 'shape', label: 'Shape', defaultValue: DEFAULTS.shape, min: 0, max: TUBE_SHAPES.length - 1, curve: 'discrete' },
+    {
+      id: 'shape',
+      label: 'Shape',
+      defaultValue: DEFAULTS.shape,
+      min: 0,
+      max: TUBE_SHAPES.length - 1,
+      curve: 'discrete',
+      // ⚠ THE ROSTER IS DERIVED FROM `TUBE_SHAPES`, NOT RE-TYPED. It is the same
+      // array the factory indexes (`tubeShapeFor`) and the same one
+      // `TempestCard.svelte` cycles, so the face cannot disagree with the
+      // engine about which tube is which, and a shape added to the core cannot
+      // leave a face naming two of three. That is also why there is no hand-
+      // written count here: `max` already derives from `TUBE_SHAPES.length`.
+      //
+      // ⚠ WHY IT HAS TO EXIST AT ALL — this is the FUNCTIONAL-PARITY half.
+      // Without a roster the face resolves `shape` to a bare 3-step stepper and
+      // the player loses the NAMES the card has always shown (its button reads
+      // the live `shapeName`). A number is not a name: "2" does not tell you
+      // the tube is a star. Nothing in the def implies the names, so they have
+      // to be promoted here or they are simply gone.
+      //
+      // ⚠ AND THE LABEL IS THE NAME VERBATIM, lower-case, exactly as the card
+      // prints it. Upper-casing would read as tidier and would be a different
+      // string from the one players have been looking at.
+      //
+      // ⚠ THIS IS THE EDIT THAT COSTS AN ATTEST. `params` is IN the WebGL
+      // content basis (unlike `face`, `docs` and `noUserControl`), so this
+      // roster moves the hash and needs an owner-machine re-attest —
+      // `colourofmagic` records the identical trade for the identical reason.
+      options: TUBE_SHAPES.map((name, i) => ({
+        value: i,
+        label: name,
+        title: `the ${name} tube cross-section`,
+      })),
+    },
   ],
+
+  // ── DOCS (boy-scouted with the face — this def shipped without any) ────────
+  //
+  // ⚠ THIS MODULE HAD NO `docs` AND WAS ABSENT FROM `STRICT_DOCS`. The living-
+  // docs ratchet says any module you incidentally touch is brought up to the
+  // bar when you touch it, so facing it is when that debt gets paid rather than
+  // re-noticed. Written from the module's own header and its factory, not from
+  // the plan document — prose on a def is the thing that lies, so everything
+  // below is a claim about code in this file.
+  docs: {
+    explanation:
+      "TEMPEST draws the glowing vector WELL of a Tempest-style tube shooter: a QuadraScan-look "
+      + "web of a near rim ring, a far pit ring and the radial lane lines joining them, with the "
+      + "player CLAW riding the near rim. It is a PICTURE, not a game — this phase renders the "
+      + "tube and the claw; enemies, firing and scoring are later phases. The claw's position "
+      + "around the rim is the one live control, driven by the RIM param or by CV into the RIM "
+      + "jack (the authentic rotary-spinner input, i.e. a gamepad joystick axis), and it WRAPS, "
+      + "so sweeping past the end continues round the tube. SHAPE swaps the tube's cross-section "
+      + "between circle, square and star, which changes the whole silhouette of the well. "
+      + "Rendering is REAL line geometry rather than a fullscreen shader pass, and every segment "
+      + "is expanded on the CPU into a glowing quad so the web reads solid and bright at any "
+      + "orientation instead of dissolving into the dotted stipple that 1px GL lines give you. "
+      + "Patch OUT into an OUTPUT to watch it, and an LFO or joystick CV into RIM to send the "
+      + "claw round the rim.",
+    inputs: {
+      rim:
+        "CV input for the claw's position around the near rim (0..1, linear, wrapping). This is "
+        + "the authentic rotary-spinner control — a gamepad joystick axis is the intended source. "
+        + "It targets the RIM param directly, so a cable here overrides the on-face control.",
+    },
+    outputs: {
+      out:
+        "The additive-line well render: rim ring, pit ring, radial lanes and the player claw, "
+        + "drawn as glowing quads into this node's own framebuffer. With nothing patched in, the "
+        + "picture is still complete — the tube does not need an input to exist.",
+    },
+    controls: {
+      rim:
+        "RIM (0..1, linear, wrapping, default centred). Where the player claw sits around the "
+        + "near rim of the tube. It WRAPS rather than clamping, so a rising ramp walks the claw "
+        + "round and round. Also the target of the RIM cv jack.",
+      shape:
+        "SHAPE (discrete: circle / square / star). The tube's cross-section, which the rim ring, "
+        + "the pit ring and every radial lane are all built from — so this re-draws the entire "
+        + "well, not a detail of it. The names come from the engine's own TUBE_SHAPES list, so "
+        + "the face and the renderer cannot disagree about which tube is which.",
+    },
+  },
+
+  // ── FACE (batch-22 · the video thin tail) ─────────────────────────────────
+  face: {
+    order: ['rim', 'shape'],
+
+    // ⚠ NO `pages`. Two controls is one honest band — and this is the smallest
+    // face in the batch, so padding it into sections would be the clearest
+    // possible case of chrome describing the layout rather than the module.
+
+    // ⚠ NO `paramCells`, AND BOTH OMISSIONS ARE DELIBERATE.
+    //   `rim`   — `TempestCard.svelte` draws it with `Knob`, which is the
+    //             shell's DEFAULT primitive, so declaring anything would be
+    //             redundant at best and a silent substitution at worst.
+    //   `shape` — resolves to a NAMED SELECTOR from the `options` roster on the
+    //             param itself (see above); `paramCells` is for the primitives
+    //             that cannot be inferred, and a declared roster IS the
+    //             inference. Declaring `grid` here would be a different control.
+    //
+    // ⚠ THE ROSTER IS WHY THIS FACE KEEPS ITS NAMES. The card's SHAPE button
+    // cycles and prints the live `shapeName`; without `options` the face would
+    // have shown a bare 3-step stepper and "circle / square / star" would have
+    // been lost. That is the functional-parity rule, and it is what makes this
+    // module's promotion cost an attest at all.
+
+    // ⚠ MANDATORY FOR A VIDEO DEF — this def's only output is `video`, so
+    // `primaryAudioOutPortId` is null and any other glyph literal falls through
+    // `glyphBinding` to a dead `{kind:'static'}` that reddens module-face-lint.
+    glyph: 'none',
+
+    // SCREEN ON/OFF arrives through this slot (#1928): promotion stops BOTH
+    // surfaces rendering `TempestCard.svelte`, which is the only route a faced
+    // video module has to the switch. See
+    // `$lib/ui/modules/tempest/shell-extension.ts`.
+    extension: 'tempest',
+  },
+
   factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;
 

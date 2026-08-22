@@ -1085,9 +1085,9 @@ fader in in_b video
 fader in return video
 fader out out video
 fader out send video
-fader param abTransition 0..4 linear default=0
+fader param abTransition 0..4 discrete default=0
 fader param dryWet 0..1 linear default=0
-fader param dwTransition 0..4 linear default=0
+fader param dwTransition 0..4 discrete default=0
 fader param fader 0..1 linear default=0.5
 featurecv meta domain=audio
 featurecv in in audio
