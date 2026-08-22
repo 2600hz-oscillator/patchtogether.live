@@ -43,7 +43,15 @@
     quadralogicalDef,
     quadWeights,
     clampJoy,
-    TRANSITIONS,
+    // ⚠ THE ROSTER, NOT `TRANSITIONS` — a control's vocabulary comes from ONE
+    // place (the backdraft rule). This `<select>` used to map `TRANSITIONS`
+    // itself, which meant the eight effect NAMES were known to this card and to
+    // nothing else: the def's `edge{N}_fx` params carried no `options`, so a
+    // faceplate cell, the Push 2 card and the docs page could only ever paint
+    // an anonymous eight-position dial. The names are now on the def as
+    // `QUADRALOGICAL_FX_OPTIONS` (derived from `TRANSITIONS`, so the two cannot
+    // disagree even in principle) and this card reads them from there.
+    QUADRALOGICAL_FX_OPTIONS,
     EFFECTS,
     EDGES,
   } from '$lib/video/modules/quadralogical';
@@ -492,8 +500,8 @@
                 onchange={(ev) => selectEdgeFx(edge.id, Number((ev.currentTarget as HTMLSelectElement).value))}
                 title={`Effect for edge ${edge.label}`}
               >
-                {#each TRANSITIONS as label, i (label)}
-                  <option value={i}>{label}</option>
+                {#each QUADRALOGICAL_FX_OPTIONS as opt (opt.value)}
+                  <option value={opt.value} title={opt.title}>{opt.label}</option>
                 {/each}
               </select>
             </div>

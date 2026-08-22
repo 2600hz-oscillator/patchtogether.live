@@ -1,0 +1,387 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>QUADRALOGICAL face — STATE 1: SCREEN OFF</title>
+<style>
+/* ─────────────────────────────────────────────────────────────────────────
+   QUADRALOGICAL FACEPLATE — MOCKUP, STATE 1 of 2 (SCREEN OFF).
+   SPEC AND MOCKUP ONLY. Nothing here is implemented.
+
+   Drawn against the SHIPPED faceplate platform as of 2026-08-22, with the
+   2026-08-19 rulings applied:
+     * NO sidebar (`face.sidebar` deleted, #1957) — the dock is one column;
+     * NO hero readout strip (`face.hero.readouts` deleted);
+     * NO resting derived text of any shape — the card's `x: 0.00  y: 0.00`
+       row is GONE and its value lives in the pad's accessible name;
+     * COMPACT is the default; width must be EARNED.
+
+   Colours / type / geometry from packages/web/src/lib/styles/tokens.css
+   (--bg #0e1013, --module-bg #1c1f24, --module-bg-deep #0a0c0f,
+    --text #eef1f5, --text-dim #9aa2ad, --border #2c3037, --tile-border #33383f,
+    --cable-video #b57bff, --r-dock 11px) and from
+   QuadralogicalCard.svelte (pad #0c0e14, diamond stroke #ffd24a on
+   rgba(255,220,0,.10), crosshair rgba(255,255,255,.08), dot 34px,
+   INPUT_COLORS #ff5a5a/#5aff7a/#5a9bff/#ffd24a).
+   ───────────────────────────────────────────────────────────────────────── */
+:root{
+  --bg:#0e1013; --dock:#12161c; --plate:#262a31; --pbody:#1c1f24; --well:#0a0c0f;
+  --line:#2c3037; --tile:#33383f; --ink:#eef1f5; --dim:#9aa2ad; --faint:#646c77;
+  --video:#b57bff; --tealo:#38d3c8; --amber:#f2c14e; --derived:#8fe6b0;
+  --in1:#ff5a5a; --in2:#5aff7a; --in3:#5a9bff; --in4:#ffd24a;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+  font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1480px;margin:0 auto;padding:26px 20px 100px}
+h1{font-size:21px;font-weight:800;margin:0 0 6px;letter-spacing:.01em}
+.sub{color:var(--dim);font-size:12.5px;margin:0 0 14px;max-width:112ch}
+.sub b{color:var(--ink)} .sub code{font-family:var(--mono);font-size:11.5px;color:var(--video)}
+.nav{display:flex;gap:8px;margin:0 0 20px;font-size:11px}
+.nav a{color:var(--ink);text-decoration:none;border:1px solid var(--line);border-radius:6px;
+  padding:6px 12px;background:#12161c;font-family:var(--mono);letter-spacing:.06em;text-transform:uppercase}
+.nav a.on{border-color:var(--video);color:var(--video)}
+.warn{border:1px solid #6a5330;background:#1c1811;border-radius:8px;padding:11px 14px;
+  margin:12px 0;font-size:12.5px;color:#e8cf9a;max-width:124ch}
+.warn b{color:var(--amber)}
+
+.mod{margin:0 0 34px}
+.mod>header{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;
+  border-bottom:1px solid var(--line);padding-bottom:8px;margin-bottom:11px}
+.mod>header h2{font-size:17px;font-weight:800;letter-spacing:.02em;margin:0;text-transform:uppercase}
+.mod>header .id{font-family:var(--mono);font-size:11px;color:var(--faint)}
+.tag{font-family:var(--mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;
+  border:1px solid #5a4a6a;border-radius:4px;padding:2px 7px;color:#c6a6e0}
+.note{color:var(--dim);font-size:12.5px;margin:0 0 14px;max-width:122ch}
+.note b{color:var(--ink);font-weight:600}
+.note code{font-family:var(--mono);font-size:11.5px;color:var(--video)}
+
+/* ── layout: the plate beside its annotated zone map ─────────────────── */
+.cols{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:18px;align-items:start}
+@media (max-width:1180px){.cols{grid-template-columns:minmax(0,1fr)}}
+
+/* ── THE DOCK FACEPLATE (one column — the sidebar is deleted) ─────────── */
+.dock{background:var(--dock);border:1px solid var(--line);border-radius:11px;overflow:hidden}
+.editor{padding:11px;min-width:0}
+.chromebar{display:flex;align-items:baseline;gap:9px;padding:0 2px 7px}
+.chromebar .ini{font-family:var(--mono);font-size:10px;color:var(--faint);letter-spacing:.1em}
+.chromebar .nm{font-size:13px;font-weight:800;letter-spacing:.03em}
+.chromebar .ln{font-family:var(--mono);font-size:8.4px;letter-spacing:.14em;color:var(--faint);
+  text-transform:uppercase}
+.tabrow{margin:0 0 -1px 2px}
+.tab{display:inline-block;border:1px solid var(--line);border-bottom-color:transparent;
+  border-radius:8px 8px 0 0;padding:5px 13px;font-size:9.4px;font-weight:800;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--ink);background:#151a21}
+.plate{background:var(--pbody);border:1px solid var(--tile);border-left:4px solid var(--video);
+  border-radius:10px;padding:0 0 12px;min-width:0;width:max-content;max-width:100%}
+.chrome{padding:9px 12px 0}
+.chrome .name{font-size:11.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase}
+.chrome .cat{font-size:8px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);
+  font-family:var(--mono);margin-top:1px}
+
+/* ── THE EXTENSION BODY: `fullViewBody`, at the HEAD of the plate ────── */
+.extbody{padding:11px 12px 2px;display:flex;justify-content:center}
+.screenwrap{position:relative;min-height:18px}
+
+/* STATE 1 — SCREEN OFF: the field is SQUARE (1:1) and carries NO canvas. */
+.field{position:relative;width:360px;height:360px;background:#0c0e14;
+  border:1px solid var(--video);border-radius:3px;cursor:crosshair;overflow:hidden}
+.corner{position:absolute;font-family:var(--mono);font-size:10px;letter-spacing:.06em;
+  color:var(--dim)}
+.corner.tl{top:6px;left:8px}   .corner.tr{top:6px;right:8px}
+.corner.bl{bottom:6px;left:8px}.corner.br{bottom:6px;right:8px}
+.corner i{display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:5px;
+  vertical-align:middle}
+.xh,.xv{position:absolute;background:rgba(255,255,255,.08)}
+.xh{left:0;right:0;top:50%;height:1px} .xv{top:0;bottom:0;left:50%;width:1px}
+/* THE DIAMOND — a clip-path RHOMBUS in PERCENTAGES, so it is correct at any
+   frame aspect. `--m` is `diamond_margin`; the vertices sit at m*50% from the
+   centre on each axis. The card's `rotate(45deg)` square is only correct at 1:1. */
+.diamond{position:absolute;inset:0;--m:.5;
+  background:rgba(255,220,0,.10);
+  clip-path:polygon(50% calc(50% - var(--m)*50%), calc(50% + var(--m)*50%) 50%,
+                    50% calc(50% + var(--m)*50%), calc(50% - var(--m)*50%) 50%)}
+.diamond::after{content:"";position:absolute;inset:0;
+  background:linear-gradient(#ffd24a,#ffd24a);
+  clip-path:polygon(50% calc(50% - var(--m)*50%), calc(50% + var(--m)*50%) 50%,
+                    50% calc(50% + var(--m)*50%), calc(50% - var(--m)*50%) 50%);
+  opacity:.55;mix-blend-mode:screen}
+/* THE PUCK — flat and tinted by the DOMINANT input. With SCREEN OFF there is
+   no video anywhere on this plate, puck included (see spec §4). */
+.puck{position:absolute;left:50%;top:50%;width:34px;height:34px;border-radius:50%;
+  transform:translate(-50%,-50%);background:var(--in1);border:2px solid var(--in1);
+  box-shadow:0 0 12px rgba(255,255,255,.30);pointer-events:none}
+.puck::after{content:"";position:absolute;inset:3px;border-radius:50%;
+  border:2px solid rgba(255,255,255,.85)}
+/* per-axis MIDI / Surface / Electra assign handles (XyPad convention) */
+.assign{position:absolute;left:6px;top:6px;display:flex;gap:4px}
+.assign b{font-family:var(--mono);font-size:8px;font-weight:400;letter-spacing:.02em;
+  color:var(--dim);background:rgba(5,6,8,.72);border:1px solid var(--tile);border-radius:2px;
+  padding:2px 5px;line-height:1}
+/* THE SCREEN SWITCH — OVERLAYS the frame's bottom-right corner on a
+   translucent backplate. It costs ZERO layout height, which is the fix the
+   spirographs stacked-row regression produced. */
+.screenbtn{position:absolute;right:6px;bottom:6px;font-family:var(--mono);font-size:8.6px;
+  letter-spacing:.06em;padding:3px 9px;border:1px solid var(--tile);border-radius:2px;
+  background:rgba(5,6,8,.72);color:var(--dim);cursor:pointer}
+
+/* ── bands ───────────────────────────────────────────────────────────── */
+.bands{padding:6px 12px 0}
+.band{border-top:1px solid var(--line);padding-top:7px;margin-top:9px}
+.band:first-child{border-top:0;margin-top:4px}
+.blab{margin:0 0 6px;font-size:9.4px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--dim)}
+.row{display:flex;flex-wrap:wrap;align-items:flex-start;gap:8px 12px}
+/* clusterFlow:'row' — the four EDGE boxes SIDE BY SIDE, wrapping. */
+.clusters{display:flex;flex-wrap:wrap;gap:10px}
+.cl{display:flex;flex-direction:column;gap:4px}
+.clab{margin:0;font-size:8.4px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;
+  color:var(--dim);opacity:.85}
+.clrow{display:flex;align-items:flex-start;gap:8px}
+
+/* knob primitive (a drawing of KnobConic) */
+.k{width:54px;display:flex;flex-direction:column;align-items:center;gap:3px}
+.k i{--v:.5;--kc:#8358b8;display:block;width:38px;height:38px;border-radius:50%;position:relative;
+  background:conic-gradient(from 215deg,var(--kc) 0turn calc(var(--v)*.75turn),
+    #2b3138 calc(var(--v)*.75turn) .75turn,rgba(0,0,0,0) .75turn)}
+.k i::before{content:"";position:absolute;inset:5px;border-radius:50%;background:#20252b;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.05)}
+.k i::after{content:"";position:absolute;left:50%;top:50%;width:2px;height:12px;background:var(--ink);
+  border-radius:1px;transform-origin:50% 100%;
+  transform:translate(-50%,-100%) rotate(calc(-135deg + var(--v)*270deg))}
+.k b{font-size:7.8px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--dim);
+  font-family:var(--mono);text-align:center;line-height:1.15}
+/* ⚠ NO <em> VALUE UNDER ANY DIAL. The resting decimal is DELETED, not hidden. */
+.k.dead i{--kc:#3b4148} .k.dead b{color:var(--faint)}
+.cell{display:flex;flex-direction:column;gap:3px;align-items:flex-start}
+.cell .cap{font-size:7.8px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--dim);font-family:var(--mono)}
+.sel{font-family:var(--mono);font-size:10px;letter-spacing:.05em;background:#1b2027;
+  border:1px solid #3a4048;border-radius:6px;padding:6px 10px;color:var(--ink);min-width:118px;
+  display:flex;justify-content:space-between;gap:10px}
+.sel s{text-decoration:none;color:var(--faint)}
+.sw{display:inline-flex;align-items:center;gap:6px;background:#1b2027;border:1px solid #3a4048;
+  border-radius:12px;padding:4px 9px;font-family:var(--mono);font-size:8.6px;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--dim)}
+.sw i{width:8px;height:8px;border-radius:50%;background:#3b4148}
+.swatch{width:38px;height:38px;border-radius:4px;border:1px solid #3a4048}
+
+/* ── the annotated ZONE MAP column ───────────────────────────────────── */
+.zones{background:#12161c;border:1px solid var(--line);border-radius:9px;padding:12px 13px}
+.zones h4{margin:0 0 8px;font-size:9px;font-weight:800;letter-spacing:.13em;text-transform:uppercase;
+  color:var(--dim)}
+.zones+.zones{margin-top:14px}
+.zt{width:100%;border-collapse:collapse;font-size:10.5px}
+.zt th{text-align:left;font-family:var(--mono);font-size:7.8px;letter-spacing:.11em;
+  text-transform:uppercase;color:var(--faint);font-weight:400;padding:0 0 5px;border-bottom:1px solid var(--line)}
+.zt td{padding:5px 0;border-bottom:1px solid #1c2027;vertical-align:top;color:var(--dim);line-height:1.4}
+.zt td:first-child{color:var(--ink);font-family:var(--mono);font-size:9.5px;padding-right:9px;
+  white-space:nowrap}
+.zt td b{color:var(--video);font-weight:600;font-family:var(--mono);font-size:9.5px}
+.zt tr:last-child td{border-bottom:0}
+.zones code{font-family:var(--mono);font-size:9.6px;color:var(--tealo)}
+
+/* ── the spec strips under the drawing ───────────────────────────────── */
+.strips{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px;margin-top:16px}
+.strips>div{border:1px solid var(--line);background:#12161c;border-radius:9px;padding:11px 13px;
+  font-size:11.5px;color:var(--dim);line-height:1.5}
+.strips h5{margin:0 0 6px;font-size:9px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--ink)}
+.strips code{font-family:var(--mono);font-size:10.5px;color:var(--tealo)}
+.strips b{color:var(--ink)}
+.strips .bad{border-color:#6a4a4a}
+.strips .der{border-color:#3b5a48}
+.strips .der h5{color:var(--derived)}
+</style>
+
+<div class="wrap">
+<h1>QUADRALOGICAL — face mock, STATE 1 of 2: <span style="color:var(--faint)">SCREEN OFF</span></h1>
+<p class="sub">The dock faceplate at rest, with the screen switched off. The frame shows exactly
+what the legacy card's XY pad shows — the diamond field, the <code>IN1</code>–<code>IN4</code> corner
+labels and the red puck — and <b>no video anywhere on the plate</b>. Spec:
+<code>spec.md</code> alongside. <b>Mockup only; nothing here is implemented.</b></p>
+
+<div class="nav">
+  <a class="on" href="screen-off.html">state 1 · screen off</a>
+  <a href="screen-on.html">state 2 · screen on</a>
+</div>
+
+<div class="warn"><b>What is deliberately absent, and each is a ruling rather than an
+omission.</b> There is <b>no right-hand sidebar</b> (deleted 2026-08-19). There is <b>no readout
+strip</b> under the frame (deleted, #1957). There is <b>no <code>x: 0.00&nbsp;&nbsp;y: 0.00</code>
+row</b> — the card draws one at <code>QuadralogicalCard.svelte:457</code> and it dies here; the
+values live in the pad's <code>aria-label</code>. And there is <b>no value printed under any
+dial</b>. If you are looking for a number on this plate, the design is working.</div>
+
+<section class="mod">
+<header>
+  <h2>quadralogical</h2>
+  <span class="id">video/modules/quadralogical.ts · 21 params · 4 inputs + 15 CV · 2 outputs · glyph <code>none</code></span>
+  <span class="tag">promotion — first faced XY mixer</span>
+</header>
+<p class="note">The <b>joystick field IS the screen</b>. It is painted by the module's own
+<code>fullViewBody</code> shell extension, which <code>ModuleShell</code> renders at the HEAD of the
+faceplate — so the owner's "edge boxes below the frame, not beside it" needs no mechanism at all:
+every band is already below it. With SCREEN <b>OFF</b> the field is <b>360 × 360 (1:1)</b> and
+carries no canvas; the <code>SCREEN OFF</code> switch overlays its bottom-right corner on a
+translucent backplate, costing <b>zero</b> layout height. ⚠ <b>OFF still calls
+<code>markWatched</code> every frame</b> — the blit <i>is</i> the watch mark, so an OFF state that
+merely stopped blitting would turn this switch into a producer kill switch for everything
+downstream of <code>out</code>.</p>
+
+<div class="cols">
+<div>
+  <div class="dock">
+    <div class="editor">
+      <div class="chromebar"><span class="ini">QL</span><span class="nm">QUADRALOGICAL</span>
+        <span class="ln">quadralogical · lane 1</span></div>
+      <div class="tabrow"><span class="tab">module</span></div>
+      <div class="plate">
+        <div class="chrome"><div class="name">QUADRALOGICAL</div><div class="cat">video · utilities</div></div>
+
+        <!-- ═══ THE EXTENSION BODY — `fullViewBody`, above every band ═══ -->
+        <div class="extbody">
+          <div class="screenwrap">
+            <div class="field" role="application" tabindex="0"
+                 aria-label="joystick: X 0.00, Y 0.00 — IN1"
+                 data-testid="control-pos_x" data-control-params="pos_x,pos_y">
+              <span class="corner tl"><i style="background:var(--in1)"></i>IN1</span>
+              <span class="corner tr"><i style="background:var(--in2)"></i>IN2</span>
+              <span class="corner bl"><i style="background:var(--in3)"></i>IN3</span>
+              <span class="corner br"><i style="background:var(--in4)"></i>IN4</span>
+              <div class="xh"></div><div class="xv"></div>
+              <div class="diamond" style="--m:.5"></div>
+              <div class="puck"></div>
+              <div class="assign"><b>x</b><b>y</b></div>
+            </div>
+            <button class="screenbtn" aria-pressed="false"
+              title="SCREEN is OFF — the four input previews are collapsed and the field is square. QUADRALOGICAL keeps mixing and keeps rendering both outputs: switching it back on shows the LIVE picture, not a stale frame.">SCREEN OFF</button>
+          </div>
+        </div>
+
+        <!-- ═══ THE BANDS — all three below the frame ═══ -->
+        <div class="bands">
+
+          <div class="band"><h4 class="blab">field</h4>
+            <div class="row">
+              <div class="k"><i style="--v:.5"></i><b>Diamond</b></div>
+              <div class="k"><i style="--v:.375"></i><b>Sharp</b></div>
+            </div></div>
+
+          <div class="band"><h4 class="blab">edges</h4>
+            <div class="clusters">
+              <div class="cl"><p class="clab">1–2</p><div class="clrow">
+                <div class="cell"><span class="cap">1–2 FX</span><span class="sel">DISSOLVE<s>▾</s></span></div>
+                <div class="k dead"><i style="--v:1"></i><b>1–2 Amt</b></div>
+                <div class="k dead"><i style="--v:.1"></i><b>1–2 Prm</b></div>
+              </div></div>
+              <div class="cl"><p class="clab">2–3</p><div class="clrow">
+                <div class="cell"><span class="cap">2–3 FX</span><span class="sel">DISSOLVE<s>▾</s></span></div>
+                <div class="k dead"><i style="--v:1"></i><b>2–3 Amt</b></div>
+                <div class="k dead"><i style="--v:.1"></i><b>2–3 Prm</b></div>
+              </div></div>
+              <div class="cl"><p class="clab">3–4</p><div class="clrow">
+                <div class="cell"><span class="cap">3–4 FX</span><span class="sel">DISSOLVE<s>▾</s></span></div>
+                <div class="k dead"><i style="--v:1"></i><b>3–4 Amt</b></div>
+                <div class="k dead"><i style="--v:.1"></i><b>3–4 Prm</b></div>
+              </div></div>
+              <div class="cl"><p class="clab">4–1</p><div class="clrow">
+                <div class="cell"><span class="cap">4–1 FX</span><span class="sel">DISSOLVE<s>▾</s></span></div>
+                <div class="k dead"><i style="--v:1"></i><b>4–1 Amt</b></div>
+                <div class="k dead"><i style="--v:.1"></i><b>4–1 Prm</b></div>
+              </div></div>
+            </div></div>
+
+          <div class="band"><h4 class="blab">key</h4>
+            <div class="row">
+              <div class="cell"><span class="cap">Inv</span><span class="sw"><i></i>off</span></div>
+              <div class="k dead"><i style="--v:0"></i><b>Key R</b></div>
+              <div class="k dead"><i style="--v:1"></i><b>Key G</b></div>
+              <div class="k dead"><i style="--v:0"></i><b>Key B</b></div>
+              <div class="cell"><span class="cap">key</span><span class="swatch" style="background:#00ff00"></span></div>
+            </div></div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div>
+  <div class="zones"><h4>zone map — SCREEN OFF</h4>
+    <table class="zt">
+      <tr><th>zone</th><th>geometry &amp; source</th></tr>
+      <tr><td>plate spine</td><td><b>4 px</b> left border, <code>--cable-video #b57bff</code>. Domain hue; nothing else may use it.</td></tr>
+      <tr><td>ext body</td><td><code>fullViewBody</code>, <b>11 px 12 px 2 px</b>, centred. Renders <b>above</b> <code>.dock-pages</code>.</td></tr>
+      <tr><td>field</td><td><b>360 × 360</b>, ratio <b>1 : 1</b>. 1 px <code>--cable-video</code> border, r 3 px, fill <code>#0c0e14</code>.</td></tr>
+      <tr><td>corner labels</td><td>10 px mono, <b>6/8 px</b> inset. IN1 TL · IN2 TR · IN3 BL · IN4 BR — the <code>quadWeights</code> corner map, verbatim.</td></tr>
+      <tr><td>crosshair</td><td>1 px, <code>rgba(255,255,255,.08)</code>, at 50 % on both axes = joystick origin (0, 0).</td></tr>
+      <tr><td>diamond</td><td><b>clip-path rhombus</b>, vertices at <code>m·50 %</code> from centre. At <code>diamond_margin 0.5</code> → <b>25 %</b> = 90 px. Fill <code>rgba(255,220,0,.10)</code>, stroke <code>#ffd24a</code>.</td></tr>
+      <tr><td>puck</td><td><b>34 px</b> circle at <code>((x+1)/2·W, (1−y)/2·H)</code>. Ring + fill = the DOMINANT input's colour. <b>Flat here</b> — no video with SCREEN off.</td></tr>
+      <tr><td>assign</td><td><b>x</b> / <b>y</b> handles, top-left, <b>2×5 px</b> pad. Click or right-click → the shared <code>ControlContextMenu</code> for that axis.</td></tr>
+      <tr><td>screen switch</td><td><b>overlay</b>, bottom-right, <b>6 px</b> inset, backplate <code>rgba(5,6,8,.72)</code>. Layout cost: <b>0 px</b>.</td></tr>
+      <tr><td>bands</td><td>3 bands, <b>no tab rail</b> (<code>DOCK_TAB_MIN_BANDS = 7</code>). Rule 1 px <code>--border</code>, 9.4 px label.</td></tr>
+    </table>
+  </div>
+
+  <div class="zones"><h4>control inventory — 21 params</h4>
+    <table class="zt">
+      <tr><th>rank</th><th>key → cell</th></tr>
+      <tr><td>1 · 2</td><td><b>pos_x · pos_y</b> → the field itself (<code>xy</code>, one cell, two params)</td></tr>
+      <tr><td>3</td><td><b>diamond_margin</b> → knob · <i>band</i> field</td></tr>
+      <tr><td>4</td><td><b>blend_sharp</b> → knob · <i>band</i> field</td></tr>
+      <tr><td>5–8</td><td><b>edge{1..4}_fx</b> → <code>selector</code>, 8 NAMED options · <i>band</i> edges</td></tr>
+      <tr><td>9</td><td><b>invert</b> → <code>toggle</code> · <i>band</i> key — <b>NEW: no control exists on the card</b></td></tr>
+      <tr><td>10–13</td><td><b>edge{1..4}_amount</b> → knob · dead at spawn</td></tr>
+      <tr><td>14–17</td><td><b>edge{1..4}_param</b> → knob · dead at spawn <i>and</i> unused by 4 of 8 effects</td></tr>
+      <tr><td>18–20</td><td><b>keyR · keyG · keyB</b> → knob · live only under CHROMA</td></tr>
+      <tr><td>—</td><td><b>freeze</b> → <code>noUserControl</code>, <code>writer:'internal'</code> (VRT determinism)</td></tr>
+    </table>
+  </div>
+
+  <div class="zones"><h4>interaction — SCREEN OFF</h4>
+    <table class="zt">
+      <tr><th>gesture</th><th>result</th></tr>
+      <tr><td>drag field</td><td>writes <code>pos_x</code>/<code>pos_y</code>, rAF-coalesced. <b>No snap-back</b> — a mixer position stays where you put it.</td></tr>
+      <tr><td>double-click</td><td>both axes → default (0, 0) = the centre of the diamond.</td></tr>
+      <tr><td>patched CV</td><td>moves the puck live; suppressed while the pointer owns the drag.</td></tr>
+      <tr><td>click <b>x</b>/<b>y</b></td><td>MIDI Learn · Forget · Send to Control Surface · Send to Electra ▸ Row ▸ knob — the shared menu, per axis.</td></tr>
+      <tr><td>click SCREEN</td><td>toggles <code>node.data.previewCollapsed</code>. Persists across tab switches, remounts, reloads and collab.</td></tr>
+      <tr><td>while OFF</td><td><b>the engine keeps rendering.</b> <code>markWatched(nodeId)</code> fires every frame; both outputs stay live.</td></tr>
+    </table>
+  </div>
+</div>
+</div>
+
+<div class="strips">
+  <div class="der"><h5>where the deleted numbers went</h5>
+    The field is <code>role="application"</code>, so its accessible value lives in
+    <b><code>aria-label</code></b>, not <code>aria-valuetext</code> — that attribute is only
+    meaningful on a range role, which this is not. <code>XyPad.svelte:317-330</code> settled the
+    same question when #2038 deleted the generic pad's readout row. The label reads
+    <code>joystick: X 0.00, Y 0.00 — IN1</code>, and the trailing name is the one fact the card
+    carried in a <b>colour</b> and nowhere else: which input the composite currently favours. A
+    colour is not speakable.</div>
+  <div><h5>why the four EDGE boxes are ONE band</h5>
+    An <code>fx</code> selector is a <code>'wide'</code> cell, so <code>bandIsPackable</code> makes
+    any band holding one <b>SOLO</b> — four separate bands would stack as four full-width rows.
+    One band with four <b>clusters</b> plus <code>clusterFlow:'row'</code> is the only mechanism
+    that puts them side by side. It wraps to 2×2 at a narrow pane, which is the layout the legacy
+    card already uses.</div>
+  <div class="bad"><h5>defects this promotion fixes</h5>
+    <b>(a)</b> <code>invert</code> is documented, read by the shader in both keyed branches, and
+    has <b>no UI on the card at all</b> — it is unreachable today, and no gate can see it because
+    completeness only runs over <code>STRICT_FACES</code>. <b>(b)</b> Its <code>curve</code> is
+    <code>'linear'</code> over a param the shader thresholds at <code>&gt;= 0.5</code>, so a face
+    would paint a rotary over a switch. <b>(c)</b> All four <code>edge{N}_fx</code> are
+    <code>0..7 discrete</code> with <b>no <code>options</code></b>, so the eight names reach the
+    player only through a hand-rolled <code>&lt;select&gt;</code>.</div>
+  <div><h5>cost + constraint</h5>
+    contract-lock: <b>4 option rosters + 1 curve</b> · <b>⚠ the WebGL attest MOVES</b> —
+    <code>options</code> and <code>curve</code> are not hash-transparent · Push 2 card moves
+    GENERIC → FACE tier · 2 NEW VRT scenes; the legacy <code>quadralogical.png</code> and the
+    eight composite scenes <b>must not</b> move · faces-parity ≈ <b>25 s</b> CI, under the 2 min
+    threshold · ART: <b>nil</b>, confirmed.</div>
+</div>
+</section>
+</div>
