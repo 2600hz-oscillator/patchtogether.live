@@ -247,6 +247,16 @@ const EXTENSION_BODY_ROLES: Readonly<Record<string, BodyRule>> = {
   tempest: { role: 'picture', why: 'the vector-well render — rim ring, pit ring, radial lanes and the player claw — plus its SCREEN switch. A SOURCE with no video input, so the retained watch mark is what stops SCREEN OFF muting the well for everything downstream (#2015).' },
   fader: { role: 'picture', why: 'the main OUT mix preview and its SCREEN switch. ⚠ This module has TWO outputs — `out` and the `send` feeding an external FX loop — so the retained watch mark protects an output the switch does not even show, and a loop the player is mixing against (#2015).' },
 
+  // ── BATCH 21 · CELLSHADE ──────────────────────────────────────────────────
+  //
+  // A PICTURE: the live toon render plus ONE control caption (the SCREEN
+  // button). The card mounts no `hideControls`, so this body declares no
+  // MONITOR toggle and no resize grip, and nothing on the surface is a derived
+  // value in a text node — ⚠ notably NOT the card's `{bands} BANDS` readout,
+  // which is exactly the resting derived text the 2026-08-17 ruling removes.
+  // The band count reaches the player as the `bits` option LABEL instead.
+  cellshade: { role: 'picture', why: 'the cel-shaded toon render and its SCREEN switch. Stateless per frame by the def\'s own account (bilateral smooth → luma quantise → Sobel ink, no feedback), so the retained watch mark protects the OUTPUT of a chainable effect rather than any accumulated state (#2015).' },
+
   // ── STATUS — the one body whose subject is not a picture.
   cvBuddy: {
     role: 'status-primitive',

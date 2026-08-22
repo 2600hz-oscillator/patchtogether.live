@@ -3150,6 +3150,44 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // even show, and can empty the wet path the player is mixing against.
   'tempest',
   'fader',
+
+  // ── BATCH 21 · CELLSHADE — the cel-shader, rebuilt on current main ────────
+  //
+  // Six controls, all drawn with `NeonFader` on the card, so five of them are
+  // declared `fader`. The sixth — `bits` (labelled BANDS) — is DISCRETE and
+  // carries an `options` roster instead, because module-face-lint refuses
+  // `fader` on a discrete param AND on any param with a roster: a fader cannot
+  // show names, so the states would render as unlabelled detents. That lesson
+  // came from `posterbox.depth` / `tiler.tile` in batch-22 G3.
+  //
+  // ⚠ THE ROSTER IS REQUIRED, NOT DECORATIVE, AND THE REASON IS ACCESSIBILITY
+  // RATHER THAN POLISH. `bits` stores an INDEX 0..4 while the player is
+  // choosing a BAND COUNT 2/3/4/6/8. The CARD bridges that with a `formatValue`
+  // prop and a labelled tick rail — card-side props `ModuleShell` does not
+  // pass. Verified at the read site: `NeonFader`'s `readoutText` is
+  // `formatValue ? formatValue(v) : format(v, units)`, and it feeds
+  // `aria-valuetext`. So an undeclared `bits` would make the face ANNOUNCE THE
+  // INDEX — saying "2" while the picture shows FOUR bands. That is a WRONG
+  // value, not a missing one, which is what flips this from optional to
+  // required.
+  //
+  // ⚠ THE LABELS ARE PROMOTED, NOT INVENTED — they are `CELLSHADE_BAND_STEPS`,
+  // the array the shader's quantiser indexes. Invention would be naming these
+  // "coarse"/"fine", words that appear nowhere in the code. This is the same
+  // move `tiler` makes with `${cols}×${rows}`: existing structured data
+  // rendered as a label. And it survives the no-resting-text ruling for the
+  // same reason — the dial's position is the INDEX, the label is the BAND
+  // COUNT, so the label says something the control does not.
+  //
+  // ⚠ REBUILT, NOT RESUMED. A parked branch carried a cellshade face from
+  // 2026-08-11 based on `a216ff243`; it predates the readout, width,
+  // EXTENSION_BODY_ROLES and latching gates, and its own commit marked itself
+  // UNVERIFIED. Everything here was re-derived against current main.
+  //
+  // ⚠ COSTS AN ATTEST — `params` is in the WebGL content basis. Nothing else in
+  // this face is: `face`, `paramCells` and `docs` are all stripped.
+  'cellshade',
+
   // ACIDWARP (2026-08-22, #2111) — the batch-23 module that RODE ALONE, on the
   // complex-module half of the owner's split: five params but FOUR distinct
   // control shapes over one 320x240 display.
