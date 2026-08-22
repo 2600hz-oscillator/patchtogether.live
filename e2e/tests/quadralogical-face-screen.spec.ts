@@ -1,0 +1,256 @@
+// e2e/tests/quadralogical-face-screen.spec.ts
+//
+// THE QUADRALOGICAL FACE SCREEN — the two claims its design rests on that no
+// other gate can see (#2102).
+//
+// ── 1. THE QUADRANTS LAND UNDER THE RIGHT CORNER LABELS ────────────────────
+//
+// The face paints the module's own `preview` output port — a 2×2 tile of the
+// four RAW inputs — BEHIND the joystick, and draws `IN1`/`IN2`/`IN3`/`IN4` in
+// the four corners on top of it. Those are two independent pieces of geometry
+// that MUST agree, and they are computed in different languages by different
+// code: the tile's quadrant map lives in GLSL (`PREVIEW_FRAG_SRC`, working in
+// `vUv` with a BOTTOM-LEFT origin — `bool top = vUv.y >= 0.5`), while the
+// labels are CSS corners on a canvas with a TOP-LEFT origin.
+//
+// ⚠ SO A VERTICAL FLIP ANYWHERE IN THE BLIT PATH PUTS IN1'S PICTURE UNDER THE
+// `IN3` LABEL, and it is the WORST failure mode this face has: it looks
+// completely correct. Four coloured quadrants, four labels, nothing missing —
+// only the wrong picture under each word, which is precisely the mistake a
+// player would trust. No unit test can see it (the mapping is in a shader), no
+// VRT baseline can catch it (a flipped tile is a valid-looking picture that
+// would simply be baselined wrong on the first capture), and `faces-parity`
+// only asks whether the pad OPERATES.
+//
+// This spec reads the FACE'S OWN CANVAS, four pixels, and asserts each quadrant
+// carries its own input's colour — the one instrument that can tell the two
+// apart. It is a POSITIVE control, not a probe that merely moves.
+//
+// ── 2. SCREEN OFF KEEPS THE ENGINE RENDERING ───────────────────────────────
+//
+// The 2026-08-18 ruling requires it, and #1937 / #2015 make it sharp: the blit
+// IS the engine's "someone is watching" mark, so a collapsed state that merely
+// stops blitting drops the node out of the pull set and the SCREEN switch
+// becomes a PRODUCER KILL SWITCH. On a MIXER that mutes the patch.
+
+import { test, expect, type Page } from '@playwright/test';
+import { spawnPatch } from './_helpers';
+
+// A distinct, saturated tint per input so each quadrant is separable by eye and
+// by probe. `tintMix: 1` makes CHROMA emit the pure tint regardless of its
+// (animated) LINES input, so each source is a deterministic FLAT COLOUR — the
+// same trick `vrt-quadralogical.spec.ts` uses, and the reason a four-pixel
+// probe is a sound instrument here.
+const TINTS = [
+  { tintR: 1, tintG: 0, tintB: 0, tintMix: 1 }, // in1 RED     → top-left
+  { tintR: 0, tintG: 1, tintB: 0, tintMix: 1 }, // in2 GREEN   → top-right
+  { tintR: 0, tintG: 0, tintB: 1, tintMix: 1 }, // in3 BLUE    → bottom-left
+  { tintR: 1, tintG: 1, tintB: 0, tintMix: 1 }, // in4 YELLOW  → bottom-right
+];
+
+/** Which channel each input's tint maxes, for the quadrant probe. */
+const EXPECT = [
+  { name: 'IN1', corner: 'top-left', pick: (p: RGB) => p.r - Math.max(p.g, p.b) },
+  { name: 'IN2', corner: 'top-right', pick: (p: RGB) => p.g - Math.max(p.r, p.b) },
+  { name: 'IN3', corner: 'bottom-left', pick: (p: RGB) => p.b - Math.max(p.r, p.g) },
+  { name: 'IN4', corner: 'bottom-right', pick: (p: RGB) => Math.min(p.r, p.g) - p.b },
+] as const;
+
+interface RGB { r: number; g: number; b: number }
+
+function buildNodes() {
+  const nodes: Array<{ id: string; type: string; position: { x: number; y: number }; domain: 'video'; params?: Record<string, number> }> = [];
+  for (let i = 0; i < 4; i++) {
+    nodes.push({ id: `lines${i}`, type: 'lines', position: { x: 40, y: 40 + i * 180 }, domain: 'video', params: { amp: 8 + i } });
+    nodes.push({ id: `chroma${i}`, type: 'chroma', position: { x: 260, y: 40 + i * 180 }, domain: 'video', params: TINTS[i]! });
+  }
+  nodes.push({ id: 'quad', type: 'quadralogical', position: { x: 560, y: 80 }, domain: 'video' });
+  return nodes;
+}
+
+function buildEdges() {
+  const edges: Array<{ id: string; from: { nodeId: string; portId: string }; to: { nodeId: string; portId: string }; sourceType?: string; targetType?: string }> = [];
+  for (let i = 0; i < 4; i++) {
+    edges.push({ id: `l${i}`, from: { nodeId: `lines${i}`, portId: 'out' }, to: { nodeId: `chroma${i}`, portId: 'in' }, sourceType: 'mono-video', targetType: 'video' });
+    edges.push({ id: `c${i}`, from: { nodeId: `chroma${i}`, portId: 'out' }, to: { nodeId: 'quad', portId: `in${i + 1}` }, sourceType: 'video', targetType: 'video' });
+  }
+  return edges;
+}
+
+/** Open the quad's dock full-view and return the dock-tier shell. */
+async function openQuadDock(page: Page) {
+  const shell = page.locator('.svelte-flow__node[data-id="quad"] [data-testid="module-shell"]');
+  await expect(shell, 'the promoted face renders a ModuleShell tile in the lane').toBeVisible();
+  await shell.getByTestId('shell-open-dock').click();
+  const faceplate = page.getByTestId('dock-full-view');
+  await expect(faceplate).toBeVisible();
+  const dockShell = faceplate.locator('[data-testid="module-shell"][data-shell-tier="dock"]');
+  await expect(dockShell).toBeVisible();
+  return dockShell;
+}
+
+/**
+ * Sample the four quadrant centres of the face's preview canvas.
+ *
+ * ⚠ READ IN THE PAGE, IN ONE EVALUATE. A Playwright-side loop would be four
+ * round-trips on the SAME MAIN THREAD as the rAF loop it is sampling — the
+ * starvation shape CLAUDE.md names, where "frozen" and "never looked" are
+ * indistinguishable from the output. It also waits for a NON-BLACK frame first
+ * and REPORTS how long that took, so "the blit never ran" fails as itself
+ * rather than as a wrong colour.
+ */
+async function sampleQuadrants(page: Page): Promise<{ ok: boolean; frames: number; px: RGB[] }> {
+  return page.evaluate(async () => {
+    const el = document.querySelector<HTMLCanvasElement>(
+      '[data-testid="quadralogical-face-quadrants"]',
+    );
+    if (!el) return { ok: false, frames: 0, px: [] };
+    const read = (): { any: boolean; px: { r: number; g: number; b: number }[] } => {
+      const ctx = el.getContext('2d');
+      if (!ctx) return { any: false, px: [] };
+      // Quadrant CENTRES — a quarter and three quarters along each axis.
+      const pts: [number, number][] = [
+        [el.width * 0.25, el.height * 0.25], // top-left
+        [el.width * 0.75, el.height * 0.25], // top-right
+        [el.width * 0.25, el.height * 0.75], // bottom-left
+        [el.width * 0.75, el.height * 0.75], // bottom-right
+      ];
+      const px = pts.map(([x, y]) => {
+        const d = ctx.getImageData(Math.floor(x), Math.floor(y), 1, 1).data;
+        return { r: d[0]!, g: d[1]!, b: d[2]! };
+      });
+      return { any: px.some((p) => p.r + p.g + p.b > 24), px };
+    };
+    // Wait, in FRAMES, for the blit loop to have painted something.
+    let frames = 0;
+    let got = read();
+    while (!got.any && frames < 240) {
+      await new Promise((r) => requestAnimationFrame(() => r(null)));
+      frames++;
+      got = read();
+    }
+    return { ok: got.any, frames, px: got.px };
+  });
+}
+
+test.describe('QUADRALOGICAL face — the screen', () => {
+  test('SCREEN ON: each quadrant carries ITS OWN input, under its own corner label', async ({
+    page,
+  }) => {
+    await page.goto('/rack?shell=1&seed=none');
+    await page.waitForLoadState('networkidle');
+    await spawnPatch(page, buildNodes(), buildEdges());
+
+    const dockShell = await openQuadDock(page);
+
+    // The body renders, the screen is ON by default, and the pad is the cell.
+    const body = dockShell.getByTestId('quadralogical-screen-body');
+    await expect(body, 'the fullViewBody paints at the dock').toBeVisible();
+    const toggle = body.getByTestId('quadralogical-face-screen-toggle');
+    await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+    await expect(toggle).toHaveText('SCREEN ON');
+    await expect(
+      body.locator('[data-control-params="pos_x,pos_y"]'),
+      'the joystick is the pad cell, covering BOTH axes',
+    ).toBeVisible();
+
+    const s = await sampleQuadrants(page);
+    expect(
+      s.ok,
+      `the quadrant canvas never painted a non-black frame (waited ${s.frames} rAFs). ` +
+        'That is a BLIT failure, not a colour failure — check blitOutputPortForPreview.',
+    ).toBe(true);
+
+    // ⚠ THE ASSERTION THE WHOLE SPEC EXISTS FOR. Each quadrant must carry the
+    // input its CORNER LABEL names. A vertical flip in the blit path swaps the
+    // top and bottom rows and produces a picture that looks entirely correct.
+    for (const [i, e] of EXPECT.entries()) {
+      const p = s.px[i]!;
+      expect(
+        e.pick(p),
+        `${e.corner} quadrant must carry ${e.name}'s colour — it sits under the ` +
+          `${e.name} label. Got rgb(${p.r}, ${p.g}, ${p.b}). A vertical flip in the blit ` +
+          'path swaps the rows and still looks like a valid picture.',
+      ).toBeGreaterThan(24);
+    }
+  });
+
+  test('SCREEN OFF: the canvas goes, the field squares up, and the ENGINE KEEPS RENDERING', async ({
+    page,
+  }) => {
+    await page.goto('/rack?shell=1&seed=none');
+    await page.waitForLoadState('networkidle');
+    await spawnPatch(page, buildNodes(), buildEdges());
+
+    const dockShell = await openQuadDock(page);
+    const body = dockShell.getByTestId('quadralogical-screen-body');
+    const field = body.locator('[data-control-params="pos_x,pos_y"]');
+    const toggle = body.getByTestId('quadralogical-face-screen-toggle');
+
+    const on = await field.boundingBox();
+    expect(on, 'the field has a box with the screen on').toBeTruthy();
+
+    await toggle.click();
+    await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+    await expect(toggle).toHaveText('SCREEN OFF');
+    await expect(
+      body.getByTestId('quadralogical-face-quadrants'),
+      'SCREEN OFF unmounts the preview canvas',
+    ).toHaveCount(0);
+
+    // THE GEOMETRY CLAIM: the toggle re-aspects on the WIDTH and the HEIGHT
+    // does not move. That is what keeps the EDGE boxes in the band below from
+    // jumping under the player's cursor mid-performance.
+    const off = await field.boundingBox();
+    expect(off, 'the field survives SCREEN OFF — it IS the control').toBeTruthy();
+    expect(
+      Math.round(off!.height),
+      `the frame's HEIGHT must not move on toggle (on ${on!.height}, off ${off!.height})`,
+    ).toBe(Math.round(on!.height));
+    expect(
+      off!.width,
+      `SCREEN OFF must RECLAIM width (on ${on!.width}, off ${off!.width})`,
+    ).toBeLessThan(on!.width - 40);
+    // …and it squares up: 2×2 of 4:3 tiles is 4:3; the joystick alone is 1:1.
+    expect(off!.width / off!.height, 'SCREEN OFF is the square pad').toBeCloseTo(1, 1);
+    expect(on!.width / on!.height, 'SCREEN ON is 4:3').toBeCloseTo(4 / 3, 1);
+
+    // ⚠ THE STATE IS ON `node.data`, NOT IN THE COMPONENT — the owner's stated
+    // floor ("it persists through tab switches") and the #1531 / #1574 / #1583
+    // class: this body unmounts on dock collapse / LRU eviction, so component
+    // `$state` would lose the switch on every remount. `node.data` is also what
+    // syncs to collaborators and survives a reload.
+    //
+    // Asserted on the GRAPH rather than by closing and reopening the dock: the
+    // graph write IS the persistence, and a close/reopen leg would really be
+    // testing the dock chrome's own button.
+    await expect
+      .poll(
+        () =>
+          page.evaluate(() => {
+            const w = globalThis as unknown as {
+              __patch: { nodes: Record<string, { data?: Record<string, unknown> } | undefined> };
+            };
+            return w.__patch.nodes.quad?.data?.previewCollapsed ?? null;
+          }),
+        {
+          message:
+            'SCREEN OFF must persist on node.data.previewCollapsed — component state would be ' +
+            'lost on the next dock collapse / LRU eviction, and would never reach a collaborator',
+        },
+      )
+      .toBe(true);
+
+    // ⚠ AND IT IS THE SHARED KEY, NOT A PRIVATE ONE. Every other video surface
+    // uses `previewCollapsed`; a rack saved before this promotion already
+    // carries it, so a different key would silently re-open every preview that
+    // was collapsed before the face existed.
+    await toggle.click();
+    await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+    await expect(
+      body.getByTestId('quadralogical-face-quadrants'),
+      'switching back ON re-mounts the canvas — and the loop never stopped, so it shows the ' +
+        'LIVE picture rather than a stale frame (#1720 / #1721)',
+    ).toBeVisible();
+  });
+});

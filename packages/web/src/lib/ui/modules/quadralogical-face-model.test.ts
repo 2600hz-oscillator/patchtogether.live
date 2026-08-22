@@ -8,6 +8,9 @@
 // red" is only useful when the reader knows which of two opposite fixes applies.
 
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   QUADRALOGICAL_FX_OPTIONS,
   TRANSITIONS,
@@ -384,6 +387,57 @@ describe('quadralogical — the accessible name is where the deleted decimals we
     expect(e12.mass + e23.mass).toBeGreaterThan(1.9);
     expect(e34.mass).toBeLessThan(0.05);
     expect(e41.mass).toBeLessThan(0.05);
+  });
+});
+
+describe('quadralogical — SCREEN OFF is not a producer kill switch', () => {
+  // ⚠ SOURCE-LEVEL, AND DELIBERATELY SO — the `milkdrop-face-model` precedent.
+  // The runtime observable would be "is this node still a pull root", and
+  // `isPullRoot` is PRIVATE with no public probe beside it, so an e2e leg
+  // asking the engine can only report "could not look" — which is decoration,
+  // not a gate. What CAN be asserted mechanically is that the collapsed branch
+  // takes the watch mark before it returns.
+  //
+  // THE DEFECT IT GUARDS (#1937 / #2015): `blitOutputForPreview` IS the "someone
+  // is watching" signal — it calls `markWatched` itself — and a node is a pull
+  // root only while that mark is fresher than `WATCH_TTL_MS`. So a collapsed
+  // state that merely stops blitting silently drops the node out of the pull
+  // set, and a control captioned SCREEN starts muting everything downstream.
+  // On a MIXER that is the whole patch, and this module has TWO outputs, so a
+  // player can be watching `preview` on a downstream monitor while this screen
+  // is off.
+  it("the collapsed branch marks the node watched BEFORE it returns", () => {
+    const src = readFileSync(
+      resolve(dirname(fileURLToPath(import.meta.url)), 'quadralogical/QuadralogicalScreenBody.svelte'),
+      'utf8',
+    );
+    expect(src).toContain('markWatched');
+    expect(
+      /if\s*\(previewCollapsed\)\s*\{[\s\S]{0,320}markWatched/.test(src),
+      'the SCREEN-OFF branch must call markWatched before returning — otherwise the switch is a '
+        + 'producer kill switch for everything downstream of `out` (#1937 / #2015)',
+    ).toBe(true);
+  });
+
+  it('⚠ NEGATIVE CONTROL: the probe reads the real file, and the pattern discriminates', () => {
+    // Both assertions above are satisfiable by a file that merely CONTAINS the
+    // word, so pin that the probe is reading this component (not an empty
+    // string, not a sibling) and that the ORDER clause can fail: the same
+    // pattern must NOT match a body whose collapsed branch returns first.
+    const src = readFileSync(
+      resolve(dirname(fileURLToPath(import.meta.url)), 'quadralogical/QuadralogicalScreenBody.svelte'),
+      'utf8',
+    );
+    expect(src.length, 'the probe read an empty/missing component').toBeGreaterThan(2000);
+    expect(src).toContain('quadralogical-face-screen-toggle');
+    const sabotaged = src.replace(
+      /if\s*\(previewCollapsed\)\s*\{[\s\S]{0,320}?markWatched[^\n]*\n/,
+      'if (previewCollapsed) {\n',
+    );
+    expect(
+      /if\s*\(previewCollapsed\)\s*\{[\s\S]{0,320}markWatched/.test(sabotaged),
+      'the pattern must FAIL on a collapsed branch with no mark — otherwise it proves nothing',
+    ).toBe(false);
   });
 });
 

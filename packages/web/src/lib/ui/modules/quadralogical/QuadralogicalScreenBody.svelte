@@ -365,7 +365,24 @@
 </script>
 
 <div class="ql-screen" data-testid="quadralogical-screen-body">
-  <div class="screen-wrap">
+  <!-- ⚠ THIS WRAPPER CARRIES THE SHELL'S OWN CELL CONTRACT, and it is required
+       rather than decorative. A `surface: 'body'` pad is still ONE CELL of the
+       faceplate — it is simply painted here instead of in a band — so it must
+       be legible to the gates that sweep the faceplate's cells, and those read
+       `[data-cell-kind]` (`renderedCells`, faces-parity) rather than the
+       testid. Without these three attributes the pad renders, satisfies the
+       `[data-testid^="control-"]` multiset, and is STILL invisible to the
+       per-cell operability sweep — which is how it failed on its first run:
+       `18 param cells covering 18 of 20 params`, with a working joystick on
+       screen. The values mirror `ModuleShell.svelte`'s own `xy` branch exactly,
+       so this cell is driven by the SAME diagonal-drag assertion every
+       shell-painted pad gets: one drag, BOTH axes must commit. -->
+  <div
+    class="screen-wrap"
+    data-cell-kind="param"
+    data-cell-control="xy"
+    data-cell-key="pos_x"
+  >
     <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions
          — `role="application"` is exactly right for a control that OWNS its pointer handling.
          Svelte's rules do not model `application` as interactive. -->

@@ -207,6 +207,32 @@ describe("face.xyPads surface:'body' — the body really paints the pad", () => 
             + `without the anchor is never collected and both axes read as dropped.`,
         );
       }
+      // ⚠ THE CELL WRAPPER, AND THIS LEG EXISTS BECAUSE THE FIRST BODY SHIPPED
+      // WITHOUT IT AND EVERYTHING ELSE WAS GREEN. A `'body'` pad is still ONE
+      // CELL of the faceplate, and the sweeps that walk a faceplate's cells key
+      // on `[data-cell-kind]` (`renderedCells`), NOT on the testid. So a body
+      // can carry both attributes above, render a perfectly working joystick,
+      // satisfy the `control-*` multiset — and still be invisible to the
+      // per-cell OPERABILITY sweep, which is the one that actually drags the
+      // pad and proves both axes commit. Measured on the first run of the first
+      // adopter: `18 param cells covering 18 of 20 params`, with the pad on
+      // screen and working. The three attributes must mirror `ModuleShell`'s
+      // own `xy` branch, so the body's cell is held to the same bar as a
+      // shell-painted one rather than to a private one.
+      for (const [attr, want] of [
+        ['data-cell-kind', 'param'],
+        ['data-cell-control', 'xy'],
+        ['data-cell-key', pad.x],
+      ] as const) {
+        if (!new RegExp(`${attr}="${want}"`).test(src)) {
+          offenders.push(
+            `${def.type}: '${extId}' fullViewBody paints the pad but declares no `
+              + `\`${attr}="${want}"\`. Without the shell's cell contract the pad is invisible `
+              + `to faces-parity's per-cell operability sweep — it renders, it works, and `
+              + `NOTHING drags it to prove both axes commit.`,
+          );
+        }
+      }
     }
     expect(
       offenders.join('\n'),
