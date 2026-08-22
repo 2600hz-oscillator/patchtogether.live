@@ -2173,7 +2173,40 @@ jobs:
         # at ~494 s + ~21 s Playwright boot = 86% of the 600 s budget — over
         # the wrapper's 85% fail line below. 6 models at ~329 s (~58%), which
         # is the growth room this lane keeps eating.
-        shard: [1, 2, 3, 4, 5, 6]
+        #
+        # ⚠ 6 → 8 on 2026-08-22 (#2103), AND IT IS THE SAME DEFECT AS #2039 —
+        # READ THAT PARAGRAPH ABOVE FIRST, because this is its second occurrence
+        # and the pattern is the finding.
+        #
+        # Same signature: `vrt-strict shard 2` red at 92% of budget with ALL 45
+        # of its tests PASSING (planned 45 / executed 45 / skipped 0) — the
+        # headroom guard, not a baseline. Same cause: the cost artifact had gone
+        # stale. #2039's refresh left it describing 210 tests; the faceplate
+        # programme then added 61 more (271 tests / 2631 CPU-s), and EVERY
+        # batch-22 face was missing from it. Missing scenes are scheduled at the
+        # MEDIAN, which is right for an audio face and badly wrong for a video
+        # DOCK face — the median face dock is 9.7 s while the video ones run
+        # 20-22 s — so the planner packed six expensive video docks onto one
+        # shard believing they were average.
+        #
+        # MEASURED, `node scripts/vrt-shard-plan.mjs --report N`:
+        #   stale artifact, 6 shards → 335-553 s, spread 1.65x, shard 2 at 92%
+        #   refreshed,      6 shards → 437-441 s, spread 1.009x, max 73% (warn)
+        #   refreshed,      8 shards → 329-330 s, spread 1.005x, max 55% (ok)
+        #
+        # ⚠ SO THE REFRESH ALONE CLEARED THE RED, and the shard bump is for the
+        # GROWTH, not the failure: 6 lands in the warn band today and models 77%
+        # once batch-22 G3 and G4 add their 16 scenes, which is where #2039 was
+        # standing when it thought it had bought room. 8 models 55% / 58%.
+        #
+        # ⚠ AND THE DURABLE FIX IS NEITHER OF THOSE. Both incidents are the
+        # artifact going stale because `task vrt:strict:timings:accept` is
+        # MANUAL and nobody runs it while faces land. Bumping the shard count is
+        # what you do when the population outgrows the split; it is not a
+        # remedy for a cost table that does not know the population. Tracked as
+        # a follow-up on #2103 — if this recurs a third time, automate the
+        # refresh rather than adding two more shards.
+        shard: [1, 2, 3, 4, 5, 6, 7, 8]
 
     env:
       # The lane's identity. Narrows testMatch to vrt.spec.ts +
