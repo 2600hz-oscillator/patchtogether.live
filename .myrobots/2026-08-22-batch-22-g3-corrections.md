@@ -1,5 +1,40 @@
 # batch-22 G3 — corrections to the banked derivation
 
+## ⚠ TEARDOWN CHECKLIST — `task e2e:stop` IS NOT SUFFICIENT
+
+A real-GPU attest pre-flight was refused by three listeners in this worktree
+(`:54026` / `:54237` / `:55098`) **while `task e2e:stop` reported "nothing to
+stop"**. They were `workerd` processes — **`@sveltejs/adapter-cloudflare`'s
+`platformProxy`**, spawned by `npm run build` / `vite build`, not by
+`task e2e:serve`. `e2e:stop` only knows about the server *it* started, so this
+species is invisible to it.
+
+That is the **third distinct species of GPU squatter** seen in one week, and the
+checklist should name all three because they are found different ways:
+
+1. **Leaked dev servers** from an abandoned worktree — `task e2e:stop` in that
+   worktree, or kill by port.
+2. **A live sibling lane's burst** — not a leak at all; coordinate a window
+   rather than killing anything.
+3. **Build-tool proxies (`workerd` / `platformProxy`)** — ⚠ survive
+   `e2e:stop`, are created by BUILDING rather than serving, and therefore
+   accumulate silently in any lane that runs `npm run build` (e.g. a Worker-size
+   measurement).
+
+**Before handing over a GPU window, do not trust `e2e:stop` alone.** Enumerate
+listeners and filter by the process's own `cwd`:
+
+```sh
+lsof -nP -iTCP -sTCP:LISTEN | awk '/workerd|vite|node/ {print $2}' | sort -u
+# then, per pid:
+lsof -a -p <pid> -d cwd -Fn        # kill ONLY if cwd is inside your worktree
+```
+
+⚠ **Filter by `cwd`, never by port or process name.** The ports are ephemeral
+and the names are shared with every other lane — killing by name is how you take
+down a sibling's live run, which is squatter species (2) and not yours to touch.
+
+
 ## ⏭ QUEUED ACTION — refresh the vrt-strict cost artifact AFTER G3 **and** G4 merge
 
 **Owner: whoever lands the later of G3 / G4.** Run
