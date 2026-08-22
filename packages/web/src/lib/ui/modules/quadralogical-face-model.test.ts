@@ -180,31 +180,38 @@ describe('quadralogical face — three bands, the edge ROW, and no rail', () => 
     expect(dockFacePlan(def)!.map((b) => b.id)).toEqual(['field', 'edges', 'key']);
   });
 
-  it("the `edges` band is FOUR clusters flowing as a ROW", () => {
+  it('the `edges` band is FOUR clusters, STACKED', () => {
     const edges = dockFacePlan(def)!.find((b) => b.id === 'edges')!;
     expect(edges.clusters.map((c) => c.label)).toEqual(['1–2', '2–3', '3–4', '4–1']);
-    // ⚠ THE FLOW IS THE OWNER'S LAYOUT, IN ONE WORD. Without it the clusters
-    // STACK and the four edge boxes become four full-width rows under the
-    // screen instead of a row of four beside each other.
-    expect(edges.clusterFlow).toBe('row');
+    // ⚠ NOT `clusterFlow: 'row'`, AND CI IS WHY. This face first shipped the
+    // row flow — the only mechanism that puts clusters beside each other, and
+    // the literal reading of the owner's "a row under the frame". Four boxes of
+    // [selector + two knob columns] measured ~1260 CSS px and
+    // `workflow-shell-faces` failed it: "40 CSS px of faceplate right of the
+    // capture box (content 1260, shown 1220)", against a budget of hiddenX === 0.
+    // The width ruling won. See the def's own comment for the argument.
+    expect(edges.clusterFlow).toBe('stack');
     // Every cluster is the same three cells — selector + its two controls.
     for (const cl of edges.clusters) expect(cl.controls).toHaveLength(3);
     // Nothing un-clustered is left over: the band is exactly its four boxes.
     expect(edges.controls).toHaveLength(0);
   });
 
-  it("⚠ the CONSOLE GRID is OFF for the edges band, and `clusterFlow` is why", () => {
-    // Four equal-sized clusters is the console grid's own trigger condition, so
-    // WITHOUT the row flow this band would ask for a shared column ruler while
-    // being laid out as a flex row — two layout systems disagreeing about one
-    // element, which resolves as neither. `consoleGridCols` refuses a row-flow
-    // band in its FIRST clause for exactly this reason; asserted here because
-    // this face is the first one that could trip it.
+  it('⚠ the stacked band IS a CONSOLE GRID — the four edge strips share one ruler', () => {
+    // Four clusters of equal size is `consoleGridCols`'s own definition of a
+    // table, so column j has ONE x across all four strips: every FX selector,
+    // every AMT and every PRM lands on a shared ruler. On four bit-identically
+    // symmetric edge slots that alignment is the point — it is what owner
+    // review of #1738 asked for on mixmstrs, and the row flow this face started
+    // with would have turned it OFF by construction.
     const edges = dockFacePlan(def)!.find((b) => b.id === 'edges')!;
-    expect(consoleGridCols(edges)).toBeNull();
-    // NEGATIVE CONTROL: the same band, stacked, IS a console grid — so the null
-    // above is the flow's doing and not an accident of the cluster shapes.
-    expect(consoleGridCols({ ...edges, clusterFlow: 'stack' })).toBe(3);
+    expect(consoleGridCols(edges)).toBe(3);
+    // ⚠ NEGATIVE CONTROL, and it is the one that would have caught the original
+    // authoring: the SAME band with the row flow is NOT a grid, because a
+    // shared column ruler and a side-by-side flow are contradictory requests.
+    // So this pair pins both halves — the alignment we now get, and the reason
+    // the discarded declaration could not have had it.
+    expect(consoleGridCols({ ...edges, clusterFlow: 'row' })).toBeNull();
   });
 
   it('NO tab rail, and that is required rather than incidental', () => {

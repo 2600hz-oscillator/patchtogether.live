@@ -133,11 +133,15 @@ h1{font-size:21px;font-weight:800;margin:0 0 6px;letter-spacing:.01em}
   color:var(--dim)}
 .row{display:flex;flex-wrap:wrap;align-items:flex-start;gap:8px 12px}
 /* clusterFlow:'row' — the four EDGE boxes SIDE BY SIDE, wrapping. */
-.clusters{display:flex;flex-wrap:wrap;gap:10px}
-.cl{display:flex;flex-direction:column;gap:4px}
+/* clusterFlow STACK + the CONSOLE GRID: four equal clusters share one column
+   ruler, so every FX / AMT / PRM lands on the same x across all four strips.
+   ⚠ This replaced a side-by-side `clusterFlow:'row'` after CI MEASURED the row
+   at 1260 CSS px against a 1220 px pane — see the note under the plate. */
+.clusters{display:grid;gap:6px 0}
+.cl{display:grid;grid-template-columns:34px 132px 54px 54px;align-items:center;gap:8px}
 .clab{margin:0;font-size:8.4px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;
-  color:var(--dim);opacity:.85}
-.clrow{display:flex;align-items:flex-start;gap:8px}
+  color:var(--dim);opacity:.85;text-align:right}
+.clrow{display:contents}
 
 /* knob primitive (a drawing of KnobConic) */
 .k{width:54px;display:flex;flex-direction:column;align-items:center;gap:3px}
@@ -362,12 +366,22 @@ downstream of <code>out</code>.</p>
     <code>joystick: X 0.00, Y 0.00 — IN1</code>, and the trailing name is the one fact the card
     carried in a <b>colour</b> and nowhere else: which input the composite currently favours. A
     colour is not speakable.</div>
-  <div><h5>why the four EDGE boxes are ONE band</h5>
-    An <code>fx</code> selector is a <code>'wide'</code> cell, so <code>bandIsPackable</code> makes
-    any band holding one <b>SOLO</b> — four separate bands would stack as four full-width rows.
-    One band with four <b>clusters</b> plus <code>clusterFlow:'row'</code> is the only mechanism
-    that puts them side by side. It wraps to 2×2 at a narrow pane, which is the layout the legacy
-    card already uses.</div>
+  <div><h5>⚠ why the edge boxes STACK — a measurement overruled the first draft</h5>
+    They were authored <code>clusterFlow:'row'</code> — side by side, the literal reading of "a row
+    under the frame". <b>CI measured that at 1260 CSS px against a 1220 px pane</b>
+    (<code>face-quadralogical-dock: 40 CSS px of faceplate right of the capture box</code>, on a
+    gate whose budget is <code>hiddenX === 0</code>). The <b>width ruling won</b>: the live 2×2
+    preview earns 480 px; nothing here earns 1260. Stacked still satisfies "below the screen, not
+    <i>beside</i> it" — which is what the note was contrasting against, since the legacy card put
+    them in a right-hand column. <b>Revert is one word</b>, and it is flagged in the PR for an
+    explicit ruling.</div>
+  <div class="der"><h5>and stacking turns the CONSOLE GRID on</h5>
+    Four clusters of equal size is <code>consoleGridCols</code>'s own definition of a table, so
+    column <i>j</i> gets <b>one x across all four strips</b> — every FX selector, every AMT and
+    every PRM on a shared ruler. On four bit-identically symmetric edge slots that alignment is
+    the point; it is what owner review of #1738 asked for on mixmstrs. The row flow would have
+    turned it off <b>by construction</b> (a shared ruler and a side-by-side flow are
+    contradictory requests), so this is a gain rather than a consolation.</div>
   <div class="bad"><h5>defects this promotion fixes</h5>
     <b>(a)</b> <code>invert</code> is documented, read by the shader in both keyed branches, and
     has <b>no UI on the card at all</b> — it is unreachable today, and no gate can see it because

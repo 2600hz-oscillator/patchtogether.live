@@ -934,22 +934,40 @@ export const quadralogicalDef: VideoModuleDef = {
       { id: 'field', label: 'field',
         controls: ['pos_x', 'pos_y', 'diamond_margin', 'blend_sharp'] },
 
-      // 2 — THE FOUR EDGES. ONE band, four CLUSTERS, SIDE BY SIDE.
+      // 2 — THE FOUR EDGES. ONE band, four CLUSTERS, STACKED — and this is a
+      // CORRECTION, made against a measurement, of the first authoring.
       //
-      // ⚠ `clusterFlow: 'row'` IS LOAD-BEARING, not a look. Four separate BANDS
-      // cannot produce this row: an fx selector is a 'wide' cell, so
-      // `bandIsPackable` makes every band holding one SOLO, and the four would
-      // stack as four full-width rows. One band with four clusters plus the
-      // row flow is the only mechanism that puts them beside each other, and it
-      // wraps to 2x2 at a narrow pane — which is the layout the legacy card
-      // already uses. It also turns the CONSOLE GRID off for this band by
-      // construction (`consoleGridCols` returns null for a row flow), which is
-      // correct: these four are PEERS, not channels of one console.
+      // ⚠ IT SHIPPED AS `clusterFlow: 'row'` AND CI MEASURED IT TOO WIDE.
+      // The owner's layout note says the edge boxes belong in "a row under the
+      // frame", and the row flow is the only mechanism that puts clusters
+      // beside each other — but four boxes of [selector 168 + two knob columns]
+      // is ~1260 CSS px, and `workflow-shell-faces` measured **40 px of
+      // faceplate right of the capture box (content 1260, shown 1220)** on a
+      // gate whose budget is hiddenX === 0, exactly. That is the "useless gray
+      // horizontal space" ruling firing on its own terms, and the burden of
+      // proof is on the WIDE face: the live 2x2 preview earns 480 px, and
+      // nothing on this module earns 1260.
+      //
+      // So the two owner instructions collided and the WIDTH ruling won, which
+      // is the narrower reading of the layout note rather than a contradiction
+      // of it: "a row under the frame, NOT BESIDE IT" is a statement about
+      // where the edges live relative to the screen — the legacy card put them
+      // in a right-hand COLUMN — and stacked clusters directly under the frame
+      // still satisfy that. Flagged in the PR for an explicit ruling; the
+      // revert is this one word.
+      //
+      // ⚠ AND STACKING TURNS THE CONSOLE GRID ON, which is a real gain rather
+      // than a consolation. Four clusters of equal size is `consoleGridCols`'s
+      // own definition of a table, so column j gets ONE x across all four
+      // strips: every FX selector, every AMT and every PRM lands on a shared
+      // ruler. On four bit-identically symmetric edge slots that alignment is
+      // the whole point — it is the property owner review of #1738 asked for on
+      // mixmstrs, and the row flow would have destroyed it by construction.
       //
       // ⚠ THE CLUSTER LABELS ARE THE INDEX CYCLE, NOT GEOMETRIC ADJACENCY.
       // Edge 2 is in2<->in3 = TR<->BL, a DIAGONAL of the pad (EDGE_PAIRS). Do
       // not relabel them to look adjacent.
-      { id: 'edges', label: 'edges', clusterFlow: 'row',
+      { id: 'edges', label: 'edges',
         controls: [
           'edge1_fx', 'edge1_amount', 'edge1_param',
           'edge2_fx', 'edge2_amount', 'edge2_param',

@@ -368,17 +368,18 @@ pages: [
   { id: 'field', label: 'field',
     controls: ['pos_x', 'pos_y', 'diamond_margin', 'blend_sharp'] },
 
-  // 2 — THE FOUR EDGES. ONE band, four CLUSTERS, laid out SIDE BY SIDE —
-  // `clusterFlow: 'row'` (graph/types.ts:679) is the only mechanism that puts
-  // clusters beside each other instead of stacking them, and it is the owner's
-  // "a row under the frame". Four separate BANDS cannot do it: an fx selector
-  // is a 'wide' cell, so `bandIsPackable` makes every one of them SOLO and the
-  // four would stack as four full-width rows.
+  // 2 — THE FOUR EDGES. ONE band, four CLUSTERS, STACKED.
+  //
+  // ⚠ AUTHORED AS `clusterFlow: 'row'` AND CORRECTED AGAINST A MEASUREMENT —
+  // see the §7 note below. Four boxes side by side is ~1260 CSS px against a
+  // 1220 px pane; the width ruling won. Four separate BANDS cannot produce the
+  // row either: an fx selector is a 'wide' cell, so `bandIsPackable` makes
+  // every one of them SOLO.
   //
   // ⚠ THE CLUSTER LABELS ARE THE INDEX CYCLE, NOT GEOMETRIC ADJACENCY. Edge 2
   // is in2<->in3 = TR<->BL, a DIAGONAL of the pad (EDGE_PAIRS, :156). Do not
   // relabel them to look adjacent.
-  { id: 'edges', label: 'edges', clusterFlow: 'row',
+  { id: 'edges', label: 'edges',
     controls: [],
     clusters: [
       { label: '1–2', controls: ['edge1_fx', 'edge1_amount', 'edge1_param'] },
@@ -400,16 +401,46 @@ only and is **not** reached for here.
 
 ⚠ **The `edges` band carries 12 cells against `DOCK_ROW_MAX_CONTROLS = 10`.** That is
 fine and is the documented behaviour: `packRun` never splits a section, so an over-cap band
-takes a row by itself (`dock-row-plan.ts:packRun`) — which is what it wants anyway. Its
-own cells still wrap inside it, which is the `clusterFlow: 'row'` fallback: **one row of
-four at a wide pane, 2×2 at a narrow one.** MUST-VERIFY (§11) — measure the resulting
-plate width and confirm it does not exceed the screen's earned width by more than the
-edge row genuinely needs.
+takes a row by itself (`dock-row-plan.ts:packRun`) — which is what it wants anyway.
 
-⚠ **Console grid is OFF for band 2 by construction** — `consoleGridCols` returns `null`
-for `clusterFlow: 'row'` (`console-grid.ts:88`), because a shared column ruler and a
-side-by-side flow are contradictory requests. Good: the four edge boxes are PEERS, not
-channels of one console.
+### ⚠ THE ROW FLOW WAS BUILT, MEASURED TOO WIDE, AND REVERSED — resolving MUST-VERIFY §11.3
+
+This section first specified `clusterFlow: 'row'`, the literal reading of the owner's "a row
+under the frame" and the only mechanism that puts clusters beside each other. It shipped, and
+**linux CI measured it**:
+
+```
+face-quadralogical-dock: 40 CSS px of faceplate right of the capture box
+                         (content 1260, shown 1220)
+```
+
+against a gate whose budget is `hiddenX === 0`, exactly. Four boxes of
+`[selector 168 + two knob columns]` is ~1260 px; the dock pane is 1220. **The width ruling
+won** — *"we do not want useless gray horizontal space on cards, ever"*, and the burden of
+proof is on the wide face: the live 2×2 preview earns 480 px, nothing on this module earns
+1260.
+
+**Two owner instructions collided and this is the narrower reading of the layout note rather
+than a contradiction of it.** "A row under the frame, **not beside it**" is a statement about
+where the edges live *relative to the screen* — the legacy card put them in a right-hand
+COLUMN — and four stacked clusters directly under the frame still satisfy that. Flagged in
+the PR for an explicit ruling; **the revert is one word**.
+
+⚠ **AND STACKING TURNS THE CONSOLE GRID ON — a gain, not a consolation.** Four clusters of
+equal size is `consoleGridCols`'s own definition of a table, so column *j* has **ONE x across
+all four strips**: every FX selector, every AMT and every PRM lands on a shared ruler. On four
+bit-identically symmetric edge slots that alignment is exactly the point — it is the property
+owner review of #1738 asked for on mixmstrs. The row flow would have turned it **off by
+construction** (`console-grid.ts:88` refuses a row-flow band in its first clause, because a
+shared ruler and a side-by-side flow are contradictory requests). Both halves are pinned in
+`quadralogical-face-model.test.ts`, the second as the negative control.
+
+⚠ **The lesson generalises past this face.** `faceplate-platform.spec.ts`'s PF-21 row sweeps
+passed locally at both pane widths, because they ask a different question (do packed rows fit
+their column). The *plate-vs-pane* measurement lives in `workflow-shell-faces.spec.ts`, which
+**cannot run locally without a baseline** — so the width of a new face is not knowable before
+the first capture. Treat the first `vrt:commit` on a wide face as a MEASUREMENT, not a
+formality.
 
 **REAR CARD.** `face.rear` is a projection of `pages`, so re-derive it: the CV holes land
 `pos_x`/`pos_y`/`diamond_margin`/`blend_sharp` → `field`; `edge{N}_amount`/`edge{N}_param`
@@ -559,9 +590,12 @@ would be reached for by the next module that merely wants a bigger knob.
 
 1. **The puck is a MIX window (§4).** Revert: delete the puck canvas. Consequence, stated
    plainly: the MIX has no surface on the faceplate at all.
-2. **`clusterFlow: 'row'` on the edges band (§7).** Revert: delete the one line and the
-   four edge boxes stack as four rows ~280 px wide — narrower plate, ~170 px taller,
-   and no longer "a row under the frame".
+2. **The edge boxes STACK rather than sitting in a row (§7).** ⚠ **This call was DECIDED BY
+   A MEASUREMENT, not by taste** — the row flow was built and CI measured it 40 px over the
+   pane (content 1260, shown 1220). It is listed here because the owner may still prefer the
+   row and pay for it some other way (a narrower selector, a 2×2 split, a wider pane). Revert:
+   restore `clusterFlow: 'row'` on that one page — and `workflow-shell-faces` goes red again
+   with the same number until something else gives.
 3. **Eight edge controls always visible (§2, rows 12/14).** Revert: none available today —
    there is no conditional-cell mechanism. The alternative is a platform PR for one, which
    is not this PR.
@@ -573,17 +607,33 @@ would be reached for by the next module that merely wants a bigger knob.
 
 ## 11. MUST-VERIFY — claims this spec makes that the build must prove
 
-1. **The quadrant→corner mapping survives the blit.** `PREVIEW_FRAG_SRC` works in
-   bottom-left-origin `vUv`; the canvas is top-left origin. If `blitTexToDrawingBuffer`
-   does not flip, **IN1 lands bottom-left and silently contradicts the corner label above
-   it**. Assert the mapping with a per-quadrant colour probe, not by eye.
-2. **`curatedFace` really resolves plate = compact = 2** for this face (§6).
-3. **The measured plate width** with `clusterFlow: 'row'` (§7) — one row of four, or 2×2.
-4. **Three consecutive dock captures are pixel-identical** with `freeze` engaged (§9.3).
-5. **`markWatched` still fires with SCREEN OFF** — probe `previewGateStats()` /
-   the pull set, not the picture (§3.3).
-6. **`faces-parity` multiset equality** with the pad in the body (§8).
-7. **`rear-card-model`**: the `key` rear section has THREE jacks, not four (§7).
+**Status after the build. Two of the seven were WRONG, and both were caught by the thing this
+list exists to force.**
+
+1. ✅ **The quadrant→corner mapping survives the blit.** `PREVIEW_FRAG_SRC` works in
+   bottom-left-origin `vUv`; the canvas is top-left. A flip would put IN1 bottom-left and
+   silently contradict the label above it. **VERIFIED** by a four-pixel positive control in
+   `quadralogical-face-screen.spec.ts` — each quadrant carries its own input's colour. The
+   mapping is right.
+2. ⚠ **`curatedFace` resolves plate = compact = 2** — **TRUE but the CONTENT was wrong.** The
+   spec said the two cells were the stick and the diamond; the stick never reaches a lane at
+   all (`laneOrder`). It is DIAMOND, then DIAMOND + SHARP. Corrected in §6.
+3. ❌ **The measured plate width.** **FAILED, and this is the finding of the build.** The row
+   flow measured **1260 CSS px against a 1220 px pane** on linux CI. Reversed to stacked; see
+   the §7 note. ⚠ It could not have been caught locally — that measurement lives in a spec
+   that needs a committed baseline to run.
+4. ⏳ **Three consecutive dock captures pixel-identical** with `freeze` engaged — pending the
+   capture that #3 blocked.
+5. ✅ **`markWatched` fires with SCREEN OFF** — verified at the SOURCE level (the collapsed
+   branch marks before returning), with a negative control proving the pattern can fail. ⚠ The
+   runtime probe this list originally asked for **does not exist**: `isPullRoot` is private
+   with no public reader, so an e2e leg could only report "could not look", which is
+   decoration. Recorded rather than faked.
+6. ✅ **`faces-parity` multiset equality** with the pad in the body — and it caught a real gap
+   on the way: the body needed the shell's own `data-cell-*` wrapper, without which the pad
+   rendered, worked, satisfied the multiset, and was still never dragged.
+7. ✅ **`rear-card-model`**: the `key` rear section has THREE jacks, not four (`invert` has no
+   CV input) — green.
 
 ## 12. VERIFICATION GATE
 
@@ -595,7 +645,7 @@ flox activate -- task test:one -- module-face-lint
 # 3. row/hero/cell plans
 flox activate -- task test:one -- dock-row-plan
 flox activate -- task test:one -- dock-faceplate-model
-flox activate -- task test:one -- console-grid          # clusterFlow:'row' turns the grid OFF
+flox activate -- task test:one -- console-grid          # the stacked band IS a console grid
 flox activate -- task test:one -- shell-cells
 flox activate -- task test:one -- shell-extensions
 flox activate -- task test:one -- module-shell-import-guard

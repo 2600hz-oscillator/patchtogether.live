@@ -152,11 +152,15 @@ h1{font-size:21px;font-weight:800;margin:0 0 6px;letter-spacing:.01em}
 .blab{margin:0 0 6px;font-size:9.4px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;
   color:var(--dim)}
 .row{display:flex;flex-wrap:wrap;align-items:flex-start;gap:8px 12px}
-.clusters{display:flex;flex-wrap:wrap;gap:10px}
-.cl{display:flex;flex-direction:column;gap:4px}
+/* clusterFlow STACK + the CONSOLE GRID: four equal clusters share one column
+   ruler, so every FX / AMT / PRM lands on the same x across all four strips.
+   ⚠ This replaced a side-by-side `clusterFlow:'row'` after CI MEASURED the row
+   at 1260 CSS px against a 1220 px pane — see the note under the plate. */
+.clusters{display:grid;gap:6px 0}
+.cl{display:grid;grid-template-columns:34px 132px 54px 54px;align-items:center;gap:8px}
 .clab{margin:0;font-size:8.4px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;
-  color:var(--dim);opacity:.85}
-.clrow{display:flex;align-items:flex-start;gap:8px}
+  color:var(--dim);opacity:.85;text-align:right}
+.clrow{display:contents}
 .k{width:54px;display:flex;flex-direction:column;align-items:center;gap:3px}
 .k i{--v:.5;--kc:#8358b8;display:block;width:38px;height:38px;border-radius:50%;position:relative;
   background:conic-gradient(from 215deg,var(--kc) 0turn calc(var(--v)*.75turn),
