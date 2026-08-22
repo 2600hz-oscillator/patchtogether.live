@@ -3174,10 +3174,11 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   //
   // NO `pages`, NO `hero`, NO `bareCells`, NO readout and NO sidebar on any of
   // the four: each is one honest band, and the 2026-08-19 rulings removed the
-  // other fields. None is a MONITOR-mode module — `hideControls` lives on five
-  // legacy cards (`ruttetra`, `monoglitch`, `milkdrop`, `reshaper`, `graphicEq`)
-  // and none of these four is among them, so inventing it here would be adding
-  // an affordance rather than preserving one.
+  // other fields. None is a MONITOR-mode module: grepped at authoring time,
+  // `hideControls` appears on `RuttetraCard`, `MonoglitchCard`, `MilkdropCard`,
+  // `ReshaperCard` and `GraphicEqCard` (plus `ModuleShell`, its consumer), and
+  // in NONE of these four cards — so inventing it here would be adding an
+  // affordance rather than preserving one.
   //
   // ⚠ SCREEN OFF KEEPS THE WATCH MARK ON ALL FOUR, AND ALL FOUR ARE STATELESS —
   // so unlike group 1, the reason is the OUTPUT every time and there is no

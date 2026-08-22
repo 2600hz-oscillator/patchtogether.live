@@ -2254,9 +2254,10 @@ export const FACES = [
       + 'membership a video node never acquires. Both scenes also carry a live picture: the '
       + 'compact tile paints a VideoTileThumb through hasVideoSurface, and the dock body is the '
       + "module's own fullViewBody extension (the graded preview plus its SCREEN switch) — a "
-      + 'surface LumaCard.svelte never had. ⚠ NOT `lumakey`, three entries up: that is the '
-      + 'two-input compositor, this is the single-input tone processor, and the def carries a '
-      + 'header about the confusion. The transfer is a per-texel chain of gamma, contrast, '
+      + 'surface LumaCard.svelte never had. ⚠ NOT `lumakey`, which is its own entry in this '
+      + 'roster: that is the two-input COMPOSITOR, this is the single-input TONE PROCESSOR, and '
+      + "luma.ts carries a header about earlier versions conflating the two. The transfer is a "
+      + 'per-texel chain of gamma, contrast, '
       + 'posterize and bias re-applied as a luma ratio — no clock, no history — and at the '
       + 'shipped defaults it is a BIT-EXACT identity, so an unpatched capture is the '
       + 'unpatched-input branch\'s solid black either way.',
