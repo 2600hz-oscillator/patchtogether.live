@@ -407,9 +407,11 @@ debit against the legacy card, and it is a debit of <i>dynamics</i>, not of cont
   <div><h5>what SCREEN OFF means here, and why it differs</h5>
     The 2026-08-18 ruling says OFF collapses the preview and reclaims its space while the module
     keeps rendering. On all twenty-six adopters the collapsed thing is a canvas. <b>Here the frame
-    is also the CONTROL</b>, so collapsing it would delete the joystick — the <code>joystick</code>
-    (#1974) refusal, self-inflicted. OFF therefore unmounts the canvas, keeps the overlay, and
-    reclaims <b>120 px of WIDTH</b> rather than the box.</div>
+    is also the CONTROL</b>, so collapsing it would delete the joystick from the dock outright —
+    and a declared pad never reaches a lane tier either (<code>laneOrder</code> makes every pad
+    anchor dock-only, because a lane knob column is 46 px and a pad is square), so the module's
+    primary gesture would have <b>no surface anywhere</b>. OFF therefore unmounts the canvas,
+    keeps the overlay, and reclaims <b>120 px of WIDTH</b> rather than the box.</div>
   <div class="bad"><h5>⚠ two things the build must prove</h5>
     <b>(1) The blit's vertical origin</b> — see the amber panel above. <b>(2) Pixel determinism:</b>
     a live 2×2 video preview is not deterministic. <code>freeze</code> is the module's own hook and

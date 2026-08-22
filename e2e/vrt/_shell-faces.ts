@@ -2201,6 +2201,38 @@ export const FACES = [
       + 'constant. Patch a source into A and that argument dies: the shape set becomes a function '
       + 'of the incoming raster.',
   },
+  // ── QUADRALOGICAL (2026-08-22, #2102) — the face where the PICTURE IS THE
+  // CONTROL, and the only entry in this roster whose dock scene contains an
+  // operable joystick rather than a preview.
+  {
+    type: 'quadralogical',
+    // THREE bands: `field`, `edges`, `key`. Below DOCK_TAB_MIN_BANDS = 7, so
+    // the dock renders one column and NOT a tab rail — which is required
+    // rather than incidental here: a rail shows one band at a time, so a
+    // tabbed face would put at most one of the four EDGE boxes on screen.
+    pages: 3,
+    videoFaceWhy:
+      'a VIDEO module, so it must boot into the video zone rather than a mixer channel column — '
+      + 'without this field bootWithFace waits out the full 90 s test timeout for a column '
+      + 'membership a video node never acquires. Both scenes carry a live picture: the compact '
+      + 'tile paints a VideoTileThumb through hasVideoSurface, and the dock body is the '
+      + "module's own fullViewBody extension. ⚠ THE DOCK BODY IS UNLIKE EVERY OTHER ENTRY HERE "
+      + 'and the difference matters for what this scene can prove: it is the JOYSTICK — the '
+      + 'field, the diamond, the corner labels and the puck — with a live 2×2 preview of the '
+      + "four inputs BEHIND it, drawn from the module's own `preview` output port. So the scene "
+      + 'holds TWO canvases (the quadrant tile and the puck, which is a window onto the MIX), '
+      + 'and freeze must stop both. ⚠ THE FREEZE WRITE IS LOAD-BEARING HERE, not a no-op like '
+      + 'the batch-22 group above: this def DOES declare `freeze`, and its `draw()` returns '
+      + 'early at >= 0.5 BEFORE either pass, so the MIX fbo and the PREVIEW fbo both hold their '
+      + 'last frame together. With nothing patched all four inputs bind the standalone 1×1 black '
+      + 'sentinel, so the held picture is black plus the preview shader\'s own separator cross — '
+      + 'constant frame to frame, which is what the harness samples. ⚠ AND THE PUCK IS AT THE '
+      + 'CENTRE at spawn (pos_x/pos_y default 0), which is inside the diamond, so the scene also '
+      + 'pins the diamond geometry against the pad: the drawn rhombus is `diamond_margin` at '
+      + '1:1 with the weight model, and a regression that reverted it to the card\'s '
+      + 'rotate(45deg) square would be WRONG BY 4/3 on one axis at this frame\'s 4:3 aspect and '
+      + 'would show as a moved outline rather than as a silent maths error.',
+  },
 ] as const;
 
 /**

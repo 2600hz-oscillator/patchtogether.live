@@ -743,6 +743,56 @@ export interface FaceXyPad {
   y: string;
   /** Caption under the pad. Omitted = the two params' own labels. */
   label?: string;
+  /**
+   * WHICH SURFACE paints this pad's ONE cell at the DOCK.
+   *
+   *   'band' (default) — the shell's generic `XyPad` renders in a band, at the
+   *                      `x` key's rank. Every pad shipped before this field.
+   *   'body'           — the module's OWN `fullViewBody` paints it, and the
+   *                      dock bands render NO cell for either axis.
+   *
+   * ⚠ IT IS A DOCK-ONLY DISTINCTION, AND THE REASON IS NOT THE ONE THE FIRST
+   * DRAFT OF THIS COMMENT GAVE. It said the lane must keep the generic pad or a
+   * pad-only module would resolve to zero controls; that premise is FALSE, and
+   * `quadralogical-face-model.test.ts` corrected it. `laneOrder`
+   * (`curated-face.ts:131-143`) ALREADY makes every declared pad's anchor
+   * dock-only, for a measured reason that predates this field: a pad is square
+   * and a lane knob column is 46 px, so squeezing it there keeps the gesture
+   * and loses the precision. So NO lane tier has ever painted a pad, and this
+   * field cannot change that.
+   *
+   * What it changes is WHICH DOCK SURFACE paints it — a band cell, or the
+   * module's own body. `extBody` is gated to the dock by
+   * `dockFullViewHeadPlan`, so 'body' is only meaningful there, and the lane is
+   * untouched because the pad was never in it.
+   *
+   * ⚠ THE #1974 REFUSAL IS A SEPARATE QUESTION AND THIS FIELD DOES NOT ANSWER
+   * IT. `joystick` is refused because a pad is its ONLY control, so the lane
+   * resolves to ZERO controls whatever any face declares. A module adopting
+   * `'body'` must still have something else to show in the lane; if it does
+   * not, the answer is to not promote it.
+   *
+   * ⚠ AND IT IS A CLAIM THE GATES CHECK IN BOTH DIRECTIONS, not a hint.
+   * `module-face-lint` INVERTS its render-parity assertion for a `'body'`
+   * pad's two axes — they must render EXACTLY ZERO dock cells where every
+   * other param must render exactly one — the same falsifiable shape
+   * `noUserControl` uses. And `face-xy-body-source.test.ts` requires the
+   * declaring face to own a `fullViewBody` whose source really emits
+   * `data-control-params` naming both axes, so "the body paints it" cannot be
+   * satisfied by a body that does not.
+   *
+   * WHY A PER-PAD ENUM rather than a general "these params live in the body"
+   * list: a 2-D pad is the only control the shell paints that a module could
+   * plausibly need to own — it is the one primitive whose picture and whose
+   * gesture can be the SAME surface as a module's own render (QUADRALOGICAL's
+   * joystick sits over live previews of the four inputs it is mixing). A
+   * general escape hatch would be reached for by the next module that merely
+   * wants a bigger knob.
+   *
+   * UI metadata like the rest of `face`: OUT of contract-signature /
+   * contract-lock (choosing a surface is not an I/O change).
+   */
+  surface?: 'band' | 'body';
 }
 
 export interface ModuleFace {

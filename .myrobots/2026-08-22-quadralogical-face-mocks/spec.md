@@ -189,8 +189,9 @@ The 2026-08-18 ruling says OFF "collapses the preview and **reclaims its vertica
 space**" while the module keeps rendering. On all twenty-six adopters the collapsed thing
 is a canvas and nothing else, so OFF reclaims the entire box.
 
-**Here the frame is also the CONTROL.** Collapsing it would delete the joystick — the
-`joystick` (#1974) refusal, self-inflicted. So on this module:
+**Here the frame is also the CONTROL.** Collapsing it would delete the joystick from the
+dock outright — and since a declared pad never reaches a lane tier either (§6), that would
+leave the module's primary gesture with **no surface anywhere**. So on this module:
 
 * **OFF unmounts the `<canvas>` and keeps the joystick overlay**, re-aspecting the field
   to 1:1. What it reclaims is **120 px of WIDTH**, not the box.
@@ -323,15 +324,29 @@ than through a component.**
 | 18–20 | `keyR` `keyG` `keyB` | Live only when some edge is CHROMA — 1 of 8 effects. The deadest controls on the module at spawn. | — |
 | — | `freeze` | `noUserControl`, `writer: 'internal'` — a determinism toggle for VRT capture (`:868`); no port targets it and no card control sets it. | — |
 
-**THE TIER LADDER, READ BACK AS A SENTENCE.** At mini you get the STICK. At compact, the
-stick and the DIAMOND — the two things that decide what is on screen. `xy` is a `'wide'`
-cell class (`dock-row-plan.ts:PARAM_CELL_WIDTH_CLASS`), and every measured video face
-resolves plate = compact = 2 cells, so **the plate tier is the stick and the diamond and
-nothing else** — MUST-VERIFY through `curatedFace`, never inferred from `LANE_PLATE_MAX_CELLS`
-(the correction `ruttetra`, `monoglitch` and `reshaper` each had to make independently).
-Everything from the four selectors down is DOCK-ONLY.
+**THE TIER LADDER — ⚠ AND IT IS NOT THE ONE THE RANKING SUGGESTS. CORRECTED
+2026-08-22 BY THE CODE.** This section first read *"at mini you get the STICK; at compact,
+the stick and the DIAMOND"*, and `quadralogical-face-model.test.ts` disproved it before a
+line of the component ran. **`laneOrder` (`curated-face.ts:131-143`) ALREADY makes every
+declared pad's anchor dock-only**, for a MEASURED reason that predates this face: a pad is
+square and a lane knob column is 46 px, so squeezing it there would keep the gesture and
+lose the precision.
 
-**THE LOSERS, NAMED.** `blend_sharp` lost the compact tier to `diamond_margin` because at
+So **no lane tier has ever painted a pad**, and the real ladder is: at mini the **DIAMOND**
+— the size of the all-four zone, which is the one thing besides the stick that decides what
+is on screen — and at compact **DIAMOND + SHARP**. Everything from the four selectors down
+is dock-only too. MEASURED through `curatedFace` (`mini === ['diamond_margin']`,
+`compact === ['diamond_margin', 'blend_sharp']`), never inferred from `LANE_PLATE_MAX_CELLS`
+— the correction `ruttetra`, `monoglitch` and `reshaper` each had to make independently.
+
+⚠ **Two consequences, stated rather than absorbed.** (1) `surface: 'body'` (§9.2) is
+therefore a **DOCK-only distinction**: it changes *which dock surface* paints the pad, never
+whether a lane has one. (2) The **#1974 `joystick` refusal is a different question and this
+design does not answer it** — that module is refused because a pad is its ONLY control, so
+its lane resolves to ZERO. Quadralogical has eighteen other ranked params, which is the
+whole reason it can be promoted at all.
+
+**THE LOSERS, NAMED.** `blend_sharp` lost the mini tier to `diamond_margin` because at
 the shipped defaults (`margin 0.5`, `K 3`) the diamond is already drawn on the pad and the
 sharpening is not: a player can *see* one of them. The four selectors lost the lane budget
 to the weight model because a selector at a 46 px lane column is a chip you cannot read.
@@ -491,18 +506,29 @@ Why `surface` and not a general `face.bodyControls`: an XY pad is the only contr
 shell paints that a module could plausibly want to own, the field already exists, and a
 narrower declaration cannot be reached for by a module that just wants a bigger knob.
 
-Touches: `graph/types.ts` · `dock-faceplate-model.ts` (drop the cell) ·
-`module-face-lint.test.ts` (expect 0 dock cells for a `'body'` pad's axes — the same
-INVERTED assertion `noUserControl` uses, so the claim is falsifiable in both directions) ·
-`face-resting-text-source.test.ts` (a new `ModuleFace` field needs its permitted-role
-entry — `surface` is a STRUCTURE enum and paints nothing, like `clusterFlow`) ·
-`contract-lock.test.ts` (`FACE_FIELDS_NOT_IN_LOCK` with `why` + `coveredBy`) · a new
-deny-by-default source gate asserting a `'body'` pad's `fullViewBody` really emits
-`data-control-params` naming both axes.
+**AS BUILT**, the touched files are: `graph/types.ts` (the field) · `curated-face.ts` (the
+drop, in `curatedFace`'s dock branch and in `resolvePage`) · `shell-control-kind.ts`
+(`bodyPaintedParamIds`) · `module-face-lint.test.ts` (expect 0 dock cells for a `'body'`
+pad's axes — the same INVERTED assertion `noUserControl` uses, so the claim is falsifiable
+in both directions — plus a clause refusing `'body'` with no `face.extension`) · a new
+deny-by-default source gate, `face-xy-body-source.test.ts`, asserting in BOTH directions
+that a `'body'` pad's `fullViewBody` really emits `data-control-params` + the
+`control-<x>` anchor, and that a body emitting a pad was actually handed one.
 
-⚠ **The lane is the reason this is `surface` and not a delete.** `extBody` is dock-only. A
-mechanism that dropped the pad everywhere would resolve the lane to ZERO controls — which
-is #1974's `joystick` refusal, self-inflicted.
+⚠ **Two gates the spec predicted and that turned out NOT to need editing.**
+`face-resting-text-source.test.ts` reads the `ModuleFace` / `ModuleFaceHero` interfaces
+only, and `contract-lock.test.ts` walks TOP-LEVEL face keys — `surface` is nested inside
+`xyPads`, which already has an entry in both. The `xyPads` entry's `why` in the resting-text
+roster WAS updated, because it read *"param ids only"* and that is no longer true; a `why`
+that has quietly stopped describing its field is the drift that file warns about.
+
+⚠ **AND THE ARGUMENT FOR `surface` OVER A DELETE IS NOT THE ONE THIS SECTION FIRST GAVE.**
+It read: *"the lane is the reason — a mechanism that dropped the pad everywhere would
+resolve the lane to ZERO controls."* That is false (see §6): `laneOrder` already drops every
+pad anchor at every lane tier, so there is no lane pad to protect. The real argument is
+narrower and still holds: a per-pad enum names exactly the one control the shell paints that
+a module could plausibly need to own, whereas a general "these params live in the body" list
+would be reached for by the next module that merely wants a bigger knob.
 
 ### 9.3 The rest
 

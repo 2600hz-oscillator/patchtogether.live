@@ -3105,6 +3105,36 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // these two.
   'lumakey',
   'shapegen',
+  // QUADRALOGICAL (2026-08-22, owner design #2102) — the first face in the repo
+  // where THE PICTURE IS THE CONTROL, and the first adopter of
+  // `face.xyPads[].surface: 'body'`.
+  //
+  // Its joystick sits ON TOP of a live 2×2 preview of the four inputs it is
+  // mixing, so the pad cannot be a band cell beside a picture — the picture and
+  // the gesture are one surface. `surface: 'body'` hands both axes to the
+  // module's own `fullViewBody` and the dock renders no band cell for either.
+  //
+  // ⚠ IT IS NOT THE `joystick` (#1974) REFUSAL IN A NEW COSTUME, and the reason
+  // is NOT that the lane keeps a pad — no lane tier has ever painted one
+  // (`laneOrder` makes every declared pad's anchor dock-only; a lane knob
+  // column is 46 px and a pad is square). It is that `joystick`'s pad is its
+  // ONLY control, so its lane resolves to ZERO; this module has eighteen other
+  // ranked params, and its lane shows DIAMOND, then DIAMOND + SHARP.
+  //
+  // ⚠ THE PROMOTION IS ALSO THE FIX FOR AN UNREACHABLE CONTROL. `invert` is
+  // declared, documented, and read by the shader in BOTH keyed branches — and
+  // `QuadralogicalCard.svelte` renders nothing for it, with no CV input
+  // targeting it either. It has been unreachable since it shipped, and no gate
+  // could see it: completeness only runs over THIS SET, `contract-lock` pins
+  // that the param exists rather than that it is operable, and
+  // `module-docs-lint` REQUIRES the docs entry describing the control that does
+  // not exist. Adding the name here is what arms all three.
+  //
+  // ⚠ AND THIS ENTRY COSTS AN ATTEST, unlike `lumakey`/`shapegen` above. Four
+  // `options` rosters (the eight effect names, which reached the player only
+  // through the card's hand-rolled `<select>`) and one `curve` correction on
+  // `invert` are `params` changes, and `params` is not hash-transparent.
+  'quadralogical',
 ]);
 
 /**

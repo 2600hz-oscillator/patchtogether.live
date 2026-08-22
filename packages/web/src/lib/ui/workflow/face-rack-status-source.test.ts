@@ -226,6 +226,29 @@ const EXTENSION_BODY_ROLES: Readonly<Record<string, BodyRule>> = {
   // already documents about itself: it has been caught by a merge three rounds
   // running, and separate alphabetical insertions are separate conflict sites.
   lumakey: { role: 'picture', why: 'the luminance-key compositor\'s live preview canvas and its SCREEN switch. A KEYER exists to be composited downstream, so its body keeps the engine\'s watch mark alive while the screen is off — a lapsed mark would change what the DOWNSTREAM sees, not just the preview (#2015).' },
+  // ── THE ONE BODY THAT IS ALSO A CONTROL (2026-08-22, #2102) ──────────────
+  //
+  // ⚠ IT IS STILL A `picture`, AND THE ROLE PREDICATE IS WHY THAT IS THE HONEST
+  // ANSWER RATHER THAN A CONVENIENT ONE: this body mounts canvases, so the
+  // `status-primitive` predicate (`StatusLed` and NO canvas) would refuse it,
+  // and the role that describes what a reviewer will see on the surface is the
+  // picture one. What makes it unlike the twenty-six above is not the role but
+  // the CONTROL it carries: `face.xyPads[0].surface: 'body'` hands the joystick
+  // itself to this file, so the dock renders NO band cell for `pos_x`/`pos_y`
+  // and this surface is the only place they can be operated at the dock. That
+  // claim is checked in both directions by `face-xy-body-source.test.ts`, which
+  // is the gate this entry should be read alongside.
+  //
+  // TEXT ON THE SURFACE, exhaustively, and every item is a NAME or a caption:
+  // the four corner labels `IN1`..`IN4` (which INPUT each quadrant and each
+  // corner is — names, and the only thing distinguishing four identical
+  // quadrants), the SCREEN button's own caption, and the two `x`/`y` assign
+  // handles. ⚠ NOT on the surface, deliberately: the legacy card's
+  // `x: 0.00  y: 0.00` row, which is deleted rather than hidden — the pad's
+  // position lives in `aria-label` (this is `role="application"`, which has no
+  // `aria-valuetext`), together with the name of the input the composite
+  // currently favours, a fact the card carried only as a colour.
+  quadralogical: { role: 'picture', why: 'the 4-input XY crossfader\'s joystick field — a live 2×2 preview of the four inputs (its own `preview` port) with the diamond, the corner labels and the puck overlaid, plus its SCREEN switch. ⚠ The only body that is also a CONTROL: `face.xyPads[0].surface: \'body\'` means the dock paints no band cell for pos_x/pos_y, so this surface IS the joystick. The puck is a window onto the MIX, which is what keeps the module\'s own output on the plate after the standalone preview screen was removed. SCREEN OFF keeps the watch mark alive on a MIXER feeding two outputs (#2015).' },
   shapegen: { role: 'picture', why: 'the generative 3-D shape synthesiser\'s live preview canvas and its SCREEN switch. A GENERATOR whose `out` is the reason to patch it, so the retained watch mark is what stops a control labelled SCREEN behaving as a MUTE downstream (#2015).' },
 
   // ── STATUS — the one body whose subject is not a picture.

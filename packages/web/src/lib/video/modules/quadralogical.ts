@@ -391,6 +391,44 @@ export const EFFECT_PARAMS: Record<number, Array<{ id: 'amount' | 'param'; label
     ]),
   );
 
+/**
+ * The eight effects as a DETENT ROSTER for `edge{N}_fx` — the same eight names
+ * as `TRANSITIONS`, DERIVED from it rather than re-typed, with the per-effect
+ * control semantics from `EFFECTS` folded into each `title`.
+ *
+ * ⚠ WHY THIS EXISTS AT ALL, and it is a live defect rather than a nicety. The
+ * four `edge{N}_fx` params are `0..7 discrete` with NO `options`, so the eight
+ * names reached the player through ONE route: the hand-rolled `<select>` that
+ * `QuadralogicalCard.svelte` builds by mapping `TRANSITIONS` itself. Nothing in
+ * the CONTRACT knew the states had names, so any consumer that is not that card
+ * — a faceplate cell, the Push 2 card, the docs page — could only ever paint an
+ * anonymous eight-position dial reading `5`. This is the `sampleHold` /
+ * `moog904b` shape exactly: promote the names the module already has onto the
+ * def, and the whole platform can read them.
+ *
+ * ⚠ EXPORTED, AND THE CARD IMPORTS IT — the backdraft rule ("a control's
+ * vocabulary comes from ONE place; never re-type it in the card"). Deriving it
+ * from `TRANSITIONS` makes the stronger version of that guarantee: the roster
+ * cannot disagree with the effect table even in principle, and adding a ninth
+ * effect extends both at once.
+ *
+ * TOTAL over the param's own `0..7` span by construction — one entry per index
+ * of `TRANSITIONS`, which is also what the shader's `uEdgeFx` switch enumerates
+ * — so it needs no `optionsExhaustive`: there is no reachable value it fails to
+ * name.
+ */
+export const QUADRALOGICAL_FX_OPTIONS = TRANSITIONS.map((label, value) => {
+  const ctl = EFFECTS[value] ?? { amount: null, param: null };
+  const knobs = [ctl.amount, ctl.param].filter(Boolean).join(' + ');
+  return {
+    value,
+    label,
+    title: knobs
+      ? `${label} — this edge's two controls act as ${knobs}`
+      : `${label} — pure joystick ratio; this edge's Amt and Prm do nothing`,
+  };
+});
+
 /** The four per-edge effect slots (id prefix + human label). */
 export const EDGES = [
   { id: 'edge1', label: '1–2' },
@@ -704,26 +742,238 @@ export const quadralogicalDef: VideoModuleDef = {
     { id: 'diamond_margin', label: 'Diamond', defaultValue: DEFAULTS.diamond_margin, min: 0,  max: 1, curve: 'linear' },
     { id: 'blend_sharp',    label: 'Sharp',   defaultValue: DEFAULTS.blend_sharp,    min: 0,  max: 8, curve: 'linear' },
     // Per-edge effect selectors (discrete 0..7) + their two controls.
-    { id: 'edge1_fx',     label: '1–2 FX', defaultValue: DEFAULTS.edge1_fx,     min: 0, max: 7, curve: 'discrete' },
+    { id: 'edge1_fx',     label: '1–2 FX', defaultValue: DEFAULTS.edge1_fx,     min: 0, max: 7, curve: 'discrete', options: QUADRALOGICAL_FX_OPTIONS },
     { id: 'edge1_amount', label: '1–2 Amt',defaultValue: DEFAULTS.edge1_amount, min: 0, max: 1, curve: 'linear' },
     { id: 'edge1_param',  label: '1–2 Prm',defaultValue: DEFAULTS.edge1_param,  min: 0, max: 1, curve: 'linear' },
-    { id: 'edge2_fx',     label: '2–3 FX', defaultValue: DEFAULTS.edge2_fx,     min: 0, max: 7, curve: 'discrete' },
+    { id: 'edge2_fx',     label: '2–3 FX', defaultValue: DEFAULTS.edge2_fx,     min: 0, max: 7, curve: 'discrete', options: QUADRALOGICAL_FX_OPTIONS },
     { id: 'edge2_amount', label: '2–3 Amt',defaultValue: DEFAULTS.edge2_amount, min: 0, max: 1, curve: 'linear' },
     { id: 'edge2_param',  label: '2–3 Prm',defaultValue: DEFAULTS.edge2_param,  min: 0, max: 1, curve: 'linear' },
-    { id: 'edge3_fx',     label: '3–4 FX', defaultValue: DEFAULTS.edge3_fx,     min: 0, max: 7, curve: 'discrete' },
+    { id: 'edge3_fx',     label: '3–4 FX', defaultValue: DEFAULTS.edge3_fx,     min: 0, max: 7, curve: 'discrete', options: QUADRALOGICAL_FX_OPTIONS },
     { id: 'edge3_amount', label: '3–4 Amt',defaultValue: DEFAULTS.edge3_amount, min: 0, max: 1, curve: 'linear' },
     { id: 'edge3_param',  label: '3–4 Prm',defaultValue: DEFAULTS.edge3_param,  min: 0, max: 1, curve: 'linear' },
-    { id: 'edge4_fx',     label: '4–1 FX', defaultValue: DEFAULTS.edge4_fx,     min: 0, max: 7, curve: 'discrete' },
+    { id: 'edge4_fx',     label: '4–1 FX', defaultValue: DEFAULTS.edge4_fx,     min: 0, max: 7, curve: 'discrete', options: QUADRALOGICAL_FX_OPTIONS },
     { id: 'edge4_amount', label: '4–1 Amt',defaultValue: DEFAULTS.edge4_amount, min: 0, max: 1, curve: 'linear' },
     { id: 'edge4_param',  label: '4–1 Prm',defaultValue: DEFAULTS.edge4_param,  min: 0, max: 1, curve: 'linear' },
     // Shared chroma key colour + global key inversion.
     { id: 'keyR',           label: 'Key R',   defaultValue: DEFAULTS.keyR,           min: 0, max: 1, curve: 'linear' },
     { id: 'keyG',           label: 'Key G',   defaultValue: DEFAULTS.keyG,           min: 0, max: 1, curve: 'linear' },
     { id: 'keyB',           label: 'Key B',   defaultValue: DEFAULTS.keyB,           min: 0, max: 1, curve: 'linear' },
-    { id: 'invert',         label: 'Inv',     defaultValue: DEFAULTS.invert,         min: 0, max: 1, curve: 'linear' },
+    // ⚠ `discrete`, NOT `linear`, AND THE CHANGE IS A BUG FIX. The shader reads
+    // this as a BOOLEAN in both keyed branches (`if (invert >= 0.5)` — the
+    // CHROMA arm and the LUMA arm of `blend()`), so every value in (0, 0.5) is
+    // bit-identically "off" and every value in [0.5, 1] bit-identically "on".
+    // Declared `linear` it is a continuous rotary over a two-state switch: 200
+    // px of travel with one cliff in the middle and no way to see where the
+    // cliff is. `looksLikeToggle` derives a <Toggle> from the discrete form,
+    // which is what the control actually is.
+    //
+    // ⚠ AND UNTIL THIS FACE THERE WAS NO CONTROL FOR IT AT ALL.
+    // `QuadralogicalCard.svelte` renders nothing for `invert` — grep it — and
+    // no CV input targets it either, so a documented, shader-read control has
+    // been UNREACHABLE. No gate could see it: `module-face-lint`'s completeness
+    // sweep only runs over STRICT_FACES (this module was not in it),
+    // `contract-lock` pins that the param exists rather than that it is
+    // operable, and `module-docs-lint` REQUIRES the docs entry describing the
+    // control that does not exist. Promotion is what arms the gate.
+    { id: 'invert',         label: 'Inv',     defaultValue: DEFAULTS.invert,         min: 0, max: 1, curve: 'discrete' },
     // freeze is a hidden VRT/determinism toggle — no card control.
     { id: 'freeze',         label: 'Freeze',  defaultValue: DEFAULTS.freeze,         min: 0, max: 1, curve: 'linear' },
   ],
+
+  noUserControl: [
+    {
+      param: 'freeze',
+      writer: 'internal',
+      why:
+        'determinism toggle for deterministic capture: at >=0.5 draw() is a no-op so BOTH FBOs '
+        + '(the MIX and the 2x2 preview tile) hold their last frame. No port targets it — asserted '
+        + "by this entry's own `writer: 'internal'` clause — and no card control sets it. Ranking "
+        + 'it would put a continuous rotary over a harness hook on the faceplate of a mixer.',
+    },
+  ],
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // THE FACEPLATE — and the thing that makes it unlike every other video face
+  // in the fleet is that THE PICTURE IS THE CONTROL.
+  //
+  // WHAT IT IS FOR. QUADRALOGICAL is the only module here where the mix and the
+  // transition are the SAME GESTURE. A video mixer gives you faders; a switcher
+  // gives you buttons. This gives you a stick over a square, and where the stick
+  // is decides both WHICH inputs you see and WHICH of four independently
+  // configured blend effects is doing the combining. The verb is STEER: push to
+  // a corner for a clean cut, sit on an edge to crossfade two sources through
+  // that edge's own effect, or drop into the centre diamond for a balanced
+  // four-way composite. Everything else on the module is setup for that drag.
+  //
+  // THE TIER LADDER, read back as a sentence — and ⚠ IT IS NOT THE ONE THE
+  // RANKING SUGGESTS, because the stick never reaches a lane at all. A declared
+  // pad's anchor is dock-only by `laneOrder` (a pad is square; a lane knob
+  // column is 46 px), so at mini you get the DIAMOND — the size of the all-four
+  // zone, which is the one thing besides the stick that decides what is on
+  // screen — and at compact the diamond plus SHARP. Everything from the four
+  // effect selectors down is dock-only too.
+  //
+  // MEASURED through `curatedFace` in `quadralogical-face-model.test.ts`, never
+  // inferred from LANE_PLATE_MAX_CELLS — which is the correction ruttetra,
+  // monoglitch and reshaper each had to make independently, and which this
+  // face's own first draft needed as well.
+  //
+  // ⚠ RANKED FOR APPLICABILITY AT SPAWN, and on this module that is unusually
+  // decisive: ALL FOUR edges default to DISSOLVE, and `EFFECTS[0]` is
+  // `{ amount: null, param: null }` — so at a fresh spawn all EIGHT
+  // `edge{N}_amount`/`edge{N}_param` controls do literally nothing, and the
+  // three key colours do nothing either (no edge is CHROMA). That is 11 of 20
+  // ranked params dead on arrival, and it is what puts every one of them below
+  // the four things that are always live.
+  //
+  // ⚠ THE FOUR EDGE SLOTS RANK AS A BLOCK, and that is a finding rather than a
+  // dodge. Nothing distinguishes edge 1-2 from edge 3-4 — they are bit
+  // identically symmetric slots over the same eight effects — so any ordering
+  // among them would be fabricated semantics.
+  //
+  // `order` and `pages` DISAGREE deliberately. `order` is PRIORITY (what a
+  // shrinking tier keeps); `pages` is FUNCTION (where a value acts): the field
+  // the stick moves through, the four edges of that field, then the key the
+  // keyed effects share. Do not "fix" one to match the other.
+  face: {
+    // ⚠ MANDATORY for a video def, and counter-intuitively so: the live picture
+    // does NOT arrive through the glyph. `primaryAudioOutPortId` matches
+    // `type === 'audio'` and this def has none, so ANY other glyph literal
+    // resolves to `{kind:'static'}` and reddens module-face-lint's dead-glyph
+    // clause. The tile picture comes from `hasVideoSurface(def)` mounting
+    // VideoTileThumb — a different seam entirely, which means `'none' + blank
+    // tile` and `'none' + live thumb` look IDENTICAL from this declaration.
+    // `quadralogical-face-model.test.ts` asserts `hasVideoSurface` directly for
+    // exactly that reason.
+    glyph: 'none',
+
+    // The bespoke screen — see $lib/ui/modules/quadralogical/. It carries the
+    // joystick field itself, the four quadrant previews behind it, and the
+    // SCREEN ON/OFF switch the 2026-08-18 ruling requires of every video
+    // module. Promotion is what stops BOTH surfaces rendering
+    // `QuadralogicalCard.svelte`, so without this file the promotion would
+    // delete the pad, the picture and the switch in one move (#1928).
+    extension: 'quadralogical',
+
+    order: [
+      // ── the lane budget ──
+      // 1-2. The stick. On a mixer rank 1 is a level; here there are no levels.
+      //      The stick IS the mix and the transition, and it is the only
+      //      control whose gesture this module was built to receive. `pos_y` is
+      //      not a rank of its own — the xyPads lint REQUIRES both axes ranked
+      //      while the y axis folds into the x cell and paints none.
+      'pos_x', 'pos_y',
+      // 3. The only param besides the stick that THE PAD ITSELF DRAWS: the
+      //    yellow diamond IS `diamond_margin`, 1:1 (the drawn boundary is the
+      //    `margin` fed to quadWeights). Move it and the picture under your
+      //    cursor changes. That argument would be wrong for any module whose
+      //    pad carries no geometry.
+      'diamond_margin',
+      // 4. Its partner and the other half of the weight model: 3 says how big
+      //    the four-way zone is, 4 says how hard its edge bites. Always live at
+      //    every stick position — and it loses the compact tier to `diamond_margin`
+      //    only because the diamond is DRAWN and the sharpening is not.
+      'blend_sharp',
+      // ── dock-only from here ──
+      // 5-8. The four effect slots. Above their own amount/param controls
+      //      because a selector is the ONLY control on this module that makes
+      //      another control live at all (DISSOLVE leaves both dead).
+      'edge1_fx', 'edge2_fx', 'edge3_fx', 'edge4_fx',
+      // 9. Global, shared by all four edges — the only key control that is not
+      //    per-edge. Above the key colour because inverting is the gesture
+      //    ("keep the other side") and R/G/B is setup.
+      'invert',
+      // 10-13 / 14-17. Inert at spawn; the `param` half is strictly deader than
+      //      the `amount` half (four of the eight effects declare `param: null`
+      //      as well), so it ranks strictly lower.
+      'edge1_amount', 'edge2_amount', 'edge3_amount', 'edge4_amount',
+      'edge1_param', 'edge2_param', 'edge3_param', 'edge4_param',
+      // 18-20. Live only when some edge is CHROMA — 1 of 8 effects. The deadest
+      //      controls on the module at spawn. `keyG` ships at 1 (green-screen),
+      //      and a good default is a reason not to need the control, not a
+      //      reason to rank it.
+      'keyR', 'keyG', 'keyB',
+    ],
+
+    // THE JOYSTICK, and it is the first pad in the repo the SHELL does not
+    // paint. `surface: 'body'` hands both axes to the `fullViewBody` above,
+    // because on this module the pad sits ON TOP of a live 2x2 preview of the
+    // four inputs it is mixing — the picture and the gesture are one surface,
+    // which no band cell can express. Ranges come off each axis's own ParamDef.
+    //
+    // ⚠ THE LANE IS UNAFFECTED, AND NOT FOR THE REASON THE FIRST DRAFT OF THIS
+    // COMMENT GAVE. It claimed the lane keeps a generic `XyPad`, which the
+    // face-model test then disproved: `laneOrder` ALREADY makes every declared
+    // pad's anchor dock-only, because a pad is square and a lane knob column is
+    // 46 px. So no lane tier has ever painted one, and `surface` changes only
+    // WHICH DOCK SURFACE paints it.
+    //
+    // ⚠ WHICH MAKES THE LANE LADDER SOMETHING TO CHECK RATHER THAN ASSUME: with
+    // the stick dock-only, mini shows DIAMOND and compact shows DIAMOND +
+    // SHARP. That is the honest lane for this module — the two params that
+    // decide how the field behaves — and it is measured in
+    // `quadralogical-face-model.test.ts`, never inferred here. The `joystick`
+    // (#1974) refusal does NOT apply: that module's pad is its only control, so
+    // its lane resolves to zero; this one has eighteen other ranked params.
+    xyPads: [
+      { x: 'pos_x', y: 'pos_y', label: 'joystick', surface: 'body' },
+    ],
+
+    pages: [
+      // 1 — THE FIELD: the two params the PAD DRAWS, directly under the pad
+      // that draws them.
+      //
+      // ⚠ `pos_x`/`pos_y` ARE LISTED HERE AND NEVER RENDER HERE. `resolvePage`
+      // drops a `surface: 'body'` pad's axes at the dock (the platform's job,
+      // not the author's — the same correction the partner-axis fold records).
+      // They are listed because a ranked key with no page falls into the
+      // defensive '__unpaged' band, which is a different and wrong faceplate;
+      // and because if the body declaration is ever dropped they degrade
+      // gracefully back into this band as a generic pad. (The dx7 hero
+      // precedent, one field over.)
+      { id: 'field', label: 'field',
+        controls: ['pos_x', 'pos_y', 'diamond_margin', 'blend_sharp'] },
+
+      // 2 — THE FOUR EDGES. ONE band, four CLUSTERS, SIDE BY SIDE.
+      //
+      // ⚠ `clusterFlow: 'row'` IS LOAD-BEARING, not a look. Four separate BANDS
+      // cannot produce this row: an fx selector is a 'wide' cell, so
+      // `bandIsPackable` makes every band holding one SOLO, and the four would
+      // stack as four full-width rows. One band with four clusters plus the
+      // row flow is the only mechanism that puts them beside each other, and it
+      // wraps to 2x2 at a narrow pane — which is the layout the legacy card
+      // already uses. It also turns the CONSOLE GRID off for this band by
+      // construction (`consoleGridCols` returns null for a row flow), which is
+      // correct: these four are PEERS, not channels of one console.
+      //
+      // ⚠ THE CLUSTER LABELS ARE THE INDEX CYCLE, NOT GEOMETRIC ADJACENCY.
+      // Edge 2 is in2<->in3 = TR<->BL, a DIAGONAL of the pad (EDGE_PAIRS). Do
+      // not relabel them to look adjacent.
+      { id: 'edges', label: 'edges', clusterFlow: 'row',
+        controls: [
+          'edge1_fx', 'edge1_amount', 'edge1_param',
+          'edge2_fx', 'edge2_amount', 'edge2_param',
+          'edge3_fx', 'edge3_amount', 'edge3_param',
+          'edge4_fx', 'edge4_amount', 'edge4_param',
+        ],
+        clusters: [
+          { label: '1–2', controls: ['edge1_fx', 'edge1_amount', 'edge1_param'] },
+          { label: '2–3', controls: ['edge2_fx', 'edge2_amount', 'edge2_param'] },
+          { label: '3–4', controls: ['edge3_fx', 'edge3_amount', 'edge3_param'] },
+          { label: '4–1', controls: ['edge4_fx', 'edge4_amount', 'edge4_param'] },
+        ] },
+
+      // 3 — THE SHARED KEY. Everything here is GLOBAL across the four edges,
+      // which is exactly why it is not four more cells inside band 2.
+      { id: 'key', label: 'key', controls: ['invert', 'keyR', 'keyG', 'keyB'] },
+    ],
+
+    // No `title`, no `hint`, no band hints, no hero — plain labels on the face;
+    // the explanation is one right-click away. THREE bands, so no tab rail
+    // (DOCK_TAB_MIN_BANDS = 7), and that is REQUIRED rather than a shortfall: a
+    // rail shows ONE band at a time, so a tabbed face would put at most one
+    // edge box on screen and contradict the whole layout.
+  },
 
   docs: {
     explanation: `QUADRALOGICAL is a four-input video mixer driven by a single XY joystick. The pad's position (pos_x, pos_y) is mapped over the unit square to four CORNER weights — one per input: in1 top-left, in2 top-right, in3 bottom-left, in4 bottom-right. A bilinear base gives every corner (one input solo) and every edge (a 2-input blend) for free; outside the central yellow DIAMOND the weights are power-sharpened toward a crisp 2-input region, while inside the diamond all four inputs stay balanced (the all-4 composite zone). The model is "logical" because each of the FOUR edges of the joystick cycle (1-2, 2-3, 3-4, 4-1) carries its OWN independently-selectable blend effect (DISSOLVE / ADD / MULTIPLY / WIPE / CHROMA / LUMA / DIFF / IRIS) run on that edge's two adjacent inputs, and the four edge-blends are layered weighted by how active each pair is. Unpatched inputs normal down the chain Eurorack-style (in4 falls to in3 to in2 to in1), so a single source never blends against black. Usage: patch one to four video sources into in1-in4, drag the joystick to a corner for a clean cut to one input, to an edge to crossfade/wipe two of them with that edge's effect, or into the diamond for a four-way composite; set each edge's effect with its FX selector and CV-modulate the joystick or per-edge controls for animated transitions.`,
