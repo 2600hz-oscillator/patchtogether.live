@@ -25,6 +25,21 @@
 import { test, expect } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 import type { Page } from '@playwright/test';
+import { waitFrames } from '../_helpers/frames';
+
+/**
+ * The window a SUSTAINED-NEGATIVE gets: "this note must NOT bind / must NOT
+ * toggle". Every such check here is preceded by an assertion that is ALREADY
+ * TRUE when the note is injected, so an auto-retrying poll converges instantly
+ * and covers nothing — the window itself is the assertion, and it is the only
+ * thing giving a would-be re-bind time to happen.
+ *
+ * FRAMES, not ms, for the usual reason: the 30-40 ms these sites used to spend
+ * is ~2 frames on a local GPU and about a QUARTER of one under CI's SwiftShader
+ * (7.9 fps measured), so the negative assertion was ~8× weaker on the machine
+ * that actually runs it. Four frames is four Svelte flush boundaries on both.
+ */
+const NO_REBIND_FRAMES = 4;
 
 test.describe.configure({ mode: 'parallel' });
 
@@ -146,14 +161,19 @@ test('MIDI assign: a gate INPUT row binds a NOTE (binding materializes + bound s
   await expect(gateRow).toHaveAttribute('data-gate-midi-bound', 'true');
 
   // A NOTE on a DIFFERENT note must NOT bind / re-capture (binding stays note 48).
+  // ⚠ The poll below is ALREADY TRUE when the note is injected, so it converges
+  // instantly and proves nothing on its own — the WINDOW is the assertion. That
+  // window has to be renderer-independent: 30 ms was ~2 frames locally and about
+  // a QUARTER of one under CI's SwiftShader (7.9 fps measured), i.e. on CI the
+  // re-capture had essentially no chance to happen before the check.
   await injectNote(page, 0, 50, 100);
-  await page.waitForTimeout(30);
+  await waitFrames(page, NO_REBIND_FRAMES);
   await expect.poll(() => readBinding(page, 'ad-1:gate')).toMatchObject({ kind: 'note', note: 48 });
 
   // NOTE-off must not error (the momentary release path is wired even for a
   // paramTarget-less gate, where driving the engine is a documented no-op).
   await injectNote(page, 0, 48, 0);
-  await page.waitForTimeout(30);
+  await waitFrames(page, NO_REBIND_FRAMES);
 
   expect(errors, `page errors: ${errors.join('; ')}`).toEqual([]);
 });
@@ -185,8 +205,10 @@ test('MIDI assign: a card BUTTON (DRUMSEQZ PLAY) binds a NOTE that TOGGLES the p
   await expect(card.locator('[data-testid="drumseqz-play-ds-1"]').locator('xpath=ancestor::*[contains(@class,"midi-assign-button")]').locator('.midi-badge')).toContainText('NOTE 60');
 
   // A NOTE-off does NOT re-toggle (toggle fires on the press edge only).
+  // Same sustained-negative shape as above: the window IS the assertion, so it
+  // is counted in frames rather than milliseconds.
   await injectNote(page, 0, 60, 0);
-  await page.waitForTimeout(30);
+  await waitFrames(page, NO_REBIND_FRAMES);
   expect(await readParam(page, 'ds-1', 'isPlaying')).toBe(1);
 
   // A second NOTE-on toggles back off.
@@ -195,7 +217,7 @@ test('MIDI assign: a card BUTTON (DRUMSEQZ PLAY) binds a NOTE that TOGGLES the p
 
   // A NOTE on a DIFFERENT note must NOT toggle.
   await injectNote(page, 0, 61, 110);
-  await page.waitForTimeout(40);
+  await waitFrames(page, NO_REBIND_FRAMES);
   expect(await readParam(page, 'ds-1', 'isPlaying')).toBe(0);
 
   // Forget the binding → subsequent NOTE-ons no longer drive the toggle.
@@ -204,7 +226,7 @@ test('MIDI assign: a card BUTTON (DRUMSEQZ PLAY) binds a NOTE that TOGGLES the p
   await menu.locator('[data-testid="ctx-midi-forget"]').click();
   await expect(menu).toBeHidden();
   await injectNote(page, 0, 60, 110);
-  await page.waitForTimeout(40);
+  await waitFrames(page, NO_REBIND_FRAMES);
   expect(await readParam(page, 'ds-1', 'isPlaying')).toBe(0);
 
   expect(errors, `page errors: ${errors.join('; ')}`).toEqual([]);
