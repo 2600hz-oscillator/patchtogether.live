@@ -17,6 +17,28 @@
 // is a real video→audio bridge that emits a measurable DC offset).
 
 import { test, expect, type Page } from '@playwright/test';
+import { SLOW_BOOT_TEST_TIMEOUT_MS } from '../_helpers/boot-budget';
+
+// ⚠ THE DEFAULT 30 s TEST BUDGET WAS THE BOUND THAT FAILED, NOT ANY WAIT IN
+// HERE. Measured on CI shard 4 (run 32601799338): the failure surfaced as
+// `page.waitForTimeout: Test timeout of 30000ms exceeded` at the 800 ms pacing
+// wait — which is NOT that wait being slow. Playwright attributes the TEST
+// budget's expiry to whatever call is in flight when it runs out, so an 800 ms
+// wait reported at 30 s means the ~29 s before it had already consumed the
+// budget: a `goto` + `networkidle` + a materialization `waitForFunction` that
+// may take its full 8 s + two round-trips, on a contended 2-core runner
+// running ten shards in parallel.
+//
+// ⚠ AND THIS TEST IS NOT A FLAKE — checking that is what stopped it being
+// PARKED. It has three commits since 2026-05-30 and not one is a flake fix;
+// the two that touched it were unrelated refactors. A correct, stable test
+// that is merely under-budgeted looks identical to a flaky one FROM THE RED
+// ALONE, and the two need opposite responses: parking this would have removed
+// the only LIVE-ENGINE leg of a shipped user-visible bug ("I patched a cable
+// but no signal") to work around a runner-speed problem with a one-line fix.
+// The unit and property tests named in the header cover the reconciler's
+// logic; neither one drives the real browser path this spec exists for.
+test.describe.configure({ timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
 
 // Same constants as nibbles-cv-scope.spec.ts — see that file for the
 // rationale. length_cv = (length - 59.5) / 59.5; at length=119 → CV=+1.0.

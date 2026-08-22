@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "webglContentHash": "186453598b8f73658ec741aab1ee4c55cee450835b60f156ed3b4e33445fa6ee",
+  "attestedAt": "2026-08-22T22:34:24.346Z",
+  "attestedBy": "patchtogether-maintainer",
+  "gitHeadAtAttest": "a998f77386d89ccbf2f1d40184c5bd8f84aeb53c",
+  "playwrightVersion": "1.50.0",
+  "os": "darwin 25.4.0 (arm64)",
+  "machineClass": "local-trusted-gpu-workstation",
+  "preflight": {
+    "samples": 7,
+    "windowMs": 10204,
+    "maxForeignCpu": 1.3,
+    "thresholdCpu": 25,
+    "load1": 2.34765625,
+    "cores": 10
+  },
+  "gpu": "ANGLE (Apple, ANGLE Metal Renderer: Apple M5, Unspecified Version)",
+  "appServer": {
+    "url": "http://127.0.0.1:54354",
+    "mode": "dev",
+    "root": "/Users/2600hz/Documents/workspace/inet.modular/.claude/worktrees/agent-aa158d3335dfe4159",
+    "commit": "a998f77386d89ccbf2f1d40184c5bd8f84aeb53c"
+  },
+  "repeatEach": 1,
+  "suites": {
+    "A-heavy": {
+      "specFiles": 60,
+      "passed": 225,
+      "failed": 0,
+      "flaky": 0,
+      "skipped": 5,
+      "flakyDetails": []
+    },
+    "A-serial": {
+      "specFiles": 6,
+      "passed": 35,
+      "failed": 0,
+      "flaky": 1,
+      "skipped": 1,
+      "flakyDetails": [
+        {
+          "test": "PICTUREBOX(bright-top image) -> OUTPUT shows bright on top",
+          "file": "video-orientation.spec.ts",
+          "firstError": "Error: video-out-canvas: THE SOURCE NEVER PRODUCED BRIGHT CONTENT (top=0 bottom=0 bright-pixel total=0, adaptive threshold luma>45.0 from frame maxLuma=13.3, floor 45 > background 20). This is a FIXTURE-READINESS failure, NOT an orientation failure — there is nothing in the frame to be the right way up. Look at whether the source actually loaded (the injected image / video / shader), not at flips,"
+        }
+      ]
+    },
+    "B-leakers": {
+      "specFiles": 4,
+      "passed": 8,
+      "failed": 0,
+      "flaky": 0,
+      "skipped": 0,
+      "flakyDetails": []
+    },
+    "C-camera": {
+      "specFiles": 1,
+      "passed": 1,
+      "failed": 0,
+      "flaky": 0,
+      "skipped": 0,
+      "flakyDetails": []
+    }
+  },
+  "durationSec": 276
+}
