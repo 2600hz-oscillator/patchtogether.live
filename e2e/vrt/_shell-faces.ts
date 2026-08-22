@@ -2201,6 +2201,82 @@ export const FACES = [
       + 'constant. Patch a source into A and that argument dies: the shape set becomes a function '
       + 'of the incoming raster.',
   },
+  // ── BATCH 22 · GROUP 4 — the video thin tail, the REMAINDER ───────────────
+  //
+  // All four are `pages: 1`: none of the four faces declares `pages`, so the
+  // dock renders ONE unlabelled band on each. All thirteen params across the
+  // four are declared `fader`, so every scene here is a fader face.
+  //
+  // ⚠ ALL FOUR ARE UNCONDITIONALLY BLACK WITH NOTHING PATCHED, which is a
+  // stronger determinism argument than group 1's and worth stating once here
+  // rather than four times below: each of the four fragment shaders opens with
+  // an unpatched-input guard that writes `vec4(0,0,0,1)` (V-MIXER's is the same
+  // thing spelled as a sum of four zeroed samplers). None declares a time
+  // uniform, a ping-pong, an accumulator or an RNG. So no `simPin` and no
+  // `freeze` param is needed on any of them — the freeze write the harness
+  // performs is a NO-OP on all four defs, deliberately.
+  {
+    type: 'mapper',
+    pages: 1,
+    videoFaceWhy:
+      'a VIDEO module, so it must boot into the video zone rather than a mixer channel column — '
+      + 'without this field bootWithFace waits out the full 90 s test timeout for a column '
+      + 'membership a video node never acquires. Both scenes also carry a live picture: the '
+      + 'compact tile paints a VideoTileThumb through hasVideoSurface, and the dock body is the '
+      + "module's own fullViewBody extension (the matte preview plus its SCREEN switch) — a "
+      + 'surface MapperCard.svelte never had, so this scene is the FIRST pixel record of what '
+      + 'this module looks like on a faceplate. Stateless per frame by the def\'s own header, and '
+      + 'INTENTIONALLY a black hole when half-patched: with either VID or KEY missing the shader '
+      + 'returns solid black before it samples anything, so an unpatched capture is black by '
+      + 'construction and identical frame to frame.',
+  },
+  {
+    type: 'destructor',
+    pages: 1,
+    videoFaceWhy:
+      'a VIDEO module, so it must boot into the video zone rather than a mixer channel column — '
+      + 'without this field bootWithFace waits out the full 90 s test timeout for a column '
+      + 'membership a video node never acquires. Both scenes also carry a live picture: the '
+      + 'compact tile paints a VideoTileThumb through hasVideoSurface, and the dock body is the '
+      + "module's own fullViewBody extension (the mangled preview plus its SCREEN switch) — a "
+      + 'surface DestructorCard.svelte never had. ⚠ ITS SCANLINE GRID IS NOT A CLOCK, which is '
+      + 'the one thing that could make this scene look animated: `step(0.5, fract(vUv.y * 240.0))` '
+      + 'is a function of the fragment coordinate alone, so the 240-band pattern is fixed in '
+      + 'space rather than scrolling. With nothing patched into `in` the shader returns solid '
+      + 'black before any of that runs.',
+  },
+  {
+    type: 'luma',
+    pages: 1,
+    videoFaceWhy:
+      'a VIDEO module, so it must boot into the video zone rather than a mixer channel column — '
+      + 'without this field bootWithFace waits out the full 90 s test timeout for a column '
+      + 'membership a video node never acquires. Both scenes also carry a live picture: the '
+      + 'compact tile paints a VideoTileThumb through hasVideoSurface, and the dock body is the '
+      + "module's own fullViewBody extension (the graded preview plus its SCREEN switch) — a "
+      + 'surface LumaCard.svelte never had. ⚠ NOT `lumakey`, three entries up: that is the '
+      + 'two-input compositor, this is the single-input tone processor, and the def carries a '
+      + 'header about the confusion. The transfer is a per-texel chain of gamma, contrast, '
+      + 'posterize and bias re-applied as a luma ratio — no clock, no history — and at the '
+      + 'shipped defaults it is a BIT-EXACT identity, so an unpatched capture is the '
+      + 'unpatched-input branch\'s solid black either way.',
+  },
+  {
+    type: 'videoMixer',
+    pages: 1,
+    videoFaceWhy:
+      'a VIDEO module, so it must boot into the video zone rather than a mixer channel column — '
+      + 'without this field bootWithFace waits out the full 90 s test timeout for a column '
+      + 'membership a video node never acquires. Both scenes also carry a live picture: the '
+      + 'compact tile paints a VideoTileThumb through hasVideoSurface, and the dock body is the '
+      + "module's own fullViewBody extension (the composite preview plus its SCREEN switch) — a "
+      + 'surface VideoMixerCard.svelte never had. ⚠ ITS UNPATCHED BLACK COMES FROM A SENTINEL, '
+      + 'not from an early return: `sampleOrZero` contributes vec3(0) per unbound input, and the '
+      + 'def\'s own comment records that binding its OWN output texture as the spare sampler was '
+      + 'rejected because that is a GL feedback loop producing garbage. So with nothing patched '
+      + 'the sum is exactly zero and the frame is black, deterministically — and it would NOT '
+      + 'have been under the rejected design.',
+  },
 ] as const;
 
 /**

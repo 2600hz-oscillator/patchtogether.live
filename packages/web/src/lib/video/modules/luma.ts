@@ -132,6 +132,108 @@ export const lumaDef: VideoModuleDef = {
     { id: 'bias',            label: 'Bias',   defaultValue: DEFAULTS.bias,            min: -0.5, max: 0.5,  curve: 'linear' },
   ],
 
+  // ── FACE (batch 22 · group 4) ─────────────────────────────────────────────
+  //
+  // WHAT LUMA IS FOR: it is a TRANSFER CURVE over brightness that PRESERVES
+  // CHROMA. Every stage runs on the Rec. 601 luma alone and the result is
+  // re-applied to RGB as a RATIO, so hue and saturation come out untouched
+  // while tonality moves. Its siblings do neighbouring things — `lumakey`
+  // COMPOSITES on luma, `colourofmagic` works in other colourspaces — and the
+  // thing only this one does is grade the tone curve without touching colour.
+  // The verb is GRADE.
+  //
+  // ⚠ THE FINDING: THIS MODULE SHIPS AS A BIT-EXACT IDENTITY. All four defaults
+  // are their own no-ops — gamma 1 (`pow(l, 1/1)`), cntr 1 (`(l-0.5)*1+0.5`),
+  // post 16 (the shader's explicit `levels >= 16.0 ? contrastLuma : …` TRUE
+  // BYPASS branch, F-L2) and bias 0 — so a fresh LUMA passes the picture
+  // through untouched. That is deliberate and documented, and it is exactly why
+  // the face needs the dock PICTURE: with every control at a no-op, the frame
+  // is the only thing that can tell a player whether the module is doing
+  // anything at all.
+  //
+  // THE TIER LADDER, read back as a sentence: at the smallest tier you get
+  // GAMMA — the module's identity and its trap, because it is Levels-style
+  // INVERSE gamma, so values ABOVE 1 BRIGHTEN midtones where every display-gamma
+  // control the player has met darkens them. Add one and you get CNTR, the only
+  // control with authority over the WHOLE curve at once (at 0 the entire picture
+  // collapses to mid-grey). Then POST, which is ranked above BIAS because it is
+  // the only control that leaves the continuous tonal domain — it changes the
+  // KIND of image (hard bands) rather than its position. BIAS is last: a single
+  // additive offset, the narrowest authority on the plate.
+  //
+  // ⚠ `order` AND SIGNAL ORDER AGREE HERE, and that is worth stating rather
+  // than leaving to coincidence: the shader chain is gamma → contrast →
+  // posterize → bias, and the priority argument above lands on the same
+  // sequence for independent reasons. Nothing is being hidden by the agreement.
+  //
+  // ⚠ `posterizeLevels` WAS `curve: 'discrete'` ON THE DEF AND `curve="linear"`
+  // ON THE CARD, and that disagreement is a LIVE DEFECT rather than a cosmetic
+  // one: `NeonFader` really does read the prop (`if (curve === 'discrete')
+  // return Math.round(...)`, NeonFader.svelte:250), so the card was writing
+  // NON-INTEGER values — 7.3 — into a param the def declares to have fifteen
+  // positions and nothing between them. The shader floors them
+  // (`max(2, floor(u + 0.5))`) so the picture looked right, and every
+  // def-reading gate was blind because the def was the CORRECT side. Meanwhile
+  // this param's own CV port declares `cvScale: { mode: 'discrete' }`, so the
+  // CABLE path quantized and the KNOB path did not — the same value arriving by
+  // two routes with two different grids. Fixed in this diff, card-side, one
+  // word. This is the #2090 class with the polarity reversed: there the DEF was
+  // wrong and the fix was REFUSED because no consumer read the field; here the
+  // CARD is wrong and the consumer demonstrably reads it.
+  //
+  // ⚠ AND IT IS THE ONE CELL ON THIS PLATE THAT IS NOT A FADER, which is a face
+  // decision rather than an omission. `module-face-lint` refuses
+  // `paramCells['posterizeLevels'] = 'fader'` outright — "a throw needs a
+  // CONTINUOUS param" — and the refusal is right: a throw's affordance says
+  // ANYWHERE ON THIS SCALE, and this param has no anywhere. Undeclared, it
+  // resolves to the shell's default KNOB, which snaps to the integer steps
+  // (`knob-conic-model.ts:71`). So the face deliberately paints three throws and
+  // one dial, and the dial IS the tell: the only control here that is not
+  // continuous is the only one that does not look continuous. The card said the
+  // opposite with all four.
+  face: {
+    order: ['gamma', 'contrast', 'posterizeLevels', 'bias'],
+
+    // ⚠ NO `pages`. Four stages of ONE transfer curve are a single honest band
+    // — far below DOCK_TAB_MIN_BANDS and below DOCK_ROW_MAX_CONTROLS. Splitting
+    // them by stage would buy four headings over four faders and describe the
+    // shader's line order rather than the module.
+
+    // ⚠ FADERS, NOT KNOBS — the parity-critical declaration. `LumaCard.svelte`
+    // draws all four with `NeonFader`, and nothing in a ParamDef separates "a
+    // level" from any other continuous scalar, so an undeclared face resolves
+    // them to KNOBS and the promotion silently substitutes dials for throws.
+    // ⚠ NO DEF-READING GATE CAN SEE THAT — they all read this same def.
+    // ⚠ AND HERE IT WOULD ALSO FALSIFY SHIPPED PROSE: `docs.controls` names
+    // them as "fader" in their own first words ("Gamma fader — …"), so a silent
+    // swap would leave the documentation describing a control that no longer
+    // exists, with every def-reading gate green.
+    //
+    // ⚠ `posterizeLevels` IS DELIBERATELY ABSENT — see the note above. It is
+    // `discrete 2..16`, module-face-lint refuses a throw over a discrete param,
+    // and the shell's default KNOB (which snaps to the steps) is the honest
+    // primitive for it. `docs.controls.posterizeLevels` is re-worded in this
+    // diff to stop calling it a fader.
+    paramCells: { gamma: 'fader', contrast: 'fader', bias: 'fader' },
+
+    // ⚠ NO `bareCells`. One unlabelled band, so no section heading exists to
+    // make a caption redundant, and `Gamma`/`Cntr`/`Post`/`Bias` are the only
+    // thing separating four identical throws — the tidyVco side of the
+    // per-control-label ruling, not the mixmstrs side.
+
+    // ⚠ MANDATORY FOR A VIDEO DEF — no `type: 'audio'` output here, so
+    // `primaryAudioOutPortId` is null and any other glyph literal falls through
+    // `glyphBinding` to a dead `{kind:'static'}` that reddens module-face-lint.
+    // The live picture arrives from `hasVideoSurface(def)` at the lane and the
+    // `fullViewBody` extension at the dock — assert THAT, never this.
+    glyph: 'none',
+
+    // SCREEN ON/OFF arrives through this slot (#1928). An ADDITION rather than a
+    // port: `LumaCard.svelte` has no preview to collapse.
+    // See `$lib/ui/modules/luma/shell-extension.ts`.
+    extension: 'luma',
+  },
+
   docs: {
     explanation: "luma is a luminance-domain color processor for a single video stream. It reads the Rec. 601 brightness (0.299/0.587/0.114) of every pixel, runs that luma through a chain of gamma, contrast (scaled around the 0.5 midpoint), posterize (quantize to N steps; 16 = off), then an additive bias, and finally re-applies the new-luma/old-luma ratio to all three RGB channels so chroma (hue and saturation) is preserved while only tonality changes. Gamma uses the Levels-style INVERSE convention pow(luma, 1/gamma): values above 1 brighten midtones, below 1 darken them (this is the Photoshop-Levels convention, not display-gamma out = in^gamma). Patch a video source into in and use it to crush blacks, lift gamma, flatten the image into hard tonal bands, or shift overall brightness; with the defaults (gamma 1, cntr 1, post 16, bias 0) the transfer is a true identity — the picture passes through untouched. Note this is NOT a keyer — for foreground/background luma compositing use lumakey instead.",
     inputs: {
@@ -147,7 +249,7 @@ export const lumaDef: VideoModuleDef = {
     controls: {
       gamma: "Gamma fader — gamma correction of the luma via pow(luma, 1/gamma), range 0.1 to 3.0; 1.0 is linear/untouched, below 1 darkens midtones, above 1 brightens them. NOTE the convention: this is the Levels-style INVERSE gamma (like Photoshop's Levels middle slider), NOT display-gamma out = in^gamma — so gamma 2 BRIGHTENS a mid-gray (0.5 -> ~0.71), it does not darken it to 0.25.",
       contrast: "Cntr fader — contrast scaling of the luma around 0.5, range 0 to 2; 1.0 is pristine, 0 flattens everything to mid-grey, values above 1 push tones apart for harder contrast.",
-      posterizeLevels: "Post fader — number of luma quantization steps, range 2 to 16; 16 (the default and max) is a TRUE BYPASS (no quantization at all, so the default transfer is identity), 15 and below quantize with floor(luma*N)/(N-1), and 2 crushes the image to two hard tonal bands.",
+      posterizeLevels: "Post — the number of luma quantization steps, range 2 to 16 in whole steps (it is the one DISCRETE control here, so it snaps: there is no 7.5). 16 (the default and max) is a TRUE BYPASS (no quantization at all, so the default transfer is identity), 15 and below quantize with floor(luma*N)/(N-1), and 2 crushes the image to two hard tonal bands.",
       bias: "Bias fader — a final additive luma offset, range -0.5 to 0.5; negative depresses overall brightness, positive lifts it, 0 leaves it unchanged.",
     },
   },

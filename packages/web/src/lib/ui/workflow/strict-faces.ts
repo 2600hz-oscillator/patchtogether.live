@@ -3105,6 +3105,95 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // these two.
   'lumakey',
   'shapegen',
+
+  // ── BATCH 22 · GROUP 4 — the video thin tail, THE REMAINDER ───────────────
+  //
+  // Four video processors with 1-4 params, promoted together. Every one of the
+  // thirteen params is a `NeonFader` on its card, so all four declare
+  // `paramCells: {... 'fader'}` — the same parity-critical declaration group 1
+  // established, for the same reason: nothing in a ParamDef separates "a level"
+  // from any other continuous scalar, so an UNDECLARED face resolves a fader to
+  // a KNOB and the promotion silently substitutes a dial for a throw, with
+  // `contract-lock`, `module-docs-lint` and the range assertions all blind
+  // because they read the def and the def says nothing about the primitive.
+  //
+  // ⚠ ON `luma` AND `videoMixer` THE SILENT SWAP WOULD ALSO HAVE FALSIFIED
+  // SHIPPED PROSE. Every entry in both defs' `docs.controls` NAMES the
+  // primitive in its first two words — "Gamma fader — …", "A1 fader (linear
+  // 0..1, default 1.0) …" — so a promotion that turned them into knobs would
+  // have left the shipped documentation describing controls that no longer
+  // exist, with every def-reading gate green. That is the #2009 lesson, and it
+  // is the second time this batch has hit it (colorizer, group 1).
+  //
+  // ⚠ NONE OF THESE FOUR CARDS DRAWS A PREVIEW — and that makes this group
+  // different from every video face before it. `MapperCard` / `DestructorCard`
+  // / `LumaCard` / `VideoMixerCard` are each a title, a PatchPanel and a fader
+  // row: no canvas anywhere. So each new `fullViewBody` is a pure ADDITION
+  // rather than the usual port-a-card-affordance, and on all four the PICTURE —
+  // not the control layout — is the reason the promotion is worth doing:
+  //   * `mapper` has ONE param and would otherwise fail the merit test. Its
+  //     whole output is a MATTE DECISION and "did the key cut where I wanted?"
+  //     is unanswerable from a fader reading 0.5.
+  //   * `destructor`'s four faders are DEGRADATION AMOUNTS whose only
+  //     description is a look.
+  //   * `luma` ships a BIT-EXACT IDENTITY (see below), so the frame is the only
+  //     thing that distinguishes graded from untouched.
+  //   * `videoMixer` SUMS — four faders with no per-channel observable at all.
+  // Recorded so nobody later "restores parity" by deleting them.
+  //
+  // ⚠ TWO REAL FINDINGS, one per module, neither previously written down:
+  //
+  //   * `videoMixer` SHIPS THREE OF FOUR CHANNELS BIT-EXACTLY DEAD. `amount1`
+  //     defaults to 1.0 and `amount2/3/4` to 0.0, and the shader multiplies each
+  //     sampled input by its amount — so patching a source into in2/in3/in4 on a
+  //     fresh node produces EXACTLY the previous frame. It is a defensible
+  //     default (opening all four sums to 4x and clips to white on contact) but
+  //     nothing in the product said so. It is also the rank-1 argument: A1 is
+  //     the only fader that does anything before the player touches something.
+  //
+  //   * `luma` SHIPS AS A BIT-EXACT IDENTITY. All four defaults are their own
+  //     no-ops, including the deliberate `levels >= 16.0` TRUE BYPASS branch
+  //     (F-L2). Documented on the def; now it has a surface that can show it.
+  //
+  // ⚠ AND A THIRD, IN A COMMENT RATHER THAN A CONTROL: `destructor.ts`'s FILE
+  // HEADER said `mangle` "scales all three" effects and described `posterize`
+  // as "0 = none, 1 = harshest". Both are backwards. `FRAG_SRC` scales only
+  // `uShift`/`uScanline` by `k`, and `levels = mix(2, 32, uPosterize)` makes 0
+  // the HARSHEST. The shipped `docs` were already correct on both counts, so
+  // the two prose surfaces contradicted each other. Corrected with this face —
+  // comments, so no attest and no contract move.
+  //
+  // ⚠ `luma.posterizeLevels` IS THE #2090 CLASS WITH THE POLARITY REVERSED. The
+  // def says `curve: 'discrete'` (2..16) and `LumaCard.svelte` passes
+  // `curve="linear"`. On #2090 the DEF was the wrong side and the fix was
+  // REFUSED because no consumer read the field; here the CARD is the wrong side
+  // and the faceplate's consumer DOES read the def — the shader itself floors
+  // the uniform, so fifteen positions with nothing between them is the truth.
+  // Promotion resolves it in the def's favour with no def edit and no
+  // contract-lock move.
+  //
+  // NO `pages`, NO `hero`, NO `bareCells`, NO readout and NO sidebar on any of
+  // the four: each is one honest band, and the 2026-08-19 rulings removed the
+  // other fields. None is a MONITOR-mode module — `hideControls` lives on five
+  // legacy cards (`ruttetra`, `monoglitch`, `milkdrop`, `reshaper`, `graphicEq`)
+  // and none of these four is among them, so inventing it here would be adding
+  // an affordance rather than preserving one.
+  //
+  // ⚠ SCREEN OFF KEEPS THE WATCH MARK ON ALL FOUR, AND ALL FOUR ARE STATELESS —
+  // so unlike group 1, the reason is the OUTPUT every time and there is no
+  // accumulator case in this group. Do not copy `vdelay`'s or `milkdrop`'s
+  // comment onto any of them. What differs is HOW WIDE a stalled pull reaches:
+  // `mapper` produces a matte something else composites, `luma` and
+  // `destructor` sit mid-chain, and `videoMixer` is the JOIN — a stalled sum
+  // blacks out up to FOUR upstream chains' visible result at once.
+  //
+  // ⚠ ZERO ATTEST for all four: `face` and `paramCells` are stripped by
+  // `scripts/attest-code-basis.ts`, comments are stripped with them, no def's
+  // `params` are touched, and the four bodies + extensions live under `ui/`.
+  'mapper',
+  'destructor',
+  'luma',
+  'videoMixer',
 ]);
 
 /**
