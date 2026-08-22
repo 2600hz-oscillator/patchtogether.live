@@ -228,6 +228,17 @@ const EXTENSION_BODY_ROLES: Readonly<Record<string, BodyRule>> = {
   lumakey: { role: 'picture', why: 'the luminance-key compositor\'s live preview canvas and its SCREEN switch. A KEYER exists to be composited downstream, so its body keeps the engine\'s watch mark alive while the screen is off — a lapsed mark would change what the DOWNSTREAM sees, not just the preview (#2015).' },
   shapegen: { role: 'picture', why: 'the generative 3-D shape synthesiser\'s live preview canvas and its SCREEN switch. A GENERATOR whose `out` is the reason to patch it, so the retained watch mark is what stops a control labelled SCREEN behaving as a MUTE downstream (#2015).' },
 
+  // ── BATCH 22 · GROUP 3 — the screens ──────────────────────────────────────
+  //
+  // All four PICTURES: a live preview canvas plus ONE control caption (the
+  // SCREEN button). None of the four cards mounts `hideControls`, so none of
+  // these bodies declares a MONITOR toggle or a resize grip, and nothing on any
+  // of the surfaces is a derived value in a text node.
+  posterbox: { role: 'picture', why: 'the colour-quantised picture and its SCREEN switch. A stateless per-pixel reduction, so the retained watch mark protects the OUTPUT of a chainable mid-graph effect rather than any accumulated state (#2015).' },
+  tiler: { role: 'picture', why: 'the tiled-grid picture and its SCREEN switch. Stateless re-sampling per frame, so SCREEN OFF costs only the OUTPUT — which is why the body keeps marking the node watched (#2015).' },
+  sourcery: { role: 'picture', why: 'the keyed/skewed picture and its SCREEN switch. Derived per frame from its two thresholds, the colour skew and the rotation, so the retained watch mark protects the OUTPUT (#2015).' },
+  onetonine: { role: 'picture', why: 'the MONITOR surface — the 3x3 grid plus the 1..9 digits saying which cell feeds which output — and its SCREEN switch. ⚠ The picture this hides is a DIAGNOSTIC, not the module product: nine clean crop outputs run behind it, so a lapsed watch mark would unpatch a nine-way splitter to hide one overlay (#2015).' },
+
   // ── STATUS — the one body whose subject is not a picture.
   cvBuddy: {
     role: 'status-primitive',

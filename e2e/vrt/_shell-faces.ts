@@ -2201,6 +2201,71 @@ export const FACES = [
       + 'constant. Patch a source into A and that argument dies: the shape set becomes a function '
       + 'of the incoming raster.',
   },
+  // ── BATCH 22 · GROUP 3 — the screens ──────────────────────────────────────
+  //
+  // All four `pages: 1` (none declares `pages`), and all four BLIT LIVE VIDEO,
+  // which is what makes the SCREEN switch load-bearing on this group rather
+  // than ceremonial. ⚠ NONE of the four reads a clock — zero `uTime`,
+  // `frame.time`, `ctx.time` or `performance.now()` between them — so every
+  // scene here settles on its own and none needs a `freeze` param or a
+  // `simPin`. That is checked, not assumed.
+  {
+    type: 'posterbox',
+    pages: 1,
+    videoFaceWhy:
+      'a VIDEO module, so it must boot into the video zone rather than a mixer channel column — '
+      + 'without this field bootWithFace waits out the full 90 s test timeout for a column '
+      + 'membership a video node never acquires. Both scenes also carry a live picture: the '
+      + 'compact tile paints a VideoTileThumb through hasVideoSurface, and the dock body is the '
+      + "module's own fullViewBody extension (the quantised preview plus its SCREEN switch). The "
+      + 'freeze write is a NO-OP on this def (it declares no `freeze` param) and deliberately so: '
+      + 'the quantiser is a pure per-pixel function of (input, depth, dither, mix) with no clock, '
+      + 'ping-pong or accumulator, and with nothing patched the output is solid black and stays '
+      + 'black however many draws land.',
+  },
+  {
+    type: 'tiler',
+    pages: 1,
+    videoFaceWhy:
+      'a VIDEO module, so it must boot into the video zone rather than a mixer channel column — '
+      + 'without this field bootWithFace waits out the full 90 s test timeout for a column '
+      + 'membership a video node never acquires. Both scenes also carry a live picture: the '
+      + 'compact tile paints a VideoTileThumb through hasVideoSurface, and the dock body is the '
+      + "module's own fullViewBody extension (the tiled preview plus its SCREEN switch). The "
+      + 'freeze write is a NO-OP on this def (no `freeze` param): tiling is a pure re-sample of '
+      + '(input, tile) with no clock and no accumulator, and unpatched it is solid black. ⚠ THE '
+      + 'DEFAULT STEP IS THE 1:1 PASSTHROUGH (index 0), so the capture is the untiled frame — '
+      + 'the grid only appears once the one control moves.',
+  },
+  {
+    type: 'sourcery',
+    pages: 1,
+    videoFaceWhy:
+      'a VIDEO module, so it must boot into the video zone rather than a mixer channel column — '
+      + 'without this field bootWithFace waits out the full 90 s test timeout for a column '
+      + 'membership a video node never acquires. Both scenes also carry a live picture: the '
+      + 'compact tile paints a VideoTileThumb through hasVideoSurface, and the dock body is the '
+      + "module's own fullViewBody extension (the keyed preview plus its SCREEN switch). The "
+      + 'freeze write is a NO-OP on this def (no `freeze` param) and deliberately so: the picture '
+      + 'is derived per frame from its two video inputs and the four params, with no time uniform '
+      + 'and no accumulator. With neither A nor B patched the derivation runs over black and the '
+      + 'result is constant.',
+  },
+  {
+    type: 'onetonine',
+    pages: 1,
+    videoFaceWhy:
+      'a VIDEO module, so it must boot into the video zone rather than a mixer channel column — '
+      + 'without this field bootWithFace waits out the full 90 s test timeout for a column '
+      + 'membership a video node never acquires. Both scenes also carry a live picture — and on '
+      + 'THIS module the picture is the MONITOR, not the product: the dock body shows the 3x3 '
+      + 'grid plus the 1..9 digits that say which cell feeds which of the nine crop outputs. The '
+      + 'freeze write is a NO-OP on this def (no `freeze` param): the monitor is the input '
+      + 'passthrough with a static overlay, and the overlay geometry is a pure function of the '
+      + 'fixed 3x3 grid, so with nothing patched the capture is black plus a constant grid. ⚠ '
+      + 'SHOWGRID DEFAULTS ON, so the overlay IS in the baseline — a capture that lost it would '
+      + 'mean the toggle had flipped, not that the scene drifted.',
+  },
 ] as const;
 
 /**

@@ -345,17 +345,25 @@ export const posterboxDef: VideoModuleDef = {
     // much dither hides the banding, how much of it you blend back in — is one
     // honest band.
 
-    // ⚠ ALL THREE ARE FADERS ON THE CARD, so all three are declared. Nothing in
-    // a ParamDef separates "a level" from any other continuous scalar, so an
-    // undeclared face resolves them to KNOBS and silently swaps a dial in for a
-    // throw, invisibly to every def-reading gate.
+    // ⚠ ONLY THE TWO CONTINUOUS ONES ARE FADERS. `dither` and `mix` are drawn
+    // with `NeonFader` on the card, and nothing in a ParamDef separates "a
+    // level" from any other continuous scalar — so an undeclared face resolves
+    // them to KNOBS and silently swaps a dial in for a throw, invisibly to
+    // every def-reading gate.
     //
-    // ⚠ `depth` IS A FADER TOO, EVEN THOUGH IT IS DISCRETE, and that pairing is
-    // the interesting one: the card draws it as a fader with a NAMED tick rail,
-    // so the roster on the param supplies the names while `fader` supplies the
-    // throw. A discrete param is not automatically a selector — this one is a
-    // stepped slider, which is what the card established.
-    paramCells: { depth: 'fader', dither: 'fader', mix: 'fader' },
+    // ⚠ `depth` IS DELIBERATELY NOT DECLARED, AND I HAD IT WRONG FIRST.
+    // The card draws it as a stepped fader with a NAMED tick rail, so declaring
+    // `fader` looked like parity. `module-face-lint` refused it, correctly, on
+    // two counts: a throw needs a CONTINUOUS param, and **a fader cannot show
+    // names** — it would render the roster as unlabelled detents on a scale.
+    // A discrete param carrying an `options` roster belongs on a segmented row
+    // or selector, which NAMES its states.
+    //
+    // So the primitive differs from the card here, and the NAMES are what
+    // survive — which is the right trade, because the names are the whole
+    // reason the roster (and its attest cost) exists. The tick rail was a
+    // card-only way of showing the same information.
+    paramCells: { dither: 'fader', mix: 'fader' },
 
     // ⚠ NO `bareCells` — one unlabelled band, so no heading exists to make a
     // caption redundant, and Depth/Dither/Mix name three different things.

@@ -3105,6 +3105,50 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // these two.
   'lumakey',
   'shapegen',
+
+  // ── BATCH 22 · GROUP 3 — THE SCREENS ──────────────────────────────────────
+  //
+  // Four video modules that BLIT LIVE VIDEO, so the SCREEN switch is
+  // load-bearing here rather than ceremonial: on three of them it hides the
+  // module's own picture, and on `onetonine` it hides a DIAGNOSTIC surface
+  // while nine outputs keep running behind it.
+  //
+  // ⚠ THREE OF THE FOUR MOVE THE ATTEST HASH, which is why this group pays one
+  // window rather than pretending to be zero-attest like G1/G2a:
+  //
+  //   `posterbox.depth` and `tiler.tile` are DISCRETE params their cards draw
+  //   as faders with NAMED tick rails. Without `options` the faces show bare
+  //   stepped sliders and the step names go — "3" does not tell you the palette
+  //   is 256 colours, and index 3 does not tell you the grid is 4x3. On `tiler`
+  //   that is the ENTIRE face, since it has exactly one control.
+  //
+  //   `onetonine.showGrid` was retyped `linear` -> `discrete`. See #2090 and the
+  //   note on the param: that issue REFUSED this retype on the grounds that no
+  //   consumer reads `curve`, and it was right while the module was card-only.
+  //   FACING IT CREATES THE CONSUMER — a latching toggle resolves ONLY through
+  //   `looksLikeToggle`, and `ModuleFace` has no toggle field of its own — so
+  //   left `linear` this face would have drawn a 2-state param as a KNOB, the
+  //   moog962 inert-control defect. The retype is now load-bearing, not
+  //   gate-greening, which is exactly the condition #2090 said must change
+  //   first. Behaviour is preserved: `gridOn()` thresholds at `>= 0.5` and
+  //   discrete snapping rounds to nearest, and `node.data.showGrid` (a boolean)
+  //   takes precedence anyway.
+  //
+  // ⚠ `sourcery` IS THE ONE FREE FACE, and it is also the one that proves the
+  // primitive rule is not "declare faders everywhere": its card draws four
+  // KNOBS, so it declares NO `paramCells` at all, while its three batch-mates
+  // declare faders. Copying either onto the other would be a silent regression
+  // in one direction or the other.
+  //
+  // ⚠ BOTH ROSTERS DERIVE from arrays that already exist —
+  // `POSTERBOX_DEPTH_STEPS` (the quantiser's own level table) and `TILER_STEPS`
+  // (which the CV snap and the card's rail read) — so a face cannot disagree
+  // with the engine, and a step added to either cannot leave a face naming a
+  // subset. Nothing is invented and no count is hand-typed.
+  'posterbox',
+  'tiler',
+  'sourcery',
+  'onetonine',
 ]);
 
 /**

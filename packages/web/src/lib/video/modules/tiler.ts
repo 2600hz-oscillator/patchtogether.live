@@ -272,9 +272,17 @@ export const tilerDef: VideoModuleDef = {
     // without the option names the entire faceplate would be one unlabelled
     // 6-step slider.
 
-    // A fader, because `TilerCard.svelte` draws a fader with a tick rail — a
-    // stepped slider, not a selector. See the roster's own note on the param.
-    paramCells: { tile: 'fader' },
+    // ⚠ NO `paramCells`, AND I HAD IT WRONG FIRST. `TilerCard.svelte` draws a
+    // stepped fader with a named tick rail, so `fader` looked like parity.
+    // `module-face-lint` refused it on two counts: a throw needs a CONTINUOUS
+    // param, and **a fader cannot show names** — it would render this roster as
+    // unlabelled detents on a scale. A discrete param carrying an `options`
+    // roster belongs on a segmented row or selector, which NAMES its states.
+    //
+    // So this one control renders as a NAMED SELECTOR rather than the card's
+    // stepped slider. That is the right trade on a one-control face: the grid
+    // names are the entire information content, and an unlabelled 6-detent
+    // slider would say nothing at all.
 
     // ⚠ MANDATORY FOR A VIDEO DEF — no audio output, so any other glyph literal
     // resolves to a dead `{kind:'static'}` that reddens module-face-lint.
