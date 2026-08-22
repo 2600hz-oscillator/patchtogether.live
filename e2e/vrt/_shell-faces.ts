@@ -2296,6 +2296,61 @@ export interface UnbaselinableFace {
 
 export const FACES_WITHOUT_SCENES: readonly UnbaselinableFace[] = [
   {
+    type: 'acidwarp',
+    scenes: ['compact', 'dock'],
+    why:
+      'BOTH of this suite\'s determinism mechanisms fail on this module, for two DIFFERENT and '
+      + 'independently verifiable reasons — which is the bar, since "it is animated" is not '
+      + 'sufficient (mirrorpool, outlines, warrensvisions and freezeframe are all animated and '
+      + 'all baselined). '
+      + '(1) `freezeFaceVideo` CANNOT STOP THIS PICTURE, AND THE MODULE SAYS SO IN ITS OWN '
+      + 'COMMENT. It freezes a video face by writing `params.freeze = 1`. On every other faced '
+      + 'video module `freeze` is a determinism hook; on acidwarp it is a REAL, DOCUMENTED USER '
+      + 'CONTROL that halts ONLY the automatic scene cycler. Read at the site: the freeze test '
+      + 'guards exactly one branch (`if (params.freeze < 0.5 && speed > 0)`, the scene advance), '
+      + 'while the palette accumulator sits OUTSIDE it — `paletteAccumSlots += dt * '
+      + 'PALETTE_ROT_PER_SEC * speed`, under the comment "Palette keeps rotating even while '
+      + 'frozen — the visual life of the patch comes from the cycling colours". The picture is a '
+      + '256-slot palette scrolling under a static index field, so with freeze engaged every '
+      + 'frame still differs. '
+      + '(2) `simPin` CANNOT REACH THIS MODULE AT ALL, and this half is structural rather than '
+      + 'behavioural. It installs boot-time globals with `addInitScript` so a factory can read '
+      + 'them AT CONSTRUCTION — but `acidwarpDef.renderLocus` is `\'worker\'`, so the factory '
+      + 'runs in a Worker with its OWN global scope which does not inherit the page\'s. Params '
+      + 'reach it over the proxy\'s RPC channel; page globals never do. So there is no pin to '
+      + 'add here short of inventing a second RPC seam for tests. '
+      + '⚠ THE MODULE DOES HAVE A NATURAL STILL — `speed = 0` zeroes the accumulator above, and '
+      + 'with freeze also on the frame is a pure function of (scene, paletteType). It is NOT '
+      + 'used, deliberately: the harness has no param-pin option (`simPin` is globals only), and '
+      + 'writing speed=0 post-boot would hold A frame without choosing WHICH — whatever rotation '
+      + 'accumulated before the write — the same "holds a frame, never which frame" defect that '
+      + 'put milkdrop on this list. Reaching it properly means a param-pin mechanism in '
+      + '`bootWithFace`, which is a platform change and not a face PR. '
+      + 'The CARD roster reached the same verdict long ago (EXEMPT_FROM_VRT in '
+      + 'vrt-exemptions.ts: "animated palette rotation + auto scene cycler defeats deterministic '
+      + 'capture"). See #2111.',
+    coveredBy: [
+      // The renderer itself — that it draws at all, structured and non-black.
+      'e2e/tests/acidwarp-render-smoke.spec.ts',
+      // The worker path specifically, which is how this module renders.
+      'e2e/tests/render-worker-acidwarp.spec.ts',
+      // The pattern + palette math, pixel-free: generatePattern, buildPalette,
+      // rotatePalette — and the palette ROSTER this face promoted onto the def.
+      'packages/web/src/lib/video/modules/acidwarp.test.ts',
+      // The FACE's structure and behaviour, none of which needs pixels: the
+      // tier ladder, the two bands, the roster, the landmarks, and the
+      // no-user-control declaration.
+      'packages/web/src/lib/ui/modules/acidwarp-face-model.test.ts',
+      // The SCREEN switch's render legs — that the picture mounts, that OFF
+      // unmounts it and keeps the generator running, and that the state
+      // persists on node.data.
+      'e2e/tests/acidwarp-face-screen.spec.ts',
+      // Every cell operates, and the dock's control set equals the def's param
+      // set — the registry-driven sweep this face auto-enrols in.
+      'e2e/tests/faces-parity.spec.ts',
+    ],
+  },
+  {
     type: 'milkdrop',
     scenes: ['compact', 'dock'],
     why:
