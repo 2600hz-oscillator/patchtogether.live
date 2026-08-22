@@ -3105,6 +3105,36 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // these two.
   'lumakey',
   'shapegen',
+  // QUADRALOGICAL (2026-08-22, owner design #2102) — the first face in the repo
+  // where THE PICTURE IS THE CONTROL, and the first adopter of
+  // `face.xyPads[].surface: 'body'`.
+  //
+  // Its joystick sits ON TOP of a live 2×2 preview of the four inputs it is
+  // mixing, so the pad cannot be a band cell beside a picture — the picture and
+  // the gesture are one surface. `surface: 'body'` hands both axes to the
+  // module's own `fullViewBody` and the dock renders no band cell for either.
+  //
+  // ⚠ IT IS NOT THE `joystick` (#1974) REFUSAL IN A NEW COSTUME, and the reason
+  // is NOT that the lane keeps a pad — no lane tier has ever painted one
+  // (`laneOrder` makes every declared pad's anchor dock-only; a lane knob
+  // column is 46 px and a pad is square). It is that `joystick`'s pad is its
+  // ONLY control, so its lane resolves to ZERO; this module has eighteen other
+  // ranked params, and its lane shows DIAMOND, then DIAMOND + SHARP.
+  //
+  // ⚠ THE PROMOTION IS ALSO THE FIX FOR AN UNREACHABLE CONTROL. `invert` is
+  // declared, documented, and read by the shader in BOTH keyed branches — and
+  // `QuadralogicalCard.svelte` renders nothing for it, with no CV input
+  // targeting it either. It has been unreachable since it shipped, and no gate
+  // could see it: completeness only runs over THIS SET, `contract-lock` pins
+  // that the param exists rather than that it is operable, and
+  // `module-docs-lint` REQUIRES the docs entry describing the control that does
+  // not exist. Adding the name here is what arms all three.
+  //
+  // ⚠ AND THIS ENTRY COSTS AN ATTEST, unlike `lumakey`/`shapegen` above. Four
+  // `options` rosters (the eight effect names, which reached the player only
+  // through the card's hand-rolled `<select>`) and one `curve` correction on
+  // `invert` are `params` changes, and `params` is not hash-transparent.
+  'quadralogical',
 
   // ── BATCH 22 · GROUP 2b — the two faces that COST AN ATTEST ───────────────
   //
@@ -3150,6 +3180,44 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // even show, and can empty the wet path the player is mixing against.
   'tempest',
   'fader',
+
+  // ── BATCH 21 · CELLSHADE — the cel-shader, rebuilt on current main ────────
+  //
+  // Six controls, all drawn with `NeonFader` on the card, so five of them are
+  // declared `fader`. The sixth — `bits` (labelled BANDS) — is DISCRETE and
+  // carries an `options` roster instead, because module-face-lint refuses
+  // `fader` on a discrete param AND on any param with a roster: a fader cannot
+  // show names, so the states would render as unlabelled detents. That lesson
+  // came from `posterbox.depth` / `tiler.tile` in batch-22 G3.
+  //
+  // ⚠ THE ROSTER IS REQUIRED, NOT DECORATIVE, AND THE REASON IS ACCESSIBILITY
+  // RATHER THAN POLISH. `bits` stores an INDEX 0..4 while the player is
+  // choosing a BAND COUNT 2/3/4/6/8. The CARD bridges that with a `formatValue`
+  // prop and a labelled tick rail — card-side props `ModuleShell` does not
+  // pass. Verified at the read site: `NeonFader`'s `readoutText` is
+  // `formatValue ? formatValue(v) : format(v, units)`, and it feeds
+  // `aria-valuetext`. So an undeclared `bits` would make the face ANNOUNCE THE
+  // INDEX — saying "2" while the picture shows FOUR bands. That is a WRONG
+  // value, not a missing one, which is what flips this from optional to
+  // required.
+  //
+  // ⚠ THE LABELS ARE PROMOTED, NOT INVENTED — they are `CELLSHADE_BAND_STEPS`,
+  // the array the shader's quantiser indexes. Invention would be naming these
+  // "coarse"/"fine", words that appear nowhere in the code. This is the same
+  // move `tiler` makes with `${cols}×${rows}`: existing structured data
+  // rendered as a label. And it survives the no-resting-text ruling for the
+  // same reason — the dial's position is the INDEX, the label is the BAND
+  // COUNT, so the label says something the control does not.
+  //
+  // ⚠ REBUILT, NOT RESUMED. A parked branch carried a cellshade face from
+  // 2026-08-11 based on `a216ff243`; it predates the readout, width,
+  // EXTENSION_BODY_ROLES and latching gates, and its own commit marked itself
+  // UNVERIFIED. Everything here was re-derived against current main.
+  //
+  // ⚠ COSTS AN ATTEST — `params` is in the WebGL content basis. Nothing else in
+  // this face is: `face`, `paramCells` and `docs` are all stripped.
+  'cellshade',
+
   // SCOREBOARD (2026-08-22, #2089) — split out of batch-22 by owner order, and
   // the THINNEST face in the video fleet: ONE ranked control.
   //
@@ -3180,6 +3248,7 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // hash-transparent, and no `params` field is touched — no options, no
   // landmarks, no curve, no default.
   'scoreboard',
+
   // ACIDWARP (2026-08-22, #2111) — the batch-23 module that RODE ALONE, on the
   // complex-module half of the owner's split: five params but FOUR distinct
   // control shapes over one 320x240 display.

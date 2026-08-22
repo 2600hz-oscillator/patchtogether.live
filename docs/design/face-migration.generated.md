@@ -50,7 +50,7 @@ author a `face` and rank the controls — no new platform capability.
 | `bentbox` | video | done | — |
 | `bluebox` | audio | done | — |
 | `buggles` | audio | done | — |
-| `cellshade` | video | — | — |
+| `cellshade` | video | done | — |
 | `charlottesEchos` | audio | done | — |
 | `chroma` | video | — | — |
 | `chromakey` | video | — | — |
@@ -136,7 +136,7 @@ author a `face` and rank the controls — no new platform capability.
 | `polarizer` | audio | done | — |
 | `posterbox` | video | — | — |
 | `qbrt` | audio | done | — |
-| `quadralogical` | video | — | — |
+| `quadralogical` | video | done | — |
 | `rasterize` | audio | done | — |
 | `reshaper` | video | done | — |
 | `resofilter` | audio | done | — |
