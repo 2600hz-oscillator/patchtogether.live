@@ -136,7 +136,7 @@ author a `face` and rank the controls — no new platform capability.
 | `polarizer` | audio | done | — |
 | `posterbox` | video | done | — |
 | `qbrt` | audio | done | — |
-| `quadralogical` | video | — | — |
+| `quadralogical` | video | done | — |
 | `rasterize` | audio | done | — |
 | `reshaper` | video | done | — |
 | `resofilter` | audio | done | — |

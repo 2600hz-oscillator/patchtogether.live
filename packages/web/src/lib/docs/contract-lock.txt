@@ -2603,20 +2603,20 @@ quadralogical out out video
 quadralogical out preview video
 quadralogical param blend_sharp 0..8 linear default=3
 quadralogical param diamond_margin 0..1 linear default=0.5
-quadralogical param edge1_amount 0..1 linear default=1
+quadralogical param edge1_amount 0..1 linear default=0.5
 quadralogical param edge1_fx 0..7 discrete default=0
 quadralogical param edge1_param 0..1 linear default=0.1
-quadralogical param edge2_amount 0..1 linear default=1
+quadralogical param edge2_amount 0..1 linear default=0.5
 quadralogical param edge2_fx 0..7 discrete default=0
 quadralogical param edge2_param 0..1 linear default=0.1
-quadralogical param edge3_amount 0..1 linear default=1
+quadralogical param edge3_amount 0..1 linear default=0.5
 quadralogical param edge3_fx 0..7 discrete default=0
 quadralogical param edge3_param 0..1 linear default=0.1
-quadralogical param edge4_amount 0..1 linear default=1
+quadralogical param edge4_amount 0..1 linear default=0.5
 quadralogical param edge4_fx 0..7 discrete default=0
 quadralogical param edge4_param 0..1 linear default=0.1
 quadralogical param freeze 0..1 linear default=0
-quadralogical param invert 0..1 linear default=0
+quadralogical param invert 0..1 discrete default=0
 quadralogical param keyB 0..1 linear default=0
 quadralogical param keyG 0..1 linear default=1
 quadralogical param keyR 0..1 linear default=0

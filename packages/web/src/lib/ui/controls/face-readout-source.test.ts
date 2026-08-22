@@ -86,8 +86,108 @@ import '$lib/video/modules';
 const HERE = dirname(fileURLToPath(import.meta.url));
 
 /** The primitives a FACEPLATE mounts for a continuous/discrete value cell. Not
- *  the whole primitive roster — see the blind-spot note in the header. */
-const PRIMITIVES = ['KnobConic.svelte', 'NeonFader.svelte'] as const;
+ *  the whole primitive roster — see the blind-spot note in the header.
+ *
+ * ⚠ `XyPad.svelte` JOINED THIS LIST ON 2026-08-22 (#1972), AND THE LIST WAS THE
+ * DEFECT. The pad is a faceplate value cell — `ModuleShell`'s `xy` branch
+ * mounts it, and `backdraft` has declared two of them since the first video
+ * face — and it was absent here, so this gate was GREEN AND HAD NEVER LOOKED AT
+ * THE FILE. That is the blind-gate shape CLAUDE.md is about, with a file list
+ * as the filter that quietly redefines the subject.
+ *
+ * ⚠ AND ADDING THE NAME ALONE WOULD HAVE BEEN DECORATION. Both legs above key
+ * on `knobValueReadout`, which the pad does not use — it formats its own value
+ * with a local `fmt`. So a bare append would have made the roster look complete
+ * while measuring exactly nothing new. `PRIMITIVE_VALUE_LADDERS` below names
+ * the formatter each primitive actually uses, and the leg runs over THAT.
+ */
+const PRIMITIVES = ['KnobConic.svelte', 'NeonFader.svelte', 'XyPad.svelte'] as const;
+
+/**
+ * The value-formatting ladder each primitive really calls, and the ONE binding
+ * it is allowed to reach.
+ *
+ * The rule is the same for all three and it is the ruling itself: a primitive
+ * may FORMAT its value only to hand it to the ACCESSIBLE NAME. Any other use is
+ * a printed number.
+ *
+ * ⚠ THE ACCESSIBLE BINDING DIFFERS BY ROLE, and that is not a loophole — it is
+ * what the roles permit. A knob and a fader are `role="slider"`, whose value
+ * lives in `aria-valuetext`. A pad is `role="application"` — the correct role
+ * for a 2-D manipulation surface that owns its own handling — and
+ * `aria-valuetext` is only meaningful on a RANGE role, so its accessible value
+ * lives in `aria-label`. `XyPad.svelte` records the same conclusion where #2038
+ * deleted its readout row. Hard-coding `aria-valuetext` for all three would
+ * have made the pad unable to satisfy a gate written for a role it does not
+ * have, and the likely "fix" would have been to give the pad two `role="slider"`
+ * children — the "the visible thing and the operable thing are two different
+ * elements" shape `faces-parity` exists to outlaw.
+ */
+interface ValueLadderRule {
+  /** The identifier the MARKUP would reference to paint this primitive's value.
+   *  Not the script-side formatter — a derivation is free; a text node is not. */
+  value: RegExp;
+  /** The accessible binding this primitive's ROLE permits, which must exist. */
+  aria: RegExp;
+  /** A PAINTED use that is not resting text, with the guard that makes it
+   *  transient. Both halves are asserted: the line is allowed, AND the guard
+   *  must appear in the markup, so removing the guard reddens. */
+  transient?: { line: RegExp; guard: RegExp; why: string };
+  why: string;
+}
+
+const PRIMITIVE_VALUE_LADDERS: Readonly<
+  Record<(typeof PRIMITIVES)[number], ValueLadderRule>
+> = {
+  'KnobConic.svelte': {
+    value: /\bspokenValue\b/,
+    aria: /aria-valuetext/,
+    why:
+      'role="slider": `knobValueReadout` derives the numeric ladder in the script and the markup '
+      + 'references it ONLY as `spokenValue`, bound to aria-valuetext. The `.readout` div beside '
+      + 'it is a different variable (`readout`, from `knobNameReadout`) and paints an option / '
+      + 'landmark NAME, which is permitted resting text — a name disambiguates otherwise '
+      + 'identical dial positions, a number restates the dial.',
+  },
+  'NeonFader.svelte': {
+    value: /\breadoutText\b/,
+    aria: /aria-valuetext/,
+    transient: {
+      line: /class="value-tag"/,
+      guard: /\{#if\s+dragging\s*\|\|\s*hovering\s*\}/,
+      why:
+        'the drag/hover VALUE TAG. It is not resting text — it requires a pointer on the control '
+        + 'and vanishes when the pointer leaves — and it is the documented survivor of the '
+        + '2026-08-17 removal ("the value is speakable, assertable, and visible WHILE YOU SET IT '
+        + '— it just does not sit on the panel at rest"). The guard is asserted rather than '
+        + 'trusted: an unguarded `.value-tag` is exactly the resting decimal that was deleted.',
+    },
+    why:
+      'role="slider". ⚠ THIS ENTRY IS ALSO A CORRECTION: the previous leg keyed on '
+      + '`knobValueReadout`, which NeonFader does not call at all — it formats through '
+      + '`formatParamNumber` into `readoutText` — so the roster named this file while the check '
+      + 'matched nothing in it. A second instance of the same blind spot #1972 found on XyPad, '
+      + 'in the file sitting next to it.',
+  },
+  'XyPad.svelte': {
+    value: /\bariaLabel\b/,
+    aria: /aria-label/,
+    why:
+      'role="application": a LOCAL `fmt` (2 dp under 10) formats both axes into `ariaLabel`, the '
+      + "pad's accessible NAME. There is no aria-valuetext on this role to move it to (that "
+      + 'attribute is only meaningful on a RANGE role), so aria-label is where the value lives '
+      + 'and is what every spec proving a pad tracks the graph reads. #2038 deleted the painted '
+      + 'row; #1972 is why this file is in the roster at all.',
+  },
+};
+
+/** The MARKUP half of a `.svelte` file — everything after the closing script
+ *  tag. A derivation is free; what reaches a text node is the question. */
+function markup(file: string): string {
+  const src = source(file);
+  const i = src.indexOf('</script>');
+  return i >= 0 ? src.slice(i) : src;
+}
 
 function source(file: string): string {
   return stripSourceComments(readFileSync(resolve(HERE, file), 'utf8'));
@@ -108,27 +208,85 @@ describe('face readouts — the resting decimal is REMOVED, not hidden', () => {
     ).toEqual([]);
   });
 
-  it('the FULL value ladder reaches `aria-valuetext` and nothing that paints', () => {
-    // `knobValueReadout` is the numeric ladder. It has exactly one legitimate
-    // consumer in a primitive; anywhere else in these files it is a printed
-    // number. Checked per line so the assertion can name the line.
+  it('the value reaches the ACCESSIBLE NAME and nothing that rests on the plate', () => {
+    // Each primitive's value text has exactly one legitimate consumer in the
+    // MARKUP: the accessible binding its ROLE permits. Anywhere else it is a
+    // painted number — unless it is a declared TRANSIENT (NeonFader's drag/hover
+    // tag), which carries its own asserted guard. Checked per line so the
+    // assertion can name the line.
     const offenders: string[] = [];
     for (const file of PRIMITIVES) {
-      source(file)
+      const rule = PRIMITIVE_VALUE_LADDERS[file];
+      markup(file)
         .split('\n')
         .forEach((line, i) => {
-          if (!/knobValueReadout/.test(line)) return;
-          // The derivation itself, and the aria binding, are the allowed uses.
-          if (/^\s*(let|const)\s|aria-valuetext/.test(line)) return;
-          if (/^\s*import\s/.test(line)) return;
-          offenders.push(`${file}:${i + 1}: ${line.trim()}`);
+          if (!rule.value.test(line)) return;
+          if (rule.aria.test(line)) return;
+          if (rule.transient?.line.test(line)) return;
+          offenders.push(`${file} markup+${i}: ${line.trim()}`);
         });
     }
     expect(
       offenders,
-      'the numeric ladder is reachable from something other than `aria-valuetext`. If it is ' +
-        'painted, it is the decimal the owner removed.',
+      "a primitive's value text reaches the markup somewhere other than the accessible name its " +
+        'role permits. If it paints at rest, it is the decimal the owner removed.',
     ).toEqual([]);
+  });
+
+  it('every PRIMITIVE declares the value binding this gate checks it on', () => {
+    // ⚠ THE ANTI-DECORATION LEG (#1972), and it found a second defect on its
+    // first run. Adding a filename to `PRIMITIVES` without saying which
+    // identifier carries its value would make the roster look complete while
+    // the leg above skipped the file entirely — which is how `XyPad` sat
+    // outside this gate while `backdraft` painted four resting decimals, AND
+    // how `NeonFader` sat inside it measuring nothing (the old leg keyed on
+    // `knobValueReadout`, which NeonFader does not call). A declaration is
+    // required, its `why` must be an argument rather than a word, and every
+    // regex it names must actually MATCH the file it names — which is the leg
+    // that catches both failure modes.
+    const problems: string[] = [];
+    for (const file of PRIMITIVES) {
+      const rule = PRIMITIVE_VALUE_LADDERS[file];
+      if (!rule) { problems.push(`${file}: no PRIMITIVE_VALUE_LADDERS entry`); continue; }
+      if (rule.why.trim().length < 40) problems.push(`${file}: \`why\` is a placeholder, not an argument`);
+      const mk = markup(file);
+      if (!rule.value.test(mk)) {
+        problems.push(
+          `${file}: declares value binding ${rule.value} but the MARKUP never references it — ` +
+            'either the primitive stopped surfacing its value (in which case the aria leg below ' +
+            'is the one that should be red) or the entry names the wrong identifier and this ' +
+            'gate has been checking nothing, which is the exact defect it exists to prevent.',
+        );
+      }
+      if (!rule.aria.test(mk)) {
+        problems.push(
+          `${file}: declares accessible binding ${rule.aria} but the markup has none — the ` +
+            'value would be neither painted NOR speakable, which is not what the ruling asked ' +
+            'for ("the data gone" means unpainted, not unobservable).',
+        );
+      }
+      if (rule.transient) {
+        if (rule.transient.why.trim().length < 40) {
+          problems.push(`${file}: the transient allowance carries no argument`);
+        }
+        if (!rule.transient.line.test(mk)) {
+          problems.push(
+            `${file}: declares a transient painted use (${rule.transient.line}) that no longer ` +
+              'exists — delete the allowance rather than leaving a permission behind for the ' +
+              'next thing that matches it.',
+          );
+        }
+        if (!rule.transient.guard.test(mk)) {
+          problems.push(
+            `${file}: the transient painted use is NOT GUARDED by ${rule.transient.guard}. ` +
+              'Without the guard it is resting text, which is precisely the decimal that was ' +
+              'deleted — an allowance for a transient must be able to fail when it stops being ' +
+              'transient.',
+          );
+        }
+      }
+    }
+    expect(problems.join('\n')).toBe('');
   });
 
   it('NEGATIVE CONTROL: the source probe can actually find a readout element', () => {
