@@ -16,7 +16,18 @@
   import Knob from '$lib/ui/controls/Knob.svelte';
   import { patch } from '$lib/graph/store';
   import { acidwarpDef, speedKnobToMultiplier } from '$lib/video/modules/acidwarp';
-  import { SCENE_COUNT, PALETTE_COUNT } from '$lib/video/modules/acidwarp-patterns';
+  // ⚠ THE ROSTER, NOT A LOCAL LIST. This card used to carry its own
+  // `PALETTE_NAMES` const, which meant the eight palette names were known to
+  // this file and to nothing else — so the def's `paletteType` had no `options`
+  // and any other consumer (a faceplate cell, the Push 2 card, the docs page)
+  // could only ever paint an anonymous eight-position dial. The names now live
+  // beside the encoding that defines them (`type & 3` base + `type & 4`
+  // sparkle) and are DERIVED from it, so card, def and builder cannot disagree.
+  import {
+    ACIDWARP_PALETTE_OPTIONS,
+    SCENE_COUNT,
+    PALETTE_COUNT,
+  } from '$lib/video/modules/acidwarp-patterns';
   import { useEngine } from '$lib/audio/engine-context';
   import type { VideoEngine } from '$lib/video/engine';
   import type { ModuleNode } from '$lib/graph/types';
@@ -107,8 +118,9 @@
     speed === 0 ? 'STOPPED'
     : `${speed.toFixed(1)}×`,
   );
-  const PALETTE_NAMES = ['RGBW', 'GREY', 'HALF', 'PASTEL', 'RGBW✨', 'GREY✨', 'HALF✨', 'PSTL✨'] as const;
-  let paletteLabel = $derived(PALETTE_NAMES[Math.round(paramVal('paletteType')) % PALETTE_COUNT]);
+  let paletteLabel = $derived(
+    ACIDWARP_PALETTE_OPTIONS[Math.round(paramVal('paletteType')) % PALETTE_COUNT]!.label,
+  );
 </script>
 
 <div class="mod-card acidwarp-card">

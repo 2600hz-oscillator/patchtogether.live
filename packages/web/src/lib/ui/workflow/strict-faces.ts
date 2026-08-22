@@ -3150,6 +3150,30 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // even show, and can empty the wet path the player is mixing against.
   'tempest',
   'fader',
+  // ACIDWARP (2026-08-22, #2111) — the batch-23 module that RODE ALONE, on the
+  // complex-module half of the owner's split: five params but FOUR distinct
+  // control shapes over one 320x240 display.
+  //
+  // ⚠ IT IS THE FIRST FACED MODULE WHOSE `freeze` IS A FEATURE, NOT A HOOK, and
+  // that has a consequence no other entry in this set has: it CANNOT take a
+  // face VRT scene. `freezeFaceVideo` freezes a video face by writing
+  // `params.freeze = 1`; on acidwarp that halts only the automatic scene
+  // cycler while THE PALETTE KEEPS ROTATING, so the picture keeps moving and
+  // the harness's one mechanism does not bite. It is therefore in
+  // `FACES_WITHOUT_SCENES` with a measured argument rather than in `FACES` —
+  // the milkdrop precedent, reached independently. The CARD roster had already
+  // reached the same verdict (`EXEMPT_FROM_VRT`).
+  //
+  // ⚠ THE PROMOTION ALSO DELETES TWO RESTING READOUTS, one of which the batch
+  // derivation missed: `SCENE n/41` AND the live speed multiplier. The second
+  // could not simply be dropped — `speedKnobToMultiplier` puts NATIVE 1x at the
+  // knob's MIDPOINT and nothing in the ParamDef said so — so the fact moved
+  // onto `speed` as two LANDMARKS (`STILL` / `NATIVE`), which are names rather
+  // than measurements and cost no NUMERIC_LABEL_EXEMPTIONS.
+  //
+  // ⚠ AND IT COSTS AN ATTEST: `paletteType` gains an `options` roster and
+  // `speed` gains `landmarks`, both `params` changes, and this is a video def.
+  'acidwarp',
   // ── BATCH 22 · GROUP 4 — the video thin tail, THE REMAINDER ───────────────
   //
   // Four video processors with 1-4 params, promoted together. Every one of the
