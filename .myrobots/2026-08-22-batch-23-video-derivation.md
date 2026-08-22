@@ -30,7 +30,7 @@ The batch-22 doc's equivalent scans went stale within a week and its own header 
 | …of those, `generic-face` | 21 |
 | …minus in-flight G2b (`tempest`, `fader`) | 19 |
 | …minus in-flight G3 (`posterbox`, `tiler`, `sourcery`, `onetonine`) | 15 |
-| …minus PARKED in another lane's tree (`cellshade`, `graphicEq`) | 13 |
+| …minus CLAIMED by lane A (`cellshade`) and routed solo (`graphicEq`) — see Q4 | 13 |
 | …minus rides-alone by owner policy (`scoreboard` #2089) | 12 |
 | **…of those with ≤4 params** | **ZERO** |
 
@@ -263,7 +263,7 @@ count.** Use the name in future PR bodies so it is greppable.
   `controlSurface`, `electraControl`, `launchpadControlLeft`, `cameraInput`), so all
   four take the shell lane tile.
 
-## Questions — three ANSWERED 2026-08-22, one still open
+## Questions — ALL FOUR ANSWERED 2026-08-22. Nothing blocks batch-23a.
 
 1. ✅ **Is a ≤5-param cut acceptable for "simple"?** **YES** — coordinator's call,
    flagged to the owner for veto. The number was a proxy for SIMPLE-vs-NEEDS-DESIGN; the
@@ -271,10 +271,31 @@ count.** Use the name in future PR bodies so it is greppable.
 2. ✅ **`acidwarp`: batch or alone?** **ALONE**, on the untouched half of the rule.
 3. ✅ **`lines.fmDepth` writer vocabulary?** **`writer: 'internal'`; no extension
    needed.** Resolved against the real type before building — see the `lines` section.
-4. ⏳ **STILL OPEN — `graphicEq`(5p) and `cellshade`(6p) are parked in other lanes'
-   trees.** If either lane is finished, `graphicEq` joins the ≤5 set and makes it five
-   deep. Worth a check before batch-23a is scoped, since it would change what 23a
-   contains.
+4. ✅ **`graphicEq`(5p) / `cellshade`(6p) — NEITHER joins 23a.** Answered by the
+   coordinator 2026-08-22; the ≤5 set stays exactly four.
+
+   - **`cellshade` is CLAIMED, not parked.** Lane A is rebuilding it off current main
+     right now — roster approved, attest staged to the coordinator. Do not touch it, and
+     do not resurrect the old parked worktree.
+   - **`graphicEq` is routed SOLO, for three reasons**, all of which are worth keeping
+     because they are a reusable test for "does this module belong in this batch?":
+     1. **It is AUDIO**, so its PR owes the `_face-fixtures` audio-pool widening in the
+        same diff (the pool is at 2 against a `> 1` slack assertion). That is a
+        different KIND of work, and folding it in would break 23a's uniformity.
+     2. **It is parked with recon in the batch-19 tree**, which should be HARVESTED when
+        someone picks it up rather than re-derived from scratch.
+     3. **23a as scoped is ready to fly.** Adding a fifth module in a different domain to
+        a batch whose whole virtue is simplicity is the wrong trade.
+
+     It becomes its own assignment — solo, audio, pool-widening included — for whichever
+     lane frees first after `cellshade` / 23a. **The coordinator routes it; do not
+     self-assign it.**
+
+   ⚠ The generalisable rule, since it will come up again: **a batch's virtue is
+   uniformity, and domain is part of uniformity.** One module that drags a different
+   class of obligation (a pool widening, an attest window, a platform change) into an
+   otherwise uniform batch belongs in its own PR — the same instinct that produced
+   SPLIT-ON-THE-ATTEST-LINE above, applied to domain instead of attest.
 
 ## Sequencing (coordinator, 2026-08-22)
 
