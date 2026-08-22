@@ -228,6 +228,16 @@ const EXTENSION_BODY_ROLES: Readonly<Record<string, BodyRule>> = {
   lumakey: { role: 'picture', why: 'the luminance-key compositor\'s live preview canvas and its SCREEN switch. A KEYER exists to be composited downstream, so its body keeps the engine\'s watch mark alive while the screen is off — a lapsed mark would change what the DOWNSTREAM sees, not just the preview (#2015).' },
   shapegen: { role: 'picture', why: 'the generative 3-D shape synthesiser\'s live preview canvas and its SCREEN switch. A GENERATOR whose `out` is the reason to patch it, so the retained watch mark is what stops a control labelled SCREEN behaving as a MUTE downstream (#2015).' },
 
+  // ── BATCH 21 · CELLSHADE ──────────────────────────────────────────────────
+  //
+  // A PICTURE: the live toon render plus ONE control caption (the SCREEN
+  // button). The card mounts no `hideControls`, so this body declares no
+  // MONITOR toggle and no resize grip, and nothing on the surface is a derived
+  // value in a text node — ⚠ notably NOT the card's `{bands} BANDS` readout,
+  // which is exactly the resting derived text the 2026-08-17 ruling removes.
+  // The band count reaches the player as the `bits` option LABEL instead.
+  cellshade: { role: 'picture', why: 'the cel-shaded toon render and its SCREEN switch. Stateless per frame by the def\'s own account (bilateral smooth → luma quantise → Sobel ink, no feedback), so the retained watch mark protects the OUTPUT of a chainable effect rather than any accumulated state (#2015).' },
+
   // ── STATUS — the one body whose subject is not a picture.
   cvBuddy: {
     role: 'status-primitive',
