@@ -35,6 +35,33 @@
 
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
+import { SLOW_BOOT_TEST_TIMEOUT_MS } from '../_helpers/boot-budget';
+
+// ⚠ THE SLOW-BOOT BOUND, AND OMITTING IT IS WHAT FAILED THIS SPEC ON CI.
+//
+// Playwright's default per-test timeout is 30 s and this suite does not override
+// it, so for any wait carrying no timeout of its own THE TEST BUDGET IS THE
+// BOUND. This spec boots workflow mode and spawns NINE WebGL video nodes; on a
+// shared 2-core runner with ten shards in flight that exceeded 30 s before the
+// first dock-open click could complete. The CI call log is unambiguous that the
+// button was fine — "locator resolved to <button data-testid='shell-open-dock'>
+// … element is visible, enabled and stable … done scrolling" — and then the
+// TEST budget expired mid-action, which Playwright reports against the click.
+//
+// ⚠ AND THIS IS THE AXIS `E2E_SWIFTSHADER=1` DOES NOT COVER. That flag changes
+// the RENDERER; it does not reproduce a cold boot, a 2-core runner, or ten
+// shards competing. `SLOW_RENDER` is `E2E_SWIFTSHADER || CI`, so CI would have
+// granted 90 s all along — this spec simply never opted in. A local SwiftShader
+// pass is necessary and not sufficient for a shell-mode spec that boots WebGL.
+//
+// Per-spec via `describe.configure`, NEVER in `e2e/playwright.config.ts`: that
+// file is in the WebGL attest basis, so a one-line edit there costs a real-GPU
+// re-attest, while `e2e/tests/**` is hash-transparent by design.
+//
+// ⚠ Raising a FAILURE bound does not hide a COST regression — lane cost is
+// gated separately by `scripts/e2e-shard-budget.sh`, which fails a shard at
+// 0.85 of its `--global-timeout`. The budget is the gauge; this is the bound.
+test.describe.configure({ timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
 
 // A distinct, saturated tint per input so each quadrant is separable by eye and
 // by probe. `tintMix: 1` makes CHROMA emit the pure tint regardless of its
@@ -67,6 +94,14 @@ function buildNodes() {
   nodes.push({ id: 'quad', type: 'quadralogical', position: { x: 560, y: 80 }, domain: 'video' });
   return nodes;
 }
+
+/** The quad on its own — everything the SCREEN-OFF leg needs. */
+const NODES_QUAD_ONLY = {
+  id: 'quad',
+  type: 'quadralogical',
+  position: { x: 560, y: 80 },
+  domain: 'video' as const,
+};
 
 function buildEdges() {
   const edges: Array<{ id: string; from: { nodeId: string; portId: string }; to: { nodeId: string; portId: string }; sourceType?: string; targetType?: string }> = [];
@@ -180,7 +215,16 @@ test.describe('QUADRALOGICAL face — the screen', () => {
   }) => {
     await page.goto('/rack?shell=1&seed=none');
     await page.waitForLoadState('networkidle');
-    await spawnPatch(page, buildNodes(), buildEdges());
+    // ⚠ THE QUAD ALONE — this leg needs NO inputs, and spawning them was real
+    // cost for nothing. Its subject is the TOGGLE: the canvas mounts and
+    // unmounts, the frame re-aspects, and the state persists on `node.data`,
+    // none of which depends on anything being patched (an unpatched quad still
+    // blits its preview port — a black 2x2 tile — so the canvas is present and
+    // the geometry identical). Cutting eight WebGL nodes off this test is a
+    // genuine reduction in what CI has to boot, not just a wider bound; the
+    // SCREEN ON leg above keeps all nine because its whole subject is which
+    // input lands in which quadrant.
+    await spawnPatch(page, [NODES_QUAD_ONLY], []);
 
     const dockShell = await openQuadDock(page);
     const body = dockShell.getByTestId('quadralogical-screen-body');
@@ -215,13 +259,31 @@ test.describe('QUADRALOGICAL face — the screen', () => {
     // expect timeout bounds the failure. No `waitForTimeout`, no frame count —
     // the subject here is a CSS transition's committed value, and the honest
     // question is "what is the width now", asked until it stops changing.
+    // ⚠ THE POLL GATES THE CLAIM ITSELF (squareness), NOT A PROXY THRESHOLD —
+    // AND THE PROXY IS A BUG THIS SPEC ACTUALLY HAD. The first fix polled for
+    // "width reclaimed at least 40 px", which the 120 ms transition SATISFIES
+    // ON ITS WAY PAST: measured under SwiftShader, one run in six read 409 px
+    // mid-flight (ratio 1.136 against a settled 1.0) and failed the squareness
+    // assertion two lines down. Polling a threshold the animation CROSSES is
+    // only half a fix — it removes the one-shot race and leaves an early-exit
+    // race behind it.
+    //
+    // Gating on the ratio the next assertion checks makes the wait and the
+    // claim the same question, so there is no window between them to lose.
     await expect
-      .poll(async () => (await field.boundingBox())!.width < on!.width - 40, {
-        message:
-          `SCREEN OFF must RECLAIM width (it was ${on!.width} with the screen on). If this ` +
-          'never flips, the CSS width transition has not committed — do not convert this to a ' +
-          'timeout, the poll IS the fix.',
-      })
+      .poll(
+        async () => {
+          const b = (await field.boundingBox())!;
+          return Math.abs(b.width / b.height - 1) < 0.02;
+        },
+        {
+          message:
+            `SCREEN OFF must SETTLE to a square field (it was ${on!.width}x${on!.height} = ` +
+            `${(on!.width / on!.height).toFixed(3)} with the screen on). If this never flips, ` +
+            'the CSS width transition has not committed — do not convert this to a timeout, and ' +
+            'do not weaken it back to a "reclaimed N px" threshold, which passes mid-transition.',
+        },
+      )
       .toBe(true);
 
     const off = await field.boundingBox();
