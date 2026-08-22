@@ -7,19 +7,29 @@ named skill under `.claude/skills/`. **When this file and a skill disagree, this
 file is the rule and the skill is the detail** — and the measured numbers live in
 the skill, so they cannot drift between two copies.
 
-## Every feature and every bug fix is a GitHub issue
+## Issues: NOBODY opens them — fix inside the planned work
 
-Whether the owner reported it or an agent found it, it gets an issue **before or
-with** its PR, and the PR closes it (`Fixes #N`). Found a defect and fixed it in
-the same session? File it anyway, then close it — the issue can be open for
-minutes. The point is that the work is searchable six weeks later by someone who
-was not in the conversation.
+Owner ruling (2026-08-22, verbatim): *"you do not open issues, nor do agents. if
+bugs are discovered in the course of doing planned work, then they are fixed as
+part of that planned work. anything severe enough to justify variance from this
+requires it be brought to my explicit attention. we need to track towards zero
+issues on the board."*
 
-- An issue is closed by a merged fix or an explicit owner `wontfix` — never by
-  "seems fine now".
+- A bug found mid-task is fixed **in the same PR**, scoped honestly, with the story
+  told in the PR body — the PR narrative replaces the issue number as the searchable
+  record.
+- Too big to fold in → bring it to the **owner explicitly** (via the orchestrator);
+  never quietly file.
+- Existing open issues only shrink: closed by a merged fix (`Fixes #N`) or explicit
+  owner closure — never by "seems fine now".
+- CI-blocking problem tests: **disable + add to the tests-to-fix list in
+  `.myrobots`** (owner ruling, same day) and keep moving — unless parking would lose
+  significant coverage, which goes to the owner instead. Triage first: a test whose
+  git history shows no flake fixes is more likely under-budgeted than flaky, and
+  those need opposite responses.
 - Automated health alerts (`alert` / `observability` labels) are exempt; they have
   their own lifecycle.
-- Details, templates and labels: [`docs/process/issue-workflow.md`](docs/process/issue-workflow.md).
+- Historical flow (retired): [`docs/process/issue-workflow.md`](docs/process/issue-workflow.md).
 
 ## Commands run through flox
 
