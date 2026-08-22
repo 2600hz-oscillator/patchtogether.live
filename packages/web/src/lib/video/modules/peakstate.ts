@@ -143,6 +143,106 @@ export const peakstateDef: VideoModuleDef = {
     { id: 'oblong',      label: 'Oblong',     defaultValue: DEFAULTS.oblong,      min: 0,   max: 1,  curve: 'linear' },
   ],
 
+  // ── FACE (batch 23a) ──────────────────────────────────────────────────────
+  //
+  // WHAT PEAKSTATE IS FOR: it is a KALEIDOSCOPE PEN. A single pen traces a
+  // path, and that path is mirrored around N arms into a mandala. Its siblings
+  // generate figures too — `spirographs` plots harmonographs, `shapegen` builds
+  // 3-D solids — and the thing only this one does is take ONE trace and
+  // multiply it by radial symmetry, then offer the same figure through three
+  // different renderings (flat mono, hue-cycling colour, and a tilted "3-D"
+  // bowl). The verb is TRACE.
+  //
+  // THE TIER LADDER, read back as a sentence: at the smallest tier you get
+  // COMPLEXITY, because it is the only control that changes the FIGURE'S
+  // SYMMETRY — a 4-arm and a 32-arm mandala are different objects, and
+  // everything else here modulates a figure complexity has already defined.
+  // Add one and you get SPEED, which is the only param that reaches a SECOND
+  // OUTPUT'S GEOMETRY: `out_3d`'s rotation is `omega = speed * 0.3 rad/s`, so
+  // it is pen rate and 3-D spin at once. Then COLOR, which is the whole
+  // difference between `rgb_out` and `mono_out`. MOVE and OBLONG last, as a
+  // pair, and in that order for a mechanical reason — see below.
+  //
+  // ⚠ THE FINDING: OBLONG IS BIT-EXACTLY INERT AT SPAWN, and the code makes it
+  // exact on purpose. `orbitCenter()` opens with
+  // `if (move <= 0) return { cx: baseCx, cy: baseCy };` — a short-circuit whose
+  // own comment says it exists "so the degeneracy is EXACT (not subject to
+  // sin(0)=0 / cos(0)=1 floating-point drift)". `move` defaults to 0, so on a
+  // fresh PEAKSTATE the `oblong` knob is not merely ineffective, it is never
+  // READ. That is the rank argument for MOVE > OBLONG: one is the orbit, the
+  // other only squashes an orbit that must already exist.
+  //
+  // ⚠ `complexity` IS A THREE-WAY DISAGREEMENT, AND THIS FACE FIXES NONE OF IT
+  // — deliberately, after nearly fixing the wrong half. The def says
+  // `curve: 'discrete'` (4..32 arms); `PeakstateCard.svelte` passes
+  // `curve="linear"` to its `Knob`; the CV port declares
+  // `cvScale: { mode: 'linear' }`; and the renderer coerces with
+  // `Math.max(1, Math.round(opts.complexity))`. So both input paths can write
+  // 12.4 arms and the renderer rounds it away.
+  //
+  // The tempting one-word "fix" — card `linear` -> `discrete` — IS THE EXACT
+  // TRAP CLAUDE.md NAMES: *"Before 'fixing' a declaration to satisfy a gate,
+  // check the consumer reads it … writing `discrete` would green the gate and
+  // change nothing, because `Knob.svelte` has no `discrete` branch. That is a
+  // green gate certifying a live bug."* VERIFIED HERE RATHER THAN ASSUMED:
+  // `Knob.svelte` maps value<->normalized for `'log'` and `'exp'` only; there
+  // is no `discrete` arm. ⚠ Do not be fooled by `knob-conic-model.ts` having
+  // one — the KNOB COMPONENT does not take that path for this mapping, which is
+  // the distinction `card-def-debt.ts` is making when it says the real defect is
+  // "the primitive has no `discrete` branch while `Fader.svelte` and
+  // `knob-conic-model.ts` both do".
+  //
+  // So the card keeps `linear` and KEEPS ITS `card-def-debt` ENTRY
+  // (`PeakstateCard.svelte: ['complexity.curve']`), whose own comment already
+  // reached this conclusion and scoped the real repair — teaching `Knob.svelte`
+  // a discrete branch changes the drag feel of every discrete knob in the rack
+  // — to its own reviewed PR. The CV port is left alone for the sibling reason:
+  // `cvScale: 'linear'` plus renderer rounding is a working, DOCUMENTED
+  // combination (`docs.inputs.complexity_cv` says "the value is rounded to a
+  // whole number of arms"), and retyping it would cost a contract re-pin and an
+  // attest window to change nothing observable. Both refusals are #2090's.
+  //
+  // ⚠ WHAT THE FACE DOES INHERIT: the shell reads the DEF, so the dock cell for
+  // `complexity` is built from `curve: 'discrete'`. Whether that snaps is a
+  // property of the shell's own primitive, not of this declaration — the same
+  // open platform gap, now visible on one more surface.
+  face: {
+    order: ['complexity', 'speed', 'color_speed', 'move', 'oblong'],
+
+    // ⚠ NO `pages`. Five controls over ONE figure are a single honest band,
+    // far below DOCK_TAB_MIN_BANDS and DOCK_ROW_MAX_CONTROLS. The only real
+    // sub-grouping (move + oblong are the orbit) is two controls, and a page
+    // to hold two controls is the padding the compact ruling forbids.
+
+    // ⚠ NO `paramCells`, AND THAT IS THE DECLARATION. `PeakstateCard.svelte`
+    // draws all five with `Knob`, which IS the shell's default primitive — so
+    // declaring anything here would CHANGE the control rather than preserve it.
+    // This is the `shapegen` side of the batch-22 G2a lesson: its sibling
+    // `lines` declares four faders because its card draws faders, and copying
+    // that here would be a silent regression in the opposite direction. The
+    // rule is "declare the primitive the CARD established, and only when the
+    // def cannot imply it", never "declare faders everywhere".
+    //
+    // ⚠ AND `complexity` MUST NOT BE DECLARED `fader` even though it is a
+    // level-ish number: `module-face-lint` refuses a throw over a `discrete`
+    // param, and it is right — a throw's affordance says ANYWHERE ON THIS
+    // SCALE and this one has 29 positions and nothing between them. The
+    // default Knob snaps to them (`knob-conic-model.ts:71`).
+
+    // ⚠ MANDATORY FOR A VIDEO DEF — no `type: 'audio'` output here, so
+    // `primaryAudioOutPortId` is null and any other glyph literal falls through
+    // `glyphBinding` to a dead `{kind:'static'}` that reddens module-face-lint.
+    // The live picture arrives from `hasVideoSurface(def)` at the lane and the
+    // `fullViewBody` extension at the dock — assert THAT, never this.
+    glyph: 'none',
+
+    // SCREEN ON/OFF arrives through this slot (#1928). ⚠ Unlike batch-22 G4's
+    // four, this one IS a port: `PeakstateCard.svelte` already draws a 144x144
+    // preview, and promotion would delete it.
+    // See `$lib/ui/modules/peakstate/shell-extension.ts`.
+    extension: 'peakstate',
+  },
+
   docs: {
     explanation: `peakstate is a self-running mandala/kaleidoscope generator — a video SOURCE with no video input. An internal "pen" traces a deterministic drifting Lissajous path (penAtTime: x = 0.5·cos(0.7t), y = 0.5·sin(1.3t + 0.4·cos(0.3t))) through a centred unit disc, pushing one sample per frame into a 600-sample ring buffer (~10s of comet trail). Each frame the whole trail is redrawn once per kaleidoscope arm — rotated by 2π/complexity and mirrored about the arm axis — over a translucent black overlay that decays the previous frame, giving the classic mirror-arm bloom. MOVE + OBLONG add a slow spirograph orbit of the mandala's centre (period ~20s at Speed 1): MOVE sets orbit radius, OBLONG squashes the orbit's vertical extent from a circle toward a near-horizontal "rolling tube". The module emits three coherent views of the SAME pen trail with different palette/transform. Usage: drop it in for a generative kaleidoscope bloom, patch an LFO or envelope into the CV jacks to pulse the speed/arm-count/hue, and pick the mono, full-colour, or pseudo-3D output to suit the look.`,
     inputs: {
