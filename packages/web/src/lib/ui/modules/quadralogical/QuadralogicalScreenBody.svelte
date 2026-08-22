@@ -60,6 +60,7 @@
   import type { ModuleNode } from '$lib/graph/types';
   import type { VideoEngine } from '$lib/video/engine';
   import { cardParams } from '../card-kit';
+  import { drawPreviewDownscaled } from '../preview-downscale';
   import { createDragCommit } from '$lib/ui/controls/drag-commit';
   import ControlContextMenu from '$lib/ui/controls/ControlContextMenu.svelte';
   import { makeMidiAssignable } from '$lib/ui/controls/midi-assignable.svelte';
@@ -284,7 +285,13 @@
     let w = cw, h = ch, x = 0, y = 0;
     if (dstAspect > srcAspect) { h = ch; w = Math.round(h * srcAspect); x = Math.round((cw - w) / 2); }
     else { w = cw; h = Math.round(w / srcAspect); y = Math.round((ch - h) / 2); }
-    ctx2d.drawImage(src, x, y, w, h);
+    // ⚠ THE HELPER, NEVER A BARE drawImage (#1846). A single resampling tap
+    // from the engine's 1024×768 buffer down to these canvases aliases badly —
+    // and the ratio is extreme on the PUCK, which is 64×48: a ~16× reduction in
+    // one step. `drawPreviewDownscaled` steps it down instead. Caught by
+    // `preview-downscale-source.test.ts` on the first full-suite run of this
+    // body, which is the gate doing exactly its job.
+    drawPreviewDownscaled(ctx2d, src, x, y, w, h);
   }
 
   function draw(): void {

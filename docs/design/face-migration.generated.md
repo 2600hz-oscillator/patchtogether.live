@@ -12,8 +12,8 @@ Every registered module carries exactly one **disposition**: what kind of work i
 |  | count |
 |---|---|
 | registered modules | 198 |
-| done (faced + promoted) | 107 |
-| remaining (excludes organizational-native) | 88 |
+| done (faced + promoted) | 108 |
+| remaining (excludes organizational-native) | 87 |
 | registered with NO disposition (must be zero) | 0 |
 | inventory entries naming a dead def (must be zero) | 0 |
 
@@ -21,7 +21,7 @@ Every registered module carries exactly one **disposition**: what kind of work i
 
 | disposition | what it means | modules | done |
 |---|---|---|---|
-| `generic-face` | author a `face` and rank the controls — no new platform capability | 141 | 107 |
+| `generic-face` | author a `face` and rank the controls — no new platform capability | 141 | 108 |
 | `blocked` | would be a face today but for the named capability, and nothing else | 3 | — |
 | `bespoke-surface` | the primary interaction is not param-shaped — needs a purpose-built surface | 51 | — |
 | `organizational-native` | rack furniture; not a migration at all | 3 | — |
@@ -136,7 +136,7 @@ author a `face` and rank the controls — no new platform capability.
 | `polarizer` | audio | done | — |
 | `posterbox` | video | — | — |
 | `qbrt` | audio | done | — |
-| `quadralogical` | video | — | — |
+| `quadralogical` | video | done | — |
 | `rasterize` | audio | done | — |
 | `reshaper` | video | done | — |
 | `resofilter` | audio | done | — |
