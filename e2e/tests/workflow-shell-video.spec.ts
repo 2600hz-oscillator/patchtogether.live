@@ -789,7 +789,26 @@ test.describe('?shell=1 video visibility', () => {
     // ⚠ `b1` (BACKDRAFT) IS NOT ONE OF THEM because it is FACED, not because it
     // has no thumb — it has one again (#1785), asserted on the shell host a few
     // lines below. This loop is the placeholder host.
-    for (const id of ['l1', RECORDERBOX]) {
+    //
+    // ⚠ `l1` USED TO BE IN THIS LOOP AND IS NOT ANY MORE — batch-23a promoted
+    // `lines`, so it renders a FACED shell tile and has no
+    // `module-shell-placeholder` at all. The case went honestly RED
+    // ("l1 renders a placeholder tile … Received: 0"), which is the good
+    // outcome: `l1` was doing two unrelated jobs here, ANIMATED SOURCE for the
+    // chain and PLACEHOLDER HOST for this loop, and only the second one
+    // promotion invalidates. It keeps the first — it is still the auto-scrolling
+    // source feeding `b1` and `g1`, which is why the node is still spawned.
+    //
+    // ⚠ THE REPLACEMENT IS `g1`, THE DERIVED SUBJECT, NOT ANOTHER LITERAL. That
+    // is the whole point of #1929, which this file already argues for `SINK_TYPE`
+    // a few lines up: a hard-coded un-migrated module is a promotion away from
+    // breaking, and picking a different name here would just reset that clock.
+    // `g1` is resolved from the contract golden by the predicates these
+    // assertions actually need (un-promoted, video domain, resolvable card, not a
+    // NON_SHELL_LANE_TYPES snowflake, video in AND out), so it CANNOT be a faced
+    // module — and a future promotion drops it from the pool automatically
+    // instead of reddening this line.
+    for (const id of ['g1', RECORDERBOX]) {
       const tile = page.locator(`.svelte-flow__node[data-id="${id}"] [data-testid="module-shell-placeholder"]`);
       await expect(tile, `${id} renders a placeholder tile`).toHaveCount(1);
       await expect(tile.locator('[data-testid="video-tile-thumb"]'), `${id} has the live thumb canvas`).toHaveCount(1);
