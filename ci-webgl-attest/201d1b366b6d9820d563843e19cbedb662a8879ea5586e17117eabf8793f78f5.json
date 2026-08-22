@@ -1,26 +1,26 @@
 {
   "schemaVersion": 1,
-  "webglContentHash": "c15d9478a8732892382d2677b7655af83de391c8e6db39ea371ee882f4261598",
-  "attestedAt": "2026-08-21T17:23:13.645Z",
+  "webglContentHash": "201d1b366b6d9820d563843e19cbedb662a8879ea5586e17117eabf8793f78f5",
+  "attestedAt": "2026-08-22T20:52:09.073Z",
   "attestedBy": "patchtogether-maintainer",
-  "gitHeadAtAttest": "900dda21fcfb99f069a4c4b3f0ea0f77dc2a9c0d",
+  "gitHeadAtAttest": "4de34aac74e65a698c7045a5148ba4b507b75ef4",
   "playwrightVersion": "1.50.0",
   "os": "darwin 25.4.0 (arm64)",
   "machineClass": "local-trusted-gpu-workstation",
   "preflight": {
     "samples": 7,
     "windowMs": 10204,
-    "maxForeignCpu": 1.8,
+    "maxForeignCpu": 2.9,
     "thresholdCpu": 25,
-    "load1": 2.55029296875,
+    "load1": 1.427734375,
     "cores": 10
   },
   "gpu": "ANGLE (Apple, ANGLE Metal Renderer: Apple M5, Unspecified Version)",
   "appServer": {
-    "url": "http://127.0.0.1:50050",
+    "url": "http://127.0.0.1:63539",
     "mode": "dev",
-    "root": "/Users/2600hz/Documents/workspace/inet.modular/.claude/worktrees/agent-aa158d3335dfe4159",
-    "commit": "900dda21fcfb99f069a4c4b3f0ea0f77dc2a9c0d"
+    "root": "/Users/2600hz/Documents/workspace/inet.modular/.claude/worktrees/agent-a5a0811ed9097c977",
+    "commit": "4de34aac74e65a698c7045a5148ba4b507b75ef4"
   },
   "repeatEach": 1,
   "suites": {
@@ -57,5 +57,5 @@
       "flakyDetails": []
     }
   },
-  "durationSec": 264
+  "durationSec": 266
 }
