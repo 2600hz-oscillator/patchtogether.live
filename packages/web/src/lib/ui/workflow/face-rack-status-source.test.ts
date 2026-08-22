@@ -248,6 +248,15 @@ const EXTENSION_BODY_ROLES: Readonly<Record<string, BodyRule>> = {
   luma: { role: 'picture', why: 'the luminance-domain grade\'s live preview canvas and its SCREEN switch. ⚠ Do not confuse the directory with `lumakey` above: this is the single-input TONE PROCESSOR, that one is the two-input COMPOSITOR. The picture earns its place because the module ships a BIT-EXACT IDENTITY at its defaults, so the frame is the only thing distinguishing graded from untouched. Stateless mid-chain, so the watch mark protects the OUTPUT (#2015).' },
   videoMixer: { role: 'picture', why: 'the 4-channel additive mixer\'s live COMPOSITE preview and its SCREEN switch — four faders that SUM have no per-channel observable, so this canvas is where "which sources am I actually seeing, and is it clipping to white?" is answered. Stateless (its own header records that binding its own output as a spare sampler was rejected as a feedback loop), and the JOIN of the graph: a lapsed watch mark would black out up to FOUR upstream chains at once (#2015).' },
 
+  // ── BATCH 22 · GROUP 2b — the two faces that cost an attest ───────────────
+  //
+  // Both PICTURES: a live preview canvas plus ONE control caption (the SCREEN
+  // button). Neither card mounts `hideControls`, so neither body declares a
+  // MONITOR toggle or a resize grip, and nothing on either surface is a derived
+  // value in a text node.
+  tempest: { role: 'picture', why: 'the vector-well render — rim ring, pit ring, radial lanes and the player claw — plus its SCREEN switch. A SOURCE with no video input, so the retained watch mark is what stops SCREEN OFF muting the well for everything downstream (#2015).' },
+  fader: { role: 'picture', why: 'the main OUT mix preview and its SCREEN switch. ⚠ This module has TWO outputs — `out` and the `send` feeding an external FX loop — so the retained watch mark protects an output the switch does not even show, and a loop the player is mixing against (#2015).' },
+
   // ── STATUS — the one body whose subject is not a picture.
   cvBuddy: {
     role: 'status-primitive',
