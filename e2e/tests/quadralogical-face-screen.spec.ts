@@ -35,7 +35,7 @@
 
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
-import { SLOW_BOOT_TEST_TIMEOUT_MS } from '../_helpers/boot-budget';
+import { BOOT_MS, SLOW_BOOT_TEST_TIMEOUT_MS } from '../_helpers/boot-budget';
 
 // ⚠ THE SLOW-BOOT BOUND, AND OMITTING IT IS WHAT FAILED THIS SPEC ON CI.
 //
@@ -246,45 +246,46 @@ test.describe('QUADRALOGICAL face — the screen', () => {
     // does not move. That is what keeps the EDGE boxes in the band below from
     // jumping under the player's cursor mid-performance.
     //
-    // ⚠ POLLED, NOT READ ONCE — and this is a RENDERER-DEPENDENT BUG THIS SPEC
-    // ACTUALLY HAD. `.field` carries `transition: width 120ms ease-out`, so the
-    // box right after the click is the PRE-transition width. On a real GPU the
-    // transition had finished by the time the read landed and the assertion
-    // passed; under `E2E_SWIFTSHADER=1` — which is what CI runs — it had not,
-    // and this failed 3/3 with "on 480, off 480". A one-shot read of an
-    // animating box is a race whose outcome is the renderer's speed.
+    // ⚠ THIS ASSERTION HAS A HISTORY, AND THE FIX THAT FINALLY HELD WAS TO THE
+    // PRODUCT, NOT TO THE TEST. `.field` used to carry
+    // `transition: width 120ms ease-out`, and each successive fix here removed
+    // one race and left a smaller one:
     //
-    // The fix is an auto-retrying assertion on the REAL SUBJECT, never a
-    // wall-clock wait: `expect.poll` re-reads until the box settles or the
-    // expect timeout bounds the failure. No `waitForTimeout`, no frame count —
-    // the subject here is a CSS transition's committed value, and the honest
-    // question is "what is the width now", asked until it stops changing.
-    // ⚠ THE POLL GATES THE CLAIM ITSELF (squareness), NOT A PROXY THRESHOLD —
-    // AND THE PROXY IS A BUG THIS SPEC ACTUALLY HAD. The first fix polled for
-    // "width reclaimed at least 40 px", which the 120 ms transition SATISFIES
-    // ON ITS WAY PAST: measured under SwiftShader, one run in six read 409 px
-    // mid-flight (ratio 1.136 against a settled 1.0) and failed the squareness
-    // assertion two lines down. Polling a threshold the animation CROSSES is
-    // only half a fix — it removes the one-shot race and leaves an early-exit
-    // race behind it.
+    //   1. a one-shot boundingBox read  -> passed on a GPU, failed 3/3 under
+    //      SwiftShader (it read the PRE-transition width);
+    //   2. a poll on "reclaimed >= 40 px" -> the animation SATISFIES THAT ON
+    //      ITS WAY PAST; 1 run in 6 read 409 px mid-flight (ratio 1.136);
+    //   3. a poll on the settled RATIO -> timed out on CI shard 8, because
+    //      `expect.poll` carries its OWN 5 s default (independent of the test
+    //      timeout) and a starved 2-core runner does not finish a style
+    //      transition inside it.
     //
-    // Gating on the ratio the next assertion checks makes the wait and the
-    // claim the same question, so there is no window between them to lose.
+    // The transition is now GONE from the body (see its `.field` rule), so the
+    // re-aspect is instant and there is no intermediate state to sample. The
+    // poll is kept as a GUARD against re-introducing one, not as a wait.
+    //
+    // ⚠ IT POLLS A VALUE, NOT A BOOLEAN — and that is the other lesson from
+    // shard 8. A boolean predicate fails as "Timeout exceeded while waiting on
+    // the predicate" and tells you NOTHING about what it saw; the CI log could
+    // not say whether the ratio was 1.136 or 1.33 or unchanged. Returning the
+    // ratio makes the matcher print the observed value on failure.
     await expect
       .poll(
         async () => {
           const b = (await field.boundingBox())!;
-          return Math.abs(b.width / b.height - 1) < 0.02;
+          return Math.round((b.width / b.height) * 100) / 100;
         },
         {
+          timeout: BOOT_MS,
           message:
-            `SCREEN OFF must SETTLE to a square field (it was ${on!.width}x${on!.height} = ` +
-            `${(on!.width / on!.height).toFixed(3)} with the screen on). If this never flips, ` +
-            'the CSS width transition has not committed — do not convert this to a timeout, and ' +
-            'do not weaken it back to a "reclaimed N px" threshold, which passes mid-transition.',
+            `SCREEN OFF must be a SQUARE field (it was ${on!.width}x${on!.height} = ` +
+            `${(on!.width / on!.height).toFixed(2)} with the screen on). The printed value is ` +
+            'the ratio actually observed. If it sits between 1 and 1.33 something has ' +
+            're-introduced a width transition on `.field` — remove it rather than widening ' +
+            'this wait, which is the fix that finally held.',
         },
       )
-      .toBe(true);
+      .toBe(1);
 
     const off = await field.boundingBox();
     expect(off, 'the field survives SCREEN OFF — it IS the control').toBeTruthy();

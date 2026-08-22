@@ -537,9 +537,37 @@
     cursor: crosshair;
     user-select: none;
     overflow: hidden;
-    /* The width transition is what the toggle's re-aspect looks like. The
-       HEIGHT is a constant, so nothing below this body ever moves. */
-    transition: width 120ms ease-out;
+    /* ⚠ NO WIDTH TRANSITION, AND ITS REMOVAL IS A BUG FIX RATHER THAN A STYLE
+       CHANGE. This carried `transition: width 120ms ease-out` to animate the
+       re-aspect, and that 120 ms cost THREE separate failures before it was
+       worth the polish:
+
+         1. a one-shot `boundingBox()` read that passed on a GPU and failed
+            3/3 under SwiftShader (it read the PRE-transition width);
+         2. a poll on "reclaimed >= 40 px", which the animation SATISFIES ON
+            ITS WAY PAST — 1 run in 6 read 409 px mid-flight;
+         3. a poll on the settled RATIO, which then timed out on CI shard 8,
+            because `expect.poll` carries its OWN 5 s default (independent of
+            the test timeout) and a starved 2-core runner does not finish a
+            style transition inside it.
+
+       Each fix was correct and each left a smaller race behind it, which is
+       the tell that the animation — not the assertion — was the subject. The
+       sibling face in this lane (acidwarp) deliberately has no transition for
+       exactly this reason, and it has never flaked.
+
+       ⚠ AND IT MOVES NO PIXELS. Measured, not reasoned: the dock VRT scene
+       reads the SAME 3079 px against the linux baseline with the transition
+       present and absent (a macOS-vs-linux text delta, unrelated to this).
+       A transition only affects the animation between states, and the scene
+       captures a settled one — but the check was cheap and the claim is now
+       evidence rather than inference.
+
+       ⚠ NOTHING IS LOST FROM THE DESIGN. The claim was never "the width
+       animates" — it is that the frame RE-ASPECTS ON ITS WIDTH while the
+       HEIGHT stays pinned, so the EDGE boxes below never move. That is
+       unchanged; the change is simply instant now, like every other video
+       face's canvas collapse. */
   }
   .field:focus-visible { outline: 1px solid var(--accent, #6884d7); outline-offset: 1px; }
   .tiles {
