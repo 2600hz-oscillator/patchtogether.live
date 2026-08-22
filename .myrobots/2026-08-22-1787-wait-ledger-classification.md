@@ -25,23 +25,50 @@ so no entry was stale either — the ledger and the tree agreed.
 
 ## The buckets
 
-    STATE    280   the wait stands in for an observable → expect / expect.poll
-    PACING    67   a real product-side interval → keep the wait, annotate it
+    STATE    282   the wait stands in for an observable → expect / expect.poll
+    PACING    69   a real product-side interval → keep the wait, annotate it
     PAINT     64   the wait buys rendered frames → waitFrames(page, n)
-    DEAD       4   redundant: a later poll in the same test already covers it
+    DEAD       0   ← see below; the bucket did not survive verification
 
-`DEAD` here means *removable*, not *unanchored*. A ledger line naming a wait
-that no longer exists is RED in `task lint`, and lint was green — so there were
-no orphan lines. The four are waits whose work a following `expect.poll` already
-does: a midi-learn-note gate wait, a `rings` pre-wait subsumed by
-`pollScopePeak(…, 3000)`, and a `shapegen` wait guarding a synchronous Yjs read.
+Roughly **83% is real debt** (STATE + PAINT) and **17% is legitimate timing that
+was simply never written down** (PACING). #1787 filed an estimate of 20/50/29;
+the read-every-site pass moved PAINT down and STATE up, and PACING landed at
+about half the estimate because a site only counts as PACING here if the product
+constant it mirrors could actually be FOUND and cited. "It feels like a debounce"
+was not accepted.
 
-Roughly **83% is real debt** (STATE + PAINT + DEAD) and **16% is legitimate
-timing that was simply never written down** (PACING). #1787 filed an estimate of
-20/50/29; the read-every-site pass moved PAINT down and STATE up, and PACING
-landed close to half the estimate because a site only counts as PACING here if
-the product constant it mirrors could actually be FOUND and cited. "It feels
-like a debounce" was not accepted.
+### ⚠ DEAD went 4 → 0 — the classifier was wrong, and two of the four were traps
+
+The first pass produced four `DEAD` verdicts ("a following `expect.poll` already
+does this wait's work"). Every one was read against the source before deletion.
+**None was a safe deletion, and two would have produced a green, blind test** —
+the exact failure CLAUDE.md's instrument rule names, met inside the instrument
+built to find it.
+
+- `midi-learn-note.spec.ts :: … a gate INPUT row binds a NOTE :: waitForTimeout(30) #1`
+  is a **SUSTAINED-NEGATIVE**. A *different* note (50) is injected and the
+  binding must STILL be note 48. The following
+  `expect.poll(...).toMatchObject({note: 48})` is already true at t=0, so it
+  converges instantly and proves nothing. **The wait IS the assertion**: it is
+  the only thing giving a would-be re-bind time to happen. Delete it and the
+  test passes vacuously and would certify the re-capture bug it exists to catch.
+- `rings.spec.ts :: … model switch (MODAL ↔ SYMPATHETIC) :: waitForTimeout(300) #1`
+  — the claim was that `pollScopePeak(…, 0.01, 3000)` subsumes it. It does not:
+  the scope is **still ringing from MODAL** when the model switches, so the poll
+  can return the MODAL decay tail. The wait separates the two measurements.
+  (That test is unsound for a second, independent reason — `peak > 0.01` is a
+  property both models share — filed as **#2112**, deliberately out of scope
+  for a wait-conversion diff.)
+- `shapegen.spec.ts` and `textmarquee.spec.ts` are real debt but **STATE**, not
+  deletions: both are the write-through-`__ydoc.transact`-then-read-`__patch`
+  shape that PR #1788 already converted on cellshade to a single
+  `expect.poll(...).toEqual({...})`. A bare delete works *today* only because
+  SyncedStore applies synchronously; the poll survives that changing.
+
+The lesson worth carrying: **"a later poll covers this" is only true when the
+poll converges on a condition that is FALSE at the moment the wait begins.** For
+a negative assertion the poll is true immediately and covers nothing. Ask of any
+"redundant wait" verdict: *what would this poll do if the bug were present?*
 
 ## ⚠ DOOM — 14 entries, permanently exempt
 
@@ -124,7 +151,11 @@ Recorded so the next pass does not re-litigate them:
   Svelte effect or an rAF-driven pass, it is a frame count. Sites:
   `timelorde-tap-tempo` ×2, `workflow-surfaces`, `workflow-lane-add-safety`,
   `workflow-viewport-nav` GUARD, `unpatch-patch-point` ("stays gone", "opens NO
-  menu").
+  menu"), `midi-learn-note` (the mis-classified one above).
+  **This is the highest-risk class in the whole ledger** — it is the one where a
+  plausible-looking conversion silently removes the assertion, and it is where
+  the classifier itself failed. Treat every "assert X is still Y" site as guilty
+  until the poll is shown to be false at t=0.
 - **GC-finalizer settles** (`patch-load-leak`, `samsloop-memory-bench`): the
   comment argues wall-clock is correct and it probably is, but finalizer timing
   is a V8 characteristic, not a `packages/` constant, so PACING's citation
