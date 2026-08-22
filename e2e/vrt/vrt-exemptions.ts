@@ -537,13 +537,22 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // structured + param-response). Promote once a deterministic seed path exists.
   sourcery: 'VRT baseline pending; v1 segmentation is source-dependent + shimmers frame-to-frame, so the solo-spawn canvas is non-deterministic. Coverage = sourcery-core.test.ts (CCL/moments/Hu/match/rel→uvB/hue-skew) + e2e/tests/sourcery.spec.ts (real 2-source chain, non-black + structured + param response). Capture darwin/linux baselines once a deterministic seed path is wired.',
   // SCOREBOARD — first-slice PR ships the module + draw helper + factory
-  // gate tests + e2e (gate→counter advance, RESET, wrap-at-10000). The
-  // VRT scene path is wired (window.__scoreboardVrtSeed → counter at
-  // 1234 for a stable, all-segments-touching baseline) — promote into
-  // MODULES + capture darwin/linux PNGs in a follow-up PR. The canvas
-  // mask above covers the live preview if promotion happens without the
-  // scene path being driven yet.
-  scoreboard: 'VRT baseline pending; unit + factory gate tests + e2e provide coverage. Promote + capture darwin/linux baselines (seed counter at 1234 via window.__scoreboardVrtSeed for a stable, all-segments-touching baseline) in a follow-up PR.',
+  // gate tests + e2e (gate→counter advance, RESET, wrap-at-10000).
+  //
+  // ⚠ HALF OF THIS NOTE'S FOLLOW-UP HAS NOW HAPPENED, and the half that has
+  // not is the CARD (#2089, 2026-08-22). The module is PROMOTED — it carries a
+  // face and two FACE scenes in `_shell-faces.ts`, captured with exactly the
+  // seed this note names (`__scoreboardVrtSeed = 1234`, via `simPin`). What
+  // remains uncaptured is the LEGACY CARD scene this entry is about, which is a
+  // different surface with a different baseline.
+  //
+  // ⚠ AND THE ORIGINAL "darwin/linux" WORDING IS STALE INDEPENDENTLY OF THAT:
+  // `snapshotPathTemplate` has no `{platform}` segment any more. There is ONE
+  // baseline set and linux CI authors it. Corrected here rather than left to
+  // send the next reader looking for a per-platform pair that cannot exist.
+  //
+  // The canvas mask above still covers the card's live preview.
+  scoreboard: 'CARD baseline pending; unit + factory gate tests + e2e provide coverage, and the module is now PROMOTED with two captured FACE scenes (see FACES in _shell-faces.ts). Capture the card baseline by driving the same seed path the face scenes use (window.__scoreboardVrtSeed = 1234 → counter at 1234, a stable all-segments-touching value). ONE baseline set, authored by linux CI.',
   // CAMERA renders a live MediaStream into a canvas. Even with the
   // fake-camera flag the synthetic frame is non-deterministic enough
   // (frame-time clock) that the baseline would flap. Functional coverage

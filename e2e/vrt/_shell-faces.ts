@@ -2237,6 +2237,57 @@ export const FACES = [
       + 'ARGUMENT WEAKENS — the picture then tracks whatever the upstream is doing, which for an '
       + 'animated source is a different frame every capture.',
   },
+  // ── SCOREBOARD (2026-08-22, #2089) — the thinnest face in the fleet, and the
+  // one whose determinism is a PROPERTY OF THE RENDERER rather than a pin we
+  // had to install.
+  {
+    type: 'scoreboard',
+    // ONE unlabelled band: the face declares no `pages`, because its single
+    // ranked control (`color`) is not the module's identity — the counter is —
+    // and a page would buy an ~81px header to write "colour" above a colour
+    // wheel.
+    pages: 1,
+    videoFaceWhy:
+      'a VIDEO module, so it must boot into the video zone rather than a mixer channel column — '
+      + 'without this field bootWithFace waits out the full 90 s test timeout for a column '
+      + 'membership a video node never acquires. Both scenes carry a live picture: the compact '
+      + 'tile paints a VideoTileThumb through hasVideoSurface, and the dock body is the module\'s '
+      + "own fullViewBody extension (the 4-digit display plus its SCREEN switch). "
+      + '⚠ THE FREEZE WRITE IS A NO-OP ON THIS DEF (it declares no `freeze` param) AND NOTHING '
+      + 'IS LOST BY THAT, which is the unusual part. The render is a PURE FUNCTION OF '
+      + '(score, hue): `drawScoreboard` rasterizes digits into an OffscreenCanvas and the module '
+      + 'only re-uploads when the score or the hue CHANGED. Verified at the read site — there is '
+      + 'no `frame.time`, no dt, no `performance.now`, no `Math.random` and no accumulator '
+      + 'anywhere in `scoreboard.ts` or `scoreboard-draw.ts`. The counter is the one piece of '
+      + 'state, and it moves ONLY on a gate rising edge, so with nothing patched it cannot move '
+      + 'at all. A still frame here needs no mechanism; it is the default behaviour. '
+      + '⚠ AND THE SCENE IS SEEDED RATHER THAN LEFT AT ZERO — see simPin.',
+    simPin: [
+      {
+        global: '__scoreboardVrtSeed',
+        value: 1234,
+        why:
+          'Seeds the counter at construction so the captured digits are 1234 rather than 0000. '
+          + 'NOT a determinism fix — the scene is already stable at 0000 (nothing patched means '
+          + 'no gate edges, and the render has no time term). It is a COVERAGE fix: 0000 draws '
+          + 'the same glyph four times, so a baseline of it would pin one digit shape and silently '
+          + 'certify the other nine. 1234 lights a variety of segments, which is what makes the '
+          + 'image evidence that the 7-segment rasterizer works rather than evidence that ONE '
+          + 'digit does. '
+          + '⚠ THE VALUE AND THE SEAM ARE BOTH REUSED, NOT INVENTED. `scoreboard.ts` has carried '
+          + 'this exact hook since it shipped, and `vrt-exemptions.ts` already names 1234 as the '
+          + 'intended capture value in its "baseline pending" note — this face is that follow-up '
+          + 'arriving. One seed for the module\'s capture paths means a picture a human has '
+          + 'already reasoned about, the same argument `outlines` makes for reusing its '
+          + 'render-smoke seed. '
+          + '⚠ AND IT WORKS ONLY BECAUSE THIS MODULE IS MAIN-THREAD — simPin installs a PAGE '
+          + 'global via addInitScript, and `worker-eligibility.test.ts` excludes scoreboard from '
+          + 'the worker precisely because "a worker realm has no `window`". That is the exact '
+          + 'inverse of acidwarp, whose worker locus is what puts simPin out of reach and lands '
+          + 'it in FACES_WITHOUT_SCENES.',
+      },
+    ],
+  },
 ] as const;
 
 /**

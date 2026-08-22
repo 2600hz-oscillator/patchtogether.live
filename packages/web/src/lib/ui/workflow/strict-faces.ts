@@ -3150,6 +3150,36 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // even show, and can empty the wet path the player is mixing against.
   'tempest',
   'fader',
+  // SCOREBOARD (2026-08-22, #2089) — split out of batch-22 by owner order, and
+  // the THINNEST face in the video fleet: ONE ranked control.
+  //
+  // That is the honest shape rather than a shortfall. The module is a counter
+  // you can see — two gates in, four neon digits out, no video input and no
+  // audio path — so its surface IS the display and the only thing to set by
+  // hand is what colour it glows. Thinness never refuses a face (owner,
+  // 2026-08-20), and one honest cell with nothing padded is the correct outcome
+  // of "compact is the default and width must be earned".
+  //
+  // ⚠ ITS ONE CONTROL IS A HUE, AND THE CARD DRAWS IT AS A KNOB. `color` is a
+  // continuous 0..1 angle onto 0-360 degrees — it WRAPS, so a dial's end stops
+  // fall mid-space and the player travels the long way round between two
+  // neighbouring reds. The face declares `paramCells: { color: 'hue' }`, the
+  // conic ring, which is the platform's named answer for exactly this shape.
+  // A deliberate primitive divergence from the card, not a range divergence.
+  //
+  // ⚠ AND IT IS BASELINABLE, unlike the other video face this lane shipped.
+  // The picture is a pure function of (score, hue) — no time term, no RNG, no
+  // accumulator in the RENDER (the counter only moves on a gate edge) — and the
+  // module already carries a `__scoreboardVrtSeed` construction hook, which is
+  // exactly `simPin`'s shape. It is also main-thread BECAUSE of that hook
+  // (`worker-eligibility` excludes it: a worker realm has no `window`), which
+  // is the precise inverse of acidwarp, where worker locus is what put simPin
+  // out of reach. So this face takes real scenes.
+  //
+  // ZERO ATTEST: `face`, `paramCells` and `noUserControl` are all
+  // hash-transparent, and no `params` field is touched — no options, no
+  // landmarks, no curve, no default.
+  'scoreboard',
 ]);
 
 /**
