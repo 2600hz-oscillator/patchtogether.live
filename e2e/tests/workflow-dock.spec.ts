@@ -518,7 +518,13 @@ test.describe('dock drawer patch menu + rear-view patching (owner fixes 2026-07-
     await pressFlipKey(page);
     const outJack = card.locator('[data-testid="back-jack"][data-port-id="masterL"][data-direction="output"]');
     await expect(outJack).toBeVisible({ timeout: 5_000 });
-    await page.waitForTimeout(450); // flip-in keyframe settles
+    // pacing: the jack is VISIBLE but still rotating — the card-back-flip-in
+    // keyframe is running, so its box is moving and a click can land off it.
+    // The keyframe's duration is a product constant: `FLIP_MS = 360` in
+    // packages/web/src/lib/ui/Canvas.svelte:8764, which that file documents as
+    // mirroring card-front/back-flip-in in _module-card.css. 450 ms is that
+    // interval with margin.
+    await page.waitForTimeout(450);
 
     // Click the docked OUTPUT jack → a pickup begins from the drawer card.
     await outJack.click();
@@ -577,6 +583,9 @@ test.describe('dock drawer patch menu + rear-view patching (owner fixes 2026-07-
     await pressFlipKey(page);
     const inJack = card.locator('[data-testid="back-jack"][data-port-id="ch1L"][data-direction="input"]');
     await expect(inJack).toBeVisible({ timeout: 5_000 });
+    // pacing: the same card-back-flip-in keyframe as the OUT-jack test above —
+    // `FLIP_MS = 360` in packages/web/src/lib/ui/Canvas.svelte:8764, mirroring
+    // _module-card.css. Visible is not yet STILL, and the click needs still.
     await page.waitForTimeout(450);
 
     await inJack.click();

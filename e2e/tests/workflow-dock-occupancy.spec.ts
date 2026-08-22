@@ -54,6 +54,7 @@ import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 import { pressFlipKey } from './_flip-key';
 import { installRenderSmokeHooks } from './_render-smoke';
+import { settle } from '../_helpers/frames';
 
 /** The pinned trio's deterministic node ids (graph/workflow-pins.ts). */
 const PINNED_IDS = ['pinned-mixmstrs', 'pinned-electraControl', 'pinned-clipplayer'] as const;
@@ -99,7 +100,11 @@ async function panTileTo(page: Page, id: string, top: number): Promise<void> {
     },
     { id, top },
   );
-  await page.waitForTimeout(120);
+  // `duration: 0` makes the pan instant IN THE STORE; the real clicks below
+  // need the new transform PAINTED, which is a frame count, not a duration —
+  // 120 ms was ~7 frames locally and under one on CI's SwiftShader (7.9 fps
+  // measured). Two rAFs is Svelte-flush + paint.
+  await settle(page);
 }
 
 /** The clip player's deterministic pinned node id — the pane's backing node. */

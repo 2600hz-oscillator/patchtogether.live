@@ -111,18 +111,49 @@ async function waitForHooks(page: Page): Promise<void> {
   );
 }
 
+/** EVERY mounted lane tile — a migrated `module-shell` OR an un-migrated
+ *  `module-shell-placeholder`. This is the population the geometry tests
+ *  measure, so it is also the honest readiness signal for "the drop landed". */
+function laneTiles(page: Page) {
+  return page.locator('[data-testid="module-shell-placeholder"], [data-testid="module-shell"]');
+}
+
+/**
+ * Run `spawn`, then wait until ONE MORE lane tile is mounted than before.
+ *
+ * Every drop in this spec used to be followed by a flat `waitForTimeout(250)`
+ * — a wall-clock guess for "the spawn reached the DOM", which is a different
+ * number of frames on every renderer (7.9 fps measured under
+ * `E2E_SWIFTSHADER=1` against ~60 fps locally, before CI's ten-shard
+ * contention). The subject was always the tile, so wait on the TILE:
+ * `toHaveCount` auto-retries, returns the instant the drop lands, and still
+ * fails loudly — naming the module and the lane — if it never does.
+ */
+async function dropAndSettle(page: Page, spawn: () => Promise<unknown>, what: string): Promise<void> {
+  const before = await laneTiles(page).count();
+  await spawn();
+  await expect(laneTiles(page), `${what}: the palette drop mounted its lane tile`).toHaveCount(
+    before + 1,
+  );
+}
+
 /** Drive the REAL palette-drop path into channel column `ch`. */
 async function dropInColumn(page: Page, type: string, ch: number): Promise<void> {
-  await page.evaluate(
-    ({ type, pos }) => {
-      const w = globalThis as unknown as {
-        __setSpawnFlowPos: (p: { x: number; y: number }) => void;
-        __spawnFromPalette: (t: string) => void;
-      };
-      w.__setSpawnFlowPos(pos);
-      w.__spawnFromPalette(type);
-    },
-    { type, pos: colPos(ch) },
+  await dropAndSettle(
+    page,
+    () =>
+      page.evaluate(
+        ({ type, pos }) => {
+          const w = globalThis as unknown as {
+            __setSpawnFlowPos: (p: { x: number; y: number }) => void;
+            __spawnFromPalette: (t: string) => void;
+          };
+          w.__setSpawnFlowPos(pos);
+          w.__spawnFromPalette(type);
+        },
+        { type, pos: colPos(ch) },
+      ),
+    `${type} → channel ${ch}`,
   );
 }
 
@@ -329,7 +360,6 @@ test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
     const types = ['tidyVco', 'vca', 'delay'];
     for (const t of types) {
       await dropInColumn(page, t, 1);
-      await page.waitForTimeout(250);
     }
     // Tiles mounted (tidyVco/vca render the migrated shell as of P1 batch 1;
     // delay + the video-zone trio stay placeholders).
@@ -384,18 +414,22 @@ test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
     const shellColPos = (ch: number) => ({ x: (ch - 1) * SHELL_COLUMN_W + 30, y: LANE_ANCHOR_Y });
     const types = ['tidyVco', 'vca', 'delay'];
     for (let i = 0; i < types.length; i++) {
-      await page.evaluate(
-        ({ type, pos }) => {
-          const w = globalThis as unknown as {
-            __setSpawnFlowPos: (p: { x: number; y: number }) => void;
-            __spawnFromPalette: (t: string) => void;
-          };
-          w.__setSpawnFlowPos(pos);
-          w.__spawnFromPalette(type);
-        },
-        { type: types[i], pos: shellColPos(i + 1) },
+      await dropAndSettle(
+        page,
+        () =>
+          page.evaluate(
+            ({ type, pos }) => {
+              const w = globalThis as unknown as {
+                __setSpawnFlowPos: (p: { x: number; y: number }) => void;
+                __spawnFromPalette: (t: string) => void;
+              };
+              w.__setSpawnFlowPos(pos);
+              w.__spawnFromPalette(type);
+            },
+            { type: types[i], pos: shellColPos(i + 1) },
+          ),
+        `${types[i]} → narrowed column ${i + 1}`,
       );
-      await page.waitForTimeout(250);
     }
 
     // (a) Each drop landed in the intended narrowed column: channels 1, 2, 3 each
@@ -459,7 +493,6 @@ test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
     await waitForHooks(page);
     for (const t of ['tidyVco', 'vca']) {
       await dropInColumn(page, t, 1);
-      await page.waitForTimeout(250);
     }
     await expect(page.locator('[data-testid="module-shell-placeholder"]')).not.toHaveCount(0);
 
@@ -606,16 +639,21 @@ test.describe('P0.3b workflow-shell ?shell=1 bug fixes', () => {
   /** Drop `type` at the tight SHELL pitch so the pitch-aware hit-test resolves the
    *  intended narrowed column `ch` (the wide COLUMN_W anchor would land elsewhere). */
   async function dropInShellColumn(page: Page, type: string, ch: number): Promise<void> {
-    await page.evaluate(
-      ({ type, pos }) => {
-        const w = globalThis as unknown as {
-          __setSpawnFlowPos: (p: { x: number; y: number }) => void;
-          __spawnFromPalette: (t: string) => void;
-        };
-        w.__setSpawnFlowPos(pos);
-        w.__spawnFromPalette(type);
-      },
-      { type, pos: { x: (ch - 1) * SHELL_COLUMN_W + 30, y: LANE_ANCHOR_Y } },
+    await dropAndSettle(
+      page,
+      () =>
+        page.evaluate(
+          ({ type, pos }) => {
+            const w = globalThis as unknown as {
+              __setSpawnFlowPos: (p: { x: number; y: number }) => void;
+              __spawnFromPalette: (t: string) => void;
+            };
+            w.__setSpawnFlowPos(pos);
+            w.__spawnFromPalette(type);
+          },
+          { type, pos: { x: (ch - 1) * SHELL_COLUMN_W + 30, y: LANE_ANCHOR_Y } },
+        ),
+      `${type} → shell column ${ch}`,
     );
   }
 
@@ -662,7 +700,6 @@ test.describe('P0.3b workflow-shell ?shell=1 bug fixes', () => {
     await waitForHooks(page);
     for (const t of ['tidyVco', 'vca']) {
       await dropInShellColumn(page, t, 1);
-      await page.waitForTimeout(250);
     }
 
     // No invalid state: both drops joined channel 1's order (the membership truth).
@@ -839,7 +876,6 @@ test.describe('P0.3b workflow-shell ?shell=1 bug fixes', () => {
       await expect(page.locator(vzFaceSelector(id))).toBeVisible({ timeout: 15_000 });
     }
     await dropInShellColumn(page, 'vca', 1);
-    await page.waitForTimeout(300);
     const memberId = await page.evaluate(() => {
       const w = globalThis as unknown as {
         __patch: { nodes: Record<string, { data?: { columns?: Record<string, string[]> } } | undefined> };
