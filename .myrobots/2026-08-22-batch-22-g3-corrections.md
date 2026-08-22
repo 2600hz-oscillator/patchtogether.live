@@ -1,5 +1,27 @@
 # batch-22 G3 — corrections to the banked derivation
 
+## ⏭ QUEUED ACTION — refresh the vrt-strict cost artifact AFTER G3 **and** G4 merge
+
+**Owner: whoever lands the later of G3 / G4.** Run
+`flox activate -- task vrt:strict:timings:accept -- <ci-run-id>` against a
+**main** run that contains all 16 new scenes, then review the diff.
+
+Why it matters, and why it is nevertheless not urgent: until accepted, G3's 8
+and G4's 8 scenes are scheduled at the **median** cost. That is the designed
+fallback and it gates nothing today — 8 shards sit at ~56% with slack for 16
+median-costed scenes. But it is the exact artifact whose staleness caused
+**#2103, twice** (see the `ci.yml` matrix comment), and **video dock scenes are
+the case where the median is most wrong** — the median face dock is 9.7 s while
+video docks run 20-22 s. Leaving it stale is how the lane drifts back toward the
+85% guard.
+
+⚠ **The third-occurrence rule.** #2103 records that if this recurs a third time
+because a batch landed without a refresh, the answer is to **automate the
+refresh, not to add two more shards**. Adding shards is what you do when the
+population outgrows the split; it is not a remedy for a cost table that does not
+know the population. Act on that trigger when it fires — not before.
+
+
 `.myrobots/2026-08-21-batch-22-video-thin-tail-derivation.md` is **untracked** —
 it exists only in the primary checkout, so it cannot be corrected from a
 worktree and a future session may well read the stale version. This file is
