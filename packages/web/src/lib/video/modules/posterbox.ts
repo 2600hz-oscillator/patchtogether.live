@@ -300,10 +300,77 @@ export const posterboxDef: VideoModuleDef = {
     // The step INDEX 0..4 into POSTERBOX_DEPTH_STEPS (discrete fader). The
     // card formats it as the allocation name (1-bit/2-2-2/3-3-2/4-4-4/5-6-5);
     // the shader reads the per-channel level counts derived from the index.
-    { id: 'depth',  label: 'Depth',  defaultValue: POSTERBOX_DEFAULTS.depth,  min: 0, max: POSTERBOX_DEPTH_STEPS.length - 1, curve: 'discrete' },
+    {
+      id: 'depth',
+      label: 'Depth',
+      defaultValue: POSTERBOX_DEFAULTS.depth,
+      min: 0,
+      max: POSTERBOX_DEPTH_STEPS.length - 1,
+      curve: 'discrete',
+      // ⚠ THE ROSTER IS DERIVED FROM `POSTERBOX_DEPTH_STEPS`, the same array the
+      // shader's level table and the card's tick rail are built from, so the
+      // face cannot disagree with the quantiser about which step is which and a
+      // depth added to that array cannot leave a face naming a subset.
+      //
+      // ⚠ WHY IT HAS TO EXIST — the FUNCTIONAL-PARITY half. `PosterboxCard`
+      // draws this as a fader with a NAMED tick rail plus a `formatValue` that
+      // prints the step name ("1-bit", "5-6-5"). Those names are the only thing
+      // that says what a step DOES; the index alone is meaningless, and "3"
+      // does not tell you the palette is 256 colours. Without a roster the face
+      // shows a bare 6-step fader and the names are gone.
+      //
+      // ⚠ IT IS ALSO WHAT MAKES THE NAME LEGAL AS RESTING TEXT. The no-resting-
+      // derived-text ruling permits exactly one kind of value-ish text: a
+      // declared option/landmark NAME that disambiguates a control's own
+      // position. A `formatValue` decimal would be forbidden; a declared option
+      // label is not.
+      //
+      // ⚠ THIS EDIT COSTS AN ATTEST — `params` is in the WebGL content basis
+      // where `face` and `docs` are not.
+      options: POSTERBOX_DEPTH_STEPS.map((s, i) => ({
+        value: i,
+        label: s.name,
+        title: `${s.bits.join('-')} bits per channel — ${s.colors} colours`,
+      })),
+    },
     { id: 'dither', label: 'Dither', defaultValue: POSTERBOX_DEFAULTS.dither, min: 0, max: 1, curve: 'linear' },
     { id: 'mix',    label: 'Mix',    defaultValue: POSTERBOX_DEFAULTS.mix,    min: 0, max: 1, curve: 'linear' },
   ],
+
+  // ── FACE (batch-22 · G3, the screens) ─────────────────────────────────────
+  face: {
+    order: ['depth', 'dither', 'mix'],
+
+    // ⚠ NO `pages`. Three controls over one quantiser — how few colours, how
+    // much dither hides the banding, how much of it you blend back in — is one
+    // honest band.
+
+    // ⚠ ALL THREE ARE FADERS ON THE CARD, so all three are declared. Nothing in
+    // a ParamDef separates "a level" from any other continuous scalar, so an
+    // undeclared face resolves them to KNOBS and silently swaps a dial in for a
+    // throw, invisibly to every def-reading gate.
+    //
+    // ⚠ `depth` IS A FADER TOO, EVEN THOUGH IT IS DISCRETE, and that pairing is
+    // the interesting one: the card draws it as a fader with a NAMED tick rail,
+    // so the roster on the param supplies the names while `fader` supplies the
+    // throw. A discrete param is not automatically a selector — this one is a
+    // stepped slider, which is what the card established.
+    paramCells: { depth: 'fader', dither: 'fader', mix: 'fader' },
+
+    // ⚠ NO `bareCells` — one unlabelled band, so no heading exists to make a
+    // caption redundant, and Depth/Dither/Mix name three different things.
+
+    // ⚠ MANDATORY FOR A VIDEO DEF — no `type: 'audio'` output, so
+    // `primaryAudioOutPortId` is null and any other glyph literal falls through
+    // `glyphBinding` to a dead `{kind:'static'}` that reddens module-face-lint.
+    glyph: 'none',
+
+    // SCREEN ON/OFF arrives through this slot (#1928): promotion stops BOTH
+    // surfaces rendering `PosterboxCard.svelte`, the only route a faced video
+    // module has to the switch. See
+    // `$lib/ui/modules/posterbox/shell-extension.ts`.
+    extension: 'posterbox',
+  },
 
   docs: {
     explanation: "posterbox is a retro palette crusher: it truncates every pixel of the incoming video to an authentic per-channel bit allocation, reproducing the look of real palette-era hardware. The Depth ladder steps through five allocations — 1-1-1 (8 colours, ZX-Spectrum-style brutal posterize), 2-2-2 (64 colours, the EGA master palette), 3-3-2 (256 colours, the VGA-era 8-bit truecolor split), 4-4-4 (4096 colours, Amiga OCS), and 5-6-5 (65536 colours, RGB565 hi-colour). The 3-3-2 and 5-6-5 steps are the exact per-channel floor quantizers CELLSHADE's original 8-bit/16-bit retro modes used, ported unchanged, so old cellshade retro patches recreate byte-for-byte here. Because the asymmetric allocations give each channel a different level grid, neutral grays come out slightly tinted (gray 0.2 at 3-3-2 becomes a dark olive) — that channel-clipped cast is the period-correct look and is intentional. Dither adds the classic companion: a Bayer 4×4 ordered dither that perturbs the quantizer threshold per screen pixel, so smooth gradients render as retro cross-hatch instead of hard bands (the same offset-before-truncate scheme the PlayStation used for its 15-bit output). Mix is a straight dry/wet. The effect is stateless per frame — one texture sample and one Bayer lookup per pixel, no feedback and no neighbourhood taps.",

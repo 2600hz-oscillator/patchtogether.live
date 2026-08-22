@@ -227,8 +227,63 @@ export const tilerDef: VideoModuleDef = {
   params: [
     // The step INDEX 0..5 into TILER_STEPS (discrete fader). The card shows the
     // resulting grid (e.g. "8×8") next to it.
-    { id: 'tile', label: 'Tile', defaultValue: TILER_DEFAULTS.tile, min: 0, max: TILER_STEPS.length - 1, curve: 'discrete' },
+    {
+      id: 'tile',
+      label: 'Tile',
+      defaultValue: TILER_DEFAULTS.tile,
+      min: 0,
+      max: TILER_STEPS.length - 1,
+      curve: 'discrete',
+      // ⚠ DERIVED FROM `TILER_STEPS` — the same array the CV snap and the card's
+      // tick rail read, so the face cannot disagree with the sampler about
+      // which grid a step is, and a grid added there cannot leave a face naming
+      // a subset.
+      //
+      // ⚠ WHY IT HAS TO EXIST — this module's ONLY control is this one param,
+      // so without a roster the entire face is a bare 6-step fader with nothing
+      // saying what any step does. The card prints the grid (its rail is built
+      // from `TILER_GRID_STEPS`), and "index 3" does not tell you it is 4×3.
+      //
+      // The label is the GRID, which is what a player is choosing; the title
+      // carries the tile total the card's rail shows. Index 0 is named
+      // explicitly as the pass-through rather than "1×1", because "no tiling"
+      // is the thing that step means.
+      //
+      // ⚠ THIS EDIT COSTS AN ATTEST — `params` is in the WebGL content basis.
+      options: TILER_STEPS.map((s, i) => ({
+        value: i,
+        label: i === 0 ? 'off' : `${s.cols}×${s.rows}`,
+        title: i === 0
+          ? 'passthrough — one tile, the source untouched'
+          : `${s.cols}×${s.rows} grid — ${s.total} tiles`,
+      })),
+    },
   ],
+
+  // ── FACE (batch-22 · G3, the screens) ─────────────────────────────────────
+  face: {
+    order: ['tile'],
+
+    // ⚠ A ONE-CONTROL FACE, and no `pages` — sectioning a single control would
+    // be a heading over one cell.
+    //
+    // ⚠ THIS IS THE SMALLEST FACE IN BATCH 22, which makes the roster on `tile`
+    // load-bearing rather than a nicety: it is the ONLY thing on the plate, so
+    // without the option names the entire faceplate would be one unlabelled
+    // 6-step slider.
+
+    // A fader, because `TilerCard.svelte` draws a fader with a tick rail — a
+    // stepped slider, not a selector. See the roster's own note on the param.
+    paramCells: { tile: 'fader' },
+
+    // ⚠ MANDATORY FOR A VIDEO DEF — no audio output, so any other glyph literal
+    // resolves to a dead `{kind:'static'}` that reddens module-face-lint.
+    glyph: 'none',
+
+    // SCREEN ON/OFF arrives through this slot (#1928). See
+    // `$lib/ui/modules/tiler/shell-extension.ts`.
+    extension: 'tiler',
+  },
 
   docs: {
     explanation: "TILER is the classic video-mixer \"multiscreen / tile\" effect: it repeats the incoming frame across a landscape cols×rows grid, where every cell shows the FULL source scaled down to fit, so each tile is a lower-resolution thumbnail of the same picture. A 2×2 grid is 4 copies, an 8×8 grid is 64 tiny copies. It's a single-pass shader whose whole effect is one line — fract(uv * vec2(cols, rows)) stretches the UV across the cells and wraps each cell back to the full 0..1 input, so each tile samples the entire source; at the 1×1 step fract(uv)==uv, making it an exact 1:1 passthrough. TILER is stateless per frame (no feedback or history), so tiled copies move and transform live with whatever feeds it. Drop it inline on a video chain and dial the TILE knob up for a quick multiscreen wall, or sweep it (or modulate it via CV) to step between grid densities. With no input it outputs solid black.",
