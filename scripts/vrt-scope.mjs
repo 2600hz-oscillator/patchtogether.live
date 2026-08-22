@@ -250,6 +250,23 @@ export function codeLines(text) {
 }
 
 /**
+ * The contents of every string literal on the given code lines — '…', "…" and
+ * `…` — concatenated. Per-line on purpose: this runs on DIFF HUNKS, where a
+ * multiline template has no guaranteed opening and closing line, so a
+ * line-spanning parse would be pretending to a precision the input cannot
+ * carry.
+ */
+export function stringLiteralText(text) {
+  const out = [];
+  for (const line of String(text).split('\n')) {
+    for (const m of line.matchAll(/'([^']*)'|"([^"]*)"|`([^`]*)`/g)) {
+      out.push(m[1] ?? m[2] ?? m[3] ?? '');
+    }
+  }
+  return out.join('\n');
+}
+
+/**
  * The module types a file's CHANGED CODE names.
  *
  * This is what keeps a face PR scoped: `strict-faces.ts`, `_shell-faces.ts`,
@@ -262,12 +279,33 @@ export function codeLines(text) {
  * way a path is, which is why this shares `words()` with `typesInPath`.
  *
  * Comment-stripped first, and that is not a nicety — see `codeLines`.
+ *
+ * ⚠ SINGLE-WORD types match only inside STRING LITERALS (#2116). A one-word
+ * module name is also an ordinary identifier — `.filter((e) => …)` implicated
+ * the `filter` MODULE, `patch.edges`/`buildEdges` would implicate `edges`, and
+ * this file's own `codeLines` collides with `lines` — so a bare-identifier hit
+ * on a one-word type is noise that forces a full sweep and teaches operators to
+ * discount the fallback. The evidence a roster diff actually carries for a
+ * one-word module is its STRING spellings (`'mapper'`, `type: 'tempest'`,
+ * `'$lib/video/modules/mapper'`, `'mapper-face-model'`), so that is what
+ * counts. Multi-word types keep the identifier match — `slewSwitchSettleText`
+ * is real evidence and a contiguous [slew, switch] run does not occur in
+ * ordinary code by accident.
+ *
+ * Safety direction, stated plainly: a one-word module named ONLY as a bare
+ * identifier (an `EXTENSION_BODY_ROLES` key with no string spelling anywhere in
+ * the file's diff) now yields no token here — which makes that file a BLOCKER
+ * in `deriveVrtScope`, i.e. a LOUD full sweep, never a silent under-capture.
  */
 export function typesInDiffText(text, types) {
   if (!text) return [];
-  const hay = words(codeLines(text));
+  const code = codeLines(text);
+  const hay = words(code);
   if (hay.length === 0) return [];
-  return types.filter((t) => formHits(hay, t).idx.length > 0).sort();
+  const strHay = words(stringLiteralText(code));
+  return types
+    .filter((t) => formHits(words(t).length > 1 ? hay : strHay, t).idx.length > 0)
+    .sort();
 }
 
 /**
