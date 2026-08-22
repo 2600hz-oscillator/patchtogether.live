@@ -2324,9 +2324,107 @@ export interface UnbaselinableFace {
    * deleted spec is the exemption quietly becoming uncovered.
    */
   readonly coveredBy: readonly string[];
+  /**
+   * REQUIRED when the module's def declares a `freeze` param — and forbidden
+   * when it does not.
+   *
+   * ⚠ THIS FIELD EXISTS BECAUSE A GATE'S PRECONDITION TURNED OUT TO BE FALSE.
+   * The anchor's fourth leg reads the def's source for `id: 'freeze'` and
+   * treats a hit as proof that a determinism seam appeared — because on every
+   * def that had one until now, that is exactly what `freeze` was: a hidden
+   * param the VRT harness writes to stop the picture, declared
+   * `noUserControl`, given no cell.
+   *
+   * `acidwarp` is the first counter-example. It declares `freeze` and that
+   * param is a REAL, DOCUMENTED USER CONTROL with a different meaning — it
+   * halts only the automatic scene cycler while the palette goes on rotating,
+   * so writing it does NOT stop the picture. Under the old blanket rule that
+   * module could never hold an exemption, however true its argument was.
+   *
+   * The fix is not to soften the leg — it is to make the claim SAYABLE and
+   * then check it. Deny-by-default survives: a def with `freeze` and no entry
+   * here is still RED (the original behaviour), and an entry here whose def has
+   * NO `freeze` param is ALSO red, so the field cannot outlive what it
+   * describes.
+   *
+   * State what the param DOES instead, and cite the read site — "it is not a
+   * seam" without a mechanism is the shrug this whole file refuses.
+   */
+  readonly freezeIsNotASeam?: string;
 }
 
 export const FACES_WITHOUT_SCENES: readonly UnbaselinableFace[] = [
+  {
+    type: 'acidwarp',
+    scenes: ['compact', 'dock'],
+    why:
+      'BOTH of this suite\'s determinism mechanisms fail on this module, for two DIFFERENT and '
+      + 'independently verifiable reasons — which is the bar, since "it is animated" is not '
+      + 'sufficient (mirrorpool, outlines, warrensvisions and freezeframe are all animated and '
+      + 'all baselined). '
+      + '(1) `freezeFaceVideo` CANNOT STOP THIS PICTURE, AND THE MODULE SAYS SO IN ITS OWN '
+      + 'COMMENT. It freezes a video face by writing `params.freeze = 1`. On every other faced '
+      + 'video module `freeze` is a determinism hook; on acidwarp it is a REAL, DOCUMENTED USER '
+      + 'CONTROL that halts ONLY the automatic scene cycler. Read at the site: the freeze test '
+      + 'guards exactly one branch (`if (params.freeze < 0.5 && speed > 0)`, the scene advance), '
+      + 'while the palette accumulator sits OUTSIDE it — `paletteAccumSlots += dt * '
+      + 'PALETTE_ROT_PER_SEC * speed`, under the comment "Palette keeps rotating even while '
+      + 'frozen — the visual life of the patch comes from the cycling colours". The picture is a '
+      + '256-slot palette scrolling under a static index field, so with freeze engaged every '
+      + 'frame still differs. '
+      + '(2) `simPin` CANNOT REACH THIS MODULE AT ALL, and this half is structural rather than '
+      + 'behavioural. It installs boot-time globals with `addInitScript` so a factory can read '
+      + 'them AT CONSTRUCTION — but `acidwarpDef.renderLocus` is `\'worker\'`, so the factory '
+      + 'runs in a Worker with its OWN global scope which does not inherit the page\'s. Params '
+      + 'reach it over the proxy\'s RPC channel; page globals never do. So there is no pin to '
+      + 'add here short of inventing a second RPC seam for tests. '
+      + '⚠ THE MODULE DOES HAVE A NATURAL STILL — `speed = 0` zeroes the accumulator above, and '
+      + 'with freeze also on the frame is a pure function of (scene, paletteType). It is NOT '
+      + 'used, deliberately: the harness has no param-pin option (`simPin` is globals only), and '
+      + 'writing speed=0 post-boot would hold A frame without choosing WHICH — whatever rotation '
+      + 'accumulated before the write — the same "holds a frame, never which frame" defect that '
+      + 'put milkdrop on this list. Reaching it properly means a param-pin mechanism in '
+      + '`bootWithFace`, which is a platform change and not a face PR. '
+      + 'The CARD roster reached the same verdict long ago (EXEMPT_FROM_VRT in '
+      + 'vrt-exemptions.ts: "animated palette rotation + auto scene cycler defeats deterministic '
+      + 'capture"). See #2111.',
+    coveredBy: [
+      // The renderer itself — that it draws at all, structured and non-black.
+      'e2e/tests/acidwarp-render-smoke.spec.ts',
+      // The worker path specifically, which is how this module renders.
+      'e2e/tests/render-worker-acidwarp.spec.ts',
+      // The pattern + palette math, pixel-free: generatePattern, buildPalette,
+      // rotatePalette — and the palette ROSTER this face promoted onto the def.
+      'packages/web/src/lib/video/modules/acidwarp.test.ts',
+      // The FACE's structure and behaviour, none of which needs pixels: the
+      // tier ladder, the two bands, the roster, the landmarks, and the
+      // no-user-control declaration.
+      'packages/web/src/lib/ui/modules/acidwarp-face-model.test.ts',
+      // The SCREEN switch's render legs — that the picture mounts, that OFF
+      // unmounts it and keeps the generator running, and that the state
+      // persists on node.data.
+      'e2e/tests/acidwarp-face-screen.spec.ts',
+      // Every cell operates, and the dock's control set equals the def's param
+      // set — the registry-driven sweep this face auto-enrols in.
+      'e2e/tests/faces-parity.spec.ts',
+    ],
+    freezeIsNotASeam:
+      'acidwarp\'s `freeze` is a SHIPPED USER CONTROL, not a capture hook, and it is the first '
+      + 'in the fleet to be so — which is why this field exists at all. Read at the site: the '
+      + 'param guards exactly ONE branch of `draw()`, `if (params.freeze < 0.5 && speed > 0)`, '
+      + 'which advances the automatic SCENE cycler. The palette accumulator sits OUTSIDE that '
+      + 'branch — `paletteAccumSlots += dt * PALETTE_ROT_PER_SEC * speed` — under the module\'s '
+      + 'own comment "Palette keeps rotating even while frozen — the visual life of the patch '
+      + 'comes from the cycling colours, not the pattern changes". Since the picture IS a '
+      + 'palette scrolling under a static index field, writing freeze=1 changes which pattern '
+      + 'you are looking at and nothing about whether it moves. MEASURED IN A BROWSER, not '
+      + 'merely read: `acidwarp-face-screen.spec.ts`\'s third leg writes exactly this param — '
+      + 'the same write `freezeFaceVideo` makes — and asserts the canvas signature CHANGES '
+      + 'across 30 frames, on a real GPU and under E2E_SWIFTSHADER=1 alike. ⚠ That leg is '
+      + 'written to fail if the picture ever DOES stop, with a message saying this exemption has '
+      + 'gone stale and the face should move into the FACES roster — so the claim retires itself '
+      + 'rather than being renewed by default.',
+  },
   {
     type: 'milkdrop',
     scenes: ['compact', 'dock'],

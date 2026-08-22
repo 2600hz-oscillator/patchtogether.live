@@ -933,6 +933,31 @@ describe('module-face lint — MOMENTARY pads (face.momentary)', () => {
     // shipped. This roster's job is to tell "deliberately latching" from
     // "nobody looked at it yet", and here the honest answer was the second one.
     'quadralogical:invert',
+    // ACIDWARP, 2026-08-22 (#2111) — and this is the entry where the NAME is
+    // the trap. On every other def in this repo `freeze` is a DETERMINISM HOOK:
+    // a hidden param the VRT harness writes to stop the picture, declared
+    // `noUserControl` and given no cell. On acidwarp `freeze` is a REAL,
+    // DOCUMENTED USER CONTROL with a completely different meaning — it halts
+    // ONLY the automatic scene cycler, and the palette goes on rotating, so the
+    // picture keeps moving. Reading the name and assuming the usual thing would
+    // have produced a `noUserControl` entry that deleted a shipped control.
+    //
+    // VERIFIED AT THE READ SITE, per this roster's standard: the factory tests
+    // `params.freeze < 0.5` as a LEVEL each draw to decide whether to advance
+    // the auto-cycler; it is never edge-detected (the edge-detected param on
+    // this module is `sceneTrig`, which is a different thing and IS declared
+    // noUserControl). So it is read as a level, every frame.
+    //
+    // LATCHING, not momentary: it is a state you switch on and leave on while
+    // you sit on a scene. A momentary render would resume the cycler the
+    // instant the player let go — the exact opposite of the control, whose card
+    // caption is the latched pair FREEZE / FROZEN.
+    //
+    // ⚠ Its `curve` needed NO correction — the def already declares
+    // `discrete 0..1`, so card and def agreed before this face existed. Worth
+    // recording as the quiet case, since most entries in this roster arrived
+    // through a `linear` -> `discrete` fix.
+    'acidwarp:freeze',
   ]);
 
   it('no ACKNOWLEDGED_LATCHING param is DOCUMENTED as momentary (the cross-check)', () => {
