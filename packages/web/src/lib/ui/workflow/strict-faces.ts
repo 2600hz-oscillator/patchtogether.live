@@ -3106,6 +3106,51 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   'lumakey',
   'shapegen',
 
+  // ── BATCH 22 · GROUP 2b — the two faces that COST AN ATTEST ───────────────
+  //
+  // Split out of group 2 for exactly one reason: both need `options` rosters on
+  // their DEFS to survive promotion, and `params` is in the WebGL content basis
+  // where `face`, `docs`, `paramCells` and `noUserControl` are not. G1 and G2a
+  // were deliberately zero-attest; these two are not, so they ride together and
+  // pay one attest window between them instead of dragging it onto the others.
+  //
+  // ⚠ THE ROSTERS ARE FUNCTIONAL PARITY, NOT DECORATION — this is the whole
+  // argument for spending the attest:
+  //
+  //   `fader.abTransition` / `fader.dwTransition` were declared `0..4` with
+  //   `curve: 'linear'` and rendered as 5-option NAMED `<select>`s. Faced
+  //   as-declared, each resolves to a KNOB sweeping a continuous range and the
+  //   FX names (fade / wipe / dissolve / star / checkerboard) simply VANISH.
+  //   `coerceMode` has always rounded and clamped, so every value between the
+  //   integers was already a lie — the curve correction and the roster are two
+  //   halves of one fix.
+  //
+  //   `tempest.shape` was `0..2 discrete` with no roster, while its card cycles
+  //   and PRINTS the live shape name. Without `options` the face shows a bare
+  //   3-step stepper and "circle / square / star" is lost. A number is not a
+  //   name: "2" does not tell you the tube is a star.
+  //
+  // ⚠ BOTH ROSTERS ARE DERIVED FROM ARRAYS THAT ALREADY EXIST — `TUBE_SHAPES`
+  // (which the factory indexes) and `TRANSITION_NAMES` (which the card renders
+  // and `coerceMode` indexes). Nothing is invented and nothing is re-typed, so
+  // a face cannot disagree with the engine about which mode is which, and
+  // `max` now derives from the roster length instead of a hand-typed `4`.
+  //
+  // ⚠ TEMPEST WAS ALSO BOY-SCOUTED. It shipped (#935) with NO `docs` block and
+  // no `STRICT_DOCS` entry; the living-docs ratchet says the module you touch
+  // is the module you bring up to the bar, so that debt is paid here rather
+  // than noticed a fourth time. Its prose is written from the def's own header
+  // and factory, not from its plan document.
+  //
+  // SCREEN OFF keeps the watch mark on both, for the OUTPUT: neither carries an
+  // accumulator (tempest rebuilds its vertex set per frame from (rim, shape);
+  // fader blends fresh every frame). ⚠ `fader` is the batch's strongest case
+  // anyway, because it has TWO outputs — `out` and the `send` that feeds an
+  // external FX loop — so a lapsed mark stalls an output the switch does not
+  // even show, and can empty the wet path the player is mixing against.
+  'tempest',
+  'fader',
+
   // ── BATCH 21 · CELLSHADE — the cel-shader, rebuilt on current main ────────
   //
   // Six controls, all drawn with `NeonFader` on the card, so five of them are

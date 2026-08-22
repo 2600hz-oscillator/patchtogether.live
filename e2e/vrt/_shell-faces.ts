@@ -2201,6 +2201,42 @@ export const FACES = [
       + 'constant. Patch a source into A and that argument dies: the shape set becomes a function '
       + 'of the incoming raster.',
   },
+  // ── BATCH 22 · GROUP 2b — the two faces that cost an attest ───────────────
+  //
+  // Both `pages: 1` (neither face declares `pages`). Both carry NAMED SELECTORS
+  // resolved from `options` rosters newly declared on their defs — which is the
+  // change that costs the attest, and the reason these two are split from G2a.
+  {
+    type: 'tempest',
+    pages: 1,
+    videoFaceWhy:
+      'a VIDEO module, so it must boot into the video zone rather than a mixer channel column — '
+      + 'without this field bootWithFace waits out the full 90 s test timeout for a column '
+      + 'membership a video node never acquires. Both scenes also carry a live picture: the '
+      + 'compact tile paints a VideoTileThumb through hasVideoSurface, and the dock body is the '
+      + "module's own fullViewBody extension (the well preview plus its SCREEN switch). The "
+      + 'freeze write is a NO-OP on this def (it declares no `freeze` param) and deliberately so: '
+      + 'the well is rebuilt every frame from (rim, shape) through tempest-core with no time '
+      + 'uniform, no accumulator and no RNG, so with the params at their defaults the geometry is '
+      + 'identical on every frame and on every boot. ⚠ THE CLAW IS PART OF THAT — it is a pure '
+      + 'function of `rim`, not of elapsed time, so it sits still unless something drives the CV.',
+  },
+  {
+    type: 'fader',
+    pages: 1,
+    videoFaceWhy:
+      'a VIDEO module, so it must boot into the video zone rather than a mixer channel column — '
+      + 'without this field bootWithFace waits out the full 90 s test timeout for a column '
+      + 'membership a video node never acquires. Both scenes also carry a live picture: the '
+      + 'compact tile paints a VideoTileThumb through hasVideoSurface, and the dock body is the '
+      + "module's own fullViewBody extension (the main OUT mix preview plus its SCREEN switch). "
+      + 'The freeze write is a NO-OP on this def (no `freeze` param) and deliberately so: both '
+      + 'passes are a pure blend of (in_a, in_b, return, fader, dryWet, the two transition modes) '
+      + 'with no clock and no accumulator. With nothing patched into either input the mix is a '
+      + 'constant black and stays black however many draws land. ⚠ PATCH A SOURCE AND THAT '
+      + 'ARGUMENT WEAKENS — the picture then tracks whatever the upstream is doing, which for an '
+      + 'animated source is a different frame every capture.',
+  },
   // ── BATCH 21 · CELLSHADE ──────────────────────────────────────────────────
   {
     type: 'cellshade',

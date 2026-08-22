@@ -228,6 +228,15 @@ const EXTENSION_BODY_ROLES: Readonly<Record<string, BodyRule>> = {
   lumakey: { role: 'picture', why: 'the luminance-key compositor\'s live preview canvas and its SCREEN switch. A KEYER exists to be composited downstream, so its body keeps the engine\'s watch mark alive while the screen is off — a lapsed mark would change what the DOWNSTREAM sees, not just the preview (#2015).' },
   shapegen: { role: 'picture', why: 'the generative 3-D shape synthesiser\'s live preview canvas and its SCREEN switch. A GENERATOR whose `out` is the reason to patch it, so the retained watch mark is what stops a control labelled SCREEN behaving as a MUTE downstream (#2015).' },
 
+  // ── BATCH 22 · GROUP 2b — the two faces that cost an attest ───────────────
+  //
+  // Both PICTURES: a live preview canvas plus ONE control caption (the SCREEN
+  // button). Neither card mounts `hideControls`, so neither body declares a
+  // MONITOR toggle or a resize grip, and nothing on either surface is a derived
+  // value in a text node.
+  tempest: { role: 'picture', why: 'the vector-well render — rim ring, pit ring, radial lanes and the player claw — plus its SCREEN switch. A SOURCE with no video input, so the retained watch mark is what stops SCREEN OFF muting the well for everything downstream (#2015).' },
+  fader: { role: 'picture', why: 'the main OUT mix preview and its SCREEN switch. ⚠ This module has TWO outputs — `out` and the `send` feeding an external FX loop — so the retained watch mark protects an output the switch does not even show, and a loop the player is mixing against (#2015).' },
+
   // ── BATCH 21 · CELLSHADE ──────────────────────────────────────────────────
   //
   // A PICTURE: the live toon render plus ONE control caption (the SCREEN
