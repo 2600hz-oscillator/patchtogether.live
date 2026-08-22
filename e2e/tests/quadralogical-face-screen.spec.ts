@@ -201,16 +201,38 @@ test.describe('QUADRALOGICAL face — the screen', () => {
     // THE GEOMETRY CLAIM: the toggle re-aspects on the WIDTH and the HEIGHT
     // does not move. That is what keeps the EDGE boxes in the band below from
     // jumping under the player's cursor mid-performance.
+    //
+    // ⚠ POLLED, NOT READ ONCE — and this is a RENDERER-DEPENDENT BUG THIS SPEC
+    // ACTUALLY HAD. `.field` carries `transition: width 120ms ease-out`, so the
+    // box right after the click is the PRE-transition width. On a real GPU the
+    // transition had finished by the time the read landed and the assertion
+    // passed; under `E2E_SWIFTSHADER=1` — which is what CI runs — it had not,
+    // and this failed 3/3 with "on 480, off 480". A one-shot read of an
+    // animating box is a race whose outcome is the renderer's speed.
+    //
+    // The fix is an auto-retrying assertion on the REAL SUBJECT, never a
+    // wall-clock wait: `expect.poll` re-reads until the box settles or the
+    // expect timeout bounds the failure. No `waitForTimeout`, no frame count —
+    // the subject here is a CSS transition's committed value, and the honest
+    // question is "what is the width now", asked until it stops changing.
+    await expect
+      .poll(async () => (await field.boundingBox())!.width < on!.width - 40, {
+        message:
+          `SCREEN OFF must RECLAIM width (it was ${on!.width} with the screen on). If this ` +
+          'never flips, the CSS width transition has not committed — do not convert this to a ' +
+          'timeout, the poll IS the fix.',
+      })
+      .toBe(true);
+
     const off = await field.boundingBox();
     expect(off, 'the field survives SCREEN OFF — it IS the control').toBeTruthy();
+    // THE HEIGHT IS THE INVARIANT, and it is asserted AFTER the width settled
+    // so that "the height did not move" cannot pass merely because nothing had
+    // moved yet.
     expect(
       Math.round(off!.height),
       `the frame's HEIGHT must not move on toggle (on ${on!.height}, off ${off!.height})`,
     ).toBe(Math.round(on!.height));
-    expect(
-      off!.width,
-      `SCREEN OFF must RECLAIM width (on ${on!.width}, off ${off!.width})`,
-    ).toBeLessThan(on!.width - 40);
     // …and it squares up: 2×2 of 4:3 tiles is 4:3; the joystick alone is 1:1.
     expect(off!.width / off!.height, 'SCREEN OFF is the square pad').toBeCloseTo(1, 1);
     expect(on!.width / on!.height, 'SCREEN ON is 4:3').toBeCloseTo(4 / 3, 1);
