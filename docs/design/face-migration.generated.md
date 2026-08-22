@@ -12,8 +12,8 @@ Every registered module carries exactly one **disposition**: what kind of work i
 |  | count |
 |---|---|
 | registered modules | 198 |
-| done (faced + promoted) | 113 |
-| remaining (excludes organizational-native) | 82 |
+| done (faced + promoted) | 115 |
+| remaining (excludes organizational-native) | 80 |
 | registered with NO disposition (must be zero) | 0 |
 | inventory entries naming a dead def (must be zero) | 0 |
 
@@ -21,7 +21,7 @@ Every registered module carries exactly one **disposition**: what kind of work i
 
 | disposition | what it means | modules | done |
 |---|---|---|---|
-| `generic-face` | author a `face` and rank the controls — no new platform capability | 141 | 113 |
+| `generic-face` | author a `face` and rank the controls — no new platform capability | 141 | 115 |
 | `blocked` | would be a face today but for the named capability, and nothing else | 3 | — |
 | `bespoke-surface` | the primary interaction is not param-shaped — needs a purpose-built surface | 51 | — |
 | `organizational-native` | rack furniture; not a migration at all | 3 | — |
@@ -40,7 +40,7 @@ author a `face` and rank the controls — no new platform capability.
 | module | domain | state | blockers |
 |---|---|---|---|
 | `4plexvid` | video | done | — |
-| `acidwarp` | video | — | — |
+| `acidwarp` | video | done | — |
 | `adsr` | audio | done | — |
 | `analogLogicMaths` | audio | done | — |
 | `analogVco` | audio | done | — |
@@ -50,7 +50,7 @@ author a `face` and rank the controls — no new platform capability.
 | `bentbox` | video | done | — |
 | `bluebox` | audio | done | — |
 | `buggles` | audio | done | — |
-| `cellshade` | video | — | — |
+| `cellshade` | video | done | — |
 | `charlottesEchos` | audio | done | — |
 | `chroma` | video | — | — |
 | `chromakey` | video | — | — |

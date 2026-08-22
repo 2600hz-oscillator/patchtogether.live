@@ -214,6 +214,16 @@ const EXTENSION_BODY_ROLES: Readonly<Record<string, BodyRule>> = {
   colorizer: { role: 'picture', why: 'the mono-to-colour tinter\'s live preview canvas and its SCREEN switch. Sits mid-chain by construction (mono-video in, video out), which is why its body keeps the engine\'s watch mark alive while the screen is off (#2015).' },
   edges: { role: 'picture', why: 'the Sobel outline filter\'s live preview canvas and its SCREEN switch. Stateless — the outline is a pure per-pixel function of (input, threshold, thickness) — so SCREEN OFF costs it nothing but the OUTPUT, which is what the retained watch mark protects (#2015).' },
   inwards: { role: 'picture', why: 'the concentric-ring generator\'s live preview canvas and its SCREEN switch. The only SOURCE of the four: it has no video input, so a lapsed watch mark would mute the generator every downstream node samples rather than merely stalling a preview (#2015).' },
+  // ── ACIDWARP (2026-08-22, #2111) — the module that IS its display ────────
+  //
+  // TEXT ON THE SURFACE, exhaustively: the SCREEN button's own caption. Nothing
+  // else. ⚠ NOT on it, deliberately, and this is the entry where that absence
+  // is the interesting part — the legacy card printed TWO resting readouts
+  // (`SCENE n/41` and a live speed multiplier like `2.4x`), and neither is
+  // ported. The scene index is spoken by its control's `aria-valuetext`; the
+  // speed mapping's one non-obvious fact (NATIVE 1x is the knob's MIDPOINT)
+  // moved onto the param as landmark NAMES.
+  acidwarp: { role: 'picture', why: 'the 320x240 plasma generator\'s live display and its SCREEN switch — on this module the picture is not a monitor of the work, it IS the work: a pure-GPU SOURCE with no input and no audio path. ⚠ SCREEN OFF keeping the watch mark alive matters more here than on a filter (#2015): acidwarp is the ORIGIN of the signal, so a lapsed mark would not stall a preview, it would MUTE the generator every downstream node is sampling. ⚠ It is also the first body whose module\'s own `freeze` param is a USER CONTROL rather than a determinism hook, which is why this face is unbaselinable and lives in FACES_WITHOUT_SCENES.' },
   vdelay: { role: 'picture', why: 'the video delay line\'s live preview canvas and its SCREEN switch. ⚠ The ACCUMULATOR of the four — a 32-slot frame ring advanced by every draw — so SCREEN OFF retaining the watch mark is load-bearing on the PICTURE here, not just the output: a stalled pull would let the echo chain decay out of the ring (#2015).' },
   // ── BATCH 22 · GROUP 2a — the video thin tail, card-checked cells ─────────
   //
@@ -247,6 +257,16 @@ const EXTENSION_BODY_ROLES: Readonly<Record<string, BodyRule>> = {
   tiler: { role: 'picture', why: 'the tiled-grid picture and its SCREEN switch. Stateless re-sampling per frame, so SCREEN OFF costs only the OUTPUT — which is why the body keeps marking the node watched (#2015).' },
   sourcery: { role: 'picture', why: 'the keyed/skewed picture and its SCREEN switch. Derived per frame from its two thresholds, the colour skew and the rotation, so the retained watch mark protects the OUTPUT (#2015).' },
   onetonine: { role: 'picture', why: 'the MONITOR surface — the 3x3 grid plus the 1..9 digits saying which cell feeds which output — and its SCREEN switch. ⚠ The picture this hides is a DIAGNOSTIC, not the module product: nine clean crop outputs run behind it, so a lapsed watch mark would unpatch a nine-way splitter to hide one overlay (#2015).' },
+
+  // ── BATCH 21 · CELLSHADE ──────────────────────────────────────────────────
+  //
+  // A PICTURE: the live toon render plus ONE control caption (the SCREEN
+  // button). The card mounts no `hideControls`, so this body declares no
+  // MONITOR toggle and no resize grip, and nothing on the surface is a derived
+  // value in a text node — ⚠ notably NOT the card's `{bands} BANDS` readout,
+  // which is exactly the resting derived text the 2026-08-17 ruling removes.
+  // The band count reaches the player as the `bits` option LABEL instead.
+  cellshade: { role: 'picture', why: 'the cel-shaded toon render and its SCREEN switch. Stateless per frame by the def\'s own account (bilateral smooth → luma quantise → Sobel ink, no feedback), so the retained watch mark protects the OUTPUT of a chainable effect rather than any accumulated state (#2015).' },
 
   // ── STATUS — the one body whose subject is not a picture.
   cvBuddy: {

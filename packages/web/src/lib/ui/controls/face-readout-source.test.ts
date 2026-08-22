@@ -73,6 +73,10 @@ import { paintsReadout } from './knob-vocabulary-model';
 // The PPQN roster itself, so the exemptions below are derived from the same
 // constant the param is built from rather than re-typed beside it.
 import { CV_BUDDY_PPQN_CHOICES } from '$lib/audio/modules/cv-buddy';
+// The BAND-STEP roster, imported for the same reason as the PPQN one above:
+// cellshade's exemptions are DERIVED from the array its options are built from,
+// so the two cannot drift apart.
+import { CELLSHADE_BAND_STEPS } from '$lib/video/modules/cellshade';
 import { listModuleDefs } from '$lib/audio/module-registry';
 import { listVideoModuleDefs } from '$lib/video/module-registry';
 import { listMetaModuleDefs } from '$lib/meta/module-registry';
@@ -310,6 +314,38 @@ const NUMERIC_LABEL_EXEMPTIONS: readonly { type: string; param: string; label: s
     label: '120',
     why: 'the same frame-rate roster — a 120 Hz panel (or double-strobed 60). Emits 119.88 Hz for the same NTSC reason as the 60 position, so it too names a standard rather than reporting a value.',
   },
+  // ── CELLSHADE · `bits` (2026-08-22, batch-21) ────────────────────────────
+  //
+  // ⚠ DERIVED FROM `CELLSHADE_BAND_STEPS`, the array the param's options are
+  // built from and the array the shader's quantiser indexes — the same stronger
+  // form the PPQN block above uses, for the same reason: a hand-typed copy
+  // could go stale in the direction that fails OPEN.
+  //
+  // The `slewSwitch/length` entries are the closest precedent and the argument
+  // is theirs: this is a COUNT, not a measurement. BANDS 4 means "collapse the
+  // luma into four flat tonal steps"; a player says "four bands" out loud, and
+  // there is no name for the state that is not the integer. Inventing one
+  // ("coarse" / "fine") would be exactly the vocabulary-invention the moog904c
+  // review declined.
+  //
+  // ⚠ AND THE ALTERNATIVE HERE IS NOT "NO LABEL", IT IS A WRONG ONE. `bits`
+  // stores an INDEX 0..4 while the picture shows 2/3/4/6/8 bands, and the
+  // card's `formatValue` bridge is a card-side prop `ModuleShell` does not
+  // pass. Without this roster `NeonFader`'s readout falls back to
+  // `format(v, units)` and `aria-valuetext` announces the INDEX — the face
+  // would say "2" while four bands are on screen. So the number painted here
+  // REPLACES a wrong number rather than adding one.
+  ...CELLSHADE_BAND_STEPS.map((bands) => ({
+    type: 'cellshade',
+    param: 'bits',
+    label: String(bands),
+    why:
+      `BAND COUNT — ${bands} is not a reading of the dial (that is an index 0..4), it is what the `
+      + 'state IS: the luma collapsed into '
+      + `${bands} flat tonal steps. A player says "${bands} bands" out loud, the param is labelled `
+      + 'BANDS, and the def\'s own docs describe the control as picking 2/3/4/6/8. There is no '
+      + 'name for it that is not the integer, and inventing one would be vocabulary-invention.',
+  })),
 ];
 
 /** Every label that could reach a painted readout, as `(type, param, label)`. */
