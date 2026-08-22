@@ -12,8 +12,8 @@ Every registered module carries exactly one **disposition**: what kind of work i
 |  | count |
 |---|---|
 | registered modules | 198 |
-| done (faced + promoted) | 114 |
-| remaining (excludes organizational-native) | 81 |
+| done (faced + promoted) | 111 |
+| remaining (excludes organizational-native) | 84 |
 | registered with NO disposition (must be zero) | 0 |
 | inventory entries naming a dead def (must be zero) | 0 |
 
@@ -21,7 +21,7 @@ Every registered module carries exactly one **disposition**: what kind of work i
 
 | disposition | what it means | modules | done |
 |---|---|---|---|
-| `generic-face` | author a `face` and rank the controls — no new platform capability | 141 | 114 |
+| `generic-face` | author a `face` and rank the controls — no new platform capability | 141 | 111 |
 | `blocked` | would be a face today but for the named capability, and nothing else | 3 | — |
 | `bespoke-surface` | the primary interaction is not param-shaped — needs a purpose-built surface | 51 | — |
 | `organizational-native` | rack furniture; not a migration at all | 3 | — |
@@ -50,7 +50,7 @@ author a `face` and rank the controls — no new platform capability.
 | `bentbox` | video | done | — |
 | `bluebox` | audio | done | — |
 | `buggles` | audio | done | — |
-| `cellshade` | video | — | — |
+| `cellshade` | video | done | — |
 | `charlottesEchos` | audio | done | — |
 | `chroma` | video | — | — |
 | `chromakey` | video | — | — |
@@ -66,7 +66,7 @@ author a `face` and rank the controls — no new platform capability.
 | `delay` | audio | done | — |
 | `depolarizer` | audio | done | — |
 | `destroy` | audio | done | — |
-| `destructor` | video | done | — |
+| `destructor` | video | — | — |
 | `dockscope` | audio | — | — |
 | `drummergirl` | audio | done | — |
 | `dx7` | audio | done | — |
@@ -89,13 +89,13 @@ author a `face` and rank the controls — no new platform capability.
 | `kickdrum` | audio | done | — |
 | `lfo` | audio | done | — |
 | `lines` | video | — | — |
-| `luma` | video | done | — |
+| `luma` | video | — | — |
 | `lumakey` | video | done | — |
 | `lushgarden` | video | — | — |
 | `macrooscillator` | audio | done | — |
 | `mandelbulb` | video | done | — |
 | `mandleblot` | video | — | — |
-| `mapper` | video | done | — |
+| `mapper` | video | — | — |
 | `marbles` | audio | done | — |
 | `meowbox` | audio | done | — |
 | `milkdrop` | video | done | — |
@@ -136,7 +136,7 @@ author a `face` and rank the controls — no new platform capability.
 | `polarizer` | audio | done | — |
 | `posterbox` | video | — | — |
 | `qbrt` | audio | done | — |
-| `quadralogical` | video | — | — |
+| `quadralogical` | video | done | — |
 | `rasterize` | audio | done | — |
 | `reshaper` | video | done | — |
 | `resofilter` | audio | done | — |
@@ -173,7 +173,7 @@ author a `face` and rank the controls — no new platform capability.
 | `vca` | audio | done | — |
 | `vdelay` | video | done | — |
 | `vfpgaRunner` | video | — | — |
-| `videoMixer` | video | done | — |
+| `videoMixer` | video | — | — |
 | `videoOut` | video | done | — |
 | `warrensspectrum` | audio | done | — |
 | `warrensvisions` | video | done | — |

@@ -82,6 +82,35 @@ export function loadContention(dir = join(ROOT, 'e2e/tests')) {
  */
 export const PENDING_FIRST_MEASUREMENT = [
   {
+    spec: 'quadralogical-face-screen.spec.ts',
+    why:
+      '#2102 — new with the QUADRALOGICAL faceplate: the two legs that prove the joystick IS '
+      + 'the screen. Leg 1 patches four flat-colour sources and probes FOUR PIXELS of the face\'s '
+      + 'own canvas to prove each quadrant carries its own input under its own corner label; '
+      + 'leg 2 toggles SCREEN and proves the frame re-aspects on the WIDTH with the height '
+      + 'pinned. '
+      + '⚠ MEASURED UNDER `E2E_SWIFTSHADER=1`, WHICH IS THE NUMBER THAT MATTERS HERE — this is '
+      + 'a WebGL module whose test subject is a live 2x2 video preview, so the software '
+      + 'renderer is the variable, not a constant factor to multiply out afterwards. Warm '
+      + 'server, single worker: 31.7 s for a REPEAT=3 flake-check of both tests, i.e. **~10.5 s '
+      + 'per pass** (leg 1 ~6.4 s, leg 2 ~3.8 s). Budget the 2-core CI VM at roughly that plus '
+      + 'the usual VM overhead — the SwiftShader floor is already IN this figure rather than '
+      + 'ahead of it. '
+      + '⚠ AND THE SWIFTSHADER RUN IS WHY THIS ENTRY IS TRUSTWORTHY: on a real GPU leg 2 passed '
+      + 'and under SwiftShader it failed 3/3, because it read `.field`\'s bounding box once '
+      + 'while a 120 ms CSS width transition was still running ("on 480, off 480"). Fixed with '
+      + 'an auto-retrying `expect.poll` on the box itself — not a timeout, not a frame count — '
+      + 'so the leg is now renderer-independent by construction. A local-GPU-only measurement '
+      + 'would have shipped a spec that was red on every CI run. '
+      + '⚠ AND A LOCAL SWIFTSHADER MEASUREMENT WAS NOT SUFFICIENT EITHER: the spec still timed '
+      + 'out on CI shard 6 because it never took `SLOW_BOOT_TEST_TIMEOUT_MS`, so it ran on the '
+      + 'default 30 s while booting workflow mode plus nine WebGL nodes on a shared 2-core '
+      + 'runner. The flag changes the RENDERER; it does not reproduce cold boot or ten shards '
+      + 'competing. Both are now applied, and the SCREEN-OFF leg spawns ONE node instead of nine. '
+      + 'Run `flox activate -- task e2e:timings:accept` on the first green CI run after this '
+      + 'merges and DELETE this entry.',
+  },
+  {
     spec: 'face-screen-render.spec.ts',
     why:
       'lands with the batch-22 G4 face PR as the FLEET render-leg home for the SCREEN ON/OFF ' +
