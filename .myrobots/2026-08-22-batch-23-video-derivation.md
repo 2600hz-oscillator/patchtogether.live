@@ -239,9 +239,16 @@ count.** Use the name in future PR bodies so it is greppable.
 - **batch-23b — ATTEST: `shapes`.** Two `params` fixes, both real defects, one attest
   window, one `docs:accept`. Full handoff protocol (clean committed tree, report the
   expected refusal hash, never run `task webgl:attest` yourself).
-- **`acidwarp` RIDES ALONE.** Approved on the owner-sacred half of the rule: *"it isn't
-  'a 5-param module', it's four control shapes + a live display + buttons + a readout
-  deletion, i.e. a module needing design, and policy says those never batch."*
+- **`acidwarp` RIDES ALONE → REASSIGNED to the DESIGN LANE (coordinator-routed,
+  2026-08-22).** Approved solo on the owner-sacred half of the rule: *"it isn't 'a
+  5-param module', it's four control shapes + a live display + buttons + a readout
+  deletion, i.e. a module needing design, and policy says those never batch."* It then
+  went to the **third lane (the quadralogical agent), which has just shipped the bespoke
+  pattern** and is therefore the right home for the design-heavy solo.
+  ⚠ **NOT this lane's work — do not queue it.** The per-module analysis below stays in
+  this doc as HANDOFF MATERIAL for whoever builds it (the roster/no-roster split, the
+  `sceneTrig` classification and the readout deletion are all derived and verified); it
+  is not a claim on the module.
 
 ## Carried-forward obligations (do not re-derive these)
 
@@ -297,8 +304,25 @@ count.** Use the name in future PR bodies so it is greppable.
    otherwise uniform batch belongs in its own PR — the same instinct that produced
    SPLIT-ON-THE-ATTEST-LINE above, applied to domain instead of attest.
 
-## Sequencing (coordinator, 2026-08-22)
+## Sequencing and ROUTING (coordinator, 2026-08-22)
 
-G4 PR first (capture reconcile → open). **Then batch-23a can start immediately** — it is
-zero-attest, so it needs no window coordination. 23b and `acidwarp` follow, and only
-those two need an attest window.
+**This lane's queue, explicit:**
+
+1. **G4 PR** — on capture reconcile → merge on green.
+2. **batch-23a** (`peakstate` + `lines`, zero-attest) — **starts the moment G4's PR is
+   open, no gap.** Needs no attest-window coordination.
+3. **batch-23b** (`shapes`) — attest handoff to the coordinator.
+4. Then **ping the coordinator for the next derivation target**: after 23b the ≤5 video
+   tail is DONE, and the next cut is *a decision, not an assumption* — do not pick one
+   unilaterally, which is the same trap the ≤4→≤5 move was caught by above.
+
+**Routing of everything NOT this lane's:**
+
+| module | routed to | note |
+|---|---|---|
+| `acidwarp` | **design lane** (the quadralogical agent), coordinator-routed | the design-heavy solo; that lane had just shipped the bespoke pattern |
+| `cellshade` | lane A, in flight | rebuilding off current main; roster approved, attest staged |
+| `graphicEq` | unassigned — **coordinator routes** | solo, audio, `_face-fixtures` pool widening included; harvest the batch-19 tree's recon |
+| `scoreboard` | unassigned (#2089) | rides alone |
+
+⚠ **Do not self-assign anything in that table.**
