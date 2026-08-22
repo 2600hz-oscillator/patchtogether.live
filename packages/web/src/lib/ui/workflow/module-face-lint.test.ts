@@ -64,7 +64,7 @@ import { COLOUROFMAGIC_OVER_PARAMS } from '$lib/video/modules/colourofmagic';
 import { bandFocusIsInert, bandFocusIsTotal } from './band-focus-model';
 import type { FaceBandFocus } from '$lib/graph/types';
 import { laneBodyPlan, laneGlyphFor } from './module-shell-model';
-import { looksLikeSwitch } from './shell-control-kind';
+import { bodyPaintedParamIds, looksLikeSwitch, type DeclaringDefLike } from './shell-control-kind';
 import { panelCellKeys, shellCellFor } from './shell-cells';
 import { GRID_MAX_CELLS } from '$lib/ui/controls/param-grid-model';
 import {
@@ -415,13 +415,33 @@ describe('module-face lint — DOCK RENDER-PLAN parity (STRICT_FACES set)', () =
       // renderer in BOTH directions, so a declaration that failed to suppress
       // (or suppressed the wrong param) is red, not quietly satisfied.
       const noControl = noUserControlIds(def as NoUserControlDefLike);
+      // ⚠ THE SECOND ZERO-CELL DECLARATION, AND IT INVERTS THE SAME WAY.
+      // `face.xyPads[].surface === 'body'` says the module's OWN `fullViewBody`
+      // paints that pad, so its two axes must render EXACTLY ZERO dock band
+      // cells. The claim is falsifiable in both directions exactly like
+      // `noUserControl`: a declaration that failed to suppress is red here, and
+      // a body that does not actually paint the pad is red in
+      // `face-xy-body-source.test.ts` (which reads the component source) and in
+      // `faces-parity` (which reads the rendered `data-control-params`).
+      //
+      // ⚠ IT IS **NOT** THE SAME CLAIM AS `noUserControl`, and conflating them
+      // would be a real error: `noUserControl` says NOBODY sets this param,
+      // `surface: 'body'` says the player sets it SOMEWHERE ELSE ON THIS PLATE.
+      // The completeness sweep above therefore still REQUIRES a body pad's axes
+      // in `face.order` — dropping them would be the un-ranked control it
+      // exists to catch — while `noUserControl` forbids the rank.
+      const inBody = bodyPaintedParamIds(def as DeclaringDefLike);
       for (const p of def.params ?? []) {
         const n = paramCounts.get(p.id) ?? 0;
-        const want = noControl.has(p.id) ? 0 : 1;
+        const want = noControl.has(p.id) || inBody.has(p.id) ? 0 : 1;
         if (n !== want) {
           problems.push(
             `${def.type}: param '${p.id}' renders ${n}× in the dock plan (must be exactly ${want}` +
-              `${want === 0 ? ' — it is declared noUserControl' : ''})`,
+              `${want === 0
+                ? noControl.has(p.id)
+                  ? ' — it is declared noUserControl'
+                  : " — its pad declares surface:'body', so the module's fullViewBody paints it"
+                : ''})`,
           );
         }
         paramCounts.delete(p.id);
@@ -888,6 +908,31 @@ describe('module-face lint — MOMENTARY pads (face.momentary)', () => {
     // the quiet agreements are what make them legible as exceptions.
     'lumakey:invert',
     'shapegen:solids',
+    // QUADRALOGICAL, 2026-08-22 — the GLOBAL key inversion, and it is the entry
+    // whose `curve` correction fixed a control that the player could not reach
+    // AT ALL rather than one they could reach awkwardly.
+    //
+    // VERIFIED AT THE READ SITE, per this roster's standard: the shader tests
+    // `if (invert >= 0.5)` in BOTH keyed arms of `blend()` — the CHROMA arm and
+    // the LUMA arm — and the TS reference `blend2()` does the same in both. So
+    // every value in (0, 0.5) is bit-identically OFF and every value in
+    // [0.5, 1] bit-identically ON: the declared `linear` was always a lie about
+    // a two-state value, and the correction is pixel-neutral by construction
+    // (every value any surface could already write stays on its own side of the
+    // threshold). Read as a LEVEL every frame via `g.uniform1f(mixU.invert,
+    // params.invert)`; never edge-detected, and no CV input targets it.
+    //
+    // LATCHING, not momentary: it is a look you switch on and LEAVE on — "keep
+    // the other side of the key". A momentary render would un-invert the key
+    // the instant the player let go, which is the opposite of the control.
+    //
+    // ⚠ AND IT BECAME VISIBLE TO THIS GATE BY A ROUTE NO OTHER ENTRY TOOK. The
+    // others were card buttons whose def merely mis-declared `curve`;
+    // `QuadralogicalCard.svelte` renders NO control for this param at all, and
+    // there is no `invert` CV input either, so it has been unreachable since it
+    // shipped. This roster's job is to tell "deliberately latching" from
+    // "nobody looked at it yet", and here the honest answer was the second one.
+    'quadralogical:invert',
     // ACIDWARP, 2026-08-22 (#2111) — and this is the entry where the NAME is
     // the trap. On every other def in this repo `freeze` is a DETERMINISM HOOK:
     // a hidden param the VRT harness writes to stop the picture, declared
@@ -1532,6 +1577,22 @@ describe('module-face lint — DECLARED param cells (face.paramCells) + PANEL ti
               `stepper wearing a joystick. A 2-D drag needs a continuous scale under both axes.`,
           );
         }
+      }
+      // ⚠ `surface: 'body'` WITHOUT A BODY IS A CONTROL DELETION, not a no-op.
+      // The dock drops both axes from the band plan on the strength of this
+      // declaration; if no `face.extension` resolves a `fullViewBody` there is
+      // nothing to paint them, and the dock faceplate of a pad-driven module
+      // silently loses its pad. The declaration must therefore name the thing
+      // it is handing the pad to. (That the resolved body ACTUALLY emits the
+      // pad is a source-level question — `face-xy-body-source.test.ts`; this
+      // clause is the cheap structural half that runs in the pure lane.)
+      if (pad.surface === 'body' && !def.face?.extension) {
+        problems.push(
+          `${def.type}: face.xyPads pad '${pad.x}'/'${pad.y}' declares surface:'body' but the ` +
+            `face declares no \`extension\` — the dock drops BOTH axes from the band plan on ` +
+            `the strength of that declaration, so with no fullViewBody to paint them the pad ` +
+            `is simply deleted from the faceplate.`,
+        );
       }
     }
     return problems;
