@@ -2292,6 +2292,33 @@ export interface UnbaselinableFace {
    * deleted spec is the exemption quietly becoming uncovered.
    */
   readonly coveredBy: readonly string[];
+  /**
+   * REQUIRED when the module's def declares a `freeze` param — and forbidden
+   * when it does not.
+   *
+   * ⚠ THIS FIELD EXISTS BECAUSE A GATE'S PRECONDITION TURNED OUT TO BE FALSE.
+   * The anchor's fourth leg reads the def's source for `id: 'freeze'` and
+   * treats a hit as proof that a determinism seam appeared — because on every
+   * def that had one until now, that is exactly what `freeze` was: a hidden
+   * param the VRT harness writes to stop the picture, declared
+   * `noUserControl`, given no cell.
+   *
+   * `acidwarp` is the first counter-example. It declares `freeze` and that
+   * param is a REAL, DOCUMENTED USER CONTROL with a different meaning — it
+   * halts only the automatic scene cycler while the palette goes on rotating,
+   * so writing it does NOT stop the picture. Under the old blanket rule that
+   * module could never hold an exemption, however true its argument was.
+   *
+   * The fix is not to soften the leg — it is to make the claim SAYABLE and
+   * then check it. Deny-by-default survives: a def with `freeze` and no entry
+   * here is still RED (the original behaviour), and an entry here whose def has
+   * NO `freeze` param is ALSO red, so the field cannot outlive what it
+   * describes.
+   *
+   * State what the param DOES instead, and cite the read site — "it is not a
+   * seam" without a mechanism is the shrug this whole file refuses.
+   */
+  readonly freezeIsNotASeam?: string;
 }
 
 export const FACES_WITHOUT_SCENES: readonly UnbaselinableFace[] = [
@@ -2349,6 +2376,22 @@ export const FACES_WITHOUT_SCENES: readonly UnbaselinableFace[] = [
       // set — the registry-driven sweep this face auto-enrols in.
       'e2e/tests/faces-parity.spec.ts',
     ],
+    freezeIsNotASeam:
+      'acidwarp\'s `freeze` is a SHIPPED USER CONTROL, not a capture hook, and it is the first '
+      + 'in the fleet to be so — which is why this field exists at all. Read at the site: the '
+      + 'param guards exactly ONE branch of `draw()`, `if (params.freeze < 0.5 && speed > 0)`, '
+      + 'which advances the automatic SCENE cycler. The palette accumulator sits OUTSIDE that '
+      + 'branch — `paletteAccumSlots += dt * PALETTE_ROT_PER_SEC * speed` — under the module\'s '
+      + 'own comment "Palette keeps rotating even while frozen — the visual life of the patch '
+      + 'comes from the cycling colours, not the pattern changes". Since the picture IS a '
+      + 'palette scrolling under a static index field, writing freeze=1 changes which pattern '
+      + 'you are looking at and nothing about whether it moves. MEASURED IN A BROWSER, not '
+      + 'merely read: `acidwarp-face-screen.spec.ts`\'s third leg writes exactly this param — '
+      + 'the same write `freezeFaceVideo` makes — and asserts the canvas signature CHANGES '
+      + 'across 30 frames, on a real GPU and under E2E_SWIFTSHADER=1 alike. ⚠ That leg is '
+      + 'written to fail if the picture ever DOES stop, with a message saying this exemption has '
+      + 'gone stale and the face should move into the FACES roster — so the claim retires itself '
+      + 'rather than being renewed by default.',
   },
   {
     type: 'milkdrop',
