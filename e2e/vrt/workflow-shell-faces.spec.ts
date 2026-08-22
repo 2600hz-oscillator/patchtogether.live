@@ -940,12 +940,45 @@ test.describe('VRT: P1 curated faces (?shell=1) — compact lane tile + dock ful
     await frameMember(page, runId, 0.45, 'compact');
 
     // LEG 0 — ANCHORED TO THE ARTIFACT.
-    const live = await readFaceAudio(page, runId);
-    expect(
-      live.tapped,
-      `${NC_AUDIO_FACE}: no analyser could attach to its '${live.portId}' output — the control ` +
-        `cannot see the signal it is about to reason about.`,
-    ).toBe(true);
+    //
+    // ⚠ THE ATTACH IS POLLED, NOT SAMPLED ONCE (#2114). This read used to fire
+    // immediately after `bootWithFace` + `frameMember`, and analyser attach is
+    // ASYNCHRONOUS READINESS — so a single sample races it. On vrt-strict shard
+    // 5/8 it lost that race and the control died on its own precondition
+    // ("no analyser could attach"), before either of the two assertions it
+    // exists to make had run. The shard was at 64 % of budget, so this was
+    // never a capacity problem; it is the documented state-readiness pattern
+    // being missing.
+    //
+    // ⚠ THIS CANNOT WEAKEN THE GATE, which is the property that makes polling
+    // the right answer rather than a bigger budget. If the analyser never
+    // attaches, the poll still fails with the same message and the same
+    // meaning; all that changes is that "sampled before ready" becomes "waited
+    // for ready, then asserted". The peak / moving legs below are untouched and
+    // still read the SAME reading this loop settles on.
+    //
+    // ⚠ AND IT IS A READINESS BOOLEAN, NOT AN ACCUMULATOR — which is why an
+    // `expect.poll` is legitimate here and is NOT the "Playwright-side poll
+    // starves its own subject" defect. That rule is about sampling a
+    // page-side quantity that ADVANCES (a frame counter), where each
+    // round-trip competes with the thing being measured. `tapped` latches once
+    // and stops changing, so re-reading it neither perturbs nor races anything.
+    let live = await readFaceAudio(page, runId);
+    await expect
+      .poll(
+        async () => {
+          live = await readFaceAudio(page, runId);
+          return live.tapped;
+        },
+        {
+          message:
+            `${NC_AUDIO_FACE}: no analyser could attach to its '${live.portId}' output — the ` +
+            `control cannot see the signal it is about to reason about. Polled to let the ` +
+            `attach settle; still false, so this is a real wiring failure rather than a race.`,
+          timeout: 15_000,
+        },
+      )
+      .toBe(true);
     expect(
       live.peak,
       `${NC_AUDIO_FACE} downstream of ${NC_SOURCE}: peak amplitude is ${live.peak} — the chain is ` +
