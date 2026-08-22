@@ -235,6 +235,33 @@ export const PENDING_FIRST_MEASUREMENT = [
       'after this merges and DELETE this entry — the gate reddens on a stale entry as loudly as ' +
       'on a missing one.',
   },
+  {
+    spec: 'face-screen-render.spec.ts',
+    why:
+      'lands with the batch-22 G4 face PR as the FLEET render-leg home for the SCREEN ON/OFF ' +
+      'switch, so no ci.yml run containing it has completed and there is no blob report to accept ' +
+      'a cost from. MEASURED locally, 2 workers, warm server, E2E_SWIFTSHADER=1: 51.2 s wall for ' +
+      '28 tests (27 module legs + 1 persistence leg), i.e. ~1.8 s/test at 2 workers or ~3.7 ' +
+      'CPU-s/test. A 3x flake-check at the 26-test size was 2.7 min for 78 tests, the same rate. ' +
+      '⚠ THE COST MODEL HERE IS PAGE BOOTS, NOT FRAMES, and that is the one thing worth knowing ' +
+      'before budgeting it. Every leg does `goto /rack` + spawnPatch + centre + open the dock, ' +
+      'then asserts on DOM and LAYOUT facts only — no leg reads a pixel — and the spec sets ' +
+      '`__videoEngineFreezeRender` in an init script, so the per-frame `blitOutputForPreview` + ' +
+      '`drawPreviewDownscaled` loop these 27 video bodies would otherwise run is OFF for the whole ' +
+      'file. So the "cost scales with frames driven and nothing else" calibration in the ' +
+      'b3ntb0x entry above does NOT transfer: there are no frames driven. Cost is ~linear in the ' +
+      'table size. ' +
+      '⚠ TREAT THE LOCAL NUMBER AS A FLOOR ANYWAY. `backdraft-preview-toggle` calibrated 57.5 s ' +
+      'local against 358.2 CPU-s on CI (6x) and that WAS a frame-driving video spec; the frozen ' +
+      'render should put this one well under that multiplier, but "should" is a prediction and ' +
+      'this artifact exists because predictions were wrong. Do not use 51.2 s for shard-balance ' +
+      'reasoning — it is here to prove the spec was measured at all. ' +
+      '⚠ AND IT IS ONE FILE, so the whole table lands on ONE shard: this is the largest ' +
+      'single-file test count the e2e lane schedules, which is precisely why it should get a real ' +
+      'measurement rather than the median. ' +
+      'Run `task e2e:timings:accept -- <run-id>` on the first green run after this merges and ' +
+      'DELETE this entry.',
+  },
   // Every entry here is a debt with a deadline.
   //
   // All six that stood on 2026-08-17 were paid in one accept against ci.yml run
