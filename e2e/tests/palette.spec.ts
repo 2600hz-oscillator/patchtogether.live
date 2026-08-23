@@ -6,7 +6,7 @@
 // chosen module type into the patch graph.
 
 import { test, expect } from './_fixtures';
-import { openModulePalette } from './_helpers';
+import { openModulePalette, canvasPane} from './_helpers';
 
 test.describe.configure({ mode: 'parallel' });
 
@@ -39,7 +39,7 @@ test('palette: Enter picks the first filtered match', async ({ page, rack }) => 
 
 test('palette: right-click on canvas pane opens at cursor', async ({ page, rack }) => {
   // Right-click somewhere on the empty pane.
-  const pane = page.locator('.svelte-flow__pane');
+  const pane = canvasPane(page);
   const box = await pane.boundingBox();
   if (!box) throw new Error('no pane');
   await page.mouse.click(box.x + 200, box.y + 200, { button: 'right' });

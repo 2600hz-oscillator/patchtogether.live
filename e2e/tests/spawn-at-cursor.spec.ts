@@ -22,7 +22,7 @@
 // the organize-modules suite uses; keeps tests stable against fitView.
 
 import { test, expect, type Page } from '@playwright/test';
-import { spawnPatch } from './_helpers';
+import { spawnPatch, canvasPane} from './_helpers';
 
 test.describe.configure({ mode: 'parallel' });
 
@@ -37,7 +37,7 @@ async function readNodes(page: Page): Promise<PatchNode[]> {
 }
 
 async function paneBox(page: Page) {
-  const pane = page.locator('.svelte-flow__pane');
+  const pane = canvasPane(page);
   const box = await pane.boundingBox();
   if (!box) throw new Error('no pane bounding box');
   return box;

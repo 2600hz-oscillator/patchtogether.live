@@ -17,7 +17,7 @@
 
 import type { Page } from '@playwright/test';
 import { test, expect } from './_fixtures';
-import { spawnPatch } from './_helpers';
+import { spawnPatch, canvasPane} from './_helpers';
 
 test.describe.configure({ mode: 'parallel' });
 
@@ -171,7 +171,7 @@ test('keyboard 1–8 gate on FOCUS-WITHIN (clicked into), NOT mere selection', a
   await expect(page.getByTestId('clipplayer-control-deck')).toBeVisible();
 
   // Deselect + blur (click empty canvas) → chip gone + digits inert again.
-  await page.locator('.svelte-flow__pane').click({ position: { x: 5, y: 5 } });
+  await canvasPane(page).click({ position: { x: 5, y: 5 } });
   await expect(page.getByTestId('clipplayer-kb-active-cp')).toHaveCount(0);
   await page.keyboard.press('3');
   await expect(page.getByTestId('clipplayer-editor')).toHaveCount(0);

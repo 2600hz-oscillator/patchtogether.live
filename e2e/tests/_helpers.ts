@@ -102,8 +102,14 @@ async function revealWorkflowNodes(page: Page, ids: string[]): Promise<void> {
       }
       if (!any) return;
 
+      // ⚠ SCOPED TO THE MAIN CANVAS — see MAIN_CANVAS below. A bare
+      // `querySelector('.svelte-flow__pane')` returns whichever comes FIRST in
+      // the DOM, and a workflow rack now has up to three (the canvas plus one
+      // per `HeadlessSourceHost`). It happens to be the canvas today only
+      // because the host wrappers are later siblings inside `.flow`.
       const pane =
-        document.querySelector('.svelte-flow__pane') ?? document.querySelector('.svelte-flow');
+        document.querySelector('.flow > .svelte-flow .svelte-flow__pane')
+        ?? document.querySelector('.flow > .svelte-flow');
       if (!pane) return;
       const rect = pane.getBoundingClientRect();
       const vp = flow.getViewport();
@@ -560,6 +566,48 @@ export async function spawnPatch(
   throw lastErr ?? new Error('spawnPatch: exhausted retries with no error captured');
 }
 
+// ---------------- THE MAIN CANVAS, scoped away from the headless hosts -------
+
+/**
+ * The MAIN rack canvas's SvelteFlow — the one a player looks at.
+ *
+ * ⚠ `.svelte-flow__pane` AND `.svelte-flow__node` ARE AMBIGUOUS ON A WORKFLOW
+ * RACK, AND THE AMBIGUITY GREW, WHICH IS WHY THIS EXISTS. `HeadlessSourceHost`
+ * mounts each hosted module's REAL card inside its OWN single-node SvelteFlow —
+ * parked at `left:-9999px`, `aria-hidden`, `pointer-events:none` — so every one
+ * of them contributes a second `.svelte-flow__pane` and its own
+ * `.svelte-flow__node[data-id=…]`. MEASURED on this tree: `/rack` has THREE
+ * panes (the canvas + the timelorde and synesthesia hosts) and
+ * `/rack?shell=legacy` has TWO; this selector resolves to exactly ONE in both.
+ *
+ * ⚠ THE HOSTS LIVE *INSIDE* `.flow`, so `.flow …` does NOT scope them out — and
+ * that was the premise several specs were written on. The distinguishing fact is
+ * the CHILD combinator: the canvas's own SvelteFlow is a DIRECT child of
+ * `.flow`, while a host's is a grandchild through the `.headless-source-host`
+ * wrapper. (Moving the host out of `.flow` would read better and is refused for
+ * a measured reason: `.flow :global(.svelte-flow) { position: absolute; inset: 0 }`
+ * is what gives a SvelteFlow its height, and its own comment records that
+ * without it the flow "renders with zero height … and the canvas appears empty
+ * even though nodes exist in the DOM".)
+ *
+ * ⚠ AND `.first()` IS NOT A SUBSTITUTE. It happens to pick the canvas today
+ * because the DOM order puts it first, which is a coincidence of markup order
+ * rather than a property of what is being addressed — the shape that "resolves
+ * to an arbitrary one" is exactly what a strict-mode violation is protecting
+ * against.
+ */
+export const MAIN_CANVAS = '.flow > .svelte-flow';
+
+/** The main canvas's pane — the click/drag target for lasso, spawn and palette. */
+export function canvasPane(page: Page) {
+  return page.locator(`${MAIN_CANVAS} .svelte-flow__pane`);
+}
+
+/** One node AS THE MAIN CANVAS RENDERS IT — never a headless host's copy. */
+export function canvasNode(page: Page, id: string) {
+  return page.locator(`${MAIN_CANVAS} .svelte-flow__node[data-id="${id}"]`);
+}
+
 // ---------------- Module palette (right-click) helper ----------------
 
 /**
@@ -588,7 +636,7 @@ export async function openModulePalette(
   page: Page,
   opts: { position?: { x: number; y: number } } = {},
 ): Promise<{ x: number; y: number }> {
-  const pane = page.locator('.svelte-flow__pane');
+  const pane = canvasPane(page);
   await pane.waitFor({ state: 'visible', timeout: 10_000 });
 
   let point = opts.position ?? null;

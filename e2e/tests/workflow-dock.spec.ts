@@ -25,7 +25,7 @@
 // multi-user dock spec is P2.5b's, per the owner's attest answer).
 
 import { test, expect, type Page } from '@playwright/test';
-import { spawnPatch } from './_helpers';
+import { spawnPatch, canvasPane} from './_helpers';
 import { pressFlipKey } from './_flip-key';
 import { readScopePeakOverWindow, runFor } from './_module-coverage-helpers';
 import { BOOT_MS } from '../_helpers/boot-budget';
@@ -366,7 +366,7 @@ test.describe('canvas cards keep their full PatchPanel handle stack', () => {
     const errors = collectErrors(page);
     await page.goto('/rack?shell=legacy');
     await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: BOOT_MS });
-    await page.locator('.svelte-flow__pane').waitFor({ state: 'visible' });
+    await canvasPane(page).waitFor({ state: 'visible' });
 
     await spawnPatch(page, [{ id: 'mx', type: 'mixer', position: { x: 300, y: 200 } }]);
     const node = page.locator('.svelte-flow__node[data-id="mx"]');
