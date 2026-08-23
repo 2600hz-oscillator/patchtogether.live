@@ -1106,16 +1106,39 @@ test.describe('?shell=1 video visibility', () => {
 
     // (a) FEEDBACK via the tile's EXPAND affordance — the user path.
     await centerOnNode(page, 'b1', 0.9);
-    const b1Tile = page.locator(`.svelte-flow__node[data-id="b1"] [data-testid="module-shell-placeholder"]`);
-    await expect(b1Tile).toBeVisible();
+    // ⚠ RE-POINTED WHEN FEEDBACK WAS PROMOTED (batch 24). Promotion is a
+    // BEHAVIOUR change, not a skin: `migrated('feedback')` is now true, so the
+    // lane renders a real `module-shell` TILE instead of the
+    // `module-shell-placeholder` that stands in for an unfaced module, and the
+    // dock renders `<ModuleShell view="dock-full">` instead of
+    // `FeedbackCard.svelte`. Both locators below moved for that reason and only
+    // that reason — the SUBJECT changed, so the assertions follow it.
+    //
+    // ⚠ THIS IS STRICTLY STRONGER THAN WHAT IT REPLACED, which is why the leg was
+    // re-pointed rather than re-homed on another module. The canvas it now polls
+    // is `FeedbackOutputBody`'s — the module's own `fullViewBody` extension —
+    // so the same three assertions (mounts / paints / ANIMATES) now prove the
+    // faced dock surface end-to-end, including that the extension's rAF loop
+    // survives the dock mount. Before promotion they proved it of a card the
+    // dock no longer renders.
+    //
+    // ⚠ AND THE REGRESSION THIS CASE EXISTS FOR IS UNAFFECTED. The original
+    // defect — a legacy card whose bare `useStore()` threw outside the
+    // SvelteFlow provider and mounted DEAD in the dock — is the videoOut leg
+    // below, and videoOut is NOT faced (it is the one named exemption in
+    // `video-face-screen-source.test.ts`). The `providerErrors` sink still
+    // covers both halves.
+    const b1Tile = page.locator(`.svelte-flow__node[data-id="b1"] [data-testid="module-shell"]`);
+    await expect(b1Tile, 'the faced feedback shell tile').toBeVisible();
     await b1Tile.getByTestId('shell-open-dock').click();
     const faceplate = page.getByTestId('dock-full-view');
     await expect(faceplate).toBeVisible();
-    const dockPreview = faceplate.locator('[data-dock-card="b1"] [data-testid="feedback-canvas"]');
+    const FEEDBACK_FACE_CANVAS = '[data-testid="dock-full-view"] [data-testid="feedback-face-canvas"]';
+    const dockPreview = faceplate.locator('[data-testid="feedback-face-canvas"]');
     await expect(dockPreview, 'feedback video surface mounts in the dock').toBeVisible();
-    const bFirst = await canvasData(page, '[data-dock-card="b1"] [data-testid="feedback-canvas"]');
+    const bFirst = await canvasData(page, FEEDBACK_FACE_CANVAS);
     expect(bFirst).not.toBe('');
-    await expectCanvasChanges(page, '[data-dock-card="b1"] [data-testid="feedback-canvas"]', bFirst, 'docked feedback');
+    await expectCanvasChanges(page, FEEDBACK_FACE_CANVAS, bFirst, 'docked feedback');
     // Plain-mount contract holds: no xyflow handles/nodes inside the faceplate.
     await expect(faceplate.locator('.svelte-flow__handle')).toHaveCount(0);
     await page.keyboard.press('Escape');

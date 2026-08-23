@@ -2612,11 +2612,32 @@ export const FACES = [
   },
   // ── BATCH 24 — CUT A, batch 1: the four plain video faces ─────────────────
   //
-  // No `sceneWeight` on any of the four, deliberately. Every field of
-  // `FaceSceneWeight` is required-if-present precisely so a weight cannot be
-  // declared without the evidence, and the durations are read off a LINUX capture
-  // run that does not exist until this branch dispatches one. Absent means the
-  // 90 s base bound, which is the honest PENDING state rather than a guess.
+  // ⚠ THE PENDING STATE IS NOW PAID, AND ONE OF THE FOUR NEEDED IT. These four
+  // shipped with NO `sceneWeight` because the field's parts are required-if-
+  // present and the durations only exist once a LINUX run has measured them.
+  // Run 32631770069 measured them, and it also FAILED the vrt-strict headroom
+  // gate at 87% of a 600 s Playwright budget (fail threshold 85%) — every test
+  // passed; what ran out was room. The cause is in the numbers below.
+  //
+  // MEASURED on run 32631770069 (compact / dock, seconds):
+  //     chroma      11.3 / 20.4
+  //     chromakey   14.5 / 17.9
+  //     feedback    15.2 / 21.4
+  //     mandleblot  42.8 / 90.0     ← 4x and 9x its batch-mates
+  //
+  // ⚠ ONLY MANDLEBLOT DECLARES A WEIGHT, and that is arithmetic rather than
+  // taste: `sceneBudgetMs` is `max(FACE_SCENE_BASE_MS, measured x FACE_SCENE_HEADROOM)`,
+  // so for the other three (dock 17.9-21.4 s, doubled = 35.8-42.8 s) the base
+  // 90 s bound already wins and a declaration would change nothing while implying
+  // it did. Their measurements are recorded here instead, where they are evidence
+  // rather than a no-op.
+  //
+  // ⚠ AND MANDLEBLOT'S 90.0 s IS NOT MERELY "THE BIGGEST" — it is EXACTLY the
+  // base bound, which is the tell: the scene consumed its entire budget rather
+  // than landing under it, so it was running AT the wire where the next slow
+  // runner tips it into a timeout. That is precisely the "a budget sitting ON the
+  // measurement is a coin flip" case `FACE_SCENE_HEADROOM` exists to prevent, and
+  // it is why the weight is declared for it and not merely noted.
   {
     type: 'chroma',
     pages: 1,
@@ -2664,6 +2685,24 @@ export const FACES = [
   {
     type: 'mandleblot',
     pages: 1,
+    sceneWeight: measuredSceneWeight({
+      compactMs: 42_800,
+      dockMs: 90_000,
+      measuredOn: 'ci.yml run 32631770069 (8 vrt-strict shards, ubuntu-latest)',
+      why:
+        'AN ESCAPE-TIME FRACTAL EVALUATED PER PIXEL, UNDER SWIFTSHADER — the one renderer in '
+        + 'batch 24 whose cost is a property of the maths rather than of the frame size. Its '
+        + 'shader runs an iteration loop per fragment, hard-capped at 500 and shipping at 150, '
+        + 'so a full-resolution frame is up to 150 complex multiply-adds PER PIXEL with no early '
+        + 'exit for interior points — and CI has no GPU, so every one of those runs on a software '
+        + 'rasteriser. Its three batch-mates are single-pass per-pixel functions of a texture '
+        + '(a hue rotate, a key decision, one warped feedback tap) and measured 17.9-21.4 s at '
+        + 'the dock against this one\'s 90.0 s. '
+        + '⚠ 90.0 s IS THE BASE BOUND ITSELF, not a number under it: the scene spent its whole '
+        + 'budget, which is the "a bound sitting ON the measurement is a coin flip" state this '
+        + 'field exists to correct. Doubling it via FACE_SCENE_HEADROOM is what turns a scene '
+        + 'that happened to finish into one that has room to.',
+    }),
     videoFaceWhy:
       'a VIDEO module — same video-zone boot requirement. ⚠ THE CLOCK PIN IS LOAD-BEARING HERE '
       + 'AND IS NOT A FORMALITY, which is what separates this entry from the other three. Its '
