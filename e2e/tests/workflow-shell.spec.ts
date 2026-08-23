@@ -16,7 +16,8 @@
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 import {
-  AUDIO_FIXTURE,
+  AUDIO_OPERABLE_FIXTURE,
+  AUDIO_PLACEHOLDER_FIXTURE,
   CONTRACT_MODULE_TYPES,
   DENIED,
   fixtureProblems,
@@ -53,7 +54,7 @@ async function readParam(page: Page, nodeId: string, paramId: string): Promise<n
 
 /** The node's WHOLE param map. The legacy-fallback test drives the docked
  *  card's first fader and asserts *some* param moved — module-agnostic, since
- *  the fixture module is derived (AUDIO_FIXTURE) rather than named,
+ *  the fixture module is derived (AUDIO_OPERABLE_FIXTURE / AUDIO_PLACEHOLDER_FIXTURE) rather than named,
  *  so no specific param id like delay's 'time' can be assumed. */
 async function readParams(page: Page, nodeId: string): Promise<Record<string, number>> {
   return page.evaluate((nodeId) => {
@@ -204,8 +205,51 @@ async function setZoomTier(page: Page, zoom: number, expectTier: string): Promis
 //
 // `fixtureProblems` carries the checks (pick ∈ pool, `pool ∪ rejections ===
 // unpromoted`, and slack), so the audio and video gates cannot drift apart.
-test('the derived audio legacy-fallback fixture is healthy', () => {
-  expect(fixtureProblems(AUDIO_FIXTURE), AUDIO_FIXTURE.why).toEqual([]);
+test('the derived audio legacy-fallback fixtures are healthy', () => {
+  expect(fixtureProblems(AUDIO_PLACEHOLDER_FIXTURE), AUDIO_PLACEHOLDER_FIXTURE.why).toEqual([]);
+  expect(fixtureProblems(AUDIO_OPERABLE_FIXTURE), AUDIO_OPERABLE_FIXTURE.why).toEqual([]);
+
+  // ── THE INSTRUMENT'S PERMANENT NEGATIVE CONTROL, BOTH DIRECTIONS (#2137) ──
+  //
+  // This replaced the `pool.length <= 1` slack floor, which was a population
+  // threshold sitting with ZERO slack on the live population (the audio pool
+  // held two members; it tripped at one) — CLAUDE.md's named ratchet hazard.
+  // What the floor protected ("the next promotion is survivable") became
+  // unconditionally true when an emptied pool started degrading to a NAMED SKIP
+  // instead of a red fixture defect, so the mechanism is DELETED rather than
+  // re-tuned and this control replaces it.
+  //
+  // ⚠ IT CALLS THE PREDICATE UNDER TEST, NOT A PARAPHRASE OF IT. `probe` is the
+  // exact closure `deriveFixture` ran; a re-implementation here could agree with
+  // a broken predicate and certify it.
+  for (const [name, f] of [
+    ['AUDIO_PLACEHOLDER', AUDIO_PLACEHOLDER_FIXTURE],
+    ['AUDIO_OPERABLE', AUDIO_OPERABLE_FIXTURE],
+  ] as const) {
+    // POSITIVE — the predicate still ACCEPTS things. A predicate that accepts
+    // nothing anywhere is broken, and it is broken in the direction that LOOKS
+    // like a finished migration: this is the leg that catches the `<Fader>` →
+    // `<NeonFader>` rename class, which once would have rejected every
+    // candidate at once and emptied the pool for a reason that is not the tree.
+    expect(
+      f.eligible.length,
+      `${name}: the fitness predicate accepts NOTHING across the whole audio population — ` +
+        'it went blind, and a blind predicate reports the end of the migration',
+    ).toBeGreaterThan(0);
+
+    // NEGATIVE — and it still REFUSES things, by name and with a reason. A
+    // predicate that accepts everything is equally blind, and it fails green.
+    expect(
+      f.probe('clipplayer'),
+      `${name}: clipplayer is a NON_SHELL_LANE_TYPES snowflake — laneRenderKind returns ` +
+        "'legacy' for it, so it renders no placeholder tile and must be refused",
+    ).not.toBeNull();
+    expect(
+      f.probe('__no_such_module__'),
+      `${name}: a type the golden has never heard of must be refused, not resolved`,
+    ).not.toBeNull();
+  }
+
 
   // ANCHORED TO THE ARTIFACT: a deny entry naming a module the contract golden
   // does not know is a licence nobody is watching — the module was renamed or
@@ -226,14 +270,14 @@ test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
     // A still-UN-migrated module, DERIVED from STRICT_FACES rather than named:
     // a hard-coded fixture rots as each P1 wave promotes more modules (vca was
     // consumed by batch 1, delay by batch 3 — both turned this red for a
-    // non-bug). See AUDIO_FIXTURE in _face-fixtures.ts.
+    // non-bug). See AUDIO_OPERABLE_FIXTURE in _face-fixtures.ts.
     //
     // When every audio module is promoted this case has no subject BY DESIGN —
     // a NAMED skip carrying the reason, never a silent pass (#1864).
-    test.skip(AUDIO_FIXTURE.kind === 'migration-complete', AUDIO_FIXTURE.why);
+    test.skip(AUDIO_OPERABLE_FIXTURE.kind === 'migration-complete', AUDIO_OPERABLE_FIXTURE.why);
     await gotoWorkflow(page, { shell: true });
     await spawnPatch(page, [
-      { id: NODE, type: fixtureType(AUDIO_FIXTURE), position: { x: 460, y: 240 } },
+      { id: NODE, type: fixtureType(AUDIO_OPERABLE_FIXTURE), position: { x: 460, y: 240 } },
     ]);
 
     const laneNode = page.locator(`.svelte-flow__node[data-id="${NODE}"]`);
@@ -263,7 +307,23 @@ test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
     await expect(faceplate.getByTestId('faceplate-close')).toBeVisible();
     await expect(faceplate.getByTestId('faceplate-collapse')).toBeVisible();
     await expect(faceplate.getByTestId('faceplate-tab')).toHaveText('MODULE');
-    await expect(faceplate.locator('.faceplate.audio')).toHaveCount(1); // fixture is audio-domain
+    // The plate carries the module's DERIVED domain class.
+    //
+    // ⚠ THIS USED TO BE A HARD-CODED `.faceplate.audio` (#2137), and the
+    // hard-coding was not cosmetic — it was the whole reason the audio fixture
+    // carried a "must be audio-class" predicate that rejected 31 of 38
+    // un-promoted candidates and shrank the pool to two. Deriving the class
+    // instead makes this leg STRICTER, not looser: it now proves the plate
+    // carries the RIGHT class for whatever subject the derivation handed it,
+    // rather than proving one class for a subject filtered to have it. The
+    // widening immediately changed the answer — today's pick is gate-class, so
+    // `.faceplate.audio` would now be simply WRONG.
+    const domainClass = AUDIO_OPERABLE_FIXTURE.kind === 'ok' ? AUDIO_OPERABLE_FIXTURE.domainClass : null;
+    expect(domainClass, 'the operable fixture must resolve a determinate domain class').not.toBeNull();
+    await expect(
+      faceplate.locator(`.faceplate.${domainClass}`),
+      `${fixtureType(AUDIO_OPERABLE_FIXTURE)}: the dock plate carries its derived domain class (.faceplate.${domainClass})`,
+    ).toHaveCount(1);
 
     // …and the REAL, unchanged legacy card mounts verbatim in .editor at native
     //  scale (carrying the data-dock-card anchor so PickupCable/patch-menu work).
@@ -298,7 +358,7 @@ test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
     await page.mouse.up();
     await expect
       .poll(async () => JSON.stringify(await readParams(page, NODE)), {
-        message: `${fixtureType(AUDIO_FIXTURE)}: driving the docked card's first fader commits a param change`,
+        message: `${fixtureType(AUDIO_OPERABLE_FIXTURE)}: driving the docked card's first fader commits a param change`,
       })
       .not.toBe(JSON.stringify(before));
 
@@ -744,13 +804,19 @@ test.describe('P0.3b workflow-shell ?shell=1 bug fixes', () => {
   // only button (undiscoverable). It is now a clear, LABELLED pill; the wired path
   // (onExpand → dockStore.openFullView → the .dock-faceplate full view) is unchanged.
   test('the EXPAND affordance is a labelled button that opens the dock faceplate + ESC closes', async ({ page }) => {
-    // A still-UN-migrated module (DERIVED — see AUDIO_FIXTURE), so this stays
-    // the PLACEHOLDER's expand path; the migrated shell's expand is covered by
-    // workflow-shell-faces.spec.ts.
-    test.skip(AUDIO_FIXTURE.kind === 'migration-complete', AUDIO_FIXTURE.why);
+    // A still-UN-migrated module (DERIVED — see AUDIO_PLACEHOLDER_FIXTURE), so
+    // this stays the PLACEHOLDER's expand path; the migrated shell's expand is
+    // covered by workflow-shell-faces.spec.ts.
+    //
+    // ⚠ THE **PLACEHOLDER** FIXTURE, NOT THE OPERABLE ONE (#2137). This leg
+    // clicks a pill and presses ESC; it never drives a control and never reads
+    // the plate's domain class, so requiring its subject's legacy card to mount
+    // a fader was a requirement borrowed from a different test. Sharing one
+    // fixture meant the strictest leg's predicates silenced this one too.
+    test.skip(AUDIO_PLACEHOLDER_FIXTURE.kind === 'migration-complete', AUDIO_PLACEHOLDER_FIXTURE.why);
     await gotoWorkflow(page, { shell: true });
     await spawnPatch(page, [
-      { id: NODE, type: fixtureType(AUDIO_FIXTURE), position: { x: 460, y: 240 } },
+      { id: NODE, type: fixtureType(AUDIO_PLACEHOLDER_FIXTURE), position: { x: 460, y: 240 } },
     ]);
 
     const laneNode = page.locator(`.svelte-flow__node[data-id="${NODE}"]`);
