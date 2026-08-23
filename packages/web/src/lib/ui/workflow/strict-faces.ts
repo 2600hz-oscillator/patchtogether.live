@@ -3847,6 +3847,54 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // face itself is hash-transparent. `tempest` and `fader` made the same trade
   // in batch 22 G2b.
   'frametable',
+
+  // ── TIMELORDE (2026-08-23) ────────────────────────────────────────────────
+  //
+  // The rack's SINGLETON master clock — `maxInstances: 1`, `undeletable`, and a
+  // rack that opens without one gets one dropped in. So the verb a player
+  // performs here is not "set a tempo", it is DECIDE WHETHER THE RACK IS MOVING,
+  // and when it is not, FIND OUT WHICH OF TWO INDISTINGUISHABLE REASONS IS WHY.
+  //
+  // ⚠ THE PROMOTION IS A STRICT GAIN AT THE LANE. timelorde is un-migrated
+  // today, so its lane tile is a `ModuleShellPlaceholder`: the owl, the
+  // transport, TAP and all three knobs are ALREADY absent there. A face is the
+  // first time any of it reaches a lane tile at all.
+  //
+  // ⚠ AND THE DEBT RUNS THE OTHER WAY, AT THE DOCK, WHERE FIVE AFFORDANCES LIVE
+  // ONLY ON THE CARD. Each has a route, and two of them are the interesting
+  // ones:
+  //  1. The 220×220 DISPLAY (the owl painting, or the live `video_in` monitor)
+  //     → the `fullViewBody` extension, which BLITS `video_out`'s own drawFrame
+  //     rather than re-rendering the owl. One renderer, two surfaces.
+  //  2. TAP TEMPO → a `ShellActionCell` with the first PARAM probe and the first
+  //     MULTI-PRESS probe in the tree. Both fields were added for it, because a
+  //     one-press probe on a control that delivers nothing until the second
+  //     press is the sixstrum defect with a green tick.
+  //  3. The RUN button's SELF-HIDING under an external transport is LOST — and
+  //     that is a GAIN. The card hid it so it could not fight a MIDICLOCK, which
+  //     is exactly the case where a hardware stop leaves the rack silent and the
+  //     card said nothing. A faceplate has no conditional cell, so the toggle is
+  //     always present; the write was always idempotent.
+  //  4. TAP's `disabled={hasExternalClock}` is a genuine DEBIT: `ShellActionCell`
+  //     has no `disabled` predicate, so the face paints an always-enabled TAP
+  //     that is a no-op under an external clock. Behaviour unchanged, affordance
+  //     SIGNAL lost; it survives in the accessible name and nowhere else.
+  //  5. The TRANSPORT STRIP and the FOOTER are deleted by the resting-text
+  //     ruling. What the strip published that no single control can — WHICH of
+  //     STOP and MUTE is silencing your rack — is why both params now carry
+  //     `options` rosters: an option NAME is the one resting text the ruling
+  //     permits, and `STOPPED` beside `MUTED` is the whole answer. ⚠ The finding
+  //     that genuinely lapses is named in timelorde-face-model.test.ts.
+  //
+  // ⚠ `glyph: 'none'` IS FORCED. Audio domain ⇒ no VideoTileThumb; thirteen
+  // `gate` outs and one `video` out ⇒ no `primaryAudioOutPortId` ⇒ every glyph
+  // literal but 'none' reddens the dead-glyph clause. Same five-module platform
+  // gap pong's entry names.
+  //
+  // ⚠ ZERO ATTEST. `webgl-attest-hash.sh --list` contains no timelorde file
+  // (audio registry; the card is 2D-context only), verified rather than assumed
+  // — and the `fullViewBody` must STAY 2D for that to remain true.
+  'timelorde',
 ]);
 
 /**

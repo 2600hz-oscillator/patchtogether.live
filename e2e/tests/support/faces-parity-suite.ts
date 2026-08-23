@@ -448,7 +448,13 @@ interface ActionProbe {
   effect:
     | { kind: 'audition'; seam: AuditionRecord['seam'] }
     | { kind: 'data'; key: string; expect: 'changed' }
-    | { kind: 'data-rev'; key: string };
+    | { kind: 'data-rev'; key: string }
+    | { kind: 'param'; paramId: string; expect: 'changed' };
+  /** Presses to issue before the effect is expected (omitted = 1). See
+   *  `ShellActionProbe.presses` — TIMELORDE's TAP delivers nothing on press
+   *  one BY DESIGN, so a single-press sweep could not tell it from a dead
+   *  button. */
+  presses?: number;
 }
 
 /** The pure predicate, mirroring `auditionDelivered` in audition-ledger.ts —
@@ -1228,8 +1234,16 @@ async function driveCell(
     // CLOSED here (a working cell reads as broken) rather than open, which is
     // the lucky half — the same latency would silently PASS a `data-rev` probe
     // whose counter had been bumped before the snapshot.
-    const dataKey = probe!.effect.kind === 'audition' ? null : probe!.effect.key;
+    const dataKey =
+      probe!.effect.kind === 'audition' || probe!.effect.kind === 'param'
+        ? null
+        : probe!.effect.key;
     const beforeRaw = dataKey === null ? null : await readData(page, nodeId, dataKey);
+    // The `param` oracle's snapshot rides the same discipline as `data`'s: taken
+    // BEFORE the press, so a handler that has already written by the time the
+    // round-trip completes cannot make before === after.
+    const beforeParam =
+      probe!.effect.kind === 'param' ? await readParam(page, nodeId, probe!.effect.paramId) : null;
 
     if (mode === 'gate') {
       // A declared HELD action MUST render as a momentary pad. This is the
@@ -1270,7 +1284,26 @@ async function driveCell(
       return;
     }
 
-    await btn.click();
+    // ⚠ ONE ACTION, N PRESSES — never a loop of `click()`. A control that needs
+    // several presses (TIMELORDE's TAP: `TapTempo` has no interval until the
+    // second one) also usually has a TIMEOUT between them, and N separate
+    // clicks each re-run their own actionability checks, so on a loaded runner
+    // the gap between presses becomes wall-clock the gate depends on.
+    // `clickCount` dispatches them inside a single input sequence.
+    const presses = Math.max(1, Math.round(probe!.presses ?? 1));
+    await btn.click(presses > 1 ? { clickCount: presses } : {});
+
+    if (probe!.effect.kind === 'param') {
+      const pid = probe!.effect.paramId;
+      await expect
+        .poll(async () => await readParam(page, nodeId, pid), {
+          message:
+            `${where}: ${presses} press(es) CHANGE the '${pid}' param (was ${beforeParam}). A press ` +
+            `that leaves the param where it was is indistinguishable from a dead button.`,
+        })
+        .not.toBe(beforeParam);
+      return;
+    }
 
     if (probe!.effect.kind === 'audition') {
       const seam = probe!.effect.seam;

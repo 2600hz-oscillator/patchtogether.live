@@ -925,13 +925,18 @@ for (const subject of SUBJECTS) {
   // RASTERIZE's `cvCombined` writes are covered by the mount-count assertion and
   // by dom-source-modules.test.ts, never by these pixels. And it covers only the
   // COLLAPSED-GROUP arm of the exclusion it fixes: the CANVAS-HIDDEN arm
-  // (`isCanvasHiddenNode` — pinned singletons + `hiddenCard` cameras) is still
-  // skipped by `headlessSourceNodes`, and the pinned TIMELORDE that every rack
-  // auto-spawns is a CARD_PRODUCER sitting in it. Measured on a default rack
-  // with `pinned-timelorde.video_out → VIDEO OUT`: `nonBlack 0/3072, maxLuma 8
-  // (its idle #07090d field), 1 distinct signature over 30 frames`, with zero
-  // card mounts anywhere. That is a separate defect with a whole-rack blast
-  // radius — filed as #1754, and this leg does not cover it.
+  // (`isCanvasHiddenNode` — pinned singletons + `hiddenCard` cameras) is a
+  // different subject.
+  //
+  // ⚠ THAT ARM IS NOW FIXED AND COVERED ELSEWHERE — #1754, 2026-08-23. The
+  // pinned TIMELORDE every rack auto-spawns is a CARD_PRODUCER that was sitting
+  // in it: measured on a default rack, `nonBlack 0/3072, maxLuma 8` (its idle
+  // #07090d field), `1 distinct signature over 30 frames`, with zero card mounts
+  // ANYWHERE, in both shells. `headlessSourceNodes` now routes canvas-hidden
+  // nodes through `needsHeadlessSourceMount`'s `laneOmitsNode` arm — which
+  // returns `CARD_PRODUCER_LANE_TYPES.has(type)`, so hidden cameras are
+  // unchanged — and `e2e/tests/timelorde-pinned-source.spec.ts` is the leg that
+  // proves it, with the same in-page drawFrame probe this file uses.
   for (const shell of ['default', 'legacy'] as const) {
     test(`${type} [${shell} shell]: its card survives its GROUP being COLLAPSED (#1721)`, async ({ page }) => {
       test.setTimeout(SLOW_RENDER ? 240_000 : 120_000);

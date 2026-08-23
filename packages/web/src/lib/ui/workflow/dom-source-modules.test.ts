@@ -58,9 +58,11 @@ import { stripComments } from '$lib/ui/media/card-media-lifetime.test';
 import {
   CARD_PRODUCER_LANE_TYPES,
   DOM_SOURCE_LANE_TYPES,
+  FACE_MOUNTS_PRODUCER,
   HEADLESS_MOUNT_LANE_TYPES,
   needsHeadlessSourceMount,
 } from './dom-source-modules';
+import { STRICT_FACES } from './strict-faces';
 import { NON_SHELL_LANE_TYPES, laneRenderKind, type LaneRenderKind } from './legacy-fallback';
 
 /** The card directory the glob resolver reads (../modules relative to here). */
@@ -1141,9 +1143,57 @@ describe("laneOmitsNode — a COLLAPSED GROUP's child, in BOTH shells (#1721)", 
     // GroupCard registry, and NOTHING here proves it computes either correctly.
     // That wiring is proven by e2e/tests/card-producer-lifetime.spec.ts's #1721
     // leg, which reads the real DOM in both shells; and the CANVAS-HIDDEN arm
-    // (pinned singletons / hiddenCard cameras — #1754) is a different exclusion
-    // that this decision never sees at all.
+    // (pinned singletons / hiddenCard cameras — #1754) reaches this decision
+    // only because Canvas folds it INTO `laneOmitsNode`, which is a caller fact
+    // this function still cannot see.
     expect(typeof needsHeadlessSourceMount).toBe('function');
+  });
+});
+
+describe('FACE_MOUNTS_PRODUCER — the dock-open exemption, anchored both ways', () => {
+  // ⚠ AN EXEMPTION LIST THAT NAMES A VANISHED SUBJECT IS RED, and both
+  // directions matter here for different reasons. A member that stops being a
+  // CARD_PRODUCER is a dead entry; a member that stops being FACED is worse than
+  // dead, because `fullViewShowsFaceInstead` only consults this set for migrated
+  // types — the entry would read as a live decision while deciding nothing.
+
+  it('every member is a CARD_PRODUCER — the only population the flag is consulted for', () => {
+    const strays = [...FACE_MOUNTS_PRODUCER].filter((t) => !CARD_PRODUCER_LANE_TYPES.has(t));
+    expect(
+      strays,
+      'a FACE_MOUNTS_PRODUCER entry names a type that is not a card-owned producer, so the ' +
+        'exemption it claims can never be reached. Delete it.',
+    ).toEqual([]);
+  });
+
+  it('every member is FACED — an unfaced entry is a decision that never fires', () => {
+    const unfaced = [...FACE_MOUNTS_PRODUCER].filter((t) => !STRICT_FACES.has(t));
+    expect(
+      unfaced,
+      'a FACE_MOUNTS_PRODUCER entry names an UNPROMOTED module. `fullViewShowsFaceInstead` ' +
+        'requires `migrated(type)`, so the entry is inert — and if that module is ever promoted ' +
+        'it inherits an exemption nobody re-argued.',
+    ).toEqual([]);
+  });
+
+  it('it is a PROPER SUBSET — the default is "keep the host", and something uses it', () => {
+    // ⚠ THE VACUITY LEG. If every producer were exempt, the deny-by-default this
+    // set inverted would be gone and the change that introduced it would be
+    // undone in silence. timelorde is the module that must NOT be in here: its
+    // face only BLITS `video_out`, so hosting is the only thing that keeps the
+    // picture alive while the faceplate is open.
+    const facedProducers = [...CARD_PRODUCER_LANE_TYPES].filter((t) => STRICT_FACES.has(t));
+    const keepsHost = facedProducers.filter((t) => !FACE_MOUNTS_PRODUCER.has(t));
+    expect(
+      keepsHost,
+      'EVERY faced producer claims to mount its own producer, so no module exercises the ' +
+        'default — the exemption has quietly become the rule',
+    ).not.toEqual([]);
+    expect(
+      keepsHost,
+      'timelorde must keep its headless host while its dock full view is open: its faceplate ' +
+        'blits `video_out` and mounts no renderer of its own',
+    ).toContain('timelorde');
   });
 });
 

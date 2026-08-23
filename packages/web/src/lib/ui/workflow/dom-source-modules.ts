@@ -229,8 +229,25 @@ export interface HeadlessSourceInput {
   type: string;
   /**
    * TRUE when the lane emits NO xyflow node at all for this node, so `kind`
-   * describes a card that is never reached — today, a child of a COLLAPSED
-   * GROUP (#1721).
+   * describes a card that is never reached. TWO producers of it, and they are
+   * the same fact by different routes:
+   *   * a child of a COLLAPSED GROUP (#1721), and
+   *   * a CANVAS-HIDDEN node — a pinned singleton or a `hiddenCard` camera
+   *     (`$lib/graph/hidden-card`), which the same `flowNodes` derivation skips
+   *     (#1754).
+   *
+   * ⚠ THE SECOND ONE WAS A `continue` IN THE CALLER FOR A YEAR, AND THAT IS
+   * WHY IT WENT UNFIXED. The skip's premise — "some other surface mounts the
+   * real card" — is true for the M/E/C drawer trio and FALSE for a pinned
+   * TOPBAR-SURFACE module, which has no drawer and no rail at all. MEASURED on
+   * this tree, both shells: a fresh `/rack` auto-spawns `pinned-timelorde` and
+   * `.mod-card.timelorde-card` has ZERO mounts anywhere, so its
+   * `write(node,'displayFrame')` never runs and `video_out` is the idle field
+   * forever (`nonBlack 0/3072, maxLuma 8, 1 distinct signature over 30 frames`
+   * — recorded in card-producer-lifetime.spec.ts, which names this exclusion as
+   * the half it does not cover). Routing it through THIS arm rather than a
+   * second `CARD_PRODUCER` test in the caller is what keeps the hidden CAMERAS'
+   * answer (no host — they are DOM_SOURCE) coming from one place.
    *
    * ⚠ THE ONE ARM THAT IS NOT SHELL-SPECIFIC. Every other input here is a
    * consequence of the faceplate shell, and the whole decision is a strict
@@ -299,6 +316,44 @@ export interface HeadlessSourceInput {
  * 'legacy'/'stub' under `?shell=legacy`, so every arm EXCEPT `laneOmitsNode` is
  * still a strict no-op there.
  */
+/**
+ * CARD_PRODUCER types whose FACEPLATE mounts the producing surface ITSELF, so a
+ * dock full view showing that faceplate really is "some other surface already
+ * mounts this node's real card" and hosting it too would be a SECOND mount.
+ *
+ * ⚠ DENY BY DEFAULT, AND THE DEFAULT WAS THE OTHER WAY ROUND UNTIL 2026-08-23.
+ * `Canvas.svelte`'s `fullViewShowsFaceInstead` was scoped to
+ * `DOM_SOURCE_LANE_TYPES` only, on the stated grounds that the producer half
+ * "is left EXACTLY as it was… because it would be UNMEASURED" — and that was
+ * right at the time, because the only two promoted producers (cube, rasterize)
+ * DO mount their renderer from the face: `CubeVizSurface` IS cube's renderer,
+ * and rasterize's body advances the painter inside `read('imageData')`.
+ *
+ * ⚠ TIMELORDE IS THE FIRST PROMOTED PRODUCER WHOSE FACE ONLY *BLITS*, and it
+ * turns that premise false. Its `fullViewBody` pulls `video_out`'s own
+ * `drawFrame`; the thing that FILLS `drawFrame` is `TimelordeCard`'s rAF, which
+ * lives nowhere else. MEASURED with the dock full view open on a promoted
+ * timelorde, before this set existed: `.mod-card.timelorde-card` count 0, no
+ * headless host, and the face canvas painting `nonBlack 47034/48400` — a
+ * perfectly bright picture that was a STALE bitmap the unmounted card had
+ * pushed before it went away, frozen for as long as the dock stayed open. On a
+ * cold open, where no frame had been pushed yet, the same state paints the
+ * module's `#07090d` idle field instead: black, and a VRT baseline captured
+ * then would have pinned a black square forever.
+ *
+ * So the default is now "a faced producer KEEPS its headless host while its dock
+ * full view is open", and a module leaves that default by NAME, with the reason
+ * it can. A new promotion inherits the safe answer instead of the silent one.
+ */
+export const FACE_MOUNTS_PRODUCER: ReadonlySet<string> = new Set<string>([
+  // The hero cell IS the renderer — `CubeVizSurface`, the same component the
+  // legacy card mounts. Two mounts of it is what this exemption prevents.
+  'cube',
+  // The body ADVANCES the painter (`read('imageData')` runs it), so it is not
+  // merely a viewer of the producer: while the dock is open it IS the producer.
+  'rasterize',
+]);
+
 export function needsHeadlessSourceMount(i: HeadlessSourceInput): boolean {
   if (!HEADLESS_MOUNT_LANE_TYPES.has(i.type)) return false;
   if (i.hostedElsewhere) return false;

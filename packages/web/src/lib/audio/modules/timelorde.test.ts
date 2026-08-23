@@ -19,7 +19,16 @@ import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { timelordeDef, transportEventsToRunState } from './timelorde';
+import {
+  timelordeDef,
+  transportEventsToRunState,
+  externalBpmLockOnMeasure,
+  externalBpmLockOnUserWrite,
+  externalBpmLockOnUnpatch,
+  BPM_LOCK_UNLOCKED,
+  TIMELORDE_BPM_MIN,
+  TIMELORDE_BPM_MAX,
+} from './timelorde';
 import { patch as livePatch } from '$lib/graph/store';
 import type { ModuleNode } from '$lib/graph/types';
 
@@ -80,10 +89,31 @@ describe('TIMELORDE swingSource range is declared in FIVE places and must agree'
     expect(cardMax, 'no max={…} on the SRC Knob').not.toBeNull();
     expect(Number(cardMax![1]), 'TimelordeCard SRC Knob max').toBe(want);
 
-    // 4. the card's SRC_LABELS list (what the footer prints)
-    const labels = /const SRC_LABELS = \[([^\]]*)\]/.exec(card);
-    expect(labels, 'SRC_LABELS not found in TimelordeCard.svelte').not.toBeNull();
-    expect((labels![1]!.match(/'/g) ?? []).length / 2, 'TimelordeCard SRC_LABELS entries').toBe(n);
+    // 4. the card's SRC list (what the footer prints) — and this site was PAID
+    //    OFF rather than kept in agreement, 2026-08-23.
+    //
+    // ⚠ IT USED TO COUNT QUOTES IN A LITERAL: `const SRC_LABELS = ['1x', …]`, a
+    // hand-typed copy of the def's own output order that this gate could only
+    // ever check for LENGTH — twelve wrong names would have passed it. The face
+    // work needed the same twelve names on the DEF (a faceplate over an
+    // option-less discrete param prints a bare integer), and once they were
+    // there, keeping a second copy on the card would have been the
+    // `sampleHold`/`moog904b` shape with a gate wrapped around it. So the card
+    // now IMPORTS the derived roster and the clause asserts the DUPLICATE IS
+    // GONE, which is strictly stronger than asserting two copies agree.
+    expect(
+      /const SRC_LABELS\s*=\s*\[/.test(card),
+      'TimelordeCard re-declares SRC_LABELS as a literal array — that is the duplicate the ' +
+        'derived roster removed, and a literal here can disagree with the def about which ' +
+        'index is `1/12` while this gate (which only ever counted entries) stays green',
+    ).toBe(false);
+    expect(card, 'the card no longer imports the derived roster').toContain('TIMELORDE_SWING_SOURCES');
+    // …and the roster it imports really is n long, read off the LIVE def.
+    expect(p.options?.length, 'the derived swingSource roster').toBe(n);
+    expect(
+      p.options?.map((o) => o.value),
+      'the roster is not TOTAL over swingSource min..max — a gap is a reachable state with no name',
+    ).toEqual(Array.from({ length: n }, (_, i) => i));
 
     // 5. the Electra hardware preset — control range, allocation range, overlay
     const electra = readRepo('packages/web/src/lib/electra/preset.ts');
@@ -746,6 +776,230 @@ describe('timelordeDef.factory: video_out cross-domain source', () => {
     const bmp2 = new FakeBitmap();
     handle.write?.('displayFrame', bmp2 as unknown as ImageBitmap);
     expect(closed.length).toBe(1); // bmp1 was closed when bmp2 replaced it
+  });
+});
+
+// ── THE EXTERNAL-CLOCK BPM LOCK IS NON-DESTRUCTIVE ────────────────────────
+//
+// THE DEFECT, as it shipped. `livePatch.nodes[id].params.bpm` was overwritten by
+// the measured external tempo and never given back: patch a MIDICLOCK at 137
+// into a rack the player had hand-set to 120, pull the cable, and 137 is the
+// stored tempo forever. It is not undoable either — the write is a factory
+// write, not a tracked user edit — and the only surface that ever hinted a
+// follower owned the number is a card footer a faceplate does not paint.
+//
+// ⚠ THE POSITIVE CONTROL IS THE FIRST TEST IN THIS BLOCK AND IT IS NOT
+// DECORATION. Every assertion below would also pass on a build that simply
+// stopped writing the measured tempo through at all — which would be a
+// different, worse bug (LIVECODE's clock.bpm() reads the stored param, so the
+// follower's write-through is load-bearing). So the block first PINS the locked
+// behaviour that must NOT change, and only then asserts the restore. A fix that
+// bought the restore by dropping the follow reddens on the control, not on the
+// feature.
+describe('timelordeDef.factory: the external-clock BPM lock is NON-DESTRUCTIVE', () => {
+  beforeEach(() => {
+    fakeSchedulerSubs.length = 0;
+    constructedWorklets.length = 0;
+    for (const k of Object.keys(livePatch.nodes)) delete livePatch.nodes[k];
+    for (const k of Object.keys(livePatch.edges)) delete livePatch.edges[k];
+    livePatch.nodes['timelorde-test'] = {
+      id: 'timelorde-test',
+      type: 'timelorde',
+      domain: 'audio',
+      position: { x: 0, y: 0 },
+      // The PLAYER'S tempo — the value the defect destroyed.
+      params: { bpm: 120 },
+      data: {},
+    } as ModuleNode;
+    (globalThis as unknown as { AudioWorkletNode: typeof FakeAudioWorkletNode }).AudioWorkletNode =
+      FakeAudioWorkletNode;
+    // `syncExternalFlag` — the ONLY code that can see the cable leave — runs on
+    // a 250 ms setInterval the factory owns. Fake timers make the unpatch edge
+    // a deterministic step instead of a wall-clock wait.
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    for (const k of Object.keys(livePatch.edges)) delete livePatch.edges[k];
+  });
+
+  function wireClockEdge(): void {
+    livePatch.edges['e-clk'] = {
+      id: 'e-clk',
+      source: { nodeId: 'midiclock', portId: 'clock' },
+      target: { nodeId: 'timelorde-test', portId: 'clock' },
+      sourceType: 'gate',
+      targetType: 'gate',
+    } as (typeof livePatch.edges)[string];
+  }
+  function unwireClockEdge(): void {
+    delete livePatch.edges['e-clk'];
+  }
+  /** Post a worklet `measuredBpm` message the way the DSP does. */
+  function postMeasured(bpm: number): void {
+    const w = constructedWorklets[constructedWorklets.length - 1]!;
+    w.port.onmessage?.({ data: { type: 'measuredBpm', bpm } });
+  }
+  /** Advance past one `syncExternalFlag` interval (the unpatch scan). */
+  function scanExternalFlag(): void {
+    vi.advanceTimersByTime(250);
+  }
+  const storedBpm = (): number | undefined => livePatch.nodes['timelorde-test']!.params.bpm;
+
+  it('POSITIVE CONTROL: while the cable is IN, the measured tempo still writes through to BOTH layers', async () => {
+    const ctx = makeMockCtx();
+    const handle = await timelordeDef.factory(ctx as unknown as AudioContext, makeNode({ bpm: 120 }));
+    wireClockEdge();
+    scanExternalFlag(); // hasExternalClock ← 1
+    postMeasured(137);
+    // The patch store — what LIVECODE's clock.bpm() and every rack-mate read.
+    expect(storedBpm(), 'the follower writes the measured tempo into the patch store').toBe(137);
+    // …and the AudioParam, so the worklet phase agrees with the outputs.
+    expect(handle.readParam?.('bpm'), 'and into the bpm AudioParam').toBe(137);
+  });
+
+  it('THE FIX: pulling the clock cable RESTORES the tempo the player set', async () => {
+    const ctx = makeMockCtx();
+    const handle = await timelordeDef.factory(ctx as unknown as AudioContext, makeNode({ bpm: 120 }));
+    wireClockEdge();
+    scanExternalFlag();
+    postMeasured(137);
+    expect(storedBpm(), 'precondition: the lock took the tempo over').toBe(137);
+
+    unwireClockEdge();
+    scanExternalFlag();
+
+    // ⚠ THIS IS THE ASSERTION THE SHIPPED BUILD FAILS. Pre-fix it read 137 in
+    // both layers, permanently, with nothing on any surface to say why.
+    expect(storedBpm(), "the player's hand-set tempo comes back on unpatch").toBe(120);
+    expect(handle.readParam?.('bpm'), 'and the AudioParam is restored with it').toBe(120);
+  });
+
+  it('a DROPOUT is not an unlock: bpm 0 with the cable still in HOLDS the followed tempo', async () => {
+    const ctx = makeMockCtx();
+    await timelordeDef.factory(ctx as unknown as AudioContext, makeNode({ bpm: 120 }));
+    wireClockEdge();
+    scanExternalFlag();
+    postMeasured(137);
+    // The worklet's dropout signal — the pulses stopped, the cable did not move.
+    postMeasured(0);
+    scanExternalFlag();
+    expect(
+      storedBpm(),
+      'the external transport still owns the tempo, so the last followed value stands',
+    ).toBe(137);
+  });
+
+  it('re-setting the tempo DURING the lock is what comes back, not the pre-lock value', async () => {
+    const ctx = makeMockCtx();
+    const handle = await timelordeDef.factory(ctx as unknown as AudioContext, makeNode({ bpm: 120 }));
+    wireClockEdge();
+    scanExternalFlag();
+    postMeasured(137);
+    // The player turns the knob while the follower owns it (every user write —
+    // knob, face cell, TAP, topbar surface — lands on setParam).
+    handle.setParam?.('bpm', 90);
+    postMeasured(137); // the follower immediately takes the number back
+
+    unwireClockEdge();
+    scanExternalFlag();
+    expect(storedBpm(), 'the LATEST intent is restored, not the pre-lock 120').toBe(90);
+  });
+
+  it('NEGATIVE CONTROL: a rack that never had a clock cable is never written', async () => {
+    const ctx = makeMockCtx();
+    await timelordeDef.factory(ctx as unknown as AudioContext, makeNode({ bpm: 120 }));
+    // Many scans, no cable, no measurement: the restore must be a NO-OP rather
+    // than a write of a default — otherwise it would clobber a value the player
+    // set through some other path between two scans.
+    scanExternalFlag();
+    scanExternalFlag();
+    livePatch.nodes['timelorde-test']!.params.bpm = 175;
+    scanExternalFlag();
+    expect(storedBpm(), 'nothing was owed, so nothing was written').toBe(175);
+  });
+
+  it('a SECOND lock stashes the RESTORED value, not the first external tempo', async () => {
+    const ctx = makeMockCtx();
+    await timelordeDef.factory(ctx as unknown as AudioContext, makeNode({ bpm: 120 }));
+    wireClockEdge();
+    scanExternalFlag();
+    postMeasured(137);
+    unwireClockEdge();
+    scanExternalFlag();
+    expect(storedBpm()).toBe(120);
+
+    wireClockEdge();
+    scanExternalFlag();
+    postMeasured(90);
+    expect(storedBpm(), 'the second lock follows its own clock').toBe(90);
+    unwireClockEdge();
+    scanExternalFlag();
+    expect(storedBpm(), 'and still gives back 120 — the stash did not latch 137').toBe(120);
+  });
+});
+
+// The pure reducer under the factory wiring above. Fast, exhaustive, and the
+// place the CLAMP is pinned against the def's own declared range rather than
+// two re-typed literals.
+describe('externalBpmLock* (pure)', () => {
+  it('the first measurement stashes the STORED tempo and writes the measured one', () => {
+    const r = externalBpmLockOnMeasure(BPM_LOCK_UNLOCKED, { measuredBpm: 137, storedBpm: 120 });
+    expect(r.state.stashed).toBe(120);
+    expect(r.write).toBe(137);
+  });
+
+  it('later measurements do NOT re-stash — the stash would become the followed tempo', () => {
+    const first = externalBpmLockOnMeasure(BPM_LOCK_UNLOCKED, { measuredBpm: 137, storedBpm: 120 });
+    // storedBpm is now 137 (we wrote it); a naive re-stash would capture it and
+    // the restore would hand back the external clock's tempo — a fix that
+    // restores nothing while looking exactly like one.
+    const second = externalBpmLockOnMeasure(first.state, { measuredBpm: 138, storedBpm: 137 });
+    expect(second.state.stashed).toBe(120);
+  });
+
+  it('a non-positive measurement is a DROPOUT: no write, no stash', () => {
+    expect(externalBpmLockOnMeasure(BPM_LOCK_UNLOCKED, { measuredBpm: 0, storedBpm: 120 })).toEqual({
+      state: BPM_LOCK_UNLOCKED,
+      write: null,
+    });
+  });
+
+  it('clamps to the def’s declared bpm range, in both directions', () => {
+    const bpmDef = timelordeDef.params.find((p) => p.id === 'bpm')!;
+    expect([TIMELORDE_BPM_MIN, TIMELORDE_BPM_MAX], 'the clamp IS the def’s range').toEqual([
+      bpmDef.min,
+      bpmDef.max,
+    ]);
+    expect(
+      externalBpmLockOnMeasure(BPM_LOCK_UNLOCKED, { measuredBpm: 5000, storedBpm: 120 }).write,
+    ).toBe(bpmDef.max);
+    expect(
+      externalBpmLockOnMeasure(BPM_LOCK_UNLOCKED, { measuredBpm: 0.5, storedBpm: 120 }).write,
+    ).toBe(bpmDef.min);
+  });
+
+  it('a user write with NO lock live is a no-op (nothing to remember)', () => {
+    expect(externalBpmLockOnUserWrite(BPM_LOCK_UNLOCKED, 90)).toBe(BPM_LOCK_UNLOCKED);
+  });
+
+  it('a user write DURING a lock replaces the stash', () => {
+    const locked = externalBpmLockOnMeasure(BPM_LOCK_UNLOCKED, { measuredBpm: 137, storedBpm: 120 }).state;
+    expect(externalBpmLockOnUserWrite(locked, 90).stashed).toBe(90);
+  });
+
+  it('unpatching with nothing stashed owes nothing', () => {
+    expect(externalBpmLockOnUnpatch(BPM_LOCK_UNLOCKED)).toEqual({
+      state: BPM_LOCK_UNLOCKED,
+      restore: null,
+    });
+  });
+
+  it('unpatching returns the stash and clears it (a second unpatch owes nothing)', () => {
+    const locked = externalBpmLockOnMeasure(BPM_LOCK_UNLOCKED, { measuredBpm: 137, storedBpm: 120 }).state;
+    const first = externalBpmLockOnUnpatch(locked);
+    expect(first.restore).toBe(120);
+    expect(externalBpmLockOnUnpatch(first.state).restore).toBeNull();
   });
 });
 

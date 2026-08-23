@@ -255,8 +255,22 @@ describe('shell cells — ACTION cells declare the handler their MODE needs', ()
       } else if (mode === 'trigger' && probe.effect.seam === 'manual-gate') {
         problems.push(`${where}: mode 'trigger' but the probe watches the HELD seam`);
       }
+    } else if (probe.effect.kind === 'param') {
+      if (!probe.effect.paramId.trim()) {
+        problems.push(`${where}: param-probe names no paramId`);
+      }
     } else if (!probe.effect.key.trim()) {
       problems.push(`${where}: probe effect names no node.data key`);
+    }
+    // ⚠ `presses` IS DECLARED ONLY WHERE IT IS LOAD-BEARING. Omitted means one,
+    // which is every action shipped before the field existed; declaring `1` is
+    // noise that reads like a decision, and declaring `0` would make the sweep
+    // assert an effect from no press at all — a probe that can only fail, which
+    // is how a gate gets deleted.
+    if (probe?.presses !== undefined && (!Number.isInteger(probe.presses) || probe.presses < 2)) {
+      problems.push(
+        `${where}: presses must be an integer >= 2 (omit it for the ordinary one-press action)`,
+      );
     }
     return problems;
   }
@@ -300,6 +314,49 @@ describe('shell cells — ACTION cells declare the handler their MODE needs', ()
     expect(
       actionProblems('x:y', { kind: 'action', label: 'a', onFire: fire, probe: gateProbe }),
     ).toHaveLength(1);
+
+    // ── the PARAM oracle + multi-press (added for TIMELORDE's TAP) ──────────
+    const paramProbe: ShellActionProbe = {
+      presses: 2,
+      effect: { kind: 'param', paramId: 'bpm', expect: 'changed' },
+    };
+    expect(actionProblems('x:y', { kind: 'action', label: 'a', onFire: fire, probe: paramProbe })).toEqual([]);
+    // A param probe naming nothing is a probe that cannot address anything.
+    expect(
+      actionProblems('x:y', {
+        kind: 'action', label: 'a', onFire: fire,
+        probe: { effect: { kind: 'param', paramId: '  ', expect: 'changed' } },
+      }),
+    ).toHaveLength(1);
+    // `presses: 1` is the default spelled out — refused as noise that reads
+    // like a decision; `presses: 0` would assert an effect from no press.
+    for (const presses of [1, 0, -1, 2.5]) {
+      expect(
+        actionProblems('x:y', {
+          kind: 'action', label: 'a', onFire: fire, probe: { ...paramProbe, presses },
+        }),
+        `presses: ${presses}`,
+      ).toHaveLength(1);
+    }
+  });
+
+  it('the PARAM-probe and MULTI-PRESS shapes are REACHED by a real module (not vacuous)', () => {
+    // Same argument as the gate-mode leg below: a clause swept over a registry
+    // that contains no instance of the shape stays green on a `return []`.
+    // TIMELORDE's TAP is the first of both; if it is ever removed, this says so
+    // rather than letting the coverage evaporate silently.
+    const paramProbes: string[] = [];
+    const multiPress: string[] = [];
+    for (const type of typesWithShellCells()) {
+      for (const key of shellCellKeys(type)) {
+        const cell = shellCellFor(type, { key, kind: 'family', label: key });
+        if (cell?.kind !== 'action') continue;
+        if (cell.probe.effect.kind === 'param') paramProbes.push(`${type}:${key}`);
+        if ((cell.probe.presses ?? 1) > 1) multiPress.push(`${type}:${key}`);
+      }
+    }
+    expect(paramProbes, 'at least one registered action cell probes a PARAM').not.toEqual([]);
+    expect(multiPress, 'at least one registered action cell needs MORE THAN ONE press').not.toEqual([]);
   });
 
   it('the gate-mode shape is REACHED by a real module (the clause is not vacuous)', () => {
