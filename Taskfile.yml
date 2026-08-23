@@ -655,17 +655,6 @@ tasks:
     cmds:
       - node scripts/vrt-strict-timings-accept.mjs {{.CLI_ARGS}}
 
-  e2e:timings:accept:
-    desc: |
-      [accept] Refresh e2e/e2e-timings.generated.json (the e2e shard planner's
-      cost artifact, #1600) from a real ci.yml run's blob-report artifacts, then
-      REVIEW THE DIFF — a cost that moved a lot is a finding, not bookkeeping.
-      Costs only: contention classes are derived at plan time
-      (scripts/e2e-contention-scan.mjs), never committed.
-      Usage: task e2e:timings:accept -- <ci-run-id>
-    cmds:
-      - node scripts/e2e-timings-accept.mjs {{.CLI_ARGS}}
-
   vrt:run:
     internal: true
     desc: 'Internal: run an e2e-workspace vrt script with E2E_PORT honoured.'

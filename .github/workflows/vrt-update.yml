@@ -297,9 +297,9 @@ jobs:
   # on top. The step below reported SUCCESS for that run, because it never
   # looked at whether the run it asked for exists.
   #
-  # So the step is now SELF-VERIFYING: after each re-fire it polls the same
-  # oracle docs-only-gate.yml's guard G2 uses — "did GitHub start a ci.yml run
-  # for this head SHA?" — retries the re-fire while the budget lasts, and FAILS
+  # So the step is now SELF-VERIFYING: after each re-fire it polls the runs API
+  # — "did GitHub start a ci.yml run for this head SHA?" — retries the re-fire
+  # while the budget lasts, and FAILS
   # LOUDLY (red run + a PR comment naming the remedy) when the run never
   # appears. It never posts a status and never marks anything green: the only
   # thing that can satisfy a required context here is a real `pull_request` CI

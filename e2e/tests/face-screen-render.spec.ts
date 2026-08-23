@@ -340,10 +340,13 @@ function nodeId(type: string): string {
  * workers was 51.2 s ⇒ a fixed ~8.6 s and a MARGINAL ~3.0 s per test, nearly all of
  * it page boot. With 27 module legs that is ~81 s of booting to prove 27 DOM facts.
  *
- * That cost is not just this file's problem, which is the real reason it changed:
- * the spec rides the 22 s MEDIAN in `e2e-timings.generated.json` until its first
- * accept, and a 28-test lump costed at 22 s perturbs the whole e2e bin-packing —
- * measured, adding this one file changes the composition of NINE of the TEN shards.
+ * That cost was not just this file's problem, which is the real reason it changed:
+ * at the time the e2e lane packed shards by MEASURED per-spec cost, a new spec
+ * rode a 22 s median until its first accept, and a 28-test lump costed at 22 s
+ * perturbed the whole bin-packing — measured, adding this one file changed the
+ * composition of NINE of the TEN shards. (That planner is deleted, 2026-08-23;
+ * sharding is Playwright's own `--shard` and no cost artifact exists. The
+ * batching still stands on its own: it is ~81 s of page boot either way.)
  * Batching amortises the boot without weakening a single assertion: every module
  * still gets its own dock open, its own toggle, and its own named failure.
  */
