@@ -246,24 +246,70 @@ function mountsAFader(type: string): boolean {
 }
 
 /**
- * Does this module render `.faceplate.audio`?
+ * WHICH `.faceplate.<class>` this module renders — DERIVED, or null when the
+ * golden cannot answer without guessing.
  *
- * ⚠ DELIBERATELY STRICTER THAN THE RUNTIME RULE, and the reason is an ordering
- * hazard rather than caution. `cableTypeForDef` takes `outputs[0] ?? inputs[0]`
- * — the DEF's declaration order — while `contract-lock.txt` lists ports SORTED
- * BY ID. Those two orders are not the same, so asking this artifact for "the
- * first output" would be asking a different question than the app asks. Instead
- * every output must map to `audio`, which makes the answer INVARIANT to
- * ordering: whichever port the real def happens to declare first, the class is
- * the same. A module with mixed outputs is simply not offered as a fixture —
- * over-rejecting only shrinks the pool, and the slack assertion guards that.
+ * ⚠ THIS REPLACED A PREDICATE THAT ASKED "IS IT AUDIO?" (#2137), and the
+ * distinction is the whole reason the audio pool had shrunk to two members.
+ * The old `rendersAudioFaceplate` REJECTED any module whose cables were not
+ * audio-class — 31 of 38 un-promoted audio-domain modules — and it existed for
+ * exactly one reason: `workflow-shell.spec.ts` hard-coded
+ * `.faceplate.audio`. That is an ASSERTION'S HARD-CODING WEARING A FITNESS
+ * CHECK'S CLOTHES: nothing about the legacy-fallback path cares what hue the
+ * plate is, so a module was being refused for a property the case does not
+ * depend on. Deriving the class instead and asserting THAT makes the leg
+ * strictly stronger — it now proves the faceplate carries the RIGHT class for
+ * whatever subject the derivation handed it, instead of proving one hard-coded
+ * class for a subject hand-filtered to have it.
+ *
+ * ⚠ IT IS NOT MEASURED SLACK EITHER. The pick this widening produces today is
+ * `modtris`, whose class is `gate`, and two of the four operable candidates are
+ * gate-class — so `.faceplate.audio` was about to be the WRONG assertion, not
+ * merely a narrow one.
+ *
+ * ⚠ STILL ORDER-INVARIANT, which is the part that must not regress.
+ * `cableTypeForDef` takes `outputs[0] ?? inputs[0]` — the DEF's declaration
+ * order — while `contract-lock.txt` lists ports SORTED BY ID. Those two orders
+ * are not the same, so asking this artifact for "the first output" would ask a
+ * different question than the app asks. Requiring every output to agree makes
+ * the answer invariant to ordering: whichever port the real def happens to
+ * declare first, the class is the same. A module whose outputs DISAGREE is
+ * refused by name — the golden genuinely cannot say which class wins without
+ * knowing an order it does not record.
  */
-function rendersAudioFaceplate(type: string): boolean {
+function uniformDomainClass(type: string): string | null {
   const ports = CONTRACT.get(type);
-  if (!ports) return false; // unknown to the golden → fail safe, never guess
+  if (!ports) return null; // unknown to the golden → fail safe, never guess
   const cables = ports.outputs.length > 0 ? ports.outputs : ports.inputs;
-  if (cables.length === 0) return false;
-  return cables.every((c) => domainClassForCable(c) === 'audio');
+  if (cables.length === 0) return null;
+  const classes = new Set(cables.map((c) => domainClassForCable(c)));
+  return classes.size === 1 ? [...classes][0] : null;
+}
+
+/**
+ * Does this module render the uniform PLACEHOLDER tile when it is un-promoted?
+ *
+ * ⚠ THE AUDIO SIDE NEVER CHECKED THIS AND WAS ONLY ACCIDENTALLY SAFE. Read
+ * `laneRenderKind` — `if (!shellFaces || !hasCard) return 'legacy'; return
+ * migrated ? 'shell' : 'placeholder'` — and TWO independent things route a
+ * module away from the placeholder, of which promotion is only one. A type with
+ * no resolvable card, or a `NON_SHELL_LANE_TYPES` snowflake, renders its
+ * VERBATIM LEGACY CARD, so there is no `module-shell-placeholder` for the
+ * specs to find at all. The old audio predicate happened to exclude every such
+ * module as a side effect of demanding audio-class cables (clipplayer,
+ * controlSurface and electraControl are all snowflakes), so dropping that
+ * filter without adding this one would have put them straight into the pool and
+ * failed in the confusing direction. `VIDEO_SINK_FIXTURE` already documents
+ * this exact class; the audio side now states it too.
+ */
+function rendersPlaceholderTile(type: string): string | null {
+  if (cardSource(type) === null) {
+    return `no card component resolves (${cardComponentName(type)}.svelte is not in lib/ui/modules), so laneRenderKind returns 'legacy' and there is no module-shell-placeholder to assert on`;
+  }
+  if (NON_SHELL_LANE_TYPES.has(type)) {
+    return "a NON_SHELL_LANE_TYPES snowflake: laneRenderKind returns 'legacy' for it, so it renders its verbatim card rather than the placeholder tile";
+  }
+  return null;
 }
 
 // ── Resolution ───────────────────────────────────────────────────────────────
@@ -273,14 +319,24 @@ function rendersAudioFaceplate(type: string): boolean {
  * them used to be one:
  *
  *   * `ok` — a fixture. `type` is the pick, `pool` the alternatives.
- *   * `migration-complete` — every module in this domain is PROMOTED, so the
+ *   * `migration-complete` — the predicate still accepts modules in this domain,
+ *     but every one it accepts is PROMOTED (or excluded by name), so the
  *     legacy-fallback case has NO SUBJECT **by design**. It is the end state of
- *     the face programme, not a defect: nothing is un-migrated, so nothing can
- *     render the lane placeholder + verbatim dock card these specs assert on.
- *     Consuming specs SKIP with `why` — loud and named, never silent.
- *   * `no-candidate` — un-promoted modules in this domain exist, but every one
- *     was rejected. That is a FIXTURE DEFECT and the consuming gate FAILS on
- *     it, printing each candidate's rejection.
+ *     the face programme, not a defect: nothing eligible is un-migrated, so
+ *     nothing can render the lane placeholder + verbatim dock card these specs
+ *     assert on. Consuming specs SKIP with `why` — loud and named, never silent.
+ *
+ *     ⚠ ITS MEANING WIDENED IN #2137 AND THE CALL SITES DID NOT MOVE. It used to
+ *     fire only on `unpromoted.length === 0` — "every module in this domain is
+ *     promoted" — which is a state THE FACE PROGRAMME WILL NEVER REACH in audio,
+ *     because a dozen games and MIDI surfaces are `bespoke-surface` and are not
+ *     queued for a face at all. So the arm that was supposed to be the designed
+ *     end state was unreachable, and the reachable outcome was the RED one. The
+ *     honest question is not "is anything left un-migrated" but "is anything
+ *     left that could SERVE THIS CASE", and that is what it now answers.
+ *   * `no-candidate` — the predicate accepts NOTHING IN THE WHOLE POPULATION, or
+ *     the golden did not parse. That is a FIXTURE DEFECT — the instrument went
+ *     blind — and the consuming gate FAILS on it, printing each rejection.
  *
  * ⚠ THE TWO EMPTY CASES NEED OPPOSITE RESPONSES, WHICH IS WHY THEY ARE
  * SEPARATE VALUES. "Nothing is left to test" and "the instrument rejected
@@ -294,22 +350,49 @@ function rendersAudioFaceplate(type: string): boolean {
  * EVERY spec importing this file, before any of them ran a line. A fixture's
  * exhaustion must surface where the fixture is USED.
  */
+interface FixtureCommon {
+  readonly why: string;
+  readonly pool: readonly string[];
+  readonly rejections: Readonly<Record<string, string>>;
+  readonly unpromoted: readonly string[];
+  /**
+   * Every module in the WHOLE domain population — promoted, un-promoted and
+   * denied alike — that the fitness predicate ACCEPTS.
+   *
+   * ⚠ THIS IS THE INSTRUMENT'S NEGATIVE CONTROL, AND IT IS THE FIELD THAT MAKES
+   * THE END STATE EXPRESSIBLE (#2137). "The predicate went blind" and "the
+   * migration consumed every eligible subject" produce the SAME empty pool, and
+   * before this field they were the same VALUE — both `no-candidate`, i.e. RED.
+   * They need opposite responses, which is exactly CLAUDE.md's
+   * VALIDATE-THE-INSTRUMENT meta-tell. Asking the predicate what it accepts
+   * across the whole population separates them: a predicate that accepts
+   * NOTHING ANYWHERE is broken (the `<Fader>` → `<NeonFader>` rename class, which
+   * would have rejected every candidate at once); a predicate that accepts
+   * plenty but finds them all promoted is a migration that finished.
+   */
+  readonly eligible: readonly string[];
+  /**
+   * The SAME fitness closure the derivation ran, exposed so a spec's negative
+   * control calls the predicate under test rather than a paraphrase of it
+   * (CLAUDE.md: "a permanent negative control calling the same predicate the
+   * check calls"). Returns a REASON to reject, or null to accept.
+   */
+  readonly probe: (type: string) => string | null;
+}
+
 export type FixtureResolution =
-  | {
+  | (FixtureCommon & {
       readonly kind: 'ok';
       readonly type: string;
-      readonly why: string;
-      readonly pool: readonly string[];
-      readonly rejections: Readonly<Record<string, string>>;
-      readonly unpromoted: readonly string[];
-    }
-  | {
+      /** The `.faceplate.<class>` this pick renders — DERIVED from the golden,
+       *  so a spec asserts the RIGHT class for whatever subject it was handed
+       *  instead of hard-coding one. Null only when the fixture does not
+       *  require a determinate class (the placeholder legs never read it). */
+      readonly domainClass: string | null;
+    })
+  | (FixtureCommon & {
       readonly kind: 'migration-complete' | 'no-candidate';
-      readonly why: string;
-      readonly pool: readonly string[];
-      readonly rejections: Readonly<Record<string, string>>;
-      readonly unpromoted: readonly string[];
-    };
+    });
 
 /**
  * Derive one domain's fixture from the golden.
@@ -333,6 +416,15 @@ function deriveFixture(
     .map(([type]) => type)
     .sort();
   const unpromoted = population.filter((t) => !STRICT_FACES.has(t));
+
+  // THE NEGATIVE CONTROL, computed BEFORE the pool and over the WHOLE
+  // population: what does this predicate accept when promotion and the deny
+  // list are not allowed to shrink the answer? An empty result here means the
+  // predicate itself stopped working, which no amount of migration can cause.
+  // (DENIED is deliberately NOT applied — it is a hand-maintained exclusion, and
+  // letting it feed the instrument check would let a deny entry disguise a blind
+  // predicate as a finished migration.)
+  const eligible = population.filter((t) => rejectUnfit(t) === null);
 
   const rejections: Record<string, string> = {};
   const pool: string[] = [];
@@ -374,42 +466,69 @@ function deriveFixture(
       pool,
       rejections,
       unpromoted,
+      eligible,
+      probe: rejectUnfit,
     };
   }
-  if (unpromoted.length === 0) {
-    return {
-      kind: 'migration-complete',
-      why:
-        `THE ${domain.toUpperCase()} FACE MIGRATION IS COMPLETE — every module declaring ` +
-        `domain=${domain} in contract-lock.txt is in STRICT_FACES, so it renders a curated ` +
-        'face. This case has NO SUBJECT by design: there is no un-migrated module left to ' +
-        `show ${purpose}. That is the END STATE, not a failure — either delete this case, or ` +
-        're-point it at a purpose-built fixture module that is deliberately never promoted. ' +
-        `Promoted ${domain} modules: ${population.join(', ')}`,
-      pool,
-      rejections,
-      unpromoted,
-    };
-  }
-  const pick = pool[0];
-  if (pick === undefined) {
+
+  // ⚠ THE INSTRUMENT CHECK COMES BEFORE THE MIGRATION CHECK, because a blind
+  // predicate would otherwise present itself as a finished migration — the
+  // failure mode is silent and green, which is the worst of the two.
+  if (eligible.length === 0) {
     return {
       kind: 'no-candidate',
       why:
-        `the derived ${domain} legacy-fallback pool is EMPTY while un-promoted ${domain} ` +
-        'modules still exist — so this is a FIXTURE DEFECT, not the end of the migration. ' +
-        `Every un-promoted ${domain} module was rejected by a predicate:\n  ` +
+        `THE FITNESS PREDICATE ACCEPTS NOTHING IN THE ENTIRE domain=${domain} POPULATION ` +
+        `(${population.length} modules, promoted and un-promoted alike). That cannot be a ` +
+        'migration state: promotion removes modules from the POOL, never from the population ' +
+        'this was measured over. So the predicate itself stopped working — the class of ' +
+        'failure where `<Fader>` was renamed `<NeonFader>` and a `/<Fader\\b/` test began ' +
+        'rejecting every candidate at once. FIX THE PREDICATE, do not re-point the fixture. ' +
+        `Un-promoted rejections:\n  ` +
         Object.entries(rejections)
           .map(([t, r]) => `${t}: ${r}`)
           .join('\n  '),
       pool,
       rejections,
       unpromoted,
+      eligible,
+      probe: rejectUnfit,
+    };
+  }
+
+  const pick = pool[0];
+  if (pick === undefined) {
+    // The predicate works (it accepts `eligible.length` modules) and every one
+    // it accepts is already promoted or excluded by name. NO SUBJECT BY DESIGN.
+    const consumedByPromotion = eligible.filter((t) => STRICT_FACES.has(t));
+    const consumedByDenial = eligible.filter((t) => !STRICT_FACES.has(t) && DENIED[t] !== undefined);
+    return {
+      kind: 'migration-complete',
+      why:
+        `THE ${domain.toUpperCase()} LEGACY-FALLBACK CASE HAS NO SUBJECT LEFT, BY DESIGN. The ` +
+        `fitness predicate still works — it accepts ${eligible.length} of the ` +
+        `${population.length} domain=${domain} modules — but every module it accepts is ` +
+        'already promoted or excluded by name, so nothing renders ' +
+        `${purpose} any more. That is the END STATE of the face programme, not a failure — ` +
+        'either DELETE this case, or re-point it at a purpose-built fixture module that is ' +
+        'deliberately never promoted.\n' +
+        `  consumed by PROMOTION (${consumedByPromotion.length}): ${consumedByPromotion.join(', ') || '(none)'}\n` +
+        `  eligible but DENIED (${consumedByDenial.length}): ${consumedByDenial.join(', ') || '(none)'}\n` +
+        `  un-promoted but unfit:\n    ` +
+        Object.entries(rejections)
+          .map(([t, r]) => `${t}: ${r}`)
+          .join('\n    '),
+      pool,
+      rejections,
+      unpromoted,
+      eligible,
+      probe: rejectUnfit,
     };
   }
   return {
     kind: 'ok',
     type: pick,
+    domainClass: uniformDomainClass(pick),
     why:
       `${domain} legacy-fallback fixture: ${pick} — first by param count, then port count, ` +
       `then name, of the ${pool.length} un-promoted ${domain} modules that pass the ` +
@@ -417,6 +536,8 @@ function deriveFixture(
     pool,
     rejections,
     unpromoted,
+    eligible,
+    probe: rejectUnfit,
   };
 }
 
@@ -431,28 +552,60 @@ function deriveFixture(
  * five times before the pool was derived (#1789, #1794): `vca`, `delay`,
  * `noise`, `attenumix`, `destroy`, each discovered by breaking the suite.
  *
- * The predicates are the ASSERTIONS' OWN predicates, run here rather than
- * described in prose, because each one has already cost a cycle when it was
- * only prose:
+ * Its predicates are the ASSERTIONS' OWN, run here rather than described in
+ * prose:
  *   * `STRICT_FACES` — a promoted module renders a curated face, so the spec
  *     asserting "placeholder is visible" fails for a reason that is not a bug.
- *   * the DOMAIN CLASS — the bridge specs assert `.faceplate.audio`, which is
- *     derived from the module's CABLE TYPES, not its declared `domain`.
- *     `gatemaiden` is `domain: 'audio'` with GATE ports and renders
- *     `.faceplate.gate`: it satisfied the requirement as written and still
- *     could not satisfy the assertion.
- *   * `mountsAFader` — `workflow-shell.spec.ts`'s operability leg drives
- *     `.fader-wrap .track` specifically. `moog902` satisfied every OTHER stated
- *     requirement and its card draws KNOBS, so the spec spent 30 s in
- *     `locator.boundingBox` and failed as a TIMEOUT, which reads like a broken
- *     app rather than an unfit fixture.
+ *   * `rendersPlaceholderTile` — a card that resolves, and not a snowflake.
+ *     Both route a module to the VERBATIM LEGACY CARD instead of the
+ *     placeholder, and neither has anything to do with promotion.
+ *
+ * ⚠ IT NO LONGER REQUIRES A FADER OR AN AUDIO-CLASS PLATE, and that is the
+ * change that un-wedged this pool (#2137). Those two belong to ONE leg, which
+ * now has its own fixture below; carrying them here made every leg pay the
+ * strictest requirement and shrank a 34-module pool to two. See
+ * `AUDIO_OPERABLE_FIXTURE` for what moved and why.
  */
-export const AUDIO_FIXTURE: FixtureResolution = deriveFixture(
+export const AUDIO_PLACEHOLDER_FIXTURE: FixtureResolution = deriveFixture(
   'audio',
-  'the uniform lane placeholder and its verbatim legacy card in the dock',
+  'the uniform lane placeholder and its EXPAND affordance',
+  rendersPlaceholderTile,
+);
+
+/**
+ * A still-UN-MIGRATED audio module whose legacy card is also OPERABLE — the
+ * fixture for the one leg that DRIVES a control instead of merely looking at
+ * the tile.
+ *
+ * ⚠ IT IS A SECOND FIXTURE BECAUSE THE THREE CONSUMING LEGS NEVER WANTED THE
+ * SAME THING (#2137). One fixture served all three, so its predicates were the
+ * UNION of their requirements and every leg paid for the strictest one. Only
+ * `workflow-shell.spec.ts`'s "legacy card operable in the dock" leg drives
+ * `.fader-wrap .track` or reads the plate's domain class; the EXPAND-pill legs
+ * in `workflow-shell.spec.ts` and `workflow-dock-ux.spec.ts` need nothing but a
+ * module that renders a placeholder. Splitting them stops a promotion that
+ * empties the narrow pool from also silencing the two legs that never needed it
+ * — measured at the split: 4 candidates here against 34 for the placeholder
+ * pool.
+ *
+ * Its predicates, and what each is for:
+ *   * `rendersPlaceholderTile` — the shared floor (see above);
+ *   * a determinate `uniformDomainClass` — the leg asserts
+ *     `.faceplate.<class>`, so the golden has to be able to NAME the class
+ *     without guessing a port order it does not record;
+ *   * `mountsAFader` — the leg drives `.fader-wrap .track` specifically.
+ *     `moog902` satisfied every OTHER stated requirement and its card draws
+ *     KNOBS, so the spec spent 30 s in `locator.boundingBox` and failed as a
+ *     TIMEOUT, which reads like a broken app rather than an unfit fixture.
+ */
+export const AUDIO_OPERABLE_FIXTURE: FixtureResolution = deriveFixture(
+  'audio',
+  'the verbatim legacy card, OPERABLE, in the dock full view',
   (type) => {
-    if (!rendersAudioFaceplate(type)) {
-      return 'does not render .faceplate.audio (its cable types put it in another domain class)';
+    const placeholder = rendersPlaceholderTile(type);
+    if (placeholder !== null) return placeholder;
+    if (uniformDomainClass(type) === null) {
+      return 'its output cables map to MORE THAN ONE domain class, so the golden cannot say which `.faceplate.<class>` it renders without knowing the def\'s declaration order — which contract-lock.txt does not record (it sorts ports by id)';
     }
     if (!mountsAFader(type)) {
       return `its legacy card (${cardComponentName(type)}.svelte) mounts no <NeonFader>, so the operability leg has no '.fader-wrap .track' to drive`;
@@ -597,12 +750,29 @@ export const VIDEO_SINK_FIXTURE: FixtureResolution = deriveFixture(
  *     so a predicate cannot quietly shrink the subject it is measuring. This is
  *     the check that would have caught the old hand-picked list: four names out
  *     of the whole video registry, with the rest neither offered nor refused.
- *   * SLACK — more than one candidate. Deliberately a `>` and not an `=`: the
- *     un-promoted population is a population, not a target, and pinning it
- *     would be the ratchet this repo forbids. The PROPERTY asserted is "a
- *     promotion from here is survivable", which needs exactly two members to be
- *     true, and it reddens ONE named test while a replacement still exists
- *     instead of at the moment the last candidate is consumed.
+ *   * (THE INSTRUMENT-IS-NOT-BLIND check is NOT here — see the note at the
+ *     `no-candidate` line in the body. `deriveFixture` detects an empty
+ *     `eligible` itself and returns `no-candidate`, so a clause here could
+ *     never fire; the consuming spec owns the positive and negative controls
+ *     over `eligible` and `probe`.)
+ *
+ * ⚠ THE `pool.length <= 1` SLACK FLOOR IS GONE (#2137), AND ITS REMOVAL IS THE
+ * POINT RATHER THAN A TIDY-UP. Two things were wrong with it. It was a
+ * POPULATION THRESHOLD SITTING EXACTLY ON THE POPULATION — the audio pool held
+ * two members and the floor tripped at one, so it had ZERO slack, which is
+ * CLAUDE.md's named "a floor sitting exactly ON the population is a ratchet in
+ * behaviour whatever it is in intent" hazard. And the PROPERTY it asserted — "a
+ * promotion from here is survivable" — became unconditionally true in this same
+ * change: emptying the pool now degrades to a NAMED SKIP rather than to a red
+ * fixture defect, so there is no longer a cliff to warn about.
+ *
+ * Per CLAUDE.md the mechanism is DELETED rather than re-tuned, and what replaces
+ * it is the unconditional check plus a PERMANENT NEGATIVE CONTROL CALLING THE
+ * SAME PREDICATE (`eligible`, and `probe` for the consuming spec's both-
+ * directions leg). That is strictly stronger than the floor: the floor could
+ * only notice a broken predicate once the pool happened to empty, while
+ * `eligible` notices it the moment the predicate stops accepting anything —
+ * even if the pool is coincidentally full.
  *
  * `migration-complete` is NOT a problem — it is the designed end state, and the
  * consuming spec skips on it by name.
@@ -610,20 +780,20 @@ export const VIDEO_SINK_FIXTURE: FixtureResolution = deriveFixture(
 export function fixtureProblems(fixture: FixtureResolution): string[] {
   const problems: string[] = [];
   if (fixture.kind === 'no-candidate') problems.push(fixture.why);
+  // ⚠ THERE IS DELIBERATELY NO `eligible.length === 0` CLAUSE HERE, and its
+  // absence is the honest shape rather than an omission. A first draft added
+  // one, guarded `&& kind !== 'no-candidate'` — and it could never fire:
+  // `deriveFixture` returns `no-candidate` for exactly that condition, so the
+  // guard excluded the only state that reaches it. A check that cannot fail is
+  // decoration, and listing it among "the checks" would have made this file
+  // claim coverage it does not have — the very shape the derivation above
+  // exists to prevent. The blind-instrument case is enforced where it is
+  // detected (in `deriveFixture`) and surfaced by the `no-candidate` line
+  // above, whose `why` carries the full diagnosis; the consuming spec adds the
+  // POSITIVE and NEGATIVE controls over `eligible` and `probe`.
   if (fixture.kind === 'ok') {
     if (!fixture.pool.includes(fixture.type)) {
       problems.push(`the pick (${fixture.type}) is not a member of the derived pool`);
-    }
-    if (fixture.pool.length <= 1) {
-      problems.push(
-        `the legacy-fallback fixture pool is down to ${fixture.pool.join(', ') || 'nothing'}. ` +
-          'The NEXT face promotion empties it. Either land an un-promoted module that passes ' +
-          'the predicates, or re-home these bridge specs on a purpose-built fixture module ' +
-          'instead of borrowing a real one. Rejected candidates and why:\n  ' +
-          Object.entries(fixture.rejections)
-            .map(([t, r]) => `${t}: ${r}`)
-            .join('\n  '),
-      );
     }
   }
   const accounted = [...fixture.pool, ...Object.keys(fixture.rejections)].sort();

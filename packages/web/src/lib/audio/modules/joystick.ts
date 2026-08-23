@@ -122,12 +122,52 @@ export const joystickDef: AudioModuleDef = {
   // so the gate is no longer blind to it.
   //
   // ⚠ THIS DOES NOT PROMOTE THE MODULE — #2038 is a primitive fix and stops at
-  // the primitive. Q43 is now UNBLOCKED rather than done, and the promotion is
-  // still its own piece of work.
+  // the primitive.
   //
   // Everything else Q43 needs was done and shipped earlier: the #1963 ruling
   // (no snap-back, the docs corrected), the raw-write debt paid, and a
   // `faceLaneCellHeights` fold bug that attempting the promotion exposed.
+  //
+  // ── ⚠ AND THERE IS A SECOND, OLDER BLOCKER THIS COMMENT NEVER MENTIONED ────
+  //
+  // Re-derived 2026-08-23 while cut A batch 2 was assigned this module. The
+  // three bullets above are all about the READOUT, and all three really are
+  // cleared — so read on its own this comment says "unblocked", which is what
+  // it said before it was corrected. It is not, and the reason is structural
+  // rather than cosmetic:
+  //
+  //   THIS MODULE'S LANE TILE WOULD BE EMPTY. `joystick` declares exactly two
+  //   params and both are the axes of one pad. `laneOrder` deletes every
+  //   declared `xyPads` anchor from the lane order (a pad is square; a lane
+  //   knob column is 46 px) and `foldedOrder` removes the partner axis at every
+  //   tier, so a face here resolves to ZERO controls at mini, compact AND full.
+  //   Nor is there a glyph to fall back on: `glyphBinding` reaches a live trace
+  //   only through a primary AUDIO output, and this module declares four `cv`
+  //   outputs and no audio, so every glyph literal resolves `{ kind: 'static' }`
+  //   — which `module-face-lint`'s dead-glyph clause refuses by name. The tile
+  //   would be a title bar and a jack rail with nothing between them, which is
+  //   strictly worse than the uniform placeholder it would replace.
+  //
+  // This is the refusal `strict-faces.ts` records in the `quadralogical` entry
+  // and `types.ts` records on `FaceXyPad.surface` — and `quadralogical` is
+  // promotable with the SAME pad only because it has eighteen other ranked
+  // params. `surface: 'body'` does not answer it either: that field changes
+  // WHICH DOCK SURFACE paints the pad, never whether a lane has one.
+  //
+  // ⚠ IT IS NOW ENFORCED, which it was not when the comment above was written.
+  // Nothing in the repo failed on a zero-control lane — the cap-vs-fit-plan
+  // clause reads `rendered === face.controls.length`, which is `0 === 0` and
+  // green — so a face authored here would have SHIPPED with a blank tile
+  // through the whole gate set. `module-face-lint.test.ts` now denies a
+  // promoted face that ranks controls and resolves to none of them at a lane
+  // tier, with this exact shape as its permanent negative control.
+  //
+  // So the honest status is BLOCKED, on a platform capability rather than on
+  // this file: either a glyph binding that can paint a pad's position (which
+  // `types.ts` already prescribes the shape for), or lifting the pad-in-lane
+  // restriction (`LANE_CELL_H.xy` is already carried at its real 96 px against
+  // that day). Both move every pad-bearing face's lane tile and its baselines,
+  // so both are platform work and not a face PR.
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     const initial = node.params ?? {};
     const live = {
