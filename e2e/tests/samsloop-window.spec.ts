@@ -158,7 +158,9 @@ async function dragFader(page: Page, paramId: string, frac: number): Promise<voi
   await page.waitForTimeout(250);
 }
 
-/** The declared max of a fader — what `Math.max(1, sampleLength)` produced. */
+/** The declared max of a fader. Since the window became a FRACTION this is 1
+ *  for every sample length — see the assertion that consumes it for why that
+ *  makes it a card-vs-def agreement check rather than a length check. */
 async function faderMax(page: Page, paramId: string): Promise<number> {
   return await page
     .locator(`[data-testid="control-${paramId}"]`)
@@ -203,12 +205,24 @@ test.describe('SAMSLOOP START/END loop window', () => {
     // ── START high: the window is the LOUD second half. ────────────────────
     await dragFader(page, 'start', 0.8);
     const hi = await readSams(page);
+    // ⚠ FRACTIONS. The window is a fraction of the sample now, so "the loud
+    // half" is literally > 0.5 and does not mention `len` at all — which is the
+    // property worth having: this assertion is the same on a four-second
+    // staircase and a sixty-second one.
+    //
+    // ⚠ THE OLD MESSAGE HERE SAID "a fader whose range collapsed to [0,1] fails
+    // HERE". That guard is GONE, not moved: [0,1] is now the CORRECT declared
+    // range, so the symptom it named is the healthy state. What it was really
+    // protecting — `sampleLength` cached as 0 after the buffer transfer — is
+    // asserted directly on `node.data` in the recorded-take test below.
     expect(
       hi.start,
-      `START must land in the LOUD half (> ${len / 2} of ${len}); got ${hi.start}. ` +
-      'A fader whose range collapsed to [0,1] fails HERE, on the value, before any audio is read.',
-    ).toBeGreaterThan(len * 0.5);
-    expect(hi.engineStart, 'the engine must have received the same start').toBeCloseTo(hi.start, 0);
+      `START must land in the LOUD half (> 0.5 of the sample, ${len} frames); got ${hi.start}`,
+    ).toBeGreaterThan(0.5);
+    // ⚠ THREE DECIMALS, NOT ZERO. `toBeCloseTo(x, 0)` accepts ±0.5, which was a
+    // sane tolerance on a frame COUNT and is half the whole control on a
+    // fraction — it would pass on almost any value the engine held.
+    expect(hi.engineStart, 'the engine must have received the same start').toBeCloseTo(hi.start, 3);
 
     await trigger(page);
     const loud = await readScopePeakOverWindow(page, 'scp', 1200);
@@ -227,10 +241,10 @@ test.describe('SAMSLOOP START/END loop window', () => {
     const lo = await readSams(page);
     expect(
       lo.start,
-      `START must come back DOWN into the quiet half; got ${lo.start} of ${len}`,
-    ).toBeLessThan(len * 0.45);
-    expect(lo.end, `END must sit inside the quiet half; got ${lo.end} of ${len}`)
-      .toBeLessThan(len * 0.5);
+      `START must come back DOWN into the quiet half; got ${lo.start} (fraction of ${len} frames)`,
+    ).toBeLessThan(0.45);
+    expect(lo.end, `END must sit inside the quiet half; got ${lo.end} (fraction)`)
+      .toBeLessThan(0.5);
     expect(lo.end, 'END must stay above START or the window is degenerate').toBeGreaterThan(lo.start);
 
     await trigger(page);
@@ -261,10 +275,13 @@ test.describe('SAMSLOOP START/END loop window', () => {
     // crop, measured on the audio.
     await dragFader(page, 'end', 0.4);
     const cropped = await readSams(page);
-    expect(cropped.end, `END must land in the quiet half; got ${cropped.end} of ${len}`)
-      .toBeLessThan(len * 0.5);
+    expect(cropped.end, `END must land in the quiet half; got ${cropped.end} (fraction of ${len} frames)`)
+      .toBeLessThan(0.5);
     expect(cropped.end, 'END must stay above START').toBeGreaterThan(cropped.start);
-    expect(cropped.engineEnd, 'the engine must have received the same end').toBeCloseTo(cropped.end, 0);
+    // ⚠ A FRACTION needs real precision here — `toBeCloseTo(x, 0)` accepts ±0.5,
+    // which on a 0..1 quantity is HALF THE CONTROL and would pass on almost any
+    // value. Three decimals is ~0.1 % of the sample.
+    expect(cropped.engineEnd, 'the engine must have received the same end').toBeCloseTo(cropped.end, 3);
 
     // THE "BLACK CLIP" ASSERTION. This is what went to zero: the START..END
     // highlight band. A `sampleLength` of 0 made `end / samples.length` collapse,
@@ -295,7 +312,7 @@ test.describe('SAMSLOOP START/END loop window', () => {
     expect(errors, errors.join('; ')).toEqual([]);
   });
 
-  test('a RECORDED take bounds both window faders to its OWN frame count, not to 1', async ({ page }) => {
+  test('a RECORDED take caches its real length, and both faders read the DEF\'s fraction range', async ({ page }) => {
     // THE REGRESSION, stated against the artifact. `sampleLength` is not compared
     // to a magic number — it is compared to the frame count implied by the bytes
     // actually sitting on node.data, so the assertion cannot rot when the record
@@ -335,25 +352,37 @@ test.describe('SAMSLOOP START/END loop window', () => {
       'A 0 here is the transferred-then-read-back buffer: postMessage detaches the view, so `f32.length` is 0.',
     ).toBe(st.recordedFrames);
 
-    // The user-visible consequence, asserted directly on the controls: both
-    // faders declare the take's range. `Math.max(1, 0)` makes this 1.
+    // ⚠ THIS LEG'S PRECONDITION WAS DELETED BY THE FIX, so the assertion had to
+    // change SUBJECT rather than tolerance. It used to read
+    // `faderMax === recordedFrames`, guarding the detached-buffer bug:
+    // `sampleLength` cached as 0 made the card compute `Math.max(1, 0)` and the
+    // fader collapsed to one sample of travel. The window is a FRACTION now, so
+    // the max is 1 by DECLARATION at every take length — the old assertion
+    // would be checking that 1 === recordedFrames and could only ever fail.
+    //
+    // The bug itself is still real and is still asserted, one step UPSTREAM and
+    // more directly: `st.sampleLength === st.recordedFrames`, above. What is
+    // worth checking down here now is the OTHER half of that contract — that
+    // the CARD reads its range from the def instead of computing one. A card
+    // that went back to `Math.max(1, sampleLength)` would produce a max of
+    // ~176400 and fail here, which is the backdraft class this file can see.
     const startMax = await faderMax(page, 'start');
     const endMax = await faderMax(page, 'end');
     expect(
       startMax,
-      `START fader max is ${startMax}; the take is ${st.recordedFrames} frames. ` +
-      'A max of 1 is a slider with one sample of travel — the "start slider does nothing" report.',
-    ).toBe(st.recordedFrames);
-    expect(endMax, `END fader max is ${endMax}; the take is ${st.recordedFrames} frames`)
-      .toBe(st.recordedFrames);
+      `START fader max is ${startMax}; the window is a FRACTION so every fader ` +
+      'declares 1 whatever the take length. A frame count here means the card ' +
+      'is computing its own range again.',
+    ).toBe(1);
+    expect(endMax, `END fader max is ${endMax}; expected the declared fraction max`).toBe(1);
 
     // And driving END through the real fader leaves a live window + live audio.
     await dragFader(page, 'end', 0.5);
     const cropped = await readSams(page);
     expect(
       cropped.end,
-      `END must land inside the take (0..${st.recordedFrames}); got ${cropped.end}`,
-    ).toBeGreaterThan(st.recordedFrames! * 0.2);
+      `END must land inside the take as a fraction (0..1); got ${cropped.end}`,
+    ).toBeGreaterThan(0.2);
     expect(cropped.end, 'END must stay above START').toBeGreaterThan(cropped.start);
 
     const drawn = await readWaveform(page);

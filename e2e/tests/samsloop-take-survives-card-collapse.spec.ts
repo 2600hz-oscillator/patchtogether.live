@@ -2,8 +2,16 @@
 //
 // #1588 — collapsing SAMSLOOP must not destroy an in-progress recording.
 //
-// SAMSLOOP is un-migrated, so under the faceplate shell its card exists ONLY inside the
-// dock full-view. Collapsing UNMOUNTS the card, and the card's unmount `$effect` ran
+// ⚠ SAMSLOOP IS PROMOTED NOW, and the subject survived the promotion unchanged — which
+// is worth stating because the surface under the test DID change. This file used to say
+// "SAMSLOOP is un-migrated, so its card exists ONLY inside the dock full-view". It is in
+// STRICT_FACES today, `DockFullView` reads `migrated()` alone, and the dock renders the
+// FACEPLATE; `samsloop-card` appears on neither surface. The defect was never about which
+// component it was — it was that a take must not depend on ANY component's lifetime — so
+// the spec now collapses the faceplate and asserts exactly the same two things. The
+// original defect, on the card that no longer renders:
+//
+// Collapsing UNMOUNTS the surface, and the card's unmount `$effect` ran
 // `attachedTap.setEnabled(false)` + `removeEventListener('message', …)` — and **nothing
 // called `stopRecording()`**, the only path that encodes the buffer and writes
 // `node.data.sample`. So a view action destroyed up to 60 s of unrepeatable live audio
@@ -199,13 +207,32 @@ async function buildGatedPatch(page: Page) {
   );
 }
 
-async function openSamsloopCard(page: Page) {
+/**
+ * Open samsloop's dock full view and wait for its surface to mount.
+ *
+ * ⚠ THE SURFACE IS THE FACEPLATE NOW, NOT THE CARD. samsloop entered
+ * `STRICT_FACES`, and `DockFullView` reads `migrated()` alone — so the dock
+ * renders `ModuleShell` and `samsloop-card` never appears on either surface.
+ * This spec's SUBJECT is unchanged and if anything sharper: #1588 was a take
+ * destroyed by a COMPONENT UNMOUNT, and the promotion swapped which component
+ * unmounts without changing that the take must not care. The waited-on element
+ * is the face's own body, which only the faceplate renders.
+ */
+async function openSamsloopFace(page: Page) {
   await page.evaluate(
     (id) => (globalThis as unknown as { __openDockFullView(x: string): void }).__openDockFullView(id),
     's',
   );
-  await expect(page.getByTestId('samsloop-card')).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByTestId('samsloop-output-body')).toBeVisible({ timeout: 20_000 });
 }
+
+/** The face's REC transport. The shell names a cell `shell-cell-<familyId>`
+ *  (`ModuleShell.cellTestId`), so the family id is the whole identifier — the
+ *  `-{n}` suffix is a FACE-KEY spelling and never reaches the DOM.
+ *  ⚠ Unlike the card's button it carries a STATIC caption, so "is it
+ *  recording?" is read from the registry via `nodeTake`, which was always the
+ *  stronger observable anyway. */
+const REC_CELL = 'shell-cell-samsloop-rec';
 
 test('a SAMSLOOP take keeps GROWING while its card is collapsed, and captures audio the card never saw', async ({
   page,
@@ -213,10 +240,15 @@ test('a SAMSLOOP take keeps GROWING while its card is collapsed, and captures au
   await page.goto('/rack?seed=none');
   await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: 30_000 });
   await buildGatedPatch(page);
-  await openSamsloopCard(page);
+  await openSamsloopFace(page);
 
-  const rec = page.getByTestId('samsloop-rec-button');
-  await expect(rec).toContainText('REC');
+  const rec = page.getByTestId(REC_CELL);
+  // ⚠ NO CAPTION ASSERTION. The card's button relabelled itself REC ↔ STOP; the
+  // face cell's caption is static, because a faceplate paints no derived state.
+  // The transport's real state is polled off the NODE below — which was always
+  // the stronger observable, since a caption can be right while the pump is
+  // dead and that is the exact half-fix #1531 warned about.
+  await expect(rec).toBeEnabled();
   await rec.click();
   await expect.poll(async () => (await nodeTake(page, 's')).recording, { timeout: 20_000 }).toBe(true);
 
@@ -231,7 +263,7 @@ test('a SAMSLOOP take keeps GROWING while its card is collapsed, and captures au
 
   // ── THE ACT UNDER TEST: collapse. This unmounts the card. ──
   await page.getByTestId('faceplate-collapse').click();
-  await expect(page.getByTestId('samsloop-card')).toHaveCount(0, { timeout: 15_000 });
+  await expect(page.getByTestId('samsloop-output-body')).toHaveCount(0, { timeout: 15_000 });
 
   const atCollapse = await nodeTake(page, 's');
   expect(
@@ -259,10 +291,15 @@ test('a SAMSLOOP take keeps GROWING while its card is collapsed, and captures au
   await setGate(page, false);
 
   // Re-expand: the remounted card must adopt the SAME running take, not a fresh idle one.
-  await openSamsloopCard(page);
-  await expect(page.getByTestId('samsloop-rec-button')).toContainText('STOP', { timeout: 10_000 });
+  await openSamsloopFace(page);
+  // The remounted surface must adopt the SAME running take rather than a fresh
+  // idle one. Read off the NODE, not the caption — see the note at the first
+  // press for why the caption stopped being an observable.
+  await expect
+    .poll(async () => (await nodeTake(page, 's')).recording, { timeout: 10_000 })
+    .toBe(true);
 
-  await page.getByTestId('samsloop-rec-button').click();
+  await page.getByTestId(REC_CELL).click();
   await expect.poll(async () => (await nodeTake(page, 's')).recording, { timeout: 20_000 }).toBe(false);
 
   const take = await measureTake(page, 's');
@@ -290,9 +327,9 @@ test('POSITIVE CONTROL: the same probe, with the card mounted the whole time', a
   await page.goto('/rack?seed=none');
   await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: 30_000 });
   await buildGatedPatch(page);
-  await openSamsloopCard(page);
+  await openSamsloopFace(page);
 
-  await page.getByTestId('samsloop-rec-button').click();
+  await page.getByTestId(REC_CELL).click();
   await expect.poll(async () => (await nodeTake(page, 's')).recording, { timeout: 20_000 }).toBe(true);
 
   const before = await waitForTakePast(page, 's', 0.2, 15_000);
@@ -303,8 +340,8 @@ test('POSITIVE CONTROL: the same probe, with the card mounted the whole time', a
   expect(after.ok, `the take stalled with the card mounted: ${JSON.stringify(after)}`).toBe(true);
   await setGate(page, false);
 
-  await expect(page.getByTestId('samsloop-card')).toBeVisible();
-  await page.getByTestId('samsloop-rec-button').click();
+  await expect(page.getByTestId('samsloop-output-body')).toBeVisible();
+  await page.getByTestId(REC_CELL).click();
   await expect.poll(async () => (await nodeTake(page, 's')).recording, { timeout: 20_000 }).toBe(false);
 
   const take = await measureTake(page, 's');
@@ -324,9 +361,9 @@ test('NEGATIVE CONTROL: deleting the node DOES end its take', async ({ page }) =
   await page.goto('/rack?seed=none');
   await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: 30_000 });
   await buildGatedPatch(page);
-  await openSamsloopCard(page);
+  await openSamsloopFace(page);
 
-  await page.getByTestId('samsloop-rec-button').click();
+  await page.getByTestId(REC_CELL).click();
   await expect.poll(async () => (await nodeTake(page, 's')).recording, { timeout: 20_000 }).toBe(true);
   const running = await waitForTakePast(page, 's', 0.15, 15_000);
   expect(running.ok, `baseline: the take must be live before we delete it: ${JSON.stringify(running)}`).toBe(true);

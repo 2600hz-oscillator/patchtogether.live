@@ -201,7 +201,26 @@ export function toggleSamsloopRecord(nodeId: string): boolean {
  * for a button the shell renders unconditionally.
  */
 export function downloadSamsloopSample(nodeId: string): boolean {
-  const d = liveNode(nodeId)?.data as SamsloopData | undefined;
+  const node = liveNode(nodeId);
+  // ⚠ `delivered` MEANS "THE SEAM WAS REACHED", NOT "THERE WAS SOMETHING TO
+  // SEND" — the ledger's own definition is that false is a press that reached
+  // NOTHING (no engine, no node, a handle that does not answer). An empty
+  // samsloop is not that case: the handler ran, resolved a live node and
+  // correctly determined there is nothing to export, which is a successful
+  // no-op rather than a dead control. Recording false there would have made
+  // every bare-rack press look like a broken button — and faces-parity presses
+  // on a BARE RACK, so it would have been a permanently red gate reporting the
+  // wrong defect.
+  //
+  // ⚠ WHAT THIS PROBE THEREFORE CANNOT SEE, stated rather than left implicit:
+  // that BYTES actually reached a file. Nothing on a bare rack can see that.
+  // `samsloop-download.spec.ts` is the gate that does — it records a take,
+  // presses DOWNLOAD and validates the RIFF/WAVE header of what lands.
+  if (!node) {
+    recordAudition({ nodeId, seam: 'file-export', delivered: false });
+    return false;
+  }
+  const d = node.data as SamsloopData | undefined;
   const deliver = (blob: Blob, filename: string): boolean => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -231,7 +250,10 @@ export function downloadSamsloopSample(nodeId: string): boolean {
       d.fileName && d.fileName.length > 0 ? d.fileName : samsloopDownloadFilename(),
     );
   }
-  recordAudition({ nodeId, seam: 'file-export', delivered: false });
+  // Nothing loaded and nothing recorded — the seam was still reached (see the
+  // note above); there was simply no subject. Reported as DELIVERED with a
+  // `false` RETURN, so a caller that cares about the difference has it.
+  recordAudition({ nodeId, seam: 'file-export', delivered: true });
   return false;
 }
 

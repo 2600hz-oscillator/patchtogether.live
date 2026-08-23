@@ -148,7 +148,7 @@ author a `face` and rank the controls — no new platform capability.
 | `rings` | audio | done | — |
 | `ruttetra` | video | done | — |
 | `sampleHold` | audio | done | — |
-| `samsloop` | audio | — | — |
+| `samsloop` | audio | done | — |
 | `scaler` | audio | done | — |
 | `scope` | audio | — | — |
 | `scoreboard` | video | done | — |
