@@ -77,16 +77,32 @@ export type GlyphBinding =
    */
   | { kind: 'wave-morph'; shapeParamId: string; depthParamId?: string; depthGain: number }
   /**
-   * TOPOLOGY (PF-15): the glyph draws the module's own SIGNAL ROUTING, derived
-   * from a discrete param — no analyser, no gate, always live.
+   * TOPOLOGY (PF-15): the glyph draws the module's own SIGNAL ROUTING or layout —
+   * no analyser, no gate, always live.
    *
-   * ⚠ NOT YET A GENERAL PRECEDENT. `paramId` is hard-wired to the `'algorithm'`
-   * glyph literal's one meaning. When a SECOND topology-bearing module arrives,
-   * do NOT add a third glyph literal: widen THIS branch to carry a layout-source
-   * id (which pure layout function feeds the picture) so the shell resolves the
-   * renderer from data instead of enumerating modules.
+   * ⚠ WIDENED 2026-08-23, exactly as this comment previously prescribed: it read
+   * "when a SECOND topology-bearing module arrives, do NOT add a third glyph
+   * literal: widen THIS branch to carry a layout-source id". It now does.
+   *
+   * `layoutSource` names WHAT FEEDS THE PICTURE, so the shell resolves the
+   * renderer from data rather than from a param NAME:
+   *   - a PARAM id  — the dx7 case, where a discrete `algorithm` param IS the
+   *                   topology and its value is also the caption;
+   *   - an EXTENSION id — a module whose picture is a pure layout function it
+   *                   owns, with no param behind it.
+   *
+   * `paramId` is therefore NULLABLE, and that nullability is the whole point:
+   * before this, a module with a card-drawn picture but no param literally named
+   * `algorithm` had NO legal glyph literal at all — every other one falls through
+   * to a dead `{kind:'static'}` and reddens the dead-glyph clause, so such
+   * modules were forced to declare `'none'` and show nothing. That is five
+   * modules today (pong, timelorde, scope, rasterize, wavesculpt).
+   *
+   * ⚠ THIS BRANCH REMOVES THE REFUSAL; IT DOES NOT DRAW ANYTHING. A module still
+   * needs its own layout component and a `glyph` extension slot to gain a
+   * picture. Widening without an adopter changes no pixel anywhere — verified.
    */
-  | { kind: 'algorithm'; paramId: string }
+  | { kind: 'algorithm'; layoutSource: string; paramId: string | null }
   | { kind: 'static' }
   | { kind: 'none' };
 
@@ -129,7 +145,19 @@ export function glyphBinding(def: GlyphDefLike | undefined): GlyphBinding {
   // branch entirely and silently paint the trace it exists to replace. Order is
   // the whole mechanism here; do not "tidy" it down with the other kinds.
   if (glyph === 'algorithm') {
-    return has('algorithm') ? { kind: 'algorithm', paramId: 'algorithm' } : { kind: 'static' };
+    // A discrete `algorithm` param IS the topology and also its caption — the
+    // dx7 case, and the only shape this branch used to accept.
+    if (has('algorithm')) {
+      return { kind: 'algorithm', layoutSource: 'algorithm', paramId: 'algorithm' };
+    }
+    // Otherwise the picture is fed by a layout function the MODULE owns, reached
+    // through its extension's `glyph` slot. No param, so no caption — the
+    // diagram is the whole glyph.
+    const ext = def?.face?.extension;
+    if (typeof ext === 'string' && ext.length > 0) {
+      return { kind: 'algorithm', layoutSource: ext, paramId: null };
+    }
+    return { kind: 'static' };
   }
 
   const audioOut = primaryAudioOutPortId(def);

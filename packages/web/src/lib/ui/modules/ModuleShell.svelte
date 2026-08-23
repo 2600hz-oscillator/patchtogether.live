@@ -456,6 +456,10 @@
   let topologyValue = $derived.by(() => {
     const b = binding;
     if (b.kind !== 'algorithm') return 0;
+    // ⚠ NULLABLE SINCE THE LAYOUT-SOURCE WIDENING: an extension-fed topology has
+    // no param behind it, so there is no value to read and 0 is the honest
+    // answer rather than a lookup of undefined.
+    if (b.paramId === null) return 0;
     void nodeVersion(id);
     return params.paramVal(b.paramId);
   });
@@ -463,6 +467,10 @@
   let topologyLabel = $derived.by(() => {
     const b = binding;
     if (b.kind !== 'algorithm') return '';
+    // ⚠ NO PARAM, NO CAPTION. The caption exists because an FM patch is named
+    // by its algorithm NUMBER; a layout-fed glyph has no such number, and
+    // printing one would be inventing a value. The diagram is the whole glyph.
+    if (b.paramId === null) return '';
     void nodeVersion(id);
     const pd = paramDef(b.paramId);
     const v = topologyValue;
