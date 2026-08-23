@@ -497,6 +497,26 @@ describe('module-face lint — MOMENTARY pads (face.momentary)', () => {
    *  an id here ONLY after confirming against the module's DSP/card that the
    *  control latches; a press-pad goes on `face.momentary` instead. */
   const ACKNOWLEDGED_LATCHING = new Set<string>([
+    // SPECTROGRAPH, 2026-08-23 (cut B). `view` picks which COLORMAP the
+    // on-surface preview pulls: COLOR (heat ramp) or B/W (inverted grayscale).
+    //
+    // LATCHING, classified AT THE READ SITE — and the read site is unusually
+    // plain here, which is worth saying because this param is NEW in the same
+    // diff. Both consumers are a bare level test evaluated fresh every frame
+    // inside a rAF loop: `const port = viewBw ? 'bw' : 'color'` in
+    // `SpectrographCard.svelte` and the identical line in
+    // `SpectrographOutputBody.svelte`, each deriving `viewBw` as
+    // `(node.params.view ?? 0) >= 0.5`. There is no edge detector anywhere in
+    // the module, its draw core or either surface, and the def declares no gate
+    // input that could deliver one. A momentary render would snap the preview
+    // back to COLOR the instant the player released, which is not a control
+    // anyone could use to compare two colormaps.
+    //
+    // ⚠ It is also DISPLAY-ONLY: both video outputs render both colormaps
+    // continuously regardless of this value, so nothing downstream observes it.
+    // That is what let a piece of component state become a param without
+    // changing a single rendered frame.
+    'spectrograph:view',
     // DOCKSCOPE, 2026-08-23 (cut A · batch 2). `range` picks the trace's
     // volts-per-division: AUDIO (±1.0) or CV (±5V, the Eurorack convention).
     //
