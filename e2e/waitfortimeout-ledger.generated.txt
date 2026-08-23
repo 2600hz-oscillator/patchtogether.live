@@ -118,9 +118,6 @@ e2e/tests/drumseqz.spec.ts :: drumseqz → drummergirl → audioOut: gate1 fires
 e2e/tests/dx7-syx-load.spec.ts :: dx7: uploading a 32-voice SYX populates the dropdown + selecting different patches changes the audible waveform :: waitForTimeout(100) #1
 e2e/tests/dx7-syx-load.spec.ts :: dx7: uploading a 32-voice SYX populates the dropdown + selecting different patches changes the audible waveform :: waitForTimeout(100) #2
 e2e/tests/dx7-syx-load.spec.ts :: dx7: uploading a 32-voice SYX populates the dropdown + selecting different patches changes the audible waveform :: waitForTimeout(1500) #1
-e2e/tests/dx7.spec.ts :: dx7: switching algorithm changes the audible scope content :: waitForTimeout(100) #1
-e2e/tests/dx7.spec.ts :: dx7: switching algorithm changes the audible scope content :: waitForTimeout(100) #2
-e2e/tests/dx7.spec.ts :: dx7: switching algorithm changes the audible scope content :: waitForTimeout(800) #1
 e2e/tests/edges.spec.ts :: captureEdges :: waitForTimeout(700) #1
 e2e/tests/filter-cv-depth.spec.ts :: cutoff_cv_amt scales the cutoff CV — full depth sweeps, depth 0 mutes the jack :: waitForTimeout(100) #1
 e2e/tests/filter-cv-depth.spec.ts :: cutoff_cv_amt scales the cutoff CV — full depth sweeps, depth 0 mutes the jack :: waitForTimeout(600) #1

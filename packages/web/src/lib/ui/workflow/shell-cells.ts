@@ -29,7 +29,7 @@
 // specs stay declarative and the shell stays generic.
 
 import type { Component } from 'svelte';
-import type { ModuleNode } from '$lib/graph/types';
+import type { ModuleNode, ParamLandmark } from '$lib/graph/types';
 import type { SelectorOption } from '$lib/ui/controls';
 import { testHooksEnabled } from '$lib/dev/test-hooks';
 import WavecelWavetablePanel from '$lib/ui/modules/wavecel/WavecelWavetablePanel.svelte';
@@ -288,12 +288,74 @@ export interface ShellPanelCell {
   probe: ShellPanelProbe;
 }
 
+/**
+ * A FADER OVER A PARAM WHOSE CARD CONVERTS AT THE BOUNDARY — the general
+ * mechanism, not a samsloop special case.
+ *
+ * ⚠ WHY THIS CANNOT BE A `paramCells` KIND. `paramCells` is
+ * `Record<paramId, kind>`: a bare string. The thing that makes this cell work is
+ * a PAIR OF FUNCTIONS, and they are module-specific, so there is nowhere in that
+ * record to put them. This registry already carries components and closures
+ * (`panel`, `selector`), so it is the seam that can hold them.
+ *
+ * ⚠ THE DEFECT IT EXISTS TO PREVENT, measured on samsloop.rate. That param is
+ * declared `-2..+2 linear`, but `SamsloopCard.svelte` never renders it: it
+ * renders KNOB SPACE `0..1` and converts at the edges with a PIECEWISE map
+ * (`samsloop-rate.ts`, `k <= 0.5 -> -2 + 6k`, else `1 + 2(k - 0.5)`). The
+ * consequence is geometric, not cosmetic: unity (+1) sits at the fader's
+ * MIDPOINT, and five tick landmarks are placed against that. A generic
+ * `paramCells: 'fader'` over the raw range draws the same param LINEARLY, which
+ * moves unity from 1/2 to `(1 - -2) / 4 = 3/4` and scatters every landmark. That
+ * is a FUNCTIONAL PARITY BREAK — the player's muscle memory for "no transpose"
+ * lands a quarter of the control away — and it passes every gate we have,
+ * because each one reads the ParamDef and the ParamDef is not what was drawn.
+ *
+ * ⚠ AND IT IS WHY `landmarks` ALONE COULD NOT FIX IT — the thing a reader is
+ * most likely to assume. `ParamLandmark` is `{ value, label }` and `value` is in
+ * PARAM UNITS with NO position field; a landmark's placement is derived by the
+ * cell that draws it. Declaring landmarks on a linearly-drawn fader therefore
+ * reproduces the break it was meant to prevent, correctly labelled.
+ *
+ * ⚠ SO: `landmarks` HERE ARE STILL PARAM UNITS. They are not knob positions and
+ * this interface did not grow a position field. THE CELL does the warping — it
+ * puts each landmark at `toKnob(value)`. Keeping them in param units is what
+ * lets the same declaration stay true if the map is ever corrected, and what
+ * lets a reader check a landmark against the def by reading it.
+ *
+ * ⚠ THE MAP MUST BE IMPORTED, NEVER RE-TYPED. This is the backdraft one-source
+ * rule applied to a function instead of a number: the card and this cell must
+ * convert identically or the two surfaces disagree about where unity is, and
+ * nothing would catch it. samsloop's pair already ships as
+ * `knobToRate`/`rateToKnob`; pass those, do not re-implement the arithmetic.
+ * `warped-fader-source.test.ts` greps this file for a re-typed map literal.
+ */
+export interface ShellWarpedFaderCell {
+  kind: 'warped-fader';
+  /** Caption under the fader. */
+  label: string;
+  /** The ParamDef this renders — the value written to the graph is param units. */
+  paramId: string;
+  /** PARAM UNITS -> knob space [0,1]. Imported from the module's own map. */
+  toKnob: (value: number) => number;
+  /** Knob space [0,1] -> PARAM UNITS. The inverse; the cell writes this result. */
+  fromKnob: (knob: number) => number;
+  /**
+   * Named waypoints, in PARAM UNITS (see the interface note). The cell places
+   * each at `toKnob(value)`, so a non-linear map produces non-uniform spacing —
+   * which is the point, and is what makes the placement match the card.
+   */
+  landmarks: readonly ParamLandmark[];
+  /** Renders the value for `aria-valuetext`. Param units in, display text out. */
+  format?: (value: number) => string;
+}
+
 export type ShellCell =
   | ShellSelectorCell
   | ShellActionCell
   | ShellFileCell
   | ShellToggleCell
-  | ShellPanelCell;
+  | ShellPanelCell
+  | ShellWarpedFaderCell;
 
 /**
  * Per-module cell specs, keyed by module type then by the EXACT `face.order`

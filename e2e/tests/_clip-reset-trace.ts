@@ -53,6 +53,22 @@ export const CLIP_STEPS = 128;
 /** Nominal lane clock: stepDiv 2 = a 1/16 grid, @240 bpm = 62.5 ms/step. */
 export const NOMINAL_STEPS_PER_S = 16;
 
+/**
+ * How long a free-running seeded clip takes to WRAP once, at nominal rate.
+ * DERIVED from the two constants above — never typed, because the two ARE the
+ * wrap horizon and a third copy of "8 s" would be the drift this file exists to
+ * prevent.
+ *
+ * ⚠ NOMINAL IS A FLOOR, NOT A BUDGET. A loaded runner's lane clock runs SLOWER,
+ * so the wall-clock wrap period STRETCHES. Anything that must contain a wrap has
+ * to wait on the WRAP ITSELF (`waitForWrap`) and use a multiple of this only to
+ * BOUND the failure. Sizing an observation window as a small multiple of this is
+ * exactly the bug #1847 hit on the launchpad negative control: 9000 ms is 1.125×
+ * this value, and a runner at 13.3 steps/s (measured, vs the nominal 16) put the
+ * wrap 588 ms outside a 9588 ms window — "0 wraps" from a perfectly healthy rack.
+ */
+export const WRAP_PERIOD_MS = (CLIP_STEPS / NOMINAL_STEPS_PER_S) * 1000;
+
 // ── RESET PROOF: an IN-PAGE playhead trace, not a CDP poll ──────────────────
 //
 // WHY (measured 2026-07, after two failed hardenings): the RST test used to
@@ -167,6 +183,36 @@ export async function waitForResetSnap(page: Page, timeoutMs: number): Promise<b
   } catch {
     return false;
   }
+}
+
+/**
+ * Wait until the trace has recorded a BACKWARD JUMP OF ANY KIND — i.e. the
+ * free-running clip has actually wrapped at least `n` times.
+ *
+ * ⚠ THIS IS THE "COUNT THE REAL UNIT, NOT MILLISECONDS" RULE APPLIED TO A LANE
+ * CLOCK. A wrap is `CLIP_STEPS` of STEP advance; how long that takes in wall
+ * clock is a property of the runner, not of the product. A test that needs a
+ * window to CONTAIN a wrap must therefore terminate on the wrap, exactly as a
+ * renderer test terminates on a frame count — `WRAP_PERIOD_MS` multiples are a
+ * FAILURE BOUND here, never the gate.
+ *
+ * Polls IN-PAGE (`waitForFunction`), so no CDP round-trip sits in the detection
+ * path and a loaded main thread cannot starve the very sampler it is measured
+ * by. Returns the drop count actually observed, so a caller can report it.
+ */
+export async function waitForWrap(page: Page, timeoutMs: number, n = 1): Promise<number> {
+  try {
+    await page.waitForFunction(
+      (want) => ((globalThis as unknown as TraceW).__cpTrace?.read().drops.length ?? 0) >= want,
+      n,
+      { timeout: timeoutMs, polling: 25 },
+    );
+  } catch {
+    /* fall through — the caller asserts on the count, with the trace in the message */
+  }
+  return await page.evaluate(
+    () => (globalThis as unknown as TraceW).__cpTrace?.read().drops.length ?? 0,
+  );
 }
 
 /** Stop the recorder and return everything it saw (the failure message). */

@@ -509,40 +509,51 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
       'SPREAD ships bit-exactly MONO and five of ten params are inert at spawn (#1999, owner ' +
       'ears, left open); the rank is built around that rather than over it.',
   },
+  {
+    type: 'frametable',
+    disposition: 'generic-face',
+    note:
+      'knobs plus two hand-cloned 2-D pads (both expressible as `face.xyPads`), a MODE selector ' +
+      'that shows/hides each mode\'s extras, and a live video_out preview that EARNS its width. ' +
+      'The .frametable.png import (and SAVE) needs an ACTION-shaped cell — a cell kind, not a ' +
+      'platform capability. ⚠ It carried `needs-media-controller` until the DOM_SOURCE predicate ' +
+      'was corrected: its picture is its `video_in` GRAPH CABLE, and the element the card hands ' +
+      'over is a one-shot atlas `detilePendingAtlas()` copies into the ring and drops. No card ' +
+      'mount was ever load-bearing, so nothing was blocking it.',
+  },
+  {
+    type: 'videocube',
+    disposition: 'generic-face',
+    note:
+      'knobs plus three mounts of the SHARED <XyPad> (already a first-class `xy` cell), the ' +
+      'WRAP/MATERIAL/SCREEN toggles, a global READER row and a live preview. The per-SLOT ' +
+      'import is an ACTION-shaped cell, three times over. ⚠ Same corrected premise as ' +
+      'frametable: its pictures are the `video_a`/`video_b`/`video_c` GRAPH CABLES, and each ' +
+      'slot ingest is a tagged atlas canvas `detilePending(slot)` consumes and nulls (plus a ' +
+      '1x1 `videocubeClear` canvas to return a slot to LIVE).',
+  },
   { type: 'wavesculpt', disposition: 'generic-face', note: 'two HAND-CLONED camera pads (#1509 §3) and the largest order after mixmstrs; a face was authored for it once and shipped both pads as knobs — do not repeat that' },
   { type: 'wavetableVco', disposition: 'generic-face' },
 
   // ── blocked ───────────────────────────────────────────────────────────────
   // Remove the named capability and these are faces — no surface work at all.
   {
-    type: 'frametable',
-    disposition: 'blocked',
-    blockers: ['needs-media-controller'],
-    why:
-      'knobs plus two hand-cloned 2-D pads (both expressible as `face.xyPads`) over a video ' +
-      'source the CARD creates and attaches — it is in DOM_SOURCE_LANE_TYPES, so the shell keeps ' +
-      'its card alive off-screen today. Once the source is node-owned this is a face and nothing ' +
-      'else.',
-  },
-  {
     type: 'loopback',
     disposition: 'blocked',
     blockers: ['needs-media-controller'],
     why:
       'a capture LED, a start/stop capture action and one fader — the smallest surface in the ' +
-      'media set. Everything about it is expressible today except that the tab-capture stream ' +
-      'lives on the card, so the face would render a control over a source that is not there.',
+      'media set, and the ONLY genuine case left in it. ⚠ Its recorded reason used to be "the ' +
+      'tab-capture stream lives on the card"; that is NO LONGER TRUE and the correction matters ' +
+      'for scoping. The <video> and the getDisplayMedia MediaStream are NODE-owned via ' +
+      '`$lib/ui/media/node-media-registry` (#1583) — the card ADOPTS a lease and its onDestroy ' +
+      'releases the lease only, with no stopStream and no detach, precisely so a collapse cannot ' +
+      'end a capture that needs a fresh user gesture to restart. What is still card-driven is ' +
+      'ACQUISITION (getDisplayMedia must be called from a user gesture, and only the card has ' +
+      'one) and the per-frame crop-rect push into `_cropU0.._cropV1`. So the remaining ' +
+      'capability is an ACTION cell that can request a stream plus a home for the crop pump — ' +
+      'narrower than the blocker\'s "node-owned media lifecycle", which has largely landed.',
   },
-  {
-    type: 'videocube',
-    disposition: 'blocked',
-    blockers: ['needs-media-controller'],
-    why:
-      'knobs plus three mounts of the SHARED <XyPad> (already a first-class `xy` cell) and a file ' +
-      'import (a file cell) — the only thing it cannot express is its card-owned video source, ' +
-      'which is exactly what the node-owned media lifecycle lands.',
-  },
-
   // ── bespoke-surface ───────────────────────────────────────────────────────
   // The primary interaction is not param-shaped. Each of these needs a
   // hand-written surface behind the extension seam — which is BUILT and adopted

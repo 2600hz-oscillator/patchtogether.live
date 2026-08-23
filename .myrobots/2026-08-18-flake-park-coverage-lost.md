@@ -183,46 +183,21 @@ One implementation note for whoever comes back: the loop-generated cases are par
 
 ---
 
-## Addendum, 2026-08-23 — the first ART park, and it is NOT a flake
+## Addendum, 2026-08-23 — the first ART park, and it is already PAID
 
-**`art/scenarios/wavetable-vco/cv-path.test.ts :: "ENABLER — the base patch drives fm/pm, and the DEPTH controls are inert without them"`**
+**`art/scenarios/wavetable-vco/cv-path.test.ts :: "ENABLER — …"`** was parked for
+part of one day and is now **UN-PARKED**, because it was never a flake: it was
+correctly detecting a real defect, and the defect is fixed.
 
-Parked with `it.skip`. One leg of a nine-test file; the other eight still run.
+The factory shipped the wavetable to the worklet with an un-acked
+`port.postMessage`, and the processor emits `out.fill(0)` — silence — until a
+table arrives. Nothing sequenced that against rendering, so an
+`OfflineAudioContext` could render silence. The table now arrives via
+`processorOptions`, which reaches the processor constructor before its first
+`process()` call.
 
-⚠ **This one is different from everything above it, and the difference is the
-point: the test is CORRECTLY DETECTING A REAL DEFECT.** It is parked because the
-defect is in the ART render harness / the module's worklet handshake, and it
-surfaced on a PR (#2141) that split a Playwright spec and touches no audio code
-at all — so there was nothing in that diff to fix.
-
-**What was observed:** `pmAmount must be inert with nothing patched: peak
-|Δsample| linear = 1.3953e+0`, expected `+0`. The output is documented as
-"roughly ±1", so ~1.4 is a *different signal*, not a perturbed one — the
-signature of one render being digital silence.
-
-**Mechanism, traced to code.** The factory ships the wavetable with an un-acked
-`workletNode.port.postMessage({ type: 'load', … })`, and
-`packages/dsp/src/wavetable-vco.ts` opens `process()` with
-`if (!this.table || this.frameCount === 0) { out.fill(0); return true; }`. So the
-worklet emits silence until that message lands, an `OfflineAudioContext` renders
-as fast as it can, and nothing sequences delivery against `startRendering()`.
-Whether a render contains audio is a scheduling race.
-
-**Ruled out, so nobody re-chases:** general harness nondeterminism (the sibling
-`toBe(0)` comparing two separate renders PASSED in the same run); phase carry-over
-(each `render()` builds a fresh `OfflineAudioContext` and handle); a
-worklet-availability fallback (the factory awaits `addModule` and has no
-try/catch, shim or bypass); a stale test (one commit in its history, #1682).
-
-⚠ **The implication is larger than this row, and is why it is on the DSP schedule
-rather than being a test tweak: an ART render can silently measure SILENCE
-instead of the shipping DSP.** Any assertion that would pass on silence — an
-inertness check, a "delta is 0" check — can be green for the wrong reason. That
-is the "ask why the green runs are green" case, stated concretely.
-
-**Do not unpark by relaxing the assertion.** The exact `toBe(0)` is right: its
-passing sibling proves exactness is achievable here, so loosening it would hide
-this defect rather than fix it. Unpark by sequencing the table load before
-rendering — an ack, a constructor-time `processorOptions` payload instead of a
-port message, or a harness that awaits readiness — and then delete the annotation
-block.
+⚠ **The assertion was never weakened**, which was the entire point of parking
+rather than relaxing it. Left here rather than deleted because the one-day round
+trip is the useful record: *a test that is "correctly detecting a real defect" is
+parked against the FIX, not against itself* — and the fix is the thing that
+retires the entry.
