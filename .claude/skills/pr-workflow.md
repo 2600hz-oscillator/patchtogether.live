@@ -231,29 +231,29 @@ day. See also `feedback_never_merge_on_red_collab_is_doom_gate` and
 `feedback_no_flake_tolerance`.)
 
 
-## Docs-only PRs: the path lists in ci.yml and docs-only-gate.yml move TOGETHER
+## Docs-only PRs just run CI — there is no path filter and no bypass
 
-`ci.yml` skips a prose-only change (`paths-ignore: ['**/*.md', '.myrobots/**',
-'LICENSE']`) so a typo fix doesn't burn ~25 min. But ruleset 16042163 REQUIRES
-`typecheck + unit + ART + E2E` and `vrt-strict (visual regression — strict
-subset)`, and a path-skipped workflow reports NOTHING — GitHub treats a
-never-reported required check as pending FOREVER, so the PR sits `BLOCKED` with
-zero failures and can never auto-merge (#1184).
+**Deleted 2026-08-23.** `ci.yml` used to carry `paths-ignore: ['**/*.md',
+'.myrobots/**', 'LICENSE']` so a typo fix didn't burn ~25 min. But ruleset
+16042163 REQUIRES `typecheck + unit + ART + E2E` and `vrt-strict (visual
+regression — strict subset)`, and a path-skipped workflow reports NOTHING —
+GitHub treats a never-reported required check as pending FOREVER, so the PR sat
+`BLOCKED` with zero failures and could never auto-merge (#1184).
 
-`.github/workflows/docs-only-gate.yml` breaks that: it fires on the **exact
-inverse** filter (`paths:` with the SAME list) and posts those two contexts as
-commit statuses — but only when **both** guards agree: every changed file is a
-doc **and** GitHub started no `ci.yml` run for that head SHA. A PR touching docs
-**and** code fires both workflows; the bypass posts nothing and the real suite
-gates it.
+The fix at the time was a second workflow (`docs-only-gate.yml` + its `.mjs` +
+its test) firing on the **exact inverse** filter and posting those two contexts.
+That worked, and it cost a standing trap: two hand-maintained path lists that had
+to remain exact complements of each other forever, with the whole safety argument
+resting on nobody ever editing one without the other.
 
-- **Editing `ci.yml`'s `paths-ignore` means editing `docs-only-gate.yml`'s
-  `paths` in the SAME commit** — the complement is the whole safety argument.
-  `scripts/docs-only-gate.test.ts` (unit lane) fails on drift, on a context
-  rename, and on any changeset containing a source file.
+**Both are gone.** `ci.yml` has no `paths-ignore`, so every PR — prose or code —
+fires a real run and the required contexts always report. The price is CI minutes
+on a docs PR; what it buys is a workflow, a script, a 503-line test and an
+invariant that could only be maintained by discipline.
+
 - **Never** satisfy a required context by naming a job after it: a job-level
-  `if:` skip reports as SUCCESS to branch protection, which would green-light
-  the mixed docs+code case. Statuses are posted by an explicit guarded call.
-- Renaming the `ci` or `vrt-strict` job still needs a coordinated ruleset PUT —
-  now plus `REQUIRED_CONTEXTS` in `scripts/docs-only-gate.mjs`.
+  `if:` skip reports as SUCCESS to branch protection.
+- Renaming the `ci` or `vrt-strict` job still needs a coordinated ruleset PUT,
+  and ⚠ nothing in the repo checks that any more — the context strings used to
+  be pinned against the job names by `scripts/docs-only-gate.test.ts`.
 
