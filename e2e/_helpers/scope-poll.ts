@@ -376,3 +376,142 @@ export async function pollScopeBandAmp(
     [scopeNodeId, freqHz, threshold, boundMs, sampleEveryMs] as const,
   );
 }
+
+// ── TIMBRE FINGERPRINT ──────────────────────────────────────────────────────
+//
+// ⚠ WHY COMPARING TWO RAW CAPTURES DOES NOT WORK, MEASURED.
+//
+// The obvious way to prove "changing X changed the sound" is to capture the
+// scope before and after and assert the buffers differ. On a signal that is
+// still running, that assertion CANNOT FAIL. Measured on dx7's algorithm
+// switch (2026-08-23), with the switch made a NO-OP — same algorithm before
+// and after:
+//
+//   normalised per-sample L2 between the captures : 1.2636   (threshold 0.1)
+//   single-capture band-energy distance           : 0.5131   (real switch 0.5386)
+//
+// Both read "hugely different" for a change that did not happen. The cause is
+// NOT pitch — dx7's sequencer holds midi 60 on every step — it is ENVELOPE
+// PHASE: the note retriggers continuously and an FM voice's spectrum evolves
+// across its envelope, so two captures at different instants disagree however
+// little the patch changed.
+//
+// The repair is to make the DESCRIPTOR steady rather than the patch: average
+// the L2-normalised band vector over a window spanning several note cycles.
+// Phase and envelope position average out; the timbre the algorithm actually
+// determines survives.
+
+/** An averaged, phase- and envelope-robust timbre fingerprint. */
+export interface TimbreFingerprint {
+  /** L2-normalised mean band-energy vector. */
+  bands: number[];
+  samples: number;
+  elapsedMs: number;
+  meanRms: number;
+}
+
+/** Log-spaced Goertzel bins used for the fingerprint. */
+const TIMBRE_BANDS = 24;
+
+/**
+ * Accumulate a TIMBRE FINGERPRINT over `windowMs`, entirely in the page.
+ *
+ * Each sample's band vector is L2-normalised (so level drops out), the
+ * normalised vectors are averaged, and the mean is normalised again. Averaging
+ * across several note cycles is what makes two captures of the SAME timbre
+ * agree — see the measurement above for why a single capture cannot.
+ */
+export async function captureScopeTimbre(
+  page: Page,
+  scopeNodeId: string,
+  windowMs: number,
+  sampleEveryMs = 25,
+): Promise<TimbreFingerprint> {
+  return page.evaluate(
+    ([id, win, every, nBands]) =>
+      new Promise<TimbreFingerprint>((resolve) => {
+        const w = globalThis as unknown as {
+          __engine?: () => {
+            read: (node: { id: string; type: string; domain: string }, key: string) => unknown;
+          } | null;
+          __patch: { nodes: Record<string, { id: string; type: string; domain: string }> };
+        };
+        const BANDS = nBands as number;
+        const acc = new Array<number>(BANDS).fill(0);
+        const t0 = performance.now();
+        let samples = 0;
+        let rmsSum = 0;
+        const read = (): void => {
+          const eng = w.__engine?.();
+          const node = w.__patch?.nodes?.[id as string];
+          const snap =
+            eng && node
+              ? (eng.read(node, 'snapshot') as
+                  | { ch1?: Float32Array; sampleRate?: number }
+                  | undefined)
+              : undefined;
+          if (snap?.ch1 && snap.ch1.length > 0) {
+            const ch1 = snap.ch1;
+            const sr = snap.sampleRate && snap.sampleRate > 0 ? snap.sampleRate : 48000;
+            let energy = 0;
+            for (let i = 0; i < ch1.length; i++) energy += ch1[i]! * ch1[i]!;
+            const rms = Math.sqrt(energy / ch1.length);
+            // Silent buffers carry no timbre; averaging them in would drag the
+            // fingerprint toward whatever normalising near-zero noise produces.
+            if (rms > 1e-6) {
+              const f0 = 80;
+              const fMax = Math.min(12000, sr / 2);
+              const bins: number[] = [];
+              for (let b = 0; b < BANDS; b++) {
+                const hz = f0 * Math.pow(fMax / f0, b / (BANDS - 1));
+                const omega = (2 * Math.PI * hz) / sr;
+                let re = 0;
+                let im = 0;
+                for (let i = 0; i < ch1.length; i++) {
+                  const v = ch1[i]!;
+                  re += v * Math.cos(omega * i);
+                  im += v * Math.sin(omega * i);
+                }
+                bins.push(Math.sqrt(re * re + im * im) / ch1.length);
+              }
+              let nrm = 0;
+              for (const v of bins) nrm += v * v;
+              nrm = Math.sqrt(nrm);
+              if (nrm > 1e-12) {
+                for (let b = 0; b < BANDS; b++) acc[b] = acc[b]! + bins[b]! / nrm;
+                samples++;
+                rmsSum += rms;
+              }
+            }
+          }
+          if (performance.now() - t0 >= (win as number)) {
+            clearInterval(timer);
+            let nrm = 0;
+            for (const v of acc) nrm += v * v;
+            nrm = Math.sqrt(nrm);
+            const bands = nrm > 1e-12 ? acc.map((v) => v / nrm) : acc.slice();
+            resolve({
+              bands,
+              samples,
+              elapsedMs: performance.now() - t0,
+              meanRms: samples > 0 ? rmsSum / samples : 0,
+            });
+          }
+        };
+        const timer = setInterval(read, every as number);
+        read();
+      }),
+    [scopeNodeId, windowMs, sampleEveryMs, TIMBRE_BANDS] as const,
+  );
+}
+
+/** L2 distance between two fingerprints. 0 = identical timbre. */
+export function timbreDistance(a: TimbreFingerprint, b: TimbreFingerprint): number {
+  const n = Math.min(a.bands.length, b.bands.length);
+  let d2 = 0;
+  for (let i = 0; i < n; i++) {
+    const d = a.bands[i]! - b.bands[i]!;
+    d2 += d * d;
+  }
+  return Math.sqrt(d2);
+}
