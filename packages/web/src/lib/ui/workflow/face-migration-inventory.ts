@@ -603,15 +603,13 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
     // No new platform capability was needed, which is what `generic-face` means:
     // the picker and the capture lamp live in the `fullViewBody` extension slot
     // that every other video face already uses for its SCREEN switch.
+    // ⚠ NO `why` FIELD, AND THAT IS THE TYPE'S DOING RATHER THAN AN OMISSION:
+    // `why` exists only on the NON-generic dispositions, because those are the
+    // ones that owe an explanation ("a non-generic disposition states WHY, in
+    // prose a stranger can act on"). A faced module's reasons live on its face.
+    // svelte-check refuses the field outright, which is the rule enforced by
+    // `tsc` rather than by a test — the strongest form.
     disposition: 'generic-face',
-    why:
-      'faced 2026-08-23 by owner directive, as the only promotion in the fleet that does NOT ' +
-      'delete its card: NON_SHELL_LANE_TYPES keeps the real card in the lane (where the owner ' +
-      'also asked for an authored minimalist rewrite) while the dock gets the faceplate, so the ' +
-      'getUserMedia lifecycle and the permission machine are untouched. The runtime-enumerated ' +
-      'device picker and the capture lamp live in the fullViewBody extension, since neither can ' +
-      'be a face cell. The former `needs-media-controller` blocker assumed promotion would ' +
-      'delete the card; it does not, so the blocker no longer applies.',
   },
   {
     type: 'cartesian',
