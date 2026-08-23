@@ -36,6 +36,11 @@ import {
   laneGlyphFor,
   type LaneGlyph,
 } from './module-shell-model';
+import { bodyPaintedParamIds } from './shell-control-kind';
+
+/** Shared empty set so the common (no `surface: 'body'` pad) case allocates
+ *  nothing and the lane branch has something to read. */
+const EMPTY_KEYS: ReadonlySet<string> = new Set<string>();
 
 /** The curation LADDER — the tiers a face is sliced into. Distinct from the
  *  LOD zoom tiers (mini/compact/full/native in lod.ts): 'dock' is the sectioned
@@ -461,9 +466,20 @@ function resolvePage(page: ModuleFacePage, def: FaceDefLike): ResolvedFacePage {
   // lint REQUIRES in `face.order`, and which reads natural to write in a page —
   // painted the partner twice: once inside the pad, once as a stray dial. One
   // fold seam, applied at every place a control roster is resolved.
+  //
+  // ⚠ AND THE SAME SEAM CARRIES THE `surface: 'body'` DROP, for the same
+  // reason one fold up. A pad the module's own `fullViewBody` paints must not
+  // ALSO paint in a band, and a page that lists its axes is the natural
+  // authoring (they have to be ranked, and a ranked-but-unpaged key falls into
+  // the defensive '__unpaged' band — a different and wrong faceplate). So the
+  // page declares its full membership and the drop is the platform's job, not
+  // the author's — exactly the correction `resolvePage` already records about
+  // partner axes. `resolvePage` is only ever reached from the DOCK branch of
+  // `curatedFace`, which is what keeps this dock-only without a tier argument.
   const partners = new Set((def.face?.xyPads ?? []).map((p) => p.y));
+  const inBody = bodyPaintedParamIds(def);
   const all = page.controls
-    .filter((k) => !partners.has(k))
+    .filter((k) => !partners.has(k) && !inBody.has(k))
     .map((k) => resolveFaceControl(k, def));
   const hint = page.hint?.trim() ?? '';
   const declared = page.clusters ?? [];
@@ -525,7 +541,20 @@ export function curatedFace(def: FaceDefLike, tier: FaceTier): CuratedFace | nul
     ...face,
     order: tier === 'dock' ? face.order : laneOrder(face),
   });
-  const ranked = order.map((k) => resolveFaceControl(k, def));
+  // ⚠ THE BODY DROP IS DOCK-ONLY. A pad declaring `surface: 'body'` is painted
+  // by the module's own `fullViewBody`, which `dockFullViewHeadPlan` renders at
+  // the DOCK and nowhere else, so the dock must not paint a second copy in a
+  // band. It sits inside the `tier === 'dock'` test rather than in
+  // `foldedOrder` because it is a statement about ONE tier's surfaces, while
+  // `foldedOrder`'s partner fold is true at every tier.
+  //
+  // ⚠ IT IS NOT LOAD-BEARING FOR THE LANE, and the first draft of this comment
+  // claimed it was. `laneOrder` a few lines up ALREADY drops every declared
+  // pad's anchor at every lane tier, so the lane branch would get the same
+  // answer with or without this guard. The tier test is about where the
+  // question belongs, not about protecting the lane from it.
+  const inBody = tier === 'dock' ? bodyPaintedParamIds(def) : EMPTY_KEYS;
+  const ranked = order.filter((k) => !inBody.has(k)).map((k) => resolveFaceControl(k, def));
   const controls = Number.isFinite(cap) ? ranked.slice(0, cap) : ranked;
 
   const out: CuratedFace = {

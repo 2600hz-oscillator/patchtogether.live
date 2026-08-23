@@ -2201,6 +2201,38 @@ export const FACES = [
       + 'constant. Patch a source into A and that argument dies: the shape set becomes a function '
       + 'of the incoming raster.',
   },
+  // ── QUADRALOGICAL (2026-08-22, #2102) — the face where the PICTURE IS THE
+  // CONTROL, and the only entry in this roster whose dock scene contains an
+  // operable joystick rather than a preview.
+  {
+    type: 'quadralogical',
+    // THREE bands: `field`, `edges`, `key`. Below DOCK_TAB_MIN_BANDS = 7, so
+    // the dock renders one column and NOT a tab rail — which is required
+    // rather than incidental here: a rail shows one band at a time, so a
+    // tabbed face would put at most one of the four EDGE boxes on screen.
+    pages: 3,
+    videoFaceWhy:
+      'a VIDEO module, so it must boot into the video zone rather than a mixer channel column — '
+      + 'without this field bootWithFace waits out the full 90 s test timeout for a column '
+      + 'membership a video node never acquires. Both scenes carry a live picture: the compact '
+      + 'tile paints a VideoTileThumb through hasVideoSurface, and the dock body is the '
+      + "module's own fullViewBody extension. ⚠ THE DOCK BODY IS UNLIKE EVERY OTHER ENTRY HERE "
+      + 'and the difference matters for what this scene can prove: it is the JOYSTICK — the '
+      + 'field, the diamond, the corner labels and the puck — with a live 2×2 preview of the '
+      + "four inputs BEHIND it, drawn from the module's own `preview` output port. So the scene "
+      + 'holds TWO canvases (the quadrant tile and the puck, which is a window onto the MIX), '
+      + 'and freeze must stop both. ⚠ THE FREEZE WRITE IS LOAD-BEARING HERE, not a no-op like '
+      + 'the batch-22 group above: this def DOES declare `freeze`, and its `draw()` returns '
+      + 'early at >= 0.5 BEFORE either pass, so the MIX fbo and the PREVIEW fbo both hold their '
+      + 'last frame together. With nothing patched all four inputs bind the standalone 1×1 black '
+      + 'sentinel, so the held picture is black plus the preview shader\'s own separator cross — '
+      + 'constant frame to frame, which is what the harness samples. ⚠ AND THE PUCK IS AT THE '
+      + 'CENTRE at spawn (pos_x/pos_y default 0), which is inside the diamond, so the scene also '
+      + 'pins the diamond geometry against the pad: the drawn rhombus is `diamond_margin` at '
+      + '1:1 with the weight model, and a regression that reverted it to the card\'s '
+      + 'rotate(45deg) square would be WRONG BY 4/3 on one axis at this frame\'s 4:3 aspect and '
+      + 'would show as a moved outline rather than as a silent maths error.',
+  },
   // ── BATCH 22 · GROUP 2b — the two faces that cost an attest ───────────────
   //
   // Both `pages: 1` (neither face declares `pages`). Both carry NAMED SELECTORS
@@ -2236,6 +2268,176 @@ export const FACES = [
       + 'constant black and stays black however many draws land. ⚠ PATCH A SOURCE AND THAT '
       + 'ARGUMENT WEAKENS — the picture then tracks whatever the upstream is doing, which for an '
       + 'animated source is a different frame every capture.',
+  },
+  // ── BATCH 21 · CELLSHADE ──────────────────────────────────────────────────
+  {
+    type: 'cellshade',
+    pages: 1,
+    videoFaceWhy:
+      'a VIDEO module, so it must boot into the video zone rather than a mixer channel column — '
+      + 'without this field bootWithFace waits out the full 90 s test timeout for a column '
+      + 'membership a video node never acquires. Both scenes also carry a live picture: the '
+      + 'compact tile paints a VideoTileThumb through hasVideoSurface, and the dock body is the '
+      + "module's own fullViewBody extension (the toon preview plus its SCREEN switch). The "
+      + 'freeze write is a NO-OP on this def (it declares no `freeze` param) and deliberately so: '
+      + 'the def states it is STATELESS PER FRAME — bilateral smooth, luma quantise and Sobel ink '
+      + 'all run from the live input with no feedback — and there is no time uniform, ping-pong '
+      + 'or RNG anywhere in it. With nothing patched into `in` the whole chain runs over black '
+      + 'and the output is constant.',
+  },
+  // ── BATCH 22 · GROUP 3 — the screens ──────────────────────────────────────
+  //
+  // All four `pages: 1` (none declares `pages`), and all four BLIT LIVE VIDEO,
+  // which is what makes the SCREEN switch load-bearing on this group rather
+  // than ceremonial. ⚠ NONE of the four reads a clock — zero `uTime`,
+  // `frame.time`, `ctx.time` or `performance.now()` between them — so every
+  // scene here settles on its own and none needs a `freeze` param or a
+  // `simPin`. That is checked, not assumed.
+  {
+    type: 'posterbox',
+    pages: 1,
+    videoFaceWhy:
+      'a VIDEO module, so it must boot into the video zone rather than a mixer channel column — '
+      + 'without this field bootWithFace waits out the full 90 s test timeout for a column '
+      + 'membership a video node never acquires. Both scenes also carry a live picture: the '
+      + 'compact tile paints a VideoTileThumb through hasVideoSurface, and the dock body is the '
+      + "module's own fullViewBody extension (the quantised preview plus its SCREEN switch). The "
+      + 'freeze write is a NO-OP on this def (it declares no `freeze` param) and deliberately so: '
+      + 'the quantiser is a pure per-pixel function of (input, depth, dither, mix) with no clock, '
+      + 'ping-pong or accumulator, and with nothing patched the output is solid black and stays '
+      + 'black however many draws land.',
+  },
+  {
+    type: 'tiler',
+    pages: 1,
+    videoFaceWhy:
+      'a VIDEO module, so it must boot into the video zone rather than a mixer channel column — '
+      + 'without this field bootWithFace waits out the full 90 s test timeout for a column '
+      + 'membership a video node never acquires. Both scenes also carry a live picture: the '
+      + 'compact tile paints a VideoTileThumb through hasVideoSurface, and the dock body is the '
+      + "module's own fullViewBody extension (the tiled preview plus its SCREEN switch). The "
+      + 'freeze write is a NO-OP on this def (no `freeze` param): tiling is a pure re-sample of '
+      + '(input, tile) with no clock and no accumulator, and unpatched it is solid black. ⚠ THE '
+      + 'DEFAULT STEP IS THE 1:1 PASSTHROUGH (index 0), so the capture is the untiled frame — '
+      + 'the grid only appears once the one control moves.',
+  },
+  {
+    type: 'sourcery',
+    pages: 1,
+    videoFaceWhy:
+      'a VIDEO module, so it must boot into the video zone rather than a mixer channel column — '
+      + 'without this field bootWithFace waits out the full 90 s test timeout for a column '
+      + 'membership a video node never acquires. Both scenes also carry a live picture: the '
+      + 'compact tile paints a VideoTileThumb through hasVideoSurface, and the dock body is the '
+      + "module's own fullViewBody extension (the keyed preview plus its SCREEN switch). The "
+      + 'freeze write is a NO-OP on this def (no `freeze` param) and deliberately so: the picture '
+      + 'is derived per frame from its two video inputs and the four params, with no time uniform '
+      + 'and no accumulator. With neither A nor B patched the derivation runs over black and the '
+      + 'result is constant.',
+  },
+  {
+    type: 'onetonine',
+    pages: 1,
+    videoFaceWhy:
+      'a VIDEO module, so it must boot into the video zone rather than a mixer channel column — '
+      + 'without this field bootWithFace waits out the full 90 s test timeout for a column '
+      + 'membership a video node never acquires. Both scenes also carry a live picture — and on '
+      + 'THIS module the picture is the MONITOR, not the product: the dock body shows the 3x3 '
+      + 'grid plus the 1..9 digits that say which cell feeds which of the nine crop outputs. The '
+      + 'freeze write is a NO-OP on this def (no `freeze` param): the monitor is the input '
+      + 'passthrough with a static overlay, and the overlay geometry is a pure function of the '
+      + 'fixed 3x3 grid, so with nothing patched the capture is black plus a constant grid. ⚠ '
+      + 'SHOWGRID DEFAULTS ON, so the overlay IS in the baseline — a capture that lost it would '
+      + 'mean the toggle had flipped, not that the scene drifted.',
+  },
+  // ── BATCH 23a — the zero-attest pair ──────────────────────────────────────
+  //
+  // Both `pages: 1` (neither face declares `pages`). ⚠ UNLIKE EVERY BATCH-22
+  // GROUP, NEITHER OF THESE IS STILL AT REST: both animate with nothing
+  // patched, so both need a determinism seam and they need DIFFERENT ONES. That
+  // is the whole reason to read these two entries together.
+  {
+    type: 'peakstate',
+    pages: 1,
+    videoFaceWhy:
+      'a VIDEO module, so it must boot into the video zone rather than a mixer channel column — '
+      + 'without this field bootWithFace waits out the full 90 s test timeout for a column '
+      + 'membership a video node never acquires. Both scenes also carry a live picture: the '
+      + 'compact tile paints a VideoTileThumb through hasVideoSurface, and the dock body is the '
+      + "module's own fullViewBody extension (the mandala preview plus its SCREEN switch) — which "
+      + 'on this module PRESERVES the 144x144 preview PeakstateCard.svelte already drew, rather '
+      + 'than adding one. ⚠ IT ANIMATES AT REST AND A CLOCK PIN IS NOT ENOUGH: the picture is an '
+      + 'accumulated PEN RING advanced by `advancePen` on every DRAW, so a frozen clock would '
+      + 'still leave the frame dependent on how many draws landed first — the mirrorpool problem, '
+      + 'not the inwards one. See the simPin below, which uses the module\'s own seam.',
+    // ⚠ THE MODULE'S OWN SEED, NOT THE ENGINE CLOCK — and the distinction is
+    // the one `inwards` and `mirrorpool` already draw between them in this
+    // file. `__videoEngineFreezeTime` pins `frame.time`, which is sufficient
+    // only when the render is a pure function of it. PEAKSTATE's is not: the
+    // pen ring is HISTORY, and `advancePen` runs per draw. Pinning the clock
+    // would leave the trail length a function of draw count.
+    //
+    // `__peakstateVrtSeed` is the seam the module ships for exactly this, and
+    // it is not something this roster invented: the def implements it as
+    // "resets the ring + t + rotation to fixed values, paints once at those
+    // values, then BLOCKS further pen advance + rotation advance so the frame
+    // is pixel-stable across runs", and its own comment records that it
+    // "Mirrors the `__foxyVrtSeed` pattern" already used by a sibling entry
+    // below.
+    simPin: [
+      {
+        global: '__peakstateVrtSeed',
+        value: 1,
+        why:
+          'seeds the pen ring at 120 fixed 1/60 s steps from t = 0, paints once, then blocks '
+          + 'further advance — so the captured frame is a pure function of the params and is '
+          + 'identical across boots, renderers and frame counts. Checked as truthy '
+          + '(`!!globalThis.__peakstateVrtSeed`), so 1 is the value. ⚠ NOT sufficient via '
+          + '`__videoEngineFreezeTime`: this module accumulates per DRAW, not per clock tick, so '
+          + 'a pinned clock would still leave the trail length dependent on draw count.',
+      },
+    ],
+  },
+  {
+    type: 'lines',
+    pages: 1,
+    videoFaceWhy:
+      'a VIDEO module, so it must boot into the video zone rather than a mixer channel column — '
+      + 'without this field bootWithFace waits out the full 90 s test timeout for a column '
+      + 'membership a video node never acquires. Both scenes also carry a live picture: the '
+      + 'compact tile paints a VideoTileThumb through hasVideoSurface, and the dock body is the '
+      + "module's own fullViewBody extension (the grating preview plus its SCREEN switch) — a "
+      + 'surface LinesCard.svelte never had. ⚠ IT ANIMATES AT REST, so this scene cannot settle '
+      + 'on its own: the def\'s own prose says the pattern "auto-scrolls on its own (Phase '
+      + 'advances steadily over time, time * 0.15 wrapped to 0..1) so it is visibly alive without '
+      + 'touching a knob". The clock pin below is what stops it — and unlike its batch sibling '
+      + '`peakstate`, a clock pin is SUFFICIENT here.',
+    // ⚠ THE ENGINE CLOCK IS ENOUGH ON THIS ONE — the `inwards` case, not the
+    // `peakstate` case sitting directly above. `lines` reads exactly one time
+    // term (`const autoPhase = (frame.time * 0.15) % 1;`) and carries no
+    // ping-pong, no accumulator, no history and no RNG, so pinning `frame.time`
+    // makes the render a pure function of the four params. That is total
+    // determinism rather than a partial settle, which is the distinction
+    // `mirrorpool` records three globals to work around.
+    //
+    // ⚠ AND IT KEEPS THIS FACE ZERO-ATTEST, which is the batch's whole shape: a
+    // `freeze` ParamDef would be a `params` change, and `params` is IN the
+    // WebGL attest basis and IN contract-lock — paying a real-GPU re-attest to
+    // solve a determinism problem the engine already solves for every video
+    // module at once.
+    simPin: [
+      {
+        global: '__videoEngineFreezeTime',
+        value: 1.0,
+        why:
+          'pins `frame.time`, the ONLY time term this module reads — its auto-scroll is '
+          + '`(frame.time * 0.15) % 1`, added on top of the Phase param. With it pinned the '
+          + 'render is a pure function of (orient, amp, thickness, phase), so the scene is '
+          + 'identical across boots, renderers and frame counts. Sufficient ALONE here, unlike on '
+          + 'peakstate above, because LINES carries no accumulator for the clock pin to leave '
+          + 'running.',
+      },
+    ],
   },
 ] as const;
 

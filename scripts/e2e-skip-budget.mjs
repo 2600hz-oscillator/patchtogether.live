@@ -594,6 +594,28 @@ export const SKIP_BUDGET = [
       + 'PEAKSTATE\'s per-port render gate (unconsumed outputs stay dark) and WAVECEL.scope_out producing a '
       + 'structured, frame-stable trace independent of the on-card preview toggle.',
   },
+  {
+    specs: ['quadralogical-face-screen.spec.ts'],
+    reason: /FLAKE-PARK #1847/,
+    lanes: ['e2e'],
+    homeLane: 'e2e',
+    why:
+      'PARKED (#1847) — both legs of the QUADRALOGICAL screen spec. ⚠ THIS ENTRY IS NOT THE '
+      + 'RECOVERED-ON-RETRY SHAPE THE REST OF THIS LIST RECORDS, and the distinction matters to whoever '
+      + 'un-parks it: both legs failed BOTH attempts at the FULL 90 s SLOW_BOOT_TEST_TIMEOUT_MS, inside '
+      + 'page.evaluate in sampleQuadrants. That is UNDER-BUDGETING, not nondeterminism. The in-page loop is '
+      + 'already correct by construction — it counts 240 FRAMES via rAF rather than wall-clock, which is what '
+      + 'the standard asks for; what does not scale is the per-test BOUND, a flat 90 s sized for BOOT while '
+      + 'this spec spends a boot AND a 240-frame sample. At the measured 7.9 fps under SwiftShader the sample '
+      + 'alone is ~30 s. '
+      + 'It surfaced on batch-22 G3 (#2120) because four new scenes re-packed the shards and these legs landed '
+      + 'on a hot one — the load-sensitivity class of #2096/#2114 — so it is a defect in neither the faces nor '
+      + 'these tests\' logic. ROOT CAUSE IS THE FLEET TIMEOUT DEFAULT and the fix is the owner\'s option-B '
+      + 'call, not a one-spec bound raise, which would only move the lottery onto the next-hottest spec. '
+      + 'Lost meanwhile: the bespoke proof that each quadrant carries ITS OWN input under its own corner label '
+      + '— quadrant-to-input MAPPING, which no fleet sweep covers. The generic screen coverage '
+      + '(reachable / collapse / reclaim) is superseded by the fleet SUBJECTS table.',
+  },
 ];
 
 // ─────────────────────────── the shared predicates ──────────────────────────

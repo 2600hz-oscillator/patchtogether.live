@@ -155,6 +155,29 @@ describe('console grid — which SHIPPED bands it claims (derived membership)', 
       // face-wide list below — a lone console band has nothing to align to.
       'moog984/crosspoints=4',
       'pentemelodica/mix=5',
+      // ⚠ THE SECOND BAND WHOSE COLUMNS ARE NOT CHANNELS, and the first that
+      // arrived by REVERSING a `clusterFlow: 'row'` rather than by declaring a
+      // grid. quadralogical's four clusters are the four EDGES of its joystick
+      // cycle (1-2, 2-3, 3-4, 4-1) and column j is the same control on each:
+      // [FX selector][AMT][PRM]. The edges are bit-identically symmetric slots
+      // over the same eight effects, so "column j means the same thing in every
+      // cluster" is exact here rather than approximate.
+      //
+      // ⚠ IT WAS AUTHORED SIDE-BY-SIDE AND CI OVERRULED IT — the mirror image
+      // of the `mixmstrs/returns` note above, and worth reading against it. The
+      // owner's layout note asked for the edge boxes in "a row under the
+      // frame", which is `clusterFlow: 'row'`; four boxes of
+      // [selector + two knob columns] measured 1260 CSS px against a 1220 px
+      // pane ("40 CSS px of faceplate right of the capture box"), and
+      // `workflow-shell-faces` budgets hiddenX === 0. Stacking was the fix, and
+      // gaining the ruler is why it is a better outcome and not merely a
+      // narrower one: on four identical strips the aligned columns are the
+      // point. So `returns` left this list to sit side by side, and `edges`
+      // joined it for the opposite reason.
+      //
+      // It is a ONE-console-band face, so `faceConsoleGridCols` correctly does
+      // not engage and it is absent from the face-wide list below.
+      'quadralogical/edges=3',
       'tidyVco/envelopes=4',
     ]);
   });
@@ -204,6 +227,13 @@ describe('console grid — which SHIPPED bands it claims (derived membership)', 
       // first and most visibly.
       'moog984',
       'pentemelodica',
+      // quadralogical's `edges` band is its only console band — the other two
+      // (`field`, `key`) carry no clusters at all. So the face-wide ruler must
+      // NOT engage, which is the same statement `moog984` makes above and the
+      // reason a face joining this list is a smaller event than one joining the
+      // face-wide list: nothing is re-parented, and only that band's own
+      // columns change layout mode.
+      'quadralogical',
       'tidyVco',
     ]);
     for (const t of singles) {

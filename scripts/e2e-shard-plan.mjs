@@ -82,6 +82,46 @@ export function loadContention(dir = join(ROOT, 'e2e/tests')) {
  */
 export const PENDING_FIRST_MEASUREMENT = [
   {
+    spec: 'quadralogical-face-screen.spec.ts',
+    why:
+      '#2102 — new with the QUADRALOGICAL faceplate: the two legs that prove the joystick IS '
+      + 'the screen. Leg 1 patches four flat-colour sources and probes FOUR PIXELS of the face\'s '
+      + 'own canvas to prove each quadrant carries its own input under its own corner label; '
+      + 'leg 2 toggles SCREEN and proves the frame re-aspects on the WIDTH with the height '
+      + 'pinned. '
+      + '⚠ MEASURED UNDER `E2E_SWIFTSHADER=1`, WHICH IS THE NUMBER THAT MATTERS HERE — this is '
+      + 'a WebGL module whose test subject is a live 2x2 video preview, so the software '
+      + 'renderer is the variable, not a constant factor to multiply out afterwards. Warm '
+      + 'server, single worker: 31.7 s for a REPEAT=3 flake-check of both tests, i.e. **~10.5 s '
+      + 'per pass** (leg 1 ~6.4 s, leg 2 ~3.8 s). Budget the 2-core CI VM at roughly that plus '
+      + 'the usual VM overhead — the SwiftShader floor is already IN this figure rather than '
+      + 'ahead of it. '
+      + '⚠ AND THE SWIFTSHADER RUN IS WHY THIS ENTRY IS TRUSTWORTHY: on a real GPU leg 2 passed '
+      + 'and under SwiftShader it failed 3/3, because it read `.field`\'s bounding box once '
+      + 'while a 120 ms CSS width transition was still running ("on 480, off 480"). Fixed with '
+      + 'an auto-retrying `expect.poll` on the box itself — not a timeout, not a frame count — '
+      + 'so the leg is now renderer-independent by construction. A local-GPU-only measurement '
+      + 'would have shipped a spec that was red on every CI run. '
+      + '⚠ AND A LOCAL SWIFTSHADER MEASUREMENT WAS NOT SUFFICIENT EITHER: the spec still timed '
+      + 'out on CI shard 6 because it never took `SLOW_BOOT_TEST_TIMEOUT_MS`, so it ran on the '
+      + 'default 30 s while booting workflow mode plus nine WebGL nodes on a shared 2-core '
+      + 'runner. The flag changes the RENDERER; it does not reproduce cold boot or ten shards '
+      + 'competing. Both are now applied, and the SCREEN-OFF leg spawns ONE node instead of nine. '
+      + 'Run `flox activate -- task e2e:timings:accept` on the first green CI run after this '
+      + 'merges and DELETE this entry. '
+      + '⚠ UNTIL THAT ACCEPT LANDS, DO NOT READ THE ~10.5 s FIGURE ABOVE AS THE PACKING COST — it is a '
+      + 'WARM-SERVER, SINGLE-WORKER, LOCAL number, while the packer needs CI CPU-seconds summed across the '
+      + 'file. The honest floor is the nearest sibling: acidwarp-face-screen.spec.ts, the same shape (a faced '
+      + 'video module; boot plus wait-for-first-painted-frame legs) measures **77 s** on CI against its own '
+      + '~11.1 s local estimate — roughly 2.3x per leg. Two legs here puts this file nearer **50 s** than the '
+      + '~21 s MEDIAN it currently rides, and any shard drawing it is under-costed by that difference. '
+      + 'That under-costing is what surfaced on batch-22 G3 (#2120): both legs timed out at the full 90 s '
+      + 'bound on a hot shard and are now FLAKE-PARKED (#1847). ⚠ THE PARK TREATS THE SYMPTOM, THIS ENTRY '
+      + 'TREATS THE PACKER, and the fleet timeout default (owner decision pending) treats the CLASS — three '
+      + 'different fixes, none substituting for the others. ⚠ AND MERGING #2110\'s TIMINGS REFRESH WOULD NOT '
+      + 'SUPPLY THIS NUMBER, which is the natural wrong assumption: its source run predates quadralogical.',
+  },
+  {
     spec: 'acidwarp-face-screen.spec.ts',
     why:
       '#2111 — new with the ACIDWARP faceplate. Three legs: the plasma display paints on the '
@@ -103,7 +143,15 @@ export const PENDING_FIRST_MEASUREMENT = [
       + 'collapses its canvas outright — no transition, no intermediate state to sample — and '
       + 'every wait here is a FRAME COUNT taken inside the page, never a wall-clock budget. '
       + 'Run `flox activate -- task e2e:timings:accept` on the first green CI run after this '
-      + 'merges and DELETE this entry.',
+      + 'merges and DELETE this entry. '
+      + '⚠ A CI OBSERVATION LANDED BEFORE THAT ACCEPT DID, and it is the number to budget against: this '
+      + 'file measures **77 s** on CI — about 2.3x the ~11.1 s per-pass local SwiftShader estimate above, '
+      + 'because the local figure is warm-server and single-worker while CI is a cold 2-core VM with ten '
+      + 'shards competing. It is recorded here rather than written into the artifact by hand, because the '
+      + 'artifact is GENERATED and hand-editing it is how it stops meaning what it says. '
+      + 'The consequence is shared with the quadralogical entry above: while unmeasured, this file rides the '
+      + '~21 s MEDIAN, so a shard drawing BOTH siblings is under-costed by ~100 s — which is exactly how a '
+      + 'spec "times out" without anything being wrong with the spec.',
   },
   {
     spec: 'cv-buddy-face.spec.ts',

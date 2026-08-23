@@ -168,7 +168,12 @@ const FACE_FIELDS: Readonly<Record<string, FaceFieldRule>> = {
   },
   xyPads: {
     role: 'none',
-    why: 'Which PAIRS of params are one 2-D gesture. Param ids only.',
+    why:
+      'Which PAIRS of params are one 2-D gesture. Param ids, an optional caption that is a '
+      + 'CONTROL LABEL like any other, and a `surface` ENUM naming which surface paints the pad '
+      + "at the dock ('band' | 'body'). The enum is STRUCTURE — it decides what is drawn, the way "
+      + '`clusterFlow` and `bandFocus` do — and structure is free under the resting-text rulings. '
+      + 'No value, measurement or state word reaches a text node from this field.',
   },
   momentary: {
     role: 'none',
