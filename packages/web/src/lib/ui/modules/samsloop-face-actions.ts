@@ -34,6 +34,7 @@
 import { getActiveEngine } from '$lib/audio/engine-ref';
 import { AudioEngine } from '$lib/audio/engine';
 import { patch } from '$lib/graph/store';
+import { mutateNode } from '$lib/graph/mutate';
 import type { ModuleNode } from '$lib/graph/types';
 import type { SelectorOption } from '$lib/ui/controls';
 import { recordAudition } from './audition-ledger';
@@ -328,30 +329,41 @@ export async function loadSamsloopAudioFile(
   if (!result.ok) return { status: null, error: result.error ?? 'Unknown error' };
 
   const samples = result.samples!;
-  const target = liveNode(nodeId);
-  if (!target) return { status: null, error: 'Module was removed during upload.' };
-  if (!target.data) target.data = {};
-  const d = target.data as SamsloopData;
+  if (!liveNode(nodeId)) return { status: null, error: 'Module was removed during upload.' };
 
-  // Store the ORIGINAL bytes, never the decoded PCM: at the sample cap a
-  // number[] of decoded samples is ~12 MB and one YArray entry per sample would
-  // explode the CRDT. The factory hydrates fileBytesB64 → buffer on load.
-  if (result.fileBytes) {
-    d.fileBytesB64 = bytesToBase64(result.fileBytes);
-    d.fileSize = result.fileSize ?? result.fileBytes.byteLength;
-    d.fileMime = result.fileMime ?? '';
-  }
-  // ONE SAMPLE AT A TIME, both directions: drop the legacy decoded array AND any
-  // recording. Without this the keys coexist and the READER'S PRECEDENCE — not
-  // the user's last action — decides what plays.
-  if (d.samples) delete d.samples;
-  if (d.sample) delete d.sample;
-  d.sampleRate = result.sampleRate;
-  d.sampleLength = samples.length;
-  d.fileName = file.name;
-  // A fresh load opens the window to the WHOLE sample — 0..1 as a fraction.
-  target.params.start = SAMSLOOP_WINDOW_RANGE.min;
-  target.params.end = SAMSLOOP_WINDOW_RANGE.max;
+  // ⚠ ONE TRANSACTION, AND IT IS `mutateNode` RATHER THAN A RAW STORE WRITE.
+  // A file load is a USER GESTURE that edits `node.data` AND both window params
+  // together, so the two must land as ONE undo step and ONE collaborator update
+  // — otherwise a single Ctrl-Z can leave a window that does not describe the
+  // sample beside it. The legacy card writes these raw and is carried in
+  // `raw-write-ledger.ts` as DEBT for exactly that reason; the face's path does
+  // not inherit it. `cloudseed-preset-actions.ts` is the precedent for an
+  // in-place multi-field write inside the origin-tagged transact.
+  mutateNode(nodeId, (live) => {
+    if (!live.data) live.data = {};
+    const d = live.data as SamsloopData;
+
+    // Store the ORIGINAL bytes, never the decoded PCM: at the sample cap a
+    // number[] of decoded samples is ~12 MB and one YArray entry per sample
+    // would explode the CRDT. The factory hydrates fileBytesB64 → buffer.
+    if (result.fileBytes) {
+      d.fileBytesB64 = bytesToBase64(result.fileBytes);
+      d.fileSize = result.fileSize ?? result.fileBytes.byteLength;
+      d.fileMime = result.fileMime ?? '';
+    }
+    // ONE SAMPLE AT A TIME, both directions: drop the legacy decoded array AND
+    // any recording. Without this the keys coexist and the READER'S PRECEDENCE
+    // — not the user's last action — decides what plays.
+    if (d.samples) delete d.samples;
+    if (d.sample) delete d.sample;
+    d.sampleRate = result.sampleRate;
+    d.sampleLength = samples.length;
+    d.fileName = file.name;
+    // A fresh load opens the window to the WHOLE sample — 0..1 as a fraction,
+    // which needs no knowledge of the frame count.
+    live.params.start = SAMSLOOP_WINDOW_RANGE.min; // guard:allow-raw-write
+    live.params.end = SAMSLOOP_WINDOW_RANGE.max; // guard:allow-raw-write
+  });
 
   return {
     status: `loaded ${samples.length} samples @ ${result.sampleRate} Hz`,
