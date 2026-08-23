@@ -19,6 +19,7 @@
 
   import { onMount, onDestroy, untrack } from 'svelte';
   import { nodeMedia, type NodeMediaLease } from '$lib/ui/media/node-media-registry';
+  import { cameraStatus } from '$lib/ui/media/camera-status-registry';
   import { acquireCameraStream } from '$lib/ui/camera-acquire';
   import { type NodeProps } from '@xyflow/svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
@@ -66,11 +67,23 @@
   const outputs = portsFromDef(cameraInputDef.outputs);
 
   // The <video> and the camera STREAM are owned by the NODE, not by this card
-  // (see $lib/ui/media/node-media-registry). cameraInput keeps its real card
-  // in the lane (a NON_SHELL carve-out) so it dodges the expand/collapse move,
-  // but it is unmounted by every OTHER card move — docking to the rail, a
-  // collapsed group — and `onDestroy` stopped the tracks, which needs a fresh
-  // permission gesture to undo.
+  // (see $lib/ui/media/node-media-registry).
+  //
+  // ⚠ THIS CARD IS NO LONGER GUARANTEED TO BE ON SCREEN, and the note that used
+  // to sit here said the opposite. `cameraInput` WAS in `NON_SHELL_LANE_TYPES`
+  // — "keeps its real card in the lane, so it dodges the expand/collapse move" —
+  // and it is not any more: the module is promoted, so under the default shell
+  // the lane paints its faceplate and this card runs inside
+  // <HeadlessSourceHost>, parked off-screen. The stream is unaffected (that is
+  // the whole point of the node-owned element), but every BUTTON below is
+  // unclickable in that window, which is why the card now publishes its state
+  // and registers its acquire command on $lib/ui/media/camera-status-registry
+  // for the dock faceplate to drive. Under `?shell=legacy` this card is still
+  // the lane surface and nothing about it changes.
+  //
+  // It is unmounted by every card move — the headless host, docking to the
+  // rail, a collapsed group — and `onDestroy` once stopped the tracks, which
+  // needs a fresh permission gesture to undo.
   let videoHost: HTMLDivElement | null = $state(null);
   let videoEl: HTMLVideoElement | null = $state(null);
   let mediaLease: NodeMediaLease<HTMLElement> | null = null;
@@ -327,19 +340,87 @@
     });
   });
 
+  // ⚠ THE `enabled` PARAM OWNS THE HARDWARE — THIS BUTTON ONLY WRITES IT.
+  //
+  // It used to do both: write the param AND stop/start the track beside it. That
+  // made the BUTTON the authority, and the param's documented behaviour was
+  // therefore only true when the button was the writer. The def's own `docs`
+  // says otherwise, in the param's voice: "off (Pause) stops the camera track to
+  // release the hardware … on (Resume) re-requests the stream". Every other
+  // writer got the param without the hardware:
+  //   * a COLLABORATOR's toggle — `enabled` is in Yjs, so a rack-mate's write
+  //     already arrived here and did nothing but change the shader branch,
+  //     leaving the camera light on for a camera the patch says is off;
+  //   * and now the dock FACEPLATE's ON cell, which is the surface most people
+  //     will reach for once this module is promoted.
+  // Same shape as the hydrate-once `deviceId` defect fixed above: a documented
+  // claim kept by one call site instead of by the state it describes.
   function onToggleEnabled(): void {
-    const next = p('enabled') < 0.5;
-    setBoolParam('enabled', next);
-    if (!next) {
-      // Pause: stop the track to release the camera (matches the spec
-      // §6 — paused means hardware is freed; resume re-requests).
-      stopStream();
-      camState = 'paused';
-    } else {
-      // Resume.
-      requestStream();
-    }
+    setBoolParam('enabled', p('enabled') < 0.5);
   }
+
+  /** Last `enabled` this card ACTED on. `null` until the first effect run — see
+   *  the SKIP-FIRST note below. */
+  let actedEnabled: boolean | null = null;
+
+  $effect(() => {
+    const on = p('enabled') > 0.5;
+    // ⚠ SKIP-FIRST IS LOAD-BEARING, NOT AN OPTIMISATION. `enabled` defaults to
+    // 1, so without this the effect's first run would call requestStream() on
+    // every mount of every camera node — firing getUserMedia with none of
+    // onMount's guards (it checks `hasLabels` precisely so a rack load does not
+    // raise a permission PROMPT, and skips a doomed exact-deviceId request when
+    // the saved camera is gone). onMount owns the initial acquire; this effect
+    // owns every CHANGE after it.
+    if (actedEnabled === null) { actedEnabled = on; return; }
+    if (on === actedEnabled) return;
+    actedEnabled = on;
+    untrack(() => {
+      if (!on) {
+        // Pause: stop the track to release the camera (matches the spec §6 —
+        // paused means hardware is freed; resume re-requests).
+        stopStream();
+        camState = 'paused';
+      } else if (shouldReacquireOnPick(camState)) {
+        // Reusing the pick guard is deliberate: the states that refuse a
+        // re-acquire on a device pick ('requesting' — one is already in flight;
+        // 'unsupported' — there is no getUserMedia) refuse it here for the same
+        // reasons.
+        requestStream();
+      }
+    });
+  });
+
+  // ── THE CAPTURE-STATUS SEAM ($lib/ui/media/camera-status-registry) ─────────
+  //
+  // ⚠ WHY A CARD THAT MAY BE OFF-SCREEN STILL HAS TO SPEAK. Promotion moves this
+  // card into <HeadlessSourceHost> under the default shell — off-screen, with
+  // `pointer-events: none`. The stream survives; the BUTTONS do not. Publishing
+  // the state and registering the acquire command is what lets the dock
+  // faceplate show the real lamp, print the recovery text, and offer a working
+  // "Request access" without a second getUserMedia owner existing anywhere.
+  //
+  // ⚠ PUBLISH IS A TRACKED READ OF ALL THREE FIELDS, deliberately. `camState`
+  // alone is not the status a consumer paints: `errorMsg` carries the recovery
+  // instructions, and `devices.length` is what decides whether acquire is even
+  // offerable (the button below is disabled on zero for the same reason).
+  $effect(() => {
+    cameraStatus.publish(id, {
+      state: camState,
+      errorMsg,
+      deviceCount: devices.length,
+    });
+  });
+
+  $effect(() => {
+    // The lease is OWNER-CHECKED, so the remount churn this card sees (lane →
+    // headless host → dock rail) cannot let a stale teardown unregister the live
+    // mount's command. See the registry header.
+    const lease = cameraStatus.registerCommands(id, {
+      acquire: () => { void requestStream(); },
+    });
+    return () => lease.release();
+  });
 
   function onToggleMirror(): void {
     const next = p('mirror') < 0.5;

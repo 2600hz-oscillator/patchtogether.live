@@ -814,31 +814,135 @@ describe("laneOmitsNode — a COLLAPSED GROUP's child, in BOTH shells (#1721)", 
   });
 });
 
-describe('cameraInput — the CAPTURE-SOURCE carve-out (source + device picker live on the card)', () => {
-  it('keeps its REAL card in the lane under the faceplate default', () => {
-    expect(NON_SHELL_LANE_TYPES.has('cameraInput')).toBe(true);
+// ⚠ THIS BLOCK USED TO ASSERT THE OPPOSITE, DELIBERATELY, AND THE REVERSAL IS
+// THE POINT — so the old assertions are quoted rather than deleted.
+//
+// It was titled "cameraInput — the CAPTURE-SOURCE carve-out (source + device
+// picker live on the card)" and pinned three things:
+//   `expect(NON_SHELL_LANE_TYPES.has('cameraInput')).toBe(true)`,
+//   that `laneRenderKind` returns 'legacy' for it whatever `migrated()` says,
+//   and that it is "therefore never headless-hosted (no double getUserMedia)".
+//
+// THE LINEAGE MATTERS, because that carve-out was created in response to an
+// owner P0 — "no video at all" under `?shell=1` — on a module CI cannot
+// exercise. It is not a preference being overturned; it is a fix whose
+// mechanism was superseded.
+//
+// WHY THE EXIT IS SAFE, in the order the chain actually runs:
+//   1. cameraInput ∈ DOM_SOURCE_LANE_TYPES ⊂ HEADLESS_MOUNT_LANE_TYPES — the
+//      first two legs below assert exactly that, so this is read off the sets
+//      rather than remembered;
+//   2. with the carve-out gone `isShellSwappable` is true, so `laneRenderKind`
+//      returns 'shell' for a promoted module;
+//   3. `needsHeadlessSourceMount` returns true for 'shell', so
+//      <HeadlessSourceHost> mounts the REAL card off-screen and getUserMedia,
+//      the MediaStream and the permission machine all keep running. The
+//      `<video>` is node-owned ($lib/ui/media/node-media-registry), so the move
+//      is a re-parent, not a teardown.
+// The mechanism did not exist when the carve-out was written — that is the
+// whole reason the carve-out was written.
+//
+// ⚠ WHAT THIS UNIT CANNOT SEE, and where the real proof is. Everything here is
+// pure set membership plus two pure functions; NOTHING in this file proves that
+// Canvas wires them, that the host mounts, or that a frame ever arrives. That is
+// `e2e/tests/camerainput-shell-source.spec.ts`, which drives the DEFAULT shell,
+// asserts the lane paints a faceplate (not a card), asserts the headless host
+// holds the card, and reads real non-black pixels out of CAMERA → VIDEO OUT
+// through the module's deterministic injected-frame seam.
+//
+// ⚠ AND THE CARD'S AFFORDANCES ARE A SEPARATE QUESTION FROM ITS SOURCE. An
+// off-screen host is `pointer-events: none`, so the card's "Request access"
+// gesture is unreachable in the default shell. Keeping the SOURCE alive does not
+// keep the ACQUIRE alive, and conflating the two is how this promotion could
+// have shipped a first-run dead end. `$lib/ui/media/camera-status-registry` is
+// the answer and has its own unit coverage.
+describe('cameraInput — PROMOTED, and kept alive by the headless host instead', () => {
+  it('is a DOM-source module, which is what makes the host apply', () => {
+    expect(DOM_SOURCE_LANE_TYPES.has('cameraInput')).toBe(true);
+    expect(HEADLESS_MOUNT_LANE_TYPES.has('cameraInput')).toBe(true);
+  });
+
+  it('is NO LONGER carved out of the shell swap', () => {
+    expect(NON_SHELL_LANE_TYPES.has('cameraInput')).toBe(false);
+  });
+
+  it('renders a FACEPLATE in the lane once promoted', () => {
     expect(
       laneRenderKind({
         shellFaces: true,
         userDocked: false,
         type: 'cameraInput',
-        // isShellSwappable() returns false for a NON_SHELL type — Canvas passes
-        // that through as hasCard.
-        hasCard: false,
-        migrated: false,
+        // isShellSwappable() is now TRUE for it — Canvas passes that through as
+        // hasCard. This is the leg that flipped.
+        hasCard: true,
+        migrated: true,
       }),
-    ).toBe('legacy');
+    ).toBe('shell');
   });
 
-  it('is therefore never headless-hosted (no double getUserMedia)', () => {
-    expect(needsHeadlessSourceMount({ kind: 'legacy', type: 'cameraInput' })).toBe(false);
+  it('and is THEREFORE headless-hosted — the source is not orphaned', () => {
+    expect(needsHeadlessSourceMount({ kind: 'shell', type: 'cameraInput' })).toBe(true);
   });
 
-  it('leaves every OTHER headless-hosted module on the uniform tile (the shell look is preserved)', () => {
+  it('still keeps its real card under ?shell=legacy, where nothing changed', () => {
+    const kind = laneRenderKind({
+      shellFaces: false,
+      userDocked: false,
+      type: 'cameraInput',
+      hasCard: true,
+      migrated: true,
+    });
+    expect(kind).toBe('legacy');
+    expect(
+      needsHeadlessSourceMount({ kind, type: 'cameraInput' }),
+      'the card is IN the lane there, so a host would be a double mount',
+    ).toBe(false);
+  });
+
+  it('a DOCKED camera is not hosted either — DockCardHost has the real card', () => {
+    expect(needsHeadlessSourceMount({ kind: 'stub', type: 'cameraInput' })).toBe(false);
+  });
+
+  it('EVERY headless-hosted module is now uniform — no member needs a skip', () => {
+    // ⚠ THIS LOOP USED TO CARRY `if (t === 'cameraInput') continue;`. Dropping
+    // the skip is the assertion: the one module that needed an exception is now
+    // covered by the same rule as the other fourteen, so the sweep is strictly
+    // stronger than it was rather than merely re-pointed.
     for (const t of HEADLESS_MOUNT_LANE_TYPES) {
-      if (t === 'cameraInput') continue;
-      expect(NON_SHELL_LANE_TYPES.has(t), `${t} still swaps to a tile`).toBe(false);
+      expect(NON_SHELL_LANE_TYPES.has(t), `${t} must swap to a tile`).toBe(false);
       expect(needsHeadlessSourceMount({ kind: 'placeholder', type: t })).toBe(true);
+      expect(needsHeadlessSourceMount({ kind: 'shell', type: t })).toBe(true);
     }
+  });
+});
+
+describe('the DOCK FULL VIEW hosts the real card only for an UN-MIGRATED module', () => {
+  // ⚠ A GATE WHOSE PRECONDITION WAS THE ABSENCE OF THE FEATURE. Canvas excluded
+  // every full-view node from the headless host unconditionally, on the stated
+  // premise that "DockFullView already mounts its real card". `DockFullView` is
+  // `{#if migrated} <ModuleShell/> {:else} <CardComponent/>`, so that premise
+  // held only while NO card-owned-source module was promoted — which was true
+  // for every member of this set until cameraInput.
+  //
+  // The fix routes it through `hostedElsewhere`, whose contract already says
+  // exactly this ("SOME OTHER live surface already mounts this node's REAL
+  // card"). `needsHeadlessSourceMount` is unchanged; the CALLER's answer to that
+  // question is what was wrong.
+  //
+  // ⚠ THE PURE DECISION CANNOT SEE `migrated`, BY DESIGN — it reads a flag the
+  // caller computes, exactly as it does for `laneOmitsNode`. So these legs pin
+  // the DECISION's behaviour given each answer; that Canvas computes the answer
+  // correctly is proven in e2e/tests/camerainput-shell-source.spec.ts, which
+  // opens the dock faceplate and asserts the picture survives it.
+  it('an un-migrated full-view occupant is hosted ELSEWHERE and gets no second mount', () => {
+    expect(
+      needsHeadlessSourceMount({ kind: 'shell', type: 'cameraInput', hostedElsewhere: true }),
+    ).toBe(false);
+  });
+
+  it('a MIGRATED one still needs the host while its faceplate is open', () => {
+    expect(
+      needsHeadlessSourceMount({ kind: 'shell', type: 'cameraInput', hostedElsewhere: false }),
+    ).toBe(true);
   });
 });

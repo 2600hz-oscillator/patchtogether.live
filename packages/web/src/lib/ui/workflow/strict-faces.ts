@@ -3686,6 +3686,43 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // 1x..1e6x, not a linear one — now lives in `docs.controls.zoom` and on the
   // control's `aria-valuetext`.
   'mandleblot',
+
+  // ── CAMERA — the FIRST card-owned-source promotion ────────────────────────
+  //
+  // ⚠ EVERY OTHER MEMBER OF `DOM_SOURCE_LANE_TYPES` IS STILL UNFACED, and that
+  // was not neglect: on those modules the card is not a skin over params, it is
+  // where the SOURCE lives. cameraInput is the first one out, so it is the first
+  // to exercise `<HeadlessSourceHost>` on a promoted module for real — the lane
+  // paints this face while the REAL card runs off-screen, keeping getUserMedia,
+  // the MediaStream and the permission machine alive. The `<video>` is
+  // node-owned, so the swap re-parents it rather than tearing it down.
+  //
+  // ⚠ AND KEEPING THE SOURCE ALIVE IS NOT THE SAME AS KEEPING THE MODULE
+  // USABLE, which is the distinction this promotion turns on. An off-screen host
+  // is `pointer-events: none`, so the card's "Request access" — the only route
+  // to getUserMedia for a visitor this origin has not granted before — and its
+  // recovery text are unclickable in the default shell. Promoting without
+  // answering that would have shipped a first-run dead end behind a green gate
+  // set, because every existing gate reads the SOURCE. The affordances were
+  // rebuilt first (`$lib/ui/media/camera-status-registry` + the extension body),
+  // and the promotion followed.
+  //
+  // ⚠ ZERO ATTEST AND ZERO CONTRACT: `params` is untouched. Device selection is
+  // `node.data.deviceId`, enumerated at runtime — it CANNOT be an `options`
+  // roster, because a roster is a fixed set known at authoring time and this one
+  // differs per machine. That is also why the picker lives in the extension
+  // body rather than in a face cell.
+  //
+  // ⚠ NONE OF ITS THREE TWO-STATE PARAMS NEEDS A LATCHING CLASSIFICATION, which
+  // is worth recording because every other faced two-state param did:
+  // `looksLikeSwitch` is `looksLikeToggle(p) && p.defaultValue === 0`, and
+  // `enabled` / `mirror` / `fillMode` all default to **1**. A camera arrives on,
+  // mirrored and filling.
+  //
+  // SCREEN OFF keeps the watch mark, and this is the widest case in the fleet:
+  // CAMERA has no video input, so it is the ORIGIN of everything downstream — a
+  // lapsed mark would turn a preview control into a MUTE for every consumer.
+  'cameraInput',
 ]);
 
 /**

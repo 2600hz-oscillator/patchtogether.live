@@ -127,16 +127,44 @@ describe('isShellSwappable — eligibility', () => {
     expect(NON_SHELL_LANE_TYPES.has('backdraft')).toBe(false);
   });
 
-  it('cameraInput is a CAPTURE-SOURCE snowflake: its legacy card (the live source + the device picker) stays in the lane', () => {
-    // The owner ?shell=1 P0: the card owns getUserMedia + the <video> it hands
-    // to the engine (attachExternalSource), AND the device <select> — neither is
-    // a ParamDef, so a tile made camera → OUTPUT patched-but-black with no way
-    // to pick a source. See ./dom-source-modules for the full rationale + gate.
-    expect(NON_SHELL_LANE_TYPES.has('cameraInput')).toBe(true);
-    expect(isShellSwappable('cameraInput', true)).toBe(false);
+  it('cameraInput SWAPS now that it has a face — the two things that kept it out were answered, not waived', () => {
+    // HISTORY, because the reversal is the point (the `videoOut` and `es9`
+    // shapes above). This used to assert the opposite, on the owner ?shell=1
+    // P0: the card owns getUserMedia + the <video> it hands to the engine
+    // (attachExternalSource), AND the device <select> — neither is a ParamDef,
+    // so a tile made camera → OUTPUT patched-but-black with no way to pick a
+    // source.
+    //
+    // Both halves are now answered, and neither by waiving the requirement:
+    //   * the SOURCE — <HeadlessSourceHost> keeps the real card mounted
+    //     off-screen (cameraInput ∈ DOM_SOURCE_LANE_TYPES, and
+    //     `needsHeadlessSourceMount` is true for kind 'shell'), and the <video>
+    //     plus its MediaStream are node-owned, so the swap re-parents rather
+    //     than tears down. That mechanism did not exist when the carve-out was
+    //     written — which is precisely why it was written;
+    //   * the PICKER — rebuilt in the faceplate's extension body, the one slot
+    //     that can hold a control no ParamDef can express;
+    //   * and the card's remaining GESTURES — "Request access" above all, the
+    //     only route to getUserMedia for a first-time visitor — reached through
+    //     $lib/ui/media/camera-status-registry, because an off-screen host is
+    //     `pointer-events: none`. Keeping the source alive is NOT the same as
+    //     keeping the acquire alive.
+    //
+    // ⚠ NONE OF THAT IS ASSERTED HERE and cannot be: this module is
+    // deliberately registry-free. Those legs live in dom-source-modules.test.ts
+    // (the host decision), camera-status-registry.test.ts (the seam) and
+    // e2e/tests/camerainput-shell-source.spec.ts (that a frame actually
+    // arrives through the whole chain).
+    expect(NON_SHELL_LANE_TYPES.has('cameraInput')).toBe(false);
+    expect(isShellSwappable('cameraInput', true)).toBe(true);
     expect(
-      laneRenderKind({ ...base, type: 'cameraInput', hasCard: isShellSwappable('cameraInput', true) }),
-    ).toBe('legacy');
+      laneRenderKind({
+        ...base,
+        type: 'cameraInput',
+        hasCard: isShellSwappable('cameraInput', true),
+        migrated: true,
+      }),
+    ).toBe('shell');
   });
 
   it('es9 SWAPS like any other module — its connection no longer lives on the card', () => {

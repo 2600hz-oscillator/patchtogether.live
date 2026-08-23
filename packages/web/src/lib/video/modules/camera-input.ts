@@ -202,6 +202,99 @@ export const cameraInputDef: VideoModuleDef = {
     { id: 'mirror',   label: 'Mirror', defaultValue: DEFAULTS.mirror,   min: 0, max: 1, curve: 'discrete' },
     { id: 'fillMode', label: 'Fill',   defaultValue: DEFAULTS.fillMode, min: 0, max: 1, curve: 'discrete' },
   ],
+
+  // ── FACE ──────────────────────────────────────────────────────────────────
+  //
+  // WHAT CAMERA IS FOR: it is the rack's only CAPTURE SOURCE — the one module
+  // whose pixels come from the physical world rather than from a shader. Its
+  // siblings synthesise (`shapes`, `lines`) or transform (`luma`, `mapper`);
+  // the thing only this one does is bring the room in. The verb is CAPTURE.
+  //
+  // ⚠ THIS IS THE FIRST PROMOTION OF A CARD-OWNED-SOURCE MODULE, and the whole
+  // cost of it was OUTSIDE the face. Every other member of
+  // `DOM_SOURCE_LANE_TYPES` is still unfaced, and the reason they were is a
+  // real one: their card is not a skin over params, it is where the source
+  // LIVES. Promoting this one required answering three separate things, none of
+  // which is a face cell:
+  //
+  //   1. THE SOURCE SURVIVES THE SWAP, by a mechanism that already existed and
+  //      had never been exercised on a promoted module. cameraInput ∈
+  //      `DOM_SOURCE_LANE_TYPES` ⊂ `HEADLESS_MOUNT_LANE_TYPES`, and
+  //      `needsHeadlessSourceMount` returns true for kind 'shell', so
+  //      `<HeadlessSourceHost>` keeps the REAL card mounted off-screen.
+  //      getUserMedia, the MediaStream and the permission machine all keep
+  //      running; the `<video>` is node-owned, so the move re-parents rather
+  //      than tears down.
+  //   2. THE DEVICE PICKER CANNOT BE A FACE CELL, ever. `node.data.deviceId` is
+  //      populated from `enumerateDevices()` at RUNTIME — not a `ParamDef`, and
+  //      not expressible as an `options` roster either, because a roster is a
+  //      fixed set known when the def is authored and this one differs per
+  //      machine and changes when hardware is plugged in. It moved into the
+  //      extension body, which is the only slot that fits.
+  //   3. ⚠ THE CARD'S GESTURES BECOME UNREACHABLE, WHICH IS NOT THE SAME
+  //      PROBLEM AS (1) AND IS THE ONE THAT NEARLY SHIPPED BROKEN. A headless
+  //      host is `pointer-events: none`, so "Request access" — the ONLY route
+  //      to getUserMedia for a visitor this origin has not granted before — is
+  //      unclickable in the default shell, and the card's recovery text
+  //      ("Grant in browser site settings", "Close other capture apps") goes
+  //      with it. The card's mount-time auto-acquire fires only when
+  //      `enumerateDevices()` already returns real LABELS, i.e. only on a
+  //      return visit. A live source with no way to START it is the owner's
+  //      original "no video at all" reproduced through a different mechanism.
+  //      `$lib/ui/media/camera-status-registry` is the answer: the card
+  //      publishes its state and registers its acquire command, the faceplate
+  //      shows and drives them, and getUserMedia keeps exactly one owner.
+  //
+  // ⚠ THE LAMP TELLS THE TRUTH OR IT DOES NOT SHIP. A lamp derived from the
+  // GRAPH alone can only say "a device is chosen and capture is enabled" — it
+  // cannot tell that apart from "permission was denied", and a lamp reading
+  // ARMED while the browser refuses frames is worse than no lamp. It reads the
+  // published state instead. That state is browser-local and never enters Yjs:
+  // a permission grant is a property of ONE person's browser, and syncing it
+  // would assert something false about everyone else's machine.
+  //
+  // THE TIER LADDER, read back as a sentence: ON first, because it is the only
+  // control that decides whether there is a PICTURE AT ALL — everything else
+  // shapes a signal it has to already be passing. MIRROR second: it is the
+  // control a player reaches for on a camera before any other, and the only one
+  // on this def with a CV port declared `edge: 'gate'`, so it is also the only
+  // one something else can drive. GAIN third — the sole continuous control, and
+  // the only one that can be wrong by degree rather than by state. FILL last:
+  // framing is a set-once decision, and it is the one control whose effect a
+  // player will not notice until the source aspect differs from the output's.
+  face: {
+    order: ['enabled', 'mirror', 'gain', 'fillMode'],
+
+    // ⚠ NO `pages`. Four controls over one capture are a single honest band.
+
+    // ⚠ ONE DECLARATION, AND ONLY ONE. `CameraInputCard.svelte` draws `gain`
+    // with `NeonFader`, so it is declared — nothing in a ParamDef separates "a
+    // level" from any other continuous scalar, and an undeclared face resolves
+    // it to a KNOB. The other three are `0..1 discrete`, so `looksLikeToggle`
+    // resolves them to Toggles on their own and the card agrees (two buttons and
+    // `NativeFillToggle`). Declaring them would be redundant; declaring `fader`
+    // for them would be REFUSED, correctly, since a throw over a two-state param
+    // has no "anywhere on this scale".
+    //
+    // ⚠ AND NONE OF THE THREE NEEDS A MOMENTARY/LATCHING CLASSIFICATION, which
+    // is worth stating because every other two-state param this fleet has faced
+    // did. `looksLikeSwitch` is `looksLikeToggle(p) && p.defaultValue === 0`,
+    // and all three of these default to **1** — a camera arrives ON, mirrored
+    // and filling. So they never reach the gate that demands the classification.
+    paramCells: { gain: 'fader' },
+
+    // ⚠ MANDATORY FOR A VIDEO DEF — no `type: 'audio'` output, so
+    // `primaryAudioOutPortId` is null and any other glyph literal falls through
+    // `glyphBinding` to a dead `{kind:'static'}` that reddens module-face-lint.
+    glyph: 'none',
+
+    // SCREEN ON/OFF, the live picture, and the three things that are NOT
+    // ParamDefs and therefore cannot be face cells at all: the DEVICE PICKER,
+    // the capture LAMP, and the ACQUIRE gesture.
+    // See `$lib/ui/modules/cameraInput/shell-extension.ts`.
+    extension: 'cameraInput',
+  },
+
   // Soft cap mirroring the multiplayer per-rackspace user limit. The
   // browser will fail extra getUserMedia calls anyway with NotReadableError
   // if the hardware can't multiplex; this just keeps the patch graph
@@ -219,7 +312,7 @@ export const cameraInputDef: VideoModuleDef = {
     },
     controls: {
       gain: "Gain (linear, 0 to 2, default 1). RGB multiplier applied to the camera frame in the shader (src.rgb * gain, unclamped): 0 = black, 1 = unity, 2 = doubled (bright/clipped) RGB. CV-modulatable via the gain input.",
-      enabled: "On (discrete 0/1, default 1 = on). The card's Pause/Resume button: off (Pause) stops the camera track to release the hardware and renders the idle navy pattern; on (Resume) re-requests the stream.",
+      enabled: "On (discrete 0/1, default 1 = on). Off (Pause) stops the camera track to release the hardware and renders the idle navy pattern; on (Resume) re-requests the stream. The PARAM owns that, not any one button — the card's Pause/Resume, the faceplate's ON cell and a collaborator's toggle all reach the hardware identically, because the card acts on the value rather than on the click.",
       mirror: "Mirror (discrete 0/1, default 1 = on). Horizontally flips the frame for a selfie mirror (shader thresholds uMirror at 0.5). Settable from the on-card Mirror button or held high by the mirror gate input. The param is shared across collaborators.",
       fillMode: "Fill (discrete 0/1, default 1 = fill). Aspect-fit mode set by the card's Fit toggle: 1 = Fill/cover-crop (fills the canvas, crops the off-axis, no bars), 0 = Letterbox/contain (fits the whole frame with black bars). Neither ever distorts the source aspect; when the source already matches the output aspect the card shows a non-interactive Native badge instead.",
     },
