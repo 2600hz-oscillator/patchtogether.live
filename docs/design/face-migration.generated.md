@@ -12,8 +12,8 @@ Every registered module carries exactly one **disposition**: what kind of work i
 |  | count |
 |---|---|
 | registered modules | 198 |
-| done (faced + promoted) | 124 |
-| remaining (excludes organizational-native) | 71 |
+| done (faced + promoted) | 126 |
+| remaining (excludes organizational-native) | 69 |
 | registered with NO disposition (must be zero) | 0 |
 | inventory entries naming a dead def (must be zero) | 0 |
 
@@ -21,7 +21,7 @@ Every registered module carries exactly one **disposition**: what kind of work i
 
 | disposition | what it means | modules | done |
 |---|---|---|---|
-| `generic-face` | author a `face` and rank the controls — no new platform capability | 141 | 124 |
+| `generic-face` | author a `face` and rank the controls — no new platform capability | 141 | 126 |
 | `blocked` | would be a face today but for the named capability, and nothing else | 3 | — |
 | `bespoke-surface` | the primary interaction is not param-shaped — needs a purpose-built surface | 51 | — |
 | `organizational-native` | rack furniture; not a migration at all | 3 | — |
@@ -67,7 +67,7 @@ author a `face` and rank the controls — no new platform capability.
 | `depolarizer` | audio | done | — |
 | `destroy` | audio | done | — |
 | `destructor` | video | done | — |
-| `dockscope` | audio | — | — |
+| `dockscope` | audio | done | — |
 | `drummergirl` | audio | done | — |
 | `dx7` | audio | done | — |
 | `edges` | video | done | — |
@@ -149,7 +149,7 @@ author a `face` and rank the controls — no new platform capability.
 | `scaler` | audio | done | — |
 | `scope` | audio | — | — |
 | `scoreboard` | video | done | — |
-| `shapedramps` | video | — | — |
+| `shapedramps` | video | done | — |
 | `shapegen` | video | done | — |
 | `shapes` | video | done | — |
 | `shimmershine` | audio | done | — |

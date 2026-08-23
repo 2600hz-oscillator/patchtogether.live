@@ -3519,6 +3519,92 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // downstream — a lapsed mark would not stall a preview, it would MUTE the
   // generator every consumer samples.
   'shapes',
+
+  // ── CUT A · BATCH 2 (2026-08-23) ──────────────────────────────────────────
+  //
+  // Two faces, and the batch is TWO rather than four because the re-derivation
+  // moved two of its four assigned modules OUT of the plain set. Both
+  // reclassifications are recorded in `.myrobots/2026-08-23-cut-a-batch2-
+  // derivation.md` with the read sites; the short form is that `samsloop`'s
+  // recording switches are `node.data` and not params, and `joystick` cannot
+  // paint a lane tile at all (see the refusal note further down this file).
+
+  // SHAPEDRAMPS — a sync-locked parametric ramp generator, and the FIRST module
+  // in this programme to gain a picture rather than carry one forward.
+  //
+  // ⚠ ITS CARD HAS NO PREVIEW. Every other video face's `fullViewBody` ports a
+  // canvas the legacy card already owned; `ShapedrampsCard.svelte` is eight
+  // faders and two section labels, and `vrt-exemptions.ts` lists it among the
+  // cards "confirmed 0 canvases each". So the SCREEN switch is an ADDITION, and
+  // the promotion is the first time a player can see what this module emits
+  // without patching it into an OUTPUT first.
+  //
+  // ⚠ EIGHT FADER-DRAWN PARAMS AND NO `paramCells`, WHICH IS THE DELIBERATE
+  // CHOICE AND NOT THE LAZY ONE. Every control on the card is a `NeonFader`, so
+  // "declare the primitive the card established" read literally would declare
+  // `fader` eight times. `shell-control-kind.ts` records the measurement that
+  // says otherwise: TWENTY-THREE faced modules rank ONE HUNDRED AND TWENTY-ONE
+  // fader-drawn params as knobs, `noise` is the only declarer, and converting
+  // them is a LOOK RULING WITH REAL COST that is WITH THE OWNER. Declaring it
+  // here would also halve this face's lane plate (`LANE_CELL_H.fader` 96 px
+  // against a 42 px row), spending the whole budget the ranking is built
+  // around. This face follows the twenty-three and says so on the def.
+  //
+  // ⚠ H/V SHAPE ARE NOT SELECTORS. They read like four-position switches —
+  // linear / triangle / soft-fold / radial — and the shader blends LINEARLY
+  // between adjacent shapes, so those are landmarks on a continuous morph. No
+  // `options` roster: naming them would tell the player the in-between values
+  // are unreachable when they are the entire point.
+  //
+  // SCREEN OFF keeps the watch mark, and this is the widest-tap form of that
+  // argument in the fleet: six outputs, four of them drawn from `vUv` with no
+  // input at all, AND THE PREVIEW SHOWS ONLY `h_out` — five of the six are
+  // invisible on the very surface whose switch would mute them. The two
+  // identity ramps (`h_lin`/`v_lin`) are invariant to every knob and CV, so if
+  // they went dark nothing on the faceplate would move to say why.
+  //
+  // ZERO ATTEST: `face` and `docs` are hash-transparent and no `params` field
+  // is touched — no options, no landmarks, no curve, no default.
+  'shapedramps',
+
+  // DOCKSCOPE — a single-channel time-domain scope, and the face that had to
+  // REFUSE the glyph its own inventory note recommended.
+  //
+  // ⚠ THE `scope` GLYPH WOULD HAVE PAINTED A FAKE TRACE. The Cut A note reads
+  // "the trace IS the `scope` glyph (analogVco is the precedent)". It is not:
+  // `glyphBinding` resolves any glyph plus a PRIMARY AUDIO OUTPUT to
+  // `live-audio`, and dockscope declares `outputs: []` — it is a terminal
+  // monitor. With no audio output the binding falls to `{ kind: 'static' }`,
+  // the deterministic placeholder trace. `glyph: 'scope'` would have compiled,
+  // passed `VALID_GLYPHS`, and shipped a picture that is not this module's
+  // signal — a green gate certifying a dead display. analogVco reaches the live
+  // branch only because it declares audio outputs.
+  //
+  // So the trace comes through `fullViewBody` instead, where the body can read
+  // the engine handle's own `read('snapshot')` key — the only seam that
+  // actually reaches these samples. `dockscope-draw.ts` was already a pure
+  // function of (samples, sampleRate, params), so the body is a thin canvas
+  // host over the drawing the card has always used, and the two surfaces cannot
+  // disagree about what the trace looks like.
+  //
+  // ⚠ THE TRACE IS THE WIDTH-EARNER, and it is one of the named ones — "a live
+  // picture, a scope trace" is the ruling's own example. This face claims width
+  // for the display and nothing else.
+  //
+  // ⚠ `range` IS LATCHING, classified at the READ SITE: `dockscope-draw.ts`
+  // compares `params.range >= 0.5` on EVERY FRAME to pick the volts-per-division
+  // ceiling. There is no edge detector anywhere in the chain, so it is a level,
+  // not a trigger — `ACKNOWLEDGED_LATCHING`, never `face.momentary`.
+  //
+  // ⚠ AND IT COSTS AN ATTEST, deliberately. `range` gains an `options` roster so
+  // the two states are named AUDIO and CV. Unnamed, a 2-state toggle announces
+  // pressed/unpressed — enable-and-absence semantics — while the display is
+  // showing two MODES with different volts-per-division. The names are
+  // PROMOTED, not invented: they are the strings the card's own button has
+  // always painted, and the read site already labels the trace `±1.0` / `±5V`
+  // from the same branch. `params` is in the WebGL content basis, so this is the
+  // one entry in this batch that is not hash-transparent.
+  'dockscope',
 ]);
 
 /**

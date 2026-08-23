@@ -229,6 +229,17 @@ const SUBJECTS: readonly Subject[] = [
   // ── batch 23b ─────────────────────────────────────────────────────────────
   { type: 'shapes', prefix: 'shapes', domain: 'video', why: 'the SDF primitive generator\'s live stamp preview and its SCREEN switch. ⚠ NOT `shapegen`, which has its own row above — different module, adjacent name. A SOURCE with no input, so a lapsed watch mark would mute the origin of the whole chain rather than stall a preview.' },
 
+  // ── cut A · batch 2 ───────────────────────────────────────────────────────
+  //
+  // ⚠ ONLY ONE ROW FOR A TWO-FACE BATCH, and the absence is the interesting
+  // half. `dockscope` also gains a `fullViewBody` in this diff and is
+  // deliberately NOT here: it declares `outputs: []`, so its trace is not a
+  // monitor OF the module, it IS the module, and it ships with NO SCREEN
+  // SWITCH — `videoOut`'s exemption argument on an audio def the video gate
+  // never reaches. A row here would assert a toggle that does not exist, which
+  // is why the omission is written down instead of left to be noticed.
+  { type: 'shapedramps', prefix: 'shapedramps', domain: 'video', why: 'the parametric ramp generator\'s live output preview and its SCREEN switch — an ADDITION, since ShapedrampsCard mounts no canvas at all. ⚠ The widest-tap watch-mark case in this file: SIX outputs, four of them pure functions of vUv with no input, and the preview shows only `h_out` — so five of the six are invisible on the very surface whose switch would mute them. Its two identity ramps are invariant to every knob and CV, so if they went dark nothing on the plate would move to say why.' },
+
   // ── the AUDIO-def outlier ─────────────────────────────────────────────────
   { type: 'rasterize', prefix: 'rasterize', domain: 'audio', why: '⚠ an AudioModuleDef that carries a VIDEO surface, so it lives in lib/audio/modules and a video-only enumeration misses it entirely. Spawns with domain: audio. It is the reason this file\'s derivation crosses both domains.' },
 ] as const;

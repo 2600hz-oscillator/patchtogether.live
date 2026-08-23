@@ -344,6 +344,20 @@ const EXTENSION_BODY_ROLES: Readonly<Record<string, BodyRule>> = {
   // ── BATCH 23b — the attest half ───────────────────────────────────────────
   shapes: { role: 'picture', why: 'the SDF primitive generator\'s live stamp preview and its SCREEN switch. ⚠ NOT `shapegen` above — that is the 3-D shape synthesiser; this is the 2-D primitive source, and the ids differ by three characters. A SOURCE with no input at all, so the retained watch mark is the sharpest form of the #2015 argument: a lapsed mark would not stall a preview, it would MUTE the origin of everything downstream. Its card mounts no `hideControls`, so no MONITOR toggle or resize grip is declared, and nothing on the surface is a derived value in a text node.' },
 
+  // ── CUT A · BATCH 2 — a video ADDITION and the first AUDIO picture ────────
+  //
+  // Both PICTURES. Grouped as one block rather than interleaved alphabetically,
+  // for the reason this roster documents about itself above.
+  //
+  // ⚠ NEITHER IS A PORT OF A CARD PREVIEW, and they are not-a-port in two
+  // DIFFERENT ways, which is why they are annotated separately rather than as a
+  // pair. `ShapedrampsCard.svelte` draws no canvas at all, so its body is an
+  // ADDITION — the declared role below is the first statement on record about
+  // what that surface paints. `DockscopeCard.svelte` draws the trace this body
+  // carries forward, but through a slot no video body uses.
+  shapedramps: { role: 'picture', why: 'the parametric ramp generator\'s live output preview and its SCREEN switch. ⚠ An ADDITION, not a port — its card mounts NO canvas (vrt-exemptions records it among the "confirmed 0 canvases each"), so this is the first surface on which what this module emits is visible without patching it into an OUTPUT. ⚠ The retained watch mark (#2015) is the widest-tap form of the argument in this roster: SIX outputs, four of them pure functions of vUv with no input, and THE PREVIEW SHOWS ONLY `h_out` — five of the six are invisible on the very surface whose switch would mute them. Its two identity ramps are invariant to every knob and CV, so if they went dark nothing on the plate would move to say why. No accumulator: all three programs are pure per-frame functions, so SCREEN OFF costs it only the OUTPUT. Its card mounts no `hideControls`, so no MONITOR toggle or resize grip is declared, and nothing on the surface is a derived value in a text node.' },
+  dockscope: { role: 'picture', why: 'the 1u rail scope\'s live time-domain trace — the FIRST AUDIO-domain picture in this roster, and the one body here with NO SCREEN SWITCH AND NO WATCH MARK, both by derivation rather than omission. No switch: dockscope declares `outputs: []`, so the trace is not a monitor OF the work, it IS the work, and collapsing it would leave two faders over nothing — `videoOut`\'s exemption argument exactly, on a def the video gate does not reach. No watch mark: `markWatched` is a VideoEngine PULL-SET concept and this module\'s AnalyserNode is fed by the Web Audio graph, which runs whether or not anything is looking, so there is no pull set to fall out of. ⚠ It is also the face that REFUSED the `scope` glyph its inventory note recommends: with no audio output `glyphBinding` falls to `{ kind: \'static\' }`, so the glyph would have painted a placeholder waveform that is not this module\'s signal. The only text on the surface is inside the canvas — the `±1.0` / `±5V` scale annotation `drawDockscope` has always drawn, which names the `range` control\'s own position rather than measuring anything.' },
+
   // ── STATUS — the one body whose subject is not a picture.
   cvBuddy: {
     role: 'status-primitive',
