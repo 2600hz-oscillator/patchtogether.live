@@ -12,8 +12,8 @@ Every registered module carries exactly one **disposition**: what kind of work i
 |  | count |
 |---|---|
 | registered modules | 198 |
-| done (faced + promoted) | 114 |
-| remaining (excludes organizational-native) | 81 |
+| done (faced + promoted) | 116 |
+| remaining (excludes organizational-native) | 79 |
 | registered with NO disposition (must be zero) | 0 |
 | inventory entries naming a dead def (must be zero) | 0 |
 
@@ -21,7 +21,7 @@ Every registered module carries exactly one **disposition**: what kind of work i
 
 | disposition | what it means | modules | done |
 |---|---|---|---|
-| `generic-face` | author a `face` and rank the controls — no new platform capability | 141 | 114 |
+| `generic-face` | author a `face` and rank the controls — no new platform capability | 141 | 116 |
 | `blocked` | would be a face today but for the named capability, and nothing else | 3 | — |
 | `bespoke-surface` | the primary interaction is not param-shaped — needs a purpose-built surface | 51 | — |
 | `organizational-native` | rack furniture; not a migration at all | 3 | — |
@@ -88,7 +88,7 @@ author a `face` and rank the controls — no new platform capability.
 | `karplus` | audio | done | — |
 | `kickdrum` | audio | done | — |
 | `lfo` | audio | done | — |
-| `lines` | video | done | — |
+| `lines` | video | — | — |
 | `luma` | video | — | — |
 | `lumakey` | video | done | — |
 | `lushgarden` | video | — | — |
@@ -129,12 +129,12 @@ author a `face` and rank the controls — no new platform capability.
 | `moogCp3` | audio | done | — |
 | `ninelives` | audio | done | — |
 | `noise` | audio | done | — |
-| `onetonine` | video | — | — |
+| `onetonine` | video | done | — |
 | `outlines` | video | done | — |
-| `peakstate` | video | done | — |
+| `peakstate` | video | — | — |
 | `pentemelodica` | audio | done | — |
 | `polarizer` | audio | done | — |
-| `posterbox` | video | — | — |
+| `posterbox` | video | done | — |
 | `qbrt` | audio | done | — |
 | `quadralogical` | video | done | — |
 | `rasterize` | audio | done | — |
@@ -157,7 +157,7 @@ author a `face` and rank the controls — no new platform capability.
 | `sixstrum` | audio | done | — |
 | `slewSwitch` | audio | done | — |
 | `snaredrum` | audio | done | — |
-| `sourcery` | video | — | — |
+| `sourcery` | video | done | — |
 | `spectrograph` | audio | — | — |
 | `spirographs` | video | done | — |
 | `stereovca` | audio | done | — |
@@ -165,7 +165,7 @@ author a `face` and rank the controls — no new platform capability.
 | `synesthesia` | audio | — | — |
 | `tempest` | video | done | — |
 | `tidyVco` | audio | done | — |
-| `tiler` | video | — | — |
+| `tiler` | video | done | — |
 | `timelorde` | audio | — | — |
 | `tomtom` | audio | done | — |
 | `treeohvox` | audio | done | — |

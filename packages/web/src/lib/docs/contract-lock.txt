@@ -2394,7 +2394,7 @@ onetonine out out6 video
 onetonine out out7 video
 onetonine out out8 video
 onetonine out out9 video
-onetonine param showGrid 0..1 linear default=1
+onetonine param showGrid 0..1 discrete default=1
 outlines meta domain=video
 outlines in collide gate param=cv_collide edge=gate
 outlines in d cv param=d cvScale=linear
