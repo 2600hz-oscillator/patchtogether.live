@@ -1491,9 +1491,39 @@ test.describe('?shell=1 video CHAIN parity', () => {
         `resolved one at x=-9976 inside the headless host); saw x=${Math.round(box!.x)}`,
     ).toBeGreaterThanOrEqual(0);
 
-    // And it is operable rather than merely painted — the host's subtree is
-    // `pointer-events: none`, so this is the property that separates the two.
-    await expect(picker, 'and it is operable, not a painted copy').toBeEnabled();
+    // (iii) HIT-TESTABLE — the property that actually separates a real surface
+    //       from a copy of one, asked the way the browser answers it.
+    //
+    // ⚠ TWO WRONG PREDICATES WERE TRIED HERE FIRST, and both are worth naming
+    // because each looked obviously right:
+    //
+    //   * `toBeEnabled()` — passed locally, FAILED ON CI. The body renders
+    //     `<select disabled={devices.length === 0}>`, and CI has no videoinput,
+    //     so a disabled picker is CORRECT there. It was a capability-dependent
+    //     assertion sitting ABOVE the capability gate — the exact trap the
+    //     ci-capability discipline exists for. The genuine enabled-ness check
+    //     belongs below the gate, and that is where it still is.
+    //   * walking every ancestor for `pointer-events: none` — FAILED LOCALLY
+    //     once zero cameras were simulated, and correctly so: the offender was
+    //     `DIV.dock-fullview-drawer`, a `none` container whose inner panel sets
+    //     `auto`. That is an ordinary overlay idiom, not a defect, so the
+    //     predicate was wrong rather than the app.
+    //
+    // `elementFromPoint` at the element's own centre is the real question — it
+    // is what the browser does on a click. It is true for a disabled control
+    // (disabled changes event DISPATCH, not hit-testing) so it stays
+    // capability-independent, and it is false for the headless host, whose
+    // centre lies at a negative coordinate no point in the viewport maps to.
+    const hitTestable = await picker.evaluate((el) => {
+      const r = el.getBoundingClientRect();
+      const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      return !!hit && (hit === el || el.contains(hit) || hit.contains(el));
+    });
+    expect(
+      hitTestable,
+      'the picker is hit-testable at its own centre — a click would land on it, which is what ' +
+        '"reachable" means and what the off-screen host can never satisfy',
+    ).toBe(true);
 
     // ⚠ PERMANENT NEGATIVE CONTROL — the repaired predicate must still be able
     // to FAIL on the thing it was blind to, or this rewrite has only moved the
@@ -1525,13 +1555,28 @@ test.describe('?shell=1 video CHAIN parity', () => {
         return 0;
       }
     });
-    test.skip(cameraCount === 0, 'no videoinput device in this runtime — device-list assert not applicable');
-    await expect
-      .poll(async () => picker.locator('option').count(), {
-        message: 'the picker lists at least one real camera',
-        timeout: 15_000,
-      })
-      .toBeGreaterThanOrEqual(1);
-    await expect(picker).toBeEnabled();
+    // ⚠ A BRANCH, NOT `test.skip` — deliberately, and it is the difference
+    // between this case reporting a result on CI and reporting nothing. CI has
+    // no videoinput, so a mid-test `test.skip` marks the WHOLE test skipped
+    // there: the reachability assertions above would still fail if broken, but
+    // a green run reports as "skipped", and a reader counting results sees a
+    // case that never ran. The reachability half is the parity-critical claim
+    // and it is capability-INDEPENDENT, so it must show up as a real pass.
+    // Only the device-list half is conditional, and it says so.
+    if (cameraCount > 0) {
+      await expect
+        .poll(async () => picker.locator('option').count(), {
+          message: 'the picker lists at least one real camera',
+          timeout: 15_000,
+        })
+        .toBeGreaterThanOrEqual(1);
+      await expect(picker, 'a picker with real devices is enabled').toBeEnabled();
+    } else {
+      // The zero-device state is a real, reachable state and is asserted rather
+      // than waved past: the control still renders, still says why, and is
+      // correctly disabled. That is what CI actually exercises.
+      await expect(picker, 'with no cameras the picker is correctly disabled').toBeDisabled();
+      await expect(picker, 'and it says why').toContainText(/no cameras|unavailable/i);
+    }
   });
 });
