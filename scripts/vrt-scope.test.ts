@@ -36,14 +36,11 @@ import { fileURLToPath } from 'node:url';
 
 // @ts-expect-error — plain .mjs with JSDoc types, no declaration file
 import {
-  codeLines,
   deriveVrtScope,
   ignorableReason,
-  parseChangedLines,
   selectionFor,
   TOKEN_RE,
   typeForms,
-  typesInDiffText,
   typesInPath,
   words,
 } from './vrt-scope.mjs';
@@ -67,8 +64,7 @@ const TYPES = [
 ];
 
 type Decision = ReturnType<typeof deriveVrtScope>;
-const derive = (files: string[], changed: Record<string, string> = {}): Decision =>
-  deriveVrtScope({ files, types: TYPES, changedLines: new Map(Object.entries(changed)) });
+const derive = (files: string[]): Decision => deriveVrtScope({ files, types: TYPES });
 
 describe('words()', () => {
   it('splits on separators AND camelCase boundaries', () => {
@@ -119,90 +115,6 @@ describe('typesInPath()', () => {
   });
 });
 
-describe('codeLines()', () => {
-  it('drops whole-line comments and keeps code that merely ends in one', () => {
-    const text = ["// destroy is mentioned here", " * and here", "const x = 1; // and here", '/* block */'].join('\n');
-    expect(codeLines(text)).toBe('const x = 1; // and here');
-  });
-
-  it('never edits a line, so a URL inside a string survives intact', () => {
-    // The CLAUDE.md hazard: a `//`-stripping regex eats 'https://x'. Nothing is
-    // stripped WITHIN a line here — whole comment lines are removed instead.
-    expect(codeLines("const u = 'https://x';")).toBe("const u = 'https://x';");
-  });
-});
-
-describe('typesInDiffText()', () => {
-  it('finds a module in the identifier spellings a shared roster file uses', () => {
-    expect(typesInDiffText("  'DestroyCard.svelte': ['decimate.label'],", TYPES)).toEqual(['destroy']);
-    expect(typesInDiffText("  'slewswitch-settle': (read) => slewSwitchSettleText(read),", TYPES)).toEqual([
-      'slewSwitch',
-    ]);
-    expect(typesInDiffText("import { x } from '$lib/ui/modules/slewswitch-face-model';", TYPES)).toEqual([
-      'slewSwitch',
-    ]);
-  });
-
-  it('PERMANENT NEGATIVE CONTROL: prose naming other modules implicates nothing', () => {
-    // The failure this exists for, measured on 5ecae1796: scanning raw hunks
-    // implicated analogLogicMaths, destroy, illogic, ninelives, noise AND
-    // sidecar on a single-module PR, purely from rationale comments — so the
-    // derivation fell back to the full sweep on exactly the case it exists to
-    // scope.
-    const prose = [
-      '// That is the `destroy` argument with the sign flipped — `filter` was',
-      '// promoted for the same reason, and `moog921a` is the counter-example.',
-    ].join('\n');
-    expect(typesInDiffText(prose, TYPES)).toEqual([]);
-    // …and the control is two-directional: the same names as STRINGS do implicate.
-    expect(typesInDiffText("const x = ['destroy', 'filter'];", TYPES)).toEqual(['destroy', 'filter']);
-  });
-
-  it('PERMANENT NEGATIVE CONTROL (#2116): a one-word type as a BARE IDENTIFIER implicates nothing', () => {
-    // Measured on the acidwarp PR: `.filter((e) => …)` in a new e2e gate leg
-    // implicated the `filter` MODULE and sent a single-module PR to the full
-    // sweep. The same class awaits `edges` (patch.edges, buildEdges), `lines`
-    // (this very tool's `codeLines`), `mixer`, `delay`, `fader`.
-    expect(typesInDiffText('const kept = rows.filter((e) => e.ok);', TYPES)).toEqual([]);
-    expect(typesInDiffText('const lines = codeLines(text); scope(lines);', TYPES)).toEqual([]);
-    // …two-directional: the STRING spellings a roster diff actually carries
-    // still implicate the one-word type…
-    expect(typesInDiffText("  type: 'filter',", TYPES)).toEqual(['filter']);
-    expect(typesInDiffText("import f from '$lib/video/modules/filter';", TYPES)).toEqual(['filter']);
-    // …and a MULTI-word type as an identifier is still real evidence — the
-    // contiguous run does not occur in ordinary code by accident.
-    expect(typesInDiffText('export const slewSwitchSettleText = fmt;', TYPES)).toEqual(['slewSwitch']);
-  });
-});
-
-describe('parseChangedLines()', () => {
-  const DIFF = [
-    'diff --git a/a.ts b/a.ts',
-    'index 111..222 100644',
-    '--- a/a.ts',
-    '+++ b/a.ts',
-    '@@ -1 +1 @@',
-    '-const old = 1;',
-    '+const now = 2;',
-    'diff --git a/b.css b/b.css',
-    '--- a/b.css',
-    '+++ b/b.css',
-    '@@ -0,0 +1 @@',
-    '+.x { color: red }',
-  ].join('\n');
-
-  it('splits per file and keeps only changed lines', () => {
-    const m = parseChangedLines(DIFF);
-    expect([...m.keys()]).toEqual(['a.ts', 'b.css']);
-    expect(m.get('a.ts')).toBe('const old = 1;\nconst now = 2;');
-    expect(m.get('b.css')).toBe('.x { color: red }');
-  });
-
-  it('never mistakes the +++/--- file headers for content', () => {
-    expect(parseChangedLines(DIFF).get('a.ts')).not.toContain('a.ts');
-  });
-});
-
 describe('deriveVrtScope()', () => {
   it('scopes a single-module change to that module', () => {
     const d = derive([
@@ -215,35 +127,28 @@ describe('deriveVrtScope()', () => {
     expect(d.token).toBe('analogLogicMaths');
   });
 
-  it('clears a shared ROSTER file whose diff registers the module already implicated', () => {
-    const d = derive(
-      ['packages/web/src/lib/ui/modules/DestroyCard.svelte', 'packages/web/src/lib/ui/workflow/strict-faces.ts'],
-      { 'packages/web/src/lib/ui/workflow/strict-faces.ts': "  'destroy'," },
-    );
-    expect(d.mode).toBe('scoped');
-    expect(d.token).toBe('destroy');
-  });
-
-  it('reports a module a shared file ALSO named, without capturing it', () => {
-    const d = derive(
-      ['packages/web/src/lib/ui/modules/DestroyCard.svelte', 'e2e/tests/_face-fixtures.ts'],
-      { 'e2e/tests/_face-fixtures.ts': "  destroy: fixture('destroy'), filter: fixture('filter')," },
-    );
-    expect(d.mode).toBe('scoped');
-    expect(d.token).toBe('destroy');
-    expect(d.alsoNamed).toEqual(['filter']);
-  });
-
-  it('#2116 safety direction: one-word types named ONLY as bare identifier keys are a BLOCKER, not an attribution', () => {
-    // Same shape as above but with no string spelling anywhere in the diff.
-    // Under the string-literal rule the shared file names nothing → it must
-    // surface as a LOUD full sweep, never a silent scoped capture that guessed.
-    const d = derive(
-      ['packages/web/src/lib/ui/modules/DestroyCard.svelte', 'e2e/tests/_face-fixtures.ts'],
-      { 'e2e/tests/_face-fixtures.ts': '  destroy: fixture(), filter: fixture(),' },
-    );
+  it('⚠ A SHARED ROSTER FILE IS NOW A BLOCKER — the derivation reads PATHS ONLY', () => {
+    // This used to be scoped: the content tokenizer read strict-faces.ts's
+    // diff, found `'destroy'`, and cleared it. That inference is deleted
+    // (2026-08-23), so the honest answer is a LOUD full sweep naming the file
+    // — and the operator passes GREP=destroy if they know better.
+    //
+    // ⚠ THIS IS THE COMMON CASE, not an edge one: every face PR touches a
+    // shared roster file. The cost is real and was accepted deliberately —
+    // the heuristic that avoided it inferred modules from prose and from
+    // ordinary identifiers (`.filter((e) => …)` implicated the `filter`
+    // MODULE) and forced full sweeps three times in the week of 2026-08-16.
+    const d = derive([
+      'packages/web/src/lib/ui/modules/DestroyCard.svelte',
+      'packages/web/src/lib/ui/workflow/strict-faces.ts',
+    ]);
     expect(d.mode).toBe('full');
-    expect(d.blockers.map((b) => b.file)).toContain('e2e/tests/_face-fixtures.ts');
+    expect(d.blockers.map((b: { file: string }) => b.file)).toEqual([
+      'packages/web/src/lib/ui/workflow/strict-faces.ts',
+    ]);
+    // …and it still names what it DID attribute, so the report can print the
+    // GREP= line the operator most likely wants.
+    expect(d.tokens).toEqual(['destroy']);
   });
 
   it('FALLS BACK TO FULL when two modules are implicated — never picks one', () => {
@@ -258,9 +163,10 @@ describe('deriveVrtScope()', () => {
   });
 
   it('FALLS BACK TO FULL on a renderable file it cannot attribute — with the file named', () => {
-    const d = derive(['packages/web/src/lib/ui/modules/AdsrCard.svelte', 'packages/web/src/lib/ui/workflow/Fader.svelte'], {
-      'packages/web/src/lib/ui/workflow/Fader.svelte': 'const track = 4;',
-    });
+    const d = derive([
+      'packages/web/src/lib/ui/modules/AdsrCard.svelte',
+      'packages/web/src/lib/ui/workflow/Fader.svelte',
+    ]);
     expect(d.mode).toBe('full');
     expect(d.blockers.map((b: { file: string }) => b.file)).toEqual(['packages/web/src/lib/ui/workflow/Fader.svelte']);
   });
@@ -277,21 +183,19 @@ describe('deriveVrtScope()', () => {
       'packages/web/src/lib/ui/workflow/face-readout-values.ts',
       'packages/web/src/lib/audio/modules/filter.ts',
     ];
-    const changed = {
-      'packages/web/src/lib/ui/workflow/strict-faces.ts': "  'destroy',",
-      'packages/web/src/lib/ui/workflow/face-readout-values.ts': "  'destroy-crush': (read) => read('crush'),",
-    };
-    const forward = derive(files, changed);
-    const reverse = derive([...files].reverse(), changed);
+    const forward = derive(files);
+    const reverse = derive([...files].reverse());
     expect(reverse.mode).toBe(forward.mode);
     expect(reverse.tokens).toEqual(forward.tokens);
+    expect(reverse.blockers.map((b: { file: string }) => b.file).sort()).toEqual(
+      forward.blockers.map((b: { file: string }) => b.file).sort(),
+    );
   });
 
   it('NEGATIVE CONTROL: cannot manufacture a scope from an empty module universe', () => {
     const d = deriveVrtScope({
       files: ['packages/web/src/lib/ui/modules/AdsrCard.svelte'],
       types: [],
-      changedLines: new Map(),
     });
     expect(d.mode).toBe('full');
     expect(d.token).toBeNull();
