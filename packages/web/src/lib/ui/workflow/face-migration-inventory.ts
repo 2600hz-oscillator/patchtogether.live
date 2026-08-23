@@ -441,7 +441,20 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
   { type: 'sampleHold', disposition: 'generic-face' },
   { type: 'samsloop', disposition: 'generic-face', note: 'file → file cell, trigger → action cell, rec channels/bits/rate → discrete params; the sample waveform is the `waveform` glyph' },
   { type: 'scaler', disposition: 'generic-face' },
-  { type: 'scope', disposition: 'generic-face', note: 'the dual-trace + Lissajous screen is ONE `scope` glyph binding; if it will not carry two channels the screen becomes a registered panel' },
+  // ⚠ THE ORIGINAL NOTE WAS WRONG AND IS CORRECTED HERE (2026-08-23, with the
+  // face). It read: "the dual-trace + Lissajous screen is ONE `scope` glyph
+  // binding; if it will not carry two channels the screen becomes a registered
+  // panel". Both halves fail. The glyph WOULD resolve — `ch1_out` is a declared
+  // audio output, so `glyphBinding` returns `{kind:'live-audio'}` and every
+  // gate stays green — but `ch1_out` IS the CH1 input gain with nothing ever
+  // written to it, so the trace it paints is invariant to all nine of this
+  // module's controls. Live, legal, and a lie. And a `panel` REQUIRES a probe
+  // (`shell-cells.ts`), which a read-only picture has none of, so it would have
+  // had to watch a DIFFERENT control — an aliveness check that cannot observe
+  // the thing it certifies, the refusal `rasterize` and `foxy` both wrote down.
+  // The screen is a `fullViewBody`; see `strict-faces.ts` and
+  // `scope-face-model.test.ts` for the derivation and the assertion.
+  { type: 'scope', disposition: 'generic-face', note: 'FACED 2026-08-23 as `glyph: none` + a `fullViewBody` — the `scope` glyph resolves LIVE here (unlike dockscope) and is still blind, because `ch1_out` is the CH1 input verbatim' },
   { type: 'scoreboard', disposition: 'generic-face' },
   { type: 'shapedramps', disposition: 'generic-face' },
   { type: 'shapegen', disposition: 'generic-face' },

@@ -286,11 +286,6 @@ export const RAW_WRITE_LEDGER: Readonly<Record<string, RawWriteEntry>> = {
     kind: 'debt',
     why: 'start/end are load-derived (sanctionable); `mode` is a card button — triage as one when drained',
   },
-  'ui/modules/ScopeCard.svelte': {
-    keys: ['mode'],
-    kind: 'debt',
-    why: 'XY-mode toggle — user gesture, should be undoable + synced',
-  },
   'ui/modules/ShapegenCard.svelte': {
     keys: ['solids'],
     kind: 'debt',

@@ -36,6 +36,34 @@ export interface ScopeSnapshot {
   sampleRate: number;
 }
 
+/**
+ * The TUNER's state, as the trace canvas draws it.
+ *
+ * ⚠ THIS IS A PICTURE, NOT A READOUT, and the distinction is the whole reason
+ * the field has this shape. `ScopeCard.svelte` carries the tuner as a labelled
+ * DOM row of derived values — `PITCH 440.0 Hz | NOTE A4` — under the screen,
+ * which is structurally the HERO READOUT STRIP the owner deleted fleet-wide.
+ * The faceplate cannot carry that shape, and hiding it behind a hover is
+ * "there but hidden", refused by name.
+ *
+ * So the tuner moves INTO THE INSTRUMENT: the meter (centre tick, marker,
+ * in-tune colour) is drawn as a graticule strip along the screen's bottom edge,
+ * the way a hardware scope prints its cursor readout on the CRT rather than on
+ * the bezel — and `drawScope` already paints text into this canvas for exactly
+ * that reason (the `±1.0` / `±5V` corner scale label). The Hz value, the cents
+ * value and the confidence are painted NOWHERE; they live on the surface's
+ * `aria-label`, speakable and assertable and unpainted.
+ *
+ * Only `note` and `cents` are here, because only those two are DRAWN.
+ */
+export interface ScopeTuning {
+  /** Detected note name (e.g. `A4`), or null when YIN's energy gate found
+   *  nothing pitched — silence, noise, or a signal below the gate. */
+  note: string | null;
+  /** Cents sharp (+) or flat (−) of `note`. Null whenever `note` is. */
+  cents: number | null;
+}
+
 export interface ScopeDrawParams {
   /** Time-window in ms shown across the full canvas width. */
   timeMs: number;
@@ -68,6 +96,14 @@ export interface ScopeDrawParams {
   /** Stroke colors per channel. Defaults match the cable colors. */
   ch1Color?: string;
   ch2Color?: string;
+  /**
+   * The TUNING GRATICULE. ⚠ ABSENT ⇒ NOTHING IS DRAWN, and that is load-bearing
+   * rather than a convenience: `ScopeCard.svelte` and the cross-domain video
+   * bridge both call `drawScope` WITHOUT this field, so both keep rendering the
+   * exact pixels they render today and every committed card / composite
+   * baseline stays valid. Only the faceplate body passes it.
+   */
+  tuning?: ScopeTuning;
 }
 
 // ---- Phosphor INTENSITY → persistence mapping ----------------------------
@@ -189,6 +225,104 @@ export function pixelFromSample(
   return sample * halfHeight;
 }
 
+// ---- TUNING GRATICULE ----------------------------------------------------
+//
+// The tuner, drawn as part of the instrument. Geometry is extracted into pure
+// exported helpers for the same reason `pixelFromSample` and `xyPixelX` are:
+// the unit lane pins the endpoints against the same math the draw loop runs,
+// so the picture and its test cannot disagree about where the marker sits.
+
+/** Half-width of the meter in CENTS. ±50 ¢ is a semitone's half-step either
+ *  way — the span `ScopeCard.svelte`'s DOM meter has always used, promoted
+ *  rather than re-chosen. */
+export const TUNING_CENTS_SPAN = 50;
+/** Inside this many cents the marker turns green. The card's own threshold. */
+export const TUNING_IN_TUNE_CENTS = 5;
+/** Strip height in px, measured from the canvas bottom. */
+export const TUNING_STRIP_H = 13;
+
+/**
+ * Cents → horizontal pixel on the meter. 0 ¢ is dead centre; ±TUNING_CENTS_SPAN
+ * lands on the meter's ends. CLAMPED, because YIN can report beyond a
+ * half-step and a marker drawn off-canvas is indistinguishable from no marker
+ * at all — pinning at the end is the honest render of "further than this".
+ */
+export function tuningPixelX(cents: number, width: number): number {
+  const t = Math.max(-1, Math.min(1, cents / TUNING_CENTS_SPAN));
+  return width / 2 + (t * width) / 2;
+}
+
+/** Is this reading inside the in-tune window? Null (no pitch) is NOT in tune —
+ *  it is the idle state, which the strip draws differently from both. */
+export function isInTune(cents: number | null): boolean {
+  return cents !== null && Math.abs(cents) <= TUNING_IN_TUNE_CENTS;
+}
+
+const TUNING_IN_TUNE_COLOR = '#4ade80';
+const TUNING_MARKER_COLOR = '#f59e0b';
+const TUNING_IDLE_COLOR = '#4b5563';
+
+/**
+ * Draw the tuning graticule along the canvas's bottom edge: a hairline rule,
+ * a centre tick, the note letter, and a marker whose position is the cents
+ * offset and whose colour is the in-tune verdict.
+ *
+ * ⚠ THE IDLE STATE IS DRAWN, NOT SKIPPED. With no pitched signal the strip
+ * still paints its rule, tick and a dim centred marker — so "the tuner found
+ * nothing" and "the tuner is not on this surface" are different pictures. A
+ * strip that vanished on silence would make the negative control unobservable.
+ */
+function drawTuningStrip(
+  ctx2d: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
+  tuning: ScopeTuning,
+  w: number,
+  h: number,
+): void {
+  const top = h - TUNING_STRIP_H;
+  const midY = top + TUNING_STRIP_H / 2;
+  const idle = tuning.cents === null;
+
+  ctx2d.save();
+
+  // The strip's own baseline — separates the graticule from the trace above it.
+  ctx2d.strokeStyle = '#1f242c';
+  ctx2d.lineWidth = 1;
+  ctx2d.beginPath();
+  ctx2d.moveTo(0, top);
+  ctx2d.lineTo(w, top);
+  ctx2d.stroke();
+
+  // Centre tick — the 0 ¢ reference.
+  ctx2d.globalAlpha = 0.6;
+  ctx2d.strokeStyle = '#6b7280';
+  ctx2d.beginPath();
+  ctx2d.moveTo(w / 2, top + 2);
+  ctx2d.lineTo(w / 2, h - 2);
+  ctx2d.stroke();
+  ctx2d.globalAlpha = 1;
+
+  // The note LETTER — a graticule annotation naming what the marker is
+  // measuring against, the same class of text as the `±5V` corner label. The
+  // Hz, the cents and the confidence are NOT drawn; they are on `aria-label`.
+  ctx2d.font = '9px ui-monospace, monospace';
+  ctx2d.fillStyle = idle ? TUNING_IDLE_COLOR : '#e5e7eb';
+  ctx2d.globalAlpha = idle ? 0.5 : 0.85;
+  ctx2d.fillText(tuning.note ?? '—', 4, h - 3);
+  ctx2d.globalAlpha = 1;
+
+  // The MARKER.
+  const x = tuningPixelX(tuning.cents ?? 0, w);
+  ctx2d.fillStyle = idle
+    ? TUNING_IDLE_COLOR
+    : isInTune(tuning.cents)
+      ? TUNING_IN_TUNE_COLOR
+      : TUNING_MARKER_COLOR;
+  ctx2d.globalAlpha = idle ? 0.35 : 1;
+  ctx2d.fillRect(x - 1.5, top + 2, 3, TUNING_STRIP_H - 4);
+
+  ctx2d.restore();
+}
+
 // Background fill color (the dark scope screen). Shared by every draw path.
 const BG = '#0a0c10';
 
@@ -219,9 +353,17 @@ export function drawScope(
 ): void {
   if (isDefaultIntensity(params.intensity)) {
     drawScopeLegacy(ctx2d, snap, params, width, height);
-    return;
+  } else {
+    drawScopePhosphor(ctx2d, snap, params, width, height);
   }
-  drawScopePhosphor(ctx2d, snap, params, width, height);
+  // ⚠ ONE CALL SITE, AFTER THE DISPATCH — so the graticule cannot end up on one
+  // render path and not the other, and so the two paths above stay byte-for-
+  // byte what they were. With `tuning` absent (the card, the video bridge) this
+  // is a no-op and the legacy render remains PIXEL-IDENTICAL, which is the
+  // property `isDefaultIntensity`'s whole short-circuit exists to preserve.
+  if (params.tuning) {
+    drawTuningStrip(ctx2d, params.tuning, width, height);
+  }
 }
 
 /** The pre-phosphor render: clear, bg, one screen of trace at full
