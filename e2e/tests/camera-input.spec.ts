@@ -361,7 +361,7 @@ test.describe('CAMERA → OUTPUT (fake webcam) — getUserMedia integration @cam
   // webcam + pre-granted permission (playwright.config.ts is in the collab
   // attest basis — adding a project for one test would force a re-attest).
   // Renderer-tolerant: canvas INEQUALITY between two frames, never exact pixels.
-  test('under ?shell=1 the camera card + picker stay in the lane and camera → OUTPUT paints moving pixels', async ({ page }) => {
+  test('under the default shell the camera card runs HEADLESS, the picker moves to the faceplate, and camera → OUTPUT paints moving pixels', async ({ page }) => {
     test.setTimeout(90_000);
 
     await page.goto('/rack');
@@ -384,25 +384,71 @@ test.describe('CAMERA → OUTPUT (fake webcam) — getUserMedia integration @cam
       ],
     );
 
-    // The CARVE-OUT: the real card in the lane, never the uniform tile…
+    // ⚠ THE CARVE-OUT IS GONE, AND THIS BLOCK USED TO ASSERT IT. It read:
+    //
+    //   // The CARVE-OUT: the real card in the lane, never the uniform tile…
+    //   const camLane = page.locator('.svelte-flow__node[data-id="v-cam"]');
+    //   await expect(camLane.locator('…module-shell-placeholder')).toHaveCount(0);
+    //   // …so the DEVICE PICKER is reachable + lists the fake device.
+    //   const select = camLane.locator('[data-testid="camera-device-select"]');
+    //   await expect(select, 'device picker usable in the shell lane').toBeVisible();
+    //
+    // ⚠ AND IT KEPT PASSING AFTER THE PROMOTION MADE IT FALSE — this file did
+    // not go red, which is why it is being corrected deliberately rather than by
+    // following a failure. Both legs went green-and-blind for reasons the
+    // assertions cannot show:
+    //   * the placeholder leg still passes, but for a NEW reason — the lane is a
+    //     `module-shell` FACE now, not the real card the carve-out gave it;
+    //   * `<HeadlessSourceHost>` mounts the real card in its OWN single-node
+    //     `<SvelteFlow>`, so `.svelte-flow__node[data-id="v-cam"]` matches TWO
+    //     elements and `camLane.locator(...)` resolved through the hosted copy —
+    //     which sits at `left:-9999px` inside a `pointer-events: none` subtree,
+    //     and Playwright's `toBeVisible` is satisfied by exactly that.
+    // Measured on the sibling case: the only picker in the document had
+    // `rect.left = -9976`. See `workflow-shell-video.spec.ts`, which carries the
+    // full measurement and now owns the reachability claim generally.
+    //
+    // What replaces it asserts the promotion's ACTUAL shape, and the
+    // real-webcam legs below are unchanged — this project is the only one with
+    // a fake device, so it stays the home of "the picker lists a REAL camera".
     const camLane = page.locator('.svelte-flow__node[data-id="v-cam"]');
-    await expect(camLane.locator('[data-testid="module-shell-placeholder"]')).toHaveCount(0);
-    // …so the DEVICE PICKER is reachable + lists the fake device.
-    const select = camLane.locator('[data-testid="camera-device-select"]');
-    await expect(select, 'device picker usable in the shell lane').toBeVisible({ timeout: 15_000 });
+    await expect(
+      camLane.locator('[data-testid="module-shell"]').first(),
+      'the promoted CAMERA paints a faceplate tile in the lane',
+    ).toBeVisible({ timeout: 15_000 });
+
+    // The REAL card is alive off-screen, and it is what owns getUserMedia — so
+    // this is also the leg that proves the source survived the swap.
+    const camHost = page.locator('[data-testid="headless-source-host"][data-node-id="v-cam"]');
+    await expect(camHost, 'the real card is kept alive in the headless host').toHaveCount(1);
+    await expect(
+      camHost.locator('[data-testid="camera-status"]'),
+      'and it reaches streaming with a REAL getUserMedia stream',
+    ).toHaveAttribute('data-state', 'streaming', { timeout: 20_000 });
+
+    // The DEVICE PICKER is reachable where it now lives — the faceplate — and
+    // it lists the fake device. Opened and closed again so the OUTPUT poll below
+    // measures the lane, exactly as it did before.
+    await page.evaluate(() => {
+      (globalThis as unknown as { __openDockFullView: (i: string) => void }).__openDockFullView('v-cam');
+    });
+    const dock = page.locator('[data-testid="dock-full-view"]');
+    await expect(dock).toHaveCount(1, { timeout: 20_000 });
+    const select = dock.locator('[data-testid="cameraInput-face-device-select"]');
+    await expect(select, 'device picker usable on the faceplate').toBeVisible({ timeout: 15_000 });
     await page.waitForFunction(
       () => {
-        const el = document.querySelector('[data-testid="camera-device-select"]') as HTMLSelectElement | null;
+        const el = document.querySelector(
+          '[data-testid="dock-full-view"] [data-testid="cameraInput-face-device-select"]',
+        ) as HTMLSelectElement | null;
         return el ? el.options.length > 0 : false;
       },
       undefined,
       { timeout: 10_000 },
     );
     await expect(select).toBeEnabled();
-
-    // The SOURCE actually reached the engine: the card streams…
-    await expect(camLane.locator('[data-testid="camera-status"]'))
-      .toHaveAttribute('data-state', 'streaming', { timeout: 20_000 });
+    await page.getByTestId('faceplate-collapse').click();
+    await expect(dock).toHaveCount(0, { timeout: 20_000 });
 
     // …and the OUTPUT surface paints MOVING pixels (the fake device's animated
     // pattern). Pre-fix this canvas stayed black — "no video at all".
@@ -524,11 +570,19 @@ test.describe('CAMERA node-owned media lifetime @camera-integration', () => {
           // assert it here where a real double-mount actually happens.
           count: all.length,
           tracks: s ? s.getVideoTracks().map((t) => t.readyState) : [],
+          // ⚠ THE `host` BRANCH IS NEW AND IS NOT COSMETIC. Before the
+          // promotion this element could only be in the dock, in parking, or in
+          // the lane; a promoted cameraInput's real card lives in
+          // <HeadlessSourceHost>, which is none of those and used to report as
+          // 'lane'. A label that cannot name where the thing actually is makes
+          // the assertions below unable to state what they mean.
           where: v.closest('[data-testid="dock-full-view"]')
             ? 'dock'
-            : v.closest('[data-testid="node-media-parking"]')
-              ? 'parking'
-              : 'lane',
+            : v.closest('[data-testid="headless-source-host"]')
+              ? 'host'
+              : v.closest('[data-testid="node-media-parking"]')
+                ? 'parking'
+                : 'lane',
         };
       });
 
@@ -537,13 +591,33 @@ test.describe('CAMERA node-owned media lifetime @camera-integration', () => {
     expect(before.tracks, `a live capture track before the move: ${JSON.stringify(before)}`)
       .toEqual(['live']);
 
-    // EXPAND — for a NON_SHELL type the lane KEEPS its real card and the dock
-    // full-view mounts a SECOND one. That is precisely the hazard Canvas
-    // documents ("a second mount would run two media elements for one node and
-    // the first to unmount would detach the survivor's source"), so this is the
-    // real-app exercise of the registry's transfer + owner-checked release:
-    // there is only ever ONE element, and whichever mount tears down last
-    // cannot strand it.
+    // EXPAND.
+    //
+    // ⚠ THIS USED TO BE A DOUBLE-MOUNT EXERCISE AND IS NOT ANY MORE. The note
+    // here read: "for a NON_SHELL type the lane KEEPS its real card and the dock
+    // full-view mounts a SECOND one … the real-app exercise of the registry's
+    // transfer + owner-checked release". That was true while cameraInput was
+    // carved out of the shell swap. It is promoted now, so the lane paints a
+    // faceplate, the dock paints a faceplate, and the real card sits in
+    // <HeadlessSourceHost> throughout — one mount, not two.
+    //
+    // ⚠ SO THE CASE CHANGED SUBJECT RATHER THAN LOSING ONE, and the new subject
+    // is sharper. `DockFullView` renders `{#if migrated} <ModuleShell/> {:else}
+    // <CardComponent/>`, so for a promoted module the tray mounts NO card —
+    // which means Canvas's headless-host derivation must keep hosting this node
+    // WHILE its faceplate is open. It very nearly did not: that exclusion was an
+    // unconditional "skip every full-view node", written when no card-owned
+    // source had ever been promoted, and it is now conditioned on `migrated`
+    // (`fullViewShowsFaceInstead`). If that condition regresses, the card
+    // unmounts on expand and its <video> is released to PARKING — which is
+    // exactly what `where` below now distinguishes, and why the `host` label had
+    // to exist for this assertion to be sayable at all.
+    //
+    // The registry invariant it used to prove (ONE element per node, owner-
+    // checked release) is still asserted here and is still real; what changed is
+    // that the second mount it was defending against no longer occurs on THIS
+    // module. `videobox`/`videovarispeed` still exercise the two-mount path in
+    // `collapse-keeps-playing.spec.ts`.
     await page.evaluate(() => {
       (globalThis as unknown as { __openDockFullView: (i: string) => void })
         .__openDockFullView('v-cam');
@@ -551,11 +625,31 @@ test.describe('CAMERA node-owned media lifetime @camera-integration', () => {
     await expect(page.locator('[data-testid="dock-full-view"]')).toHaveCount(1, { timeout: 20_000 });
 
     const expanded = await waitForLiveCapture();
-    expect(expanded.present, `exactly one element while double-mounted: ${JSON.stringify(expanded)}`)
+    expect(expanded.present, `the element still exists while expanded: ${JSON.stringify(expanded)}`)
       .toBe(true);
     expect(expanded.count, 'never two <video> elements for one node').toBe(1);
     expect(expanded.tracks, `capture still live while expanded: ${JSON.stringify(expanded)}`)
       .toEqual(['live']);
+    // ⚠ THE GUARD FOR THE FULL-VIEW EXCLUSION, AND IT IS THE ONLY LEG THAT CAN
+    // SEE THAT REGRESSION — measured, not argued. Reverting
+    // `fullViewShowsFaceInstead` to a constant `false` in Canvas (i.e. restoring
+    // the unconditional "skip every full-view node") and re-running this test
+    // reports:
+    //
+    //   {"present":true,"count":1,"tracks":["live"],"where":"parking"}
+    //
+    // The capture is STILL LIVE and there is STILL exactly one element — so
+    // `tracks` and `count`, the two assertions directly above, both pass on the
+    // broken tree. They are structurally blind to it, because the element is
+    // node-owned and the registry saves the stream whether or not any card is
+    // mounted. `where` is what separates "hosted" from "rescued by the
+    // registry", and 'parking' is the signature of the card having been
+    // unmounted from every surface at once.
+    expect(
+      expanded.where,
+      `the real card must still be HOSTED while its faceplate is open — 'parking' means it ` +
+        `was unmounted everywhere and only the node registry saved the stream: ${JSON.stringify(expanded)}`,
+    ).toBe('host');
 
     // COLLAPSE — the dock mount goes away. Pre-fix, that unmount stopped the
     // tracks and the camera was gone for good.
