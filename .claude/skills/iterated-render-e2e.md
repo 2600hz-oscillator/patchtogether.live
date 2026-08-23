@@ -207,7 +207,7 @@ ratchet: convert or annotate, re-run accept, commit the shrunk artifact, and rea
 the removals in the diff as the measurement.
 
 ⚠ **DOOM is carved out of the burn-down permanently, by owner ruling
-(2026-08-17): _"do not fuck with doom in any way without specific approval"_.**
+(2026-08-17): _"do not [touch] doom in any way without specific approval"_.**
 Its ~49 entries stay in the ledger, so **the ledger's floor is not zero** — the
 payoff campaign (#1787) finishes with them still listed, and nothing may assert
 an empty ledger or a remaining count.

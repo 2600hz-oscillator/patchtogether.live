@@ -301,7 +301,7 @@ to.** Both mechanisms are removed from the platform, not deprecated:
   the vertical space. I DO NOT WANT THESE RIGHT HAND TEXT AREAS I DO NOT WANT
   EXTRA TEXT. i explicitly already dictated that several times."*
 - **`face.hero.readouts`** — the labelled strip under the hero. *"you don't need
-  to have the out-silent text at all … we absolutely have to stop doing shit
+  to have the out-silent text at all … we absolutely have to stop doing [things]
   like that. i said minimal, and good use of screen real estate."* (#1957)
 
 `FaceReadout`, `FacePreset`, `FaceSidebarBlock`, `sidebarPlan`, `readoutText`,

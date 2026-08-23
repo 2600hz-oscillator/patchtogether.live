@@ -78,7 +78,7 @@ the umbrella's `needs:`/`env:`/failing-`if`, so none could ever block a merge â€
 and `vrt` and `behavioral-coverage` had grown into their caps and were turning
 main runs `cancelled`, which poisons the green signal AND disqualifies the run
 from `daily-prod-deploy.yml`'s `find-green` (it rejects any conclusion that is
-not success/skipped/null). Owner ruling: *"shit that is not gating, is
+not success/skipped/null). Owner ruling: *"[anything] that is not gating, is
 worthless"*.
 
 âš  **Merge latency did not change.** None of them was in the umbrella; time to
