@@ -183,6 +183,6 @@ describe('e2e boot bounds are explicit (#1904)', () => {
 // gate WITHOUT BEING TOUCHED and needs no exemption. That is also why the rule
 // is "an explicit timeout" and not "a named constant": the stricter rule would
 // have forced an edit to a DOOM spec, which the standing owner ruling forbids
-// without specific approval ("do not fuck with doom in any way"). DOOM's game
+// without specific approval ("do not [touch] doom in any way"). DOOM's game
 // clock IS its frame clock, so a timing edit re-specifies how far the marine
 // walks. No DOOM file is modified by #1904.

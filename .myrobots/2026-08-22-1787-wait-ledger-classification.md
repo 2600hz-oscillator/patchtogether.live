@@ -72,7 +72,7 @@ a negative assertion the poll is true immediately and covers nothing. Ask of any
 
 ## ⚠ DOOM — 14 entries, permanently exempt
 
-Owner ruling 2026-08-17, verbatim: *"do not fuck with doom in any way without
+Owner ruling 2026-08-17, verbatim: *"do not [touch] doom in any way without
 specific approval."* Not classified, not read, not counted toward the payable
 set. The mechanism is why it generalises: `video/modules/doom.ts` calls
 `runtime.runTic()` inside `surface.draw`, and `runTic` runs exactly one

@@ -1275,7 +1275,7 @@ export interface FaceMonitor {
  * day that the RESTING faceplate paints no derived-state text: "I DO NOT WANT
  * THESE RIGHT HAND TEXT AREAS I DO NOT WANT EXTRA TEXT. i explicitly already
  * dictated that several times" (the spirographs sidebar), then "you don't need
- * to have the out-silent text at all … we absolutely have to stop doing shit
+ * to have the out-silent text at all … we absolutely have to stop doing [things]
  * like that. i said minimal, and good use of screen real estate" (moog984's
  * hero readout row, #1957).
  *

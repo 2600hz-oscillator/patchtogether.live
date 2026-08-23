@@ -84,7 +84,7 @@ vs ~60 fps on a real GPU, and CI runs ten shards in parallel on top of that.
 - Keep a wall-clock cap only to **bound the failure**, never as the gate.
 - ⚠ **DOOM IS EXEMPT FROM THIS RULE. Never convert, annotate or otherwise touch a
   DOOM wait — or any DOOM spec — without specific owner approval** (owner ruling,
-  2026-08-17: *"do not fuck with doom in any way without specific approval"*).
+  2026-08-17: *"do not [touch] doom in any way without specific approval"*).
   Its ~49 ledger entries are permanent, so **the ledger never reaches zero and
   that is intended** — never write an "0 remaining" check. The reason is
   mechanical, not preference: `video/modules/doom.ts` calls `runtime.runTic()`
@@ -323,7 +323,7 @@ passed the gate written for the previous one:
    already dictated that several times"*;
 3. the HERO READOUT STRIP — a labelled row of derived values under the hero, on
    50 of 68 faces, deleted 2026-08-19: *"you don't need to have the out-silent
-   text at all … we absolutely have to stop doing shit like that. i said
+   text at all … we absolutely have to stop doing [things] like that. i said
    minimal, and good use of screen real estate"* (#1957);
 4. the per-control caption a section heading already conveys (`face.bareCells`).
 

@@ -13,7 +13,7 @@ name: CI
 # `behavioral-coverage` at 125) had grown into those caps and were reporting
 # `cancelled` on main runs, which poisons the green signal AND disqualifies the
 # run from `daily-prod-deploy.yml`'s `find-green` (it rejects any job not
-# success/skipped/null). Owner ruling: "shit that is not gating, is worthless".
+# success/skipped/null). Owner ruling: "[anything] that is not gating, is worthless".
 #
 # ⚠ MERGE LATENCY IS UNCHANGED. Time-to-merge was, and remains, pinned by the
 # `e2e` shard matrix inside the umbrella. This is not a speedup; it is the

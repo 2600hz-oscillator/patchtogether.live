@@ -13,7 +13,7 @@
 //     already dictated that several times."*
 //   * on moog984's hero row printing `OUT 1 silent · OUT 2 silent …` —
 //     *"you don't need to have the out-silent text at all … we absolutely have
-//     to stop doing shit like that. i said minimal, and good use of screen real
+//     to stop doing [things] like that. i said minimal, and good use of screen real
 //     estate."* (#1957)
 //
 // The earlier two are already codified in CLAUDE.md: the resting decimal under
