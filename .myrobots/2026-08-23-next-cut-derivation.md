@@ -104,8 +104,11 @@ the face itself.
 ⚠ Every video face in that table also owes a screen on/off toggle and a
 shell-extension, per the owner's fleet-standard direction (2026-08-19) that all
 video cards get one. None of the five plain video modules has a `shell-extension.ts`
-today; 43 modules do, so this is replication rather than invention, but it is not
-free.
+today, while the great majority of already-faced video modules do — so this is
+replication of an established pattern rather than invention, but it is not free.
+Re-derive the current set with
+`ls packages/web/src/lib/ui/modules/*/shell-extension.ts` rather than trusting a
+number written here.
 
 ### The 3 `blocked` — all one capability away from being ordinary faces
 
