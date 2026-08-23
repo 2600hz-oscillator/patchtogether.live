@@ -27,9 +27,17 @@
   // The preview shows the COLOR (heat) output by default; a toggle flips
   // it to the BW (inverted-grayscale, printed-sonogram) output so you can
   // eyeball BOTH looks on the card without patching either out. This is a
-  // pure VIEW switch on the card — both video outputs always render the
-  // SAME binned plane regardless of what the preview shows.
-  let viewBw = $state(false);
+  // pure VIEW switch — both video outputs always render the SAME binned plane
+  // regardless of what the preview shows.
+  //
+  // ⚠ IT IS THE `view` PARAM NOW, NOT COMPONENT STATE (cut B). It used to be
+  // `let viewBw = $state(false)`, which promotion would have DELETED along with
+  // this card: `migrated(type)` stops both surfaces rendering here, and a
+  // control living only in a component has nowhere to go. Reading the param
+  // keeps this card and the faceplate naming the same switch from ONE place,
+  // and it is what makes the toggle survive a reload and a tab switch — which
+  // component state never did.
+  let viewBw = $derived((node?.params.view ?? 0) >= 0.5);
 
   // All ports live in the shared yellow drill-down <PatchPanel> (the post-#767
   // standard — no raw side <Handle> jacks).
@@ -107,7 +115,7 @@
           class:bw={viewBw}
           data-testid="spectrograph-view"
           data-view={viewBw ? 'bw' : 'color'}
-          onclick={() => (viewBw = !viewBw)}
+          onclick={() => set('view')(viewBw ? 0 : 1)}
           title="Preview the COLOR (heat) or B/W (inverted, printed-sonogram) output"
         >{viewBw ? 'B/W' : 'COLOR'}</button>
       </div>

@@ -3723,6 +3723,50 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // CAMERA has no video input, so it is the ORIGIN of everything downstream — a
   // lapsed mark would turn a preview control into a MUTE for every consumer.
   'cameraInput',
+
+  // ── CUT B (2026-08-23) — the "screen-panel" cut, which wanted no panels ────
+  //
+  // SPECTROGRAPH — the cheapest face in the fleet, and the one that had to
+  // CREATE a param to keep an affordance.
+  //
+  // ⚠ THE CUT PRESCRIBED A REGISTERED PANEL FOR ITS SCREEN. It is a BODY, and
+  // the discriminator is mechanical rather than aesthetic — stated on `wavecel`
+  // in `shell-cells.ts`: a PANEL is right when the picture is DERIVED from
+  // params and `node.data` with no analyser, a BODY when the surface carries a
+  // per-frame ENGINE READ. Every column of this sonogram comes from
+  // `analyser.getFloatFrequencyData`, and the 256-column scroll buffer lives in
+  // the module's FACTORY CLOSURE reachable only through `drawFrame`. There is
+  // nothing on the node for a panel to derive.
+  //
+  // ⚠ THE `view` PARAM IS NEW, AND CREATING IT IS THE POINT. COLOR/B-W was
+  // `let viewBw = $state(false)` — component state, which promotion DELETES
+  // along with the card. Functional parity is not negotiable, so the switch
+  // moved onto the contract. It is display-only (both video outputs always
+  // render both colormaps; this picks which port a PREVIEW pulls), so no
+  // downstream consumer can observe it and not one rendered frame changes.
+  // It carries an `options` roster for the dockscope reason: unnamed, a 2-state
+  // toggle announces pressed/unpressed while what this picks is one of two
+  // COLORMAPS, neither of which is the other's "off".
+  //
+  // ⚠ `glyph: 'none'` IS FORCED TWICE OVER, which is unusual and worth stating.
+  // No LIVE glyph: `glyphBinding` needs a primary AUDIO output and both of this
+  // module's outputs are `mono-video`, so any literal resolves `static` — the
+  // dead-glyph clause refuses it. And no PICTURE glyph either: `hasVideoSurface`
+  // is `domain === 'video'` and this def is `domain: 'audio'` despite emitting
+  // video. So its LANE tile paints two ranked cells and nothing else, and the
+  // sonogram is a DOCK surface by construction — the only face in the programme
+  // whose module emits video and whose tile shows none.
+  //
+  // ⚠ DETERMINISM IS FREE. `__spectrographVrtFreeze` is read INSIDE the module,
+  // not in the card, so the body inherits the frozen fill without mirroring a
+  // global — the opposite of dockscope, where the seed lived in the card and
+  // had to be duplicated or the face would have been unbaselinable.
+  //
+  // ZERO ATTEST despite adding a param: `webgl-attest-lib.ts` admits
+  // `lib/video/**`, any `lib/ui/modules/*.svelte` that greps as creating a real
+  // WebGL context, and exactly two audio defs (`cube.ts`, `wavesculpt.ts`).
+  // This def is none of those, and both surfaces are Canvas2D.
+  'spectrograph',
 ]);
 
 /**
