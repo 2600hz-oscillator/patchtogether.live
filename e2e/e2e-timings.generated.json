@@ -1,5 +1,5 @@
 {
-  "_comment": "Per-spec-file cost in SECONDS of test execution (CPU time, summed across a file's tests). Regenerate with `flox activate -- task e2e:timings:accept -- <ci-run-id>` (scripts/e2e-timings-accept.mjs) and REVIEW THE DIFF. Costs only — contention classes are derived at plan time by scripts/e2e-contention-scan.mjs and are deliberately NOT committed here (#1600).",
+  "_comment": "Per-spec-file cost in SECONDS of test execution (CPU time, summed across a file's tests). Regenerate with `flox activate -- task e2e:timings:accept -- <ci-run-id>` (scripts/e2e-timings-accept.mjs) and REVIEW THE DIFF. Costs only \u2014 contention classes are derived at plan time by scripts/e2e-contention-scan.mjs and are deliberately NOT committed here (#1600).",
   "_source": "blob-report artifacts of ci.yml run 32600989329 (2317 tests, 369 files, 19552 CPU-s)",
   "files": {
     "4plexer.spec.ts": 23,
@@ -30,7 +30,6 @@
     "bentbox.spec.ts": 31,
     "blood-audio-output.spec.ts": 48,
     "blood-ingame.spec.ts": 45.9,
-    "blood-keyboard.spec.ts": 46,
     "blood-mount.spec.ts": 16.6,
     "bluebox.spec.ts": 38.5,
     "bridge-late-materialization.spec.ts": 10.6,

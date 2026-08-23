@@ -340,7 +340,10 @@ async function openDockFor(page: Page, type: string) {
   await expect(shell, `the ${type} shell tile`)
     .toBeVisible({ timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
   await shell.getByTestId('shell-open-dock').click();
-  await expect(page.getByTestId('dock-full-view'), `the ${type} dock full view`).toBeVisible();
+  await expect(page.getByTestId('dock-full-view'), `the ${type} dock full view`)
+    // Mount-dependent, so bounded from the ONE export site rather than left on
+    // the 5 s default — the same correction the polls below carry.
+    .toBeVisible({ timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
 }
 
 /** Close the dock and PROVE it closed — so a module that fails to release the pane
@@ -452,10 +455,29 @@ for (const [batchIdx, batch] of BATCHES.entries()) {
       // Absent => false => ON, so an existing rack opens unchanged.
       await expect(toggle, 'starts ON').toHaveAttribute('aria-pressed', 'true');
       await expect(toggle).toHaveText('SCREEN ON');
-      await expect(canvas, 'the picture is showing').toBeVisible();
+      await expect(canvas, 'the picture is showing')
+        .toBeVisible({ timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
       await expect
+        // ⚠ BOUNDED WITH THE BOOT BUDGET, NOT PLAYWRIGHT'S 5 s POLL DEFAULT —
+        // and this file WROTE THAT RULE twenty lines up and then failed to apply
+        // it to its own polls. CI run 32611882426 shard 3: this exact line and
+        // its twin below produced `Timeout 5000ms exceeded while waiting on the
+        // predicate` — one hard failure (batch 2) and one recovered-on-retry
+        // flake (batch 1), which is a RED run under the #1847 gate either way.
+        //
+        // ⚠ THE BUDGET WAS THE GATE, WHICH IS THE THING CLAUDE.md FORBIDS. The
+        // `toBeVisible()` immediately above PASSED on both failures, so the
+        // canvas was mounted and visible; only its measured box had not reached
+        // 50 CSS px yet. On a hot 2-core shard under SwiftShader, laying out and
+        // painting a 480x360 canvas in a freshly-mounted dock body can take
+        // longer than a flat 5 s — a wall-clock cap must BOUND the failure, never
+        // decide it. The assertion is unchanged (still > 50 px on the real
+        // subject, still auto-retrying); only the time allowed to settle now
+        // comes from the ONE export site instead of a library default that is a
+        // different assertion on every runner (#1875/#1906).
         .poll(async () => (await canvas.boundingBox())?.height ?? 0, {
           message: `${type}: the preview occupies real vertical space when ON (CSS px)`,
+          timeout: SLOW_BOOT_TEST_TIMEOUT_MS,
         })
         .toBeGreaterThan(50);
 
@@ -473,11 +495,15 @@ for (const [batchIdx, batch] of BATCHES.entries()) {
       await expect(toggle, 'the toggle survives its own OFF state').toBeVisible();
 
       await toggle.click();
-      await expect(canvas, 'the picture returns').toBeVisible();
+      await expect(canvas, 'the picture returns')
+        .toBeVisible({ timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
       await expect(toggle, 'back ON').toHaveAttribute('aria-pressed', 'true');
       await expect
+        // Same budget, same reason as the poll above — the two are a pair and
+        // must not drift apart.
         .poll(async () => (await canvas.boundingBox())?.height ?? 0, {
           message: `${type}: the preview has its space back (CSS px)`,
+          timeout: SLOW_BOOT_TEST_TIMEOUT_MS,
         })
         .toBeGreaterThan(50);
       // …and it is THIS faceplate's canvas, not a stray sharing the testid — see
@@ -530,7 +556,8 @@ test.describe(`${PERSISTENCE_SUBJECT}: the SCREEN state PERSISTS`, () => {
 
     const shell = page.locator(`.svelte-flow__node[data-id="${id}"] [data-testid="module-shell"]`);
     await shell.getByTestId('shell-open-dock').click();
-    await expect(page.getByTestId('dock-full-view')).toBeVisible();
+    await expect(page.getByTestId('dock-full-view'))
+      .toBeVisible({ timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
 
     await expect(page.locator(TOGGLE), 'still OFF after a remount')
       .toHaveAttribute('aria-pressed', 'false');
