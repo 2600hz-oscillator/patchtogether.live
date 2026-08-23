@@ -1467,7 +1467,7 @@
          full-width row of labelled derived values used to sit under the stage
          on fifty of the faces. The owner removed the shape outright (2026-08-19,
          on moog984: "you don't need to have the out-silent text at all … we
-         absolutely have to stop doing shit like that. i said minimal, and good
+         absolutely have to stop doing [things] like that. i said minimal, and good
          use of screen real estate"). The value belongs on the control it
          describes, in `aria-valuetext`. See `ModuleFaceHero` in graph/types.ts
          for the full ruling set and `face-resting-text-source.test.ts` for the

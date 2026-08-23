@@ -1,7 +1,7 @@
 // e2e/tests/doom-late-join.spec.ts
 //
 // ⚠ DOOM SPECS ARE NORMALLY OFF-LIMITS — the standing owner ruling is
-//   "do not fuck with doom in any way without specific approval". The waits in
+//   "do not [touch] doom in any way without specific approval". The waits in
 //   this file were re-budgeted under a SPECIFIC approval given by the owner on
 //   2026-08-18, verbatim:
 //     "okay see if you can go make the doom tests blurrier and less flakey,
