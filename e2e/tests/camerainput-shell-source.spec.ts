@@ -50,7 +50,16 @@
 // renderer-dependent wait anywhere in this file — not a millisecond budget, not
 // a frame count standing in for one.
 
-import { test, expect, type Page } from '@playwright/test';
+// ⚠ ARMED WITH `errorWatch`, WHICH IS PART OF THE ASSERTION HERE RATHER THAN
+// HYGIENE. The status registry notifies its subscribers SYNCHRONOUSLY from
+// inside the card's publish `$effect`, and the subscriber is a DIFFERENT
+// component (the dock body) writing its own `$state`. Cross-component state
+// writes during an effect are exactly the shape Svelte 5 warns about, and a
+// warning here would be a real design smell in a seam that runs on every camera
+// state change. A clean console across all three tests is the evidence that the
+// notify/subscribe direction is sound; without this fixture the specs would pass
+// while the console filled up.
+import { test, expect, type Page } from './_fixtures';
 import { spawnPatch } from './_helpers';
 import { SLOW_BOOT_TEST_TIMEOUT_MS } from '../_helpers/boot-budget';
 import { installRenderSmokeHooks, stepAndReadStats, assertRenderStats } from './_render-smoke';
@@ -128,7 +137,7 @@ async function spawnCameraChain(page: Page): Promise<void> {
 }
 
 test.describe('CAMERA under the DEFAULT shell — promoted lane, headless source', () => {
-  test('the lane paints a FACEPLATE, the real card runs headless, and the source still produces', async ({ page }) => {
+  test('the lane paints a FACEPLATE, the real card runs headless, and the source still produces', async ({ page, errorWatch }) => {
     test.setTimeout(SLOW_BOOT_TEST_TIMEOUT_MS * 2);
 
     await installRenderSmokeHooks(page);
@@ -222,7 +231,7 @@ test.describe('CAMERA under the DEFAULT shell — promoted lane, headless source
     assertRenderStats(afterDock, FIXED_STEPS);
   });
 
-  test('the faceplate carries the ACQUIRE gesture, and the card\'s answer comes back to it', async ({ page }) => {
+  test('the faceplate carries the ACQUIRE gesture, and the card\'s answer comes back to it', async ({ page, errorWatch }) => {
     test.setTimeout(SLOW_BOOT_TEST_TIMEOUT_MS * 2);
 
     await stubMediaDevices(page);
@@ -290,7 +299,7 @@ test.describe('CAMERA under the DEFAULT shell — promoted lane, headless source
     ).toContainText(/site settings/i, { timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
   });
 
-  test('`?shell=legacy` is UNCHANGED — the real card is in the lane and no host exists', async ({ page }) => {
+  test('`?shell=legacy` is UNCHANGED — the real card is in the lane and no host exists', async ({ page, errorWatch }) => {
     // ⚠ THE ESCAPE HATCH IS PART OF THE CONTRACT, and this promotion is exactly
     // the kind of change that quietly breaks it: the headless host would be a
     // SECOND mount of a card that is already in the lane, which is the
