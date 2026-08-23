@@ -214,6 +214,21 @@ const EXTENSION_BODY_ROLES: Readonly<Record<string, BodyRule>> = {
   colorizer: { role: 'picture', why: 'the mono-to-colour tinter\'s live preview canvas and its SCREEN switch. Sits mid-chain by construction (mono-video in, video out), which is why its body keeps the engine\'s watch mark alive while the screen is off (#2015).' },
   edges: { role: 'picture', why: 'the Sobel outline filter\'s live preview canvas and its SCREEN switch. Stateless — the outline is a pure per-pixel function of (input, threshold, thickness) — so SCREEN OFF costs it nothing but the OUTPUT, which is what the retained watch mark protects (#2015).' },
   inwards: { role: 'picture', why: 'the concentric-ring generator\'s live preview canvas and its SCREEN switch. The only SOURCE of the four: it has no video input, so a lapsed watch mark would mute the generator every downstream node samples rather than merely stalling a preview (#2015).' },
+  // ── SCOREBOARD (2026-08-22, #2089) — a picture that is a NUMBER ──────────
+  //
+  // ⚠ THE ENTRY WHERE "TEXT ON THE SURFACE" NEEDS ITS SHARPEST READING, which
+  // is why it is spelled out. The body's canvas paints FOUR DIGITS, and digits
+  // are the thing this roster's rulings are usually about. They are permitted
+  // here — indeed unavoidable — because they are not a READOUT OF A CONTROL:
+  // they are the module's OUTPUT PICTURE, the very frame the `out` port emits
+  // to whatever is patched downstream. Suppressing them would not tidy a
+  // faceplate, it would delete the module's product. The resting-text ruling is
+  // about derived state printed BESIDE a control; this is the signal itself.
+  //
+  // Everything the body paints as CHROME is one control caption: the SCREEN
+  // button. The card has no readout row, no state word and no decimal, so
+  // unlike most entries here nothing had to be removed on promotion.
+  scoreboard: { role: 'picture', why: 'the 4-digit neon counter\'s live display and its SCREEN switch — the module\'s entire product, since it has no video input and no audio path: two gates in, four digits out. ⚠ The DIGITS are the OUTPUT PICTURE (what `out` emits), not a readout of a control, which is why numerals on this surface are correct rather than a resting-text violation. ⚠ SCREEN OFF keeping the watch mark is load-bearing on STATE here, not just on the picture: the counter advances on gate edges the factory detects during draw, so a lapsed mark would leave SCORE edges UNCOUNTED and the number WRONG when the screen returns — not merely stale (#2015).' },
   // ── ACIDWARP (2026-08-22, #2111) — the module that IS its display ────────
   //
   // TEXT ON THE SURFACE, exhaustively: the SCREEN button's own caption. Nothing

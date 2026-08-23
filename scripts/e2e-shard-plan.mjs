@@ -122,6 +122,28 @@ export const PENDING_FIRST_MEASUREMENT = [
       + 'SUPPLY THIS NUMBER, which is the natural wrong assumption: its source run predates quadralogical.',
   },
   {
+    spec: 'scoreboard-face-screen.spec.ts',
+    why:
+      '#2089 — new with the SCOREBOARD faceplate. Two legs covering what a SCREENSHOT CANNOT '
+      + 'SEE: this face DOES have dock and compact baselines, so what the plate looks like is '
+      + 'already pinned, but a still image cannot show that the canvas unmounts on SCREEN OFF, '
+      + 'that the state lands on `node.data` rather than in component state, or that switching '
+      + 'back gives a live picture instead of a stale frame. '
+      + '⚠ MEASURED UNDER `E2E_SWIFTSHADER=1`: warm server, single worker, 20.2 s for a REPEAT=3 '
+      + 'flake-check of both legs, i.e. **~6.7 s per pass** (SCREEN ON ~4.4 s, SCREEN OFF ~2.0 s). '
+      + 'On a real GPU the pair runs in 7.4 s, so the software renderer costs this spec almost '
+      + 'nothing — unsurprising, since the module rasterizes four digits into a 2D canvas and '
+      + 'uploads them, with no shader work worth the name. '
+      + '⚠ AND IT IS THE CHEAPEST FACE SPEC IN THE LANE BY DESIGN: ONE node, no input chain. '
+      + 'scoreboard is a generator whose only inputs are two CV gates, so nothing needs patching '
+      + 'to exercise the toggle. Cost is the axis a local SwiftShader run does NOT measure (that '
+      + 'flag changes the renderer, not cold boot or ten-way shard contention), which is why this '
+      + 'spec also takes `SLOW_BOOT_TEST_TIMEOUT_MS` from the outset rather than discovering the '
+      + 'default 30 s on a shared runner the way a sibling spec did. '
+      + 'Run `flox activate -- task e2e:timings:accept` on the first green CI run after this '
+      + 'merges and DELETE this entry.',
+  },
+  {
     spec: 'acidwarp-face-screen.spec.ts',
     why:
       '#2111 — new with the ACIDWARP faceplate. Three legs: the plasma display paints on the '
