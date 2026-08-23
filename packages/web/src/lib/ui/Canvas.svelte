@@ -222,7 +222,7 @@
   import { migrated } from '$lib/ui/workflow/strict-faces';
   // DOM-SOURCE seam: a video module whose source lives on its CARD stays alive
   // in an off-screen host when the shell swaps its lane card away.
-  import { HEADLESS_MOUNT_LANE_TYPES, DOM_SOURCE_LANE_TYPES, needsHeadlessSourceMount } from '$lib/ui/workflow/dom-source-modules';
+  import { HEADLESS_MOUNT_LANE_TYPES, DOM_SOURCE_LANE_TYPES, CARD_PRODUCER_LANE_TYPES, needsHeadlessSourceMount } from '$lib/ui/workflow/dom-source-modules';
   import { cameraStatus } from '$lib/ui/media/camera-status-registry';
   import { groupCardHostsChildCard } from '$lib/ui/modules/group-viz-hosts';
   import { nodeMedia } from '$lib/ui/media/node-media-registry';
@@ -2388,7 +2388,32 @@
     const out: ModuleNode[] = [];
     for (const n of snapshot.nodes) {
       if (!HEADLESS_MOUNT_LANE_TYPES.has(n.type)) continue;
-      if (isCanvasHiddenNode(n)) continue;
+      // ⚠ THE PINNED ARM. A canvas-hidden node is skipped because SOME OTHER
+      // surface mounts its real card — for a PINNED drawer singleton that surface
+      // is the dock rail. But `dockRailRendersFace` makes the rail paint the
+      // FACEPLATE instead once the module is promoted, and then the producer card
+      // mounts NOWHERE: no lane tile (canvas-hidden), no rail card (faced), and
+      // no headless host (skipped right here).
+      //
+      // ⚠ AND THIS IS A PARITY RESTORATION, NOT A NEW MOUNT — which matters,
+      // because the skip's own stated reason is parity: canvas-hidden nodes
+      // "render no lane card in preview-off EITHER, so hosting them would ADD
+      // engine state the shell-off rack doesn't have". That argument INVERTS for
+      // a faced producer. Under `?shell=legacy` `shellFaces` is false, so the rail
+      // renders the CARD and the producer IS alive; under the default shell it
+      // renders the face and the producer is DEAD. The two shells disagree, which
+      // is the very thing the skip exists to prevent.
+      //
+      // Scoped exactly as #2148 scoped its sibling (`fullViewShowsFaceInstead`):
+      // gated on CARD_PRODUCER membership, so hidden CAMERAS — the other kind of
+      // canvas-hidden node, and a DOM_SOURCE rather than a producer — are
+      // untouched. timelorde is the only member of pinnable ∩ card-owned-source.
+      const railShowsFaceInstead =
+        isCanvasHiddenNode(n) &&
+        shellFaces &&
+        migrated(n.type) &&
+        CARD_PRODUCER_LANE_TYPES.has(n.type);
+      if (isCanvasHiddenNode(n) && !railShowsFaceInstead) continue;
       // ⚠ THE DOCK FULL VIEW ONLY MOUNTS THE REAL CARD FOR AN UN-MIGRATED
       // MODULE, and this used to be an unconditional `continue`. See the
       // `dockFullViewMountsCard` note below — the exclusion moved into
