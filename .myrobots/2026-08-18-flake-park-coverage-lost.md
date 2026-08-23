@@ -112,6 +112,30 @@ This is the class the poly/MIDI rule exists for. The standing finding is that en
 
 ---
 
+## Later additions
+
+### 2026-08-22 — `quadralogical-face-screen.spec.ts` (both legs), parked on #2120
+
+⚠ **This one is NOT the recovered-on-retry shape the census above records, and the difference is the whole point of the entry.** Both legs failed **both attempts**, at the **full 90 s** `SLOW_BOOT_TEST_TIMEOUT_MS`, inside `page.evaluate` in `sampleQuadrants`. Nothing here is nondeterministic — it is **under-budgeting**, and it has two distinct causes that need two distinct fixes.
+
+**The test is already written correctly.** Its in-page loop counts **240 frames** via rAF rather than wall-clock, which is exactly what the frames-not-milliseconds standard asks for. What does not scale is the per-test **bound**: `SLOW_BOOT_TEST_TIMEOUT_MS` is a flat 90 s sized for **boot**, while this spec spends a boot *and* a 240-frame sample. At the measured 7.9 fps under SwiftShader that sample alone is ~30 s.
+
+**Why it surfaced now:** batch-22 G3 added four scenes, the packer re-packed the shards, and these two legs landed on a hot one — the load-sensitivity class of #2096/#2114, where the neighbours change and the timing changes with them. It is a defect in neither the faces nor these tests' logic.
+
+**Three fixes, none substituting for another:**
+
+| what | treats | status |
+|---|---|---|
+| this park | the **symptom** — unblocks G3 today | done |
+| the `PENDING_FIRST_MEASUREMENT` cost notes | the **packer** — the file rides the ~21 s median while its nearest sibling measures **77 s** on CI | done, in `e2e-shard-plan.mjs` |
+| the fleet timeout default | the **class** — every spec that samples frames against a boot-sized bound | ⏳ owner's option-B call |
+
+⚠ **Merging #2110's timings refresh would NOT fix this**, which is the natural wrong assumption: its source run predates quadralogical entirely.
+
+**What we lose meanwhile.** The generic screen coverage (toggle reachable / collapse / reclaim) is superseded imminently by the fleet `SUBJECTS` table in the consolidation PR, so that part is a short overlap rather than a hole. **The real temporary loss is the bespoke one: that each quadrant carries ITS OWN input, under its own corner label** — quadrant-to-input *mapping*, proven by probing four pixels of the face's own canvas. No fleet sweep covers that; a wiring transposition that fed the top-right quadrant from input 3 would now ship unobserved. It returns when the timeout default lands.
+
+---
+
 ## ⚠ DOOM is excluded by name and untouched
 
 Three DOOM tests appear in the raw flaky data and **none of them was modified**:

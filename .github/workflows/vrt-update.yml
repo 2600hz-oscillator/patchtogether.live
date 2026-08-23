@@ -96,7 +96,25 @@ jobs:
     # COMMITTED BASELINE COUNT and reddens in the fast unit lane the moment a
     # face batch outgrows the ceiling — minutes after the face lands, instead of
     # an hour into a capture that dies without evidence.
-    timeout-minutes: 115
+    #
+    # ⚠ 115 -> 125 (2026-08-22, batch-22 G3), AND THE DERIVED GATE IS WHAT SAID SO
+    # — which is the point of having built it. G3's eight baselines took the
+    # committed population to 479, and 479 x 9.2 s = 73.5 min + 3.5 min setup =
+    # 76.9 min of work, x1.5 = 115.4 against a 115 ceiling. It reddened in the
+    # fast unit lane on the PR that caused it, minutes after the baselines
+    # landed, instead of cancelling a capture an hour in. Nothing was measured
+    # again: the rate, the setup cost and the 1.5x are unchanged and the
+    # population moved.
+    #
+    # 125 is sized to the SAME formula against a population of ~520 rather than
+    # to today's 479 — ((520 x 9.2)/60 + 3.5) x 1.5 = 124.9, rounded up. Sizing
+    # to 116 (the minimum that clears 115.4) would satisfy the gate and be eaten
+    # by the very next batch: at 1.5x, each baseline costs 0.23 min of ceiling,
+    # so a four-face batch is ~1.8 min. The third-occurrence trigger asked for
+    # automation over repeated bumps; the automation exists now, so the honest
+    # companion to it is a ceiling with real room rather than one that re-reddens
+    # every fortnight.
+    timeout-minutes: 125
     outputs:
       # 'true' only when a baseline commit was actually pushed. A capture that
       # rewrote nothing still SUCCEEDS, so `revalidate` needs this to tell

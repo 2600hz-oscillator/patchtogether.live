@@ -254,8 +254,70 @@ export const oneToNineDef: VideoModuleDef = {
   inputs: [{ id: 'in', type: 'video' }],
   outputs: OUTPUT_IDS.map((id) => ({ id, type: 'video' as const })),
   params: [
-    { id: 'showGrid', label: 'Grid', defaultValue: DEFAULTS.showGrid, min: 0, max: 1, curve: 'linear' },
+    // ⚠ `discrete`, RETYPED FROM `linear` (#2090). This param has ALWAYS been a
+    // 2-state switch — the card draws a GRID ON/OFF `<button>`, the factory
+    // thresholds it (`params.showGrid >= 0.5`), and it is mirrored to
+    // `node.data.showGrid` as a real boolean. `linear` described a ramp that no
+    // consumer has ever implemented.
+    //
+    // ⚠ #2090 REFUSED THIS RETYPE, AND THAT REFUSAL WAS CORRECT AT THE TIME.
+    // Its argument was that no consumer reads `curve`, so the edit would green a
+    // gate and change nothing. FACING THE MODULE CREATES THE CONSUMER: a
+    // faceplate resolves a latching toggle ONLY via
+    // `looksLikeToggle = curve === 'discrete' && min === 0 && max === 1`, and
+    // `ModuleFace` has no toggle declaration of its own (paramCells is
+    // grid/color/hue/fader; `momentary` is for rising-edge press-pads). Left
+    // `linear`, this face would have rendered a 2-state param as a KNOB — the
+    // moog962 INERT-control defect, where most of the sweep does nothing and the
+    // player cannot reliably land on either state. So the retype is now
+    // LOAD-BEARING rather than gate-greening, which is exactly the condition
+    // #2090 said would have to change first.
+    //
+    // ⚠ BEHAVIOUR IS PRESERVED FOR EVERY EXISTING VALUE, verified at the read
+    // site rather than assumed. `gridOn()` thresholds at exactly `>= 0.5` and
+    // discrete snapping rounds to nearest, so 0.7 → 1 → ON and 0.3 → 0 → OFF
+    // both match what they did before, and the 0.5 tie rounds UP, matching the
+    // `>=`. Stronger still: `node.data.showGrid` (a real boolean) takes
+    // PRECEDENCE over the param, so any rack that ever touched the card is
+    // unaffected regardless of what the param holds.
+    { id: 'showGrid', label: 'Grid', defaultValue: DEFAULTS.showGrid, min: 0, max: 1, curve: 'discrete' },
   ],
+
+  // ── FACE (batch-22 · G3, the screens) ─────────────────────────────────────
+  face: {
+    order: ['showGrid'],
+
+    // ⚠ A ONE-CONTROL FACE — no `pages`, nothing to section.
+
+    // ⚠ NO `paramCells`, AND THE REASON IS THE WHOLE POINT OF THIS MODULE'S
+    // ENTRY IN THE BATCH. `showGrid` resolves to a LATCHING TOGGLE from its own
+    // shape via `looksLikeToggle` (`curve === 'discrete' && min === 0 &&
+    // max === 1`) — which is why the def was retyped from `linear` (see the
+    // param). `ModuleFace` has NO toggle declaration to reach for: `paramCells`
+    // is grid/color/hue/fader and `momentary` means a rising-edge press-pad,
+    // which this is not. So the def's shape is the only mechanism, and left
+    // `linear` this face would have drawn a 2-state param as a KNOB — the
+    // moog962 INERT-control defect.
+    //
+    // ⚠ IT IS LATCHING, NOT MOMENTARY, verified at the read site: `gridOn()`
+    // reads a LEVEL (`params.showGrid >= 0.5`, or the `node.data` boolean when
+    // present) every draw, never an edge. A momentary render would drop the
+    // grid the instant the player let go — the opposite of the card's GRID
+    // ON/OFF button.
+
+    // ⚠ MANDATORY FOR A VIDEO DEF — every output is `video`, so
+    // `primaryAudioOutPortId` is null and any other glyph literal resolves to a
+    // dead `{kind:'static'}` that reddens module-face-lint.
+    glyph: 'none',
+
+    // SCREEN ON/OFF arrives through this slot (#1928). ⚠ ON THIS MODULE THE
+    // PREVIEW IS THE MONITOR — the grid+digits surface that says which cell
+    // feeds which of the nine outputs — so the body keeps the engine's watch
+    // mark alive while the screen is off: the nine crops must go on being
+    // produced whether or not anyone is looking at the monitor. See
+    // `$lib/ui/modules/onetonine/shell-extension.ts`.
+    extension: 'onetonine',
+  },
 
   docs: {
     explanation: "ONE TO NINE is a fixed 3×3 video splitter: it takes one source on `in` and divides the frame into nine equal sub-rectangles, exposing each cell on its own output (out1..out9) magnified to fill the whole output frame — a clean, grid-line-free crop of one ninth. Cells are numbered in reading order (1 = top-left, 5 = centre, 9 = bottom-right). The module's canonical surface is a MONITOR that shows the input with an amber 3×3 grid and a big upright 7-segment digit drawn in each cell, so the operator can see which cell feeds which output before patching — the grid and numbers appear ONLY on the monitor, never in the nine outputs (those stay clean). Use it alongside (not wired to) MAPPY to feed up to nine projectors a different ninth of one source, or fan one feed across a video wall. The on-card GRID button toggles the monitor overlay only.",
@@ -274,7 +336,7 @@ export const oneToNineDef: VideoModuleDef = {
       "out9": "Cell 9 — the bottom-right ninth of the input, magnified to fill the frame. Clean crop, no grid or numbers.",
     },
     controls: {
-      "showGrid": "Grid (0/1 toggle, min 0 / max 1, linear, default ON; the card's GRID ON/OFF button). When on, the monitor draws the amber 3×3 grid plus a big upright 7-segment digit 1..9 in each cell so you can see which cell feeds which output; when off, the monitor is a raw input passthrough. Affects the monitor only — the nine crop outputs are always clean. Mirrored to node.data so the button and the persisted param stay in agreement.",
+      "showGrid": "Grid (0/1 toggle, min 0 / max 1, discrete, default ON; the card's GRID ON/OFF button). When on, the monitor draws the amber 3×3 grid plus a big upright 7-segment digit 1..9 in each cell so you can see which cell feeds which output; when off, the monitor is a raw input passthrough. Affects the monitor only — the nine crop outputs are always clean. Mirrored to node.data so the button and the persisted param stay in agreement.",
     },
   },
   factory(ctx, node): VideoNodeHandle {
