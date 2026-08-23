@@ -161,6 +161,19 @@ export function createCameraStatusRegistry(): CameraStatusRegistry {
     return e;
   }
 
+  /** Drop everything for one node and tell its consumers. A LOCAL function
+   *  rather than a method, so `sweep` can call it without depending on `this`
+   *  — see the note at the call site. */
+  function clearEntry(nodeId: string): void {
+    const e = entries.get(nodeId);
+    if (!e) return;
+    e.status = null;
+    e.commands = null;
+    e.owner = null;
+    notify(e);
+    entries.delete(nodeId);
+  }
+
   function notify(e: Entry): void {
     // Copy before iterating: a listener may unsubscribe itself.
     for (const fn of [...e.listeners]) {
@@ -230,20 +243,18 @@ export function createCameraStatusRegistry(): CameraStatusRegistry {
       };
     },
 
-    clear(nodeId) {
-      const e = entries.get(nodeId);
-      if (!e) return;
-      e.status = null;
-      e.commands = null;
-      e.owner = null;
-      notify(e);
-      entries.delete(nodeId);
-    },
+    clear: clearEntry,
 
     sweep(liveIds) {
       const live = liveIds instanceof Set ? liveIds : new Set(liveIds);
       for (const nodeId of [...entries.keys()]) {
-        if (!live.has(nodeId)) this.clear(nodeId);
+        // ⚠ THE LOCAL FUNCTION, NEVER `this.clear`. Canvas calls these as
+        // `cameraStatus.sweep(liveIds)` today, so `this` happens to bind — but
+        // a `this`-dependent method breaks silently the first time someone
+        // destructures the registry (`const { sweep } = cameraStatus`), which
+        // is an ordinary thing to do and which every sibling registry in this
+        // directory is safe against because they close over their helpers.
+        if (!live.has(nodeId)) clearEntry(nodeId);
       }
     },
   };

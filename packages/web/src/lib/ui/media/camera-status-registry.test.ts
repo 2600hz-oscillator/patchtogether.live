@@ -185,6 +185,19 @@ describe('camera-status-registry — GRAPH-keyed teardown', () => {
     expect(r.read('gone')).toBeNull();
   });
 
+  it('sweep survives being DESTRUCTURED off the registry (no `this` dependency)', () => {
+    // `sweep` used to call `this.clear(...)`, which binds only when the method
+    // is invoked as `registry.sweep(...)`. Canvas happens to do that, so the
+    // bug would have stayed invisible until the first `const { sweep } = …` —
+    // an ordinary refactor that would have thrown at runtime, in a teardown
+    // path, on node deletion.
+    const r = createCameraStatusRegistry();
+    r.publish('gone', status());
+    const { sweep } = r;
+    expect(() => sweep([])).not.toThrow();
+    expect(r.read('gone')).toBeNull();
+  });
+
   it('NEGATIVE CONTROL: sweep with everything live changes nothing', () => {
     // A sweep that dropped its own argument would satisfy the leg above by
     // accident — this is the direction that catches an inverted predicate.
