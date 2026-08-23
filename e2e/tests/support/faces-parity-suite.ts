@@ -174,6 +174,9 @@ type CellControl =
   | 'color'
   | 'hue'
   | 'fader'
+  // A fader drawn in KNOB SPACE over a param that keeps its own range — the
+  // module converts at the boundary (#2144's cell, first rendered on samsloop).
+  | 'warped-fader'
   | 'xy'
   | 'action'
   | 'file'
@@ -737,6 +740,43 @@ async function driveCell(
     await expect
       .poll(() => readParam(page, nodeId, pid), {
         message: `${where}: dragging the fader commits a param change into the graph`,
+      })
+      .not.toBe(before);
+    return;
+  }
+
+  // A WARPED FADER is a fader DRAWN IN KNOB SPACE over a param that keeps its
+  // own declared range — the module converts at the boundary. The gesture is the
+  // same drag; what differs is that the control's coordinate and the param's are
+  // NOT the same number, so this arm asserts the param MOVED and deliberately
+  // does not predict where to.
+  //
+  // ⚠ THE PARAM RANGE IS THE WRONG DRAG BASIS HERE. `dragKnob` sizes its travel
+  // from the ParamDef, and this control's travel is 0..1 regardless — so the
+  // drag is driven from the fader's own geometry instead, and the ParamDef is
+  // used only to confirm the cell is really backed by one.
+  if (cell.control === 'warped-fader') {
+    const pid = cell.key;
+    const p = spec.params.find((q) => q.id === pid);
+    expect(p, `${where}: backed by a real ParamDef`).toBeTruthy();
+    const fader = host.locator(`[data-testid="control-${pid}"]`);
+    await expect(fader, `${where}: the fader is a real, visible control`).toBeVisible();
+    const before = await readParam(page, nodeId, pid);
+    // Drag from the middle toward one end. SCROLL FIRST — see `rectOf`: a
+    // control below the fold reports a good box no pointer can reach.
+    const box = await rectOf(fader);
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height * 0.1, { steps: 10 });
+    await page.mouse.up();
+    await expect
+      .poll(() => readParam(page, nodeId, pid), {
+        message:
+          `${where}: dragging the warped fader commits a param change into the graph. ` +
+          `The control is drawn 0..1 while the param keeps its declared range, so this ` +
+          `asserts MOVEMENT rather than a predicted value — a cell whose converters were ` +
+          `wired backwards would still move, and its GEOMETRY is what the dock VRT ` +
+          `baseline gates.`,
       })
       .not.toBe(before);
     return;

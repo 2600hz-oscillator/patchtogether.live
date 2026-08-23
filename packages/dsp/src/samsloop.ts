@@ -72,6 +72,27 @@ type SamsloopMessage = LoadSampleMessage | ResetMessage | TriggerMessage;
 
 const TRIG_THRESHOLD = 0.5;
 
+/** How often the playhead is published to the main thread, in Hz.
+ *
+ *  ⚠ MATCHED TO THE RECORDER'S EXISTING CADENCE, not chosen fresh.
+ *  `node-samsloop-registry` already publishes its live peak bar at 20 Hz and
+ *  the waveform surface already re-reads on that beat, so a playhead on the
+ *  same clock costs the consumer nothing extra. It is expressed in HZ and
+ *  converted against the live `sampleRate` below — never in blocks, which
+ *  would be a different wall-clock rate at every buffer size. */
+const PLAYHEAD_HZ = 20;
+
+/** A single read cursor. Mono runs exactly one of these; poly runs up to
+ *  `maxVoices` and steals the oldest when they are all busy. */
+interface Voice {
+  /** Fractional read-cursor in sample-frames within `buffer`. */
+  cursor: number;
+  /** Emitting audio? Idle voices are skipped and are the free pool. */
+  playing: boolean;
+  /** Monotonic allocation stamp — the steal victim is the SMALLEST. */
+  age: number;
+}
+
 class SamsloopProcessor extends AudioWorkletProcessor {
   static get parameterDescriptors() {
     return [
@@ -83,31 +104,52 @@ class SamsloopProcessor extends AudioWorkletProcessor {
       // Loop vs one-shot. 0 = one-shot (clamp + go silent at end), 1 = loop
       // (wrap back to start). Read at the start of each block and rounded.
       { name: 'mode',  defaultValue: 1, minValue: 0,  maxValue: 1,  automationRate: 'k-rate' as const },
-      // Selected playback window. The host clamps via the slider's
-      // [0, sampleLen] range; the worklet additionally clamps per-sample
-      // so a stale value (e.g. set while the previous sample was loaded)
-      // can't read off the end of a shorter newly-loaded buffer.
-      { name: 'start', defaultValue: 0,    minValue: 0, maxValue: 1e9, automationRate: 'k-rate' as const },
-      { name: 'end',   defaultValue: 1e9,  minValue: 0, maxValue: 1e9, automationRate: 'k-rate' as const },
+      // ⚠ THE WINDOW IS A FRACTION OF THE SAMPLE (0..1), not a frame index.
+      // The host param carries the knob PLUS any summed window CV, so these
+      // arrive already modulated and the range must admit the overshoot a
+      // full-depth CV produces — hence ±2 bounds on a 0..1 quantity, with the
+      // real clamping done below in a DEFINED ORDER.
+      { name: 'start', defaultValue: 0, minValue: -2, maxValue: 2, automationRate: 'k-rate' as const },
+      { name: 'end',   defaultValue: 1, minValue: -2, maxValue: 2, automationRate: 'k-rate' as const },
+      // 0 = mono (a re-trigger restarts the single cursor), 1 = poly (each
+      // edge takes its own cursor and overlapping strikes layer).
+      { name: 'poly',  defaultValue: 0, minValue: 0, maxValue: 1, automationRate: 'k-rate' as const },
     ];
   }
 
   /** The decoded sample. Empty Float32Array until `loadSample` arrives. */
   private buffer: Float32Array = new Float32Array(0);
-  /** Fractional read-cursor in sample-frames within `buffer`. */
-  private cursor = 0;
-  /** Whether we're currently emitting audio. IDLE-BY-DEFAULT: starts FALSE
-   *  (no autoplay). A trig rising edge / manual trigger flips it TRUE +
-   *  resets the cursor; in one-shot the cursor running off the window flips
-   *  it back FALSE (stop, silent); in loop it stays true (wrap). `loadSample`
-   *  does NOT set it true — a loaded/rehydrated sample sits idle. */
-  private playing = false;
+  /**
+   * The voice pool. IDLE-BY-DEFAULT: every voice starts `playing: false` (no
+   * autoplay). A trig rising edge / manual trigger starts one; in one-shot a
+   * cursor running off the window stops that voice; in loop it wraps and stays.
+   * `loadSample` never starts a voice — a rehydrated sample sits idle.
+   *
+   * ⚠ ALLOCATED ONCE, AT CONSTRUCTION. `process` runs on the audio thread, so
+   * growing an array there would allocate in the render quantum. Mono simply
+   * uses index 0 and leaves the rest idle.
+   */
+  private voices: Voice[] = [];
+  /** Monotonic allocation counter feeding `Voice.age`. */
+  private ageCounter = 0;
+  /** How many voices poly mode may run. From `processorOptions.maxVoices`, so
+   *  the number lives in ONE place (`midi-lane.ts`'s `MAX_POLY_VOICES`) rather
+   *  than being re-typed across the package boundary — `packages/dsp` cannot
+   *  import from `packages/web`. */
+  private maxVoices = 1;
   /** A `{ type: 'trigger' }` port message arrived between process() blocks;
    *  honored at the top of the next block (same effect as a trig rising
    *  edge). Consumed (reset to false) once applied. */
   private pendingTrigger = false;
   /** Trigger edge detection. */
   private lastTrig = 0;
+  /** Samples remaining until the next playhead publish. Counted DOWN per block
+   *  against the block size, so the cadence is wall-clock stable regardless of
+   *  how many render quanta the host chooses to run. */
+  private playheadCountdown = 0;
+  /** Was the last playhead publish an IDLE one? Lets the idle state be sent
+   *  exactly once instead of twenty times a second forever. */
+  private playheadWasIdle = false;
   /** Cursor scale = bufferSampleRate / contextSampleRate. At scale=1 the
    *  cursor advances one buffer-sample per output sample (legacy behavior:
    *  the buffer plays at the context's rate, NOT its captured rate, which
@@ -116,9 +158,55 @@ class SamsloopProcessor extends AudioWorkletProcessor {
    *  sampleRate still plays. */
   private rateScale = 1;
 
-  constructor(options?: { processorOptions?: unknown }) {
+  constructor(options?: { processorOptions?: { maxVoices?: number } }) {
     super(options);
+    const requested = options?.processorOptions?.maxVoices;
+    // Deny-by-default: an absent or nonsense option yields MONO (1 voice),
+    // which is the historical behaviour — never a guessed poly width.
+    this.maxVoices =
+      typeof requested === 'number' && Number.isFinite(requested) && requested >= 1
+        ? Math.floor(requested)
+        : 1;
+    for (let i = 0; i < this.maxVoices; i++) {
+      this.voices.push({ cursor: 0, playing: false, age: 0 });
+    }
     this.port.onmessage = (e: MessageEvent) => this.handleMessage(e.data as SamsloopMessage);
+  }
+
+  /** Silence every voice and rewind. */
+  private stopAll(): void {
+    for (const v of this.voices) {
+      v.cursor = 0;
+      v.playing = false;
+    }
+  }
+
+  /**
+   * Start a voice at `pos`.
+   *
+   * MONO (`poly` false) always drives voice 0 — a re-trigger RESTARTS it, which
+   * is what a looper does and what this module has always done. POLY takes the
+   * first idle voice, and STEALS THE OLDEST when they are all busy: the
+   * same steal-oldest rule `midi-lane` applies under key pressure, so the two
+   * ends of a real MIDI chain agree about which note dies.
+   */
+  private startVoice(pos: number, poly: boolean): void {
+    if (!poly) {
+      const v = this.voices[0]!;
+      v.cursor = pos;
+      v.playing = true;
+      v.age = ++this.ageCounter;
+      return;
+    }
+    let victim: Voice | undefined;
+    for (const v of this.voices) {
+      if (!v.playing) { victim = v; break; }
+      if (!victim || v.age < victim.age) victim = v;
+    }
+    if (!victim) return;
+    victim.cursor = pos;
+    victim.playing = true;
+    victim.age = ++this.ageCounter;
   }
 
   private handleMessage(msg: SamsloopMessage): void {
@@ -126,10 +214,9 @@ class SamsloopProcessor extends AudioWorkletProcessor {
     if (msg.type === 'loadSample') {
       if (!(msg.samples instanceof ArrayBuffer)) return;
       this.buffer = new Float32Array(msg.samples);
-      this.cursor = 0;
       // IDLE-BY-DEFAULT: loading a sample does NOT start playback. The
       // sample sits silent until a trig edge / manual trigger fires.
-      this.playing = false;
+      this.stopAll();
       this.pendingTrigger = false;
       // Update the cursor scale. If the host omitted sampleRate we default
       // to the context rate so the cursor advances 1 sample per output
@@ -146,8 +233,7 @@ class SamsloopProcessor extends AudioWorkletProcessor {
       this.pendingTrigger = true;
     } else if (msg.type === 'reset') {
       // Stop + rewind. Stays idle (silent) until the next trigger.
-      this.cursor = 0;
-      this.playing = false;
+      this.stopAll();
       this.pendingTrigger = false;
     }
   }
@@ -188,18 +274,60 @@ class SamsloopProcessor extends AudioWorkletProcessor {
     const modeArr = parameters.mode!;
     const startArr = parameters.start!;
     const endArr = parameters.end!;
+    const polyArr = parameters.poly!;
     const trigIn = inputs[0]?.[0];
 
     // k-rate params: read once per block.
     const mode = Math.round(modeArr[0] ?? 1); // 0=one-shot, 1=loop
-    const startRaw = startArr[0] ?? 0;
-    const endRaw = endArr[0] ?? this.buffer.length;
+    const poly = Math.round(polyArr[0] ?? 0) === 1;
     const len = this.buffer.length;
-    // Clamp the window to the actual buffer. start < end always (the host's
-    // slider clamps too, but this is the load-bearing defensive clamp for
-    // a stale param value left over from a previous, longer upload).
-    let start = Math.max(0, Math.min(len - 1, startRaw));
-    let end = Math.max(start + 1, Math.min(len, endRaw));
+
+    // ⚠ MONO RETIRES THE EXTRA VOICES, and leaving this out was a real defect
+    // rather than untidiness. The render loop below only walks voice 0 when
+    // `poly` is false, so voices started in POLY and still `playing` when the
+    // switch flips are neither rendered NOR advanced — they freeze. Two things
+    // then go wrong, and neither is silent:
+    //
+    //   * the PLAYHEAD publish walks the whole pool, so a frozen voice is still
+    //     counted and can WIN the newest-age lead — the faceplate draws a
+    //     stationary playhead that never moves again;
+    //   * flipping back to POLY resurrects them from their frozen cursors, so
+    //     stale voices burst back in mid-sample.
+    //
+    // Stopping them here is idempotent and costs one boolean check per voice
+    // per BLOCK (not per sample), which is nothing against the per-sample loop.
+    if (!poly) {
+      for (let v = 1; v < this.voices.length; v++) {
+        const extra = this.voices[v]!;
+        if (extra.playing) {
+          extra.playing = false;
+          extra.cursor = 0;
+        }
+      }
+    }
+
+    // ── THE WINDOW, RESOLVED IN A DEFINED ORDER ────────────────────────────
+    //
+    // These params arrive as FRACTIONS of the sample carrying the knob PLUS any
+    // summed window CV, so both can be driven outside [0,1] at once.
+    //
+    // ⚠ THE ORDER IS LOAD-BEARING AND IT IS *END FIRST*. The natural statement
+    // of the rule — "start is bounded by end, end is bounded by start" — is
+    // MUTUALLY RECURSIVE and has no defined answer when both cables move
+    // together. Resolving END against the sample and then START against the
+    // resolved END breaks the cycle in the direction the controls are actually
+    // used: END says how much of the sample is in play, START says where inside
+    // it to begin. It reproduces both anchors exactly — at the defaults a full
+    // +CV on START walks it to the far end, and a full −CV on END walks the
+    // window back to the beginning.
+    const endFrac = Math.max(0, Math.min(1, endArr[0] ?? 1));
+    const startFrac = Math.max(0, Math.min(endFrac, startArr[0] ?? 0));
+
+    // Fraction → frames, then the defensive floor that guarantees a window at
+    // least one frame wide (a zero-width window would divide by zero in the
+    // loop wrap below).
+    const start = Math.max(0, Math.min(len - 1, Math.floor(startFrac * len)));
+    const end = Math.max(start + 1, Math.min(len, Math.ceil(endFrac * len)));
 
     // Apply a pending manual trigger (from the on-card TRIGGER button) at
     // the top of the block — same effect as a trig gate rising edge, but
@@ -207,69 +335,115 @@ class SamsloopProcessor extends AudioWorkletProcessor {
     // the block's leading rate sample.
     if (this.pendingTrigger) {
       const rate0 = rateArr[0] ?? 1;
-      this.cursor = rate0 >= 0 ? start : end - 1;
-      this.playing = true;
+      this.startVoice(rate0 >= 0 ? start : end - 1, poly);
       this.pendingTrigger = false;
     }
 
+    const winLen = end - start;
+
     for (let i = 0; i < out.length; i++) {
-      // Trigger rising-edge → START / restart sample playback from the
-      // window edge (start if playing forward, end-1 if playing reverse).
-      // Detect the edge before sample emission so the very first sample of
-      // the new burst lands in this same frame. From idle this is what
-      // begins playback (no autoplay); while already playing it restarts.
+      // Trigger rising-edge → START sample playback from the window edge
+      // (start if playing forward, end-1 if playing reverse). Detect the edge
+      // before sample emission so the very first sample of the new burst lands
+      // in this same frame. From idle this is what begins playback (no
+      // autoplay); in MONO an edge while already playing RESTARTS the single
+      // cursor, in POLY it takes another one.
       if (trigIn) {
         const t = trigIn[i] ?? 0;
         if (this.lastTrig < TRIG_THRESHOLD && t >= TRIG_THRESHOLD) {
           const rate0 = rateArr.length > 1 ? (rateArr[i] ?? 1) : (rateArr[0] ?? 1);
-          this.cursor = rate0 >= 0 ? start : end - 1;
-          this.playing = true;
+          this.startVoice(rate0 >= 0 ? start : end - 1, poly);
         }
         this.lastTrig = t;
       }
 
-      if (!this.playing) {
-        out[i] = 0;
-        continue;
-      }
-
-      // Read the fractional sample at the current cursor.
-      out[i] = this.read(this.cursor);
-
-      // Advance the cursor by the current rate (a-rate so CV reads sample-
-      // accurate), scaled by bufferRate/contextRate so rate=1.0 plays at
-      // the sample's captured pitch regardless of the AudioContext's
-      // native rate. rate=0 freezes; rate<0 reverses.
       const rate = rateArr.length > 1 ? (rateArr[i] ?? 1) : (rateArr[0] ?? 1);
-      this.cursor += rate * this.rateScale;
+      const step = rate * this.rateScale;
 
-      // Handle window crossings. The branches below are organised by
-      // direction (forward vs reverse) and mode (loop vs one-shot).
-      if (this.cursor >= end) {
-        if (mode === 1) {
-          // Loop: wrap forward through the window. fmod-style so very
-          // high rate doesn't take many trips around to settle.
-          const winLen = end - start;
-          this.cursor = start + ((this.cursor - start) % winLen);
-        } else {
-          // One-shot: the pass is complete — stop + go idle (silent) until
-          // the next trigger.
-          this.cursor = end;
-          this.playing = false;
-        }
-      } else if (this.cursor < start) {
-        // Reverse direction.
-        if (mode === 1) {
-          const winLen = end - start;
-          // Mirror the wrap formula for negative excursion.
-          const overshoot = start - this.cursor;
-          this.cursor = end - (overshoot % winLen);
-        } else {
-          // One-shot reverse: pass complete — stop + go idle.
-          this.cursor = start;
-          this.playing = false;
+      // ⚠ VOICES SUM, THEY DO NOT AVERAGE. Dividing by the active count would
+      // make every voice quieter the moment a second one starts — a duck on
+      // every overlap, which is not what layering a looper sounds like. Mono is
+      // bit-identical to the single-cursor behaviour this replaced, because
+      // exactly one voice is ever active.
+      let acc = 0;
+      // Mono only ever runs voice 0; skipping the rest keeps the per-sample
+      // cost identical to the pre-poly loop rather than paying for 16 idle
+      // checks on every frame of every mono samsloop in the rack.
+      const active = poly ? this.voices.length : 1;
+      for (let v = 0; v < active; v++) {
+        const voice = this.voices[v]!;
+        if (!voice.playing) continue;
+
+        // Read the fractional sample at this voice's cursor.
+        acc += this.read(voice.cursor);
+
+        // Advance by the current rate (a-rate so CV reads sample-accurate),
+        // scaled by bufferRate/contextRate so rate=1.0 plays at the sample's
+        // captured pitch regardless of the AudioContext's native rate.
+        // rate=0 freezes; rate<0 reverses.
+        voice.cursor += step;
+
+        // Handle window crossings, by direction (forward/reverse) and mode.
+        if (voice.cursor >= end) {
+          if (mode === 1) {
+            // Loop: wrap forward through the window. fmod-style so a very high
+            // rate doesn't take many trips around to settle.
+            voice.cursor = start + ((voice.cursor - start) % winLen);
+          } else {
+            // One-shot: the pass is complete — stop this voice.
+            voice.cursor = end;
+            voice.playing = false;
+          }
+        } else if (voice.cursor < start) {
+          if (mode === 1) {
+            // Mirror the wrap formula for negative excursion.
+            const overshoot = start - voice.cursor;
+            voice.cursor = end - (overshoot % winLen);
+          } else {
+            voice.cursor = start;
+            voice.playing = false;
+          }
         }
       }
+      out[i] = acc;
+    }
+
+    // ── PLAYHEAD PUBLISH ───────────────────────────────────────────────────
+    //
+    // ⚠ ONE MESSAGE PER ~20 Hz, NOT PER BLOCK. At 128 frames and 48 kHz a
+    // per-block post is 375 messages a second per samsloop in the rack, all
+    // landing on the main thread that is also drawing the waveform. The
+    // countdown is in SAMPLES so the cadence is wall-clock stable whatever
+    // render-quantum size the host picks.
+    //
+    // ⚠ AND IT IS A FRACTION, NOT A FRAME INDEX — same reason the window is:
+    // the consumer draws into a canvas of its own width and would otherwise
+    // need the buffer length to mean anything by the number. `-1` means "no
+    // voice is sounding", which a fraction cannot otherwise express.
+    this.playheadCountdown -= out.length;
+    if (this.playheadCountdown <= 0) {
+      this.playheadCountdown = Math.max(1, Math.floor(sampleRate / PLAYHEAD_HZ));
+      let lead = -1;
+      let leadAge = -1;
+      let voicesPlaying = 0;
+      for (const v of this.voices) {
+        if (!v.playing) continue;
+        voicesPlaying++;
+        // The NEWEST voice is the one a player is watching — it is the one
+        // their last strike started.
+        if (v.age > leadAge) {
+          leadAge = v.age;
+          lead = len > 0 ? v.cursor / len : -1;
+        }
+      }
+      // ⚠ AN IDLE MODULE GOES QUIET, rather than repeating "-1" twenty times a
+      // second for as long as the rack is open. The FIRST idle publish still
+      // goes out — that is the edge the consumer needs to clear its playhead —
+      // and only the repeats are suppressed.
+      if (voicesPlaying > 0 || !this.playheadWasIdle) {
+        this.port.postMessage({ type: 'playhead', position: lead, voices: voicesPlaying });
+      }
+      this.playheadWasIdle = voicesPlaying === 0;
     }
     return true;
   }

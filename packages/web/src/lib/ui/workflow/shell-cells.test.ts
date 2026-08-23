@@ -16,6 +16,8 @@
 // rendered cell and asserts an observable effect.
 
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 
 import '$lib/audio/modules';
 import '$lib/video/modules';
@@ -31,6 +33,7 @@ import {
   panelCellKeys,
   shellCellFor,
   shellCellKeys,
+  paramShapedCellKind,
   shellPanelProbes,
   typesWithShellCells,
   type ShellActionCell,
@@ -75,14 +78,112 @@ describe('shell cells — COVERAGE (no inert cell can render on a promoted face)
     expect(inert.join('\n'), 'INERT shell cell(s) — a curated control the user cannot touch').toBe('');
   });
 
-  it('a param control never routes to the family/static registry', () => {
+  // ⚠ THIS PAIR REPLACES A SINGLE TEST THAT PINNED A BUG AS A RULE. It read
+  // "a param control never routes to the family/static registry" and swept
+  // EVERY param, asserting `shellCellFor` returned null. That was true — and
+  // correct — until #2144 introduced `warped-fader`, the first cell kind that
+  // BINDS A PARAM. #2144 added the type, the ModuleShell render branch and a
+  // source gate, but not the resolver arm, so its branch was unreachable from
+  // the day it merged and this test was what held the door shut.
+  //
+  // Nothing went red, because a warped-fader param still resolved a perfectly
+  // valid GENERIC cell — it just drew the param LINEARLY, which is the exact
+  // geometry the cell exists to prevent. The two halves of the real rule are
+  // now asserted separately, in both directions.
+
+  it('a param control cannot borrow a FAMILY/STATIC cell', () => {
+    const borrowed: string[] = [];
     for (const def of allDefs()) {
       if (!STRICT_FACES.has(def.type)) continue;
       for (const ctl of dockPlanControls(dockFacePlan(def) ?? [])) {
         if (ctl.kind !== 'param') continue;
-        expect(shellCellFor(def.type, ctl), `${def.type}: ${ctl.key}`).toBeNull();
+        const cell = shellCellFor(def.type, ctl);
+        // A param may resolve ONLY a param-shaped cell. Every other kind edits
+        // node.data and carries no paramId, so rendering one over a param would
+        // write somewhere the control does not point.
+        if (cell && cell.kind !== 'warped-fader') {
+          borrowed.push(`${def.type}: param '${ctl.key}' resolved a '${cell.kind}' cell`);
+        }
       }
     }
+    expect(borrowed.join('\n'), 'a param control borrowed a non-param cell').toBe('');
+  });
+
+  it('every DECLARED param cell is REACHABLE through the real resolver', () => {
+    // The leg that would have caught #2144's dead branch. A module can declare a
+    // `warped-fader` and rank its param, and every other gate stays green while
+    // the shell silently renders the generic control — so the declaration itself
+    // has to be checked against the resolution path the shell actually uses.
+    const unreachable: string[] = [];
+    for (const def of allDefs()) {
+      if (!STRICT_FACES.has(def.type)) continue;
+      const declared = shellCellKeys(def.type).filter(
+        (k) => paramShapedCellKind(def.type, k),
+      );
+      if (declared.length === 0) continue;
+      const reached = new Set(
+        dockPlanControls(dockFacePlan(def) ?? [])
+          .filter((ctl) => shellCellFor(def.type, ctl)?.kind === 'warped-fader')
+          .map((ctl) => ctl.key),
+      );
+      for (const key of declared) {
+        if (!reached.has(key)) {
+          unreachable.push(
+            `${def.type}: declares a param-shaped cell for '${key}' that the dock plan ` +
+              `never resolves — the shell would render the GENERIC control instead, ` +
+              `silently discarding the cell's geometry.`,
+          );
+        }
+      }
+    }
+    expect(unreachable.join('\n'), 'a declared param cell is unreachable').toBe('');
+  });
+
+  it('the warped-fader has exactly ONE render site, in the PARAM arm', () => {
+    // ⚠ THE GATE FOR THE HALF THE RESOLVER SWEEP CANNOT SEE, and it exists
+    // because fixing the resolver alone left the bug live. `shellCellFor`
+    // returning the cell is necessary and NOT sufficient: `ModuleShell` renders
+    // `ctl.kind === 'param'` in its own arm and consults the cell registry only
+    // in that arm's `{:else}`, so a param never reached the registry AT RENDER
+    // TIME no matter what the resolver returned. Every unit assertion passed —
+    // the cell resolved, the reachability sweep was green — while the dock still
+    // painted a KNOB, and the VRT capture came back "0 baselines committed".
+    //
+    // ⚠ SOURCE, and it is the honest tier for this: no unit test can see a
+    // rendered pixel, and the DOCK BASELINE is the real owner of "what it
+    // paints". This asserts the STRUCTURAL fact that made the pixels wrong —
+    // one render site, on the param side — which is cheap, non-brittle, and
+    // fails in milliseconds instead of a 3-minute capture round trip.
+    const shell = readFileSync(
+      resolve(__dirname, '..', 'modules', 'ModuleShell.svelte'),
+      'utf8',
+    );
+    const sites = [...shell.matchAll(/data-cell-control="warped-fader"/g)];
+    expect(sites.length, 'exactly one warped-fader render site').toBe(1);
+
+    // And it must sit INSIDE the param arm — before the family/static chain,
+    // which is what `{@const cell = shellCellFor(` opens.
+    const paramArm = shell.indexOf("{#if ctl.kind === 'param'}");
+    const familyChain = shell.indexOf('{@const cell = shellCellFor(');
+    const site = shell.indexOf('data-cell-control="warped-fader"');
+    expect(paramArm, 'the param arm exists').toBeGreaterThan(-1);
+    expect(familyChain, 'the family/static chain exists').toBeGreaterThan(-1);
+    expect(
+      site > paramArm && site < familyChain,
+      'the warped-fader renders in the PARAM arm, not the family/static chain — ' +
+        'an arm in the latter is unreachable, which is how #2144 shipped inert',
+    ).toBe(true);
+  });
+
+  it('NEGATIVE CONTROL: the reachability sweep is not vacuous', () => {
+    // It only means something if some module really declares one today.
+    const declaring = allDefs()
+      .filter((d) => STRICT_FACES.has(d.type))
+      .filter((d) => shellCellKeys(d.type).some((k) => paramShapedCellKind(d.type, k)));
+    expect(
+      declaring.length,
+      'no promoted module declares a param-shaped cell — the sweep above proves nothing',
+    ).toBeGreaterThan(0);
   });
 });
 
@@ -241,7 +342,15 @@ describe('shell cells — ACTION cells declare the handler their MODE needs', ()
       // here is what makes that a loud "unknown audition seam" rather than a
       // silently-accepted mis-wiring; the pad's own coverage is the `momentary`
       // branch of faces-parity + audition-ledger.test.ts.
-      const SEAMS = ['manual-strike', 'manual-gate', 'engine-message'];
+      //
+      // ⚠ `file-export` IS PRESENT, and it is a ONE-SHOT seam like the first and
+      // third. It exists because samsloop's sample EXPORT reaches no engine and
+      // no worklet — its whole effect leaves the app — so labelling it
+      // `engine-message` would make the ledger describe something that did not
+      // happen, AND would let a probe watching this node be satisfied by a REC
+      // press instead. That is the same aliasing `manual-press` was split out to
+      // prevent, one seam over.
+      const SEAMS = ['manual-strike', 'manual-gate', 'engine-message', 'file-export'];
       if (!SEAMS.includes(probe.effect.seam)) {
         problems.push(`${where}: unknown audition seam '${probe.effect.seam}'`);
       } else if (mode === 'gate' && probe.effect.seam !== 'manual-gate') {

@@ -119,6 +119,14 @@ describe('warped-fader cells import their map — they never re-type it', () => 
   });
 });
 
+// ⚠ THE ANCHOR IS `paramCell`, NOT `cell`, AND THE RENAME IS THE STORY. This
+// branch used to live in ModuleShell's FAMILY/STATIC cell chain, where a `param`
+// control can never go — so it was unreachable from the day #2144 merged and
+// these assertions were guarding dead code. Both halves had to move: the
+// resolver had to stop refusing param controls, and the render had to move into
+// the `ctl.kind === 'param'` arm. Nothing here went red during any of that,
+// because a source gate can only see the code it is pointed at — the VRT dock
+// baseline is what finally showed a KNOB where a fader was declared.
 describe('the renderer draws KNOB SPACE, not the param range', () => {
   it('the warped branch passes 0..1, never pd.min/pd.max', () => {
     // ⚠ THE ONE-LINE REGRESSION THIS FILE EXISTS FOR. Someone "fixing" the
@@ -127,7 +135,7 @@ describe('the renderer draws KNOB SPACE, not the param range', () => {
     // correct values. Only the GEOMETRY is wrong, and no runtime gate reads
     // geometry.
     const shell = readFileSync(SHELL_SRC, 'utf8');
-    const i = shell.indexOf("cell?.kind === 'warped-fader'");
+    const i = shell.indexOf("paramCell?.kind === 'warped-fader'");
     expect(i, 'the renderer still has a warped-fader branch').toBeGreaterThan(-1);
     const branch = shell.slice(i, shell.indexOf("{:else if", i + 10));
     expect(/min=\{0\}/.test(branch), 'min is knob-space 0').toBe(true);
@@ -140,16 +148,16 @@ describe('the renderer draws KNOB SPACE, not the param range', () => {
 
   it('landmarks reach the primitive through toKnob, not raw', () => {
     const shell = readFileSync(SHELL_SRC, 'utf8');
-    const i = shell.indexOf("cell?.kind === 'warped-fader'");
+    const i = shell.indexOf("paramCell?.kind === 'warped-fader'");
     const branch = shell.slice(i, shell.indexOf("{:else if", i + 10));
     const flat = branch.replace(/\s+/g, ' ');
     // ⚠ NOT `[^)]*` between the two — the arrow's own parameter list `((lm) =>`
     // contains a `)`, so that form can never match and the gate would be
     // vacuously red. Anchor on the two facts instead: the ticks come from
     // `landmarks`, and `frac` is computed by `toKnob`.
-    expect(/ticks=\{ ?cell\.landmarks\.map\(/.test(flat), 'ticks derive from the landmarks').toBe(true);
+    expect(/ticks=\{ ?paramCell\.landmarks\.map\(/.test(flat), 'ticks derive from the landmarks').toBe(true);
     expect(
-      /frac: ?cell\.toKnob\(/.test(flat),
+      /frac: ?paramCell\.toKnob\(/.test(flat),
       'each landmark is PLACED at toKnob(value) — a raw value would place it linearly',
     ).toBe(true);
   });

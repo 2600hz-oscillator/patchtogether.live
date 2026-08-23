@@ -70,6 +70,14 @@ const EXPECTED_AUDITIONS: Record<string, string[]> = {
   // this seam; the shell registry did not, so `?shell=1` offered twenty
   // controls over an instrument that could not be sounded.
   'sixstrum:sixstrum-strum-{n}': [MANUAL_STRIKE_KEY],
+  // samsloop's TRIGGER, 2026-08-23. ⚠ THE SEAM WAS ALREADY THE CANONICAL ONE
+  // and that is why this entry is one line rather than a migration: the legacy
+  // card's ▶ TRIGGER resolved `manualTrigger` off the engine handle, which IS
+  // `MANUAL_STRIKE_KEY`. The face cell calls `fireManualStrike` and reaches the
+  // same door. It matters more here than on most modules — samsloop is
+  // IDLE-BY-DEFAULT with no autoplay, so with nothing patched into TRIG this
+  // button is the ONLY way to hear a sample you have just loaded or recorded.
+  'samsloop:samsloop-trigger-{n}': [MANUAL_STRIKE_KEY],
   // face batch 3 — the fourteen-engine macro voice. FIVE of its engines
   // (FM 6OP, STRING, KICK, SNARE, HIHAT) initialise their excitation or
   // envelopes to zero and are SILENT with nothing patched into TRIG, so this

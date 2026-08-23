@@ -2801,6 +2801,32 @@ export const FACES = [
       },
     ],
   },
+  {
+    type: 'samsloop',
+    // PLAY and SAMPLE — what you do with a sample you have, and how you get one.
+    pages: 2,
+    // ⚠ NO simPin, AND THAT IS DERIVED RATHER THAN OPTIMISTIC. This face's body
+    // paints a canvas, which is normally the live-surface hazard (analogVco was
+    // dropped from batch 3 for exactly this: 254 / 154 / 315 px across three
+    // captures of the same tile). Three independent facts make this one
+    // deterministic at capture time:
+    //
+    //   * a freshly spawned samsloop holds NO SAMPLE, so the body takes its
+    //     empty branch and paints one fixed string — there is no PCM to fold
+    //     and no waveform to draw;
+    //   * the module is IDLE-BY-DEFAULT with no autoplay, so no voice is
+    //     sounding, the worklet publishes `position: -1`, and the playhead is
+    //     suppressed entirely rather than parked at a wall-clock-dependent
+    //     spot;
+    //   * the live RECORD branch — the one genuinely time-varying thing this
+    //     surface can draw — is reachable only after a REC press, which no VRT
+    //     scene performs.
+    //
+    // ⚠ So the determinism argument is about the CAPTURE STATE, not about the
+    // draw being pure: load a sample and start it and this surface would be as
+    // unstable as analogVco's. If a future scene ever spawns samsloop WITH a
+    // sample, it needs a pin and this comment is wrong.
+  },
   // ── CUT B ─────────────────────────────────────────────────────────────────
   {
     type: 'spectrograph',

@@ -911,8 +911,37 @@
     {#if ctl.kind === 'param'}
       {@const pd = paramDef(ctl.paramId ?? ctl.key)}
       {#if pd}
+        {@const paramCell = shellCellFor(node.type, ctl)}
         {@const cellKind = paramCellKind(pd, momentary, faceplateView ? 'dock' : 'lane', declaredCells)}
-        {#if cellKind === 'momentary'}
+        <!-- ⚠ A PARAM-SHAPED SHELL CELL WINS OVER THE GENERIC LADDER, and this
+             branch is why #2144's warped fader shipped inert. `shellCellFor`
+             refusing param controls was only HALF the reason it was unreachable:
+             the other half is right here — this `{#if ctl.kind === 'param'}` arm
+             renders the generic control and the shell-cell block below sits in
+             its `{:else}`, so a param never reached the registry at RENDER time
+             no matter what the resolver returned.
+             ⚠ AND ONLY THE VRT BASELINE COULD SEE IT. Fixing the resolver alone
+             made every unit assertion pass — the cell resolved, the reachability
+             sweep was green — while the dock still painted a KNOB. The capture
+             came back "0 baselines committed", which is the red flag that says
+             the pixels never moved. -->
+        {#if paramCell?.kind === 'warped-fader'}
+          <div class="kcol ms-cell-fader" data-cell-kind={ctl.kind} data-cell-control="warped-fader" data-cell-key={ctl.key} style:--ka={ka}>
+            <NeonFader
+              value={paramCell.toKnob(params.paramVal(paramCell.paramId))}
+              min={0}
+              max={1}
+              defaultValue={paramCell.toKnob(pd.defaultValue)}
+              label={paramCell.label}
+              curve="linear"
+              ticks={paramCell.landmarks.map((lm) => ({ frac: paramCell.toKnob(lm.value), label: lm.label }))}
+              onchange={(k: number) => paramWrite(paramCell.paramId)(paramCell.fromKnob(k))}
+              moduleId={id}
+              paramId={paramCell.paramId}
+              formatValue={(k: number) => (paramCell.format ?? String)(paramCell.fromKnob(k))}
+            />
+          </div>
+        {:else if cellKind === 'momentary'}
           <!-- MOMENTARY press-pad (declared on face.momentary): fires on the
                press edge and RETURNS TO REST on release. It must never be a
                rotary — dragging a latching knob to 1 held the pad down, masked
@@ -1198,42 +1227,12 @@
           />
           {#if faceplateView}<span class="cell-cap">{ctl.label}</span>{/if}
         </div>
-      {:else if cell?.kind === 'warped-fader'}
-        <!-- WARPED FADER — a param whose CARD converts at the boundary, so the
-             fader is drawn in KNOB SPACE and the graph still receives PARAM
-             UNITS. The whole cell is three conversions and nothing else:
-
-               value  = toKnob(paramVal)            read  — param -> knob
-               commit = paramWrite(fromKnob(k))     write — knob  -> param
-               ticks  = landmarks.map(toKnob)       place — param -> knob
-
-             ⚠ `min`/`max` ARE 0..1 AND THAT IS NOT A CLAMP ON THE PARAM. The
-             param keeps its declared range; this is the coordinate the fader is
-             drawn in. Passing `pd.min`/`pd.max` here is exactly the linear
-             rendering this cell exists to prevent.
-
-             ⚠ `ticks` TAKE A `frac`, WHICH IS WHY THE WARP LANDS HERE. The
-             landmark declarations stay in PARAM UNITS (ParamLandmark has no
-             position field and did not grow one); `toKnob` turns each into the
-             fraction the primitive wants, so a piecewise map produces the
-             non-uniform spacing that matches the card. On samsloop that puts
-             `Norm` at 0.5 instead of 0.75. -->
-        {@const wpd = paramDef(cell.paramId)}
-        <div class="kcol ms-cell-fader" data-cell-kind={ctl.kind} data-cell-control="warped-fader" data-cell-key={ctl.key} style:--ka={ka}>
-          <NeonFader
-            value={cell.toKnob(params.paramVal(cell.paramId))}
-            min={0}
-            max={1}
-            defaultValue={cell.toKnob(wpd?.defaultValue ?? 0)}
-            label={cell.label}
-            curve="linear"
-            ticks={cell.landmarks.map((lm) => ({ frac: cell.toKnob(lm.value), label: lm.label }))}
-            onchange={(k: number) => paramWrite(cell.paramId)(cell.fromKnob(k))}
-            moduleId={id}
-            paramId={cell.paramId}
-            formatValue={(k: number) => (cell.format ?? String)(cell.fromKnob(k))}
-          />
-        </div>
+      <!-- ⚠ NO `warped-fader` ARM HERE, DELIBERATELY. This chain renders FAMILY /
+           STATIC cells, and a warped fader binds a PARAM by definition — so its
+           render lives in the `ctl.kind === 'param'` arm above. An arm here is
+           exactly what shipped in #2144: unreachable, because a param control
+           never enters this block. `shell-cells.test.ts` asserts there is ONE
+           warped-fader render site and that it is the param one. -->
       {:else if cell?.kind === 'toggle'}
         <div class="kcol ms-cell-act" data-cell-kind={ctl.kind} data-cell-control="toggle" data-cell-key={ctl.key} style:--ka={ka}>
           <Toggle
