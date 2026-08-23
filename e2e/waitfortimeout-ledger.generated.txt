@@ -55,7 +55,6 @@ e2e/tests/bluebox.spec.ts :: bluebox: clicking "5" produces 770 + 1336 Hz peaks 
 e2e/tests/bluebox.spec.ts :: bluebox: clicking BLUEBOX produces a 2600 Hz dominant peak :: waitForTimeout(200) #1
 e2e/tests/bluebox.spec.ts :: bluebox: clicking REDBOX produces 1700 + 2200 Hz peaks :: waitForTimeout(200) #1
 e2e/tests/bluebox.spec.ts :: bluebox: setting btn_5 param directly drives the tone (no UI click) :: waitForTimeout(200) #1
-e2e/tests/bluebox.spec.ts :: pollBandAmp :: waitForTimeout(50) #1
 e2e/tests/bridge-late-materialization.spec.ts :: edge added in a SEPARATE transaction AFTER the source node still wires + delivers signal :: waitForTimeout(400) #1
 e2e/tests/bridge-late-materialization.spec.ts :: edge added in a SEPARATE transaction AFTER the source node still wires + delivers signal :: waitForTimeout(400) #2
 e2e/tests/bridge-late-materialization.spec.ts :: edge added in a SEPARATE transaction AFTER the source node still wires + delivers signal :: waitForTimeout(600) #1
@@ -64,8 +63,6 @@ e2e/tests/bridge-late-materialization.spec.ts :: edge patched BEFORE target node
 e2e/tests/buggles.spec.ts :: buggles: SMOOTH output modulates VCA amplitude :: waitForTimeout(1800) #1
 e2e/tests/buggles.spec.ts :: buggles: SMOOTH output produces a slowly-varying voltage :: waitForTimeout(1800) #1
 e2e/tests/buggles.spec.ts :: buggles: STEPPED output produces varying voltages over time (chaos > 0) :: waitForTimeout(1500) #1
-e2e/tests/buggles.spec.ts :: pollScopePeak :: waitForTimeout(50) #1
-e2e/tests/buggles.spec.ts :: pollScopePeak :: waitForTimeout(50) #2
 e2e/tests/cable-drag-panel-lock.spec.ts :: click opens the menu; hover alone does not; outside-click closes :: waitForTimeout(150) #1
 e2e/tests/cable-drag-panel-lock.spec.ts :: click opens the menu; hover alone does not; outside-click closes :: waitForTimeout(300) #1
 e2e/tests/chromaconsole.spec.ts :: chromaconsole: repeating a value puts no second message on the wire (graph-coalesced) :: waitForTimeout(300) #1
@@ -234,8 +231,6 @@ e2e/tests/reshaper-shapedramps.spec.ts :: onboard mix1 crossfades two LINES into
 e2e/tests/reshaper-shapedramps.spec.ts :: shaped wiring renders a non-uniform deformed coordinate field :: waitForTimeout(800) #1
 e2e/tests/ringback.spec.ts :: RINGBACK: mix=0 passes the input through; sweeping the crush params stays error-free :: waitForTimeout(120) #1
 e2e/tests/ringback.spec.ts :: RINGBACK: mix=0 passes the input through; sweeping the crush params stays error-free :: waitForTimeout(400) #1
-e2e/tests/rings.spec.ts :: pollScopePeak :: waitForTimeout(50) #1
-e2e/tests/rings.spec.ts :: pollScopePeak :: waitForTimeout(50) #2
 e2e/tests/samsloop-download.spec.ts :: record → DOWNLOAD → WAV file lands with valid RIFF/WAVE header :: waitForTimeout(500) #1
 e2e/tests/samsloop-memory-bench.spec.ts :: per-instance heap cost — spawn 20 SAMSLOOPs with worst-case payload :: waitForTimeout(3000) #1
 e2e/tests/samsloop-memory-bench.spec.ts :: per-instance heap cost — spawn 20 SAMSLOOPs with worst-case payload :: waitForTimeout(500) #1

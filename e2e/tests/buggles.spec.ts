@@ -5,82 +5,14 @@
 // the offline render that ART scenarios use.
 
 import { test, expect } from './_fixtures';
-import { type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
+import { pollScopePeak, readScopeStats, scopePollMsg } from '../_helpers/scope-poll';
 
 test.describe.configure({ mode: 'parallel' });
 
-interface ScopeStats { peak: number; rms: number; nonzeroSamples: number; total: number; }
-
-async function readScopeStats(page: Page, scopeNodeId: string): Promise<ScopeStats> {
-  return await page.evaluate((id) => {
-    const w = globalThis as unknown as {
-      __engine?: () => {
-        read: (node: { id: string; type: string; domain: string }, key: string) => unknown;
-      } | null;
-      __patch: { nodes: Record<string, { id: string; type: string; domain: string }> };
-    };
-    const eng = w.__engine?.();
-    if (!eng) return { peak: 0, rms: 0, nonzeroSamples: 0, total: 0 };
-    const node = w.__patch.nodes[id];
-    if (!node) return { peak: 0, rms: 0, nonzeroSamples: 0, total: 0 };
-    const snap = eng.read(node, 'snapshot') as { ch1: Float32Array } | undefined;
-    if (!snap) return { peak: 0, rms: 0, nonzeroSamples: 0, total: 0 };
-    let peak = 0, energy = 0, nonzero = 0;
-    for (let i = 0; i < snap.ch1.length; i++) {
-      const v = snap.ch1[i];
-      const a = Math.abs(v);
-      if (a > peak) peak = a;
-      energy += v * v;
-      if (a > 1e-6) nonzero++;
-    }
-    return { peak, rms: Math.sqrt(energy / snap.ch1.length), nonzeroSamples: nonzero, total: snap.ch1.length };
-  }, scopeNodeId);
-}
-
-/**
- * Poll the scope analyser until any one snapshot's peak exceeds `threshold`,
- * or `timeoutMs` elapses. The analyser holds only ~43ms of audio (fftSize 2048
- * @ 48kHz), so a single waitForTimeout + read can land entirely inside a dead
- * zone of a transient signal — e.g. an ADSR envelope between gate triggers,
- * which decays to 0 within attack+release after each pulse and stays there
- * until the next gate. Polling at 50ms over multiple gate cycles guarantees
- * we catch the envelope at its peak as long as the signal is firing at all.
- *
- * Returns the highest stats observed across all polls. If we never crossed
- * the threshold, that highest value is what the caller's assertion sees.
- */
-async function pollScopePeak(
-  page: Page,
-  scopeNodeId: string,
-  threshold: number,
-  timeoutMs: number,
-): Promise<ScopeStats> {
-  const deadline = Date.now() + timeoutMs;
-  let best: ScopeStats = { peak: 0, rms: 0, nonzeroSamples: 0, total: 0 };
-  while (Date.now() < deadline) {
-    let s: ScopeStats;
-    try {
-      s = await readScopeStats(page, scopeNodeId);
-    } catch (err) {
-      // Vite dev-server HMR can drop the execution context mid-poll under
-      // load (`Execution context was destroyed, most likely because of a
-      // navigation`). Wait for the page to settle and retry — it's not a
-      // BUGGLES signal issue.
-      const msg = err instanceof Error ? err.message : String(err);
-      if (msg.includes('Execution context was destroyed')) {
-        await page.waitForLoadState('domcontentloaded').catch(() => {});
-        await page.waitForTimeout(50);
-        continue;
-      }
-      throw err;
-    }
-    if (s.peak > best.peak) best = s;
-    if (best.peak > threshold) return best;
-    await page.waitForTimeout(50);
-  }
-  return best;
-}
+// The scope poller lives at ONE export site and runs its whole sampling loop
+// INSIDE the page. The local copy this replaces did one CDP round trip per
+// sample, on the same main thread as the audio graph it was measuring.
 
 test('buggles: drop module → card mounts with no console errors', async ({ page, rack, errorWatch }) => {
   await spawnPatch(page, [{ id: 'b', type: 'buggles', position: { x: 200, y: 200 } }]);
@@ -170,10 +102,10 @@ test('buggles: CLOCK output triggers ADSR envelope', async ({ page, rack }) => {
     ],
   );
   // Poll the analyser over up to 8 woggle periods (~2s). With BUGGLES firing
-  // every ~240ms and the envelope rising to ~1.0 on each gate, a 50ms-cadence
-  // poll will land on a peak within at most one period.
+  // every ~240ms and the envelope rising to ~1.0 on each gate, the in-page
+  // sampler lands on a peak within at most one period.
   const stats = await pollScopePeak(page, 'scp', 0.1, 2000);
-  expect(stats.peak, `ADSR env peak from BUGGLES.clock=${stats.peak}`).toBeGreaterThan(0.1);
+  expect(stats.peak, scopePollMsg(`ADSR env peak from BUGGLES.clock=${stats.peak}`, stats)).toBeGreaterThan(0.1);
 });
 
 test('buggles: SMOOTH output modulates VCA amplitude', async ({ page, rack }) => {

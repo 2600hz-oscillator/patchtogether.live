@@ -17,6 +17,7 @@
 import { test, expect } from './_fixtures';
 import { type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
+import { pollScopeBandAmp, scopePollMsg } from '../_helpers/scope-poll';
 
 test.describe.configure({ mode: 'parallel' });
 
@@ -63,27 +64,35 @@ function bandAmp(buf: Float32Array | number[], freqHz: number, sr: number): numb
   return 2 * Math.sqrt(re * re + im * im) / n;
 }
 
-/** Poll the scope until we observe the target frequency over `threshold`
- *  or the deadline fires. Returns the highest amplitude seen. */
+/**
+ * Poll the scope until we observe the target frequency over `threshold` or the
+ * bound fires. Returns the highest amplitude seen.
+ *
+ * The sampling loop lives at ONE export site and runs INSIDE the page. What it
+ * replaces did a CDP round trip per sample AND shipped the whole ch1
+ * Float32Array across the wire to reduce it test-side, so the cost of measuring
+ * scaled with the thing being measured — on the same main thread as the audio.
+ *
+ * ⚠ AND IT DISTINGUISHES THE TWO ZEROES. "0" from a poll that never resolved a
+ * scope buffer and "0" from a genuinely silent band are the same number meaning
+ * opposite things — the ambiguity CLAUDE.md names, where "frozen" and "never
+ * looked" are indistinguishable from the output. The off-band probes below
+ * ASSERT on a near-zero reading, so a poll that silently saw nothing would
+ * confirm them. This fails loudly instead.
+ */
 async function pollBandAmp(
   page: Page,
   scopeNodeId: string,
   freqHz: number,
   threshold: number,
-  timeoutMs: number,
+  boundMs: number,
 ): Promise<number> {
-  const deadline = Date.now() + timeoutMs;
-  let best = 0;
-  while (Date.now() < deadline) {
-    const snap = await readScopeChannel(page, scopeNodeId);
-    if (snap) {
-      const amp = bandAmp(snap.ch1, freqHz, snap.sampleRate);
-      if (amp > best) best = amp;
-      if (best > threshold) return best;
-    }
-    await page.waitForTimeout(50);
-  }
-  return best;
+  const r = await pollScopeBandAmp(page, scopeNodeId, freqHz, threshold, boundMs);
+  expect(
+    r.samples,
+    scopePollMsg(`bandAmp@${freqHz}Hz resolved NO scope buffer, so its 0 is not a measurement`, r),
+  ).toBeGreaterThan(0);
+  return r.best;
 }
 
 /** Set a node's button param via the live store (no UI click — used in
