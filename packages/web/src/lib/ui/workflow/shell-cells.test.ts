@@ -16,6 +16,8 @@
 // rendered cell and asserts an observable effect.
 
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 
 import '$lib/audio/modules';
 import '$lib/video/modules';
@@ -135,6 +137,42 @@ describe('shell cells — COVERAGE (no inert cell can render on a promoted face)
       }
     }
     expect(unreachable.join('\n'), 'a declared param cell is unreachable').toBe('');
+  });
+
+  it('the warped-fader has exactly ONE render site, in the PARAM arm', () => {
+    // ⚠ THE GATE FOR THE HALF THE RESOLVER SWEEP CANNOT SEE, and it exists
+    // because fixing the resolver alone left the bug live. `shellCellFor`
+    // returning the cell is necessary and NOT sufficient: `ModuleShell` renders
+    // `ctl.kind === 'param'` in its own arm and consults the cell registry only
+    // in that arm's `{:else}`, so a param never reached the registry AT RENDER
+    // TIME no matter what the resolver returned. Every unit assertion passed —
+    // the cell resolved, the reachability sweep was green — while the dock still
+    // painted a KNOB, and the VRT capture came back "0 baselines committed".
+    //
+    // ⚠ SOURCE, and it is the honest tier for this: no unit test can see a
+    // rendered pixel, and the DOCK BASELINE is the real owner of "what it
+    // paints". This asserts the STRUCTURAL fact that made the pixels wrong —
+    // one render site, on the param side — which is cheap, non-brittle, and
+    // fails in milliseconds instead of a 3-minute capture round trip.
+    const shell = readFileSync(
+      resolve(__dirname, '..', 'modules', 'ModuleShell.svelte'),
+      'utf8',
+    );
+    const sites = [...shell.matchAll(/data-cell-control="warped-fader"/g)];
+    expect(sites.length, 'exactly one warped-fader render site').toBe(1);
+
+    // And it must sit INSIDE the param arm — before the family/static chain,
+    // which is what `{@const cell = shellCellFor(` opens.
+    const paramArm = shell.indexOf("{#if ctl.kind === 'param'}");
+    const familyChain = shell.indexOf('{@const cell = shellCellFor(');
+    const site = shell.indexOf('data-cell-control="warped-fader"');
+    expect(paramArm, 'the param arm exists').toBeGreaterThan(-1);
+    expect(familyChain, 'the family/static chain exists').toBeGreaterThan(-1);
+    expect(
+      site > paramArm && site < familyChain,
+      'the warped-fader renders in the PARAM arm, not the family/static chain — ' +
+        'an arm in the latter is unreachable, which is how #2144 shipped inert',
+    ).toBe(true);
   });
 
   it('NEGATIVE CONTROL: the reachability sweep is not vacuous', () => {
