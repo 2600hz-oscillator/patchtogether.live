@@ -204,6 +204,28 @@ const SUBJECTS: readonly Subject[] = [
       + 'conventionally-named canvas, which is what the `canvas` override exists for.',
   },
 
+  // ── batch-23a — PAYING A DEBT THIS PR'S PREDECESSOR DECLARED ──────────────
+  //
+  // ⚠ #2124 (peakstate + lines) MERGED WITHOUT ROWS HERE, AND SAID SO IN ITS OWN
+  // BODY. Not an omission: this file lives only on the consolidation branch, so
+  // #2124 could not have added them without basing itself on an unmerged PR and
+  // dragging that whole diff into its review. Its body recorded the debt, named
+  // the reason, and named the place it would be paid — this absorb. That is the
+  // difference between a gap and a deferral: one is discovered later by someone
+  // else, the other arrives with an address.
+  //
+  // ⚠ AND THE PRECEDENT FOR PAYING IT PROMPTLY IS TWENTY LINES UP. `quadralogical`
+  // reached main with its two render legs PARKED and no row here, which left its
+  // SCREEN switch at zero live coverage while everyone believed it covered. The
+  // same slip on these two would have been invisible for the same reason.
+  //
+  // Verified before writing, not assumed: `type == prefix == extension id` for
+  // both, both bodies use the standard `{#if !previewCollapsed}` REMOVES
+  // mechanism, and both declare the conventional `<type>-face-canvas` — so
+  // neither needs the `canvas` override quadralogical does.
+  { type: 'peakstate', prefix: 'peakstate', domain: 'video', why: 'the kaleidoscope pen-trace\'s live mandala and its SCREEN switch. ⚠ The ACCUMULATOR case: the picture IS a pen ring of trace history whose advance is unconditional by design, so a lapsed watch mark freezes the mandala mid-figure for all THREE outputs, which share one ring. Its body also swaps the card\'s ungated 30 Hz `read(\'previewCanvas\')` poll for the fleet `blitOutputForPreview` — same surface, but gated and legible to the port seam.' },
+  { type: 'lines', prefix: 'lines', domain: 'video', why: 'the procedural grating\'s live preview and its SCREEN switch — an ADDITION, since LinesCard never drew a preview. ⚠ NOT stateless despite having no accumulator: its shader reads a time term and the pattern auto-scrolls at rest, so a lapsed mark freezes a MOVING picture every downstream consumer is sampling.' },
+
   // ── the AUDIO-def outlier ─────────────────────────────────────────────────
   { type: 'rasterize', prefix: 'rasterize', domain: 'audio', why: '⚠ an AudioModuleDef that carries a VIDEO surface, so it lives in lib/audio/modules and a video-only enumeration misses it entirely. Spawns with domain: audio. It is the reason this file\'s derivation crosses both domains.' },
 ] as const;

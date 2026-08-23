@@ -2350,6 +2350,95 @@ export const FACES = [
       + 'SHOWGRID DEFAULTS ON, so the overlay IS in the baseline — a capture that lost it would '
       + 'mean the toggle had flipped, not that the scene drifted.',
   },
+  // ── BATCH 23a — the zero-attest pair ──────────────────────────────────────
+  //
+  // Both `pages: 1` (neither face declares `pages`). ⚠ UNLIKE EVERY BATCH-22
+  // GROUP, NEITHER OF THESE IS STILL AT REST: both animate with nothing
+  // patched, so both need a determinism seam and they need DIFFERENT ONES. That
+  // is the whole reason to read these two entries together.
+  {
+    type: 'peakstate',
+    pages: 1,
+    videoFaceWhy:
+      'a VIDEO module, so it must boot into the video zone rather than a mixer channel column — '
+      + 'without this field bootWithFace waits out the full 90 s test timeout for a column '
+      + 'membership a video node never acquires. Both scenes also carry a live picture: the '
+      + 'compact tile paints a VideoTileThumb through hasVideoSurface, and the dock body is the '
+      + "module's own fullViewBody extension (the mandala preview plus its SCREEN switch) — which "
+      + 'on this module PRESERVES the 144x144 preview PeakstateCard.svelte already drew, rather '
+      + 'than adding one. ⚠ IT ANIMATES AT REST AND A CLOCK PIN IS NOT ENOUGH: the picture is an '
+      + 'accumulated PEN RING advanced by `advancePen` on every DRAW, so a frozen clock would '
+      + 'still leave the frame dependent on how many draws landed first — the mirrorpool problem, '
+      + 'not the inwards one. See the simPin below, which uses the module\'s own seam.',
+    // ⚠ THE MODULE'S OWN SEED, NOT THE ENGINE CLOCK — and the distinction is
+    // the one `inwards` and `mirrorpool` already draw between them in this
+    // file. `__videoEngineFreezeTime` pins `frame.time`, which is sufficient
+    // only when the render is a pure function of it. PEAKSTATE's is not: the
+    // pen ring is HISTORY, and `advancePen` runs per draw. Pinning the clock
+    // would leave the trail length a function of draw count.
+    //
+    // `__peakstateVrtSeed` is the seam the module ships for exactly this, and
+    // it is not something this roster invented: the def implements it as
+    // "resets the ring + t + rotation to fixed values, paints once at those
+    // values, then BLOCKS further pen advance + rotation advance so the frame
+    // is pixel-stable across runs", and its own comment records that it
+    // "Mirrors the `__foxyVrtSeed` pattern" already used by a sibling entry
+    // below.
+    simPin: [
+      {
+        global: '__peakstateVrtSeed',
+        value: 1,
+        why:
+          'seeds the pen ring at 120 fixed 1/60 s steps from t = 0, paints once, then blocks '
+          + 'further advance — so the captured frame is a pure function of the params and is '
+          + 'identical across boots, renderers and frame counts. Checked as truthy '
+          + '(`!!globalThis.__peakstateVrtSeed`), so 1 is the value. ⚠ NOT sufficient via '
+          + '`__videoEngineFreezeTime`: this module accumulates per DRAW, not per clock tick, so '
+          + 'a pinned clock would still leave the trail length dependent on draw count.',
+      },
+    ],
+  },
+  {
+    type: 'lines',
+    pages: 1,
+    videoFaceWhy:
+      'a VIDEO module, so it must boot into the video zone rather than a mixer channel column — '
+      + 'without this field bootWithFace waits out the full 90 s test timeout for a column '
+      + 'membership a video node never acquires. Both scenes also carry a live picture: the '
+      + 'compact tile paints a VideoTileThumb through hasVideoSurface, and the dock body is the '
+      + "module's own fullViewBody extension (the grating preview plus its SCREEN switch) — a "
+      + 'surface LinesCard.svelte never had. ⚠ IT ANIMATES AT REST, so this scene cannot settle '
+      + 'on its own: the def\'s own prose says the pattern "auto-scrolls on its own (Phase '
+      + 'advances steadily over time, time * 0.15 wrapped to 0..1) so it is visibly alive without '
+      + 'touching a knob". The clock pin below is what stops it — and unlike its batch sibling '
+      + '`peakstate`, a clock pin is SUFFICIENT here.',
+    // ⚠ THE ENGINE CLOCK IS ENOUGH ON THIS ONE — the `inwards` case, not the
+    // `peakstate` case sitting directly above. `lines` reads exactly one time
+    // term (`const autoPhase = (frame.time * 0.15) % 1;`) and carries no
+    // ping-pong, no accumulator, no history and no RNG, so pinning `frame.time`
+    // makes the render a pure function of the four params. That is total
+    // determinism rather than a partial settle, which is the distinction
+    // `mirrorpool` records three globals to work around.
+    //
+    // ⚠ AND IT KEEPS THIS FACE ZERO-ATTEST, which is the batch's whole shape: a
+    // `freeze` ParamDef would be a `params` change, and `params` is IN the
+    // WebGL attest basis and IN contract-lock — paying a real-GPU re-attest to
+    // solve a determinism problem the engine already solves for every video
+    // module at once.
+    simPin: [
+      {
+        global: '__videoEngineFreezeTime',
+        value: 1.0,
+        why:
+          'pins `frame.time`, the ONLY time term this module reads — its auto-scroll is '
+          + '`(frame.time * 0.15) % 1`, added on top of the Phase param. With it pinned the '
+          + 'render is a pure function of (orient, amp, thickness, phase), so the scene is '
+          + 'identical across boots, renderers and frame counts. Sufficient ALONE here, unlike on '
+          + 'peakstate above, because LINES carries no accumulator for the clock pin to leave '
+          + 'running.',
+      },
+    ],
+  },
   // ── BATCH 22 · GROUP 4 — the video thin tail, the REMAINDER ───────────────
   //
   // All four are `pages: 1`: none of the four faces declares `pages`, so the
