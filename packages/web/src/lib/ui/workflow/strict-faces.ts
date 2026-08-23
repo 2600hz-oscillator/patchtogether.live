@@ -3476,6 +3476,49 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   'destructor',
   'luma',
   'videoMixer',
+
+  // ── BATCH 23b · THE ATTEST HALF ───────────────────────────────────────────
+  //
+  // `shapes` rides alone because it is the one module of the <=5 cut whose face
+  // cannot be authored without changing `params` — SPLIT-ON-THE-ATTEST-LINE, the
+  // pattern batch 22 established when it split G2a from G2b, applied again so
+  // 23a's zero-attest pair did not inherit a window it did not need.
+  //
+  // ⚠ TWO DEF CORRECTIONS, BOTH #2090-CLASS, BOTH VERIFIED AT THE SHADER'S READ
+  // SITE rather than argued from the range:
+  //
+  //   * `shape` was `0..2 linear` and is a THREE-STATE SELECTOR: `FRAG_SRC` does
+  //     `int shape = int(floor(uShape + 0.5))`. Now `discrete` with an `options`
+  //     roster promoted from the names the CARD already painted
+  //     (`['CIRCLE','SQUARE','TRI']`) — never invented. Without it the faceplate
+  //     would have rendered this module's most visible decision as a dial
+  //     reading 0/1/2, because promotion deletes the only surface those names
+  //     ever lived on. The roster now lives on the DEF and the card IMPORTS it,
+  //     so a card can no longer disagree with its def about the state names.
+  //
+  //   * `tile` was `0..1 linear` and is a 2-STATE SWITCH: the shader reads
+  //     `uTile >= 0.5 ? ... : 1.0`. Declared `linear`, `looksLikeToggle` returns
+  //     false and the face resolves it to a KNOB — the moog962 defect, where a
+  //     dial cannot reliably land on two values, so the control is INERT in
+  //     practice. Now `discrete`, and classified LATCHING in
+  //     `ACKNOWLEDGED_LATCHING` from that same read site: a LEVEL compared every
+  //     frame, and a momentary render would un-tile the frame on release.
+  //
+  // ⚠ BOTH ARE PIXEL-NEUTRAL BY CONSTRUCTION — every value the card or a CV
+  // could already write was rounded/thresholded by the shader to the same
+  // result, so no baseline moves. What changes is what the CONTROL can express.
+  //
+  // ⚠ TWO OF THE FIVE CONTROLS ARE INERT AT SPAWN, for DIFFERENT reasons, which
+  // is the rank argument rather than trivia: `rotate` is invisible because the
+  // default `shape` is a CIRCLE (rotationally symmetric), and `tileN` is
+  // invisible because `tile` defaults off and the shader collapses the grid to
+  // `n = 1.0`, never reading the uniform. Symmetry versus a gate.
+  //
+  // SCREEN OFF keeps the watch mark, and on a SOURCE that is the sharpest form
+  // of the argument: SHAPES has no input, so it is the ORIGIN of everything
+  // downstream — a lapsed mark would not stall a preview, it would MUTE the
+  // generator every consumer samples.
+  'shapes',
 ]);
 
 /**

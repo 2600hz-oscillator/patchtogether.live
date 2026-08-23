@@ -2879,8 +2879,8 @@ shapes in tile cv param=tile cvScale=linear
 shapes in zoom cv param=zoom cvScale=log
 shapes out out mono-video
 shapes param rotate -3.14159..3.14159 linear default=0
-shapes param shape 0..2 linear default=0
-shapes param tile 0..1 linear default=0
+shapes param shape 0..2 discrete default=0
+shapes param tile 0..1 discrete default=0
 shapes param tileN 1..16 linear default=4
 shapes param zoom 0.05..10 log default=1
 shimmershine meta domain=audio
