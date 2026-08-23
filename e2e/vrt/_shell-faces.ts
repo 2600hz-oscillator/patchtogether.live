@@ -2784,6 +2784,38 @@ export const FACES = [
       },
     ],
   },
+  // ── LUSH GARDEN (2026-08-23) ──────────────────────────────────────────────
+  {
+    type: 'lushgarden',
+    pages: 2,
+    videoFaceWhy:
+      'a VIDEO module, so it must boot into the video zone rather than a mixer channel column — '
+      + 'without this field bootWithFace waits out the full test timeout for a column membership '
+      + 'a video node never acquires. Both scenes carry a live surface: the compact tile paints a '
+      + 'VideoTileThumb through hasVideoSurface (a picture the placeholder tile never had), and '
+      + 'the dock body is the module\'s own fullViewBody. ⚠ AND THE PICTURE IS A WALL-CLOCK '
+      + 'ACCUMULATION, which is what makes the simPin below mandatory rather than tidy: plants '
+      + 'spawn on a rate, each integrates a grow-in curve, and cutout bakes drain two per frame, '
+      + 'so the frame differs on every frame AND every boot.',
+    simPin: [
+      {
+        global: '__lushgardenVrtSeed',
+        value: 0x5eed,
+        why:
+          'resets the scene, spawns a fixed 24 fully-grown plants from a seeded RNG, and sets '
+          + 'vrtMode, which SUPPRESSES ALL FURTHER SPAWNING. That is strictly stronger than a '
+          + 'phase pin: the surface becomes TIME-INVARIANT rather than merely frozen at an '
+          + 'arbitrary moment. ⚠ The freeze write alone would NOT be sufficient here — it stops '
+          + 'the picture but does not choose WHICH picture, the outlines failure mode that '
+          + 'measured 6724 px against a 1500 px tolerance across two ubuntu boots. ⚠ And the pin '
+          + 'REACHES this module only because it runs main-thread: simPin installs boot-time '
+          + 'globals via addInitScript, so a worker renderLocus would put it out of reach (the '
+          + 'acidwarp case). lushgarden declares no renderLocus. The value is the one the CARD '
+          + 'scene already pins, so the layout is one a human has reviewed in the legacy '
+          + 'baseline.',
+      },
+    ],
+  },
 ] as const;
 
 /**
