@@ -78,7 +78,21 @@ import { testHooksEnabled } from '$lib/dev/test-hooks';
  * press-pad edge on the same node. (An ACTION cell must never DECLARE this seam;
  * `shell-cells.test.ts`'s `SEAMS` allowlist keeps it out by omission.)
  */
-export type AuditionSeam = 'manual-strike' | 'manual-gate' | 'engine-message' | 'manual-press';
+/**
+ * `file-export` is the FIFTH member, for a press whose whole effect leaves the
+ * app — samsloop's sample DOWNLOAD. It is deliberately not `engine-message`:
+ * an export reaches no engine and no worklet, so reusing that name would make
+ * the ledger describe something that did not happen, AND a probe watching
+ * `engine-message` on the node would then be satisfied by a REC press — the
+ * exact aliasing `manual-press` was split out to prevent, one seam over.
+ * `delivered: false` is recorded when there is nothing to export.
+ */
+export type AuditionSeam =
+  | 'manual-strike'
+  | 'manual-gate'
+  | 'engine-message'
+  | 'manual-press'
+  | 'file-export';
 
 export interface AuditionRecord {
   /** Monotonic, so a probe can ask "since I looked" without clock skew. */

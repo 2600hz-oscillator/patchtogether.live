@@ -55,6 +55,10 @@ import {
   loadFrametableFile,
   saveFrametableFile,
 } from '$lib/ui/modules/frametable-file-actions';
+import {
+  loadVideocubeSlotFile,
+  setVideocubeSlotLive,
+} from '$lib/ui/modules/videocube-slot-actions';
 import Dx7OperatorMap from '$lib/ui/modules/dx7/Dx7OperatorMap.svelte';
 import Dx7OpDetail from '$lib/ui/modules/dx7/Dx7OpDetail.svelte';
 import AnalogVcoHeroPanel from '$lib/ui/modules/AnalogVcoHeroPanel.svelte';
@@ -85,6 +89,26 @@ import {
   sixstrumSelectorOptions,
 } from '$lib/ui/modules/sixstrum-preset-actions';
 import { clearCloudseedTail } from '$lib/ui/modules/cloudseed-preset-actions';
+import {
+  knobToRate,
+  rateToKnob,
+  formatRatePercent,
+} from '$lib/audio/modules/samsloop-rate';
+import { SAMSLOOP_RATE_LANDMARKS } from '$lib/audio/modules/samsloop';
+import {
+  downloadSamsloopSample,
+  loadSamsloopAudioFile,
+  samsloopBitsOptions,
+  samsloopBitsValue,
+  samsloopChannelsOptions,
+  samsloopChannelsValue,
+  samsloopRateOptions,
+  samsloopRateValue,
+  selectSamsloopBits,
+  selectSamsloopChannels,
+  selectSamsloopRate,
+  toggleSamsloopRecord,
+} from '$lib/ui/modules/samsloop-face-actions';
 import {
   exposeAuditionLedgerForTests,
   type AuditionSeam,
@@ -529,6 +553,69 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
       onFire: (nodeId) => { void saveFrametableFile(nodeId); },
     },
   },
+  videocube: {
+    // THE THREE RING SLOTS — FLOOR, WALL, CEILING — each with the two controls
+    // `VideocubeCard.svelte` gives it: point the ring back at its LIVE input, or
+    // load a `.frametable.png` table into it. These six decide WHAT IS IN THE
+    // CUBE, and promotion deletes the card that owns them, so without these
+    // cells the faceplate would have thirty knobs over a solid whose contents
+    // could not be chosen. All six call
+    // `$lib/ui/modules/videocube-slot-actions`, which the card now calls too.
+    //
+    // ⚠ EVERY ONE OF THE SIX IS ENGINE-ONLY. Both actions hand a tagged element
+    // to `attachExternalSource` and write NOTHING to the graph — v1 does not even
+    // persist a descriptor, unlike FRAMETABLE — so `readParam`/`readData` are
+    // structurally blind to the work. The `videocubeSlot` outcome record is what
+    // makes a press observable, and it is the SECOND adopter of the pattern
+    // `saveFrametableFile` established: written on EVERY press including the
+    // failures, carrying which slot, which source and the outcome, so a dead
+    // button writes nothing at all and a button that reached no engine writes
+    // `ok: false` with the reason. One key for all six — `seq` is what
+    // guarantees a change, and each probe snapshots immediately before its own
+    // press.
+    'videocube-a-live-{n}': {
+      kind: 'action',
+      label: 'FLOOR live',
+      title: 'Point ring A (FLOOR) back at the video_a input and resume live capture — the way back from a loaded table',
+      probe: { effect: { kind: 'data', key: 'videocubeSlot', expect: 'changed' } },
+      onFire: (nodeId) => { setVideocubeSlotLive(nodeId, 'a'); },
+    },
+    'videocube-a-file-input-{n}': {
+      kind: 'file',
+      label: 'FLOOR table…',
+      title: 'Load a .frametable.png atlas into ring A (FLOOR). Session-only in v1 — a reload returns the slot to LIVE',
+      accept: FRAMETABLE_FILE_ACCEPT,
+      onFile: (nodeId, file) => loadVideocubeSlotFile(nodeId, 'a', file),
+    },
+    'videocube-b-live-{n}': {
+      kind: 'action',
+      label: 'WALL live',
+      title: 'Point ring B (WALL / connector) back at the video_b input and resume live capture',
+      probe: { effect: { kind: 'data', key: 'videocubeSlot', expect: 'changed' } },
+      onFire: (nodeId) => { setVideocubeSlotLive(nodeId, 'b'); },
+    },
+    'videocube-b-file-input-{n}': {
+      kind: 'file',
+      label: 'WALL table…',
+      title: 'Load a .frametable.png atlas into ring B (WALL / connector). Session-only in v1',
+      accept: FRAMETABLE_FILE_ACCEPT,
+      onFile: (nodeId, file) => loadVideocubeSlotFile(nodeId, 'b', file),
+    },
+    'videocube-c-live-{n}': {
+      kind: 'action',
+      label: 'CEIL live',
+      title: 'Point ring C (CEILING) back at the video_c input and resume live capture',
+      probe: { effect: { kind: 'data', key: 'videocubeSlot', expect: 'changed' } },
+      onFire: (nodeId) => { setVideocubeSlotLive(nodeId, 'c'); },
+    },
+    'videocube-c-file-input-{n}': {
+      kind: 'file',
+      label: 'CEIL table…',
+      title: 'Load a .frametable.png atlas into ring C (CEILING). Session-only in v1',
+      accept: FRAMETABLE_FILE_ACCEPT,
+      onFile: (nodeId, file) => loadVideocubeSlotFile(nodeId, 'c', file),
+    },
+  },
   dx7: {
     // The voice selector — the single control that defines the sound. Drives
     // the SAME `node.data.preset` write the legacy Dx7Card's <select> does
@@ -581,6 +668,118 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
         action: 'drag',
         effect: { kind: 'data-rev', key: 'voiceRev' },
       },
+    },
+  },
+  samsloop: {
+    // ⚠ THE WARPED FADER'S FIRST CONSUMER, and the reason that cell exists. The
+    // `rate` param is declared `-2..+2 linear`, but `SamsloopCard.svelte` has
+    // never rendered it that way: it draws KNOB SPACE `0..1` and converts at the
+    // edges with a PIECEWISE map. The consequence is geometric — unity (+1) sits
+    // at the fader's MIDPOINT, and a generic linear fader would move it to 3/4
+    // and scatter every landmark with it.
+    //
+    // ⚠ THE MAP IS IMPORTED, NEVER RE-TYPED. `knobToRate`/`rateToKnob` are the
+    // module's own pair and the card calls the same two functions. This is the
+    // backdraft one-source rule applied to a FUNCTION instead of a number: a
+    // re-typed copy renders correctly, writes correct values and passes every
+    // runtime assertion, right up until someone corrects the map in one place —
+    // and then the two surfaces disagree about where unity is with nothing red.
+    // `warped-fader-source.test.ts` greps this file for exactly that.
+    //
+    // ⚠ THE LANDMARKS STAY IN PARAM UNITS. `ParamLandmark` has no position
+    // field; the cell places each at `toKnob(value)`. Declaring them as knob
+    // positions would reproduce the break this cell exists to prevent, neatly
+    // labelled.
+    rate: {
+      kind: 'warped-fader',
+      label: 'rate',
+      paramId: 'rate',
+      toKnob: rateToKnob,
+      fromKnob: knobToRate,
+      landmarks: SAMSLOOP_RATE_LANDMARKS,
+      format: formatRatePercent,
+    },
+
+    // The manual TRIGGER. ⚠ ITS SEAM ALREADY EXISTED: the card resolves
+    // `manualTrigger` off the engine handle, which IS `MANUAL_STRIKE_KEY`, so
+    // this is the canonical one-shot audition rather than a new path. An
+    // audition writes NOTHING to the graph by design, so `readParam`/`readData`
+    // are structurally blind to it and the ledger is the only observable.
+    'samsloop-trigger-{n}': {
+      kind: 'action',
+      label: 'trigger',
+      title: 'Start playback (one-shot plays once, loop starts the loop)',
+      mode: 'trigger',
+      probe: { effect: { kind: 'audition', seam: 'manual-strike' } },
+      onFire: (nodeId) => { fireManualStrike(nodeId); },
+    },
+
+    // The sample LOADER — the same decode-and-install action the card's file
+    // input runs. ⚠ Its `{ status, error }` return is not decoration: the card
+    // renders those two strings in `samsloop-upload-status` /
+    // `samsloop-upload-error`, two affordances the def never declared, and the
+    // `file` cell's contract carries them for free.
+    'samsloop-wav-input-{n}': {
+      kind: 'file',
+      label: 'Load audio...',
+      title: 'Load a sample (wav, mp3, m4a, ogg, flac, opus — up to 2 MB)',
+      accept: 'audio/*',
+      onFile: (nodeId, file) => loadSamsloopAudioFile(nodeId, file),
+    },
+
+    // ⚠ THE RECORDER, WHICH THE FACEPLATE SKILL RECORDED AS UNBUILDABLE. That
+    // claim ("the shell has no recorder cell") was measured again here and is
+    // WRONG: an `engine-message` audition is exactly this shape. Pressing REC
+    // writes NOTHING to `node.data` — the take lives in a node-keyed registry
+    // and commits once, on stop — so a `data` probe would fail on a perfectly
+    // live button. What the press DOES do is resolve a callable off the live
+    // engine handle and drive it, which is what the ledger witnesses.
+    'samsloop-rec-{n}': {
+      kind: 'action',
+      label: 'rec',
+      title: 'Start or stop recording into the sample buffer',
+      mode: 'trigger',
+      probe: { effect: { kind: 'audition', seam: 'engine-message' } },
+      onFire: (nodeId) => { toggleSamsloopRecord(nodeId); },
+    },
+
+    // Export the sample — the recording as a WAV, or an upload's ORIGINAL bytes
+    // verbatim. ⚠ The seam is `file-export` rather than `engine-message`: an
+    // export reaches no engine, and a probe watching `engine-message` here would
+    // be satisfied by a REC press on the same node.
+    'samsloop-download-{n}': {
+      kind: 'action',
+      label: 'export',
+      title: 'Download the loaded or recorded sample',
+      mode: 'trigger',
+      probe: { effect: { kind: 'audition', seam: 'file-export' } },
+      onFire: (nodeId) => { downloadSamsloopSample(nodeId); },
+    },
+
+    // The three RECORD-FORMAT switches. They are `node.data`, not params — they
+    // ride the Yjs envelope and are frozen for a take's duration — so they are
+    // selectors rather than param cells. The rosters are DERIVED from the
+    // module's own tables; the card paints the same strings.
+    'samsloop-chan-{n}': {
+      kind: 'selector',
+      tag: 'chan',
+      options: () => samsloopChannelsOptions(),
+      value: (node) => samsloopChannelsValue(node),
+      onchange: (nodeId, value) => selectSamsloopChannels(nodeId, value),
+    },
+    'samsloop-bits-{n}': {
+      kind: 'selector',
+      tag: 'bits',
+      options: () => samsloopBitsOptions(),
+      value: (node) => samsloopBitsValue(node),
+      onchange: (nodeId, value) => selectSamsloopBits(nodeId, value),
+    },
+    'samsloop-rate-select-{n}': {
+      kind: 'selector',
+      tag: 'rate',
+      options: () => samsloopRateOptions(),
+      value: (node) => samsloopRateValue(node),
+      onchange: (nodeId, value) => selectSamsloopRate(nodeId, value),
     },
   },
   wavecel: {
@@ -1332,14 +1531,60 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
 };
 
 /**
- * The cell spec for a curated FAMILY / STATIC control, or `null` when the
- * module declares none for that key (→ the shell renders an explicitly INERT
- * cell, which both the unit lint and the faces-parity e2e fail on). A `param`
- * control never routes here — the shell handles those generically. Pure.
+ * Cell kinds a PARAM control may resolve.
+ *
+ * ⚠ EXACTLY ONE, AND THE LIST EXISTS SO IT STAYS THAT WAY. Every other kind
+ * here edits `node.data` and carries no `paramId`; handing one to a param
+ * control would render a cell that writes somewhere the control does not point.
+ * `warped-fader` is the only kind that BINDS A PARAM — it is a param cell whose
+ * geometry the generic renderer cannot express — so it is the only one allowed
+ * to cross.
+ */
+const PARAM_CELL_KINDS: ReadonlySet<string> = new Set(['warped-fader']);
+
+/**
+ * The cell spec for a curated control, or `null` when the module declares none
+ * for that key (→ the shell renders an explicitly INERT cell, which both the
+ * unit lint and the faces-parity e2e fail on). Pure.
+ *
+ * ⚠ THIS USED TO REFUSE EVERY `param` CONTROL OUTRIGHT — *"a param control never
+ * routes here, the shell handles those generically"* — and that was TRUE until a
+ * param-shaped cell kind existed. #2144 added `warped-fader`, which binds a
+ * `paramId` by definition, and added its renderer branch to `ModuleShell`
+ * WITHOUT touching this function. The result was a cell type, a render branch
+ * and a source gate that **no control could ever reach**: the branch was dead
+ * code from the day it merged.
+ *
+ * ⚠ NOTHING WAS RED. `module-face-lint`, the dock render-plan parity check and
+ * `faces-parity` all passed, because a `warped-fader` param still resolves to a
+ * perfectly valid GENERIC cell — it just renders the param LINEARLY, which is
+ * precisely the geometry the cell exists to prevent. On samsloop that put unity
+ * at 3/4 of the fader instead of the midpoint. The gate set could not see it
+ * because every member asks "does this control render and operate", and it did.
+ * The VRT dock baseline is what showed it: a KNOB where a fader was declared.
  */
 export function shellCellFor(moduleType: string, ctl: FaceControl): ShellCell | null {
-  if (ctl.kind === 'param') return null;
-  return SHELL_CELLS[moduleType]?.[ctl.key] ?? null;
+  const cell = SHELL_CELLS[moduleType]?.[ctl.key] ?? null;
+  if (!cell) return null;
+  // A param control takes only a param-shaped cell; everything else takes only
+  // the non-param kinds. Both directions, so neither can silently borrow the
+  // other's renderer.
+  const isParamCell = PARAM_CELL_KINDS.has(cell.kind);
+  if (ctl.kind === 'param') return isParamCell ? cell : null;
+  return isParamCell ? null : cell;
+}
+
+/**
+ * Is the cell this module registers under `faceKey` a PARAM-SHAPED one?
+ *
+ * Gate helper for the reachability sweep in `shell-cells.test.ts`: a module can
+ * declare a param cell and rank its param, and every other gate stays green
+ * while the shell renders the generic control — so the declaration has to be
+ * checked against the real resolver. Pure.
+ */
+export function paramShapedCellKind(moduleType: string, faceKey: string): boolean {
+  const cell = SHELL_CELLS[moduleType]?.[faceKey];
+  return !!cell && PARAM_CELL_KINDS.has(cell.kind);
 }
 
 /** Every module type that registers at least one cell spec (gate helper). */

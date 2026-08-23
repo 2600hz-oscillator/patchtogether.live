@@ -234,8 +234,6 @@ e2e/tests/samsloop-record.spec.ts :: REC → wait → STOP commits bytes + wavef
 e2e/tests/samsloop-record.spec.ts :: a RECORDED sample PLAYS — record → trigger → audible at the output :: waitForTimeout(600) #1
 e2e/tests/samsloop-record.spec.ts :: a RECORDED sample PLAYS — record → trigger → audible at the output :: waitForTimeout(700) #1
 e2e/tests/samsloop-record.spec.ts :: the RACK budget, EMPTY rack: full length, no note, records :: waitForTimeout(400) #1
-e2e/tests/samsloop-window.spec.ts :: a RECORDED take bounds both window faders to its OWN frame count, not to 1 :: waitForTimeout(800) #1
-e2e/tests/samsloop-window.spec.ts :: a RECORDED take bounds both window faders to its OWN frame count, not to 1 :: waitForTimeout(900) #1
 e2e/tests/samsloop-window.spec.ts :: dragFader :: waitForTimeout(250) #1
 e2e/tests/samsloop.spec.ts :: REC button is present and clicking it does not crash the card :: waitForTimeout(150) #1
 e2e/tests/samsloop.spec.ts :: idle-by-default: a loaded sample stays SILENT until the TRIGGER button produces audio :: waitForTimeout(600) #1

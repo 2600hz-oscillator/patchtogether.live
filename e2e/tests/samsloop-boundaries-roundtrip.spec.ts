@@ -72,9 +72,18 @@ test.describe('SAMSLOOP loop boundaries round-trip', () => {
     expect(loaded.sampleLength!).toBeGreaterThan(0);
 
     // Set a sub-window loop boundary (a quarter..three-quarters slice).
-    const len = loaded.sampleLength!;
-    const wantStart = Math.round(len * 0.25);
-    const wantEnd = Math.round(len * 0.75);
+    //
+    // ⚠ FRACTIONS OF THE SAMPLE, NOT FRAME INDICES — and the change makes this
+    // test STRONGER rather than merely re-expressing it. The failure it was
+    // written against was that a saved frame index is only meaningful against
+    // the length the buffer had at SAVE time, so a re-decode at a different
+    // AudioContext rate pointed the window at the wrong samples. A fraction is
+    // length-invariant, so that failure is now structurally impossible and what
+    // this asserts is the plain round-trip. The values are deliberately NOT
+    // derived from `sampleLength`: if the window ever silently goes back to
+    // depending on it, these two literals stop matching.
+    const wantStart = 0.25;
+    const wantEnd = 0.75;
     await page.evaluate(({ id, s, e }) => {
       const w = globalThis as unknown as {
         __patch: { nodes: Record<string, { params: Record<string, number> }> };

@@ -2588,6 +2588,22 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   'moog903a',
   'moog962',
   'sampleHold',
+  // ⚠ SAMSLOOP WAS RECORDED AS UNPROMOTABLE, and the record was two claims of
+  // which only one survived re-measurement. `module-faceplates.md` said the
+  // shell had no cell for the file import (FIXED by #2010) and none for the
+  // RECORDER — the second half is now wrong too. The recorder's press resolves a
+  // callable off the live engine handle and drives it, which is precisely what
+  // an `engine-message` audition witnesses; the ledger records `delivered:
+  // false` for a press that reached nothing, so a dead REC button cannot pass.
+  //
+  // The affordance that genuinely had no home was the WAVEFORM — a picture with
+  // no interactive element, and `ShellPanelProbe` requires one. It rides the
+  // `fullViewBody` extension slot instead, which needs no probe because it is a
+  // slot rather than a cell. Every other card affordance maps: the loader to a
+  // file cell, TRIGGER to the canonical manual-strike audition, CHAN/BITS/RATE
+  // to node.data selectors, and the window to two param cells over a range that
+  // is finally the same on both sides of the contract.
+  'samsloop',
   'scaler',
   // control surface is one knob or nothing at all. Thin is not sloppy: each
   // still ships an honest band count (never padded to look substantial), a
@@ -3847,6 +3863,48 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // face itself is hash-transparent. `tempest` and `fader` made the same trade
   // in batch 22 G2b.
   'frametable',
+  // VIDEOCUBE (2026-08-23) — the second of the two ONE-SHOT INGEST modules #2154
+  // reclassified, and the entry that is the OWNER'S CONTROL-HEAVY TABBED CASE
+  // (ruling 2026-08-18) on the stated test rather than by assertion: THIRTY
+  // params across six different KINDS of control — three 2-D pads, five named
+  // rosters, three switches, sixteen dials and six ingest cells — plus EIGHT
+  // outputs, one of them audio. Seven honest pages, and the rail engages at
+  // `DOCK_TAB_MIN_BANDS` on its own: no `face.tabbed` opt-in, and none needed.
+  // ⚠ Nothing was padded to reach seven; the honest grouping landed there, which
+  // is the only way the ruling permits a rail.
+  //
+  // It repeats FRAMETABLE's findings, which is the point of doing the pair
+  // together — the same defects were present, in the same shapes, and neither
+  // was visible until a faceplate resolved a primitive from a declaration:
+  //
+  //  1. `freeze` and `live` declared `curve: 'linear'` while being read as
+  //     `>= 0.5` two-state levels and drawn as BUTTONS by the card.
+  //  2. FIVE discrete params had NO `options` roster — `wrap`, `material`,
+  //     `reader_mode`, `slice_view`, `hue_mode`. Every name lived only in
+  //     `VideocubeCard.svelte`'s `MODES` / `SLICE_VIEWS` arrays and its own
+  //     button captions, so promotion would have left five anonymous dials.
+  //  3. The SIX per-slot INGEST controls were card-only, and they decide the
+  //     entire CONTENT of the solid. A faceplate without them is thirty knobs
+  //     over a cube whose three surfaces cannot be chosen.
+  //  4. The card's THREE pictures — the ray-march, the SLICE cross-section and
+  //     the derived WAVE — are deleted by promotion, and the last of those is
+  //     the only place this module's SOUND is visible at all.
+  //
+  // ⚠ AND ONE FINDING THAT IS ITS OWN, not a repeat: `screen_on`. The def
+  // already shipped a param captioned `screen`, and it is very nearly the
+  // OPPOSITE of the 2026-08-18 SCREEN switch — it skips the RAY-MARCH ITSELF,
+  // where the ruling's switch stops the BLIT and keeps the engine running. Both
+  // now ship, because both are real, but the param is relabelled `ray-march` so
+  // one faceplate does not carry two differently-behaved controls under one
+  // word. Only the LABEL moved; the id, range, default and semantics did not,
+  // and `label` is not projected into contract-lock.
+  //
+  // ⚠ THIS FACE COSTS A REAL-GPU RE-ATTEST, for FRAMETABLE's reason: `params` is
+  // real code to `attest-code-basis.ts` and this def is in the WebGL basis, so
+  // the five rosters, the two `curve` corrections and the one label all move
+  // `computeWebglHash`. Unlike frametable the FACTORY is untouched — VIDEOCUBE's
+  // slot loads are session-only, so there is no re-hydrate to move.
+  'videocube',
 ]);
 
 /**

@@ -2740,13 +2740,23 @@ sampleHold param scale 0..9 discrete default=1
 samsloop meta domain=audio
 samsloop in audio_l_in audio
 samsloop in audio_r_in audio
+samsloop in end_cv cv param=end cvScale=linear:1
 samsloop in rate_cv cv param=rate cvScale=linear
+samsloop in start_cv cv param=start cvScale=linear:1
 samsloop in trig gate edge=trigger
 samsloop out out audio
-samsloop param end 0..1000000 linear default=1000000
+samsloop param end 0..1 linear default=1
 samsloop param mode 0..1 discrete default=1
+samsloop param poly 0..1 discrete default=0
 samsloop param rate -2..2 linear default=1
-samsloop param start 0..1000000 linear default=0
+samsloop param start 0..1 linear default=0
+samsloop family samsloop-bits kind=other prefix=samsloop-bits
+samsloop family samsloop-chan kind=other prefix=samsloop-chan
+samsloop family samsloop-download kind=other prefix=samsloop-download
+samsloop family samsloop-rate-select kind=other prefix=samsloop-rate
+samsloop family samsloop-rec kind=other prefix=samsloop-rec
+samsloop family samsloop-trigger kind=other prefix=samsloop-trigger
+samsloop family samsloop-wav-input kind=other prefix=samsloop-wav-input
 scaler meta domain=audio
 scaler in in audio accepts=cv,gate,pitch
 scaler out out audio adopts=in
@@ -3573,10 +3583,10 @@ videocube param connect_strength 0..1 linear default=0
 videocube param crush 0..1 linear default=0
 videocube param fine -100..100 linear default=0 unit=¢
 videocube param fold 0..1 linear default=0
-videocube param freeze 0..1 linear default=0
+videocube param freeze 0..1 discrete default=0
 videocube param hue_mode 0..1 discrete default=0
 videocube param level 0..2 linear default=1
-videocube param live 0..1 linear default=0
+videocube param live 0..1 discrete default=0
 videocube param material 0..1 discrete default=0
 videocube param morph_fc 0..1 linear default=0
 videocube param motion 0..1 linear default=0
@@ -3597,6 +3607,12 @@ videocube param view_rot_y -3.1416..3.1416 linear default=0.7
 videocube param view_rot_z -3.1416..3.1416 linear default=0
 videocube param view_zoom 0.3..3 linear default=1
 videocube param wrap 0..1 discrete default=0
+videocube family videocube-a-file-input kind=other prefix=videocube-a-file-input
+videocube family videocube-a-live kind=other prefix=videocube-a-live
+videocube family videocube-b-file-input kind=other prefix=videocube-b-file-input
+videocube family videocube-b-live kind=other prefix=videocube-b-live
+videocube family videocube-c-file-input kind=other prefix=videocube-c-file-input
+videocube family videocube-c-live kind=other prefix=videocube-c-live
 videoMixer meta domain=video
 videoMixer in amount1 cv param=amount1 cvScale=linear
 videoMixer in amount2 cv param=amount2 cvScale=linear

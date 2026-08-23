@@ -48,6 +48,8 @@
     samsloopDecodeBytesB64,
     SAMSLOOP_MAX_FILE_BYTES,
     SAMSLOOP_RATE_RANGE,
+    SAMSLOOP_WINDOW_RANGE,
+    SAMSLOOP_RATE_LANDMARKS,
     type SamsloopData,
   } from '$lib/audio/modules/samsloop';
   import {
@@ -80,6 +82,7 @@
   import ModuleTitle from './ModuleTitle.svelte';
   import { cardParams, portsFromDef } from './card-kit';
   import { nodeSamsloop, type SamsloopTap } from './node-samsloop-registry.svelte';
+  import { drawSamsloopWaveform } from './samsloop-waveform-draw';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -552,8 +555,10 @@
       d.sampleRate = result.sampleRate;
       d.sampleLength = samples.length;
       d.fileName = file.name;
-      target.params.start = 0;
-      target.params.end = samples.length;
+      // A fresh load opens the window to the WHOLE sample. As a fraction that
+      // is literally 0..1 and needs no knowledge of the frame count.
+      target.params.start = SAMSLOOP_WINDOW_RANGE.min;
+      target.params.end = SAMSLOOP_WINDOW_RANGE.max;
       // The engine factory polls node.data every POLL_MS (200ms) and
       // picks up the new fileBytesB64 signature → decodes + pushes to
       // the worklet. Sub-quarter-second audible delay; the alternative
@@ -641,6 +646,13 @@
   //   - Idle / after recording: draw the loaded `samples` (file upload)
   //     OR the static peaks of the persisted node.data.sample.bytes
   //     (recorded). When neither exists, "NO SAMPLE LOADED" placeholder.
+  // ⚠ THE DRAW ITSELF LIVES IN `samsloop-waveform-draw.ts` AND THE FACEPLATE
+  // BODY CALLS THE SAME FUNCTION. Until the legacy shell is gone both surfaces
+  // exist and must show the same picture of the same sample; the peak fold, the
+  // window wash and the playhead are all arithmetic that can drift, and this
+  // module has already paid for a duplicated PCM path once (a recording that
+  // drew correctly and made no sound). This effect resolves the STATE; it no
+  // longer owns any geometry.
   $effect(() => {
     // Track reactivity dependencies explicitly.
     void sampleLength; void start; void end;
@@ -648,58 +660,24 @@
     if (!canvasEl) return;
     const ctx2d = canvasEl.getContext('2d');
     if (!ctx2d) return;
-    const w = canvasEl.width;
-    const h = canvasEl.height;
-    ctx2d.clearRect(0, 0, w, h);
-    ctx2d.fillStyle = '#0a0c11';
-    ctx2d.fillRect(0, 0, w, h);
 
-    if (isRecording) {
-      // Live-record view: bar's x-axis = the take's own barSeconds.
-      //
-      // ⚠ `progress()` is read ONLY on this branch, and that is deliberate: it
-      // subscribes to the registry's 20 Hz publish counter, and an IDLE
-      // samsloop card's draw below decodes its persisted PCM on every run. A
-      // single shared counter would have made every idle card re-decode 20×
-      // a second whenever any samsloop in the rack was recording.
-      const live = nodeSamsloop.progress(id);
-      const peaks = live?.peaks ?? new Float32Array(0);
-      const cols = Math.min(w, peaks.length);
-      ctx2d.fillStyle = 'rgba(255, 60, 60, 0.18)';
-      // Highlight already-filled region. ⚠ `elapsed` here is frames/rate — the
-      // LENGTH OF THE TAKE, not the wall clock. A wall clock would keep the bar
-      // sliding right even if the tap had gone silent, which is precisely the
-      // half-fix this whole change exists to make impossible to ship.
-      const axis = Math.max(live?.barSeconds ?? maxSecondsExact, 0.001);
-      const filledFrac = Math.min(1, (live?.elapsed ?? 0) / axis);
-      ctx2d.fillRect(0, 0, filledFrac * w, h);
-      ctx2d.strokeStyle = 'rgb(255, 80, 60)';
-      ctx2d.lineWidth = 1;
-      ctx2d.beginPath();
-      for (let x = 0; x < cols; x++) {
-        const peak = peaks[x] ?? 0;
-        if (peak === 0) continue;
-        const y0 = (1 - peak * 0.5 - 0.5) * h;
-        const y1 = (1 - (-peak) * 0.5 - 0.5) * h;
-        ctx2d.moveTo(x + 0.5, y0);
-        ctx2d.lineTo(x + 0.5, y1);
-      }
-      ctx2d.stroke();
-      // Right edge: thin vertical to show the cap.
-      ctx2d.strokeStyle = 'rgba(255, 200, 60, 0.5)';
-      ctx2d.beginPath();
-      ctx2d.moveTo(w - 0.5, 0);
-      ctx2d.lineTo(w - 0.5, h);
-      ctx2d.stroke();
-      return;
-    }
+    // ⚠ `progress()` is read ONLY while recording, and that is deliberate: it
+    // subscribes to the registry's 20 Hz publish counter, and an IDLE samsloop
+    // card's draw decodes its persisted PCM on every run. A single shared
+    // counter would have made every idle card re-decode 20× a second whenever
+    // any samsloop in the rack was recording.
+    //
+    // ⚠ `elapsed` is frames/rate — the LENGTH OF THE TAKE, not the wall clock.
+    // A wall clock would keep the bar sliding right even if the tap had gone
+    // silent, which is the half-fix that must not ship.
+    const live = isRecording ? nodeSamsloop.progress(id) : null;
 
-    // Idle / playback view. Source priority:
-    //   1. `displaySamples` — locally-decoded buffer from the NEW
-    //      fileBytesB64 path (current uploads use this).
-    //   2. `d.samples` — legacy YArray PCM from pre-PR-#XXX patches.
-    //   3. `d.sample.bytesB64` — the recording-path bytes (separate
-    //      feature from uploads; the card draws L-channel peaks).
+    // Idle / playback source priority:
+    //   1. `displaySamples` — locally-decoded buffer from the fileBytesB64 path.
+    //   2. `d.samples` — legacy YArray PCM from older patches.
+    //   3. `d.sample.bytesB64` — the recording path, through the SAME decoder
+    //      playback uses. `'left'` keeps the trace's shape stable regardless of
+    //      the CHAN setting; playback asks for `'mix'`.
     const d = node?.data as SamsloopData | undefined;
     let samplesForDraw: Float32Array | null = null;
     if (displaySamples && displaySamples.length > 0) {
@@ -707,54 +685,23 @@
     } else if (d?.samples && d.samples.length > 0) {
       samplesForDraw = new Float32Array(d.samples);
     } else if (d?.sample && d.sample.byteLength > 0) {
-      // Decode the persisted PCM bytes back to Float32 for the waveform
-      // preview, through the SAME decoder the playback path uses. It used to
-      // be a second hand-rolled copy of this arithmetic here — and the two
-      // sides drifting is precisely how the recording came to draw correctly
-      // while making no sound. `'left'` keeps the trace's shape stable
-      // regardless of the CHAN setting; playback asks for `'mix'`.
       samplesForDraw = decodeRecordedPcm(d.sample, 'left');
     }
-    if (!samplesForDraw || samplesForDraw.length === 0) {
-      ctx2d.fillStyle = '#5a6275';
-      ctx2d.font = '10px ui-monospace, monospace';
-      ctx2d.textAlign = 'center';
-      ctx2d.fillText('NO SAMPLE LOADED', w / 2, h / 2);
-      return;
-    }
-    const samples = samplesForDraw;
-    // The START..END highlight band. It used to be drawn for UPLOADS ONLY, on
-    // the reasoning that "for recorded-only samples the start/end params
-    // haven't been touched yet" — which was true only because a recording did
-    // not play at all, so its window meant nothing. Now that it does, the
-    // window is exactly as real for a take as for an upload and the band has
-    // to show it: whatever is drawn here is the slice the worklet loops.
-    {
-      const wStartFrac = Math.max(0, Math.min(1, start / samples.length));
-      const wEndFrac = Math.max(wStartFrac, Math.min(1, end / samples.length));
-      ctx2d.fillStyle = 'rgba(80, 160, 220, 0.18)';
-      ctx2d.fillRect(wStartFrac * w, 0, (wEndFrac - wStartFrac) * w, h);
-    }
-    const samplesPerPx = Math.max(1, Math.floor(samples.length / w));
-    ctx2d.strokeStyle = 'rgb(255, 150, 40)';
-    ctx2d.lineWidth = 1;
-    ctx2d.beginPath();
-    for (let x = 0; x < w; x++) {
-      const i0 = x * samplesPerPx;
-      const i1 = Math.min(samples.length, i0 + samplesPerPx);
-      let mn = 0;
-      let mx = 0;
-      for (let i = i0; i < i1; i++) {
-        const s = samples[i] ?? 0;
-        if (s < mn) mn = s;
-        if (s > mx) mx = s;
-      }
-      const y0 = (1 - (mx * 0.5 + 0.5)) * h;
-      const y1 = (1 - (mn * 0.5 + 0.5)) * h;
-      ctx2d.moveTo(x + 0.5, y0);
-      ctx2d.lineTo(x + 0.5, y1);
-    }
-    ctx2d.stroke();
+
+    // ⚠ NO PLAYHEAD ON THE CARD. It is a per-frame live read and this effect is
+    // reactive, not a rAF loop — a line drawn once when a param happens to
+    // change would sit frozen wherever the last repaint left it, which is worse
+    // than no playhead at all. The faceplate body paints on rAF and shows it.
+    drawSamsloopWaveform(ctx2d, canvasEl.width, canvasEl.height, {
+      samples: samplesForDraw,
+      startFrac: start,
+      endFrac: end,
+      playheadFrac: -1,
+      recordPeaks: live?.peaks ?? null,
+      recordFilledFrac: live
+        ? Math.min(1, (live.elapsed ?? 0) / Math.max(live.barSeconds ?? maxSecondsExact, 0.001))
+        : 0,
+    });
   });
 </script>
 
@@ -934,11 +881,18 @@
       {/if}
 
       <div class="waveform-row">
+        <!-- ⚠ THE WINDOW IS A FRACTION AND THE RANGE COMES FROM THE DEF. It
+             used to be `max={Math.max(1, sampleLength)}` — a frame count the
+             card computed itself, against a def that declared `0..1e6`. The
+             model clamps a write to the DECLARED range, so on any recording
+             past ~20.8 s at 48 kHz this fader's upper travel wrote values the
+             contract silently discarded: the backdraft class. Importing
+             SAMSLOOP_WINDOW_RANGE is what makes the two sides one source. -->
         <NeonFader
           value={start}
-          min={0}
-          max={Math.max(1, sampleLength)}
-          defaultValue={0}
+          min={SAMSLOOP_WINDOW_RANGE.min}
+          max={SAMSLOOP_WINDOW_RANGE.max}
+          defaultValue={SAMSLOOP_WINDOW_RANGE.min}
           label="Start"
           curve="linear"
           onchange={set('start')} moduleId={id} paramId="start"
@@ -953,9 +907,9 @@
         ></canvas>
         <NeonFader
           value={end}
-          min={0}
-          max={Math.max(1, sampleLength)}
-          defaultValue={Math.max(1, sampleLength)}
+          min={SAMSLOOP_WINDOW_RANGE.min}
+          max={SAMSLOOP_WINDOW_RANGE.max}
+          defaultValue={SAMSLOOP_WINDOW_RANGE.max}
           label="End"
           curve="linear"
           onchange={set('end')} moduleId={id} paramId="end"
@@ -963,6 +917,13 @@
         />
       </div>
 
+      <!-- ⚠ THE TICKS ARE ONE SOURCE WITH THE FACE. They used to be five
+           hand-typed `frac` positions — knob-space coordinates that silently
+           encoded the current piecewise map's geometry. They are now DERIVED
+           from the same `SAMSLOOP_RATE_LANDMARKS` (param units) the faceplate's
+           warped-fader cell reads, through the same `rateToKnob`. Correct the
+           map and both surfaces move together, which is what the two-sided
+           contract rule is for. -->
       <div class="rate-row">
         <NeonFader
           value={rateToKnob(rate)}
@@ -971,13 +932,10 @@
           defaultValue={rateToKnob(SAMSLOOP_RATE_RANGE.defaultValue)}
           label="Rate"
           curve="linear"
-          ticks={[
-            { frac: 0.0,        label: '-200%' },
-            { frac: 1 / 6,      label: '-100%' },
-            { frac: 1 / 3,      label: '0%' },
-            { frac: 0.5,        label: 'Norm' },
-            { frac: 1.0,        label: '+200%' },
-          ]}
+          ticks={SAMSLOOP_RATE_LANDMARKS.map((lm) => ({
+            frac: rateToKnob(lm.value),
+            label: lm.label,
+          }))}
           onchange={(k: number) => set('rate')(knobToRate(k))}
           moduleId={id}
           paramId="rate"

@@ -1,5 +1,58 @@
 # `composite-nibbles-length_cv-driven` — a VRT baseline that is nondeterministic, and the evidence for it
 
+---
+
+## ⚠ RESOLVED — and the hypothesis below was WRONG. Read this first.
+
+The diagnosis was carried out on 2026-08-23. **Step 1 (classify the diff PNG
+first) refuted section 4's cv-shadow-latch hypothesis in one look**, which is
+exactly what that section asked it to do. Recorded rather than quietly edited,
+because the value of the falsifiable framing is only visible if the falsification
+is kept.
+
+**What the two PNGs actually showed** (committed baseline vs the frame the full
+sweep captured):
+
+```
+LEN 4 → LEN 5 · pellet (495,167) → (374,133) · snake moved
+```
+
+That is **NIBBLES GAME STATE**, not a SCOPE analyser offset. Section 4 predicted a
+DC-offset shift with an unchanged trace shape; the real difference is a different
+RNG draw plus a different number of elapsed game ticks.
+
+**The mechanism**, from `nibbles.ts`: `initialSeed()` falls back to `Date.now()`
+unless `__nibblesVrtSeed` is set, and the game steps whenever `frame.time`
+advances (`dt` feeds `tickAccumS`, which drives `advanceGame()`). This spec pinned
+neither. ⚠ The sibling spec `vrt-composite.spec.ts` never had the bug — its scenes
+go through `vrt-composite-scenes.ts`, which has pinned `__nibblesVrtSeed` all
+along. **Two composite specs, one pinned, one not.**
+
+**The fix** pins both halves, for the NIBBLES pairs only: the engine clock
+(`__videoEngineFreezeTime`, so `dt` is identically 0 and the snake never steps)
+and the RNG (`__nibblesVrtSeed`, set BEFORE spawn — `maybeApplyVrtSeed` re-seeds
+`state` on a later frame but does NOT repaint, so a post-spawn pin would leave the
+original `Date.now()` frame on screen).
+
+**MEASURED, both directions, byte-level:**
+
+| tree | run A | run B | verdict |
+|---|---|---|---|
+| pre-fix | `2ed942ac…` | `62fc8ce5…` | **differ** |
+| post-fix | `1425603 2…` | `14256032…` | **identical** |
+
+⚠ Section 5 warned that a local repeat loop here would be vacuous "because the
+scene usually passes". That warning was right about a *pass/fail* loop and wrong
+about this one: comparing the captured PNGs **byte-for-byte** is far more
+sensitive than the tolerance-gated comparison, and the defect reproduces on every
+run at that resolution. Worth keeping as a technique — when a flake hides inside a
+tolerance, drop the tolerance rather than repeating the gated check.
+
+DOOM was excluded by name and by construction; see the closing section.
+
+---
+
+
 Written 2026-08-23 from the CAMERA promotion lane (#2148), which tripped over this
 without causing it. No fix attempted here: this is the diagnosis a fix session
 should start from, so it does not have to re-derive the contradiction.

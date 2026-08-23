@@ -497,6 +497,18 @@ describe('module-face lint — MOMENTARY pads (face.momentary)', () => {
    *  an id here ONLY after confirming against the module's DSP/card that the
    *  control latches; a press-pad goes on `face.momentary` instead. */
   const ACKNOWLEDGED_LATCHING = new Set<string>([
+    // SAMSLOOP `poly`, 2026-08-23. MONO (0) vs POLY (1) — whether a trigger
+    // arriving while the module is already sounding RESTARTS the single voice or
+    // takes another one.
+    //
+    // LATCHING, classified AT THE READ SITE. The worklet reads it once per
+    // block as a plain level (`Math.round(polyArr[0] ?? 0) === 1`) and hands the
+    // boolean to `startVoice`; there is no edge detector on it anywhere in the
+    // processor. It is a MODE the player sets and leaves — the whole point is
+    // that the NEXT several triggers layer — so a momentary render would drop
+    // the rack back to mono the instant they released the pad, which is the one
+    // behaviour nobody could use it for.
+    'samsloop:poly',
     // SPECTROGRAPH, 2026-08-23 (cut B). `view` picks which COLORMAP the
     // on-surface preview pulls: COLOR (heat ramp) or B/W (inverted grayscale).
     //
@@ -1041,6 +1053,47 @@ describe('module-face lint — MOMENTARY pads (face.momentary)', () => {
     // overwriting it.
     'frametable:live',
     'frametable:freeze',
+    // VIDEOCUBE, 2026-08-23. Five switch-shaped params, ALL LATCHING, and all
+    // five classified at the READ SITE — which on this module is unusually
+    // uniform: every one of them is a bare level test evaluated fresh inside
+    // `draw()` on every frame, and there is NO edge detector anywhere in
+    // videocube.ts. The card agrees at the WRITE site: all five are `onclick`
+    // handlers that FLIP the stored value (`toggleWrap`, `toggleMaterial`,
+    // `toggleFreeze`, `toggleLive`, `toggleHueMode`), and this card has no
+    // pointer-capture press-pad at all.
+    //
+    // `freeze` — `const frozen = params.freeze >= 0.5` stops the LIVE rings
+    // advancing so the held surfaces can be scrubbed. A momentary render would
+    // resume capture on release and wash away the very window a player froze in
+    // order to scan it, which is the same loss FRAMETABLE's entry describes.
+    //
+    // `live` — forces the real-time / no-lag ring read. A state you switch on
+    // and leave on for as long as you want the solid tracking its inputs;
+    // releasing back into the lag mid-performance is not a control anyone could
+    // use.
+    //
+    // `wrap` and `material` — both are LOOKS. WRAP mirror-folds the sampling
+    // domain so the videos kaleidoscopically tile through the volume; MATERIAL
+    // switches the solid between a translucent blend and a hard one-surface-wins
+    // mosaic. Each is a property of the render you choose and keep, and a
+    // momentary render would snap the solid back to the other look the instant
+    // the pointer lifted — the b3ntb0x / colourofmagic shape.
+    //
+    // `hue_mode` — picks which colour-to-timbre CHARACTER BANK drives the chroma
+    // morph. Audio-only, and the def's own doc calls it "a front-panel toggle".
+    // ⚠ It is additionally CV-GATED (a gate high selects INSTRUMENT), which is
+    // the FREEZE-pattern seam, not a press: the level is read every frame, so a
+    // momentary render would fight the cable rather than complement it.
+    //
+    // ⚠ `screen_on` IS DELIBERATELY ABSENT from this list, and its absence is
+    // correct rather than an oversight: it rests at 1, so `looksLikeSwitch`
+    // (which requires `defaultValue === 0`) does not flag it and no
+    // classification is owed. It is latching too.
+    'videocube:freeze',
+    'videocube:live',
+    'videocube:wrap',
+    'videocube:material',
+    'videocube:hue_mode',
   ]);
 
   it('no ACKNOWLEDGED_LATCHING param is DOCUMENTED as momentary (the cross-check)', () => {
