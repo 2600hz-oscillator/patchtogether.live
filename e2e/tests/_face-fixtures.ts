@@ -750,10 +750,11 @@ export const VIDEO_SINK_FIXTURE: FixtureResolution = deriveFixture(
  *     so a predicate cannot quietly shrink the subject it is measuring. This is
  *     the check that would have caught the old hand-picked list: four names out
  *     of the whole video registry, with the rest neither offered nor refused.
- *   * THE INSTRUMENT IS NOT BLIND — `eligible` is non-empty, i.e. the fitness
- *     predicate still accepts SOMETHING across the whole domain population.
- *     Checked for every resolution kind, including the skip, because a blind
- *     predicate reaches the skip arm looking exactly like a finished migration.
+ *   * (THE INSTRUMENT-IS-NOT-BLIND check is NOT here — see the note at the
+ *     `no-candidate` line in the body. `deriveFixture` detects an empty
+ *     `eligible` itself and returns `no-candidate`, so a clause here could
+ *     never fire; the consuming spec owns the positive and negative controls
+ *     over `eligible` and `probe`.)
  *
  * ⚠ THE `pool.length <= 1` SLACK FLOOR IS GONE (#2137), AND ITS REMOVAL IS THE
  * POINT RATHER THAN A TIDY-UP. Two things were wrong with it. It was a
@@ -779,12 +780,17 @@ export const VIDEO_SINK_FIXTURE: FixtureResolution = deriveFixture(
 export function fixtureProblems(fixture: FixtureResolution): string[] {
   const problems: string[] = [];
   if (fixture.kind === 'no-candidate') problems.push(fixture.why);
-  if (fixture.eligible.length === 0 && fixture.kind !== 'no-candidate') {
-    problems.push(
-      'the fitness predicate accepts NOTHING in the whole domain population, so this ' +
-        'resolution was reached by a BLIND instrument rather than by the state of the tree',
-    );
-  }
+  // ⚠ THERE IS DELIBERATELY NO `eligible.length === 0` CLAUSE HERE, and its
+  // absence is the honest shape rather than an omission. A first draft added
+  // one, guarded `&& kind !== 'no-candidate'` — and it could never fire:
+  // `deriveFixture` returns `no-candidate` for exactly that condition, so the
+  // guard excluded the only state that reaches it. A check that cannot fail is
+  // decoration, and listing it among "the checks" would have made this file
+  // claim coverage it does not have — the very shape the derivation above
+  // exists to prevent. The blind-instrument case is enforced where it is
+  // detected (in `deriveFixture`) and surfaced by the `no-candidate` line
+  // above, whose `why` carries the full diagnosis; the consuming spec adds the
+  // POSITIVE and NEGATIVE controls over `eligible` and `probe`.
   if (fixture.kind === 'ok') {
     if (!fixture.pool.includes(fixture.type)) {
       problems.push(`the pick (${fixture.type}) is not a member of the derived pool`);
