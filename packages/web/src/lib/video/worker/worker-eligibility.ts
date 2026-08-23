@@ -38,11 +38,20 @@
 //                      undefined), so a module that publishes or consumes audio
 //                      cannot exist there.
 //
-//   dom-source         the CARD owns a real <video>/<img> and hands it to
-//                      `attachExternalSource`. A DOM element is main-thread by
-//                      definition. Membership comes from
-//                      `DOM_SOURCE_LANE_TYPES`, which is itself derived by
-//                      grepping the cards.
+//   dom-source         the CARD owns a real <video>/<img>, hands it to
+//                      `attachExternalSource`, AND THE ENGINE KEEPS IT — wiring
+//                      per-frame delivery (rVFC, the texture uploader, a
+//                      keep-alive, a retained `mediaEl`). A live DOM element is
+//                      main-thread by definition. Membership comes from
+//                      `DOM_SOURCE_LANE_TYPES`, which is derived from BOTH
+//                      halves: the card grep and the engine-side attach body.
+//                      ⚠ The second half is why `frametable` and `videocube`
+//                      are NOT here. They attach a one-shot atlas the next draw
+//                      detiles and drops, so nothing main-thread is pinned by
+//                      it. Both remain BLOCKED regardless — frametable on
+//                      `video-input`, videocube on `video-input` +
+//                      `multi-video-output` + `audio-port` — so dropping
+//                      `dom-source` moved neither module's disposition.
 //
 //   card-producer      the CARD's own rAF IS the producer of the picture (or of
 //                      the engine-visible state). Membership comes from

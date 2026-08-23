@@ -423,14 +423,21 @@ for (const type of TYPES) {
     // full behavioural scenario iff its expanded card exposes BOTH a local-file
     // input and a transport play button — i.e. it is a local-file PLAYER, the
     // only shape whose "is it still playing?" question is even well posed.
-    // Two groups fall out, and neither can opt out silently:
+    // One group falls out, and it cannot opt out silently:
     //   * network / capture sources (peertube, tvLibrarian, archivist,
-    //     cameraInput, loopback) — no fixture can drive them in CI;
-    //   * one-shot loaders (frametable, videocube) — they upload a file into an
-    //     atlas/texture and have no transport, so there is no playback to lose.
-    // BOTH groups are still covered, by the SOURCE-level gate
+    //     cameraInput, loopback) — no fixture can drive them in CI.
+    // It is still covered by the SOURCE-level gate
     // (packages/web/src/lib/ui/media/card-media-lifetime.test.ts), which reads
     // every DOM-source card's unmount path and needs no browser.
+    //
+    // ⚠ THERE USED TO BE A SECOND GROUP HERE — "one-shot loaders (frametable,
+    // videocube) … there is no playback to lose" — and that sentence was RIGHT
+    // while the set it described was WRONG. Those two are no longer DOM-source
+    // modules at all: `DOM_SOURCE_LANE_TYPES` now requires the ENGINE to keep
+    // the attached element, and theirs is a one-shot atlas import the next draw
+    // detiles and drops. So they are not enrolled here to be skipped; they are
+    // simply not in this sweep's population. This spec's own prose had the
+    // right observation two levels below where the classification lived.
     const fileInput = pane.locator('input[type="file"][data-testid$="-file-input"]').first();
     const playBtn = pane.locator('button[data-testid$="-play-btn"]').first();
     const isPlayer = (await fileInput.count()) > 0 && (await playBtn.count()) > 0;
