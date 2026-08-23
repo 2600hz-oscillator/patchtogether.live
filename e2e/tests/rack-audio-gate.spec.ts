@@ -21,6 +21,7 @@
 // patch is the audio suites' subject, not this file's.
 
 import { test, expect } from '@playwright/test';
+import { BOOT_MS } from '../_helpers/boot-budget';
 
 test.describe('/rack audio gate (#1826)', () => {
   test('opted in: overlay shows at boot, one click boots the engine, overlay removes itself', async ({
@@ -32,7 +33,17 @@ test.describe('/rack audio gate (#1826)', () => {
     await page.goto('/rack');
 
     const gate = page.locator('[data-testid="audio-gate"]');
-    await expect(gate).toBeVisible();
+    // BOUND, not an assertion: the claim is that the overlay is THERE, never
+    // that it paints within some interval. This is a BOOT / first-paint
+    // subject — the overlay mounts on hydration of a cold route — so it takes
+    // BOOT_MS like every other one (#1875). Measured on the merge of #2145:
+    // against Playwright's invisible 5000 ms expect default, a cold server
+    // put first paint at 5.2 s (pass) and 5.4 s (FAIL) on a fast dev box, so
+    // the default sat exactly ON the cost. ⚠ And under `E2E_SWIFTSHADER=1`,
+    // the renderer CI actually uses, even the WARM iterations measured
+    // 4.5-4.8 s — i.e. the default was ~200 ms from red on every CI run, not
+    // only cold ones. The 2-core CI VM is slower still.
+    await expect(gate).toBeVisible({ timeout: BOOT_MS });
 
     await gate.click();
 
@@ -55,8 +66,9 @@ test.describe('/rack audio gate (#1826)', () => {
     page,
   }) => {
     await page.goto('/rack');
-    // The canvas is up (the route booted normally)…
-    await expect(page.locator('.svelte-flow').first()).toBeVisible();
+    // The canvas is up (the route booted normally)… same BOOT bound and the
+    // same reason: this leg's subject is the cold route coming up at all.
+    await expect(page.locator('.svelte-flow').first()).toBeVisible({ timeout: BOOT_MS });
     // …and the gate never mounted: {#if} on the webdriver signal, so there is
     // no node to intercept the first click of any fixture spec.
     await expect(page.locator('[data-testid="audio-gate"]')).toHaveCount(0);
