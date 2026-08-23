@@ -214,6 +214,21 @@ const EXTENSION_BODY_ROLES: Readonly<Record<string, BodyRule>> = {
   colorizer: { role: 'picture', why: 'the mono-to-colour tinter\'s live preview canvas and its SCREEN switch. Sits mid-chain by construction (mono-video in, video out), which is why its body keeps the engine\'s watch mark alive while the screen is off (#2015).' },
   edges: { role: 'picture', why: 'the Sobel outline filter\'s live preview canvas and its SCREEN switch. Stateless — the outline is a pure per-pixel function of (input, threshold, thickness) — so SCREEN OFF costs it nothing but the OUTPUT, which is what the retained watch mark protects (#2015).' },
   inwards: { role: 'picture', why: 'the concentric-ring generator\'s live preview canvas and its SCREEN switch. The only SOURCE of the four: it has no video input, so a lapsed watch mark would mute the generator every downstream node samples rather than merely stalling a preview (#2015).' },
+  // ── SCOREBOARD (2026-08-22, #2089) — a picture that is a NUMBER ──────────
+  //
+  // ⚠ THE ENTRY WHERE "TEXT ON THE SURFACE" NEEDS ITS SHARPEST READING, which
+  // is why it is spelled out. The body's canvas paints FOUR DIGITS, and digits
+  // are the thing this roster's rulings are usually about. They are permitted
+  // here — indeed unavoidable — because they are not a READOUT OF A CONTROL:
+  // they are the module's OUTPUT PICTURE, the very frame the `out` port emits
+  // to whatever is patched downstream. Suppressing them would not tidy a
+  // faceplate, it would delete the module's product. The resting-text ruling is
+  // about derived state printed BESIDE a control; this is the signal itself.
+  //
+  // Everything the body paints as CHROME is one control caption: the SCREEN
+  // button. The card has no readout row, no state word and no decimal, so
+  // unlike most entries here nothing had to be removed on promotion.
+  scoreboard: { role: 'picture', why: 'the 4-digit neon counter\'s live display and its SCREEN switch — the module\'s entire product, since it has no video input and no audio path: two gates in, four digits out. ⚠ The DIGITS are the OUTPUT PICTURE (what `out` emits), not a readout of a control, which is why numerals on this surface are correct rather than a resting-text violation. ⚠ SCREEN OFF keeping the watch mark is load-bearing on STATE here, not just on the picture: the counter advances on gate edges the factory detects during draw, so a lapsed mark would leave SCORE edges UNCOUNTED and the number WRONG when the screen returns — not merely stale (#2015).' },
   // ── ACIDWARP (2026-08-22, #2111) — the module that IS its display ────────
   //
   // TEXT ON THE SURFACE, exhaustively: the SCREEN button's own caption. Nothing
@@ -260,6 +275,26 @@ const EXTENSION_BODY_ROLES: Readonly<Record<string, BodyRule>> = {
   // currently favours, a fact the card carried only as a colour.
   quadralogical: { role: 'picture', why: 'the 4-input XY crossfader\'s joystick field — a live 2×2 preview of the four inputs (its own `preview` port) with the diamond, the corner labels and the puck overlaid, plus its SCREEN switch. ⚠ The only body that is also a CONTROL: `face.xyPads[0].surface: \'body\'` means the dock paints no band cell for pos_x/pos_y, so this surface IS the joystick. The puck is a window onto the MIX, which is what keeps the module\'s own output on the plate after the standalone preview screen was removed. SCREEN OFF keeps the watch mark alive on a MIXER feeding two outputs (#2015).' },
   shapegen: { role: 'picture', why: 'the generative 3-D shape synthesiser\'s live preview canvas and its SCREEN switch. A GENERATOR whose `out` is the reason to patch it, so the retained watch mark is what stops a control labelled SCREEN behaving as a MUTE downstream (#2015).' },
+  // ── BATCH 22 · GROUP 4 — the video thin tail, the REMAINDER ───────────────
+  //
+  // All four PICTURES: a live preview canvas plus ONE control caption (the
+  // SCREEN button). ⚠ AND ALL FOUR ARE SURFACES THEIR MODULES NEVER HAD — none
+  // of `MapperCard` / `DestructorCard` / `LumaCard` / `VideoMixerCard` draws a
+  // canvas, so these bodies are ADDITIONS rather than ports of a card preview.
+  // That makes the declared role the FIRST statement on record about what each
+  // one paints. None of the four cards mounts `hideControls`, so none carries a
+  // MONITOR toggle or a resize grip to declare. Nothing on any of the four
+  // surfaces is a derived value in a text node.
+  //
+  // Grouped rather than interleaved alphabetically for the reason this roster
+  // already documents about itself three entries up: it has been caught by a
+  // merge on three consecutive rounds, and four separate alphabetical
+  // insertions are four separate conflict sites in the file most likely to take
+  // a concurrent edit. One block is one hunk.
+  mapper: { role: 'picture', why: 'the luminance-gated keyer\'s live MATTE preview and its SCREEN switch — and on a one-param module this canvas IS the merit argument, because "did the key cut where I wanted?" is not answerable from a fader reading 0.5. Stateless, so SCREEN OFF costs it only the OUTPUT, which is what the retained watch mark protects: the matte is produced FOR something downstream to composite (#2015).' },
+  destructor: { role: 'picture', why: 'the glitch/decay stack\'s live preview canvas and its SCREEN switch. Its four faders are DEGRADATION AMOUNTS whose only description is a look, so the picture is what makes them legible. Stateless — the scanline grid is a function of vUv.y, not of a clock — so the retained watch mark is about the OUTPUT of a chain effect, never an accumulator (#2015).' },
+  luma: { role: 'picture', why: 'the luminance-domain grade\'s live preview canvas and its SCREEN switch. ⚠ Do not confuse the directory with `lumakey` above: this is the single-input TONE PROCESSOR, that one is the two-input COMPOSITOR. The picture earns its place because the module ships a BIT-EXACT IDENTITY at its defaults, so the frame is the only thing distinguishing graded from untouched. Stateless mid-chain, so the watch mark protects the OUTPUT (#2015).' },
+  videoMixer: { role: 'picture', why: 'the 4-channel additive mixer\'s live COMPOSITE preview and its SCREEN switch — four faders that SUM have no per-channel observable, so this canvas is where "which sources am I actually seeing, and is it clipping to white?" is answered. Stateless (its own header records that binding its own output as a spare sampler was rejected as a feedback loop), and the JOIN of the graph: a lapsed watch mark would black out up to FOUR upstream chains at once (#2015).' },
 
   // ── BATCH 22 · GROUP 2b — the two faces that cost an attest ───────────────
   //
@@ -305,6 +340,9 @@ const EXTENSION_BODY_ROLES: Readonly<Record<string, BodyRule>> = {
   // documents about itself above.
   peakstate: { role: 'picture', why: 'the kaleidoscope pen-trace\'s live mandala and its SCREEN switch. ⚠ THE ACCUMULATOR CASE, and the strongest in the fleet: the picture IS a pen ring of trace history, and the def keeps the state advance UNCONDITIONAL while per-port rasterization is gated precisely so a re-patched output "resumes at the correct phase with the whole trail already in the ring". A lapsed watch mark drops the node from the pull set and stops the ADVANCE, not merely a rasterize — so the mandala freezes mid-figure for all THREE outputs, which share one ring (#2015). ⚠ Its body also swaps the card\'s ungated `read(\'previewCanvas\')` 30 Hz poll for the fleet `blitOutputForPreview`, which is the same surface but gated AND legible to the port seam.' },
   lines: { role: 'picture', why: 'the procedural grating\'s live preview canvas and its SCREEN switch. ⚠ NOT a stateless sibling despite having no accumulator: its shader reads a time term and the pattern auto-scrolls at rest ("visibly alive without touching a knob"), so a lapsed watch mark freezes a MOVING picture that every downstream consumer is sampling rather than merely pausing a preview (#2015). The switch is an ADDITION — its card never drew a preview.' },
+
+  // ── BATCH 23b — the attest half ───────────────────────────────────────────
+  shapes: { role: 'picture', why: 'the SDF primitive generator\'s live stamp preview and its SCREEN switch. ⚠ NOT `shapegen` above — that is the 3-D shape synthesiser; this is the 2-D primitive source, and the ids differ by three characters. A SOURCE with no input at all, so the retained watch mark is the sharpest form of the #2015 argument: a lapsed mark would not stall a preview, it would MUTE the origin of everything downstream. Its card mounts no `hideControls`, so no MONITOR toggle or resize grip is declared, and nothing on the surface is a derived value in a text node.' },
 
   // ── STATUS — the one body whose subject is not a picture.
   cvBuddy: {

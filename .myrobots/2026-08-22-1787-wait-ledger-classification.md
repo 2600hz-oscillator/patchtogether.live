@@ -56,9 +56,13 @@ built to find it.
   — the claim was that `pollScopePeak(…, 0.01, 3000)` subsumes it. It does not:
   the scope is **still ringing from MODAL** when the model switches, so the poll
   can return the MODAL decay tail. The wait separates the two measurements.
-  (That test is unsound for a second, independent reason — `peak > 0.01` is a
-  property both models share — filed as **#2112**, deliberately out of scope
-  for a wait-conversion diff.)
+  (That test was ALSO unsound for a second, independent reason — `peak > 0.01`
+  is a property both models share, so it could not fail on a `model` that never
+  reached the engine. **Fixed in the batch that touched it**: the switch is now
+  a checked step, an `expect.poll` on the engine's own `model` value,
+  negative-controlled in both directions. What it still cannot see — engine →
+  worklet AudioParam, i.e. whether the DSP really renders a different resonator
+  — is stated at the call site and raised with the owner.)
 - `shapegen.spec.ts` and `textmarquee.spec.ts` are real debt but **STATE**, not
   deletions: both are the write-through-`__ydoc.transact`-then-read-`__patch`
   shape that PR #1788 already converted on cellshade to a single
@@ -72,7 +76,7 @@ a negative assertion the poll is true immediately and covers nothing. Ask of any
 
 ## ⚠ DOOM — 14 entries, permanently exempt
 
-Owner ruling 2026-08-17, verbatim: *"do not fuck with doom in any way without
+Owner ruling 2026-08-17, verbatim: *"do not [touch] doom in any way without
 specific approval."* Not classified, not read, not counted toward the payable
 set. The mechanism is why it generalises: `video/modules/doom.ts` calls
 `runtime.runTic()` inside `surface.draw`, and `runTic` runs exactly one

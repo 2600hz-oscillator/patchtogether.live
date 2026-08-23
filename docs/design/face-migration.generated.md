@@ -12,8 +12,8 @@ Every registered module carries exactly one **disposition**: what kind of work i
 |  | count |
 |---|---|
 | registered modules | 198 |
-| done (faced + promoted) | 118 |
-| remaining (excludes organizational-native) | 77 |
+| done (faced + promoted) | 124 |
+| remaining (excludes organizational-native) | 71 |
 | registered with NO disposition (must be zero) | 0 |
 | inventory entries naming a dead def (must be zero) | 0 |
 
@@ -21,7 +21,7 @@ Every registered module carries exactly one **disposition**: what kind of work i
 
 | disposition | what it means | modules | done |
 |---|---|---|---|
-| `generic-face` | author a `face` and rank the controls — no new platform capability | 141 | 118 |
+| `generic-face` | author a `face` and rank the controls — no new platform capability | 141 | 124 |
 | `blocked` | would be a face today but for the named capability, and nothing else | 3 | — |
 | `bespoke-surface` | the primary interaction is not param-shaped — needs a purpose-built surface | 51 | — |
 | `organizational-native` | rack furniture; not a migration at all | 3 | — |
@@ -66,7 +66,7 @@ author a `face` and rank the controls — no new platform capability.
 | `delay` | audio | done | — |
 | `depolarizer` | audio | done | — |
 | `destroy` | audio | done | — |
-| `destructor` | video | — | — |
+| `destructor` | video | done | — |
 | `dockscope` | audio | — | — |
 | `drummergirl` | audio | done | — |
 | `dx7` | audio | done | — |
@@ -89,13 +89,13 @@ author a `face` and rank the controls — no new platform capability.
 | `kickdrum` | audio | done | — |
 | `lfo` | audio | done | — |
 | `lines` | video | done | — |
-| `luma` | video | — | — |
+| `luma` | video | done | — |
 | `lumakey` | video | done | — |
 | `lushgarden` | video | — | — |
 | `macrooscillator` | audio | done | — |
 | `mandelbulb` | video | done | — |
 | `mandleblot` | video | — | — |
-| `mapper` | video | — | — |
+| `mapper` | video | done | — |
 | `marbles` | audio | done | — |
 | `meowbox` | audio | done | — |
 | `milkdrop` | video | done | — |
@@ -148,10 +148,10 @@ author a `face` and rank the controls — no new platform capability.
 | `samsloop` | audio | — | — |
 | `scaler` | audio | done | — |
 | `scope` | audio | — | — |
-| `scoreboard` | video | — | — |
+| `scoreboard` | video | done | — |
 | `shapedramps` | video | — | — |
 | `shapegen` | video | done | — |
-| `shapes` | video | — | — |
+| `shapes` | video | done | — |
 | `shimmershine` | audio | done | — |
 | `sidecar` | audio | done | — |
 | `sixstrum` | audio | done | — |
@@ -173,7 +173,7 @@ author a `face` and rank the controls — no new platform capability.
 | `vca` | audio | done | — |
 | `vdelay` | video | done | — |
 | `vfpgaRunner` | video | — | — |
-| `videoMixer` | video | — | — |
+| `videoMixer` | video | done | — |
 | `videoOut` | video | done | — |
 | `warrensspectrum` | audio | done | — |
 | `warrensvisions` | video | done | — |

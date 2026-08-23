@@ -146,7 +146,7 @@ Three DOOM tests appear in the raw flaky data and **none of them was modified**:
 | `doom-late-join.spec.ts` | B joins mid-level → hot-drops into the current map as active player 1 | 1 |
 | `doom-mp-real.spec.ts` | owner hosts + launches MP as P1, guest one-click hot-joins as P2 | 1 |
 
-The reason is the standing owner ruling — *"do not fuck with doom in any way without specific approval"* — and it is mechanical, not preference. `video/modules/doom.ts` calls `runtime.runTic()` inside `surface.draw`, and `runTic` runs exactly one `dgpt_tick`, so **DOOM's game clock IS the frame clock: one rendered frame = one game tic.** Anything that changes DOOM's timing re-specifies how far the marine walks, in a suite that then asserts on where he ended up. The owner has reserved these three for their own decision.
+The reason is the standing owner ruling — *"do not [touch] doom in any way without specific approval"* — and it is mechanical, not preference. `video/modules/doom.ts` calls `runtime.runTic()` inside `surface.draw`, and `runTic` runs exactly one `dgpt_tick`, so **DOOM's game clock IS the frame clock: one rendered frame = one game tic.** Anything that changes DOOM's timing re-specifies how far the marine walks, in a suite that then asserts on where he ended up. The owner has reserved these three for their own decision.
 
 No DOOM file, spec, wait or timing is touched by this campaign.
 

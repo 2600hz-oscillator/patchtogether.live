@@ -7,7 +7,7 @@
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import { patch } from '$lib/graph/store';
   import { setNodeParam } from '$lib/graph/mutate';
-  import { shapesDef } from '$lib/video/modules/shapes';
+  import { shapesDef, SHAPE_NAMES } from '$lib/video/modules/shapes';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
   import { portsFromDef } from './card-kit';
@@ -23,7 +23,12 @@
     return (v: number) => setNodeParam(id, paramId, v);
   }
 
-  const SHAPE_LABELS = ['CIRCLE', 'SQUARE', 'TRI'] as const;
+  // ⚠ IMPORTED, NOT RE-TYPED. These names used to be a local literal here while
+  // the def declared `shape` as a bare `0..2 linear` range — so the card was the
+  // ONLY place the roster existed, and promotion (which deletes this card) would
+  // have taken it with it. Batch 23b moved the roster onto the def as
+  // `SHAPE_NAMES` and this card now reads it, so there is ONE definition and a
+  // card can no longer disagree with its def about what the states are called.
   let shapeIdx = $derived(Math.max(0, Math.min(2, Math.round(p('shape')))));
   let tileOn   = $derived(p('tile') >= 0.5);
 
@@ -51,7 +56,7 @@
   <PatchPanel nodeId={id} {inputs} {outputs}>
   <div class="button-row">
     <button class="mode-btn" onclick={cycleShape} title="Cycle shape (circle / square / triangle)">
-      {SHAPE_LABELS[shapeIdx]}
+      {SHAPE_NAMES[shapeIdx]}
     </button>
     <button class="mode-btn" class:active={tileOn} onclick={toggleTile} title="Tile across the frame">
       TILE {tileOn ? 'ON' : 'OFF'}

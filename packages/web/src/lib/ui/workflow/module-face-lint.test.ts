@@ -908,6 +908,19 @@ describe('module-face lint — MOMENTARY pads (face.momentary)', () => {
     // the quiet agreements are what make them legible as exceptions.
     'lumakey:invert',
     'shapegen:solids',
+    // SHAPES, 2026-08-23 (batch 23b) — the TILE switch, here for the same reason
+    // b3ntb0x's folds are: its `curve` was corrected `linear` -> `discrete` when
+    // the face landed, because the shader hard-thresholds it
+    // (`uTile >= 0.5 ? ... : 1.0`) so `linear` was always a lie and the faceplate
+    // would have painted a two-state switch as a continuous rotary — which is
+    // INERT, not merely ugly. Pixel-neutral: every value the card could write
+    // already sat on the same side of that threshold.
+    //
+    // LATCHING, not momentary, read off the shader rather than assumed: it
+    // compares a LEVEL every frame, and the card's TILE ON/OFF button flips a
+    // persisted state you leave engaged. A momentary render would un-tile the
+    // frame the instant you let go, which is the opposite of the control.
+    'shapes:tile',
     // QUADRALOGICAL, 2026-08-22 — the GLOBAL key inversion, and it is the entry
     // whose `curve` correction fixed a control that the player could not reach
     // AT ALL rather than one they could reach awkwardly.

@@ -43,7 +43,6 @@ e2e/tests/audio-in.spec.ts :: ensureAudioInStreaming :: waitForTimeout(150) #1
 e2e/tests/audio-in.spec.ts :: exposes BOTH L and R outputs of the stereo pair (both non-silent) :: waitForTimeout(800) #1
 e2e/tests/audio-in.spec.ts :: menu patch-out wires pinned AUDIO IN → SCOPE and the fake-mic signal materializes :: waitForTimeout(800) #1
 e2e/tests/audio-in.spec.ts :: streams the fake 440 Hz sine to SCOPE.ch1 (non-silence) :: waitForTimeout(800) #1
-e2e/tests/backdraft.spec.ts :: faders route through the patch store :: waitForTimeout(120) #1
 e2e/tests/behavioral-observation-window.spec.ts :: readFramesWallClockSpaced :: waitForTimeout(spacingMs) #1
 e2e/tests/blood-audio-output.spec.ts :: BLOOD audio_l → SCOPE: the game-audio mixer produces audible signal in-game :: waitForTimeout(80) #1
 e2e/tests/blood-audio-output.spec.ts :: BLOOD audio_l → SCOPE: the game-audio mixer produces audible signal in-game :: waitForTimeout(80) #2
@@ -56,7 +55,6 @@ e2e/tests/bluebox.spec.ts :: bluebox: clicking "5" produces 770 + 1336 Hz peaks 
 e2e/tests/bluebox.spec.ts :: bluebox: clicking BLUEBOX produces a 2600 Hz dominant peak :: waitForTimeout(200) #1
 e2e/tests/bluebox.spec.ts :: bluebox: clicking REDBOX produces 1700 + 2200 Hz peaks :: waitForTimeout(200) #1
 e2e/tests/bluebox.spec.ts :: bluebox: setting btn_5 param directly drives the tone (no UI click) :: waitForTimeout(200) #1
-e2e/tests/bluebox.spec.ts :: pollBandAmp :: waitForTimeout(50) #1
 e2e/tests/bridge-late-materialization.spec.ts :: edge added in a SEPARATE transaction AFTER the source node still wires + delivers signal :: waitForTimeout(400) #1
 e2e/tests/bridge-late-materialization.spec.ts :: edge added in a SEPARATE transaction AFTER the source node still wires + delivers signal :: waitForTimeout(400) #2
 e2e/tests/bridge-late-materialization.spec.ts :: edge added in a SEPARATE transaction AFTER the source node still wires + delivers signal :: waitForTimeout(600) #1
@@ -65,8 +63,6 @@ e2e/tests/bridge-late-materialization.spec.ts :: edge patched BEFORE target node
 e2e/tests/buggles.spec.ts :: buggles: SMOOTH output modulates VCA amplitude :: waitForTimeout(1800) #1
 e2e/tests/buggles.spec.ts :: buggles: SMOOTH output produces a slowly-varying voltage :: waitForTimeout(1800) #1
 e2e/tests/buggles.spec.ts :: buggles: STEPPED output produces varying voltages over time (chaos > 0) :: waitForTimeout(1500) #1
-e2e/tests/buggles.spec.ts :: pollScopePeak :: waitForTimeout(50) #1
-e2e/tests/buggles.spec.ts :: pollScopePeak :: waitForTimeout(50) #2
 e2e/tests/cable-drag-panel-lock.spec.ts :: click opens the menu; hover alone does not; outside-click closes :: waitForTimeout(150) #1
 e2e/tests/cable-drag-panel-lock.spec.ts :: click opens the menu; hover alone does not; outside-click closes :: waitForTimeout(300) #1
 e2e/tests/chromaconsole.spec.ts :: chromaconsole: repeating a value puts no second message on the wire (graph-coalesced) :: waitForTimeout(300) #1
@@ -126,7 +122,6 @@ e2e/tests/dx7.spec.ts :: dx7: sequencer (poly) → DX7 → audioOut produces aud
 e2e/tests/dx7.spec.ts :: dx7: switching algorithm changes the audible scope content :: waitForTimeout(100) #1
 e2e/tests/dx7.spec.ts :: dx7: switching algorithm changes the audible scope content :: waitForTimeout(100) #2
 e2e/tests/dx7.spec.ts :: dx7: switching algorithm changes the audible scope content :: waitForTimeout(800) #1
-e2e/tests/edges.spec.ts :: CV params route through the patch store :: waitForTimeout(120) #1
 e2e/tests/edges.spec.ts :: captureEdges :: waitForTimeout(700) #1
 e2e/tests/filter-cv-depth.spec.ts :: cutoff_cv_amt scales the cutoff CV — full depth sweeps, depth 0 mutes the jack :: waitForTimeout(100) #1
 e2e/tests/filter-cv-depth.spec.ts :: cutoff_cv_amt scales the cutoff CV — full depth sweeps, depth 0 mutes the jack :: waitForTimeout(600) #1
@@ -184,11 +179,6 @@ e2e/tests/meowbox.spec.ts :: peakRmsOverWindow :: waitForTimeout(intervalMs) #1
 e2e/tests/meowbox.spec.ts :: waitForVOct :: waitForTimeout(40) #1
 e2e/tests/midi-cv-buddy.spec.ts :: midi-cv-buddy: clicking Connect does not crash the card :: waitForTimeout(300) #1
 e2e/tests/midi-lane.spec.ts :: midi-lane: clicking Connect does not crash the card :: waitForTimeout(300) #1
-e2e/tests/midi-learn-note.spec.ts :: MIDI assign: a card BUTTON (DRUMSEQZ PLAY) binds a NOTE that TOGGLES the param :: waitForTimeout(30) #1
-e2e/tests/midi-learn-note.spec.ts :: MIDI assign: a card BUTTON (DRUMSEQZ PLAY) binds a NOTE that TOGGLES the param :: waitForTimeout(40) #1
-e2e/tests/midi-learn-note.spec.ts :: MIDI assign: a card BUTTON (DRUMSEQZ PLAY) binds a NOTE that TOGGLES the param :: waitForTimeout(40) #2
-e2e/tests/midi-learn-note.spec.ts :: MIDI assign: a gate INPUT row binds a NOTE (binding materializes + bound state) :: waitForTimeout(30) #1
-e2e/tests/midi-learn-note.spec.ts :: MIDI assign: a gate INPUT row binds a NOTE (binding materializes + bound state) :: waitForTimeout(30) #2
 e2e/tests/midi-learn.spec.ts :: MIDI Learn: right-click a knob → learn → CC drives the param + badge shows + tracks :: waitForTimeout(50) #1
 e2e/tests/midi-learn.spec.ts :: MIDI Learn: right-click a knob → learn → CC drives the param + badge shows + tracks :: waitForTimeout(50) #2
 e2e/tests/midi.spec.ts :: @midi MIDI Clock pulses drive midi-clock-source BPM derivation :: waitForTimeout(50) #1
@@ -241,9 +231,6 @@ e2e/tests/reshaper-shapedramps.spec.ts :: onboard mix1 crossfades two LINES into
 e2e/tests/reshaper-shapedramps.spec.ts :: shaped wiring renders a non-uniform deformed coordinate field :: waitForTimeout(800) #1
 e2e/tests/ringback.spec.ts :: RINGBACK: mix=0 passes the input through; sweeping the crush params stays error-free :: waitForTimeout(120) #1
 e2e/tests/ringback.spec.ts :: RINGBACK: mix=0 passes the input through; sweeping the crush params stays error-free :: waitForTimeout(400) #1
-e2e/tests/rings.spec.ts :: pollScopePeak :: waitForTimeout(50) #1
-e2e/tests/rings.spec.ts :: pollScopePeak :: waitForTimeout(50) #2
-e2e/tests/rings.spec.ts :: rings: model switch (MODAL ↔ SYMPATHETIC) — both produce audio :: waitForTimeout(300) #1
 e2e/tests/samsloop-download.spec.ts :: record → DOWNLOAD → WAV file lands with valid RIFF/WAVE header :: waitForTimeout(500) #1
 e2e/tests/samsloop-memory-bench.spec.ts :: per-instance heap cost — spawn 20 SAMSLOOPs with worst-case payload :: waitForTimeout(3000) #1
 e2e/tests/samsloop-memory-bench.spec.ts :: per-instance heap cost — spawn 20 SAMSLOOPs with worst-case payload :: waitForTimeout(500) #1
@@ -260,7 +247,6 @@ e2e/tests/samsloop-window.spec.ts :: dragFader :: waitForTimeout(250) #1
 e2e/tests/samsloop.spec.ts :: REC button is present and clicking it does not crash the card :: waitForTimeout(150) #1
 e2e/tests/samsloop.spec.ts :: idle-by-default: a loaded sample stays SILENT until the TRIGGER button produces audio :: waitForTimeout(600) #1
 e2e/tests/samsloop.spec.ts :: per-rackspace cap: adding samsloop #21 surfaces "sorry, SAMSLOOP limit exceeded" :: waitForTimeout(300) #1
-e2e/tests/samsloop.spec.ts :: rate param accepts a reverse value (varispeed) without errors :: waitForTimeout(200) #1
 e2e/tests/samsloop.spec.ts :: uploads a WAV → filename appears + waveform renders trace pixels :: waitForTimeout(300) #1
 e2e/tests/scaler-cv-passthrough.spec.ts :: AMOUNT scales the CV reaching LINES.orient — high AMOUNT moves orient more than low (dead-knob regression) :: waitForTimeout(300) #1
 e2e/tests/scaler-cv-passthrough.spec.ts :: AMOUNT scales the CV reaching LINES.orient — high AMOUNT moves orient more than low (dead-knob regression) :: waitForTimeout(300) #2
@@ -288,7 +274,6 @@ e2e/tests/shapegen-clock.spec.ts :: rising edges regenerate; within-hold window 
 e2e/tests/shapegen-clock.spec.ts :: rising edges regenerate; within-hold window holds; stopped clock freezes regen count :: waitForTimeout(2000) #1
 e2e/tests/shapegen-clock.spec.ts :: rising edges regenerate; within-hold window holds; stopped clock freezes regen count :: waitForTimeout(4000) #1
 e2e/tests/shapegen-clock.spec.ts :: waitForRegen :: waitForTimeout(80) #1
-e2e/tests/shapegen.spec.ts :: SIZE + ROT knobs mutate params via the patch store :: waitForTimeout(100) #1
 e2e/tests/shapegen.spec.ts :: SOLIDS toggle changes the rendered pixel content :: waitForTimeout(300) #1
 e2e/tests/shapegen.spec.ts :: SOLIDS toggle changes the rendered pixel content :: waitForTimeout(400) #1
 e2e/tests/shapegen.spec.ts :: spawns + card mounts + preview canvas paints without errors :: waitForTimeout(400) #1
@@ -308,7 +293,6 @@ e2e/tests/tempo-stability.spec.ts :: tempo-stability: ${} drops the past-due bac
 e2e/tests/tempo-stability.spec.ts :: tempo-stability: ${} drops the past-due backlog under a stall > lookahead, never bunches (#229/#224) :: waitForTimeout(600) #1
 e2e/tests/tempo-stability.spec.ts :: tempo-stability: baseline (no jank) sequencer advance rate matches BPM :: waitForTimeout(RUN_MS) #1
 e2e/tests/textmarquee.spec.ts :: BOLD toolbar applies a bold run to the selection :: waitForTimeout(400) #1
-e2e/tests/textmarquee.spec.ts :: CV params (scrollX / posX) route through the patch store :: waitForTimeout(120) #1
 e2e/tests/tidy-vco.spec.ts :: TIDY VCO mono chain: SEQUENCER gate+pitch → voice → audible RMS + in-tune fundamental :: waitForTimeout(60) #1
 e2e/tests/timelorde-auto-spawn.spec.ts :: rack that already has TIMELORDE: no duplicate spawned on second mount :: waitForTimeout(750) #1
 e2e/tests/timelorde-tap-tempo.spec.ts :: Spacebar taps the tempo ONLY when TIMELORDE is selected :: waitForTimeout(300) #1

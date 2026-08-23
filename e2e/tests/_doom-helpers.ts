@@ -1,7 +1,7 @@
 // e2e/tests/_doom-helpers.ts
 //
 // ⚠ DOOM SPECS ARE NORMALLY OFF-LIMITS. The standing owner ruling is:
-//     "do not fuck with doom in any way without specific approval"
+//     "do not [touch] doom in any way without specific approval"
 //   This file — and the DOOM specs that import it — exist under a SPECIFIC,
 //   NARROWER approval given by the owner on 2026-08-18, verbatim:
 //     "okay see if you can go make the doom tests blurrier and less flakey,
