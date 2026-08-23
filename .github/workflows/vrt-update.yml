@@ -92,7 +92,7 @@ jobs:
     # has been outgrown by the faceplate programme (#2039 shard count, #2103
     # cost artifact + 6 -> 8 shards, now this), and #2103's matrix comment
     # records the trigger: on a third occurrence, AUTOMATE rather than bump. So
-    # `scripts/vrt-capture-timeout.test.ts` now derives this requirement from the
+    # this requirement is no longer gated by a committed forecast (deleted 2026-08-23) —
     # COMMITTED BASELINE COUNT and reddens in the fast unit lane the moment a
     # face batch outgrows the ceiling — minutes after the face lands, instead of
     # an hour into a capture that dies without evidence.

@@ -107,7 +107,79 @@ export const spectrographDef: AudioModuleDef = {
   ],
   params: [
     { id: 'gain', label: 'Gain', defaultValue: 1, min: 0.25, max: 4, curve: 'log' },
+    // ⚠ THIS PARAM IS NEW, AND IT EXISTS BECAUSE OF THE FACE (cut B).
+    // The COLOR/B-W switch was LOCAL CARD STATE (`let viewBw = $state(false)`),
+    // which is exactly the shape a promotion DELETES: `migrated(type)` stops
+    // both surfaces rendering `SpectrographCard.svelte`, and a control that
+    // lives only in a component has nowhere to go. Functional parity is not
+    // negotiable, so the state moves onto the contract rather than being
+    // dropped or re-invented on the faceplate.
+    //
+    // ⚠ IT IS DISPLAY-ONLY AND COSTS THE ENGINE NOTHING. Both video outputs
+    // ALWAYS render both colormaps (`color` and `bw` are separate ports drawn
+    // from the same FFT plane); this only selects which port a PREVIEW pulls.
+    // So no downstream consumer can observe it, which is why a preview switch
+    // can become a param without changing a single rendered frame.
+    //
+    // The roster is REQUIRED for the same reason dockscope's `range` needed
+    // one: unnamed, a 2-state toggle announces pressed/unpressed — an
+    // enable-and-absence reading — while what this picks is one of two
+    // COLORMAPS, neither of which is the other's "off". The names are
+    // PROMOTED, not invented: they are the strings the card's own button has
+    // always painted.
+    {
+      id: 'view',
+      label: 'View',
+      defaultValue: 0,
+      min: 0,
+      max: 1,
+      curve: 'discrete',
+      options: [
+        { value: 0, label: 'COLOR', title: 'preview the COLOR heat ramp — quiet blue through cyan and yellow to red' },
+        { value: 1, label: 'B/W', title: 'preview the INVERTED grayscale — the classic printed-sonogram look' },
+      ],
+    },
   ],
+
+  // ── FACE (cut B) ───────────────────────────────────────────────────────────
+  face: {
+    // Two controls, and the order is the order a player reaches for them: GAIN
+    // trims the signal into the display window (it is the one that decides
+    // whether you can SEE anything), VIEW picks which colormap the preview
+    // shows once you can.
+    order: ['gain', 'view'],
+
+    // ⚠ NO `pages`. Two controls under one picture is one honest band, and a
+    // tab rail over two cells is the "never pad pages to force the rail"
+    // failure.
+
+    // ⚠ NO `paramCells`. The card draws GAIN with `Knob`, which is the shell's
+    // default primitive, so declaring anything would be redundant. `view` is
+    // `min 0 / max 1 / discrete`, the genuine two-state shape, so
+    // `looksLikeToggle` resolves it to a TOGGLE — matching the card's
+    // `<button>` — and its two positions now carry names.
+
+    // ⚠ `glyph: 'none'` IS FORCED, not chosen, and for the dockscope reason
+    // rather than the backdraft one. `glyphBinding` reaches a LIVE trace only
+    // through `primaryAudioOutPortId` — the first declared `audio` OUTPUT — and
+    // this module declares NONE: `color` and `bw` are both `mono-video`. Any
+    // glyph literal would therefore resolve `{ kind: 'static' }`, the
+    // deterministic placeholder, which the face lint's dead-glyph clause
+    // refuses by name.
+    //
+    // ⚠ AND IT GETS NO PICTURE GLYPH EITHER, which is the part worth stating
+    // because it differs from every video face in this programme:
+    // `hasVideoSurface` is `def.domain === 'video'`, and this module is
+    // `domain: 'audio'` despite emitting video. So the LANE tile paints its two
+    // ranked cells and no picture — the sonogram is a DOCK surface only.
+    glyph: 'none',
+
+    // The waterfall arrives through this slot. Promotion stops both surfaces
+    // rendering the card, and on a module whose entire product is an IMAGE that
+    // would leave two controls over nothing. See
+    // `$lib/ui/modules/spectrograph/shell-extension.ts`.
+    extension: 'spectrograph',
+  },
 
   docs: {
     explanation:
@@ -124,6 +196,8 @@ export const spectrographDef: AudioModuleDef = {
     controls: {
       gain:
         "Pre-analysis input trim (0.25..4, log, default 1) — boosts a quiet source up into the −90..−10 dB display window so its traces are visible (or tames a hot one). Applied before the FFT tap; it shapes the IMAGE contrast, not the audio (there's no audio output).",
+      view:
+        "Which colormap the on-surface PREVIEW shows: COLOR (the blue→cyan→yellow→red heat ramp) or B/W (inverted grayscale, quiet = white, loud = black). Display-only and it changes nothing downstream — the COLOR and BW outputs are separate ports drawn from the same FFT plane and BOTH render continuously whatever this is set to, so patching is unaffected. It exists as a param rather than card state so the preview switch survives on the faceplate.",
     },
   },
 
