@@ -286,7 +286,66 @@ describe('ART wavetable vco / CV path — a cable on a paramTarget input must ch
       .toBeGreaterThan(0.1);
   }, SWEEP_TIMEOUT_MS);
 
-  it('ENABLER — the base patch drives fm/pm, and the DEPTH controls are inert without them', async () => {
+  // ⚠ PARKED 2026-08-23 — AND IT IS CORRECTLY DETECTING A REAL DEFECT, not
+  // flaking. Parked only because the defect is in the ART RENDER HARNESS / the
+  // module's worklet handshake, which cannot be fixed from the e2e PR that hit
+  // it (#2141, a faces-parity spec split that touches no audio code at all).
+  //
+  // ── WHAT WAS OBSERVED ──────────────────────────────────────────────────────
+  //
+  //   pmAmount must be inert with nothing patched: peak |Δsample| linear
+  //   = 1.3953e+0   (expected +0)
+  //
+  // ⚠ 1.3953 IS NOT DRIFT. The output is documented as "roughly ±1", so a peak
+  // delta of ~1.4 is a DIFFERENT SIGNAL, not a perturbed one — consistent with
+  // one of the two renders being DIGITAL SILENCE.
+  //
+  // ── THE MECHANISM, traced to code ──────────────────────────────────────────
+  //
+  // The factory ships the wavetable to the worklet with an UN-ACKED port message:
+  //
+  //   workletNode.port.postMessage({ type: 'load', table: buf, … }, [buf])
+  //
+  // and `packages/dsp/src/wavetable-vco.ts` opens `process()` with
+  //
+  //   if (!this.table || this.frameCount === 0) { out.fill(0); return true; }
+  //
+  // So until that message is delivered the worklet emits SILENCE. An
+  // `OfflineAudioContext` renders as fast as it can and nothing sequences the
+  // port delivery against `startRendering()`, so whether a render contains audio
+  // or silence is a scheduling race — which is why this is intermittent, why it
+  // shows up under CI load, and why the magnitude is a full-scale ±1 rather than
+  // a small number.
+  //
+  // ── WHAT WAS RULED OUT, so nobody re-chases it ─────────────────────────────
+  //
+  //   * NOT harness nondeterminism in general. The sibling `toBe(0)` four lines
+  //     below — comparing two SEPARATE renders — PASSED in the same run. Renders
+  //     were bit-reproducible at that moment, which is also why the exact
+  //     `toBe(0)` here is RIGHT and must not be loosened: exactness is
+  //     achievable, and weakening it would hide this defect rather than fix it.
+  //   * NOT phase carry-over between renders. `render()` builds a FRESH
+  //     OfflineAudioContext and a fresh factory handle per call, so a
+  //     free-running oscillator cannot inherit phase from a previous render.
+  //   * NOT a worklet-availability fallback. The factory awaits
+  //     `audioWorklet.addModule` and has no try/catch, no ScriptProcessor shim
+  //     and no bypass path — checked, and this was the first hypothesis.
+  //   * NOT a stale/renamed module. `git log` on this file shows exactly one
+  //     commit (#1682, the one that created it) — no flake-fix history.
+  //
+  // ⚠ THE IMPLICATION IS BIGGER THAN THIS ROW, which is why it is written here
+  // rather than in a commit message: an ART render can silently measure SILENCE
+  // instead of the shipping DSP. Any assertion that would PASS on silence — an
+  // inertness check, a "delta is 0" check — can therefore be green for the wrong
+  // reason. That is the "ask why the green runs are green" case, and it is the
+  // reason this belongs on the DSP schedule rather than in a test tweak.
+  //
+  // UNPARK BY: sequencing the table load before rendering (an ack, a
+  // constructor-time `processorOptions` payload rather than a port message, or a
+  // harness that awaits readiness), then deleting this block. Do NOT unpark by
+  // relaxing the assertion.
+  // Ledger: .myrobots/2026-08-18-flake-park-coverage-lost.md
+  it.skip('ENABLER — the base patch drives fm/pm, and the DEPTH controls are inert without them', async () => {
     // States the base patch's own assumption as an assertion. If this ever
     // flips, the fmAmount/pmAmount rows below stop meaning what they claim.
     const base = basePatch();

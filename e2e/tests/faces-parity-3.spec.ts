@@ -1,6 +1,6 @@
-// e2e/tests/faces-parity.spec.ts
+// e2e/tests/faces-parity-3.spec.ts
 //
-// PARTITION 1 OF 4 of the registry-driven face parity sweep.
+// PARTITION 3 OF 4 of the registry-driven face parity sweep.
 //
 // ⚠ THERE IS NOTHING MODULE-SPECIFIC IN THIS FILE AND THERE MUST NOT BE. It
 // declares WHICH partition it runs and nothing else; the set is derived from
@@ -16,13 +16,7 @@
 // ⚠ DO NOT add a test here. A one-off belongs in `faces-parity.spec.ts`, which
 // calls `registerFacesParityOneOffs()`; anything added here would run ONCE for
 // this partition and silently not at all for the others.
-//
-// ⚠ THIS FILE ALSO CARRIES THE ONE-OFFS — the FACE_QUIESCE anchoring check and
-// the four regression describes (tidyVco, param vocabulary, dx7 hero, sixstrum
-// PRESET). They are NOT per-module rows, so they must run exactly once rather
-// than once per partition.
 
-import { registerFacesParityOneOffs, registerFacesParityTests } from './support/faces-parity-suite';
+import { registerFacesParityTests } from './support/faces-parity-suite';
 
-registerFacesParityOneOffs();
-registerFacesParityTests(0);
+registerFacesParityTests(2);

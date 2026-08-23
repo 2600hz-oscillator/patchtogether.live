@@ -134,7 +134,19 @@ function allDefs(): FaceDefLike[] {
 const repoFile = (rel: string) =>
   fileURLToPath(new URL(`../../../../../../${rel}`, import.meta.url));
 
-const PARITY_SPEC = repoFile('e2e/tests/faces-parity.spec.ts');
+// ⚠ RE-POINTED WHEN faces-parity WAS SPLIT (#2141). The sweep is now FOUR spec
+// files over a stable name-hash partition, and the thing this gate reads — the
+// `CellControl` union and `driveCell` — lives in the shared suite module they
+// all call, not in any one of them. The four `.spec.ts` files declare only which
+// partition they run.
+//
+// ⚠ THIS PATH IS LOAD-BEARING AND THE GATE CANNOT TELL A WRONG ONE FROM A
+// PASSING ONE ON ITS OWN: every predicate below is `regex.test(source)`, so a
+// path pointing at a file that does not contain the union would report "the
+// union does not admit this kind" — a plausible, actionable-looking failure
+// with an entirely wrong cause. The existence assertion below is what makes a
+// bad path say so in those words instead.
+const PARITY_SPEC = repoFile('e2e/tests/support/faces-parity-suite.ts');
 const SHELL = fileURLToPath(new URL('../modules/ModuleShell.svelte', import.meta.url));
 
 /** Strip HTML + `//` line comments so a kind merely NAMED in prose does not
@@ -150,6 +162,30 @@ function stripComments(src: string): string {
 
 const shellSrc = stripComments(readFileSync(SHELL, 'utf8'));
 const paritySrc = stripComments(readFileSync(PARITY_SPEC, 'utf8'));
+
+// ⚠ ANCHOR BOTH SOURCES TO A LANDMARK THEY MUST CONTAIN. Every predicate in this
+// file is `regex.test(source)`, which means a source that moved, was renamed or
+// was split reports as "the union does not admit this kind" — a specific,
+// plausible, entirely wrong diagnosis that sends the reader to the cell
+// registry instead of to the path two lines above. This is not hypothetical:
+// splitting faces-parity into four partition files (#2141) moved the union and
+// `driveCell` into the shared suite module, and without these two lines the
+// three failures said the knob/toggle/momentary primitives had become unwired.
+if (!/cell\.control === '/.test(paritySrc)) {
+  throw new Error(
+    `param-cell-coverage: ${PARITY_SPEC} contains no \`cell.control === '…'\` arms, so every ` +
+      'parity predicate in this file would report a FALSE "unwired primitive". The parity ' +
+      'sweep has moved or been split — re-point PARITY_SPEC at the module that now owns the ' +
+      '`CellControl` union and `driveCell`.',
+  );
+}
+if (!/data-cell-control="/.test(shellSrc)) {
+  throw new Error(
+    `param-cell-coverage: ${SHELL} paints no \`data-cell-control\` attribute, so every shell ` +
+      'predicate would report a FALSE "unpainted primitive". ModuleShell has moved or the ' +
+      'attribute was renamed.',
+  );
+}
 
 /** ModuleShell paints this kind (`data-cell-control="<kind>"` on a real cell). */
 const shellRenders = (kind: string) =>
