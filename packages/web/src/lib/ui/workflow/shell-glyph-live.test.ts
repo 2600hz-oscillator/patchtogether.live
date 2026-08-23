@@ -38,10 +38,19 @@ function faceDef(
   partial: Partial<GlyphDefLike> & {
     glyph: 'scope' | 'meter' | 'envelope' | 'waveform' | 'algorithm' | 'none';
     glyphDepthGain?: number;
+    // ⚠ ADDED WITH THE LAYOUT-SOURCE WIDENING. The helper used to DROP this,
+    // which meant an extension-fed case could not be expressed at all — the
+    // fixture silently built a def without the very field under test.
+    extension?: string;
   },
 ): GlyphDefLike {
   return {
-    face: { order: [], glyph: partial.glyph, glyphDepthGain: partial.glyphDepthGain },
+    face: {
+      order: [],
+      glyph: partial.glyph,
+      glyphDepthGain: partial.glyphDepthGain,
+      extension: partial.extension,
+    },
     outputs: partial.outputs ?? [],
     params: partial.params ?? [],
   };
@@ -246,7 +255,15 @@ describe('glyphBinding — pure live-source resolution', () => {
       outputs: [{ id: 'out_l', type: 'audio' }, { id: 'out_r', type: 'audio' }],
       params: [{ id: 'algorithm', min: 1, max: 32 }, { id: 'feedback', min: 0, max: 7 }],
     });
-    expect(glyphBinding(def)).toEqual({ kind: 'algorithm', paramId: 'algorithm' });
+    // ⚠ THE SHAPE WIDENED (2026-08-23) and this assertion moved WITH it rather
+    // than being loosened: the binding now names WHAT FEEDS THE PICTURE. For dx7
+    // that is the `algorithm` param itself, so `layoutSource` is 'algorithm' and
+    // `paramId` is unchanged — the param is both the topology and the caption.
+    expect(glyphBinding(def)).toEqual({
+      kind: 'algorithm',
+      layoutSource: 'algorithm',
+      paramId: 'algorithm',
+    });
 
     // Sanity: the SAME def with any other glyph does take the audio short-circuit,
     // so the assertion above is about the branch order and nothing else.
@@ -256,9 +273,65 @@ describe('glyphBinding — pure live-source resolution', () => {
     });
   });
 
-  it('algorithm glyph WITHOUT an algorithm param falls back to static, never to a trace', () => {
+  it('algorithm glyph with NEITHER a param NOR an extension still falls back to static', () => {
+    // ⚠ THE REFUSAL IS PRESERVED, and that is the half a widening most easily
+    // loses. A def that declares the literal but supplies nothing to draw with
+    // must still fall to `static` — never to a trace, and never to a topology
+    // binding pointing at nothing.
     const def = faceDef({
       glyph: 'algorithm',
+      outputs: [{ id: 'out_l', type: 'audio' }],
+      params: [{ id: 'level', min: 0, max: 1 }],
+    });
+    expect(glyphBinding(def)).toEqual({ kind: 'static' });
+  });
+
+  it('algorithm glyph + an EXTENSION and no param → topology fed by the extension, caption-less', () => {
+    // ⚠ THE POINT OF THE WIDENING, and the case that did not exist before it.
+    // A module whose picture is a pure layout function it owns had NO legal glyph
+    // literal at all: every other one falls through to a dead `static` and reddens
+    // the dead-glyph clause, so such modules were forced to declare 'none' and
+    // show nothing. Five modules are in that position today.
+    const def = faceDef({
+      glyph: 'algorithm',
+      extension: 'somemodule',
+      outputs: [{ id: 'out_l', type: 'audio' }],
+      params: [{ id: 'level', min: 0, max: 1 }],
+    });
+    expect(glyphBinding(def)).toEqual({
+      kind: 'algorithm',
+      layoutSource: 'somemodule',
+      // ⚠ NULL, DELIBERATELY. There is no param behind the picture, so there is
+      // no value to caption it with. Printing one would be inventing a number.
+      paramId: null,
+    });
+  });
+
+  it('a PARAM outranks an extension — dx7 keeps its captioned form', () => {
+    // Both present: the param wins, because it carries a value a player reads and
+    // a CV sweep visibly tracks. Without this ordering, adding an extension to a
+    // captioned module would silently delete its caption.
+    const def = faceDef({
+      glyph: 'algorithm',
+      extension: 'dx7',
+      outputs: [{ id: 'out_l', type: 'audio' }],
+      params: [{ id: 'algorithm', min: 1, max: 32 }],
+    });
+    // Narrow before reading — GlyphBinding is a union and the assertion is about
+    // WHICH member resolved as much as about its fields.
+    const bound = glyphBinding(def);
+    expect(bound.kind).toBe('algorithm');
+    if (bound.kind !== 'algorithm') throw new Error('expected a topology binding');
+    expect(bound.layoutSource).toBe('algorithm');
+    expect(bound.paramId).toBe('algorithm');
+  });
+
+  it('an EMPTY extension id is not a layout source', () => {
+    // Negative control on the guard: a falsy/blank id must not resolve a topology
+    // binding that points at nothing to load.
+    const def = faceDef({
+      glyph: 'algorithm',
+      extension: '',
       outputs: [{ id: 'out_l', type: 'audio' }],
       params: [{ id: 'level', min: 0, max: 1 }],
     });
