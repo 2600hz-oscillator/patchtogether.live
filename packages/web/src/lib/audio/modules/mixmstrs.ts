@@ -57,6 +57,7 @@
 //     comp (linear 0..1 macro) / send1 / send2 (linear 0..1).
 
 import { instantiateFaustModule } from '$lib/audio/faust-runtime';
+import { markJsConsumedParam } from '$lib/audio/cv-shadow';
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
 import type { ParamDef, PortDef } from '$lib/graph/types';
@@ -819,6 +820,17 @@ export const mixmstrsDef: AudioModuleDef = {
       const ana = ctx.createAnalyser();
       ana.fftSize = 32;
       g.connect(ana); // passive observation tap; g still feeds no audible path
+      // DECLARE the consumer at the construction site. `g.gain` reaches no
+      // declared output and never will — the pump above IS its consumer — which
+      // is the CORRECT shape for a JS-consumed pad and indistinguishable by
+      // reachability alone from the #1661 dead terminal it used to be. Marking
+      // it makes `art/scenarios/cv-terminal` read the declaration instead of
+      // guessing, and makes membership DERIVED: the eight hand-named
+      // `known-defect` entries this module carried there are deleted with this
+      // change, exactly as that gate's own message instructs. The claim is
+      // checked in both directions — a marked param that DOES reach an output
+      // reddens the LYING leg — so this is not an escape hatch.
+      markJsConsumedParam(g.gain);
       silenceSources.push(sink);
       compShadow[macroId] = g;
       compShadowAna[macroId] = { ana, buf: new Float32Array(ana.fftSize) };
