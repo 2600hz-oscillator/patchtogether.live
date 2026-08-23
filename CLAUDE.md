@@ -22,11 +22,18 @@ issues on the board."*
   never quietly file.
 - Existing open issues only shrink: closed by a merged fix (`Fixes #N`) or explicit
   owner closure — never by "seems fine now".
-- CI-blocking problem tests: **disable + add to the tests-to-fix list in
-  `.myrobots`** (owner ruling, same day) and keep moving — unless parking would lose
-  significant coverage, which goes to the owner instead. Triage first: a test whose
-  git history shows no flake fixes is more likely under-budgeted than flaky, and
-  those need opposite responses.
+- CI-blocking problem tests: **disable + record the park in the ONE park authority
+  — `SKIP_BUDGET` in `scripts/e2e-skip-budget.mjs`** — and keep moving, unless
+  parking would lose significant coverage, which goes to the owner instead. Triage
+  first: a test whose git history shows no flake fixes is more likely
+  under-budgeted than flaky, and those need opposite responses.
+  ⚠ **One park list, not three.** This used to also say "add it to the tests-to-fix
+  list in `.myrobots`", and a flake-park ledger lived there too — so a park could
+  be fully recorded in one mechanism and look like missing paperwork to another,
+  which reddened a PR that had done nothing wrong. The skip budget is the authority
+  because it is the only one that GATES: deny-by-default, anchored in both
+  directions, and it caught a genuinely unclaimed park this week. `.myrobots`
+  records stay as evidence — prose, never a gate.
 - Automated health alerts (`alert` / `observability` labels) are exempt; they have
   their own lifecycle.
 - Historical flow (retired): [`docs/process/issue-workflow.md`](docs/process/issue-workflow.md).
@@ -512,19 +519,23 @@ The run that gates the merge must be built from the exact SHA you're merging.
 A **red push run on `main` is a P0** to root-cause immediately — never absorbed as
 "flake".
 
-## Docs-only PRs: the path lists in ci.yml and docs-only-gate.yml move TOGETHER
+## `ci.yml` has NO path filter — docs-only PRs just run CI
 
-`ci.yml` skips prose-only changes, but the ruleset REQUIRES four contexts and a
-path-skipped workflow reports NOTHING — GitHub treats a never-reported required check
-as pending forever, so the PR sits BLOCKED with zero failures.
-`docs-only-gate.yml` fires on the **exact inverse** filter and posts those contexts,
-but only when **both** guards agree: every changed file is a doc **and** GitHub
-started no `ci.yml` run for that SHA.
+`ci.yml` used to `paths-ignore` prose-only changes. The ruleset REQUIRES four
+contexts and a path-skipped workflow reports NOTHING — GitHub treats a
+never-reported required check as pending forever — so a whole second workflow
+(`docs-only-gate.yml`) existed to post those contexts on the **exact inverse**
+filter. Two hand-maintained path lists that had to stay exact complements forever.
 
-- **Editing `ci.yml`'s `paths-ignore` means editing `docs-only-gate.yml`'s `paths` in
-  the SAME commit** — the complement is the whole safety argument.
+**Deleted 2026-08-23**: the filter, the bypass workflow, its script and its test.
+A prose PR now runs the suite like any other. Never re-add a `paths-ignore` here
+without re-adding the bypass in the same commit — that coupling is the trap, and
+not having a filter is how it stays gone.
+
 - **Never** satisfy a required context by naming a job after it: a job-level `if:`
   skip reports as SUCCESS to branch protection.
+- Renaming the `ci` or `vrt-strict` job still needs a coordinated ruleset PUT
+  (16042163 matches the names literally), and ⚠ no local gate checks that any more.
 
 ## Poly/MIDI modules: e2e the REAL source chain
 
