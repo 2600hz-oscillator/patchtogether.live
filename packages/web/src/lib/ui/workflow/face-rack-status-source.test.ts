@@ -372,6 +372,8 @@ const EXTENSION_BODY_ROLES: Readonly<Record<string, BodyRule>> = {
 
   lushgarden: { role: 'picture', why: 'the generative garden\'s live CLEAN output and its SCREEN switch. ⚠ Its #2015 argument is TWO independent ones, not the generic pull case: it is a pure SOURCE (no input requirement), so a lapsed mark mutes the origin of the chain rather than stalling a preview — AND the picture is a running ACCUMULATION, so a collapse that stopped surface.draw would leave the garden younger than the rack when SCREEN came back on. Nothing on the surface is a derived value in a text node; the plant-count readout the legacy card carried is deliberately absent, and its finding moved into the def docs.' },
 
+  pong: { role: 'picture', why: 'the arcade COURT — ball, paddles, centre dash and the two scores — drawn by `drawPong` from an engine snapshot. ⚠ NOT an engine blit like every other picture in this roster: pong is an AUDIO module with no video surface, so the body owns a 2D canvas and reads `read(node, \'snapshot\')`. ⚠ AND IT DELIBERATELY DOES NOT `markWatched`: the game is stepped by the shared scheduler clock regardless of what is mounted, so there is no pull set to stay in and SCREEN OFF costs a repaint rather than the simulation. The scores are painted INTO the canvas as part of the picture, not as resting chrome.' },
+
   // ── STATUS — the one body whose subject is not a picture.
   cvBuddy: {
     role: 'status-primitive',

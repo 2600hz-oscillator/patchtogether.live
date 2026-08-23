@@ -172,6 +172,57 @@ export function stepPongState(
     }
   }
 
+  // 4b. ⚠ RENORMALISE THE VELOCITY TO THE COMMANDED SPEED. One expression, three
+  //     defects — they were three symptoms of the same omission: nothing ever
+  //     re-derived the ball's SPEED from `params.speed` after the serve.
+  //
+  //     (i)  SPEED WAS A RANK-1 CONTROL THAT DID NOTHING MID-RALLY. `params.speed`
+  //          was read at EXACTLY ONE site — `resetState` — so moving the knob
+  //          changed nothing until the next serve, while `readLive` reported the
+  //          new value immediately. ⚠ And with tracking paddles a rally is
+  //          infinite (measured: gate-pulses asserts zero scores over 5 s), so
+  //          SPEED could be inert PERMANENTLY. The docs promised "scales how fast
+  //          the ball travels" with no caveat.
+  //     (ii) THE ENGLISH DID NOT SCALE WITH SPEED. The kick below adds
+  //          `offset * BASE_SPEED * 0.4` — the module constant, NOT
+  //          `BASE_SPEED * params.speed` — so at speed 4 the ball moved 4x faster
+  //          with unchanged paddle english, and the control's felt effect varied
+  //          16:1 across its declared range. Renormalising makes english an ANGLE
+  //          change, which is what english IS in Pong, and it scales for free.
+  //     (iii) VELOCITY WAS UNBOUNDED. That kick was a pure addition with no
+  //          renormalisation and no cap anywhere in the file, so |v| grew
+  //          monotonically with every hit until the ball tunnelled through a
+  //          paddle. Renormalisation IS the clamp; no separate cap is needed.
+  //
+  //     ⚠ THIS CHANGES TRAJECTORIES, so the ART scenario is re-run rather than
+  //     assumed — the perfect-tracker test asserts `scores === 0` and never looked
+  //     at velocity magnitude, which is why none of the three was caught.
+  const target = BASE_SPEED * params.speed;
+  const mag = Math.hypot(vx, vy);
+  if (mag > 1e-9 && target > 0) {
+    // ⚠ ANGLE CLAMP, AND IT IS A CONSEQUENCE OF THE FIX RATHER THAN AN EXTRA.
+    // Renormalising holds |v| constant, so repeated english now steals from vx
+    // instead of growing vy — left alone the ball would asymptote toward vertical
+    // and stall between the paddles, a NEW failure the old unbounded version did
+    // not have (its vx stayed put while vy ran away). Capping the angle keeps a
+    // floor under horizontal progress, which is what every Pong implementation
+    // does and what makes a rally terminate.
+    const MAX_ABS_VY_RATIO = 2.0; // |vy| <= 2·|vx|  ⇒  at most ~63° off-axis
+    const sx = vx < 0 ? -1 : 1;
+    let ux = Math.abs(vx);
+    let uy = Math.abs(vy);
+    if (uy > MAX_ABS_VY_RATIO * ux) {
+      const uMag = Math.hypot(ux, uy);
+      // Re-seat the direction on the cap, preserving the unit length.
+      const capMag = Math.hypot(1, MAX_ABS_VY_RATIO);
+      ux = (uMag / capMag) * 1;
+      uy = (uMag / capMag) * MAX_ABS_VY_RATIO;
+    }
+    const norm = Math.hypot(ux, uy) || 1;
+    vx = sx * (ux / norm) * target;
+    vy = (vy < 0 ? -1 : 1) * (uy / norm) * target;
+  }
+
   // 5. Score detection. If we're STILL out-of-bounds after the collision
   //    pass, the relevant side missed.
   let scoreEvent: 'L' | 'R' | null = null;

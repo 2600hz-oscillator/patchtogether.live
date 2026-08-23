@@ -265,6 +265,9 @@ const SUBJECTS: readonly Subject[] = [
   // ── lush garden (2026-08-23) ──────────────────────────────────────────────
   { type: 'lushgarden', prefix: 'lushgarden', domain: 'video', why: 'the generative garden\'s live preview and its SCREEN switch. ⚠ THE STRONGEST "KEEPS RENDERING" CASE IN THIS TABLE, and for a reason no other entry has: the picture is a wall-clock ACCUMULATION (plants spawn on a rate and each integrates a grow-in curve), so a collapse that stopped surface.draw would not merely pause a preview — re-opening SCREEN would show a garden YOUNGER THAN THE RACK. It is also a pure SOURCE with no input requirement, so a lapsed watch mark mutes the origin of the whole chain.' },
 
+  // ── pong (2026-08-23) ─────────────────────────────────────────────────────
+  { type: 'pong', prefix: 'pong', domain: 'audio', why: 'the arcade court and its SCREEN switch. ⚠ THE SECOND AUDIO-DEF ENTRY IN THIS TABLE, and it is here for a different reason than rasterize: pong carries no video surface at all (domain audio, both outputs gate), so its court is a 2D canvas the BODY draws from an engine snapshot rather than an engine blit. That also means SCREEN OFF stops a repaint and nothing else — the game is stepped by the shared scheduler clock and goes on scoring, so there is no watch mark to keep and copying one in from a video body would be cargo.' },
+
   // ── the AUDIO-def outlier ─────────────────────────────────────────────────
   { type: 'rasterize', prefix: 'rasterize', domain: 'audio', why: '⚠ an AudioModuleDef that carries a VIDEO surface, so it lives in lib/audio/modules and a video-only enumeration misses it entirely. Spawns with domain: audio. It is the reason this file\'s derivation crosses both domains.' },
 ] as const;
