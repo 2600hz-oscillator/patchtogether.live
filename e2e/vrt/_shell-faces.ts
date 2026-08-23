@@ -2582,6 +2582,73 @@ export const FACES = [
       + 'is one centred CIRCLE at zoom 1 on black — identical on every frame, every boot and '
       + 'every renderer.',
   },
+  // ── BATCH 24 — CUT A, batch 1: the four plain video faces ─────────────────
+  //
+  // No `sceneWeight` on any of the four, deliberately. Every field of
+  // `FaceSceneWeight` is required-if-present precisely so a weight cannot be
+  // declared without the evidence, and the durations are read off a LINUX capture
+  // run that does not exist until this branch dispatches one. Absent means the
+  // 90 s base bound, which is the honest PENDING state rather than a guess.
+  {
+    type: 'chroma',
+    pages: 1,
+    videoFaceWhy:
+      'a VIDEO module, so it must boot into the video zone rather than a mixer channel column — '
+      + 'without this field bootWithFace waits out the full test timeout for a column membership '
+      + 'a video node never acquires. Both scenes carry a live picture: the compact tile paints a '
+      + 'VideoTileThumb through hasVideoSurface, and the dock body is the module\'s own '
+      + 'fullViewBody extension (the graded preview plus its SCREEN switch) — a surface '
+      + 'ChromaCard.svelte never had. ⚠ DETERMINISTIC FOR A STATED REASON rather than by luck: '
+      + 'CHROMA is a pure per-pixel function of its `in` texture and six params, with NO time '
+      + 'uniform, no ping-pong and no accumulator, so the freeze the harness performs is a no-op '
+      + 'on this def. In the scene nothing is patched into `in`, so the graded frame is the '
+      + 'grade of an absent input on every frame and every renderer — the scene\'s value is the '
+      + 'CONTROL layout, which is what the dock capture mostly frames anyway.',
+  },
+  {
+    type: 'chromakey',
+    pages: 1,
+    videoFaceWhy:
+      'a VIDEO module — same video-zone boot requirement as its three batch-mates. ⚠ NOT the '
+      + '`chroma` entry directly above: that is the single-input COLOUR GRADE, this is the '
+      + 'two-input COMPOSITOR, and chroma.ts carries a header about earlier versions conflating '
+      + 'exactly these two. Deterministic for the same stated reason — a per-pixel key decision '
+      + 'over `fg` and `bg` with no time uniform and no accumulator — and with BOTH video inputs '
+      + 'unpatched in the scene the composite is the same frame on every renderer. The dock body '
+      + 'is the module\'s own fullViewBody (the composite preview plus its SCREEN switch), a '
+      + 'surface ChromakeyCard.svelte never had.',
+  },
+  {
+    type: 'feedback',
+    pages: 1,
+    videoFaceWhy:
+      'a VIDEO module — same video-zone boot requirement. ⚠ THE ONE ENTRY IN THIS BATCH WHOSE '
+      + 'DETERMINISM IS AN ARGUMENT ABOUT AN ACCUMULATOR, so it is written out rather than '
+      + 'shared. FEEDBACK re-samples its OWN previous output from a ping-pong framebuffer, so a '
+      + 'clock pin alone would NOT be sufficient if the loop had anything in it — the ping-pong '
+      + 'advances once per drawn frame regardless of the clock, which is the mirrorpool class. '
+      + 'What makes it still here is the ARITHMETIC at rest: the FBOs start cleared, nothing is '
+      + 'patched into `in`, and the recurrence is decay×(warped black) + (1-decay)×black, whose '
+      + 'fixed point is black. So the accumulator is black on frame 1 and stays black — a '
+      + 'deterministic picture, and deliberately a dark one. Unlike its batch-mates its card '
+      + 'ALREADY drew this preview; what the face adds is the SCREEN switch it never had.',
+  },
+  {
+    type: 'mandleblot',
+    pages: 1,
+    videoFaceWhy:
+      'a VIDEO module — same video-zone boot requirement. ⚠ THE CLOCK PIN IS LOAD-BEARING HERE '
+      + 'AND IS NOT A FORMALITY, which is what separates this entry from the other three. Its '
+      + 'fragment shader takes a `uTime` uniform and folds `uTime * 0.1 * uColorCycle` into the '
+      + 'hue, and `color_cycle` SHIPS AT 1 — so at the shipped defaults this renderer CYCLES ITS '
+      + 'PALETTE CONTINUOUSLY at rest. `__videoEngineFreezeTime` is what pins `frame.time` and '
+      + 'therefore what makes the capture still; without it this face would be the analogVco '
+      + 'case and could not be baselined. ⚠ A clock pin is nonetheless SUFFICIENT: the module '
+      + 'holds no accumulator at all — every frame is recomputed from (centre, zoom, iterations, '
+      + 'rotation, colour, time) — so there is no ping-pong for a pinned clock to leave '
+      + 'advancing. Its card already drew this fractal; the face adds the SCREEN switch, and '
+      + 'drops the derived magnification readout the resting faceplate may not paint.',
+  },
 ] as const;
 
 /**

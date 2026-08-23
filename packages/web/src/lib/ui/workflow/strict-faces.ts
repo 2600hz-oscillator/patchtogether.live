@@ -3519,6 +3519,42 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // downstream — a lapsed mark would not stall a preview, it would MUTE the
   // generator every consumer samples.
   'shapes',
+
+  // ── BATCH 24 — CUT A, batch 1: the four plain video faces ─────────────────
+  //
+  // "Plain" is a measured claim, not a vibe: each of the four needs only cells
+  // that already ship, and none needed a registered panel, a tab rail or a
+  // snowflake accommodation. All four are six params in ONE band.
+  //
+  // CHROMA — the single-input COLOUR GRADE (NOT a keyer; the name is historical
+  // and `chromakey` below took that job). `tintMix` ranks ABOVE the three tint
+  // channels because it DEFAULTS TO 0 and gates them: reach a channel first and
+  // nothing happens. Its `hue` param is `-180..180` DEGREES, so it is emphatically
+  // NOT the `hue` CELL, which is the conic ring for a continuous `0..1` angle.
+  'chroma',
+  // CHROMAKEY — the two-input COMPOSITOR. Its key colour ranks LAST precisely
+  // because it is already correct at spawn: `keyR/keyG/keyB` default to pure
+  // green, the colour the module exists to key, so the common session never
+  // touches them. SCREEN OFF keeping the watch mark matters more here than
+  // anywhere else in the batch — this node is the pull root for TWO upstream
+  // chains (`fg` and `bg`), so a lapsed mark idles both branches of the composite.
+  'chromakey',
+  // FEEDBACK — the video-feedback LOOP, and the batch's ACCUMULATOR case. It
+  // re-samples its OWN previous output from a ping-pong framebuffer, so the pull
+  // is not merely how the picture stays fresh, it is how the trail EXISTS: a
+  // lapsed watch mark would decay the accumulated image out of the patch and
+  // SCREEN would become a history eraser. Do not copy its three batch-mates'
+  // "it would resume identically" argument onto it.
+  'feedback',
+  // MANDLEBLOT — the Mandelbrot EXPLORER. Two things separate it from the other
+  // three. It is TIME-ANIMATED (`uTime * 0.1 * uColorCycle` drives the hue and
+  // `color_cycle` ships at 1, so the palette cycles at rest — the VRT clock pin
+  // is load-bearing here, not a formality). And its promotion DELETES a real
+  // derived readout: the card painted the live magnification, which the resting
+  // faceplate may not. That finding — knob position is a LOG map onto roughly
+  // 1x..1e6x, not a linear one — now lives in `docs.controls.zoom` and on the
+  // control's `aria-valuetext`.
+  'mandleblot',
 ]);
 
 /**

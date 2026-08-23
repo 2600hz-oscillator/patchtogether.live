@@ -12,8 +12,8 @@ Every registered module carries exactly one **disposition**: what kind of work i
 |  | count |
 |---|---|
 | registered modules | 198 |
-| done (faced + promoted) | 124 |
-| remaining (excludes organizational-native) | 71 |
+| done (faced + promoted) | 128 |
+| remaining (excludes organizational-native) | 67 |
 | registered with NO disposition (must be zero) | 0 |
 | inventory entries naming a dead def (must be zero) | 0 |
 
@@ -21,7 +21,7 @@ Every registered module carries exactly one **disposition**: what kind of work i
 
 | disposition | what it means | modules | done |
 |---|---|---|---|
-| `generic-face` | author a `face` and rank the controls — no new platform capability | 141 | 124 |
+| `generic-face` | author a `face` and rank the controls — no new platform capability | 141 | 128 |
 | `blocked` | would be a face today but for the named capability, and nothing else | 3 | — |
 | `bespoke-surface` | the primary interaction is not param-shaped — needs a purpose-built surface | 51 | — |
 | `organizational-native` | rack furniture; not a migration at all | 3 | — |
@@ -52,8 +52,8 @@ author a `face` and rank the controls — no new platform capability.
 | `buggles` | audio | done | — |
 | `cellshade` | video | done | — |
 | `charlottesEchos` | audio | done | — |
-| `chroma` | video | — | — |
-| `chromakey` | video | — | — |
+| `chroma` | video | done | — |
+| `chromakey` | video | done | — |
 | `clap` | audio | done | — |
 | `clouds` | audio | done | — |
 | `cloudseed` | audio | done | — |
@@ -73,7 +73,7 @@ author a `face` and rank the controls — no new platform capability.
 | `edges` | video | done | — |
 | `fader` | video | done | — |
 | `featurecv` | audio | done | — |
-| `feedback` | video | — | — |
+| `feedback` | video | done | — |
 | `filter` | audio | done | — |
 | `flipper` | audio | done | — |
 | `fourplexer` | audio | done | — |
@@ -94,7 +94,7 @@ author a `face` and rank the controls — no new platform capability.
 | `lushgarden` | video | — | — |
 | `macrooscillator` | audio | done | — |
 | `mandelbulb` | video | done | — |
-| `mandleblot` | video | — | — |
+| `mandleblot` | video | done | — |
 | `mapper` | video | done | — |
 | `marbles` | audio | done | — |
 | `meowbox` | audio | done | — |

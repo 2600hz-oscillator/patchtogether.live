@@ -344,6 +344,14 @@ const EXTENSION_BODY_ROLES: Readonly<Record<string, BodyRule>> = {
   // ── BATCH 23b — the attest half ───────────────────────────────────────────
   shapes: { role: 'picture', why: 'the SDF primitive generator\'s live stamp preview and its SCREEN switch. ⚠ NOT `shapegen` above — that is the 3-D shape synthesiser; this is the 2-D primitive source, and the ids differ by three characters. A SOURCE with no input at all, so the retained watch mark is the sharpest form of the #2015 argument: a lapsed mark would not stall a preview, it would MUTE the origin of everything downstream. Its card mounts no `hideControls`, so no MONITOR toggle or resize grip is declared, and nothing on the surface is a derived value in a text node.' },
 
+  // ── BATCH 24 — CUT A, batch 1. All four are pictures; none mounts
+  // `hideControls`, so no MONITOR toggle or resize grip is declared, and nothing
+  // on any of the four surfaces is a derived value in a text node.
+  chroma: { role: 'picture', why: 'the single-input colour grade\'s live preview and its SCREEN switch. ⚠ NOT `chromakey` below — that is the two-input COMPOSITOR; this is the GRADE, and chroma.ts carries a header about earlier versions conflating exactly these two roles. Holds no history of any kind, so the retained watch mark is purely about the PULL: it sits mid-chain, and a lapsed mark idles the chain feeding its one video input.' },
+  chromakey: { role: 'picture', why: 'the two-input chroma-key compositor\'s live preview and its SCREEN switch. The retained watch mark matters more here than on any sibling in its batch: this node is the pull root for TWO upstream chains (`fg` and `bg`), so a lapsed mark idles both branches of the composite rather than one.' },
+  feedback: { role: 'picture', why: '⚠ THE ACCUMULATOR CASE of batch 24, and the reason its body does NOT carry its batch-mates\' "it would resume identically" argument. FEEDBACK re-samples its own previous output from a ping-pong framebuffer, so the retained watch mark is not how the picture stays fresh — it is how the TRAIL EXISTS. A lapsed mark decays the accumulated image out of the patch, turning SCREEN into a history eraser.' },
+  mandleblot: { role: 'picture', why: 'the Mandelbrot explorer\'s live fractal and its SCREEN switch. ⚠ TIME-ANIMATED despite holding no accumulator: `uTime * 0.1 * uColorCycle` cycles the palette and `color_cycle` ships at 1, so it is never still at rest. Its only input is a CV, making it the ORIGIN of its chain — a lapsed mark would mute the generator every consumer samples. ⚠ Its legacy card painted a derived magnification readout; this body deliberately does not, and that finding moved into the def\'s `docs.controls.zoom`.' },
+
   // ── STATUS — the one body whose subject is not a picture.
   cvBuddy: {
     role: 'status-primitive',
