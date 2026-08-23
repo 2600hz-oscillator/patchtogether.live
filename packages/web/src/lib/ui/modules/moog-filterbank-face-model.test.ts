@@ -32,7 +32,6 @@ import {
   glyphBinding,
   primaryAudioOutPortId,
 } from '$lib/ui/workflow/shell-glyph-live';
-import { faceReadoutValueFor } from '$lib/ui/workflow/face-readout-values';
 import {
   MOOG907A_BANK,
   MOOG914_BANK,
@@ -118,28 +117,6 @@ describe.each(BANKS)('$name faceplate model', ({ name, prefix, bank }) => {
       for (const s of moogBankSections(bank)) {
         expect(s.label).toBe(bank.def.params.find((p) => p.id === s.id)!.label);
       }
-    });
-
-    it('the sidebar table has exactly one row per section, and every row RESOLVES', () => {
-      const block = bank.def.face?.sidebar?.[0];
-      expect(block?.kind).toBe('readouts');
-      const entries = block?.kind === 'readouts' ? block.entries : [];
-      const sections = moogBankSections(bank);
-      expect(entries.map((e) => e.valueId)).toEqual(sections.map((s) => `${prefix}-section-${s.id}`));
-      expect(entries.map((e) => e.label)).toEqual(sections.map((s) => s.label));
-      for (const e of entries) {
-        expect(faceReadoutValueFor(e.valueId!), `${e.valueId} is registered`).toBeTruthy();
-      }
-    });
-
-    it('every hero readout resolves too', () => {
-      for (const r of bank.def.face?.hero?.readouts ?? []) {
-        expect(faceReadoutValueFor(r.valueId!), `${r.valueId} is registered`).toBeTruthy();
-      }
-      // The hero promotes NO control: fourteen interchangeable levels have no
-      // member whose promotion is anything but an arbitrary claim.
-      expect(bank.def.face?.hero?.control).toBeUndefined();
-      expect(bank.def.face?.hero?.cell).toBeUndefined();
     });
 
     it('every cell is a FADER, because every control is a level', () => {
@@ -313,104 +290,14 @@ describe.each(BANKS)('$name faceplate model', ({ name, prefix, bank }) => {
           `${moogBankTiltDb(bank, tilted).toFixed(2)} dB`,
       ).toBeGreaterThan(3);
     });
-
-    it('the registered readout ids print what the model says, through the real reader', () => {
-      // Joins the REGISTRY to the MODEL: a readout wired to the wrong bank (the
-      // 907A's id resolving the 914's numbers) passes every leg above and fails
-      // this one.
-      const lv = defaults(bank);
-      const read = readerFor(lv);
-      expect(faceReadoutValueFor(`${prefix}-peak`)!(read)).toBe(moogBankPeakText(bank, lv));
-      expect(faceReadoutValueFor(`${prefix}-notch`)!(read)).toBe(moogBankNotchText(bank, lv));
-      expect(faceReadoutValueFor(`${prefix}-tilt`)!(read)).toBe(moogBankTiltText(bank, lv));
-    });
   });
 
   // ── 5. TOTALITY ──────────────────────────────────────────────────────────
-  describe('total — a readout runs on every render', () => {
-    it('a FRESH node (no params touched) resolves the def defaults, not undefined', () => {
-      const fresh = () => undefined;
-      const lv = moogBankLevels(bank, fresh);
-      for (const p of bank.def.params) expect(lv[p.id]).toBe(p.defaultValue);
-      for (const id of [`${prefix}-peak`, `${prefix}-notch`, `${prefix}-tilt`]) {
-        expect(faceReadoutValueFor(id)!(fresh)).not.toContain('NaN');
-      }
-    });
-
-    it('NaN / ±Infinity / negative levels do not throw and do not print NaN', () => {
-      for (const poison of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, -1]) {
-        const read = (id: string): number | undefined => (id === 'band1' ? poison : 0.5);
-        for (const suffix of ['peak', 'notch', 'tilt']) {
-          const fn = faceReadoutValueFor(`${prefix}-${suffix}`)!;
-          let out = '';
-          expect(() => {
-            out = fn(read);
-          }, `${prefix}-${suffix} with band1=${poison}`).not.toThrow();
-          expect(out, `${prefix}-${suffix} with band1=${poison}`).not.toMatch(/NaN|undefined/);
-        }
-        for (const s of moogBankSections(bank)) {
-          const fn = faceReadoutValueFor(`${prefix}-section-${s.id}`)!;
-          expect(() => fn(read)).not.toThrow();
-        }
-      }
-    });
-
-    it('every level at 0 prints `silent` rather than a number', () => {
-      const read = () => 0;
-      expect(faceReadoutValueFor(`${prefix}-peak`)!(read)).toBe('silent');
-      expect(faceReadoutValueFor(`${prefix}-notch`)!(read)).toBe('silent');
-    });
-  });
 });
 
 // ── the pair, and the one approximation the model makes ────────────────────
 
 describe('the two banks are ONE face', () => {
-  it('same rank law, same glyph, same hero shape, same table shape', () => {
-    for (const a of BANKS) {
-      for (const b of BANKS) {
-        expect(a.bank.def.face?.glyph).toBe(b.bank.def.face?.glyph);
-        expect(a.bank.def.face?.hero?.readouts?.map((r) => r.label)).toEqual(
-          b.bank.def.face?.hero?.readouts?.map((r) => r.label),
-        );
-        expect(a.bank.def.face?.pages).toBeUndefined();
-        expect(b.bank.def.face?.pages).toBeUndefined();
-      }
-    }
-    // And the rank law itself: BOTH orders are their own section list, low→high.
-    expect([...(moog914Def.face!.order)]).toEqual([...moogBankOrder(MOOG914_BANK)]);
-    expect([...(moog907aDef.face!.order)]).toEqual([...moogBankOrder(MOOG907A_BANK)]);
-  });
-
-  it('pins WHAT THE SHIPPED DEFAULTS PRINT — the numbers the defs and the PR quote', () => {
-    // A golden over a fixture the test itself builds (the def's own defaults),
-    // not a population count. It exists because the comment on each `face` and
-    // the corrected `docs.explanation` both quote these strings, and a claim
-    // that lives only in prose is a claim nobody is checking. If the grid, the
-    // Q, the summing or the formatter changes, this says so in one line.
-    expect({
-      peak: faceReadoutValueFor('moog914-peak')!(readerFor(defaults(MOOG914_BANK))),
-      notch: faceReadoutValueFor('moog914-notch')!(readerFor(defaults(MOOG914_BANK))),
-      tilt: faceReadoutValueFor('moog914-tilt')!(readerFor(defaults(MOOG914_BANK))),
-    }).toEqual({ peak: '1.0k -3.9 dB', notch: '6.5k -24.8 dB', tilt: '+0.8 dB' });
-
-    expect({
-      peak: faceReadoutValueFor('moog907a-peak')!(readerFor(defaults(MOOG907A_BANK))),
-      notch: faceReadoutValueFor('moog907a-notch')!(readerFor(defaults(MOOG907A_BANK))),
-      tilt: faceReadoutValueFor('moog907a-tilt')!(readerFor(defaults(MOOG907A_BANK))),
-    }).toEqual({ peak: '1.4k -4.1 dB', notch: '209 Hz -21.6 dB', tilt: '+5.0 dB' });
-
-    // The 907A's null sits between its 175 Hz low-pass corner and its 250 Hz
-    // first band — a gap the 914's extra 125/175 Hz bands fill, which is why
-    // the 914's deepest hole is up at 6.5 kHz instead. The clearest difference
-    // between the two banks, and readable from neither module's knobs.
-    expect(moogBankNotch(MOOG907A_BANK, defaults(MOOG907A_BANK)).hz).toBeLessThan(
-      MOOG907A_BANK.spec.centers[0]!,
-    );
-    expect(moogBankNotch(MOOG914_BANK, defaults(MOOG914_BANK)).hz).toBeGreaterThan(
-      MOOG914_BANK.spec.centers.at(-1)!,
-    );
-  });
 
   it('the model evaluates at a NOMINAL rate — the 44.1 kHz spread is measured, not shrugged at', () => {
     // `FaceReadoutValue` receives a param reader and nothing else, so the

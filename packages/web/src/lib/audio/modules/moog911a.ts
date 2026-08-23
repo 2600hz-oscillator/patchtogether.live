@@ -180,30 +180,6 @@ export const moog911aDef: AudioModuleDef = {
 
     glyph: 'none',
 
-    // THE HERO: two derived readouts and no promoted control. Both are joins
-    // that no knob readback can perform, and the first is the module's entire
-    // merit argument.
-    //
-    //   max rate  the clock ABOVE WHICH THIS CHANNEL EMITS NOTHING, 1/delay1.
-    //             10.0 Hz at the shipped default, and the measured cliff sits
-    //             at 9.998958 Hz. It is invariant to DELAY 2 and to MODE, which
-    //             is what makes it the other readout's negative control.
-    //   last out  when the LAST output fires after one trigger on TRIG 1 — and
-    //             it needs all THREE params, because the mode decides which
-    //             outputs fire at all: OFF -> delay1 (out2 never fires from
-    //             TRIG 1, measured), PARALLEL -> max(delay1, delay2), SERIES ->
-    //             delay1 + delay2. Sweeping MODE with both dials held moves it
-    //             100 -> 100 -> 200 ms while NEITHER dial moves.
-    //
-    // The permanent negative controls are in moog911a-face-model.test.ts and
-    // the closed forms are re-derived from the shipping worklet in
-    // art/scenarios/moog911a/face-audit.test.ts.
-    hero: {
-      readouts: [
-        { label: 'max rate', valueId: 'moog911a-max-rate' },
-        { label: 'last out', valueId: 'moog911a-last-out' },
-      ],
-    },
   },
 
   docs: {

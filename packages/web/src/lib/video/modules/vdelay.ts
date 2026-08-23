@@ -172,6 +172,57 @@ export const vdelayDef: VideoModuleDef = {
     { id: 'colorShift', label: 'Color',    defaultValue: DEFAULTS.colorShift, min: 0, max: 1,                curve: 'linear' },
   ],
 
+  // ── FACE (batch-22 · the video thin tail) ─────────────────────────────────
+  face: {
+    order: ['delayTime', 'feedback', 'mix', 'colorShift'],
+
+    // ⚠ NO `pages`, AND THIS ONE WAS THE CLOSE CALL IN THE BATCH. There is a
+    // real semantic split here — Time/Feedback shape the ECHO STRUCTURE, Mix/
+    // Color shape how it LOOKS — and that is the shape `reshaper` sections on.
+    // It is refused anyway: four controls is one row (DOCK_ROW_MAX_CONTROLS is
+    // far above it), so paging would add two headings and their vertical chrome
+    // to a face that already fits, buying structure the player did not ask for.
+    // Width and height must be EARNED; a split that only re-describes four
+    // faders does not earn it.
+
+    // ⚠ FADERS, NOT KNOBS — the parity-critical declaration on this face.
+    // `VdelayCard.svelte` draws all four with `NeonFader`. Nothing in a ParamDef
+    // separates "a level" from any other continuous scalar, so an undeclared
+    // face resolves them to KNOBS and silently swaps a dial in for a throw,
+    // with every def-reading gate blind to it.
+    paramCells: {
+      delayTime: 'fader', feedback: 'fader', mix: 'fader', colorShift: 'fader',
+    },
+
+    // ⚠ NO `bareCells` — one unlabelled band, so no heading exists to make a
+    // caption redundant, and Time/Feedback/Mix/Color name four different
+    // quantities rather than four instances of one.
+    //
+    // ⚠ THE FACE CAPTIONS COME FROM THE DEF's OWN `label`s, which is worth
+    // noting because the CARD disagrees with the def on one of them: the card
+    // writes `FB` where the def says `Feedback`. The face follows the DEF
+    // (`ParamDef.label`), so the caption reads `Feedback` — strictly more
+    // legible, and a place where card and def already differed before any of
+    // this. Nothing is lost; recorded so it is not read as a face bug.
+
+    // ⚠ MANDATORY FOR A VIDEO DEF — no `type: 'audio'` output on this def
+    // (`out` is `video`), so `primaryAudioOutPortId` is null and any other glyph
+    // literal falls through to a dead `{kind:'static'}` that reddens
+    // module-face-lint.
+    glyph: 'none',
+
+    // SCREEN ON/OFF arrives through this slot (#1928): promotion stops BOTH
+    // surfaces rendering `VdelayCard.svelte`.
+    //
+    // ⚠ THIS IS THE ACCUMULATOR MODULE OF THE BATCH, so the switch carries more
+    // weight here than on its three siblings. The body keeps the engine's watch
+    // mark alive while the screen is off precisely because this module's 32-slot
+    // ring is advanced BY THE DRAW: dropping out of the pull set would let the
+    // echo chain decay out of the ring and the picture would come back with its
+    // trails missing. See `$lib/ui/modules/vdelay/shell-extension.ts`.
+    extension: 'vdelay',
+  },
+
   docs: {
     explanation: "A video delay line with feedback echo — the visual analog of a tape/analog audio echo for the picture domain. VDELAY keeps a ring of 32 frame buffers; each frame a WRITE pass renders a new head slot equal to the live input plus a feedback-attenuated copy of the slot one delay-time ago, so the same image re-enters the ring and decays into a chain of repeats spaced by the delay length (this frame, then N frames later, then 2N, 3N...). A separate COMPOSE pass produces the visible output as a dry/wet mix between the live input and that delayed tap, so at low Mix you see the source with a faint trailing ghost and at high Mix you see mostly the echoes. With short Time and high Feedback you get fast, dense smearing/trails; long Time gives discrete stutter-style repeats. Color multiplicatively tints the feedback path toward a warm magenta, and because it is applied each pass the trails drift in hue (and darken slightly) as they age. Wire a video source into IN and route OUT into an OUTPUT, MONOGLITCH, or RUTTETRA card to watch the trails; push Feedback toward 0.95 for long-lived feedback ghosts without runaway.",
     inputs: {

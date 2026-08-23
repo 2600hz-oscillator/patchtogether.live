@@ -99,14 +99,18 @@ import { noiseDef } from '$lib/audio/modules/noise';
 import { warrensvisionsDef } from '$lib/video/modules/warrensvisions';
 import { charlottesEchosDef } from '$lib/audio/modules/charlottes-echos';
 import { filterDef } from '$lib/audio/modules/filter';
+import { gatemaidenDef } from '$lib/audio/modules/gatemaiden';
+import { colourofmagicDef } from '$lib/video/modules/colourofmagic';
 import { karplusDef } from '$lib/audio/modules/karplus';
 import { meowboxDef } from '$lib/audio/modules/meowbox';
 import { resofilterDef } from '$lib/audio/modules/resofilter';
 import { ringbackDef } from '$lib/audio/modules/ringback';
 import { ringsDef } from '$lib/audio/modules/rings';
+import { rasterizeDef } from '$lib/audio/modules/rasterize';
 import { sidecarDef } from '$lib/audio/modules/sidecar';
 import { slewSwitchDef } from '$lib/audio/modules/slewswitch';
 import { snaredrumDef } from '$lib/audio/modules/snaredrum';
+import { stereovcaDef } from '$lib/audio/modules/stereovca';
 import { swolevcoDef } from '$lib/audio/modules/swolevco';
 import { moog911Def } from '$lib/audio/modules/moog911';
 import { moog911aDef } from '$lib/audio/modules/moog911a';
@@ -253,6 +257,29 @@ import type { ParamDef } from '$lib/graph/types';
  */
 const RANGE_BOUND_CARDS: Readonly<Record<string, { params: readonly ParamDef[] }>> = {
   'AdsrCard.svelte': adsrDef,
+  // Converted with its FACEPLATE (queue Q53, 2026-08-20), and it is the entry
+  // that shows the conversion can be worth doing when NOTHING is wrong yet and
+  // the card is only two controls. Both of its literals (`min={0.005}`,
+  // `max={2}`) already agreed with the def and its `defaultValue` was already
+  // bound. What promotion changes is the consequence of the second copy: the
+  // dock now renders LEN straight off the `ParamDef` while the card renders
+  // what it typed, so a later edit to either side would give one fader two
+  // travels depending on the surface. Range-bound only — it still hand-types
+  // `curve="log"` (which AGREES with the def) and passes no `units`, so it
+  // stays out of MAPPING_BOUND_CARDS, the AnalogVcoCard position.
+  'GatemaidenCard.svelte': gatemaidenDef,
+  // Enrolled by the ARTIFACT ANCHOR rather than by choice (2026-08-20), which is
+  // the anchor doing exactly what it replaced the deleted floors to do. Facing
+  // `colourofmagic` moved the 22 preview TAP NAMES onto the def and made the
+  // card read them through `paramSpec(colourofmagicDef, 'preview')` — so the
+  // card became def-bound in FACT while this file still said nothing about it,
+  // and "def-bound but unlisted is coverage nobody is claiming" went red. It
+  // re-types no range literal, so the enrolment is free and the claim is true.
+  //   ⚠ The second failure was the NEGATIVE CONTROL on the same predicate — it
+  // delists one card and requires the anchor to name exactly that one, and it
+  // was naming two. Same root cause, one fix; a reviewer seeing both should not
+  // go looking for a second defect.
+  'ColourofmagicCard.svelte': colourofmagicDef,
   // Converted with its FACEPLATE (queue Q18), and it is the entry that shows
   // this list is not only about NUMBERS. All three of DestroyCard's ranges
   // already agreed with the def; what diverged was a NAME (`Decimate` on the
@@ -332,6 +359,14 @@ const RANGE_BOUND_CARDS: Readonly<Record<string, { params: readonly ParamDef[] }
   // renders rather than restates.
   'SlewSwitchCard.svelte': slewSwitchDef,
   'SnaredrumCard.svelte': snaredrumDef,
+  // THE FACEPLATE QUEUE · Q42. Enrolled with its faceplate, and it is the
+  // SidecarCard shape — both ranges were re-typed and both AGREED, so nothing
+  // was red and nothing is being fixed except the exposure itself. What makes
+  // it worth the edit now is that the def grew a `landmarks` roster in the same
+  // PR: this card's faders cannot render one (NeonFader takes no landmarks),
+  // so the def and the card have just become genuinely different surfaces over
+  // one contract, which is exactly when a re-typed number stops being harmless.
+  'StereovcaCard.svelte': stereovcaDef,
   // THE FACEPLATE QUEUE · Q5. Enrolled with its faceplate. All EIGHT ranges
   // were re-typed and all eight AGREED, so this is the SidecarCard shape — a
   // maintainability fix, not a bug fix — with one exception that had already
@@ -515,6 +550,26 @@ const RANGE_BOUND_CARDS: Readonly<Record<string, { params: readonly ParamDef[] }
   // re-ordering the panel would move a strict baseline for nothing.)
   'Moog921aCard.svelte': moog921aDef,
   'Moog921bCard.svelte': moog921bDef,
+  // THE FACEPLATE QUEUE · Q46. Enrolled with its faceplate. The card was
+  // HALF-BOUND, which is the state worth naming: SCAN already read
+  // `rasterizeDef.params[0]!.max` while SAMP/F and GAIN hand-typed `16..8000`
+  // and `0..8`. All three AGREED with the def, so this is a maintainability fix
+  // rather than a bug fix — but the def is the artifact that just moved (the
+  // `wrap` roster landed with the promotion), and half-bound is the shape that
+  // reads as bound at a glance.
+  //
+  // ⚠ AND THE BOUND HALF WAS ITSELF FRAGILE: `params[0]` is POSITIONAL, so it
+  // silently re-points if a param is ever reordered — a way for a def-reading
+  // prop to start reading the wrong def entry while still looking correct.
+  // Now looked up by id.
+  //
+  // ⚠ THE CARD IS NOT DEAD CODE AFTER PROMOTION, which is why enrolling it is
+  // worth anything at all: `?shell=legacy` still renders the verbatim card, so
+  // its ranges still reach a user. (The Q46 spec assumed the opposite and
+  // concluded the literals could simply retire with the card; the same premise
+  // made its raw-write-ledger instruction wrong, and both were checked against
+  // the tree rather than taken.)
+  'RasterizeCard.svelte': rasterizeDef,
 };
 
 /**
@@ -524,6 +579,18 @@ const RANGE_BOUND_CARDS: Readonly<Record<string, { params: readonly ParamDef[] }
  */
 const MAPPING_BOUND_CARDS: readonly string[] = [
   'AdsrCard.svelte',
+  // Enrolled with its FACEPLATE (2026-08-20), and the anchor walked it here in
+  // two steps rather than one — which is the ratchet being stricter than the
+  // author, not a detour. Facing `colourofmagic` made the card read the preview
+  // TAP NAMES off the def, so it became range-bound and the anchor demanded the
+  // RANGE_BOUND_CARDS row. That surfaced five `curve="linear"` props the curve
+  // clause could not check, because every knob here sits in an `{#each}` with a
+  // DYNAMIC `paramId={ch.bias}` and a source-level gate has no literal id to
+  // resolve. Binding the curve off the def removed the unverifiable claim — and
+  // left the card re-typing NO mapping literal either, which is this list's
+  // entry condition. Value-identical throughout: the def already declared
+  // `linear` for every bias.
+  'ColourofmagicCard.svelte',
   // Range AND mapping: every Fader reads min/max/defaultValue/label/curve off
   // the ParamDef it was derived from, so nothing is restated.
   'AttenumixCard.svelte',
@@ -600,6 +667,11 @@ const MAPPING_BOUND_CARDS: readonly string[] = [
   // which this card never printed at all before binding.
   'SlewSwitchCard.svelte',
   'SnaredrumCard.svelte',
+  // THE FACEPLATE QUEUE · Q42. `curve` is bound off `paramSpec` (`linear` on
+  // both); `units` is ABSENT ON BOTH SIDES — neither stereovca param declares
+  // one and the card passes none — which the anchor reads as "nothing left to
+  // drift", correctly.
+  'StereovcaCard.svelte',
   'VcaCard.svelte',
   'WarrensspectrumCard.svelte',
   // THE FACEPLATE QUEUE · Q9. `units` is bound too, not merely absent: `tune`

@@ -142,6 +142,18 @@ const BEHAVIORAL_MODULE_EXEMPT: Record<string, string> = {
   // pinned by the dsp es9-bridge-core unit suite; flow verified on hardware
   // per the native repo plan (patchtogether.es9/docs/inet-modular-es9-module-plan.md).
   es9: 'all outputs source from physical ES-9 hardware via the native bridge (absent in CI) — control + patched arms both read rms 0.000, so no input can show a delta; re-enable via a mock bridge WebSocket fixture; ring/scaling/policy covered by dsp es9-bridge-core tests, flow verified on hardware per the native repo plan',
+  // VST INSTRUMENT — its audio outputs carry a mounted AU plugin's render
+  // via the vst-bridge helper (patchtogether.nativeapps, ws://127.0.0.1:9309);
+  // neither helper nor plugins exist in CI, so control + patched arms both
+  // read rms 0.000 and no note input can show a delta. NOTE vstFx is NOT
+  // exempted here on purpose: its not-connected LOCAL BYPASS routes in_l/r
+  // to out_l/r inside the worklet, so driving its inputs shows a real delta —
+  // that sweep row is genuine coverage of the bypass path. Re-enable path
+  // for this entry: a mock vst-bridge WebSocket fixture feeding
+  // deterministic frames. CV→MIDI conversion is pinned by the dsp
+  // vst-bridge-core suite; wire codecs by vst/vst-transport tests; live
+  // flow owner-verified per #1953 (the checklist lands with its M4 PR).
+  vstInstrument: 'outputs source from a mounted AU plugin via the vst-bridge helper (absent in CI) — control + patched arms both read rms 0.000, so no note input can show a delta; re-enable via a mock bridge WebSocket fixture; CV→MIDI pinned by dsp vst-bridge-core tests, codecs by vst-transport tests, live flow owner-verified',
 
   // ── MIDI-driven: same as hardware — no MIDI device in test browser.
   midiCvBuddy: 'requires MIDI device; covered by midi-cv-buddy.spec.ts',
@@ -297,7 +309,7 @@ const BEHAVIORAL_MODULE_EXEMPT: Record<string, string> = {
   // specs 20–25 s, far past this sweep's per-input window, and until the menu is
   // driven into a level BOTH arms observe the same idle menu, so there is no
   // delta to detect — a structural no-delta, not dead CV.
-  blood:    'boot-gated, not data-gated: the bundled shareware is committed + materialized on CI (docs/adr/007-game-asset-distribution.md) but `blood-ready` takes 20–25 s and, until the menu is driven into a level, driven + control arms observe the same idle menu → structural no-delta; real coverage = blood-audio-output.spec.ts (menu→level→fire→SCOPE) + blood-ingame/blood-keyboard specs + blood-keys.test.ts',
+  blood:    'boot-gated, not data-gated: the bundled shareware is committed + materialized on CI (docs/adr/007-game-asset-distribution.md) but `blood-ready` takes 20–25 s and, until the menu is driven into a level, driven + control arms observe the same idle menu → structural no-delta; real coverage = blood-audio-output.spec.ts (menu→level→fire→SCOPE) + blood-ingame specs + blood-keys.test.ts',
   frogger:  'gameplay-conditional outputs; covered by frogger specs',
   skifree:  'gate fires only on in-game crash/eaten; out is animated canvas; covered by e2e/tests/skifree.spec.ts',
   gibribbon: 'gameplay-conditional outputs (evt_hit/miss/fire/kill/gameover fire on in-game judgement; health_cv is idle DC); covered by gibribbon.spec.ts (forcePulse) + gibribbon-events.test.ts',

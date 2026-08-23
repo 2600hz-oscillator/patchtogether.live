@@ -511,56 +511,7 @@ export const cloudsDef: AudioModuleDef = {
     hero: {
       cell: 'clouds-buffer-{n}',
       control: 'position',
-      // ⚠ ALL THREE DERIVED, and each because the nearest knob is blind to
-      // something that genuinely changes the answer:
-      //
-      //   reads  — a `paramId: 'position'` readout prints 0.50 at every SIZE,
-      //            while the reachable span shrinks from 1.94 s to 0.50 s and
-      //            the read point moves 1.03 s → 1.75 s. It is the number that
-      //            makes the module's most invisible control legible at all.
-      //            (That span is WIDER since #1456, because POSITION's window is
-      //            the ring minus one grain and the grain now reaches 1.5 s —
-      //            the same readout, one more thing it is right about.)
-      //   grain  — a `paramId: 'size'` readout prints 0.50 for a 300 ms grain,
-      //            says nothing about the 60…1500 ms law behind it, and cannot
-      //            express that a transposed grain covers a DIFFERENT amount of
-      //            tape than it sounds for (the two clocks differ by
-      //            2^(pitch/12), and the value names its frame for that reason).
-      //   pitch  — a `paramId: 'pitch'` readout prints `0.50 st` for a detune
-      //            that costs the FULL ~10.6 dB, because coherence is a
-      //            threshold and a semitone readback is a slope.
-      readouts: [
-        { label: 'reads', valueId: 'clouds-position-reach' },
-        { label: 'grain', valueId: 'clouds-grain-ms' },
-        { label: 'pitch', valueId: 'clouds-coherence' },
-      ],
     },
-
-    sidebar: [
-      {
-        kind: 'readouts',
-        // THE TWO SECONDS, as numbers rather than as a moving picture. The
-        // panel cannot draw a filling ring honestly — `fillLevel` is not an
-        // AudioParam and the worklet posts nothing, so there is no observable
-        // to read, and a clock-derived head would make the VRT baseline a race
-        // against boot time (see clouds-face-model's ring-plan note). These say
-        // the same thing without needing a clock, and both MOVE with SIZE.
-        label: 'the two seconds',
-        entries: [
-          { label: 'silent for', valueId: 'clouds-silence' },
-          { label: 'full level at', valueId: 'clouds-full-level' },
-          { label: 'grain pool', valueId: 'clouds-grain-count' },
-          // MEASURED, not derived, and the model test re-derives it from
-          // `cloudsMath` on every run so it cannot go stale. A first-principles
-          // coherence ratio (10·log10(N·E[env]²/E[env²])) reads 12.55 dB here
-          // and is 4.7 dB out at TEXTURE 0, because it does not model the
-          // output tanh — a confident wrong number is worse than a constant
-          // that says which setting it was taken at.
-          { label: 'pitch ≠ 0', text: '≈ −10.6 dB (defaults)' },
-          { label: 'blend 0', text: 'bit-exact dry' },
-        ],
-      },
-    ],
 
     // REAR CARD. The derivation already puts each CV hole on the band holding
     // the param it targets, so only the audio-rate ticks need declaring: in_l /

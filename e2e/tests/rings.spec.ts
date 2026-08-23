@@ -223,7 +223,43 @@ test('rings: model switch (MODAL ↔ SYMPATHETIC) — both produce audio', async
       node.params.damping = 0.1;
     }
   });
-  // Give the engine a beat to apply the param change.
+  // THE SWITCH ITSELF IS NOW ASSERTED. `peak > 0.01` below is a property BOTH
+  // models share, so on its own it cannot fail on a `model` param that never
+  // reached the engine — the test would have gone green against a dead
+  // selector, measuring MODAL twice. Poll the engine's own value for `model`
+  // so the switch is a checked step rather than an assumption.
+  //
+  // ⚠ SCOPE OF THIS ASSERTION, stated so it is not read as more than it is:
+  // AudioEngine.readParam returns its knobValues cache (engine.ts:803), seeded
+  // by setParam. So this proves STORE → ENGINE — the link that was entirely
+  // unchecked — and NOT engine → worklet AudioParam. Proving the DSP actually
+  // renders a different resonator needs a spectral statistic, which the scope
+  // exposes no read key for; that half is raised with the owner rather than
+  // bodged in here with a threshold nobody has measured.
+  await expect
+    .poll(
+      () =>
+        page.evaluate(() => {
+          const w = globalThis as unknown as {
+            __engine?: () => {
+              readParam: (n: { id: string; type: string; domain: string }, k: string) => number | undefined;
+            } | null;
+            __patch: { nodes: Record<string, { id: string; type: string; domain: string }> };
+          };
+          const eng = w.__engine?.();
+          const node = w.__patch.nodes['r'];
+          if (!eng || !node) return null;
+          return eng.readParam(node, 'model');
+        }),
+      { message: 'the engine takes up model = 1 (SYMPATHETIC), so the switch really happened' },
+    )
+    .toBe(1);
+
+  // pacing: this wait SEPARATES TWO MEASUREMENTS and must survive as timed
+  // semantics. RINGS is still ringing from MODAL when `model` flips, and the
+  // resonator's decay is a product-side tail (`damping`, set to 0.1 just above).
+  // Without this window `pollScopePeak` below can converge on the MODAL TAIL,
+  // so the SYMPATHETIC reading would not be SYMPATHETIC's.
   await page.waitForTimeout(300);
   const sympStats = await pollScopePeak(page, 'scp', 0.01, 3000);
   expect(sympStats.peak, `SYMPATHETIC peak=${sympStats.peak}`).toBeGreaterThan(0.01);

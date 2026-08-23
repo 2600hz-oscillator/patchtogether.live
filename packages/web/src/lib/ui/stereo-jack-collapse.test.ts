@@ -275,6 +275,8 @@ tvLibrarian output:audio_l+audio_r=AUDIO
 twotracks input:audio_l_in_a+audio_r_in_a=AUDIO IN A input:audio_l_in_b+audio_r_in_b=AUDIO IN B output:out_l+out_r=OUT
 videobox output:audio_l+audio_r=AUDIO
 videovarispeed output:audio_l+audio_r=AUDIO
+vstFx input:in_l+in_r=IN output:out_l+out_r=OUT
+vstInstrument output:out_l+out_r=OUT
 wavecel output:out_l+out_r=OUT
 wavesculpt output:L+R=OUT
 `.trim();

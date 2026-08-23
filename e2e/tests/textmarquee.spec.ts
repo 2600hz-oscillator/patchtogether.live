@@ -118,15 +118,21 @@ test.describe('TEXTMARQUEE — rich-text marquee video generator', () => {
         n.params.posX = 0.2;
       });
     });
-    await page.waitForTimeout(120);
-    const params = await page.evaluate(() => {
-      const w = globalThis as unknown as {
-        __patch: { nodes: Record<string, { params: Record<string, number> }> };
-      };
-      const n = w.__patch.nodes['txt'];
-      return { scrollX: n?.params.scrollX, posX: n?.params.posX };
-    });
-    expect(params.scrollX, 'scrollX routed to the store').toBeCloseTo(0.9, 5);
-    expect(params.posX, 'posX routed to the store').toBeCloseTo(0.2, 5);
+    // Poll the STORE rather than budget a guess for the transaction — the same
+    // cellshade pattern the comment above cites, completed. One assertion over
+    // the whole record, so a partial write still fails.
+    await expect
+      .poll(
+        () =>
+          page.evaluate(() => {
+            const w = globalThis as unknown as {
+              __patch: { nodes: Record<string, { params: Record<string, number> }> };
+            };
+            const n = w.__patch.nodes['txt'];
+            return { scrollX: n?.params.scrollX, posX: n?.params.posX };
+          }),
+        { message: 'scrollX + posX both route through the patch store' },
+      )
+      .toEqual({ scrollX: 0.9, posX: 0.2 });
   });
 });

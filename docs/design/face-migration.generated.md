@@ -11,9 +11,9 @@ Every registered module carries exactly one **disposition**: what kind of work i
 
 |  | count |
 |---|---|
-| registered modules | 196 |
-| done (faced + promoted) | 59 |
-| remaining (excludes organizational-native) | 134 |
+| registered modules | 198 |
+| done (faced + promoted) | 123 |
+| remaining (excludes organizational-native) | 72 |
 | registered with NO disposition (must be zero) | 0 |
 | inventory entries naming a dead def (must be zero) | 0 |
 
@@ -21,9 +21,9 @@ Every registered module carries exactly one **disposition**: what kind of work i
 
 | disposition | what it means | modules | done |
 |---|---|---|---|
-| `generic-face` | author a `face` and rank the controls — no new platform capability | 141 | 59 |
+| `generic-face` | author a `face` and rank the controls — no new platform capability | 141 | 123 |
 | `blocked` | would be a face today but for the named capability, and nothing else | 3 | — |
-| `bespoke-surface` | the primary interaction is not param-shaped — needs a purpose-built surface | 49 | — |
+| `bespoke-surface` | the primary interaction is not param-shaped — needs a purpose-built surface | 51 | — |
 | `organizational-native` | rack furniture; not a migration at all | 3 | — |
 
 ## What each blocker buys
@@ -31,7 +31,7 @@ Every registered module carries exactly one **disposition**: what kind of work i
 | blocker | issue | modules waiting |
 |---|---|---|
 | `needs-media-controller` | #1511 | 12 |
-| `needs-note-entry-cell` | #1509 | 15 |
+| `needs-note-entry-cell` | #1509 | 17 |
 
 ## `generic-face`
 
@@ -39,18 +39,18 @@ author a `face` and rank the controls — no new platform capability.
 
 | module | domain | state | blockers |
 |---|---|---|---|
-| `4plexvid` | video | — | — |
-| `acidwarp` | video | — | — |
+| `4plexvid` | video | done | — |
+| `acidwarp` | video | done | — |
 | `adsr` | audio | done | — |
 | `analogLogicMaths` | audio | done | — |
 | `analogVco` | audio | done | — |
 | `attenumix` | audio | done | — |
-| `b3ntb0x` | video | — | — |
+| `b3ntb0x` | video | done | — |
 | `backdraft` | video | done | — |
-| `bentbox` | video | — | — |
+| `bentbox` | video | done | — |
 | `bluebox` | audio | done | — |
 | `buggles` | audio | done | — |
-| `cellshade` | video | — | — |
+| `cellshade` | video | done | — |
 | `charlottesEchos` | audio | done | — |
 | `chroma` | video | — | — |
 | `chromakey` | video | — | — |
@@ -58,126 +58,126 @@ author a `face` and rank the controls — no new platform capability.
 | `clouds` | audio | done | — |
 | `cloudseed` | audio | done | — |
 | `cofefve` | audio | done | — |
-| `colorizer` | video | — | — |
-| `colourofmagic` | video | — | — |
+| `colorizer` | video | done | — |
+| `colourofmagic` | video | done | — |
 | `cube` | audio | done | — |
-| `cvBuddy` | audio | — | — |
-| `cvBuddyMini` | audio | — | — |
+| `cvBuddy` | audio | done | — |
+| `cvBuddyMini` | audio | done | — |
 | `delay` | audio | done | — |
-| `depolarizer` | audio | — | — |
+| `depolarizer` | audio | done | — |
 | `destroy` | audio | done | — |
-| `destructor` | video | — | — |
+| `destructor` | video | done | — |
 | `dockscope` | audio | — | — |
 | `drummergirl` | audio | done | — |
 | `dx7` | audio | done | — |
-| `edges` | video | — | — |
-| `fader` | video | — | — |
+| `edges` | video | done | — |
+| `fader` | video | done | — |
 | `featurecv` | audio | done | — |
 | `feedback` | video | — | — |
 | `filter` | audio | done | — |
-| `flipper` | audio | — | — |
+| `flipper` | audio | done | — |
 | `fourplexer` | audio | done | — |
-| `foxy` | audio | — | — |
-| `freezeframe` | video | — | — |
-| `gatemaiden` | audio | — | — |
-| `grainsOfVision` | video | — | — |
+| `foxy` | audio | done | — |
+| `freezeframe` | video | done | — |
+| `gatemaiden` | audio | done | — |
+| `grainsOfVision` | video | done | — |
 | `graphicEq` | video | — | — |
 | `illogic` | audio | done | — |
-| `inwards` | video | — | — |
+| `inwards` | video | done | — |
 | `joystick` | audio | — | — |
 | `karplus` | audio | done | — |
 | `kickdrum` | audio | done | — |
 | `lfo` | audio | done | — |
-| `lines` | video | — | — |
-| `luma` | video | — | — |
-| `lumakey` | video | — | — |
+| `lines` | video | done | — |
+| `luma` | video | done | — |
+| `lumakey` | video | done | — |
 | `lushgarden` | video | — | — |
 | `macrooscillator` | audio | done | — |
-| `mandelbulb` | video | — | — |
+| `mandelbulb` | video | done | — |
 | `mandleblot` | video | — | — |
-| `mapper` | video | — | — |
+| `mapper` | video | done | — |
 | `marbles` | audio | done | — |
 | `meowbox` | audio | done | — |
-| `milkdrop` | video | — | — |
-| `mirrorpool` | video | — | — |
+| `milkdrop` | video | done | — |
+| `mirrorpool` | video | done | — |
 | `mixer` | audio | done | — |
 | `mixmstrs` | audio | done | — |
-| `monoglitch` | video | — | — |
-| `moog902` | audio | — | — |
-| `moog903a` | audio | — | — |
-| `moog904a` | audio | — | — |
-| `moog904b` | audio | — | — |
-| `moog904c` | audio | — | — |
-| `moog905` | audio | — | — |
+| `monoglitch` | video | done | — |
+| `moog902` | audio | done | — |
+| `moog903a` | audio | done | — |
+| `moog904a` | audio | done | — |
+| `moog904b` | audio | done | — |
+| `moog904c` | audio | done | — |
+| `moog905` | audio | done | — |
 | `moog907a` | audio | done | — |
 | `moog911` | audio | done | — |
 | `moog911a` | audio | done | — |
-| `moog912` | audio | — | — |
+| `moog912` | audio | done | — |
 | `moog914` | audio | done | — |
 | `moog921a` | audio | done | — |
 | `moog921b` | audio | done | — |
 | `moog921Vco` | audio | done | — |
 | `moog923` | audio | done | — |
 | `moog960` | audio | — | — |
-| `moog961` | audio | — | — |
-| `moog962` | audio | — | — |
-| `moog984` | audio | — | — |
-| `moog992` | audio | — | — |
-| `moog993` | audio | — | — |
-| `moog994` | audio | — | — |
-| `moog995` | audio | — | — |
+| `moog961` | audio | done | — |
+| `moog962` | audio | done | — |
+| `moog984` | audio | done | — |
+| `moog992` | audio | done | — |
+| `moog993` | audio | done | — |
+| `moog994` | audio | done | — |
+| `moog995` | audio | done | — |
 | `moogCp3` | audio | done | — |
 | `ninelives` | audio | done | — |
 | `noise` | audio | done | — |
-| `onetonine` | video | — | — |
-| `outlines` | video | — | — |
-| `peakstate` | video | — | — |
+| `onetonine` | video | done | — |
+| `outlines` | video | done | — |
+| `peakstate` | video | done | — |
 | `pentemelodica` | audio | done | — |
-| `polarizer` | audio | — | — |
-| `posterbox` | video | — | — |
+| `polarizer` | audio | done | — |
+| `posterbox` | video | done | — |
 | `qbrt` | audio | done | — |
-| `quadralogical` | video | — | — |
-| `rasterize` | audio | — | — |
-| `reshaper` | video | — | — |
+| `quadralogical` | video | done | — |
+| `rasterize` | audio | done | — |
+| `reshaper` | video | done | — |
 | `resofilter` | audio | done | — |
 | `reverb` | audio | done | — |
 | `ringback` | audio | done | — |
 | `rings` | audio | done | — |
-| `ruttetra` | video | — | — |
-| `sampleHold` | audio | — | — |
+| `ruttetra` | video | done | — |
+| `sampleHold` | audio | done | — |
 | `samsloop` | audio | — | — |
-| `scaler` | audio | — | — |
+| `scaler` | audio | done | — |
 | `scope` | audio | — | — |
-| `scoreboard` | video | — | — |
+| `scoreboard` | video | done | — |
 | `shapedramps` | video | — | — |
-| `shapegen` | video | — | — |
+| `shapegen` | video | done | — |
 | `shapes` | video | — | — |
 | `shimmershine` | audio | done | — |
 | `sidecar` | audio | done | — |
 | `sixstrum` | audio | done | — |
 | `slewSwitch` | audio | done | — |
 | `snaredrum` | audio | done | — |
-| `sourcery` | video | — | — |
+| `sourcery` | video | done | — |
 | `spectrograph` | audio | — | — |
-| `spirographs` | video | — | — |
-| `stereovca` | audio | — | — |
+| `spirographs` | video | done | — |
+| `stereovca` | audio | done | — |
 | `swolevco` | audio | done | — |
 | `synesthesia` | audio | — | — |
-| `tempest` | video | — | — |
+| `tempest` | video | done | — |
 | `tidyVco` | audio | done | — |
-| `tiler` | video | — | — |
+| `tiler` | video | done | — |
 | `timelorde` | audio | — | — |
 | `tomtom` | audio | done | — |
-| `treeohvox` | audio | — | — |
+| `treeohvox` | audio | done | — |
 | `unityscalemathematik` | audio | done | — |
 | `vca` | audio | done | — |
-| `vdelay` | video | — | — |
+| `vdelay` | video | done | — |
 | `vfpgaRunner` | video | — | — |
-| `videoMixer` | video | — | — |
+| `videoMixer` | video | done | — |
 | `videoOut` | video | done | — |
 | `warrensspectrum` | audio | done | — |
-| `warrensvisions` | video | — | — |
-| `wavecel` | audio | — | — |
+| `warrensvisions` | video | done | — |
+| `wavecel` | audio | done | — |
 | `wavesculpt` | audio | — | — |
 | `wavetableVco` | audio | done | — |
 
@@ -245,6 +245,8 @@ the primary interaction is not param-shaped — needs a purpose-built surface.
 | `twotracks` | audio | — | — |
 | `videobox` | video | — | `needs-media-controller` |
 | `videovarispeed` | video | — | `needs-media-controller` |
+| `vstFx` | audio | — | `needs-note-entry-cell` |
+| `vstInstrument` | audio | — | `needs-note-entry-cell` |
 | `writeseq` | audio | — | `needs-note-entry-cell` |
 
 ## `organizational-native`

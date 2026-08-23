@@ -15,16 +15,33 @@
 //       control = gainKnob(0..6 V)  +  fcv (fixed-control-voltage bias)
 //                 + cvAmount * cv   (the summing CONTROL INPUTS)
 //   The headline anchors: overall gain ×2 (+6 dB) at pot=max (6 V) OR at
-//   CV=6 V; gain reaches its ×3 ceiling near a control sum of ~7.5 V.
+//   CV=6 V; gain then rises to a ×3 ceiling whose CONTROL VOLTAGE DEPENDS ON
+//   THE MODE — 9 V in LINEAR, 7.5 V in EXPONENTIAL.
 //
 //   * LINEAR mode: gain rises linearly with the control voltage —
 //       gainMul = control / 3      (so 6 V → ×2, the +6 dB anchor)
-//     clamped to the ×3 ceiling. A 0 V control = silence.
+//     clamped to the ×3 ceiling, which this arm reaches at 9 V. A 0 V
+//     control = silence.
 //   * EXPONENTIAL mode: gain rises exponentially with the control voltage,
 //     normalized so it STILL passes through ×2 at 6 V (the shared anchor)
-//     and then climbs faster, hitting the ×3 ceiling near ~7.5 V (matching
+//     and then climbs faster, hitting the ×3 ceiling at 7.5 V (matching
 //     the spec's "max ×3 near FCV+input sum ≈ 7.5 V"). This is the classic
 //     VCA "exp = snappier, more aggressive at the top" feel.
+//
+//   ⚠ THE ~7.5 V CEILING FIGURE IS THE EXPONENTIAL ARM'S, AND THIS HEADER USED
+//   TO STATE IT UNCONDITIONALLY (#1912). It is a fitted anchor of the EXP curve
+//   — see EXP_TAU below, solved from exactly that pair of constraints — so it
+//   was never the LINEAR arm's answer. Bisected against this processor the
+//   ceiling is 9.000000 V in LINEAR and 7.499999 V in EXPONENTIAL, and at 7.5 V
+//   LINEAR delivers ×2.500000. Since LINEAR is the SHIPPED DEFAULT, the
+//   unconditional claim was wrong for a bare 902 by 1.5 V.
+//
+//   ⚠ AND THE TWO LAWS ARE NOT LEVEL-MATCHED, which the mode's own name does
+//   not suggest: they coincide ONLY at 0 V and at the 6 V anchor, so flipping
+//   the switch moves the OUTPUT LEVEL at every setting between them — −2.9841
+//   dB at the shipped pot position, −5.4525 dB near the bottom of the dial.
+//   That is deliberate curve shape, not a defect; it is recorded because the
+//   faceplate has to print it (see moog902-face-model.ts).
 //
 // DSP is OWN CODE. A clean-room amplifier gain law forked from the repo's own
 // existing `vca` (packages/dsp/src/vca.dsp) — re-implemented here in TS with
@@ -77,6 +94,8 @@ const V_ANCHOR = 6;
 // The gain multiplier at the anchor (×2 = +6 dB).
 const GAIN_AT_ANCHOR = 2;
 // The hard ceiling: the 902 maxes out at ×3 (the control sum saturates).
+// ⚠ The VOLTAGE at which each law reaches it differs — 9 V linear, 7.5 V
+// exponential — because only the exp curve was fitted to the 7.5 V anchor.
 const GAIN_CEILING = 3;
 // The GAIN pot spans 0..6 V of control (param `gain` is 0..1 → ×6).
 const GAIN_POT_VOLTS = 6;
@@ -93,9 +112,10 @@ const EXP_A = GAIN_AT_ANCHOR / (Math.exp(V_ANCHOR / EXP_TAU) - 1);
  * Map a CONTROL SUM (in volts) to an amplitude multiplier under the given
  * mode — the single place the 902 gain law lives. (The DSP unit tests pin
  * it indirectly by driving process() and reading the steady-state output.)
- *   LINEAR:      gainMul = control / 3   (6 V → ×2), clamped to [0, ×3].
- *   EXPONENTIAL: passes through ×2 at 6 V, climbs faster, hits ×3 near
- *                ~7.5 V, clamped to [0, ×3]. Below 0 V → silence.
+ *   LINEAR:      gainMul = control / 3   (6 V → ×2), clamped to [0, ×3] —
+ *                which this arm reaches at 9 V.
+ *   EXPONENTIAL: passes through ×2 at 6 V, climbs faster, hits ×3 at
+ *                7.5 V, clamped to [0, ×3]. Below 0 V → silence.
  */
 function moog902Gain(control: number, exponential: boolean): number {
   if (control <= 0) return 0;
@@ -108,7 +128,8 @@ function moog902Gain(control: number, exponential: boolean): number {
     // through BOTH anchors exactly —
     //   At control = 0           → 0   (silence)
     //   At control = 6 (anchor)  → ×2  (the shared +6 dB point)
-    //   At control = 7.5         → ×3  (the ceiling anchor — "≈ 7.5 V")
+    //   At control = 7.5         → ×3  (the ceiling anchor — EXP ONLY; the
+    //                                   LINEAR arm reaches ×3 at 9 V, #1912)
     // The clamp below still pins the hard ×3 max for any larger sum.
     g = EXP_A * (Math.exp(control / EXP_TAU) - 1);
   }

@@ -240,6 +240,39 @@ export function buildRuttetraIndices(cols = COLS, rows = ROWS): Uint32Array {
 
 export const RUTTETRA_GRID = { cols: COLS, rows: ROWS } as const;
 
+// ⚠ THE MONITOR BOX MOVED OUT OF THIS DEF (2026-08-21). It is now
+// `$lib/ui/modules/ruttetra/monitor-box.ts`, imported by the card and the
+// faced body exactly as before — the one-source rule is unchanged, only its
+// address. It left because ALL of `lib/video/**` is swept into the WebGL
+// attest basis, so six layout numbers here made every monitor-box edit a
+// real-GPU re-attest; a probe on the monoglitch branch showed those eight lines
+// were the ONLY hash contribution of an entire face. See that file's header.
+
+/**
+ * The morph anchors of `shapedRamp`, as NAMED WAYPOINTS on a continuous param
+ * (PF-10 `landmarks`) — ONE source for both shape params.
+ *
+ * ⚠ THESE ARE THE SHADER'S OWN ARM BOUNDARIES, not a display table. `:83-89`
+ * crossfades `lin → tri` over `[0, 0.333)`, `tri → sf` over `[0.333, 0.666)`
+ * and `sf → radial` over `[0.666, 1]`, so 0 / 0.333 / 0.666 / 1 are exactly the
+ * four values at which the ramp IS one named shape rather than a blend of two.
+ * `knobNameReadout` paints the NEAREST one, which derives the display
+ * boundaries (0.1665 / 0.4995 / 0.833) from these anchors instead of re-typing
+ * a second set of thresholds the way the legacy card does.
+ *
+ * ⚠ `radial` AT 1 IS THE DECLARED INTENT, AND THE SHADER OVERSHOOTS IT BY
+ * 0.2 % (#1863, open) — arm 3's coefficient reaches 1.002 at `m = 1`, which
+ * `ruttetra.test.ts:63-81` pins DELIBERATELY as bit-faithful to the shader.
+ * This roster names the intent, not the residue; #1863 is the owner's call on
+ * whether the maths or the docs move, and nothing here prejudges it.
+ */
+const SHAPE_LANDMARKS = [
+  { value: 0,     label: 'linear'   },
+  { value: 0.333, label: 'triangle' },
+  { value: 0.666, label: 'soft'     },
+  { value: 1,     label: 'radial'   },
+] as const;
+
 export const ruttetraDef: VideoModuleDef = {
   type: 'ruttetra',
   palette: { top: 'Video modules', sub: 'Processors' },
@@ -272,22 +305,189 @@ export const ruttetraDef: VideoModuleDef = {
     { id: 'out', type: 'video' },
   ],
   params: [
-    { id: 'xShape',    label: 'X Shape',   defaultValue: DEFAULTS.xShape,    min: 0,    max: 1, curve: 'linear' },
-    { id: 'yShape',    label: 'Y Shape',   defaultValue: DEFAULTS.yShape,    min: 0,    max: 1, curve: 'linear' },
+    // ⚠ THE TWO SHAPE PARAMS CARRY `landmarks` AND MUST STAY KNOBS. The card
+    // re-types seven thresholds (`RuttetraCard.svelte:57-66`: 0.083 / 0.25 /
+    // 0.416 / 0.583 / 0.75 / 0.916) that appear NOWHERE in this def, so a
+    // def-driven face would have lost the morph name entirely and porting the
+    // table would have shipped the same re-typed mapping with fresh paint.
+    // These four anchors are the shader's OWN arms (`shapedRamp`, :83-89), so
+    // nearest-match derives the boundaries (0.1665 / 0.4995 / 0.833) instead of
+    // re-typing them.
+    //
+    // ⚠ AND THE CELL KIND IS LOAD-BEARING, WHICH IS NOT OBVIOUS AND WAS NEARLY
+    // GOT WRONG. `landmarks` is read by exactly ONE primitive: `KnobConic`
+    // (`ModuleShell.svelte`, `landmarks={pd.landmarks}` on the knob branch).
+    // `NeonFader` is passed `options` and NOT `landmarks`, so declaring
+    // `paramCells: 'fader'` for these two — which card fidelity would otherwise
+    // argue for, since the card draws all twelve as throws — would silently
+    // drop every name while leaving this declaration looking honoured. The
+    // face therefore leaves xShape/yShape at the shell's DEFAULT dial and
+    // declares `fader` for the other ten; `ruttetra-face-model.test.ts` pins
+    // that pairing with the fader case as its negative control.
+    { id: 'xShape',    label: 'X Shape',   defaultValue: DEFAULTS.xShape,    min: 0,    max: 1, curve: 'linear',
+      landmarks: SHAPE_LANDMARKS },
+    { id: 'yShape',    label: 'Y Shape',   defaultValue: DEFAULTS.yShape,    min: 0,    max: 1, curve: 'linear',
+      landmarks: SHAPE_LANDMARKS },
     { id: 'xDisp',     label: 'X Disp',    defaultValue: DEFAULTS.xDisp,     min: -1,   max: 1, curve: 'linear' },
     { id: 'yDisp',     label: 'Y Disp',    defaultValue: DEFAULTS.yDisp,     min: -1,   max: 1, curve: 'linear' },
     { id: 'intensity', label: 'Intensity', defaultValue: DEFAULTS.intensity, min: 0,    max: 2, curve: 'linear' },
-    { id: 'tintR',     label: 'Tint R',    defaultValue: DEFAULTS.tintR,     min: 0,    max: 1, curve: 'linear' },
-    { id: 'tintG',     label: 'Tint G',    defaultValue: DEFAULTS.tintG,     min: 0,    max: 1, curve: 'linear' },
-    { id: 'tintB',     label: 'Tint B',    defaultValue: DEFAULTS.tintB,     min: 0,    max: 1, curve: 'linear' },
+    // ⚠ `R` / `G` / `B`, NOT `Tint R` / `Tint G` / `Tint B`. The redundancy the
+    // owner's caption ruling targets is the word "Tint" under a page already
+    // called BEAM — not the letter, which is the ONLY thing separating three
+    // otherwise-identical controls and is therefore tidyVco's `A`/`D`/`S`/`R`,
+    // which the ruling explicitly KEEPS. So the fix is the label, and
+    // `face.bareCells` is deliberately NOT declared: hiding these captions
+    // would leave three indistinguishable knobs. It also aligns the def with
+    // the card, which has always passed `label="R"` (`:281-283`).
+    { id: 'tintR',     label: 'R',         defaultValue: DEFAULTS.tintR,     min: 0,    max: 1, curve: 'linear' },
+    { id: 'tintG',     label: 'G',         defaultValue: DEFAULTS.tintG,     min: 0,    max: 1, curve: 'linear' },
+    { id: 'tintB',     label: 'B',         defaultValue: DEFAULTS.tintB,     min: 0,    max: 1, curve: 'linear' },
     { id: 'xFreq',     label: 'X Freq',    defaultValue: DEFAULTS.xFreq,     min: 0.25, max: 8, curve: 'linear' },
     { id: 'yFreq',     label: 'Y Freq',    defaultValue: DEFAULTS.yFreq,     min: 0.25, max: 8, curve: 'linear' },
     { id: 'xPhase',    label: 'X Phase',   defaultValue: DEFAULTS.xPhase,    min: 0,    max: 1, curve: 'linear' },
     { id: 'yPhase',    label: 'Y Phase',   defaultValue: DEFAULTS.yPhase,    min: 0,    max: 1, curve: 'linear' },
   ],
 
+  // ── THE FACEPLATE (#2009) ────────────────────────────────────────────────
+  //
+  // The verb is TILT: you are sculpting relief out of a flat image. Every page
+  // below is ONE expression of the vertex shader, which is why there are four
+  // of them and not the six the queue proposed — `h0 * uXFreq + uXPhase` is one
+  // expression with two terms, not two ideas, and splitting BEAM off TINT would
+  // leave a one-control page for a control that is not this module's identity.
+  //
+  // ⚠ UNTABBED BY OWNER RULING ("2 - a"), and the arithmetic agrees rather than
+  // merely permitting it. `DOCK_TAB_MIN_BANDS` is 7; four honest bands pack to
+  // TWO ROWS under `dock-row-plan`'s `DOCK_ROW_MAX_CONTROLS = 10` ((2+2) then
+  // (4+4)), which is the compact plate the width ruling asks for. Reaching the
+  // rail would have meant padding the pages to hit a threshold — the thing the
+  // ruling forbids — and ruttetra, the module the tabbed ruling first NAMED, is
+  // the weakest tab candidate in the video bank.
+  face: {
+    // ⚠ `order` AND `pages` DELIBERATELY DISAGREE, and both are derived.
+    // `order` is the TIER LADDER (which controls survive down to a lane tile),
+    // ranked by how much of the picture each moves; `pages` groups by IDEA for
+    // the dock. Y leads X throughout because Y is the relief axis: the def
+    // spends its ONE non-neutral default on `yDisp` (-0.3, "the classic raised
+    // terrain look"), while every other geometry param ships at its identity
+    // value. That single fact selects the hero, and it is a proof rather than a
+    // sample — on `mirrorpool` the same argument selects nothing, and on
+    // `spirographs` the ranking argument is inertness instead.
+    //
+    // The ladder as a sentence, MEASURED through `curatedFace` rather than
+    // inferred from `LANE_PLATE_MAX_CELLS`: at mini you get RELIEF; at compact,
+    // relief and its X partner; and everything else — the shapes, the scan pair,
+    // the beam, the tint and the phases — is DOCK-ONLY.
+    //
+    // ⚠ THIS SENTENCE USED TO PROMISE "at plate, the whole geometry story" AND
+    // THAT WAS FALSE (corrected 2026-08-21, #2085). `FACE_TIER_CAPS.full` is
+    // `LANE_PLATE_MAX_CELLS` = 6, but `faceTierCap` does not return that
+    // constant — it runs `laneBodyPlan`, which fits CELLS INTO GEOMETRY, and a
+    // `fader` is a TALL cell. With the video surface taking its share this face
+    // resolves plate = compact = 2 (`yDisp`, `xDisp`), so the plate never showed
+    // a "geometry story" at all. Measured identically on `monoglitch` (8 params)
+    // and `reshaper` (6): every video fader face is plate = 2. The same wrong
+    // inference was made independently on both of those and corrected there;
+    // this is the last copy of it.
+    order: [
+      'yDisp', 'xDisp', 'yShape', 'xShape', 'yFreq', 'xFreq',
+      'intensity', 'tintR', 'tintG', 'tintB', 'yPhase', 'xPhase',
+    ],
+
+    pages: [
+      {
+        id: 'relief',
+        label: 'relief',
+        hint: 'the (luma - 0.5) x disp term - the module\'s whole identity: how far a bright pixel pushes its scanline out of the plane',
+        controls: ['yDisp', 'xDisp'],
+      },
+      {
+        id: 'shape',
+        label: 'shape',
+        hint: 'shapedRamp\'s morph argument - the geometry the source is laid along before luma displaces it, from a 1:1 linear raster through triangle and soft-fold to radial',
+        controls: ['yShape', 'xShape'],
+      },
+      {
+        id: 'scan',
+        label: 'scan',
+        hint: 'the ramp argument itself - how many cycles span the frame and where each starts. One expression with two terms, which is why frequency and phase are one page',
+        controls: ['yFreq', 'xFreq', 'yPhase', 'xPhase'],
+      },
+      {
+        id: 'beam',
+        label: 'beam',
+        hint: 'the whole of vColor - the phosphor colour and how hard it is driven into the additive blend. Disjoint from the geometry above: these four move colour and nothing else',
+        controls: ['intensity', 'tintR', 'tintG', 'tintB'],
+      },
+    ],
+
+    // ⚠ MANDATORY AND COUNTER-INTUITIVE, the same trap backdraft, spirographs,
+    // mirrorpool and grainsOfVision all document. `primaryAudioOutPortId` needs
+    // a `type: 'audio'` output and this def has none, so ANY other glyph literal
+    // falls through `glyphBinding` to `{kind:'static'}` and reddens
+    // module-face-lint's dead-glyph clause. The live picture arrives from two
+    // OTHER seams entirely — `hasVideoSurface(def)` mounting VideoTileThumb at
+    // the lane, and the `fullViewBody` extension at the dock — so assert
+    // `hasVideoSurface`, never this declaration: 'none' + blank tile and
+    // 'none' + live thumb are indistinguishable from the declaration alone.
+    glyph: 'none',
+
+    // THE SCREEN SWITCH, THE RESIZE HANDLE AND THE MONITOR TOGGLE ALL ARRIVE
+    // THROUGH THIS SLOT, and they have to (#1928 / #2009). Promotion sets
+    // `migrated('ruttetra')` true and neither surface renders
+    // `RuttetraCard.svelte` again, so anything authored on the card is deleted
+    // by the promotion meant to keep it.
+    extension: 'ruttetra',
+
+    // ⚠ MONITOR MODE — the seam this face exists to prove (#2009). The def's
+    // own `docs` have always advertised the gesture in the user's words
+    // ("hiding the controls turns it into a resizable monitor"), so promoting
+    // without it would have left the SHIPPED DOCUMENTATION describing a control
+    // that no longer exists — a failure no def-reading gate can see, because
+    // every one of them reads the same def that tells the lie.
+    monitor: {
+      why:
+        'RUTTETRA\'s output is a RASTER SCOPE: 57,420 additive line segments over black, and '
+        + 'the relief it builds is a shape you read by LOOKING at it, not a value any control '
+        + 'reports. Every dial here — the two disp terms, the two ramp morphs, the scan pair, '
+        + 'the beam — is aimed at that picture, so "sculpt it, then watch it" is the module\'s '
+        + 'actual working loop rather than a convenience. Its docs have advertised the monitor '
+        + 'since it shipped, and the picture is also the ONLY surface that can show the flyback '
+        + 'streaks and the shape-morph geometry #1862/#1863 are open about.',
+    },
+
+    // The card draws all twelve as `<NeonFader>` THROWS, and nothing in a
+    // ParamDef separates "a throw" from any other continuous scalar — so
+    // undeclared, the face would repaint every one as a dial and stop looking
+    // like the control the player already knows.
+    //
+    // ⚠ TWO ARE DELIBERATELY ABSENT, and it is not an oversight: `xShape` and
+    // `yShape` declare `landmarks`, which ONLY `KnobConic` renders (the fader
+    // branch is passed `options` and not `landmarks`). Declaring `fader` for
+    // them would silently delete the linear/triangle/soft/radial names while
+    // leaving the `landmarks` declaration looking honoured — a green gate over
+    // a live regression. They stay dials on purpose; see the param comment.
+    paramCells: {
+      yDisp: 'fader', xDisp: 'fader',
+      yFreq: 'fader', xFreq: 'fader', yPhase: 'fader', xPhase: 'fader',
+      intensity: 'fader', tintR: 'fader', tintG: 'fader', tintB: 'fader',
+    },
+
+    // ⚠ NO `hero`, NO READOUT ROW, NO SIDEBAR. Two derived readouts were
+    // specced for this face — peak relief as a fraction of frame height, and
+    // the fraction of the frame the ramp actually covers — and the 2026-08-19
+    // rulings deleted the SHAPE they would have been painted in. Saying which
+    // finding lost its surface, as the ruling requires: the `Freq < 1` case,
+    // where the whole picture compresses into the left/top quarter of the
+    // output. It survives in `docs.controls` (corrected in this diff, which is
+    // where it should have been all along) rather than as resting text.
+    //
+    // ⚠ NO `bareCells` EITHER — see the tint label comment above; hiding those
+    // three captions is the one thing that would make them indistinguishable.
+  },
+
   docs: {
-    explanation: `An authentic forward-scatter Rutt/Etra scan-processor. A 320x180 grid of sample points walks the Z source; for each point it reads the source luma, places it along an internally-generated H/V ramp, then displaces that position by (luma - 0.5) so bright pixels push their scanline outward and dark pixels recede - building a 3D heightmap relief out of the picture. Adjacent grid points within each row are joined into horizontal LINE segments, and the whole raster is drawn with additive (phosphor) blending over a black field, exactly like a CRT scope. With everything at default the ramp is a linear 1:1 mapping and Y Disp = -0.3, so the source is read upright and bright areas raise the terrain - the classic Rutt/Etra "raised landscape" look. Patch any video, image, or keyer into Z; sweep Y Disp (and X Disp) for relief depth, raise Intensity for a brighter glow, morph the X/Y Shape ramps toward triangle/soft/radial for warped scan geometry, and modulate the params with CV for animated topography. Z left unpatched binds a mid-grey sentinel (luma 0.5 = zero displacement), so the card shows flat scanlines rather than a black void. The card has a live preview screen; hiding the controls turns it into a resizable monitor (drag the bottom-right corner, double-click to restore) — a viewport only, it does not change the output resolution.`,
+    explanation: `An authentic forward-scatter Rutt/Etra scan-processor. A 320x180 grid of sample points walks the Z source; for each point it reads the source luma, places it along an internally-generated H/V ramp, then displaces that position by (luma - 0.5) so bright pixels push their scanline outward and dark pixels recede - building a 3D heightmap relief out of the picture. Adjacent grid points within each row are joined into horizontal LINE segments, and the whole raster is drawn with additive (phosphor) blending over a black field, exactly like a CRT scope. With everything at default the ramp is a linear 1:1 mapping and Y Disp = -0.3, so the source is read upright and bright areas raise the terrain - the classic Rutt/Etra "raised landscape" look. Patch any video, image, or keyer into Z; sweep Y Disp (and X Disp) for relief depth, raise Intensity for a brighter glow, morph the X/Y Shape ramps toward triangle/soft/radial for warped scan geometry, and modulate the params with CV for animated topography. Z left unpatched binds a mid-grey sentinel (luma 0.5 = zero displacement), so the card shows flat scanlines rather than a black void. There is a live preview screen with the picture, and two switches beside it that do opposite things: SCREEN turns the preview off to reclaim its space (the module goes on rendering either way), and MONITOR hides the control bands so the picture has the whole plate to itself - drag the bottom-right corner to size it, and click MONITOR again to bring the controls back. Either way it is a viewport only; neither changes the output resolution.`,
     inputs: {
       z: "Z (video) - the source frame. Its per-pixel luma (0.299R+0.587G+0.114B) is sampled at each of the 320x180 grid points and drives that point's outward displacement; the source RGB is also carried through as the scanline color. Accepts video, mono-video, image, or keys (upcast by the engine). Unpatched, a mid-grey 1x1 texture is bound so luma is 0.5 everywhere and the scanlines draw flat instead of going black.",
       xShape: "X Shape (cv) - modulates the X Shape control, morphing the horizontal ramp shape (linear -> triangle -> soft-fold -> radial) that positions each scanline across the frame.",
@@ -302,18 +502,18 @@ export const ruttetraDef: VideoModuleDef = {
       out: "out (video) - the rendered Rutt/Etra raster: additive horizontal scanlines, luma-displaced into a heightmap, over a black phosphor field. Chainable into any video input and also feeds the on-card preview screen.",
     },
     controls: {
-      xShape: "X Shape (0..1, default 0) - morphs the horizontal ramp shape that lays the source across each scanline. 0 = linear (1:1, the unwarped raster), ~0.33 = triangle, ~0.66 = soft-fold (raised cosine), 1 = radial (distance from center). The card prints the current name (linear / triangle / soft / radial and the crossfades between them).",
-      yShape: "Y Shape (0..1, default 0) - morphs the vertical ramp shape that stacks the scanlines down the frame, through the same linear -> triangle -> soft-fold -> radial sequence as X Shape, with the current name shown on the card.",
+      xShape: "X Shape (0..1, default 0) - morphs the horizontal ramp shape that lays the source across each scanline. 0 = linear (1:1, the unwarped raster), ~0.33 = triangle, ~0.66 = soft-fold (raised cosine), 1 = radial (distance from center). The dial is marked at those four anchors and names the nearest one as you sweep it (linear / triangle / soft / radial); the legacy card prints the crossfades between them as well.",
+      yShape: "Y Shape (0..1, default 0) - morphs the vertical ramp shape that stacks the scanlines down the frame, through the same linear -> triangle -> soft-fold -> radial sequence as X Shape, marked and named at the same four anchors.",
       xDisp: "X Disp (-1..1, default 0) - bipolar amount that luma pushes each point horizontally. (luma - 0.5) * X Disp, so mid-grey never moves; negative and positive deflect bright pixels to opposite sides.",
       yDisp: "Y Disp (-1..1, default -0.3) - bipolar amount that luma pushes each point vertically; this builds the 3D relief. The default -0.3 makes bright pixels rise (the classic raised-terrain look).",
       intensity: "Intensity (0..2, default 1.5) - multiplies the scanline color before the additive blend; raises or dims the overall glow of the raster (default 1.5 keeps the additive lines from looking too faint). It affects brightness only, not relief depth.",
-      tintR: "Tint R (0..1, default 1) - red multiplier applied to every scanline's color. Lower it to drain red from the phosphor tint. No CV input (panel knob only).",
-      tintG: "Tint G (0..1, default 1) - green multiplier applied to every scanline's color. Lower it to drain green from the phosphor tint. No CV input (panel knob only).",
-      tintB: "Tint B (0..1, default 1) - blue multiplier applied to every scanline's color. Combine R/G/B to push the whole raster toward a monochrome CRT hue. No CV input (panel knob only).",
-      xFreq: "X Freq (0.25..8, default 1) - horizontal ramp frequency: how many shape-ramp cycles span the frame in X. 1 = one pass; higher values repeat/fold the scan pattern across the width. Lives under the card's ADVANCED disclosure.",
-      yFreq: "Y Freq (0.25..8, default 1) - vertical ramp frequency: how many shape-ramp cycles span the frame in Y. 1 = one pass; higher values repeat/fold the scanlines down the height. Lives under the card's ADVANCED disclosure.",
-      xPhase: "X Phase (0..1, default 0) - phase offset added to the horizontal ramp after the frequency multiply and before shaping, sliding the X scan pattern sideways. Panel knob only (no CV input); under the ADVANCED disclosure.",
-      yPhase: "Y Phase (0..1, default 0) - phase offset added to the vertical ramp after the frequency multiply and before shaping, sliding the Y scan pattern up/down. Panel knob only (no CV input); under the ADVANCED disclosure.",
+      tintR: "R (0..1, default 1) - red multiplier applied to every scanline's color. Lower it to drain red from the phosphor tint. No CV input (panel control only).",
+      tintG: "G (0..1, default 1) - green multiplier applied to every scanline's color. Lower it to drain green from the phosphor tint. No CV input (panel control only).",
+      tintB: "B (0..1, default 1) - blue multiplier applied to every scanline's color. Combine R/G/B to push the whole raster toward a monochrome CRT hue. No CV input (panel control only).",
+      xFreq: "X Freq (0.25..8, default 1) - horizontal ramp frequency: how many shape-ramp cycles span the frame in X. 1 = one pass; higher values repeat/fold the scan pattern across the width. BELOW 1 the ramp never completes, so the picture is COMPRESSED into that fraction of the width and the rest of the frame stays black - at 0.25 the whole raster occupies the left quarter. On the faceplate it sits on the SCAN page beside X Phase; the legacy card keeps it under the ADVANCED disclosure.",
+      yFreq: "Y Freq (0.25..8, default 1) - vertical ramp frequency: how many shape-ramp cycles span the frame in Y. 1 = one pass; higher values repeat/fold the scanlines down the height. BELOW 1 the scanlines are compressed into that fraction of the height - at 0.25 the whole raster occupies the top quarter. On the faceplate it sits on the SCAN page; the legacy card keeps it under ADVANCED.",
+      xPhase: "X Phase (0..1, default 0) - phase offset added to the horizontal ramp after the frequency multiply and before shaping, sliding the X scan pattern sideways. Panel control only (no CV input); on the SCAN page of the faceplate, under ADVANCED on the legacy card.",
+      yPhase: "Y Phase (0..1, default 0) - phase offset added to the vertical ramp after the frequency multiply and before shaping, sliding the Y scan pattern up/down. Panel control only (no CV input); on the SCAN page of the faceplate, under ADVANCED on the legacy card.",
     },
   },
   factory(ctx, node): VideoNodeHandle {

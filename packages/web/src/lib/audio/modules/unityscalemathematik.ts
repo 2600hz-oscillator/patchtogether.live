@@ -167,29 +167,6 @@ export const unityscalemathematikDef: AudioModuleDef = {
     glyph: 'none',
     hero: {
       control: 'aCurve',
-      // FOUR READOUTS IN TWO PAIRS, and the PAIRING is the instrument's own
-      // negative control. Each half prints a RESPONSE — what a given input
-      // magnitude becomes — never a level, because with nothing patched into
-      // `a_in` every control here is bit-exactly inert (measured) and a
-      // `FaceReadoutValue` cannot see a cable.
-      //
-      //   `half` is what a HALF-SCALE input becomes. A ATT is blind to A CRV
-      //          (0.500 → 0.125 with ATT untouched) and A CRV is blind to A ATT.
-      //   `2×`   is what a DOUBLE-SCALE input becomes, and it moves the OTHER
-      //          WAY as CURVE rises (0.5 → 0.125 while 2 → 8). Publishing both
-      //          is what makes the pivot at |1| visible instead of merely
-      //          assertable — and it is the claim the shipped docs got wrong
-      //          (#1715: "leaving larger excursions intact" is false above 1).
-      //
-      // B's pair is the cross-section control: moving A's dials must not move
-      // B's numbers, which unityscalemathematik-face-model.test.ts asserts in
-      // both directions on every run.
-      readouts: [
-        { label: 'a half', valueId: 'unityscale-a-half' },
-        { label: 'a 2×', valueId: 'unityscale-a-over' },
-        { label: 'b half', valueId: 'unityscale-b-half' },
-        { label: 'b 2×', valueId: 'unityscale-b-over' },
-      ],
     },
     // No `title`, no `hint`, no band hints, no sidebar — owner ruling
     // 2026-08-11 (marbles / resofilter): plain labels and values on the face;

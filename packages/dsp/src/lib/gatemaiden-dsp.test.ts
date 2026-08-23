@@ -80,6 +80,67 @@ describe('GateMaidenState — gate↔trigger conversion', () => {
     expect(trigs.filter((t) => t > 0).length).toBe(TRIG_SAMPLES);
   });
 
+  // ── TRI vs SQR IS NOT "DISPLAY/FEEL ONLY" ────────────────────────────────
+  //
+  // The def's `docs.controls.trigShape` used to claim exactly that, and it was
+  // FALSE (#2008). These legs are what that prose is now pinned to, so the two
+  // cannot drift: the docs quote 2:1 and 2.5 ms vs 5.0 ms, and the numbers are
+  // measured here rather than asserted there.
+  //
+  // ⚠ THE TWO LEGS MEASURE DIFFERENT THINGS AND ONLY THE SECOND ONE BITES.
+  // Area is the honest physical statement, but nothing downstream integrates a
+  // trigger — every gate/trigger consumer in the rack COMPARES AGAINST 0.5. So
+  // the consequence a player actually meets is the time-above-threshold one,
+  // which is why it is separated out rather than folded into the area leg.
+  //
+  // ⚠ AND BOTH SHAPES OCCUPY THE SAME ENVELOPE, asserted below, because that
+  // half of the original claim was TRUE and deleting it would overcorrect: the
+  // difference is entirely in the shape within the pulse, not in its width or
+  // in how many times it fires.
+  it('TRI carries exactly HALF the area of SQR over the SAME envelope', () => {
+    const strike = [1, ...Array(500).fill(0)];
+    const tri = run(new GateMaidenState(SR), strike, GATE_LEN_DEFAULT, 0).map((o) => o.trig);
+    const sqr = run(new GateMaidenState(SR), strike, GATE_LEN_DEFAULT, 1).map((o) => o.trig);
+
+    const area = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
+    expect(area(sqr)).toBe(TRIG_SAMPLES); // 240 sample-units @ 48 kHz
+    expect(area(tri)).toBeCloseTo(TRIG_SAMPLES / 2, 6); // 120
+    expect(area(tri) / area(sqr)).toBeCloseTo(0.5, 6);
+
+    // Same envelope, same pulse count: the width did NOT change, only the shape
+    // inside it. This is the clause of the old docs sentence that was correct.
+    expect(tri.filter((t) => t > 0).length).toBe(TRIG_SAMPLES);
+    expect(sqr.filter((t) => t > 0).length).toBe(TRIG_SAMPLES);
+    expect(countTrigPulses(tri.map((t) => ({ trig: t })))).toBe(1);
+    expect(countTrigPulses(sqr.map((t) => ({ trig: t })))).toBe(1);
+  });
+
+  it('to a THRESHOLD consumer TRI is a HALF-WIDTH trigger (2.5 ms vs 5.0 ms)', () => {
+    const strike = [1, ...Array(500).fill(0)];
+    const aboveHi = (shape: number) =>
+      run(new GateMaidenState(SR), strike, GATE_LEN_DEFAULT, shape).filter((o) => o.trig >= 0.5)
+        .length;
+
+    const triHi = aboveHi(0);
+    const sqrHi = aboveHi(1);
+
+    expect(sqrHi).toBe(TRIG_SAMPLES); // 240 samples = 5.000 ms
+    expect(triHi).toBe(TRIG_SAMPLES / 2); // 120 samples = 2.500 ms
+    expect((sqrHi / SR) * 1000).toBeCloseTo(5.0, 6);
+    expect((triHi / SR) * 1000).toBeCloseTo(2.5, 6);
+
+    // NEGATIVE CONTROL, and it is the leg that makes the two above mean
+    // something: the shapes are NOT distinguishable by peak. Both reach ~1, so
+    // any check that looked at amplitude alone would call them identical and
+    // certify the very claim #2008 disproved.
+    const peak = (shape: number) =>
+      Math.max(
+        ...run(new GateMaidenState(SR), strike, GATE_LEN_DEFAULT, shape).map((o) => o.trig),
+      );
+    expect(peak(1)).toBe(1);
+    expect(peak(0)).toBeGreaterThan(0.99);
+  });
+
   it('a HELD-HIGH input never re-triggers (single rise, like real hardware)', () => {
     const st = new GateMaidenState(SR);
     // 50000 samples high — way longer than the trig pulse. Must be ONE trigger.

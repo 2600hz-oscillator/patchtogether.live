@@ -154,8 +154,24 @@ describe('typesInDiffText()', () => {
       '// promoted for the same reason, and `moog921a` is the counter-example.',
     ].join('\n');
     expect(typesInDiffText(prose, TYPES)).toEqual([]);
-    // …and the control is two-directional: the same names in CODE do implicate.
-    expect(typesInDiffText("const x = [destroy, filter];", TYPES)).toEqual(['destroy', 'filter']);
+    // …and the control is two-directional: the same names as STRINGS do implicate.
+    expect(typesInDiffText("const x = ['destroy', 'filter'];", TYPES)).toEqual(['destroy', 'filter']);
+  });
+
+  it('PERMANENT NEGATIVE CONTROL (#2116): a one-word type as a BARE IDENTIFIER implicates nothing', () => {
+    // Measured on the acidwarp PR: `.filter((e) => …)` in a new e2e gate leg
+    // implicated the `filter` MODULE and sent a single-module PR to the full
+    // sweep. The same class awaits `edges` (patch.edges, buildEdges), `lines`
+    // (this very tool's `codeLines`), `mixer`, `delay`, `fader`.
+    expect(typesInDiffText('const kept = rows.filter((e) => e.ok);', TYPES)).toEqual([]);
+    expect(typesInDiffText('const lines = codeLines(text); scope(lines);', TYPES)).toEqual([]);
+    // …two-directional: the STRING spellings a roster diff actually carries
+    // still implicate the one-word type…
+    expect(typesInDiffText("  type: 'filter',", TYPES)).toEqual(['filter']);
+    expect(typesInDiffText("import f from '$lib/video/modules/filter';", TYPES)).toEqual(['filter']);
+    // …and a MULTI-word type as an identifier is still real evidence — the
+    // contiguous run does not occur in ordinary code by accident.
+    expect(typesInDiffText('export const slewSwitchSettleText = fmt;', TYPES)).toEqual(['slewSwitch']);
   });
 });
 
@@ -211,11 +227,23 @@ describe('deriveVrtScope()', () => {
   it('reports a module a shared file ALSO named, without capturing it', () => {
     const d = derive(
       ['packages/web/src/lib/ui/modules/DestroyCard.svelte', 'e2e/tests/_face-fixtures.ts'],
-      { 'e2e/tests/_face-fixtures.ts': "  destroy: fixture(), filter: fixture()," },
+      { 'e2e/tests/_face-fixtures.ts': "  destroy: fixture('destroy'), filter: fixture('filter')," },
     );
     expect(d.mode).toBe('scoped');
     expect(d.token).toBe('destroy');
     expect(d.alsoNamed).toEqual(['filter']);
+  });
+
+  it('#2116 safety direction: one-word types named ONLY as bare identifier keys are a BLOCKER, not an attribution', () => {
+    // Same shape as above but with no string spelling anywhere in the diff.
+    // Under the string-literal rule the shared file names nothing → it must
+    // surface as a LOUD full sweep, never a silent scoped capture that guessed.
+    const d = derive(
+      ['packages/web/src/lib/ui/modules/DestroyCard.svelte', 'e2e/tests/_face-fixtures.ts'],
+      { 'e2e/tests/_face-fixtures.ts': '  destroy: fixture(), filter: fixture(),' },
+    );
+    expect(d.mode).toBe('full');
+    expect(d.blockers.map((b) => b.file)).toContain('e2e/tests/_face-fixtures.ts');
   });
 
   it('FALLS BACK TO FULL when two modules are implicated — never picks one', () => {

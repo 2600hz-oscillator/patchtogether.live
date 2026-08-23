@@ -22,6 +22,7 @@ import {
   LOW_WATER,
   SLOW_INTERVAL_MS,
   baselineFiles,
+  beforeMark,
   classifyRun,
   nextDelayMs,
   rateLimitAction,
@@ -186,5 +187,76 @@ describe('⚠ ZERO COMMITS IS RED — the leg this whole file exists for', () =>
       const files = Array.from({ length: n }, (_, i) => `e2e/vrt/__screenshots__/s/f${i}.png`);
       expect(summarize({ conclusion: 'success', files }).count).toBe(n);
     }
+  });
+});
+
+// ── ⚠ THE BEFORE MARK — the instrument bug that made the block above LIE ───
+//
+// Every assertion in the block above takes `files` as an INPUT, so all of them
+// were green while the thing that PRODUCES `files` returned an empty list for a
+// run that had committed two. That is the shape CLAUDE.md's "VALIDATE THE
+// INSTRUMENT" section is about: the checks were correct and blind, because each
+// one started downstream of the defect.
+//
+// Reproduced from run 32351143240 (`feat/mirrorpool-face`), which committed
+// `face-mirrorpool-compact.png` and `face-mirrorpool-dock.png` and was reported
+// as `baseline files committed: 0 — ⚠ ZERO BASELINES COMMITTED, THIS IS A RED
+// FLAG`.
+describe('⚠ the BEFORE mark is the RUN, never the branch tip at watcher-start', () => {
+  const RUN_SHA = 'bfa5a625f477a28a7c10729bfb0940850bc1d142';
+  const BOT_SHA = '73dee7db8f9a7f72715c5feb6aa9f005998f9509';
+
+  it('ATTACH LATE — the bot has already pushed, and the mark still points at what the run built on', () => {
+    // The exact failing case: the watcher's first fetch pulls the bot commit,
+    // so the branch tip IS the bot commit and a tip-derived mark diffs against
+    // itself.
+    const m = beforeMark({ runHeadSha: RUN_SHA, branchTip: BOT_SHA });
+    expect(m.sha, 'a late attach must not adopt the bot commit as its baseline').toBe(RUN_SHA);
+    expect(m.sha).not.toBe(BOT_SHA);
+  });
+
+  it('ATTACH EARLY — the tip and the run agree, and the answer is unchanged', () => {
+    // The instrument must read the SAME value in both worlds. This is the leg
+    // that makes the one above a fix rather than a different arbitrary choice:
+    // invariance to WHEN the watcher attached is the whole property.
+    expect(beforeMark({ runHeadSha: RUN_SHA, branchTip: RUN_SHA }).sha).toBe(RUN_SHA);
+  });
+
+  it('NEGATIVE CONTROL: the OLD rule really did produce the false zero', () => {
+    // Without this the fix is unfalsifiable — it would pass even if the bug had
+    // never existed. `before === after` is exactly what emptied the diff.
+    const oldMark = BOT_SHA; // what `rev-parse origin/<branch>` returned
+    const after = BOT_SHA;
+    expect(oldMark === after, 'the pre-fix mark equalled the post-run tip').toBe(true);
+    expect(summarize({ conclusion: 'success', files: [], predicted: 2 }).verdict).toBe('RED FLAG');
+  });
+
+  it('falls back to the branch tip when gh cannot answer, and SAYS it is a fallback', () => {
+    // Degrading to the old behaviour is right — a partial report beats none —
+    // but silently degrading is how this class survives, so the source is
+    // printed and names its own weakness.
+    const m = beforeMark({ runHeadSha: '', branchTip: BOT_SHA });
+    expect(m.sha).toBe(BOT_SHA);
+    expect(m.source).toContain('fallback');
+    expect(m.source).toContain('under-report');
+  });
+
+  it('reports NO mark rather than a wrong one when neither is readable', () => {
+    expect(beforeMark({ runHeadSha: '', branchTip: '' }).sha).toBe('');
+  });
+
+  // ⚠ WHAT THIS FIX STILL CANNOT SEE, stated rather than implied. The diff is
+  // `runHeadSha..tip`, so an UNRELATED baseline pushed to the branch while the
+  // capture ran is counted here. That is over-reporting, and it surfaces as a
+  // PREDICTED/COMMITTED mismatch the reader reconciles — the opposite and safe
+  // direction from the silent zero this replaces.
+  it('over-reports rather than under-reports when the branch moved for other reasons', () => {
+    const files = [
+      'e2e/vrt/__screenshots__/workflow-shell-faces.spec.ts/face-mirrorpool-dock.png',
+      'e2e/vrt/__screenshots__/vrt.spec.ts/someone-elses.png',
+    ];
+    const r = summarize({ conclusion: 'success', files, predicted: 1 });
+    expect(r.verdict).toBe('committed');
+    expect(r.lines.join('\n')).toContain('PREDICTED 1, COMMITTED 2');
   });
 });

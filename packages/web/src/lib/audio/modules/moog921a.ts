@@ -156,30 +156,8 @@ export const moog921aDef: AudioModuleDef = {
     //         fixed). A bare `50 %` there would read like the dial working.
     hero: {
       control: 'frequency',
-      readouts: [
-        { label: 'bus', valueId: 'moog921a-bus' },
-        { label: 'span', valueId: 'moog921a-span' },
-        { label: 'duty', valueId: 'moog921a-duty' },
-      ],
     },
 
-    // THE COMPARISON — the pair's headline fact, as two rows: the pitch this
-    // dial position encodes in EACH range position, both live, side by side. At
-    // `frequency = +0.50` they read `370.0 Hz` and `2.09k`, a factor of 5.66
-    // from a two-state switch; at the shipped `frequency = 0` they are the same
-    // number, which is the inertness argument above made visible rather than
-    // asserted. LABELLED FROM `MOOG921A_RANGE_OPTIONS` so the switch's names
-    // have exactly one copy.
-    sidebar: [
-      {
-        kind: 'readouts',
-        label: 'at this dial',
-        entries: MOOG921A_RANGE_OPTIONS.map((o) => ({
-          label: o.label,
-          valueId: `moog921a-pitch-${o.value}`,
-        })),
-      },
-    ],
   },
 
   docs: {

@@ -495,27 +495,6 @@ export const warrensspectrumDef: AudioModuleDef = {
       // mean 16. It MOVES out of the `engine` band, leaving MODE + BANDS there
       // (still two controls, so the band keeps its header).
       control: 'spectralPartials',
-      // NO `cell` — see the note above the face: the bank is inert at spawn.
-      readouts: [
-        // FOUR derived values, each negative-controlled PERMANENTLY on the
-        // input a knob readback is blind to
-        // (`warrensspectrum-face-model.test.ts`), and each other's controls
-        // where the arithmetic allows it.
-        //
-        // `spectralPartials` prints 64 in SPECTRAL, in MASSPASS at 99 bands and
-        // in MASSPASS at 16 bands — where the answer is 16.
-        { label: 'voices', valueId: 'warrensspectrum-voices' },
-        // `spectralResidual` prints 0.50 at PARTIALS 1, where the residual is
-        // bit-exactly absent (the cbrt((n-1)/47) factor is 0), and at PARTIALS
-        // 64, where it is fully 0.50.
-        { label: 'residual', valueId: 'warrensspectrum-residual' },
-        // `spectralStab` prints 3 whether that costs 20 ms or 400 ms; the birth
-        // ramp is counted in COMMITS, so its duration is SLICE-scaled.
-        { label: 'fade in', valueId: 'warrensspectrum-fade-in' },
-        // `gain` prints 0.0 dB while INPUT MIX 1 leaves the module +6.02 dB
-        // hot; BANK WET moves the PATH half and cannot move the number.
-        { label: 'out', valueId: 'warrensspectrum-out' },
-      ],
     },
   },
 

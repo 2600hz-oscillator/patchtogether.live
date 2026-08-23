@@ -86,6 +86,28 @@ import {
   type Circle,
 } from './outlines-sim';
 
+/**
+ * THE VRT PHASE PIN — how far the sim is advanced, deterministically, before a
+ * capture, and in what size steps. Consumed only when `__outlinesVrtSeed` is
+ * set (i.e. by the capture harness); see the pin in `draw()`.
+ *
+ * ⚠ THE STEP SIZE IS A FIXED 60 fps TICK ON PURPOSE. The pin must reproduce a
+ * trajectory the live module could actually draw, and the integrator moves each
+ * shape by `v * dt` then bounces it off the field walls — so one large step
+ * would tunnel shapes straight through the edges. Equal small steps give the
+ * real path.
+ *
+ * ⚠ THE COUNT IS CHOSEN TO POPULATE THE FIELD, which is what makes the baseline
+ * worth having. 480 steps is 8.0 s of simulated time; at the shipped
+ * `rate` default the internal clock spawns one shape every 2250 ms, so the
+ * captured scene holds a handful of shapes that have moved and begun to
+ * overlap — the thing the four outputs are derived FROM. A pin of ~0 steps
+ * would be perfectly deterministic and would show an empty field, which is the
+ * "blind the gate to its own subject" outcome this fix exists to avoid.
+ */
+const VRT_PIN_STEP_MS = 1000 / 60;
+const VRT_PIN_STEPS = 480;
+
 /** The synthetic param the engine's CV-bridge writes the gate value into
  *  (mirrors SHAPEGEN's cv_clock). The port id is the human-readable `gate`;
  *  the param id carries the `cv_` prefix. */
@@ -125,6 +147,8 @@ interface OutlinesParams {
   // Synthetic COLLIDE gate LEVEL — written by the CV-bridge; hidden from the
   // card. Read live each frame as the inter-shape collision on/off switch.
   cv_collide: number;
+  // Hidden VRT determinism toggle — see its ParamDef.
+  freeze: number;
 }
 
 const DEFAULTS: OutlinesParams = {
@@ -137,6 +161,12 @@ const DEFAULTS: OutlinesParams = {
   rate: 0.5, // internal clock on by default so the source is alive on spawn
   cv_gate: 0,
   cv_collide: 0, // collide OFF by default (pass-through) until the gate goes HIGH
+  // ⚠ `freeze` MUST BE SEEDED HERE, not only declared in `params`. `setParam`
+  // below writes through `if (paramId in params)`, and `params` is built from
+  // THIS record — so a key missing here makes the VRT harness's write a SILENT
+  // NO-OP: the store would agree that freeze=1 and the surface would go on
+  // moving. Same trap spirographs documents on its own freeze param.
+  freeze: 0,
 };
 
 // Fullscreen-quad shader: sample the scene texture (top-left-origin canvas →
@@ -219,10 +249,152 @@ export const outlinesDef: VideoModuleDef = {
     { id: 'rate',     label: 'Rate',  defaultValue: DEFAULTS.rate,     min: 0, max: 1, curve: 'linear' },
     // Synthetic gate param — hidden from the card; rendered as the gate jack.
     { id: OUTLINES_GATE_PARAM_ID, label: 'GATE', defaultValue: 0, min: 0, max: 1, curve: 'linear' },
+    // ── freeze — the hidden VRT/determinism toggle ────────────────────────
+    // ⚠ IT EXISTS BECAUSE THIS MODULE ANIMATES BY CONSTRUCTION, and the face
+    // scene cannot be captured without it. Every live shape drifts and bounces
+    // every frame as a function of ELAPSED TIME, and at the shipped rate a new
+    // one spawns every 2250 ms — so two captures of identical settings are
+    // never the same pixels. The seeded RNG (`__outlinesVrtSeed`) fixes WHERE
+    // things spawn; it does nothing about WHEN, and an AudioContext suspend
+    // says nothing about a rAF-driven picture.
+    //
+    // Measured: without this, `workflow-shell-faces.spec.ts` refuses both
+    // outlines scenes with "the video surface was still MOVING after writing
+    // freeze=1" — `freezeFaceVideo` writes `params.freeze = 1` and there was no
+    // such param for it to reach. Same mechanism spirographs added for the same
+    // reason.
+    //
+    // NO CONTROL ANYWHERE — not on the card, not on the faceplate, not on the
+    // patch surface: it is `noUserControl` with `writer: 'internal'` and is
+    // absent from `face.order`. The harness writes it; nothing else ever does.
+    { id: 'freeze', label: 'Freeze', defaultValue: 0, min: 0, max: 1, curve: 'linear' },
     // Synthetic COLLIDE gate param — hidden from the card; rendered as the
     // collide jack. Read live as the inter-shape collision on/off level.
     { id: OUTLINES_COLLIDE_PARAM_ID, label: 'COLLIDE', defaultValue: 0, min: 0, max: 1, curve: 'linear' },
   ],
+
+  // Two SYNTHETIC params that exist only so the CV bridge has somewhere to
+  // write a gate level. Neither is a control: the card hides both, and without
+  // this declaration `module-face-lint`'s completeness loop demands an
+  // interactive cell for each and the face paints two continuous rotaries over
+  // raw gate levels. `writer` is checked against THIS def's own `inputs` in
+  // both directions by `no-user-control.test.ts`.
+  noUserControl: [
+    {
+      param: OUTLINES_GATE_PARAM_ID,
+      writer: 'cv-port',
+      why: 'written by the gate bridge as a raw 0..1 level; the module edge-detects it and each RISING EDGE spawns one shape, latching the live D/V/Spd/Decay/Shape values at that instant. The player controls it by patching a clock, never by turning it',
+    },
+    {
+      param: 'freeze',
+      writer: 'internal',
+      why: 'determinism toggle for VRT capture: at >=0.5 the draw step is a no-op so the field holds its last frame instead of going black. No port targets it and no card or face control sets it — the visual-regression harness writes it before comparing a screenshot, and nothing else ever does',
+    },
+    {
+      param: OUTLINES_COLLIDE_PARAM_ID,
+      writer: 'cv-port',
+      why: 'written by the collide bridge as a raw 0..1 level and read LIVE every frame (not latched): while high, shapes bounce off each other elastically. It is a patched-cable mode switch, not a dial anyone sets by hand',
+    },
+  ],
+
+  // ── THE FACEPLATE ──────────────────────────────────────────────────────────
+  //
+  // WHAT IT IS FOR. Most video modules transform the frame you give them.
+  // outlines GENERATES one, and it does so as a STATEFUL PARTICLE FIELD: a gate
+  // edge (or its own clock) spawns a shape that drifts, bounces off the walls
+  // forever, and piles up with the others into a per-pixel overlap count that
+  // four different pictures are derived from. The verb is STOCKING A POND —
+  // you set what the next thing dropped in will be, and how often.
+  //
+  // ⚠ THE ONE FACT THE WHOLE FACE IS ORGANISED AROUND: FIVE OF THE SEVEN KNOBS
+  // ARE LATCHED AT SPAWN. `d`, `v`, `spd`, `decay` and `shape` are copied into
+  // each shape as it is born, and turning them afterwards changes NOTHING about
+  // the shapes already on screen. A player who turns SPEED and sees nothing
+  // move is not looking at a broken control — they are looking at a control
+  // that only applies to the future. Only `rotation` is live, and `rate` is
+  // neither: it is GENERATIVE, deciding whether there is a future at all.
+  //
+  // That is why `pages` groups by WHEN A CONTROL ACTS rather than by what it
+  // affects, which is the more obvious grouping and the less useful one. The
+  // band labels are the only place this module's hardest-to-discover property
+  // is stated on a resting faceplate.
+  //
+  // THE LADDER, read back as a sentence: mini gives RATE, because it is the
+  // control that decides whether the module is a source at all (below its
+  // engage threshold the clock is OFF entirely and nothing spawns without a
+  // patched gate). Compact adds SHAPE, the most visible identity of what gets
+  // dropped in. Plate adds D, SPD, DECAY and ROT. V is dock-only — it is the
+  // launch ANGLE, and on a field where everything bounces off four walls
+  // forever the initial direction is the least consequential of the five
+  // latched values.
+  //
+  // ⚠ ROTATION RANKS SIXTH DESPITE BEING THE ONLY LIVE CONTROL, and that is the
+  // inertness-at-spawn rule doing real work: `mapAngularVel(0.5)` is BIT-EXACTLY
+  // 0, and 0.5 is the shipped default. A control that does nothing on a
+  // freshly-spawned node has no business high in a six-cell lane budget,
+  // however conceptually important it is.
+  //
+  // No `paramCells`: the card draws plain `<Knob>`s, so the shell's default
+  // dial is already the right primitive and there is nothing to declare.
+  face: {
+    order: ['rate', 'shape', 'd', 'spd', 'decay', 'rotation', 'v'],
+
+    pages: [
+      {
+        id: 'clock',
+        label: 'spawn clock',
+        hint: 'how often a shape is born — and at the very bottom of the dial, not at all: below the engage threshold the internal clock is OFF and only a patched GATE spawns',
+        controls: ['rate'],
+      },
+      {
+        id: 'birth',
+        label: 'latched at birth',
+        hint: 'copied into each shape as it spawns — turning these changes the NEXT shape, never the ones already on screen',
+        controls: ['shape', 'd', 'spd', 'decay', 'v'],
+      },
+      {
+        id: 'field',
+        label: 'live field',
+        hint: 'applied to every shape at once, every frame',
+        controls: ['rotation'],
+      },
+    ],
+
+    // ⚠ MANDATORY for a video def: `primaryAudioOutPortId` matches
+    // `type === 'audio'` and this def has none, so any other glyph literal
+    // resolves to the dead `{kind:'static'}` module-face-lint refuses by name.
+    // The live picture arrives via `hasVideoSurface` (lane) and the
+    // `fullViewBody` extension (dock).
+    glyph: 'none',
+
+    // The SCREEN ON/OFF switch (#1928). Promotion stops both surfaces from
+    // rendering `OutlinesCard.svelte`, so the toggle cannot live there.
+    extension: 'outlines',
+
+    // ── STOP 2: ONE CARD AFFORDANCE IS NOT REPRODUCED, AND THIS IS ITS
+    //    WRITTEN EXEMPTION ──────────────────────────────────────────────────
+    //
+    // `OutlinesCard.svelte` paints a `[GATED]` badge (`outlines-gated-badge`)
+    // whenever the GATE input is the target of any edge. The face does not,
+    // and CANNOT as a readout: a `FaceReadoutValue` is
+    // `(read: (paramId) => number | undefined) => string` — it sees PARAMS and
+    // nothing else, while `gatePatched` is derived from the EDGE LIST. This is
+    // the same structural blindness that made five specced samsloop readouts
+    // underivable, and freezeframe's gate caption impossible.
+    //
+    // ⚠ THE INFORMATION IS NOT LOST, WHICH IS WHY THIS IS AN EXEMPTION RATHER
+    // THAN A BLOCKER. "Is the gate patched" is a CABLE — the rear card renders
+    // the GATE jack with its cable attached, so the fact is on the faceplate,
+    // one flip gesture away instead of printed on the front. What is lost is
+    // the at-a-glance version, and the honest trade is that a badge restating
+    // a visible cable is weaker than a readout naming something invisible —
+    // which is what the four `hero.readouts` above do instead.
+    //
+    // Recorded rather than quietly dropped, because a card affordance that
+    // disappears in a promotion with no argument is exactly what STOP 2 exists
+    // to catch.
+
+  },
 
   docs: {
     explanation: "A stateful particle video SOURCE in the LZX tradition. Each gate edge (or the internal rate clock) spawns a shape — a circle or a regular N-gon — at a seeded-random position; it drifts in a latched direction at a latched speed and BOUNCES when its center hits a wall, accumulating into a 1024px field. From the per-pixel overlap COUNT of all live shapes it derives four pictures: overlap (white where any shape covers a pixel), contour (just the shape outlines, so stacking shapes read as ripples in a pond), combine (the overlap region colorized by stack depth via a hue ramp with brightness and saturation rising as more shapes pile up), and mapped (the patched video input shown only where two or more shapes overlap). Usage: leave RATE up for a self-running generator, or set RATE to 0 and clock the GATE input to spawn one shape per pulse; patch COMBINE or CONTOUR into a screen and use the CV inputs to animate size, drift, and spin.",
@@ -250,6 +422,7 @@ export const outlinesDef: VideoModuleDef = {
       decay: "FADE-OUT time. 0..1 maps to 0..10s; latched per shape. 0 = persist (oldest shapes FIFO-culled at the cap); above 0 fades alpha to 0 and removes the shape over that many seconds.",
       shape: "SHAPE SELECTOR, 0..1 quantised to six shapes: circle, triangle, square, pentagon, hexagon, octagon. Latched per shape at spawn; the card shows the current shape name.",
       rotation: "ROTATION, a LIVE GLOBAL bipolar spin: center (0.5) = no rotation, left = fast counter-clockwise, right = fast clockwise. Every live shape shares one rotation angle (not latched); the card shows CCW / dot / CW.",
+      freeze: "Freeze (0/1, default 0): a hidden determinism toggle with NO control anywhere — not on the card, not on the faceplate, not on the patch surface. At 0.5 or above the draw step is a no-op, so the field HOLDS its last frame rather than going black. It exists because this module animates by construction: every live shape drifts and bounces as a function of elapsed time, and at the shipped rate a new one spawns every 2250 ms, so two captures of identical settings are never the same pixels. The seeded spawn RNG fixes WHERE shapes appear and says nothing about WHEN. The visual-regression harness writes it before comparing a screenshot; nothing else ever does.",
       rate: "Internal spawn CLOCK (knob only, no CV input). 0 = gate-only; turning it up engages a clock that tightens from slow toward a cap of one shape every 500ms.",
       cv_gate: "Hidden synthetic gate param backing the GATE jack (not a knob). The engine CV-bridge writes the gate input's sample here; a rising edge spawns ONE shape, latching the live D / V / Spd / Decay / Shape at the moment of the edge.",
       cv_collide: "Hidden synthetic gate param backing the COLLIDE jack (not a knob). The engine CV-bridge writes the collide input's LEVEL here; read live every frame, HIGH (>=0.5) makes shapes bounce off each other elastically, LOW passes through.",
@@ -275,6 +448,10 @@ export const outlinesDef: VideoModuleDef = {
     // ---- Seeded sim ----
     const vrtSeed = (globalThis as unknown as { __outlinesVrtSeed?: number }).__outlinesVrtSeed;
     const sim = new OutlinesSim(typeof vrtSeed === 'number' ? vrtSeed >>> 0 : undefined);
+    // A VRT seed is present ONLY under the capture harness, so this is the one
+    // switch that separates a captured render from a live one. See the phase
+    // pin in draw().
+    const vrtPinned = typeof vrtSeed === 'number';
     const gateState: GateState = makeGateState();
 
     // ---- 2D scene canvases (one for the colour combine + per-mono outputs +
@@ -475,6 +652,11 @@ export const outlinesDef: VideoModuleDef = {
     }
 
     let lastTime = -1;
+
+    // ── THE VRT PHASE PIN (see VRT_PIN_STEPS) ────────────────────────────────
+    // Set once the deterministic warm-up has run, after which the sim is not
+    // advanced again while pinned.
+    let vrtPinWarmed = false;
     let framesElapsed = 0;
 
     // Reused across frames so the combine derive-once path allocates nothing
@@ -510,9 +692,56 @@ export const outlinesDef: VideoModuleDef = {
       draw(frame) {
         const g = frame.gl;
 
-        // dt from the engine clock (seconds → ms). First frame: assume 1/60.
+        // VRT determinism: hold the last frame rather than going black. See the
+        // `freeze` ParamDef for why this module needs one at all. Read straight
+        // off the live params so the harness's write reaches it on the very next
+        // frame.
+        if (params.freeze >= 0.5) return;
+
+        // ── THE VRT PHASE PIN ────────────────────────────────────────────
+        //
+        // ⚠ WHAT IS PINNED: the sim's ELAPSED TIME, and nothing else. While a
+        // VRT seed is present the sim is advanced by a FIXED number of FIXED-dt
+        // steps on the first frame and then never again (dt = 0), so the
+        // rendered picture is a pure function of (seed, params) — independent
+        // of wall clock, frame count, boot speed, and of whether `freeze` was
+        // ever written.
+        //
+        // ⚠ WHY IT IS NOT ENOUGH TO FREEZE. `freeze` holds the LAST DRAWN
+        // frame, so the frozen picture is whatever the field happened to look
+        // like when the harness got around to writing it — a different number
+        // of elapsed frames on every boot, hence a different set of shape
+        // positions. Measured: `face-outlines-dock` missed its own freshly
+        // captured baseline by 6724 px against a `DOCK_MAX_DIFF` of 1500 —
+        // 4.5x the tolerance, so this is structural, not noise. Re-capturing
+        // could not fix it; it would only re-roll the dice, and a capture that
+        // passed BY LUCK would convert a red gate into a flaky one.
+        //
+        // ⚠ WHY IT IS INVISIBLE LIVE, which is the property that makes this a
+        // pin and not a behaviour change: `vrtSeed` is `globalThis
+        // .__outlinesVrtSeed`, set by the capture harness BEFORE the module
+        // mounts and undefined everywhere else. In normal use this branch does
+        // not exist and the module integrates the real engine clock exactly as
+        // before. It is deliberately NOT keyed on `freeze`, so the live module
+        // and the captured module are the same module.
         const t = frame.time;
-        const dtMs = lastTime < 0 ? 1000 / 60 : Math.max(0, (t - lastTime) * 1000);
+        let dtMs: number;
+        if (vrtPinned) {
+          if (vrtPinWarmed) {
+            dtMs = 0;
+          } else {
+            // Advance in FIXED sub-steps rather than one large dt: the
+            // integrator moves each shape by `v * dt` and bounces it off the
+            // walls, so a single multi-second step would tunnel shapes through
+            // the field edges and produce a picture the live module never
+            // draws. Small equal steps reproduce the real trajectory exactly.
+            for (let i = 0; i < VRT_PIN_STEPS; i++) sim.step(VRT_PIN_STEP_MS);
+            vrtPinWarmed = true;
+            dtMs = 0;
+          }
+        } else {
+          dtMs = lastTime < 0 ? 1000 / 60 : Math.max(0, (t - lastTime) * 1000);
+        }
         lastTime = t;
 
         // Push live params into the sim. d/v/spd/decay/shape latch per-shape at

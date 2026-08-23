@@ -1,0 +1,433 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>QUADRALOGICAL face — STATE 2: SCREEN ON</title>
+<style>
+/* ─────────────────────────────────────────────────────────────────────────
+   QUADRALOGICAL FACEPLATE — MOCKUP, STATE 2 of 2 (SCREEN ON).
+   SPEC AND MOCKUP ONLY. Nothing here is implemented.
+
+   Same platform, tokens and rulings as `screen-off.html`. The ONE difference
+   is the frame: 480 x 360 (4:3) with a live 2 x 2 preview of the four inputs
+   behind the joystick overlay. The four "video" tiles below are STAND-INS
+   drawn in CSS — the real ones are one blit of the module's EXISTING `preview`
+   output port, which already renders exactly this tile
+   (PREVIEW_FRAG_SRC, quadralogical.ts:575-611).
+   ───────────────────────────────────────────────────────────────────────── */
+:root{
+  --bg:#0e1013; --dock:#12161c; --plate:#262a31; --pbody:#1c1f24; --well:#0a0c0f;
+  --line:#2c3037; --tile:#33383f; --ink:#eef1f5; --dim:#9aa2ad; --faint:#646c77;
+  --video:#b57bff; --tealo:#38d3c8; --amber:#f2c14e; --derived:#8fe6b0;
+  --in1:#ff5a5a; --in2:#5aff7a; --in3:#5a9bff; --in4:#ffd24a;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+  font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1480px;margin:0 auto;padding:26px 20px 100px}
+h1{font-size:21px;font-weight:800;margin:0 0 6px;letter-spacing:.01em}
+.sub{color:var(--dim);font-size:12.5px;margin:0 0 14px;max-width:112ch}
+.sub b{color:var(--ink)} .sub code{font-family:var(--mono);font-size:11.5px;color:var(--video)}
+.nav{display:flex;gap:8px;margin:0 0 20px;font-size:11px}
+.nav a{color:var(--ink);text-decoration:none;border:1px solid var(--line);border-radius:6px;
+  padding:6px 12px;background:#12161c;font-family:var(--mono);letter-spacing:.06em;text-transform:uppercase}
+.nav a.on{border-color:var(--video);color:var(--video)}
+.warn{border:1px solid #6a5330;background:#1c1811;border-radius:8px;padding:11px 14px;
+  margin:12px 0;font-size:12.5px;color:#e8cf9a;max-width:124ch}
+.warn b{color:var(--amber)}
+.ok{border:1px solid #3b5a48;background:#111a15;border-radius:8px;padding:11px 14px;
+  margin:12px 0;font-size:12.5px;color:#a9d8bd;max-width:124ch}
+.ok b{color:var(--derived)}
+
+.mod{margin:0 0 34px}
+.mod>header{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;
+  border-bottom:1px solid var(--line);padding-bottom:8px;margin-bottom:11px}
+.mod>header h2{font-size:17px;font-weight:800;letter-spacing:.02em;margin:0;text-transform:uppercase}
+.mod>header .id{font-family:var(--mono);font-size:11px;color:var(--faint)}
+.tag{font-family:var(--mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;
+  border:1px solid #5a4a6a;border-radius:4px;padding:2px 7px;color:#c6a6e0}
+.note{color:var(--dim);font-size:12.5px;margin:0 0 14px;max-width:122ch}
+.note b{color:var(--ink);font-weight:600}
+.note code{font-family:var(--mono);font-size:11.5px;color:var(--video)}
+
+.cols{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:18px;align-items:start}
+@media (max-width:1180px){.cols{grid-template-columns:minmax(0,1fr)}}
+
+.dock{background:var(--dock);border:1px solid var(--line);border-radius:11px;overflow:hidden}
+.editor{padding:11px;min-width:0}
+.chromebar{display:flex;align-items:baseline;gap:9px;padding:0 2px 7px}
+.chromebar .ini{font-family:var(--mono);font-size:10px;color:var(--faint);letter-spacing:.1em}
+.chromebar .nm{font-size:13px;font-weight:800;letter-spacing:.03em}
+.chromebar .ln{font-family:var(--mono);font-size:8.4px;letter-spacing:.14em;color:var(--faint);
+  text-transform:uppercase}
+.tabrow{margin:0 0 -1px 2px}
+.tab{display:inline-block;border:1px solid var(--line);border-bottom-color:transparent;
+  border-radius:8px 8px 0 0;padding:5px 13px;font-size:9.4px;font-weight:800;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--ink);background:#151a21}
+.plate{background:var(--pbody);border:1px solid var(--tile);border-left:4px solid var(--video);
+  border-radius:10px;padding:0 0 12px;min-width:0;width:max-content;max-width:100%}
+.chrome{padding:9px 12px 0}
+.chrome .name{font-size:11.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase}
+.chrome .cat{font-size:8px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);
+  font-family:var(--mono);margin-top:1px}
+
+.extbody{padding:11px 12px 2px;display:flex;justify-content:center}
+.screenwrap{position:relative;min-height:18px}
+
+/* STATE 2 — SCREEN ON: the field is 4:3 and carries the 2x2 preview canvas.
+   The HEIGHT is byte-identical to state 1; only the WIDTH grows (360 -> 480),
+   so nothing below the frame moves on toggle. */
+.field{position:relative;width:480px;height:360px;background:#0c0e14;
+  border:1px solid var(--video);border-radius:3px;cursor:crosshair;overflow:hidden}
+
+/* ── the CANVAS: ONE blit of the `preview` port's 2x2 raw-input tile ───── */
+.tiles{position:absolute;inset:0;display:grid;grid-template-columns:1fr 1fr;
+  grid-template-rows:1fr 1fr}
+.t{position:relative;overflow:hidden}
+/* stand-in "video" — the real tile is a texture blit, not CSS. */
+.t1{background:
+  repeating-linear-gradient(115deg,rgba(255,90,90,.55) 0 13px,rgba(120,20,30,.55) 13px 26px),
+  radial-gradient(120% 90% at 30% 25%,#8c2230,#2a0d12)}
+.t2{background:
+  repeating-radial-gradient(circle at 62% 42%,rgba(90,255,122,.42) 0 9px,rgba(10,60,30,.42) 9px 20px),
+  linear-gradient(200deg,#124b2a,#06180f)}
+.t3{background:
+  linear-gradient(150deg,rgba(90,155,255,.5) 0 40%,rgba(12,30,70,.5) 40% 100%),
+  radial-gradient(90% 120% at 70% 80%,#20447e,#070d1c)}
+.t4{background:
+  repeating-linear-gradient(0deg,rgba(255,210,74,.40) 0 7px,rgba(70,52,10,.40) 7px 15px),
+  linear-gradient(20deg,#6b5215,#171008)}
+/* the separator cross the preview shader draws at 0.004 of the frame */
+.tiles::after{content:"";position:absolute;inset:0;pointer-events:none;
+  background:linear-gradient(#1f1f1f,#1f1f1f) 50% 0/2px 100% no-repeat,
+             linear-gradient(#1f1f1f,#1f1f1f) 0 50%/100% 2px no-repeat}
+/* which input each quadrant is — a NAME on the tile, not a value */
+.t span{position:absolute;font-family:var(--mono);font-size:9px;letter-spacing:.08em;
+  color:rgba(255,255,255,.82);background:rgba(5,6,8,.55);padding:1px 5px;border-radius:2px}
+.t1 span{top:5px;left:5px} .t2 span{top:5px;right:5px}
+.t3 span{bottom:5px;left:5px} .t4 span{bottom:5px;right:5px}
+
+/* ── the joystick overlay, ON TOP of the previews ─────────────────────── */
+.overlay{position:absolute;inset:0}
+.corner{position:absolute;font-family:var(--mono);font-size:10px;letter-spacing:.06em;
+  color:#fff;text-shadow:0 0 4px #000,0 0 2px #000}
+.corner.tl{top:6px;left:8px}   .corner.tr{top:6px;right:8px}
+.corner.bl{bottom:6px;left:8px}.corner.br{bottom:6px;right:8px}
+.corner i{display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:5px;
+  vertical-align:middle;box-shadow:0 0 0 1px rgba(0,0,0,.6)}
+.xh,.xv{position:absolute;background:rgba(255,255,255,.20)}
+.xh{left:0;right:0;top:50%;height:1px} .xv{top:0;bottom:0;left:50%;width:1px}
+/* ⚠ THE DIAMOND IS A RHOMBUS, NOT A ROTATED SQUARE. At 4:3 a rotated square is
+   wrong by 33% on one axis. Percentages of the frame are aspect-free. */
+.diamond{position:absolute;inset:0;--m:.5;
+  background:rgba(255,220,0,.16);
+  clip-path:polygon(50% calc(50% - var(--m)*50%), calc(50% + var(--m)*50%) 50%,
+                    50% calc(50% + var(--m)*50%), calc(50% - var(--m)*50%) 50%)}
+.diamond::after{content:"";position:absolute;inset:0;background:#ffd24a;
+  clip-path:polygon(50% calc(50% - var(--m)*50%), calc(50% + var(--m)*50%) 50%,
+                    50% calc(50% + var(--m)*50%), calc(50% - var(--m)*50%) 50%);
+  opacity:.5;mix-blend-mode:screen}
+/* THE PUCK — with SCREEN ON it is a 34 px circular window onto the MIX
+   (`blitOutputForPreview`), ringed in the dominant input's colour. This is
+   what keeps the module's own OUTPUT on the faceplate after the standalone
+   preview screen is removed. See spec §4. */
+.puck{position:absolute;left:50%;top:50%;width:34px;height:34px;border-radius:50%;
+  transform:translate(-50%,-50%);border:2px solid var(--in1);
+  box-shadow:0 0 14px rgba(255,255,255,.45);pointer-events:none;overflow:hidden;
+  background:conic-gradient(from 210deg,#8c2230,#124b2a,#20447e,#6b5215,#8c2230)}
+.puck::after{content:"";position:absolute;inset:0;border-radius:50%;
+  box-shadow:inset 0 0 0 2px rgba(255,255,255,.85)}
+.assign{position:absolute;left:6px;top:26px;display:flex;gap:4px}
+.assign b{font-family:var(--mono);font-size:8px;font-weight:400;letter-spacing:.02em;
+  color:var(--dim);background:rgba(5,6,8,.72);border:1px solid var(--tile);border-radius:2px;
+  padding:2px 5px;line-height:1}
+.screenbtn{position:absolute;right:6px;bottom:6px;font-family:var(--mono);font-size:8.6px;
+  letter-spacing:.06em;padding:3px 9px;border:1px solid #6f57a0;border-radius:2px;
+  background:rgba(5,6,8,.72);color:var(--ink);cursor:pointer}
+
+/* ── bands (identical to state 1 — they do not move on toggle) ────────── */
+.bands{padding:6px 12px 0}
+.band{border-top:1px solid var(--line);padding-top:7px;margin-top:9px}
+.band:first-child{border-top:0;margin-top:4px}
+.blab{margin:0 0 6px;font-size:9.4px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--dim)}
+.row{display:flex;flex-wrap:wrap;align-items:flex-start;gap:8px 12px}
+/* clusterFlow STACK + the CONSOLE GRID: four equal clusters share one column
+   ruler, so every FX / AMT / PRM lands on the same x across all four strips.
+   ⚠ This replaced a side-by-side `clusterFlow:'row'` after CI MEASURED the row
+   at 1260 CSS px against a 1220 px pane — see the note under the plate. */
+.clusters{display:grid;gap:6px 0}
+.cl{display:grid;grid-template-columns:34px 132px 54px 54px;align-items:center;gap:8px}
+.clab{margin:0;font-size:8.4px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;
+  color:var(--dim);opacity:.85;text-align:right}
+.clrow{display:contents}
+.k{width:54px;display:flex;flex-direction:column;align-items:center;gap:3px}
+.k i{--v:.5;--kc:#8358b8;display:block;width:38px;height:38px;border-radius:50%;position:relative;
+  background:conic-gradient(from 215deg,var(--kc) 0turn calc(var(--v)*.75turn),
+    #2b3138 calc(var(--v)*.75turn) .75turn,rgba(0,0,0,0) .75turn)}
+.k i::before{content:"";position:absolute;inset:5px;border-radius:50%;background:#20252b;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.05)}
+.k i::after{content:"";position:absolute;left:50%;top:50%;width:2px;height:12px;background:var(--ink);
+  border-radius:1px;transform-origin:50% 100%;
+  transform:translate(-50%,-100%) rotate(calc(-135deg + var(--v)*270deg))}
+.k b{font-size:7.8px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--dim);
+  font-family:var(--mono);text-align:center;line-height:1.15}
+.k.dead i{--kc:#3b4148} .k.dead b{color:var(--faint)}
+.k.live i{--kc:#c9a227} .k.live b{color:var(--ink)}
+.cell{display:flex;flex-direction:column;gap:3px;align-items:flex-start}
+.cell .cap{font-size:7.8px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--dim);font-family:var(--mono)}
+.sel{font-family:var(--mono);font-size:10px;letter-spacing:.05em;background:#1b2027;
+  border:1px solid #3a4048;border-radius:6px;padding:6px 10px;color:var(--ink);min-width:118px;
+  display:flex;justify-content:space-between;gap:10px}
+.sel.on{border-color:var(--video);color:var(--video)}
+.sel s{text-decoration:none;color:var(--faint)}
+.sw{display:inline-flex;align-items:center;gap:6px;background:#1b2027;border:1px solid #3a4048;
+  border-radius:12px;padding:4px 9px;font-family:var(--mono);font-size:8.6px;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--dim)}
+.sw i{width:8px;height:8px;border-radius:50%;background:#3b4148}
+.sw.on{border-color:var(--tealo);color:var(--tealo)} .sw.on i{background:var(--tealo)}
+.swatch{width:38px;height:38px;border-radius:4px;border:1px solid #3a4048}
+
+.zones{background:#12161c;border:1px solid var(--line);border-radius:9px;padding:12px 13px}
+.zones h4{margin:0 0 8px;font-size:9px;font-weight:800;letter-spacing:.13em;text-transform:uppercase;
+  color:var(--dim)}
+.zones+.zones{margin-top:14px}
+.zt{width:100%;border-collapse:collapse;font-size:10.5px}
+.zt th{text-align:left;font-family:var(--mono);font-size:7.8px;letter-spacing:.11em;
+  text-transform:uppercase;color:var(--faint);font-weight:400;padding:0 0 5px;border-bottom:1px solid var(--line)}
+.zt td{padding:5px 0;border-bottom:1px solid #1c2027;vertical-align:top;color:var(--dim);line-height:1.4}
+.zt td:first-child{color:var(--ink);font-family:var(--mono);font-size:9.5px;padding-right:9px;
+  white-space:nowrap}
+.zt td b{color:var(--video);font-weight:600;font-family:var(--mono);font-size:9.5px}
+.zt tr:last-child td{border-bottom:0}
+.zones code{font-family:var(--mono);font-size:9.6px;color:var(--tealo)}
+
+.strips{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px;margin-top:16px}
+.strips>div{border:1px solid var(--line);background:#12161c;border-radius:9px;padding:11px 13px;
+  font-size:11.5px;color:var(--dim);line-height:1.5}
+.strips h5{margin:0 0 6px;font-size:9px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--ink)}
+.strips code{font-family:var(--mono);font-size:10.5px;color:var(--tealo)}
+.strips b{color:var(--ink)}
+.strips .bad{border-color:#6a4a4a}
+.strips .der{border-color:#3b5a48} .strips .der h5{color:var(--derived)}
+
+/* the toggle-delta diagram */
+.delta{display:flex;gap:18px;align-items:flex-end;flex-wrap:wrap;margin-top:8px}
+.dbox{position:relative;border:1px dashed #4a5560;border-radius:3px;background:#0c0e14}
+.dbox span{position:absolute;bottom:-17px;left:0;font-family:var(--mono);font-size:8.4px;
+  letter-spacing:.08em;color:var(--faint);white-space:nowrap}
+.dbox.off{width:120px;height:120px;border-color:#4a5560}
+.dbox.on{width:160px;height:120px;border-color:var(--video)}
+.dbox.on::after{content:"";position:absolute;left:120px;top:0;bottom:0;width:40px;
+  background:repeating-linear-gradient(45deg,rgba(181,123,255,.22) 0 5px,transparent 5px 10px)}
+</style>
+
+<div class="wrap">
+<h1>QUADRALOGICAL — face mock, STATE 2 of 2: <span style="color:var(--video)">SCREEN ON</span></h1>
+<p class="sub">The same joystick field, with each of the four quadrants showing a live preview of
+its own input. The diamond and puck stay <b>overlaid on top</b>. The frame re-aspects from
+<b>1:1</b> to <b>4:3</b> — and it does so on the <b>width only</b>, so nothing below it moves.
+<b>Mockup only; nothing here is implemented.</b> The four tiles are CSS stand-ins.</p>
+
+<div class="nav">
+  <a href="screen-off.html">state 1 · screen off</a>
+  <a class="on" href="screen-on.html">state 2 · screen on</a>
+</div>
+
+<div class="ok"><b>The previews cost no new GLSL.</b> QUADRALOGICAL already renders a second FBO
+every frame — a 2×2 tile of the four RAW inputs, <code>in1</code> TL / <code>in2</code> TR /
+<code>in3</code> BL / <code>in4</code> BR, with a thin separator cross — and already exposes it as
+the <code>preview</code> output port (<code>PREVIEW_FRAG_SRC</code>,
+<code>quadralogical.ts:575-611</code>). The face is <b>one call to
+<code>blitOutputPortForPreview(nodeId, 'preview')</code></b>. Its quadrant map is already the
+<code>quadWeights</code> corner map, so the previews land under the corner labels by construction —
+<b>subject to the flip check in the red panel below.</b></div>
+
+<div class="warn"><b>⚠ MUST-VERIFY before this ships: the blit's vertical origin.</b>
+<code>PREVIEW_FRAG_SRC</code> works in <code>vUv</code> with a <b>bottom-left</b> origin
+(<code>bool top = vUv.y &gt;= 0.5</code>) while a canvas is <b>top-left</b>. If
+<code>blitTexToDrawingBuffer</code> does not flip, <b>IN1 lands bottom-left and silently
+contradicts the corner label directly above it</b> — a wrong picture under a right label, which
+is worse than no picture. Prove it with a per-quadrant colour probe, never by eye.</div>
+
+<section class="mod">
+<header>
+  <h2>quadralogical</h2>
+  <span class="id">video/modules/quadralogical.ts · 21 params · 4 inputs + 15 CV · 2 outputs · glyph <code>none</code></span>
+  <span class="tag">promotion — first faced XY mixer</span>
+</header>
+<p class="note">Shown here <b>mid-performance</b>: the stick has been pushed toward IN2/IN4 (the
+right edge), edge <b>2–3</b> has been switched to <b>LUMA</b> — which is what wakes its
+<code>Thr</code> and <code>Soft</code> controls and the shared <code>Inv</code> — and the puck has
+left the diamond. The four <code>Amt</code>/<code>Prm</code> pairs on the DISSOLVE edges remain
+dimmed, because DISSOLVE reads neither (<code>EFFECTS[0]</code> is
+<code>{amount: null, param: null}</code>). ⚠ The face paints them anyway: a faceplate cell's
+caption is the static <code>ParamDef.label</code> and there is no conditional-cell mechanism, so
+the platform expresses "currently inert" through <b>rank</b>, not visibility. That is the one
+debit against the legacy card, and it is a debit of <i>dynamics</i>, not of controls.</p>
+
+<div class="cols">
+<div>
+  <div class="dock">
+    <div class="editor">
+      <div class="chromebar"><span class="ini">QL</span><span class="nm">QUADRALOGICAL</span>
+        <span class="ln">quadralogical · lane 1</span></div>
+      <div class="tabrow"><span class="tab">module</span></div>
+      <div class="plate">
+        <div class="chrome"><div class="name">QUADRALOGICAL</div><div class="cat">video · utilities</div></div>
+
+        <div class="extbody">
+          <div class="screenwrap">
+            <div class="field" role="application" tabindex="0"
+                 aria-label="joystick: X 0.62, Y -0.18 — IN4"
+                 data-testid="control-pos_x" data-control-params="pos_x,pos_y">
+              <!-- ONE canvas: the `preview` port's 2x2 raw-input tile -->
+              <div class="tiles">
+                <div class="t t1"><span>IN 1</span></div>
+                <div class="t t2"><span>IN 2</span></div>
+                <div class="t t3"><span>IN 3</span></div>
+                <div class="t t4"><span>IN 4</span></div>
+              </div>
+              <!-- the joystick overlay, on top -->
+              <div class="overlay">
+                <span class="corner tl"><i style="background:var(--in1)"></i>IN1</span>
+                <span class="corner tr"><i style="background:var(--in2)"></i>IN2</span>
+                <span class="corner bl"><i style="background:var(--in3)"></i>IN3</span>
+                <span class="corner br"><i style="background:var(--in4)"></i>IN4</span>
+                <div class="xh"></div><div class="xv"></div>
+                <div class="diamond" style="--m:.5"></div>
+                <div class="puck" style="left:81%;top:59%;border-color:var(--in4)"></div>
+                <div class="assign"><b>x</b><b>y</b></div>
+              </div>
+            </div>
+            <button class="screenbtn" aria-pressed="true"
+              title="SCREEN — turn the four input previews off to square the field and reclaim 120 px of width. QUADRALOGICAL goes on mixing and rendering either way.">SCREEN ON</button>
+          </div>
+        </div>
+
+        <div class="bands">
+          <div class="band"><h4 class="blab">field</h4>
+            <div class="row">
+              <div class="k"><i style="--v:.5"></i><b>Diamond</b></div>
+              <div class="k"><i style="--v:.375"></i><b>Sharp</b></div>
+            </div></div>
+
+          <div class="band"><h4 class="blab">edges</h4>
+            <div class="clusters">
+              <div class="cl"><p class="clab">1–2</p><div class="clrow">
+                <div class="cell"><span class="cap">1–2 FX</span><span class="sel">DISSOLVE<s>▾</s></span></div>
+                <div class="k dead"><i style="--v:1"></i><b>1–2 Amt</b></div>
+                <div class="k dead"><i style="--v:.1"></i><b>1–2 Prm</b></div>
+              </div></div>
+              <div class="cl"><p class="clab">2–3</p><div class="clrow">
+                <div class="cell"><span class="cap">2–3 FX</span><span class="sel on">LUMA<s>▾</s></span></div>
+                <div class="k live"><i style="--v:.44"></i><b>2–3 Amt</b></div>
+                <div class="k live"><i style="--v:.18"></i><b>2–3 Prm</b></div>
+              </div></div>
+              <div class="cl"><p class="clab">3–4</p><div class="clrow">
+                <div class="cell"><span class="cap">3–4 FX</span><span class="sel">DISSOLVE<s>▾</s></span></div>
+                <div class="k dead"><i style="--v:1"></i><b>3–4 Amt</b></div>
+                <div class="k dead"><i style="--v:.1"></i><b>3–4 Prm</b></div>
+              </div></div>
+              <div class="cl"><p class="clab">4–1</p><div class="clrow">
+                <div class="cell"><span class="cap">4–1 FX</span><span class="sel">DISSOLVE<s>▾</s></span></div>
+                <div class="k dead"><i style="--v:1"></i><b>4–1 Amt</b></div>
+                <div class="k dead"><i style="--v:.1"></i><b>4–1 Prm</b></div>
+              </div></div>
+            </div></div>
+
+          <div class="band"><h4 class="blab">key</h4>
+            <div class="row">
+              <div class="cell"><span class="cap">Inv</span><span class="sw on"><i></i>on</span></div>
+              <div class="k dead"><i style="--v:0"></i><b>Key R</b></div>
+              <div class="k dead"><i style="--v:1"></i><b>Key G</b></div>
+              <div class="k dead"><i style="--v:0"></i><b>Key B</b></div>
+              <div class="cell"><span class="cap">key</span><span class="swatch" style="background:#00ff00"></span></div>
+            </div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div>
+  <div class="zones"><h4>zone map — SCREEN ON</h4>
+    <table class="zt">
+      <tr><th>zone</th><th>geometry &amp; source</th></tr>
+      <tr><td>field</td><td><b>480 × 360</b>, ratio <b>4 : 3</b>. Height IDENTICAL to state 1; width <b>+120 px</b>.</td></tr>
+      <tr><td>quadrant</td><td><b>240 × 180</b> each = <b>4 : 3</b>, matching <code>VIDEO_RES 1024×768</code>. 2×2 of 4:3 is 8:6 = 4:3.</td></tr>
+      <tr><td>separator</td><td>the shader's own cross, <code>min(|u−.5|,|v−.5|) &lt; 0.004</code> → <code>#1f1f1f</code>. Not chrome — it is in the texture.</td></tr>
+      <tr><td>quadrant map</td><td><code>in1</code> TL · <code>in2</code> TR · <code>in3</code> BL · <code>in4</code> BR — the same corner map <code>quadWeights</code> uses. ⚠ verify the blit flip.</td></tr>
+      <tr><td>overlay</td><td>corner labels, crosshair, diamond, puck — <b>above</b> the canvas. Labels gain a 4 px text shadow to stay legible over picture.</td></tr>
+      <tr><td>diamond</td><td><b>rhombus</b>, vertices at <code>m·50 %</code>. At <code>0.5</code> → <b>120 px</b> horizontal, <b>90 px</b> vertical semi-axis. ⚠ a rotated SQUARE is wrong by 4/3 here.</td></tr>
+      <tr><td>puck</td><td><b>34 px</b> circular window onto the <b>MIX</b> (<code>blitOutputForPreview</code>), ring = dominant input. This is what keeps the module's OUTPUT on the plate.</td></tr>
+      <tr><td>screen switch</td><td>same overlay, same 6 px inset, <b>0 px</b> layout cost. <code>aria-pressed="true"</code>.</td></tr>
+      <tr><td>bands</td><td>byte-identical to state 1 — the toggle changes no band geometry.</td></tr>
+    </table>
+  </div>
+
+  <div class="zones"><h4>the toggle, dimensioned</h4>
+    <div class="delta">
+      <div class="dbox off"><span>OFF · 360×360 · 1:1</span></div>
+      <div class="dbox on"><span>ON · 480×360 · 4:3</span></div>
+    </div>
+    <p style="margin:26px 0 0;font-size:11px;color:var(--dim);line-height:1.5">
+      The hatched strip is the <b>120 px</b> the toggle adds and removes. Pinning the HEIGHT is the
+      whole design: the four EDGE boxes sit directly under this frame, and a height-changing toggle
+      would jump them up and down under the player's cursor mid-performance. Every other
+      <code>fullViewBody</code> in the fleet <i>does</i> change height — because on every other
+      module the collapsed thing is a canvas and nothing else.</p>
+  </div>
+
+  <div class="zones"><h4>state matrix</h4>
+    <table class="zt">
+      <tr><th>element</th><th>OFF → ON</th></tr>
+      <tr><td>frame</td><td>360×360 → <b>480×360</b></td></tr>
+      <tr><td>canvas</td><td>unmounted → <code>preview</code> port, 2×2</td></tr>
+      <tr><td>corner labels</td><td><code>--text-dim</code> → white + shadow</td></tr>
+      <tr><td>crosshair</td><td>.08 alpha → <b>.20</b> (it must read over picture)</td></tr>
+      <tr><td>diamond fill</td><td>.10 → <b>.16</b> alpha, same geometry</td></tr>
+      <tr><td>puck</td><td>flat tint → <b>MIX window</b>, ring keeps the tint</td></tr>
+      <tr><td>bands</td><td><b>unchanged</b> — nothing below the frame moves</td></tr>
+      <tr><td>engine</td><td><b>unchanged</b> — renders in both states; <code>markWatched</code> fires in both</td></tr>
+      <tr><td>persistence</td><td><code>node.data.previewCollapsed</code> — survives tab switch, remount, reload, collab</td></tr>
+    </table>
+  </div>
+</div>
+</div>
+
+<div class="strips">
+  <div class="der"><h5>the puck recovers the MIX (spec §4)</h5>
+    Requirement 4 removes the standalone preview, which showed the <b>MIX</b>. The quadrants show
+    the four <b>RAW INPUTS</b>. Those are not the same picture, so swapping one for the other would
+    leave a MIXER's faceplate unable to show its own mix. The puck already exists, already has a
+    position, and already costs the layout nothing — so it becomes the window. Two blits per frame
+    do not fight: <code>blitOutputPortForPreview</code> keys cadence on
+    <code>(node, port)</code> (<code>engine.ts:1689</code>) exactly so a surface can show a primary
+    preview and a second port at full rate. <b>VIDEOCUBE's SLICE is the precedent.</b>
+    <b>Revert:</b> drop the puck canvas — and the MIX then has no surface on the faceplate at all.</div>
+  <div><h5>what SCREEN OFF means here, and why it differs</h5>
+    The 2026-08-18 ruling says OFF collapses the preview and reclaims its space while the module
+    keeps rendering. On all twenty-six adopters the collapsed thing is a canvas. <b>Here the frame
+    is also the CONTROL</b>, so collapsing it would delete the joystick from the dock outright —
+    and a declared pad never reaches a lane tier either (<code>laneOrder</code> makes every pad
+    anchor dock-only, because a lane knob column is 46 px and a pad is square), so the module's
+    primary gesture would have <b>no surface anywhere</b>. OFF therefore unmounts the canvas,
+    keeps the overlay, and reclaims <b>120 px of WIDTH</b> rather than the box.</div>
+  <div class="bad"><h5>⚠ two things the build must prove</h5>
+    <b>(1) The blit's vertical origin</b> — see the amber panel above. <b>(2) Pixel determinism:</b>
+    a live 2×2 video preview is not deterministic. <code>freeze</code> is the module's own hook and
+    <code>freezeFaceVideo</code> is the harness, but the dock scene must be shown identical across
+    <b>three consecutive captures</b> before any baseline is trusted. That is the
+    <code>analogVco</code> lesson: its glyph drew a genuinely moving saw and measured 254 / 154 /
+    315 px across three captures of the same tile.</div>
+  <div><h5>why there is no tab rail</h5>
+    Three bands; the rail engages at <code>DOCK_TAB_MIN_BANDS = 7</code>. That is not a shortfall —
+    it is <b>required</b>. A rail shows <b>one band at a time</b>, so a tabbed face would put at
+    most one edge box on screen and directly contradict the owner's "the four EDGE boxes move
+    below the screen". <code>face.tabbed</code> is owner-instruction-only and is not reached for.</div>
+</div>
+</section>
+</div>

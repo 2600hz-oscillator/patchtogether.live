@@ -510,11 +510,97 @@ export const cellshadeDef: VideoModuleDef = {
     // The step INDEX 0..4 into CELLSHADE_BAND_STEPS (discrete fader). The id
     // `bits` is the legacy colour-depth knob's — kept verbatim (same range +
     // discrete curve) so saved patches and CV cables need zero migration.
-    { id: 'bits',      label: 'Bands',  defaultValue: CELLSHADE_DEFAULTS.bits,      min: 0, max: CELLSHADE_BAND_STEPS.length - 1, curve: 'discrete' },
+    {
+      id: 'bits',
+      label: 'Bands',
+      defaultValue: CELLSHADE_DEFAULTS.bits,
+      min: 0,
+      max: CELLSHADE_BAND_STEPS.length - 1,
+      curve: 'discrete',
+      // ⚠ THE ROSTER EXISTS BECAUSE WITHOUT IT THE FACE SPEAKS A WRONG NUMBER —
+      // not a missing one, which is what makes it required rather than nice.
+      //
+      // `bits` stores an INDEX 0..4; what the player is choosing is a BAND COUNT
+      // 2/3/4/6/8. `CellshadeCard.svelte` bridges that with a `formatValue` prop
+      // and a labelled tick rail — both CARD-side props `ModuleShell` does not
+      // pass. Verified at the read site: `NeonFader`'s `readoutText` is
+      // `formatValue ? formatValue(v) : format(v, units)` and it feeds
+      // `aria-valuetext`, so an undeclared `bits` on a faceplate would announce
+      // the INDEX. The face would say "2" while the picture shows FOUR bands.
+      //
+      // ⚠ THE LABELS ARE PROMOTED, NOT INVENTED. They are
+      // `CELLSHADE_BAND_STEPS` — the array the shader's quantiser indexes — not
+      // words chosen here. Invention would be naming these "coarse"/"fine",
+      // which appear nowhere in the code. This is the same move `tiler` makes
+      // with `${cols}×${rows}`: existing structured data rendered as a label.
+      //
+      // ⚠ AND IT SURVIVES THE NO-RESTING-TEXT RULING for the same reason
+      // `tiler` does. The permitted case is a declared option NAME that
+      // disambiguates a control's own position; the forbidden case is a number
+      // that RESTATES the dial. Here the dial's position is the INDEX and the
+      // label is the BAND COUNT — different quantities, so the label says
+      // something the control does not.
+      //
+      // ⚠ THIS IS THE ONE EDIT IN THIS FILE THAT COSTS AN ATTEST: `params` is
+      // in the WebGL content basis, where `face`, `docs` and `paramCells` are
+      // not.
+      options: CELLSHADE_BAND_STEPS.map((bands, i) => ({
+        value: i,
+        label: String(bands),
+        title: `${bands} flat tonal bands`,
+      })),
+    },
     { id: 'softness',  label: 'Soft',   defaultValue: CELLSHADE_DEFAULTS.softness,  min: 0, max: 1,                  curve: 'linear' },
     { id: 'smooth',    label: 'Smooth', defaultValue: CELLSHADE_DEFAULTS.smooth,    min: 0, max: 1,                  curve: 'linear' },
     { id: 'ink',       label: 'Ink',    defaultValue: CELLSHADE_DEFAULTS.ink,       min: 0, max: 1,                  curve: 'linear' },
   ],
+
+  // ── FACE (batch-21, rebuilt against current main) ─────────────────────────
+  face: {
+    order: ['bits', 'ink', 'threshold', 'thickness', 'softness', 'smooth'],
+
+    // ⚠ NO `pages`. Six controls is one row (well under
+    // DOCK_ROW_MAX_CONTROLS), so paging would add headings and their vertical
+    // chrome to a face that already fits. Width and height must be EARNED.
+    //
+    // The ORDER is the pipeline's own, most-reached-for first: BANDS is the
+    // control that decides what the look IS, INK is the second thing anyone
+    // touches, and the four that tune the edge and the smoothing follow. That
+    // is a ranking, which is what `order` is for — not the declaration order.
+
+    // ⚠ FIVE FADERS DECLARED, AND `bits` DELIBERATELY ABSENT.
+    // `CellshadeCard.svelte` draws all six with `NeonFader` (6 NeonFader, 0
+    // Knob), and nothing in a ParamDef separates "a level" from any other
+    // continuous scalar — so an undeclared face resolves them to KNOBS and
+    // silently swaps a dial in for a throw, invisibly to every def-reading
+    // gate.
+    //
+    // `bits` is excluded because it is DISCRETE and carries an `options`
+    // roster. module-face-lint refuses `fader` on both counts — a throw needs a
+    // CONTINUOUS param, and **a fader cannot show names**, so the roster would
+    // render as unlabelled detents. A discrete param with a roster belongs on a
+    // segmented row / selector, which names its states. (Learned the hard way
+    // on `posterbox.depth` and `tiler.tile` in batch-22 G3.)
+    paramCells: {
+      threshold: 'fader', thickness: 'fader',
+      softness: 'fader', smooth: 'fader', ink: 'fader',
+    },
+
+    // ⚠ NO `bareCells` — one unlabelled band, so no section heading exists to
+    // make a caption redundant, and six controls of the same shape are told
+    // apart only by their captions.
+
+    // ⚠ MANDATORY FOR A VIDEO DEF — the only output is `video`, so
+    // `primaryAudioOutPortId` is null and any other glyph literal falls through
+    // `glyphBinding` to a dead `{kind:'static'}` that reddens module-face-lint.
+    glyph: 'none',
+
+    // SCREEN ON/OFF arrives through this slot (#1928): promotion stops BOTH
+    // surfaces rendering `CellshadeCard.svelte`, the only route a faced video
+    // module has to the switch. No MONITOR mode — this card mounts no
+    // `hideControls`. See `$lib/ui/modules/cellshade/shell-extension.ts`.
+    extension: 'cellshade',
+  },
 
   docs: {
     explanation: "cellshade is a real cel-shader: it remakes the incoming video as flat, hand-painted toon art using the canonical live-video cel pipeline (Winnemöller's Real-Time Video Abstraction). Three stages run per frame: an edge-preserving bilateral smoothing pass (the Smooth knob) flattens low-contrast texture and noise into the large flat regions that read as painted cels while keeping strong contours crisp; a soft luminance quantization pass collapses the image's Rec. 601 brightness into a small number of flat tonal bands (the Bands knob picks 2/3/4/6/8, Soft widens the band transitions) while hue and saturation ride through untouched — a yellow stays yellow, a skin tone stays warm, and each band is a flat tonal step of consistent colour; finally a Sobel ink pass (the same edge machinery as the EDGES module, measured on the smoothed image so noise never inks) draws the salient contours as dark outline strokes, scaled by the Ink knob. It is stateless per frame, so the look tracks the live source with no feedback. Dial Bands low and Ink up for bold comic cels, raise Smooth for painterly abstraction, and use Soft to trade crisp band edges against shimmer-free gradients on live video.",

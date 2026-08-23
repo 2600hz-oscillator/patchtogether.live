@@ -196,78 +196,8 @@ export const resofilterDef: AudioModuleDef = {
 
     hero: {
       control: 'cutoff',
-      // NO `cell`. A panel's first legal rank is 7 (module-face-lint refuses a
-      // PANEL selected at a lane tier and `faceTierCap('full')` is 6) and this
-      // face has FOUR keys, so rank 7 is unreachable — the drummergirl wall.
-      // The picture goes in the SIDEBAR, which carries no `face.order` key and
-      // therefore no rank at all: the meowbox/noise answer.
-      readouts: [
-        // The two halves of what RESONANCE does, and they are each other's
-        // negative control: `peak` is live in LP/HP/BP, `width` in BP/NT/AP, so
-        // every mode has exactly one of them except BAND-PASS, which has both.
-        // A `paramId: 'resonance'` readout prints `0.30` in all five.
-        { label: 'peak', valueId: 'resofilter-peak-db' },
-        { label: 'width', valueId: 'resofilter-band-width' },
-        // Invariant to everything the other two move with, and moving with the
-        // one thing they are both blind to.
-        { label: 'cv reach', valueId: 'resofilter-cv-reach' },
-      ],
     },
 
-    // TWO BLOCKS. NO `signal-flow` — owner ruling 2026-08-11, and it would
-    // have been a poor one here anyway: this module is a single SVF whose five
-    // modes are taps off one shared state, so the chain is one box.
-    sidebar: [
-      {
-        // The picture, beside the controls rather than above them. It is the
-        // only surface that can show the ALLPASS doing anything: its magnitude
-        // is unity at every frequency and every resonance (measured span 0.00
-        // dB over the whole dial), so the panel draws PHASE there instead.
-        kind: 'custom',
-        label: 'response',
-        panelId: 'svf-response',
-        props: {
-          cutoffParam: 'cutoff',
-          resParam: 'resonance',
-          modeParam: 'mode',
-          mixParam: 'mix',
-        },
-      },
-      {
-        // FOUR STATES, ONE CLICK EACH — the filter `starting points` shape, and
-        // here it does a second job the picture cannot: it makes the face's
-        // whole argument reachable without turning anything. Each entry lands
-        // on a different MODE, and the `note` beside it is the quantity that is
-        // LIVE in that mode, so the four notes read
-        //
-        //     −2.9 dB · +20.0 dB · 1.13 oct · 0.288 oct
-        //
-        // — dB, dB, octaves, octaves, off ONE dial. That is "RESO means
-        // different things" stated as four values and no sentence.
-        //
-        // ⚠ THE NOTES ARE PINNED, not typed and forgotten. `resofilter-face-
-        // model.test.ts` recomputes each one from the preset's OWN `values`
-        // through the same model the hero prints, so a law change reddens the
-        // note instead of leaving a stale number beside a live button. (This is
-        // the noise scar: a hero readout and a sidebar entry printed two
-        // different true values of one quantity and nothing could see it.)
-        kind: 'presets',
-        label: 'starting points',
-        entries: [
-          { id: 'gentle-lp', label: 'gentle lp', note: '−2.9 dB',
-            values: { mode: 0, cutoff: 1000, resonance: 0.3, mix: 1 } },
-          { id: 'squelch', label: 'squelch', note: '+20.0 dB',
-            values: { mode: 0, cutoff: 600, resonance: 0.95, mix: 1 } },
-          { id: 'notch-out', label: 'notch out', note: '1.13 oct',
-            values: { mode: 3, cutoff: 1000, resonance: 0.6, mix: 1 } },
-          // The one state that is not reachable by picking a mode alone: an
-          // allpass only becomes audible when some dry is mixed back against
-          // it, because its magnitude is unity at every frequency on its own.
-          { id: 'phaser', label: 'phaser', note: '0.288 oct',
-            values: { mode: 4, cutoff: 800, resonance: 0.9, mix: 0.5 } },
-        ],
-      },
-    ],
   },
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {

@@ -486,12 +486,64 @@ export const bentboxDef: VideoModuleDef = {
     { id: 'master_gain',        label: 'Gain',      defaultValue: DEFAULTS.master_gain,        min: 0,  max: 2, curve: 'linear' },
     // MIRROR kaleidoscope toggles (0/1). Buttons on the card set these; the
     // gate inputs flip them on a rising edge. Default off.
-    { id: 'mirrorX',            label: 'Mirror X',  defaultValue: DEFAULTS.mirrorX,            min: 0,  max: 1, curve: 'linear' },
-    { id: 'mirrorY',            label: 'Mirror Y',  defaultValue: DEFAULTS.mirrorY,            min: 0,  max: 1, curve: 'linear' },
+    //
+    // ⚠ `curve: 'discrete'` IS THE CORRECTION, NOT THE ORIGINAL. Both were
+    // declared `linear` while `mirrorUv` hard-thresholds them
+    // (`mirrorX ? … : …` on a `>= 0.5` reduction at :659-660), so `linear` was
+    // always a lie about a two-state value. It went unnoticed because the CARD
+    // renders them as BUTTONS — the def-vs-card divergence class — and a
+    // def-driven face would have painted TWO CONTINUOUS ROTARIES over a switch.
+    // `looksLikeToggle` keys on exactly this shape (`discrete 0..1 → true`,
+    // `linear 0..1 → false`), so the declaration is what decides the primitive.
+    // Identical to the `cloudseed` stage-enable precedent and to the sibling
+    // `b3ntb0x`, which corrected the same two ids when its own face landed.
+    //
+    // ⚠ PIXEL-NEUTRAL BY CONSTRUCTION, and that is a claim about the THRESHOLD
+    // rather than about care: the shader compares `>= 0.5` either way, so every
+    // value a card, a face, an automation lane or a persisted patch could
+    // already hold still lands on the same side of it. Narrowing what is
+    // WRITABLE cannot move a pixel when the READ is a threshold.
+    //
+    // ⚠ AND IT COSTS A REAL-GPU RE-ATTEST — MEASURED, not assumed. `params` is
+    // NOT in `HASH_TRANSPARENT_PROPS`, so this two-word edit moves the WebGL
+    // content hash while the `noUserControl` block below does not. That A/B is
+    // the instrument's own negative control and both halves are recorded.
+    { id: 'mirrorX',            label: 'Mirror X',  defaultValue: DEFAULTS.mirrorX,            min: 0,  max: 1, curve: 'discrete' },
+    { id: 'mirrorY',            label: 'Mirror Y',  defaultValue: DEFAULTS.mirrorY,            min: 0,  max: 1, curve: 'discrete' },
     // Synthetic gate params the mirror_x_gate / mirror_y_gate bridge writes —
     // hidden (no card knob); the module edge-detects a rising edge to FLIP.
     { id: 'mirrorXGate',        label: 'Mir X Gate', defaultValue: DEFAULTS.mirrorXGate,       min: 0, max: 1, curve: 'linear' },
     { id: 'mirrorYGate',        label: 'Mir Y Gate', defaultValue: DEFAULTS.mirrorYGate,       min: 0, max: 1, curve: 'linear' },
+  ],
+
+  // #1726 — the two SYNTHETIC params. Neither is a control: each exists so the
+  // `mirror_*_gate` CV bridge has somewhere to write a raw gate swing that the
+  // module edge-detects into a mirror TOGGLE. The def has called them "hidden
+  // (no card knob)" since it was written; `module-face-lint` has no skip-list
+  // and `ModuleFace` has no `hidden` field, so without this a face would paint
+  // a continuous rotary over a voltage nobody sets by hand — right beside the
+  // MIRROR X / MIRROR Y toggles they drive. Two controls that look like four,
+  // with the two fakes indistinguishable from the real pair.
+  //
+  // Hash-transparent (`HASH_TRANSPARENT_PROPS`), so declaring this costs no
+  // re-attest — MEASURED on this branch, not assumed: the content hash is
+  // 0a711a14… both before and after this block. That is the negative control
+  // for the `curve` correction below, which DOES move it.
+  //
+  // The sibling `b3ntb0x` declares the identical pair for the identical reason;
+  // it also declares a third entry for a `freeze` param, and ⚠ THIS MODULE
+  // DELIBERATELY HAS NO SUCH PARAM — see the FREEZE note on the face below.
+  noUserControl: [
+    {
+      param: 'mirrorXGate',
+      writer: 'cv-port',
+      why: "The mirror_x_gate input's raw level. A RISING EDGE on it toggles Mirror X; the level itself is never a setting, and the face paints the mirrorX toggle it drives instead.",
+    },
+    {
+      param: 'mirrorYGate',
+      writer: 'cv-port',
+      why: "The mirror_y_gate input's raw level. A RISING EDGE on it toggles Mirror Y; the level itself is never a setting, and the face paints the mirrorY toggle it drives instead.",
+    },
   ],
 
   docs: {
@@ -535,6 +587,150 @@ export const bentboxDef: VideoModuleDef = {
       mirrorYGate: "Hidden synthetic gate param written by the mirror_y_gate CV bridge (raw 0..1). No knob; the module edge-detects its rising edge to flip Mirror Y.",
     },
   },
+
+  // ── THE FACEPLATE (queue Q24) ─────────────────────────────────────────────
+  //
+  // WHAT IT IS FOR. BENTBOX is a VIRTUAL CRT fed a hand-bent composite line.
+  // The picture is resampled to a 240-line raster, encoded to NTSC YIQ, abused
+  // as a "voltage" (wavefold → soft-clip), decoded back, blended with the
+  // previous frame, and finally painted through a phosphor pipeline. So the
+  // verb is not "pick a look" — it is BREAK THE SIGNAL AND WATCH THE SET TRY TO
+  // HOLD LOCK, and the face is organised as that path, one page per stage.
+  //
+  // ⚠ IT IS NOT "b3ntb0x WITH FEWER KNOBS", and the pages are where that shows.
+  // The two modules share exactly FOUR param ids (`mirrorX`, `mirrorY` and
+  // their two gates) and nothing else; `b3ntb0x.ts:51` says outright that
+  // NOTHING is imported from here. Its pages are a BEND CIRCUIT with four patch
+  // points; these are a BROADCAST CHAIN. Only the MIRROR page is legitimately
+  // the same idea, and it is the only one whose controls are the same controls.
+  //
+  // ⚠ AND THE TWO IDENTICALLY-LABELLED "Hue" DIALS ARE NOT INTERCHANGEABLE —
+  // measured, because it is the sharpest reason the family cannot share one
+  // spec sentence. Here `ang = (uChromaPhase + phaseNoise) * TWO_PI` over
+  // `chroma_phase ∈ [-1, 1]`, so the dial spans a FULL TURN: 0.5 is 180° (the
+  // real maximum hue shift) and BOTH ENDS return to the centre's colour
+  // (±1.0 → ±360°, cos = 1.0). b3ntb0x's `hue` tops out at 0.9π = 162° and
+  // never wraps. Same word, opposite geometry.
+  //
+  // ── RANKING, AND WHAT IT DESCENDS FROM ────────────────────────────────────
+  //
+  // Every destructive control ships at ZERO (only `bloom` 0.4 and `noise` 0.05
+  // are non-zero, and both are "a CRT always has some"), so nothing here is
+  // ranked by what moves at spawn — an effect is inert until you bend it. The
+  // rank instead follows the module's OWN stated outcome list, in its own docs:
+  // *"timing-domain glitch (sync tearing, hue shimmer, ghosting, solarization)
+  // rather than pixel mosh."*
+  //
+  //   1 `hsync_loss`    the tear — whole scanlines lose lock and displace far.
+  //                     First-named outcome and the most decisive single dial.
+  //   2 `feedback_gain` the ghost — max-blend recursion against the last frame.
+  //   3 `wavefold`      the solarize, and the DOMINANT composite term: it
+  //                     carries 0.7 of the luma blend weight against
+  //                     master_gain's 0.1 (`:343`).
+  //   4 `master_gain`   the DRIVE. It acts twice — `softClip(comp * gain)` at
+  //                     :337 and that 0.1 blend term at :343.
+  //
+  // ⚠ ONE CORRECTION TO THE QUEUE SPEC, MEASURED. It records that
+  // `master_gain = 0` "discards the whole composite stage", unconditionally.
+  // The blend weight is `uWavefold * 0.7 + uMasterGain * 0.1`, so that is true
+  // ONLY while `wavefold` is also 0 — which it is at the shipped defaults, and
+  // is not once SOLARIZE is engaged. At `wavefold = 0.5, master_gain = 0` the
+  // weight is 0.35 and the picture blends toward a zero-composite term, i.e. a
+  // DIFFERENT picture rather than a bypass. Both statements matter: at factory
+  // settings Gain-to-zero really is the cleanest image the module can make.
+  //
+  // ⚠ `order` AND `pages` DISAGREE ON PURPOSE, as always: `order` ranks by
+  // PRIORITY for the tiers that show a subset; `pages` follows the SIGNAL PATH
+  // for the tier that shows everything. Rank 1 therefore sits in band 1 here
+  // only by coincidence of the chain starting at sync.
+  //
+  // NOT CONTROL-HEAVY: six honest stages against `DOCK_TAB_MIN_BANDS = 7`, so
+  // stacked bands and no rail. Per the 2026-08-18 ruling the pages are NOT
+  // padded to reach it — the seventh stage does not exist.
+  //
+  // NO READOUTS, NO SIDEBAR, NO HERO — the 2026-08-19 rulings deleted the
+  // fields. See the FACE-READOUT note below for the two findings that lost
+  // their surface, recorded rather than quietly dropped.
+  //
+  // ⚠ FREEZE: THIS MODULE NEEDS NO `freeze` PARAM, AND THAT IS A MEASURED
+  // DIFFERENCE FROM ITS SIBLING rather than an oversight. `b3ntb0x` declares
+  // one because it animates by construction (subcarrier phase and sync wobble
+  // both advance with uTime, and CRT persistence feeds the previous frame
+  // back), so its capture can never settle. BENTBOX returns EARLY when nothing
+  // is patched — `if (uHasInput < 0.5)` at :266 outputs
+  // `vec4(0.04, 0.06, 0.10 + vUv.y * 0.05, 1.0)`, a pure function of `vUv` with
+  // NO time term — and the face VRT scene spawns exactly one node with nothing
+  // patched. The surface is therefore a STATIC gradient, identical frame to
+  // frame by construction. Adding a param would be a `params` edit on a def in
+  // the WebGL attest basis (an owner-machine re-attest) to buy an assertion
+  // that already holds. ⚠ What would change the answer: patching anything into
+  // IN, at which point every uTime term above comes alive.
+  face: {
+    // The SCREEN switch AND the four display affordances that live only on
+    // `BentboxCard.svelte` — fullscreen, full-frame, present-on-second-display
+    // and the resize handle. Promotion stops that card rendering on both
+    // surfaces, so without this extension they are deleted by the very change
+    // meant to preserve them (#1928 / #1935).
+    extension: 'bentbox',
+    glyph: 'none',
+    order: [
+      'hsync_loss', 'feedback_gain', 'wavefold', 'master_gain',
+      'chroma_phase', 'chroma_instability',
+      'hsync_drift', 'vsync_drift', 'scan_wobble',
+      'feedback_delay', 'bloom', 'noise',
+      'mirrorX', 'mirrorY',
+    ],
+    pages: [
+      // 1 — THE TIMEBASE. Everything that happens before a pixel has a colour:
+      // where each line starts and whether it holds lock at all.
+      {
+        id: 'sync',
+        label: 'sync',
+        hint: 'where each scanline starts, and whether it holds lock at all',
+        controls: ['hsync_drift', 'hsync_loss', 'vsync_drift', 'scan_wobble'],
+      },
+      // 2 — THE SUBCARRIER. Colour is a phase relationship in NTSC, so both of
+      // these are the same quantity: one static, one wandering.
+      {
+        id: 'chroma',
+        label: 'chroma',
+        hint: 'colour is a phase angle on the subcarrier — hold it, or let it wander',
+        controls: ['chroma_phase', 'chroma_instability'],
+      },
+      // 3 — THE BEND. The composite voltage itself: folded, then driven into
+      // the soft clipper.
+      {
+        id: 'bend',
+        label: 'bend',
+        hint: 'the composite voltage folded and driven into the clipper',
+        controls: ['wavefold', 'master_gain'],
+      },
+      // 4 — THE RECURSION. A max-blend against the previous frame, offset by a
+      // sub-frame delay so the trails are "alive".
+      {
+        id: 'feedback',
+        label: 'feedback',
+        hint: 'max-blend recursion against the last frame',
+        controls: ['feedback_gain', 'feedback_delay'],
+      },
+      // 5 — THE PHOSPHOR. What the tube adds after the signal is decoded.
+      {
+        id: 'crt',
+        label: 'crt',
+        hint: 'what the tube adds once the signal is decoded',
+        controls: ['bloom', 'noise'],
+      },
+      // 6 — THE FOLD, applied to the FINAL output coordinate, so the whole
+      // pipeline above renders inside it.
+      {
+        id: 'mirror',
+        label: 'mirror',
+        hint: 'a kaleidoscope fold of the finished picture',
+        controls: ['mirrorX', 'mirrorY'],
+      },
+    ],
+  },
+
   factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;
     const program = ctx.compileFragment(FRAG_SRC);

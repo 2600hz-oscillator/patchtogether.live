@@ -72,6 +72,144 @@ function selectGainsOf(outNode: FakeGain, created: FakeGain[]): [number, number]
   return [feeders[0]!.gain.value, feeders[1]!.gain.value] as [number, number];
 }
 
+/**
+ * The route state a trigger output is ACTUALLY DELIVERING, identified by which
+ * SOURCE fan-out feeds the open select gain — never by creation order.
+ *
+ * Routing is the whole subject here, so the probe must not assume it: a
+ * closure that reads `feeders[0]` and calls it "source 1" would report a
+ * correct-looking number while reading the wrong jack. `src1`/`src2` are the
+ * handle's own declared input nodes, so this reads the delivered wiring.
+ *
+ * Returns 1 / 2 for a source that reaches the bus at unity, 0 when both select
+ * gains are muted, and `'BROKEN'` if both are open (which the module must never
+ * do — a summing bus carrying two clocks at once).
+ */
+function deliveredRoute(
+  handle: { inputs: Map<string, { node: unknown }>; outputs: Map<string, { node: unknown }> },
+  outId: string,
+  created: FakeGain[],
+): 0 | 1 | 2 | 'BROKEN' {
+  const out = handle.outputs.get(outId)!.node as unknown as FakeGain;
+  const src1 = handle.inputs.get('trig_from1')!.node as unknown as FakeGain;
+  const src2 = handle.inputs.get('trig_from2')!.node as unknown as FakeGain;
+  const feeders = created.filter((g) => g.outgoing.some((c) => c.node === out));
+  expect(feeders.length, `${outId} must be fed by exactly two select gains`).toBe(2);
+  const from1 = feeders.find((g) => src1.outgoing.some((c) => c.node === g));
+  const from2 = feeders.find((g) => src2.outgoing.some((c) => c.node === g));
+  expect(from1, `${outId} has no select gain fed by trig_from1`).toBeTruthy();
+  expect(from2, `${outId} has no select gain fed by trig_from2`).toBeTruthy();
+  const open1 = from1!.gain.value >= 0.5;
+  const open2 = from2!.gain.value >= 0.5;
+  if (open1 && open2) return 'BROKEN';
+  if (open1) return 1;
+  if (open2) return 2;
+  return 0;
+}
+
+/** The state a dial position MEANS: the nearest declared state, clamped to the
+ *  declared range. This is the reference the delivered routing is measured
+ *  against — it is the definition of a banded selector, not a re-implementation
+ *  of the DSP's internals. */
+function nearestState(v: number): number {
+  return Math.round(Math.max(0, Math.min(2, v)));
+}
+
+describe('moog993 ROUTE is a BANDED selector, not a continuous dial (#1911)', () => {
+  // 201 evenly-spaced positions across the declared 0..2 travel — the same
+  // sweep the issue measured, re-run here as a permanent leg.
+  const SWEEP = Array.from({ length: 201 }, (_, i) => i / 100);
+
+  it('every dial position on a fresh spawn delivers its NEAREST declared state', async () => {
+    const wrong: string[] = [];
+    for (const v of SWEEP) {
+      const { ctx, created } = makeCtx();
+      const handle = await moog993Def.factory(
+        ctx as unknown as AudioContext,
+        makeNode({ route1: v }),
+      );
+      const got = deliveredRoute(handle, 'trig_out1', created);
+      if (got !== nearestState(v)) {
+        wrong.push(`route1=${v} delivered ${got}, expected state ${nearestState(v)}`);
+      }
+    }
+    expect(wrong, `positions whose delivered routing is not their nearest state (of ${SWEEP.length} swept)`).toEqual([]);
+  });
+
+  it('every dial position delivers its nearest state through setParam too', async () => {
+    const { ctx, created } = makeCtx();
+    const handle = await moog993Def.factory(ctx as unknown as AudioContext, makeNode());
+    const wrong: string[] = [];
+    for (const v of SWEEP) {
+      handle.setParam('route2', v);
+      const got = deliveredRoute(handle, 'trig_out2', created);
+      if (got !== nearestState(v)) wrong.push(`setParam(route2, ${v}) delivered ${got}`);
+    }
+    expect(wrong, 'positions whose live setParam routing is not their nearest state').toEqual([]);
+  });
+
+  // The instrument's own control: the sweep above cannot pass by always
+  // returning one state, because the reference itself takes all three — and a
+  // probe blind to the difference would fail THIS test instead.
+  it('the reference takes all three states across the sweep (instrument control)', () => {
+    expect(new Set(SWEEP.map(nearestState))).toEqual(new Set([0, 1, 2]));
+  });
+
+  it('a position inside the OFF band mutes both sources (negative control)', async () => {
+    const { ctx, created } = makeCtx();
+    const handle = await moog993Def.factory(
+      ctx as unknown as AudioContext,
+      makeNode({ route3: 0.4 }),
+    );
+    expect(deliveredRoute(handle, 'trig_out3', created)).toBe(0);
+  });
+
+  it('a persisted non-integer route RESPAWNS routed, not silent', async () => {
+    // The reload path: a stored 1.4 reached the factory as an initial param and
+    // muted both select gains, so the patch came back SILENT on every load.
+    const { ctx, created } = makeCtx();
+    const handle = await moog993Def.factory(
+      ctx as unknown as AudioContext,
+      makeNode({ route1: 1.4 }),
+    );
+    expect(deliveredRoute(handle, 'trig_out1', created)).toBe(1);
+  });
+
+  it('one wheel notch off the default still routes', async () => {
+    // Knob.svelte's wheel step is 0.005 of the arc → 1.01 on a 0..2 dial.
+    const { ctx, created } = makeCtx();
+    const handle = await moog993Def.factory(ctx as unknown as AudioContext, makeNode());
+    handle.setParam('route1', 1.01);
+    expect(deliveredRoute(handle, 'trig_out1', created)).toBe(1);
+  });
+
+  it('readParam reports the SAME state the routing delivers, at every position', async () => {
+    // Three numbers once described one control: the store held 1.4, the DSP
+    // routed nothing, and readParam said 0.
+    const { ctx, created } = makeCtx();
+    const handle = await moog993Def.factory(ctx as unknown as AudioContext, makeNode());
+    const disagreements: string[] = [];
+    for (const v of SWEEP) {
+      handle.setParam('route1', v);
+      const delivered = deliveredRoute(handle, 'trig_out1', created);
+      const reported = handle.readParam('route1');
+      if (reported !== delivered) {
+        disagreements.push(`at ${v}: delivered ${delivered}, readParam ${reported}`);
+      }
+    }
+    expect(disagreements, 'positions where readParam disagrees with the delivered routing').toEqual([]);
+  });
+
+  it('an out-of-range value lands on a declared state rather than muting', async () => {
+    const { ctx, created } = makeCtx();
+    const handle = await moog993Def.factory(ctx as unknown as AudioContext, makeNode());
+    handle.setParam('route1', 5);
+    expect(deliveredRoute(handle, 'trig_out1', created)).toBe(2);
+    handle.setParam('route1', -3);
+    expect(deliveredRoute(handle, 'trig_out1', created)).toBe(0);
+  });
+});
+
 describe('moog993 factory: passive trigger routing', () => {
   it('exposes the declared inputs + outputs on the handle', async () => {
     const { ctx } = makeCtx();

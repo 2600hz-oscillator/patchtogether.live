@@ -27,6 +27,11 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   // ES-9 native-bridge I/O module (2026-07-10): born strict — every jack and
   // class selector documented from day one (46 ports, 22 controls).
   'es9',
+  // VST BRIDGE cards (2026-08-19): born strict — the vst-bridge helper's
+  // in-graph faces (instrument voice + stereo FX insert), every port
+  // documented from day one.
+  'vstInstrument',
+  'vstFx',
   // CV BUDDY (2026-07-21): born strict — the ES-9 note-lane sink. Every port
   // (gate/pitch/velocity in; pitchCv/gate/velCv/run/clock out) + both clock
   // params documented from day one.
@@ -446,4 +451,10 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   // morphed video_out AND a derived cube-slice audio_out. Born strict — docs
   // authored + verified against the source..
   'videocube',
+  // TEMPEST (2026-08-21): BOY-SCOUTED IN, not born strict. It shipped (#935)
+  // with no `docs` block at all and no entry here, which is exactly the debt
+  // the living-docs ratchet says to pay when you next touch a module — so it
+  // was paid alongside its face rather than re-noticed a fourth time. The prose
+  // is written from this def's own header and factory, not from its plan doc.
+  'tempest',
 ]);

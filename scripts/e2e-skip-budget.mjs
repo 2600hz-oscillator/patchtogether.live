@@ -182,6 +182,43 @@ export const SKIP_BUDGET = [
       'WebGL2 capability probes. CI SwiftShader provides WebGL2, so a row on an audited lane means the '
       + 'software renderer regressed and every WebGL2 assertion silently stopped asserting.',
   },
+
+  // ── #1905 render-worker producer-init race: the REAL-GPU control ──────────
+  // Two guards in ONE test, deliberately separate entries: they fire in
+  // different places for opposite reasons, and one shared entry would let
+  // either go dark behind the other.
+  {
+    specs: ['render-worker-toybox.spec.ts'],
+    reason: /REAL-GPU control: under SwiftShader/,
+    lanes: [],
+    homeLane: 'local',
+    why:
+      'The #1905 two-directional control arms the producer-init race (a worker frame posted before the node '
+      + 'had a picture) and needs the worker to be the LIVE render path to hold that window open. Under '
+      + 'SwiftShader the TOYBOX worker context dies mid-run — a separate, pre-existing gap, which is why '
+      + 'toybox is renderLocus:worker-experimental — so the window cannot be held and the control would be a '
+      + 'slow unstable red saying nothing about the defect. It is deliberately NOT tagged @webgl-smoke '
+      + '(that tag would enrol it in the one CI lane where it cannot speak), and render-worker-*.spec.ts is '
+      + 'in WEBGL_HEAVY_GLOBS so it is testIgnored out of the sharded matrix: lanes:[] because this guard '
+      + 'cannot reach an audited lane at all. It resolves on a developer SwiftShader flake-check; the test '
+      + 'itself RUNS on the real-GPU attest pass (E2E_WEBGL_HEAVY=only + E2E_REAL_GPU=1), which is the lane '
+      + 'every #1905 sighting came from and the one this control exists to protect.',
+  },
+  {
+    specs: ['render-worker-toybox.spec.ts'],
+    reason: /worker-WebGL2 did not initialize on this renderer/,
+    lanes: [],
+    homeLane: 'webgl-attest',
+    why:
+      'Dynamic capability guard inside the same #1905 control: if worker-WebGL2 never initializes there is no '
+      + 'race window to arm, so it skips LOUDLY (carrying the full handshake diagnosis in the reason) rather '
+      + 'than passing vacuously against a main-thread fallback — the exact "green and blind to the whole thing '
+      + 'it covers" failure this spec family already hit once. homeLane webgl-attest because that is the pass '
+      + 'where the test actually runs on CI infrastructure and where a worker that stops initializing on a real '
+      + 'GPU would surface; a row there means the worker path went dark and the control silently stopped '
+      + 'exercising it. Not audited (scope note 3), so this is a resolution record, not a checked claim.',
+  },
+
   {
     specs: ['picturebox-gif.spec.ts'],
     reason: /ImageDecoder\(image\/gif\) unavailable/,
@@ -281,7 +318,12 @@ export const SKIP_BUDGET = [
       + 'collapse, and the skip names the type so a producer regressing to black is at least visible here.',
   },
   {
-    specs: ['blood-audio-output.spec.ts', 'blood-ingame.spec.ts', 'blood-keyboard.spec.ts'],
+    // ⚠ `blood-keyboard.spec.ts` WAS HERE AND IS GONE — the spec was DELETED by
+    // owner ruling (2026-08-23, verbatim: "delete the blood keyboard spec"), so
+    // the name had to leave this list with it: this budget is anchored
+    // budget→tree, and "an entry naming a spec that no longer exists is RED".
+    // The other two BLOOD specs are untouched and keep this entry alive.
+    specs: ['blood-audio-output.spec.ts', 'blood-ingame.spec.ts'],
     reason: /BLOOD (engine|runtime)|engine not ready|extras unavailable|runtime\/extras unavailable/,
     lanes: ['e2e'],
     homeLane: 'e2e',
@@ -342,6 +384,21 @@ export const SKIP_BUDGET = [
     why:
       'Real Clerk sign-in needs the dev-instance test credentials, which are not wired into the sharded '
       + 'lane today. The skip names both env vars so arming the guard is a secrets change, not a code hunt.',
+  },
+  {
+    specs: ['cv-buddy-face.spec.ts'],
+    reason: /multichannel output device|E2E_ES9_HARDWARE=1/,
+    lanes: ['e2e'],
+    homeLane: 'local',
+    why:
+      'Hardware-in-the-loop, #2024: the CV BUDDY face\'s last leg needs a physical ES-9, and the probe is '
+      + 'real rather than an env check — it reads `destination.maxChannelCount` and requires >= 8. CI can '
+      + 'never satisfy it twice over (no device, and Chrome caps the destination at 2 channels), so the '
+      + 'reason NAMES the measured number it saw. ⚠ Unlike its es9-hardware sibling this guard INVERTS on '
+      + 'the opt-in flag: with E2E_ES9_HARDWARE=1 a missing rig THROWS instead of skipping, so in the lane '
+      + 'that promises hardware "the rig is unplugged" cannot green the same way "the code is fine" does. '
+      + 'Everything about the face that a browser can prove is covered unskipped by the six other tests in '
+      + 'this spec; only voltage at a physical jack is deferred to the owner recipe in the PR body.',
   },
   {
     specs: ['es9-hardware.spec.ts'],
@@ -541,6 +598,28 @@ export const SKIP_BUDGET = [
       + 'JSON audit step: lanes:[] means a row here in an audited lane is a partition leak. Lost meanwhile: '
       + 'PEAKSTATE\'s per-port render gate (unconsumed outputs stay dark) and WAVECEL.scope_out producing a '
       + 'structured, frame-stable trace independent of the on-card preview toggle.',
+  },
+  {
+    specs: ['quadralogical-face-screen.spec.ts'],
+    reason: /FLAKE-PARK #1847/,
+    lanes: ['e2e'],
+    homeLane: 'e2e',
+    why:
+      'PARKED (#1847) — both legs of the QUADRALOGICAL screen spec. ⚠ THIS ENTRY IS NOT THE '
+      + 'RECOVERED-ON-RETRY SHAPE THE REST OF THIS LIST RECORDS, and the distinction matters to whoever '
+      + 'un-parks it: both legs failed BOTH attempts at the FULL 90 s SLOW_BOOT_TEST_TIMEOUT_MS, inside '
+      + 'page.evaluate in sampleQuadrants. That is UNDER-BUDGETING, not nondeterminism. The in-page loop is '
+      + 'already correct by construction — it counts 240 FRAMES via rAF rather than wall-clock, which is what '
+      + 'the standard asks for; what does not scale is the per-test BOUND, a flat 90 s sized for BOOT while '
+      + 'this spec spends a boot AND a 240-frame sample. At the measured 7.9 fps under SwiftShader the sample '
+      + 'alone is ~30 s. '
+      + 'It surfaced on batch-22 G3 (#2120) because four new scenes re-packed the shards and these legs landed '
+      + 'on a hot one — the load-sensitivity class of #2096/#2114 — so it is a defect in neither the faces nor '
+      + 'these tests\' logic. ROOT CAUSE IS THE FLEET TIMEOUT DEFAULT and the fix is the owner\'s option-B '
+      + 'call, not a one-spec bound raise, which would only move the lottery onto the next-hottest spec. '
+      + 'Lost meanwhile: the bespoke proof that each quadrant carries ITS OWN input under its own corner label '
+      + '— quadrant-to-input MAPPING, which no fleet sweep covers. The generic screen coverage '
+      + '(reachable / collapse / reclaim) is superseded by the fleet SUBJECTS table.',
   },
 ];
 

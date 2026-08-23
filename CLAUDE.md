@@ -7,19 +7,29 @@ named skill under `.claude/skills/`. **When this file and a skill disagree, this
 file is the rule and the skill is the detail** — and the measured numbers live in
 the skill, so they cannot drift between two copies.
 
-## Every feature and every bug fix is a GitHub issue
+## Issues: NOBODY opens them — fix inside the planned work
 
-Whether the owner reported it or an agent found it, it gets an issue **before or
-with** its PR, and the PR closes it (`Fixes #N`). Found a defect and fixed it in
-the same session? File it anyway, then close it — the issue can be open for
-minutes. The point is that the work is searchable six weeks later by someone who
-was not in the conversation.
+Owner ruling (2026-08-22, verbatim): *"you do not open issues, nor do agents. if
+bugs are discovered in the course of doing planned work, then they are fixed as
+part of that planned work. anything severe enough to justify variance from this
+requires it be brought to my explicit attention. we need to track towards zero
+issues on the board."*
 
-- An issue is closed by a merged fix or an explicit owner `wontfix` — never by
-  "seems fine now".
+- A bug found mid-task is fixed **in the same PR**, scoped honestly, with the story
+  told in the PR body — the PR narrative replaces the issue number as the searchable
+  record.
+- Too big to fold in → bring it to the **owner explicitly** (via the orchestrator);
+  never quietly file.
+- Existing open issues only shrink: closed by a merged fix (`Fixes #N`) or explicit
+  owner closure — never by "seems fine now".
+- CI-blocking problem tests: **disable + add to the tests-to-fix list in
+  `.myrobots`** (owner ruling, same day) and keep moving — unless parking would lose
+  significant coverage, which goes to the owner instead. Triage first: a test whose
+  git history shows no flake fixes is more likely under-budgeted than flaky, and
+  those need opposite responses.
 - Automated health alerts (`alert` / `observability` labels) are exempt; they have
   their own lifecycle.
-- Details, templates and labels: [`docs/process/issue-workflow.md`](docs/process/issue-workflow.md).
+- Historical flow (retired): [`docs/process/issue-workflow.md`](docs/process/issue-workflow.md).
 
 ## Commands run through flox
 
@@ -297,10 +307,46 @@ condition on its own merits), never the threshold.
 The repaired versions are strictly stronger: they exercise real overflow from a
 genuinely wide face instead of overflow manufactured by padding a narrow one.
 
-## Faceplate chrome: NO resting numbers, NO useless width
+## Faceplate chrome: NO resting derived text, NO useless width
 
-Three owner rulings from one review round (2026-08-17). They are about
+Owner rulings from two review rounds (2026-08-17 and 2026-08-19). They are about
 FACEPLATES — the legacy cards are untouched.
+
+**THE RESTING FACEPLATE PAINTS NO DERIVED-STATE TEXT, IN ANY SHAPE.** The owner
+has now said this FOUR times about FOUR different mechanisms, and each one had
+passed the gate written for the previous one:
+
+1. the resting decimal under a dial (`persistentReadout`, deleted 2026-08-17);
+2. the dock SIDEBAR — the right-hand column, all three kinds, deleted
+   2026-08-19: *"this should go away and we reclaim the vertical space. I DO NOT
+   WANT THESE RIGHT HAND TEXT AREAS I DO NOT WANT EXTRA TEXT. i explicitly
+   already dictated that several times"*;
+3. the HERO READOUT STRIP — a labelled row of derived values under the hero, on
+   50 of 68 faces, deleted 2026-08-19: *"you don't need to have the out-silent
+   text at all … we absolutely have to stop doing shit like that. i said
+   minimal, and good use of screen real estate"* (#1957);
+4. the per-control caption a section heading already conveys (`face.bareCells`).
+
+**Permitted resting text, exhaustively:** the module NAME (dock title bar),
+TAB/SECTION labels, CONTROL CAPTIONS, and option/landmark NAMES that
+disambiguate a control's own position. Everything else — a value, a measurement,
+a state word, a sentence — lives in `aria-valuetext` on the control it
+describes, which is speakable and assertable but unpainted.
+
+⚠ **So the gate denies the SHAPE, never a mechanism.**
+`face-resting-text-source.test.ts` enumerates the permitted text ROLES and
+refuses any `ModuleFace` field without one — RED on the TYPE, before a module
+adopts it, which is the only formulation a fifth mechanism cannot walk around.
+It states its own blind spot: **text drawn INTO a canvas** (a glyph, a video
+surface, a shell extension's `fullViewBody`) is invisible to it, and only the
+dock VRT baselines and a human reviewing them can see that.
+
+⚠ **Deleting a readout deletes a FINDING.** Kick drum's TAIL was 398 ms where
+the nearest knob said 450; resofilter's five modes collapsed to three distinct
+pairs; marbles' CLUSTERS model runs the COIN generator. The arithmetic survives
+in the `<mod>-face-model.test.ts` unit lane, but nothing now joins it to a
+surface a player can see. When you remove one, **say which finding lost its
+surface** rather than letting the coverage quietly lapse.
 
 **No face prints a decimal under a control, and the data is REMOVED, not
 hidden.** *"we should kill the light white decimil represebtation of knob state

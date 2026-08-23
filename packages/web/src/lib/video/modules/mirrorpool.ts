@@ -347,6 +347,9 @@ interface MirrorpoolParams {
   look_yaw: number;    // free-look yaw (rad)                       [pad 2 X]
   look_pitch: number;  // free-look pitch (rad)                     [pad 2 Y]
   zoom: number;        // 0..1 → FOV 70°..20°
+  /** Hidden determinism toggle for VRT capture. NOT a control — see the
+   *  ParamDef and the `noUserControl` entry. */
+  freeze: number;
 }
 
 const DEFAULTS: MirrorpoolParams = {
@@ -362,6 +365,12 @@ const DEFAULTS: MirrorpoolParams = {
   look_yaw: 0,
   look_pitch: 0,
   zoom: 0.5,
+  // ⚠ SEEDED HERE ON PURPOSE, not merely declared on `params`. The node's param
+  // map is built from the def's defaults, and every write path guards on the id
+  // already EXISTING in it — a `freeze` that is declared but not seeded is a
+  // write that silently no-ops, which is the #1941 shape (a pin gated on
+  // something nothing sets) wearing a different mask.
+  freeze: 0,
 };
 
 export const MIRRORPOOL_DEFAULTS: Readonly<MirrorpoolParams> = DEFAULTS;
@@ -442,7 +451,214 @@ export const mirrorpoolDef: VideoModuleDef = {
     { id: 'look_yaw', label: 'Look X', defaultValue: DEFAULTS.look_yaw, min: -Math.PI, max: Math.PI, curve: 'linear' },
     { id: 'look_pitch', label: 'Look Y', defaultValue: DEFAULTS.look_pitch, min: -1.45, max: 1.45, curve: 'linear' },
     { id: 'zoom', label: 'Zoom', defaultValue: DEFAULTS.zoom, min: 0, max: 1, curve: 'linear' },
+    // ── freeze — the hidden VRT/determinism toggle ────────────────────────
+    //
+    // ⚠ THIS MODULE CANNOT BE PINNED BY TIME ALONE, and the existing seam is
+    // exactly the trap the b3ntb0x face hit (#1941 — grep the setters). Two
+    // independent things advance here:
+    //
+    //   * `__videoEngineFreezeTime` pins `tSec`, and only `tSec`. It is a
+    //     globalThis flag read in `draw`, used by the render-smoke specs and by
+    //     `e2e/vrt/mirrorpool-composite.spec.ts`. The FACE VRT harness
+    //     (`freezeFaceVideo`) writes `params.freeze` through the Y.Doc and sets
+    //     NO GLOBALS, so that seam is dead for it.
+    //   * The wave field is a PING-PONG SIMULATION (`simA`/`simB`, read front /
+    //     write back every draw) fed by `spawnDrops(rain, seed, frameIndex)`,
+    //     and `frameIndex` advances per frame regardless of the clock. So even
+    //     with time pinned the height field keeps integrating and new rain
+    //     impacts keep landing — the analytic fallback keeps its own
+    //     `activeRings` history for the same reason. A screenshot can never
+    //     settle against that.
+    //
+    // Written ONLY by the VRT harness — see `videoFaceWhy` on this module's
+    // FACES roster entry, and the `noUserControl` entry below. At >= 0.5 `draw`
+    // is a no-op, so every surface holds its last frame instead of going black,
+    // which is the same shape `spirographs`, `backdraft`, `freezeframe`,
+    // `grainsOfVision` and `b3ntb0x` already use.
+    { id: 'freeze', label: 'Freeze', defaultValue: DEFAULTS.freeze, min: 0, max: 1, curve: 'linear' },
   ],
+
+  // #1726 — the ONE synthetic param. It is not a control: `module-face-lint`
+  // requires every ParamDef to render exactly one interactive cell on a
+  // promoted face, and a `curve: 'linear'` freeze would paint as a continuous
+  // rotary over a flag nobody sets by hand. Declaring it here is what exempts
+  // it, and `face.order` does not rank it.
+  //
+  // Hash-transparent (`HASH_TRANSPARENT_PROPS`), so this block costs no
+  // re-attest — ⚠ unlike the `params` entry above it describes, which is real
+  // code on a def inside the WebGL basis and DOES move the attest hash.
+  noUserControl: [
+    {
+      param: 'freeze',
+      writer: 'internal',
+      why: "A determinism toggle for VRT capture, with NO control anywhere - not on the card, not on the faceplate, not on the patch surface. At 0.5 or above the draw step is a no-op so every surface holds its last frame. This module animates by construction and time alone cannot pin it: the height field is a ping-pong wave simulation that integrates once per draw and spawns new rain impacts from a frame counter, so two captures of the same settings are never the same pixels. The visual-regression harness writes it before comparing a screenshot; nothing else ever does.",
+    },
+  ],
+
+  // ── THE FACEPLATE ──────────────────────────────────────────────────────────
+  //
+  // WHAT IT IS FOR. Every other video module in the fleet TRANSFORMS AN
+  // INCOMING FRAME — feedback, keying, quantising, warping. mirrorpool renders
+  // a WORLD: a hemisphere of water carrying a real velocity-form wave equation,
+  // where the two video inputs are not the subject but the OPTICS (what lies
+  // under the surface, and what the surface reflects). So the verb is not
+  // "process a picture", it is STAND SOMEWHERE AND LOOK AT WATER — place the
+  // eye, set the weather, and the picture is whatever the physics does. Every
+  // rank below descends from that one sentence.
+  //
+  // THE PADS RANK FIRST, AND THEY COST NOTHING TO DO SO. A declared 2-D pad is
+  // dock-only (`laneOrder` excludes each pad's anchor: a pad is square and a
+  // lane knob column is 46 px), so it takes no lane slot and ranking it first
+  // is free. It is also the honest ranking for a module whose main control IS
+  // its camera. ⚠ This corrects the queue's §25.4 tier sentence, which had
+  // "compact adds the position pad" — no tier below the dock ever shows a pad.
+  //
+  // THE LANE LADDER, read back as a sentence (the seven throws, pads excluded):
+  // at mini you get MODE — the one control that changes what the module IS, a
+  // refractive pool or a mirror, and at its default it is BIT-EXACTLY the raw
+  // Fresnel term (`surfaceReflectivity(F, 0) === F` at every incidence
+  // sampled), i.e. the physics with no thumb on the scale. At compact, add WIND
+  // — with it at 0 the height field early-returns hard flat, a true null, so it
+  // decides whether there is any surface motion at all. Then RAIN, the second
+  // and independent source of surface motion (its own seeded Poisson
+  // scheduler). At plate, add DIR, BRIGHT and ZOOM. DIST is dock-only.
+  //
+  // ⚠ DIR RANKS BELOW WIND ON PURPOSE. `wind_dir` is BIT-EXACTLY INERT whenever
+  // `wind_speed` is 0 — measured, identical `{height:0,dhdx:0,dhdz:0}` at dir 0
+  // and dir π/2 — so it is a MODIFIER of Wind, not a peer, and must never reach
+  // a tier its master has not. (It is live as shipped, at `wind_speed = 0.3`,
+  // but one knob turn away it is dead.) The queue asked for it immediately
+  // after WIND; it sits one lower, behind RAIN, because RAIN is unconditionally
+  // live and DIR is not — which is the same rule applied, not a departure from
+  // it.
+  //
+  // `order` and `pages` DISAGREE deliberately. `order` is PRIORITY — what a
+  // shrinking tier keeps. `pages` is the ORDER OF THE PICTURE'S CAUSES: what
+  // the water is doing, then how light leaves it, then where the eye stands,
+  // then where it points. Four bands, under `DOCK_TAB_MIN_BANDS = 7`, so this
+  // face is UNTABBED and its band labels paint. It is not padded to reach the
+  // rail — there are four ideas here and inventing three more is the thing the
+  // tabbed ruling forbids in the same paragraph that mandates the rail.
+  face: {
+    order: [
+      // The two pads first: dock-only, and they cost no lane rank.
+      'orbit_az', 'orbit_el',
+      'look_yaw', 'look_pitch',
+      // The lane budget, in priority order.
+      'surface_mode',
+      'wind_speed',
+      'rain',
+      'wind_dir',
+      'brightness',
+      'zoom',
+      // Dock-only.
+      'orbit_dist',
+    ],
+
+    pages: [
+      {
+        id: 'weather',
+        label: 'weather',
+        hint: 'the two independent sources of surface motion — a directional swell, and rain impacts that expand into rings',
+        controls: ['wind_speed', 'wind_dir', 'rain'],
+      },
+      {
+        id: 'surface',
+        label: 'surface',
+        hint: 'how light leaves the water: MODE sweeps the Fresnel split from a refractive pool to a near-full mirror',
+        controls: ['surface_mode', 'brightness'],
+      },
+      {
+        id: 'position',
+        label: 'position',
+        hint: 'where the eye STANDS — the pad rides a sphere around the pool, and below the centre line it goes underwater',
+        controls: ['orbit_az', 'orbit_el', 'orbit_dist'],
+      },
+      {
+        id: 'look',
+        label: 'look',
+        hint: 'where the eye POINTS, as an offset from the aim-at-centre framing',
+        controls: ['look_yaw', 'look_pitch', 'zoom'],
+      },
+    ],
+
+    // ⚠ MANDATORY, and counter-intuitively so — the same trap backdraft and
+    // spirographs both document. `primaryAudioOutPortId` matches
+    // `type === 'audio'` and this def has no audio port, so ANY other glyph
+    // literal resolves to `{kind:'static'}` and reddens module-face-lint's
+    // dead-glyph clause. The live picture arrives through a different seam
+    // entirely — `hasVideoSurface(def)` (`domain === 'video'`) mounting
+    // VideoTileThumb at the lane, and the `fullViewBody` extension at the dock.
+    glyph: 'none',
+
+    // ⚠ THE SCREEN ON/OFF SWITCH ARRIVES THROUGH THIS SLOT, AND IT HAS TO
+    // (#1928). The 2026-08-18 ruling gives every video module a screen on/off
+    // toggle. A toggle authored on `MirrorpoolCard.svelte` would be DELETED BY
+    // THIS PROMOTION: `migrated()` becomes true and neither surface renders the
+    // card again. There is no generic shell affordance to fall back on —
+    // `previewCollapsed` appears in zero shell files — so it comes through
+    // `fullViewBody`, the route backdraft, videoOut and spirographs take.
+    //
+    // Contract-transparent: `face.extension` is a STRING, not a component, so
+    // the shell never imports a mirrorpool file (`module-shell-import-guard`),
+    // and a def's top-level `face` is stripped from the attest basis — so
+    // declaring it costs no re-attest and no contract-lock line.
+    extension: 'mirrorpool',
+
+    // All seven non-pad controls are `<NeonFader>` THROWS on the card. Nothing
+    // in a ParamDef separates "a throw" from any other continuous scalar, so a
+    // face that does not declare them silently repaints all seven as dials — a
+    // look regression the shell cannot infer. (The queue's §25.4 did not
+    // mention this; it was found by reading the card, per its own ATTACK 2.)
+    paramCells: {
+      wind_speed: 'fader', wind_dir: 'fader', rain: 'fader',
+      brightness: 'fader', surface_mode: 'fader',
+      orbit_dist: 'fader', zoom: 'fader',
+    },
+
+    // THE TWO CAMERA PADS. The card has always drawn these as 2-D pads; four
+    // dials would keep every value and lose the GESTURE, which is the whole
+    // point of a camera you aim. Ranges come off each axis's own ParamDef, so
+    // the card/def divergence class is unrepresentable here by construction.
+    //
+    // ⚠ This also MIGRATES A HAND-CLONE ONTO THE SHARED CELL.
+    // `card-primitive-parity.test.ts` records that eight cards hand-roll a
+    // `div.pad` + `onpointerdown` instead of mounting the shared `<XyPad>`, and
+    // names `MirrorpoolCard` among them — a clone is invisible to that scan, so
+    // moving these onto the declared cell brings the module INTO a gate it
+    // currently escapes rather than hiding it there.
+    xyPads: [
+      { x: 'orbit_az', y: 'orbit_el', label: 'position' },
+      { x: 'look_yaw', y: 'look_pitch', label: 'look' },
+    ],
+
+    // ⚠ THERE IS NO `hero` HERE, AND THE READOUT THIS FACE WAS DESIGNED AROUND
+    // IS GONE. It declared `hero.readouts: [{ label: 'eye', … }]` printing
+    // UNDER / OVER / OUTSIDE — where the eye is standing relative to the water
+    // and the bowl's rim. The owner ruling of 2026-08-19 (#1957) deleted the
+    // hero readout row from the platform outright: the resting faceplate paints
+    // no derived-state text in ANY shape, and `ModuleFaceHero` no longer carries
+    // a `readouts` field for one to be declared in.
+    //
+    // WHICH FINDING LOST ITS SURFACE, stated rather than left to lapse (the
+    // CLAUDE.md rule on deleting a readout): the eye's horizontal radius is
+    // `dist·cos el`, so a readback of EITHER camera dial is blind to the other
+    // — hold DIST at 1 and the same camera is inside the bowl at `el = 0.55`
+    // and exactly on its rim at `el = 0`, and crossing `eye.y < 0` switches the
+    // shader to a whole different underwater branch. Nothing a player can SEE
+    // on the resting faceplate says that any more; the picture does, and the
+    // arithmetic survives in `mirrorpool-face-model.ts` with its permanent
+    // negative controls in the unit lane.
+    //
+    // ⚠ THE QUEUE'S PROPOSED `eye-side` (ABOVE/BELOW) READOUT WAS ALREADY
+    // REFUSED BEFORE THE RULING, and the refusal is still the useful part:
+    // `eye.y = dist·sin el` with `dist` clamped strictly positive, so
+    // `sign(eye.y) === sign(orbit_el)` EXACTLY — measured across 729 camera
+    // settings with zero disagreements. That readout would have been one dial's
+    // sign relabelled, which is the one thing a derived readout must not be.
+    // The refuted identity is kept as a permanent leg in
+    // `mirrorpool-face-model.test.ts` so it cannot go stale unnoticed.
+  },
 
   docs: {
     explanation: "mirrorpool renders a hemisphere pool of liquid sitting in a box, viewed by a repositionable ORBIT camera you fly around the pool. Two video inputs feed the optics: POOL is surface-mapped to the INSIDE of the hemisphere (the underwater view you see refracted through the water) and SCENE is the surroundings, reflected off the surface as an overhead backdrop. A single real height field drives everything: WIND raises a set of directional swell waves (bigger waves are genuinely taller and travel faster — dispersion, not a flat normal-map trick) and RAIN spawns raindrop impacts that punch one-shot dimples which expand into propagating rings, denser and deeper from drizzle up to a downpour. The surface normal reconstructed from that height field drives a physically-based Fresnel split: in the default REFRACT mode you see the reflected scene layered over the refracted, caustic-lit, colour-absorbed pool beneath; sweep MODE toward MIRROR and the surface becomes a near-full mirror of the sky/scene that the ripples shatter and distort. BRIGHT is a virtual sun that scales overall scene light (no sun disc is drawn yet). The camera is the card's TWO X-Y pads: pad 1 POSITIONS the eye on a sphere around the pool (Orbit = azimuth around it, Elev = elevation from straight overhead down BELOW the surface for an underwater Snell's-window view) with a Dist dial for how far out it sits; pad 2 is the free-LOOK (Look X = yaw, Look Y = pitch) that swings the view off the default aim-at-centre so you can look any direction, and Zoom sets the field of view. Every control has a matching CV input, so patch an LFO into orbit_az_cv for a slow orbit, a noise source into rain_cv to gust the storm, or an envelope into surface_mode_cv to melt between a clear refractive pool and a hard mirror. With nothing patched it still renders a live procedural sky + water, so it works as a standalone generative source.",
@@ -476,6 +692,7 @@ export const mirrorpoolDef: VideoModuleDef = {
       look_yaw: "Look X (-pi..pi, default 0): free-LOOK yaw — the X axis of look pad 2. 0 aims straight at the pool centre so the pool is always framed at rest; sweeping it swings the view left/right so the camera can look away from the pool.",
       look_pitch: "Look Y (-1.45..1.45 rad, default 0): free-LOOK pitch — the Y axis of look pad 2. 0 aims at the centre; positive tilts the view up, negative down, off the aim-at-centre. Clamped to about +/-83 degrees.",
       zoom: "Zoom (0..1, default 0.5): maps to a 70..20 degree vertical field of view; higher zooms the camera in.",
+      freeze: "Freeze (0/1, default 0): a hidden determinism toggle with NO control anywhere - not on the card, not on the faceplate, not on the patch surface. At 0.5 or above the draw step is a no-op, so every surface holds its last frame instead of going black. It exists because pinning the clock is not enough here: the height field is a ping-pong wave simulation that integrates once per draw, and the rain scheduler spawns new impacts from a frame counter, so two captures of the same settings are never the same pixels however the time seam is set. The visual-regression harness writes it before comparing a screenshot; nothing else ever does.",
     },
   },
 
@@ -557,6 +774,14 @@ export const mirrorpoolDef: VideoModuleDef = {
       draw(frame) {
         const g = frame.gl;
         if (!ensurePrograms() || !renderProgram) return;
+
+        // ⚠ FIRST, AND BEFORE ANY STATE ADVANCES. See the `freeze` ParamDef for
+        // why this module needs a PARAM and not just the time seam below: the
+        // ping-pong sim integrates and `frameIndex` spawns new drops on every
+        // draw, so returning here — rather than pinning `tSec` — is the only
+        // thing that holds the picture. `renderTarget.texture` keeps its last
+        // contents, so the surface holds its frame instead of going black.
+        if ((params.freeze ?? 0) >= 0.5) return;
 
         const freezeT = (globalThis as unknown as { __videoEngineFreezeTime?: number }).__videoEngineFreezeTime;
         const tSec = typeof freezeT === 'number' && Number.isFinite(freezeT)

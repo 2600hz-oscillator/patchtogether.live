@@ -42,7 +42,6 @@ import {
   attenumixSquashDb,
   attenumixSumAtt,
 } from './attenumix-face-model';
-import { faceReadoutValueFor } from '$lib/ui/workflow/face-readout-values';
 
 /** A param reader over an explicit override map — the shape
  *  `FaceReadoutValue` is handed, including `undefined` for untouched params. */
@@ -265,29 +264,6 @@ describe('attenumix readouts are TOTAL — they run on every frame', () => {
     undefined,
   ];
   const IDS = ['attenumix-peak', 'attenumix-drive', 'attenumix-cv-room'] as const;
-
-  it('every registered id resolves through the shared registry', () => {
-    for (const id of IDS) {
-      expect(faceReadoutValueFor(id), `'${id}' must be registered in face-readout-values`).not.toBeNull();
-    }
-  });
-
-  it('a fresh node, a NaN mid-drag and an out-of-range save all print a FINITE string', () => {
-    for (const id of IDS) {
-      const fn = faceReadoutValueFor(id)!;
-      expect(fn(reader()), `'${id}' on a fresh node`).toMatch(/\S/);
-      for (const hostile of HOSTILE) {
-        for (const paramId of [...ATTENUMIX_ATT_PARAM_IDS, ATTENUMIX_MASTER_PARAM_ID]) {
-          const over = hostile === undefined ? {} : { [paramId]: hostile };
-          const out = fn(reader(over as Record<string, number>));
-          expect(out, `'${id}' with ${paramId}=${hostile}`).toMatch(/\S/);
-          expect(out, `'${id}' must never print a non-finite number`).not.toMatch(
-            /NaN|Infinity/,
-          );
-        }
-      }
-    }
-  });
 
   it('an out-of-range value is CLAMPED to the def range, not believed', () => {
     // A corrupt save saying `master: 99` must not print a peak the module

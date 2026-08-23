@@ -260,6 +260,47 @@ export const edgesDef: VideoModuleDef = {
     { id: 'thickness', label: 'Thick',  defaultValue: EDGES_DEFAULTS.thickness, min: 1, max: EDGES_MAX_THICKNESS, curve: 'linear', units: 'px' },
   ],
 
+  // ── FACE (batch-22 · the video thin tail) ─────────────────────────────────
+  face: {
+    order: ['threshold', 'thickness'],
+
+    // ⚠ NO `pages`, DELIBERATELY. Two controls is one honest band: it is far
+    // below DOCK_TAB_MIN_BANDS and below DOCK_ROW_MAX_CONTROLS, so the dock
+    // renders a single unlabelled row. Splitting THRESH from THICK would buy
+    // two section headings over two controls, which is the "never pad" half of
+    // the compact ruling — the bands would be describing the layout rather
+    // than the module.
+
+    // ⚠ FADERS, NOT KNOBS — the parity-critical declaration on this face.
+    // `EdgesCard.svelte` draws BOTH controls with `NeonFader`, and nothing in a
+    // ParamDef separates "a level" from any other continuous scalar, so an
+    // undeclared face resolves them to KNOBS and the promotion silently
+    // substitutes a dial for a throw. ⚠ NO DEF-READING GATE CAN SEE THAT — they
+    // all read this same def, which says nothing about the primitive — so it is
+    // DECLARED here rather than inferred, exactly as `reshaper` declares its
+    // six. The value semantics are identical and the regression is still real.
+    paramCells: { threshold: 'fader', thickness: 'fader' },
+
+    // ⚠ NO `bareCells`. There is no section heading here to make a caption
+    // redundant (one unlabelled band), and `Thresh`/`Thick` are the only thing
+    // telling two otherwise-identical faders apart — the tidyVco side of the
+    // per-control-label ruling, not the mixmstrs side.
+
+    // ⚠ MANDATORY FOR A VIDEO DEF — `primaryAudioOutPortId` needs a
+    // `type: 'audio'` output and this def has none (`out` is `mono-video`), so
+    // any other glyph literal falls through `glyphBinding` to `{kind:'static'}`
+    // and reddens module-face-lint's dead-glyph clause. The live picture
+    // arrives from `hasVideoSurface(def)` at the lane and from the
+    // `fullViewBody` extension at the dock, so assert THAT, never this
+    // declaration.
+    glyph: 'none',
+
+    // SCREEN ON/OFF arrives through this slot (#1928): promotion stops BOTH
+    // surfaces rendering `EdgesCard.svelte`, and a faced video module has no
+    // other route to the switch. See `$lib/ui/modules/edges/shell-extension.ts`.
+    extension: 'edges',
+  },
+
   docs: {
     explanation: "edges is a stateless Sobel edge-detector for video: it runs a 3x3 luminance gradient (Rec. 601 luma) over the incoming frame and emits a high-contrast mono-video frame that is white wherever a brightness edge was found and black everywhere else. The detection has no feedback or history, so the white outlines track and morph live with whatever moves in the source. After the threshold test it morphologically dilates the mask (max over a square neighbourhood) so 1px contours render as fatter strokes. Use it to pull line-art/outlines from a camera or any video source, feed a key/mask downstream, or stack it with a colorizer for a glowing-wireframe look; if you get too much speckle raise thresh, if outlines are too thin raise thick.",
     inputs: {

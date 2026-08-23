@@ -284,8 +284,26 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
   { type: 'colorizer', disposition: 'generic-face' },
   { type: 'colourofmagic', disposition: 'generic-face', note: 'large control count — the face will need page splitting past the hero slots' },
   { type: 'cube', disposition: 'generic-face' },
-  { type: 'cvBuddy', disposition: 'generic-face', note: 'the PPQN roster + offset are params; SLOTS / LATE / ES-9-present are readouts to register, not knobs' },
-  { type: 'cvBuddyMini', disposition: 'generic-face', note: 'renders the same shared CvBuddyBody as cvBuddy — migrate the pair together' },
+  // ⚠ THE ORIGINAL NOTE HERE SAID "SLOTS / LATE / ES-9-present are READOUTS to
+  // register, not knobs", and that plan was overturned before it was built:
+  // `readouts` and `sidebar` were DELETED by the 2026-08-19 resting-text
+  // rulings, so the thing this entry named as the route no longer exists.
+  // #2024 re-opened the pair with measurements and the owner ruled "close the
+  // gap" — the resolution is `face.rackStatus` (the shell removes a band that
+  // belongs to another instance) plus the `StatusLed` primitive on the module's
+  // own fullViewBody (a static caption, a lamp, and the measurement in
+  // aria-label/title). The slot LABEL paints because it is a NAME.
+  //
+  // ⚠ KNOWN, DELIBERATE DIVERGENCE FROM THE CARD — recorded here rather than
+  // left to be rediscovered as a bug: on a 192px LANE TILE a non-primary
+  // instance STILL paints its clock controls. The legacy card hid them at every
+  // tier. Suppression requires the status body that explains the absence, and
+  // that body is dock-only (`dockFullViewHeadPlan`), so a tile would be left
+  // with neither controls nor body — blank, which is worse. This is the same
+  // trade MONITOR MODE already makes. If the owner wants tiles suppressed too,
+  // that is a rebuild on a ruling, not a defect.
+  { type: 'cvBuddy', disposition: 'generic-face', note: 'DONE (#2024): rackStatus + StatusLed; the clock band is primary-only, and a non-primary LANE TILE keeps its clock controls by design — see the note above' },
+  { type: 'cvBuddyMini', disposition: 'generic-face', note: 'DONE (#2024): renders the same shared CvBuddyBody as cvBuddy and now shares ONE face object with it, asserted by identity — the pair migrated together' },
   { type: 'delay', disposition: 'generic-face' },
   { type: 'depolarizer', disposition: 'generic-face' },
   { type: 'destroy', disposition: 'generic-face' },
@@ -300,7 +318,25 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
   { type: 'filter', disposition: 'generic-face' },
   { type: 'flipper', disposition: 'generic-face', note: 'declares no params — its face is a title, a glyph and the rear; nothing to rank' },
   { type: 'fourplexer', disposition: 'generic-face' },
-  { type: 'foxy', disposition: 'generic-face', note: 'knobs only; the raster/XYZ/wavetable previews are read-only pictures needing a registered panel (cube is the precedent)' },
+  {
+    type: 'foxy',
+    disposition: 'generic-face',
+    note:
+      'DONE (#2007). This entry predicted the blocker correctly — "the raster/XYZ/wavetable ' +
+      'previews are read-only pictures" — and, like rasterize, the RESOLUTION half of the ' +
+      'prediction ("needing a registered panel, cube is the precedent") was deliberately NOT ' +
+      'taken. Two reasons, both structural rather than preference. First the blind-gate one ' +
+      'rasterize wrote down: a PF-14 panel REQUIRES an operability probe, and a read-only ' +
+      'picture has none of its own, so the probe would watch a DIFFERENT control — an aliveness ' +
+      'check that cannot observe the thing it certifies. Second, ARITY: cube is one picture and ' +
+      'foxy is five, so panels would have meant five cells consuming five ranks and five probes ' +
+      'for pictures that belong together. `fullViewBody` needs no proxy and keeps all five ' +
+      'PERSISTENT across the seven tabs, which is the owner backdraft ruling and is what lets a ' +
+      'player watch raster B while turning SRC B one tab over. 33 params rank normally around ' +
+      'it across seven pages, which reaches DOCK_TAB_MIN_BANDS and engages the tab rail with no ' +
+      '`face.tabbed` declaration. The two exported mode-name rosters became `options[]` (#2007), ' +
+      'so `sync_mode` stopped rendering as an anonymous three-state rotary.',
+  },
   { type: 'freezeframe', disposition: 'generic-face' },
   { type: 'gatemaiden', disposition: 'generic-face' },
   { type: 'grainsOfVision', disposition: 'generic-face' },
@@ -316,7 +352,25 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
   { type: 'lumakey', disposition: 'generic-face' },
   { type: 'lushgarden', disposition: 'generic-face', note: 'the def declares more params than the card exposes — a face ranks ALL of them, so check each one is real' },
   { type: 'macrooscillator', disposition: 'generic-face' },
-  { type: 'mandelbulb', disposition: 'generic-face', note: 'the orbit drag over the preview is a 2-D camera gesture → the `xy` cell, not two knobs' },
+  // ⚠ THE PREVIOUS NOTE HERE NAMED THE WRONG GESTURE AND THE WRONG PARAMS, and
+  // a face built to it would have wired the wrong pair to its pad. It read:
+  // "the orbit drag over the preview is a 2-D camera gesture → the `xy` cell,
+  // not two knobs". Checked against `MandelbulbCard.svelte`:
+  //
+  //   * there IS no orbit drag — the pointer handlers write `slice_y` +
+  //     `slice_ry` (`:136-137`), and only fire when SLICE is ON (`:140`);
+  //   * `rotate_x`/`rotate_y` are knob-only, so it is not a CAMERA gesture at
+  //     all — it is a slice-PLANE selector.
+  //
+  // Its third clause was RIGHT and is kept: a 2-D pad is the correct shape, and
+  // "the `xy` cell" is this file's own shorthand for it (see the header's cell
+  // list and the derivation note). The implementation is `face.xyPads`, named
+  // here so the next reader does not go looking for an `xy` KIND in
+  // `shell-cells.ts`, where there isn't one.
+  //
+  // A disposition note is a hypothesis like any other — verify it against the
+  // code before designing against it.
+  { type: 'mandelbulb', disposition: 'generic-face', note: 'the drag over the preview writes slice_y + slice_ry and only when SLICE is on — a slice-plane selector, NOT a camera orbit; rotate_x/rotate_y are knob-only. A 2-D pad is still the right shape: declare it as `face.xyPads` (there is no `xy` KIND in shell-cells.ts). ⚠ glyph MUST be `none`: this is the one video def with an `audio` output, so primaryAudioOutPortId resolves and a live glyph would bind to a tap that cannot see a video-domain node (mandelbulb-glyph-tap.test.ts). The slice WAVEFORM readout canvas is a second bespoke picture: it now lives in the `fullViewBody` extension and is fed by the `read("sliceWave")` seam, NOT re-derived — mbSampleSlice is 16,384 DE calls on the main thread and the card already runs it a second time, so a third derivation would have made a slice move cost 3x. ⚠ `read("slice")` is the TOGGLE STATE, not the wave. ⚠ TWO SCREEN CONTROLS AND THEY ARE NOT DUPLICATES: the `screen_on` PARAM is product behaviour (at 0 the factory skips the raymarch, but only while video_out is unpatched, so it never starves a consumer — the faced `cube` precedent, and NOT the #2015 producer-kill class), while the preview switch is `node.data.previewCollapsed`, pure view layer. One asks "compute a picture at all", the other "do I want to look right now"; separate state, separate meanings, neither can diverge from the other.' },
   { type: 'mandleblot', disposition: 'generic-face' },
   { type: 'mapper', disposition: 'generic-face' },
   { type: 'marbles', disposition: 'generic-face' },
@@ -360,7 +414,24 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
   { type: 'posterbox', disposition: 'generic-face' },
   { type: 'qbrt', disposition: 'generic-face' },
   { type: 'quadralogical', disposition: 'generic-face', note: 'the quad mix pad is a HAND-CLONE → the shared `xy` cell (#1509 §3)' },
-  { type: 'rasterize', disposition: 'generic-face', note: 'faders + a wrap toggle; the scan preview is a read-only picture with no glyph kind — it needs a registered panel or it is a look loss' },
+  {
+    type: 'rasterize',
+    disposition: 'generic-face',
+    note:
+      'DONE (#2001). This entry predicted the blocker correctly — "the scan preview is a read-only ' +
+      'picture with no glyph kind, it needs a registered panel or it is a look loss" — and the ' +
+      'resolution is the `fullViewBody` extension slot rather than a panel cell. The reason no ' +
+      'glyph kind fits is sharper than "none of them match": `hasVideoSurface` is ' +
+      '`domain === "video"` and this is an AUDIO def with a mono-video OUT painted in JS by ' +
+      'RasterPainter, so the shell has no generic route to the picture at all. Four params rank ' +
+      'normally around it; SCAN ranks LAST because it is a change detector rather than a position ' +
+      'control (#2000, left open — revisit the rank if that issue is fixed). ' +
+      '⚠ THE "registered panel" HALF OF THE PREDICTION WAS DELIBERATELY NOT TAKEN, and the reason ' +
+      'is a blind-gate one rather than a preference: a PF-14 panel cell REQUIRES a probe, and the ' +
+      'only probe available here reads a DIFFERENT control (the WRAP caption) — a picture whose ' +
+      'aliveness check cannot observe the picture. `fullViewBody` needs no such proxy, and ' +
+      '`videoOut` is the precedent it matches exactly: a card whose BODY is the live screen.',
+  },
   { type: 'reshaper', disposition: 'generic-face' },
   { type: 'resofilter', disposition: 'generic-face' },
   { type: 'reverb', disposition: 'generic-face' },
@@ -395,11 +466,49 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
   { type: 'unityscalemathematik', disposition: 'generic-face' },
   { type: 'vca', disposition: 'generic-face' },
   { type: 'vdelay', disposition: 'generic-face' },
+  {
+    type: 'vstInstrument',
+    disposition: 'bespoke-surface',
+    blockers: ['needs-note-entry-cell'],
+    why:
+      'a VST BRIDGE card (the es9 shape): connection state machine, plugin picker with text ' +
+      'filter (the typed entry), mount/unmount/swap gestures, native-editor toggle, and ' +
+      'meter/rtt/latency telemetry. Zero params — the surface IS the bridge control plane.',
+  },
+  {
+    type: 'vstFx',
+    disposition: 'bespoke-surface',
+    blockers: ['needs-note-entry-cell'],
+    why:
+      'the VST BRIDGE stereo-insert card — the same bridge control plane as vstInstrument ' +
+      '(shared VstBridgePanel: picker with its typed filter entry, mount/unmount, editor, ' +
+      'meters) with zero params; nothing to rank into a generic face.',
+  },
   { type: 'vfpgaRunner', disposition: 'generic-face', note: 'preset roster → selector cell, fabric floorplan → a toggled read-only panel; the params are def-declared, so rank those and not the manifest' },
   { type: 'videoMixer', disposition: 'generic-face' },
   { type: 'warrensspectrum', disposition: 'generic-face', note: 'the ws-filterbank family is a bank of param faders — a family cell/panel, the same shape as the faced modules already register' },
   { type: 'warrensvisions', disposition: 'generic-face' },
-  { type: 'wavecel', disposition: 'generic-face', note: 'source/preset rosters → selector cells, .wav import → file cell, viz toggle → toggle; the wavetable view is a panel' },
+  {
+    type: 'wavecel',
+    disposition: 'generic-face',
+    note:
+      'DONE. This entry mapped it correctly except for ONE word, and that word was the whole ' +
+      'build estimate: "viz toggle → toggle" would have made wavecel the FIRST adopter of the ' +
+      'data-backed `toggle` shell cell (zero entries, real first-adopter cost). It is not. ' +
+      '`WavecelCard.svelte:54` holds the view mode in component `$state`; the def\'s "persists ' +
+      'across page reloads + multiplayer" sentence two lines below is about `wavetableSource`, ' +
+      'not about the toggle, and both video OUTPUTS render their own view regardless of it. So ' +
+      'it is a private view preference over the picture and lives INSIDE the panel — where ' +
+      'shell-cells then forced it onto `node.data` anyway, by refusing a probe whose witness ' +
+      'was the button\'s own caption ("a control that only relabels itself is indistinguishable ' +
+      'from a dead one"). The rosters and the .wav import are `selector` + `file` cells exactly ' +
+      'as predicted, and the RECORDED BLOCKER (wavetable selection lives in node.data, which ' +
+      '`FaceReadoutValue` cannot see) was stale in both halves: that type is a param reader and ' +
+      'is correctly blind to node.data, while shell-cell specs are node-taking closures — dx7 ' +
+      'ships both kinds today (#2010 reached this from the docs side the same week). ' +
+      'SPREAD ships bit-exactly MONO and five of ten params are inert at spawn (#1999, owner ' +
+      'ears, left open); the rank is built around that rather than over it.',
+  },
   { type: 'wavesculpt', disposition: 'generic-face', note: 'two HAND-CLONED camera pads (#1509 §3) and the largest order after mixmstrs; a face was authored for it once and shipped both pads as knobs — do not repeat that' },
   { type: 'wavetableVco', disposition: 'generic-face' },
 

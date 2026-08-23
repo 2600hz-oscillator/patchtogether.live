@@ -69,6 +69,23 @@ export const moog905Def: AudioModuleDef = {
     },
   },
 
+  // THREE PARAMS, THREE RANKS, ONE BAND. MIX first — a spring reverb you cannot
+  // hear is not set up yet — then the two that shape the tank.
+  //
+  // NO `pages`. Three controls that are all one idea (this tank's character) do
+  // not become clearer by being split under headings; bands are for separating
+  // ideas, and inventing a second one here would spend vertical space to say
+  // nothing.
+  //
+  // `glyph: 'meter'` is RUN, not argued: `audio` is this module's only audio
+  // output, so `primaryAudioOutPortId` resolves it and the binding is LIVE and
+  // TOTAL. A reverb is also a module where the tail IS the thing you are
+  // listening for, so a level trace earns its slot rather than decorating.
+  face: {
+    order: ['mix', 'decay', 'size'],
+    glyph: 'meter',
+  },
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     if (!loadedContexts.has(ctx)) {
       await ctx.audioWorklet.addModule(workletUrl);

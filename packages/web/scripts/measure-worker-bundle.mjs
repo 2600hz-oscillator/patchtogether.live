@@ -27,10 +27,19 @@
 //   node scripts/measure-worker-bundle.mjs --check    # + fail if over the ceiling
 //   node scripts/measure-worker-bundle.mjs --json out.json
 //
-// `--check` is NOT wired into CI: it needs a full production build, and the
-// build job does not currently run wrangler. It is the command to run by hand
-// when a PR plausibly grows the server graph — and the number it prints is the
-// one to quote.
+// ⚠ `--check` IS NOW WIRED INTO CI (#2088) — this comment used to say it was
+// not, and that gap is exactly what let a Worker 177 KiB over the ceiling reach
+// `main`. It runs in the REQUIRED `build` job in ci.yml, as
+// `task worker:size:check`, straight after `task build`.
+//
+// It lives in `build` and not `build-web` on purpose: `build-web` emits the
+// PREVIEW bundle with VITE_E2E_HOOKS=1 baked in, which never deploys, so
+// ratcheting it would gauge an artifact nothing is subject to. `build` runs the
+// production bundler — the same path deploy.yml takes.
+//
+// It needs no Cloudflare token (`--dry-run` bundles locally) and no network
+// (wrangler is already a transitive dep of @sveltejs/adapter-cloudflare), which
+// is what makes it safe to run in that deliberately token-free job. ~1.3 s.
 
 import { build } from 'esbuild';
 import { execFileSync } from 'node:child_process';
@@ -43,13 +52,41 @@ const WEB = fileURLToPath(new URL('..', import.meta.url));
 const ENTRY = path.join(WEB, '.svelte-kit/cloudflare/_worker.js');
 const KiB = 1024;
 
-// Cloudflare's free-plan Worker ceiling, gzipped. The paid plan is 10 MiB; the
-// project is on paid, so this is a self-imposed budget, not a hard blocker.
+// Cloudflare's free-plan Worker ceiling, gzipped.
+//
+// ⚠ THIS COMMENT USED TO READ "the project is on paid, so this is a self-imposed
+// budget, not a hard blocker." THAT IS FALSE AND IT MATTERED (#2088). Cloudflare
+// enforced 3 MiB against this project on 2026-08-21 and took `main`'s deploys
+// down with it:
+//
+//   Failed to publish your Function. Got error: Your Worker exceeded the size
+//   limit of 3 MiB. Please upgrade to a paid plan to deploy Workers up to 10 MiB.
+//
+// So whatever the account's Workers plan says, the number the deploy path
+// applies to THIS project is 3 MiB. Treat the ceiling as HARD until a green
+// deploy proves otherwise — a comment asserting an entitlement is not the same
+// as the platform granting it, and believing this line is part of why the
+// overshoot was a surprise.
 const CEILING_KIB = 3 * 1024;
-// The headroom the diet bought (see perf/ssr-worker-diet). Ratcheted DOWNWARD
-// only: if a change needs more than this, that is a decision to make out loud,
-// not a number to bump quietly.
-const BUDGET_KIB = 2700;
+// The headroom the diet bought. Ratcheted DOWNWARD only: if a change needs more
+// than this, that is a decision to make out loud, not a number to bump quietly.
+//
+// ⚠ LOWERED 2700 → 630 (#2088), and the ratchet is what demanded it. Taking the
+// `<Canvas>` edge out of the SSR graph dropped the Worker to 470.93 KiB
+// gzipped, which left 2229 KiB of UNCLAIMED SLACK under the old budget — far
+// past the 400 KiB the slack leg allows, so `--check` failed until this number
+// came down with the win. That is the mechanism working exactly as intended:
+// slack nobody claims is slack that silently absorbs the next regression, so a
+// win is only banked when the budget moves with it.
+//
+// The value is the script's own suggestion (`gzip + 150`, rounded up to 10),
+// not a hand-picked figure. ~159 KiB of headroom over the measured bundle.
+//
+// Measured progression, all via wrangler's own gzip figure:
+//   main, before anything      3249.34 KiB   (177.34 OVER the 3072 ceiling)
+//   + SSR build minified       2595.39 KiB
+//   + <Canvas> out of SSR       470.93 KiB   (15.3 % of the ceiling)
+const BUDGET_KIB = 630;
 
 if (!fs.existsSync(ENTRY)) {
   console.error(`no _worker.js at ${ENTRY} — run \`task build:web\` first`);

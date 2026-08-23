@@ -264,12 +264,6 @@ export const moog921VcoDef: AudioModuleDef = {
     // A constant belongs in `docs` and in this comment, which is where it is.
     hero: {
       control: 'octave',
-      readouts: [
-        { label: 'pitch', valueId: 'moog921vco-pitch' },
-        { label: 'out', valueId: 'moog921vco-out' },
-        { label: 'fm', valueId: 'moog921vco-fm' },
-        { label: 'sync', valueId: 'moog921vco-sync' },
-      ],
     },
   },
 

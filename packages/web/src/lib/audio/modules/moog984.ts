@@ -75,6 +75,105 @@ export const moog984Def: AudioModuleDef = {
   ],
   params: CROSS_PARAMS,
 
+  // ── THE FACEPLATE ──────────────────────────────────────────────────────────
+  //
+  // WHAT IT IS FOR. Every other panel in this family DOES something to a
+  // signal. The 984 does nothing to one — it decides HOW MUCH OF IT GOES WHERE,
+  // to four places at once. It is the only module in the family whose surface
+  // is a TABLE rather than a row of controls: the verb is CROSS-FADING A PATCH,
+  // moving a source from one destination to another without touching a cable,
+  // and blending several sources into one bus on the way.
+  //
+  // ⚠ THE SIXTEEN CROSS-POINTS ARE BIT-EXACTLY SYMMETRIC, and this face says so
+  // rather than inventing a hierarchy. They are emitted from ONE loop above, so
+  // every min / max / defaultValue / curve is identical, and the factory gives
+  // each an identical GainNode reached through identical code. No measurement
+  // distinguishes any one of them from any other. So `order` below is a stated
+  // CONVENTION, not a ranking argument — the `moog993` precedent, where the
+  // merit is likewise carried by a readout rather than by the ranking.
+  //
+  // THE LADDER, read back as a sentence: mini shows IN 1 → OUT 1; compact adds
+  // IN 2 and IN 3 into the same output; the plate shows every source that can
+  // reach OUT 1, plus the first two into OUT 2; the dock shows the whole
+  // matrix. The convention is COLUMN-MAJOR, so what a shrinking tier keeps is a
+  // COMPLETE OUTPUT BUS — four sources blended into one destination, which is
+  // still a working mixer. Ranking row-major would keep a complete fan-OUT
+  // instead; both are defensible and the choice is decided by the module's own
+  // name and by its outputs being summed buses ("each output is the sum of its
+  // column", `docs.explanation`). It would be the WRONG convention for a 1→N
+  // distributor, where the row is the unit.
+  //
+  // ⚠ `order` AND `pages` DISAGREE, DELIBERATELY, AND THIS IS THE ONE FACE
+  // WHERE THE DISAGREEMENT IS THE POINT. `order` is column-major (the priority
+  // ranking, which only ever decides what a LANE TIER paints as a subset);
+  // `pages` is ROW-major, because the dock renders everything and there the
+  // layout must be the physical matrix — rows are inputs, columns are outputs,
+  // exactly as `m_ij` is named, as `docs` describes it and as the legacy card
+  // draws it. Transposing the dock to match the ranking would make the face
+  // disagree with every other statement of the same object.
+  //
+  // ── THE GRID IS REAL, AND IT IS ONE BAND ─────────────────────────────────
+  //
+  // ONE band of four equal clusters, NOT four bands. `consoleGridCols`
+  // (`$lib/ui/workflow/console-grid.ts:80`) turns a band into a CONSOLE GRID —
+  // fixed-width columns on the shared `DOCK_KCOL_W` ruler, so column j has the
+  // same centre in every cluster — when the band has at least two clusters, all
+  // of equal size, at least two cells each, and does not ask for
+  // `clusterFlow: 'row'`. Four clusters of four satisfies every clause, so this
+  // band answers 4 and the four output columns line up by construction.
+  //
+  // ⚠ FOUR BANDS WOULD DESTROY IT, silently and while looking correct:
+  // `dock-row-plan`'s `packRun` packs whole bands onto a row up to
+  // `DOCK_ROW_MAX_CONTROLS = 10`, so `[4,4,4,4]` becomes two rows of eight and
+  // there is no matrix left. The cluster is a ~14 px sub-header against a
+  // ~81 px band, which is the other reason: four band headers to say `in 1..4`
+  // is four times the vertical cost of the thing they label.
+  //
+  // (This face has ONE console band, so `faceConsoleGridCols`'s face-level
+  // ruler — which needs `FACE_CONSOLE_MIN_BANDS = 2` — correctly does not
+  // engage. A lone console band has nothing to be aligned to and keeps its own.)
+  //
+  // ── WHY NO GLYPH ─────────────────────────────────────────────────────────
+  //
+  // `'none'`, and it is a refusal rather than an omission. The outputs are
+  // audio, so a `meter` WOULD resolve — onto `out1` alone, because
+  // `primaryAudioOutPortId` takes the first. A picture that silently means "one
+  // of these four buses" on the module whose entire subject is which bus
+  // carries what is the mixmstrs blind-tap hazard with a live tap instead of a
+  // dead one. Declaring `'none'` also buys the compact tier a third cell.
+  //
+  // ── WHAT THE READOUTS CARRY ──────────────────────────────────────────────
+  //
+  // Four, one per output bus — the column sums, `Σ_i m_ij`, in dB. This is the
+  // whole merit case and it is the only thing on the face that is not a knob
+  // relabelled: an output's gain is a JOIN over four params, so a readback of
+  // the nearest cross-point is blind to three quarters of it while moving
+  // convincingly. See `moog984-face-model.ts`; both negative-control legs
+  // (moves with its column, invariant to its row) are permanent in
+  // `moog984-face-model.test.ts`.
+  face: {
+    order: [
+      // COLUMN-MAJOR: everything that reaches OUT 1, then OUT 2, and so on.
+      // Built from the def's own roster so it cannot drift from `params`.
+      ...[1, 2, 3, 4].flatMap((j) => [1, 2, 3, 4].map((i) => crossId(i, j))),
+    ],
+    glyph: 'none',
+    pages: [
+      {
+        // ROW-MAJOR, one cluster per input — the physical matrix. The band
+        // label names what the sixteen controls ARE; the module's own name is
+        // already painted once by the dock title bar and is not repeated here.
+        id: 'crosspoints',
+        label: 'cross-points',
+        controls: [...[1, 2, 3, 4].flatMap((i) => [1, 2, 3, 4].map((j) => crossId(i, j)))],
+        clusters: [1, 2, 3, 4].map((i) => ({
+          label: `in ${i}`,
+          controls: [1, 2, 3, 4].map((j) => crossId(i, j)),
+        })),
+      },
+    ],
+  },
+
   docs: {
     explanation:
       "A clean-room recreation of the Moog 984 Matrix Mixer — a 4×4 cross-point router that lets any of the four inputs be mixed, at an independent level, into any of the four outputs. The faceplate is the matrix itself: rows are inputs (IN 1–4), columns are outputs (OUT 1–4), and each of the 16 cross-point knobs sets how much of that row's input reaches that column's output (each output is the sum of its column). Every cross-point starts at 0, so a freshly placed matrix is silent until you dial in connections — exactly how a patch matrix behaves. Mental model: 16 independent send levels arranged in a grid, so one source can fan out to several destinations and several sources can be blended into one — patch four oscillators or effect sends and freely route/blend them to four destinations. Works for audio or CV (the mix is DC-transparent).",

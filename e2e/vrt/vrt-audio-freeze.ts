@@ -111,6 +111,65 @@ export async function resumeAudioContext(page: Page): Promise<AudioClock> {
   return readAudioClock(page);
 }
 
+/**
+ * ARM A ONE-SHOT RESUME that fires `afterFrames` animation frames from now —
+ * the product's real racer, reproduced on demand.
+ *
+ * ⚠ THIS EXISTS TO MAKE #1931 DETERMINISTIC. The defect is a resume landing in
+ * a specific WINDOW (after the freeze loop reads back 'suspended', before the
+ * clock check finishes), and a race you cannot time is a race you cannot write
+ * a control for — three faces lost it in one day and none of them reproduced on
+ * demand. Delaying by a frame count lets a caller aim at that window instead of
+ * hoping to hit it.
+ *
+ * Modelled on the KNOWN one-shot racer rather than invented: recorderbox's
+ * factory does `if (ac.state === 'suspended') void ac.resume()` from the spawn's
+ * own reconcile. ONE-SHOT is the point — a repeating resumer is a different and
+ * genuinely unrecoverable defect, and the freeze loop is supposed to say so.
+ *
+ * Sets `__oneShotResumeFired` when the resume actually resolves, so a caller can
+ * assert the injection REACHED the context. Without that leg a control that
+ * silently failed to arm looks exactly like a control that passed.
+ */
+export async function armOneShotResume(page: Page, afterFrames: number): Promise<void> {
+  await page.evaluate((frames: number) => {
+    const w = globalThis as unknown as {
+      __engine?: () => Record<string, unknown> | null;
+      __oneShotResumeFired?: boolean;
+    };
+    w.__oneShotResumeFired = false;
+    const eng = w.__engine?.();
+    if (!eng) return;
+    const ctx =
+      (eng as { ctx?: AudioContext }).ctx ??
+      (eng as { getDomain?: (d: string) => { ctx?: AudioContext } }).getDomain?.('audio')?.ctx;
+    if (!ctx) return;
+    let n = 0;
+    const tick = (): void => {
+      if (n++ < frames) {
+        requestAnimationFrame(tick);
+        return;
+      }
+      void ctx
+        .resume()
+        .then(() => {
+          w.__oneShotResumeFired = true;
+        })
+        .catch(() => {
+          /* the fired flag staying false is the verdict */
+        });
+    };
+    requestAnimationFrame(tick);
+  }, afterFrames);
+}
+
+/** Did the armed one-shot resume actually reach the context? */
+export async function oneShotResumeFired(page: Page): Promise<boolean> {
+  return page.evaluate(
+    () => (globalThis as unknown as { __oneShotResumeFired?: boolean }).__oneShotResumeFired === true,
+  );
+}
+
 export type FreezeVerdict =
   | { ok: true; state: 'suspended' }
   | { ok: false; reason: 'no-engine' | 'no-ctx' | 'not-suspended'; state: string | null };

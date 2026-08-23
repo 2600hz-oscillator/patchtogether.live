@@ -23,7 +23,6 @@ import {
 } from '$lib/video/modules/backdraft';
 import { hasVideoSurface, laneBodyPlan, laneGlyphFor } from '$lib/ui/workflow/module-shell-model';
 import { curatedFace } from '$lib/ui/workflow/curated-face';
-import { faceReadoutValueFor } from '$lib/ui/workflow/face-readout-values';
 import {
   BACKDRAFT_READOUT_WIDTH_PX,
   backdraftBandsText,
@@ -46,50 +45,6 @@ function reader(over: Record<string, number> = {}) {
   const base = { ...defaults(), ...over };
   return (id: string): number | undefined => base[id];
 }
-
-describe('BACKDRAFT face readouts — TOTALITY (they run on every render)', () => {
-  // A throw here takes the whole faceplate down mid-drag, so totality is not a
-  // nicety: `face-readout-values.ts` calls these on every frame of a drag.
-  const HOSTILE: readonly (number | undefined)[] = [
-    undefined, NaN, Infinity, -Infinity, 0, -0, 1e308, -1e308,
-  ];
-
-  it('every readout is TOTAL on a fresh node and on hostile values', () => {
-    for (const v of HOSTILE) {
-      const read = (): number | undefined => v;
-      for (const id of ['backdraft-tv-fill', 'backdraft-tv-bands', 'backdraft-delay-frames']) {
-        const fn = faceReadoutValueFor(id);
-        expect(fn, `${id} must be registered`).toBeTruthy();
-        const text = fn!(read);
-        expect(typeof text, `${id} @ ${String(v)}`).toBe('string');
-        expect(text.length, `${id} @ ${String(v)} printed an empty string`).toBeGreaterThan(0);
-        expect(text, `${id} @ ${String(v)} leaked a non-finite number`).not.toMatch(/NaN|Infinity/);
-      }
-    }
-  });
-
-  it('all three ids are REGISTERED, and the FACE no longer declares any of them', () => {
-    // ⚠ THE FACE DROPPED THESE IN OWNER REVIEW ROUND 1 — *"the bands, fill and
-    // timing is not useful and should go away"* — so `hero` is gone entirely.
-    // The functions are deliberately KEPT, registered and tested, because they
-    // are the MEASUREMENT behind #1786: BackdraftCard prints a band count
-    // computed at a hardcoded bezel of 0.4 while the param ships at 0.5, and is
-    // blind to BEZEL across its whole range. Deleting them would delete the
-    // evidence for an open bug on a surface this PR does not touch.
-    //
-    // Both directions are asserted so this cannot rot into either shape: the
-    // ids must still RESOLVE (a dead registration is not evidence of anything),
-    // and the face must still declare NONE of them (if a later round puts a
-    // readout back, this line goes red and whoever does it reads this note).
-    for (const id of ['backdraft-tv-fill', 'backdraft-tv-bands', 'backdraft-delay-frames']) {
-      expect(faceReadoutValueFor(id), `valueId '${id}' resolves nothing`).toBeTruthy();
-    }
-    expect(
-      backdraftDef.face?.hero,
-      'the owner removed the hero row; a hero reappearing needs a fresh decision, not a silent one',
-    ).toBeUndefined();
-  });
-});
 
 describe('backdraft-tv-bands — the join a ZOOM readback cannot perform', () => {
   // The nearest dial to "how many nesting levels resolve" is ZOOM. These two

@@ -82,49 +82,101 @@ export function loadContention(dir = join(ROOT, 'e2e/tests')) {
  */
 export const PENDING_FIRST_MEASUREMENT = [
   {
-    spec: 'videoout-detach-display.spec.ts',
+    spec: 'quadralogical-face-screen.spec.ts',
     why:
-      '#1821 — new with the videoOut detach display + bridge-on-delete. Measured locally, single '
-      + 'worker: 2.0 min wall for 16 tests (it grew from 10 across two review rounds). ⚠ TREAT THAT '
-      + 'AS A FLOOR: backdraft-preview-toggle measured 57.5 s locally and 358.2 CPU-s on CI, ~6x. '
-      + '⚠ AND THE REASON IS THE MACHINE, NOT CONTENTION — a note here previously blamed "ten shards '
-      + 'competing for one software rasterizer" and that is WRONG twice over: each shard is its own '
-      + 'VM so shards never contend, and a local headless run is ALREADY SwiftShader, so '
-      + 'E2E_SWIFTSHADER=1 changes nothing locally. The delta is a 2-core CI VM against a dev '
-      + 'machine. Run `flox activate -- task e2e:timings:accept` on the first green CI run after '
-      + 'this merges and DELETE this entry.',
+      '#2102 — new with the QUADRALOGICAL faceplate: the two legs that prove the joystick IS '
+      + 'the screen. Leg 1 patches four flat-colour sources and probes FOUR PIXELS of the face\'s '
+      + 'own canvas to prove each quadrant carries its own input under its own corner label; '
+      + 'leg 2 toggles SCREEN and proves the frame re-aspects on the WIDTH with the height '
+      + 'pinned. '
+      + '⚠ MEASURED UNDER `E2E_SWIFTSHADER=1`, WHICH IS THE NUMBER THAT MATTERS HERE — this is '
+      + 'a WebGL module whose test subject is a live 2x2 video preview, so the software '
+      + 'renderer is the variable, not a constant factor to multiply out afterwards. Warm '
+      + 'server, single worker: 31.7 s for a REPEAT=3 flake-check of both tests, i.e. **~10.5 s '
+      + 'per pass** (leg 1 ~6.4 s, leg 2 ~3.8 s). Budget the 2-core CI VM at roughly that plus '
+      + 'the usual VM overhead — the SwiftShader floor is already IN this figure rather than '
+      + 'ahead of it. '
+      + '⚠ AND THE SWIFTSHADER RUN IS WHY THIS ENTRY IS TRUSTWORTHY: on a real GPU leg 2 passed '
+      + 'and under SwiftShader it failed 3/3, because it read `.field`\'s bounding box once '
+      + 'while a 120 ms CSS width transition was still running ("on 480, off 480"). Fixed with '
+      + 'an auto-retrying `expect.poll` on the box itself — not a timeout, not a frame count — '
+      + 'so the leg is now renderer-independent by construction. A local-GPU-only measurement '
+      + 'would have shipped a spec that was red on every CI run. '
+      + '⚠ AND A LOCAL SWIFTSHADER MEASUREMENT WAS NOT SUFFICIENT EITHER: the spec still timed '
+      + 'out on CI shard 6 because it never took `SLOW_BOOT_TEST_TIMEOUT_MS`, so it ran on the '
+      + 'default 30 s while booting workflow mode plus nine WebGL nodes on a shared 2-core '
+      + 'runner. The flag changes the RENDERER; it does not reproduce cold boot or ten shards '
+      + 'competing. Both are now applied, and the SCREEN-OFF leg spawns ONE node instead of nine. '
+      + 'Run `flox activate -- task e2e:timings:accept` on the first green CI run after this '
+      + 'merges and DELETE this entry. '
+      + '⚠ UNTIL THAT ACCEPT LANDS, DO NOT READ THE ~10.5 s FIGURE ABOVE AS THE PACKING COST — it is a '
+      + 'WARM-SERVER, SINGLE-WORKER, LOCAL number, while the packer needs CI CPU-seconds summed across the '
+      + 'file. The honest floor is the nearest sibling: acidwarp-face-screen.spec.ts, the same shape (a faced '
+      + 'video module; boot plus wait-for-first-painted-frame legs) measures **77 s** on CI against its own '
+      + '~11.1 s local estimate — roughly 2.3x per leg. Two legs here puts this file nearer **50 s** than the '
+      + '~21 s MEDIAN it currently rides, and any shard drawing it is under-costed by that difference. '
+      + 'That under-costing is what surfaced on batch-22 G3 (#2120): both legs timed out at the full 90 s '
+      + 'bound on a hot shard and are now FLAKE-PARKED (#1847). ⚠ THE PARK TREATS THE SYMPTOM, THIS ENTRY '
+      + 'TREATS THE PACKER, and the fleet timeout default (owner decision pending) treats the CLASS — three '
+      + 'different fixes, none substituting for the others. ⚠ AND MERGING #2110\'s TIMINGS REFRESH WOULD NOT '
+      + 'SUPPLY THIS NUMBER, which is the natural wrong assumption: its source run predates quadralogical.',
   },
   {
-    spec: 'videoout-drop-patch.spec.ts',
+    spec: 'scoreboard-face-screen.spec.ts',
     why:
-      '#1819 — the per-module drop-gesture coverage that lands with the videoOut face. Measured '
-      + 'locally, single worker: 24.7 s wall for 5 tests. Same ~6x floor caveat as its sibling '
-      + 'above, and the same correction — the gap is the 2-core CI VM, not shard contention. For '
-      + 'calibration the generic card-drop-patch.spec.ts measures 246 CPU-s. Run '
-      + '`flox activate -- task e2e:timings:accept` on the first green CI run after this merges and '
-      + 'DELETE this entry.',
+      '#2089 — new with the SCOREBOARD faceplate. Two legs covering what a SCREENSHOT CANNOT '
+      + 'SEE: this face DOES have dock and compact baselines, so what the plate looks like is '
+      + 'already pinned, but a still image cannot show that the canvas unmounts on SCREEN OFF, '
+      + 'that the state lands on `node.data` rather than in component state, or that switching '
+      + 'back gives a live picture instead of a stale frame. '
+      + '⚠ MEASURED UNDER `E2E_SWIFTSHADER=1`: warm server, single worker, 20.2 s for a REPEAT=3 '
+      + 'flake-check of both legs, i.e. **~6.7 s per pass** (SCREEN ON ~4.4 s, SCREEN OFF ~2.0 s). '
+      + 'On a real GPU the pair runs in 7.4 s, so the software renderer costs this spec almost '
+      + 'nothing — unsurprising, since the module rasterizes four digits into a 2D canvas and '
+      + 'uploads them, with no shader work worth the name. '
+      + '⚠ AND IT IS THE CHEAPEST FACE SPEC IN THE LANE BY DESIGN: ONE node, no input chain. '
+      + 'scoreboard is a generator whose only inputs are two CV gates, so nothing needs patching '
+      + 'to exercise the toggle. Cost is the axis a local SwiftShader run does NOT measure (that '
+      + 'flag changes the renderer, not cold boot or ten-way shard contention), which is why this '
+      + 'spec also takes `SLOW_BOOT_TEST_TIMEOUT_MS` from the outset rather than discovering the '
+      + 'default 30 s on a shared runner the way a sibling spec did. '
+      + 'Run `flox activate -- task e2e:timings:accept` on the first green CI run after this '
+      + 'merges and DELETE this entry.',
   },
   {
-    spec: 'main-thread-cost.spec.ts',
+    spec: 'face-screen-render.spec.ts',
     why:
-      'lands with #1811 as the instrument that MEASURED AND REJECTED the worker migration, so no ' +
-      'ci.yml run containing it has completed and there is no blob report to accept a cost from. ' +
-      'MEASURED under E2E_SWIFTSHADER=1, single worker, in the configuration CI actually runs ' +
-      '(both perturbation phases gated OFF): 14.5 s cold, 10.2 s warm across a 3/3 flake-check. ' +
-      'The full three-phase form costs 32.1 s and is OPT-IN ONLY (PT_COST_PERTURB=1, which nothing ' +
-      'in CI sets): the planner co-schedules this spec onto shard 2/10 with two DOOM specs, and ' +
-      'DOOM runs runTic() inside surface.draw, so its game clock IS its frame clock — a co-tenant ' +
-      'that pins a core does not delay a DOOM assertion, it changes how far the marine walks. ' +
-      'Owner ruling: DOOM is not touched without specific approval, and reaching that outcome ' +
-      'through a neighbouring spec is the same violation through the side door. ' +
-      '⚠ TREAT 10.2 s AS A FLOOR, NOT A PREDICTION. This is a VIDEO spec — it drives a real ' +
-      'spirographs -> videoOut chain and asserts on engine frame counts — and the entry deleted ' +
-      'directly above this one is the precedent: backdraft-preview-toggle predicted 57.5 s from ' +
-      'exactly this kind of local single-worker run and measured 358.2 CPU-s, 6x, because ' +
-      'the CI VM is 2-core where a dev machine is not (⚠ NOT "shards competing for one rasterizer" — every `runs-on:` here is `ubuntu-latest` and a GitHub-hosted job gets its OWN VM, so shards never contend; see the ci.yml note of 2026-08-12. A local headless run is ALREADY SwiftShader too, so E2E_SWIFTSHADER=1 changes nothing locally). Do not use the local ' +
-      'number for shard-balance reasoning; it is here to prove the spec was measured at all. ' +
-      'Run `task e2e:timings:accept -- <run-id>` on the first green main run after this merges and ' +
-      'DELETE this entry — the gate reddens on a stale entry as loudly as on a missing one.',
+      'lands with the batch-22 G4 face PR as the FLEET render-leg home for the SCREEN ON/OFF ' +
+      'switch, so no ci.yml run containing it has completed and there is no blob report to accept ' +
+      'a cost from. MEASURED locally, 2 workers, warm server, E2E_SWIFTSHADER=1: 30.7 s wall for ' +
+      '5 tests covering 27 modules + 1 persistence leg (2.1 min across a REPEAT=3 flake-check). ' +
+      '⚠ THAT IS DOWN FROM 51.2 s / 28 TESTS, and the restructure is the reason this entry is ' +
+      'worth reading. One test per module cost a MEASURED ~3.0 s marginal each (one test alone = ' +
+      '11.6 s wall; the 28-test file = 51.2 s at 2 workers ⇒ fixed ~8.6 s, marginal ~3.0 s), ' +
+      'nearly all of it page boot — ~81 s of booting to prove 27 DOM facts. The modules are now ' +
+      'batched 7 to a rack behind ONE boot, with every per-module assertion, dock open and named ' +
+      'failure unchanged. ' +
+      '⚠ THE COST MODEL HERE IS PAGE BOOTS, NOT FRAMES, and that is the one thing worth knowing ' +
+      'before budgeting it. Every leg does `goto /rack` + spawnPatch + centre + open the dock, ' +
+      'then asserts on DOM and LAYOUT facts only — no leg reads a pixel — and the spec sets ' +
+      '`__videoEngineFreezeRender` in an init script, so the per-frame `blitOutputForPreview` + ' +
+      '`drawPreviewDownscaled` loop these 27 video bodies would otherwise run is OFF for the whole ' +
+      'file. So the "cost scales with frames driven and nothing else" calibration in the ' +
+      'b3ntb0x entry above does NOT transfer: there are no frames driven. Cost is ~linear in the ' +
+      'table size. ' +
+      '⚠ TREAT THE LOCAL NUMBER AS A FLOOR ANYWAY. `backdraft-preview-toggle` calibrated 57.5 s ' +
+      'local against 358.2 CPU-s on CI (6x) and that WAS a frame-driving video spec; the frozen ' +
+      'render should put this one well under that multiplier, but "should" is a prediction and ' +
+      'this artifact exists because predictions were wrong. Do not use 51.2 s for shard-balance ' +
+      'reasoning — it is here to prove the spec was measured at all. ' +
+      '⚠ AND IT IS ONE FILE, so the whole table lands on ONE shard. ⚠ THE COST OF BEING ' +
+      'UNMEASURED IS NOT LOCAL TO ITS OWN SHARD, which this PR learned the expensive way: the ' +
+      'planner packs by FILE, so adding one file re-derives the whole plan — measured, adding ' +
+      'this single file changes the composition of NINE of the TEN shards. Its own shard passed; ' +
+      'a DIFFERENT shard went to 86% of budget because the reshuffle handed it a heavier draw. ' +
+      'That is why this entry matters more than its own runtime suggests. ' +
+      'Run `task e2e:timings:accept -- <run-id>` on the first green run after this merges and ' +
+      'DELETE this entry.',
   },
   // Every entry here is a debt with a deadline.
   //

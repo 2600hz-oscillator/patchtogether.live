@@ -39,6 +39,7 @@ import { spawnPatch } from './_helpers';
 import { pressFlipKey } from './_flip-key';
 import { AUDIO_FIXTURE, VIDEO_FIXTURE, fixtureProblems, fixtureType } from './_face-fixtures';
 import { BOOT_MS } from '../_helpers/boot-budget';
+import { settle } from '../_helpers/frames';
 
 async function gotoWorkflow(page: Page): Promise<void> {
   await page.goto('/rack');
@@ -72,7 +73,11 @@ async function panTileTo(
     },
     { id, target },
   );
-  await page.waitForTimeout(120);
+  // `duration: 0` makes the pan instant IN THE STORE; the real clicks below
+  // need the new transform PAINTED, which is a frame count, not a duration —
+  // 120 ms was ~7 frames locally and under one on CI's SwiftShader (7.9 fps
+  // measured). Two rAFs is Svelte-flush + paint.
+  await settle(page);
 }
 
 // ── THE VIDEO FIXTURE IS HEALTHY (#1864) ────────────────────────────────────

@@ -26,7 +26,6 @@
 import { describe, expect, it } from 'vitest';
 import { renderResofilter, resToK } from '../../../../../dsp/src/lib/resofilter-dsp';
 import { resofilterDef, RESOFILTER_MODE_NAMES, RESOFILTER_MODE_SHORT } from '$lib/audio/modules/resofilter';
-import { faceReadoutValueIds } from '$lib/ui/workflow/face-readout-values';
 import {
   MODES_WITH_PEAK,
   MODES_WITH_WIDTH,
@@ -444,53 +443,6 @@ describe('resofilter face model — the WORKLET’s own rounding, and the def wi
     for (const [i, short] of RESOFILTER_MODE_SHORT.entries()) {
       expect(RESOFILTER_MODE_NAMES[i]!.length).toBeGreaterThan(short.length);
     }
-  });
-
-  it('every readout the face declares is REGISTERED, and every registered id is declared', () => {
-    const declared = (resofilterDef.face?.hero?.readouts ?? [])
-      .map((r) => r.valueId)
-      .filter((v): v is string => !!v);
-    expect(declared).toEqual([
-      'resofilter-peak-db',
-      'resofilter-band-width',
-      'resofilter-cv-reach',
-    ]);
-    const registered = new Set(faceReadoutValueIds());
-    for (const id of declared) expect(registered.has(id), `${id} is registered`).toBe(true);
-    // …and nothing registered under this module's prefix is orphaned.
-    const mine = faceReadoutValueIds().filter((id) => id.startsWith('resofilter-'));
-    expect([...mine].sort()).toEqual([...declared].sort());
-  });
-
-  it('every PRESET’s note is RECOMPUTED from its own values — no typed number beside a live button', () => {
-    // ⚠ THE NOISE SCAR, GATED. That face shipped a hero readout and a sidebar
-    // entry printing two different true values of ONE quantity (−12.3 vs
-    // −12.5 dB), in one screenshot, with every test green — because the
-    // sidebar's number was PROSE and the only gate that read a printed value
-    // read the other one. A preset `note` is exactly that shape: a string
-    // beside a button that applies real params. So each note is re-derived here
-    // through the SAME model the hero prints, from the preset's OWN `values`.
-    const block = (resofilterDef.face?.sidebar ?? []).find((b) => b.kind === 'presets');
-    expect(block, 'the presets block exists').toBeTruthy();
-    if (!block || block.kind !== 'presets') return;
-    expect(block.entries.length).toBe(4);
-
-    for (const e of block.entries) {
-      const p = resofilterFaceParams((id) => e.values[id]);
-      // The note is whichever readout is LIVE in that preset's mode — a peak
-      // where there is one, the width where there is not. That rule is what
-      // makes the four notes carry two different UNITS, which is the point.
-      const expected = MODES_WITH_PEAK.has(p.mode) ? resofilterPeakText(p) : resofilterWidthText(p);
-      expect(e.note, `preset '${e.id}' note`).toBe(expected);
-      expect(expected, `preset '${e.id}' prints a value, never '—'`).not.toBe('—');
-    }
-
-    // …and the set genuinely spans the argument: at least two distinct UNITS
-    // across four presets, off one RESONANCE dial.
-    const units = new Set(block.entries.map((e) => (e.note ?? '').replace(/[-−+0-9. ]/g, '')));
-    expect(units, `notes: ${block.entries.map((e) => e.note).join(' · ')}`).toEqual(new Set(['dB', 'oct']));
-    // every preset lands on a DIFFERENT mode-character than at least one other
-    expect(new Set(block.entries.map((e) => e.values.mode)).size).toBeGreaterThan(2);
   });
 
   it('resofilterFaceParams resolves the DEF DEFAULT for anything untouched', () => {

@@ -17,6 +17,9 @@
   import { patch } from '$lib/graph/store';
   import { setNodeParam } from '$lib/graph/mutate';
   import { ruttetraDef } from '$lib/video/modules/ruttetra';
+  // ONE source, shared with the faced dock body. Co-located under `ui/` rather
+  // than on the def so it stays out of the WebGL attest basis — see that file.
+  import { RUTTETRA_MONITOR_BOX } from './ruttetra/monitor-box';
   import { startCornerResize } from './card-resize';
   import type { VideoEngine } from '$lib/video/engine';
   import { VIDEO_RES } from '$lib/video/engine';
@@ -72,14 +75,14 @@
   const CANVAS_W = 280;
   const CANVAS_H = 158;
 
-  // Rounded to whole-u (180px) rack tiles (#759) so default + min land on the
-  // grid; this card is user-resizable so the rack CSS doesn't clamp it.
-  const MIN_WIDTH = 360;
-  const MIN_HEIGHT = 180;
-  const DEFAULT_WIDTH = 360;
-  const DEFAULT_HEIGHT = 360;
-  const HEADER_PX = 56;
-  const PAD_PX = 20;
+  // THE MONITOR BOX — imported from the def, not re-typed (#2009). The FACED
+  // dock body (`ui/modules/ruttetra/RuttetraOutputBody.svelte`) reads the same
+  // `node.data.resizedWidth`/`resizedHeight` keys and needs the same floors, so
+  // the constants live in ONE place both surfaces can reach without importing
+  // each other. `headerPx`/`padPx` are card-only chrome; the faced body has
+  // neither, which is why the shared record names them as such.
+  const { minW: MIN_WIDTH, minH: MIN_HEIGHT, defW: DEFAULT_WIDTH,
+          defH: DEFAULT_HEIGHT, headerPx: HEADER_PX, padPx: PAD_PX } = RUTTETRA_MONITOR_BOX;
 
   let hideControls = $derived<boolean>(Boolean(node?.data?.hideControls));
   let resizedWidth = $derived<number>(

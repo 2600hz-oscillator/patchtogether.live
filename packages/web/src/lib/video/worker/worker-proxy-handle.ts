@@ -56,6 +56,9 @@ export class WorkerProxyHandle implements VideoNodeHandle {
    *  not a fixed wall-clock budget. Pure test instrumentation: a single integer
    *  increment on the existing successful-upload path (no prod behaviour). */
   private framesDelivered = 0;
+  /** #1905 — bitmaps that arrived and FAILED to upload (see draw()). */
+  private uploadErrors = 0;
+  private lastUploadError: string | null = null;
 
   /** Lazily-materialized main-thread fallback (only when the worker can't / isn't
    *  yet rendering). Null while the worker path is live. */
@@ -170,8 +173,18 @@ export class WorkerProxyHandle implements VideoNodeHandle {
           gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, bmp);
           this.workerTextureReady = true;
           this.framesDelivered++;
-        } catch {
+        } catch (err) {
           // A bad upload shouldn't crash the frame; drop this bitmap.
+          //
+          // ⚠ #1905 — but it must not be INVISIBLE. This is the LAST silent
+          // drop in the worker chain: the bridge can report thousands of frames
+          // RECEIVED while every one of them fails to upload here, and the only
+          // outward sign was `workerFramesDelivered` sitting at 0 — which reads
+          // exactly like "the worker never sent anything". Two opposite facts,
+          // one number. Measured on a SwiftShader run: framesReceived=2367,
+          // framesDelivered=0.
+          this.uploadErrors++;
+          this.lastUploadError = err instanceof Error ? err.message : String(err);
         }
         gl.bindTexture(gl.TEXTURE_2D, null);
         try { bmp.close(); } catch { /* */ }
@@ -222,6 +235,10 @@ export class WorkerProxyHandle implements VideoNodeHandle {
     // answer a counter read. A spec polls this until ≥N to know the worker render
     // chain is live (a real state, not a wall-clock guess).
     if (key === 'workerFramesDelivered') return this.framesDelivered;
+    // #1905 — the OTHER half of that number. Served before the fallback path
+    // for the same reason: a diagnostic read must not materialize a handle.
+    if (key === 'workerUploadErrors') return this.uploadErrors;
+    if (key === 'workerLastUploadError') return this.lastUploadError;
     // Is the worker the ACTIVE render path RIGHT NOW (spawned AND its WebGL2
     // context initialized)? `bridge.ready()` is `supported && workerGlOk`, so it
     // is FALSE on a renderer where worker-WebGL2 can't initialize — notably CI's

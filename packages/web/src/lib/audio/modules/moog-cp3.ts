@@ -173,28 +173,6 @@ export const moogCp3Def: AudioModuleDef = {
     // mask and no freeze argument.
     glyph: 'meter',
 
-    // THE HERO: one derived readout and no promoted control — promoting one of
-    // four interchangeable channel gains would be an arbitrary claim (the
-    // attenumix precedent).
-    //
-    // ⚠ ONE NUMBER, IN dB, AND THE SHAPE IS DELIBERATE. The obvious form is
-    // `x8.00 · +18.1 dB`, and that is very close to the composite the owner
-    // deleted from mixmstrs — *"[MASTER 1.00 / BUS <= 8.60x · +18.7 dB / ASLEEP
-    // 16 asleep] these numbers and text should go away"*. What the faces merged
-    // since then carry is a BARE VALUE (moog923's `-24.8 dB`, swolevco's
-    // `261.6 Hz`), so this prints one number with one unit and the gain ratio
-    // lives in this comment and in `docs`, which is where an explanation
-    // belongs. If a reviewer wants the strip gone entirely, deleting this one
-    // entry is the whole change.
-    //
-    // It is a JOIN over all five knobs that no single readback can perform, and
-    // it is validated against the instrument rather than derived on paper:
-    // `2·(ch1+ch2+ch3+ch4·attenuator4)` vs the measured worst-case bus peak at
-    // five settings — x8.0000 / x4.0000 / x2.0000 / x6.0000 / x3.0000 — AGREE
-    // at every one.
-    hero: {
-      readouts: [{ label: 'bus', valueId: 'moogcp3-bus-db' }],
-    },
 
     // ⚠ THE REAR CARD IS AUTHORED HERE BECAUSE THE DERIVED DEFAULT WOULD SPLIT
     // BY CABLE DOMAIN, and the domains are not what a player needs to know.

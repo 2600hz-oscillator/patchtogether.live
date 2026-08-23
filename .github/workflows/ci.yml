@@ -53,9 +53,14 @@ name: CI
 #                            | was deleted 2026-06-20; webgl-smoke + webgl-attest
 #                            | are the blessed heavy-WebGL gates now).
 #   ci (umbrella)   ~0 s   | needs all above; gates branch protection
-#   vrt-strict-shard (× 4) ~6.5 min | matrix 1..4/4, needs: dsp-build; the
-#                            | REQUIRED comparison lane, split by MEASURED
-#                            | per-test cost (scripts/vrt-shard-plan.mjs)
+#   vrt-strict-shard       | matrix under `vrt-strict-shard` below (the count
+#                            | lives THERE, not in this table), needs: dsp-build;
+#                            | the REQUIRED comparison lane, split by MEASURED
+#                            | per-test cost (scripts/vrt-shard-plan.mjs).
+#                            | Duration: `node scripts/vrt-shard-plan.mjs
+#                            | --report <N>` derives it from the committed cost
+#                            | artifact — the "~6.5 min" that used to sit here
+#                            | was 2.3x stale (#2039).
 #   vrt-strict      ~10 s  | needs: vrt-strict-shard — the AGGREGATOR, and the
 #                            | job whose `name:` is the required context
 #
@@ -70,9 +75,14 @@ name: CI
 # Critical path: max(typecheck, unit, art, slowest-e2e-shard) ≈ 4-5 min, vs the
 # previous ~22 min single-runner pipeline. Setup is repeated per-job (npm cache
 # makes it ~70 s each), which is the deliberate trade-off the plan accepted in
-# exchange for parallelism. Free-tier concurrency cap is 20 concurrent jobs;
-# with the informational lanes deleted the pipeline tops out well under it
-# (10 e2e + 4 vrt-strict shards + typecheck/unit/art/build/… ).
+# exchange for parallelism. Free-tier concurrency cap is 20 concurrent jobs.
+# ⚠ MEASURED on run 32408464982 (2026-08-20), reading created_at vs started_at
+# per job: every job started 1-4 s after creation with ~19 running at once, so
+# the pipeline was NOT queueing at that width. The vrt-strict matrix went 4 → 6
+# in #2039, which takes peak concurrency to ~21 — the first change that can
+# actually reach the cap. If a run ever shows a multi-minute gap between a
+# job's created_at and its started_at, THAT is what it will be, and the vrt
+# matrix is the cheapest thing to shrink.
 #
 # Branch ruleset note: the "main: green PRs only" ruleset (id 16042163)
 # requires the status check `typecheck + unit + ART + E2E`. The `ci` umbrella
@@ -536,6 +546,38 @@ jobs:
       # "does the prod bundle compile?" gate.
       - name: Run production build (dsp + web)
         run: flox activate -- task build
+
+      # ---------------------------------------------------------------------
+      # The Cloudflare Worker SIZE RATCHET (#2088).
+      #
+      # WHY IT IS HERE AND NOT IN `build-web`. This gate must measure the
+      # bundle that actually DEPLOYS. `build-web` produces the PREVIEW bundle
+      # with VITE_E2E_HOOKS=1 baked in — a different artifact that never ships
+      # — so gauging it would ratchet a number no deploy is subject to. This
+      # job runs `task build`, the production bundler, which is the same path
+      # `deploy.yml` takes. That is the whole reason the step lives in the
+      # slower job rather than the one that already had artifacts to hand.
+      #
+      # WHY IT IS NEEDED AT ALL. #2088: main went 177 KiB OVER Cloudflare's
+      # 3 MiB gzipped ceiling and NOTHING in CI could see it. The failure
+      # surfaced only in `deploy.yml` — which is NOT a required check — so a
+      # Worker that could not be published merged to main and took
+      # dev.patchtogether.live down with it. The measurement script existed and
+      # its own header recorded that it was not wired up; this is that gap.
+      #
+      # COST: ~1.3 s measured locally on a warm build. It shells out to
+      # `wrangler deploy --dry-run`, which needs NO Cloudflare token (it bundles
+      # locally and prints the size), and wrangler is already on disk as a
+      # transitive dep of @sveltejs/adapter-cloudflare — so there is no network
+      # fetch and no secret in this job. Both properties are load-bearing: this
+      # job is deliberately token-free.
+      #
+      # ⚠ IT FAILS IN BOTH DIRECTIONS. Over budget is the obvious half. The
+      # other half fails when too much slack opens up, forcing the budget DOWN
+      # in the commit that earned it — otherwise a win silently becomes room for
+      # the next regression, and the ratchet stops meaning anything.
+      - name: Check Cloudflare Worker size (gzipped, ratchet)
+        run: flox activate -- task worker:size:check
 
   # -----------------------------------------------------------------------
   # dsp-build — compile the DSP worklets (Faust + esbuild) ONCE per run and
@@ -1479,7 +1521,12 @@ jobs:
     name: webgl-smoke (SwiftShader WebGL floor)
     needs: [dsp-build, build-web]
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # 20, not 10 (#1854/#1917): the job's typical run is well under 10 min, but
+    # the slow-runner lottery pushed it to 10m07s four times on 2026-08-19 —
+    # and a job-level timeout reports as CANCELLED, which the aggregate treats
+    # as red while every real leg is green. The timeout is a failure BOUND, not
+    # a gate (the #1860 rule); 20 matches build-web's bound.
+    timeout-minutes: 20
 
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/patchtogether_test
@@ -2090,15 +2137,19 @@ jobs:
   # 1.02x) and selects via an anchored `--grep`.
   # -----------------------------------------------------------------------
   vrt-strict-shard:
-    name: vrt-strict shard ${{ matrix.shard }}/4
+    name: vrt-strict shard ${{ matrix.shard }}/${{ strategy.job-total }}
     needs: dsp-build
     runs-on: ubuntu-latest
-    # 15, against a 6.59 min prediction — 2.3x headroom, and deliberately not
-    # the old 25. A cap costs nothing on green (only an ALREADY-FAILING job runs
-    # to it), but a cap far above the real duration is also a cap that cannot
-    # notice a lane that has silently doubled. The prior 25 was sized for a
-    # 17.3 min job; carrying it over unchanged would have been a number that
-    # meant nothing.
+    # 15, against a prediction this file does not restate — re-derive it with
+    # `node scripts/vrt-shard-plan.mjs --report <N>`, which reads the committed
+    # cost artifact and prints the per-shard load and predicted job wall. The
+    # number that USED to sit here (6.59 min) was measured against a 115-test /
+    # 860 CPU-s roster and was 2.3x stale by 2026-08-20; a prediction copied
+    # into prose is a number that must track another number by discipline.
+    # A cap costs nothing on green (only an ALREADY-FAILING job runs to it),
+    # but a cap far above the real duration is also a cap that cannot notice a
+    # lane that has silently doubled. The prior 25 was sized for a 17.3 min job;
+    # carrying it over unchanged would have been a number that meant nothing.
     timeout-minutes: 15
 
     strategy:
@@ -2112,7 +2163,50 @@ jobs:
         # matrix out of this file and plans against it — so the planner's
         # coverage assertions always describe the split CI actually runs, and a
         # bump here cannot leave the gate certifying a different partition.
-        shard: [1, 2, 3, 4]
+        #
+        # 4 → 6 on 2026-08-20 (#2039). NOT a re-run lottery and not balance:
+        # the split was already even (spread 1.008x). The cost artifact had
+        # drifted to 115 tests / 860 CPU-s against a real 210 / 1940, so the
+        # planner believed each shard held ~410 s when it really held ~490 s,
+        # and shard 2 died on `--global-timeout` with 49 green, 0 failed and
+        # 4 scenes never reached. With the artifact refreshed, 4 shards model
+        # at ~494 s + ~21 s Playwright boot = 86% of the 600 s budget — over
+        # the wrapper's 85% fail line below. 6 models at ~329 s (~58%), which
+        # is the growth room this lane keeps eating.
+        #
+        # ⚠ 6 → 8 on 2026-08-22 (#2103), AND IT IS THE SAME DEFECT AS #2039 —
+        # READ THAT PARAGRAPH ABOVE FIRST, because this is its second occurrence
+        # and the pattern is the finding.
+        #
+        # Same signature: `vrt-strict shard 2` red at 92% of budget with ALL 45
+        # of its tests PASSING (planned 45 / executed 45 / skipped 0) — the
+        # headroom guard, not a baseline. Same cause: the cost artifact had gone
+        # stale. #2039's refresh left it describing 210 tests; the faceplate
+        # programme then added 61 more (271 tests / 2631 CPU-s), and EVERY
+        # batch-22 face was missing from it. Missing scenes are scheduled at the
+        # MEDIAN, which is right for an audio face and badly wrong for a video
+        # DOCK face — the median face dock is 9.7 s while the video ones run
+        # 20-22 s — so the planner packed six expensive video docks onto one
+        # shard believing they were average.
+        #
+        # MEASURED, `node scripts/vrt-shard-plan.mjs --report N`:
+        #   stale artifact, 6 shards → 335-553 s, spread 1.65x, shard 2 at 92%
+        #   refreshed,      6 shards → 437-441 s, spread 1.009x, max 73% (warn)
+        #   refreshed,      8 shards → 329-330 s, spread 1.005x, max 55% (ok)
+        #
+        # ⚠ SO THE REFRESH ALONE CLEARED THE RED, and the shard bump is for the
+        # GROWTH, not the failure: 6 lands in the warn band today and models 77%
+        # once batch-22 G3 and G4 add their 16 scenes, which is where #2039 was
+        # standing when it thought it had bought room. 8 models 55% / 58%.
+        #
+        # ⚠ AND THE DURABLE FIX IS NEITHER OF THOSE. Both incidents are the
+        # artifact going stale because `task vrt:strict:timings:accept` is
+        # MANUAL and nobody runs it while faces land. Bumping the shard count is
+        # what you do when the population outgrows the split; it is not a
+        # remedy for a cost table that does not know the population. Tracked as
+        # a follow-up on #2103 — if this recurs a third time, automate the
+        # refresh rather than adding two more shards.
+        shard: [1, 2, 3, 4, 5, 6, 7, 8]
 
     env:
       # The lane's identity. Narrows testMatch to vrt.spec.ts +
@@ -2246,9 +2340,18 @@ jobs:
           set -euo pipefail
           flox activate -- npx --workspace e2e playwright test \
             --config=vrt/vrt.config.ts --list --reporter=json > vrt-strict-list.json
-          flox activate -- node scripts/vrt-shard-plan.mjs ${{ matrix.shard }} 4 \
+          # ⚠ THE COUNT IS DERIVED (`strategy.job-total`), NEVER RE-TYPED.
+          # It was the literal `4` until 2026-08-20, and bumping the matrix to
+          # 6 in #2039 left it behind: shards 5 and 6 called `vrt-shard-plan.mjs
+          # 5 4` / `6 4`, which is out of range, so they died on the planner's
+          # usage error. Coverage was never at risk — shards 1-4 still planned a
+          # complete 4-way partition and the union assertion held — but two jobs
+          # went red for a reason that had nothing to do with any baseline.
+          # `scripts/vrt-shard-plan.test.ts` now DENIES a literal here, so this
+          # cannot drift from the matrix again.
+          flox activate -- node scripts/vrt-shard-plan.mjs ${{ matrix.shard }} ${{ strategy.job-total }} \
             --list vrt-strict-list.json --out vrt-shard-planned.txt > vrt-shard-grep.txt
-          echo "shard ${{ matrix.shard }}/4 plans $(wc -l < vrt-shard-planned.txt) scenes:"
+          echo "shard ${{ matrix.shard }}/${{ strategy.job-total }} plans $(wc -l < vrt-shard-planned.txt) scenes:"
           sed 's/^/  /' vrt-shard-planned.txt
 
       # ⚠ Playwright is invoked DIRECTLY, not through `task vrt:strict`. The
@@ -2264,7 +2367,11 @@ jobs:
       # only record of WHICH tests executed, and that is what the coverage check
       # below diffs against the plan. `PIPESTATUS` preserves Playwright's exit
       # code across the tee.
-      - name: Run VRT (strict subset — shard ${{ matrix.shard }}/4)
+      - name: Run VRT (strict subset — shard ${{ matrix.shard }}/${{ strategy.job-total }})
+        env:
+          # Names this lane in the wrapper's one-line budget report, so the
+          # percentage in the log says WHICH shard it belongs to.
+          E2E_SHARD_BUDGET_LABEL: vrt-strict shard ${{ matrix.shard }}/${{ strategy.job-total }}
         run: |
           set -uo pipefail
           GREP="$(cat vrt-shard-grep.txt)"
@@ -2275,13 +2382,25 @@ jobs:
           set +e
           # --global-timeout: the repo's die-mute guard (ci-playwright-timeout
           # test) requires every Playwright job to either carry one or be
-          # DECLARED unguarded. This lane's cost is measured (860 CPU-s / 4
-          # shards ≈ 215 s of test time + boot), so 600 s bounds a wedged shard
-          # at ~3x its expected test runtime and fires a full 5 minutes BEFORE
-          # this job's `timeout-minutes: 15` kill — the die-mute guard requires
-          # that ordering, or the runner reaps the job before Playwright can
-          # write its report and the shard dies without evidence.
-          flox activate -- npx --workspace e2e playwright test \
+          # DECLARED unguarded. 600 s fires a full 5 minutes BEFORE this job's
+          # `timeout-minutes: 15` kill — the die-mute guard requires that
+          # ordering, or the runner reaps the job before Playwright can write
+          # its report and the shard dies without evidence.
+          #
+          # ⚠ THE BUDGET WRAPPER IS THE POINT, not decoration. --global-timeout
+          # is a CLIFF, not a gauge: a shard at 99% of it and a shard at 40%
+          # produce byte-identical green output, so the only signal is the day
+          # it runs out. That day was 2026-08-20 (#2039) — shard 2 hit 600 s
+          # with 49 passed, ZERO failed and 4 planned scenes never reached, and
+          # nothing in the log said "out of room" because nothing was measuring
+          # room. `scripts/e2e-shard-budget.sh` prints this shard's percentage
+          # of budget on EVERY run and fails at 85%, so the next time this lane
+          # grows into its ceiling it says so in the shard that is still green.
+          # It derives the threshold from the --global-timeout below rather
+          # than re-typing it, and it propagates a real test failure verbatim
+          # instead of relabelling it as a budget failure.
+          flox activate -- bash scripts/e2e-shard-budget.sh -- \
+            npx --workspace e2e playwright test \
             --config=vrt/vrt.config.ts --grep "$GREP" --global-timeout 600000 2>&1 | tee vrt-shard-run.log
           RC=${PIPESTATUS[0]}
           set -e

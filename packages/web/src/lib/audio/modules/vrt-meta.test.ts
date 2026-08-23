@@ -36,6 +36,24 @@
 import { describe, expect, it } from 'vitest';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
+// ⚠ THE SIDE-EFFECT IMPORTS ARE LOAD-BEARING, AND THEIR ABSENCE WAS A LATENT
+// BLIND SPOT IN THIS FILE. `list*ModuleDefs()` reads a registry that is
+// populated by IMPORTING the module barrels; without these three lines this
+// file was relying on some TRANSITIVE import to have registered them first.
+// That held for the full-file run and BROKE under a `-t` filter, where
+// `listVideoModuleDefs()` returned an EMPTY array.
+//
+// An empty registry does not fail — it makes every sweep keyed on it cover
+// NOTHING and pass, which is the blind-gate shape exactly. Four pre-existing
+// sweeps in this file already depended on it (the registered-vs-exempt
+// reconciliation, the mask reconciliation, and the STRICT_VRT cross-checks), so
+// this hardens them too rather than only the video-face gate added below.
+// Caught by that gate's own vacuity control, which is what a vacuity control is
+// for. `push-card-schema.test.ts` and `video-face-screen-source.test.ts` both
+// already do this; this file was the copy that did not.
+import '$lib/audio/modules';
+import '$lib/video/modules';
+import '$lib/meta/modules';
 import { listModuleDefs } from '$lib/audio/module-registry';
 import { listVideoModuleDefs } from '$lib/video/module-registry';
 import { listMetaModuleDefs } from '$lib/meta/module-registry';
@@ -51,6 +69,13 @@ import {
 } from '../../../../../../e2e/vrt/vrt-exemptions';
 import { VRT_SCENES } from '../../../../../../e2e/vrt/vrt-scenes';
 import { VRT_LIVE_SURFACES } from '../../../../../../e2e/vrt/vrt-live-surfaces';
+// The hand-maintained face-scene roster + the promoted set it must equal.
+import {
+  EXEMPT_FACE_TYPES,
+  FACES,
+  ROSTERED_FACE_TYPES,
+} from '../../../../../../e2e/vrt/_shell-faces';
+import { STRICT_FACES } from '$lib/ui/workflow/strict-faces';
 
 function repoRoot(): string {
   // This file lives at packages/web/src/lib/audio/modules/. Six `..`
@@ -571,6 +596,260 @@ describe('vrt-meta — the face-scene AUDIO FREEZE is deny-by-default', () => {
       Object.values(VRT_SCENES).filter((s) => s.freezeAudio === false).length,
       'no VRT_SCENES entry opts out of the freeze at all — if that is now true the guard ' +
         'should be retired deliberately, not left scanning for a shape that cannot occur.',
+    ).toBeGreaterThan(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// FACE SCENE COVERAGE — the roster was HAND-MAINTAINED and nothing checked it
+// ---------------------------------------------------------------------------
+//
+// ⚠ THE GAP THIS CLOSES IS ONE THE SKILL DOCUMENTS AND NO GATE ENFORCED.
+// `module-faceplates.md` lists `e2e/vrt/_shell-faces.ts`'s `FACES` roster under
+// "NOT registry-driven — you must edit them by hand", and states the
+// consequence outright: **"A promoted module missing from this list simply has
+// no VRT scene, silently."**
+//
+// Promotion itself is already airtight in both directions — `module-face-lint`
+// asserts STRICT_FACES equals the set of defs declaring a `face`. The PIXEL side
+// was not: a module could be promoted, ship a live faceplate to every
+// workflow-mode user, and have zero baseline behind it, with every other gate
+// green. That is the same shape as the defect this suite exists for, one layer
+// out.
+//
+// ⚠ AND IT IS NOT HYPOTHETICAL — it was hit while landing moog904a (2026-08-19).
+// A local branch merged `main` while BEHIND its own origin, silently dropping
+// the capture bot's baseline commit. The roster entry stayed, the two PNGs
+// vanished, and nothing failed: the face lint was green (the def still declares
+// a face), the promotion set was green, and the VRT lane does not fail on a
+// baseline it was never told to expect. It was caught by a hand-run audit.
+//
+// Three assertions, deny-by-default in both directions, so neither list can
+// drift from the other or from the committed pixels.
+describe('face VRT scenes — every promoted face is rostered AND captured', () => {
+  const faceBaseline = (type: string, tier: 'compact' | 'dock'): string =>
+    resolve(
+      repoRoot(),
+      'e2e/vrt/__screenshots__/workflow-shell-faces.spec.ts',
+      `face-${type}-${tier}.png`,
+    );
+
+  // `Set<string>`, deliberately: `STRICT_FACES` is a narrow union type, so an
+  // inferred set of literals refuses `.has(someString)` at the type level.
+  const rostered = new Set<string>(FACES.map((f) => f.type));
+
+  it('the FACES roster is EXACTLY the promoted set (both directions)', () => {
+    // ⚠ THE SUBJECT IS "ACCOUNTED FOR", NOT "HAS A SCENE" — and this gate used
+    // to conflate them. A face can be accounted for by a captured scene OR by a
+    // named `FACES_WITHOUT_SCENES` exemption (a renderer that cannot be
+    // baselined at all; `milkdrop`/#2083 is the first). When that exemption
+    // landed, `workflow-shell-faces.spec.ts` learned about it and THIS FILE DID
+    // NOT — two gates asserting one relationship off two lists — so a correctly
+    // exempted face reported as PROMOTED BUT NOT ROSTERED here.
+    //
+    // Both gates now read `ROSTERED_FACE_TYPES`, which is the union, defined
+    // once beside the rosters it unions. Do not re-derive it locally.
+    const promoted = new Set<string>(STRICT_FACES);
+    const unaccounted = [...promoted].filter((t) => !ROSTERED_FACE_TYPES.has(t)).sort();
+    const unpromoted = [...ROSTERED_FACE_TYPES].filter((t) => !promoted.has(t)).sort();
+
+    expect(
+      unaccounted,
+      'PROMOTED BUT NOT ACCOUNTED FOR — these modules render a live faceplate to every ' +
+        'workflow-mode user with NO VRT scene behind them, and nothing else can see it: ' +
+        'module-face-lint only checks that the def declares a face. Either add ' +
+        '{ type, pages } to FACES in e2e/vrt/_shell-faces.ts and capture the baselines, or — ' +
+        'if the RENDERER genuinely cannot be baselined — add a named FACES_WITHOUT_SCENES ' +
+        `entry carrying the measurement and its replacement coverage: ${unaccounted.join(', ')}`,
+    ).toEqual([]);
+
+    // ⚠ THE REVERSE DIRECTION SPLITS, because the two halves are different
+    // mistakes and deserve different sentences. A stale SCENE captures a legacy
+    // card under a face-scene name; a stale EXEMPTION silently pre-approves
+    // whatever takes that name next. Telling an author to "remove the scene" for
+    // an entry that has no scene is the kind of misdirection that costs a
+    // debugging session.
+    const staleScenes = unpromoted.filter((t) => !EXEMPT_FACE_TYPES.has(t));
+    const staleExemptions = unpromoted.filter((t) => EXEMPT_FACE_TYPES.has(t));
+
+    expect(
+      staleScenes,
+      'ROSTERED BUT NOT PROMOTED — a scene naming a module that is not in STRICT_FACES ' +
+        'captures a legacy card under a face-scene name, which is a baseline nobody can ' +
+        `interpret. Remove it or promote the module: ${staleScenes.join(', ')}`,
+    ).toEqual([]);
+
+    expect(
+      staleExemptions,
+      'EXEMPTED BUT NOT PROMOTED — a FACES_WITHOUT_SCENES entry names a module that is not ' +
+        'faced. It has no scene BY DESIGN, so there is nothing to remove and nothing to ' +
+        'capture; the entry itself is what is stale. An unpromoted module needs no exemption, ' +
+        'and leaving one behind quietly pre-approves whatever takes that name next — delete ' +
+        `it, or promote the module and re-argue its coveredBy: ${staleExemptions.join(', ')}`,
+    ).toEqual([]);
+  });
+
+  // ── EVERY FACED VIDEO MODULE DECLARES `videoFaceWhy` ─────────────────────
+  //
+  // ⚠ THE GAP THIS CLOSES COST A FULL CI SHARD AND A 90-SECOND HANG. `FACES`
+  // and the video registry were joined by NOTHING: a video module could be
+  // promoted, rostered, and pass every unit gate in this file while its scene
+  // was structurally incapable of booting.
+  //
+  // The mechanism, from `bootWithFace`: without `videoFaceWhy` a face takes the
+  // AUDIO boot path, which spawns the node and then waits — with NO explicit
+  // timeout, so it inherits the 90 s TEST timeout — for it to appear in
+  // `pinned-mixmstrs.data.columns['1']`. A VIDEO module never joins a mixer
+  // channel column; it joins the video zone. The predicate can therefore never
+  // become true, and the scene dies at `page.waitForFunction: Test timeout of
+  // 90000ms exceeded` WITHOUT EVER REACHING THE SCREENSHOT.
+  //
+  // ⚠ AND IT IS INDISTINGUISHABLE FROM A SLOW SCENE FROM THE OUTPUT ALONE — a
+  // timeout at a `waitForFunction` reads as "CI is slow, raise the budget",
+  // and raising it buys another 90 s of waiting for a condition that cannot
+  // become true. That is why this is a UNIT gate: it answers "never" vs
+  // "slower" before a shard is spent, which no e2e budget change can do.
+  //
+  // `backdraft` hit this as the first video face and the option's own
+  // doc-comment records it in caps; `4plexvid` hit it again anyway, by reading
+  // the `freezeFaceVideo` helper (which the flag ALSO gates) and concluding the
+  // flag was a freeze opt-in it could decline. A doc-comment is not a gate, so
+  // two independent agents made the same call. This is the gate.
+  //
+  // DENY BY DEFAULT with a NAMED, ANCHORED exemption — empty, and it should
+  // stay empty: there is no such thing as a video face that boots into a mixer
+  // column, so an entry here is almost certainly a misdiagnosis of some other
+  // failure.
+  const NO_VIDEO_FACE_WHY: readonly { type: string; why: string }[] = [];
+
+  it('every faced VIDEO module declares `videoFaceWhy` on its roster entry', () => {
+    const videoTypes = new Set(listVideoModuleDefs().map((d) => d.type));
+    const exempt = new Set(NO_VIDEO_FACE_WHY.map((e) => e.type));
+    const offenders = FACES.filter((f) => videoTypes.has(f.type) && !exempt.has(f.type))
+      .filter((f) => !(f as { videoFaceWhy?: string }).videoFaceWhy?.trim())
+      .map((f) => f.type)
+      .sort();
+    expect(
+      offenders,
+      'a VIDEO module is rostered without `videoFaceWhy`, so `bootWithFace` will send it down '
+        + 'the AUDIO path and wait out the full 90 s test timeout for a mixer-column membership '
+        + 'a video node never acquires. Both of its scenes fail, and they fail as a TIMEOUT '
+        + 'rather than an error. Declare it — the field is the video-zone boot selector first '
+        + 'and the freeze opt-in second.',
+    ).toEqual([]);
+  });
+
+  it('the videoFaceWhy check has a SUBJECT, and its predicate can FAIL', () => {
+    // Vacuity: a gate over an empty set is green and proves nothing. If the
+    // video registry or the roster stopped resolving, THIS fails rather than
+    // the sweep above passing silently.
+    const videoTypes = new Set(listVideoModuleDefs().map((d) => d.type));
+    const facedVideo = FACES.filter((f) => videoTypes.has(f.type)).map((f) => f.type);
+    expect(facedVideo.length, 'faced VIDEO modules found in the roster').toBeGreaterThan(0);
+
+    // ...and the predicate must be able to say NO. A rostered video entry with
+    // the field absent, or blank, is the exact shape that shipped.
+    const bad = [{ type: facedVideo[0]!, pages: 1 }, { type: facedVideo[0]!, pages: 1, videoFaceWhy: '  ' }];
+    for (const entry of bad) {
+      expect(
+        !(entry as { videoFaceWhy?: string }).videoFaceWhy?.trim(),
+        `a ${JSON.stringify((entry as { videoFaceWhy?: string }).videoFaceWhy)} videoFaceWhy must be REFUSED`,
+      ).toBe(true);
+    }
+    // ...and a real declaration must be ACCEPTED, or the gate would refuse
+    // everything and be equally useless.
+    const good = { type: facedVideo[0]!, pages: 1, videoFaceWhy: 'a real reason, stated' };
+    expect(!good.videoFaceWhy.trim()).toBe(false);
+  });
+
+  it('every videoFaceWhy exemption still names a faced video module', () => {
+    const videoTypes = new Set(listVideoModuleDefs().map((d) => d.type));
+    const dead = NO_VIDEO_FACE_WHY.filter(
+      (e) => !videoTypes.has(e.type) || !rostered.has(e.type),
+    ).map((e) => e.type);
+    expect(
+      dead,
+      'an exemption naming a module that is no longer a rostered video face is stale — delete '
+        + 'it, or it will quietly permit the next module that takes the same name.',
+    ).toEqual([]);
+  });
+
+  it('every rostered face has BOTH committed baselines', () => {
+    // ⚠ ANCHORED TO THE ARTIFACT, not to the list — the rule this repo applies
+    // to every ledger. A roster entry whose PNGs are absent is exactly the
+    // moog904a case above, and it is invisible to a comparison run that was
+    // never told the file should exist.
+    const missing: string[] = [];
+    for (const type of [...rostered].sort()) {
+      for (const tier of ['compact', 'dock'] as const) {
+        if (!existsSync(faceBaseline(type, tier))) missing.push(`face-${type}-${tier}.png`);
+      }
+    }
+    expect(
+      missing,
+      'a rostered face scene has no committed baseline. Capture with ' +
+        '`flox activate -- task vrt:commit` (vrt-update.yml on linux CI) and check the bot ' +
+        'commit actually landed on the branch you are pushing — a merge of main onto a ' +
+        `STALE local branch drops it silently: ${missing.join(', ')}`,
+    ).toEqual([]);
+  });
+
+  it('NEGATIVE CONTROL: the checks can FAIL — on a fabricated roster and a fabricated name', () => {
+    // Without this, "no gaps" is indistinguishable from a predicate that cannot
+    // find one. Both legs are exercised against synthetic inputs so the real
+    // ones stay untouched.
+    const promoted = new Set<string>(STRICT_FACES);
+    // ⚠ FABRICATED FROM THE UNION, NOT FROM `FACES` — this control was the THIRD
+    // site asserting promoted↔accounted-for, and it went red on the first
+    // correctly-exempted face for the same reason the real check did: it
+    // subtracted a set that had never heard of `FACES_WITHOUT_SCENES`, so
+    // `milkdrop` read as a gap in a fabricated roster that was supposed to have
+    // none. The control's INTENT is unchanged — an invented name must be caught,
+    // and the real set must show no gaps — but it now measures that against the
+    // same `ROSTERED_FACE_TYPES` the two live gates read.
+    const fakeRoster = new Set([...ROSTERED_FACE_TYPES, 'definitelyNotAPromotedModule']);
+    expect([...fakeRoster].filter((t) => !promoted.has(t))).toEqual([
+      'definitelyNotAPromotedModule',
+    ]);
+    expect([...promoted].filter((t) => !fakeRoster.has(t))).toEqual([]);
+    expect(existsSync(faceBaseline('definitelyNotAPromotedModule', 'dock'))).toBe(false);
+    // ...and the positive half: a REAL rostered face resolves a real file, so
+    // the existence probe is reading the right directory.
+    //
+    // ⚠ THIS USED TO PIN `[...rostered].sort()[0]`, AND THAT MEASURED THE WRONG
+    // THING. The claim here is "the probe reads the right DIRECTORY". Pinning
+    // the alphabetically-first entry instead asks "does that ONE face have a
+    // baseline yet" — a different question, and one whose answer is legitimately
+    // NO during the documented window in which a face is rostered but its
+    // capture has not landed. Every new face passes through that window by
+    // design (`--update-snapshots` cannot write a baseline the roster has not
+    // asked for yet), so this control was one sort order away from failing for a
+    // reason that has nothing to do with the instrument.
+    //
+    // It survived only by luck: the previous new faces did not sort first.
+    // `4plexvid` does — a leading digit sorts before every letter — so it became
+    // the subject of the control the moment it was rostered, and the control
+    // reported "the existence probe is reading the wrong directory" about a
+    // probe that was working perfectly.
+    //
+    // ⚠ AND THE FALSE DIAGNOSIS IS THE REAL COST. The sweep above ALREADY
+    // reports an uncaptured baseline, by name, with the command that fixes it.
+    // This leg firing too says the opposite thing — that the harness is
+    // misconfigured — and sends the next author to the wrong place.
+    //
+    // Fixed at the SUBJECT: resolve across the WHOLE roster and require that at
+    // least one real face resolves. That is exactly the "right directory" claim
+    // and it stays falsifiable — a wrong directory resolves NOTHING, so this
+    // goes red on the condition it names. It is a vacuity floor with enormous
+    // slack (one, against the whole faced population), not a population count.
+    const resolvable = [...rostered]
+      .sort()
+      .filter((t) => existsSync(faceBaseline(t, 'dock')));
+    expect(
+      resolvable.length,
+      'the existence probe resolved NO rostered face at all. That is the DIRECTORY being wrong ' +
+        '(a moved snapshot root, a bad faceBaseline join) — not a missing capture, which the ' +
+        '"every rostered face has BOTH committed baselines" test above reports by name.',
     ).toBeGreaterThan(0);
   });
 });

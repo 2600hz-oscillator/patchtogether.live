@@ -32,6 +32,24 @@ import type { Component } from 'svelte';
 import type { ModuleNode } from '$lib/graph/types';
 import type { SelectorOption } from '$lib/ui/controls';
 import { testHooksEnabled } from '$lib/dev/test-hooks';
+import WavecelWavetablePanel from '$lib/ui/modules/wavecel/WavecelWavetablePanel.svelte';
+import {
+  WAVECEL_WAV_ACCEPT,
+  loadWavecelPreset,
+  loadWavecelWavFile,
+  selectWavecelSource,
+  wavecelPresetOptions,
+  wavecelPresetValue,
+  wavecelSourceOptions,
+  wavecelSourceValue,
+} from '$lib/ui/modules/wavecel-table-actions';
+import {
+  MILK_ACCEPT,
+  loadMilkFile,
+  milkdropPresetOptions,
+  milkdropPresetValue,
+  selectMilkdropPreset,
+} from '$lib/ui/modules/milkdrop-preset-actions';
 import Dx7OperatorMap from '$lib/ui/modules/dx7/Dx7OperatorMap.svelte';
 import Dx7OpDetail from '$lib/ui/modules/dx7/Dx7OpDetail.svelte';
 import AnalogVcoHeroPanel from '$lib/ui/modules/AnalogVcoHeroPanel.svelte';
@@ -353,6 +371,36 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
       },
     },
   },
+  milkdrop: {
+    // THE PRESET PICKER — the only surface on which the preset NAMES exist.
+    // `presetSelect` addresses presets by INDEX, so without this cell a
+    // faceplate could paint only an anonymous ~20-position control (the
+    // `sampleHold` / `colourofmagic` defect). Options come from the ENGINE's
+    // live list rather than a static roster, because the list grows with
+    // in-session `.milk` imports and a frozen roster would be wrong the moment
+    // anyone used the loader below.
+    //
+    // ⚠ IT WRITES `presetSelect`, the same param the PST fader, the PRESET CV
+    // jack and the NEXT trigger drive — which is what keeps all four in sync and
+    // what makes the choice persist with the patch.
+    'milkdrop-preset-select-{n}': {
+      kind: 'selector',
+      tag: 'preset',
+      options: (node) => milkdropPresetOptions(node?.id ?? ''),
+      value: (node) => milkdropPresetValue(node),
+      onchange: (nodeId, value) => selectMilkdropPreset(nodeId, value),
+    },
+    // The `.milk` importer — the same convert/append/crossfade action as the
+    // card's hidden file input, status line included. Custom imports are
+    // in-session only by design; the curated index is what the patch saves.
+    'milkdrop-milk-input-{n}': {
+      kind: 'file',
+      label: 'Load .milk…',
+      title: 'Import a Winamp Milkdrop .milk preset (appended to the picker for this session)',
+      accept: MILK_ACCEPT,
+      onFile: (nodeId, file) => loadMilkFile(nodeId, file),
+    },
+  },
   dx7: {
     // The voice selector — the single control that defines the sound. Drives
     // the SAME `node.data.preset` write the legacy Dx7Card's <select> does
@@ -405,6 +453,88 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
         action: 'drag',
         effect: { kind: 'data-rev', key: 'voiceRev' },
       },
+    },
+  },
+  wavecel: {
+    // THE HERO PICTURE — the loaded wavetable as a 3D stack or a single-frame
+    // scope, with the frame MORPH points at highlighted and SPREAD's read
+    // window picked out across its neighbours.
+    //
+    // ⚠ A PANEL RATHER THAN A `fullViewBody` EXTENSION, and `analogVco` above
+    // is the sibling that decides it rather than `rasterize`. All three are
+    // audio defs whose picture the shell cannot draw generically — but
+    // rasterize's raster is PRODUCED inside `read('imageData')`, so its surface
+    // must carry a per-frame push and has no probe of its own. This one is
+    // DERIVED: the table comes from `node.data`, the read position from the
+    // params and the CV taps, and nothing reads an AnalyserNode. That is the
+    // `analogvco-cycle` shape, including why its glyph cannot serve — a
+    // `hero.cell` suppresses the dock glyph so a knob-INVARIANT live trace
+    // never sits beside a knob-DERIVED picture.
+    //
+    // ⚠ THE PROBE READS THIS PANEL'S OWN SUBJECT. The view mode is a PRIVATE
+    // component-state preference (the card holds it the same way at
+    // `WavecelCard.svelte:54`, and both video OUTPUTS render their own view
+    // regardless of it), so there is no node.data key to watch — the
+    // `analogvco-cycle` situation exactly. The difference from a bad `text`
+    // probe is WHOSE caption it reads: this button lives INSIDE the panel and
+    // its caption IS the panel's current view, so a dead panel cannot produce
+    // the change. A probe reading some other control's caption could not say
+    // that, which is why rasterize declined a panel entirely.
+    'wavecel-viz-toggle-{n}': {
+      kind: 'panel',
+      label: 'wavetable',
+      component: WavecelWavetablePanel,
+      minWidth: 320,
+      // ⚠ A `data` PROBE, AND THE GATE IS WHAT MADE IT ONE. The first draft
+      // named a `text` witness on the toggle's own caption; `shell-cells`
+      // refused it — *"a control that only relabels itself is indistinguishable
+      // from a dead one"*. Correct, and it is the reason the view mode moved to
+      // `node.data`: the probe now watches the STATE THE PICTURE IS DRAWN FROM,
+      // so a panel that has stopped rendering cannot satisfy it. `data` over
+      // `data-rev` per the registry's own rule — a revision counter passes on a
+      // dead control that merely bumps it.
+      probe: {
+        testid: 'wavecel-viz-toggle-1',
+        action: 'click',
+        effect: { kind: 'data', key: 'vizMode', expect: 'changed' },
+      },
+    },
+    // The wavetable SOURCE — which factory table (or the user upload) is
+    // loaded. Drives the SAME `node.data.wavetableSource` write the card's
+    // <select> does (wavecel-table-actions), which the factory's poll loop
+    // picks up and re-posts to the worklet.
+    'wavecel-source-select-{n}': {
+      kind: 'selector',
+      tag: 'table',
+      options: (node) => wavecelSourceOptions(node),
+      value: (node) => wavecelSourceValue(node),
+      onchange: (nodeId, value) => selectWavecelSource(nodeId, value),
+    },
+    // The built-in preset loader. ⚠ IT REPORTS REAL STATE, unlike the card's
+    // `<select>`, which blanks itself the instant a load finishes and so never
+    // shows what it loaded. `faces-parity` refuses that shape by name — it
+    // picks an option and asserts the selection CHANGED, because a selector
+    // that always reads the same thing is indistinguishable from a dead one.
+    // The panel picture is the did-it-take feedback the card's reset was
+    // standing in for.
+    'wavecel-preset-select-{n}': {
+      kind: 'selector',
+      tag: 'preset',
+      options: () => wavecelPresetOptions(),
+      value: (node) => wavecelPresetValue(node),
+      onchange: (nodeId, value) => { void loadWavecelPreset(nodeId, value); },
+    },
+    // The WAV importer — the same parse-and-write action as the card's file
+    // input. ⚠ Its `{ status, error }` return is not decoration: the card
+    // renders those two strings in `wavecel-upload-status` /
+    // `wavecel-upload-error`, two affordances the def never declared, and the
+    // `file` cell's contract carries them for free.
+    'wavecel-wav-input-{n}': {
+      kind: 'file',
+      label: 'Load WAV...',
+      title: 'Import a wavetable WAV (E352-style single-cycle frames)',
+      accept: WAVECEL_WAV_ACCEPT,
+      onFile: (nodeId, file) => loadWavecelWavFile(nodeId, file),
     },
   },
   analogVco: {
@@ -865,6 +995,47 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
       // deliver AND the close must deliver. A gate that opens and never closes is
       // the worst failure this seam has, and a one-edge probe would be blind to
       // exactly it.
+      probe: { effect: { kind: 'audition', seam: 'manual-gate' } },
+    },
+  },
+  treeohvox: {
+    // THE AUDITION, and this one was ORDERED BY THE DEF. `treeohvox.ts:125-137`
+    // carries a note addressed to whoever authors this faceplate: its card's
+    // gate pad reaches the dock ONLY while the module has no `face`, because an
+    // un-faced dock full view renders the legacy card. The moment a face lands,
+    // the dock renders the face instead and the pad disappears unless the face
+    // ranks a gate cell of its own. That is the sixstrum defect verbatim — the
+    // card's STRUM button always worked while the FACE offered twenty controls
+    // over an instrument that could not be sounded — and this cell is the
+    // instruction being carried out.
+    //
+    // MEASURED (#1658): with nothing patched and every pressable on the card
+    // clicked, `audio_out` peaked at exactly 0.000e+0 over 145 frames, while
+    // the same analyser read 3.390e-1 the moment a gate reached `gate_in`.
+    //
+    // ⚠ `mode: 'gate'`, and the def is emphatic about why. `gate_in` declares
+    // `edge: 'gate'` and the processor acts on BOTH edges — rising starts the
+    // note, FALLING ends it, so gate length IS note length. The shared one-shot
+    // is a 5 ms pulse, which would end every auditioned note 5 ms after it
+    // began. The factory answers `manualGate` and DELIBERATELY NOT
+    // `manualTrigger`, so a caller reaching for the one-shot gets `undefined`
+    // and the ledger records `delivered: false` — the honest answer, and
+    // distinguishable from a press that never happened.
+    //
+    // ⚠ AND IT SOUNDS AN UN-ACCENTED NOTE, by design. The gate ConstantSource
+    // is connected to worklet input 1 alone; driving the shared `silence`
+    // source instead would also drive PITCH and ACCENT, transposing the voice
+    // and latching an accent on every audition. So ACCENT does nothing on this
+    // surface, which is the measured reason the face ranks it dock-only.
+    'treeohvox-gate-{n}': {
+      kind: 'action',
+      mode: 'gate',
+      label: 'gate',
+      title: 'Audition: HOLD to sound the voice (identical to holding gate_in high)',
+      onGate: (nodeId, high) => { setManualGate(nodeId, high); },
+      // Both edges, for the reason the siblings give: a gate that opens and
+      // never closes is a note that never ends, and a one-edge probe is blind
+      // to exactly it.
       probe: { effect: { kind: 'audition', seam: 'manual-gate' } },
     },
   },

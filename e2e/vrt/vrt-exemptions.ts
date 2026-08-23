@@ -135,9 +135,15 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
   // preview canvas (each spiro's center drifts + bounces every frame off the
   // engine clock). Mask the canvas so the deterministic chrome (COUNT fader +
   // 1/2/3 spiro selector + IN/OUT toggle + chroma colorwheel + per-spiro fader
-  // bank + the sectioned PatchPanel) is the regression gate. Currently in
-  // EXEMPT_FROM_VRT below; the mask covers the live preview if promoted into
-  // MODULES once darwin/linux baselines are captured.
+  // bank + the sectioned PatchPanel) is the regression gate.
+  //
+  // ⚠ THE "Currently in EXEMPT_FROM_VRT below" NOTE THAT USED TO SIT HERE WAS
+  // STALE AND IT COST A WRONG PREDICTION (2026-08-18). `spirographs` is NOT in
+  // that list — it has a real card baseline (`vrt.spec.ts/spirographs.png`) and
+  // this mask is what makes it deterministic. Predicting a capture off this
+  // comment rather than off the list gave "2 committed" against an actual 3,
+  // which is exactly the reconciliation the vrt-watch red flag exists to force.
+  // Read the LIST, not the prose next to it.
   spirographs: [
     { selector: 'canvas', why: 'live spirograph preview — each spiro\'s centre drifts and bounces every frame off the engine clock; the COUNT fader, selector, colorwheel and fader bank are the gate.' },
   ],
@@ -192,13 +198,20 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
   textmarquee: [
     { selector: 'canvas', why: 'live OUT preview canvas, continuously animated off the rAF loop while scrolling; the toolbar, FG/BG swatches and four knob rows are the gate.' },
   ],
-  // 4PLEXVID carries a live OUT-1 preview canvas; mask it so the
-  // deterministic chrome (4 selector knobs + handle rows) diffs while the
-  // live render is excluded. (Kept here for the follow-up baseline; the
-  // module is currently in EXEMPT_FROM_VRT below — promote it into MODULES
-  // when the darwin/linux PNGs are captured.)
+  // 4PLEXVID carries a live OUT-1 preview canvas; mask it so the deterministic
+  // chrome diffs while the live render is excluded.
+  //
+  // ⚠ TWO SENTENCES HERE WERE STALE AND ARE CORRECTED (Q44). It said "promote
+  // it into MODULES when the darwin/linux PNGs are captured" — there is ONE
+  // baseline set and LINUX CI AUTHORS IT (`snapshotPathTemplate` has no
+  // `{platform}` segment), so there is no pair to capture and no darwin half to
+  // wait for. And it described the deterministic chrome as "4 selector knobs",
+  // which the CARD has not rendered since 4plexvid entered `STRICT_FACES`:
+  // `migrated()` swaps both surfaces to `ModuleShell`, the four `<NeonFader>`s
+  // are gone, and the selectors now paint as a `segmented` row of named buttons
+  // at the dock.
   '4plexvid': [
-    { selector: 'canvas', why: 'live OUT-1 preview canvas blitted off the engine clock; the four selector knobs and the handle rows are the gate.' },
+    { selector: 'canvas', why: 'live OUT-1 preview canvas blitted off the engine clock — on the faceplate it is the fullViewBody preview; the selector cells and the handle rows are the gate.' },
   ],
   // ONE TO NINE — 1-in/9-out 3×3 splitter. The card carries a live MONITOR
   // preview canvas (input + grid + numbers via blitOutputToDrawingBuffer off
@@ -391,16 +404,40 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // (pure cores: query builder, response parser, best-file picker, scrub math)
   // + e2e/tests/archivist.spec.ts (route-mocked archive.org — never live).
   archivist: 'live external archive.org source + live <video>/<audio> + ticking playhead defeat deterministic capture; pure-core unit tests (query/parse/file-pick/scrub) + route-mocked e2e provide coverage',
-  // 4PLEXVID — 4-in/4-out video router. Card carries a live OUT-1 preview
-  // canvas; the rest is static chrome (4 discrete selector knobs + handle
-  // rows). VRT baseline pending platform-specific capture. Functional
-  // coverage: e2e/tests/4plexvid.spec.ts (proves each output shows its
-  // SELECTED input, gate rising-edge advances + wraps, outputs are
-  // independent) + the plex-select unit suite (selector-advance + gate
-  // edge-detect). Promote into MODULES + capture darwin/linux PNGs (the
-  // canvas mask above masks the live preview) in a follow-up PR.
-  '4plexvid': 'VRT baseline pending; e2e/tests/4plexvid.spec.ts + plex-select unit tests provide coverage. Promote + capture darwin/linux baselines (live preview masked) in a follow-up PR.',
-  cvBuddy: 'VRT baseline pending — hardware-facing card whose look is NOT yet owner-locked (Part A preview; the slot/clock readout + ES-9 mirror will likely change on owner feedback), so a baseline now would just churn. Card behavior is covered by cv-buddy slot-alloc/clock-math/es9-reconcile unit tests; promote + capture darwin/linux baselines once the look is approved.',
+  // 4PLEXVID — 4-in/4-out video router.
+  //
+  // ⚠ THIS EXEMPTION IS ABOUT THE LEGACY CARD, WHICH NO LONGER RENDERS (Q44).
+  // The module is now in `STRICT_FACES`, so `migrated()` swaps both surfaces to
+  // `ModuleShell` and there is no card scene left to capture — the exemption is
+  // no longer a debt anyone can pay off, it is a statement that the subject is
+  // gone. What replaced it is REAL, COMMITTED COVERAGE rather than a pending
+  // promise: `face-4plexvid-compact` and `face-4plexvid-dock` in the FACES
+  // roster (`e2e/vrt/_shell-faces.ts`), captured by linux CI like every other
+  // face scene.
+  //
+  // ⚠ AND THE OLD TEXT'S "capture darwin/linux PNGs" WAS ALREADY WRONG BEFORE
+  // THAT. There is ONE baseline set and linux CI authors it; the darwin half it
+  // told the next author to wait for has not existed for some time.
+  //
+  // Functional coverage is unchanged and does not depend on any of the above:
+  // e2e/tests/4plexvid.spec.ts (each output shows its SELECTED input, gate
+  // rising-edge advances + wraps, outputs independent) + the plex-select unit
+  // suite (selector-advance + gate edge-detect) + 4plexvid.test.ts (the #1959
+  // store-reflect legs, which hold the node object).
+  '4plexvid': 'the legacy card no longer renders — 4plexvid is in STRICT_FACES, so both surfaces mount ModuleShell and the card scene has no subject. Pixel coverage moved to the committed face-4plexvid-compact / face-4plexvid-dock scenes in the FACES roster; behaviour is covered by e2e/tests/4plexvid.spec.ts + plex-select + 4plexvid.test.ts.',
+  // ⚠ `cvBuddy` WAS HERE AND IS DRAINED (owner ruling, 2026-08-20: *"vrt it,
+  // note is wrong"*). Its entry read *"VRT baseline pending — hardware-facing
+  // card whose look is NOT yet owner-locked … so a baseline now would just
+  // churn"*, and the note was refuted by the repo itself: `cvBuddyMini` was
+  // never exempt and carries a committed baseline of the SAME shared body
+  // (`CvBuddyBody.svelte`, one component, a `kind` prop). So the look was
+  // already pinned for one of its two consumers, and *"a baseline now would
+  // churn"* could not be true of a body that already churned the mini's
+  // baseline on every change. Both cannot be right, and the mini's was.
+  //   ⚠ THE GENERAL SHAPE, worth more than this entry: two modules sharing one
+  // component can hold CONTRADICTORY VRT positions and no gate compares them.
+  // An exemption is a claim about a RENDER, not about a module id — so when a
+  // component is shared, check its siblings before believing one.
   // OUT TO LAUNCH — Launchpad Mini Mk3 as a live 9×9 RGB video monitor. The
   // card is a live MONITOR preview canvas (the 9×9 grid) driven by the module's
   // per-frame GPU readback + a device-picker; nothing patched is a black grid,
@@ -418,6 +455,18 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // class scaling, gate hysteresis, underrun policies) + es9.test.ts (def
   // shape, class→worklet mapping) + the per-module handle-presence sweep.
   es9: 'VRT baseline pending; es9-bridge-core (dsp) + es9.test.ts unit suites cover the logic, card is static chrome. Promote + capture darwin/linux baselines in a follow-up PR.',
+  // VST BRIDGE cards — the connection pill is a LIVE state machine: with no
+  // vst-bridge helper on the runner the transport worker cycles
+  // "connecting…" ↔ "helper not found" on its 1-5 s reconnect backoff
+  // forever, so a captured PNG is a lottery on which phase the settle lands
+  // in — a baseline here would flake vrt-strict on unrelated PRs (the cvBuddy
+  // hardware-facing precedent). Coverage: vst-defs + vst-transport +
+  // dsp vst-bridge-core unit suites, and the mocked-helper e2e
+  // (vst-bridge.spec.ts / vst-lane-autowire.spec.ts) exercises the real card
+  // UI (picker/mount/editor testids). Promote + capture once the status row
+  // is masked or the look is owner-locked.
+  vstInstrument: 'VRT baseline pending — the connection pill cycles connecting/helper-not-found on the reconnect backoff with no helper on CI, so a PNG is phase-dependent; card UI is exercised by the mocked-helper e2e (vst-bridge.spec.ts) and the logic by vst-defs/vst-transport/vst-bridge-core suites. Promote + capture with the status row masked once the look is owner-locked.',
+  vstFx: 'VRT baseline pending — same live connection pill as vstInstrument (connecting/helper-not-found backoff cycle on a helperless runner); card UI exercised by the mocked-helper e2e (vst-bridge.spec.ts / vst-lane-autowire.spec.ts), logic by the vst unit suites. Promote + capture with the status row masked once the look is owner-locked.',
   // ONE TO NINE — 1-in/9-out fixed 3×3 splitter. The card is a live MONITOR
   // preview canvas (input + grid + numbers) + a GRID toggle + the IN/OUT1..OUT9
   // patch panel; nothing patched is a black preview, and the live render is
@@ -488,13 +537,22 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // structured + param-response). Promote once a deterministic seed path exists.
   sourcery: 'VRT baseline pending; v1 segmentation is source-dependent + shimmers frame-to-frame, so the solo-spawn canvas is non-deterministic. Coverage = sourcery-core.test.ts (CCL/moments/Hu/match/rel→uvB/hue-skew) + e2e/tests/sourcery.spec.ts (real 2-source chain, non-black + structured + param response). Capture darwin/linux baselines once a deterministic seed path is wired.',
   // SCOREBOARD — first-slice PR ships the module + draw helper + factory
-  // gate tests + e2e (gate→counter advance, RESET, wrap-at-10000). The
-  // VRT scene path is wired (window.__scoreboardVrtSeed → counter at
-  // 1234 for a stable, all-segments-touching baseline) — promote into
-  // MODULES + capture darwin/linux PNGs in a follow-up PR. The canvas
-  // mask above covers the live preview if promotion happens without the
-  // scene path being driven yet.
-  scoreboard: 'VRT baseline pending; unit + factory gate tests + e2e provide coverage. Promote + capture darwin/linux baselines (seed counter at 1234 via window.__scoreboardVrtSeed for a stable, all-segments-touching baseline) in a follow-up PR.',
+  // gate tests + e2e (gate→counter advance, RESET, wrap-at-10000).
+  //
+  // ⚠ HALF OF THIS NOTE'S FOLLOW-UP HAS NOW HAPPENED, and the half that has
+  // not is the CARD (#2089, 2026-08-22). The module is PROMOTED — it carries a
+  // face and two FACE scenes in `_shell-faces.ts`, captured with exactly the
+  // seed this note names (`__scoreboardVrtSeed = 1234`, via `simPin`). What
+  // remains uncaptured is the LEGACY CARD scene this entry is about, which is a
+  // different surface with a different baseline.
+  //
+  // ⚠ AND THE ORIGINAL "darwin/linux" WORDING IS STALE INDEPENDENTLY OF THAT:
+  // `snapshotPathTemplate` has no `{platform}` segment any more. There is ONE
+  // baseline set and linux CI authors it. Corrected here rather than left to
+  // send the next reader looking for a per-platform pair that cannot exist.
+  //
+  // The canvas mask above still covers the card's live preview.
+  scoreboard: 'CARD baseline pending; unit + factory gate tests + e2e provide coverage, and the module is now PROMOTED with two captured FACE scenes (see FACES in _shell-faces.ts). Capture the card baseline by driving the same seed path the face scenes use (window.__scoreboardVrtSeed = 1234 → counter at 1234, a stable all-segments-touching value). ONE baseline set, authored by linux CI.',
   // CAMERA renders a live MediaStream into a canvas. Even with the
   // fake-camera flag the synthetic frame is non-deterministic enough
   // (frame-time clock) that the baseline would flap. Functional coverage
@@ -896,7 +954,22 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // (moog-ladder-dsp.test.ts + moog904a.test.ts worklet) + ART (source-SHA-
   // pinned .f32 self-osc) + per-module-per-port e2e provide functional
   // coverage. Promote into MODULES once the darwin + linux PNGs are captured.
-  moog904a: 'VRT baseline pending — deterministic beige Moog faceplate (2 knobs + 3-position RANGE switch, no canvas/animation); capture via `task vrt:update` on each platform. DSP unit + ART (SHA-pinned self-osc) + per-module-per-port e2e provide coverage. Promote into MODULES once darwin + linux baselines land.',
+  // ⚠ REWRITTEN WITH THE FACE PR (Q39). Two things in the old reason no longer
+  // held, and the second was already true when it was written:
+  //
+  //  1. It described the SUBJECT as "2 knobs + a 3-position RANGE switch" —
+  //     i.e. `Moog904aVcfCard.svelte`. `moog904a` is now in STRICT_FACES, so
+  //     `migrated()` is true and NEITHER surface renders that card: the lane
+  //     draws a ModuleShell tile and the dock a ModuleShell full view.
+  //  2. It credited "ART (SHA-pinned self-osc)" as functional coverage of this
+  //     module. `art/scenarios/moog904a/profile.test.ts` exists — but it
+  //     imports `MoogLadder` from the shared lib and drives it directly, with
+  //     `DRIVE = 0.5 + REGEN * 0.8` HAND-COPIED out of the worklet (its `:47`
+  //     even names the line it was copied from). So it pins the LADDER LIB, not
+  //     `moog904a`'s processor, and a change to the worklet's drive law, its
+  //     RANGE handling, its clamp or its dither would not move that baseline at
+  //     all (#1913). Real coverage, narrower than the sentence claimed.
+  moog904a: 'No card VRT baseline — and the card is unreachable: moog904a is in STRICT_FACES, so both surfaces render ModuleShell instead of Moog904aVcfCard. Pixel coverage is the two face scenes (face-moog904a-compact / face-moog904a-dock) in the shell-faces roster. Functional coverage: moog904a.test.ts (the real worklet), moog-ladder-dsp.test.ts, moog904a-face-model.ts (the delivered-cutoff join + the measured self-oscillation threshold), per-module-per-port e2e. ⚠ The ART profile pins the shared LADDER LIB driven directly with a hand-copied drive expression, NOT this worklet — so it cannot see a worklet-level drift (#1913).',
   // MOOG 911 EG — Moog System 55/35 contour generator. Deterministic beige
   // faceplate (4 knobs: T1 / T2 / ESUS / T3, no canvas / animation) like the
   // 921; baselines pending a `task vrt:update` run on each platform. DSP unit
@@ -904,16 +977,32 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // .f32) + per-module-per-port e2e (gate-driven env emit) provide functional
   // coverage. Promote into MODULES once darwin + linux PNGs are captured.
   moog911: 'VRT baseline pending — deterministic beige Moog faceplate (4 knobs T1/T2/ESUS/T3, no canvas/animation); capture via `task vrt:update` on each platform. DSP unit + ART (SHA-pinned) + per-module-per-port e2e provide coverage. Promote into MODULES once darwin + linux baselines land.',
-  // MOOG 902 VCA — Moog System 55/35 clone slice 3. Same shape as the 921 +
-  // 904A: a deterministic beige faceplate (2 knobs + a 2-position LIN/EXP
-  // switch, no canvas / animation), so a good VRT candidate; baselines are
-  // pending a `task vrt:update` run on each platform (this authoring worktree
-  // can't reliably boot the full dev server for capture). DSP unit
-  // (moog902.test.ts: gain-law + ×2-at-6V + ×3-ceiling + CV summing + inverted
-  // output) + ART (source-SHA-pinned .f32) + per-module-per-port e2e provide
-  // functional coverage. Promote into MODULES once the darwin + linux PNGs are
-  // captured.
-  moog902: 'VRT baseline pending — deterministic beige Moog faceplate (2 knobs + 2-position LIN/EXP switch, no canvas/animation); capture via `task vrt:update` on each platform. DSP unit + ART (SHA-pinned) + per-module-per-port e2e provide coverage. Promote into MODULES once darwin + linux baselines land.',
+  // MOOG 902 VCA — Moog System 55/35 clone slice 3.
+  //
+  // ⚠ THIS ENTRY CARRIED TWO FALSE CLAIMS UNTIL THE FACE PR (#1912), and they
+  // failed in opposite directions — one described an artifact that no longer
+  // exists, the other credited coverage that never did:
+  //
+  //  1. It described the SUBJECT as "2 knobs + a 2-position LIN/EXP switch",
+  //     i.e. `Moog902VcaCard.svelte`. `moog902` is now in STRICT_FACES, so
+  //     `migrated()` is true and neither surface renders that card any more —
+  //     the lane draws a ModuleShell tile and the dock a ModuleShell full view.
+  //     An exemption reason naming a card nobody can reach is an exemption
+  //     nobody is watching.
+  //  2. It claimed "ART (source-SHA-pinned .f32)" coverage. There is NO
+  //     `art/scenarios/moog902/` in the tree and `moog902` is listed in the ART
+  //     BACKLOG (`art/setup/profile-coverage.ts`), so that leg of the argument
+  //     was empty — checked, not assumed.
+  //
+  // What is actually true: the module has no committed card baseline, and its
+  // real pixel coverage now comes from the two FACE scenes
+  // (`face-moog902-compact` / `face-moog902-dock`, rostered in
+  // `e2e/vrt/_shell-faces.ts`) rather than from a card capture that was never
+  // taken. Functional coverage is the DSP worklet unit (gain law, the ×2-at-6V
+  // anchor, the mode-dependent ×3 ceiling, CV summing, the bit-exact inverted
+  // output), the face model's own negative controls, and per-module-per-port
+  // e2e.
+  moog902: 'No card VRT baseline — and the card is unreachable: moog902 is in STRICT_FACES, so both surfaces render ModuleShell instead of Moog902VcaCard. Pixel coverage is the two face scenes (face-moog902-compact / face-moog902-dock) in the shell-faces roster. Functional coverage: DSP worklet unit (gain law + x2-at-6V anchor + the mode-dependent x3 ceiling + CV summing + bit-exact inverted output), moog902-face-model unit, per-module-per-port e2e. NOT ART-covered — moog902 is in the ART backlog and has no scenario (this reason previously claimed otherwise, #1912).',
   // PAINTER (new video module) — VRT baseline pending (the new-module pattern).
   // The card is an interactive MS-Paint surface; its drawing canvas content is
   // user/op-driven (not deterministic at first paint), and CI runs linux-only so
@@ -1013,7 +1102,10 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
  *  re-exempt itself lying around. */
 export const ALLOWED_PERMANENT_EXEMPT: ReadonlySet<string> = new Set([
   'milkdrop', 'graphicEq', 'archivist', '4plexvid',
-  'cvBuddy', 'outToLaunch', 'es9', 'onetonine',
+  // ⚠ `cvBuddy` REMOVED 2026-08-20 — it is no longer in EXEMPT_FROM_VRT, and
+  // this list is ANCHORED: an entry naming a module that is not exempt is RED,
+  // so a drained module cannot leave a stale licence to re-exempt itself.
+  'outToLaunch', 'es9', 'onetonine',
   'shapegen', 'sixstrum', 'mirrorpool', 'grainsOfVision',
   'frametable', 'videocube', 'sourcery', 'scoreboard',
   'cameraInput', 'loopback', 'audioIn', 'group',
@@ -1032,7 +1124,7 @@ export const ALLOWED_PERMANENT_EXEMPT: ReadonlySet<string> = new Set([
   'chroma', 'luma', 'fourplexer', 'treeohvox',
   'bluebox', 'moog921Vco', 'moogCp3', 'moog904a',
   'moog911', 'moog902', 'painter', 'twotracks',
-  'backdraft',
+  'backdraft', 'vstInstrument', 'vstFx',
 ]);
 
 /** Strict VRT subset — the deterministic, pure-DOM/CSS knob-and-fader cards

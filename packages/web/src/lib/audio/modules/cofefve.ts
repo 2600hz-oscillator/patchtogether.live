@@ -457,71 +457,7 @@ export const cofefveDelayDef: AudioModuleDef = {
     hero: {
       cell: 'cofefve-echo-{n}',
       control: 'delayTime',
-      readouts: [
-        { label: 'waiting', valueId: 'cofefve-asleep' },
-        { label: 'spacing', valueId: 'cofefve-echo-spacing' },
-        { label: 'repeats', valueId: 'cofefve-repeats' },
-      ],
     },
-
-    sidebar: [
-      // THE BLOCK THIS FACE IS FOR. Five live lines, one per enabler pair, each
-      // naming its own enabler's current value and what is asleep behind it.
-      // The band hints say it at the point of use; this says it all at once,
-      // in a column that paints unconditionally and never truncates.
-      {
-        kind: 'readouts',
-        label: 'enabler → what it wakes',
-        entries: [
-          { label: 'wow', valueId: 'cofefve-wait-wow' },
-          { label: 'duck', valueId: 'cofefve-wait-duck' },
-          { label: 'sync', valueId: 'cofefve-wait-sync' },
-          { label: 'pan', valueId: 'cofefve-wait-pan' },
-          { label: 'drive', valueId: 'cofefve-wait-drive' },
-        ],
-      },
-      // …and the one-click answer to it. FOUR presets open all FIVE enablers
-      // between them, through the ordinary param write path (real undo, real
-      // sync). On a module where a third of the panel is asleep, "wake the
-      // section" is the highest-value thing a sidebar can offer — and the
-      // ping-pong entry is the one that carries the corrected fact, because it
-      // opens STEREO and leaves PAN at 0.
-      {
-        kind: 'presets',
-        label: 'openers',
-        entries: [
-          {
-            id: 'tape', label: 'tape wobble', note: 'wakes wow + drive',
-            values: { lfoAmount: 0.25, lfoFrequency: 0.8, driftAmount: 0.02, driveGain: 3 },
-          },
-          {
-            id: 'ducked', label: 'ducked', note: 'wakes atk + rel',
-            values: { duckAmount: 5, duckAttack: 5, duckRelease: 40 },
-          },
-          {
-            id: 'pingpong', label: 'ping-pong', note: 'wakes pan mode — via STEREO',
-            values: { stereoOffset: 0.25, panMode: 1, pan: 0 },
-          },
-          {
-            id: 'onbeat', label: 'on the beat', note: 'wakes clk src',
-            values: { tempoSync: 9 },
-          },
-        ],
-      },
-      // THREE FIXED FACTS, which is what a `text` readout is for. Every one is
-      // a measured property of the shipping DSP and re-asserted against it in
-      // cofefve-face-model.test.ts, so a DSP fix turns the stale claim RED
-      // rather than leaving the faceplate insisting on a repaired defect.
-      {
-        kind: 'readouts',
-        label: 'the hazards',
-        entries: [
-          { label: 'dry at 2.0', text: '1.089 peak — no limiter' },
-          { label: 'wet at 2.0', text: '1.240 peak — no limiter' },
-          { label: 'drive off', text: 'exactly 0, not 0.1' },
-        ],
-      },
-    ],
 
     title: 'Analog delay',
     hint:

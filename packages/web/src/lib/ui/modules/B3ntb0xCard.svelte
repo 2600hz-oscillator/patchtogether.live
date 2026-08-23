@@ -110,6 +110,27 @@
   let cardEl: HTMLDivElement | null = $state(null);
   $effect(() => ff.attach(cardEl, () => fullFrame));
 
+  // ── SCREEN ON / OFF (owner ruling, 2026-08-18) ──────────────────────────
+  // *"'screen on / off' on the card like that is a thing all video modules
+  // should have moving forward."* OFF collapses the preview and reclaims its
+  // space while the module KEEPS RENDERING; ON again shows the LIVE picture,
+  // never a stale frame (see the draw loop's watch-mark note).
+  //
+  // On `node.data`, not in the component: the owner's stated floor is that the
+  // state survives tab switches, and this card unmounts on collapse / LRU
+  // eviction (the #1531/#1574/#1583 class). It is the SAME key the dock
+  // faceplate's `fullViewBody` reads, so the two surfaces share one truth.
+  let previewCollapsed = $derived<boolean>(
+    (node?.data?.previewCollapsed as boolean | undefined) ?? false,
+  );
+  function togglePreview(): void {
+    const next = !previewCollapsed;
+    mutateNode(id, (live) => {
+      if (!live.data) live.data = {};
+      live.data.previewCollapsed = next;
+    });
+  }
+
   // Presenting-mode hard render lease — without it, scrolling the card
   // off-screen freezes the presented surface (see use-render-lease).
   attachRenderLease({
@@ -179,8 +200,21 @@
       // #1802 — gated preview blit (see VideoEngine.blitOutputForPreview).
       // ⚠ A WRAP, not an early return: the mirror-state writeback further down
       // this function is NOT a preview and must keep running on a gated frame.
+      //
+      // ⚠ SCREEN OFF SKIPS THE BLIT AND KEEPS THE WATCH MARK (#1937).
+      // `blitOutputForPreview` IS the engine's "someone is watching" signal, so
+      // simply not calling it would drop this node out of the pull set once
+      // `WATCH_TTL_MS` expired — turning the switch into a PRODUCER KILL SWITCH
+      // wherever nothing downstream watches, and showing a stale frame when it
+      // came back on. The ruling says the module KEEPS RENDERING, so the mark
+      // is made directly instead (the supported route) and only the copy is
+      // skipped.
       let blitted = false;
-      try { blitted = videoEngine.blitOutputForPreview(id); } catch { /* defensive */ }
+      if (previewCollapsed) {
+        try { videoEngine.markWatched(id); } catch { /* defensive */ }
+      } else {
+        try { blitted = videoEngine.blitOutputForPreview(id); } catch { /* defensive */ }
+      }
       // Mirror the live engine dims so the fullscreen buffer-size derive follows
       // the engine resolution. Cheap change-guard. Outside the blit guard: these
       // are property reads, and a resolution change must reach the fullscreen
@@ -318,6 +352,7 @@
       class="screen-wrap"
       class:fullscreen={fs.isFullscreen}
       class:full-frame={fullFrame}
+      class:collapsed={previewCollapsed}
       style="width: {fs.isFullscreen || fullFrame ? '100%' : innerWidth + 'px'}; height: {fs.isFullscreen || fullFrame ? '100%' : screenAreaH + 'px'};"
       data-testid="b3ntb0x-fs-wrap"
       oncontextmenu={onCanvasContextMenu}
@@ -330,6 +365,25 @@
         data-testid="b3ntb0x-canvas"
         data-node-id={id}
       ></canvas>
+      <!-- SCREEN ON/OFF — owner ruling 2026-08-18: every video module's card
+           carries this.
+           ⚠ IT OVERLAYS THE PICTURE; IT DOES NOT TAKE A ROW. That is the house
+           pattern (SpirographsCard, FreezeframeCard) and it is deliberate here
+           for a reason those two do not have: this card is USER-RESIZABLE down
+           to a 360x540 floor, so any control that consumed layout height would
+           consume it at every size the user can drag to. The overlay costs ZERO
+           layout height, so the card is exactly the height it was before. -->
+      <button
+        type="button"
+        class="screen-btn nodrag"
+        class:on={!previewCollapsed}
+        data-testid="b3ntb0x-preview-toggle"
+        aria-pressed={!previewCollapsed}
+        title={previewCollapsed
+          ? 'SCREEN is OFF — the preview is collapsed and its space reclaimed. B3NTB0X keeps rendering: switching it back on shows the LIVE picture, not a stale frame.'
+          : 'SCREEN — turn the preview off to collapse it and reclaim the vertical space. The module goes on rendering either way.'}
+        onclick={togglePreview}
+      >{previewCollapsed ? 'SCREEN OFF' : 'SCREEN ON'}</button>
       {#if reducedPrecision}
         <div class="precision-badge" data-testid="b3ntb0x-reduced-precision">reduced precision (no float FBO)</div>
       {/if}
@@ -442,6 +496,37 @@
     align-items: center;
     position: relative;
   }
+  /* SCREEN OFF — the canvas goes and its space is RECLAIMED (the ruling's
+     wording: "collapses the preview and reclaims its vertical space"). The
+     inline `height` is overridden here because the height a resized card
+     computes for the picture is exactly what must stop being reserved. */
+  .screen-wrap.collapsed {
+    height: auto !important;
+    min-height: 0;
+    justify-content: flex-start;
+  }
+  .screen-wrap.collapsed canvas { display: none; }
+  /* Only load-bearing with SCREEN OFF: with the canvas gone the button has no
+     picture to overlay, so it stops being absolutely positioned and simply
+     sits where the screen was. */
+  .screen-wrap.collapsed .screen-btn { position: static; }
+  .screen-btn {
+    position: absolute;
+    left: 4px;
+    bottom: 4px;
+    z-index: 2;
+    font: inherit;
+    font-size: 0.58rem;
+    letter-spacing: 0.06em;
+    padding: 1px 6px;
+    background: rgba(0, 0, 0, 0.55);
+    color: var(--text-dim);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    cursor: pointer;
+  }
+  .screen-btn.on { color: var(--text); border-color: var(--accent-dim); }
+  .screen-btn:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px; }
   .screen-wrap canvas {
     background: #050608;
     border: 1px solid var(--cable-video);

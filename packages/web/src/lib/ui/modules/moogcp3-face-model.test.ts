@@ -20,7 +20,6 @@ import {
   moogCp3FaceParams,
 } from './moogcp3-face-model';
 import { moogCp3Def } from '$lib/audio/modules/moog-cp3';
-import { faceReadoutValueFor } from '$lib/ui/workflow/face-readout-values';
 
 function reader(patch: Record<string, number> = {}) {
   return (id: string): number | undefined => patch[id];
@@ -149,17 +148,5 @@ describe('moogCp3 face model — TOTALITY (it runs on every render)', () => {
   it('out-of-range knob values are clamped like the DSP clamps them', () => {
     expect(moogCp3BusGain(P({ ch1: 5 }))).toBe(moogCp3BusGain(P({ ch1: 1 })));
     expect(moogCp3BusGain(P({ ch1: -5 }))).toBe(moogCp3BusGain(P({ ch1: 0 })));
-  });
-});
-
-describe('moogCp3 — the readout the DEF declares is the one the REGISTRY resolves', () => {
-  it('the valueId resolves and prints what the model prints', () => {
-    const declared = (moogCp3Def.face?.hero?.readouts ?? []).map((r) => r.valueId);
-    expect(declared).toEqual(['moogcp3-bus-db']);
-    const fn = faceReadoutValueFor('moogcp3-bus-db');
-    expect(fn, 'moogcp3-bus-db must be registered in face-readout-values.ts').toBeTypeOf('function');
-    expect(fn!(reader())).toBe('+18.1 dB');
-    // …and through the registry, ATT 4 still moves it.
-    expect(fn!(reader({ attenuator4: 0 }))).toBe('+15.6 dB');
   });
 });

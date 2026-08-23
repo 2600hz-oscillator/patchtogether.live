@@ -20,6 +20,20 @@
   });
   const outputs = portsFromDef(rasterizeDef.outputs, { thru: 'AUDIO THRU', out: 'VIDEO OUT' });
 
+  // ⚠ ONE SOURCE FOR EVERY RANGE (`RANGE_BOUND_CARDS`). This card used to be
+  // half-and-half: SCAN read `rasterizeDef.params[0]!.max` while SAMP/F and
+  // GAIN hand-typed `16..8000` and `0..8`. They AGREED with the def, so
+  // `card-def-agreement` was green and nothing was broken — but the def is the
+  // one that just moved (the `wrap` roster landed with the faceplate), and a
+  // restated number is only ever one edit away from the backdraft class.
+  //
+  // Looked up BY ID rather than by index, which is the other half of the
+  // fragility: `params[0]` silently re-points if a param is ever reordered.
+  const P = Object.fromEntries(rasterizeDef.params.map((p) => [p.id, p]));
+  const CURSOR = P.cursor!;
+  const SAMPLES = P.samplesPerFrame!;
+  const GAIN = P.gain!;
+
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
   const engineCtx = useEngine();
@@ -122,9 +136,9 @@
     </div>
 
     <div class="fader-row">
-      <NeonFader value={cursor}          min={0}  max={rasterizeDef.params[0]!.max} defaultValue={0}   label="Scan"   curve="linear" onchange={setParam('cursor')}          moduleId={id} paramId="cursor" />
-      <NeonFader value={samplesPerFrame} min={16} max={8000}   defaultValue={800} label="Samp/F" curve="log"    onchange={setParam('samplesPerFrame')} moduleId={id} paramId="samplesPerFrame" />
-      <NeonFader value={gain}            min={0}  max={8}       defaultValue={1}   label="Gain"   curve="log"    onchange={setParam('gain')}            moduleId={id} paramId="gain" />
+      <NeonFader value={cursor}          min={CURSOR.min}  max={CURSOR.max}   defaultValue={CURSOR.defaultValue}  label="Scan"   curve={CURSOR.curve}  onchange={setParam('cursor')}          moduleId={id} paramId="cursor" />
+      <NeonFader value={samplesPerFrame} min={SAMPLES.min} max={SAMPLES.max}  defaultValue={SAMPLES.defaultValue} label="Samp/F" curve={SAMPLES.curve} onchange={setParam('samplesPerFrame')} moduleId={id} paramId="samplesPerFrame" />
+      <NeonFader value={gain}            min={GAIN.min}    max={GAIN.max}     defaultValue={GAIN.defaultValue}    label="Gain"   curve={GAIN.curve}    onchange={setParam('gain')}            moduleId={id} paramId="gain" />
     </div>
   </PatchPanel>
 </div>

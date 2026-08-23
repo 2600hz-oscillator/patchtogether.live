@@ -100,6 +100,55 @@ export const inwardsDef: VideoModuleDef = {
     { id: 'thickness', label: 'Thickness', defaultValue: DEFAULTS.thickness, min: 0,    max: 1,   curve: 'linear' },
   ],
 
+  // ── FACE (batch-22 · the video thin tail) ─────────────────────────────────
+  face: {
+    order: ['speed', 'density', 'thickness'],
+
+    // ⚠ NO `pages`. Three controls that jointly describe ONE ring field — how
+    // fast it sweeps, how many rings fit, how fat each band is — are a single
+    // honest band. Sectioning them would be three headings over three controls.
+
+    // ⚠ FADERS, NOT KNOBS — the parity-critical declaration on this face.
+    // `InwardsCard.svelte` draws all three with `NeonFader`. Nothing in a
+    // ParamDef separates "a level" from any other continuous scalar, so an
+    // undeclared face resolves them to KNOBS and the promotion silently swaps a
+    // dial in for a throw — invisible to every def-reading gate, since they all
+    // read this same def.
+    //
+    // ⚠ `speed` IS BIPOLAR (-2..2) AND STILL A FADER. Its centre detent is the
+    // still frame and the sign is the sweep DIRECTION (positive inward,
+    // negative outward); a throw shows that zero crossing as a position, which
+    // is the reading the card already gives players.
+    paramCells: { speed: 'fader', density: 'fader', thickness: 'fader' },
+
+    // ⚠ NO `bareCells` — no section heading exists to make Speed/Density/
+    // Thickness redundant, and they name three genuinely different quantities.
+
+    // ⚠ MANDATORY FOR A VIDEO DEF — this def has no `type: 'audio'` output
+    // (`out` is `mono-video`), so `primaryAudioOutPortId` is null and any other
+    // glyph literal resolves to a dead `{kind:'static'}` that reddens
+    // module-face-lint.
+    //
+    // ⚠ AND THE PICTURE THIS FACE PAINTS IS A MOVING ONE, which is this
+    // module's one determinism note: it is the only SOURCE in the batch and its
+    // shader advances with `uTime` at the shipped default (Speed 0.5). Its VRT
+    // scene therefore pins `__videoEngineFreezeTime` through `simPin` rather
+    // than declaring a `freeze` ParamDef — the render is a pure function of
+    // (wall clock, params), so pinning the clock alone is sufficient here in a
+    // way it explicitly is NOT for `mirrorpool`, whose ping-pong field keeps
+    // integrating. Adding a `freeze` param would have been a contract change
+    // for a determinism problem the engine already solves.
+    glyph: 'none',
+
+    // SCREEN ON/OFF arrives through this slot (#1928): promotion stops BOTH
+    // surfaces rendering `InwardsCard.svelte`. On a SOURCE the switch is the
+    // more pointed case — the body keeps the watch mark alive while the screen
+    // is off, so turning the picture off never mutes the generator every
+    // downstream node is sampling. See
+    // `$lib/ui/modules/inwards/shell-extension.ts`.
+    extension: 'inwards',
+  },
+
   docs: {
     explanation:
       "A procedural source that synthesizes a field of concentric rings centered on the frame, with their phase scrolling inward over time so the bands appear to zoom toward the center (positive Speed) or outward (negative). The shader takes the radial distance from center, multiplies it by Density to set how many rings fit on screen, then subtracts time*Speed to animate the sweep; an abs(sin) wave is soft-banded by Thickness to render alternating bright and dark grayscale rings. There is no video input — it generates its image entirely from time and the three params, so it works without camera permissions. Use it as a hypnotic radial backdrop or a moving mask/wipe source: patch an LFO or envelope into Speed for pulsing zoom, or sweep Density for a tunnel-breathing effect.",

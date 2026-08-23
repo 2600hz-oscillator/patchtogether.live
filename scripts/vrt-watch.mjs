@@ -62,6 +62,13 @@
 // So on completion it diffs the branch's baseline directory across the run and
 // prints the files. ⚠ DERIVED FROM GIT, never a typed count: the answer is read
 // off the artifact the bot actually pushed.
+//
+// ⚠ AND THE BEFORE MARK IS THE RUN'S OWN `headSha`, NOT THE BRANCH TIP AT
+// WATCHER-START — see `beforeMark`. The tip version reported a confident
+// `0 baselines committed / RED FLAG` for a run that had committed exactly the
+// two files predicted, purely because the watcher attached after the bot
+// pushed. A tool whose loudest alarm fires on the reader's timing rather than
+// on the run is worse than no tool.
 
 import { execFileSync } from 'node:child_process';
 
@@ -203,6 +210,52 @@ function readRun(runId) {
   }
 }
 
+/**
+ * The SHA the run checked out — the only correct BEFORE mark for the
+ * committed-file diff.
+ *
+ * ⚠ SEE `beforeMark` FOR WHY THIS EXISTS. Returns '' when gh cannot answer, and
+ * the caller falls back to the branch tip rather than skipping the report.
+ */
+function readRunHeadSha(runId) {
+  try {
+    return sh('gh', ['run', 'view', String(runId), '--json', 'headSha', '--jq', '.headSha']);
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Choose the BEFORE mark for the committed-file diff.
+ *
+ * ⚠ THIS IS THE INSTRUMENT BUG THIS FUNCTION EXISTS TO CLOSE, and it produced a
+ * confident false RED FLAG on run 32351143240. The mark used to be
+ * `origin/<branch>` read at the moment the WATCHER started. The bot commits ON
+ * TOP of the SHA the RUN checked out, so the two agree only while the watcher
+ * is attached BEFORE the bot pushes. Attach to a run that has already finished
+ * — reasonable, and what an agent does after a context switch — and the very
+ * first fetch pulls the bot's commit into the mark itself. `before === after`,
+ * the diff is empty, and the watcher prints
+ *
+ *     baseline files committed: 0
+ *     ⚠ ZERO BASELINES COMMITTED — THIS IS A RED FLAG, NOT A PASS.
+ *
+ * about a run that had just committed exactly the two files predicted. That is
+ * the worst possible failure for this tool: the message is the single
+ * highest-authority failure signal in the VRT docs, it names three causes none
+ * of which is "you attached late", and every one of them sends the reader
+ * hunting a harness failure that does not exist.
+ *
+ * The measurement has to be invariant to WHEN the watcher attached, and the
+ * run's own `headSha` is exactly that: fixed at dispatch, unaffected by
+ * anything the bot pushes afterwards.
+ */
+export function beforeMark({ runHeadSha, branchTip }) {
+  if (runHeadSha) return { sha: runHeadSha, source: 'run headSha' };
+  if (branchTip) return { sha: branchTip, source: 'branch tip (fallback — attach late and this under-reports)' };
+  return { sha: '', source: 'none' };
+}
+
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function main(argv) {
@@ -220,14 +273,23 @@ async function main(argv) {
   const predicted = predictedRaw ? Number(predictedRaw) : undefined;
   const capMs = Number(arg('--cap-min', String(DEFAULT_CAP_MS / 60_000))) * 60_000;
 
-  // The BEFORE mark for the committed-file diff. Read off the REMOTE ref so a
-  // dirty local tree cannot affect it.
-  let before = '';
+  // The BEFORE mark for the committed-file diff — the SHA the RUN checked out,
+  // NOT the branch tip at watcher-start. See `beforeMark`: the branch-tip
+  // version silently reports 0 for any watcher attached after the bot pushed,
+  // and 0 is the loudest RED FLAG this tool has.
+  let branchTip = '';
   try {
     sh('git', ['fetch', 'origin', branch]);
-    before = sh('git', ['rev-parse', `origin/${branch}`]);
+    branchTip = sh('git', ['rev-parse', `origin/${branch}`]);
   } catch {
-    console.error(`vrt-watch: could not read origin/${branch} — committed-file report will be skipped`);
+    console.error(`vrt-watch: could not read origin/${branch}`);
+  }
+  const mark = beforeMark({ runHeadSha: readRunHeadSha(runId), branchTip });
+  const before = mark.sha;
+  if (!before) {
+    console.error('vrt-watch: no BEFORE mark (run headSha and branch tip both unreadable) — committed-file report will be skipped');
+  } else {
+    console.log(`vrt-watch: BEFORE mark ${before.slice(0, 9)} (${mark.source})`);
   }
 
   const started = Date.now();

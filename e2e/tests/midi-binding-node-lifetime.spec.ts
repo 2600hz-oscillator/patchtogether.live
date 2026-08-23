@@ -57,8 +57,14 @@
 //     (a synthetic action id) is NOT covered anywhere and stays card-scoped —
 //     see the header of `$lib/midi/graph-param-dispatch.ts`.
 //   * The RANGE a mounted control uses. Phase A and phase B agreeing here says
-//     wavecel's Knob and wavecel's def agree; a card that re-typed a different
-//     range would diverge, and no runtime gate sees that.
+//     the subject's Knob and the subject's def agree; a card that re-typed a
+//     different range would diverge, and no runtime gate sees that. ⚠ For the
+//     CURRENT subject the hole is REAL but currently harmless: the def declares
+//     `scale` as `min: 0, max: 5, defaultValue: 2` and `Moog956Card.svelte`
+//     RE-TYPES exactly those three numbers as literals rather than importing
+//     them, so the two agree by inspection today and nothing gates it —
+//     `moog956` is not in `RANGE_BOUND_CARDS`. That is the backdraft shape
+//     sitting one edit away, and the caveat stands as written.
 
 // `_fixtures` (not bare @playwright/test) for `errorWatch`: this spec expands,
 // collapses and LRU-evicts real cards, which is exactly the flow a lifetime bug
@@ -91,14 +97,53 @@ const PROMOTED = strictFaces();
 
 /** The subject: an UN-MIGRATED audio module with a plain [0,1] param and a
  *  legacy card that renders it as a Knob. Its un-migrated-ness is ASSERTED
- *  below, not assumed. */
+ *  below, not assumed.
+ *
+ *  ⚠ RE-POINTED TWICE IN ONE DAY (2026-08-20): `wavecel` → `depolarizer` →
+ *  `moog956`. Both times the `beforeAll` precondition fired exactly as designed
+ *  — *"Re-point this spec at a module that is still un-migrated"* — and the
+ *  guard working is the only reason this spec did not silently go vacuous
+ *  against a `<ModuleShell>`. It is filed as #2068, because the CHURN is the
+ *  defect and a third re-point does not fix it.
+ *
+ *  ⚠ THE PREVIOUS PICK'S REASONING WAS WRONG, AND SPECIFICALLY SO — read this
+ *  before choosing a fourth. `depolarizer` was called "structurally
+ *  un-promotable" on the faceplate skill's STOP 1 refusal ("≤2 params, no
+ *  control families, no node.data-backed affordances … the same grounds on
+ *  which `noise` is refused"). Both halves were false: `noise` was ALREADY in
+ *  STRICT_FACES when it was cited, and the owner had directed the opposite —
+ *  *"they still need to be done, <4 params or not"* (2026-08-20) — so the
+ *  batch-18 blitz promoted `depolarizer` hours later. That skill text is
+ *  corrected in #2067; do not resurrect the argument from a stale copy.
+ *
+ *  ⚠ SO THE PICK IS NOW MADE ON DISPOSITION, NOT ON THINNESS. `moog956` is
+ *  `bespoke-surface` in the face-migration inventory: its primary interaction
+ *  is a ribbon DRAG, not a param, so it needs a hand-written surface behind the
+ *  extension seam rather than a ranked cell list. No lane or directive is
+ *  face-queueing that disposition, so the subject does not expire with this
+ *  blitz or the next batch — which is exactly how both prior picks died, by
+ *  borrowing from the `generic-face` population being actively drained.
+ *
+ *  It is still only a delay, not a fix: EVERY module is eventually migrated off
+ *  the legacy card, so in the limit no valid subject exists. #2068 carries the
+ *  durable shape (a forced-placeholder harness hook rather than a registry
+ *  fixture, which would auto-enrol in every registry-driven sweep).
+ *
+ *  ⚠ THE "[0,1] param" REQUIREMENT THIS COMMENT USED TO STATE IS NOT REAL, and
+ *  believing it needlessly narrowed the candidate set to one heavyweight looper
+ *  card. `ccToParam` maps CC 0..127 across the param's OWN declared
+ *  `[min,max]`, read off the registry manifest at `beforeAll` — so any range
+ *  works and the expectation is derived, never hard-coded. `moog956`'s `scale`
+ *  is `0..5 linear`, and `Moog956Card.svelte` renders it as `<Knob
+ *  label="Scale">` (the Knob sets `aria-label={label}`). */
 const SUBJECT = {
-  nodeId: 'mb-wc',
-  type: 'wavecel',
-  paramId: 'morph',
+  nodeId: 'mb-rb',
+  type: 'moog956',
+  paramId: 'scale',
   /** The Knob's aria-label on the legacy card — how the mounted-control count
-   *  is taken. */
-  ariaLabel: 'Morph',
+   *  is taken. `<Knob>` sets `aria-label={label}`, and Moog956Card passes
+   *  `label="Scale"`. */
+  ariaLabel: 'Scale',
   channel: 0,
   cc: 21,
 } as const;

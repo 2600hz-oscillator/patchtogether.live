@@ -170,12 +170,18 @@ test.describe('workflow clock surface (🕐 TIMELORDE face)', () => {
 
     // 2-tap minimum: the first tap alone must not move the tempo.
     await tap.click();
-    await page.waitForTimeout(250);
-    expect(await readBpm(page)).toBe(60);
 
-    // Let the solo tap age past the ~2 s reset window so the timed pair
-    // below is a FRESH sequence (otherwise the solo tap joins the median).
+    // pacing: age the solo tap past the reset window so the timed pair below is
+    // a FRESH sequence (otherwise the solo tap joins the median). That window is
+    // the product's own `TAP_RESET_MS = 2000` —
+    // packages/web/src/lib/electra/tap-tempo.ts:27, the default `resetMs` of the
+    // `TapTempo` controller this very button drives (ClockSurface.svelte:83).
+    // 2_100 is that interval plus margin.
     await page.waitForTimeout(2_100);
+
+    // …and it did not: checked AFTER the full reset window rather than after a
+    // 250 ms guess, so the solo tap has had strictly more time to (not) land.
+    expect(await readBpm(page), 'one tap alone leaves the tempo untouched').toBe(60);
 
     // Fire both taps IN-PAGE and measure the actual interval with
     // performance.now() — CI load can stretch any nominal wait, so the

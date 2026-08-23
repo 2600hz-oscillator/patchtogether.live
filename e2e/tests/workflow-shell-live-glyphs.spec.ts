@@ -27,6 +27,12 @@ import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 import { setNodeParams } from './_module-coverage-helpers';
 import { BOOT_MS } from '../_helpers/boot-budget';
+import { waitFrames } from '../_helpers/frames';
+
+/** Painted frames the SILENT glyph must stay byte-identical across. FRAMES, not
+ *  ms: the glyph repaints once per rAF, so "static" is a claim about frames and
+ *  a duration would mean a different claim on every renderer. */
+const STATIC_GLYPH_FRAMES = 16;
 
 /** The dock hero glyph width cap (mirrors DOCK_HERO_GLYPH_W). */
 const DOCK_HERO_GLYPH_W = 214;
@@ -179,7 +185,14 @@ test.describe('LIVE shell glyphs (?shell=1)', () => {
       .toBe(true);
     expect(await dockTracePeak(page), 'silent chain → flat trace').toBeLessThan(0.005);
     const silentA = await dockGlyphFrame(page);
-    await page.waitForTimeout(300);
+    // The claim is "the glyph canvas does not CHANGE ACROSS PAINTED FRAMES", so
+    // the window has to be measured in frames. 300 ms was ~18 frames on a local
+    // GPU and ~2 under CI's SwiftShader (7.9 fps measured) — the same source
+    // line making a much weaker claim on the machine that runs it. The positive
+    // control is step 3 below: once the chain is driven, the SAME canvas read
+    // must differ. Sixteen frames is well past the flat-vs-moving boundary that
+    // control demonstrates.
+    await waitFrames(page, STATIC_GLYPH_FRAMES);
     const silentB = await dockGlyphFrame(page);
     expect(silentA.length, 'canvas snapshot resolved').toBeGreaterThan(0);
     expect(silentB, 'silent glyph canvas is static (byte-identical frames)').toBe(silentA);

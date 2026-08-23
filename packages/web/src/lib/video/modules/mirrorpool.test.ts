@@ -24,8 +24,25 @@ describe('mirrorpoolDef shape', () => {
     expect(mirrorpoolDef.pullExempt).toBe(true);
   });
 
-  it('every param has a matching `<param>_cv` input carrying a cvScale', () => {
-    for (const param of mirrorpoolDef.params) {
+  // ⚠ THE SUBJECT IS "EVERY PLAYER-FACING PARAM", AND THE FILTER IS DERIVED —
+  // never a name list. `noUserControl` is the def's own declaration that a param
+  // is not a control (here: the VRT `freeze` toggle), so a param added tomorrow
+  // is covered by exactly one of the two legs below without an edit.
+  //
+  // Splitting it this way is not bookkeeping. The old single leg would have been
+  // satisfied by giving `freeze` a CV port, which is the WRONG fix — a
+  // determinism toggle reachable from the patch surface is a control nobody
+  // declared. Leg 2 is what makes that state RED instead of green.
+  const internalParams = new Set((mirrorpoolDef.noUserControl ?? []).map((n) => n.param));
+
+  it('LEG 1 — every player-facing param has a matching `<param>_cv` input carrying a cvScale', () => {
+    const playerFacing = mirrorpoolDef.params.filter((p) => !internalParams.has(p.id));
+    // The sweep must not be vacuous: if `noUserControl` ever grew to cover the
+    // whole roster this leg would pass by measuring nothing.
+    expect(playerFacing.length, 'params this leg actually sweeps').toBeGreaterThan(
+      internalParams.size,
+    );
+    for (const param of playerFacing) {
       const cv = mirrorpoolDef.inputs.find(
         (i) => i.type === 'cv' && i.paramTarget === param.id,
       );
@@ -33,6 +50,17 @@ describe('mirrorpoolDef shape', () => {
       expect(cv!.cvScale, `cvScale for ${param.id}`).toBeTruthy();
       expect(cv!.id).toBe(`${param.id}_cv`);
     }
+  });
+
+  it('LEG 2 — no INTERNAL param is reachable from the patch surface', () => {
+    expect(internalParams.size, 'the def declares at least one internal param').toBeGreaterThan(0);
+    const patchable = [...internalParams].filter((id) =>
+      mirrorpoolDef.inputs.some((i) => i.type === 'cv' && i.paramTarget === id),
+    );
+    expect(
+      patchable,
+      'noUserControl params that nevertheless carry a CV input — a hidden toggle a player can patch',
+    ).toEqual([]);
   });
 
   it('surface_mode blends Refract(0)→Mirror(1); defaults match', () => {

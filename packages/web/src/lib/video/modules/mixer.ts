@@ -102,6 +102,76 @@ export const mixerVideoDef: VideoModuleDef = {
     { id: 'amount4', label: 'A4', defaultValue: DEFAULTS.amount4, min: 0, max: 1, curve: 'linear' },
   ],
 
+  // ── FACE (batch 22 · group 4) ─────────────────────────────────────────────
+  //
+  // WHAT V-MIXER IS FOR: it is the JOIN. Four independent video chains meet
+  // here and leave as ONE frame, weighted per channel. Its siblings do
+  // neighbouring things — `4plexvid` SWITCHES between sources, `lumakey`
+  // composites TWO by a key — and the thing only this one does is sum four at
+  // arbitrary levels, which is what makes it both a crossfader (push A1 up
+  // while pulling A2 down) and a brightness control on a single source. The
+  // verb is BLEND.
+  //
+  // ⚠ THE FINDING: THREE OF THE FOUR CHANNELS ARE BIT-EXACTLY DEAD AT SPAWN.
+  // `DEFAULTS` ships `amount1: 1.0` and `amount2/3/4: 0.0`, and the shader
+  // multiplies each sampled input by its amount, so patching a source into in2,
+  // in3 or in4 on a fresh V-MIXER produces EXACTLY the frame you had before —
+  // no dimming, no partial blend, nothing. Nothing in the product says so. It
+  // is a defensible default (a mixer that opened all four channels would sum to
+  // 4x and clip to white on contact), but it is the single most expensive thing
+  // about this module to discover by hand, and it is why the dock PICTURE is
+  // load-bearing rather than decorative: the composite is the only surface on
+  // which "am I actually seeing in2 yet?" is answerable.
+  //
+  // THE TIER LADDER, read back as a sentence: at the smallest tier you get A1,
+  // and the reason is the finding above — it is the only channel that carries
+  // signal on a fresh node, so it is the only fader that does anything before
+  // the player touches something. Everything after it is CHANNEL ORDER, and
+  // that is a deliberate refusal to rank: `in{N}` pairs with `amount{N}` by
+  // construction, the four are bit-identically symmetric in the shader
+  // (`col += sampleOrZero(...) * uAmount{N}`), and re-ordering the row would
+  // break the correspondence between the fader strip and the jack column — the
+  // one thing a mixer's layout has to preserve. Inventing a preference among
+  // four identical channels is exactly the kind of rank the skill's "would this
+  // argument be wrong for a different module?" test refuses.
+  face: {
+    order: ['amount1', 'amount2', 'amount3', 'amount4'],
+
+    // ⚠ NO `pages`. Four channel levels are ONE band by definition — a mixer's
+    // strip. Sectioning them would put a heading over each channel, which is
+    // the "never pad" half of the compact ruling, and it would break the single
+    // row that makes the four readable as peers.
+
+    // ⚠ FADERS, NOT KNOBS — the parity-critical declaration, and on a MIXER it
+    // is also the semantically right primitive: a channel level is a THROW.
+    // `VideoMixerCard.svelte` draws all four with `NeonFader`, and nothing in a
+    // ParamDef separates "a level" from any other continuous scalar, so an
+    // undeclared face resolves them to KNOBS and the promotion silently
+    // substitutes dials. ⚠ NO DEF-READING GATE CAN SEE THAT — they all read
+    // this same def. ⚠ AND IT WOULD FALSIFY SHIPPED PROSE: every entry in
+    // `docs.controls` begins "A1 fader", "A2 fader", …
+    paramCells: { amount1: 'fader', amount2: 'fader', amount3: 'fader', amount4: 'fader' },
+
+    // ⚠ NO `bareCells`, and this is the case the ruling was drawn AROUND rather
+    // than the case it excludes. mixmstrs loses `1LO…8LO` because a `LOW`
+    // section heading already says what they are; there is no heading here (one
+    // unlabelled band), and `A1`…`A4` are the only thing that maps a fader to
+    // its jack. That is the tidyVco side, exactly.
+
+    // ⚠ MANDATORY FOR A VIDEO DEF — no `type: 'audio'` output here, so
+    // `primaryAudioOutPortId` is null and any other glyph literal falls through
+    // `glyphBinding` to a dead `{kind:'static'}` that reddens module-face-lint.
+    // The live picture arrives from `hasVideoSurface(def)` at the lane and the
+    // `fullViewBody` extension at the dock — assert THAT, never this.
+    glyph: 'none',
+
+    // SCREEN ON/OFF arrives through this slot (#1928). An ADDITION rather than a
+    // port: `VideoMixerCard.svelte` has no preview to collapse.
+    // ⚠ The extension id is the TYPE (`videoMixer`), not this file's name —
+    // see `$lib/ui/modules/videoMixer/shell-extension.ts`.
+    extension: 'videoMixer',
+  },
+
   docs: {
     explanation:
       "A 4-channel additive video mixer. Each frame it samples up to four input textures at the same UV and sums them, scaling each by its own amount fader: out = in1*A1 + in2*A2 + in3*A3 + in4*A4, with the final RGB clamped to [0,1] and alpha forced opaque. Unpatched inputs contribute pure black (they read a 1x1 sentinel texture, not the mixer's own output, so there is no feedback loop). Because the sum is linear, it doubles as a crossfader (push A1 up while pulling A2 down for a two-source dissolve) and as a brightness/level control on a single source. Bright sources or amounts summing above 1.0 clip to white per channel. Usage hint: keep the active amounts summing near 1.0 for clean compositing; drive amount1..amount4 from LFOs or envelopes for automated fades and pulses.",

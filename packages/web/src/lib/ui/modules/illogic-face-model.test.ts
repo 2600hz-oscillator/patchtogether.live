@@ -43,9 +43,7 @@
 import { describe, expect, it } from 'vitest';
 import { illogicDef } from '$lib/audio/modules/illogic';
 import { glyphBinding, primaryAudioOutPortId } from '$lib/ui/workflow/shell-glyph-live';
-import { faceReadoutValueFor } from '$lib/ui/workflow/face-readout-values';
 import { STRICT_FACES } from '$lib/ui/workflow/strict-faces';
-import { sidebarPanelFor } from '$lib/ui/workflow/sidebar-panels';
 import {
   ILLOGIC_ATT_PARAM_IDS,
   ILLOGIC_DIFF_SIGNS,
@@ -251,18 +249,6 @@ describe('illogic face model — TOTALITY (a readout runs on every render)', () 
     // …and −0 must not print as `×−0.00`.
     expect(fmtBusGain(-0)).toBe('×0.00');
   });
-
-  it('every declared readout id RESOLVES and prints through the registry', () => {
-    const declared = (illogicDef.face?.hero?.readouts ?? []).map((r) => r.valueId).filter(Boolean);
-    expect(declared.length, 'the hero declares readouts').toBeGreaterThan(0);
-    for (const id of declared) {
-      const fn = faceReadoutValueFor(id!);
-      expect(fn, `readout ${id} is registered`).toBeTruthy();
-      const out = fn!(R());
-      expect(typeof out).toBe('string');
-      expect(out.length, `readout ${id} prints something`).toBeGreaterThan(0);
-    }
-  });
 });
 
 describe('illogic face — the GLYPH resolution, in both directions', () => {
@@ -304,14 +290,6 @@ describe('illogic face — promotion + the picture', () => {
   it('is PROMOTED, and the promotion is what changes the UI', () => {
     expect(STRICT_FACES.has('illogic')).toBe(true);
     expect(illogicDef.face, 'authoring a face IS the promotion').toBeTruthy();
-  });
-
-  it('the sidebar names a REGISTERED panel', () => {
-    const custom = (illogicDef.face?.sidebar ?? []).filter((b) => b.kind === 'custom');
-    expect(custom.length, 'the routing picture is a sidebar block').toBeGreaterThan(0);
-    for (const b of custom) {
-      expect(sidebarPanelFor(b.panelId!), `panel ${b.panelId} is registered`).toBeTruthy();
-    }
   });
 
   it('the picture marks exactly the tapped channels, and marks the sign', () => {

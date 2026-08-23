@@ -132,6 +132,11 @@ const FACE_ANSWER: Readonly<Record<string, FaceAnswer>> = {
   Selector: { via: 'param-cell', kind: 'selector', note: 'and ShellSelectorCell for a data roster' },
   ParamGrid: { via: 'param-cell', kind: 'grid' },
   ColorField: { via: 'param-cell', kind: 'color' },
+  HueWheel: {
+    via: 'param-cell',
+    kind: 'hue',
+    note: 'The conic hue ring. A SEPARATE kind from ColorField beside it: that primitive is a native picker over a DISCRETE packed-RGB param, this is a CONTINUOUS 0..1 angle that WRAPS.',
+  },
 
   // ── read-only pictures ──
   ScopeScreen: { via: 'glyph', kind: 'scope' },
@@ -156,6 +161,18 @@ const FACE_ANSWER: Readonly<Record<string, FaceAnswer>> = {
   ControlContextMenu: {
     via: 'ambient',
     why: 'the shared right-click menu itself — chrome under every primitive, never a cell.',
+  },
+  StatusLed: {
+    via: 'ambient',
+    why:
+      'an INDICATOR, not an affordance — it takes no param, writes nothing, and has no onchange, '
+      + 'so there is no cell for it to be. It is the positive form of the resting-text rulings: a '
+      + 'STATIC caption, a boolean rendered as a lamp, and the measurement in `aria-label`/`title` '
+      + 'rather than a text node. A face reaches it only through a module\'s own `fullViewBody` '
+      + '(the first is cvBuddy\'s rack-global status body), which is why it is placed by the '
+      + 'module rather than ranked by `face.order`. ⚠ Compare `Readout` above, which is the shape '
+      + 'it refuses: that primitive HAS a `value` prop and a formatter; this one deliberately has '
+      + 'neither, and `status-led-source.test.ts` denies adding them.',
   },
 
   // ── THE GAPS ──
