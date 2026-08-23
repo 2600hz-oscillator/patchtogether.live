@@ -82,6 +82,19 @@ export function loadContention(dir = join(ROOT, 'e2e/tests')) {
  */
 export const PENDING_FIRST_MEASUREMENT = [
   {
+    spec: 'rack-audio-gate.spec.ts',
+    why:
+      '#1826 — new with the /rack AudioGate mount: two cheap DOM legs (overlay visible → click '
+      + '→ ctx running → overlay removed; and the NEGATIVE CONTROL that a plain webdriver boot '
+      + 'renders no overlay at all, which is what protects every existing /rack spec from an '
+      + 'inherited click-interceptor). MEASURED both renderers, warm server, single worker, '
+      + 'REPEAT=3: `E2E_SWIFTSHADER=1` 26.0 s for 6 runs (~8.7 s per pass of both legs), real '
+      + 'GPU 12.3 s (~4.1 s per pass). Budget the CI shard at roughly the SwiftShader figure — '
+      + 'the subject is DOM + one engine boot, not per-frame rendering, so cost is page boots. '
+      + 'Run `flox activate -- task e2e:timings:accept` on the first green CI run after this '
+      + 'merges and DELETE this entry.',
+  },
+  {
     spec: 'quadralogical-face-screen.spec.ts',
     why:
       '#2102 — new with the QUADRALOGICAL faceplate: the two legs that prove the joystick IS '
