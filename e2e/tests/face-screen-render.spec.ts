@@ -262,6 +262,14 @@ const SUBJECTS: readonly Subject[] = [
   { type: 'feedback', prefix: 'feedback', domain: 'video', why: '⚠ THE ACCUMULATOR CASE OF THIS BATCH, and the row worth having for it. FEEDBACK re-samples its OWN previous output from a ping-pong framebuffer, so the pull is not how the picture stays fresh — it is how the TRAIL EXISTS. A lapsed watch mark decays the accumulated image out of the patch and turns a control labelled SCREEN into a history eraser. Its card already drew this preview; the face adds the toggle it never had.' },
   { type: 'mandleblot', prefix: 'mandleblot', domain: 'video', why: 'the Mandelbrot explorer\'s preview and its SCREEN switch. ⚠ NOT stateless despite holding no accumulator: `uTime * 0.1 * uColorCycle` cycles the palette and `color_cycle` ships at 1, so a lapsed mark freezes a MOVING picture that is also the ORIGIN of its chain — the module\'s only input is a CV. The heaviest renderer of the four, which is why its cost is measured rather than assumed.' },
 
+  // ── the ONE-SHOT INGEST pair (#2154) ──────────────────────────────────────
+  //
+  // Added in the SAME diff as the promotion, per this file's convention.
+  // Verified before writing: `type == prefix == extension id`, the body uses the
+  // standard `{#if !previewCollapsed}` REMOVES mechanism, and it declares the
+  // conventional `<type>-face-canvas` — so no `canvas` override is needed.
+  { type: 'frametable', prefix: 'frametable', domain: 'video', why: '⚠ THE DEEPEST ACCUMULATOR IN THIS FILE, and the row earns its place on that alone: a SIXTY-LAYER GPU ring advanced once per draw, where `vdelay` (32 slots) and `feedback` (one ping-pong tap) are the nearest cases. A lapsed watch mark does not decay a trail or stall a preview — it punches a PERMANENT HOLE in a history the player scans BACK through with MORPH, and the def says so itself: `pullExempt` exists because "a gap from a paused-while-unwatched period would be a visible seam the instant you MORPH back through it". So SCREEN OFF retaining the mark is load-bearing on the module\'s SUBJECT, not merely on its output. Its card already drew this preview at 176x92; what the face adds is the toggle it never had.' },
+
   // ── lush garden (2026-08-23) ──────────────────────────────────────────────
   { type: 'lushgarden', prefix: 'lushgarden', domain: 'video', why: 'the generative garden\'s live preview and its SCREEN switch. ⚠ THE STRONGEST "KEEPS RENDERING" CASE IN THIS TABLE, and for a reason no other entry has: the picture is a wall-clock ACCUMULATION (plants spawn on a rate and each integrates a grow-in curve), so a collapse that stopped surface.draw would not merely pause a preview — re-opening SCREEN would show a garden YOUNGER THAN THE RACK. It is also a pure SOURCE with no input requirement, so a lapsed watch mark mutes the origin of the whole chain.' },
 
