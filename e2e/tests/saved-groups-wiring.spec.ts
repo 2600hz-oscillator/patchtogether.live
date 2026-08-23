@@ -21,7 +21,7 @@
 
 import { test, expect } from './_fixtures';
 import { type Page } from '@playwright/test';
-import { spawnPatch } from './_helpers';
+import { spawnPatch, canvasPane} from './_helpers';
 
 test.describe.configure({ mode: 'parallel' });
 
@@ -94,7 +94,7 @@ async function createTestGroup(page: Page): Promise<void> {
 }
 
 test('ModulePalette renders tools section without the saved-groups entry for anonymous users', async ({ page, rack }) => {
-  const pane = page.locator('.svelte-flow__pane');
+  const pane = canvasPane(page);
   const box = await pane.boundingBox();
   if (!box) throw new Error('no pane');
   await page.mouse.click(box.x + 200, box.y + 200, { button: 'right' });

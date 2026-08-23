@@ -2995,6 +2995,48 @@ export const FACES = [
       },
     ],
   },
+  // ── TIMELORDE (2026-08-23) ────────────────────────────────────────────────
+  //
+  // ⚠ NO `videoFaceWhy`, DELIBERATELY, AND IT IS THE OPPOSITE CALL FROM PONG'S
+  // even though the two modules look alike (both audio defs whose dock body
+  // paints a live 2D canvas). Two reasons, either one sufficient. First, that
+  // field turns on `freezeFaceVideo`, which writes `params.freeze` — pong
+  // DECLARES a freeze param and timelorde does not, so it would be writing to
+  // nothing. Second, timelorde's picture is not produced by the video engine at
+  // all: the body BLITS `video_out`'s own drawFrame, i.e. the frame
+  // `TimelordeCard` composites in an off-screen `HeadlessSourceHost`, so there
+  // is no video-engine surface to freeze.
+  //
+  // ⚠ THE DOCK SCENE'S DETERMINISM IS A DECODE, NOT A FREEZE, and it is
+  // measured. Under `prefers-reduced-motion` the card paints EXACTLY ONE frame
+  // and stops; `owlReady` used to flip in `onload`, which fires when the bytes
+  // arrive rather than when the bitmap is rastered, so the single latched frame
+  // was a function of boot speed. `vrt-live-surfaces.ts` recorded 13 of 20
+  // SEPARATE PROCESSES failing the timelorde CARD scene for exactly that, which
+  // is why the card carries a wrap mask — and this roster has no mask mechanism
+  // at all, so the fix had to be at the source. The card now awaits
+  // `img.decode()` before its first paint.
+  //
+  // ⚠ THE COMPACT SCENE HAS THE OPPOSITE ARGUMENT and is deterministic for free:
+  // timelorde is domain audio with thirteen gate outs and one video out, so
+  // `hasVideoSurface` is false, `primaryAudioOutPortId` is null, the face
+  // declares `glyph: 'none'`, and the tile is three plain cells with no picture.
+  {
+    type: 'timelorde',
+    pages: 4,
+    singletonAdoptWhy:
+      'THE FIRST FACED RACK SINGLETON, and the harness cannot spawn its subject. timelorde is '
+      + 'maxInstances 1 AND is named in cap.ts\'s PINNED_COUNTS_TOWARD_CAP ("the pinned TIMELORDE '
+      + 'is the rack\'s one clock"), so the always-on pinned instance every rack auto-spawns '
+      + 'CONSUMES the cap and `__spawnFromPalette` is refused — measured as a 20 s timeout in '
+      + 'spawnVideoZoneMember\'s arrival wait, with no second node ever appearing. And the pinned '
+      + 'instance itself is canvas-hidden, so it has no lane tile to capture either. ⚠ SO THE '
+      + 'SUBJECT IS ADOPTED RATHER THAN SPAWNED: the existing instance is un-pinned and moved '
+      + 'into the lane-1 band, which is not a synthetic state — it is exactly what a rack IMPORTED '
+      + 'from a saved patch has (workflow-pins\' presence:\'type\' rule means no pinned instance '
+      + 'is spawned when a canvas one already exists), and it is the only state in which this '
+      + 'face is reachable by a player at all.',
+  },
 ] as const;
 
 /**
@@ -3675,6 +3717,29 @@ export interface BootFaceOptions {
    */
   videoFaceWhy?: string;
   /**
+   * THE FACE IS A RACK SINGLETON THE HARNESS CANNOT SPAWN — adopt the instance
+   * the rack already has instead. The string is the REASON, so the declaration
+   * cannot be a bare flag (the `videoFaceWhy` idiom, one field up).
+   *
+   * ⚠ THE SPAWN PATH ASSUMES A TYPE CAN BE INSTANTIATED ON DEMAND, and for one
+   * module it cannot. `timelorde` is `maxInstances: 1` and is named in
+   * `graph/cap.ts`'s `PINNED_COUNTS_TOWARD_CAP` — its always-on pinned instance
+   * IS the rack's one clock and therefore CONSUMES the cap — so
+   * `__spawnFromPalette` is simply refused. It fails as a 20 s arrival timeout
+   * with no error, which reads like a broken app rather than a refused spawn.
+   * And the pinned instance is canvas-hidden, so it has no lane tile either:
+   * there is no subject at all until one is made.
+   *
+   * ⚠ THE ADOPTED STATE IS REAL, NOT SYNTHETIC, which is what makes this
+   * legitimate rather than a harness cheat. `workflow-pins`' `presence: 'type'`
+   * rule spawns the pinned instance only when NO node of the type exists, so a
+   * rack imported from a saved patch carries an ORDINARY CANVAS timelorde and
+   * no pin — exactly the state this branch produces by un-pinning and moving
+   * the node into the lane band. It is also the ONLY state in which this face
+   * is reachable by a player, which is the same thing said from the other side.
+   */
+  singletonAdoptWhy?: string;
+  /**
    * PIN A STATEFUL SIM'S PHASE — boot-time globals installed via
    * `addInitScript` BEFORE `goto`, so they are set before any module factory
    * runs and can be read at CONSTRUCTION.
@@ -4139,6 +4204,30 @@ export async function bootWithFace(
   // channel-columns.ts), and the order array is the chain order, so spawning
   // `upstream` first puts its output into `type`'s input through the REAL
   // membership + reconcile path — no hand-built edge, no second boot path.
+  // ── A RACK SINGLETON IS ADOPTED, NOT SPAWNED ────────────────────────────
+  //
+  // See BootFaceOptions.singletonAdoptWhy. It resolves its member the way the
+  // video-zone branch does — by NODE, on free canvas — and for the same
+  // underlying reason rather than by imitation: a CHANNEL COLUMN is the AUDIO
+  // chain, and a module with no audio port can never join one. timelorde's
+  // fourteen outputs are thirteen `gate` and one `video`, so the column wait
+  // would sit at its full budget on a perfectly healthy rack (MEASURED: 90 s,
+  // with the node un-pinned and in the lane band). That is the same fact
+  // `videoFaceWhy` encodes for pong, which is likewise an audio def with no
+  // audio port.
+  //
+  // ⚠ IT DOES NOT REUSE `videoFaceWhy`, and the difference is not cosmetic:
+  // that field ALSO turns on `freezeFaceVideo`, which writes `params.freeze`.
+  // pong declares a freeze param; timelorde does not, so the write would invent
+  // an undeclared key and the assertion after it would be measuring a freeze
+  // that never happened.
+  if (opts.singletonAdoptWhy) {
+    const adoptedId = await adoptCanvasSingleton(page, type);
+    await applyFaceSceneStyle(page);
+    if (opts.freezeAudio !== false) await freezeFaceAudio(page, `face-${type}`);
+    return adoptedId;
+  }
+
   const chain = opts.upstream ? [opts.upstream, type] : [type];
   for (const t of chain) {
     await page.evaluate((tt) => {
@@ -4237,6 +4326,72 @@ async function idsOfType(page: Page, type: string): Promise<string[]> {
  * which is the assertion that fails if this ever regresses to picking the
  * default `videoOut` instead of the spawned face.
  */
+/**
+ * UN-PIN the rack's existing singleton and put it in the lane-1 band, so the
+ * shared audio path can go on treating it as an ordinary channel member.
+ *
+ * ⚠ IT ASSERTS ITS OWN PRECONDITION IN BOTH DIRECTIONS. "Adopt the one that is
+ * there" is silently wrong if there are zero (nothing to capture) or two (the
+ * scene would pick an arbitrary one), and both would surface as a generic
+ * timeout in the column wait rather than as the thing that happened. The
+ * expectation names the population it found.
+ */
+async function adoptCanvasSingleton(page: Page, type: string): Promise<string> {
+  // ⚠ THE ENGINE IS A SIDE-EFFECT OF SPAWNING, AND THIS BRANCH DOES NOT SPAWN.
+  // `__spawnFromPalette` boots the audio engine on its way past; adopting a node
+  // that already exists never touches it, so without this the scene reaches
+  // `freezeFaceAudio` with no AudioContext to suspend and fails as
+  // "AUDIO FREEZE DID NOT LAND (no-engine)" — an accurate message pointing at
+  // the wrong cause. (MEASURED here, on the first run of this branch.) It is
+  // also what lets the adopted card push a display frame at all.
+  await page.waitForFunction(() => {
+    const w = globalThis as unknown as { __ensureEngine?: () => Promise<unknown> };
+    return typeof w.__ensureEngine === 'function';
+  }, undefined, { timeout: 20_000 });
+  await page.evaluate(async () => {
+    const w = globalThis as unknown as { __ensureEngine: () => Promise<unknown> };
+    await w.__ensureEngine();
+  });
+
+  const existing = await idsOfType(page, type);
+  expect(
+    existing,
+    `${type}: singletonAdoptWhy expects EXACTLY ONE existing instance to adopt, found ` +
+      `[${existing.join(', ')}]. Zero means the rack's always-on spawn did not run (there is ` +
+      `nothing to capture); two means the cap this branch exists for is no longer in force, and ` +
+      `the ordinary spawn path should be used instead.`,
+  ).toHaveLength(1);
+
+  await page.evaluate(
+    ({ id, pos }) => {
+      const w = globalThis as unknown as {
+        __patch: {
+          nodes: Record<
+            string,
+            { position?: { x: number; y: number }; data?: Record<string, unknown> } | undefined
+          >;
+        };
+        __ydoc: { transact: (fn: () => void) => void };
+      };
+      const node = w.__patch.nodes[id];
+      if (!node) throw new Error(`adoptCanvasSingleton: ${id} vanished between read and write`);
+      w.__ydoc.transact(() => {
+        // Un-pinning is what makes it a CANVAS node: `isCanvasHiddenNode` is
+        // `pinned || hiddenCard`, and the flowNodes derivation skips those, so a
+        // pinned node has no lane tile to capture at all.
+        if (node.data) node.data.pinned = false;
+        // FREE CANVAS below the channel-lane baseline — the same point the
+        // video-zone branch drops into, and for the same reason: a channel
+        // column is the AUDIO chain and this module has no audio port, so
+        // parking it in a lane band would only make it wait forever to join one.
+        node.position = { x: pos.x, y: pos.y };
+      });
+    },
+    { id: existing[0]!, pos: { x: 200, y: 4560 } },
+  );
+  return existing[0]!;
+}
+
 async function spawnVideoZoneMember(page: Page, type: string): Promise<string> {
   // The population BEFORE the spawn — the thing that made `=== 1` wrong.
   const before = await idsOfType(page, type);

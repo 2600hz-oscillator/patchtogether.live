@@ -1094,6 +1094,34 @@ describe('module-face lint — MOMENTARY pads (face.momentary)', () => {
     'videocube:wrap',
     'videocube:material',
     'videocube:hue_mode',
+    // TIMELORDE, 2026-08-23. Three switch-shaped params, all LATCHING, and each
+    // one classified at its own read site rather than by family resemblance.
+    //
+    // `muteOutputs` — the worklet reads its LEVEL every block and zeroes the
+    // gate WRITES while it is high (the internal clock keeps turning so
+    // LIVECODE's subscribers stay alive). A momentary render would un-mute the
+    // rack the instant the player let go, which is the opposite of a mute.
+    //
+    // `running` — the TRANSPORT, and the one where the press-pad shape is most
+    // tempting because the module DOES have gate inputs. It is still latching,
+    // and the reason is the SPLIT: `start_in` / `stop_in` are declared
+    // `edge: 'trigger'` and are drained through `transportEventsToRunState`,
+    // which sets the level; the param holds it. A momentary render would resume
+    // a deliberately stopped rack on release — and worse, it would fight a
+    // hardware MIDICLOCK stop, which is the exact case the legacy card hid its
+    // own RUN button to avoid.
+    //
+    // ⚠ `running` also RESTS AT 1, which is the rarer half of this shape: a
+    // press-pad that rests high would be held-down-forever at spawn.
+    //
+    // `wizardOn` — display show/hide, and the clearest of the three: the `gate`
+    // input that also drives it is declared `edge: 'gate'` (LEVEL-sensitive, the
+    // def says so twice), and `pollWizardGate` writes the level, never an edge.
+    // Holding the gate high keeps the owl on; the button is the manual override
+    // that converges on the same state.
+    'timelorde:muteOutputs',
+    'timelorde:running',
+    'timelorde:wizardOn',
   ]);
 
   it('no ACKNOWLEDGED_LATCHING param is DOCUMENTED as momentary (the cross-check)', () => {

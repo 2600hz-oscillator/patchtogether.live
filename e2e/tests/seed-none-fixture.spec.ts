@@ -16,6 +16,7 @@
 
 import { test, expect } from './_fixtures';
 import { BOOT_MS } from '../_helpers/boot-budget';
+import { canvasPane } from './_helpers';
 
 /** Every node id on the graph. */
 async function nodeIds(page: import('@playwright/test').Page): Promise<string[]> {
@@ -37,7 +38,7 @@ test('?seed=none: the rack is GENUINELY empty — no pins, no video zone, no aut
 }) => {
   await page.goto('/rack?shell=legacy&seed=none');
   await page.waitForLoadState('networkidle');
-  await page.locator('.svelte-flow__pane').waitFor({ state: 'visible' });
+  await canvasPane(page).waitFor({ state: 'visible' });
 
   // Hold for a while in FRAMES: the seeders are async $effects, so "empty right
   // now" and "empty once the effects have had their chance" are different

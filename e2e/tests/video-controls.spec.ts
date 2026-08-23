@@ -75,7 +75,7 @@
 
 import { test, expect } from './_fixtures';
 import { type Page, type Locator } from '@playwright/test';
-import { spawnPatch } from './_helpers';
+import { spawnPatch, canvasPane} from './_helpers';
 import {
   installRenderSmokeHooks,
   stepAndReadStats,
@@ -699,7 +699,7 @@ test.describe('module palette: VIDEO grouping + V-MIXER visibility', () => {
     // Open the palette via right-click on the canvas pane (xyflow's
     // background pane catches the contextmenu and Canvas.svelte routes
     // it through onPaneContextMenu → paletteOpen=true).
-    const pane = page.locator('.svelte-flow__pane').first();
+    const pane = canvasPane(page);
     await expect(pane).toBeVisible();
     await pane.click({ button: 'right', position: { x: 200, y: 200 } });
 

@@ -21,7 +21,7 @@
 
 import { test, expect } from './_fixtures';
 import type { Page } from '@playwright/test';
-import { spawnPatch } from './_helpers';
+import { spawnPatch, canvasPane} from './_helpers';
 import { installRenderSmokeHooks } from './_render-smoke';
 import { readScopeSnapshot, summarize } from './_module-coverage-helpers';
 
@@ -188,7 +188,7 @@ test.describe('VIDEOCUBE — video isomorph of the audio CUBE', () => {
     // (wheel over the pane centre = SvelteFlow zoomOnScroll) so every pad is on
     // screen; the fractional drag math is zoom-independent (it uses each pad's
     // own rendered rect).
-    const pane = page.locator('.svelte-flow__pane').first();
+    const pane = canvasPane(page);
     const pbox = await pane.boundingBox();
     if (pbox) {
       for (let i = 0; i < 2; i++) {
