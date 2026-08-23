@@ -29,6 +29,8 @@
 // complementary and both should stay.
 
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { samsloopDef } from './samsloop';
 
 /** Every input this def declares as a modulation target. Derived, so a new CV
@@ -49,9 +51,6 @@ function paramTargetPorts() {
 function factoryInputsSource(): string {
   // The def and its factory live in one file; reading it back is the same
   // source-level technique `card-range-source` uses for the card/def pair.
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { readFileSync } = require('node:fs') as typeof import('node:fs');
-  const { resolve } = require('node:path') as typeof import('node:path');
   return readFileSync(resolve(__dirname, 'samsloop.ts'), 'utf8');
 }
 
