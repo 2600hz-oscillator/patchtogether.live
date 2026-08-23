@@ -50,6 +50,11 @@ import {
   milkdropPresetValue,
   selectMilkdropPreset,
 } from '$lib/ui/modules/milkdrop-preset-actions';
+import {
+  FRAMETABLE_FILE_ACCEPT,
+  loadFrametableFile,
+  saveFrametableFile,
+} from '$lib/ui/modules/frametable-file-actions';
 import Dx7OperatorMap from '$lib/ui/modules/dx7/Dx7OperatorMap.svelte';
 import Dx7OpDetail from '$lib/ui/modules/dx7/Dx7OpDetail.svelte';
 import AnalogVcoHeroPanel from '$lib/ui/modules/AnalogVcoHeroPanel.svelte';
@@ -399,6 +404,48 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
       title: 'Import a Winamp Milkdrop .milk preset (appended to the picker for this session)',
       accept: MILK_ACCEPT,
       onFile: (nodeId, file) => loadMilkFile(nodeId, file),
+    },
+  },
+  frametable: {
+    // THE WAVETABLE FILE WORKFLOW — the two affordances promotion would
+    // otherwise have deleted with `FrametableCard.svelte`, since `migrated(type)`
+    // stops BOTH surfaces rendering a promoted module's card. The def's own
+    // `explanation` advertises this workflow at length ("FRAMETABLE also SAVES +
+    // LOADS real FILES"), so a face without them would ship documentation
+    // describing controls that no longer exist — and no def-reading gate can see
+    // that. Both call `$lib/ui/modules/frametable-file-actions`, which the card
+    // now calls too, so the two surfaces cannot drift about what a `.frametable
+    // .png` is.
+    'frametable-file-input-{n}': {
+      kind: 'file',
+      label: 'Load table…',
+      title: 'Import a .frametable.png atlas (a 10x6 = 60-tile contact sheet) into the ring, freezing it so the loaded table can be scanned',
+      accept: FRAMETABLE_FILE_ACCEPT,
+      onFile: (nodeId, file) => loadFrametableFile(nodeId, file),
+    },
+    // ⚠ THE FIRST `data` PROBE ON AN ACTION CELL IN THE TREE, and the reason is
+    // that this action's whole effect is OUTSIDE the page. `ShellActionProbe`
+    // has carried the shape since PF-14 ("a future action cell that edits
+    // node.data instead of firing a seam") with no adopter; the five shipped
+    // action cells are all AUDITIONS, whose observable is the audition ledger
+    // because they deliberately write nothing at all.
+    //
+    // This one is the opposite case. It is not an audition — it does not touch a
+    // seam, an engine handle callable or a ConstantSource — it reads the ring
+    // back, encodes a PNG and hands it to the browser. A `seam` probe would have
+    // nothing to record, and an `audition` record would be a lie about what
+    // happened. What it DOES leave behind is the descriptor on
+    // `node.data.frametableFile`, written LAST, after the disk write — so a
+    // probe that sees it change has proved the whole chain ran, and one that
+    // does not has proved the button is dead. That is exactly the
+    // pressed-and-reached-nothing distinction the ledger exists to preserve,
+    // reached through the oracle this action actually has.
+    'frametable-save-file-{n}': {
+      kind: 'action',
+      label: 'Save table',
+      title: 'Write the current 60-frame ring to a lossless .frametable.png atlas file (FREEZE first to hold a specific 60 frames)',
+      probe: { effect: { kind: 'data', key: 'frametableFile', expect: 'changed' } },
+      onFire: (nodeId) => { void saveFrametableFile(nodeId); },
     },
   },
   dx7: {

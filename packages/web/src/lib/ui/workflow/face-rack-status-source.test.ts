@@ -160,6 +160,7 @@ const EXTENSION_BODY_ROLES: Readonly<Record<string, BodyRule>> = {
   colourofmagic: { role: 'picture', why: 'the multi-colorspace processor\'s live preview canvas and its SCREEN switch (#2015: OFF stops the preview copy, never the engine).' },
   foxy: { role: 'picture', why: 'the video-synth\'s live output preview canvas and its SCREEN switch.' },
   freezeframe: { role: 'picture', why: 'the frame-hold preview canvas — the one surface on which "is it frozen?" is answerable at all.' },
+  frametable: { role: 'picture', why: 'the video wavetable oscillator\'s live scan preview and its SCREEN switch — a picture FrametableCard.svelte already drew at 176x92, so this slot is a PORT rather than an addition and promotion would have deleted the surface without it. ⚠ It is also the roster\'s strongest watch-mark case after `vdelay`: this module\'s subject is a SIXTY-LAYER RING advanced once per draw, so a lapsed mark does not merely pause a preview, it punches a permanent GAP in the history you scan back through — which is the exact seam `frametableDef.pullExempt` exists to prevent, in its own words.' },
   grainsOfVision: { role: 'picture', why: 'the video-granulator\'s live preview canvas and its SCREEN switch (#1928 — the toggle a promotion would otherwise delete with the card).' },
   mandelbulb: { role: 'picture', why: 'the raymarched fractal\'s live preview canvas and its SCREEN switch.' },
   mirrorpool: { role: 'picture', why: 'the kaleidoscopic reflector\'s live preview canvas and its SCREEN switch.' },
