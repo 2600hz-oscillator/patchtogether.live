@@ -2582,6 +2582,47 @@ export const FACES = [
       + 'is one centred CIRCLE at zoom 1 on black — identical on every frame, every boot and '
       + 'every renderer.',
   },
+  // ── CUT A · BATCH 2 ───────────────────────────────────────────────────────
+  {
+    type: 'shapedramps',
+    pages: 2,
+    videoFaceWhy:
+      'a VIDEO module, so it must boot into the video zone rather than a mixer channel column — '
+      + 'without this field bootWithFace waits out the full 90 s test timeout for a column '
+      + 'membership a video node never acquires. Both scenes carry a live picture: the compact '
+      + 'tile paints a VideoTileThumb through hasVideoSurface, and the dock body is the module\'s '
+      + 'own fullViewBody extension — a surface ShapedrampsCard.svelte never had at all, since '
+      + 'that card mounts ZERO canvases. ⚠ AND IT NEEDS NO DETERMINISM SEAM, for the same reason '
+      + '`shapes` above needs none and unlike both of batch 23a: all three of this module\'s '
+      + 'programs are pure per-pixel functions of vUv and the uniforms (LIN_FRAG_SRC, '
+      + 'SHAPED_FRAG_SRC, MIX_FRAG_SRC) with NO time uniform, no ping-pong, no history texture '
+      + 'and no RNG, so every frame is fully recomputed to the same pixels. It is a SOURCE that '
+      + 'is nonetheless perfectly still at rest. ⚠ The dock preview shows `h_out` specifically — '
+      + 'the engine aliases surface.texture to fboH_out.texture — so at the shipped defaults '
+      + '(h_shape 0, h_phase 0, h_freq 1) the scene is a clean left-to-right linear luminance '
+      + 'ramp, which is about as stable a target as this suite has.',
+  },
+  {
+    type: 'dockscope',
+    pages: 1,
+    simPin: [
+      {
+        global: '__dockscopeVrtSeed',
+        value: 1,
+        why:
+          'DOCKSCOPE paints a LIVE ANALYSER WINDOW — read(\'snapshot\') returns whatever 2048 '
+          + 'samples the AnalyserNode happens to hold when the frame runs — so with nothing '
+          + 'patched the trace is the input gain node\'s noise floor and with something patched '
+          + 'it is a window whose phase depends on when the capture landed. Neither is stable '
+          + 'across boots, and freezeFaceVideo cannot reach it: this is an AUDIO def, so there '
+          + 'is no VideoEngine frame to freeze. The module already carries a deterministic seed '
+          + 'for exactly this — a fixed 2048-sample 220 Hz sine at 48 kHz, mirroring ScopeCard\'s '
+          + '__scopeVrtSeed — and the faceplate body reads the SAME global the card does, which '
+          + 'is what lets the FACE be baselined and not only the card. Setting it makes the trace '
+          + 'a pure function of the module\'s own constants plus TIME and SCALE.',
+      },
+    ],
+  },
   {
     type: 'graphicEq',
     pages: 1,

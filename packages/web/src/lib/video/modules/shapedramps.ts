@@ -243,6 +243,71 @@ export const shapedrampsDef: VideoModuleDef = {
     { id: 'mix2',    label: 'Mix 2',   defaultValue: DEFAULTS.mix2,    min: 0,   max: 1, curve: 'linear' },
   ],
 
+  // ── FACE (cut A · batch 2) ─────────────────────────────────────────────────
+  face: {
+    // RANKED BY WHAT MOVES THE PICTURE, which is not the card's grid order.
+    // `ShapedrampsCard.svelte` lays the six ramp faders out 3-across (HS VS HP
+    // VP HF VF) — a LAYOUT. A face ranks, so the two SHAPE morphs lead: they
+    // walk the ramp through linear → triangle → soft-fold → radial and are the
+    // only controls that change what KIND of gradient comes out. FREQ follows
+    // (it fract-wraps the axis, so freq=2 repeats the whole shape and is the
+    // next most structural), then PHASE (a shift of a shape already chosen).
+    //
+    // ⚠ BOTH MIXES RANK LAST DELIBERATELY, AND THE REASON IS THAT THEY DO
+    // NOTHING ON THEIR OWN. `mix1`/`mix2` crossfade `mix{N}_a` against
+    // `mix{N}_b` — patched mono-video that is not this module's own output — so
+    // on an unpatched instance the two dials are inert. Everything above them
+    // moves the picture with nothing plugged in. That is what pushes them out
+    // of the six-cell lane budget, not a judgement about mixing.
+    order: ['h_shape', 'v_shape', 'h_freq', 'v_freq', 'h_phase', 'v_phase', 'mix1', 'mix2'],
+
+    // Two bands, mirroring the two regions the card already separates: one
+    // fader grid for the ramp generators, then the onboard mixers. The H/V
+    // pairs sit adjacent inside RAMPS because the axes are symmetric — reading
+    // down the band is "shape, then rate, then offset", twice.
+    pages: [
+      { id: 'ramps', label: 'ramps', controls: ['h_shape', 'v_shape', 'h_freq', 'v_freq', 'h_phase', 'v_phase'] },
+      { id: 'mix', label: 'mix', controls: ['mix1', 'mix2'] },
+    ],
+
+    // ⚠ NO `paramCells`, AND IT IS A DECISION RATHER THAN AN OMISSION — the
+    // opposite decision to the one this card's markup would suggest. All eight
+    // controls ARE `<NeonFader>` on `ShapedrampsCard.svelte`, so a literal
+    // reading of "declare the primitive the card established" would put
+    // `fader` on every one of them. Measured (`shell-control-kind.ts:96-105`),
+    // that is not what the fleet does: TWENTY-THREE faced modules rank ONE
+    // HUNDRED AND TWENTY-ONE fader-drawn params as knobs and `noise` is still
+    // the only declarer. Converting them is recorded there as a LOOK RULING
+    // WITH REAL COST that is WITH THE OWNER — `LANE_CELL_H.fader` is 96 px
+    // against a 42 px plate row, so declaring it here would halve this
+    // module's lane plate from six cells to three and spend the whole budget
+    // the ranking above was built around.
+    //
+    // So this face follows the twenty-three, not the one, and says so out loud
+    // rather than leaving a silent omission that reads like an oversight. If
+    // the pending ruling goes the other way this def is one line from
+    // complying, and the ranking is what would need re-checking.
+
+    // ⚠ NOTHING TO CLASSIFY AND NOTHING TO NAME. All eight params are
+    // continuous linear scalars — no switch shape, so no `momentary` and no
+    // `ACKNOWLEDGED_LATCHING` entry — and none declares `options`. ⚠ H/V SHAPE
+    // LOOK LIKE FOUR-POSITION SELECTORS AND ARE NOT: the shader blends
+    // linearly between adjacent shapes (`SHAPED_FRAG_SRC`, the `seg`/`frac`
+    // split), so "linear / triangle / soft-fold / radial" are LANDMARKS ON A
+    // CONTINUOUS MORPH, not detents. Naming them as options would tell the
+    // player the intermediate values are unreachable when they are the point.
+    glyph: 'none',
+
+    // SCREEN ON/OFF arrives through this slot: promotion stops BOTH surfaces
+    // rendering `ShapedrampsCard.svelte`, and that card has NO preview at all,
+    // so this is an ADDITION rather than a port — the first picture this module
+    // has ever had on its own surface. See
+    // `$lib/ui/modules/shapedramps/shell-extension.ts` for the watch-mark
+    // argument, which on a six-output pure source is the strongest form of it
+    // in the fleet.
+    extension: 'shapedramps',
+  },
+
   docs: {
     explanation: "SHAPEDRAMPS is a sync-locked parametric ramp generator for video coordinate synthesis — it draws gradients across the raster rather than processing an incoming picture. It emits four mono-video ramps: h_lin/v_lin are stable identity ramps (red channel = screen u or v, untouched by any knob or CV) for clean raster passthrough into geometry modules like RUTTETRA; h_out/v_out are shaped ramps that morph through four canonical shapes via H Shape / V Shape (0..1): linear (t), triangle (abs(2t-1)), soft-fold (0.5 - 0.5*cos(2pi*t)), and radial (H = distance from center scaled so corners read 1, V = angle around center), blending linearly between adjacent shapes. H/V Phase shift the ramp before shaping; H/V Freq scale the axis variable and fract-wrap it, so freq=2 repeats the shape twice across the canvas (a triangle becomes a two-peak zigzag). It also packs two general-purpose 2-channel video crossfade mixers (out = (1-amount)*A + amount*B) so you can blend ramp shapes without an external V-MIXER, though they accept any mono-video signal. Typical use: feed h_lin/v_lin into a coordinate consumer for an identity raster, then crossfade toward h_out/v_out to warp the geometry; all four ramps and both mixers render every frame so downstream consumers always read fresh textures.",
     inputs: {
