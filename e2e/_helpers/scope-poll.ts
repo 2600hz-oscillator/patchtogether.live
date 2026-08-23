@@ -182,6 +182,136 @@ export async function pollScopePeak(
   );
 }
 
+/** What the RMS pollers return: the reading PLUS how it was taken. */
+export interface RmsPollResult {
+  rms: number;
+  samples: number;
+  elapsedMs: number;
+  reachedThreshold: boolean;
+}
+
+/** What the windowed RMS sampler returns — the SPREAD plus its provenance. */
+export interface RmsWindowResult {
+  lo: number;
+  hi: number;
+  samples: number;
+  elapsedMs: number;
+}
+
+/**
+ * Poll the scope's ch1 RMS until it exceeds `threshold`, or `boundMs` elapses.
+ *
+ * The RMS sibling of `pollScopePeak`, and it exists for the same reason: five
+ * specs carried a private `while (Date.now() < deadline) { await
+ * readScopeRms(page, id); … await page.waitForTimeout(100); }` — a CDP round
+ * trip per sample against an audio analyser on the thread being sampled.
+ */
+export async function pollScopeRms(
+  page: Page,
+  scopeNodeId: string,
+  threshold: number,
+  boundMs: number,
+  sampleEveryMs = 25,
+): Promise<RmsPollResult> {
+  return page.evaluate(
+    ([id, thr, bound, every]) =>
+      new Promise<RmsPollResult>((resolve) => {
+        const w = globalThis as unknown as {
+          __engine?: () => {
+            read: (node: { id: string; type: string; domain: string }, key: string) => unknown;
+          } | null;
+          __patch: { nodes: Record<string, { id: string; type: string; domain: string }> };
+        };
+        const t0 = performance.now();
+        let best = 0;
+        let samples = 0;
+        const done = (reachedThreshold: boolean): void => {
+          clearInterval(timer);
+          resolve({ rms: best, samples, elapsedMs: performance.now() - t0, reachedThreshold });
+        };
+        const read = (): void => {
+          const eng = w.__engine?.();
+          const node = w.__patch?.nodes?.[id as string];
+          const snap =
+            eng && node ? (eng.read(node, 'snapshot') as { ch1?: Float32Array } | undefined) : undefined;
+          if (snap?.ch1 && snap.ch1.length > 0) {
+            let energy = 0;
+            for (let i = 0; i < snap.ch1.length; i++) energy += snap.ch1[i]! * snap.ch1[i]!;
+            const rms = Math.sqrt(energy / snap.ch1.length);
+            samples++;
+            if (rms > best) best = rms;
+            if (best > (thr as number)) return done(true);
+          }
+          if (performance.now() - t0 >= (bound as number)) done(false);
+        };
+        const timer = setInterval(read, every as number);
+        read();
+      }),
+    [scopeNodeId, threshold, boundMs, sampleEveryMs] as const,
+  );
+}
+
+/**
+ * Take `sampleCount` RMS readings `everyMs` apart and return the LO/HI seen.
+ *
+ * For the specs that characterise a MOVING signal rather than wait for one:
+ * a filter sweep's RMS spread, or the peak RMS a note reaches over a window.
+ * Both used to be Playwright-side `for` loops doing one round trip per sample.
+ *
+ * `everyMs` is a real product-side cadence — the scope analyser refills its
+ * buffer on the audio clock, so sampling faster re-reduces bytes that have not
+ * changed — and it never crosses the process boundary.
+ */
+export async function sampleScopeRms(
+  page: Page,
+  scopeNodeId: string,
+  sampleCount: number,
+  everyMs: number,
+): Promise<RmsWindowResult> {
+  return page.evaluate(
+    ([id, count, every]) =>
+      new Promise<RmsWindowResult>((resolve) => {
+        const w = globalThis as unknown as {
+          __engine?: () => {
+            read: (node: { id: string; type: string; domain: string }, key: string) => unknown;
+          } | null;
+          __patch: { nodes: Record<string, { id: string; type: string; domain: string }> };
+        };
+        const t0 = performance.now();
+        let lo = Number.POSITIVE_INFINITY;
+        let hi = 0;
+        let samples = 0;
+        let taken = 0;
+        const read = (): void => {
+          const eng = w.__engine?.();
+          const node = w.__patch?.nodes?.[id as string];
+          const snap =
+            eng && node ? (eng.read(node, 'snapshot') as { ch1?: Float32Array } | undefined) : undefined;
+          if (snap?.ch1 && snap.ch1.length > 0) {
+            let energy = 0;
+            for (let i = 0; i < snap.ch1.length; i++) energy += snap.ch1[i]! * snap.ch1[i]!;
+            const rms = Math.sqrt(energy / snap.ch1.length);
+            samples++;
+            if (rms < lo) lo = rms;
+            if (rms > hi) hi = rms;
+          }
+          if (++taken >= (count as number)) {
+            clearInterval(timer);
+            resolve({
+              lo: Number.isFinite(lo) ? lo : 0,
+              hi,
+              samples,
+              elapsedMs: performance.now() - t0,
+            });
+          }
+        };
+        const timer = setInterval(read, every as number);
+        read();
+      }),
+    [scopeNodeId, sampleCount, everyMs] as const,
+  );
+}
+
 /**
  * Poll the scope's ch1 buffer for the Goertzel band magnitude at `freqHz`,
  * until it exceeds `threshold` or `boundMs` elapses.

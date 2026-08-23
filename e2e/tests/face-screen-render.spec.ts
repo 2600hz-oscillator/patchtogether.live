@@ -239,6 +239,16 @@ const SUBJECTS: readonly Subject[] = [
   // never reaches. A row here would assert a toggle that does not exist, which
   // is why the omission is written down instead of left to be noticed.
   { type: 'shapedramps', prefix: 'shapedramps', domain: 'video', why: 'the parametric ramp generator\'s live output preview and its SCREEN switch — an ADDITION, since ShapedrampsCard mounts no canvas at all. ⚠ The widest-tap watch-mark case in this file: SIX outputs, four of them pure functions of vUv with no input, and the preview shows only `h_out` — so five of the six are invisible on the very surface whose switch would mute them. Its two identity ramps are invariant to every knob and CV, so if they went dark nothing on the plate would move to say why.' },
+  // ── the CROSS-DOMAIN INPUT case ───────────────────────────────────────────
+  //
+  // ⚠ THE MIRROR OF `rasterize` BELOW, and worth the adjacency. That one is an
+  // AUDIO def carrying a video surface; this is a VIDEO def whose only INPUTS
+  // are audio-typed (`audio_l` / `audio_r` — the cross-domain audio→video
+  // bridge). It spawns with `domain: 'video'`, so a domain-derived enumeration
+  // finds it correctly and no special-casing is needed — which is exactly the
+  // fact worth pinning here, because the audio inputs make it LOOK like the
+  // outlier it is not.
+  { type: 'graphicEq', prefix: 'graphicEq', domain: 'video', why: 'the spectrum meters\' preview, and the last of the five #2009 MONITOR cards — so its body carries a MONITOR toggle and a corner resize BESIDE the SCREEN switch, which is the two-switches-on-one-surface case a mis-wired `aria-pressed` or a shared handler would hide in. ⚠ AND IT IS THE ACCUMULATOR CASE AMONG THEM: per-band peak-hold caps advanced once per draw plus `smoothingTimeConstant = 0.7` on both analysers, so SCREEN OFF retaining the watch mark is load-bearing on what the meters MEAN, not just on the output — a lapsed mark returns a frame asserting peaks from whenever it expired.' },
 
   // ── the AUDIO-def outlier ─────────────────────────────────────────────────
   { type: 'rasterize', prefix: 'rasterize', domain: 'audio', why: '⚠ an AudioModuleDef that carries a VIDEO surface, so it lives in lib/audio/modules and a video-only enumeration misses it entirely. Spawns with domain: audio. It is the reason this file\'s derivation crosses both domains.' },

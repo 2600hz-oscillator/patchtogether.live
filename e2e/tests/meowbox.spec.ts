@@ -34,6 +34,7 @@
 
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
+import { sampleScopeRms, scopePollMsg } from '../_helpers/scope-poll';
 
 interface ScopeSnapshot { ch1?: Float32Array }
 
@@ -241,14 +242,16 @@ test.describe('MEOWBOX V/oct integration', () => {
 
     /** Sample RMS N times over a window, return the max — peak energy is
      *  more stable than mean across gate retriggers + envelope tails. */
+    /** Peak RMS over a sampling window. The loop runs IN THE PAGE (one export
+     *  site): the old form did one CDP round trip per sample against the audio
+     *  thread it was measuring. */
     async function peakRmsOverWindow(scopeId: string, samples = 12, intervalMs = 100): Promise<number> {
-      let peak = 0;
-      for (let i = 0; i < samples; i++) {
-        const r = await readScopeRms(page, scopeId);
-        if (r > peak) peak = r;
-        await page.waitForTimeout(intervalMs);
-      }
-      return peak;
+      const w = await sampleScopeRms(page, scopeId, samples, intervalMs);
+      expect(
+        w.samples,
+        scopePollMsg(`peakRmsOverWindow(${scopeId}) resolved NO scope buffer, so its 0 is not a measurement`, w),
+      ).toBeGreaterThan(0);
+      return w.hi;
     }
 
     // ----- Configuration A: knob = +12 semi, no pitch CV cable -----

@@ -2623,6 +2623,34 @@ export const FACES = [
       },
     ],
   },
+  {
+    type: 'graphicEq',
+    pages: 1,
+    videoFaceWhy:
+      'a VIDEO module, so it must boot into the video zone rather than a mixer channel column — '
+      + 'without this field bootWithFace waits out the full 90 s test timeout for a column '
+      + 'membership a video node never acquires. Both scenes also carry a live picture: the '
+      + 'compact tile paints a VideoTileThumb through hasVideoSurface, and the dock body is the '
+      + "module's own fullViewBody extension (the meters plus its SCREEN and MONITOR switches). "
+      + '⚠ THIS ONE CANNOT USE THE ARGUMENT ITS NEIGHBOURS USE, and saying so is the point of '
+      + 'this entry. shapes and batch-22 G3 are still because they hold NO STATE — no time '
+      + 'uniform, no accumulator. GRAPHIC EQ HOLDS TWO: `peakL[]`/`peakR[]` are per-band '
+      + 'peak-hold caps advanced once per draw by `decayPeak(prev, current, params.peak)`, and '
+      + 'both AnalyserNodes carry `smoothingTimeConstant = 0.7`, which is itself an average over '
+      + 'the frames actually read. A scene here is earned by a DIFFERENT property and it is '
+      + 'MEASURED, not assumed: the animation is AUDIO-DRIVEN, and with nothing patched the '
+      + 'analysers read silence, so every band folds to 0 and the caps decay from 0 to 0 — the '
+      + 'accumulators exist but have nothing to accumulate. The capture is the dim meter grid. '
+      + '⚠ THE EVIDENCE IS AN EXISTING TEST, NOT THIS PROSE: '
+      + '`e2e/tests/graphic-eq-render-smoke.spec.ts` already drives two INDEPENDENT step bursts '
+      + 'of a fixed frame count against this module and asserts the frames are bit-stable '
+      + '(|delta mean| < 0.5, |delta variance| < 1.0). That is the same cross-boot property a '
+      + 'baseline needs, proven before this scene existed. '
+      + '⚠ AND THE FREEZE WRITE IS A NO-OP HERE (no `freeze` param) — which on THIS module is '
+      + 'worth stating rather than glossing, because freezing would not have helped anyway: the '
+      + 'thing that could move the picture is the AUDIO, and the harness stills that by leaving '
+      + 'the AudioContext suspended with no source patched.',
+  },
 ] as const;
 
 /**
