@@ -3788,6 +3788,50 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // WebGL context, and exactly two audio defs (`cube.ts`, `wavesculpt.ts`).
   // This def is none of those, and both surfaces are Canvas2D.
   'spectrograph',
+  // FRAMETABLE (2026-08-23) — the first of the two ONE-SHOT INGEST modules #2154
+  // reclassified out of `needs-media-controller`, and the entry whose interest is
+  // that it was never actually blocked.
+  //
+  // ⚠ IT SAT ON THE BLOCKED LIST FOR A PREDICATE THAT WAS ABOUT THE WRONG FILE.
+  // `DOM_SOURCE_LANE_TYPES` decided which modules need an off-screen
+  // `HeadlessSourceHost` mount, and its membership came from ONE question: does
+  // the card's subtree call `attachExternalSource(`? FRAMETABLE does — but it
+  // does not RETAIN what it is handed. The element goes into a `pendingAtlas`
+  // STAGING slot and the next `draw()` detiles it into GL and sets
+  // `pendingAtlas = null`. It is a FILE IMPORT, not a source; the live picture
+  // comes from the `video_in` CABLE, which no card mount affects. So the module
+  // needed no media lifecycle and this face costs no platform work.
+  //
+  // FIVE THINGS THIS PROMOTION HAD TO BUILD OR FIX, none of them cosmetic:
+  //
+  //  1. FOUR SWITCHES SAID `curve: 'linear'` while being read as `>= 0.5`
+  //     two-state levels and drawn as BUTTONS on the card. `looksLikeToggle` is
+  //     `curve === 'discrete' && min === 0 && max === 1`, so the faceplate would
+  //     have painted each as a rotary over a continuum, and `face.momentary`
+  //     could not have been declared on `chaos` or `saveTrig` at all.
+  //  2. `mode` HAD NO `options` ROSTER — the moog962 trap. SMOOTH / MORPH /
+  //     CHAOS existed only in `FrametableCard.svelte`'s `MODES` array, so
+  //     promotion would have deleted the names and left a 0..2 dial. The roster
+  //     is a PROMOTION of shipped strings, never an invention.
+  //  3. THE `.frametable.png` FILE WORKFLOW lived entirely on the card, and the
+  //     def's own `explanation` advertises it at length. Both halves are now
+  //     shell cells over one shared action module.
+  //  4. THE RE-HYDRATE WAS ATTACHED TO A VIEW. A `$effect` on the card restored
+  //     a saved table into the ring after a reload; promotion stops the card
+  //     rendering, so the table would have been silently gone. It moved into the
+  //     FACTORY, whose lifetime is the node's (#1531).
+  //  5. NO SCREEN SWITCH COULD EXIST. The card draws a 176x92 `video_out`
+  //     preview and promotion deletes it; the `fullViewBody` extension is the
+  //     only route to both the picture and the #1928 toggle.
+  //
+  // ⚠ THIS FACE COSTS A REAL-GPU RE-ATTEST, and items 1 and 2 are why. `params`
+  // is real code to `attest-code-basis.ts` — only `docs`, `controlFamilies`,
+  // `face` and `noUserControl` are stripped — and this def is in the WebGL basis
+  // (`resolveWebglBasis` sweeps `lib/video/`). Item 4 touches the factory, which
+  // is in the hash for the ordinary reason. Paid ONCE, in one PR, because the
+  // face itself is hash-transparent. `tempest` and `fader` made the same trade
+  // in batch 22 G2b.
+  'frametable',
 ]);
 
 /**

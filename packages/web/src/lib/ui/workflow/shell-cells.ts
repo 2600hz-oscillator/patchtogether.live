@@ -50,6 +50,11 @@ import {
   milkdropPresetValue,
   selectMilkdropPreset,
 } from '$lib/ui/modules/milkdrop-preset-actions';
+import {
+  FRAMETABLE_FILE_ACCEPT,
+  loadFrametableFile,
+  saveFrametableFile,
+} from '$lib/ui/modules/frametable-file-actions';
 import Dx7OperatorMap from '$lib/ui/modules/dx7/Dx7OperatorMap.svelte';
 import Dx7OpDetail from '$lib/ui/modules/dx7/Dx7OpDetail.svelte';
 import AnalogVcoHeroPanel from '$lib/ui/modules/AnalogVcoHeroPanel.svelte';
@@ -461,6 +466,67 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
       title: 'Import a Winamp Milkdrop .milk preset (appended to the picker for this session)',
       accept: MILK_ACCEPT,
       onFile: (nodeId, file) => loadMilkFile(nodeId, file),
+    },
+  },
+  frametable: {
+    // THE WAVETABLE FILE WORKFLOW — the two affordances promotion would
+    // otherwise have deleted with `FrametableCard.svelte`, since `migrated(type)`
+    // stops BOTH surfaces rendering a promoted module's card. The def's own
+    // `explanation` advertises this workflow at length ("FRAMETABLE also SAVES +
+    // LOADS real FILES"), so a face without them would ship documentation
+    // describing controls that no longer exist — and no def-reading gate can see
+    // that. Both call `$lib/ui/modules/frametable-file-actions`, which the card
+    // now calls too, so the two surfaces cannot drift about what a `.frametable
+    // .png` is.
+    'frametable-file-input-{n}': {
+      kind: 'file',
+      label: 'Load table…',
+      title: 'Import a .frametable.png atlas (a 10x6 = 60-tile contact sheet) into the ring, freezing it so the loaded table can be scanned',
+      accept: FRAMETABLE_FILE_ACCEPT,
+      onFile: (nodeId, file) => loadFrametableFile(nodeId, file),
+    },
+    // ⚠ THE FIRST `data` PROBE ON AN ACTION CELL IN THE TREE, and the reason is
+    // that this action's whole effect is OUTSIDE the page. `ShellActionProbe`
+    // has carried the shape since PF-14 ("a future action cell that edits
+    // node.data instead of firing a seam") with no adopter; the five shipped
+    // action cells are all AUDITIONS, whose observable is the audition ledger
+    // because they deliberately write nothing at all.
+    //
+    // This one is the opposite case. It is not an audition — it touches no seam,
+    // no engine-handle callable and no ConstantSource — it reads the ring back,
+    // encodes a PNG and hands it to the browser. An `audition` record would be a
+    // lie about what happened.
+    //
+    // ⚠ AND THE OBSERVABLE IS `frametableSave`, NOT `frametableFile`, WHICH THE
+    // FIRST DRAFT OF THIS CELL GOT WRONG. `frametableFile` is the success-only
+    // descriptor, and it is the stronger claim — but it is UNREACHABLE in the
+    // sweep's scene, for a reason that is a property of the harness rather than
+    // of this module. MEASURED on this branch: `spawnPatch` populates the graph
+    // store and NEVER reconciles the engine, so with a frametable spawned and
+    // its dock OPEN the video engine holds `nodes: []` and `rafId: null` — and
+    // the same probe reports the same emptiness for `chroma`, an already-shipped
+    // video face, which is what makes it a scene fact and not a frametable one.
+    // With no engine node there is no ring to read, so NO honest probe of a real
+    // save can pass there; asserting one would have been a gate that fails on
+    // correct code.
+    //
+    // `frametableSave` is the outcome record every exit of `saveFrametableFile`
+    // writes — `{ seq, ok, error }`, with `ok: false` KEPT — which is the
+    // audition ledger's own principle applied to a disk write: "never pressed"
+    // and "pressed and reached nothing" must stay distinguishable. So the probe
+    // asserts the press RAN THE HANDLER AND REPORTED, which is exactly what the
+    // FILE branch one kind over asserts of an import ("Either way the action RAN
+    // — which is what 'not inert' means here"), and the content-level behaviour
+    // stays with the bespoke spec, exactly as that branch leaves it to
+    // `dx7-syx-load.spec.ts`. Here that spec is `frametable.spec.ts`, whose
+    // SAVE→LOAD round-trip drives a REAL engine and asserts the atlas restores
+    // the ring.
+    'frametable-save-file-{n}': {
+      kind: 'action',
+      label: 'Save table',
+      title: 'Write the current 60-frame ring to a lossless .frametable.png atlas file (FREEZE first to hold a specific 60 frames)',
+      probe: { effect: { kind: 'data', key: 'frametableSave', expect: 'changed' } },
+      onFire: (nodeId) => { void saveFrametableFile(nodeId); },
     },
   },
   dx7: {
