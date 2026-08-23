@@ -172,7 +172,7 @@ const EMPTY_CELLS: ReadonlyMap<string, DeclaredParamCell> = new Map();
 export interface DeclaringDefLike {
   face?: {
     paramCells?: Readonly<Record<string, AuthoredParamCell>>;
-    xyPads?: readonly { x: string; y: string; label?: string }[];
+    xyPads?: readonly { x: string; y: string; label?: string; surface?: 'band' | 'body' }[];
   };
 }
 
@@ -182,6 +182,34 @@ export interface DeclaringDefLike {
  *  inside the pad and once as a stray knob beside it. Pure. */
 export function foldedParamIds(def: DeclaringDefLike | undefined): ReadonlySet<string> {
   return new Set((def?.face?.xyPads ?? []).map((p) => p.y));
+}
+
+/**
+ * The param ids painted by the module's OWN `fullViewBody` instead of by a dock
+ * band — BOTH axes of every pad declaring `surface: 'body'` (`FaceXyPad`).
+ * Empty for every face that declares none, which is all of them but one.
+ *
+ * ⚠ THE CALLER OWNS THE TIER, AND THIS FUNCTION DELIBERATELY DOES NOT. It
+ * answers "which params does the body claim", not "should they be dropped
+ * here". The body is dock-only (`dockFullViewHeadPlan`), so the two call sites
+ * are both inside the dock branch of `curatedFace` and the lane branch never
+ * asks.
+ *
+ * ⚠ THE LANE IS UNAFFECTED EITHER WAY, and for a reason worth stating because
+ * the obvious guess is wrong: `laneOrder` ALREADY drops every declared pad's
+ * anchor at every lane tier (a pad is square; a lane knob column is 46 px). So
+ * a lane tier that DID ask this function would get the same answer it already
+ * has. Keeping the call inside the dock branch is about where the QUESTION
+ * belongs, not about protecting the lane from it. Pure.
+ */
+export function bodyPaintedParamIds(def: DeclaringDefLike | undefined): ReadonlySet<string> {
+  const out = new Set<string>();
+  for (const pad of def?.face?.xyPads ?? []) {
+    if (pad.surface !== 'body') continue;
+    out.add(pad.x);
+    out.add(pad.y);
+  }
+  return out;
 }
 
 /** The declared pad ANCHORED at each x param id (empty when none). Pure. */

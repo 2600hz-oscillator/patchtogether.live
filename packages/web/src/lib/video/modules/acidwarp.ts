@@ -46,6 +46,7 @@ import type { VideoNodeHandle, VideoNodeSurface, VideoEngineContext } from '$lib
 import {
   generatePattern,
   buildPalette,
+  ACIDWARP_PALETTE_OPTIONS,
   SCENE_COUNT,
   PALETTE_COUNT,
   type PaletteType,
@@ -143,11 +144,59 @@ export const acidwarpDef: VideoModuleDef = {
     { id: 'out', type: 'video' },
   ],
   params: [
-    { id: 'speed',       label: 'Speed',   defaultValue: DEFAULTS.speed,       min: 0, max: 1, curve: 'linear' },
+    // ⚠ TWO LANDMARKS, AND THEY REPLACE A DELETED READOUT RATHER THAN DECORATE
+    // THE DIAL. `AcidwarpCard.svelte` printed the LIVE MULTIPLIER under this
+    // knob (`STOPPED`, `2.4×`) — resting derived text, which the 2026-08-19
+    // ruling removes from a faceplate. Deleting it silently would lose a fact
+    // the ParamDef does not otherwise carry: `speedKnobToMultiplier` is
+    // `k < 0.5 ? k*2 : 1 + (k-0.5)*6`, so NATIVE 1x sits at the knob's MIDPOINT,
+    // not at the top. A bare 0..1 dial gives a player no way to find it.
+    //
+    // Landmarks are the mechanism for exactly this shape — named waypoints on a
+    // CONTINUOUS param that morphs through its range — and a landmark NAME is
+    // permitted resting text where a number is not.
+    //
+    // ⚠ THE TOP END IS DELIBERATELY NOT A LANDMARK. `4×` would be a NUMERIC
+    // label: `face-readout-source`'s `paintableLabels()` sweeps landmarks as
+    // well as options, and its `looksNumeric` matches a digit plus a `×`, so it
+    // would need a NUMERIC_LABEL_EXEMPTIONS entry. It also buys nothing a dial
+    // does not already say — "fully clockwise is fastest" is legible from the
+    // control. Both names here come from the def's OWN docs ("0 = still,
+    // 0.5 = native 1x"), so nothing is invented and no exemption is spent.
+    {
+      id: 'speed', label: 'Speed', defaultValue: DEFAULTS.speed, min: 0, max: 1, curve: 'linear',
+      landmarks: [
+        { value: 0, label: 'STILL' },
+        { value: 0.5, label: 'NATIVE' },
+      ],
+    },
     { id: 'freeze',      label: 'Freeze',  defaultValue: DEFAULTS.freeze,      min: 0, max: 1, curve: 'discrete' },
+    // ⚠ NO `options` ON `scene`, AND THAT IS A DECISION. Forty-one states, and
+    // the module names NONE of them — the card printed `SCENE n/41`, an index.
+    // Inventing forty-one names would be fabricating semantics the module does
+    // not have, which `param-vocabulary`'s own reasoning forbids. It stays a
+    // numeric discrete control, and its value lives in `aria-valuetext`.
     { id: 'scene',       label: 'Scene',   defaultValue: DEFAULTS.scene,       min: 0, max: SCENE_COUNT - 1,   curve: 'discrete' },
-    { id: 'paletteType', label: 'Palette', defaultValue: DEFAULTS.paletteType, min: 0, max: PALETTE_COUNT - 1, curve: 'discrete' },
+    // The eight palette names, DERIVED from the `type & 3` / `type & 4`
+    // encoding in acidwarp-patterns rather than transcribed. Until now they
+    // existed only inside the card, so no consumer but that card could name a
+    // palette: a faceplate would have painted an anonymous eight-position dial.
+    { id: 'paletteType', label: 'Palette', defaultValue: DEFAULTS.paletteType, min: 0, max: PALETTE_COUNT - 1, curve: 'discrete', options: ACIDWARP_PALETTE_OPTIONS },
     { id: 'sceneTrig',   label: 'Trig',    defaultValue: DEFAULTS.sceneTrig,   min: 0, max: 1, curve: 'linear' },
+  ],
+
+  noUserControl: [
+    {
+      param: 'sceneTrig',
+      writer: 'cv-port',
+      why:
+        'written by the `scene_cv` bridge (the port declares `paramTarget: sceneTrig`), and the '
+        + "draw loop EDGE-DETECTS it: a low->high crossing above 0.5 advances the scene once per "
+        + 'pulse. It is a trigger, not a value — and it is declared `linear`, so a rendered cell '
+        + 'would be a continuous rotary over a gate edge, inviting a player to park it at 0.7 '
+        + 'where it fires never again. The scene is advanced by the SCENE control and by this '
+        + 'CV; nothing hand-turns the trigger itself. Same shape as milkdrop `nextTrig`.',
+    },
   ],
 
   docs: {
@@ -160,12 +209,83 @@ export const acidwarpDef: VideoModuleDef = {
       out: "Video out: the rendered plasma frame (320x240 internal, 4:3), linearly upsampled to the engine framebuffer. The only output — acidwarp is a generator with no audio path.",
     },
     controls: {
-      speed: "Speed knob (linear 0..1, default 0.5). Maps piecewise to a rate multiplier: 0 = stopped, 0.5 = native 1x, 1.0 = 4x. Scales both palette-rotation speed and the auto scene-change interval (~8s at 1x, halving as speed rises). The card shows the live multiplier (e.g. 2.4x, or STOPPED at 0).",
-      freeze: "Freeze toggle (discrete 0/1, default 0). When on, halts only the automatic scene cycler — the palette keeps rotating, so colors still scroll. Manual SCENE button presses and scene_cv triggers still advance the scene while frozen. Card button reads FREEZE / FROZEN.",
-      scene: "Scene index (discrete 0..40, default 0). Picks which of the 41 per-pixel pattern formulas is generated. Advanced automatically (unless frozen, and only while speed > 0), by the SCENE card button, or by a scene_cv rising edge; the card reads SCENE n/41 (1-based). Persisted with the patch.",
-      paletteType: "Palette picker (discrete 0..7, default 0). Selects one of 4 base palettes — RGBW rainbow, GREY, HALF-grey, PASTEL — each with an optional sparkle/lightning variant (base id + 4). The card's PAL button cycles through all 8 (RGBW, GREY, HALF, PASTEL, then the four sparkle versions).",
-      sceneTrig: "One-shot scene-advance trigger (linear 0..1, default 0). Driven by the scene_cv input; the draw loop edge-detects it (a low->high crossing above 0.5 fires once, advancing the scene). Not a hand-turned control — it is the CV-fed trigger that bumps the scene index.",
+      speed: "Speed knob (linear 0..1, default 0.5). Maps piecewise to a rate multiplier: 0 = stopped, 0.5 = native 1x, 1.0 = 4x — so NATIVE SPEED IS THE MIDPOINT of the dial, not the top. Scales both palette-rotation speed and the auto scene-change interval (~8s at 1x, halving as speed rises). Two landmarks name the non-obvious positions (STILL at 0, NATIVE at 0.5); the exact multiplier at any position is spoken by the control rather than printed on the panel.",
+      freeze: "Freeze toggle (discrete 0/1, default 0). When on, halts only the automatic scene cycler — the palette keeps rotating, so colors still scroll. Advancing the scene by hand, or by a scene_cv rising edge, still works while frozen. It LATCHES: switch it on and it stays on until you switch it off.",
+      scene: "Scene index (discrete 0..40, default 0). Picks which of the 41 per-pixel pattern formulas is generated. Advanced automatically (unless frozen, and only while speed > 0), by the SCENE control, or by a scene_cv rising edge. The 41 scenes have no names — this is an index, and it is spoken rather than printed. Persisted with the patch.",
+      paletteType: "Palette picker (discrete 0..7, default 0). Selects one of 4 base palettes — RGBW rainbow, GREY, HALF-grey, PASTEL — each with an optional sparkle/lightning variant (base id + 4), shown with a sparkle mark. All 8 are named states you pick directly.",
+      sceneTrig: "One-shot scene-advance trigger (linear 0..1, default 0). Driven by the scene_cv input; the draw loop edge-detects it (a low->high crossing above 0.5 fires once, advancing the scene). Not a hand-turned control — it is the CV-fed trigger that bumps the scene index, and the faceplate gives it no cell.",
     },
+  },
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // THE FACEPLATE — five params, but FOUR DISTINCT CONTROL SHAPES over one
+  // picture, which is what put this module on the complex side of the owner's
+  // batch split and sent it out alone.
+  //
+  // WHAT IT IS FOR. ACIDWARP is a pure-GPU plasma SOURCE — no input, it
+  // synthesizes its picture from math, a faithful port of Spurrier's 1992-93
+  // demo. The index field is STATIC until the scene changes; what makes the
+  // picture appear to flow is the PALETTE ROTATING under it. So the verb is not
+  // "shape a signal", it is CHOOSE AND PACE: pick a pattern, pick a colour
+  // world, and set how fast the colours scroll through it. Every rank below
+  // descends from that.
+  //
+  // THE TIER LADDER, read back as a sentence: at mini you get SPEED — the one
+  // control that decides whether anything appears to move at all, and the only
+  // continuous one on the module. At compact, SPEED and PALETTE — pace plus
+  // colour world, which between them account for everything a viewer notices
+  // from across a room. SCENE and FREEZE are dock-only: SCENE because a
+  // 41-position numeric stepper is unreadable in a 46 px lane column, FREEZE
+  // because it does nothing to the picture's LOOK (it stops the cycler; the
+  // palette keeps rotating either way). MEASURED through `curatedFace` in
+  // `acidwarp-face-model.test.ts`, never inferred from LANE_PLATE_MAX_CELLS.
+  //
+  // ⚠ LANDMARKS COST LANE HEIGHT. `speed` now declares two, which makes
+  // `paintsReadout` true and adds `LANE_KNOB_READOUT_H` to its cell — so the
+  // lane fit plan sees a TALLER first cell than it did before the face. That is
+  // measured rather than assumed, in the same test.
+  face: {
+    // ⚠ MANDATORY for a video def, and counter-intuitively so: the live picture
+    // does NOT arrive through the glyph. `primaryAudioOutPortId` matches
+    // `type === 'audio'` and this def has none, so any other literal resolves to
+    // a dead static glyph. The tile picture comes from `hasVideoSurface(def)`.
+    glyph: 'none',
+
+    // The bespoke screen — see $lib/ui/modules/acidwarp/. Promotion is what
+    // stops BOTH surfaces rendering `AcidwarpCard.svelte`, and that card owns
+    // the module's only picture, so without this file the promotion would
+    // delete the display from a module that IS a display (#1928).
+    extension: 'acidwarp',
+
+    order: [
+      // 1. The only continuous control, and the only one that decides whether
+      //    the picture appears to move. Its landmarks carry the fact the
+      //    deleted readout used to: NATIVE is the midpoint.
+      'speed',
+      // 2. The colour world. Eight named states, so it reads at a glance and
+      //    changes the picture more than anything except the scene itself —
+      //    but unlike the scene it is a SMALL, NAMED set a player can hold in
+      //    their head.
+      'paletteType',
+      // ── dock-only from here ──
+      // 3. Forty-one unnamed states. It changes the picture MOST, and it ranks
+      //    below palette anyway: a 41-position numeric stepper is not operable
+      //    in a lane knob column, and picking a specific one of forty-one
+      //    unnamed patterns is browsing, not performing.
+      'scene',
+      // 4. Stops the auto-cycler and NOTHING else — the palette keeps rotating,
+      //    so the picture still moves. Lowest rank of the four real controls
+      //    because it is the only one that changes no pixel directly.
+      'freeze',
+    ],
+
+    // FOUR controls over ONE picture, in two honest ideas: what is on screen,
+    // and how it moves. Two bands, so no tab rail (DOCK_TAB_MIN_BANDS = 7) —
+    // correct for a module whose whole surface is a display plus four knobs.
+    pages: [
+      { id: 'pattern', label: 'pattern', controls: ['scene', 'paletteType'] },
+      { id: 'motion', label: 'motion', controls: ['speed', 'freeze'] },
+    ],
   },
   factory(ctx: VideoEngineContext, node): VideoNodeHandle {
     const gl = ctx.gl;

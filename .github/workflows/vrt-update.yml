@@ -76,7 +76,45 @@ jobs:
     # Playwright = 9.2 s/test, so 297 tests ~= 45.5 min + ~3.5 min of
     # checkout/npm/DSP setup ~= 49 min. 75 leaves ~50 % headroom for a slow
     # runner. On-demand workflow: this costs zero per-PR wall time.
-    timeout-minutes: 75
+    #
+    # ⚠ 75 -> 115 (2026-08-22, #2108), AND THE SAME ARITHMETIC AS ABOVE SAYS SO.
+    # The rate never changed; the population did. At 9.2 s/test the sweep grew
+    # from 297 tests (~49 min, which 75 covered with ~50 % headroom) to 467
+    # committed baselines: 467 x 9.2 s = 71.6 min + ~3.5 min setup = 75.1 min of
+    # WORK against a 75 min ceiling. batch-22 G3's capture was killed at exactly
+    # 75:00 twice, and — as the note above already warned — both kills reported
+    # as `cancelled`, so neither looked like a timeout.
+    #
+    # 115 restores the SAME 1.5x headroom the 40 -> 75 bump chose, computed
+    # rather than picked: 75.1 x 1.5 = 112.7, rounded up.
+    #
+    # ⚠ AND THE NUMBER IS NO LONGER ALONE. This is the THIRD time a fixed budget
+    # has been outgrown by the faceplate programme (#2039 shard count, #2103
+    # cost artifact + 6 -> 8 shards, now this), and #2103's matrix comment
+    # records the trigger: on a third occurrence, AUTOMATE rather than bump. So
+    # `scripts/vrt-capture-timeout.test.ts` now derives this requirement from the
+    # COMMITTED BASELINE COUNT and reddens in the fast unit lane the moment a
+    # face batch outgrows the ceiling — minutes after the face lands, instead of
+    # an hour into a capture that dies without evidence.
+    #
+    # ⚠ 115 -> 125 (2026-08-22, batch-22 G3), AND THE DERIVED GATE IS WHAT SAID SO
+    # — which is the point of having built it. G3's eight baselines took the
+    # committed population to 479, and 479 x 9.2 s = 73.5 min + 3.5 min setup =
+    # 76.9 min of work, x1.5 = 115.4 against a 115 ceiling. It reddened in the
+    # fast unit lane on the PR that caused it, minutes after the baselines
+    # landed, instead of cancelling a capture an hour in. Nothing was measured
+    # again: the rate, the setup cost and the 1.5x are unchanged and the
+    # population moved.
+    #
+    # 125 is sized to the SAME formula against a population of ~520 rather than
+    # to today's 479 — ((520 x 9.2)/60 + 3.5) x 1.5 = 124.9, rounded up. Sizing
+    # to 116 (the minimum that clears 115.4) would satisfy the gate and be eaten
+    # by the very next batch: at 1.5x, each baseline costs 0.23 min of ceiling,
+    # so a four-face batch is ~1.8 min. The third-occurrence trigger asked for
+    # automation over repeated bumps; the automation exists now, so the honest
+    # companion to it is a ceiling with real room rather than one that re-reddens
+    # every fortnight.
+    timeout-minutes: 125
     outputs:
       # 'true' only when a baseline commit was actually pushed. A capture that
       # rewrote nothing still SUCCEEDS, so `revalidate` needs this to tell

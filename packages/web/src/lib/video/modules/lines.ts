@@ -127,6 +127,107 @@ export const linesDef: VideoModuleDef = {
     { id: 'fmDepth',   label: 'FM Depth',  defaultValue: DEFAULTS.fmDepth,   min: 0,    max: 1,  curve: 'linear' },
   ],
 
+  // ── #1726 — the param with NO USER CONTROL ────────────────────────────────
+  //
+  // ⚠ `fmDepth` IS DELIBERATELY INERT, NOT BROKEN, and the distinction is the
+  // whole reason this declaration exists rather than a rank. Its own docs say
+  // it: "The uniform is plumbed but multiplied by 0.0 in this Phase 0 shader,
+  // and there is no CV input or card fader for it, so it currently has no
+  // visible effect." The `fm` mono-video input is the same Phase-3
+  // forward-compatibility. Nothing is wrong; the feature is not built yet.
+  //
+  // But `module-face-lint` COMPLETENESS requires every param to be ranked AND
+  // to render exactly one interactive cell, so ranking it would paint a control
+  // the shader multiplies by zero — "a faceplate must not paint a dead control
+  // as a working one" (the macrooscillator rule). Declaring it here satisfies
+  // completeness while asserting the OPPOSITE of a rank: the dock render-plan
+  // parity gate then requires it to render EXACTLY ZERO cells, so the claim is
+  // falsifiable in both directions rather than skipped.
+  //
+  // ⚠ `writer: 'internal'` IS THE MECHANICALLY CORRECT ARM, checked before it
+  // was written. The union is `'cv-port' | 'internal'`, and `'internal'` is
+  // defined as "NOTHING on the patch surface targets it … Asserted to have no
+  // such port, so the day one is added this entry stops being true and says
+  // so." `lines in fm` is `mono-video`, and no input declares
+  // `paramTarget: 'fmDepth'` — so `cvWritersOf()` returns empty and the
+  // 'cv-port' arm would have gone RED on the first lint run. The field is
+  // anchored in BOTH directions, which is what makes it a declaration rather
+  // than an excuse: WIRE the Phase-3 CV port and this entry reddens and gets
+  // re-read by whoever wired it.
+  noUserControl: [
+    {
+      param: 'fmDepth',
+      writer: 'internal',
+      why:
+        'Phase-0 forward compatibility, not a control: the uniform is plumbed but the shader '
+        + 'multiplies it by 0.0, and nothing on the patch surface targets it (the `fm` input is '
+        + 'a mono-video texture port, not a paramTarget). Painting it would put a knob on the '
+        + 'faceplate that provably cannot change a pixel. Phase 3 wires the shader and the CV '
+        + 'port; at that point this entry stops being true and the anchor says so.',
+    },
+  ],
+
+  // ── FACE (batch 23a) ──────────────────────────────────────────────────────
+  //
+  // WHAT LINES IS FOR: it is a GRATING. One trigonometric stripe field, dialled
+  // by angle, density, duty and offset, emitted as mono-video. Its siblings
+  // generate other primitives — `shapes` draws filled figures, `inwards` draws
+  // concentric rings — and the thing only this one does is produce a straight
+  // parallel field at an arbitrary angle, which is what makes it the fleet's
+  // structural test pattern and a modulation texture for everything downstream.
+  // The verb is RULE (as in ruled lines).
+  //
+  // THE TIER LADDER, read back as a sentence: at the smallest tier you get AMP,
+  // the line COUNT — a 0.5..50 lpx span is the widest authority on this plate
+  // by an order of magnitude, taking the picture from a couple of broad bands
+  // to a fine moiré, and it is the control that decides what the pattern IS.
+  // Add one and you get ORIENT, which decides which way it runs (0 horizontal,
+  // 1 vertical, between = diagonal). Then THICKNESS, the duty cycle — it
+  // changes how much ink is on screen but not the figure, and near 1 it just
+  // floods the frame white. PHASE is LAST, and the reason is in the def's own
+  // prose: the pattern "auto-scrolls on its own … so it is visibly alive
+  // without touching a knob; your Phase value adds on top of that drift." It is
+  // an offset onto an animation that runs regardless — the least load-bearing
+  // control here, and the only one whose effect a player might never notice.
+  face: {
+    order: ['amp', 'orient', 'thickness', 'phase'],
+
+    // ⚠ NO `pages`. Four controls describing ONE grating are a single honest
+    // band. Splitting angle from density would buy two headings over four
+    // faders and describe the shader's uniform list rather than the module.
+
+    // ⚠ FADERS, NOT KNOBS — the parity-critical declaration. `LinesCard.svelte`
+    // draws all four with `NeonFader`, and nothing in a ParamDef separates "a
+    // level" from any other continuous scalar, so an undeclared face resolves
+    // them to KNOBS and the promotion silently substitutes dials for throws.
+    // ⚠ NO DEF-READING GATE CAN SEE THAT — `contract-lock`, `module-docs-lint`
+    // and the range assertions all read this same def, which says nothing about
+    // the primitive. Declared, not inferred.
+    // ⚠ `fmDepth` IS ABSENT because it renders no cell at all (see
+    // `noUserControl` above) — a `paramCells` entry for it would be a declared
+    // primitive for a control that does not exist, which module-face-lint
+    // refuses as a no-op declaration.
+    paramCells: { amp: 'fader', orient: 'fader', thickness: 'fader', phase: 'fader' },
+
+    // ⚠ NO `bareCells`. One unlabelled band, so no section heading exists to
+    // make a caption redundant, and `Amp`/`Orient`/`Thickness`/`Phase` are the
+    // only thing separating four identical throws — the tidyVco side of the
+    // per-control-label ruling, not the mixmstrs side.
+
+    // ⚠ MANDATORY FOR A VIDEO DEF — `primaryAudioOutPortId` needs a
+    // `type: 'audio'` output and this def has none (`out` is `mono-video`), so
+    // any other glyph literal falls through `glyphBinding` to a dead
+    // `{kind:'static'}` that reddens module-face-lint's dead-glyph clause. The
+    // live picture arrives from `hasVideoSurface(def)` at the lane and the
+    // `fullViewBody` extension at the dock — assert THAT, never this.
+    glyph: 'none',
+
+    // SCREEN ON/OFF arrives through this slot (#1928). An ADDITION rather than
+    // a port: `LinesCard.svelte` draws no preview.
+    // See `$lib/ui/modules/lines/shell-extension.ts`.
+    extension: 'lines',
+  },
+
   docs: {
     explanation: "LINES is a procedural mono-video source that renders soft-edged parallel stripes whose orientation, count, thickness, and scroll you dial in. The shader rotates the UV space by Orient (0 = horizontal lines, 1 = vertical, anything between = diagonal), then computes wave = abs(sin(2pi * Amp * (position + Phase))) along that axis and lights up bright bands wherever the wave falls under the Thickness threshold, with a smoothstep soft edge straddling it. The result is a grayscale grating written equally to all three RGB channels (alpha 1). The pattern auto-scrolls on its own (Phase advances steadily over time, time * 0.15 wrapped to 0..1) so it is visibly alive without touching a knob; your Phase value adds on top of that drift. Patch the OUT into an OUTPUT screen, a video mixer, or a colorizer; use it as a structural test pattern or as a moving modulation texture for downstream video modules.",
     inputs: {
