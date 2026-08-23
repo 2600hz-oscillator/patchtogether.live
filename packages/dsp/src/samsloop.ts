@@ -282,6 +282,30 @@ class SamsloopProcessor extends AudioWorkletProcessor {
     const poly = Math.round(polyArr[0] ?? 0) === 1;
     const len = this.buffer.length;
 
+    // ⚠ MONO RETIRES THE EXTRA VOICES, and leaving this out was a real defect
+    // rather than untidiness. The render loop below only walks voice 0 when
+    // `poly` is false, so voices started in POLY and still `playing` when the
+    // switch flips are neither rendered NOR advanced — they freeze. Two things
+    // then go wrong, and neither is silent:
+    //
+    //   * the PLAYHEAD publish walks the whole pool, so a frozen voice is still
+    //     counted and can WIN the newest-age lead — the faceplate draws a
+    //     stationary playhead that never moves again;
+    //   * flipping back to POLY resurrects them from their frozen cursors, so
+    //     stale voices burst back in mid-sample.
+    //
+    // Stopping them here is idempotent and costs one boolean check per voice
+    // per BLOCK (not per sample), which is nothing against the per-sample loop.
+    if (!poly) {
+      for (let v = 1; v < this.voices.length; v++) {
+        const extra = this.voices[v]!;
+        if (extra.playing) {
+          extra.playing = false;
+          extra.cursor = 0;
+        }
+      }
+    }
+
     // ── THE WINDOW, RESOLVED IN A DEFINED ORDER ────────────────────────────
     //
     // These params arrive as FRACTIONS of the sample carrying the knob PLUS any

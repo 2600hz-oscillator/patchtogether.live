@@ -195,6 +195,83 @@ test('POLY — the same chain layers instead of stealing, and stays audible', as
   ).toBeGreaterThan(AUDIBLE_FLOOR);
 });
 
+/** Read the worklet's published playhead off the live engine handle. Returns
+ *  null until the engine has mounted this node. */
+async function readPlayhead(
+  page: import('@playwright/test').Page,
+  nodeId: string,
+): Promise<{ position: number; voices: number } | null> {
+  return await page.evaluate((id) => {
+    const w = globalThis as unknown as {
+      __patch: { nodes: Record<string, unknown> };
+      // ⚠ A GETTER, not the engine — `Canvas.svelte` assigns `() => engine`.
+      __engine?: () => { read(n: unknown, k: string): unknown } | null;
+    };
+    const node = w.__patch.nodes[id];
+    const engine = w.__engine?.();
+    if (!node || !engine) return null;
+    try {
+      const p = engine.read(node, 'playhead') as
+        | { position?: number; voices?: number }
+        | undefined;
+      if (!p || typeof p.position !== 'number') return null;
+      return { position: p.position, voices: p.voices ?? 0 };
+    } catch {
+      return null;
+    }
+  }, nodeId);
+}
+
+test('POLY → MONO retires the extra voices — they do not freeze in the pool', async ({
+  page, rack, errorWatch,
+}) => {
+  test.setTimeout(timeoutFor(2));
+  // ⚠ THE DEFECT THIS PINS, found by reading the worklet rather than by a red
+  // test. The per-sample render loop only walks voice 0 when `poly` is false, so
+  // voices started in POLY and still sounding at the switch were neither
+  // rendered NOR advanced — they FROZE in the pool. Two visible consequences:
+  // the playhead publish walks the whole pool, so a frozen voice could win the
+  // newest-age lead and the faceplate would draw a playhead that never moves
+  // again; and flipping back to POLY resurrected them mid-sample.
+  //
+  // ⚠ ASSERTED ON THE VOICE COUNT, which is the worklet's OWN report of its
+  // pool — not on the audio, because a frozen voice is SILENT and the output
+  // would sound correct while the pool was wrong. This is the only observable
+  // that can tell the two apart.
+  await spawnPatch(page, nodes(1), [CLOCK_TO_TRIG, OUT_TO_SCOPE]);
+  await seedSample(page, 'sl');
+  await seedSeqSteps(page, 'seq');
+
+  // Let the sequencer strike several times so more than one voice is live.
+  await expect
+    .poll(async () => (await readPlayhead(page, 'sl'))?.voices ?? 0, { timeout: AUDIBLE_CAP_MS })
+    .toBeGreaterThan(1);
+
+  // Flip to MONO.
+  await page.evaluate(() => {
+    const w = globalThis as unknown as {
+      __patch: { nodes: Record<string, { params: Record<string, number> }> };
+      __ydoc: { transact: (fn: () => void) => void };
+    };
+    w.__ydoc.transact(() => { w.__patch.nodes['sl']!.params.poly = 0; });
+  });
+
+  // The pool must drain to at most the single mono voice. Polled, because the
+  // worklet publishes on its own ~20 Hz clock rather than on the param write.
+  await expect
+    .poll(async () => (await readPlayhead(page, 'sl'))?.voices ?? 99, { timeout: AUDIBLE_CAP_MS })
+    .toBeLessThanOrEqual(1);
+
+  // And the module is still playing — draining the pool must not silence it.
+  const w = await readScopePeakOverWindow(page, 'sc', AUDIBLE_CAP_MS, {
+    untilPeak: AUDIBLE_FLOOR,
+  });
+  expect(
+    w.peak,
+    `MONO must keep sounding after the switch — ${describeScopeWindow(w)}`,
+  ).toBeGreaterThan(AUDIBLE_FLOOR);
+});
+
 test('MUST-READ-ZERO — no cable into trig means SILENCE (idle-by-default)', async ({
   page, rack, errorWatch,
 }) => {
