@@ -1198,6 +1198,42 @@
           />
           {#if faceplateView}<span class="cell-cap">{ctl.label}</span>{/if}
         </div>
+      {:else if cell?.kind === 'warped-fader'}
+        <!-- WARPED FADER — a param whose CARD converts at the boundary, so the
+             fader is drawn in KNOB SPACE and the graph still receives PARAM
+             UNITS. The whole cell is three conversions and nothing else:
+
+               value  = toKnob(paramVal)            read  — param -> knob
+               commit = paramWrite(fromKnob(k))     write — knob  -> param
+               ticks  = landmarks.map(toKnob)       place — param -> knob
+
+             ⚠ `min`/`max` ARE 0..1 AND THAT IS NOT A CLAMP ON THE PARAM. The
+             param keeps its declared range; this is the coordinate the fader is
+             drawn in. Passing `pd.min`/`pd.max` here is exactly the linear
+             rendering this cell exists to prevent.
+
+             ⚠ `ticks` TAKE A `frac`, WHICH IS WHY THE WARP LANDS HERE. The
+             landmark declarations stay in PARAM UNITS (ParamLandmark has no
+             position field and did not grow one); `toKnob` turns each into the
+             fraction the primitive wants, so a piecewise map produces the
+             non-uniform spacing that matches the card. On samsloop that puts
+             `Norm` at 0.5 instead of 0.75. -->
+        {@const wpd = paramDef(cell.paramId)}
+        <div class="kcol ms-cell-fader" data-cell-kind={ctl.kind} data-cell-control="warped-fader" data-cell-key={ctl.key} style:--ka={ka}>
+          <NeonFader
+            value={cell.toKnob(params.paramVal(cell.paramId))}
+            min={0}
+            max={1}
+            defaultValue={cell.toKnob(wpd?.defaultValue ?? 0)}
+            label={cell.label}
+            curve="linear"
+            ticks={cell.landmarks.map((lm) => ({ frac: cell.toKnob(lm.value), label: lm.label }))}
+            onchange={(k: number) => paramWrite(cell.paramId)(cell.fromKnob(k))}
+            moduleId={id}
+            paramId={cell.paramId}
+            formatValue={(k: number) => (cell.format ?? String)(cell.fromKnob(k))}
+          />
+        </div>
       {:else if cell?.kind === 'toggle'}
         <div class="kcol ms-cell-act" data-cell-kind={ctl.kind} data-cell-control="toggle" data-cell-key={ctl.key} style:--ka={ka}>
           <Toggle
