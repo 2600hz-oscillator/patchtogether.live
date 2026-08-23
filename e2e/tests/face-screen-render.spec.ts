@@ -80,6 +80,20 @@ interface Subject {
    * those two and pass everywhere else.
    */
   readonly prefix: string;
+  /**
+   * The testid of the element the SCREEN switch REMOVES, when it is not the
+   * default `<prefix>-face-canvas`.
+   *
+   * ⚠ ONE MODULE NEEDS THIS, AND IT IS THE ONE THAT MOST NEEDS COVERING.
+   * `quadralogical`'s faceplate IS its joystick — the body paints a quadrant
+   * preview, a diamond, a puck and a mix canvas rather than a single
+   * conventionally-named one, so there is no `quadralogical-face-canvas` for the
+   * default to find. The element actually inside its `{#if !previewCollapsed}`
+   * is `quadralogical-face-quadrants`. Declaring the exception is the honest
+   * alternative to either skipping the module or loosening the assertion for
+   * everyone.
+   */
+  readonly canvas?: string;
   /** Which engine the node belongs to. `audio` for the two audio-def outliers. */
   readonly domain: 'audio' | 'video';
   /** What this body paints, and what its SCREEN switch is protecting. Required. */
@@ -154,6 +168,41 @@ const SUBJECTS: readonly Subject[] = [
   // `toHaveCount(0)` leg is correct for them too.
   { type: 'tempest', prefix: 'tempest', domain: 'video', why: 'the geometry well\'s preview. One of the two G2b faces that cost an attest for their `options` rosters — its named SHAPE selector is resolved from the def, so the picture is where you confirm the selection did something.' },
   { type: 'fader', prefix: 'fader', domain: 'video', why: 'the A/B transition mixer\'s main OUT preview. ⚠ The strongest watch-mark case in the roster: it has TWO outputs — `out` and the `send` feeding an external FX loop — so a lapsed mark stalls an output the switch does not even show.' },
+
+  // ── THE CONSOLIDATION ROWS — batch-22 G3, scoreboard, and the two the ─────
+  // ── absorb brought in without them ────────────────────────────────────────
+  //
+  // ⚠ THIS BLOCK IS WHY THE CONSOLIDATION WAS WORTH DOING. This file exists only
+  // on the G4 branch, so G3, scoreboard, cellshade and quadralogical could not
+  // add their own rows even in principle — their PRs had no table to extend. One
+  // combined PR is the only place the gap closes, and it closes for seven modules
+  // at once.
+  //
+  // Verified per module before writing, not assumed: `type == prefix ==
+  // extension id` for all seven except where noted, every body uses the same
+  // `{#if !previewCollapsed}` REMOVES mechanism, and each declares
+  // `<type>-face-screen-toggle`.
+  { type: 'posterbox', prefix: 'posterbox', domain: 'video', why: 'the palette-crush processor\'s live preview and its SCREEN switch (batch-22 G3).' },
+  { type: 'tiler', prefix: 'tiler', domain: 'video', why: 'the kaleidoscopic tiler\'s live preview and its SCREEN switch (batch-22 G3).' },
+  { type: 'sourcery', prefix: 'sourcery', domain: 'video', why: 'the source-router\'s live preview and its SCREEN switch (batch-22 G3).' },
+  { type: 'onetonine', prefix: 'onetonine', domain: 'video', why: 'the 1-to-9 splitter\'s live preview and its SCREEN switch (batch-22 G3) — the module whose declared-vs-rendered `showGrid` mismatch is #2090.' },
+  { type: 'cellshade', prefix: 'cellshade', domain: 'video', why: 'the cel-shader\'s live preview and its SCREEN switch (batch-21). Arrived on main mid-flight and had no row until this consolidation.' },
+  { type: 'scoreboard', prefix: 'scoreboard', domain: 'video', why: '⚠ the module the batch-22 derivation predicted would NOT fit this table — "its canvas is SELF-DRAWN, not a video-out blit, so OFF stops the blit has no blit to stop". Its lane resolved that: the body calls `blitOutputForPreview` and `markWatched` like every sibling, so it takes an ordinary row. Verified against the body, not inherited from the prediction.' },
+  {
+    type: 'quadralogical',
+    prefix: 'quadralogical',
+    domain: 'video',
+    // ⚠ THE ONE THAT NEEDS THE OVERRIDE, AND THE ONE THAT MOST NEEDS THE ROW.
+    canvas: 'quadralogical-face-quadrants',
+    why:
+      '⚠ THE HIGHEST-VALUE ROW IN THIS FILE AS OF THIS PR. quadralogical\'s own render spec has '
+      + 'exactly TWO tests and BOTH are `test.fixme` FLAKE-PARKED on main (#1847, under-budgeted '
+      + 'on hot shards), and no other spec in the tree references `quadralogical-face-screen-toggle`. '
+      + 'So its SCREEN switch has ZERO live render coverage without this row — the parked legs are '
+      + 'not a reduced signal, they are no signal. Its faceplate IS its joystick, so the element '
+      + 'inside `{#if !previewCollapsed}` is `quadralogical-face-quadrants` rather than a '
+      + 'conventionally-named canvas, which is what the `canvas` override exists for.',
+  },
 
   // ── the AUDIO-def outlier ─────────────────────────────────────────────────
   { type: 'rasterize', prefix: 'rasterize', domain: 'audio', why: '⚠ an AudioModuleDef that carries a VIDEO surface, so it lives in lib/audio/modules and a video-only enumeration misses it entirely. Spawns with domain: audio. It is the reason this file\'s derivation crosses both domains.' },
@@ -330,7 +379,7 @@ for (const [batchIdx, batch] of BATCHES.entries()) {
     test(`${batch.map((s) => s.type).join(', ')} — each is REACHABLE, collapses the picture, RECLAIMS its space, and comes back`, async ({ page }) => {
       await bootBatch(page, batch);
 
-      for (const { type, prefix, why } of batch) {
+      for (const { type, prefix, why, canvas: canvasId } of batch) {
         // Every assertion below names its module, so a batched failure is exactly
         // as legible as a per-module one. `why` rides into the step name so the
         // reason this module is covered survives into the trace.
@@ -355,7 +404,7 @@ for (const [batchIdx, batch] of BATCHES.entries()) {
       // construction — which is the point of RECLAIMING the space.)
       const face = page.getByTestId('dock-full-view');
       const toggle = face.locator(`[data-testid="${prefix}-face-screen-toggle"]`);
-      const canvas = face.locator(`[data-testid="${prefix}-face-canvas"]`);
+      const canvas = face.locator(`[data-testid="${canvasId ?? `${prefix}-face-canvas`}"]`);
 
       // ⚠ THE LEG NO SOURCE GATE CAN HAVE. Promotion deletes the card from both
       // default surfaces, so if `face.extension` were dropped or its
