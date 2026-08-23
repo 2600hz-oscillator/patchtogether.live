@@ -192,7 +192,11 @@ h2{font-size:13px;font-weight:800;margin:26px 0 10px;letter-spacing:.05em;text-t
       <code>0</code> when <code>paramId</code> is null, <code>:473</code> returns
       <code>''</code> for the caption, and <code>ShellExtensionGlyphProps</code> carries
       <b>no <code>nodeId</code></b>. Every node in every rack renders the same SVG, forever.
-      It would also rank <code>'trace'</code> and <b>yield to the very cells it displaced</b>.</p>
+      Its precedence is also tier-dependent: at <code>'full'</code> it is dropped whenever the
+      plate is busy (<i>&ldquo;Ranked controls outrank the glyph&rdquo;</i>), and at
+      <code>'compact'</code> &mdash; the tile drawn here &mdash; it paints unconditionally and
+      <b>takes the space from the cells beside it</b>. Absent where detail is wanted; present
+      where the tile can least afford it.</p>
   </div>
 
 </div>
@@ -225,7 +229,7 @@ h2{font-size:13px;font-weight:800;margin:26px 0 10px;letter-spacing:.05em;text-t
     <td>C &middot; <code>'algorithm'</code></td>
     <td><code>{kind:'algorithm', layoutSource:'rasterize', paramId:null}</code></td>
     <td><b>GREEN</b> &mdash; live, not static.<br>⚠ but <code>shell-extensions.test.ts:102</code> reddens until a <code>glyph</code> slot exists</td>
-    <td>a per-instance-identical SVG; no caption</td>
+    <td>a per-instance-identical SVG; no caption. Dropped at <code>'full'</code>, painted at <code>'compact'</code></td>
     <td style="color:#f08c8c">REFUSED</td>
   </tr>
 </table>

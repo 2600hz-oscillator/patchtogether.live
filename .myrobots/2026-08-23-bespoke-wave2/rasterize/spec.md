@@ -113,14 +113,25 @@ show the cursor, the bands, the gain, the wrap mode, or anything that distinguis
 `rasterize` node from another. It could only be a fixed diagram of the idea "audio goes in,
 a frame comes out" — which the module's NAME already says, in the same tile, one row above.
 
-**(b) It would not hold its ground even as decoration.**
+**(b) Its precedence is tier-dependent, and both outcomes are bad.**
 `laneGlyphFor` (`module-shell-model.ts:237-240`) returns `'trace'` for any non-`'none'`
-glyph on a non-video def, and `'trace'` **yields to ranked cells** in `laneBodyPlan`. Only
-`'picture'` outranks cells, and `'picture'` is gated on `hasVideoSurface(def)` ≡
-`domain === 'video'` — which this module is not and cannot become without a domain change.
-So the constant diagram would be dropped by the lane precisely when the tile is busy.
-MEASURED context: the compact tile is **88 × 82** and carries three cells; there is no
-room being wasted for a glyph to fill.
+glyph on a non-video def. `laneBodyPlan` then treats it differently per tier — read it
+exactly rather than summarised:
+
+* at `'full'` (`:767-786`): *"Ranked controls outrank the glyph: the strip renders only
+  when a whole strip-row still fits UNDER the cell rows"* —
+  `glyph: hasGlyph && plateGlyphFitsRows(usedTracks)`. The diagram is **dropped** whenever
+  the plate is busy.
+* at `'compact'`/`'mini'` (`:702-720`): `glyph: hasGlyph`, unconditionally. The constant
+  SVG **paints**, in the remainder of the design row — taking space from the three ranked
+  cells that are the tile's entire content.
+* only `'picture'` gets the INVERTED precedence (reserved FIRST, `:724-765`), and it is
+  gated on `hasVideoSurface(def)` ≡ `domain === 'video'` — which this module is not and
+  cannot become without a domain change.
+
+So the diagram is absent where detail is wanted and present where the tile can least
+afford it. MEASURED context: the compact tile is **88 × 82** and already carries three
+cells; there is no wasted room for a glyph to fill.
 
 **(c) It costs a component, a slot and a gate row, for that.**
 `shell-extensions.test.ts:102-117` requires that any def declaring `glyph: 'algorithm'`

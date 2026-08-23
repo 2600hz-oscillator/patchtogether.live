@@ -115,12 +115,21 @@ route was evaluated and refused, and the refusal is measured rather than aesthet
 2. **A constant SVG in a lane tile is the useless width the owner refused.** The tile
    already prints the module NAME; a fixed diagram of "two inputs into a screen" adds
    nothing the name has not said, and consumes tile height that ranked cells want.
-3. **It would not even hold its ground.** `laneGlyphFor` (`module-shell-model.ts:237-240`)
-   returns `'trace'` for any non-`'none'` glyph on a non-video def, and `'trace'` YIELDS
-   to ranked cells in `laneBodyPlan`; only `'picture'` outranks them, and `'picture'` is
-   gated on `hasVideoSurface(def)` ≡ `domain === 'video'`. So the diagram would be
-   dropped by the lane exactly when the tile is busy — i.e. always, on a nine-param
-   module.
+3. **It would not even hold its ground at the tier that matters.** `laneGlyphFor`
+   (`module-shell-model.ts:237-240`) returns `'trace'` for any non-`'none'` glyph on a
+   non-video def, and the precedence is tier-dependent — read it exactly:
+   * at `'full'` (`:767-786`), *"Ranked controls outrank the glyph: the strip renders
+     only when a whole strip-row still fits UNDER the cell rows"* —
+     `glyph: hasGlyph && plateGlyphFitsRows(usedTracks)`. **A nine-param face fills the
+     plate, so the diagram is dropped.**
+   * at `'compact'`/`'mini'` (`:702-720`) it is `glyph: hasGlyph` unconditionally, so the
+     constant SVG WOULD paint — in the remainder of the design row, taking space from the
+     three ranked cells that are the tile's whole value.
+   * only `'picture'` gets the INVERTED precedence (reserved first, `:724-765`), and it
+     is gated on `hasVideoSurface(def)` ≡ `domain === 'video'`, which this module is not.
+
+   So the diagram is absent exactly where a player would look for detail and present
+   exactly where the tile can least afford it. Neither outcome is worth a component.
 4. **It costs a gate obligation.** `shell-extensions.test.ts:102-117` requires that any
    def declaring `glyph: 'algorithm'` resolve an extension exporting a `glyph` slot;
    without one the shell paints a 40 px empty framed plate (`ModuleShell.svelte:1429`

@@ -1,0 +1,372 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>WAVESCULPT face — STATE 1: the tab rail, CAMERA tab, SCREEN ON</title>
+<style>
+/* ─────────────────────────────────────────────────────────────────────────
+   WAVESCULPT FACEPLATE — MOCKUP, state 1 of 2.
+   SPEC AND MOCKUP ONLY. Nothing here is implemented. See spec.md.
+
+   The 3D ROOM is a CSS/SVG stand-in. The real one is the WebGL2 renderer
+   extracted out of WavesculptCard.svelte into
+   `wavesculpt/WavesculptVizSurface.svelte` — ONE renderer, mounted by both
+   the legacy card and this body (the `cube` shape). That extraction is PR 1
+   and it is why this module is BLOCKED rather than ready.
+
+   ⚠ The tab rail is NOT declared. `DOCK_TAB_MIN_BANDS` is 7 and this face
+   has nine bands, so the rail engages on COUNT. `face.tabbed` needs an
+   explicit owner instruction and there is none for this module.
+   ───────────────────────────────────────────────────────────────────────── */
+:root{
+  --bg:#0e1013; --dock:#12161c; --pbody:#1c1f24; --line:#2c3037; --tile:#33383f;
+  --ink:#eef1f5; --dim:#9aa2ad; --faint:#646c77;
+  --hyb:#b57bff; --accent:#6cf; --warn:#f2c14e; --good:#8fe6b0; --bad:#f08c8c;
+  --red:#ff5a5a; --grn:#5ae06a; --blu:#5a9bff; --alp:#c9c9d4;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+  font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1240px;margin:0 auto;padding:26px 20px 90px}
+h1{font-size:21px;font-weight:800;margin:0 0 6px;letter-spacing:.01em}
+.sub{color:var(--dim);font-size:12.5px;margin:0 0 14px;max-width:108ch}
+.sub b{color:var(--ink)} code{font-family:var(--mono);font-size:11.5px;color:var(--hyb)}
+.nav{display:flex;gap:8px;margin:0 0 20px;font-size:11px;flex-wrap:wrap}
+.nav a{color:var(--ink);text-decoration:none;border:1px solid var(--line);border-radius:6px;
+  padding:6px 12px;background:#12161c;font-family:var(--mono);letter-spacing:.06em;text-transform:uppercase}
+.nav a.on{border-color:var(--hyb);color:var(--hyb)}
+.warn{border:1px solid #6a5330;background:#1c1811;border-radius:8px;padding:11px 14px;
+  margin:12px 0;font-size:12.5px;color:#e8cf9a;max-width:120ch}
+.warn b{color:var(--warn)}
+.ok{border:1px solid #3b5a48;background:#111a15;border-radius:8px;padding:11px 14px;
+  margin:12px 0;font-size:12.5px;color:#a9d8bd;max-width:120ch}
+.ok b{color:var(--good)}
+
+.cols{display:grid;grid-template-columns:minmax(0,1fr) 400px;gap:18px;align-items:start}
+@media (max-width:1100px){.cols{grid-template-columns:minmax(0,1fr)}}
+
+.dock{background:var(--dock);border:1px solid var(--line);border-radius:11px;overflow:hidden;padding:11px}
+.chromebar{display:flex;align-items:baseline;gap:9px;padding:0 2px 8px}
+.chromebar .nm{font-size:13px;font-weight:800;letter-spacing:.03em}
+.chromebar .rl{font-size:9.4px;letter-spacing:.09em;text-transform:uppercase;color:var(--faint);font-family:var(--mono)}
+.chromebar .x{margin-left:auto;color:var(--faint);font-family:var(--mono);font-size:12px}
+.plate{background:var(--pbody);border:1px solid var(--tile);border-left:4px solid var(--hyb);
+  border-radius:10px;padding:0 0 12px;width:max-content;max-width:100%}
+
+/* ── fullViewBody: the room + the camera pad + SCREEN ─────────────────── */
+.extbody{padding:10px 14px 4px}
+.bodyrow{display:flex;gap:12px;align-items:flex-start}
+.previewwrap{position:relative;min-height:18px}
+.room{position:relative;width:420px;height:315px;border-radius:4px;border:1px solid #1a1f2a;
+  background:radial-gradient(120% 90% at 50% 55%,#161326 0 40%,#08070e 100%);overflow:hidden}
+.room svg{display:block;width:100%;height:100%}
+.screenbtn{position:absolute;right:4px;bottom:4px;font-family:var(--mono);font-size:8.6px;
+  letter-spacing:.06em;padding:3px 9px;border:1px solid #4a3f5a;border-radius:2px;
+  background:rgba(5,6,8,.72);color:var(--ink);cursor:pointer;z-index:2}
+.monbtn{position:absolute;left:4px;bottom:4px;font-family:var(--mono);font-size:8.6px;
+  letter-spacing:.06em;padding:3px 9px;border:1px solid #333a43;border-radius:2px;
+  background:rgba(5,6,8,.72);color:var(--faint);cursor:pointer;z-index:2}
+/* the camera XY pad — surface:'body', so it is painted HERE, not in a band */
+.padcol{display:flex;flex-direction:column;gap:5px;align-items:center}
+.padlab{font-family:var(--mono);font-size:7.4px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint)}
+.pad{position:relative;width:96px;height:96px;border:1px solid #333a43;border-radius:5px;background:#101319}
+.pad .ch{position:absolute;left:0;right:0;top:50%;height:1px;background:#232a33}
+.pad .cv{position:absolute;top:0;bottom:0;left:50%;width:1px;background:#232a33}
+.pad .dot{position:absolute;width:9px;height:9px;border-radius:50%;background:var(--hyb);
+  box-shadow:0 0 8px rgba(181,123,255,.8);transform:translate(-50%,-50%)}
+
+/* ── tab rail ─────────────────────────────────────────────────────────── */
+.rail{display:flex;gap:2px;flex-wrap:wrap;padding:8px 14px 0;border-top:1px solid var(--line);margin-top:8px}
+.rail b{font-family:var(--mono);font-size:8.4px;font-weight:400;letter-spacing:.09em;text-transform:uppercase;
+  padding:6px 9px;border:1px solid #2a3038;border-bottom:0;border-radius:5px 5px 0 0;
+  background:#161a20;color:var(--faint);cursor:pointer}
+.rail b.on{background:#232833;color:var(--hyb);border-color:#40364f}
+.rail b.r{color:#e07575} .rail b.g{color:#75c98a} .rail b.b{color:#7aa4e0} .rail b.a{color:#b8b8c4}
+.rail b.on.r{color:var(--red)} .rail b.on.g{color:var(--grn)} .rail b.on.b{color:var(--blu)}
+
+.bands{padding:2px 14px 0}
+.band{border-top:1px solid var(--line);padding-top:8px;margin-top:2px}
+.blab{margin:0 0 2px;font-size:9.4px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--dim)}
+.bhint{margin:0 0 8px;font-size:9.6px;color:var(--faint);font-style:italic}
+.row{display:flex;flex-wrap:wrap;align-items:flex-start;gap:10px 16px}
+.cluster{display:flex;flex-direction:column;gap:5px}
+.clab{font-family:var(--mono);font-size:7.6px;letter-spacing:.13em;text-transform:uppercase;color:var(--faint)}
+.crow{display:flex;gap:9px;align-items:flex-start}
+.k{width:50px;display:flex;flex-direction:column;align-items:center;gap:4px}
+.k i{--v:.5;--kc:#b57bff;display:block;width:38px;height:38px;border-radius:50%;position:relative;
+  background:conic-gradient(from 215deg,var(--kc) 0turn calc(var(--v)*.75turn),
+    #2b3138 calc(var(--v)*.75turn) .75turn,rgba(0,0,0,0) .75turn)}
+.k i::before{content:"";position:absolute;inset:5px;border-radius:50%;background:#20252b;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.05)}
+.k i::after{content:"";position:absolute;left:50%;top:50%;width:2px;height:12px;background:var(--ink);
+  border-radius:1px;transform-origin:50% 100%;
+  transform:translate(-50%,-100%) rotate(calc(-135deg + var(--v)*270deg))}
+.k b{font-size:7.6px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--dim);
+  font-family:var(--mono);text-align:center}
+.k.dead i{--kc:#3b4148} .k.dead b{color:var(--faint)}
+.seg{display:flex;flex-direction:column;gap:4px}
+.seg .cap{font-size:7.6px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--dim);font-family:var(--mono)}
+.segbtns{display:flex;border:1px solid #3a4048;border-radius:6px;overflow:hidden}
+.segbtns b{font-family:var(--mono);font-size:8.6px;font-weight:400;letter-spacing:.05em;
+  padding:6px 8px;background:#1b2027;color:var(--faint)}
+.segbtns b.on{background:#2b2338;color:var(--hyb)}
+.padsm{display:flex;flex-direction:column;gap:4px;align-items:center}
+.padsm .p{position:relative;width:64px;height:64px;border:1px solid #333a43;border-radius:5px;background:#101319}
+.padsm .p .ch{position:absolute;left:0;right:0;top:50%;height:1px;background:#232a33}
+.padsm .p .cv{position:absolute;top:0;bottom:0;left:50%;width:1px;background:#232a33}
+.padsm .p .dot{position:absolute;width:8px;height:8px;border-radius:50%;background:var(--hyb);
+  box-shadow:0 0 7px rgba(181,123,255,.8);transform:translate(-50%,-50%)}
+.padsm span{font-size:7.6px;letter-spacing:.06em;text-transform:uppercase;color:var(--dim);font-family:var(--mono)}
+
+.zones{background:#12161c;border:1px solid var(--line);border-radius:9px;padding:12px 13px}
+.zones h4{margin:0 0 8px;font-size:9px;font-weight:800;letter-spacing:.13em;text-transform:uppercase;color:var(--dim)}
+.zones+.zones{margin-top:14px}
+.zt{width:100%;border-collapse:collapse;font-size:10.5px}
+.zt th{text-align:left;font-family:var(--mono);font-size:7.8px;letter-spacing:.11em;text-transform:uppercase;
+  color:var(--faint);font-weight:400;padding:0 8px 5px 0;border-bottom:1px solid var(--line)}
+.zt td{padding:6px 8px 6px 0;border-bottom:1px solid #1c2027;vertical-align:top;color:var(--dim);line-height:1.45}
+.zt td:first-child{color:var(--ink);font-family:var(--mono);font-size:9.5px;white-space:nowrap}
+.aria{font-family:var(--mono);font-size:10px;color:var(--good);background:#101a14;
+  border:1px solid #2c4636;border-radius:4px;padding:2px 6px;display:inline-block;margin-top:3px}
+.sel{font-family:var(--mono);font-size:9.4px;letter-spacing:.04em;background:#1b2027;
+  border:1px solid #3a4048;border-radius:5px;padding:6px 9px;color:var(--ink);min-width:132px;
+  display:flex;justify-content:space-between;gap:10px}
+.sel s{text-decoration:none;color:var(--faint)}
+.act{font-family:var(--mono);font-size:9px;letter-spacing:.09em;padding:7px 12px;
+  border:1px solid #3a4048;border-radius:5px;background:#1b2027;color:var(--ink);cursor:pointer}
+.sw{width:20px;height:20px;border-radius:4px;border:1px solid #444b56;display:inline-block}
+</style>
+
+<div class="wrap">
+<h1>WAVESCULPT — dock faceplate · STATE 1: the tab rail, CAMERA tab, SCREEN ON</h1>
+<p class="sub">
+  <b>Mockup only. Nothing here is implemented, and this module is BLOCKED</b> on one precursor
+  PR (extract the WebGL renderer out of the 3 644-line card so a faceplate body can mount it —
+  the <code>cube</code> shape). The rail below is <b>not declared</b>: nine bands against
+  <code>DOCK_TAB_MIN_BANDS = 7</code>, so it engages on count. <code>face.tabbed</code> requires
+  an explicit owner instruction and there is none for this module.
+</p>
+
+<div class="nav">
+  <a class="on" href="dock-tabs.html">STATE 1 &middot; CAMERA TAB</a>
+  <a href="dock-monitor.html">STATE 2 &middot; MONITOR MODE</a>
+</div>
+
+<div class="ok">
+  <b>THE CAMERA RANKS FIRST, INVERTING DECLARATION ORDER.</b> It is the only control set that
+  moves <b>both domains at once</b> &mdash; <i>&ldquo;closer = bigger ribbons visually AND
+  louder audibly, one shared distance number&rdquo;</i> &mdash; the only one operated
+  continuously during a performance, and the only one audible with <b>no gate patched</b>.
+  <code>face.xyPads</code>&rsquo; own doc-comment sanctions it: a pad costs no lane rank,
+  <i>&ldquo;so it may rank FIRST, which for a module whose pad IS its main control is the
+  honest ranking.&rdquo;</i>
+</div>
+
+<div class="cols">
+<div>
+
+<div class="dock">
+  <div class="chromebar"><span class="nm">wavesculpt</span>
+    <span class="rl">sources &middot; hybrid</span><span class="x">&#10005;</span></div>
+
+  <div class="plate">
+
+    <!-- ── fullViewBody ────────────────────────────────────────────────── -->
+    <div class="extbody"><div class="bodyrow">
+      <div class="previewwrap">
+        <div class="room">
+          <svg viewBox="0 0 420 315" aria-hidden="true">
+            <!-- the box, seen from inside: a one-point perspective frame -->
+            <g stroke="#2a2440" stroke-width="1" fill="none">
+              <rect x="8" y="8" width="404" height="299"/>
+              <rect x="120" y="92" width="180" height="131"/>
+              <path d="M8 8L120 92M412 8L300 92M8 307L120 223M412 307L300 223"/>
+            </g>
+            <!-- four wall oscillator ribbons, one per colour -->
+            <path fill="none" stroke="#ff5a5a" stroke-width="3" opacity=".9"
+              d="M40 268 C 120 236, 168 190, 210 158 C 250 128, 290 118, 330 122"/>
+            <path fill="none" stroke="#5ae06a" stroke-width="3" opacity=".85"
+              d="M380 262 C 310 232, 258 192, 214 160 C 172 130, 128 122, 90 130"/>
+            <path fill="none" stroke="#5a9bff" stroke-width="3" opacity=".85"
+              d="M46 52 C 118 92, 170 130, 208 156 C 252 186, 300 210, 344 228"/>
+            <path fill="none" stroke="#c9c9d4" stroke-width="2.4" opacity=".55"
+              d="M372 48 C 312 92, 256 128, 212 156 C 166 186, 118 212, 74 232"/>
+            <!-- emitter dots at the corners -->
+            <g>
+              <circle cx="40" cy="268" r="4.5" fill="#ff5a5a"/>
+              <circle cx="380" cy="262" r="4.5" fill="#5ae06a"/>
+              <circle cx="46" cy="52" r="4.5" fill="#5a9bff"/>
+              <circle cx="372" cy="48" r="4" fill="#c9c9d4" opacity=".7"/>
+            </g>
+            <!-- a wall video textured on the BACK face, alpha ~100 -->
+            <g opacity=".38">
+              <rect x="122" y="94" width="176" height="127" fill="url(#wallgrad)"/>
+            </g>
+            <defs>
+              <linearGradient id="wallgrad" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0" stop-color="#2b4a6b"/><stop offset=".5" stop-color="#6b4a2b"/>
+                <stop offset="1" stop-color="#2b6b52"/>
+              </linearGradient>
+            </defs>
+          </svg>
+          <button class="monbtn" aria-pressed="false">MONITOR</button>
+          <button class="screenbtn" aria-pressed="true">SCREEN ON</button>
+        </div>
+      </div>
+
+      <!-- the camera pad — face.xyPads surface:'body' -->
+      <div class="padcol">
+        <span class="padlab">camera</span>
+        <div class="pad" role="application" aria-label="Camera position X/Y">
+          <div class="ch"></div><div class="cv"></div>
+          <div class="dot" style="left:58%;top:44%"></div>
+        </div>
+        <span class="padlab">pos x / y</span>
+      </div>
+    </div></div>
+
+    <!-- ── the tab rail (engaged by COUNT) ─────────────────────────────── -->
+    <div class="rail">
+      <b class="on">Camera</b><b class="r">Osc Red</b><b class="g">Osc Green</b>
+      <b class="b">Osc Blue</b><b class="a">Osc Alpha</b><b>Voicing</b><b>Look</b>
+      <b>Output</b><b>Walls</b>
+    </div>
+
+    <!-- ── the CAMERA band ─────────────────────────────────────────────── -->
+    <div class="bands">
+      <div class="band">
+        <p class="blab">camera</p>
+        <p class="bhint">fly the room &mdash; closer is bigger AND louder</p>
+        <div class="row">
+          <div class="k"><i style="--v:.5"></i><b>Height</b></div>
+          <div class="padsm">
+            <div class="p" role="application" aria-label="Zoom / rotation">
+              <div class="ch"></div><div class="cv"></div>
+              <div class="dot" style="left:38%;top:52%"></div>
+            </div>
+            <span>zoom / rot</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="warn">
+  <b>&#9888; THE ZOOM/ROT PAD IS THE WEAKER OF THE TWO, AND THE SPEC SAYS SO.</b> Its axes have
+  different curves and ranges &mdash; <code>zoom</code> is <b>log 0.3..3</b>, <code>rot</code> is
+  <b>linear &plusmn;1</b> &mdash; so equal pixel travel is not equal parameter travel in the two
+  directions. The mechanism permits it (each axis maps its own param), and the card already ships
+  it. <b>The alternative &mdash; split it into two faders &mdash; loses no gesture</b>, because
+  nothing couples the two axes. That is an owner question, not an agent decision: flattening a
+  2-D pad is exactly the loss <code>face.xyPads</code> exists to prevent, and doing it
+  deliberately for an incommensurate pair is a different case from doing it by accident.
+  spec.md &sect;7.1 / &sect;11.
+</div>
+
+<div class="ok" style="margin-top:16px">
+  <b>THE OSC RED TAB, IN OUTLINE</b> (one of four identical bands; ALPHA has no colour cell).
+  <div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:10px;align-items:flex-start">
+    <div class="cluster"><span class="clab">source</span><div class="crow" style="align-items:center">
+      <span class="sw" style="background:#ff5a5a"></span>
+      <div class="sel">PRESET<s>&#9662;</s></div>
+      <div class="sel">FACTORY &middot; BASIC<s>&#9662;</s></div>
+      <button class="act">LOAD .WAV</button>
+    </div></div>
+  </div>
+  <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:12px;align-items:flex-start">
+    <div class="cluster"><span class="clab">pitch</span><div class="crow">
+      <div class="k"><i style="--v:.5"></i><b>T1</b></div>
+      <div class="k"><i style="--v:.5"></i><b>F1</b></div>
+      <div class="k"><i style="--v:.2"></i><b>M1</b></div>
+    </div></div>
+    <div class="cluster"><span class="clab">shape</span><div class="crow">
+      <div class="k"><i style="--v:0"></i><b>S1</b></div>
+      <div class="k"><i style="--v:0"></i><b>Fd1</b></div>
+      <div class="k"><i style="--v:.3"></i><b>Th1</b></div>
+    </div></div>
+    <div class="cluster"><span class="clab">env</span><div class="crow">
+      <div class="k"><i style="--v:.08"></i><b>A1</b></div>
+      <div class="k"><i style="--v:.3"></i><b>D1</b></div>
+      <div class="k"><i style="--v:.7"></i><b>Su1</b></div>
+      <div class="k"><i style="--v:.5"></i><b>R1</b></div>
+    </div></div>
+    <div class="cluster"><span class="clab">fx</span><div class="crow" style="align-items:flex-start">
+      <div class="seg"><span class="cap">FX1</span>
+        <div class="segbtns"><b class="on">OFF</b><b>REVERB</b><b>DELAY</b></div></div>
+      <div class="k"><i style="--v:.4"></i><b>FXAmt1</b></div>
+    </div></div>
+  </div>
+  <div style="margin-top:10px">
+    <b>&#9888; THREE CONTROL FAMILIES, NOT ONE.</b> The card&rsquo;s strip is a swatch, two
+    <code>&lt;select&gt;</code>s and a file button &mdash; but a family key resolves ONE
+    <code>ShellCell</code>. So <code>wavesculpt-osc</code> splits into
+    <code>wavesculpt-preset-{n}</code> / <code>-table-{n}</code> / <code>-load-{n}</code>
+    (two <code>selector</code>s and a <code>file</code>), and the swatch leaves the family
+    entirely to become a <code>paramCells: 'color'</code> cell. <b>Splitting
+    <code>controlFamilies</code> is FREE</b> &mdash; the field is stripped from the WebGL attest
+    hash. A single <code>panel</code> was refused because a panel requires a probe and a
+    picker&rsquo;s only observable is the selection it makes.
+  </div>
+</div>
+
+</div>
+
+<div>
+  <div class="zones">
+    <h4>nine bands &mdash; the rail engages on COUNT</h4>
+    <table class="zt">
+      <tr><th>#</th><th>band</th><th>why it is a BAND</th></tr>
+      <tr><td>1</td><td>CAMERA</td><td>ranks first &mdash; the only both-domains control</td></tr>
+      <tr><td>2-5</td><td>OSC &times;4</td><td>twelve params + a strip each; four in one band is a wall of knobs on a dock that folds at 720p</td></tr>
+      <tr><td>6</td><td>VOICING</td><td>a different idea &mdash; four voices vs one instrument</td></tr>
+      <tr><td>7</td><td>LOOK</td><td>what the render IS, in every patch</td></tr>
+      <tr><td>8</td><td>OUTPUT</td><td>the one control that can silence the module &mdash; never buried</td></tr>
+      <tr><td>9</td><td>WALLS</td><td>last: twelve params that move nothing until a video cable lands</td></tr>
+      <tr><td colspan="3" style="color:#a9d8bd">&#9888; Collapse the four osc bands into one and the count drops to six &mdash; <b>and the rail stops engaging</b>. That is the tell that the split is load-bearing rather than padded.</td></tr>
+    </table>
+  </div>
+
+  <div class="zones">
+    <h4>the ARIA contract</h4>
+    <table class="zt">
+      <tr><td>camera pad</td><td><span class="aria">Camera position X/Y: x 0.16, y 0.12</span></td></tr>
+      <tr><td>zoom/rot pad</td><td><span class="aria">Zoom 0.82, rotation -0.04</span></td></tr>
+      <tr><td>FX1</td><td><span class="aria">FX1: OFF</span> &mdash; a NAME, from the roster</td></tr>
+      <tr><td>Height</td><td><span class="aria">Height 0.00</span> (aria-valuetext)</td></tr>
+      <tr><td>SCREEN</td><td><span class="aria">aria-pressed=true</span></td></tr>
+      <tr><td>MONITOR</td><td><span class="aria">aria-pressed=false</span></td></tr>
+    </table>
+  </div>
+
+  <div class="zones">
+    <h4>&#9888; the defect this tab makes visible</h4>
+    <table class="zt">
+      <tr><td colspan="2" style="color:#e8cf9a">On the LOOK tab, the card&rsquo;s VIEW button
+        paints <code>3D</code> / <code>BIRDSEYE</code> / <code>SPECTRO</code> from a hand-written
+        ternary (<code>WavesculptCard.svelte:3148</code>), while
+        <code>VIDEO_MODE_OPTIONS</code> declares
+        <code>PROXIMITY</code> / <code>BIRDSEYE</code> / <code>SPECTROGRAPH</code> &mdash; and
+        <code>VIEW_CYCLE_TITLE</code>, <b>the <code>title</code> on that same button</b>, is
+        built from the roster. <b>One element, two vocabularies; two of three states
+        disagree.</b> The def&rsquo;s own comment says the rosters exist so
+        <i>&ldquo;one roster [is] read by the def, the dock and the card&rdquo;</i>, and every
+        other consumer complies. A <code>segmented</code> cell fixes the faced surface for free;
+        the legacy caption needs the one-line repair. spec.md &sect;9.1.</td></tr>
+    </table>
+  </div>
+
+  <div class="zones">
+    <h4>what is DEAD at spawn</h4>
+    <table class="zt">
+      <tr><td>Scale</td><td><code>uScale[]</code> is read only by the SCOPE program, which runs only when <code>blink_mode &gt; 0</code>. <b>Dead at the shipped default</b>, and the roster label is the only place a player can learn that &mdash; which is why it ranks immediately after <code>blink_mode</code> and never into the lane</td></tr>
+      <tr><td>Detune</td><td>does nothing until UNISON is on</td></tr>
+      <tr><td>Quality</td><td>does nothing until CHORD is on</td></tr>
+      <tr><td>Wiggle / LumBP</td><td>0 = OFF by declaration</td></tr>
+      <tr><td>12 wall params</td><td>move nothing until a video cable lands</td></tr>
+    </table>
+  </div>
+</div>
+</div>
+</div>
