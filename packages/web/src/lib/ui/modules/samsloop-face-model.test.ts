@@ -84,14 +84,52 @@ describe('samsloop face — ONE SOURCE for the map and the landmarks', () => {
   // `warped-fader-source.test.ts` owns the generic form; these two are
   // samsloop's own, because they name THIS module's symbols.
 
-  it('the cell passes the module\'s imported converters, not inline arrows', () => {
-    const cell = shellCellFor('samsloop', { kind: 'static', key: 'rate' } as never);
+  it('the RATE cell is REACHABLE through the real resolver — the shape the shell passes', () => {
+    // ⚠ THIS ASSERTION USED TO COERCE `kind: 'static'` WITH AN `as never`, AND
+    // THAT COERCION HID A LIVE BUG. `shellCellFor` refused every `param`
+    // control, so the warped-fader branch in ModuleShell was unreachable and
+    // RATE rendered as a generic LINEAR knob — unity at 3/4 of the travel
+    // instead of the midpoint, which is the exact break the cell exists to
+    // prevent. Forcing the kind made the lookup succeed in the test and nowhere
+    // else. The control below is the shape `curatedFace` really builds
+    // (`{ key, kind: 'param', paramId }`), so this test now fails if the
+    // resolver ever refuses params again.
+    const cell = shellCellFor('samsloop', {
+      key: 'rate',
+      kind: 'param',
+      paramId: 'rate',
+      label: 'Rate',
+    });
     expect(cell?.kind).toBe('warped-fader');
     // Identity, not behaviour: a re-implementation that happened to agree today
     // would pass a value comparison and still be the defect.
     expect(cell && 'toKnob' in cell && cell.toKnob).toBe(rateToKnob);
     expect(cell && 'fromKnob' in cell && cell.fromKnob).toBe(knobToRate);
     expect(cell && 'landmarks' in cell && cell.landmarks).toBe(SAMSLOOP_RATE_LANDMARKS);
+  });
+
+  it('NEGATIVE CONTROL: a param control still cannot borrow a FAMILY cell', () => {
+    // The fix opened `shellCellFor` to param controls, so the other direction
+    // needs pinning: a non-param cell must stay unreachable from a param
+    // control, or a `selector` (which edits node.data and carries no paramId)
+    // could render over a param and write somewhere the control does not point.
+    const borrowed = shellCellFor('samsloop', {
+      key: 'samsloop-chan-{n}',
+      kind: 'param',
+      paramId: 'samsloop-chan-{n}',
+      label: 'chan',
+    });
+    expect(borrowed, 'a param must not resolve a selector cell').toBeNull();
+  });
+
+  it('NEGATIVE CONTROL: a FAMILY control cannot borrow the warped fader either', () => {
+    const borrowed = shellCellFor('samsloop', {
+      key: 'rate',
+      kind: 'family',
+      familyId: 'rate',
+      label: 'Rate',
+    });
+    expect(borrowed, 'a family must not resolve the param-shaped cell').toBeNull();
   });
 
   it('the CARD derives its ticks from the same landmarks — no hand-typed fracs', () => {

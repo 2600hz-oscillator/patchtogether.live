@@ -1562,7 +1562,17 @@ export const samsloopDef: AudioModuleDef = {
       domain: 'audio',
       inputs: new Map<string, { node: AudioNode; input: number; param?: AudioParam }>([
         ['trig',       { node: workletNode, input: 0 }],
+        // ⚠ EVERY `paramTarget` PORT MUST PUBLISH ITS AudioParam HERE, and the
+        // failure mode is silent by design. `AudioEngine.addEdge` reads `param`
+        // to decide whether a cable is MODULATION or SIGNAL; with it absent it
+        // falls back to `{node, input}` and the cable becomes audio into worklet
+        // input 0 — the control does nothing and nothing throws. The window CV
+        // shipped that way in this PR's first CI run: the ports were declared on
+        // the def and never added to this map. `samsloop-cv-contract.test.ts`
+        // now asserts the two sides agree.
         ['rate_cv',    { node: workletNode, input: 0, param: params.get('rate')! }],
+        ['start_cv',   { node: workletNode, input: 0, param: params.get('start')! }],
+        ['end_cv',     { node: workletNode, input: 0, param: params.get('end')! }],
         // Record-tap audio inputs. These wire user-patched audio into the
         // samsloop-tap worklet, which forwards captured L/R blocks to the
         // card via the tap port (subscribed via the handle's read('recTap')

@@ -334,12 +334,25 @@ test.describe('SAMSLOOP START/END loop window', () => {
     const rec = page.locator('[data-testid="samsloop-rec-button"]');
     await rec.click();
     await expect(rec).toContainText('STOP', { timeout: 5000 });
+    // pacing: the LENGTH OF THE TAKE being recorded — a real-time capture, so
+    // the wall clock IS the subject rather than a proxy for one. The assertions
+    // below need a take longer than 1000 frames; 800 ms of live audio is that
+    // with margin at every supported rate. It cannot be a frame count or a
+    // predicate: nothing observable advances until the recording has actually
+    // run for a while, and shortening it shortens the RECORDING, not the wait.
+    // (Un-annotated until this PR only because the ledger key is the enclosing
+    // test's NAME, and renaming the test — its old title asserted the opposite
+    // of what it checks — correctly dropped the exemption.)
     await page.waitForTimeout(800);
     await rec.click();
     await expect(rec).toContainText('REC');
 
-    // Let the factory's 200 ms poll decode + post the take (and, before the fix,
-    // stomp sampleLength with the length of a DETACHED buffer).
+    // pacing: the factory's own POLL_MS = 200 ms decode-and-post loop
+    // (`samsloop.ts` — `pollTimer = setTimeout(poll, POLL_MS)`), which is what
+    // lands `sampleLength` back on node.data after a take commits. 900 ms is
+    // four of those intervals, so a loaded runner that misses one still lands.
+    // A product-side interval the app defines, which is the annotation carve-out
+    // rather than a workaround.
     await page.waitForTimeout(900);
 
     const st = await readSams(page);

@@ -1464,14 +1464,60 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
 };
 
 /**
- * The cell spec for a curated FAMILY / STATIC control, or `null` when the
- * module declares none for that key (→ the shell renders an explicitly INERT
- * cell, which both the unit lint and the faces-parity e2e fail on). A `param`
- * control never routes here — the shell handles those generically. Pure.
+ * Cell kinds a PARAM control may resolve.
+ *
+ * ⚠ EXACTLY ONE, AND THE LIST EXISTS SO IT STAYS THAT WAY. Every other kind
+ * here edits `node.data` and carries no `paramId`; handing one to a param
+ * control would render a cell that writes somewhere the control does not point.
+ * `warped-fader` is the only kind that BINDS A PARAM — it is a param cell whose
+ * geometry the generic renderer cannot express — so it is the only one allowed
+ * to cross.
+ */
+const PARAM_CELL_KINDS: ReadonlySet<string> = new Set(['warped-fader']);
+
+/**
+ * The cell spec for a curated control, or `null` when the module declares none
+ * for that key (→ the shell renders an explicitly INERT cell, which both the
+ * unit lint and the faces-parity e2e fail on). Pure.
+ *
+ * ⚠ THIS USED TO REFUSE EVERY `param` CONTROL OUTRIGHT — *"a param control never
+ * routes here, the shell handles those generically"* — and that was TRUE until a
+ * param-shaped cell kind existed. #2144 added `warped-fader`, which binds a
+ * `paramId` by definition, and added its renderer branch to `ModuleShell`
+ * WITHOUT touching this function. The result was a cell type, a render branch
+ * and a source gate that **no control could ever reach**: the branch was dead
+ * code from the day it merged.
+ *
+ * ⚠ NOTHING WAS RED. `module-face-lint`, the dock render-plan parity check and
+ * `faces-parity` all passed, because a `warped-fader` param still resolves to a
+ * perfectly valid GENERIC cell — it just renders the param LINEARLY, which is
+ * precisely the geometry the cell exists to prevent. On samsloop that put unity
+ * at 3/4 of the fader instead of the midpoint. The gate set could not see it
+ * because every member asks "does this control render and operate", and it did.
+ * The VRT dock baseline is what showed it: a KNOB where a fader was declared.
  */
 export function shellCellFor(moduleType: string, ctl: FaceControl): ShellCell | null {
-  if (ctl.kind === 'param') return null;
-  return SHELL_CELLS[moduleType]?.[ctl.key] ?? null;
+  const cell = SHELL_CELLS[moduleType]?.[ctl.key] ?? null;
+  if (!cell) return null;
+  // A param control takes only a param-shaped cell; everything else takes only
+  // the non-param kinds. Both directions, so neither can silently borrow the
+  // other's renderer.
+  const isParamCell = PARAM_CELL_KINDS.has(cell.kind);
+  if (ctl.kind === 'param') return isParamCell ? cell : null;
+  return isParamCell ? null : cell;
+}
+
+/**
+ * Is the cell this module registers under `faceKey` a PARAM-SHAPED one?
+ *
+ * Gate helper for the reachability sweep in `shell-cells.test.ts`: a module can
+ * declare a param cell and rank its param, and every other gate stays green
+ * while the shell renders the generic control — so the declaration has to be
+ * checked against the real resolver. Pure.
+ */
+export function paramShapedCellKind(moduleType: string, faceKey: string): boolean {
+  const cell = SHELL_CELLS[moduleType]?.[faceKey];
+  return !!cell && PARAM_CELL_KINDS.has(cell.kind);
 }
 
 /** Every module type that registers at least one cell spec (gate helper). */
