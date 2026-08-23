@@ -1364,29 +1364,189 @@ test.describe('?shell=1 video CHAIN parity', () => {
       page.locator('[data-testid="headless-source-host"][data-node-id="vb1"]'),
     ).toHaveCount(1);
 
-    // cameraInput must NEVER be hosted — it keeps its real card IN the lane
-    // (carve-out), so hosting it would be the double-mount above.
+    // ⚠ cameraInput IS HOSTED NOW, AND THIS ASSERTION USED TO SAY THE OPPOSITE.
+    // It read:
+    //
+    //   // cameraInput must NEVER be hosted — it keeps its real card IN the
+    //   // lane (carve-out), so hosting it would be the double-mount above.
+    //   await expect(page.locator('…[data-node-id="cam1"]')).toHaveCount(0);
+    //
+    // Both halves of that were true when written and the FIRST half is what
+    // changed: `cameraInput` was in `NON_SHELL_LANE_TYPES`, so its real card
+    // rendered in the lane and a host would indeed have been a second mount.
+    // It was promoted and left that set, so the lane paints its faceplate and
+    // the host is now the ONLY mount — which makes it an ordinary member of
+    // this test's subject rather than the exception to it.
+    //
+    // The double-mount hazard the old line guarded has NOT been waived; it has
+    // moved to where it can still occur, and it is asserted BELOW rather than
+    // deleted: exactly one host for this node, and none at all under
+    // `?shell=legacy` (see `camerainput-shell-source.spec.ts`, which drives the
+    // legacy shell and asserts the count is zero there).
     await injectPatch(page, [{ id: 'cam1', type: 'cameraInput', position: { x: -700, y: 5100 } }]);
-    await expect(page.locator('[data-testid="headless-source-host"][data-node-id="cam1"]')).toHaveCount(0);
+    const camHost = page.locator('[data-testid="headless-source-host"][data-node-id="cam1"]');
+    await expect(camHost, 'a promoted CAMERA keeps its real card in the off-screen host').toHaveCount(1);
+    await expect(
+      camHost.locator('[data-testid="camera-device-select"]'),
+      "the hosted card is the module's real card, not a stub",
+    ).toHaveCount(1);
   });
 
-  test('the CAMERA source picker is reachable in the lane under the shell (device list capability-gated)', async ({ page }) => {
+  test('the CAMERA source picker is reachable on the FACEPLATE under the shell (device list capability-gated)', async ({ page }) => {
+    // ⚠ THIS TEST WAS GREEN AND BLIND, AND THAT IS WHY IT IS REWRITTEN RATHER
+    // THAN RE-TARGETED. It was titled "…reachable in the lane" and asserted:
+    //
+    //   const laneNode = page.locator('.svelte-flow__node[data-id="cam1"]');
+    //   await expect(laneNode.locator('[data-testid="module-shell-placeholder"]')).toHaveCount(0);
+    //   const picker = laneNode.locator('[data-testid="camera-device-select"]');
+    //   await expect(picker, '…present + usable in the shell lane').toBeVisible();
+    //
+    // After cameraInput's promotion it KEPT PASSING while the thing it names
+    // stopped being true. Two mechanisms combined, and neither is visible from
+    // the assertion:
+    //
+    //   1. `<HeadlessSourceHost>` mounts the real card inside its OWN
+    //      single-node `<SvelteFlow>`, passing `type`/`id` through — so
+    //      `.svelte-flow__node[data-id="cam1"]` matches TWO elements, the lane
+    //      tile AND the hosted card. `laneNode.locator(...)` resolved through
+    //      the HOST's copy.
+    //   2. Playwright's `toBeVisible` means "has a non-empty box and is not
+    //      display:none/visibility:hidden". The host parks at `left:-9999px`,
+    //      which satisfies that — so OFF-SCREEN reads as VISIBLE.
+    //
+    // MEASURED on the promoted tree, with the old locators still in place:
+    //   totalPickers 1 · pickersInsideHeadlessHost 1 · pickersOutsideHeadlessHost 0
+    //   nodesMatchingLaneSelector 2 (laneNodeIsHost [false, true])
+    //   firstPickerRect.left -9976 · host pointer-events "none"
+    // i.e. the ONLY picker in the document was 9976 px off-screen inside a
+    // subtree that cannot receive a click, and the test called it "usable in
+    // the shell lane". The `module-shell-placeholder` leg also still passed,
+    // but for a NEW reason (the lane is a `module-shell` FACE now, not a
+    // placeholder) rather than the old one (the carve-out gave it a real card).
+    //
+    // ⚠ SO THE SUBJECT MOVED, AND THE ASSERTION FOLLOWS IT rather than being
+    // weakened: the picker is no longer a lane affordance at all. It lives in
+    // the faceplate's extension body, which is a real, clickable surface. The
+    // locators below are scoped so that an off-screen copy can NEVER satisfy
+    // them again — that is the repair, not the re-title.
     test.setTimeout(SLOW_RENDER ? 90_000 : 30_000);
     await gotoShell(page);
     await expect(videoOutLane(page)).toBeVisible({ timeout: 15_000 });
 
     await injectPatch(page, [{ id: 'cam1', type: 'cameraInput', position: { x: -1200, y: 5100 } }]);
 
-    const laneNode = page.locator('.svelte-flow__node[data-id="cam1"]');
-    // The REAL card, not the tile — the carve-out (like videoOut).
-    await expect(laneNode.locator('[data-testid="module-shell-placeholder"]')).toHaveCount(0);
-    const picker = laneNode.locator('[data-testid="camera-device-select"]');
-    await expect(picker, 'the device picker is present + usable in the shell lane').toBeVisible({ timeout: 15_000 });
+    // (a) THE LANE CARRIES NO PICKER, stated as a property of the whole
+    //     document rather than of a selector that cannot tell the two mounts
+    //     apart: every `camera-device-select` there is must be inside the host.
+    const hostedPicker = page.locator(
+      '[data-testid="headless-source-host"][data-node-id="cam1"] [data-testid="camera-device-select"]',
+    );
+    await expect(hostedPicker, "the real card's picker is in the off-screen host")
+      .toHaveCount(1, { timeout: 15_000 });
+    await expect(
+      page.locator('[data-testid="camera-device-select"]'),
+      'and it is the ONLY one — nothing reachable in the lane, which is the point',
+    ).toHaveCount(1);
+
+    // (b) THE FACEPLATE CARRIES ONE, and it is genuinely operable. `[data-testid=
+    //     "module-shell"]` exists only on the lane tile, so this locator cannot
+    //     resolve through the host the way the old one did.
+    //
+    // Same re-pointing discipline the FEEDBACK leg above records for batch 24:
+    // "Promotion is a BEHAVIOUR change, not a skin … the SUBJECT changed, so the
+    // assertions follow it." `centerOnNode` is required before the click for the
+    // same reason it is there — the lane band sits far down in flow space, so an
+    // un-centred tile is off-screen and the click times out.
+    await centerOnNode(page, 'cam1', 0.9);
+    const camTile = page.locator('.svelte-flow__node[data-id="cam1"] [data-testid="module-shell"]');
+    await expect(camTile, 'the faced CAMERA shell tile').toBeVisible({ timeout: 15_000 });
+    await camTile.getByTestId('shell-open-dock').click();
+    const dock = page.getByTestId('dock-full-view');
+    await expect(dock).toBeVisible({ timeout: 15_000 });
+
+    const picker = dock.getByTestId('cameraInput-face-device-select');
+    await expect(picker, 'the device picker is present on the faceplate').toBeVisible({ timeout: 15_000 });
+
+    // ⚠ NOT `toBeVisible` ALONE — that is the exact predicate that went blind,
+    // so re-using it here would rebuild the same hole one surface over. Two
+    // checks that a left:-9999px mount cannot satisfy:
+    //
+    //   (i) SCROLL-REACHABLE. The faceplate body is taller than the pane (the
+    //       480x360 preview sits above this row), so the picker legitimately
+    //       starts below the fold — which is why `toBeInViewport` alone is the
+    //       WRONG bar: it would fail a control a user reaches by scrolling.
+    //       Scrolling IS the user action, so do it and then require the result.
+    //       The host cannot be rescued this way: it is `position: fixed`, so no
+    //       amount of scrolling moves it into the viewport.
+    await picker.scrollIntoViewIfNeeded();
+    await expect(picker, 'the picker comes into view when scrolled to').toBeInViewport();
+
+    //  (ii) ON-CANVAS, stated against the number that was actually measured.
+    //       The blind version resolved a picker whose box was at x = -9976.
+    const box = await picker.boundingBox();
+    expect(box, 'the picker has a layout box at all').not.toBeNull();
+    expect(
+      box!.x,
+      `the picker must sit on-canvas, not parked off it (the blind version ` +
+        `resolved one at x=-9976 inside the headless host); saw x=${Math.round(box!.x)}`,
+    ).toBeGreaterThanOrEqual(0);
+
+    // (iii) HIT-TESTABLE — the property that actually separates a real surface
+    //       from a copy of one, asked the way the browser answers it.
+    //
+    // ⚠ TWO WRONG PREDICATES WERE TRIED HERE FIRST, and both are worth naming
+    // because each looked obviously right:
+    //
+    //   * `toBeEnabled()` — passed locally, FAILED ON CI. The body renders
+    //     `<select disabled={devices.length === 0}>`, and CI has no videoinput,
+    //     so a disabled picker is CORRECT there. It was a capability-dependent
+    //     assertion sitting ABOVE the capability gate — the exact trap the
+    //     ci-capability discipline exists for. The genuine enabled-ness check
+    //     belongs below the gate, and that is where it still is.
+    //   * walking every ancestor for `pointer-events: none` — FAILED LOCALLY
+    //     once zero cameras were simulated, and correctly so: the offender was
+    //     `DIV.dock-fullview-drawer`, a `none` container whose inner panel sets
+    //     `auto`. That is an ordinary overlay idiom, not a defect, so the
+    //     predicate was wrong rather than the app.
+    //
+    // `elementFromPoint` at the element's own centre is the real question — it
+    // is what the browser does on a click. It is true for a disabled control
+    // (disabled changes event DISPATCH, not hit-testing) so it stays
+    // capability-independent, and it is false for the headless host, whose
+    // centre lies at a negative coordinate no point in the viewport maps to.
+    const hitTestable = await picker.evaluate((el) => {
+      const r = el.getBoundingClientRect();
+      const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      return !!hit && (hit === el || el.contains(hit) || hit.contains(el));
+    });
+    expect(
+      hitTestable,
+      'the picker is hit-testable at its own centre — a click would land on it, which is what ' +
+        '"reachable" means and what the off-screen host can never satisfy',
+    ).toBe(true);
+
+    // ⚠ PERMANENT NEGATIVE CONTROL — the repaired predicate must still be able
+    // to FAIL on the thing it was blind to, or this rewrite has only moved the
+    // blindness. Run by hand against the hosted copy while repairing: pointing
+    // `picker` at
+    // `[data-testid="headless-source-host"][data-node-id="cam1"] [data-testid="camera-device-select"]`
+    // fails at the scroll leg with `viewport ratio 0` — where the OLD predicate
+    // (`toBeVisible`) passed on that same element. Kept as an executable leg
+    // rather than a claim: the hosted picker is asserted to be exactly what the
+    // reachable one is not.
+    const hostedBox = await hostedPicker.boundingBox();
+    expect(hostedBox, 'the hosted picker exists to compare against').not.toBeNull();
+    expect(
+      hostedBox!.x,
+      `the host's copy must be OFF-canvas — if this ever goes >= 0 the two mounts ` +
+        `are no longer distinguishable by position and the checks above go blind; ` +
+        `saw x=${Math.round(hostedBox!.x)}`,
+    ).toBeLessThan(0);
 
     // CAPABILITY GATE (ci-capability discipline): only assert "lists a real
     // device" where a videoinput actually exists. CI's default project has no
-    // camera and no permission — there the picker correctly shows "(no cameras)"
-    // and the presence assert above is the whole contract.
+    // camera and no permission — there the picker correctly shows "no cameras"
+    // and the reachability asserts above are the whole contract.
     const cameraCount = await page.evaluate(async () => {
       if (typeof navigator === 'undefined' || !navigator.mediaDevices?.enumerateDevices) return 0;
       try {
@@ -1395,13 +1555,28 @@ test.describe('?shell=1 video CHAIN parity', () => {
         return 0;
       }
     });
-    test.skip(cameraCount === 0, 'no videoinput device in this runtime — device-list assert not applicable');
-    await expect
-      .poll(async () => picker.locator('option').count(), {
-        message: 'the picker lists at least one real camera',
-        timeout: 15_000,
-      })
-      .toBeGreaterThanOrEqual(1);
-    await expect(picker).toBeEnabled();
+    // ⚠ A BRANCH, NOT `test.skip` — deliberately, and it is the difference
+    // between this case reporting a result on CI and reporting nothing. CI has
+    // no videoinput, so a mid-test `test.skip` marks the WHOLE test skipped
+    // there: the reachability assertions above would still fail if broken, but
+    // a green run reports as "skipped", and a reader counting results sees a
+    // case that never ran. The reachability half is the parity-critical claim
+    // and it is capability-INDEPENDENT, so it must show up as a real pass.
+    // Only the device-list half is conditional, and it says so.
+    if (cameraCount > 0) {
+      await expect
+        .poll(async () => picker.locator('option').count(), {
+          message: 'the picker lists at least one real camera',
+          timeout: 15_000,
+        })
+        .toBeGreaterThanOrEqual(1);
+      await expect(picker, 'a picker with real devices is enabled').toBeEnabled();
+    } else {
+      // The zero-device state is a real, reachable state and is asserted rather
+      // than waved past: the control still renders, still says why, and is
+      // correctly disabled. That is what CI actually exercises.
+      await expect(picker, 'with no cameras the picker is correctly disabled').toBeDisabled();
+      await expect(picker, 'and it says why').toContainText(/no cameras|unavailable/i);
+    }
   });
 });

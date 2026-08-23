@@ -222,7 +222,8 @@
   import { migrated } from '$lib/ui/workflow/strict-faces';
   // DOM-SOURCE seam: a video module whose source lives on its CARD stays alive
   // in an off-screen host when the shell swaps its lane card away.
-  import { HEADLESS_MOUNT_LANE_TYPES, needsHeadlessSourceMount } from '$lib/ui/workflow/dom-source-modules';
+  import { HEADLESS_MOUNT_LANE_TYPES, DOM_SOURCE_LANE_TYPES, needsHeadlessSourceMount } from '$lib/ui/workflow/dom-source-modules';
+  import { cameraStatus } from '$lib/ui/media/camera-status-registry';
   import { groupCardHostsChildCard } from '$lib/ui/modules/group-viz-hosts';
   import { nodeMedia } from '$lib/ui/media/node-media-registry';
   import { nodeExtras } from '$lib/ui/media/node-extras';
@@ -2252,9 +2253,16 @@
    *  like cameraInput/videoOut) and 'stub' (real card in the dock rail) both
    *  render the card SOMEWHERE and are excluded — only 'shell'/'placeholder'
    *  qualify. Additionally excluded:
-   *    - a node whose full faceplate is OPEN in the dock (DockFullView already
-   *      mounts its real card — a second mount would run two media elements for
-   *      one node and the first to unmount would detach the survivor's source),
+   *    - a node whose full faceplate is OPEN in the dock, BECAUSE DockFullView
+   *      mounts its real card there — a second mount would run two media
+   *      elements for one node and the first to unmount would detach the
+   *      survivor's source.
+   *      ⚠ AND THAT IS A CONDITION, NOT A CONSTANT. `DockFullView` mounts the
+   *      real card only for an UN-MIGRATED module; a promoted one gets
+   *      `<ModuleShell>` and no card at all. So a promoted DOM-source module
+   *      (cameraInput) still needs its host WHILE its faceplate is open — see
+   *      `fullViewShowsFaceInstead` at the site, which is where the argument and
+   *      its deliberate scope live,
    *    - canvas-hidden nodes (pinned drawer / hiddenCard cameras): those render
    *      no lane card in preview-off EITHER, so hosting them would ADD engine
    *      state the shell-off rack doesn't have — the opposite of the parity
@@ -2340,6 +2348,13 @@
     nodeDoomSession.sweep(liveIds);
     nodeLaunchpadMonitor.sweep(liveIds);
     nodeExtras.sweep(liveIds);
+    // ...and the CAMERA CAPTURE STATUS
+    // ($lib/ui/media/camera-status-registry): the published state and the
+    // acquire command a promoted CAMERA's dock faceplate drives. Its card is
+    // off-screen in <HeadlessSourceHost> under the default shell, so the
+    // registry is the only thing joining the two surfaces — and like every row
+    // above it is keyed to the NODE, so the graph is what retires it.
+    cameraStatus.sweep(liveIds);
   });
 
   /** THE EXTRAS-CHANNEL PRODUCER SEAM (#1720). The sixth instance of the #1583
@@ -2374,7 +2389,10 @@
     for (const n of snapshot.nodes) {
       if (!HEADLESS_MOUNT_LANE_TYPES.has(n.type)) continue;
       if (isCanvasHiddenNode(n)) continue;
-      if (dockStore.isFullView(n.id)) continue;
+      // ⚠ THE DOCK FULL VIEW ONLY MOUNTS THE REAL CARD FOR AN UN-MIGRATED
+      // MODULE, and this used to be an unconditional `continue`. See the
+      // `dockFullViewMountsCard` note below — the exclusion moved into
+      // `hostedElsewhere`, which is the input that already means exactly this.
       const parentGroupId = (n.data as { parentGroupId?: string } | undefined)?.parentGroupId;
       // The lane emits NO node for a collapsed group's child (see the flowNodes
       // derivation below), in EITHER shell — so `kind` describes a card that is
@@ -2387,15 +2405,51 @@
         hasCard: isShellSwappable(n.type, cardTypeSet.has(n.type)),
         migrated: migrated(n.type),
       });
+      // ⚠ A DOCK FULL VIEW DOES NOT ALWAYS MOUNT THE REAL CARD, and this used
+      // to be an unconditional `continue` that assumed it always does.
+      // `DockFullView.svelte` is `{#if migrated} <ModuleShell/> {:else}
+      // <CardComponent/>`: for a PROMOTED module the tray paints the FACEPLATE,
+      // and the card is nowhere in it.
+      //
+      // The old premise held for every member of this set on the day it was
+      // written, because NO card-owned-source module was promoted yet — a gate
+      // whose precondition was the ABSENCE of the feature. Promoting one turns
+      // it false: expanding the faceplate would unmount the card from every
+      // surface at once, and on a CAPTURE source that is the acquire command's
+      // owner vanishing exactly while the user looks at the surface offering it.
+      //
+      // ⚠ SCOPED TO THE DOM-SOURCE HALF ON PURPOSE. The producer half (cube,
+      // rasterize — the two promoted members today) is left EXACTLY as it was,
+      // and not because hosting them would be wrong: because it would be
+      // UNMEASURED. Their faces mount the producing surface through the hero
+      // cell (`CubeVizSurface` IS cube's renderer, per dom-source-modules.ts),
+      // so they are not dark in the tray, and adding a second mount of a card
+      // that installs a frame drawer is a change that needs its own measurement
+      // rather than a ride-along. This decision is already channel-aware for the
+      // same kind of reason — `needsHeadlessSourceMount`'s `laneOmitsNode` arm
+      // returns `CARD_PRODUCER_LANE_TYPES.has(type)`.
+      //
+      // ⚠ AND ON THE DOM-SOURCE HALF IT CANNOT DOUBLE-MOUNT, which is the exact
+      // hazard the original exclusion existed for: `nodeMedia` adoption is a
+      // TRANSFER with an owner-checked release, so there is one element per
+      // (node, slot), two hosts cannot own two elements, and a stale teardown
+      // cannot strand the live one.
+      const fullViewShowsFaceInstead =
+        dockStore.isFullView(n.id) && migrated(n.type) && DOM_SOURCE_LANE_TYPES.has(n.type);
       if (
         needsHeadlessSourceMount({
           kind,
           type: n.type,
           laneOmitsNode,
-          // GroupCard hidden-mounts a viz-passthrough child's REAL card for
-          // exactly as long as the group is collapsed, so that node already has
-          // a live host and a second one would be a double mount.
-          hostedElsewhere: laneOmitsNode && groupCardHostsChildCard(n.type),
+          // Two producers of "some other live surface already mounts this
+          // node's REAL card":
+          //   * the DOCK FULL VIEW — unless it is showing a faceplate instead
+          //     (see above), and
+          //   * GroupCard, which hidden-mounts a viz-passthrough child's real
+          //     card for exactly as long as the group is collapsed.
+          hostedElsewhere:
+            (dockStore.isFullView(n.id) && !fullViewShowsFaceInstead) ||
+            (laneOmitsNode && groupCardHostsChildCard(n.type)),
         })
       ) {
         out.push(n);

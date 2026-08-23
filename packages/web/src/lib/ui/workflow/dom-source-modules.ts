@@ -74,12 +74,17 @@ import type { LaneRenderKind } from './legacy-fallback';
  * retains. Excluding one takes a NAMED `ONE_SHOT_INGEST` entry carrying its
  * `why`, anchored so it reddens the day that module starts keeping its element.
  *
- * Note `cameraInput` is listed here even though it is ALSO a
- * NON_SHELL_LANE_TYPE (its real card always renders in the lane, so it is never
- * swapped and never needs the headless host — see `needsHeadlessSourceMount`,
- * which returns false for the 'legacy' kind). It stays in the set because the
- * set documents "this module's source lives on its card", which is true of
- * cameraInput and is exactly WHY it earned the carve-out.
+ * ⚠ `cameraInput` USED TO BE THE EXCEPTION IN THIS SET AND IS NOT ANY MORE. The
+ * note here said it "is never swapped and never needs the headless host",
+ * because it was ALSO in `NON_SHELL_LANE_TYPES` and its real card therefore
+ * always rendered in the lane. That carve-out was removed when the module was
+ * promoted (see ./legacy-fallback, which carries the full lineage), so
+ * cameraInput is now an ORDINARY member: the shell swaps its lane card for a
+ * faceplate, `needsHeadlessSourceMount` returns true for the resulting 'shell'
+ * kind, and `<HeadlessSourceHost>` keeps the real card — and therefore
+ * getUserMedia, the stream and the permission machine — alive off-screen. It is
+ * the FIRST member of this set to be promoted, so it is also the first to
+ * exercise that path for real.
  */
 export const DOM_SOURCE_LANE_TYPES: ReadonlySet<string> = new Set<string>([
   'archivist',
@@ -266,8 +271,8 @@ export interface HeadlessSourceInput {
  *       * `laneOmitsNode` — the lane emits no node AT ALL (a collapsed group's
  *         child) → YES, but only for the PRODUCER half; see below,
  *       * 'shell' / 'placeholder' — the shell swapped it out  → YES,
- *       * 'legacy' — the card IS in the lane (?shell=legacy, or a
- *         NON_SHELL carve-out like cameraInput/videoOut) → no,
+ *       * 'legacy' — the card IS in the lane (?shell=legacy, or a NON_SHELL
+ *         carve-out) → no,
  *       * 'stub'   — the user DOCKED it, so the real card is mounted in the
  *         dock rail (DockCardHost) → no. Double-mounting would run TWO
  *         getUserMedia / two <video> elements for one node, and whichever

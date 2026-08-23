@@ -262,6 +262,9 @@ const SUBJECTS: readonly Subject[] = [
   { type: 'feedback', prefix: 'feedback', domain: 'video', why: '⚠ THE ACCUMULATOR CASE OF THIS BATCH, and the row worth having for it. FEEDBACK re-samples its OWN previous output from a ping-pong framebuffer, so the pull is not how the picture stays fresh — it is how the TRAIL EXISTS. A lapsed watch mark decays the accumulated image out of the patch and turns a control labelled SCREEN into a history eraser. Its card already drew this preview; the face adds the toggle it never had.' },
   { type: 'mandleblot', prefix: 'mandleblot', domain: 'video', why: 'the Mandelbrot explorer\'s preview and its SCREEN switch. ⚠ NOT stateless despite holding no accumulator: `uTime * 0.1 * uColorCycle` cycles the palette and `color_cycle` ships at 1, so a lapsed mark freezes a MOVING picture that is also the ORIGIN of its chain — the module\'s only input is a CV. The heaviest renderer of the four, which is why its cost is measured rather than assumed.' },
 
+  // ── CAMERA — the first card-owned-source promotion ────────────────────────
+  { type: 'cameraInput', prefix: 'cameraInput', domain: 'video', why: 'the capture source\'s live preview and its SCREEN switch. ⚠ The first module in this table whose REAL CARD is still mounted while the face is showing — off-screen in <HeadlessSourceHost>, because the card owns getUserMedia and the MediaStream. Its picture is BLITTED from the engine, never adopted: the node-owned <video> belongs to that card, and a DOM node has one parent. A SOURCE with no video input, so a lapsed watch mark would mute the origin of the whole chain rather than pause a preview.' },
+
   // ── the ONE-SHOT INGEST pair (#2154) ──────────────────────────────────────
   //
   // Added in the SAME diff as the promotion, per this file's convention.

@@ -60,20 +60,37 @@ export type LaneRenderKind = 'legacy' | 'shell' | 'placeholder' | 'stub';
  *     this def would walk it toward that branch; `videoout-face-model.test.ts`
  *     asserts the tile keeps its picture at every tier so the day that happens
  *     is a red test rather than a silent regression.
- *   - cameraInput — the CAPTURE-SOURCE snowflake, at the other end of the
- *     chain. Two things live ONLY on its card:
+ *   ⚠ cameraInput USED TO BE IN THIS SET and is not any more. Its entry named
+ *     two things that lived ONLY on its card:
  *       (a) the live SOURCE — the card owns getUserMedia + the `<video>` element
  *           and hands it to the engine via `attachExternalSource` (see
- *           ./dom-source-modules). Swapped for a tile, camera → OUTPUT is
+ *           ./dom-source-modules). "Swapped for a tile, camera → OUTPUT is
  *           patched-but-black, and switching an already-running rack INTO the
- *           shell actively DETACHES the live camera on the card's onDestroy;
+ *           shell actively DETACHES the live camera on the card's onDestroy";
  *       (b) the DEVICE PICKER — a `<select>` populated from
  *           `enumerateDevices()`, persisted to `node.data.deviceId`. It is NOT
  *           a ParamDef, so no shell face can render it (a `static` face cell is
- *           a dead dashed label by design — ModuleShell's controlCell), and the
- *           owner must be able to pick + switch cameras in the new view.
- *     The carve-out fixes both with the mechanism already proven for videoOut,
- *     instead of inventing an interactive-static face seam.
+ *           a dead dashed label by design — ModuleShell's controlCell).
+ *     ⚠ (a) IS NO LONGER TRUE AT ALL, and it was already not true when this
+ *     entry was last read. The claim describes the world BEFORE
+ *     `<HeadlessSourceHost>` existed: cameraInput is in
+ *     `DOM_SOURCE_LANE_TYPES` ⊂ `HEADLESS_MOUNT_LANE_TYPES`, and
+ *     `needsHeadlessSourceMount` returns true for kind 'shell', so the shell
+ *     keeps the real card mounted off-screen and the source is never orphaned.
+ *     The onDestroy detach it feared was removed for the same reason (the
+ *     `<video>` and its stream are NODE-owned — $lib/ui/media/node-media-registry).
+ *     ⚠ (b) IS STILL TRUE and is answered rather than dodged: the picker moved
+ *     into the faceplate's EXTENSION BODY
+ *     ($lib/ui/modules/cameraInput/CameraInputOutputBody.svelte), which is the
+ *     one slot that can hold a control no `ParamDef` can express.
+ *     ⚠ AND THE REST OF THE CARD IS REACHED BY A NAMED SEAM, which is the part
+ *     that had to be BUILT rather than merely re-argued. An off-screen host is
+ *     `pointer-events: none`, so the card's "Request access" gesture — the only
+ *     path to `getUserMedia` for a first-time visitor — and its recovery text
+ *     become unclickable. `$lib/ui/media/camera-status-registry` publishes the
+ *     card's capture state and registers its acquire command so the faceplate
+ *     can show and drive them, WITHOUT a second getUserMedia owner existing.
+ *     Parity was preserved first; the promotion followed.
  * Everything else with a resolvable card swaps.
  */
 export const NON_SHELL_LANE_TYPES: ReadonlySet<string> = new Set<string>([
@@ -92,7 +109,6 @@ export const NON_SHELL_LANE_TYPES: ReadonlySet<string> = new Set<string>([
   // legacy-fallback.test.ts: every member of this set must resolve to a
   // registered def, and this entry must equal the def's own exported type.
   'launchpadControlLeft',
-  'cameraInput',
 ]);
 
 /** Inputs to the pure lane-render decision. */
