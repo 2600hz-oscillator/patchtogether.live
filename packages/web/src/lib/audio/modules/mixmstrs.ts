@@ -860,9 +860,16 @@ export const mixmstrsDef: AudioModuleDef = {
     const RENDER_QUANTUM_FRAMES = 128;
     const compShadowsBuiltAt = ctx.currentTime;
     const COMP_SHADOW_READY_S = (2 * RENDER_QUANTUM_FRAMES) / ctx.sampleRate;
-    // Last macro value actually APPLIED to the Faust triple, per macro — the
-    // pump's change detector, seeded from the build-time value so an unmoved
-    // shadow never re-applies (and never clobbers a manual triple, #1737).
+    // Last COMBINED (knob + CV) value actually APPLIED to the Faust triple, per
+    // macro — the pump's change detector, seeded from the build-time knob so an
+    // unmoved shadow never re-applies (and never clobbers a manual triple).
+    //
+    // ⚠ SEPARATE FROM `compMacro`, WHICH STAYS THE KNOB INTRINSIC. The pump must
+    // not write the combined value back into what `readParam` reports:
+    // `AudioEngine.readParam` adds the modulator tap ON TOP of the handle's
+    // intrinsic for the motorized fader, so a combined intrinsic counts the
+    // cable twice. `cv-shadow`'s `knob()` states the same contract for every
+    // other JS-consumed pad, and this is one of those now.
     const compApplied: Record<string, number> = { ...compMacro };
     function pumpCompMacros() {
       if (ctx.currentTime - compShadowsBuiltAt < COMP_SHADOW_READY_S) return;
@@ -872,11 +879,10 @@ export const mixmstrsDef: AudioModuleDef = {
         s.ana.getFloatTimeDomainData(s.buf);
         // DC 1 in → the tap's newest sample IS the effective (knob + CV) macro
         // value, in the macro's own 0..1 units.
-        const clamped = Math.max(0, Math.min(1, s.buf[s.buf.length - 1] ?? 0));
-        if (Math.abs(clamped - (compApplied[macroId] ?? 0)) > 1e-6) {
-          compApplied[macroId] = clamped;
-          compMacro[macroId] = clamped;
-          applyCompMacro(macroId, clamped);
+        const combined = Math.max(0, Math.min(1, s.buf[s.buf.length - 1] ?? 0));
+        if (Math.abs(combined - (compApplied[macroId] ?? 0)) > 1e-6) {
+          compApplied[macroId] = combined;
+          applyCompMacro(macroId, combined);
         }
       }
     }
@@ -928,8 +934,10 @@ export const mixmstrsDef: AudioModuleDef = {
         params.get(`${PARAM_PREFIX}/${paramId}`)?.setValueAtTime(value, ctx.currentTime);
       },
       readParam(paramId) {
-        // comp{N}: pump-updated, so a patched CV cable reads back like every
-        // other param (CV == knob was the issue's own liveness criterion).
+        // comp{N}: the KNOB INTRINSIC, deliberately not the pumped combined
+        // value — `AudioEngine.readParam` folds the modulator tap in on top of
+        // whatever this returns, so reporting the combined value here would
+        // double-count a patched cable on the motorized fader (#1737).
         if (paramId.startsWith('comp')) return compMacro[paramId];
         return params.get(`${PARAM_PREFIX}/${paramId}`)?.value;
       },
@@ -941,11 +949,12 @@ export const mixmstrsDef: AudioModuleDef = {
         if (key === 'levels') return readChannelLevels();
         // #1737: deterministic pump seam for OFFLINE renders — the ART harness
         // calls this at OfflineAudioContext suspend points, where the
-        // wall-clock interval above cannot be relied on to tick. Returns the
-        // number of macros (a truthy ack), never audio data.
+        // wall-clock interval above cannot be relied on to tick. Returns a bare
+        // acknowledgement so a caller can tell the seam from an unknown key;
+        // never audio data, and never anything worth asserting on.
         if (key === 'pumpCompMacros') {
           pumpCompMacros();
-          return COMP_MACRO_IDS.length;
+          return true;
         }
         return undefined;
       },
