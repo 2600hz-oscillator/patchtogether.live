@@ -128,8 +128,47 @@ export const graphicEqDef: VideoModuleDef = {
     { id: 'out', type: 'video' },
   ],
   params: [
-    { id: 'style',   label: 'Style',   defaultValue: DEFAULTS.style,   min: 0,    max: 1,    curve: 'discrete' },
-    { id: 'display', label: 'Display', defaultValue: DEFAULTS.display, min: 0,    max: 1,    curve: 'discrete' },
+    // ⚠ THE TWO ROSTERS ARE REQUIRED, NOT DECORATIVE, AND THIS IS WHERE THE
+    // ATTEST COST COMES FROM — `params` is in the WebGL content basis while
+    // `face`, `paramCells` and `docs` are all stripped from it.
+    //
+    // Both params are `discrete` 0..1, which is the shape the shell resolves as
+    // a bare TOGGLE with no declaration at all. That resolution is wrong HERE,
+    // and wrong in a way that is worse than missing: neither param is an ON/OFF.
+    // `style` chooses BARS *or* BOXES and `display` chooses MONO *or* STEREO —
+    // two named alternatives with no "off" state between them. An undeclared
+    // toggle would render them as pressed/unpressed and ANNOUNCE the wrong idea:
+    // that there is a feature being enabled, and that one of the two looks is
+    // its absence. The roster makes each state say its own name, which is the
+    // same reason cellshade's `bits` earned one.
+    //
+    // The LABELS ARE PROMOTED, NOT INVENTED — they are the words the def's own
+    // `docs.controls` already uses for these states (SOLID BARS / STACKED BOXES,
+    // MONO / STEREO), so the face and the documentation cannot drift apart.
+    {
+      id: 'style',
+      label: 'Style',
+      defaultValue: DEFAULTS.style,
+      min: 0,
+      max: 1,
+      curve: 'discrete',
+      options: [
+        { value: 0, label: 'BARS', title: 'Each band is one smooth filled bar' },
+        { value: 1, label: 'BOXES', title: 'Each band is an LED ladder of discrete lit segments' },
+      ],
+    },
+    {
+      id: 'display',
+      label: 'Display',
+      defaultValue: DEFAULTS.display,
+      min: 0,
+      max: 1,
+      curve: 'discrete',
+      options: [
+        { value: 0, label: 'MONO', title: '8 meters across the full width, fed by the L/R average' },
+        { value: 1, label: 'STEREO', title: 'The screen splits L|R — each channel gets its own 8 meters' },
+      ],
+    },
     { id: 'gain',    label: 'Gain',    defaultValue: DEFAULTS.gain,    min: 0.5,  max: 4,    curve: 'linear' },
     { id: 'peak',    label: 'Peak',    defaultValue: DEFAULTS.peak,    min: 0.5,  max: 0.99, curve: 'linear' },
     { id: 'hue',     label: 'Hue',     defaultValue: DEFAULTS.hue,     min: 0,    max: 1,    curve: 'linear' },
@@ -150,6 +189,67 @@ export const graphicEqDef: VideoModuleDef = {
       gain: "Gain (0.5..4, default 1.6): sensitivity. Multiplies each band magnitude before it drives the meter height (FFT bands read low, so the default lifts them); higher makes quiet material reach further up the meters, clamped at the top.",
       peak: "Peak (0.5..0.99, default 0.92): peak-hold decay. A cap marker jumps up instantly to each band's latest peak then falls back, multiplying by this factor per frame — 0.5 falls fast, 0.99 lingers near the top.",
       hue: "Hue (0..1, default 0): rotates the whole green→yellow→red colour ramp around the hue wheel (0 = classic VU colours, 0.5 = ~180° opposite), tinting both bars and peak caps.",
+    },
+  },
+
+  face: {
+    // Loudest first: the two SHAPE switches decide what the meters ARE, then
+    // the two response faders, then the palette. `hue` ranks last deliberately
+    // — it is the only control that cannot change what the meters SAY.
+    order: ['style', 'display', 'gain', 'peak', 'hue'],
+
+    // ⚠ MANDATORY FOR A VIDEO DEF — `primaryAudioOutPortId` needs a
+    // `type: 'audio'` OUTPUT, and this def has none. ⚠ Its audio-typed INPUTS
+    // do not satisfy that: the glyph binds to what a module EMITS, and this one
+    // emits video. Any other literal falls through `glyphBinding` to
+    // `{kind:'static'}` and reddens module-face-lint's dead-glyph clause. The
+    // live picture arrives from `hasVideoSurface(def)` at the lane and the
+    // `fullViewBody` extension at the dock, so assert THOSE, never this.
+    glyph: 'none',
+
+    // SCREEN ON/OFF, the MONITOR toggle and the corner resize all arrive
+    // through this slot (#1928 / #2009) — promotion stops `GraphicEqCard.svelte`
+    // rendering, and it is their only home today.
+    extension: 'graphicEq',
+
+    // ⚠ MONITOR MODE — the FIFTH and last of the cards #2009 named, after
+    // ruttetra proved the seam and monoglitch / reshaper / milkdrop inherited
+    // it. VERIFIED AGAINST THE CARD, not against the def's prose, because prose
+    // on a def is exactly what lies in this bug class: `GraphicEqCard.svelte`
+    // derives `hideControls` from `node.data`, drives a corner resize over
+    // `resizedWidth`/`resizedHeight`, and clears both on restore.
+    monitor: {
+      why:
+        'GRAPHIC EQ IS A METER, so the picture is not an illustration of the module\'s work — it '
+        + 'IS the work, and it is the only place the reading appears. Nothing on this face reports '
+        + 'a level: `gain` and `peak` set how the meters RESPOND, never what they currently show, '
+        + 'so with the controls hidden the player has lost no readout at all and gained the whole '
+        + 'frame to read 8 (or 2x8) bands at once. That is the working loop this card was built '
+        + 'for — patch a mix, then WATCH — and its docs have advertised the resizable full-screen '
+        + 'monitor since it shipped.',
+    },
+
+    // ⚠ `style` AND `display` ARE DELIBERATELY ABSENT FROM THIS MAP. Both carry
+    // an `options` roster, and the shell resolves a rostered param to a NAMED
+    // selector on its own — declaring a `paramCells` kind for them would be the
+    // posterbox/tiler mistake in reverse. In particular NOT `'fader'`: a fader
+    // cannot show names, and module-face-lint refuses the combination outright.
+    //
+    // `gain` and `peak` are `<NeonFader>` THROWS on the card and nothing in a
+    // ParamDef separates a throw from any other continuous scalar, so both are
+    // declared rather than left to repaint as dials.
+    //
+    // ⚠ `hue` IS THE POINT OF DIFFERENCE FROM THE CARD, and it is a correction
+    // rather than parity: the card draws it as a NeonFader, but the param is a
+    // CONTINUOUS 0..1 ANGLE THAT WRAPS — 0 and 1 are the same colour. On a
+    // linear throw the two ends are the far extremes of the control while being
+    // the identical result, so the one place a player most wants to cross is the
+    // one place the fader cannot. The conic ring has no end stops and is this
+    // cell's specified use case.
+    paramCells: {
+      gain: 'fader',
+      peak: 'fader',
+      hue: 'hue',
     },
   },
 
