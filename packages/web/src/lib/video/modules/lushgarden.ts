@@ -344,6 +344,136 @@ export const lushgardenDef: VideoModuleDef = {
     { id: 'freeze', label: 'Freeze', defaultValue: 0, min: 0, max: 1, curve: 'linear' },
   ],
 
+  // ── noUserControl — A LIVE P1, NOT BOOKKEEPING ─────────────────────────────
+  //
+  // These three params are SYNTHETIC: two are the write targets of the grow/reset
+  // jacks, one is a determinism hook. None is a control. But this def declared no
+  // `noUserControl`, and two separate surfaces synthesise a knob for every param
+  // that is not excluded — so all three were REACHABLE, and turning one bricks the
+  // module until the node is respawned.
+  //
+  //   PUSH 2. With no `PUSH_CARD_CONTROLS` override and (until now) no `face`, the
+  //   module fell to the GENERIC tier. `genericControls` skips only
+  //   `momentary || noControl || !isTurnable`, and `noControl` is
+  //   `new Set(def.noUserControl ?? [])` — EMPTY. Seven turnable params against
+  //   `PUSH_CARD_SLOTS = 8`, so every one of them got an encoder.
+  //
+  //   GROUP BAR. `listExposableControls` auto-synthesises a knob for every param
+  //   not covered by `exposableControls` minus `noUserControl`. This def declares
+  //   neither, so collapsing a group containing lushgarden offered all three.
+  //
+  // ⚠ AND THE CONSEQUENCE IS NOT COSMETIC. A graph param write reaches the handle,
+  // so turning `cv_grow` past 0.6 latches `growPatched` TRUE PERMANENTLY: the
+  // spawner returns 0 forever and the RATE knob goes dead WITH NO BADGE, because
+  // the badge reads gate EDGES and an encoder produces none. `freeze` past 0.5
+  // stops `surface.draw` outright. Neither is recoverable without respawning.
+  //
+  // ⚠ THIS BLOCK IS HASH-TRANSPARENT BY DESIGN. `noUserControl` is one of the four
+  // props `attest-code-basis.ts` strips, precisely so a video def in the WebGL
+  // basis can declare one without a GPU re-attest. That is why the fix is three
+  // declarations rather than a code change.
+  noUserControl: [
+    {
+      param: LUSHGARDEN_GROW_PARAM_ID,
+      writer: 'cv-port',
+      why:
+        'the GROW jack writes it. A rising edge spawns one plant, and the FIRST write latches '
+        + 'gated mode permanently — so a hand-turned encoder does not "grow a plant", it '
+        + 'silently converts the module to gate-driven and kills the RATE knob.',
+    },
+    {
+      param: LUSHGARDEN_RESET_PARAM_ID,
+      writer: 'cv-port',
+      why:
+        'the RESET jack writes it; a rising edge clears every plant in the garden. A knob over '
+        + 'a destructive edge-triggered clear is not a control, it is a hazard.',
+    },
+    {
+      param: 'freeze',
+      writer: 'internal',
+      why:
+        'a VRT determinism hook, not a musical control: at >= 0.5 `surface.draw` returns before '
+        + 'anything else and every output holds its last frame. ⚠ It is written by the FACE '
+        + 'scene harness (freezeFaceVideo) and by nothing else in the product — so the day a '
+        + '`freeze` CV input appears, this entry reddens and gets re-read, which is the '
+        + 'mechanism rather than a nicety.',
+    },
+  ],
+
+  // ── THE FACEPLATE (PF-20) ─────────────────────────────────────────────────
+  //
+  // WHAT THIS MODULE IS FOR. It is a generative botanical garden: plants spawn on
+  // a rate, each integrates a grow-in curve, and the scene is composited in depth
+  // over an optional backdrop. The output is ACCUMULATED — the picture is a
+  // running integration, not a function of the current params — and that one fact
+  // drives the whole rank below.
+  face: {
+    // THE RANK. `rate` is rank 1 because it is the ONLY control over the
+    // GENERATOR; the other three are a camera over a scene that already exists.
+    // Turn it to 10 and the frame fills in seconds, to 0.5 and the same garden
+    // takes twenty times as long to become the same picture. That argument would
+    // be WRONG for a filter or a mixer, where rank 1 is a level — it is right here
+    // only because the output accumulates.
+    //
+    // `view` (2) is the camera control with a PERFORMANCE verb: parallax makes
+    // near plants shift far further than distant ones, so a sweep is a dolly
+    // rather than a crop — the one gesture that reads as moving THROUGH the
+    // garden rather than changing it.
+    //
+    // `horizon` (3) is the most VIOLENT control and still ranks third, on purpose:
+    // at 0 the depth sort collapses to a single flat row. That is a composition
+    // decided once, not a thing anyone rides, and a dramatic extreme is not the
+    // same as earning the lane.
+    //
+    // `fov` (4) is last on a STRUCTURAL argument rather than an aesthetic one: it
+    // is the ONLY visible param with no CV input. `rate`, `horizon` and `view`
+    // each have a `paramTarget` port; `fov` has none. A param nothing can automate
+    // is set-once by construction, and set-once is what rank 4 means.
+    order: ['rate', 'view', 'horizon', 'fov'],
+
+    pages: [
+      // 1 — GROWTH. One control, and it earns a header because it is the module's
+      //     IDENTITY: the only param that touches the generator.
+      { id: 'growth', label: 'growth', controls: ['rate'] },
+      // 2 — CAMERA. Three params that change WHERE YOU STAND, not what is there.
+      //
+      // ⚠ `order` AND `pages` DISAGREE HERE, DELIBERATELY. `order` puts `view`
+      // above `horizon` because a shrinking tier should keep the pan; `pages`
+      // lists them in GEOMETRIC order — pan, then how far the ground recedes,
+      // then how much smaller the far rank gets — because at the dock, where all
+      // three are visible at once, the picture is easier to reason about that way.
+      { id: 'camera', label: 'camera', controls: ['view', 'horizon', 'fov'] },
+    ],
+
+    // ⚠ NOTHING DECLARED, and each alternative was checked rather than skipped.
+    // `fader` is for a LEVEL the player expects as a THROW; a log spawn rate over
+    // 0.5..10 has no throw semantics and no unity point, and the other three are
+    // 0..1 camera positions, not levels. `grid` needs picture-states, `color` a
+    // packed RGB, `hue` a wrapping angle — ⚠ named here only so a reader does not
+    // reach for `hue` on account of the `psychedelic` output, whose hue is a
+    // wall-clock rotation the module owns rather than a param.
+    //
+    // ⚠ AND NOT A `warped-fader` either, which the shape invites. That cell is for
+    // a param whose CARD converts at the boundary; `LushGardenCard` does not
+    // convert — it passes the def's own numbers in the def's own space — so there
+    // is no warp to declare and declaring one would implement a map that does not
+    // exist.
+
+    // ⚠ MANDATORY FOR A VIDEO DEF, and counter-intuitive. All four outputs are
+    // `type: 'video'`, so `primaryAudioOutPortId` returns null and ANY other glyph
+    // literal falls through to a dead `{kind:'static'}` that reddens
+    // module-face-lint's dead-glyph clause. ⚠ `'none' + blank tile` and
+    // `'none' + live picture` are indistinguishable from this declaration — the
+    // face model test asserts `hasVideoSurface`, which is the only thing that
+    // tells them apart.
+    glyph: 'none',
+
+    // SCREEN ON/OFF arrives through this slot (#1928). A PORT rather than an
+    // addition: `LushGardenCard` already draws a preview, but with no toggle.
+    // See `$lib/ui/modules/lushgarden/shell-extension.ts`.
+    extension: 'lushgarden',
+  },
+
   docs: {
     explanation:
       "lush garden is a generative video source that grows a dense, layered 2D English-garden bed out of a bank of ~75 real plant cutouts (flowers, bushes, small trees), each background-keyed to a clean silhouette. Plants spawn continuously at the RATE knob's spawns-per-second onto a virtual ground plane that runs from the bottom edge up to an INVISIBLE horizon: each plant lands at a random (x, depth), where depth places its ground anchor between the bottom edge (near) and the horizon (far) and scales it down with distance on top of the natural kind scale (FOV sets how steep that shrink is; trees > bushes > flowers; the spawn mix is roughly 70% flowers / 20% bushes / 10% trees). New plants grow in from their ground anchor with a quick ~350 ms ease-out. The scene composites back-to-front (painter's algorithm), and VIEW pans a viewport across a world ~2.5 frames wide with depth-proportional parallax — near plants sweep past while the far rank barely moves, a deliberately flat, theatre-flat parallax. At the 350-plant cap each new spawn replaces the OLDEST plant, so a full bed keeps slowly turning over instead of freezing. Patch a gate into GROW to take manual control: continuous spawning stops entirely and exactly one plant grows per rising edge (the card shows [GATED]); pulse RESET to clear the bed. The same scene renders through four simultaneous outputs — clean (the plain composite, also the card preview), mono (white silhouette outlines), watercolor (colours bled inside each plant's boundary), and psychedelic (animated hue-cycled colours, phase-offset per plant) — and an optional background video passes through unprocessed behind the plants on all four. Usage: run it bare as an evolving backdrop; clock GROW from a sequencer so the garden grows on the beat; sweep VIEW with a slow LFO for a drifting parallax pan; or feed a camera into background and outlines into a mixer for a garden-stencil overlay.",

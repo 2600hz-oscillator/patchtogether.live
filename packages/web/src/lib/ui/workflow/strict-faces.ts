@@ -3687,6 +3687,27 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // control's `aria-valuetext`.
   'mandleblot',
 
+  // ── LUSH GARDEN (2026-08-23) ──────────────────────────────────────────────
+  //
+  // A generative botanical garden, and the promotion is a STRICT GAIN at every
+  // lane tier: today its tile is a ModuleShellPlaceholder with no picture at all,
+  // and `hasVideoSurface` gives the faced tile a live one.
+  //
+  // ⚠ THE PROMOTION IS ALSO A P1 FIX. With no PUSH_CARD_CONTROLS override and no
+  // face, the module fell to Push 2's GENERIC tier, which skips only params that
+  // are momentary/non-turnable/declared `noUserControl` — and this def declared
+  // none. All SEVEN params got an encoder, including three synthetic ones, and
+  // turning `cv_grow` latches gated mode PERMANENTLY (the RATE knob dies with no
+  // badge, because the badge reads gate edges and an encoder produces none). The
+  // face moves it to the FACE tier at four controls, and the `noUserControl`
+  // block declared alongside it is what makes the other three unreachable.
+  //
+  // ⚠ Its rank is driven by ONE fact: the output ACCUMULATES. `rate` is the only
+  // control over the generator; the other three are a camera over a scene that
+  // already exists. That argument would be wrong for a filter, where rank 1 is a
+  // level.
+  'lushgarden',
+
   // ── CUT B (2026-08-23) — the "screen-panel" cut, which wanted no panels ────
   //
   // SPECTROGRAPH — the cheapest face in the fleet, and the one that had to
