@@ -1098,18 +1098,14 @@ jobs:
       # and scripts/ci-playwright-timeout.test.ts enforces exactly that.
       #
       # ⚠ THIS ADDS NO CI WALL-TIME. A timeout only decides when a WEDGED run
-      # is killed; a healthy shard still finishes in ~13 min. What it buys is
-      # room for the headroom guard below to be meaningful instead of red on
-      # arrival — #1454's 892 s is still caught (87 % of 1020 s).
+      # is killed; a healthy shard still finishes in ~13 min.
       #
-      # ⚠ AND THE CLIFF IS STILL INVISIBLE FROM CI OUTPUT ALONE, which is what
-      # scripts/e2e-shard-budget.sh is for: it prints every shard's percentage
-      # of budget on EVERY run, warns from 70 %, and fails from 85 % — so a
-      # lane running out of room is a gradual, visible signal rather than the
-      # day main goes red. 2026-08-11: shard 3 finished at 892 s against 900 s
-      # — EIGHT SECONDS of slack — after #1470 consumed the headroom and #1454
-      # landed on top. Two individually-green PRs collided on a budget neither
-      # could see.
+      # ⚠ THE HEADROOM GUARD THAT USED TO WRAP THIS COMMAND IS DELETED (owner
+      # ruling, 2026-08-23). It failed a shard at 85% of this budget even when
+      # EVERY TEST PASSED, which made a forecast about future capacity into a
+      # present-day red — and it fired on stale cost data far more often than
+      # on a real capacity problem. A run now fails when TESTS fail, or when a
+      # shard is genuinely killed by --global-timeout. Nothing else.
       #
       # ⚠ ON THE COMMAND LINE, NOT IN e2e/playwright.config.ts, DELIBERATELY.
       # A `globalTimeout` in the config would be one number shared by all six
@@ -1156,8 +1152,7 @@ jobs:
           FILES=$(flox activate -- node scripts/e2e-shard-plan.mjs ${{ matrix.shard }} 10 --files $SPECS)
           echo "shard ${{ matrix.shard }}/10 -> $(echo "$FILES" | wc -w) spec files"
           # shellcheck disable=SC2086 # why: $FILES is this shard's spec list; word splitting is how playwright receives one argument per spec file. Quoting it would pass a single nonexistent filename.
-          flox activate -- bash scripts/e2e-shard-budget.sh -- \
-            npx --workspace e2e playwright test \
+          flox activate -- npx --workspace e2e playwright test \
             --global-timeout 1020000 \
             --grep-invert "@collab|@capacity|BEHAVIORAL input coverage" \
             $FILES \
@@ -2387,20 +2382,15 @@ jobs:
           # ordering, or the runner reaps the job before Playwright can write
           # its report and the shard dies without evidence.
           #
-          # ⚠ THE BUDGET WRAPPER IS THE POINT, not decoration. --global-timeout
-          # is a CLIFF, not a gauge: a shard at 99% of it and a shard at 40%
-          # produce byte-identical green output, so the only signal is the day
-          # it runs out. That day was 2026-08-20 (#2039) — shard 2 hit 600 s
-          # with 49 passed, ZERO failed and 4 planned scenes never reached, and
-          # nothing in the log said "out of room" because nothing was measuring
-          # room. `scripts/e2e-shard-budget.sh` prints this shard's percentage
-          # of budget on EVERY run and fails at 85%, so the next time this lane
-          # grows into its ceiling it says so in the shard that is still green.
-          # It derives the threshold from the --global-timeout below rather
-          # than re-typing it, and it propagates a real test failure verbatim
-          # instead of relabelling it as a budget failure.
-          flox activate -- bash scripts/e2e-shard-budget.sh -- \
-            npx --workspace e2e playwright test \
+          # ⚠ THE BUDGET WRAPPER THAT USED TO WRAP THIS COMMAND IS DELETED
+          # (owner ruling, 2026-08-23). It failed this lane at 85% of the 600 s
+          # budget with EVERY TEST PASSING — a forecast about future capacity
+          # reported as a present-day failure. It red-flagged main on
+          # 2026-08-23 for exactly that reason, on stale cost data rather than
+          # a real capacity problem. --global-timeout remains the one real
+          # guard: a shard genuinely killed by it fails, and that is the only
+          # capacity failure left.
+          flox activate -- npx --workspace e2e playwright test \
             --config=vrt/vrt.config.ts --grep "$GREP" --global-timeout 600000 2>&1 | tee vrt-shard-run.log
           RC=${PIPESTATUS[0]}
           set -e

@@ -54,7 +54,7 @@
 // instant the element paints, so raising it adds exactly zero to a green run
 // and changes only what happens on a run that was going to be a false red.
 // The bound still exists to stop a genuinely broken app hanging the lane —
-// which is what `--global-timeout` and `scripts/e2e-shard-budget.sh` bound
+// which is what `--global-timeout` bounds
 // from the outside anyway.
 //
 // ⚠ THIS IS NOT A LICENCE TO WIDEN AN ASSERTION. Bounds only. If a number is
@@ -103,7 +103,7 @@ export const PLACEHOLDER_PAINT_MS = SLOW_RENDER ? 45_000 : 15_000;
  * hash-transparent by design.
  *
  * ⚠ Raising a FAILURE bound does not hide a COST regression. Lane cost is
- * gated separately and explicitly by `scripts/e2e-shard-budget.sh`, which
+ * bounded by `--global-timeout`, which
  * fails a shard at 0.85 of its `--global-timeout` and prints the percentage on
  * every run, green or not. The budget is the gauge; this is only the bound.
  */
