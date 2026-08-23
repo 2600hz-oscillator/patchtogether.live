@@ -1,6 +1,8 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
   import Canvas from '$lib/ui/Canvas.svelte';
+  import AudioGate from '$lib/ui/AudioGate.svelte';
+  import { createAudioGate } from '$lib/audio/audio-gate.svelte';
   import { ydoc, bindRackspace, unbindRackspace } from '$lib/graph/store';
   import { attachLocalReplica } from '$lib/multiplayer/local-replica';
   import { getOrCreateLocalScratchId } from '$lib/storage/local-scratch';
@@ -80,6 +82,26 @@
       (window as unknown as { __ptScratchReplica?: boolean }).__ptScratchReplica === true) ||
     !(typeof navigator !== 'undefined' && navigator.webdriver === true);
 
+  // AUDIO GATE (#1826) — /rack booted NO engine and showed NO prompt: the
+  // AudioContext can't start without a gesture (autoplay policy), and unlike
+  // /r/[id] there was no overlay saying so, so the default route sat silently
+  // dead until the user happened to click something. Mount the same gate
+  // /r/[id] uses: Canvas wires its booter, the overlay resumes+boots on first
+  // click and hides while the ctx is `running`.
+  //
+  // ⚠ SUPPRESSED UNDER WEBDRIVER, same runtime signal (and same reasoning) as
+  // `replicaEnabled` above: the overlay is full-screen and click-intercepting,
+  // and the /rack e2e fixture population boots this route and clicks
+  // immediately — their engine still boots from that first gesture, exactly
+  // today's behavior. `window.__ptRackAudioGate = true` opts a spec back IN;
+  // `rack-audio-gate.spec.ts` uses it to prove the real-user path (overlay
+  // visible → click → ctx running) and that plain webdriver runs see nothing.
+  const audioGate = createAudioGate();
+  const audioGateVisible =
+    (typeof window !== 'undefined' &&
+      (window as unknown as { __ptRackAudioGate?: boolean }).__ptRackAudioGate === true) ||
+    !(typeof navigator !== 'undefined' && navigator.webdriver === true);
+
   // SEED GATE for the workflow ensures (only meaningful when the replica is ON).
   // Canvas mounts IMMEDIATELY (engine ready for users + e2e — do NOT block the
   // whole canvas on the seed); we thread a `seeded` boolean down so Canvas's two
@@ -129,7 +151,11 @@
 {#key scratchId}
   <Canvas
     {headerAuth}
+    {audioGate}
     rackspaceId={scratchId}
     scratchSeeded={replicaEnabled ? seeded : undefined}
   />
 {/key}
+{#if audioGateVisible}
+  <AudioGate gate={audioGate} />
+{/if}
