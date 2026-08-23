@@ -938,17 +938,22 @@ test.describe('BACKDRAFT — video feedback generator', () => {
         n.params.darken = 0.4;
       });
     });
-    await page.waitForTimeout(120);
-
-    const params = await page.evaluate(() => {
-      const w = globalThis as unknown as {
-        __patch: { nodes: Record<string, { params: Record<string, number> }> };
-      };
-      const n = w.__patch.nodes['bd'];
-      return { fb: n?.params.feedback, ch: n?.params.chroma, dk: n?.params.darken };
-    });
-    expect(params.fb).toBe(1.2);
-    expect(params.ch).toBe(1.8);
-    expect(params.dk).toBe(0.4);
+    // Poll the STORE — the real subject. This site reads no pixels, so it is a
+    // plain state readback and NOT one of backdraft's frame-count waits (those
+    // gate the per-frame nest and are untouched here). One assertion over the
+    // whole record: a partial write fails.
+    await expect
+      .poll(
+        () =>
+          page.evaluate(() => {
+            const w = globalThis as unknown as {
+              __patch: { nodes: Record<string, { params: Record<string, number> }> };
+            };
+            const n = w.__patch.nodes['bd'];
+            return { fb: n?.params.feedback, ch: n?.params.chroma, dk: n?.params.darken };
+          }),
+        { message: 'all three BACKDRAFT param writes land in the patch store' },
+      )
+      .toEqual({ fb: 1.2, ch: 1.8, dk: 0.4 });
   });
 });

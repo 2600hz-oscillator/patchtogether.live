@@ -173,20 +173,22 @@ test.describe('SHAPEGEN — 3D-shape-generator video module', () => {
         n.params.rotate = 0.5;
       });
     });
-    await page.waitForTimeout(100);
-
-    const params = await page.evaluate(() => {
-      const w = globalThis as unknown as {
-        __patch: { nodes: Record<string, { params: Record<string, number> }> };
-      };
-      const n = w.__patch.nodes['sg'];
-      return {
-        size: n?.params.size,
-        rotate: n?.params.rotate,
-      };
-    });
-
-    expect(params.size).toBe(2);
-    expect(params.rotate).toBe(0.5);
+    // The subject is the store values themselves, so poll THOSE rather than
+    // budget a guess for how long the Y.Doc transaction takes to be observable.
+    // Polling the whole record keeps this ONE assertion — a partial write is a
+    // failure, exactly as it was with two separate reads off one snapshot.
+    await expect
+      .poll(
+        () =>
+          page.evaluate(() => {
+            const w = globalThis as unknown as {
+              __patch: { nodes: Record<string, { params: Record<string, number> }> };
+            };
+            const n = w.__patch.nodes['sg'];
+            return { size: n?.params.size, rotate: n?.params.rotate };
+          }),
+        { message: 'both SHAPEGEN knob writes land in the patch store' },
+      )
+      .toEqual({ size: 2, rotate: 0.5 });
   });
 });
