@@ -1200,7 +1200,38 @@ test.describe('?shell=1 video visibility', () => {
     await expect(page.locator('[data-testid="module-shell-placeholder"]')).toHaveCount(0);
     await expect(page.locator('[data-testid="module-shell"]')).toHaveCount(0);
     await expect(page.locator('[data-testid="video-tile-thumb"]')).toHaveCount(0);
-    await expect(page.locator('[data-testid="headless-source-host"]')).toHaveCount(0);
+
+    // ⚠ RE-POINTED (2026-08-23, #1754), AND THE OLD LINE IS WORTH READING BEFORE
+    // THE NEW ONE. It was `expect(headless-source-host).toHaveCount(0)` — "the
+    // legacy shell hosts nothing" — and it was TRUE ONLY BECAUSE A PRODUCER WAS
+    // DEAD. The pinned TIMELORDE every rack auto-spawns is canvas-hidden, so its
+    // card mounted NOWHERE in either shell; `video_out` served its idle field
+    // forever (measured `nonBlack 0/3072, maxLuma 8`). Fixing that gives legacy a
+    // host, so the old assertion could only stay green by leaving the bug in.
+    //
+    // ⚠ AND THE CLAIM THIS TEST IS ACTUALLY MAKING IS UNDAMAGED. Its subject is
+    // "the SHELL is a strict no-op under ?shell=legacy" — no shell tiles, no
+    // thumbs, the videoOut verbatim card. A headless host is not a shell feature:
+    // it is a LIFETIME mechanism keyed on `laneOmitsNode`, the one arm of
+    // `needsHeadlessSourceMount` that its own doc-comment calls "the ONE ARM THAT
+    // IS NOT SHELL-SPECIFIC". So the assertion is narrowed to what the shell
+    // itself may not do — host a module the SHELL swapped away — which is the
+    // regression the original line was written to catch, and it still fails on it.
+    // ⚠ AN ATTRIBUTE SELECTOR, NOT `filter({hasNot})`: the type lives on the host
+    // element ITSELF, and `filter` matches DESCENDANTS — it would have excluded
+    // nothing and passed for the wrong reason.
+    await expect(
+      page.locator('[data-testid="headless-source-host"]:not([data-node-type="timelorde"])'),
+      'a headless host under ?shell=legacy for something OTHER than the canvas-hidden clock — ' +
+        'the shell is supposed to be a strict no-op here',
+    ).toHaveCount(0);
+    // POSITIVE CONTROL for the narrowing: the clock's host really is the one
+    // being excluded, so this cannot quietly become "count anything, exclude
+    // everything".
+    await expect(
+      page.locator('[data-testid="headless-source-host"][data-node-type="timelorde"]'),
+      'the canvas-hidden clock has no host on legacy either — #1754 is only half fixed',
+    ).toHaveCount(1);
   });
 });
 

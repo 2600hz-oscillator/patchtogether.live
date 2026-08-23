@@ -17,7 +17,7 @@
 // that core through the real card.
 
 import { test, expect, type Page } from '@playwright/test';
-import { spawnPatch, type SpawnNode, type SpawnEdge } from './_helpers';
+import { spawnPatch, type SpawnNode, type SpawnEdge, canvasPane} from './_helpers';
 // ⚠ THE MODULE'S OWN MATH, IMPORTED RATHER THAN RESTATED. `clampBpm` and
 // `median` are the exact functions `TapTempo` runs, and `TAP_HISTORY` is the
 // ring depth the eviction argument below depends on. Re-implementing any of the
@@ -397,7 +397,7 @@ test.describe('TIMELORDE tap tempo', () => {
 
     // NOT selected yet: Space must NOT change the tempo.
     // (Click empty canvas to ensure nothing is selected.)
-    await page.locator('.svelte-flow__pane').click({ position: { x: 5, y: 5 } });
+    await canvasPane(page).click({ position: { x: 5, y: 5 } });
     const before = await readBpm(page, TL);
     await pressSpace(page, 2, 500);
     await page.waitForTimeout(300);

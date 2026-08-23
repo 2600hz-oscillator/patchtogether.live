@@ -87,6 +87,100 @@ export function transportEventsToRunState(args: {
   return args.prevRunning;
 }
 
+// ---------------- Pure EXTERNAL-CLOCK BPM LOCK helper ----------------
+//
+// ⚠ THE DEFECT THIS EXISTS TO CLOSE, and it is a DATA-LOSS one rather than an
+// audio one. When a cable sits in `clock` the worklet posts its measured tempo
+// and the factory writes it into BOTH the `bpm` AudioParam and
+// `livePatch.nodes[id].params.bpm` — because LIVECODE's `clock.bpm()` reads the
+// stored param and would otherwise diverge from the rack. That write-through is
+// correct and stays. What was wrong is that it was DESTRUCTIVE: patch a
+// MIDICLOCK running at 137 into a rack whose player had hand-set 120, pull the
+// cable out again, and the knob is at 137 forever. The hand-set tempo is gone,
+// there is no undo marker (the write does not ride the UndoManager — it is a
+// factory write, not a user edit), and the ONE hint that a follower owned the
+// number lived in a card footer that faceplates do not paint.
+//
+// The factory's own comment argued the overwrite was intentional ("the last
+// followed tempo is the most sensible value to hold"). That argument is about
+// what to hold WHILE LOCKED, and it is right; it says nothing about what to hold
+// after the cable is gone. So the lock is now NON-DESTRUCTIVE: the player's
+// tempo is STASHED the moment the follower first takes the knob, and RESTORED
+// when the cable leaves. Nothing about the locked behaviour changes — every
+// reader still sees the measured tempo for exactly as long as the clock owns it.
+//
+// Pure + sync (the transportEventsToRunState shape) so the whole three-edge
+// state machine runs in vitest with no AudioContext, no worklet and no timers.
+export interface BpmLockState {
+  /**
+   * The tempo the PLAYER set, stashed at the instant an external clock first
+   * overwrote it. `null` = no external clock currently owns the tempo, so there
+   * is nothing to give back.
+   */
+  stashed: number | null;
+}
+
+/** A rack with no external clock patched: nothing stashed, nothing owed. */
+export const BPM_LOCK_UNLOCKED: BpmLockState = { stashed: null };
+
+/** TIMELORDE's declared `bpm` range — the clamp the follower has always applied
+ *  (a glitchy measurement must not push the param out of bounds). Exported so a
+ *  test asserts against the DEF's numbers rather than re-typing them. */
+export const TIMELORDE_BPM_MIN = 10;
+export const TIMELORDE_BPM_MAX = 300;
+function clampTimelordeBpm(bpm: number): number {
+  return Math.max(TIMELORDE_BPM_MIN, Math.min(TIMELORDE_BPM_MAX, bpm));
+}
+
+/**
+ * A `measuredBpm` message arrived from the worklet.
+ *
+ * `measuredBpm <= 0` is the worklet's DROPOUT signal — the cable is still
+ * patched, the pulses merely stopped — so it writes nothing and stashes nothing:
+ * the external clock still owns the tempo and the last followed value stands.
+ * That is the half of the old comment's argument which was always right.
+ */
+export function externalBpmLockOnMeasure(
+  state: BpmLockState,
+  args: { measuredBpm: number; storedBpm: number },
+): { state: BpmLockState; write: number | null } {
+  if (!(args.measuredBpm > 0)) return { state, write: null };
+  // ⚠ STASH ONLY ON THE FIRST TAKE-OVER. Re-stashing on every measurement would
+  // capture the FOLLOWED tempo (we wrote it ourselves one message ago) and the
+  // restore would hand back the external clock's value — a fix that restores
+  // nothing while looking exactly like one.
+  const stashed = state.stashed ?? args.storedBpm;
+  return { state: { stashed }, write: clampTimelordeBpm(args.measuredBpm) };
+}
+
+/**
+ * The player moved the BPM control (the handle's `setParam` path — the knob, the
+ * face cell, TAP, the topbar clock surface: every user write lands there).
+ *
+ * While a lock is live this REPLACES the stash, so unlocking gives back the
+ * player's latest intent rather than whatever the tempo happened to be when the
+ * cable went in. With no lock there is nothing to remember — the stored param
+ * IS the truth — and stashing then would make the next unlock restore a stale
+ * value.
+ */
+export function externalBpmLockOnUserWrite(state: BpmLockState, value: number): BpmLockState {
+  if (state.stashed === null) return state;
+  return { stashed: value };
+}
+
+/**
+ * The `clock` cable was removed (or was never there). Returns the tempo to write
+ * back, or `null` when nothing is owed — which is the overwhelmingly common case
+ * and must therefore be a no-op rather than a write of a default.
+ */
+export function externalBpmLockOnUnpatch(state: BpmLockState): {
+  state: BpmLockState;
+  restore: number | null;
+} {
+  if (state.stashed === null) return { state, restore: null };
+  return { state: BPM_LOCK_UNLOCKED, restore: state.stashed };
+}
+
 export const timelordeDef: AudioModuleDef = {
   type: 'timelorde',
   palette: { top: 'Audio modules', sub: 'Utility' },
@@ -138,6 +232,15 @@ export const timelordeDef: AudioModuleDef = {
   ],
   outputs: [
     // Order MUST match dsp/timelorde.ts OUT_* indices.
+    //
+    // ⚠ THIS ARRAY MUST STAY AN INLINE LITERAL INSIDE THE DEF, and that is a
+    // PARSER constraint rather than a style one. The living-docs manifest reads
+    // this file as TEXT (`readModule`, module-manifest.ts) and looks for
+    // `outputs: [ … ]` in the def object; hoisting it to a named const made the
+    // manifest emit ZERO outputs for this module while every runtime gate stayed
+    // green — measured, by module-manifest.test.ts, on exactly that refactor.
+    // The swing-source roster is therefore derived AFTER the def instead (see
+    // TIMELORDE_SWING_SOURCES below).
     { id: '1x',    type: 'gate', edge: 'trigger' },
     { id: '8x',    type: 'gate', edge: 'trigger' },
     { id: '4x',    type: 'gate', edge: 'trigger' },
@@ -164,6 +267,12 @@ export const timelordeDef: AudioModuleDef = {
   params: [
     { id: 'bpm',          label: 'BPM',   defaultValue: 120, min: 10, max: 300, curve: 'log',      units: 'bpm' },
     { id: 'swingAmount',  label: 'Swing', defaultValue: 0,   min: 0,  max: 90,  curve: 'linear',   units: 'deg' },
+    // swingSource: its `options` roster is DERIVED from this def's own output
+    // fanout and ATTACHED just below the def — see TIMELORDE_SWING_SOURCES for
+    // why it cannot be written here. Twelve options is past
+    // SEGMENTED_MAX_OPTIONS, so the faceplate resolves a portaled SELECTOR
+    // printing the same twelve names the card prints, instead of an anonymous
+    // twelve-position dial reading `5`.
     { id: 'swingSource',  label: 'Src',   defaultValue: 0,   min: 0,  max: 11,  curve: 'discrete' },
     // muteOutputs (v2): 0 (default) = running + gates fire normally;
     // 1 = gates muted but the INTERNAL clock keeps generating so
@@ -175,15 +284,36 @@ export const timelordeDef: AudioModuleDef = {
     // Patches saved on v1 carry `params.isPlaying`; the factory
     // converts inline (see readMuteOutputs() below) so old racks
     // start MUTED iff the user had explicitly stopped them.
-    { id: 'muteOutputs',  label: 'Mute',  defaultValue: 0,   min: 0,  max: 1,   curve: 'discrete' },
+    //
+    // ⚠ THE `options` ROSTER IS THE WHOLE POINT OF THIS PAIR, and it is not
+    // about selectability — `looksLikeToggle` already derives a switch from a
+    // 0/1 discrete param. It is about the ONE kind of resting text the faceplate
+    // ruling permits: an option NAME that disambiguates a control's own
+    // position. `running = 0` and `muteOutputs = 1` are BYTE-IDENTICAL on all
+    // thirteen gate outputs (measured on the clock core,
+    // timelorde-clock-core.test.ts), so a player hunting "why is my whole rack
+    // silent" cannot answer it from any cable — only from seeing both switches
+    // NAME their states side by side. The words are STATES, not verbs: a roster
+    // reading STOP/START would be a command on a latching control.
+    { id: 'muteOutputs',  label: 'Mute',  defaultValue: 0,   min: 0,  max: 1,   curve: 'discrete',
+      options: [
+        { value: 0, label: 'GATES LIVE' },
+        { value: 1, label: 'MUTED' },
+      ] },
     // running (v3): driven exclusively by start_in / stop_in transport
     // gate inputs. Default 1 = clock advances. When 0 the worklet
     // freezes phase + sample-count + pending pulses; on resume the
     // counters pick up from the halted position (musical position
-    // preserved). The card has no button for this — only the external
-    // gates can flip it. Patches save it so a stopped rack stays
-    // stopped on reload.
-    { id: 'running',      label: 'Run',   defaultValue: 1,   min: 0,  max: 1,   curve: 'discrete' },
+    // preserved). Patches save it so a stopped rack stays stopped on
+    // reload. ⚠ The line that used to sit here — "the card has no button
+    // for this, only the external gates can flip it" — has been false
+    // since the card grew its RUN button, and is doubly so now: the
+    // faceplate paints it as a NAMED two-state control at rank 2.
+    { id: 'running',      label: 'Run',   defaultValue: 1,   min: 0,  max: 1,   curve: 'discrete',
+      options: [
+        { value: 0, label: 'STOPPED' },
+        { value: 1, label: 'RUNNING' },
+      ] },
     // wizardOn (card-only): 1 (default) = the dot-matrix neon WIZARD graphic
     // is shown (and pulses with the beat while running); 0 = hidden. Driven
     // by BOTH the on-card toggle button (manual override) AND the `gate`
@@ -206,12 +336,127 @@ export const timelordeDef: AudioModuleDef = {
     { id: 'swingSource', label: 'Src',   kind: 'knob', paramId: 'swingSource' },
   ],
 
+  // TAP TEMPO is not a param — it is a CALL into a TapTempo controller that,
+  // from the second tap onward, writes the ordinary `bpm` param. A family entry
+  // is how a non-param control gets a rank, a doc blurb and a shell cell; the
+  // `testidPrefix` matches the testid the legacy card already emits, so the two
+  // surfaces address one control by one string.
+  controlFamilies: [
+    { id: 'timelorde-tap', label: 'Tap tempo', kind: 'transport', testidPrefix: 'timelorde-tap' },
+  ],
+
+  // ── THE FACEPLATE ────────────────────────────────────────────────────────
+  //
+  // `order` is PRIORITY (what a shrinking tier keeps); `pages` is FUNCTION
+  // order. They disagree DELIBERATELY here and the disagreement is the design:
+  // the transport pair ranks 2/3 because a stopped rack is the worst state this
+  // module can be in, while `bpm` — rank 1 — sits in a band of its own because
+  // tempo and transport are different questions.
+  //
+  //  1 `bpm`         on most modules rank 1 is the thing you RIDE; here it is
+  //                  the thing the whole rack is DERIVED from. Thirteen outputs
+  //                  and every sequencer in the patch are a function of this one
+  //                  number, and it is the only continuous control on the
+  //                  module. Nothing else can be rank 1.
+  //  2 `running`     the control that un-silences a silent rack. It outranks
+  //                  MUTE because STOP is the strictly worse state: un-muting a
+  //                  stopped rack does not start it
+  //                  (timelorde-transport-state.ts). ⚠ Wrong ranking for any
+  //                  non-singleton — on a per-voice module a transport toggle is
+  //                  setup, not performance.
+  //  3 `muteOutputs` the other half of the pair, and the two are only legible
+  //                  TOGETHER: their two rosters side by side are the only
+  //                  surface that separates four states the jacks cannot.
+  //  4 `swingAmount` the only other continuous control. Below the transport pair
+  //                  because it is INERT at its shipped default (0 = an exact
+  //                  duplicate of the source), and a lane cell that does nothing
+  //                  on a fresh spawn is worse than absent.
+  //  5 `swingSource` setup, not performance — chosen once. Legible at the dock
+  //                  as a named selector, pointless at a 46 px lane column where
+  //                  `paramCellKind` degrades every roster to a knob.
+  //  6 `wizardOn`    it governs a picture that only exists on the DOCK, so a
+  //                  lane cell for it would switch something the lane cannot
+  //                  show.
+  //  7 TAP          ⚠ DOCK-ONLY, AND THAT IS A REAL LOSS ARGUED RATHER THAN A
+  //                  formality. With `glyph: 'none'` the caps are mini 1 /
+  //                  compact 3 / plate 6, so rank 7 never reaches a lane tier —
+  //                  and TAP is a PERFORMANCE gesture, which normally wins that
+  //                  argument. It loses here because each of the six params
+  //                  above it is defensible on its own AND because TAP alone has
+  //                  a working keyboard route the params do not (Space, while
+  //                  the node is selected). Revert = rank it 5 and demote
+  //                  `swingSource`; the cost is the swing division going back to
+  //                  an anonymous lane knob.
+  //
+  // ⚠ `glyph: 'none'` IS FORCED, NOT CHOSEN. `hasVideoSurface` is
+  // `domain === 'video'` and timelorde is audio, so the lane paints no
+  // VideoTileThumb; and `primaryAudioOutPortId` matches `type === 'audio'`,
+  // while all fourteen outputs are thirteen `gate` plus one `video` — so every
+  // glyph literal except 'none' resolves `{kind:'static'}` and reddens the
+  // dead-glyph clause. The lane tile is controls-only. That is a five-module
+  // platform gap (`ShellExtension.glyph` renders only under
+  // `binding.kind === 'algorithm'`), not a decision made here.
+  face: {
+    order: [
+      'bpm',
+      'running',
+      'muteOutputs',
+      'swingAmount',
+      'swingSource',
+      'wizardOn',
+      'timelorde-tap-{n}',
+    ],
+    glyph: 'none',
+    extension: 'timelorde',
+    pages: [
+      // TRANSPORT. The two params that decide whether the RACK MOVES, adjacent,
+      // because they are only legible as a pair. TAP is homed HERE and not in
+      // `tempo`: it SETS the tempo, so it reads as a tempo control — but it is a
+      // PRESS, and the one thing a press belongs beside is the other things you
+      // press.
+      { id: 'transport', label: 'transport', controls: ['running', 'muteOutputs', 'timelorde-tap-{n}'] },
+      // TEMPO. One continuous control and the thing it is measured in.
+      { id: 'tempo', label: 'tempo', controls: ['bpm'] },
+      // SWING. Depth and which train it shadows: one idea, two halves, and the
+      // second is meaningless without the first.
+      { id: 'swing', label: 'swing', controls: ['swingAmount', 'swingSource'] },
+      // DISPLAY. ⚠ THIS BAND IS THE DECLARED FALLBACK, NOT THE FIRST CHOICE, and
+      // the reason is worth keeping. The design wanted `wizardOn` painted by the
+      // BODY beside the picture it governs — but the body-surfaced-control
+      // mechanism is `face.xyPads[].surface`, which exists only for PADS, and
+      // `module-face-lint`'s completeness loop has no filter and no skip list: a
+      // param with no cell is RED. Painting it in BOTH places is refused for a
+      // different gate — `faces-parity` asserts EXACT multiset equality between
+      // the dock's `control-*` testids and the def's param ids, and it scans the
+      // extension body too, so a second `control-wizardOn` fails the whole face.
+      // So the switch lives in a band and the body paints only the picture and
+      // its SCREEN switch. Nothing is lost: the card's owl-thumbnail button was
+      // decoration on the same param.
+      { id: 'display', label: 'display', controls: ['wizardOn'] },
+    ],
+    // ⚠ AUTHORED BECAUSE THE DERIVATION CANNOT SEE THESE JOINS, and that is a
+    // property of the PORT NAMES rather than a shortfall. `face.rear` derives a
+    // section per page from the `<param>_cv` convention; timelorde's inputs
+    // target the same state under different names — `start_in`/`stop_in` drive
+    // `running`, `gate` drives `wizardOn` — so nothing joins them and the whole
+    // input rail would be uncurated. These two groups make the rear say what the
+    // front says. The OUTPUT rail is left ALONE: thirteen gate jacks and one
+    // video jack split by cable domain is already right, and
+    // `rearSectionColumns` widens the gate section on its own.
+    rear: {
+      groups: [
+        { id: 'transport', label: 'transport', ports: ['start_in', 'stop_in'] },
+        { id: 'tempo', label: 'clock', ports: ['clock'] },
+      ],
+    },
+  },
+
   docs: {
     explanation:
       "The rack's master clock — one canonical tempo source per patch (it's a singleton and can't be deleted; a rack that opens without one gets one dropped in automatically). Set a BPM and TIMELORDE fans out a whole family of clock outputs at standard musical divisions of that tempo, from a quarter-note pulse up through sixteenths and down to multi-bar pulses, plus a swung tap — so any sequencer, LFO, or trigger consumer can patch the exact division it needs without a separate clock divider. Patch an external clock into CLOCK IN and it locks its tempo to the incoming pulses (and follows that measured BPM everywhere, including LIVECODE's clock). Its transport is drivable hands-free via START/STOP gate inputs (wire a MIDICLOCK's start/stop to slave the rack to hardware), and the big card display shows a beat-pulsing neon WIZARD — or, if you patch a video feed into VIDEO IN, it becomes a live monitor that also passes the feed through VIDEO OUT, so TIMELORDE can sit inline in a video chain.",
     inputs: {
       clock:
-        "External clock input: while patched, TIMELORDE locks its master tempo to the measured period between incoming rising edges, so every division output tracks the external pulse train. Unpatch and it falls back to the internal BPM after a couple of beats. One beat of lock-in is unavoidable: a period needs two edges to measure, so the FIRST incoming beat has its 2x / 4x / 8x subdivisions laid out at whatever tempo the BPM knob says instead. They are all still there — the spacing is off for one beat, nothing is dropped — and from the second beat on the multipliers ride the measured tempo. Set the knob near the incoming tempo and even that beat lands where you expect.",
+        "External clock input: while patched, TIMELORDE locks its master tempo to the measured period between incoming rising edges, so every division output tracks the external pulse train. Unpatch and it falls back to the internal BPM after a couple of beats — and to the BPM YOU set, not to the tempo the hardware happened to be running: the lock puts your setting aside rather than overwriting it. One beat of lock-in is unavoidable: a period needs two edges to measure, so the FIRST incoming beat has its 2x / 4x / 8x subdivisions laid out at whatever tempo the BPM knob says instead. They are all still there — the spacing is off for one beat, nothing is dropped — and from the second beat on the multipliers ride the measured tempo. Set the knob near the incoming tempo and even that beat lands where you expect.",
       start_in:
         "Transport START: a rising edge resumes the clock from wherever it was last stopped (musical position is preserved, like a DAW play button). Wire MIDICLOCK's start here to slave the rack's transport to a hardware MIDI device.",
       stop_in:
@@ -240,7 +485,7 @@ export const timelordeDef: AudioModuleDef = {
         "Cross-domain video output: the picture the card's big display shows — the live feed when something is patched into VIDEO IN, otherwise the beat-pulsing wizard — passed on for downstream video modules.",
     },
     controls: {
-      bpm: "BPM — the master tempo every division output is derived from (10–300). When an external clock is patched it's overridden by the measured external tempo.",
+      bpm: "BPM — the master tempo every division output is derived from (10–300). While an external clock is patched into CLOCK IN the measured external tempo takes the control over, so everything that reads the tempo (the outputs, LIVECODE's clock, a collaborator's screen) agrees with the hardware. Your own setting is not lost while that happens: it is put aside and handed back the moment you pull the clock cable out, and if you re-set the tempo during the lock it is that later setting you get back.",
       swingAmount: "SWING — how far the SWING output's off-beats are pushed late, as an angle of the SOURCE division's own pulse interval (0–90°, so at most a quarter of the way to the next pulse); 0 is dead-straight, higher values deepen the shuffle. Because it is measured against the SRC train rather than the master beat, the same setting means the same feel whichever division you swing.",
       swingSource: "SRC — which clock division feeds the SWING tap (0–11, one per gate output in the order 1x, 8x, 4x, 2x, 1/2, 1/3, 1/4, 1/8, 1/12, 1/16, 1/32, 1/64), so you can shuffle a faster or slower subdivision than the default 1x quarter-note.",
       muteOutputs:
@@ -248,7 +493,9 @@ export const timelordeDef: AudioModuleDef = {
       running:
         "RUN — the transport state (1 = clock advancing, 0 = halted with phase frozen). It is driven by the START/STOP gate inputs as well as the card's transport button, and is saved so a stopped rack reloads stopped. Halting is a real stop: the phase accumulator, the sample counter and the pending pulses all freeze, so nothing downstream advances (unlike MUTE, which only silences the gates). Because both states look identical from a patch cable, the card's TRANSPORT readout is the thing that tells them apart — and note that STOPPED + MUTED is its own state: un-muting a rack that is also stopped will not start it.",
       wizardOn:
-        "WIZARD — whether the neon WIZARD card graphic is shown (1) or hidden (0); it pulses with the beat while running. Driven by both the on-card wizard toggle and the level on the gate input. Card-visual only — not used by the clock.",
+        "WIZARD — whether the owl display is shown (1) or hidden (0); it pulses with the beat while running. Driven by both this switch and the level on the gate input, which converge on one state. Display-only — not used by the clock, and VIDEO OUT keeps passing the picture on either way.",
+      'timelorde-tap-{n}':
+        "TAP — set the tempo by ear: tap it twice in time with the beat and the BPM locks to the interval you tapped, then keep tapping to refine it (it takes the median of your recent taps, so one mistimed tap does not drag the estimate, and a pause of about two seconds starts a fresh count). It writes the ordinary BPM control, so the value persists and syncs to everyone in the rack. While an external clock is patched into CLOCK IN it does nothing at all — the measured external tempo owns the BPM then.",
     },
   },
 
@@ -300,6 +547,15 @@ export const timelordeDef: AudioModuleDef = {
 
     const nodeId = node.id;
 
+    // The player's own tempo, held for the duration of an external lock. See
+    // BpmLockState above for the data-loss defect this closes.
+    let bpmLock: BpmLockState = BPM_LOCK_UNLOCKED;
+    function writeBpm(value: number): void {
+      bpmParam?.setValueAtTime(value, ctx.currentTime);
+      const live = livePatch.nodes[nodeId];
+      if (live?.params) live.params.bpm = value;
+    }
+
     // hasExternalClock is reflected from the live patch every ~250 ms so the
     // worklet knows when to honor isPlaying vs force always-on.
     let timer: ReturnType<typeof setInterval> | null = null;
@@ -313,6 +569,17 @@ export const timelordeDef: AudioModuleDef = {
         }
       }
       if (hasExt) hasExt.setValueAtTime(hasEdge ? 1 : 0, ctx.currentTime);
+      // ⚠ THE UNLOCK EDGE IS THE CABLE LEAVING, NOT THE PULSES STOPPING. The
+      // worklet posts `bpm: 0` on dropout while the cable is still in, and that
+      // is NOT an unlock — the external transport still owns the tempo and the
+      // last followed value must stand. This scan is the only place that knows
+      // the difference, which is why the restore lives here and not in the
+      // message handler.
+      if (!hasEdge) {
+        const { state, restore } = externalBpmLockOnUnpatch(bpmLock);
+        bpmLock = state;
+        if (restore !== null) writeBpm(restore);
+      }
     }
     syncExternalFlag();
     timer = setInterval(syncExternalFlag, 250);
@@ -346,14 +613,20 @@ export const timelordeDef: AudioModuleDef = {
         // posts bpm:0; we DON'T clobber the param then — the last followed
         // tempo is the most sensible value to hold (and the internal knob
         // resumes governing the worklet phase via the worklet's own logic).
-        if (measuredBpm > 0 && bpmParam) {
-          // Clamp to the param's declared range so a glitchy measurement
-          // can't push it out of bounds.
-          const clamped = Math.max(10, Math.min(300, measuredBpm));
-          bpmParam.setValueAtTime(clamped, ctx.currentTime);
-          const live = livePatch.nodes[nodeId];
-          if (live?.params) live.params.bpm = clamped;
-        }
+        //
+        // ⚠ AND THE WRITE IS NO LONGER DESTRUCTIVE. The player's own tempo is
+        // STASHED on the first take-over and given back by syncExternalFlag the
+        // moment the cable leaves (externalBpmLockOnMeasure / …OnUnpatch above).
+        // The locked behaviour is byte-identical to before; only the state after
+        // an unpatch changed, and it changed from "the player's tempo is gone
+        // with no undo marker" to "the player's tempo comes back".
+        const liveNode = livePatch.nodes[nodeId];
+        const storedRaw = liveNode?.params?.bpm;
+        const storedBpm =
+          typeof storedRaw === 'number' ? storedRaw : (bpmParam?.value ?? 120);
+        const step = externalBpmLockOnMeasure(bpmLock, { measuredBpm, storedBpm });
+        bpmLock = step.state;
+        if (step.write !== null) writeBpm(step.write);
       }
     };
 
@@ -583,6 +856,11 @@ export const timelordeDef: AudioModuleDef = {
         ['video_out', { analyser: videoTapAna, sampleRate: ctx.sampleRate, drawFrame }],
       ]),
       setParam(paramId, value) {
+        // ⚠ EVERY user tempo write lands here — the knob, the faceplate cell,
+        // TAP, the topbar clock surface — so this is the one seam that can see
+        // "the player re-set the tempo WHILE the follower owned it" and keep the
+        // stash honest. With no lock live it is a no-op (see …OnUserWrite).
+        if (paramId === 'bpm') bpmLock = externalBpmLockOnUserWrite(bpmLock, value);
         params.get(paramId)?.setValueAtTime(value, ctx.currentTime);
       },
       readParam(paramId) {
@@ -608,6 +886,29 @@ export const timelordeDef: AudioModuleDef = {
         }
         if (key === 'measuredBpm') {
           return measuredBpm;
+        }
+        if (key === 'hasDisplayFrame') {
+          // ⚠ THIS EXISTS TO MAKE THE CARD'S PUSH CONVERGENT RATHER THAN
+          // FIRE-AND-FORGET, and it closes a measured defect.
+          //
+          // `write(node,'displayFrame', …)` is the ONLY thing that ever fills
+          // `lastDisplayFrame`, and under `prefers-reduced-motion: reduce` the
+          // card paints exactly ONE frame and pushes exactly ONCE. A push that
+          // lands before this handle exists — or on a handle that is then
+          // replaced — is therefore lost FOREVER, and `drawFrame` falls back to
+          // the #07090d idle field for the rest of the session. MEASURED on a
+          // default rack, `emulateMedia({reducedMotion:'reduce'})`, card mounted
+          // and its own canvas carrying the owl at `nonBlack 47034/48400`:
+          // `video_out` read `nonBlack 0/3072, maxLuma 9`. Every reduced-motion
+          // player's TIMELORDE was a black square downstream. Nudging the card
+          // into one more render restored it to `2940/3072` immediately, which
+          // is what identified the push rather than the render as the loss.
+          //
+          // With this key the card can ASK whether its frame arrived and push
+          // again if it did not — so a lost write self-heals, and a replaced
+          // handle (which reports false again) does too. Cheap by construction:
+          // a boolean, no allocation, no copy.
+          return lastDisplayFrame ? 1 : 0;
         }
         if (key === 'running') {
           // Reflects the transport-gate state. start_in/stop_in flip
@@ -659,3 +960,45 @@ export const timelordeDef: AudioModuleDef = {
     };
   },
 };
+
+/**
+ * The twelve divisions `swingSource` selects between, as an `options` ROSTER —
+ * DERIVED from this def's own output fanout, never typed.
+ *
+ * ⚠ WHY DERIVED. `swingSource` shipped as a 12-state discrete param with NO
+ * roster, so a faceplate over it paints an anonymous dial reading `5` for a
+ * state the module already has a name for. The names existed — as a CARD-LOCAL
+ * array (`TimelordeCard.svelte`'s `SRC_LABELS`) duplicating this very list,
+ * which is the `sampleHold` / `moog904b` shape and the backdraft one-source
+ * rule applied to a list instead of a range. Re-typing them here would have
+ * MOVED the duplicate rather than removed it, and it would have been a
+ * hand-typed population count in disguise: the outputs' own comment says the
+ * order MUST match the DSP's `OUT_*` indices, so the twelfth entry is not a
+ * fact anyone may re-state.
+ *
+ * ⚠ WHY IT IS ATTACHED HERE RATHER THAN WRITTEN INSIDE THE PARAM. A def cannot
+ * reference itself while it is being constructed, and hoisting `outputs` to a
+ * named const so it could is what the outputs' own comment now forbids: the
+ * living-docs manifest parses this file as TEXT and emitted ZERO outputs for
+ * timelorde when the literal moved. So the roster is computed from the finished
+ * def and written onto the param it belongs to. `param-vocabulary`,
+ * `contract-lock` and `paramCellKind` all read the LIVE def, so they see it.
+ *
+ * TOTAL over the declared 0..11 by construction (thirteen gate outputs minus
+ * `swing` itself, which cannot shadow itself) — which is what `param-vocabulary`
+ * requires of any roster.
+ */
+export const TIMELORDE_SWING_SOURCES: readonly { value: number; label: string }[] =
+  timelordeDef.outputs
+    .filter((o) => o.type === 'gate' && o.id !== 'swing')
+    .map((o, i) => ({ value: i, label: o.id }));
+
+{
+  const swingSourceParam = timelordeDef.params.find((p) => p.id === 'swingSource');
+  if (!swingSourceParam) {
+    // Fail LOUDLY rather than silently shipping an unnamed twelve-position dial:
+    // a rename here is exactly the drift this roster exists to prevent.
+    throw new Error('timelorde: swingSource param not found — the derived roster has nothing to attach to');
+  }
+  swingSourceParam.options = TIMELORDE_SWING_SOURCES;
+}

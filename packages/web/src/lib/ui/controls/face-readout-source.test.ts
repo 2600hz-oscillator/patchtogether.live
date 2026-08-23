@@ -73,6 +73,9 @@ import { paintsReadout } from './knob-vocabulary-model';
 // The PPQN roster itself, so the exemptions below are derived from the same
 // constant the param is built from rather than re-typed beside it.
 import { CV_BUDDY_PPQN_CHOICES } from '$lib/audio/modules/cv-buddy';
+// The twelve clock divisions `swingSource` selects — derived from timelorde's
+// own output fanout, so this exemption cannot drift from the jacks it names.
+import { TIMELORDE_SWING_SOURCES } from '$lib/audio/modules/timelorde';
 // The BAND-STEP roster, imported for the same reason as the PPQN one above:
 // cellshade's exemptions are DERIVED from the array its options are built from,
 // so the two cannot drift apart.
@@ -367,6 +370,35 @@ const NUMERIC_LABEL_EXEMPTIONS: readonly { type: string; param: string; label: s
         + 'meaning for (#2024, fixed by #2055).',
     })),
   ),
+  // ── TIMELORDE · `swingSource` (2026-08-23) ───────────────────────────────
+  //
+  // ⚠ DERIVED FROM THE ROSTER for the cvBuddy reason, and here the derivation is
+  // two levels deep: `TIMELORDE_SWING_SOURCES` is itself computed from the def's
+  // OUTPUT FANOUT (each option's label IS a gate port's id), because the twelve
+  // divisions and their ORDER are pinned to the DSP's `OUT_*` indices. Typing
+  // twelve labels here would be a third copy of a list the module already
+  // refuses to let anyone re-state.
+  //
+  // Four of the twelve read as numeric to this gate (`1x`, `2x`, `4x`, `8x`);
+  // the rest carry a slash and read as names already. Mapping the WHOLE roster
+  // is deliberate and matches cvBuddy: the anchor leg below requires every
+  // exemption to name a label that really paints, so an over-broad entry cannot
+  // hide — and a division renamed at the def would redden here rather than
+  // silently losing its approval.
+  ...TIMELORDE_SWING_SOURCES.map((o) => ({
+    type: 'timelorde',
+    param: 'swingSource',
+    label: o.label,
+    why:
+      `a musical DIVISION of the master clock — \`${o.label}\` is not a reading of the dial, it is `
+      + 'what the division is CALLED, and it is the id of the gate OUTPUT that carries it. A '
+      + 'player patches "the 4x out" and swings "the 4x train"; the two must print the same word '
+      + 'or the selector stops naming anything a cable can be found by. There is no name that is '
+      + 'not this one, and inventing one ("sixteenths") would be the vocabulary invention the '
+      + 'moog904c review declined — and would then disagree with the jack it points at. The '
+      + 'param itself is a 0..11 INDEX, which is exactly what the roster exists to stop the face '
+      + 'painting.',
+  })),
   {
     type: 'cofefve',
     param: 'tempoSync',

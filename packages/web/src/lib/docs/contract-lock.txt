@@ -3362,6 +3362,7 @@ timelorde param wizardOn 0..1 discrete default=1
 timelorde expose bpm param=bpm kind=knob
 timelorde expose swingAmount param=swingAmount kind=knob
 timelorde expose swingSource param=swingSource kind=knob
+timelorde family timelorde-tap kind=transport prefix=timelorde-tap
 tomtom meta domain=audio
 tomtom in accent_in cv
 tomtom in bend_cv cv

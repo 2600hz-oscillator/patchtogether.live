@@ -222,7 +222,7 @@
   import { migrated } from '$lib/ui/workflow/strict-faces';
   // DOM-SOURCE seam: a video module whose source lives on its CARD stays alive
   // in an off-screen host when the shell swaps its lane card away.
-  import { HEADLESS_MOUNT_LANE_TYPES, DOM_SOURCE_LANE_TYPES, needsHeadlessSourceMount } from '$lib/ui/workflow/dom-source-modules';
+  import { HEADLESS_MOUNT_LANE_TYPES, DOM_SOURCE_LANE_TYPES, CARD_PRODUCER_LANE_TYPES, FACE_MOUNTS_PRODUCER, needsHeadlessSourceMount } from '$lib/ui/workflow/dom-source-modules';
   import { cameraStatus } from '$lib/ui/media/camera-status-registry';
   import { groupCardHostsChildCard } from '$lib/ui/modules/group-viz-hosts';
   import { nodeMedia } from '$lib/ui/media/node-media-registry';
@@ -2388,7 +2388,43 @@
     const out: ModuleNode[] = [];
     for (const n of snapshot.nodes) {
       if (!HEADLESS_MOUNT_LANE_TYPES.has(n.type)) continue;
-      if (isCanvasHiddenNode(n)) continue;
+      // ⚠ THE CANVAS-HIDDEN ARM OF #1721 — #1754. A canvas-hidden node is
+      // skipped on the premise that SOME OTHER surface mounts its real card.
+      // For the M/E/C drawer trio that premise is true (the dock rail mounts
+      // it). For a CARD PRODUCER it is FALSE, and the measurement is flat:
+      //
+      //   A fresh `/rack` auto-spawns `pinned-timelorde` (`data.pinned: true`,
+      //   `presence: 'type'` — see graph/workflow-pins). MEASURED on this tree,
+      //   BOTH shells: `.mod-card.timelorde-card` = 0 mounts, headless hosts for
+      //   timelorde = 0. Its producer card has never been mounted anywhere, so
+      //   `write(node,'displayFrame')` never runs and `video_out` is the idle
+      //   field forever — `nonBlack 0/3072, maxLuma 8, 1 distinct signature over
+      //   30 frames`, recorded in card-producer-lifetime.spec.ts, which names
+      //   this exclusion as the half it does not cover.
+      //
+      // ⚠ AND IT IS NOT THE PINNED-DRAWER STORY AN EARLIER DRAFT OF THIS COMMENT
+      // TOLD. timelorde is a WORKFLOW_PINNED_SURFACES module, not one of the
+      // M/E/C drawer occupants: it has NO drawer and NO rail, so
+      // `dockRailRendersFace` never fires for it and the defect has nothing to
+      // do with promotion. Gating this on `shellFaces && migrated` would have
+      // fixed exactly half of it — the default shell after the face lands —
+      // and left `?shell=legacy` dark, which is the opposite of the parity the
+      // skip exists to protect. Both shells are equally broken today; both are
+      // fixed here, so they still agree.
+      //
+      // Scoped on CARD_PRODUCER membership, exactly as #2148 scoped its sibling:
+      // hidden CAMERAS are the other kind of canvas-hidden node and are
+      // DOM_SOURCE, so they are untouched, and the trio are not producers.
+      // canvas-hidden ∩ CARD_PRODUCER is {timelorde} today.
+      //
+      // ⚠ AND THE DECISION IS NOT DUPLICATED HERE. The `continue` this replaces
+      // encoded "is this a producer?" in the caller, beside a pure function that
+      // already answers exactly that question for exactly this case:
+      // `needsHeadlessSourceMount`'s `laneOmitsNode` arm returns
+      // `CARD_PRODUCER_LANE_TYPES.has(type)`. So canvas-hidden is folded INTO
+      // `laneOmitsNode` below — it is the same fact ("the lane emits no node at
+      // all for this one") — and the hidden CAMERAS keep their old answer from
+      // the one place that decides it, rather than from a second copy here.
       // ⚠ THE DOCK FULL VIEW ONLY MOUNTS THE REAL CARD FOR AN UN-MIGRATED
       // MODULE, and this used to be an unconditional `continue`. See the
       // `dockFullViewMountsCard` note below — the exclusion moved into
@@ -2397,7 +2433,11 @@
       // The lane emits NO node for a collapsed group's child (see the flowNodes
       // derivation below), in EITHER shell — so `kind` describes a card that is
       // never reached, and the decision needs to know that rather than infer it.
-      const laneOmitsNode = !!parentGroupId && collapsed.has(parentGroupId);
+      // A CANVAS-HIDDEN node (pinned singleton / `hiddenCard` camera) is the
+      // same fact by a different route: the flowNodes derivation skips it, so
+      // no lane node is emitted for it either, in either shell.
+      const laneOmitsNode =
+        (!!parentGroupId && collapsed.has(parentGroupId)) || isCanvasHiddenNode(n);
       const kind = laneRenderKind({
         shellFaces,
         userDocked: !!dockStore.entryFor(n.id),
@@ -2434,8 +2474,20 @@
       // TRANSFER with an owner-checked release, so there is one element per
       // (node, slot), two hosts cannot own two elements, and a stale teardown
       // cannot strand the live one.
+      // ⚠ THE PRODUCER HALF IS NO LONGER LEFT ALONE, and the paragraph above now
+      // records why it USED to be rather than why it still is. The premise was
+      // that a promoted producer's face mounts its renderer (true of cube and
+      // rasterize, the only two at the time). timelorde is the first whose face
+      // only BLITS what the card produces — so with the dock open the card was
+      // unmounted from every surface and the picture froze on the last pushed
+      // bitmap, or on the idle field if none had been pushed yet. Deny by
+      // default now: a faced producer KEEPS its host, and the two that must not
+      // are named in `FACE_MOUNTS_PRODUCER` with the reason they can.
       const fullViewShowsFaceInstead =
-        dockStore.isFullView(n.id) && migrated(n.type) && DOM_SOURCE_LANE_TYPES.has(n.type);
+        dockStore.isFullView(n.id) &&
+        migrated(n.type) &&
+        (DOM_SOURCE_LANE_TYPES.has(n.type) ||
+          (CARD_PRODUCER_LANE_TYPES.has(n.type) && !FACE_MOUNTS_PRODUCER.has(n.type)));
       if (
         needsHeadlessSourceMount({
           kind,

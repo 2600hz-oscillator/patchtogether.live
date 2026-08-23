@@ -7,7 +7,7 @@
 
 import { test, expect, loadVoiceDemo, openFileMenu, fileMenuClick } from './_fixtures';
 import { captureConsole, formatConsole } from './helpers';
-import { spawnPatch } from './_helpers';
+import { spawnPatch, canvasPane} from './_helpers';
 
 test.describe('AI smoke check', () => {
   test('app: HTTP 200 + COOP/COEP headers @smoke', async ({ page }) => {
@@ -267,7 +267,7 @@ test.describe('AI smoke check', () => {
     // Move keyboard focus onto the canvas pane so the Backspace keydown reaches
     // xyflow's window-level KeyHandler and is NOT swallowed by isInputDOMNode
     // (e.g. if an editable card title held focus). Click empty pane space.
-    await page.locator('.svelte-flow__pane').click({ position: { x: 5, y: 5 } });
+    await canvasPane(page).click({ position: { x: 5, y: 5 } });
 
     // Select the edge through xyflow's real `selected` mutation. Retry the
     // (select → assert .selected) pair: under HMR/CPU stress Canvas can
