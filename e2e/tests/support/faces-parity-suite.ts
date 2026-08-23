@@ -213,11 +213,33 @@ interface RenderedCell {
  * the type IS the basename, so this needs no per-module knowledge. Returns null
  * when neither exists, which the anchoring test fails on.
  */
+// ⚠ THIS PATH IS RELATIVE TO *THIS FILE*, AND THIS FILE MOVED (#2141). It was
+// `../../packages/…` while the sweep lived at `e2e/tests/`; the split moved it to
+// `e2e/tests/support/`, one level deeper.
+//
+// ⚠ AND NOTHING STATIC COULD SEE THAT. The import-path fixes in the same commit
+// were caught by `tsc` because they are `import` statements; this is a RUNTIME
+// `new URL(...)` + `existsSync`, so a wrong path is not a compile error — it is
+// a silent `null`, and `moduleSourceFor` returning null reads exactly like "that
+// module does not exist". It surfaced on CI as
+// `foxy: no module source found to anchor the quiesce against`, which points at
+// foxy rather than at this line.
+//
+// So the directory itself is now anchored below: a base that does not resolve
+// fails ONCE, naming the real cause, instead of once per module naming the wrong
+// one.
+const MODULES_ROOT = fileURLToPath(new URL('../../../packages/web/src/lib/', import.meta.url));
+
 function moduleSourceFor(type: string): string | null {
-  for (const domain of ['audio', 'video']) {
-    const p = fileURLToPath(
-      new URL(`../../packages/web/src/lib/${domain}/modules/${type}.ts`, import.meta.url),
+  if (!existsSync(MODULES_ROOT)) {
+    throw new Error(
+      `faces-parity-suite: MODULES_ROOT does not resolve (${MODULES_ROOT}). This file's path ` +
+        'relative to packages/ has changed — every quiesce anchor below would report "no module ' +
+        'source found" and name a MODULE instead of this path.',
     );
+  }
+  for (const domain of ['audio', 'video']) {
+    const p = `${MODULES_ROOT}${domain}/modules/${type}.ts`;
     if (existsSync(p)) return readFileSync(p, 'utf8');
   }
   return null;
