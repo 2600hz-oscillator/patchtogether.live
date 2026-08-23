@@ -55,6 +55,10 @@ import {
   loadFrametableFile,
   saveFrametableFile,
 } from '$lib/ui/modules/frametable-file-actions';
+import {
+  loadVideocubeSlotFile,
+  setVideocubeSlotLive,
+} from '$lib/ui/modules/videocube-slot-actions';
 import Dx7OperatorMap from '$lib/ui/modules/dx7/Dx7OperatorMap.svelte';
 import Dx7OpDetail from '$lib/ui/modules/dx7/Dx7OpDetail.svelte';
 import AnalogVcoHeroPanel from '$lib/ui/modules/AnalogVcoHeroPanel.svelte';
@@ -527,6 +531,69 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
       title: 'Write the current 60-frame ring to a lossless .frametable.png atlas file (FREEZE first to hold a specific 60 frames)',
       probe: { effect: { kind: 'data', key: 'frametableSave', expect: 'changed' } },
       onFire: (nodeId) => { void saveFrametableFile(nodeId); },
+    },
+  },
+  videocube: {
+    // THE THREE RING SLOTS — FLOOR, WALL, CEILING — each with the two controls
+    // `VideocubeCard.svelte` gives it: point the ring back at its LIVE input, or
+    // load a `.frametable.png` table into it. These six decide WHAT IS IN THE
+    // CUBE, and promotion deletes the card that owns them, so without these
+    // cells the faceplate would have thirty knobs over a solid whose contents
+    // could not be chosen. All six call
+    // `$lib/ui/modules/videocube-slot-actions`, which the card now calls too.
+    //
+    // ⚠ EVERY ONE OF THE SIX IS ENGINE-ONLY. Both actions hand a tagged element
+    // to `attachExternalSource` and write NOTHING to the graph — v1 does not even
+    // persist a descriptor, unlike FRAMETABLE — so `readParam`/`readData` are
+    // structurally blind to the work. The `videocubeSlot` outcome record is what
+    // makes a press observable, and it is the SECOND adopter of the pattern
+    // `saveFrametableFile` established: written on EVERY press including the
+    // failures, carrying which slot, which source and the outcome, so a dead
+    // button writes nothing at all and a button that reached no engine writes
+    // `ok: false` with the reason. One key for all six — `seq` is what
+    // guarantees a change, and each probe snapshots immediately before its own
+    // press.
+    'videocube-a-live-{n}': {
+      kind: 'action',
+      label: 'FLOOR live',
+      title: 'Point ring A (FLOOR) back at the video_a input and resume live capture — the way back from a loaded table',
+      probe: { effect: { kind: 'data', key: 'videocubeSlot', expect: 'changed' } },
+      onFire: (nodeId) => { setVideocubeSlotLive(nodeId, 'a'); },
+    },
+    'videocube-a-file-input-{n}': {
+      kind: 'file',
+      label: 'FLOOR table…',
+      title: 'Load a .frametable.png atlas into ring A (FLOOR). Session-only in v1 — a reload returns the slot to LIVE',
+      accept: FRAMETABLE_FILE_ACCEPT,
+      onFile: (nodeId, file) => loadVideocubeSlotFile(nodeId, 'a', file),
+    },
+    'videocube-b-live-{n}': {
+      kind: 'action',
+      label: 'WALL live',
+      title: 'Point ring B (WALL / connector) back at the video_b input and resume live capture',
+      probe: { effect: { kind: 'data', key: 'videocubeSlot', expect: 'changed' } },
+      onFire: (nodeId) => { setVideocubeSlotLive(nodeId, 'b'); },
+    },
+    'videocube-b-file-input-{n}': {
+      kind: 'file',
+      label: 'WALL table…',
+      title: 'Load a .frametable.png atlas into ring B (WALL / connector). Session-only in v1',
+      accept: FRAMETABLE_FILE_ACCEPT,
+      onFile: (nodeId, file) => loadVideocubeSlotFile(nodeId, 'b', file),
+    },
+    'videocube-c-live-{n}': {
+      kind: 'action',
+      label: 'CEIL live',
+      title: 'Point ring C (CEILING) back at the video_c input and resume live capture',
+      probe: { effect: { kind: 'data', key: 'videocubeSlot', expect: 'changed' } },
+      onFire: (nodeId) => { setVideocubeSlotLive(nodeId, 'c'); },
+    },
+    'videocube-c-file-input-{n}': {
+      kind: 'file',
+      label: 'CEIL table…',
+      title: 'Load a .frametable.png atlas into ring C (CEILING). Session-only in v1',
+      accept: FRAMETABLE_FILE_ACCEPT,
+      onFile: (nodeId, file) => loadVideocubeSlotFile(nodeId, 'c', file),
     },
   },
   dx7: {
