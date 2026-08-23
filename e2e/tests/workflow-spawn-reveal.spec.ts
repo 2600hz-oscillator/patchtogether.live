@@ -109,6 +109,12 @@ async function setViewport(page: Page, vp: { x: number; y: number; zoom: number 
 async function settledViewport(page: Page): Promise<{ x: number; y: number; zoom: number }> {
   let prev = await getViewport(page);
   for (let i = 0; i < 25; i++) {
+    // pacing: the SPACING between samples is the product's own pan duration —
+    // Canvas.svelte's `WCOL_PAN_MS = 220`, the value it hands xyflow's
+    // animated setViewport (packages/web/src/lib/ui/Canvas.svelte:1733). Two
+    // reads a full pan-duration apart that agree mean no pan is in flight;
+    // sampling any faster cannot distinguish "finished" from "mid-animation
+    // and momentarily still". The +60 ms clears the tail of the easing curve.
     await page.waitForTimeout(WCOL_PAN_MS + 60);
     const cur = await getViewport(page);
     if (cur.x === prev.x && cur.y === prev.y && cur.zoom === prev.zoom) return cur;
@@ -176,6 +182,12 @@ test.describe('workflow spawn-camera reveal: adds never scroll the viewport wild
 
       // Give any (buggy) pan animation ample time to fire, then compare EXACT
       // transforms: no setViewport must have been issued at all.
+      // pacing: the NEGATIVE case has no subject to poll — the assertion is
+      // that nothing happens — so the wait must outlast the animation whose
+      // absence it proves. That is the product's own `WCOL_PAN_MS = 220`
+      // (packages/web/src/lib/ui/Canvas.svelte:1733), the duration Canvas
+      // hands xyflow's animated setViewport; 3× it is that interval with
+      // margin for a delayed start under load.
       await page.waitForTimeout(WCOL_PAN_MS * 3);
       const after = await getViewport(page);
       expect(after).toEqual(before);

@@ -342,7 +342,14 @@ for (const [label, url] of [
     await transport.click();
     await expect.poll(() => timelordeRunning(page), { timeout: 5_000 }).toBe(0);
     await expect(transport).toHaveText('▶', { timeout: 5_000 });
-    await page.waitForTimeout(400); // drain scheduled steps (lookahead)
+    // pacing: STOP cancels future scheduling, but audio already committed to the
+    // graph still has to play out. That tail is the product's own scheduling
+    // lookahead: `LOOKAHEAD_S = 0.2` in
+    // packages/web/src/lib/audio/modules/clipplayer.ts:281, advanced on the
+    // 25 ms scheduler tick (SCHEDULER_TICK_MS, packages/web/src/lib/audio/
+    // scheduler-clock.ts). 400 ms is that 200 ms window plus its tick, so the
+    // freeze scan below starts after the drain rather than during it.
+    await page.waitForTimeout(400);
     // The freeze is scanned CONTINUOUSLY (was: two spot reads 700ms apart, which
     // could not see a counter that moved and moved back). It doubles as the
     // NEGATIVE CONTROL for `stepScan` on every run: a scanner that always

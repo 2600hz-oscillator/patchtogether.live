@@ -29,6 +29,13 @@
 // graph writes.
 
 import { test, expect, type Page } from '@playwright/test';
+import { waitFrames } from '../_helpers/frames';
+
+/** Frames the column-reconcile janitor gets to run before a NEGATIVE edge
+ *  assertion. FRAMES, not ms: the janitor is a Svelte `$effect` on the graph
+ *  snapshot, so the window is a number of flush boundaries and a duration would
+ *  buy ~8× fewer of them on CI's software renderer than it does locally. */
+const JANITOR_FRAMES = 8;
 
 // CI (and a local E2E_SWIFTSHADER=1 flake-check) rasterize WebGL on the
 // SwiftShader SOFTWARE renderer: every live video engine steals raster/main-
@@ -288,7 +295,13 @@ test.describe('BUG B — lane note wiring: pitch AND gate (+vel where present)',
 
     // lfo (lane 6): only a CONTROL gate (clock) — must NOT be note-tapped.
     const lfo = await dropInLane(page, 'lfo', 6);
-    await page.waitForTimeout(400); // give the janitor a tick to (not) wire it
+    // Give the janitor room to (not) wire it. The janitor is Canvas.svelte's
+    // column-reconcile `$effect` on the graph snapshot, so what this needs is
+    // "effects have flushed", i.e. a COUNT OF FRAMES — not a duration. 400 ms
+    // was ~24 frames on a local GPU and ~3 under CI's SwiftShader (7.9 fps
+    // measured), so the negative assertion was ~8× weaker on the machine that
+    // runs it. Eight frames is eight flush boundaries on both.
+    await waitFrames(page, JANITOR_FRAMES);
     expect((await wcolEdges(page)).some((e) => e.includes(`->${lfo}.`))).toBe(false);
   });
 });

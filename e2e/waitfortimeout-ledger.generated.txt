@@ -103,7 +103,6 @@ e2e/tests/cofefve.spec.ts :: COFEFVE wet echo is audible with dry muted (only th
 e2e/tests/collab.spec.ts :: layouts: A and B independently drag; each sees own override :: waitForTimeout(500) #1
 e2e/tests/collab.spec.ts :: layouts: A and B independently drag; each sees own override :: waitForTimeout(500) #2
 e2e/tests/collab.spec.ts :: layouts: A drags node, B does not see it move (per-user layout split) :: waitForTimeout(500) #1
-e2e/tests/dock-pane-close-chrome.spec.ts :: the lane tile CLOSE pill still closes its module (chrome ✕ is in ADDITION, not instead) :: waitForTimeout(120) #1
 e2e/tests/doom-aspect.spec.ts :: DOOM letterboxed into the 4:3 FBO: top + bottom bands BLACK, middle band has gameplay content :: waitForTimeout(2500) #1
 e2e/tests/doom-aspect.spec.ts :: content band contains non-zero pixels at multiple sample coordinates (DOOM not clipped to nothing) :: waitForTimeout(2500) #1
 e2e/tests/doom-cheat-gates.spec.ts :: rising edge on iddqd_in injects the IDDQD god-mode cheat within ~500ms :: waitForTimeout(300) #1
@@ -390,28 +389,8 @@ e2e/tests/voice-chain.spec.ts :: voice-chain: stopping the sequencer silences th
 e2e/tests/voice-pitch-accuracy.spec.ts :: ${} @ FACTORY DEFAULTS: sequenced ${} measures ≈ ${} Hz at the audible output :: waitForTimeout(700) #1
 e2e/tests/voice-pitch-accuracy.spec.ts :: ${} @ FACTORY DEFAULTS: sequenced ${} measures ≈ ${} Hz at the audible output :: waitForTimeout(90) #1
 e2e/tests/waveform-trace-shape.spec.ts :: SCOPE -> OUTPUT renders waveform across many rows (not a flat line) :: waitForTimeout(1000) #1
-e2e/tests/workflow-channel-columns.spec.ts :: CV BUDDY lane: REAL clip lane taps the CV Buddy inputs + (with ES-9) its return reaches the channel :: waitForTimeout(1500) #1
-e2e/tests/workflow-dock-occupancy.spec.ts :: panTileTo :: waitForTimeout(120) #1
-e2e/tests/workflow-dock-ux.spec.ts :: panTileTo :: waitForTimeout(120) #1
-e2e/tests/workflow-dock.spec.ts :: REAR VIEW (Tab): patch INTO the docked card — pickup from its input back jack, commit on a canvas output :: waitForTimeout(450) #1
-e2e/tests/workflow-dock.spec.ts :: REAR VIEW (Tab): patch OUT of the docked card back jacks → canvas commit :: waitForTimeout(450) #1
-e2e/tests/workflow-lane-add-safety.spec.ts :: tidyVco gets pitch{n}→poly AND gate{n}→gate; adsr gets the gate tap; batch-1 sweep :: waitForTimeout(400) #1
-e2e/tests/workflow-master-transport.spec.ts :: master transport drives audible clip playback through the real lane chain (${}) :: waitForTimeout(400) #1
-e2e/tests/workflow-shell-live-glyphs.spec.ts :: tidyVco dock hero glyph: static-silent, then MOVES when the real POLYSEQZ chain drives audio :: waitForTimeout(300) #1
 e2e/tests/workflow-shell.spec.ts :: 4-stack lane: ≥90px headroom above the top tile, ONE shared band top, badges fully visible :: waitForTimeout(250) #1
 e2e/tests/workflow-shell.spec.ts :: 4-stack lane: ≥90px headroom above the top tile, ONE shared band top, badges fully visible :: waitForTimeout(250) #2
-e2e/tests/workflow-shell.spec.ts :: a lane drop persists + renders at the tight column centre, flush-stacked, no invalid state :: waitForTimeout(250) #1
-e2e/tests/workflow-shell.spec.ts :: column members are UNIFORM width + FLUSH-stacked (no overlap, no gap) :: waitForTimeout(250) #1
-e2e/tests/workflow-shell.spec.ts :: lanes are the TIGHT ~216px shell pitch: drops land in the narrowed column + tiles fill the lane with no overlap :: waitForTimeout(250) #1
-e2e/tests/workflow-shell.spec.ts :: zoom NEVER repositions tiles: fixed slot box at every LOD tier, positions byte-identical :: waitForTimeout(250) #1
-e2e/tests/workflow-shell.spec.ts :: zoom is a geometric NO-OP on SCREEN: tiles hold position vs lane lines, badges, the video band, and each other :: waitForTimeout(300) #1
-e2e/tests/workflow-spawn-reveal.spec.ts :: ON-SCREEN lane add → the viewport transform is UNCHANGED, byte-equal (${}) :: waitForTimeout(WCOL_PAN_MS * 3) #1
-e2e/tests/workflow-spawn-reveal.spec.ts :: settledViewport :: waitForTimeout(WCOL_PAN_MS + 60) #1
-e2e/tests/workflow-surfaces.spec.ts :: tap tempo: a single tap is inert; two taps lock the tapped tempo :: waitForTimeout(250) #1
-e2e/tests/workflow-surfaces.spec.ts :: tap tempo: a single tap is inert; two taps lock the tapped tempo :: waitForTimeout(2_100) #1
-e2e/tests/workflow-viewport-nav.spec.ts :: '3' centers column 3 horizontally with its baseline at the viewport bottom :: waitForTimeout(600) #1
-e2e/tests/workflow-viewport-nav.spec.ts :: 'V' snaps the video area's lower-left corner to the viewport's lower-left corner :: waitForTimeout(600) #1
-e2e/tests/workflow-viewport-nav.spec.ts :: GUARD: a number pressed while a text input is focused does NOT pan :: waitForTimeout(400) #1
 e2e/vrt/cellshade-composite.spec.ts :: ${} matches baseline :: waitForTimeout(200) #1
 e2e/vrt/cellshade-composite.spec.ts :: ${} matches baseline :: waitForTimeout(700) #1
 e2e/vrt/cube-adsr-composite.spec.ts :: cube-adsr-midilane matches baseline :: waitForTimeout(600) #1
