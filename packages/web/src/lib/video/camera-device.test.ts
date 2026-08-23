@@ -109,8 +109,8 @@ describe('savedDeviceMissing — show "saved camera not found" + skip the doomed
 // happened to remount — the pick looked like it did nothing. Invisible while the
 // card owned the only picker — but a collaborator's pick arrives through the same
 // Yjs-backed key TODAY, and simply sat there doing nothing. It becomes unmissable
-// for any SECOND picker surface (one was prototyped and parked; see
-// .myrobots/2026-08-23-camerainput-face-PARKED-handoff.md).
+// for any SECOND picker surface (one was prototyped and parked on the branch
+// `parked/camerainput-face-option-a`, which carries its own handoff note).
 //
 // ⚠ WHY A SOURCE-LEVEL GATE RATHER THAN A BEHAVIOURAL ONE. The observable is a
 // Svelte component reacting to a Yjs-backed value, so proving it behaviourally

@@ -303,10 +303,10 @@
   // The live case today is COLLABORATION: `node.data.deviceId` is in Yjs, so a
   // rack-mate's pick already arrives here — and used to arrive as a value that
   // sat in the document doing nothing. It was also found while prototyping a
-  // second picker surface for this module (parked, see
-  // `.myrobots/2026-08-23-camerainput-face-PARKED-handoff.md`), where the same
-  // defect is not a latent one: any second picker writes the shared key and
-  // appears to do nothing at all.
+  // second picker surface for this module, parked on the branch
+  // `parked/camerainput-face-option-a` (which carries its own handoff note),
+  // where the same defect is not a latent one: any second picker writes the
+  // shared key and appears to do nothing at all.
   //
   // ⚠ IT IS ALSO WHAT THE DEF ALREADY CLAIMED. This card's own header says
   // `node.data.deviceId` is "in Yjs. Each user's browser tries to match it to a
