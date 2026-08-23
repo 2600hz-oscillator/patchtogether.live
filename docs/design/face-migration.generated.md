@@ -30,7 +30,7 @@ Every registered module carries exactly one **disposition**: what kind of work i
 
 | blocker | issue | modules waiting |
 |---|---|---|
-| `needs-media-controller` | #1511 | 10 |
+| `needs-media-controller` | #1511 | 9 |
 | `needs-note-entry-cell` | #1509 | 17 |
 
 ## `generic-face`
@@ -50,6 +50,7 @@ author a `face` and rank the controls — no new platform capability.
 | `bentbox` | video | done | — |
 | `bluebox` | audio | done | — |
 | `buggles` | audio | done | — |
+| `cameraInput` | video | done | — |
 | `cellshade` | video | done | — |
 | `charlottesEchos` | audio | done | — |
 | `chroma` | video | done | — |
@@ -202,7 +203,6 @@ the primary interaction is not param-shaped — needs a purpose-built surface.
 | `audioIn` | audio | — | `needs-media-controller` |
 | `audioOut` | audio | — | — |
 | `blood` | video | — | — |
-| `cameraInput` | video | — | `needs-media-controller` |
 | `cartesian` | audio | — | `needs-note-entry-cell` |
 | `chromaconsole` | audio | — | — |
 | `clipplayer` | audio | — | — |
