@@ -280,9 +280,8 @@ test.describe('#1811 main-thread cost instrument', () => {
   // `runs-on:` here is `ubuntu-latest` and a GitHub-hosted job gets its OWN VM
   // (ci.yml, checked 2026-08-12), so shards have nothing to contend for; and a
   // local headless run is ALREADY SwiftShader, so E2E_SWIFTSHADER=1 is not the
-  // lever it looks like. Read the real cost off a CI run's own report; the
-  // committed cost artifact this used to point at is deleted (2026-08-23 —
-  // sharding is Playwright's `--shard` now, so nothing consumes per-spec costs).
+  // lever it looks like. Take the real cost from
+  // e2e-timings.generated.json once a run has carried this spec.
   //
   // ⚠ TICKS_PER_PHASE IS NOT A COST KNOB, and the reason is the repo's headline
   // renderer rule read backwards. The WINDOW is a time budget (N tick arrivals

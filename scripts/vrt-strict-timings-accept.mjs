@@ -2,22 +2,13 @@
 //
 // Refresh `e2e/vrt-strict-timings.generated.json` from a REAL CI run (#1595).
 //
-// WHY THIS EXISTS AS A SCRIPT RATHER THAN A COMMENT. Its sibling — the e2e
-// lane's cost artifact — once carried the instruction "Regenerate with `task
-// e2e:timings:accept`" against a target that did not exist, so the artifact the
-// e2e split was planned against had no working refresh path and quietly went
-// stale. An accept command that is prose is not an accept command; this one is
-// real, and `task vrt:strict:timings:accept` runs it.
-//
-// ⚠ THE E2E SIDE OF THIS IS GONE (2026-08-23). The e2e lane now shards with
-// Playwright's own `--shard` and consumes no cost artifact at all — the CI
-// simplification audit deleted the planner, its timings file and its accept
-// script after a week in which their staleness, not any test, was the top
-// source of red CI. THIS lane keeps its planner because native `--shard` cannot
-// replace it: `vrt.config.ts` is `fullyParallel: false` with TWO spec files, so
-// Playwright can build at most two bins. Measured 2026-08-23 at `--shard=k/8`:
-// 48 / 265 / 0 / 0 / 0 / 0 / 0 / 0. Six empty shards and a 37-minute long pole
-// against a 15-minute cap. Keeping this artifact fresh is the price of that.
+// WHY THIS EXISTS AS A SCRIPT RATHER THAN A COMMENT. `e2e/e2e-timings.generated
+// .json` says "Regenerate with `task e2e:timings:accept`" and that target does
+// not exist — so the one cost artifact the e2e split is planned against has no
+// working refresh path, and it now predates several specs (they are scheduled
+// at the median instead, which is where the residual 1.36x shard spread comes
+// from). Shipping a second artifact with a second imaginary accept command
+// would repeat the defect, so this is the real one.
 //
 // Each `vrt-strict-shard` job uploads the per-test durations it harvested from
 // its own reporter output (`vrt-strict-timings-<n>`). This merges them.

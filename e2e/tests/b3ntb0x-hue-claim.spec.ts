@@ -87,7 +87,8 @@ import {
  * warm" figure — across a 3-tint sweep, i.e. ~136 full 4-pass renders in one
  * test. That is ~34 s on a dev machine and **exceeded the 180 s test timeout on
  * CI**, because CI is a 2-core VM measured at roughly 6x a dev machine
- * (measured on backdraft-preview-toggle: 57.5 s local vs 358.2 CPU-s on CI).
+ * (`PENDING_FIRST_MEASUREMENT` in e2e-shard-plan.mjs carries the calibration:
+ * backdraft-preview-toggle, 57.5 s local vs 358.2 CPU-s on CI).
  *
  * The 8 was only ever needed to reach the FIRST measurable frame. `bootRig`
  * now pays that once via `warmUntilMeasurable`, and a param change settles in

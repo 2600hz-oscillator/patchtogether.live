@@ -891,9 +891,8 @@ jobs:
           retention-days: 1
 
   # -----------------------------------------------------------------------
-  # e2e — Playwright E2E suite, sharded 10 ways by Playwright's own `--shard`.
-  # Each shard runs ~1/10 of the tests (test-level distribution, since the
-  # config is `fullyParallel: true`) with 4 workers, on its own runner.
+  # e2e — Playwright E2E suite, sharded 10 ways. Each shard runs ~1/10 of the
+  # 812 specs (file-level distribution) with 4 workers, on its own runner.
   # Bumped 8 → 10 (2026-06-04, #51): at 8 the slow toybox/WebGL specs
   # clustered into one shard (~9 min long pole vs ~5 min for the rest); 10
   # shards carry ~80% the tests each, spreading the heavy specs and shortening
@@ -1134,41 +1133,58 @@ jobs:
           E2E_SHARD_BUDGET_LABEL: shard ${{ matrix.shard }}/10
         run: |
           set -euo pipefail
-          # PLAYWRIGHT'S OWN `--shard`. Nothing computes a plan: Playwright
-          # discovers the suite, applies `--grep-invert` FIRST, then splits what
-          # remains across 10 bins itself.
+          # COST-BASED SHARDING (#1538). `--shard=N/10` splits by TEST COUNT,
+          # which on this suite is near-perfect count balance and 2.31x cost
+          # imbalance: a video/WebGL test under SwiftShader costs ~2.3x a DOM
+          # test, and path-ordered contiguous chunks put the whole video/workflow
+          # family on shard 10 (795 s) while shard 6 finished in 348 s.
           #
-          # ⚠ THIS REPLACED AN LPT COST PLANNER (2026-08-23, CI simplification
-          # audit). `scripts/e2e-shard-plan.mjs` bin-packed spec FILES by their
-          # measured cost from a committed `e2e/e2e-timings.generated.json`, and
-          # it worked — predicted worst shard 805 s → 483 s. What it also did was
-          # make every shard's correctness depend on a hand-refreshed cost table
-          # that the face programme staled weekly: 21 commits to the planner and
-          # 14 to the cost artifacts in one week, six staleness incidents, and a
-          # per-new-spec paperwork ritual. The costs it saved were single-digit
-          # minutes of wall time; the costs it imposed were red runs in which
-          # every test passed.
+          # Instead: discover the spec list, then let scripts/e2e-shard-plan.mjs
+          # assign files by MEASURED cost (LPT bin-packing over
+          # e2e/e2e-timings.generated.json). Predicted worst shard 805 s -> 483 s.
           #
-          # What we give up, measured and accepted: `--shard` balances by TEST
-          # COUNT, and on this suite that is near-perfect count balance (261 /
-          # 261 / 261 / 261 / 261 / 261 / 261 / 261 / 261 / 260, measured
-          # 2026-08-23) with ~2.3x COST imbalance, because a video/WebGL test
-          # under SwiftShader costs ~2.3x a DOM test. The long pole gets longer.
-          # It cannot go stale, it cannot drop a spec, and it needs no artifact.
+          # Every shard job runs the planner independently and they must agree
+          # without communicating — the planner is deterministic (total order on
+          # cost then filename), and scripts/e2e-shard-plan.test.ts asserts the
+          # union of all 10 groups equals the discovered list with no duplicates.
+          # That union assertion is the safety argument: assigning files
+          # explicitly makes US responsible for covering the suite, and a
+          # silently dropped spec would look exactly like a speedup.
           #
-          # ⚠ CONTIGUOUS, FILE-ORDERED CHUNKS — SO ADJACENT SPECS CO-LOCATE.
-          # Playwright assigns each shard a contiguous run of the discovered
-          # order, so alphabetically-adjacent families land together. Measured
-          # 2026-08-23 against `scripts/e2e-contention-scan.mjs`: shard 10 holds
-          # 14 media-class specs (camera-input, audio-in, the videobox /
-          # videovarispeed family, workflow-camera/media/shell-video) and shard 3
-          # holds none. The planner's PASS 1 used to spread that class on
-          # purpose. If media contention resurfaces, pin THAT cluster — do not
-          # reintroduce a cost database for it.
+          # ⚠ REPLACING THIS WITH PLAIN `--shard=N/10` WAS TRIED AND MEASURED,
+          # AND IT DOES NOT WORK (2026-08-23, PR #2150 run 32643416031). The CI
+          # simplification audit recommended exactly that, on the reasoning that
+          # the worst case is "uneven shards costing single-digit minutes of wall
+          # time". The worst case is not wall time — it is a DEAD SHARD:
+          #
+          #     shard  4  8.5 min      shard  9 11.5 min
+          #     shard  6 10.8 min      shard  1 12.9 min
+          #     shard  8 10.4 min      shard 10 15.2 min   ← 1.8 min under budget
+          #     shard  3  KILLED by --global-timeout at 17.0 min:
+          #               75 passed, 160 NEVER RAN
+          #
+          # Native `--shard` assigns CONTIGUOUS, FILE-ORDERED chunks, so shard 3
+          # drew an alphabetical run (fader… featurecv… filter… flip-rack…
+          # four-modules… foxy-face…) whose real cost is ~3x the cheapest shard.
+          # The 160 unrun tests surface as runtime SKIPS, so the skip-budget
+          # audit reddens too — one imbalance, two red gates, and no test failed.
+          # Shard 10's media cluster (camera-input + the videobox/videovarispeed
+          # family, which this planner's PASS 1 deliberately spreads) landed 1.8
+          # min under the same cliff.
+          #
+          # So the cost table stays. If it goes stale the packing degrades; if it
+          # is deleted the lane loses tests silently-then-loudly. Anyone revisiting
+          # this needs a REPLACEMENT for cost-aware packing, not the absence of one.
+          SPECS=$(cd e2e && flox activate -- npx playwright test --list --reporter=json 2>/dev/null \
+            | flox activate -- node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{const r=JSON.parse(d),f=new Set();(function w(s){for(const x of s||[]){if(x.file)f.add(x.file);w(x.suites);}})(r.suites);console.log([...f].sort().join(" "));})')
+          # shellcheck disable=SC2086 # why: $SPECS is a SPACE-SEPARATED SPEC LIST and word splitting is the mechanism, not an accident — quoting it would hand the planner one argument that is the whole suite concatenated.
+          FILES=$(flox activate -- node scripts/e2e-shard-plan.mjs ${{ matrix.shard }} 10 --files $SPECS)
+          echo "shard ${{ matrix.shard }}/10 -> $(echo "$FILES" | wc -w) spec files"
+          # shellcheck disable=SC2086 # why: $FILES is this shard's spec list; word splitting is how playwright receives one argument per spec file. Quoting it would pass a single nonexistent filename.
           flox activate -- npx --workspace e2e playwright test \
             --global-timeout 1020000 \
-            --shard=${{ matrix.shard }}/10 \
             --grep-invert "@collab|@capacity|BEHAVIORAL input coverage" \
+            $FILES \
             --reporter=blob
 
       - name: Upload blob report (shard ${{ matrix.shard }})

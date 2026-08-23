@@ -1,24 +1,21 @@
 // scripts/e2e-contention-scan.mjs
 //
-// CONTENTION CLASSES — a DIAGNOSTIC. Nothing consumes it; it answers a question.
+// CONTENTION CLASSES, DERIVED AT PLAN TIME — never committed (#1600).
 //
-// ⚠ ITS CONSUMER IS GONE (2026-08-23). This fed PASS 1 of the e2e shard planner,
-// which spread each contention class across shards before cost-packing — the
-// remedy for the camera-input 3/3 failure, where camera capture was scheduled
-// alongside heavy video decode on one 2-core runner. The planner and its cost
-// artifact are deleted (CI simplification audit); sharding is now Playwright's
-// own `--shard`, which assigns CONTIGUOUS, FILE-ORDERED chunks and therefore
-// re-creates exactly the clustering this class was invented to break up.
+// The e2e shard planner spreads each contention class across shards before
+// cost-packing (see e2e-shard-plan.mjs PASS 1 — the camera-input 3/3 failure).
+// The class map used to live INSIDE `e2e-timings.generated.json`, derived by a
+// scan that ran ONCE and was never committed. A committed snapshot of a
+// derivation IS a hand-maintained list from the moment the population moves:
+// `layers-survive-card-collapse.spec.ts` (262 CPU-s of video decode) landed
+// after the snapshot, joined no class, and was cost-packed next to other media
+// specs — the exact contention shape the class exists to prevent, recreated by
+// artifact staleness instead of packing logic.
 //
-// KEPT ANYWAY, deliberately, because it is the INSTRUMENT for that question.
-// `node scripts/e2e-contention-scan.mjs` prints the media class in ~10 ms;
-// intersect it with `playwright test --shard=k/N --list` to see how the class
-// actually lands. Measured that way on 2026-08-23, 10 shards: shard 10 held 14
-// media specs (camera-input, audio-in, the videobox/videovarispeed family,
-// workflow-camera/media/shell-video) and shard 3 held none.
-//
-// So if a media-contention failure returns, this is how you SEE it — and the
-// answer is to pin THAT cluster, not to rebuild a cost database.
+// So the scan now runs EVERY TIME the planner does (it is ~10 ms over ~430
+// files), and the committed artifact carries only the COSTS — the one thing
+// that genuinely requires a CI run to know. A new media spec is classified the
+// moment it exists, with no accept step in between.
 //
 // ── WHAT COUNTS AS 'media' ──────────────────────────────────────────────────
 // A spec whose SOURCE shows it decodes/captures real media in the page:
