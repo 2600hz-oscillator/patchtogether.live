@@ -101,6 +101,57 @@ export const PENDING_FIRST_MEASUREMENT = [
   // The gate reddens on a STALE entry exactly as loudly as on a missing one, so
   // an entry whose first measurement has landed MUST be deleted rather than left
   // as a record that it once existed.
+  //
+  // ── THE FACES-PARITY SPLIT (#2141) ────────────────────────────────────────
+  //
+  // The registry-driven face parity sweep was ONE file that had grown into the
+  // most expensive in the suite — MEASURED at 2303.2 CPU-s against a 2088 s fair
+  // share at 10 shards, i.e. a single spec exceeding a whole shard's share, which
+  // made a balanced partition arithmetically impossible. It is now four files
+  // over a stable name-hash partition (`e2e/tests/support/faces-parity-suite.ts`).
+  //
+  // ⚠ THE ENTRIES BELOW ARE THE RISKY PART OF THIS PR, NOT THE SPLIT. An
+  // unmeasured spec rides the MEDIAN, and this list's own header records what
+  // that once cost: a 309 CPU-s media spec scheduled at ~6 s failed a shard that
+  // was green everywhere else. Each of these three is expected to be several
+  // HUNDRED CPU-s and will be scheduled at the median until the first accept, so
+  // this PR's own shard balance is the worst it will ever be.
+  //
+  // ⚠ AND `faces-parity.spec.ts` IS DELIBERATELY NOT LISTED. It still exists and
+  // is still measured, so it is not unmeasured — but its measurement is now ~4x
+  // too HIGH, because it describes the un-split file. That errs toward
+  // over-reserving a shard, which is the safe direction, and it is corrected by
+  // the same accept that pays these three off.
+  //
+  // THE DEADLINE, explicitly: run `task e2e:timings:accept -- <ci-run-id>` on the
+  // first green run after this merges, and DELETE all three entries in that same
+  // commit. The gate reddens on a stale entry exactly as loudly as on a missing
+  // one, so leaving them is not a soft failure.
+  {
+    spec: 'faces-parity-2.spec.ts',
+    why:
+      'partition 2/4 of the face parity sweep, created by the split in this PR. It has never run '
+      + 'on CI, so it has no measurement — its cost is roughly a quarter of the old single file '
+      + '(~575 CPU-s at that file\'s worst measured 2303.2 s), which is about a hundred times the '
+      + 'median it will be scheduled at until the first accept lands.',
+  },
+  {
+    spec: 'faces-parity-3.spec.ts',
+    why:
+      'partition 3/4 of the face parity sweep, created by the split in this PR. Same reasoning as '
+      + 'partition 2: never run on CI, so unmeasured, and it rides the median until the first '
+      + 'accept. ⚠ Its membership is NOT interchangeable with its siblings — the partition is a '
+      + 'stable hash of each module\'s own name, so this file owns a fixed set and its measured '
+      + 'cost will stay attributable to that set as the roster grows.',
+  },
+  {
+    spec: 'faces-parity-4.spec.ts',
+    why:
+      'partition 4/4 of the face parity sweep, created by the split in this PR. Same reasoning as '
+      + 'partitions 2 and 3. This is the last of the three unmeasured partitions; partition 1 '
+      + 'kept the original filename and therefore kept its (now over-large) measurement rather '
+      + 'than joining this list.',
+  },
 ];
 
 /** Median of a numeric array (used as the cost of an unmeasured file). */
