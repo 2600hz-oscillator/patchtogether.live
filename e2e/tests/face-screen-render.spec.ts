@@ -265,6 +265,9 @@ const SUBJECTS: readonly Subject[] = [
   // ── CAMERA — the first card-owned-source promotion ────────────────────────
   { type: 'cameraInput', prefix: 'cameraInput', domain: 'video', why: 'the capture source\'s live preview and its SCREEN switch. ⚠ The first module in this table whose REAL CARD is still mounted while the face is showing — off-screen in <HeadlessSourceHost>, because the card owns getUserMedia and the MediaStream. Its picture is BLITTED from the engine, never adopted: the node-owned <video> belongs to that card, and a DOM node has one parent. A SOURCE with no video input, so a lapsed watch mark would mute the origin of the whole chain rather than pause a preview.' },
 
+  // ── lush garden (2026-08-23) ──────────────────────────────────────────────
+  { type: 'lushgarden', prefix: 'lushgarden', domain: 'video', why: 'the generative garden\'s live preview and its SCREEN switch. ⚠ THE STRONGEST "KEEPS RENDERING" CASE IN THIS TABLE, and for a reason no other entry has: the picture is a wall-clock ACCUMULATION (plants spawn on a rate and each integrates a grow-in curve), so a collapse that stopped surface.draw would not merely pause a preview — re-opening SCREEN would show a garden YOUNGER THAN THE RACK. It is also a pure SOURCE with no input requirement, so a lapsed watch mark mutes the origin of the whole chain.' },
+
   // ── the AUDIO-def outlier ─────────────────────────────────────────────────
   { type: 'rasterize', prefix: 'rasterize', domain: 'audio', why: '⚠ an AudioModuleDef that carries a VIDEO surface, so it lives in lib/audio/modules and a video-only enumeration misses it entirely. Spawns with domain: audio. It is the reason this file\'s derivation crosses both domains.' },
 ] as const;
