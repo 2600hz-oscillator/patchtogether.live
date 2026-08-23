@@ -3286,6 +3286,76 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // ⚠ AND IT COSTS AN ATTEST: `paletteType` gains an `options` roster and
   // `speed` gains `landmarks`, both `params` changes, and this is a video def.
   'acidwarp',
+
+  // ── BATCH 23a · THE ZERO-ATTEST PAIR ──────────────────────────────────────
+  //
+  // The first batch of the ≤5-param video cut. Batch 22 exhausted the ≤4 tail
+  // entirely — after it, the only ≤4 generic-face video module left was
+  // `scoreboard`, which rides alone (#2089) — so the cut moved to ≤5 by
+  // coordinator decision, on the reasoning that the owner's "<4 controls get
+  // batched" line divides SIMPLE from NEEDS-DESIGN and the number was a proxy.
+  // The half that did NOT move is the half that sent `acidwarp` above here
+  // alone: complex modules never batch.
+  //
+  // ⚠ THESE TWO ARE PAIRED BY WHAT THEY COST, NOT BY WHAT THEY DO —
+  // SPLIT-ON-THE-ATTEST-LINE, the standing pattern batch 22 established when it
+  // split G2a from G2b. Neither touches `params`, so neither moves
+  // `contract-lock` or the WebGL basis, and they ride together rather than
+  // dragging an attest window behind a module that does not need one.
+  //
+  // ⚠ AND THEY DISAGREE ON THE PRIMITIVE, WHICH IS THE WHOLE REASON THEY ARE
+  // WORTH READING TOGETHER. `lines` draws four `NeonFader`s, so its face
+  // DECLARES `paramCells: {...'fader'}` — nothing in a ParamDef separates "a
+  // level" from any other continuous scalar, so an undeclared face silently
+  // swaps a KNOB in for a throw and no def-reading gate can see it.
+  // `peakstate` draws five `Knob`s, the shell's DEFAULT primitive, so its face
+  // declares NOTHING — copying lines' declaration onto it would be a silent
+  // regression in the opposite direction. This is the lumakey/shapegen lesson
+  // from G2a, restated because it is the mistake that looks like consistency.
+  //
+  // ⚠ TWO FINDINGS, one per module, neither previously written down:
+  //
+  //   * `peakstate.oblong` IS BIT-EXACTLY INERT AT SPAWN. `orbitCenter()` opens
+  //     `if (move <= 0) return { cx: baseCx, cy: baseCy };` — a short-circuit
+  //     whose own comment says it exists so the degeneracy is EXACT rather than
+  //     subject to float drift — and `move` defaults to 0. So on a fresh node
+  //     the OBLONG knob is never even READ. That is the rank argument for
+  //     MOVE > OBLONG: one is the orbit, the other squashes an orbit that must
+  //     already exist.
+  //
+  //   * `lines.fmDepth` IS DELIBERATELY INERT — Phase-0 forward compatibility,
+  //     documented on the def ("multiplied by 0.0 in this Phase 0 shader"), NOT
+  //     a bug. It takes `noUserControl` with `writer: 'internal'`, which is the
+  //     mechanically correct arm: nothing on the patch surface targets it, and
+  //     the field is anchored in both directions so wiring the Phase-3 CV port
+  //     reddens the entry.
+  //
+  // ⚠ AND A THIRD THAT THIS PR DELIBERATELY DID NOT FIX, which is the more
+  // useful record: `peakstate.complexity` is a THREE-WAY disagreement — def
+  // `discrete`, card `curve="linear"`, CV port `cvScale: 'linear'`, renderer
+  // `Math.round(...)`. The one-word card "fix" was written, then REVERTED after
+  // checking the consumer: `Knob.svelte` maps only `'log'` and `'exp'` and has
+  // no `discrete` arm, so writing `discrete` there greens a gate and moves no
+  // pixel — CLAUDE.md's "green gate certifying a live bug", exactly. ⚠ The
+  // near-miss came from reading `knob-conic-model.ts`, which DOES have the
+  // branch, and assuming the component used it. The card keeps `linear`, keeps
+  // its `card-def-debt` entry, and the real repair (teaching the primitive a
+  // discrete branch, which changes the drag feel of every discrete knob in the
+  // rack) stays the separate reviewed PR that ledger already scoped.
+  //
+  // SCREEN OFF keeps the watch mark on both, for DIFFERENT reasons — do not
+  // flatten them: `peakstate` is the ACCUMULATOR case (a pen ring whose state
+  // advance is unconditional precisely so a re-patched output resumes with the
+  // trail intact), while `lines` has no accumulator but DOES read a time term
+  // and auto-scrolls at rest, so a stalled pull freezes a moving picture rather
+  // than merely pausing a preview.
+  //
+  // ⚠ ONE IS A PORT AND ONE IS AN ADDITION. `PeakstateCard.svelte` already
+  // draws a 144x144 preview, so its `fullViewBody` preserves a picture the
+  // promotion would otherwise delete; `LinesCard.svelte` has none, so its body
+  // is new. Recorded so neither is "corrected" toward the other.
+  'peakstate',
+  'lines',
 ]);
 
 /**

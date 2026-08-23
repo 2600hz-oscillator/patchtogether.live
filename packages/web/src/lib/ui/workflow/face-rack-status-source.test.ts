@@ -290,6 +290,21 @@ const EXTENSION_BODY_ROLES: Readonly<Record<string, BodyRule>> = {
   // which is exactly the resting derived text the 2026-08-17 ruling removes.
   // The band count reaches the player as the `bits` option LABEL instead.
   cellshade: { role: 'picture', why: 'the cel-shaded toon render and its SCREEN switch. Stateless per frame by the def\'s own account (bilateral smooth → luma quantise → Sobel ink, no feedback), so the retained watch mark protects the OUTPUT of a chainable effect rather than any accumulated state (#2015).' },
+  // ── BATCH 23a — the zero-attest pair (SPLIT-ON-THE-ATTEST-LINE) ───────────
+  //
+  // Both PICTURES: a live preview canvas plus ONE control caption (the SCREEN
+  // button). Neither card mounts `hideControls`, so neither body declares a
+  // MONITOR toggle or a resize grip, and nothing on either surface is a derived
+  // value in a text node.
+  //
+  // ⚠ ONE IS A PORT AND ONE IS AN ADDITION, which is unusual for a pair and
+  // worth having on record: `PeakstateCard.svelte` already draws a 144x144
+  // preview (so its body preserves a picture promotion would delete),
+  // `LinesCard.svelte` draws none (so its body is new). Grouped as one block
+  // rather than interleaved alphabetically, for the reason this roster
+  // documents about itself above.
+  peakstate: { role: 'picture', why: 'the kaleidoscope pen-trace\'s live mandala and its SCREEN switch. ⚠ THE ACCUMULATOR CASE, and the strongest in the fleet: the picture IS a pen ring of trace history, and the def keeps the state advance UNCONDITIONAL while per-port rasterization is gated precisely so a re-patched output "resumes at the correct phase with the whole trail already in the ring". A lapsed watch mark drops the node from the pull set and stops the ADVANCE, not merely a rasterize — so the mandala freezes mid-figure for all THREE outputs, which share one ring (#2015). ⚠ Its body also swaps the card\'s ungated `read(\'previewCanvas\')` 30 Hz poll for the fleet `blitOutputForPreview`, which is the same surface but gated AND legible to the port seam.' },
+  lines: { role: 'picture', why: 'the procedural grating\'s live preview canvas and its SCREEN switch. ⚠ NOT a stateless sibling despite having no accumulator: its shader reads a time term and the pattern auto-scrolls at rest ("visibly alive without touching a knob"), so a lapsed watch mark freezes a MOVING picture that every downstream consumer is sampling rather than merely pausing a preview (#2015). The switch is an ADDITION — its card never drew a preview.' },
 
   // ── STATUS — the one body whose subject is not a picture.
   cvBuddy: {
