@@ -148,12 +148,93 @@ type Leg =
    *  automation of that control inert too. */
   | { kind: 'automation'; id: string; value: number };
 
-interface Render { chans: Float32Array[]; offWorkletHosts: string[] }
+interface Render { chans: Float32Array[]; offWorkletHosts: string[]; pumped: boolean }
+
+/**
+ * WHERE THE COMP-MACRO PUMP RUNS, AND WHY THERE IS EXACTLY ONE OF THEM.
+ *
+ * #1737: the comp{N} shadow must be pumped DETERMINISTICALLY during the offline
+ * render. The factory's live path is a wall-clock `setInterval`, which an
+ * offline render outruns nondeterministically; `read('pumpCompMacros')` is the
+ * factory's own seam for exactly this. 50 ms is past the shadow's readiness
+ * gate (`COMP_SHADOW_READY_S`, 2 render quanta ≈ 5.3 ms) and well before the
+ * SETTLE window opens at 150 ms, so an applied CV change is fully settled where
+ * `peakDelta` measures. The CV under test is a `ConstantSource`, so the value
+ * the pump reads never changes — the pump's own change detector (`> 1e-6`)
+ * makes every LATER pump a no-op. This used to schedule four (0.05/0.10/0.15/
+ * 0.20); three of them could never do anything, and each one cost a throw of
+ * the dice described below.
+ *
+ * ⚠ `OfflineAudioContext.suspend()` IS RACY BY CONSTRUCTION IN THE PINNED
+ * BINDING, AND THE RACE IS WHAT MADE THE ART LANE GO RED ON A GREEN RUN.
+ * node-web-audio-api generates `suspend` as `#[napi(catch_unwind)] pub async
+ * fn`, so the call only SPAWNS the Rust future on napi's multi-threaded tokio
+ * runtime — the registration inside it (`self.renderer.lock()` →
+ * `suspend_promises.insert(...)`) happens later, on a worker thread. Nothing
+ * orders that against `startRendering()`, whose future does
+ * `self.renderer.lock().take()`. When `startRendering` wins, the suspend future
+ * panics; `catch_unwind` reports it as `Error: Panic in async function
+ * { code: 'GenericFailure' }`, which is what `js/lib/errors.js` prints as
+ * "Unexpected Rust error". Measured against the pinned 1.0.9 binding on this
+ * machine: ~4-18 panics per 12 000 suspend calls issued in the same turn as
+ * `startRendering()`, and 0 per 8 000 when the registration is given a real
+ * head start. `resume()` and `startRendering()` never failed once across
+ * ~30 000 calls, so `suspend()` is the whole of it. Upstream 2.2.0 has the
+ * identical shape, so there is no version to move to.
+ *
+ * So the seam is registered FIRST — before `mixmstrsDef.factory()`, whose
+ * `addModule` + wasm instantiation is a real awaited gap orders of magnitude
+ * wider than the race window — and its promise is AWAITED rather than floated.
+ * ⚠ THE FLOATING WAS THE EXPENSIVE HALF: `void ctx.suspend(t).then(…)` turned a
+ * rare binding panic into an UNHANDLED REJECTION, which vitest counts as
+ * "Errors 1" and npm turns into exit 1 — reddening a run that reported
+ * `145 passed (145)` / `961 passed (961)` with no failing assertion to point
+ * at. Awaiting it means a lost race fails the ONE test that depends on the
+ * pump, by name.
+ */
+const PUMP_AT_S = 0.05;
 
 async function render(base: Record<string, number>, leg: Leg): Promise<Render> {
   const ctx = new OfflineAudioContext({ numberOfChannels: OUTS.length, length: N, sampleRate: SR });
+
+  // ⚠ THE PUMP SEAM IS REGISTERED HERE — FIRST, BEFORE THE FACTORY BUILD — AND
+  // IT IS AWAITED, NOT FLOATED. Both halves are load-bearing; see PUMP_AT_S.
+  const handleRef: { h?: Awaited<ReturnType<typeof mixmstrsDef.factory>> } = {};
+  let pumped = false;
+  let pumpError: Error | undefined;
+  // ⚠ `pump` MUST NEVER REJECT, and that is not style — it is the whole defect.
+  // The rejection lands WHILE `startRendering()` is still being awaited, many
+  // ticks before anything could `await` this promise, and Node fires
+  // `unhandledRejection` the moment the microtask queue drains with no handler
+  // attached. Rethrowing from the rejection handler here would re-arm exactly
+  // the failure this file is fixing. So both settlements are captured into
+  // `pumpError` and re-thrown below, on the awaiting side, where the failure
+  // belongs to a test.
+  const pump = ctx.suspend(PUMP_AT_S).then(
+    async () => {
+      try {
+        pumped = handleRef.h?.read?.('pumpCompMacros') === true;
+        await ctx.resume();
+      } catch (err) {
+        pumpError = new Error(
+          `cv-path: the comp-macro pump seam threw after its suspend point resolved: ` +
+            `"${(err as Error)?.message}".`,
+        );
+      }
+    },
+    (err: Error) => {
+      pumpError = new Error(
+        `cv-path: the comp-macro pump seam never ran — ctx.suspend(${PUMP_AT_S}) rejected ` +
+          `with "${err?.message}" instead of resolving at its render quantum. The comp{N} rows ` +
+          `of this file's CV sweep depend on it, so the render below is NOT measurable. ` +
+          `This is the node-web-audio-api suspend-registration race (see PUMP_AT_S).`,
+      );
+    },
+  );
+
   const node = { id: 'cv-path', type: 'mixmstrs', position: { x: 0, y: 0 }, params: base } as never;
   const handle = await mixmstrsDef.factory(ctx as unknown as AudioContext, node);
+  handleRef.h = handle;
 
   AUDIO_IN.forEach((id, i) => {
     const ref = handle.inputs.get(id)!;
@@ -202,20 +283,12 @@ async function render(base: Record<string, number>, leg: Leg): Promise<Render> {
     ref.node.connect(merger, ref.output, k);
   });
   merger.connect(ctx.destination);
-  // #1737: pump the comp-macro shadow DETERMINISTICALLY during the offline
-  // render. The factory's live path is a wall-clock setInterval, which an
-  // offline render outruns nondeterministically; `read('pumpCompMacros')` is
-  // the factory's own seam for exactly this. Every 50 ms, well before the
-  // SETTLE window opens at 150 ms, so an applied CV change is fully settled
-  // where peakDelta measures.
-  for (let t = 0.05; t < DUR_S; t += 0.05) {
-    void ctx.suspend(t).then(() => {
-      handle.read?.('pumpCompMacros');
-      void ctx.resume();
-    });
-  }
   const buf = await ctx.startRendering();
-  return { chans: OUTS.map((_, k) => buf.getChannelData(k).slice()), offWorkletHosts };
+  // Surfaces a lost suspend-registration race as an ATTRIBUTED failure of the
+  // test that depends on it, instead of an unhandled rejection with no owner.
+  await pump;
+  if (pumpError) throw pumpError;
+  return { chans: OUTS.map((_, k) => buf.getChannelData(k).slice()), offWorkletHosts, pumped };
 }
 
 /** Peak |Δsample| in LINEAR AMPLITUDE over the settled window, across every
@@ -274,9 +347,28 @@ describe('ART mixmstrs / CV path — a cable on a paramTarget input must change 
       .toBeGreaterThan(off * 2);
   });
 
+  it('SEAM control — the comp-macro pump actually RAN inside the render', async () => {
+    // The positive control on the mechanism `PUMP_AT_S` documents. Every comp{N}
+    // row of the CV sweep below is only measurable because `ctx.suspend()`
+    // resolved mid-render and `read('pumpCompMacros')` was answered by the live
+    // factory. Both halves can fail silently and INDEPENDENTLY of each other:
+    // the suspend can lose its registration race in the binding, and the `read`
+    // seam can be renamed or dropped by a factory refactor — in which case
+    // `read()` returns undefined and the pump never fires while every other
+    // assertion here still has something to measure. This leg reads the seam's
+    // own acknowledgement, so neither failure can present as a green run.
+    const ctrl = await render(basePatch(), { kind: 'none' });
+    expect(ctrl.pumped, `read('pumpCompMacros') must be answered at the t=${PUMP_AT_S}s suspend point`).toBe(true);
+  }, SWEEP_TIMEOUT_MS);
+
   it('every declared paramTarget input moves the audio through the KNOB path', async () => {
     const base = basePatch();
     const ctrl = await render(base, { kind: 'none' });
+    // Carried into BOTH sweeps, not just the SEAM leg above: these two tests are
+    // where the CI panics actually landed (one in each), and the single suspend
+    // point they now share is the thing that has to have run for either sweep's
+    // control render to mean anything.
+    expect(ctrl.pumped, 'the comp-macro pump must have run in this sweep\'s control render').toBe(true);
     const dead: string[] = [];
     for (const id of PARAM_INPUT_IDS) {
       const d = peakDelta(await render(base, { kind: 'knob', id, value: perturbTarget(id) }), ctrl);
@@ -294,6 +386,9 @@ describe('ART mixmstrs / CV path — a cable on a paramTarget input must change 
     // else. The old SCOPE leg's own text mandated its deletion with the fix.
     const base = basePatch();
     const ctrl = await render(base, { kind: 'none' });
+    // See the KNOB sweep: the comp{N} rows below are ONLY measurable because
+    // this ran, so it is asserted here too rather than once, elsewhere.
+    expect(ctrl.pumped, 'the comp-macro pump must have run in this sweep\'s control render').toBe(true);
     const dead: string[] = [];
     const table: string[] = [];
     for (const id of PARAM_INPUT_IDS) {
@@ -381,8 +476,10 @@ describe('ART mixmstrs / CV path — a cable on a paramTarget input must change 
 // Both halves below therefore read a RENDERED observable:
 //   * the AUDIBLE half is dBFS RMS of the real master output over a settled
 //     window — the units #1737 states its defect in (+29.17 dB);
-//   * the READBACK half samples `readParam` INSIDE a `ctx.suspend()` callback,
-//     i.e. at a real render instant, which is the same seam the comp pump uses.
+//   * the READBACK half samples `readParam` AFTER `startRendering()` resolves,
+//     i.e. at a real render instant. The table above measured that read and the
+//     `ctx.suspend()` one as identical, so this half keeps its subject while
+//     dropping a `suspend()` call — see PUMP_AT_S for why those are not free.
 describe('ART mixmstrs / #1737 — the macro must not clobber what the rack saved', () => {
   /** How far below the bypassed level an ENGAGED compressor must pull the
    *  master before this scenario believes it. A POLICY THRESHOLD on a derived
@@ -415,16 +512,18 @@ describe('ART mixmstrs / #1737 — the macro must not clobber what the rack save
     g.connect(inRef.node, 0, inRef.input);
     osc.start(0);
 
-    const live: Record<string, number | undefined> = {};
-    // Read the params at a RENDERED instant, past the settle point, so the
-    // reader is looking at a value the graph has actually produced.
-    const readAt = SETTLE / SR + 0.02;
-    void ctx.suspend(readAt).then(() => {
-      for (const id of ['ch1_thresh', 'ch1_ratio', 'ch1_compEnable']) live[id] = h.readParam?.(id);
-      void ctx.resume();
-    });
-
     const d = (await ctx.startRendering()).getChannelData(0);
+    // Read the params at a RENDERED instant — AFTER the render, not at a
+    // `ctx.suspend()` point inside it. The header's own measured table has the
+    // post-render read returning exactly what the mid-render read returned
+    // (−30 / 8 / 1) while the PRE-render read returns the declared defaults for
+    // the wrong reason, so the observable is unchanged and this leg is still
+    // NOT invariant to the defect. What it drops is one more throw of the
+    // `suspend()` registration dice documented on PUMP_AT_S — this graph has no
+    // comp CV and no pump, so its params are written once at build and simply
+    // stand.
+    const live: Record<string, number | undefined> = {};
+    for (const id of ['ch1_thresh', 'ch1_ratio', 'ch1_compEnable']) live[id] = h.readParam?.(id);
     let sum = 0;
     for (let i = SETTLE; i < N; i++) sum += d[i]! * d[i]!;
     const rms = Math.sqrt(sum / (N - SETTLE));

@@ -23,6 +23,8 @@ import {
   // draw (it reads real pixels), and that is exactly what makes its per-output
   // cost what it is. See the budget derivation in _per-module-per-port-shared.ts.
   observeScopePeak,
+  readEmitDiagnostics,
+  formatEmitDiagnostics,
   perPortDriverFor,
   pickOutputSink,
   spawnPatch,
@@ -309,12 +311,33 @@ test.describe('per-module per-port: outputs emit signal', () => {
             + `never resolved, so this run says NOTHING about whether the port emits. `
             + `This is an instrument failure, not a dead port.`,
           ).toBeGreaterThan(0);
+          // CAUSE, NOT JUST LEVEL. The peak/rms/samples triple says HOW MUCH
+          // signal arrived and nothing about WHY it did not — which is how a
+          // moog904a.audio flake supported two incompatible explanations
+          // through a full log read. Read the discriminating state only on the
+          // failing branch, so a green port pays no extra round trip.
+          // See readEmitDiagnostics for the measurement that motivated it.
+          // ⚠ The probe must never COST us the finding. It runs on a page that
+          // has already misbehaved once, so a throw here would replace a real
+          // measurement with a stack trace about the instrument. Degrade to a
+          // note instead and let the peak/rms/samples triple stand on its own.
+          let diagLine = '';
+          if (obs.maxPeak <= 0.005) {
+            try {
+              diagLine = formatEmitDiagnostics(
+                await readEmitDiagnostics(page, 'sut', Object.keys(sutParams), 'e-sut-sink'),
+              );
+            } catch (err) {
+              diagLine = `unavailable (${(err as Error)?.message ?? 'unknown'})`;
+            }
+          }
           expect(
             obs.maxPeak,
             `${mod.type}.${port.id} (type=${port.type}): scope.ch1 peak above floor `
             + `(maxPeak=${obs.maxPeak.toFixed(4)}, lastRms=${obs.lastRms.toFixed(4)}, `
             + `samples=${obs.samples} over ${Math.round(obs.elapsedMs)} ms of a ${boundMs} ms `
-            + `bound, unpatched ch2 peak=${obs.maxPeakCh2.toFixed(4)})`,
+            + `bound, unpatched ch2 peak=${obs.maxPeakCh2.toFixed(4)})`
+            + (diagLine ? `\n  SUT state at failure: ${diagLine}` : ''),
           ).toBeGreaterThan(0.005);
         } else {
           // Video output → VIDEOOUT canvas stats. We assert TWO floors:

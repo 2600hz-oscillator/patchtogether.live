@@ -1361,7 +1361,7 @@ export function emitBudgetMs(mod: RegistryModule): number {
 // keeps the dependency surface of the split identical to the original file's.
 export { spawnPatch } from './_helpers';
 export type { SpawnNode, SpawnEdge } from './_helpers';
-export { observeScopePeak, runFor } from './_module-coverage-helpers';
+export { observeScopePeak, runFor, readEmitDiagnostics, formatEmitDiagnostics } from './_module-coverage-helpers';
 export { collectPageErrors } from './_page-errors';
 export { REGISTRY } from './_registry';
 export type { RegistryModule, RegistryPort } from './_registry';
