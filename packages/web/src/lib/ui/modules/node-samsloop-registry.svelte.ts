@@ -113,6 +113,7 @@ import {
   type SamsloopRecChannels,
   type SamsloopRecRate,
 } from '$lib/audio/modules/samsloop-record';
+import { SAMSLOOP_WINDOW_RANGE } from '$lib/audio/modules/samsloop';
 
 /** The engine handle's `recTap` surface: the worklet's port, its enable switch
  *  and the rate it captures at. Resolved by the CARD at REC-press time (it is
@@ -326,8 +327,12 @@ export function writeSamsloopTake(
   // REC stops.
   d.sampleLength = frames;
   d.sampleRate = storedRate;
-  target.params.start = 0;
-  target.params.end = frames;
+  // The window opens to the WHOLE take. As a FRACTION that is 0..1 and does not
+  // depend on `frames` at all — which is the point: `end = frames` was a frame
+  // index against a param declared `0..1e6`, so a take longer than ~20.8 s at
+  // 48 kHz wrote an END the model silently clamped away.
+  target.params.start = SAMSLOOP_WINDOW_RANGE.min;
+  target.params.end = SAMSLOOP_WINDOW_RANGE.max;
   return { frames, storedRate };
 }
 

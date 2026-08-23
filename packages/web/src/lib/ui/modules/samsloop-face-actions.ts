@@ -40,6 +40,7 @@ import { recordAudition } from './audition-ledger';
 import { nodeSamsloop, type SamsloopTap } from './node-samsloop-registry.svelte';
 import {
   loadSamsloopWav,
+  SAMSLOOP_WINDOW_RANGE,
   type SamsloopData,
 } from '$lib/audio/modules/samsloop';
 import {
@@ -348,8 +349,9 @@ export async function loadSamsloopAudioFile(
   d.sampleRate = result.sampleRate;
   d.sampleLength = samples.length;
   d.fileName = file.name;
-  target.params.start = 0;
-  target.params.end = samples.length;
+  // A fresh load opens the window to the WHOLE sample — 0..1 as a fraction.
+  target.params.start = SAMSLOOP_WINDOW_RANGE.min;
+  target.params.end = SAMSLOOP_WINDOW_RANGE.max;
 
   return {
     status: `loaded ${samples.length} samples @ ${result.sampleRate} Hz`,

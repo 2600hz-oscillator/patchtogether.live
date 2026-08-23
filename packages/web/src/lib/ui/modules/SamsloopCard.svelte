@@ -48,6 +48,7 @@
     samsloopDecodeBytesB64,
     SAMSLOOP_MAX_FILE_BYTES,
     SAMSLOOP_RATE_RANGE,
+    SAMSLOOP_WINDOW_RANGE,
     type SamsloopData,
   } from '$lib/audio/modules/samsloop';
   import {
@@ -552,8 +553,10 @@
       d.sampleRate = result.sampleRate;
       d.sampleLength = samples.length;
       d.fileName = file.name;
-      target.params.start = 0;
-      target.params.end = samples.length;
+      // A fresh load opens the window to the WHOLE sample. As a fraction that
+      // is literally 0..1 and needs no knowledge of the frame count.
+      target.params.start = SAMSLOOP_WINDOW_RANGE.min;
+      target.params.end = SAMSLOOP_WINDOW_RANGE.max;
       // The engine factory polls node.data every POLL_MS (200ms) and
       // picks up the new fileBytesB64 signature → decodes + pushes to
       // the worklet. Sub-quarter-second audible delay; the alternative
@@ -730,8 +733,10 @@
     // window is exactly as real for a take as for an upload and the band has
     // to show it: whatever is drawn here is the slice the worklet loops.
     {
-      const wStartFrac = Math.max(0, Math.min(1, start / samples.length));
-      const wEndFrac = Math.max(wStartFrac, Math.min(1, end / samples.length));
+      // start/end ARE fractions now — no division by the buffer length, which
+      // is exactly the arithmetic the re-scale bug used to live in.
+      const wStartFrac = Math.max(0, Math.min(1, start));
+      const wEndFrac = Math.max(wStartFrac, Math.min(1, end));
       ctx2d.fillStyle = 'rgba(80, 160, 220, 0.18)';
       ctx2d.fillRect(wStartFrac * w, 0, (wEndFrac - wStartFrac) * w, h);
     }
@@ -934,11 +939,18 @@
       {/if}
 
       <div class="waveform-row">
+        <!-- ⚠ THE WINDOW IS A FRACTION AND THE RANGE COMES FROM THE DEF. It
+             used to be `max={Math.max(1, sampleLength)}` — a frame count the
+             card computed itself, against a def that declared `0..1e6`. The
+             model clamps a write to the DECLARED range, so on any recording
+             past ~20.8 s at 48 kHz this fader's upper travel wrote values the
+             contract silently discarded: the backdraft class. Importing
+             SAMSLOOP_WINDOW_RANGE is what makes the two sides one source. -->
         <NeonFader
           value={start}
-          min={0}
-          max={Math.max(1, sampleLength)}
-          defaultValue={0}
+          min={SAMSLOOP_WINDOW_RANGE.min}
+          max={SAMSLOOP_WINDOW_RANGE.max}
+          defaultValue={SAMSLOOP_WINDOW_RANGE.min}
           label="Start"
           curve="linear"
           onchange={set('start')} moduleId={id} paramId="start"
@@ -953,9 +965,9 @@
         ></canvas>
         <NeonFader
           value={end}
-          min={0}
-          max={Math.max(1, sampleLength)}
-          defaultValue={Math.max(1, sampleLength)}
+          min={SAMSLOOP_WINDOW_RANGE.min}
+          max={SAMSLOOP_WINDOW_RANGE.max}
+          defaultValue={SAMSLOOP_WINDOW_RANGE.max}
           label="End"
           curve="linear"
           onchange={set('end')} moduleId={id} paramId="end"
