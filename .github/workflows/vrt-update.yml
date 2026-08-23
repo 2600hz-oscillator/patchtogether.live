@@ -96,7 +96,33 @@ jobs:
     # COMMITTED BASELINE COUNT and reddens in the fast unit lane the moment a
     # face batch outgrows the ceiling — minutes after the face lands, instead of
     # an hour into a capture that dies without evidence.
-    timeout-minutes: 115
+    #
+    # ⚠ 115 -> 125 (batch-22 G4). THE DERIVED GATE ABOVE FIRED ON ITS AUTHOR'S
+    # OWN PR, which is the outcome it was built for: this branch adds 8 face
+    # baselines, taking the population to 479, and
+    # `((479 x 9.2)/60 + 3.5) x 1.5 = 115.4` — 0.4 min OVER the 115 ceiling. It
+    # was caught in the unit lane in seconds rather than by a capture that dies
+    # at 115 minutes and reports `cancelled`, which is exactly the failure #2108
+    # spent three lanes' captures diagnosing.
+    #
+    # ⚠ RAISED TO 125 RATHER THAN TO 116, and the arithmetic is the argument.
+    # The gate asserts POSITIVE SLACK, not mere sufficiency, precisely so the
+    # minimum bump is not the answer — at the same 9.2 s/test x 1.5:
+    #   116 min -> 481 baselines (ZERO further face batches; the next one reds it)
+    #   120 min -> 498 baselines (2 batches of 8)
+    #   125 min -> 520 baselines (5 batches of 8)
+    # 125 buys roughly five more face batches for ten minutes of worst-case
+    # runner time that is only ever spent by a capture that has already hung.
+    #
+    # ⚠ AND THIS IS STILL A BUMP, WHICH IS THE THIRD OPTION IN #2108'S OWN
+    # PREFERENCE ORDER, NOT THE FIRST. The real fix is to SHARD this job — it is
+    # explicitly "ONE unsharded job" while `vrt-strict` already runs 8 shards, so
+    # its wall time grows linearly with a population that only ever grows. A
+    # derived `timeout-minutes` is not available (GitHub evaluates it before any
+    # step can compute one), so the ceiling stays a literal and the GATE is what
+    # keeps it honest. Expect to be back here around 520 baselines; prefer
+    # sharding over a fourth bump.
+    timeout-minutes: 125
     outputs:
       # 'true' only when a baseline commit was actually pushed. A capture that
       # rewrote nothing still SUCCEEDS, so `revalidate` needs this to tell
