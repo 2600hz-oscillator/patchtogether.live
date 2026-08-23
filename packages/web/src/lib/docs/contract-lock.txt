@@ -2554,6 +2554,7 @@ pong in paddle_left cv
 pong in paddle_right cv
 pong out score_left gate edge=trigger
 pong out score_right gate edge=trigger
+pong param freeze 0..1 linear default=0
 pong param paddleH 0.05..0.5 linear default=0.2
 pong param serveAngle 0..1 linear default=0.3
 pong param speed 0.25..4 log default=1

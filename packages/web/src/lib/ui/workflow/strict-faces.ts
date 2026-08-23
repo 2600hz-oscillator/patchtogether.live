@@ -3687,6 +3687,79 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // control's `aria-valuetext`.
   'mandleblot',
 
+  // ── CAMERA — the FIRST card-owned-source promotion ────────────────────────
+  //
+  // ⚠ EVERY OTHER MEMBER OF `DOM_SOURCE_LANE_TYPES` IS STILL UNFACED, and that
+  // was not neglect: on those modules the card is not a skin over params, it is
+  // where the SOURCE lives. cameraInput is the first one out, so it is the first
+  // to exercise `<HeadlessSourceHost>` on a promoted module for real — the lane
+  // paints this face while the REAL card runs off-screen, keeping getUserMedia,
+  // the MediaStream and the permission machine alive. The `<video>` is
+  // node-owned, so the swap re-parents it rather than tearing it down.
+  //
+  // ⚠ AND KEEPING THE SOURCE ALIVE IS NOT THE SAME AS KEEPING THE MODULE
+  // USABLE, which is the distinction this promotion turns on. An off-screen host
+  // is `pointer-events: none`, so the card's "Request access" — the only route
+  // to getUserMedia for a visitor this origin has not granted before — and its
+  // recovery text are unclickable in the default shell. Promoting without
+  // answering that would have shipped a first-run dead end behind a green gate
+  // set, because every existing gate reads the SOURCE. The affordances were
+  // rebuilt first (`$lib/ui/media/camera-status-registry` + the extension body),
+  // and the promotion followed.
+  //
+  // ⚠ ZERO ATTEST AND ZERO CONTRACT: `params` is untouched. Device selection is
+  // `node.data.deviceId`, enumerated at runtime — it CANNOT be an `options`
+  // roster, because a roster is a fixed set known at authoring time and this one
+  // differs per machine. That is also why the picker lives in the extension
+  // body rather than in a face cell.
+  //
+  // ⚠ NONE OF ITS THREE TWO-STATE PARAMS NEEDS A LATCHING CLASSIFICATION, which
+  // is worth recording because every other faced two-state param did:
+  // `looksLikeSwitch` is `looksLikeToggle(p) && p.defaultValue === 0`, and
+  // `enabled` / `mirror` / `fillMode` all default to **1**. A camera arrives on,
+  // mirrored and filling.
+  //
+  // SCREEN OFF keeps the watch mark, and this is the widest case in the fleet:
+  // CAMERA has no video input, so it is the ORIGIN of everything downstream — a
+  // lapsed mark would turn a preview control into a MUTE for every consumer.
+  'cameraInput',
+
+  // ── LUSH GARDEN (2026-08-23) ──────────────────────────────────────────────
+  //
+  // A generative botanical garden, and the promotion is a STRICT GAIN at every
+  // lane tier: today its tile is a ModuleShellPlaceholder with no picture at all,
+  // and `hasVideoSurface` gives the faced tile a live one.
+  //
+  // ⚠ THE PROMOTION IS ALSO A P1 FIX. With no PUSH_CARD_CONTROLS override and no
+  // face, the module fell to Push 2's GENERIC tier, which skips only params that
+  // are momentary/non-turnable/declared `noUserControl` — and this def declared
+  // none. All SEVEN params got an encoder, including three synthetic ones, and
+  // turning `cv_grow` latches gated mode PERMANENTLY (the RATE knob dies with no
+  // badge, because the badge reads gate edges and an encoder produces none). The
+  // face moves it to the FACE tier at four controls, and the `noUserControl`
+  // block declared alongside it is what makes the other three unreachable.
+  //
+  // ⚠ Its rank is driven by ONE fact: the output ACCUMULATES. `rate` is the only
+  // control over the generator; the other three are a camera over a scene that
+  // already exists. That argument would be wrong for a filter, where rank 1 is a
+  // level.
+  'lushgarden',
+
+  // ── PONG (2026-08-23) ─────────────────────────────────────────────────────
+  //
+  // ⚠ THE PROMOTION IS THE FIX. Today the lane tile is a ModuleShellPlaceholder
+  // — no court, no score, no faders — WHILE THE GAME RUNS on the shared
+  // scheduler clock and pulses its score gates into whatever is patched. Every
+  // pong e2e drives ?shell=legacy, so nothing in the suite has ever seen it.
+  //
+  // ⚠ THE COURT MOVES TO THE DOCK BODY AND NOWHERE ELSE. `drawPong` is a pure
+  // function the legacy CARD called; promotion stops both surfaces rendering
+  // that card. And the lane STILL gets no picture — pong is domain audio so
+  // there is no VideoTileThumb, and both outputs are 'gate' so every glyph
+  // literal except 'none' reddens the dead-glyph clause. That is a platform gap
+  // affecting five modules, not a choice made here.
+  'pong',
+
   // ── CUT B (2026-08-23) — the "screen-panel" cut, which wanted no panels ────
   //
   // SPECTROGRAPH — the cheapest face in the fleet, and the one that had to

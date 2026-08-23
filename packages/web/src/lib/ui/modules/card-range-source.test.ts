@@ -101,6 +101,8 @@ import { charlottesEchosDef } from '$lib/audio/modules/charlottes-echos';
 import { filterDef } from '$lib/audio/modules/filter';
 import { gatemaidenDef } from '$lib/audio/modules/gatemaiden';
 import { colourofmagicDef } from '$lib/video/modules/colourofmagic';
+import { lushgardenDef } from '$lib/video/modules/lushgarden';
+import { pongDef } from '$lib/audio/modules/pong';
 import { karplusDef } from '$lib/audio/modules/karplus';
 import { meowboxDef } from '$lib/audio/modules/meowbox';
 import { resofilterDef } from '$lib/audio/modules/resofilter';
@@ -257,6 +259,20 @@ import type { ParamDef } from '$lib/graph/types';
  */
 const RANGE_BOUND_CARDS: Readonly<Record<string, { params: readonly ParamDef[] }>> = {
   'AdsrCard.svelte': adsrDef,
+  // Converted with its FACEPLATE (2026-08-23). ⚠ ENROLLED WHILE NOTHING WAS
+  // WRONG: all four of its knobs re-typed ranges that AGREED with the def, so
+  // no value was ever clamped. The reason to convert is that the disagreement
+  // would have been invisible — this card sat outside this set, and the set is
+  // the only thing that reads a numeric literal in a .svelte file. Its `rate`
+  // is the interesting one: 0.5..10 on a log curve, the only non-0..1 range on
+  // the module, and the one where a divergence would have been least obvious.
+  'LushGardenCard.svelte': lushgardenDef,
+  // Converted with its FACEPLATE (2026-08-23). ⚠ THE INTERESTING ONE: besides
+  // re-typing three ranges, this card read its DEFAULTS OUT OF THE DEF BY
+  // POSITION — pongDef.params[0..2] — while the same PR adds a fourth param.
+  // Positional access is a re-typed range wearing a different hat: it looks
+  // def-bound and breaks the moment the array order moves.
+  'PongCard.svelte': pongDef,
   // Converted with its FACEPLATE (queue Q53, 2026-08-20), and it is the entry
   // that shows the conversion can be worth doing when NOTHING is wrong yet and
   // the card is only two controls. Both of its literals (`min={0.005}`,

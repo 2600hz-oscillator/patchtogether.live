@@ -554,7 +554,57 @@ describe('face-migration inventory — DERIVED from the tree, not from this list
     expect(mountsTypedEntry(cardTemplate('<script>const s = \'<input type="text">\';</script>'))).toBe(false);
   });
 
-  it('CARD-OWNED SOURCE: no generic-face module owns one, and every one that does declares the blocker', () => {
+  // ── CARD-OWNED SOURCE ─────────────────────────────────────────────────────
+  //
+  // ⚠ THE GATE'S ORIGINAL REASON WAS ALREADY STALE WHEN THIS WAS WRITTEN, and
+  // saying so is the point rather than a footnote. Its message read "a face over
+  // it renders controls for a DEAD SOURCE". That has not been true of any member
+  // since `<HeadlessSourceHost>` shipped: `needsHeadlessSourceMount` returns
+  // true for kind 'shell', so promoting a DOM-source module keeps its real card
+  // mounted off-screen and the source keeps producing. A gate whose stated
+  // reason is false is still protecting something — it just is not protecting
+  // the thing it claims, and the next person to read it will "fix" the wrong
+  // half.
+  //
+  // ⚠ THE REAL HAZARD IS REACHABILITY, NOT LIVENESS. A headless host is
+  // `pointer-events: none` and parked at `left:-9999px`, so promotion makes
+  // every INTERACTIVE affordance the card draws unclickable in the default
+  // shell — a file picker, a URL field, a transport, an acquire gesture. On
+  // cameraInput that is "Request access", the only route to `getUserMedia` for a
+  // visitor this origin has not granted before, so the failure is a first-run
+  // dead end rather than a degraded one. The face's own controls are alive and
+  // the module is unusable, which is exactly the shape a params-only gate cannot
+  // see.
+  //
+  // ⚠ SO THE EXEMPTION IS NOT A PREDICATE NARROWING. An earlier draft of this
+  // work narrowed the condition to "the card always mounts" by reading
+  // NON_SHELL_LANE_TYPES live. That was a correct statement about a module that
+  // was carved out of the swap — and it evaporates the moment the module is
+  // promoted, which is the same change that creates the hazard. A condition that
+  // stops holding precisely when the risk appears is not a narrowing; it is a
+  // gate that switches itself off. Deny-by-default with a NAMED entry per
+  // module, carrying what was carried and how, is the shape that survives.
+  interface CarriedAffordances {
+    /** What the card draws that the face had to reproduce, and where it went. */
+    readonly why: string;
+    /** The seam that reaches the card from the face, so a reader can check it
+     *  still exists rather than trusting the prose. */
+    readonly seam: string;
+  }
+
+  const CARD_SOURCE_FACED: Readonly<Record<string, CarriedAffordances>> = {
+    cameraInput: {
+      why:
+        'the DEVICE PICKER (a runtime enumerateDevices roster, so never a ParamDef and never an '
+        + 'options list) plus the ACQUIRE gesture, the capture LAMP and the recovery TEXT — all '
+        + 'rebuilt in the faceplate extension body. The card keeps sole ownership of '
+        + 'getUserMedia, the MediaStream and the permission state machine; the body reads a '
+        + 'published status and invokes a registered command, so no second owner exists.',
+      seam: '$lib/ui/media/camera-status-registry',
+    },
+  };
+
+  it('CARD-OWNED SOURCE: a generic-face module must have CARRIED its card-only affordances', () => {
     // DOM_SOURCE_LANE_TYPES is itself grep-gated against the cards that call
     // attachExternalSource (dom-source-modules.test.ts), so this reads a
     // maintained artifact rather than re-grepping for the same thing.
@@ -563,10 +613,14 @@ describe('face-migration inventory — DERIVED from the tree, not from this list
       const entry = inventoryEntry(type);
       if (!entry) continue; // reported by the totality gate
       if (entry.disposition === 'generic-face') {
-        offenders.push(
-          `${type}: dispositioned generic-face, but its source exists only while its card is ` +
-            'mounted (DOM_SOURCE_LANE_TYPES) — a face over it renders controls for a dead source',
-        );
+        if (!CARD_SOURCE_FACED[type]) {
+          offenders.push(
+            `${type}: dispositioned generic-face, but its card owns the source and the shell ` +
+              'parks that card off-screen (pointer-events:none) — every button it draws becomes ' +
+              'unreachable. Carry them to the face, then add a NAMED CARD_SOURCE_FACED entry ' +
+              'saying which affordances moved and through what seam.',
+          );
+        }
         continue;
       }
       if (!migrationBlockers(entry).includes('needs-media-controller')) {
@@ -574,6 +628,87 @@ describe('face-migration inventory — DERIVED from the tree, not from this list
       }
     }
     expect(offenders.sort()).toEqual([]);
+  });
+
+  it('ANCHORED: every CARD_SOURCE_FACED entry still names a faced DOM-source module', () => {
+    // An entry that outlives its subject is the classic stale exemption: it
+    // reads as protection and covers nothing. Both directions are checked, so a
+    // module that is de-faced, re-dispositioned or removed from the DOM-source
+    // set reddens here instead of leaving a silent licence behind.
+    const stale: string[] = [];
+    for (const type of Object.keys(CARD_SOURCE_FACED).sort()) {
+      if (!DOM_SOURCE_LANE_TYPES.has(type)) {
+        stale.push(`${type}: no longer a DOM-source module — the exemption has no subject`);
+      }
+      const entry = inventoryEntry(type);
+      if (!entry) {
+        stale.push(`${type}: no inventory entry at all`);
+      } else if (entry.disposition !== 'generic-face') {
+        stale.push(`${type}: is ${entry.disposition}, so it never reaches the clause this exempts`);
+      }
+    }
+    expect(stale).toEqual([]);
+  });
+
+  it('DERIVED: a carried-affordance module DECLARES an extension, because there is nowhere else', () => {
+    // ⚠ THE LEG THAT MAKES THE ENTRY MORE THAN A PROMISE. A generic face is
+    // param cells and nothing else, and none of these affordances is a param —
+    // `controlCell` renders a `static` cell as a dead dashed label by design. So
+    // a module claiming it carried them while declaring no `face.extension` has
+    // carried them nowhere, and the claim is refuted by the def itself.
+    const byType = new Map(allDefs().map((d) => [d.type, d]));
+    const offenders: string[] = [];
+    for (const type of Object.keys(CARD_SOURCE_FACED).sort()) {
+      const face = byType.get(type)?.face;
+      const ext = (face as { extension?: string } | undefined)?.extension;
+      if (!ext) {
+        offenders.push(`${type}: claims carried affordances but declares no face.extension`);
+        continue;
+      }
+      if (!shellExtensionIds().includes(ext)) {
+        offenders.push(`${type}: declares extension '${ext}', which the glob does not resolve`);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it('EVERY entry states WHICH affordances moved and THROUGH WHAT — prose a stranger can act on', () => {
+    for (const [type, e] of Object.entries(CARD_SOURCE_FACED)) {
+      expect(e.why.length, `${type}: the why must be a real argument`).toBeGreaterThan(80);
+      expect(e.seam.length, `${type}: name the seam`).toBeGreaterThan(10);
+    }
+  });
+
+  it('NEGATIVE CONTROL: the exemption is NOT universal — the hazard still stands for the rest', () => {
+    // Without this the clause could be silently vacuous (nobody covered) or
+    // silently universal (everybody covered) and the sweep would look identical
+    // either way. Both directions, off the live sets.
+    const covered = [...DOM_SOURCE_LANE_TYPES].filter((t) => CARD_SOURCE_FACED[t]);
+    expect(covered, 'no DOM-source module is exempt — the mechanism is dead code').not.toEqual([]);
+
+    const uncovered = [...DOM_SOURCE_LANE_TYPES].filter((t) => !CARD_SOURCE_FACED[t]);
+    expect(uncovered, 'every DOM-source module is exempt — the gate checks nothing').not.toEqual([]);
+
+    // And an uncovered member really is refused a generic face. This is the leg
+    // that fails if someone "simplifies" the condition to a blanket skip.
+    for (const t of uncovered) {
+      expect(
+        inventoryEntry(t)?.disposition,
+        `${t} has no carried-affordance entry, so it must not be generic-face`,
+      ).not.toBe('generic-face');
+    }
+  });
+
+  it('SCOPE: this gate reads DISPOSITIONS and DEFS — it cannot see a rebuilt affordance WORK', () => {
+    // Stated inside the gate, per the blind-gate discipline. Nothing here mounts
+    // a face, clicks anything, or proves the acquire command reaches a card. The
+    // seam's own behaviour is unit-tested in
+    // `$lib/ui/media/camera-status-registry.test.ts` (delivery, hand-over,
+    // delivered:false when nobody is listening), and that it works END TO END
+    // through a real headless-hosted card is
+    // `e2e/tests/camerainput-shell-source.spec.ts`. A green run here means the
+    // module DECLARED a home for its affordances, never that they function.
+    expect(Object.keys(CARD_SOURCE_FACED).length).toBeGreaterThan(0);
   });
 
 });

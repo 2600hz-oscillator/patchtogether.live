@@ -557,7 +557,26 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // fake-camera flag the synthetic frame is non-deterministic enough
   // (frame-time clock) that the baseline would flap. Functional coverage
   // is e2e/tests/camera-input.spec.ts.
-  cameraInput: 'live MediaStream defeats deterministic capture',
+  // ⚠ SCOPED TO THE CARD, AND THE FACE IS NOW CAPTURED. This entry has always
+  // been about the LEGACY CARD scene — a different surface with a different
+  // baseline, the same distinction the `scoreboard` entry above draws. It stays
+  // true: the card renders the live `<video>` directly, so there is no version
+  // of the card scene without a MediaStream in it.
+  //
+  // ⚠ BUT THE FACE IS A DIFFERENT MATTER AND IS NOT EXEMPT. The module ships
+  // `__camerainputTestFrame`, a flag-gated seam that uploads a fixed synthetic
+  // checker instead of sampling the `<video>` — "identical on every build →
+  // frame-stable", with no getUserMedia dependency at all. The face scenes pin
+  // it through `simPin` and capture normally, so `cameraInput` is NOT in
+  // `FACES_WITHOUT_SCENES`. Recorded here because "the module is exempt" is the
+  // obvious wrong inference from this line, and it would have bought a needless
+  // exemption for a surface that captures fine.
+  //
+  // ⚠ THE CARD STILL EXISTS AND IS STILL RENDERED — under `?shell=legacy` it is
+  // the lane surface, and under the default shell it runs off-screen in
+  // `<HeadlessSourceHost>`. So this exemption is not obsolete just because the
+  // module was promoted.
+  cameraInput: 'CARD scene only: the card renders a live MediaStream, which defeats deterministic capture. The FACE scenes ARE captured (simPin __camerainputTestFrame) — see _shell-faces.ts.',
   // LOOPBACK renders a live getDisplayMedia tab-capture into a recursive
   // preview (a video-feedback tunnel) — non-deterministic by construction, same
   // as CAMERA. Functional + render coverage is e2e/tests/loopback.spec.ts
@@ -698,7 +717,19 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // until either (a) a deterministic-time test harness is added so VRT can
   // freeze the ball at a known position, or (b) the prototype is promoted
   // out of research/.
-  pong: 'animated game state defeats deterministic capture; unit + ART + E2E provide coverage',
+  // ⚠ pong REMOVED 2026-08-23 — THE EXEMPTION NAMED ITS OWN PROMOTION CONDITION
+  // and this PR built it. The entry read "animated game state defeats
+  // deterministic capture" and its surrounding note set the bar verbatim: until
+  // "a deterministic-time test harness is added so VRT can freeze the ball at a
+  // known position". That harness now exists in two halves — a `freeze` param
+  // whose scheduler tick returns before stepping, and a `__pongVrtSeed` global
+  // the factory reads at construction to pin the serve RNG. Freeze alone would
+  // NOT have been enough: it stops the picture without choosing WHICH picture,
+  // the outlines failure that measured 6724 px against a 1500 px tolerance.
+  //
+  // ⚠ REMOVED FROM ALLOWED_PERMANENT_EXEMPT IN THE SAME COMMIT — the two lists
+  // are anchored in both directions and an entry naming a non-exempt module is
+  // RED, so they can only ever move together.
   // MODTRIS research prototype: same rationale as PONG.
   modtris: 'animated game state defeats deterministic capture; unit + ART + E2E provide coverage',
   // GIBRIBBON — Vib-Ribbon-style ribbon scroller: the ribbon + sprites scroll
@@ -1113,7 +1144,7 @@ export const ALLOWED_PERMANENT_EXEMPT: ReadonlySet<string> = new Set([
   'push2Control', 'clouds', 'macseq', 'writeseq',
   'rings', 'marbles', 'attenumix', 'sidecar',
   'cloudseed', 'livecode', 'clockedRunner', 'midiCvBuddy',
-  'midiOutBuddy', 'midiclock', 'midiLane', 'pong',
+  'midiOutBuddy', 'midiclock', 'midiLane',
   'modtris', 'gibribbon', 'frogger', 'skifree',
   'analogLogicMaths', 'bentbox', 'b3ntb0x', 'acidwarp',
   'tempest', 'vfpgaRunner', 'joystick', 'gamepad',

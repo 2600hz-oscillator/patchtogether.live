@@ -594,12 +594,47 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
   },
   {
     type: 'cameraInput',
-    disposition: 'bespoke-surface',
-    blockers: ['needs-media-controller'],
-    why:
-      'the capture-source snowflake already carved out of the shell swap: the card owns ' +
-      'getUserMedia AND the enumerateDevices picker, and #1511 names its device-selection + ' +
-      'permission UI as its own surface concern rather than part of the lifecycle move.',
+    // ⚠ WAS `bespoke-surface` WITH A `needs-media-controller` BLOCKER. The old
+    // record read: "the capture-source snowflake already carved out of the shell
+    // swap: the card owns getUserMedia AND the enumerateDevices picker, and
+    // #1511 names its device-selection + permission UI as its own surface
+    // concern rather than part of the lifecycle move."
+    //
+    // ⚠ EVERY FACT IN THAT SENTENCE IS STILL TRUE. What changed is that none of
+    // them is a BLOCKER, and it is worth being precise about which argument
+    // retired which clause, because the same reasoning does NOT transfer to the
+    // other members of `DOM_SOURCE_LANE_TYPES`:
+    //
+    //   * "carved out of the shell swap" — no longer; the carve-out was removed
+    //     as part of this promotion (see ./legacy-fallback for the lineage).
+    //   * "the card owns getUserMedia" — it still does, and that is the design.
+    //     `<HeadlessSourceHost>` keeps the card mounted off-screen, so the
+    //     source is never orphaned, and the face never becomes a second owner.
+    //   * "the enumerateDevices picker" — rebuilt in the extension body. It can
+    //     never be a face cell (a runtime device list is not a `ParamDef` and
+    //     not an `options` roster), and the extension slot is exactly the rung
+    //     of the ladder for a control the generic cells cannot express.
+    //   * "its device-selection + permission UI as its own surface concern" —
+    //     the sharpest clause, and the one that took real work rather than a
+    //     re-reading. An off-screen host is `pointer-events: none`, so the
+    //     card's acquire gesture and recovery text ARE unreachable under the
+    //     shell. `$lib/ui/media/camera-status-registry` carries both to the
+    //     faceplate without moving ownership of the stream.
+    //
+    // ⚠ THIS IS NOT #1511 LANDING. The blocker's capability is "node-owned media
+    // lifecycle … instead of a mounted <X>Card.svelte", and its probe is
+    // `HEADLESS_MOUNT_LANE_TYPES.length === 0` — which is still false, and stays
+    // false, because this module's card is exactly what the host keeps alive.
+    // What this proves instead is narrower and worth having: a card-owned-source
+    // module CAN be faced while that blocker is outstanding, by paying the
+    // headless-host tax and rebuilding the card-only affordances. The other
+    // eleven waiting on #1511 have not paid either half.
+    //
+    // ⚠ NO `why` FIELD, AND THAT IS THE TYPE'S DOING RATHER THAN AN OMISSION:
+    // `why` exists only on the NON-generic dispositions, because those are the
+    // ones that owe an explanation. svelte-check refuses the field outright,
+    // which is the rule enforced by `tsc` rather than by a test.
+    disposition: 'generic-face',
   },
   {
     type: 'cartesian',
@@ -826,10 +861,28 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
       'a POLYPHONIC STEP SEQUENCER: a per-step chord/root roster with page navigation and ' +
       'quicksave slots. Steps are typed and the grid is the interaction.',
   },
+  // ⚠ RECLASSIFIED 2026-08-23, bespoke-surface -> generic-face, AND THE OLD WHY WAS
+  // RIGHT ABOUT THE MODULE AND WRONG ABOUT THE LADDER. It read: "a GAME: a paddle
+  // viewport with CV taps; the faders beside it are not the module." The first half
+  // still holds — the court IS the module and three faders are not. What changed is
+  // that "the viewport cannot be a generic face" stopped being true: the
+  // fullViewBody extension slot carries exactly that kind of surface, and backdraft,
+  // spirographs and videoOut all reach it from a generic-face disposition. So pong
+  // needs no bespoke DISPOSITION, only a bespoke BODY.
+  //
+  // ⚠ And the reclassification is REQUIRED rather than cosmetic: two gates couple to
+  // it in both directions — every def declaring a face must be dispositioned
+  // generic-face, and the done-set must BE STRICT_FACES. Promoting without this is
+  // red, which is how this was caught.
   {
     type: 'pong',
-    disposition: 'bespoke-surface',
-    why: 'a GAME: a paddle viewport with CV taps; the faders beside it are not the module.',
+    disposition: 'generic-face',
+    note: 'the COURT is the module and the three faders are not, so its picture lives in a '
+      + 'fullViewBody extension rather than a glyph. ⚠ The lane tile still gets NO picture: '
+      + 'pong is domain audio so hasVideoSurface is false, and both outputs are gate so every '
+      + 'glyph literal except none reddens the dead-glyph clause. That is the five-module '
+      + 'platform gap (with timelorde, scope, rasterize, wavesculpt), not a property of this '
+      + 'module.',
   },
   {
     type: 'push2Control',

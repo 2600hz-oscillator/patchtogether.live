@@ -378,14 +378,46 @@ export const SKIP_BUDGET = [
       'The scale-run leg is deliberately CI-skipped; the 4-source case is the CI guard. Every run skips it '
       + 'on the audited lane, and the budget keeps that decision named rather than ambient.',
   },
+  // ⚠ THIS ENTRY WAS RE-AIMED, AND THE REASON IS WORTH READING BEFORE EDITING
+  // IT. It used to be:
+  //
+  //   specs: ['workflow-shell-video.spec.ts'], reason: /no videoinput device/
+  //   why: 'Device-list assertion needs a videoinput; headless CI runners
+  //         expose none, so the leg is not applicable there and says so.'
+  //
+  // That skip is GONE — not moved, not renamed. The CAMERA picker case that
+  // owned it was reworked when cameraInput was promoted: its capability-
+  // dependent half became an `if (cameraCount > 0) … else …` BRANCH, so the
+  // zero-device state is now ASSERTED (the control renders, is correctly
+  // disabled, and says why) rather than skipped. The rest of that test is
+  // capability-independent and now reports a real pass on CI, which a mid-test
+  // `test.skip` had been hiding behind a whole-case "skipped".
+  //
+  // ⚠ BUT DELETING THE ENTRY OUTRIGHT ORPHANED A SECOND SITE, and that is the
+  // finding. `workflow-shell-video.spec.ts:737` is a DYNAMIC guard
+  // (`test.skip(VIDEO_SINK_FIXTURE.kind !== 'ok' || …, VIDEO_SINK_FIXTURE.why)`)
+  // about an exhausted video-sink pool — nothing to do with cameras. A dynamic
+  // site is claimed at SPEC granularity by testing the entry's regex against the
+  // spec's whole SOURCE TEXT, so `/no videoinput device/` was claiming it purely
+  // because that unrelated string happened to appear somewhere in the file.
+  // An incidental claim looks identical to a deliberate one right up until the
+  // string it depended on is deleted — which is exactly what happened here, and
+  // direction B caught it in the same cycle.
+  //
+  // So the regex now names the dynamic reason EXPRESSION itself. It cannot be
+  // satisfied by an unrelated edit elsewhere in the file, and if that guard is
+  // ever removed this entry goes stale loudly instead of drifting onto whatever
+  // string is nearest.
   {
     specs: ['workflow-shell-video.spec.ts'],
-    reason: /no videoinput device/,
+    reason: /VIDEO_SINK_FIXTURE\.why/,
     lanes: ['e2e'],
     homeLane: 'e2e',
     why:
-      'Device-list assertion needs a videoinput; headless CI runners expose none, so the leg is not '
-      + 'applicable there and says so. Tolerated but surfaced.',
+      'A DYNAMIC guard: the video-SINK fixture is resolved from the registry, and an exhausted pool '
+      + 'is a MIGRATION state rather than a failure. The named fixture-health test in the same file '
+      + 'is what goes red for it, so this case skips to keep one failure in one place instead of two. '
+      + 'Tolerated but surfaced.',
   },
   {
     specs: ['auth-routes.spec.ts'],

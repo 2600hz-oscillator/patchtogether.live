@@ -12,8 +12,8 @@ Every registered module carries exactly one **disposition**: what kind of work i
 |  | count |
 |---|---|
 | registered modules | 198 |
-| done (faced + promoted) | 134 |
-| remaining (excludes organizational-native) | 61 |
+| done (faced + promoted) | 137 |
+| remaining (excludes organizational-native) | 58 |
 | registered with NO disposition (must be zero) | 0 |
 | inventory entries naming a dead def (must be zero) | 0 |
 
@@ -21,16 +21,16 @@ Every registered module carries exactly one **disposition**: what kind of work i
 
 | disposition | what it means | modules | done |
 |---|---|---|---|
-| `generic-face` | author a `face` and rank the controls — no new platform capability | 143 | 134 |
+| `generic-face` | author a `face` and rank the controls — no new platform capability | 145 | 137 |
 | `blocked` | would be a face today but for the named capability, and nothing else | 1 | — |
-| `bespoke-surface` | the primary interaction is not param-shaped — needs a purpose-built surface | 51 | — |
+| `bespoke-surface` | the primary interaction is not param-shaped — needs a purpose-built surface | 49 | — |
 | `organizational-native` | rack furniture; not a migration at all | 3 | — |
 
 ## What each blocker buys
 
 | blocker | issue | modules waiting |
 |---|---|---|
-| `needs-media-controller` | #1511 | 10 |
+| `needs-media-controller` | #1511 | 9 |
 | `needs-note-entry-cell` | #1509 | 17 |
 
 ## `generic-face`
@@ -50,6 +50,7 @@ author a `face` and rank the controls — no new platform capability.
 | `bentbox` | video | done | — |
 | `bluebox` | audio | done | — |
 | `buggles` | audio | done | — |
+| `cameraInput` | video | done | — |
 | `cellshade` | video | done | — |
 | `charlottesEchos` | audio | done | — |
 | `chroma` | video | done | — |
@@ -92,7 +93,7 @@ author a `face` and rank the controls — no new platform capability.
 | `lines` | video | done | — |
 | `luma` | video | done | — |
 | `lumakey` | video | done | — |
-| `lushgarden` | video | — | — |
+| `lushgarden` | video | done | — |
 | `macrooscillator` | audio | done | — |
 | `mandelbulb` | video | done | — |
 | `mandleblot` | video | done | — |
@@ -135,6 +136,7 @@ author a `face` and rank the controls — no new platform capability.
 | `peakstate` | video | done | — |
 | `pentemelodica` | audio | done | — |
 | `polarizer` | audio | done | — |
+| `pong` | audio | done | — |
 | `posterbox` | video | done | — |
 | `qbrt` | audio | done | — |
 | `quadralogical` | video | done | — |
@@ -201,7 +203,6 @@ the primary interaction is not param-shaped — needs a purpose-built surface.
 | `audioIn` | audio | — | `needs-media-controller` |
 | `audioOut` | audio | — | — |
 | `blood` | video | — | — |
-| `cameraInput` | video | — | `needs-media-controller` |
 | `cartesian` | audio | — | `needs-note-entry-cell` |
 | `chromaconsole` | audio | — | — |
 | `clipplayer` | audio | — | — |
@@ -233,7 +234,6 @@ the primary interaction is not param-shaped — needs a purpose-built surface.
 | `peertube` | video | — | `needs-media-controller` `needs-note-entry-cell` |
 | `picturebox` | video | — | — |
 | `polyseqz` | audio | — | `needs-note-entry-cell` |
-| `pong` | audio | — | — |
 | `push2Control` | meta | — | — |
 | `recorderbox` | video | — | `needs-media-controller` `needs-note-entry-cell` |
 | `score` | audio | — | — |

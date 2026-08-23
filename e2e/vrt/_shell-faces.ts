@@ -2757,6 +2757,50 @@ export const FACES = [
       + 'advancing. Its card already drew this fractal; the face adds the SCREEN switch, and '
       + 'drops the derived magnification readout the resting faceplate may not paint.',
   },
+  // ── CAMERA — the first card-owned-source promotion ────────────────────────
+  {
+    type: 'cameraInput',
+    pages: 1,
+    videoFaceWhy:
+      'a VIDEO module, so it must boot into the video zone rather than a mixer channel column — '
+      + 'without this field bootWithFace waits out the full 90 s test timeout for a column '
+      + 'membership a video node never acquires. ⚠ AND IT IS CAPTURABLE DESPITE OWNING A LIVE '
+      + 'MediaStream, which is the interesting part — see the simPin below.',
+    // ⚠ THE MODULE'S OWN INJECTED-FRAME SEAM, AND IT IS WHY THIS FACE GETS REAL
+    // BASELINES RATHER THAN A `FACES_WITHOUT_SCENES` EXEMPTION.
+    //
+    // `cameraInput` sits in `EXEMPT_FROM_VRT` — "live MediaStream defeats
+    // deterministic capture" — and that stays TRUE OF THE CARD SCENE, which is a
+    // different surface with a different baseline (the same distinction the
+    // `scoreboard` entry in vrt-exemptions.ts already draws). It is NOT true of
+    // a scene captured with this pin set.
+    //
+    // `__camerainputTestFrame` makes the module upload a FIXED high-contrast
+    // synthetic frame instead of sampling the live `<video>`: the def describes
+    // it as "identical on every build → frame-stable", DOM-free, and with "NO
+    // dependency on getUserMedia reaching 'streaming'". So the pinned scene has
+    // no camera, no permission prompt and no stream clock in it at all.
+    //
+    // ⚠ AND IT IS A PAGE GLOBAL, WHICH IS WHY IT REACHES THIS MODULE AT ALL.
+    // simPin installs globals with `addInitScript`; cameraInput is main-thread
+    // (its source is a DOM `<video>`, so it can never be worker-eligible), so
+    // the factory reads them at construction. That is the same property that
+    // makes scoreboard pinnable and the exact inverse of acidwarp's worker
+    // locus, which is what lands acidwarp in FACES_WITHOUT_SCENES.
+    simPin: [
+      {
+        global: '__camerainputTestFrame',
+        value: 1,
+        why:
+          "uploads the module's fixed synthetic checker instead of sampling the live <video>, so "
+          + 'the captured frame is a pure function of the params and is identical across boots, '
+          + 'renderers and frame counts. Read as truthy, so 1 is the value. ⚠ It removes the '
+          + 'getUserMedia dependency entirely, which is the same reason the attest smoke uses it: '
+          + 'CI has no camera, and without the pin the scene would be a permission hole rather '
+          + 'than a picture.',
+      },
+    ],
+  },
   // ── CUT B ─────────────────────────────────────────────────────────────────
   {
     type: 'spectrograph',
@@ -2854,6 +2898,67 @@ export const FACES = [
       + 'canvas shows a live solid built from whatever is patched. These two scenes boot their '
       + 'own node with nothing patched — the `warrensvisions` / `colourofmagic` position, and the '
       + 'same one `frametable` takes directly above.',
+  },
+  // ── LUSH GARDEN (2026-08-23) ──────────────────────────────────────────────
+  {
+    type: 'lushgarden',
+    pages: 2,
+    videoFaceWhy:
+      'a VIDEO module, so it must boot into the video zone rather than a mixer channel column — '
+      + 'without this field bootWithFace waits out the full test timeout for a column membership '
+      + 'a video node never acquires. Both scenes carry a live surface: the compact tile paints a '
+      + 'VideoTileThumb through hasVideoSurface (a picture the placeholder tile never had), and '
+      + 'the dock body is the module\'s own fullViewBody. ⚠ AND THE PICTURE IS A WALL-CLOCK '
+      + 'ACCUMULATION, which is what makes the simPin below mandatory rather than tidy: plants '
+      + 'spawn on a rate, each integrates a grow-in curve, and cutout bakes drain two per frame, '
+      + 'so the frame differs on every frame AND every boot.',
+    simPin: [
+      {
+        global: '__lushgardenVrtSeed',
+        value: 0x5eed,
+        why:
+          'resets the scene, spawns a fixed 24 fully-grown plants from a seeded RNG, and sets '
+          + 'vrtMode, which SUPPRESSES ALL FURTHER SPAWNING. That is strictly stronger than a '
+          + 'phase pin: the surface becomes TIME-INVARIANT rather than merely frozen at an '
+          + 'arbitrary moment. ⚠ The freeze write alone would NOT be sufficient here — it stops '
+          + 'the picture but does not choose WHICH picture, the outlines failure mode that '
+          + 'measured 6724 px against a 1500 px tolerance across two ubuntu boots. ⚠ And the pin '
+          + 'REACHES this module only because it runs main-thread: simPin installs boot-time '
+          + 'globals via addInitScript, so a worker renderLocus would put it out of reach (the '
+          + 'acidwarp case). lushgarden declares no renderLocus. The value is the one the CARD '
+          + 'scene already pins, so the layout is one a human has reviewed in the legacy '
+          + 'baseline.',
+      },
+    ],
+  },
+  // ── PONG (2026-08-23) ─────────────────────────────────────────────────────
+  {
+    type: 'pong',
+    pages: 1,
+    videoFaceWhy:
+      'an AUDIO module that nonetheless needs the video-zone treatment for its DOCK scene: the '
+      + 'body paints a LIVE COURT on a 2D canvas, driven by the shared scheduler clock, so the '
+      + 'dock capture is of a running game. ⚠ The COMPACT scene is the opposite and it is worth '
+      + 'saying so — pong is domain audio, so hasVideoSurface is false and the tile is three '
+      + 'static faders with NO picture at all, deterministic for free. The two scenes on this '
+      + 'one module therefore have completely different determinism arguments.',
+    simPin: [
+      {
+        global: '__pongVrtSeed',
+        value: 0x50ec,
+        why:
+          'pins the serve RNG at CONSTRUCTION, which is what makes the dock capture a function '
+          + 'of (seed, params) rather than of boot speed. ⚠ freeze alone is NOT sufficient here '
+          + 'and that is measured, not assumed: it stops the picture but does not choose WHICH '
+          + 'picture — the outlines case drifted 6724 px against a 1500 px tolerance across two '
+          + 'ubuntu boots with freeze and no pin. The pin is unusually cheap on this module '
+          + 'because the game is ALREADY a pure function of tick count (dtSeconds is a constant, '
+          + 'never a measurement), so Math.random at serve time was the only nondeterminism left, '
+          + 'and both stepper entry points already accepted an injectable rng. ⚠ It REACHES this '
+          + 'factory only because pong is main-thread: simPin installs boot-time globals via '
+          + 'addInitScript, so a worker renderLocus would put it out of reach (the acidwarp case).',
+      },
+    ],
   },
 ] as const;
 
