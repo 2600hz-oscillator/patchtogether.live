@@ -107,7 +107,10 @@ Fourteen items across the three packages, each with evidence and a routing call.
 
 * **`scope`** — the file header calls the CV range *"unipolar 0..1"* when
   `pixelFromSample` is bipolar ±5 (and `docs.controls` contradicts itself in the same
-  sentence); the XY toggle's ledgered raw write is outstanding.
+  sentence); the XY toggle's ledgered raw write is outstanding; and **the fleet has no
+  pitch assertion that runs** — `scope-tuner.spec.ts:18` is `test.fixme`'d under flake
+  park #1847, so the only live leg checks the em-dash placeholder on the legacy card.
+  The face's `aria-label` route is the deterministic assertion that park wanted.
 * **`rasterize`** — the SCREEN switch is correctly built and **structurally invisible to
   its own gate** (`video-face-screen-source.test.ts` sweeps `listVideoModuleDefs()`; this
   is an audio def), so deleting it tomorrow goes green; the legacy card's redraw is an

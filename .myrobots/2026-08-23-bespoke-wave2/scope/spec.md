@@ -564,6 +564,36 @@ one-line revert (drop the strip from `drawScope`'s params; the meter disappears,
 `aria-label` survives, nothing else changes), and in §14 as the one item to put in front
 of the owner with a screenshot before merge.
 
+### 5.1 ⚠ AND THE TUNER'S PITCH BEHAVIOUR IS CURRENTLY UNTESTED IN CI
+
+MEASURED by reading `e2e/tests/scope-tuner.spec.ts`:
+
+* `:18` — *"ANALOG-VCO at A4 → pitch=440Hz / note=A4 / center hash visible"* is a
+  **`test.fixme`**, annotated *"FLAKE-PARK #1847 — nondeterministic on CI: 1
+  recovered-on-retry observation in the 96 h census to 2026-08-18; parked until
+  root-caused."* **The only assertion that reads a pitch VALUE does not run.**
+* `:80-100` — the one live test asserts the **em-dash placeholder** (`—` in `pitch-hz`
+  and `pitch-note`) on `.svelte-flow__node-scope`, i.e. **on the LEGACY CARD**, after a
+  `page.waitForTimeout(400)`.
+
+Two consequences, and both make the §5 design better rather than riskier:
+
+1. **The live test is unaffected by promotion.** It targets the card, and a face does not
+   delete the card — `raw-write-ledger.ts:202-210` makes exactly that point about a
+   different gate (*"promotion does not delete the card — the per-card VRT sweep still
+   renders it under `?shell=legacy`"*). So the em-dash leg keeps passing, on the surface
+   it has always tested.
+2. **The face's `aria-label` route is STRICTLY better-tested than the DOM row it
+   replaces**, because a `toHaveAttribute` on a stable accessible name is deterministic
+   where a rendered Hz string chasing a live YIN estimate is what got parked. ⚠ **Write
+   that leg**: the face PR should add a pitch assertion at the FACE reading
+   `aria-label`, which is the assertion #1847 wanted and could not stabilise. It is not a
+   replacement for un-parking `:18` — that is still #1847's to root-cause — but it means
+   the fleet regains a pitch assertion that runs.
+
+⚠ **Do NOT touch the parked test.** Un-parking it is a root-cause job with its own
+evidence, and a face PR is the wrong place to relitigate a flake park.
+
 ⚠ **What is NOT proposed:** keeping the DOM row, hiding it behind a hover, or making it
 an opt-in. Those are "there but hidden", refused by name.
 
@@ -824,6 +854,9 @@ missing capability; 12.4 is a gate that cannot see a capability that already shi
 5. **`face-scope-dock` slack ≤ 40 px** at the shipped screen width.
 6. **CI wall-time delta < 2 min.**
 7. **The tuning strip in front of the owner with a screenshot before merge** (§5).
+8. **A pitch assertion that RUNS**, reading the strip's `aria-label` at the face (§5.1) —
+   the fleet has none today, because `scope-tuner.spec.ts:18` is parked under #1847.
+   ⚠ Adding it is not un-parking that test, and the face PR must not attempt to.
 
 ---
 
@@ -851,6 +884,8 @@ flox activate -- task test:one -- push-card-schema            # ⚠ the face CHA
 flox activate -- task docs:accept && flox activate -- git diff --stat
 
 # 5. e2e — the existing scope specs must survive, and faces-parity auto-enrols
+#    ⚠ scope-tuner's pitch leg is PARKED (#1847); only the em-dash leg runs, and it
+#      targets the LEGACY CARD, which promotion retains. Do not un-park it here.
 flox activate -- task e2e:one -- scope-tuner
 flox activate -- task e2e:one -- scope-xy-intensity
 flox activate -- task e2e:one -- scope-video-out
