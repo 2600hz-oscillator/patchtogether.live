@@ -717,7 +717,19 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // until either (a) a deterministic-time test harness is added so VRT can
   // freeze the ball at a known position, or (b) the prototype is promoted
   // out of research/.
-  pong: 'animated game state defeats deterministic capture; unit + ART + E2E provide coverage',
+  // ⚠ pong REMOVED 2026-08-23 — THE EXEMPTION NAMED ITS OWN PROMOTION CONDITION
+  // and this PR built it. The entry read "animated game state defeats
+  // deterministic capture" and its surrounding note set the bar verbatim: until
+  // "a deterministic-time test harness is added so VRT can freeze the ball at a
+  // known position". That harness now exists in two halves — a `freeze` param
+  // whose scheduler tick returns before stepping, and a `__pongVrtSeed` global
+  // the factory reads at construction to pin the serve RNG. Freeze alone would
+  // NOT have been enough: it stops the picture without choosing WHICH picture,
+  // the outlines failure that measured 6724 px against a 1500 px tolerance.
+  //
+  // ⚠ REMOVED FROM ALLOWED_PERMANENT_EXEMPT IN THE SAME COMMIT — the two lists
+  // are anchored in both directions and an entry naming a non-exempt module is
+  // RED, so they can only ever move together.
   // MODTRIS research prototype: same rationale as PONG.
   modtris: 'animated game state defeats deterministic capture; unit + ART + E2E provide coverage',
   // GIBRIBBON — Vib-Ribbon-style ribbon scroller: the ribbon + sprites scroll
@@ -1132,7 +1144,7 @@ export const ALLOWED_PERMANENT_EXEMPT: ReadonlySet<string> = new Set([
   'push2Control', 'clouds', 'macseq', 'writeseq',
   'rings', 'marbles', 'attenumix', 'sidecar',
   'cloudseed', 'livecode', 'clockedRunner', 'midiCvBuddy',
-  'midiOutBuddy', 'midiclock', 'midiLane', 'pong',
+  'midiOutBuddy', 'midiclock', 'midiLane',
   'modtris', 'gibribbon', 'frogger', 'skifree',
   'analogLogicMaths', 'bentbox', 'b3ntb0x', 'acidwarp',
   'tempest', 'vfpgaRunner', 'joystick', 'gamepad',

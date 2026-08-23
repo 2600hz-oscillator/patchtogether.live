@@ -3745,6 +3745,21 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // level.
   'lushgarden',
 
+  // ── PONG (2026-08-23) ─────────────────────────────────────────────────────
+  //
+  // ⚠ THE PROMOTION IS THE FIX. Today the lane tile is a ModuleShellPlaceholder
+  // — no court, no score, no faders — WHILE THE GAME RUNS on the shared
+  // scheduler clock and pulses its score gates into whatever is patched. Every
+  // pong e2e drives ?shell=legacy, so nothing in the suite has ever seen it.
+  //
+  // ⚠ THE COURT MOVES TO THE DOCK BODY AND NOWHERE ELSE. `drawPong` is a pure
+  // function the legacy CARD called; promotion stops both surfaces rendering
+  // that card. And the lane STILL gets no picture — pong is domain audio so
+  // there is no VideoTileThumb, and both outputs are 'gate' so every glyph
+  // literal except 'none' reddens the dead-glyph clause. That is a platform gap
+  // affecting five modules, not a choice made here.
+  'pong',
+
   // ── CUT B (2026-08-23) — the "screen-panel" cut, which wanted no panels ────
   //
   // SPECTROGRAPH — the cheapest face in the fleet, and the one that had to

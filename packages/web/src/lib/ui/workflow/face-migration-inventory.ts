@@ -861,10 +861,28 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
       'a POLYPHONIC STEP SEQUENCER: a per-step chord/root roster with page navigation and ' +
       'quicksave slots. Steps are typed and the grid is the interaction.',
   },
+  // ⚠ RECLASSIFIED 2026-08-23, bespoke-surface -> generic-face, AND THE OLD WHY WAS
+  // RIGHT ABOUT THE MODULE AND WRONG ABOUT THE LADDER. It read: "a GAME: a paddle
+  // viewport with CV taps; the faders beside it are not the module." The first half
+  // still holds — the court IS the module and three faders are not. What changed is
+  // that "the viewport cannot be a generic face" stopped being true: the
+  // fullViewBody extension slot carries exactly that kind of surface, and backdraft,
+  // spirographs and videoOut all reach it from a generic-face disposition. So pong
+  // needs no bespoke DISPOSITION, only a bespoke BODY.
+  //
+  // ⚠ And the reclassification is REQUIRED rather than cosmetic: two gates couple to
+  // it in both directions — every def declaring a face must be dispositioned
+  // generic-face, and the done-set must BE STRICT_FACES. Promoting without this is
+  // red, which is how this was caught.
   {
     type: 'pong',
-    disposition: 'bespoke-surface',
-    why: 'a GAME: a paddle viewport with CV taps; the faders beside it are not the module.',
+    disposition: 'generic-face',
+    note: 'the COURT is the module and the three faders are not, so its picture lives in a '
+      + 'fullViewBody extension rather than a glyph. ⚠ The lane tile still gets NO picture: '
+      + 'pong is domain audio so hasVideoSurface is false, and both outputs are gate so every '
+      + 'glyph literal except none reddens the dead-glyph clause. That is the five-module '
+      + 'platform gap (with timelorde, scope, rasterize, wavesculpt), not a property of this '
+      + 'module.',
   },
   {
     type: 'push2Control',

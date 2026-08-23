@@ -2896,6 +2896,35 @@ export const FACES = [
       },
     ],
   },
+  // ── PONG (2026-08-23) ─────────────────────────────────────────────────────
+  {
+    type: 'pong',
+    pages: 1,
+    videoFaceWhy:
+      'an AUDIO module that nonetheless needs the video-zone treatment for its DOCK scene: the '
+      + 'body paints a LIVE COURT on a 2D canvas, driven by the shared scheduler clock, so the '
+      + 'dock capture is of a running game. ⚠ The COMPACT scene is the opposite and it is worth '
+      + 'saying so — pong is domain audio, so hasVideoSurface is false and the tile is three '
+      + 'static faders with NO picture at all, deterministic for free. The two scenes on this '
+      + 'one module therefore have completely different determinism arguments.',
+    simPin: [
+      {
+        global: '__pongVrtSeed',
+        value: 0x50ec,
+        why:
+          'pins the serve RNG at CONSTRUCTION, which is what makes the dock capture a function '
+          + 'of (seed, params) rather than of boot speed. ⚠ freeze alone is NOT sufficient here '
+          + 'and that is measured, not assumed: it stops the picture but does not choose WHICH '
+          + 'picture — the outlines case drifted 6724 px against a 1500 px tolerance across two '
+          + 'ubuntu boots with freeze and no pin. The pin is unusually cheap on this module '
+          + 'because the game is ALREADY a pure function of tick count (dtSeconds is a constant, '
+          + 'never a measurement), so Math.random at serve time was the only nondeterminism left, '
+          + 'and both stepper entry points already accepted an injectable rng. ⚠ It REACHES this '
+          + 'factory only because pong is main-thread: simPin installs boot-time globals via '
+          + 'addInitScript, so a worker renderLocus would put it out of reach (the acidwarp case).',
+      },
+    ],
+  },
 ] as const;
 
 /**

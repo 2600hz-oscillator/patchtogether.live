@@ -5,6 +5,7 @@
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import { setNodeParam } from '$lib/graph/mutate';
   import { pongDef, drawPong, type PongState, type PongParams } from '$lib/audio/modules/pong';
+  import { paramSpec } from './card-kit';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
@@ -25,9 +26,25 @@
   // Params reflect the patch graph (source of truth). The engine's
   // setParam is invoked by the reconciler when a fader moves; we mirror
   // here for the draw call.
-  let speed      = $derived(node?.params.speed      ?? pongDef.params[0]!.defaultValue);
-  let paddleH    = $derived(node?.params.paddleH    ?? pongDef.params[1]!.defaultValue);
-  let serveAngle = $derived(node?.params.serveAngle ?? pongDef.params[2]!.defaultValue);
+  // ⚠ RANGES AND DEFAULTS COME FROM THE DEF, NOT FROM LITERALS RE-TYPED HERE.
+  // The three faders below used to hard-code min/max/defaultValue while this very
+  // file already imported `pongDef` — and read defaults out of it BY POSITION
+  // (`params[0]`, `params[1]`, `params[2]`), which is its own hazard: adding a
+  // param at the front silently re-points all three. This PR adds `freeze`, so
+  // that hazard was about to become a live bug.
+  //
+  // They agreed with the def today; nothing held them there. pong sat outside
+  // RANGE_BOUND_CARDS, whose own stated scope is that every card NOT in it is
+  // unchecked — so a divergence would have been invisible to every gate. This is
+  // the backdraft class verbatim. `paramSpec` throws on an unknown id, so a
+  // renamed param fails loudly at mount instead of silently clamping.
+  const pSpeed      = paramSpec(pongDef, 'speed');
+  const pPaddleH    = paramSpec(pongDef, 'paddleH');
+  const pServeAngle = paramSpec(pongDef, 'serveAngle');
+
+  let speed      = $derived(node?.params.speed      ?? pSpeed.defaultValue);
+  let paddleH    = $derived(node?.params.paddleH    ?? pPaddleH.defaultValue);
+  let serveAngle = $derived(node?.params.serveAngle ?? pServeAngle.defaultValue);
 
   const setParam = (paramId: string) => (v: number) => setNodeParam(id, paramId, v);
   const readLive = (paramId: string) => () => {
@@ -87,9 +104,9 @@
       ></canvas>
     </div>
     <div class="fader-row">
-      <NeonFader value={speed}      min={0.25} max={4}  defaultValue={1.0} label="Speed"  curve="log"    onchange={setParam('speed')} moduleId={id} paramId="speed"      readLive={readLive('speed')} />
-      <NeonFader value={paddleH}    min={0.05} max={0.5} defaultValue={0.2} label="Paddle" curve="linear" onchange={setParam('paddleH')} moduleId={id} paramId="paddleH"    readLive={readLive('paddleH')} />
-      <NeonFader value={serveAngle} min={0}    max={1}   defaultValue={0.3} label="Serve"  curve="linear" onchange={setParam('serveAngle')} moduleId={id} paramId="serveAngle" readLive={readLive('serveAngle')} />
+      <NeonFader value={speed}      min={pSpeed.min} max={pSpeed.max} defaultValue={pSpeed.defaultValue} label="Speed"  curve="log"    onchange={setParam('speed')} moduleId={id} paramId="speed"      readLive={readLive('speed')} />
+      <NeonFader value={paddleH}    min={pPaddleH.min} max={pPaddleH.max} defaultValue={pPaddleH.defaultValue} label="Paddle" curve="linear" onchange={setParam('paddleH')} moduleId={id} paramId="paddleH"    readLive={readLive('paddleH')} />
+      <NeonFader value={serveAngle} min={pServeAngle.min} max={pServeAngle.max} defaultValue={pServeAngle.defaultValue} label="Serve"  curve="linear" onchange={setParam('serveAngle')} moduleId={id} paramId="serveAngle" readLive={readLive('serveAngle')} />
     </div>
   </PatchPanel>
 </div>
