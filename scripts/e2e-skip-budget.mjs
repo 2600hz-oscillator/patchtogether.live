@@ -290,6 +290,26 @@ export const SKIP_BUDGET = [
       + 'quarantined it.',
   },
   {
+    specs: ['dx7.spec.ts'],
+    reason: /SUSPECTED LIVE REGRESSION/,
+    lanes: ['e2e'],
+    homeLane: 'e2e',
+    why:
+      'PARKED WHILE CORRECTLY FAILING — this is NOT flake debt, and the reason regex deliberately quotes '
+      + 'the annotation so it cannot be mistaken for one. The algorithm-switch leg used to assert that two '
+      + 'scope captures differ by a normalised per-sample L2 > 0.1; measured with the switch made a NO-OP, '
+      + 'that distance is 1.2636, so the assertion could not fail on the very regression its header names '
+      + '(setParam early-out short-circuiting a postMessage-only param). Repaired to compare a '
+      + 'phase/envelope-robust TIMBRE FINGERPRINT (captureScopeTimbre, e2e/_helpers/scope-poll.ts), and it '
+      + 'now fails: algorithm 1->32 reads 0.0489 against a 0.0456 noise floor, 16->32 reads 0.0359, while '
+      + 'the POSITIVE CONTROL — a preset change through the identical metric — reads 1.1579. The host path '
+      + 'traces intact (engine has no early-out; the handle posts {type:"algorithm"} before its early-out '
+      + 'and is unit-tested; the worklet handles the message and process() re-reads patch.algorithm), so '
+      + 'resolving it needs worklet instrumentation rather than test work. Un-park it by fixing the product '
+      + 'or by disproving the measurement — never by widening the threshold, which is how it went blind the '
+      + 'first time. Full write-up: #1787 batch 5 (PR #2142).',
+  },
+  {
     specs: ['recording-survives-card-collapse.spec.ts'],
     reason: /no real H\.264 encoder/,
     lanes: ['e2e'],
