@@ -3071,6 +3071,7 @@ spectrograph in in audio
 spectrograph out bw mono-video
 spectrograph out color mono-video
 spectrograph param gain 0.25..4 log default=1
+spectrograph param view 0..1 discrete default=0
 spirographs meta domain=video
 spirographs in count cv param=count cvScale=discrete
 spirographs in s1_chroma cv param=s1_chroma cvScale=linear

@@ -180,3 +180,24 @@ Two things make that concrete:
 - **`illogic-face.spec.ts` is the one candidate that may already be fixed.** It is in the parked set because it flaked inside the census window, but the temporal analysis used it as the positive control: after #1834 landed on 08-18 it recorded **zero** flaky observations, while the same method showed #1646 and #1757 did not hold for their specs. That control is what makes the "did not hold" verdicts on the other two credible. If a root cause is wanted for a first un-park, #1834 is already written down.
 
 One implementation note for whoever comes back: the loop-generated cases are parked **per subject** through a named map (`FLAKE_PARK_1847`, and the existing `QUARANTINE` map in `modules.spec.ts`). The shared assertion body still runs for every subject NOT in the map, the rendered title is identical to the live one, and un-parking is a one-entry deletion.
+
+---
+
+## Addendum, 2026-08-23 — the first ART park, and it is already PAID
+
+**`art/scenarios/wavetable-vco/cv-path.test.ts :: "ENABLER — …"`** was parked for
+part of one day and is now **UN-PARKED**, because it was never a flake: it was
+correctly detecting a real defect, and the defect is fixed.
+
+The factory shipped the wavetable to the worklet with an un-acked
+`port.postMessage`, and the processor emits `out.fill(0)` — silence — until a
+table arrives. Nothing sequenced that against rendering, so an
+`OfflineAudioContext` could render silence. The table now arrives via
+`processorOptions`, which reaches the processor constructor before its first
+`process()` call.
+
+⚠ **The assertion was never weakened**, which was the entire point of parking
+rather than relaxing it. Left here rather than deleted because the one-day round
+trip is the useful record: *a test that is "correctly detecting a real defect" is
+parked against the FIX, not against itself* — and the fix is the thing that
+retires the entry.

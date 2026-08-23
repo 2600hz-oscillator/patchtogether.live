@@ -1,0 +1,244 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>ELECTRA CONTROL face — STATE 2: renaming a slot</title>
+<style>
+/* ─────────────────────────────────────────────────────────────────────────
+   ELECTRA CONTROL FACEPLATE — MOCKUP, state 2 of 2 (renaming).
+   SPEC AND MOCKUP ONLY. Nothing here is implemented. See spec.md.
+
+   This page exists for ONE affordance: the in-place rename. It is the
+   affordance the migration inventory records as this module's BLOCKER
+   (`needs-note-entry-cell`), and the research finding of this package is
+   that the blocker does not apply to the route this spec takes — the field
+   lives inside a module-owned `fullViewBody`, not in a face cell.
+   ───────────────────────────────────────────────────────────────────────── */
+:root{
+  --bg:#0e1013; --dock:#12161c; --pbody:#1c1f24; --line:#2c3037; --tile:#33383f;
+  --ink:#eef1f5; --dim:#9aa2ad; --faint:#646c77;
+  --meta:#7fd3b5; --warn:#f2c14e; --good:#8fe6b0; --bad:#ff9b9b;
+  --c1:#ff6b6b; --c2:#5ad1ff; --c3:#ffd23f;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+  font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1320px;margin:0 auto;padding:26px 20px 90px}
+h1{font-size:21px;font-weight:800;margin:0 0 6px}
+.sub{color:var(--dim);font-size:12.5px;margin:0 0 14px;max-width:110ch}
+.sub b{color:var(--ink)} code{font-family:var(--mono);font-size:11.5px;color:var(--meta)}
+.nav{display:flex;gap:8px;margin:0 0 20px;font-size:11px;flex-wrap:wrap}
+.nav a{color:var(--ink);text-decoration:none;border:1px solid var(--line);border-radius:6px;
+  padding:6px 12px;background:#12161c;font-family:var(--mono);letter-spacing:.06em;text-transform:uppercase}
+.nav a.on{border-color:var(--meta);color:var(--meta)}
+.warn{border:1px solid #6a5330;background:#1c1811;border-radius:8px;padding:11px 14px;margin:12px 0;
+  font-size:12.5px;color:#e8cf9a;max-width:122ch} .warn b{color:var(--warn)}
+.bad{border:1px solid #6a3838;background:#1c1212;border-radius:8px;padding:11px 14px;margin:12px 0;
+  font-size:12.5px;color:#e8b0b0;max-width:122ch} .bad b{color:var(--bad)}
+.ok{border:1px solid #3b5a48;background:#111a15;border-radius:8px;padding:11px 14px;margin:12px 0;
+  font-size:12.5px;color:#a9d8bd;max-width:122ch} .ok b{color:var(--good)}
+.cols{display:grid;grid-template-columns:minmax(0,1fr) 420px;gap:18px;align-items:start}
+@media (max-width:1180px){.cols{grid-template-columns:minmax(0,1fr)}}
+.drawer{background:#0b0e12;border:1px solid var(--line);border-top:2px solid var(--meta);
+  border-radius:11px 11px 0 0;padding:11px 13px 15px}
+.drawerbar{display:flex;align-items:center;gap:10px;padding:0 2px 9px}
+.drawerbar .nm{font-size:13px;font-weight:800;letter-spacing:.03em}
+.drawerbar .key{font-family:var(--mono);font-size:8.6px;letter-spacing:.12em;color:var(--faint);
+  border:1px solid var(--tile);border-radius:3px;padding:2px 6px}
+.connect{margin-left:auto;font-family:var(--mono);font-size:9.4px;letter-spacing:.07em;padding:6px 13px;
+  border:1px solid #3f6a5c;border-radius:5px;background:#14201c;color:var(--meta)}
+.plate{background:var(--pbody);border:1px solid var(--tile);border-left:4px solid var(--meta);
+  border-radius:10px;padding:11px 12px 12px;width:max-content;max-width:100%}
+.bank{display:grid;grid-template-columns:30px repeat(6,54px);gap:6px 8px;align-items:center}
+.banklab{font-family:var(--mono);font-size:8px;letter-spacing:.12em;color:var(--faint);
+  writing-mode:vertical-rl;transform:rotate(180deg);text-align:center;grid-row:span 2;
+  border-right:1px solid var(--tile);height:100%;padding-right:4px}
+.cell{position:relative;width:54px;display:flex;flex-direction:column;align-items:center;gap:3px;padding-top:5px}
+.stripe{position:absolute;top:0;left:9px;right:9px;height:2px;border-radius:1px}
+.cell i{--v:.5;--kc:#556;display:block;width:32px;height:32px;border-radius:50%;position:relative;
+  background:conic-gradient(from 215deg,var(--kc) 0turn calc(var(--v)*.75turn),
+    #2b3138 calc(var(--v)*.75turn) .75turn,rgba(0,0,0,0) .75turn)}
+.cell i::before{content:"";position:absolute;inset:4px;border-radius:50%;background:#20252b}
+.cell i::after{content:"";position:absolute;left:50%;top:50%;width:2px;height:11px;background:var(--ink);
+  border-radius:1px;transform-origin:50% 100%;
+  transform:translate(-50%,-100%) rotate(calc(-135deg + var(--v)*270deg))}
+.cell b{font-size:7px;font-weight:600;letter-spacing:.04em;color:var(--dim);font-family:var(--mono);
+  text-align:center;max-width:52px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pen{position:absolute;top:3px;right:1px;font-size:7px;color:var(--faint)}
+.empty{width:30px;height:30px;border-radius:50%;border:1px dashed #333a44;opacity:.45}
+.emptycap{font-size:7px;color:transparent;font-family:var(--mono)}
+/* the rename field — a real <input maxlength="14">, focused */
+.rename{width:52px;font-family:var(--mono);font-size:8px;letter-spacing:.02em;color:var(--ink);
+  background:#0d1116;border:1px solid var(--meta);border-radius:3px;padding:2px 4px;text-align:center;
+  box-shadow:0 0 6px rgba(127,211,181,.35);outline:none}
+.cell.editing{background:rgba(127,211,181,.07);border-radius:6px}
+.callout{position:absolute;left:60px;top:2px;white-space:nowrap;font-family:var(--mono);font-size:8px;
+  letter-spacing:.06em;color:var(--meta);background:#101a17;border:1px solid #2f4f45;border-radius:4px;
+  padding:3px 8px;z-index:4}
+.zones{background:#12161c;border:1px solid var(--line);border-radius:9px;padding:12px 13px}
+.zones h4{margin:0 0 8px;font-size:9px;font-weight:800;letter-spacing:.13em;text-transform:uppercase;color:var(--dim)}
+.zones+.zones{margin-top:14px}
+.zt{width:100%;border-collapse:collapse;font-size:10.5px}
+.zt th{text-align:left;font-family:var(--mono);font-size:7.8px;letter-spacing:.11em;text-transform:uppercase;
+  color:var(--faint);font-weight:400;padding:0 0 5px;border-bottom:1px solid var(--line)}
+.zt td{padding:5px 0;border-bottom:1px solid #1c2027;vertical-align:top;color:var(--dim);line-height:1.42}
+.zt td:first-child{color:var(--ink);font-family:var(--mono);font-size:9.5px;padding-right:10px;white-space:nowrap}
+</style>
+
+<div class="wrap">
+<h1>ELECTRA CONTROL — the drawer faceplate · STATE 2: renaming a slot in place</h1>
+<p class="sub">Spec and mockup only. The rename is a 14-character field, committed on Enter or
+blur and cancelled on Escape, that writes <code>node.data.slots[slot].name</code> <b>in place</b>
+inside one Yjs transaction. The clamp is the Electra's own name budget.</p>
+
+<div class="nav">
+  <a href="drawer.html">state 1 · the board</a>
+  <a class="on" href="drawer-renaming.html">state 2 · renaming a slot</a>
+</div>
+
+<div class="bad"><b>&#9888; THE MUTATION RULE IS LOAD-BEARING AND HAS ALREADY BROKEN ONCE.</b>
+<i>&ldquo;never rebuild-and-reassign <code>data.slots</code> &hellip; once integrated, spreading
+it into a fresh object re-integrates already-integrated Y types and Yjs throws 'Type already
+integrated' (the same trap that broke the second send-to-surface)&rdquo;</i>. Every mutator
+writes in place inside one <code>ydoc.transact</code>, and there is a named regression leg:
+<i>&ldquo;a SECOND assign to a DIFFERENT slot does NOT throw&rdquo;</i>. <b>Any body that
+rebuilds this map is a shipped crash.</b> Porting the card is the design instruction for exactly
+this reason: it is 417 lines of correct, tested, hard-won behaviour, and every deviation is a
+place three renderers of one grid can disagree.</div>
+
+<div class="cols">
+<div>
+  <div class="drawer">
+    <div class="drawerbar">
+      <span class="nm">ELECTRA CONTROL</span><span class="key">E</span>
+      <div class="connect">Send to Electra</div>
+    </div>
+
+    <div class="plate">
+      <div class="bank">
+        <div class="banklab">TOP</div>
+        <div class="cell editing"><div class="stripe" style="background:var(--c1)"></div>
+          <i style="--v:.62;--kc:var(--c1)"></i>
+          <input class="rename" value="Punch" maxlength="14" aria-label="Rename Punch">
+          <div class="callout">Enter commits &middot; Esc cancels &middot; blur commits &middot; max 14</div>
+        </div>
+        <div class="cell"><div class="stripe" style="background:var(--c1)"></div>
+          <i style="--v:.35;--kc:var(--c1)"></i><b>ADSR Dec</b><span class="pen">&#9998;</span></div>
+        <div class="cell"><div class="stripe" style="background:var(--c2)"></div>
+          <i style="--v:.74;--kc:var(--c2)"></i><b>Cutoff</b><span class="pen">&#9998;</span></div>
+        <div class="cell"><div class="stripe" style="background:var(--c2)"></div>
+          <i style="--v:.28;--kc:var(--c2)"></i><b>Reso</b><span class="pen">&#9998;</span></div>
+        <div class="cell"><div class="empty"></div><span class="emptycap">.</span></div>
+        <div class="cell"><div class="empty"></div><span class="emptycap">.</span></div>
+
+        <div class="cell"><div class="stripe" style="background:var(--c3)"></div>
+          <i style="--v:.5;--kc:var(--c3)"></i><b>BPM</b><span class="pen">&#9998;</span></div>
+        <div class="cell"><div class="stripe" style="background:var(--c3)"></div>
+          <i style="--v:.18;--kc:var(--c3)"></i><b>Swing</b><span class="pen">&#9998;</span></div>
+        <div class="cell"><div class="empty"></div><span class="emptycap">.</span></div>
+        <div class="cell"><div class="empty"></div><span class="emptycap">.</span></div>
+        <div class="cell"><div class="empty"></div><span class="emptycap">.</span></div>
+        <div class="cell"><div class="empty"></div><span class="emptycap">.</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="ok"><b>Width is EARNED here, and it is the strongest such argument in the fleet.</b>
+  Six columns is <b>the hardware's geometry, not a layout choice</b>. Compressing it would break
+  the 1:1 correspondence with the pots a player's hands are on. Say exactly that in the
+  <code>face-width-source</code> exemption entry, naming the device as the thing that consumes
+  the width — the width is not a design, it is a device.</div>
+</div>
+
+<div>
+  <div class="zones"><h4>the rename, and why it is not the blocker</h4>
+    <table class="zt">
+      <tr><th>fact</th><th>detail</th></tr>
+      <tr><td>the blocker</td><td><code>needs-note-entry-cell</code> (#1509), recorded against
+        this module in the migration inventory.</td></tr>
+      <tr><td>its definition</td><td><i>"a note/short-text entry <b>face cell</b> &hellip; a raw
+        <code>&lt;input type='text'&gt;</code> shares the gap, so a name field has <b>no face
+        representation</b> at all"</i>, with a probe that looks for typed entry mounted by
+        <b>ModuleShell &mdash; "the ONE renderer every face cell is painted by"</b>.</td></tr>
+      <tr><td>&#9888; why it misses</td><td><b>Every word of that is about a CELL.</b> This field
+        is markup inside <code>ElectraGridBody.svelte</code>, which the module owns and statically
+        imports in its own <code>shell-extension.ts</code>. ModuleShell never paints it and never
+        needs to.</td></tr>
+      <tr><td>where it IS real</td><td><code>vstInstrument</code> and <code>vstFx</code> &mdash;
+        their picker filter must be a ranked control, so the cell is genuinely missing. <b>The
+        blocker survives; only this membership changes.</b> (The inventory's capability probe is
+        deny-by-default: a declaration nobody needs is RED.)</td></tr>
+      <tr><td>the lesson</td><td><i>"A stale SCOPING CLAIM goes quietly green forever &mdash; it
+        produces no failure, only absent work &mdash; and it reads as a considered architectural
+        boundary rather than a snapshot."</i></td></tr>
+      <tr><td>the clamp</td><td><code>maxlength="14"</code> on the input. &#9888;
+        <code>setSlotName</code> does <b>not</b> clamp, so a name written by any other path (an
+        older peer, a direct ydoc write) can exceed 14 and is only truncated at preset-generation
+        time.</td></tr>
+    </table>
+  </div>
+
+  <div class="zones"><h4>the platform sequence — what "not yet" costs</h4>
+    <table class="zt">
+      <tr><th>#</th><th>change</th></tr>
+      <tr><td>1 &middot; REAL</td><td><code>MetaModuleDef</code> gains <code>face?</code> (and
+        <code>docs?</code>, which closes the zero-documentation defect in the same PR). &#9888;
+        Then sweep the consumers &mdash; <code>STRICT_FACES</code> is asserted as "every def that
+        declares a face" in both directions, and at least one face gate already calls
+        <code>listMetaModuleDefs()</code>.</td></tr>
+      <tr><td>2 &middot; REAL</td><td><code>BodyRole</code> gains
+        <code>'control-matrix'</code> &mdash; <b>with its own mechanical predicate</b>, because the
+        gate's whole design is that an entry cannot be wrong in the direction that matters without
+        reddening. Write the predicate first; a role with no predicate is a ledger of claims.</td></tr>
+      <tr><td>3 &middot; NOT REAL</td><td>the inventory blocker &mdash; one entry correction with
+        the argument in its <code>why</code>.</td></tr>
+      <tr><td>4</td><td>the face itself: port the card into the body, declare the extension,
+        promote, re-point the e2e at the drawer, resolve the VRT contradiction.</td></tr>
+      <tr><td>total</td><td><b>two PRs, and the first one is small.</b></td></tr>
+    </table>
+  </div>
+
+  <div class="zones"><h4>defects found, for routing</h4>
+    <table class="zt">
+      <tr><th>id</th><th>one line</th></tr>
+      <tr><td>13.1</td><td><b>zero documentation</b>, and the type system makes it unfixable in
+        place: no <code>docs</code> field on <code>MetaModuleDef</code>, no DESCRIPTIONS entry,
+        one line in the contract lock. The module's whole spec is a source comment no gate reads.</td></tr>
+      <tr><td>13.2</td><td>the VRT treatment <b>contradicts itself in three files</b> &mdash; two
+        exemption comments say this module belongs with <code>controlSurface</code>, and it is not
+        exempt and carries a live gating baseline. Recommendation: keep the baseline, fix the
+        prose.</td></tr>
+      <tr><td>13.5</td><td><b><code>data-testid</code> collision.</b> <code>Knob</code> keys the
+        testid on <code>paramId</code> alone, so two slots on the same param collide with each
+        other AND with the source module's own knob. The existing e2e already works around it
+        without naming it &mdash; and it is the reason <code>faces-parity</code>'s multiset gate
+        may red on a filled board.</td></tr>
+      <tr><td>13.6</td><td>the <code>detail</code> status string is computed on four paths and
+        rendered on none &mdash; a failed flash discards its own reason, including a thrown error
+        message. The fix is the accessible name, not a painted line.</td></tr>
+      <tr><td>13.8</td><td><b>only the FIRST board ever reaches the hardware.</b>
+        <code>maxInstances:1</code> looks like the guard, but the workflow PIN is excluded from
+        the cap &mdash; so a user can hold two, and <code>pinned-electraControl</code> sorts
+        first, meaning <b>the canvas one the user is looking at is the one silently ignored</b>.
+        No signal, no test. Owner decision.</td></tr>
+      <tr><td>13.9</td><td>a slot bound to a renamed PARAM on a still-present module is never
+        pruned, renders empty, and <b>the only way to clear a slot is to right-click the proxy</b>
+        &mdash; which an empty-looking cell does not have. Permanently invisible dead state.</td></tr>
+      <tr><td>13.11</td><td><b>no probe shape exists for a hardware-egress action.</b> This
+        module, <code>launchpadControl</code> and <code>controlSurface</code> all have one, so it
+        is a cohort blocker. The honest first step is a broker-side ledger recording
+        <code>delivered: false</code> rather than dropping it.</td></tr>
+      <tr><td>13.12</td><td>the 6&times;6 geometry is re-typed in the <b>assignment writer</b>,
+        the one place a wrong index binds a control to the wrong pot.</td></tr>
+    </table>
+  </div>
+
+  <div class="bad"><b>&#9888; Risk: HIGHEST in the wave, for a reason no other module has.</b>
+  This module is in the owner's rack on <b>every load</b> &mdash; it is a workflow pin,
+  undeletable while pinned, and the front end of a hardware pipeline with two
+  already-shipped-and-fixed bugs in its teardown path. A regression here is not cosmetic; it is
+  <i>the board is empty and the Electra will not flash</i>. <b>Do not auto-merge, whatever the
+  green says.</b></div>
+</div>
+</div>
+</div>

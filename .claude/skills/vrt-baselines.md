@@ -25,17 +25,31 @@ scoped.** The capture is one unsharded job over every spec, and the `grep` input
 that fixes that had existed for weeks — nothing chose it for you, so the
 documented entry point swept everything.
 
-A bare `task vrt:commit` now runs `scripts/vrt-scope.mjs decide`, which reads the
-branch's diff against `origin/main` and prints, BEFORE dispatching: the token it
-chose, the files that produced it, and how many of the discovered tests that
-token selects. It is **deny-by-default** — one module, or the full sweep:
+A bare `task vrt:commit` runs `scripts/vrt-scope.mjs decide`, which reads the
+branch's changed FILE PATHS against `origin/main` and prints, BEFORE dispatching:
+the token it chose, the files that produced it, and how many of the discovered
+tests that token selects. It is **deny-by-default** — one module, or the full
+sweep:
 
 | what changed | what you get |
 |---|---|
-| files of exactly ONE module (paths, or a shared roster file whose diff registers it) | `SCOPE <type>` |
+| files whose PATHS name exactly ONE module | `SCOPE <type>` |
 | two or more modules (e.g. the moog921a/921b pair) | FULL, with both tokens named |
-| a renderable file attributable to no module (shared primitive, stylesheet, spec, lockfile) | FULL, with the file named |
+| a renderable file whose path names no module (shared primitive, stylesheet, spec, lockfile, **shared roster**) | FULL, with the file named |
 | nothing that can move a pixel (CI, prose, `*.test.ts`, attest receipts) | REFUSES to dispatch (exit 3) |
+
+⚠ **PATHS ONLY, since 2026-08-23 — so pass `GREP=` on a face PR.** The derivation
+used to have a second phase that read each unattributable file's DIFF HUNKS for
+module names, which is what let a shared roster file (`strict-faces.ts`,
+`face-readout-values.ts`, `card-def-debt.ts`) be attributed to the module a face
+PR was promoting. It never stopped producing false positives — repo prose names
+other modules constantly, `.filter((e) => …)` implicated the `filter` MODULE,
+`patch.edges` implicated `edges` — and after three narrowings it still forced
+full sweeps three times in the week of 2026-08-16. The CI simplification audit
+deleted it: keep the scoped dispatch (a real 3-min-vs-45-min win), stop inferring
+the token, and let the operator who already knows the answer type it. **Every
+face PR touches a roster file, so a bare dispatch there now derives FULL** — the
+report says so and prints the `GREP=` line.
 
 - ⚠ **The token is ONE shell-safe word**, derived or hand-passed, and both the
   Taskfile and the workflow refuse anything else. `task vrt:update -- --grep

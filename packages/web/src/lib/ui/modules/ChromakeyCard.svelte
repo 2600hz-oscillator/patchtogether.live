@@ -9,8 +9,7 @@
   import type { NodeProps } from '@xyflow/svelte';
   import NeonFader from '$lib/ui/controls/NeonFader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import { patch } from '$lib/graph/store';
-  import { setNodeParam } from '$lib/graph/mutate';
+  import { mutateNode, setNodeParam } from '$lib/graph/mutate';
   import { chromakeyDef } from '$lib/video/modules/chromakey';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
@@ -33,16 +32,29 @@
   function ch(v: number): string { return Math.round(clamp01(v) * 255).toString(16).padStart(2, '0'); }
   let keyHex = $derived(`#${ch(p('keyR'))}${ch(p('keyG'))}${ch(p('keyB'))}`);
 
+  // ⚠ ONE TRANSACTION, NOT THREE BARE WRITES — the same defect ChromaCard
+  // carried, in the same shape, because this picker was copied from it. Three
+  // bare `patch.nodes[id].params.*` assignments are three separate UNTAGGED
+  // transactions: `mutate.ts` describes `setNodeParam` as *"equivalent to the
+  // bare proxy assignment but tagged so it lands on the undo stack"*, and every
+  // fader on this card already goes through it. So a collaborator saw two wrong
+  // intermediate key colours, and an undo unwound one channel at a time.
+  //
+  // ⚠ IT IS WORSE HERE THAN ON CHROMA, which is why both were fixed together:
+  // the key colour is what the matte is COMPUTED FROM, so an intermediate value
+  // is not a wrong tint on top of a correct picture — it is a different matte,
+  // and every collaborator briefly composites the wrong pixels.
   function onColorChange(e: Event) {
     const hex = (e.target as HTMLInputElement).value;
     const r = parseInt(hex.slice(1, 3), 16) / 255;
     const g = parseInt(hex.slice(3, 5), 16) / 255;
     const b = parseInt(hex.slice(5, 7), 16) / 255;
-    const target = patch.nodes[id];
-    if (!target) return;
-    target.params.keyR = r;
-    target.params.keyG = g;
-    target.params.keyB = b;
+    mutateNode(id, (live) => {
+      // In place, never reassigning `params` (the "Type already integrated" trap).
+      live.params.keyR = r;
+      live.params.keyG = g;
+      live.params.keyB = b;
+    });
   }
 
   // Ports — ids byte-identical to chromakeyDef (fg/bg = video, keyR/keyG/keyB +

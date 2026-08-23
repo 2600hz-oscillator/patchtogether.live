@@ -121,6 +121,62 @@ export const feedbackDef: VideoModuleDef = {
     { id: 'offsetY', label: 'OffsY',  defaultValue: DEFAULTS.offsetY, min: -1,   max: 1,      curve: 'linear' },
   ],
 
+  // ── FACE (PF-20) ──────────────────────────────────────────────────────────
+  //
+  // FEEDBACK is the video-feedback LOOP: the frame is re-sampled from its own
+  // previous output through a small affine warp, scaled by decay, and mixed back
+  // against the fresh input. It is the camera-pointed-at-its-own-monitor
+  // instrument, so every control shapes the TRAJECTORY the image takes rather
+  // than a static look.
+  //
+  // THE RANK, read back as a sentence: decide how much loop there is (WET),
+  // decide whether the trail dies or runs away (DECAY), then shape the path it
+  // takes — the tunnel (ZOOM), the spiral (ROTATE), and the drift (OFFSETS).
+  //
+  // ⚠ WET IS FIRST BECAUSE AT 0 THIS MODULE IS A WIRE. The docs call it the
+  // wet/dry mix between the raw input and the recursive accumulator; at 0 the
+  // accumulator is not in the output at all, so nothing else on this face does
+  // anything. That is a stronger claim than "it is the important one".
+  //
+  // ⚠ DECAY IS SECOND BECAUSE ITS RANGE CROSSES 1.0. `0..2` spans a decaying
+  // trail and a DESTRUCTIVE one — the def's own docs note that decay over 1.0
+  // saturates white rather than NaN-ing — so this single control is the
+  // difference between an effect and a runaway. The warp controls only decide
+  // what shape the runaway has.
+  //
+  // ⚠ THE TWO OFFSETS RANK ADJACENTLY AND LAST because they are ONE gesture in
+  // two axes (the frame's drift), and neither is meaningful alone.
+  face: {
+    order: ['wet', 'decay', 'zoom', 'rotate', 'offsetX', 'offsetY'],
+
+    // ⚠ NO `pages`. Six controls over ONE loop are a single honest band, far
+    // below DOCK_TAB_MIN_BANDS (7). "Amount" vs "warp" is a real distinction but
+    // a two-control band and a four-control band each earning a header is more
+    // chrome than signal at this size.
+
+    // ⚠ FADERS FOR ALL SIX, and here that IS what the card draws: every one of
+    // `FeedbackCard.svelte`'s controls is a `NeonFader`. Declared rather than
+    // left to default because the shell's default for a continuous param is a
+    // KNOB, and this module's throws are genuinely linear travels the player
+    // sweeps — a tunnel is a gesture along zoom, not a dial setting.
+    paramCells: {
+      wet: 'fader', decay: 'fader', zoom: 'fader',
+      rotate: 'fader', offsetX: 'fader', offsetY: 'fader',
+    },
+
+    // ⚠ MANDATORY FOR A VIDEO DEF — see the sibling defs in this batch: with no
+    // `type: 'audio'` output, any other glyph literal resolves to a dead
+    // `{kind:'static'}` and reddens module-face-lint. The picture comes from
+    // `hasVideoSurface(def)` and the `fullViewBody` extension.
+    glyph: 'none',
+
+    // SCREEN ON/OFF arrives through this slot (#1928). A PORT rather than an
+    // addition: `FeedbackCard.svelte` already draws this preview — but with no
+    // toggle, so promotion would have handed the player a picture they could not
+    // collapse. See `$lib/ui/modules/feedback/shell-extension.ts`.
+    extension: 'feedback',
+  },
+
   docs: {
     explanation:
       "Analog-video-style feedback loop, the on-screen equivalent of pointing a camera at its own monitor. Each frame it re-samples its OWN previous output from a ping-pong framebuffer through a small affine warp — rotate and scale the UV about the canvas center, plus a tiny XY offset — multiplies that warped tap by Decay, then adds the fresh input (weighted by 1 minus the clamped decay) to form a recursive accumulator. That accumulator is cross-faded against the dry input by Wet and clamped to [0,1] so destructive Decay over 1.0 saturates white instead of NaN-ing. With Zoom slightly above 1 and a touch of Rotate you get the classic infinite spiraling \"tunnel\"; the prior frame is sampled black outside the canvas (no edge smear) so trails decay into darkness rather than melting along the borders. Patch a camera or any video source into IN, feed OUT back to a monitor, and modulate the warp via the CV inputs for evolving, self-oscillating imagery.",

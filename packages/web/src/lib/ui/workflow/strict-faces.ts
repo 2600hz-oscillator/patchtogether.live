@@ -3520,6 +3520,100 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // generator every consumer samples.
   'shapes',
 
+  // ── CUT A · BATCH 2 (2026-08-23) ──────────────────────────────────────────
+  //
+  // Two faces, and the batch is TWO rather than four because the re-derivation
+  // moved two of its four assigned modules OUT of the plain set. Both
+  // reclassifications are recorded in `.myrobots/2026-08-23-cut-a-batch2-
+  // derivation.md` with the read sites; the short form is that `samsloop`'s
+  // recording switches are `node.data` and not params, and `joystick` cannot
+  // paint a lane tile at all (see the refusal note further down this file).
+
+  // SHAPEDRAMPS — a sync-locked parametric ramp generator, and the FIRST module
+  // in this programme to gain a picture rather than carry one forward.
+  //
+  // ⚠ ITS CARD HAS NO PREVIEW. Every other video face's `fullViewBody` ports a
+  // canvas the legacy card already owned; `ShapedrampsCard.svelte` is eight
+  // faders and two section labels, and `vrt-exemptions.ts` lists it among the
+  // cards "confirmed 0 canvases each". So the SCREEN switch is an ADDITION, and
+  // the promotion is the first time a player can see what this module emits
+  // without patching it into an OUTPUT first.
+  //
+  // ⚠ EIGHT FADER-DRAWN PARAMS AND NO `paramCells`, WHICH IS THE DELIBERATE
+  // CHOICE AND NOT THE LAZY ONE. Every control on the card is a `NeonFader`, so
+  // "declare the primitive the card established" read literally would declare
+  // `fader` eight times. `shell-control-kind.ts` records the measurement that
+  // says otherwise: TWENTY-THREE faced modules rank ONE HUNDRED AND TWENTY-ONE
+  // fader-drawn params as knobs, `noise` is the only declarer, and converting
+  // them is a LOOK RULING WITH REAL COST that is WITH THE OWNER. Declaring it
+  // here would also halve this face's lane plate (`LANE_CELL_H.fader` 96 px
+  // against a 42 px row), spending the whole budget the ranking is built
+  // around. This face follows the twenty-three and says so on the def.
+  //
+  // ⚠ H/V SHAPE ARE NOT SELECTORS. They read like four-position switches —
+  // linear / triangle / soft-fold / radial — and the shader blends LINEARLY
+  // between adjacent shapes, so those are landmarks on a continuous morph. No
+  // `options` roster: naming them would tell the player the in-between values
+  // are unreachable when they are the entire point.
+  //
+  // SCREEN OFF keeps the watch mark, and this is the widest-tap form of that
+  // argument in the fleet: six outputs, four of them drawn from `vUv` with no
+  // input at all, AND THE PREVIEW SHOWS ONLY `h_out` — five of the six are
+  // invisible on the very surface whose switch would mute them. The two
+  // identity ramps (`h_lin`/`v_lin`) are invariant to every knob and CV, so if
+  // they went dark nothing on the faceplate would move to say why.
+  //
+  // ZERO ATTEST: `face` and `docs` are hash-transparent and no `params` field
+  // is touched — no options, no landmarks, no curve, no default.
+  'shapedramps',
+
+  // DOCKSCOPE — a single-channel time-domain scope, and the face that had to
+  // REFUSE the glyph its own inventory note recommended.
+  //
+  // ⚠ THE `scope` GLYPH WOULD HAVE PAINTED A FAKE TRACE. The Cut A note reads
+  // "the trace IS the `scope` glyph (analogVco is the precedent)". It is not:
+  // `glyphBinding` resolves any glyph plus a PRIMARY AUDIO OUTPUT to
+  // `live-audio`, and dockscope declares `outputs: []` — it is a terminal
+  // monitor. With no audio output the binding falls to `{ kind: 'static' }`,
+  // the deterministic placeholder trace. `glyph: 'scope'` would have compiled,
+  // passed `VALID_GLYPHS`, and shipped a picture that is not this module's
+  // signal — a green gate certifying a dead display. analogVco reaches the live
+  // branch only because it declares audio outputs.
+  //
+  // So the trace comes through `fullViewBody` instead, where the body can read
+  // the engine handle's own `read('snapshot')` key — the only seam that
+  // actually reaches these samples. `dockscope-draw.ts` was already a pure
+  // function of (samples, sampleRate, params), so the body is a thin canvas
+  // host over the drawing the card has always used, and the two surfaces cannot
+  // disagree about what the trace looks like.
+  //
+  // ⚠ THE TRACE IS THE WIDTH-EARNER, and it is one of the named ones — "a live
+  // picture, a scope trace" is the ruling's own example. This face claims width
+  // for the display and nothing else.
+  //
+  // ⚠ `range` IS LATCHING, classified at the READ SITE: `dockscope-draw.ts`
+  // compares `params.range >= 0.5` on EVERY FRAME to pick the volts-per-division
+  // ceiling. There is no edge detector anywhere in the chain, so it is a level,
+  // not a trigger — `ACKNOWLEDGED_LATCHING`, never `face.momentary`.
+  //
+  // `range` gains an `options` roster so the two states are named AUDIO and CV.
+  // Unnamed, a 2-state toggle announces pressed/unpressed — enable-and-absence
+  // semantics — while the display is showing two MODES with different
+  // volts-per-division. The names are PROMOTED, not invented: they are the
+  // strings the card's own button has always painted, and the read site already
+  // labels the trace `±1.0` / `±5V` from the same branch.
+  //
+  // ⚠ AND IT COSTS NO ATTEST, WHICH IS NOT THE OBVIOUS ANSWER. A new `options`
+  // roster is a `params` change, and "params is in the WebGL content basis" is
+  // the rule every recent face entry cites — `graphicEq` below pays exactly that
+  // cost for exactly this kind of roster. It does not apply here, and the
+  // difference is the DOMAIN rather than the field: `webgl-attest-lib.ts`
+  // auto-sweeps `packages/web/src/lib/video/**` plus exactly TWO named audio
+  // files (`cube.ts`, `wavesculpt.ts`). `dockscope.ts` is an AUDIO def and
+  // neither of those, so it is not in the basis at all. Measured, not reasoned:
+  // `task webgl:attest:check` reports the hash unchanged with a matching
+  // attestation already on disk.
+  'dockscope',
   // ── GRAPHIC EQ — the meter, and the LAST of the five MONITOR cards ────────
   //
   // Five controls. Two of them carry a NEW `options` roster and that is where
@@ -3557,6 +3651,85 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // expired. The OUTPUT argument holds on top of that, and more pointedly for a
   // chainable `output`-category module whose whole point is feeding downstream.
   'graphicEq',
+  // ── BATCH 24 — CUT A, batch 1: the four plain video faces ─────────────────
+  //
+  // "Plain" is a measured claim, not a vibe: each of the four needs only cells
+  // that already ship, and none needed a registered panel, a tab rail or a
+  // snowflake accommodation. All four are six params in ONE band.
+  //
+  // CHROMA — the single-input COLOUR GRADE (NOT a keyer; the name is historical
+  // and `chromakey` below took that job). `tintMix` ranks ABOVE the three tint
+  // channels because it DEFAULTS TO 0 and gates them: reach a channel first and
+  // nothing happens. Its `hue` param is `-180..180` DEGREES, so it is emphatically
+  // NOT the `hue` CELL, which is the conic ring for a continuous `0..1` angle.
+  'chroma',
+  // CHROMAKEY — the two-input COMPOSITOR. Its key colour ranks LAST precisely
+  // because it is already correct at spawn: `keyR/keyG/keyB` default to pure
+  // green, the colour the module exists to key, so the common session never
+  // touches them. SCREEN OFF keeping the watch mark matters more here than
+  // anywhere else in the batch — this node is the pull root for TWO upstream
+  // chains (`fg` and `bg`), so a lapsed mark idles both branches of the composite.
+  'chromakey',
+  // FEEDBACK — the video-feedback LOOP, and the batch's ACCUMULATOR case. It
+  // re-samples its OWN previous output from a ping-pong framebuffer, so the pull
+  // is not merely how the picture stays fresh, it is how the trail EXISTS: a
+  // lapsed watch mark would decay the accumulated image out of the patch and
+  // SCREEN would become a history eraser. Do not copy its three batch-mates'
+  // "it would resume identically" argument onto it.
+  'feedback',
+  // MANDLEBLOT — the Mandelbrot EXPLORER. Two things separate it from the other
+  // three. It is TIME-ANIMATED (`uTime * 0.1 * uColorCycle` drives the hue and
+  // `color_cycle` ships at 1, so the palette cycles at rest — the VRT clock pin
+  // is load-bearing here, not a formality). And its promotion DELETES a real
+  // derived readout: the card painted the live magnification, which the resting
+  // faceplate may not. That finding — knob position is a LOG map onto roughly
+  // 1x..1e6x, not a linear one — now lives in `docs.controls.zoom` and on the
+  // control's `aria-valuetext`.
+  'mandleblot',
+
+  // ── CUT B (2026-08-23) — the "screen-panel" cut, which wanted no panels ────
+  //
+  // SPECTROGRAPH — the cheapest face in the fleet, and the one that had to
+  // CREATE a param to keep an affordance.
+  //
+  // ⚠ THE CUT PRESCRIBED A REGISTERED PANEL FOR ITS SCREEN. It is a BODY, and
+  // the discriminator is mechanical rather than aesthetic — stated on `wavecel`
+  // in `shell-cells.ts`: a PANEL is right when the picture is DERIVED from
+  // params and `node.data` with no analyser, a BODY when the surface carries a
+  // per-frame ENGINE READ. Every column of this sonogram comes from
+  // `analyser.getFloatFrequencyData`, and the 256-column scroll buffer lives in
+  // the module's FACTORY CLOSURE reachable only through `drawFrame`. There is
+  // nothing on the node for a panel to derive.
+  //
+  // ⚠ THE `view` PARAM IS NEW, AND CREATING IT IS THE POINT. COLOR/B-W was
+  // `let viewBw = $state(false)` — component state, which promotion DELETES
+  // along with the card. Functional parity is not negotiable, so the switch
+  // moved onto the contract. It is display-only (both video outputs always
+  // render both colormaps; this picks which port a PREVIEW pulls), so no
+  // downstream consumer can observe it and not one rendered frame changes.
+  // It carries an `options` roster for the dockscope reason: unnamed, a 2-state
+  // toggle announces pressed/unpressed while what this picks is one of two
+  // COLORMAPS, neither of which is the other's "off".
+  //
+  // ⚠ `glyph: 'none'` IS FORCED TWICE OVER, which is unusual and worth stating.
+  // No LIVE glyph: `glyphBinding` needs a primary AUDIO output and both of this
+  // module's outputs are `mono-video`, so any literal resolves `static` — the
+  // dead-glyph clause refuses it. And no PICTURE glyph either: `hasVideoSurface`
+  // is `domain === 'video'` and this def is `domain: 'audio'` despite emitting
+  // video. So its LANE tile paints two ranked cells and nothing else, and the
+  // sonogram is a DOCK surface by construction — the only face in the programme
+  // whose module emits video and whose tile shows none.
+  //
+  // ⚠ DETERMINISM IS FREE. `__spectrographVrtFreeze` is read INSIDE the module,
+  // not in the card, so the body inherits the frozen fill without mirroring a
+  // global — the opposite of dockscope, where the seed lived in the card and
+  // had to be duplicated or the face would have been unbaselinable.
+  //
+  // ZERO ATTEST despite adding a param: `webgl-attest-lib.ts` admits
+  // `lib/video/**`, any `lib/ui/modules/*.svelte` that greps as creating a real
+  // WebGL context, and exactly two audio defs (`cube.ts`, `wavesculpt.ts`).
+  // This def is none of those, and both surfaces are Canvas2D.
+  'spectrograph',
 ]);
 
 /**

@@ -653,6 +653,40 @@ to hide.
 | `task docs:accept` | `contract-lock.txt` (+ the gitignored render module). Needed for a new `controlFamilies` entry or any param change. |
 | `task test:ledger:accept` | `docs/testing/test-ledger.generated.md`. Needed on ANY edit to an exemption list. GENERATED — never hand-edit. |
 | `task art:update` | ART `.f32` + `.sha` **and** `fingerprints.generated.json` (chained). Only if the audit fixed DSP. **Attribute every manifest entry**: a labels-only `peakDb`/`rmsDb` move is a LEVEL change; a spectrum move is TIMBRAL. An entry you cannot attribute is a regression — stop, do not re-pin. |
+| `task e2e:timings:accept -- <run>` | `e2e/e2e-timings.generated.json` — the e2e shard planner's cost artifact. |
+| `task vrt:strict:timings:accept -- <run>` | `e2e/vrt-strict-timings.generated.json` — the vrt-strict shard planner's cost artifact. |
+
+### ⚠ A FACE ADDS SCENES TO **BOTH** COST ARTIFACTS — RE-PIN BOTH, EVERY TIME
+
+**Measured, twice, in one day (2026-08-23).** Promoting a module adds rows to the
+e2e sweeps *and* two new `vrt-strict` scenes (`face-<t>-compact`,
+`face-<t>-dock`). An unmeasured scene rides the **median**, so a genuinely
+expensive one is scheduled at a fraction of its cost and its shard runs out of
+headroom while **every test on it passes**:
+
+- `vrt-strict shard 1/8` reddened at **87%** of its 600 s budget on a face PR,
+  because that batch's ten new scenes rode the median — one of them,
+  `face-mandleblot-dock`, actually costs **90.0 s**.
+- Then **`main` itself went RED** at **92%** on `shard 2/8` a few hours later,
+  because the *next* two faces (`shapedramps`, `dockscope`) landed with their
+  scenes unmeasured for exactly the same reason.
+
+⚠ **The recurrence is the point: the first fix re-pinned only the artifact that
+had just broken, and the policy said nothing about the other one.** A gap in a
+policy reproduces the same failure on the next merge, which is why this row is
+here rather than in a PR body.
+
+- **On every face PR's absorb-main, run BOTH accepts** against the newest green
+  run, and review both diffs.
+- ⚠ **A `vrt-strict` capacity failure does NOT look like a cost problem.** It
+  reports *"Every test here PASSED. What failed is the HEADROOM"*, names a
+  percentage, and suggests raising `--global-timeout`. **Raising the timeout is
+  the wrong fix** — re-pin the artifact so the planner can see the real costs and
+  re-balance. Measured after re-pinning: spread `1.008x`, every shard at 77-78%
+  of budget.
+- ⚠ **The blobs of a run that FAILED on headroom are still valid input**, because
+  the tests passed — the run measured everything correctly and only ran out of
+  room. Do not wait for a green run to accept from one.
 
 Attest: **NIL**, for an audio OR a video def. Audio defs are outside the WebGL
 basis and no collab/grand basis file is touched; and a video def's `face` is

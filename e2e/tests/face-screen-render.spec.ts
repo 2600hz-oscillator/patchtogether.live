@@ -229,6 +229,16 @@ const SUBJECTS: readonly Subject[] = [
   // ── batch 23b ─────────────────────────────────────────────────────────────
   { type: 'shapes', prefix: 'shapes', domain: 'video', why: 'the SDF primitive generator\'s live stamp preview and its SCREEN switch. ⚠ NOT `shapegen`, which has its own row above — different module, adjacent name. A SOURCE with no input, so a lapsed watch mark would mute the origin of the whole chain rather than stall a preview.' },
 
+  // ── cut A · batch 2 ───────────────────────────────────────────────────────
+  //
+  // ⚠ ONLY ONE ROW FOR A TWO-FACE BATCH, and the absence is the interesting
+  // half. `dockscope` also gains a `fullViewBody` in this diff and is
+  // deliberately NOT here: it declares `outputs: []`, so its trace is not a
+  // monitor OF the module, it IS the module, and it ships with NO SCREEN
+  // SWITCH — `videoOut`'s exemption argument on an audio def the video gate
+  // never reaches. A row here would assert a toggle that does not exist, which
+  // is why the omission is written down instead of left to be noticed.
+  { type: 'shapedramps', prefix: 'shapedramps', domain: 'video', why: 'the parametric ramp generator\'s live output preview and its SCREEN switch — an ADDITION, since ShapedrampsCard mounts no canvas at all. ⚠ The widest-tap watch-mark case in this file: SIX outputs, four of them pure functions of vUv with no input, and the preview shows only `h_out` — so five of the six are invisible on the very surface whose switch would mute them. Its two identity ramps are invariant to every knob and CV, so if they went dark nothing on the plate would move to say why.' },
   // ── the CROSS-DOMAIN INPUT case ───────────────────────────────────────────
   //
   // ⚠ THE MIRROR OF `rasterize` BELOW, and worth the adjacency. That one is an
@@ -239,6 +249,18 @@ const SUBJECTS: readonly Subject[] = [
   // fact worth pinning here, because the audio inputs make it LOOK like the
   // outlier it is not.
   { type: 'graphicEq', prefix: 'graphicEq', domain: 'video', why: 'the spectrum meters\' preview, and the last of the five #2009 MONITOR cards — so its body carries a MONITOR toggle and a corner resize BESIDE the SCREEN switch, which is the two-switches-on-one-surface case a mis-wired `aria-pressed` or a shared handler would hide in. ⚠ AND IT IS THE ACCUMULATOR CASE AMONG THEM: per-band peak-hold caps advanced once per draw plus `smoothingTimeConstant = 0.7` on both analysers, so SCREEN OFF retaining the watch mark is load-bearing on what the meters MEAN, not just on the output — a lapsed mark returns a frame asserting peaks from whenever it expired.' },
+  // ── batch 24 — CUT A, batch 1: the four plain video faces ─────────────────
+  //
+  // Added in the SAME diff as the promotions, which is this file's stated
+  // convention and the thing #2124 could not do and had to defer. Verified
+  // before writing rather than assumed, on all four: `type == prefix ==
+  // extension id`, each body uses the standard `{#if !previewCollapsed}` REMOVES
+  // mechanism, and each declares the conventional `<type>-face-canvas` — so none
+  // of them needs the `canvas` override `quadralogical` does.
+  { type: 'chroma', prefix: 'chroma', domain: 'video', why: 'the single-input colour grade\'s preview and its SCREEN switch — an ADDITION, since ChromaCard draws no preview at all. ⚠ NOT `chromakey` below: this is the GRADE, that is the COMPOSITOR, and chroma.ts carries a header about earlier versions conflating exactly these two. Holds no history of any kind, so its watch-mark argument is purely about the PULL: it sits mid-chain on one video input, and a lapsed mark idles the chain behind it.' },
+  { type: 'chromakey', prefix: 'chromakey', domain: 'video', why: 'the two-input compositor\'s preview and its SCREEN switch — also an ADDITION. ⚠ The sharpest PULL case in this batch: it is the pull root for TWO upstream chains (`fg` and `bg`), so a lapsed watch mark idles both branches of the composite rather than one. Its key colour ships as pure green, so the resting picture is the composite of two absent inputs.' },
+  { type: 'feedback', prefix: 'feedback', domain: 'video', why: '⚠ THE ACCUMULATOR CASE OF THIS BATCH, and the row worth having for it. FEEDBACK re-samples its OWN previous output from a ping-pong framebuffer, so the pull is not how the picture stays fresh — it is how the TRAIL EXISTS. A lapsed watch mark decays the accumulated image out of the patch and turns a control labelled SCREEN into a history eraser. Its card already drew this preview; the face adds the toggle it never had.' },
+  { type: 'mandleblot', prefix: 'mandleblot', domain: 'video', why: 'the Mandelbrot explorer\'s preview and its SCREEN switch. ⚠ NOT stateless despite holding no accumulator: `uTime * 0.1 * uColorCycle` cycles the palette and `color_cycle` ships at 1, so a lapsed mark freezes a MOVING picture that is also the ORIGIN of its chain — the module\'s only input is a CV. The heaviest renderer of the four, which is why its cost is measured rather than assumed.' },
 
   // ── the AUDIO-def outlier ─────────────────────────────────────────────────
   { type: 'rasterize', prefix: 'rasterize', domain: 'audio', why: '⚠ an AudioModuleDef that carries a VIDEO surface, so it lives in lib/audio/modules and a video-only enumeration misses it entirely. Spawns with domain: audio. It is the reason this file\'s derivation crosses both domains.' },

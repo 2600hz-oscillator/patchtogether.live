@@ -167,6 +167,57 @@ export const chromaDef: VideoModuleDef = {
     { id: 'tintMix',    label: 'Mix',  defaultValue: DEFAULTS.tintMix,    min: 0,    max: 1,   curve: 'linear' },
   ],
 
+  // ── FACE (PF-20) ──────────────────────────────────────────────────────────
+  //
+  // CHROMA is a single-input COLOUR GRADE: rotate the hue wheel, push or pull
+  // saturation, then blend a flat tint over the result. (It is NOT a keyer — the
+  // name is historical; see this file's header. CHROMAKEY took that job.)
+  //
+  // THE RANK, read back as a sentence: turn the whole frame's colour (HUE),
+  // decide how much colour there is at all (SATURATION), then open the tint and
+  // choose it (MIX, then R/G/B).
+  //
+  // ⚠ MIX RANKS ABOVE THE THREE CHANNELS IT MIXES, and that is the one rank here
+  // that would be wrong for a different module. `tintMix` DEFAULTS TO 0, so the
+  // tint is invisible no matter what R/G/B say: a player who reaches a channel
+  // first turns it and sees nothing happen. Ranking the gate above the thing it
+  // gates is the difference between a working face and three inert knobs. The
+  // channels then read R, G, B — the order the card's hex swatch reads.
+  face: {
+    order: ['hue', 'saturation', 'tintMix', 'tintR', 'tintG', 'tintB'],
+
+    // ⚠ NO `pages`. Six controls over ONE grade are a single honest band, far
+    // below DOCK_TAB_MIN_BANDS (7) and DOCK_ROW_MAX_CONTROLS (10). The only
+    // candidate split — grade vs tint — would put a header over three channels
+    // that are one colour, which is the padding the compact ruling forbids.
+
+    // ⚠ FADERS FOR EXACTLY THE THREE THE CARD DRAWS AS FADERS, read off
+    // `ChromaCard.svelte`: `hue`, `saturation` and `tintMix` are `NeonFader`s
+    // there. The three tint CHANNELS are deliberately absent — the card never
+    // draws them as anything (they reach the user only through the colour
+    // picker), so the shell's default knob is the honest rendering of one
+    // `0..1` channel rather than a primitive this module never had.
+    paramCells: { hue: 'fader', saturation: 'fader', tintMix: 'fader' },
+
+    // ⚠ NOT `paramCells: 'hue'` for the `hue` param, despite the name. The hue
+    // CELL is the conic ring for a CONTINUOUS `0..1` angle; this param is
+    // `-180..180` DEGREES, so module-face-lint refuses the cell on that shape —
+    // correctly, since the two are different coordinate systems.
+
+    // ⚠ MANDATORY FOR A VIDEO DEF — `primaryAudioOutPortId` needs a
+    // `type: 'audio'` output and this def has none, so any other glyph literal
+    // falls through `glyphBinding` to a dead `{kind:'static'}` that reddens
+    // module-face-lint's dead-glyph clause. The live picture arrives from
+    // `hasVideoSurface(def)` at the lane and the `fullViewBody` extension at the
+    // dock — assert THAT, never this.
+    glyph: 'none',
+
+    // SCREEN ON/OFF arrives through this slot (#1928). An ADDITION rather than a
+    // port: `ChromaCard.svelte` draws no preview.
+    // See `$lib/ui/modules/chroma/shell-extension.ts`.
+    extension: 'chroma',
+  },
+
   docs: {
     explanation: "CHROMA is a single-input hue-shifter / colorizer (not a keyer — use CHROMAKEY to composite a foreground over a background). For every pixel of the incoming video it converts RGB to HSV, rotates the hue by the Hue control (in degrees, wrapped with fract() so it cycles cleanly around the color wheel including negative shifts), multiplies the saturation by the Sat control (0 desaturates to grayscale, 1 leaves color untouched, above 1 intensifies toward fully-saturated color — the result is clamped at maximum saturation so it can't exceed it), converts back to RGB, then lerps the result toward the tint color (tintR/tintG/tintB) by the Mix amount. With Mix at 0 the tint is bypassed and you get a pure hue/saturation pass; at 1 every pixel becomes the flat tint color, with values in between producing a duotone-style wash that biases the image toward the chosen color. Use it to recolor a clip, sweep a video through the spectrum (patch an LFO into hue), drain it to black-and-white, or apply a colored grade. With no input connected the output is opaque black.",
     inputs: {

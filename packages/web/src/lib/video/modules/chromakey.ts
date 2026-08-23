@@ -146,6 +146,53 @@ export const chromakeyDef: VideoModuleDef = {
     { id: 'spillSuppress', label: 'Spill',defaultValue: DEFAULTS.spillSuppress, min: 0, max: 1,   curve: 'linear' },
   ],
 
+  // ── FACE (PF-20) ──────────────────────────────────────────────────────────
+  //
+  // CHROMAKEY is the two-input COMPOSITOR: pick a key colour, and everywhere the
+  // FOREGROUND matches it within a threshold, show the BACKGROUND instead.
+  //
+  // THE RANK, read back as a sentence: decide how much of the frame keys at all
+  // (THRESHOLD), feather the edge of what it keyed (SOFTNESS), pull the key
+  // colour back out of what survived (SPILL), and only then touch the key colour
+  // itself (R/G/B).
+  //
+  // ⚠ THE KEY COLOUR RANKS LAST BECAUSE IT IS ALREADY CORRECT AT SPAWN, which is
+  // an argument that would be wrong for almost any other module: `keyR/keyG/keyB`
+  // default to 0 / 1 / 0 — pure green, the colour this module exists to key — so
+  // the common session never touches them at all. Ranking them high would put
+  // three controls nobody needs ahead of the three that do the work.
+  //
+  // ⚠ AND SPILL RANKS BELOW SOFTNESS because it is a CORRECTION to what already
+  // survived the key: it is meaningless until THRESHOLD and SOFTNESS have decided
+  // what survives.
+  face: {
+    order: ['threshold', 'softness', 'spillSuppress', 'keyR', 'keyG', 'keyB'],
+
+    // ⚠ NO `pages`. Six controls over ONE key are a single honest band, far below
+    // DOCK_TAB_MIN_BANDS (7). Splitting "matte" from "key colour" would earn a
+    // header over three channels that are one colour — padding, which the compact
+    // ruling forbids.
+
+    // ⚠ FADERS FOR EXACTLY THE THREE THE CARD DRAWS AS FADERS, read off
+    // `ChromakeyCard.svelte`: `threshold`, `softness` and `spillSuppress` are
+    // `NeonFader`s there. The three key CHANNELS are deliberately absent — the
+    // card reaches them only through the colour picker, so the shell's default
+    // knob is the honest rendering of one `0..1` channel.
+    paramCells: { threshold: 'fader', softness: 'fader', spillSuppress: 'fader' },
+
+    // ⚠ MANDATORY FOR A VIDEO DEF — `primaryAudioOutPortId` needs a
+    // `type: 'audio'` output and this def has none, so any other glyph literal
+    // falls through to a dead `{kind:'static'}` that reddens module-face-lint's
+    // dead-glyph clause. The live picture arrives from `hasVideoSurface(def)` at
+    // the lane and the `fullViewBody` extension at the dock — assert THAT.
+    glyph: 'none',
+
+    // SCREEN ON/OFF arrives through this slot (#1928). An ADDITION rather than a
+    // port: `ChromakeyCard.svelte` draws no preview.
+    // See `$lib/ui/modules/chromakey/shell-extension.ts`.
+    extension: 'chromakey',
+  },
+
   docs: {
     explanation: "chromakey is a two-input green-screen compositor: it takes a foreground video (the layer shot against a key colour) and a background video, and replaces every foreground pixel that is chromatically close to the chosen key colour with the matching background pixel. Per pixel it measures the DISTANCE IN THE CHROMA PLANE (full-swing Rec. 601 Cb/Cr) between the pixel and the key colour, normalized by the key's own chroma strength — the industry-standard keying metric — and builds an alpha via smoothstep over the thr/soft window (alpha 0 = show background, alpha 1 = keep foreground). A neutral gray always sits at exactly distance 1.0 from a saturated key, so shadows, highlights and low-saturation subject pixels survive the key without any special gating. Spill suppression then limits the key colour's dominant channel on the KEPT foreground (for a green key: green is pulled down toward max(red, blue)), removing green contamination from the subject itself — not just from the matte edge. Pick the key colour with the swatch (defaults to pure green), then tune thr: the default 0.5 keys real-world screen variation (shading, off-tint) while keeping subjects; lower it toward 0.15 to key only near-pure key pixels, raise soft to feather the matte edge, and raise spill to remove key-colour fringing from the subject. If no foreground is patched it just passes the background through. Note: an achromatic (black/white/gray) key colour has no chroma to measure against, so ALL neutral pixels key out together regardless of brightness — for keying off a black or white backdrop use lumakey instead.",
     inputs: {

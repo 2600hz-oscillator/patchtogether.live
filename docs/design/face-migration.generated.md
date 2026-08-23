@@ -12,8 +12,8 @@ Every registered module carries exactly one **disposition**: what kind of work i
 |  | count |
 |---|---|
 | registered modules | 198 |
-| done (faced + promoted) | 125 |
-| remaining (excludes organizational-native) | 70 |
+| done (faced + promoted) | 132 |
+| remaining (excludes organizational-native) | 63 |
 | registered with NO disposition (must be zero) | 0 |
 | inventory entries naming a dead def (must be zero) | 0 |
 
@@ -21,7 +21,7 @@ Every registered module carries exactly one **disposition**: what kind of work i
 
 | disposition | what it means | modules | done |
 |---|---|---|---|
-| `generic-face` | author a `face` and rank the controls — no new platform capability | 141 | 125 |
+| `generic-face` | author a `face` and rank the controls — no new platform capability | 141 | 132 |
 | `blocked` | would be a face today but for the named capability, and nothing else | 3 | — |
 | `bespoke-surface` | the primary interaction is not param-shaped — needs a purpose-built surface | 51 | — |
 | `organizational-native` | rack furniture; not a migration at all | 3 | — |
@@ -52,8 +52,8 @@ author a `face` and rank the controls — no new platform capability.
 | `buggles` | audio | done | — |
 | `cellshade` | video | done | — |
 | `charlottesEchos` | audio | done | — |
-| `chroma` | video | — | — |
-| `chromakey` | video | — | — |
+| `chroma` | video | done | — |
+| `chromakey` | video | done | — |
 | `clap` | audio | done | — |
 | `clouds` | audio | done | — |
 | `cloudseed` | audio | done | — |
@@ -67,13 +67,13 @@ author a `face` and rank the controls — no new platform capability.
 | `depolarizer` | audio | done | — |
 | `destroy` | audio | done | — |
 | `destructor` | video | done | — |
-| `dockscope` | audio | — | — |
+| `dockscope` | audio | done | — |
 | `drummergirl` | audio | done | — |
 | `dx7` | audio | done | — |
 | `edges` | video | done | — |
 | `fader` | video | done | — |
 | `featurecv` | audio | done | — |
-| `feedback` | video | — | — |
+| `feedback` | video | done | — |
 | `filter` | audio | done | — |
 | `flipper` | audio | done | — |
 | `fourplexer` | audio | done | — |
@@ -94,7 +94,7 @@ author a `face` and rank the controls — no new platform capability.
 | `lushgarden` | video | — | — |
 | `macrooscillator` | audio | done | — |
 | `mandelbulb` | video | done | — |
-| `mandleblot` | video | — | — |
+| `mandleblot` | video | done | — |
 | `mapper` | video | done | — |
 | `marbles` | audio | done | — |
 | `meowbox` | audio | done | — |
@@ -149,7 +149,7 @@ author a `face` and rank the controls — no new platform capability.
 | `scaler` | audio | done | — |
 | `scope` | audio | — | — |
 | `scoreboard` | video | done | — |
-| `shapedramps` | video | — | — |
+| `shapedramps` | video | done | — |
 | `shapegen` | video | done | — |
 | `shapes` | video | done | — |
 | `shimmershine` | audio | done | — |
@@ -158,7 +158,7 @@ author a `face` and rank the controls — no new platform capability.
 | `slewSwitch` | audio | done | — |
 | `snaredrum` | audio | done | — |
 | `sourcery` | video | done | — |
-| `spectrograph` | audio | — | — |
+| `spectrograph` | audio | done | — |
 | `spirographs` | video | done | — |
 | `stereovca` | audio | done | — |
 | `swolevco` | audio | done | — |

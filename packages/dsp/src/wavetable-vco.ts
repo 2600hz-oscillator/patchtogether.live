@@ -39,36 +39,78 @@ class WavetableVcoProcessor extends AudioWorkletProcessor {
   private frameCount = 0;
   private phase = 0;
 
+  /**
+   * Accept a table, validating first. ONE implementation, shared by the
+   * constructor and the port handler — the two entry points must agree, and a
+   * second copy of these bounds checks is how they would stop agreeing.
+   *
+   * Validation is not optional: an undersized or mis-shaped table causes
+   * out-of-bounds reads in `process()` (`table[f1base + s1]` etc).
+   */
+  private applyLoad(m: LoadMessage | undefined, where: string): boolean {
+    if (!m || m.type !== 'load') return false;
+    if (
+      !m.table ||
+      !Number.isFinite(m.frameSize) ||
+      !Number.isFinite(m.frameCount) ||
+      m.frameSize <= 0 ||
+      m.frameCount <= 0 ||
+      !Number.isInteger(m.frameSize) ||
+      !Number.isInteger(m.frameCount)
+    ) {
+      console.error(`[wavetable-vco] invalid LoadMessage shape (${where})`, m);
+      return false;
+    }
+    const expectedSamples = m.frameSize * m.frameCount;
+    const tbl = new Float32Array(m.table);
+    if (tbl.length !== expectedSamples) {
+      console.error(
+        `[wavetable-vco] table length ${tbl.length} != frameSize*frameCount (${expectedSamples}) (${where})`,
+      );
+      return false;
+    }
+    this.table = tbl;
+    this.frameSize = m.frameSize;
+    this.frameCount = m.frameCount;
+    return true;
+  }
+
   constructor(options?: { processorOptions?: unknown }) {
     super(options);
+
+    // ⚠ THE TABLE ARRIVES AT CONSTRUCTION, NOT BY MESSAGE. This is a RACE FIX,
+    // not a refactor, and the race was measured rather than theorised.
+    //
+    // The factory used to ship the table with an un-acked `port.postMessage`,
+    // and `process()` below still opens with
+    // `if (!this.table …) { out.fill(0); return true; }`. Nothing sequenced that
+    // message against rendering, so any block that ran before delivery emitted
+    // DIGITAL SILENCE. On a realtime context the window is one or two blocks and
+    // nobody hears it; on an `OfflineAudioContext` — which renders as fast as it
+    // can — whole renders came out silent, intermittently.
+    //
+    // MEASURED (2026-08-23, art/scenarios/wavetable-vco/cv-path.test.ts on CI):
+    // an inertness assertion comparing two renders reported
+    // `peak |Δsample| linear = 1.3953` against an expected 0. The output is
+    // documented as roughly ±1, so ~1.4 is silence-against-signal, not drift.
+    //
+    // ⚠ AND THE COST OF THE BUG WAS NOT ONE RED TEST. An ART render that silently
+    // measures SILENCE instead of the DSP makes every assertion that would PASS on
+    // silence — an inertness check, a "delta is 0" check — green for the wrong
+    // reason. `processorOptions` is delivered synchronously to this constructor
+    // before the first `process()` call can run, so there is no window at all.
+    //
+    // ⚠ IT COSTS ONE COPY. `processorOptions` is structured-cloned rather than
+    // transferred, so the table is copied once per node (16 × 2048 × 4 B ≈ 128 KB)
+    // where the old path transferred the buffer. That is a one-time construction
+    // cost paid to remove a correctness race, and it is the right trade.
+    this.applyLoad(options?.processorOptions as LoadMessage | undefined, 'processorOptions');
+
+    // ⚠ THE PORT PATH STAYS, and is now a genuine SECOND loader rather than the
+    // only one: it is what a future table swap would use. It shares `applyLoad`
+    // with the constructor precisely so the two cannot diverge.
     this.port.onmessage = (e: MessageEvent) => {
-      const m = e.data as LoadMessage;
-      if (m?.type !== 'load') return;
-      // Validate before accepting: an undersized or mis-shaped table would
-      // cause out-of-bounds reads in process() (table[f1base + s1] etc).
-      if (
-        !m.table ||
-        !Number.isFinite(m.frameSize) ||
-        !Number.isFinite(m.frameCount) ||
-        m.frameSize <= 0 ||
-        m.frameCount <= 0 ||
-        !Number.isInteger(m.frameSize) ||
-        !Number.isInteger(m.frameCount)
-      ) {
-        console.error('[wavetable-vco] invalid LoadMessage shape', m);
-        return;
-      }
-      const expectedSamples = m.frameSize * m.frameCount;
-      const tbl = new Float32Array(m.table);
-      if (tbl.length !== expectedSamples) {
-        console.error(
-          `[wavetable-vco] table length ${tbl.length} != frameSize*frameCount (${expectedSamples})`,
-        );
-        return;
-      }
-      this.table = tbl;
-      this.frameSize = m.frameSize;
-      this.frameCount = m.frameCount;
+      this.applyLoad(e.data as LoadMessage, 'port message');
     };
   }
 

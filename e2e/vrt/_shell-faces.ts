@@ -2582,6 +2582,47 @@ export const FACES = [
       + 'is one centred CIRCLE at zoom 1 on black — identical on every frame, every boot and '
       + 'every renderer.',
   },
+  // ── CUT A · BATCH 2 ───────────────────────────────────────────────────────
+  {
+    type: 'shapedramps',
+    pages: 2,
+    videoFaceWhy:
+      'a VIDEO module, so it must boot into the video zone rather than a mixer channel column — '
+      + 'without this field bootWithFace waits out the full 90 s test timeout for a column '
+      + 'membership a video node never acquires. Both scenes carry a live picture: the compact '
+      + 'tile paints a VideoTileThumb through hasVideoSurface, and the dock body is the module\'s '
+      + 'own fullViewBody extension — a surface ShapedrampsCard.svelte never had at all, since '
+      + 'that card mounts ZERO canvases. ⚠ AND IT NEEDS NO DETERMINISM SEAM, for the same reason '
+      + '`shapes` above needs none and unlike both of batch 23a: all three of this module\'s '
+      + 'programs are pure per-pixel functions of vUv and the uniforms (LIN_FRAG_SRC, '
+      + 'SHAPED_FRAG_SRC, MIX_FRAG_SRC) with NO time uniform, no ping-pong, no history texture '
+      + 'and no RNG, so every frame is fully recomputed to the same pixels. It is a SOURCE that '
+      + 'is nonetheless perfectly still at rest. ⚠ The dock preview shows `h_out` specifically — '
+      + 'the engine aliases surface.texture to fboH_out.texture — so at the shipped defaults '
+      + '(h_shape 0, h_phase 0, h_freq 1) the scene is a clean left-to-right linear luminance '
+      + 'ramp, which is about as stable a target as this suite has.',
+  },
+  {
+    type: 'dockscope',
+    pages: 1,
+    simPin: [
+      {
+        global: '__dockscopeVrtSeed',
+        value: 1,
+        why:
+          'DOCKSCOPE paints a LIVE ANALYSER WINDOW — read(\'snapshot\') returns whatever 2048 '
+          + 'samples the AnalyserNode happens to hold when the frame runs — so with nothing '
+          + 'patched the trace is the input gain node\'s noise floor and with something patched '
+          + 'it is a window whose phase depends on when the capture landed. Neither is stable '
+          + 'across boots, and freezeFaceVideo cannot reach it: this is an AUDIO def, so there '
+          + 'is no VideoEngine frame to freeze. The module already carries a deterministic seed '
+          + 'for exactly this — a fixed 2048-sample 220 Hz sine at 48 kHz, mirroring ScopeCard\'s '
+          + '__scopeVrtSeed — and the faceplate body reads the SAME global the card does, which '
+          + 'is what lets the FACE be baselined and not only the card. Setting it makes the trace '
+          + 'a pure function of the module\'s own constants plus TIME and SCALE.',
+      },
+    ],
+  },
   {
     type: 'graphicEq',
     pages: 1,
@@ -2609,6 +2650,139 @@ export const FACES = [
       + 'worth stating rather than glossing, because freezing would not have helped anyway: the '
       + 'thing that could move the picture is the AUDIO, and the harness stills that by leaving '
       + 'the AudioContext suspended with no source patched.',
+  },
+  // ── BATCH 24 — CUT A, batch 1: the four plain video faces ─────────────────
+  //
+  // ⚠ THE PENDING STATE IS NOW PAID, AND ONE OF THE FOUR NEEDED IT. These four
+  // shipped with NO `sceneWeight` because the field's parts are required-if-
+  // present and the durations only exist once a LINUX run has measured them.
+  // Run 32631770069 measured them, and it also FAILED the vrt-strict headroom
+  // gate at 87% of a 600 s Playwright budget (fail threshold 85%) — every test
+  // passed; what ran out was room. The cause is in the numbers below.
+  //
+  // MEASURED on run 32631770069 (compact / dock, seconds):
+  //     chroma      11.3 / 20.4
+  //     chromakey   14.5 / 17.9
+  //     feedback    15.2 / 21.4
+  //     mandleblot  42.8 / 90.0     ← 4x and 9x its batch-mates
+  //
+  // ⚠ ONLY MANDLEBLOT DECLARES A WEIGHT, and that is arithmetic rather than
+  // taste: `sceneBudgetMs` is `max(FACE_SCENE_BASE_MS, measured x FACE_SCENE_HEADROOM)`,
+  // so for the other three (dock 17.9-21.4 s, doubled = 35.8-42.8 s) the base
+  // 90 s bound already wins and a declaration would change nothing while implying
+  // it did. Their measurements are recorded here instead, where they are evidence
+  // rather than a no-op.
+  //
+  // ⚠ AND MANDLEBLOT'S 90.0 s IS NOT MERELY "THE BIGGEST" — it is EXACTLY the
+  // base bound, which is the tell: the scene consumed its entire budget rather
+  // than landing under it, so it was running AT the wire where the next slow
+  // runner tips it into a timeout. That is precisely the "a budget sitting ON the
+  // measurement is a coin flip" case `FACE_SCENE_HEADROOM` exists to prevent, and
+  // it is why the weight is declared for it and not merely noted.
+  {
+    type: 'chroma',
+    pages: 1,
+    videoFaceWhy:
+      'a VIDEO module, so it must boot into the video zone rather than a mixer channel column — '
+      + 'without this field bootWithFace waits out the full test timeout for a column membership '
+      + 'a video node never acquires. Both scenes carry a live picture: the compact tile paints a '
+      + 'VideoTileThumb through hasVideoSurface, and the dock body is the module\'s own '
+      + 'fullViewBody extension (the graded preview plus its SCREEN switch) — a surface '
+      + 'ChromaCard.svelte never had. ⚠ DETERMINISTIC FOR A STATED REASON rather than by luck: '
+      + 'CHROMA is a pure per-pixel function of its `in` texture and six params, with NO time '
+      + 'uniform, no ping-pong and no accumulator, so the freeze the harness performs is a no-op '
+      + 'on this def. In the scene nothing is patched into `in`, so the graded frame is the '
+      + 'grade of an absent input on every frame and every renderer — the scene\'s value is the '
+      + 'CONTROL layout, which is what the dock capture mostly frames anyway.',
+  },
+  {
+    type: 'chromakey',
+    pages: 1,
+    videoFaceWhy:
+      'a VIDEO module — same video-zone boot requirement as its three batch-mates. ⚠ NOT the '
+      + '`chroma` entry directly above: that is the single-input COLOUR GRADE, this is the '
+      + 'two-input COMPOSITOR, and chroma.ts carries a header about earlier versions conflating '
+      + 'exactly these two. Deterministic for the same stated reason — a per-pixel key decision '
+      + 'over `fg` and `bg` with no time uniform and no accumulator — and with BOTH video inputs '
+      + 'unpatched in the scene the composite is the same frame on every renderer. The dock body '
+      + 'is the module\'s own fullViewBody (the composite preview plus its SCREEN switch), a '
+      + 'surface ChromakeyCard.svelte never had.',
+  },
+  {
+    type: 'feedback',
+    pages: 1,
+    videoFaceWhy:
+      'a VIDEO module — same video-zone boot requirement. ⚠ THE ONE ENTRY IN THIS BATCH WHOSE '
+      + 'DETERMINISM IS AN ARGUMENT ABOUT AN ACCUMULATOR, so it is written out rather than '
+      + 'shared. FEEDBACK re-samples its OWN previous output from a ping-pong framebuffer, so a '
+      + 'clock pin alone would NOT be sufficient if the loop had anything in it — the ping-pong '
+      + 'advances once per drawn frame regardless of the clock, which is the mirrorpool class. '
+      + 'What makes it still here is the ARITHMETIC at rest: the FBOs start cleared, nothing is '
+      + 'patched into `in`, and the recurrence is decay×(warped black) + (1-decay)×black, whose '
+      + 'fixed point is black. So the accumulator is black on frame 1 and stays black — a '
+      + 'deterministic picture, and deliberately a dark one. Unlike its batch-mates its card '
+      + 'ALREADY drew this preview; what the face adds is the SCREEN switch it never had.',
+  },
+  {
+    type: 'mandleblot',
+    pages: 1,
+    sceneWeight: measuredSceneWeight({
+      compactMs: 42_800,
+      dockMs: 90_000,
+      measuredOn: 'ci.yml run 32631770069 (8 vrt-strict shards, ubuntu-latest)',
+      why:
+        'AN ESCAPE-TIME FRACTAL EVALUATED PER PIXEL, UNDER SWIFTSHADER — the one renderer in '
+        + 'batch 24 whose cost is a property of the maths rather than of the frame size. Its '
+        + 'shader runs an iteration loop per fragment, hard-capped at 500 and shipping at 150, '
+        + 'so a full-resolution frame is up to 150 complex multiply-adds PER PIXEL with no early '
+        + 'exit for interior points — and CI has no GPU, so every one of those runs on a software '
+        + 'rasteriser. Its three batch-mates are single-pass per-pixel functions of a texture '
+        + '(a hue rotate, a key decision, one warped feedback tap) and measured 17.9-21.4 s at '
+        + 'the dock against this one\'s 90.0 s. '
+        + '⚠ 90.0 s IS THE BASE BOUND ITSELF, not a number under it: the scene spent its whole '
+        + 'budget, which is the "a bound sitting ON the measurement is a coin flip" state this '
+        + 'field exists to correct. Doubling it via FACE_SCENE_HEADROOM is what turns a scene '
+        + 'that happened to finish into one that has room to.',
+    }),
+    videoFaceWhy:
+      'a VIDEO module — same video-zone boot requirement. ⚠ THE CLOCK PIN IS LOAD-BEARING HERE '
+      + 'AND IS NOT A FORMALITY, which is what separates this entry from the other three. Its '
+      + 'fragment shader takes a `uTime` uniform and folds `uTime * 0.1 * uColorCycle` into the '
+      + 'hue, and `color_cycle` SHIPS AT 1 — so at the shipped defaults this renderer CYCLES ITS '
+      + 'PALETTE CONTINUOUSLY at rest. `__videoEngineFreezeTime` is what pins `frame.time` and '
+      + 'therefore what makes the capture still; without it this face would be the analogVco '
+      + 'case and could not be baselined. ⚠ A clock pin is nonetheless SUFFICIENT: the module '
+      + 'holds no accumulator at all — every frame is recomputed from (centre, zoom, iterations, '
+      + 'rotation, colour, time) — so there is no ping-pong for a pinned clock to leave '
+      + 'advancing. Its card already drew this fractal; the face adds the SCREEN switch, and '
+      + 'drops the derived magnification readout the resting faceplate may not paint.',
+  },
+  // ── CUT B ─────────────────────────────────────────────────────────────────
+  {
+    type: 'spectrograph',
+    pages: 1,
+    simPin: [
+      {
+        global: '__spectrographVrtFreeze',
+        value: true,
+        why:
+          'SPECTROGRAPH paints a LIVE SCROLLING BUFFER driven by an AnalyserNode, and its own '
+          + 'card scene records the measurement: the contents "never bit-stabilize across runs "'
+          + '(the column count AND the buffered FFT both depend on wall-clock scheduling). '
+          + '⚠ SUSPENDING THE AUDIO CONTEXT DOES NOT FIX IT, which is why this is a simPin and '
+          + 'not `freezeAudio` — the scroll is driven by rAF against a 16 ms column gate, not by '
+          + 'the audio clock, so a suspend stops the SIGNAL without choosing where the BUFFER '
+          + 'stopped. Setting this flag makes the module fill its WHOLE 256-column buffer ONCE '
+          + 'from a fixed synthetic three-peak spectrum and HOLD it, so the picture becomes a '
+          + 'pure function of the module\'s own constants. '
+          + '⚠ AND IT IS A `boolean`, NOT A SEED: the module reads it as `=== true` strictly, so '
+          + 'writing 1 here would silently fail to freeze anything and the face would flake '
+          + 'rather than fail — which is exactly why this field admits booleans. '
+          + '⚠ NOTHING IS MIRRORED INTO THE FACE BODY for this to work: the flag is read INSIDE '
+          + 'the module, so any caller of `drawFrame` inherits the freeze. That is the opposite '
+          + 'of dockscope, whose seed lived in its card and had to be duplicated into the body.',
+      },
+    ],
   },
 ] as const;
 
