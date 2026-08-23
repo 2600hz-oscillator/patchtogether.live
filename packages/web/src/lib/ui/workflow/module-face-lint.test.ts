@@ -1053,6 +1053,47 @@ describe('module-face lint — MOMENTARY pads (face.momentary)', () => {
     // overwriting it.
     'frametable:live',
     'frametable:freeze',
+    // VIDEOCUBE, 2026-08-23. Five switch-shaped params, ALL LATCHING, and all
+    // five classified at the READ SITE — which on this module is unusually
+    // uniform: every one of them is a bare level test evaluated fresh inside
+    // `draw()` on every frame, and there is NO edge detector anywhere in
+    // videocube.ts. The card agrees at the WRITE site: all five are `onclick`
+    // handlers that FLIP the stored value (`toggleWrap`, `toggleMaterial`,
+    // `toggleFreeze`, `toggleLive`, `toggleHueMode`), and this card has no
+    // pointer-capture press-pad at all.
+    //
+    // `freeze` — `const frozen = params.freeze >= 0.5` stops the LIVE rings
+    // advancing so the held surfaces can be scrubbed. A momentary render would
+    // resume capture on release and wash away the very window a player froze in
+    // order to scan it, which is the same loss FRAMETABLE's entry describes.
+    //
+    // `live` — forces the real-time / no-lag ring read. A state you switch on
+    // and leave on for as long as you want the solid tracking its inputs;
+    // releasing back into the lag mid-performance is not a control anyone could
+    // use.
+    //
+    // `wrap` and `material` — both are LOOKS. WRAP mirror-folds the sampling
+    // domain so the videos kaleidoscopically tile through the volume; MATERIAL
+    // switches the solid between a translucent blend and a hard one-surface-wins
+    // mosaic. Each is a property of the render you choose and keep, and a
+    // momentary render would snap the solid back to the other look the instant
+    // the pointer lifted — the b3ntb0x / colourofmagic shape.
+    //
+    // `hue_mode` — picks which colour-to-timbre CHARACTER BANK drives the chroma
+    // morph. Audio-only, and the def's own doc calls it "a front-panel toggle".
+    // ⚠ It is additionally CV-GATED (a gate high selects INSTRUMENT), which is
+    // the FREEZE-pattern seam, not a press: the level is read every frame, so a
+    // momentary render would fight the cable rather than complement it.
+    //
+    // ⚠ `screen_on` IS DELIBERATELY ABSENT from this list, and its absence is
+    // correct rather than an oversight: it rests at 1, so `looksLikeSwitch`
+    // (which requires `defaultValue === 0`) does not flag it and no
+    // classification is owed. It is latching too.
+    'videocube:freeze',
+    'videocube:live',
+    'videocube:wrap',
+    'videocube:material',
+    'videocube:hue_mode',
   ]);
 
   it('no ACKNOWLEDGED_LATCHING param is DOCUMENTED as momentary (the cross-check)', () => {

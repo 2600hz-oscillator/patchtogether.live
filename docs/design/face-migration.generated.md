@@ -176,7 +176,7 @@ author a `face` and rank the controls — no new platform capability.
 | `vca` | audio | done | — |
 | `vdelay` | video | done | — |
 | `vfpgaRunner` | video | — | — |
-| `videocube` | video | — | — |
+| `videocube` | video | done | — |
 | `videoMixer` | video | done | — |
 | `videoOut` | video | done | — |
 | `warrensspectrum` | audio | done | — |

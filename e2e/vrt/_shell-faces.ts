@@ -2890,6 +2890,41 @@ export const FACES = [
       + '`colourofmagic` position — the card baseline is masked or deferred and the face scenes '
       + 'need neither.',
   },
+  {
+    type: 'videocube',
+    pages: 7,
+    videoFaceWhy:
+      'a VIDEO module, so it must boot into the video zone rather than a mixer channel column — '
+      + 'without this field bootWithFace waits out the full test timeout for a column membership '
+      + 'a video node never acquires. ⚠ THE ONLY TABBED FACE IN THIS ROSTER, so the dock scene is '
+      + 'also the only one whose capture frames a RAIL plus ONE open band rather than a column of '
+      + 'bands — which is worth stating because it means the usual "the fold hides the lower '
+      + 'bands" caveat does not apply here in the same way: six of the seven pages are mounted '
+      + 'but hidden, and the pixel gate sees exactly the open one. Band STRUCTURE is gated by the '
+      + 'pure units and faceplate-platform, as always. '
+      + 'THE DETERMINISM ARGUMENT, and it is stronger than its siblings\' rather than weaker '
+      + 'despite this being the heaviest renderer of the pair. (1) THERE IS NO TIME TERM AT ALL — '
+      + 'grepped, not assumed: `uTime`, `frame.time`, `frame.frame`, `timeDelta`, `Date.now` and '
+      + '`performance.now` appear NOWHERE in videocube.ts. Every frame is recomputed from '
+      + '(three rings, the params, the camera basis), so unlike `mandleblot` there is not even a '
+      + 'clock to pin. (2) THE THREE RINGS ARE EMPTY IN THIS SCENE, which disposes of the '
+      + 'accumulator. bootWithFace patches nothing into `video_a`/`video_b`/`video_c`, so no slot '
+      + 'ever captures, `anyContent = captured.a || captured.b || captured.c` stays FALSE, and '
+      + 'the combine shader is handed `uHasContent = 0`. The solid is empty by arithmetic on '
+      + 'every renderer. (3) `freezeFaceVideo` REACHES IT ANYWAY, so the harness assertion is '
+      + 'real rather than vacuous: `draw()` reads `frozen = params.freeze >= 0.5` and stops the '
+      + 'live rings advancing. As on frametable this param is ALSO a shipped user control, which '
+      + 'is fine — the two are not exclusive, and the FACES entry is correct precisely because '
+      + 'the write still pins the picture. (4) THE WAVE CANVAS IS NOT A LOOSE END: the body\'s '
+      + 'third surface traces `read(\'lastWave\')`, which is derived from the same empty field, '
+      + 'and the harness suspends the audio graph before framing — so it is a flat baseline, like '
+      + 'every other faced module\'s analyser tap. '
+      + '⚠ NOT TO BE CONFUSED WITH THE CARD ROSTER\'S VERDICT. `videocube` is in EXEMPT_FROM_VRT '
+      + 'with "VRT baseline pending owner look-approval", but that is about the CARD scene, whose '
+      + 'canvas shows a live solid built from whatever is patched. These two scenes boot their '
+      + 'own node with nothing patched — the `warrensvisions` / `colourofmagic` position, and the '
+      + 'same one `frametable` takes directly above.',
+  },
   // ── LUSH GARDEN (2026-08-23) ──────────────────────────────────────────────
   {
     type: 'lushgarden',

@@ -3583,10 +3583,10 @@ videocube param connect_strength 0..1 linear default=0
 videocube param crush 0..1 linear default=0
 videocube param fine -100..100 linear default=0 unit=¢
 videocube param fold 0..1 linear default=0
-videocube param freeze 0..1 linear default=0
+videocube param freeze 0..1 discrete default=0
 videocube param hue_mode 0..1 discrete default=0
 videocube param level 0..2 linear default=1
-videocube param live 0..1 linear default=0
+videocube param live 0..1 discrete default=0
 videocube param material 0..1 discrete default=0
 videocube param morph_fc 0..1 linear default=0
 videocube param motion 0..1 linear default=0
@@ -3607,6 +3607,12 @@ videocube param view_rot_y -3.1416..3.1416 linear default=0.7
 videocube param view_rot_z -3.1416..3.1416 linear default=0
 videocube param view_zoom 0.3..3 linear default=1
 videocube param wrap 0..1 discrete default=0
+videocube family videocube-a-file-input kind=other prefix=videocube-a-file-input
+videocube family videocube-a-live kind=other prefix=videocube-a-live
+videocube family videocube-b-file-input kind=other prefix=videocube-b-file-input
+videocube family videocube-b-live kind=other prefix=videocube-b-live
+videocube family videocube-c-file-input kind=other prefix=videocube-c-file-input
+videocube family videocube-c-live kind=other prefix=videocube-c-live
 videoMixer meta domain=video
 videoMixer in amount1 cv param=amount1 cvScale=linear
 videoMixer in amount2 cv param=amount2 cvScale=linear
