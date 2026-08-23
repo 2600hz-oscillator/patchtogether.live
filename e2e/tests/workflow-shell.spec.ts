@@ -344,6 +344,23 @@ test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
     //    whole param map rather than naming one id.
     const before = await readParams(page, NODE);
     const track = dockCard.locator('.fader-wrap .track').first();
+    // ⚠ SCROLL IT INTO VIEW BEFORE MEASURING, and this is a REAL FIX rather than
+    // defensive noise (#2137). This leg drives raw `page.mouse` at coordinates
+    // from `boundingBox()`, which reports where an element IS — including when
+    // it is scrolled outside the dock's clipped viewport. The pointer then lands
+    // on whatever actually occupies those screen coordinates, the drag commits
+    // nothing, and the failure reads as "this card is not operable" rather than
+    // "the test never touched it".
+    //
+    // It was latent for as long as the fixture happened to resolve SHORT cards.
+    // The derivation now offers `modtris`, whose card is a game board with its
+    // two faders far below the fold, and the leg failed with an empty param map
+    // — the card mounted correctly and both sliders were present in the
+    // accessibility tree. That is a defect in the LEG, not evidence against the
+    // candidate, so the fix belongs here and not in a `DENIED` entry: denying
+    // the module would have hidden a fragility that the next tall card hits
+    // again.
+    await track.scrollIntoViewIfNeeded();
     const box = await track.boundingBox();
     expect(box, 'a fader track should be present in the docked card').toBeTruthy();
     if (!box) return;
