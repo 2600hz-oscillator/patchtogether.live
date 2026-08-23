@@ -1,0 +1,214 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>LUSH GARDEN face — STATE 2: SCREEN OFF</title>
+<style>
+/* ─────────────────────────────────────────────────────────────────────────
+   LUSH GARDEN FACEPLATE — MOCKUP, state 2 of 2 (SCREEN OFF).
+   SPEC AND MOCKUP ONLY. Nothing here is implemented. See spec.md.
+
+   OFF collapses the picture and reclaims its vertical space (the fleet
+   standard). The button keeps a small min-height wrap so an absolutely-
+   positioned control does not escape the plate with the canvas gone.
+
+   The load-bearing claim on this page: the garden KEEPS ACCUMULATING while
+   the screen is off. On every other adopter "keeps rendering" is a nicety;
+   here the picture is a running integration, so stopping it would make the
+   garden younger than the rack.
+   ───────────────────────────────────────────────────────────────────────── */
+:root{
+  --bg:#0e1013; --dock:#12161c; --pbody:#1c1f24; --line:#2c3037; --tile:#33383f;
+  --ink:#eef1f5; --dim:#9aa2ad; --faint:#646c77;
+  --video:#b57bff; --warn:#f2c14e; --good:#8fe6b0; --leaf:#7bd88f;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+  font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1240px;margin:0 auto;padding:26px 20px 90px}
+h1{font-size:21px;font-weight:800;margin:0 0 6px}
+.sub{color:var(--dim);font-size:12.5px;margin:0 0 14px;max-width:108ch}
+.sub b{color:var(--ink)} code{font-family:var(--mono);font-size:11.5px;color:var(--video)}
+.nav{display:flex;gap:8px;margin:0 0 20px;font-size:11px;flex-wrap:wrap}
+.nav a{color:var(--ink);text-decoration:none;border:1px solid var(--line);border-radius:6px;
+  padding:6px 12px;background:#12161c;font-family:var(--mono);letter-spacing:.06em;text-transform:uppercase}
+.nav a.on{border-color:var(--video);color:var(--video)}
+.warn{border:1px solid #6a5330;background:#1c1811;border-radius:8px;padding:11px 14px;margin:12px 0;
+  font-size:12.5px;color:#e8cf9a;max-width:120ch} .warn b{color:var(--warn)}
+.ok{border:1px solid #3b5a48;background:#111a15;border-radius:8px;padding:11px 14px;margin:12px 0;
+  font-size:12.5px;color:#a9d8bd;max-width:120ch} .ok b{color:var(--good)}
+.cols{display:grid;grid-template-columns:minmax(0,1fr) 400px;gap:18px;align-items:start}
+@media (max-width:1120px){.cols{grid-template-columns:minmax(0,1fr)}}
+.dock{background:var(--dock);border:1px solid var(--line);border-radius:11px;padding:11px}
+.chromebar{display:flex;align-items:baseline;gap:9px;padding:0 2px 8px}
+.chromebar .nm{font-size:13px;font-weight:800;letter-spacing:.03em}
+.chromebar .x{margin-left:auto;color:var(--faint);font-family:var(--mono);font-size:12px}
+.plate{background:var(--pbody);border:1px solid var(--tile);border-left:4px solid var(--video);
+  border-radius:10px;padding:0 0 12px;width:max-content;min-width:300px;max-width:100%}
+/* SCREEN OFF: the canvas is unmounted; the wrap keeps a small min-height so the
+   overlaid button still has a box to sit in. */
+.extbody{padding:10px 14px 2px;display:flex;justify-content:flex-end}
+.offwrap{position:relative;min-height:20px;width:100%;display:flex;justify-content:flex-end}
+.screenbtn{font-family:var(--mono);font-size:8.6px;letter-spacing:.06em;padding:3px 9px;
+  border:1px solid #4a4258;border-radius:2px;background:rgba(5,6,8,.72);color:var(--faint)}
+.bands{padding:6px 14px 0}
+.band{border-top:1px solid var(--line);padding-top:8px;margin-top:10px}
+.band:first-child{border-top:0;margin-top:4px}
+.blab{margin:0 0 7px;font-size:9.4px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--dim)}
+.row{display:flex;flex-wrap:wrap;align-items:flex-start;gap:10px 16px}
+.k{width:58px;display:flex;flex-direction:column;align-items:center;gap:4px}
+.k i{--v:.5;--kc:#8358b8;display:block;width:40px;height:40px;border-radius:50%;position:relative;
+  background:conic-gradient(from 215deg,var(--kc) 0turn calc(var(--v)*.75turn),
+    #2b3138 calc(var(--v)*.75turn) .75turn,rgba(0,0,0,0) .75turn)}
+.k i::before{content:"";position:absolute;inset:5px;border-radius:50%;background:#20252b}
+.k i::after{content:"";position:absolute;left:50%;top:50%;width:2px;height:13px;background:var(--ink);
+  border-radius:1px;transform-origin:50% 100%;
+  transform:translate(-50%,-100%) rotate(calc(-135deg + var(--v)*270deg))}
+.k b{font-size:7.8px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--dim);
+  font-family:var(--mono);text-align:center}
+.k.grow i{--kc:var(--leaf)}
+.zones{background:#12161c;border:1px solid var(--line);border-radius:9px;padding:12px 13px}
+.zones h4{margin:0 0 8px;font-size:9px;font-weight:800;letter-spacing:.13em;text-transform:uppercase;color:var(--dim)}
+.zones+.zones{margin-top:14px}
+.zt{width:100%;border-collapse:collapse;font-size:10.5px}
+.zt th{text-align:left;font-family:var(--mono);font-size:7.8px;letter-spacing:.11em;text-transform:uppercase;
+  color:var(--faint);font-weight:400;padding:0 0 5px;border-bottom:1px solid var(--line)}
+.zt td{padding:5px 0;border-bottom:1px solid #1c2027;vertical-align:top;color:var(--dim);line-height:1.42}
+.zt td:first-child{color:var(--ink);font-family:var(--mono);font-size:9.5px;padding-right:10px;white-space:nowrap}
+.hidden-params{font-family:var(--mono);font-size:10px;color:var(--faint);
+  border:1px dashed var(--tile);border-radius:5px;padding:6px 9px;margin-top:8px}
+</style>
+
+<div class="wrap">
+<h1>LUSH GARDEN — dock faceplate · STATE 2: SCREEN OFF</h1>
+<p class="sub">Spec and mockup only; nothing here is implemented. OFF unmounts the picture and
+reclaims its vertical space — the fleet standard. <b>Nothing about the module stops.</b></p>
+
+<div class="nav">
+  <a href="dock-screen-on.html">state 1 · screen on</a>
+  <a class="on" href="dock-screen-off.html">state 2 · screen off</a>
+</div>
+
+<div class="warn"><b>&#9888; This state carries an obligation no other adopter has.</b>
+Collapsing must <b>not</b> stop <code>surface.draw</code>. On every other module with a SCREEN
+switch the picture is stateless enough that &ldquo;keeps rendering&rdquo; is a performance
+nicety. Here the picture is a <b>running integration</b> — the garden at second 30 contains the
+garden at second 10 — so a collapse that paused it would produce a garden <b>younger than the
+rack</b> when the screen came back. Make it a permanent leg of the face model test: with SCREEN
+OFF for N frames, <code>read('spawnCount')</code> must be <b>strictly higher</b> than before,
+not equal.</div>
+
+<div class="warn"><b>&#9888; And <code>markWatched</code> must still fire.</b> The blit IS the
+watch mark, so an OFF state that merely stops blitting drops the node out of the pull set. On a
+filter that stalls a preview; <b>on this module it would stop the GENERATOR every downstream
+node is sampling</b> — lushgarden is a pure SOURCE with no input requirement, so it is the
+origin of the signal and a lapsed mark mutes the patch, not the preview.</div>
+
+<div class="cols">
+<div>
+  <div class="dock">
+    <div class="chromebar"><span class="nm">LUSH GARDEN</span><span class="x">&#10005;</span></div>
+    <div class="plate">
+      <div class="extbody"><div class="offwrap">
+        <div class="screenbtn">SCREEN OFF</div>
+      </div></div>
+      <div class="bands">
+        <div class="band">
+          <p class="blab">growth</p>
+          <div class="row"><div class="k grow"><i style="--v:.34"></i><b>Rate</b></div></div>
+        </div>
+        <div class="band">
+          <p class="blab">camera</p>
+          <div class="row">
+            <div class="k"><i style="--v:.5"></i><b>View</b></div>
+            <div class="k"><i style="--v:.65"></i><b>Horizon</b></div>
+            <div class="k"><i style="--v:.7"></i><b>Fov</b></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="hidden-params">noUserControl (renders ZERO cells, asserted invertedly):
+    cv_grow &middot; cv_reset &middot; freeze</div>
+
+  <div class="ok"><b>Width.</b> With the picture gone the plate is four knob columns and two
+  band headers — one of the narrower faces in the fleet, which is the correct outcome of
+  &ldquo;compact is the default and width must be earned&rdquo;, not a defect. The picture is a
+  declared width earner; it simply does not want much.</div>
+</div>
+
+<div>
+  <div class="zones"><h4>what SCREEN OFF does and does not do</h4>
+    <table class="zt">
+      <tr><th>subject</th><th>state</th></tr>
+      <tr><td>the canvas</td><td><b>unmounted.</b> Its vertical space is reclaimed.</td></tr>
+      <tr><td>surface.draw</td><td><b>still running.</b> The garden keeps spawning, growing and
+        depth-sorting. This is the assertion, not the aspiration.</td></tr>
+      <tr><td>markWatched</td><td><b>still firing.</b> Verified at the SOURCE level with a
+        negative control proving the pattern can fail &mdash; a runtime probe is not available
+        because <code>isPullRoot</code> is private with no public reader, and an e2e leg that can
+        only report &ldquo;could not look&rdquo; is decoration.</td></tr>
+      <tr><td>all four outputs</td><td><b>unchanged.</b> <code>clean</code> always renders;
+        the other three follow their downstream connections exactly as before.</td></tr>
+      <tr><td>the bands</td><td>unchanged and unmoved.</td></tr>
+      <tr><td>persistence</td><td><code>node.data.previewCollapsed</code> &mdash; never component
+        <code>$state</code>. It survives a tab switch, a remount, a reload and a sync to
+        collaborators. Reuse the SAME key the fleet uses, or a rack saved before the promotion
+        silently re-opens its collapsed preview.</td></tr>
+    </table>
+  </div>
+
+  <div class="zones"><h4>determinism — the strongest story in the wave</h4>
+    <table class="zt">
+      <tr><th>half</th><th>mechanism</th></tr>
+      <tr><td>stop it</td><td><code>freezeFaceVideo</code> writes <code>params.freeze = 1</code>,
+        and <code>surface.draw</code> returns before anything else. It then <b>verifies</b> the
+        canvases held, in the page, across real rAF frames &mdash; an assertion, not a hope.</td></tr>
+      <tr><td>choose WHICH</td><td><code>simPin</code> on <code>__lushgardenVrtSeed</code>. It
+        pins a fixed 24-plant set from a seeded RNG <b>and</b> suppresses all further spawning, so
+        the surface is <b>time-invariant</b> rather than merely phase-pinned &mdash; strictly
+        stronger than the <code>outlines</code> pin it copies. The value reuses the seed the CARD
+        scene already pins, so the layout is one a human has reviewed.</td></tr>
+      <tr><td>&#9888; reachability</td><td><code>simPin</code> installs boot-time globals with
+        <code>addInitScript</code>, so it only reaches a factory in the PAGE's global scope.
+        <code>acidwarp</code> is unreachable because its <code>renderLocus</code> is
+        <code>'worker'</code>. <b>lushgarden declares no <code>renderLocus</code></b> &mdash; grep
+        returns zero hits &mdash; so it runs main-thread and the global is visible.</td></tr>
+      <tr><td>the negative control</td><td>a <b>different</b> seed must produce a visibly
+        different dock capture. A pin that changes nothing is indistinguishable from a pin that
+        never ran.</td></tr>
+      <tr><td>&#9888; not the route</td><td><code>FACES_WITHOUT_SCENES</code>. Its bar is evidence
+        that <code>simPin</code> AND <code>freeze</code> cannot reach the renderer; here both do.
+        And <code>freezeIsNotASeam</code> is a field on that same exemption type, so it is not
+        applicable to a module in <code>FACES</code>.</td></tr>
+    </table>
+  </div>
+
+  <div class="zones"><h4>defects found, for routing</h4>
+    <table class="zt">
+      <tr><th>id</th><th>one line</th></tr>
+      <tr><td>13.1</td><td><b>P1</b> three unturnable params on the Push 2 and the group bar; one
+        of them permanently bricks the RATE knob. <b>Fold into the face PR.</b></td></tr>
+      <tr><td>13.2</td><td>the card re-types four ranges the def exports, and the card is not in
+        <code>RANGE_BOUND_CARDS</code>, so nothing can see a divergence. Fold in.</td></tr>
+      <tr><td>13.3</td><td><code>freeze</code> is written by nothing today; this face makes it
+        live and the declaration stops it being reachable any other way.</td></tr>
+      <tr><td>13.4</td><td>the <code>[GATED]</code> badge disagrees with the engine after an
+        unpatch. The engine already publishes the true signal and the card ignores it.
+        <b>Owner question: is the permanent latch right at all?</b></td></tr>
+      <tr><td>13.5</td><td>the white-matte chroma-key path is dead code against the shipped atlas
+        (all 76 entries are <code>matte:"none"</code>). Report; do NOT delete in a face PR &mdash;
+        it is basis code and a no-op deletion costs a GPU re-attest.</td></tr>
+      <tr><td>13.6</td><td>three of six input ports are unasserted, and the sweep is measurably
+        vacuous for a fourth (a no-op RESET still passes 7/10). The sweep's floor is the defect.</td></tr>
+      <tr><td>13.7</td><td>the background-passthrough contract has no live gate &mdash; its only
+        test is parked.</td></tr>
+      <tr><td>13.8</td><td>two stale in-repo comments say &ldquo;3 knobs&rdquo;; there are four.</td></tr>
+      <tr><td>13.9</td><td>content budget: <code>SPAWN_MIX</code> declares 10% trees against a
+        7-image tree pool, so the near rank visibly repeats. Not a bug.</td></tr>
+    </table>
+  </div>
+</div>
+</div>
+</div>
