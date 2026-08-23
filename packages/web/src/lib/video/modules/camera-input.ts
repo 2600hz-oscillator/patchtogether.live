@@ -202,6 +202,86 @@ export const cameraInputDef: VideoModuleDef = {
     { id: 'mirror',   label: 'Mirror', defaultValue: DEFAULTS.mirror,   min: 0, max: 1, curve: 'discrete' },
     { id: 'fillMode', label: 'Fill',   defaultValue: DEFAULTS.fillMode, min: 0, max: 1, curve: 'discrete' },
   ],
+
+  // ── FACE (owner directive 2026-08-23: "camera face + authored minimalist
+  //    card", built as one PR) ─────────────────────────────────────────────
+  //
+  // WHAT CAMERA IS FOR: it is the rack's only CAPTURE SOURCE — the one module
+  // whose pixels come from the physical world rather than from a shader. Its
+  // siblings synthesise (`shapes`, `lines`) or transform (`luma`, `mapper`);
+  // the thing only this one does is bring the room in. The verb is CAPTURE.
+  //
+  // ⚠ THE FACE LANDS AT THE DOCK ONLY, AND THAT IS THE DESIGN RATHER THAN A
+  // COMPROMISE. `cameraInput` is in `NON_SHELL_LANE_TYPES`, so
+  // `laneRenderKind` returns 'legacy' for it whatever `migrated()` says
+  // (`hasCard` is false, and the check is `if (!shellFaces || !hasCard) return
+  // 'legacy'`), while the dock reads `migrated()` alone. So promoting it gives
+  // the dock a faceplate and leaves the LANE showing its real card — which is
+  // exactly what the owner asked for, since the same directive orders an
+  // authored minimalist CARD. The lane surface is supposed to be a card here.
+  //
+  // ⚠ AND THAT CARVE-OUT IS LOAD-BEARING, NOT INCIDENTAL. The card owns
+  // `getUserMedia`, the `<video>` element and the whole permission state
+  // machine; the carve-out is what guarantees it always mounts, so the stream
+  // survives. Removing `cameraInput` from `NON_SHELL_LANE_TYPES` to get a lane
+  // TILE too is a separate, reviewed change — the mechanism exists
+  // (`needsHeadlessSourceMount` returns true for kind 'shell' and this type is
+  // already in `DOM_SOURCE_LANE_TYPES`, so `HeadlessSourceHost` would keep the
+  // card alive off-screen) but it reverts a carve-out born from an owner P0
+  // ("no video at all") on a module CI cannot exercise, and
+  // `dom-source-modules.test.ts` asserts the membership deliberately. Not this
+  // PR.
+  //
+  // ⚠ FUNCTIONAL PARITY IS TOTAL HERE, WHICH IS UNUSUAL FOR A PROMOTION.
+  // Normally promotion DELETES the card and every card-only affordance has to
+  // be rebuilt or the module cannot be promoted (the samsloop STOP-2 case).
+  // Here the card keeps rendering in the lane, so nothing is removed from
+  // anywhere: the device picker, the permission machine, the presence badge and
+  // the local-only hint all stay reachable exactly as before. The face ADDS a
+  // dock view; it takes nothing away.
+  //
+  // THE TIER LADDER, read back as a sentence: ON first, because it is the only
+  // control that decides whether there is a PICTURE AT ALL — everything else
+  // shapes a signal it has to already be passing. MIRROR second: it is the
+  // control a player reaches for on a camera before any other, and the only one
+  // on this def with a CV port declared `edge: 'gate'`, so it is also the only
+  // one something else can drive. GAIN third — the sole continuous control, and
+  // the only one that can be wrong by degree rather than by state. FILL last:
+  // framing is a set-once decision, and it is the one control whose effect a
+  // player will not notice until the source aspect differs from the output's.
+  face: {
+    order: ['enabled', 'mirror', 'gain', 'fillMode'],
+
+    // ⚠ NO `pages`. Four controls over one capture are a single honest band.
+
+    // ⚠ ONE DECLARATION, AND ONLY ONE. `CameraInputCard.svelte` draws `gain`
+    // with `NeonFader`, so it is declared — nothing in a ParamDef separates "a
+    // level" from any other continuous scalar, and an undeclared face resolves
+    // it to a KNOB. The other three are `0..1 discrete`, so `looksLikeToggle`
+    // resolves them to Toggles on their own and the card agrees (two buttons and
+    // `NativeFillToggle`). Declaring them would be redundant; declaring `fader`
+    // for them would be REFUSED, correctly, since a throw over a two-state param
+    // has no "anywhere on this scale".
+    //
+    // ⚠ AND NONE OF THE THREE NEEDS A MOMENTARY/LATCHING CLASSIFICATION, which
+    // is worth stating because every other two-state param this fleet has faced
+    // did. `looksLikeSwitch` is `looksLikeToggle(p) && p.defaultValue === 0`,
+    // and all three of these default to **1** — a camera arrives ON, mirrored
+    // and filling. So they never reach the gate that demands the classification.
+    paramCells: { gain: 'fader' },
+
+    // ⚠ MANDATORY FOR A VIDEO DEF — no `type: 'audio'` output, so
+    // `primaryAudioOutPortId` is null and any other glyph literal falls through
+    // `glyphBinding` to a dead `{kind:'static'}` that reddens module-face-lint.
+    glyph: 'none',
+
+    // SCREEN ON/OFF plus the two things that are NOT ParamDefs and therefore
+    // cannot be face cells at all: the DEVICE PICKER (`node.data.deviceId`,
+    // enumerated at runtime) and the capture STATUS lamp. Both live in the
+    // extension body, which is the only slot that can hold them.
+    // See `$lib/ui/modules/cameraInput/shell-extension.ts`.
+    extension: 'cameraInput',
+  },
   // Soft cap mirroring the multiplayer per-rackspace user limit. The
   // browser will fail extra getUserMedia calls anyway with NotReadableError
   // if the hardware can't multiplex; this just keeps the patch graph

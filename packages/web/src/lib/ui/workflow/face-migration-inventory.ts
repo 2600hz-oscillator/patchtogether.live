@@ -583,12 +583,35 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
   },
   {
     type: 'cameraInput',
-    disposition: 'bespoke-surface',
-    blockers: ['needs-media-controller'],
+    // ⚠ WAS `bespoke-surface` WITH A `needs-media-controller` BLOCKER, MOVED TO
+    // `generic-face` 2026-08-23 (owner directive: "camera face and authored
+    // minimalist card"). The old record said the card owns getUserMedia AND the
+    // enumerateDevices picker, and that its device-selection + permission UI is
+    // "its own surface concern rather than part of the lifecycle move".
+    //
+    // ⚠ THAT WAS TRUE AND IS STILL TRUE — WHAT CHANGED IS THAT IT STOPPED BEING
+    // A BLOCKER. The blocker assumed promotion DELETES the card, so the picker
+    // and the permission machine would have to be rebuilt as shell cells (which
+    // they cannot be: the device list is enumerated at runtime, so it is neither
+    // a `ParamDef` nor an `options` roster). But `cameraInput` is in
+    // `NON_SHELL_LANE_TYPES`, so the LANE always renders its real card whatever
+    // `migrated()` says, while the dock reads `migrated()` alone. Promotion
+    // therefore ADDS a dock faceplate and removes nothing — getUserMedia, the
+    // permission machine, the presence badge and the local-only hint all stay
+    // exactly where they were.
+    //
+    // No new platform capability was needed, which is what `generic-face` means:
+    // the picker and the capture lamp live in the `fullViewBody` extension slot
+    // that every other video face already uses for its SCREEN switch.
+    disposition: 'generic-face',
     why:
-      'the capture-source snowflake already carved out of the shell swap: the card owns ' +
-      'getUserMedia AND the enumerateDevices picker, and #1511 names its device-selection + ' +
-      'permission UI as its own surface concern rather than part of the lifecycle move.',
+      'faced 2026-08-23 by owner directive, as the only promotion in the fleet that does NOT ' +
+      'delete its card: NON_SHELL_LANE_TYPES keeps the real card in the lane (where the owner ' +
+      'also asked for an authored minimalist rewrite) while the dock gets the faceplate, so the ' +
+      'getUserMedia lifecycle and the permission machine are untouched. The runtime-enumerated ' +
+      'device picker and the capture lamp live in the fullViewBody extension, since neither can ' +
+      'be a face cell. The former `needs-media-controller` blocker assumed promotion would ' +
+      'delete the card; it does not, so the blocker no longer applies.',
   },
   {
     type: 'cartesian',

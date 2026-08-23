@@ -296,6 +296,32 @@
     }
   }
 
+  // ⚠ TRACK EXTERNAL PICKS — the card used to hydrate `node.data.deviceId` ONCE
+  // on mount and never look again, so a device chosen anywhere else was saved
+  // but never acted on until a remount. That was invisible while the card was
+  // the only surface with a picker; it stops being invisible the moment the
+  // DOCK FACE gets one (owner directive 2026-08-23), because a pick there would
+  // write the shared key and appear to do nothing.
+  //
+  // ⚠ IT IS ALSO WHAT THE DEF ALREADY CLAIMED. This card's own header says
+  // `node.data.deviceId` is "in Yjs. Each user's browser tries to match it to a
+  // local camera" — a promise hydrate-once could not keep for any change after
+  // mount, including a collaborator's.
+  //
+  // Guarded three ways so this cannot loop or fight the user: it fires only when
+  // the saved id DIFFERS from what this card already has, only when the id is
+  // non-null, and it reuses `shouldReacquireOnPick` so the same states that
+  // refuse a re-acquire on a local pick refuse it here too.
+  $effect(() => {
+    const saved = readSavedDeviceId();
+    if (!saved) return;
+    if (saved === untrack(() => selectedDeviceId)) return;
+    untrack(() => {
+      selectedDeviceId = saved;
+      if (shouldReacquireOnPick(camState)) requestStream();
+    });
+  });
+
   function onToggleEnabled(): void {
     const next = p('enabled') < 0.5;
     setBoolParam('enabled', next);

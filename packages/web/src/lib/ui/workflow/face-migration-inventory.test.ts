@@ -78,6 +78,10 @@ import type { ModuleFace } from '$lib/graph/types';
 
 import { STRICT_FACES } from './strict-faces';
 import { DOM_SOURCE_LANE_TYPES, HEADLESS_MOUNT_LANE_TYPES } from './dom-source-modules';
+// The carve-out set the CARD-OWNED SOURCE gate reads to tell "the card can be
+// swapped away" from "the card always mounts" — see that test for why the
+// distinction is the whole hazard.
+import { NON_SHELL_LANE_TYPES } from './legacy-fallback';
 import { shellExtensionIds, WIRED_SHELL_EXTENSION_SLOTS } from './shell-extensions';
 import {
   FACE_MIGRATION_INVENTORY,
@@ -562,18 +566,64 @@ describe('face-migration inventory — DERIVED from the tree, not from this list
     for (const type of [...DOM_SOURCE_LANE_TYPES].sort()) {
       const entry = inventoryEntry(type);
       if (!entry) continue; // reported by the totality gate
-      if (entry.disposition === 'generic-face') {
+      // ⚠ THE HAZARD IS "THE CARD GETS SWAPPED AWAY", NOT "THE SOURCE LIVES ON
+      // THE CARD" — and for a module in NON_SHELL_LANE_TYPES the swap cannot
+      // happen. `laneRenderKind` returns 'legacy' for those whatever
+      // `migrated()` says (`hasCard` is false, and the check is
+      // `if (!shellFaces || !hasCard) return 'legacy'`), so the real card
+      // ALWAYS mounts and the source is never orphaned. `dom-source-modules.ts`
+      // already records exactly this about the one module in both sets:
+      // "cameraInput is listed here even though it is ALSO a
+      // NON_SHELL_LANE_TYPE (its real card always renders in the lane, so it is
+      // never swapped and never needs the headless host)".
+      //
+      // ⚠ THIS IS A NARROWING OF THE PREDICATE, NOT AN EXEMPTION LIST. There is
+      // no name here to go stale: the condition is read from the live
+      // NON_SHELL_LANE_TYPES set, so a module that LEAVES that set immediately
+      // becomes an offender again if it is still generic-face — which is
+      // precisely the review that removing such a carve-out should trigger.
+      const cardAlwaysMounts = NON_SHELL_LANE_TYPES.has(type);
+      if (entry.disposition === 'generic-face' && !cardAlwaysMounts) {
         offenders.push(
           `${type}: dispositioned generic-face, but its source exists only while its card is ` +
             'mounted (DOM_SOURCE_LANE_TYPES) — a face over it renders controls for a dead source',
         );
         continue;
       }
+      if (entry.disposition === 'generic-face') continue;
       if (!migrationBlockers(entry).includes('needs-media-controller')) {
         offenders.push(`${type}: is a DOM-source module but does not declare needs-media-controller`);
       }
     }
     expect(offenders.sort()).toEqual([]);
+  });
+
+  it('NEGATIVE CONTROL: the card-always-mounts narrowing is REAL and narrow', () => {
+    // Without this, the narrowing above could be silently vacuous (or silently
+    // universal) and the sweep would look identical either way.
+    //
+    // (a) It must actually be load-bearing for someone — i.e. at least one
+    //     DOM-source module really is carved out of the swap. If that stops
+    //     being true the narrowing is dead code and should be deleted, not left
+    //     to imply a protection nobody uses.
+    const carved = [...DOM_SOURCE_LANE_TYPES].filter((t) => NON_SHELL_LANE_TYPES.has(t));
+    expect(carved, 'no DOM-source module is carved out — the narrowing is dead').not.toEqual([]);
+
+    // (b) It must NOT be universal: the great majority of DOM-source modules are
+    //     still swappable, and for those the original hazard stands untouched.
+    const swappable = [...DOM_SOURCE_LANE_TYPES].filter((t) => !NON_SHELL_LANE_TYPES.has(t));
+    expect(swappable, 'every DOM-source module is carved out — the gate now checks nothing')
+      .not.toEqual([]);
+
+    // (c) And the predicate itself must still say NO for a swappable one. This
+    //     is the leg that fails if someone "simplifies" the condition to a
+    //     blanket skip.
+    for (const t of swappable) {
+      expect(
+        NON_SHELL_LANE_TYPES.has(t),
+        `${t} is swappable, so the card-always-mounts narrowing must not cover it`,
+      ).toBe(false);
+    }
   });
 
 });

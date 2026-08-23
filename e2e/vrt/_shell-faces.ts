@@ -2564,6 +2564,45 @@ export const FACES = [
       },
     ],
   },
+  // ── CAMERA (owner directive 2026-08-23) ───────────────────────────────────
+  {
+    type: 'cameraInput',
+    pages: 1,
+    videoFaceWhy:
+      'a VIDEO module, so it must boot into the video zone rather than a mixer channel column — '
+      + 'without this field bootWithFace waits out the full 90 s test timeout for a column '
+      + 'membership a video node never acquires. ⚠ THIS IS THE ONE FACE WHOSE MODULE KEEPS ITS '
+      + 'CARD: `cameraInput` is in NON_SHELL_LANE_TYPES, so the LANE renders the real card and '
+      + 'only the DOCK gets the faceplate. ⚠ AND IT IS CAPTURABLE DESPITE THE LIVE STREAM, which '
+      + 'is the interesting part — see the simPin below.',
+    // ⚠ THE MODULE'S OWN INJECTED-FRAME SEAM, AND IT IS WHY THIS FACE GETS REAL
+    // BASELINES RATHER THAN A `FACES_WITHOUT_SCENES` EXEMPTION.
+    //
+    // `cameraInput` sits in `EXEMPT_FROM_VRT` — "live MediaStream defeats
+    // deterministic capture" — and that stays TRUE OF THE CARD SCENE, which is a
+    // different surface with a different baseline (the same distinction the
+    // `scoreboard` entry in that file already draws). It is NOT true of a scene
+    // captured with this pin set.
+    //
+    // `__camerainputTestFrame` makes the module upload a FIXED high-contrast
+    // synthetic frame instead of sampling the live `<video>`: the def describes
+    // it as "identical on every build → frame-stable", DOM-free, and with "NO
+    // dependency on getUserMedia reaching 'streaming'". So the pinned scene has
+    // no camera, no permission prompt and no stream clock in it at all.
+    simPin: [
+      {
+        global: '__camerainputTestFrame',
+        value: 1,
+        why:
+          "uploads the module's fixed synthetic checker instead of sampling the live <video>, so "
+          + 'the captured frame is a pure function of the params and is identical across boots, '
+          + 'renderers and frame counts. Read as truthy, so 1 is the value. ⚠ It removes the '
+          + 'getUserMedia dependency entirely, which is the same reason the attest smoke uses it: '
+          + 'CI has no camera, and without the pin the scene would be a permission hole rather '
+          + 'than a picture.',
+      },
+    ],
+  },
 ] as const;
 
 /**

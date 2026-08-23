@@ -226,6 +226,9 @@ const SUBJECTS: readonly Subject[] = [
   { type: 'peakstate', prefix: 'peakstate', domain: 'video', why: 'the kaleidoscope pen-trace\'s live mandala and its SCREEN switch. ⚠ The ACCUMULATOR case: the picture IS a pen ring of trace history whose advance is unconditional by design, so a lapsed watch mark freezes the mandala mid-figure for all THREE outputs, which share one ring. Its body also swaps the card\'s ungated 30 Hz `read(\'previewCanvas\')` poll for the fleet `blitOutputForPreview` — same surface, but gated and legible to the port seam.' },
   { type: 'lines', prefix: 'lines', domain: 'video', why: 'the procedural grating\'s live preview and its SCREEN switch — an ADDITION, since LinesCard never drew a preview. ⚠ NOT stateless despite having no accumulator: its shader reads a time term and the pattern auto-scrolls at rest, so a lapsed mark freezes a MOVING picture every downstream consumer is sampling.' },
 
+  // ── CAMERA (owner directive 2026-08-23) ───────────────────────────────────
+  { type: 'cameraInput', prefix: 'cameraInput', domain: 'video', why: 'the capture source\'s live preview and its SCREEN switch. ⚠ The one module in this table whose promotion does NOT delete its card — it is in NON_SHELL_LANE_TYPES, so the lane keeps the real card and only the dock gets this body. Its picture is BLITTED, never adopted: the node-owned <video> belongs to the card that owns getUserMedia. A SOURCE with no input, so a lapsed watch mark would mute the origin of the whole chain.' },
+
   // ── the AUDIO-def outlier ─────────────────────────────────────────────────
   { type: 'rasterize', prefix: 'rasterize', domain: 'audio', why: '⚠ an AudioModuleDef that carries a VIDEO surface, so it lives in lib/audio/modules and a video-only enumeration misses it entirely. Spawns with domain: audio. It is the reason this file\'s derivation crosses both domains.' },
 ] as const;

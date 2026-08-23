@@ -3476,6 +3476,41 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   'destructor',
   'luma',
   'videoMixer',
+
+  // ── CAMERA (owner directive 2026-08-23) ───────────────────────────────────
+  //
+  // "camera face and authored minimalist card", built as one PR.
+  //
+  // ⚠ THE ONLY PROMOTION IN THIS FLEET THAT DOES NOT DELETE ITS CARD, and the
+  // whole design rests on that. `cameraInput` is in `NON_SHELL_LANE_TYPES`, so
+  // `laneRenderKind` returns 'legacy' for it whatever `migrated()` says, while
+  // the dock reads `migrated()` alone — so this entry gives the DOCK a faceplate
+  // and leaves the LANE showing its real card. That is the ask, not a
+  // compromise: the same directive orders an authored minimalist CARD, so the
+  // lane surface is supposed to be a card.
+  //
+  // ⚠ FUNCTIONAL PARITY IS THEREFORE TOTAL. Promotion normally deletes the card
+  // and every card-only affordance must be rebuilt or the module cannot be
+  // promoted (the samsloop STOP-2 refusal). Here nothing is removed anywhere:
+  // the permission machine, the presence badge and the local-only hint stay
+  // reachable in the lane exactly as before, and the face ADDS a dock view.
+  //
+  // ⚠ ZERO ATTEST AND ZERO CONTRACT: `params` is untouched. Device selection is
+  // `node.data.deviceId`, enumerated at runtime — it CANNOT be an `options`
+  // roster, because a roster is a fixed set known at authoring time and this one
+  // differs per machine. That is also why the picker lives in the extension
+  // body rather than in a face cell.
+  //
+  // ⚠ NONE OF ITS THREE TWO-STATE PARAMS NEEDS A LATCHING CLASSIFICATION, which
+  // is worth recording because every other faced two-state param did:
+  // `looksLikeSwitch` is `looksLikeToggle(p) && p.defaultValue === 0`, and
+  // `enabled` / `mirror` / `fillMode` all default to **1**. A camera arrives on,
+  // mirrored and filling.
+  //
+  // SCREEN OFF keeps the watch mark, and this is the widest case in the fleet:
+  // CAMERA has no video input, so it is the ORIGIN of everything downstream — a
+  // lapsed mark would turn a preview control into a MUTE for every consumer.
+  'cameraInput',
 ]);
 
 /**

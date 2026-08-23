@@ -557,7 +557,23 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // fake-camera flag the synthetic frame is non-deterministic enough
   // (frame-time clock) that the baseline would flap. Functional coverage
   // is e2e/tests/camera-input.spec.ts.
-  cameraInput: 'live MediaStream defeats deterministic capture',
+  // ⚠ SCOPED TO THE CARD, AND THE FACE IS NOW CAPTURED (owner directive
+  // 2026-08-23). This entry has always been about the LEGACY CARD scene — a
+  // different surface with a different baseline, the same distinction the
+  // `scoreboard` entry above draws. It stays true: the card renders the live
+  // `<video>`, and on `cameraInput` the card ALWAYS renders (it is in
+  // `NON_SHELL_LANE_TYPES`), so there is no version of the card scene without a
+  // MediaStream in it.
+  //
+  // ⚠ BUT THE FACE IS A DIFFERENT MATTER AND IS NOT EXEMPT. The module ships
+  // `__camerainputTestFrame`, a flag-gated seam that uploads a fixed synthetic
+  // checker instead of sampling the `<video>` — "identical on every build →
+  // frame-stable", with no getUserMedia dependency at all. The face scenes pin
+  // it through `simPin` and capture normally, so `cameraInput` is NOT in
+  // `FACES_WITHOUT_SCENES`. Recorded here because "the module is exempt" is the
+  // obvious wrong inference from this line, and it would have bought a
+  // needless exemption for a surface that captures fine.
+  cameraInput: 'CARD scene only: the card renders a live MediaStream, which defeats deterministic capture. The FACE scenes ARE captured (simPin __camerainputTestFrame) — see _shell-faces.ts.',
   // LOOPBACK renders a live getDisplayMedia tab-capture into a recursive
   // preview (a video-feedback tunnel) — non-deterministic by construction, same
   // as CAMERA. Functional + render coverage is e2e/tests/loopback.spec.ts
