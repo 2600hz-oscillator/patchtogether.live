@@ -639,8 +639,9 @@ export const SAMSLOOP_RATE_RANGE = { min: -2, max: 2, defaultValue: 1 } as const
  * index is only meaningful against the length the buffer had when it was
  * SAVED, so a non-WAV source re-decoded at a different AudioContext rate
  * (`decodeAudioData` resamples) pointed the saved window at the wrong samples.
- * That is what `samsloopMath.rescaleBoundaries` exists to repair. A FRACTION is
- * length-invariant by construction, so the re-decode mismatch cannot arise.
+ * That is what `samsloopMath.rescaleBoundaries` existed to repair — and it is
+ * DELETED with this change rather than adapted, because a FRACTION is
+ * length-invariant by construction and the mismatch cannot arise at all.
  *
  * ⚠ IT IS ALSO WHAT MAKES THE CV PORTS HONEST. `cvScale.depth: 1` means "full
  * natural-range sweep", and the natural range of a fraction IS the whole
@@ -866,47 +867,12 @@ export const samsloopMath = {
     return Math.max(SAMSLOOP_RATE_RANGE.min, Math.min(SAMSLOOP_RATE_RANGE.max, sliderValue));
   },
 
-  /**
-   * Re-scale saved loop boundaries when the buffer is re-decoded to a DIFFERENT
-   * length than it had at save time — the SAMSLOOP boundary-restore bug.
-   *
-   * Boundaries persist as ABSOLUTE sample indices against the decoded length at
-   * save time (`savedLen`). On a perf-zip load on a machine whose AudioContext
-   * runs at a different sample rate, a NON-WAV source (mp3/m4a/ogg — anything
-   * routed through `decodeAudioData`, which resamples to the live ctx rate)
-   * re-decodes to a different `newLen`, so the saved absolute indices point at
-   * the WRONG positions (e.g. a 25%..75% window collapses or overruns). WAV
-   * sources parse losslessly at their own rate, so `newLen === savedLen` and
-   * this is a no-op for them.
-   *
-   * We map start/end PROPORTIONALLY from the saved length onto the new length so
-   * the loop window keeps the same musical placement. Returns null when no
-   * rescale is needed (lengths equal / no usable saved length / boundaries are
-   * still at their pristine defaults — a full-buffer window, which the worklet's
-   * own clamp already handles).
-   */
-  rescaleBoundaries(
-    start: number,
-    end: number,
-    savedLen: number,
-    newLen: number,
-  ): { start: number; end: number } | null {
-    if (!Number.isFinite(savedLen) || !Number.isFinite(newLen)) return null;
-    if (savedLen <= 0 || newLen <= 0) return null;
-    if (savedLen === newLen) return null; // same machine / WAV — indices are exact
-    // A pristine full-buffer window (start=0, end>=savedLen, or the param default
-    // 1e6 ceiling) needs no proportional map — re-anchor end to the new length so
-    // the fader bound is right; the worklet clamps anyway.
-    const sClamped = Math.max(0, Math.min(savedLen, Math.round(start)));
-    const eClamped = Math.max(sClamped, Math.min(savedLen, Math.round(end)));
-    if (sClamped === 0 && end >= savedLen) {
-      return { start: 0, end: newLen };
-    }
-    const scale = newLen / savedLen;
-    const ns = Math.max(0, Math.min(newLen - 1, Math.round(sClamped * scale)));
-    const ne = Math.max(ns + 1, Math.min(newLen, Math.round(eClamped * scale)));
-    return { start: ns, end: ne };
-  },
+  // ⚠ `rescaleBoundaries` WAS HERE AND IS DELETED. It proportionally re-mapped a
+  // saved FRAME window onto a re-decoded buffer of a different length, because an
+  // absolute index is only meaningful against the length the buffer had at SAVE
+  // time. The window is a FRACTION now — length-invariant by construction — so
+  // that failure cannot occur and the helper had no caller left. Leaving it would
+  // leave a plausible-looking function for someone to "fix" against fractions.
 
   /**
    * Resolve the FRACTIONAL window to frame indices inside `[0, len]`.
