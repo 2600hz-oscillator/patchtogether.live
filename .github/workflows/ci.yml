@@ -90,14 +90,26 @@ name: CI
 # coordinated PUT to /repos/.../rulesets/16042163. Rename it ONLY in a PR
 # that also updates the ruleset.
 
+# ── NO PATH FILTER, DELIBERATELY (2026-08-23) ──────────────────────────────
+#
+# `paths-ignore` used to skip prose-only pushes and PRs. It is GONE, and with it
+# `docs-only-gate.yml` + `scripts/docs-only-gate.mjs` + their test.
+#
+# The reason is the SHAPE, not the cost. A path-skipped workflow reports NOTHING,
+# and the branch ruleset REQUIRES four contexts, so a docs-only PR sat blocked
+# with zero failures — which is why a whole second workflow existed to post those
+# contexts on the EXACT INVERSE filter. Two path lists that must stay exact
+# complements of each other, forever, maintained by hand, is a standing trap: the
+# repo's own standard had to carry a rule ("the path lists move TOGETHER") whose
+# only job was to stop a silent deadlock.
+#
+# Deleting the filter deletes the trap. A docs-only PR now runs CI like any
+# other PR. They are rare; the price is CI minutes on a prose change, and what it
+# buys is a workflow, a script, a test and a hand-maintained complement invariant
+# all going away.
 on:
   push:
     branches: [main, first-mvp]
-    paths-ignore:
-      - '**/*.md'
-      - '!docs/design/face-migration.generated.md'
-      - '.myrobots/**'
-      - 'LICENSE'
   pull_request:
     # `labeled` REMOVED 2026-08-17 with the behavioral lane. It existed for one
     # reason — adding the 'behavioral' label re-fired CI so the otherwise-skipped
@@ -110,17 +122,9 @@ on:
     # exactly what this PR exists to stop main from reporting.
     #
     # These three are the GitHub default set; they stay listed explicitly because
-    # once `types:` is declared the default no longer applies — and because
-    # docs-only-gate.yml declares the SAME three, so the two workflows now fire
-    # on identical event types (their path filters are complements; see the note
-    # on `paths-ignore` below). Path filters are unchanged.
+    # once `types:` is declared the default no longer applies.
     types: [opened, synchronize, reopened]
     branches: [main]
-    paths-ignore:
-      - '**/*.md'
-      - '!docs/design/face-migration.generated.md'
-      - '.myrobots/**'
-      - 'LICENSE'
   # Manual re-trigger on a branch (operator convenience). NOTE: a
   # workflow_dispatch run does NOT count toward a PR's required-status-check
   # gate (confirmed on #524) — so vrt-update.yml no longer dispatches this to
@@ -194,8 +198,8 @@ jobs:
   # It gates: it is in the `ci` umbrella's needs + env + failing condition
   # below, the same three edits every other required job uses. No new required
   # context, so no ruleset change (ruleset 16042163 requires the umbrella and
-  # vrt-strict; naming a job after a required context is the thing the
-  # docs-only-gate comments warn against).
+  # vrt-strict — and ⚠ never satisfy a required context by naming a JOB after
+  # it: a job-level `if:` skip reports as SUCCESS to branch protection).
   # -----------------------------------------------------------------------
   lint:
     name: lint (eslint + shellcheck)
@@ -1146,6 +1150,31 @@ jobs:
           # That union assertion is the safety argument: assigning files
           # explicitly makes US responsible for covering the suite, and a
           # silently dropped spec would look exactly like a speedup.
+          #
+          # ⚠ REPLACING THIS WITH PLAIN `--shard=N/10` WAS TRIED AND MEASURED,
+          # AND IT DOES NOT WORK (2026-08-23, PR #2150 run 32643416031). The CI
+          # simplification audit recommended exactly that, on the reasoning that
+          # the worst case is "uneven shards costing single-digit minutes of wall
+          # time". The worst case is not wall time — it is a DEAD SHARD:
+          #
+          #     shard  4  8.5 min      shard  9 11.5 min
+          #     shard  6 10.8 min      shard  1 12.9 min
+          #     shard  8 10.4 min      shard 10 15.2 min   ← 1.8 min under budget
+          #     shard  3  KILLED by --global-timeout at 17.0 min:
+          #               75 passed, 160 NEVER RAN
+          #
+          # Native `--shard` assigns CONTIGUOUS, FILE-ORDERED chunks, so shard 3
+          # drew an alphabetical run (fader… featurecv… filter… flip-rack…
+          # four-modules… foxy-face…) whose real cost is ~3x the cheapest shard.
+          # The 160 unrun tests surface as runtime SKIPS, so the skip-budget
+          # audit reddens too — one imbalance, two red gates, and no test failed.
+          # Shard 10's media cluster (camera-input + the videobox/videovarispeed
+          # family, which this planner's PASS 1 deliberately spreads) landed 1.8
+          # min under the same cliff.
+          #
+          # So the cost table stays. If it goes stale the packing degrades; if it
+          # is deleted the lane loses tests silently-then-loudly. Anyone revisiting
+          # this needs a REPLACEMENT for cost-aware packing, not the absence of one.
           SPECS=$(cd e2e && flox activate -- npx playwright test --list --reporter=json 2>/dev/null \
             | flox activate -- node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{const r=JSON.parse(d),f=new Set();(function w(s){for(const x of s||[]){if(x.file)f.add(x.file);w(x.suites);}})(r.suites);console.log([...f].sort().join(" "));})')
           # shellcheck disable=SC2086 # why: $SPECS is a SPACE-SEPARATED SPEC LIST and word splitting is the mechanism, not an accident — quoting it would hand the planner one argument that is the whole suite concatenated.
@@ -2082,9 +2111,11 @@ jobs:
   # GitHub then sees a required check that never reports and every PR sits
   # BLOCKED with zero failures, forever. So the matrix moved to a NEW job key
   # (`vrt-strict-shard`) and `vrt-strict` stayed put as a tiny aggregator that
-  # keeps the byte-identical `name:`. `scripts/docs-only-gate.test.ts` reads
-  # `jobName(CI_YML, 'vrt-strict')` and asserts it against the posted context,
-  # so the identity is gated, not merely intended.
+  # keeps the byte-identical `name:`. ⚠ Nothing in the repo gates that name any
+  # more — `scripts/docs-only-gate.test.ts` used to pin it against the contexts
+  # the bypass posted, and the bypass is deleted (2026-08-23). The name is
+  # matched LITERALLY by ruleset 16042163, so renaming this job still requires
+  # the accompanying ruleset PUT; there is now no local check that will tell you.
   #
   # ⚠ The aggregator is `if: always()`, NOT `if: '!cancelled()'`. A job-level
   # `if:` that SKIPS reports as SUCCESS to branch protection — an aggregator

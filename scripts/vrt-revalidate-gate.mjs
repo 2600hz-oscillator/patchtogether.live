@@ -65,36 +65,34 @@
 // ── What this module does ──────────────────────────────────────────────────
 //
 // It makes the re-fire SELF-VERIFYING. After each close+reopen it polls the
-// same oracle `docs-only-gate.yml` uses — but it asks the STRONGER question:
-// "did GitHub start a ci.yml run for this head SHA **that executed, or will**?"
-// A parked run is APPROVED through the REST endpoint and re-verified; a run in
-// any other inert state fails the job with its actual state printed.
+// GitHub Actions runs API and asks the STRONG question: "did GitHub start a
+// ci.yml run for this head SHA **that executed, or will**?" A parked run is
+// APPROVED through the REST endpoint and re-verified; a run in any other inert
+// state fails the job with its actual state printed.
 //
 // It never posts a status, and it never marks anything green: the worst case is
 // a RED vrt-update run naming the PR, the run URL, the state GitHub reported,
 // and the one-line fix. Posting success here would green-light genuinely
-// untested code — the thing `scripts/docs-only-gate.mjs` is most careful to
-// avoid — and the required contexts still come only from a real
+// untested code, and the required contexts still come only from a real
 // `pull_request` CI run.
 //
 // ── ⚠ THE ORACLE FILTERS ON `event=pull_request`, AND THAT IS THE POINT ────
 //
-// `docs-only-gate.yml`'s guard G2 asks "does ANY ci.yml run exist for this
-// SHA?" because there, presence means REFUSE THE BYPASS — over-counting is the
-// safe direction. Here presence means DECLARE SUCCESS, so the safe direction is
-// the opposite one and the query must be narrower: a `workflow_dispatch` ci.yml
-// run does NOT count toward a PR's required-status gate (confirmed on #524), so
-// counting one would let this module call a still-deadlocked PR verified.
-// Only `pull_request`-event runs are counted.
+// Presence of a run here means DECLARE SUCCESS, so the query must be narrow: a
+// `workflow_dispatch` ci.yml run does NOT count toward a PR's required-status
+// gate (confirmed on #524), so counting one would let this module call a
+// still-deadlocked PR verified. Only `pull_request`-event runs are counted.
 //
-// ⚠ G2 inherits the WEAK question this module just fixed: a PARKED ci.yml run
-// makes `decideBypass` refuse a bypass that should apply. Out of scope here
-// (posting statuses that a later approval could contradict is its own hazard) —
-// filed as #1817 rather than fixed in passing. `classifyRun`/`groupRuns` are
-// exported so whichever remedy is chosen imports the taxonomy instead of
-// growing a second copy of it.
-
-import { DOCS_PATTERNS, REQUIRED_CONTEXTS } from './docs-only-gate.mjs';
+// ── THE DOCS-ONLY BYPASS IS GONE (2026-08-23) ─────────────────────────────
+//
+// `docs-only-gate.yml` + `scripts/docs-only-gate.mjs` are deleted along with
+// `ci.yml`'s `paths-ignore`, so "ci.yml was path-skipped by design" is no
+// longer a thing that can happen: every PR fires a ci.yml run. The three
+// bypass-shaped causes this module used to distinguish (`path-skipped`,
+// `healthy-bypass`, `bypass-missing-status`) and the `indeterminate` verdict
+// that existed only to say "I cannot tell those from a dropped event" are
+// deleted with it. `diagnoseBlocked` now has exactly four outcomes, and
+// "no ci.yml run exists" has ONE meaning again.
 
 /** The one-line remedy for "no run was created at all" (#1694). Printed on failure. */
 export const REMEDY =
@@ -549,58 +547,50 @@ export async function runVerification({
 }
 
 // ---------------------------------------------------------------------------
-// "BLOCKED WITH NOTHING RED" HAS FOUR CAUSES AND THEY LOOK IDENTICAL
+// "BLOCKED WITH NOTHING RED" LOOKS THE SAME WHATEVER CAUSED IT
 //
-// From the PR page, #1184 / #1694 / #1783 / #1815 are the same picture: a
-// required context that never reported. They need four different fixes, and
-// #1694's fix (push a non-bot commit) accidentally clears #1815 too — which is
-// exactly how #1815 got misfiled as #1694 twice.
+// From the PR page, #1694 and #1815 are the same picture: a required context
+// that never reported. They need different fixes, and #1694's fix (push a
+// non-bot commit) accidentally clears #1815 too — which is exactly how #1815
+// got misfiled as #1694 twice.
 //
-// So the classification is written down ONCE, as a pure function over four
-// observables, instead of being re-derived by whoever is looking today:
+// So the classification is written down ONCE, as a pure function over ONE
+// observable, instead of being re-derived by whoever is looking today: the
+// ci.yml pull_request runs on the head SHA, CLASSIFIED (not counted).
 //
-//   · the ci.yml pull_request runs on the head SHA, CLASSIFIED (not counted)
-//   · whether the PR's changed files are docs-only by ci.yml's own path set
-//   · which required contexts are posted as commit statuses
-//   · whether docs-only-gate.yml ran for the SHA
+// It used to take four observables, because `ci.yml`'s `paths-ignore` made a
+// missing run ambiguous — #1184/#1783 were the docs-only-bypass halves of that
+// ambiguity. The path filter and the bypass are both deleted (2026-08-23), and
+// three observables went with them.
 // ---------------------------------------------------------------------------
 
 /** The distinguishable causes, each with the issue that documents it. */
 export const BLOCKED_CAUSES = Object.freeze({
   healthy: { issue: null, summary: 'a ci.yml run executed for this head — the contexts report' },
-  'healthy-bypass': {
-    issue: 1783,
-    summary: 'docs-only change: ci.yml is path-skipped by design and docs-only-gate posted the contexts',
-  },
   parked: { issue: 1815, summary: 'a ci.yml run was created and PARKED awaiting approval — it executed nothing' },
   'inert-run': {
     issue: 1815,
     summary: 'a ci.yml run exists in a state that executed nothing and cannot be approved (stale / startup_failure)',
   },
   'no-run': { issue: 1694, summary: 'NO ci.yml run was created for this head at all — the event was never delivered' },
-  'path-skipped': {
-    issue: 1184,
-    summary: 'ci.yml is path-skipped for this docs-only change and no bypass ran — the contexts can never report',
-  },
-  'bypass-missing-status': {
-    issue: 1783,
-    summary: 'the docs-only bypass RAN but the required contexts are not posted — its status POST failed',
-  },
-  indeterminate: { issue: null, summary: 'not enough observables to tell the four causes apart' },
 });
 
 /**
- * Which of the four causes is this? Pure; the CLI below fetches the four
- * observables and hands them over.
+ * Which of the four causes is this? Pure; the CLI below fetches the run list
+ * and hands it over.
+ *
+ * ⚠ "No run exists" now has exactly ONE meaning. While `ci.yml` carried a
+ * `paths-ignore`, a missing run was ambiguous between "path-skipped by design"
+ * and "the event was dropped", and telling them apart needed the changed-file
+ * list plus the bypass workflow's runs plus the posted commit statuses. The
+ * path filter is gone (2026-08-23), so every PR fires a run and its ABSENCE is
+ * unconditionally #1694.
  *
  * @param {object} o
  * @param {Array<object>} [o.runs]            ci.yml pull_request runs on the head SHA
- * @param {boolean|null} [o.docsOnly]         every changed file matches ci.yml's paths-ignore
- * @param {string[]} [o.postedContexts]       contexts present as commit statuses
- * @param {Array<object>} [o.bypassRuns]      docs-only-gate.yml runs on the head SHA
  * @returns {{cause: keyof typeof BLOCKED_CAUSES, issue: number|null, reason: string}}
  */
-export function diagnoseBlocked({ runs = [], docsOnly = null, postedContexts = [], bypassRuns = [] }) {
+export function diagnoseBlocked({ runs = [] }) {
   const say = (cause, reason) => ({ cause, issue: BLOCKED_CAUSES[cause].issue, reason });
   const g = groupRuns(runs);
 
@@ -609,39 +599,10 @@ export function diagnoseBlocked({ runs = [], docsOnly = null, postedContexts = [
   const inert = [...g.stuck, ...g.unknown];
   if (inert.length > 0) return say('inert-run', `${describeRuns(inert)}. ${REMEDY}`);
 
-  // No ci.yml run at all. The two remaining causes are told apart by whether
-  // ci.yml was SUPPOSED to run — which is a property of the changed files, not
-  // of the run list.
-  if (docsOnly === null) {
-    return say(
-      'indeterminate',
-      'no ci.yml run exists, and the changed-file list was not supplied — without it ' +
-        '"path-skipped by design" (#1184/#1783) and "the event was dropped" (#1694) are indistinguishable',
-    );
-  }
-  if (!docsOnly) {
-    return say(
-      'no-run',
-      'the change is NOT docs-only, so ci.yml should have run and no run exists: the ' +
-        `pull_request event was never delivered (bot-authored HEAD is the known cause). ${REMEDY}`,
-    );
-  }
-  const missing = REQUIRED_CONTEXTS.filter((c) => !postedContexts.includes(c));
-  if (bypassRuns.length === 0) {
-    return say(
-      'path-skipped',
-      'docs-only change, ci.yml correctly path-skipped, and docs-only-gate.yml did not run for ' +
-        `this SHA — the required contexts (${missing.join(', ')}) can never report. Check that ` +
-        "docs-only-gate.yml's `paths:` is still the exact inverse of ci.yml's `paths-ignore:`.",
-    );
-  }
-  if (missing.length === 0) {
-    return say('healthy-bypass', 'docs-only change; the bypass posted every required context');
-  }
   return say(
-    'bypass-missing-status',
-    `docs-only change and docs-only-gate.yml ran (${describeRuns(bypassRuns)}), but these required ` +
-      `contexts are NOT posted on the commit: ${missing.join(', ')}. Its status POST is the fault.`,
+    'no-run',
+    'ci.yml has no path filter, so it should have run and no run exists: the ' +
+      `pull_request event was never delivered (bot-authored HEAD is the known cause). ${REMEDY}`,
   );
 }
 
@@ -659,9 +620,8 @@ export function diagnoseBlocked({ runs = [], docsOnly = null, postedContexts = [
 //       deadlocked and one known to be healthy and confirm the verdict MOVES.
 //
 //   node scripts/vrt-revalidate-gate.mjs diagnose --repo R --sha S
-//       The one command for "this PR is BLOCKED and nothing is red": fetches
-//       the four observables and names which of #1184 / #1694 / #1783 / #1815
-//       it is.
+//       The one command for "this PR is BLOCKED and nothing is red": names
+//       which of #1694 / #1815 it is, and prints the posted contexts alongside.
 //
 // All shell out to `gh`, which is on the runner and in the flox env.
 // ---------------------------------------------------------------------------
@@ -809,35 +769,14 @@ if (isMain) {
       process.exit(0);
     }
 
-    // diagnose: the three further observables.
+    // diagnose: the commit statuses, printed as context for the human. They are
+    // NOT an input to the verdict any more — the bypass that could post them
+    // independently of a ci.yml run is deleted.
     const statuses = JSON.parse(gh(['api', `repos/${repo}/commits/${sha}/status`]));
     const postedContexts = (statuses.statuses ?? []).map((s) => s.context);
-    const bypassRuns = parseRunsResponse(
-      gh(['api', `repos/${repo}/actions/workflows/docs-only-gate.yml/runs?head_sha=${sha}&per_page=${RUNS_PAGE_SIZE}`]),
-    );
-    // The changed-file list, via the PR this commit belongs to. An APPROXIMATION
-    // of docs-only-gate's own merge-base..head diff, and it is labelled as one:
-    // it is used only to tell "ci.yml was path-skipped by design" from "the
-    // event was dropped".
-    let docsOnly = null;
-    let files = [];
-    try {
-      const prs = JSON.parse(gh(['api', `repos/${repo}/commits/${sha}/pulls`]));
-      if (prs.length > 0) {
-        files = JSON.parse(gh(['api', `repos/${repo}/pulls/${prs[0].number}/files?per_page=${RUNS_PAGE_SIZE}`])).map(
-          (f) => f.filename,
-        );
-        const { isDocsOnly } = await import('./docs-only-gate.mjs');
-        docsOnly = isDocsOnly(files, DOCS_PATTERNS);
-      }
-    } catch (err) {
-      console.log(`(could not read the PR's changed files: ${err})`);
-    }
 
-    const d = diagnoseBlocked({ runs, docsOnly, postedContexts, bypassRuns });
-    console.log(`  docs-only change:         ${docsOnly === null ? 'unknown' : docsOnly}`);
+    const d = diagnoseBlocked({ runs });
     console.log(`  contexts posted:          ${postedContexts.join(', ') || 'none'}`);
-    console.log(`  docs-only-gate runs:      ${describeRuns(bypassRuns)}`);
     console.log(`\nCAUSE: ${d.cause}${d.issue ? ` (#${d.issue})` : ''} — ${BLOCKED_CAUSES[d.cause].summary}`);
     console.log(`WHY:   ${d.reason}`);
     process.exit(0);

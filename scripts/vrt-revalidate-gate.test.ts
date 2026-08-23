@@ -44,8 +44,10 @@
 //    approval failure is a LOUD verdict carrying GitHub's own error text
 //    rather than a silent continue.
 //  · Whether ruleset 16042163 still requires the contexts ci.yml produces.
-//    That lives in a GitHub ruleset (docs-only-gate.test.ts pins the context
-//    STRINGS against ci.yml's job names, which is the closest available proxy).
+//    That lives in a GitHub ruleset, and nothing in the repo pins it any more:
+//    docs-only-gate.test.ts used to hold the context STRINGS against ci.yml's
+//    job names and it is deleted with the bypass (2026-08-23). The strings are
+//    restated below purely so this file can assert the module NEVER names one.
 //  · Whether `secrets.VRT_BASELINE_PUSH_TOKEN` exists or is valid. The token is
 //    optional by construction and the fallback shape is asserted below, so its
 //    absence cannot break the workflow — and its EXPIRY cannot go silent,
@@ -63,7 +65,18 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import * as gate from './vrt-revalidate-gate.mjs';
-import { REQUIRED_CONTEXTS } from './docs-only-gate.mjs';
+
+/**
+ * The two status contexts branch ruleset 16042163 requires, matched LITERALLY
+ * by GitHub (em-dash included). They used to live in `scripts/docs-only-gate.mjs`,
+ * which posted them; that bypass is deleted, and the only remaining use is the
+ * DENIAL below — this module must never name one, because the sole thing that
+ * may satisfy the ruleset is a real `pull_request` CI run.
+ */
+const REQUIRED_CONTEXTS = [
+  'typecheck + unit + ART + E2E',
+  'vrt-strict (visual regression — strict subset)',
+] as const;
 
 type Verdictish = 'ran' | 'parked' | 'stuck' | 'unknown';
 type Action = 'satisfied' | 'approve' | 'refire' | 'wait' | 'fail';
@@ -80,15 +93,7 @@ type Verdict = {
   headSha: string | null;
   prNumber: number | null;
 };
-type Cause =
-  | 'healthy'
-  | 'healthy-bypass'
-  | 'parked'
-  | 'inert-run'
-  | 'no-run'
-  | 'path-skipped'
-  | 'bypass-missing-status'
-  | 'indeterminate';
+type Cause = 'healthy' | 'parked' | 'inert-run' | 'no-run';
 
 const {
   REMEDY,
@@ -145,12 +150,7 @@ const {
     pollsPerAction?: number;
     pollIntervalMs?: number;
   }) => Promise<Verdict>;
-  diagnoseBlocked: (o: {
-    runs?: Run[];
-    docsOnly?: boolean | null;
-    postedContexts?: string[];
-    bypassRuns?: Run[];
-  }) => { cause: Cause; issue: number | null; reason: string };
+  diagnoseBlocked: (o: { runs?: Run[] }) => { cause: Cause; issue: number | null; reason: string };
   parseRunsResponse: (raw: string | object) => Run[];
   ciRunsQuery: (repo: string, sha: string) => string;
   approvePath: (repo: string, runId: string | number) => string;
@@ -770,10 +770,8 @@ describe('the oracle reads the right thing', () => {
     // ⚠ THE NARROWING IS THE SAFETY ARGUMENT, not a tidy-up. A
     // workflow_dispatch ci.yml run does NOT count toward a PR's
     // required-status gate (confirmed on #524), so counting one would let this
-    // module declare a still-deadlocked PR verified. docs-only-gate.yml's guard
-    // G2 deliberately does NOT filter, because there presence means REFUSE and
-    // over-counting is the safe direction; here presence means DECLARE SUCCESS,
-    // so the safe direction is the opposite one.
+    // module declare a still-deadlocked PR verified. Presence means DECLARE
+    // SUCCESS here, so the safe direction is to under-count, never over-count.
     expect(q).toContain('event=pull_request');
     // ⚠ and it must fetch the RUNS, not one of them: the decision reads each
     // run's state, so a page of 1 could hide the run that matters.
@@ -845,108 +843,58 @@ describe('the oracle reads the right thing', () => {
   });
 });
 
-// ───────────── four causes, one picture: the diagnostic tells them apart ─────
+// ───────────── one picture, four causes: the diagnostic tells them apart ─────
 
 describe('diagnoseBlocked: "BLOCKED with nothing red" has four causes', () => {
-  const contexts = [...REQUIRED_CONTEXTS];
-
   it('#1815 — a run exists and is PARKED', () => {
-    const d = diagnoseBlocked({ runs: [PARKED_RUN], docsOnly: false });
+    const d = diagnoseBlocked({ runs: [PARKED_RUN] });
     expect(d.cause).toBe('parked');
     expect(d.issue).toBe(1815);
     expect(d.reason).toContain(String(PARKED_RUN.id));
   });
 
-  it('#1694 — no run was created at all, on a change that is NOT docs-only', () => {
-    const d = diagnoseBlocked({ runs: [], docsOnly: false });
+  it('#1694 — no run was created at all', () => {
+    // ci.yml has NO path filter (the `paths-ignore` + docs-only bypass were
+    // deleted 2026-08-23), so a missing run is unambiguous: the event was
+    // dropped. While the filter existed this same input was indistinguishable
+    // from "path-skipped by design", which is why the verdict then needed the
+    // changed-file list, the bypass workflow's runs and the posted contexts.
+    const d = diagnoseBlocked({ runs: [] });
     expect(d.cause).toBe('no-run');
     expect(d.issue).toBe(1694);
     expect(d.reason).toContain(REMEDY);
   });
 
-  it('#1184 — docs-only, ci.yml path-skipped, and NO bypass ran', () => {
-    const d = diagnoseBlocked({ runs: [], docsOnly: true, bypassRuns: [] });
-    expect(d.cause).toBe('path-skipped');
-    expect(d.issue).toBe(1184);
-    // It has to name what is missing, or the next person re-derives it.
-    for (const c of contexts) expect(d.reason).toContain(c);
+  it('healthy — a real run executed', () => {
+    expect(diagnoseBlocked({ runs: [RAN_RUN] }).cause).toBe('healthy');
   });
 
-  it('#1783 — the bypass RAN but the required contexts are not posted', () => {
-    const d = diagnoseBlocked({
-      runs: [],
-      docsOnly: true,
-      bypassRuns: [RAN_RUN],
-      postedContexts: [contexts[0]],
-    });
-    expect(d.cause).toBe('bypass-missing-status');
-    expect(d.issue).toBe(1783);
-    expect(d.reason).toContain(contexts[1]);
-    expect(d.reason, 'and NOT the one that did post').not.toContain(`${contexts[0]},`);
-  });
-
-  it('healthy, both ways — a real run, or a complete bypass', () => {
-    expect(diagnoseBlocked({ runs: [RAN_RUN], docsOnly: false }).cause).toBe('healthy');
-    expect(
-      diagnoseBlocked({ runs: [], docsOnly: true, bypassRuns: [RAN_RUN], postedContexts: contexts }).cause,
-    ).toBe('healthy-bypass');
-  });
-
-  it('a fifth shape it can also name: an inert run that approval cannot fix', () => {
-    const d = diagnoseBlocked({ runs: [{ id: 9, status: 'completed', conclusion: 'startup_failure' }], docsOnly: false });
+  it('an inert run that approval cannot fix', () => {
+    const d = diagnoseBlocked({ runs: [{ id: 9, status: 'completed', conclusion: 'startup_failure' }] });
     expect(d.cause).toBe('inert-run');
     expect(d.reason).toContain('startup_failure');
   });
 
-  it('says INDETERMINATE rather than guessing when an observable is missing', () => {
-    // #1184/#1783 and #1694 are separated ONLY by the changed-file list. Without
-    // it the honest answer is "I cannot tell", not a coin flip — the whole
-    // reason this bug was misfiled twice.
-    const d = diagnoseBlocked({ runs: [], docsOnly: null });
-    expect(d.cause).toBe('indeterminate');
-    expect(d.issue).toBe(null);
-  });
-
-  it('⚠ NEGATIVE CONTROL: each observable ALONE moves the verdict', () => {
-    // One base input, four one-field perturbations, four different answers. If
-    // any observable were being ignored, two of these would collide.
-    const bases = { runs: [] as Run[], docsOnly: false, postedContexts: [] as string[], bypassRuns: [] as Run[] };
+  it('⚠ NEGATIVE CONTROL: each run shape ALONE moves the verdict', () => {
+    // One base input, three one-field perturbations, four different answers. If
+    // the run classification were being ignored, two of these would collide.
     const causes = new Set<Cause>([
-      diagnoseBlocked({ ...bases }).cause,
-      diagnoseBlocked({ ...bases, runs: [PARKED_RUN] }).cause,
-      diagnoseBlocked({ ...bases, runs: [RAN_RUN] }).cause,
-      diagnoseBlocked({ ...bases, docsOnly: true }).cause,
-      diagnoseBlocked({ ...bases, docsOnly: true, bypassRuns: [RAN_RUN] }).cause,
-      diagnoseBlocked({ ...bases, docsOnly: true, bypassRuns: [RAN_RUN], postedContexts: contexts }).cause,
-      diagnoseBlocked({ ...bases, docsOnly: null }).cause,
+      diagnoseBlocked({ runs: [] }).cause,
+      diagnoseBlocked({ runs: [PARKED_RUN] }).cause,
+      diagnoseBlocked({ runs: [RAN_RUN] }).cause,
+      diagnoseBlocked({ runs: [{ id: 9, status: 'completed', conclusion: 'startup_failure' }] }).cause,
     ]);
-    // Seven inputs, seven distinct causes — no two observables collapse into
-    // the same answer, which is the property the diagnostic exists for.
-    expect([...causes].sort()).toEqual(
-      [
-        'bypass-missing-status',
-        'healthy',
-        'healthy-bypass',
-        'indeterminate',
-        'no-run',
-        'parked',
-        'path-skipped',
-      ].sort(),
-    );
+    expect([...causes].sort()).toEqual(['healthy', 'inert-run', 'no-run', 'parked'].sort());
     // …and every cause it can return is documented with the issue it belongs to.
     for (const c of causes) expect(BLOCKED_CAUSES[c].summary.length).toBeGreaterThan(20);
   });
 
   it('every documented cause is reachable — the table is not aspirational', () => {
     const reachable = new Set<Cause>([
-      diagnoseBlocked({ runs: [RAN_RUN], docsOnly: false }).cause,
-      diagnoseBlocked({ runs: [PARKED_RUN], docsOnly: false }).cause,
-      diagnoseBlocked({ runs: [{ id: 1, status: 'completed', conclusion: 'stale' }], docsOnly: false }).cause,
-      diagnoseBlocked({ runs: [], docsOnly: false }).cause,
-      diagnoseBlocked({ runs: [], docsOnly: true }).cause,
-      diagnoseBlocked({ runs: [], docsOnly: true, bypassRuns: [RAN_RUN] }).cause,
-      diagnoseBlocked({ runs: [], docsOnly: true, bypassRuns: [RAN_RUN], postedContexts: contexts }).cause,
-      diagnoseBlocked({ runs: [], docsOnly: null }).cause,
+      diagnoseBlocked({ runs: [RAN_RUN] }).cause,
+      diagnoseBlocked({ runs: [PARKED_RUN] }).cause,
+      diagnoseBlocked({ runs: [{ id: 1, status: 'completed', conclusion: 'stale' }] }).cause,
+      diagnoseBlocked({ runs: [] }).cause,
     ]);
     const unreachable = Object.keys(BLOCKED_CAUSES).filter((c) => !reachable.has(c as Cause));
     expect(unreachable).toEqual([]);
@@ -957,8 +905,8 @@ describe('diagnoseBlocked: "BLOCKED with nothing red" has four causes', () => {
 
 describe('the fix cannot satisfy a required context by itself', () => {
   it('never writes a commit status and never names a required context', () => {
-    // The rule docs-only-gate.mjs is built around: the ONLY thing that may
-    // satisfy ruleset 16042163 is a real pull_request CI run. This module's
+    // The standing rule: the ONLY thing that may satisfy ruleset 16042163 is a
+    // real pull_request CI run — nothing may post one. This module's
     // failure path exists precisely because the code is UNVERIFIED, so a green
     // context from here would be the exact inversion of its purpose.
     expect(MODULE_SRC).not.toMatch(/createCommitStatus|POST[^\n]*statuses|state:\s*'success'/);
