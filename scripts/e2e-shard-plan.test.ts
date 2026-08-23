@@ -12,7 +12,7 @@
 import { describe, expect, it } from 'vitest';
 
 // @ts-expect-error — plain .mjs with JSDoc types, no declaration file
-import { planShards, median, loadTimings, loadContention, PENDING_FIRST_MEASUREMENT } from './e2e-shard-plan.mjs';
+import { planShards, median, loadTimings, loadContention } from './e2e-shard-plan.mjs';
 // @ts-expect-error — plain .mjs with JSDoc types, no declaration file
 import { scanContention, MEDIA_MARKERS } from './e2e-contention-scan.mjs';
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
@@ -153,16 +153,12 @@ describe('FRESHNESS GATE — the artifact cannot silently predate the suite (#16
     return true;
   });
 
-  it('every scheduled spec is MEASURED or NAMED as pending — deny by default', () => {
-    const pendingNames = new Set(PENDING_FIRST_MEASUREMENT.map((p: { spec: string }) => p.spec));
-    const offenders = scheduled.filter((f) => !(f in timings) && !pendingNames.has(f));
-    expect(
-      offenders,
-      `unmeasured scheduled spec(s) — each rides the MEDIAN cost and joins no shard-balance ` +
-        `reasoning until \`task e2e:timings:accept -- <ci-run-id>\` runs. Either accept a fresh run ` +
-        `or add a NAMED { spec, why } entry to PENDING_FIRST_MEASUREMENT (e2e-shard-plan.mjs).`,
-    ).toEqual([]);
-  });
+  // ⚠ THE "MEASURED OR NAMED AS PENDING" GATE IS DELETED (owner ruling,
+  // 2026-08-23). Cost data is now BEST-EFFORT: an unmeasured spec rides the
+  // median, which makes shards slightly uneven and CI slightly slower — it no
+  // longer makes CI RED, so it is not a thing to do paperwork about. The
+  // PENDING_FIRST_MEASUREMENT list and its deadline choreography existed only
+  // to keep a freshness gate green and went with it.
 
   it('the gate is not vacuous: the scheduled set is derived and non-trivial', () => {
     // Anchored to NAMES the derivation must produce, never to a count.
@@ -170,14 +166,6 @@ describe('FRESHNESS GATE — the artifact cannot silently predate the suite (#16
     expect(scheduled).toContain('camera-input.spec.ts');
     // …and the derivation really excludes: a heavy-glob spec is not scheduled.
     expect(scheduled).not.toContain('wavesculpt.spec.ts');
-  });
-
-  it('every PENDING entry is anchored — names a live spec that is genuinely unmeasured', () => {
-    for (const p of PENDING_FIRST_MEASUREMENT as { spec: string; why: string }[]) {
-      expect(existsSync(join(SPEC_DIR, p.spec)), `PENDING names a spec that no longer exists: ${p.spec}`).toBe(true);
-      expect(p.spec in timings, `PENDING entry is STALE — ${p.spec} has been measured; remove the entry`).toBe(false);
-      expect(p.why.length, `PENDING.why for ${p.spec} must say why it awaits measurement, not just that it does`).toBeGreaterThan(40);
-    }
   });
 
   it('every measured entry names a spec that still exists — a deleted spec reddens here', () => {

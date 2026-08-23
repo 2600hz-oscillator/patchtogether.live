@@ -2757,6 +2757,33 @@ export const FACES = [
       + 'advancing. Its card already drew this fractal; the face adds the SCREEN switch, and '
       + 'drops the derived magnification readout the resting faceplate may not paint.',
   },
+  // ── CUT B ─────────────────────────────────────────────────────────────────
+  {
+    type: 'spectrograph',
+    pages: 1,
+    simPin: [
+      {
+        global: '__spectrographVrtFreeze',
+        value: true,
+        why:
+          'SPECTROGRAPH paints a LIVE SCROLLING BUFFER driven by an AnalyserNode, and its own '
+          + 'card scene records the measurement: the contents "never bit-stabilize across runs "'
+          + '(the column count AND the buffered FFT both depend on wall-clock scheduling). '
+          + '⚠ SUSPENDING THE AUDIO CONTEXT DOES NOT FIX IT, which is why this is a simPin and '
+          + 'not `freezeAudio` — the scroll is driven by rAF against a 16 ms column gate, not by '
+          + 'the audio clock, so a suspend stops the SIGNAL without choosing where the BUFFER '
+          + 'stopped. Setting this flag makes the module fill its WHOLE 256-column buffer ONCE '
+          + 'from a fixed synthetic three-peak spectrum and HOLD it, so the picture becomes a '
+          + 'pure function of the module\'s own constants. '
+          + '⚠ AND IT IS A `boolean`, NOT A SEED: the module reads it as `=== true` strictly, so '
+          + 'writing 1 here would silently fail to freeze anything and the face would flake '
+          + 'rather than fail — which is exactly why this field admits booleans. '
+          + '⚠ NOTHING IS MIRRORED INTO THE FACE BODY for this to work: the flag is read INSIDE '
+          + 'the module, so any caller of `drawFrame` inherits the freeze. That is the opposite '
+          + 'of dockscope, whose seed lived in its card and had to be duplicated into the body.',
+      },
+    ],
+  },
 ] as const;
 
 /**

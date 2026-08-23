@@ -66,43 +66,6 @@ export function loadContention(dir = join(ROOT, 'e2e/tests')) {
   return scanContention(dir);
 }
 
-/**
- * Specs awaiting their FIRST measured cost (#1600) — the ONLY sanctioned way
- * for a scheduled spec to be absent from e2e-timings.generated.json.
- *
- * Deny by default: the freshness gate (e2e-shard-plan.test.ts) reddens on any
- * scheduled spec that is neither measured nor named here, and reddens AGAIN on
- * an entry that has become stale (its spec was deleted, or its first accept
- * has landed and the entry was not removed). An unmeasured spec rides the
- * MEDIAN, which is how a 309 CPU-s media spec was once scheduled at ~6 s and
- * failed a shard that was green everywhere else — being on this list is a debt
- * with a deadline, not a parking lot.
- *
- * @type {{ spec: string, why: string }[]}
- */
-export const PENDING_FIRST_MEASUREMENT = [
-  // Every entry here is a debt with a deadline.
-  //
-  // All six that stood on 2026-08-17 were paid in one accept against ci.yml run
-  // 32069537806. `backdraft-preview-toggle.spec.ts` (#1784) was paid the same
-  // way against run 32095771313 — its own entry named the deadline ("run
-  // `task e2e:timings:accept` on the first green run after this merges and
-  // DELETE this entry"), and this is that deletion.
-  //
-  // ⚠ ITS MEASURED COST IS 358.2 CPU-s, against the 57.5 s its entry predicted
-  // from a local single-worker `E2E_SWIFTSHADER=1` run — 6x. That is not a
-  // regression in the spec, it is the gap this artifact exists to close: a local
-  // measurement runs on a dev machine, and CI runs on a 2-core VM. ⚠ NOT shard
-  // contention — every `runs-on:` here is `ubuntu-latest` and a GitHub-hosted job
-  // gets its OWN VM (ci.yml, checked 2026-08-12), and a local headless run is
-  // already SwiftShader. It is now the 11th most expensive file in the suite,
-  // and the planner can finally see that.
-  //
-  // The gate reddens on a STALE entry exactly as loudly as on a missing one, so
-  // an entry whose first measurement has landed MUST be deleted rather than left
-  // as a record that it once existed.
-];
-
 /** Median of a numeric array (used as the cost of an unmeasured file). */
 export function median(xs) {
   if (xs.length === 0) return 1;

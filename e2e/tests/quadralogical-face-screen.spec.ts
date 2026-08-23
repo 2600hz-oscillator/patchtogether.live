@@ -59,7 +59,7 @@ import { BOOT_MS, SLOW_BOOT_TEST_TIMEOUT_MS } from '../_helpers/boot-budget';
 // re-attest, while `e2e/tests/**` is hash-transparent by design.
 //
 // ⚠ Raising a FAILURE bound does not hide a COST regression — lane cost is
-// gated separately by `scripts/e2e-shard-budget.sh`, which fails a shard at
+// bounded by `--global-timeout`, which kills a shard at
 // 0.85 of its `--global-timeout`. The budget is the gauge; this is the bound.
 test.describe.configure({ timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
 
