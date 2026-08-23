@@ -150,10 +150,6 @@ test.describe('CAMERA under the DEFAULT shell — promoted lane, headless source
     const laneNode = page.locator(`.svelte-flow__node[data-id="${CAM}"]`);
     await expect(laneNode.getByTestId('module-shell'), 'the lane paints CAMERA\'s faceplate')
       .toBeVisible({ timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
-    await expect(
-      page.locator(`.svelte-flow__node-cameraInput[data-id="${CAM}"]`),
-      'and NOT the legacy card — that is what leaving NON_SHELL_LANE_TYPES means',
-    ).toHaveCount(0);
 
     // ── 2. THE REAL CARD IS STILL MOUNTED, OFF-SCREEN ──────────────────────
     // This is the assertion the whole promotion rests on. Without it the card is
@@ -168,14 +164,44 @@ test.describe('CAMERA under the DEFAULT shell — promoted lane, headless source
       'and it is the REAL card in there, not an empty shell',
     ).toHaveCount(1);
 
-    // ── 3. THE SOURCE PRODUCES ─────────────────────────────────────────────
+    // ── 3. …AND THE CARD IS ONLY THERE ─────────────────────────────────────
+    //
+    // ⚠ THE FIRST VERSION OF THIS WAS AN INVERTED GATE, and it is worth keeping
+    // the story because the assertion looked obviously right. It read:
+    //
+    //     expect(page.locator('.svelte-flow__node-cameraInput[data-id=…]'))
+    //       .toHaveCount(0)   // "the lane no longer renders the legacy card"
+    //
+    // `HeadlessSourceHost` mounts the real card inside its OWN single-node
+    // `<SvelteFlow>`, passing `type: node.type` — so the hosted card is also a
+    // `.svelte-flow__node-cameraInput` carrying the same `data-id`. The locator
+    // matched the HOST's copy and the test went red on a correct tree.
+    //
+    // ⚠ AND THE FAILURE WAS THE LUCKY OUTCOME. `toHaveCount(0)` is satisfied by
+    // BOTH "the lane swapped and the card is hosted off-screen" (right) and "the
+    // card is not mounted anywhere at all" (the exact regression this file
+    // exists to catch). It would have gone GREEN in the broken world — a gate
+    // whose passing condition is the defect.
+    //
+    // The repair asserts the card's mount is UNIQUE and INSIDE the host, which
+    // distinguishes the two worlds instead of collapsing them.
+    await expect(
+      host.locator('.svelte-flow__node-cameraInput'),
+      'the real card is mounted inside the headless host',
+    ).toHaveCount(1);
+    await expect(
+      page.locator('.svelte-flow__node-cameraInput'),
+      'and NOWHERE ELSE — exactly one mount, and leg 2 proved which one it is',
+    ).toHaveCount(1);
+
+    // ── 4. THE SOURCE PRODUCES ─────────────────────────────────────────────
     // Driven synchronously with the engine rAF loop paused: the frame count is
     // the assertion's own input, so this is renderer-independent by
     // construction rather than by tuning.
     const stats = await stepAndReadStats(page, { nodeId: CAM, steps: FIXED_STEPS });
     assertRenderStats(stats, FIXED_STEPS);
 
-    // ── 4. OPENING THE DOCK FACEPLATE DOES NOT UNMOUNT THE CARD ────────────
+    // ── 5. OPENING THE DOCK FACEPLATE DOES NOT UNMOUNT THE CARD ────────────
     // ⚠ THE REGRESSION THIS LEG EXISTS FOR. Canvas excluded every full-view node
     // from the headless host on the premise that "DockFullView already mounts
     // its real card" — true only for an UN-MIGRATED module, since
