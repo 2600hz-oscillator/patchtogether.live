@@ -21,8 +21,8 @@ Every registered module carries exactly one **disposition**: what kind of work i
 
 | disposition | what it means | modules | done |
 |---|---|---|---|
-| `generic-face` | author a `face` and rank the controls — no new platform capability | 142 | 133 |
-| `blocked` | would be a face today but for the named capability, and nothing else | 3 | — |
+| `generic-face` | author a `face` and rank the controls — no new platform capability | 144 | 133 |
+| `blocked` | would be a face today but for the named capability, and nothing else | 1 | — |
 | `bespoke-surface` | the primary interaction is not param-shaped — needs a purpose-built surface | 50 | — |
 | `organizational-native` | rack furniture; not a migration at all | 3 | — |
 
@@ -30,7 +30,7 @@ Every registered module carries exactly one **disposition**: what kind of work i
 
 | blocker | issue | modules waiting |
 |---|---|---|
-| `needs-media-controller` | #1511 | 11 |
+| `needs-media-controller` | #1511 | 9 |
 | `needs-note-entry-cell` | #1509 | 17 |
 
 ## `generic-face`
@@ -79,6 +79,7 @@ author a `face` and rank the controls — no new platform capability.
 | `flipper` | audio | done | — |
 | `fourplexer` | audio | done | — |
 | `foxy` | audio | done | — |
+| `frametable` | video | — | — |
 | `freezeframe` | video | done | — |
 | `gatemaiden` | audio | done | — |
 | `grainsOfVision` | video | done | — |
@@ -174,6 +175,7 @@ author a `face` and rank the controls — no new platform capability.
 | `vca` | audio | done | — |
 | `vdelay` | video | done | — |
 | `vfpgaRunner` | video | — | — |
+| `videocube` | video | — | — |
 | `videoMixer` | video | done | — |
 | `videoOut` | video | done | — |
 | `warrensspectrum` | audio | done | — |
@@ -188,9 +190,7 @@ would be a face today but for the named capability, and nothing else.
 
 | module | domain | state | blockers |
 |---|---|---|---|
-| `frametable` | video | — | `needs-media-controller` |
 | `loopback` | video | — | `needs-media-controller` |
-| `videocube` | video | — | `needs-media-controller` |
 
 ## `bespoke-surface`
 

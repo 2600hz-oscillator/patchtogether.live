@@ -1,0 +1,251 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>TIMELORDE face — STATE 1: RUNNING, owl, SCREEN ON</title>
+<style>
+/* ─────────────────────────────────────────────────────────────────────────
+   TIMELORDE FACEPLATE — MOCKUP, state 1 of 2.
+   SPEC AND MOCKUP ONLY. Nothing here is implemented. See spec.md.
+
+   House tokens, same set the quadralogical mocks use. The OWL is a CSS
+   stand-in; the real one is the owner's painting blitted into a 220x220
+   2D canvas by the module's own render function (TimelordeCard.svelte).
+   ───────────────────────────────────────────────────────────────────────── */
+:root{
+  --bg:#0e1013; --dock:#12161c; --plate:#262a31; --pbody:#1c1f24; --well:#0a0c0f;
+  --line:#2c3037; --tile:#33383f; --ink:#eef1f5; --dim:#9aa2ad; --faint:#646c77;
+  --gate:#ffd23f; --accent:#6cf; --video:#b57bff; --warn:#f2c14e; --good:#8fe6b0;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+  font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1200px;margin:0 auto;padding:26px 20px 90px}
+h1{font-size:21px;font-weight:800;margin:0 0 6px;letter-spacing:.01em}
+.sub{color:var(--dim);font-size:12.5px;margin:0 0 14px;max-width:106ch}
+.sub b{color:var(--ink)} code{font-family:var(--mono);font-size:11.5px;color:var(--gate)}
+.nav{display:flex;gap:8px;margin:0 0 20px;font-size:11px;flex-wrap:wrap}
+.nav a{color:var(--ink);text-decoration:none;border:1px solid var(--line);border-radius:6px;
+  padding:6px 12px;background:#12161c;font-family:var(--mono);letter-spacing:.06em;text-transform:uppercase}
+.nav a.on{border-color:var(--gate);color:var(--gate)}
+.warn{border:1px solid #6a5330;background:#1c1811;border-radius:8px;padding:11px 14px;
+  margin:12px 0;font-size:12.5px;color:#e8cf9a;max-width:118ch}
+.warn b{color:var(--warn)}
+.ok{border:1px solid #3b5a48;background:#111a15;border-radius:8px;padding:11px 14px;
+  margin:12px 0;font-size:12.5px;color:#a9d8bd;max-width:118ch}
+.ok b{color:var(--good)}
+
+.cols{display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:18px;align-items:start}
+@media (max-width:1080px){.cols{grid-template-columns:minmax(0,1fr)}}
+
+.dock{background:var(--dock);border:1px solid var(--line);border-radius:11px;overflow:hidden;padding:11px}
+.chromebar{display:flex;align-items:baseline;gap:9px;padding:0 2px 8px}
+.chromebar .nm{font-size:13px;font-weight:800;letter-spacing:.03em}
+.chromebar .x{margin-left:auto;color:var(--faint);font-family:var(--mono);font-size:12px}
+.plate{background:var(--pbody);border:1px solid var(--tile);border-left:4px solid var(--gate);
+  border-radius:10px;padding:0 0 12px;width:max-content;max-width:100%}
+
+/* ── the fullViewBody ─────────────────────────────────────────────────── */
+.extbody{padding:12px 14px 4px;display:flex;justify-content:center}
+.screenwrap{position:relative}
+.display{position:relative;width:220px;height:220px;border-radius:4px;border:1px solid #1a1f2a;
+  background:#07090d;overflow:hidden;
+  box-shadow:0 0 8px rgba(255,210,63,.55)}
+/* CSS stand-in for the owl painting: a warm body, two pulsing eyes, a blue rim. */
+.owl{position:absolute;inset:0;
+  background:
+    radial-gradient(38% 24% at 50% 34%, #6b4a2a 0 60%, rgba(0,0,0,0) 61%),
+    radial-gradient(30% 34% at 50% 62%, #59391f 0 62%, rgba(0,0,0,0) 63%),
+    linear-gradient(#0b0d12,#07090d)}
+.owl::before,.owl::after{content:"";position:absolute;top:30%;width:26px;height:26px;border-radius:50%;
+  background:radial-gradient(circle,#ffe66b 0 42%,#8a6a12 43% 100%);
+  box-shadow:0 0 12px rgba(255,230,107,.85)}
+.owl::before{left:30%} .owl::after{right:30%}
+.rim{position:absolute;inset:5px;border:2px solid #4aa7ff;border-radius:3px;opacity:.85;
+  box-shadow:0 0 10px rgba(74,167,255,.7)}
+.owlchip{position:absolute;top:-4px;right:8px;width:22px;height:22px;border-radius:3px;
+  border:1px solid var(--gate);box-shadow:0 0 4px var(--gate);
+  background:radial-gradient(circle at 50% 45%,#6b4a2a 0 55%,#20252b 56% 100%);z-index:2}
+.screenbtn{position:absolute;right:6px;bottom:6px;font-family:var(--mono);font-size:8.6px;
+  letter-spacing:.06em;padding:3px 9px;border:1px solid #6a5a2a;border-radius:2px;
+  background:rgba(5,6,8,.72);color:var(--ink);cursor:pointer;z-index:2}
+
+/* ── bands ────────────────────────────────────────────────────────────── */
+.bands{padding:6px 14px 0}
+.band{border-top:1px solid var(--line);padding-top:8px;margin-top:10px}
+.band:first-child{border-top:0;margin-top:4px}
+.blab{margin:0 0 7px;font-size:9.4px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--dim)}
+.row{display:flex;flex-wrap:wrap;align-items:flex-start;gap:10px 16px}
+.seg{display:flex;flex-direction:column;gap:4px}
+.seg .cap{font-size:7.8px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--dim);font-family:var(--mono)}
+.segbtns{display:flex;border:1px solid #3a4048;border-radius:6px;overflow:hidden}
+.segbtns b{font-family:var(--mono);font-size:9px;font-weight:400;letter-spacing:.06em;
+  padding:6px 10px;background:#1b2027;color:var(--faint)}
+.segbtns b.on{background:#2a3340;color:var(--accent)}
+.segbtns.mute b.on{background:#332c18;color:var(--gate)}
+.act{font-family:var(--mono);font-size:10px;letter-spacing:.1em;padding:9px 16px;
+  border:1px solid #3a4048;border-radius:6px;background:#1b2027;color:var(--ink);cursor:pointer;
+  align-self:flex-end}
+.k{width:58px;display:flex;flex-direction:column;align-items:center;gap:4px}
+.k i{--v:.5;--kc:#c9a227;display:block;width:40px;height:40px;border-radius:50%;position:relative;
+  background:conic-gradient(from 215deg,var(--kc) 0turn calc(var(--v)*.75turn),
+    #2b3138 calc(var(--v)*.75turn) .75turn,rgba(0,0,0,0) .75turn)}
+.k i::before{content:"";position:absolute;inset:5px;border-radius:50%;background:#20252b;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.05)}
+.k i::after{content:"";position:absolute;left:50%;top:50%;width:2px;height:13px;background:var(--ink);
+  border-radius:1px;transform-origin:50% 100%;
+  transform:translate(-50%,-100%) rotate(calc(-135deg + var(--v)*270deg))}
+.k b{font-size:7.8px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--dim);
+  font-family:var(--mono);text-align:center}
+.k.dead i{--kc:#3b4148} .k.dead b{color:var(--faint)}
+.sel{font-family:var(--mono);font-size:10px;letter-spacing:.05em;background:#1b2027;
+  border:1px solid #3a4048;border-radius:6px;padding:7px 11px;color:var(--ink);min-width:104px;
+  display:flex;justify-content:space-between;gap:12px}
+.sel s{text-decoration:none;color:var(--faint)}
+
+/* ── the notes column ─────────────────────────────────────────────────── */
+.zones{background:#12161c;border:1px solid var(--line);border-radius:9px;padding:12px 13px}
+.zones h4{margin:0 0 8px;font-size:9px;font-weight:800;letter-spacing:.13em;text-transform:uppercase;
+  color:var(--dim)}
+.zones+.zones{margin-top:14px}
+.zt{width:100%;border-collapse:collapse;font-size:10.5px}
+.zt th{text-align:left;font-family:var(--mono);font-size:7.8px;letter-spacing:.11em;
+  text-transform:uppercase;color:var(--faint);font-weight:400;padding:0 0 5px;border-bottom:1px solid var(--line)}
+.zt td{padding:5px 0;border-bottom:1px solid #1c2027;vertical-align:top;color:var(--dim);line-height:1.42}
+.zt td:first-child{color:var(--ink);font-family:var(--mono);font-size:9.5px;padding-right:10px;white-space:nowrap}
+.aria{font-family:var(--mono);font-size:10px;color:var(--good);background:#101a14;
+  border:1px solid #2c4636;border-radius:4px;padding:2px 6px;display:inline-block;margin-top:3px}
+</style>
+
+<div class="wrap">
+<h1>TIMELORDE — dock faceplate · STATE 1: RUNNING, owl, SCREEN ON</h1>
+<p class="sub">Spec and mockup only; nothing here is implemented. The face is
+<b>three bands and a <code>fullViewBody</code></b>. The body is the module's own 220&times;220
+2D display — the beat-pulsing owl, or a live monitor of <code>video_in</code> — plus the
+fleet-standard SCREEN switch overlaid in its bottom-right corner, never in a row of its own.</p>
+
+<div class="nav">
+  <a class="on" href="dock.html">state 1 · running · owl</a>
+  <a href="dock-monitor.html">state 2 · stopped+muted · video monitor</a>
+</div>
+
+<div class="warn"><b>&#9888; The two things a reader will look for and not find.</b>
+There is <b>no transport readout strip</b> and <b>no <code>120 BPM (internal)</code> footer</b> —
+both are resting derived text, deleted by the 2026-08-19 ruling. Their facts moved into
+<code>aria-valuetext</code> (see the ARIA column). And the <b>lane tile has no owl</b>: this is an
+audio-domain def, so <code>hasVideoSurface</code> is false and the body is dock-only.</div>
+
+<div class="cols">
+<div>
+  <div class="dock">
+    <div class="chromebar"><span class="nm">TIMELORDE</span><span class="x">&#10005;</span></div>
+    <div class="plate">
+
+      <div class="extbody"><div class="screenwrap">
+        <div class="display">
+          <div class="owl"></div><div class="rim"></div>
+          <div class="screenbtn">SCREEN ON</div>
+        </div>
+        <div class="owlchip" title="wizard toggle"></div>
+      </div></div>
+
+      <div class="bands">
+        <div class="band">
+          <p class="blab">transport</p>
+          <div class="row">
+            <div class="seg"><span class="cap">Run</span>
+              <div class="segbtns"><b>STOPPED</b><b class="on">RUNNING</b></div></div>
+            <div class="seg"><span class="cap">Mute</span>
+              <div class="segbtns mute"><b class="on">GATES LIVE</b><b>MUTED</b></div></div>
+            <div class="act">TAP</div>
+          </div>
+        </div>
+
+        <div class="band">
+          <p class="blab">tempo</p>
+          <div class="row">
+            <div class="k"><i style="--v:.52"></i><b>BPM</b></div>
+          </div>
+        </div>
+
+        <div class="band">
+          <p class="blab">swing</p>
+          <div class="row">
+            <div class="k dead"><i style="--v:0"></i><b>Swing</b></div>
+            <div class="seg"><span class="cap">Src</span>
+              <div class="sel"><span>1x</span><s>&#9662;</s></div></div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<div>
+  <div class="zones"><h4>zone map</h4>
+    <table class="zt">
+      <tr><th>zone</th><th>what it is</th></tr>
+      <tr><td>body</td><td>the module's own 2D display, 220&times;220. Owl (here) or the live
+        <code>video_in</code> feed. It also feeds <code>video_out</code> — so the SCREEN switch
+        unmounts the visible canvas and the compositing rAF keeps running.</td></tr>
+      <tr><td>owl chip</td><td><code>wizardOn</code>. A graph param that syncs to rack-mates and is
+        also driven by the <code>gate</code> input's level. <b>Not</b> the SCREEN switch.</td></tr>
+      <tr><td>SCREEN</td><td><code>node.data.previewCollapsed</code>. Local view furniture.
+        Overlaid in the picture's own box, so the toggle costs zero vertical reflow.</td></tr>
+      <tr><td>band 1</td><td><b>transport</b> — the two states that are byte-identical at all
+        thirteen jacks. Adjacent on purpose: seeing both is the only way to tell them apart.</td></tr>
+      <tr><td>band 2</td><td><b>tempo</b> — one knob, and it is the number the whole rack rides.</td></tr>
+      <tr><td>band 3</td><td><b>swing</b> — depth plus which of the twelve divisions it shadows.</td></tr>
+    </table>
+  </div>
+
+  <div class="zones"><h4>controls &amp; primitives</h4>
+    <table class="zt">
+      <tr><th>key</th><th>primitive &amp; why</th></tr>
+      <tr><td>running</td><td>rank 2 &middot; <b>segmented</b> from a new <code>options</code>
+        roster. The roster is what lets the plate print <code>RUNNING</code> — an option NAME is
+        the one kind of resting text still permitted.</td></tr>
+      <tr><td>muteOutputs</td><td>rank 3 &middot; same. <code>GATES LIVE</code> / <code>MUTED</code>.</td></tr>
+      <tr><td>timelorde-tap</td><td>rank 7, dock-only &middot; <code>ShellActionCell</code>,
+        <code>mode:'trigger'</code>. <b>Its probe must press TWICE</b> — TapTempo locks on the
+        second tap, so a one-press probe cannot tell a warming-up controller from a dead button.</td></tr>
+      <tr><td>bpm</td><td>rank 1 &middot; <b>knob</b>, log 10..300. Not a fader (no throw), not a
+        warped fader (the card does not convert — it passes the def's own numbers).</td></tr>
+      <tr><td>swingAmount</td><td>rank 4 &middot; knob. Drawn dim: at its 0 default the
+        <code>swing</code> output is an exact copy of its source.</td></tr>
+      <tr><td>swingSource</td><td>rank 5 &middot; <b>selector</b>, 12 options &gt; the segmented cap
+        of 6. <b>Today it has no roster at all</b> and a faceplate would print a bare integer —
+        the defect this promotion fixes.</td></tr>
+      <tr><td>wizardOn</td><td>rank 6, painted by the body. Last on purpose: it switches a picture
+        that only exists on the dock.</td></tr>
+    </table>
+  </div>
+
+  <div class="zones"><h4>ARIA — where the deleted text went</h4>
+    <table class="zt">
+      <tr><th>element</th><th>accessible value</th></tr>
+      <tr><td>control-running</td><td>the COMBINED transport state, from the same pure function the
+        engine handle publishes:<span class="aria">RUNNING &mdash; clock advancing and gates live</span></td></tr>
+      <tr><td>control-muteOutputs</td><td><span class="aria">GATES LIVE &mdash; the transport is running</span></td></tr>
+      <tr><td>control-bpm</td><td><span class="aria">120 bpm &mdash; internal</span>
+        &#9888; the <code>(external)</code> half is a function of <code>patch.edges</code>, which no
+        param resolver can see. If the shell has no module-supplied accessible-value seam, record
+        that the external-lock signal has no faceplate surface &mdash; do not fake it.</td></tr>
+      <tr><td>the display</td><td><code>role="img"</code>
+        <span class="aria">TIMELORDE display &mdash; the owl painting, pulsing at 120 bpm</span></td></tr>
+      <tr><td>SCREEN</td><td><code>aria-pressed="true"</code>, and a title saying the module keeps
+        rendering either way.</td></tr>
+    </table>
+  </div>
+
+  <div class="ok"><b>Determinism.</b> The card already pins <code>pulse = 0</code> and paints ONE
+  frame under <code>prefers-reduced-motion</code> — which the VRT runner sets. The body must reuse
+  that branch, not re-implement it. The one hazard is the owl ASSET: a capture taken before it
+  decodes photographs a black square that passes forever, so the dock scene waits on a
+  <b>frame count</b> after <code>owlReady</code>, never a wall-clock budget.</div>
+</div>
+</div>
+</div>

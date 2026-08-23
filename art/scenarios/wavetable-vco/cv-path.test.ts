@@ -286,66 +286,31 @@ describe('ART wavetable vco / CV path — a cable on a paramTarget input must ch
       .toBeGreaterThan(0.1);
   }, SWEEP_TIMEOUT_MS);
 
-  // ⚠ PARKED 2026-08-23 — AND IT IS CORRECTLY DETECTING A REAL DEFECT, not
-  // flaking. Parked only because the defect is in the ART RENDER HARNESS / the
-  // module's worklet handshake, which cannot be fixed from the e2e PR that hit
-  // it (#2141, a faces-parity spec split that touches no audio code at all).
+  // ⚠ UN-PARKED — the defect this caught is FIXED, not tolerated.
   //
-  // ── WHAT WAS OBSERVED ──────────────────────────────────────────────────────
+  // This leg was skipped on 2026-08-23 with the note that it was "correctly
+  // detecting a real defect" in the render harness rather than flaking. It was:
+  // the factory shipped the wavetable to the worklet with an UN-ACKED
+  // `port.postMessage`, and the processor emits `out.fill(0)` — digital SILENCE —
+  // until a table arrives. Nothing sequenced that message against rendering, and
+  // an OfflineAudioContext renders as fast as it can, so whole renders came out
+  // silent intermittently. That is why this assertion saw
+  // `peak |Δsample| = 1.3953` on a signal documented as roughly ±1: it was
+  // comparing SILENCE against SIGNAL.
   //
-  //   pmAmount must be inert with nothing patched: peak |Δsample| linear
-  //   = 1.3953e+0   (expected +0)
+  // The table now arrives through `processorOptions`, which reaches the processor
+  // constructor synchronously BEFORE its first `process()` call, so the window
+  // does not exist rather than being made small.
   //
-  // ⚠ 1.3953 IS NOT DRIFT. The output is documented as "roughly ±1", so a peak
-  // delta of ~1.4 is a DIFFERENT SIGNAL, not a perturbed one — consistent with
-  // one of the two renders being DIGITAL SILENCE.
+  // ⚠ THE ASSERTION WAS NEVER WEAKENED, and that was the whole point of parking
+  // rather than relaxing it. `toBe(0)` on a float audio delta looks like the
+  // obvious thing to loosen; its passing sibling below proved exactness WAS
+  // achievable, so loosening it would have hidden this defect instead of fixing
+  // it. The body is byte-identical to the version that caught the bug.
   //
-  // ── THE MECHANISM, traced to code ──────────────────────────────────────────
-  //
-  // The factory ships the wavetable to the worklet with an UN-ACKED port message:
-  //
-  //   workletNode.port.postMessage({ type: 'load', table: buf, … }, [buf])
-  //
-  // and `packages/dsp/src/wavetable-vco.ts` opens `process()` with
-  //
-  //   if (!this.table || this.frameCount === 0) { out.fill(0); return true; }
-  //
-  // So until that message is delivered the worklet emits SILENCE. An
-  // `OfflineAudioContext` renders as fast as it can and nothing sequences the
-  // port delivery against `startRendering()`, so whether a render contains audio
-  // or silence is a scheduling race — which is why this is intermittent, why it
-  // shows up under CI load, and why the magnitude is a full-scale ±1 rather than
-  // a small number.
-  //
-  // ── WHAT WAS RULED OUT, so nobody re-chases it ─────────────────────────────
-  //
-  //   * NOT harness nondeterminism in general. The sibling `toBe(0)` four lines
-  //     below — comparing two SEPARATE renders — PASSED in the same run. Renders
-  //     were bit-reproducible at that moment, which is also why the exact
-  //     `toBe(0)` here is RIGHT and must not be loosened: exactness is
-  //     achievable, and weakening it would hide this defect rather than fix it.
-  //   * NOT phase carry-over between renders. `render()` builds a FRESH
-  //     OfflineAudioContext and a fresh factory handle per call, so a
-  //     free-running oscillator cannot inherit phase from a previous render.
-  //   * NOT a worklet-availability fallback. The factory awaits
-  //     `audioWorklet.addModule` and has no try/catch, no ScriptProcessor shim
-  //     and no bypass path — checked, and this was the first hypothesis.
-  //   * NOT a stale/renamed module. `git log` on this file shows exactly one
-  //     commit (#1682, the one that created it) — no flake-fix history.
-  //
-  // ⚠ THE IMPLICATION IS BIGGER THAN THIS ROW, which is why it is written here
-  // rather than in a commit message: an ART render can silently measure SILENCE
-  // instead of the shipping DSP. Any assertion that would PASS on silence — an
-  // inertness check, a "delta is 0" check — can therefore be green for the wrong
-  // reason. That is the "ask why the green runs are green" case, and it is the
-  // reason this belongs on the DSP schedule rather than in a test tweak.
-  //
-  // UNPARK BY: sequencing the table load before rendering (an ack, a
-  // constructor-time `processorOptions` payload rather than a port message, or a
-  // harness that awaits readiness), then deleting this block. Do NOT unpark by
-  // relaxing the assertion.
-  // Ledger: .myrobots/2026-08-18-flake-park-coverage-lost.md
-  it.skip('ENABLER — the base patch drives fm/pm, and the DEPTH controls are inert without them', async () => {
+  // The permanent negative control for the fix — that a render’s FIRST block is
+  // already non-silent — is the LOAD SEQUENCING test at the bottom of this file.
+  it('ENABLER — the base patch drives fm/pm, and the DEPTH controls are inert without them', async () => {
     // States the base patch's own assumption as an assertion. If this ever
     // flips, the fmAmount/pmAmount rows below stop meaning what they claim.
     const base = basePatch();
@@ -455,5 +420,69 @@ describe('ART wavetable vco / CV path — a cable on a paramTarget input must ch
     expect(pitchD, `pitch (V/oct) inert: peak |Δsample| linear = ${fmt(pitchD)}`).toBeGreaterThan(0);
     expect(fmD, `fm inert at full depth: peak |Δsample| linear = ${fmt(fmD)}`).toBeGreaterThan(0);
     expect(pmD, `pm inert at full depth: peak |Δsample| linear = ${fmt(pmD)}`).toBeGreaterThan(0);
+  }, SWEEP_TIMEOUT_MS);
+  // ── LOAD SEQUENCING — the PERMANENT NEGATIVE CONTROL for the silent-render fix ──
+  //
+  // ⚠ THIS TEST EXISTS BECAUSE THE BUG IT DENIES WAS INVISIBLE TO EVERY OTHER
+  // ASSERTION IN THIS FILE. The factory used to hand the wavetable to the worklet
+  // with an un-acked `port.postMessage`, and the processor emits `out.fill(0)` —
+  // digital SILENCE — until a table arrives. Nothing sequenced that message
+  // against rendering, and an OfflineAudioContext renders as fast as it can, so
+  // leading blocks (sometimes a whole render) came out silent, intermittently.
+  //
+  // ⚠ THE DAMAGE WAS TO THE GREEN RUNS, WHICH IS WHY A DEDICATED CONTROL IS OWED.
+  // A render that is silently silent still SATISFIES every assertion of the form
+  // "this delta is 0" — the inertness rows above are exactly that shape. So the
+  // defect could make a row pass for entirely the wrong reason, and only showed
+  // itself when it happened to make a comparison FAIL. A suite cannot be trusted
+  // to notice its own measurements evaporating; this row is what notices.
+  //
+  // It fails on the old post-message path BY CONSTRUCTION rather than by tuning:
+  // there is no threshold to widen and no timing to tolerate — either the table
+  // was present before the first `process()` call or those blocks are flat.
+  it('LOAD SEQUENCING — no render block is silent: the table cannot arrive late', async () => {
+    const r = await render(basePatch(), { kind: 'none' });
+
+    // One render quantum is 128 frames. At the base patch's 261.626 Hz on a
+    // 48 kHz context that sweeps ~0.7 of a cycle, so ANY real waveform swings
+    // well away from zero inside a single block — a flat block means no table,
+    // not an unlucky phase.
+    const QUANTUM = 128;
+    const PROBE_BLOCKS = 8;
+    const peaks: number[] = [];
+    const silent: number[] = [];
+    for (let b = 0; b < PROBE_BLOCKS; b++) {
+      let peak = 0;
+      for (let i = b * QUANTUM; i < (b + 1) * QUANTUM && i < r.chan.length; i++) {
+        const v = Math.abs(r.chan[i] ?? 0);
+        if (v > peak) peak = v;
+      }
+      peaks.push(peak);
+      if (peak < 1e-6) silent.push(b);
+    }
+
+    // Unconditional: the answer is "none of them", never "few enough of them".
+    expect(
+      silent,
+      'render block(s) came out SILENT while the module is a free-running SOURCE that is ' +
+        'audible at the base patch (asserted above). That is the table arriving AFTER rendering ' +
+        'started: the processor emits out.fill(0) until it has one. Per-block peak |sample| ' +
+        `linear = [${peaks.map((p) => fmt(p)).join(', ')}]`,
+    ).toEqual([]);
+
+    // POSITIVE CONTROL on the same measurement, so a probe that reads zero for
+    // some unrelated reason cannot pass by finding nothing: the FIRST block must
+    // be comparable to the loudest block, not merely non-zero. A table arriving a
+    // few blocks late — the partial version of this defect — leaves block 0 quiet
+    // while later blocks are full, and that ratio catches it where a bare
+    // non-zero check would not.
+    const loudest = Math.max(...peaks);
+    expect(loudest, 'every probed block was silent — the probe read nothing').toBeGreaterThan(1e-6);
+    expect(
+      peaks[0]! / loudest,
+      `the FIRST block is quiet relative to the loudest probed block (${fmt(peaks[0]!)} vs ` +
+        `${fmt(loudest)}) — the signature of a table that arrived a few blocks late rather than ` +
+        'at construction',
+    ).toBeGreaterThan(0.5);
   }, SWEEP_TIMEOUT_MS);
 });

@@ -38,12 +38,19 @@
 // DENY BY DEFAULT. A branch is scoped only when EVERY changed file is either
 //   * ignorable — it cannot move a rendered pixel (named list below, each entry
 //     carrying its own reason), or
-//   * attributable to ONE module type, by its PATH or by the module names its
-//     own diff hunks add/remove,
+//   * attributable to ONE module type BY ITS PATH,
 // and the union of those attributions is exactly ONE type. Anything else —
 // an unattributable renderable file (a shared primitive, a global stylesheet, a
-// spec, a lockfile), or two or more distinct modules — falls back to the FULL
-// sweep and says so, LOUDLY, with the file or the token list that forced it.
+// spec, a lockfile, a shared roster), or two or more distinct modules — falls
+// back to the FULL sweep and says so, LOUDLY, naming the files that forced it
+// and printing the `GREP=<module>` line that would have cost ~3 minutes.
+//
+// ⚠ 2026-08-23: THE DIFF-CONTENT INFERENCE IS GONE and the derivation is now
+// PATH-ONLY, so the full-sweep fallback is the COMMON case rather than the
+// exception — a face PR touches a shared roster file and will derive FULL. That
+// is the deliberate trade: the operator types the token they already know
+// instead of a heuristic guessing it from prose and identifiers and being wrong
+// three times in one week. See the note above `deriveVrtScope`.
 //
 // ⚠ The multi-population case is REAL and is why the fallback is not optional:
 // #1822 spans "cards mounting a fader", "cards carrying a domain-chain control"
@@ -221,163 +228,67 @@ export function typesInPath(path, types) {
   return out.sort();
 }
 
-/**
- * Drop whole-line comments from hunk text.
- *
- * ⚠ MEASURED, and it is the difference between this file working and not: the
- * prose in this repo NAMES OTHER MODULES CONSTANTLY. Scanning the raw hunks of
- * the analogLogicMaths promotion (5ecae1796) implicated SIX modules — every
- * extra one came from an explanatory comment (`strict-faces.ts` alone cited
- * `ninelives` and `illogic` in its rationale), so the derivation fell back to
- * the full sweep on a textbook single-module PR.
- *
- * This drops only lines whose FIRST non-space character starts a comment, so a
- * code line with a trailing `//` keeps its code — the CLAUDE.md hazard about a
- * `//`-stripping regex eating `'https://x'` cannot bite, because no line is
- * edited, only whole comment lines are removed. (`attest-code-basis.ts` does
- * the real parse; this is a heuristic on a diff, where there is no parseable
- * program to hand.)
- */
-export function codeLines(text) {
-  return String(text)
-    .split('\n')
-    .filter((l) => {
-      const t = l.trim();
-      if (!t) return false;
-      return !(t.startsWith('//') || t.startsWith('*') || t.startsWith('/*') || t.startsWith('#'));
-    })
-    .join('\n');
-}
-
-/**
- * The contents of every string literal on the given code lines — '…', "…" and
- * `…` — concatenated. Per-line on purpose: this runs on DIFF HUNKS, where a
- * multiline template has no guaranteed opening and closing line, so a
- * line-spanning parse would be pretending to a precision the input cannot
- * carry.
- */
-export function stringLiteralText(text) {
-  const out = [];
-  for (const line of String(text).split('\n')) {
-    for (const m of line.matchAll(/'([^']*)'|"([^"]*)"|`([^`]*)`/g)) {
-      out.push(m[1] ?? m[2] ?? m[3] ?? '');
-    }
-  }
-  return out.join('\n');
-}
-
-/**
- * The module types a file's CHANGED CODE names.
- *
- * This is what keeps a face PR scoped: `strict-faces.ts`, `_shell-faces.ts`,
- * `sidebar-panels.ts`, `face-readout-values.ts`, `card-def-debt.ts` and
- * `raw-write-ledger.ts` are shared ROSTER files whose PATH names no module, but
- * whose diff registers exactly the module being promoted — as
- * `'DestroyCard.svelte'`, as `slewSwitchSettleText`, as
- * `'$lib/ui/modules/slewswitch-face-model'`, as `'slewswitch-settle'`. Every
- * one of those spellings is the same word run once the text is tokenized the
- * way a path is, which is why this shares `words()` with `typesInPath`.
- *
- * Comment-stripped first, and that is not a nicety — see `codeLines`.
- *
- * ⚠ SINGLE-WORD types match only inside STRING LITERALS (#2116). A one-word
- * module name is also an ordinary identifier — `.filter((e) => …)` implicated
- * the `filter` MODULE, `patch.edges`/`buildEdges` would implicate `edges`, and
- * this file's own `codeLines` collides with `lines` — so a bare-identifier hit
- * on a one-word type is noise that forces a full sweep and teaches operators to
- * discount the fallback. The evidence a roster diff actually carries for a
- * one-word module is its STRING spellings (`'mapper'`, `type: 'tempest'`,
- * `'$lib/video/modules/mapper'`, `'mapper-face-model'`), so that is what
- * counts. Multi-word types keep the identifier match — `slewSwitchSettleText`
- * is real evidence and a contiguous [slew, switch] run does not occur in
- * ordinary code by accident.
- *
- * Safety direction, stated plainly: a one-word module named ONLY as a bare
- * identifier (an `EXTENSION_BODY_ROLES` key with no string spelling anywhere in
- * the file's diff) now yields no token here — which makes that file a BLOCKER
- * in `deriveVrtScope`, i.e. a LOUD full sweep, never a silent under-capture.
- */
-export function typesInDiffText(text, types) {
-  if (!text) return [];
-  const code = codeLines(text);
-  const hay = words(code);
-  if (hay.length === 0) return [];
-  const strHay = words(stringLiteralText(code));
-  return types
-    .filter((t) => formHits(words(t).length > 1 ? hay : strHay, t).idx.length > 0)
-    .sort();
-}
-
-/**
- * Parse `git diff -U0` into `path -> changed-line text` (added AND removed).
- *
- * `-U0` means there are no context lines, so a module named only in surrounding
- * unchanged code cannot leak into the attribution.
- */
-export function parseChangedLines(diffText) {
-  const byFile = new Map();
-  let cur = null;
-  for (const line of String(diffText).split('\n')) {
-    const m = /^diff --git a\/(.+?) b\/(.+)$/.exec(line);
-    if (m) {
-      cur = m[2] || m[1];
-      if (!byFile.has(cur)) byFile.set(cur, []);
-      continue;
-    }
-    if (!cur) continue;
-    if (line.startsWith('+++') || line.startsWith('---')) continue;
-    if (line.startsWith('+') || line.startsWith('-')) byFile.get(cur).push(line.slice(1));
-  }
-  return new Map([...byFile].map(([k, v]) => [k, v.join('\n')]));
-}
+// ── THE DIFF-CONTENT TOKENIZER IS DELETED (2026-08-23) ─────────────────────
+//
+// `codeLines` / `stringLiteralText` / `typesInDiffText` / `parseChangedLines`
+// lived here. They read each unattributable file's DIFF HUNKS and looked for
+// module names in them, so a shared roster file (`strict-faces.ts`,
+// `face-readout-values.ts`, `card-def-debt.ts`, …) could still be attributed to
+// the module a face PR was promoting instead of forcing a full sweep.
+//
+// It was the right idea and it never stopped generating false positives: repo
+// prose names other modules constantly (comment-stripping was added for that),
+// `.filter((e) => …)` implicated the `filter` MODULE, `patch.edges` implicated
+// `edges`, and the string-literal-only rule for one-word types (#2116) was the
+// third narrowing of the same heuristic. It still forced full sweeps three
+// times in the week of 2026-08-16, on single-module PRs.
+//
+// The 2026-08-23 CI simplification audit's verdict: keep the scoped dispatch,
+// which is a real 3-min-vs-45-min win, and stop INFERRING the token. A file
+// whose PATH names a module is still attributed — that is precise evidence with
+// no false positives. Everything else is a BLOCKER and says so by name, and the
+// operator who knows the answer passes `GREP=<module>`.
 
 // ───────────────────────── the decision ──────────────────────────
 
 /**
- * TWO PHASES, and the order is the whole design.
+ * ONE PHASE: PATH. A file whose own path names a module belongs to that module.
+ * That is precise evidence with no false-positive mode — a path is not prose.
+ * Anything else that can move a pixel is a BLOCKER and is named in the report.
  *
- * PHASE 1 — PATH. A file whose own path names a module belongs to that module.
- * This is the precise evidence and it is the ONLY thing that adds a token.
+ * ⚠ IT USED TO HAVE A SECOND PHASE and the audit deleted it (see the note above
+ * the ignorable list). Phase 2 read the unplaced files' DIFF HUNKS for module
+ * names, which is what let a shared roster file (`strict-faces.ts`,
+ * `face-readout-values.ts`, `card-def-debt.ts`, …) be attributed to the module
+ * a face PR was promoting. It never stopped producing false positives, and its
+ * failure mode was the same as its absence: a LOUD full sweep on a
+ * single-module PR.
  *
- * PHASE 2 — CONTENT, for the files phase 1 could not place. A shared roster
- * file (`strict-faces.ts`, `face-readout-values.ts`, `card-def-debt.ts`, …)
- * changes in every face PR, so treating it as unattributable would send every
- * single-module PR to the 50-minute sweep — which is the defect. So its diff is
- * read, and:
+ * ⚠ SO THE HONEST CONSEQUENCE, stated rather than discovered: a face PR touches
+ * a shared roster file, so it will now derive FULL. The remedy is not a cleverer
+ * heuristic — it is the operator, who knows the answer, typing it:
  *
- *   · names a module phase 1 already implicated  → EXPLAINED, adds nothing;
- *   · names only OTHER modules                   → those are added (which means
- *                                                  ≥2 tokens, i.e. full sweep);
- *   · names no module at all                     → BLOCKER, full sweep. This is
- *                                                  the shared primitive / global
- *                                                  stylesheet / spec case.
+ *     GREP=<module> task vrt:commit        # ~3 min
+ *     ALL=1         task vrt:commit        # 41-56 min, deliberately
  *
- * ⚠ THE ONE THING THIS CAN GET WRONG, stated plainly: a roster file that
- * changed entries for TWO modules is "explained" by the one phase 1 found, so a
- * co-named module's baseline can go uncaptured. That is precisely the case
- * `vrt-strict` catches — it renders EVERY face and the strict card set, is
- * REQUIRED, and names the file it fails on. Those co-named modules are reported
- * at dispatch (`alsoNamed`) so the operator can widen the scope on sight rather
- * than learning it from a red run.
+ * The report below names every blocker so that choice is informed.
  *
- * @param {{files: string[], types: string[], changedLines?: Map<string,string>}} input
+ * @param {{files: string[], types: string[]}} input
  * @returns {{
  *   mode: 'scoped'|'full'|'none',
  *   token: string|null,
  *   tokens: string[],
- *   alsoNamed: string[],
- *   attributions: {file: string, types: string[], via: 'path'|'diff'}[],
+ *   attributions: {file: string, types: string[], via: 'path'}[],
  *   blockers: {file: string, why: string}[],
  *   ignored: {file: string, why: string}[],
  *   reason: string,
  * }}
  */
-export function deriveVrtScope({ files, types, changedLines = new Map() }) {
+export function deriveVrtScope({ files, types }) {
   const attributions = [];
   const blockers = [];
   const ignored = [];
   const tokens = new Set();
-  const alsoNamed = new Set();
 
   const renderable = [];
   for (const file of files) {
@@ -386,49 +297,21 @@ export function deriveVrtScope({ files, types, changedLines = new Map() }) {
     else renderable.push(file);
   }
 
-  // Phase 1 — path.
-  const unplaced = [];
   for (const file of renderable) {
     const hit = typesInPath(file, types);
     if (hit.length === 0) {
-      unplaced.push(file);
+      blockers.push({ file, why: 'renderable, and its PATH names no module' });
       continue;
     }
     attributions.push({ file, types: hit, via: 'path' });
     for (const t of hit) tokens.add(t);
   }
 
-  // Phase 2 — content, for what the paths could not place.
-  //
-  // Split into two passes ON PURPOSE: every file is judged against the SAME
-  // phase-1 token set. A single pass would make the verdict depend on the order
-  // git happened to list the files in — one file could add a token that
-  // "explains" the next — and a decision function that reads its own output is
-  // not one you can test.
-  const contentHits = new Map(unplaced.map((f) => [f, typesInDiffText(changedLines.get(f) ?? '', types)]));
-  const pathTokens = new Set(tokens);
-  for (const [file, hit] of contentHits) {
-    if (hit.length === 0) {
-      blockers.push({ file, why: 'renderable, and its changed code names no module' });
-      continue;
-    }
-    const known = hit.filter((t) => pathTokens.has(t));
-    if (known.length > 0) {
-      attributions.push({ file, types: known, via: 'diff' });
-      for (const t of hit) if (!pathTokens.has(t)) alsoNamed.add(t);
-      continue;
-    }
-    attributions.push({ file, types: hit, via: 'diff' });
-    for (const t of hit) tokens.add(t);
-  }
-
   const list = [...tokens].sort();
-  const also = [...alsoNamed].filter((t) => !tokens.has(t)).sort();
   const decision = (mode, token, reason) => ({
     mode,
     token,
     tokens: list,
-    alsoNamed: also,
     attributions,
     blockers,
     ignored,
@@ -439,7 +322,7 @@ export function deriveVrtScope({ files, types, changedLines = new Map() }) {
     return decision(
       'full',
       null,
-      `${blockers.length} changed file(s) can move a baseline but name no module — the blast radius is not expressible as one token`,
+      `${blockers.length} changed file(s) can move a baseline and no PATH names a module — the blast radius is not derivable`,
     );
   }
   if (list.length === 0) return decision('none', null, 'no changed file on this branch can move a VRT baseline');
@@ -576,11 +459,9 @@ function decide(args) {
   const nameOnly = run('git', ['diff', '--name-only', `${base}...HEAD`]);
   if (nameOnly.status !== 0) fail(`git diff failed: ${String(nameOnly.stderr).trim()}`);
   const files = nameOnly.stdout.split('\n').filter(Boolean);
-  const patch = run('git', ['diff', '-U0', `${base}...HEAD`]);
-  const changedLines = parseChangedLines(patch.stdout ?? '');
 
   const types = loadTypes();
-  const d = deriveVrtScope({ files, types, changedLines });
+  const d = deriveVrtScope({ files, types });
 
   let report = bar('VRT capture scope (derived — #1795)');
   report += `  branch      ${branch || '(current)'}\n`;
@@ -618,12 +499,16 @@ function decide(args) {
       for (const b of d.blockers.slice(0, 12)) report += `    ${b.file}  (${b.why})\n`;
       if (d.blockers.length > 12) report += `    … and ${d.blockers.length - 12} more\n`;
     }
-    if (d.tokens.length) report += `  Modules named by the diff: ${d.tokens.join(', ')}\n`;
+    if (d.tokens.length) report += `  Modules named by a changed PATH: ${d.tokens.join(', ')}\n`;
     report += `  Cost: ${tests.length} tests across ${new Set(tests.map((t) => t.file)).size} spec files, ONE unsharded job.\n`;
-    if (d.tokens.length > 1) {
-      report += `\n  If ONE of these covers everything that moved, scope it and pay minutes instead:\n`;
-      report += `    GREP=${d.tokens[0]} task vrt:commit\n`;
-    }
+    // ⚠ THE COMMON CASE NOW, NOT THE EXCEPTION. Nothing infers a token from a
+    // file's contents any more, so a shared roster file lands here on an
+    // ordinary single-module PR. The operator knows the answer; this is where
+    // they are asked for it.
+    report += `\n  If ONE token covers everything that moved, scope it and pay ~3 min instead of 41-56:\n`;
+    report += `    GREP=${d.tokens[0] ?? '<module>'} task vrt:commit\n`;
+    report += `  Nothing derives that token from file CONTENTS any more (deleted 2026-08-23 —\n`;
+    report += `  it inferred modules from prose and identifiers and was wrong three times in a week).\n`;
     process.stderr.write(report);
     process.stdout.write('FULL\n');
     return;
@@ -646,12 +531,6 @@ function decide(args) {
   for (const a of d.attributions.slice(0, 8)) report += `    ${a.file}  (by ${a.via})\n`;
   if (d.attributions.length > 8) report += `    … and ${d.attributions.length - 8} more\n`;
   report += `  spec files  ${sel.files.join(', ')}\n`;
-  if (d.alsoNamed.length) {
-    // Named by a shared roster file's diff alongside the scoped module. NOT
-    // captured — surfaced so a genuine second population is visible here rather
-    // than in a red vrt-strict run.
-    report += `  also named  ${d.alsoNamed.join(', ')} (mentioned by a shared file; NOT captured)\n`;
-  }
   report += `\n  A scoped capture cannot silently under-capture where it matters: if this\n`;
   report += `  change moved a baseline outside the scope, vrt-strict (required) reddens and\n`;
   report += `  names the file. Sweep everything deliberately with:  ALL=1 task vrt:commit\n`;

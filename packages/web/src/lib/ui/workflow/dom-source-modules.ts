@@ -54,11 +54,25 @@ import type { LaneRenderKind } from './legacy-fallback';
 
 /**
  * Video module TYPES whose engine handle is fed by a CARD-OWNED DOM element via
- * `VideoEngine.attachExternalSource` — i.e. the card mount IS the source
- * lifecycle. Kept in sync with reality by a GREP GATE
- * (dom-source-modules.test.ts): the set must equal exactly the set of module
- * types whose resolved card component calls `attachExternalSource`, so a NEW
- * DOM-source module cannot ship dark under the shell.
+ * `VideoEngine.attachExternalSource` AND whose ENGINE KEEPS that element — i.e.
+ * the card mount IS the source lifecycle. Kept in sync with reality by a GREP
+ * GATE (dom-source-modules.test.ts), which reads BOTH halves off the tree, so a
+ * NEW DOM-source module cannot ship dark under the shell.
+ *
+ * ⚠ THE SECOND HALF IS NOT DECORATION, and leaving it out is how `frametable`
+ * and `videocube` sat here wrongly. "The card calls attachExternalSource" says a
+ * card HANDS an element over; it cannot say whether the engine keeps it, and
+ * those are different files with different answers. Both of those modules stage
+ * a decoded `.frametable.png` atlas into a `pendingAtlas` slot at FILE LOAD; the
+ * next draw detiles it into GL and nulls the reference. Their live pictures come
+ * from GRAPH CABLES (`video_in`; `video_a|b|c`), so no card mount is load-
+ * bearing and neither ever needed the headless host. The gate now derives
+ * retention from the engine-side attach body (a rVFC subscription, the texture
+ * uploader, an element keep-alive, or a retained `mediaEl`).
+ *
+ * Deny-by-default runs in the direction that costs: the DEFAULT is that a module
+ * retains. Excluding one takes a NAMED `ONE_SHOT_INGEST` entry carrying its
+ * `why`, anchored so it reddens the day that module starts keeping its element.
  *
  * ⚠ `cameraInput` USED TO BE THE EXCEPTION IN THIS SET AND IS NOT ANY MORE. The
  * note here said it "is never swapped and never needs the headless host",
@@ -75,12 +89,10 @@ import type { LaneRenderKind } from './legacy-fallback';
 export const DOM_SOURCE_LANE_TYPES: ReadonlySet<string> = new Set<string>([
   'archivist',
   'cameraInput',
-  'frametable',
   'loopback',
   'peertube',
   'tvLibrarian',
   'videobox',
-  'videocube',
   'videovarispeed',
 ]);
 

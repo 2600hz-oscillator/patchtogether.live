@@ -5,8 +5,13 @@
 // The gate owed by the #1661 defect class (`swolevco`: four declared CV inputs
 // that were bit-exactly audio-inert because the factory published an AudioParam
 // on a node whose output was connected to nothing). #1661 named this file's
-// module as using the same vocabulary, unverified. It does — for its eight
-// `comp{N}` macros, and only for those. Every other declared CV input is live.
+// module as using the same vocabulary, unverified. It DID — for its eight
+// `comp{N}` macros, and only for those; every other declared CV input was
+// always live. FIXED in #1737, and this file now asserts the fixed behaviour
+// where it used to characterize the defect: the sweep below covers EVERY
+// declared paramTarget input with no filter, and the leg that used to name the
+// comp macros as the uncertifiable set is now a permanent negative control that
+// requires them to be BOTH structurally off-worklet AND audibly live.
 //
 // WHY NO EXISTING GATE SEES THIS (module-adversarial-audit.md step 3):
 //  * `art/scenarios/mixmstrs/{profile,prefader-sends,passthrough}.test.ts` all
@@ -44,17 +49,24 @@
 // factory two different ways and confirming which leg reddens each time:
 //
 //  A. published on a NON-worklet node (`{ node: deadGain, param: deadGain.gain }`)
-//     → SCOPE reddens (`ch1_volume` joins the excluded set) and the automation
-//       leg reddens (0.0000e+0 vs knob 1.6946e-1). The CV sweep stays green —
-//       because the defect REMOVED its own subject from the sweep's filter.
-//       That is precisely why SCOPE exists and why it is asserted both ways.
+//     → the OFF-WORKLET leg reddens (`ch1_volume` joins that set) and the
+//       automation leg reddens (0.0000e+0 vs knob 1.6946e-1). ⚠ The CV sweep
+//       used to stay green here, because the defect REMOVED its own subject
+//       from the sweep's FILTER — which is why the sweep no longer has one.
 //  B. kept ON the worklet node but pointed at a dead param
 //     (`{ node: f, param: deadGain.gain }`) → the CV sweep reddens naming
 //       `ch1_volume 0.8→0 0.0000e+0` while every other row prints a live value,
-//       and SCOPE correctly stays green.
+//       and the off-worklet leg correctly stays green.
 //
-// So an input cannot be made CV-dead without reddening at least one leg, and the
-// SCOPE leg is the permanent one that keeps the sweep's filter honest.
+// So an input cannot be made CV-dead without reddening at least one leg.
+//
+// AND THE FIX WAS NEGATIVE-CONTROLLED THE SAME WAY (#1737), each half alone:
+//  C. restore the unconditional build-time `applyCompMacro` → the RELOAD leg
+//     reddens with "engaged −9.624 dBFS RMS vs bypassed −9.624 dBFS RMS", and
+//     the declared-defaults leg reddens showing thresh 0 / ratio 1.
+//  D. restore wavesculpt's value-based analyser readiness test → the CV sweep
+//     reddens naming comp1..comp8 at 0.0000e+0 while all 83 other rows print a
+//     live value.
 //
 // Every driver here is deterministic and nothing is pinned, so this scenario
 // needs no baseline and no `.sha` — it is an assertion scenario like
@@ -62,7 +74,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { OfflineAudioContext } from 'node-web-audio-api';
-import { mixmstrsDef, MIXMSTRS_CHANNELS, MIXMSTRS_RETURNS } from '$lib/audio/modules/mixmstrs';
+import { mixmstrsDef, MIXMSTRS_CHANNELS, MIXMSTRS_RETURNS, mapCompMacro } from '$lib/audio/modules/mixmstrs';
 
 const SR = 48000;
 const DUR_S = 0.25;
@@ -190,6 +202,18 @@ async function render(base: Record<string, number>, leg: Leg): Promise<Render> {
     ref.node.connect(merger, ref.output, k);
   });
   merger.connect(ctx.destination);
+  // #1737: pump the comp-macro shadow DETERMINISTICALLY during the offline
+  // render. The factory's live path is a wall-clock setInterval, which an
+  // offline render outruns nondeterministically; `read('pumpCompMacros')` is
+  // the factory's own seam for exactly this. Every 50 ms, well before the
+  // SETTLE window opens at 150 ms, so an applied CV change is fully settled
+  // where peakDelta measures.
+  for (let t = 0.05; t < DUR_S; t += 0.05) {
+    void ctx.suspend(t).then(() => {
+      handle.read?.('pumpCompMacros');
+      void ctx.resume();
+    });
+  }
   const buf = await ctx.startRendering();
   return { chans: OUTS.map((_, k) => buf.getChannelData(k).slice()), offWorkletHosts };
 }
@@ -264,13 +288,15 @@ describe('ART mixmstrs / CV path — a cable on a paramTarget input must change 
     expect(dead, 'controls inert from their own knob — peak |Δsample| linear = 0').toEqual([]);
   }, SWEEP_TIMEOUT_MS);
 
-  it('every paramTarget input hosted ON THE DSP WORKLET moves the audio through the CV path', async () => {
+  it('EVERY declared paramTarget input moves the audio through the CV path — comp macros included (#1737)', async () => {
+    // The off-worklet carve-out is RETIRED: the comp shadow is read back and
+    // pumped (see mixmstrs.ts), so comp{N} joins the same sweep as everything
+    // else. The old SCOPE leg's own text mandated its deletion with the fix.
     const base = basePatch();
     const ctrl = await render(base, { kind: 'none' });
-    const live = PARAM_INPUT_IDS.filter((id) => !ctrl.offWorkletHosts.includes(id));
     const dead: string[] = [];
     const table: string[] = [];
-    for (const id of live) {
+    for (const id of PARAM_INPUT_IDS) {
       const target = perturbTarget(id);
       const d = peakDelta(await render(base, { kind: 'cv', id, delta: target - effectiveBase(id, base) }), ctrl);
       table.push(`${id} ${effectiveBase(id, base)}→${target} ${fmt(d)}`);
@@ -279,25 +305,35 @@ describe('ART mixmstrs / CV path — a cable on a paramTarget input must change 
     expect(dead, `CV cable inert (linear peak |Δsample| = 0) on: ${table.join(' | ')}`).toEqual([]);
   }, SWEEP_TIMEOUT_MS);
 
-  it('SCOPE — the inputs this scenario CANNOT certify are exactly the comp macros (#1661)', async () => {
-    // Deny-by-default and DERIVED on both sides: the left is read off the live
-    // handle (which published params sit on a node that is not the DSP worklet),
-    // the right off the def's own exported channel list. Nothing is hand-typed
-    // and nothing is counted. When the comp macros are moved onto the worklet —
-    // or onto any node whose output reaches an output port — this assertion goes
-    // RED and must be deleted along with the exclusion above, so the carve-out
-    // cannot outlive the defect.
-    const ctrl = await render(basePatch(), { kind: 'none' });
+  it('PERMANENT NEGATIVE CONTROL — the comp macros are STILL off-worklet hosts, and their CV is live anyway (#1737)', async () => {
+    // Both halves derived, neither hand-typed. The STRUCTURE is unchanged (the
+    // macro publishes on a GainNode, not the DSP worklet — same predicate the
+    // old carve-out used), so if the CV sweep above ever goes green by the
+    // comp rows silently LEAVING the population (an inputs-map refactor
+    // dropping paramTarget, say), this leg still reddens: it asserts the
+    // off-worklet set is exactly the comp macros AND that one comp CV cable
+    // audibly moves the mix on its own.
+    const base = basePatch();
+    const ctrl = await render(base, { kind: 'none' });
     expect(
       ctrl.offWorkletHosts.slice().sort(),
-      'paramTarget inputs published on a non-DSP node — their CV is a dead end; see #1661',
+      'paramTarget inputs published on a non-DSP node (structure, not liveness)',
     ).toEqual(MIXMSTRS_CHANNELS.map((c) => `comp${c}`).sort());
+    const d = peakDelta(
+      await render(base, { kind: 'cv', id: 'comp1', delta: 0 - effectiveBase('comp1', base) }),
+      ctrl,
+    );
+    expect(d, `comp1 CV cable must audibly move the mix (linear peak |Δsample|): ${fmt(d)}`).toBeGreaterThan(0);
   }, SWEEP_TIMEOUT_MS);
 
-  it('a dead published param also makes CLIP AUTOMATION of that control inert', async () => {
-    // engine.ts:700 / :754 prefer `inputs[id].param` over `setParam`, so this is
-    // not a second bug — it is the same dead terminal reached by another writer.
-    // `ch1_volume` is the positive control: same branch, live param.
+  it('CLIP AUTOMATION reaches the same terminal a CV cable does — comp macros included (#1737)', async () => {
+    // ⚠ THE TITLE IS THE ASSERTION, so it changed with the fix. This leg used to
+    // read "a dead published param also makes CLIP AUTOMATION of that control
+    // inert" — a characterization of the defect, green BECAUSE comp1 was dead.
+    // engine.ts:700 / :754 prefer `inputs[id].param` over `setParam`, so
+    // automation was never a second bug: it is the same terminal reached by
+    // another writer, and it went live the moment that terminal did.
+    // `ch1_volume` is the positive control: same branch, always-live param.
     const base = basePatch();
     const ctrl = await render(base, { kind: 'none' });
     const auto = async (id: string, v: number) =>
@@ -310,5 +346,162 @@ describe('ART mixmstrs / CV path — a cable on a paramTarget input must change 
     expect(liveAuto, `automation must reach a LIVE param: ${fmt(liveAuto)} vs knob ${fmt(liveKnob)}`)
       .toBeGreaterThan(0);
     expect(liveAuto, 'automation and knob agree on a live param').toBeCloseTo(liveKnob, 6);
+
+    // #1737: the same engine branch on the FORMERLY dead terminal — clip
+    // automation of comp1 writes g.gain, the pump picks it up, the mix moves.
+    const compAuto = await auto('comp1', 0);
+    expect(compAuto, `clip automation of comp1 must be audible: ${fmt(compAuto)}`).toBeGreaterThan(0);
+  }, SWEEP_TIMEOUT_MS);
+});
+
+// ── #1737 (3): the macro must not clobber what the rack saved ─────────────────
+//
+// ⚠ THE OBVIOUS INSTRUMENT HERE IS BROKEN, AND ITS FAILURE MODE IS A GREEN RUN.
+//
+// The natural way to write this is: build the factory against a saved params
+// snapshot and read `handle.readParam('ch1_thresh')` straight back. That is a
+// SNAPSHOT OF AN AudioParam THAT NOTHING HAS RENDERED. `AudioParam.value` is
+// the [[current value]], updated at RENDER QUANTUM boundaries — on a fresh
+// `OfflineAudioContext` no quantum has run, so every `setValueAtTime` the
+// factory just issued is still queued and `.value` reports the param's
+// DECLARED DEFAULT. Measured on this module, same handle, three sample points:
+//
+//   before startRendering   ch1_thresh −12   ch1_ratio 2   ch1_compEnable 0
+//   at ctx.suspend(0.1)     ch1_thresh −30   ch1_ratio 8   ch1_compEnable 1
+//   after startRendering    ch1_thresh −30   ch1_ratio 8   ch1_compEnable 1
+//
+// So the pre-render read is invariant to the entire defect: it returns −12/2/0
+// whether the macro clobbered the saved triple or not. The "fresh spawn holds
+// its declared defaults" leg PASSED against that instrument — and would have
+// passed just as happily with the bug still in, because −12 is what the reader
+// returns when it is reading nothing at all. Exactly the CLAUDE.md shape: a
+// gate whose precondition (no quantum has rendered) makes its subject
+// unobservable, reporting the right number for the wrong reason.
+//
+// Both halves below therefore read a RENDERED observable:
+//   * the AUDIBLE half is dBFS RMS of the real master output over a settled
+//     window — the units #1737 states its defect in (+29.17 dB);
+//   * the READBACK half samples `readParam` INSIDE a `ctx.suspend()` callback,
+//     i.e. at a real render instant, which is the same seam the comp pump uses.
+describe('ART mixmstrs / #1737 — the macro must not clobber what the rack saved', () => {
+  /** How far below the bypassed level an ENGAGED compressor must pull the
+   *  master before this scenario believes it. A POLICY THRESHOLD on a derived
+   *  measurement, not a count: the real separation measured on the shipped wasm
+   *  is ~23.8 dB, so 6 dB is a wide margin that still cannot be reached by
+   *  rounding, dither or a fader nudge. */
+  const COMP_ENGAGED_MIN_DB = 6;
+
+  /** Reload a rack: build the SHIPPED factory against a saved params snapshot,
+   *  drive ch1 with a loud inharmonic source, render, and report BOTH
+   *  observables — master dBFS RMS over the settled tail, and the compressor
+   *  triple as read at a real render instant. */
+  async function reload(params: Record<string, number>): Promise<{
+    rmsDb: number;
+    live: Record<string, number | undefined>;
+  }> {
+    const ctx = new OfflineAudioContext({ numberOfChannels: 1, length: N, sampleRate: SR });
+    const node = { id: 'reload', type: 'mixmstrs', position: { x: 0, y: 0 }, params } as never;
+    const h = await mixmstrsDef.factory(ctx as unknown as AudioContext, node);
+
+    const out = h.outputs.get('masterL')!;
+    out.node.connect(ctx.destination, out.output);
+    const inRef = h.inputs.get('ch1L')!;
+    const osc = ctx.createOscillator();
+    osc.type = 'sawtooth';
+    osc.frequency.value = 220;
+    const g = ctx.createGain();
+    g.gain.value = 0.9; // hot enough that a −30 dB threshold is genuinely crossed
+    osc.connect(g);
+    g.connect(inRef.node, 0, inRef.input);
+    osc.start(0);
+
+    const live: Record<string, number | undefined> = {};
+    // Read the params at a RENDERED instant, past the settle point, so the
+    // reader is looking at a value the graph has actually produced.
+    const readAt = SETTLE / SR + 0.02;
+    void ctx.suspend(readAt).then(() => {
+      for (const id of ['ch1_thresh', 'ch1_ratio', 'ch1_compEnable']) live[id] = h.readParam?.(id);
+      void ctx.resume();
+    });
+
+    const d = (await ctx.startRendering()).getChannelData(0);
+    let sum = 0;
+    for (let i = SETTLE; i < N; i++) sum += d[i]! * d[i]!;
+    const rms = Math.sqrt(sum / (N - SETTLE));
+    return { rmsDb: 20 * Math.log10(rms > 0 ? rms : Number.MIN_VALUE), live };
+  }
+
+  const dB = (v: number) => `${v.toFixed(3)} dBFS RMS`;
+  /** A rack saved BEFORE the comp macro existed: the manual triple, no comp{N}
+   *  key at all. That absence is what made the default 0 reach applyCompMacro. */
+  const PRE_MACRO_RACK: Record<string, number> = { ch1_thresh: -30, ch1_ratio: 8, ch1_compEnable: 1 };
+
+  it('a pre-macro rack RELOADS COMPRESSED — not +29 dB louder and bypassed', async () => {
+    // The three renders are the assertion AND its own controls:
+    //   engaged  — the saved rack, exactly as a pre-macro save comes back;
+    //   bypassed — the same triple with the compressor explicitly OFF, which is
+    //              precisely the state mapCompMacro(0) used to force;
+    //   fresh    — a spawn with no compressor params at all.
+    // `bypassed === fresh` is the instrument's positive control: it proves this
+    // window can see the compressor's ENABLE flag, so the gap below is a real
+    // gain reduction and not the harness measuring two arbitrary numbers.
+    const engaged = await reload(PRE_MACRO_RACK);
+    const bypassed = await reload({ ...PRE_MACRO_RACK, ch1_compEnable: 0 });
+    const fresh = await reload({});
+
+    expect(
+      bypassed.rmsDb,
+      `CONTROL — an explicitly bypassed compressor must sit at the no-compressor level: ${dB(bypassed.rmsDb)} vs fresh ${dB(fresh.rmsDb)}`,
+    ).toBeCloseTo(fresh.rmsDb, 6);
+
+    expect(
+      engaged.rmsDb,
+      `a rack saved with thresh ${PRE_MACRO_RACK.ch1_thresh} / ratio ${PRE_MACRO_RACK.ch1_ratio} / enable on must RELOAD compressed: ` +
+        `${dB(engaged.rmsDb)} vs bypassed ${dB(bypassed.rmsDb)} — required at least ${COMP_ENGAGED_MIN_DB} dB below`,
+    ).toBeLessThan(bypassed.rmsDb - COMP_ENGAGED_MIN_DB);
+
+    // The readback half of the same defect, at a rendered instant: the card
+    // reads node.params while readLive reads the Faust param, and #1737's third
+    // consequence is that those two disagree silently after a reload.
+    expect(engaged.live, 'the LIVE Faust triple at a rendered instant must equal what the rack saved').toEqual({
+      ch1_thresh: PRE_MACRO_RACK.ch1_thresh,
+      ch1_ratio: PRE_MACRO_RACK.ch1_ratio,
+      ch1_compEnable: PRE_MACRO_RACK.ch1_compEnable,
+    });
+  }, SWEEP_TIMEOUT_MS);
+
+  it('a rack that SAVED a macro value still gets it applied — the macro path is not weakened', async () => {
+    // Skipping the build-time apply must not turn the macro off for racks that
+    // legitimately carry one. comp1 = 1 is mapCompMacro's strongest setting.
+    const m = mapCompMacro(1);
+    const macro = await reload({ comp1: 1 });
+    const fresh = await reload({});
+    expect(
+      macro.rmsDb,
+      `comp1 = 1 must compress a fresh rack: ${dB(macro.rmsDb)} vs no macro ${dB(fresh.rmsDb)} — required at least ${COMP_ENGAGED_MIN_DB} dB below`,
+    ).toBeLessThan(fresh.rmsDb - COMP_ENGAGED_MIN_DB);
+    expect(macro.live, 'the macro fans out to the LIVE Faust triple').toEqual({
+      ch1_thresh: m.thresh,
+      ch1_ratio: m.ratio,
+      ch1_compEnable: m.enable,
+    });
+  }, SWEEP_TIMEOUT_MS);
+
+  it('a FRESH spawn holds the DECLARED defaults on the LIVE params', async () => {
+    // The display half: mapCompMacro(0) used to write { thresh 0, ratio 1 } at
+    // build, so ch{N}_thresh/ratio NEVER held their declared −12 / 2 and the
+    // knob disagreed with its own motorized readback. Audio is identical either
+    // way (enable is 0 = bypassed in both), which is exactly why this leg has to
+    // read the params rather than the mix — and why it has to read them at a
+    // RENDERED instant, where the pre-render snapshot returned −12 / 2 / 0 for
+    // free and could never have failed.
+    const declared = Object.fromEntries(
+      ['ch1_thresh', 'ch1_ratio', 'ch1_compEnable'].map((id) => [
+        id,
+        mixmstrsDef.params.find((p) => p.id === id)!.defaultValue,
+      ]),
+    );
+    const fresh = await reload({});
+    expect(fresh.live, 'a fresh spawn must render the DECLARED defaults, not mapCompMacro(0)').toEqual(declared);
   }, SWEEP_TIMEOUT_MS);
 });

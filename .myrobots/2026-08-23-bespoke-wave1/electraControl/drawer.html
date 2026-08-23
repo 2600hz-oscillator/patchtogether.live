@@ -1,0 +1,279 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>ELECTRA CONTROL face — STATE 1: the board in the drawer</title>
+<style>
+/* ─────────────────────────────────────────────────────────────────────────
+   ELECTRA CONTROL FACEPLATE — MOCKUP, state 1 of 2.
+   SPEC AND MOCKUP ONLY. Nothing here is implemented, AND IT CANNOT BE YET:
+   `MetaModuleDef` has no `face` field, so this face does not typecheck.
+   See spec.md §12 for the two-PR platform sequence.
+
+   The surface drawn here is the WORKFLOW DRAWER, because that is the only
+   surface this module has in workflow mode (`workflow-pins.ts`,
+   `surface: 'drawer'`). `dockFullViewHeadPlan` gates the extension body on
+   `isFaceplateView(view)` = `view !== 'lane'`, and its comment says why:
+   "the pinned drawer paints the same full faceplate and wants the same head
+   precedence (#1739)". That one line is what makes this module promotable.
+   ───────────────────────────────────────────────────────────────────────── */
+:root{
+  --bg:#0e1013; --dock:#12161c; --pbody:#1c1f24; --line:#2c3037; --tile:#33383f;
+  --ink:#eef1f5; --dim:#9aa2ad; --faint:#646c77;
+  --meta:#7fd3b5; --warn:#f2c14e; --good:#8fe6b0; --bad:#ff9b9b;
+  --c1:#ff6b6b; --c2:#5ad1ff; --c3:#ffd23f; --c4:#b57bff; --c5:#7bd88f;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+  font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1320px;margin:0 auto;padding:26px 20px 90px}
+h1{font-size:21px;font-weight:800;margin:0 0 6px}
+.sub{color:var(--dim);font-size:12.5px;margin:0 0 14px;max-width:110ch}
+.sub b{color:var(--ink)} code{font-family:var(--mono);font-size:11.5px;color:var(--meta)}
+.nav{display:flex;gap:8px;margin:0 0 20px;font-size:11px;flex-wrap:wrap}
+.nav a{color:var(--ink);text-decoration:none;border:1px solid var(--line);border-radius:6px;
+  padding:6px 12px;background:#12161c;font-family:var(--mono);letter-spacing:.06em;text-transform:uppercase}
+.nav a.on{border-color:var(--meta);color:var(--meta)}
+.warn{border:1px solid #6a5330;background:#1c1811;border-radius:8px;padding:11px 14px;margin:12px 0;
+  font-size:12.5px;color:#e8cf9a;max-width:122ch} .warn b{color:var(--warn)}
+.bad{border:1px solid #6a3838;background:#1c1212;border-radius:8px;padding:11px 14px;margin:12px 0;
+  font-size:12.5px;color:#e8b0b0;max-width:122ch} .bad b{color:var(--bad)}
+.ok{border:1px solid #3b5a48;background:#111a15;border-radius:8px;padding:11px 14px;margin:12px 0;
+  font-size:12.5px;color:#a9d8bd;max-width:122ch} .ok b{color:var(--good)}
+.cols{display:grid;grid-template-columns:minmax(0,1fr) 420px;gap:18px;align-items:start}
+@media (max-width:1180px){.cols{grid-template-columns:minmax(0,1fr)}}
+
+/* ── the workflow drawer ──────────────────────────────────────────────── */
+.drawer{background:#0b0e12;border:1px solid var(--line);border-top:2px solid var(--meta);
+  border-radius:11px 11px 0 0;padding:11px 13px 15px}
+.drawerbar{display:flex;align-items:center;gap:10px;padding:0 2px 9px}
+.drawerbar .nm{font-size:13px;font-weight:800;letter-spacing:.03em}
+.drawerbar .key{font-family:var(--mono);font-size:8.6px;letter-spacing:.12em;color:var(--faint);
+  border:1px solid var(--tile);border-radius:3px;padding:2px 6px}
+.connect{margin-left:auto;font-family:var(--mono);font-size:9.4px;letter-spacing:.07em;padding:6px 13px;
+  border:1px solid #3f6a5c;border-radius:5px;background:#14201c;color:var(--meta);cursor:pointer}
+.plate{background:var(--pbody);border:1px solid var(--tile);border-left:4px solid var(--meta);
+  border-radius:10px;padding:11px 12px 12px;width:max-content;max-width:100%}
+.board{display:flex;flex-direction:column;gap:9px}
+.bank{display:grid;grid-template-columns:30px repeat(6,54px);gap:6px 8px;align-items:center}
+.banklab{font-family:var(--mono);font-size:8px;letter-spacing:.12em;color:var(--faint);
+  writing-mode:vertical-rl;transform:rotate(180deg);text-align:center;grid-row:span 2;
+  border-right:1px solid var(--tile);height:100%;padding-right:4px}
+.cell{position:relative;width:54px;display:flex;flex-direction:column;align-items:center;gap:3px;
+  padding-top:5px}
+.stripe{position:absolute;top:0;left:9px;right:9px;height:2px;border-radius:1px}
+.cell i{--v:.5;--kc:#556;display:block;width:32px;height:32px;border-radius:50%;position:relative;
+  background:conic-gradient(from 215deg,var(--kc) 0turn calc(var(--v)*.75turn),
+    #2b3138 calc(var(--v)*.75turn) .75turn,rgba(0,0,0,0) .75turn)}
+.cell i::before{content:"";position:absolute;inset:4px;border-radius:50%;background:#20252b}
+.cell i::after{content:"";position:absolute;left:50%;top:50%;width:2px;height:11px;background:var(--ink);
+  border-radius:1px;transform-origin:50% 100%;
+  transform:translate(-50%,-100%) rotate(calc(-135deg + var(--v)*270deg))}
+.cell b{font-size:7px;font-weight:600;letter-spacing:.04em;color:var(--dim);font-family:var(--mono);
+  text-align:center;max-width:52px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pen{position:absolute;top:3px;right:1px;font-size:7px;color:var(--faint)}
+.empty{width:30px;height:30px;border-radius:50%;border:1px dashed #333a44;opacity:.45}
+.emptycap{font-size:7px;color:transparent;font-family:var(--mono)}
+.jackrail{margin-top:11px;border-top:1px dashed #3a3030;padding-top:8px;font-family:var(--mono);
+  font-size:8px;letter-spacing:.09em;color:#a06a6a;text-align:center}
+
+.zones{background:#12161c;border:1px solid var(--line);border-radius:9px;padding:12px 13px}
+.zones h4{margin:0 0 8px;font-size:9px;font-weight:800;letter-spacing:.13em;text-transform:uppercase;color:var(--dim)}
+.zones+.zones{margin-top:14px}
+.zt{width:100%;border-collapse:collapse;font-size:10.5px}
+.zt th{text-align:left;font-family:var(--mono);font-size:7.8px;letter-spacing:.11em;text-transform:uppercase;
+  color:var(--faint);font-weight:400;padding:0 0 5px;border-bottom:1px solid var(--line)}
+.zt td{padding:5px 0;border-bottom:1px solid #1c2027;vertical-align:top;color:var(--dim);line-height:1.42}
+.zt td:first-child{color:var(--ink);font-family:var(--mono);font-size:9.5px;padding-right:10px;white-space:nowrap}
+.aria{font-family:var(--mono);font-size:10px;color:var(--good);background:#101a14;
+  border:1px solid #2c4636;border-radius:4px;padding:2px 6px;display:inline-block;margin-top:3px}
+</style>
+
+<div class="wrap">
+<h1>ELECTRA CONTROL — the drawer faceplate · STATE 1: a partly-filled board</h1>
+<p class="sub">Spec and mockup only. <b>This one cannot be built yet</b> — <code>MetaModuleDef</code>
+has no <code>face</code> field, so the declaration does not typecheck. The design below is what
+the two-PR sequence in §12 unblocks. The module is the only one in the fleet whose subject is
+<b>other modules</b>: thirty-six named holes, each holding a POINTER, and the board <i>is</i> the
+preset the Electra One hardware gets flashed with.</p>
+
+<div class="nav">
+  <a class="on" href="drawer.html">state 1 · the board</a>
+  <a href="drawer-renaming.html">state 2 · renaming a slot</a>
+</div>
+
+<div class="bad"><b>&#9888; THE CARVE-OUT WALL, in its sharpest form in the fleet.</b>
+<code>dockRailRendersFace</code> is <code>shellFaces &amp;&amp; pinned &amp;&amp; migrated</code>.
+The moment <code>migrated('electraControl')</code> becomes true the drawer stops painting
+<code>ElectraControlCard</code> and starts painting <code>&lt;ModuleShell view='drawer'&gt;</code>
+— and the def has <b>zero params and zero ports</b>, so that faceplate is an empty plate with a
+jack rail that has no jacks. The 36-slot matrix, the rename affordance and the connect button
+all vanish at once, on a module the owner's rack contains on every load. <b>The face has to BE
+the board, or promotion deletes the module.</b></div>
+
+<div class="cols">
+<div>
+  <div class="drawer">
+    <div class="drawerbar">
+      <span class="nm">ELECTRA CONTROL</span>
+      <span class="key">E</span>
+      <div class="connect">Send to Electra</div>
+    </div>
+
+    <div class="plate">
+      <div class="board">
+
+        <!-- BANK TOP = rows 1-2 = control set 1 (pots 1-6 then 7-12) -->
+        <div class="bank">
+          <div class="banklab">TOP</div>
+          <div class="cell"><div class="stripe" style="background:var(--c1)"></div>
+            <i style="--v:.62;--kc:var(--c1)"></i><b>Punch</b><span class="pen">&#9998;</span></div>
+          <div class="cell"><div class="stripe" style="background:var(--c1)"></div>
+            <i style="--v:.35;--kc:var(--c1)"></i><b>ADSR Dec</b><span class="pen">&#9998;</span></div>
+          <div class="cell"><div class="stripe" style="background:var(--c2)"></div>
+            <i style="--v:.74;--kc:var(--c2)"></i><b>Cutoff</b><span class="pen">&#9998;</span></div>
+          <div class="cell"><div class="stripe" style="background:var(--c2)"></div>
+            <i style="--v:.28;--kc:var(--c2)"></i><b>Reso</b><span class="pen">&#9998;</span></div>
+          <div class="cell"><div class="empty"></div><span class="emptycap">.</span></div>
+          <div class="cell"><div class="empty"></div><span class="emptycap">.</span></div>
+
+          <div class="cell"><div class="stripe" style="background:var(--c3)"></div>
+            <i style="--v:.5;--kc:var(--c3)"></i><b>BPM</b><span class="pen">&#9998;</span></div>
+          <div class="cell"><div class="stripe" style="background:var(--c3)"></div>
+            <i style="--v:.18;--kc:var(--c3)"></i><b>Swing</b><span class="pen">&#9998;</span></div>
+          <div class="cell"><div class="empty"></div><span class="emptycap">.</span></div>
+          <div class="cell"><div class="empty"></div><span class="emptycap">.</span></div>
+          <div class="cell"><div class="empty"></div><span class="emptycap">.</span></div>
+          <div class="cell"><div class="empty"></div><span class="emptycap">.</span></div>
+        </div>
+
+        <!-- BANK MID = rows 3-4 = control set 2 -->
+        <div class="bank">
+          <div class="banklab">MID</div>
+          <div class="cell"><div class="stripe" style="background:var(--c4)"></div>
+            <i style="--v:.55;--kc:var(--c4)"></i><b>Mix</b><span class="pen">&#9998;</span></div>
+          <div class="cell"><div class="empty"></div><span class="emptycap">.</span></div>
+          <div class="cell"><div class="empty"></div><span class="emptycap">.</span></div>
+          <div class="cell"><div class="empty"></div><span class="emptycap">.</span></div>
+          <div class="cell"><div class="empty"></div><span class="emptycap">.</span></div>
+          <div class="cell"><div class="empty"></div><span class="emptycap">.</span></div>
+
+          <div class="cell"><div class="empty"></div><span class="emptycap">.</span></div>
+          <div class="cell"><div class="empty"></div><span class="emptycap">.</span></div>
+          <div class="cell"><div class="empty"></div><span class="emptycap">.</span></div>
+          <div class="cell"><div class="empty"></div><span class="emptycap">.</span></div>
+          <div class="cell"><div class="empty"></div><span class="emptycap">.</span></div>
+          <div class="cell"><div class="empty"></div><span class="emptycap">.</span></div>
+        </div>
+
+        <!-- BANK BOT = rows 5-6 = control set 3 -->
+        <div class="bank">
+          <div class="banklab">BOT</div>
+          <div class="cell"><div class="empty"></div><span class="emptycap">.</span></div>
+          <div class="cell"><div class="empty"></div><span class="emptycap">.</span></div>
+          <div class="cell"><div class="empty"></div><span class="emptycap">.</span></div>
+          <div class="cell"><div class="empty"></div><span class="emptycap">.</span></div>
+          <div class="cell"><div class="empty"></div><span class="emptycap">.</span></div>
+          <div class="cell"><div class="empty"></div><span class="emptycap">.</span></div>
+
+          <div class="cell"><div class="empty"></div><span class="emptycap">.</span></div>
+          <div class="cell"><div class="empty"></div><span class="emptycap">.</span></div>
+          <div class="cell"><div class="empty"></div><span class="emptycap">.</span></div>
+          <div class="cell"><div class="empty"></div><span class="emptycap">.</span></div>
+          <div class="cell"><div class="empty"></div><span class="emptycap">.</span></div>
+          <div class="cell"><div class="stripe" style="background:var(--c5)"></div>
+            <i style="--v:.8;--kc:var(--c5)"></i><b>Master</b><span class="pen">&#9998;</span></div>
+        </div>
+
+      </div>
+      <div class="jackrail">&#9888; view='drawer' mounts a PatchPanel &mdash; and this def has ZERO ports.
+        MUST-VERIFY what an empty rail renders.</div>
+    </div>
+  </div>
+</div>
+
+<div>
+  <div class="zones"><h4>zone map</h4>
+    <table class="zt">
+      <tr><th>zone</th><th>what it is</th></tr>
+      <tr><td>the board</td><td>a <code>fullViewBody</code>. Not <code>editorSurface</code> —
+        that slot is UNWIRED and adopting it would mean a ModuleShell render-site change inside a
+        face PR for no behavioural gain. <code>fullViewBody</code> is wired, is already
+        drawer-gated, and does the job.</td></tr>
+      <tr><td>the 36 cells</td><td>enumerated from <code>(row, knob)</code> and <b>never from the
+        data</b>, so all 36 always render. That is what makes an EMPTY slot a visible <i>place</i>
+        rather than an absence &mdash; and it is why the "hide the empties" toggle is refused.</td></tr>
+      <tr><td>each filled cell</td><td>a real <code>&lt;Knob&gt;</code> proxying a param of
+        ANOTHER node. Every range, curve and default comes off the SOURCE <code>ParamDef</code>;
+        the card re-types <b>zero</b> numbers &mdash; the best-behaved card in this wave on the
+        one-source rule.</td></tr>
+      <tr><td>the stripe</td><td>a LIVE read of the source module's control colour, never copied
+        onto the slot.</td></tr>
+      <tr><td>bank labels</td><td><code>TOP</code> / <code>MID</code> / <code>BOT</code> &mdash;
+        &#9888; four source comments say <code>MIDDLE</code> / <code>BOTTOM</code>. The shipped
+        abbreviations are what the e2e asserts.</td></tr>
+      <tr><td>Send to Electra</td><td>in the BODY, not a <code>ShellActionCell</code>. An action
+        cell requires a probe, and this action's observable is <i>a MIDI device received a SysEx
+        preset</i> &mdash; which no probe shape can see. A probe that cannot observe the effect is
+        the sixstrum defect with a green tick.</td></tr>
+      <tr><td>bands</td><td><b>none.</b> Zero params, so <code>pages: []</code> and the empty-band
+        filter removes everything. On this one module "the body is the whole plate" is honest,
+        because there is nothing to lose &mdash; which is exactly the case the slot's own warning
+        is not about.</td></tr>
+    </table>
+  </div>
+
+  <div class="zones"><h4>the geometry, and why it is not what it looks like</h4>
+    <table class="zt">
+      <tr><th>fact</th><th>value</th></tr>
+      <tr><td>storage</td><td><code>slotIndex = (row-1)*6 + (knob-1)</code> &mdash; row-major</td></tr>
+      <tr><td>firmware</td><td><code>controlSetId = ceil(row/2)</code>;
+        <code>potId = (row odd ? 0 : 6) + knob</code></td></tr>
+      <tr><td>&#9888;</td><td><b>The storage order is NOT the firmware's walk.</b> The file says so:
+        <i>"Do NOT derive (controlSetId, potId) from a naive floor(slot/12)+1 / slot%12+1."</i></td></tr>
+      <tr><td>anchor 1</td><td>Row2&rarr;2 = cs1 / pot8 / slot 7</td></tr>
+      <tr><td>anchor 2</td><td>Row6&rarr;6 = cs3 / pot12 / slot 35 &mdash; the bottom-right cell
+        above</td></tr>
+      <tr><td>proof</td><td>a BIJECTION leg: all 36 slots hit every (controlSet, pot) of the 3&times;12
+        firmware grid exactly once</td></tr>
+      <tr><td>&#9888; drift</td><td><code>ControlContextMenu.svelte</code> &mdash; <b>the assignment
+        WRITER</b> &mdash; hand-writes its own <code>ELECTRA_ROWS</code>,
+        <code>ELECTRA_KNOBS</code> and <code>electraSlot()</code>, held together only by a comment.
+        The Push renderer re-exports from the source correctly; the writer does not. That is the
+        one place a wrong index silently binds a control to the wrong pot.</td></tr>
+    </table>
+  </div>
+
+  <div class="zones"><h4>ARIA</h4>
+    <table class="zt">
+      <tr><th>element</th><th>accessible value</th></tr>
+      <tr><td>each proxy</td><td><code>&lt;Knob&gt;</code>'s own <code>aria-valuetext</code>
+        carries the VALUE, so <code>aria-label</code> carries the COORDINATE:
+        <span class="aria">Punch &mdash; Row 1 knob 1, control set 1 pot 1</span>
+        &mdash; a NAME for a position, which is permitted resting text and is the one fact the
+        grid position only implies.</td></tr>
+      <tr><td>each empty cell</td><td>&#9888; <b>change it from <code>aria-hidden</code></b>:
+        <span class="aria">Row 3 knob 4 &mdash; empty</span>. An empty slot is a <i>place</i>, and
+        a board where 30 of 36 places are unspeakable cannot be described. This is not keyboard
+        a11y; it is the accessible NAME of a rendered element.</td></tr>
+      <tr><td>the board</td><td><code>role="group"</code>
+        <span class="aria">Electra One board &mdash; 6 rows of 6, 7 slots assigned</span>
+        &#9888; derive the count from <code>Object.keys(slots).length</code>, never type it.</td></tr>
+      <tr><td>Send to Electra</td><td><span class="aria">Send this board to the Electra One</span>
+        &mdash; extended with the <code>detail</code> string that is currently computed on four
+        paths and <b>rendered on none</b>. It goes here, not onto the plate.</td></tr>
+    </table>
+  </div>
+
+  <div class="warn"><b>&#9888; The blocker the inventory records is the WRONG one.</b> The
+  migration inventory carries <code>blockers: ['needs-note-entry-cell']</code> for this module.
+  That blocker is defined as <i>"a note/short-text entry <b>face cell</b> &hellip; no face
+  representation"</i>, and its probe looks for typed entry mounted by <b>ModuleShell &mdash; "the
+  ONE renderer every face cell is painted by"</b>. The rename field in this design is <b>not a
+  cell</b>: it is markup inside a module-owned <code>fullViewBody</code> that ModuleShell never
+  paints. The blocker is real for <code>vstInstrument</code> and <code>vstFx</code>, whose typed
+  field must be a ranked control. It is not real for a module whose entire surface is a body.
+  <b>A stale scoping claim goes quietly green forever</b> &mdash; correct the entry.</div>
+</div>
+</div>
+</div>
