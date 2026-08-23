@@ -2588,6 +2588,22 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   'moog903a',
   'moog962',
   'sampleHold',
+  // ⚠ SAMSLOOP WAS RECORDED AS UNPROMOTABLE, and the record was two claims of
+  // which only one survived re-measurement. `module-faceplates.md` said the
+  // shell had no cell for the file import (FIXED by #2010) and none for the
+  // RECORDER — the second half is now wrong too. The recorder's press resolves a
+  // callable off the live engine handle and drives it, which is precisely what
+  // an `engine-message` audition witnesses; the ledger records `delivered:
+  // false` for a press that reached nothing, so a dead REC button cannot pass.
+  //
+  // The affordance that genuinely had no home was the WAVEFORM — a picture with
+  // no interactive element, and `ShellPanelProbe` requires one. It rides the
+  // `fullViewBody` extension slot instead, which needs no probe because it is a
+  // slot rather than a cell. Every other card affordance maps: the loader to a
+  // file cell, TRIGGER to the canonical manual-strike audition, CHAN/BITS/RATE
+  // to node.data selectors, and the window to two param cells over a range that
+  // is finally the same on both sides of the contract.
+  'samsloop',
   'scaler',
   // control surface is one knob or nothing at all. Thin is not sloppy: each
   // still ships an honest band count (never padded to look substantial), a

@@ -497,6 +497,18 @@ describe('module-face lint — MOMENTARY pads (face.momentary)', () => {
    *  an id here ONLY after confirming against the module's DSP/card that the
    *  control latches; a press-pad goes on `face.momentary` instead. */
   const ACKNOWLEDGED_LATCHING = new Set<string>([
+    // SAMSLOOP `poly`, 2026-08-23. MONO (0) vs POLY (1) — whether a trigger
+    // arriving while the module is already sounding RESTARTS the single voice or
+    // takes another one.
+    //
+    // LATCHING, classified AT THE READ SITE. The worklet reads it once per
+    // block as a plain level (`Math.round(polyArr[0] ?? 0) === 1`) and hands the
+    // boolean to `startVoice`; there is no edge detector on it anywhere in the
+    // processor. It is a MODE the player sets and leaves — the whole point is
+    // that the NEXT several triggers layer — so a momentary render would drop
+    // the rack back to mono the instant they released the pad, which is the one
+    // behaviour nobody could use it for.
+    'samsloop:poly',
     // SPECTROGRAPH, 2026-08-23 (cut B). `view` picks which COLORMAP the
     // on-surface preview pulls: COLOR (heat ramp) or B/W (inverted grayscale).
     //

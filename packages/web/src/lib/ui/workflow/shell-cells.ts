@@ -86,6 +86,26 @@ import {
 } from '$lib/ui/modules/sixstrum-preset-actions';
 import { clearCloudseedTail } from '$lib/ui/modules/cloudseed-preset-actions';
 import {
+  knobToRate,
+  rateToKnob,
+  formatRatePercent,
+} from '$lib/audio/modules/samsloop-rate';
+import { SAMSLOOP_RATE_LANDMARKS } from '$lib/audio/modules/samsloop';
+import {
+  downloadSamsloopSample,
+  loadSamsloopAudioFile,
+  samsloopBitsOptions,
+  samsloopBitsValue,
+  samsloopChannelsOptions,
+  samsloopChannelsValue,
+  samsloopRateOptions,
+  samsloopRateValue,
+  selectSamsloopBits,
+  selectSamsloopChannels,
+  selectSamsloopRate,
+  toggleSamsloopRecord,
+} from '$lib/ui/modules/samsloop-face-actions';
+import {
   exposeAuditionLedgerForTests,
   type AuditionSeam,
 } from '$lib/ui/modules/audition-ledger';
@@ -581,6 +601,118 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
         action: 'drag',
         effect: { kind: 'data-rev', key: 'voiceRev' },
       },
+    },
+  },
+  samsloop: {
+    // ⚠ THE WARPED FADER'S FIRST CONSUMER, and the reason that cell exists. The
+    // `rate` param is declared `-2..+2 linear`, but `SamsloopCard.svelte` has
+    // never rendered it that way: it draws KNOB SPACE `0..1` and converts at the
+    // edges with a PIECEWISE map. The consequence is geometric — unity (+1) sits
+    // at the fader's MIDPOINT, and a generic linear fader would move it to 3/4
+    // and scatter every landmark with it.
+    //
+    // ⚠ THE MAP IS IMPORTED, NEVER RE-TYPED. `knobToRate`/`rateToKnob` are the
+    // module's own pair and the card calls the same two functions. This is the
+    // backdraft one-source rule applied to a FUNCTION instead of a number: a
+    // re-typed copy renders correctly, writes correct values and passes every
+    // runtime assertion, right up until someone corrects the map in one place —
+    // and then the two surfaces disagree about where unity is with nothing red.
+    // `warped-fader-source.test.ts` greps this file for exactly that.
+    //
+    // ⚠ THE LANDMARKS STAY IN PARAM UNITS. `ParamLandmark` has no position
+    // field; the cell places each at `toKnob(value)`. Declaring them as knob
+    // positions would reproduce the break this cell exists to prevent, neatly
+    // labelled.
+    rate: {
+      kind: 'warped-fader',
+      label: 'rate',
+      paramId: 'rate',
+      toKnob: rateToKnob,
+      fromKnob: knobToRate,
+      landmarks: SAMSLOOP_RATE_LANDMARKS,
+      format: formatRatePercent,
+    },
+
+    // The manual TRIGGER. ⚠ ITS SEAM ALREADY EXISTED: the card resolves
+    // `manualTrigger` off the engine handle, which IS `MANUAL_STRIKE_KEY`, so
+    // this is the canonical one-shot audition rather than a new path. An
+    // audition writes NOTHING to the graph by design, so `readParam`/`readData`
+    // are structurally blind to it and the ledger is the only observable.
+    'samsloop-trigger-{n}': {
+      kind: 'action',
+      label: 'trigger',
+      title: 'Start playback (one-shot plays once, loop starts the loop)',
+      mode: 'trigger',
+      probe: { effect: { kind: 'audition', seam: 'manual-strike' } },
+      onFire: (nodeId) => { fireManualStrike(nodeId); },
+    },
+
+    // The sample LOADER — the same decode-and-install action the card's file
+    // input runs. ⚠ Its `{ status, error }` return is not decoration: the card
+    // renders those two strings in `samsloop-upload-status` /
+    // `samsloop-upload-error`, two affordances the def never declared, and the
+    // `file` cell's contract carries them for free.
+    'samsloop-wav-input-{n}': {
+      kind: 'file',
+      label: 'Load audio...',
+      title: 'Load a sample (wav, mp3, m4a, ogg, flac, opus — up to 2 MB)',
+      accept: 'audio/*',
+      onFile: (nodeId, file) => loadSamsloopAudioFile(nodeId, file),
+    },
+
+    // ⚠ THE RECORDER, WHICH THE FACEPLATE SKILL RECORDED AS UNBUILDABLE. That
+    // claim ("the shell has no recorder cell") was measured again here and is
+    // WRONG: an `engine-message` audition is exactly this shape. Pressing REC
+    // writes NOTHING to `node.data` — the take lives in a node-keyed registry
+    // and commits once, on stop — so a `data` probe would fail on a perfectly
+    // live button. What the press DOES do is resolve a callable off the live
+    // engine handle and drive it, which is what the ledger witnesses.
+    'samsloop-rec-{n}': {
+      kind: 'action',
+      label: 'rec',
+      title: 'Start or stop recording into the sample buffer',
+      mode: 'trigger',
+      probe: { effect: { kind: 'audition', seam: 'engine-message' } },
+      onFire: (nodeId) => { toggleSamsloopRecord(nodeId); },
+    },
+
+    // Export the sample — the recording as a WAV, or an upload's ORIGINAL bytes
+    // verbatim. ⚠ The seam is `file-export` rather than `engine-message`: an
+    // export reaches no engine, and a probe watching `engine-message` here would
+    // be satisfied by a REC press on the same node.
+    'samsloop-download-{n}': {
+      kind: 'action',
+      label: 'export',
+      title: 'Download the loaded or recorded sample',
+      mode: 'trigger',
+      probe: { effect: { kind: 'audition', seam: 'file-export' } },
+      onFire: (nodeId) => { downloadSamsloopSample(nodeId); },
+    },
+
+    // The three RECORD-FORMAT switches. They are `node.data`, not params — they
+    // ride the Yjs envelope and are frozen for a take's duration — so they are
+    // selectors rather than param cells. The rosters are DERIVED from the
+    // module's own tables; the card paints the same strings.
+    'samsloop-chan-{n}': {
+      kind: 'selector',
+      tag: 'chan',
+      options: () => samsloopChannelsOptions(),
+      value: (node) => samsloopChannelsValue(node),
+      onchange: (nodeId, value) => selectSamsloopChannels(nodeId, value),
+    },
+    'samsloop-bits-{n}': {
+      kind: 'selector',
+      tag: 'bits',
+      options: () => samsloopBitsOptions(),
+      value: (node) => samsloopBitsValue(node),
+      onchange: (nodeId, value) => selectSamsloopBits(nodeId, value),
+    },
+    'samsloop-rate-select-{n}': {
+      kind: 'selector',
+      tag: 'rate',
+      options: () => samsloopRateOptions(),
+      value: (node) => samsloopRateValue(node),
+      onchange: (nodeId, value) => selectSamsloopRate(nodeId, value),
     },
   },
   wavecel: {

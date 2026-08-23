@@ -241,7 +241,15 @@ describe('shell cells — ACTION cells declare the handler their MODE needs', ()
       // here is what makes that a loud "unknown audition seam" rather than a
       // silently-accepted mis-wiring; the pad's own coverage is the `momentary`
       // branch of faces-parity + audition-ledger.test.ts.
-      const SEAMS = ['manual-strike', 'manual-gate', 'engine-message'];
+      //
+      // ⚠ `file-export` IS PRESENT, and it is a ONE-SHOT seam like the first and
+      // third. It exists because samsloop's sample EXPORT reaches no engine and
+      // no worklet — its whole effect leaves the app — so labelling it
+      // `engine-message` would make the ledger describe something that did not
+      // happen, AND would let a probe watching this node be satisfied by a REC
+      // press instead. That is the same aliasing `manual-press` was split out to
+      // prevent, one seam over.
+      const SEAMS = ['manual-strike', 'manual-gate', 'engine-message', 'file-export'];
       if (!SEAMS.includes(probe.effect.seam)) {
         problems.push(`${where}: unknown audition seam '${probe.effect.seam}'`);
       } else if (mode === 'gate' && probe.effect.seam !== 'manual-gate') {

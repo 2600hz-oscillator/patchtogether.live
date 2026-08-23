@@ -117,7 +117,7 @@
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
-import type { ParamOption } from '$lib/graph/types';
+import type { ParamLandmark, ParamOption } from '$lib/graph/types';
 import {
   decodeRecordedPcm,
   type SamsloopRecordedSample,
@@ -650,6 +650,29 @@ export const SAMSLOOP_RATE_RANGE = { min: -2, max: 2, defaultValue: 1 } as const
 export const SAMSLOOP_WINDOW_RANGE = { min: 0, max: 1 } as const;
 
 /**
+ * The RATE fader's named waypoints, in PARAM UNITS.
+ *
+ * ⚠ PARAM UNITS, NOT KNOB POSITIONS, and the distinction is the whole reason
+ * this is declarable at all. `ParamLandmark` is `{ value, label }` with NO
+ * position field: a landmark's PLACEMENT is derived by whatever cell draws it.
+ * The warped-fader cell puts each one at `toKnob(value)`, so the non-uniform
+ * spacing a player sees — unity at the MIDPOINT rather than three-quarters
+ * along — falls out of the module's own piecewise map instead of being typed
+ * here. Declaring these as fractions would hard-code the current map's geometry
+ * and silently stop matching it the day the map is corrected.
+ *
+ * The values are the rate scale's own integers and the labels are what the card
+ * has always painted; nothing here restates the conversion.
+ */
+export const SAMSLOOP_RATE_LANDMARKS: readonly ParamLandmark[] = [
+  { value: -2, label: '-200%' },
+  { value: -1, label: '-100%' },
+  { value: 0, label: '0%' },
+  { value: 1, label: 'Norm' },
+  { value: 2, label: '+200%' },
+];
+
+/**
  * LOOP vs ONE-SHOT, as a SELECTABLE roster rather than a two-position dial.
  *
  * ⚠ WITHOUT THIS THE CONTROL IS INERT ON A FACEPLATE, and that is measured
@@ -1176,6 +1199,103 @@ export const samsloopDef: AudioModuleDef = {
       options: SAMSLOOP_POLY_OPTIONS },
   ],
 
+  // The non-param affordances the faceplate ranks. Each one is a cell in
+  // `SHELL_CELLS.samsloop`; the id is the face key and the prefix is the testid
+  // the parity sweep drives. ⚠ These are what make the card's buttons
+  // REPRESENTABLE at all — a control with no family entry is invisible to
+  // `module-face-lint`'s completeness check, which is how a card-only affordance
+  // silently fails to survive promotion.
+  controlFamilies: [
+    { id: 'samsloop-trigger',     label: 'Manual trigger',     kind: 'other', testidPrefix: 'samsloop-trigger' },
+    { id: 'samsloop-wav-input',   label: 'Sample loader',      kind: 'other', testidPrefix: 'samsloop-wav-input' },
+    { id: 'samsloop-rec',         label: 'Record transport',   kind: 'other', testidPrefix: 'samsloop-rec' },
+    { id: 'samsloop-download',    label: 'Sample export',      kind: 'other', testidPrefix: 'samsloop-download' },
+    { id: 'samsloop-chan',        label: 'Record channels',    kind: 'other', testidPrefix: 'samsloop-chan' },
+    { id: 'samsloop-bits',        label: 'Record bit depth',   kind: 'other', testidPrefix: 'samsloop-bits' },
+    // ⚠ The id and the testidPrefix DIVERGE here on purpose. The card's rate
+    // switch renders one button per option with a derived testid
+    // (`samsloop-rate-${n}k`), so the prefix that actually appears on the card
+    // is `samsloop-rate`. The face key stays `-select` because a bare
+    // `samsloop-rate` would read as the RATE PARAM, which is a different
+    // control entirely — this one is the RECORDING sample rate.
+    { id: 'samsloop-rate-select', label: 'Record sample rate', kind: 'other', testidPrefix: 'samsloop-rate' },
+  ],
+
+  // ── THE FACEPLATE ─────────────────────────────────────────────────────────
+  //
+  // WHAT SAMSLOOP IS FOR, in one sentence, because every rank below descends
+  // from it: it is the module that turns a RECORDING into an INSTRUMENT — you
+  // capture or load one sample, choose a slice of it, and play that slice at any
+  // speed in either direction. The verb is "aim the window and fire it".
+  //
+  // THE TIER LADDER, read back as a sentence: at mini you get RATE, because a
+  // looper whose speed you cannot reach is a tape deck. At compact you get RATE
+  // and the WINDOW's two ends — aiming is the gesture. The plate adds MODE and
+  // the TRIGGER that fires it. The dock adds everything else: the recorder, the
+  // loader, the export, and POLY.
+  //
+  // ⚠ WHY `rate` LEADS AND NOT `start`. START is the more-used control in a
+  // session, but it is INERT AT SPAWN: with no sample loaded the window has
+  // nothing to aim at, and a hero that does nothing on a fresh module teaches
+  // that the module does nothing. RATE is meaningful the instant a sample
+  // arrives and is the one control that is never a no-op.
+  //
+  // ⚠ AND `rate` IS THE WARPED-FADER CELL, not an ordinary fader. Its param is
+  // declared `-2..+2 linear`, but the card has always drawn KNOB SPACE with a
+  // PIECEWISE map (`samsloop-rate.ts`), which puts unity (+1) at the fader's
+  // MIDPOINT rather than at `(1 - -2) / 4 = 3/4`. Drawing it linearly on the
+  // face would move "no transpose" a quarter of the control away from where
+  // every player's muscle memory has it — a functional-parity break that passes
+  // every gate, because they all read the ParamDef and the ParamDef is not what
+  // was drawn. See the `warped-fader` entry in `shell-cells.ts`.
+  face: {
+    // ⚠ The `-{n}` suffix is the NUMBERED-CONTROL form a `controlFamilies`
+    // entry is ranked by; a bare family id resolves to nothing.
+    order: [
+      'rate', 'start', 'end', 'mode', 'samsloop-trigger-{n}', 'poly',
+      'samsloop-wav-input-{n}', 'samsloop-rec-{n}', 'samsloop-download-{n}',
+      'samsloop-chan-{n}', 'samsloop-bits-{n}', 'samsloop-rate-select-{n}',
+    ],
+
+    pages: [
+      // ⚠ PAGED BY FUNCTION, and the two pages are genuinely different IDEAS
+      // rather than a header hunt: PLAY is what you do with a sample you have,
+      // SAMPLE is how you get one. Five bands would have been padding.
+      {
+        id: 'play',
+        label: 'play',
+        controls: ['rate', 'start', 'end', 'mode', 'poly', 'samsloop-trigger-{n}'],
+      },
+      {
+        id: 'sample',
+        label: 'sample',
+        controls: [
+          'samsloop-wav-input-{n}',
+          'samsloop-rec-{n}',
+          'samsloop-download-{n}',
+          'samsloop-chan-{n}',
+          'samsloop-bits-{n}',
+          'samsloop-rate-select-{n}',
+        ],
+      },
+    ],
+
+    // ⚠ `glyph: 'none'` IS FORCED, not chosen — and for the opposite reason to
+    // spectrograph's. This module DOES declare an audio output, so a glyph would
+    // resolve to a live trace happily. But the dock body below already paints
+    // this module's picture, and a live output trace beside a waveform of the
+    // SAME audio teaches that they are two different things. The lane tile keeps
+    // its ranked cells; the waveform is a dock surface.
+    glyph: 'none',
+
+    // The waveform, its window wash and the live playhead arrive through this
+    // slot. Promotion stops both surfaces rendering the card, and on a sampler
+    // that would leave the player placing loop points BLIND — START and END are
+    // the two controls whose entire meaning is "where in this picture".
+    // See `$lib/ui/modules/samsloop/shell-extension.ts`.
+    extension: 'samsloop',
+  },
+
   docs: {
     explanation:
       "A single-sample loop player. Load one audio file (drag/drop or the upload button — wav, mp3, m4a/aac, ogg, flac, opus, up to 2 MB) OR record straight from the microphone or a patched audio input; either way the source is decoded into one buffer that the on-card waveform shows. A recording runs up to 31 seconds at the default settings (MONO / 16-bit / 48 kHz); the CHAN, BITS and RATE switches trade fidelity for length up to a hard 60-second ceiling, and the card's \"N.NNs max\" readout always shows what the current settings buy. REC stops itself when it gets there. SAMSLOOP holds exactly ONE sample at a time — a new upload or recording REPLACES it (no playlist, no slots). After loading it sits SILENT and waits: it does NOT auto-play. A TRIGGER (a rising edge on the TRIG input, or the on-card TRIGGER button) starts playback, and what 'start' means depends on MODE — in one-shot mode the sample plays through the window once and returns to idle; in loop mode the trigger starts a continuous loop and a re-trigger restarts it from the window edge. Playback uses a fractional read-cursor with linear interpolation, so the RATE control is a full varispeed: positive = forward, negative = REVERSE, |value| = speed (2 = double speed / one octave up, 0.5 = half). The START and END markers crop which slice of the sample plays/loops, and they are FRACTIONS of the sample rather than frame counts — 0 is its beginning and 1 is its end whether the sample is two seconds or sixty. That is what lets a patched START CV or END CV sweep the whole sample at any length, and it is why re-loading a patch never lands the window on the wrong samples. POLY decides what a second trigger does while the first is still sounding: in MONO it restarts the single voice (a looper stealing itself, the historical behaviour), in POLY it takes another voice and the two layer, up to the same voice budget MIDI LANE uses, stealing the oldest under pressure. The output is mono.",
@@ -1205,6 +1325,20 @@ export const samsloopDef: AudioModuleDef = {
         "START of the playback window, as a FRACTION of the sample (0 = its beginning, 1 = its end) — the left waveform marker. Crops where playback/looping begins, and where reverse playback ends. Being sample-relative rather than a frame index means the same setting means the same musical point on a two-second sample and a sixty-second one, and that a re-loaded patch can never land it on the wrong samples. CV via start_cv.",
       end:
         "END of the playback window, as a FRACTION of the sample (the right waveform marker). Crops where playback/looping ends, and where reverse playback begins. Together START..END select the slice that plays or loops. ⚠ END is resolved BEFORE START: when both are driven at once END is clamped to the sample and START is then clamped to END, so the pair always describes a real window instead of two rules that each depend on the other. CV via end_cv.",
+      "samsloop-trigger-{n}":
+        "Fires playback by hand, exactly as a rising edge on the TRIG input would: in one-shot it plays the window through once, in loop it starts (or restarts) the loop. It works whether or not a cable is patched, which makes it the fastest way to audition a sample you have just loaded or recorded.",
+      "samsloop-wav-input-{n}":
+        "Loads one audio file as THE sample — wav, mp3, m4a/aac, ogg, flac or opus, up to 2 MB. SAMSLOOP holds exactly one sample, so a load REPLACES whatever was there (including a recording), and the window reopens over the whole of the new one. The status and error lines under the button report what was decoded, or why it was refused.",
+      "samsloop-rec-{n}":
+        "Starts and stops recording into the sample buffer, capturing whatever is patched to the record inputs at the current CHAN/BITS/RATE. A take REPLACES the loaded sample. It refuses to arm rather than silently shortening when the rack's sample budget cannot fit a usable take, and it stops itself at the length the current settings buy.",
+      "samsloop-download-{n}":
+        "Exports the sample to a file: a recording is written as a WAV at the rate, depth and channel count it was captured with, while an uploaded file comes back as its ORIGINAL bytes — an mp3 stays an mp3, losslessly. Nothing to export means nothing happens.",
+      "samsloop-chan-{n}":
+        "How many channels a RECORDING captures. MONO halves the bytes per second and so roughly doubles the take length the budget allows; STEREO records both record inputs. It applies to the next take — the settings are frozen for the duration of one, and changing this mid-take ends it cleanly.",
+      "samsloop-bits-{n}":
+        "The bit depth a RECORDING is quantized to. 16 is the default and is transparent for most material; 8 halves the bytes per second, doubling the available length at the cost of an audible noise floor — which on a looper is often a sound you want rather than a compromise.",
+      "samsloop-rate-select-{n}":
+        "The sample rate a RECORDING is decimated to. Lower rates trade bandwidth for length, and the decimation is by an INTEGER factor, so a requested rate that does not divide the audio context's rate lands on the nearest one that does — the card says so rather than claiming a rate it did not produce.",
       poly:
         "What a trigger does while the module is already sounding. MONO (0, default) restarts the single voice — the historical behaviour, and what a looper usually wants. POLY (1) gives each trigger its own read-cursor so overlapping strikes LAYER instead of interrupting, sharing the same voice budget MIDI LANE allocates and stealing the oldest voice when they are all busy. Voices sum rather than average, so layering gets louder rather than ducking.",
     },
@@ -1235,6 +1369,32 @@ export const samsloopDef: AudioModuleDef = {
       // real MIDI chain) and the worklet is TOLD.
       processorOptions: { maxVoices: MAX_POLY_VOICES },
     });
+
+    /**
+     * THE LIVE PLAYHEAD, as last published by the worklet.
+     *
+     * ⚠ PUSHED ON THE WORKLET'S OWN CLOCK, PULLED BY WHOEVER IS LOOKING. The
+     * cursor lives on the audio thread and there is no way to read it
+     * synchronously, so the worklet posts it at ~20 Hz and this is where the
+     * newest one rests. Surfaces READ this (through the handle's `playhead`
+     * key) at whatever rate they paint — nobody subscribes, so a surface that
+     * is not mounted costs nothing and a surface that mounts late is correct on
+     * its first frame instead of waiting for the next publish.
+     *
+     * ⚠ A FRACTION, matching the window params, so a consumer drawing into a
+     * canvas of its own width needs no knowledge of the buffer length.
+     * `position: -1` means NO VOICE IS SOUNDING — which a fraction cannot
+     * otherwise express, and which is a different fact from "position 0".
+     */
+    let playhead: { position: number; voices: number } = { position: -1, voices: 0 };
+    workletNode.port.onmessage = (e: MessageEvent) => {
+      const m = e.data as { type?: string; position?: number; voices?: number } | null;
+      if (!m || m.type !== 'playhead') return;
+      playhead = {
+        position: typeof m.position === 'number' ? m.position : -1,
+        voices: typeof m.voices === 'number' ? m.voices : 0,
+      };
+    };
 
     // Recording tap. Two audio inputs (L + R), 1 silent output (Web Audio
     // requires at least one output to keep the node alive in the graph;
@@ -1471,6 +1631,11 @@ export const samsloopDef: AudioModuleDef = {
             try { workletNode.port.postMessage({ type: 'trigger' }); } catch { /* */ }
           };
         }
+        // The live play position, as a FRACTION of the sample, plus how many
+        // voices are sounding. `position: -1` = nothing is playing. Read by the
+        // waveform surfaces on their own paint clock; see the `playhead`
+        // binding above for why this is a pull rather than a subscription.
+        if (key === 'playhead') return playhead;
         // Expose the tap's MessagePort + a helper to enable/disable it.
         // The card subscribes to the port's onmessage to receive captured
         // L/R chunks during a recording. The two are surfaced together
