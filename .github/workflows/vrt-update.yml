@@ -114,6 +114,14 @@ jobs:
     # automation over repeated bumps; the automation exists now, so the honest
     # companion to it is a ceiling with real room rather than one that re-reddens
     # every fortnight.
+    #
+    # ⚠ A SECOND LANE DERIVED THE SAME 125 INDEPENDENTLY. batch-22 G4 hit this
+    # same gate on its own eight baselines, ran the same formula, and rejected
+    # the minimum bump for the same reason (116 holds ZERO further batches).
+    # Two lanes reaching an identical ceiling from the same derivation, without
+    # coordinating, is the strongest evidence available that the number is
+    # computed rather than picked — and it is why the consolidation kept ONE
+    # comment instead of both.
     timeout-minutes: 125
     outputs:
       # 'true' only when a baseline commit was actually pushed. A capture that

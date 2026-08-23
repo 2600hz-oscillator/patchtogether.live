@@ -66,7 +66,7 @@ author a `face` and rank the controls — no new platform capability.
 | `delay` | audio | done | — |
 | `depolarizer` | audio | done | — |
 | `destroy` | audio | done | — |
-| `destructor` | video | — | — |
+| `destructor` | video | done | — |
 | `dockscope` | audio | — | — |
 | `drummergirl` | audio | done | — |
 | `dx7` | audio | done | — |
@@ -89,13 +89,13 @@ author a `face` and rank the controls — no new platform capability.
 | `kickdrum` | audio | done | — |
 | `lfo` | audio | done | — |
 | `lines` | video | — | — |
-| `luma` | video | — | — |
+| `luma` | video | done | — |
 | `lumakey` | video | done | — |
 | `lushgarden` | video | — | — |
 | `macrooscillator` | audio | done | — |
 | `mandelbulb` | video | done | — |
 | `mandleblot` | video | — | — |
-| `mapper` | video | — | — |
+| `mapper` | video | done | — |
 | `marbles` | audio | done | — |
 | `meowbox` | audio | done | — |
 | `milkdrop` | video | done | — |
@@ -173,7 +173,7 @@ author a `face` and rank the controls — no new platform capability.
 | `vca` | audio | done | — |
 | `vdelay` | video | done | — |
 | `vfpgaRunner` | video | — | — |
-| `videoMixer` | video | — | — |
+| `videoMixer` | video | done | — |
 | `videoOut` | video | done | — |
 | `warrensspectrum` | audio | done | — |
 | `warrensvisions` | video | done | — |

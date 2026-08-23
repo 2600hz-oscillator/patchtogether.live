@@ -260,6 +260,26 @@ const EXTENSION_BODY_ROLES: Readonly<Record<string, BodyRule>> = {
   // currently favours, a fact the card carried only as a colour.
   quadralogical: { role: 'picture', why: 'the 4-input XY crossfader\'s joystick field — a live 2×2 preview of the four inputs (its own `preview` port) with the diamond, the corner labels and the puck overlaid, plus its SCREEN switch. ⚠ The only body that is also a CONTROL: `face.xyPads[0].surface: \'body\'` means the dock paints no band cell for pos_x/pos_y, so this surface IS the joystick. The puck is a window onto the MIX, which is what keeps the module\'s own output on the plate after the standalone preview screen was removed. SCREEN OFF keeps the watch mark alive on a MIXER feeding two outputs (#2015).' },
   shapegen: { role: 'picture', why: 'the generative 3-D shape synthesiser\'s live preview canvas and its SCREEN switch. A GENERATOR whose `out` is the reason to patch it, so the retained watch mark is what stops a control labelled SCREEN behaving as a MUTE downstream (#2015).' },
+  // ── BATCH 22 · GROUP 4 — the video thin tail, the REMAINDER ───────────────
+  //
+  // All four PICTURES: a live preview canvas plus ONE control caption (the
+  // SCREEN button). ⚠ AND ALL FOUR ARE SURFACES THEIR MODULES NEVER HAD — none
+  // of `MapperCard` / `DestructorCard` / `LumaCard` / `VideoMixerCard` draws a
+  // canvas, so these bodies are ADDITIONS rather than ports of a card preview.
+  // That makes the declared role the FIRST statement on record about what each
+  // one paints. None of the four cards mounts `hideControls`, so none carries a
+  // MONITOR toggle or a resize grip to declare. Nothing on any of the four
+  // surfaces is a derived value in a text node.
+  //
+  // Grouped rather than interleaved alphabetically for the reason this roster
+  // already documents about itself three entries up: it has been caught by a
+  // merge on three consecutive rounds, and four separate alphabetical
+  // insertions are four separate conflict sites in the file most likely to take
+  // a concurrent edit. One block is one hunk.
+  mapper: { role: 'picture', why: 'the luminance-gated keyer\'s live MATTE preview and its SCREEN switch — and on a one-param module this canvas IS the merit argument, because "did the key cut where I wanted?" is not answerable from a fader reading 0.5. Stateless, so SCREEN OFF costs it only the OUTPUT, which is what the retained watch mark protects: the matte is produced FOR something downstream to composite (#2015).' },
+  destructor: { role: 'picture', why: 'the glitch/decay stack\'s live preview canvas and its SCREEN switch. Its four faders are DEGRADATION AMOUNTS whose only description is a look, so the picture is what makes them legible. Stateless — the scanline grid is a function of vUv.y, not of a clock — so the retained watch mark is about the OUTPUT of a chain effect, never an accumulator (#2015).' },
+  luma: { role: 'picture', why: 'the luminance-domain grade\'s live preview canvas and its SCREEN switch. ⚠ Do not confuse the directory with `lumakey` above: this is the single-input TONE PROCESSOR, that one is the two-input COMPOSITOR. The picture earns its place because the module ships a BIT-EXACT IDENTITY at its defaults, so the frame is the only thing distinguishing graded from untouched. Stateless mid-chain, so the watch mark protects the OUTPUT (#2015).' },
+  videoMixer: { role: 'picture', why: 'the 4-channel additive mixer\'s live COMPOSITE preview and its SCREEN switch — four faders that SUM have no per-channel observable, so this canvas is where "which sources am I actually seeing, and is it clipping to white?" is answered. Stateless (its own header records that binding its own output as a spare sampler was rejected as a feedback loop), and the JOIN of the graph: a lapsed watch mark would black out up to FOUR upstream chains at once (#2015).' },
 
   // ── BATCH 22 · GROUP 2b — the two faces that cost an attest ───────────────
   //

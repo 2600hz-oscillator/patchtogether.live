@@ -307,6 +307,41 @@ export const PENDING_FIRST_MEASUREMENT = [
       'after this merges and DELETE this entry — the gate reddens on a stale entry as loudly as ' +
       'on a missing one.',
   },
+  {
+    spec: 'face-screen-render.spec.ts',
+    why:
+      'lands with the batch-22 G4 face PR as the FLEET render-leg home for the SCREEN ON/OFF ' +
+      'switch, so no ci.yml run containing it has completed and there is no blob report to accept ' +
+      'a cost from. MEASURED locally, 2 workers, warm server, E2E_SWIFTSHADER=1: 30.7 s wall for ' +
+      '5 tests covering 27 modules + 1 persistence leg (2.1 min across a REPEAT=3 flake-check). ' +
+      '⚠ THAT IS DOWN FROM 51.2 s / 28 TESTS, and the restructure is the reason this entry is ' +
+      'worth reading. One test per module cost a MEASURED ~3.0 s marginal each (one test alone = ' +
+      '11.6 s wall; the 28-test file = 51.2 s at 2 workers ⇒ fixed ~8.6 s, marginal ~3.0 s), ' +
+      'nearly all of it page boot — ~81 s of booting to prove 27 DOM facts. The modules are now ' +
+      'batched 7 to a rack behind ONE boot, with every per-module assertion, dock open and named ' +
+      'failure unchanged. ' +
+      '⚠ THE COST MODEL HERE IS PAGE BOOTS, NOT FRAMES, and that is the one thing worth knowing ' +
+      'before budgeting it. Every leg does `goto /rack` + spawnPatch + centre + open the dock, ' +
+      'then asserts on DOM and LAYOUT facts only — no leg reads a pixel — and the spec sets ' +
+      '`__videoEngineFreezeRender` in an init script, so the per-frame `blitOutputForPreview` + ' +
+      '`drawPreviewDownscaled` loop these 27 video bodies would otherwise run is OFF for the whole ' +
+      'file. So the "cost scales with frames driven and nothing else" calibration in the ' +
+      'b3ntb0x entry above does NOT transfer: there are no frames driven. Cost is ~linear in the ' +
+      'table size. ' +
+      '⚠ TREAT THE LOCAL NUMBER AS A FLOOR ANYWAY. `backdraft-preview-toggle` calibrated 57.5 s ' +
+      'local against 358.2 CPU-s on CI (6x) and that WAS a frame-driving video spec; the frozen ' +
+      'render should put this one well under that multiplier, but "should" is a prediction and ' +
+      'this artifact exists because predictions were wrong. Do not use 51.2 s for shard-balance ' +
+      'reasoning — it is here to prove the spec was measured at all. ' +
+      '⚠ AND IT IS ONE FILE, so the whole table lands on ONE shard. ⚠ THE COST OF BEING ' +
+      'UNMEASURED IS NOT LOCAL TO ITS OWN SHARD, which this PR learned the expensive way: the ' +
+      'planner packs by FILE, so adding one file re-derives the whole plan — measured, adding ' +
+      'this single file changes the composition of NINE of the TEN shards. Its own shard passed; ' +
+      'a DIFFERENT shard went to 86% of budget because the reshuffle handed it a heavier draw. ' +
+      'That is why this entry matters more than its own runtime suggests. ' +
+      'Run `task e2e:timings:accept -- <run-id>` on the first green run after this merges and ' +
+      'DELETE this entry.',
+  },
   // Every entry here is a debt with a deadline.
   //
   // All six that stood on 2026-08-17 were paid in one accept against ci.yml run
