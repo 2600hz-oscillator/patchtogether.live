@@ -219,6 +219,92 @@ export async function observeScopePeak(
   );
 }
 
+/** What the SUT looked like at the moment an emit assertion was about to fail. */
+export interface EmitDiagnostics {
+  /** Whether `__engine()` resolved at all. */
+  engineUp: boolean;
+  /** Whether the SUT node is still in `__patch.nodes`. */
+  sutInPatch: boolean;
+  /** Whether the SUT→sink edge is in `__patch.edges` — the same HARD state
+   *  `addToPatch` waits on, never a DOM proxy. */
+  edgeInPatch: boolean;
+  /** LIVE `readParam` per driver-seeded param, read off the ENGINE rather than
+   *  the patch document. `null` = the module reports no such param.
+   *  ⚠ This is the discriminator: the patch doc says what the driver ASKED for,
+   *  this says what the module is actually RUNNING. */
+  liveParams: Record<string, number | null>;
+}
+
+/**
+ * Read the cause-discriminating state behind a failed emit assertion.
+ *
+ * ⚠ WHY THIS EXISTS, MEASURED. A `moog904a.audio` flake reported
+ * `maxPeak=0.0037, lastRms=0.0027, samples=165 over 5015 ms of a 5000 ms
+ * bound` — a message that gives the LEVEL and nothing about the CAUSE, and two
+ * incompatible explanations survived a full log read because of it. Probing the
+ * shipped worklet directly at that driver's exact operating point
+ * (`regeneration: 1, range: 2, cutoff: 800`, silence in) settled it: the module
+ * reaches **1.062** — 212× the 0.005 floor — within **0.25 s**, flat through
+ * 5 s, identical across three runs. So neither candidate story was true: the
+ * bound was not short (165 contiguous samples at ~30 ms spacing is the full
+ * window, and the early-out means the floor was genuinely never crossed) and
+ * the output was not faint-or-late (`lastRms ≈ maxPeak/√2` says a STEADY tone,
+ * not one still climbing). The observed level was ~287× below what the DSP
+ * does, which points at the spawn path — and the message could not say so.
+ *
+ * Called ONLY on the failing branch, so the happy path pays no round trip.
+ *
+ * Reading it: `regeneration=1` with the edge present ⇒ the tap or the edge
+ * carried nothing; `regeneration=0` ⇒ the seeded param never reached the
+ * module; anything in between ⇒ a partially-applied param, which is the case
+ * the moog904a numbers actually matched and which had no name before this.
+ */
+export async function readEmitDiagnostics(
+  page: Page,
+  sutId: string,
+  paramIds: string[],
+  edgeId: string,
+): Promise<EmitDiagnostics> {
+  return await page.evaluate(
+    ({ sutId, paramIds, edgeId }) => {
+      const w = globalThis as unknown as {
+        __engine?: () => {
+          readParam?: (n: { id: string; type: string; domain: string }, p: string) => number | undefined;
+        } | null;
+        __patch?: {
+          nodes: Record<string, { id: string; type: string; domain: string }>;
+          edges: Record<string, unknown>;
+        };
+      };
+      const eng = w.__engine?.() ?? null;
+      const node = w.__patch?.nodes?.[sutId];
+      const liveParams: Record<string, number | null> = {};
+      for (const id of paramIds) {
+        const v = eng && node ? eng.readParam?.(node, id) : undefined;
+        liveParams[id] = typeof v === 'number' ? v : null;
+      }
+      return {
+        engineUp: !!eng,
+        sutInPatch: !!node,
+        edgeInPatch: !!w.__patch?.edges?.[edgeId],
+        liveParams,
+      };
+    },
+    { sutId, paramIds, edgeId },
+  );
+}
+
+/** One-line rendering of {@link EmitDiagnostics} for an assertion message. */
+export function formatEmitDiagnostics(d: EmitDiagnostics): string {
+  const params = Object.entries(d.liveParams)
+    .map(([k, v]) => `${k}=${v === null ? 'ABSENT' : v}`)
+    .join(' ');
+  return (
+    `engine=${d.engineUp ? 'up' : 'DOWN'} sutInPatch=${d.sutInPatch} `
+    + `edgeInPatch=${d.edgeInPatch}${params ? ` | live params: ${params}` : ' | live params: (none seeded)'}`
+  );
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // THE OBSERVATION PLAN — and the BUDGET derived from it
 // ═══════════════════════════════════════════════════════════════════════════
