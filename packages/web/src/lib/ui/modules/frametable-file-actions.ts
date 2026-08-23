@@ -79,6 +79,48 @@ function writeFileMeta(nodeId: string, meta: FrametableFileMeta): void {
   (target.data as Record<string, unknown>).frametableFile = meta;
 }
 
+/** What the LAST SAVE press did. `ok: false` is recorded, never dropped. */
+export interface FrametableSaveOutcome {
+  /** Monotonic per node — distinguishes two presses with the same outcome. */
+  seq: number;
+  ok: boolean;
+  /** The failure, or null on success. */
+  error: string | null;
+}
+
+/**
+ * Record the outcome of ONE save press.
+ *
+ * ⚠ THIS EXISTS BECAUSE A FILE WRITE LEAVES NO OBSERVABLE IN THE PAGE, and the
+ * faced SAVE cell needs one. The reasoning is the AUDITION LEDGER's, transposed:
+ * an audition writes nothing to the graph by design, so the ledger records — per
+ * press — whether the seam actually delivered, and `delivered: false` is kept
+ * precisely so that "never pressed" and "pressed and reached nothing" are
+ * different observations. A disk write is the same shape of problem: the
+ * artifact leaves the page entirely.
+ *
+ * ⚠ AND IT IS NOT A `data-rev` COUNTER WEARING A DIFFERENT NAME. The pathology
+ * this repo outlaws is a revision that bumps whether or not the work happened —
+ * "a DEAD mute button that bumps the counter without muting anything". This is
+ * written INSIDE the handler at a point the whole chain has already been
+ * attempted, and it carries the OUTCOME, so a dead button writes nothing at all
+ * and a broken engine writes `ok: false` with the reason.
+ *
+ * ⚠ WHAT IT DELIBERATELY DOES *NOT* CLAIM: that a file reached the disk. That is
+ * `frametableFile`, written only on success, and it is the stronger of the two.
+ * The split matches the FILE cell one kind over, whose parity branch asserts the
+ * import "reported back" either way and leaves the content-level behaviour to a
+ * bespoke spec — here `frametable.spec.ts`'s SAVE→LOAD round-trip.
+ */
+function writeSaveOutcome(nodeId: string, ok: boolean, error: string | null): void {
+  const target = patch.nodes[nodeId];
+  if (!target) return;
+  if (!target.data) target.data = {};
+  const data = target.data as Record<string, unknown>;
+  const prev = data.frametableSave as FrametableSaveOutcome | undefined;
+  data.frametableSave = { seq: (prev?.seq ?? 0) + 1, ok, error } satisfies FrametableSaveOutcome;
+}
+
 /**
  * Forward a decoded atlas to the factory over the external-source channel (so
  * `engine.ts` stays untouched) and FREEZE the ring.
@@ -160,17 +202,24 @@ export async function loadFrametableFile(
 export async function saveFrametableFile(
   nodeId: string,
 ): Promise<{ status: string | null; error: string | null }> {
+  // ⚠ EVERY EXIT BELOW GOES THROUGH `done`, which is the whole point: an
+  // outcome that is only recorded on the happy path cannot distinguish a dead
+  // button from a failing one. See `writeSaveOutcome`.
+  const done = (status: string | null, error: string | null) => {
+    writeSaveOutcome(nodeId, error === null && status !== null, error);
+    return { status, error };
+  };
   try {
     const ve = videoEngine();
-    if (!ve) return { status: null, error: 'video engine not ready' };
+    if (!ve) return done(null, 'video engine not ready');
     const rb = ve.read(nodeId, 'ringReadback') as
       | { w: number; h: number; layers: number; chrono: Uint8Array[] }
       | undefined;
     if (!rb || !rb.chrono || rb.chrono.length < FRAMETABLE_ATLAS_TILES) {
-      return { status: null, error: 'ring not ready' };
+      return done(null, 'ring not ready');
     }
     const blob = await encodeAtlasBlob(rb.w, rb.h, rb.chrono);
-    if (!blob) return { status: null, error: 'PNG encode failed' };
+    if (!blob) return done(null, 'PNG encode failed');
     const name = frametableFileName();
     await saveBlobToDisk(blob, name);
     const fid = newFrametableFileId();
@@ -179,11 +228,12 @@ export async function saveFrametableFile(
       id: fid, name, cols: FRAMETABLE_ATLAS_COLS, rows: FRAMETABLE_ATLAS_ROWS,
       tileW: rb.w, tileH: rb.h, frames: FRAMETABLE_ATLAS_TILES, size: blob.size,
     });
-    return { status: `saved ${name}`, error: null };
+    return done(`saved ${name}`, null);
   } catch (err) {
-    // AbortError = the user cancelled the picker — not an error to surface.
-    if (err instanceof DOMException && err.name === 'AbortError') return { status: null, error: null };
-    return { status: null, error: err instanceof Error ? err.message : String(err) };
+    // AbortError = the user cancelled the picker — not an error to surface, but
+    // still an OUTCOME: the press ran and the player declined.
+    if (err instanceof DOMException && err.name === 'AbortError') return done(null, null);
+    return done(null, err instanceof Error ? err.message : String(err));
   }
 }
 

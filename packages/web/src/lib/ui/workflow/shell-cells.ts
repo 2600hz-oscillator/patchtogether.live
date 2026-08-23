@@ -430,21 +430,40 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
     // action cells are all AUDITIONS, whose observable is the audition ledger
     // because they deliberately write nothing at all.
     //
-    // This one is the opposite case. It is not an audition — it does not touch a
-    // seam, an engine handle callable or a ConstantSource — it reads the ring
-    // back, encodes a PNG and hands it to the browser. A `seam` probe would have
-    // nothing to record, and an `audition` record would be a lie about what
-    // happened. What it DOES leave behind is the descriptor on
-    // `node.data.frametableFile`, written LAST, after the disk write — so a
-    // probe that sees it change has proved the whole chain ran, and one that
-    // does not has proved the button is dead. That is exactly the
-    // pressed-and-reached-nothing distinction the ledger exists to preserve,
-    // reached through the oracle this action actually has.
+    // This one is the opposite case. It is not an audition — it touches no seam,
+    // no engine-handle callable and no ConstantSource — it reads the ring back,
+    // encodes a PNG and hands it to the browser. An `audition` record would be a
+    // lie about what happened.
+    //
+    // ⚠ AND THE OBSERVABLE IS `frametableSave`, NOT `frametableFile`, WHICH THE
+    // FIRST DRAFT OF THIS CELL GOT WRONG. `frametableFile` is the success-only
+    // descriptor, and it is the stronger claim — but it is UNREACHABLE in the
+    // sweep's scene, for a reason that is a property of the harness rather than
+    // of this module. MEASURED on this branch: `spawnPatch` populates the graph
+    // store and NEVER reconciles the engine, so with a frametable spawned and
+    // its dock OPEN the video engine holds `nodes: []` and `rafId: null` — and
+    // the same probe reports the same emptiness for `chroma`, an already-shipped
+    // video face, which is what makes it a scene fact and not a frametable one.
+    // With no engine node there is no ring to read, so NO honest probe of a real
+    // save can pass there; asserting one would have been a gate that fails on
+    // correct code.
+    //
+    // `frametableSave` is the outcome record every exit of `saveFrametableFile`
+    // writes — `{ seq, ok, error }`, with `ok: false` KEPT — which is the
+    // audition ledger's own principle applied to a disk write: "never pressed"
+    // and "pressed and reached nothing" must stay distinguishable. So the probe
+    // asserts the press RAN THE HANDLER AND REPORTED, which is exactly what the
+    // FILE branch one kind over asserts of an import ("Either way the action RAN
+    // — which is what 'not inert' means here"), and the content-level behaviour
+    // stays with the bespoke spec, exactly as that branch leaves it to
+    // `dx7-syx-load.spec.ts`. Here that spec is `frametable.spec.ts`, whose
+    // SAVE→LOAD round-trip drives a REAL engine and asserts the atlas restores
+    // the ring.
     'frametable-save-file-{n}': {
       kind: 'action',
       label: 'Save table',
       title: 'Write the current 60-frame ring to a lossless .frametable.png atlas file (FREEZE first to hold a specific 60 frames)',
-      probe: { effect: { kind: 'data', key: 'frametableFile', expect: 'changed' } },
+      probe: { effect: { kind: 'data', key: 'frametableSave', expect: 'changed' } },
       onFire: (nodeId) => { void saveFrametableFile(nodeId); },
     },
   },

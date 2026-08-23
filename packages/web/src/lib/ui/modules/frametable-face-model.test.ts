@@ -234,17 +234,39 @@ describe('frametable face — the FILE workflow survives promotion', () => {
     }
   });
 
-  it('⚠ the SAVE cell probes node.data, because a file write leaves nothing else', () => {
+  it('⚠ the SAVE cell probes an OUTCOME record, because a file write leaves nothing else', () => {
     const cell = shellCellFor('frametable', { kind: 'family', key: 'frametable-save-file-{n}' } as never);
     expect(cell?.kind).toBe('action');
     const probe = (cell as { probe?: { effect?: { kind?: string; key?: string } } }).probe;
     // An `audition` probe would be a lie: this action touches no seam, no
-    // engine-handle callable and no ConstantSource. The descriptor stamp is the
-    // ONLY residue, and `saveFrametableFile` writes it LAST — after the disk
-    // write — so seeing it change proves the whole chain ran.
+    // engine-handle callable and no ConstantSource.
     expect(probe?.effect?.kind, 'a data probe, not an audition').toBe('data');
-    expect(probe?.effect?.key).toBe('frametableFile');
+    // ⚠ THE OUTCOME, NOT THE DESCRIPTOR. `frametableFile` is the stronger,
+    // success-only claim and it is UNREACHABLE in the parity scene: measured on
+    // this branch, `spawnPatch` never reconciles the engine, so the video engine
+    // holds zero nodes even with the dock open and there is no ring to read.
+    expect(probe?.effect?.key, 'the record every press writes').toBe('frametableSave');
+  });
+
+  it('⚠ EVERY exit of the save records an outcome — `ok: false` is kept, not dropped', () => {
+    // The audition ledger's principle, transposed to a disk write: an outcome
+    // recorded only on the happy path cannot tell a DEAD button from a FAILING
+    // one, which is the exact vacuity the ledger exists to prevent.
     const actions = read(ACTIONS_SRC);
+    const body = actions.slice(actions.indexOf('export async function saveFrametableFile'));
+    const fn = body.slice(0, body.indexOf('\n}\n'));
+    // ⚠ SLICED FROM `try {`, so the `done` HELPER'S OWN `return { status, error }`
+    // is excluded. The first draft of this test did not, matched that line, and
+    // reported a violation that did not exist — an instrument bug that reads
+    // exactly like the defect it hunts.
+    const exits = fn.slice(fn.indexOf('try {'));
+    const returns = [...exits.matchAll(/return\s+([a-zA-Z{]\w*)/g)].map((m) => m[1]);
+    expect(returns.length, 'the function has several exits').toBeGreaterThan(3);
+    for (const r of returns) {
+      expect(r, 'every exit funnels through the outcome-recording `done`').toBe('done');
+    }
+    // …and the descriptor is still success-only, written AFTER the disk write,
+    // so the weaker probe above did not weaken the stronger claim.
     const stampAt = actions.indexOf('writeFileMeta(nodeId, {');
     const diskAt = actions.indexOf('await saveBlobToDisk(');
     expect(diskAt, 'the disk write exists').toBeGreaterThan(-1);
@@ -342,7 +364,19 @@ describe('frametable face — the picture, the pads and the band structure', () 
     const bands = dockFacePlan(frametableDef) ?? [];
     expect(bands.map((b) => b.id)).toEqual(['engine', 'scan', 'field', 'ring']);
     expect(bands.length, 'below the rail threshold').toBeLessThan(DOCK_TAB_MIN_BANDS);
-    expect(dockTabPlan(frametableDef)?.tabbed ?? false, 'so the dock renders a COLUMN').toBe(false);
+    // ⚠ `dockTabPlan` TAKES BANDS AND RETURNS `DockTab[] | null`, and the first
+    // draft of this line passed the DEF and read a `.tabbed` field that does not
+    // exist — `undefined ?? false` is `false`, so it asserted `false === false`
+    // and would have stayed green if this face had grown a rail. vitest accepted
+    // it; svelte-check is what refused it, which is the whole reason `typecheck`
+    // is a separate gate from `test`.
+    expect(dockTabPlan(bands), 'so the dock renders a COLUMN, not a rail').toBeNull();
+    // POSITIVE CONTROL: the same call DOES return a rail once the band count
+    // crosses the threshold, so the null above is a property of this face
+    // rather than of the arguments.
+    const padded = [...bands, ...bands, ...bands].slice(0, DOCK_TAB_MIN_BANDS);
+    expect(padded.length).toBe(DOCK_TAB_MIN_BANDS);
+    expect(dockTabPlan(padded), 'the predicate can say YES').not.toBeNull();
     // ⚠ NON-VACUITY: this must be a real margin, not a coincidence at the
     // boundary. Padding to seven to earn a rail is what the owner ruling
     // forbids, so the gap is the thing being asserted.
