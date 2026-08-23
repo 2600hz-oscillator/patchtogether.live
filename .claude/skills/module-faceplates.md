@@ -803,35 +803,44 @@ geometry is real code and stays in the hash, deliberately.)
   surfaces, videoOut, cameraInput, group, sticky, cadillac) — they get bespoke
   faces in a later spike, and the dock-side story for them is unsolved.
 - **`cube` and the odd ducks** whose "controls" are a viewport. Not attempted.
-- **`samsloop`-class modules** — but ⚠ **THIS ENTRY USED TO SAY "the shell has no
-  file-import OR recorder cell that reaches the dock", AND THE FIRST HALF IS NOW
-  FALSE (#2010).** The two were carried as one clause and they have different
-  answers:
+- **`samsloop`-class modules — RESOLVED, 2026-08-23. samsloop IS PROMOTED.** This
+  entry is kept, twice-corrected, because the way it was wrong is the point.
 
-  - **FILE IMPORT HAS A CELL, and it is generic and shipping.** `ShellFileCell`
-    (`shell-cells.ts:180` — `kind: 'file'` with `accept` / `onFile` / a
-    status-and-error line) renders at a generic site,
-    `ModuleShell.svelte:1080`. **`dx7` is the adopter to copy**: it is in
-    `STRICT_FACES`, it RANKS `dx7-syx-input-{n}` in `face.order` (`dx7.ts:213`)
-    and it puts it on a DOCK PAGE (`dx7.ts:226`), so a player imports a Yamaha
-    `.syx` cartridge from the faceplate today.
-  - **THE RECORDER DOES NOT.** samsloop's REC machine — the transport plus
-    CHAN/BITS/RATE — has no cell, and that part of the original sentence stands.
+  It first said *"the shell has no file-import OR recorder cell that reaches the
+  dock"*. #2010 falsified the first half. The entry was then updated to say
+  **"THE RECORDER DOES NOT [have a cell]"** — and that half was falsified too,
+  the next time anyone measured it instead of reading it:
 
-  So "samsloop-class is a platform PR" is no longer the right summary. Re-measure
-  the specific module: samsloop is **4 params** plus an `accept="audio/*"` loader
-  (→ file cell), a loop/one-shot toggle (→ `ShellToggleCell`) and ~9 buttons
-  (→ `ShellActionCell`, probe required). Only the recorder is genuinely missing.
+  - **FILE IMPORT HAS A CELL.** `ShellFileCell` (`kind: 'file'` with `accept` /
+    `onFile` / a status-and-error line), rendered at a generic site. `dx7` and
+    `wavecel` are the adopters to copy.
+  - **SO DOES THE RECORDER.** REC is an `ShellActionCell` whose probe is an
+    `engine-message` AUDITION. The reason it looked impossible is instructive:
+    pressing REC writes NOTHING to `node.data` — the take lives in a node-keyed
+    registry and commits ONCE, on stop — so `readData`, the oracle every other
+    cell branch uses, is *structurally blind* to an arm and a `data` probe fails
+    on a perfectly live button. The press does resolve a callable off the live
+    engine handle and drive it, which is exactly what the audition ledger
+    witnesses. CHAN/BITS/RATE are `node.data` SELECTORS.
+
+  **What genuinely had no home was the WAVEFORM** — and it was never a missing
+  CELL. `ShellPanelProbe` is required and names an element to click or drag; that
+  canvas has never carried a pointer handler, so a panel could only have shipped
+  by inventing a control the module does not have. It rides the `fullViewBody`
+  extension slot, which needs no probe because it is a SLOT rather than a cell.
 
   ⚠ **The general lesson, which is why this is written out rather than silently
   corrected.** A stale TEST goes red and gets fixed. A stale SCOPING CLAIM goes
   **quietly green forever** — it produces no failure, only absent work — and it
   reads as a considered architectural boundary rather than a snapshot, so each
-  agent who meets it defers instead of re-measuring. Two other modules were
-  parked on this one sentence (`wavecel`, recorded as "blocked on two cells that
-  do not exist"; `wavesculpt`, whose fourteen card affordances ALL have cells
-  today). **Before deferring to any scoping claim in this file, check the
-  primitive it says is missing.**
+  agent who meets it defers instead of re-measuring. This entry proves the
+  failure mode is not a one-off: it was corrected once, in detail, WITH this
+  warning attached, and the surviving half was still wrong. Two other modules
+  were parked on it (`wavecel`, recorded as "blocked on two cells that do not
+  exist" and since promoted; `wavesculpt`, whose fourteen card affordances all
+  have cells). **Before deferring to any scoping claim in this file, check the
+  primitive it says is missing — including the ones a previous correction left
+  standing.**
 - **Whether the owner will like it.** Design review is not a gate you can run.
 
 ## Related

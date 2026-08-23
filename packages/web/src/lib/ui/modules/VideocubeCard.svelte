@@ -21,7 +21,19 @@
     VIDEOCUBE_MODE_MORPH,
     VIDEOCUBE_MODE_CHAOS,
   } from '$lib/video/videocube-core';
-  import { atlasGeometry, FRAMETABLE_FILE_ACCEPT, FRAMETABLE_ATLAS_COLS, FRAMETABLE_ATLAS_ROWS } from '$lib/video/frametable-atlas';
+  // ⚠ THE SLOT INGEST IS NO LONGER IMPLEMENTED HERE. LIVE-reset and atlas LOAD
+  // moved to `./videocube-slot-actions`, which the FACED shell cells call too —
+  // so the card and the faceplate cannot drift about what a slot IS or which
+  // dataset tags the factory's slot router reads. The milkdrop/wavecel shape,
+  // and the same move `frametable-file-actions` made one PR earlier.
+  import {
+    FRAMETABLE_FILE_ACCEPT,
+    VIDEOCUBE_SLOTS,
+    VIDEOCUBE_SLOT_LABEL,
+    loadVideocubeSlotFile,
+    setVideocubeSlotLive,
+    type VideocubeSlot,
+  } from './videocube-slot-actions';
   import type { VideoEngine } from '$lib/video/engine';
   import { VIDEO_RES } from '$lib/video/engine';
   import type { ModuleNode } from '$lib/graph/types';
@@ -33,9 +45,23 @@
   let node = $derived(data?.node as ModuleNode);
   const engineCtx = useEngine();
 
-  type Slot = 'a' | 'b' | 'c';
-  const SLOTS: readonly Slot[] = ['a', 'b', 'c'];
-  const SLOT_LABEL: Record<Slot, string> = { a: 'FLOOR', b: 'WALL', c: 'CEIL' };
+  type Slot = VideocubeSlot;
+  const SLOTS = VIDEOCUBE_SLOTS;
+  const SLOT_LABEL = VIDEOCUBE_SLOT_LABEL;
+
+  // ⚠ LITERAL TESTIDS, NOT TEMPLATED — and the reason is a GATE, not style.
+  // `module-docs-lint` proves a declared `controlFamily.testidPrefix` exists by
+  // GREPPING the card source (`cards.includes(f.testidPrefix)`), so a testid
+  // built as `` `videocube-${slot}-live` `` is invisible to it and every one of
+  // the six slot families would read as undeclared. The EMITTED strings are
+  // byte-identical to what this card has always rendered, so `videocube.spec.ts`
+  // and `videocube-assign.spec.ts` are untouched — only the SOURCE changes, and
+  // only so the contract layer can see what the card already emits.
+  const SLOT_TESTID: Record<Slot, { select: string; live: string; load: string; file: string }> = {
+    a: { select: 'videocube-a-select', live: 'videocube-a-live', load: 'videocube-a-load', file: 'videocube-a-file-input' },
+    b: { select: 'videocube-b-select', live: 'videocube-b-live', load: 'videocube-b-load', file: 'videocube-b-file-input' },
+    c: { select: 'videocube-c-select', live: 'videocube-c-live', load: 'videocube-c-load', file: 'videocube-c-file-input' },
+  };
 
   function p(name: string): number {
     const def = videocubeDef.params.find((d) => d.id === name);
@@ -154,16 +180,9 @@
   let slotError = $state<Record<Slot, string | null>>({ a: null, b: null, c: null });
 
   function setLive(slot: Slot): void {
-    const ve = getVideoEngine();
-    if (!ve) return;
-    // A tiny tagged clear element resets the factory's slot back to LIVE capture.
-    const c = document.createElement('canvas');
-    c.width = 1; c.height = 1;
-    c.dataset.videocubeSlot = slot;
-    c.dataset.videocubeClear = '1';
-    ve.attachExternalSource(id, 'image', c);
-    slotStatus[slot] = 'live';
-    slotError[slot] = null;
+    const { status, error } = setVideocubeSlotLive(id, slot);
+    slotStatus[slot] = status;
+    slotError[slot] = error;
   }
 
   async function onSlotFileChange(slot: Slot, ev: Event): Promise<void> {
@@ -172,30 +191,10 @@
     if (!file) return;
     slotError[slot] = null;
     slotStatus[slot] = 'loading...';
-    try {
-      const bmp = await createImageBitmap(file);
-      const geo = atlasGeometry(bmp.width, bmp.height);
-      if (!geo.valid) {
-        bmp.close?.();
-        throw new Error(`not a ${FRAMETABLE_ATLAS_COLS}×${FRAMETABLE_ATLAS_ROWS} frametable atlas`);
-      }
-      const ve = getVideoEngine();
-      if (!ve) throw new Error('video engine not ready');
-      const c = document.createElement('canvas');
-      c.width = bmp.width; c.height = bmp.height;
-      const cx = c.getContext('2d');
-      if (!cx) throw new Error('no 2d context');
-      cx.drawImage(bmp, 0, 0);
-      c.dataset.videocubeSlot = slot;
-      ve.attachExternalSource(id, 'image', c);
-      bmp.close?.();
-      slotStatus[slot] = `file · ${geo.frames}f`;
-    } catch (err) {
-      slotError[slot] = err instanceof Error ? err.message : String(err);
-      slotStatus[slot] = null;
-    } finally {
-      try { input.value = ''; } catch { /* */ }
-    }
+    const { status, error } = await loadVideocubeSlotFile(id, slot, file);
+    slotStatus[slot] = status;
+    slotError[slot] = error;
+    try { input.value = ''; } catch { /* */ }
   }
 
   // ── Live preview of video_out + the two on-card visualizers (Cube-parity).
@@ -370,20 +369,20 @@
 
         <div class="slots">
           {#each SLOTS as slot (slot)}
-            <div class="slot-row" data-testid={`videocube-${slot}-select`}>
+            <div class="slot-row" data-testid={SLOT_TESTID[slot].select}>
               <span class="slot-label">{SLOT_LABEL[slot]}</span>
               <button
                 type="button"
                 class="vc-btn nodrag"
-                data-testid={`videocube-${slot}-live`}
+                data-testid={SLOT_TESTID[slot].live}
                 title="Use the connected LIVE video input for this slot"
                 onclick={() => setLive(slot)}
               >LIVE</button>
-              <label class="vc-btn nodrag file-load" data-testid={`videocube-${slot}-load`}
+              <label class="vc-btn nodrag file-load" data-testid={SLOT_TESTID[slot].load}
                 title="Load a .frametable.png atlas into this slot (session-only in v1)">
                 <input type="file" accept={FRAMETABLE_FILE_ACCEPT}
                   onchange={(ev) => onSlotFileChange(slot, ev)}
-                  data-testid={`videocube-${slot}-file-input`} />
+                  data-testid={SLOT_TESTID[slot].file} />
                 <span>Load…</span>
               </label>
               {#if slotStatus[slot]}<span class="slot-status">{slotStatus[slot]}</span>{/if}

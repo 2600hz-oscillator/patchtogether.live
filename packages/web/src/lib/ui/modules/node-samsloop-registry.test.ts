@@ -527,8 +527,39 @@ describe('writeSamsloopTake — the commit shape', () => {
     expect(sample.rate).toBe(48_000);
     expect(target.data.sampleLength).toBe(480);
     expect(target.data.sampleRate).toBe(48_000);
+    // ⚠ THE WINDOW IS A FRACTION, SO IT DOES NOT MENTION 480 AT ALL — and that
+    // independence is the assertion, not an incidental unit change. `end` used
+    // to be the frame count, which meant a take longer than the `0..1e6` param
+    // ceiling (~20.8 s at 48 kHz) wrote an END the model silently clamped away.
+    // A fraction says "the whole take" for a 480-frame take and a 60-second one
+    // in the same two numbers.
     expect(target.params.start, 'the window opens over the whole take').toBe(0);
-    expect(target.params.end).toBe(480);
+    expect(target.params.end, 'a FRACTION of the take, never its frame count').toBe(1);
+  });
+
+  it('the committed window is INDEPENDENT of take length — the 1e6-clamp regression', () => {
+    // ⚠ THE NEGATIVE CONTROL, AND IT USES A GENUINELY LONG TAKE. 1.5 M frames is
+    // 31.25 s at 48 kHz — the module's own default-settings ceiling, and PAST
+    // the `0..1e6` the params used to declare. Under the old frame indexing this
+    // committed `end = 1_500_000`, which the model clamped to 1e6: the last
+    // ~10.4 s of every long recording was unreachable on both surfaces. Asserted
+    // against the SHORT take's result so the property under test is that the two
+    // AGREE, which a length-dependent unit cannot do.
+    const frames = 1_500_000;
+    const longTarget = { data: {} as Record<string, unknown>, params: {} as Record<string, number> };
+    const res = writeSamsloopTake(
+      longTarget,
+      take({ l: new Float32Array(frames).fill(0.5), r: new Float32Array(frames).fill(0.5) }),
+    );
+    expect(res).not.toBeNull();
+    expect(res!.frames, 'the take really is longer than the old 1e6 ceiling').toBe(frames);
+    expect(longTarget.data.sampleLength).toBe(frames);
+
+    const shortTarget = { data: {} as Record<string, unknown>, params: {} as Record<string, number> };
+    writeSamsloopTake(shortTarget, take());
+    expect(longTarget.params.end, 'a 31 s take opens over all of itself').toBe(1);
+    expect(longTarget.params.end).toBe(shortTarget.params.end);
+    expect(longTarget.params.start).toBe(shortTarget.params.start);
   });
 
   it('clears the UPLOAD keys — the one-sample invariant, expressed in the data', () => {

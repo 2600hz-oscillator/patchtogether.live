@@ -27,6 +27,10 @@ import {
   SAMSLOOP_MAX_DECODED_SAMPLES,
   SAMSLOOP_TARGET_SAMPLE_RATE,
   SAMSLOOP_RATE_RANGE,
+  SAMSLOOP_WINDOW_RANGE,
+  SAMSLOOP_MODE_OPTIONS,
+  SAMSLOOP_POLY_OPTIONS,
+  samsloopWindowToFraction,
   createSamsloopRecMachine,
   samsloopRecStart,
   samsloopRecAppend,
@@ -629,42 +633,16 @@ describe('samsloopDecodeBytesB64 — engine-factory hydrate helper', () => {
 
 // ---------- varispeed mapping ----------
 
-describe('samsloopMath.rescaleBoundaries (perf-zip boundary-restore fix)', () => {
-  it('is a no-op when the re-decoded length matches the saved length (WAV / same machine)', () => {
-    expect(samsloopMath.rescaleBoundaries(2700, 8100, 10800, 10800)).toBeNull();
-  });
-
-  it('proportionally maps a sub-window when the buffer re-decodes longer', () => {
-    // Saved 25%..75% over a 1000-sample buffer; re-decode yields 2000 samples
-    // (e.g. a non-WAV source decoded on a higher-rate AudioContext). The window
-    // must keep its 25%..75% placement → 500..1500.
-    const r = samsloopMath.rescaleBoundaries(250, 750, 1000, 2000);
-    expect(r).toEqual({ start: 500, end: 1500 });
-  });
-
-  it('proportionally maps when the buffer re-decodes shorter', () => {
-    const r = samsloopMath.rescaleBoundaries(500, 1500, 2000, 1000);
-    expect(r).toEqual({ start: 250, end: 750 });
-  });
-
-  it('re-anchors a pristine full-buffer window to the new length', () => {
-    // start=0, end>=savedLen (or the 1e6 default ceiling) → full window.
-    expect(samsloopMath.rescaleBoundaries(0, 1000, 1000, 1500)).toEqual({ start: 0, end: 1500 });
-    expect(samsloopMath.rescaleBoundaries(0, 1e6, 1000, 1500)).toEqual({ start: 0, end: 1500 });
-  });
-
-  it('keeps start < end after rescale (never inverts the window)', () => {
-    const r = samsloopMath.rescaleBoundaries(999, 1000, 1000, 4)!;
-    expect(r.start).toBeLessThan(r.end);
-    expect(r.end).toBeLessThanOrEqual(4);
-  });
-
-  it('returns null on degenerate lengths', () => {
-    expect(samsloopMath.rescaleBoundaries(10, 20, 0, 100)).toBeNull();
-    expect(samsloopMath.rescaleBoundaries(10, 20, 100, 0)).toBeNull();
-    expect(samsloopMath.rescaleBoundaries(10, 20, Number.NaN, 100)).toBeNull();
-  });
-});
+// ⚠ `samsloopMath.rescaleBoundaries` AND ITS SIX TESTS ARE DELETED HERE, not
+// moved. It proportionally re-mapped a saved FRAME window onto a re-decoded
+// buffer of a different length — the "perf-zip boundary-restore fix" — because
+// an absolute index is only meaningful against the length the buffer had at
+// SAVE time. The window is a FRACTION now, which is length-invariant, so the
+// failure it repaired CANNOT OCCUR and the helper had no caller left but these
+// tests. Keeping it would leave a plausible-looking function for a future agent
+// to "fix" against fractional values, which is the trap; the round-trip
+// property it protected is asserted directly by
+// `samsloop-boundaries-roundtrip.spec.ts` and by the migration tests below.
 
 describe('samsloopMath.sliderToRate', () => {
   it('center (1.0) → unity forward', () => {
@@ -702,40 +680,83 @@ describe('samsloopMath.sliderToRate', () => {
 
 // ---------- start/end clamp ----------
 
-describe('samsloopMath.clampWindow', () => {
+describe('samsloopMath.clampWindow — FRACTIONS in, frames out', () => {
+  // ⚠ THE INPUTS ARE FRACTIONS NOW (knob + CV), not frame indices. These cases
+  // were re-expressed rather than re-tuned: each one still asks the question it
+  // always asked, in the unit the control actually carries.
+
   it('start < end in [0, len]', () => {
-    const { start, end } = samsloopMath.clampWindow(10, 100, 200);
+    const { start, end } = samsloopMath.clampWindow(0.05, 0.5, 200);
     expect(start).toBeGreaterThanOrEqual(0);
     expect(end).toBeGreaterThan(start);
     expect(end).toBeLessThanOrEqual(200);
   });
 
-  it('clamps negative start to 0', () => {
-    const w = samsloopMath.clampWindow(-50, 100, 200);
+  it('clamps a negative start (a −CV past the low end) to 0', () => {
+    const w = samsloopMath.clampWindow(-0.25, 0.5, 200);
     expect(w.start).toBe(0);
     expect(w.end).toBe(100);
   });
 
-  it('clamps end past buffer length to length', () => {
-    const w = samsloopMath.clampWindow(10, 9999, 500);
+  it('clamps an end past 1 (a +CV past the far end) to the buffer length', () => {
+    const w = samsloopMath.clampWindow(0.02, 20, 500);
     expect(w.start).toBe(10);
     expect(w.end).toBe(500);
   });
 
   it('enforces start < end even when caller passes start === end', () => {
-    const w = samsloopMath.clampWindow(50, 50, 200);
+    const w = samsloopMath.clampWindow(0.25, 0.25, 200);
     expect(w.end).toBeGreaterThan(w.start);
   });
 
   it('enforces start < end when caller passes start > end', () => {
-    const w = samsloopMath.clampWindow(150, 50, 200);
+    const w = samsloopMath.clampWindow(0.75, 0.25, 200);
     expect(w.end).toBeGreaterThan(w.start);
   });
 
-  it('clamps start to len-1 for too-large start', () => {
-    const w = samsloopMath.clampWindow(1000, 1200, 500);
+  it('clamps start to len-1 for a start at or past the far end', () => {
+    const w = samsloopMath.clampWindow(2, 2.4, 500);
     expect(w.start).toBe(499);
     expect(w.end).toBe(500);
+  });
+
+  // ── THE CV CLAMP ORDER, which only exists here ────────────────────────────
+  //
+  // The worklet is not importable under vitest, so this mirror is the ONLY
+  // place the END-FIRST rule is asserted. The alternative order is not merely
+  // different — it is undefined, because each bound would depend on the other's
+  // post-CV value.
+
+  it('END is resolved FIRST, so a +CV on START cannot push the window open', () => {
+    // START driven to 0.9 while END sits at 0.5. Under a start-first reading
+    // END would be dragged out to ~900 to stay above START. End-first pins END
+    // at the half mark and collapses START onto it instead — the window shrinks
+    // to the minimum width rather than growing.
+    const w = samsloopMath.clampWindow(0.9, 0.5, 1000);
+    expect(w.start, 'START is clamped DOWN to the resolved END').toBe(500);
+    expect(w.end, 'END stayed at the half mark, +1 for the minimum width').toBe(501);
+    expect(w.end, 'a start-first reading would have produced ~900').toBeLessThan(600);
+    expect(w.start).toBeLessThan(w.end);
+  });
+
+  it('ANCHOR — at the defaults a full +CV on START walks it to the far end', () => {
+    // start knob 0 + full-depth CV = 1. end stays 1 (the whole sample).
+    const w = samsloopMath.clampWindow(1, 1, 1000);
+    expect(w.end).toBe(1000);
+    expect(w.start, 'walked all the way to the far end').toBe(999);
+  });
+
+  it('ANCHOR — a full −CV on END walks the window back to the beginning', () => {
+    // end knob 1 + full-depth −CV = 0; start stays 0.
+    const w = samsloopMath.clampWindow(0, 0, 1000);
+    expect(w.start).toBe(0);
+    expect(w.end, 'collapsed to the first frame').toBe(1);
+  });
+
+  it('a non-finite fraction falls back to the full window rather than NaN', () => {
+    const w = samsloopMath.clampWindow(Number.NaN, Number.NaN, 400);
+    expect(w.start).toBe(0);
+    expect(w.end).toBe(400);
   });
 });
 
@@ -853,11 +874,11 @@ describe('samsloopMath.render — rate semantics around the dead-center default'
   });
 
   it('rate=0 freezes playback: cursor never moves, all samples == buf[start]', () => {
-    // A non-trivial window so we can see start-position parking. We seed
-    // start=37 in a 200-sample ramp; the cursor begins at 37 and the
-    // rate=0 path keeps it there for every output sample → out[i] = 0.185.
+    // A non-trivial window so we can see start-position parking. The window is
+    // a FRACTION now: 0.185 of a 200-sample ramp is frame 37, so the cursor
+    // begins at 37 and the rate=0 path keeps it there → out[i] = 0.185.
     const buf = rampBuffer(200);
-    const { out, active } = samsloopMath.render(buf, 50, 0, 37, 200, 'loop');
+    const { out, active } = samsloopMath.render(buf, 50, 0, 0.185, 1, 'loop');
     expect(active).toBe(true);
     for (let i = 0; i < 50; i++) {
       expect(out[i]).toBeCloseTo(37 / 200, 6);
@@ -1135,5 +1156,120 @@ describe('samsloop mic-record state machine — append + cap', () => {
     m = samsloopRecStart(m, 48000);
     expect(m.samples.length).toBe(0);
     expect(m.state).toBe('recording');
+  });
+});
+
+describe('samsloopWindowToFraction — the saved-patch migration', () => {
+  // ⚠ WHAT THIS PROTECTS. `start`/`end` were FRAME INDICES declared `0..1e6`.
+  // 1e6 frames is 20.8 s at 48 kHz while the module records to a documented
+  // 60 s, and a param write is clamped to its declared range — so END could not
+  // reach the tail of a long recording on either surface (the card passed
+  // `max={sampleLength}` and the model discarded the overshoot: the backdraft
+  // class). The window is a FRACTION now, and every patch saved before that
+  // has to arrive at the SAME AUDIBLE WINDOW it was saved with.
+
+  it('a saved frame window round-trips to the same audible slice', () => {
+    // Half-way to three-quarters of a 96 000-frame (2 s @ 48 k) sample.
+    const r = samsloopWindowToFraction(48_000, 72_000, 96_000)!;
+    expect(r.start).toBeCloseTo(0.5, 10);
+    expect(r.end).toBeCloseTo(0.75, 10);
+  });
+
+  it('the DIVISOR is the sample length, not the old 1e6 ceiling', () => {
+    // ⚠ THE FALLBACK THAT LOOKS RIGHT AND IS NOT. Dividing by 1e6 (the declared
+    // max) would turn a 2-second sample's full-length window into 9.6 % of
+    // itself — every saved loop silently truncated to a sliver. The saved
+    // `sampleLength` rides the same envelope as the params, so the exact
+    // divisor is always in hand.
+    const r = samsloopWindowToFraction(0, 96_000, 96_000)!;
+    expect(r.end, 'the whole sample, not 96000/1e6').toBe(1);
+    expect(r.end).not.toBeCloseTo(0.096, 3);
+  });
+
+  it("a legacy end of 1e6 means THE WHOLE SAMPLE, matching the old worklet's clamp", () => {
+    // The old default. The worklet then applied `min(len, endRaw)`, so what it
+    // actually played was the whole buffer — which is what 1 means now.
+    const r = samsloopWindowToFraction(0, 1e6, 96_000)!;
+    expect(r.start).toBe(0);
+    expect(r.end).toBe(1);
+  });
+
+  it('is IDEMPOTENT — re-running on a migrated value changes nothing', () => {
+    // It sits on a load path that runs more than once, so this is load-bearing
+    // rather than tidiness: a second pass must not divide a fraction again.
+    expect(samsloopWindowToFraction(0.5, 0.75, 96_000)).toBeNull();
+    expect(samsloopWindowToFraction(0, 1, 96_000)).toBeNull();
+  });
+
+  it('refuses rather than guesses when there is no length to divide by', () => {
+    expect(samsloopWindowToFraction(0, 96_000, 0)).toBeNull();
+    expect(samsloopWindowToFraction(0, 96_000, Number.NaN)).toBeNull();
+  });
+
+  it('orders the pair, so a saved start>end cannot produce an inverted window', () => {
+    const r = samsloopWindowToFraction(72_000, 48_000, 96_000)!;
+    expect(r.start).toBeLessThanOrEqual(r.end);
+  });
+
+  it('a 31 s take — past the old ceiling — migrates to the whole sample', () => {
+    // 1.5 M frames at 48 kHz. Under the old indexing `end` was clamped to 1e6,
+    // so the last ~10.4 s was unreachable. The fraction restores all of it.
+    const frames = 1_500_000;
+    const r = samsloopWindowToFraction(0, frames, frames)!;
+    expect(r.end).toBe(1);
+  });
+});
+
+describe('samsloop window + roster contract', () => {
+  it('start and end declare the FRACTION range, both directions', () => {
+    for (const id of ['start', 'end']) {
+      const p = samsloopDef.params.find((q) => q.id === id)!;
+      expect(p.min, `${id} min`).toBe(SAMSLOOP_WINDOW_RANGE.min);
+      expect(p.max, `${id} max`).toBe(SAMSLOOP_WINDOW_RANGE.max);
+    }
+  });
+
+  it('the window opens over the WHOLE sample by default', () => {
+    expect(samsloopDef.params.find((p) => p.id === 'start')!.defaultValue).toBe(0);
+    expect(samsloopDef.params.find((p) => p.id === 'end')!.defaultValue).toBe(1);
+  });
+
+  it('every two-state discrete param carries a roster — the moog962 trap', () => {
+    // A `0..1 discrete` param drawn as a knob has two reachable positions across
+    // the whole dial, so a drag quantises back to where it started and the
+    // control is INERT on a faceplate. `options` is the only mechanism that
+    // reaches a segmented cell. Asserted over the DEF rather than a list, so a
+    // future two-state param is covered without editing this test.
+    const twoState = samsloopDef.params.filter(
+      (p) => p.curve === 'discrete' && p.max - p.min === 1,
+    );
+    expect(twoState.length).toBeGreaterThan(0);
+    for (const p of twoState) {
+      expect(p.options, `${p.id} needs an options roster`).toBeTruthy();
+      expect(p.options!.length, `${p.id} roster is total`).toBe(2);
+    }
+  });
+
+  it('the rosters are TOTAL over their params — no value the dial can reach is unnamed', () => {
+    for (const [id, roster] of [
+      ['mode', SAMSLOOP_MODE_OPTIONS],
+      ['poly', SAMSLOOP_POLY_OPTIONS],
+    ] as const) {
+      const p = samsloopDef.params.find((q) => q.id === id)!;
+      const values = roster.map((o) => o.value).sort((a, b) => a - b);
+      expect(values, `${id} names every reachable state`).toEqual([p.min, p.max]);
+    }
+  });
+
+  it('the window CV ports target the window params and sweep the FULL sample', () => {
+    // `depth: 1` means a full natural-range sweep, and the natural range of a
+    // fraction IS the whole sample — for every sample, at every length. Against
+    // the old frame indexing the same declaration meant 1e6 frames.
+    for (const [port, target] of [['start_cv', 'start'], ['end_cv', 'end']] as const) {
+      const d = samsloopDef.inputs.find((i) => i.id === port)!;
+      expect(d, `${port} exists`).toBeTruthy();
+      expect(d.paramTarget).toBe(target);
+      expect(d.cvScale?.depth, `${port} sweeps the whole sample`).toBe(1);
+    }
   });
 });

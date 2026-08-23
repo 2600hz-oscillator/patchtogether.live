@@ -111,11 +111,13 @@
 // Params:
 //   rate (linear, default = 1.0 native rate): playback rate (negative = reverse, 1 = native).
 //   mode (discrete 0..1, default 1): 0 = one-shot, 1 = loop.
-//   start (linear 0..1e6 samples, default 0): in-buffer start sample.
-//   end (linear 0..1e6 samples, default 1e6): in-buffer end sample.
+//   start (linear 0..1 FRACTION of the sample, default 0): window start.
+//   end (linear 0..1 FRACTION of the sample, default 1): window end.
+//   poly (discrete 0..1, default 0): 0 = mono (re-trigger restarts), 1 = poly.
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
+import type { ParamLandmark, ParamOption } from '$lib/graph/types';
 import {
   decodeRecordedPcm,
   type SamsloopRecordedSample,
@@ -124,6 +126,7 @@ import {
   type SamsloopRecChannels,
 } from '$lib/audio/modules/samsloop-record';
 import { patch as livePatch } from '$lib/graph/store';
+import { MAX_POLY_VOICES } from '$lib/audio/modules/midi-lane';
 import workletUrl from '@patchtogether.live/dsp/dist/samsloop.js?url';
 import tapWorkletUrl from '@patchtogether.live/dsp/dist/samsloop-tap.js?url';
 
@@ -621,6 +624,119 @@ export async function samsloopDecodeBytesB64(
  *  file for the convention. */
 export const SAMSLOOP_RATE_RANGE = { min: -2, max: 2, defaultValue: 1 } as const;
 
+/**
+ * THE LOOP WINDOW IS A FRACTION OF THE SAMPLE, NOT A FRAME INDEX.
+ *
+ * ⚠ THIS REPLACED A FRAME-INDEXED WINDOW, AND THE OLD ONE CARRIED A LIVE BUG.
+ * `start`/`end` used to be frame counts declared `0..1e6`, which is **20.8 s at
+ * 48 kHz** — while this module records to a documented 60 s (31.25 s at the
+ * default settings, where the byte budget binds). A param write is clamped to
+ * its ParamDef range, so END COULD NOT REACH THE TAIL of any recording past
+ * ~20.8 s, on either surface. The card passed `max={sampleLength}` and the
+ * model silently clamped it: the backdraft class, shipping.
+ *
+ * ⚠ AND THE FRACTION IS NOT MERELY A RESCALE — IT DELETES A BUG CLASS. A frame
+ * index is only meaningful against the length the buffer had when it was
+ * SAVED, so a non-WAV source re-decoded at a different AudioContext rate
+ * (`decodeAudioData` resamples) pointed the saved window at the wrong samples.
+ * That is what `samsloopMath.rescaleBoundaries` existed to repair — and it is
+ * DELETED with this change rather than adapted, because a FRACTION is
+ * length-invariant by construction and the mismatch cannot arise at all.
+ *
+ * ⚠ IT IS ALSO WHAT MAKES THE CV PORTS HONEST. `cvScale.depth: 1` means "full
+ * natural-range sweep", and the natural range of a fraction IS the whole
+ * sample — for every sample, at every length. Against frames it meant 1e6 of
+ * them, which is neither the sample nor reachable.
+ */
+export const SAMSLOOP_WINDOW_RANGE = { min: 0, max: 1 } as const;
+
+/**
+ * The RATE fader's named waypoints, in PARAM UNITS.
+ *
+ * ⚠ PARAM UNITS, NOT KNOB POSITIONS, and the distinction is the whole reason
+ * this is declarable at all. `ParamLandmark` is `{ value, label }` with NO
+ * position field: a landmark's PLACEMENT is derived by whatever cell draws it.
+ * The warped-fader cell puts each one at `toKnob(value)`, so the non-uniform
+ * spacing a player sees — unity at the MIDPOINT rather than three-quarters
+ * along — falls out of the module's own piecewise map instead of being typed
+ * here. Declaring these as fractions would hard-code the current map's geometry
+ * and silently stop matching it the day the map is corrected.
+ *
+ * The values are the rate scale's own integers and the labels are what the card
+ * has always painted; nothing here restates the conversion.
+ */
+export const SAMSLOOP_RATE_LANDMARKS: readonly ParamLandmark[] = [
+  { value: -2, label: '-200%' },
+  { value: -1, label: '-100%' },
+  { value: 0, label: '0%' },
+  { value: 1, label: 'Norm' },
+  { value: 2, label: '+200%' },
+];
+
+/**
+ * LOOP vs ONE-SHOT, as a SELECTABLE roster rather than a two-position dial.
+ *
+ * ⚠ WITHOUT THIS THE CONTROL IS INERT ON A FACEPLATE, and that is measured
+ * rather than theoretical: a `0..1 discrete` param drawn as a knob has exactly
+ * two reachable positions across the dial's whole travel, so an ordinary drag
+ * quantises back to where it started. `faces-parity` failed `moog962` on
+ * precisely this shape, twice — *"dragging the knob commits a param change into
+ * the graph"*. `options` is the ONLY mechanism that reaches a segmented cell;
+ * `face.paramCells` has no segmented kind to declare.
+ *
+ * The names are the module's OWN — `SamsloopCard.svelte` has painted `LOOP` /
+ * `1-SHOT` on its mode button since the module shipped, and the `docs` prose
+ * calls them the same thing. Nothing here is invented.
+ */
+export const SAMSLOOP_MODE_OPTIONS: readonly ParamOption[] = [
+  { value: 0, label: 'one-shot' },
+  { value: 1, label: 'loop' },
+];
+
+/** MONO vs POLY, same selectability argument as the mode roster above: a
+ *  two-state discrete param needs a roster or it is an inert dial. */
+export const SAMSLOOP_POLY_OPTIONS: readonly ParamOption[] = [
+  { value: 0, label: 'mono' },
+  { value: 1, label: 'poly' },
+];
+
+/**
+ * Convert a saved FRAME-indexed window to the fractional one, idempotently.
+ *
+ * ⚠ THE DISCRIMINATOR IS `> 1`, AND IT IS SOUND RATHER THAN A HEURISTIC. A
+ * fraction is by definition within `[0, 1]`; a legacy frame index for any real
+ * sample is far outside it. The one overlap is `start = 0`, which is both the
+ * legacy default and the fractional one — and it means the SAME position under
+ * either reading, so the ambiguity is not observable. Re-running this on an
+ * already-migrated value is therefore a no-op, which is what lets it live on a
+ * load path that runs more than once.
+ *
+ * ⚠ THE DIVISOR IS THE SAMPLE'S OWN LENGTH, NOT THE OLD `1e6` CEILING. Dividing
+ * by 1e6 would look right (it was the declared max) and would silently truncate
+ * every saved loop to a sliver: a 2-second sample's `end` was 96 000 frames
+ * meaning THE WHOLE SAMPLE, and `96000 / 1e6` is 9.6 % of it. The saved
+ * `sampleLength` rides the same envelope as the params, so the exact divisor is
+ * always in hand and the fallback is never needed.
+ *
+ * Returns null when there is nothing to convert (already fractional, or no
+ * length to divide by) so the caller can skip the write entirely.
+ */
+export function samsloopWindowToFraction(
+  start: number,
+  end: number,
+  sampleLength: number,
+): { start: number; end: number } | null {
+  if (!(sampleLength > 0)) return null;
+  if (start <= 1 && end <= 1) return null; // already fractional
+  const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
+  const s = clamp01(start / sampleLength);
+  const e = clamp01(end / sampleLength);
+  // A legacy `end` of 1e6 against a 96 000-frame sample divides to >1 and
+  // clamps to 1 — the whole sample, which is exactly what the old worklet
+  // played after ITS defensive `min(len, endRaw)` clamp.
+  return { start: Math.min(s, e), end: Math.max(s, e) };
+}
+
 // ---------- mic-record state machine ----------
 //
 // The card owns the actual MediaStream + AudioContext nodes; this
@@ -751,55 +867,41 @@ export const samsloopMath = {
     return Math.max(SAMSLOOP_RATE_RANGE.min, Math.min(SAMSLOOP_RATE_RANGE.max, sliderValue));
   },
 
-  /**
-   * Re-scale saved loop boundaries when the buffer is re-decoded to a DIFFERENT
-   * length than it had at save time — the SAMSLOOP boundary-restore bug.
-   *
-   * Boundaries persist as ABSOLUTE sample indices against the decoded length at
-   * save time (`savedLen`). On a perf-zip load on a machine whose AudioContext
-   * runs at a different sample rate, a NON-WAV source (mp3/m4a/ogg — anything
-   * routed through `decodeAudioData`, which resamples to the live ctx rate)
-   * re-decodes to a different `newLen`, so the saved absolute indices point at
-   * the WRONG positions (e.g. a 25%..75% window collapses or overruns). WAV
-   * sources parse losslessly at their own rate, so `newLen === savedLen` and
-   * this is a no-op for them.
-   *
-   * We map start/end PROPORTIONALLY from the saved length onto the new length so
-   * the loop window keeps the same musical placement. Returns null when no
-   * rescale is needed (lengths equal / no usable saved length / boundaries are
-   * still at their pristine defaults — a full-buffer window, which the worklet's
-   * own clamp already handles).
-   */
-  rescaleBoundaries(
-    start: number,
-    end: number,
-    savedLen: number,
-    newLen: number,
-  ): { start: number; end: number } | null {
-    if (!Number.isFinite(savedLen) || !Number.isFinite(newLen)) return null;
-    if (savedLen <= 0 || newLen <= 0) return null;
-    if (savedLen === newLen) return null; // same machine / WAV — indices are exact
-    // A pristine full-buffer window (start=0, end>=savedLen, or the param default
-    // 1e6 ceiling) needs no proportional map — re-anchor end to the new length so
-    // the fader bound is right; the worklet clamps anyway.
-    const sClamped = Math.max(0, Math.min(savedLen, Math.round(start)));
-    const eClamped = Math.max(sClamped, Math.min(savedLen, Math.round(end)));
-    if (sClamped === 0 && end >= savedLen) {
-      return { start: 0, end: newLen };
-    }
-    const scale = newLen / savedLen;
-    const ns = Math.max(0, Math.min(newLen - 1, Math.round(sClamped * scale)));
-    const ne = Math.max(ns + 1, Math.min(newLen, Math.round(eClamped * scale)));
-    return { start: ns, end: ne };
-  },
+  // ⚠ `rescaleBoundaries` WAS HERE AND IS DELETED. It proportionally re-mapped a
+  // saved FRAME window onto a re-decoded buffer of a different length, because an
+  // absolute index is only meaningful against the length the buffer had at SAVE
+  // time. The window is a FRACTION now — length-invariant by construction — so
+  // that failure cannot occur and the helper had no caller left. Leaving it would
+  // leave a plausible-looking function for someone to "fix" against fractions.
 
-  /** Clamp start/end indices to a valid window inside `[0, len]`. Caller
-   *  passes raw slider-derived values; we enforce start < end and both
-   *  inside the buffer. Returns the clamped pair. */
-  clampWindow(startRaw: number, endRaw: number, len: number): { start: number; end: number } {
+  /**
+   * Resolve the FRACTIONAL window to frame indices inside `[0, len]`.
+   *
+   * ⚠ THIS IS THE MIRROR OF THE WORKLET'S OWN WINDOW MATH and it must stay
+   * arithmetically identical — an `AudioWorkletProcessor` cannot be imported
+   * under vitest, so this is the only place the rule is testable at all. The
+   * worklet's copy is in `packages/dsp/src/samsloop.ts`; if you change one,
+   * change both, and the tests below are what notices.
+   *
+   * ⚠ THE INPUTS ARE FRACTIONS (0..1) CARRYING KNOB + CV, so either can arrive
+   * outside the unit interval and both can move at once.
+   *
+   * ⚠ THE ORDER IS *END FIRST*, and that is a decision rather than an accident.
+   * The natural phrasing — "start is bounded by end, end is bounded by start" —
+   * is MUTUALLY RECURSIVE and has no defined answer when both cables move
+   * together. Resolving END against the sample and then START against the
+   * resolved END breaks the cycle the way the controls are actually used: END
+   * says how much of the sample is in play, START says where inside it to
+   * begin. Both CV anchors fall out exactly — at the defaults a full +CV on
+   * START walks it to the far end, and a full −CV on END walks the window back
+   * to the beginning.
+   */
+  clampWindow(startFrac: number, endFrac: number, len: number): { start: number; end: number } {
     if (len <= 1) return { start: 0, end: Math.max(1, len) };
-    let s = Math.max(0, Math.min(len - 1, Math.floor(startRaw)));
-    let e = Math.max(s + 1, Math.min(len, Math.floor(endRaw)));
+    const e01 = Math.max(0, Math.min(1, Number.isFinite(endFrac) ? endFrac : 1));
+    const s01 = Math.max(0, Math.min(e01, Number.isFinite(startFrac) ? startFrac : 0));
+    const s = Math.max(0, Math.min(len - 1, Math.floor(s01 * len)));
+    const e = Math.max(s + 1, Math.min(len, Math.ceil(e01 * len)));
     return { start: s, end: e };
   },
 
@@ -949,16 +1051,18 @@ export interface SamsloopSamplePort {
  * **DETACHES every view onto it**, so `f32.length` is `0` the instant this call
  * returns. That is not a theoretical hazard: the factory's RECORD branch cached
  * `node.data.sampleLength = f32.length` AFTER posting, so every recording
- * persisted a length of ZERO, and `SamsloopCard` sizes both window faders to
- * `Math.max(1, sampleLength)`. All three of the reported symptoms are that one
- * detached read:
+ * persisted a length of ZERO, and `SamsloopCard` sized both window faders from
+ * it. All three of the reported symptoms are that one detached read. ⚠ THE THREE SYMPTOMS BELOW ARE HISTORICAL — they describe the
+ * FRAME-INDEXED window, which no longer exists (the window is a fraction now, so
+ * neither fader is sized from `sampleLength` any more). They are kept because
+ * they are what a zero length LOOKED like from the outside, and the cache is
+ * still load-bearing for the legacy-window migration and the waveform draw:
  *   * START became a [0, 1] slider on a 40 000-frame take — full travel moved
  *     the play head by at most one sample, i.e. a control that does nothing;
  *   * touching END wrote an `end` ≤ 1, which the worklet clamps to
  *     `max(start+1, …)` — a ONE-SAMPLE window, so playback went to DC/silence;
- *   * the card's START..END highlight band is `end / samples.length` wide, so it
- *     collapsed to zero and the waveform panel lost its lit wash — it reads as
- *     black.
+ *   * the card's START..END highlight band collapsed to zero width and the
+ *     waveform panel lost its lit wash — it reads as black.
  *
  * Capturing the length HERE, before the transfer, is what makes that class of
  * mistake UNWRITABLE at the call site rather than merely fixed once.
@@ -1008,6 +1112,18 @@ export const samsloopDef: AudioModuleDef = {
   inputs: [
     { id: 'trig',       type: 'gate', edge: 'trigger' },
     { id: 'rate_cv',    type: 'cv', paramTarget: 'rate', cvScale: { mode: 'linear' } },
+    // ⚠ WINDOW CV, AND `depth: 1` IS LOAD-BEARING RATHER THAN DECORATIVE. It
+    // means "a full natural-range sweep", and now that the window is a FRACTION
+    // the natural range IS the whole sample — so +full CV walks START to the far
+    // end and −full CV walks END back to the beginning, on a two-second loop and
+    // a sixty-second one alike. Against the old frame indexing the same
+    // declaration meant 1e6 frames, which was neither the sample nor reachable.
+    //
+    // ⚠ `center: 'param'` (the default) is deliberate: these are BIAS knobs, not
+    // absolute positions. The player sets a window and the CV moves it from
+    // there — an LFO on START is a scrub, not a jump to wherever the cable sits.
+    { id: 'start_cv',   type: 'cv', paramTarget: 'start', cvScale: { mode: 'linear', depth: 1 } },
+    { id: 'end_cv',     type: 'cv', paramTarget: 'end',   cvScale: { mode: 'linear', depth: 1 } },
     // Stereo record inputs — patched audio is captured + quantized +
     // downsampled into node.data.sample on STOP. `audio_r_in` normalizes
     // to `audio_l_in` when unpatched (same rule as stereovca / cofefve
@@ -1029,22 +1145,135 @@ export const samsloopDef: AudioModuleDef = {
       min: SAMSLOOP_RATE_RANGE.min, max: SAMSLOOP_RATE_RANGE.max,
       curve: 'linear' },
     { id: 'mode',  label: 'Mode',
-      defaultValue: 1, min: 0, max: 1, curve: 'discrete' },
-    // Start/end ranges are dynamically clamped client-side to the loaded
-    // sample length; the param's declared max is a generous ceiling so
-    // the slider doesn't need to be re-bounded on every upload.
-    { id: 'start', label: 'Start', defaultValue: 0,    min: 0, max: 1e6, curve: 'linear' },
-    { id: 'end',   label: 'End',   defaultValue: 1e6,  min: 0, max: 1e6, curve: 'linear' },
+      defaultValue: 1, min: 0, max: 1, curve: 'discrete',
+      options: SAMSLOOP_MODE_OPTIONS },
+    // ⚠ FRACTIONS OF THE SAMPLE, not frame indices — see SAMSLOOP_WINDOW_RANGE
+    // for the 20.8 s clamp bug this replaced and why a fraction also deletes
+    // the re-decode boundary-restore class. `end` defaults to 1 = the whole
+    // sample, which is what the old `1e6` ceiling meant after the worklet's
+    // own `min(len, …)` clamp.
+    { id: 'start', label: 'Start', defaultValue: SAMSLOOP_WINDOW_RANGE.min,
+      min: SAMSLOOP_WINDOW_RANGE.min, max: SAMSLOOP_WINDOW_RANGE.max, curve: 'linear' },
+    { id: 'end',   label: 'End',   defaultValue: SAMSLOOP_WINDOW_RANGE.max,
+      min: SAMSLOOP_WINDOW_RANGE.min, max: SAMSLOOP_WINDOW_RANGE.max, curve: 'linear' },
+    // POLYPHONY. 0 = mono (one cursor; a re-trigger restarts it — the historical
+    // behaviour and still the default, because a looper that steals its own
+    // voice is what a looper is). 1 = poly: each gate edge takes its own cursor,
+    // so overlapping strikes layer instead of interrupting.
+    { id: 'poly',  label: 'Poly',
+      defaultValue: 0, min: 0, max: 1, curve: 'discrete',
+      options: SAMSLOOP_POLY_OPTIONS },
   ],
+
+  // The non-param affordances the faceplate ranks. Each one is a cell in
+  // `SHELL_CELLS.samsloop`; the id is the face key and the prefix is the testid
+  // the parity sweep drives. ⚠ These are what make the card's buttons
+  // REPRESENTABLE at all — a control with no family entry is invisible to
+  // `module-face-lint`'s completeness check, which is how a card-only affordance
+  // silently fails to survive promotion.
+  controlFamilies: [
+    { id: 'samsloop-trigger',     label: 'Manual trigger',     kind: 'other', testidPrefix: 'samsloop-trigger' },
+    { id: 'samsloop-wav-input',   label: 'Sample loader',      kind: 'other', testidPrefix: 'samsloop-wav-input' },
+    { id: 'samsloop-rec',         label: 'Record transport',   kind: 'other', testidPrefix: 'samsloop-rec' },
+    { id: 'samsloop-download',    label: 'Sample export',      kind: 'other', testidPrefix: 'samsloop-download' },
+    { id: 'samsloop-chan',        label: 'Record channels',    kind: 'other', testidPrefix: 'samsloop-chan' },
+    { id: 'samsloop-bits',        label: 'Record bit depth',   kind: 'other', testidPrefix: 'samsloop-bits' },
+    // ⚠ The id and the testidPrefix DIVERGE here on purpose. The card's rate
+    // switch renders one button per option with a derived testid
+    // (`samsloop-rate-${n}k`), so the prefix that actually appears on the card
+    // is `samsloop-rate`. The face key stays `-select` because a bare
+    // `samsloop-rate` would read as the RATE PARAM, which is a different
+    // control entirely — this one is the RECORDING sample rate.
+    { id: 'samsloop-rate-select', label: 'Record sample rate', kind: 'other', testidPrefix: 'samsloop-rate' },
+  ],
+
+  // ── THE FACEPLATE ─────────────────────────────────────────────────────────
+  //
+  // WHAT SAMSLOOP IS FOR, in one sentence, because every rank below descends
+  // from it: it is the module that turns a RECORDING into an INSTRUMENT — you
+  // capture or load one sample, choose a slice of it, and play that slice at any
+  // speed in either direction. The verb is "aim the window and fire it".
+  //
+  // THE TIER LADDER, read back as a sentence: at mini you get RATE, because a
+  // looper whose speed you cannot reach is a tape deck. At compact you get RATE
+  // and the WINDOW's two ends — aiming is the gesture. The plate adds MODE and
+  // the TRIGGER that fires it. The dock adds everything else: the recorder, the
+  // loader, the export, and POLY.
+  //
+  // ⚠ WHY `rate` LEADS AND NOT `start`. START is the more-used control in a
+  // session, but it is INERT AT SPAWN: with no sample loaded the window has
+  // nothing to aim at, and a hero that does nothing on a fresh module teaches
+  // that the module does nothing. RATE is meaningful the instant a sample
+  // arrives and is the one control that is never a no-op.
+  //
+  // ⚠ AND `rate` IS THE WARPED-FADER CELL, not an ordinary fader. Its param is
+  // declared `-2..+2 linear`, but the card has always drawn KNOB SPACE with a
+  // PIECEWISE map (`samsloop-rate.ts`), which puts unity (+1) at the fader's
+  // MIDPOINT rather than at `(1 - -2) / 4 = 3/4`. Drawing it linearly on the
+  // face would move "no transpose" a quarter of the control away from where
+  // every player's muscle memory has it — a functional-parity break that passes
+  // every gate, because they all read the ParamDef and the ParamDef is not what
+  // was drawn. See the `warped-fader` entry in `shell-cells.ts`.
+  face: {
+    // ⚠ The `-{n}` suffix is the NUMBERED-CONTROL form a `controlFamilies`
+    // entry is ranked by; a bare family id resolves to nothing.
+    order: [
+      'rate', 'start', 'end', 'mode', 'samsloop-trigger-{n}', 'poly',
+      'samsloop-wav-input-{n}', 'samsloop-rec-{n}', 'samsloop-download-{n}',
+      'samsloop-chan-{n}', 'samsloop-bits-{n}', 'samsloop-rate-select-{n}',
+    ],
+
+    pages: [
+      // ⚠ PAGED BY FUNCTION, and the two pages are genuinely different IDEAS
+      // rather than a header hunt: PLAY is what you do with a sample you have,
+      // SAMPLE is how you get one. Five bands would have been padding.
+      {
+        id: 'play',
+        label: 'play',
+        controls: ['rate', 'start', 'end', 'mode', 'poly', 'samsloop-trigger-{n}'],
+      },
+      {
+        id: 'sample',
+        label: 'sample',
+        controls: [
+          'samsloop-wav-input-{n}',
+          'samsloop-rec-{n}',
+          'samsloop-download-{n}',
+          'samsloop-chan-{n}',
+          'samsloop-bits-{n}',
+          'samsloop-rate-select-{n}',
+        ],
+      },
+    ],
+
+    // ⚠ `glyph: 'none'` IS FORCED, not chosen — and for the opposite reason to
+    // spectrograph's. This module DOES declare an audio output, so a glyph would
+    // resolve to a live trace happily. But the dock body below already paints
+    // this module's picture, and a live output trace beside a waveform of the
+    // SAME audio teaches that they are two different things. The lane tile keeps
+    // its ranked cells; the waveform is a dock surface.
+    glyph: 'none',
+
+    // The waveform, its window wash and the live playhead arrive through this
+    // slot. Promotion stops both surfaces rendering the card, and on a sampler
+    // that would leave the player placing loop points BLIND — START and END are
+    // the two controls whose entire meaning is "where in this picture".
+    // See `$lib/ui/modules/samsloop/shell-extension.ts`.
+    extension: 'samsloop',
+  },
 
   docs: {
     explanation:
-      "A single-sample loop player. Load one audio file (drag/drop or the upload button — wav, mp3, m4a/aac, ogg, flac, opus, up to 2 MB) OR record straight from the microphone or a patched audio input; either way the source is decoded into one buffer that the on-card waveform shows. A recording runs up to 31 seconds at the default settings (MONO / 16-bit / 48 kHz); the CHAN, BITS and RATE switches trade fidelity for length up to a hard 60-second ceiling, and the card's \"N.NNs max\" readout always shows what the current settings buy. REC stops itself when it gets there. SAMSLOOP holds exactly ONE sample at a time — a new upload or recording REPLACES it (no playlist, no slots). After loading it sits SILENT and waits: it does NOT auto-play. A TRIGGER (a rising edge on the TRIG input, or the on-card TRIGGER button) starts playback, and what 'start' means depends on MODE — in one-shot mode the sample plays through the window once and returns to idle; in loop mode the trigger starts a continuous loop and a re-trigger restarts it from the window edge. Playback uses a fractional read-cursor with linear interpolation, so the RATE control is a full varispeed: positive = forward, negative = REVERSE, |value| = speed (2 = double speed / one octave up, 0.5 = half). The START and END markers crop which slice of the sample plays/loops (draggable on the waveform). The output is mono.",
+      "A single-sample loop player. Load one audio file (drag/drop or the upload button — wav, mp3, m4a/aac, ogg, flac, opus, up to 2 MB) OR record straight from the microphone or a patched audio input; either way the source is decoded into one buffer that the on-card waveform shows. A recording runs up to 31 seconds at the default settings (MONO / 16-bit / 48 kHz); the CHAN, BITS and RATE switches trade fidelity for length up to a hard 60-second ceiling, and the card's \"N.NNs max\" readout always shows what the current settings buy. REC stops itself when it gets there. SAMSLOOP holds exactly ONE sample at a time — a new upload or recording REPLACES it (no playlist, no slots). After loading it sits SILENT and waits: it does NOT auto-play. A TRIGGER (a rising edge on the TRIG input, or the on-card TRIGGER button) starts playback, and what 'start' means depends on MODE — in one-shot mode the sample plays through the window once and returns to idle; in loop mode the trigger starts a continuous loop and a re-trigger restarts it from the window edge. Playback uses a fractional read-cursor with linear interpolation, so the RATE control is a full varispeed: positive = forward, negative = REVERSE, |value| = speed (2 = double speed / one octave up, 0.5 = half). The START and END markers crop which slice of the sample plays/loops, and they are FRACTIONS of the sample rather than frame counts — 0 is its beginning and 1 is its end whether the sample is two seconds or sixty. That is what lets a patched START CV or END CV sweep the whole sample at any length, and it is why re-loading a patch never lands the window on the wrong samples. POLY decides what a second trigger does while the first is still sounding: in MONO it restarts the single voice (a looper stealing itself, the historical behaviour), in POLY it takes another voice and the two layer, up to the same voice budget MIDI LANE uses, stealing the oldest under pressure. The output is mono.",
     inputs: {
       trig:
         "Rising-edge trigger that STARTS playback per the current MODE: in one-shot mode it plays the cropped window through once; in loop mode it starts the loop (and a re-trigger restarts it from the window edge — START for forward, END for reverse). Works alongside the on-card TRIGGER button. While idle (no trigger yet) the module is silent.",
       rate_cv:
         "CV that offsets the RATE param (linear): ±1 V swings the playback rate by ±1 unit on top of the slider, so an LFO here does pitch/speed wobble, tape-stop, or reverse sweeps. The summed rate is clamped to the worklet's [−3, +3] range; crossing zero flips playback direction.",
+      start_cv:
+        "CV that moves the START of the playback window. Because the window is a FRACTION of the sample rather than a frame count, a full-depth sweep here walks START from the sample's beginning to its far end whatever its length — an LFO scrubs the loop's in-point, an envelope drags it open. It is a BIAS on the knob, not an absolute position: the player sets a window and the CV moves it from there. START is resolved AFTER END (see end_cv), so driving START past END collapses the window onto END rather than pushing it open.",
+      end_cv:
+        "CV that moves the END of the playback window, in the same sample-relative fractions START uses: a full-depth negative sweep walks END back to the sample's beginning, shortening the loop to nothing. END is resolved FIRST and START is then bounded by the result — the two rules read together are not circular, which is exactly why the order is fixed rather than symmetric. Patch both and END decides how much of the sample is in play while START decides where inside it to begin.",
       audio_l_in:
         "Left audio RECORD input — patch a source here and arm recording to capture it into the sample buffer (replacing whatever was loaded). Mono sources work with just this jack.",
       audio_r_in:
@@ -1059,9 +1288,25 @@ export const samsloopDef: AudioModuleDef = {
       mode:
         "Playback MODE: LOOP (1, default) = a trigger starts a continuous loop that keeps going (re-trigger restarts it); ONE-SHOT (0) = a trigger plays the window through once and returns to idle/silent.",
       start:
-        "START of the playback window, in sample frames from the buffer's beginning (the left waveform marker). Crops where playback/looping begins (and where reverse playback ends). Auto-clamped to the loaded sample's length.",
+        "START of the playback window, as a FRACTION of the sample (0 = its beginning, 1 = its end) — the left waveform marker. Crops where playback/looping begins, and where reverse playback ends. Being sample-relative rather than a frame index means the same setting means the same musical point on a two-second sample and a sixty-second one, and that a re-loaded patch can never land it on the wrong samples. CV via start_cv.",
       end:
-        "END of the playback window, in sample frames (the right waveform marker). Crops where playback/looping ends (and where reverse playback begins). Together START..END select the slice that plays or loops; auto-clamped to the sample length.",
+        "END of the playback window, as a FRACTION of the sample (the right waveform marker). Crops where playback/looping ends, and where reverse playback begins. Together START..END select the slice that plays or loops. ⚠ END is resolved BEFORE START: when both are driven at once END is clamped to the sample and START is then clamped to END, so the pair always describes a real window instead of two rules that each depend on the other. CV via end_cv.",
+      "samsloop-trigger-{n}":
+        "Fires playback by hand, exactly as a rising edge on the TRIG input would: in one-shot it plays the window through once, in loop it starts (or restarts) the loop. It works whether or not a cable is patched, which makes it the fastest way to audition a sample you have just loaded or recorded.",
+      "samsloop-wav-input-{n}":
+        "Loads one audio file as THE sample — wav, mp3, m4a/aac, ogg, flac or opus, up to 2 MB. SAMSLOOP holds exactly one sample, so a load REPLACES whatever was there (including a recording), and the window reopens over the whole of the new one. The status and error lines under the button report what was decoded, or why it was refused.",
+      "samsloop-rec-{n}":
+        "Starts and stops recording into the sample buffer, capturing whatever is patched to the record inputs at the current CHAN/BITS/RATE. A take REPLACES the loaded sample. It refuses to arm rather than silently shortening when the rack's sample budget cannot fit a usable take, and it stops itself at the length the current settings buy.",
+      "samsloop-download-{n}":
+        "Exports the sample to a file: a recording is written as a WAV at the rate, depth and channel count it was captured with, while an uploaded file comes back as its ORIGINAL bytes — an mp3 stays an mp3, losslessly. Nothing to export means nothing happens.",
+      "samsloop-chan-{n}":
+        "How many channels a RECORDING captures. MONO halves the bytes per second and so roughly doubles the take length the budget allows; STEREO records both record inputs. It applies to the next take — the settings are frozen for the duration of one, and changing this mid-take ends it cleanly.",
+      "samsloop-bits-{n}":
+        "The bit depth a RECORDING is quantized to. 16 is the default and is transparent for most material; 8 halves the bytes per second, doubling the available length at the cost of an audible noise floor — which on a looper is often a sound you want rather than a compromise.",
+      "samsloop-rate-select-{n}":
+        "The sample rate a RECORDING is decimated to. Lower rates trade bandwidth for length, and the decimation is by an INTEGER factor, so a requested rate that does not divide the audio context's rate lands on the nearest one that does — the card says so rather than claiming a rate it did not produce.",
+      poly:
+        "What a trigger does while the module is already sounding. MONO (0, default) restarts the single voice — the historical behaviour, and what a looper usually wants. POLY (1) gives each trigger its own read-cursor so overlapping strikes LAYER instead of interrupting, sharing the same voice budget MIDI LANE allocates and stealing the oldest voice when they are all busy. Voices sum rather than average, so layering gets louder rather than ducking.",
     },
   },
 
@@ -1081,7 +1326,41 @@ export const samsloopDef: AudioModuleDef = {
       numberOfInputs: 1,
       numberOfOutputs: 1,
       outputChannelCount: [1],
+      // ⚠ THE POLY WIDTH CROSSES THE PACKAGE BOUNDARY AS DATA, not as a second
+      // copy of the number. `packages/dsp` cannot import from `packages/web`,
+      // so a worklet that needed its own `const MAX_VOICES = 16` would be the
+      // two-sided-contract shape again — and the side that drifted would be the
+      // one nothing reads. `MAX_POLY_VOICES` stays the single authority in
+      // `midi-lane.ts` (it is the same steal-oldest budget on both ends of a
+      // real MIDI chain) and the worklet is TOLD.
+      processorOptions: { maxVoices: MAX_POLY_VOICES },
     });
+
+    /**
+     * THE LIVE PLAYHEAD, as last published by the worklet.
+     *
+     * ⚠ PUSHED ON THE WORKLET'S OWN CLOCK, PULLED BY WHOEVER IS LOOKING. The
+     * cursor lives on the audio thread and there is no way to read it
+     * synchronously, so the worklet posts it at ~20 Hz and this is where the
+     * newest one rests. Surfaces READ this (through the handle's `playhead`
+     * key) at whatever rate they paint — nobody subscribes, so a surface that
+     * is not mounted costs nothing and a surface that mounts late is correct on
+     * its first frame instead of waiting for the next publish.
+     *
+     * ⚠ A FRACTION, matching the window params, so a consumer drawing into a
+     * canvas of its own width needs no knowledge of the buffer length.
+     * `position: -1` means NO VOICE IS SOUNDING — which a fraction cannot
+     * otherwise express, and which is a different fact from "position 0".
+     */
+    let playhead: { position: number; voices: number } = { position: -1, voices: 0 };
+    workletNode.port.onmessage = (e: MessageEvent) => {
+      const m = e.data as { type?: string; position?: number; voices?: number } | null;
+      if (!m || m.type !== 'playhead') return;
+      playhead = {
+        position: typeof m.position === 'number' ? m.position : -1,
+        voices: typeof m.voices === 'number' ? m.voices : 0,
+      };
+    };
 
     // Recording tap. Two audio inputs (L + R), 1 silent output (Web Audio
     // requires at least one output to keep the node alive in the graph;
@@ -1144,30 +1423,44 @@ export const samsloopDef: AudioModuleDef = {
         // is a different buffer and survives.) See postBuffer below for the
         // regression this exact read caused on the record branch.
         const newLen = result.samples.length;
-        // BOUNDARY-RESTORE FIX: the saved loop start/end are ABSOLUTE indices
-        // against the length the buffer had at SAVE time (ld.sampleLength, just
-        // restored from the envelope). When this re-decode yields a DIFFERENT
-        // length — a non-WAV source re-decoded on a machine with a different
-        // AudioContext rate (decodeAudioData resamples to ctx.sampleRate) — the
-        // saved indices point at the wrong samples. Re-scale start/end
-        // PROPORTIONALLY onto the new length so the loop window keeps its
-        // placement. WAV / same-machine loads have newLen === savedLen → no-op.
+        // LEGACY WINDOW MIGRATION — frame indices → the fractional window.
+        //
+        // ⚠ THIS IS THE WHOLE MIGRATION, AND IT LIVES HERE RATHER THAN IN
+        // `persistence.ts` ON PURPOSE. That loader's stated policy is TOLERANT
+        // READ with no value reshaping — *"a patch stores TOPOLOGY + authored
+        // values only, and is never reshaped on load"* — and the per-module
+        // `schemaVersion` / `moduleSchemas` substrate was deliberately collapsed
+        // in the envelope-v2 cleanup. Re-opening it for one module would undo
+        // that decision (and drag `persistence.ts`, a collab-attest basis file,
+        // along with it). The factory already owns the one moment where the
+        // saved window and the sample's true length are both in hand, which is
+        // exactly what the conversion needs.
+        //
+        // ⚠ AND THE OLD PROPORTIONAL RESCALE IS GONE WITH THE FRAME INDEXING,
+        // not merely moved. It existed because an absolute index is only valid
+        // against the length the buffer had at SAVE time, so a non-WAV source
+        // re-decoded at a different AudioContext rate (`decodeAudioData`
+        // resamples) pointed the window at the wrong samples. A FRACTION is
+        // length-invariant, so that failure cannot occur and there is nothing
+        // left to repair — the bug class is deleted, not patched.
         const savedLen = typeof ld.sampleLength === 'number' ? ld.sampleLength : 0;
-        if (savedLen > 0 && savedLen !== newLen && live.params) {
+        if (live.params) {
           const p = live.params as Record<string, number>;
-          const rescaled = samsloopMath.rescaleBoundaries(
+          // Prefer the SAVED length as the divisor — the frames were written
+          // against it. Fall back to the freshly-decoded one when the envelope
+          // carried no length (very old patches).
+          const migrated = samsloopWindowToFraction(
             p.start ?? 0,
-            p.end ?? newLen,
-            savedLen,
-            newLen,
+            p.end ?? 1,
+            savedLen > 0 ? savedLen : newLen,
           );
-          if (rescaled) {
-            p.start = rescaled.start;
-            p.end = rescaled.end;
+          if (migrated) {
+            p.start = migrated.start;
+            p.end = migrated.end;
             // Re-apply to the worklet immediately (the poll loop only repushes
             // the sample, not start/end — those are set once at factory init).
-            params.get('start')?.setValueAtTime(rescaled.start, ctx.currentTime);
-            params.get('end')?.setValueAtTime(rescaled.end, ctx.currentTime);
+            params.get('start')?.setValueAtTime(migrated.start, ctx.currentTime);
+            params.get('end')?.setValueAtTime(migrated.end, ctx.currentTime);
           }
         }
         if (ld.sampleLength !== newLen) {
@@ -1269,7 +1562,17 @@ export const samsloopDef: AudioModuleDef = {
       domain: 'audio',
       inputs: new Map<string, { node: AudioNode; input: number; param?: AudioParam }>([
         ['trig',       { node: workletNode, input: 0 }],
+        // ⚠ EVERY `paramTarget` PORT MUST PUBLISH ITS AudioParam HERE, and the
+        // failure mode is silent by design. `AudioEngine.addEdge` reads `param`
+        // to decide whether a cable is MODULATION or SIGNAL; with it absent it
+        // falls back to `{node, input}` and the cable becomes audio into worklet
+        // input 0 — the control does nothing and nothing throws. The window CV
+        // shipped that way in this PR's first CI run: the ports were declared on
+        // the def and never added to this map. `samsloop-cv-contract.test.ts`
+        // now asserts the two sides agree.
         ['rate_cv',    { node: workletNode, input: 0, param: params.get('rate')! }],
+        ['start_cv',   { node: workletNode, input: 0, param: params.get('start')! }],
+        ['end_cv',     { node: workletNode, input: 0, param: params.get('end')! }],
         // Record-tap audio inputs. These wire user-patched audio into the
         // samsloop-tap worklet, which forwards captured L/R blocks to the
         // card via the tap port (subscribed via the handle's read('recTap')
@@ -1304,6 +1607,11 @@ export const samsloopDef: AudioModuleDef = {
             try { workletNode.port.postMessage({ type: 'trigger' }); } catch { /* */ }
           };
         }
+        // The live play position, as a FRACTION of the sample, plus how many
+        // voices are sounding. `position: -1` = nothing is playing. Read by the
+        // waveform surfaces on their own paint clock; see the `playhead`
+        // binding above for why this is a pull rather than a subscription.
+        if (key === 'playhead') return playhead;
         // Expose the tap's MessagePort + a helper to enable/disable it.
         // The card subscribes to the port's onmessage to receive captured
         // L/R chunks during a recording. The two are surfaced together

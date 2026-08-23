@@ -1053,18 +1053,82 @@ export const videocubeDef: VideoModuleDef = {
     { id: 'view_rot_y',       label: 'view y',       defaultValue: DEFAULTS.view_rot_y,       min: -3.1416, max: 3.1416, curve: 'linear' },
     { id: 'view_rot_z',       label: 'view z',       defaultValue: DEFAULTS.view_rot_z,       min: -3.1416, max: 3.1416, curve: 'linear' },
     // ── discrete toggles ──
-    { id: 'wrap',        label: 'wrap',     defaultValue: DEFAULTS.wrap,        min: 0, max: 1, curve: 'discrete' },
-    { id: 'material',    label: 'material', defaultValue: DEFAULTS.material,    min: 0, max: 1, curve: 'discrete' },
-    { id: 'screen_on',   label: 'screen',   defaultValue: DEFAULTS.screen_on,   min: 0, max: 1, curve: 'discrete' },
-    { id: 'reader_mode', label: 'reader',   defaultValue: DEFAULTS.reader_mode, min: 0, max: 2, curve: 'discrete' },
-    { id: 'freeze',      label: 'freeze',   defaultValue: DEFAULTS.freeze,      min: 0, max: 1, curve: 'linear' },
-    { id: 'live',        label: 'live',     defaultValue: DEFAULTS.live,        min: 0, max: 1, curve: 'linear' },
+    //
+    // ⚠ FIVE ROSTERS BELOW, AND ALL FIVE PROMOTE NAMES THAT ALREADY EXISTED IN
+    // SHIPPED CODE — `VideocubeCard.svelte`'s `MODES` and `SLICE_VIEWS` arrays
+    // and its own button captions. None is invented. Without them promotion
+    // deletes the names (the card is the only place they live) and the faceplate
+    // paints anonymous dials and unlabelled switches: the moog962 trap.
+    //
+    // ⚠ AND THE DISCRIMINATION THAT DECIDES WHICH TWO-STATE PARAMS GET ONE. A
+    // bare `<Toggle>` announces PRESSED / UNPRESSED, which is right only when one
+    // state genuinely IS the other's "off". `wrap`, `material` and `hue_mode` are
+    // each a choice between two NAMED alternatives — neither is off — so they
+    // take rosters and render as captioned two-button rows. `screen_on` is a
+    // genuine on/off gate and keeps the plain toggle. Same rule `spectrograph`'s
+    // `view` applied to its two colormaps.
+    {
+      id: 'wrap', label: 'wrap', defaultValue: DEFAULTS.wrap, min: 0, max: 1, curve: 'discrete',
+      options: [
+        { value: 0, label: 'CLAMP', title: 'Out-of-range sample coordinates clamp to the edge of the solid' },
+        { value: 1, label: 'FOLD', title: 'Out-of-range coordinates MIRROR-FOLD back into the solid, so the field tiles seamlessly instead of smearing its border voxels' },
+      ],
+    },
+    {
+      id: 'material', label: 'material', defaultValue: DEFAULTS.material, min: 0, max: 1, curve: 'discrete',
+      options: [
+        { value: 0, label: 'SMOOTH', title: 'Each voxel is an occupancy-weighted BLEND of the three source videos' },
+        { value: 1, label: 'HARD', title: 'One surface WINS per voxel — a mosaic of whole source pixels rather than a blend' },
+      ],
+    },
+    // ⚠ RENAMED FROM `screen` TO `ray-march`, AND THE RENAME IS A COLLISION FIX.
+    // The 2026-08-18 owner ruling gives every faced video module a SCREEN ON/OFF
+    // switch, and this face gets one in its `fullViewBody` like the rest of the
+    // fleet — but that switch is the fleet's `previewCollapsed`, which stops the
+    // BLIT AND KEEPS THE ENGINE RUNNING. This param is very nearly its opposite:
+    // it skips the RAY-MARCH ITSELF when `video_out` is unpatched. Shipping both
+    // captioned "screen" on one faceplate would put two differently-behaved
+    // controls under one word, and the one that reads as the ruling's switch is
+    // the one that is not. Only the LABEL moves — the id, range, default and
+    // semantics are untouched, and `label` is not projected into contract-lock.
+    { id: 'screen_on',   label: 'ray-march', defaultValue: DEFAULTS.screen_on,  min: 0, max: 1, curve: 'discrete' },
+    {
+      id: 'reader_mode', label: 'reader', defaultValue: DEFAULTS.reader_mode, min: 0, max: 2, curve: 'discrete',
+      options: [
+        { value: VIDEOCUBE_MODE_SMOOTH, label: 'SMOOTH', title: 'Each ring contributes a TRAILING frame — the lagged, settled read' },
+        { value: VIDEOCUBE_MODE_MORPH,  label: 'MORPH',  title: 'Each ring contributes its NEWEST frame' },
+        { value: VIDEOCUBE_MODE_CHAOS,  label: 'CHAOS',  title: 'Each ring contributes a PER-PIXEL dithered frame — a temporal mosaic per surface' },
+      ],
+    },
+    // ⚠ `discrete`, NOT `linear`. Both are read as `>= 0.5` two-state levels and
+    // both are drawn as BUTTONS by the card, but `looksLikeToggle` is
+    // `curve === 'discrete' && min === 0 && max === 1` — so while they said
+    // `linear` the faceplate would have painted each as a rotary over a
+    // continuum. The identical correction FRAMETABLE needed one PR earlier, and
+    // for the identical reason: the card drew its buttons from its own markup
+    // and never consulted `curve`, so the wrong declaration had no consequence
+    // until a face resolved a primitive from it.
+    { id: 'freeze',      label: 'freeze',   defaultValue: DEFAULTS.freeze,      min: 0, max: 1, curve: 'discrete' },
+    { id: 'live',        label: 'live',     defaultValue: DEFAULTS.live,        min: 0, max: 1, curve: 'discrete' },
     // slice-viz colorize flavour (0 TEXTURED / 1 XRAY / 2 WEIGHTS) — drives
     // slice_out + the smooth/morph/chaos triptych; NOT an audio param.
-    { id: 'slice_view',  label: 'slice view', defaultValue: DEFAULTS.slice_view, min: 0, max: 2, curve: 'discrete' },
+    {
+      id: 'slice_view', label: 'slice view', defaultValue: DEFAULTS.slice_view, min: 0, max: 2, curve: 'discrete',
+      options: [
+        { value: 0, label: 'TEX', title: 'The cut plane painted with the source VIDEO the solid is made of' },
+        { value: 1, label: 'XRAY', title: 'The cut plane painted by DENSITY — how much solid the plane is passing through' },
+        { value: 2, label: 'WEIGHTS', title: 'The cut plane painted by WHICH ring is winning at each point — the debug view of the combine' },
+      ],
+    },
     // CHROMASTACK hue-character bank toggle (0 MUSICAL / 1 INSTRUMENT) — audio-only,
     // CV-gated (a gate high switches to INSTRUMENT).
-    { id: 'hue_mode',    label: 'hue mode',   defaultValue: DEFAULTS.hue_mode,   min: 0, max: 1, curve: 'discrete' },
+    {
+      id: 'hue_mode', label: 'hue mode', defaultValue: DEFAULTS.hue_mode, min: 0, max: 1, curve: 'discrete',
+      options: [
+        { value: 0, label: 'MUSICAL', title: 'Colour maps to TONAL character — hue picks a place in a musical timbre space' },
+        { value: 1, label: 'INSTR', title: 'Colour maps to an ANALOG↔DIGITAL instrument character instead' },
+      ],
+    },
   ],
 
   docs: {
@@ -1135,9 +1199,186 @@ export const videocubeDef: VideoModuleDef = {
       freeze: 'FREEZE (0/1, default 0): stops all LIVE rings from advancing so the held surfaces can be scrubbed with the slice/view controls. File-loaded rings are always frozen. Picture + (via the ring content) audio.',
       live: 'LIVE (0/1, default 0): forces the real-time / no-lag ring read (the newest frame) for the SMOOTH reader (MORPH is already newest; CHAOS keeps its per-pixel dither). Applies to BOTH the picture and the audio surface selection.',
       slice_view: 'SLICE VIEW (0..2, default 0 = TEXTURED): the colorize flavour for slice_out AND the smooth/morph/chaos triptych (it does NOT change video_out, the audio, or the field). 0 = TEXTURED (the occupancy-weighted source videos where the plane cuts solid), 1 = XRAY (grayscale occupancy density), 2 = WEIGHTS (false-colour occupancy shares — R = floor-fill, G = ceiling-fill, B = wall/connector). Picture-only; no CV.',
+      'videocube-a-live-{n}': 'FLOOR live - points ring A (the FLOOR surface, one of the two morph ends) back at whatever is patched into video_a, resuming live frame-by-frame capture. This is the way back from a loaded table: a slot stays on its file until you press this. Unpatched, the ring fills with black.',
+      'videocube-a-file-input-{n}': 'FLOOR table - loads a .frametable.png atlas (a lossless 10x6 = 60-tile contact sheet, the format FRAMETABLE saves) into ring A, replacing live capture and holding the ring frozen so the loaded content can be scanned with SCAN and SPREAD. Session-only in v1: nothing is written to disk or to the patch, so a reload returns the slot to LIVE.',
+      'videocube-b-live-{n}': 'WALL live - points ring B (the WALL / connector surface that binds FLOOR and CEILING through the middle of the solid) back at video_b for live capture. The same reset as FLOOR live, on the ring that decides how the other two join through space.',
+      'videocube-b-file-input-{n}': 'WALL table - loads a .frametable.png atlas into ring B, the connector surface. Session-only in v1.',
+      'videocube-c-live-{n}': 'CEIL live - points ring C (the CEILING surface, the far morph end) back at video_c for live capture. The same reset as the other two.',
+      'videocube-c-file-input-{n}': 'CEIL table - loads a .frametable.png atlas into ring C, the ceiling surface. Session-only in v1.',
     },
   },
-  controlFamilies: [],
+  // The SIX per-slot INGEST affordances. Each ring is independently either LIVE
+  // (recording whatever is patched into `video_a`/`b`/`c`) or LOADED from a
+  // `.frametable.png` atlas, and both controls exist ONLY on
+  // `VideocubeCard.svelte` — which `migrated(type)` stops both surfaces
+  // rendering. Without these six, promoting VIDEOCUBE would leave the module
+  // with no way to choose WHAT IS IN THE CUBE at all. That is STOP 2 in the
+  // faceplate skill, and this is what answers it.
+  //
+  // ⚠ SIX ENTRIES RATHER THAN TWO, because a `<familyId>-{n}` key resolves to
+  // exactly ONE cell (`resolveFaceControl`), not to a grid of members. Three
+  // slots x two controls really is six cells, and collapsing them would mean a
+  // bespoke panel whose two engine-only actions have no probe of their own.
+  //
+  // ⚠ EVERY `testidPrefix` IS A LITERAL THE CARD EMITS, checked by
+  // `module-docs-lint`'s source grep — which is why the card now spells these
+  // through a `SLOT_TESTID` map instead of a template literal. The rendered
+  // testids did not change.
+  controlFamilies: [
+    { id: 'videocube-a-live', label: 'FLOOR live', kind: 'other', testidPrefix: 'videocube-a-live' },
+    { id: 'videocube-a-file-input', label: 'FLOOR table', kind: 'other', testidPrefix: 'videocube-a-file-input' },
+    { id: 'videocube-b-live', label: 'WALL live', kind: 'other', testidPrefix: 'videocube-b-live' },
+    { id: 'videocube-b-file-input', label: 'WALL table', kind: 'other', testidPrefix: 'videocube-b-file-input' },
+    { id: 'videocube-c-live', label: 'CEIL live', kind: 'other', testidPrefix: 'videocube-c-live' },
+    { id: 'videocube-c-file-input', label: 'CEIL table', kind: 'other', testidPrefix: 'videocube-c-file-input' },
+  ],
+
+  // ── THE FACEPLATE ──────────────────────────────────────────────────────────
+  //
+  // WHAT IT IS FOR. FRAMETABLE makes TIME scannable; VIDEOCUBE makes SPACE out
+  // of three of those tables. Three 60-frame rings become the FLOOR, the WALL
+  // and the CEILING of a real volumetric solid, the occupancy curve fills
+  // genuine density BETWEEN them, and you fly a cutting plane through the
+  // result — while the SAME plane, through the SAME field, is what you HEAR.
+  // Nothing else in the fleet emits a picture and a drone that are two readings
+  // of one object rather than two processes that happen to share a knob. So the
+  // verb is CUT: choose what the solid is made of, then decide where to slice it
+  // and from where to watch. Every rank below descends from that.
+  //
+  // ⚠ THIS IS THE OWNER'S CONTROL-HEAVY TABBED CASE (ruling 2026-08-18), and it
+  // qualifies on the stated test — "lots of controls of DIFFERENT types" — not
+  // on render weight. THIRTY params across six genuinely different kinds
+  // (three 2-D pads, five named rosters, three switches, sixteen dials, six
+  // ingest cells), plus EIGHT outputs. The seven pages below are seven different
+  // IDEAS, and the rail engages at `DOCK_TAB_MIN_BANDS` on its own: no
+  // `face.tabbed` opt-in is declared, and none is needed. ⚠ Nothing is padded to
+  // reach seven — the honest grouping landed there, which is the only way the
+  // ruling permits a rail.
+  //
+  // THE TIER LADDER, read back as a sentence. mini 1 (READER — which frame each
+  // ring contributes, the choice every other control is downstream of) ·
+  // compact 2 (READER and MORPH: what the solid is made of, and how the two ends
+  // blend through it) · dock everything. The lane caps are `laneBodyPlan`
+  // geometry and resolve to 2 cells at both lane tiers for a video face (#2085),
+  // so ranks 3+ are dock-only and the three pads cost nothing to rank —
+  // `laneOrder` already excludes every pad anchor.
+  //
+  // WHY READER OUTRANKS THE FIELD KNOBS. MORPH is the more famous control and it
+  // ranks second, but READER decides WHICH FRAME of each ring is the surface at
+  // all — and it does so for the picture and the audio TOGETHER. Every field
+  // knob shapes a solid; READER chooses what the solid is built out of, and on a
+  // frozen table it is the difference between a still object and a boiling one.
+  // That argument would be wrong for a module whose sources were static images,
+  // which is exactly the test for a defended rank.
+  //
+  // ORDER AND PAGES DISAGREE, DELIBERATELY. `order` is PRIORITY — what a
+  // narrower tier keeps — so it front-loads the controls that decide what you
+  // are looking at. `pages` is SIGNAL ORDER at the dock, and there the honest
+  // grouping is by WHICH STAGE OF THE PIPELINE a control belongs to: what goes
+  // in, how the solid is built, where it is cut, how it is read in time, where
+  // the camera is, how it is drawn, and what it sounds like.
+  //
+  // NO HERO, NO READOUT, NO SIDEBAR — the 2026-08-19 rulings.
+  face: {
+    order: [
+      // The two that survive to a lane tier.
+      'reader_mode', 'morph_fc',
+      // The rest of the temporal read, then the solid's shape.
+      'live', 'freeze', 'scan', 'spread',
+      'connect', 'connect_strength', 'crush', 'space_crush', 'space_diffuse',
+      // Where it is cut.
+      'slice_rx', 'slice_ry', 'slice_y', 'slice_rz', 'slice_view',
+      // Where it is watched from.
+      'view_rot_x', 'view_rot_y', 'view_zoom', 'view_rot_z',
+      // How it is drawn.
+      'wrap', 'material', 'screen_on',
+      // What it sounds like.
+      'tune', 'fine', 'fold', 'level', 'chroma_depth', 'motion', 'hue_mode',
+      // ⚠ THE SIX INGEST CELLS RANK LAST, and not because they matter least —
+      // they decide the entire content of the solid. They rank last because
+      // every one of them is a WIDE cell no lane tier can paint, so ranking
+      // them higher would claim lane space they cannot use. `pages` puts them
+      // FIRST, which is where a player meets them.
+      'videocube-a-live-{n}', 'videocube-a-file-input-{n}',
+      'videocube-b-live-{n}', 'videocube-b-file-input-{n}',
+      'videocube-c-live-{n}', 'videocube-c-file-input-{n}',
+    ],
+
+    pages: [
+      {
+        id: 'ingest',
+        label: 'ingest',
+        hint: 'what the solid is MADE OF: three independent 60-frame rings — FLOOR, WALL and CEILING — each either recording its live video input or holding a .frametable.png table loaded from disk. LIVE is the way back from a loaded table',
+        controls: [
+          'videocube-a-live-{n}', 'videocube-a-file-input-{n}',
+          'videocube-b-live-{n}', 'videocube-b-file-input-{n}',
+          'videocube-c-live-{n}', 'videocube-c-file-input-{n}',
+        ],
+      },
+      {
+        id: 'solid',
+        label: 'solid',
+        hint: 'how the three surfaces become one volume: MORPH cross-fades the floor fill toward the ceiling through the wall, CONNECT reshapes how the wall binds them, and the CRUSH pair posterises and voxelises the field itself',
+        controls: ['morph_fc', 'connect', 'connect_strength', 'crush', 'space_crush', 'space_diffuse'],
+      },
+      {
+        id: 'slice',
+        label: 'slice',
+        hint: 'the cutting plane — the one geometry the picture and the SOUND share, since the audio is this exact plane flown through the same field. The pad tilts it, Y raises it, ROT Z spins it, and VIEW picks what the slice jacks paint',
+        controls: ['slice_rx', 'slice_ry', 'slice_y', 'slice_rz', 'slice_view'],
+      },
+      {
+        id: 'reader',
+        label: 'reader',
+        hint: 'how each ring is read in TIME: which frame becomes the surface, whether the rings keep advancing, and the pad that walks a window through the last two seconds — position across, width up. Picture and drone read the same frame',
+        controls: ['reader_mode', 'live', 'freeze', 'scan', 'spread'],
+      },
+      {
+        id: 'view',
+        label: 'view',
+        hint: 'the orbit camera — picture only. It changes nothing about the solid or the sound, only where you stand to look through it',
+        controls: ['view_rot_x', 'view_rot_y', 'view_zoom', 'view_rot_z'],
+      },
+      {
+        id: 'render',
+        label: 'render',
+        hint: 'how the volume is drawn: what happens to sample coordinates that fall outside it, whether overlapping tables blend or one wins per voxel, and whether the ray-march runs at all when nothing is patched to OUT',
+        controls: ['wrap', 'material', 'screen_on'],
+      },
+      {
+        id: 'audio',
+        label: 'audio',
+        hint: 'the drone the same field produces, and the only page whose controls change NOTHING about the picture: pitch, a wavefolder with no image analog, output level, and the two CHROMASTACK controls that turn colour and frame-change into timbre',
+        controls: ['tune', 'fine', 'fold', 'level', 'chroma_depth', 'motion', 'hue_mode'],
+      },
+    ],
+
+    // ⚠ MANDATORY FOR A VIDEO DEF — `primaryAudioOutPortId` matches
+    // `type === 'audio'`, and although this def DOES declare an `audio_out`, the
+    // glyph would then be a scope trace of a drone rather than a picture of the
+    // solid, and `hasVideoSurface` already gives the lane its live thumb. Assert
+    // `hasVideoSurface` and the extension, never this literal.
+    glyph: 'none',
+
+    // The dock body: the video_out picture, the SLICE cross-section and the
+    // derived WAVE trace — the three surfaces `VideocubeCard.svelte` draws — plus
+    // the SCREEN switch. See `$lib/ui/modules/videocube/shell-extension.ts`.
+    extension: 'videocube',
+
+    // The three 2-D pads the card already hand-mounts as `<XyPad>`s, migrated
+    // verbatim: the same axes, the same pairing, the same captions.
+    //
+    // ⚠ THE PAIRING IS THE CAPABILITY on all three. Tilting the cutting plane is
+    // ONE gesture (rot X and rot Y together sweep the plane through the solid);
+    // walking the reader window is one gesture (position and width); orbiting the
+    // camera is one gesture. Split into six dials they reach every value and lose
+    // every move.
+    xyPads: [
+      { x: 'slice_rx', y: 'slice_ry', label: 'rot x / y' },
+      { x: 'scan', y: 'spread', label: 'scan / spread' },
+      { x: 'view_rot_x', y: 'view_rot_y', label: 'view x / y' },
+    ],
+  },
 
   factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;

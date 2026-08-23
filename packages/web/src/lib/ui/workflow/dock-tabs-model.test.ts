@@ -165,7 +165,21 @@ describe('the LIVE registry — which faces are tabbed today', () => {
       // message above: `dockFacePlan` appends a `__unpaged` band for any ranked
       // control no page mentions, so a forgotten param would report 8 here, not
       // 7. The count matching the page count is what says all 33 are paged.
-    ).toEqual(['backdraft', 'cloudseed', 'foxy', 'pentemelodica', 'spirographs']);
+      // ⚠ videocube (2026-08-23) is the FIFTH rail, the SECOND to arrive by the
+      // THRESHOLD route, and the first the 2026-08-18 CONTROL-HEAVY ruling was
+      // written for by name. It declares NO `face.tabbed`: THIRTY params across
+      // six different KINDS of control — three 2-D pads, five named rosters,
+      // three switches, sixteen dials — plus SIX ingest cells, falling into
+      // seven honest stages of one pipeline (what goes in · how the solid is
+      // built · where it is cut · how it is read in time · where the camera is ·
+      // how it is drawn · what it sounds like). Seven IS the threshold; nothing
+      // was padded to reach it and nothing crammed to avoid it. It is a NEW
+      // face, so it is captured as a tabbed face from the start and no existing
+      // baseline moves.
+      // ⚠ AND `videocube=7` IS THE SAME COMPLETENESS PROOF foxy's entry
+      // describes, on a wider surface: 30 params + 6 families = 36 ranked
+      // controls, and a single one left off a page would report 8 here.
+    ).toEqual(['backdraft', 'cloudseed', 'foxy', 'pentemelodica', 'spirographs', 'videocube']);
   });
 
   it('every tabbed face is EITHER over the threshold OR a named opt-in — never neither', () => {
