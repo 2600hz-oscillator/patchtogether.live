@@ -5,8 +5,13 @@
 // The gate owed by the #1661 defect class (`swolevco`: four declared CV inputs
 // that were bit-exactly audio-inert because the factory published an AudioParam
 // on a node whose output was connected to nothing). #1661 named this file's
-// module as using the same vocabulary, unverified. It does — for its eight
-// `comp{N}` macros, and only for those. Every other declared CV input is live.
+// module as using the same vocabulary, unverified. It DID — for its eight
+// `comp{N}` macros, and only for those; every other declared CV input was
+// always live. FIXED in #1737, and this file now asserts the fixed behaviour
+// where it used to characterize the defect: the sweep below covers EVERY
+// declared paramTarget input with no filter, and the leg that used to name the
+// comp macros as the uncertifiable set is now a permanent negative control that
+// requires them to be BOTH structurally off-worklet AND audibly live.
 //
 // WHY NO EXISTING GATE SEES THIS (module-adversarial-audit.md step 3):
 //  * `art/scenarios/mixmstrs/{profile,prefader-sends,passthrough}.test.ts` all
@@ -44,17 +49,24 @@
 // factory two different ways and confirming which leg reddens each time:
 //
 //  A. published on a NON-worklet node (`{ node: deadGain, param: deadGain.gain }`)
-//     → SCOPE reddens (`ch1_volume` joins the excluded set) and the automation
-//       leg reddens (0.0000e+0 vs knob 1.6946e-1). The CV sweep stays green —
-//       because the defect REMOVED its own subject from the sweep's filter.
-//       That is precisely why SCOPE exists and why it is asserted both ways.
+//     → the OFF-WORKLET leg reddens (`ch1_volume` joins that set) and the
+//       automation leg reddens (0.0000e+0 vs knob 1.6946e-1). ⚠ The CV sweep
+//       used to stay green here, because the defect REMOVED its own subject
+//       from the sweep's FILTER — which is why the sweep no longer has one.
 //  B. kept ON the worklet node but pointed at a dead param
 //     (`{ node: f, param: deadGain.gain }`) → the CV sweep reddens naming
 //       `ch1_volume 0.8→0 0.0000e+0` while every other row prints a live value,
-//       and SCOPE correctly stays green.
+//       and the off-worklet leg correctly stays green.
 //
-// So an input cannot be made CV-dead without reddening at least one leg, and the
-// SCOPE leg is the permanent one that keeps the sweep's filter honest.
+// So an input cannot be made CV-dead without reddening at least one leg.
+//
+// AND THE FIX WAS NEGATIVE-CONTROLLED THE SAME WAY (#1737), each half alone:
+//  C. restore the unconditional build-time `applyCompMacro` → the RELOAD leg
+//     reddens with "engaged −9.624 dBFS RMS vs bypassed −9.624 dBFS RMS", and
+//     the declared-defaults leg reddens showing thresh 0 / ratio 1.
+//  D. restore wavesculpt's value-based analyser readiness test → the CV sweep
+//     reddens naming comp1..comp8 at 0.0000e+0 while all 83 other rows print a
+//     live value.
 //
 // Every driver here is deterministic and nothing is pinned, so this scenario
 // needs no baseline and no `.sha` — it is an assertion scenario like
@@ -314,10 +326,14 @@ describe('ART mixmstrs / CV path — a cable on a paramTarget input must change 
     expect(d, `comp1 CV cable must audibly move the mix (linear peak |Δsample|): ${fmt(d)}`).toBeGreaterThan(0);
   }, SWEEP_TIMEOUT_MS);
 
-  it('a dead published param also makes CLIP AUTOMATION of that control inert', async () => {
-    // engine.ts:700 / :754 prefer `inputs[id].param` over `setParam`, so this is
-    // not a second bug — it is the same dead terminal reached by another writer.
-    // `ch1_volume` is the positive control: same branch, live param.
+  it('CLIP AUTOMATION reaches the same terminal a CV cable does — comp macros included (#1737)', async () => {
+    // ⚠ THE TITLE IS THE ASSERTION, so it changed with the fix. This leg used to
+    // read "a dead published param also makes CLIP AUTOMATION of that control
+    // inert" — a characterization of the defect, green BECAUSE comp1 was dead.
+    // engine.ts:700 / :754 prefer `inputs[id].param` over `setParam`, so
+    // automation was never a second bug: it is the same terminal reached by
+    // another writer, and it went live the moment that terminal did.
+    // `ch1_volume` is the positive control: same branch, always-live param.
     const base = basePatch();
     const ctrl = await render(base, { kind: 'none' });
     const auto = async (id: string, v: number) =>
