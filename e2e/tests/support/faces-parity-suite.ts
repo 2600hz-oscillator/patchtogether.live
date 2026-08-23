@@ -1208,6 +1208,28 @@ async function driveCell(
 
     const mode = await readActionMode(page, spec.type, cell.key);
     const before = lastSeq(await readAuditionLog(page));
+    // ⚠ THE `data` SNAPSHOT IS TAKEN **HERE**, BEFORE THE PRESS — and it used to
+    // be taken after it, which made that whole branch unable to pass.
+    //
+    // MEASURED on the branch that first adopted it (frametable's SAVE TABLE, the
+    // first `data`-probe action cell in the tree; the shape had shipped in
+    // PF-14 as "a future action cell" and never had one). `driveCell` clicked,
+    // and only THEN read `beforeRaw`. Any handler that had already written by
+    // the time that round-trip completed made before === after, so the poll
+    // compared a value against itself and timed out on a press that had worked
+    // perfectly:
+    //
+    //   Expected: not "{\"seq\":1,\"ok\":false,\"error\":\"ring not ready\"}"
+    //   Timeout 5000ms exceeded while waiting on the predicate
+    //
+    // The `audition` branch two lines up never had the bug because `before` was
+    // always captured pre-click; this is the same discipline, applied to the
+    // sibling oracle. ⚠ Note the FAILURE DIRECTION: a never-adopted branch fails
+    // CLOSED here (a working cell reads as broken) rather than open, which is
+    // the lucky half — the same latency would silently PASS a `data-rev` probe
+    // whose counter had been bumped before the snapshot.
+    const dataKey = probe!.effect.kind === 'audition' ? null : probe!.effect.key;
+    const beforeRaw = dataKey === null ? null : await readData(page, nodeId, dataKey);
 
     if (mode === 'gate') {
       // A declared HELD action MUST render as a momentary pad. This is the
@@ -1263,9 +1285,9 @@ async function driveCell(
       return;
     }
 
-    // A future action cell that edits node.data instead of firing a seam.
+    // An action cell that edits node.data instead of firing a seam. `beforeRaw`
+    // was captured BEFORE the click — see the note at the snapshot.
     const key = probe!.effect.key;
-    const beforeRaw = await readData(page, nodeId, key);
     if (probe!.effect.kind === 'data-rev') {
       await expect
         .poll(async () => Number(await readData(page, nodeId, key)) || 0, {

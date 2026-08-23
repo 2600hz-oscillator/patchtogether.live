@@ -1210,15 +1210,15 @@ frametable in waveShapeX_cv cv param=waveShapeX cvScale=linear
 frametable in waveShapeY_cv cv param=waveShapeY cvScale=linear
 frametable in weightShape_cv cv param=weightShape cvScale=linear
 frametable out video_out video
-frametable param chaos 0..1 linear default=0
+frametable param chaos 0..1 discrete default=0
 frametable param chaosGate 0..1 linear default=0
-frametable param freeze 0..1 linear default=0
+frametable param freeze 0..1 discrete default=0
 frametable param freezeGate 0..1 linear default=0
-frametable param live 0..1 linear default=0
+frametable param live 0..1 discrete default=0
 frametable param liveGate 0..1 linear default=0
 frametable param mode 0..2 discrete default=0
 frametable param morph 0..1 linear default=0
-frametable param saveTrig 0..1 linear default=0
+frametable param saveTrig 0..1 discrete default=0
 frametable param shimmer 0..1 linear default=0
 frametable param spread 1..60 linear default=12
 frametable param waveAmtX 0..1 linear default=0.35
@@ -1228,6 +1228,8 @@ frametable param waveFreqY 0..8 linear default=1
 frametable param waveShapeX 0..1 linear default=0
 frametable param waveShapeY 0..1 linear default=0
 frametable param weightShape 0..1 linear default=0
+frametable family frametable-file-input kind=other prefix=frametable-file-input
+frametable family frametable-save-file kind=other prefix=frametable-save-file
 freezeframe meta domain=video
 freezeframe in gate_in gate param=gateLevel edge=gate
 freezeframe in video_in video

@@ -1010,6 +1010,37 @@ describe('module-face lint — MOMENTARY pads (face.momentary)', () => {
     // recording as the quiet case, since most entries in this roster arrived
     // through a `linear` -> `discrete` fix.
     'acidwarp:freeze',
+    // FRAMETABLE, 2026-08-23. `live` forces the REAL-TIME / no-lag read in any
+    // mode; `freeze` stops the 60-frame ring advancing.
+    //
+    // LATCHING BOTH, classified at the READ SITE and at the WRITE site, which
+    // agree. Reads: `draw()` evaluates `liveActive = params.live >= 0.5 ||
+    // params.liveGate >= 0.5` and `frozen = params.freeze >= 0.5 ||
+    // params.freezeGate >= 0.5` fresh on EVERY frame, as bare level tests. There
+    // is no edge detector on either — the only one in this module is
+    // `frametableSaveWrite`, which is on `saveTrig` and is on `face.momentary`
+    // for exactly that reason. Writes: `FrametableCard.svelte` binds both to
+    // `onclick` handlers that FLIP the stored value (`toggleLive`,
+    // `toggleFreeze`), where the same card binds `chaos` to
+    // `onpointerdown`/`onpointerup` with pointer capture.
+    //
+    // ⚠ AND THE MOMENTARY BEHAVIOUR ALREADY EXISTS SEPARATELY, which is what
+    // makes the latching reading certain rather than merely defensible. Each of
+    // these is OR-combined with a synthetic gate param — `liveGate` / `freezeGate`
+    // — written per frame by its own jack, so the module ALREADY offers "hold it
+    // while the gate is high" through the cable. The def's header calls this the
+    // FREEZE-pattern and the whole point of the split is that the button latches
+    // where the gate does not. A momentary render would delete the latching half
+    // of a pair whose two halves are the design.
+    //
+    // What a momentary render would cost, concretely: releasing LIVE would drop
+    // the picture back into its ~2-second lag mid-performance, and releasing
+    // FREEZE would resume capture and wash away the held window a player froze
+    // in order to scrub it — including a table just loaded from a file, since
+    // `loadFrametableFile` sets `freeze = 1` precisely to stop live frames
+    // overwriting it.
+    'frametable:live',
+    'frametable:freeze',
   ]);
 
   it('no ACKNOWLEDGED_LATCHING param is DOCUMENTED as momentary (the cross-check)', () => {

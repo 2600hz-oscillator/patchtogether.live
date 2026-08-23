@@ -2784,6 +2784,42 @@ export const FACES = [
       },
     ],
   },
+  {
+    type: 'frametable',
+    pages: 4,
+    videoFaceWhy:
+      'a VIDEO module, so it must boot into the video zone rather than a mixer channel column — '
+      + 'without this field bootWithFace waits out the full test timeout for a column membership '
+      + 'a video node never acquires. Both scenes carry a live picture: the compact tile paints a '
+      + 'VideoTileThumb through hasVideoSurface, and the dock body is the module\'s own '
+      + 'fullViewBody extension (the scanned preview plus its SCREEN switch) — a surface '
+      + 'FrametableCard.svelte DID have, at 176x92, and which promotion would otherwise delete. '
+      + '⚠ THE DETERMINISM ARGUMENT IS TWO INDEPENDENT LEGS, and it needs to be, because this is '
+      + 'the one faced module whose subject is a SIXTY-LAYER ACCUMULATOR advanced once per draw '
+      + '— the ping-pong class, one order worse. Neither leg is "it happens to look still". '
+      + '(1) `freezeFaceVideo` REACHES THIS MODULE EXACTLY, and `freeze` here is a determinism '
+      + 'seam in the ordinary sense rather than the acidwarp sense: `draw()` reads `frozen = '
+      + 'params.freeze >= 0.5 || params.freezeGate >= 0.5` and SKIPS the whole capture-and-'
+      + 'advance block, so the write stops `head` moving and stops any new frame entering the '
+      + 'ring. It is also a real user control, which is fine — the two are not exclusive, and '
+      + 'the FACES entry is the correct home precisely because the write DOES still pin the '
+      + 'picture. (2) THE RING IS EMPTY IN THIS SCENE ANYWAY, which is the stronger leg. '
+      + 'bootWithFace patches nothing into `video_in`, so `inputTex` is null on every draw, '
+      + '`capturedAny` never flips true, and the SELECT shader takes its first branch — '
+      + '`if (uHasContent < 0.5){ outColor = vec4(0,0,0,1); return; }`. The picture is BLACK by '
+      + 'arithmetic on every frame and every renderer, not by luck. The two SHIMMER-driven CPU '
+      + 'phase integrators are inert for the same reason a clock pin would be: `shimmer` ships '
+      + 'at 0, so `phaseX`, `phaseY` and `morphDrift` all accumulate exactly zero. '
+      + 'The scene\'s value is therefore the CONTROL layout — four bands, two XY pads, a '
+      + 'segmented MODE roster and the two FILE cells — which is what the dock capture mostly '
+      + 'frames anyway. '
+      + '⚠ NOT TO BE CONFUSED WITH THE CARD ROSTER\'S VERDICT. `frametable` is in '
+      + 'EXEMPT_FROM_VRT with "VRT baseline pending owner look-approval", but that is about the '
+      + 'CARD scene, whose canvas shows a live scan of whatever is patched. These two scenes '
+      + 'boot their own node with nothing patched, which is the `warrensvisions` / '
+      + '`colourofmagic` position — the card baseline is masked or deferred and the face scenes '
+      + 'need neither.',
+  },
   // ── LUSH GARDEN (2026-08-23) ──────────────────────────────────────────────
   {
     type: 'lushgarden',

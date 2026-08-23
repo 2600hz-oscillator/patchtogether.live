@@ -61,9 +61,14 @@ import {
 import {
   FRAMETABLE_ATLAS_COLS,
   FRAMETABLE_ATLAS_ROWS,
+  atlasGeometry,
   chronoToLayer,
   tileUvTransform,
 } from '$lib/video/frametable-atlas';
+// The node-lifetime FILE RE-HYDRATE (see the factory) — the half of the
+// `.frametable.png` workflow that used to live on the card's `$effect` and
+// would have been deleted by promotion.
+import { getFrametableBlob } from '$lib/video/frametable-file-store';
 
 // ----------------------------------------------------------------------
 // Param model.
@@ -434,18 +439,55 @@ export const frametableDef: VideoModuleDef = {
   outputs: [{ id: 'video_out', type: 'video' }],
   params: [
     // mode selector: 0=SMOOTH (default), 1=MORPH, 2=CHAOS. Discrete (faceplate-only, no CV).
-    { id: 'mode',        label: 'mode',      defaultValue: FRAMETABLE_DEFAULTS.mode,       min: 0, max: 2,  curve: 'discrete' },
+    //
+    // ⚠ THE ROSTER IS A PROMOTION, NOT AN INVENTION. Every name below already
+    // existed in shipped code — `FrametableCard.svelte`'s `MODES` array spelled
+    // them SMOOTH / MORPH / CHAOS on its three segment buttons, and the shader's
+    // own `MODE_SMOOTH`/`MODE_MORPH`/`MODE_CHAOS` constants are these integers.
+    // The card was the ONLY place the names lived, so promotion would have
+    // deleted them: without an `options` roster the faceplate paints a 0..2
+    // rotary reading a bare integer, which is the moog962 trap (a discrete param
+    // with no names is a dial whose states cannot be told apart).
+    //
+    // ⚠ AND IT IS THE ONE DECLARATION ON THIS DEF THAT COSTS A REAL-GPU
+    // RE-ATTEST. `params` is real code to `attest-code-basis.ts`; only `docs`,
+    // `controlFamilies`, `face` and `noUserControl` are stripped. This def sits
+    // in the WebGL basis (`resolveWebglBasis` sweeps lib/video/), so the roster
+    // and the four `curve` corrections below move `computeWebglHash`. Same
+    // trade `tempest` and `fader` made in batch 22 G2b, and it is paid ONCE
+    // here because the face itself is hash-transparent.
+    {
+      id: 'mode', label: 'mode', defaultValue: FRAMETABLE_DEFAULTS.mode, min: 0, max: 2, curve: 'discrete',
+      options: [
+        { value: FRAMETABLE_MODE_SMOOTH, label: 'SMOOTH', title: 'A flowing 2-D field of temporal sample-centres from two morphable waveforms, output as a capped weighted AVERAGE — liquid, and auto-lagged by ~2 s unless LIVE is on' },
+        { value: FRAMETABLE_MODE_MORPH,  label: 'MORPH',  title: 'The smoothest possible cross-dissolve: a spatially-uniform periodic Hann scan between temporal positions that loops seamlessly across the ring seam. Auto-lagged by ~2 s unless LIVE is on' },
+        { value: FRAMETABLE_MODE_CHAOS,  label: 'CHAOS',  title: 'The per-pixel stochastic mosaic: every pixel draws exactly ONE source frame, picked in O(1) from a static screen-space threshold. Always real-time (never lagged)' },
+      ],
+    },
     // LIVE switch (button-latched; OR'd with the live_gate LEVEL) → forces real-time.
-    { id: 'live',        label: 'live',      defaultValue: FRAMETABLE_DEFAULTS.live,       min: 0, max: 1,  curve: 'linear' },
+    //
+    // ⚠ `discrete`, NOT `linear`, AND THE CORRECTION IS FUNCTIONAL. This and the
+    // three switches below are read as `>= 0.5` two-state levels by `draw()`,
+    // and `FrametableCard.svelte` has always drawn all four as BUTTONS. But
+    // `looksLikeToggle` is `curve === 'discrete' && min === 0 && max === 1`, so
+    // while they said `linear` the faceplate would have painted each of them as
+    // a KnobConic sweeping a continuum — a 200 px drag to flip a two-state
+    // control — and `face.momentary` could not have been declared on `chaos` or
+    // `saveTrig` at all (module-face-lint refuses a press-pad that is not
+    // `0..1 discrete` resting at 0). The `linear` -> `discrete` fix is the
+    // ordinary route into this classification; `acidwarp:freeze` is the
+    // in-tree precedent and the ACKNOWLEDGED_LATCHING roster says most of its
+    // entries arrived the same way. Nothing outside the UI reads `curve`.
+    { id: 'live',        label: 'live',      defaultValue: FRAMETABLE_DEFAULTS.live,       min: 0, max: 1,  curve: 'discrete' },
     // momentary CHAOS switch (button-latched; OR'd with the chaos_gate LEVEL) → overrides to CHAOS.
-    { id: 'chaos',       label: 'chaos',     defaultValue: FRAMETABLE_DEFAULTS.chaos,      min: 0, max: 1,  curve: 'linear' },
+    { id: 'chaos',       label: 'chaos',     defaultValue: FRAMETABLE_DEFAULTS.chaos,      min: 0, max: 1,  curve: 'discrete' },
     { id: 'morph',       label: 'morph',     defaultValue: FRAMETABLE_DEFAULTS.morph,      min: 0, max: 1,  curve: 'linear' },
     { id: 'spread',      label: 'spread',    defaultValue: FRAMETABLE_DEFAULTS.spread,     min: 1, max: 60, curve: 'linear' },
     { id: 'shimmer',     label: 'shimmer',   defaultValue: FRAMETABLE_DEFAULTS.shimmer,    min: 0, max: 1,  curve: 'linear' },
     // weight-shape: 0 = triangular (default), 1 = gaussian ("smooth"). CHAOS bell only.
     { id: 'weightShape', label: 'shape',     defaultValue: FRAMETABLE_DEFAULTS.weightShape, min: 0, max: 1, curve: 'linear' },
     // user-facing FREEZE toggle (button-latched; OR'd with the freeze_gate LEVEL to freeze).
-    { id: 'freeze',      label: 'freeze',    defaultValue: FRAMETABLE_DEFAULTS.freeze,     min: 0, max: 1,  curve: 'linear' },
+    { id: 'freeze',      label: 'freeze',    defaultValue: FRAMETABLE_DEFAULTS.freeze,     min: 0, max: 1,  curve: 'discrete' },
     // SMOOTH-mode morphable-waveform field (independent X/Y).
     { id: 'waveFreqX',   label: 'x freq',    defaultValue: FRAMETABLE_DEFAULTS.waveFreqX,  min: 0, max: 8,  curve: 'linear' },
     { id: 'waveAmtX',    label: 'x amt',     defaultValue: FRAMETABLE_DEFAULTS.waveAmtX,   min: 0, max: 1,  curve: 'linear' },
@@ -457,7 +499,13 @@ export const frametableDef: VideoModuleDef = {
     { id: 'liveGate',    label: 'live gate', defaultValue: FRAMETABLE_DEFAULTS.liveGate,   min: 0, max: 1,  curve: 'linear' },
     { id: 'chaosGate',   label: 'chaos gate',defaultValue: FRAMETABLE_DEFAULTS.chaosGate,  min: 0, max: 1,  curve: 'linear' },
     { id: 'freezeGate',  label: 'frz gate',  defaultValue: FRAMETABLE_DEFAULTS.freezeGate, min: 0, max: 1,  curve: 'linear' },
-    { id: 'saveTrig',    label: 'save',      defaultValue: FRAMETABLE_DEFAULTS.saveTrig,   min: 0, max: 1,  curve: 'linear' },
+    // ⚠ `saveTrig` IS NOT ONE OF THE THREE ABOVE, and the difference decides its
+    // face cell. `liveGate`/`chaosGate`/`freezeGate` are written ONLY by a CV
+    // bridge (`noUserControl` below); this one is ALSO the SAVE button's param —
+    // `FrametableCard.svelte`'s `doSave()` writes 1, then 0 after 140 ms. So it
+    // is a real user control, it needs the press-pad shape, and it goes on
+    // `face.momentary` rather than into `noUserControl`.
+    { id: 'saveTrig',    label: 'save',      defaultValue: FRAMETABLE_DEFAULTS.saveTrig,   min: 0, max: 1,  curve: 'discrete' },
   ],
 
   docs: {
@@ -501,10 +549,225 @@ export const frametableDef: VideoModuleDef = {
       liveGate: 'Hidden synthetic param the live-gate CV bridge writes each frame with the live gate LEVEL; while it is HIGH (>= 0.5) the real-time / no-lag read is forced in any mode (OR-combined with the LIVE switch, so the per-frame level never stomps the button\'s latched state). Exposed only as the live gate jack, not as a knob.',
       chaosGate: 'Hidden synthetic param the chaos-gate CV bridge writes each frame with the chaos gate LEVEL; while it is HIGH (>= 0.5) the CHAOS render is forced, overriding the MODE selector (OR-combined with the momentary CHAOS switch). Exposed only as the chaos gate jack, not as a knob.',
       freezeGate: 'Hidden synthetic param the freeze-gate CV bridge writes each frame with the freeze gate LEVEL; while it is HIGH (>= 0.5) the ring is held frozen (OR-combined with the FREEZE toggle, so the per-frame level never stomps the button\'s latched state). Exposed only as the freeze gate jack, not as a knob.',
-      saveTrig: 'Hidden synthetic param the SAVE momentary button sets and the save-trigger CV bridge writes; a RISING edge on it snapshots the current 60-frame ring into an in-GPU slot (idempotent per edge). Exposed only as the SAVE button + save trigger jack, not as a knob.',
+      saveTrig: 'SAVE (0/1, default 0): a MOMENTARY press-pad. Its RISING edge snapshots the current 60-frame ring into an in-GPU slot (idempotent per edge — held down does not re-snapshot), which is the slot a VideoCube reads and the one the save trigger jack also fires. The snapshot lives in GPU memory and dies on reload; the FILE controls below are the ones that survive it. Releasing returns the pad to rest, so nothing is left latched in the patch.',
+      'frametable-file-input-{n}': 'Load table - imports a `.frametable.png` atlas file (a lossless 10x6 = 60-tile contact sheet, no video codec) from disk and detiles it straight into the 60-frame ring, FREEZING the ring so the loaded table can be scanned with MORPH and SPREAD without live frames washing it away. A status line reports the frame count and tile size, or the reason a file was rejected (a PNG whose dimensions are not a 10x6 grid is not a frametable atlas). The multi-megabyte frame bytes are kept in THIS browser\'s IndexedDB and only a ~120-byte descriptor is saved with the patch, so a loaded table survives a reload for you but a peer without the local copy sees the loader rather than your table.',
+      'frametable-save-file-{n}': 'Save table - reads all 60 ring layers back from the GPU, tiles them into a lossless `.frametable.png` atlas and writes it to disk through the file picker (or a plain download where no picker exists). FREEZE first if you want a specific 60 frames: the ring keeps advancing while you click otherwise. Unlike the SAVE pad above — which snapshots into GPU memory and dies on reload — this produces a real file you can keep, re-load into any FRAMETABLE, and pass to someone else. It also stores a copy in this browser and stamps the descriptor onto the node, so the saved table is what a reload restores.',
     },
   },
-  controlFamilies: [],
+  // The card's two FILE affordances, declared as one-member families so the docs
+  // gate can key authored prose to them and the shell can render a cell for each.
+  // Both `testidPrefix` values are the ones `FrametableCard.svelte` actually
+  // emits, which is what the source grep in the contract layer checks.
+  //
+  // ⚠ THEY ARE FAMILY CELLS RATHER THAN PARAMS BECAUSE THEY HOLD NO VALUE. A
+  // file import is an ACTION over `node.data` (the tiny `frametableFile`
+  // descriptor) plus IndexedDB; there is no number for a ParamDef to carry, and
+  // no CV that could drive one. The dx7 pair (`dx7-preset-select-{n}` +
+  // `dx7-syx-input-{n}`) and milkdrop's loader are the precedent, verbatim.
+  //
+  // ⚠ AND THEY ARE THE HALF OF THIS MODULE PROMOTION WOULD OTHERWISE DELETE.
+  // `migrated(type)` stops BOTH surfaces rendering `FrametableCard.svelte`, so
+  // the entire `.frametable.png` workflow — which this def's own `explanation`
+  // advertises at length as "the wavetable file workflow" — would become
+  // unreachable the moment the face shipped. That is STOP 2 in the faceplate
+  // skill, and these two entries are what answers it.
+  controlFamilies: [
+    { id: 'frametable-file-input', label: 'Load table', kind: 'other', testidPrefix: 'frametable-file-input' },
+    { id: 'frametable-save-file', label: 'Save table', kind: 'other', testidPrefix: 'frametable-save-file' },
+  ],
+
+  // The three synthetic gate-state params. Each exists ONLY so a gate bridge has
+  // somewhere to write the raw per-frame LEVEL of its jack without stomping the
+  // latched state of the faceplate switch it is OR-combined with; none has ever
+  // had a control on any surface, and rendering one would put a continuous
+  // rotary over a raw gate swing.
+  //
+  // ⚠ `saveTrig` IS DELIBERATELY ABSENT. It has a cv-port too, but it is ALSO
+  // the SAVE pad's param, so it is a user control and belongs on
+  // `face.momentary` — see the param declaration above.
+  noUserControl: [
+    {
+      param: 'liveGate',
+      writer: 'cv-port',
+      why: "The `live_gate` input (edge: 'gate') targets it, and the cross-domain bridge writes that jack's LEVEL into it every frame. `draw()` reads it as `params.liveGate >= 0.5` and ORs it with the latched LIVE switch, which is the entire reason the two are separate params: a per-frame level write into `live` would erase whatever the player had switched on the instant a cable was patched. There is no control for it on the card and none on the faceplate — the LIVE switch is the control, and this is the jack's private landing pad.",
+    },
+    {
+      param: 'chaosGate',
+      writer: 'cv-port',
+      why: "The `chaos_gate` input (edge: 'gate') targets it, and the bridge writes that jack's LEVEL into it every frame. `draw()` reads `params.chaosGate >= 0.5` and ORs it with the momentary CHAOS pad to force the real-time CHAOS render over whatever MODE selects, for exactly as long as the gate is high. Same FREEZE-pattern separation as the two siblings: the pad owns the latch, the jack owns the level, and neither can overwrite the other.",
+    },
+    {
+      param: 'freezeGate',
+      writer: 'cv-port',
+      why: "The `freeze_gate` input (edge: 'gate') targets it, and the bridge writes that jack's LEVEL into it every frame. `draw()` reads `params.freezeGate >= 0.5` and ORs it with the latched FREEZE toggle to hold the ring, so a momentary gate hold and a latched button freeze independently. This is the ORIGINAL of the pattern the other two copy — the def's own header calls the pair 'FREEZE-pattern' — and it exists because a per-frame level write into `freeze` would drop the ring the instant a held gate went low even though the player had the button engaged.",
+    },
+  ],
+
+  // ── THE FACEPLATE ──────────────────────────────────────────────────────────
+  //
+  // WHAT IT IS FOR. Every other time-based video module in the fleet gives you
+  // ONE tap on the past: vdelay hands back a frame from N slots ago, freezeframe
+  // holds one, feedback folds the last output into this one. FRAMETABLE keeps
+  // the last SIXTY frames addressable AT ONCE and makes the read position a
+  // control you play — the video isomorph of a wavetable oscillator, where the
+  // "table" is two seconds of whatever you patched into it. So the verb is SCAN:
+  // point at a moment in the recent past, decide how much of the neighbourhood
+  // comes with it, and choose which of three engines does the reading. Every
+  // rank below descends from that sentence.
+  //
+  // THE TIER LADDER, read back as a sentence. mini 1 (MODE — which of three
+  // instruments you are holding) · compact 2 (MODE and MORPH: which engine, and
+  // where in the two seconds it is pointing) · dock everything. The lane caps
+  // are `laneBodyPlan` geometry and resolve to 2 cells at BOTH lane tiers for a
+  // video face (#2085), so ranks 3+ are dock-only and the pads cost nothing to
+  // rank — `laneOrder` already excludes every pad anchor (a pad is square; a
+  // lane knob column is 46 px).
+  //
+  // WHY MODE OUTRANKS MORPH, and the argument would be WRONG for most modules.
+  // Normally the module's namesake control ranks first, and MORPH is both the
+  // namesake and the identity verb. It ranks second anyway because MODE is not a
+  // flavour of one engine — it selects between three renderers that share almost
+  // nothing, and it changes what every other control on this face MEANS. SPREAD
+  // is an averaging window in SMOOTH, a dissolve width in MORPH and a bell in
+  // CHAOS; SHIMMER is flow speed, then scan drift, then threshold dither; SHAPE
+  // and the whole `field` page are INERT outside their own mode. A player who
+  // cannot see MODE cannot read any other cell correctly, which is a property of
+  // this def and not of the fleet.
+  //
+  // WHY LIVE RANKS FOURTH. It is a two-state switch, so it looks like chrome —
+  // but it is the control that explains this module's most surprising default.
+  // SMOOTH and MORPH engage a ~2-second LAG on purpose (`lagged = effMode !==
+  // CHAOS && !liveActive`), so out of the box the picture does not track the
+  // input, and LIVE is the only thing that makes it. Ranking it below the
+  // waveform pads would bury the answer to the first question this module
+  // provokes.
+  //
+  // ORDER AND PAGES DISAGREE, DELIBERATELY. `order` is PRIORITY — what a
+  // narrower tier keeps — so it interleaves the shared scan controls with the
+  // switches that gate them. `pages` is SIGNAL ORDER at the dock, and there the
+  // honest grouping is by WHICH ENGINE OWNS A CONTROL: the four `field` cells
+  // do nothing outside SMOOTH and the `ring` page is not about reading the
+  // table at all, it is about the buffer underneath it.
+  //
+  // FOUR PAGES, AND NO TAB RAIL. `DOCK_TAB_MIN_BANDS` is 7 and this face has
+  // four honest ideas; padding it to seven to earn a rail is exactly what the
+  // owner ruling forbids ("never pad pages to force the rail"). Four bands
+  // render as a column, which is correct.
+  //
+  // NO HERO, NO READOUT, NO SIDEBAR — the 2026-08-19 rulings. The finding that
+  // loses its painted surface is the card's `frametable-file-status` line ("`loaded
+  // 60 frames 512x384`"); it survives as the FILE cell's own status line, which
+  // the shell renders for a `file` cell and which faces-parity asserts on, so
+  // nothing had to be weakened to remove it.
+  face: {
+    order: [
+      'mode', 'morph', 'spread', 'live', 'shimmer', 'freeze', 'chaos', 'saveTrig',
+      // CHAOS-only, so it ranks below every control that is live in all three
+      // engines. `weightShape` is `shape` on the plate.
+      'weightShape',
+      // The two waveform pads and their shape knobs. Both pad ANCHORS are
+      // dock-only by construction, and each `waveAmt*` is FOLDED into its pad
+      // rather than rendering a cell of its own — it is ranked here because
+      // face completeness is what proves no control was dropped, not because it
+      // paints twice.
+      'waveFreqX', 'waveAmtX', 'waveShapeX',
+      'waveFreqY', 'waveAmtY', 'waveShapeY',
+      // The two FILE affordances rank last: both are WIDE cells no lane tier can
+      // paint, so ranking them higher would claim lane space they cannot use.
+      'frametable-file-input-{n}', 'frametable-save-file-{n}',
+    ],
+
+    pages: [
+      {
+        id: 'engine',
+        label: 'engine',
+        hint: 'which of three renderers is reading the 60-frame table, plus the two switches that override it — LIVE drops the ~2-second lag SMOOTH and MORPH take by default, and CHAOS forces the real-time mosaic for as long as you hold it',
+        controls: ['mode', 'live', 'chaos'],
+      },
+      {
+        id: 'scan',
+        label: 'scan',
+        hint: 'the read itself, and the only page whose four controls do something in every engine: where in the last two seconds the centre sits, how many frames wide the window around it is, how fast that centre drifts on its own, and the shape of the bell CHAOS draws from',
+        controls: ['morph', 'spread', 'shimmer', 'weightShape'],
+      },
+      {
+        id: 'field',
+        label: 'field',
+        hint: 'SMOOTH only: two morphable waveforms, one per screen axis, that bend the read position into a 2-D field so different parts of the picture come from different moments. Each pad is frequency across, amount up; the knob beside it morphs that axis sine to triangle to saw to square',
+        controls: ['waveFreqX', 'waveAmtX', 'waveShapeX', 'waveFreqY', 'waveAmtY', 'waveShapeY'],
+      },
+      {
+        id: 'ring',
+        label: 'ring',
+        hint: 'the 60-frame buffer underneath every engine: hold it still so a scan has something fixed to scan, snapshot it into GPU memory for a VideoCube, or write it out as a .frametable.png you can keep, share and load back',
+        controls: ['freeze', 'saveTrig', 'frametable-file-input-{n}', 'frametable-save-file-{n}'],
+      },
+    ],
+
+    // ⚠ MANDATORY FOR A VIDEO DEF — `primaryAudioOutPortId` matches
+    // `type === 'audio'` and this def has none, so any other glyph literal falls
+    // through `glyphBinding` to a dead `{kind:'static'}` and reddens
+    // module-face-lint's dead-glyph clause. The picture arrives from a different
+    // seam entirely: `hasVideoSurface(def)` paints the lane tile's
+    // `VideoTileThumb`, and the `fullViewBody` extension paints the dock. Assert
+    // THOSE, never this literal — `'none' + blank tile` and `'none' + live
+    // thumb` are indistinguishable from the declaration alone.
+    glyph: 'none',
+
+    // SCREEN ON/OFF, and here it is a PORT rather than an addition (#1928):
+    // `FrametableCard.svelte` already draws a 176x92 `video_out` preview, and
+    // promotion stops both surfaces rendering that card — so without this slot
+    // the face would silently delete a picture the module already had, and with
+    // it the only surface on which "what is the table doing?" is answerable.
+    // See `$lib/ui/modules/frametable/shell-extension.ts`.
+    extension: 'frametable',
+
+    // The six controls `FrametableCard.svelte` draws as `<NeonFader>` throws.
+    // The six the card does NOT draw as faders are deliberately absent: the four
+    // `waveFreq*`/`waveAmt*` are pad axes (below), and `mode`/`live`/`chaos`/
+    // `freeze`/`saveTrig` are switches whose primitive comes from their shape.
+    paramCells: {
+      morph: 'fader', spread: 'fader', shimmer: 'fader', weightShape: 'fader',
+      waveShapeX: 'fader', waveShapeY: 'fader',
+    },
+
+    // The two 2-D pads, IDENTICAL to the pair `FrametableCard.svelte` hand-rolls
+    // at `frametable-pad-x` / `frametable-pad-y` — same axes, same pairing, same
+    // captions. Migrating them onto the shared `XyPad` is the point: the card's
+    // versions are a private re-implementation (pointer capture, rAF coalescing,
+    // a dbl-click reset) of a primitive the shell already owns.
+    //
+    // ⚠ THE PAIRING IS THE CAPABILITY. Two dials CAN reach every value a pad
+    // can; what they cannot do is reach them TOGETHER, and on this module a
+    // diagonal drag across freq x amt is the gesture — you are shaping one
+    // waveform, not setting two numbers.
+    //
+    // `surface: 'band'` (the default, left implicit): unlike quadralogical these
+    // pads have nothing to do with the picture, so the module's own body has no
+    // reason to paint them and the generic cell in the `field` band is right.
+    xyPads: [
+      { x: 'waveFreqX', y: 'waveAmtX', label: 'x freq / amt' },
+      { x: 'waveFreqY', y: 'waveAmtY', label: 'y freq / amt' },
+    ],
+
+    // ⚠ TWO PRESS-PADS, AND BOTH ARE MOMENTARY AT THE READ SITE rather than by
+    // assumption.
+    //
+    // `chaos` — `draw()` computes `chaosActive = params.chaos >= 0.5 || ...` and
+    // uses it to OVERRIDE the MODE selector for that frame only. The card binds
+    // it to `onpointerdown` -> 1 / `onpointerup` -> 0 with pointer capture, and
+    // its own title says "HOLD to momentarily force". A latching render would
+    // strand the module in CHAOS with the MODE selector saying something else —
+    // a stuck value in the Y.Doc that reads as a broken selector.
+    //
+    // `saveTrig` — the engine latches its RISING EDGE inside `setParam` (see the
+    // saveLatch comment: the bridge replays a whole trigger inside one scheduler
+    // tick, so a level read at draw time misses it). The card presses to 1 and
+    // releases to 0 after 140 ms. A latching render would leave it high, and the
+    // next `frametableSaveWrite(0)` from a patched trigger would arm a snapshot
+    // the player never asked for.
+    momentary: ['chaos', 'saveTrig'],
+  },
 
   factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;
@@ -723,6 +986,63 @@ export const frametableDef: VideoModuleDef = {
     //    re-load re-detiles even if the element identity is reused. ──
     let pendingAtlas: TexImageSource | null = null;
     let atlasScratch: WebGLTexture | null = null;
+
+    // ── FILE RE-HYDRATE, ON THE NODE'S LIFETIME ──────────────────────────────
+    //
+    // ⚠ THIS MOVED HERE FROM `FrametableCard.svelte`, AND THE PROMOTION IS WHY.
+    // A `.frametable.png` load persists as two halves: the multi-megabyte frame
+    // bytes in THIS browser's IndexedDB, and a ~120-byte descriptor on
+    // `node.data.frametableFile` (the only half that syncs). The GPU ring is not
+    // persisted at all, so something has to re-detile the bytes back into it
+    // after a reload — and until now that something was a `$effect` on the CARD.
+    //
+    // `migrated(type)` stops BOTH surfaces rendering that card, so promoting
+    // this module WITHOUT moving the re-hydrate would have shipped a face whose
+    // LOAD control works, whose descriptor saves, and whose table is silently
+    // gone the next time the patch opens. The card's `$effect` was never wrong,
+    // it was just attached to a VIEW: this is #1531's rule ("a resource whose
+    // LIFETIME is the node's belongs to the NODE, never to whichever view
+    // happens to be mounted"), applied to the one piece of frametable state that
+    // had it backwards.
+    //
+    // Doing it in the FACTORY is what makes it view-free: the factory is
+    // constructed with the node and disposed with it, on both surfaces and under
+    // `?shell=legacy` alike, so there is now exactly ONE hydrate path and the
+    // card and the faceplate cannot drift about what a reload restores.
+    //
+    // Best-effort by construction — a missing local copy is the NORMAL case for
+    // a collaborator who never had the file (the VIDEOBOX "peers without a local
+    // copy show the placeholder" shape), and every failure leaves the LOAD
+    // control as the re-load path rather than taking the node down.
+    function hydrateRingFromStore(fileId: string): void {
+      void (async () => {
+        try {
+          const rec = await getFrametableBlob(fileId);
+          if (!rec) return; // no local copy — the LOAD control is the recovery
+          const bmp = await createImageBitmap(rec.blob);
+          if (!atlasGeometry(bmp.width, bmp.height).valid) { bmp.close?.(); return; }
+          // Bitmap → canvas, mirroring the card's own upload path EXACTLY. The
+          // atlas round-trip is documented as bit-exact in frametable-atlas.ts
+          // (the SAVE tiler's per-tile flip composes with the detile's
+          // UNPACK_FLIP_Y to identity), and taking a different route to the
+          // texture is how a "cosmetic" refactor turns a lossless table upside
+          // down.
+          const c = document.createElement('canvas');
+          c.width = bmp.width; c.height = bmp.height;
+          const cx = c.getContext('2d');
+          if (cx) cx.drawImage(bmp, 0, 0);
+          bmp.close?.(); // AFTER the draw — the canvas now owns the pixels
+          if (!cx) return;
+          pendingAtlas = c; // detiled by the next draw()
+        } catch {
+          /* IndexedDB unavailable, a decode failure, or no DOM (unit lane) */
+        }
+      })();
+    }
+    {
+      const saved = (node.data as { frametableFile?: { id?: string } } | undefined)?.frametableFile;
+      if (typeof saved?.id === 'string' && saved.id) hydrateRingFromStore(saved.id);
+    }
 
     /** Upload the pending atlas into a scratch texture and COPY-detile each of
      *  the 60 tiles into ring layer `c` (uTileScale=1/COLS×1/ROWS, uTileOffset=
