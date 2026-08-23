@@ -118,14 +118,12 @@ e2e/tests/drumseqz.spec.ts :: drumseqz → drummergirl → audioOut: gate1 fires
 e2e/tests/dx7-syx-load.spec.ts :: dx7: uploading a 32-voice SYX populates the dropdown + selecting different patches changes the audible waveform :: waitForTimeout(100) #1
 e2e/tests/dx7-syx-load.spec.ts :: dx7: uploading a 32-voice SYX populates the dropdown + selecting different patches changes the audible waveform :: waitForTimeout(100) #2
 e2e/tests/dx7-syx-load.spec.ts :: dx7: uploading a 32-voice SYX populates the dropdown + selecting different patches changes the audible waveform :: waitForTimeout(1500) #1
-e2e/tests/dx7.spec.ts :: dx7: sequencer (poly) → DX7 → audioOut produces audible RMS :: waitForTimeout(100) #1
 e2e/tests/dx7.spec.ts :: dx7: switching algorithm changes the audible scope content :: waitForTimeout(100) #1
 e2e/tests/dx7.spec.ts :: dx7: switching algorithm changes the audible scope content :: waitForTimeout(100) #2
 e2e/tests/dx7.spec.ts :: dx7: switching algorithm changes the audible scope content :: waitForTimeout(800) #1
 e2e/tests/edges.spec.ts :: captureEdges :: waitForTimeout(700) #1
 e2e/tests/filter-cv-depth.spec.ts :: cutoff_cv_amt scales the cutoff CV — full depth sweeps, depth 0 mutes the jack :: waitForTimeout(100) #1
 e2e/tests/filter-cv-depth.spec.ts :: cutoff_cv_amt scales the cutoff CV — full depth sweeps, depth 0 mutes the jack :: waitForTimeout(600) #1
-e2e/tests/filter-cv-depth.spec.ts :: rmsSpread :: waitForTimeout(70) #1
 e2e/tests/filter-cv-depth.spec.ts :: setParam :: waitForTimeout(150) #1
 e2e/tests/four-modules.spec.ts :: CHARLOTTE'S ECHOS: passes signal through and produces echo tail :: waitForTimeout(50) #1
 e2e/tests/four-modules.spec.ts :: MEOWBOX: gate triggers audible voice on L output :: waitForTimeout(800) #1
@@ -162,7 +160,6 @@ e2e/tests/lfo-modulation-visible.spec.ts :: LFO modulating DRUMMERGIRL volume vi
 e2e/tests/lfo-modulation-visible.spec.ts :: LFO modulating DRUMMERGIRL volume visibly moves the volume fader thumb :: waitForTimeout(300) #1
 e2e/tests/lfo-modulation-visible.spec.ts :: LFO modulating QBRT cutoff visibly moves the cutoff fader thumb :: waitForTimeout(300) #1
 e2e/tests/lfo-modulation-visible.spec.ts :: sampleFaderThumbTops :: waitForTimeout(intervalMs) #1
-e2e/tests/load-patch.spec.ts :: @load cold-load: clicking Load as the first user action produces audio :: waitForTimeout(100) #1
 e2e/tests/lushgarden.spec.ts :: continuous mode: plants spawn at RATE and the clean preview renders non-black :: waitForTimeout(700) #1
 e2e/tests/lushgarden.spec.ts :: grow gate: [GATED] badge, rate-spawning stops, one plant per rising edge, reset clears :: waitForTimeout(1200) #1
 e2e/tests/lushgarden.spec.ts :: grow gate: [GATED] badge, rate-spawning stops, one plant per rising edge, reset clears :: waitForTimeout(1500) #1
@@ -175,7 +172,6 @@ e2e/tests/menu-viewport-clamp.spec.ts :: panNodeTo :: waitForTimeout(120) #1
 e2e/tests/meowbox.spec.ts :: Sequencer → MEOWBOX → Scope → AudioOut produces audible RMS via the new pitch cable :: waitForTimeout(100) #1
 e2e/tests/meowbox.spec.ts :: knob pitch ≡ CV pitch: +12 semi knob (no CV) sounds same RMS as +1V CV (knob=0) :: waitForTimeout(600) #1
 e2e/tests/meowbox.spec.ts :: knob pitch ≡ CV pitch: +12 semi knob (no CV) sounds same RMS as +1V CV (knob=0) :: waitForTimeout(600) #2
-e2e/tests/meowbox.spec.ts :: peakRmsOverWindow :: waitForTimeout(intervalMs) #1
 e2e/tests/meowbox.spec.ts :: waitForVOct :: waitForTimeout(40) #1
 e2e/tests/midi-cv-buddy.spec.ts :: midi-cv-buddy: clicking Connect does not crash the card :: waitForTimeout(300) #1
 e2e/tests/midi-lane.spec.ts :: midi-lane: clicking Connect does not crash the card :: waitForTimeout(300) #1
