@@ -180,16 +180,20 @@ test.describe('EDGES — Sobel edge-detection processor', () => {
         n.params.thickness = 5;
       });
     });
-    await page.waitForTimeout(120);
-
-    const params = await page.evaluate(() => {
-      const w = globalThis as unknown as {
-        __patch: { nodes: Record<string, { params: Record<string, number> }> };
-      };
-      const n = w.__patch.nodes['edg'];
-      return { th: n?.params.threshold, wk: n?.params.thickness };
-    });
-    expect(params.th).toBe(0.45);
-    expect(params.wk).toBe(5);
+    // Poll the STORE — the real subject — instead of budgeting for the Y.Doc
+    // transaction. One assertion over the whole record: a partial write fails.
+    await expect
+      .poll(
+        () =>
+          page.evaluate(() => {
+            const w = globalThis as unknown as {
+              __patch: { nodes: Record<string, { params: Record<string, number> }> };
+            };
+            const n = w.__patch.nodes['edg'];
+            return { th: n?.params.threshold, wk: n?.params.thickness };
+          }),
+        { message: 'both EDGES param writes land in the patch store' },
+      )
+      .toEqual({ th: 0.45, wk: 5 });
   });
 });
