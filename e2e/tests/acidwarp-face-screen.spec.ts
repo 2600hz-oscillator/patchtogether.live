@@ -18,6 +18,7 @@
 // if acidwarp ever BECAME capturable this spec goes red and says so.
 
 import { test, expect, type Page } from '@playwright/test';
+import { SLOW_BOOT_TEST_TIMEOUT_MS } from '../_helpers/boot-budget';
 import { spawnPatch } from './_helpers';
 
 /**
@@ -72,12 +73,13 @@ async function sampleTwice(page: Page, frames: number): Promise<{
 
 async function openAcidwarpDock(page: Page) {
   const shell = page.locator('.svelte-flow__node[data-id="aw"] [data-testid="module-shell"]');
-  await expect(shell, 'the promoted face renders a ModuleShell tile in the lane').toBeVisible();
+  await expect(shell, 'the promoted face renders a ModuleShell tile in the lane')
+    .toBeVisible({ timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
   await shell.getByTestId('shell-open-dock').click();
   const faceplate = page.getByTestId('dock-full-view');
-  await expect(faceplate).toBeVisible();
+  await expect(faceplate).toBeVisible({ timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
   const dockShell = faceplate.locator('[data-testid="module-shell"][data-shell-tier="dock"]');
-  await expect(dockShell).toBeVisible();
+  await expect(dockShell).toBeVisible({ timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
   return dockShell;
 }
 
@@ -86,6 +88,24 @@ const NODES = [
 ];
 
 test.describe('ACIDWARP face — the screen', () => {
+  // ⚠ THE CEILING THIS FILE NEVER SET, AND THE ONE THAT ACTUALLY FIRED. CI run
+  // 32614572680 shard 5 reddened here with `Test timeout of 30000ms exceeded` on
+  // the SCREEN OFF leg — Playwright's flat per-test DEFAULT, because this file
+  // declared no budget of its own.
+  //
+  // ⚠ IT IS NOT THE hot-shard STORY, AND THE NUMBER SAYS SO: that shard finished
+  // at 532s of 1020s = 52% of budget, nowhere near the 85% line. So this is not a
+  // shard packed too hot, it is a test that was never given room. This file's own
+  // PENDING entry measured ~11.1 s per pass under SwiftShader LOCALLY and warned
+  // in capitals to "budget the 2-core CI VM at roughly the SwiftShader figure
+  // plus VM overhead" — which lands at or past 30 s. The measurement was right;
+  // nothing consumed it.
+  //
+  // Taken from the ONE export site rather than typed, so it moves with the fleet
+  // instead of drifting: a flat wall-clock number is a different assertion on
+  // every runner (#1875/#1906). It BOUNDS the failure; it is not the gate.
+  test.setTimeout(SLOW_BOOT_TEST_TIMEOUT_MS);
+
   test('SCREEN ON: the plasma display paints a live picture on the faceplate', async ({ page }) => {
     await page.goto('/rack?shell=1&seed=none');
     await page.waitForLoadState('networkidle');
@@ -93,12 +113,14 @@ test.describe('ACIDWARP face — the screen', () => {
 
     const dockShell = await openAcidwarpDock(page);
     const body = dockShell.getByTestId('acidwarp-screen-body');
-    await expect(body, 'the fullViewBody paints at the dock').toBeVisible();
+    await expect(body, 'the fullViewBody paints at the dock')
+      .toBeVisible({ timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
 
     const toggle = body.getByTestId('acidwarp-face-screen-toggle');
     await expect(toggle).toHaveAttribute('aria-pressed', 'true');
     await expect(toggle).toHaveText('SCREEN ON');
-    await expect(body.getByTestId('acidwarp-face-canvas')).toBeVisible();
+    await expect(body.getByTestId('acidwarp-face-canvas'))
+      .toBeVisible({ timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
 
     const s = await sampleTwice(page, 20);
     expect(s.ok, 'the face canvas exists').toBe(true);
@@ -139,7 +161,13 @@ test.describe('ACIDWARP face — the screen', () => {
           };
           return w.__patch.nodes.aw?.data?.previewCollapsed ?? null;
         }),
-        { message: 'SCREEN OFF must persist on node.data.previewCollapsed (the shared key)' },
+        {
+          message: 'SCREEN OFF must persist on node.data.previewCollapsed (the shared key)',
+          // Same export site as the ceiling above — an unbounded poll here would
+          // be the next thing to fire once the test ceiling stopped being the
+          // first to run out.
+          timeout: SLOW_BOOT_TEST_TIMEOUT_MS,
+        },
       )
       .toBe(true);
 
@@ -148,7 +176,8 @@ test.describe('ACIDWARP face — the screen', () => {
     // watch mark while collapsed), so there is nothing to spin up.
     await toggle.click();
     await expect(toggle).toHaveAttribute('aria-pressed', 'true');
-    await expect(body.getByTestId('acidwarp-face-canvas')).toBeVisible();
+    await expect(body.getByTestId('acidwarp-face-canvas'))
+      .toBeVisible({ timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
     const back = await sampleTwice(page, 20);
     expect(back.nonBlack, 'switching SCREEN back on shows a picture').toBe(true);
   });
