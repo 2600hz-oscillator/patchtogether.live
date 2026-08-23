@@ -2564,6 +2564,24 @@ export const FACES = [
       },
     ],
   },
+  // ── BATCH 23b — the attest half ───────────────────────────────────────────
+  {
+    type: 'shapes',
+    pages: 1,
+    videoFaceWhy:
+      'a VIDEO module, so it must boot into the video zone rather than a mixer channel column — '
+      + 'without this field bootWithFace waits out the full 90 s test timeout for a column '
+      + 'membership a video node never acquires. Both scenes also carry a live picture: the '
+      + 'compact tile paints a VideoTileThumb through hasVideoSurface, and the dock body is the '
+      + "module's own fullViewBody extension (the stamp preview plus its SCREEN switch) — a "
+      + 'surface ShapesCard.svelte never had. ⚠ AND IT NEEDS NO DETERMINISM SEAM AT ALL, unlike '
+      + 'both of batch 23a: this is a pure per-pixel SDF evaluation of (shape, zoom, rotate, '
+      + 'tile, tileN) with NO time uniform, no ping-pong, no accumulator and no RNG, so it is a '
+      + 'SOURCE that is nonetheless perfectly still at rest. The freeze write the harness '
+      + 'performs is a NO-OP on this def and deliberately so. At the shipped defaults the scene '
+      + 'is one centred CIRCLE at zoom 1 on black — identical on every frame, every boot and '
+      + 'every renderer.',
+  },
 ] as const;
 
 /**
