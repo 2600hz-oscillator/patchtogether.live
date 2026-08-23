@@ -31,6 +31,7 @@ import { vcaDef } from '$lib/audio/modules/vca';
 import { lfoDef } from '$lib/audio/modules/lfo';
 import { LFO_DEPTH_GAIN } from '$lib/audio/modules/lfo-face-model';
 import { cloudseedDef } from '$lib/audio/modules/cloudseed';
+import { pongDef } from '$lib/audio/modules/pong';
 
 // ── 1. binding rules ─────────────────────────────────────────────────────────
 
@@ -324,6 +325,46 @@ describe('glyphBinding — pure live-source resolution', () => {
     if (bound.kind !== 'algorithm') throw new Error('expected a topology binding');
     expect(bound.layoutSource).toBe('algorithm');
     expect(bound.paramId).toBe('algorithm');
+  });
+
+  it('THE REAL ADOPTER: pongDef resolves the layout-source form, and it is not the dead static', () => {
+    // ⚠ THE FIXTURE LEGS ABOVE PROVE THE RESOLVER; THIS ONE PROVES A SHIPPING
+    // MODULE REACHES IT. `faceDef({ extension: 'somemodule' })` would keep
+    // passing if every real def in the tree still declared `glyph: 'none'` —
+    // which is exactly the state #2160 shipped in, by design: it widened the
+    // branch and deliberately changed no pixel anywhere, so for one merge window
+    // this whole section was green with ZERO real modules bound to it.
+    //
+    // pong is the first adopter, so this row is what makes the widening load
+    // -bearing rather than latent. It is the same shape as the "locks the REAL
+    // P1 batch-1 defs" leg above, and it fails if pong's def OR its extension
+    // declaration regresses to the placeholder tile.
+    expect(glyphBinding(pongDef)).toEqual({
+      kind: 'algorithm',
+      // The EXTENSION id, not a param — pong's picture is a layout function it
+      // owns (`pong/pong-glyph-model.ts`), reached through the `glyph` slot.
+      layoutSource: 'pong',
+      // No param behind the picture ⇒ no caption. A court has no number.
+      paramId: null,
+    });
+
+    // ⚠ THE OTHER DIRECTION, and the one a forward-only assertion cannot see: a
+    // def that merely STOPS declaring the pair silently returns to a dead
+    // binding, and `{kind:'static'}` is what the shell paints as a live-looking
+    // readout of nothing. Deny it by name on the real def.
+    expect(
+      glyphBinding(pongDef).kind,
+      'pong resolved the DEAD static binding — the lane tile would paint a fixed trace instead ' +
+        'of its court, which is the pre-#2160 behaviour this adopter exists to end',
+    ).not.toBe('static');
+
+    // The extension id the binding NAMES must be the one the def DECLARES —
+    // anchored to the artifact, so a rename of the directory that missed the def
+    // (or vice versa) is red here rather than a blank tile in the rack.
+    // ⚠ That the named extension actually EXPORTS a glyph component is asserted
+    // by `shell-extensions.test.ts`'s derived sweep over every 'algorithm' def,
+    // which pong now enters by declaration rather than by being listed.
+    expect(pongDef.face?.extension).toBe('pong');
   });
 
   it('an EMPTY extension id is not a layout source', () => {

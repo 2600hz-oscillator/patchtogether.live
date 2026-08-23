@@ -5,9 +5,17 @@
 // Five claims carry this face, and every one is either invisible from the
 // declaration or a judgement against the obvious reading:
 //
-//   1. `glyph: 'none'` is mandatory AND the lane genuinely has NO picture — the
-//      opposite of every video face, and an absence a reviewer should be able to
-//      confirm rather than infer.
+//   1. the lane picture is fed by a LAYOUT SOURCE, not by a param and not by a
+//      video surface — `glyph: 'algorithm'` on a def with no `algorithm` param,
+//      which is the one shape a reader will assume is a mistake.
+//      ⚠ THIS CLAIM WAS INVERTED UNTIL 2026-08-23 and the inversion is worth
+//      keeping visible: it read "`glyph: 'none'` is mandatory AND the lane
+//      genuinely has NO picture — an absence a reviewer should be able to
+//      confirm". That was TRUE and correctly gated, and it stopped being true
+//      the moment #2160 widened the topology branch to carry a layout-source id.
+//      The leg was not weakened to survive the change; its SUBJECT moved, and it
+//      now pins the presence in both directions (the binding resolves to a live
+//      topology kind, and it is NOT the dead `static` the old platform forced).
 //   2. `freeze` renders ZERO cells — the inverted assertion that makes the
 //      `noUserControl` claim falsifiable in both directions.
 //   3. the body does NOT `markWatched`, deliberately, unlike every video body.
@@ -21,7 +29,8 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { pongDef } from '$lib/audio/modules/pong';
 import { curatedFace, type FaceDefLike } from '$lib/ui/workflow/curated-face';
-import { hasVideoSurface } from '$lib/ui/workflow/module-shell-model';
+import { hasVideoSurface, laneGlyphFor } from '$lib/ui/workflow/module-shell-model';
+import { glyphBinding } from '$lib/ui/workflow/shell-glyph-live';
 import { STRICT_FACES } from '$lib/ui/workflow/strict-faces';
 
 const def = pongDef as unknown as FaceDefLike & { type: string };
@@ -52,24 +61,88 @@ function stripComments(src: string): string {
 const bodySrc = stripComments(readFileSync(BODY_SRC, 'utf-8'));
 const cardSrc = stripComments(readFileSync(CARD_SRC, 'utf-8'));
 
-describe('pong face — promoted, and the lane deliberately has NO picture', () => {
+describe('pong face — promoted, and the lane picture is LAYOUT-FED', () => {
   it('is promoted', () => {
     expect(STRICT_FACES.has('pong')).toBe(true);
   });
 
-  it("declares glyph:none, and has NO video surface — the ABSENCE is the claim", () => {
-    // ⚠ THE INVERSE OF EVERY VIDEO FACE IN THIS DIRECTORY. There, `glyph: 'none'`
-    // plus a video surface means "the picture arrives from elsewhere". Here there
-    // is no surface at all: pong is domain audio and both outputs are `gate`, so
-    // `primaryAudioOutPortId` is null and every glyph literal except 'none' would
-    // redden the dead-glyph clause. Asserting the absence stops a future reader
-    // "fixing" the glyph and stops anyone assuming the lane shows a court.
-    expect(pongDef.face?.glyph, 'a gate-output def must declare glyph:none').toBe('none');
+  it("the lane glyph is fed by the EXTENSION as a layout source, with NO param and NO video surface", () => {
+    // ⚠ THE ONE DECLARATION A READER WILL ASSUME IS A TYPO. 'algorithm' is the
+    // TOPOLOGY/LAYOUT literal, and pong has no param called `algorithm` — the
+    // binding falls to the declared extension and names it as the layout source.
+    // Pinned as a triple rather than as `glyph !== 'none'`, because the two
+    // fields are ONE mechanism: 'algorithm' without an extension falls back to
+    // {kind:'static'} and reddens the dead-glyph clause, and an extension
+    // without the literal leaves the tile blank. Either half alone is a silent
+    // regression to the placeholder tile this face exists to replace.
+    expect(pongDef.face?.glyph, "pong's picture is layout-fed, so the literal is 'algorithm'").toBe(
+      'algorithm',
+    );
+    expect(pongDef.face?.extension, 'the layout source IS the extension id').toBe('pong');
+    expect(
+      pongDef.params?.some((p) => p.id === 'algorithm'),
+      'a real `algorithm` param would make this the dx7 captioned case instead — the ' +
+        'layout-source branch is only reached when no such param exists',
+    ).toBe(false);
+
+    const bound = glyphBinding(pongDef as never);
+    expect(bound).toEqual({ kind: 'algorithm', layoutSource: 'pong', paramId: null });
+
+    // ⚠ THE NEGATIVE HALF, AND IT IS THE ONE THAT CATCHES THE REGRESSION. Before
+    // #2160 every glyph literal except 'none' resolved to a DEAD {kind:'static'}
+    // on this def — a binding the shell paints as a live-looking readout of
+    // nothing. Asserting the kind alone would still pass if the resolver started
+    // returning static for a different reason, so deny it by name.
+    expect(
+      bound.kind,
+      'the glyph resolved to the DEAD static binding — the lane would paint a fixed trace ' +
+        'that looks live and shows nothing, which is exactly what the pre-#2160 platform forced',
+    ).not.toBe('static');
+
+    // STILL TRUE, AND STILL WORTH PINNING: the picture is NOT a video surface.
+    // pong is domain audio, so there is no VideoTileThumb — the court arrives
+    // from the extension's own layout function. This leg keeps the two routes to
+    // a lane picture from being confused for one another.
     expect(
       hasVideoSurface(def),
-      'pong reports a video surface — it is an AUDIO module and the lane tile has no court; ' +
-        'if this ever becomes true the face model changed and the roster entry needs re-reading',
+      'pong reports a video surface — it is an AUDIO module whose lane picture comes from its ' +
+        'own layout function; if this ever becomes true the face model changed',
     ).toBe(false);
+  });
+
+  it('THE TIER LADDER, derived — the court costs serveAngle at compact, and that is the #1785 trade', () => {
+    // ⚠ DERIVED THROUGH `curatedFace`, NEVER READ OFF THE CAP CONSTANTS. The
+    // spec's own §15.1 flags this as a MUST-VERIFY because four sibling faces
+    // got it wrong that way — and the pong spec ITSELF predicted "at compact,
+    // SPEED and PADDLE" while the shipped glyph-less tile actually painted all
+    // three (cap = LANE_ROW_MAX_CELLS = 3). Measuring rather than reasoning is
+    // what caught that, so the measurement is the permanent record.
+    //
+    // Declaring a glyph moves pong onto the glyph-bearing column
+    // (LANE_ROW_MAX_CELLS_WITH_GLYPH = 2), so compact now trades `serveAngle`
+    // for the court. That is the #1785 ruling applied — the picture IS the
+    // module's identity in a rack and outranks a ranked control — and
+    // `serveAngle` is the control the spec calls unreadable in a lane column
+    // ("you must watch three serves to evaluate it"). It is NOT lost: plate and
+    // dock still carry it, which the ladder below pins in the same breath.
+    const ladder = (['mini', 'compact', 'full', 'dock'] as const).map((tier) => [
+      tier,
+      curatedFace(def, tier)?.controls.map((c) => c.key) ?? [],
+    ]);
+
+    expect(ladder).toEqual([
+      ['mini', ['speed']],
+      ['compact', ['speed', 'paddleH']],
+      ['full', ['speed', 'paddleH', 'serveAngle']],
+      ['dock', ['speed', 'paddleH', 'serveAngle']],
+    ]);
+
+    // The glyph is what caused the compact trade, so assert the cause and not
+    // only the effect — otherwise a future change that drops a control for an
+    // unrelated reason would keep this green.
+    expect(laneGlyphFor(pongDef as never), 'the lane tile must actually carry a picture').toBe(
+      'trace',
+    );
   });
 
   it('SPEED is rank 1 — the module is a clock, and rank follows what it IS', () => {

@@ -18,10 +18,28 @@
 //
 // Dock-only, enforced by `dockFullViewHeadPlan`: a 192 px lane tile cannot carry
 // a module surface.
+//
+// ⚠ TWO SLOTS, TWO SURFACES, AND THE SPLIT IS THE POINT (the #2160 adopter).
+// `fullViewBody` is the LIVE court at the dock — it gets a `nodeId`, so it can
+// read `eng.read(node, 'snapshot')` every frame. `glyph` is the LANE IDENTITY
+// picture — its props are `{ num, numbers?, testid? }` with no `nodeId`, so it
+// is a pure layout function by construction and draws pong's rest frame.
+//
+// Before this pair, the lane tile was a `ModuleShellPlaceholder`: the game ran,
+// scored and pulsed its gates while a rack of pongs showed a rack of grey boxes.
+// The comment in `PongCourtBody.svelte` still records why the body alone could
+// not close that — `ShellExtension.glyph` rendered only under
+// `binding.kind === 'algorithm'`, and that branch required a param literally
+// named `algorithm`. #2160 widened the branch to carry a LAYOUT SOURCE instead,
+// which is what `glyph` below is now resolved through: `face.glyph:'algorithm'`
+// + `face.extension:'pong'` ⇒ `{ kind:'algorithm', layoutSource:'pong',
+// paramId:null }`.
 
 import type { ShellExtension } from '$lib/ui/workflow/shell-extensions';
 import PongCourtBody from './PongCourtBody.svelte';
+import PongCourtGlyph from './PongCourtGlyph.svelte';
 
 export default {
+  glyph: PongCourtGlyph,
   fullViewBody: PongCourtBody,
 } satisfies ShellExtension;
