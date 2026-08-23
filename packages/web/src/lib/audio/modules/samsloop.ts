@@ -1062,16 +1062,18 @@ export interface SamsloopSamplePort {
  * **DETACHES every view onto it**, so `f32.length` is `0` the instant this call
  * returns. That is not a theoretical hazard: the factory's RECORD branch cached
  * `node.data.sampleLength = f32.length` AFTER posting, so every recording
- * persisted a length of ZERO, and `SamsloopCard` sizes both window faders to
- * `Math.max(1, sampleLength)`. All three of the reported symptoms are that one
- * detached read:
+ * persisted a length of ZERO, and `SamsloopCard` sized both window faders from
+ * it. All three of the reported symptoms are that one detached read. ⚠ THE THREE SYMPTOMS BELOW ARE HISTORICAL — they describe the
+ * FRAME-INDEXED window, which no longer exists (the window is a fraction now, so
+ * neither fader is sized from `sampleLength` any more). They are kept because
+ * they are what a zero length LOOKED like from the outside, and the cache is
+ * still load-bearing for the legacy-window migration and the waveform draw:
  *   * START became a [0, 1] slider on a 40 000-frame take — full travel moved
  *     the play head by at most one sample, i.e. a control that does nothing;
  *   * touching END wrote an `end` ≤ 1, which the worklet clamps to
  *     `max(start+1, …)` — a ONE-SAMPLE window, so playback went to DC/silence;
- *   * the card's START..END highlight band is `end / samples.length` wide, so it
- *     collapsed to zero and the waveform panel lost its lit wash — it reads as
- *     black.
+ *   * the card's START..END highlight band collapsed to zero width and the
+ *     waveform panel lost its lit wash — it reads as black.
  *
  * Capturing the length HERE, before the transfer, is what makes that class of
  * mistake UNWRITABLE at the call site rather than merely fixed once.
