@@ -39,55 +39,144 @@ const SLOW_GAP_MS = 600;
 const FAST_GAP_MS = 300;
 
 /**
- * How closely the locked BPM must match the one DERIVED from the measured
- * interval, as a fraction of the expected value.
+ * ONE TAP, BRACKETED — `performance.now()` immediately BEFORE `btn.click()` and
+ * immediately AFTER it returns.
  *
- * ⚠ IT IS RELATIVE, AND IT IS NOT ZERO, because the stamps this spec collects
- * are a PROXY for the ones the module used. `tapInPage` records
- * `performance.now()` immediately before `btn.click()`; `tap()` records its own
- * `performance.now()` INSIDE the synchronous handler. The gap between them is
- * the click-dispatch cost — sub-millisecond, but never zero, and it grows on a
- * starved main thread.
- *
- * MEASURED ON CI (#2056, the run that caught this): the module locked
- * 99.40357852883088 BPM where this spec's stamps implied 99.34268258357663 —
- * a 604.0 ms proxy interval against a 603.63 ms real one, i.e. **0.37 ms of
- * dispatch** showing up as **0.061 BPM**. The first version of this leg asked
- * for agreement within 0.05 BPM and was therefore asserting that the dispatch
- * cost is zero.
- *
- * ⚠ AND THE FIRST VERSION ASKED FOR THAT BY ACCIDENT, which is the part worth
- * remembering: it used `toBeCloseTo(expected, 1)` meaning to allow 1 BPM.
- * Jest/Playwright precision is `0.5 x 10^-n`, so `1` is ±0.05 — twenty times
- * tighter than intended, in an assertion whose own message printed "units:
- * BPM". A units error inside the units annotation.
- *
- * 1 % is ~16x the measured proxy error at these tempi and ~50x smaller than the
- * smallest defect worth catching (the negative control halves the BPM), so it
- * discriminates the thing under test without asserting anything about the
- * runner.
+ * ⚠ THE BRACKET IS THE WHOLE REPAIR. `tap()` stamps its own `performance.now()`
+ * INSIDE the synchronous handler, and the handler runs during `click()`, so the
+ * module's stamp is PROVABLY inside `[before, after]`. That turns this spec's
+ * measurement from a proxy with an unknown error into an estimate with a
+ * MEASURED bound: midpoint ± half-width, and the bound widens by itself exactly
+ * when the runner gets slow enough to need it.
  */
-const BPM_MATCH_TOLERANCE = 0.01;
+interface TapBracket {
+  before: number;
+  after: number;
+}
 
-/** Assert a locked BPM matches the one implied by the interval ACTUALLY tapped,
- *  printing both sides, the delta and the allowance — so a future drift is
- *  legible from the failure line alone rather than needing a re-run. */
+/** An interval and the PROVEN bound on it — both in ms, both measured. */
+interface IntervalEstimate {
+  ms: number;
+  uncMs: number;
+}
+
+/**
+ * Why there is no tolerance CONSTANT here any more (#1847 flake, root-caused).
+ *
+ * The previous version stamped only BEFORE the click, so every tap carried an
+ * unmeasured click-dispatch cost and the INTERVAL carried the DIFFERENCE
+ * between two of them. The first click is the expensive one, so the module saw
+ * a shorter interval than the spec did and locked HIGH. That error was covered
+ * by a flat `BPM_MATCH_TOLERANCE = 0.01`, sized at "~16x the measured proxy
+ * error" — 0.061 BPM, measured once, on an unloaded machine.
+ *
+ * MEASURED ON CI (the run that caught this, main @ fa0108a21): the module
+ * locked 95.1618 BPM where the before-stamps implied 94.2181 — a 630.5 ms real
+ * interval against a 636.8 ms proxy one, i.e. **6.3 ms of dispatch skew**
+ * showing up as **0.9437 BPM** against an allowance of 0.9422. It missed by
+ * 0.0015 BPM. That is 15.5x the 0.061 the constant was sized against: the 16x
+ * headroom was consumed to 97 %, because the quantity it was sized against is
+ * LOAD-DEPENDENT and the sizing measurement was not.
+ *
+ * ⚠ THE SPEC'S OWN COMMENT ALREADY SAID SO — "it grows on a starved main
+ * thread" — and the number was hand-typed anyway. A budget written from one
+ * observation of a load-dependent quantity is the millisecond-vs-frames mistake
+ * in different clothing: it is not one assertion, it is a different assertion
+ * per machine.
+ *
+ * So the allowance is now DERIVED, per assertion, from the brackets actually
+ * observed. On a fast runner the brackets are thin and this is TIGHTER than the
+ * old 1 %; on a starved shard they widen and it stays sound. Nothing here is
+ * calibrated, so nothing here can go stale.
+ */
+
+/** Best estimate of the handler's own stamp: the bracket midpoint. */
+const midOf = (t: TapBracket): number => (t.before + t.after) / 2;
+
+/**
+ * The proven bound on that estimate: half the bracket, plus half a clock
+ * quantum.
+ *
+ * ⚠ THE QUANTUM TERM IS NOT DECORATION. If a click completes inside one
+ * `performance.now()` tick then `before === after`, the half-width is 0, and a
+ * bound of zero would be a claim that the measurement is exact when it is
+ * merely unresolved. The quantum is MEASURED in-page rather than assumed,
+ * because it differs by browser and by cross-origin-isolation state.
+ */
+const uncOf = (t: TapBracket, quantumMs: number): number =>
+  (t.after - t.before) / 2 + quantumMs / 2;
+
+/**
+ * Assert a locked BPM matches the one implied by the interval ACTUALLY tapped,
+ * within the bound DERIVED from that interval's own measurement.
+ *
+ * The allowance is the interval uncertainty pushed through the BPM conversion:
+ * `bpm = 60000 / ms`, so `|d bpm| = 60000 / ms^2 * |d ms|`. Units are stated on
+ * both sides and the bound is printed with the bracket that produced it, so a
+ * future failure is legible from the line alone.
+ */
+function bpmMatch(
+  actualBpm: number,
+  interval: IntervalEstimate,
+): { expected: number; allowed: number; delta: number; ok: boolean } {
+  const expected = clampBpm(60000 / interval.ms);
+  // dBPM/dms at the measured interval, times the measured uncertainty.
+  const allowed = (60000 / (interval.ms * interval.ms)) * interval.uncMs;
+  const delta = Math.abs(actualBpm - expected);
+  return { expected, allowed, delta, ok: delta < allowed };
+}
+
+function describeBpmMatch(actualBpm: number, interval: IntervalEstimate, label: string): string {
+  const { expected, allowed, delta } = bpmMatch(actualBpm, interval);
+  return (
+    `${label}: locked ${actualBpm.toFixed(4)} BPM, interval ${interval.ms.toFixed(2)} ms `
+    + `(+/- ${interval.uncMs.toFixed(3)} ms, MEASURED from the click brackets) implies `
+    + `${expected.toFixed(4)} BPM — delta ${delta.toFixed(4)} BPM, allowed `
+    + `${allowed.toFixed(4)}. Units: BPM either side; the allowance is DERIVED from `
+    + `this run's own brackets (60000/ms^2 x unc), not a calibrated percentage.`
+  );
+}
+
 function expectBpmMatchesInterval(
   actualBpm: number,
-  intervalMs: number,
+  interval: IntervalEstimate,
   label: string,
   detail = '',
 ): void {
-  const expected = clampBpm(60000 / intervalMs);
-  const allowed = expected * BPM_MATCH_TOLERANCE;
-  const delta = Math.abs(actualBpm - expected);
   expect(
-    delta,
-    `${label}: locked ${actualBpm.toFixed(4)} BPM, interval ${intervalMs.toFixed(2)} ms implies `
-      + `${expected.toFixed(4)} BPM — delta ${delta.toFixed(4)} BPM, allowed `
-      + `${allowed.toFixed(4)} (${(BPM_MATCH_TOLERANCE * 100).toFixed(0)}% of expected). `
-      + `Units: BPM either side; the allowance covers click-dispatch cost, not runner speed.${detail}`,
-  ).toBeLessThan(allowed);
+    bpmMatch(actualBpm, interval).ok,
+    describeBpmMatch(actualBpm, interval, label) + detail,
+  ).toBe(true);
+}
+
+/**
+ * PERMANENT NEGATIVE CONTROL, and it calls the SAME predicate the assertion
+ * calls — not a second copy of the rule that could agree with it today and
+ * drift tomorrow.
+ *
+ * ⚠ THIS LEG EXISTS BECAUSE THE FIX WAS TO THE INSTRUMENT. The allowance is no
+ * longer a constant a reviewer can eyeball; it is computed per run from the
+ * observed brackets, so "is it still tight enough to catch anything?" stops
+ * being answerable by reading the source. A derived bound that silently grew
+ * huge — a pathological bracket, a clock that reports garbage, an arithmetic
+ * slip in the conversion — would pass every positive assertion in this file
+ * while proving nothing. So on every run the same predicate is asked to REJECT
+ * the canonical defect: a BPM off by 2x, which is what a broken tap-tempo
+ * actually looks like (a missed tap doubles the interval).
+ */
+function expectAllowanceStillDiscriminates(
+  actualBpm: number,
+  interval: IntervalEstimate,
+  label: string,
+): void {
+  const halved = bpmMatch(actualBpm / 2, interval);
+  expect(
+    halved.ok,
+    `${label} NEGATIVE CONTROL: a HALVED BPM (${(actualBpm / 2).toFixed(4)}) must be REJECTED. `
+      + `delta ${halved.delta.toFixed(4)} BPM vs allowance ${halved.allowed.toFixed(4)} BPM. `
+      + `If this passes, the derived allowance has grown wide enough to accept a 2x error `
+      + `and every positive assertion above it is vacuous.`,
+  ).toBe(false);
 }
 
 /** Read TIMELORDE's live `bpm` param from the patch store. */
@@ -138,36 +227,67 @@ async function selectTimelorde(page: Page, nodeId: string): Promise<void> {
  * one that was intended — which is what makes this leg immune to timing drift
  * rather than merely less exposed to it. A slow runner then changes the input,
  * not the verdict.
+ *
+ * ⚠ EACH TAP IS BRACKETED, not point-stamped. A single stamp before the click
+ * left the click-dispatch cost inside the measurement, unmeasured; two stamps
+ * put the handler's own timestamp provably between them. See `TapBracket`.
+ * The `performance.now()` quantum is measured alongside, in the same page and
+ * the same run, because a bracket that reads zero width still is not exact.
  */
 async function tapInPage(
   page: Page,
   nodeId: string,
   n: number,
   gapMs: number,
-): Promise<number[]> {
+): Promise<{ taps: TapBracket[]; clockQuantumMs: number }> {
   return page.evaluate(
     async ({ id, count, gap }) => {
       const btn = document.querySelector<HTMLButtonElement>(
         `[data-testid="timelorde-tap-${id}"]`,
       );
       if (!btn) throw new Error(`TAP button for ${id} not found in page`);
-      const stamps: number[] = [];
+
+      // The smallest non-zero step this page's clock can report. Spin until the
+      // value changes; bounded so a pathological clock cannot hang the run.
+      const measureQuantum = (): number => {
+        let q = Infinity;
+        for (let probe = 0; probe < 8; probe++) {
+          const t0 = performance.now();
+          let t1 = t0;
+          for (let guard = 0; guard < 1e6 && t1 === t0; guard++) t1 = performance.now();
+          if (t1 > t0) q = Math.min(q, t1 - t0);
+        }
+        return Number.isFinite(q) ? q : 0;
+      };
+      const clockQuantumMs = measureQuantum();
+
+      const taps: { before: number; after: number }[] = [];
       for (let i = 0; i < count; i++) {
         if (i > 0) await new Promise((r) => { setTimeout(r, gap); });
-        // Stamped immediately before the synchronous handler runs, so this
-        // tracks the handler's own `performance.now()` to well under a ms.
-        stamps.push(performance.now());
+        // The handler's own `performance.now()` runs synchronously inside
+        // `click()`, so it is provably in [before, after].
+        const before = performance.now();
         btn.click();
+        const after = performance.now();
+        taps.push({ before, after });
       }
-      return stamps;
+      return { taps, clockQuantumMs };
     },
     { id: nodeId, count: n, gap: gapMs },
   );
 }
 
-/** The inter-tap intervals implied by a stamp list. */
-function intervalsOf(stamps: readonly number[]): number[] {
-  return stamps.slice(1).map((t, i) => t - stamps[i]!);
+/** The inter-tap intervals implied by a bracket list, each with its own proven
+ *  bound. Midpoint-to-midpoint, so the systematic first-click dispatch cost
+ *  largely cancels instead of landing entirely in the interval. */
+function intervalsOf(taps: readonly TapBracket[], quantumMs: number): IntervalEstimate[] {
+  return taps.slice(1).map((t, i) => {
+    const prev = taps[i]!;
+    return {
+      ms: midOf(t) - midOf(prev),
+      uncMs: uncOf(t, quantumMs) + uncOf(prev, quantumMs),
+    };
+  });
 }
 
 /** Press Space N times with `gapMs` between presses. */
@@ -205,13 +325,14 @@ test.describe('TIMELORDE tap tempo', () => {
     // math is exactly `clampBpm(60000 / interval)` (one interval, so the median
     // is that interval). So this now proves the claim in the test's NAME —
     // "locks the BPM to the tapped interval" — instead of proving it moved.
-    const slowStamps = await tapInPage(page, TL, 2, SLOW_GAP_MS);
-    const slowInterval = intervalsOf(slowStamps)[0]!;
+    const slow = await tapInPage(page, TL, 2, SLOW_GAP_MS);
+    const slowInterval = intervalsOf(slow.taps, slow.clockQuantumMs)[0]!;
     await expect
       .poll(() => readBpm(page, TL), { timeout: 3000, message: 'a 2-tap sets the bpm off the spawn' })
       .not.toBe(50);
     const bpmSlow = (await readBpm(page, TL))!;
     expectBpmMatchesInterval(bpmSlow, slowInterval, '2-tap lock');
+    expectAllowanceStillDiscriminates(bpmSlow, slowInterval, '2-tap lock');
 
     // ── 2. TAPPING FASTER RE-LOCKS HIGHER ─────────────────────────────────
     //
@@ -229,8 +350,16 @@ test.describe('TIMELORDE tap tempo', () => {
     // claim. 600 vs 300 is a clean 2x (100 vs 200 BPM, both well inside the
     // 10-300 clamp), so the ordering survives far more drift than a loaded
     // shard produces — and the derived assertion below does not depend on it.
-    const fastStamps = await tapInPage(page, TL, TAP_HISTORY, FAST_GAP_MS);
-    const fastMedian = median(intervalsOf(fastStamps));
+    const fast = await tapInPage(page, TL, TAP_HISTORY, FAST_GAP_MS);
+    const fastIntervals = intervalsOf(fast.taps, fast.clockQuantumMs);
+    // The module medians ITS intervals; this medians the estimates of those same
+    // intervals. A median is 1-Lipschitz in sup-norm, so if every estimate is
+    // within its own bound, the median is within the LARGEST of those bounds —
+    // which is what makes `max` the correct carry here rather than a guess.
+    const fastMedian: IntervalEstimate = {
+      ms: median(fastIntervals.map((v) => v.ms)),
+      uncMs: Math.max(...fastIntervals.map((v) => v.uncMs)),
+    };
     await expect
       .poll(() => readBpm(page, TL), { timeout: 3000, message: 'a faster tap re-locks the bpm' })
       .not.toBe(bpmSlow);
@@ -239,15 +368,16 @@ test.describe('TIMELORDE tap tempo', () => {
       bpmFast,
       fastMedian,
       'fast re-lock (median of the ring)',
-      ` Intervals: [${intervalsOf(fastStamps).map((v) => v.toFixed(1)).join(', ')}] ms.`,
+      ` Intervals: [${fastIntervals.map((v) => v.ms.toFixed(1)).join(', ')}] ms.`,
     );
+    expectAllowanceStillDiscriminates(bpmFast, fastMedian, 'fast re-lock');
 
     // The relative claim, kept because it is the one a PLAYER cares about —
     // now a consequence of two derived facts rather than the only assertion.
     expect(
       bpmFast,
-      `faster taps must lock HIGHER: ${fastMedian.toFixed(1)} ms median vs `
-        + `${slowInterval.toFixed(1)} ms single interval`,
+      `faster taps must lock HIGHER: ${fastMedian.ms.toFixed(1)} ms median vs `
+        + `${slowInterval.ms.toFixed(1)} ms single interval`,
     ).toBeGreaterThan(bpmSlow);
 
     expect(errors).toEqual([]);
