@@ -12,8 +12,8 @@ Every registered module carries exactly one **disposition**: what kind of work i
 |  | count |
 |---|---|
 | registered modules | 198 |
-| done (faced + promoted) | 128 |
-| remaining (excludes organizational-native) | 67 |
+| done (faced + promoted) | 129 |
+| remaining (excludes organizational-native) | 66 |
 | registered with NO disposition (must be zero) | 0 |
 | inventory entries naming a dead def (must be zero) | 0 |
 
@@ -21,7 +21,7 @@ Every registered module carries exactly one **disposition**: what kind of work i
 
 | disposition | what it means | modules | done |
 |---|---|---|---|
-| `generic-face` | author a `face` and rank the controls — no new platform capability | 141 | 128 |
+| `generic-face` | author a `face` and rank the controls — no new platform capability | 141 | 129 |
 | `blocked` | would be a face today but for the named capability, and nothing else | 3 | — |
 | `bespoke-surface` | the primary interaction is not param-shaped — needs a purpose-built surface | 51 | — |
 | `organizational-native` | rack furniture; not a migration at all | 3 | — |
@@ -81,7 +81,7 @@ author a `face` and rank the controls — no new platform capability.
 | `freezeframe` | video | done | — |
 | `gatemaiden` | audio | done | — |
 | `grainsOfVision` | video | done | — |
-| `graphicEq` | video | — | — |
+| `graphicEq` | video | done | — |
 | `illogic` | audio | done | — |
 | `inwards` | video | done | — |
 | `joystick` | audio | — | — |

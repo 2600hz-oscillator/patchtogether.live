@@ -3520,6 +3520,43 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // generator every consumer samples.
   'shapes',
 
+  // ── GRAPHIC EQ — the meter, and the LAST of the five MONITOR cards ────────
+  //
+  // Five controls. Two of them carry a NEW `options` roster and that is where
+  // the attest cost comes from — `params` is in the WebGL content basis while
+  // `face`, `paramCells` and `docs` are stripped from it.
+  //
+  // ⚠ THE ROSTERS ARE REQUIRED, NOT DECORATIVE, and the reason is not the same
+  // as posterbox/tiler's. Those two had a roster already and the question was
+  // which PRIMITIVE to draw it on. Here the params are bare `discrete` 0..1,
+  // which the shell resolves as an unlabelled TOGGLE with no declaration at
+  // all — and that resolution is wrong in a way worse than missing. Neither
+  // param is an ON/OFF: `style` picks BARS *or* BOXES, `display` picks MONO *or*
+  // STEREO. Two named alternatives with no "off" between them. An undeclared
+  // toggle renders pressed/unpressed and announces that a FEATURE is being
+  // enabled and that one of the two looks is its ABSENCE. The labels are
+  // PROMOTED, not invented — they are the words the def's own `docs.controls`
+  // already uses.
+  //
+  // ⚠ `hue` IS A CORRECTION, NOT PARITY, and the only place this face
+  // deliberately departs from its card. The card draws hue as a NeonFader, but
+  // the param is a continuous 0..1 ANGLE THAT WRAPS: 0 and 1 are the SAME
+  // colour. On a linear throw those sit at opposite extremes of the control
+  // while being the identical result, so the one crossing a player most wants
+  // is the one the fader cannot make. The conic ring has no end stops.
+  //
+  // ⚠ SCREEN OFF KEEPS THE WATCH MARK FOR AN ACCUMULATOR REASON, which makes
+  // this the odd one out among the MONITOR five. ruttetra / monoglitch /
+  // reshaper all argue they have NO accumulator, so only the OUTPUT is at
+  // stake. That is FALSE here and was checked in the def rather than assumed:
+  // `peakL[]`/`peakR[]` are per-band peak-hold state advanced once per draw by
+  // `decayPeak(prev, current, params.peak)`, and both AnalyserNodes carry
+  // `smoothingTimeConstant = 0.7`. A lapsed mark does not pause a picture that
+  // resumes identically — it freezes the caps, staleness the smoothing history,
+  // and the returning frame asserts peaks belonging to whenever the mark
+  // expired. The OUTPUT argument holds on top of that, and more pointedly for a
+  // chainable `output`-category module whose whole point is feeding downstream.
+  'graphicEq',
   // ── BATCH 24 — CUT A, batch 1: the four plain video faces ─────────────────
   //
   // "Plain" is a measured claim, not a vibe: each of the four needs only cells

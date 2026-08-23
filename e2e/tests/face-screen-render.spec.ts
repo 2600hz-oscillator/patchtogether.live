@@ -229,6 +229,16 @@ const SUBJECTS: readonly Subject[] = [
   // ── batch 23b ─────────────────────────────────────────────────────────────
   { type: 'shapes', prefix: 'shapes', domain: 'video', why: 'the SDF primitive generator\'s live stamp preview and its SCREEN switch. ⚠ NOT `shapegen`, which has its own row above — different module, adjacent name. A SOURCE with no input, so a lapsed watch mark would mute the origin of the whole chain rather than stall a preview.' },
 
+  // ── the CROSS-DOMAIN INPUT case ───────────────────────────────────────────
+  //
+  // ⚠ THE MIRROR OF `rasterize` BELOW, and worth the adjacency. That one is an
+  // AUDIO def carrying a video surface; this is a VIDEO def whose only INPUTS
+  // are audio-typed (`audio_l` / `audio_r` — the cross-domain audio→video
+  // bridge). It spawns with `domain: 'video'`, so a domain-derived enumeration
+  // finds it correctly and no special-casing is needed — which is exactly the
+  // fact worth pinning here, because the audio inputs make it LOOK like the
+  // outlier it is not.
+  { type: 'graphicEq', prefix: 'graphicEq', domain: 'video', why: 'the spectrum meters\' preview, and the last of the five #2009 MONITOR cards — so its body carries a MONITOR toggle and a corner resize BESIDE the SCREEN switch, which is the two-switches-on-one-surface case a mis-wired `aria-pressed` or a shared handler would hide in. ⚠ AND IT IS THE ACCUMULATOR CASE AMONG THEM: per-band peak-hold caps advanced once per draw plus `smoothingTimeConstant = 0.7` on both analysers, so SCREEN OFF retaining the watch mark is load-bearing on what the meters MEAN, not just on the output — a lapsed mark returns a frame asserting peaks from whenever it expired.' },
   // ── batch 24 — CUT A, batch 1: the four plain video faces ─────────────────
   //
   // Added in the SAME diff as the promotions, which is this file's stated
