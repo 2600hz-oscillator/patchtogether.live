@@ -1,11 +1,22 @@
 <script lang="ts">
   // JoystickCard — XY pad emitting four bipolar CV outputs.
   //
-  // ⚠ THIS IS THE LEGACY SURFACE. joystick is in STRICT_FACES (queue Q43), so
-  // both the lane and the dock render `ModuleShell` and its shared `xy` cell;
-  // this card only paints under `?shell=legacy`. It is kept in step with the
-  // face rather than frozen, because the two must not disagree about what the
-  // module DOES.
+  // ⚠ THIS IS THE LIVE SURFACE — the previous version of this comment claimed
+  // the opposite and was wrong (corrected 2026-08-23). It read "joystick is in
+  // STRICT_FACES (queue Q43), so both the lane and the dock render ModuleShell
+  // … this card only paints under `?shell=legacy`". joystick is NOT in
+  // STRICT_FACES and never has been: it declares no `face`, and `STRICT_FACES`
+  // is asserted equal to the set of defs that declare one. So this card is what
+  // the DOCK actually mounts today, and the lane shows the uniform placeholder
+  // — not a curated face.
+  //
+  // The stale claim mattered, because a reader who believed it would think the
+  // migration had already happened here and leave both surfaces alone. The
+  // refusal is recorded on the def (`$lib/audio/modules/joystick.ts`): a face
+  // would resolve to ZERO lane controls, because both of this module's params
+  // are axes of one pad and `laneOrder` makes a pad's anchor dock-only. It is
+  // now enforced by `module-face-lint`, with this module's shape as the
+  // negative control.
   //
   // The user drags a virtual stick inside a square pad. Pad-center maps to
   // (0, 0) CV; pad-edge maps to ±1.

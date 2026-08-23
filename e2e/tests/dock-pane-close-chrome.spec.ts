@@ -28,6 +28,7 @@ import { test, expect, type Page, type Locator } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 import { pressFlipKey } from './_flip-key';
 import { installRenderSmokeHooks } from './_render-smoke';
+import { settle } from '../_helpers/frames';
 
 async function gotoShellWorkflow(page: Page): Promise<void> {
   await page.goto('/rack');
@@ -245,7 +246,11 @@ test.describe('dock full-view pane ✕ — visible chrome in every state (?shell
       },
       { id: 'm1', top: 90 },
     );
-    await page.waitForTimeout(120);
+    // `duration: 0` makes the pan instant IN THE STORE; what the click below
+    // needs is the new transform PAINTED, which is a frame count, not a
+    // duration — 120 ms was ~7 frames locally and under one on CI's
+    // SwiftShader (7.9 fps measured). Two rAFs is Svelte-flush + paint.
+    await settle(page);
 
     const pill = tile.getByTestId('shell-open-dock');
     await pill.click();

@@ -318,7 +318,12 @@ export const SKIP_BUDGET = [
       + 'collapse, and the skip names the type so a producer regressing to black is at least visible here.',
   },
   {
-    specs: ['blood-audio-output.spec.ts', 'blood-ingame.spec.ts', 'blood-keyboard.spec.ts'],
+    // ⚠ `blood-keyboard.spec.ts` WAS HERE AND IS GONE — the spec was DELETED by
+    // owner ruling (2026-08-23, verbatim: "delete the blood keyboard spec"), so
+    // the name had to leave this list with it: this budget is anchored
+    // budget→tree, and "an entry naming a spec that no longer exists is RED".
+    // The other two BLOOD specs are untouched and keep this entry alive.
+    specs: ['blood-audio-output.spec.ts', 'blood-ingame.spec.ts'],
     reason: /BLOOD (engine|runtime)|engine not ready|extras unavailable|runtime\/extras unavailable/,
     lanes: ['e2e'],
     homeLane: 'e2e',

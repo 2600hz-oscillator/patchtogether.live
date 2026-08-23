@@ -12,8 +12,8 @@ Every registered module carries exactly one **disposition**: what kind of work i
 |  | count |
 |---|---|
 | registered modules | 198 |
-| done (faced + promoted) | 118 |
-| remaining (excludes organizational-native) | 77 |
+| done (faced + promoted) | 132 |
+| remaining (excludes organizational-native) | 63 |
 | registered with NO disposition (must be zero) | 0 |
 | inventory entries naming a dead def (must be zero) | 0 |
 
@@ -21,7 +21,7 @@ Every registered module carries exactly one **disposition**: what kind of work i
 
 | disposition | what it means | modules | done |
 |---|---|---|---|
-| `generic-face` | author a `face` and rank the controls — no new platform capability | 141 | 118 |
+| `generic-face` | author a `face` and rank the controls — no new platform capability | 141 | 132 |
 | `blocked` | would be a face today but for the named capability, and nothing else | 3 | — |
 | `bespoke-surface` | the primary interaction is not param-shaped — needs a purpose-built surface | 51 | — |
 | `organizational-native` | rack furniture; not a migration at all | 3 | — |
@@ -52,8 +52,8 @@ author a `face` and rank the controls — no new platform capability.
 | `buggles` | audio | done | — |
 | `cellshade` | video | done | — |
 | `charlottesEchos` | audio | done | — |
-| `chroma` | video | — | — |
-| `chromakey` | video | — | — |
+| `chroma` | video | done | — |
+| `chromakey` | video | done | — |
 | `clap` | audio | done | — |
 | `clouds` | audio | done | — |
 | `cloudseed` | audio | done | — |
@@ -66,14 +66,14 @@ author a `face` and rank the controls — no new platform capability.
 | `delay` | audio | done | — |
 | `depolarizer` | audio | done | — |
 | `destroy` | audio | done | — |
-| `destructor` | video | — | — |
-| `dockscope` | audio | — | — |
+| `destructor` | video | done | — |
+| `dockscope` | audio | done | — |
 | `drummergirl` | audio | done | — |
 | `dx7` | audio | done | — |
 | `edges` | video | done | — |
 | `fader` | video | done | — |
 | `featurecv` | audio | done | — |
-| `feedback` | video | — | — |
+| `feedback` | video | done | — |
 | `filter` | audio | done | — |
 | `flipper` | audio | done | — |
 | `fourplexer` | audio | done | — |
@@ -81,7 +81,7 @@ author a `face` and rank the controls — no new platform capability.
 | `freezeframe` | video | done | — |
 | `gatemaiden` | audio | done | — |
 | `grainsOfVision` | video | done | — |
-| `graphicEq` | video | — | — |
+| `graphicEq` | video | done | — |
 | `illogic` | audio | done | — |
 | `inwards` | video | done | — |
 | `joystick` | audio | — | — |
@@ -89,13 +89,13 @@ author a `face` and rank the controls — no new platform capability.
 | `kickdrum` | audio | done | — |
 | `lfo` | audio | done | — |
 | `lines` | video | done | — |
-| `luma` | video | — | — |
+| `luma` | video | done | — |
 | `lumakey` | video | done | — |
 | `lushgarden` | video | — | — |
 | `macrooscillator` | audio | done | — |
 | `mandelbulb` | video | done | — |
-| `mandleblot` | video | — | — |
-| `mapper` | video | — | — |
+| `mandleblot` | video | done | — |
+| `mapper` | video | done | — |
 | `marbles` | audio | done | — |
 | `meowbox` | audio | done | — |
 | `milkdrop` | video | done | — |
@@ -148,17 +148,17 @@ author a `face` and rank the controls — no new platform capability.
 | `samsloop` | audio | — | — |
 | `scaler` | audio | done | — |
 | `scope` | audio | — | — |
-| `scoreboard` | video | — | — |
-| `shapedramps` | video | — | — |
+| `scoreboard` | video | done | — |
+| `shapedramps` | video | done | — |
 | `shapegen` | video | done | — |
-| `shapes` | video | — | — |
+| `shapes` | video | done | — |
 | `shimmershine` | audio | done | — |
 | `sidecar` | audio | done | — |
 | `sixstrum` | audio | done | — |
 | `slewSwitch` | audio | done | — |
 | `snaredrum` | audio | done | — |
 | `sourcery` | video | done | — |
-| `spectrograph` | audio | — | — |
+| `spectrograph` | audio | done | — |
 | `spirographs` | video | done | — |
 | `stereovca` | audio | done | — |
 | `swolevco` | audio | done | — |
@@ -173,7 +173,7 @@ author a `face` and rank the controls — no new platform capability.
 | `vca` | audio | done | — |
 | `vdelay` | video | done | — |
 | `vfpgaRunner` | video | — | — |
-| `videoMixer` | video | — | — |
+| `videoMixer` | video | done | — |
 | `videoOut` | video | done | — |
 | `warrensspectrum` | audio | done | — |
 | `warrensvisions` | video | done | — |

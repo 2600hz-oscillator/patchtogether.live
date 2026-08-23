@@ -296,6 +296,37 @@
     }
   }
 
+  // ⚠ TRACK EXTERNAL PICKS — the card used to hydrate `node.data.deviceId` ONCE
+  // on mount and never look again, so a device chosen anywhere OTHER than this
+  // card's own `<select>` was saved and never acted on until a remount.
+  //
+  // The live case today is COLLABORATION: `node.data.deviceId` is in Yjs, so a
+  // rack-mate's pick already arrives here — and used to arrive as a value that
+  // sat in the document doing nothing. It was also found while prototyping a
+  // second picker surface for this module, parked on the branch
+  // `parked/camerainput-face-option-a` (which carries its own handoff note),
+  // where the same defect is not a latent one: any second picker writes the
+  // shared key and appears to do nothing at all.
+  //
+  // ⚠ IT IS ALSO WHAT THE DEF ALREADY CLAIMED. This card's own header says
+  // `node.data.deviceId` is "in Yjs. Each user's browser tries to match it to a
+  // local camera" — a promise hydrate-once could not keep for any change after
+  // mount, including a collaborator's.
+  //
+  // Guarded three ways so this cannot loop or fight the user: it fires only when
+  // the saved id DIFFERS from what this card already has, only when the id is
+  // non-null, and it reuses `shouldReacquireOnPick` so the same states that
+  // refuse a re-acquire on a local pick refuse it here too.
+  $effect(() => {
+    const saved = readSavedDeviceId();
+    if (!saved) return;
+    if (saved === untrack(() => selectedDeviceId)) return;
+    untrack(() => {
+      selectedDeviceId = saved;
+      if (shouldReacquireOnPick(camState)) requestStream();
+    });
+  });
+
   function onToggleEnabled(): void {
     const next = p('enabled') < 0.5;
     setBoolParam('enabled', next);
@@ -514,10 +545,16 @@
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
   <div class="body">
+    <!-- ⚠ THE `device` CAPTION IS GONE, THE ACCESSIBLE NAME IS NOT (owner
+         directive 2026-08-23). A single select whose every option is a camera
+         name does not need a word telling you it is the camera; the caption was
+         the section-heading-restated class. `aria-label` keeps the name for
+         anything that is not looking at the pixels — hiding the TEXT is allowed,
+         dropping the NAME never is. -->
     <label class="row">
-      <span class="row-label">device</span>
       <select
         class="device-select"
+        aria-label="Camera device"
         data-testid="camera-device-select"
         value={selectedDeviceId ?? ''}
         onchange={(e) => onPickDevice((e.currentTarget as HTMLSelectElement).value)}
@@ -613,7 +650,16 @@
         onclick={onToggleMirror}
         aria-pressed={p('mirror') > 0.5}
       >
-        Mirror{p('mirror') > 0.5 ? ': on' : ': off'}
+        <!-- ⚠ THE `: on` / `: off` SUFFIX IS GONE (owner directive 2026-08-23,
+             "authored minimalist card"): it was resting text restating the
+             control's own state, which `aria-pressed` already carries.
+             ⚠ BUT THE STATE IS NOT MERELY HIDDEN — this card had NO
+             `[aria-pressed]` styling at all, so the suffix was the only thing
+             making MIRROR's state perceivable. Deleting the text alone would
+             have been a functional regression dressed as tidying. The state
+             moved INTO the button's appearance (see `.ghost[aria-pressed]`),
+             which is how every other toggle in the fleet shows it. -->
+        Mirror
       </button>
       <NativeFillToggle
         fillMode={p('fillMode')}
@@ -640,7 +686,23 @@
 <style>
   .card {
     width: 280px;
-    min-height: 360px;
+    /* ⚠ `min-height: 360px` REMOVED (owner directive 2026-08-23: compact is the
+       default, and useless grey space is never earned). The card's real content
+       is the 200 px preview plus four short rows; the floor padded every state
+       that is SHORTER than that — idle, permission-denied, no-cameras-found —
+       into a tall grey box whose bottom third was empty by construction.
+       ⚠ Removing it is safe for baselines because `cameraInput` is in
+       EXEMPT_FROM_VRT for its CARD scene, so no committed PNG measures this
+       card. The height now follows the content, and the preview is what earns
+       the space. */
+  }
+  /* ⚠ THE PRESSED STATE MIRROR'S TEXT SUFFIX USED TO CARRY. This card had no
+     [aria-pressed] rule, so removing ": on"/": off" without this would have
+     made the toggle's state invisible rather than merely quieter. */
+  .ghost[aria-pressed='true'] {
+    border-color: var(--accent, #16a34a);
+    color: var(--text, #e6e6e6);
+    background: color-mix(in srgb, var(--accent, #16a34a) 18%, transparent);
   }
   .body {
     /* Clear the PatchPanel's top-left/right trigger affordances (18px tall,
@@ -659,7 +721,9 @@
     font-size: 0.7rem;
     color: var(--text-dim);
   }
-  .row-label { min-width: 44px; text-transform: uppercase; letter-spacing: 0.05em; }
+  /* `.row-label` deleted with the `device` caption it styled — an unused
+     selector is a svelte-check warning and, worse, an invitation to re-add the
+     caption it implies is still wanted. */
   .device-select {
     flex: 1 1 auto;
     background: #0c0e13;

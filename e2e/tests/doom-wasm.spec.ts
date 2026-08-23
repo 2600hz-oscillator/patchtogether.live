@@ -1,7 +1,7 @@
 // e2e/tests/doom-wasm.spec.ts
 //
 // ⚠ DOOM SPECS ARE NORMALLY OFF-LIMITS — the standing owner ruling is
-//   "do not fuck with doom in any way without specific approval". This file's
+//   "do not [touch] doom in any way without specific approval". This file's
 //   frame-difference probe was rewritten under a SPECIFIC approval given by
 //   the owner on 2026-08-18, verbatim:
 //     "okay see if you can go make the doom tests blurrier and less flakey,

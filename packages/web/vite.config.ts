@@ -161,10 +161,29 @@ export const SSR_CANVAS_STUB =
   '  void _props;\n' +
   '</script>\n';
 
+// ---------------------------------------------------------------------------
+// …AND THE THIRD OCCUPANT: THE `/dev/**` PLAYGROUND PAGES (#2094).
+//
+// After the two stubs above, the single largest ROUTE input left in the Worker
+// was `entries/pages/dev/video-patch-drop/_page.svelte.js` (222 KiB), dragging
+// `chunks/peakstate.js` behind it — a dev page, in the production Worker.
+//
+// Same REACHABILITY argument as the Canvas stub, resting on ONE flag:
+// `src/routes/dev/+layout.ts` declares `ssr = false` for the whole subtree, so
+// no server render of any /dev page component can occur, and a component that
+// is never rendered on the server cannot contribute a byte to server HTML.
+// ⚠ THAT FLAG IS THIS STUB'S PRECONDITION — `dev-routes-ssr-stub.test.ts` pins
+// the pair, so deleting the layout flag reds the gate naming this coupling
+// before the server ever renders a stub. The tell, if it ever regresses past
+// the gate, is not subtle: every /dev page SSRs as an empty shell.
+// `PT_SSR_KEEP_CARDS=1` disables all three stubs — the shared negative control.
+const DEV_ROUTES_DIR = 'src/routes/dev';
+
 function ssrDropBrowserOnlyGraph(): Plugin {
   const WEB_DIR = fileURLToPath(new URL('.', import.meta.url));
   const CARD_TARGET = path.resolve(WEB_DIR, CARD_COMPONENTS_MODULE);
   const CANVAS_TARGET = path.resolve(WEB_DIR, CANVAS_MODULE);
+  const DEV_ROUTES_TARGET = path.resolve(WEB_DIR, DEV_ROUTES_DIR) + path.sep;
   let isBuild = false;
   return {
     name: 'patchtogether:ssr-drop-browser-only-graph',
@@ -180,6 +199,10 @@ function ssrDropBrowserOnlyGraph(): Plugin {
       const resolved = path.resolve(id.split('?')[0]);
       if (resolved === CARD_TARGET) return SSR_CARD_COMPONENTS_STUB;
       if (resolved === CANVAS_TARGET) return SSR_CANVAS_STUB;
+      // /dev/** pages: never server-rendered (routes/dev/+layout.ts ssr=false),
+      // so the empty component keeps the server graph type-correct and small.
+      // `.svelte` only — the +layout.ts carrying the flag must survive as-is.
+      if (resolved.startsWith(DEV_ROUTES_TARGET) && resolved.endsWith('.svelte')) return SSR_CANVAS_STUB;
       return null;
     },
   };

@@ -275,7 +275,7 @@ test.describe('PF-20 dock faceplate platform (kickdrum)', () => {
     //
     // All of it is deleted rather than softened, because the owner removed the
     // shape itself on 2026-08-19: "you don't need to have the out-silent text at
-    // all … we absolutely have to stop doing shit like that. i said minimal, and
+    // all … we absolutely have to stop doing [things] like that. i said minimal, and
     // good use of screen real estate." There is no element left to measure, and
     // re-pointing these at another face would move the subject without saying so.
     //

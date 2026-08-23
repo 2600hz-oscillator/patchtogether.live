@@ -60,22 +60,36 @@ async function waitForFlowHook(page: Page): Promise<void> {
   );
 }
 
-/** The flow pane's client-space bounding rect (xyflow's `.svelte-flow` root). */
-async function paneRect(page: Page): Promise<{ left: number; top: number; width: number; height: number }> {
-  return page.evaluate(() => {
+/**
+ * The pane rect AND a flow point projected through the LIVE viewport, in ONE
+ * page round trip — so the two can never come from different animation frames,
+ * which is exactly the class of error a two-evaluate read invites while an
+ * animated `setViewport` is still running.
+ */
+async function paneAndPoint(
+  page: Page,
+  p: { x: number; y: number },
+): Promise<{
+  rect: { left: number; top: number; width: number; height: number };
+  point: { x: number; y: number };
+}> {
+  return page.evaluate((pt) => {
+    const w = globalThis as unknown as {
+      __flow: { flowToScreenPosition: (q: { x: number; y: number }) => { x: number; y: number } };
+    };
     const el = document.querySelector('.svelte-flow') as HTMLElement | null;
     const r = (el ?? document.body).getBoundingClientRect();
-    return { left: r.left, top: r.top, width: r.width, height: r.height };
-  });
-}
-
-/** Project a flow-space point to client px through the LIVE viewport. */
-async function projectFlow(page: Page, p: { x: number; y: number }): Promise<{ x: number; y: number }> {
-  return page.evaluate((pt) => {
-    const w = globalThis as unknown as { __flow: { flowToScreenPosition: (q: { x: number; y: number }) => { x: number; y: number } } };
-    return w.__flow.flowToScreenPosition(pt);
+    return {
+      rect: { left: r.left, top: r.top, width: r.width, height: r.height },
+      point: w.__flow.flowToScreenPosition(pt),
+    };
   }, p);
 }
+
+/** `within` px of `want`, else the signed miss — so a failing poll prints the
+ *  per-axis error in CSS px rather than a bare boolean. */
+const near = (got: number, want: number, within: number, ok: string): string =>
+  Math.abs(got - want) < within ? ok : `off by ${Math.round(got - want)} CSS px`;
 
 async function getViewport(page: Page): Promise<{ x: number; y: number; zoom: number }> {
   return page.evaluate(() => (globalThis as unknown as { __flow: { getViewport: () => { x: number; y: number; zoom: number } } }).__flow.getViewport());
@@ -99,14 +113,30 @@ test.describe('workflow viewport navigation (keyboard pan)', () => {
     // Focus the canvas body (not a text field) so the window keydown fires.
     await page.locator('body').click({ position: { x: 5, y: 5 } });
     await page.keyboard.press('3');
-    await page.waitForTimeout(600); // let the 220ms animated setViewport settle
 
-    const rect = await paneRect(page);
-    // The band center of column 3 must land at the horizontal center of the pane…
-    const center = await projectFlow(page, { x: columnBandCenterX(3), y: COLUMN_BASELINE_Y });
-    expect(Math.abs(center.x - (rect.left + rect.width / 2)), 'column 3 band-center at viewport center-x').toBeLessThan(6);
-    // …and the baseline near the very bottom of the pane.
-    expect(Math.abs(center.y - (rect.top + rect.height)), 'column 3 baseline near viewport bottom').toBeLessThan(6);
+    // WHERE THE PAN LANDS is the subject, so wait on THAT rather than budget
+    // 600 ms for a 220 ms animation (Canvas.svelte WCOL_PAN_MS). The poll
+    // returns the instant the transform arrives, and still fails — naming the
+    // axis and the miss in CSS px — if it never does. ONE assertion, because a
+    // second read after a passing poll could only ever be vacuous.
+    await expect
+      .poll(
+        async () => {
+          const { rect, point } = await paneAndPoint(page, {
+            x: columnBandCenterX(3),
+            y: COLUMN_BASELINE_Y,
+          });
+          return {
+            // The band center of column 3 must land at the horizontal center
+            // of the pane…
+            x: near(point.x, rect.left + rect.width / 2, 6, 'at viewport center-x'),
+            // …and the baseline near the very bottom of the pane.
+            y: near(point.y, rect.top + rect.height, 6, 'near viewport bottom'),
+          };
+        },
+        { message: "'3' centers column 3's band with its baseline at the pane bottom" },
+      )
+      .toEqual({ x: 'at viewport center-x', y: 'near viewport bottom' });
   });
 
   test("'V' snaps the video area's lower-left corner to the viewport's lower-left corner", async ({ page }) => {
@@ -116,14 +146,23 @@ test.describe('workflow viewport navigation (keyboard pan)', () => {
 
     await page.locator('body').click({ position: { x: 5, y: 5 } });
     await page.keyboard.press('v');
-    await page.waitForTimeout(600);
 
-    const rect = await paneRect(page);
+    // Same shape as '3' above: poll the LANDING, not a budget for the 220 ms
+    // WCOL_PAN_MS animation.
     const b = videoArea();
-    const corner = await projectFlow(page, { x: b.x0, y: b.y1 });
-    // Lower-LEFT of the video zone → lower-LEFT of the viewport.
-    expect(Math.abs(corner.x - rect.left), 'video-area left edge at viewport left').toBeLessThan(6);
-    expect(Math.abs(corner.y - (rect.top + rect.height)), 'video-area bottom near viewport bottom').toBeLessThan(6);
+    await expect
+      .poll(
+        async () => {
+          const { rect, point } = await paneAndPoint(page, { x: b.x0, y: b.y1 });
+          // Lower-LEFT of the video zone → lower-LEFT of the viewport.
+          return {
+            x: near(point.x, rect.left, 6, 'at viewport left'),
+            y: near(point.y, rect.top + rect.height, 6, 'near viewport bottom'),
+          };
+        },
+        { message: "'V' snaps the video area's lower-left corner to the pane's lower-left" },
+      )
+      .toEqual({ x: 'at viewport left', y: 'near viewport bottom' });
   });
 
   test('GUARD: a number pressed while a text input is focused does NOT pan', async ({ page }) => {
@@ -142,6 +181,13 @@ test.describe('workflow viewport navigation (keyboard pan)', () => {
 
     const before = await getViewport(page);
     await page.keyboard.press('4'); // would center column 4 if it leaked
+    // pacing: this is the NEGATIVE case — nothing must happen — so there is no
+    // subject to poll; the wait has to outlast the animation whose absence is
+    // being asserted. That animation is the product's own: Canvas.svelte's
+    // `WCOL_PAN_MS = 220` (packages/web/src/lib/ui/Canvas.svelte), the duration
+    // it hands xyflow's setViewport for a column/video pan. 400 ms is that
+    // interval with margin, so a leaked keydown has finished panning by the
+    // read below rather than being caught mid-flight and read as "unchanged".
     await page.waitForTimeout(400);
     const after = await getViewport(page);
 

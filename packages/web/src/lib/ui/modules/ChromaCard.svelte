@@ -9,8 +9,7 @@
   import type { NodeProps } from '@xyflow/svelte';
   import NeonFader from '$lib/ui/controls/NeonFader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import { patch } from '$lib/graph/store';
-  import { setNodeParam } from '$lib/graph/mutate';
+  import { mutateNode, setNodeParam } from '$lib/graph/mutate';
   import { chromaDef } from '$lib/video/modules/chroma';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
@@ -34,16 +33,28 @@
   function ch(v: number): string { return Math.round(clamp01(v) * 255).toString(16).padStart(2, '0'); }
   let tintHex = $derived(`#${ch(p('tintR'))}${ch(p('tintG'))}${ch(p('tintB'))}`);
 
+  // ⚠ ONE TRANSACTION, NOT THREE BARE WRITES. This used to assign
+  // `patch.nodes[id].params.tintR/G/B` directly, which is the ONLY write on this
+  // card that did not go through the mutate seam every fader uses. `mutate.ts`
+  // says what that costs in as many words: `setNodeParam` is *"equivalent to the
+  // bare proxy assignment but tagged so it lands on the undo stack"*. So three
+  // bare assignments were three separate untagged transactions —
+  //   · a collaborator observed TWO wrong intermediate colours on the way to the
+  //     one that was actually picked (red lands, then green, then blue), and
+  //   · an undo unwound one CHANNEL at a time rather than one colour pick.
+  // A tint is one gesture, so it is one transaction. `mutateNode` is the same
+  // seam `setNodeParam` is built on — it just lets all three keys move together.
   function onColorChange(e: Event) {
     const hex = (e.target as HTMLInputElement).value;
     const r = parseInt(hex.slice(1, 3), 16) / 255;
     const g = parseInt(hex.slice(3, 5), 16) / 255;
     const b = parseInt(hex.slice(5, 7), 16) / 255;
-    const target = patch.nodes[id];
-    if (!target) return;
-    target.params.tintR = r;
-    target.params.tintG = g;
-    target.params.tintB = b;
+    mutateNode(id, (live) => {
+      // In place, never reassigning `params` (the "Type already integrated" trap).
+      live.params.tintR = r;
+      live.params.tintG = g;
+      live.params.tintB = b;
+    });
   }
 
   // Ports — ids byte-identical to chromaDef (in = video, hue/saturation/tintR/

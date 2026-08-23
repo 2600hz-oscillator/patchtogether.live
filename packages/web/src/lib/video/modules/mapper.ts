@@ -195,6 +195,57 @@ export const mapperDef: VideoModuleDef = {
     { id: 'threshold', label: 'Thresh', defaultValue: MAPPER_DEFAULTS.threshold, min: 0, max: 1, curve: 'linear' },
   ],
 
+  // ── FACE (batch 22 · group 4) ─────────────────────────────────────────────
+  //
+  // WHAT MAPPER IS FOR: it is a MATTE GENERATOR. Its siblings do neighbouring
+  // things — `lumakey` COMPOSITES two frames and `chromakey` keys on hue — and
+  // the thing only this one does is take an ARBITRARY key input's luminance as
+  // the gate and emit the source through it, black elsewhere. The verb is CUT,
+  // and the whole gesture is one number: WHERE the cut falls.
+  //
+  // ⚠ ONE PARAM IS THE MERIT ARGUMENT, NOT A COUNTER-ARGUMENT. The skill's
+  // NO-FACE-ON-MERIT test refuses a promotion when the face would organise
+  // nothing; here the face is not organising controls, it is adding the
+  // OBSERVABLE this module has never had. `MapperCard.svelte` draws a title, a
+  // PatchPanel and one fader — no preview — so on the card "did the key cut
+  // where I wanted?" is unanswerable, and it is the only question the module
+  // poses. The dock `fullViewBody` is the live matte.
+  face: {
+    order: ['threshold'],
+
+    // ⚠ NO `pages`. One control cannot be sectioned; a page here would be a
+    // heading over a single fader, which is the "never pad" half of the compact
+    // ruling in its purest form.
+
+    // ⚠ FADER, NOT KNOB — the parity-critical declaration. `MapperCard.svelte`
+    // draws THRESHOLD with `NeonFader`, and nothing in a ParamDef separates "a
+    // level" from any other continuous scalar, so an undeclared face resolves it
+    // to a KNOB and the promotion silently substitutes a dial for a throw.
+    // ⚠ NO DEF-READING GATE CAN SEE THAT — `contract-lock`, `module-docs-lint`
+    // and the range assertions all read this same def, which says nothing about
+    // the primitive. Declared, not inferred.
+    paramCells: { threshold: 'fader' },
+
+    // ⚠ NO `bareCells`. There is no section heading to make a caption
+    // redundant, and on a one-control plate `Thresh` is the only word telling
+    // the player what the fader does at all.
+
+    // ⚠ MANDATORY FOR A VIDEO DEF — `primaryAudioOutPortId` needs a
+    // `type: 'audio'` output and this def has none (`out` is `video`), so any
+    // other glyph literal falls through `glyphBinding` to a dead
+    // `{kind:'static'}` and reddens module-face-lint's dead-glyph clause. The
+    // live picture arrives from `hasVideoSurface(def)` at the lane and from the
+    // `fullViewBody` extension at the dock, so assert THAT, never this
+    // declaration.
+    glyph: 'none',
+
+    // SCREEN ON/OFF arrives through this slot (#1928). On this module it is an
+    // ADDITION rather than a port — the card has no preview to collapse — and
+    // the ruling requires it of every video face.
+    // See `$lib/ui/modules/mapper/shell-extension.ts`.
+    extension: 'mapper',
+  },
+
   docs: {
     explanation:
       "MAPPER is a per-frame video keyer / matte processor. It shows the VID source only where the KEY input is bright, and paints black everywhere else. For each output texel the shader reads the KEY frame's Rec. 601 luminance (0.299 R + 0.587 G + 0.114 B), builds a mask = smoothstep(threshold - 0.03, threshold + 0.03, keyLuma), and outputs video * mask — so above the cutoff the video shows through, below it fades to black, with a sub-pixel soft edge that kills 1-texel aliasing on a moving key. It is STATELESS per frame: no feedback, no history, so the keyed region tracks the key source live. This generalises OUTLINES' hard-coded \"mapped\" output (video where >=2 shapes overlap) to an arbitrary luminance gate. A mono-video key (white-on-black from SHAPES / LINES / EDGES) is the common matte. Usage: patch a moving picture into VID, a white-on-black shape/mask into KEY, and turn Thresh to trim how much of the matte passes. Note: it is intentionally a black hole when half-patched — with either VID or KEY missing the output is solid black.",

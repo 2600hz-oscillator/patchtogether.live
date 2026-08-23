@@ -44,7 +44,7 @@ import { budgetViolations, classifySkipRow, AUDITED_LANES } from './e2e-skip-bud
 // `dgpt_tick`, so DOOM's game clock IS the frame clock: one rendered frame is
 // one game tic. Anything that changes DOOM's timing re-specifies how far the
 // marine walks, in a suite that then asserts on where he ended up. Standing
-// owner ruling: "do not fuck with doom in any way without specific approval".
+// owner ruling: "do not [touch] doom in any way without specific approval".
 //
 // ⚠ EXCLUDED FROM FAILING THE JOB, NOT FROM BEING REPORTED. A DOOM flake still
 // prints, under its own heading naming the ruling. A silent exclusion is the

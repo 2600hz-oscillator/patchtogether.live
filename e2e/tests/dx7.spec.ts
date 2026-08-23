@@ -11,26 +11,10 @@
 import { test, expect } from './_fixtures';
 import { type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
+import { pollScopeRms, scopePollMsg } from '../_helpers/scope-poll';
 
 test.describe.configure({ mode: 'parallel' });
 
-async function readScopeRms(page: Page, scopeId: string): Promise<number> {
-  return await page.evaluate((id) => {
-    const w = globalThis as unknown as {
-      __engine?: () => { read: (n: { id: string; type: string; domain: string }, k: string) => unknown } | null;
-      __patch: { nodes: Record<string, { id: string; type: string; domain: string }> };
-    };
-    const eng = w.__engine?.();
-    if (!eng) return 0;
-    const node = w.__patch.nodes[id];
-    if (!node) return 0;
-    const snap = eng.read(node, 'snapshot') as { ch1?: Float32Array } | undefined;
-    if (!snap || !snap.ch1) return 0;
-    let s = 0;
-    for (let i = 0; i < snap.ch1.length; i++) s += snap.ch1[i]! * snap.ch1[i]!;
-    return Math.sqrt(s / snap.ch1.length);
-  }, scopeId);
-}
 
 test('dx7: spawns + renders card with preset selector + 4 knobs + 4 handles', async ({ page, rack }) => {
   await spawnPatch(page, [{ id: 'dx', type: 'dx7' }]);
@@ -116,15 +100,14 @@ test('dx7: sequencer (poly) → DX7 → audioOut produces audible RMS', async ({
     });
   });
 
-  // Wait for audio to settle and probe the scope RMS.
-  let rms = 0;
-  const deadline = Date.now() + 6000;
-  while (Date.now() < deadline) {
-    rms = await readScopeRms(page, 'scp');
-    if (rms > 0.005) break;
-    await page.waitForTimeout(100);
-  }
-  expect(rms, `expected audible DX7 RMS via poly cable (got ${rms})`).toBeGreaterThan(0.005);
+  // Wait for audio to settle and probe the scope RMS. The sampling loop runs
+  // IN THE PAGE (one export site) rather than one CDP round trip per sample
+  // against the audio thread it is measuring.
+  const r = await pollScopeRms(page, 'scp', 0.005, 6000);
+  expect(
+    r.rms,
+    scopePollMsg(`expected audible DX7 RMS via poly cable (got ${r.rms})`, r),
+  ).toBeGreaterThan(0.005);
 });
 
 // Helper for the algorithm-switching test: read both scope channels back as

@@ -3262,6 +3262,37 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // this face is: `face`, `paramCells` and `docs` are all stripped.
   'cellshade',
 
+  // SCOREBOARD (2026-08-22, #2089) — split out of batch-22 by owner order, and
+  // the THINNEST face in the video fleet: ONE ranked control.
+  //
+  // That is the honest shape rather than a shortfall. The module is a counter
+  // you can see — two gates in, four neon digits out, no video input and no
+  // audio path — so its surface IS the display and the only thing to set by
+  // hand is what colour it glows. Thinness never refuses a face (owner,
+  // 2026-08-20), and one honest cell with nothing padded is the correct outcome
+  // of "compact is the default and width must be earned".
+  //
+  // ⚠ ITS ONE CONTROL IS A HUE, AND THE CARD DRAWS IT AS A KNOB. `color` is a
+  // continuous 0..1 angle onto 0-360 degrees — it WRAPS, so a dial's end stops
+  // fall mid-space and the player travels the long way round between two
+  // neighbouring reds. The face declares `paramCells: { color: 'hue' }`, the
+  // conic ring, which is the platform's named answer for exactly this shape.
+  // A deliberate primitive divergence from the card, not a range divergence.
+  //
+  // ⚠ AND IT IS BASELINABLE, unlike the other video face this lane shipped.
+  // The picture is a pure function of (score, hue) — no time term, no RNG, no
+  // accumulator in the RENDER (the counter only moves on a gate edge) — and the
+  // module already carries a `__scoreboardVrtSeed` construction hook, which is
+  // exactly `simPin`'s shape. It is also main-thread BECAUSE of that hook
+  // (`worker-eligibility` excludes it: a worker realm has no `window`), which
+  // is the precise inverse of acidwarp, where worker locus is what put simPin
+  // out of reach. So this face takes real scenes.
+  //
+  // ZERO ATTEST: `face`, `paramCells` and `noUserControl` are all
+  // hash-transparent, and no `params` field is touched — no options, no
+  // landmarks, no curve, no default.
+  'scoreboard',
+
   // ACIDWARP (2026-08-22, #2111) — the batch-23 module that RODE ALONE, on the
   // complex-module half of the owner's split: five params but FOUR distinct
   // control shapes over one 320x240 display.
@@ -3356,6 +3387,349 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // is new. Recorded so neither is "corrected" toward the other.
   'peakstate',
   'lines',
+  // ── BATCH 22 · GROUP 4 — the video thin tail, THE REMAINDER ───────────────
+  //
+  // Four video processors with 1-4 params, promoted together. Every one of the
+  // thirteen params is a `NeonFader` on its card, so all four declare
+  // `paramCells: {... 'fader'}` — the same parity-critical declaration group 1
+  // established, for the same reason: nothing in a ParamDef separates "a level"
+  // from any other continuous scalar, so an UNDECLARED face resolves a fader to
+  // a KNOB and the promotion silently substitutes a dial for a throw, with
+  // `contract-lock`, `module-docs-lint` and the range assertions all blind
+  // because they read the def and the def says nothing about the primitive.
+  //
+  // ⚠ ON `luma` AND `videoMixer` THE SILENT SWAP WOULD ALSO HAVE FALSIFIED
+  // SHIPPED PROSE. Every entry in both defs' `docs.controls` NAMES the
+  // primitive in its first two words — "Gamma fader — …", "A1 fader (linear
+  // 0..1, default 1.0) …" — so a promotion that turned them into knobs would
+  // have left the shipped documentation describing controls that no longer
+  // exist, with every def-reading gate green. That is the #2009 lesson, and it
+  // is the second time this batch has hit it (colorizer, group 1).
+  //
+  // ⚠ NONE OF THESE FOUR CARDS DRAWS A PREVIEW — and that makes this group
+  // different from every video face before it. `MapperCard` / `DestructorCard`
+  // / `LumaCard` / `VideoMixerCard` are each a title, a PatchPanel and a fader
+  // row: no canvas anywhere. So each new `fullViewBody` is a pure ADDITION
+  // rather than the usual port-a-card-affordance, and on all four the PICTURE —
+  // not the control layout — is the reason the promotion is worth doing:
+  //   * `mapper` has ONE param and would otherwise fail the merit test. Its
+  //     whole output is a MATTE DECISION and "did the key cut where I wanted?"
+  //     is unanswerable from a fader reading 0.5.
+  //   * `destructor`'s four faders are DEGRADATION AMOUNTS whose only
+  //     description is a look.
+  //   * `luma` ships a BIT-EXACT IDENTITY (see below), so the frame is the only
+  //     thing that distinguishes graded from untouched.
+  //   * `videoMixer` SUMS — four faders with no per-channel observable at all.
+  // Recorded so nobody later "restores parity" by deleting them.
+  //
+  // ⚠ TWO REAL FINDINGS, one per module, neither previously written down:
+  //
+  //   * `videoMixer` SHIPS THREE OF FOUR CHANNELS BIT-EXACTLY DEAD. `amount1`
+  //     defaults to 1.0 and `amount2/3/4` to 0.0, and the shader multiplies each
+  //     sampled input by its amount — so patching a source into in2/in3/in4 on a
+  //     fresh node produces EXACTLY the previous frame. It is a defensible
+  //     default (opening all four sums to 4x and clips to white on contact) but
+  //     nothing in the product said so. It is also the rank-1 argument: A1 is
+  //     the only fader that does anything before the player touches something.
+  //
+  //   * `luma` SHIPS AS A BIT-EXACT IDENTITY. All four defaults are their own
+  //     no-ops, including the deliberate `levels >= 16.0` TRUE BYPASS branch
+  //     (F-L2). Documented on the def; now it has a surface that can show it.
+  //
+  // ⚠ AND A THIRD, IN A COMMENT RATHER THAN A CONTROL: `destructor.ts`'s FILE
+  // HEADER said `mangle` "scales all three" effects and described `posterize`
+  // as "0 = none, 1 = harshest". Both are backwards. `FRAG_SRC` scales only
+  // `uShift`/`uScanline` by `k`, and `levels = mix(2, 32, uPosterize)` makes 0
+  // the HARSHEST. The shipped `docs` were already correct on both counts, so
+  // the two prose surfaces contradicted each other. Corrected with this face —
+  // comments, so no attest and no contract move.
+  //
+  // ⚠ `luma.posterizeLevels` IS THE #2090 CLASS WITH THE POLARITY REVERSED. The
+  // def says `curve: 'discrete'` (2..16) and `LumaCard.svelte` passes
+  // `curve="linear"`. On #2090 the DEF was the wrong side and the fix was
+  // REFUSED because no consumer read the field; here the CARD is the wrong side
+  // and the faceplate's consumer DOES read the def — the shader itself floors
+  // the uniform, so fifteen positions with nothing between them is the truth.
+  // Promotion resolves it in the def's favour with no def edit and no
+  // contract-lock move.
+  //
+  // NO `pages`, NO `hero`, NO `bareCells`, NO readout and NO sidebar on any of
+  // the four: each is one honest band, and the 2026-08-19 rulings removed the
+  // other fields. None is a MONITOR-mode module: grepped at authoring time,
+  // `hideControls` appears on `RuttetraCard`, `MonoglitchCard`, `MilkdropCard`,
+  // `ReshaperCard` and `GraphicEqCard` (plus `ModuleShell`, its consumer), and
+  // in NONE of these four cards — so inventing it here would be adding an
+  // affordance rather than preserving one.
+  //
+  // ⚠ SCREEN OFF KEEPS THE WATCH MARK ON ALL FOUR, AND ALL FOUR ARE STATELESS —
+  // so unlike group 1, the reason is the OUTPUT every time and there is no
+  // accumulator case in this group. Do not copy `vdelay`'s or `milkdrop`'s
+  // comment onto any of them. What differs is HOW WIDE a stalled pull reaches:
+  // `mapper` produces a matte something else composites, `luma` and
+  // `destructor` sit mid-chain, and `videoMixer` is the JOIN — a stalled sum
+  // blacks out up to FOUR upstream chains' visible result at once.
+  //
+  // ⚠ ZERO ATTEST for all four: `face` and `paramCells` are stripped by
+  // `scripts/attest-code-basis.ts`, comments are stripped with them, no def's
+  // `params` are touched, and the four bodies + extensions live under `ui/`.
+  'mapper',
+  'destructor',
+  'luma',
+  'videoMixer',
+
+  // ── BATCH 23b · THE ATTEST HALF ───────────────────────────────────────────
+  //
+  // `shapes` rides alone because it is the one module of the <=5 cut whose face
+  // cannot be authored without changing `params` — SPLIT-ON-THE-ATTEST-LINE, the
+  // pattern batch 22 established when it split G2a from G2b, applied again so
+  // 23a's zero-attest pair did not inherit a window it did not need.
+  //
+  // ⚠ TWO DEF CORRECTIONS, BOTH #2090-CLASS, BOTH VERIFIED AT THE SHADER'S READ
+  // SITE rather than argued from the range:
+  //
+  //   * `shape` was `0..2 linear` and is a THREE-STATE SELECTOR: `FRAG_SRC` does
+  //     `int shape = int(floor(uShape + 0.5))`. Now `discrete` with an `options`
+  //     roster promoted from the names the CARD already painted
+  //     (`['CIRCLE','SQUARE','TRI']`) — never invented. Without it the faceplate
+  //     would have rendered this module's most visible decision as a dial
+  //     reading 0/1/2, because promotion deletes the only surface those names
+  //     ever lived on. The roster now lives on the DEF and the card IMPORTS it,
+  //     so a card can no longer disagree with its def about the state names.
+  //
+  //   * `tile` was `0..1 linear` and is a 2-STATE SWITCH: the shader reads
+  //     `uTile >= 0.5 ? ... : 1.0`. Declared `linear`, `looksLikeToggle` returns
+  //     false and the face resolves it to a KNOB — the moog962 defect, where a
+  //     dial cannot reliably land on two values, so the control is INERT in
+  //     practice. Now `discrete`, and classified LATCHING in
+  //     `ACKNOWLEDGED_LATCHING` from that same read site: a LEVEL compared every
+  //     frame, and a momentary render would un-tile the frame on release.
+  //
+  // ⚠ BOTH ARE PIXEL-NEUTRAL BY CONSTRUCTION — every value the card or a CV
+  // could already write was rounded/thresholded by the shader to the same
+  // result, so no baseline moves. What changes is what the CONTROL can express.
+  //
+  // ⚠ TWO OF THE FIVE CONTROLS ARE INERT AT SPAWN, for DIFFERENT reasons, which
+  // is the rank argument rather than trivia: `rotate` is invisible because the
+  // default `shape` is a CIRCLE (rotationally symmetric), and `tileN` is
+  // invisible because `tile` defaults off and the shader collapses the grid to
+  // `n = 1.0`, never reading the uniform. Symmetry versus a gate.
+  //
+  // SCREEN OFF keeps the watch mark, and on a SOURCE that is the sharpest form
+  // of the argument: SHAPES has no input, so it is the ORIGIN of everything
+  // downstream — a lapsed mark would not stall a preview, it would MUTE the
+  // generator every consumer samples.
+  'shapes',
+
+  // ── CUT A · BATCH 2 (2026-08-23) ──────────────────────────────────────────
+  //
+  // Two faces, and the batch is TWO rather than four because the re-derivation
+  // moved two of its four assigned modules OUT of the plain set. Both
+  // reclassifications are recorded in `.myrobots/2026-08-23-cut-a-batch2-
+  // derivation.md` with the read sites; the short form is that `samsloop`'s
+  // recording switches are `node.data` and not params, and `joystick` cannot
+  // paint a lane tile at all (see the refusal note further down this file).
+
+  // SHAPEDRAMPS — a sync-locked parametric ramp generator, and the FIRST module
+  // in this programme to gain a picture rather than carry one forward.
+  //
+  // ⚠ ITS CARD HAS NO PREVIEW. Every other video face's `fullViewBody` ports a
+  // canvas the legacy card already owned; `ShapedrampsCard.svelte` is eight
+  // faders and two section labels, and `vrt-exemptions.ts` lists it among the
+  // cards "confirmed 0 canvases each". So the SCREEN switch is an ADDITION, and
+  // the promotion is the first time a player can see what this module emits
+  // without patching it into an OUTPUT first.
+  //
+  // ⚠ EIGHT FADER-DRAWN PARAMS AND NO `paramCells`, WHICH IS THE DELIBERATE
+  // CHOICE AND NOT THE LAZY ONE. Every control on the card is a `NeonFader`, so
+  // "declare the primitive the card established" read literally would declare
+  // `fader` eight times. `shell-control-kind.ts` records the measurement that
+  // says otherwise: TWENTY-THREE faced modules rank ONE HUNDRED AND TWENTY-ONE
+  // fader-drawn params as knobs, `noise` is the only declarer, and converting
+  // them is a LOOK RULING WITH REAL COST that is WITH THE OWNER. Declaring it
+  // here would also halve this face's lane plate (`LANE_CELL_H.fader` 96 px
+  // against a 42 px row), spending the whole budget the ranking is built
+  // around. This face follows the twenty-three and says so on the def.
+  //
+  // ⚠ H/V SHAPE ARE NOT SELECTORS. They read like four-position switches —
+  // linear / triangle / soft-fold / radial — and the shader blends LINEARLY
+  // between adjacent shapes, so those are landmarks on a continuous morph. No
+  // `options` roster: naming them would tell the player the in-between values
+  // are unreachable when they are the entire point.
+  //
+  // SCREEN OFF keeps the watch mark, and this is the widest-tap form of that
+  // argument in the fleet: six outputs, four of them drawn from `vUv` with no
+  // input at all, AND THE PREVIEW SHOWS ONLY `h_out` — five of the six are
+  // invisible on the very surface whose switch would mute them. The two
+  // identity ramps (`h_lin`/`v_lin`) are invariant to every knob and CV, so if
+  // they went dark nothing on the faceplate would move to say why.
+  //
+  // ZERO ATTEST: `face` and `docs` are hash-transparent and no `params` field
+  // is touched — no options, no landmarks, no curve, no default.
+  'shapedramps',
+
+  // DOCKSCOPE — a single-channel time-domain scope, and the face that had to
+  // REFUSE the glyph its own inventory note recommended.
+  //
+  // ⚠ THE `scope` GLYPH WOULD HAVE PAINTED A FAKE TRACE. The Cut A note reads
+  // "the trace IS the `scope` glyph (analogVco is the precedent)". It is not:
+  // `glyphBinding` resolves any glyph plus a PRIMARY AUDIO OUTPUT to
+  // `live-audio`, and dockscope declares `outputs: []` — it is a terminal
+  // monitor. With no audio output the binding falls to `{ kind: 'static' }`,
+  // the deterministic placeholder trace. `glyph: 'scope'` would have compiled,
+  // passed `VALID_GLYPHS`, and shipped a picture that is not this module's
+  // signal — a green gate certifying a dead display. analogVco reaches the live
+  // branch only because it declares audio outputs.
+  //
+  // So the trace comes through `fullViewBody` instead, where the body can read
+  // the engine handle's own `read('snapshot')` key — the only seam that
+  // actually reaches these samples. `dockscope-draw.ts` was already a pure
+  // function of (samples, sampleRate, params), so the body is a thin canvas
+  // host over the drawing the card has always used, and the two surfaces cannot
+  // disagree about what the trace looks like.
+  //
+  // ⚠ THE TRACE IS THE WIDTH-EARNER, and it is one of the named ones — "a live
+  // picture, a scope trace" is the ruling's own example. This face claims width
+  // for the display and nothing else.
+  //
+  // ⚠ `range` IS LATCHING, classified at the READ SITE: `dockscope-draw.ts`
+  // compares `params.range >= 0.5` on EVERY FRAME to pick the volts-per-division
+  // ceiling. There is no edge detector anywhere in the chain, so it is a level,
+  // not a trigger — `ACKNOWLEDGED_LATCHING`, never `face.momentary`.
+  //
+  // `range` gains an `options` roster so the two states are named AUDIO and CV.
+  // Unnamed, a 2-state toggle announces pressed/unpressed — enable-and-absence
+  // semantics — while the display is showing two MODES with different
+  // volts-per-division. The names are PROMOTED, not invented: they are the
+  // strings the card's own button has always painted, and the read site already
+  // labels the trace `±1.0` / `±5V` from the same branch.
+  //
+  // ⚠ AND IT COSTS NO ATTEST, WHICH IS NOT THE OBVIOUS ANSWER. A new `options`
+  // roster is a `params` change, and "params is in the WebGL content basis" is
+  // the rule every recent face entry cites — `graphicEq` below pays exactly that
+  // cost for exactly this kind of roster. It does not apply here, and the
+  // difference is the DOMAIN rather than the field: `webgl-attest-lib.ts`
+  // auto-sweeps `packages/web/src/lib/video/**` plus exactly TWO named audio
+  // files (`cube.ts`, `wavesculpt.ts`). `dockscope.ts` is an AUDIO def and
+  // neither of those, so it is not in the basis at all. Measured, not reasoned:
+  // `task webgl:attest:check` reports the hash unchanged with a matching
+  // attestation already on disk.
+  'dockscope',
+  // ── GRAPHIC EQ — the meter, and the LAST of the five MONITOR cards ────────
+  //
+  // Five controls. Two of them carry a NEW `options` roster and that is where
+  // the attest cost comes from — `params` is in the WebGL content basis while
+  // `face`, `paramCells` and `docs` are stripped from it.
+  //
+  // ⚠ THE ROSTERS ARE REQUIRED, NOT DECORATIVE, and the reason is not the same
+  // as posterbox/tiler's. Those two had a roster already and the question was
+  // which PRIMITIVE to draw it on. Here the params are bare `discrete` 0..1,
+  // which the shell resolves as an unlabelled TOGGLE with no declaration at
+  // all — and that resolution is wrong in a way worse than missing. Neither
+  // param is an ON/OFF: `style` picks BARS *or* BOXES, `display` picks MONO *or*
+  // STEREO. Two named alternatives with no "off" between them. An undeclared
+  // toggle renders pressed/unpressed and announces that a FEATURE is being
+  // enabled and that one of the two looks is its ABSENCE. The labels are
+  // PROMOTED, not invented — they are the words the def's own `docs.controls`
+  // already uses.
+  //
+  // ⚠ `hue` IS A CORRECTION, NOT PARITY, and the only place this face
+  // deliberately departs from its card. The card draws hue as a NeonFader, but
+  // the param is a continuous 0..1 ANGLE THAT WRAPS: 0 and 1 are the SAME
+  // colour. On a linear throw those sit at opposite extremes of the control
+  // while being the identical result, so the one crossing a player most wants
+  // is the one the fader cannot make. The conic ring has no end stops.
+  //
+  // ⚠ SCREEN OFF KEEPS THE WATCH MARK FOR AN ACCUMULATOR REASON, which makes
+  // this the odd one out among the MONITOR five. ruttetra / monoglitch /
+  // reshaper all argue they have NO accumulator, so only the OUTPUT is at
+  // stake. That is FALSE here and was checked in the def rather than assumed:
+  // `peakL[]`/`peakR[]` are per-band peak-hold state advanced once per draw by
+  // `decayPeak(prev, current, params.peak)`, and both AnalyserNodes carry
+  // `smoothingTimeConstant = 0.7`. A lapsed mark does not pause a picture that
+  // resumes identically — it freezes the caps, staleness the smoothing history,
+  // and the returning frame asserts peaks belonging to whenever the mark
+  // expired. The OUTPUT argument holds on top of that, and more pointedly for a
+  // chainable `output`-category module whose whole point is feeding downstream.
+  'graphicEq',
+  // ── BATCH 24 — CUT A, batch 1: the four plain video faces ─────────────────
+  //
+  // "Plain" is a measured claim, not a vibe: each of the four needs only cells
+  // that already ship, and none needed a registered panel, a tab rail or a
+  // snowflake accommodation. All four are six params in ONE band.
+  //
+  // CHROMA — the single-input COLOUR GRADE (NOT a keyer; the name is historical
+  // and `chromakey` below took that job). `tintMix` ranks ABOVE the three tint
+  // channels because it DEFAULTS TO 0 and gates them: reach a channel first and
+  // nothing happens. Its `hue` param is `-180..180` DEGREES, so it is emphatically
+  // NOT the `hue` CELL, which is the conic ring for a continuous `0..1` angle.
+  'chroma',
+  // CHROMAKEY — the two-input COMPOSITOR. Its key colour ranks LAST precisely
+  // because it is already correct at spawn: `keyR/keyG/keyB` default to pure
+  // green, the colour the module exists to key, so the common session never
+  // touches them. SCREEN OFF keeping the watch mark matters more here than
+  // anywhere else in the batch — this node is the pull root for TWO upstream
+  // chains (`fg` and `bg`), so a lapsed mark idles both branches of the composite.
+  'chromakey',
+  // FEEDBACK — the video-feedback LOOP, and the batch's ACCUMULATOR case. It
+  // re-samples its OWN previous output from a ping-pong framebuffer, so the pull
+  // is not merely how the picture stays fresh, it is how the trail EXISTS: a
+  // lapsed watch mark would decay the accumulated image out of the patch and
+  // SCREEN would become a history eraser. Do not copy its three batch-mates'
+  // "it would resume identically" argument onto it.
+  'feedback',
+  // MANDLEBLOT — the Mandelbrot EXPLORER. Two things separate it from the other
+  // three. It is TIME-ANIMATED (`uTime * 0.1 * uColorCycle` drives the hue and
+  // `color_cycle` ships at 1, so the palette cycles at rest — the VRT clock pin
+  // is load-bearing here, not a formality). And its promotion DELETES a real
+  // derived readout: the card painted the live magnification, which the resting
+  // faceplate may not. That finding — knob position is a LOG map onto roughly
+  // 1x..1e6x, not a linear one — now lives in `docs.controls.zoom` and on the
+  // control's `aria-valuetext`.
+  'mandleblot',
+
+  // ── CUT B (2026-08-23) — the "screen-panel" cut, which wanted no panels ────
+  //
+  // SPECTROGRAPH — the cheapest face in the fleet, and the one that had to
+  // CREATE a param to keep an affordance.
+  //
+  // ⚠ THE CUT PRESCRIBED A REGISTERED PANEL FOR ITS SCREEN. It is a BODY, and
+  // the discriminator is mechanical rather than aesthetic — stated on `wavecel`
+  // in `shell-cells.ts`: a PANEL is right when the picture is DERIVED from
+  // params and `node.data` with no analyser, a BODY when the surface carries a
+  // per-frame ENGINE READ. Every column of this sonogram comes from
+  // `analyser.getFloatFrequencyData`, and the 256-column scroll buffer lives in
+  // the module's FACTORY CLOSURE reachable only through `drawFrame`. There is
+  // nothing on the node for a panel to derive.
+  //
+  // ⚠ THE `view` PARAM IS NEW, AND CREATING IT IS THE POINT. COLOR/B-W was
+  // `let viewBw = $state(false)` — component state, which promotion DELETES
+  // along with the card. Functional parity is not negotiable, so the switch
+  // moved onto the contract. It is display-only (both video outputs always
+  // render both colormaps; this picks which port a PREVIEW pulls), so no
+  // downstream consumer can observe it and not one rendered frame changes.
+  // It carries an `options` roster for the dockscope reason: unnamed, a 2-state
+  // toggle announces pressed/unpressed while what this picks is one of two
+  // COLORMAPS, neither of which is the other's "off".
+  //
+  // ⚠ `glyph: 'none'` IS FORCED TWICE OVER, which is unusual and worth stating.
+  // No LIVE glyph: `glyphBinding` needs a primary AUDIO output and both of this
+  // module's outputs are `mono-video`, so any literal resolves `static` — the
+  // dead-glyph clause refuses it. And no PICTURE glyph either: `hasVideoSurface`
+  // is `domain === 'video'` and this def is `domain: 'audio'` despite emitting
+  // video. So its LANE tile paints two ranked cells and nothing else, and the
+  // sonogram is a DOCK surface by construction — the only face in the programme
+  // whose module emits video and whose tile shows none.
+  //
+  // ⚠ DETERMINISM IS FREE. `__spectrographVrtFreeze` is read INSIDE the module,
+  // not in the card, so the body inherits the frozen fill without mirroring a
+  // global — the opposite of dockscope, where the seed lived in the card and
+  // had to be duplicated or the face would have been unbaselinable.
+  //
+  // ZERO ATTEST despite adding a param: `webgl-attest-lib.ts` admits
+  // `lib/video/**`, any `lib/ui/modules/*.svelte` that greps as creating a real
+  // WebGL context, and exactly two audio defs (`cube.ts`, `wavesculpt.ts`).
+  // This def is none of those, and both surfaces are Canvas2D.
+  'spectrograph',
 ]);
 
 /**

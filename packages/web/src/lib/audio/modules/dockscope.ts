@@ -59,8 +59,77 @@ export const dockscopeDef: AudioModuleDef = {
     { id: 'timeMs', label: 'Time', defaultValue: 20, min: 1, max: 200, curve: 'log', units: 'ms' },
     { id: 'scale',  label: 'Scale', defaultValue: 1, min: 0.1, max: 10, curve: 'log' },
     // 0 = audio (±1 fills the trace), 1 = cv (±5V — Eurorack CV convention).
-    { id: 'range',  label: 'Range', defaultValue: 0, min: 0, max: 1, curve: 'discrete' },
+    //
+    // ⚠ THE ROSTER IS REQUIRED, NOT DECORATIVE, and the reason is what an
+    // unnamed 2-state control ANNOUNCES. Without `options` a toggle reads as
+    // pressed/unpressed — enable-and-absence semantics, "range is on" — while
+    // what this switch actually picks is one of two DISPLAY MODES with
+    // different volts-per-division. "Off" is not a thing this control has; both
+    // positions are a mode, and the trace is drawn differently in each.
+    //
+    // ⚠ THE NAMES ARE PROMOTED, NOT INVENTED. `AUDIO` and `CV` are the strings
+    // `DockscopeCard.svelte`'s button has always painted, and the read site
+    // (`dockscope-draw.ts`) already annotates the trace `±1.0` / `±5V` off the
+    // same `range >= 0.5` branch. This declaration moves them from card markup
+    // — where no face could reach them — onto the contract, so both surfaces
+    // name the mode from ONE place.
+    {
+      id: 'range',
+      label: 'Range',
+      defaultValue: 0,
+      min: 0,
+      max: 1,
+      curve: 'discrete',
+      options: [
+        { value: 0, label: 'AUDIO', title: 'audio range — ±1.0 fills the trace' },
+        { value: 1, label: 'CV', title: 'CV range — ±5V, the Eurorack convention' },
+      ],
+    },
   ],
+
+  // ── FACE (cut A · batch 2) ─────────────────────────────────────────────────
+  face: {
+    // Three controls, ranked by how often a player reaches for them while
+    // watching a trace: the TIME window frames what you are looking at, SCALE
+    // fits it vertically, and RANGE is set once for the kind of signal on the
+    // probe and then left alone.
+    order: ['timeMs', 'scale', 'range'],
+
+    // ⚠ NO `pages`. Three controls over one display is one honest band, and a
+    // tab rail over three cells would be the "never pad pages to force the
+    // rail" failure.
+
+    // ⚠ NO `paramCells`. `DockscopeCard.svelte` draws TIME and SCALE with
+    // `NeonFader`, but this face follows the same fleet convention
+    // `shapedramps` does in this batch and the other twenty-three faced
+    // modules do already — see `shell-control-kind.ts`, where the conversion is
+    // recorded as a LOOK RULING WITH REAL COST that is with the owner. `range`
+    // needs no declaration in either direction: `min 0 / max 1 / discrete` is
+    // the genuine two-state shape, so `looksLikeToggle` resolves it to a
+    // TOGGLE, which is what the card's `<button>` already is — and its two
+    // positions now carry names.
+
+    // ⚠ NO GLYPH, AND THIS IS THE CORRECTION THAT DEFINES THIS FACE. The
+    // migration inventory recommends `glyph: 'scope'` on the grounds that
+    // "the trace IS the scope glyph". It is not. `glyphBinding` resolves a
+    // glyph to a LIVE trace only through `primaryAudioOutPortId` — the first
+    // declared `audio` OUTPUT — and dockscope declares `outputs: []`, because
+    // it is a terminal monitor that observes and never passes through. With no
+    // audio output the binding falls to `{ kind: 'static' }`: a deterministic
+    // placeholder waveform that is not this module's signal at all.
+    //
+    // `glyph: 'scope'` would have COMPILED and PASSED `VALID_GLYPHS`, and
+    // shipped a faceplate whose picture is a fiction. analogVco — the
+    // precedent the note cites — reaches the live branch only because it
+    // declares six audio outputs.
+    glyph: 'none',
+
+    // The trace arrives through this slot instead, because the engine handle's
+    // `read('snapshot')` key is the ONLY seam that reaches these samples and
+    // nothing in the glyph path calls it. See
+    // `$lib/ui/modules/dockscope/shell-extension.ts`.
+    extension: 'dockscope',
+  },
 
   docs: {
     explanation:

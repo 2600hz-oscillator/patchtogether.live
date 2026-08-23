@@ -497,6 +497,45 @@ describe('module-face lint — MOMENTARY pads (face.momentary)', () => {
    *  an id here ONLY after confirming against the module's DSP/card that the
    *  control latches; a press-pad goes on `face.momentary` instead. */
   const ACKNOWLEDGED_LATCHING = new Set<string>([
+    // SPECTROGRAPH, 2026-08-23 (cut B). `view` picks which COLORMAP the
+    // on-surface preview pulls: COLOR (heat ramp) or B/W (inverted grayscale).
+    //
+    // LATCHING, classified AT THE READ SITE — and the read site is unusually
+    // plain here, which is worth saying because this param is NEW in the same
+    // diff. Both consumers are a bare level test evaluated fresh every frame
+    // inside a rAF loop: `const port = viewBw ? 'bw' : 'color'` in
+    // `SpectrographCard.svelte` and the identical line in
+    // `SpectrographOutputBody.svelte`, each deriving `viewBw` as
+    // `(node.params.view ?? 0) >= 0.5`. There is no edge detector anywhere in
+    // the module, its draw core or either surface, and the def declares no gate
+    // input that could deliver one. A momentary render would snap the preview
+    // back to COLOR the instant the player released, which is not a control
+    // anyone could use to compare two colormaps.
+    //
+    // ⚠ It is also DISPLAY-ONLY: both video outputs render both colormaps
+    // continuously regardless of this value, so nothing downstream observes it.
+    // That is what let a piece of component state become a param without
+    // changing a single rendered frame.
+    'spectrograph:view',
+    // DOCKSCOPE, 2026-08-23 (cut A · batch 2). `range` picks the trace's
+    // volts-per-division: AUDIO (±1.0) or CV (±5V, the Eurorack convention).
+    //
+    // LATCHING, classified AT THE READ SITE rather than from the shape. The
+    // consumer is `dockscope-draw.ts`, which opens every redraw with
+    // `const isCv = params.range >= 0.5` and picks `rangeMax` from it — a LEVEL
+    // compared on EVERY FRAME, for as long as the value stands. There is no
+    // edge detector anywhere in the chain: the card's own button writes it as a
+    // persisted flip (`setNodeParam(id, 'range', range >= 0.5 ? 0 : 1)`) and
+    // reads it back off `node.params`, and the module declares no gate input at
+    // all. A momentary render would snap the display back to ±1.0 the instant
+    // the player let go, which is not a control anyone could use to look at a
+    // 5V pitch sweep.
+    //
+    // ⚠ It is also the one param in this batch that carries an `options`
+    // roster, so the two positions announce AUDIO and CV rather than
+    // pressed/unpressed. The classification and the roster are the same
+    // argument from two directions: this is a MODE switch, not an enable.
+    'dockscope:range',
     // B3NTB0X, 2026-08-19. The two kaleidoscope FOLDS, and they became visible
     // to this gate the same way cloudseed's enables did: their `curve` was
     // corrected `linear` → `discrete` when the face landed, because the shader
@@ -908,6 +947,19 @@ describe('module-face lint — MOMENTARY pads (face.momentary)', () => {
     // the quiet agreements are what make them legible as exceptions.
     'lumakey:invert',
     'shapegen:solids',
+    // SHAPES, 2026-08-23 (batch 23b) — the TILE switch, here for the same reason
+    // b3ntb0x's folds are: its `curve` was corrected `linear` -> `discrete` when
+    // the face landed, because the shader hard-thresholds it
+    // (`uTile >= 0.5 ? ... : 1.0`) so `linear` was always a lie and the faceplate
+    // would have painted a two-state switch as a continuous rotary — which is
+    // INERT, not merely ugly. Pixel-neutral: every value the card could write
+    // already sat on the same side of that threshold.
+    //
+    // LATCHING, not momentary, read off the shader rather than assumed: it
+    // compares a LEVEL every frame, and the card's TILE ON/OFF button flips a
+    // persisted state you leave engaged. A momentary render would un-tile the
+    // frame the instant you let go, which is the opposite of the control.
+    'shapes:tile',
     // QUADRALOGICAL, 2026-08-22 — the GLOBAL key inversion, and it is the entry
     // whose `curve` correction fixed a control that the player could not reach
     // AT ALL rather than one they could reach awkwardly.
@@ -2724,6 +2776,193 @@ describe('module-face lint — FACEPLATE STRUCTURE (PF-20: hero / sidebar / hint
       'page-hint',
       'band-hint',
     ]);
+  });
+});
+
+// ── THE LANE TILE PAINTS SOMETHING (2026-08-23, cut A · batch 2) ────────────
+//
+// ⚠ THIS CONVERTS A REFUSAL FROM LORE INTO ENFORCEMENT, and it was written
+// because the refusal turned out to be enforced by NOTHING.
+//
+// The `joystick` refusal is recorded in three separate live comments —
+// `strict-faces.ts` (the quadralogical entry), `types.ts` (on
+// `FaceXyPad.surface`) and `quadralogical.ts` — all saying the same thing: a
+// pad is joystick's ONLY control, `laneOrder` makes every declared pad's anchor
+// dock-only, so its lane resolves to ZERO. Every one of those is prose. Swept
+// for a gate that fails on it, the answer was that there is no registry-wide
+// one: the cap-vs-fit-plan clause asserts `rendered === face.controls.length`,
+// which for a pad-only face is `0 === 0` and green; the panel-tier clause fires
+// only when a panel is SELECTED; `param-cell-coverage` counts primitive kinds;
+// no e2e asserts a minimum occupancy. The only executable assertion was
+// `quadralogical-face-model.test.ts`, scoped to one def. So a joystick face
+// would have shipped GREEN THROUGH THE WHOLE GATE SET with a blank lane tile —
+// the exact "green and blind" shape CLAUDE.md warns about, and worse than the
+// placeholder it would have replaced.
+//
+// ⚠ THE RULE IS ABOUT A SILENT DROP, NOT ABOUT EMPTINESS — and the first draft
+// of this gate got that wrong, which is worth recording because the tree
+// corrected it on the first run. Written as "the tile must paint something", it
+// immediately failed `flipper`: a promoted, deliberate, thoroughly documented
+// face that declares `params: []` and `order: []` because the module HAS no
+// controls (a gate flip-flop whose alternation lives entirely in the worklet).
+// Its own def says it: *"ONE BAND WOULD BE ONE BAND TOO MANY … the faceplate IS
+// the jack field."* An empty tile is the honest rendering of a module with
+// nothing to render, and `videoOut` is the same shape from the other end —
+// `order: []` with a picture.
+//
+// So emptiness is not the defect. THE DEFECT IS A LANE THAT PROMISES CONTROLS
+// AND PAINTS NONE: a face that RANKS something, and then resolves to zero cells
+// at the tier the player is looking at. joystick is exactly that — two ranked
+// params, both axes of one declared pad, and `laneOrder` makes the anchor
+// dock-only while `foldedOrder` removes the partner, so both vanish with no
+// glyph to take their place (four `cv` outputs and no audio, so every glyph
+// literal resolves `{ kind: 'static' }`, which the dead-glyph clause above
+// refuses by name). flipper drops nothing; joystick drops everything it has.
+//
+// Framing it as the drop also removes the exemption `flipper` would otherwise
+// have needed — a strictly better shape than carving out the honest case.
+//
+// DERIVED, not listed: the subject is `STRICT_FACES`, the predicate reads the
+// same `curatedFace` / `laneGlyphFor` the shell reads, and there is no count
+// anywhere. An exemption needs a `why` in the TYPE, so `tsc` refuses the bare
+// form before this test runs.
+describe('module-face lint — every promoted LANE TILE paints something', () => {
+  /** A promoted face whose lane tile is legitimately empty. Deny-by-default:
+   *  the `why` is required, so an undeclared exemption cannot compile. */
+  interface EmptyLaneExemption {
+    type: string;
+    why: string;
+  }
+  const EMPTY_LANE_OK: readonly EmptyLaneExemption[] = [];
+
+  /** The lane tiers a player actually sees — `curatedFace`'s non-dock tiers. */
+  const LANE_TIERS = ['mini', 'compact', 'full'] as const;
+
+  it('no promoted face RANKS controls the lane then drops entirely', () => {
+    const exempt = new Map(EMPTY_LANE_OK.map((e) => [e.type, e.why]));
+    const offenders: string[] = [];
+    for (const def of allDefs()) {
+      if (!STRICT_FACES.has(def.type)) continue;
+      if (exempt.has(def.type)) continue;
+      // ⚠ A face that ranks NOTHING is not in scope: it promises the lane
+      // nothing, so an empty tile is the honest rendering of it. `flipper`
+      // (params: []) and `videoOut` (order: [], picture) are both this shape,
+      // and both are deliberate. The subject is a face that ranks controls.
+      if ((def.face?.order?.length ?? 0) === 0) continue;
+      // A glyph fills the tile on its own — the videoOut shape.
+      if (laneGlyphFor(def as Parameters<typeof laneGlyphFor>[0]) !== 'none') continue;
+      const empty = LANE_TIERS.filter(
+        (tier) => (curatedFace(def as FaceDefLike, tier)?.controls.length ?? 0) === 0,
+      );
+      if (empty.length > 0) {
+        offenders.push(
+          `${def.type}: face.order ranks ${def.face!.order!.length} control(s), but lane tier(s) `
+            + `${empty.join(', ')} resolve to ZERO of them and the module paints no lane glyph — `
+            + 'so its tile body is EMPTY while its face claims otherwise. This is the #1974 '
+            + 'joystick shape: a face whose only ranked controls are an `xyPads` pair has no lane '
+            + 'presence at all, because `laneOrder` makes the pad anchor dock-only and '
+            + '`foldedOrder` removes its partner. Either rank a control the lane can paint, give '
+            + 'the module a live glyph binding, or do not promote it — a blank tile is worse than '
+            + 'the placeholder it replaces.',
+        );
+      }
+    }
+    expect(offenders.join('\n'), 'promoted face(s) whose lane drops every ranked control').toBe('');
+  });
+
+  // ⚠ ANCHORED: an exemption naming a module that is not promoted is a licence
+  // nobody is watching — the module was renamed, un-promoted or deleted and the
+  // carve-out silently stopped carving anything out.
+  it('ANCHOR: every empty-lane exemption names a promoted module, with a reason', () => {
+    for (const e of EMPTY_LANE_OK) {
+      expect(STRICT_FACES.has(e.type), `EMPTY_LANE_OK names '${e.type}', which is not promoted`).toBe(true);
+      expect(e.why.length, `EMPTY_LANE_OK.${e.type}: an exemption without an argument is a shrug`)
+        .toBeGreaterThan(40);
+    }
+  });
+
+  it('has a subject at all (vacuity control)', () => {
+    // Three ways this could be green while measuring nothing: the registry does
+    // not load, nothing is promoted, or `curatedFace` returns null for
+    // everything. All three fail HERE rather than letting the sweep pass over
+    // an empty set.
+    const promoted = allDefs().filter((d) => STRICT_FACES.has(d.type));
+    expect(promoted.length, 'no promoted def resolved — the registry did not load').toBeGreaterThan(0);
+    expect(
+      promoted.filter((d) => (curatedFace(d as FaceDefLike, 'full')?.controls.length ?? 0) > 0).length,
+      'not one promoted face resolved a single lane control — the derivation is broken, and a '
+        + 'broken derivation makes the sweep above vacuously green',
+    ).toBeGreaterThan(0);
+  });
+
+  // ⚠ NEGATIVE CONTROL, BOTH DIRECTIONS, over the SAME predicate the sweep
+  // calls. The positive leg above can only prove "nothing in the tree is
+  // empty"; without this, a `curatedFace` that returned a non-empty list for
+  // every input would satisfy it while measuring nothing.
+  it('NEGATIVE CONTROL: the pad-only (#1974 joystick) shape IS caught', () => {
+    // joystick's exact shape: two params, both axes of one declared pad, no
+    // audio output and not a video domain — so no glyph either.
+    const padOnly = {
+      type: 'joystick-shaped-fixture',
+      domain: 'audio',
+      outputs: [{ id: 'x', type: 'cv' }, { id: 'y', type: 'cv' }],
+      params: [{ id: 'pos_x', label: 'X' }, { id: 'pos_y', label: 'Y' }],
+      face: { order: ['pos_x', 'pos_y'], glyph: 'none', xyPads: [{ x: 'pos_x', y: 'pos_y' }] },
+    } as unknown as FaceDefLike;
+    expect(
+      laneGlyphFor(padOnly as Parameters<typeof laneGlyphFor>[0]),
+      'the fixture must paint no lane glyph, else the sweep would skip it before measuring',
+    ).toBe('none');
+    for (const tier of LANE_TIERS) {
+      expect(
+        curatedFace(padOnly, tier)?.controls.length ?? 0,
+        `lane tier '${tier}': a pad-only face must resolve to ZERO controls`,
+      ).toBe(0);
+    }
+    // …and the DOCK still has it, which is what makes this a LANE problem
+    // rather than a dead control: the pad is reachable, just not at 192 px.
+    expect(
+      curatedFace(padOnly, 'dock')?.controls.map((c) => c.key),
+      'the pad anchor is dock-only, not absent',
+    ).toEqual(['pos_x']);
+  });
+
+  // ⚠ THE EXCLUSION IS NARROW, AND THIS PROVES IT. "Ranks nothing" is skipped
+  // above, so it must be shown that the skip is the flipper shape and not a
+  // blanket escape any face could reach by emptying `order` — which would be a
+  // gate you can satisfy by deleting the thing it measures.
+  it('NEGATIVE CONTROL: "ranks nothing" is the flipper shape, and it is genuinely empty', () => {
+    const flipper = allDefs().find((d) => d.type === 'flipper');
+    expect(flipper, 'flipper must still exist — this control is anchored to it').toBeTruthy();
+    expect(flipper!.face?.order ?? [], 'flipper ranks nothing because it HAS nothing').toEqual([]);
+    expect((flipper!.params ?? []).length, 'flipper declares no params at all').toBe(0);
+    // …and it really does resolve to an empty lane, which is what makes the
+    // skip a judgement about the MODULE rather than a hole in the predicate.
+    for (const tier of LANE_TIERS) {
+      expect(
+        curatedFace(flipper as unknown as FaceDefLike, tier)?.controls.length ?? 0,
+        `flipper lane tier '${tier}'`,
+      ).toBe(0);
+    }
+  });
+
+  it('NEGATIVE CONTROL: adding ONE lane-paintable control clears it', () => {
+    // The same fixture with a third ranked param — the difference between
+    // refused and promotable, and the reason `quadralogical` (eighteen other
+    // ranked params) is not this shape.
+    const padPlusOne = {
+      type: 'joystick-shaped-fixture-plus',
+      domain: 'audio',
+      outputs: [{ id: 'x', type: 'cv' }],
+      params: [{ id: 'pos_x', label: 'X' }, { id: 'pos_y', label: 'Y' }, { id: 'gain', label: 'G' }],
+      face: { order: ['pos_x', 'pos_y', 'gain'], glyph: 'none', xyPads: [{ x: 'pos_x', y: 'pos_y' }] },
+    } as unknown as FaceDefLike;
+    for (const tier of LANE_TIERS) {
+      expect(
+        curatedFace(padPlusOne, tier)?.controls.length ?? 0,
+        `lane tier '${tier}': one non-pad ranked control must reach the lane`,
+      ).toBeGreaterThan(0);
+    }
   });
 });
 

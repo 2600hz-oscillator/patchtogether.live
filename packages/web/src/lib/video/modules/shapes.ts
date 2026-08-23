@@ -103,6 +103,22 @@ interface ShapesParams {
   zoom: number;    // 0.05..10
 }
 
+/**
+ * The three primitives `shape` selects, in VALUE ORDER — index IS the param
+ * value, which is what makes this roster and the shader's
+ * `int(floor(uShape + 0.5))` the same statement.
+ *
+ * ⚠ NOT INVENTED FOR THE FACEPLATE. These are the names `ShapesCard.svelte` has
+ * always painted on its cycle button (`const SHAPE_LABELS = ['CIRCLE','SQUARE',
+ * 'TRI']`); promoting them here moves the ONE definition to the def and the card
+ * now imports it, so the card can no longer re-type a roster its def owns — the
+ * backdraft rule applied to names instead of ranges.
+ *
+ * Exported because the card imports it and `shapes.test.ts` can assert the
+ * roster and the shader agree about how many primitives exist.
+ */
+export const SHAPE_NAMES = ['CIRCLE', 'SQUARE', 'TRI'] as const;
+
 const DEFAULTS: ShapesParams = {
   shape: 0,    // circle
   tile: 0,     // single centered shape
@@ -130,12 +146,127 @@ export const shapesDef: VideoModuleDef = {
     { id: 'out', type: 'mono-video' },
   ],
   params: [
-    { id: 'shape',  label: 'Shape',  defaultValue: DEFAULTS.shape,  min: 0,    max: 2,         curve: 'linear' },
-    { id: 'tile',   label: 'Tile',   defaultValue: DEFAULTS.tile,   min: 0,    max: 1,         curve: 'linear' },
+    // ⚠ `discrete` + an `options` ROSTER, both corrections from `linear`, and
+    // BOTH VERIFIED AT THE SHADER'S READ SITE rather than inferred from the
+    // range. `FRAG_SRC` does `int shape = int(floor(uShape + 0.5));` and its own
+    // uniform comment reads "0 = circle, 1 = square, 2 = triangle (rounded
+    // toward nearest int)". So the parameter has three positions and nothing
+    // between them, and `linear` was always a lie: the def's own `docs` already
+    // said "The shape is picked discretely … there is no morph or blend between
+    // primitives" while the declaration claimed a continuous scale.
+    //
+    // ⚠ WITHOUT THE ROSTER THE FACEPLATE WOULD PAINT THE MODULE'S MOST VISIBLE
+    // DECISION AS A DIAL READING `0` / `1` / `2`. Promotion deletes the card,
+    // and the card's cycle button is the only place the names CIRCLE / SQUARE /
+    // TRI have ever existed — this is the spirographs `inside` class and the
+    // fourplexer class before it. The names are promoted, never invented.
+    //
+    // ⚠ PIXEL-NEUTRAL BY CONSTRUCTION: every value the card or a CV could
+    // already write was rounded by the shader to the same integer, so no
+    // baseline moves. What changes is what the CONTROL can express.
+    { id: 'shape',  label: 'Shape',  defaultValue: DEFAULTS.shape,  min: 0,    max: 2,         curve: 'discrete',
+      options: SHAPE_NAMES.map((name, i) => ({
+        value: i,
+        label: name,
+        title: `the ${name.toLowerCase()} primitive`,
+      })),
+    },
+    // ⚠ `discrete`, corrected from `linear`, and this one fixes an INERT
+    // CONTROL rather than an ugly one. The shader reads it as a hard threshold
+    // — `float n = uTile >= 0.5 ? max(1.0, floor(uTileN + 0.5)) : 1.0;` — so it
+    // is a 2-state switch with `min: 0, max: 1, default: 0`. Declared `linear`,
+    // `looksLikeToggle` returns FALSE and the faceplate resolves it to a KNOB:
+    // the moog962 defect, where a dial cannot reliably land on two values and
+    // the control is unusable in practice. Declared `discrete` it resolves to a
+    // Toggle, which is what the card's TILE ON/OFF button has always been.
+    //
+    // ⚠ AND IT IS LATCHING, NOT MOMENTARY — classified from the READ SITE, not
+    // assumed: the shader compares a LEVEL every frame, and the card's button
+    // flips a persisted state you leave engaged. A momentary render would
+    // un-tile the frame the instant you released it. Recorded in
+    // `ACKNOWLEDGED_LATCHING` as `shapes:tile`.
+    { id: 'tile',   label: 'Tile',   defaultValue: DEFAULTS.tile,   min: 0,    max: 1,         curve: 'discrete' },
     { id: 'tileN',  label: 'Grid',   defaultValue: DEFAULTS.tileN,  min: 1,    max: 16,        curve: 'linear' },
     { id: 'rotate', label: 'Rotate', defaultValue: DEFAULTS.rotate, min: -3.14159, max: 3.14159, curve: 'linear' },
     { id: 'zoom',   label: 'Zoom',   defaultValue: DEFAULTS.zoom,   min: 0.05, max: 10,        curve: 'log' },
   ],
+
+  // ── FACE (batch 23b — the ATTEST half of the ≤5 cut) ──────────────────────
+  //
+  // WHAT SHAPES IS FOR: it is a PRIMITIVE GENERATOR. No input, no history — a
+  // signed-distance field for one of three primitives, rendered white-on-black
+  // and optionally repeated into a grid. Its siblings generate other figures
+  // (`lines` rules a grating, `inwards` draws concentric rings); the thing only
+  // this one does is emit a clean, hard-edged MASK you can key or displace
+  // with. The verb is STAMP.
+  //
+  // ⚠ THIS FACE COSTS AN ATTEST, WHICH IS WHY IT RIDES ALONE IN 23b. Two of its
+  // params are corrected on the DEF (`shape` gains `discrete` + an `options`
+  // roster, `tile` gains `discrete`), and `params` is in the WebGL content basis
+  // where `face`, `docs`, `paramCells` and `noUserControl` are not. Batch 23a
+  // (peakstate + lines) was split out for exactly this reason —
+  // SPLIT-ON-THE-ATTEST-LINE — so the zero-attest pair did not inherit a window
+  // it did not need.
+  //
+  // THE TIER LADDER, read back as a sentence: at the smallest tier you get
+  // SHAPE, because it is the only control that changes WHICH OBJECT this is —
+  // a circle, a square and a triangle are three different generators wearing one
+  // module, and every other control here transforms whichever one is selected.
+  // Add one and you get ZOOM, the only `log` control on the plate and the one
+  // that takes the figure from a speck to larger than the frame (0.05..10 is
+  // 200x). Then TILE, which decides whether you are looking at ONE stamp or a
+  // field of them — a bigger visual change than either remaining control, but
+  // ranked below ZOOM because it is binary and ZOOM is where the framing lives.
+  // GRID is fourth and is INERT UNTIL TILE IS ON (see below). ROTATE last: on a
+  // CIRCLE — the default shape — it is bit-exactly invisible, which is the
+  // weakest claim any control on this plate can make at spawn.
+  //
+  // ⚠ THE SPAWN-STATE FINDING, and it is a chain rather than a single dead
+  // control: `shape` defaults to 0 = CIRCLE, and a circle is rotationally
+  // symmetric, so ROTATE does nothing observable on a fresh node. `tile`
+  // defaults to 0 = off, and the shader collapses the grid to `n = 1.0` when it
+  // is, so GRID does nothing either — its own uniform is not even read
+  // (`uTile >= 0.5 ? max(1.0, floor(uTileN + 0.5)) : 1.0`). So TWO of the five
+  // controls are inert at spawn, and each for a DIFFERENT reason: one because
+  // of the selected shape's symmetry, the other because a switch gates it. That
+  // is the rank argument for TILE > GRID, exactly as `move > oblong` was on
+  // peakstate.
+  face: {
+    order: ['shape', 'zoom', 'tile', 'tileN', 'rotate'],
+
+    // ⚠ NO `pages`. Five controls over ONE stamp are a single honest band, far
+    // below DOCK_TAB_MIN_BANDS and DOCK_ROW_MAX_CONTROLS. The one real grouping
+    // (tile + grid are the repeat) is two controls, and a page to hold two is
+    // the padding the compact ruling forbids.
+
+    // ⚠ FADERS FOR THE THREE CONTINUOUS ONES ONLY — read off the card, which
+    // draws `tileN`, `rotate` and `zoom` with `NeonFader` and the other two as
+    // BUTTONS. `shape` and `tile` are deliberately absent: with the def
+    // corrected above, `shape` carries an `options` roster (which outranks
+    // everything and renders a named selector) and `tile` satisfies
+    // `looksLikeToggle` (which renders a Toggle). Declaring a primitive for
+    // either would be redundant at best; declaring `fader` for them would be
+    // REFUSED, because module-face-lint will not put a throw over a discrete
+    // param — correctly, since neither has an "anywhere on this scale".
+    paramCells: { tileN: 'fader', rotate: 'fader', zoom: 'fader' },
+
+    // ⚠ NO `bareCells`. One unlabelled band, so no heading exists to make a
+    // caption redundant, and `Shape`/`Zoom`/`Tile`/`Grid`/`Rotate` name five
+    // different things.
+
+    // ⚠ MANDATORY FOR A VIDEO DEF — `primaryAudioOutPortId` needs a
+    // `type: 'audio'` output and this def has none (`out` is `mono-video`), so
+    // any other glyph literal falls through `glyphBinding` to a dead
+    // `{kind:'static'}` that reddens module-face-lint's dead-glyph clause. The
+    // live picture arrives from `hasVideoSurface(def)` at the lane and the
+    // `fullViewBody` extension at the dock — assert THAT, never this.
+    glyph: 'none',
+
+    // SCREEN ON/OFF arrives through this slot (#1928). An ADDITION rather than a
+    // port: `ShapesCard.svelte` draws no preview.
+    // See `$lib/ui/modules/shapes/shell-extension.ts`.
+    extension: 'shapes',
+  },
 
   docs: {
     explanation:

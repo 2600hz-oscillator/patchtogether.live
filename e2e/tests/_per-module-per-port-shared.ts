@@ -253,7 +253,7 @@ export const EXEMPT_OUTPUT_EMIT_MODULES: Record<string, string> = {
   // and the sweep's emit window is ~2 s. After boot the engine sits in the MENU;
   // audio_l/audio_r only carry level music + SFX once something drives the menu
   // into a level (8 scancodes), which blood-audio-output.spec.ts does.
-  blood: 'boot cost, not data: the bundled shareware IS committed + materialized on CI (docs/adr/007-game-asset-distribution.md), but reaching `blood-ready` takes the dedicated specs 20–25 s (5.9 MB ASYNCIFY WASM + full Build engine init) against this sweep\'s ~2 s emit window, and after boot the engine idles in the MENU until something drives it into a level; real coverage = blood-audio-output.spec.ts (menu→level→fire→SCOPE peak) + blood-ingame/blood-mount/blood-keyboard specs + blood-keys.test.ts',
+  blood: 'boot cost, not data: the bundled shareware IS committed + materialized on CI (docs/adr/007-game-asset-distribution.md), but reaching `blood-ready` takes the dedicated specs 20–25 s (5.9 MB ASYNCIFY WASM + full Build engine init) against this sweep\'s ~2 s emit window, and after boot the engine idles in the MENU until something drives it into a level; real coverage = blood-audio-output.spec.ts (menu→level→fire→SCOPE peak) + blood-ingame/blood-mount specs + blood-keys.test.ts',
   // ── Driver page.evaluate / postSpawn hangs ──
   // These modules' drivers time out under CI load — the per-output
   // serial loop (8 × 20 s, 7 × 20 s) exhausts the test budget before

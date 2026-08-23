@@ -81,245 +81,6 @@ export function loadContention(dir = join(ROOT, 'e2e/tests')) {
  * @type {{ spec: string, why: string }[]}
  */
 export const PENDING_FIRST_MEASUREMENT = [
-  {
-    spec: 'rack-audio-gate.spec.ts',
-    why:
-      '#1826 — new with the /rack AudioGate mount: two cheap DOM legs (overlay visible → click '
-      + '→ ctx running → overlay removed; and the NEGATIVE CONTROL that a plain webdriver boot '
-      + 'renders no overlay at all, which is what protects every existing /rack spec from an '
-      + 'inherited click-interceptor). MEASURED both renderers, warm server, single worker, '
-      + 'REPEAT=3: `E2E_SWIFTSHADER=1` 26.0 s for 6 runs (~8.7 s per pass of both legs), real '
-      + 'GPU 12.3 s (~4.1 s per pass). Budget the CI shard at roughly the SwiftShader figure — '
-      + 'the subject is DOM + one engine boot, not per-frame rendering, so cost is page boots. '
-      + 'Run `flox activate -- task e2e:timings:accept` on the first green CI run after this '
-      + 'merges and DELETE this entry.',
-  },
-  {
-    spec: 'quadralogical-face-screen.spec.ts',
-    why:
-      '#2102 — new with the QUADRALOGICAL faceplate: the two legs that prove the joystick IS '
-      + 'the screen. Leg 1 patches four flat-colour sources and probes FOUR PIXELS of the face\'s '
-      + 'own canvas to prove each quadrant carries its own input under its own corner label; '
-      + 'leg 2 toggles SCREEN and proves the frame re-aspects on the WIDTH with the height '
-      + 'pinned. '
-      + '⚠ MEASURED UNDER `E2E_SWIFTSHADER=1`, WHICH IS THE NUMBER THAT MATTERS HERE — this is '
-      + 'a WebGL module whose test subject is a live 2x2 video preview, so the software '
-      + 'renderer is the variable, not a constant factor to multiply out afterwards. Warm '
-      + 'server, single worker: 31.7 s for a REPEAT=3 flake-check of both tests, i.e. **~10.5 s '
-      + 'per pass** (leg 1 ~6.4 s, leg 2 ~3.8 s). Budget the 2-core CI VM at roughly that plus '
-      + 'the usual VM overhead — the SwiftShader floor is already IN this figure rather than '
-      + 'ahead of it. '
-      + '⚠ AND THE SWIFTSHADER RUN IS WHY THIS ENTRY IS TRUSTWORTHY: on a real GPU leg 2 passed '
-      + 'and under SwiftShader it failed 3/3, because it read `.field`\'s bounding box once '
-      + 'while a 120 ms CSS width transition was still running ("on 480, off 480"). Fixed with '
-      + 'an auto-retrying `expect.poll` on the box itself — not a timeout, not a frame count — '
-      + 'so the leg is now renderer-independent by construction. A local-GPU-only measurement '
-      + 'would have shipped a spec that was red on every CI run. '
-      + '⚠ AND A LOCAL SWIFTSHADER MEASUREMENT WAS NOT SUFFICIENT EITHER: the spec still timed '
-      + 'out on CI shard 6 because it never took `SLOW_BOOT_TEST_TIMEOUT_MS`, so it ran on the '
-      + 'default 30 s while booting workflow mode plus nine WebGL nodes on a shared 2-core '
-      + 'runner. The flag changes the RENDERER; it does not reproduce cold boot or ten shards '
-      + 'competing. Both are now applied, and the SCREEN-OFF leg spawns ONE node instead of nine. '
-      + 'Run `flox activate -- task e2e:timings:accept` on the first green CI run after this '
-      + 'merges and DELETE this entry. '
-      + '⚠ UNTIL THAT ACCEPT LANDS, DO NOT READ THE ~10.5 s FIGURE ABOVE AS THE PACKING COST — it is a '
-      + 'WARM-SERVER, SINGLE-WORKER, LOCAL number, while the packer needs CI CPU-seconds summed across the '
-      + 'file. The honest floor is the nearest sibling: acidwarp-face-screen.spec.ts, the same shape (a faced '
-      + 'video module; boot plus wait-for-first-painted-frame legs) measures **77 s** on CI against its own '
-      + '~11.1 s local estimate — roughly 2.3x per leg. Two legs here puts this file nearer **50 s** than the '
-      + '~21 s MEDIAN it currently rides, and any shard drawing it is under-costed by that difference. '
-      + 'That under-costing is what surfaced on batch-22 G3 (#2120): both legs timed out at the full 90 s '
-      + 'bound on a hot shard and are now FLAKE-PARKED (#1847). ⚠ THE PARK TREATS THE SYMPTOM, THIS ENTRY '
-      + 'TREATS THE PACKER, and the fleet timeout default (owner decision pending) treats the CLASS — three '
-      + 'different fixes, none substituting for the others. ⚠ AND MERGING #2110\'s TIMINGS REFRESH WOULD NOT '
-      + 'SUPPLY THIS NUMBER, which is the natural wrong assumption: its source run predates quadralogical.',
-  },
-  {
-    spec: 'acidwarp-face-screen.spec.ts',
-    why:
-      '#2111 — new with the ACIDWARP faceplate. Three legs: the plasma display paints on the '
-      + 'faceplate, SCREEN OFF unmounts it and persists on `node.data` and it comes back LIVE, '
-      + "and — the unusual one — that the module's own `freeze` param does NOT stop the picture, "
-      + 'which is the EVIDENCE for its `FACES_WITHOUT_SCENES` entry rather than a behaviour '
-      + 'check. '
-      + '⚠ MEASURED UNDER `E2E_SWIFTSHADER=1`, and on this module that is the only number worth '
-      + 'quoting: acidwarp is a pure-GPU plasma generator rendering in a WORKER, so the software '
-      + 'renderer is the subject rather than a multiplier applied afterwards. Warm server, '
-      + 'single worker: 33.3 s for a REPEAT=3 flake-check of all three legs, i.e. **~11.1 s per '
-      + 'pass** (SCREEN ON ~4.9 s, SCREEN OFF ~3.1 s, freeze-evidence ~2.7 s). On a real GPU the '
-      + 'same three run in 10.3 s, so the SwiftShader penalty here is mild — the legs are '
-      + 'dominated by boot and by waiting for the FIRST painted frame, not by fill rate. Budget '
-      + 'the 2-core CI VM at roughly the SwiftShader figure plus VM overhead. '
-      + '⚠ NO ANIMATED-GEOMETRY RACE IN THIS ONE, deliberately, and it is worth recording next '
-      + "to quadralogical's entry: that spec's SCREEN leg read a bounding box once while a CSS "
-      + 'width transition ran, passed on a GPU and failed 3/3 under SwiftShader. This body '
-      + 'collapses its canvas outright — no transition, no intermediate state to sample — and '
-      + 'every wait here is a FRAME COUNT taken inside the page, never a wall-clock budget. '
-      + 'Run `flox activate -- task e2e:timings:accept` on the first green CI run after this '
-      + 'merges and DELETE this entry. '
-      + '⚠ A CI OBSERVATION LANDED BEFORE THAT ACCEPT DID, and it is the number to budget against: this '
-      + 'file measures **77 s** on CI — about 2.3x the ~11.1 s per-pass local SwiftShader estimate above, '
-      + 'because the local figure is warm-server and single-worker while CI is a cold 2-core VM with ten '
-      + 'shards competing. It is recorded here rather than written into the artifact by hand, because the '
-      + 'artifact is GENERATED and hand-editing it is how it stops meaning what it says. '
-      + 'The consequence is shared with the quadralogical entry above: while unmeasured, this file rides the '
-      + '~21 s MEDIAN, so a shard drawing BOTH siblings is under-costed by ~100 s — which is exactly how a '
-      + 'spec "times out" without anything being wrong with the spec.',
-  },
-  {
-    spec: 'cv-buddy-face.spec.ts',
-    why:
-      '#2024 — new with the CV BUDDY / CV BUDDY MINI faceplate and the rack-global status home. '
-      + 'Measured locally, single worker, warm server: 10.6 s wall for 6 tests + 1 skip '
-      + '(27.5 s across a REPEAT=3 flake-check, i.e. ~9 s per pass). '
-      + '⚠ BUDGET THIS ONE AT ROUGHLY ITS WALL CLOCK, unlike the foxy entry below. There is no '
-      + 'WebGL here at all and no canvas of any kind: the module is audio, its faceplate is two '
-      + 'param cells, and the status surface this spec exercises is a slot name and two DOM '
-      + 'lamps. So the ~6x SwiftShader floor does not apply and the renderer is not a variable — '
-      + 'budget the 2-core CI VM at the usual ~2.5-3x unit-lane factor, i.e. ~30 s. '
-      + '⚠ THE ONE COST WORTH NAMING is that three of the six tests spawn TWO module nodes and '
-      + 'open a dock faceplate on each, so the per-test setup is roughly doubled against a '
-      + 'single-instance face spec — that is inherent (the whole subject is what a SECOND '
-      + 'instance does) rather than something to trim. The skipped seventh test is the ES-9 '
-      + 'hardware leg, which probes `destination.maxChannelCount` and costs nothing on CI. '
-      + 'Run `flox activate -- task e2e:timings:accept` on the first green CI run after this '
-      + 'merges and DELETE this entry.',
-  },
-  {
-    spec: 'foxy-face-surface.spec.ts',
-    why:
-      '#2007 — new with the FOXY faceplate: the FACE-surface legs (five live pictures, the tab '
-      + 'rail, SCREEN, the SCOPE/3D flip, and EXPORT gated on FREEZE TABLE), which exist because '
-      + "foxy's two existing specs both drive `?shell=legacy` and stay green while proving nothing "
-      + 'about what promotion ships. Measured locally, single worker, warm server: 8.2 s wall for '
-      + '6 tests (24.4 s across a REPEAT=3 flake-check); with E2E_SWIFTSHADER=1, 1.1 min across '
-      + 'REPEAT=3, i.e. ~22 s per pass. '
-      + '⚠ BUDGET THIS ONE ABOVE ITS WALL CLOCK, because the module is main-thread heavy in a way '
-      + 'the test count hides: each leg opens a dock faceplate over a module that recomputes a '
-      + '256x256 volumetric field ~24x/second and paints five canvases, all on the page main '
-      + 'thread. On the first CI run that cost took the SIBLING `faces-parity` foxy row past a '
-      + '144 s test timeout at cell 18 of 33 — a bare `locator.evaluate` starving behind the '
-      + "render loop — and flaked this spec's own tab-rail leg. Both were fixed (the paint is now "
-      + "throttled to the module's BRIDGE_MS, and the leg uses a `:visible` locator instead of an "
-      + '8-round-trip poll), and both shards passed on the next run — but the headroom is thinner '
-      + 'here than 6 tests suggests. '
-      + '⚠ ONE CAVEAT ON THE NUMBERS ABOVE, stated because a sibling entry in this file says the '
-      + 'opposite: that note claims a local headless run is ALREADY SwiftShader so '
-      + 'E2E_SWIFTSHADER=1 changes nothing locally. On this macOS dev machine it changed the '
-      + 'REPEAT=3 wall from 24.4 s to 66 s (2.7x), so the flag is NOT inert here — most likely '
-      + 'because headless Chromium takes Metal/ANGLE on darwin. Neither number reproduced the CI '
-      + 'failure, which is a 2-core VM effect I could not reproduce at all. Run '
-      + '`flox activate -- task e2e:timings:accept` on the first green CI run after this merges '
-      + 'and DELETE this entry.',
-  },
-  {
-    spec: 'vst-bridge.spec.ts',
-    why:
-      '#1953 — new with the VST BRIDGE cards. Measured locally, single worker, warm server: '
-      + '5.2 s wall for 2 tests (15.2 s across a REPEAT=3 flake-check). Audio-only against a '
-      + 'Node-side mock WebSocket helper — no WebGL, so the usual ~6x SwiftShader floor does not '
-      + 'apply; budget the 2-core CI VM at ~3-4x. Run `flox activate -- task e2e:timings:accept` '
-      + 'on the first green CI run after this merges and DELETE this entry.',
-  },
-  {
-    spec: 'vst-lane-autowire.spec.ts',
-    why:
-      '#1953 — the lane-drop acceptance leg for the VST BRIDGE cards (pinned trio + palette-drop '
-      + 'pipeline + a 12 s in-page RMS window, so it is wall-clock-bound by design). Measured '
-      + 'locally, single worker, warm server: 13.9 s wall for 1 test (41.8 s across REPEAT=3). '
-      + 'Audio-only + mocked helper, same CI-VM caveat as its sibling above. Run '
-      + '`flox activate -- task e2e:timings:accept` on the first green CI run after this merges '
-      + 'and DELETE this entry.',
-  },
-  {
-    spec: 'videoout-detach-display.spec.ts',
-    why:
-      '#1821 — new with the videoOut detach display + bridge-on-delete. Measured locally, single '
-      + 'worker: 2.0 min wall for 16 tests (it grew from 10 across two review rounds). ⚠ TREAT THAT '
-      + 'AS A FLOOR: backdraft-preview-toggle measured 57.5 s locally and 358.2 CPU-s on CI, ~6x. '
-      + '⚠ AND THE REASON IS THE MACHINE, NOT CONTENTION — a note here previously blamed "ten shards '
-      + 'competing for one software rasterizer" and that is WRONG twice over: each shard is its own '
-      + 'VM so shards never contend, and a local headless run is ALREADY SwiftShader, so '
-      + 'E2E_SWIFTSHADER=1 changes nothing locally. The delta is a 2-core CI VM against a dev '
-      + 'machine. Run `flox activate -- task e2e:timings:accept` on the first green CI run after '
-      + 'this merges and DELETE this entry.',
-  },
-  {
-    spec: 'videoout-drop-patch.spec.ts',
-    why:
-      '#1819 — the per-module drop-gesture coverage that lands with the videoOut face. Measured '
-      + 'locally, single worker: 24.7 s wall for 5 tests. Same ~6x floor caveat as its sibling '
-      + 'above, and the same correction — the gap is the 2-core CI VM, not shard contention. For '
-      + 'calibration the generic card-drop-patch.spec.ts measures 246 CPU-s. Run '
-      + '`flox activate -- task e2e:timings:accept` on the first green CI run after this merges and '
-      + 'DELETE this entry.',
-  },
-  {
-    spec: 'main-thread-cost.spec.ts',
-    why:
-      'lands with #1811 as the instrument that MEASURED AND REJECTED the worker migration, so no ' +
-      'ci.yml run containing it has completed and there is no blob report to accept a cost from. ' +
-      'MEASURED under E2E_SWIFTSHADER=1, single worker, in the configuration CI actually runs ' +
-      '(both perturbation phases gated OFF): 14.5 s cold, 10.2 s warm across a 3/3 flake-check. ' +
-      'The full three-phase form costs 32.1 s and is OPT-IN ONLY (PT_COST_PERTURB=1, which nothing ' +
-      'in CI sets): the planner co-schedules this spec onto shard 2/10 with two DOOM specs, and ' +
-      'DOOM runs runTic() inside surface.draw, so its game clock IS its frame clock — a co-tenant ' +
-      'that pins a core does not delay a DOOM assertion, it changes how far the marine walks. ' +
-      'Owner ruling: DOOM is not touched without specific approval, and reaching that outcome ' +
-      'through a neighbouring spec is the same violation through the side door. ' +
-      '⚠ TREAT 10.2 s AS A FLOOR, NOT A PREDICTION. This is a VIDEO spec — it drives a real ' +
-      'spirographs -> videoOut chain and asserts on engine frame counts — and the entry deleted ' +
-      'directly above this one is the precedent: backdraft-preview-toggle predicted 57.5 s from ' +
-      'exactly this kind of local single-worker run and measured 358.2 CPU-s, 6x, because ' +
-      'the CI VM is 2-core where a dev machine is not (⚠ NOT "shards competing for one rasterizer" — every `runs-on:` here is `ubuntu-latest` and a GitHub-hosted job gets its OWN VM, so shards never contend; see the ci.yml note of 2026-08-12. A local headless run is ALREADY SwiftShader too, so E2E_SWIFTSHADER=1 changes nothing locally). Do not use the local ' +
-      'number for shard-balance reasoning; it is here to prove the spec was measured at all. ' +
-      'Run `task e2e:timings:accept -- <run-id>` on the first green main run after this merges and ' +
-      'DELETE this entry — the gate reddens on a stale entry as loudly as on a missing one.',
-  },
-  {
-    spec: 'freezeframe-screen-toggle.spec.ts',
-    why:
-      '#1861 — new with the freezeframe faceplate: the SCREEN ON/OFF preview-collapse toggle '
-      + '(owner ruling 2026-08-18, every video module gets one). MEASURED locally, single worker, '
-      + 'in the configuration CI runs: 8.8 s cold for 4 tests, 4.5 s warm, across a 3/3 '
-      + 'flake-check (12/12, zero flaky). '
-      + '⚠ TREAT 8.8 s AS A FLOOR, NOT A PREDICTION — this is a VIDEO spec and the entries above '
-      + 'are the precedent (backdraft-preview-toggle predicted 57.5 s locally and measured '
-      + '358.2 CPU-s on CI, ~6x, because the CI VM is 2-core; a local headless run is ALREADY '
-      + 'SwiftShader so E2E_SWIFTSHADER=1 changes nothing locally). '
-      + '⚠ AND THIS SPEC HAS ALREADY BEEN BITTEN BY EXACTLY THAT GAP, which is why the number '
-      + 'above is lower than the first version of this entry would have carried. Its first CI run '
-      + 'TIMED OUT two legs at 30 s while passing locally: FreezeframeCard drives a per-frame '
-      + 'GL blit + canvas downscale, and on a two-core box under a software rasterizer that '
-      + 'saturates the main thread, so an injected page.evaluate promise (a double rAF) never got '
-      + 'scheduled. The spec now freezes the per-frame draw (__videoEngineFreezeRender, the lever '
-      + 'card-control-overflow.spec.ts already pulls for backdraft) and waits only on '
-      + 'auto-retrying expects, which is what brought the two failing legs from 2.4 s / 1.7 s to '
-      + '1.0 s / 0.98 s locally. The CI cost should therefore be far below the 6x floor, but it '
-      + 'has not been MEASURED on CI yet, which is the whole reason this entry exists. '
-      + 'Run `task e2e:timings:accept -- <run-id>` on the first green main run after this merges '
-      + 'and DELETE this entry — the gate reddens on a stale entry as loudly as on a missing one.',
-  },
-  {
-    spec: 'b3ntb0x-hue-claim.spec.ts',
-    why:
-      'lands with #1901 as the acceptance test for the GLSL readout harness ' +
-      '(e2e/_helpers/glsl-claim.ts), so no ci.yml run containing it has completed green and there ' +
-      'is no blob report to accept a cost from. MEASURED locally, single worker: 10.7 s for both ' +
-      'tests (4.1 s + 6.1 s) across a 3/3 flake-check. ' +
-      '⚠ TREAT THAT AS A FLOOR, NOT A PREDICTION — and this entry exists because the FIRST version ' +
-      'of this spec proved the point the hard way. It cost 34.6 s locally and BLEW THE 180 s TEST ' +
-      'TIMEOUT on CI, i.e. worse than the 6x that backdraft-preview-toggle (57.5 s local vs ' +
-      '358.2 CPU-s) calibrated: a video spec driving a real 4-pass NTSC float pipeline pays the ' +
-      '2-core CI VM on EVERY frame, so cost scales with frames driven and nothing else. The fix ' +
-      'was to stop paying a fixed 8-frame warm-up per read: bootRig now warms ONCE by observation ' +
-      '(warmUntilMeasurable) and each subsequent read drives 2 frames, because a param change was ' +
-      'measured to settle in 1. Frames driven per test fell ~4x. ' +
-      'Do not use the local number for shard-balance reasoning; it is here to prove the spec was ' +
-      'measured at all. Run `task e2e:timings:accept -- <run-id>` on the first green main run ' +
-      'after this merges and DELETE this entry — the gate reddens on a stale entry as loudly as ' +
-      'on a missing one.',
-  },
   // Every entry here is a debt with a deadline.
   //
   // All six that stood on 2026-08-17 were paid in one accept against ci.yml run
@@ -340,6 +101,71 @@ export const PENDING_FIRST_MEASUREMENT = [
   // The gate reddens on a STALE entry exactly as loudly as on a missing one, so
   // an entry whose first measurement has landed MUST be deleted rather than left
   // as a record that it once existed.
+
+  {
+    spec: 'rack-audio-gate.spec.ts',
+    why:
+      '#1826 — new with the /rack AudioGate mount: two cheap DOM legs (overlay visible → click '
+      + '→ ctx running → overlay removed; and the NEGATIVE CONTROL that a plain webdriver boot '
+      + 'renders no overlay at all, which is what protects every existing /rack spec from an '
+      + 'inherited click-interceptor). MEASURED both renderers, warm server, single worker, '
+      + 'REPEAT=3: `E2E_SWIFTSHADER=1` 26.0 s for 6 runs (~8.7 s per pass of both legs), real '
+      + 'GPU 12.3 s (~4.1 s per pass). Budget the CI shard at roughly the SwiftShader figure — '
+      + 'the subject is DOM + one engine boot, not per-frame rendering, so cost is page boots. '
+      + 'Run `flox activate -- task e2e:timings:accept` on the first green CI run after this '
+      + 'merges and DELETE this entry.',
+  },
+
+  // ── THE FACES-PARITY SPLIT (#2141) ────────────────────────────────────────
+  //
+  // The registry-driven face parity sweep was ONE file that had grown into the
+  // most expensive in the suite — MEASURED at 2303.2 CPU-s against a 2088 s fair
+  // share at 10 shards, i.e. a single spec exceeding a whole shard's share, which
+  // made a balanced partition arithmetically impossible. It is now four files
+  // over a stable name-hash partition (`e2e/tests/support/faces-parity-suite.ts`).
+  //
+  // ⚠ THE ENTRIES BELOW ARE THE RISKY PART OF THIS PR, NOT THE SPLIT. An
+  // unmeasured spec rides the MEDIAN, and this list's own header records what
+  // that once cost: a 309 CPU-s media spec scheduled at ~6 s failed a shard that
+  // was green everywhere else. Each of these three is expected to be several
+  // HUNDRED CPU-s and will be scheduled at the median until the first accept, so
+  // this PR's own shard balance is the worst it will ever be.
+  //
+  // ⚠ AND `faces-parity.spec.ts` IS DELIBERATELY NOT LISTED. It still exists and
+  // is still measured, so it is not unmeasured — but its measurement is now ~4x
+  // too HIGH, because it describes the un-split file. That errs toward
+  // over-reserving a shard, which is the safe direction, and it is corrected by
+  // the same accept that pays these three off.
+  //
+  // THE DEADLINE, explicitly: run `task e2e:timings:accept -- <ci-run-id>` on the
+  // first green run after this merges, and DELETE all three entries in that same
+  // commit. The gate reddens on a stale entry exactly as loudly as on a missing
+  // one, so leaving them is not a soft failure.
+  {
+    spec: 'faces-parity-2.spec.ts',
+    why:
+      'partition 2/4 of the face parity sweep, created by the split in this PR. It has never run '
+      + 'on CI, so it has no measurement — its cost is roughly a quarter of the old single file '
+      + '(~575 CPU-s at that file\'s worst measured 2303.2 s), which is about a hundred times the '
+      + 'median it will be scheduled at until the first accept lands.',
+  },
+  {
+    spec: 'faces-parity-3.spec.ts',
+    why:
+      'partition 3/4 of the face parity sweep, created by the split in this PR. Same reasoning as '
+      + 'partition 2: never run on CI, so unmeasured, and it rides the median until the first '
+      + 'accept. ⚠ Its membership is NOT interchangeable with its siblings — the partition is a '
+      + 'stable hash of each module\'s own name, so this file owns a fixed set and its measured '
+      + 'cost will stay attributable to that set as the roster grows.',
+  },
+  {
+    spec: 'faces-parity-4.spec.ts',
+    why:
+      'partition 4/4 of the face parity sweep, created by the split in this PR. Same reasoning as '
+      + 'partitions 2 and 3. This is the last of the three unmeasured partitions; partition 1 '
+      + 'kept the original filename and therefore kept its (now over-large) measurement rather '
+      + 'than joining this list.',
+  },
 ];
 
 /** Median of a numeric array (used as the cost of an unmeasured file). */
