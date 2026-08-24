@@ -116,9 +116,28 @@ const SLOW_RENDER = process.env.E2E_SWIFTSHADER === '1' || !!process.env.CI;
 // ran 41.9 s on main's green run and 47.9 s on the next branch run, then blew
 // the old 1_800/cell ceiling (95.4 s) TWICE on the run after that — identical
 // code, a ≥2× swing, the same slow-runner lottery that hit the videoout specs
-// the same night. 3_000/cell puts backdraft at 129 s ≈ 2.7× its typical run.
+// the same night. 3_000/cell put backdraft at 129 s ≈ 2.7× its typical run.
+//
+// ⚠ 2.7× WAS STILL UNDER WATER. Measured 2026-08-24, run 32687013830 shard 4/10:
+// backdraft timed out at 129 s and PASSED ON RETRY — so the swing reaches beyond
+// 2.7× of typical, and the flake gate (#1847) correctly reddened a PR whose diff
+// could not touch this suite. Two independent derivations agree the ceiling was
+// too low by construction, not by bad luck:
+//   • from the LOCAL floor — 9.0 s for this test on a real GPU (warm server, 1
+//     worker, macOS) × the documented ~7.6× SwiftShader factor (7.9 fps vs ~60,
+//     CLAUDE.md) ≈ 68 s of pure render cost, and CI runs TEN shards concurrently
+//     on a 4-vCPU runner on top of that — 2× contention alone lands at ~137 s,
+//     already past 129 s before any VM variance.
+//   • from the CI history above — covering the observed excursion needs more than
+//     2.7× of the 47.9 s typical run, and the previous two ceilings were each set
+//     just above the then-worst sample and each blew within days.
+// So this ceiling is set from the SWING, not the sample: 5_000/cell puts backdraft
+// at 185 s ≈ 3.9× its 47.9 s typical and ≈ 2.7× the ~68 s SwiftShader floor.
+// Units are WALL-CLOCK MS of Playwright test timeout, and this bounds FAILURE
+// only — it is spent exclusively by a test that was going to fail anyway, so the
+// green path costs nothing and no assertion or wait below moves.
 const FACE_FIXED_MS = SLOW_RENDER ? 45_000 : 30_000;
-const FACE_PER_CELL_MS = SLOW_RENDER ? 3_000 : 600;
+const FACE_PER_CELL_MS = SLOW_RENDER ? 5_000 : 600;
 
 interface SpecParam {
   id: string;

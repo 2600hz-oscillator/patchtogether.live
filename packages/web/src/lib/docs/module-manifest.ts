@@ -1448,6 +1448,10 @@ export function buildModuleManifest(
       if (file === 'clip-record-machine.ts') return false;
       if (file === 'clip-lane-phase.ts') return false;
       if (file === 'clip-reconcile.ts') return false;
+      // CLIPPLAYER's shared COPY BUFFER — the one typed clipboard the card's
+      // note menu, the Launchpad and Push 2 all read. Not a ModuleDef (the def
+      // lives in clipplayer.ts).
+      if (file === 'clip-clipboard.ts') return false;
       // KRIA step/pattern data model + step-advance / scale / cue math — not a
       // ModuleDef (the def lives in kria.ts).
       if (file === 'kria-types.ts') return false;
