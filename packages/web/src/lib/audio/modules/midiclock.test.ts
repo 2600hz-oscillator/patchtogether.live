@@ -7,6 +7,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   CLOCK_DIVISORS,
+  DEFAULT_DIVISOR,
   MAX_TIMESTAMP_LAG_MS,
   MIDI_PPQN,
   TIMESTAMP_LOOKAHEAD_S,
@@ -15,6 +16,8 @@ import {
   isSystemRealTime,
   isValidDivisor,
   measureCtxOffset,
+  midiclockDef,
+  snapDivisor,
 } from './midiclock';
 
 describe('isSystemRealTime', () => {
@@ -316,5 +319,87 @@ describe('eventTimeStampToAudioTime (tempo-stability anchor)', () => {
     // gets quantized to the next block boundary anyway — we make that
     // explicit by reserving at least one block of headroom).
     expect(TIMESTAMP_LOOKAHEAD_S).toBeGreaterThanOrEqual(128 / 48000);
+  });
+});
+
+// ── THE DIVISION AS A PARAM (2026-08-24) ────────────────────────────────────
+//
+// `divisor` used to live in `node.data` on the def's own stated reasoning that
+// a discrete choice "is not a continuous AudioParam" — correct about an
+// AudioParam, and wrong about a `ParamDef`. These tests pin the three
+// properties that make the reasoning change safe: the roster is the LEGAL SET
+// (not a naming of the steps), an off-roster value SNAPS rather than being
+// dropped, and the exhaustive clause carries a real, checkable argument.
+
+describe('midiclock divisor — the roster is the LEGAL SET', () => {
+  const p = () => midiclockDef.params.find((x) => x.id === 'divisor')!;
+
+  it("is declared at all, and is the module's only param", () => {
+    // The vacuity control for everything below: if the declaration were
+    // dropped, every other assertion here would be asserting about undefined.
+    expect(midiclockDef.params.map((x) => x.id)).toEqual(['divisor']);
+  });
+
+  it('names exactly the divisions the module can actually use', () => {
+    // DERIVED from the module's own exported roster, never re-typed — the
+    // one-place rule. A second literal list here would be a second truth free
+    // to drift from the one the engine divides by.
+    expect(p().options?.map((o) => o.value)).toEqual([...CLOCK_DIVISORS]);
+    expect(p().options?.map((o) => o.label)).toEqual(CLOCK_DIVISORS.map(divisorLabel));
+  });
+
+  it("every named division divides MIDI's 24 PPQN evenly — the clause's own claim", () => {
+    // ⚠ THE ARGUMENT, ASSERTED RATHER THAN MERELY WRITTEN. `optionsExhaustive
+    // .why` says the nineteen integers between the entries "are not unnamed
+    // states, they are values this module has no meaning for", and the reason
+    // it gives is that a division is only musically meaningful when it divides
+    // 24 evenly. That is a checkable claim about the numbers, so it is checked
+    // — otherwise the clause is prose beside a list nothing ties it to.
+    for (const d of CLOCK_DIVISORS) expect(MIDI_PPQN % d, `${d} divides 24`).toBe(0);
+  });
+
+  it('the exhaustive clause carries an ARGUMENT, not a shrug', () => {
+    expect(p().optionsExhaustive?.why.length ?? 0).toBeGreaterThan(40);
+  });
+
+  it('SNAPS an off-roster value onto a named member — both directions', () => {
+    // The contract `optionsExhaustive` imposes: a legal value passes through
+    // EXACT, an illegal one lands ON the roster.
+    for (const d of CLOCK_DIVISORS) expect(snapDivisor(d)).toBe(d);
+    // Every one of the 24 reachable steps, because a LANE knob really can
+    // produce any of them — `paramCellKind` returns 'knob' off-dock.
+    for (let v = 1; v <= 24; v++) {
+      expect(isValidDivisor(snapDivisor(v)), `snapDivisor(${v}) is legal`).toBe(true);
+    }
+  });
+
+  it('NEGATIVE CONTROL: snapDivisor really MOVES — it is not the identity', () => {
+    // The permanent leg. Every assertion above would also pass against a
+    // `snapDivisor` that returned its input unchanged — and that implementation
+    // is exactly the defect the clause exists to prevent, because the engine
+    // would then divide by a number the picker cannot name.
+    expect(snapDivisor(7)).not.toBe(7);
+    expect(snapDivisor(7)).toBe(6);
+    expect(snapDivisor(20)).toBe(24);
+  });
+
+  it("DEFAULT_DIVISOR is the param's own default — one place", () => {
+    expect(DEFAULT_DIVISOR).toBe(p().defaultValue);
+    expect(isValidDivisor(DEFAULT_DIVISOR)).toBe(true);
+  });
+
+  it('no label trips the numeric-label gate', () => {
+    // `face-readout-source.test.ts` refuses an option label that looks like a
+    // measurement, because a roster of bare numbers is a readout wearing a
+    // picker's clothes. Checked HERE too, at the declaration, so a future
+    // relabel fails beside the labels rather than in a sweep three directories
+    // away.
+    const looksNumeric = (s: string) =>
+      /^[+\-−]?[0-9]+(\.[0-9]+)?\s*[a-zA-Z%°¢×x]{0,3}$/.test(s.trim());
+    for (const o of p().options ?? []) expect(looksNumeric(o.label), o.label).toBe(false);
+    // Negative control for the PREDICATE — a broken regex would otherwise pass
+    // this test by matching nothing at all.
+    expect(looksNumeric('24')).toBe(true);
+    expect(looksNumeric('440 Hz')).toBe(true);
   });
 });

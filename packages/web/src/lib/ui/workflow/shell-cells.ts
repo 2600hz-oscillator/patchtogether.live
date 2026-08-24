@@ -151,6 +151,7 @@ import {
   kriaTimeDivisionOptions,
   kriaTimeDivisionValue,
 } from '$lib/ui/modules/kria-cell-actions';
+import { midiclockConnect } from '$lib/ui/modules/midiclock-cell-actions';
 import { timelordeFaceTap } from '$lib/ui/modules/timelorde/face-tap';
 import {
   WAVESCULPT_WAV_ACCEPT,
@@ -181,6 +182,23 @@ export interface ShellSelectorCell {
  * `engine` is typed STRUCTURALLY (just the `write` seam) so shell-cells never
  * pulls the whole PatchEngine import chain — the same discipline the file
  * header's circular-import note is about.
+ *
+ * ⚠ IT CARRIES `write` AND NOTHING ELSE. THERE IS NO `read`, AND THE ABSENCE
+ * HAS MISLED THREE AGENTS IN A ROW, so it is spelled out here rather than left
+ * to the signature. The sentence above is a good reason for a NARROW type and
+ * is completely silent about WHICH methods are missing, so the interface reads
+ * as "the engine, narrowed" rather than as "the write half of the engine".
+ * Anyone reasoning from the prose concludes the engine is reachable from `env`,
+ * and a platform ask to hand this same `env` to `ShellSelectorCell.options` was
+ * drafted on exactly that belief — it would not have unblocked a single device
+ * picker, because every one of them reaches its roster through a READ.
+ *
+ * **For anything other than a write, the route is `getActiveEngine()`**
+ * (`$lib/audio/engine-ref`), which is consumed from plain `.ts` by the
+ * module-owned action files this registry imports — see `fireManualStrike` and
+ * `midiclockConnect`, both of which take a `nodeId` and no `env` at all. That
+ * is not a workaround; it is the general route, and `env` is the narrow
+ * convenience beside it.
  */
 export interface ShellCellEnv {
   engine: { write(node: ModuleNode, key: string, value: unknown): void } | null;
@@ -1971,6 +1989,42 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
       mode: 'trigger',
       probe: { effect: { kind: 'audition', seam: 'file-export' } },
       onFire: (nodeId) => { twotracksSaveTape(nodeId, 'b'); },
+    },
+  },
+  midiclock: {
+    // CONNECT MIDI — the permission gesture, and the reason this module's face
+    // is worth more than a re-skin. Web MIDI shows NO device until the browser
+    // consents, so before this press midiclock has no stream, no device roster,
+    // and four jacks sitting at rest: it is the first thing to do, on a module
+    // that otherwise looks broken. Until promotion the only button that could
+    // do it lived on the legacy card, and the default shell paints an
+    // un-migrated module as a lane PLACEHOLDER — so granting access meant
+    // finding and opening the dock full view first. An `action` cell is not
+    // dock-restricted (only `panel` is, by `panelCellKeys`), so ranking this
+    // key puts the gesture on the lane tile where the module is met.
+    //
+    // ⚠ IT TAKES ONLY A nodeId AND IGNORES `env`, deliberately — the
+    // `fireManualStrike` idiom this file already documents twice. The gesture
+    // needs a READ off the live handle (`read(node, 'card-api')`) and
+    // `ShellCellEnv.engine` carries `write` and nothing else, so `env` could
+    // not serve it even if it were passed. `getActiveEngine()` is the general
+    // route and the module-owned action file resolves it there.
+    'midiclock-connect-{n}': {
+      kind: 'action',
+      label: 'Connect MIDI…',
+      title: 'Grant this site access to Web MIDI (one-time per origin), then pick a device in the dock',
+      mode: 'trigger',
+      // ⚠ AN AUDITION, NOT A `data` PROBE, AND NOT A STATE READ. The obvious
+      // observable is `getState().connected` flipping false→true — and it is
+      // the WRONG one, for the reason the twotracks block one entry up gives
+      // about `transportState_a`: it depends on the machine, not the button. No
+      // CI runner has a MIDI device or an origin that has granted MIDI, so
+      // `connected` can never flip there and the probe would be RED on a
+      // perfectly live control. The audition asks what the runner CAN answer —
+      // did the press resolve a callable off the live engine handle and call it
+      // — which is exactly the caller→seam gap this ledger exists to close.
+      probe: { effect: { kind: 'audition', seam: 'engine-message' } },
+      onFire: (nodeId) => { midiclockConnect(nodeId); },
     },
   },
 };

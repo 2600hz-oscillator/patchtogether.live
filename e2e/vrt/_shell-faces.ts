@@ -3304,6 +3304,51 @@ export const FACES = [
     // marker/hit-test agreement and the tape-vs-no-tape branches against a
     // recording context double, and `twotracks.spec.ts` drives a real take.
   },
+
+  // ── MIDICLOCK — the first BINDER baselined, and the exemption it discharges ─
+  {
+    type: 'midiclock',
+    // ONE band: the division and the connect gesture. Two ranked cells is one
+    // band and nothing is padded to make it more — `DOCK_TAB_MIN_BANDS` is 7.
+    pages: 1,
+
+    // ⚠ THIS SCENE IS WHY THE MODULE COULD LEAVE `ALLOWED_PERMANENT_EXEMPT`,
+    // AND THE ARGUMENT IS THE EXEMPTION'S OWN. `vrt-exemptions.ts` said "card
+    // content depends on connected MIDI device", and the sentence right above
+    // it conceded the other half: *"pre-Connect state shows a 'Connect MIDI…'
+    // button (deterministic) but post-connect the device list depends on
+    // hardware that isn't present in CI."* Both halves are true, and only one
+    // of them is in frame here.
+    //
+    // A freshly spawned midiclock has NO MIDI ACCESS: `requestMIDIAccess` is
+    // never called until someone presses CONNECT, and this scene presses
+    // nothing. So the device roster is not merely empty, it does not exist —
+    // `snapshotState().devices` is built from `access.inputs` and `access` is
+    // null — and the body renders its pre-connect branch: a CONNECT button, the
+    // one-time-per-origin hint, and two DARK lamps. Every pixel is a function
+    // of the code, none of it of the runner's hardware.
+    //
+    // ⚠ AND THE UNREACHABILITY IS STRUCTURAL, NOT INCIDENTAL. On a runner with
+    // no MIDI devices and no prior grant, the connected state is not just
+    // unlikely — there is no path to it without a click. That is what makes
+    // this a discharge rather than a bet: the capture cannot drift into the
+    // hardware-dependent state, because reaching that state requires a gesture
+    // this suite does not perform.
+    //
+    // ⚠ WHAT THIS BASELINE DOES **NOT** COVER, stated rather than implied: the
+    // POST-CONNECT device picker. A baseline over a mocked roster is reachable
+    // — `e2e/tests/_per-port-drivers.ts` already mocks `requestMIDIAccess` and
+    // pumps a deterministic clock stream, built for the per-port sweep — but it
+    // would mean installing that mock in the VRT harness, which is a change to
+    // the harness rather than to this module. Not this PR. The picker's
+    // behaviour is asserted in `midiclock.spec.ts` and its strings in
+    // `midiclock-status-model.test.ts`.
+    //
+    // ⚠ NO `videoFaceWhy` AND NO `simPin`. `domain: 'audio'` with four gate/cv
+    // outputs and no canvas anywhere on the surface: there is no clock to pin
+    // and nothing that advances between frames. The lamps change only when
+    // `notify()` fires, and `notify()` fires only on a MIDI transport message.
+  },
 ] as const;
 
 /**

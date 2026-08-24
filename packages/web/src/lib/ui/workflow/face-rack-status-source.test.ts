@@ -423,7 +423,60 @@ const EXTENSION_BODY_ROLES: Readonly<Record<string, BodyRule>> = {
 
   wavesculpt: { role: 'picture', why: 'the 4-voice 3-D scene — four wave ribbons inside a room whose six walls can be live video, seen through a camera the player flies — plus the SCREEN switch and the MONITOR resize. ⚠ IT MOUNTS `WavesculptVizSurface`, THE SAME COMPONENT THE LEGACY CARD MOUNTS, so the faceplate and the card are two mounts of ONE renderer rather than two renderers drifting against one DSP; that extraction was its own PR and is the reason this module could be promoted at all. ⚠ THE PICTURE IS ALSO THE PAD: the camera pad is declared `surface: \'body\'` and is painted here as an overlay ON the render, because you fly a camera by watching where it goes — the gesture and its feedback are one surface, which no band cell can express. The pad shows the KNOB while CV moves the PICTURE; those are two different numbers and both are correct, and this body deliberately does NOT read the camera shadow to reconcile them (that shadow is an owner-listed defect). ⚠ SCREEN OFF HIDES WITH CSS AND NEVER UNMOUNTS THE SURFACE: unmounting would run its onDestroy, disposing the GL context and uninstalling the cross-domain frame drawer, so collapsing a preview would black out `video_out` for every module downstream — the module\'s own drawFrame fills solid black with no drawer installed. The renderer keeps running; only the view stops. ⚠ NO DERIVED VALUE IS PAINTED. The pad\'s X/Y live on its `aria-label`, and the only text nodes on the surface are the two switch captions (SCREEN ON/OFF, MONITOR ON/OFF), which are control captions on their own buttons. What the canvas draws is the render itself, and the dock VRT baselines are what see it.' },
 
-  // ── STATUS — the one body whose subject is not a picture.
+  // ── MIDICLOCK — the SECOND status body, and the first BINDER ─────────────
+  //
+  // ⚠ IT IS A `status-primitive` FOR A DIFFERENT REASON THAN cvBuddy'S, and the
+  // difference is worth recording because it is the shape the whole binder
+  // cohort will arrive in. cvBuddy's subject is RACK-GLOBAL (which ES-9 jacks
+  // this instance was allocated — a function of every CV Buddy present). This
+  // one's subject is a BINDING to hardware that is not in the rack at all, and
+  // it is not rack-global: two midiclocks can listen to two different devices
+  // and neither is a property of the other. So this body declares NO
+  // `face.rackStatus`, suppresses no band, and the FORWARD leg above does not
+  // reach it — the ROSTERED leg is what covers it, which is exactly the case
+  // that leg was added for.
+  //
+  // TEXT ON THE SURFACE, exhaustively: the DEVICE `<select>`'s option NAMES (the
+  // cameraInput precedent — a runtime device roster is not a `ParamDef` and not
+  // an `options` roster either, and the device's name is a NAME), the `Device`
+  // control CAPTION, the `Connect MIDI…` button's own caption, and — only when
+  // something is wrong — the ACCESS FAILURE message from the shared
+  // `midiOutcomeMessage` seam. That last one stays LOUD deliberately: the seam
+  // exists because a browser that quietly suppresses its own MIDI permission
+  // prompt is indistinguishable from a broken button, and the legacy card's
+  // comment records a one-line hint swap that users did not register.
+  //
+  // ⚠ NOT ON THE SURFACE, and this is the entry's interesting half: the legacy
+  // card's TWO readout rows. `STATE — RUN / STOP` is the deleted hero strip's
+  // exact shape and is now the RUN LAMP — which matters, because it is the ONLY
+  // place in the product that says whether the EXTERNAL transport is rolling,
+  // and `run` is a level a player may not have patched anywhere visible.
+  // `TICKS — n` is a raw count and is gone entirely, NOT relocated to an aria
+  // attribute: the module's CLOCK branch returns before `notify()` (correctly —
+  // 24 PPQN at 120 BPM is 48 Hz of subscriber pressure), so the pushed count
+  // freezes for a whole performance, which is what the card was painting while
+  // its comment called it a "live activity indicator". A frozen number in an
+  // `aria-label` is the same lie one layer down.
+  midiclock: {
+    role: 'status-primitive',
+    why:
+      'the DEVICE BINDING for the MIDI transport bridge: the runtime-enumerated input picker, the '
+      + 'CONNECT gesture, the access-failure message, and the MIDI / RUN lamps. The picker is the '
+      + 'one affordance on this module that cannot be a face cell — its roster lives on the engine '
+      + 'handle behind `requestMIDIAccess()` and differs per machine, so it is neither a `ParamDef` '
+      + 'nor an `options` roster, which is a fixed set known when the def is authored. ⚠ The '
+      + 'DIVISION and CONNECT are NOT duplicated here: both are real ranked cells that reach the '
+      + 'lane, and a body carrying them too would be a second implementation of controls the face '
+      + 'already owns. ⚠ Unlike cameraInput this body needs no status registry, because promotion '
+      + 'does not park a live card off-screen — the MIDI handler is installed engine-side through '
+      + 'an identity-scoped claim in the factory, so there is no second owner. Every measurement '
+      + 'goes through `StatusLed` into `aria-label`/`title`; the only text nodes are option NAMES, '
+      + 'control captions, and an ERROR that is absent whenever nothing is wrong.',
+  },
+
+  // ── STATUS — the FIRST body whose subject is not a picture (midiclock above
+  // is the second; this line used to say "the one", and it stopped being true
+  // the moment a second binder arrived).
   cvBuddy: {
     role: 'status-primitive',
     why:
