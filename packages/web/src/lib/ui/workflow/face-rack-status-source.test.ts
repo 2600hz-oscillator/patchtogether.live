@@ -139,7 +139,7 @@ function defsDeclaringRackStatus(): DefLike[] {
 // IS, and each role carries a mechanical predicate (below) that the source must
 // satisfy — so the entry is a claim the gate checks, not a claim it records.
 
-type BodyRole = 'picture' | 'status-primitive';
+type BodyRole = 'picture' | 'status-primitive' | 'control-grid';
 
 interface BodyRule {
   role: BodyRole;
@@ -153,6 +153,33 @@ const EXTENSION_BODY_ROLES: Readonly<Record<string, BodyRule>> = {
   // button (SCREEN, MONITOR, a resize grip). What their canvases draw is the
   // residue named in this file's header, and the dock VRT baselines are what
   // see it.
+  // ── MATRIXMIX (bespoke wave 4) — the roster's first CONTROL GRID ─────────
+  //
+  // TEXT ON THE SURFACE, exhaustively: the two axis corner labels (`Y↓` / `X→`),
+  // and one PORT ID plus its direction (`CUTOFF` / `in`) per row and per column
+  // head. Every one of those is a CONTROL CAPTION in substance — the name of the
+  // jack that row or column IS — and the permitted-text list names captions
+  // explicitly. There is no value, no measurement and no state word anywhere on
+  // the plate. Nothing had to be removed on promotion either: the legacy card
+  // never printed a readout.
+  //
+  // ⚠ AND THE ONE SENTENCE THIS MODULE HAS IS ON `aria-label`, WHICH IS THE
+  // WHOLE POINT OF THE ROLE. A cross-point's visual is a coloured dot or a ✕;
+  // what it MEANS — "input already patched from FILTER.cutoff — clicking replaces
+  // it", "output already feeds VCA.in — clicking adds another cable" — is the
+  // entire semantics of the control and cannot be inferred from the glyph. Under
+  // the resting-text ruling that sentence must not become painted face text, and
+  // it does not need to: the accessible name is exactly where the ruling puts
+  // this class. The `aria-not-painted` leg below is what keeps it there.
+  //
+  // ⚠ THE EMPTY-STATE LINE ("Pick an X-axis + Y-axis module to build the patch
+  // matrix.") is INSTRUCTIONAL COPY IN AN EMPTY STATE, not a value — the
+  // samsloop / twotracks "NO SAMPLE LOADED" shape, and like those it is REPLACED
+  // by the surface the moment the surface exists. It is drawn rather than left
+  // blank so that "no axes picked yet" and "the body failed to mount" are
+  // different pictures, which matters because the fresh-spawn empty state is
+  // exactly what this module's dock baseline captures.
+  matrixmix: { role: 'control-grid', why: 'the rack-wide PATCH MATRIX — a scrollable cross-point table over two OTHER modules\' jacks, where each cell is a cable that exists, could exist, or would replace one. ⚠ IT IS A CONTROL GRID, NOT A PICTURE: the table is the surface the module is OPERATED from (a click patches or unpatches through the shared validateEdge seam), not a preview of something happening elsewhere — which is also why it mounts no canvas and must not grow one, since attest basis membership is derived from CONTENT and a WebGL body would enrol a meta module in the GPU attest. ⚠ ALL PAINTED TEXT IS A CONTROL CAPTION: the two axis corner labels and one port id + direction per row/column head. No value, no measurement, no state word. ⚠ THE SEMANTICS LIVE ON aria-label, per the resting-text ruling — the dot/✕ glyph cannot say "clicking replaces the existing source", so the sentence is the accessible name and never a text node. ⚠ IT IS A BODY RATHER THAN A PANEL for two mechanical reasons: ShellPanelCell REQUIRES a minWidth NUMBER and this grid is 4 columns or 40 depending on two foreign modules (any number would be a fiction in a required field), and its required probe vocabulary is data/data-rev/text while this surface\'s observable is patch.edges BETWEEN TWO OTHER NODES — neither this node\'s data nor its text. ⚠ NO SCREEN SWITCH and NO WATCH MARK: the video-screen ruling runs over STRICT_FACES INTERSECT video defs and this is domain meta, and markWatched is a VideoEngine pull-set concept this module has no part in.' },
   '4plexvid': { role: 'picture', why: 'the four-input video switcher\'s live output preview canvas and its SCREEN switch.' },
   // ── audioOut — the roster's first AUDIO METER, and the first body whose
   //    text-role question is about what it DOES NOT draw ────────────────────
@@ -509,6 +536,11 @@ const EXTENSION_BODY_ROLES: Readonly<Record<string, BodyRule>> = {
  * whole-tree search — a body that mounts something that mounts something is
  * far enough from its own picture that the claim should be written down again.
  */
+/** Escape a captured source expression for use inside a RegExp. */
+function escapeRe(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 function paintsCanvas(src: string, extId: string): boolean {
   if (/<canvas/.test(src)) return true;
   for (const m of src.matchAll(/import\s+([A-Z][A-Za-z0-9_]*)\s+from\s+'\.\/([^']+\.svelte)'/g)) {
@@ -540,6 +572,37 @@ const ROLE_PREDICATE: Readonly<
       'imports StatusLed and mounts NO <canvas>, directly or through a component it renders — a '
       + 'status body paints its measurements through the primitive, and a canvas would put it '
       + 'back in the blind spot this role exists to leave',
+  },
+  // ── THE THIRD ROLE, ADDED BY matrixMix (bespoke wave 4) ───────────────
+  //
+  // ⚠ IT EXISTS BECAUSE THE GATE REFUSED A BODY IT WAS RIGHT TO REFUSE, which
+  // is worth stating because "the gate went red so I widened it" is usually the
+  // wrong move. Both shipped predicates DENIED matrixMix's `fullViewBody`, and
+  // both denials were correct: it mounts no `<canvas>` (so it is not a PICTURE)
+  // and imports no `StatusLed` (so it is not a STATUS-PRIMITIVE surface). It is
+  // a third thing the roster had not met — a DOM CONTROL GRID, a table of
+  // clickable cross-points that is neither a preview of something nor a
+  // measurement of something, but the surface the module is operated FROM.
+  //
+  // Mislabelling it `picture` would have meant weakening the picture predicate
+  // to accept a body with no canvas, which is the one change that would let a
+  // genuine picture-body skip its own check. The role is the honest repair.
+  //
+  // ⚠ THE PREDICATE IS THE RULING'S OWN MECHANISM, NOT A RUBBER STAMP. A grid
+  // like this has exactly one text-shaped hazard: the sentence that says what a
+  // cell MEANS. `aria-label=` is where the resting-text ruling puts that class
+  // — "speakable and assertable but unpainted" — so a body claiming this role
+  // must actually be setting accessible names, and must not have quietly become
+  // a picture. The sharper half (that the sentence is NOT also painted as a text
+  // node) is its own permanent leg below, because it is the failure this role
+  // would otherwise hide.
+  'control-grid': {
+    holds: (src, extId) => /aria-label=/.test(src) && !paintsCanvas(src, extId),
+    what:
+      'sets aria-label on what it paints and mounts NO <canvas>, directly or through a component '
+      + 'it renders — a control grid carries its MEANING in the accessible name, which is where '
+      + 'the resting-text ruling puts a sentence that must be speakable and unpainted; a canvas '
+      + 'would make it a picture, and no aria-label would mean the meaning went somewhere else',
   },
 };
 
@@ -740,12 +803,60 @@ describe('#2024 — every extension body declares what its canvas PAINTS', () =>
     expect(thin, 'an entry without a stated reason is a suppression').toEqual([]);
   });
 
-  it('the roster covers BOTH roles — it is not one role with a decoration', () => {
+  it('EVERY DEFINED ROLE IS USED, and every used role is defined — no role is a decoration', () => {
     // A roster where every entry said `picture` would be a rename of the blind
-    // spot rather than a narrowing of it, and the `status-primitive` predicate
-    // would never run.
-    const roles = new Set(Object.values(EXTENSION_BODY_ROLES).map((r) => r.role));
-    expect([...roles].sort()).toEqual(['picture', 'status-primitive']);
+    // spot rather than a narrowing of it, and the other predicates would never
+    // run. This used to assert a hand-typed PAIR of role names, which went stale
+    // the moment a third surface kind arrived (matrixMix's control grid) — so it
+    // is now a SET IDENTITY between the roles the type defines and the roles the
+    // roster actually uses, asserted in both directions. A role added to the
+    // union and never adopted is a predicate nothing exercises; a role used by
+    // an entry and absent from the union does not compile.
+    const used = new Set(Object.values(EXTENSION_BODY_ROLES).map((r) => r.role));
+    const defined = new Set(Object.keys(ROLE_PREDICATE) as BodyRole[]);
+    expect(
+      [...defined].filter((r) => !used.has(r)).sort(),
+      'role(s) with a predicate that no body claims — an unexercised predicate proves nothing. '
+        + 'Adopt it or delete it.',
+    ).toEqual([]);
+    expect(
+      [...used].filter((r) => !defined.has(r)).sort(),
+      'role(s) claimed by an entry with no predicate to check them',
+    ).toEqual([]);
+  });
+
+  it('⚠ A CONTROL GRID\'S SENTENCE IS SPEAKABLE, NOT PAINTED', () => {
+    // ── THE LEG THE `control-grid` ROLE OWES ──────────────────────────
+    //
+    // The role's own predicate proves the body sets accessible names and owns no
+    // canvas. That is necessary and not sufficient: a body could set
+    // `aria-label={cellTitle(...)}` AND ALSO render `{cellTitle(...)}` as a text
+    // node, which is the resting-text violation wearing the ruling's own
+    // mechanism as a disguise — and it is precisely the mistake a well-meaning
+    // author makes ("the screen reader gets it, so the sighted user should too").
+    //
+    // So: whatever expression is bound to `aria-label={…}` must not also appear
+    // in a bare text mustache. Source-level, because no runtime gate sees it —
+    // `face-resting-text-source` reads FACE FIELDS and is blind to a body's
+    // markup by its own admission.
+    const offenders: string[] = [];
+    for (const [id, rule] of Object.entries(EXTENSION_BODY_ROLES)) {
+      if (rule.role !== 'control-grid') continue;
+      const src = fullViewBodySource(id);
+      if (src === null) continue; // the ANCHOR leg owns this failure
+      for (const m of src.matchAll(/aria-label=\{([^}]+)\}/g)) {
+        const expr = m[1]!.trim();
+        // The same expression rendered as CONTENT: `>{expr}<` or `>{expr}</`.
+        if (new RegExp(`>\\s*\\{\\s*${escapeRe(expr)}\\s*\\}`).test(src)) {
+          offenders.push(
+            `${id}: the accessible name \`${expr}\` is ALSO painted as a text node. The sentence `
+              + 'a cell needs is speakable and unpainted — putting it in both places is the '
+              + 'resting-text violation using the ruling\'s own mechanism as cover.',
+          );
+        }
+      }
+    }
+    expect(offenders, 'a control grid paints its own accessible name').toEqual([]);
   });
 
   it('the body resolver DISCRIMINATES (negative controls)', () => {
@@ -791,6 +902,35 @@ describe('#2024 — every extension body declares what its canvas PAINTS', () =>
     expect(
       ROLE_PREDICATE.picture.holds(importedNotMounted, 'wavesculpt'),
       'importing a canvas-bearing component without RENDERING it must not satisfy picture',
+    ).toBe(false);
+
+    // ⚠ AND THE THIRD ROLE DISCRIMINATES AGAINST BOTH OF THE OTHERS. Adding a
+    // role is only a narrowing of the blind spot if the new predicate refuses
+    // the bodies the old ones accept and vice versa; a role that everything
+    // satisfies is a rename. All four directions, on real source.
+    const grid = fullViewBodySource('matrixmix');
+    expect(grid, 'matrixmix fullViewBody source').not.toBeNull();
+    expect(ROLE_PREDICATE['control-grid'].holds(grid!, 'matrixmix')).toBe(true);
+    expect(
+      ROLE_PREDICATE.picture.holds(grid!, 'matrixmix'),
+      'a DOM control grid must NOT satisfy the picture predicate — it mounts no canvas',
+    ).toBe(false);
+    expect(
+      ROLE_PREDICATE['status-primitive'].holds(grid!, 'matrixmix'),
+      'and must NOT satisfy status-primitive — it routes no measurement through StatusLed',
+    ).toBe(false);
+    expect(
+      ROLE_PREDICATE['control-grid'].holds(pic!, 'videoOut'),
+      'a canvas preview must NOT satisfy control-grid, whatever aria it sets',
+    ).toBe(false);
+    // …and the aria half of the predicate is load-bearing, not decorative: strip
+    // the accessible names and the claim fails. Without this, `control-grid`
+    // would be "any body with no canvas", which is most of the tree.
+    const gridNoAria = grid!.replace(/aria-label=/g, 'data-was-aria=');
+    expect(
+      ROLE_PREDICATE['control-grid'].holds(gridNoAria, 'matrixmix'),
+      'a body with no canvas AND no accessible names is not a control grid — its meaning went '
+        + 'somewhere this gate cannot see',
     ).toBe(false);
   });
 });

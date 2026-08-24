@@ -637,15 +637,33 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // fingerprinting. Covered by control-surface.test.ts (model) + the
   // control-surface e2e (spawn → send → proxy drives source → collapse).
   controlSurface: 'content is binding-dependent (proxied controls vary by patch); empty state is a blank square. Covered by control-surface.test.ts + control-surface.spec.ts.',
-  // MATRIXMIX — meta module (EMS-Synthi / Buchla patch matrix) whose entire
-  // grid body is patch-dependent: a solo-spawned card shows only two axis
-  // dropdowns + a "pick a module" hint (the matrix only materializes once both
-  // axes name a module that exists in the patch), so the grid has no stable
-  // module-specific pixels to fingerprint. Like CONTROL SURFACE, covered by
-  // the pure-core unit (matrixmix-grid.test.ts), the real-Y.Doc edge writer
-  // (matrixmix-ydoc.test.ts), and the live-chain e2e (matrixmix.spec.ts:
-  // spawn matrix + two modules → select axes → click cell → assert edge + dot).
-  matrixMix: 'grid body is patch-dependent — solo-spawn shows only the axis dropdowns + a pick-a-module hint (no stable module-specific pixels). Covered by matrixmix-grid.test.ts + matrixmix-ydoc.test.ts + e2e/tests/matrixmix.spec.ts.',
+  // ⚠ `matrixMix` WAS HERE AND IS DRAINED. Its entry read: "grid body is
+  // patch-dependent — solo-spawn shows only the axis dropdowns + a pick-a-module
+  // hint (no stable module-specific pixels)", with NO exit condition, and it sat
+  // in ALLOWED_PERMANENT_EXEMPT alongside it.
+  //
+  // The grid half of that argument was always right and is unchanged: the
+  // cross-point field is a function of two OTHER modules plus the whole edge set,
+  // so a solo spawn cannot produce one. The CONCLUSION is what stopped being
+  // true. A solo-spawned matrixMix is a stable, deterministic, entirely
+  // module-specific picture — the title, two axis pickers reading their
+  // placeholder option, and the "pick a module" hint — and it is the state every
+  // player meets first. "No stable pixels" described the surface that ISN'T
+  // rendered and drew a conclusion about the one that is.
+  //
+  // ALLOWED_PERMANENT_EXEMPT's own header says the set "only ever SHRINKS BY
+  // NAME" and that membership "records that a module was exempt on the day the
+  // brake landed — nothing more". Removed from BOTH lists (vrt-meta.test.ts
+  // asserts set equality in both directions, so a one-sided delete is red), which
+  // enrols the legacy card in vrt.spec.ts alongside the two committed face scenes
+  // (face-matrixMix-compact / face-matrixMix-dock) that promotion added.
+  //
+  // ⚠ AND THE LEGACY CARD REALLY DOES STILL RENDER, which is worth stating
+  // because several sibling entries in this file say the opposite about THEIR
+  // modules ("the legacy card no longer renders — X is in STRICT_FACES, so both
+  // surfaces mount ModuleShell"). vrt.spec.ts boots `/rack?shell=legacy&seed=none`
+  // and `laneRenderKind` returns 'legacy' whenever `shellFaces` is false,
+  // regardless of STRICT_FACES membership — so this scene has a subject.
   // LAUNCHPAD CONTROL LEFT / RIGHT — meta control-surface cards that bind a
   // physical Novation Launchpad pair to a clip-player. Like CONTROL SURFACE /
   // ELECTRA, the card body is DEVICE-dependent (Pair / Bind state + a status
@@ -657,7 +675,14 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // golden vectors), launchpad-map.test.ts (placement + RGB colour language),
   // launchpad-control.test.ts (binding mode-machine), and the real-source-chain
   // e2e launchpad-clip-launch.spec.ts (TIMELORDE → clipplayer → simulated pad →
-  // audible RMS). Same treatment as controlSurface/matrixMix (fully exempt).
+  // audible RMS). Same treatment as controlSurface (fully exempt).
+  //
+  // ⚠ THIS LINE USED TO SAY "controlSurface/matrixMix" AND matrixMix IS DRAINED.
+  // Corrected here rather than left to read as company: matrixMix's exemption
+  // rested on a solo spawn having no stable pixels, which stopped being true;
+  // THIS one rests on the body being DEVICE-dependent — a Pair/Bind state and a
+  // status line that require hardware CI does not have. Those are different
+  // arguments and only one of them was overturned.
   launchpadControlLeft: 'meta control-surface card (consolidated launchpad-control pair); body is device/binding-dependent (Pair/Bind state + status absent in CI), like controlSurface/electraControl. Covered by launchpad-sysex/map/control unit suites + the real-source-chain launchpad-clip-launch e2e (pad → audible RMS).',
   push2Control: 'meta control-surface card (Ableton Push 2); body is device/binding-dependent (Connect/Bind state + view segment absent in CI) AND the push-card preview canvas renders whatever module happens to be in lane 1, so the card face is patch-dependent — like launchpadControlLeft/electraControl. Covered by push2-sysex/map/control/lane/schema/model/layout/paint unit suites + the real-source-chain push2-clip-launch e2e (sim pad → audible RMS + lane select → the push card + a display encoder → that card param + master encoder → MixMasters + D-Pad nav).',
   // CLOUDS first-slice PR (#166): VRT baseline pending; ART + unit + E2E
@@ -1181,7 +1206,11 @@ export const ALLOWED_PERMANENT_EXEMPT: ReadonlySet<string> = new Set([
   'shapegen', 'sixstrum', 'mirrorpool', 'grainsOfVision',
   'frametable', 'videocube', 'sourcery', 'scoreboard',
   'cameraInput', 'loopback', 'audioIn', 'group',
-  'cadillac', 'controlSurface', 'matrixMix', 'launchpadControlLeft',
+  // ⚠ `matrixMix` REMOVED (bespoke wave 4) — it is no longer in EXEMPT_FROM_VRT,
+  // and this list is ANCHORED: an entry naming a module that is not exempt is RED,
+  // so a drained module cannot leave a stale licence to re-exempt itself. See the
+  // note in EXEMPT_FROM_VRT for why the stated reason stopped being true.
+  'cadillac', 'controlSurface', 'launchpadControlLeft',
   'push2Control', 'clouds', 'macseq', 'writeseq',
   'rings', 'marbles', 'attenumix', 'sidecar',
   'cloudseed', 'livecode', 'clockedRunner', 'midiCvBuddy',

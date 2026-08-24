@@ -370,8 +370,10 @@ export const midiclockDef: AudioModuleDef = {
     // deleted. See `snapDivisor` above for the argument (an engine-side repair
     // of stored data is an untagged Y.Doc write, and a silent repair is
     // indistinguishable from no bug). The first ordinary tagged write of the
-    // param is what makes the new shape durable, and `midiclock.test.ts` pins
-    // both halves over a v-old fixture.
+    // param is what makes the new shape durable, and `midiclock-factory.test.ts`
+    // pins both halves over a v-old fixture — there rather than in
+    // `midiclock.test.ts` because the READ ORDER lives here, in the factory, and
+    // a pure test of `snapDivisor` cannot see which key was reached for first.
     const savedParams = (node.params ?? {}) as Record<string, number | undefined>;
     const fromParams = savedParams.divisor;
     let divisor: ClockDivisor =

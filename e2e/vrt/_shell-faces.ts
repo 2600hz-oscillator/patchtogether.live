@@ -3304,6 +3304,42 @@ export const FACES = [
     // marker/hit-test agreement and the tape-vs-no-tape branches against a
     // recording context double, and `twotracks.spec.ts` drives a real take.
   },
+  // ── MATRIXMIX — the first META-DOMAIN scene in this roster ─────────────────
+  {
+    type: 'matrixMix',
+    // ONE band: the two axis selector cells. No `face.pages`, so the dock
+    // renders a single unlabelled section — nowhere near `DOCK_TAB_MIN_BANDS`,
+    // and nothing here is padded to reach a rail.
+    pages: 1,
+    // ⚠ DETERMINISTIC, AND THE ARGUMENT IS THE ONE THE OLD VRT EXEMPTION MADE —
+    // now pointed at the right subject. That exemption read "grid body is
+    // patch-dependent — solo-spawn shows only the axis dropdowns + a
+    // pick-a-module hint (no stable module-specific pixels)". The first half is
+    // TRUE and stays true: the cross-point field is a function of two OTHER
+    // modules plus the whole edge set, and a solo spawn has neither. The
+    // conclusion is what the face falsifies. A solo-spawned matrixMix has NO
+    // axis selected, so:
+    //
+    //   * the LANE TILE is two selector cells reading their placeholder option
+    //     ('— pick a module —') under fixed `X` / `Y` tags on a stable plate —
+    //     exactly the stable module-specific pixels the exemption said did not
+    //     exist; and
+    //   * the DOCK body is the empty-state hint, NOT the grid. The grid cannot
+    //     paint at all without both axes, so the patch-dependent surface is
+    //     structurally out of frame rather than merely quiet.
+    //
+    // The empty state is therefore the thing being photographed, and it is the
+    // state a player actually meets first. It is also self-evidencing: if the
+    // body failed to mount, `matrixmix-empty` would be absent and the structural
+    // leg reddens before any pixel is compared.
+    //
+    // ⚠ AND THE ROSTER CANNOT LEAK INTO THE PICTURE. The axis cells' options are
+    // derived from the live patch, so a scene that spawned a NEIGHBOUR would put
+    // that neighbour's display name in a dropdown and make this baseline depend
+    // on what else the harness happened to boot. It declares no `upstream`, and
+    // the free-canvas branch spawns exactly one node — asserted, both that the
+    // population grew by one and that the returned id IS this type.
+  },
 
   // ── MIDICLOCK — the first BINDER baselined, and the exemption it discharges ─
   {
@@ -4540,6 +4576,31 @@ export async function bootWithFace(
     return adoptedId;
   }
 
+  // ── THE ORDINARY PATH: a channel COLUMN is the chain ─────────────────────
+  //
+  // ⚠ THERE IS NO PRE-FLIGHT PORT CHECK HERE, AND A WHOLE BOOT BRANCH THAT
+  // ASSUMED ONE WAS DELETED. Both rested on the premise that "a def with no
+  // audio port can never join a channel column". THE PREMISE IS FALSE. Column
+  // membership is decided by DROP POSITION — `__setSpawnFlowPos` lands the node
+  // in lane 1's painted band and the membership path adopts it — and has nothing
+  // to do with port shape. MEASURED, twice over and in both directions: eight
+  // shipped CV/gate-only faces (lfo, kria, marbles, fourplexer, gatemaiden,
+  // ninelives, moog962, depolarizer) join fine, and so does `matrixMix`, which
+  // declares NO PORTS AT ALL and still reaches a rendered tile through this
+  // exact path.
+  //
+  // The mistake was a PROXY standing in for the SUBJECT. What matters is "the
+  // column never formed, so this boot is about to die as a bare timeout" — a
+  // DYNAMIC outcome of THIS run. "Declares no audio port" is a STATIC property
+  // that merely correlates, and correlates badly in both directions: it
+  // reddened eight working faces while `backdraft`'s real problem was the video
+  // zone and `timelorde`'s was a REFUSED SPAWN (maxInstances), neither of which
+  // is about ports at all.
+  //
+  // So the wait below is WRAPPED rather than predicted. Every module that can
+  // use this path uses it unchanged; a module that ACTUALLY times out gets a
+  // named refusal instead of a bare timeout, which turns the 90 s mystery
+  // backdraft and timelorde each cost into a 90 s EXPLAINED failure.
   const chain = opts.upstream ? [opts.upstream, type] : [type];
   for (const t of chain) {
     await page.evaluate((tt) => {
@@ -4553,17 +4614,40 @@ export async function bootWithFace(
       w.__setSpawnFlowPos({ x: 30, y: 4280 });
       w.__spawnFromPalette(tt);
     }, t);
-    await page.waitForFunction(
-      (n) => {
-        const w = globalThis as unknown as {
-          __patch?: {
-            nodes: Record<string, { data?: { columns?: Record<string, string[]> } } | undefined>;
+    try {
+      await page.waitForFunction(
+        (n) => {
+          const w = globalThis as unknown as {
+            __patch?: {
+              nodes: Record<string, { data?: { columns?: Record<string, string[]> } } | undefined>;
+            };
           };
-        };
-        return (w.__patch?.nodes['pinned-mixmstrs']?.data?.columns?.['1'] ?? []).length === n;
-      },
-      chain.indexOf(t) + 1,
-    );
+          return (w.__patch?.nodes['pinned-mixmstrs']?.data?.columns?.['1'] ?? []).length === n;
+        },
+        chain.indexOf(t) + 1,
+      );
+    } catch {
+      // ── THE COLUMN NEVER FORMED — the ONLY condition this refusal is about ──
+      //
+      // Reached only after the wait has actually exhausted its budget, so it is
+      // a MEASUREMENT of this boot rather than a prediction from the def's
+      // shape. Every module whose column forms never gets here — which is every
+      // module in the roster except the two that declare a branch.
+      throw new Error(
+        `${t}: the channel column never formed — waited for lane 1 to hold `
+          + `${chain.indexOf(t) + 1} member(s) and it never did, so this boot was about to die `
+          + `as a bare Playwright timeout with no indication of why (MEASURED at ~90 s on `
+          + `backdraft and again on timelorde, each diagnosed from scratch). Membership comes `
+          + `from the DROP POSITION, not from port shape, so a module that fails to join has a `
+          + `spawn or membership problem rather than a port one. If this module genuinely `
+          + `cannot use this path, declare ONE of: \`videoFaceWhy\` (a video module — boots `
+          + `into the video zone AND pins its live surface) or \`singletonAdoptWhy\` (a pinned `
+          + `rack singleton \`__spawnFromPalette\` refuses). Each takes a REASON string, not a `
+          + `flag. ⚠ If this def's column USED to form, this is a REGRESSION in the spawn or `
+          + `membership path and declaring a branch is the WRONG fix — it would route a working `
+          + `chain around the path that is meant to exercise it.`,
+      );
+    }
   }
   // The face under test is the LAST member — the bottom of the chain.
   const memberId = await page.evaluate((n) => {
