@@ -1,23 +1,44 @@
 <script lang="ts">
-  // SkifreeCard — host shell around the upstream skifree.js engine (MIT,
-  // Daniel Hough 2013). Mirrors Sm64Card's bundle-load pattern, but the
-  // bundle is tiny (~24 KB) and we own a CLEAN controller API
-  // (window.SkiFree.create) rather than monkey-patching globals.
+  // SkifreeCard — the VIEW onto the upstream skifree.js engine (MIT, Daniel
+  // Hough 2013).
   //
-  // Lifecycle:
-  //   1. onMount: inject <script src="/skifree/skifree.bundle.js">.
-  //   2. onload: window.SkiFree.create({ canvas, width, height, onGate }) →
-  //      a controller bound to OUR card canvas. Publish it on
-  //      window.__skifree.controller so the audio factory (skifree.ts) can
-  //      drive the CV cursor + read game state. The controller's onGate
-  //      forwards to window.__skifree.onGate (set by the factory) → gate pulse.
-  //   3. Focus handling: when the card is focused AND CV x/y are unpatched
-  //      (factory sets window.__skifree.cvDriven = false), engage native mouse
-  //      steering on the canvas. Patched CV (cvDriven = true) OR blur → mouse off.
-  //   4. onDestroy: dispose the controller + remove the script + clear the bridge.
+  // ⚠ THIS CARD CREATES NOTHING AND DISPOSES NOTHING, AND THAT IS THE FIX.
+  // It used to inject the bundle `<script>` in `onMount`, call
+  // `window.SkiFree.create({ canvas })` against its OWN `bind:this` canvas, and
+  // `controller.dispose()` in `onDestroy` — so the GAME's lifetime was the
+  // CARD's. Under the shipping shell an un-migrated module renders a
+  // PLACEHOLDER tile and its real card exists only while the dock full-view is
+  // open, which meant:
   //
-  // maxInstances:1 → exactly one card mounted at a time; the bridge is a
-  // single window.__skifree object.
+  //   * a rack containing SKIFREE had NO GAME AT ALL until someone expanded the
+  //     dock — the DEFAULT state of any saved rack, not a collapse edge case;
+  //   * collapsing that pane (or a dock LRU eviction when a third module is
+  //     expanded, or ESC) DESTROYED THE RUN IN PROGRESS.
+  //
+  // MEASURED on `/rack` with nothing expanded, before the change:
+  //   samples 45 / 368 ms · tick 0 -> 15 · distance 0 -> 0 · controller false
+  // — the engine ticking while the skier never moved. It failed BLACK rather
+  // than broken (the factory's `drawFrame` returns early with no controller, so
+  // the `out` VIDEO port emitted a black frame and nothing was logged), which
+  // is why it survived.
+  //
+  // The AUDIO FACTORY owns the game now: it has exactly node lifetime, it
+  // creates a DETACHED canvas, loads the bundle and builds the controller. See
+  // `$lib/audio/skifree-bridge`'s header for why the factory rather than a
+  // node-keyed registry.
+  //
+  // What this card still does, all of it VIEW work:
+  //   1. BLIT the owned canvas into its own visible one, every frame.
+  //      ⚠ It must never RE-PARENT the owned canvas — a DOM node has one
+  //      parent, so adopting it would hand the game's surface to a component
+  //      that unmounts. That is the cameraInput trap, one seam over.
+  //   2. Forward native MOUSE steering while focused and CV is unpatched
+  //      (`enableMouse` takes THIS card's visible element, which is why mouse
+  //      is a card concern even though the game is not).
+  //   3. Poll the node's snapshot for the HUD.
+  //
+  // maxInstances:1 → one card at a time; the bridge is a single
+  // window.__skifree object (still un-keyed by node — see the bridge header).
 
   import { onMount, onDestroy } from 'svelte';
   import type { NodeProps } from '@xyflow/svelte';
@@ -26,7 +47,7 @@
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
-  import { ensureSkifreeBridge, releaseSkifreeCardState } from '$lib/audio/skifree-bridge';
+  import { ensureSkifreeBridge } from '$lib/audio/skifree-bridge';
   import {
     SKIFREE_CANVAS_SIZE,
     type SkifreeBridge,
@@ -53,27 +74,28 @@
 
   let cardEl: HTMLDivElement | null = $state(null);
   let canvasEl: HTMLCanvasElement | null = $state(null);
-  let loadStatus = $state<'idle' | 'loading' | 'ready' | 'error'>('idle');
-  let loadError = $state<string | null>(null);
   let focused = $state(false);
   let snapshot = $state<SkifreeSnapshot | null>(null);
+  /** True once the NODE reports it has built its game — read off the snapshot
+   *  rather than tracked here, so the overlay and the HUD cannot disagree about
+   *  whether a game exists. */
+  let gameReady = $derived(snapshot?.gameCreated === true);
 
-  let scriptTagEl: HTMLScriptElement | null = null;
-  let controller: SkifreeController | null = null;
   let snapRaf: number | null = null;
-
-  interface SkiFreeGlobal {
-    create(opts: {
-      canvas: HTMLCanvasElement;
-      width: number;
-      height: number;
-      spriteBase?: string;
-      onGate?: (evt: { type: 'crash' | 'eaten' }) => void;
-    }): SkifreeController;
-  }
+  let blitRaf: number | null = null;
+  /** The controller the NODE owns. Read, never created, never disposed. */
+  let controller: SkifreeController | null = null;
 
   function ensureBridge(): SkifreeBridge {
     return ensureSkifreeBridge();
+  }
+
+  /** The node's own game handle, through the engine — scoped to THIS node
+   *  rather than to the single un-keyed global. */
+  function nodeController(): SkifreeController | null {
+    const eng = engineCtx.get();
+    if (!eng || !node) return null;
+    return (eng.read(node, 'controller') as SkifreeController | undefined) ?? null;
   }
 
   /** Engage / disengage native mouse steering. Engaged only when focused AND
@@ -89,49 +111,46 @@
     }
   }
 
-  async function loadBundle(): Promise<void> {
-    if (loadStatus !== 'idle') return;
-    loadStatus = 'loading';
-    try {
-      const bridge = ensureBridge();
-      // Inject the bundle <script>. Idempotent across hot-reload — if
-      // window.SkiFree already exists (a prior mount loaded it) we skip the
-      // network round-trip.
-      const w = globalThis as unknown as { SkiFree?: SkiFreeGlobal };
-      if (!w.SkiFree) {
-        await new Promise<void>((resolve, reject) => {
-          const s = document.createElement('script');
-          s.src = '/skifree/skifree.bundle.js';
-          s.async = false;
-          s.onload = () => resolve();
-          s.onerror = () => reject(new Error('SKIFREE bundle failed to load (404?)'));
-          scriptTagEl = s;
-          document.head.appendChild(s);
-        });
-      }
-      if (!canvasEl) throw new Error('SKIFREE: canvas not bound');
-      if (!w.SkiFree) throw new Error('SKIFREE: window.SkiFree missing after load');
-
-      controller = w.SkiFree.create({
-        canvas: canvasEl,
-        width: CSS,
-        height: CSS,
-        spriteBase: '/skifree',
-        // Forward every crash/eaten event to the factory's gate-pulse fn.
-        onGate: (evt) => {
-          const b = ensureBridge();
-          if (b.onGate) b.onGate(evt);
-        },
-      });
-      bridge.controller = controller;
+  /**
+   * BLIT the node's game canvas onto this card's visible one, every frame.
+   *
+   * ⚠ A COPY, NOT AN ADOPTION. The owned canvas stays detached and parentless;
+   * re-parenting it here would move the game's surface into a component that
+   * unmounts on collapse, which is the bug this card was just relieved of
+   * wearing a different hat. `drawImage` is canvas-to-canvas with no CPU
+   * readback — the same thing the factory's `drawFrame` does for the video
+   * port, so the two surfaces show one render rather than two.
+   */
+  function blit(): void {
+    const next = nodeController();
+    if (next !== controller) {
+      controller = next;
+      // A game that has just appeared may need mouse engaged immediately.
       syncMouseControl();
-
-      loadStatus = 'ready';
-      loadError = null;
-    } catch (e) {
-      loadStatus = 'error';
-      loadError = (e as Error).message;
     }
+    const src = controller?.canvas;
+    const dst = canvasEl;
+    if (src && dst && src.width > 0 && src.height > 0) {
+      const c2d = dst.getContext('2d');
+      if (c2d) {
+        c2d.imageSmoothingEnabled = false;
+        try {
+          // ⚠ THE THREE-ARGUMENT FORM, BECAUSE THIS IS GENUINELY 1:1. Both
+          // canvases are sized from the SAME exported constant — the factory
+          // mints its game canvas at `SKIFREE_CANVAS_SIZE` and this card's
+          // visible canvas is `width={CSS}` where `CSS = SKIFREE_CANVAS_SIZE` —
+          // so there is no scale factor to apply. An earlier draft wrote the
+          // nine-argument `drawImage(src, 0,0,sw,sh, 0,0,dw,dh)`, which is a
+          // RESAMPLE by shape even when the numbers happen to match, and
+          // `preview-downscale-source.test.ts` (#1846) caught it. The gate was
+          // right: a call that names a destination width and height is claiming
+          // a resize this code never performs, and the honest spelling is also
+          // the one that cannot alias if the sizes ever drift apart.
+          c2d.drawImage(src, 0, 0);
+        } catch (_e) { /* detached/tainted this frame — leave the last image */ }
+      }
+    }
+    blitRaf = requestAnimationFrame(blit);
   }
 
   function pollSnapshot(): void {
@@ -152,24 +171,28 @@
 
   onMount(() => {
     snapRaf = requestAnimationFrame(pollSnapshot);
-    void loadBundle();
+    blitRaf = requestAnimationFrame(blit);
   });
 
   onDestroy(() => {
+    // ⚠ EVERYTHING RELEASED HERE IS THIS COMPONENT'S OWN — two rAF handles and
+    // the mouse binding. NOTHING node-owned is touched, and there is no longer
+    // a spelling for touching it: the controller is created and disposed by the
+    // factory (node lifetime), and the card-facing `releaseSkifreeCardState`
+    // was DELETED rather than deprecated, so `tsc` refuses a future teardown
+    // that tries to reach the game from here.
+    //
+    // ⚠ `disableMouse()` IS RELEASED, DELIBERATELY. The pointer binding is on
+    // THIS card's element; leaving it engaged would keep a handler on a node
+    // that is being removed from the document, and the next mount re-engages it
+    // through `syncMouseControl`. It is card state, so the card frees it —
+    // which is exactly the distinction that was missing before.
     if (snapRaf !== null) cancelAnimationFrame(snapRaf);
     snapRaf = null;
-    try { controller?.dispose(); } catch (_e) { /* */ }
+    if (blitRaf !== null) cancelAnimationFrame(blitRaf);
+    blitRaf = null;
+    try { controller?.disableMouse(); } catch (_e) { /* */ }
     controller = null;
-    if (scriptTagEl?.parentNode) scriptTagEl.parentNode.removeChild(scriptTagEl);
-    scriptTagEl = null;
-    // #1590: release ONLY the CARD-owned field. This used to
-    // `delete globalThis.__skifree`, which destroyed the whole bridge including
-    // the FACTORY's `onGate` — and the factory registers that once at
-    // materialize and never runs again, so the card's remount rebuilt the bridge
-    // with `onGate: null` and GATE (this module's only trigger source) was dead
-    // for the life of the node while everything still LOOKED healthy.
-    // We leave window.SkiFree (the loaded bundle code) in place — re-mount reuses it.
-    releaseSkifreeCardState();
   });
 </script>
 
@@ -194,10 +217,18 @@
         data-testid="skifree-canvas"
       ></canvas>
 
-      {#if loadStatus === 'loading'}
-        <div class="skifree-overlay">Loading…</div>
-      {:else if loadStatus === 'error'}
-        <div class="skifree-overlay skifree-overlay-err">Bundle failed: {loadError}</div>
+      <!-- ⚠ THE FAILURE COMES OFF THE NODE'S SNAPSHOT, NOT OUT OF CARD STATE.
+           The card no longer loads the bundle, so it cannot know why a load
+           failed — and a permanent "Loading…" would be indistinguishable from a
+           slow network for anyone actually using it. `bundleError` rides the
+           payload this card already polls, so the report reaches whichever
+           surface exists, and none (harmlessly) when none does. -->
+      {#if snapshot?.bundleError}
+        <div class="skifree-overlay skifree-overlay-err" data-testid="skifree-load-error">
+          Bundle failed: {snapshot.bundleError}
+        </div>
+      {:else if !gameReady}
+        <div class="skifree-overlay" data-testid="skifree-loading">Loading…</div>
       {/if}
 
       <div class="skifree-hud" data-testid="skifree-hud">

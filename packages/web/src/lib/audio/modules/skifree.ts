@@ -39,7 +39,12 @@
 // (PONG's pattern); the game logic runs at rAF cadence inside the bundle.
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
-import { ensureSkifreeBridge, releaseSkifreeGate } from '../skifree-bridge';
+import {
+  ensureSkifreeBridge,
+  ensureSkifreeBundle,
+  releaseSkifreeController,
+  releaseSkifreeGate,
+} from '../skifree-bridge';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
 import { getSchedulerClock } from '$lib/audio/scheduler-clock';
 
@@ -91,23 +96,81 @@ export interface SkifreeSnapshot {
   gameOver: boolean;
   /** True when at least one of x/y is patched (CV overrides mouse). */
   cvDriven: boolean;
+  /**
+   * Has the NODE built its game yet? True from the moment `SkiFree.create()`
+   * returns, which is BEFORE the skier exists — see `gameStarted`.
+   *
+   * ⚠ THIS IS THE CARD'S "Loading…" CONDITION, and it is on the snapshot rather
+   * than in card state because the game belongs to the node: a card that
+   * mounted mid-load must show the same thing a card that mounted early shows.
+   */
+  gameCreated: boolean;
+  /**
+   * Has the skier ever actually MOVED? Latches true on the first non-zero
+   * distance and never goes back.
+   *
+   * ⚠ IT EXISTS BECAUSE `gameCreated` IS NOT ENOUGH TO TELL TWO FAILURES APART,
+   * and both look like "distance is 0". `SkiFree.create()` returns a controller
+   * SYNCHRONOUSLY, but the bundle only builds the player after two sprite-sheet
+   * PNGs decode (`loadImagesThen → buildGame`). So a zero distance means either
+   * "still booting" or "booted and not moving", and only a flag that survives
+   * the boot can separate them. Read it beside `distance` and the pair carries
+   * its own control:
+   *   created false                → still loading (or `bundleError` is set)
+   *   created true,  started false → booted-or-booting, skier has never moved
+   *   created true,  started true  → the run is real; a frozen distance now is
+   *                                  a genuine stall rather than a boot gap
+   */
+  gameStarted: boolean;
+  /**
+   * Why the game could not be loaded, or null when fine.
+   *
+   * ⚠ THE FAILURE REPORT LIVES ON THE NODE, NOT ON THE CARD. The card used to
+   * own the bundle load and render its own error overlay — but the card is not
+   * guaranteed to be mounted, so a card-only message is addressed to somebody
+   * who may not be there, and a `console.warn` plus a permanent "Loading…"
+   * spinner is indistinguishable from a slow network to anyone actually using
+   * it. Putting it on the payload the card already polls costs one field and
+   * reuses the existing `read` seam.
+   */
+  bundleError: string | null;
 }
 
-/** Bridge shape the card publishes on window.__skifree for the factory.
- *  The card owns the canvas + the loaded bundle's controller; the factory
- *  reads game state, pushes the CV cursor, and registers its gate-pulse
- *  callback. */
+/** Publication shape on `window.__skifree`.
+ *
+ *  ⚠ THE FACTORY OWNS EVERY FIELD. It used to own only `onGate` while the CARD
+ *  owned `controller` — two owners with different lifetimes sharing one object,
+ *  which is what #1590 was about. The card no longer creates, publishes or
+ *  disposes anything: the game's lifetime is the NODE's, so the factory that
+ *  already has exactly that lifetime owns it. See the header of
+ *  `$lib/audio/skifree-bridge` for what that collapse did and did not fix. */
 export interface SkifreeBridge {
   /** The bundle controller (window.SkiFree.create(...)), or null until the
-   *  bundle has loaded + the card created it. */
+   *  factory has loaded the bundle and created it. */
   controller: SkifreeController | null;
-  /** The factory sets this once at materialize; the card's controller calls
-   *  it on every crash/eaten event so the gate pulses. */
+  /** The factory sets this once at materialize; the controller calls it on
+   *  every crash/eaten event so the gate pulses. */
   onGate: ((evt: { type: 'crash' | 'eaten' }) => void) | null;
   /** The factory sets this true/false each tick; the card reads it to flip
    *  native mouse on/off (CV-driven → mouse off). */
   cvDriven: boolean;
 }
+
+/** The global the vendored bundle installs. Typed here because the bundle is
+ *  plain JS; the FACTORY is now its only caller. */
+export interface SkiFreeGlobal {
+  create(opts: {
+    canvas: HTMLCanvasElement;
+    width: number;
+    height: number;
+    spriteBase?: string;
+    onGate?: (evt: { type: 'crash' | 'eaten' }) => void;
+  }): SkifreeController;
+}
+
+/** Where the vendored bundle and its sprite sheets live under `static/`. */
+export const SKIFREE_BUNDLE_SRC = '/skifree/skifree.bundle.js';
+export const SKIFREE_SPRITE_BASE = '/skifree';
 
 /** Subset of the bundle controller's API this module relies on (the bundle
  *  is plain JS; this is the typed view). */
@@ -118,7 +181,21 @@ export interface SkifreeController {
   reset(): void;
   dispose(): void;
   getState(): {
-    distanceTravelled: number;
+    /**
+     * ⚠ A NUMBER *OR* A STRING, AND THE TYPE SAYS SO BECAUSE THE BUNDLE DOES
+     * BOTH. It is declared `0` at init and on reset, and every game tick then
+     * overwrites it with
+     * `parseFloat(pixels / 18).toFixed(1)` — and `.toFixed()` returns a
+     * STRING. So this field is `0` before the first tick and `"12.3"` after
+     * one, in the same run.
+     *
+     * It used to be typed `number` here, which is how `snapshot.distance`
+     * became a string that every consumer silently coerced. The union is not
+     * pedantry: it is what makes the `Number(...)` at the read site below
+     * visibly NECESSARY rather than looking like redundant defensive code
+     * somebody could tidy away.
+     */
+    distanceTravelled: number | string;
     livesLeft: number;
     crashes: number;
     eaten: number;
@@ -195,6 +272,19 @@ export const skifreeDef: AudioModuleDef = {
     const xTap = makeCvTap();
     const yTap = makeCvTap();
 
+    // ---- The game's handle, declared HERE so `drawFrame` closes over it ----
+    // Assigned asynchronously once the vendored bundle has loaded; see "THE
+    // GAME ITSELF" below for why the NODE owns it rather than the card.
+    let controller: SkifreeController | null = null;
+    /** Set by `dispose()`. Guards the in-flight bundle load from creating a
+     *  controller for a node that has already left the graph. */
+    let disposed = false;
+    /** Latches on the first non-zero distance — see `SkifreeSnapshot.gameStarted`. */
+    let gameStarted = false;
+    /** Why the bundle could not be loaded, surfaced on the snapshot so the card
+     *  can SHOW it instead of spinning forever. */
+    let bundleError: string | null = null;
+
     // A CV input is "patched" if its analyser sees a non-zero connection.
     // An unpatched AnalyserNode reads exactly 0 (no upstream node feeds it);
     // a patched-but-resting-at-0 CV is indistinguishable from unpatched,
@@ -222,8 +312,11 @@ export const skifreeDef: AudioModuleDef = {
     const vidAnalyser = ctx.createAnalyser();
     vidAnalyser.fftSize = 32;
     function drawFrame(target: OffscreenCanvas | HTMLCanvasElement): void {
-      const bridge = (globalThis as unknown as { __skifree?: SkifreeBridge }).__skifree;
-      const src = bridge?.controller?.canvas;
+      // Reads the FACTORY'S OWN controller through the closure rather than the
+      // global. It used to go through `globalThis.__skifree`, which is how a
+      // missing card turned this into a silent early return and the `out` port
+      // into a black frame nobody could attribute.
+      const src = controller?.canvas;
       if (!src) return;
       const c2d = target.getContext('2d') as
         | CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null;
@@ -254,19 +347,81 @@ export const skifreeDef: AudioModuleDef = {
     }
 
     // ---- Register the gate-pulse callback on the bridge -----------------
-    // The card's controller calls bridge.onGate({type}) on every event; we
-    // pulse the gate. Idempotent — re-materialize overwrites the prior fn.
-    function ensureBridge(): SkifreeBridge {
-      return ensureSkifreeBridge();
-    }
-    const bridge = ensureBridge();
+    // The controller calls bridge.onGate({type}) on every event; we pulse the
+    // gate. Idempotent — re-materialize overwrites the prior fn.
+    const bridge = ensureSkifreeBridge();
     bridge.onGate = (_evt) => { pulseGate(); };
+
+    // ---- THE GAME ITSELF — owned by the NODE, created here ---------------
+    //
+    // ⚠ THIS USED TO LIVE ON THE CARD, AND THAT WAS THE BUG. `SkifreeCard`
+    // was the only caller of `window.SkiFree.create()`, against its own
+    // `bind:this` canvas — so under the shipping shell, where an un-migrated
+    // module renders a PLACEHOLDER and the card exists only inside an open
+    // dock pane, a rack containing SKIFREE had no game at all until someone
+    // expanded it, and collapsing the pane destroyed the run.
+    //
+    // MEASURED on `/rack` with nothing expanded, before this change:
+    //   samples 45 / 368 ms · tick 0 -> 15 · distance 0 -> 0 · controller false
+    // — the scheduler tick advancing while the skier never moved, which is the
+    // engine being alive and the game not existing.
+    //
+    // ⚠ THE CANVAS IS DETACHED AND STAYS DETACHED. It is never appended to the
+    // document and the card must never re-parent it: a DOM node has exactly one
+    // parent, so adopting it into a card would hand the game's surface to a
+    // component that unmounts — the cameraInput trap, one seam over. The card
+    // BLITS from it (`controller.canvas` → its own visible canvas), which is
+    // the same canvas-to-canvas `drawImage` `drawFrame` above already does.
+    // The bundle never touches `document` (verified against the vendored file),
+    // so a detached canvas is fully sufficient for it to run.
+    if (typeof document !== 'undefined') {
+      // Guarded exactly like `spectrograph.ts` / `twotracks.ts`: an audio
+      // factory may be constructed in a node-env test with no DOM, and there
+      // the module is simply gameless rather than broken.
+      const gameCanvas = document.createElement('canvas');
+      gameCanvas.width = SKIFREE_CANVAS_SIZE;
+      gameCanvas.height = SKIFREE_CANVAS_SIZE;
+      void ensureSkifreeBundle()
+        .then((SkiFree) => {
+          // The node may have been removed while the bundle was in flight.
+          // Creating a controller for a dead node would leak a rAF loop that
+          // nothing ever disposes.
+          if (disposed) return;
+          controller = SkiFree.create({
+            canvas: gameCanvas,
+            width: SKIFREE_CANVAS_SIZE,
+            height: SKIFREE_CANVAS_SIZE,
+            spriteBase: SKIFREE_SPRITE_BASE,
+            onGate: (evt) => {
+              // Through the bridge, NOT straight to `pulseGate`, so a
+              // re-materialized node's newer callback wins — the identity
+              // discipline `releaseSkifreeGate` exists for.
+              const b = ensureSkifreeBridge();
+              if (b.onGate) b.onGate(evt);
+            },
+          });
+          ensureSkifreeBridge().controller = controller;
+        })
+        .catch((e: unknown) => {
+          // ⚠ RECORDED ON THE SNAPSHOT, NOT JUST LOGGED. A card-only overlay was
+          // the old answer and it is addressed to somebody who may not be
+          // mounted; a bare `console.warn` plus a permanent "Loading…" is
+          // indistinguishable from a slow network to anyone actually using it.
+          // The card polls this payload already, so the failure reaches
+          // whichever surface happens to exist — and none, harmlessly, when
+          // none does.
+          bundleError = (e as Error).message;
+          lastSnapshot = { ...lastSnapshot, bundleError };
+          console.warn(`[skifree] the game bundle failed to load: ${bundleError}`);
+        });
+    }
 
     // ---- Per-tick state -------------------------------------------------
     let tick = 0;
     let lastSnapshot: SkifreeSnapshot = {
       tick: 0, distance: 0, lives: 5, crashes: 0, eaten: 0,
       lastEvent: null, gameOver: false, cvDriven: false,
+      gameCreated: false, gameStarted: false, bundleError: null,
     };
 
     const tickFn = () => {
@@ -278,7 +433,10 @@ export const skifreeDef: AudioModuleDef = {
       const b = (globalThis as unknown as { __skifree?: SkifreeBridge }).__skifree;
       if (b) {
         b.cvDriven = cvDriven;
-        const ctl = b.controller;
+        // The FACTORY'S OWN handle, not `b.controller` — the bridge is a
+        // publication for the card and the e2e, never this node's source of
+        // truth about its own game.
+        const ctl = controller;
         if (ctl) {
           // CV OVERRIDES mouse: when an axis is patched, write the CV cursor.
           // When neither is patched the card's native-mouse path drives the
@@ -290,18 +448,32 @@ export const skifreeDef: AudioModuleDef = {
             );
           }
           const gs = ctl.getState();
+          // ⚠ COERCED AT THE BOUNDARY, ONCE. `distanceTravelled` is `0` before
+          // the first game tick and a `.toFixed(1)` STRING after it (see the
+          // type above), so `snapshot.distance` was a number-or-string that
+          // every consumer coerced by accident — the HUD by interpolation, this
+          // latch by `>`, and any future arithmetic by luck. One `Number()`
+          // here makes the published type true for everyone downstream.
+          const distance = Number(gs.distanceTravelled) || 0;
+          // LATCHES, never unlatches — "has this run ever been real" is a
+          // different question from "is it moving right now", and only the
+          // latched form can tell a boot gap from a stall.
+          if (distance > 0) gameStarted = true;
           lastSnapshot = {
             tick,
-            distance: gs.distanceTravelled,
+            distance,
             lives: gs.livesLeft,
             crashes: gs.crashes,
             eaten: gs.eaten,
             lastEvent: gs.lastEvent,
             gameOver: gs.gameOver,
             cvDriven,
+            gameCreated: true,
+            gameStarted,
+            bundleError,
           };
         } else {
-          lastSnapshot = { ...lastSnapshot, tick, cvDriven };
+          lastSnapshot = { ...lastSnapshot, tick, cvDriven, gameCreated: false, bundleError };
         }
       }
     };
@@ -323,17 +495,29 @@ export const skifreeDef: AudioModuleDef = {
       readParam(_paramId) { return undefined; },
       read(key) {
         if (key === 'snapshot') return lastSnapshot;
+        // The card reaches the game THROUGH THE NODE rather than through the
+        // global, so mouse steering is scoped to the node it is drawn on and
+        // does not depend on a single-instance global being the right one.
+        if (key === 'controller') return controller;
         return undefined;
       },
       dispose() {
+        // ⚠ THE ONLY TEARDOWN THE GAME HAS, AND IT IS KEYED TO THE GRAPH.
+        // `dispose` runs when the node LEAVES the graph — deleted, cleared,
+        // undone, or replaced by a patch load — and nowhere else. A card
+        // unmounting is not one of those, which is the whole point: there is
+        // deliberately no card-facing release, so a future `onDestroy` cannot
+        // reach the controller and `tsc` refuses the attempt.
+        disposed = true;
         unsubscribe();
         try { gateSrc.stop(); } catch { /* */ }
         try { gateSrc.disconnect(); } catch { /* */ }
         xTap.node.disconnect();
         yTap.node.disconnect();
         try { vidAnalyser.disconnect(); } catch { /* */ }
-        // Detach our gate callback from the bridge (the card owns the
-        // controller's lifecycle + clears window.__skifree on unmount).
+        try { controller?.dispose(); } catch { /* */ }
+        releaseSkifreeController(controller);
+        controller = null;
         releaseSkifreeGate(bridge.onGate);
       },
     };
