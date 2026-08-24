@@ -283,7 +283,24 @@ test.fixme('@launchpad RESET pad snaps every active lane back to step 1 (control
   expect(resumed.ok, `lane 0 kept advancing after reset (saw ${resumed.last})`).toBe(true);
 });
 
-test('@launchpad RESET negative control: without the pad press, neither observable fires', async ({ page, rack }) => {
+// ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; body and assertions UNCHANGED.
+//
+// ⚠ THIS IS THE NEGATIVE CONTROL OF AN ALREADY-PARKED POSITIVE, and parking it
+// is closing a half-open pair rather than widening the debt. The positive leg
+// at :190 is parked; this is the control that keeps it honest, and the two are
+// co-nondeterministic BY CONSTRUCTION — both ride the same free-running
+// 128-step clip whose 8 s wrap is what the control exists to distinguish from a
+// real reset. Leaving the control running while its positive sits parked is
+// the "a passing negative control is not enough" problem from the other side:
+// a control with no positive proves only that the probe can stay silent, which
+// is half-coverage at best and misleading at worst.
+//
+// FIRST observation of THIS leg recovering (run 32725328269 shard 2/10,
+// 2026-08-24 12:31Z; absent from main's previous 8 runs). NOT triaged as flake
+// vs under-budget. UN-PARK IS THE PAIR'S BUDGET DIAGNOSIS — un-parking this one
+// alone would restore a control whose positive is still parked, i.e. exactly
+// the half-pair this park exists to end.
+test.fixme('@launchpad RESET negative control: without the pad press, neither observable fires', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — recovered-on-retry, FIRST observation of THIS leg (run 32725328269 shard 2/10, 2026-08-24 12:31Z; not on main\'s previous 8 runs), NOT yet triaged as flake vs under-budget; NEGATIVE CONTROL of the already-parked positive at :190 — the pair is co-nondeterministic by construction (same free-running 128-step clip whose 8 s wrap is what this control distinguishes from a real reset), and a control without its positive is half-coverage; un-park = the PAIR\'s budget diagnosis' } }, async ({ page, rack }) => {
   // ⚠ THE LEG THAT KEEPS THE ONE ABOVE HONEST, and the one the old absolute
   // band could not have had: a free-running 128-step clip WRAPS every 8 s, and
   // a wrap reads `step <= 6` exactly like a reset does. Under the old

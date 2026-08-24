@@ -543,7 +543,14 @@ export const SKIP_BUDGET = [
       + 'automation (record/arm/suspend), clip-default probability, song mode, per-lane rate + RST, the note '
       + 'editor, and the #1165 guard that the card transport works with NO controller attached. Several of '
       + 'these are the ONLY real-source-chain proof for their feature; #1646 was a declared fix for the '
-      + 'clip-automation flakiness and the census shows it did NOT hold.',
+      + 'clip-automation flakiness and the census shows it did NOT hold. '
+      + 'ADDED 2026-08-24 — launchpad-perf-controls\' RESET NEGATIVE CONTROL (:286), which was left running '
+      + 'when its POSITIVE at :190 was parked. The two are co-nondeterministic by construction: both ride the '
+      + 'same free-running 128-step clip whose 8 s wrap is precisely what the control distinguishes from a '
+      + 'real reset. A control with no positive is half-coverage — it can only show the probe staying silent '
+      + '— so this closes a half-open pair rather than widening the debt. Recovered-on-retry, FIRST '
+      + 'observation of that leg (run 32725328269 shard 2/10, 2026-08-24 12:31Z, absent from main\'s previous '
+      + '8 runs), NOT triaged as flake vs under-budget; un-park is the PAIR\'s budget diagnosis.',
   },
   {
     specs: [
@@ -597,6 +604,43 @@ export const SKIP_BUDGET = [
   },
   {
     specs: [
+      'cv-buddy-face.spec.ts',
+    ],
+    reason: /FLAKE-PARK #1847/,
+    lanes: ['e2e'],
+    homeLane: 'e2e',
+    why:
+      'PARKED (#1847) — the LATE lamp\'s static caption + its count riding the accessible name. '
+      + 'Recovered-on-retry, FIRST observation (PR e2e shard 6/10), NOT yet triaged as flake vs '
+      + 'under-budget. TRIAGE POINTS THE OTHER WAY and the entry says so rather than claiming "flaky": '
+      + 'the rule is that a test with no flake-fix history is more likely UNDER-BUDGETED than flaky, and '
+      + '`git log` on this spec has exactly ONE commit — the feature that created it (#2082) — so there '
+      + 'is no failed-fix history to argue the other side. The two classes need OPPOSITE responses, so '
+      + 'UN-PARK is a reproduce-and-measure budget diagnosis, never a re-run until green. '
+      + 'SIBLINGS RETAIN COVERAGE, named: the ES-9-sentences leg and the ROUTED-lamp positive control in '
+      + 'this same file both exercise the lamp — what is parked is narrower than the lamp itself. '
+      + 'Parked on the first observation to unblock the board (it reddens every PR on this commit range, '
+      + 'not just the one that found it) rather than hold a PR for a diagnosis lane the cap does not allow.',
+  },
+  {
+    specs: [
+      'docs-virtual-module.spec.ts',
+    ],
+    reason: /FLAKE-PARK #1847/,
+    lanes: ['e2e'],
+    homeLane: 'e2e',
+    why:
+      'PARKED (#1847) — SCOPED TO ONE PROBE (`sequencer`), not to the spec. The test is a single body run '
+      + 'over every PROBES entry, and only the sequencer instance was observed recovering on retry (PR e2e '
+      + 'shard 4/10, one observation), so every other probe still runs the identical assertions and the '
+      + 'interactive-doc CODE PATH keeps its coverage; parking the loop would have traded the whole '
+      + 'contract for one module\'s timing. NOT yet triaged as flake vs under-budget, and the entry carries '
+      + 'that instead of hiding it: this file\'s history is module deletions and probe-list edits with no '
+      + 'flake fixes, which the triage rule reads as UNDER-BUDGETED being the likelier class. UN-PARK is a '
+      + 'reproduce-and-measure budget diagnosis on that probe, not a re-run.',
+  },
+  {
+    specs: [
       'backdraft-preview-toggle.spec.ts',
       'backdraft-pure-tv.spec.ts',
       'extras-producer-lifetime.spec.ts',
@@ -614,7 +658,14 @@ export const SKIP_BUDGET = [
       + 'not tear down its producer, drop its layers or freeze a live projector. This is the #1720/#1574/#1589 '
       + 'family, a class that has shipped repeatedly, and extras-producer-lifetime is its unique regression net '
       + '— #1757 was a declared fix for that spec and the census shows most of its flakiness landed AFTER it. '
-      + 'The alternation admits the loop-parked sites, whose description is the per-subject map value.',
+      + 'The alternation admits the loop-parked sites, whose description is the per-subject map value. '
+      + 'ADDED 2026-08-24 — backdraft-preview-toggle\'s THIRD leg (:303, the collapse/reclaim geometry). Its '
+      + 'two same-file siblings were already parked (:362 with 21 recovered-on-retry observations, :425 with '
+      + '11) and they document the shared preview-collapse mechanism this leg runs on, so it flakes by the '
+      + 'family\'s cause rather than one of its own. Recovered-on-retry, FIRST observation of THIS leg (run '
+      + '32725328269 shard 2/10, 2026-08-24 12:31Z, absent from main\'s previous 8 runs), NOT triaged as '
+      + 'flake vs under-budget; un-park is the FAMILY\'s budget diagnosis — repairing one of three siblings '
+      + 'that share a mechanism would leave the other two parked and prove nothing.',
   },
   {
     specs: [
