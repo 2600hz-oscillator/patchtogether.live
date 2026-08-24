@@ -259,10 +259,25 @@ its evidence, which is what the class asks for.
 blocker, stated by someone who was not thinking about promotion.** See below.
 
 `kria` has no such entry and none of the un-faced-fixture comments
-(`workflow-rear-card.spec.ts:672`, `midi-binding-node-lifetime.spec.ts`,
-`extras-producer-lifetime.spec.ts`, `workflow-shell.spec.ts:270`) names it; the ones
-that pick a subject derive it from `STRICT_FACES` rather than hard-coding, which is the
-repaired form.
+(`midi-binding-node-lifetime.spec.ts`, `extras-producer-lifetime.spec.ts`,
+`workflow-shell.spec.ts:270`) names it; the ones that pick a subject derive it from
+`STRICT_FACES` rather than hard-coding, which is the repaired form.
+
+⚠ **This section was re-checked against `main` after #2166 merged mid-authoring, and one
+claim changed.** The original #2166 case — `workflow-rear-card.spec.ts` pinning the
+legacy dock pane using `scope`, *chosen because it was un-faced* — is now **fixed and
+shipped**, not in flight. The repaired mechanism is
+`LEGACY_DOCK_CANDIDATES = ['moog956', 'moog960', 'cartesian']`
+(`workflow-rear-card.spec.ts:738`): a small NAMED, ordered set scanned against the
+registry's own `strictFace`, first un-faced wins, anchored so it reddens when the fleet
+exhausts it. **None of this wave's three is a member**, so no spec here inherits that
+hazard — and the candidates are named rather than derived from a bare registry scan on
+purpose, so a pool can never wander onto a hardware device module or onto DOOM.
+
+All three modules were re-verified on the post-merge tree: still absent from
+`STRICT_FACES`, still listed as `bespoke-surface` in
+`docs/design/face-migration.generated.md` (`:204`, `:218`, `:245`), all three still
+blocker-free.
 
 ---
 
