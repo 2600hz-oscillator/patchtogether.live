@@ -21,7 +21,7 @@ the question the roster is actually stuck on: **can a step grid live on a facepl
 | outputs are `pitch*` / `gate*`, no `audio` | `kria.ts:68-77` | `primaryAudioOutPortId` is null ⇒ every glyph literal → dead static. **Mechanically protected** (§4) |
 | the def already declares a `kind: 'cell'` control family | `kria.ts:118-120` | the note-entry blocker does not apply — §0.3 |
 | every unreachable control already has a typed roster or range | `kria-types.ts:76-125` | the face invents no vocabulary — §5 |
-| the card reaches four of the module's per-step lanes and none of its per-track ones | `KriaCard.svelte`, exhaustively | §2.1, the defect that dominates the page |
+| the card reaches `trig`/`note`/`octave`/`duration` and nothing else | `KriaCard.svelte`, exhaustively | §2.1, the defect that dominates the page |
 | `running` defaults to 0 | `kria.ts:84` | a fresh spawn is STOPPED ⇒ deterministic by default (§11) |
 | zero WebGL attest | measured, §10.1 | free |
 
@@ -76,13 +76,13 @@ Three things make this worth a section rather than a ledger row:
    See the wave README — this is the wave-level finding, and `kria` is its clearest
    instance because the un-undoable surface here is the entire instrument.
 3. **The fix is one argument.** `ydoc.transact(fn, LOCAL_ORIGIN)`. It is folded into
-   this PR (§12 D1) and it does not depend on the platform question.
+   this PR (§11 D1) and it does not depend on the platform question.
 
 ⚠ **Verify the fix, do not assume it.** Coalescing matters: `captureTimeout: 500`
 (`store.ts:69`) means a run of quick cell clicks becomes ONE undo step. That is
 probably right for a drag across a row and probably wrong for two deliberate edits
 four seconds apart, and it is a behaviour nobody has looked at because the feature has
-never worked. §14 makes it a MUST-VERIFY rather than a hope.
+never worked. §13 makes it a MUST-VERIFY rather than a hope.
 
 ### 0.3 THE NOTE-ENTRY BLOCKER DOES NOT APPLY, AND THE REGISTRY'S OWN TEXT SAYS WHY
 
@@ -151,7 +151,7 @@ solves this with pages. The card solves a quarter of it. §5 is the face's answe
 **No — and the honest finding is the reverse. Promotion is the first time most of this
 module becomes reachable at all.**
 
-### 2.1 ⚠ THE CARD CAN EDIT FOUR OF THE MODULE'S TWELVE PER-TRACK BEHAVIOURS
+### 2.1 ⚠ THE CARD CAN EDIT `TRIG`, `NOTE`, `OCTAVE` AND `DURATION`. THAT IS ALL OF IT.
 
 Enumerated exhaustively from `KriaCard.svelte`'s markup (`:235-342`), not from memory.
 The card's entire body is: four track buttons, four page buttons plus `PAT`, either the
@@ -189,7 +189,7 @@ anyone who does not own a monome grid.
 ⚠ **The face is the fix, and this is the rare case where "promotion fixes it" is
 true — but not for free.** The rule stands: a face does not pay a card's debt, because
 the legacy card still renders under `?shell=legacy` and in the per-card VRT sweep. So
-§12 routes each item explicitly, and the SCALE tag (§12 D4) is fixed on the card too.
+§11 routes each item explicitly, and the SCALE tag (§11 D4) is fixed on the card too.
 
 ### 2.2 THE GESTURES THAT DO EXIST, AND ALL OF THEM SURVIVE
 
@@ -243,7 +243,7 @@ Yes, and the `data`-shaped ones get a better seam than they have.
   `raw-write-ledger` entry exists and none is owed.
 * **The sequencer** routes `writeData` → §0.2 → gets `LOCAL_ORIGIN`.
 * **The monome grid** writes through `lib/control/monome/kria-grid.svelte.ts`, which
-  is **outside the card entirely** and unaffected by promotion. ⚠ MUST-VERIFY (§14.6):
+  is **outside the card entirely** and unaffected by promotion. ⚠ MUST-VERIFY (§13.6):
   the grid path and the face must write the same keys through the same helper, or a
   face edit and a grid edit will disagree about the pattern bank. They share
   `kria-types.ts`'s pure mutators (`toggleTrig`, `setNote`, `setOctave`, `setDuration`)
@@ -274,7 +274,7 @@ is one assignment:
   reason.
 * every click sends the whole pattern over the wire.
 
-**Fold into this PR** (§12 D2). The fix is to write at the LANE-STEP path
+**Fold into this PR** (§11 D2). The fix is to write at the LANE-STEP path
 (`d.patterns[slot].tracks[t].trig[step] = …`) rather than replacing the pattern —
 `KriaPatternBank` is already a string-keyed record precisely so Yjs supports keyed
 assignment (`kria-types.ts:135-140`), so the mechanism is present; only the write site
@@ -400,7 +400,7 @@ when an honest grouping lands under the threshold.
 | `timeDivision` | **`selector`** over `KRIA_TIME_DIVISIONS` | a declared roster of eight irregular values (`1,2,3,4,6,8,12,16`) — **not** a continuous range. A knob would let a user land between two legal divisions |
 | `direction` | **`selector`** over `KRIA_DIRECTIONS` | five named modes. The names disambiguate; the positions do not |
 | `mute` | **`toggle`** cell | boolean |
-| `scale` | **`selector`** over `KRIA_SCALE_PRESETS` | ⚠ and this REPLACES the card's read-only text tag (§12 D4) |
+| `scale` | **`selector`** over `KRIA_SCALE_PRESETS` | ⚠ and this REPLACES the card's read-only text tag (§11 D4) |
 | `root` | **`selector`** over note names | ⚠ **not a raw MIDI number.** The stored value is MIDI (48 = C3), but a face that made a user pick `48` would be a worse instrument than the hardware. The roster is note names; the cell writes the MIDI int |
 | GRID connect | **`action`**, `mode: 'trigger'`, `data` probe | §2.3 |
 
@@ -482,7 +482,7 @@ setting in component state and probing it; **the honest answer here is probably 
 `node.data` key written with a NON-tracked origin** — synced and durable, but not on
 the Cmd-Z stack, so undo walks back through your edits rather than through your
 clicks. `mutateNode` takes `{ origin }` for exactly this (`mutate.ts:60-62`).
-**This is a judgement; §13 gives it a revert.**
+**This is a judgement; §12 gives it a revert.**
 
 ### 6.4 THE PAGE SELECTOR EXTENDS TO EVERY LANE
 
@@ -492,7 +492,7 @@ grid with its own `cellOn` / `onCell` interpretation, exactly as the four existi
 pages already do.
 
 * `probability` — four levels (`1, 0.5, 0.25, 0`), so four of the seven rows are
-  meaningful. ⚠ **Do not alias the other three** — that is D3's bug (§12). Either use
+  meaningful. ⚠ **Do not alias the other three** — that is D3's bug (§11). Either use
   four rows and leave three inert-and-visibly-inert, or map the seven rows onto the
   four levels with an explicit, tested rounding. Pick one and assert it.
 * `ratchet` — 1..4, same shape, same warning.
@@ -762,7 +762,7 @@ signal about the change, not about the test.
 
 | | |
 |---|---|
-| the face declaration, three bands, nine registry cells importing their rosters | ≈ 4 h |
+| the face declaration, three bands, the registry cells, each importing its roster | ≈ 4 h |
 | `KriaGridBody` — two views, seven pages, the selection in `node.data` | ≈ 5 h |
 | the card defect fixes (D1, D2, D3, D4, D6, D7) + the manifest correction (D5) | ≈ 3 h |
 | `kria-face-model` with states 4 and 6 as permanent negative controls | ≈ 2 h |

@@ -19,11 +19,11 @@ only one whose face has a **measured** problem to solve rather than an aesthetic
 | `out_l` / `out_r` are `type: 'audio'` | `twotracks.ts:225-226` | `primaryAudioOutPortId` resolves ⇒ a glyph literal is **LIVE and legal**. Unprotected — §4 |
 | the transport is an engine MESSAGE, not a param | `TwotracksCard.svelte:232-237`; `twotracks.ts:613` | maps onto `ShellActionCell` — and the probe key already exists (§3.1) |
 | the engine already mirrors `transportState_a/b` into `node.data` | `twotracks.ts:444-454` | the `data` probe is free |
-| ~28 live params across two symmetric reels plus a mix | `twotracks.ts:249-288` | the wave's only control-heavy module — §5.2 |
+| a large param set: two symmetric reels plus a global mix | `twotracks.ts:249-288` | the wave's only control-heavy module — §5.2 |
 | **measured mount cost**: exceeds a 5 s budget; needs `HEAVY_MOUNT_TIMEOUT = 30_000`; a 30 s `boundingBox` timeout in the fixture bridge | `io-spec-consistency.spec.ts:173-182`; `_face-fixtures.ts:74-77` | §5.3 — the face has a number attached |
 | every param write already routes `setNodeParam` | `TwotracksCard.svelte:6`, and every call site | exemplary. No ledger entry owed |
-| no committed VRT baseline | `vrt-exemptions.ts:1062` | §11 |
-| zero WebGL attest | measured, §10.1 | free |
+| no committed VRT baseline | `vrt-exemptions.ts:1062` | §9 |
+| zero WebGL attest | measured, §8.1 | free |
 
 ### 0.1 ⚠ THE BLOCKER: TWO PARAMS IN THE PUBLIC CONTRACT THAT NOTHING IMPLEMENTS
 
@@ -71,8 +71,11 @@ blindly. It rides this PR (fix-plus-face is one PR) but it is called out here be
   written against the real param set;
 * ⚠ **check saved racks.** A persisted patch may carry `params.playhead_a`. Since
   nothing reads it, dropping it is inert — but *verify* that rather than assume it, and
-  confirm the loader does not reject unknown keys. §14.
-* ⚠ **it moves the ART source pin** (§10.2), because ART pins the raw file SHA.
+  confirm the loader does not reject unknown keys. §12.
+* ⚠ **and there is NO ART capture to corroborate the deletion against** (§8.2). The
+  strongest evidence a param is inert is that removing it does not move a captured
+  waveform — this module has no baseline, so that evidence is unavailable and the search
+  has to carry the whole weight.
 
 **Alternative, and it should be rejected explicitly rather than left open:** wire the
 params to the scrub. Do not. The scrub is a live engine seek (`port.postMessage({type:
@@ -113,7 +116,7 @@ the most affordance-dense in the wave, so this is enumerated rather than summari
 
 | affordance | element | survives? |
 |---|---|---|
-| ~28 param knobs / faders | `Knob`/`NeonFader`, all via `setNodeParam` | **YES** — cells |
+| every param knob / fader | `Knob`/`NeonFader`, all via `setNodeParam` | **YES** — cells |
 | REC / PLAY / STOP × 2 reels | `sendTransport` → worklet port (`:232-237`, `:474-481`, `:631-638`) | **YES** — `action` cells, §3.1 |
 | MODE toggle (TAPE / LOOP TAPE) × 2 | `toggleModeA/B` (`:253`, `:298`) | **YES** — a 0/1 discrete param, inferred toggle |
 | OVERDUB toggle × 2 | `toggleOverdubA/B` (`:254`, `:299`) | **YES** — same |
@@ -479,7 +482,7 @@ Contents, all of which the card already draws (`drawWaveform`, `:343-421`):
 
 ⚠ **2D canvas, and it must stay 2D.** Attest basis rule (2) is derived from CONTENT, so
 a WebGL waveform would enrol this module in the basis and make every future edit cost a
-GPU re-attest (§10.1). The existing draw is 2D; reuse it.
+GPU re-attest (§8.1). The existing draw is 2D; reuse it.
 
 ⚠ **Visibility-gate the draw.** The card runs a rAF peak poll (`:103-105`) and a
 reactive redraw with no visibility gate. On a dock face that loop must stop when the
@@ -727,7 +730,7 @@ git diff packages/web/src/lib/docs/contract-lock.txt
 flox activate -- task e2e:serve
 REPEAT=3 flox activate -- task e2e:one -- tests/twotracks.spec.ts
 REPEAT=3 flox activate -- task e2e:one -- tests/twotracks-stereo.spec.ts
-REPEAT=3 flox activate -- task e2e:one -- tests/twotracks-perfzip.spec.ts   # ⚠ §14.2 — the save/load path
+REPEAT=3 flox activate -- task e2e:one -- tests/twotracks-perfzip.spec.ts   # ⚠ §12.2 — the save/load path
 REPEAT=3 flox activate -- npx --workspace e2e playwright test faces-parity --grep twotracks
 REPEAT=3 flox activate -- task e2e:one -- tests/io-spec-consistency.spec.ts # §5.3 — the mount budget
 flox activate -- task e2e:stop

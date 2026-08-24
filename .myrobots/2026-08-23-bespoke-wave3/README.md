@@ -203,8 +203,8 @@ today and independent of any face**:
   (`:146-165`) is never cleared on destroy — it can outlive the card by up to its full
   retry window and write `$state` after unmount, which is the
   card-unmount-kills-node-resources class from the other side.
-* **`kria`** — the card can edit **four** of the module's per-step lanes and none of its
-  per-track ones. `ratchet`, `probability`, `glide`, `loopStart`, `loopLength`,
+* **`kria`** — the card can edit `trig`, `note`, `octave` and `duration`, and **nothing
+  else**. `ratchet`, `probability`, `glide`, `loopStart`, `loopLength`,
   `timeDivision`, `direction`, `muted`, `scale` and `root` are all documented in the
   def's own `docs.explanation`, all implemented in the engine (glide `kria.ts:253-260`,
   probability `:267-268`, ratchet `:277-285`), and **all unreachable from the card** —

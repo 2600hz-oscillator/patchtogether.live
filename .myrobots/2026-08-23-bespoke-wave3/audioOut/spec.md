@@ -457,7 +457,7 @@ control bands, replaces the hero glyph — and **leaves every param cell intact*
   fleet-wide on 2026-08-19.
 * **Visibility-gated.** The draw loop must not run when the body is not on screen. The
   legacy card has no equivalent loop to copy, so this is new code and gets it right the
-  first time; `kria`'s spec (§12) documents what the ungated version costs.
+  first time; `kria`'s spec (§11 D6) documents what the ungated version costs.
 
 ### 6.3 ⚠ SCREEN ON/OFF — and `audioOut` is on the "no" side of it
 
