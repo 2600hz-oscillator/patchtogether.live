@@ -608,6 +608,86 @@ export function canvasNode(page: Page, id: string) {
   return page.locator(`${MAIN_CANVAS} .svelte-flow__node[data-id="${id}"]`);
 }
 
+/**
+ * Every LANE TILE's LOD tier attribute, **scoped to the main canvas**.
+ *
+ * ⚠ THIS EXISTS BECAUSE A BARE `document.querySelectorAll('[data-shell-tier]')`
+ * STOPPED MEANING "THE LANE TILES", AND IT DID SO WITHOUT ANY SPEC CHANGING.
+ * `[data-shell-tier]` is stamped by `ModuleShell`, and until 2026-08-24 a
+ * `ModuleShell` only ever existed in a lane tile or in a dock full view that a
+ * test had deliberately opened. Promoting `audioOut` broke that premise
+ * PASSIVELY: one instance of it is PINNED, its only surface is the topbar 🎧
+ * panel, and **that panel is always MOUNTED** — it stays in the DOM whether the
+ * menu is open or shut, because `AudioinCard` owns the live input stream and
+ * closing the menu must not kill the rack's audio input. So on the DEFAULT
+ * shell a `<ModuleShell view="drawer" tier="dock">` is now in the DOM of every
+ * page, at all times, and it is not a lane tile.
+ *
+ * MEASURED, four shards on one push, two distinct mechanisms:
+ *   * `tiles.every(el => tier === t)` NEVER became true — the panel's tier is
+ *     permanently `dock` while the lane walks its LOD ladder — so four copies of
+ *     the same `setLaneTier`/`setZoomTier` helper hit their 10 s timeout
+ *     (`workflow-shell`, `ringback-face`, `delay-face`, `vca-face`);
+ *   * `measureTiles` counted the panel's faceplate as a tile and reported two
+ *     distinct widths where the assertion wants one.
+ *
+ * ⚠ THE DUPLICATION IS THE REASON ONE PRODUCT CHANGE COST FOUR SHARDS. That
+ * helper had been copy-pasted into four specs, so there was no single place to
+ * fix. It has one now, for the same reason `canvasPane`/`canvasNode` above have
+ * one: the discriminator is subtle (a CHILD combinator), and a subtle
+ * discriminator re-derived per spec is a defect waiting for its next occupant.
+ *
+ * ⚠ AND `:not([data-shell-view="drawer"])` IS NOT THE FIX, though it would go
+ * green today. It names the panel's *rendering mode* rather than *where the
+ * thing is*, so it would also exclude a genuine drawer-tray tile a future spec
+ * wants to measure, and it says nothing about the next surface that mounts a
+ * shell outside the canvas. Scoping to the canvas states the actual subject.
+ */
+export const LANE_SHELL_TIER = `${MAIN_CANVAS} [data-shell-tier]`;
+
+/**
+ * EVERY LANE TILE — a migrated `module-shell` or an un-migrated
+ * `module-shell-placeholder` — **scoped to the main canvas**, for the same
+ * reason as `LANE_SHELL_TIER` above.
+ *
+ * ⚠ THE UNSCOPED FORM FAILS TWO DIFFERENT WAYS, and only one of them is loud.
+ * A COUNT taken as a DELTA (`before` … `toHaveCount(before + 1)`) survives the
+ * extra element, because the constant cancels — but the pinned singletons are
+ * ensured ASYNCHRONOUSLY, so a `before` read before the 🎧 panel's faceplate
+ * mounts is satisfied by that mount rather than by the drop under test, and the
+ * geometry read that follows races a tile that is not there yet. A COUNT taken
+ * as a FLOOR (`not.toHaveCount(0)`) simply stops being able to fail.
+ */
+export const LANE_TILES =
+  `${MAIN_CANVAS} [data-testid="module-shell-placeholder"], ` +
+  `${MAIN_CANVAS} [data-testid="module-shell"]`;
+
+/**
+ * Wait until every LANE tile reports LOD tier `tier`.
+ *
+ * Page-side by construction (one `waitForFunction`, not a Playwright poll loop),
+ * and it reports what it SAW on timeout rather than only that it timed out —
+ * the failure this replaces said nothing about which tile was holding out.
+ */
+export async function waitForLaneTier(
+  page: Page,
+  tier: string,
+  timeout = 10_000,
+): Promise<void> {
+  await page.waitForFunction(
+    ({ sel, t }) => {
+      const tiles = Array.from(document.querySelectorAll(sel));
+      if (tiles.length === 0) return false;
+      const seen = tiles.map((el) => el.getAttribute('data-shell-tier'));
+      const w = globalThis as unknown as { __laneTierSeen?: (string | null)[] };
+      w.__laneTierSeen = seen; // readable from a failing test's trace
+      return seen.every((s) => s === t);
+    },
+    { sel: LANE_SHELL_TIER, t: tier },
+    { timeout },
+  );
+}
+
 // ---------------- Module palette (right-click) helper ----------------
 
 /**

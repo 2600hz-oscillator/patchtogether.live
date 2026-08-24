@@ -111,6 +111,33 @@
   let holdR = 0;
   const HOLD_DECAY_PER_FRAME = 0.006;
 
+  /**
+   * Is this canvas actually being SHOWN?
+   *
+   * ⚠ `onMeterFrame`'s gate CANNOT ANSWER THIS, and on this module that matters
+   * more than on any other meter in the fleet. It skips a subscriber only when
+   * `IntersectionObserver` says it is off-screen or the document is hidden —
+   * and neither sees `opacity: 0` or `visibility: hidden`. The 🎧 topbar panel
+   * that holds the PINNED audio out is always MOUNTED and closes by toggling
+   * exactly those two properties (never `display:none`, deliberately, so the
+   * host stays measurable for its ResizeObserver). It is also absolutely
+   * positioned under the topbar, i.e. squarely IN the viewport.
+   *
+   * So without this the meter repaints on EVERY default-shell page, forever,
+   * with the panel shut — which is precisely the cost `meter-frame.ts` exists to
+   * remove ("a card scrolled out of view stops reading its analyser and
+   * repainting"). `checkVisibility` is the one API that folds CSS visibility AND
+   * opacity into the answer; where it is unavailable the behaviour is unchanged,
+   * so this can only ever remove work.
+   */
+  function isShown(c: HTMLCanvasElement): boolean {
+    const check = (c as HTMLCanvasElement & {
+      checkVisibility?: (o?: { checkVisibilityCSS?: boolean; opacityProperty?: boolean }) => boolean;
+    }).checkVisibility;
+    if (typeof check !== 'function') return true;
+    return check.call(c, { checkVisibilityCSS: true, opacityProperty: true });
+  }
+
   function paint(c: HTMLCanvasElement, lv: TerminalLevels | null): void {
     const rect = c.getBoundingClientRect();
     if (rect.width < 2 || rect.height < 2) return;
@@ -195,6 +222,9 @@
       const c = canvasEl;
       const n = node;
       if (!c) return;
+      // Nothing to draw for a canvas nobody can see — and no engine read
+      // either, since the read is the expensive half.
+      if (!isShown(c)) return;
       const eng = n ? engineCtx.get() : null;
       const next = eng && n ? readTerminalLevels((key) => eng.read(n, key)) : null;
       levels = next;

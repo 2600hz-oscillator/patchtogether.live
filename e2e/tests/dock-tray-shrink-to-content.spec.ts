@@ -185,8 +185,36 @@ test.describe('#1573 expanded tray hugs its content', () => {
 
     // Read off the element, never a typed constant — the rule is "no floor", so the
     // assertion is about the DECLARATION rather than about any particular number.
+    // ⚠ SCOPED TO THE TRAY PANE — the same root `trayGeometry` above uses.
+    //
+    // ⚠ AND THE FIRST VERSION OF THIS COMMENT WAS WRONG, WHICH IS WHY THE
+    // CORRECTION IS RECORDED RATHER THAN QUIETLY APPLIED. It claimed that
+    // promoting `audioOut` had put a second `.faceplate-body` on the page (in
+    // the always-mounted 🎧 topbar panel) and that this bare `querySelector`
+    // was therefore silently measuring the wrong module. MEASURED, and it is
+    // NOT TRUE: `<div class="faceplate-body">` is emitted in exactly ONE place
+    // in the tree — `DockFullView.svelte` — and the 🎧 panel mounts through
+    // `DockCardHost`, which renders `section.dock-card` → `[data-dock-card-frame]`
+    // → `<ModuleShell view='drawer'>` and never a `.faceplate-body` at all (it
+    // only NAMES the class, in a comment). The panel is invisible to this
+    // selector, before and after that promotion.
+    //
+    // The scoping stays, for the reason that IS real: this file opens a SPLIT
+    // view further down, so "the first `.faceplate-body` in the document" is
+    // ambiguous by this spec's own construction rather than by anything a
+    // module promotion did. Naming the pane makes the subject explicit, and the
+    // two throws below turn "there was nothing to measure" into a loud failure
+    // instead of a `null` deref — which a bare `as HTMLElement` cast hid.
+    //
+    // Kept as a note because a comment asserting a mechanism that does not
+    // exist is the same hazard as a gate that cannot fail: the next reader
+    // inherits a false cause and stops looking for the real one.
     const sizing = await page.evaluate(() => {
-      const cs = getComputedStyle(document.querySelector('.faceplate-body') as HTMLElement);
+      const pane = document.querySelector('[data-testid="dock-fullview-pane"]');
+      if (!pane) throw new Error('dock-tray-shrink: no dock full-view pane to measure');
+      const body = pane.querySelector('.faceplate-body');
+      if (!body) throw new Error('dock-tray-shrink: the tray pane has no .faceplate-body');
+      const cs = getComputedStyle(body as HTMLElement);
       return { minWidth: cs.minWidth, width: cs.width };
     });
     expect(
