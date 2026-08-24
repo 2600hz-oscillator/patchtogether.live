@@ -1,27 +1,31 @@
 // packages/web/src/lib/audio/modules/twotracks.ts
 //
-// TWOTRACKS — two-reel tape loop emulator. Phase 4: live waveform + WAV export.
+// TWOTRACKS — two-reel tape loop emulator: two independent decks in one box,
+// mixed to a stereo output. Live waveform + WAV export.
 //
-// Phase 1 surface (reel A):
-//   inputs:  audio_l_in_a, audio_r_in_a, rec_start_a, rec_arm_a, overdub_a
-//   outputs: out_l, out_r
-//   params:  rate_a, mode_a, decay_a, start_a, end_a, overdub_flag_a, playhead_a
+// ⚠ THIS HEADER IS PROSE AND PROSE DRIFTS. The authoritative roster is the
+// `params` / `inputs` / `outputs` arrays below and the `docs` block beside them
+// (which `contract-lock.txt` pins). An earlier version of this header listed
+// `decay_a` — a param that has never existed anywhere in the tree — and called
+// the filter "HP/LP/BP", three modes in the wrong order with no `off`, against
+// the four the param actually has. Two prose records of one roster were free to
+// disagree because NEITHER was the source; the filter roster is now an exported
+// symbol (`TWOTRACKS_FILTER_MODES`) that the def and the UI both import.
 //
-// Phase 2 additions:
-//   inputs (reel B): audio_l_in_b, audio_r_in_b, rec_start_b, rec_arm_b, overdub_b
-//   params (reel B): rate_b, mode_b, echoes_b, start_b, end_b, overdub_flag_b,
-//                    playhead_b
-//   per-reel EQ (both reels):
-//     eqLow_a, eqMid_a, eqHigh_a  — reel A 3-band EQ (dB ±12, default 0)
-//     eqLow_b, eqMid_b, eqHigh_b  — reel B 3-band EQ
-//   per-reel filter (both reels):
-//     filterMode_a, cutoff_a, reso_a — reel A HP/LP/BP filter
-//     filterMode_b, cutoff_b, reso_b — reel B HP/LP/BP filter
-//   global:
-//     ab — A/B crossfade: 0=A only, 0.5=both unity, 1=B only
+// Per reel (suffix `_a` / `_b`):
+//   inputs:  audio_l_in, audio_r_in (stereo record path), rec_start, rec_arm,
+//            overdub (gates), rate_cv
+//   params:  rate (varispeed −3..+3), mode (one-shot/loop), echoes, start, end
+//            (the loop window), overdub_flag, eqLow/eqMid/eqHigh,
+//            filterMode/cutoff/reso
+// Global params: ab (crossfade), a2b / b2a (cross-feed), lofi, monitor
+// Outputs: out_l, out_r
 //
 // Single worklet node handles both reels.
 // Playhead messages: { type:'playhead', reel:'a'|'b', pos:0..1, state }
+// ⚠ The playhead is TRANSIENT ENGINE STATE, deliberately: it is read through
+// `engine.read(node,'playheadA')` per frame and is neither a param nor a
+// `node.data` key. See the note on `TwoTracksData` below.
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
@@ -50,20 +54,78 @@ export const TWOTRACKS_MAX_SAMPLES = 960_000;
 /** How often to poll node.data for param changes (ms). */
 const POLL_MS = 100;
 
+/**
+ * THE FILTER ROSTER — ONE source, imported by the def's `options` below and by
+ * every surface that names a mode. Never re-type these strings.
+ *
+ * ⚠ READ THE ORDER OFF THE DSP, NOT OFF PROSE. Three records of this roster
+ * existed and they contradicted each other:
+ *   * this file's header said "HP/LP/BP" — right order, but no `off`;
+ *   * the `docs` string said "off / low-pass / high-pass / band-pass" — it has
+ *     the `off`, and it has modes 1 and 2 THE WRONG WAY ROUND;
+ *   * `packages/dsp/src/twotracks.ts` — which is the code that runs — steps the
+ *     SVF and selects `taps.hp` at 1, `taps.lp` at 2, `taps.bp` at 3
+ *     (`:746-756`), bypassing at 0.
+ * The DSP is the consumer, so the DSP decides, and the doc string has been
+ * corrected to match it. This mattered the moment the roster became VISIBLE: the
+ * card's nameless modulo-4 cycle button could not be wrong about a name it never
+ * painted, but a segmented control built from the doc string would have labelled
+ * the high-pass "LP" on every faceplate.
+ *
+ * Cosmetic for the contract (`contract-lock` records id/min/max/curve/default/
+ * units and nothing else), so naming these moves no contract line.
+ */
+export const TWOTRACKS_FILTER_MODES = [
+  { value: 0, label: 'OFF', title: 'Filter bypassed — the tape plays through untouched' },
+  { value: 1, label: 'HP', title: 'High-pass — keeps the highs, rolls off below CUTOFF' },
+  { value: 2, label: 'LP', title: 'Low-pass — keeps the lows, rolls off above CUTOFF' },
+  { value: 3, label: 'BP', title: 'Band-pass — keeps a band around CUTOFF, rolls off either side' },
+] as const;
+
+/**
+ * THE LOFI ROSTER — same argument, second instance. The card carried these four
+ * names as a private `LOFI_LABELS` array in its own markup, so the def could not
+ * see them and no other surface could reuse them: the exact shape of the
+ * card-disagrees-with-its-def class. Now the def declares them and the card
+ * imports this.
+ */
+export const TWOTRACKS_LOFI_MODES = [
+  { value: 0, label: 'OFF', title: 'Clean — no tape degradation' },
+  { value: 1, label: 'LOW', title: 'Gentle wow/flutter and grit' },
+  { value: 2, label: 'HIGH', title: 'Heavy degradation' },
+  { value: 3, label: 'ERROR', title: 'Broken-transport extreme — the tape is falling apart' },
+] as const;
+
 export interface TwoTracksData {
   /** Reel A transport state (posted from worklet). */
   transportState_a?: 'idle' | 'play' | 'armed' | 'rec' | 'overdub';
   /** Reel B transport state (posted from worklet). */
   transportState_b?: 'idle' | 'play' | 'armed' | 'rec' | 'overdub';
-  /** Reel A normalized playhead position 0..1. */
-  playhead_a?: number;
-  /** Reel B normalized playhead position 0..1. */
-  playhead_b?: number;
   /** How many samples reel A's ring buffer holds (for duration display + SAVE enabled). */
   bufLenA?: number;
   /** How many samples reel B's ring buffer holds. */
   bufLenB?: number;
+  /** Faceplate SCREEN switch: is the reel picture collapsed? Fleet-standard key
+   *  (`previewCollapsed`), on `node.data` rather than component `$state` so it
+   *  survives the card/face unmount that a dock LRU eviction or a tab flip
+   *  causes, and so a saved rack re-opens the way it was left. */
+  previewCollapsed?: boolean;
 }
+
+// ⚠ THERE IS DELIBERATELY NO `playhead_a` / `playhead_b` HERE, and there is no
+// `playhead_*` PARAM either. Both once existed and NEITHER was ever written or
+// read: the message handler below routes `msg.pos` to a module-scope volatile
+// (`localPlayheadA`) which the UI polls through `engine.read(node,'playheadA')`,
+// and the handler's own comment says ONLY transport state + bufLen reach the
+// Y.Doc. The param pair additionally sat in the PUBLIC CONTRACT
+// (`contract-lock.txt`) describing a control no surface has ever offered.
+//
+// Keep it that way. The playhead moves at frame rate, so a param would put it on
+// the undo stack and in the Y.Doc every frame — the CV-modulation write-storm
+// class this repo has a standing rule against. The scrub gesture is an engine
+// message (`{type:'seek'}`), which is the correct seam for a transient
+// performance gesture, and the loop markers are params because they are a
+// durable setting. That split is the point.
 
 // NOTE: the tape transport math (record-window span, varispeed record/advance,
 // playhead, ECHOES→decay) lives in the worklet's pure engine
@@ -252,13 +314,12 @@ export const twotracksDef: AudioModuleDef = {
     { id: 'start_a',        label: 'Start A',   defaultValue: 0,     min: 0,   max: 1,     curve: 'linear' },
     { id: 'end_a',          label: 'End A',     defaultValue: 1,     min: 0,   max: 1,     curve: 'linear' },
     { id: 'overdub_flag_a', label: 'Overdub A', defaultValue: 0,     min: 0,   max: 1,     curve: 'discrete' },
-    { id: 'playhead_a',     label: 'Playhead A',defaultValue: 0,     min: 0,   max: 1,     curve: 'linear' },
     // EQ reel A
     { id: 'eqLow_a',        label: 'EQ Low A',  defaultValue: 0,     min: -12, max: 12,    curve: 'linear', units: 'dB' },
     { id: 'eqMid_a',        label: 'EQ Mid A',  defaultValue: 0,     min: -12, max: 12,    curve: 'linear', units: 'dB' },
     { id: 'eqHigh_a',       label: 'EQ Hi A',   defaultValue: 0,     min: -12, max: 12,    curve: 'linear', units: 'dB' },
     // Filter reel A
-    { id: 'filterMode_a',   label: 'Flt Mode A',defaultValue: 0,     min: 0,   max: 3,     curve: 'discrete' },
+    { id: 'filterMode_a',   label: 'Flt Mode A',defaultValue: 0,     min: 0,   max: 3,     curve: 'discrete', options: TWOTRACKS_FILTER_MODES },
     { id: 'cutoff_a',       label: 'Cutoff A',  defaultValue: 20000, min: 20,  max: 20000, curve: 'log', units: 'Hz' },
     { id: 'reso_a',         label: 'Reso A',    defaultValue: 0,     min: 0,   max: 1,     curve: 'linear' },
 
@@ -269,13 +330,12 @@ export const twotracksDef: AudioModuleDef = {
     { id: 'start_b',        label: 'Start B',   defaultValue: 0,     min: 0,   max: 1,     curve: 'linear' },
     { id: 'end_b',          label: 'End B',     defaultValue: 1,     min: 0,   max: 1,     curve: 'linear' },
     { id: 'overdub_flag_b', label: 'Overdub B', defaultValue: 0,     min: 0,   max: 1,     curve: 'discrete' },
-    { id: 'playhead_b',     label: 'Playhead B',defaultValue: 0,     min: 0,   max: 1,     curve: 'linear' },
     // EQ reel B
     { id: 'eqLow_b',        label: 'EQ Low B',  defaultValue: 0,     min: -12, max: 12,    curve: 'linear', units: 'dB' },
     { id: 'eqMid_b',        label: 'EQ Mid B',  defaultValue: 0,     min: -12, max: 12,    curve: 'linear', units: 'dB' },
     { id: 'eqHigh_b',       label: 'EQ Hi B',   defaultValue: 0,     min: -12, max: 12,    curve: 'linear', units: 'dB' },
     // Filter reel B
-    { id: 'filterMode_b',   label: 'Flt Mode B',defaultValue: 0,     min: 0,   max: 3,     curve: 'discrete' },
+    { id: 'filterMode_b',   label: 'Flt Mode B',defaultValue: 0,     min: 0,   max: 3,     curve: 'discrete', options: TWOTRACKS_FILTER_MODES },
     { id: 'cutoff_b',       label: 'Cutoff B',  defaultValue: 20000, min: 20,  max: 20000, curve: 'log', units: 'Hz' },
     { id: 'reso_b',         label: 'Reso B',    defaultValue: 0,     min: 0,   max: 1,     curve: 'linear' },
 
@@ -284,7 +344,7 @@ export const twotracksDef: AudioModuleDef = {
     // Cross-feed: A's playback → B's input path (a2b) and B → A (b2a). Off = 0.
     { id: 'a2b',            label: 'A→B',       defaultValue: 0,     min: 0,   max: 1,     curve: 'linear' },
     { id: 'b2a',            label: 'B→A',       defaultValue: 0,     min: 0,   max: 1,     curve: 'linear' },
-    { id: 'lofi',           label: 'Lofi',      defaultValue: 0,     min: 0,   max: 3,     curve: 'discrete' },
+    { id: 'lofi',           label: 'Lofi',      defaultValue: 0,     min: 0,   max: 3,     curve: 'discrete', options: TWOTRACKS_LOFI_MODES },
     { id: 'monitor',        label: 'Monitor',   defaultValue: 0,     min: 0,   max: 1,     curve: 'discrete' },
   ],
 
@@ -310,11 +370,10 @@ export const twotracksDef: AudioModuleDef = {
       controls[`start_${s}`] = `Reel ${R} loop START (0..1) — the left edge of the playback window within the recorded tape (you can't drag it past the playhead while rolling).`;
       controls[`end_${s}`] = `Reel ${R} loop END (0..1) — the right edge of the playback window within the recorded tape.`;
       controls[`overdub_flag_${s}`] = `Reel ${R} overdub state flag (0/1) — the persisted on/off of overdub mode (the button form of the OVERDUB gate); when on, new input layers onto the existing loop.`;
-      controls[`playhead_${s}`] = `Reel ${R} playhead position (0..1) — the live read position on the tape; scrub it to jump within the take (the card draws it on the waveform).`;
       controls[`eqLow_${s}`] = `Reel ${R} EQ LOW (±12 dB) — low-band shelf on reel ${R}'s playback.`;
       controls[`eqMid_${s}`] = `Reel ${R} EQ MID (±12 dB) — mid-band on reel ${R}'s playback.`;
       controls[`eqHigh_${s}`] = `Reel ${R} EQ HIGH (±12 dB) — high-band shelf on reel ${R}'s playback.`;
-      controls[`filterMode_${s}`] = `Reel ${R} FILTER MODE — off / low-pass / high-pass / band-pass selector for reel ${R}'s playback filter.`;
+      controls[`filterMode_${s}`] = `Reel ${R} FILTER MODE — ${TWOTRACKS_FILTER_MODES.map((m) => m.label).join(' / ')} selector for reel ${R}'s playback filter (0 = off, and the state-variable filter's high-pass tap comes BEFORE its low-pass one: 1 = HP, 2 = LP, 3 = BP, as the worklet selects them).`;
       controls[`cutoff_${s}`] = `Reel ${R} filter CUTOFF (20 Hz..20 kHz, log) — the corner of reel ${R}'s playback filter (active per FILTER MODE).`;
       controls[`reso_${s}`] = `Reel ${R} filter RESONANCE (0..1) — emphasis at reel ${R}'s filter cutoff.`;
     }
@@ -332,7 +391,7 @@ export const twotracksDef: AudioModuleDef = {
         ab: 'A/B crossfade (0..1) — blends the two reels in the output: 0 = reel A only, 0.5 = both at unity, 1 = reel B only.',
         a2b: 'Cross-feed A→B (0..1) — routes reel A\'s playback into reel B\'s input/record path; with overdub this builds layered, evolving tape loops (raise carefully — it can run away).',
         b2a: 'Cross-feed B→A (0..1) — routes reel B\'s playback into reel A\'s input/record path (the mirror of A→B).',
-        lofi: 'LOFI degradation (0..3) — a global tape-degradation amount that adds wow/flutter/bit-grit character; 0 = clean.',
+        lofi: `LOFI degradation (${TWOTRACKS_LOFI_MODES.map((m) => m.label).join(' / ')}) — a global tape-degradation amount that adds wow/flutter/bit-grit character; OFF = clean.`,
         monitor: 'MONITOR (on/off) — passes the live input signal through to the output so you can hear what you\'re about to record (input monitoring), independent of playback.',
       },
     };
@@ -726,11 +785,9 @@ export function cardParamToWorkletParam(cardId: string): string | null {
     // Transient scrub-velocity params (not in def.params, not persisted)
     scrubVelocity_a: 'scrubVelocity_a',
     scrubVelocity_b: 'scrubVelocity_b',
-    // Display-only / toggle-handled params — no direct AudioParam
+    // Toggle-handled params — no direct AudioParam
     // overdub_flag_a: handled via pulsed overdub_toggle
     // overdub_flag_b: handled via pulsed overdub_toggle_b
-    // playhead_a: display-only
-    // playhead_b: display-only
   };
   return MAP[cardId] ?? null;
 }
