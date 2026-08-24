@@ -1498,6 +1498,13 @@ kria out pitch4 pitch
 kria param bpm 30..300 linear default=120
 kria param running 0..1 discrete default=0
 kria family kria-cell kind=cell prefix=kria-cell
+kria family kria-direction kind=other prefix=kria-direction
+kria family kria-loop-length kind=other prefix=kria-loop-length
+kria family kria-loop-start kind=other prefix=kria-loop-start
+kria family kria-mute kind=other prefix=kria-mute
+kria family kria-root kind=other prefix=kria-root
+kria family kria-scale kind=other prefix=kria-scale
+kria family kria-time-division kind=other prefix=kria-time-division
 launchpadControlLeft meta domain=meta
 lfo meta domain=audio
 lfo in clock gate edge=trigger

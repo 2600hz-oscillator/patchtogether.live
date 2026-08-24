@@ -109,6 +109,7 @@ import { resofilterDef } from '$lib/audio/modules/resofilter';
 import { ringbackDef } from '$lib/audio/modules/ringback';
 import { ringsDef } from '$lib/audio/modules/rings';
 import { rasterizeDef } from '$lib/audio/modules/rasterize';
+import { kriaDef } from '$lib/audio/modules/kria';
 import { sidecarDef } from '$lib/audio/modules/sidecar';
 import { slewSwitchDef } from '$lib/audio/modules/slewswitch';
 import { snaredrumDef } from '$lib/audio/modules/snaredrum';
@@ -586,6 +587,15 @@ const RANGE_BOUND_CARDS: Readonly<Record<string, { params: readonly ParamDef[] }
   // made its raw-write-ledger instruction wrong, and both were checked against
   // the tree rather than taken.)
   'RasterizeCard.svelte': rasterizeDef,
+  // Enrolled with its FACEPLATE (boy-scout — the gate is opt-in per card and
+  // that blind spot, not any one card, is where this defect class lives now).
+  // KriaCard binds only ONE param range (`bpm`), and every OTHER control on it
+  // is a roster imported from `kria-types.ts` — the directions, the eight legal
+  // clock divisions, the scale presets, the MIDI root bounds. Those are exactly
+  // the numbers a card is tempted to re-type, and re-typing them would let the
+  // card offer a value `coerceTrack` silently clamps away with every
+  // def-reading gate green: the backdraft shape.
+  'KriaCard.svelte': kriaDef,
 };
 
 /**
