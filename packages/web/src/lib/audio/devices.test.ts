@@ -125,11 +125,48 @@ describe('formatDeviceLabel', () => {
     expect(formatDeviceLabel(device, 0)).toBe('Built-in Microphone');
   });
 
-  it('falls back to a 1-based positional label when the label is empty', () => {
-    // Pre-permission privacy gate: enumerateDevices returns empty labels.
-    const device: MinimalDevice = { deviceId: 'abc', label: '' };
-    expect(formatDeviceLabel(device, 0)).toBe('Input #1');
-    expect(formatDeviceLabel(device, 4)).toBe('Input #5');
+  // ⚠ THIS BLOCK USED TO PIN THE BUG, AND IT PASSED WHILE DOING SO.
+  //
+  // It read, in full:
+  //
+  //     const device: MinimalDevice = { deviceId: 'abc', label: '' };
+  //     expect(formatDeviceLabel(device, 0)).toBe('Input #1');
+  //     expect(formatDeviceLabel(device, 4)).toBe('Input #5');
+  //
+  // — a fixture with NO `kind`, asserted against the word `Input`. The helper
+  // has two callers and one of them is the AUDIO OUT device picker, so the
+  // assertion was not merely blind to direction: it certified that an OUTPUT
+  // device renders as `Input #1`, which is what shipped. A gate that reads one
+  // side of a two-sided contract proves nothing about the other side, and this
+  // one was positioned exactly where the defect was.
+  //
+  // The repair asserts BOTH directions off the same helper, so the two words
+  // can never be produced by one branch again.
+  it('falls back to a 1-based positional label naming the DIRECTION when the label is empty', () => {
+    // Pre-permission privacy gate: enumerateDevices returns empty labels. For
+    // audiooutput entries this is the DEFAULT state until MICROPHONE
+    // permission is granted, per this module's own header — so the output
+    // picker's fallback is what a fresh visitor actually sees.
+    const out: MinimalDevice = { deviceId: 'abc', label: '', kind: 'audiooutput' };
+    expect(formatDeviceLabel(out, 0)).toBe('Output #1');
+    expect(formatDeviceLabel(out, 4)).toBe('Output #5');
+
+    const inp: MinimalDevice = { deviceId: 'abc', label: '', kind: 'audioinput' };
+    expect(formatDeviceLabel(inp, 0)).toBe('Input #1');
+    expect(formatDeviceLabel(inp, 4)).toBe('Input #5');
+
+    // …and the two directions must not collide, which is the property the old
+    // assertion could not state because it only ever had one of them.
+    expect(formatDeviceLabel(out, 0)).not.toBe(formatDeviceLabel(inp, 0));
+  });
+
+  it('uses a direction-NEUTRAL noun when the entry carries no kind', () => {
+    // `kind` is optional on MinimalDevice. Guessing a direction here is what
+    // produced the defect above, so the honest answer is neither word — and
+    // asserting it keeps a future "just default to Input" from coming back.
+    const unknown: MinimalDevice = { deviceId: 'abc', label: '' };
+    expect(formatDeviceLabel(unknown, 0)).toBe('Device #1');
+    expect(formatDeviceLabel(unknown, 0)).not.toMatch(/Input|Output/);
   });
 
   it('treats whitespace-only labels as non-empty (browser-provided is preserved)', () => {
