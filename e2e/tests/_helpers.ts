@@ -982,3 +982,39 @@ export async function seedKriaGate(page: Page, nodeId: string, opts?: { steps?: 
     });
   }, { id: nodeId, steps });
 }
+
+/** A self-running POLY chord source: KRIA (clock, track-1 trigs via
+ *  seedPolySource) → CARTESIAN (all 16 pads maj chords, clocked walk), whose
+ *  `pitch` out is the polyPitchGate bus. Replaces the deleted POLYSEQZ
+ *  (2026-08-24). Spawn POLY_SOURCE_NODES + POLY_SOURCE_EDGES, then call
+ *  seedPolySource(page) post-spawn; wire `poly-cart`.pitch → your consumer. */
+export const POLY_SOURCE_NODES: SpawnNode[] = [
+  { id: 'poly-clk', type: 'kria', position: { x: 40, y: 40 }, domain: 'audio', params: { bpm: 240, running: 1 } },
+  { id: 'poly-cart', type: 'cartesian', position: { x: 40, y: 220 }, domain: 'audio' },
+];
+export const POLY_SOURCE_EDGES: SpawnEdge[] = [
+  {
+    id: 'e-poly-clk',
+    from: { nodeId: 'poly-clk', portId: 'gate1' },
+    to: { nodeId: 'poly-cart', portId: 'clock' },
+    sourceType: 'gate',
+    targetType: 'gate',
+  },
+];
+export async function seedPolySource(page: Page): Promise<void> {
+  await seedKriaGate(page, 'poly-clk');
+  await page.evaluate(() => {
+    const w = globalThis as unknown as {
+      __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
+      __ydoc: { transact: (fn: () => void) => void };
+    };
+    w.__ydoc.transact(() => {
+      const n = w.__patch.nodes['poly-cart'];
+      if (!n) return;
+      if (!n.data) n.data = {};
+      n.data.cells = Array.from({ length: 16 }, (_, i) => (
+        { on: true, midi: [60, 65, 67, 72][i % 4], chord: 'maj' }
+      ));
+    });
+  });
+}

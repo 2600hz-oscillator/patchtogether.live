@@ -42,7 +42,7 @@
 // looking.
 
 import { test, expect } from './_fixtures';
-import { spawnPatch, type SpawnNode } from './_helpers';
+import { spawnPatch, type SpawnNode, seedKriaGate } from './_helpers';
 import { readScopePeakOverWindow, describeScopeWindow } from './_module-coverage-helpers';
 
 test.describe.configure({ mode: 'parallel' });
@@ -107,13 +107,14 @@ async function seedSeqSteps(
       const t = w.__patch.nodes[id];
       if (!t) return;
       if (!t.data) t.data = {};
-      t.data.steps = [
-        { on: true, root: 60, quality: 'maj', inversion: 0, voicing: 'closed' },
-        { on: true, root: 60, quality: 'maj', inversion: 0, voicing: 'closed' },
-        { on: true, root: 60, quality: 'maj', inversion: 0, voicing: 'closed' },
-        { on: true, root: 60, quality: 'maj', inversion: 0, voicing: 'closed' },
-      ];
+      t.data.cells = Array.from({ length: 16 }, (_, i) => [
+          { on: true, midi: 60, chord: 'maj' },
+          { on: true, midi: 60, chord: 'maj' },
+          { on: true, midi: 60, chord: 'maj' },
+          { on: true, midi: 60, chord: 'maj' },
+        ][i % 4]);
     });
+    await seedKriaGate(page, 'seq-clk');
   }, seqId);
 }
 
@@ -122,10 +123,8 @@ async function seedSeqSteps(
  *  different reading. */
 function nodes(poly: number): SpawnNode[] {
   return [
-    {
-      id: 'seq', type: 'polyseqz', position: { x: 40, y: 60 }, domain: 'audio' as const,
-      params: { isPlaying: 1, length: 4, bpm: 240, gateLength: 0.6 },
-    },
+    { id: 'seq-clk', type: 'kria', position: { x: 40, y: 440 }, domain: 'audio', params: { bpm: 240, running: 1 } },
+      { id: 'seq', type: 'cartesian', position: { x: 40, y: 60 }, domain: 'audio' },
     {
       id: 'sl', type: 'samsloop', position: { x: 360, y: 60 }, domain: 'audio' as const,
       // mode 1 = loop, so a struck voice keeps sounding across the window; the

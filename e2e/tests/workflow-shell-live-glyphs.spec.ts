@@ -24,7 +24,7 @@
 // canvas via toDataURL (plain CPU canvas — identical on CI's SwiftShader).
 
 import { test, expect, type Page } from '@playwright/test';
-import { spawnPatch } from './_helpers';
+import { spawnPatch, seedKriaGate } from './_helpers';
 import { setNodeParams } from './_module-coverage-helpers';
 import { BOOT_MS } from '../_helpers/boot-budget';
 import { waitFrames } from '../_helpers/frames';
@@ -92,14 +92,15 @@ test.describe('LIVE shell glyphs (?shell=1)', () => {
     await spawnPatch(
       page,
       [
-        { id: 'p-seq', type: 'polyseqz', position: { x: 40, y: 60 }, domain: 'audio',
-          params: { isPlaying: 0, length: 4, bpm: 240, gateLength: 0.6 } },
+        { id: 'p-seq-clk', type: 'kria', position: { x: 40, y: 440 }, domain: 'audio', params: { bpm: 240, running: 0 } },
+      { id: 'p-seq', type: 'cartesian', position: { x: 40, y: 60 }, domain: 'audio' },
         { id: 'p-tv', type: 'tidyVco', position: { x: 460, y: 240 }, domain: 'audio', params: {} },
         { id: 'p-out', type: 'audioOut', position: { x: 1050, y: 60 }, domain: 'audio',
           params: { master: 0.2 } },
       ],
       [
-        { id: 'pe1', from: { nodeId: 'p-seq', portId: 'poly' }, to: { nodeId: 'p-tv', portId: 'poly' },
+      { id: 'e_p-seq_clk', from: { nodeId: 'p-seq-clk', portId: 'gate1' }, to: { nodeId: 'p-seq', portId: 'clock' }, sourceType: 'gate', targetType: 'gate' },
+        { id: 'pe1', from: { nodeId: 'p-seq', portId: 'pitch' }, to: { nodeId: 'p-tv', portId: 'poly' },
           sourceType: 'polyPitchGate', targetType: 'polyPitchGate' },
         { id: 'pe2', from: { nodeId: 'p-tv', portId: 'out_l' }, to: { nodeId: 'p-out', portId: 'L' },
           sourceType: 'audio', targetType: 'audio' },
@@ -118,13 +119,14 @@ test.describe('LIVE shell glyphs (?shell=1)', () => {
         const seq = w.__patch.nodes['p-seq'];
         if (!seq) return;
         if (!seq.data) seq.data = {};
-        seq.data.steps = [
-          { on: true, root: 60, quality: 'maj', inversion: 0, voicing: 'closed' },
-          { on: true, root: 57, quality: 'min', inversion: 0, voicing: 'closed' },
-          { on: true, root: 65, quality: 'maj', inversion: 0, voicing: 'closed' },
-          { on: true, root: 62, quality: 'min', inversion: 0, voicing: 'closed' },
-        ];
+        seq.data.cells = Array.from({ length: 16 }, (_, i) => [
+          { on: true, midi: 60, chord: 'maj' },
+          { on: true, midi: 57, chord: 'min' },
+          { on: true, midi: 65, chord: 'maj' },
+          { on: true, midi: 62, chord: 'min' },
+        ][i % 4]);
       });
+    await seedKriaGate(page, 'p-seq-clk');
     });
 
     // Open the tidyVco dock full-view from the lane tile's expand pill.
@@ -199,7 +201,7 @@ test.describe('LIVE shell glyphs (?shell=1)', () => {
     expect(await dockTracePeak(page), 'still flat after the window').toBeLessThan(0.005);
 
     // 3) DRIVE the real chain: start POLYSEQZ's own transport.
-    await setNodeParams(page, 'p-seq', { isPlaying: 1 });
+    await setNodeParams(page, 'p-seq-clk', { running: 1 });
     await expect
       .poll(() => dockTracePeak(page), { timeout: 8000, message: 'driven trace goes non-flat' })
       .toBeGreaterThan(0.05);

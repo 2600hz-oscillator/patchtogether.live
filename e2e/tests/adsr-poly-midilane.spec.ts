@@ -63,7 +63,7 @@
 // "the instrument never looked" can no longer print as "the module is silent".
 
 import { test, expect } from './_fixtures';
-import { spawnPatch } from './_helpers';
+import { spawnPatch, seedKriaGate } from './_helpers';
 import { readScopePeakOverWindow, describeScopeWindow } from './_module-coverage-helpers';
 
 test.describe.configure({ mode: 'parallel' });
@@ -119,6 +119,7 @@ test('dx7 master-ADSR: a gated poly note carries audio through the master VCA', 
       { id: 'sc', type: 'scope', position: { x: 900, y: 60 }, domain: 'audio', params: { timeMs: 50 } },
     ],
     [
+      { id: 'e_seq_clk', from: { nodeId: 'seq-clk', portId: 'gate1' }, to: { nodeId: 'seq', portId: 'clock' }, sourceType: 'gate', targetType: 'gate' },
       { id: 'e_seq_dx', from: { nodeId: 'seq', portId: 'pitch' }, to: { nodeId: 'dx', portId: 'poly' }, sourceType: 'polyPitchGate', targetType: 'polyPitchGate' },
       { id: 'e_dx_sc',  from: { nodeId: 'dx', portId: 'out' },    to: { nodeId: 'sc', portId: 'ch1' },  sourceType: 'audio', targetType: 'audio' },
     ],
@@ -270,12 +271,13 @@ test('cube poly chord (POLYSEQZ → poly) drives the per-voice envelopes', async
   await spawnPatch(
     page,
     [
-      { id: 'seq', type: 'polyseqz', position: { x: 40, y: 60 }, domain: 'audio', params: { isPlaying: 1, length: 4, bpm: 240, gateLength: 0.6 } },
+      { id: 'seq-clk', type: 'kria', position: { x: 40, y: 440 }, domain: 'audio', params: { bpm: 240, running: 1 } },
+      { id: 'seq', type: 'cartesian', position: { x: 40, y: 60 }, domain: 'audio' },
       { id: 'cb', type: 'cube', position: { x: 360, y: 60 }, domain: 'audio', params: { attack: 0.02, decay: 0.1, sustain: 0.9, release: 0.2, level: 1 } },
       { id: 'sc', type: 'scope', position: { x: 900, y: 60 }, domain: 'audio', params: { timeMs: 50 } },
     ],
     [
-      { id: 'e_seq_cb', from: { nodeId: 'seq', portId: 'poly' }, to: { nodeId: 'cb', portId: 'poly' }, sourceType: 'polyPitchGate', targetType: 'polyPitchGate' },
+      { id: 'e_seq_cb', from: { nodeId: 'seq', portId: 'pitch' }, to: { nodeId: 'cb', portId: 'poly' }, sourceType: 'polyPitchGate', targetType: 'polyPitchGate' },
       { id: 'e_cb_sc', from: { nodeId: 'cb', portId: 'L' }, to: { nodeId: 'sc', portId: 'ch1' }, sourceType: 'audio', targetType: 'audio' },
     ],
   );
@@ -290,13 +292,14 @@ test('cube poly chord (POLYSEQZ → poly) drives the per-voice envelopes', async
       const n = w.__patch.nodes['seq'];
       if (!n) return;
       if (!n.data) n.data = {};
-      n.data.steps = [
-        { on: true, root: 60, quality: 'maj', inversion: 0, voicing: 'closed' },
-        { on: true, root: 64, quality: 'min', inversion: 0, voicing: 'closed' },
-        { on: true, root: 67, quality: 'maj', inversion: 0, voicing: 'closed' },
-        { on: true, root: 72, quality: 'maj', inversion: 0, voicing: 'closed' },
-      ];
+      n.data.cells = Array.from({ length: 16 }, (_, i) => [
+          { on: true, midi: 60, chord: 'maj' },
+          { on: true, midi: 64, chord: 'min' },
+          { on: true, midi: 67, chord: 'maj' },
+          { on: true, midi: 72, chord: 'maj' },
+        ][i % 4]);
     });
+    await seedKriaGate(page, 'seq-clk');
   });
 
   // THE REGRESSION THIS FILE'S REWRITE EXISTS FOR. CUBE's poly gating makes an

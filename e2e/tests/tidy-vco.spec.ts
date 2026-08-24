@@ -30,7 +30,7 @@
 // source→voice→audible-output chains.
 
 import { test, expect } from './_fixtures';
-import { spawnPatch } from './_helpers';
+import { spawnPatch, seedKriaGate } from './_helpers';
 import { readScopePeakOverWindow, readScopeSnapshot } from './_module-coverage-helpers';
 
 test.describe.configure({ mode: 'parallel' });
@@ -56,8 +56,8 @@ test('TIDY VCO poly chain: POLYSEQZ chord bus → voices → AUDIOOUT — audibl
     page,
     [
       // The REAL default-mode poly source: POLYSEQZ's own transport.
-      { id: 'p-seq', type: 'polyseqz', position: { x: 40, y: 60 }, domain: 'audio',
-        params: { isPlaying: 1, length: 4, bpm: 240, gateLength: 0.6 } },
+      { id: 'p-seq-clk', type: 'kria', position: { x: 40, y: 440 }, domain: 'audio', params: { bpm: 240, running: 1 } },
+      { id: 'p-seq', type: 'cartesian', position: { x: 40, y: 60 }, domain: 'audio' },
       { id: 'p-tv', type: 'tidyVco', position: { x: 420, y: 60 }, domain: 'audio',
         params: {} }, // shipping defaults — the default card must speak
       { id: 'p-out', type: 'audioOut', position: { x: 1050, y: 60 }, domain: 'audio',
@@ -66,7 +66,8 @@ test('TIDY VCO poly chain: POLYSEQZ chord bus → voices → AUDIOOUT — audibl
         params: { timeMs: 100 } },
     ],
     [
-      { id: 'pe1', from: { nodeId: 'p-seq', portId: 'poly' }, to: { nodeId: 'p-tv', portId: 'poly' },
+      { id: 'e_p-seq_clk', from: { nodeId: 'p-seq-clk', portId: 'gate1' }, to: { nodeId: 'p-seq', portId: 'clock' }, sourceType: 'gate', targetType: 'gate' },
+      { id: 'pe1', from: { nodeId: 'p-seq', portId: 'pitch' }, to: { nodeId: 'p-tv', portId: 'poly' },
         sourceType: 'polyPitchGate', targetType: 'polyPitchGate' },
       { id: 'pe2', from: { nodeId: 'p-tv', portId: 'out_l' }, to: { nodeId: 'p-out', portId: 'L' },
         sourceType: 'audio', targetType: 'audio' },
@@ -91,13 +92,15 @@ test('TIDY VCO poly chain: POLYSEQZ chord bus → voices → AUDIOOUT — audibl
       const seq = w.__patch.nodes['p-seq'];
       if (!seq) return;
       if (!seq.data) seq.data = {};
-      seq.data.steps = [
-        { on: true, root: 60, quality: 'maj', inversion: 0, voicing: 'closed' },
-        { on: true, root: 57, quality: 'min', inversion: 0, voicing: 'closed' },
-        { on: true, root: 65, quality: 'maj', inversion: 0, voicing: 'closed' },
-        { on: true, root: 62, quality: 'min', inversion: 0, voicing: 'closed' },
-      ];
+      seq.data.cells = Array.from({ length: 16 }, (_, i) => [
+          { on: true, midi: 60, chord: 'maj' },
+          { on: true, midi: 57, chord: 'min' },
+          { on: true, midi: 65, chord: 'maj' },
+          { on: true, midi: 62, chord: 'min' },
+        ][i % 4]);
     });
+    await seedKriaGate(page, 'n-seq-clk');
+    await seedKriaGate(page, 'p-seq-clk');
   });
 
   // Audible RMS at the output via windowed MAX-HOLD (chords land every
@@ -214,14 +217,15 @@ test('TIDY VCO no stray drone: patched but never gated stays silent', async ({ p
     page,
     [
       // Transport STOPPED — the chord bus exists but no lane ever gates.
-      { id: 'n-seq', type: 'polyseqz', position: { x: 40, y: 60 }, domain: 'audio',
-        params: { isPlaying: 0 } },
+      { id: 'n-seq-clk', type: 'kria', position: { x: 40, y: 440 }, domain: 'audio', params: { bpm: 240, running: 0 } },
+      { id: 'n-seq', type: 'cartesian', position: { x: 40, y: 60 }, domain: 'audio' },
       { id: 'n-tv', type: 'tidyVco', position: { x: 420, y: 60 }, domain: 'audio', params: {} },
       { id: 'n-scp', type: 'scope', position: { x: 1050, y: 60 }, domain: 'audio',
         params: { timeMs: 100 } },
     ],
     [
-      { id: 'ne1', from: { nodeId: 'n-seq', portId: 'poly' }, to: { nodeId: 'n-tv', portId: 'poly' },
+      { id: 'e_n-seq_clk', from: { nodeId: 'n-seq-clk', portId: 'gate1' }, to: { nodeId: 'n-seq', portId: 'clock' }, sourceType: 'gate', targetType: 'gate' },
+      { id: 'ne1', from: { nodeId: 'n-seq', portId: 'pitch' }, to: { nodeId: 'n-tv', portId: 'poly' },
         sourceType: 'polyPitchGate', targetType: 'polyPitchGate' },
       { id: 'ne2', from: { nodeId: 'n-tv', portId: 'out_l' }, to: { nodeId: 'n-scp', portId: 'ch1' } },
     ],
