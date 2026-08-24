@@ -437,8 +437,21 @@ Each was believed on entry and each was checked. Full text in
    throughout. Recorded because a wave that spends this much effort on other
    documents' staleness owes the same accounting of its own.
 
-⚠ **Three of these eight are corrections to THIS wave**, not to a prior one (5, 7,
-8), and two more (3, 3c) are cases where this wave asserted something and a spec
+9. ⚠⚠ **This document went stale WHILE IT WAS BEING WRITTEN.** `#2183` (`cef7c16c0`)
+   merged mid-wave and deleted five sequencer modules — including **two of the four
+   positive controls** the typed-entry instrument relied on. The gate's own list moved
+   too (`:534` is now `['cartesian', 'sticky', 'textmarquee']`).
+   **Re-measured against the new `main` before merging: THE FINDING IS UNCHANGED** —
+   the same five modules are TYPED, the same nine clean. ⚠ **Only the controls moved,
+   and no version of this document would have told you that without re-running the
+   scan.** A wave that cites `file:line` throughout has bought reproducibility, not
+   permanence: **a citation is a coordinate into a tree that keeps moving.** That is
+   why the instrument is inlined in [`SURFACES.md §10`](SURFACES.md) rather than its
+   numbers merely asserted — and why the recipe now tells you to read the gate's
+   control list instead of copying the one printed beside it.
+
+⚠ **Four of these nine are corrections to THIS wave**, not to a prior one (5, 7, 8,
+9), and two more (3, 3c) are cases where this wave asserted something and a spec
 agent overturned it by reading the tree. **That ratio is the fan-out working**: the
 orchestrator's briefs were the single largest source of error in the wave, and the
 only thing that caught them was three agents independently instructed to verify every

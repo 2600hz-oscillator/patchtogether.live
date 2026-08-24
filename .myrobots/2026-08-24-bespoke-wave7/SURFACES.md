@@ -350,7 +350,7 @@ over the seven cohort cards returned **zero hits**. `git grep` is LINE-BASED and
 every one of these tags is written across multiple lines
 (`<NoteEntry⏎`, `<textarea⏎`, `type="text"` on its own line), while the real gate
 reads the **whole file as one string**. The negative control caught it: the gate
-names four cards it must find (`:533-537` — `sequencer`, `drumseqz`, `sticky`,
+names the cards it must find (`:530-537` — `cartesian`, `sticky`,
 `textmarquee`) and the grep found only `textmarquee`.
 
 The corrected instrument replicates `cardTemplate()` + `mountsTypedEntry()`
@@ -359,8 +359,7 @@ what makes the negatives believable:
 
 | card | typed entry? | via |
 |---|---|---|
-| `SequencerCard` | **TYPED** | `<NoteEntry` | *(positive control ✓)* |
-| `DrumseqzCard` | **TYPED** | `<NoteEntry` | *(positive control ✓)* |
+| `CartesianCard` | **TYPED** | `<NoteEntry` | *(positive control ✓)* |
 | `StickyCard` | **TYPED** | `<textarea` | *(positive control ✓)* |
 | `TextmarqueeCard` | **TYPED** | `contenteditable` | *(positive control ✓)* |
 | **`ControlSurfaceCard`** | ⚠ **TYPED** | `<input type="text">` | the in-situ rename |
@@ -998,8 +997,9 @@ Recorded because each was believed on entry and each was checked.
        { encoding:'utf8', maxBuffer: 32<<20 });
      console.log(c.padEnd(26), typed(tmpl(src)) ?? '.');
    }
-   // ALWAYS pass the four positive controls first — the gate names them at :533-537:
-   //   SequencerCard DrumseqzCard StickyCard TextmarqueeCard
+   // ALWAYS pass the gate's OWN positive controls first — it names them at :530-537,
+   // and ⚠ READ THAT LIST RATHER THAN COPYING THIS ONE (§10.8): as of cef7c16c0 it is
+   //   CartesianCard StickyCard TextmarqueeCard
    ```
 
 6. ⚠⚠ **THIS WAVE'S OWN BRIEF ASSERTED AN 8×8 PAD GRID THAT DOES NOT EXIST**, and
@@ -1025,7 +1025,34 @@ Recorded because each was believed on entry and each was checked.
    this cohort are provably wrong** (this one, `gamepad`'s — §11.4 — and
    `recorderbox`'s, which wave 6 found). **Read the card, never the `why`.**
 
-7. **Two of this wave's own citations were wrong and a spec agent caught both** —
+8. ⚠⚠ **THIS DOCUMENT WENT STALE WHILE IT WAS BEING WRITTEN, AND THE PROCESS THAT
+   CAUGHT IT IS THE POINT.** `#2183` (`cef7c16c0`) merged mid-wave and **deleted five
+   sequencer modules outright** — including `SequencerCard.svelte` and
+   `DrumseqzCard.svelte`, **two of the four positive controls this section was
+   relying on** to prove the typed-entry instrument works. The gate's own list moved
+   with it: `:534` is now `['cartesian', 'sticky', 'textmarquee']`, three names, and
+   `cartesian` is the replacement `NoteEntry` carrier.
+
+   **Re-measured against the new `main` before this PR merged**, with the surviving
+   controls plus `cartesian` (which fires, `<NoteEntry`):
+
+   > **THE FINDING IS UNCHANGED.** The same five modules are TYPED —
+   > `controlSurface`, `midiLane`, `archivist`, `peertube`, `recorderbox` — and the
+   > same nine are clean, `midiclock` / `kria` / `matrixmix` among them.
+
+   ⚠ **Only the CONTROLS moved, not the result — and there is no version of this
+   document that would have told you that without re-running the scan.** A wave that
+   cites `file:line` throughout has bought reproducibility, not permanence: **a
+   citation is a coordinate into a tree that keeps moving**, and the mitigation is
+   the one already in §10.5 — the instrument is inlined so the scan can be re-run,
+   rather than the numbers being asserted and trusted.
+
+   ⚠ **So the recipe above names the controls as of `cef7c16c0` and tells you to read
+   the gate's list rather than copy them.** Hard-coding a positive-control list into
+   a document is the same construct as hard-coding a population count, one level up:
+   correct for the tree it was written in, and silently wrong for the next one.
+
+9. **Two of this wave's own citations were wrong and a spec agent caught both** —
    `ModuleShellPlaceholder.svelte` is under `ui/modules/`, not `ui/workflow/`, and
    `FACES_WITHOUT_SCENES` is `_shell-faces.ts:3472`, not `:3391`. Corrected
    throughout. Recorded because a wave that spends this much effort on other
