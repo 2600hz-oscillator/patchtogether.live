@@ -33,14 +33,16 @@
   } from '$lib/ui/matrixmix-grid';
   import {
     MATRIXMIX_TYPE,
-    readMatrixData,
     createMatrixEdge,
     removeMatrixEdge,
   } from '$lib/graph/matrixmix';
   import {
+    MATRIXMIX_NO_AXIS,
     matrixmixAxisChoices,
     matrixmixSetXAxis,
     matrixmixSetYAxis,
+    matrixmixXAxisValue,
+    matrixmixYAxisValue,
     type MatrixAxisChoice,
   } from '$lib/ui/modules/matrixmix-cell-actions';
 
@@ -84,22 +86,23 @@
     return matrixmixAxisChoices(id);
   });
 
-  let matrixData = $derived.by(() => {
-    void cardVersion;
-    return readMatrixData(patch.nodes[id]);
-  });
-
   // Resolve the selected axis ids, dropping any that no longer exist (a matrixed
   // module was deleted) so the grid empties cleanly rather than dangling.
+  //
+  // ⚠ THE DROP IS THE EXTRACTED READER'S, NOT A SECOND COPY OF IT. It used to be
+  // spelled out here; the faceplate's two selector cells need the identical rule
+  // (a cell rendering a value absent from its own roster is indistinguishable
+  // from a dead one), and two spellings of "drop a dangling selection" is
+  // exactly the drift the extraction exists to prevent.
   let xId = $derived.by(() => {
     void cardVersion;
-    const sel = matrixData.xAxisModuleId;
-    return sel && patch.nodes[sel] ? sel : undefined;
+    const v = matrixmixXAxisValue(patch.nodes[id] as ModuleNode | undefined);
+    return v === MATRIXMIX_NO_AXIS ? undefined : v;
   });
   let yId = $derived.by(() => {
     void cardVersion;
-    const sel = matrixData.yAxisModuleId;
-    return sel && patch.nodes[sel] ? sel : undefined;
+    const v = matrixmixYAxisValue(patch.nodes[id] as ModuleNode | undefined);
+    return v === MATRIXMIX_NO_AXIS ? undefined : v;
   });
 
   let colJacks = $derived.by<Jack[]>(() => {
