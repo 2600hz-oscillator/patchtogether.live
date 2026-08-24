@@ -27,17 +27,6 @@ import { settle, waitFrames } from '../_helpers/frames';
 // focused band set from the shipped predicate is what stops this harness from
 // growing a second, drifting copy of the rule.
 import { visibleBandIds, type BandFocusPredicate } from '../../packages/web/src/lib/ui/workflow/band-focus-model';
-// ⚠ TYPE-ONLY, AND THE VALUE IS IMPORTED DYNAMICALLY INSIDE `hasAudioPort`.
-// `_registry.ts` reads + validates `e2e/.generated/registry-manifest.json` AT
-// MODULE LOAD and THROWS when it is missing or stale — which is correct for a
-// Playwright spec, and fatal here: `vrt-meta.test.ts` imports THIS file from the
-// UNIT lane, and `task test` deliberately does not emit the manifest (#1526,
-// "a unit suite that mutates the tree as a side effect made which lane ran last
-// decide what e2e tests exist"). A static value import would therefore redden
-// the unit lane on a clean checkout. A type-only import is erased entirely, and
-// the dynamic one runs only inside `bootWithFace`, which only ever executes in
-// the VRT lane where the manifest is a declared task dep.
-import type { RegistryModule } from '../tests/_registry';
 
 /** The P1 migrated set (= STRICT_FACES). `pages` = the declared face.pages
  *  count the dock scene must render as labeled section bands — a per-scene
@@ -3091,7 +3080,7 @@ export const FACES = [
       + 'maxInstances 1 AND is named in cap.ts\'s PINNED_COUNTS_TOWARD_CAP ("the pinned TIMELORDE '
       + 'is the rack\'s one clock"), so the always-on pinned instance every rack auto-spawns '
       + 'CONSUMES the cap and `__spawnFromPalette` is refused — measured as a 20 s timeout in '
-      + 'spawnOnFreeCanvas\'s arrival wait, with no second node ever appearing. And the pinned '
+      + 'spawnVideoZoneMember\'s arrival wait, with no second node ever appearing. And the pinned '
       + 'instance itself is canvas-hidden, so it has no lane tile to capture either. ⚠ SO THE '
       + 'SUBJECT IS ADOPTED RATHER THAN SPAWNED: the existing instance is un-pinned and moved '
       + 'into the lane-1 band, which is not a synthetic state — it is exactly what a rack IMPORTED '
@@ -3322,21 +3311,6 @@ export const FACES = [
     // renders a single unlabelled section — nowhere near `DOCK_TAB_MIN_BANDS`,
     // and nothing here is padded to reach a rail.
     pages: 1,
-    // ⚠ THE FIRST SCENE THAT BOOTS ON FREE CANVAS FOR A NON-VIDEO REASON. This
-    // def is `domain: 'meta'` with `inputs: []` and `outputs: []`, so it can
-    // never join a channel column — and before this branch existed the default
-    // path did not refuse it, it WAITED, for the full ~90 s, and died as a bare
-    // Playwright timeout. See BootFaceOptions.freeCanvasWhy; the refusal is now
-    // immediate and names the module.
-    freeCanvasWhy:
-      'a META-DOMAIN module: it binds to NO engine and declares NO PORTS AT ALL, so a channel '
-      + 'column — which IS the audio chain — has nothing to connect it to and the default boot '
-      + 'would sit at its full budget waiting to join one. It is NOT `videoFaceWhy`: that field '
-      + 'also turns on `freezeFaceVideo`, which writes `params.freeze`, and matrixMix declares no '
-      + 'params of any kind — the write would invent an undeclared key and the assertion after it '
-      + 'would be measuring a freeze that never happened. It is NOT `singletonAdoptWhy` either: '
-      + 'that branch adopts because `__spawnFromPalette` is REFUSED for a pinned singleton, and '
-      + 'this module spawns perfectly well. It simply has nowhere in the audio chain to land.',
     // ⚠ DETERMINISTIC, AND THE ARGUMENT IS THE ONE THE OLD VRT EXEMPTION MADE —
     // now pointed at the right subject. That exemption read "grid body is
     // patch-dependent — solo-spawn shows only the axis dropdowns + a
@@ -4069,36 +4043,6 @@ export interface BootFaceOptions {
    */
   singletonAdoptWhy?: string;
   /**
-   * THE FACE HAS NO AUDIO PORT AND IS NOT A VIDEO MODULE — spawn it onto FREE
-   * CANVAS, below the channel-lane baseline, with no video freeze. The string is
-   * the REASON, so the declaration cannot be a bare flag (the `videoFaceWhy`
-   * idiom).
-   *
-   * ⚠ IT IS NOT `videoFaceWhy` WITH A DIFFERENT NAME, and the difference is the
-   * same one the `singletonAdoptWhy` note already had to make once: that field
-   * ALSO turns on `freezeFaceVideo`, which writes `params.freeze`. A def with no
-   * such param would have that write invent an undeclared key, and the assertion
-   * after it would be measuring a freeze that never happened. This branch shares
-   * only the SPAWN with the video path (`spawnOnFreeCanvas`, one implementation
-   * for both) and stops there.
-   *
-   * ⚠ AND IT IS NOT `singletonAdoptWhy` EITHER: that branch ADOPTS an instance
-   * the rack already has, because its module is `maxInstances: 1` and pinned, so
-   * `__spawnFromPalette` is refused. An ordinary meta module spawns perfectly
-   * well; it simply has nowhere in the AUDIO chain to land.
-   *
-   * ⚠ WHY IT HAD TO EXIST AT ALL: the default path waits for the spawned node to
-   * appear in `pinned-mixmstrs.data.columns['1']`, because for an audio face a
-   * COLUMN IS THE CHAIN. `matrixMix` is `domain: 'meta'` and declares
-   * `inputs: []` / `outputs: []`, so it can never join one — and the failure is a
-   * 90-SECOND `waitForFunction` TIMEOUT with no error, which reads like a broken
-   * app rather than an unsupported shape. That silent-and-expensive failure is
-   * now impossible: `bootWithFace` refuses an unmatched type IMMEDIATELY and BY
-   * NAME (see the guard above the default branch), so the next module in this
-   * position gets a one-line answer instead of a mystery.
-   */
-  freeCanvasWhy?: string;
-  /**
    * PIN A STATEFUL SIM'S PHASE — boot-time globals installed via
    * `addInitScript` BEFORE `goto`, so they are set before any module factory
    * runs and can be read at CONSTRUCTION.
@@ -4553,33 +4497,10 @@ export async function bootWithFace(
   // scene style + audio freeze tail below is shared, so an audio face runs the
   // same code it always has.
   if (opts.videoFaceWhy) {
-    const videoMemberId = await spawnOnFreeCanvas(page, type);
+    const videoMemberId = await spawnVideoZoneMember(page, type);
     await applyFaceSceneStyle(page);
     if (opts.freezeAudio !== false) await freezeFaceAudio(page, `face-${type}`);
     return videoMemberId;
-  }
-
-  // ── NO AUDIO PORT, NOT A VIDEO MODULE — FREE CANVAS ──────────────────────
-  // See BootFaceOptions.freeCanvasWhy. Same spawn as the video branch and
-  // deliberately nothing else: no `freezeFaceVideo`, because a def with no
-  // `freeze` param would have that write invent an undeclared key.
-  //
-  // ⚠ ANCHORED IN BOTH DIRECTIONS. A scene declaring this while its def DOES
-  // have an audio port is refused here, so the field cannot become a way to
-  // route around a chain that is merely slow to form — which is the failure the
-  // ordinary path is there to catch. The other direction (a def with no audio
-  // port and no declaration) is refused by the guard below.
-  if (opts.freeCanvasWhy) {
-    expect(
-      await hasAudioPort(type),
-      `${type}: \`freeCanvasWhy\` is declared, but this def DOES declare an audio port — the ` +
-        `ordinary channel-column path applies and a column really is its chain. Remove the ` +
-        `declaration rather than routing around a chain that should form.`,
-    ).toBe(false);
-    const freeMemberId = await spawnOnFreeCanvas(page, type);
-    await applyFaceSceneStyle(page);
-    if (opts.freezeAudio !== false) await freezeFaceAudio(page, `face-${type}`);
-    return freeMemberId;
   }
 
   // A channel column IS the chain (source → processor → … → mixer channel;
@@ -4610,32 +4531,31 @@ export async function bootWithFace(
     return adoptedId;
   }
 
-  // ── DENY BY DEFAULT: A TYPE THAT MATCHES NO BRANCH FAILS HERE, BY NAME ────
+  // ── THE ORDINARY PATH: a channel COLUMN is the chain ─────────────────────
   //
-  // ⚠ THIS GUARD EXISTS BECAUSE THE OLD FAILURE MODE WAS SILENT AND EXPENSIVE.
-  // Below, the boot waits for the spawned node to appear in
-  // `pinned-mixmstrs.data.columns['1']` — a column IS the audio chain. A def
-  // with no audio port never joins one, so the wait sat at its full budget and
-  // died as a bare Playwright timeout: MEASURED at 90 s on `backdraft` (the
-  // first video face) and again on `timelorde`, each time reading like a broken
-  // app rather than an unsupported shape, and each time diagnosed from scratch.
+  // ⚠ THERE IS NO PRE-FLIGHT PORT CHECK HERE, AND A WHOLE BOOT BRANCH THAT
+  // ASSUMED ONE WAS DELETED. Both rested on the premise that "a def with no
+  // audio port can never join a channel column". THE PREMISE IS FALSE. Column
+  // membership is decided by DROP POSITION — `__setSpawnFlowPos` lands the node
+  // in lane 1's painted band and the membership path adopts it — and has nothing
+  // to do with port shape. MEASURED, twice over and in both directions: eight
+  // shipped CV/gate-only faces (lfo, kria, marbles, fourplexer, gatemaiden,
+  // ninelives, moog962, depolarizer) join fine, and so does `matrixMix`, which
+  // declares NO PORTS AT ALL and still reaches a rendered tile through this
+  // exact path.
   //
-  // Three branches now cover the three real cases, and this refuses the fourth
-  // IMMEDIATELY, naming the module, what is missing and what to declare. The
-  // test is a DECLARED PROPERTY of the def — does it have an audio port — never
-  // a list of module names, so the next module in this position is answered
-  // without anyone editing anything.
-  expect(
-    await hasAudioPort(type),
-    `${type}: no bootWithFace branch matches this def. It declares NO AUDIO PORT, so it can ` +
-      `never join a channel column (a column IS the audio chain) and the default path below ` +
-      `would wait ~90 s and die as a bare timeout. Declare ONE of: \`videoFaceWhy\` (a video ` +
-      `module — boots into the video zone AND pins its live surface), \`singletonAdoptWhy\` (a ` +
-      `pinned rack singleton the harness cannot spawn), or \`freeCanvasWhy\` (anything else with ` +
-      `no audio port — spawns onto free canvas, no video freeze). Each takes a REASON string, ` +
-      `not a flag.`,
-  ).toBe(true);
-
+  // The mistake was a PROXY standing in for the SUBJECT. What matters is "the
+  // column never formed, so this boot is about to die as a bare timeout" — a
+  // DYNAMIC outcome of THIS run. "Declares no audio port" is a STATIC property
+  // that merely correlates, and correlates badly in both directions: it
+  // reddened eight working faces while `backdraft`'s real problem was the video
+  // zone and `timelorde`'s was a REFUSED SPAWN (maxInstances), neither of which
+  // is about ports at all.
+  //
+  // So the wait below is WRAPPED rather than predicted. Every module that can
+  // use this path uses it unchanged; a module that ACTUALLY times out gets a
+  // named refusal instead of a bare timeout, which turns the 90 s mystery
+  // backdraft and timelorde each cost into a 90 s EXPLAINED failure.
   const chain = opts.upstream ? [opts.upstream, type] : [type];
   for (const t of chain) {
     await page.evaluate((tt) => {
@@ -4649,17 +4569,40 @@ export async function bootWithFace(
       w.__setSpawnFlowPos({ x: 30, y: 4280 });
       w.__spawnFromPalette(tt);
     }, t);
-    await page.waitForFunction(
-      (n) => {
-        const w = globalThis as unknown as {
-          __patch?: {
-            nodes: Record<string, { data?: { columns?: Record<string, string[]> } } | undefined>;
+    try {
+      await page.waitForFunction(
+        (n) => {
+          const w = globalThis as unknown as {
+            __patch?: {
+              nodes: Record<string, { data?: { columns?: Record<string, string[]> } } | undefined>;
+            };
           };
-        };
-        return (w.__patch?.nodes['pinned-mixmstrs']?.data?.columns?.['1'] ?? []).length === n;
-      },
-      chain.indexOf(t) + 1,
-    );
+          return (w.__patch?.nodes['pinned-mixmstrs']?.data?.columns?.['1'] ?? []).length === n;
+        },
+        chain.indexOf(t) + 1,
+      );
+    } catch {
+      // ── THE COLUMN NEVER FORMED — the ONLY condition this refusal is about ──
+      //
+      // Reached only after the wait has actually exhausted its budget, so it is
+      // a MEASUREMENT of this boot rather than a prediction from the def's
+      // shape. Every module whose column forms never gets here — which is every
+      // module in the roster except the two that declare a branch.
+      throw new Error(
+        `${t}: the channel column never formed — waited for lane 1 to hold `
+          + `${chain.indexOf(t) + 1} member(s) and it never did, so this boot was about to die `
+          + `as a bare Playwright timeout with no indication of why (MEASURED at ~90 s on `
+          + `backdraft and again on timelorde, each diagnosed from scratch). Membership comes `
+          + `from the DROP POSITION, not from port shape, so a module that fails to join has a `
+          + `spawn or membership problem rather than a port one. If this module genuinely `
+          + `cannot use this path, declare ONE of: \`videoFaceWhy\` (a video module — boots `
+          + `into the video zone AND pins its live surface) or \`singletonAdoptWhy\` (a pinned `
+          + `rack singleton \`__spawnFromPalette\` refuses). Each takes a REASON string, not a `
+          + `flag. ⚠ If this def's column USED to form, this is a REGRESSION in the spawn or `
+          + `membership path and declaring a branch is the WRONG fix — it would route a working `
+          + `chain around the path that is meant to exercise it.`,
+      );
+    }
   }
   // The face under test is the LAST member — the bottom of the chain.
   const memberId = await page.evaluate((n) => {
@@ -4800,43 +4743,7 @@ async function adoptCanvasSingleton(page: Page, type: string): Promise<string> {
   return existing[0]!;
 }
 
-/**
- * Does this def declare at least one AUDIO port (either rail)?
- *
- * ⚠ THIS IS THE BRANCH SELECTOR, AND IT IS A DECLARED PROPERTY ON PURPOSE. The
- * question `bootWithFace` actually has is "can this module join a channel
- * column", and a column IS the audio chain — so the answer is a property of the
- * def's own port list, readable off the registry projection, and it stays right
- * for a module nobody has thought about. A module-name list would answer the
- * same question by enumeration, go stale the first time a def gained or lost a
- * port, and fail in the direction that hangs for 90 s.
- *
- * A type the manifest does not know returns `false`, which routes it into the
- * loud refusal rather than into a wait — an unknown type is exactly the case
- * that must not be given the benefit of the doubt.
- */
-async function hasAudioPort(type: string): Promise<boolean> {
-  // Dynamic on purpose — see the import note at the head of this file. The unit
-  // lane loads this module and must never touch the generated manifest.
-  const { REGISTRY } = await import('../tests/_registry');
-  const m = (REGISTRY as readonly RegistryModule[]).find((r) => r.type === type);
-  if (!m) return false;
-  return [...m.inputs, ...m.outputs].some((p) => p.type === 'audio');
-}
-
-/**
- * Spawn ONE new node of `type` onto FREE CANVAS below the channel-lane baseline
- * and return its id.
- *
- * ⚠ IT WAS `spawnVideoZoneMember` AND THE NAME WAS THE NARROWER OF THE TWO
- * TRUTHS. The point (200, 4560) is inside the purple VIDEO ZONE, which is why
- * the video branch uses it — but nothing in this function is about video. What
- * it actually provides is "spawn somewhere that is NOT a channel column, and
- * identify the member by TYPE rather than by column position", which is what
- * every face with no audio port needs. Renamed when the meta domain arrived, so
- * a reader of the meta branch is not told they are in the video zone.
- */
-async function spawnOnFreeCanvas(page: Page, type: string): Promise<string> {
+async function spawnVideoZoneMember(page: Page, type: string): Promise<string> {
   // The population BEFORE the spawn — the thing that made `=== 1` wrong.
   const before = await idsOfType(page, type);
 

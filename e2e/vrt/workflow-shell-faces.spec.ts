@@ -303,12 +303,11 @@ const FACE_WIDTH_EXEMPTIONS: Readonly<Record<string, string>> = {
 };
 
 test.describe('VRT: P1 curated faces (?shell=1) — compact lane tile + dock full-view', () => {
-  for (const { type, pages, videoFaceWhy, singletonAdoptWhy, freeCanvasWhy, simPin, tabbedOptIn } of FACES as readonly {
+  for (const { type, pages, videoFaceWhy, singletonAdoptWhy, simPin, tabbedOptIn } of FACES as readonly {
     type: string;
     pages: number;
     videoFaceWhy?: string;
     singletonAdoptWhy?: string;
-    freeCanvasWhy?: string;
     simPin?: BootFaceOptions['simPin'];
     tabbedOptIn?: true;
   }[]) {
@@ -321,7 +320,6 @@ test.describe('VRT: P1 curated faces (?shell=1) — compact lane tile + dock ful
     const bootOpts: BootFaceOptions = {
       ...(videoFaceWhy ? { videoFaceWhy } : {}),
       ...(singletonAdoptWhy ? { singletonAdoptWhy } : {}),
-      ...(freeCanvasWhy ? { freeCanvasWhy } : {}),
       ...(simPin ? { simPin } : {}),
     };
     test(`face-${type}-compact: the compact lane tile matches baseline`, async ({ page }) => {
