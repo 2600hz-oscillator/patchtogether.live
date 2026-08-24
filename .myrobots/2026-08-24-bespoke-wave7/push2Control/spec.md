@@ -15,6 +15,21 @@
 | VRT | `EXEMPT_FROM_VRT:687` **and** `ALLOWED_PERMANENT_EXEMPT:1214` |
 | docs | ⚠ **no `docs` field, and NOT in `STRICT_DOCS`** — see §8.4 |
 
+> **WHICH SIDE OF THE LANE CARVE-OUT:** ⚠ **NOT in `NON_SHELL_LANE_TYPES`**
+> (`legacy-fallback.ts:110-129`) — unlike its two named models, `electraControl`
+> and `launchpadControlLeft` — so `laneRenderKind` returns **`'placeholder'`**
+> today (`:156-160`) and this module already HAS a shell lane tile, just an empty
+> one. Promotion therefore fills a tile that exists rather than creating one, and
+> the compact-versus-caption tradeoff is live for this face (a lane tile has no
+> section headings, which is what makes `face.bareCells` dock-only). §0.
+>
+> **WHAT WOULD MAKE IT DRAINABLE** from `ALLOWED_PERMANENT_EXEMPT`: ⚠ **the
+> PRE-CONNECT state is fully deterministic and is what a dock baseline captures**
+> — two of the exemption's three stated grounds (`:687`) are absences in CI, not
+> variability, and the third (a patch-dependent replica) is defeated by a VRT
+> scene that spawns `push2Control` ALONE, leaving lane 1 empty and the canvas
+> painting its stable `card.empty` picture. §7.2.
+
 ---
 
 ## 0. THE HEADLINE — THIS IS `midiclock` #2187 AGAIN, WORD FOR WORD, AND THE PR TITLE IS THE PROOF
