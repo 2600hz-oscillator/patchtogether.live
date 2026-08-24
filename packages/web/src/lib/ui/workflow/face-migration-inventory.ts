@@ -976,14 +976,6 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
       'a ranked control list, and the staff is the interaction.',
   },
   {
-    type: 'kria',
-    disposition: 'bespoke-surface',
-    blockers: ['needs-note-entry-cell'],
-    why:
-      'the CV STEP SEQUENCER: pitch / gate / chord rosters per step with page navigation and ' +
-      'quicksave slots. Steps are typed and the grid is the interaction.',
-  },
-  {
     type: 'skifree',
     disposition: 'bespoke-surface',
     why: 'a GAME: a scrolling viewport played on the keyboard, with no params at all.',
