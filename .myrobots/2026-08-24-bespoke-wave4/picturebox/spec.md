@@ -668,7 +668,7 @@ Measured on this tree, negative control then positive control:
 |---|---|
 | **baseline** (clean `main`) | `1c49e951c4836ef426bf969dad894302e738321319ff56a30c9d0ee1bf83ab50` |
 | `+ face: { order: ['gain'] }` on `pictureboxDef` | `1c49e951…` — **UNCHANGED** |
-| `+ def-top-level `noUserControl: [ …2 entries… ]` | `1c49e951…` — **UNCHANGED** |
+| plus a def-top-level `noUserControl` array, one entry per synthetic param | `1c49e951…` — **UNCHANGED** |
 | `gain` `max: 2` → `max: 3` (positive control) | `93ab8cd7e696cde48429821a4265a3072dc6ba167beef1af31d90fd76ce85e2a` — **MOVED** |
 
 So the exact PR shape matters, and the rule is sharp:

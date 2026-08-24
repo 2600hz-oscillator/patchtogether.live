@@ -204,7 +204,7 @@ writer, why }` and the registries declare `noUserControl?: readonly NoUserContro
 |---|---|
 | baseline | `1c49e951c4836ef426bf969dad894302e738321319ff56a30c9d0ee1bf83ab50` |
 | `+ face: { order: ['gain'] }` | `1c49e951…` **UNCHANGED** |
-| `+ def-level `noUserControl: […]`` | `1c49e951…` **UNCHANGED** |
+| plus a def-level `noUserControl` array | `1c49e951…` **UNCHANGED** |
 | `gain` `max: 2 → 3` (positive control) | `93ab8cd7e696cde48429821a4265a3072dc6ba167beef1af31d90fd76ce85e2a` **MOVED** |
 
 So the operative rule is sharp and it is in `picturebox/spec.md` §10.1: **a picturebox face
