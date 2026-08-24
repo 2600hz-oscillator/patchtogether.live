@@ -445,7 +445,7 @@ None of the three is in `NON_SHELL_LANE_TYPES` (`legacy-fallback.ts:96-112` —
 
 All three are `domain: 'audio'`, so `hasVideoSurface` is false and the wave-4
 `picturebox` escape does not apply. They are on the glyph seam, where
-`ShellExtensionGlyphProps` (`shell-extensions.ts:44-52`) carries `num`, `numbers` and
+`ShellExtensionGlyphProps` (`shell-extensions.ts:44-51`) carries `num`, `numbers` and
 `testid` and **no `nodeId`** — so a glyph is a pure function of a discrete param value and
 every instance would draw an identical picture.
 

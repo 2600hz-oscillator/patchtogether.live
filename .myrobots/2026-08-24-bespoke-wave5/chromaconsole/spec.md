@@ -113,7 +113,7 @@ So all four escapes are closed, and each for a different reason:
 still captions from `label` (so no existing face moves), and a face WITH it captions from
 the node (so a node-data change moves the caption). One of those must be a permanent leg of
 the test — a gate that only proves the new path works is blind to the regression it can
-cause in the other 145 faces.
+cause in every already-promoted face.
 
 ⚠ **THIS ASK IS NOT WAVE 4's ASK.** Wave 4 wanted `env` on `ShellSelectorCell`, which
 BINDERS §1 shows was both too narrow and unnecessary. This one is verified in the opposite
@@ -288,7 +288,7 @@ editor on every load and sync one collaborator's editing into another's performa
 makes component state the wrong default, so choosing it needs the argument written down.
 
 ⚠ **PUSH ALL and the descriptor actions are `ShellActionCell`s and REQUIRE a probe.**
-`shell-cells.ts:157` makes `probe` required. An audition writes nothing to the graph, so
+`shell-cells.ts:293` makes `probe` required. An audition writes nothing to the graph, so
 `readParam`/`readData` are structurally blind — `faces-parity` once asserted `toBeEnabled()`,
 clicked, and asserted nothing, and **sixstrum shipped a face over an instrument that could
 not be sounded.** The observable is the audition ledger. **chromaconsole already has the
