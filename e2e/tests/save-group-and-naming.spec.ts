@@ -14,7 +14,7 @@
 
 import { test, expect } from './_fixtures';
 import { type Page } from '@playwright/test';
-import { spawnPatch } from './_helpers';
+import { spawnPatch, canvasPane} from './_helpers';
 
 test.describe.configure({ mode: 'parallel' });
 
@@ -69,7 +69,7 @@ test('module palette: "Insert saved group…" is suppressed when no user is sign
   // with currentUserId=undefined unless a clerk JWT is supplied. So the
   // saved-group entry should NOT appear on a fresh load.
   // Right-click empty pane to open the palette.
-  await page.locator('.svelte-flow__pane').click({ button: 'right', position: { x: 400, y: 300 } });
+  await canvasPane(page).click({ button: 'right', position: { x: 400, y: 300 } });
   await expect(page.locator('[data-testid="palette-create-group"]')).toBeVisible();
   await expect(page.locator('[data-testid="palette-insert-saved-group"]')).toHaveCount(0);
 });

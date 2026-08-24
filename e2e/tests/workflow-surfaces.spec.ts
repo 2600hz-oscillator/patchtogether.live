@@ -19,7 +19,7 @@
 // at navigator.requestMIDIAccess, which is exactly the seam we stub.
 
 import { test, expect, type Page } from '@playwright/test';
-import { spawnPatch } from './_helpers';
+import { canvasNode, spawnPatch } from './_helpers';
 
 /** All always-on pinned ids a workflow rack must hold after the ensure
  *  (P1 trio + P2 surfaces — graph/workflow-pins.ts). */
@@ -115,11 +115,31 @@ test.describe('workflow clock surface (🕐 TIMELORDE face)', () => {
     await gotoWorkflow(page);
 
     // The P2 surface pins live in the graph but NEVER as MAIN-CANVAS cards
-    // (`.flow` is the main rack flow — the audio-I/O menu legitimately
-    // hosts the pinned AUDIO IN/OUT faces in its own standalone flow).
+    // (the audio-I/O menu legitimately hosts the pinned AUDIO IN/OUT faces in
+    // its own standalone flow).
+    //
+    // ⚠ RE-POINTED, NOT RELAXED (2026-08-23). This read `.flow .svelte-flow__node…`
+    // on the premise — stated in the line it replaces — that "`.flow` is the
+    // main rack flow". That premise is FALSE: `HeadlessSourceHost` renders each
+    // hosted card in its own SvelteFlow *inside* `.flow`, so a bare `.flow`
+    // scope matches the host's copy too. It went red the day `pinned-timelorde`
+    // gained a host (#1754), and the thing that changed is the SELECTOR'S REACH,
+    // not the claim: an off-screen, `aria-hidden`, `pointer-events:none` mount
+    // at `left:-9999px` is not a canvas card by any reading. `canvasNode`
+    // addresses the canvas's own flow by the child combinator that separates
+    // them — see its note in `_helpers.ts`.
     for (const id of SURFACE_IDS) {
-      await expect(page.locator(`.flow .svelte-flow__node[data-id="${id}"]`)).toHaveCount(0);
+      await expect(canvasNode(page, id)).toHaveCount(0);
     }
+    // …and the ABSENCE above is not the absence of the node from the PAGE, which
+    // is a different and much weaker claim. `pinned-timelorde` really is mounted
+    // — off-canvas, in its host — because its card is the sole writer of
+    // `video_out`. Pinning that here keeps the leg above honest: if the host ever
+    // stops existing, this fails rather than the one above quietly getting easier.
+    await expect(
+      page.locator('[data-testid="headless-source-host"][data-node-type="timelorde"]'),
+      'the pinned clock has no headless host — its producer would be dead (#1754)',
+    ).toHaveCount(1);
 
     await page.getByTestId('workflow-topbar-slot-clock').click();
     const menu = page.getByTestId('workflow-clock-menu');

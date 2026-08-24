@@ -24,7 +24,7 @@
 //     per-node menu, not the palette — that behavior is exercised separately).
 
 import { test, expect, type Page } from '@playwright/test';
-import { spawnPatch, openModulePalette } from './_helpers';
+import { spawnPatch, openModulePalette, canvasPane} from './_helpers';
 import { SYNC_BUDGET_MS, SYNC_POLL_INTERVALS } from './_collab-helpers';
 
 test.describe.configure({ mode: 'parallel' });
@@ -75,7 +75,7 @@ async function getInternalSize(page: Page, id: string): Promise<{ w: number; h: 
 }
 
 async function paneBox(page: Page) {
-  const pane = page.locator('.svelte-flow__pane');
+  const pane = canvasPane(page);
   const box = await pane.boundingBox();
   if (!box) throw new Error('no pane bounding box');
   return box;

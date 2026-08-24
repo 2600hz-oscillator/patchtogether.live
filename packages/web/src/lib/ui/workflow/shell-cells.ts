@@ -124,6 +124,7 @@ import {
 // it, because shell-cells.test.ts checks which HANDLER FIELD is present, not
 // what the handler does.
 import { fireManualStrike, setManualGate } from '$lib/ui/modules/manual-strike-actions';
+import { timelordeFaceTap } from '$lib/ui/modules/timelorde/face-tap';
 
 /** A dropdown over a NAMED roster that lives in node.data (not a param). */
 export interface ShellSelectorCell {
@@ -202,7 +203,47 @@ export interface ShellActionProbe {
         seam: AuditionSeam;
       }
     | { kind: 'data'; key: string; expect: 'changed' }
-    | { kind: 'data-rev'; key: string };
+    | { kind: 'data-rev'; key: string }
+    | {
+        /**
+         * The press must move a declared PARAM — the strongest observable an
+         * action can have, because it is the module's own I/O contract rather
+         * than a private view key or a counter.
+         *
+         * ⚠ IT IS NOT AN ALIAS OF `data`, and the difference is the point. A
+         * `data` probe watches `node.data`, which is where a cell keeps state
+         * the DEF does not know about; an action whose whole job is to write a
+         * param would have to MIRROR its result onto `node.data` to be probed
+         * that way, which is a second copy of a value that already has one home
+         * — exactly the disagreement this file's other rules exist to prevent.
+         */
+        kind: 'param';
+        paramId: string;
+        expect: 'changed';
+      };
+  /**
+   * How many presses the sweep must issue before the effect is expected.
+   * Omitted = 1, which is every action shipped before this field.
+   *
+   * ⚠ IT EXISTS BECAUSE A ONE-PRESS PROBE ON A MULTI-PRESS CONTROL IS THE
+   * SIXSTRUM DEFECT WEARING A GREEN TICK. TIMELORDE's TAP TEMPO delivers
+   * NOTHING on the first press by design — `TapTempo` needs two timestamps to
+   * have an interval, so it returns null and writes no param — so a single
+   * click cannot distinguish "the controller is warming up" from "this button
+   * is dead". The alternatives were both worse and both were considered: a
+   * `data-rev` counter is refused BY NAME two paragraphs down (it passes on a
+   * dead button that bumps it), and mirroring the locked tempo onto `node.data`
+   * to satisfy a `data` probe would put a param's value in two places.
+   *
+   * ⚠ THE PRESSES ARE ISSUED AS ONE `clickCount` ACTION, NOT AS A LOOP, AND
+   * THAT IS A CORRECTNESS REQUIREMENT RATHER THAN A SPEED ONE. `TapTempo`
+   * starts a FRESH series after a ~2 s gap, so N separate `click()` calls —
+   * each re-running its own actionability checks on a loaded CI runner — put a
+   * wall-clock dependency inside a gate: a slow enough runner resets the series
+   * and reads the param unchanged. One `clickCount: n` action dispatches the
+   * presses inside a single input sequence with no interleaved await.
+   */
+  presses?: number;
 }
 
 export interface ShellActionCell {
@@ -1526,6 +1567,50 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
         action: 'drag',
         effect: { kind: 'data', key: 'wsBands[0].send', expect: 'changed' },
       },
+    },
+  },
+
+  timelorde: {
+    // TAP TEMPO — set the rack's master tempo by ear.
+    //
+    // ⚠ AN ACTION, NOT A `face.momentary` PAD, and the distinction is not
+    // stylistic. `momentary` is for a 0/1 press-PARAM that returns to rest (the
+    // clap `strike` shape, ORed with a trigger input in the worklet). TAP is not
+    // a param at all — it is a CALL into a `TapTempo` controller that, from the
+    // second tap onward, writes the ordinary `bpm` param through the same
+    // `setNodeParam` path the BPM control uses.
+    //
+    // ⚠ THE PROBE IS THE INTERESTING PART, AND THE OBVIOUS ONE IS VACUOUS. An
+    // `audition` probe asks the ledger whether a callable resolved off the live
+    // ENGINE HANDLE; TAP never touches the engine, so that probe would pass on a
+    // dead button. `data-rev` is refused by name in this file (it passes on a
+    // dead button that bumps a counter). And `data` would mean mirroring the
+    // locked tempo onto `node.data` — a param's value in two places.
+    //
+    // So: a `param` probe on `bpm`, pressed TWICE. `TapTempo` needs two
+    // timestamps to have an interval and returns null on the first press BY
+    // DESIGN, so a single-press probe reads `bpm` unchanged and cannot tell "the
+    // controller is warming up" from "this button is dead" — which is the
+    // sixstrum defect exactly. Both fields (`kind: 'param'` and `presses`) were
+    // added for this cell; see ShellActionProbe for the argument and for why the
+    // presses are issued as one `clickCount` action rather than a loop.
+    //
+    // ⚠ WHATEVER GAP THE SWEEP HAPPENS TO PUT BETWEEN THE TWO PRESSES IS FINE,
+    // and it is worth saying why rather than leaving a reader to worry: two
+    // presses `n` ms apart lock `60000/n`, clamped to 10..300. A fast harness
+    // pins 300, a slow one pins 10 — both are "changed", so the probe is honest
+    // either way. The ONE hazard is a gap past `TAP_RESET_MS`, which starts a
+    // fresh series and writes nothing; that is what the single-action press
+    // requirement removes.
+    'timelorde-tap-{n}': {
+      kind: 'action',
+      label: 'tap',
+      mode: 'trigger',
+      title:
+        'Tap twice in time to set the tempo (Space taps it too while TIMELORDE is selected). '
+        + 'Inactive while an external clock is patched into CLOCK IN — the measured tempo owns the BPM then.',
+      probe: { presses: 2, effect: { kind: 'param', paramId: 'bpm', expect: 'changed' } },
+      onFire: (nodeId) => { timelordeFaceTap(nodeId); },
     },
   },
 };

@@ -169,7 +169,7 @@ author a `face` and rank the controls — no new platform capability.
 | `tempest` | video | done | — |
 | `tidyVco` | audio | done | — |
 | `tiler` | video | done | — |
-| `timelorde` | audio | — | — |
+| `timelorde` | audio | done | — |
 | `tomtom` | audio | done | — |
 | `treeohvox` | audio | done | — |
 | `unityscalemathematik` | audio | done | — |
