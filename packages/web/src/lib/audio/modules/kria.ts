@@ -141,13 +141,22 @@ export const kriaDef: AudioModuleDef = {
     // Every one of these is a control the engine already implemented and the
     // docs already described while the ONLY editor for it was an attached
     // monome grid over WebSerial.
-    { id: 'kria-loop-start',     label: 'Loop start step (selected track)',   kind: 'other', testidPrefix: 'kria-loop-start' },
-    { id: 'kria-loop-length',    label: 'Loop length (selected track)',       kind: 'other', testidPrefix: 'kria-loop-length' },
-    { id: 'kria-time-division',  label: 'Clock division (selected track)',    kind: 'other', testidPrefix: 'kria-time-division' },
-    { id: 'kria-direction',      label: 'Play direction (selected track)',    kind: 'other', testidPrefix: 'kria-direction' },
-    { id: 'kria-mute',           label: 'Track mute (selected track)',        kind: 'other', testidPrefix: 'kria-mute' },
+    //
+    // ⚠ THE LABELS ARE TERSE ON PURPOSE, and they were not at first. Each of
+    // the per-track ones read '… (selected track)', which printed that phrase
+    // FOUR times inside a band already headed TRACK — the mixmstrs case the
+    // owner ruled on ('a per-control label earns its place when it
+    // disambiguates otherwise-identical controls; it is clutter when a section
+    // heading already conveys it'). The band heading carries the scoping, the
+    // selector chip carries the value, and the full explanation lives in
+    // `docs.controls` where right-click annotate reads it.
+    { id: 'kria-loop-start',     label: 'Loop start',    kind: 'other', testidPrefix: 'kria-loop-start' },
+    { id: 'kria-loop-length',    label: 'Loop length',   kind: 'other', testidPrefix: 'kria-loop-length' },
+    { id: 'kria-time-division',  label: 'Clock division',kind: 'other', testidPrefix: 'kria-time-division' },
+    { id: 'kria-direction',      label: 'Play direction',kind: 'other', testidPrefix: 'kria-direction' },
+    { id: 'kria-mute',           label: 'Track mute',    kind: 'other', testidPrefix: 'kria-mute' },
     { id: 'kria-scale',          label: 'Pattern scale',                      kind: 'other', testidPrefix: 'kria-scale' },
-    { id: 'kria-root',           label: 'Pattern root note',                  kind: 'other', testidPrefix: 'kria-root' },
+    { id: 'kria-root',           label: 'Pattern root',  kind: 'other', testidPrefix: 'kria-root' },
   ],
 
   face: {
