@@ -1,0 +1,373 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>KRIA face — STEP view, the NOTE page</title>
+<style>
+/* ─────────────────────────────────────────────────────────────────────────
+   KRIA FACEPLATE — MOCKUP, state 1 of 2: the STEP view on the NTE page.
+   SPEC AND MOCKUP ONLY. Nothing here is implemented. See spec.md.
+
+   House tokens, the same set the wave-1 and wave-2 mocks use. The grid is
+   DOM <button>s, exactly as the card's is — not a canvas. That keeps every
+   accessible name, keeps hit-testing free, and keeps this module out of the
+   WebGL attest basis (basis rule 2 is derived from CONTENT).
+   ───────────────────────────────────────────────────────────────────────── */
+:root{
+  --bg:#0e1013; --dock:#12161c; --plate:#262a31; --pbody:#1c1f24; --well:#0a0c0f;
+  --line:#2c3037; --tile:#33383f; --ink:#eef1f5; --dim:#9aa2ad; --faint:#646c77;
+  --cv:#7dd3fc; --accent:#6cf; --ch1:#fbbf24; --ch2:#60a5fa; --warn:#f2c14e; --good:#8fe6b0;
+  --lit:#f0b429; --play:#3d5570;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+  font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1240px;margin:0 auto;padding:26px 20px 90px}
+h1{font-size:21px;font-weight:800;margin:0 0 6px;letter-spacing:.01em}
+.sub{color:var(--dim);font-size:12.5px;margin:0 0 14px;max-width:108ch}
+.sub b{color:var(--ink)} code{font-family:var(--mono);font-size:11.5px;color:var(--ch1)}
+.nav{display:flex;gap:8px;margin:0 0 20px;font-size:11px;flex-wrap:wrap}
+.nav a{color:var(--ink);text-decoration:none;border:1px solid var(--line);border-radius:6px;
+  padding:6px 12px;background:#12161c;font-family:var(--mono);letter-spacing:.06em;text-transform:uppercase}
+.nav a.on{border-color:var(--ch1);color:var(--ch1)}
+.warn{border:1px solid #6a5330;background:#1c1811;border-radius:8px;padding:11px 14px;
+  margin:12px 0;font-size:12.5px;color:#e8cf9a;max-width:120ch}
+.warn b{color:var(--warn)}
+.ok{border:1px solid #3b5a48;background:#111a15;border-radius:8px;padding:11px 14px;
+  margin:12px 0;font-size:12.5px;color:#a9d8bd;max-width:120ch}
+.ok b{color:var(--good)}
+.cols{display:grid;grid-template-columns:minmax(0,1fr) 370px;gap:18px;align-items:start}
+@media (max-width:1120px){.cols{grid-template-columns:minmax(0,1fr)}}
+
+.dock{background:var(--dock);border:1px solid var(--line);border-radius:11px;overflow:hidden;padding:11px}
+.chromebar{display:flex;align-items:baseline;gap:9px;padding:0 2px 8px}
+.chromebar .nm{font-size:13px;font-weight:800;letter-spacing:.03em}
+.chromebar .rl{font-size:9.4px;letter-spacing:.09em;text-transform:uppercase;color:var(--faint);font-family:var(--mono)}
+.chromebar .x{margin-left:auto;color:var(--faint);font-family:var(--mono);font-size:12px}
+.plate{background:var(--pbody);border:1px solid var(--tile);border-left:4px solid var(--cv);
+  border-radius:10px;padding:0 0 12px;width:max-content;max-width:100%}
+
+/* ── the fullViewBody: selection chrome + the step grid ───────────────── */
+.extbody{padding:12px 14px 4px}
+.selrow{display:flex;gap:14px;align-items:center;margin:0 0 9px;flex-wrap:wrap}
+.grp{display:flex;align-items:center;gap:6px}
+.grp .lbl{font-family:var(--mono);font-size:7.4px;letter-spacing:.13em;text-transform:uppercase;color:var(--faint)}
+.btns{display:flex;border:1px solid #3a4048;border-radius:6px;overflow:hidden}
+.btns b{font-family:var(--mono);font-size:8.8px;font-weight:400;letter-spacing:.06em;
+  padding:5px 9px;background:#1b2027;color:var(--faint);border-right:1px solid #2a3038}
+.btns b:last-child{border-right:0}
+.btns b.on{background:#2a3340;color:var(--accent)}
+.btns.lane b.on{background:#3a3218;color:var(--lit)}
+.viewflip{margin-left:auto;font-family:var(--mono);font-size:8.4px;letter-spacing:.08em;
+  border:1px solid #3a4048;border-radius:5px;padding:4px 11px;color:var(--faint);background:#1b2027}
+
+.gridwrap{background:#0a0c10;border:1px solid #1a1f2a;border-radius:5px;padding:8px 9px}
+.grid{display:flex;flex-direction:column;gap:3px}
+.grow{display:flex;gap:3px}
+.cell{width:24px;height:19px;border-radius:2px;background:#151a21;border:1px solid #232a33}
+.cell.ph{background:var(--play);border-color:#4d6683}
+.cell.on{background:var(--lit);border-color:#c9962a;box-shadow:0 0 6px rgba(240,180,41,.35)}
+.cell.on.ph{background:#ffd15c;border-color:#e0ae3a}
+.stepnums{display:flex;gap:3px;padding-top:5px}
+.stepnums b{width:24px;text-align:center;font-family:var(--mono);font-size:6.8px;font-weight:400;
+  letter-spacing:.02em;color:#414a55}
+.stepnums b.q{color:#6b7683}
+
+/* ── bands ────────────────────────────────────────────────────────────── */
+.bands{padding:6px 14px 0}
+.band{border-top:1px solid var(--line);padding-top:8px;margin-top:10px}
+.band:first-child{border-top:0;margin-top:4px}
+.blab{margin:0 0 7px;font-size:9.4px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--dim)}
+.row{display:flex;flex-wrap:wrap;align-items:flex-start;gap:10px 20px}
+.cluster{display:flex;flex-direction:column;gap:5px}
+.clab{font-family:var(--mono);font-size:7.6px;letter-spacing:.13em;text-transform:uppercase;color:var(--faint)}
+.crow{display:flex;gap:12px;align-items:flex-start}
+/* knob stand-in */
+.k{width:50px;display:flex;flex-direction:column;align-items:center;gap:5px}
+.k i{--a:140deg;display:block;width:34px;height:34px;border-radius:50%;position:relative;
+  background:radial-gradient(circle at 38% 32%,#2b323b,#171c22 70%);border:1px solid #3a4048}
+.k i::after{content:"";position:absolute;left:50%;top:50%;width:2px;height:13px;background:var(--cv);
+  border-radius:1px;transform-origin:50% 100%;transform:translate(-50%,-100%) rotate(var(--a));
+  box-shadow:0 0 5px rgba(125,211,252,.55)}
+.k b{font-size:7.8px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--dim);
+  font-family:var(--mono);text-align:center}
+/* toggle stand-in */
+.tg{display:flex;flex-direction:column;align-items:center;gap:5px}
+.tg i{display:block;width:38px;height:20px;border-radius:11px;background:#1b2027;border:1px solid #3a4048;
+  position:relative}
+.tg i::after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:#4b545f}
+.tg.on i{background:#233a2c;border-color:#3f7a55}
+.tg.on i::after{left:auto;right:2px;background:var(--good)}
+.tg b{font-size:7.8px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--dim);font-family:var(--mono)}
+/* selector stand-in */
+.sel{display:flex;flex-direction:column;gap:4px;min-width:104px}
+.sel .cap{font-size:7.8px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--dim);font-family:var(--mono)}
+.selbox{display:flex;align-items:center;gap:6px;border:1px solid #3a4048;border-radius:6px;
+  background:#151a21;padding:5px 8px}
+.selbox .val{font-family:var(--mono);font-size:9.4px;color:var(--ink);flex:1 1 auto}
+.selbox .caret{color:var(--faint);font-size:9px}
+/* action stand-in */
+.act{display:flex;flex-direction:column;align-items:center;gap:5px}
+.act i{display:grid;place-items:center;min-width:56px;height:24px;border-radius:5px;background:#1b2027;
+  border:1px solid #3a4048;font-family:var(--mono);font-size:8.6px;letter-spacing:.09em;color:var(--dim);
+  font-style:normal}
+.act b{font-size:7.8px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--dim);font-family:var(--mono)}
+
+.notes{display:flex;flex-direction:column;gap:12px}
+.card{border:1px solid var(--line);background:#101419;border-radius:9px;padding:12px 14px}
+.card h3{margin:0 0 7px;font-size:10px;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--accent);font-family:var(--mono);font-weight:700}
+.card p{margin:0 0 8px;font-size:12px;color:var(--dim)} .card p:last-child{margin-bottom:0}
+.card b{color:var(--ink)}
+table{border-collapse:collapse;width:100%;font-size:11px;margin:2px 0 0}
+th,td{text-align:left;padding:4px 7px 4px 0;border-bottom:1px solid #1e242c;vertical-align:top;color:var(--dim)}
+th{color:var(--faint);font-family:var(--mono);font-size:8.6px;letter-spacing:.09em;text-transform:uppercase;font-weight:400}
+td b{color:var(--ink)}
+.aria{font-family:var(--mono);font-size:10.5px;color:#8fe6b0}
+.no{color:#e8918a}
+</style>
+<div class="wrap">
+
+<h1>KRIA — the dock faceplate, STEP view</h1>
+<p class="sub">
+  <b>SPEC AND MOCKUP ONLY. Nothing here is implemented.</b> The NOTE page of track 1, running.
+  Every control below the grid is a <b>registry cell</b> — a selector or a toggle over a roster
+  <code>kria-types.ts</code> already declares. <b>The face invents no vocabulary.</b>
+</p>
+
+<div class="nav">
+  <a class="on" href="dock.html">1 · STEP view</a>
+  <a href="dock-patterns.html">2 · PATTERN view</a>
+  <a href="spec.md">spec.md</a>
+</div>
+
+<div class="ok">
+  <b>Seven lane pages, not four.</b> The card offers TRG / NTE / OCT / DUR. <code>RAT</code>,
+  <code>PRB</code> and <code>GLD</code> are documented in the def's own
+  <code>docs.explanation</code>, implemented in the engine
+  (<code>kria.ts:277-285</code>, <code>:267-268</code>, <code>:253-260</code>) and reachable today
+  <b>only from a monome grid over WebSerial</b> — while the manifest says the module is
+  <i>"FULLY usable from the card with a mouse."</i>
+</div>
+
+<div class="cols">
+<div>
+
+  <div class="dock">
+    <div class="chromebar">
+      <span class="nm">kria</span>
+      <span class="rl">dock · full view</span>
+      <span class="x">✕</span>
+    </div>
+
+    <div class="plate">
+
+      <!-- fullViewBody -->
+      <div class="extbody">
+        <div class="selrow">
+          <span class="grp">
+            <span class="lbl">track</span>
+            <span class="btns"><b class="on">1</b><b>2</b><b>3</b><b>4</b></span>
+          </span>
+          <span class="grp">
+            <span class="lbl">lane</span>
+            <span class="btns lane">
+              <b>TRG</b><b class="on">NTE</b><b>OCT</b><b>DUR</b><b>PRB</b><b>GLD</b><b>RAT</b>
+            </span>
+          </span>
+          <span class="viewflip">PATTERNS ▸</span>
+        </div>
+
+        <div class="gridwrap">
+          <div class="grid">
+            <div class="grow">
+              <span class="cell"></span><span class="cell"></span><span class="cell"></span><span class="cell"></span>
+              <span class="cell on"></span><span class="cell"></span><span class="cell"></span><span class="cell"></span>
+              <span class="cell"></span><span class="cell"></span><span class="cell"></span><span class="cell"></span>
+              <span class="cell"></span><span class="cell on"></span><span class="cell"></span><span class="cell"></span>
+            </div>
+            <div class="grow">
+              <span class="cell"></span><span class="cell"></span><span class="cell on"></span><span class="cell"></span>
+              <span class="cell"></span><span class="cell"></span><span class="cell"></span><span class="cell"></span>
+              <span class="cell on"></span><span class="cell"></span><span class="cell"></span><span class="cell"></span>
+              <span class="cell"></span><span class="cell"></span><span class="cell"></span><span class="cell"></span>
+            </div>
+            <div class="grow">
+              <span class="cell"></span><span class="cell"></span><span class="cell"></span><span class="cell"></span>
+              <span class="cell"></span><span class="cell"></span><span class="cell ph"></span><span class="cell"></span>
+              <span class="cell"></span><span class="cell"></span><span class="cell on"></span><span class="cell"></span>
+              <span class="cell"></span><span class="cell"></span><span class="cell"></span><span class="cell"></span>
+            </div>
+            <div class="grow">
+              <span class="cell"></span><span class="cell on"></span><span class="cell"></span><span class="cell"></span>
+              <span class="cell"></span><span class="cell"></span><span class="cell ph"></span><span class="cell"></span>
+              <span class="cell"></span><span class="cell"></span><span class="cell"></span><span class="cell"></span>
+              <span class="cell"></span><span class="cell"></span><span class="cell on"></span><span class="cell"></span>
+            </div>
+            <div class="grow">
+              <span class="cell"></span><span class="cell"></span><span class="cell"></span><span class="cell on"></span>
+              <span class="cell"></span><span class="cell"></span><span class="cell ph"></span><span class="cell"></span>
+              <span class="cell"></span><span class="cell on"></span><span class="cell"></span><span class="cell"></span>
+              <span class="cell"></span><span class="cell"></span><span class="cell"></span><span class="cell"></span>
+            </div>
+            <div class="grow">
+              <span class="cell"></span><span class="cell"></span><span class="cell"></span><span class="cell"></span>
+              <span class="cell"></span><span class="cell on"></span><span class="cell ph"></span><span class="cell"></span>
+              <span class="cell"></span><span class="cell"></span><span class="cell"></span><span class="cell on"></span>
+              <span class="cell"></span><span class="cell"></span><span class="cell"></span><span class="cell"></span>
+            </div>
+            <div class="grow">
+              <span class="cell on"></span><span class="cell"></span><span class="cell"></span><span class="cell"></span>
+              <span class="cell"></span><span class="cell"></span><span class="cell on ph"></span><span class="cell on"></span>
+              <span class="cell"></span><span class="cell"></span><span class="cell"></span><span class="cell"></span>
+              <span class="cell on"></span><span class="cell"></span><span class="cell"></span><span class="cell on"></span>
+            </div>
+          </div>
+          <div class="stepnums">
+            <b class="q">1</b><b>2</b><b>3</b><b>4</b><b class="q">5</b><b>6</b><b>7</b><b>8</b>
+            <b class="q">9</b><b>10</b><b>11</b><b>12</b><b class="q">13</b><b>14</b><b>15</b><b>16</b>
+          </div>
+        </div>
+      </div>
+
+      <div class="bands">
+        <div class="band">
+          <p class="blab">Transport</p>
+          <div class="row">
+            <span class="tg on"><i></i><b>Run</b></span>
+            <span class="k"><i style="--a:110deg"></i><b>BPM</b></span>
+          </div>
+        </div>
+
+        <div class="band">
+          <p class="blab">Track</p>
+          <div class="row">
+            <span class="cluster">
+              <span class="clab">loop</span>
+              <span class="crow">
+                <span class="sel"><span class="cap">Start</span><span class="selbox"><span class="val">1</span><span class="caret">▾</span></span></span>
+                <span class="sel"><span class="cap">Length</span><span class="selbox"><span class="val">16</span><span class="caret">▾</span></span></span>
+              </span>
+            </span>
+            <span class="cluster">
+              <span class="clab">time</span>
+              <span class="crow">
+                <span class="sel"><span class="cap">Div</span><span class="selbox"><span class="val">1</span><span class="caret">▾</span></span></span>
+                <span class="sel" style="min-width:126px"><span class="cap">Direction</span><span class="selbox"><span class="val">forward</span><span class="caret">▾</span></span></span>
+              </span>
+            </span>
+            <span class="tg"><i></i><b>Mute</b></span>
+            <span class="act"><i>GRID</i><b>monome</b></span>
+          </div>
+        </div>
+
+        <div class="band">
+          <p class="blab">Scale</p>
+          <div class="row">
+            <span class="sel" style="min-width:126px"><span class="cap">Scale</span><span class="selbox"><span class="val">major</span><span class="caret">▾</span></span></span>
+            <span class="sel"><span class="cap">Root</span><span class="selbox"><span class="val">C3</span><span class="caret">▾</span></span></span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="warn" style="margin-top:16px">
+    <b>THREE BANDS, UNTABBED — and that is a decision, not an omission.</b>
+    Mirroring Kria's hardware pages (TRIG / NOTE / OCT / DUR / PRB / GLD / RAT / LOOP / TIME /
+    DIRECTION / SCALE / PATTERN) would clear <code>DOCK_TAB_MIN_BANDS = 7</code> comfortably and
+    produce a rail. <b>That would be padding.</b> The per-step lanes are not bands — they are
+    <i>which lane the grid is editing</i>, one selection. LOOP and TIME are the same idea twice, so
+    they are <b>clusters at ~14 px</b>, not pages at ~81 px. <code>face.tabbed</code> is
+    owner-instruction-only; if a rail is wanted here, that is a threshold conversation.
+  </div>
+
+  <div class="card" style="margin-top:14px">
+    <h3>the accessible names — the part the card gets wrong</h3>
+    <p>The card's every cell is <code>aria-label={`step ${step} row ${row}`}</code>
+      (<code>KriaCard.svelte:325</code>) — a bare coordinate, <b>page-invariant</b> and value-free.
+      On a face that matters more than anywhere else in the wave: the plate paints no derived state,
+      so <code>aria-valuetext</code> is the <b>only</b> place the sequencer's state exists in a
+      readable form.</p>
+    <table>
+      <tr><th>element</th><th>card today</th><th>the face</th></tr>
+      <tr><td><b>cell 5,6</b></td><td class="no">step 5 row 6</td><td class="aria">step 6, degree 0 — lit</td></tr>
+      <tr><td><b>cell 5,2</b> on OCT</td><td class="no">step 5 row 2</td><td class="aria">step 6, octave +4</td></tr>
+      <tr><td><b>Scale</b></td><td class="no">painted as text</td><td class="aria">major</td></tr>
+      <tr><td><b>Direction</b></td><td class="no">unreachable</td><td class="aria">forward</td></tr>
+    </table>
+    <p style="margin-top:8px">⚠ Per the owner ruling this is <b>not</b> a keyboard-navigation
+      project. No roving tabindex, no arrow-key grid navigation, nothing that changes the Tab
+      gesture. The accessible NAME is the deliverable.</p>
+  </div>
+
+</div>
+
+<div class="notes">
+
+  <div class="card">
+    <h3>the rosters already exist</h3>
+    <p>Every selector above reads a symbol <code>kria-types.ts</code> already exports:</p>
+    <table>
+      <tr><th>control</th><th>declared as</th></tr>
+      <tr><td><b>Direction</b></td><td><code>KRIA_DIRECTIONS</code> · :76</td></tr>
+      <tr><td><b>Div</b></td><td><code>KRIA_TIME_DIVISIONS</code> · :88</td></tr>
+      <tr><td><b>Scale</b></td><td><code>KRIA_SCALE_PRESETS</code> · :50</td></tr>
+      <tr><td><b>Root</b></td><td><code>KRIA_DEFAULT_ROOT</code>, clamped · :40</td></tr>
+      <tr><td><b>Start/Length</b></td><td><code>KRIA_STEPS</code> · :32</td></tr>
+    </table>
+    <p style="margin-top:8px">⚠ <b>Import them, never re-type them.</b> <code>kria</code> joins
+      <code>RANGE_BOUND_CARDS</code> when this PR touches it.</p>
+  </div>
+
+  <div class="card">
+    <h3>Div is a roster, not a range</h3>
+    <p><code>KRIA_TIME_DIVISIONS = [1,2,3,4,6,8,12,16]</code> — <b>eight irregular values</b>.
+      A knob would let a user land between two legal divisions. A selector cannot.</p>
+    <p>Same argument for Start and Length: a knob over sixteen integers has no landmark at any
+      position; a roster names the step.</p>
+  </div>
+
+  <div class="card">
+    <h3>Root is note names, not MIDI</h3>
+    <p>The stored value is MIDI (<code>48 = C3</code>). A face that made a user pick
+      <code>48</code> would be a worse instrument than the hardware. The roster is note names;
+      the cell writes the int.</p>
+  </div>
+
+  <div class="card">
+    <h3>the selection lives in node.data</h3>
+    <p>Not component <code>$state</code>. Three independent reasons, any one sufficient:</p>
+    <p><b>1.</b> Every cell above except Run and BPM is <i>"…of the selected track"</i>, and a
+      cell's <code>value(node)</code> receives only the node.</p>
+    <p><b>2.</b> The component unmounts on dock collapse and LRU eviction — the
+      #1531 / #1574 / #1583 class.</p>
+    <p><b>3.</b> It makes the cells and the body agree by construction rather than by a prop
+      contract nobody gates.</p>
+  </div>
+
+  <div class="card">
+    <h3>the GRID button is narrower than wave 1's gap</h3>
+    <p>Wave 1's finding #3 is about hardware <b>egress</b> — proving a SysEx preset arrived.
+      This button proves only <b>binding</b>, and binding is already in the graph
+      (<code>boundKriaNode()</code>).</p>
+    <p>So: <code>kind: 'action'</code>, <code>mode: 'trigger'</code>, <b>a <code>data</code>
+      probe</b> — the kind the registry says to prefer. ⚠ And it records
+      <code>delivered: false</code> rather than dropping it when WebSerial is unavailable.</p>
+  </div>
+
+  <div class="card">
+    <h3>no lane picture — a third distinct mechanism</h3>
+    <p>Outputs are <code>pitch*</code> / <code>gate*</code>, no <code>audio</code>, so
+      <code>primaryAudioOutPortId</code> is null and every literal falls to dead static.
+      <b>Mechanically protected.</b></p>
+    <p>⚠ And #2160 would not rescue it: with no <code>nodeId</code> on
+      <code>ShellExtensionGlyphProps</code> every kria would draw the same sixteen steps — and
+      <b>the sequence IS the module</b>. Worse, kria needs strictly more than
+      <code>nodeId</code>: the picture depends on the selected track and lane too.</p>
+  </div>
+
+</div>
+</div>
+</div>

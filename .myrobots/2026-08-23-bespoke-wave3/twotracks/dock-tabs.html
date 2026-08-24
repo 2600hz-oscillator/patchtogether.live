@@ -1,0 +1,346 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>TWOTRACKS face — the tab rail, reel A · TAPE</title>
+<style>
+/* ─────────────────────────────────────────────────────────────────────────
+   TWOTRACKS FACEPLATE — MOCKUP, state 1 of 2: the tab rail, reel A TAPE tab.
+   SPEC AND MOCKUP ONLY. Nothing here is implemented. See spec.md.
+
+   The waveform is a CSS/SVG stand-in; the real one is the card's own 2D
+   drawWaveform (TwotracksCard.svelte:343-421) mounted in the face's
+   fullViewBody, PRESENT ON EVERY TAB (backdraft's ruling).
+   ───────────────────────────────────────────────────────────────────────── */
+:root{
+  --bg:#0e1013; --dock:#12161c; --plate:#262a31; --pbody:#1c1f24; --well:#0a0c0f;
+  --line:#2c3037; --tile:#33383f; --ink:#eef1f5; --dim:#9aa2ad; --faint:#646c77;
+  --cv:#7dd3fc; --accent:#6cf; --ch1:#fbbf24; --ch2:#60a5fa; --warn:#f2c14e; --good:#8fe6b0;
+  --bad:#e8918a; --tape:#7fb2d4; --loop:#e0b453;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+  font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1240px;margin:0 auto;padding:26px 20px 90px}
+h1{font-size:21px;font-weight:800;margin:0 0 6px;letter-spacing:.01em}
+.sub{color:var(--dim);font-size:12.5px;margin:0 0 14px;max-width:108ch}
+.sub b{color:var(--ink)} code{font-family:var(--mono);font-size:11.5px;color:var(--ch1)}
+.nav{display:flex;gap:8px;margin:0 0 20px;font-size:11px;flex-wrap:wrap}
+.nav a{color:var(--ink);text-decoration:none;border:1px solid var(--line);border-radius:6px;
+  padding:6px 12px;background:#12161c;font-family:var(--mono);letter-spacing:.06em;text-transform:uppercase}
+.nav a.on{border-color:var(--ch1);color:var(--ch1)}
+.warn{border:1px solid #6a5330;background:#1c1811;border-radius:8px;padding:11px 14px;
+  margin:12px 0;font-size:12.5px;color:#e8cf9a;max-width:120ch}
+.warn b{color:var(--warn)}
+.bad{border:1px solid #6d3b38;background:#1d1312;border-radius:8px;padding:11px 14px;
+  margin:12px 0;font-size:12.5px;color:#e6b8b3;max-width:120ch}
+.bad b{color:var(--bad)}
+.ok{border:1px solid #3b5a48;background:#111a15;border-radius:8px;padding:11px 14px;
+  margin:12px 0;font-size:12.5px;color:#a9d8bd;max-width:120ch}
+.ok b{color:var(--good)}
+.cols{display:grid;grid-template-columns:minmax(0,1fr) 370px;gap:18px;align-items:start}
+@media (max-width:1120px){.cols{grid-template-columns:minmax(0,1fr)}}
+
+.dock{background:var(--dock);border:1px solid var(--line);border-radius:11px;overflow:hidden;padding:11px}
+.chromebar{display:flex;align-items:baseline;gap:9px;padding:0 2px 8px}
+.chromebar .nm{font-size:13px;font-weight:800;letter-spacing:.03em}
+.chromebar .rl{font-size:9.4px;letter-spacing:.09em;text-transform:uppercase;color:var(--faint);font-family:var(--mono)}
+.chromebar .x{margin-left:auto;color:var(--faint);font-family:var(--mono);font-size:12px}
+.plate{background:var(--pbody);border:1px solid var(--tile);border-left:4px solid var(--cv);
+  border-radius:10px;padding:0 0 12px;width:max-content;max-width:100%}
+
+/* ── the fullViewBody: the persistent reel picture ────────────────────── */
+.extbody{padding:12px 14px 4px}
+.reel{position:relative;width:420px;max-width:100%}
+.wave{position:relative;height:88px;border-radius:4px;border:1px solid #1a1f2a;background:#0a0c10;overflow:hidden}
+.wave svg{display:block;width:100%;height:100%}
+/* loop window */
+.loopwin{position:absolute;top:0;bottom:0;left:18%;right:32%;background:rgba(224,180,83,.07);
+  border-left:2px solid var(--loop);border-right:2px solid var(--loop)}
+.mk{position:absolute;top:2px;width:9px;height:9px;background:var(--loop);border-radius:1px}
+.mk.s{left:-5px} .mk.e{right:-5px}
+/* playhead */
+.ph{position:absolute;top:0;bottom:0;left:44%;width:1px;background:#e9edf3}
+.ph::after{content:"";position:absolute;top:0;left:-4px;width:9px;height:7px;background:#e9edf3;
+  clip-path:polygon(0 0,100% 0,50% 100%)}
+.screenbtn{position:absolute;right:4px;bottom:4px;font-family:var(--mono);font-size:8.6px;
+  letter-spacing:.06em;padding:3px 9px;border:1px solid #3a4a5a;border-radius:2px;
+  background:rgba(5,6,8,.72);color:var(--ink);z-index:2}
+.reelcap{display:flex;align-items:center;gap:9px;padding:6px 2px 0}
+.reelcap .rn{font-family:var(--mono);font-size:8.2px;letter-spacing:.13em;text-transform:uppercase;color:var(--faint)}
+.leds{display:flex;gap:5px;margin-left:auto}
+.led{width:8px;height:8px;border-radius:50%;background:#1d232b;border:1px solid #2f3843}
+.led.arm{background:#4a3a12;border-color:#8a6a2a}
+.led.rec{background:#5c2320;border-color:#a8443c}
+.led.play{background:#1e4a33;border-color:#3f8f66}
+.led.ovdb{background:#2a2450;border-color:#5a4fa0}
+
+/* ── the tab rail ─────────────────────────────────────────────────────── */
+.rail{display:flex;gap:4px;padding:10px 14px 0;flex-wrap:wrap;border-top:1px solid var(--line);margin-top:10px}
+.tab{font-family:var(--mono);font-size:8.6px;letter-spacing:.08em;text-transform:uppercase;
+  padding:5px 11px;border:1px solid #2a3038;border-bottom-color:transparent;border-radius:5px 5px 0 0;
+  background:#161b21;color:var(--faint)}
+.tab.on{background:var(--pbody);border-color:#3f4a57;color:var(--accent)}
+.tab.mix{margin-left:6px}
+
+/* ── the active band ──────────────────────────────────────────────────── */
+.bands{padding:10px 14px 0;border-top:1px solid #3f4a57;margin-top:-1px}
+.row{display:flex;flex-wrap:wrap;align-items:flex-start;gap:12px 20px}
+.k{width:52px;display:flex;flex-direction:column;align-items:center;gap:5px}
+.k i{--a:0deg;display:block;width:36px;height:36px;border-radius:50%;position:relative;
+  background:radial-gradient(circle at 38% 32%,#2b323b,#171c22 70%);border:1px solid #3a4048}
+.k i::after{content:"";position:absolute;left:50%;top:50%;width:2px;height:14px;background:var(--cv);
+  border-radius:1px;transform-origin:50% 100%;transform:translate(-50%,-100%) rotate(var(--a));
+  box-shadow:0 0 5px rgba(125,211,252,.55)}
+.k b{font-size:7.8px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--dim);
+  font-family:var(--mono);text-align:center}
+.k em{font-family:var(--mono);font-size:7px;font-style:normal;color:#4d5560;letter-spacing:.05em}
+.f{width:52px;display:flex;flex-direction:column;align-items:center;gap:5px}
+.f i{--v:.5;--fc:#7dd3fc;display:block;width:16px;height:66px;border-radius:8px;position:relative;
+  background:linear-gradient(#171b21,#12161c);border:1px solid #333a43}
+.f i::before{content:"";position:absolute;left:50%;transform:translateX(-50%);width:2px;top:6px;bottom:6px;
+  background:#262c34;border-radius:1px}
+.f i::after{content:"";position:absolute;left:50%;width:22px;height:9px;border-radius:2px;
+  background:var(--fc);box-shadow:0 0 7px color-mix(in srgb,var(--fc) 60%,transparent);
+  transform:translate(-50%,-50%);top:calc(6px + (1 - var(--v)) * (100% - 12px))}
+.f b{font-size:7.8px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--dim);
+  font-family:var(--mono);text-align:center}
+.seg{display:flex;flex-direction:column;gap:4px}
+.seg .cap{font-size:7.8px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--dim);font-family:var(--mono)}
+.segbtns{display:flex;border:1px solid #3a4048;border-radius:6px;overflow:hidden}
+.segbtns b{font-family:var(--mono);font-size:8.8px;font-weight:400;letter-spacing:.06em;
+  padding:6px 10px;background:#1b2027;color:var(--faint);border-right:1px solid #2a3038}
+.segbtns b:last-child{border-right:0}
+.segbtns b.on{background:#2a3340;color:var(--accent)}
+
+.notes{display:flex;flex-direction:column;gap:12px}
+.card{border:1px solid var(--line);background:#101419;border-radius:9px;padding:12px 14px}
+.card h3{margin:0 0 7px;font-size:10px;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--accent);font-family:var(--mono);font-weight:700}
+.card p{margin:0 0 8px;font-size:12px;color:var(--dim)} .card p:last-child{margin-bottom:0}
+.card b{color:var(--ink)}
+table{border-collapse:collapse;width:100%;font-size:11px;margin:2px 0 0}
+th,td{text-align:left;padding:4px 7px 4px 0;border-bottom:1px solid #1e242c;vertical-align:top;color:var(--dim)}
+th{color:var(--faint);font-family:var(--mono);font-size:8.6px;letter-spacing:.09em;text-transform:uppercase;font-weight:400}
+td b{color:var(--ink)}
+.aria{font-family:var(--mono);font-size:10.5px;color:#8fe6b0}
+pre{margin:6px 0 0;background:#0a0d11;border:1px solid #1e242c;border-radius:6px;padding:9px 11px;
+  font-family:var(--mono);font-size:10.2px;color:#c9d3de;overflow-x:auto}
+</style>
+<div class="wrap">
+
+<h1>TWOTRACKS — the tab rail, reel A · TAPE</h1>
+<p class="sub">
+  <b>SPEC AND MOCKUP ONLY. Nothing here is implemented.</b> The wave's control-heavy module and
+  its only genuine tab-rail candidate. The reel picture is <b>present on every tab</b> —
+  backdraft's ruling — and the rail engages through the <b>ordinary</b>
+  <code>DOCK_TAB_MIN_BANDS = 7</code> threshold. <code>face.tabbed</code> is not declared.
+</p>
+
+<div class="nav">
+  <a class="on" href="dock-tabs.html">1 · reel A · TAPE</a>
+  <a href="dock-reel-b.html">2 · reel B · TONE</a>
+  <a href="spec.md">spec.md</a>
+</div>
+
+<div class="bad">
+  <b>ONE CONTRACT CHANGE MUST LAND FIRST.</b> <code>playhead_a</code> and
+  <code>playhead_b</code> are declared params that <b>nothing writes and nothing reads</b> — across
+  <code>packages/web/src</code> and <code>e2e</code> they occur only in
+  <code>twotracks.ts</code> (the declaration, and a comment excluding them from the AudioParam map)
+  and in <code>contract-lock.txt</code>. <b>Face completeness would put two inert cells on this
+  plate.</b> Delete them first; the rest of the spec is written against the real param set.
+</div>
+
+<div class="cols">
+<div>
+
+  <div class="dock">
+    <div class="chromebar">
+      <span class="nm">twotracks</span>
+      <span class="rl">dock · full view</span>
+      <span class="x">✕</span>
+    </div>
+
+    <div class="plate">
+
+      <!-- fullViewBody: the SELECTED reel's tape, on every tab -->
+      <div class="extbody">
+        <div class="reel">
+          <div class="wave">
+            <svg viewBox="0 0 420 88" preserveAspectRatio="none" aria-hidden="true">
+              <g fill="#7fb2d4" opacity=".85">
+                <rect x="4" y="40" width="2" height="8"/><rect x="8" y="36" width="2" height="16"/>
+                <rect x="12" y="30" width="2" height="28"/><rect x="16" y="22" width="2" height="44"/>
+                <rect x="20" y="28" width="2" height="32"/><rect x="24" y="18" width="2" height="52"/>
+                <rect x="28" y="26" width="2" height="36"/><rect x="32" y="12" width="2" height="64"/>
+                <rect x="36" y="24" width="2" height="40"/><rect x="40" y="20" width="2" height="48"/>
+                <rect x="44" y="32" width="2" height="24"/><rect x="48" y="16" width="2" height="56"/>
+                <rect x="52" y="28" width="2" height="32"/><rect x="56" y="22" width="2" height="44"/>
+                <rect x="60" y="34" width="2" height="20"/><rect x="64" y="14" width="2" height="60"/>
+                <rect x="68" y="26" width="2" height="36"/><rect x="72" y="30" width="2" height="28"/>
+                <rect x="76" y="18" width="2" height="52"/><rect x="80" y="24" width="2" height="40"/>
+                <rect x="84" y="36" width="2" height="16"/><rect x="88" y="20" width="2" height="48"/>
+                <rect x="92" y="28" width="2" height="32"/><rect x="96" y="16" width="2" height="56"/>
+                <rect x="100" y="32" width="2" height="24"/><rect x="104" y="24" width="2" height="40"/>
+                <rect x="108" y="12" width="2" height="64"/><rect x="112" y="30" width="2" height="28"/>
+                <rect x="116" y="22" width="2" height="44"/><rect x="120" y="34" width="2" height="20"/>
+                <rect x="124" y="18" width="2" height="52"/><rect x="128" y="26" width="2" height="36"/>
+                <rect x="132" y="20" width="2" height="48"/><rect x="136" y="38" width="2" height="12"/>
+                <rect x="140" y="14" width="2" height="60"/><rect x="144" y="28" width="2" height="32"/>
+                <rect x="148" y="24" width="2" height="40"/><rect x="152" y="32" width="2" height="24"/>
+                <rect x="156" y="16" width="2" height="56"/><rect x="160" y="30" width="2" height="28"/>
+                <rect x="164" y="22" width="2" height="44"/><rect x="168" y="36" width="2" height="16"/>
+                <rect x="172" y="18" width="2" height="52"/><rect x="176" y="26" width="2" height="36"/>
+                <rect x="180" y="12" width="2" height="64"/><rect x="184" y="34" width="2" height="20"/>
+                <rect x="188" y="24" width="2" height="40"/><rect x="192" y="20" width="2" height="48"/>
+                <rect x="196" y="30" width="2" height="28"/><rect x="200" y="16" width="2" height="56"/>
+                <rect x="204" y="28" width="2" height="32"/><rect x="208" y="36" width="2" height="16"/>
+                <rect x="212" y="22" width="2" height="44"/><rect x="216" y="14" width="2" height="60"/>
+                <rect x="220" y="32" width="2" height="24"/><rect x="224" y="26" width="2" height="36"/>
+                <rect x="228" y="18" width="2" height="52"/><rect x="232" y="30" width="2" height="28"/>
+                <rect x="236" y="24" width="2" height="40"/><rect x="240" y="38" width="2" height="12"/>
+                <rect x="244" y="20" width="2" height="48"/><rect x="248" y="28" width="2" height="32"/>
+                <rect x="252" y="16" width="2" height="56"/><rect x="256" y="34" width="2" height="20"/>
+                <rect x="260" y="22" width="2" height="44"/><rect x="264" y="26" width="2" height="36"/>
+                <rect x="268" y="18" width="2" height="52"/><rect x="272" y="32" width="2" height="24"/>
+                <rect x="276" y="40" width="2" height="8"/><rect x="280" y="36" width="2" height="16"/>
+              </g>
+              <g fill="#3c4a56" opacity=".7">
+                <rect x="286" y="42" width="2" height="4"/><rect x="292" y="43" width="2" height="2"/>
+                <rect x="300" y="42" width="2" height="4"/><rect x="310" y="43" width="2" height="2"/>
+                <rect x="322" y="42" width="2" height="4"/><rect x="336" y="43" width="2" height="2"/>
+                <rect x="350" y="42" width="2" height="4"/><rect x="366" y="43" width="2" height="2"/>
+                <rect x="382" y="42" width="2" height="4"/><rect x="400" y="43" width="2" height="2"/>
+              </g>
+            </svg>
+            <span class="loopwin"><i class="mk s"></i><i class="mk e"></i></span>
+            <span class="ph"></span>
+            <span class="screenbtn">SCREEN ON</span>
+          </div>
+          <div class="reelcap">
+            <span class="rn">reel a</span>
+            <span class="leds">
+              <i class="led arm"></i><i class="led"></i><i class="led play"></i><i class="led"></i>
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <!-- the tab rail -->
+      <div class="rail">
+        <span class="tab">A·TRANSPORT</span>
+        <span class="tab on">A·TAPE</span>
+        <span class="tab">A·TONE</span>
+        <span class="tab">B·TRANSPORT</span>
+        <span class="tab">B·TAPE</span>
+        <span class="tab">B·TONE</span>
+        <span class="tab mix">MIX</span>
+      </div>
+
+      <div class="bands">
+        <div class="row">
+          <span class="k"><i style="--a:0deg"></i><b>Rate</b><em>unity</em></span>
+          <span class="seg">
+            <span class="cap">Echoes</span>
+            <span class="segbtns"><b>1</b><b>2</b><b class="on">3</b><b>4</b><b>5</b></span>
+          </span>
+          <span class="f"><i style="--v:.18;--fc:#e0b453"></i><b>Start</b></span>
+          <span class="f"><i style="--v:.68;--fc:#e0b453"></i><b>End</b></span>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="warn" style="margin-top:16px">
+    <b>A TABBED FACE NEVER PACKS ROWS</b> (<code>dock-row-plan.ts:288</code>) and prints no band
+    hints where the rail already names them. Note also that the plate is <b>narrower than the
+    580 px card</b>: the rail shows one reel's band at a time where the card shows both reels side
+    by side. <code>FACE_WIDTH_EXEMPTIONS</code> stays untouched.
+  </div>
+
+  <div class="card" style="margin-top:14px">
+    <h3>the accessible names, at this state</h3>
+    <table>
+      <tr><th>element</th><th>aria-valuetext</th></tr>
+      <tr><td><b>Rate</b></td><td class="aria">unity — forward, normal speed</td></tr>
+      <tr><td><b>Rate</b> at −2</td><td class="aria">reverse, 2× speed</td></tr>
+      <tr><td><b>Rate</b> at 0</td><td class="aria">frozen</td></tr>
+      <tr><td><b>Start</b></td><td class="aria">18% of the tape</td></tr>
+      <tr><td><b>transport</b></td><td class="aria">armed</td></tr>
+    </table>
+    <p style="margin-top:8px">⚠ On a −3..+3 knob, <b>unity is not the centre</b> — the centre is 0,
+      which is FROZEN tape. That is why the card carries a reset button
+      (<code>TwotracksCard.svelte:522</code>), and why the spec makes
+      "double-click-to-default reaches this control" a <b>MUST-VERIFY</b> rather than an
+      assumption. Losing it is a real parity loss.</p>
+  </div>
+
+</div>
+
+<div class="notes">
+
+  <div class="card">
+    <h3>seven bands — and the decision's sensitivity is stated</h3>
+    <p>Two reels × (TRANSPORT / TAPE / TONE), plus MIX. The owner's ruling is that
+      <i>"lots of controls of DIFFERENT types"</i> gets a tabbed face; this module has knobs,
+      faders, toggles, segmented selectors, actions and two canvases.</p>
+    <p>⚠ <b>A reviewer could reasonably collapse TAPE + TONE per reel</b>, which drops the count to
+      three and turns the rail off. If that happens, <b>do not re-split to get the rail back</b> —
+      that is the padding the rule forbids. Ship untabbed (ruttetra's precedent) or raise the
+      threshold question to the owner.</p>
+  </div>
+
+  <div class="card">
+    <h3>the two drag seams, and the split is already right</h3>
+    <p>One canvas, two gestures, and the card gets the seam correct:</p>
+<pre>START / END markers
+  setNodeParam(id, 'start_a', clampLoopStart(...))   :207
+  → durable, undoable, synced
+
+PLAYHEAD scrub
+  port.postMessage({ type: 'seek', reel, pos })      :217
+  → transient engine state, NOT in the Y.Doc</pre>
+    <p style="margin-top:9px"><b>The face must preserve that exactly.</b> Making the scrub a param
+      would put the playhead in the Y.Doc at frame rate — the CV write-storm class.</p>
+  </div>
+
+  <div class="card">
+    <h3>the transport probe is free</h3>
+    <p><code>sendTransport</code> posts to the worklet port and writes nothing to the graph — the
+      <code>ShellActionCell</code> shape. But the engine <b>already mirrors the result back</b>:
+      <code>transportState_a</code> / <code>_b</code> land in <code>node.data</code>
+      (<code>twotracks.ts:444-454</code>).</p>
+    <p>So the cells take a <b><code>data</code> probe</b>, which the registry says to prefer — and
+      which is stronger than an audition ledger because it observes the <b>engine's result</b>
+      rather than the message's departure.</p>
+  </div>
+
+  <div class="card">
+    <h3>SAVE TAPE — and the precedent carries a warning aimed at this module</h3>
+    <p><code>samsloop</code>'s export cell (<code>shell-cells.ts:787-798</code>):</p>
+<pre>⚠ The seam is `file-export` rather than
+  `engine-message`: an export reaches no
+  engine, and a probe watching
+  `engine-message` here would be satisfied
+  by a REC press on the same node.</pre>
+    <p style="margin-top:9px">twotracks' SAVE TAPE sits in the same reel block as REC, on the same
+      node — <b>the exact adjacency that comment describes</b>. Get it wrong and the probe is green
+      because the user pressed a different button.</p>
+  </div>
+
+  <div class="card">
+    <h3>the LEDs — a judgement, with a revert</h3>
+    <p>The eight lamps are <b>derived state</b>. The ruling's four deletions were all of
+      <i>labelled values</i>, and an LED is a live picture, not text — so they survive as lamps.</p>
+    <p>But the <b>meaning</b> must not be painted as a word, and <code>armed</code> vs
+      <code>rec</code> vs <code>overdub</code> go to <code>aria-valuetext</code> on the transport
+      cell, where they are distinguishable in a way four similar lamps arguably are not.</p>
+    <p>⚠ <b>The line has moved four times.</b> This is the item to look at in the dock baseline
+      before merge.</p>
+  </div>
+
+</div>
+</div>
+</div>

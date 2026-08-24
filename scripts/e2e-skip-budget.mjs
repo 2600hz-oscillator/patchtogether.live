@@ -572,6 +572,31 @@ export const SKIP_BUDGET = [
   },
   {
     specs: [
+      'timelorde-pinned-source.spec.ts',
+    ],
+    reason: /FLAKE-PARK #1847/,
+    lanes: ['e2e'],
+    homeLane: 'e2e',
+    why:
+      'PARKED (#1847) — the SOLE regression guard for the FACE_MOUNTS_PRODUCER producer-unmount class '
+      + '(#2163): a promoted face that merely BLITS kills the card rAF that fills `video_out`, and the '
+      + 'pre-fix failure painted a bright STALE bitmap, so only a CHANGING picture catches it. That class '
+      + 'was a live product bug TWICE this week (camera + timelorde), which is why this entry says SOLE '
+      + 'rather than "covered elsewhere" — while it is parked, nothing in CI watches it. Parked on the '
+      + 'FIRST recovered-flake observation, deliberately, to unblock the board rather than hold a PR for an '
+      + 'owner round-trip; OWNER NOTIFIED via the orchestrator as the coverage-loss exception, which is the '
+      + 'half of the ruling a park alone does not satisfy. '
+      + 'TRIAGE (the rule says a test with no flake-fix history is more likely under-budgeted than flaky, '
+      + 'and the two need opposite responses): `git log` on this spec has exactly ONE commit — its birth '
+      + 'commit b22850e09 — so there is no failed-fix history. `sampleVideoOut` is NOT the poll-starvation '
+      + 'class: it accumulates all 12 rAF frames inside ONE page.evaluate. The suspect is the `expect.poll` '
+      + 'around it, bounded by BOOT_MS — a WALL-CLOCK budget gating a renderer-dependent movement '
+      + 'assertion, the house rule\'s named anti-pattern. UN-PARK: re-express that window in FRAMES '
+      + '(e2e/_helpers/frames.ts), keeping a wall-clock cap only to BOUND the failure, and reproduce under '
+      + 'E2E_SWIFTSHADER=1 first — "slower here" and "genuinely different here" need opposite fixes.',
+  },
+  {
+    specs: [
       'backdraft-preview-toggle.spec.ts',
       'backdraft-pure-tv.spec.ts',
       'extras-producer-lifetime.spec.ts',
