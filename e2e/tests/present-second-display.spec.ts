@@ -26,6 +26,7 @@
 
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
+import { waitFrames } from '../_helpers/frames';
 
 const TRIANGLE_PARAMS = { shape: 2, tile: 0, rotate: 0, zoom: 2.2 };
 
@@ -141,9 +142,27 @@ test.describe('present on a second display — VIDEO OUT', () => {
     // canvas every frame, so it must show NON-BLACK pixels (the captureStream→
     // <video> pipeline produced an all-black popup here). Poll: the first blit
     // lands a frame or two after the popup's `present:ready` handshake.
-    await expect
-      .poll(() => canvasHasNonBlackPixel(popup), { timeout: 8000 })
-      .toBe(true);
+    // ⚠ FRAMES, NOT MILLISECONDS. The blit lands ON A FRAME, so a wall-clock
+    // budget is a DIFFERENT assertion on every renderer: 8 s was ~480 frames on
+    // a real GPU but only ~63 under SwiftShader, and fewer still on a CI runner
+    // hosting ten shards — which is why this recovered-on-retry (#1903 red,
+    // 2026-08-24) as an UNDER-BUDGETED test rather than a nondeterministic one.
+    // The frame count is renderer-independent; the test timeout remains the
+    // wall-clock bound on the failure, never the gate.
+    const FRAME_BUDGET = 180;
+    const FRAME_BATCH = 15;
+    let framesWaited = 0;
+    let nonBlack = false;
+    while (!nonBlack && framesWaited < FRAME_BUDGET) {
+      await waitFrames(popup, FRAME_BATCH);
+      framesWaited += FRAME_BATCH;
+      nonBlack = await canvasHasNonBlackPixel(popup);
+    }
+    expect(
+      nonBlack,
+      `the popup canvas must receive a NON-BLACK blit from the opener within `
+        + `${FRAME_BUDGET} rendered frames (observed ${framesWaited} frames, units: FRAMES)`,
+    ).toBe(true);
 
     // Re-open the menu on the opener -> "Stop presenting" now shows + closes it.
     await canvas.click({ button: 'right' });
