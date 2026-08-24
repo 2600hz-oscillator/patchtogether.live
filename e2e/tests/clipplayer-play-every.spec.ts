@@ -53,13 +53,13 @@ test.fixme('@clipplayer card Play Every menu writes playEvery onto the note; "1"
   // it — a parked test that no longer compiles against the UI is a second bug
   // waiting at un-park time.)
   await cell.click({ button: 'right' });
-  await page.getByTestId('clipplayer-sub-every-pe-cp').click();
+  await page.getByTestId('clipplayer-sub-skip-pe-cp').click();
   await page.getByTestId('clipplayer-play-every-item-3').click();
   await expect.poll(() => step0PlayEvery(page), { timeout: 5000 }).toBe(3);
 
   // Re-open the menu and pick "1" (every loop) → the key is removed (back to default).
   await cell.click({ button: 'right' });
-  await page.getByTestId('clipplayer-sub-every-pe-cp').click();
+  await page.getByTestId('clipplayer-sub-skip-pe-cp').click();
   await page.getByTestId('clipplayer-play-every-item-1').click();
   await expect.poll(() => step0PlayEvery(page), { timeout: 5000 }).toBe(1);
 });
