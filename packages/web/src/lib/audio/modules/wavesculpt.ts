@@ -1047,15 +1047,35 @@ export const wavesculptDef: AudioModuleDef = {
     controls.grn_color = 'GREEN oscillator base COLOUR (colour picker) — tints the GREEN osc in every blink mode. Packed 0xRRGGBB.';
     controls.blu_color = 'BLUE oscillator base COLOUR (colour picker) — tints the BLUE osc in every blink mode. Packed 0xRRGGBB.';
     controls.master_gain = 'MASTER GAIN (0..2, default 1) — overall output level of the summed audio mix (L/R), AND the composite drive of the CRT post-process on the render. One knob, both domains: 1 = unity (audio unchanged, picture undistorted), above 1 the mix gets louder while the picture overdrives into soft-clip white smear, 0 mutes L/R and blacks the composite. The per-oscillator taps (out_red/grn/blu/alp) are PRE master gain and are not affected.';
-    // The wavetable strip, as three DOM-only families (see `controlFamilies`).
-    // One key per family, because a family key addresses the family as a whole
-    // rather than one oscillator's instance of it.
-    controls['wavesculpt-preset-{n}'] =
-      "PRESET picker, one per oscillator - a dropdown of the curated wavetable presets. Choosing one FETCHES and parses that table and hands it to that oscillator, replacing whatever it held; the load is asynchronous and reports its own status/failure beside the picker. The chosen table is the wave that oscillator both plays and draws as its ribbon, and the selection rides the patch, so a reloaded rack comes back with the same voice.";
-    controls['wavesculpt-table-{n}'] =
-      "FACTORY table picker, one per oscillator - a dropdown of the built-in wavetables, which unlike the PRESET list are already in memory and switch instantly. It also carries the synthetic `USER - <name>` entry whenever that oscillator is holding a table you loaded yourself, so the dropdown can always show what is actually loaded rather than going blank on a value it has no option for.";
-    controls['wavesculpt-load-{n}'] =
-      "LOAD button, one per oscillator - imports your own .wav as that oscillator's wavetable (the E352 single-cycle layout: 256-sample frames laid end to end). The parse happens in the browser and reports frames-loaded or the reason it failed. A loaded table is stored on the patch and reappears as the `USER - <name>` entry in the FACTORY picker above.";
+    // The wavetable strip: TWELVE DOM-only families, one per (oscillator,
+    // control kind). See `controlFamilies` for why twelve rather than three —
+    // a family renders as ONE cell with no member index, so four oscillators
+    // need four families per kind. Each entry NAMES ITS OSCILLATOR, which is
+    // what makes the repetition worth more than three abstract entries.
+    controls['wavesculpt-osc1-preset-{n}'] =
+      'OSC RED PRESET picker - a dropdown of the curated wavetables. Choosing one FETCHES and parses that table and hands it to the RED oscillator, replacing whatever it held; the load is asynchronous and reports frames-loaded or the reason it failed. It rests on an empty sentinel rather than showing state, because loading a preset is an ACTION - what the RED oscillator currently holds is reported by its FACTORY picker.';
+    controls['wavesculpt-osc1-table-{n}'] =
+      'OSC RED FACTORY table picker - the built-in wavetables, already in memory and switching instantly (unlike the PRESET list, which fetches). It also carries a synthetic USER entry whenever the RED oscillator holds a table you loaded yourself, so the dropdown can always show what is actually loaded instead of going blank on a value it has no option for. The chosen table is the wave this oscillator both plays and draws as its ribbon.';
+    controls['wavesculpt-osc1-load-{n}'] =
+      'OSC RED LOAD - imports your own .wav as the RED oscillator\'s wavetable (the E352 single-cycle layout: 256-sample frames end to end). The parse happens in the browser and reports frames-loaded or the failure. A loaded table is stored on the patch and reappears as the USER entry in the RED FACTORY picker.';
+    controls['wavesculpt-osc2-preset-{n}'] =
+      'OSC GREEN PRESET picker - a dropdown of the curated wavetables. Choosing one FETCHES and parses that table and hands it to the GREEN oscillator, replacing whatever it held; the load is asynchronous and reports frames-loaded or the reason it failed. It rests on an empty sentinel rather than showing state, because loading a preset is an ACTION - what the GREEN oscillator currently holds is reported by its FACTORY picker.';
+    controls['wavesculpt-osc2-table-{n}'] =
+      'OSC GREEN FACTORY table picker - the built-in wavetables, already in memory and switching instantly (unlike the PRESET list, which fetches). It also carries a synthetic USER entry whenever the GREEN oscillator holds a table you loaded yourself, so the dropdown can always show what is actually loaded instead of going blank on a value it has no option for. The chosen table is the wave this oscillator both plays and draws as its ribbon.';
+    controls['wavesculpt-osc2-load-{n}'] =
+      'OSC GREEN LOAD - imports your own .wav as the GREEN oscillator\'s wavetable (the E352 single-cycle layout: 256-sample frames end to end). The parse happens in the browser and reports frames-loaded or the failure. A loaded table is stored on the patch and reappears as the USER entry in the GREEN FACTORY picker.';
+    controls['wavesculpt-osc3-preset-{n}'] =
+      'OSC BLUE PRESET picker - a dropdown of the curated wavetables. Choosing one FETCHES and parses that table and hands it to the BLUE oscillator, replacing whatever it held; the load is asynchronous and reports frames-loaded or the reason it failed. It rests on an empty sentinel rather than showing state, because loading a preset is an ACTION - what the BLUE oscillator currently holds is reported by its FACTORY picker.';
+    controls['wavesculpt-osc3-table-{n}'] =
+      'OSC BLUE FACTORY table picker - the built-in wavetables, already in memory and switching instantly (unlike the PRESET list, which fetches). It also carries a synthetic USER entry whenever the BLUE oscillator holds a table you loaded yourself, so the dropdown can always show what is actually loaded instead of going blank on a value it has no option for. The chosen table is the wave this oscillator both plays and draws as its ribbon.';
+    controls['wavesculpt-osc3-load-{n}'] =
+      'OSC BLUE LOAD - imports your own .wav as the BLUE oscillator\'s wavetable (the E352 single-cycle layout: 256-sample frames end to end). The parse happens in the browser and reports frames-loaded or the failure. A loaded table is stored on the patch and reappears as the USER entry in the BLUE FACTORY picker.';
+    controls['wavesculpt-osc4-preset-{n}'] =
+      'OSC ALPHA PRESET picker - a dropdown of the curated wavetables. Choosing one FETCHES and parses that table and hands it to the ALPHA oscillator, replacing whatever it held; the load is asynchronous and reports frames-loaded or the reason it failed. It rests on an empty sentinel rather than showing state, because loading a preset is an ACTION - what the ALPHA oscillator currently holds is reported by its FACTORY picker.';
+    controls['wavesculpt-osc4-table-{n}'] =
+      'OSC ALPHA FACTORY table picker - the built-in wavetables, already in memory and switching instantly (unlike the PRESET list, which fetches). It also carries a synthetic USER entry whenever the ALPHA oscillator holds a table you loaded yourself, so the dropdown can always show what is actually loaded instead of going blank on a value it has no option for. The chosen table is the wave this oscillator both plays and draws as its ribbon.';
+    controls['wavesculpt-osc4-load-{n}'] =
+      'OSC ALPHA LOAD - imports your own .wav as the ALPHA oscillator\'s wavetable (the E352 single-cycle layout: 256-sample frames end to end). The parse happens in the browser and reports frames-loaded or the failure. A loaded table is stored on the patch and reappears as the USER entry in the ALPHA FACTORY picker.';
     return {
       explanation:
         "A hybrid 4-oscillator 3D video synth — it makes sound AND a live 3D image from the same engine. A unit box holds four 'wall oscillators' (RED / GREEN / BLUE / ALPHA), each emitting a wave ribbon along a vector into the box. One user camera renders the scene; you fly it with an XY pad (X/Y), a HEIGHT slider (Z), ZOOM, and ROTATION. Closer = bigger ribbons AND louder — the same distance number drives both visual size and audio gain, so 'lean in' is consistently louder. Each oscillator is a full wavetable voice: pick its table (preset / factory / your own .wav), set TUNE/FINE/MORPH/SPREAD/FOLD, and shape it with a per-osc ADSR gated by its GATE input and pitched by its PITCH input, plus a pre-mix per-osc FX slot (reverb/delay). The audio output is the summed stereo mix (L/R), with four per-oscillator AUDIO taps (out_red/grn/blu/alp) for routing one voice out independently. The render goes out video_out (a mono-video carrying a light, always-on CRT pass — scanlines, phosphor mask, a little bloom and grain — with no knobs of its own; patch it through BENTBOX for the adjustable, CV-able CRT controls, bearing in mind that stacks two CRT passes) and can be viewed as 3D ribbons, a birds-eye floorplan, or a spectrograph (VIEW). Six VIDEO WALL inputs texture the faces of the room — self-patch video_out → a wall for recursive video feedback, and LUMINOSITY→BANDPASS lets a wall's brightness shape the audio. UNISON/DETUNE and CHORD MODE turn the four voices into a stacked or harmonized instrument; everything is CV-modulatable.",
@@ -1091,10 +1111,44 @@ export const wavesculptDef: AudioModuleDef = {
   // `attest-code-basis.ts` (see the note on `docs` below), so this costs no GPU
   // re-attest — which is why it is worth doing properly rather than living with
   // one opaque cell.
+  // ⚠ TWELVE FAMILIES, NOT THREE, AND THE PLATFORM DECIDES THAT — not taste.
+  // A control family renders as exactly ONE cell: `ModuleShell.cellTestId` is
+  // `shell-cell-${familyId}` with no member index, and `ShellSelectorCell`'s
+  // callbacks are `options(node)` / `value(node)` / `onchange(nodeId, value)`
+  // — nothing anywhere carries WHICH member is being drawn. So three families
+  // over four oscillators would render three pickers for twelve controls, and
+  // no cell could tell voice 1 from voice 4.
+  //
+  // The established answer is `videocube`'s: for N instances, declare N
+  // SEPARATE families (`videocube-a-live` / `-b-live` / `-c-live` for FLOOR /
+  // WALL / CEIL, and the same again for its file inputs) rather than one family
+  // with N members. Twelve here is that precedent applied to four oscillators
+  // times three control kinds.
+  //
+  // ⚠ THE HONEST GENERALIZATION WOULD BE A PLATFORM CHANGE — render a family
+  // per member and pass the index — and wavesculpt is the module that
+  // justifies it, being the first with a genuinely multi-instance family. It is
+  // deliberately NOT done here: new platform machinery inside a manual-review
+  // module, beside an attest-basis file, is the wrong place to introduce it.
+  // Recorded for whoever pays it deliberately.
+  //
+  // The prose below repeats three explanations four times, and that repetition
+  // is the point: each entry NAMES ITS OSCILLATOR, which is more useful to a
+  // reader than three abstract entries that make them work out which voice they
+  // are looking at.
   controlFamilies: [
-    { id: 'wavesculpt-preset', label: 'Wavetable PRESET picker', kind: 'cell', testidPrefix: 'wavesculpt-preset' },
-    { id: 'wavesculpt-table', label: 'FACTORY wavetable picker', kind: 'cell', testidPrefix: 'wavesculpt-table' },
-    { id: 'wavesculpt-load', label: 'Load your own .wav', kind: 'cell', testidPrefix: 'wavesculpt-load' },
+    { id: 'wavesculpt-osc1-preset', label: 'OSC RED preset', kind: 'cell', testidPrefix: 'wavesculpt-osc1-preset' },
+    { id: 'wavesculpt-osc1-table', label: 'OSC RED factory table', kind: 'cell', testidPrefix: 'wavesculpt-osc1-table' },
+    { id: 'wavesculpt-osc1-load', label: 'OSC RED load .wav', kind: 'cell', testidPrefix: 'wavesculpt-osc1-load' },
+    { id: 'wavesculpt-osc2-preset', label: 'OSC GREEN preset', kind: 'cell', testidPrefix: 'wavesculpt-osc2-preset' },
+    { id: 'wavesculpt-osc2-table', label: 'OSC GREEN factory table', kind: 'cell', testidPrefix: 'wavesculpt-osc2-table' },
+    { id: 'wavesculpt-osc2-load', label: 'OSC GREEN load .wav', kind: 'cell', testidPrefix: 'wavesculpt-osc2-load' },
+    { id: 'wavesculpt-osc3-preset', label: 'OSC BLUE preset', kind: 'cell', testidPrefix: 'wavesculpt-osc3-preset' },
+    { id: 'wavesculpt-osc3-table', label: 'OSC BLUE factory table', kind: 'cell', testidPrefix: 'wavesculpt-osc3-table' },
+    { id: 'wavesculpt-osc3-load', label: 'OSC BLUE load .wav', kind: 'cell', testidPrefix: 'wavesculpt-osc3-load' },
+    { id: 'wavesculpt-osc4-preset', label: 'OSC ALPHA preset', kind: 'cell', testidPrefix: 'wavesculpt-osc4-preset' },
+    { id: 'wavesculpt-osc4-table', label: 'OSC ALPHA factory table', kind: 'cell', testidPrefix: 'wavesculpt-osc4-table' },
+    { id: 'wavesculpt-osc4-load', label: 'OSC ALPHA load .wav', kind: 'cell', testidPrefix: 'wavesculpt-osc4-load' },
   ],
 
   /**
@@ -1167,8 +1221,12 @@ export const wavesculptDef: AudioModuleDef = {
       'zoom', 'master_gain', 'blink_mode',
       // The rest of the camera.
       'pos_z', 'rot',
-      // The voice SOURCES — one key per family, all four oscillators each.
-      'wavesculpt-preset-{n}', 'wavesculpt-table-{n}', 'wavesculpt-load-{n}',
+      // The voice SOURCES — three keys per OSCILLATOR (see controlFamilies:
+      // a family is one cell, so four voices need four families per kind).
+      'wavesculpt-osc1-preset-{n}', 'wavesculpt-osc1-table-{n}', 'wavesculpt-osc1-load-{n}',
+      'wavesculpt-osc2-preset-{n}', 'wavesculpt-osc2-table-{n}', 'wavesculpt-osc2-load-{n}',
+      'wavesculpt-osc3-preset-{n}', 'wavesculpt-osc3-table-{n}', 'wavesculpt-osc3-load-{n}',
+      'wavesculpt-osc4-preset-{n}', 'wavesculpt-osc4-table-{n}', 'wavesculpt-osc4-load-{n}',
       // What the render shows, and how. `scale` sits immediately after
       // `blink_mode`'s partner controls because it is DEAD at blink_mode 0 —
       // adjacency is the only affordance a faceplate has for "this belongs to
@@ -1197,8 +1255,22 @@ export const wavesculptDef: AudioModuleDef = {
       { id: 'camera', label: 'CAMERA', hint: 'fly the room — closer is bigger AND louder',
         controls: ['pos_x', 'pos_y', 'pos_z', 'zoom', 'rot'] },
 
+      // One CLUSTER per oscillator, so the three pickers that belong to a voice
+      // read as that voice's strip — and all four strips sit side by side,
+      // which is how you compare voices.
       { id: 'wavetables', label: 'WAVETABLES', hint: 'what each voice plays — and draws',
-        controls: ['wavesculpt-preset-{n}', 'wavesculpt-table-{n}', 'wavesculpt-load-{n}'] },
+        controls: [
+          'wavesculpt-osc1-preset-{n}', 'wavesculpt-osc1-table-{n}', 'wavesculpt-osc1-load-{n}',
+          'wavesculpt-osc2-preset-{n}', 'wavesculpt-osc2-table-{n}', 'wavesculpt-osc2-load-{n}',
+          'wavesculpt-osc3-preset-{n}', 'wavesculpt-osc3-table-{n}', 'wavesculpt-osc3-load-{n}',
+          'wavesculpt-osc4-preset-{n}', 'wavesculpt-osc4-table-{n}', 'wavesculpt-osc4-load-{n}',
+        ],
+        clusters: [
+          { label: 'RED', controls: ['wavesculpt-osc1-preset-{n}', 'wavesculpt-osc1-table-{n}', 'wavesculpt-osc1-load-{n}'] },
+          { label: 'GREEN', controls: ['wavesculpt-osc2-preset-{n}', 'wavesculpt-osc2-table-{n}', 'wavesculpt-osc2-load-{n}'] },
+          { label: 'BLUE', controls: ['wavesculpt-osc3-preset-{n}', 'wavesculpt-osc3-table-{n}', 'wavesculpt-osc3-load-{n}'] },
+          { label: 'ALPHA', controls: ['wavesculpt-osc4-preset-{n}', 'wavesculpt-osc4-table-{n}', 'wavesculpt-osc4-load-{n}'] },
+        ] },
 
       // ⚠ A page's `clusters` may only name controls the page ALSO claims in
       // `controls` — a sub-header over a key the band does not own would

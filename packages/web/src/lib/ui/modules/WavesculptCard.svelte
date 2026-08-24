@@ -270,6 +270,24 @@
   }
   const FX_CYCLE_TITLE = `FX slot — click to cycle ${FX_TYPE_OPTIONS.map((o) => o.label).join(' / ')}`;
 
+  /**
+   * The per-oscillator strip testids, SPELLED OUT as literals rather than built
+   * from a `${i + 1}` template.
+   *
+   * ⚠ THIS IS NOT STYLE. `module-docs-lint` proves that every declared
+   * `controlFamily.testidPrefix` exists by GREPPING card source
+   * (`cards.includes(f.testidPrefix)`), and a template literal leaves nothing
+   * to find — the string `wavesculpt-osc1-preset` never appears in a file that
+   * only ever writes `` `wavesculpt-osc${i + 1}-preset` ``. Twelve families
+   * therefore need twelve findable literals, and this is where they live.
+   */
+  const OSC_TESTIDS = [
+    { preset: 'wavesculpt-osc1-preset', table: 'wavesculpt-osc1-table', load: 'wavesculpt-osc1-load' },
+    { preset: 'wavesculpt-osc2-preset', table: 'wavesculpt-osc2-table', load: 'wavesculpt-osc2-load' },
+    { preset: 'wavesculpt-osc3-preset', table: 'wavesculpt-osc3-table', load: 'wavesculpt-osc3-load' },
+    { preset: 'wavesculpt-osc4-preset', table: 'wavesculpt-osc4-table', load: 'wavesculpt-osc4-load' },
+  ] as const;
+
   // Per-osc wavetable source (rides node.data).
   function oscData(i: number): WavesculptOscData {
     const d = (node?.data ?? {}) as WavesculptData;
@@ -672,7 +690,7 @@
                 class="wt-select preset-select"
                 value={presetSelection[i] ?? ''}
                 onchange={(ev) => onPresetChange(i, ev)}
-                data-testid={`wavesculpt-preset-${i + 1}`}
+                data-testid={OSC_TESTIDS[i]!.preset}
               >
                 <option value="">— pick a preset —</option>
                 {#each WAVETABLE_PRESETS as p (p.id)}
@@ -690,7 +708,7 @@
                   const factoryId = v.startsWith('factory:') ? v.slice('factory:'.length) : v;
                   selectFactory(i, factoryId);
                 }}
-                data-testid={`wavesculpt-table-${i + 1}`}
+                data-testid={OSC_TESTIDS[i]!.table}
               >
                 {#each getFactoryTables() as t (t.id)}
                   <option value={`factory:${t.id}`}>{t.label}</option>
@@ -699,7 +717,7 @@
                   <option value="user">USER · {oscLabel(i)}</option>
                 {/if}
               </select>
-              <label class="upload-btn" data-testid={`wavesculpt-load-${i + 1}`}>
+              <label class="upload-btn" data-testid={OSC_TESTIDS[i]!.load}>
                 <input
                   type="file"
                   accept=".wav,audio/wav"
