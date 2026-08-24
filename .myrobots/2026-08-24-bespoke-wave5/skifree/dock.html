@@ -1,0 +1,243 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>SKIFREE — the refusal</title>
+<style>
+/* ─────────────────────────────────────────────────────────────────────────
+   SKIFREE — MOCKUP ONLY, nothing here is implemented. See spec.md.
+
+   ⚠ THIS PAGE IS A REFUSAL, NOT A DESIGN. It draws what a skifree faceplate
+   WOULD be so an owner can see the outcome rather than read an argument about
+   it. Three independent blockers: promotion DELETES THE GAME (the engine lives
+   on the card), params:[] means ZERO controls at every tier, and there is no
+   determinism seam to build inside a vendored pre-built bundle.
+
+   ⚠ NOTE ON RESTING TEXT. The card today paints a DOM chrome row beside the
+   canvas — `280m · lives 4 · CV · GAME OVER` — and that row is the group's
+   clearest FORBIDDEN case under the resting-text ruling: a measurement, a
+   count, a STATE WORD and a status banner, none of them on the permitted list
+   (module NAME, TAB/SECTION labels, CONTROL CAPTIONS, option/landmark NAMES).
+   It is shown BELOW, struck through and labelled, precisely so the deletion is
+   visible. It is NOT reproduced as part of the proposed plate.
+   ⚠ And unlike frogger and modtris, skifree has NO in-canvas HUD to fall back
+   on: those four values exist ONLY in this repo's chrome, so the ruling does
+   not relocate them, it DELETES them. Their home is the accessible name.
+   ───────────────────────────────────────────────────────────────────────── */
+:root{
+  --bg:#0e1013; --dock:#12161c; --pbody:#1c1f24; --line:#2c3037; --tile:#33383f;
+  --ink:#eef1f5; --dim:#9aa2ad; --faint:#646c77;
+  --gate:#ffd23f; --cv:#5ad1ff; --warn:#f2c14e; --good:#8fe6b0; --bad:#ff9b9b;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+  font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1240px;margin:0 auto;padding:26px 20px 90px}
+h1{font-size:21px;font-weight:800;margin:0 0 6px}
+.sub{color:var(--dim);font-size:12.5px;margin:0 0 14px;max-width:108ch}
+.sub b{color:var(--ink)} code{font-family:var(--mono);font-size:11.5px;color:var(--gate)}
+.nav{display:flex;gap:8px;margin:0 0 20px;font-size:11px;flex-wrap:wrap}
+.nav a{color:var(--ink);text-decoration:none;border:1px solid var(--line);border-radius:6px;
+  padding:6px 12px;background:#12161c;font-family:var(--mono);letter-spacing:.06em;text-transform:uppercase}
+.nav a.on{border-color:var(--bad);color:var(--bad)}
+.warn{border:1px solid #6a5330;background:#1c1811;border-radius:8px;padding:11px 14px;margin:12px 0;
+  font-size:12.5px;color:#e8cf9a;max-width:120ch} .warn b{color:var(--warn)}
+.bad{border:1px solid #6a3838;background:#1c1212;border-radius:8px;padding:11px 14px;margin:12px 0;
+  font-size:12.5px;color:#e8b0b0;max-width:120ch} .bad b{color:var(--bad)}
+.ok{border:1px solid #3b5a48;background:#111a15;border-radius:8px;padding:11px 14px;margin:12px 0;
+  font-size:12.5px;color:#a9d8bd;max-width:120ch} .ok b{color:var(--good)}
+.cols{display:grid;grid-template-columns:minmax(0,1fr) 400px;gap:18px;align-items:start}
+@media (max-width:1120px){.cols{grid-template-columns:minmax(0,1fr)}}
+.dock{background:var(--dock);border:1px solid var(--line);border-radius:11px;padding:11px}
+.chromebar{display:flex;align-items:baseline;gap:9px;padding:0 2px 8px}
+.chromebar .nm{font-size:13px;font-weight:800;letter-spacing:.03em}
+.chromebar .x{margin-left:auto;color:var(--faint);font-family:var(--mono);font-size:12px}
+.plate{background:var(--pbody);border:1px solid var(--tile);border-left:4px solid var(--gate);
+  border-radius:10px;padding:0 0 12px;width:max-content;max-width:100%;min-width:300px}
+.empty{padding:34px 18px;text-align:center;font-family:var(--mono);font-size:10.5px;color:var(--bad);
+  border:1px dashed #5a3232;border-radius:6px;margin:12px 14px;line-height:1.7}
+.jacks{display:flex;gap:10px;justify-content:center;padding:2px 14px 8px}
+.jack{display:flex;flex-direction:column;align-items:center;gap:4px}
+.jack .hole{width:16px;height:16px;border-radius:50%;background:#0b0d10;border:2px solid var(--cv)}
+.jack.g .hole{border-color:var(--gate)} .jack.v .hole{border-color:#c08cff}
+.jack b{font-size:7px;font-family:var(--mono);letter-spacing:.06em;color:var(--dim)}
+.slope{position:relative;width:320px;height:320px;background:linear-gradient(#e8f2ff,#cfe8ff);
+  border:1px solid #232a33;border-radius:3px;overflow:hidden;margin:0 auto}
+.slope.dead{background:#0b0d10;display:flex;align-items:center;justify-content:center}
+.slope.dead span{font-family:var(--mono);font-size:10px;color:var(--bad);text-align:center;line-height:1.7;padding:0 22px}
+.tree{position:absolute;width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;
+  border-bottom:16px solid #1f6b3a}
+.rock{position:absolute;width:9px;height:7px;border-radius:4px 4px 2px 2px;background:#7a8592}
+.skier{position:absolute;width:7px;height:12px;background:#e03a3a;border-radius:2px}
+.hudrow{display:flex;gap:8px;justify-content:center;margin-top:8px;font-family:var(--mono);font-size:10px;
+  color:#88a;text-decoration:line-through;opacity:.75}
+.hudrow .mode{color:var(--gate)} .hudrow .over{color:#ff5050;font-weight:700}
+.hudlab{text-align:center;font-family:var(--mono);font-size:8.4px;color:var(--bad);margin-top:4px;letter-spacing:.05em}
+.zones{background:#12161c;border:1px solid var(--line);border-radius:9px;padding:12px 13px}
+.zones h4{margin:0 0 8px;font-size:9px;font-weight:800;letter-spacing:.13em;text-transform:uppercase;color:var(--dim)}
+.zones+.zones{margin-top:14px}
+.zt{width:100%;border-collapse:collapse;font-size:10.5px}
+.zt th{text-align:left;font-family:var(--mono);font-size:7.8px;letter-spacing:.11em;text-transform:uppercase;
+  color:var(--faint);font-weight:400;padding:0 0 5px;border-bottom:1px solid var(--line)}
+.zt td{padding:5px 0;border-bottom:1px solid #1c2027;vertical-align:top;color:var(--dim);line-height:1.42}
+.zt td:first-child{color:var(--ink);font-family:var(--mono);font-size:9.5px;padding-right:10px;white-space:nowrap}
+.aria{font-family:var(--mono);font-size:10px;color:var(--good);background:#101a14;
+  border:1px solid #2c4636;border-radius:4px;padding:2px 6px;display:inline-block;margin-top:3px}
+.side{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:14px 0}
+.panel{background:#12161c;border:1px solid var(--line);border-radius:9px;padding:11px 12px}
+.panel h5{margin:0 0 8px;font-size:8.6px;font-weight:800;letter-spacing:.13em;text-transform:uppercase;
+  color:var(--faint);font-family:var(--mono)}
+</style>
+
+<div class="wrap">
+<h1>SKIFREE &mdash; <span style="color:var(--bad)">REFUSE</span>, and the refusal is the finding</h1>
+<p class="sub">Spec and mockup only; nothing here is implemented. This page draws what a skifree
+faceplate <i>would</i> be, because the picture is the argument. <b>Three independent blockers</b>
+&mdash; promotion deletes the game, there are zero params to rank, and no determinism seam is
+buildable inside a vendored pre-built bundle. The audit that produced them found a <b>live
+product defect</b> worth more than the face.</p>
+
+<div class="nav">
+  <a href="../frogger/dock.html">frogger &middot; dock</a>
+  <a href="../frogger/lane-tiers.html">frogger &middot; lane tiers</a>
+  <a href="../modtris/dock.html">modtris &middot; dock</a>
+  <a class="on" href="dock.html">skifree &middot; refusal</a>
+  <a href="../nibbles/dock.html">nibbles &middot; dock</a>
+  <a href="../nibbles/dock-screen-off.html">nibbles &middot; screen off</a>
+</div>
+
+<div class="bad"><b>&#9888; SKIFREE HAS NO GAME UNDER THE SHIPPING SHELL, TODAY, ON MAIN.</b>
+The card injects the bundle <code>&lt;script&gt;</code>, calls
+<code>window.SkiFree.create({canvas,…})</code> against its own canvas, and publishes the
+controller; the factory only READS it. skifree is not in <code>NON_SHELL_LANE_TYPES</code>, not
+in <code>STRICT_FACES</code> and <b>not in <code>CARD_PRODUCER_LANE_TYPES</code></b>, so
+<code>laneRenderKind</code> returns <code>'placeholder'</code> and no card mounts. <b>No bundle,
+no controller, no game:</b> the snapshot freezes at its construction defaults,
+<code>out</code> stays black, and <code>gate</code> &mdash; the module's ONLY trigger output
+&mdash; never fires. Expanding the dock pane starts a game; collapsing it calls
+<code>controller.dispose()</code> and throws the run away, and the dock LRU-evicts a pane when a
+third module is expanded. <b>Every skifree e2e drives <code>?shell=legacy</code></b>, so nothing
+in CI can see any of it.</div>
+
+<div class="side">
+  <div class="panel"><h5>what the card gives you &mdash; <code>?shell=legacy</code></h5>
+    <div class="slope">
+      <div class="tree" style="left:40px;top:60px"></div>
+      <div class="tree" style="left:210px;top:105px"></div>
+      <div class="tree" style="left:96px;top:190px"></div>
+      <div class="tree" style="left:258px;top:238px"></div>
+      <div class="rock" style="left:150px;top:150px"></div>
+      <div class="rock" style="left:60px;top:265px"></div>
+      <div class="skier" style="left:158px;top:120px"></div>
+    </div>
+    <div class="hudrow"><span>280m</span><span>&middot; lives 4</span><span class="mode">CV</span><span class="over">GAME OVER</span></div>
+    <div class="hudlab">&#9888; DOM CHROME &mdash; FORBIDDEN by the resting-text ruling (&sect;10). Shown struck through so the deletion is visible.</div>
+  </div>
+  <div class="panel"><h5>what a promoted face gives you</h5>
+    <div class="slope dead"><span>NO CANVAS.<br>The bundle is loaded by the CARD,<br>which promotion removes from<br>BOTH surfaces.<br><br>snapshot frozen &middot; out black &middot; gate dead</span></div>
+    <div class="hudlab" style="color:var(--faint)">and the plate below has nothing to put on it</div>
+  </div>
+</div>
+
+<div class="cols">
+<div>
+  <div class="dock">
+    <div class="chromebar"><span class="nm">SKIFREE</span><span class="x">&#10005;</span></div>
+    <div class="plate">
+      <div class="jacks">
+        <div class="jack"><div class="hole"></div><b>X</b></div>
+        <div class="jack"><div class="hole"></div><b>Y</b></div>
+        <div class="jack g"><div class="hole"></div><b>GATE</b></div>
+        <div class="jack v"><div class="hole"></div><b>OUT</b></div>
+      </div>
+      <div class="empty">
+        <code>params: []</code><br>
+        ZERO ranked cells at mini, compact, plate AND dock.<br>
+        <code>hasVideoSurface</code> false (audio domain) &rArr; no picture.<br>
+        Only audio-family output is a <code>gate</code> &rArr;
+        <code>primaryAudioOutPortId</code> null &rArr; every glyph literal but
+        <code>'none'</code> is a dead static.<br><br>
+        <b>A title bar and a patch panel.</b>
+      </div>
+    </div>
+  </div>
+
+  <div class="bad"><b>&#9888; This is the #1974 <code>joystick</code> refusal verbatim</b> &mdash;
+  <i>&ldquo;every lane tier resolves to zero controls: a title, a patch panel, and no stick, on a
+  module whose entire purpose is a performance gesture.&rdquo;</i> The STOP-1 override says
+  THINNESS never refuses (<i>&ldquo;they still need to be done, &lt;4 params or not&rdquo;</i>)
+  &mdash; a one-knob module gets a one-knob face. <b>Zero is not thin.</b> And note the numeric
+  form: <code>faces-parity</code> budgets <code>10 s + 0.8 s/cell</code>, so this face would cost
+  <b>ten seconds of CI for zero cells</b>.</div>
+</div>
+
+<div>
+  <div class="zones"><h4>the three blockers</h4>
+    <table class="zt">
+      <tr><th>#</th><th>blocker</th></tr>
+      <tr><td>B1</td><td><b>Promotion DELETES THE GAME.</b> STOP-2 rows 3&ndash;7 &mdash; the
+        bundle <code>&lt;script&gt;</code>, <code>SkiFree.create</code>, the controller
+        publication, the CANVAS itself and MOUSE steering &mdash; all live only on the card, and
+        <b>no shell cell can hold any of them</b>. A <code>ShellFileCell</code> loads a file; a
+        <code>ShellActionCell</code> fires an audition; neither instantiates a third-party game
+        runtime.</td></tr>
+      <tr><td>B2</td><td><b><code>params: []</code></b> &rArr; zero controls at every tier. See the
+        plate above.</td></tr>
+      <tr><td>B3</td><td><b>No determinism seam is buildable.</b> The game is a committed
+        pre-built third-party IIFE driving its own rAF with its own clock and RNG.
+        <code>SkifreeController</code> exposes setCursor/enableMouse/disableMouse/reset/dispose/
+        getState/_forceCrash/_forceEaten &mdash; <b>no freeze, no seed, no tick</b>. Adding one
+        means forking the vendored source and re-running the bundle recipe. Its
+        <code>EXEMPT_FROM_VRT</code> entry names the missing hook, and it stays missing.</td></tr>
+    </table>
+  </div>
+
+  <div class="zones"><h4>&#9888; the platform finding &mdash; TWO gates cannot see this</h4>
+    <table class="zt">
+      <tr><th>gate</th><th>why it is blind</th></tr>
+      <tr><td>CARD_PRODUCER<br>_LANE_TYPES</td><td>a DERIVED set: exactly TWO
+        <code>PRODUCER_SEAMS</code> regexes, searched over each card's <b><code>.svelte</code>
+        subtree</b>. skifree's producer statement is <code>bridge.controller = controller</code>,
+        reached through <code>$lib/audio/skifree-bridge.ts</code> &mdash; <b>a <code>.ts</code>
+        file</b>, matching neither regex. The <code>.svelte</code>-only boundary is
+        <b>deliberate and argued in the gate's own header</b> (following <code>.ts</code> edges
+        enrols all 195 cards), so this is a STRUCTURAL blind spot, not an oversight.</td></tr>
+      <tr><td>card-media<br>-lifetime</td><td>deny-by-default over cards <b>on the extras
+        channel</b> (<code>read(id,'extras')</code>). <code>SkifreeCard</code> never calls it
+        &mdash; it uses the <code>window.__skifree</code> global &mdash; so it is not on the
+        channel and the map never asks. &#9888; Its sibling <code>NibblesCard</code> IS classified
+        (<code>module-renders-itself</code>), and that verdict is exactly right for nibbles and
+        exactly wrong for skifree.</td></tr>
+      <tr><td>the shape</td><td><b>A third producer seam exists and neither gate knows it.</b>
+        CLAUDE.md Pattern 5 verbatim: <i>a filter applied before the check redefined the check's
+        subject.</i> The set is honestly derived; its enumeration of SEAMS is the
+        filter.</td></tr>
+    </table>
+  </div>
+
+  <div class="zones"><h4>ARIA, if it ever ships</h4>
+    <table class="zt">
+      <tr><th>element</th><th>accessible value</th></tr>
+      <tr><td>the slope</td><td><code>role="img"</code>
+        <span class="aria">SKIFREE &mdash; 280 metres, 4 lives, steered by CV</span> &mdash; the
+        deleted chrome row's four values, speakable and unpainted. &#9888; The
+        <code>CV</code>/<code>MOUSE</code>/<code>IDLE</code> word is the one that most deserves to
+        survive and least deserves to be painted: it answers <i>&ldquo;why is my mouse doing
+        nothing&rdquo;</i>, and it is a STATE WORD &mdash; the exact shape the ruling refuses.
+        <b>Do not propose a compact or hover version; &ldquo;there but hidden&rdquo; was refused
+        by name.</b></td></tr>
+    </table>
+  </div>
+
+  <div class="ok"><b>WHAT TO DO INSTEAD, NOW.</b> Enrol skifree as a card producer so
+  <code>&lt;HeadlessSourceHost&gt;</code> keeps the real card alive off-screen. The bundle loads
+  once, the controller lives for the NODE, <code>gate</code> fires, <code>out</code> carries the
+  slope, and a collapse stops throwing the run away. &#9888; The set is DERIVED and asserted
+  EXACTLY, so the honest fix moves the publication into the COMPONENT (where the existing walk
+  finds it) rather than loosening the regex. &#9888; It does NOT solve mouse steering &mdash; an
+  off-screen host is <code>pointer-events: none</code>, the cameraInput problem &mdash; nor B2.
+  <b>Say so in the PR body so a green producer gate is not read as a promotion signal.</b>
+  Estimated ~8&nbsp;h, and the leg that proves it must be RED on main.</div>
+</div>
+</div>
+</div>

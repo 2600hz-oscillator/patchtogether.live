@@ -1,0 +1,356 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>NIBBLES face — SCREEN ON</title>
+<style>
+/* ─────────────────────────────────────────────────────────────────────────
+   NIBBLES FACEPLATE — MOCKUP ONLY, nothing here is implemented. See spec.md.
+   State 1 of 2: SCREEN ON.  (State 2: dock-screen-off.html)
+
+   ⚠ THIS IS THE ONE FACE IN THE GROUP WHERE THE RESTING-TEXT RULING COSTS
+   SOMETHING. The card today paints `LEN 17 †` as a DOM chrome row beside the
+   picture (NibblesCard.svelte:136) — a labelled derived value with a state
+   glyph, and none of the four permitted resting-text roles (module NAME,
+   TAB/SECTION labels, CONTROL CAPTIONS, option/landmark NAMES). It is the hero
+   readout strip (#1957) with a different label. REFUSED BY NAME, and it is NOT
+   reproduced anywhere on this plate.
+
+   ⚠ AND UNLIKE FROGGER AND MODTRIS THERE IS NO IN-CANVAS FALLBACK. MEASURED:
+   nibbles.ts paintFrame() draws background, border ring, food, snake and a
+   scanline darken — ZERO text, no fillText, no font. So the ruling does not
+   RELOCATE the score, it DELETES it. Its home is the canvas's aria-label.
+   Restoring a painted score would be a paintFrame edit, and nibbles.ts is IN
+   the WebGL attest basis — an owner-machine GPU re-attest CI cannot run.
+
+   ⚠ WHAT DOES PAINT, and why each is permitted:
+     · NIBBLES            — the module NAME (dock title bar)
+     · snake              — a BAND label
+     · Tick / Auto / Reset — CONTROL CAPTIONS
+     · SELF-PLAY / ARROWS — OPTION NAMES that disambiguate the toggle's own
+       position. A NAME disambiguates otherwise-identical states; a NUMBER
+       restates the dial.
+     · SCREEN ON / 1×     — the buttons' own option names
+   Nothing else. No length, no dagger, no tips, no state sentence.
+
+   ⚠ AND THE GATE CANNOT SEE ANY OF IT. face-resting-text-source.test.ts denies
+   ModuleFace FIELDS; a div in a module-owned fullViewBody is not a field, and
+   canvas text is its own named blind spot. This dock baseline and a human are
+   the whole enforcement.
+   ───────────────────────────────────────────────────────────────────────── */
+:root{
+  --bg:#0e1013; --dock:#12161c; --pbody:#1c1f24; --line:#2c3037; --tile:#33383f;
+  --ink:#eef1f5; --dim:#9aa2ad; --faint:#646c77;
+  --gate:#ffd23f; --cv:#5ad1ff; --vid:#c08cff; --warn:#f2c14e; --good:#8fe6b0; --bad:#ff9b9b;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+  font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1240px;margin:0 auto;padding:26px 20px 90px}
+h1{font-size:21px;font-weight:800;margin:0 0 6px}
+.sub{color:var(--dim);font-size:12.5px;margin:0 0 14px;max-width:108ch}
+.sub b{color:var(--ink)} code{font-family:var(--mono);font-size:11.5px;color:var(--gate)}
+.nav{display:flex;gap:8px;margin:0 0 20px;font-size:11px;flex-wrap:wrap}
+.nav a{color:var(--ink);text-decoration:none;border:1px solid var(--line);border-radius:6px;
+  padding:6px 12px;background:#12161c;font-family:var(--mono);letter-spacing:.06em;text-transform:uppercase}
+.nav a.on{border-color:var(--vid);color:var(--vid)}
+.warn{border:1px solid #6a5330;background:#1c1811;border-radius:8px;padding:11px 14px;margin:12px 0;
+  font-size:12.5px;color:#e8cf9a;max-width:120ch} .warn b{color:var(--warn)}
+.bad{border:1px solid #6a3838;background:#1c1212;border-radius:8px;padding:11px 14px;margin:12px 0;
+  font-size:12.5px;color:#e8b0b0;max-width:120ch} .bad b{color:var(--bad)}
+.ok{border:1px solid #3b5a48;background:#111a15;border-radius:8px;padding:11px 14px;margin:12px 0;
+  font-size:12.5px;color:#a9d8bd;max-width:120ch} .ok b{color:var(--good)}
+.cols{display:grid;grid-template-columns:minmax(0,1fr) 400px;gap:18px;align-items:start}
+@media (max-width:1120px){.cols{grid-template-columns:minmax(0,1fr)}}
+.dock{background:var(--dock);border:1px solid var(--line);border-radius:11px;padding:11px}
+.chromebar{display:flex;align-items:baseline;gap:9px;padding:0 2px 8px}
+.chromebar .nm{font-size:13px;font-weight:800;letter-spacing:.03em}
+.chromebar .x{margin-left:auto;color:var(--faint);font-family:var(--mono);font-size:12px}
+.plate{background:var(--pbody);border:1px solid var(--tile);border-left:4px solid var(--vid);
+  border-radius:10px;padding:0 0 12px;width:max-content;max-width:100%}
+.extbody{padding:12px 14px 6px}
+.screenwrap{position:relative;width:320px;min-height:26px;margin:0 auto;
+  outline:1px solid #4a7fbf;outline-offset:2px;border-radius:3px}
+/* 320 x 200 CSS px at 1× — the module's native framebuffer. ⚠ The PLATE is
+   sized to THIS, never to 4×: at >1× the preview scrolls inside its own box.
+   The CARD does the opposite (width:max-content + width:320*scale), so a 4×
+   zoom makes the card 1280px wide — the "useless gray horizontal space" the
+   compact ruling forbids. A face must not inherit it. */
+.screen{position:relative;width:320px;height:200px;background:#101420;border:1px solid #000;
+  border-radius:3px;overflow:hidden;
+  background-image:repeating-linear-gradient(rgba(0,0,0,.15) 0 1px, transparent 1px 2px)}
+.brd{position:absolute;inset:0;border:1px solid #404060;border-radius:2px}
+.cell{position:absolute;width:4px;height:4px}
+.food{background:#ff4040}
+.head{background:#c0ff80}
+.bodyc{background:#40c060}
+.tailc{background:#208040}
+.ovl{position:absolute;font-family:var(--mono);font-size:8.6px;letter-spacing:.06em;
+  padding:3px 9px;border-radius:2px;background:rgba(5,6,8,.72);color:var(--ink);z-index:3}
+.ovl.screen-btn{right:6px;bottom:6px;border:1px solid #6a5a2a}
+.ovl.scale-btn{left:6px;bottom:6px;border:1px solid #3f4a5a}
+.focusnote{text-align:center;font-family:var(--mono);font-size:8px;color:#4a7fbf;margin-top:5px;
+  letter-spacing:.06em}
+.bands{padding:6px 14px 0}
+.band{border-top:1px solid var(--line);padding-top:8px;margin-top:10px}
+.band:first-child{border-top:0;margin-top:4px}
+.blab{margin:0 0 8px;font-size:9.4px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--dim)}
+.row{display:flex;gap:26px;align-items:flex-end}
+.knb{display:flex;flex-direction:column;align-items:center;gap:6px}
+.knb .dial{position:relative;width:44px;height:44px;border-radius:50%;background:#151a21;
+  border:1px solid #303740;box-shadow:inset 0 0 8px rgba(0,0,0,.5)}
+.knb .ptr{position:absolute;left:50%;top:5px;width:2px;height:15px;background:#e8edf3;
+  transform-origin:50% 17px;transform:translateX(-50%) rotate(-24deg);border-radius:1px;
+  box-shadow:0 0 6px rgba(192,140,255,.55)}
+.knb b,.tog b,.act b{font-size:7.8px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;
+  color:var(--dim);font-family:var(--mono)}
+.tog{display:flex;flex-direction:column;align-items:center;gap:6px}
+.tog .sw{width:66px;height:26px;border-radius:13px;background:#151a21;border:1px solid #303740;
+  position:relative;display:flex;align-items:center}
+.tog .sw i{position:absolute;left:3px;width:20px;height:20px;border-radius:50%;background:#6d737b}
+.tog .sw.on{background:rgba(192,140,255,.18);border-color:var(--vid)}
+.tog .sw.on i{left:auto;right:3px;background:var(--vid)}
+.tog .opt{font-family:var(--mono);font-size:7.4px;letter-spacing:.07em;color:var(--vid)}
+.act{display:flex;flex-direction:column;align-items:center;gap:6px}
+.act .btn{width:66px;height:26px;border-radius:4px;background:#151a21;border:1px solid #3f4a5a;
+  display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:8.4px;
+  letter-spacing:.08em;color:var(--ink)}
+.zones{background:#12161c;border:1px solid var(--line);border-radius:9px;padding:12px 13px}
+.zones h4{margin:0 0 8px;font-size:9px;font-weight:800;letter-spacing:.13em;text-transform:uppercase;color:var(--dim)}
+.zones+.zones{margin-top:14px}
+.zt{width:100%;border-collapse:collapse;font-size:10.5px}
+.zt th{text-align:left;font-family:var(--mono);font-size:7.8px;letter-spacing:.11em;text-transform:uppercase;
+  color:var(--faint);font-weight:400;padding:0 0 5px;border-bottom:1px solid var(--line)}
+.zt td{padding:5px 0;border-bottom:1px solid #1c2027;vertical-align:top;color:var(--dim);line-height:1.42}
+.zt td:first-child{color:var(--ink);font-family:var(--mono);font-size:9.5px;padding-right:10px;white-space:nowrap}
+.aria{font-family:var(--mono);font-size:10px;color:var(--good);background:#101a14;
+  border:1px solid #2c4636;border-radius:4px;padding:2px 6px;display:inline-block;margin-top:3px}
+.lane{display:flex;gap:16px;align-items:flex-start;margin:14px 0 4px}
+.tile{background:var(--pbody);border:1px solid var(--tile);border-left:3px solid var(--vid);
+  border-radius:7px;padding:7px 8px;width:192px}
+.tile .tnm{font-size:9px;font-weight:800;letter-spacing:.05em;color:var(--ink);margin-bottom:6px;font-family:var(--mono)}
+.thumb{position:relative;width:100%;height:66px;border-radius:3px;overflow:hidden;background:#101420;
+  border:1px solid #000;background-image:repeating-linear-gradient(rgba(0,0,0,.15) 0 1px,transparent 1px 2px)}
+.tcells{display:flex;gap:12px;align-items:flex-end;justify-content:center;margin-top:7px}
+.tknb{width:32px;height:32px;border-radius:50%;background:#151a21;border:1px solid #303740}
+.tsw{width:44px;height:18px;border-radius:9px;background:rgba(192,140,255,.18);border:1px solid var(--vid)}
+</style>
+
+<div class="wrap">
+<h1>NIBBLES &mdash; dock faceplate &middot; SCREEN ON</h1>
+<p class="sub">Spec and mockup only; nothing here is implemented. <b>One band, two cells, one
+action and a <code>fullViewBody</code></b>. NIBBLES is a video source that is <i>also</i> a
+self-generating CV/gate/audio rig &mdash; one state variable is simultaneously the picture, the
+trigger source and a pitched voice that climbs as the snake grows.</p>
+
+<div class="nav">
+  <a href="../frogger/dock.html">frogger &middot; dock</a>
+  <a href="../frogger/lane-tiers.html">frogger &middot; lane tiers</a>
+  <a href="../modtris/dock.html">modtris &middot; dock</a>
+  <a href="../skifree/dock.html">skifree &middot; refusal</a>
+  <a class="on" href="dock.html">nibbles &middot; screen on</a>
+  <a href="dock-screen-off.html">nibbles &middot; screen off</a>
+</div>
+
+<div class="ok"><b>The only lane PICTURE in the group, and it is FREE.</b>
+<code>hasVideoSurface(def)</code> is <code>def?.domain === 'video'</code> and nothing else, so
+<code>laneGlyphFor</code> returns <code>'picture'</code> and the tile paints
+<code>&lt;VideoTileThumb nodeId={id}/&gt;</code> &mdash; <b>per-node by construction</b>, with no
+opt-in and no declaration. Every AUDIO module in waves 2, 3 and this one was refused a lane
+picture because <code>ShellExtensionGlyphProps</code> carries no <code>nodeId</code>; nibbles is
+not on that seam at all. &#9888; <code>face.glyph:'none'</code> is nonetheless MANDATORY &mdash;
+and <code>'none' + blank tile</code> is indistinguishable from <code>'none' + live thumb</code>
+from the declaration, so <b>assert <code>hasVideoSurface</code>, never infer it</b>.</div>
+
+<div class="lane">
+  <div class="tile">
+    <div class="tnm">NIBBLES &mdash; compact tile</div>
+    <div class="thumb">
+      <div class="cell food" style="left:52px;top:20px;width:3px;height:3px"></div>
+      <div class="cell head" style="left:96px;top:38px;width:3px;height:3px"></div>
+      <div class="cell bodyc" style="left:93px;top:38px;width:3px;height:3px"></div>
+      <div class="cell bodyc" style="left:90px;top:38px;width:3px;height:3px"></div>
+      <div class="cell tailc" style="left:87px;top:38px;width:3px;height:3px"></div>
+    </div>
+    <div class="tcells"><div class="tknb"></div><div class="tsw"></div></div>
+  </div>
+  <div class="ok" style="margin:0"><b>It fits EXACTLY, and that is a measurement worth
+  having.</b> <code>laneBodyPlan</code> caps a compact row at
+  <code>LANE_ROW_MAX_CELLS_WITH_GLYPH</code> when a glyph is present, and nibbles has exactly TWO
+  ranked params &mdash; so the tile is picture + TICK + AUTO with <b>nothing evicted</b>. The
+  #1785 rule that a PICTURE outranks ranked controls (which strips cells off backdraft's tile)
+  <b>never has to fire here</b>.</div>
+</div>
+
+<div class="cols">
+<div>
+  <div class="dock">
+    <div class="chromebar"><span class="nm">NIBBLES</span><span class="x">&#10005;</span></div>
+    <div class="plate">
+
+      <div class="extbody">
+        <div class="screenwrap">
+          <div class="screen">
+            <div class="brd"></div>
+            <div class="cell food" style="left:236px;top:64px"></div>
+            <div class="cell head" style="left:140px;top:100px"></div>
+            <div class="cell bodyc" style="left:136px;top:100px"></div>
+            <div class="cell bodyc" style="left:132px;top:100px"></div>
+            <div class="cell bodyc" style="left:128px;top:100px"></div>
+            <div class="cell bodyc" style="left:128px;top:104px"></div>
+            <div class="cell bodyc" style="left:128px;top:108px"></div>
+            <div class="cell bodyc" style="left:124px;top:108px"></div>
+            <div class="cell bodyc" style="left:120px;top:108px"></div>
+            <div class="cell tailc" style="left:116px;top:108px"></div>
+            <div class="ovl scale-btn">1&times;</div>
+            <div class="ovl screen-btn">SCREEN ON</div>
+          </div>
+          <div class="focusnote">&#9000; focused &mdash; arrow keys drive the snake</div>
+        </div>
+      </div>
+
+      <div class="bands">
+        <div class="band">
+          <p class="blab">snake</p>
+          <div class="row">
+            <div class="knb"><div class="dial"><div class="ptr"></div></div><b>Tick</b></div>
+            <div class="tog"><div class="sw on"><i></i></div><span class="opt">SELF-PLAY</span><b>Auto</b></div>
+            <div class="act"><div class="btn">RESET</div><b>Reset</b></div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="bad"><b>&#9888; THE RULING DELETES THE `LEN` READOUT, AND THERE IS NO IN-CANVAS
+  FALLBACK.</b> <code>NibblesCard.svelte:136</code> paints <code>LEN 17 &dagger;</code> as DOM
+  chrome beside the picture &mdash; a labelled derived value with a state glyph, and none of the
+  four permitted resting-text roles. <b>Refused by name.</b> And MEASURED at the source:
+  <code>paintFrame</code> (<code>nibbles.ts:514-552</code>) draws background, border, food, snake
+  and scanlines &mdash; <b>zero text, no <code>fillText</code>, no font</b>. So unlike frogger's
+  HUD and modtris' <code>LN</code> counter, the number has nowhere in the picture to go. Its home
+  is the canvas's <code>aria-label</code>, which <code>nibbles.spec.ts</code> already effectively
+  reads (it takes the score off <code>eng.read(node,'score')</code>, not off the DOM), so
+  <b>no assertion has to be weakened</b>. &#9888; Restoring a painted score would be a
+  <code>paintFrame</code> edit &mdash; and <code>nibbles.ts</code> is IN the WebGL attest basis
+  &mdash; so it costs an owner-machine GPU re-attest CI cannot run. <b>Do not fold that into the
+  face PR.</b></div>
+</div>
+
+<div>
+  <div class="zones"><h4>zone map</h4>
+    <table class="zt">
+      <tr><th>zone</th><th>what it is</th></tr>
+      <tr><td>lane tile</td><td>the live <code>VideoTileThumb</code>, per-node, free. Plus both
+        cells &mdash; nothing evicted.</td></tr>
+      <tr><td>body</td><td>the live 320&times;200 preview at 1&times;, plus <b>SCREEN</b>,
+        <b>SCALE</b> and the <b>arrow-key focus</b>. <code>spirographs</code> is the template, and
+        its header is the reason: it shipped the SCREEN toggle on its CARD, was promoted, and the
+        ruling was satisfied only on a surface nobody can reach (#1928).</td></tr>
+      <tr><td>SCREEN</td><td>overlaid bottom-RIGHT on a translucent backplate, never a row (a
+        stacked row cost spirographs ~18.8&nbsp;px against ~11&nbsp;px of slack). &#9888; <b>Here
+        it is load-bearing, not policy:</b> <code>surface.draw</code> is where the GAME TICKS, so
+        a collapse that stopped the draw would stop the game and silence every output. <b>The
+        toggle gates the CARD-SIDE POLL only.</b></td></tr>
+      <tr><td>SCALE</td><td>overlaid bottom-LEFT, same treatment &mdash; two overlays cost zero
+        height, two rows cost ~37&nbsp;px. &#9888; State moves to
+        <code>node.data.previewScale</code>: it is component <code>$state</code> today, so a dock
+        collapse <b>already</b> resets a user's 4&times; zoom (the #1531/#1574/#1583 class).
+        Parity and the bug fix are the SAME change. It must NOT become a
+        <code>ParamDef</code> &mdash; that is a GPU re-attest for a per-view
+        preference.</td></tr>
+      <tr><td>arrow keys</td><td>&#9888; <b>the INSTRUMENT, not keyboard-a11y.</b> The card
+        declares <code>role="application"</code> precisely because it owns its key handling. The
+        body must be focusable, take <code>keydown</code>, and carry the focus ring &mdash;
+        otherwise the face ships a game with no way to play it. Dock-only, which is also true of
+        the card today.</td></tr>
+      <tr><td>band</td><td><b>snake</b> &mdash; one band, two params. &#9888; <b>NOT tabbed</b>,
+        and the refusal is argued: the rail engages at <code>DOCK_TAB_MIN_BANDS = 7</code>,
+        <code>face.tabbed</code> is owner-instruction-only, and <i>&ldquo;do not pad pages to
+        force the rail&rdquo;</i> is explicit. Two params is not control-heavy.</td></tr>
+      <tr><td>rear</td><td>NO INPUTS AT ALL, so the input rail is empty. Seven outputs authored as
+        <b>picture</b> / <b>events</b> / <b>voice</b> rather than by cable domain &mdash; a domain
+        split would put <code>length_cv</code> away from the two oscillators it pitches. &#9888;
+        Every group declares <code>direction:'output'</code>; the default is
+        <code>'input'</code>.</td></tr>
+    </table>
+  </div>
+
+  <div class="zones"><h4>controls &amp; primitives</h4>
+    <table class="zt">
+      <tr><th>key</th><th>primitive &amp; why</th></tr>
+      <tr><td>tick_ms</td><td>rank 1 &middot; <b><code>'knob'</code>, the generic default,
+        DECLARED NOTHING.</b> The module's TEMPO &mdash; and the one module here whose tempo
+        control is also its pitch-EVENT rate: the three gates, the <code>gated</code> retrigger and
+        the <code>length_cv</code> step rate are all clocked by it, and it is read EVERY FRAME.
+        &#9888; NOT <code>'fader'</code>: <code>NibblesCard</code> renders a
+        <code>&lt;Knob&gt;</code> (modtris renders faders and declares accordingly).</td></tr>
+      <tr><td>auto</td><td>rank 2 &middot; <b><code>'toggle'</code> &mdash; DERIVED, not
+        declared.</b> <code>looksLikeToggle</code> on a <code>0..1 discrete</code> param yields a
+        <code>&lt;Toggle&gt;</code> before <code>options</code> is consulted. &#9888; <b>The
+        moog962 trap is one param shape away and does NOT apply</b>: a <code>2..3
+        discrete</code> drawn as a KNOB has two reachable positions across the whole dial and
+        quantises back &mdash; <code>faces-parity</code> failed moog962 on exactly that, twice.
+        <b>Assert the derived kind; do not declare a roster</b>, which would invent names the
+        module does not have. &#9888; And NOT <code>face.momentary</code>: AUTO is a LATCHING mode
+        and must persist a reload.</td></tr>
+      <tr><td>RESET</td><td><b><code>ShellActionCell</code>, <code>mode:'trigger'</code>, probe =
+        an <code>engine-message</code> AUDITION.</b> <code>extras.reset()</code> writes NOTHING to
+        <code>node.data</code> or <code>params</code> &mdash; the game is factory-internal by
+        design &mdash; so <code>readParam</code>/<code>readData</code> are <b>structurally
+        blind</b>, exactly as with samsloop's REC arm. The observable is the AUDITION LEDGER, and
+        <code>delivered:false</code> is recorded, never dropped. &#9888; <b>Not a
+        <code>data-rev</code> probe</b>: a revision-only probe passes on a dead button that bumps
+        the counter.</td></tr>
+      <tr><td>&mdash;</td><td>&#9888; <b>NO <code>freeze</code> param</b>, unlike all three
+        siblings. The determinism pair already exists, and adding a param to a def in the WebGL
+        attest basis would buy an assertion that already holds &mdash; the 4plexvid anti-pattern by
+        name. <b>NO <code>units</code></b> either: a <code>format</code> makes the readout PAINT,
+        <i>and</i> it is a <code>params</code> edit. The ruling and the cost point the same
+        way.</td></tr>
+      <tr><td>&mdash;</td><td>&#9888; <b>NO hero.</b> A <code>hero.cell</code> SUPPRESSES the
+        shell glyph at the dock &mdash; and for a video module the glyph IS the
+        <code>VideoTileThumb</code>. A hero would trade the free per-node picture for a bespoke
+        one.</td></tr>
+    </table>
+  </div>
+
+  <div class="zones"><h4>ARIA &mdash; where the deleted numbers live</h4>
+    <table class="zt">
+      <tr><th>element</th><th>accessible value</th></tr>
+      <tr><td>the screen</td><td><code>role="img"</code>
+        <span class="aria">NIBBLES &mdash; length 17, alive, auto-play on</span> &mdash; where the
+        deleted <code>LEN</code> and the <code>&dagger;</code> become speakable.</td></tr>
+      <tr><td>the lane thumb</td><td>the shell's own generic label. &#9888; <b>Do NOT duplicate
+        the game state onto it</b> &mdash; the shell owns it, and a module-authored label there
+        would be resting text on a surface with no body.</td></tr>
+      <tr><td>control-tick_ms</td><td><span class="aria">80 ms &mdash; 12.5 ticks per second</span>
+        a DERIVED quantity (<code>1000/tick_ms</code>) with a live negative control:
+        <code>auto</code> must not move it.</td></tr>
+      <tr><td>control-auto</td><td><code>aria-pressed</code> +
+        <span class="aria">self-play</span> / <span class="aria">arrow keys</span> &#9888; these
+        two <b>MAY PAINT</b> as the toggle's own label: they are option NAMES that disambiguate the
+        control's own position. <b>A NAME disambiguates otherwise-identical states; a NUMBER
+        restates the dial.</b></td></tr>
+      <tr><td>body wrapper</td><td><code>role="application"</code>, <code>tabindex="0"</code>,
+        <span class="aria">NIBBLES &mdash; arrow keys drive the snake when AUTO is off</span>,
+        carried verbatim from the card.</td></tr>
+    </table>
+  </div>
+
+  <div class="ok"><b>The determinism seam ALREADY EXISTS and is ALREADY PROVEN.</b> Two globals,
+  both in the module today and both already the pinned pair a sibling VRT spec uses:
+  <code>__videoEngineFreezeTime</code> (so <code>dt</code> is identically 0 and the snake never
+  steps) and <code>__nibblesVrtSeed</code> (so the start and every pellet are identical). MEASURED
+  byte-level in the tree: pre-fix <code>2ed942ac…</code> vs <code>62fc8ce5…</code> (differ),
+  post-fix <code>14256032…</code> twice (identical). &#9888; The seed must be set BEFORE spawn
+  &mdash; <code>maybeApplyVrtSeed</code> re-seeds but does NOT repaint &mdash; and
+  <code>simPin</code>'s <code>addInitScript</code> is strictly earlier than any
+  <code>afterSpawn</code>. &#9888; <code>videoFaceWhy</code> is MANDATORY (it is the video-zone
+  BOOT SELECTOR first; without it the scene waits out the full 90&nbsp;s timeout for a channel-
+  column membership a video node never acquires) &mdash; and its freeze half being inert here is
+  fine and must not be used as an argument to drop it.</div>
+</div>
+</div>
+</div>

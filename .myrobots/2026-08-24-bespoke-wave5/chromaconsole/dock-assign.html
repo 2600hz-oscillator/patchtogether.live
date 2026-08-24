@@ -1,0 +1,289 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>CHROMA CONSOLE — ASSIGN mode</title>
+<style>
+/* ─────────────────────────────────────────────────────────────────────────
+   CHROMA CONSOLE FACEPLATE — MOCKUP, state 2 of 2 (ASSIGN MODE).
+   SPEC AND MOCKUP ONLY. Nothing here is implemented. See spec.md §3.3.
+
+   The ⇄ ASSIGN toggle swaps the eight knobs, IN PLACE, for eight pickers
+   over the descriptor's grouped roster. This is the ONE mode in which the
+   plate is wide, and it is wide for a reason CLAUDE.md names explicitly:
+   "a control that appears in one mode only" is one of the four genuine
+   width earners. The earner is spent only while earning — exit the mode
+   and the plate returns to ~340 px (see dock.html).
+
+   The card, by contrast, renders all eight <select>s PERMANENTLY, one
+   above each knob (ChromaconsoleCard.svelte:238-252) — eight dropdowns of
+   chrome at rest for a setting changed rarely.
+
+   ⚠ THE ROSTER IS AUTHORED DATA AND MUST KEEP ITS GROUPS. The card uses
+   <optgroup> per group (:245-251). The descriptor has 35 controls in five
+   groups — primary(8), secondary(8), modules(4), bypass(6), other — and a
+   flat 27-item list is unusable. GROUPED is built at :95-103.
+
+   ⚠ RESTING TEXT IN THIS MODE: the picker VALUES are OPTION NAMES that
+   disambiguate a control's own position — explicitly permitted. The
+   captions are CONTROL CAPTIONS — permitted. There are NO values, NO
+   counts, NO sentences. The group headers are SECTION LABELS inside a
+   roster, which is the same role a <optgroup> plays on the card.
+   ───────────────────────────────────────────────────────────────────────── */
+:root{
+  --bg:#0e1013; --dock:#12161c; --pbody:#1c1f24; --line:#2c3037; --tile:#33383f;
+  --ink:#eef1f5; --dim:#9aa2ad; --faint:#646c77;
+  --ch1:#fbbf24; --warn:#f2c14e; --good:#8fe6b0; --bad:#e08b8b;
+  --dev:#e0b98f; --c-violet:#b57bff;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+  font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1240px;margin:0 auto;padding:26px 20px 90px}
+h1{font-size:21px;font-weight:800;margin:0 0 6px}
+h2{font-size:13px;font-weight:800;margin:26px 0 8px;letter-spacing:.05em;
+  text-transform:uppercase;color:var(--dim);font-family:var(--mono)}
+.sub{color:var(--dim);font-size:12.5px;margin:0 0 14px;max-width:106ch}
+.sub b{color:var(--ink)}
+code{font-family:var(--mono);font-size:11.5px;color:var(--ch1)}
+.nav{display:flex;gap:8px;margin:0 0 20px;font-size:11px;flex-wrap:wrap}
+.nav a{color:var(--ink);text-decoration:none;border:1px solid var(--line);border-radius:6px;
+  padding:6px 12px;background:#12161c;font-family:var(--mono);letter-spacing:.06em;text-transform:uppercase}
+.nav a.on{border-color:var(--c-violet);color:var(--c-violet)}
+.warn{border:1px solid #6a5330;background:#1c1811;border-radius:8px;padding:11px 14px;
+  margin:12px 0;font-size:12.5px;color:#e8cf9a;max-width:120ch}
+.warn b{color:var(--warn)}
+.ok{border:1px solid #3b5a48;background:#111a15;border-radius:8px;padding:11px 14px;
+  margin:12px 0;font-size:12.5px;color:#a9d8bd;max-width:120ch}
+.ok b{color:var(--good)}
+.cols{display:grid;grid-template-columns:minmax(0,1fr) 400px;gap:22px;align-items:start}
+@media (max-width:1160px){.cols{grid-template-columns:minmax(0,1fr)}}
+
+.pane{background:#0b0e12;border:1px dashed #4a3566;border-radius:12px;padding:16px 16px 26px;
+  position:relative}
+.pane::after{content:attr(data-cap);position:absolute;left:16px;bottom:7px;
+  font-family:var(--mono);font-size:8.6px;letter-spacing:.09em;color:#7a5f9a}
+.dock{background:var(--dock);border:1px solid var(--line);border-radius:11px;overflow:hidden;
+  padding:11px;width:max-content}
+.chromebar{display:flex;align-items:baseline;gap:9px;padding:0 2px 8px}
+.chromebar .nm{font-size:13px;font-weight:800;letter-spacing:.03em}
+.chromebar .x{margin-left:auto;color:var(--faint);font-family:var(--mono);font-size:12px}
+/* WIDE — only in this mode. Exit and it returns to 340px. */
+.plate{background:var(--pbody);border:1px solid var(--tile);border-left:4px solid var(--c-violet);
+  border-radius:10px;padding:0 0 4px;width:520px}
+.band{padding:12px 14px 10px}
+.agrid{display:grid;grid-template-columns:repeat(2,1fr);gap:9px 12px}
+.slot{display:flex;flex-direction:column;gap:4px}
+.slot .cap{font-family:var(--mono);font-size:8.4px;letter-spacing:.09em;color:var(--faint);
+  text-transform:uppercase}
+.pick{background:#0d1116;border:1px solid #2a3038;border-radius:5px;color:var(--ink);
+  font-size:11px;padding:5px 8px;display:flex;align-items:center;gap:6px}
+.pick .caret{margin-left:auto;color:var(--faint);font-size:9px}
+.pick.stale{border-color:#4a3566;color:var(--c-violet)}
+.pick.open{border-color:#5a4a7a;background:#120e1a}
+
+/* the opened roster, showing the GROUPS */
+.roster{margin-top:4px;border:1px solid #3a2f52;border-radius:6px;background:#0a0c12;
+  padding:5px 0;max-height:196px;overflow:auto}
+.roster .g{font-family:var(--mono);font-size:8.2px;letter-spacing:.10em;text-transform:uppercase;
+  color:#7a5f9a;padding:5px 10px 2px}
+.roster .o{font-size:11px;color:var(--dim);padding:2.5px 10px 2.5px 18px}
+.roster .o.on{color:var(--c-violet);background:#170f22}
+
+.extbody{border-top:1px solid #23272e;padding:11px 14px 12px;display:flex;
+  flex-direction:column;gap:8px}
+.row{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.sel{flex:1;min-width:0;background:#0d1116;border:1px solid #2a3038;border-radius:5px;
+  color:var(--ink);font-size:11px;padding:4px 7px;display:flex;align-items:center;gap:6px}
+.sel.sm{flex:none;width:74px}
+.sel .caret{margin-left:auto;color:var(--faint);font-size:9px}
+.btn{background:#0f1620;border:1px solid #2a3038;color:var(--dim);border-radius:5px;
+  padding:4px 9px;font-size:10.5px;font-family:var(--mono);letter-spacing:.05em}
+.btn.pri{background:#241d12;border-color:#5a4326;color:var(--dev)}
+.btn.mode{background:#241a33;border-color:#6a4f96;color:var(--c-violet)}
+
+.side{font-size:12.3px;color:var(--dim)}
+.side h3{font-size:10.4px;font-family:var(--mono);letter-spacing:.09em;text-transform:uppercase;
+  color:var(--faint);margin:16px 0 6px;font-weight:600}
+.side h3:first-child{margin-top:0}
+.side p{margin:0 0 9px}
+.side b{color:var(--ink)}
+table{border-collapse:collapse;width:100%;font-size:11.4px;margin:6px 0 12px}
+th,td{border:1px solid #23272e;padding:5px 8px;text-align:left;vertical-align:top}
+th{background:#12161c;color:var(--faint);font-family:var(--mono);font-size:9.2px;
+  letter-spacing:.07em;text-transform:uppercase;font-weight:600}
+td code{font-size:10.4px}
+.measure{font-family:var(--mono);font-size:10.6px;color:var(--good)}
+</style>
+
+<div class="wrap">
+
+<h1>chroma console — ASSIGN mode</h1>
+<p class="sub">Wave 5, the BINDER cohort. State 2 of 2. <b>Mockup only; nothing here is
+implemented.</b> The eight knobs are swapped <b>in place</b> for eight pickers over the
+descriptor’s grouped roster of 27 slottable controls. Exit and the plate returns to ~340 px.</p>
+
+<div class="nav">
+  <a href="dock.html">dock · perform</a>
+  <a class="on" href="dock-assign.html">dock · ASSIGN mode</a>
+  <a href="spec.md">spec.md</a>
+  <a href="../BINDERS.md">BINDERS.md</a>
+</div>
+
+<div class="cols">
+<div>
+
+<div class="pane" data-cap="ASSIGN MODE — 520 px, and it is EARNED">
+  <div class="dock">
+    <div class="chromebar"><span class="nm">chroma console</span><span class="x">✕</span></div>
+    <div class="plate">
+      <div class="band">
+        <div class="agrid">
+          <div class="slot"><span class="cap">slot 1</span>
+            <span class="pick"><span>tilt</span><span class="caret">▾</span></span></div>
+          <div class="slot"><span class="cap">slot 2</span>
+            <span class="pick"><span>rate</span><span class="caret">▾</span></span></div>
+          <div class="slot"><span class="cap">slot 3</span>
+            <span class="pick"><span>time</span><span class="caret">▾</span></span></div>
+          <div class="slot"><span class="cap">slot 4</span>
+            <span class="pick"><span>mix</span><span class="caret">▾</span></span></div>
+          <div class="slot"><span class="cap">slot 5</span>
+            <span class="pick"><span>amount · character</span><span class="caret">▾</span></span></div>
+          <div class="slot"><span class="cap">slot 6</span>
+            <span class="pick"><span>amount · movement</span><span class="caret">▾</span></span></div>
+
+          <div class="slot"><span class="cap">slot 7</span>
+            <span class="pick stale"><span>— unassigned —</span><span class="caret">▾</span></span></div>
+
+          <div class="slot"><span class="cap">slot 8</span>
+            <span class="pick open"><span>bypass</span><span class="caret">▴</span></span>
+            <div class="roster">
+              <div class="g">primary</div>
+              <div class="o">tilt</div><div class="o">rate</div><div class="o">time</div>
+              <div class="o">mix</div><div class="o">amount · character</div>
+              <div class="o">amount · movement</div><div class="o">amount · diffusion</div>
+              <div class="o">amount · texture</div>
+              <div class="g">secondary</div>
+              <div class="o">sensitivity</div><div class="o">drift · movement</div>
+              <div class="o">drift · diffusion</div><div class="o">output level</div>
+              <div class="o">effect vol · character</div><div class="o">effect vol · movement</div>
+              <div class="o">effect vol · diffusion</div><div class="o">effect vol · texture</div>
+              <div class="g">modules</div>
+              <div class="o">character</div><div class="o">movement</div>
+              <div class="o">diffusion</div><div class="o">texture</div>
+              <div class="g">bypass</div>
+              <div class="o on">bypass</div><div class="o">dual bypass</div>
+              <div class="o">bypass · character</div><div class="o">bypass · movement</div>
+              <div class="o">bypass · diffusion</div><div class="o">bypass · texture</div>
+              <div class="g">other</div>
+              <div class="o">capture routing</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="extbody">
+        <div class="row">
+          <span class="sel"><span>HOLOGRAM Chroma Console MIDI</span><span class="caret">▾</span></span>
+          <span class="sel sm"><span>ch 1</span><span class="caret">▾</span></span>
+        </div>
+        <div class="row">
+          <span class="btn mode">⇄ ASSIGN · on</span>
+          <span class="btn pri">Push all</span>
+          <span class="btn">tap</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="ok">
+  <b>The width is EARNED, and only here.</b> CLAUDE.md names four genuine earners — a live
+  picture, a scope trace, a video preview, an XY pad, <b>and a control that appears in one
+  mode only</b>. A picker over a grouped roster of 27 needs ~200 px; a knob needs ~68. The
+  mode is what lets the resting plate be narrow and the editing view be wide, so the plate
+  never carries width it is not using.
+</div>
+
+<h2>Slot 7 is STALE, and the sentence it replaces was worse</h2>
+<div class="warn">
+  The card prints <i>“N slot(s) point at controls this device no longer has. Reassign them.”</i>
+  (<code>:221-223</code>) — a derived sentence containing a derived count. The face marks
+  <b>the cell</b>, in both modes. <code>status.staleSlots</code> already names WHICH, so this
+  is <b>strictly more information than the card gives</b>, not less: the card tells you how
+  many, the face tells you which one to fix.
+  <br><br>
+  ⚠ The card’s comment is right about why the signal must exist at all — <i>“a slot that
+  quietly behaved like an empty one would leave automation writing into a dead lane with
+  nothing anywhere saying so.”</i> Keeping the signal while dropping the sentence is the whole
+  move.
+</div>
+
+</div>
+
+<div class="side">
+
+<h3>The groups are authored data — keep them</h3>
+<p>The descriptor has <b>35 controls in five groups</b>:
+<code>primary</code> (8), <code>secondary</code> (8), <code>modules</code> (4,
+<code>role: 'enum'</code>), <code>bypass</code> (6, mostly enum), <code>other</code>.
+The card builds <code>GROUPED</code> at <code>:95-103</code> and renders one
+<code>&lt;optgroup&gt;</code> per group at <code>:245-251</code>.</p>
+<p><b>A flat 27-item list is unusable.</b> The grouping is not decoration; it is how a player
+finds “the movement one” among four things called movement.</p>
+
+<h3>Why the label shortens on the knob but not in the picker</h3>
+<p><code>knobLabel()</code> (<code>:157-169</code>) takes the tail after <code>·</code> —
+<code>amount · character</code> becomes <code>character</code> on the dial. Its doc says why:
+<i>“the qualifier is already visible in the select directly above it, so the tail alone is
+unambiguous — and the full string overlaps its neighbours at this width.”</i></p>
+<div class="warn" style="margin-top:8px">
+  <b>⚠ That argument DOES NOT SURVIVE the mode split.</b> On the card the select is directly
+  above the knob; in a mode, the two are never on screen together. So the perform view must
+  show the <b>qualified</b> name, or a player reading <code>character</code> cannot tell
+  <code>amount · character</code> from <code>effect vol · character</code> from the
+  <code>modules</code> control literally named <code>character</code> — <b>three different
+  controls</b> in this roster.
+  <br><br>
+  This is the kind of reasoning that transfers silently and wrongly: the shortening is
+  correct <i>given a layout the face does not have</i>. Perform-view captions stay qualified;
+  the 4-across grid gets two lines instead of one.
+</div>
+
+<h3>Mode state is COMPONENT state</h3>
+<table>
+  <tr><th>toggle</th><th>lives</th><th>because</th></tr>
+  <tr><td><code>previewCollapsed</code><br>(the SCREEN ruling)</td><td><code>node.data</code></td>
+      <td>a persistent VIEW PREFERENCE — must survive reload, sync to collaborators,
+      and outlive an unmount (#1531/#1574/#1583)</td></tr>
+  <tr><td><code>assignMode</code></td><td>component <code>$state</code></td>
+      <td>a transient EDITING state. Persisting it would reopen the editor on every load and
+      sync one collaborator’s editing into another’s performance view</td></tr>
+</table>
+<p>The unmount class makes <code>node.data</code> the right default, so <b>choosing against it
+needs the argument written down</b> — which is what this row is.</p>
+
+<h3>PUSH ALL and the actions need a PROBE</h3>
+<p><code>shell-cells.ts:293</code> makes <code>ShellActionCell.probe</code> required. An
+audition writes nothing to the graph, so <code>readParam</code>/<code>readData</code> are
+structurally blind — <code>faces-parity</code> once asserted <code>toBeEnabled()</code>,
+clicked, and asserted nothing, and <b>sixstrum shipped a face over an instrument that could
+not be sounded</b>.</p>
+<p><b>chromaconsole already has the right instrument.</b> <code>read('ledger')</code> (card
+header <code>:28</code>), and <code>chromaconsole.spec.ts:240</code> already proves <i>“with
+NO output selected, a write sends nothing and is RECORDED undelivered”</i> —
+<code>delivered: false</code> recorded, never dropped, which is exactly the shape the probe
+contract wants.</p>
+
+<h3>Carry the testids across unchanged</h3>
+<p><code>chromaconsole-connect-{id}</code> · <code>chromaconsole-port-{id}</code> ·
+<code>chromaconsole-assign-{id}-{n}</code> · <code>chromaconsole-pushall-{id}</code> ·
+<code>chromaconsole-action-{id}-{actionId}</code>.</p>
+<p>All node-scoped, all already correct. <b>Do not invent new ones</b> — a renamed testid
+turns three mechanical e2e re-points into a behavioural review. Six of the module’s ten
+tests need no change at all, because the suite was written against behaviour rather than
+markup.</p>
+
+</div>
+</div>
+</div>
