@@ -471,3 +471,287 @@ export function setDuration(track: KriaTrack, step: number, dur: number): KriaTr
   duration[step] = clampNum(dur, 0, 1, 0.5);
   return { ...track, duration };
 }
+export function setRatchet(track: KriaTrack, step: number, n: number): KriaTrack {
+  const ratchet = track.ratchet.slice();
+  ratchet[step] = clampInt(n, 1, KRIA_RATCHET_MAX, 1);
+  return { ...track, ratchet };
+}
+export function setProbability(track: KriaTrack, step: number, p: number): KriaTrack {
+  const probability = track.probability.slice();
+  probability[step] = clampNum(p, 0, 1, 1);
+  return { ...track, probability };
+}
+export function setGlide(track: KriaTrack, step: number, secs: number): KriaTrack {
+  const glide = track.glide.slice();
+  glide[step] = clampNum(secs, 0, KRIA_GLIDE_MAX, 0);
+  return { ...track, glide };
+}
+export function setLoopStart(track: KriaTrack, start: number): KriaTrack {
+  return { ...track, loopStart: clampInt(start, 0, KRIA_STEPS - 1, 0) };
+}
+export function setLoopLength(track: KriaTrack, len: number): KriaTrack {
+  return { ...track, loopLength: clampInt(len, 1, KRIA_STEPS, KRIA_STEPS) };
+}
+export function setTimeDivision(track: KriaTrack, div: number): KriaTrack {
+  return { ...track, timeDivision: coerceTimeDivision(div) };
+}
+export function setDirection(track: KriaTrack, dir: unknown): KriaTrack {
+  return { ...track, direction: coerceDirection(dir) };
+}
+export function setMuted(track: KriaTrack, muted: boolean): KriaTrack {
+  return { ...track, muted: !!muted };
+}
+
+// ---------------------------------------------------------------------------
+// THE STEP-EDITOR GRID MODEL (PURE) — the ONE place row↔value lives
+// ---------------------------------------------------------------------------
+//
+// Every editor of this sequencer reads this model: the legacy card, the
+// faceplate's step-grid panel, and — through the pure mutators above — the
+// monome grid bridge. It exists because the row↔value mapping used to be
+// written TWICE inside KriaCard.svelte, once in the click handler and once in
+// the lit test, and the two disagreed.
+//
+// ⚠ THE BUG THAT PUT THIS HERE. The OCTAVE page computed a clicked value as
+// `Math.min(5, 6 - row)` while lighting `6 - row <= oct`. Rows 0 AND 1 both
+// wrote octave 5, and `oct = 5` lit rows 1..6 — so **row 0 responded to every
+// click and could never display the state it had just written.** A click
+// handler and a lit test that are two expressions of one mapping will drift;
+// one function answering BOTH cannot.
+//
+// The rule this encodes: a lane's rows are in BIJECTION with its values. When a
+// lane has fewer values than the grid has rows, the surplus rows are INERT —
+// refused by `laneRowActive` and painted dead — never
+// click-responsive-but-unlightable, and never silently aliased onto a
+// neighbouring value.
+
+/** Rows in the step editor. Kria's grid is 16 wide; the editor is 7 tall. */
+export const KRIA_EDIT_ROWS = 7;
+/** Ratchet ceiling (1 = a single hit, up to 4 sub-hits inside one step). */
+export const KRIA_RATCHET_MAX = 4;
+/** Glide ceiling in SECONDS — the same bound `coerceTrack` clamps to. */
+export const KRIA_GLIDE_MAX = 0.5;
+/**
+ * Kria's PROBABILITY fader, bottom row first. Four levels, not a continuous
+ * scale: index 0 (the bottom row) never fires, index 3 always does.
+ */
+export const KRIA_PROBABILITY_LEVELS: readonly number[] = [0, 0.25, 0.5, 1] as const;
+
+/** A per-step lane the 7×16 editor can edit. */
+export type KriaLane = 'trig' | 'note' | 'octave' | 'duration' | 'probability' | 'glide' | 'ratchet';
+
+/** The lanes, with the short tags the page selector prints. */
+export const KRIA_LANES: readonly { id: KriaLane; label: string }[] = [
+  { id: 'trig', label: 'TRG' },
+  { id: 'note', label: 'NTE' },
+  { id: 'octave', label: 'OCT' },
+  { id: 'duration', label: 'DUR' },
+  { id: 'probability', label: 'PRB' },
+  { id: 'glide', label: 'GLD' },
+  { id: 'ratchet', label: 'RAT' },
+] as const;
+
+/** Is `lane` one of the declared lanes? (A persisted/selector value is data.) */
+export function coerceLane(raw: unknown): KriaLane {
+  return KRIA_LANES.some((l) => l.id === raw) ? (raw as KriaLane) : 'trig';
+}
+
+/**
+ * How many rows, counted from the BOTTOM, this lane actually uses. Rows above
+ * are inert. `trig` reads 1 because only the bottom row LIGHTS — but see
+ * `laneRowActive`: a trig column is clickable anywhere, a different question
+ * and the reason these are two functions rather than one.
+ */
+export function laneRowsUsed(lane: KriaLane): number {
+  switch (lane) {
+    case 'trig':
+      return 1;
+    case 'octave':
+      return 6; // values 0..5
+    case 'probability':
+      return KRIA_PROBABILITY_LEVELS.length; // 4
+    case 'ratchet':
+      return KRIA_RATCHET_MAX; // 4
+    case 'note':
+    case 'duration':
+    case 'glide':
+      return KRIA_EDIT_ROWS; // 7
+  }
+}
+
+/**
+ * Is this (lane, row) a live target for a click?
+ *
+ * ⚠ `trig` is the ONE lane where every row is active while only one row lights,
+ * and that is deliberate rather than the octave bug wearing a different hat: a
+ * trig column is a single boolean, so clicking anywhere in the column toggles
+ * it and the bottom row reports the result. The click has a visible
+ * consequence — exactly what row 0 of the octave page did not.
+ */
+export function laneRowActive(lane: KriaLane, row: number): boolean {
+  if (!Number.isInteger(row) || row < 0 || row >= KRIA_EDIT_ROWS) return false;
+  if (lane === 'trig') return true;
+  // Every other lane fills from the bottom: the used rows are the LAST N.
+  return row >= KRIA_EDIT_ROWS - laneRowsUsed(lane);
+}
+
+/** The 0-based level a row denotes, counting UP from the bottom row. */
+function levelForRow(row: number): number {
+  return KRIA_EDIT_ROWS - 1 - row;
+}
+
+/**
+ * The value a click on (lane, row) writes. `null` for an inert row, so a caller
+ * that forgets `laneRowActive` writes nothing rather than a clamped neighbour —
+ * the octave failure mode, refused at the return type.
+ */
+export function laneValueForRow(lane: KriaLane, row: number): number | null {
+  if (!laneRowActive(lane, row)) return null;
+  const level = levelForRow(row);
+  switch (lane) {
+    case 'trig':
+      return 1; // a toggle; the value is not read
+    case 'note':
+      return level; // bottom row = degree 0
+    case 'octave':
+      return level; // rows 1..6 → octaves 5..0
+    // ⚠ A BAR FROM THE TOP, unlike every other level lane. Clicking row r fills
+    // rows 0..r, so the value is (r+1)/7 and NOT the bottom-anchored `level`.
+    // Deriving it from `level` like its neighbours inverts the bar: the click
+    // lands on a row the lit test then leaves dark — the same shape as the
+    // octave defect, which is how the round-trip property caught it.
+    case 'duration':
+      return (row + 1) / KRIA_EDIT_ROWS; // top row = shortest gate
+    case 'probability':
+      return KRIA_PROBABILITY_LEVELS[level] ?? 1;
+    case 'ratchet':
+      return level + 1; // bottom row = 1 hit
+    case 'glide':
+      return (level / (KRIA_EDIT_ROWS - 1)) * KRIA_GLIDE_MAX;
+  }
+}
+
+/** Index of the roster entry nearest `v` (the probability fader's rounding). */
+function nearestLevelIndex(levels: readonly number[], v: number): number {
+  let best = 0;
+  let bestD = Infinity;
+  for (let i = 0; i < levels.length; i++) {
+    const d = Math.abs(levels[i]! - v);
+    if (d < bestD) {
+      bestD = d;
+      best = i;
+    }
+  }
+  return best;
+}
+
+/** Is (lane, step, row) lit for this track? */
+export function laneRowLit(lane: KriaLane, track: KriaTrack, step: number, row: number): boolean {
+  if (!laneRowActive(lane, row)) return false;
+  const level = levelForRow(row);
+  switch (lane) {
+    case 'trig':
+      return row === KRIA_EDIT_ROWS - 1 && !!track.trig[step];
+    case 'note': {
+      const deg = Math.max(0, Math.min(KRIA_EDIT_ROWS - 1, track.note[step] ?? 0));
+      return level === deg;
+    }
+    case 'octave':
+      return level <= Math.min(5, track.octave[step] ?? 0); // a bar from the bottom
+    case 'duration': {
+      const filled = Math.max(1, Math.round((track.duration[step] ?? 0.5) * KRIA_EDIT_ROWS));
+      return row < filled; // a bar from the top
+    }
+    case 'probability':
+      return level <= nearestLevelIndex(KRIA_PROBABILITY_LEVELS, track.probability[step] ?? 1);
+    case 'ratchet':
+      return level + 1 <= clampInt(track.ratchet[step], 1, KRIA_RATCHET_MAX, 1);
+    case 'glide': {
+      const g = clampNum(track.glide[step], 0, KRIA_GLIDE_MAX, 0);
+      return level <= Math.round((g / KRIA_GLIDE_MAX) * (KRIA_EDIT_ROWS - 1));
+    }
+  }
+}
+
+/**
+ * A step's value on a lane, spoken. This is the ONLY place the sequencer's
+ * per-step state exists as readable text: the faceplate paints no resting
+ * derived text, so this rides `aria-valuetext` (owner rulings 2026-08-17/19).
+ */
+export function laneStepText(lane: KriaLane, track: KriaTrack, step: number): string {
+  switch (lane) {
+    case 'trig':
+      return track.trig[step] ? 'on' : 'off';
+    case 'note':
+      return `degree ${track.note[step] ?? 0}`;
+    case 'octave':
+      return `octave +${Math.min(5, track.octave[step] ?? 0)}`;
+    case 'duration':
+      return `gate ${Math.round(clampNum(track.duration[step], 0, 1, 0.5) * 100)}% of the step`;
+    case 'probability': {
+      const p = clampNum(track.probability[step], 0, 1, 1);
+      return p >= 1 ? 'always' : p <= 0 ? 'never' : `${Math.round(p * 100)}% of the time`;
+    }
+    case 'ratchet': {
+      const r = clampInt(track.ratchet[step], 1, KRIA_RATCHET_MAX, 1);
+      return r === 1 ? 'single hit' : `${r} hits`;
+    }
+    case 'glide': {
+      const g = clampNum(track.glide[step], 0, KRIA_GLIDE_MAX, 0);
+      return g <= 0 ? 'no glide' : `${Math.round(g * 1000)} ms slew`;
+    }
+  }
+}
+
+/** What a cell IS on this lane — the accessible NAME half (the value half is
+ *  `laneStepText`). Page-dependent, because a cell on NTE is a scale degree and
+ *  the same cell on DUR is a gate width. */
+export function laneCellName(lane: KriaLane, step: number, row: number): string {
+  const human = KRIA_LANES.find((l) => l.id === lane)?.label ?? lane;
+  if (!laneRowActive(lane, row)) return `step ${step + 1}, ${human} (unused row)`;
+  switch (lane) {
+    case 'trig':
+      return `step ${step + 1}, trigger`;
+    case 'note':
+      return `step ${step + 1}, degree ${levelForRow(row)}`;
+    case 'octave':
+      return `step ${step + 1}, octave +${levelForRow(row)}`;
+    case 'duration':
+      return `step ${step + 1}, gate ${KRIA_EDIT_ROWS - row} of ${KRIA_EDIT_ROWS}`;
+    case 'probability':
+      return `step ${step + 1}, probability ${Math.round((KRIA_PROBABILITY_LEVELS[levelForRow(row)] ?? 1) * 100)}%`;
+    case 'ratchet':
+      return `step ${step + 1}, ${levelForRow(row) + 1} hits`;
+    case 'glide':
+      return `step ${step + 1}, glide ${Math.round((levelForRow(row) / (KRIA_EDIT_ROWS - 1)) * KRIA_GLIDE_MAX * 1000)} ms`;
+  }
+}
+
+/** Apply a lane edit to a track, returning a NEW track (or null for an inert
+ *  row). The one switch every editor routes through, so a new lane cannot reach
+ *  only half the surfaces. */
+export function applyLaneEdit(
+  lane: KriaLane,
+  track: KriaTrack,
+  step: number,
+  row: number,
+): KriaTrack | null {
+  const v = laneValueForRow(lane, row);
+  if (v === null) return null;
+  switch (lane) {
+    case 'trig':
+      return toggleTrig(track, step);
+    case 'note':
+      return setNote(track, step, v);
+    case 'octave':
+      return setOctave(track, step, v);
+    case 'duration':
+      return setDuration(track, step, v);
+    case 'probability':
+      return setProbability(track, step, v);
+    case 'ratchet':
+      return setRatchet(track, step, v);
+    case 'glide':
+      return setGlide(track, step, v);
+  }
+}

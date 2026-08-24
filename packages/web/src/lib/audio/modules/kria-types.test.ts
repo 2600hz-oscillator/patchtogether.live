@@ -26,6 +26,17 @@ import {
   setNote,
   setOctave,
   setDuration,
+  applyLaneEdit,
+  laneCellName,
+  laneRowActive,
+  laneRowLit,
+  laneRowsUsed,
+  laneStepText,
+  laneValueForRow,
+  KRIA_EDIT_ROWS,
+  KRIA_GLIDE_MAX,
+  KRIA_LANES,
+  KRIA_PROBABILITY_LEVELS,
   KRIA_TRACKS,
   KRIA_STEPS,
   type KriaTrack,
@@ -235,6 +246,172 @@ describe('kria-types: edit helpers are immutable', () => {
 
     const d = setDuration(t, 0, 0.25);
     expect(d.duration[0]).toBeCloseTo(0.25, 6);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// THE STEP-EDITOR GRID MODEL — and the octave defect it closes
+// ---------------------------------------------------------------------------
+describe('kria grid model: rows are in BIJECTION with values', () => {
+  /**
+   * ⚠ THE PROPERTY THAT WAS FALSE, and it is stated as a property rather than
+   * as a row number so it cannot be satisfied by patching one case.
+   *
+   * A row a user can CLICK must be a row that can SHOW what the click did.
+   * `KriaCard.svelte` computed the octave page's clicked value as
+   * `Math.min(5, 6 - row)` and lit it with `6 - row <= oct`: rows 0 and 1 both
+   * wrote octave 5, and octave 5 lit rows 1..6 — so row 0 accepted clicks
+   * forever and never once displayed its own state. Written this way the test
+   * fails for ANY lane that grows a click target it cannot paint.
+   */
+  /**
+   * DENY BY DEFAULT with ONE named exemption carrying its reason.
+   *
+   * `trig` is a single boolean per COLUMN, not a value per row: clicking
+   * anywhere in the column toggles it and the BOTTOM row reports the result.
+   * The click therefore has a visible consequence — which is the thing the
+   * octave defect lacked — but it is not "row R lights row R". It is exempt
+   * from the row-lights-itself form and carries a stronger, positive assertion
+   * of its own below, so the exemption costs no coverage.
+   */
+  const NOT_ROW_ADDRESSED: Readonly<Record<string, string>> = {
+    trig: 'one boolean per column; the consequence shows on the bottom row (asserted separately)',
+  };
+
+  it('every ACTIVE row, once clicked, lights that row — for every value lane', () => {
+    const offenders: string[] = [];
+    for (const { id: lane } of KRIA_LANES) {
+      if (NOT_ROW_ADDRESSED[lane]) continue;
+      for (let row = 0; row < KRIA_EDIT_ROWS; row++) {
+        if (!laneRowActive(lane, row)) continue;
+        for (const step of [0, 7, 15]) {
+          const next = applyLaneEdit(lane, defaultTrack(), step, row);
+          expect(next, `${lane} row ${row}: an active row must write something`).not.toBeNull();
+          if (!laneRowLit(lane, next!, step, row)) {
+            offenders.push(`${lane}: clicking row ${row} (step ${step}) did not light row ${row}`);
+          }
+        }
+      }
+    }
+    expect(offenders, 'a click target that cannot show its own result').toEqual([]);
+  });
+
+  it('…and the exemption is ANCHORED — every exempt lane still exists', () => {
+    // A named exemption for a lane that no longer exists is RED, so the list
+    // cannot outlive its subject.
+    for (const lane of Object.keys(NOT_ROW_ADDRESSED)) {
+      expect(
+        KRIA_LANES.map((l) => String(l.id)),
+        `exempt lane '${lane}' is not a declared lane`,
+      ).toContain(lane);
+    }
+  });
+
+  it('TRIG (the exempt lane): a click anywhere in the column moves the bottom row', () => {
+    for (let row = 0; row < KRIA_EDIT_ROWS; row++) {
+      expect(laneRowActive('trig', row), `trig row ${row} must be clickable`).toBe(true);
+      const on = applyLaneEdit('trig', defaultTrack(), 6, row)!;
+      expect(on.trig[6], `clicking trig row ${row} set the step`).toBe(true);
+      expect(
+        laneRowLit('trig', on, 6, KRIA_EDIT_ROWS - 1),
+        `clicking trig row ${row} lit the bottom row`,
+      ).toBe(true);
+      // …and the click is a TOGGLE: clicking again clears it.
+      expect(applyLaneEdit('trig', on, 6, row)!.trig[6]).toBe(false);
+    }
+  });
+
+  it('every INACTIVE row is inert — no value, no edit, never lit', () => {
+    const offenders: string[] = [];
+    for (const { id: lane } of KRIA_LANES) {
+      for (let row = 0; row < KRIA_EDIT_ROWS; row++) {
+        if (laneRowActive(lane, row)) continue;
+        if (laneValueForRow(lane, row) !== null) offenders.push(`${lane} row ${row}: has a value`);
+        if (applyLaneEdit(lane, defaultTrack(), 0, row) !== null)
+          offenders.push(`${lane} row ${row}: edited the track`);
+        if (laneRowLit(lane, defaultTrack(), 0, row)) offenders.push(`${lane} row ${row}: lit`);
+      }
+    }
+    expect(offenders, 'an inert row must be inert in all three directions').toEqual([]);
+  });
+
+  it('OCTAVE: row 0 is inert and rows 1..6 map onto octaves 5..0 one-to-one', () => {
+    // The regression test for the shipped defect, named concretely so the diff
+    // is legible next to the property above.
+    expect(laneRowActive('octave', 0)).toBe(false);
+    const written = new Set<number>();
+    for (let row = 1; row <= 6; row++) {
+      const v = laneValueForRow('octave', row);
+      expect(v, `octave row ${row}`).toBe(6 - row);
+      written.add(v!);
+    }
+    expect(written.size, 'six rows wrote six DISTINCT octaves (rows 0+1 both wrote 5)').toBe(6);
+    expect([...written].sort((a, b) => a - b)).toEqual([0, 1, 2, 3, 4, 5]);
+  });
+
+  it('PROBABILITY quantises to the four declared levels and nothing between', () => {
+    const seen = new Set<number>();
+    for (let row = 0; row < KRIA_EDIT_ROWS; row++) {
+      if (!laneRowActive('probability', row)) continue;
+      seen.add(laneValueForRow('probability', row)!);
+    }
+    expect([...seen].sort((a, b) => a - b)).toEqual([...KRIA_PROBABILITY_LEVELS].sort((a, b) => a - b));
+    // …and the three unused rows are not aliased onto a level (§6.4's warning).
+    expect(laneRowsUsed('probability')).toBe(KRIA_PROBABILITY_LEVELS.length);
+  });
+
+  it('RATCHET spans exactly 1..KRIA_RATCHET_MAX', () => {
+    const seen: number[] = [];
+    for (let row = 0; row < KRIA_EDIT_ROWS; row++) {
+      if (laneRowActive('ratchet', row)) seen.push(laneValueForRow('ratchet', row)!);
+    }
+    expect(seen.sort((a, b) => a - b)).toEqual([1, 2, 3, 4]);
+  });
+
+  it('GLIDE reaches 0 and the declared ceiling, and never exceeds it', () => {
+    const vals: number[] = [];
+    for (let row = 0; row < KRIA_EDIT_ROWS; row++) vals.push(laneValueForRow('glide', row)!);
+    expect(Math.min(...vals)).toBe(0);
+    expect(Math.max(...vals)).toBeCloseTo(KRIA_GLIDE_MAX, 9);
+    // The ceiling is the SAME bound coerceTrack clamps to — imported, never
+    // re-typed, so the editor cannot offer a value the model would clamp away.
+    const t = applyLaneEdit('glide', defaultTrack(), 0, 0)!;
+    expect(coerceTrack(t).glide[0]).toBeCloseTo(KRIA_GLIDE_MAX, 9);
+  });
+
+  it('a lane edit touches ONLY its own lane and only the clicked step', () => {
+    const before = defaultTrack();
+    const after = applyLaneEdit('note', before, 5, 2)!;
+    expect(after.note[5]).toBe(4);
+    expect(after.note.filter((n) => n !== 0)).toHaveLength(1);
+    for (const lane of ['trig', 'octave', 'duration', 'probability', 'glide', 'ratchet'] as const) {
+      expect(JSON.stringify(after[lane]), `${lane} moved`).toBe(JSON.stringify(before[lane]));
+    }
+  });
+
+  it('laneStepText speaks the value — the only readable form on a faceplate', () => {
+    // The face paints no resting derived text, so this string IS the coverage
+    // for per-step state. Each lane must say something DIFFERENT for two
+    // different values, or the accessible name is decoration.
+    const t = defaultTrack();
+    for (const { id: lane } of KRIA_LANES) {
+      const low = applyLaneEdit(lane, t, 0, KRIA_EDIT_ROWS - 1)!;
+      const highRow = laneRowActive(lane, 0) ? 0 : KRIA_EDIT_ROWS - laneRowsUsed(lane);
+      const high = applyLaneEdit(lane, t, 0, highRow)!;
+      if (lane === 'trig') continue; // one boolean; covered by on/off below
+      expect(
+        laneStepText(lane, low, 0),
+        `${lane}: the extremes must not read the same`,
+      ).not.toBe(laneStepText(lane, high, 0));
+    }
+    expect(laneStepText('trig', toggleTrig(t, 0), 0)).toBe('on');
+    expect(laneStepText('trig', t, 0)).toBe('off');
+  });
+
+  it('laneCellName is PAGE-DEPENDENT — the card said "step 5 row 2" on every page', () => {
+    const names = KRIA_LANES.map(({ id }) => laneCellName(id, 4, 5));
+    expect(new Set(names).size, 'seven lanes must not share one accessible name').toBe(names.length);
+    for (const n of names) expect(n).toContain('step 5');
   });
 });
 
