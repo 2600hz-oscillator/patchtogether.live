@@ -763,7 +763,7 @@
   ];
   const SINGLE_MAP_GRID: MapRow[] = [
     { what: 'GRID — the clip matrix', addr: 'column = channel / lane (1–8 left→right), row = clip slot (top row = slot 1). Single-tap = launch / stop (queued to the boundary). DOUBLE-TAP a clip = select it + open CLIP on it (empty pad = create a clip). No-shift right column = ROW / scene launch — a SCROLLING window of position-relative buttons over up to 64 scenes (slid by Grid+shift SCR▲/SCR▼)' },
-    { what: 'CLIP-DEFAULT PROBABILITY — SHIFT + a clip pad', addr: 'SHIFT + press a clip PAD (with NO armed function) → the 8×8 becomes a 40-level ORANGE bar (top 5 rows; each pad = 2.5%) for that clip’s DEFAULT firing probability. Tap pad k = k×2.5%, pad 40 = 100% (clears the clip default); the page auto-returns on the tap, a bottom-3-row tap cancels. The default is used by EVERY note with no probability of its own (a note’s own prob is used as-is, incl 100% which pins above the default). Opens only on a pad holding a clip; single-unit only. An armed copy/paste/div/len still consumes the tap; a no-shift tap still launches. Also on the card: right-click a clip pad → “Clip probability”' },
+    { what: 'CLIP-DEFAULT PROBABILITY — SHIFT + a clip pad', addr: 'SHIFT + press a clip PAD (with NO armed function) → the 8×8 becomes a 40-level ORANGE bar (top 5 rows; each pad = 2.5%) for that clip’s DEFAULT firing probability. Tap pad k = k×2.5%, pad 40 = 100% (clears the clip default); the page auto-returns on the tap, a bottom-3-row tap cancels. The default is used by EVERY note with no probability of its own (a note’s own prob is used as-is, incl 100% which pins above the default). Opens only on a pad holding a clip; single-unit only. An armed copy/paste/div/len still consumes the tap; a no-shift tap still launches. Also on the card: right-click a clip pad → “note probability”' },
     { what: 'GRID + shift right column', addr: 'top→bottom: COPY · PASTE · CLIP-DIV · SWING+ · SWING− · LENGTH · SCROLL▲ · SCROLL▼ (amber). Copy / Paste / Clip-Div / Length are TAP-TO-ARM (tap → arm → tap a target). Copy + a ROW/scene press grabs the WHOLE SCENE (all 8 lanes) — release SHIFT first so the column shows the ROW ▶ buttons (clip-pad targets work under either shift state); Paste is type-gated (clip→clip + scene→scene apply, the cross-type pastes are no-ops). Swing ± are direct ±2 % nudges on the SELECTED channel. SCROLL ▲▼ slide the scene window (up to 64 scenes; each dims at its limit)' },
     { what: 'SCENE REPEATS — HOLD GRID + HOLD a scene button', addr: 'the 8×8 becomes the orange REPEAT-COUNT view for that scene (no shift — SHIFT+top-row stays the arm map). Tap pad k (row-major from the upper-left) = k repeats (1–63) · pad 64 = INFINITE (default). Pads 1..N stay lit for count N; all 64 lit = infinite. The held button is POSITION-RELATIVE through the scene scroll (button i edits scene offset+i); the press never launches. Release either button = back to the grid. After N passes of the scene’s longest clip (frozen at launch) the next content scene down auto-launches via the normal quantized path' },
   ];
@@ -1240,10 +1240,10 @@
       <li>Under shift an <strong>armed</strong> copy / paste / clip-div / length still consumes the clip-pad
         tap (unchanged); a <strong>no-shift</strong> tap still launches. Empty pads don't open the page
         (there's no clip to carry a default). <em>Single-unit only</em> — on the card, right-click a clip
-        pad → <strong>Clip probability</strong>.</li>
+        pad → <strong>note probability</strong>.</li>
       <li><strong>The bottom-right clip pad (7,7) is claimed by the lane-8 arm</strong> from every view, so a
         SHIFT-tap there arms lane 8 rather than opening that clip's default-probability page. Set that clip's
-        default from the card instead: <strong>right-click the clip pad → Clip probability</strong>.</li>
+        default from the card instead: <strong>right-click the clip pad → note probability</strong>.</li>
     </ul>
 
     {@render lengthEditSection()}
@@ -1839,7 +1839,7 @@
       <li><strong>Note colour = firing probability</strong> (white 100% · purple per-note · orange clip
         default), the same as single mode. The pair note editor has <strong>no PROB page</strong> — set a
         per-note or clip-default probability from the <strong>card</strong> (right-click a note cell →
-        Probability, or a clip pad → Clip probability) or on a single-unit Launchpad.</li>
+        note probability, or a clip pad → note probability) or on a single-unit Launchpad.</li>
       <li><strong>FOLLOW (CC 98):</strong> green = the window auto-scrolls with the playhead; violet =
         frozen on the page you chose. A manual ◀/▶ scroll freezes; <strong>tap FOL to resume
         following</strong>.</li>
