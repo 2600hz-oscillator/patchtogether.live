@@ -480,7 +480,11 @@ would make `kria` a considerably stronger demonstration for the sequencer cohort
 this spec originally claimed: **the clicked-grid class may need no platform seam at
 all.**
 
-### 6.1 Why `fullViewBody` and not `editorSurface`
+### 6.1 IF a shell extension is used at all, it is `fullViewBody` — never `editorSurface`
+
+⚠ Read this section as conditional on §6.0: if both views fit in panel cells there is no
+extension, and this section is moot. It exists because `editorSurface` is the slot a
+reader will reach for, and reaching for it would be wrong either way.
 
 `editorSurface` is the slot whose own documentation names this exact thing — *"a
 bespoke EDITOR SURFACE for controls that are not cell-shaped at all (a clip arranger,
@@ -743,6 +747,11 @@ made by name.
 
 ## 13. MUST-VERIFY
 
+0. **`'kria-cell-{n}'` is ranked and RENDERED** (§5.2, §6.0). Completeness demands the
+   key; `shell-cells.test.ts` demands it not be inert. **Decide the rung by building the
+   panel cell first** and only reaching for an extension if the panel primitive cannot
+   carry a 7×16 grid — and if it can carry BOTH views, ship with no `face.extension` at
+   all and say so, because that is a materially stronger result for the cohort.
 1. **Undo actually works**, and the `captureTimeout: 500` coalescing is looked at
    rather than inherited (§0.2).
 2. **`tracks` at runtime — live Y.Array or plain array?** D2's fix depends on the
