@@ -3060,6 +3060,56 @@ export const FACES = [
       + 'is spawned when a canvas one already exists), and it is the only state in which this '
       + 'face is reachable by a player at all.',
   },
+  // ── LOOPBACK — the second card-owned-source promotion ─────────────────────
+  {
+    type: 'loopback',
+    pages: 1,
+    videoFaceWhy:
+      'a VIDEO module, so it must boot into the video zone rather than a mixer channel column — '
+      + 'without this field bootWithFace waits out the full 90 s test timeout for a column '
+      + 'membership a video node never acquires. ⚠ AND IT IS CAPTURABLE DESPITE BEING A LIVE '
+      + 'SCREEN-CAPTURE SOURCE, which is the interesting part — see the simPin below.',
+    // ⚠ THE MODULE'S OWN INJECTED-FRAME SEAM, AND IT IS WHY THIS FACE GETS REAL
+    // BASELINES RATHER THAN A `FACES_WITHOUT_SCENES` EXEMPTION.
+    //
+    // `loopback` sits in `EXEMPT_FROM_VRT` — "a live getDisplayMedia tab-capture
+    // + recursive preview defeat deterministic capture" — and that stays TRUE OF
+    // THE CARD SCENE, which is a different surface with a different baseline
+    // (the same distinction the `cameraInput` and `scoreboard` entries draw). It
+    // is NOT true of a scene captured with this pin set.
+    //
+    // ⚠ AND THIS PIN DOES STRICTLY MORE THAN CAMERA'S, which is the one place
+    // the analogy under-sells it. `__camerainputTestFrame` replaces the UPLOAD.
+    // `__loopbackTestFrame` replaces the upload AND the GEOMETRY: `effectiveCrop`
+    // switches to a fixed sub-quadrant derived from the `crop` PARAM, with no
+    // dependency on the card's per-frame `getBoundingClientRect` push into
+    // `_cropU0.._cropV1`. That matters because the crop rect is a function of the
+    // BROWSER WINDOW, so without the pin this face's picture would be a function
+    // of the runner's viewport size — a per-machine baseline, which is the one
+    // thing this suite cannot have. With it, the frame is a pure function of the
+    // two params.
+    //
+    // ⚠ AND IT IS A PAGE GLOBAL, WHICH IS WHY IT REACHES THIS MODULE AT ALL.
+    // simPin installs globals with `addInitScript`; loopback is main-thread (its
+    // source is a DOM `<video>`, so it can never be worker-eligible), so the
+    // factory reads them at construction. Same property that makes cameraInput
+    // and scoreboard pinnable.
+    simPin: [
+      {
+        global: '__loopbackTestFrame',
+        value: 1,
+        why:
+          "uploads the module's fixed synthetic gradient+checker instead of sampling the live "
+          + '<video>, AND derives the crop sub-rectangle from the `crop` param instead of from the '
+          + "card's per-frame viewport measurement — so the captured frame is a pure function of "
+          + 'the params and is identical across boots, renderers, frame counts AND runner window '
+          + 'sizes. Read as truthy, so 1 is the value. ⚠ It removes the getDisplayMedia dependency '
+          + 'entirely, which is not merely convenient: a display capture needs a real user gesture '
+          + 'and a picker choice EVERY time, with no already-granted state, so without the pin '
+          + 'this scene would be an un-answerable browser prompt rather than a picture.',
+      },
+    ],
+  },
 ] as const;
 
 /**

@@ -602,6 +602,24 @@ describe('face-migration inventory — DERIVED from the tree, not from this list
         + 'published status and invokes a registered command, so no second owner exists.',
       seam: '$lib/ui/media/camera-status-registry',
     },
+    loopback: {
+      why:
+        'the ACQUIRE gesture and the STOP gesture (both ACTIONS, not values), the capture LAMP '
+        + 'and the card\'s recovery TEXT — all rebuilt in the faceplate extension body. The card '
+        + 'keeps sole ownership of getDisplayMedia, the MediaStream and the capture state '
+        + 'machine; the body reads a published status and invokes a registered command, so no '
+        + 'second owner exists. ⚠ ACQUIRE IS LOAD-BEARING IN A WAY CAMERA\'S IS NOT: a display '
+        + 'capture has NO already-granted state, so there is no auto-acquire path to fall back '
+        + 'on and a promoted loopback with no reachable button could never be started at all. '
+        + '⚠ STOP could not be carried as a param instead — loopback.ts is in the WebGL attest '
+        + 'basis (a new param costs a GPU re-attest window) and a synced param would let one '
+        + 'collaborator stop a capture living in another browser. ⚠ The LAMP has nothing in the '
+        + 'graph to derive from: gain and crop are the only params and neither moves when a '
+        + 'capture starts, stops, is refused, or is ended from the browser\'s share bar. '
+        + 'Separately, the per-frame CROP PUMP moved to a node-keyed home so a card unmount can '
+        + 'no longer freeze the crop rectangle under a running capture.',
+      seam: '$lib/ui/media/loopback-status-registry',
+    },
   };
 
   it('CARD-OWNED SOURCE: a generic-face module must have CARRIED its card-only affordances', () => {

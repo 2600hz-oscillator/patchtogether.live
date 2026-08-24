@@ -224,6 +224,8 @@
   // in an off-screen host when the shell swaps its lane card away.
   import { HEADLESS_MOUNT_LANE_TYPES, DOM_SOURCE_LANE_TYPES, CARD_PRODUCER_LANE_TYPES, FACE_MOUNTS_PRODUCER, needsHeadlessSourceMount } from '$lib/ui/workflow/dom-source-modules';
   import { cameraStatus } from '$lib/ui/media/camera-status-registry';
+  import { loopbackStatus } from '$lib/ui/media/loopback-status-registry';
+  import { loopbackCropPump } from '$lib/ui/media/loopback-crop-pump';
   import { groupCardHostsChildCard } from '$lib/ui/modules/group-viz-hosts';
   import { nodeMedia } from '$lib/ui/media/node-media-registry';
   import { nodeExtras } from '$lib/ui/media/node-extras';
@@ -2355,6 +2357,17 @@
     // registry is the only thing joining the two surfaces — and like every row
     // above it is keyed to the NODE, so the graph is what retires it.
     cameraStatus.sweep(liveIds);
+    // ...and the same pair for LOOPBACK, for the same reason and with one
+    // addition. `loopbackStatus` is the status/command seam its promoted
+    // faceplate drives ($lib/ui/media/loopback-status-registry).
+    // `loopbackCropPump` is a running rAF LOOP, so this row is the only thing
+    // that ever ends one for a DELETED node: the pump is deliberately
+    // node-keyed and deliberately survives a card unmount (a collapse must not
+    // freeze the crop under a live capture), which means a card teardown
+    // cannot be what stops it. Without this sweep a deleted loopback would
+    // leave a pump measuring the viewport forever.
+    loopbackStatus.sweep(liveIds);
+    loopbackCropPump.sweep(liveIds);
   });
 
   /** THE EXTRAS-CHANNEL PRODUCER SEAM (#1720). The sixth instance of the #1583

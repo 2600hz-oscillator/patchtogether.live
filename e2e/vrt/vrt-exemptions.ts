@@ -582,7 +582,29 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // as CAMERA. Functional + render coverage is e2e/tests/loopback.spec.ts
   // (deterministic synthetic-frame render smoke + crop-toggle + recorderbox
   // chain) + loopback-crop.test.ts (pure crop math) + loopback.test.ts (def).
-  loopback: 'live getDisplayMedia tab-capture + recursive preview defeat deterministic capture; covered by loopback.spec.ts (synthetic-frame render smoke + crop-toggle + recorderbox chain) + loopback-crop/loopback unit tests',
+  //
+  // ⚠ SCOPED TO THE CARD, AND THE FACE IS NOW CAPTURED — the identical split
+  // the `cameraInput` entry above draws, recorded here for the identical
+  // reason: "the module is exempt" is the obvious wrong inference from this
+  // line, and it would buy a needless exemption for a surface that captures
+  // fine. This entry has always been about the LEGACY CARD scene, a different
+  // surface with a different baseline, and it stays true — the card renders the
+  // live `<video>` directly, so there is no version of the card scene without a
+  // MediaStream in it.
+  //
+  // ⚠ THE FACE SCENES ARE NOT EXEMPT. The module ships `__loopbackTestFrame`, a
+  // flag-gated seam that uploads a fixed synthetic gradient+checker instead of
+  // sampling the `<video>` AND derives the crop from the `crop` PARAM rather
+  // than from any per-frame card measurement — so a pinned scene has no
+  // getDisplayMedia, no picker and no viewport rect in it at all. The face
+  // scenes pin it through `simPin`, so `loopback` is NOT in
+  // `FACES_WITHOUT_SCENES`.
+  //
+  // ⚠ THE CARD STILL EXISTS AND IS STILL RENDERED — under `?shell=legacy` it is
+  // the lane surface, and under the default shell it runs off-screen in
+  // `<HeadlessSourceHost>`. So this exemption is not obsolete just because the
+  // module was promoted.
+  loopback: 'CARD scene only: a live getDisplayMedia tab-capture + recursive preview defeat deterministic capture. The FACE scenes ARE captured (simPin __loopbackTestFrame) — see _shell-faces.ts. Card coverage is loopback.spec.ts (synthetic-frame render smoke + crop-toggle + recorderbox chain) + loopback-crop/loopback unit tests',
   // AUDIO IN — system mic / line-in source. Card state depends on
   // getUserMedia permission + presence of audio inputs (both non-
   // deterministic across CI runners); the LED + status text would
