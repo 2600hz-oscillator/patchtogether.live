@@ -48,6 +48,7 @@ out vec4 outColor;
 
 uniform sampler2D uTex;
 uniform float uHasInput;
+uniform float uGain;       // post-multiplier on RGB
 
 void main() {
   if (uHasInput < 0.5) {
@@ -55,7 +56,7 @@ void main() {
     outColor = vec4(0.05, 0.05, 0.09 + v, 1.0);
     return;
   }
-  outColor = vec4(texture(uTex, vUv).rgb, 1.0);
+  outColor = vec4(texture(uTex, vUv).rgb * uGain, 1.0);
 }`;
 
 /** Metadata for a tuned channel, persisted so peers without the dataset loaded
@@ -157,7 +158,7 @@ export const tvLibrarianDef: VideoModuleDef = {
       stream_online: "Gate out (gate cable, edge:'gate'): held high while the stream is actually playing, low while loading, idle, or unavailable.",
     },
     controls: {
-      gain: "Gain — declared output-level param (0 to 2, linear; default 1.0). NOTE: the passthrough shader does not currently read it (no uGain uniform / draw() never applies it), so it is carried on the module but inert in v1 — it does not yet brighten or scale the video output.",
+      gain: "Gain — output level for the picture (0 to 2, linear; default 1.0). The passthrough shader multiplies the sampled RGB by this (the uGain uniform), so 0 blacks the output, 1.0 is the identity and 2 doubles it (clipped at full scale by the 8-bit framebuffer). It scales the VIDEO only — the audio_l/audio_r outs are unaffected.",
       cv_next: "Next (hidden synthetic param, 0 to 1, default 0): the CV bridge writes the next input's gate level here; the card polls readParam and edge-detects a rising edge (<0.5 → >=0.5) to advance one channel. Not a user-facing knob.",
       cv_random: "Random (hidden synthetic param, 0 to 1, default 0): the CV bridge writes the random input's gate level here; the card polls readParam and edge-detects a rising edge to tune a random channel. Not a user-facing knob.",
     },
@@ -168,6 +169,7 @@ export const tvLibrarianDef: VideoModuleDef = {
 
     const uTex      = gl.getUniformLocation(program, 'uTex');
     const uHasInput = gl.getUniformLocation(program, 'uHasInput');
+    const uGain     = gl.getUniformLocation(program, 'uGain');
 
     const { fbo, texture: outTexture } = ctx.createFbo();
 
@@ -281,6 +283,7 @@ export const tvLibrarianDef: VideoModuleDef = {
         g.viewport(0, 0, ctx.res.width, ctx.res.height);
         g.useProgram(program);
         g.uniform1f(uHasInput, uploaded ? 1.0 : 0.0);
+        g.uniform1f(uGain, params.gain);
         if (uploaded && sourceTexture) {
           g.activeTexture(g.TEXTURE0);
           g.bindTexture(g.TEXTURE_2D, sourceTexture);
