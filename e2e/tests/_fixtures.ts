@@ -157,8 +157,11 @@ export function creditSetupBudget(startedAtMs: number, label: string): number {
 const VOICE_DEMO_NODE_IDS = ['vd-seq', 'vd-vco', 'vd-adsr', 'vd-vca', 'vd-out'] as const;
 
 /**
- * Put the canonical VOICE DEMO on the canvas: Sequencer → VCO + ADSR → VCA →
- * Audio Out, pre-loaded with an 8-note C-major motif, sequencer auto-playing.
+ * Put the canonical VOICE DEMO on the canvas: KRIA → VCO + ADSR → VCA →
+ * Audio Out, pre-loaded with an 8-note C-major motif, auto-playing.
+ * (Was SEQUENCER until the deprecated sequencers were deleted 2026-08-24;
+ * same 5 nodes / 6 edges / vd-* ids, so every downstream assertion keeps
+ * its meaning.)
  *
  * WHY THIS EXISTS. This is byte-for-byte the graph the retired
  * `Canvas.loadExample()` wrote — the "Sequenced VCO" entry in the "Load
@@ -169,13 +172,13 @@ const VOICE_DEMO_NODE_IDS = ['vd-seq', 'vd-vco', 'vd-adsr', 'vd-vca', 'vd-out'] 
  * thrown away real coverage of features that have nothing to do with example
  * patches, so the fixture moved HERE and the specs now call this.
  *
- * It is deliberately the SAME 5 nodes / 6 edges at the SAME positions with the
+ * It is deliberately the SAME 5 nodes / 6 edges with the
  * SAME params, so every downstream assertion (node counts, cable counts, the
  * `vd-*` ids, audible RMS) keeps its original meaning.
  *
  * NOT `spawnPatch()`: that helper cannot write `node.data`, and the motif lives
- * on `vd-seq.data.steps`. A sequencer with no steps is silent, which would have
- * quietly gutted the specs that assert the demo makes noise.
+ * on `vd-seq.data` (KRIA's pattern record). A kria with no trigs is silent,
+ * which would have quietly gutted the specs that assert the demo makes noise.
  *
  * Lives in `_fixtures.ts` (NOT `_helpers.ts`) because this is fixture-only
  * churn. (It also used to keep the collab attest hash still; that attest was
@@ -194,41 +197,52 @@ export async function loadVoiceDemo(page: Page): Promise<void> {
     };
     await w.__ensureEngine();
 
-    const steps = [
-      // C-major motif starting at C4 (MIDI 60) — the 8 notes the dropdown's
-      // "Sequenced VCO" example shipped with.
-      { on: true, midi: 60 },
-      { on: true, midi: 67 },
-      { on: true, midi: 72 },
-      { on: true, midi: 67 },
-      { on: true, midi: 64 },
-      { on: true, midi: 60 },
-      { on: true, midi: 65 },
-      { on: true, midi: 67 },
-      ...Array.from({ length: 24 }, () => ({ on: false, midi: null })),
-    ];
+    // The same 8-note C-major motif the dropdown's "Sequenced VCO" example
+    // shipped with, re-expressed in KRIA's lane model (scale DEGREES through
+    // major/C, octave lane lifting the high C): C4 G4 C5 G4 E4 C4 F4 G4.
+    const track = {
+      trig: [...Array.from({ length: 8 }, () => true), ...Array.from({ length: 8 }, () => false)],
+      ratchet: Array.from({ length: 16 }, () => 1),
+      note: [0, 4, 0, 4, 2, 0, 3, 4, 0, 0, 0, 0, 0, 0, 0, 0],
+      octave: [0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+      duration: Array.from({ length: 16 }, () => 0.4),
+      probability: Array.from({ length: 16 }, () => 1),
+      glide: Array.from({ length: 16 }, () => 0),
+      loopStart: 0,
+      loopLength: 8,
+      timeDivision: 1,
+      direction: 'forward',
+      muted: false,
+    };
+    const silentTrack = () => ({ ...track, trig: Array.from({ length: 16 }, () => false) });
+    const kriaData = {
+      patterns: { '0': { tracks: [track, silentTrack(), silentTrack(), silentTrack()], scale: 'major', root: 48 } },
+      active: 0,
+      cued: null,
+      cueSteps: 0,
+    };
     const nodes: Record<
       string,
       { type: string; position: { x: number; y: number }; params: Record<string, number>; data?: Record<string, unknown> }
     > = {
       'vd-seq': {
-        type: 'sequencer',
+        type: 'kria',
         position: { x: 40, y: 60 },
-        params: { bpm: 180, length: 8, isPlaying: 1, gateLength: 0.4 },
-        data: { steps },
+        params: { bpm: 180, running: 1 },
+        data: kriaData,
       },
-      'vd-vco': { type: 'analogVco', position: { x: 620, y: 30 }, params: {} },
+      'vd-vco': { type: 'analogVco', position: { x: 900, y: 30 }, params: {} },
       'vd-adsr': {
         type: 'adsr',
-        position: { x: 620, y: 320 },
+        position: { x: 900, y: 320 },
         params: { attack: 0.005, decay: 0.08, sustain: 0.3, release: 0.15 },
       },
-      'vd-vca': { type: 'vca', position: { x: 920, y: 130 }, params: { base: 0, cvAmount: 1 } },
-      'vd-out': { type: 'audioOut', position: { x: 1200, y: 130 }, params: { master: 0.4 } },
+      'vd-vca': { type: 'vca', position: { x: 1240, y: 130 }, params: { base: 0, cvAmount: 1 } },
+      'vd-out': { type: 'audioOut', position: { x: 1520, y: 130 }, params: { master: 0.4 } },
     };
     const wires: Array<[string, string, string, string, string]> = [
-      ['vd-seq', 'pitch', 'vd-vco', 'pitch', 'pitch'],
-      ['vd-seq', 'gate', 'vd-adsr', 'gate', 'gate'],
+      ['vd-seq', 'pitch1', 'vd-vco', 'pitch', 'pitch'],
+      ['vd-seq', 'gate1', 'vd-adsr', 'gate', 'gate'],
       ['vd-vco', 'sine', 'vd-vca', 'audio', 'audio'],
       ['vd-adsr', 'env', 'vd-vca', 'cv', 'cv'],
       ['vd-vca', 'audio', 'vd-out', 'L', 'audio'],

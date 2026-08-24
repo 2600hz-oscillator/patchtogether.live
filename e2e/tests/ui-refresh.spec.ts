@@ -7,7 +7,7 @@
 // state across tests.
 
 import { test, expect, loadVoiceDemo } from './_fixtures';
-import { openModulePalette } from './_helpers';
+import { openModulePalette, spawnPatch } from './_helpers';
 import { waitFrames } from '../_helpers/frames';
 
 test.describe.configure({ mode: 'parallel' });
@@ -99,7 +99,7 @@ test.describe('Cable hover affordances', () => {
     // graph edges draw 5. Pinned in stereo-only-channel.spec.ts.
     await expect(page.locator('.svelte-flow__edge')).toHaveCount(5, { timeout: 10_000 });
 
-    const seqNode = page.locator('.svelte-flow__node-sequencer').first();
+    const seqNode = page.locator('.svelte-flow__node-kria').first();
     await seqNode.hover();
 
     // No settle: the attribute assertion below auto-retries, so the sleep only
@@ -193,8 +193,11 @@ test.describe('Undo / redo', () => {
     await loadVoiceDemo(page);
     await expect(page.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 10_000 });
 
-    // Focus a sequencer note input — pressing Cmd-Z there should not pull
-    // any nodes off the canvas.
+    // The demo gives the undo stack real content; CARTESIAN supplies the text
+    // input. (It was the deleted SEQUENCER card's note input until 2026-08-24 —
+    // CARTESIAN is the surviving NoteEntry host, and NoteEntry is the component
+    // that owns the keydown behaviour under test, so the subject is unchanged.)
+    await spawnPatch(page, [{ id: 'ur-cart', type: 'cartesian', position: { x: 1700, y: 60 } }]);
     const note = page.locator('input.note-input').first();
     await note.click();
 

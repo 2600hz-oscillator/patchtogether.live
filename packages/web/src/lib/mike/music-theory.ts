@@ -188,11 +188,10 @@ export function findClockSource(
 }
 
 const SEQUENCER_TYPES = new Set([
-  'sequencer',
-  'polyseqz',
-  'drumseqz',
-  'macseq',
-  'sequencerPages',
+  'clipplayer',
+  'kria',
+  'score',
+  'cartesian',
   'drummergirl',
 ]);
 

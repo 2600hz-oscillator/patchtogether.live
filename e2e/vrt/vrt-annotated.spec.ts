@@ -39,7 +39,7 @@ const NODE_ID = 'annot-1';
 // utility (adsr), a knob modulation module (lfo), and a numbered-step
 // sequencer (sequencer). Override with ANNOTATED_MODULES="adsr,lfo" to
 // regenerate a subset locally; Phase 2 drives the full registry.
-const DEFAULT_SAMPLE = ['adsr', 'lfo', 'sequencer'];
+const DEFAULT_SAMPLE = ['adsr', 'lfo', 'score'];
 const ANNOTATED_MODULES = (process.env.ANNOTATED_MODULES
   ? process.env.ANNOTATED_MODULES.split(',').map((s) => s.trim()).filter(Boolean)
   : DEFAULT_SAMPLE

@@ -84,7 +84,7 @@ async function dockGlyphFrame(page: Page): Promise<string> {
 }
 
 test.describe('LIVE shell glyphs (?shell=1)', () => {
-  test('tidyVco dock hero glyph: static-silent, then MOVES when the real POLYSEQZ chain drives audio', async ({ page }) => {
+  test('tidyVco dock hero glyph: static-silent, then MOVES when the real CLIP PLAYER chain drives audio', async ({ page }) => {
     await gotoWorkflowShell(page);
 
     // The REAL default-mode poly chain (tidy-vco.spec pattern) with the
@@ -92,14 +92,17 @@ test.describe('LIVE shell glyphs (?shell=1)', () => {
     await spawnPatch(
       page,
       [
-        { id: 'p-seq', type: 'polyseqz', position: { x: 40, y: 60 }, domain: 'audio',
-          params: { isPlaying: 0, length: 4, bpm: 240, gateLength: 0.6 } },
+        // CLIP PLAYER + TIMELORDE is the canonical poly source after POLYSEQZ's
+        // deletion (2026-08-24): ONE transport, stopped at spawn, so "silent"
+        // and "driven" are the same switch the original test flipped.
+        { id: 'p-tl', type: 'timelorde', position: { x: 40, y: 1400 }, domain: 'audio', params: { bpm: 240, running: 0 } },
+        { id: 'p-seq', type: 'clipplayer', position: { x: 40, y: 60 }, domain: 'audio' },
         { id: 'p-tv', type: 'tidyVco', position: { x: 460, y: 240 }, domain: 'audio', params: {} },
         { id: 'p-out', type: 'audioOut', position: { x: 1050, y: 60 }, domain: 'audio',
           params: { master: 0.2 } },
       ],
       [
-        { id: 'pe1', from: { nodeId: 'p-seq', portId: 'poly' }, to: { nodeId: 'p-tv', portId: 'poly' },
+        { id: 'pe1', from: { nodeId: 'p-seq', portId: 'pitch1' }, to: { nodeId: 'p-tv', portId: 'poly' },
           sourceType: 'polyPitchGate', targetType: 'polyPitchGate' },
         { id: 'pe2', from: { nodeId: 'p-tv', portId: 'out_l' }, to: { nodeId: 'p-out', portId: 'L' },
           sourceType: 'audio', targetType: 'audio' },
@@ -118,12 +121,20 @@ test.describe('LIVE shell glyphs (?shell=1)', () => {
         const seq = w.__patch.nodes['p-seq'];
         if (!seq) return;
         if (!seq.data) seq.data = {};
-        seq.data.steps = [
-          { on: true, root: 60, quality: 'maj', inversion: 0, voicing: 'closed' },
-          { on: true, root: 57, quality: 'min', inversion: 0, voicing: 'closed' },
-          { on: true, root: 65, quality: 'maj', inversion: 0, voicing: 'closed' },
-          { on: true, root: 62, quality: 'min', inversion: 0, voicing: 'closed' },
-        ];
+        // Lane 0, slot 0: a looped 4-step chord clip. Launched, but the
+        // transport is stopped, so nothing sounds until we start TIMELORDE.
+        seq.data.clips = {
+          '0': {
+            kind: 'note', lengthSteps: 4, root: 48, loop: true,
+            steps: [
+              { step: 0, midi: 60, velocity: 127, lengthSteps: 1 },
+              { step: 1, midi: 57, velocity: 127, lengthSteps: 1 },
+              { step: 2, midi: 65, velocity: 127, lengthSteps: 1 },
+              { step: 3, midi: 62, velocity: 127, lengthSteps: 1 },
+            ],
+          },
+        };
+        seq.data.queued = [0, null, null, null, null, null, null, null];
       });
     });
 
@@ -198,8 +209,8 @@ test.describe('LIVE shell glyphs (?shell=1)', () => {
     expect(silentB, 'silent glyph canvas is static (byte-identical frames)').toBe(silentA);
     expect(await dockTracePeak(page), 'still flat after the window').toBeLessThan(0.005);
 
-    // 3) DRIVE the real chain: start POLYSEQZ's own transport.
-    await setNodeParams(page, 'p-seq', { isPlaying: 1 });
+    // 3) DRIVE the real chain: start the rack transport (TIMELORDE).
+    await setNodeParams(page, 'p-tl', { running: 1 });
     await expect
       .poll(() => dockTracePeak(page), { timeout: 8000, message: 'driven trace goes non-flat' })
       .toBeGreaterThan(0.05);

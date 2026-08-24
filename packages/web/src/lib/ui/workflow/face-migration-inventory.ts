@@ -783,14 +783,6 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
       'game, not the interaction — the interaction is play.',
   },
   {
-    type: 'drumseqz',
-    disposition: 'bespoke-surface',
-    blockers: ['needs-note-entry-cell'],
-    why:
-      'a DRUM STEP GRID: per-track lanes of steps with page navigation, quicksave slots and a ' +
-      'typed root note per track. The grid is the module and the pitch fields are typed.',
-  },
-  {
     type: 'electraControl',
     disposition: 'bespoke-surface',
     blockers: ['needs-note-entry-cell'],
@@ -850,14 +842,6 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
     why:
       'a LIVE-CODE EDITOR: the card body is the code buffer and its evaluation status. No params, ' +
       'no controls, nothing a ranked cell list can carry.',
-  },
-  {
-    type: 'macseq',
-    disposition: 'bespoke-surface',
-    blockers: ['needs-note-entry-cell'],
-    why:
-      'a MACRO-OSCILLATOR STEP SEQUENCER: per-step model + typed pitch rosters with page ' +
-      'navigation and quicksave slots. Step rosters are typed and the grid is the interaction.',
   },
   {
     type: 'mappy',
@@ -994,14 +978,6 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
       + 'FIXES a live defect: on the card, slots 2-7 sit behind an oncontextmenu toggle '
       + 'nothing advertises, and the body puts all seven on screen permanently.',
   },
-  {
-    type: 'polyseqz',
-    disposition: 'bespoke-surface',
-    blockers: ['needs-note-entry-cell'],
-    why:
-      'a POLYPHONIC STEP SEQUENCER: a per-step chord/root roster with page navigation and ' +
-      'quicksave slots. Steps are typed and the grid is the interaction.',
-  },
   // ⚠ RECLASSIFIED 2026-08-23, bespoke-surface -> generic-face, AND THE OLD WHY WAS
   // RIGHT ABOUT THE MODULE AND WRONG ABOUT THE LADDER. It read: "a GAME: a paddle
   // viewport with CV taps; the faders beside it are not the module." The first half
@@ -1055,14 +1031,6 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
     why:
       'a NOTATION EDITOR: note / tie / dynamic rosters placed on a staff. Editing a score is not ' +
       'a ranked control list, and the staff is the interaction.',
-  },
-  {
-    type: 'sequencer',
-    disposition: 'bespoke-surface',
-    blockers: ['needs-note-entry-cell'],
-    why:
-      'the CV STEP SEQUENCER: pitch / gate / chord rosters per step with page navigation and ' +
-      'quicksave slots. Steps are typed and the grid is the interaction.',
   },
   {
     type: 'skifree',
@@ -1138,14 +1106,6 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
     why:
       'a multi-SLOT varispeed player: several file slots, a crop overlay dragged over the frame, ' +
       'and scrub/speed transport — over a card-owned video source.',
-  },
-  {
-    type: 'writeseq',
-    disposition: 'bespoke-surface',
-    blockers: ['needs-note-entry-cell'],
-    why:
-      'a WRITE-IN SEQUENCER: a typed per-step pitch roster with page navigation and quicksave ' +
-      'slots. Steps are typed and the grid is the interaction.',
   },
 
   // ── organizational-native ─────────────────────────────────────────────────

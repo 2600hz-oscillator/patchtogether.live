@@ -434,7 +434,7 @@ describe('clip eligibility — live registry (appears when it should)', () => {
 describe('clip eligibility — live registry (absent when it should not appear)', () => {
   // Note SOURCES, effects, visualizers, drones — must NOT offer clip control.
   const EXPECTED_INELIGIBLE = [
-    'clipplayer', 'midiLane', 'polyseqz', // note sources
+    'clipplayer', 'midiLane', // note sources
     'reverb', 'filter', 'delay', 'scope', // effects / visualizers
     'clouds', // freeze gate, not a note gate
   ];

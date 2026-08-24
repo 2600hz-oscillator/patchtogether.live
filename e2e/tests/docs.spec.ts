@@ -59,12 +59,16 @@ test('clip player module page surfaces the grid-clip-launcher guide callout', as
   await expect(guideLink).toHaveAttribute('href', '/docs/modules/grid-clip-launcher');
 });
 
-test('docs per-module page renders its I/O (sequencer)', async ({ page }) => {
-  await page.goto('/docs/modules/sequencer');
-  await expect(page.getByRole('heading', { name: 'Sequencer' })).toBeVisible();
+test('docs per-module page renders its I/O (kria)', async ({ page }) => {
+  // Re-subjected from the deleted SEQUENCER (2026-08-24) to KRIA, which
+  // satisfies the same three claims this test makes: it is PROMOTED (so the
+  // live virtual-module path is exercised), it declares a `clock` input, and
+  // its outputs are pitch/gate per track.
+  await page.goto('/docs/modules/kria');
+  await expect(page.getByRole('heading', { name: /kria/i })).toBeVisible();
 
   // A per-module page leads with the interactive LIVE virtual module (the
-  // primary view for promoted modules like sequencer), OR — before it mounts /
+  // primary view for promoted modules like kria), OR — before it mounts /
   // for non-promoted modules / with no JS — the numbered control FACE, OR the
   // abstract I/O diagram fallback. Any of the three proves the visual renders.
   const live = page.locator('[data-testid="virtual-module"]');
@@ -73,7 +77,7 @@ test('docs per-module page renders its I/O (sequencer)', async ({ page }) => {
   await expect(live.or(face).or(diagram)).toBeVisible();
 
   // The auto-generated I/O tables are the ground truth for every module —
-  // sequencer has many gate inputs and pitch/gate/clock outputs.
+  // kria has clock/reset gate inputs and pitch1..4 / gate1..4 outputs.
   await expect(page.locator('[data-testid="io-inputs"]')).toBeVisible();
   await expect(page.locator('[data-testid="io-outputs"]')).toBeVisible();
   await expect(page.locator('[data-testid="io-outputs"]')).toContainText('pitch');

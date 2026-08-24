@@ -71,35 +71,10 @@ export const RAW_WRITE_LEDGER: Readonly<Record<string, RawWriteEntry>> = {
   // telling the store what it already did. Routing it through the undoable seam
   // would put a playhead tick on the undo stack and storm ydoc.update — the
   // #719 class this guard's opt-out was created for.
-  'audio/modules/drumseqz.ts': {
-    keys: ['isPlaying'],
-    kind: 'sanctioned',
-    why: 'transport → store reflect; an undoable play/stop tick would storm ydoc + pollute undo',
-  },
-  'audio/modules/macseq.ts': {
-    keys: ['isPlaying'],
-    kind: 'sanctioned',
-    why: 'transport → store reflect (see drumseqz)',
-  },
-  'audio/modules/polyseqz.ts': {
-    keys: ['isPlaying'],
-    kind: 'sanctioned',
-    why: 'transport → store reflect (see drumseqz)',
-  },
   'audio/modules/score.ts': {
     keys: ['isPlaying'],
     kind: 'sanctioned',
-    why: 'transport → store reflect (see drumseqz)',
-  },
-  'audio/modules/sequencer.ts': {
-    keys: ['isPlaying'],
-    kind: 'sanctioned',
-    why: 'transport → store reflect (see drumseqz)',
-  },
-  'audio/modules/writeseq.ts': {
-    keys: ['isPlaying', 'recArm'],
-    kind: 'sanctioned',
-    why: 'transport + record-arm → store reflect (see drumseqz)',
+    why: 'transport → store reflect; an undoable play/stop tick would storm ydoc + pollute undo',
   },
   'audio/modules/timelorde.ts': {
     keys: ['bpm', 'running', 'wizardOn'],

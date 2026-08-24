@@ -8,10 +8,10 @@
 //     the TRIGGER fires).
 //   - back-compat: a TRULY-UNPATCHED TRIGGER (no poly either) keeps CUBE/WAVECEL
 //     droning as a continuous raw VCO (env idle, base_vol=1 → byte-identical).
-//   - no-stray-drone (Bug 1): a TRIGGER patched but NEVER gated (sequencer parked,
-//     isPlaying=0) is SILENT — patching poly/trigger puts the module into GATED
+//   - no-stray-drone (Bug 1): a TRIGGER patched but NEVER gated (kria parked,
+//     running=0) is SILENT — patching poly/trigger puts the module into GATED
 //     mode, so a never-gated voice does NOT fall through to the legacy drone.
-//   - a poly chord (POLYSEQZ) into `poly` drives the per-voice envelopes → the
+//   - a poly chord (KRIA-clocked CARTESIAN) into `poly` drives the per-voice envelopes → the
 //     stereo OUT carries audio.
 //
 // CI is on a software renderer; audio-capture e2e is slow there, so timeouts
@@ -63,7 +63,7 @@
 // "the instrument never looked" can no longer print as "the module is silent".
 
 import { test, expect } from './_fixtures';
-import { spawnPatch } from './_helpers';
+import { spawnPatch, seedKriaGate } from './_helpers';
 import { readScopePeakOverWindow, describeScopeWindow } from './_module-coverage-helpers';
 
 test.describe.configure({ mode: 'parallel' });
@@ -87,44 +87,32 @@ function timeoutFor(captureWindows: number): number {
   return 30_000 + captureWindows * 12_000;
 }
 
-/** Seed a SEQUENCER with always-on C4 steps so its gate fires every step. */
-async function seedSeqSteps(page: import('@playwright/test').Page, seqId: string): Promise<void> {
-  await page.evaluate((id) => {
-    const w = globalThis as unknown as {
-      __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
-      __ydoc: { transact: (fn: () => void) => void };
-    };
-    w.__ydoc.transact(() => {
-      const t = w.__patch.nodes[id];
-      if (!t) return;
-      if (!t.data) t.data = {};
-      (t.data as Record<string, unknown>).steps = Array.from({ length: 32 }, () => ({ on: true, midi: 60, chord: 'mono' }));
-    });
-  }, seqId);
-}
-
 test('dx7 master-ADSR: a gated poly note carries audio through the master VCA', async ({ page, rack, errorWatch }) => {
   test.setTimeout(timeoutFor(1));
 
 
-  // Drive DX7 via the poly bus (the proven dx7.spec path): SEQUENCER.pitch →
-  // DX7.poly, with seeded always-on steps so a gate fires every step. Each gate
+  // Drive DX7 via the poly bus (the proven dx7.spec path): KRIA clocks
+  // CARTESIAN; CARTESIAN.pitch → DX7.poly, with all-on cells so every
+  // clocked pad fires a gated note. Each gate
   // rising edge fires noteOn → the master VCA shapes the voice on top of the
   // operator EGs. A slow master attack + held sustain keeps the OUT alive.
   await spawnPatch(
     page,
     [
-      { id: 'seq', type: 'sequencer', position: { x: 40, y: 60 }, domain: 'audio', params: { bpm: 240, length: 4, isPlaying: 1 } },
+      { id: 'seq-clk', type: 'kria', position: { x: 40, y: 440 }, domain: 'audio', params: { bpm: 240, running: 1 } },
+      { id: 'seq', type: 'cartesian', position: { x: 40, y: 60 }, domain: 'audio' },
       { id: 'dx', type: 'dx7', position: { x: 360, y: 60 }, domain: 'audio', params: { algorithm: 5, voiceCount: 5, attack: 0.05, decay: 0.2, sustain: 0.9, release: 0.3, level: 1 } },
       { id: 'sc', type: 'scope', position: { x: 900, y: 60 }, domain: 'audio', params: { timeMs: 50 } },
     ],
     [
+      { id: 'e_seq_clk', from: { nodeId: 'seq-clk', portId: 'gate1' }, to: { nodeId: 'seq', portId: 'clock' }, sourceType: 'gate', targetType: 'gate' },
       { id: 'e_seq_dx', from: { nodeId: 'seq', portId: 'pitch' }, to: { nodeId: 'dx', portId: 'poly' }, sourceType: 'polyPitchGate', targetType: 'polyPitchGate' },
+      // (source chain: KRIA gate1 clocks CARTESIAN; its pitch IS the poly bus)
       { id: 'e_dx_sc',  from: { nodeId: 'dx', portId: 'out' },    to: { nodeId: 'sc', portId: 'ch1' },  sourceType: 'audio', targetType: 'audio' },
     ],
   );
 
-  // Seed always-on steps so the sequencer's gate fires (default steps may be off).
+  // Seed all-on mono-C4 cells so every clocked pad fires a gated note.
   await page.evaluate(() => {
     const w = globalThis as unknown as {
       __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
@@ -134,9 +122,10 @@ test('dx7 master-ADSR: a gated poly note carries audio through the master VCA', 
       const t = w.__patch.nodes['seq'];
       if (!t) return;
       if (!t.data) t.data = {};
-      (t.data as Record<string, unknown>).steps = Array.from({ length: 32 }, () => ({ on: true, midi: 60, chord: 'mono' }));
+      (t.data as Record<string, unknown>).cells = Array.from({ length: 16 }, () => ({ on: true, midi: 60, chord: 'mono' }));
     });
   });
+  await seedKriaGate(page, 'seq-clk');
 
   const w = await readScopePeakOverWindow(page, 'sc', AUDIBLE_CAP_MS, {
     untilPeak: AUDIBLE_FLOOR,
@@ -154,16 +143,16 @@ test('cube mono TRIGGER gates the per-voice envelope (audio opens on trigger)', 
   await spawnPatch(
     page,
     [
-      { id: 'seq', type: 'sequencer', position: { x: 40, y: 60 }, domain: 'audio', params: { bpm: 240, length: 4, isPlaying: 1, gateLength: 0.6 } },
+      { id: 'seq', type: 'kria', position: { x: 40, y: 60 }, domain: 'audio', params: { bpm: 240, running: 1} },
       { id: 'cb', type: 'cube', position: { x: 360, y: 60 }, domain: 'audio', params: { attack: 0.02, decay: 0.1, sustain: 0.9, release: 0.2, level: 1 } },
       { id: 'sc', type: 'scope', position: { x: 900, y: 60 }, domain: 'audio', params: { timeMs: 50 } },
     ],
     [
-      { id: 'e_seq_cb', from: { nodeId: 'seq', portId: 'gate' }, to: { nodeId: 'cb', portId: 'trigger' }, sourceType: 'gate', targetType: 'gate' },
+      { id: 'e_seq_cb', from: { nodeId: 'seq', portId: 'gate1' }, to: { nodeId: 'cb', portId: 'trigger' }, sourceType: 'gate', targetType: 'gate' },
       { id: 'e_cb_sc', from: { nodeId: 'cb', portId: 'L' }, to: { nodeId: 'sc', portId: 'ch1' }, sourceType: 'audio', targetType: 'audio' },
     ],
   );
-  await seedSeqSteps(page, 'seq');
+  await seedKriaGate(page, 'seq');
 
   const w = await readScopePeakOverWindow(page, 'sc', AUDIBLE_CAP_MS, {
     untilPeak: AUDIBLE_FLOOR,
@@ -215,12 +204,12 @@ test('cube no-stray-drone: a TRIGGER patched but NEVER gated is SILENT (gated, n
   await spawnPatch(
     page,
     [
-      { id: 'seq', type: 'sequencer', position: { x: 40, y: 60 }, domain: 'audio', params: { bpm: 240, length: 4, isPlaying: 0, gateLength: 0.6 } },
+      { id: 'seq', type: 'kria', position: { x: 40, y: 60 }, domain: 'audio', params: { bpm: 240, running: 0} },
       { id: 'cb', type: 'cube', position: { x: 360, y: 60 }, domain: 'audio', params: { level: 1 } },
       { id: 'sc', type: 'scope', position: { x: 900, y: 60 }, domain: 'audio', params: { timeMs: 50 } },
     ],
     [
-      { id: 'e_seq_cb', from: { nodeId: 'seq', portId: 'gate' }, to: { nodeId: 'cb', portId: 'trigger' }, sourceType: 'gate', targetType: 'gate' },
+      { id: 'e_seq_cb', from: { nodeId: 'seq', portId: 'gate1' }, to: { nodeId: 'cb', portId: 'trigger' }, sourceType: 'gate', targetType: 'gate' },
       { id: 'e_cb_sc', from: { nodeId: 'cb', portId: 'L' }, to: { nodeId: 'sc', portId: 'ch1' }, sourceType: 'audio', targetType: 'audio' },
     ],
   );
@@ -243,16 +232,16 @@ test('wavecel mono TRIGGER gates the per-voice envelope (audio opens on trigger)
   await spawnPatch(
     page,
     [
-      { id: 'seq', type: 'sequencer', position: { x: 40, y: 60 }, domain: 'audio', params: { bpm: 240, length: 4, isPlaying: 1, gateLength: 0.6 } },
+      { id: 'seq', type: 'kria', position: { x: 40, y: 60 }, domain: 'audio', params: { bpm: 240, running: 1} },
       { id: 'wc', type: 'wavecel', position: { x: 360, y: 60 }, domain: 'audio', params: { attack: 0.02, decay: 0.1, sustain: 0.9, release: 0.2 } },
       { id: 'sc', type: 'scope', position: { x: 900, y: 60 }, domain: 'audio', params: { timeMs: 50 } },
     ],
     [
-      { id: 'e_seq_wc', from: { nodeId: 'seq', portId: 'gate' }, to: { nodeId: 'wc', portId: 'trigger' }, sourceType: 'gate', targetType: 'gate' },
+      { id: 'e_seq_wc', from: { nodeId: 'seq', portId: 'gate1' }, to: { nodeId: 'wc', portId: 'trigger' }, sourceType: 'gate', targetType: 'gate' },
       { id: 'e_wc_sc', from: { nodeId: 'wc', portId: 'out_l' }, to: { nodeId: 'sc', portId: 'ch1' }, sourceType: 'audio', targetType: 'audio' },
     ],
   );
-  await seedSeqSteps(page, 'seq');
+  await seedKriaGate(page, 'seq');
 
   const w = await readScopePeakOverWindow(page, 'sc', AUDIBLE_CAP_MS, {
     untilPeak: AUDIBLE_FLOOR,
@@ -263,19 +252,21 @@ test('wavecel mono TRIGGER gates the per-voice envelope (audio opens on trigger)
   ).toBeGreaterThan(AUDIBLE_FLOOR);
 });
 
-test('cube poly chord (POLYSEQZ → poly) drives the per-voice envelopes', async ({ page, rack, errorWatch }) => {
+test('cube poly chord (kria-clocked cartesian → poly) drives the per-voice envelopes', async ({ page, rack, errorWatch }) => {
   test.setTimeout(timeoutFor(1));
 
 
   await spawnPatch(
     page,
     [
-      { id: 'seq', type: 'polyseqz', position: { x: 40, y: 60 }, domain: 'audio', params: { isPlaying: 1, length: 4, bpm: 240, gateLength: 0.6 } },
+      { id: 'seq-clk', type: 'kria', position: { x: 40, y: 440 }, domain: 'audio', params: { bpm: 240, running: 1 } },
+      { id: 'seq', type: 'cartesian', position: { x: 40, y: 60 }, domain: 'audio' },
       { id: 'cb', type: 'cube', position: { x: 360, y: 60 }, domain: 'audio', params: { attack: 0.02, decay: 0.1, sustain: 0.9, release: 0.2, level: 1 } },
       { id: 'sc', type: 'scope', position: { x: 900, y: 60 }, domain: 'audio', params: { timeMs: 50 } },
     ],
     [
-      { id: 'e_seq_cb', from: { nodeId: 'seq', portId: 'poly' }, to: { nodeId: 'cb', portId: 'poly' }, sourceType: 'polyPitchGate', targetType: 'polyPitchGate' },
+      { id: 'e_clk_seq', from: { nodeId: 'seq-clk', portId: 'gate1' }, to: { nodeId: 'seq', portId: 'clock' }, sourceType: 'gate', targetType: 'gate' },
+      { id: 'e_seq_cb', from: { nodeId: 'seq', portId: 'pitch' }, to: { nodeId: 'cb', portId: 'poly' }, sourceType: 'polyPitchGate', targetType: 'polyPitchGate' },
       { id: 'e_cb_sc', from: { nodeId: 'cb', portId: 'L' }, to: { nodeId: 'sc', portId: 'ch1' }, sourceType: 'audio', targetType: 'audio' },
     ],
   );
@@ -290,20 +281,21 @@ test('cube poly chord (POLYSEQZ → poly) drives the per-voice envelopes', async
       const n = w.__patch.nodes['seq'];
       if (!n) return;
       if (!n.data) n.data = {};
-      n.data.steps = [
-        { on: true, root: 60, quality: 'maj', inversion: 0, voicing: 'closed' },
-        { on: true, root: 64, quality: 'min', inversion: 0, voicing: 'closed' },
-        { on: true, root: 67, quality: 'maj', inversion: 0, voicing: 'closed' },
-        { on: true, root: 72, quality: 'maj', inversion: 0, voicing: 'closed' },
-      ];
+      n.data.cells = Array.from({ length: 16 }, (_, i) => [
+          { on: true, midi: 60, chord: 'maj' },
+          { on: true, midi: 64, chord: 'min' },
+          { on: true, midi: 67, chord: 'maj' },
+          { on: true, midi: 72, chord: 'maj' },
+        ][i % 4]);
     });
   });
+  await seedKriaGate(page, 'seq-clk');
 
   // THE REGRESSION THIS FILE'S REWRITE EXISTS FOR. CUBE's poly gating makes an
   // un-gated lane contribute EXACTLY 0.0000 (packages/dsp/src/cube.ts — the
-  // no-stray-drone rule), and POLYSEQZ's first gated chord cannot reach the
+  // no-stray-drone rule), and the source chain's first gated chord cannot reach the
   // audio thread until the MAIN-THREAD step scheduler ticks past its 200 ms
-  // lookahead with the freshly-seeded steps. Observing for a fixed 600 ms of
+  // lookahead with the freshly-seeded cells. Observing for a fixed 600 ms of
   // Playwright wall clock asked a question whose answer depended on the
   // runner's load; observing UNTIL audible, bounded, asks the module.
   const w = await readScopePeakOverWindow(page, 'sc', AUDIBLE_CAP_MS, {

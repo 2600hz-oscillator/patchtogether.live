@@ -21,14 +21,14 @@
 // latency. Serial: one mock server per worker, sessions asserted by clientId.
 
 import { test, expect } from './_fixtures';
-import { spawnPatch } from './_helpers';
+import { spawnPatch, seedKriaGate } from './_helpers';
 import {
   readScopePeakOverWindow,
   describeScopeWindow,
   setNodeParams,
 } from './_module-coverage-helpers';
 import { startMockVstBridge, type MockVstBridge } from '../_helpers/mock-vst-bridge';
-import { chordToVoices } from '../../packages/web/src/lib/audio/chord-tables';
+import { chordVoicing } from '../../packages/web/src/lib/audio/poly';
 
 const AUDIBLE_FLOOR = 0.01;
 /** Bounds the failure, never the gate (untilPeak returns at first audible). */
@@ -135,27 +135,35 @@ test('vstFx: helper echo carries lane audio; a mounted mute plugin is IN the pat
   expect(session!.lastSampleTime).toBeGreaterThan(0);
 });
 
-test('vstInstrument: POLYSEQZ → card → audible RMS; c3/c4/a4 arrive as MIDI 48/60/69, vel 100, gates paired', async ({ page }) => {
+test('vstInstrument: kria-clocked cartesian → card → audible RMS; c3/c4/a4 arrive as MIDI 48/60/69, vel 100, gates paired', async ({ page }) => {
   await spawnPatch(
     page,
     [
       {
-        id: 'seq',
-        type: 'polyseqz',
-        position: { x: 40, y: 60 },
-        // isPlaying starts 0 — the transport starts AFTER the steps are
+        id: 'seq-clk',
+        type: 'kria',
+        position: { x: 40, y: 460 },
+        // running starts 0 — the transport starts AFTER the cells are
         // seeded, so no default-step note can leak into the MIDI log.
-        params: { isPlaying: 0, length: 4, bpm: 240, gateLength: 0.6 },
+        params: { running: 0, bpm: 240 },
       },
-      // polyseqz is a very WIDE card — keep the vst card fully clear of its
-      // node subtree or the mount-button click is pointer-intercepted.
+      { id: 'seq', type: 'cartesian', position: { x: 40, y: 60 } },
+      // keep the vst card fully clear of the sequencer subtrees or the
+      // mount-button click is pointer-intercepted.
       { id: 'inst', type: 'vstInstrument', position: { x: 1500, y: 60 } },
       { id: 'sc', type: 'scope', position: { x: 2300, y: 60 }, params: { timeMs: 50 } },
     ],
     [
       {
+        id: 'e_seq_clk',
+        from: { nodeId: 'seq-clk', portId: 'gate1' },
+        to: { nodeId: 'seq', portId: 'clock' },
+        sourceType: 'gate',
+        targetType: 'gate',
+      },
+      {
         id: 'e_seq_inst',
-        from: { nodeId: 'seq', portId: 'poly' },
+        from: { nodeId: 'seq', portId: 'pitch' },
         to: { nodeId: 'inst', portId: 'poly' },
         sourceType: 'polyPitchGate',
         targetType: 'polyPitchGate',
@@ -164,12 +172,13 @@ test('vstInstrument: POLYSEQZ → card → audible RMS; c3/c4/a4 arrive as MIDI 
     ],
   );
 
-  // Seed the OWNER-NAMED roots on the real source: c3, c4, a4. POLYSEQZ's
-  // smallest unit is a TRIAD (CHORD_QUALITY_NAMES has no 'mono'), so each
-  // step is a closed maj triad — which makes this leg prove BOTH halves of
-  // the owner ask at the wire: the roots land as MIDI 48/60/69, and the
-  // chord's other voices ride their own poly voice-pairs into their own
-  // NoteOn/NoteOff pairs (48,52,55 / 60,64,67 / 69,73,76).
+  // Seed the OWNER-NAMED roots on the real source: c3, c4, a4. CARTESIAN's
+  // maj chord is the closed triad ([0,4,7] in chord-tables.ts), so each pad
+  // on the clocked diagonal walk (0, 5, 10, 15) proves BOTH halves of the
+  // owner ask at the wire: the roots land as MIDI 48/60/69, and the chord's
+  // other voices ride their own poly voice-pairs into their own
+  // NoteOn/NoteOff pairs (48,52,55 / 60,64,67 / 69,73,76). Pad 15 is OFF —
+  // one silent step per cycle. (Was POLYSEQZ until its deletion 2026-08-24.)
   await page.evaluate((id) => {
     const w = globalThis as unknown as {
       __patch: { nodes: Record<string, { data?: Record<string, unknown> } | undefined> };
@@ -179,14 +188,15 @@ test('vstInstrument: POLYSEQZ → card → audible RMS; c3/c4/a4 arrive as MIDI 
       const t = w.__patch.nodes[id];
       if (!t) return;
       if (!t.data) t.data = {};
-      (t.data as Record<string, unknown>).steps = [
-        { on: true, root: 48, quality: 'maj', inversion: 0, voicing: 'closed' }, // c3
-        { on: true, root: 60, quality: 'maj', inversion: 0, voicing: 'closed' }, // c4
-        { on: true, root: 69, quality: 'maj', inversion: 0, voicing: 'closed' }, // a4
-        { on: false, root: 60, quality: 'maj', inversion: 0, voicing: 'closed' },
-      ];
+      const roots: Record<number, number> = { 0: 48, 5: 60, 10: 69 };
+      (t.data as Record<string, unknown>).cells = Array.from({ length: 16 }, (_, i) => (
+        i in roots
+          ? { on: true, midi: roots[i], chord: 'maj' }
+          : { on: false, midi: 60, chord: 'mono' }
+      ));
     });
   }, 'seq');
+  await seedKriaGate(page, 'seq-clk');
 
   await expect(page.getByTestId('vst-status-inst')).toContainText('mock-vst-bridge', { timeout: 15_000 });
 
@@ -196,7 +206,7 @@ test('vstInstrument: POLYSEQZ → card → audible RMS; c3/c4/a4 arrive as MIDI 
   await expect(page.getByTestId('vst-mounted-inst')).toContainText('mock sine synth', { timeout: 10_000 });
 
   // Everything is wired and mounted — start the transport.
-  await setNodeParams(page, 'seq', { isPlaying: 1 });
+  await setNodeParams(page, 'seq-clk', { running: 1 });
 
   // THE POLY RULE: real default-mode source → module → AUDIBLE RMS at the
   // output. (Engine-direct synthetic tests shipped silent bugs 5× — this is
@@ -209,14 +219,16 @@ test('vstInstrument: POLYSEQZ → card → audible RMS; c3/c4/a4 arrive as MIDI 
 
   // NOTE MAPPING (owner-verbatim): c3 = −1.0 CV → 48, c4 = 0.0 → 60,
   // a4 = +0.75 → 69 — asserted at the WIRE, after the worklet's CV→MIDI.
-  // The expected set is DERIVED from the same chord table POLYSEQZ voices
-  // with (chordToVoices fills every poly lane — octave doublings included),
-  // so this pins "what the source emitted is exactly what the plugin heard",
-  // note for note, with the three roots present by construction.
+  // The expected set is DERIVED from chordVoicing — the SAME function
+  // CARTESIAN calls per pad (root/3rd/5th/octave, poly.ts) — so this pins
+  // "what the source emitted is exactly what the plugin heard", note for
+  // note, with the three roots present by construction. (The old derivation
+  // used chord-tables' chordToVoices, POLYSEQZ's 5-lane voicing — one note
+  // wide of what CARTESIAN actually sends.)
   const EXPECTED_NOTES = [
     ...new Set(
       [48, 60, 69].flatMap((root) =>
-        chordToVoices(root, 'maj', 0, 'closed')
+        chordVoicing(root, 'maj')
           .filter((l) => l.gate === 1 && l.midi !== null)
           .map((l) => l.midi!),
       ),
@@ -247,7 +259,7 @@ test('vstInstrument: POLYSEQZ → card → audible RMS; c3/c4/a4 arrive as MIDI 
 
   // GATES ≡ MIDI GATES: stop the transport; every sounding note must be
   // released — NoteOn and NoteOff counts pair up per note number.
-  await setNodeParams(page, 'seq', { isPlaying: 0 });
+  await setNodeParams(page, 'seq-clk', { running: 0 });
   await expect
     .poll(
       () => {

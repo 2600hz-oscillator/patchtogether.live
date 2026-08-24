@@ -10,7 +10,7 @@
 //   - no console / page errors throughout.
 
 import { test, expect } from './_fixtures';
-import { spawnPatch } from './_helpers';
+import { spawnPatch, seedKriaGate } from './_helpers';
 import { readScopeSnapshot, summarize } from './_module-coverage-helpers';
 
 test.describe.configure({ mode: 'parallel' });
@@ -46,12 +46,14 @@ test('pentemelodica: a POLYSEQZ chord drives the stereo OUT', async ({ page, rac
   await spawnPatch(
     page,
     [
-      { id: 'seq', type: 'polyseqz', position: { x: 40, y: 60 }, domain: 'audio', params: { isPlaying: 1, length: 4, bpm: 240, gateLength: 0.6 } },
+      { id: 'seq-clk', type: 'kria', position: { x: 40, y: 440 }, domain: 'audio', params: { bpm: 240, running: 1 } },
+      { id: 'seq', type: 'cartesian', position: { x: 40, y: 60 }, domain: 'audio' },
       { id: 'pm', type: 'pentemelodica', position: { x: 360, y: 60 }, domain: 'audio' },
       { id: 'sc', type: 'scope', position: { x: 900, y: 60 }, domain: 'audio', params: { timeMs: 50 } },
     ],
     [
-      { id: 'e_seq_pm', from: { nodeId: 'seq', portId: 'poly' }, to: { nodeId: 'pm', portId: 'poly' }, sourceType: 'polyPitchGate', targetType: 'polyPitchGate' },
+      { id: 'e_seq_clk', from: { nodeId: 'seq-clk', portId: 'gate1' }, to: { nodeId: 'seq', portId: 'clock' }, sourceType: 'gate', targetType: 'gate' },
+      { id: 'e_seq_pm', from: { nodeId: 'seq', portId: 'pitch' }, to: { nodeId: 'pm', portId: 'poly' }, sourceType: 'polyPitchGate', targetType: 'polyPitchGate' },
       { id: 'e_pm_sc', from: { nodeId: 'pm', portId: 'out_l' }, to: { nodeId: 'sc', portId: 'ch1' }, sourceType: 'audio', targetType: 'audio' },
     ],
   );
@@ -66,14 +68,15 @@ test('pentemelodica: a POLYSEQZ chord drives the stereo OUT', async ({ page, rac
       const n = w.__patch.nodes['seq'];
       if (!n) return;
       if (!n.data) n.data = {};
-      n.data.steps = [
-        { on: true, root: 60, quality: 'maj', inversion: 0, voicing: 'closed' },
-        { on: true, root: 65, quality: 'maj', inversion: 0, voicing: 'closed' },
-        { on: true, root: 67, quality: 'maj', inversion: 0, voicing: 'closed' },
-        { on: true, root: 72, quality: 'maj', inversion: 0, voicing: 'closed' },
-      ];
+      n.data.cells = Array.from({ length: 16 }, (_, i) => [
+          { on: true, midi: 60, chord: 'maj' },
+          { on: true, midi: 65, chord: 'maj' },
+          { on: true, midi: 67, chord: 'maj' },
+          { on: true, midi: 72, chord: 'maj' },
+        ][i % 4]);
     });
   });
+    await seedKriaGate(page, 'seq-clk');
 
   // Poll the SCOPE analyser until the OUT carries audio.
   let peak = 0;

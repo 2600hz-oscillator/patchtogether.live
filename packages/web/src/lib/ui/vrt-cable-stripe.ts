@@ -512,7 +512,6 @@ export const CARD_CAPTURE_DIRS: Record<string, (stem: string) => string> = {
   'vrt-tidy-vco.spec.ts': () => 'tidyVco',
   'vrt-scope-modes.spec.ts': () => 'scope',
   // `<type>-step-<n>.png` for polyseqz / sequencer / drumseqz.
-  'playhead.spec.ts': (stem) => stem.replace(/-step-\d+$/, ''),
   // Captures `.svelte-flow__node-${sinkCardClass}` — a single `videoOut` card.
   // Was declared NON-card until 2026-08-02; see the writeup above.
   'vrt-aspect-16x9.spec.ts': () => 'videoOut',

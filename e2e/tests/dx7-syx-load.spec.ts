@@ -20,7 +20,7 @@
 
 import { test, expect } from './_fixtures';
 import { type Page } from '@playwright/test';
-import { spawnPatch } from './_helpers';
+import { spawnPatch, seedKriaWith, buildKriaMidiData, seedKriaGate } from './_helpers';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -64,13 +64,15 @@ test('dx7: uploading a 32-voice SYX populates the dropdown + selecting different
   await spawnPatch(
     page,
     [
-      { id: 'seq', type: 'sequencer', params: { bpm: 240, isPlaying: 1, length: 4 } },
+      { id: 'clk', type: 'kria', params: { bpm: 240, running: 1 } },
+      { id: 'seq', type: 'cartesian' },
       { id: 'dx',  type: 'dx7',       params: { voiceCount: 5, level: 1.0 } },
       { id: 'scp', type: 'scope' },
       { id: 'out', type: 'audioOut' },
     ],
     [
-      { id: 'poly-edge', from: { nodeId: 'seq', portId: 'pitch' },   to: { nodeId: 'dx',  portId: 'poly' }, sourceType: 'polyPitchGate', targetType: 'polyPitchGate' },
+      { id: 'clk-edge',  from: { nodeId: 'clk', portId: 'gate1' },    to: { nodeId: 'seq', portId: 'clock' }, sourceType: 'gate', targetType: 'gate' },
+      { id: 'poly-edge', from: { nodeId: 'seq', portId: 'pitch' },    to: { nodeId: 'dx',  portId: 'poly' }, sourceType: 'polyPitchGate', targetType: 'polyPitchGate' },
       { id: 'audio-tap', from: { nodeId: 'dx',  portId: 'out' },     to: { nodeId: 'scp', portId: 'ch1'  }, sourceType: 'audio',         targetType: 'audio'         },
       { id: 'audio-out', from: { nodeId: 'scp', portId: 'ch1_out' }, to: { nodeId: 'out', portId: 'L'    }, sourceType: 'audio',         targetType: 'audio'         },
     ],
@@ -86,10 +88,10 @@ test('dx7: uploading a 32-voice SYX populates the dropdown + selecting different
       const t = w.__patch.nodes['seq'];
       if (!t) return;
       if (!t.data) t.data = {};
-      const steps = Array.from({ length: 32 }, () => ({ on: true, midi: 60, chord: 'mono' }));
-      (t.data as Record<string, unknown>).steps = steps;
+      (t.data as Record<string, unknown>).cells = Array.from({ length: 16 }, () => ({ on: true, midi: 60, chord: 'mono' }));
     });
   });
+  await seedKriaGate(page, 'clk');
 
   // Build a synthetic 32-voice SYX cartridge in-page (avoids filesystem
   // dependency). Each voice gets a distinct algorithm + distinct operator

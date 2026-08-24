@@ -943,3 +943,159 @@ export async function claimKeyboard(page: Page, id: string, timeout = 5000): Pro
     )
     .catch(() => {});
 }
+
+/** Seed a KRIA node (post-spawn) so track 1 fires: all-16 trigs, a C-major
+ *  degree contour, running transport assumed set via params. The ONE idiom
+ *  every spec uses since the deprecated sequencers were deleted (2026-08-24)
+ *  — was per-file `data.steps` seeds against the old SEQUENCER shape. */
+/** Build a plain KriaData object (track 1 armed, tracks 2-4 empty) for
+ *  seeding via page.evaluate — JSON-serializable, so it can cross the
+ *  boundary as an argument. `steps` are (scale-degree, octave) pairs against
+ *  the major scale on root 48: degree 0 / octave 1 = MIDI 60 (C4); degree 2 /
+ *  octave 1 = 64 (E4); degree 4 / octave 1 = 67 (G4); degree 0 / octave 2 =
+ *  72 (C5). Loop length = steps.length, so the pattern cycles exactly the
+ *  steps given. */
+export function buildKriaData(
+  steps: Array<{ note: number; octave: number; trig?: boolean }>,
+  opts?: { timeDivision?: number; duration?: number; scale?: string },
+): Record<string, unknown> {
+  const len = Math.max(1, steps.length);
+  const track = (arm: boolean) => ({
+    trig: Array.from({ length: 16 }, (_, i) => arm && i < len && (steps[i]?.trig ?? true)),
+    ratchet: Array.from({ length: 16 }, () => 1),
+    note: Array.from({ length: 16 }, (_, i) => steps[i % len]?.note ?? 0),
+    octave: Array.from({ length: 16 }, (_, i) => steps[i % len]?.octave ?? 0),
+    duration: Array.from({ length: 16 }, () => opts?.duration ?? 0.5),
+    probability: Array.from({ length: 16 }, () => 1),
+    glide: Array.from({ length: 16 }, () => 0),
+    loopStart: 0,
+    loopLength: len,
+    timeDivision: opts?.timeDivision ?? 1,
+    direction: 'forward',
+    muted: false,
+  });
+  return {
+    patterns: { '0': { tracks: [track(true), track(false), track(false), track(false)], scale: opts?.scale ?? 'major', root: 48 } },
+    active: 0,
+    cued: null,
+    cueSteps: 0,
+  };
+}
+
+/** Write a built KriaData object onto a node inside one Y.Doc transaction. */
+export async function seedKriaWith(page: Page, nodeId: string, data: Record<string, unknown>): Promise<void> {
+  await page.evaluate(({ id, d }) => {
+    const w = globalThis as unknown as {
+      __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
+      __ydoc: { transact: (fn: () => void) => void };
+    };
+    w.__ydoc.transact(() => {
+      const n = w.__patch.nodes[id];
+      if (!n) return;
+      if (!n.data) n.data = {};
+      for (const [k, v] of Object.entries(d)) n.data[k] = v;
+    });
+  }, { id: nodeId, d: data });
+}
+
+/** buildKriaData from RAW MIDI notes (null = rest), on the CHROMATIC scale
+ *  (root 48) so ANY midi is representable exactly: note = (m-48) % 12,
+ *  octave = floor((m-48) / 12).
+ *
+ *  Timing note for specs converted off the deleted SEQUENCER: that module
+ *  stepped QUARTER notes at its bpm, while kria's base grid is 16ths — so
+ *  keeping the node's ORIGINAL bpm and passing `timeDivision: 4` reproduces
+ *  the old step rate exactly (rate = bpm·4/(60·div)). */
+export function buildKriaMidiData(
+  midis: Array<number | null>,
+  opts?: { timeDivision?: number; duration?: number },
+): Record<string, unknown> {
+  // Kria's lanes are CLAMPED (note 0..35, octave 0..5), so a fixed root
+  // cannot express notes below it — derive the root from the LOWEST note
+  // instead (octave-aligned), then express every note as a non-negative
+  // chromatic degree + octave above it.
+  const present = midis.filter((m): m is number => m !== null);
+  const root = present.length ? 12 * Math.floor(Math.min(...present) / 12) : 48;
+  const steps = midis.map((m) => (
+    m === null
+      ? { note: 0, octave: 0, trig: false }
+      : { note: (m - root) % 12, octave: Math.floor((m - root) / 12), trig: true }
+  ));
+  const data = buildKriaData(steps, { ...opts, scale: 'chromatic' });
+  (data.patterns as Record<string, Record<string, unknown>>)['0']!.root = root;
+  return data;
+}
+
+
+export async function seedKriaGate(page: Page, nodeId: string, opts?: { steps?: number; note?: number; octave?: number }): Promise<void> {
+  const steps = opts?.steps ?? 16;
+  const note = opts?.note ?? null;
+  const octave = opts?.octave ?? null;
+  await page.evaluate(({ id, steps, note, octave }) => {
+    const w = globalThis as unknown as {
+      __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
+      __ydoc: { transact: (fn: () => void) => void };
+    };
+    w.__ydoc.transact(() => {
+      const n = w.__patch.nodes[id];
+      if (!n) return;
+      if (!n.data) n.data = {};
+      const track = (trig: boolean) => ({
+        trig: Array.from({ length: 16 }, (_, i) => trig && i < steps),
+        ratchet: Array.from({ length: 16 }, () => 1),
+        note: note === null ? [0, 2, 4, 7, 0, 2, 4, 7, 0, 2, 4, 7, 0, 2, 4, 7] : Array.from({ length: 16 }, () => note),
+        octave: Array.from({ length: 16 }, () => octave ?? 0),
+        duration: Array.from({ length: 16 }, () => 0.5),
+        probability: Array.from({ length: 16 }, () => 1),
+        glide: Array.from({ length: 16 }, () => 0),
+        loopStart: 0,
+        loopLength: steps,
+        timeDivision: 1,
+        direction: 'forward',
+        muted: false,
+      });
+      Object.assign(n.data, {
+        patterns: { '0': { tracks: [track(true), track(false), track(false), track(false)], scale: 'major', root: 48 } },
+        active: 0,
+        cued: null,
+        cueSteps: 0,
+      });
+    });
+  }, { id: nodeId, steps, note, octave });
+}
+
+/** A self-running POLY chord source: KRIA (clock, track-1 trigs via
+ *  seedPolySource) → CARTESIAN (all 16 pads maj chords, clocked walk), whose
+ *  `pitch` out is the polyPitchGate bus. Replaces the deleted POLYSEQZ
+ *  (2026-08-24). Spawn POLY_SOURCE_NODES + POLY_SOURCE_EDGES, then call
+ *  seedPolySource(page) post-spawn; wire `poly-cart`.pitch → your consumer. */
+export const POLY_SOURCE_NODES: SpawnNode[] = [
+  { id: 'poly-clk', type: 'kria', position: { x: 40, y: 40 }, domain: 'audio', params: { bpm: 240, running: 1 } },
+  { id: 'poly-cart', type: 'cartesian', position: { x: 40, y: 220 }, domain: 'audio' },
+];
+export const POLY_SOURCE_EDGES: SpawnEdge[] = [
+  {
+    id: 'e-poly-clk',
+    from: { nodeId: 'poly-clk', portId: 'gate1' },
+    to: { nodeId: 'poly-cart', portId: 'clock' },
+    sourceType: 'gate',
+    targetType: 'gate',
+  },
+];
+export async function seedPolySource(page: Page): Promise<void> {
+  await seedKriaGate(page, 'poly-clk');
+  await page.evaluate(() => {
+    const w = globalThis as unknown as {
+      __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
+      __ydoc: { transact: (fn: () => void) => void };
+    };
+    w.__ydoc.transact(() => {
+      const n = w.__patch.nodes['poly-cart'];
+      if (!n) return;
+      if (!n.data) n.data = {};
+      n.data.cells = Array.from({ length: 16 }, (_, i) => (
+        { on: true, midi: [60, 65, 67, 72][i % 4], chord: 'maj' }
+      ));
+    });
+  });
+}

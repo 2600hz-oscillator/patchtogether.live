@@ -689,18 +689,6 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // provide coverage. Promote into MODULES + capture baselines on both
   // platforms in a follow-up PR.
   clouds: 'VRT baseline pending; ART + unit + E2E provide coverage.',
-  // MACSEQ — VRT baseline pending. Functional coverage is e2e/tests/macseq.spec.ts
-  // which proves the headline MACSEQ→MACROOSCILLATOR MODELCV wiring works.
-  // A follow-up PR will capture the darwin + linux pixel baselines.
-  macseq: 'VRT baseline pending; e2e/tests/macseq.spec.ts covers MODELCV wiring',
-  // WRITESEQ — recording step-sequencer. VRT baseline pending (the card is a
-  // standard grid + fader card with a pulsing REC indicator + animated
-  // playhead, like MACSEQ, which would need masking before a stable pixel
-  // baseline). Functional coverage is the deterministic alignment +
-  // transport-rule unit tests (writeseq.test.ts / writeseq-alignment.test.ts /
-  // writeseq-transport.test.ts) + e2e/tests/writeseq.spec.ts. A follow-up PR
-  // captures the darwin + linux baselines via the vrt-update.yml workflow.
-  writeseq: 'VRT baseline pending; unit (alignment + transport) + e2e/tests/writeseq.spec.ts provide coverage. Capture darwin/linux baselines via vrt-update.yml in a follow-up.',
   // RINGS: the legacy CARD has no baseline. Its faceplate does — as of the face
   // PR, `face-rings-compact` and `face-rings-dock` are captured by the linux
   // job like every other face scene — so the pixel surface a migrated module
@@ -1210,8 +1198,10 @@ export const ALLOWED_PERMANENT_EXEMPT: ReadonlySet<string> = new Set([
   // and this list is ANCHORED: an entry naming a module that is not exempt is RED,
   // so a drained module cannot leave a stale licence to re-exempt itself. See the
   // note in EXEMPT_FROM_VRT for why the stated reason stopped being true.
+  // ⚠ `macseq` + `writeseq` REMOVED with the five deprecated sequencers
+  // (2026-08-24) — the same anchor applies: their defs no longer exist.
   'cadillac', 'controlSurface', 'launchpadControlLeft',
-  'push2Control', 'clouds', 'macseq', 'writeseq',
+  'push2Control', 'clouds',
   'rings', 'marbles', 'attenumix', 'sidecar',
   'cloudseed', 'livecode', 'clockedRunner', 'midiCvBuddy',
   // ⚠ `midiclock` REMOVED 2026-08-24 — the second drain, after `cvBuddy` above,
@@ -1338,7 +1328,6 @@ export const STRICT_VRT_MODULES = new Set<string>([
   'charlottesEchos',      // delay/echo knob card
   'destroy',              // destruction/distortion knob card
   'drummergirl',          // drum-sample card (chrome only — sample preview is static post-load)
-  'drumseqz',             // 16-step drum sequencer (static at step 0 with no playhead)
   'dx7',                  // DX7 FM synth card (operator grid)
   'filter',               // filter knob card
   'illogic',              // logic-gate knob card
@@ -1348,11 +1337,9 @@ export const STRICT_VRT_MODULES = new Set<string>([
   'noise',                // noise-source FADER card (like mixer/mixmstrs above,
                           //   not a knob card — the distinction is the whole
                           //   point of its `face.paramCells: { level: 'fader' }`)
-  'polyseqz',             // poly chord sequencer card (S&H header toggle; linux baseline regenerated)
   'qbrt',                 // q-bit/quantizer knob card
   'reverb',               // reverb knob card
   'score',                // score/note display card
-  'sequencer',            // 32-step sequencer card (S&H header toggle; linux baseline regenerated)
   'shimmershine',         // shimmer-reverb knob card
   'stereovca',            // stereo VCA fader card
   'sticky',               // sticky-note widget (static)

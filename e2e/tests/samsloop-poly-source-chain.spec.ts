@@ -13,7 +13,7 @@
 // samsloop declares NO `poly` port and NO `pitch` input. Its voices are STRUCK
 // BY GATE EDGES on `trig` (`edge: 'trigger'`), so the real default-mode source
 // chain for this module is a real sequencer's TRIGGER output into that jack.
-// POLYSEQZ is one of the two sources the rule names, and it is the right one
+// The kria-clocked cartesian chain replaces POLYSEQZ (deleted 2026-08-24) as
 // here for a second reason: it needs no MIDI hardware and no WebMIDI mock, so
 // this spec measures the module rather than the runner's device permissions.
 //
@@ -42,7 +42,7 @@
 // looking.
 
 import { test, expect } from './_fixtures';
-import { spawnPatch, type SpawnNode } from './_helpers';
+import { spawnPatch, type SpawnNode, seedKriaGate } from './_helpers';
 import { readScopePeakOverWindow, describeScopeWindow } from './_module-coverage-helpers';
 
 test.describe.configure({ mode: 'parallel' });
@@ -107,14 +107,15 @@ async function seedSeqSteps(
       const t = w.__patch.nodes[id];
       if (!t) return;
       if (!t.data) t.data = {};
-      t.data.steps = [
-        { on: true, root: 60, quality: 'maj', inversion: 0, voicing: 'closed' },
-        { on: true, root: 60, quality: 'maj', inversion: 0, voicing: 'closed' },
-        { on: true, root: 60, quality: 'maj', inversion: 0, voicing: 'closed' },
-        { on: true, root: 60, quality: 'maj', inversion: 0, voicing: 'closed' },
-      ];
+      t.data.cells = Array.from({ length: 16 }, (_, i) => [
+          { on: true, midi: 60, chord: 'maj' },
+          { on: true, midi: 60, chord: 'maj' },
+          { on: true, midi: 60, chord: 'maj' },
+          { on: true, midi: 60, chord: 'maj' },
+        ][i % 4]);
     });
   }, seqId);
+  await seedKriaGate(page, 'seq-clk');
 }
 
 /** The patch, with the `trig` cable optional so the silence leg is the SAME
@@ -122,10 +123,8 @@ async function seedSeqSteps(
  *  different reading. */
 function nodes(poly: number): SpawnNode[] {
   return [
-    {
-      id: 'seq', type: 'polyseqz', position: { x: 40, y: 60 }, domain: 'audio' as const,
-      params: { isPlaying: 1, length: 4, bpm: 240, gateLength: 0.6 },
-    },
+    { id: 'seq-clk', type: 'kria', position: { x: 40, y: 440 }, domain: 'audio', params: { bpm: 240, running: 1 } },
+      { id: 'seq', type: 'cartesian', position: { x: 40, y: 60 }, domain: 'audio' },
     {
       id: 'sl', type: 'samsloop', position: { x: 360, y: 60 }, domain: 'audio' as const,
       // mode 1 = loop, so a struck voice keeps sounding across the window; the
@@ -147,6 +146,14 @@ const OUT_TO_SCOPE = {
   targetType: 'audio' as const,
 };
 
+const KRIA_CLOCKS_CART = {
+  id: 'e_clk_seq',
+  from: { nodeId: 'seq-clk', portId: 'gate1' },
+  to: { nodeId: 'seq', portId: 'clock' },
+  sourceType: 'gate' as const,
+  targetType: 'gate' as const,
+};
+
 const CLOCK_TO_TRIG = {
   id: 'e_seq_sl',
   from: { nodeId: 'seq', portId: 'clock' },
@@ -155,11 +162,11 @@ const CLOCK_TO_TRIG = {
   targetType: 'gate' as const,
 };
 
-test('MONO — a real POLYSEQZ clock strikes samsloop and the OUT carries audio', async ({
+test('MONO — a real sequencer-chain clock strikes samsloop and the OUT carries audio', async ({
   page, rack, errorWatch,
 }) => {
   test.setTimeout(timeoutFor(1));
-  await spawnPatch(page, nodes(0), [CLOCK_TO_TRIG, OUT_TO_SCOPE]);
+  await spawnPatch(page, nodes(0), [KRIA_CLOCKS_CART, CLOCK_TO_TRIG, OUT_TO_SCOPE]);
   await seedSample(page, 'sl');
   await seedSeqSteps(page, 'seq');
 
@@ -176,7 +183,7 @@ test('POLY — the same chain layers instead of stealing, and stays audible', as
   page, rack, errorWatch,
 }) => {
   test.setTimeout(timeoutFor(1));
-  await spawnPatch(page, nodes(1), [CLOCK_TO_TRIG, OUT_TO_SCOPE]);
+  await spawnPatch(page, nodes(1), [KRIA_CLOCKS_CART, CLOCK_TO_TRIG, OUT_TO_SCOPE]);
   await seedSample(page, 'sl');
   await seedSeqSteps(page, 'seq');
 
@@ -238,7 +245,7 @@ test('POLY → MONO retires the extra voices — they do not freeze in the pool'
   // pool — not on the audio, because a frozen voice is SILENT and the output
   // would sound correct while the pool was wrong. This is the only observable
   // that can tell the two apart.
-  await spawnPatch(page, nodes(1), [CLOCK_TO_TRIG, OUT_TO_SCOPE]);
+  await spawnPatch(page, nodes(1), [KRIA_CLOCKS_CART, CLOCK_TO_TRIG, OUT_TO_SCOPE]);
   await seedSample(page, 'sl');
   await seedSeqSteps(page, 'seq');
 
@@ -278,7 +285,7 @@ test('MUST-READ-ZERO — no cable into trig means SILENCE (idle-by-default)', as
   test.setTimeout(timeoutFor(1));
   // The SAME rack minus exactly one edge. samsloop has a sample loaded and a
   // running sequencer beside it; the only thing missing is the trigger.
-  await spawnPatch(page, nodes(0), [OUT_TO_SCOPE]);
+  await spawnPatch(page, nodes(0), [KRIA_CLOCKS_CART, OUT_TO_SCOPE]);
   await seedSample(page, 'sl');
   await seedSeqSteps(page, 'seq');
 

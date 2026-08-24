@@ -37,10 +37,9 @@ function runPair(group: string, patch: PairPatch): void {
   test(`${group} — ${patch.label}`, async ({ page, rackDefault, errorWatch }) => {
     await spawnPatch(page, patch.nodes, patch.edges);
 
-    // If a sequencer is in the patch, seed playable steps so its gate
-    // actually fires. (Most spec authors forget the step seed; this
-    // is a convention — generator-emitted patches with a `seq` node
-    // get a 4-note major chord seeded here.)
+    // If a KRIA gate source is in the patch (id 'seq' by convention), seed
+    // track-1 trigs so its gate1 actually fires. (Was the SEQUENCER step
+    // seed until the deprecated sequencers were deleted, 2026-08-24.)
     const hasSeq = patch.nodes.some((n) => n.id === 'seq');
     if (hasSeq) {
       await page.evaluate(() => {
@@ -52,17 +51,31 @@ function runPair(group: string, patch: PairPatch): void {
           const seq = w.__patch.nodes['seq'];
           if (!seq) return;
           if (!seq.data) seq.data = {};
-          seq.data.steps = [
-            { on: true, midi: 60 },
-            { on: true, midi: 64 },
-            { on: true, midi: 67 },
-            { on: true, midi: 72 },
-          ];
+          const track = (trig: boolean) => ({
+            trig: Array.from({ length: 16 }, () => trig),
+            ratchet: Array.from({ length: 16 }, () => 1),
+            note: [0, 2, 4, 7, 0, 2, 4, 7, 0, 2, 4, 7, 0, 2, 4, 7],
+            octave: Array.from({ length: 16 }, () => 0),
+            duration: Array.from({ length: 16 }, () => 0.5),
+            probability: Array.from({ length: 16 }, () => 1),
+            glide: Array.from({ length: 16 }, () => 0),
+            loopStart: 0,
+            loopLength: 16,
+            timeDivision: 1,
+            direction: 'forward',
+            muted: false,
+          });
+          Object.assign(seq.data, {
+            patterns: { '0': { tracks: [track(true), track(false), track(false), track(false)], scale: 'major', root: 48 } },
+            active: 0,
+            cued: null,
+            cueSteps: 0,
+          });
         });
       });
     }
 
-    // 1.0 s — long enough for wavetable loads + several sequencer
+    // 1.0 s — long enough for wavetable loads + several kria
     // ticks at 240 BPM (~63 ms per 16th).
     await runFor(page, 1000);
 

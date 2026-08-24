@@ -36,7 +36,7 @@
 
 import { test, expect } from './_fixtures';
 import { type Page } from '@playwright/test';
-import { spawnPatch } from './_helpers';
+import { spawnPatch, seedKriaGate } from './_helpers';
 import { seedScoreThenPlay } from './_score-helpers';
 import {
   readScopeSnapshot,
@@ -97,34 +97,21 @@ test.fixme('lfo: phase outputs emit cv that crosses zero', { annotation: { type:
 });
 
 test('adsr: gate ping triggers an attack-then-decay envelope on env output', async ({ page, rack, errorWatch }) => {
-  // 240 BPM sequencer at gateLength=0.5 → gate cycles every ~125 ms.
+  // 240 BPM kria with all-on track-1 trigs → gate1 pulses every ~250 ms.
   // env (cv 0..1) -> scope.ch1 captured as audio.
   await spawnPatch(
     page,
     [
-      { id: 'seq', type: 'sequencer', params: { bpm: 240, length: 4, isPlaying: 1, gateLength: 0.5 } },
+      { id: 'seq', type: 'kria', params: { bpm: 240, running: 1} },
       { id: 'env', type: 'adsr',      params: { attack: 0.01, decay: 0.05, sustain: 0.6, release: 0.05 } },
       { id: 'scp', type: 'scope',     params: { timeMs: 200, ch1Range: 1 } },
     ],
     [
-      { id: 'e1', from: { nodeId: 'seq', portId: 'gate' }, to: { nodeId: 'env', portId: 'gate' }, sourceType: 'gate', targetType: 'gate' },
+      { id: 'e1', from: { nodeId: 'seq', portId: 'gate1' }, to: { nodeId: 'env', portId: 'gate' }, sourceType: 'gate', targetType: 'gate' },
       { id: 'e2', from: { nodeId: 'env', portId: 'env'  }, to: { nodeId: 'scp', portId: 'ch1'  }, sourceType: 'cv',   targetType: 'audio' },
     ],
   );
-  await page.evaluate(() => {
-    const w = globalThis as unknown as {
-      __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
-      __ydoc: { transact: (fn: () => void) => void };
-    };
-    w.__ydoc.transact(() => {
-      const seq = w.__patch.nodes['seq'];
-      if (!seq.data) seq.data = {};
-      seq.data.steps = [
-        { on: true, midi: 60 }, { on: true, midi: 60 },
-        { on: true, midi: 60 }, { on: true, midi: 60 },
-      ];
-    });
-  });
+  await seedKriaGate(page, 'seq');
 
   await runFor(page, 600);
 
@@ -288,33 +275,23 @@ test('unityscalemathematik: u_in passthrough scaled by unityAtten', async ({ pag
 });
 
 test('timelorde: external clock drives gate-divider outputs', async ({ page, rack }) => {
-  // Drive timelorde.clock from a sequencer's clock_out. Verify that
+  // Drive timelorde.clock from kria's gate1 train (all-on trigs = one rising
+  // edge per step — a clock, to timelorde's edge:'trigger' input). Verify that
   // any one of timelorde's divider outputs fires.
 
   await spawnPatch(
     page,
     [
-      { id: 'seq', type: 'sequencer', params: { bpm: 480, length: 8, isPlaying: 1, gateLength: 0.5 } },
+      { id: 'seq', type: 'kria', params: { bpm: 480, running: 1} },
       { id: 'tl',  type: 'timelorde', params: { bpm: 480 } },
       { id: 'scp', type: 'scope',     params: { timeMs: 50, ch1Range: 1 } },
     ],
     [
-      { id: 'e1', from: { nodeId: 'seq', portId: 'clock' }, to: { nodeId: 'tl',  portId: 'clock' }, sourceType: 'gate', targetType: 'gate' },
+      { id: 'e1', from: { nodeId: 'seq', portId: 'gate1' }, to: { nodeId: 'tl',  portId: 'clock' }, sourceType: 'gate', targetType: 'gate' },
       { id: 'e2', from: { nodeId: 'tl',  portId: '1x'    }, to: { nodeId: 'scp', portId: 'ch1'   }, sourceType: 'gate', targetType: 'audio' },
     ],
   );
-  // Lay down steps so the seq clock_out fires.
-  await page.evaluate(() => {
-    const w = globalThis as unknown as {
-      __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
-      __ydoc: { transact: (fn: () => void) => void };
-    };
-    w.__ydoc.transact(() => {
-      const seq = w.__patch.nodes['seq'];
-      if (!seq.data) seq.data = {};
-      seq.data.steps = Array.from({ length: 8 }, () => ({ on: true, midi: 60 }));
-    });
-  });
+  await seedKriaGate(page, 'seq');
 
   await runFor(page, 1200);
 
@@ -379,66 +356,41 @@ async function readCurrentStep(page: Page, nodeId: string): Promise<number | nul
   }, nodeId);
 }
 
-for (const seq of [
-  { type: 'sequencer', stepsCount: 4 },
-  { type: 'polyseqz',  stepsCount: 4 },
-  { type: 'drumseqz',  stepsCount: 4 },
-]) {
-  test(`sequencer ${seq.type}: currentStep advances when isPlaying=1`, async ({ page, rack }) => {
-    // 480 BPM → step every 31 ms; 4 steps fit easily in 250 ms.
-    await spawnPatch(page, [
-      { id: 'q', type: seq.type, params: { bpm: 480, length: seq.stepsCount, isPlaying: 1, gateLength: 0.5 } },
-    ]);
+// (Was a three-way loop over SEQUENCER / POLYSEQZ / DRUMSEQZ until those
+// modules were deleted 2026-08-24 — deprecated by CLIP PLAYER. KRIA is the
+// surviving self-running step sequencer; its read key is per-track.)
+test('sequencer kria: currentStep advances when running=1', async ({ page, rack }) => {
+  // 480 BPM → step every 31 ms; plenty of advances inside 250 ms.
+  await spawnPatch(page, [
+    { id: 'q', type: 'kria', params: { bpm: 480, running: 1 } },
+  ]);
+  await seedKriaGate(page, 'q');
 
-    if (seq.type === 'sequencer' || seq.type === 'polyseqz') {
-      await page.evaluate(({ count, ty }) => {
-        const w = globalThis as unknown as {
-          __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
-          __ydoc: { transact: (fn: () => void) => void };
-        };
-        w.__ydoc.transact(() => {
-          const node = w.__patch.nodes['q'];
-          if (!node.data) node.data = {};
-          if (ty === 'sequencer') {
-            node.data.steps = Array.from({ length: count }, () => ({ on: true, midi: 60 }));
-          } else {
-            node.data.steps = Array.from({ length: count }, () => ({
-              on: true, root: 60, quality: 'maj', inversion: 0, voicing: 'closed',
-            }));
-          }
-        });
-      }, { count: seq.stepsCount, ty: seq.type });
-    } else if (seq.type === 'drumseqz') {
-      await page.evaluate(({ count }) => {
-        const w = globalThis as unknown as {
-          __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
-          __ydoc: { transact: (fn: () => void) => void };
-        };
-        w.__ydoc.transact(() => {
-          const node = w.__patch.nodes['q'];
-          if (!node.data) node.data = {};
-          node.data.tracks = Array.from({ length: 4 }, () =>
-            Array.from({ length: count }, () => ({ on: true, midi: null })),
-          );
-        });
-      }, { count: seq.stepsCount });
-    }
+  await runFor(page, 100);
+  const step0 = await page.evaluate((id) => {
+    const w = globalThis as unknown as {
+      __engine: () => { read: (n: unknown, k: string) => unknown };
+      __patch: { nodes: Record<string, unknown> };
+    };
+    const v = w.__engine().read(w.__patch.nodes[id], 'currentStep:0');
+    return typeof v === 'number' ? v : null;
+  }, 'q');
+  expect(step0).not.toBeNull();
+  expect(step0).toBeGreaterThanOrEqual(0);
 
-    await runFor(page, 100);
-    const step0 = await readCurrentStep(page, 'q');
-    expect(step0).not.toBeNull();
-    expect(step0).toBeGreaterThanOrEqual(0);
-
-    // After another ~150ms there should be at least 1 step advance from
-    // wherever we started. Allow wrap (step%length) since fast bpm may
-    // make currentStep advance multiple ticks.
-    await runFor(page, 200);
-    const step1 = await readCurrentStep(page, 'q');
-    expect(step1).not.toBeNull();
-    expect(step1).toBeGreaterThanOrEqual(0);
-    expect(step1).toBeLessThan(seq.stepsCount);
-  });
-}
+  await runFor(page, 200);
+  const step1 = await page.evaluate((id) => {
+    const w = globalThis as unknown as {
+      __engine: () => { read: (n: unknown, k: string) => unknown };
+      __patch: { nodes: Record<string, unknown> };
+    };
+    const v = w.__engine().read(w.__patch.nodes[id], 'currentStep:0');
+    return typeof v === 'number' ? v : null;
+  }, 'q');
+  expect(step1).not.toBeNull();
+  expect(step1).toBeGreaterThanOrEqual(0);
+  expect(step1).toBeLessThan(16);
+});
 
 // task #12 (re-enabled, wave-3): SCORE-playhead `currentNoteId` was read after a
 // FLAT runFor(200) + a single read, so under CI load the read could land on a
@@ -482,34 +434,23 @@ test('score: tickIndex advances + currentNoteId resolves to laid-down note', asy
 });
 
 test('cartesian: external clock drives pitch output (poly cable, lane 0 = pitch)', async ({ page, rack }) => {
-  // Drive cartesian.clock from sequencer.clock_out. Its pitch output is
+  // Drive cartesian.clock from kria's gate1 train. Its pitch output is
   // a polyPitchGate; route lane 0 into a scope as cv to verify motion.
   await spawnPatch(
     page,
     [
-      { id: 'seq',  type: 'sequencer',  params: { bpm: 480, length: 8, isPlaying: 1, gateLength: 0.5 } },
+      { id: 'seq',  type: 'kria',  params: { bpm: 480, running: 1} },
       { id: 'cart', type: 'cartesian' },
       { id: 'scp',  type: 'scope',      params: { timeMs: 200, ch1Range: 1 } },
     ],
     [
-      { id: 'e1', from: { nodeId: 'seq',  portId: 'clock' }, to: { nodeId: 'cart', portId: 'clock' }, sourceType: 'gate', targetType: 'gate' },
+      { id: 'e1', from: { nodeId: 'seq',  portId: 'gate1' }, to: { nodeId: 'cart', portId: 'clock' }, sourceType: 'gate', targetType: 'gate' },
       // pitch is polyPitchGate; route the lane-0 pitch into ch1 (the resolver
       // pulls lane 0 pitch for a mono audio sink).
       { id: 'e2', from: { nodeId: 'cart', portId: 'pitch' }, to: { nodeId: 'scp', portId: 'ch1' }, sourceType: 'polyPitchGate', targetType: 'audio' },
     ],
   );
-  // Lay down steps so the seq clock_out fires.
-  await page.evaluate(() => {
-    const w = globalThis as unknown as {
-      __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
-      __ydoc: { transact: (fn: () => void) => void };
-    };
-    w.__ydoc.transact(() => {
-      const seq = w.__patch.nodes['seq'];
-      if (!seq.data) seq.data = {};
-      seq.data.steps = Array.from({ length: 8 }, () => ({ on: true, midi: 60 }));
-    });
-  });
+  await seedKriaGate(page, 'seq');
 
   await runFor(page, 800);
 
@@ -520,12 +461,12 @@ test('cartesian: external clock drives pitch output (poly cable, lane 0 = pitch)
 });
 
 test('integration (Group 4): sequencer drives 3 drum voices in parallel via mixer', async ({ page, rack, errorWatch }) => {
-  // sequencer.gate -> drummergirl + meowbox + qbrt (gate/ping inputs).
+  // kria.gate1 -> drummergirl + meowbox + qbrt (gate/ping inputs).
   // All three sum into a mixer; the mixer reads in scope.
   await spawnPatch(
     page,
     [
-      { id: 'seq', type: 'sequencer',    params: { bpm: 240, length: 4, isPlaying: 1, gateLength: 0.5 } },
+      { id: 'seq', type: 'kria',    params: { bpm: 240, running: 1} },
       { id: 'dg',  type: 'drummergirl' },
       { id: 'mb',  type: 'meowbox' },
       { id: 'qb',  type: 'qbrt' },
@@ -534,9 +475,9 @@ test('integration (Group 4): sequencer drives 3 drum voices in parallel via mixe
     ],
     [
       // Drive each voice with the same gate.
-      { id: 'g1', from: { nodeId: 'seq', portId: 'gate'  }, to: { nodeId: 'dg', portId: 'gate'  }, sourceType: 'gate', targetType: 'gate' },
-      { id: 'g2', from: { nodeId: 'seq', portId: 'gate'  }, to: { nodeId: 'mb', portId: 'gate'  }, sourceType: 'gate', targetType: 'gate' },
-      { id: 'g3', from: { nodeId: 'seq', portId: 'gate'  }, to: { nodeId: 'qb', portId: 'ping'  }, sourceType: 'gate', targetType: 'gate' },
+      { id: 'g1', from: { nodeId: 'seq', portId: 'gate1' }, to: { nodeId: 'dg', portId: 'gate'  }, sourceType: 'gate', targetType: 'gate' },
+      { id: 'g2', from: { nodeId: 'seq', portId: 'gate1' }, to: { nodeId: 'mb', portId: 'gate'  }, sourceType: 'gate', targetType: 'gate' },
+      { id: 'g3', from: { nodeId: 'seq', portId: 'gate1' }, to: { nodeId: 'qb', portId: 'ping'  }, sourceType: 'gate', targetType: 'gate' },
       // Sum: drummergirl + meowbox(L) + qbrt(L) into mixer.in1..in3.
       { id: 'a1', from: { nodeId: 'dg', portId: 'audio' }, to: { nodeId: 'mix', portId: 'in1' } },
       { id: 'a2', from: { nodeId: 'mb', portId: 'L'     }, to: { nodeId: 'mix', portId: 'in2' } },
@@ -545,17 +486,7 @@ test('integration (Group 4): sequencer drives 3 drum voices in parallel via mixe
       { id: 'm1', from: { nodeId: 'mix', portId: 'audio' }, to: { nodeId: 'scp', portId: 'ch1' } },
     ],
   );
-  await page.evaluate(() => {
-    const w = globalThis as unknown as {
-      __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
-      __ydoc: { transact: (fn: () => void) => void };
-    };
-    w.__ydoc.transact(() => {
-      const seq = w.__patch.nodes['seq'];
-      if (!seq.data) seq.data = {};
-      seq.data.steps = Array.from({ length: 4 }, () => ({ on: true, midi: 60 }));
-    });
-  });
+  await seedKriaGate(page, 'seq');
 
   await runFor(page, 1000);
 

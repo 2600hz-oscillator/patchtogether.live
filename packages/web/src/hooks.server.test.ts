@@ -49,7 +49,7 @@ describe('isBetaGatePublic', () => {
     expect(isBetaGatePublic('/docs')).toBe(true);
     expect(isBetaGatePublic('/docs/')).toBe(true);
     expect(isBetaGatePublic('/docs/modules')).toBe(true);
-    expect(isBetaGatePublic('/docs/modules/sequencer')).toBe(true);
+    expect(isBetaGatePublic('/docs/modules/kria')).toBe(true);
     expect(isBetaGatePublic('/docs/testing')).toBe(true);
     expect(isBetaGatePublic('/docs/deploy')).toBe(true);
   });

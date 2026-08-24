@@ -32,7 +32,7 @@ describe('shouldAutoSpawnTimelorde', () => {
       shouldAutoSpawnTimelorde([
         { type: 'analogVco' },
         { type: 'audioOut' },
-        { type: 'sequencer' },
+        { type: 'kria' },
       ]),
     ).toBe(true);
   });

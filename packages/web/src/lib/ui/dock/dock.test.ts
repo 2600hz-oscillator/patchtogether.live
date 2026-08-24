@@ -78,7 +78,7 @@ describe('discrete zoom ladder (50–150% in 25% steps)', () => {
 
 describe('dockable allowlist (control-first + scope, workflow-only gating in Canvas)', () => {
   it('includes the knob/fader-heavy control set + scope', () => {
-    for (const t of ['mixer', 'mixmstrs', 'matrixMix', 'adsr', 'drumseqz', 'polyseqz', 'controlSurface', 'fader', 'scope']) {
+    for (const t of ['mixer', 'mixmstrs', 'matrixMix', 'adsr', 'kria', 'cartesian', 'controlSurface', 'fader', 'scope']) {
       expect(isDockableType(t), t).toBe(true);
     }
   });
