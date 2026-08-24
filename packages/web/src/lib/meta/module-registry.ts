@@ -59,9 +59,17 @@ export interface MetaModuleDef {
    * unable to see, and would its green run look any different if the answer
    * were 'everything'?" shape.
    *
-   * `meta-face-precursor.test.ts` is the negative control that keeps this from
-   * landing as a decorative type change — it drives a fixture meta def in BOTH
-   * directions through `listMetaModuleDefs()` and the anchor's own predicate.
+   * THE NEGATIVE CONTROL LIVES WITH THE GATE IT PROTECTS:
+   * `$lib/ui/workflow/module-face-lint.test.ts`, in the describe block
+   * *"meta domain: the `face?` precursor is READ, not merely declarable"*. It
+   * drives a fixture meta def through the anchor's OWN extracted predicate
+   * (`isUnpromotedFace`, not a restated copy of the expression) in three
+   * directions — caught when unpromoted, CLEARS when promoted so the leg
+   * measures promotion rather than domain, and clears for a faceless meta def
+   * so the fix cannot degenerate into "meta defs are always promoted" — plus a
+   * fourth leg asserting the live meta registry really reaches `allDefs()`
+   * carrying `face`. That is what keeps this field from landing as a decorative
+   * type change nothing reads.
    *
    * ⚠ THERE IS DELIBERATELY NO `docs?` FIELD BESIDE THIS ONE, and adding one is
    * a SEPARATE decision with a coupling that must land in the same diff — see
