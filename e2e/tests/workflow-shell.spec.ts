@@ -14,7 +14,7 @@
 // workflow-dock.spec.ts. Shell state is transient/local (never in the Y.Doc).
 
 import { test, expect, type Page } from '@playwright/test';
-import { spawnPatch } from './_helpers';
+import { LANE_TILES, MAIN_CANVAS, spawnPatch, waitForLaneTier } from './_helpers';
 import {
   AUDIO_OPERABLE_FIXTURE,
   AUDIO_PLACEHOLDER_FIXTURE,
@@ -116,7 +116,14 @@ async function waitForHooks(page: Page): Promise<void> {
  *  `module-shell-placeholder`. This is the population the geometry tests
  *  measure, so it is also the honest readiness signal for "the drop landed". */
 function laneTiles(page: Page) {
-  return page.locator('[data-testid="module-shell-placeholder"], [data-testid="module-shell"]');
+  // ⚠ SCOPED (LANE_TILES). Unscoped, this counted the PINNED audioOut faceplate
+  // in the always-mounted 🎧 topbar panel as a lane tile. The delta below hid
+  // that — the constant cancels — but the pins are ensured ASYNCHRONOUSLY, so a
+  // `before` read taken before that mount lands is satisfied by the PANEL
+  // instead of by the drop, and the geometry read that follows races a tile
+  // that has not mounted. `measureTiles` was re-scoped in the same pass; a
+  // readiness signal and the measurement it gates must count one population.
+  return page.locator(LANE_TILES);
 }
 
 /**
@@ -163,8 +170,17 @@ async function dropInColumn(page: Page, type: string, ch: number): Promise<void>
  *  tile px + data-shell-tier. */
 async function measureTiles(page: Page): Promise<{ node: string | null; tier: string | null; w: number; h: number }[]> {
   return page.evaluate(() => {
+    // ⚠ SCOPED TO THE MAIN CANVAS. A document-wide sweep stopped meaning "the
+    // lane tiles" on 2026-08-24: the always-mounted 🎧 topbar panel now holds a
+    // PINNED audioOut faceplate, which this counted as a tile and which is a
+    // different width — so `new Set(tiles.map(t => t.w)).size` read 2 where the
+    // assertion wants 1. The CHILD combinator is the discriminator (see
+    // `MAIN_CANVAS` in ./_helpers); `.first()` would not be one.
+    const scope = document.querySelector('.flow > .svelte-flow');
     const tiles = Array.from(
-      document.querySelectorAll('[data-testid="module-shell-placeholder"], [data-testid="module-shell"]'),
+      (scope ?? document).querySelectorAll(
+        '[data-testid="module-shell-placeholder"], [data-testid="module-shell"]',
+      ),
     ) as HTMLElement[];
     return tiles.map((t) => ({
       node: t.getAttribute('data-shell-node'),
@@ -184,14 +200,13 @@ async function setZoomTier(page: Page, zoom: number, expectTier: string): Promis
     const vp = f.getViewport();
     f.setViewport({ x: vp.x, y: vp.y, zoom }, { duration: 0 });
   }, zoom);
-  await page.waitForFunction(
-    (tier) => {
-      const tiles = Array.from(document.querySelectorAll('[data-shell-tier]'));
-      return tiles.length > 0 && tiles.every((t) => t.getAttribute('data-shell-tier') === tier);
-    },
-    expectTier,
-    { timeout: 10_000 },
-  );
+  // ⚠ WAS A BARE `document.querySelectorAll('[data-shell-tier]')` + `.every()`.
+  // That stopped meaning "the lane tiles" on 2026-08-24 without this spec
+  // changing: promoting `audioOut` put a PINNED faceplate in the always-mounted
+  // 🎧 topbar panel, whose tier is permanently `dock`, so `.every()` could never
+  // become true and this call sat out its full 10 s timeout. Scoped to the main
+  // canvas through the ONE export site — see `waitForLaneTier`.
+  await waitForLaneTier(page, expectTier);
 }
 
 // ── THE AUDIO FIXTURE IS HEALTHY (#1789, #1864) ─────────────────────────────
@@ -440,8 +455,17 @@ test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
     }
     // Tiles mounted (tidyVco/vca render the migrated shell as of P1 batch 1;
     // delay + the video-zone trio stay placeholders).
-    await expect(page.locator('[data-testid="module-shell-placeholder"]')).not.toHaveCount(0);
-    await expect(page.locator('[data-testid="module-shell"]')).not.toHaveCount(0);
+    // ⚠ BOTH SCOPED TO THE CANVAS, and the second one had ALREADY GONE BLIND.
+    // `page.locator('[data-testid="module-shell"]')` matched the pinned audioOut
+    // faceplate in the always-mounted 🎧 topbar panel, so "a migrated tile
+    // mounted in the LANE" became true on every page whether or not anything
+    // dropped — a precondition that can no longer fail, guarding a measurement
+    // that was re-scoped to the canvas in the same pass. It would have gone on
+    // certifying the next lane-mount regression in silence.
+    await expect(
+      page.locator(`${MAIN_CANVAS} [data-testid="module-shell-placeholder"]`),
+    ).not.toHaveCount(0);
+    await expect(page.locator(`${MAIN_CANVAS} [data-testid="module-shell"]`)).not.toHaveCount(0);
 
     // Uniform width + height across every mounted tile.
     const tiles = await measureTiles(page);
@@ -1020,14 +1044,13 @@ test.describe('P0.3b workflow-shell ?shell=1 bug fixes', () => {
         const cy = 4200;
         f.setViewport({ x: pr.width / 2 - cx * z, y: pr.height / 2 - cy * z, zoom: z }, { duration: 0 });
       }, zoom);
-      await page.waitForFunction(
-        (t) => {
-          const tiles = Array.from(document.querySelectorAll('[data-shell-tier]'));
-          return tiles.length > 0 && tiles.every((el) => el.getAttribute('data-shell-tier') === t);
-        },
-        faceTier,
-        { timeout: 10_000 },
-      );
+      // ⚠ WAS A BARE `document.querySelectorAll('[data-shell-tier]')` + `.every()`.
+      // That stopped meaning "the lane tiles" on 2026-08-24 without this spec
+      // changing: promoting `audioOut` put a PINNED faceplate in the always-mounted
+      // 🎧 topbar panel, whose tier is permanently `dock`, so `.every()` could never
+      // become true and this call sat out its full 10 s timeout. Scoped to the main
+      // canvas through the ONE export site — see `waitForLaneTier`.
+      await waitForLaneTier(page, faceTier);
       // Two rAFs so the overlay re-projection + any tier content swap settle.
       await page.evaluate(() => new Promise<void>((res) => requestAnimationFrame(() => requestAnimationFrame(() => res()))));
       const m = await measurePairs();

@@ -67,10 +67,21 @@ const repoPath = (...segments: string[]): string => resolve(REPO, ...segments);
 export const DENIED: Readonly<Record<string, string>> = {
   audioIn:
     'needs getUserMedia — capability-dependent on CI, where there is no camera or mic to grant',
-  audioOut:
-    'the rack MASTER OUTPUT: `AudioIoSurface.svelte` hosts it (and audioIn) in a dedicated ' +
-    'I/O drawer via DockCardHost, so it never renders the lane tile + dock full view the ' +
-    'bridge specs assert on. It passes every content predicate and is still unfit.',
+  // ⚠ `audioOut` WAS HERE AND IS DELETED, NOT AMENDED. Its entry read: "the
+  // rack MASTER OUTPUT: `AudioIoSurface.svelte` hosts it (and audioIn) in a
+  // dedicated I/O drawer via DockCardHost, so it never renders the lane tile +
+  // dock full view the bridge specs assert on."
+  //
+  // It is now PROMOTED, so it leaves `unpromoted` (the population this record
+  // filters) and the loop below never consults it again. That is the important
+  // part: a promotion does not redden a stale entry here, it makes one
+  // INVISIBLE — the record would have sat on, unread and factually wrong, with
+  // every anchor still green (the keys are anchored against `contract-lock.txt`,
+  // and audioOut is still a module). Deleted by hand for that reason, and
+  // reported to the owner as the one thing this file's own header claims to
+  // prevent and cannot: "an entry naming a module the golden does not know is
+  // RED instead of quietly decorative" is true for a RENAMED module and false
+  // for a PROMOTED one.
   twotracks:
     'a two-reel tape emulator: it mounts, but the bridge test timed out at 30 s in ' +
     "`boundingBox` waiting for it, and this fixture's whole contract is " +
