@@ -5,9 +5,10 @@
 // WHY THIS IS CENTRAL AND NOT PER-CARD
 // ------------------------------------
 // 208 cards exist; 188 mount PatchPanel and ~44 hand-build their descriptor
-// lists. Three of those hand-built lists (CubeCard,
-// WavesculptCard, FoxyCard) plus every video card are inside the **WebGL attest
-// hash basis**, so editing them forces a GPU re-attest. Collapsing inside the
+// lists. Some of those hand-built lists sit beside files inside the **WebGL
+// attest hash basis** (FoxyCard is in it directly; cube and wavesculpt keep
+// their GL in CubeVizSurface / WavesculptVizSurface, which are), plus every
+// video card, so editing them forces a GPU re-attest. Collapsing inside the
 // PANEL rather than in the cards means those faces collapse without a single
 // byte changing in the basis — and it means a card CANNOT disagree with its def
 // about what is one stereo signal, which is the exact divergence class
