@@ -3198,6 +3198,52 @@ export const FACES = [
     // `no-devices` disabled state. Both are stable run-to-run on the machine
     // that authors the file.
   },
+  // THE 4-VOICE 3-D VIDEO SYNTH — the widest face in the fleet, and the one
+  // whose promotion needed a precursor PR to be possible at all.
+  //
+  // `pages: 10`. Nine of them are ordinary bands; the tenth exists because a
+  // control-family key is ONE cell for ALL of that family's instances, so the
+  // twelve wavetable pickers could not be distributed into the four oscillator
+  // bands the build spec drew them in and share a WAVETABLES band instead.
+  // The four OSCILLATOR bands are what take the count over the rail threshold,
+  // and they are argued on arithmetic (twelve params + a colour cell each)
+  // rather than padded to get there.
+  //
+  // ⚠ NO `videoFaceWhy`. This is `domain: 'audio'` with a `mono-video` OUT, so
+  // the boot must be the ordinary mixer-column spawn — setting it would move
+  // the subject into the purple VIDEO ZONE, which is the wrong rack and is the
+  // easy copy-paste from the picture-bearing faces either side of it.
+  //
+  // ── WHY THE PICTURE IS DETERMINISTIC ──────────────────────────────────────
+  //
+  // It is not, on its own: the renderer advances `uTime`, a per-osc wavetable
+  // scroll and a per-osc bolt phase every frame, so two captures would frame
+  // different moments of a moving scene. `__wavesculptVrtFreeze` is the seam
+  // that settles it, and it is NOT a new one written for this roster — it has
+  // shipped inside the renderer since the module did, and the two module-level
+  // scenes (`vrt-wavesculpt-blink`, `vrt-wavesculpt-walls`) are captured
+  // through it today. The extraction moved it into `WavesculptVizSurface`
+  // WITHOUT changing what it pins, which those two scenes re-proved by passing
+  // unchanged against their existing baselines after the move.
+  {
+    type: 'wavesculpt',
+    pages: 10,
+    simPin: [
+      {
+        global: '__wavesculptVrtFreeze',
+        value: true,
+        why:
+          'pins the renderer\'s three animated clocks at once — shader `uTime` at a fixed 2.0 s, '
+          + 'the per-oscillator wavetable scroll phase at 0, and the CRT field offset — so the '
+          + 'scene becomes a pure function of the module\'s own params rather than of how many '
+          + 'rAFs elapsed before the capture landed. It is the SAME flag the two module-level '
+          + 'wavesculpt VRT scenes have always used, read inside the renderer itself rather than '
+          + 'by any card, so this surface inherits the frozen picture without duplicating a global '
+          + '— and without it the ribbons, the scope traces and the wall feedback would each be '
+          + 'sampled at a different unrepeatable instant.',
+      },
+    ],
+  },
 ] as const;
 
 /**

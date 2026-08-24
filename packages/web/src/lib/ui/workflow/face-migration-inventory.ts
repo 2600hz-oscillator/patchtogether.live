@@ -585,7 +585,27 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
       'slot ingest is a tagged atlas canvas `detilePending(slot)` consumes and nulls (plus a ' +
       '1x1 `videocubeClear` canvas to return a slot to LIVE).',
   },
-  { type: 'wavesculpt', disposition: 'generic-face', note: 'two HAND-CLONED camera pads (#1509 §3) and the largest order after mixmstrs; a face was authored for it once and shipped both pads as knobs — do not repeat that' },
+  {
+    type: 'wavesculpt',
+    disposition: 'generic-face',
+    note: 'PROMOTED 2026-08-24. The old warning here — "a face was authored for it once and '
+      + 'shipped both pads as knobs, do not repeat that" — was correct and is now SPENT, so it '
+      + 'is replaced by what actually happened rather than left as a caution nobody can act on. '
+      + '⚠ THE PADS: `face.xyPads` now exists and `module-face-lint` enforces that both axes are '
+      + 'ranked and CONTINUOUS, so shipping a pad as two knobs is refused by a gate rather than '
+      + 'by memory. The camera pad survives as a pad, declared `surface: \'body\'` so the module '
+      + 'paints it ON its own render. ⚠ THE SECOND PAD DID NOT SURVIVE, DELIBERATELY: zoom/rot '
+      + 'became two FADERS on owner instruction, because its axes are not commensurate (zoom log '
+      + '0.3..3, rot linear ±1) so equal pixel travel was never equal parameter travel. That is '
+      + 'the one case where flattening a pad is the fix rather than the loss. ⚠ IT NEEDED A '
+      + 'PRECURSOR PR: the picture was a WebGL2 renderer welded into a 3 644-line card, and no '
+      + 'faceplate body can mount that — the renderer was extracted first (behaviour-neutral, '
+      + 'VRT-proved) so the card and the face are two mounts of ONE renderer, the cube shape. '
+      + '⚠ AND ITS BAND STRUCTURE IS PLATFORM-FORCED: a control-family key is ONE cell for ALL '
+      + 'instances, so the twelve wavetable pickers could not sit in the four oscillator bands '
+      + 'the spec drew them in and share a WAVETABLES band; four oscillators needed twelve '
+      + 'families, videocube-style, not three.',
+  },
   { type: 'wavetableVco', disposition: 'generic-face' },
 
   // ── blocked ───────────────────────────────────────────────────────────────
