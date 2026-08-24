@@ -82,7 +82,7 @@ export function cvIntoAdsr(): PairPatch[] {
     label: `cv-family: LFO.phase0 (cv) → ADSR.${adsrParam} (cv) drives audible env`,
     nodes: [
       { id: 'lfo', type: 'lfo',      position: { x: 60, y: 60 } },
-      { id: 'seq', type: 'sequencer',position: { x: 60, y: 200 }, params: { bpm: 240, length: 4, isPlaying: 1 } },
+      { id: 'seq', type: 'kria', position: { x: 60, y: 200 }, params: { bpm: 240, running: 1 } },
       { id: 'adsr',type: 'adsr',     position: { x: 360, y: 120 } },
       { id: 'vco', type: 'analogVco',position: { x: 660, y: 60 }, params: { tune: 0, fine: 0 } },
       { id: 'vca', type: 'vca',      position: { x: 900, y: 60 } },
@@ -91,7 +91,7 @@ export function cvIntoAdsr(): PairPatch[] {
     edges: [
       { id: 'e_lfo_adsr', from: { nodeId: 'lfo', portId: 'phase0' },  to: { nodeId: 'adsr', portId: adsrParam },
         sourceType: 'cv', targetType: 'cv' },
-      { id: 'e_seq_gate', from: { nodeId: 'seq', portId: 'gate' },    to: { nodeId: 'adsr', portId: 'gate' },
+      { id: 'e_seq_gate', from: { nodeId: 'seq', portId: 'gate1' },    to: { nodeId: 'adsr', portId: 'gate' },
         sourceType: 'gate', targetType: 'gate' },
       { id: 'e_vco_vca',  from: { nodeId: 'vco', portId: 'sine' },    to: { nodeId: 'vca', portId: 'audio' },
         sourceType: 'audio', targetType: 'audio' },
@@ -104,24 +104,24 @@ export function cvIntoAdsr(): PairPatch[] {
   }));
 }
 
-/** SEQUENCER.gate → ADSR.attack — the canonical cv-family
+/** KRIA.gate1 → ADSR.attack — the canonical cv-family
  *  interchange path the user flagged. gate routed onto a cv-typed
  *  param works at the engine level; this asserts the audible result. */
 export function gateIntoCvParam(): PairPatch[] {
   return [
     {
-      label: 'cv-family: SEQUENCER.gate (gate) → ADSR.attack (cv) — audible env',
+      label: 'cv-family: KRIA.gate1 (gate) → ADSR.attack (cv) — audible env',
       nodes: [
-        { id: 'seq', type: 'sequencer', position: { x: 60, y: 60 }, params: { bpm: 240, length: 4, isPlaying: 1 } },
+        { id: 'seq', type: 'kria', position: { x: 60, y: 60 }, params: { bpm: 240, running: 1 } },
         { id: 'adsr',type: 'adsr',      position: { x: 360, y: 60 } },
         { id: 'vco', type: 'analogVco', position: { x: 660, y: 60 }, params: { tune: 0, fine: 0 } },
         { id: 'vca', type: 'vca',       position: { x: 900, y: 60 } },
         { id: 'snk', type: 'scope',     position: { x: 1140, y: 60 }, params: { timeMs: 50 } },
       ],
       edges: [
-        { id: 'e_seq_attack', from: { nodeId: 'seq', portId: 'gate' }, to: { nodeId: 'adsr', portId: 'attack' },
+        { id: 'e_seq_attack', from: { nodeId: 'seq', portId: 'gate1' }, to: { nodeId: 'adsr', portId: 'attack' },
           sourceType: 'gate', targetType: 'cv' },
-        { id: 'e_seq_gate',   from: { nodeId: 'seq', portId: 'gate' }, to: { nodeId: 'adsr', portId: 'gate' },
+        { id: 'e_seq_gate',   from: { nodeId: 'seq', portId: 'gate1' }, to: { nodeId: 'adsr', portId: 'gate' },
           sourceType: 'gate', targetType: 'gate' },
         { id: 'e_vco_vca',    from: { nodeId: 'vco', portId: 'sine' }, to: { nodeId: 'vca', portId: 'audio' },
           sourceType: 'audio', targetType: 'audio' },
