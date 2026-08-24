@@ -54,9 +54,24 @@ export const matrixmixDef: MetaModuleDef = {
   // Each `testidPrefix` is a literal the CARD already emits
   // (`matrixmix-x-select` / `matrixmix-y-select`), which is what
   // module-docs-lint's card grep checks — so a rename on either surface is red.
+  //
+  // ⚠ THE LABELS ARE THE MOCKUP'S, TERSELY. They were `X-axis module` /
+  // `Y-axis module` and are now `X axis` / `Y axis`, which is what the reviewed
+  // dock + lane mockups both print. The word `module` said nothing the roster
+  // did not — every option in the dropdown IS a module — and it cost ~7
+  // characters of caption on a 246 px lane tile, against a standing ruling that
+  // compact is the default and screen real estate is expensive.
+  //
+  // ⚠ THE CAPTION IS NOT REDUNDANT WITH THE CHIP'S `X` / `Y` TAG, which is the
+  // `face.bareCells` question and resolves the other way here. That ruling drops
+  // a per-control label when a SECTION HEADING already conveys it; this face's
+  // only heading is the module name, so nothing but these two captions
+  // distinguishes two otherwise-identical dropdowns. The tag is inside the chip
+  // and vanishes at the lane tiers that render no caption, so dropping either
+  // one leaves a tier where the two controls are indistinguishable.
   controlFamilies: [
-    { id: 'matrixmix-x', label: 'X-axis module', kind: 'other', testidPrefix: 'matrixmix-x' },
-    { id: 'matrixmix-y', label: 'Y-axis module', kind: 'other', testidPrefix: 'matrixmix-y' },
+    { id: 'matrixmix-x', label: 'X axis', kind: 'other', testidPrefix: 'matrixmix-x' },
+    { id: 'matrixmix-y', label: 'Y axis', kind: 'other', testidPrefix: 'matrixmix-y' },
   ],
 
   // ── THE FACE ──────────────────────────────────────────────────────────────
