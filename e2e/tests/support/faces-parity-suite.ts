@@ -139,15 +139,22 @@ const SLOW_RENDER = process.env.E2E_SWIFTSHADER === '1' || !!process.env.CI;
 // Units are WALL-CLOCK MS of Playwright test timeout, and this bounds FAILURE
 // only — it is spent exclusively by a test that was going to fail anyway, so the
 // green path costs nothing and no assertion or wait below moves.
-// ⚠ THE SLOW_RENDER ARMS WERE RAISED 45_000/5_000 → 70_000/7_000 (2026-08-24),
-// and ONLY because chunking (below) made it safe. Both numbers are derived from
+// ⚠ THE SLOW_RENDER ARMS WERE RAISED 45_000/5_000 → 100_000/14_000 (2026-08-24),
+// and ONLY because chunking (below) made it safe. Both are derived from
 // measurement, not bumped; the derivation is in the FACE_CELL_CHUNK_CAP block.
 // The short version: `5_000 ms/cell` was BELOW the CI per-drive rate implied by
-// the row that died (>4_900 ms), i.e. ~1.02× margin, so no cap could have fixed
-// it — a chunk drives the same cells at the same rate. Units are WALL-CLOCK MS
-// and both terms BOUND FAILURE only.
-const FACE_FIXED_MS = SLOW_RENDER ? 70_000 : 30_000;
-const FACE_PER_CELL_MS = SLOW_RENDER ? 7_000 : 600;
+// the row that died (>4_900 ms) — ~1.02× margin — so no cap could have fixed it,
+// because a chunk drives the same cells at the same rate. Units are WALL-CLOCK
+// MS and both terms BOUND FAILURE only, so the green path pays nothing for them.
+//
+// ⚠ AND THEY ARE SIZED FOR THE SWING, NOT THE SAMPLE — the mistake this file has
+// now made three times (`1_800`, `3_000`, and my own first pass at `7_000`, which
+// was set from a LOWER BOUND as though it were the value and duly blew on the
+// next saturated runner). The swing is real and it is wide: the same 18-cell
+// wavesculpt chunk costs ~22 s locally under SwiftShader and >196 s on a
+// saturated CI shard.
+const FACE_FIXED_MS = SLOW_RENDER ? 100_000 : 30_000;
+const FACE_PER_CELL_MS = SLOW_RENDER ? 14_000 : 600;
 
 // ── THE CHUNK CAP — why the operability walk is split at all ────────────────
 //
@@ -208,14 +215,37 @@ const FACE_PER_CELL_MS = SLOW_RENDER ? 7_000 : 600;
 // A 1.3× margin therefore needs FIXED ≥ 70 s and PER ≥ 6.4 s, which is where
 // 70_000 / 7_000 above come from.
 //
-// ⚠ CHUNKING IS WHAT MAKES THAT RAISE LEGAL. At 7_000 ms/cell an unchunked
-// 90-cell row would want 675 s, and 2 × 675 = 1350 s blows the 1020 s shard
-// timeout — the dead-shard outcome above. Chunked at 20, the worst row wants
-// 70 + 7 × 20 = 210 s and two attempts cost 420 s, comfortably inside the shard.
-// So the cap and the constants are ONE fix in two halves: the cap buys the shard
-// headroom, and the constants spend it on the margin the rate actually needs.
-// Resulting margin on the largest chunk: ceiling 196 s against a predicted CI
-// cost of 54 + 18 × 4.9 = 142 s, i.e. 1.38×.
+// ⚠ THEN CI CORRECTED ME, AND THE CORRECTION IS THE REAL LESSON HERE. The first
+// attempt at this used 70_000/14_000's predecessor (70_000/7_000), derived by
+// scaling the local numbers by 495/108 = 4.58. But 495 s was a TIMEOUT — a LOWER
+// BOUND on what that row would have cost — so 4.58 was a lower bound too, and
+// treating it as the value is the same "just above the worst sample" error the
+// paragraph above warns about. Run 32750900305 shard 6/10 duly blew the new
+// ceiling: `wavesculpt: EVERY cell operates (chunk 5/5)` exceeded 196 000 ms.
+//
+// That failure is now the EVIDENCE, and it is a measured lower bound rather than
+// an extrapolation: an 18-cell chunk cost >196 s, i.e. >10.9 s/cell effective on
+// a saturated shard, against ~1.2 s/cell warm locally. So the CI/local swing on
+// this row is ~9×, not 4.6×.
+//
+// ⚠ AND THE PER-CELL COST IS NOT UNIFORM ACROSS CELLS, which is why chunk 5 and
+// not chunk 1. Cells arrive params-then-families, so the LAST chunk of a face is
+// where its control families land — and wavesculpt's are twelve wavetable-strip
+// cells whose preset pickers FETCH and parse a 32 KB .WAV and write ~16 000
+// numbers into the patch store each. A budget for this sweep has to cover the
+// worst CELL KIND, not the mean.
+//
+// 14_000 ms/cell is ~1.3 × the >10.9 s/cell measured tail, and 100_000 ms covers
+// a boot that the same swing puts near 80 s. Largest chunk: 100 + 14 × 18 = 352 s
+// against that >196 s tail, ~1.8×.
+//
+// ⚠ CHUNKING IS WHAT MAKES THE RAISE LEGAL, and at these numbers that is no
+// longer a fine margin — it is the whole reason they are affordable. An
+// unchunked 90-cell row at 14_000 ms/cell would want 1_360 s, more than the
+// shard's ENTIRE 1020 s budget, before its retry. Chunked at 20 the worst row
+// wants 100 + 14 × 20 = 380 s and two attempts cost 760 s, inside the shard with
+// room. The cap buys the headroom; the constants spend it on the margin the rate
+// actually needs; neither half works alone.
 //
 // ⚠ AND THE CAP IS A CAP, NOT A CHUNK SIZE. Chunks are equal slices of the real
 // cell list, so a 90-cell face becomes 5 × 18 rather than 4 × 20 + 1 × 10 — the
@@ -1758,15 +1788,21 @@ async function runFaceParityRow(page: Page, type: string, scope: FaceRowScope): 
       const size = Math.ceil(cells.length / scope.chunk.count);
       const mine = cells.slice(scope.chunk.index * size, (scope.chunk.index + 1) * size);
       const where = `${type} chunk ${scope.chunk.index + 1}/${scope.chunk.count}`;
-      // A chunk that drives nothing is a row that asserts nothing. It cannot
-      // happen (the chunk count is derived from a cell-count UPPER bound, so
-      // `count <= cells.length` always), which is exactly why it is worth
-      // asserting: if that reasoning ever stops holding, this fails loudly
-      // instead of going quietly vacuous.
+      // ⚠ A FACE MAY LEGITIMATELY RENDER NO CELLS AT ALL, and this assertion got
+      // that wrong on its first outing: `moog994`, `videoOut` and `flipper` are
+      // STRICT_FACES modules that are ALL JACKS AND NO CONTROLS (zero params,
+      // zero families). They still get one row, because the chunk count floors
+      // at 1 — and a `toBeGreaterThan(0)` here failed all three on CI for
+      // faithfully reporting an empty face.
+      //
+      // So the invariant is not "every chunk is non-empty". It is "a chunk is
+      // empty ONLY WHEN THE FACE IS", which still catches the real bug class —
+      // a slice that comes out empty on a face that HAS cells — and catches it
+      // in both directions.
       expect(
-        mine.length,
-        `${where}: drives at least one cell — an empty chunk is a row that asserts nothing`,
-      ).toBeGreaterThan(0);
+        mine.length === 0,
+        `${where}: empty chunk on a face with ${cells.length} cells — the chunk maths is wrong`,
+      ).toBe(cells.length === 0);
 
       // Stage 2: now that THIS ROW'S real size is known, extend the ceiling by
       // its own cell count (Playwright counts a re-`setTimeout` from the test's
