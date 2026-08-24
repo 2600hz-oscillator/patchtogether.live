@@ -2596,6 +2596,48 @@
   let workflowAudioOutNode = $derived(
     snapshot.nodes.find((n) => n.id === 'pinned-audioOut') ?? null,
   );
+  // ── THE 🎧 PANEL IS A DOCK RAIL TOO, AND IT NEVER ASKED (#1739's third
+  //    caller) ──────────────────────────────────────────────────────────────
+  //
+  // `dockRailRendersFace`'s header states the argument for the pinned occupant
+  // exactly: *"a PINNED occupant is canvas-hidden (`isCanvasHiddenNode`), so it
+  // has NO lane tile, NO EXPAND pill and no route to `DockFullView`. The tray is
+  // its ONLY surface, and it is therefore the only place its face can appear."*
+  //
+  // `pinned-audioIn` / `pinned-audioOut` are exactly that shape — canvas-hidden
+  // singletons whose one surface is `AudioIoSurface`'s two `DockCardHost`
+  // mounts — and that component passed six props and no `face`, so the host's
+  // `face = false` default won and it mounted `nodeTypes[type]` unconditionally.
+  // The rule existed, was correct, and had a caller that did not call it.
+  //
+  // ⚠ EVALUATED HERE, INJECTED, NEVER RE-DERIVED IN THE PANEL. `shellFaces` and
+  // `migrated()` are read in ONE place on purpose (see `DockCardHost`'s `face`
+  // prop doc); a second reader inside `AudioIoSurface` is the
+  // two-derivations-of-one-fact class this file's own patch rows were rewritten
+  // to remove. `pinned: true` is a literal because that is what these two nodes
+  // ARE — `workflow-pins.ts` spawns them as the always-on pair.
+  //
+  // ⚠ BOTH ARMS ARE FALSE TODAY (neither type is migrated), and that is the
+  // point rather than a caveat: this is the leg that MOVES the day either module
+  // is promoted. The panel's existing VRT scene drives `?shell=legacy`, so
+  // `shellFaces` is false there and it can never see this arm — the same blind
+  // spot `legacy-fallback.ts` already records for the three drawer specs.
+  let workflowAudioInFace = $derived(
+    !!workflowAudioInNode &&
+      dockRailRendersFace({
+        shellFaces,
+        pinned: true,
+        migrated: migrated(workflowAudioInNode.type),
+      }),
+  );
+  let workflowAudioOutFace = $derived(
+    !!workflowAudioOutNode &&
+      dockRailRendersFace({
+        shellFaces,
+        pinned: true,
+        migrated: migrated(workflowAudioOutNode.type),
+      }),
+  );
   /** A cable feeds TIMELORDE's clock input (DIN assignment or hand-patch)
    *  → tap tempo + tempo knob flip to the externally-clocked state. */
   let workflowExternallyClocked = $derived(
@@ -8984,6 +9026,8 @@
     midiclockNode={workflowMidiclockNode}
     audioInNode={workflowAudioInNode}
     audioOutNode={workflowAudioOutNode}
+    audioInFace={workflowAudioInFace}
+    audioOutFace={workflowAudioOutFace}
     externallyClocked={workflowExternallyClocked}
     dinAssigned={workflowDinAssigned}
     nodeTypes={nodeTypes as unknown as Record<string, unknown>}

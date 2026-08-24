@@ -103,6 +103,14 @@
     /** The pinned always-on AUDIO IN / AUDIO OUT. */
     audioInNode?: ModuleNode | null;
     audioOutNode?: ModuleNode | null;
+    /** Does each 🎧-panel occupant render its PROMOTED FACEPLATE rather than
+     *  its verbatim legacy card? `dockRailRendersFace`, evaluated by Canvas
+     *  (the one place that reads `?shell=legacy` + `migrated()`) and threaded
+     *  through — this bar re-derives nothing. Both are false while both types
+     *  are un-migrated; see Canvas's derivation for why the pinned pair needs
+     *  this at all. */
+    audioInFace?: boolean;
+    audioOutFace?: boolean;
     /** True while a cable feeds TIMELORDE's `clock` input (any source). */
     externallyClocked?: boolean;
     /** True while the DIN bridge's clock edge into TIMELORDE exists. */
@@ -149,6 +157,8 @@
     midiclockNode = null,
     audioInNode = null,
     audioOutNode = null,
+    audioInFace = false,
+    audioOutFace = false,
     externallyClocked = false,
     dinAssigned = false,
     nodeTypes = {},
@@ -597,6 +607,8 @@
       <AudioIoSurface
         audioIn={audioInNode}
         audioOut={audioOutNode}
+        {audioInFace}
+        {audioOutFace}
         {nodeTypes}
         {rackSizeByType}
         open={openMenu === 'io'}

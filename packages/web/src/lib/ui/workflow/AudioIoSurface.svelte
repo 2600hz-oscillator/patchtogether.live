@@ -19,6 +19,34 @@
   // output device pick (setSinkId) and master fader remain the cards' own
   // code — zero forked device-enumeration logic.
   //
+  // ⚠ "THE REAL CARD" IS NOW "WHATEVER THE MIGRATION RULE SAYS". Each column
+  // passes `face` to its host — `dockRailRendersFace`, evaluated by Canvas (see
+  // `audioInFace` / `audioOutFace` below). Both occupants are canvas-hidden
+  // pinned singletons, so THIS PANEL IS THE ONLY PLACE THEIR FACE CAN APPEAR:
+  // no lane tile, no EXPAND pill, no route to DockFullView. Until this prop
+  // existed the host's `face = false` default won here unconditionally, so
+  // promoting either module would have changed nothing a normal user can reach.
+  // Both arms are false while both types are un-migrated.
+  //
+  // ⚠⚠ AND THEREFORE, TO WHOEVER PROMOTES EITHER MODULE: FLIPPING AN ARM HERE
+  // UNMOUNTS THAT CARD FROM THE ONLY PLACE IT IS MOUNTED. Both cards own live,
+  // engine-visible state in their own component lifecycle — AudioOutCard's
+  // `setSinkId` apply-and-re-apply loop, its `enumerateDevices` retry and its
+  // `devicechange` listener; AudioinCard's MediaStream. MEASURED on this tree:
+  // NEITHER type is in `DOM_SOURCE_LANE_TYPES` or `CARD_PRODUCER_LANE_TYPES`
+  // (./dom-source-modules), so `needsHeadlessSourceMount` is FALSE for both and
+  // `<HeadlessSourceHost>` will NOT rescue them the way it rescues cameraInput.
+  // That was harmless while this panel mounted the card unconditionally, and it
+  // stops being harmless the moment `face` is true here.
+  //
+  // The fix is to move the ownership, not to keep a card alive off-screen: the
+  // saved key (`node.data.outputDeviceId`) already IS the source of truth — the
+  // card re-applies it on engine boot — so ONE node-scoped owner should watch
+  // that key and call `setSinkId`, and the face's cell should only write it.
+  // Adding a type to `CARD_PRODUCER_LANE_TYPES` would instead keep a hidden
+  // card running device enumeration forever, which is the shape that set exists
+  // to bound, not to grow.
+  //
   // ALWAYS-ON lifecycle: AudioinCard owns the live MediaStream and stops
   // it on unmount, so this panel stays MOUNTED whenever the workflow shell
   // is up and open/close only toggles CSS visibility — closing the menu
@@ -41,6 +69,16 @@
     /** The pinned AUDIO IN / AUDIO OUT (snapshot-derived; null pre-ensure). */
     audioIn: ModuleNode | null;
     audioOut: ModuleNode | null;
+    /** Does each column render its PROMOTED FACEPLATE instead of the verbatim
+     *  legacy card? This is `dockRailRendersFace({ shellFaces, pinned: true,
+     *  migrated })` — evaluated by Canvas and INJECTED, exactly like
+     *  `DockCardHost.face` in the dock rails. This panel deliberately re-derives
+     *  neither `?shell=legacy` nor `migrated()`: the whole reason that rule is
+     *  pure and injected is that ONE component reads those, and the patch rows
+     *  below are here because a second source of truth for a def's own facts is
+     *  the failure class this file has already paid for once. */
+    audioInFace?: boolean;
+    audioOutFace?: boolean;
     /** The same glob-driven nodeTypes map the main canvas uses. */
     nodeTypes: Record<string, unknown>;
     /** Canvas's type → rack {size, hp} map (DockCardHost rack sizing). */
@@ -50,7 +88,16 @@
     /** Close the dropdown (called after a patch-out hand-off). */
     onRequestClose: () => void;
   }
-  let { audioIn, audioOut, nodeTypes, rackSizeByType = {}, open, onRequestClose }: Props = $props();
+  let {
+    audioIn,
+    audioOut,
+    audioInFace = false,
+    audioOutFace = false,
+    nodeTypes,
+    rackSizeByType = {},
+    open,
+    onRequestClose,
+  }: Props = $props();
 
   // Independent per-column zoom — LOCAL panel state (the pinned pair has no
   // dock entry), stepping the same discrete 50–150% ladder the drawers use.
@@ -170,6 +217,7 @@
           <div class="card-host" data-testid="workflow-io-audioin-host">
             <DockCardHost
               node={audioIn}
+              face={audioInFace}
               {nodeTypes}
               rackSize={rackSizeByType[audioIn.type]}
               scale={inScale}
@@ -206,6 +254,7 @@
           <div class="card-host" data-testid="workflow-io-audioout-host">
             <DockCardHost
               node={audioOut}
+              face={audioOutFace}
               {nodeTypes}
               rackSize={rackSizeByType[audioOut.type]}
               scale={outScale}
