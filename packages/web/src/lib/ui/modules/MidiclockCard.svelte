@@ -124,7 +124,19 @@
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="body">
       {#if !cardState.connected}
-        <button class="connect-btn" type="button" onclick={onClickConnect}>
+        <!-- ⚠ CARRIES THE CONTROL FAMILY'S `testidPrefix`. `midiclock-connect`
+             is a declared `controlFamilies` entry now (it is what the face's
+             ranked action cell resolves against), and `module-docs-lint`
+             requires every declared prefix to appear in the CARD source — the
+             gate that keeps a family declaration and the card it describes from
+             drifting apart. The card really does have this gesture, so naming
+             it here is agreement rather than paperwork. -->
+        <button
+          class="connect-btn"
+          type="button"
+          data-testid="midiclock-connect-{id}"
+          onclick={onClickConnect}
+        >
           Connect MIDI…
         </button>
         {#if cardState.accessMessage}
