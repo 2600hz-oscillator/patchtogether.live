@@ -295,7 +295,7 @@ function setupSnhSeqScope(snh: number): (page: Page) => Promise<void> {
 }
 
 const SNH_SEQ_SCOPE_CARDS = [
-  '.svelte-flow__node-sequencer',
+  '.svelte-flow__node-kria',
   '.svelte-flow__node-analogVco',
   '.svelte-flow__node-scope',
 ];
@@ -555,7 +555,7 @@ function setupAdsrSustainScope(sustain: number): (page: Page) => Promise<void> {
 }
 
 const ADSR_SUSTAIN_CARDS = [
-  '.svelte-flow__node-sequencer',
+  '.svelte-flow__node-kria',
   '.svelte-flow__node-adsr',
   '.svelte-flow__node-scope',
 ];
@@ -675,7 +675,7 @@ function setupDepolarizerScope(): (page: Page) => Promise<void> {
 }
 
 const DEPOLARIZER_SCOPE_CARDS = [
-  '.svelte-flow__node-sequencer',
+  '.svelte-flow__node-kria',
   '.svelte-flow__node-depolarizer',
   '.svelte-flow__node-scope',
 ];
@@ -787,7 +787,7 @@ function setupScalerScope(): (page: Page) => Promise<void> {
 }
 
 const SCALER_SCOPE_CARDS = [
-  '.svelte-flow__node-sequencer',
+  '.svelte-flow__node-kria',
   '.svelte-flow__node-scaler',
   '.svelte-flow__node-scope',
 ];
@@ -897,7 +897,7 @@ function setupPolarizerScope(): (page: Page) => Promise<void> {
 }
 
 const POLARIZER_SCOPE_CARDS = [
-  '.svelte-flow__node-sequencer',
+  '.svelte-flow__node-kria',
   '.svelte-flow__node-polarizer',
   '.svelte-flow__node-scope',
 ];
@@ -1023,7 +1023,7 @@ function setupMixerSumScope(): (page: Page) => Promise<void> {
 }
 
 const MIXER_SUM_SCOPE_CARDS = [
-  '.svelte-flow__node-sequencer',
+  '.svelte-flow__node-kria',
   '.svelte-flow__node-mixer',
   '.svelte-flow__node-scope',
 ];

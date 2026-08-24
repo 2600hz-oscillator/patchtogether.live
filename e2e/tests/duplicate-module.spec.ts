@@ -143,11 +143,11 @@ test.fixme('right-click → Duplicate deep-clones data (mutating dup does not af
   // timeout. Right-clicking `.title` (control-free) opens the module menu
   // deterministically. We also wait for the module menu to be visible before
   // clicking, gating actionability on the menu actually being present.
-  const seq = page.locator('.svelte-flow__node-sequencer').first();
+  const seq = page.locator('.svelte-flow__node-kria').first();
   await seq.locator('.title').click({ button: 'right' });
   await expect(page.locator('[role="menu"][aria-label="Module actions"]')).toBeVisible();
   await page.locator('[role="menuitem"]', { hasText: 'Duplicate' }).click();
-  await expect(page.locator('.svelte-flow__node-sequencer')).toHaveCount(2);
+  await expect(page.locator('.svelte-flow__node-kria')).toHaveCount(2);
 
   // Mutate the duplicate's nested step. Source must be untouched.
   const dupId = await page.evaluate(() => {

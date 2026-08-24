@@ -172,7 +172,7 @@ const VOICE_DEMO_NODE_IDS = ['vd-seq', 'vd-vco', 'vd-adsr', 'vd-vca', 'vd-out'] 
  * thrown away real coverage of features that have nothing to do with example
  * patches, so the fixture moved HERE and the specs now call this.
  *
- * It is deliberately the SAME 5 nodes / 6 edges at the SAME positions with the
+ * It is deliberately the SAME 5 nodes / 6 edges with the
  * SAME params, so every downstream assertion (node counts, cable counts, the
  * `vd-*` ids, audible RMS) keeps its original meaning.
  *
@@ -231,14 +231,14 @@ export async function loadVoiceDemo(page: Page): Promise<void> {
         params: { bpm: 180, running: 1 },
         data: kriaData,
       },
-      'vd-vco': { type: 'analogVco', position: { x: 620, y: 30 }, params: {} },
+      'vd-vco': { type: 'analogVco', position: { x: 900, y: 30 }, params: {} },
       'vd-adsr': {
         type: 'adsr',
-        position: { x: 620, y: 320 },
+        position: { x: 900, y: 320 },
         params: { attack: 0.005, decay: 0.08, sustain: 0.3, release: 0.15 },
       },
-      'vd-vca': { type: 'vca', position: { x: 920, y: 130 }, params: { base: 0, cvAmount: 1 } },
-      'vd-out': { type: 'audioOut', position: { x: 1200, y: 130 }, params: { master: 0.4 } },
+      'vd-vca': { type: 'vca', position: { x: 1240, y: 130 }, params: { base: 0, cvAmount: 1 } },
+      'vd-out': { type: 'audioOut', position: { x: 1520, y: 130 }, params: { master: 0.4 } },
     };
     const wires: Array<[string, string, string, string, string]> = [
       ['vd-seq', 'pitch1', 'vd-vco', 'pitch', 'pitch'],
