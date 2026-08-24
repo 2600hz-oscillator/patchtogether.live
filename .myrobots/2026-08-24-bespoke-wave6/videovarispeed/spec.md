@@ -638,17 +638,29 @@ not pause, detach or unwire. Anything else would be the #1720/#1721 bug class.
 (`:646-658`). The role carries a **mechanical predicate** the source must satisfy
 (`ROLE_PREDICATE`, `:471-492`).
 
-⚠ **SPOT-CHECK THAT CAME BACK DIFFERENT FROM THE BRIEF.** The brief listed three
-existing roles — `picture`, `status-primitive`, `control-grid` (*"added by
-#2184"*). **On `ea2e06340` the type is `type BodyRole = 'picture' |
-'status-primitive';` (`:142`)**, and `:695` asserts
-`expect([...roles].sort()).toEqual(['picture', 'status-primitive'])`. There is no
-`control-grid`. Recorded rather than silently corrected: if #2184 lands before
-this face is built, the roster will have three roles and this paragraph is what
-tells the builder to re-read rather than trust either list.
+⚠ **SPOT-CHECK THAT CAME BACK DIFFERENT FROM THE BRIEF, AND THE CORRECTION IS
+CONFIRMED FROM TWO DIRECTIONS.** The brief listed three existing roles —
+`picture`, `status-primitive`, `control-grid` (*"added by #2184"*). **On
+`ea2e06340` there are TWO**:
+
+* `:142` — `type BodyRole = 'picture' | 'status-primitive';`
+* `:690-696` — an ANCHOR asserting the live role set exactly:
+  `expect([...roles].sort()).toEqual(['picture', 'status-primitive']);`
+* `grep -c "control-grid"` over that file returns **0**.
+
+**#2184 is an OPEN PR, not merged** (independently re-verified by the wave's
+orchestrator after this spec was drafted). The anchor at `:695` is the part worth
+carrying forward: **a third role cannot be added silently — it reddens that
+assertion** — so if #2184 lands before this face is built, the roster will have
+three roles *and the anchor will have been edited to say so*. Re-read it rather
+than trusting either list.
 
 **ROLE: `picture`.** The predicate is `paintsCanvas(src, extId)` (`:476`) and the
-body mounts a `<canvas>` directly, so it holds.
+body mounts a `<canvas>` directly, so it holds. ⚠ Note the two predicates are
+**ordered by the canvas test, not mutually exclusive by intent**:
+`status-primitive` is `/StatusLed/.test(src) && !paintsCanvas(...)` (`:481-483`),
+so a body that keeps a preview canvas **and** imports `StatusLed` is legally
+`picture`. No new role is needed here, and none is proposed.
 
 The `why` string to commit, written out so it is reviewed here rather than
 invented at build time:

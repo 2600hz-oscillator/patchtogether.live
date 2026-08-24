@@ -679,13 +679,27 @@ roles (`picture`, `status-primitive`, `control-grid`, the last *"added by #2184"
 expect([...roles].sort()).toEqual(['picture', 'status-primitive']);
 ```
 
-`git log --grep=2184` returns nothing on this tree. **`control-grid` does not exist**,
-and adding a third role means editing the union, the predicate record **and** that
-hand-enumerated assertion. **peertube does not need one** — its body mounts a canvas
-and `picture` is the honest role, exactly as `quadralogical`'s entry (`:280-296`)
-reasons for the one body that is also a control: *"this body mounts canvases, so the
-`status-primitive` predicate (`StatusLed` and NO canvas) would refuse it, and the role
-that describes what a reviewer will see on the surface is the picture one."*
+`git log --grep=2184` returns nothing on this tree — **#2184 is an OPEN PR, not a
+merged one.** `control-grid` does not exist, and adding a third role means editing the
+union, the predicate record **and** that hand-enumerated assertion — a deliberate,
+visible change rather than a quiet addition. ⚠ **A later wave that genuinely needs one
+should DEFER TO #2184 rather than race it**; two branches adding a third role to the
+same union and the same anchor is the shared-file conflict this repo runs a sweep for.
+
+**peertube does not need one.** ⚠ **The two predicates are ORDERED BY THE CANVAS TEST,
+not mutually exclusive by intent** — `status-primitive` requires
+`/StatusLed/.test(src) && !paintsCanvas(...)` — so **a body that keeps a video preview
+AND uses `StatusLed` is legally and correctly `picture`.** peertube's body does exactly
+that (§7.2's stream lamp is a `StatusLed`), and `quadralogical`'s entry (`:280-296`)
+already reasons the same way for the one body that is also a control: *"this body
+mounts canvases, so the `status-primitive` predicate (`StatusLed` and NO canvas) would
+refuse it, and the role that describes what a reviewer will see on the surface is the
+picture one."*
+
+⚠ **This is the answer even though the RESULT LIST is the interaction.** The role names
+what a reviewer sees on the surface, and a reviewer opening this pane sees a video
+player with a list under it. The list's own justification lives in the `why` string
+below, where the gate requires it, rather than in a role that does not exist.
 
 **The `why` string to commit, verbatim:**
 

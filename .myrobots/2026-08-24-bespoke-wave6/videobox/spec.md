@@ -598,20 +598,29 @@ reason into the `why` (§6.5), not the copied one.**
 `fullViewBody`, membership derived off the DIRECTORY (`:100-116`), `why`
 required by the type, each role carrying a mechanical predicate (`:471-492`).
 
-⚠ **SPOT-CHECK THAT CAME BACK DIFFERENT FROM THE BRIEF.** On `ea2e06340` the type
-is `type BodyRole = 'picture' | 'status-primitive';` (`:142`), and `:695` asserts
-`expect([...roles].sort()).toEqual(['picture', 'status-primitive'])`. **There is
-no `control-grid` role in this tree.** If #2184 lands first, re-read the roster
-rather than trusting either list.
+⚠ **SPOT-CHECK THAT CAME BACK DIFFERENT FROM THE BRIEF, CONFIRMED TWICE.** On
+`ea2e06340` there are TWO roles, not three: `:142` is
+`type BodyRole = 'picture' | 'status-primitive';`, `:690-696` is an ANCHOR
+asserting the live set exactly
+(`expect([...roles].sort()).toEqual(['picture', 'status-primitive'])`), and
+`grep -c "control-grid"` over that file returns **0**. **#2184 is an OPEN PR, not
+merged** (independently re-verified by the wave's orchestrator). The anchor is the
+durable part: **a third role cannot be added silently — it reddens `:695`** — so
+if #2184 lands first, the roster will have three roles *and that assertion will
+have been edited to say so*. Re-read it rather than trusting either list.
 
 **ROLE: `picture`.** Predicate `paintsCanvas(src, extId)` (`:476`) — the body
 mounts a `<canvas>` directly.
 
-⚠ **`status-primitive` was CONSIDERED and REFUSED**, and it is the interesting
-half. Its predicate is `/StatusLed/.test(src) && !paintsCanvas(...)` (`:481-483`),
-so a body that mounts a canvas cannot hold it anyway — but the substantive
-question is whether videobox's **SYNC state deserves a `StatusLed` at all**.
-Ruled: **NO**, on the merits, and §7.2 is the argument.
+⚠ **`status-primitive` was CONSIDERED and REFUSED, and it is the interesting
+half.** Note first that the two predicates are **ordered by the canvas test rather
+than mutually exclusive by intent**: `status-primitive` is
+`/StatusLed/.test(src) && !paintsCanvas(...)` (`:481-483`), so a body that keeps a
+preview canvas **and** imports `StatusLed` is legally `picture` — the role choice
+would not have been forced either way. The substantive question is therefore
+whether videobox's **SYNC state deserves a `StatusLed` at all**. Ruled: **NO**, on
+the merits, and §7.2 is the argument. **No new role is needed and none is
+proposed.**
 
 The `why` string to commit:
 

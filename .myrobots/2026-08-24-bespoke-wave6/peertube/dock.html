@@ -1,0 +1,265 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>PEERTUBE face — the dock faceplate, COLD</title>
+<style>
+/* ─────────────────────────────────────────────────────────────────────────
+   PEERTUBE FACEPLATE — MOCKUP, state 1 of 2 (COLD / nothing searched).
+   SPEC AND MOCKUP ONLY. Nothing here is implemented. See spec.md.
+
+   House tokens, the same set the wave-1..5 mocks use.
+   ⚠ This is the ONLY state the VRT dock baseline will ever capture (spec.md
+   §9.1): a fresh peertube has selectedHost/uuid/name all null, the transport
+   block is {#if uuid} so it does not render, the results list is empty, and
+   NOTHING FETCHES ON MOUNT — every runSearch caller is a keystroke or a click.
+   ───────────────────────────────────────────────────────────────────────── */
+:root{
+  --bg:#0e1013; --dock:#12161c; --plate:#262a31; --pbody:#1c1f24; --well:#0a0c0f;
+  --line:#2c3037; --tile:#33383f; --ink:#eef1f5; --dim:#9aa2ad; --faint:#646c77;
+  --cv:#7dd3fc; --accent:#6cf; --vid:#4ade80; --ch1:#fbbf24; --warn:#f2c14e; --good:#8fe6b0;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+  font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1240px;margin:0 auto;padding:26px 20px 90px}
+h1{font-size:21px;font-weight:800;margin:0 0 6px;letter-spacing:.01em}
+.sub{color:var(--dim);font-size:12.5px;margin:0 0 14px;max-width:106ch}
+.sub b{color:var(--ink)} code{font-family:var(--mono);font-size:11.5px;color:var(--ch1)}
+.nav{display:flex;gap:8px;margin:0 0 20px;font-size:11px;flex-wrap:wrap}
+.nav a{color:var(--ink);text-decoration:none;border:1px solid var(--line);border-radius:6px;
+  padding:6px 12px;background:#12161c;font-family:var(--mono);letter-spacing:.06em;text-transform:uppercase}
+.nav a.on{border-color:var(--vid);color:var(--vid)}
+.warn{border:1px solid #6a5330;background:#1c1811;border-radius:8px;padding:11px 14px;
+  margin:12px 0;font-size:12.5px;color:#e8cf9a;max-width:118ch}
+.warn b{color:var(--warn)}
+.ok{border:1px solid #3b5a48;background:#111a15;border-radius:8px;padding:11px 14px;
+  margin:12px 0;font-size:12.5px;color:#a9d8bd;max-width:118ch}
+.ok b{color:var(--good)}
+.bad{border:1px solid #6b3a3a;background:#1c1214;border-radius:8px;padding:11px 14px;
+  margin:12px 0;font-size:12.5px;color:#f0b8b8;max-width:118ch}
+.bad b{color:#ff9a9a}
+.cols{display:grid;grid-template-columns:minmax(0,1fr) 400px;gap:18px;align-items:start}
+@media (max-width:1120px){.cols{grid-template-columns:minmax(0,1fr)}}
+
+.dock{background:var(--dock);border:1px solid var(--line);border-radius:11px;overflow:hidden;padding:11px}
+.chromebar{display:flex;align-items:baseline;gap:9px;padding:0 2px 8px}
+.chromebar .nm{font-size:13px;font-weight:800;letter-spacing:.03em}
+.chromebar .rl{font-size:9.4px;letter-spacing:.09em;text-transform:uppercase;color:var(--faint);font-family:var(--mono)}
+.chromebar .x{margin-left:auto;color:var(--faint);font-family:var(--mono);font-size:12px}
+.plate{background:var(--pbody);border:1px solid var(--tile);border-left:4px solid var(--vid);
+  border-radius:10px;padding:0 0 12px;width:max-content;max-width:100%}
+
+.extbody{padding:12px 14px 4px;width:508px;max-width:100%}
+.prevwrap{position:relative;display:flex;justify-content:center;min-height:18px}
+.prev{width:480px;max-width:100%;aspect-ratio:16/9;border-radius:4px;border:1px solid #1a1f2a;
+  /* the module's OWN idle gradient: vec4(0.05, 0.04, 0.09 + vUv.y*0.06, 1.0) */
+  background:linear-gradient(180deg,#0d0a17 0%,#141024 100%);
+  display:flex;align-items:center;justify-content:center;position:relative}
+.prev .ph{font-family:var(--mono);font-size:10px;letter-spacing:.14em;color:#3d3a52}
+.screenbtn{position:absolute;right:6px;bottom:6px;font-size:9px;letter-spacing:.06em;
+  padding:2px 8px;border:1px solid var(--vid);border-radius:2px;background:rgba(5,6,8,.72);
+  color:var(--ink);font-family:var(--mono);z-index:3}
+
+.q{margin-top:10px;display:flex;flex-direction:column;gap:5px}
+.qrow{display:flex;gap:5px;align-items:center}
+.inp{flex:1;min-width:0;background:#11151c;border:1px solid #404652;border-radius:2px;
+  color:#5c6470;font-size:10.5px;padding:5px 7px}
+.inp.small{font-size:9.6px;padding:4px 6px}
+.btn{padding:4px 11px;background:var(--vid);color:#08120c;border-radius:2px;font-size:9.4px;
+  font-family:var(--mono);letter-spacing:.06em;text-transform:uppercase;font-weight:700;white-space:nowrap}
+.btn.sec{background:#2a3340;color:var(--dim)}
+.btn.off{background:#232830;color:#4d5560}
+
+.lamprow{display:flex;align-items:center;gap:7px;margin-top:10px;
+  border-top:1px solid var(--line);padding-top:9px}
+.lamp{width:8px;height:8px;border-radius:50%;background:var(--dim);opacity:.35;flex:0 0 auto}
+.lampcap{font-family:var(--mono);font-size:8.6px;letter-spacing:.1em;color:var(--faint)}
+.lampnote{margin-left:auto;font-family:var(--mono);font-size:8.6px;color:#3f4753}
+
+.list{margin-top:9px;border:1px solid var(--line);border-radius:3px;padding:3px;
+  min-height:96px;display:flex;align-items:center;justify-content:center}
+.list .empty{font-family:var(--mono);font-size:9px;letter-spacing:.08em;color:#3f4753}
+
+.disc{margin-top:10px;border-top:1px solid var(--line);padding-top:6px;
+  font-size:9px;line-height:1.4;color:var(--faint)}
+.disc a{color:var(--accent);text-decoration:none}
+
+.bands{padding:6px 14px 0}
+.band{border-top:1px solid var(--line);padding-top:8px;margin-top:10px}
+.blab{margin:0 0 7px;font-size:9.4px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--dim)}
+.row{display:flex;flex-wrap:wrap;align-items:flex-start;gap:10px 18px}
+.f{width:52px;display:flex;flex-direction:column;align-items:center;gap:5px}
+.f i{--v:.5;--fc:var(--vid);display:block;width:16px;height:74px;border-radius:8px;position:relative;
+  background:linear-gradient(#171b21,#12161c);border:1px solid #333a43}
+.f i::before{content:"";position:absolute;left:50%;transform:translateX(-50%);width:2px;top:6px;bottom:6px;
+  background:#262c34;border-radius:1px}
+.f i::after{content:"";position:absolute;left:50%;width:22px;height:9px;border-radius:2px;
+  background:var(--fc);box-shadow:0 0 7px color-mix(in srgb,var(--fc) 60%,transparent);
+  transform:translate(-50%,-50%);top:calc(6px + (1 - var(--v)) * (100% - 12px))}
+.f b{font-size:7.8px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--dim);
+  font-family:var(--mono);text-align:center}
+
+.notes{display:flex;flex-direction:column;gap:12px}
+.card{border:1px solid var(--line);background:#101419;border-radius:9px;padding:12px 14px}
+.card h3{margin:0 0 7px;font-size:10px;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--accent);font-family:var(--mono);font-weight:700}
+.card p{margin:0 0 8px;font-size:12px;color:var(--dim)}
+.card p:last-child{margin-bottom:0}
+.card b{color:var(--ink)}
+table{border-collapse:collapse;width:100%;font-size:11px;margin:2px 0 0}
+th,td{text-align:left;padding:4px 7px 4px 0;border-bottom:1px solid #1e242c;vertical-align:top;color:var(--dim)}
+th{color:var(--faint);font-family:var(--mono);font-size:8.6px;letter-spacing:.09em;text-transform:uppercase;font-weight:400}
+td b{color:var(--ink)}
+.aria{font-family:var(--mono);font-size:10.5px;color:#8fe6b0}
+.gone{text-decoration:line-through;color:#5a616c}
+.meas{font-family:var(--mono);font-size:10.5px;color:var(--ch1)}
+</style>
+<div class="wrap">
+
+<h1>PEERTUBE — the dock faceplate, COLD</h1>
+<p class="sub">
+  <b>SPEC AND MOCKUP ONLY. Nothing here is implemented.</b> One ranked control, and a
+  <b>fullViewBody</b> carrying a search box, a player and a twenty-four-row result list —
+  because promotion parks the real card off-screen at <code>left:-9999px</code> with
+  <code>pointer-events: none</code>.
+</p>
+
+<div class="nav">
+  <a class="on" href="dock.html">1 · cold (what VRT captures)</a>
+  <a href="dock-results.html">2 · searched, playing, and the lane tile</a>
+  <a href="spec.md">spec.md</a>
+  <a href="../archivist/spec.md">↔ archivist</a>
+</div>
+
+<div class="ok">
+  <b>This is the ONLY state the dock baseline will ever see.</b> A fresh peertube has
+  <code>selectedHost</code> / <code>uuid</code> / <code>name</code> all null, so the
+  <code>$effect</code> at <code>:482-491</code> returns early and nothing attaches; the transport
+  is <code>{#if uuid}</code> so it does not render; and <b>nothing fetches on mount</b> — every
+  <code>runSearch</code> caller is a keystroke, an Enter, or a ↻ press. So the face scenes capture
+  normally, with no <code>simPin</code> and no <code>FACES_WITHOUT_SCENES</code> entry.
+  ⚠ <code>seed=none</code> is load-bearing: a scene that spawned peertube with a persisted
+  <code>uuid</code> would hit the network and baseline whatever a third party returned that
+  minute. spec.md §9.
+</div>
+
+<div class="cols">
+<div>
+
+<div class="dock">
+  <div class="chromebar">
+    <span class="nm">peertube</span>
+    <span class="rl">dock full view</span>
+    <span class="x">✕</span>
+  </div>
+
+  <div class="plate">
+    <div class="extbody">
+
+      <!-- THE PICTURE — an ordinary blit of the module's OWN output texture,
+           because peertube.ts:341-347 DOES call uploader.attach(). -->
+      <div class="prevwrap">
+        <div class="prev">
+          <span class="ph">SEARCH, THEN PICK A VIDEO</span>
+          <span class="screenbtn">SCREEN ON</span>
+        </div>
+      </div>
+
+      <div class="q">
+        <div class="qrow">
+          <span class="inp">search the fediverse…</span>
+        </div>
+        <div class="qrow">
+          <span class="inp small">instance (optional)</span>
+          <span class="btn off">↻ next</span>
+        </div>
+      </div>
+
+      <div class="lamprow">
+        <span class="lamp"></span>
+        <span class="lampcap">STREAM</span>
+        <span class="lampnote">dim = nothing selected</span>
+      </div>
+
+      <div class="list"><span class="empty">no results yet</span></div>
+
+      <div class="disc">
+        Federated public videos via the <a href="#">PeerTube</a> fediverse ·
+        search by <a href="#">Sepia Search</a>.
+      </div>
+
+    </div>
+
+    <div class="bands">
+      <div class="band">
+        <p class="blab">level</p>
+        <div class="row">
+          <span class="f"><i style="--v:.5"></i><b>gain</b></span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="bad">
+  <b>PROMOTION CREATES A SEARCH-REQUEST GENERATOR — and it would ship green.</b>
+  <code>nextResult()</code> (<code>:275-279</code>) falls back to <code>void runSearch()</code>
+  when <code>results.length === 0</code>, and <code>results</code> is <b>card-local
+  <code>$state</code></b> (<code>:117</code>). After promotion the SEARCH runs in the body, so the
+  card's array is empty forever — and the 33 ms trigger loop still runs on the card. <b>Patch a
+  clock into <code>next_trigger</code> and the module issues a fresh Sepia Search per pulse</b>,
+  capped by its own limiter at 5 req/s to a third party's server. No spec drives
+  <code>next_trigger</code>, every port is exempt from the emit sweep, and all three e2e tests boot
+  <code>?shell=legacy</code> — <b>the precondition that makes the bug possible is exactly the one
+  the specs remove</b>. Fixed by a node-keyed <code>peertube-browse-registry</code>, landed as a
+  <b>precursor</b> so the face PR is not both cause and cure. spec.md §2.2.
+</div>
+
+</div>
+<div class="notes">
+
+  <div class="card">
+    <h3>why the result list is not a <code>selector</code></h3>
+    <p><code>ShellSelectorCell.options</code> is
+    <code>(node) =&gt; SelectorOption&lt;string&gt;[]</code> — <b>a pure function of the
+    NODE</b>. The roster is card-local <code>$state</code>, not on <code>node.data</code> and not
+    on the engine handle.</p>
+    <p>⚠ <b>This is not wave 4's <code>env</code> question.</b> That was refuted in
+    <code>BINDERS.md §1</code> — <code>getActiveEngine()</code> already reaches the engine from
+    plain <code>.ts</code>. No capability reaches a Svelte component's <code>$state</code>, so the
+    fix is to move the state, not to widen a type.</p>
+    <p>And after the registry moves it, three objections still stand: a
+    <code>SelectorOption</code> is <code>{value,label}</code> with <b>no thumbnail</b>; the cell
+    needs a <code>controlFamilies</code> entry, which <b>IS</b> in the contract; and a ranked
+    selector competes with <code>gain</code> for band space when it is a library, not a control.</p>
+  </div>
+
+  <div class="card">
+    <h3>width — earned twice, argued separately</h3>
+    <table>
+      <tr><th>claim</th><th>verdict</th></tr>
+      <tr><td><b>the PICTURE</b></td><td>a live video preview is a NAMED earner in the owner ruling. <b class="meas">480 × 270</b>, 16:9 because that is the card's own aspect and a federated video's</td></tr>
+      <tr><td><b>the LIST</b></td><td>⚠ a <b>different</b> claim, and it fails: a list is long, which earns HEIGHT. <code>[64 thumb] + [title]</code> wants <b class="meas">≈300</b> and <b>fits inside the width the picture already earns</b></td></tr>
+    </table>
+    <p style="margin-top:8px">So the list is a <b>passenger</b>, not a second earner. ⚠ If a build
+    finds itself widening the plate for it, the §7 trim has not been applied — the card's
+    four-field sub-line is what makes a row want 600 px, and three of its four fields are refused
+    resting text anyway.</p>
+  </div>
+
+  <div class="card">
+    <h3>the stale claim this spec was asked to verify</h3>
+    <p>Project memory and <code>_face-fixtures.ts:111-113</code> both say peertube is
+    <i>"known-broken — no audio, red CI (#786)"</i>. <b>Both halves are false today.</b></p>
+    <table>
+      <tr><th>claim</th><th>measured</th></tr>
+      <tr><td>no audio</td><td><b>FIXED and guarded.</b> <code>:389-395</code> un-mutes after the tap is wired; <code>peertube.spec.ts:273-377</code> asserts <code>peak &gt; 0.01</code> at AUDIO OUT <b>and</b> <code>muted === false</code>, over the real HLS path</td></tr>
+      <tr><td>red CI</td><td><b>a NAMED capability skip</b>, claimed in the one park authority: <code>e2e-skip-budget.mjs:354-361</code>, <i>"headless Chromium builds without proprietary codecs cannot decode the AVC HLS fixture"</i></td></tr>
+      <tr><td>"fetches at mount"</td><td><b>false</b> — every <code>runSearch</code> caller enumerated; <code>onMount</code> hydrates two strings and starts three timers</td></tr>
+    </table>
+  </div>
+
+</div>
+</div>
+</div>

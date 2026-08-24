@@ -882,9 +882,9 @@ keys, and `:695` asserts the population in both directions:
 expect([...roles].sort()).toEqual(['picture', 'status-primitive']);
 ```
 
-`git log --grep=2184` returns nothing on this tree. **So `control-grid` does not
-exist, and a build agent who reached for it would find a type error.** Two
-consequences follow and both matter:
+`git log --grep=2184` returns nothing on this tree — **#2184 is an OPEN PR, not a
+merged one.** So `control-grid` does not exist, and a build agent who reached for it
+would find a type error. Two consequences follow and both matter:
 
 1. **archivist declares `picture`.** Its body mounts a `<canvas>` (§6.3) for the
    blit path, so the predicate holds. ⚠ **This makes the canvas load-bearing on the
@@ -894,9 +894,22 @@ consequences follow and both matter:
    must be understood as a constraint rather than discovered as a failure.
 2. **Adding a THIRD role is not a one-line change.** It means editing the `BodyRole`
    union, `ROLE_PREDICATE`, *and* the hand-enumerated assertion at `:695`, which is
-   a literal list of the role population. **Neither of this cohort's two modules
-   needs a new role**, so neither should propose one — but a wave that concluded
-   otherwise should know the assertion is there.
+   a literal list of the role population — a deliberate, visible change rather than
+   a quiet addition. **Neither of this cohort's two modules needs a new role**, so
+   neither proposes one. ⚠ **And if a later wave does, it should DEFER TO #2184
+   rather than race it** — that open PR is reportedly introducing `control-grid` for
+   `matrixMix`, and two branches adding a third role to the same union and the same
+   anchor is the shared-file conflict this repo runs a sweep for.
+
+⚠ **The two predicates are ORDERED BY THE CANVAS TEST, not mutually exclusive by
+intent**, which is what makes `picture` the honest answer here rather than a
+convenience: `status-primitive` requires `/StatusLed/.test(src) && !paintsCanvas(...)`,
+so **a body that keeps a video preview AND uses `StatusLed` is legally and correctly
+`picture`.** archivist's body does exactly that (§7.2's CORS lamp is a `StatusLed`),
+and `quadralogical`'s entry (`face-rack-status-source.test.ts:280-296`) already
+reasons the same way for the one body that is also a control: *"this body mounts
+canvases, so the `status-primitive` predicate … would refuse it, and the role that
+describes what a reviewer will see on the surface is the picture one."*
 
 **The `why` string to commit, verbatim:**
 
