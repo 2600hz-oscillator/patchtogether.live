@@ -1398,7 +1398,7 @@
    *  show; see clipplayer-prob-color.ts on why it is not a third colour). */
   function cellTitle(clip: NoteClipRecord, step: number, midi: number): string {
     const base =
-      'Click: note on/off (Shift-click: cycle velocity) · Right-click: probability (colour = purple ∝ probability, white = 100%), play every, pitch probability';
+      'Click: note on/off (Shift-click: cycle velocity) · Right-click: gate probability (colour = purple ∝ probability, white = 100%), pitch probability, play every — plus copy / paste / clear for the whole clip';
     const pp = noteCellPitchProb(clip, step, midi);
     return pp > 0 ? `${base} — PITCH PROBABILITY ${pitchProbLabel(pp)} (dashed border)` : base;
   }
