@@ -149,6 +149,46 @@ export const loopbackDef: VideoModuleDef = {
   // the same tab multiply the recursive-preview cost for no benefit.
   maxInstances: 2,
 
+  face: {
+    // CROP first: it is what makes this module "my viewport" rather than "my
+    // whole browser window", so it is the control a player reaches for.
+    order: ['crop', 'gain'],
+
+    // ⚠ NO `pages`. Two controls over one capture are a single honest band, and
+    // padding a page rail onto them to look busier is refused by name.
+
+    // ⚠ ONE DECLARATION, AND ONLY ONE — the same reasoning cameraInput records.
+    // `LoopbackCard.svelte` draws `gain` with `NeonFader`, so it is declared:
+    // nothing in a ParamDef separates "a level" from any other continuous
+    // scalar, and an undeclared face resolves it to a KNOB.
+    //
+    // `crop` is `0..1 discrete`, so `looksLikeToggle` resolves it to a Toggle on
+    // its own and the card agrees (its Crop button). Declaring it would be
+    // redundant. ⚠ AND IT NEEDS NO MOMENTARY/LATCHING CLASSIFICATION, which is
+    // worth stating because most faced two-state params do: `looksLikeSwitch` is
+    // `looksLikeToggle(p) && p.defaultValue === 0`, and `crop` defaults to **1**
+    // — a loopback arrives cropped to the viewport. So it never reaches the gate
+    // that demands the classification.
+    paramCells: { gain: 'fader' },
+
+    // ⚠ MANDATORY FOR A VIDEO DEF — no `type: 'audio'` output, so
+    // `primaryAudioOutPortId` is null and any other glyph literal falls through
+    // `glyphBinding` to a dead `{kind:'static'}` that reddens module-face-lint.
+    glyph: 'none',
+
+    // SCREEN ON/OFF, the live picture, and the three things that are NOT
+    // ParamDefs and therefore cannot be face cells at all: the ACQUIRE gesture,
+    // the STOP gesture and the capture LAMP + recovery text.
+    //
+    // ⚠ THE ACQUIRE CASE IS STRICTLY HARDER HERE THAN ON CAMERA. A camera this
+    // origin has already been granted re-acquires itself on mount, so CAMERA's
+    // button is "the first-visit route". A display capture is granted PER
+    // GESTURE, every time — there is no already-granted state to inherit, so
+    // without the extension body a promoted LOOPBACK could never start at all.
+    // See `$lib/ui/modules/loopback/shell-extension.ts`.
+    extension: 'loopback',
+  },
+
   docs: {
     explanation: "LOOPBACK turns the BROWSER VIEWPORT into a video source: its single output carries what you currently SEE in this tab — the visible canvas pane — so you can feed it into RECORDERBOX to record your viewport, or into any video effect for live self-referential feedback. The card acquires the current tab with the Screen Capture API (getDisplayMedia with preferCurrentTab + self-capture allowed — the Start capture button is the required user gesture), runs the captured tab in a hidden <video>, and the engine samples each frame into a GPU texture (exactly like CAMERA). A crop step then windows that tab frame down to the app viewport element's on-screen rectangle so the output is just the active viewport, not the surrounding browser/app chrome; the cropped region is letterbox-fit into the engine frame (black bars rather than cropping edges away) so the WHOLE viewport is preserved. Because the preview shows the tab it is captured from, a live on-card preview is intentionally recursive (a video-feedback tunnel) — that is expected, not a bug. Usage: drop LOOPBACK in, click Start capture and confirm the tab in the picker, then patch OUT into RECORDERBOX (record the viewport) or a mixer/effect. Capture needs a gesture and can be stopped from the browser's share bar (the card returns to idle with a re-capture button); where the Screen Capture API is unavailable the card shows a disabled unsupported state.",
     inputs: {},
