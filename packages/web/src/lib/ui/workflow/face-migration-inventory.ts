@@ -348,6 +348,46 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
   { type: 'kickdrum', disposition: 'generic-face' },
   { type: 'lfo', disposition: 'generic-face' },
   { type: 'lines', disposition: 'generic-face' },
+  // ⚠ WAS THE INVENTORY'S LAST `blocked` ENTRY, on `needs-media-controller`.
+  // The old record read: "a capture LED, a start/stop capture action and one
+  // fader — the smallest surface in the media set, and the ONLY genuine case
+  // left in it", with the correction that the LIFETIME half had already shipped
+  // (#1583) and what remained was "an ACTION cell that can request a stream plus
+  // a home for the crop pump".
+  //
+  // ⚠ THAT SCOPING WAS RIGHT, AND BOTH HALVES ARE NOW BUILT — but neither of
+  // them is the blocker's capability, and it is worth being precise about which
+  // is which, because "the last blocked module was promoted" is very easy to
+  // misread as "#1511 landed":
+  //
+  //   * ACQUISITION — `$lib/ui/media/loopback-status-registry`. The card keeps
+  //     sole ownership of `getDisplayMedia`, the MediaStream and the state
+  //     machine; it PUBLISHES its status and REGISTERS acquire/stop commands,
+  //     and the faceplate reads and invokes. A remote control, not a second
+  //     owner. ⚠ Harder than CAMERA's equivalent: a display capture has no
+  //     already-granted state, so this is not a first-visit convenience — it is
+  //     the only way a promoted loopback can be started at all.
+  //   * THE CROP PUMP — `$lib/ui/media/loopback-crop-pump`, node-keyed and
+  //     swept from Canvas. Off the card because a collapse used to freeze the
+  //     crop rectangle while the capture kept running (#1531), and because the
+  //     card's `document.querySelector('.svelte-flow')` reader was ambiguous
+  //     the moment a headless host mounted a second flow — which, measured, was
+  //     ALREADY true for an unfaced loopback ('placeholder' hosts too), so that
+  //     was a pre-existing defect rather than one the face created.
+  //
+  // ⚠ AND THE BLOCKER IS UNMOVED. `needs-media-controller`'s capability is
+  // "node-owned media lifecycle … instead of a mounted <X>Card.svelte", and its
+  // probe is `HEADLESS_MOUNT_LANE_TYPES.length === 0` — still false, and still
+  // false BECAUSE OF THIS MODULE among others: loopback's card is exactly what
+  // `<HeadlessSourceHost>` keeps alive. What this proves is the narrower thing
+  // cameraInput proved first — a card-owned-source module CAN be faced while
+  // that blocker is outstanding, by paying the headless-host tax and rebuilding
+  // the card-only affordances. It is the SECOND module to pay both halves.
+  //
+  // ⚠ NO `why` FIELD, AND THAT IS THE TYPE'S DOING RATHER THAN AN OMISSION:
+  // `why` exists only on the NON-generic dispositions, because those are the
+  // ones that owe an explanation. svelte-check refuses the field outright.
+  { type: 'loopback', disposition: 'generic-face' },
   { type: 'luma', disposition: 'generic-face' },
   { type: 'lumakey', disposition: 'generic-face' },
   { type: 'lushgarden', disposition: 'generic-face', note: 'the def declares more params than the card exposes — a face ranks ALL of them, so check each one is real' },
@@ -549,24 +589,23 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
   { type: 'wavetableVco', disposition: 'generic-face' },
 
   // ── blocked ───────────────────────────────────────────────────────────────
-  // Remove the named capability and these are faces — no surface work at all.
-  {
-    type: 'loopback',
-    disposition: 'blocked',
-    blockers: ['needs-media-controller'],
-    why:
-      'a capture LED, a start/stop capture action and one fader — the smallest surface in the ' +
-      'media set, and the ONLY genuine case left in it. ⚠ Its recorded reason used to be "the ' +
-      'tab-capture stream lives on the card"; that is NO LONGER TRUE and the correction matters ' +
-      'for scoping. The <video> and the getDisplayMedia MediaStream are NODE-owned via ' +
-      '`$lib/ui/media/node-media-registry` (#1583) — the card ADOPTS a lease and its onDestroy ' +
-      'releases the lease only, with no stopStream and no detach, precisely so a collapse cannot ' +
-      'end a capture that needs a fresh user gesture to restart. What is still card-driven is ' +
-      'ACQUISITION (getDisplayMedia must be called from a user gesture, and only the card has ' +
-      'one) and the per-frame crop-rect push into `_cropU0.._cropV1`. So the remaining ' +
-      'capability is an ACTION cell that can request a stream plus a home for the crop pump — ' +
-      'narrower than the blocker\'s "node-owned media lifecycle", which has largely landed.',
-  },
+  //
+  // ⚠ THIS BUCKET IS NOW EMPTY, and that is a real state rather than a missing
+  // section. `loopback` was its last member and was promoted 2026-08-23; the
+  // heading stays because the DISPOSITION still exists in the union and is
+  // still the right answer for a future module whose surface genuinely waits on
+  // a platform capability. Nothing asserts the bucket is non-empty (the only
+  // gate on it refuses a `blocked` entry that names NO blocker), so an empty
+  // section is green by construction — but a reader finding no heading at all
+  // would reasonably conclude the disposition had been retired, and it has not.
+  //
+  // ⚠ AND EMPTYING IT DID NOT RETIRE `needs-media-controller`. That blocker's
+  // probe is `cardOwnedSourceTypes.length === 0` — i.e. HEADLESS_MOUNT_LANE_TYPES
+  // is empty — and it is still false, because loopback's own card is one of the
+  // things the headless host keeps alive. Modules in the `bespoke-surface`
+  // bucket below still declare the blocker, so the registry entry stays
+  // anchored in both directions. "The last blocked module shipped" and "the
+  // blocker resolved" are different facts and only the first one happened.
   // ── bespoke-surface ───────────────────────────────────────────────────────
   // The primary interaction is not param-shaped. Each of these needs a
   // hand-written surface behind the extension seam — which is BUILT and adopted

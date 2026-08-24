@@ -265,6 +265,14 @@ const SUBJECTS: readonly Subject[] = [
   // ── CAMERA — the first card-owned-source promotion ────────────────────────
   { type: 'cameraInput', prefix: 'cameraInput', domain: 'video', why: 'the capture source\'s live preview and its SCREEN switch. ⚠ The first module in this table whose REAL CARD is still mounted while the face is showing — off-screen in <HeadlessSourceHost>, because the card owns getUserMedia and the MediaStream. Its picture is BLITTED from the engine, never adopted: the node-owned <video> belongs to that card, and a DOM node has one parent. A SOURCE with no video input, so a lapsed watch mark would mute the origin of the whole chain rather than pause a preview.' },
 
+  // ── LOOPBACK — the second card-owned-source promotion ─────────────────────
+  //
+  // Added in the SAME diff as the promotion, per this file's convention.
+  // Verified before writing: `type == prefix == extension id`, the body uses
+  // the standard `{#if !previewCollapsed}` REMOVES mechanism, and it declares
+  // the conventional `<type>-face-canvas` — so no `canvas` override is needed.
+  { type: 'loopback', prefix: 'loopback', domain: 'video', why: 'the tab capture\'s live preview and its SCREEN switch. ⚠ The SECOND module in this table whose REAL CARD is still mounted while the face is showing — off-screen in <HeadlessSourceHost>, because the card owns getDisplayMedia and the MediaStream. Its picture is BLITTED from the engine, never adopted: the node-owned <video> belongs to that card, and a DOM node has one parent. ⚠ Here that is unrecoverable rather than merely bad, which is the one way this row differs from cameraInput\'s above: a stolen camera stream can be re-acquired programmatically because the origin is already granted, whereas a stolen tab capture sends the user back through the browser picker. A SOURCE with no video input, so a lapsed watch mark would mute the origin of the whole chain rather than pause a preview.' },
+
   // ── the ONE-SHOT INGEST pair (#2154) ──────────────────────────────────────
   //
   // Added in the SAME diff as the promotion, per this file's convention.

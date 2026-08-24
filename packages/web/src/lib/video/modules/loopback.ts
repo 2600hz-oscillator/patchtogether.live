@@ -149,15 +149,55 @@ export const loopbackDef: VideoModuleDef = {
   // the same tab multiply the recursive-preview cost for no benefit.
   maxInstances: 2,
 
+  face: {
+    // CROP first: it is what makes this module "my viewport" rather than "my
+    // whole browser window", so it is the control a player reaches for.
+    order: ['crop', 'gain'],
+
+    // ⚠ NO `pages`. Two controls over one capture are a single honest band, and
+    // padding a page rail onto them to look busier is refused by name.
+
+    // ⚠ ONE DECLARATION, AND ONLY ONE — the same reasoning cameraInput records.
+    // `LoopbackCard.svelte` draws `gain` with `NeonFader`, so it is declared:
+    // nothing in a ParamDef separates "a level" from any other continuous
+    // scalar, and an undeclared face resolves it to a KNOB.
+    //
+    // `crop` is `0..1 discrete`, so `looksLikeToggle` resolves it to a Toggle on
+    // its own and the card agrees (its Crop button). Declaring it would be
+    // redundant. ⚠ AND IT NEEDS NO MOMENTARY/LATCHING CLASSIFICATION, which is
+    // worth stating because most faced two-state params do: `looksLikeSwitch` is
+    // `looksLikeToggle(p) && p.defaultValue === 0`, and `crop` defaults to **1**
+    // — a loopback arrives cropped to the viewport. So it never reaches the gate
+    // that demands the classification.
+    paramCells: { gain: 'fader' },
+
+    // ⚠ MANDATORY FOR A VIDEO DEF — no `type: 'audio'` output, so
+    // `primaryAudioOutPortId` is null and any other glyph literal falls through
+    // `glyphBinding` to a dead `{kind:'static'}` that reddens module-face-lint.
+    glyph: 'none',
+
+    // SCREEN ON/OFF, the live picture, and the three things that are NOT
+    // ParamDefs and therefore cannot be face cells at all: the ACQUIRE gesture,
+    // the STOP gesture and the capture LAMP + recovery text.
+    //
+    // ⚠ THE ACQUIRE CASE IS STRICTLY HARDER HERE THAN ON CAMERA. A camera this
+    // origin has already been granted re-acquires itself on mount, so CAMERA's
+    // button is "the first-visit route". A display capture is granted PER
+    // GESTURE, every time — there is no already-granted state to inherit, so
+    // without the extension body a promoted LOOPBACK could never start at all.
+    // See `$lib/ui/modules/loopback/shell-extension.ts`.
+    extension: 'loopback',
+  },
+
   docs: {
-    explanation: "LOOPBACK turns the BROWSER VIEWPORT into a video source: its single output carries what you currently SEE in this tab — the visible canvas pane — so you can feed it into RECORDERBOX to record your viewport, or into any video effect for live self-referential feedback. The card acquires the current tab with the Screen Capture API (getDisplayMedia with preferCurrentTab + self-capture allowed — the Start capture button is the required user gesture), runs the captured tab in a hidden <video>, and the engine samples each frame into a GPU texture (exactly like CAMERA). A crop step then windows that tab frame down to the app viewport element's on-screen rectangle so the output is just the active viewport, not the surrounding browser/app chrome; the cropped region is letterbox-fit into the engine frame (black bars rather than cropping edges away) so the WHOLE viewport is preserved. Because the preview shows the tab it is captured from, a live on-card preview is intentionally recursive (a video-feedback tunnel) — that is expected, not a bug. Usage: drop LOOPBACK in, click Start capture and confirm the tab in the picker, then patch OUT into RECORDERBOX (record the viewport) or a mixer/effect. Capture needs a gesture and can be stopped from the browser's share bar (the card returns to idle with a re-capture button); where the Screen Capture API is unavailable the card shows a disabled unsupported state.",
+    explanation: "LOOPBACK turns the BROWSER VIEWPORT into a video source: its single output carries what you currently SEE in this tab — the visible canvas pane — so you can feed it into RECORDERBOX to record your viewport, or into any video effect for live self-referential feedback. Capture is acquired with the Screen Capture API (getDisplayMedia with preferCurrentTab + self-capture allowed), the captured tab runs in a hidden <video>, and the engine samples each frame into a GPU texture (exactly like CAMERA). A crop step then windows that tab frame down to the app viewport element's on-screen rectangle so the output is just the active viewport, not the surrounding browser/app chrome; the cropped region is letterbox-fit into the engine frame (black bars rather than cropping edges away) so the WHOLE viewport is preserved. Because the preview shows the tab it is captured from, a live preview is intentionally recursive (a video-feedback tunnel) — that is expected, not a bug. STARTING A CAPTURE ALWAYS TAKES A CLICK, and that is a browser rule rather than a design choice: getDisplayMedia has no already-granted state, so unlike CAMERA there is no path that can resume a capture automatically — every capture, every time, needs a fresh gesture and a fresh trip through the picker. Under the default shell that gesture is START CAPTURE on the faceplate (open the module's full view); under ?shell=legacy it is the Start capture button on the card. Usage: drop LOOPBACK in, press START CAPTURE and confirm the tab in the picker, then patch OUT into RECORDERBOX (record the viewport) or a mixer/effect. A capture can be ended with STOP or from the browser's own share bar (the module returns to idle with a re-capture button); where the Screen Capture API is unavailable the surface shows a disabled unsupported state with the reason.",
     inputs: {},
     outputs: {
       out: "Video output carrying the captured browser viewport: cropped to the visible pane (or the whole tab when Crop is off), letterbox-fit into the engine frame, and RGB gain-multiplied. Patch into RECORDERBOX to record the viewport, or into any downstream video module.",
     },
     controls: {
       gain: "Gain (linear, 0 to 2, default 1). RGB multiplier applied to the captured frame in the shader (src.rgb * gain, unclamped): 0 = black, 1 = unity, 2 = doubled/clipped. Handy to brighten a dim viewport before recording.",
-      crop: "Crop (discrete 0/1, default 1 = on). ON crops the captured tab down to the visible canvas pane's on-screen rectangle (measured per frame from the viewport element), so OUT is just the active viewport; OFF passes the WHOLE captured tab. The crop is per-viewer local render state (each collaborator's viewport differs) and never distorts the source aspect — it letterbox-fits, preserving the full region.",
+      crop: "Crop (discrete 0/1, default 1 = on). ON crops the captured tab down to the visible canvas pane's on-screen rectangle, so OUT is just the active viewport; OFF passes the WHOLE captured tab. The rectangle is re-measured EVERY FRAME (pan, zoom, resize and opening the dock all move it) by a node-scoped pump that outlives any one card mount, so collapsing or docking the module cannot freeze the crop under a running capture. The crop is per-viewer local render state (each collaborator's viewport differs) and never distorts the source aspect — it letterbox-fits, preserving the full region.",
     },
   },
   factory(ctx, _node): VideoNodeHandle {

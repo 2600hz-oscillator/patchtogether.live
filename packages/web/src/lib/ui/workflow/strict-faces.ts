@@ -4037,6 +4037,64 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // (audio registry; the card is 2D-context only), verified rather than assumed
   // — and the `fullViewBody` must STAY 2D for that to remain true.
   'timelorde',
+
+  // ── LOOPBACK (2026-08-23) — the LAST `blocked` disposition in the inventory ─
+  //
+  // The browser VIEWPORT as a video source: `getDisplayMedia` captures this tab,
+  // a crop step windows it down to the canvas pane, and OUT carries "what I
+  // see". Two params — `crop` and `gain` — so the FACE is small. Everything
+  // interesting is in what could not be a face cell.
+  //
+  // ⚠ IT WAS DISPOSITIONED `blocked` ON `needs-media-controller`, AND THE HALF
+  // THAT MATTERED HAD ALREADY SHIPPED. The `<video>` and the getDisplayMedia
+  // MediaStream have been NODE-owned since #1583 (`node-media-registry`); the
+  // card adopts a lease and its `onDestroy` releases the lease ONLY — no
+  // `stopStream`, no detach — precisely so a collapse cannot end a capture that
+  // needs a fresh user gesture to restart. What was still card-driven was
+  // narrower than the blocker's headline: the ACQUISITION GESTURE and the
+  // per-frame CROP PUMP. Both are addressed here, and the blocker's own probe
+  // is UNMOVED by that — see the inventory entry.
+  //
+  // ⚠ THE ACQUIRE CASE IS STRICTLY HARDER THAN CAMERA'S, which is the one thing
+  // a reader should not carry over by analogy. cameraInput's card auto-acquires
+  // when `enumerateDevices()` already returns real labels, so its faceplate
+  // button is "the route for a FIRST-TIME visitor". `getDisplayMedia` has no
+  // already-granted state at all: every capture, for every user, forever, needs
+  // a fresh gesture and a fresh trip through the browser's picker. So the
+  // extension body is not a first-run convenience here — it is the only way a
+  // promoted LOOPBACK can ever be started, and a promotion without it would
+  // have shipped a module that cannot run, behind a fully green gate set that
+  // reads only the SOURCE.
+  //
+  // ⚠ STOP IS AN ACTION AND CANNOT BE MADE A PARAM, which is the second thing
+  // that does not transfer from CAMERA. CAMERA gets pause/resume free as an
+  // `enabled` toggle cell. LOOPBACK has no such param and must not grow one:
+  // `loopback.ts` IS in the WebGL attest basis (`webgl-attest-hash.sh --list`,
+  // verified), so a new param costs a real-GPU re-attest window — and a synced
+  // param would let one collaborator stop a capture living in someone else's
+  // browser. Both gestures therefore ride the command seam,
+  // `$lib/ui/media/loopback-status-registry`.
+  //
+  // ⚠ THE CROP PUMP MOVED OFF THE CARD, and that is a NODE-LIFETIME fix rather
+  // than a face concern (#1531). It was a card `$effect`, so a collapse froze
+  // `_cropU0.._cropV1` at the last mounted frame while the capture went on
+  // running — the stuck-value shape, invisible because the picture stayed live.
+  // It now lives in `$lib/ui/media/loopback-crop-pump`, node-keyed and swept
+  // from Canvas beside every other node registry.
+  //
+  // ⚠ ZERO ATTEST, MEASURED NOT ASSUMED. `loopback.ts` is in the basis, so this
+  // is the case where the usual "a face is free" reflex is exactly wrong to
+  // assume. `params` and `factory` are untouched and `attest-code-basis.ts`
+  // strips a def's own top-level `face` and `docs`, so the hash is unmoved:
+  // 1c49e951c4836ef4… before and after, checked at both ends of the branch.
+  // Everything new lives under `lib/ui/**`, which is not in the basis at all.
+  //
+  // ⚠ THE CARD'S VRT EXEMPTION STAYS AND THE FACE IS STILL CAPTURED — the same
+  // split cameraInput's entry records. A live tab capture defeats deterministic
+  // capture of the CARD scene forever; the FACE scenes pin `__loopbackTestFrame`
+  // through `simPin`, which uploads a fixed synthetic frame and derives the crop
+  // from the PARAM, so they have no getDisplayMedia in them at all.
+  'loopback',
 ]);
 
 /**
