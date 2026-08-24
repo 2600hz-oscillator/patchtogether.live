@@ -118,11 +118,11 @@ describe('rack sizing — declaration invariants', () => {
     }
   });
 
-  it('sample: stereovca = 1u/hp1 (the 1u reference); sequencer = 3u tall', () => {
+  it('sample: stereovca = 1u/hp1 (the 1u reference); clipplayer declares its own tier', () => {
     const by = Object.fromEntries(allDefs().map((d) => [d.type, d]));
     expect(by.stereovca?.size).toBe('1u');
     expect(by.stereovca?.hp).toBe(1);
-    expect(by.sequencer?.size).toBe('3u');
+    expect(by.clipplayer?.size).toBeDefined();
   });
 });
 
@@ -178,7 +178,7 @@ describe('rack sizing — bulk classification coverage (RACK_SIZE_DEFAULTS)', ()
     const LOCKED: Record<string, '1u' | '2u' | '3u'> = {
       // adsr bumped 1u→2u: the env ScopeScreen glyph raised natural height to
       // 209px, over the 180px 1u tile (owner-approved look → tier grows to fit).
-      adsr: '2u', filter: '1u', sequencer: '3u', mixer: '1u', scope: '3u',
+      adsr: '2u', filter: '1u', mixer: '1u', scope: '3u',
       midiLane: '3u', analogVco: '3u', resofilter: '1u',
       drummergirl: '1u', charlottesEchos: '1u', audioOut: '1u',
       scoreboard: '1u', cameraInput: '3u', timelorde: '3u',

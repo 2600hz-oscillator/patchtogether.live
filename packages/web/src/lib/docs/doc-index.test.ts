@@ -80,8 +80,8 @@ describe('buildDocIndex — score (control families + transport CV)', () => {
     expect(index.controls.bpm.desc).toMatch(/tempo/i);
   });
 
-  it('keeps the step-grid control FAMILY template entry', () => {
-    const fam = index.controls['seq-gate-{n}'];
+  it('keeps the staff-note control FAMILY template entry', () => {
+    const fam = index.controls['score-note-{n}'];
     expect(fam).toBeDefined();
     expect(fam.kind).toBe('family');
     expect(fam.desc).toBeTruthy();

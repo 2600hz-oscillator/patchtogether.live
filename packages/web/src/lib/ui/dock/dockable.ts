@@ -22,6 +22,9 @@
 
 /** Module types offered "Dock to …" in workflow racks. */
 export const DOCKABLE_TYPES: ReadonlySet<string> = new Set([
+  'kria',
+  'cartesian',
+  'score',
   // Mixers / levels (non-pinned instances; the pinned MIXMSTRS is drawer-only).
   'mixer',
   'mixmstrs',

@@ -45,7 +45,6 @@ export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> 
   depolarizer: { size: '1u', hp: 1 }, // 160×150px (tiny 1-in/1-out bipolar→unipolar CV util)
   destroy: { size: '1u', hp: 2 }, // 152×220px
   drummergirl: { size: '1u', hp: 2 }, // 152×320px  [LOCKED]
-  drumseqz: { size: '4u', hp: 5 }, // 604×820px
   dx7: { size: '2u', hp: 2 }, // 326×320px
   featurecv: { size: '2u', hp: 2 }, // ~260 wide — 3 feature meters + ONSET led + 6 knobs/toggle over a 5-port PatchPanel (≈ spectrograph)
   fader: { size: '2u', hp: 2 }, // ~360 wide — 2 long faders + 2 transition dropdowns (A/B + dry/wet) over a 5-port PatchPanel
@@ -70,7 +69,6 @@ export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> 
   karplus: { size: '2u', hp: 2 }, // ~310×450px — STRING/EXCITER fader bands + PLUCK button
   lfo: { size: '1u', hp: 2 }, // 180×360px — Rate/Shape faders + Depth knob in one row
   macrooscillator: { size: '1u', hp: 2 }, // 187×320px
-  macseq: { size: '2u', hp: 5 }, // 282×880px
   marbles: { size: '1u', hp: 3 }, // 199×420px
   meowbox: { size: '1u', hp: 2 }, // 127×240px
   midiclock: { size: '1u', hp: 1 }, // 136×200px
@@ -110,7 +108,6 @@ export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> 
   numpadPlus: { size: '4u', hp: 4 }, // 714×722px
   pentemelodica: { size: '3u', hp: 7 }, // 462×1180px
   polarizer: { size: '1u', hp: 1 }, // 160×150px (tiny 1-in/1-out unipolar→bipolar CV util)
-  polyseqz: { size: '2u', hp: 3 }, // 321×540px
   pong: { size: '2u', hp: 2 }, // 304×240px
   qbrt: { size: '1u', hp: 2 }, // 152×280px
   rasterize: { size: '2u', hp: 2 }, // 330×320px
@@ -123,7 +120,6 @@ export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> 
   scaler: { size: '1u', hp: 1 }, // 160×150px (tiny 1-in/1-out 1-knob multiplier)
   scope: { size: '3u', hp: 2 }, // 500×320px  [LOCKED]
   score: { size: '4u', hp: 4 }, // 597×720px
-  sequencer: { size: '3u', hp: 3 }, // 307×540px  [LOCKED]
   shimmershine: { size: '1u', hp: 2 }, // 152×280px
   sidecar: { size: '2u', hp: 2 }, // 299×380px
   sixstrum: { size: '2u', hp: 4 }, // 620×~380px — 4 fader bands + per-string rear PatchPanel
@@ -149,7 +145,6 @@ export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> 
   warrensspectrum: { size: '3u', hp: 2 },
   wavecel: { size: '3u', hp: 2 }, // 398×320px
   wavetableVco: { size: '1u', hp: 2 }, // 152×240px
-  writeseq: { size: '2u', hp: 5 }, // 261×880px
 
   // ── meta domain ──
   electraControl: { size: '3u', hp: 2 }, // 519×360px

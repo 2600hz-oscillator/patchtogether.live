@@ -230,7 +230,7 @@ describe('resolveExposedControls', () => {
     expect(got[0].controls.map((c) => c.id)).toEqual(['bpm', 'swingAmount']);
     // Second child: seq-1, using its data.name when present.
     expect(got[1].childId).toBe('seq-1');
-    expect(got[1].childLabel).toBe('DRUMSEQZ1');
+    expect(got[1].childLabel).toBe('SCORE1');
     expect(got[1].controls.map((c) => c.id)).toEqual(['playStop']);
   });
 

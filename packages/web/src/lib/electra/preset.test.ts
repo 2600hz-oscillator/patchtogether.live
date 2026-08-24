@@ -255,7 +255,7 @@ describe('generatePreset — BUTTON bindings render as pads (WORKSTREAM B)', () 
     expect(pad.name).toBe('PLAY');
     expect(pad.values[0]!.message.type).toBe('note');
     expect(pad.values[0]!.message.deviceId).toBe(DEVICE_PLAY);
-    const alloc = allocations.find((a) => a.key === 'drumseqz:play')!;
+    const alloc = allocations.find((a) => a.key === 'kria:play')!;
     expect(alloc.role).toBe('button-momentary');
     expect(alloc.messageType).toBe('note');
     expect(alloc.deviceId).toBe(DEVICE_PLAY);
