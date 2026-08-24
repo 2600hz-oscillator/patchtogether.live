@@ -186,23 +186,49 @@ export const pongDef: AudioModuleDef = {
     // discrete, so `options` does not apply, and there is no wrapping angle for
     // `hue` — serveAngle is a BIAS on a range, not a position on a circle.
 
-    // ⚠ MANDATORY, AND COUNTER-INTUITIVE ON AN AUDIO DEF. Both outputs are
-    // type: 'gate', so primaryAudioOutPortId returns null and EVERY other glyph
-    // literal resolves to a dead {kind:static} that reddens the dead-glyph clause.
+    // ⚠ 'algorithm' ON A MODULE WITH NO `algorithm` PARAM, AND THAT IS THE
+    // POINT — it is the TOPOLOGY/LAYOUT literal, not an FM one. Read it as
+    // "this module's picture is a layout function it owns".
     //
-    // ⚠ AND THE LANE TILE THEREFORE HAS NO COURT. hasVideoSurface is
-    // domain === 'video' and pong is audio, so there is no VideoTileThumb either.
-    // The lane gets three faders and no picture. That is a PLATFORM gap, not a
-    // choice: ShellExtension.glyph renders only under binding.kind === "algorithm",
-    // and that branch requires an `algorithm` param. shell-glyph-live.ts already
-    // prescribes the fix in its own comment — widen THAT branch to carry a
-    // layout-source id rather than adding a third glyph literal. pong is the
-    // SECOND of five modules to hit it (timelorde, scope, rasterize, wavesculpt).
-    glyph: 'none',
+    // THE HISTORY, because the obvious reading of this line is that it is wrong.
+    // Both outputs are type:'gate', so primaryAudioOutPortId returns null; and
+    // hasVideoSurface is domain === 'video', so there is no VideoTileThumb
+    // either. Every OTHER glyph literal therefore resolves to a dead
+    // {kind:static} and reddens the dead-glyph clause, which left 'none' as the
+    // only legal value and the lane tile as a ModuleShellPlaceholder — a rack of
+    // pongs was a rack of grey boxes while the games ran, scored and pulsed
+    // their gates. That was a PLATFORM gap across five modules (timelorde, pong,
+    // scope, rasterize, wavesculpt), not a per-module choice.
+    //
+    // #2160 closed it exactly as shell-glyph-live.ts's own comment prescribed —
+    // it widened the topology branch to carry a LAYOUT SOURCE rather than adding
+    // a third glyph literal. With no `algorithm` param, the branch falls to the
+    // declared `extension` below and resolves
+    //   { kind: 'algorithm', layoutSource: 'pong', paramId: null }
+    // — paramId null because there IS no param behind the picture, so the shell
+    // draws the diagram with no caption. An FM patch is named by its algorithm
+    // NUMBER; a court is not.
+    //
+    // ⚠ THE TWO DECLARATIONS BELOW ARE ONE MECHANISM. `glyph: 'algorithm'`
+    // without `extension` falls back to {kind:static} and reddens; `extension`
+    // without `glyph` leaves the lane blank again. Neither is decoration.
+    glyph: 'algorithm',
 
-    // The court lives here (#1928): promotion stops both surfaces rendering the
-    // legacy card, so the dock body is the ONLY place the game can still be seen.
-    // See `$lib/ui/modules/pong/shell-extension.ts`.
+    // TWO SLOTS. The `fullViewBody` court lives here (#1928): promotion stops
+    // both surfaces rendering the legacy card, so the dock body is the only
+    // place the LIVE game can be seen — it receives a nodeId and reads the
+    // engine snapshot every frame. The `glyph` slot is the LANE identity
+    // picture, which receives no nodeId and is a pure layout function of pong's
+    // own rest state. See `$lib/ui/modules/pong/shell-extension.ts`.
+    //
+    // ⚠ Declaring a glyph also moves pong onto the GLYPH-BEARING lane cap
+    // column: compact goes from LANE_ROW_MAX_CELLS (3) to
+    // LANE_ROW_MAX_CELLS_WITH_GLYPH (2), so the tile trades serveAngle for the
+    // court. That is the #1785 ruling applied, not a regression — the picture IS
+    // the module's identity in a rack and outranks a ranked control, and
+    // serveAngle is the one control the spec itself calls unreadable in a lane
+    // column ("you must watch three serves to evaluate it"). Derived, never
+    // typed: see the tier-ladder leg in pong-face-model.test.ts.
     extension: 'pong',
   },
   docs: {

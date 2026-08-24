@@ -2965,9 +2965,18 @@ export const FACES = [
       'an AUDIO module that nonetheless needs the video-zone treatment for its DOCK scene: the '
       + 'body paints a LIVE COURT on a 2D canvas, driven by the shared scheduler clock, so the '
       + 'dock capture is of a running game. ⚠ The COMPACT scene is the opposite and it is worth '
-      + 'saying so — pong is domain audio, so hasVideoSurface is false and the tile is three '
-      + 'static faders with NO picture at all, deterministic for free. The two scenes on this '
-      + 'one module therefore have completely different determinism arguments.',
+      + 'saying so — the tile is two faders plus a court GLYPH that is a PURE LAYOUT FUNCTION, '
+      + 'so it is deterministic for free. The two scenes on this one module therefore have '
+      + 'completely different determinism arguments. ⚠ AND THE COMPACT ARGUMENT WAS REWRITTEN '
+      + '2026-08-23 RATHER THAN LEFT TO ROT: it used to read "hasVideoSurface is false and the '
+      + 'tile is three static faders with NO PICTURE AT ALL". The conclusion (deterministic for '
+      + 'free) survived the lane-glyph adopter, but its REASON did not — "there is nothing to '
+      + 'draw" became "what is drawn cannot read the game". That distinction is the whole safety '
+      + 'argument now, and it is mechanical rather than a promise: ShellExtensionGlyphProps is '
+      + '{ num, numbers?, testid? } with NO nodeId, so the glyph component cannot resolve a '
+      + 'graph node and cannot reach eng.read(node, "snapshot"). It renders pong\'s rest frame, '
+      + 'identical on every boot. ⚠ If that prop contract ever gains a nodeId, THIS SCENE NEEDS '
+      + 'THE DOCK SCENE\'S TREATMENT (the __pongVrtSeed pin below) and not this paragraph.',
     simPin: [
       {
         global: '__pongVrtSeed',
