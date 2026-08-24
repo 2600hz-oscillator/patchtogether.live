@@ -589,5 +589,6 @@ than authored here, so fix it upstream rather than editing it in place:
 | `running-tests` | the `*:one` loop, REPEAT, warm server |
 | `skeptical-first-baseline` | first measurement of anything |
 | `testing-conventions` | what tier a test belongs in |
+| `usual-agent-limits` | how many agents to run — the standing fleet size, and the fill-work when idle |
 | `vrt-baselines` · `vrt-failures` | anything touching a baseline |
 | `webgl-attest` | touching the attest basis |
