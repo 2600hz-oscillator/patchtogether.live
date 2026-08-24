@@ -1,0 +1,272 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>OUT TO LAUNCH face — connected and bound</title>
+<style>
+/* ─────────────────────────────────────────────────────────────────────────
+   OUT TO LAUNCH FACEPLATE — MOCKUP, state 2 of 2: a video source patched, a
+   Launchpad enumerated and BOUND.
+   SPEC AND MOCKUP ONLY. Nothing here is implemented. See spec.md.
+
+   ⚠ THIS STATE IS NOT REACHABLE IN CI and is deliberately NOT the VRT
+   baseline: it needs a real Web-MIDI grant, a real Launchpad and a live GL
+   frame. It is drawn here because it is what the module is FOR, and because
+   the picker + lamp are where the resting-text ruling actually bites
+   (spec.md §3).
+
+   The lit cells are a plausible 9x9 box-average of a bright frame, put through
+   rgb8ToLp(bright=1, gamma=2.2) — the same transform the LEDs get.
+   ───────────────────────────────────────────────────────────────────────── */
+:root{
+  --bg:#0e1013; --dock:#12161c; --pbody:#1c1f24;
+  --line:#2c3037; --tile:#33383f; --ink:#eef1f5; --dim:#9aa2ad; --faint:#646c77;
+  --accent:#6cf; --warn:#f2c14e; --good:#8fe6b0; --bad:#ff8a8a;
+  --vid:#f472b6; --socket:#131318; --wellbg:#060608;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+  font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1240px;margin:0 auto;padding:26px 20px 90px}
+h1{font-size:21px;font-weight:800;margin:0 0 6px;letter-spacing:.01em}
+.sub{color:var(--dim);font-size:12.5px;margin:0 0 14px;max-width:106ch}
+.sub b{color:var(--ink)} code{font-family:var(--mono);font-size:11.5px;color:var(--warn)}
+.nav{display:flex;gap:8px;margin:0 0 20px;font-size:11px;flex-wrap:wrap}
+.nav a{color:var(--ink);text-decoration:none;border:1px solid var(--line);border-radius:6px;
+  padding:6px 12px;background:#12161c;font-family:var(--mono);letter-spacing:.06em;text-transform:uppercase}
+.nav a.on{border-color:var(--vid);color:var(--vid)}
+.warn{border:1px solid #6a5330;background:#1c1811;border-radius:8px;padding:11px 14px;
+  margin:12px 0;font-size:12.5px;color:#e8cf9a;max-width:118ch}
+.warn b{color:var(--warn)}
+.ok{border:1px solid #3b5a48;background:#111a15;border-radius:8px;padding:11px 14px;
+  margin:12px 0;font-size:12.5px;color:#a9d8bd;max-width:118ch}
+.ok b{color:var(--good)}
+.cols{display:grid;grid-template-columns:minmax(0,1fr) 420px;gap:18px;align-items:start}
+@media (max-width:1160px){.cols{grid-template-columns:minmax(0,1fr)}}
+
+.dock{background:var(--dock);border:1px solid var(--line);border-radius:11px;overflow:hidden;padding:11px}
+.chromebar{display:flex;align-items:baseline;gap:9px;padding:0 2px 8px}
+.chromebar .nm{font-size:13px;font-weight:800;letter-spacing:.03em}
+.chromebar .rl{font-size:9.4px;letter-spacing:.09em;text-transform:uppercase;color:var(--faint);font-family:var(--mono)}
+.chromebar .x{margin-left:auto;color:var(--faint);font-family:var(--mono);font-size:12px}
+.plate{background:var(--pbody);border:1px solid var(--tile);border-left:4px solid var(--vid);
+  border-radius:10px;padding:0 0 12px;width:max-content;max-width:100%}
+.extbody{padding:12px 13px 10px;width:262px;max-width:100%;position:relative}
+
+.mon{width:236px;height:236px;background:var(--wellbg);border:1px solid #000;border-radius:6px;
+  box-shadow:inset 0 0 10px rgba(0,0,0,.7),0 0 4px rgba(0,0,0,.3);
+  padding:7px;display:grid;grid-template-columns:repeat(9,22px);grid-auto-rows:22px;gap:3px;position:relative}
+.c{width:22px;height:22px;background:var(--socket);border-radius:4px}
+.c.r{border-radius:50%;width:18.5px;height:18.5px;margin:1.75px}
+.c.logo{width:14px;height:14px;margin:4px}
+.screen{position:absolute;right:5px;bottom:5px;font-size:8.4px;letter-spacing:.06em;
+  padding:2px 8px;border:1px solid var(--line);border-radius:2px;font-family:var(--mono);
+  background:rgba(5,6,8,.78);color:var(--ink);z-index:3}
+
+.picker{display:flex;flex-direction:column;gap:5px;margin:10px 0 0}
+.port{padding:5px 10px;border-radius:3px;border:1px solid #5a7;background:transparent;color:#5a7;
+  font-family:var(--mono);font-size:9.6px;text-align:left}
+.port.dis{opacity:.4;border-color:#4a5260;color:var(--faint)}
+.port.sel{background:rgba(85,170,119,.14)}
+.btn{display:inline-block;padding:4px 11px;border-radius:3px;font-size:9.2px;
+  font-family:var(--mono);letter-spacing:.06em;text-transform:uppercase;font-weight:700;
+  border:1px solid #5a7;background:transparent;color:#5a7}
+.lamps{display:flex;gap:12px;align-items:center;margin:10px 0 0;padding-top:9px;border-top:1px solid var(--line)}
+.led{display:flex;align-items:center;gap:5px}
+.led .dot{width:8px;height:8px;border-radius:50%;background:#242832;border:1px solid #343a46}
+.led .dot.lit{background:var(--good);border-color:var(--good);box-shadow:0 0 6px rgba(143,230,176,.6)}
+.led .cap{font-size:8.4px;font-family:var(--mono);letter-spacing:.09em;color:var(--faint)}
+
+.band{margin:10px 13px 0;padding-top:9px;border-top:1px solid var(--line)}
+.cells{display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap}
+.cell{display:flex;flex-direction:column;align-items:center;gap:5px;width:56px}
+.knob{width:44px;height:44px;border-radius:50%;background:
+   radial-gradient(circle at 50% 34%,#3a4049 0%,#22262d 62%,#171a1f 100%);
+  border:1px solid #444a55;position:relative}
+.knob::after{content:"";position:absolute;left:50%;top:5px;width:2px;height:13px;margin-left:-1px;
+  background:var(--ink);border-radius:1px;transform-origin:50% 17px}
+.knob.k1::after{transform:rotate(135deg)}
+.knob.k2::after{transform:rotate(72deg)}
+.cell .cap{font-size:8.4px;font-family:var(--mono);letter-spacing:.09em;color:var(--dim);text-transform:uppercase}
+.cell.act{width:auto}
+.actbtn{padding:5px 12px;border-radius:3px;border:1px solid #5a7;color:#5a7;background:transparent;
+  font-size:9.2px;font-family:var(--mono);letter-spacing:.06em;text-transform:uppercase;font-weight:700}
+
+.notes{display:flex;flex-direction:column;gap:12px}
+.card{border:1px solid var(--line);background:#101419;border-radius:9px;padding:12px 14px}
+.card h3{margin:0 0 7px;font-size:10px;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--accent);font-family:var(--mono);font-weight:700}
+.card p{margin:0 0 8px;font-size:12px;color:var(--dim)}
+.card p:last-child{margin-bottom:0}
+.card b{color:var(--ink)}
+table{border-collapse:collapse;width:100%;font-size:11px;margin:2px 0 0}
+th,td{text-align:left;padding:4px 7px 4px 0;border-bottom:1px solid #1e242c;vertical-align:top;color:var(--dim)}
+th{color:var(--faint);font-family:var(--mono);font-size:8.6px;letter-spacing:.09em;text-transform:uppercase;font-weight:400}
+td b{color:var(--ink)}
+.aria{font-family:var(--mono);font-size:10.5px;color:var(--good)}
+.gone{text-decoration:line-through;color:#5a616c}
+.no{color:var(--bad);font-weight:700}
+.yes{color:var(--good);font-weight:700}
+</style>
+<div class="wrap">
+
+<h1>OUT TO LAUNCH — connected, bound, driving a frame</h1>
+<p class="sub">
+  <b>SPEC AND MOCKUP ONLY. Nothing here is implemented.</b> A video source is patched, Connect
+  has been pressed, two Launchpad outputs were enumerated, and the first is bound. <b>&#9888; This
+  state is not reachable in CI and is deliberately NOT the VRT baseline</b> — it needs a real
+  Web-MIDI grant, a real device and a live GL frame. It is drawn because it is where the
+  resting-text ruling actually bites.
+</p>
+
+<div class="nav">
+  <a href="dock.html">1 &middot; the dock face (spawn)</a>
+  <a class="on" href="dock-bound.html">2 &middot; connected, bound, and the lane</a>
+  <a href="spec.md">spec.md</a>
+</div>
+
+<div class="ok">
+  <b>THE PICKER IS THE SETTLED DISCRIMINATOR, DRAWN.</b> The device names below are painted
+  <b>inside the control that selects them</b> &mdash; permitted, the <code>cameraInput</code>
+  precedent. What is <b>gone</b> is the line that used to sit <i>outside</i> every control
+  restating the selection (<code class="gone">Bound to &lt;port id&gt;</code>) and the banner
+  (<code class="gone">MONITOR ACTIVE &mdash; &hellip;</code>). The second Launchpad is
+  <b>disabled</b> rather than annotated: <code>isOutputClaimed</code> says LAUNCHPAD CONTROL
+  already owns it, and a <code>disabled</code> option is a position of the control, not a
+  measurement.
+</div>
+
+<div class="cols">
+<div>
+
+  <div class="dock">
+    <div class="chromebar">
+      <span class="nm">OUT TO LAUNCH</span>
+      <span class="rl">dock &middot; full view</span>
+      <span class="x">&#10005;</span>
+    </div>
+
+    <div class="plate">
+      <div class="extbody">
+
+        <div class="mon">
+          <!-- top CC row + logo -->
+          <div class="c r" style="background:#3a2f14"></div><div class="c r" style="background:#4d3d18"></div>
+          <div class="c r" style="background:#5e4a1c"></div><div class="c r" style="background:#6d5620"></div>
+          <div class="c r" style="background:#6a5420"></div><div class="c r" style="background:#57441b"></div>
+          <div class="c r" style="background:#3f3216"></div><div class="c r" style="background:#2a2211"></div>
+          <div class="c r logo" style="background:#1b160e"></div>
+          <!-- row 8 -->
+          <div class="c" style="background:#123049"></div><div class="c" style="background:#1a4468"></div><div class="c" style="background:#276184"></div><div class="c" style="background:#3f8299"></div><div class="c" style="background:#57a0a6"></div><div class="c" style="background:#4d8f9c"></div><div class="c" style="background:#316b86"></div><div class="c" style="background:#1d4a6c"></div><div class="c r" style="background:#123049"></div>
+          <!-- row 7 -->
+          <div class="c" style="background:#16385a"></div><div class="c" style="background:#215383"></div><div class="c" style="background:#3b7ea0"></div><div class="c" style="background:#79b7b4"></div><div class="c" style="background:#c8dfc9"></div><div class="c" style="background:#8ec3ba"></div><div class="c" style="background:#437f9d"></div><div class="c" style="background:#22557f"></div><div class="c r" style="background:#16385a"></div>
+          <!-- row 6 -->
+          <div class="c" style="background:#194068"></div><div class="c" style="background:#2b6494"></div><div class="c" style="background:#4f92a8"></div><div class="c" style="background:#a8d0c4"></div><div class="c" style="background:#f3f0d6"></div><div class="c" style="background:#b4d6c6"></div><div class="c" style="background:#548fa4"></div><div class="c" style="background:#2b6390"></div><div class="c r" style="background:#194068"></div>
+          <!-- row 5 -->
+          <div class="c" style="background:#173a5e"></div><div class="c" style="background:#265a86"></div><div class="c" style="background:#457f95"></div><div class="c" style="background:#7fb2ab"></div><div class="c" style="background:#a9cbb8"></div><div class="c" style="background:#82b2a8"></div><div class="c" style="background:#4a8090"></div><div class="c" style="background:#265780"></div><div class="c r" style="background:#173a5e"></div>
+          <!-- row 4 -->
+          <div class="c" style="background:#12304c"></div><div class="c" style="background:#1d4667"></div><div class="c" style="background:#2f6274"></div><div class="c" style="background:#4d8380"></div><div class="c" style="background:#63968a"></div><div class="c" style="background:#4f857f"></div><div class="c" style="background:#336270"></div><div class="c" style="background:#1e4463"></div><div class="c r" style="background:#12304c"></div>
+          <!-- row 3 -->
+          <div class="c" style="background:#0d2337"></div><div class="c" style="background:#153349"></div><div class="c" style="background:#204450"></div><div class="c" style="background:#325a56"></div><div class="c" style="background:#40685c"></div><div class="c" style="background:#345c56"></div><div class="c" style="background:#234550"></div><div class="c" style="background:#163348"></div><div class="c r" style="background:#0d2337"></div>
+          <!-- row 2 -->
+          <div class="c" style="background:#2a2413"></div><div class="c" style="background:#3d3418"></div><div class="c" style="background:#54471f"></div><div class="c" style="background:#6d5b26"></div><div class="c" style="background:#7d682b"></div><div class="c" style="background:#6f5c27"></div><div class="c" style="background:#544820"></div><div class="c" style="background:#3a3218"></div><div class="c r" style="background:#2a2413"></div>
+          <!-- row 1 (bottom) — pad 11 is bottom-left -->
+          <div class="c" style="background:#4a3d1b"></div><div class="c" style="background:#6a5624"></div><div class="c" style="background:#8b712d"></div><div class="c" style="background:#a98a36"></div><div class="c" style="background:#bd9a3c"></div><div class="c" style="background:#ac8c37"></div><div class="c" style="background:#87702e"></div><div class="c" style="background:#5f4e21"></div><div class="c r" style="background:#4a3d1b"></div>
+          <span class="screen">SCREEN ON</span>
+        </div>
+
+        <div class="picker">
+          <span class="port sel">Launchpad Mini MK3 MIDI</span>
+          <span class="port dis">Launchpad Mini MK3 #2 MIDI</span>
+        </div>
+
+        <div style="margin-top:8px"><span class="btn">Unbind Launchpad</span></div>
+
+        <div class="lamps">
+          <span class="led"><span class="dot lit"></span><span class="cap">MONITOR</span></span>
+        </div>
+
+      </div>
+
+      <div class="band">
+        <div class="cells">
+          <div class="cell"><span class="knob k1"></span><span class="cap">Bright</span></div>
+          <div class="cell"><span class="knob k2"></span><span class="cap">Gamma</span></div>
+          <div class="cell act"><span class="actbtn">Connect&hellip;</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="notes">
+
+  <div class="card">
+    <h3>The accessible layer &mdash; speakable, unpainted</h3>
+    <table>
+      <tr><th>element</th><th>accessible name / valuetext</th></tr>
+      <tr><td><b>MONITOR</b> lamp</td>
+          <td><span class="aria">"Monitor bound to Launchpad Mini MK3 MIDI. Its LEDs are driven by
+              the video and it cannot be used for control while bound."</span> &mdash; the caption
+              stays the literal <code>MONITOR</code> whether lit or dark, by
+              <code>StatusLed</code>'s contract.</td></tr>
+      <tr><td>the disabled port</td>
+          <td><span class="aria">"Launchpad Mini MK3 #2 MIDI &mdash; already in use by another
+              binding"</span>, via <code>aria-disabled</code> + the accessible name. The
+              <code class="gone">(in use)</code> suffix and the <code class="gone">title=</code>
+              both go.</td></tr>
+      <tr><td>BRIGHT / GAMMA</td>
+          <td><span class="aria">aria-valuetext</span> carries the number. No decimal is painted;
+              neither param declares <code>options</code>, so <code>paintsReadout</code> is false
+              and the readout <b>vanishes with zero work</b>.</td></tr>
+      <tr><td>SCREEN</td>
+          <td>a real <code>&lt;button&gt;</code> over <code>node.data.previewCollapsed</code>
+              &mdash; the gate's own three legs (read / write / button).</td></tr>
+    </table>
+  </div>
+
+  <div class="card">
+    <h3>&#9888; What the two knobs actually do &mdash; and where a grep would have lied</h3>
+    <p>
+      <code>FRAG_SRC</code> declares exactly two uniforms, <code>uTex</code> and
+      <code>uHasInput</code>. There is no <code>uBright</code> and no <code>uGamma</code>, and
+      <code>surface.draw</code> never reads the params. <b>Grepping the shader says DEAD</b> &mdash;
+      the wave-6 <code>gain</code> class.
+    </p>
+    <p>
+      They are <b>alive on the CPU</b>, applied to the 81 bytes <i>after</i> the readback:
+      <code>node-launchpad-monitor-registry.svelte.ts:262-266</code> reads them off the ENGINE
+      (<code>ve.readParam</code>, never a card's props) and hands them to
+      <code>monitorGridToLeds</code>; the preview calls the same
+      <code>rgb8ToLp(v8, bright, gamma)</code>. <b>So a face cell writing either one reaches the
+      hardware with no card mounted</b> &mdash; the two knobs work on a promoted module by
+      construction.
+    </p>
+    <p>
+      &#9888; The face body must import <code>rgb8ToLp</code> rather than re-derive it. The
+      registry already states the rule for these exact two numbers: the helper defaults gamma to
+      1 while the def's default is 2.2, so falling through would render a <b>different picture
+      than the LEDs</b>.
+    </p>
+  </div>
+
+  <div class="card">
+    <h3>&#9888; The P0 spec this state belongs to</h3>
+    <p>
+      <code>launchpad-monitor-survives-card-collapse.spec.ts</code> drives this exact flow on the
+      <b>DEFAULT shell</b> &mdash; Connect, pick, <code>MONITOR ACTIVE</code>, then collapse and
+      prove the surface stays lit, claimed and pumping. Promotion <b>reddens</b> its
+      "real card mounted in the dock full-view" leg and <b>silently re-points</b> its
+      "the shell renders a placeholder tile" leg at a different world.
+    </p>
+    <p>
+      <b>The face PR owns rewriting it against the face</b>, keeping every node-side and
+      device-side assertion, its 120 s bounded-failure cap and its frame-counted polls exactly
+      as they are. <code>spec.md &sect;8</code>.
+    </p>
+  </div>
+
+</div>
+</div>
+</div>

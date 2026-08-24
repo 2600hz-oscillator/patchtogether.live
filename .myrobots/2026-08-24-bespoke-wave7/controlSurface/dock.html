@@ -1,0 +1,327 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>CONTROL SURFACE face — the dock faceplate (populated)</title>
+<style>
+/* ─────────────────────────────────────────────────────────────────────────
+   CONTROL SURFACE FACEPLATE — MOCKUP, state 1 of 2.
+   SPEC AND MOCKUP ONLY. Nothing here is implemented. See spec.md.
+
+   ⚠ THE VERDICT IS **REFUSE**. This drawing is what should be built the day
+   spec.md §12's `laneBody` slot lands AND §5.3's typed-entry gate is resolved.
+   It is drawn anyway because the design is settled and only the PR's file
+   list is contingent on those two answers.
+
+   House tokens — the same set the wave-1/2/3/4/5/6 mocks use.
+   ───────────────────────────────────────────────────────────────────────── */
+:root{
+  --bg:#0e1013; --dock:#12161c; --plate:#262a31; --pbody:#1c1f24; --well:#0a0c0f;
+  --line:#2c3037; --tile:#33383f; --ink:#eef1f5; --dim:#9aa2ad; --faint:#646c77;
+  --cv:#7dd3fc; --accent:#6cf; --meta:#c084fc; --ch1:#fbbf24; --warn:#f2c14e; --good:#8fe6b0;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+  font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1240px;margin:0 auto;padding:26px 20px 90px}
+h1{font-size:21px;font-weight:800;margin:0 0 6px;letter-spacing:.01em}
+.sub{color:var(--dim);font-size:12.5px;margin:0 0 14px;max-width:106ch}
+.sub b{color:var(--ink)} code{font-family:var(--mono);font-size:11.5px;color:var(--ch1)}
+.nav{display:flex;gap:8px;margin:0 0 20px;font-size:11px;flex-wrap:wrap}
+.nav a{color:var(--ink);text-decoration:none;border:1px solid var(--line);border-radius:6px;
+  padding:6px 12px;background:#12161c;font-family:var(--mono);letter-spacing:.06em;text-transform:uppercase}
+.nav a.on{border-color:var(--meta);color:var(--meta)}
+.warn{border:1px solid #6a5330;background:#1c1811;border-radius:8px;padding:11px 14px;
+  margin:12px 0;font-size:12.5px;color:#e8cf9a;max-width:118ch}
+.warn b{color:var(--warn)}
+.ok{border:1px solid #3b5a48;background:#111a15;border-radius:8px;padding:11px 14px;
+  margin:12px 0;font-size:12.5px;color:#a9d8bd;max-width:118ch}
+.ok b{color:var(--good)}
+.bad{border:1px solid #6b3a3a;background:#1c1214;border-radius:8px;padding:11px 14px;
+  margin:12px 0;font-size:12.5px;color:#f0b8b8;max-width:118ch}
+.bad b{color:#ff8a8a}
+.cols{display:grid;grid-template-columns:minmax(0,1fr) 400px;gap:18px;align-items:start}
+@media (max-width:1120px){.cols{grid-template-columns:minmax(0,1fr)}}
+
+.dock{background:var(--dock);border:1px solid var(--line);border-radius:11px;overflow:hidden;padding:11px}
+.chromebar{display:flex;align-items:baseline;gap:9px;padding:0 2px 8px}
+.chromebar .nm{font-size:13px;font-weight:800;letter-spacing:.03em}
+.chromebar .rl{font-size:9.4px;letter-spacing:.09em;text-transform:uppercase;color:var(--faint);font-family:var(--mono)}
+.chromebar .x{margin-left:auto;color:var(--faint);font-family:var(--mono);font-size:12px}
+.plate{background:var(--pbody);border:1px solid var(--tile);border-left:4px solid var(--meta);
+  border-radius:10px;padding:0 0 12px;width:max-content;max-width:100%}
+
+/* ── the fullViewBody: the PROXY BOARD ───────────────────────────────────
+   spec.md §6.1 — a max-width:600 / max-height:320 scroll box, the
+   MatrixMixGridBody.svelte:262-276 shape. The plate sizes to THIS, so
+   bodyW - contentW is ~0 and no FACE_WIDTH_EXEMPTIONS entry is needed. */
+.extbody{padding:12px 14px 10px}
+.board{max-width:600px;max-height:320px;overflow:auto;border:1px solid #2a2f3a;
+  border-radius:5px;background:#0e1015;padding:10px;display:flex;flex-wrap:wrap;gap:12px}
+/* .cs-group — BOX_W = BOX_PAD_X 14 + 2*KNOB_CELL_W 76 + KNOB_GRID_GAP 8 = 174 */
+.grp{width:174px;border:1px dashed #3a4150;border-radius:5px;padding:4px 6px 6px;background:#12161c}
+.grp .lbl{font-size:8.6px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--dim);font-family:var(--mono);margin:0 0 4px;text-align:center}
+.knobs{display:grid;grid-template-columns:repeat(2,76px);gap:8px}
+.kn{display:flex;flex-direction:column;align-items:center;gap:2px;position:relative}
+.kn .stripe{width:34px;height:4px;border-radius:2px}
+.kn .dial{width:36px;height:36px;border-radius:50%;border:2px solid #4a5260;background:#171b22;
+  position:relative;margin-top:2px}
+.kn .dial::after{content:"";position:absolute;left:50%;top:3px;width:2px;height:12px;
+  background:var(--ink);transform-origin:50% 15px;border-radius:1px}
+.kn .dial.d1::after{transform:translateX(-50%) rotate(-38deg)}
+.kn .dial.d2::after{transform:translateX(-50%) rotate(64deg)}
+.kn .dial.d3::after{transform:translateX(-50%) rotate(-120deg)}
+.kn .dial.d4::after{transform:translateX(-50%) rotate(110deg)}
+.kn .dial.d5::after{transform:translateX(-50%) rotate(0deg)}
+.kn .dial.d6::after{transform:translateX(-50%) rotate(-70deg)}
+.kn .cap{font-size:8.4px;font-family:var(--mono);color:var(--dim);max-width:72px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.kn .pen{font-size:8px;color:var(--faint);height:12px}
+.kn.edit .cap{display:none}
+.kn .rename{width:70px;font-family:var(--mono);font-size:8.4px;padding:1px 3px;
+  background:#0a0c0f;color:var(--ink);border:1px solid var(--meta);border-radius:2px}
+
+.bands{margin:10px 14px 0;padding-top:9px;border-top:1px solid var(--line)}
+.band{display:flex;align-items:center;gap:10px}
+.cell{display:flex;align-items:center;gap:7px;border:1px solid var(--line);border-radius:5px;
+  padding:5px 9px;background:#171b22}
+.cell .cn{font-size:8.6px;letter-spacing:.09em;text-transform:uppercase;color:var(--faint);font-family:var(--mono)}
+.tgl{width:30px;height:15px;border-radius:8px;background:#2a3038;position:relative;border:1px solid #3a4150}
+.tgl::after{content:"";position:absolute;top:1px;left:1px;width:11px;height:11px;border-radius:50%;background:#6a737f}
+.tgl.on{background:color-mix(in oklab,var(--meta) 38%,#2a3038)}
+.tgl.on::after{left:16px;background:var(--meta)}
+
+/* ── the LANE tile — drawn to scale so the refusal is visible ─────────── */
+.lanes{display:flex;gap:24px;align-items:flex-start;flex-wrap:wrap;margin-top:6px}
+.lane{width:192px;height:180px;background:var(--pbody);border:1px solid var(--tile);
+  border-left:3px solid var(--meta);border-radius:7px;padding:7px 8px 9px;position:relative}
+.lane .t{font-size:8.6px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--dim);font-family:var(--mono);margin:0 0 6px}
+.lane .cap{font-size:8.4px;color:var(--faint);font-family:var(--mono);text-align:center;margin:7px 0 0}
+.ghost{position:absolute;left:8px;top:34px;width:174px;height:124px;border:1px dashed #6b3a3a;
+  border-radius:5px;background:rgba(107,58,58,.13);display:flex;align-items:center;
+  justify-content:center;text-align:center;font-family:var(--mono);font-size:8px;
+  color:#f0b8b8;padding:4px;line-height:1.35}
+
+.notes{display:flex;flex-direction:column;gap:12px}
+.card{border:1px solid var(--line);background:#101419;border-radius:9px;padding:12px 14px}
+.card h3{margin:0 0 7px;font-size:10px;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--accent);font-family:var(--mono);font-weight:700}
+.card p{margin:0 0 8px;font-size:12px;color:var(--dim)}
+.card p:last-child{margin-bottom:0}
+.card b{color:var(--ink)}
+table{border-collapse:collapse;width:100%;font-size:11px;margin:2px 0 0}
+th,td{text-align:left;padding:4px 7px 4px 0;border-bottom:1px solid #1e242c;vertical-align:top;color:var(--dim)}
+th{color:var(--faint);font-family:var(--mono);font-size:8.6px;letter-spacing:.09em;text-transform:uppercase;font-weight:400}
+td b{color:var(--ink)}
+.aria{font-family:var(--mono);font-size:10.5px;color:#8fe6b0}
+.gone{text-decoration:line-through;color:#5a616c}
+</style>
+
+<div class="wrap">
+<h1>CONTROL SURFACE — the dock faceplate</h1>
+<p class="sub">
+  <b>SPEC + MOCKUP. Nothing here is implemented.</b> The dock full view: a
+  <code>control-grid</code> <code>fullViewBody</code> holding the proxy board, over one
+  ranked band carrying the <code>LOCK</code> cell. Populated state — three source modules,
+  six proxied controls, unlocked, one rename in progress.
+</p>
+
+<div class="nav">
+  <a class="on" href="dock.html">DOCK — populated</a>
+  <a href="lane-tile.html">LANE TILE — the refusal, to scale</a>
+</div>
+
+<div class="bad">
+  <b>THE VERDICT IS REFUSE, ON TWO INDEPENDENT BLOCKERS.</b>
+  (1) <b>Parity</b> — a faced lane tile is <code>SHELL_TILE_W = 192</code> px and one group
+  box is <code>BOX_W = 174</code> px, with no lane-tier slot to bridge it, so promotion moves
+  every proxied knob off the canvas (spec.md §3.2; see <code>lane-tile.html</code>).
+  (2) <b>The typed-entry gate</b> — the in-situ rename <code>&lt;input type="text"&gt;</code>
+  lives on the LEGACY card, which promotion does not remove, and declaring a <code>face</code>
+  forces the inventory entry to <code>generic-face</code>, which
+  <code>face-migration-inventory.test.ts:226-248</code> refuses (spec.md §5.3).
+  <b>This drawing is what to build the day both are answered.</b>
+</div>
+
+<div class="cols">
+<div>
+
+<div class="dock">
+  <div class="chromebar">
+    <span class="nm">CONTROL SURFACE</span>
+    <span class="rl">dock full view</span>
+    <span class="x">✕</span>
+  </div>
+
+  <div class="plate">
+    <div class="extbody">
+      <!-- THE PROXY BOARD. Every aria-label below is a SENTENCE, and no sentence
+           is also a text node — face-rack-status-source.test.ts:826-860. -->
+      <div class="board">
+
+        <div class="grp">
+          <div class="lbl">ADSR 1</div>
+          <div class="knobs">
+            <div class="kn">
+              <div class="stripe" style="background:#7dd3fc"></div>
+              <div class="dial d1"></div><div class="cap">ATTACK</div><div class="pen">✎</div>
+            </div>
+            <div class="kn">
+              <div class="stripe" style="background:#7dd3fc"></div>
+              <div class="dial d2"></div><div class="cap">RELEASE</div><div class="pen">✎</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="grp">
+          <div class="lbl">LADDER FILTER</div>
+          <div class="knobs">
+            <div class="kn">
+              <div class="stripe" style="background:#fbbf24"></div>
+              <div class="dial d3"></div><div class="cap">CUTOFF</div><div class="pen">✎</div>
+            </div>
+            <!-- A rename in progress: the caption is REPLACED by the input, never
+                 stacked beside it. maxlength=14 (the Electra preset's clamp). -->
+            <div class="kn edit">
+              <div class="stripe" style="background:#fbbf24"></div>
+              <div class="dial d4"></div>
+              <input class="rename" value="SQUELCH" maxlength="14">
+              <div class="pen"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="grp">
+          <div class="lbl">TOYBOX</div>
+          <div class="knobs">
+            <div class="kn">
+              <div class="stripe" style="background:#c084fc"></div>
+              <div class="dial d5"></div><div class="cap">SCALE</div><div class="pen">✎</div>
+            </div>
+            <div class="kn">
+              <div class="stripe" style="background:#c084fc"></div>
+              <div class="dial d6"></div><div class="cap">FADE T</div><div class="pen">✎</div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ONE BAND. One cell against DOCK_TAB_MIN_BANDS = 7 — no rail, nothing padded. -->
+    <div class="bands">
+      <div class="band">
+        <div class="cell">
+          <span class="cn">LOCK</span>
+          <span class="tgl" title="aria-label: Lock layout — unlocked; the group boxes can be dragged"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="ok" style="margin-top:16px">
+  <b>WIDTH IS NOT EARNED, AND NONE IS REQUESTED.</b> The board is a
+  <code>max-width:600px; max-height:320px; overflow:auto</code> box — the component's own
+  internal layout, exactly <code>MatrixMixGridBody.svelte:262-276</code>, which the width gate
+  does not police and which <b>REVEALS</b> a wide occupant where a plate clamp would
+  <b>CLIP</b> it. The plate sizes to the box, so <code>bodyW − contentW</code> lands near zero
+  against the 40 px ceiling and no <code>FACE_WIDTH_EXEMPTIONS</code> entry exists.
+  matrixMix carries none either.
+</div>
+
+<h3 style="font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--faint);
+  font-family:var(--mono);margin:22px 0 8px">The empty state — what the dock VRT baseline actually captures</h3>
+
+<div class="dock" style="max-width:420px">
+  <div class="chromebar">
+    <span class="nm">CONTROL SURFACE</span><span class="rl">dock full view</span><span class="x">✕</span>
+  </div>
+  <div class="plate">
+    <div class="extbody">
+      <div style="min-height:90px;border:1px dashed #3a4150;border-radius:5px;display:flex;
+        align-items:center;justify-content:center;color:var(--dim);font-size:.72rem;
+        text-align:center;padding:8px">
+        Right-click a control → “Send to this surface”.
+      </div>
+    </div>
+    <div class="bands"><div class="band">
+      <div class="cell"><span class="cn">LOCK</span><span class="tgl"></span></div>
+    </div></div>
+  </div>
+</div>
+
+<div class="warn">
+  <b>THIS is the state a VRT scene produces</b> — a solo spawn has no bindings — and it is
+  entirely deterministic and entirely module-specific.
+  <code>vrt-exemptions.ts:639</code> calls it <span class="gone">“a blank square”</span>, which
+  is matrixMix's overturned argument verbatim in structure: <i>“‘no stable pixels’ described the
+  surface that ISN'T rendered and drew a conclusion about the one that is”</i>
+  (<code>:645-652</code>). ⚠ The prompt loses its interpolated <code>{name}</code> — a surface's
+  own user-typed name inside a sentence makes the sentence derived.
+  <b>This drain is available TODAY with no face</b> (spec.md §6.3, §13.1).
+</div>
+
+</div>
+
+<div class="notes">
+
+  <div class="card">
+    <h3>Body role — <code>control-grid</code></h3>
+    <p>Predicate (<code>face-rack-status-source.test.ts:598-606</code>):
+      <code>/aria-label=/.test(src) &amp;&amp; !paintsCanvas(src, extId)</code>.
+      Both hold. Not <code>picture</code> (no canvas), not <code>status-primitive</code>
+      (no <code>StatusLed</code>, and <b>none may be drawn — this module has no device</b>).</p>
+    <p><b>It must stay DOM.</b> <code>resolveWebglBasis()</code> admits any
+      <code>lib/ui/modules/**.svelte</code> that creates a GL context, so a canvas body would
+      enrol a <code>meta</code> module in the GPU attest automatically.</p>
+  </div>
+
+  <div class="card">
+    <h3>Painted text — every string, classified</h3>
+    <table>
+      <tr><th>what</th><th>role</th></tr>
+      <tr><td><b>CONTROL SURFACE</b></td><td>module NAME (shell title bar)</td></tr>
+      <tr><td><b>ADSR 1</b> / <b>LADDER FILTER</b> / <b>TOYBOX</b></td><td>SECTION LABELS — the only thing separating boxes of identical dials</td></tr>
+      <tr><td><b>ATTACK</b>…<b>FADE T</b></td><td>CONTROL CAPTIONS — <b>may be user-typed</b>, see below</td></tr>
+      <tr><td><b>LOCK</b></td><td>a control caption, <b>static by contract</b></td></tr>
+      <tr><td class="gone">🔒 Locked / 🔓 Unlocked</td><td>REFUSED — a caption that changes with state</td></tr>
+      <tr><td class="gone">title=“… right-click for Remove from …”</td><td>REFUSED — “there but hidden”</td></tr>
+    </table>
+  </div>
+
+  <div class="card">
+    <h3>A user-typed name is a CAPTION — settled</h3>
+    <p>The ruling ranges over a text's <b>ROLE</b> and <b>POSITION</b>, never its author.
+      <b>SQUELCH</b> above was typed by the player; it sits inside the control it names and
+      disambiguates it from its neighbour, which is the caption role exactly.</p>
+    <p>The alternative rule has a shipped counter-example: a <b>user-renamed MODULE name</b> is
+      permitted in every faceplate's title bar on ~300 modules. A user-typed control name is
+      permitted as the control caption by the identical argument, one level down.</p>
+  </div>
+
+  <div class="card">
+    <h3>The sentence is speakable, not painted</h3>
+    <p><code>face-rack-status-source.test.ts:826-860</code> refuses an
+      <code>aria-label={E}</code> whose same expression is also a text node. So the caption
+      stays <code>{c.label}</code> and the accessible name is a different string:</p>
+    <p class="aria">aria-label = “ATTACK on ADSR 1 — proxied control; turning it writes the
+      source module's live parameter. Right-click to remove it from this surface.”</p>
+    <p>⚠ The gate's predicate is expression <b>identity</b>, so it cannot catch a spelled-out
+      duplicate. The compliance argument rests on the sentence genuinely differing, and only
+      the dock PNG and a human can see that.</p>
+  </div>
+
+  <div class="card">
+    <h3>The colour stripe is PASSTHROUGH</h3>
+    <p>Each stripe is a <b>live read</b> of the SOURCE module's control colour through
+      <code>resolveControlColor(sourceNode)</code> — never a stored copy, so the same control
+      shows the same colour everywhere it appears. It is a non-text mark and the ruling does
+      not reach it.</p>
+  </div>
+
+</div>
+</div>
+</div>
