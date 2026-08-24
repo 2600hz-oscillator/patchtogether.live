@@ -126,8 +126,8 @@ test.describe('LIVE shell glyphs (?shell=1)', () => {
           { on: true, midi: 62, chord: 'min' },
         ][i % 4]);
       });
-    await seedKriaGate(page, 'p-seq-clk');
     });
+    await seedKriaGate(page, 'p-seq-clk');
 
     // Open the tidyVco dock full-view from the lane tile's expand pill.
     await setZoomTier(page, 'p-tv', 0.6, 'full');

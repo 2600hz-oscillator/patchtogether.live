@@ -173,7 +173,7 @@ test('livecode: setData writes sequencer step array → node.data.steps', async 
   await typeAndRun(
     page,
     'lc',
-    `spawn('sequencer', 'seq');
+    `spawn('kria', 'seq');
 setData('seq', 'steps', [
   { on: true, pitch: 60 },
   { on: false },
@@ -183,13 +183,13 @@ setData('seq', 'steps', [
 
   await page.waitForFunction(() => {
     const w = globalThis as unknown as { __patch: { nodes: Record<string, { type: string; data?: { steps?: unknown } }> } };
-    const seq = Object.values(w.__patch.nodes).find((n) => n?.type === 'sequencer');
+    const seq = Object.values(w.__patch.nodes).find((n) => n?.type === 'kria');
     return !!(seq?.data?.steps);
   }, { timeout: 5000 });
 
   const steps = await page.evaluate(() => {
     const w = globalThis as unknown as { __patch: { nodes: Record<string, { type: string; data?: { steps?: unknown } }> } };
-    const seq = Object.values(w.__patch.nodes).find((n) => n?.type === 'sequencer');
+    const seq = Object.values(w.__patch.nodes).find((n) => n?.type === 'kria');
     return seq?.data?.steps;
   });
   expect(Array.isArray(steps)).toBe(true);
@@ -260,23 +260,21 @@ test('livecode: JS recreates the voice-demo patch → graph-isomorphic', async (
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [{ id: 'lc', type: 'livecode', position: { x: 50, y: 400 } }]);
 
-  const js = `spawn('sequencer', 'seq');
+  const js = `spawn('kria', 'seq');
 spawn('analogVco', 'vco');
 spawn('adsr', 'env');
 spawn('vca', 'amp');
 spawn('audioOut', 'out');
 
-patch('seq.pitch', 'vco.pitch');
-patch('seq.gate',  'env.gate');
+patch('seq.pitch1', 'vco.pitch');
+patch('seq.gate1',  'env.gate');
 patch('vco.sine',  'amp.audio');
 patch('env.env',   'amp.cv');
 patch('amp.audio', 'out.L');
 patch('amp.audio', 'out.R');
 
-set('seq', 'bpm',        180);
-set('seq', 'length',     8);
-set('seq', 'isPlaying',  1);
-set('seq', 'gateLength', 0.4);
+set('seq', 'bpm',     180);
+set('seq', 'running', 1);
 
 set('env', 'attack',  0.005);
 set('env', 'decay',   0.08);

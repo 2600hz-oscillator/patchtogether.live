@@ -75,8 +75,8 @@ test('pentemelodica: a POLYSEQZ chord drives the stereo OUT', async ({ page, rac
           { on: true, midi: 72, chord: 'maj' },
         ][i % 4]);
     });
-    await seedKriaGate(page, 'seq-clk');
   });
+    await seedKriaGate(page, 'seq-clk');
 
   // Poll the SCOPE analyser until the OUT carries audio.
   let peak = 0;

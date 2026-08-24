@@ -153,7 +153,7 @@ test.fixme('right-click → Duplicate deep-clones data (mutating dup does not af
   const dupId = await page.evaluate(() => {
     const w = window as unknown as { __patch: { nodes: Record<string, { type: string; id: string }> } };
     const ids = Object.keys(w.__patch.nodes).filter(
-      (k) => w.__patch.nodes[k]!.type === 'sequencer' && k !== 'seq-source',
+      (k) => w.__patch.nodes[k]!.type === 'kria' && k !== 'seq-source',
     );
     return ids[0] ?? null;
   });

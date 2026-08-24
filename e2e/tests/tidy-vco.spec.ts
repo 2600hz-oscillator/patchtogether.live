@@ -99,9 +99,8 @@ test('TIDY VCO poly chain: POLYSEQZ chord bus → voices → AUDIOOUT — audibl
           { on: true, midi: 62, chord: 'min' },
         ][i % 4]);
     });
-    await seedKriaGate(page, 'n-seq-clk');
-    await seedKriaGate(page, 'p-seq-clk');
   });
+  await seedKriaGate(page, 'p-seq-clk');
 
   // Audible RMS at the output via windowed MAX-HOLD (chords land every
   // 250 ms at BPM 240 — a 1.5 s capture always observes gated voices).

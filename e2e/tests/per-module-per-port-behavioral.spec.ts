@@ -3890,10 +3890,10 @@ async function populateAllSequencerSteps(page: Page, heldNoteDriver = false): Pr
     w.__ydoc.transact(() => {
       for (const id of Object.keys(w.__patch.nodes)) {
         const node = w.__patch.nodes[id];
-        // WRITESEQ shares the {on, midi} step shape with SEQUENCER, so seed it
-        // too — otherwise an isPlaying=0 control + a clock/play_cv patched run
-        // both emit silence (empty grid) and the behavioral sweep sees no delta.
-        if (!node || (node.type !== 'sequencer' && node.type !== 'writeseq')) continue;
+        // (SEQUENCER/WRITESEQ deleted 2026-08-24; no registered module still
+        // needs a step seed here — the branch below keeps the seed mechanism
+        // for the day one does, matching on nothing today.)
+        if (!node || node.type !== '__no-step-seeded-module__') continue;
         if (!node.data) node.data = {};
         node.data.steps = held && id === 'driver-seq'
           ? [

@@ -61,7 +61,6 @@ const PATCH_TYPES = [
   'kickdrum',
   'reverb',
   'cloudseed',
-  'sequencer',
 ] as const;
 
 // ── RATCHET ────────────────────────────────────────────────────────────────

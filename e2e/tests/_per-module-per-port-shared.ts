@@ -532,11 +532,11 @@ export const EXEMPT_OUTPUT_EMIT: Record<string, string> = {
 // duplication: this array is the review surface and the merge-conflict surface.
 export const PINNED_MODULE_EXEMPT_KEYS: readonly string[] = Object.freeze([
   'archivist', 'audioIn', 'blood', 'bluebox', 'cvBuddy', 'cvBuddyMini',
-  'drumseqz', 'es9',
-  'fader', 'featurecv', 'flipper', 'gamepad', 'illogic', 'joystick', 'macseq',
+  'es9',
+  'fader', 'featurecv', 'flipper', 'gamepad', 'illogic', 'joystick',
   'marbles', 'midiCvBuddy', 'midiOutBuddy', 'midiclock', 'milkdrop', 'modtris',
   'moog911a', 'moog956', 'moog962', 'moog992', 'moog993', 'numpadPlus',
-  'peertube', 'polyseqz', 'pong', 'samsloop', 'score', 'sequencer',
+  'peertube', 'pong', 'samsloop', 'score',
   'slewSwitch', 'synesthesia', 'timelorde', 'tvLibrarian', 'twotracks',
   'videobox', 'videocube', 'videovarispeed', 'vstFx', 'vstInstrument',
 ]);
@@ -1150,7 +1150,7 @@ export const NOT_EFFECT_DESPITE_AUDIO_INPUT = new Set([
  *  per-port EXEMPT_OUTPUT_EMIT entries catch the slivers, this catches shape. */
 export const PURE_CV_GATE_UTILITY = new Set([
   'analogLogicMaths', 'fourplexer', 'unityscalemathematik',
-  'cartesian', 'polyseqz', 'frogger',
+  'cartesian', 'frogger',
 ]);
 
 export function emitSkipReason(mod: RegistryModule): string | null {

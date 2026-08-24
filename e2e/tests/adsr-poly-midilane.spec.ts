@@ -299,8 +299,8 @@ test('cube poly chord (POLYSEQZ → poly) drives the per-voice envelopes', async
           { on: true, midi: 72, chord: 'maj' },
         ][i % 4]);
     });
-    await seedKriaGate(page, 'seq-clk');
   });
+    await seedKriaGate(page, 'seq-clk');
 
   // THE REGRESSION THIS FILE'S REWRITE EXISTS FOR. CUBE's poly gating makes an
   // un-gated lane contribute EXACTLY 0.0000 (packages/dsp/src/cube.ts — the

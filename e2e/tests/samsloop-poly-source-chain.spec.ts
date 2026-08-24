@@ -114,8 +114,8 @@ async function seedSeqSteps(
           { on: true, midi: 60, chord: 'maj' },
         ][i % 4]);
     });
-    await seedKriaGate(page, 'seq-clk');
   }, seqId);
+  await seedKriaGate(page, 'seq-clk');
 }
 
 /** The patch, with the `trig` cable optional so the silence leg is the SAME

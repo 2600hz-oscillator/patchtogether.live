@@ -36,7 +36,7 @@
 
 import { test, expect } from './_fixtures';
 import { type Page } from '@playwright/test';
-import { spawnPatch } from './_helpers';
+import { spawnPatch, seedKriaGate } from './_helpers';
 import { seedScoreThenPlay } from './_score-helpers';
 import {
   readScopeSnapshot,
@@ -379,66 +379,41 @@ async function readCurrentStep(page: Page, nodeId: string): Promise<number | nul
   }, nodeId);
 }
 
-for (const seq of [
-  { type: 'kria', stepsCount: 4 },
-  { type: 'polyseqz',  stepsCount: 4 },
-  { type: 'drumseqz',  stepsCount: 4 },
-]) {
-  test(`sequencer ${seq.type}: currentStep advances when isPlaying=1`, async ({ page, rack }) => {
-    // 480 BPM → step every 31 ms; 4 steps fit easily in 250 ms.
-    await spawnPatch(page, [
-      { id: 'q', type: seq.type, params: { bpm: 480, length: seq.stepsCount, isPlaying: 1, gateLength: 0.5 } },
-    ]);
+// (Was a three-way loop over SEQUENCER / POLYSEQZ / DRUMSEQZ until those
+// modules were deleted 2026-08-24 — deprecated by CLIP PLAYER. KRIA is the
+// surviving self-running step sequencer; its read key is per-track.)
+test('sequencer kria: currentStep advances when running=1', async ({ page, rack }) => {
+  // 480 BPM → step every 31 ms; plenty of advances inside 250 ms.
+  await spawnPatch(page, [
+    { id: 'q', type: 'kria', params: { bpm: 480, running: 1 } },
+  ]);
+  await seedKriaGate(page, 'q');
 
-    if (seq.type === 'sequencer' || seq.type === 'polyseqz') {
-      await page.evaluate(({ count, ty }) => {
-        const w = globalThis as unknown as {
-          __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
-          __ydoc: { transact: (fn: () => void) => void };
-        };
-        w.__ydoc.transact(() => {
-          const node = w.__patch.nodes['q'];
-          if (!node.data) node.data = {};
-          if (ty === 'sequencer') {
-            node.data.steps = Array.from({ length: count }, () => ({ on: true, midi: 60 }));
-          } else {
-            node.data.steps = Array.from({ length: count }, () => ({
-              on: true, root: 60, quality: 'maj', inversion: 0, voicing: 'closed',
-            }));
-          }
-        });
-      }, { count: seq.stepsCount, ty: seq.type });
-    } else if (seq.type === 'drumseqz') {
-      await page.evaluate(({ count }) => {
-        const w = globalThis as unknown as {
-          __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
-          __ydoc: { transact: (fn: () => void) => void };
-        };
-        w.__ydoc.transact(() => {
-          const node = w.__patch.nodes['q'];
-          if (!node.data) node.data = {};
-          node.data.tracks = Array.from({ length: 4 }, () =>
-            Array.from({ length: count }, () => ({ on: true, midi: null })),
-          );
-        });
-      }, { count: seq.stepsCount });
-    }
+  await runFor(page, 100);
+  const step0 = await page.evaluate((id) => {
+    const w = globalThis as unknown as {
+      __engine: () => { read: (n: unknown, k: string) => unknown };
+      __patch: { nodes: Record<string, unknown> };
+    };
+    const v = w.__engine().read(w.__patch.nodes[id], 'currentStep:0');
+    return typeof v === 'number' ? v : null;
+  }, 'q');
+  expect(step0).not.toBeNull();
+  expect(step0).toBeGreaterThanOrEqual(0);
 
-    await runFor(page, 100);
-    const step0 = await readCurrentStep(page, 'q');
-    expect(step0).not.toBeNull();
-    expect(step0).toBeGreaterThanOrEqual(0);
-
-    // After another ~150ms there should be at least 1 step advance from
-    // wherever we started. Allow wrap (step%length) since fast bpm may
-    // make currentStep advance multiple ticks.
-    await runFor(page, 200);
-    const step1 = await readCurrentStep(page, 'q');
-    expect(step1).not.toBeNull();
-    expect(step1).toBeGreaterThanOrEqual(0);
-    expect(step1).toBeLessThan(seq.stepsCount);
-  });
-}
+  await runFor(page, 200);
+  const step1 = await page.evaluate((id) => {
+    const w = globalThis as unknown as {
+      __engine: () => { read: (n: unknown, k: string) => unknown };
+      __patch: { nodes: Record<string, unknown> };
+    };
+    const v = w.__engine().read(w.__patch.nodes[id], 'currentStep:0');
+    return typeof v === 'number' ? v : null;
+  }, 'q');
+  expect(step1).not.toBeNull();
+  expect(step1).toBeGreaterThanOrEqual(0);
+  expect(step1).toBeLessThan(16);
+});
 
 // task #12 (re-enabled, wave-3): SCORE-playhead `currentNoteId` was read after a
 // FLAT runFor(200) + a single read, so under CI load the read could land on a

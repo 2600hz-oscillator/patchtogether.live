@@ -104,7 +104,7 @@ async function bootDrumseqz(page: Page): Promise<void> {
   await page.evaluate(() => window.localStorage.removeItem('pt.midi-bindings.v1'));
   await spawnPatch(
     page,
-    [{ id: 'ds-1', type: 'drumseqz', position: { x: 120, y: 120 }, domain: 'audio', params: { isPlaying: 0 } }],
+    [{ id: 'ds-1', type: 'score', position: { x: 120, y: 120 }, domain: 'audio', params: { isPlaying: 0 } }],
     [],
   );
   await expect(page.locator('.svelte-flow__node-drumseqz')).toHaveCount(1);

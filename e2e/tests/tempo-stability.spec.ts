@@ -169,15 +169,17 @@ test('tempo-stability: baseline (no jank) sequencer advance rate matches BPM', a
 // exercised the catch-up path. Without the guard, pastDueEmits would be > 0.
 //
 // Parametrized across the step sequencers that advance with default (empty)
-// patterns. `score` shares the identical drop guard but needs loaded notes
-// to advance, so its regression coverage is a follow-up (the code path is
-// the same one proven here).
-for (const mod of ['sequencer', 'polyseqz', 'drumseqz'] as const) {
+// patterns. (Was SEQUENCER/POLYSEQZ/DRUMSEQZ until their deletion 2026-08-24
+// — deprecated by CLIP PLAYER. KRIA's cursor advances while running even with
+// no trigs set, so it inherits the guard.) `score` shares the identical drop
+// guard but needs loaded notes to advance, so its regression coverage is a
+// follow-up (the code path is the same one proven here).
+for (const mod of ['kria'] as const) {
   test(`tempo-stability: ${mod} drops the past-due backlog under a stall > lookahead, never bunches (#229/#224)`, async ({ page, rack }) => {
     const id = `j_${mod}`;
     await spawnPatch(
       page,
-      [{ id, type: mod, params: { bpm: SEQ_BPM, length: 16, isPlaying: 1 } }],
+      [{ id, type: mod, params: { bpm: SEQ_BPM, running: 1 } }],
       [],
     );
 

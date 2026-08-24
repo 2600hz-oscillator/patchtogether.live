@@ -165,8 +165,8 @@ test.describe('tidyVco DUAL-display glyph (?shell=1)', () => {
           { on: true, midi: 62, chord: 'min' },
         ][i % 4]);
       });
-    await seedKriaGate(page, 'p-seq-clk');
     });
+    await seedKriaGate(page, 'p-seq-clk');
 
     const faceplate = await openDock(page, 'p-tv');
     const wave = faceplate.getByTestId('shell-glyph-wave');

@@ -849,3 +849,4 @@ test('#1790 cartesian GATE: the flip key advances the cell and does NOT flip —
   // Single-owner intact throughout: the canvas never moved.
   await expect(canvasFlow(page)).not.toHaveClass(/rear-view/);
   await expect(flipRackBtn(page)).toHaveAttribute('aria-pressed', 'false');
+});

@@ -42,7 +42,7 @@ async function setupChain(page: Page): Promise<void> {
   await spawnPatch(
     page,
     [
-      { id: 'seq-1', type: 'drumseqz', position: { x: 100, y: 100 }, domain: 'audio' },
+      { id: 'seq-1', type: 'score', position: { x: 100, y: 100 }, domain: 'audio' },
       { id: 'tl-1', type: 'timelorde', position: { x: 400, y: 100 }, domain: 'audio' },
     ],
     [],
