@@ -221,6 +221,62 @@ describe('synesthesia face — the VU wall is the picture, and it is a READER', 
   });
 });
 
+describe('synesthesia face — NO card gesture needs a CLICK the host cannot deliver', () => {
+  // ⚠ THE SECOND HALF OF STOP 2, AND IT IS NOT THE OBVIOUS ONE.
+  //
+  // "Every affordance has a shell cell" is the half everyone checks. The half
+  // that bit `cameraInput` is different: `synesthesia` is in
+  // `CARD_PRODUCER_LANE_TYPES`, so after promotion its real card is still
+  // MOUNTED — off-screen, in `HeadlessSourceHost`, which parks at
+  // `left:-9999px` with `pointer-events: none` (HeadlessSourceHost.svelte:103).
+  // So anything on that card that must merely KEEP RUNNING is fine, and
+  // anything that must be PRESSED is unreachable. cameraInput's "Request
+  // access" button was the only path to `getUserMedia` for a first-time
+  // visitor, and its promotion had to BUILD a registry seam rather than argue
+  // the point.
+  //
+  // SYNESTHESIA NEEDS NO SEAM, and the reason is structural rather than lucky:
+  // this card has no non-param state at all. Asserted here, at the source,
+  // because no runtime gate looks at a card that is no longer rendered.
+  const CARD_SRC = resolve(HERE, 'SynesthesiaCard.svelte');
+  const card = (): string => stripSourceComments(readFileSync(CARD_SRC, 'utf8'));
+
+  it('the card owns NO node.data, NO file input and NO device roster', () => {
+    const src = card();
+    // The samsloop shape (a `node.data`-backed loader), the cameraInput shape
+    // (a service the card acquires), and the writeData shape — none present.
+    expect(src).not.toMatch(/writeData|mutateNode|\bnode\.data\b|data\?\.\w+\s*=/);
+    expect(src).not.toMatch(/<input\b|<select\b|accept=/);
+  });
+
+  it('⚠ every CLICKABLE thing on the card is a PARAM write, and every one is RANKED', () => {
+    const src = card();
+    // Every `onclick` on this card routes through one of these two handlers…
+    const handlers = [...src.matchAll(/onclick=\{\(\)\s*=>\s*(\w+)\(/g)].map((m) => m[1]!);
+    expect(new Set(handlers)).toEqual(new Set(['toggleMode', 'togglePolarity']));
+    // …and both write a param through the ordinary graph seam, which is exactly
+    // what a face cell does. No third gesture exists.
+    expect(src).toMatch(/function toggleMode[\s\S]{0,220}set\(`\$\{c\}_mode`\)/);
+    expect(src).toMatch(/function togglePolarity[\s\S]{0,220}set\(`\$\{c\}_bipolar`\)/);
+    expect(src).toMatch(/const set = \(id_: string\) => \(v: number\) => setNodeParam\(/);
+    // The four params those two handlers reach are all ranked, so the face
+    // renders an interactive cell for each and the click has somewhere to go.
+    for (const id of SWITCHES) expect(face.order).toContain(id);
+  });
+
+  it('the only card work that must SURVIVE is a rAF, which the host serves fine', () => {
+    const src = card();
+    // The video-levels pump is a loop, not a gesture — `pointer-events: none`
+    // is irrelevant to it, which is the whole reason the headless host is a
+    // sufficient answer here and was not for cameraInput.
+    expect(src).toContain('requestAnimationFrame');
+    expect(src).toContain("eng.write(node, 'video_levels_a', lv)");
+    // NEGATIVE CONTROL on the instrument: the grep really can find a click, so
+    // "no third gesture" above is a reading rather than an empty match.
+    expect(src.match(/onclick=/g)?.length).toBeGreaterThan(0);
+  });
+});
+
 describe('synesthesia face — the VU wall needs NO VRT seed, and that is derived', () => {
   it('drawVuMeters is a PURE function of its levels — same input, same ops', () => {
     const a = vuOps([0.2, 0.5, 0.9, 0.1]);
