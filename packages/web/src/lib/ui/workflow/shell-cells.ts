@@ -66,6 +66,7 @@ import BlueboxToneBankPanel from '$lib/ui/modules/BlueboxToneBankPanel.svelte';
 import ClapHeroPanel from '$lib/ui/modules/ClapHeroPanel.svelte';
 import CubeHeroPanel from '$lib/ui/modules/cube/CubeHeroPanel.svelte';
 import CubeTableStackPanel from '$lib/ui/modules/cube/CubeTableStackPanel.svelte';
+import KriaGridPanel from '$lib/ui/modules/kria/KriaGridPanel.svelte';
 import CloudsRingPanel from '$lib/ui/modules/CloudsRingPanel.svelte';
 import CofefveEchoTrainPanel from '$lib/ui/modules/CofefveEchoTrainPanel.svelte';
 import KickdrumHeroPanel from '$lib/ui/modules/KickdrumHeroPanel.svelte';
@@ -124,6 +125,28 @@ import {
 // it, because shell-cells.test.ts checks which HANDLER FIELD is present, not
 // what the handler does.
 import { fireManualStrike, setManualGate } from '$lib/ui/modules/manual-strike-actions';
+import {
+  kriaDirectionOptions,
+  kriaDirectionValue,
+  kriaLoopLengthOptions,
+  kriaLoopLengthValue,
+  kriaLoopStartOptions,
+  kriaLoopStartValue,
+  kriaMuteValue,
+  kriaRootOptions,
+  kriaRootValue,
+  kriaScaleOptions,
+  kriaScaleValue,
+  kriaSetDirection,
+  kriaSetLoopLength,
+  kriaSetLoopStart,
+  kriaSetMute,
+  kriaSetRoot,
+  kriaSetScale,
+  kriaSetTimeDivision,
+  kriaTimeDivisionOptions,
+  kriaTimeDivisionValue,
+} from '$lib/ui/modules/kria-cell-actions';
 import { timelordeFaceTap } from '$lib/ui/modules/timelorde/face-tap';
 
 /** A dropdown over a NAMED roster that lives in node.data (not a param). */
@@ -1611,6 +1634,103 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
         + 'Inactive while an external clock is patched into CLOCK IN — the measured tempo owns the BPM then.',
       probe: { presses: 2, effect: { kind: 'param', paramId: 'bpm', expect: 'changed' } },
       onFire: (nodeId) => { timelordeFaceTap(nodeId); },
+    },
+  },
+  kria: {
+    // THE STEP GRID — 7 lanes × 16 steps for the selected track, plus the
+    // sixteen pattern slots on the same surface. This IS the module: its two
+    // params (`bpm`, `running`) are both FALLBACKS that do nothing in the
+    // default rack, because the auto-spawned TIMELORDE drives playback. So the
+    // only two controls the PARAM system knows about are the two least
+    // important controls on the instrument, and everything a player actually
+    // plays lives in `node.data` — which is exactly the gap this registry
+    // exists to close (the DX7 defect verbatim).
+    //
+    // ⚠ RANKED FIRST, VIA `face.hero.cell`, AND THAT COMBINATION IS LOAD-BEARING.
+    // `module-face-lint` refuses a panel SELECTED at a lane tier (a panel
+    // declares its own minWidth; a lane knob column is 46 px), which made a
+    // panel's first legal rank 7 — unreachable for a module with three rankable
+    // keys. PF-22's `laneOrder` drops `face.hero.cell` from the LANE roster
+    // only, so a hero picture costs no lane rank and may rank first. kria is
+    // named in PF-22's own comment as one of the two modules the old arithmetic
+    // locked out of having a faceplate at all.
+    //
+    // ⚠ A `data` PROBE, NOT `data-rev`, and it is aimed at a cell that is live
+    // in the SHIPPED default state. A fresh kria selects track 0 and the TRIG
+    // lane (`coerceLane` defaults there), and step 0 / row 6 is the trig lane's
+    // one lit row — so the probe's click toggles `trig[0]` on the default
+    // surface with no setup. It watches the whole lane array rather than one
+    // index so the assertion cannot be satisfied by a write that lands on a
+    // different step.
+    'kria-cell-{n}': {
+      kind: 'panel',
+      label: 'the grid',
+      component: KriaGridPanel,
+      // Sixteen columns is what makes this wide, and nothing else: 16 cells at
+      // 16 px plus 15 two-px gaps plus the plate's own padding. Width EARNED by
+      // a picture-you-edit, not spent on gray space.
+      minWidth: 320,
+      probe: {
+        testid: 'kria-cell-0-6',
+        action: 'click',
+        effect: { kind: 'data', key: 'patterns.0.tracks.0.trig', expect: 'changed' },
+      },
+    },
+
+    // ── THE TRACK BANDS. Every cell below reads and writes the SELECTED track,
+    // which is why the selection lives in `node.data`: a cell's `value(node)`
+    // receives the node and nothing else.
+    'kria-loop-start-{n}': {
+      kind: 'selector',
+      tag: 'FROM',
+      options: () => kriaLoopStartOptions(),
+      value: (node) => kriaLoopStartValue(node),
+      onchange: (nodeId, v) => kriaSetLoopStart(nodeId, v),
+    },
+    'kria-loop-length-{n}': {
+      kind: 'selector',
+      tag: 'LEN',
+      options: () => kriaLoopLengthOptions(),
+      value: (node) => kriaLoopLengthValue(node),
+      onchange: (nodeId, v) => kriaSetLoopLength(nodeId, v),
+    },
+    'kria-time-division-{n}': {
+      kind: 'selector',
+      tag: 'DIV',
+      options: () => kriaTimeDivisionOptions(),
+      value: (node) => kriaTimeDivisionValue(node),
+      onchange: (nodeId, v) => kriaSetTimeDivision(nodeId, v),
+    },
+    'kria-direction-{n}': {
+      kind: 'selector',
+      tag: 'DIR',
+      options: () => kriaDirectionOptions(),
+      value: (node) => kriaDirectionValue(node),
+      onchange: (nodeId, v) => kriaSetDirection(nodeId, v),
+    },
+    'kria-mute-{n}': {
+      kind: 'toggle',
+      label: 'mute',
+      value: (node) => kriaMuteValue(node),
+      onchange: (nodeId, on) => kriaSetMute(nodeId, on),
+    },
+
+    // ── SCALE + ROOT are PATTERN-level: one setting for all four tracks.
+    // `scale` was PRINTED on the card as a read-only text tag and editable
+    // nowhere but a monome grid; `root` was not on the card at all.
+    'kria-scale-{n}': {
+      kind: 'selector',
+      tag: 'SCALE',
+      options: () => kriaScaleOptions(),
+      value: (node) => kriaScaleValue(node),
+      onchange: (nodeId, v) => kriaSetScale(nodeId, v),
+    },
+    'kria-root-{n}': {
+      kind: 'selector',
+      tag: 'ROOT',
+      options: () => kriaRootOptions(),
+      value: (node) => kriaRootValue(node),
+      onchange: (nodeId, v) => kriaSetRoot(nodeId, v),
     },
   },
 };

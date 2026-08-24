@@ -727,6 +727,33 @@ export function laneCellName(lane: KriaLane, step: number, row: number): string 
   }
 }
 
+/**
+ * The full accessible name of one grid cell: what it IS, then what the step
+ * currently HOLDS.
+ *
+ * ⚠ IT ALL GOES IN `aria-label`, AND NOT IN `aria-valuetext`. `aria-valuetext`
+ * is only meaningful on a RANGE role; these cells are `role="gridcell"` inside a
+ * `role="grid"`, so a value parked there is dropped on the floor by assistive
+ * tech and flagged by svelte-check. (Knobs, faders and selectors — real range
+ * roles — keep `aria-valuetext` as before. The same correction was made for
+ * `role="application"` XY pads in #2038.)
+ *
+ * This string carries real weight on this module: the faceplate paints NO
+ * resting derived text, so the accessible name is the ONLY readable form the
+ * sequencer's per-step state has, and it is what every spec proving the face
+ * tracks the graph reads. The card it replaces said `step 5 row 2` on every
+ * page — a bare grid coordinate, identical on TRIG, NOTE, OCTAVE and DURATION,
+ * that never named the value or whether the cell was lit.
+ */
+export function laneCellAriaLabel(
+  lane: KriaLane,
+  track: KriaTrack,
+  step: number,
+  row: number,
+): string {
+  return `${laneCellName(lane, step, row)} — ${laneStepText(lane, track, step)}`;
+}
+
 /** Apply a lane edit to a track, returning a NEW track (or null for an inert
  *  row). The one switch every editor routes through, so a new lane cannot reach
  *  only half the surfaces. */
