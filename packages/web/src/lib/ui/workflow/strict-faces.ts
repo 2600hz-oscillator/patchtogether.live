@@ -4249,6 +4249,39 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // SCREEN switch sits outside the video-screen ruling's population by domain.
   'twotracks',
 
+  // ── PICTUREBOX — the image SLOT BANK, and the promotion that FIXES a defect
+  //
+  // ONE ranked control (`gain`) and one picture. That is not a thin face, it is
+  // the module: picturebox is the fleet's cheap image-on-a-wire, and its idea is
+  // the seven-slot bank a clip player selects by PITCH CLASS, not a control
+  // surface.
+  //
+  // ⚠ THE PROMOTION IS A BUG FIX, WHICH IS UNUSUAL FOR A FACE. On the card,
+  // slots 2-7 are reachable ONLY through an `oncontextmenu` handler on the card
+  // root that toggles a "Load multiple…" overlay. Nothing on the card's visible
+  // surface advertises it; the gesture is documented only on the docs site. So
+  // the module has been shipping a seven-slot instrument with six slots behind
+  // an undiscoverable right-click. The dock body puts the bank on screen
+  // permanently and binds no `oncontextmenu` at all, which also hands the node
+  // its normal right-click menu back — today BOTH fire (`varispeed-panel-layout`
+  // presses Escape to dismiss the node menu its own right-click summoned).
+  //
+  // ⚠ THE INPUT PATH IS THE STOP-2 QUESTION AND IT IS ANSWERED BY THE
+  // EXTENSION, NOT BY THE FACE. Eight `<input type="file">` elements live on the
+  // card and no `ParamCellKind` mounts one, so a promotion without a
+  // `fullViewBody` would leave a picture source that can never be given a
+  // picture — the exact refusal the skill records for `samsloop`. The body
+  // carries the pickers, the bank, and the SCREEN switch.
+  //
+  // ⚠ WHAT PROMOTION DOES **NOT** COST HERE, and it is the reason this module
+  // was safe to take: the two halves that normally break when a card stops
+  // mounting were moved off it long ago (#1720). The texture upload and the
+  // ASSET GATE / ASSET PITCH poll both live in `extras-producers.ts` on GRAPH
+  // lifetime, so picturebox is absent from `CARD_PRODUCER_LANE_TYPES` — a set
+  // that is DERIVED by grepping every card for those seams, not hand-kept. Its
+  // absence is therefore a gate-anchored statement that the seam is gone.
+  'picturebox',
+
   // ── matrixMix — THE FIRST META-DOMAIN FACE (bespoke wave 4) ────────────────
   //
   // ⚠ IT IS THE FIRST MEMBER OF THIS SET FROM A DOMAIN THAT COULD NOT HAVE ONE,

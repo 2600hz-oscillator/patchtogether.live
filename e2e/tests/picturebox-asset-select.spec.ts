@@ -22,6 +22,9 @@ import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 import { midiToVOct } from '../../packages/web/src/lib/audio/note-entry';
 import { ASSET_SLOT_NOTES } from '../../packages/web/src/lib/video/asset-select';
+// The pump's own sampling interval, imported from the product rather than
+// re-typed — the two gate holds below are expressed in ITS ticks.
+import { PUMP_INTERVAL_MS } from '../../packages/web/src/lib/ui/media/node-extras-registry';
 
 async function setup(page: Page): Promise<string[]> {
   const errors: string[] = [];
@@ -101,9 +104,36 @@ async function writeAssets(page: Page, nodeId: string, assets: (string | null)[]
   }, { nodeId, assets });
 }
 
-/** Fire an asset_gate rising edge with a given asset_pitch (raw V/oct) via the
- *  video engine setParam — and hold the gate high long enough (> one 33ms card
- *  poll tick) for the card's gate loop to catch the rising edge. */
+/**
+ * Fire an asset_gate rising edge with a given asset_pitch (raw V/oct) via the
+ * video engine setParam — the same entry point the cross-domain CV bridge uses.
+ *
+ * ⚠ THIS HELPER WAS UNSOUND AND THE SPEC FAILED 2 RUNS IN 5 ON PRISTINE MAIN
+ * (2026-08-24, measured with REPEAT=5), always on the THIRD leg and always with
+ * the identical reading `mean=7.7` — i.e. still showing slot 1 after a gate at
+ * note C. It is a genuine race, not a renderer budget, and the mechanism is the
+ * RELEASE rather than the rise:
+ *
+ * The consumer is `pictureboxProducer.pump` in `$lib/ui/media/extras-producers`.
+ * It samples ONE value per tick and edge-detects with `last < 0.5 && g >= 0.5`,
+ * so it can only see a rising edge if it has already OBSERVED THE LOW. This
+ * helper used to write the gate back to 0 and return IMMEDIATELY, so the release
+ * and the next rise landed inside a single tick whenever the two Playwright
+ * round-trips took less than one interval — the pump read high-then-high, no
+ * edge fired, and the displayed slot never moved. The three "green" legs were
+ * green because a tick happened to land in the round-trip, which is exactly the
+ * "ask why the GREEN runs are green" shape: the coverage was a coin flip.
+ *
+ * ⚠ AND THE SAMPLING RATE IS THE PRODUCT'S, NOT THE TEST'S. A gate narrower
+ * than the pump's interval is genuinely invisible to this module — the card's
+ * old interval had the same property and the move to the pump deliberately kept
+ * it ("gate timing is unchanged by the move"). So the test respects the
+ * product's rate; it does not ask the product to sample faster.
+ *
+ * The fix is a direct port of the one `extras-producer-lifetime.spec.ts` already
+ * carries for the same jacks, including its reasoning — see the `pacing` note
+ * there. Both holds derive from PUMP_INTERVAL_MS rather than re-typing 80.
+ */
 async function fireAssetGate(page: Page, nodeId: string, voct: number): Promise<void> {
   await page.evaluate(({ nodeId, voct }) => {
     const w = globalThis as unknown as {
@@ -115,7 +145,13 @@ async function fireAssetGate(page: Page, nodeId: string, voct: number): Promise<
     ve?.setParam?.(nodeId, 'asset_pitch', voct);
     ve?.setParam?.(nodeId, 'asset_gate', 1); // rising edge
   }, { nodeId, voct });
-  await page.waitForTimeout(80); // > one 33ms card poll tick so the edge is seen
+  // pacing: the HIGH half of a real product GATE WIDTH. The node-lifetime pump
+  // samples asset_gate once per PUMP_INTERVAL_MS — defined by the product in
+  // $lib/ui/media/node-extras-registry and imported here rather than re-typed —
+  // so the level has to SIT high across at least one sample or a live detector
+  // reads as dead. No number of rAF frames expresses "one setInterval tick".
+  // Three ticks so a loaded runner cannot starve the single sample this needs.
+  await page.waitForTimeout(PUMP_INTERVAL_MS * 3);
   await page.evaluate((nodeId) => {
     const w = globalThis as unknown as {
       __engine?: () => {
@@ -125,6 +161,13 @@ async function fireAssetGate(page: Page, nodeId: string, voct: number): Promise<
     const ve = w.__engine?.()?.getDomain?.('video');
     ve?.setParam?.(nodeId, 'asset_gate', 0); // release → re-arm
   }, nodeId);
+  // pacing: THE LOW half, and the half whose absence made this spec unsound.
+  // An edge detector re-arms only once it has OBSERVED the low, on the SAME
+  // PUMP_INTERVAL_MS sample clock. Without this the release and the next rise
+  // land inside one tick, the pump reads high-then-high, and the second gate
+  // silently does nothing — which is precisely the 2-in-5 failure measured on
+  // main. Same three-tick margin, same reason.
+  await page.waitForTimeout(PUMP_INTERVAL_MS * 3);
 }
 
 // Slot 0 = bright (gray 240) → high downstream luma. Slot 1 = dark (gray 8) →

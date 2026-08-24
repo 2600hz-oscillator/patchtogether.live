@@ -360,6 +360,20 @@ const EXTENSION_BODY_ROLES: Readonly<Record<string, BodyRule>> = {
   // SCREEN button). None of the four cards mounts `hideControls`, so none of
   // these bodies declares a MONITOR toggle or a resize grip, and nothing on any
   // of the surfaces is a derived value in a text node.
+  // ⚠ THE ROSTER'S MOST TEXT-HEAVY BODY, DECLARED AS SUCH RATHER THAN SLIPPED
+  //    THROUGH. Every other `picture` here paints a canvas plus a switch caption.
+  //    picturebox paints a canvas plus EIGHT file-pick controls, seven scale-degree
+  //    tags and up to seven FILENAMES — and that is the point of the module, not
+  //    decoration on it. Each of those is a permitted role in substance: the note
+  //    tag (C D E F G A B) is an OPTION/LANDMARK NAME saying which pitch class
+  //    reaches this slot; "Choose image…" / "Load file…" are CONTROL CAPTIONS on
+  //    their own buttons; and the filename is the row's own caption — a file bank
+  //    whose rows do not say which file is in them is not a file bank, and the
+  //    name is what disambiguates seven otherwise-identical rows. What it does NOT
+  //    paint is the one thing that WAS derived state: the card's
+  //    `gif` / `synced (1024×768)` line is a state word and a measurement, and it
+  //    is gone from this surface, living on the canvas's `aria-label` instead.
+  picturebox: { role: 'picture', why: 'the image bank\'s LIVE ENGINE OUTPUT — deliberately not an <img> of node.data.imageBytes, because that field is the SINGLE-image slot while the displayed slot is gate-selected local render state, so a data: URL would show the wrong picture the moment a clip player selected slot 3 and would be blind to GAIN besides — plus the SCREEN switch, the single-file picker, and the 7-slot bank with its scale-degree tags and per-row filenames. ⚠ The bank is on this surface rather than behind a `panel` cell because its controls are `<input type="file">` elements: no ParamCellKind mounts one, so without this body a promoted picturebox would be a picture source with no way to be given a picture. ⚠ AND THE WATCH MARK IS RETAINED FOR A REASON THE STATELESS BODIES DO NOT HAVE: an animated gif\'s frame index is advanced INSIDE surface.draw off the engine clock, so a collapsed state that stopped marking would stop the gif\'s clock and SCREEN back ON would resume from a stale frame — the #1720/#1721 shape the ruling names (#2015).' },
   posterbox: { role: 'picture', why: 'the colour-quantised picture and its SCREEN switch. A stateless per-pixel reduction, so the retained watch mark protects the OUTPUT of a chainable mid-graph effect rather than any accumulated state (#2015).' },
   tiler: { role: 'picture', why: 'the tiled-grid picture and its SCREEN switch. Stateless re-sampling per frame, so SCREEN OFF costs only the OUTPUT — which is why the body keeps marking the node watched (#2015).' },
   sourcery: { role: 'picture', why: 'the keyed/skewed picture and its SCREEN switch. Derived per frame from its two thresholds, the colour skew and the rotation, so the retained watch mark protects the OUTPUT (#2015).' },

@@ -2319,6 +2319,25 @@ export const FACES = [
       + 'black however many draws land.',
   },
   {
+    type: 'picturebox',
+    pages: 1,
+    videoFaceWhy:
+      'a VIDEO module, so it must boot into the video zone rather than a mixer channel column — '
+      + 'without this field bootWithFace waits out the full 90 s test timeout for a column '
+      + 'membership a video node never acquires. Both scenes carry a picture: the compact tile '
+      + 'paints a VideoTileThumb through hasVideoSurface, and the dock body is the module\'s own '
+      + "fullViewBody extension (the live output plus its SCREEN switch, the file pickers and the "
+      + '7-slot bank). The freeze write is a NO-OP on this def (it declares no `freeze` param), '
+      + 'and unlike its batch-mates that is not because the module is stateless — it DOES have a '
+      + 'clock, in the animated-gif frame scheduler that `surface.draw` advances off `ctx.time`. '
+      + 'The scene is deterministic anyway because that clock only runs on a slot holding an '
+      + 'ANIMATED gif with more than one frame, and a freshly spawned picturebox holds no image '
+      + 'at all: `hasActiveImage()` is false, the shader takes its idle branch and fills a '
+      + 'constant dark teal (0.02, 0.06, 0.08), and `slotAnim` is seven nulls so the frame-index '
+      + 'branch is never entered. A picture would have to be LOADED for anything here to move, '
+      + 'and the scene loads none.',
+  },
+  {
     type: 'tiler',
     pages: 1,
     videoFaceWhy:

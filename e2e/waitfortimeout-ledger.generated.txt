@@ -203,7 +203,6 @@ e2e/tests/patch-menu-ux.spec.ts :: clicking the patch-trigger opens the menu; ho
 e2e/tests/patch-panel.spec.ts :: both triggers open the same menu (shared state) :: waitForTimeout(150) #1
 e2e/tests/peertube.spec.ts :: audio_l/audio_r -> AUDIO OUT: real HLS-stream energy reaches the terminal output (capability-gated) @video :: waitForTimeout(120) #1
 e2e/tests/pentemelodica.spec.ts :: pentemelodica: a POLYSEQZ chord drives the stereo OUT :: waitForTimeout(40) #1
-e2e/tests/picturebox-asset-select.spec.ts :: fireAssetGate :: waitForTimeout(80) #1
 e2e/tests/picturebox-asset-select.spec.ts :: waitForLuma :: waitForTimeout(120) #1
 e2e/tests/picturebox-gif.spec.ts :: a static image renders and does NOT animate (regression) :: waitForTimeout(700) #1
 e2e/tests/picturebox-gif.spec.ts :: sampleLumaOverTime :: waitForTimeout(everyMs) #1
