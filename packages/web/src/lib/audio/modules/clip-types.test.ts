@@ -1940,7 +1940,7 @@ describe('copyClip', () => {
     // function playback actually consults, not just the key's presence. A note
     // with no `prob` of its own inherits the clip default, so dropping the key
     // silently promotes every such note from 50% to certain.
-    const ev = { step: 0, midi: 60 };
+    const ev: NoteEvent = { step: 0, midi: 60 };
     const c0: NoteClipRecord = { ...defaultNoteClip(), steps: [ev], defaultProb: 0.5 };
     expect(noteEffProb(c0, ev)).toBe(0.5);
     expect(noteEffProb(copyClip(c0), ev)).toBe(0.5); // pre-fix this read 1

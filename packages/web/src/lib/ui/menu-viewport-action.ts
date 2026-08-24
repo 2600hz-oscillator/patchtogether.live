@@ -108,8 +108,10 @@ export function clampMenu(node: HTMLElement, params: ClampMenuParams) {
 }
 
 export interface CascadeMenuParams {
-  /** The PARENT ROW's bounding rect in client-viewport coords. */
-  rect: { left: number; top: number; right: number; bottom: number };
+  /** The PARENT ROW's bounding rect in client-viewport coords. `width`/`height`
+   *  complete `patch-menu-position`'s `Rect` — a `DOMRect` supplies them, and a
+   *  hand-built rect must too. */
+  rect: { left: number; top: number; right: number; bottom: number; width: number; height: number };
   /** Gap between the parent row and the flyout (default 2 — a cascade reads as
    *  attached to its parent, unlike the rail's detached tile menu). */
   gap?: number;

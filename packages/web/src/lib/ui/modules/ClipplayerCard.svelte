@@ -1262,7 +1262,7 @@
   // it slides the flyout back left, over the parent menu. See cascadeMenu's
   // header for the measurement.
   type ProbSubKind = 'gate' | 'pitch' | 'every';
-  type RowRect = { left: number; top: number; right: number; bottom: number };
+  type RowRect = { left: number; top: number; right: number; bottom: number; width: number; height: number };
   let probSub = $state<{ which: ProbSubKind; rect: RowRect } | null>(null);
   /** Open (or switch to) a parent row's flyout, placed beside that row. Hover
    *  switches between the three the way a native menu does; click opens the same
@@ -1278,7 +1278,17 @@
     // is what makes a cascade read as belonging to the item you are on.
     const menuEl = row.closest('.prob-menu');
     const m = menuEl ? menuEl.getBoundingClientRect() : r;
-    probSub = { which, rect: { left: m.left, top: r.top, right: m.right, bottom: r.bottom } };
+    probSub = {
+      which,
+      rect: {
+        left: m.left,
+        top: r.top,
+        right: m.right,
+        bottom: r.bottom,
+        width: m.right - m.left,
+        height: r.bottom - r.top,
+      },
+    };
   }
 
   // ── CLIP-level actions on the NOTE menu: COPY / PASTE / CLEAR. These act on
