@@ -17,6 +17,8 @@ import type {
   Domain,
   RackSize,
   NoUserControlParam,
+  ControlFamily,
+  ModuleFace,
 } from '$lib/graph/types';
 import type { PaletteCategory } from '$lib/audio/module-registry';
 
@@ -37,6 +39,71 @@ export interface MetaModuleDef {
    *  meta module declares one today (meta defs have no ports, so any entry
    *  would have to be `writer: 'internal'`). See NoUserControlParam. */
   noUserControl?: readonly NoUserControlParam[];
+  /**
+   * THE CURATED FACEPLATE. Declared for parity with AudioModuleDef /
+   * VideoModuleDef — AUTHORING ONE **IS** PROMOTION to STRICT_FACES, exactly
+   * as it is for the other two registries.
+   *
+   * ⚠ WHY THIS ARRIVED LATE, AND WHY NOTHING WAS RED WHILE IT WAS MISSING.
+   * `noUserControl` above was already added "so the face lints can read
+   * `def.noUserControl` uniformly across all three registries" — the meta
+   * registry had been extended for the face system's benefit by somebody
+   * thinking about the face lints, and it stopped one field short of the field
+   * that lets a meta module HAVE a face. `svelte-check` refuses `face:` on a
+   * meta def outright, so no meta module could be promoted however good its
+   * design; and the promotion anchor (module-face-lint.test.ts, "every module
+   * that declares a `face` is in STRICT_FACES") reads
+   * `def.face && !STRICT_FACES.has(def.type)`, which for a meta def is
+   * `undefined && …` — PERMANENTLY FALSE. A whole DOMAIN sat outside the face
+   * system with every gate green: the exact "what is this gate structurally
+   * unable to see, and would its green run look any different if the answer
+   * were 'everything'?" shape.
+   *
+   * THE NEGATIVE CONTROL LIVES WITH THE GATE IT PROTECTS:
+   * `$lib/ui/workflow/module-face-lint.test.ts`, in the describe block
+   * *"meta domain: the `face?` precursor is READ, not merely declarable"*. It
+   * drives a fixture meta def through the anchor's OWN extracted predicate
+   * (`isUnpromotedFace`, not a restated copy of the expression) in three
+   * directions — caught when unpromoted, CLEARS when promoted so the leg
+   * measures promotion rather than domain, and clears for a faceless meta def
+   * so the fix cannot degenerate into "meta defs are always promoted" — plus a
+   * fourth leg asserting the live meta registry really reaches `allDefs()`
+   * carrying `face`. That is what keeps this field from landing as a decorative
+   * type change nothing reads.
+   *
+   * ⚠ THERE IS DELIBERATELY NO `docs?` FIELD BESIDE THIS ONE, and adding one is
+   * a SEPARATE decision with a coupling that must land in the same diff — see
+   * the note in `$lib/docs/strict-docs.ts` above the matrixMix line. In short:
+   * `module-manifest.ts` globs `../audio/modules/*.ts` + `../video/modules/*.ts`
+   * and has NO meta glob, so a meta `docs` field would be authored into a
+   * manifest that never reads it; and `e2e/tests/module-annotate.spec.ts` uses
+   * matrixMix as its "undocumented module" fixture, protected today by the
+   * mechanical impossibility of documenting a meta def rather than by anyone's
+   * restraint. Adding `docs?` removes that protection and must re-point the
+   * fixture in the same commit.
+   */
+  face?: ModuleFace;
+  /**
+   * CARD CONTROLS WITH NO BACKING PARAM, declared as families so a face can
+   * RANK them — the dx7 / videocube / kria convention.
+   *
+   * ⚠ IT IS NOT OPTIONAL DECORATION FOR THIS DOMAIN, IT IS THE ONLY ROUTE. A
+   * meta def declares `params: []` BY CONSTRUCTION (no engine, no ports), so
+   * every key its `face.order` can ever hold is a NON-param key — and
+   * `module-face-lint` legitimizes a non-param key exactly two ways: a
+   * `<familyId>-{n}` template whose prefix is a family DECLARED here, or an
+   * entry in a committed `<type>.legend.json` (an annotated-VRT artifact three
+   * modules have). The dock render-plan parity check independently refuses any
+   * other static as "a DEAD static cell". So without this field a meta face can
+   * rank NOTHING, and `face?` alone would have been a promotion route to a
+   * blank tile.
+   *
+   * Each `testidPrefix` is asserted to appear in real card source by
+   * `module-docs-lint` ("controlFamilies match the card — no drift"), which
+   * already enumerates the meta registry, so a family declared here cannot
+   * drift off the surface it names.
+   */
+  controlFamilies?: readonly ControlFamily[];
   /** Rack HEIGHT tier ('1u' | '3u') — a def-declared size WINS over the bulk
    *  RACK_SIZE_DEFAULTS map (see Canvas.svelte rackSizeByType). */
   size?: RackSize;

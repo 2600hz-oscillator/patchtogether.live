@@ -185,9 +185,23 @@ const PENDING_PALETTE_REGEN: readonly string[] = [];
  * reason rather than a styling one: it is a control surface for an EXTERNAL
  * device, so it declares zero ports and there is no cable for a stripe to
  * colour. A card with nothing to patch cannot pin a cable token.
+ *
+ * ⚠ `matrixMix` IS THE SAME STRUCTURAL CASE AS `chromaconsole`, AND IT ARRIVED
+ * BY A ROUTE WORTH RECORDING: it is not a new card, and nothing about it
+ * changed. It became a SCENE because bespoke wave 4 DRAINED its
+ * `EXEMPT_FROM_VRT` entry, which enrolled it in `vrt.spec.ts` for the first
+ * time. So this list grew without any card being edited, which is exactly the
+ * event the exact-set assertion exists to force somebody to look at.
+ *
+ * It belongs here on the merits: matrixMix is a META-domain module declaring
+ * `inputs: []` and `outputs: []` and binding to no engine, so like
+ * `chromaconsole` it has no cable for a stripe to colour — the card genuinely
+ * renders no `.stripe` element (the gate's own probe says so:
+ * "card renders no .stripe element"). It is NOT the hardcoded-hex divergence
+ * this list warns about; there is no hex, and no stripe.
  */
 const NOT_TOKEN_PINNED_SCENES: readonly string[] = [
-  'audioOut', 'chromaconsole', 'electraControl', 'mixer',
+  'audioOut', 'chromaconsole', 'electraControl', 'matrixMix', 'mixer',
   'moog903a', 'moog904b', 'moog904c', 'moog905', 'moog907a', 'moog911a', 'moog912',
   'moog914', 'moog921a', 'moog921b', 'moog923', 'moog956', 'moog960', 'moog961',
   'moog962', 'moog984', 'moog992', 'moog993', 'moog994', 'moog995',
