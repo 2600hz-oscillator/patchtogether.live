@@ -206,7 +206,15 @@ test('every 8-wide row shares ONE column ruler — column N is channel N everywh
 
   // The page declares a face-wide ruler at all. Without this, every clause below
   // could pass by coincidence on a face whose bands happened to agree.
-  const declared = await page.getByTestId('face-pages').getAttribute('data-face-console-cols');
+  //
+  // ⚠ SCOPED TO THE DOCK FULL VIEW — the same root `readClusters` already uses,
+  // so this spec measures ONE face everywhere. It was `page.getByTestId(...)`
+  // until 2026-08-24, when promoting `audioOut` put a second `face-pages` on
+  // every page: its PINNED instance lives in the topbar 🎧 panel, and that panel
+  // is always MOUNTED (open/close only toggles CSS, because AudioinCard owns the
+  // live input stream). The bare locator became a strict-mode violation.
+  const dock = page.getByTestId('dock-full-view');
+  const declared = await dock.getByTestId('face-pages').getAttribute('data-face-console-cols');
   expect(declared, 'mixmstrs must render on a FACE-WIDE console ruler').not.toBeNull();
   const ruler = Number(declared);
 
@@ -239,7 +247,16 @@ test('every 8-wide row shares ONE column ruler — column N is channel N everywh
   // …and the off-ruler band really is the side-by-side one, read off the DOM
   // rather than inferred from its absence: a band that fell off the ruler for
   // some OTHER reason would satisfy the two clauses above and be a bug.
-  const returnsBand = page.locator('[data-testid="face-page"][data-face-page="returns"]');
+  // ⚠ SCOPED, LIKE ITS TWO SIBLINGS IN THIS FILE. This one is not red today and
+  // the reason is luck rather than design: since 2026-08-24 the pinned audioOut
+  // faceplate sits on every page in the always-mounted 🎧 panel, and it renders
+  // NO `face-page` children only because its def declares a hero and no `pages`.
+  // One band on that face and this `toHaveCount(1)` reads 2. A count assertion
+  // whose safety depends on ANOTHER module's face content is not an assertion
+  // about mixmstrs.
+  const returnsBand = page
+    .getByTestId('dock-full-view')
+    .locator('[data-testid="face-page"][data-face-page="returns"]');
   await expect(returnsBand, 'the returns band must still render').toHaveCount(1);
   await expect(
     returnsBand,
@@ -328,7 +345,17 @@ test('NEGATIVE CONTROL: a face with ONE console band gets no face-wide ruler', a
   // and MUST NOT carry the attribute — which is also the containment claim for
   // this change: no other face's layout moved.
   await bootDock(page, [{ id: 'tv', type: 'tidyVco', position: { x: 460, y: 240 } }], 'tv');
-  await expect(page.getByTestId('face-pages')).not.toHaveAttribute('data-face-console-cols', /.*/);
+  // ⚠ THE SCOPE IS LOAD-BEARING ON THIS LEG SPECIFICALLY, more than on the
+  // positive one above. Since 2026-08-24 a second `face-pages` exists on every
+  // page — the PINNED audioOut faceplate in the always-mounted 🎧 topbar panel —
+  // and it carries no `data-face-console-cols`. A bare locator is a strict-mode
+  // violation today, but "fixing" it with `.first()` would have made this
+  // NEGATIVE CONTROL pass against the PANEL instead of against tidyVco: green,
+  // and no longer testing the thing it exists to test. Scoped to the dock full
+  // view this spec opened, so the subject is unambiguous.
+  await expect(
+    page.getByTestId('dock-full-view').getByTestId('face-pages'),
+  ).not.toHaveAttribute('data-face-console-cols', /.*/);
   // …and it really does have clustered bands, so the absence is a DECISION and
   // not "there was nothing to align".
   const clusters = await readClusters(page);

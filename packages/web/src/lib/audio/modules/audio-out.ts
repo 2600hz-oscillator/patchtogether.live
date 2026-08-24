@@ -70,6 +70,7 @@ import type { AudioModuleDef } from '$lib/audio/module-registry';
 // bare `src/**` specifiers; the `?url` dist import below goes through the
 // package name as usual.)
 import { MASTER_CEILING_DB } from '../../../../../dsp/src/lib/master-limiter-dsp';
+import { clearSinkReport, reportSink } from '$lib/audio/output-sink-report';
 // The degraded tail + the runtime latch recovery live in a DIST-FREE module so
 // they are covered by a pure unit test (audio-out-failover.test.ts) — this file
 // cannot be imported outside Vite because of the `?url` worklet import below.
@@ -107,6 +108,112 @@ export const audioOutDef: AudioModuleDef = {
       units: 'gain',
     },
   ],
+
+  // ── THE FACE ──────────────────────────────────────────────────────────────
+  //
+  // The rack's TERMINAL, promoted. One param, one bespoke body, and a lane
+  // picture that is mechanically refused.
+  face: {
+    // ONE RANK, AND NOTHING TO ARGUE. `master` is the only param this module
+    // has ever had.
+    order: ['master'],
+
+    // A MASTER LEVEL IS A THROW, NOT A DIAL — and UNDECLARED it silently
+    // becomes a dial, because `'fader'` and `'hue'` are the two primitives the
+    // shell cannot infer (`0..1 linear` is the same shape as any other
+    // continuous scalar). The card has always mounted a `NeonFader` here;
+    // `mixmstrs` and `noise` are the precedent, and `noise` carries this exact
+    // declaration for exactly this reason.
+    paramCells: { master: 'fader' },
+
+    // ⚠ NO LANE PICTURE, AND THE REFUSAL IS MECHANICAL RATHER THAN A TASTE
+    // CALL. `primaryAudioOutPortId` finds the first `audio` OUTPUT port, and
+    // this module declares `outputs: []` — it is a terminal sink. So the id is
+    // null, every live-glyph literal falls to `{kind:'static'}`, and the
+    // unconditional dead-glyph clause catches it. Declaring `'none'` states the
+    // outcome instead of shipping a binding that resolves to a dashed label.
+    //
+    // ⚠ AND THIS IS THE MODULE WHERE A PICTURE IS MOST WANTED AND LEAST
+    // REACHABLE. The terminal L/R level is the single most useful thing a
+    // rack-wide glance could carry — it is measured at `tail`, so it sees the
+    // master gain AND the limiter's action, unlike a passthrough glyph. But the
+    // PINNED instance is canvas-hidden and has NO LANE TILE, so a glyph would
+    // paint only on user-ADDED instances: the minority case, and the one that
+    // matters least, since a user who deliberately added a second output is
+    // already looking at it. The picture goes in the body instead, where the
+    // pinned instance can actually see it.
+    glyph: 'none',
+
+    // ── THE BODY ───────────────────────────────────────────────────────────
+    //
+    // `$lib/ui/modules/audioOut/shell-extension.ts` → `fullViewBody`. It carries
+    // the two things a `ParamDef` cannot express, and the reason they belong
+    // together is that they are the two halves of "where is my sound going":
+    //
+    //   1. THE TERMINAL STEREO METER — the thing this module has never had.
+    //      Three analyser taps already hang off `tail` (the exact node feeding
+    //      `ctx.destination`) and are read by NOTHING in the UI: they exist for
+    //      e2e audibility assertions. So the rack's terminal currently cannot
+    //      tell you whether it is clipping. The owner's list of genuine
+    //      width-earners names "a live picture" first; this is that picture, it
+    //      is what the module is about, and it costs no new engine work.
+    //
+    //   2. THE OUTPUT DEVICE PICKER — an `enumerateDevices()` roster plus the
+    //      `setSinkId` support/error states, which are neither params nor node
+    //      data with a roster the def could declare.
+    //
+    // ⚠ (2) IS WHY THIS MODULE'S migration disposition WAS `bespoke-surface`,
+    // and the body is exactly the answer that entry was asking for. It is also
+    // not a new idea: `cameraInput` had the SAME problem — a `<select>`
+    // populated from `enumerateDevices()` and persisted to a `node.data` key —
+    // and `legacy-fallback.ts` records the resolution by name: the picker
+    // "moved into the faceplate's EXTENSION BODY, which is the one slot that
+    // can hold a control no `ParamDef` can express."
+    //
+    // ⚠ AND IT IS DELIBERATELY NOT A `selector` SHELL CELL, which is the route
+    // that looks obvious and is worse here. `SHELL_CELLS` is keyed by
+    // `face.order` key, so a selector needs a declared non-param CONTROL — i.e.
+    // a `controlFamilies` entry on this def (the `milkdrop-preset-select` shape)
+    // — which puts an OS-device dropdown on the COMPACT LANE TILE of every
+    // added instance. That is wide on the one face that should be narrowest,
+    // and its options are the runner's own hardware names, which is a baseline
+    // full of machine-specific text. The body keeps the picker one click away
+    // (dock full view / the 🎧 tray, which IS the pinned instance's surface) and
+    // the tile a single throw.
+    //
+    // ⚠ 2D, NOT WEBGL, AND THAT IS A COST DECISION. The attest basis rule is
+    // derived from CONTENT, so a body written against a WebGL context would
+    // enrol this module automatically and make every later edit cost a real-GPU
+    // re-attest window. There is no reason to use WebGL for two bars.
+    extension: 'audioOut',
+
+    // ⚠ THE HERO IS THE FADER, AND THE FIRST DRAFT OF THIS FACE OMITTED IT.
+    // The reasoning was that "a hero MOVES a key out of its band, and with one
+    // param there is nothing to promote it above" — which is true about RANK
+    // and wrong about LAYOUT. MEASURED: with no hero the single ranked key
+    // stays in the page-less `__all` band, so the dock renders ONE labelled
+    // section band containing one fader, under a body. `noise` — also one
+    // param, also a fader — declares a hero for exactly this reason:
+    // `heroFacePlan` DROPS the emptied band ("a labelled void where they
+    // were"), leaving the plate as body + control with no section furniture
+    // naming a band of one.
+    //
+    // `hero.control`, NOT `hero.cell`: a `hero.cell` suppresses the shell glyph
+    // at the dock, and there is no glyph here to suppress (`glyph: 'none'`).
+    // The extension body takes the hero PICTURE's place; the hero CONTROL sits
+    // beside it, and every param cell stays intact.
+    hero: { control: 'master' },
+
+    // NO `pages`, NO `tabbed`.
+    //   * two bands would need two things to put in them; the picker is in the
+    //     body, so there is nothing left to name.
+    //   * `DOCK_TAB_MIN_BANDS` is 7. A tab rail could not engage here even if
+    //     someone asked for one, and the opt-in is owner-instruction-only.
+    //
+    // COMPACT BY DEFAULT: `FACE_WIDTH_EXEMPTIONS` is untouched and this face
+    // must never become an entry. One fader plus a meter is the narrowest face
+    // in its wave and should stay that way.
+  },
 
   docs: {
     explanation:
@@ -281,6 +388,83 @@ export const audioOutDef: AudioModuleDef = {
     silenceR.start();
     silenceR.connect(gainR);
 
+    // ---------------- THE OUTPUT SINK — the ONE owner of setSinkId ----------
+    //
+    // Choosing which hardware device the browser sends to used to live entirely
+    // on `AudioOutCard`: it applied the pick, and it ALSO ran a 100 ms x 50
+    // retry loop that re-applied the saved id once the engine appeared. Two
+    // code paths that had to agree, plus a timer `onDestroy` never cleared.
+    //
+    // ⚠ THAT ARRANGEMENT DEPENDED ON THE CARD BEING MOUNTED, AND IT STOPPED
+    // BEING GUARANTEED. The PINNED audio out is canvas-hidden; its only surface
+    // is the 🎧 topbar panel, and with the module promoted that panel mounts the
+    // FACEPLATE instead of the card. MEASURED: audioOut is in neither
+    // DOM_SOURCE_LANE_TYPES nor CARD_PRODUCER_LANE_TYPES, so
+    // `needsHeadlessSourceMount` is false and no headless host would have kept a
+    // copy alive. The saved device would simply have stopped being restored.
+    //
+    // So the apply lives HERE, where it always could have: the factory runs on
+    // engine boot BY CONSTRUCTION, which is the event the retry loop was
+    // polling for. The loop is deleted rather than moved. `node.data` is the
+    // source of truth on both paths — boot reads it, `write()` applies a change
+    // — so the reload path and the click path are the same code.
+    //
+    // ⚠ FEATURE-DETECTED ON THE LIVE CONTEXT, deliberately. An OfflineAudio-
+    // Context (the ART harness) has no `setSinkId`, so `sinkSupported` is false
+    // there and nothing in this block runs — which is why adding it costs the
+    // ART property tests nothing.
+    const sinkCtx = ctx as BaseAudioContext & {
+      setSinkId?: (deviceId: string) => Promise<void>;
+    };
+    const sinkSupported = typeof sinkCtx.setSinkId === 'function';
+    /** The id actually APPLIED (not merely requested) — the observable half. */
+    let sinkDeviceId: string | null = null;
+    /** The last rejection. TRANSIENT: cleared on the next successful apply, and
+     *  cleared here rather than left to a caller, because a stale error under a
+     *  working picker was a real defect on the card. */
+    let sinkError: string | null = null;
+
+    /** Publish the current sink state. `read('outputSink')` is a plain function
+     *  call and therefore not reactive, so a UI `$derived` over it would never
+     *  recompute on a rejection — the report is what makes the failure REACH a
+     *  surface. Both are kept: the read for a test that wants a pull, the
+     *  report for the UI that needs a push. */
+    function publishSink(): void {
+      reportSink(node.id, { supported: sinkSupported, deviceId: sinkDeviceId, error: sinkError });
+    }
+
+    async function applySink(deviceId: string): Promise<void> {
+      if (!sinkSupported) {
+        // Not an error the user caused — the browser cannot do this at all, and
+        // the picker reports that as its DISABLED state, not as a failure.
+        sinkError = null;
+        publishSink();
+        return;
+      }
+      try {
+        await sinkCtx.setSinkId!(deviceId);
+        sinkDeviceId = deviceId;
+        sinkError = null;
+      } catch (err) {
+        // The device can disappear between enumerate and apply. Surfaced
+        // through the report (push) AND `read('outputSink')` (pull) so the
+        // picker can announce it without polling.
+        sinkError = (err as Error).message || 'setSinkId failed';
+      }
+      publishSink();
+    }
+
+    // Restore the saved pick at BOOT. Floated deliberately: the factory must not
+    // block the audio graph on a device negotiation, and a failure lands in
+    // `sinkError` rather than rejecting the whole terminal sink (which would
+    // silence the entire patch — see the limiter catch above for the same
+    // priority).
+    {
+      publishSink(); // support/idle state is known now, before any pick
+      const saved = (node.data ?? {})['outputDeviceId'];
+      if (typeof saved === 'string' && saved.length > 0) void applySink(saved);
+    }
+
     return {
       domain: 'audio',
       inputs: new Map([
@@ -298,7 +482,18 @@ export const audioOutDef: AudioModuleDef = {
         if (paramId === 'master') return gainL.gain.value;
         return undefined;
       },
+      write(key, value) {
+        // THE ONLY CALLER OF setSinkId IN THE APP. See `applySink` above.
+        if (key === 'outputDeviceId' && typeof value === 'string') void applySink(value);
+      },
       read(key) {
+        // The sink state — support, the id actually applied, and the last
+        // rejection. The picker's `aria-valuetext` and the model test read
+        // this; nothing paints it. Read off the thing that CALLS setSinkId, so
+        // it cannot drift from what actually happened.
+        if (key === 'outputSink') {
+          return { supported: sinkSupported, deviceId: sinkDeviceId, error: sinkError };
+        }
         // Terminal-output samples — what the limiter is feeding to
         // ctx.destination this frame. Used by e2e to assert end-to-end
         // audibility (signal reached the speakers through the user's patch).
@@ -321,6 +516,7 @@ export const audioOutDef: AudioModuleDef = {
         return undefined;
       },
       dispose() {
+        clearSinkReport(node.id);
         try { silenceL.stop(); } catch { /* */ }
         try { silenceR.stop(); } catch { /* */ }
         silenceL.disconnect();
