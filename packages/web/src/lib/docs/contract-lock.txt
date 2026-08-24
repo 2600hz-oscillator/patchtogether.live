@@ -1642,6 +1642,8 @@ marbles param x_deja_vu 0..1 linear default=0
 marbles param x_length 1..16 discrete default=8
 marbles family marbles-loop kind=cell prefix=marbles-loop
 matrixMix meta domain=meta
+matrixMix family matrixmix-x kind=other prefix=matrixmix-x
+matrixMix family matrixmix-y kind=other prefix=matrixmix-y
 meowbox meta domain=audio
 meowbox in decay cv param=decay cvScale=log
 meowbox in gate gate edge=gate

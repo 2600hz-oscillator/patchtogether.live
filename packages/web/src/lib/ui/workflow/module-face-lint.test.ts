@@ -75,6 +75,11 @@ import {
 
 interface FaceDef {
   type: string;
+  /** The def's registry DOMAIN. Read by the meta-precursor control at the foot
+   *  of this file, which has to be able to ask "did a META def reach `allDefs()`
+   *  carrying a face" — the question the promotion anchor was structurally
+   *  unable to ask for the whole life of the face system. */
+  domain?: string;
   inputs?: readonly { id: string }[];
   outputs?: readonly { id: string }[];
   params?: readonly ParamDef[];
@@ -3186,9 +3191,15 @@ describe('module-face lint — STRICT_FACES is DERIVED FROM THE ARTIFACT, not fl
   // the ratchet rolls out' — measured 2026-08-12, that population is EMPTY: 32
   // defs declare a face and all 32 are in STRICT_FACES. This pins the live
   // state rather than raising the bar.
+  /** THE ANCHOR'S PREDICATE, extracted so the negative control below calls the
+   *  SAME function rather than a second copy of the same expression. A restated
+   *  predicate is how a control ends up proving something adjacent to the check
+   *  it is meant to protect. */
+  const isUnpromotedFace = (def: FaceDef): boolean => !!def.face && !STRICT_FACES.has(def.type);
+
   it('every module that declares a `face` is in STRICT_FACES (deny-by-default)', () => {
     const unpromoted = allDefs()
-      .filter((def) => def.face && !STRICT_FACES.has(def.type))
+      .filter(isUnpromotedFace)
       .map((def) => def.type)
       .sort();
     expect(
@@ -3209,5 +3220,94 @@ describe('module-face lint — STRICT_FACES is DERIVED FROM THE ARTIFACT, not fl
       [...STRICT_FACES].filter((t) => !faced.has(t)).sort(),
       'STRICT_FACES name(s) with no co-located `face` on a live def — delete them',
     ).toEqual([]);
+  });
+
+  // ── THE META-DOMAIN PRECURSOR'S NEGATIVE CONTROL ────────────────────────────
+  //
+  // ⚠ THIS IS THE ONE PLACE THE `face?` FIELD ON `MetaModuleDef` CAN BE PROVEN
+  // TO BE READ, AND THE REASON IT NEEDS PROVING IS THAT ITS ABSENCE WAS
+  // INVISIBLE FOR THE WHOLE LIFE OF THE FACE SYSTEM.
+  //
+  // Until `meta/module-registry.ts` grew `face?` (and `controlFamilies?`
+  // alongside it — see that file's note), NO meta def could carry a face at
+  // all: `svelte-check` refused the property outright. And the anchor two tests
+  // up could not notice, because its predicate is `def.face && …` and for a
+  // meta def that first term is PERMANENTLY `undefined`. Every meta module was
+  // outside the face system, and the deny-by-default gate whose entire job is
+  // to catch an un-anchored face read green about all of them — the "would its
+  // green run look any different if the answer were 'everything'?" shape,
+  // answered "no" for a whole DOMAIN.
+  //
+  // So a type-only precursor is exactly the failure mode this repo keeps
+  // finding: a field nothing reads, certifying nothing. The two legs below are
+  // the two halves of "something reads it", driven in BOTH directions off a
+  // fixture rather than off the shipped def, so they keep working if matrixMix
+  // is ever un-promoted and stay honest if it is not.
+  describe('meta domain: the `face?` precursor is READ, not merely declarable', () => {
+    /** A meta def shaped exactly like a real one: no ports, no params, and its
+     *  only rankable keys are one-member control families — which is the ONLY
+     *  shape a meta face can have (see MetaModuleDef.controlFamilies). */
+    const metaFixture = {
+      type: 'meta-face-fixture',
+      domain: 'meta',
+      label: 'meta face fixture',
+      category: 'tools',
+      inputs: [],
+      outputs: [],
+      params: [],
+      controlFamilies: [
+        { id: 'fixture-pick', label: 'Fixture pick', kind: 'other', testidPrefix: 'fixture-pick' },
+      ],
+      face: { order: ['fixture-pick-{n}'], glyph: 'none' },
+    } as unknown as FaceDef;
+
+    it('a meta def declaring a `face` REACHES the promotion anchor (it is not filtered out by domain)', () => {
+      // The anchor reads `allDefs()`, which concatenates all three registries.
+      // The claim is that a META member with a face is VISIBLE there with its
+      // face intact — if the concat ever loses the meta registry, or the field
+      // is stripped on the way through, this is what says so.
+      const metaWithFace = allDefs().filter((d) => d.domain === 'meta' && d.face);
+      expect(
+        metaWithFace.map((d) => d.type).sort(),
+        'the LIVE meta registry must reach allDefs() carrying `face` — if this is empty ' +
+          'while a meta def declares a face, the anchor above is blind to the whole domain again',
+      ).toEqual(['matrixMix']);
+      for (const d of metaWithFace) {
+        expect(d.face?.order.length, `${d.type}: a promoted meta face must rank something`).toBeGreaterThan(0);
+      }
+    });
+
+    it('NEGATIVE CONTROL, BOTH DIRECTIONS: the anchor PREDICATE fires on an unpromoted meta face and clears on a promoted one', () => {
+      // Direction 1 — a meta def with a face and no STRICT_FACES entry is
+      // caught. Before the precursor this could not even be expressed: the
+      // fixture would not have compiled with `face:` on a meta def, and the
+      // predicate's first term would have been undefined for it forever.
+      expect(
+        isUnpromotedFace(metaFixture),
+        'a meta def declaring a `face` but absent from STRICT_FACES MUST be caught by the ' +
+          'anchor predicate — if this is false, the anchor is structurally blind to the meta ' +
+          'domain and a meta module could ship an un-anchored face',
+      ).toBe(true);
+
+      // Direction 2 — the same predicate CLEARS for a meta def that IS
+      // promoted, so leg 1 is measuring promotion rather than domain. A control
+      // that can only ever return true proves the probe moves, not that it
+      // reads the right thing.
+      const promoted = { ...metaFixture, type: 'matrixMix' } as unknown as FaceDef;
+      expect(
+        isUnpromotedFace(promoted),
+        'the anchor predicate must CLEAR for a promoted meta def — otherwise leg 1 is ' +
+          'reporting "is meta", not "is unpromoted"',
+      ).toBe(false);
+
+      // Direction 3 — and it clears for a meta def with NO face, which is every
+      // other meta module today. This is the leg that would go red if the
+      // precursor were ever implemented as "meta defs are always promoted".
+      const faceless = { ...metaFixture, face: undefined } as unknown as FaceDef;
+      expect(
+        isUnpromotedFace(faceless),
+        'a meta def with no `face` is not an unpromoted face — it is an unfaced module',
+      ).toBe(false);
+    });
   });
 });

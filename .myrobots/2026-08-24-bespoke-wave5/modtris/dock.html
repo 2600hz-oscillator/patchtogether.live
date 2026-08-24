@@ -1,0 +1,310 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>MODTRIS face — the dock well</title>
+<style>
+/* ─────────────────────────────────────────────────────────────────────────
+   MODTRIS FACEPLATE — MOCKUP ONLY, nothing here is implemented. See spec.md.
+
+   ⚠ THE `NEXT` / `LN 17` STRIP IS INSIDE THE CANVAS AND IS ON THE ALLOWED SIDE
+   OF THE RESTING-TEXT RULING. drawModtris paints it (modtris.ts:329-354) — the
+   game paints it, not the face. It is the module's ARTWORK, part of the one
+   picture that earns the plate's width, and the strip consumes 30% of the
+   canvas BY CONSTRUCTION (wellWidthPx = w * 0.7), so it is not slack to
+   reclaim.
+
+   ⚠ THE FACE ADDS NO CHROME ROW OF ITS OWN, and that is REFUSED BY NAME in
+   spec.md §10.1: `LINES 17` beside the well would be the hero readout strip
+   (#1957) with a different label. Nothing in this mock paints a derived number
+   outside the well rectangle. The only resting text on the plate is the module
+   NAME, one BAND LABEL and two CONTROL CAPTIONS — the exhaustive permitted
+   list.
+
+   ⚠ AND THE GATE CANNOT SEE EITHER SHAPE. face-resting-text-source.test.ts
+   names canvas text as its own blind spot, and a chrome row inside a
+   module-owned fullViewBody is not a ModuleFace field. This picture and a human
+   reviewing the dock baseline are the whole enforcement.
+
+   ⚠ THE `LVL` FADER IS DRAWN GREYED AND ANNOTATED ON PURPOSE. `levelStep` is
+   read by NOTHING (modtris-state.ts:129 says so in its own words). Half this
+   module's control surface is dead; spec §13.1 is the decision.
+   ───────────────────────────────────────────────────────────────────────── */
+:root{
+  --bg:#0e1013; --dock:#12161c; --pbody:#1c1f24; --line:#2c3037; --tile:#33383f;
+  --ink:#eef1f5; --dim:#9aa2ad; --faint:#646c77;
+  --gate:#ffd23f; --cv:#5ad1ff; --warn:#f2c14e; --good:#8fe6b0; --bad:#ff9b9b;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+  font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1240px;margin:0 auto;padding:26px 20px 90px}
+h1{font-size:21px;font-weight:800;margin:0 0 6px}
+.sub{color:var(--dim);font-size:12.5px;margin:0 0 14px;max-width:108ch}
+.sub b{color:var(--ink)} code{font-family:var(--mono);font-size:11.5px;color:var(--gate)}
+.nav{display:flex;gap:8px;margin:0 0 20px;font-size:11px;flex-wrap:wrap}
+.nav a{color:var(--ink);text-decoration:none;border:1px solid var(--line);border-radius:6px;
+  padding:6px 12px;background:#12161c;font-family:var(--mono);letter-spacing:.06em;text-transform:uppercase}
+.nav a.on{border-color:var(--gate);color:var(--gate)}
+.warn{border:1px solid #6a5330;background:#1c1811;border-radius:8px;padding:11px 14px;margin:12px 0;
+  font-size:12.5px;color:#e8cf9a;max-width:120ch} .warn b{color:var(--warn)}
+.bad{border:1px solid #6a3838;background:#1c1212;border-radius:8px;padding:11px 14px;margin:12px 0;
+  font-size:12.5px;color:#e8b0b0;max-width:120ch} .bad b{color:var(--bad)}
+.ok{border:1px solid #3b5a48;background:#111a15;border-radius:8px;padding:11px 14px;margin:12px 0;
+  font-size:12.5px;color:#a9d8bd;max-width:120ch} .ok b{color:var(--good)}
+.cols{display:grid;grid-template-columns:minmax(0,1fr) 400px;gap:18px;align-items:start}
+@media (max-width:1120px){.cols{grid-template-columns:minmax(0,1fr)}}
+.dock{background:var(--dock);border:1px solid var(--line);border-radius:11px;padding:11px}
+.chromebar{display:flex;align-items:baseline;gap:9px;padding:0 2px 8px}
+.chromebar .nm{font-size:13px;font-weight:800;letter-spacing:.03em}
+.chromebar .x{margin-left:auto;color:var(--faint);font-family:var(--mono);font-size:12px}
+.plate{background:var(--pbody);border:1px solid var(--tile);border-left:4px solid var(--gate);
+  border-radius:10px;padding:0 0 12px;width:max-content;max-width:100%}
+.extbody{padding:12px 14px 4px;display:flex;justify-content:center}
+.wellwrap{position:relative}
+/* 200 x 260 CSS px — the card's own logical size (ModtrisCard CSS_W/CSS_H). */
+.canvas{position:relative;width:200px;height:260px;background:#0b121a;border:1px solid #232a33;
+  border-radius:3px;overflow:hidden;font-family:var(--mono)}
+.well{position:absolute;left:0;top:10px;width:140px;height:240px;
+  background:repeating-linear-gradient(#1a2030 0 11px, #0b121a 11px 12px),
+             repeating-linear-gradient(90deg,#1a2030 0 13px,#0b121a 13px 14px)}
+.blk{position:absolute;width:13px;height:11px;border-top:1px solid #0b121a;border-left:1px solid #0b121a}
+.strip{position:absolute;left:146px;top:10px;width:50px;color:#dafff7}
+.strip .lab{font-size:9px;font-weight:700;letter-spacing:.03em}
+.strip .mini{margin-top:5px;display:grid;grid-template-columns:repeat(4,8px);grid-auto-rows:8px;gap:0}
+.strip .mini i{display:block;width:8px;height:8px}
+.strip .ln{margin-top:56px;font-size:11px;font-weight:700;line-height:1.15}
+.screenbtn{position:absolute;right:5px;bottom:5px;font-family:var(--mono);font-size:8.6px;
+  letter-spacing:.06em;padding:3px 9px;border:1px solid #6a5a2a;border-radius:2px;
+  background:rgba(5,6,8,.72);color:var(--ink);z-index:3}
+.bands{padding:6px 14px 0}
+.band{border-top:1px solid var(--line);padding-top:8px;margin-top:10px}
+.band:first-child{border-top:0;margin-top:4px}
+.blab{margin:0 0 8px;font-size:9.4px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--dim)}
+.row{display:flex;gap:26px;align-items:flex-end}
+/* NeonFader stand-in — `paramCells:'fader'` is DECLARED for BOTH, because
+   ModtrisCard renders <NeonFader>s. ⚠ Its sibling frogger declares NOTHING
+   because FroggerCard renders a <Knob>. Each face matches its OWN card. */
+.fad{display:flex;flex-direction:column;align-items:center;gap:6px}
+.fad .track{position:relative;width:16px;height:96px;border-radius:8px;background:#151a21;
+  border:1px solid #303740}
+.fad .fill{position:absolute;left:0;right:0;bottom:0;border-radius:0 0 7px 7px;
+  background:linear-gradient(#ffd23f55,#ffd23f22)}
+.fad .cap{position:absolute;left:-4px;right:-4px;height:8px;border-radius:3px;background:#e8edf3;
+  box-shadow:0 0 7px rgba(255,210,63,.55)}
+.fad b{font-size:7.8px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:var(--dim);
+  font-family:var(--mono)}
+.dead .fill{background:linear-gradient(#55555555,#33333322)}
+.dead .cap{background:#6d737b;box-shadow:none}
+.dead b{color:#6d737b}
+.deadnote{font-family:var(--mono);font-size:8px;color:var(--bad);text-align:center;margin-top:2px}
+.hidden-params{font-family:var(--mono);font-size:10px;color:var(--faint);
+  border:1px dashed var(--tile);border-radius:5px;padding:6px 9px;margin-top:8px}
+.zones{background:#12161c;border:1px solid var(--line);border-radius:9px;padding:12px 13px}
+.zones h4{margin:0 0 8px;font-size:9px;font-weight:800;letter-spacing:.13em;text-transform:uppercase;color:var(--dim)}
+.zones+.zones{margin-top:14px}
+.zt{width:100%;border-collapse:collapse;font-size:10.5px}
+.zt th{text-align:left;font-family:var(--mono);font-size:7.8px;letter-spacing:.11em;text-transform:uppercase;
+  color:var(--faint);font-weight:400;padding:0 0 5px;border-bottom:1px solid var(--line)}
+.zt td{padding:5px 0;border-bottom:1px solid #1c2027;vertical-align:top;color:var(--dim);line-height:1.42}
+.zt td:first-child{color:var(--ink);font-family:var(--mono);font-size:9.5px;padding-right:10px;white-space:nowrap}
+.aria{font-family:var(--mono);font-size:10px;color:var(--good);background:#101a14;
+  border:1px solid #2c4636;border-radius:4px;padding:2px 6px;display:inline-block;margin-top:3px}
+</style>
+
+<div class="wrap">
+<h1>MODTRIS &mdash; dock faceplate &middot; the well</h1>
+<p class="sub">Spec and mockup only; nothing here is implemented. <b>One band, two faders and a
+<code>fullViewBody</code></b>. MODTRIS is a gate-driven ACCUMULATOR whose output rate is a
+function of how well the patch is playing &mdash; nothing else in the rack has a stack that
+remembers, so the same input pattern produces a different output rate ten seconds later.</p>
+
+<div class="nav">
+  <a href="../frogger/dock.html">frogger &middot; dock</a>
+  <a href="../frogger/lane-tiers.html">frogger &middot; lane tiers</a>
+  <a class="on" href="dock.html">modtris &middot; dock</a>
+  <a href="../skifree/dock.html">skifree &middot; refusal</a>
+  <a href="../nibbles/dock.html">nibbles &middot; dock</a>
+  <a href="../nibbles/dock-screen-off.html">nibbles &middot; screen off</a>
+</div>
+
+<div class="bad"><b>&#9888; PROMOTING THIS MODULE SILENTLY RETIRES A TEST.</b> MEASURED by
+evaluating the derivation rather than reading its comment: <code>AUDIO_OPERABLE_FIXTURE</code>
+resolves to <b>modtris, pool size 1</b>. When the pool empties, <code>deriveFixture</code>
+returns <code>migration-complete</code>, <code>fixtureProblems()</code> deliberately does not
+count that as a problem, and <code>workflow-shell.spec.ts</code> pairs it with
+<code>test.skip(...)</code>. <b>The suite goes GREEN and &ldquo;the verbatim legacy card is
+OPERABLE in the dock full view&rdquo; stops running.</b> Skips are not passes. Fix the SUBJECT
+&mdash; widen the predicate to what the leg needs, or retire the leg with the design it covered
+&mdash; and say which in the PR body. spec.md &sect;0.1.</div>
+
+<div class="cols">
+<div>
+  <div class="dock">
+    <div class="chromebar"><span class="nm">MODTRIS</span><span class="x">&#10005;</span></div>
+    <div class="plate">
+
+      <div class="extbody"><div class="wellwrap">
+        <div class="canvas">
+          <div class="well">
+            <div class="blk" style="left:52px;top:44px;background:#a000f0"></div>
+            <div class="blk" style="left:39px;top:55px;background:#a000f0"></div>
+            <div class="blk" style="left:52px;top:55px;background:#a000f0"></div>
+            <div class="blk" style="left:65px;top:55px;background:#a000f0"></div>
+            <div class="blk" style="left:0px;top:180px;background:#00f0f0"></div>
+            <div class="blk" style="left:13px;top:180px;background:#00f0f0"></div>
+            <div class="blk" style="left:26px;top:180px;background:#f0a000"></div>
+            <div class="blk" style="left:91px;top:180px;background:#00f000"></div>
+            <div class="blk" style="left:104px;top:180px;background:#00f000"></div>
+            <div class="blk" style="left:117px;top:180px;background:#f00000"></div>
+            <div class="blk" style="left:0px;top:191px;background:#0000f0"></div>
+            <div class="blk" style="left:13px;top:191px;background:#0000f0"></div>
+            <div class="blk" style="left:26px;top:191px;background:#0000f0"></div>
+            <div class="blk" style="left:39px;top:191px;background:#f0f000"></div>
+            <div class="blk" style="left:52px;top:191px;background:#f0f000"></div>
+            <div class="blk" style="left:78px;top:191px;background:#a000f0"></div>
+            <div class="blk" style="left:91px;top:191px;background:#00f000"></div>
+            <div class="blk" style="left:104px;top:191px;background:#f0a000"></div>
+            <div class="blk" style="left:117px;top:191px;background:#f00000"></div>
+          </div>
+          <!-- NEXT + LN: painted INSIDE the canvas by drawModtris. ALLOWED. -->
+          <div class="strip">
+            <div class="lab">NEXT</div>
+            <div class="mini">
+              <i></i><i style="background:#00f0f0"></i><i style="background:#00f0f0"></i><i></i>
+              <i></i><i style="background:#00f0f0"></i><i style="background:#00f0f0"></i><i></i>
+            </div>
+            <div class="ln">LN<br>17</div>
+          </div>
+          <div class="screenbtn">SCREEN ON</div>
+        </div>
+      </div></div>
+
+      <div class="bands">
+        <div class="band">
+          <p class="blab">fall</p>
+          <div class="row">
+            <div class="fad"><div class="track">
+              <div class="fill" style="height:34%"></div><div class="cap" style="bottom:calc(34% - 4px)"></div>
+            </div><b>Drop</b></div>
+            <div>
+              <div class="fad dead"><div class="track">
+                <div class="fill" style="height:47%"></div><div class="cap" style="bottom:calc(47% - 4px)"></div>
+              </div><b>Lvl</b></div>
+              <div class="deadnote">reads nothing</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="hidden-params">noUserControl (NEW, renders ZERO cells, asserted invertedly): freeze</div>
+
+  <div class="bad"><b>&#9888; HALF THIS CONTROL SURFACE IS DEAD.</b>
+  <code>modtris-state.ts:129</code> in its own words: <i>&ldquo;Lines-per-level threshold
+  (<b>unused in v1 stepper</b> but reserved for future scoring).&rdquo;</i> MEASURED:
+  <code>grep -n "params\." modtris-state.ts</code> returns ONE consumer,
+  <code>gravitySecondsPerDrop(params.gravityBpm)</code>, and <code>ModtrisState</code> has no
+  <code>level</code> field at all. The def declares it, the card faders it,
+  <code>contract-lock.txt:2031</code> pins it, the Push card will rank it, and the docs promise
+  <i>&ldquo;gravity speeds up each level&rdquo;</i> &mdash; false in both clauses. <b>Wire it or
+  delete it; the face cannot rank it honestly until that is decided</b> (spec &sect;13.1). Wiring
+  it changes how the module SOUNDS, so that route is an owner-preview PR.</div>
+</div>
+
+<div>
+  <div class="zones"><h4>zone map</h4>
+    <table class="zt">
+      <tr><th>zone</th><th>what it is</th></tr>
+      <tr><td>body</td><td>the 10&times;20 well plus the NEXT strip, painted by
+        <code>drawModtris</code> &mdash; the def's own pure exported function, <b>imported, never
+        re-implemented</b>. A PF-14 panel cell's first legal rank is 7 and modtris has two params,
+        so a panel can never be reached.</td></tr>
+      <tr><td>the NEXT strip</td><td>&#9888; <b>painted inside the canvas, and ALLOWED.</b>
+        <code>NEXT</code>, the preview and <code>LN 17</code> are the module's ARTWORK &mdash; the
+        game paints them, not the face. The strip consumes 30% of the canvas BY CONSTRUCTION
+        (<code>wellWidthPx = w * 0.7</code>), so it is not slack to reclaim. A
+        <code>LINES 17</code> row beside the well would be the hero readout strip with a different
+        label and is <b>refused by name</b>. &#9888; The resting-text gate can see NEITHER
+        shape.</td></tr>
+      <tr><td>SCREEN</td><td>overlaid in the well's own box on a translucent backplate, never a
+        row of its own. &#9888; <b>Unusually safe here:</b> the game runs on the SCHEDULER, and
+        that scheduler is a Web Worker <code>setInterval</code> with <b>no AudioContext
+        check</b> &mdash; so OFF stops a <code>drawModtris</code> call and nothing else. Pieces
+        keep dropping, lines keep clearing, gates keep firing. <b><code>skifree</code>, one module
+        away, does NOT have that property.</b></td></tr>
+      <tr><td>band</td><td><b>fall</b> &mdash; one band. Both params answer the same question (how
+        hard is this game) and splitting them would invent a distinction the module does not have.
+        <code>order</code> and <code>pages</code> agree.</td></tr>
+      <tr><td>rear</td><td>authored: <code>steer</code> (move L/R) + <code>rotate</code> (rot L/R)
+        + <code>drop</code>. The five gate inputs have no <code>paramTarget</code>, so without
+        groups the rail is five anonymous jacks. &#9888; A section's width is derived from its row
+        count, so these lay out 2/2/1 &mdash; check it, do not assume.</td></tr>
+    </table>
+  </div>
+
+  <div class="zones"><h4>controls &amp; primitives</h4>
+    <table class="zt">
+      <tr><th>key</th><th>primitive &amp; why</th></tr>
+      <tr><td>gravityBpm</td><td>rank 1 &middot; <b><code>paramCells:'fader'</code>, DECLARED.</b>
+        The module's TEMPO, and on a gate-output module that is rank 1 by definition. &#9888;
+        <b>AND it is the only param read EVERY STEP</b> (<code>modtris-state.ts:407</code>), so it
+        acts on the next frame. On pong &ldquo;tempo&rdquo; and &ldquo;acts now&rdquo; were split
+        across two params and the spec had to choose; here they are the SAME param &mdash; the
+        least contestable rank in the wave.</td></tr>
+      <tr><td>levelStep</td><td>rank 2 of 2 &middot; fader. &#9888; <b>Not a runner-up on merit
+        &mdash; it does nothing.</b> If &sect;13.1 WIRES it, the rank is right (a difficulty ramp
+        changes rate over time and a rack cares about rate). If &sect;13.1 DELETES it, this row
+        disappears and modtris becomes a one-param face. <b>The rank is not defensible until that
+        is answered</b>, and saying so is more useful than defending a rank for a dead
+        control.</td></tr>
+      <tr><td>&mdash;</td><td>&#9888; <b>NOT <code>warped-fader</code>.</b> Checked deliberately:
+        that cell is for a param whose CARD converts at the boundary. ModtrisCard does not convert
+        &mdash; it passes <code>min</code>/<code>max</code>/<code>curve</code> straight through, as
+        <b>literals rather than the def's symbols</b>, which is a ONE-SOURCE defect and not a
+        warp. The warped-fader cell would encode a map that does not exist.</td></tr>
+      <tr><td>freeze</td><td><b>NEW</b> &middot; <code>noUserControl</code>,
+        <code>writer:'internal'</code>. Required by the VRT seam and nothing else &mdash; and
+        required <i>because</i> the game clock is a Web Worker interval that an audio suspend
+        cannot stop.</td></tr>
+      <tr><td>&mdash;</td><td>&#9888; <b>No RESET / NEW GAME.</b> modtris has <b>no restart input
+        at all</b>, unlike frogger's <code>start_gate</code>; the stepper re-inits itself on
+        overfill, so the game recovers but the player cannot choose to. Refused because it does
+        not exist on the card either &mdash; it needs an input port (a contract change) or an
+        ACTION cell with an AUDITION-LEDGER probe.</td></tr>
+    </table>
+  </div>
+
+  <div class="zones"><h4>ARIA</h4>
+    <table class="zt">
+      <tr><th>element</th><th>accessible value</th></tr>
+      <tr><td>the well</td><td><code>role="img"</code>
+        <span class="aria">MODTRIS &mdash; 17 lines, next piece L, well 40% full</span> &mdash;
+        where the painted <code>LN</code> becomes speakable. <i>well 40% full</i> is a DERIVED
+        quantity with a live negative control: <code>gravityBpm</code> must not move it.</td></tr>
+      <tr><td>control-gravityBpm</td><td><span class="aria">60 bpm &mdash; 1.00 s per drop</span>
+        the seconds-per-drop is what the player feels, and it is <code>60 / bpm</code>, the def's
+        own function. &#9888; <b>No <code>units</code> on the param</b> &mdash; a
+        <code>format</code> makes the readout PAINT, which is the resting decimal by the back
+        door.</td></tr>
+      <tr><td>control-levelStep</td><td><span class="aria">every 10 lines</span> &#9888; only if
+        &sect;13.1 wires it. Unresolved, the honest string is <code>10 &mdash; has no
+        effect</code>, and shipping that admits half the face is dead.</td></tr>
+      <tr><td>SCREEN</td><td>a title saying <b>the game keeps playing and the gates keep
+        firing</b>.</td></tr>
+    </table>
+  </div>
+
+  <div class="warn"><b>&#9888; The determinism seam is pong's exactly, and it is HALF-BUILT
+  already.</b> <code>initModtrisState({rng})</code> and <code>stepModtrisState(…, {rng})</code>
+  both accept an injectable RNG defaulting to <code>Math.random</code> &mdash; and the factory
+  calls both with <b>none</b>. So the pin is a two-line change plus a <code>freeze</code>
+  early-return. A mulberry32 <code>seededRng</code> already exists in
+  <code>art/scenarios/modtris/gate-pulses.test.ts</code>; <b>do NOT import it from a test file</b>
+  &mdash; lift it to a shared module, or the ART scenario becomes part of the product's
+  basis.</div>
+</div>
+</div>
+</div>

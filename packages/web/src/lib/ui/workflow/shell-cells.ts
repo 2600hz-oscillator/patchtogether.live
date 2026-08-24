@@ -151,6 +151,14 @@ import {
   kriaTimeDivisionOptions,
   kriaTimeDivisionValue,
 } from '$lib/ui/modules/kria-cell-actions';
+import {
+  matrixmixSetXAxis,
+  matrixmixSetYAxis,
+  matrixmixXAxisOptions,
+  matrixmixXAxisValue,
+  matrixmixYAxisOptions,
+  matrixmixYAxisValue,
+} from '$lib/ui/modules/matrixmix-cell-actions';
 import { timelordeFaceTap } from '$lib/ui/modules/timelorde/face-tap';
 import {
   WAVESCULPT_WAV_ACCEPT,
@@ -1971,6 +1979,55 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
       mode: 'trigger',
       probe: { effect: { kind: 'audition', seam: 'file-export' } },
       onFire: (nodeId) => { twotracksSaveTape(nodeId, 'b'); },
+    },
+  },
+
+  // ── MATRIXMIX — the first META-DOMAIN face, and the zero-param case ────────
+  //
+  // Two cells, and they are the module's ENTIRE control surface: matrixMix
+  // declares `inputs: []`, `outputs: []`, `params: []` and binds to no engine.
+  // Its only persisted state is which two modules the cross-point grid is
+  // looking at.
+  //
+  // ⚠ THESE ARE WHY THE FACE IS WORTH BUILDING AT ALL. A face that ranks
+  // NOTHING is legal — `module-face-lint` puts it out of scope by name — and it
+  // paints a BLANK lane tile, which is strictly worse than the placeholder it
+  // replaces. These two answer the only question anybody has about a matrix node
+  // at a glance (WHICH TWO MODULES) without opening the dock, which today costs
+  // a full-view open because an un-migrated matrixMix renders a placeholder.
+  //
+  // ⚠ AND THEY REACH THE LANE, CHECKED RATHER THAN ASSUMED — it would be easy to
+  // assume a shell cell is a dock thing, which would collapse the whole
+  // argument. Only the `panel` kind is dock-only, by the NAMED rule in
+  // `panelCellKeys` ("a 280 px SVG has no business being SELECTED into a 46 px
+  // lane knob column"). `laneOrder` drops exactly two things — a declared
+  // `hero.cell` and each `xyPads` entry's `x` key — and matrixMix declares
+  // neither, so its full `order` survives to every tier. `matrixmix-face-model`
+  // asserts the cells are PRESENT at every lane tier rather than that the face
+  // merely resolves: the `joystick` shape is a face that ranks controls and
+  // renders zero of them, and a two-cell face at the tightest tier is exactly
+  // what could become that.
+  //
+  // ⚠ THE ROSTER IS A FUNCTION, NOT A LIST, AND THAT IS THE POINT. `options` is
+  // evaluated per render against the LIVE patch, which is what makes a runtime
+  // roster expressible as a face cell at all — see matrixmix-cell-actions.ts
+  // for why the shipped "no shell face can render it" claim about cameraInput's
+  // device picker does not generalise (the constraint is where the roster LIVES,
+  // not that it is derived at runtime).
+  matrixMix: {
+    'matrixmix-x-{n}': {
+      kind: 'selector',
+      tag: 'X',
+      options: (node) => matrixmixXAxisOptions(node),
+      value: (node) => matrixmixXAxisValue(node),
+      onchange: (nodeId, v) => matrixmixSetXAxis(nodeId, v),
+    },
+    'matrixmix-y-{n}': {
+      kind: 'selector',
+      tag: 'Y',
+      options: (node) => matrixmixYAxisOptions(node),
+      value: (node) => matrixmixYAxisValue(node),
+      onchange: (nodeId, v) => matrixmixSetYAxis(nodeId, v),
     },
   },
 };
