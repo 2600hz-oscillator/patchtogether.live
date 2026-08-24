@@ -1097,6 +1097,261 @@ export const wavesculptDef: AudioModuleDef = {
     { id: 'wavesculpt-load', label: 'Load your own .wav', kind: 'cell', testidPrefix: 'wavesculpt-load' },
   ],
 
+  /**
+   * THE FACEPLATE.
+   *
+   * ⚠ THE RANK IS NOT THE DECLARATION ORDER, AND THE INVERSION IS THE ONE
+   * DECISION HERE WORTH DEFENDING. The params declare the four oscillators
+   * first and the camera late. The face puts the CAMERA first, because it is
+   * the only control set that moves BOTH DOMAINS AT ONCE — `docs.controls.zoom`
+   * states the coupling: closer is bigger ribbons visually AND louder audibly,
+   * one shared distance number. It is also the only thing here a player
+   * operates continuously while performing, and the only control whose effect
+   * is audible with NO GATE PATCHED AT ALL: the four voices are silent until
+   * their gates open, while distance gain applies regardless.
+   *
+   * The counter-argument, stated so this reads as a decision: an oscillator
+   * with no table and no tuning makes no sound, so the voices "come first".
+   * That is true of the SETUP order and false of the PERFORMANCE order, and a
+   * faceplate ranks the second.
+   *
+   * ⚠ `order` AND `pages` ARE INDEPENDENT ARTIFACTS, and this face uses that on
+   * purpose. `order` is PRIORITY — it feeds the rank and, through `laneOrder`,
+   * the lane tier. `pages` is GROUPING — what the dock draws as bands. So the
+   * camera can rank first while `master_gain` still reaches the lane: the pad
+   * axes cost no lane rank at all (`laneOrder` drops every declared pad's axes,
+   * because a pad is square and a lane knob column is 46 px), so the first
+   * three LANE-eligible keys here are `zoom`, `master_gain`, `blink_mode` —
+   * the one camera axis that is both audible and visual, the level, and the
+   * mode that decides what the picture is. Deliberately NOT `pos_x`/`pos_y`:
+   * splitting a pad into two lane knobs is exactly the 2-D-gesture-flattened
+   * loss `xyPads` exists to prevent.
+   *
+   * ⚠ TEN BANDS, AND BAND 2 IS A PLATFORM-FORCED DEVIATION FROM THE REVIEWED
+   * MOCKS. The build spec put each oscillator's wavetable strip INSIDE that
+   * oscillator's band (`wavesculpt-osc-1` in OSC RED, and so on). That key
+   * form does not exist. A control-family key in `order`/`pages` is the
+   * TEMPLATE `<familyId>-{n}`, and `resolveFaceControl` resolves it to
+   * `kind: 'family'` — ONE cell standing for ALL of that family's instances.
+   * It is not addressable per index, so the strips CANNOT be distributed
+   * across the four OSC bands. (milkdrop is the only prior adopter and has
+   * exactly one instance per family, which is why nothing had hit this.)
+   *
+   * So the three families share a band of their own, ranked second: you pick a
+   * voice's table BEFORE you shape it, and having all four strips adjacent is
+   * how you compare voices. §7.2's argument for splitting one family into
+   * three is untouched by this — that argument is about the CELL KIND (two
+   * generic `selector`s and a `file`, versus one `panel` that would need a
+   * probe that is either circular or blind), not about placement.
+   *
+   * ⚠ THE FOUR OSCILLATOR BANDS ARE STILL FOUR BANDS, and that is what engages
+   * the tab rail HONESTLY. Four oscillators are "the same idea four times",
+   * which normally reads as CLUSTER rather than PAGE — but each carries twelve
+   * params plus (for three of them) a colour cell, and four of those in one
+   * band is a wall of knobs with four sub-headers on a dock that folds at
+   * 720p. The clusters then do their proper job INSIDE each band: SHAPE, ENV
+   * and FX are three different ideas about ONE voice. The rail engages on BAND
+   * COUNT alone, so `face.tabbed` is deliberately ABSENT — it is fenced to
+   * explicit owner instruction per module, and there is none naming wavesculpt.
+   * Nothing here is padded to reach the count; the split stands on the
+   * arithmetic above and the rail is a consequence.
+   *
+   * ⚠ ALPHA HAS NO COLOUR CELL AND THAT IS BY DESIGN, not an omission: it is
+   * the alpha/mask layer, and it has no colour param to rank.
+   */
+  face: {
+    order: [
+      // The pad ranks FIRST and costs no lane rank (see above).
+      'pos_x', 'pos_y',
+      // The lane tier, in order: level+picture coupling, the level, the mode.
+      'zoom', 'master_gain', 'blink_mode',
+      // The rest of the camera.
+      'pos_z', 'rot',
+      // The voice SOURCES — one key per family, all four oscillators each.
+      'wavesculpt-preset-{n}', 'wavesculpt-table-{n}', 'wavesculpt-load-{n}',
+      // What the render shows, and how. `scale` sits immediately after
+      // `blink_mode`'s partner controls because it is DEAD at blink_mode 0 —
+      // adjacency is the only affordance a faceplate has for "this belongs to
+      // that mode", and it must not reach the lane, where the section heading
+      // that carries the relationship does not exist.
+      'video_mode', 'scale', 'wiggle', 'alpha_brightness', 'lum_depth',
+      // Four voices, or one stacked instrument.
+      'unison', 'detune', 'chord_mode', 'chord_quality',
+      // The four voices themselves.
+      'red_color', 'tune1', 'fine1', 'morph1', 'spread1', 'fold1', 'thickness1',
+      'A1', 'D1', 'S1', 'R1', 'fxType1', 'fxAmount1',
+      'grn_color', 'tune2', 'fine2', 'morph2', 'spread2', 'fold2', 'thickness2',
+      'A2', 'D2', 'S2', 'R2', 'fxType2', 'fxAmount2',
+      'blu_color', 'tune3', 'fine3', 'morph3', 'spread3', 'fold3', 'thickness3',
+      'A3', 'D3', 'S3', 'R3', 'fxType3', 'fxAmount3',
+      'tune4', 'fine4', 'morph4', 'spread4', 'fold4', 'thickness4',
+      'A4', 'D4', 'S4', 'R4', 'fxType4', 'fxAmount4',
+      // Twelve params that move NOTHING until a video cable lands in one of the
+      // six wall inputs, so they rank last.
+      'wall1_alpha', 'wall1_distort', 'wall2_alpha', 'wall2_distort',
+      'wall3_alpha', 'wall3_distort', 'wall4_alpha', 'wall4_distort',
+      'wall5_alpha', 'wall5_distort', 'wall6_alpha', 'wall6_distort',
+    ],
+
+    pages: [
+      { id: 'camera', label: 'CAMERA', hint: 'fly the room — closer is bigger AND louder',
+        controls: ['pos_x', 'pos_y', 'pos_z', 'zoom', 'rot'] },
+
+      { id: 'wavetables', label: 'WAVETABLES', hint: 'what each voice plays — and draws',
+        controls: ['wavesculpt-preset-{n}', 'wavesculpt-table-{n}', 'wavesculpt-load-{n}'] },
+
+      // ⚠ A page's `clusters` may only name controls the page ALSO claims in
+      // `controls` — a sub-header over a key the band does not own would
+      // silently render nothing. So each band lists its full twelve (or
+      // thirteen) and the clusters group a subset of them.
+      { id: 'osc-red', label: 'OSC RED', hint: 'wavetable voice 1',
+        controls: [
+          'red_color', 'tune1', 'fine1', 'morph1',
+          'spread1', 'fold1', 'thickness1',
+          'A1', 'D1', 'S1', 'R1', 'fxType1', 'fxAmount1',
+        ],
+        clusters: [
+          { label: 'SHAPE', controls: ['spread1', 'fold1', 'thickness1'] },
+          { label: 'ENV', controls: ['A1', 'D1', 'S1', 'R1'] },
+          { label: 'FX', controls: ['fxType1', 'fxAmount1'] },
+        ] },
+
+      { id: 'osc-green', label: 'OSC GREEN', hint: 'wavetable voice 2',
+        controls: [
+          'grn_color', 'tune2', 'fine2', 'morph2',
+          'spread2', 'fold2', 'thickness2',
+          'A2', 'D2', 'S2', 'R2', 'fxType2', 'fxAmount2',
+        ],
+        clusters: [
+          { label: 'SHAPE', controls: ['spread2', 'fold2', 'thickness2'] },
+          { label: 'ENV', controls: ['A2', 'D2', 'S2', 'R2'] },
+          { label: 'FX', controls: ['fxType2', 'fxAmount2'] },
+        ] },
+
+      { id: 'osc-blue', label: 'OSC BLUE', hint: 'wavetable voice 3',
+        controls: [
+          'blu_color', 'tune3', 'fine3', 'morph3',
+          'spread3', 'fold3', 'thickness3',
+          'A3', 'D3', 'S3', 'R3', 'fxType3', 'fxAmount3',
+        ],
+        clusters: [
+          { label: 'SHAPE', controls: ['spread3', 'fold3', 'thickness3'] },
+          { label: 'ENV', controls: ['A3', 'D3', 'S3', 'R3'] },
+          { label: 'FX', controls: ['fxType3', 'fxAmount3'] },
+        ] },
+
+      // No colour cell — ALPHA is the mask layer and has no colour param.
+      { id: 'osc-alpha', label: 'OSC ALPHA', hint: 'the mask layer — no colour of its own',
+        controls: [
+          'tune4', 'fine4', 'morph4',
+          'spread4', 'fold4', 'thickness4',
+          'A4', 'D4', 'S4', 'R4', 'fxType4', 'fxAmount4',
+        ],
+        clusters: [
+          { label: 'SHAPE', controls: ['spread4', 'fold4', 'thickness4'] },
+          { label: 'ENV', controls: ['A4', 'D4', 'S4', 'R4'] },
+          { label: 'FX', controls: ['fxType4', 'fxAmount4'] },
+        ] },
+
+      { id: 'voicing', label: 'VOICING', hint: 'four independent voices, or one stacked instrument',
+        controls: ['unison', 'detune', 'chord_mode', 'chord_quality'] },
+
+      { id: 'look', label: 'LOOK', hint: 'what the render shows, and how',
+        controls: ['video_mode', 'blink_mode', 'scale', 'wiggle', 'alpha_brightness', 'lum_depth'] },
+
+      // Between LOOK and WALLS because it is the one control that can SILENCE
+      // the module, and burying a mute is a mistake.
+      { id: 'output', label: 'OUTPUT', hint: 'one level, both domains',
+        controls: ['master_gain'] },
+
+      { id: 'walls', label: 'WALLS', hint: 'texture the room’s six faces',
+        controls: [
+          'wall1_alpha', 'wall1_distort', 'wall2_alpha', 'wall2_distort',
+          'wall3_alpha', 'wall3_distort', 'wall4_alpha', 'wall4_distort',
+          'wall5_alpha', 'wall5_distort', 'wall6_alpha', 'wall6_distort',
+        ],
+        clusters: [
+          { label: 'FRONT', controls: ['wall1_alpha', 'wall1_distort'] },
+          { label: 'BACK', controls: ['wall2_alpha', 'wall2_distort'] },
+          { label: 'LEFT', controls: ['wall3_alpha', 'wall3_distort'] },
+          { label: 'RIGHT', controls: ['wall4_alpha', 'wall4_distort'] },
+          { label: 'FLOOR', controls: ['wall5_alpha', 'wall5_distort'] },
+          { label: 'CEILING', controls: ['wall6_alpha', 'wall6_distort'] },
+        ] },
+    ],
+
+    /**
+     * ⚠ `zoom` AND `rot` ARE DECLARED FADERS, AND THIS OVERRIDES THE BUILD
+     * SPEC — owner instruction, and the tension is written down here because
+     * this module is on the manual-review list and the owner rules on the
+     * built result.
+     *
+     * The spec said NO `fader` declarations on this module, reasoning that the
+     * card mounts `<Knob>` for every continuous control so the shell's default
+     * resolution already matches. That reasoning assumed the zoom/rot PAD
+     * survived into the face. It does not: the owner's instruction is to split
+     * that pad into two faders, because its axes are NOT COMMENSURATE — `zoom`
+     * is log 0.3..3 and `rot` is linear ±1, so equal pixel travel is not equal
+     * parameter travel in the two directions, a real usability wart the card
+     * ships today. Splitting loses no GESTURE (nothing couples the axes) and
+     * gains a correct curve per axis.
+     *
+     * With the pad gone there is no card affordance to preserve, so the
+     * question becomes what these two controls SHOULD look like — and
+     * `shell-control-kind` says `fader` exists for exactly that: not because it
+     * is ambiguous with another primitive, but because "the AFFORDANCE IS THE
+     * MODULE'S CHOICE". The kind guards against SILENT substitution; an
+     * explicit choice is the sanctioned path through it.
+     *
+     * The three colour params are `color` — DISCRETE over packed 0xRRGGBB, not
+     * `hue`, which is continuous over a circular 0..1. The platform's own type
+     * doc names wavesculpt's `red_color`/`grn_color`/`blu_color` as the worked
+     * example of the distinction.
+     */
+    paramCells: {
+      red_color: 'color', grn_color: 'color', blu_color: 'color',
+      zoom: 'fader', rot: 'fader',
+    },
+
+    /**
+     * The camera pad, painted by this module's OWN body rather than by a band
+     * cell. `surface: 'body'` because it is a control OVER THE PICTURE — you
+     * fly the camera by watching where it goes — so the gesture belongs next to
+     * its feedback, which is exactly why the legacy card put it beside the
+     * canvas. It costs a `face-xy-body-source` obligation: the body's source
+     * must really paint it, which is checked by reading the body.
+     *
+     * ⚠ The pad shows the KNOB; CV moves the PICTURE. Those are two different
+     * numbers and both are correct — the body must not "improve" on that by
+     * reading the camera shadow to make the pad follow CV.
+     */
+    xyPads: [
+      { x: 'pos_x', y: 'pos_y', label: 'camera', surface: 'body' },
+    ],
+
+    monitor: {
+      why:
+        'WAVESCULPT\'s output IS a 3-D scene you steer: four wave ribbons inside a room whose six walls '
+        + 'can be live video, viewed through a camera you fly. Every control on the page aims at that '
+        + 'picture, and the ONLY way to judge a camera position, a wall distort or a blink mode is to '
+        + 'watch the render while you move them — no control reports any of it as a value. It is also '
+        + 'the module whose picture is a genuine OUTPUT (`video_out` feeds other modules), so watching '
+        + 'it full-size is inspecting a signal, not previewing a decoration.',
+    },
+
+    /**
+     * ⚠ NO LANE GLYPH, and this is the one module in its cohort where a live
+     * one would have been HONEST — `L` is the summed stereo output, not a
+     * passthrough, so a meter there would show something real. It is refused
+     * anyway: the module's picture is its point, a 192 px lane tile cannot
+     * carry a WebGL scene, and a level meter beside a module whose whole
+     * identity is a 3-D render would advertise the wrong thing.
+     */
+    glyph: 'none',
+
+    extension: 'wavesculpt',
+  },
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     const initialParams = (node.params ?? {}) as Record<string, number>;
     const param = (k: string, d: number) =>

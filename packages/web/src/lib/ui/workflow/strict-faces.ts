@@ -4176,6 +4176,36 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // Note that the exclusion's reason is the SAME structural fact as the glyph
   // refusal: `outputs: []`.
   'audioOut',
+  // WAVESCULPT — the 4-voice 3-D video synth, and the largest param order in
+  // the fleet after mixmstrs (79 params + three control families).
+  //
+  // ⚠ IT NEEDED A PRECURSOR PR, AND THAT IS THE INTERESTING PART. Unusually
+  // for a module this size, every mechanism the face wanted already shipped —
+  // and one of them, `paramCells: 'color'`, was written FOR this module and
+  // names its `red_color`/`grn_color`/`blu_color` in the platform's own type
+  // doc. What blocked promotion was that the picture was a WebGL2 renderer
+  // welded into a 3 644-line card, and no faceplate body can mount that. The
+  // renderer was extracted first into `wavesculpt/WavesculptVizSurface.svelte`
+  // (behaviour-neutral, VRT-proved, its own PR) so the legacy card and the
+  // faceplate body are two mounts of ONE renderer rather than two renderers
+  // drifting against one DSP — the shape `cube` already established.
+  //
+  // ⚠ THE BAND STRUCTURE DEVIATES FROM THE REVIEWED MOCKS, PLATFORM-FORCED.
+  // The spec placed each oscillator's wavetable strip inside that oscillator's
+  // band. That key form cannot exist: a control-family key is the TEMPLATE
+  // `<familyId>-{n}` and resolves to ONE cell standing for ALL instances, so
+  // the strips cannot be distributed per-band. They share a WAVETABLES band
+  // ranked second instead. The four oscillator bands remain four, which is
+  // what engages the tab rail on genuine count with no padding.
+  //
+  // ⚠ ZERO ATTEST ON THE FACE ITSELF, MEASURED not reasoned: `face`, `docs` and
+  // `controlFamilies` are stripped by `attest-code-basis.ts`, and the card left
+  // the WebGL basis when the renderer moved out of it — so authoring the face,
+  // splitting the families and renaming the card's testids all held the hash at
+  // 136a02a3, confirmed by recompute. The `chord_quality` roster, which is a
+  // `params` edit and therefore NOT free, deliberately rode the extraction PR
+  // so the two hash-moving edits paid ONE GPU run between them instead of two.
+  'wavesculpt',
 ]);
 
 /**
