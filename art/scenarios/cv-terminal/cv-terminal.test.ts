@@ -202,6 +202,12 @@ const EXEMPT: readonly Exemption[] = [
   //        named here instead, and the entries carry the same two-sided
   //        re-check the register does. Fold the mark in whenever wavesculpt next
   //        moves that hash for a real reason, and delete these.
+  //        ⚠ THAT TRIGGER FIRED AND WAS DECLINED ONCE, DELIBERATELY. The
+  //        renderer-extraction PR moved the hash for a real reason, but the
+  //        construction site these marks belong on is the readCamShadow rig,
+  //        which is OWNER-LISTED as not-to-be-touched — so folding them in was
+  //        out of that PR's scope by ruling, not by cost. The next basis-moving
+  //        change that is ALLOWED in that rig is the one that should do it.
   ...([
     'morph1_cv', 'morph2_cv', 'morph3_cv', 'morph4_cv',
     'pos_x', 'pos_y', 'pos_z', 'zoom', 'rot', 'scale', 'wiggle',

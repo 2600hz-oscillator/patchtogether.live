@@ -185,10 +185,36 @@ export const rasterizeDef: AudioModuleDef = {
   // which no gate looks for. It would also be a live moving surface in the
   // compact VRT baseline — what got `analogVco` dropped from batch 3.
   //
-  // The picture that IS this module is the raster frame; it is `mono-video` and
-  // matches no glyph kind, so it arrives at the dock through `fullViewBody`
-  // (below). The lane tile shows controls, strictly more than the placeholder
-  // an un-promoted module shows today.
+  // ⚠ `glyph: 'none'` IS A CHOICE, AND SINCE #2160 IT IS A CHOICE BETWEEN TWO
+  // LEGAL OPTIONS RATHER THAN A REFUSAL. This paragraph used to read "the
+  // picture that IS this module … matches no glyph kind", and that was true
+  // when it was written and is FALSE NOW: the widening added `algorithm` with
+  // a `layoutSource`, which this module matches. The reason to decline moved
+  // from "no kind fits" to "the kind that fits carries no data", and leaving
+  // the old wording would have had the next reader re-derive the question from
+  // scratch against a tree that no longer matches the recorded reason. Both
+  // options were evaluated:
+  //
+  //   * 'scope'/'meter'/'waveform' → {kind:'live-audio', portId:'thru'}. LIVE,
+  //     green on every gate, and BLIND: `thru` is `inGain`, bit-exactly this
+  //     module's input, so the trace is invariant to all four controls. (The
+  //     original argument, and still correct.)
+  //   * 'algorithm' + extension → {kind:'algorithm', layoutSource:'rasterize',
+  //     paramId:null}. Also a live kind, also green — and CONSTANT:
+  //     `ModuleShell` hardcodes `topologyValue` to 0 when `paramId` is null,
+  //     and `ShellExtensionGlyphProps` carries no `nodeId`, so the picture
+  //     cannot vary per node or over time. It would also rank as `trace` and
+  //     yield to the three ranked cells the compact tile already shows.
+  //
+  // Neither is a picture OF THIS MODULE. The raster reaches the dock through
+  // `fullViewBody` (below); the lane tile shows controls, which is strictly
+  // more than the placeholder an un-promoted module shows.
+  //
+  // ⚠ THE GENERAL FORM, because this module is where it is easiest to check:
+  // after #2160 a layout-source glyph is a CONSTANT PICTURE. The widening
+  // removed a refusal; it did not add a data path (`shell-glyph-live.ts` says
+  // so itself). Until `ShellExtensionGlyphProps` carries a `nodeId`, no module
+  // in that cohort gains an informative lane picture from it.
   //
   // ⚠ THE PREVIEW NEEDS THE EXTENSION SLOT, AND WITHOUT IT PROMOTION IS A
   // LOOK LOSS. `hasVideoSurface(def)` is literally `domain === 'video'`, and

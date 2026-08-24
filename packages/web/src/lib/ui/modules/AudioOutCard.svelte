@@ -1,19 +1,50 @@
 <script lang="ts">
-  import { onMount, onDestroy, untrack } from 'svelte';
+  // ⚠ THE DEVICE PICKER'S MACHINERY IS NOT HERE ANY MORE, AND THAT IS THE FIX.
+  //
+  // This card used to own all three jobs — enumerate, write, and call
+  // `setSinkId` — and it applied the pick from TWO places: the click, plus a
+  // 100 ms x 50 `setInterval` that re-applied the saved id once the engine
+  // appeared. Three defects came out of that arrangement, and all three are
+  // gone rather than patched:
+  //
+  //   * THE TIMER LEAKED. `onMount` started it; `onDestroy` removed only the
+  //     `devicechange` listener. An unmounted card kept ticking for up to its
+  //     full 5 s window and wrote `$state` after destroy — and under dock
+  //     collapse / LRU eviction this card unmounts routinely.
+  //   * A STALE ERROR COULD OUTLIVE ITS CAUSE. The branch that discovered
+  //     `setSinkId` was missing returned WITHOUT clearing `setSinkIdError`, so
+  //     a rejection could sit under a notice saying the feature is unavailable.
+  //   * A DEAD, SILENT CONTROL. The `<select>` disabled on
+  //     `devices.length === 0 || !setSinkIdSupported` and the notice rendered
+  //     only for the second cause — so a SUPPORTING browser that enumerated
+  //     nothing showed a greyed `(no outputs)` and no reason at all.
+  //
+  // Ownership moved to `$lib/audio/output-device.svelte` (one roster, one
+  // origin-tagged write) and the audio-out HANDLE (the one caller of
+  // `setSinkId`, applying at engine boot and on write). The retry loop is
+  // DELETED, not moved: the factory runs on engine boot by construction, which
+  // is the event the loop was polling for.
+  //
+  // ⚠ AND THE CARD IS FIXED RATHER THAN ABANDONED. It still renders under
+  // `?shell=legacy` and in the per-card VRT sweep, so a face does not pay a
+  // card's debt — these edits are the payment.
   import type { NodeProps } from '@xyflow/svelte';
   import NeonFader from '$lib/ui/controls/NeonFader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import { patch } from '$lib/graph/store';
   import { setNodeParam } from '$lib/graph/mutate';
   import { audioOutDef } from '$lib/audio/modules/audio-out';
   import { useEngine } from '$lib/audio/engine-context';
   import {
-    findDefaultOutputDevice,
-    formatDeviceLabel,
-    type MinimalDevice,
-  } from '$lib/audio/devices';
+    ensureOutputDeviceWatch,
+    ensureSinkReportWatch,
+    outputDeviceOptions,
+    outputDeviceRoster,
+    outputDeviceValue,
+    outputPickerBlock,
+    outputSinkError,
+    setOutputDevice,
+  } from '$lib/audio/output-device.svelte';
   import type { ModuleNode } from '$lib/graph/types';
-  import type { AudioEngine } from '$lib/audio/engine';
   import ModuleTitle from './ModuleTitle.svelte';
   import { portsFromDef } from './card-kit';
 
@@ -22,25 +53,6 @@
   const engineCtx = useEngine();
 
   let master = $derived(node?.params.master ?? audioOutDef.params[0]!.defaultValue);
-
-  // ----- output device picker state -----
-  //
-  // Per-tab state; selected device id mirrors into node.data.outputDeviceId
-  // in Yjs so reloads remember the choice (and collaborators see the
-  // owner's pick — at the cost of a remote user being able to nudge your
-  // sink choice, but same as every other Yjs-shared field).
-  let devices = $state<MinimalDevice[]>([]);
-  let selectedOutputId = $state<string | null>(null);
-  // STATIC platform feature-detect, not engine-instance detect: the old
-  // `false` initial value meant the "requires Chromium-based browsers"
-  // notice showed on EVERY browser (Edge included) whenever the audio
-  // engine hadn't booted within the onMount probe's 5 s window — a fresh
-  // rack with no user gesture yet always hit it. AudioContext.setSinkId
-  // is a prototype member; its presence doesn't need a live engine.
-  let setSinkIdSupported = $state<boolean>(
-    typeof AudioContext !== 'undefined' && 'setSinkId' in AudioContext.prototype,
-  );
-  let setSinkIdError = $state<string | null>(null);
 
   function setParam(paramId: string) {
     return (v: number) => setNodeParam(id, paramId, v);
@@ -53,128 +65,21 @@
     };
   }
 
-  function readSavedOutputDeviceId(): string | null {
-    const d = node?.data;
-    if (d && typeof d['outputDeviceId'] === 'string') {
-      return d['outputDeviceId'] as string;
-    }
-    return null;
-  }
-  function setSavedOutputDeviceId(deviceId: string | null): void {
-    const target = patch.nodes[id];
-    if (!target) return;
-    if (!target.data) target.data = {};
-    if (deviceId === null) delete target.data['outputDeviceId'];
-    else target.data['outputDeviceId'] = deviceId;
-  }
-
-  /**
-   * Refresh the list of `audiooutput` devices via enumerateDevices().
-   * Labels may be empty pre-permission (browsers gate them behind ANY
-   * granted mic permission); we render them as numeric fallbacks via
-   * `formatDeviceLabel`.
-   */
-  async function refreshDevices(): Promise<void> {
-    if (typeof navigator === 'undefined' || !navigator.mediaDevices?.enumerateDevices) {
-      devices = [];
-      return;
-    }
-    try {
-      const all = await navigator.mediaDevices.enumerateDevices();
-      devices = all.filter((d) => d.kind === 'audiooutput');
-    } catch (err) {
-      console.warn('[audioOut] enumerateDevices failed:', err);
-      devices = [];
-    }
-  }
-
-  /**
-   * Apply the user's pick via `audioCtx.setSinkId(deviceId)`. Chromium
-   * 110+ + recent Safari support this; Firefox does not. When
-   * unsupported, we silently fall back to the default device + show
-   * an inline notice via the `setSinkIdSupported` flag.
-   *
-   * `setSinkId` is async + can reject (e.g. device disappeared between
-   * enumerate and apply); we surface the error inline so the user
-   * knows their pick didn't take.
-   */
-  async function applySinkId(deviceId: string): Promise<void> {
-    const e = engineCtx.get();
-    if (!e) return;
-    let audioEngine: AudioEngine;
-    try {
-      audioEngine = e.getDomain<AudioEngine>('audio');
-    } catch {
-      return;
-    }
-    const ctx = audioEngine.ctx as AudioContext & {
-      setSinkId?: (deviceId: string) => Promise<void>;
-    };
-    if (typeof ctx.setSinkId !== 'function') {
-      setSinkIdSupported = false;
-      return;
-    }
-    try {
-      await ctx.setSinkId(deviceId);
-      setSinkIdError = null;
-    } catch (err) {
-      setSinkIdError = (err as Error).message || 'setSinkId failed';
-    }
-  }
-
-  function onPickOutputDevice(deviceId: string): void {
-    selectedOutputId = deviceId;
-    setSavedOutputDeviceId(deviceId);
-    applySinkId(deviceId);
-  }
-
-  function onDeviceChange(): void {
-    refreshDevices();
-  }
-
-  // ----- lifecycle -----
-
-  onMount(() => {
-    untrack(() => {
-      selectedOutputId = readSavedOutputDeviceId();
-    });
-
-    // Feature-detect setSinkId on the live AudioContext. Done in a
-    // small retry loop because the engine boot is async; the card may
-    // mount before the engine exists.
-    let attempts = 0;
-    const detect = setInterval(() => {
-      attempts++;
-      const e = engineCtx.get();
-      if (e) {
-        try {
-          const ae = e.getDomain<AudioEngine>('audio');
-          const ctx = ae.ctx as AudioContext & { setSinkId?: unknown };
-          setSinkIdSupported = typeof ctx.setSinkId === 'function';
-          clearInterval(detect);
-          // Re-apply any saved sink id on engine boot — restores the user's
-          // pick across reload.
-          if (setSinkIdSupported && selectedOutputId) {
-            applySinkId(selectedOutputId);
-          }
-        } catch {
-          // engine ready but no audio domain (shouldn't happen)
-        }
-      }
-      if (attempts > 50) clearInterval(detect); // ~5s
-    }, 100);
-
-    refreshDevices();
-    if (navigator.mediaDevices?.addEventListener) {
-      navigator.mediaDevices.addEventListener('devicechange', onDeviceChange);
-    }
+  // The app-wide roster: idempotent, so this card and the faceplate can both be
+  // mounted (they are — the 🎧 panel and the dock) and there is still exactly
+  // one `enumerateDevices()` per `devicechange`.
+  $effect(() => {
+    ensureOutputDeviceWatch();
+    ensureSinkReportWatch();
   });
 
-  onDestroy(() => {
-    if (navigator.mediaDevices?.removeEventListener) {
-      navigator.mediaDevices.removeEventListener('devicechange', onDeviceChange);
-    }
-  });
+  let devices = $derived(outputDeviceRoster());
+  let options = $derived(outputDeviceOptions(devices));
+  let selectedOutputId = $derived(outputDeviceValue(node, devices));
+  /** `'unsupported'` | `'no-devices'` | null — the two causes this card could
+   *  not distinguish, now named separately in the markup below. */
+  let block = $derived(outputPickerBlock(devices));
+  let setSinkIdError = $derived(outputSinkError(node));
 
   const inputs = portsFromDef(audioOutDef.inputs);
 </script>
@@ -190,33 +95,37 @@
         <select
           class="device-select"
           data-testid="audioout-device-select"
-          value={selectedOutputId ?? ''}
-          onchange={(e) => onPickOutputDevice((e.currentTarget as HTMLSelectElement).value)}
-          disabled={devices.length === 0 || !setSinkIdSupported}
+          data-block={block ?? 'none'}
+          value={selectedOutputId}
+          onchange={(e) => setOutputDevice(id, (e.currentTarget as HTMLSelectElement).value)}
+          disabled={block !== null}
         >
-          {#if devices.length === 0}
+          {#if options.length === 0}
             <option value="">(no outputs)</option>
           {:else}
-            {#if !selectedOutputId}
-              {@const def = findDefaultOutputDevice(devices)}
-              <option value={def ?? ''} selected>
-                {def === 'default' ? 'Default' : '(default)'}
-              </option>
-            {/if}
-            {#each devices as d, i (d.deviceId)}
-              <option value={d.deviceId} selected={d.deviceId === selectedOutputId}>
-                {d.deviceId === 'default' ? 'Default' : formatDeviceLabel(d, i)}
-              </option>
+            {#each options as o (o.value)}
+              <option value={o.value}>{o.label}</option>
             {/each}
           {/if}
         </select>
       </label>
-      {#if !setSinkIdSupported}
+      <!-- ⚠ TWO CAUSES, TWO NOTICES. The control disables on either, and until
+           now only the first said why — so a supporting browser that enumerated
+           nothing showed a greyed `(no outputs)` and no reason. -->
+      {#if block === 'unsupported'}
         <div class="device-notice" data-testid="audioout-setsinkid-notice">
           Device selection requires Chromium-based browsers.
         </div>
-      {:else if setSinkIdError}
-        <div class="device-notice err" role="alert">
+      {:else if block === 'no-devices'}
+        <div class="device-notice" data-testid="audioout-no-devices-notice">
+          No output devices found.
+        </div>
+      {/if}
+      <!-- The error is INDEPENDENT of the disabled notices, not an else-branch
+           of them: a rejection happens on a browser that supports the feature
+           and enumerated devices, i.e. exactly when neither notice shows. -->
+      {#if setSinkIdError}
+        <div class="device-notice err" role="alert" data-testid="audioout-sink-error">
           {setSinkIdError}
         </div>
       {/if}

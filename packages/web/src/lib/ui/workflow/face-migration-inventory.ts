@@ -631,11 +631,39 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
   },
   {
     type: 'audioOut',
-    disposition: 'bespoke-surface',
-    why:
-      'a hardware OUTPUT BINDER around one master fader: a live enumerateDevices roster plus the ' +
-      'setSinkId support/error states, which are neither params nor node data and have no cell ' +
-      'kind that reads them.',
+    // ⚠ WAS `bespoke-surface`. The old record read: "a hardware OUTPUT BINDER
+    // around one master fader: a live enumerateDevices roster plus the setSinkId
+    // support/error states, which are neither params nor node data and have no
+    // cell kind that reads them."
+    //
+    // ⚠ EVERY FACT IN THAT SENTENCE IS STILL TRUE — the roster is still service
+    // state, `setSinkId` support is still not a `ParamDef`, and no cell kind
+    // reads either. What changed is that none of it is a BLOCKER, because the
+    // EXTENSION BODY is the rung of the ladder for exactly this. `cameraInput`
+    // had the identical problem (a `<select>` populated from
+    // `enumerateDevices()`, persisted to a `node.data` key) and
+    // `legacy-fallback.ts` records the resolution by name — the picker "moved
+    // into the faceplate's EXTENSION BODY, which is the one slot that can hold a
+    // control no `ParamDef` can express."
+    //
+    // ⚠ IT WAS NOT A FREE READ-THROUGH, AND THE WORK IS WORTH NAMING because
+    // the same shape still waits on `audioIn` above. The card was the SOLE
+    // caller of `setSinkId` and re-applied the saved device from a retry loop in
+    // its own `onMount` — and audioOut is in neither `DOM_SOURCE_LANE_TYPES` nor
+    // `CARD_PRODUCER_LANE_TYPES`, so unlike `cameraInput` NO headless host would
+    // have kept that card alive. Facing it without moving the apply would have
+    // silently stopped the saved output device being restored on load. The apply
+    // moved into the audio-out HANDLE, where the engine's own boot is the event
+    // the retry loop was polling for; the loop is deleted rather than hosted.
+    //
+    // ⚠ AND ITS SURFACE PROBLEM WAS NOT ITS OWN. One instance is PINNED into
+    // every rackspace and is canvas-hidden, so the 🎧 topbar panel is its only
+    // surface — and that panel never called `dockRailRendersFace`. Fixed first,
+    // in its own PR, because it moves `audioIn` too.
+    //
+    // ⚠ NO `why` FIELD — the type refuses one on `generic-face`, which is the
+    // rule enforced by `tsc` rather than by a test.
+    disposition: 'generic-face',
   },
   {
     type: 'blood',
@@ -936,9 +964,17 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
     note: 'the COURT is the module and the three faders are not, so its picture lives in a '
       + 'fullViewBody extension rather than a glyph. ⚠ The lane tile still gets NO picture: '
       + 'pong is domain audio so hasVideoSurface is false, and both outputs are gate so every '
-      + 'glyph literal except none reddens the dead-glyph clause. That is the five-module '
-      + 'platform gap (with timelorde, scope, rasterize, wavesculpt), not a property of this '
-      + 'module.',
+      + 'glyph literal except none reddens the dead-glyph clause. That is a PLATFORM gap '
+      + 'shared with timelorde, scope, rasterize and wavesculpt, not a property of this '
+      + 'module. ⚠ AND ITS SHAPE CHANGED WITH #2160, which is why this no longer says '
+      + '"the five-module platform gap": the widening added `algorithm` + `layoutSource`, '
+      + 'so a glyph literal now RESOLVES for that cohort — the gap closed MECHANICALLY. It '
+      + 'remains open SUBSTANTIVELY, and that is the half that matters: `ModuleShell` '
+      + 'hardcodes topologyValue to 0 when paramId is null and ShellExtensionGlyphProps '
+      + 'carries no nodeId, so what resolves is a CONSTANT picture, identical on every node '
+      + 'and over time. The old sentence now over-claims in one direction (a kind does fit) '
+      + 'and under-claims in the other (fitting buys nothing). rasterize is where this is '
+      + 'easiest to check, being the only cohort member already faced.',
   },
   {
     type: 'push2Control',
@@ -1003,10 +1039,21 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
   },
   {
     type: 'twotracks',
-    disposition: 'bespoke-surface',
-    why:
-      'a TAPE DECK: two reels of transport state, and the waveform canvases are INTERACTIVE — ' +
-      'scrubbing and setting loop points directly on the picture is a gesture no cell kind has.',
+    disposition: 'generic-face',
+    note:
+      'DONE (2026-08-24). The refusal above was half right and the half that was wrong is the ' +
+      'interesting part. "Transport state on two reels" was never the obstacle — REC/PLAY/STOP and ' +
+      'SAVE TAPE are ordinary `action` cells over control families, exactly as samsloop\'s are. The ' +
+      'real claim was that the INTERACTIVE canvas is "a gesture no cell kind has", and that is still ' +
+      'true: no cell kind scrubs a playhead. It stopped being a BLOCKER because the gesture does not ' +
+      'need a cell — `fullViewBody` mounts the module\'s own picture, pointer handlers and all, while ' +
+      'the params it writes (start/end per reel) keep ordinary param cells in the TAPE bands. So the ' +
+      'picture is an ADDITIONAL way to operate controls the faceplate already reaches, rather than the ' +
+      'only way, which is what a body can honestly be and a panel could not (a panel would have to ' +
+      'claim those cells do not exist). ' +
+      '⚠ Promotion also required a CONTRACT CHANGE first: `playhead_a`/`playhead_b` were declared ' +
+      'params nothing wrote and nothing read, invisible while the card mounted no control for them ' +
+      'and unavoidable the moment a face had to rank every param. They were deleted, not hidden.',
   },
   {
     type: 'videoOut',

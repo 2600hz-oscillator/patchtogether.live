@@ -515,6 +515,22 @@ async function openInputs(page: Page) {
 
 for (const probe of PROBES) {
   test(`virtual module: live card + hover pane (${probe.id})`, async ({ page }) => {
+    // ⏸ FLAKE-PARK #1847 — SCOPED TO ONE PROBE, not to the loop. Only the
+    // `sequencer` probe was ever observed recovering on retry (PR run, e2e shard
+    // 4/10, one observation). Every other probe in PROBES runs this identical
+    // body unchanged, so the CODE PATH keeps its coverage and what is parked is
+    // one module's instance of it — parking the loop would have taken the whole
+    // interactive-doc contract with it for a single probe's timing.
+    //
+    // ⚠ THE REASON CARRIES ITS UNCERTAINTY rather than asserting "flaky", which
+    // nobody has evidence for. This file's git history is module deletions and
+    // probe-list edits with no flake fixes, and CLAUDE.md's triage rule reads
+    // that as UNDER-BUDGETED being the likelier class. Un-parking is therefore a
+    // reproduce-and-measure budget diagnosis, not a re-run until green.
+    test.fixme(
+      probe.id === 'sequencer',
+      'FLAKE-PARK #1847 — recovered-on-retry, first observation, NOT yet triaged as flake vs under-budget; git history shows no flake fixes so under-budget is the likelier class; siblings retain coverage (every other PROBES entry runs this same body); un-park = a reproduce-and-measure budget diagnosis',
+    );
     // A module only earns the INTERACTIVE_DOC_MODULES allowlist if its live card
     // mounts with NO uncaught page error (a card that throws on the doc sandbox
     // stays on the static face). Collect uncaught errors for the whole flow.

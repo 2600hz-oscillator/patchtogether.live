@@ -22,6 +22,7 @@
 
 import { test, expect, type Page } from '@playwright/test';
 import { pinVrtFonts, awaitVrtFonts } from './_fonts';
+import { waitForLaneTier } from '../tests/_helpers';
 
 test.describe.configure({ mode: 'default' });
 
@@ -143,14 +144,13 @@ test.describe('VRT: ?shell=1 rack holds position vs the lane grid at fixed zooms
         f.setViewport({ x: r.width / 2 - cx * z, y: r.height / 2 - cy * z, zoom: z }, { duration: 0 });
       }, zoom);
       // The LOD face tier settles on every tile before capture.
-      await page.waitForFunction(
-        (t) => {
-          const tiles = Array.from(document.querySelectorAll('[data-shell-tier]'));
-          return tiles.length > 0 && tiles.every((el) => el.getAttribute('data-shell-tier') === t);
-        },
-        faceTier,
-        { timeout: 10_000 },
-      );
+      // ⚠ WAS A BARE `document.querySelectorAll('[data-shell-tier]')` + `.every()`.
+      // That stopped meaning "the lane tiles" on 2026-08-24 without this spec
+      // changing: promoting `audioOut` put a PINNED faceplate in the always-mounted
+      // 🎧 topbar panel, whose tier is permanently `dock`, so `.every()` could never
+      // become true and this call sat out its full 10 s timeout. Scoped to the main
+      // canvas through the ONE export site — see `waitForLaneTier`.
+      await waitForLaneTier(page, faceTier);
       // Two rAFs so the overlay re-projection + tier content swap settle.
       await page.evaluate(
         () => new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r()))),

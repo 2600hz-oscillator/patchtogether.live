@@ -118,6 +118,7 @@ import { swolevcoDef } from '$lib/audio/modules/swolevco';
 import { moog911Def } from '$lib/audio/modules/moog911';
 import { moog911aDef } from '$lib/audio/modules/moog911a';
 import { moogCp3Def } from '$lib/audio/modules/moog-cp3';
+import { twotracksDef } from '$lib/audio/modules/twotracks';
 import { vcaDef } from '$lib/audio/modules/vca';
 import { warrensspectrumDef } from '$lib/audio/modules/warrensspectrum';
 import { wavetableVcoDef } from '$lib/audio/modules/wavetable-vco';
@@ -435,6 +436,25 @@ const RANGE_BOUND_CARDS: Readonly<Record<string, { params: readonly ParamDef[] }
   // EXEMPT_FROM_VRT so it has no committed card baseline, and no param on it
   // declares `units`, so binding units paints exactly what was painted before.
   'MoogCp3MixerCard.svelte': moogCp3Def,
+  // THE FACEPLATE QUEUE · twotracks. Enrolled with its faceplate. Every re-typed
+  // min/max/defaultValue on all seventeen knobs AGREED with the def — measured
+  // before the conversion, not assumed — so this is the AnalogLogicMathsCard
+  // shape: a maintainability conversion, not a bug fix, and pixel-neutral
+  // (twotracks is in EXEMPT_FROM_VRT, so there is no committed card baseline for
+  // an identical value to move).
+  //
+  // ⚠ RANGE ONLY, and both reasons came out of that same measurement rather than
+  // from a rule of thumb. RATE passes `units="×"` where the def declares no
+  // units, so binding the mapping would silently stop printing a suffix this
+  // card has always shown — the Moog911aCard case verbatim. And ECHOES passes
+  // `curve="linear"` against the def's `discrete`, which is the live platform
+  // gap CLAUDE.md names by hand: `Knob.svelte` has no discrete branch, so
+  // writing `discrete` here would green a gate and change nothing. It is left
+  // alone deliberately. The card compensates with its own `Math.round` on that
+  // write; the FACE needs no compensation, because `knob-conic-model` quantises
+  // a discrete param itself — which is worth recording, because it means the
+  // promoted surface is STRICTER here than the card it replaces.
+  'TwotracksCard.svelte': twotracksDef,
   'VcaCard.svelte': vcaDef,
   'WarrensspectrumCard.svelte': warrensspectrumDef,
   // THE FACEPLATE QUEUE · Q9. Enrolled while PAYING a live `OPERATIONAL_DEBT`
