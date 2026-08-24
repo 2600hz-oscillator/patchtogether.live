@@ -1,0 +1,302 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>VIDEOBOX face — the dock faceplate</title>
+<style>
+/* ─────────────────────────────────────────────────────────────────────────
+   VIDEOBOX FACEPLATE — MOCKUP, state 1 of 2.
+   SPEC AND MOCKUP ONLY. Nothing here is implemented. See spec.md.
+
+   House tokens, the same set the wave-1/2/3/4 mocks use. The PICTURE is a CSS
+   stand-in for the body's 480x360 <canvas> fed by
+   `videoEngine.blitOutputForPreview(nodeId)` — NEVER an adopted <video>
+   (spec.md §0.2).
+
+   ⚠ THE FACE RANKS NOTHING. `gain` is a declared param nothing writes and
+   nothing reads (videobox.ts:102-103, :153; the shader at :56-62 has no uGain),
+   and a face must rank every param — so promotion REQUIRES deleting it. That is
+   the twotracks precedent, and it is what makes the WebGL attest mandatory here.
+   After the deletion the only param left is synthetic, so `order: []` — exactly
+   videoOut's shape (video-out.ts:83, :134-139).
+   ───────────────────────────────────────────────────────────────────────── */
+:root{
+  --bg:#0e1013; --dock:#12161c; --plate:#262a31; --pbody:#1c1f24; --well:#0a0c0f;
+  --line:#2c3037; --tile:#33383f; --ink:#eef1f5; --dim:#9aa2ad; --faint:#646c77;
+  --cv:#7dd3fc; --accent:#6cf; --img:#c084fc; --ch1:#fbbf24; --warn:#f2c14e; --good:#8fe6b0;
+  --vid:#f472b6;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+  font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1240px;margin:0 auto;padding:26px 20px 90px}
+h1{font-size:21px;font-weight:800;margin:0 0 6px;letter-spacing:.01em}
+.sub{color:var(--dim);font-size:12.5px;margin:0 0 14px;max-width:106ch}
+.sub b{color:var(--ink)} code{font-family:var(--mono);font-size:11.5px;color:var(--ch1)}
+.nav{display:flex;gap:8px;margin:0 0 20px;font-size:11px;flex-wrap:wrap}
+.nav a{color:var(--ink);text-decoration:none;border:1px solid var(--line);border-radius:6px;
+  padding:6px 12px;background:#12161c;font-family:var(--mono);letter-spacing:.06em;text-transform:uppercase}
+.nav a.on{border-color:var(--vid);color:var(--vid)}
+.warn{border:1px solid #6a5330;background:#1c1811;border-radius:8px;padding:11px 14px;
+  margin:12px 0;font-size:12.5px;color:#e8cf9a;max-width:118ch}
+.warn b{color:var(--warn)}
+.ok{border:1px solid #3b5a48;background:#111a15;border-radius:8px;padding:11px 14px;
+  margin:12px 0;font-size:12.5px;color:#a9d8bd;max-width:118ch}
+.ok b{color:var(--good)}
+.bad{border:1px solid #6b3a3a;background:#1c1214;border-radius:8px;padding:11px 14px;
+  margin:12px 0;font-size:12.5px;color:#f0b8b8;max-width:118ch}
+.bad b{color:#ff8a8a}
+.cols{display:grid;grid-template-columns:minmax(0,1fr) 400px;gap:18px;align-items:start}
+@media (max-width:1120px){.cols{grid-template-columns:minmax(0,1fr)}}
+
+.dock{background:var(--dock);border:1px solid var(--line);border-radius:11px;overflow:hidden;padding:11px}
+.chromebar{display:flex;align-items:baseline;gap:9px;padding:0 2px 8px}
+.chromebar .nm{font-size:13px;font-weight:800;letter-spacing:.03em}
+.chromebar .rl{font-size:9.4px;letter-spacing:.09em;text-transform:uppercase;color:var(--faint);font-family:var(--mono)}
+.chromebar .x{margin-left:auto;color:var(--faint);font-family:var(--mono);font-size:12px}
+.plate{background:var(--pbody);border:1px solid var(--tile);border-left:4px solid var(--vid);
+  border-radius:10px;padding:0 0 12px;width:max-content;max-width:100%}
+
+.extbody{padding:12px 14px 10px;width:504px;max-width:100%;position:relative}
+/* The idle field: videobox.ts:59 — vec4(0.05,0.05,0.08 + vUv.y*0.05, 1). */
+.pic{position:relative;width:480px;max-width:100%;aspect-ratio:4/3;border-radius:3px;
+  background:linear-gradient(180deg,#0d0d14 0%,#0d0d1a 100%);border:1px solid #1a1f2a;overflow:hidden}
+.pic .hint{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;
+  justify-content:center;gap:4px;background:rgba(5,6,8,.55);
+  border:1px dashed color-mix(in oklab,var(--vid) 45%,transparent);border-radius:3px}
+.pic .hint b{font-size:11px;font-weight:600;color:var(--ink)}
+.pic .hint span{font-size:9.4px;color:var(--dim)}
+.screen{position:absolute;right:4px;bottom:4px;font-size:8.6px;letter-spacing:.06em;
+  padding:2px 8px;border:1px solid var(--line);border-radius:2px;font-family:var(--mono);
+  background:rgba(5,6,8,.72);color:var(--ink);z-index:3}
+
+.row{display:flex;align-items:center;gap:7px;margin:8px 0 0;flex-wrap:wrap}
+.btn{display:inline-block;padding:3px 10px;border-radius:2px;font-size:9.2px;
+  font-family:var(--mono);letter-spacing:.06em;text-transform:uppercase;font-weight:700;
+  border:1px solid #404652;background:#1a1f2a;color:var(--dim)}
+.btn.pri{background:var(--vid);border-color:var(--vid);color:#0b0d11}
+.seek{flex:1;min-width:140px;height:4px;border-radius:2px;background:#20252e;position:relative;opacity:.5}
+.seek::after{content:"";position:absolute;left:0;top:-4px;width:11px;height:11px;border-radius:50%;background:#4a5260}
+.fname{font-family:var(--mono);font-size:9.2px;color:var(--dim);overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.screens{display:flex;gap:6px;margin-top:9px;padding-top:8px;border-top:1px solid var(--line);flex-wrap:wrap}
+/* the corner resize grip — the ruttetra/bentbox body shape, over
+   resizedWidth/resizedHeight (spec.md §2.3) */
+.grip{position:absolute;right:5px;bottom:5px;width:11px;height:11px;
+  background:linear-gradient(135deg,transparent 45%,var(--faint) 46%,var(--faint) 54%,transparent 55%,
+    transparent 70%,var(--faint) 71%,var(--faint) 79%,transparent 80%)}
+
+.nobands{padding:10px 14px 0;border-top:1px solid var(--line);margin:8px 14px 0}
+.nobands p{margin:0;font-size:9.4px;font-family:var(--mono);letter-spacing:.05em;color:var(--faint);
+  text-transform:uppercase}
+
+/* ── the LANE tile ────────────────────────────────────────────────────── */
+.lanes{display:flex;gap:24px;align-items:flex-start;flex-wrap:wrap;margin-top:6px}
+.lane{width:192px;background:var(--pbody);border:1px solid var(--tile);border-left:3px solid var(--vid);
+  border-radius:7px;padding:7px 8px 9px}
+.lane .t{font-size:8.6px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--dim);font-family:var(--mono);margin:0 0 6px}
+.lane .thumb{width:160px;height:120px;border-radius:2px;border:1px solid #1a1f2a;overflow:hidden;
+  position:relative;margin:0 auto;background:linear-gradient(180deg,#0d0d14 0%,#0d0d1a 100%)}
+.lane .thumb.live{background:
+    radial-gradient(circle at 62% 34%, rgba(255,244,214,.9) 0 7%, transparent 8%),
+    linear-gradient(165deg,#0f2033 0%,#1d4763 44%,#4d7d84 76%,#c9b184 100%)}
+.lane .thumb .bar{position:absolute;left:0;right:0;height:12.5%;background:#000}
+.lane .thumb .bar.t2{top:0} .lane .thumb .bar.b2{bottom:0}
+.lane .cap{font-size:8.4px;color:var(--faint);font-family:var(--mono);text-align:center;margin:7px 0 0}
+
+.notes{display:flex;flex-direction:column;gap:12px}
+.card{border:1px solid var(--line);background:#101419;border-radius:9px;padding:12px 14px}
+.card h3{margin:0 0 7px;font-size:10px;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--accent);font-family:var(--mono);font-weight:700}
+.card p{margin:0 0 8px;font-size:12px;color:var(--dim)}
+.card p:last-child{margin-bottom:0}
+.card b{color:var(--ink)}
+table{border-collapse:collapse;width:100%;font-size:11px;margin:2px 0 0}
+th,td{text-align:left;padding:4px 7px 4px 0;border-bottom:1px solid #1e242c;vertical-align:top;color:var(--dim)}
+th{color:var(--faint);font-family:var(--mono);font-size:8.6px;letter-spacing:.09em;text-transform:uppercase;font-weight:400}
+td b{color:var(--ink)}
+.aria{font-family:var(--mono);font-size:10.5px;color:#8fe6b0}
+.gone{text-decoration:line-through;color:#5a616c}
+.no{color:#ff8a8a;font-weight:700}
+.yes{color:var(--good);font-weight:700}
+</style>
+<div class="wrap">
+
+<h1>VIDEOBOX — the dock faceplate (spawn state)</h1>
+<p class="sub">
+  <b>SPEC AND MOCKUP ONLY. Nothing here is implemented.</b> The face ranks
+  <b>NOTHING</b> — <code>videoOut</code>'s shape — because videobox's only non-synthetic
+  param is <code>gain</code>, and <code>gain</code> is <b>a declared param nothing writes
+  and nothing reads</b>. Promotion requires deleting it. This is the no-file spawn state,
+  which is also exactly what the VRT dock baseline captures.
+</p>
+
+<div class="nav">
+  <a class="on" href="dock.html">1 · the dock face (spawn)</a>
+  <a href="dock-screens.html">2 · loaded, the four screens, and the lane</a>
+  <a href="spec.md">spec.md</a>
+</div>
+
+<div class="bad">
+  <b>⚠ THE CONTRACT CHANGES, AND THE ATTEST IS MANDATORY.</b>
+  <code>videobox.ts:102-103</code> — <i>"Reserved for future CV control; not consumed in
+  v1"</i>; <code>docs.controls.gain</code> — <i>"not yet consumed by the v1 engine or exposed
+  as a knob on the card, so changing it currently has no audible/visible effect"</i>; and the
+  shader (<code>:56-62</code>) has no <code>uGain</code>. A face must rank every param, and
+  the only escape — <code>noUserControl</code> — has two legal <code>writer</code> values,
+  neither of which is true here. <b>So the deletion and the face are one change</b>, and
+  because <code>videobox.ts</code> is in the WebGL attest basis this is
+  <b>the only face in the program that cannot be hash-neutral</b>. The precedent is
+  <code>twotracks</code>: <i>"They were deleted, not hidden."</i>
+</div>
+
+<div class="cols">
+<div>
+
+  <div class="dock">
+    <div class="chromebar">
+      <span class="nm">VIDEOBOX</span>
+      <span class="rl">dock · full view</span>
+      <span class="x">✕</span>
+    </div>
+
+    <div class="plate">
+      <div class="extbody">
+
+        <div class="pic">
+          <div class="hint"><b>Drop a video file</b><span>or click to select</span></div>
+          <span class="screen">SCREEN ON</span>
+        </div>
+
+        <div class="row">
+          <span class="btn pri">Choose video…</span>
+        </div>
+
+        <div class="row">
+          <span class="btn pri">Play</span>
+          <span class="seek"></span>
+        </div>
+
+        <div class="screens">
+          <span class="btn">FULL FRAME</span>
+          <span class="btn">FULLSCREEN</span>
+          <span class="btn">DETACH</span>
+          <span class="btn">PRESENT</span>
+        </div>
+
+        <span class="grip"></span>
+      </div>
+
+      <div class="nobands">
+        <p>no bands — this face ranks nothing (videoOut's shape)</p>
+      </div>
+    </div>
+  </div>
+
+  <h1 style="font-size:15px;margin:26px 0 6px">the LANE tile — the picture IS the tile</h1>
+  <p class="sub" style="margin-bottom:10px">
+    With <code>order: []</code> there is nothing to compete with the picture, so the #1785
+    ruling that <i>"the picture OUTRANKS ranked controls"</i> never has to fire. This is
+    <code>videoOut</code>'s lane tile exactly.
+  </p>
+
+  <div class="lanes">
+    <div class="lane">
+      <p class="t">videobox</p>
+      <div class="thumb live"><div class="bar t2"></div><div class="bar b2"></div></div>
+      <p class="cap">a node with a clip · 160×120 @ 15 fps</p>
+    </div>
+    <div class="lane">
+      <p class="t">videobox</p>
+      <div class="thumb"></div>
+      <p class="cap">a node with no file · the idle field</p>
+    </div>
+  </div>
+
+  <div class="ok" style="margin-top:16px">
+    <b>This arrangement is not a prediction — <code>main</code> already does it.</b>
+    <code>workflow-shell-video.spec.ts:1361-1381</code> spawns a videobox at plain
+    <code>/rack</code> today and asserts a uniform RACKLINE tile in the lane, an off-screen
+    lifecycle host carrying <code>data-node-type="videobox"</code>, and the real
+    <code>videobox-card</code> plus its <code>videobox-video</code> inside that host.
+    <b>Promotion changes only which component the DOCK renders.</b>
+  </div>
+
+  <div class="warn">
+    <b>The <code>0:04 / 2:00</code> readout is GONE, not hidden</b>
+    (<code>VideoboxCard.svelte:881-883</code>). It was also the only thing a
+    <b>peer without a local copy</b> could see — <code>refreshDisplay</code> extrapolates
+    <code>lastSyncPosition + elapsed</code> for exactly that case. It survives on the SEEK
+    scrubber, which <b>stays live for a peer with no file</b> (its <code>max</code> is the
+    synced <code>fileMeta.duration</code>), so the head still moves. A slider showing where
+    the head is is a control position, not text.
+  </div>
+
+</div>
+
+<div class="notes">
+
+  <div class="card">
+    <h3>the whole face, declared</h3>
+    <table>
+      <tr><th>field</th><th>value</th></tr>
+      <tr><td><b>glyph</b></td><td><code>'none'</code> — mandatory for a video def</td></tr>
+      <tr><td><b>order</b></td><td><code>[]</code> — videoOut's shape</td></tr>
+      <tr><td><b>pages</b></td><td>none — zero bands</td></tr>
+      <tr><td><b>extension</b></td><td><code>'videobox'</code> → <code>fullViewBody</code></td></tr>
+      <tr><td><b>tabbed</b></td><td>no — a rail is not reachable from zero bands</td></tr>
+      <tr><td><b>noUserControl</b></td><td>1 entry: <code>cv_play_trigger</code>, <code>writer:'cv-port'</code></td></tr>
+      <tr><td><b>contract</b></td><td>⚠ one line REMOVED: <code>videobox param gain 0..2 linear default=1</code></td></tr>
+    </table>
+  </div>
+
+  <div class="card">
+    <h3>⚠ the .data census — one module, TWO rows</h3>
+    <table>
+      <tr><th>writer</th><th>shape</th><th>Cmd-Z</th></tr>
+      <tr><td><b>writeSync</b> (play/pause/seek)</td><td>transact + LOCAL_ORIGIN</td><td class="yes">✓</td></tr>
+      <tr><td><b>writeFileMeta</b></td><td>transact + LOCAL_ORIGIN</td><td class="yes">✓</td></tr>
+      <tr><td><b>setFullFrame</b> <code>:701-708</code></td><td>bare proxy write</td><td class="no">✗</td></tr>
+      <tr><td><b>resize apply</b> <code>:744-751</code></td><td>bare proxy write</td><td class="no">✗</td></tr>
+    </table>
+    <p style="margin-top:8px">So <b>on <code>main</code> today, Cmd-Z cannot undo a videobox
+      Full Frame toggle or a resize</b> — while the multiplayer triple in the same file is
+      correctly tagged.</p>
+    <p>Waves 3-5 built a census with <b>one row per module</b>. videobox needs two, and the
+      correct writers are the ones an author was thinking about while the careless ones were
+      bolted on later. <b>A per-module column would record this module as ✓ or ✗ depending on
+      which function the surveyor opened first.</b></p>
+  </div>
+
+  <div class="card">
+    <h3>⚠ NO StatusLed — a decision, not an omission</h3>
+    <p><code>videobox-sync.ts</code> is exactly the seam that wants to paint
+      <code>SYNCED</code> / <code>DRIFTING</code> / <code>2 PEERS</code>. The positive form
+      exists (<code>StatusLed</code>, gated by <code>status-led-source.test.ts</code>) and is
+      <b>deliberately not used</b>.</p>
+    <p><b>A lamp must name a state a player can ACT on.</b> Drift correction is automatic and
+      silent; "in sync" is the resting state of a working module. <code>loopback</code>'s lamp
+      earns its place because START CAPTURE / STOP <em>depend</em> on the state it shows —
+      lamp and buttons are one control. videobox has no such gesture.</p>
+    <p>And the one actionable multiplayer state — <b>a peer loaded a file you do not have</b> —
+      is already an <em>affordance</em>: the re-link overlay, which occupies the picture, names
+      the file and is itself the button that fixes it.</p>
+  </div>
+
+  <div class="card">
+    <h3>cost</h3>
+    <p><b>WebGL attest: ⚠ MANDATORY.</b> <code>face</code>, <code>noUserControl</code> and
+      <code>docs</code> are free — the <code>gain</code> deletion is not. There is no split
+      that avoids it.</p>
+    <p><b>ART: ZERO</b> — video domain.</p>
+    <p><b>Contract: ONE removed line</b>, predicted exactly (<code>contract-lock.txt:3562</code>).</p>
+    <p><b>VRT:</b> 2 scenes ADDED, 0 moved. No <code>simPin</code> — the spawn state has no
+      file and the idle shader has no time term.</p>
+    <p><b>Push 2:</b> the card goes from two slots to <b>zero</b> — a dead param and a raw gate
+      cache leave a hardware controller.</p>
+  </div>
+
+</div>
+</div>
+</div>

@@ -1,0 +1,309 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>ARCHIVIST face — a loaded VIDEO item, and the lane tile</title>
+<style>
+/* ─────────────────────────────────────────────────────────────────────────
+   ARCHIVIST FACEPLATE — MOCKUP, state 2 of 2 (a loaded VIDEO item).
+   SPEC AND MOCKUP ONLY. Nothing here is implemented. See spec.md.
+
+   ⚠ THE PICTURE IN THIS STATE IS THE ONLY REASON THIS SPEC DIFFERS FROM ITS
+   SIBLING'S. archive.org video is CORS-tainted, so archivist.ts:453-467
+   deliberately never calls uploader.attach() and the module's own output
+   texture stays the idle gradient for a VIDEO item — the media type this
+   module DEFAULTS to. A cameraInput-style blit would show nothing.
+   The body therefore ADOPTS the node-owned <video> (spec.md §2.1.1).
+   ───────────────────────────────────────────────────────────────────────── */
+:root{
+  --bg:#0e1013; --dock:#12161c; --plate:#262a31; --pbody:#1c1f24; --well:#0a0c0f;
+  --line:#2c3037; --tile:#33383f; --ink:#eef1f5; --dim:#9aa2ad; --faint:#646c77;
+  --cv:#7dd3fc; --accent:#6cf; --vid:#4ade80; --ch1:#fbbf24; --warn:#f2c14e; --good:#8fe6b0;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+  font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1240px;margin:0 auto;padding:26px 20px 90px}
+h1{font-size:21px;font-weight:800;margin:0 0 6px;letter-spacing:.01em}
+.sub{color:var(--dim);font-size:12.5px;margin:0 0 14px;max-width:106ch}
+.sub b{color:var(--ink)} code{font-family:var(--mono);font-size:11.5px;color:var(--ch1)}
+.nav{display:flex;gap:8px;margin:0 0 20px;font-size:11px;flex-wrap:wrap}
+.nav a{color:var(--ink);text-decoration:none;border:1px solid var(--line);border-radius:6px;
+  padding:6px 12px;background:#12161c;font-family:var(--mono);letter-spacing:.06em;text-transform:uppercase}
+.nav a.on{border-color:var(--vid);color:var(--vid)}
+.warn{border:1px solid #6a5330;background:#1c1811;border-radius:8px;padding:11px 14px;
+  margin:12px 0;font-size:12.5px;color:#e8cf9a;max-width:118ch}
+.warn b{color:var(--warn)}
+.ok{border:1px solid #3b5a48;background:#111a15;border-radius:8px;padding:11px 14px;
+  margin:12px 0;font-size:12.5px;color:#a9d8bd;max-width:118ch}
+.ok b{color:var(--good)}
+.bad{border:1px solid #6b3a3a;background:#1c1214;border-radius:8px;padding:11px 14px;
+  margin:12px 0;font-size:12.5px;color:#f0b8b8;max-width:118ch}
+.bad b{color:#ff9a9a}
+.cols{display:grid;grid-template-columns:minmax(0,1fr) 400px;gap:18px;align-items:start}
+@media (max-width:1120px){.cols{grid-template-columns:minmax(0,1fr)}}
+
+.dock{background:var(--dock);border:1px solid var(--line);border-radius:11px;overflow:hidden;padding:11px}
+.chromebar{display:flex;align-items:baseline;gap:9px;padding:0 2px 8px}
+.chromebar .nm{font-size:13px;font-weight:800;letter-spacing:.03em}
+.chromebar .rl{font-size:9.4px;letter-spacing:.09em;text-transform:uppercase;color:var(--faint);font-family:var(--mono)}
+.chromebar .x{margin-left:auto;color:var(--faint);font-family:var(--mono);font-size:12px}
+.plate{background:var(--pbody);border:1px solid var(--tile);border-left:4px solid var(--vid);
+  border-radius:10px;padding:0 0 12px;width:max-content;max-width:100%}
+
+.extbody{padding:12px 14px 4px;width:508px;max-width:100%}
+.prevwrap{position:relative;display:flex;justify-content:center;min-height:18px}
+.prev{width:480px;max-width:100%;aspect-ratio:4/3;border-radius:4px;border:1px solid #1a1f2a;
+  overflow:hidden;position:relative;background:#000}
+/* a stand-in for the ADOPTED node-owned <video> — a 1950s civil-defence film frame */
+.prev .film{position:absolute;inset:0;
+  background:
+    radial-gradient(ellipse at 50% 40%, rgba(255,250,230,.30) 0 18%, transparent 42%),
+    linear-gradient(180deg,#2a2620 0%,#151310 44%,#0c0b09 100%)}
+.prev .film::after{content:"";position:absolute;inset:0;
+  background:repeating-linear-gradient(180deg,rgba(255,255,255,.035) 0 1px,transparent 1px 3px)}
+.screenbtn{position:absolute;right:6px;bottom:6px;font-size:9px;letter-spacing:.06em;
+  padding:2px 8px;border:1px solid var(--vid);border-radius:2px;background:rgba(5,6,8,.72);
+  color:var(--ink);font-family:var(--mono);z-index:3}
+
+.q{margin-top:10px;display:flex;flex-direction:column;gap:5px}
+.qrow{display:flex;gap:5px;align-items:center}
+.sel{background:#1a1f2a;border:1px solid #404652;border-radius:2px;color:var(--ink);
+  font-size:10px;font-family:var(--mono);padding:4px 6px;min-width:66px}
+.inp{flex:1;min-width:0;background:#11151c;border:1px solid #404652;border-radius:2px;
+  color:var(--ink);font-size:10.5px;padding:5px 7px}
+.yr{width:56px;background:#11151c;border:1px solid #404652;border-radius:2px;color:var(--ink);
+  font-size:10px;padding:4px 5px}
+.yr.ph{color:#5c6470}
+.dash{color:var(--faint);font-size:11px}
+.btn{padding:4px 11px;background:var(--vid);color:#08120c;border-radius:2px;font-size:9.4px;
+  font-family:var(--mono);letter-spacing:.06em;text-transform:uppercase;font-weight:700;white-space:nowrap}
+.btn.sec{background:#2a3340;color:var(--ink)}
+
+.tr{display:flex;align-items:center;gap:5px;margin-top:10px}
+.tbtn{background:#2a3340;color:var(--ink);border-radius:2px;padding:3px 7px;font-size:9.4px;font-family:var(--mono)}
+.tbtn.play{background:var(--vid);color:#08120c;min-width:52px;text-align:center;font-weight:700}
+.seek{margin-top:6px;height:5px;border-radius:3px;background:#1a1f2a;position:relative}
+.seek .fill{position:absolute;left:0;top:0;bottom:0;width:31%;background:var(--vid);border-radius:3px}
+.seek .knob{position:absolute;left:31%;top:50%;transform:translate(-50%,-50%);
+  width:11px;height:11px;border-radius:50%;background:var(--vid);box-shadow:0 0 6px rgba(74,222,128,.6)}
+
+.meta{margin-top:9px;border-top:1px solid var(--line);padding-top:8px;
+  display:flex;align-items:center;gap:7px}
+.title{font-size:11px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  text-decoration:underline;text-decoration-color:#2f3a44;text-underline-offset:3px;min-width:0}
+.lamp{width:8px;height:8px;border-radius:50%;flex:0 0 auto;background:var(--warn);opacity:1}
+.lampcap{font-family:var(--mono);font-size:8.6px;letter-spacing:.1em;color:var(--faint);margin-left:auto}
+
+.bands{padding:6px 14px 0}
+.band{border-top:1px solid var(--line);padding-top:8px;margin-top:10px}
+.blab{margin:0 0 7px;font-size:9.4px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--dim)}
+.row{display:flex;flex-wrap:wrap;align-items:flex-start;gap:10px 18px}
+.f{width:52px;display:flex;flex-direction:column;align-items:center;gap:5px}
+.f i{--v:.5;--fc:var(--vid);display:block;width:16px;height:74px;border-radius:8px;position:relative;
+  background:linear-gradient(#171b21,#12161c);border:1px solid #333a43}
+.f i::before{content:"";position:absolute;left:50%;transform:translateX(-50%);width:2px;top:6px;bottom:6px;
+  background:#262c34;border-radius:1px}
+.f i::after{content:"";position:absolute;left:50%;width:22px;height:9px;border-radius:2px;
+  background:var(--fc);box-shadow:0 0 7px color-mix(in srgb,var(--fc) 60%,transparent);
+  transform:translate(-50%,-50%);top:calc(6px + (1 - var(--v)) * (100% - 12px))}
+.f b{font-size:7.8px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--dim);
+  font-family:var(--mono);text-align:center}
+
+.lanes{display:flex;gap:14px;flex-wrap:wrap;margin-top:8px}
+.tile{background:var(--pbody);border:1px solid var(--tile);border-left:3px solid var(--vid);
+  border-radius:7px;padding:7px 8px;width:198px}
+.tile .tn{font-family:var(--mono);font-size:8.4px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--dim);margin-bottom:5px}
+.thumb{width:160px;height:120px;border-radius:3px;border:1px solid #1a1f2a;margin-bottom:6px;position:relative;overflow:hidden}
+.thumb.idle{background:linear-gradient(180deg,#0a0d17 0%,#0f1424 100%)}
+.thumb.img{background:
+  radial-gradient(circle at 34% 36%, #f0a5c8 0 14%, transparent 15%),
+  linear-gradient(155deg,#3a2a6b 0%,#7b3f8f 48%,#d97a5a 80%,#f6c78a 100%)}
+.tilecap{font-family:var(--mono);font-size:8px;color:var(--faint);letter-spacing:.05em}
+.minif{display:flex;gap:5px;align-items:center;margin-top:2px}
+.minif i{--v:.5;display:block;width:12px;height:34px;border-radius:6px;position:relative;
+  background:linear-gradient(#171b21,#12161c);border:1px solid #333a43}
+.minif i::after{content:"";position:absolute;left:50%;width:16px;height:6px;border-radius:2px;
+  background:var(--vid);transform:translate(-50%,-50%);top:calc(4px + (1 - var(--v)) * (100% - 8px))}
+.minif b{font-size:7px;font-family:var(--mono);color:var(--dim);letter-spacing:.05em}
+
+.notes{display:flex;flex-direction:column;gap:12px}
+.card{border:1px solid var(--line);background:#101419;border-radius:9px;padding:12px 14px}
+.card h3{margin:0 0 7px;font-size:10px;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--accent);font-family:var(--mono);font-weight:700}
+.card p{margin:0 0 8px;font-size:12px;color:var(--dim)}
+.card p:last-child{margin-bottom:0}
+.card b{color:var(--ink)}
+table{border-collapse:collapse;width:100%;font-size:11px;margin:2px 0 0}
+th,td{text-align:left;padding:4px 7px 4px 0;border-bottom:1px solid #1e242c;vertical-align:top;color:var(--dim)}
+th{color:var(--faint);font-family:var(--mono);font-size:8.6px;letter-spacing:.09em;text-transform:uppercase;font-weight:400}
+td b{color:var(--ink)}
+.aria{font-family:var(--mono);font-size:10.5px;color:#8fe6b0}
+.gone{text-decoration:line-through;color:#5a616c}
+</style>
+<div class="wrap">
+
+<h1>ARCHIVIST — a loaded VIDEO item, and the lane tile</h1>
+<p class="sub">
+  <b>SPEC AND MOCKUP ONLY. Nothing here is implemented.</b> The state a player actually uses,
+  and the one that makes this module's body <b>different from every other faced video source
+  in the fleet</b>.
+</p>
+
+<div class="nav">
+  <a href="dock.html">1 · cold (what VRT captures)</a>
+  <a class="on" href="dock-loaded.html">2 · a loaded VIDEO item + the lane tile</a>
+  <a href="spec.md">spec.md</a>
+  <a href="../peertube/spec.md">↔ peertube</a>
+</div>
+
+<div class="bad">
+  <b>THE PICTURE ABOVE CANNOT COME FROM THE ENGINE.</b>
+  <code>archivist.ts:453-467</code> deliberately never calls <code>uploader.attach()</code> for a
+  video element — <i>"archive.org video is CORS-tainted, so the card attaches the &lt;video&gt; for
+  PLAYBACK + audio only — NOT for texturing"</i> — and a shipped gate says so in its own words
+  (<code>dom-source-modules.test.ts:142</code>: <i>"NOT archivist"</i>). So the module's own
+  output texture is the idle gradient for a VIDEO item, which is the media type it
+  <b>defaults to</b>. Copying cameraInput's blit-only body verbatim would ship a promoted
+  archivist whose preview is dark. <b>This body ADOPTS the node-owned element instead</b>, which
+  <code>node-media-registry</code> makes safe by construction — adoption is an owner-checked
+  TRANSFER and there is exactly one element per <code>(nodeId, slot)</code>. spec.md §2.1.1,
+  and <b>M2 is the experiment that must run before a line is written</b>.
+</div>
+
+<div class="cols">
+<div>
+
+<div class="dock">
+  <div class="chromebar">
+    <span class="nm">archivist</span>
+    <span class="rl">dock full view</span>
+    <span class="x">✕</span>
+  </div>
+
+  <div class="plate">
+    <div class="extbody">
+
+      <div class="prevwrap">
+        <div class="prev">
+          <div class="film"></div>
+          <span class="screenbtn">SCREEN ON</span>
+        </div>
+      </div>
+
+      <div class="q">
+        <div class="qrow">
+          <span class="sel">video&nbsp;▾</span>
+          <span class="inp">civil defense</span>
+        </div>
+        <div class="qrow">
+          <span class="yr">1950</span>
+          <span class="dash">–</span>
+          <span class="yr">1959</span>
+          <span class="btn">Search</span>
+          <span class="btn sec">↻ next</span>
+        </div>
+      </div>
+
+      <!-- TRANSPORT — rendered only for time-media, exactly as the card gates it -->
+      <div class="tr">
+        <span class="tbtn">−10s</span>
+        <span class="tbtn play">Pause</span>
+        <span class="tbtn">+10s</span>
+        <span class="tbtn">⤭</span>
+      </div>
+      <div class="seek"><div class="fill"></div><div class="knob"></div></div>
+
+      <!-- ATTRIBUTION + the OUT lamp. One title, one link, one lamp, no state words. -->
+      <div class="meta">
+        <span class="lamp" title="Play-only. archive.org serves video without CORS on the final hop, so the texture is tainted: this item plays and scrubs in the preview, and the `video` output stays the idle pattern."></span>
+        <span class="title">Duck and Cover (1951)</span>
+        <span class="lampcap">OUT</span>
+      </div>
+
+    </div>
+
+    <div class="bands">
+      <div class="band">
+        <p class="blab">level</p>
+        <div class="row">
+          <span class="f"><i style="--v:.5"></i><b>gain</b></span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="lanes">
+  <div class="tile">
+    <div class="tn">archivist · video item</div>
+    <div class="thumb idle"></div>
+    <div class="minif"><i style="--v:.5"></i><b>gain</b></div>
+    <p class="tilecap" style="margin:6px 0 0">⚠ the idle gradient — no texture exists</p>
+  </div>
+  <div class="tile">
+    <div class="tn">archivist · image item</div>
+    <div class="thumb img"></div>
+    <div class="minif"><i style="--v:.5"></i><b>gain</b></div>
+    <p class="tilecap" style="margin:6px 0 0">the picture, live, per node, free</p>
+  </div>
+</div>
+
+<div class="warn">
+  <b>The lane picture is free and per-node, and blank for three of four states.</b>
+  <code>laneGlyphFor</code> returns <code>'picture'</code> on <code>domain === 'video'</code>
+  alone, and <code>VideoTileThumb</code> takes the <code>nodeId</code> — so the tile costs
+  nothing to author. But it shows the item only for an <b>IMAGE</b>; audio and video items and
+  the empty state all paint the idle gradient. A spec that wrote <i>"the lane shows the loaded
+  media"</i> would be wrong three times out of four. spec.md §4.
+</div>
+
+</div>
+<div class="notes">
+
+  <div class="card">
+    <h3>the multiplayer defect this found</h3>
+    <p><code>archivist.ts:184</code> promises <i>"Multiplayer-aware: the loaded item … mirror on
+    the node so peers see and drive the same item"</i>. <b>There is no <code>$effect</code> on
+    <code>item</code>.</b> Enumerated: three effects (adopt, class-toggle, isPlaying-sync) and two
+    <code>onMount</code>s. <code>attachMedia</code> runs on mount and inside <code>loadItem</code>
+    only.</p>
+    <p>So a remote peer's selection writes <code>node.data.item</code>; the local card updates its
+    attributes and the title link, and <b>never sets <code>.src</code> on any element</b>. The
+    preview stays empty and every output stays idle.</p>
+    <p>⚠ <b>The sibling has the effect</b> (<code>PeerTubeCard.svelte:482-491</code>). Reading the
+    two together is what found it, and the fix is one effect copied across. It is also the seam
+    the body needs, so the face cannot ship without it. spec.md §11 D1.</p>
+  </div>
+
+  <div class="card">
+    <h3>the CORS finding, relocated not deleted</h3>
+    <p>Removing <code>⚠ play-only (no clean output)</code> removes the <b>only place in the
+    product</b> that tells a player a loaded video cannot drive anything downstream.</p>
+    <table>
+      <tr><th>lamp</th><th>aria-label</th></tr>
+      <tr><td><b>lit</b></td><td class="aria">texture and audio are CORS-clean; the outputs carry real signal</td></tr>
+      <tr><td><b>amber</b></td><td class="aria">Play-only. archive.org serves video without CORS, so the texture is tainted…</td></tr>
+      <tr><td><b>dim</b></td><td class="aria">Nothing loaded.</td></tr>
+    </table>
+    <p style="margin-top:8px">Static caption <b>OUT</b>. ⚠ <b>Not</b> a changing caption
+    <span class="gone">CLEAN / PLAY-ONLY</span> — that is the readout wearing a shorter label, and
+    <i>"there but hidden"</i> was refused by name.</p>
+  </div>
+
+  <div class="card">
+    <h3>the tax it pays</h3>
+    <p>archivist is in <code>DOM_SOURCE_LANE_TYPES</code>, so its real card is mounted in
+    <code>&lt;HeadlessSourceHost&gt;</code> at <code>left:-9999px</code> with
+    <code>pointer-events: none</code> — <b>even while its own dock pane is open</b>.</p>
+    <p><b>The engine state survives untouched. All nineteen interactive affordances become
+    unreachable.</b> That is the whole tax, and this body is the payment.</p>
+    <p>⚠ It needs <b>no status registry</b>, unlike cameraInput and loopback: everything it must
+    show is already on <code>node.data</code> or on the engine handle, and every gesture acts on
+    the element it now holds. spec.md §6.2.</p>
+  </div>
+
+</div>
+</div>
+</div>

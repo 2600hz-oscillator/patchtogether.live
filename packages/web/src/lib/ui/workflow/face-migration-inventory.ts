@@ -891,10 +891,18 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
   },
   {
     type: 'midiclock',
-    disposition: 'bespoke-surface',
-    why:
-      'a MIDI CLOCK BINDER: permission gesture, live device roster, clock divisor and a running ' +
-      'tempo readout. No params — the surface is the binding.',
+    disposition: 'generic-face',
+    note:
+      'DONE: two ranked cells (the clock DIVISION as a segmented param, CONNECT MIDI as an action ' +
+      'cell that reaches the lane) plus a `fullViewBody` carrying the one thing that cannot be a ' +
+      'cell — the runtime MIDI input roster, which lives on the engine handle behind ' +
+      '`requestMIDIAccess()` and differs per machine. ⚠ THIS ENTRY USED TO SAY "clock divisor and ' +
+      'a running TEMPO READOUT. No params", and BOTH halves were wrong. No tempo is computed ' +
+      'anywhere in the module — nothing derives BPM from the tick stream, and the card showed ' +
+      'STATE and TICKS, never a tempo. And the divisor was never un-rankable: its roster ' +
+      '(`CLOCK_DIVISORS`), its labels and its validator were all exported from the def already; ' +
+      'it simply had not been DECLARED as a param, on the def\'s stated reasoning that a discrete ' +
+      'choice is not a continuous AudioParam — true of an AudioParam, and not of a `ParamDef`.',
   },
   {
     type: 'modtris',

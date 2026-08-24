@@ -1,0 +1,255 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>RECORDERBOX face — the dock faceplate (idle)</title>
+<style>
+/* ─────────────────────────────────────────────────────────────────────────
+   RECORDERBOX FACEPLATE — MOCKUP, state 1 of 2.
+   SPEC AND MOCKUP ONLY. Nothing here is implemented. See spec.md.
+
+   House tokens, the same set the wave-1/2/3/4 mocks use. The LAMPS are CSS
+   stand-ins for `$lib/ui/controls/StatusLed.svelte` — a static caption, a
+   boolean lamp, and every measurement on aria-label/title.
+   ───────────────────────────────────────────────────────────────────────── */
+:root{
+  --bg:#0e1013; --dock:#12161c; --plate:#262a31; --pbody:#1c1f24; --well:#0a0c0f;
+  --line:#2c3037; --tile:#33383f; --ink:#eef1f5; --dim:#9aa2ad; --faint:#646c77;
+  --cv:#7dd3fc; --accent:#6cf; --img:#c084fc; --ch1:#fbbf24; --warn:#f2c14e; --good:#8fe6b0;
+  --rec:#ff3b30;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+  font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1200px;margin:0 auto;padding:26px 20px 90px}
+h1{font-size:21px;font-weight:800;margin:0 0 6px;letter-spacing:.01em}
+.sub{color:var(--dim);font-size:12.5px;margin:0 0 14px;max-width:106ch}
+.sub b{color:var(--ink)} code{font-family:var(--mono);font-size:11.5px;color:var(--ch1)}
+.nav{display:flex;gap:8px;margin:0 0 20px;font-size:11px;flex-wrap:wrap}
+.nav a{color:var(--ink);text-decoration:none;border:1px solid var(--line);border-radius:6px;
+  padding:6px 12px;background:#12161c;font-family:var(--mono);letter-spacing:.06em;text-transform:uppercase}
+.nav a.on{border-color:var(--rec);color:#ff8a82}
+.warn{border:1px solid #6a5330;background:#1c1811;border-radius:8px;padding:11px 14px;
+  margin:12px 0;font-size:12.5px;color:#e8cf9a;max-width:118ch}
+.warn b{color:var(--warn)}
+.ok{border:1px solid #3b5a48;background:#111a15;border-radius:8px;padding:11px 14px;
+  margin:12px 0;font-size:12.5px;color:#a9d8bd;max-width:118ch}
+.ok b{color:var(--good)}
+.bad{border:1px solid #6b3a3a;background:#1c1214;border-radius:8px;padding:11px 14px;
+  margin:12px 0;font-size:12.5px;color:#f0b8b8;max-width:118ch}
+.bad b{color:#ff8a82}
+.cols{display:grid;grid-template-columns:minmax(0,1fr) 400px;gap:18px;align-items:start}
+@media (max-width:1080px){.cols{grid-template-columns:minmax(0,1fr)}}
+
+.dock{background:var(--dock);border:1px solid var(--line);border-radius:11px;overflow:hidden;padding:11px}
+.chromebar{display:flex;align-items:baseline;gap:9px;padding:0 2px 8px}
+.chromebar .nm{font-size:13px;font-weight:800;letter-spacing:.03em}
+.chromebar .rl{font-size:9.4px;letter-spacing:.09em;text-transform:uppercase;color:var(--faint);font-family:var(--mono)}
+.chromebar .x{margin-left:auto;color:var(--faint);font-family:var(--mono);font-size:12px}
+.plate{background:var(--pbody);border:1px solid var(--tile);border-left:4px solid var(--rec);
+  border-radius:10px;padding:0 0 12px;width:max-content;max-width:100%}
+
+/* ── the fullViewBody: lamps + transport. NO canvas. ──────────────────── */
+.extbody{padding:12px 14px 6px;width:300px;max-width:100%}
+.lamps{display:flex;gap:14px;padding:2px 0 11px;border-bottom:1px solid var(--line)}
+.led{display:inline-flex;align-items:center;gap:5px;font-size:9px;font-weight:600;
+  letter-spacing:.6px;color:var(--faint);text-transform:uppercase;font-family:var(--sans)}
+.led .lamp{width:8px;height:8px;border-radius:50%;background:#252a31;border:1px solid #333a43}
+.led.lit{color:var(--ink)}
+.led.lit .lamp{background:var(--rec);border-color:var(--rec);box-shadow:0 0 8px rgba(255,59,48,.7)}
+.led.lit.acc .lamp{background:var(--accent);border-color:var(--accent);box-shadow:0 0 8px rgba(102,204,255,.7)}
+
+.row{display:flex;align-items:center;gap:8px;margin:10px 0 0}
+.row .lbl{font-size:8.6px;font-family:var(--mono);letter-spacing:.09em;text-transform:uppercase;
+  color:var(--faint);width:26px;flex:0 0 26px}
+.field{flex:1;min-width:0;background:var(--well);border:1px solid #333a43;border-radius:3px;
+  padding:4px 7px;font-family:var(--mono);font-size:10.5px;color:var(--ink)}
+.suffix{font-family:var(--mono);font-size:9.4px;color:var(--faint)}
+.btn{display:inline-block;padding:4px 11px;background:#3a424e;color:var(--ink);border-radius:3px;
+  font-size:9px;font-family:var(--mono);letter-spacing:.06em;text-transform:uppercase;font-weight:700}
+.sel{flex:1;min-width:0;background:var(--well);border:1px solid #333a43;border-radius:3px;
+  padding:4px 7px;font-family:var(--mono);font-size:10.5px;color:var(--ink);
+  display:flex;justify-content:space-between;align-items:center}
+.sel .cv{color:var(--accent)}
+.recbtn{display:block;width:100%;margin-top:12px;padding:8px 0;text-align:center;
+  background:#2a1416;border:1px solid #6b3a3a;border-radius:4px;color:#ff8a82;
+  font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.09em}
+.badge{display:inline-block;margin-top:9px;padding:3px 8px;border:1px solid #6b3a3a;background:#1c1214;
+  border-radius:4px;font-family:var(--mono);font-size:8.8px;color:#f0a0a0}
+
+/* ── side notes ───────────────────────────────────────────────────────── */
+.notes{display:flex;flex-direction:column;gap:12px}
+.card{border:1px solid var(--line);background:#101419;border-radius:9px;padding:12px 14px}
+.card h3{margin:0 0 7px;font-size:10px;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--accent);font-family:var(--mono);font-weight:700}
+.card p{margin:0 0 8px;font-size:12px;color:var(--dim)}
+.card p:last-child{margin-bottom:0}
+.card b{color:var(--ink)}
+table{border-collapse:collapse;width:100%;font-size:11px;margin:2px 0 0}
+th,td{text-align:left;padding:4px 7px 4px 0;border-bottom:1px solid #1e242c;vertical-align:top;color:var(--dim)}
+th{color:var(--faint);font-family:var(--mono);font-size:8.6px;letter-spacing:.09em;text-transform:uppercase;font-weight:400}
+td b{color:var(--ink)}
+.aria{font-family:var(--mono);font-size:10.5px;color:#8fe6b0}
+.gone{text-decoration:line-through;color:#5a616c}
+.lane{display:flex;gap:10px;align-items:flex-start;margin-top:12px}
+.tile{width:160px;border:1px solid var(--tile);border-radius:7px;background:#15181d;padding:7px;flex:0 0 auto}
+.tile .tnm{font-size:8.4px;font-family:var(--mono);letter-spacing:.08em;text-transform:uppercase;
+  color:var(--faint);margin-bottom:5px}
+.thumb{width:100%;aspect-ratio:4/3;border-radius:3px;border:1px solid #1a1f2a;
+  background:linear-gradient(150deg,#123 0%,#2b6f7a 40%,#d4a24c 72%,#7a2f4f 100%);position:relative}
+</style>
+<div class="wrap">
+
+<h1>RECORDERBOX — the dock faceplate, IDLE</h1>
+<p class="sub">
+  <b>SPEC AND MOCKUP ONLY. Nothing here is implemented.</b> Zero params, two cells, and a
+  <b>fullViewBody</b> that is a lamp and a transport — <b>no preview canvas</b>. This is the
+  wave's only <code>status-primitive</code> body, and the only module in the cohort that is a
+  <b>SINK</b>.
+</p>
+
+<div class="nav">
+  <a class="on" href="dock.html">1 · idle</a>
+  <a href="dock-recording.html">2 · recording + the lane tile</a>
+  <a href="spec.md">spec.md</a>
+</div>
+
+<div class="ok">
+  <b>The set anomaly resolves as (a): the blocker's <code>why</code> is STALE.</b>
+  <code>face-migration-inventory.ts:1029-1034</code> says <em>"the capture canvas plus its
+  per-frame encode loop live on the card, so the recording exists only while it is
+  mounted."</em> All three clauses were made false by <code>#1574</code>
+  (<code>bdef392f6</code>, a P0). The card says so itself at
+  <code>RecorderboxCard.svelte:93-96</code>, <code>:106-111</code> and <code>:257-260</code>.
+</div>
+
+<div class="cols">
+<div>
+
+  <div class="dock">
+    <div class="chromebar">
+      <span class="nm">RECORDERBOX</span>
+      <span class="rl">dock · full view</span>
+      <span class="x">✕</span>
+    </div>
+
+    <div class="plate">
+      <div class="extbody">
+
+        <div class="lamps">
+          <span class="led" title="not recording"><span class="lamp"></span>REC</span>
+          <span class="led acc" title="idle"><span class="lamp"></span>SAVING</span>
+        </div>
+
+        <div class="row">
+          <span class="lbl">File</span>
+          <span class="field">recording</span>
+          <span class="suffix">.mp4</span>
+        </div>
+
+        <div class="row">
+          <span class="lbl">Dir</span>
+          <span class="btn" title="No folder chosen yet — you will be prompted on Record">Pick</span>
+        </div>
+
+        <div class="row">
+          <span class="lbl">Size</span>
+          <span class="sel">BALANCED <span class="cv">▾</span></span>
+        </div>
+
+        <div class="recbtn">● RECORD</div>
+      </div>
+
+      <!-- NO BANDS. `params: []`, so `face.order: []`. -->
+    </div>
+  </div>
+
+  <div class="warn" style="margin-top:16px">
+    <b>There is no band section, and that is legal.</b> <code>recorderbox.ts:162</code> is
+    <code>params: []</code>, so the face is <code>order: []</code>.
+    <code>module-face-lint.test.ts:3042</code> carves the shape in by SCOPE rather than by
+    exemption — <em>"`flipper` (params: []) and `videoOut` (order: [], picture) are both this
+    shape, and both are deliberate."</em> <b>No <code>EMPTY_LANE_OK</code> entry is needed.</b>
+  </div>
+
+  <div class="bad">
+    <b>Three settings, none of them undoable.</b> <code>setData</code>
+    (<code>RecorderboxCard.svelte:144-151</code>) is a bare SyncedStore proxy write — no
+    <code>ydoc.transact</code>, and <code>LOCAL_ORIGIN</code> appears <b>zero</b> times in the
+    file. So Cmd-Z does nothing for <code>filename</code>, <code>quality</code> or
+    <b><code>recording</code></b> — and the last one has irreversible side effects on disk.
+    Fixed inside the face PR.
+  </div>
+
+</div>
+
+<div class="notes">
+
+  <div class="card">
+    <h3>the whole face, declared</h3>
+    <table>
+      <tr><th>field</th><th>value</th></tr>
+      <tr><td><b>glyph</b></td><td><code>'none'</code> — the audio ports are INPUTS, so every literal is a dead static</td></tr>
+      <tr><td><b>order</b></td><td><code>[]</code> — zero params</td></tr>
+      <tr><td><b>cells</b></td><td><code>['quality','record']</code></td></tr>
+      <tr><td><b>extension</b></td><td><code>'recorderbox'</code> → <code>fullViewBody</code></td></tr>
+      <tr><td><b>body role</b></td><td><code>status-primitive</code></td></tr>
+      <tr><td><b>tabbed</b></td><td>no — zero bands</td></tr>
+    </table>
+  </div>
+
+  <div class="card">
+    <h3>the two cells, each argued</h3>
+    <p><b><code>quality</code> → <code>selector</code>.</b> The cell is literally <em>"a dropdown
+      over a NAMED roster that lives in node.data (not a param)"</em>
+      (<code>shell-cells.ts:166</code>) — which is <code>node.data.quality</code> exactly.
+      <code>HIGH</code>/<code>BALANCED</code>/<code>SMALL</code> are option NAMES, the permitted
+      resting-text role.</p>
+    <p><b><code>record</code> → <code>toggle</code>, not <code>action</code>.</b>
+      <code>node.data.recording</code> is genuine latched state synced over the Y.Doc, so a
+      <b>remote peer can flip it</b>. An <code>action</code> has no <code>value</code> and could
+      not render "a rack-mate started this recording".</p>
+  </div>
+
+  <div class="card">
+    <h3>width is NOT earned — and parity is UPGRADED</h3>
+    <p>The card's 200×150 preview is not rebuilt here. <b>It does not need to be:</b>
+      <code>domain: 'video'</code> gives this node a live per-node lane thumb at 160×120
+      (<code>module-shell-model.ts:250-252</code>) blitted from <b>the same output FBO the
+      encoder reads</b>.</p>
+    <p>So the preview goes from <em>only while the card is mounted</em> to <b>always, in the
+      rack</b>. A player who never opens the dock has <b>more</b> preview than before — which is
+      the only reason dropping it is a design choice rather than a parity loss.</p>
+    <p>⚠ It needs a named <code>NO_SCREEN_SWITCH</code> entry: this IS a video def, so the
+      fleet SCREEN ruling really does reach it, and there is no canvas to collapse.</p>
+  </div>
+
+  <div class="card">
+    <h3>the readouts, after</h3>
+    <table>
+      <tr><th>was</th><th>now</th></tr>
+      <tr><td class="gone">REC 04:12</td><td class="aria">StatusLed detail → aria-label</td></tr>
+      <tr><td class="gone">SAVING…</td><td><b>a lamp</b> + static caption</td></tr>
+      <tr><td class="gone">Takes/ (folder name)</td><td class="aria">button title + aria-label</td></tr>
+      <tr><td class="gone">saved RECORDING-002-….mp4</td><td class="aria">folded into REC detail</td></tr>
+      <tr><td>HIGH / BALANCED / SMALL</td><td><b>kept</b> — option names</td></tr>
+      <tr><td>no H.264 encoder available</td><td><b>kept</b> — an outcome, not a readout</td></tr>
+    </table>
+  </div>
+
+  <div class="card">
+    <h3>cost, measured</h3>
+    <p><b>WebGL attest: NINE basis files</b> — <code>recorderbox.ts</code> plus eight
+      <code>lib/video/recorderbox-*.ts</code>. The largest footprint in the wave. A PR adding
+      only <code>face</code> costs zero; <b>any</b> other edit in those files buys a real-GPU
+      window CI cannot run.</p>
+    <p><b>ART: ZERO</b> — video domain, outside the audio profile gate.</p>
+    <p><b>VRT:</b> one baseline moves, two are added. <b>No <code>FACES_WITHOUT_SCENES</code>
+      entry needed</b> — the idle state is static chrome. (Contrast tvLibrarian, which is
+      permanently exempt.)</p>
+    <p><b>Push 2: nothing moves</b> — zero params, so no card to re-rank.</p>
+  </div>
+
+</div>
+</div>
+</div>

@@ -1,0 +1,348 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>VIDEOVARISPEED face — loaded, cropping, and the lane tile</title>
+<style>
+/* ─────────────────────────────────────────────────────────────────────────
+   VIDEOVARISPEED FACEPLATE — MOCKUP, state 2 of 2.
+   SPEC AND MOCKUP ONLY. Nothing here is implemented. See spec.md.
+
+   Same house token set as dock.html. This page shows the WORKING state: three
+   slots loaded, slot E on air, the CROP rectangle being dragged over the frame,
+   and the LANE TILE the promotion gains for free.
+   ───────────────────────────────────────────────────────────────────────── */
+:root{
+  --bg:#0e1013; --dock:#12161c; --plate:#262a31; --pbody:#1c1f24; --well:#0a0c0f;
+  --line:#2c3037; --tile:#33383f; --ink:#eef1f5; --dim:#9aa2ad; --faint:#646c77;
+  --cv:#7dd3fc; --accent:#6cf; --img:#c084fc; --ch1:#fbbf24; --warn:#f2c14e; --good:#8fe6b0;
+  --vid:#f472b6;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+  font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1240px;margin:0 auto;padding:26px 20px 90px}
+h1{font-size:21px;font-weight:800;margin:0 0 6px;letter-spacing:.01em}
+.sub{color:var(--dim);font-size:12.5px;margin:0 0 14px;max-width:106ch}
+.sub b{color:var(--ink)} code{font-family:var(--mono);font-size:11.5px;color:var(--ch1)}
+.nav{display:flex;gap:8px;margin:0 0 20px;font-size:11px;flex-wrap:wrap}
+.nav a{color:var(--ink);text-decoration:none;border:1px solid var(--line);border-radius:6px;
+  padding:6px 12px;background:#12161c;font-family:var(--mono);letter-spacing:.06em;text-transform:uppercase}
+.nav a.on{border-color:var(--vid);color:var(--vid)}
+.warn{border:1px solid #6a5330;background:#1c1811;border-radius:8px;padding:11px 14px;
+  margin:12px 0;font-size:12.5px;color:#e8cf9a;max-width:118ch}
+.warn b{color:var(--warn)}
+.bad{border:1px solid #6b3a3a;background:#1c1214;border-radius:8px;padding:11px 14px;
+  margin:12px 0;font-size:12.5px;color:#f0b8b8;max-width:118ch}
+.bad b{color:#ff8a8a}
+.ok{border:1px solid #3b5a48;background:#111a15;border-radius:8px;padding:11px 14px;
+  margin:12px 0;font-size:12.5px;color:#a9d8bd;max-width:118ch}
+.ok b{color:var(--good)}
+.cols{display:grid;grid-template-columns:minmax(0,1fr) 400px;gap:18px;align-items:start}
+@media (max-width:1120px){.cols{grid-template-columns:minmax(0,1fr)}}
+
+.dock{background:var(--dock);border:1px solid var(--line);border-radius:11px;overflow:hidden;padding:11px}
+.chromebar{display:flex;align-items:baseline;gap:9px;padding:0 2px 8px}
+.chromebar .nm{font-size:13px;font-weight:800;letter-spacing:.03em}
+.chromebar .rl{font-size:9.4px;letter-spacing:.09em;text-transform:uppercase;color:var(--faint);font-family:var(--mono)}
+.chromebar .x{margin-left:auto;color:var(--faint);font-family:var(--mono);font-size:12px}
+.plate{background:var(--pbody);border:1px solid var(--tile);border-left:4px solid var(--vid);
+  border-radius:10px;padding:0 0 12px;width:max-content;max-width:100%}
+
+.extbody{padding:12px 14px 4px;width:504px;max-width:100%}
+/* A stand-in for a decoded frame. The real one is a 2D canvas blitted from the
+   engine's own output texture — never an <img>, never an adopted <video>. */
+.pic{position:relative;width:480px;max-width:100%;aspect-ratio:4/3;border-radius:3px;
+  border:1px solid #1a1f2a;overflow:hidden;
+  background:
+    radial-gradient(circle at 26% 30%, rgba(255,214,138,.85) 0 8%, transparent 9%),
+    radial-gradient(circle at 74% 62%, rgba(125,211,252,.5) 0 13%, transparent 14%),
+    linear-gradient(155deg,#141a3a 0%,#3d2b64 38%,#8c3f5e 70%,#d98a52 100%)}
+/* letterbox bars — the FBO is 4:3 and the clip is 16:9 (videovarispeed.ts:583-590) */
+.pic .bar{position:absolute;left:0;right:0;height:12.5%;background:#000}
+.pic .bar.t{top:0} .pic .bar.b{bottom:0}
+/* the CROP rectangle: aspect-locked, thin red border, dimmed outside. */
+.pic .crop{position:absolute;left:30%;top:33%;width:38%;aspect-ratio:4/3;
+  border:1px solid #ff3b3b;box-shadow:0 0 0 9999px rgba(4,5,8,.5)}
+.pic .crop i{position:absolute;width:7px;height:7px;background:#ff3b3b}
+.pic .crop i:nth-child(1){left:-3px;top:-3px} .pic .crop i:nth-child(2){right:-3px;top:-3px}
+.pic .crop i:nth-child(3){left:-3px;bottom:-3px} .pic .crop i:nth-child(4){right:-3px;bottom:-3px}
+.screen{position:absolute;right:4px;bottom:4px;font-size:8.6px;letter-spacing:.06em;
+  padding:2px 8px;border:1px solid var(--line);border-radius:2px;font-family:var(--mono);
+  background:rgba(5,6,8,.72);color:var(--ink);z-index:3}
+
+.row{display:flex;align-items:center;gap:7px;margin:8px 0 0;flex-wrap:wrap}
+.btn{display:inline-block;padding:3px 10px;border-radius:2px;font-size:9.2px;
+  font-family:var(--mono);letter-spacing:.06em;text-transform:uppercase;font-weight:700;
+  border:1px solid #404652;background:#1a1f2a;color:var(--dim)}
+.btn.pri{background:var(--vid);border-color:var(--vid);color:#0b0d11}
+.btn.on{background:rgba(255,59,59,.16);border-color:#ff3b3b;color:#ff8a8a}
+.btn.loop{background:rgba(135,200,255,.2);border-color:#87c8ff;color:#87c8ff}
+.seek{flex:1;min-width:120px;height:4px;border-radius:2px;background:#20252e;position:relative}
+.seek::before{content:"";position:absolute;left:0;top:0;bottom:0;width:37%;border-radius:2px;background:var(--vid)}
+.seek::after{content:"";position:absolute;left:37%;top:-4px;width:11px;height:11px;border-radius:50%;
+  background:var(--vid);box-shadow:0 0 6px color-mix(in srgb,var(--vid) 60%,transparent)}
+.fname{font-family:var(--mono);font-size:9.2px;color:var(--dim);overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap;min-width:0}
+
+.bank{margin-top:11px;border-top:1px solid var(--line);padding-top:9px}
+.bhead{font-size:9.4px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--dim);margin:0 0 7px}
+.slot{display:grid;grid-template-columns:15px auto 1fr 15px;align-items:center;gap:7px;
+  padding:3px 0;border-bottom:1px solid #191d24}
+.slot:last-child{border-bottom:0}
+.slot .n{font-family:var(--mono);font-size:9.6px;font-weight:700;color:var(--vid);text-align:center}
+.slot .nm{font-family:var(--mono);font-size:9px;color:var(--dim);overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.slot.empty .nm{color:#4d5560}
+.slot .ld{font-size:8.4px;font-family:var(--mono);letter-spacing:.05em;text-transform:uppercase;
+  color:#0b0d11;background:#4a5260;border-radius:2px;padding:1px 6px}
+.slot.full .ld{background:var(--vid)}
+.slot .rm{font-family:var(--mono);font-size:10px;color:var(--faint);text-align:center}
+.slot.on{background:#22101c;border-radius:3px}
+.slot.on .n{color:#ffc0e2}
+
+.bands{padding:6px 14px 0}
+.band{border-top:1px solid var(--line);padding-top:8px;margin-top:10px}
+.band:first-child{border-top:0;margin-top:4px}
+.blab{margin:0 0 7px;font-size:9.4px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--dim)}
+.cells{display:flex;flex-wrap:wrap;align-items:flex-start;gap:10px 20px}
+.k{width:56px;display:flex;flex-direction:column;align-items:center;gap:5px}
+.k i{--a:0deg;display:block;width:38px;height:38px;border-radius:50%;position:relative;
+  background:radial-gradient(circle at 40% 34%,#2a3038,#151920 72%);border:1px solid #3a424d}
+.k i::after{content:"";position:absolute;left:50%;top:5px;width:2px;height:13px;border-radius:1px;
+  background:var(--vid);box-shadow:0 0 6px color-mix(in srgb,var(--vid) 60%,transparent);
+  transform-origin:50% 14px;transform:translateX(-50%) rotate(var(--a))}
+.k b,.f b{font-size:7.8px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--dim);
+  font-family:var(--mono);text-align:center}
+.f{width:64px;display:flex;flex-direction:column;align-items:center;gap:5px}
+.f i{--v:.5;display:block;width:56px;height:14px;border-radius:7px;position:relative;
+  background:linear-gradient(#171b21,#12161c);border:1px solid #333a43}
+.f i::before{content:"";position:absolute;top:50%;transform:translateY(-50%);height:2px;left:5px;right:5px;
+  background:#262c34;border-radius:1px}
+.f i::after{content:"";position:absolute;top:50%;width:8px;height:20px;border-radius:2px;
+  background:var(--cv);box-shadow:0 0 7px color-mix(in srgb,var(--cv) 60%,transparent);
+  transform:translate(-50%,-50%);left:calc(5px + var(--v) * (100% - 10px))}
+
+/* ── the LANE tile (192px, SHELL_TILE_W) ──────────────────────────────── */
+.lanes{display:flex;gap:24px;align-items:flex-start;flex-wrap:wrap;margin-top:6px}
+.lane{width:192px;background:var(--pbody);border:1px solid var(--tile);border-left:3px solid var(--vid);
+  border-radius:7px;padding:7px 8px 9px}
+.lane .t{font-size:8.6px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--dim);font-family:var(--mono);margin:0 0 6px}
+.lane .thumb{width:160px;height:120px;border-radius:2px;border:1px solid #1a1f2a;overflow:hidden;
+  position:relative;margin:0 auto 7px;
+  background:
+    radial-gradient(circle at 26% 30%, rgba(255,214,138,.85) 0 8%, transparent 9%),
+    radial-gradient(circle at 74% 62%, rgba(125,211,252,.5) 0 13%, transparent 14%),
+    linear-gradient(155deg,#141a3a 0%,#3d2b64 38%,#8c3f5e 70%,#d98a52 100%)}
+.lane .thumb .bar{position:absolute;left:0;right:0;height:12.5%;background:#000}
+.lane .thumb .bar.t2{top:0} .lane .thumb .bar.b2{bottom:0}
+.lane .cells{justify-content:center;gap:6px 14px}
+.lane .cap{font-size:8.4px;color:var(--faint);font-family:var(--mono);text-align:center;margin:6px 0 0}
+
+.notes{display:flex;flex-direction:column;gap:12px}
+.card{border:1px solid var(--line);background:#101419;border-radius:9px;padding:12px 14px}
+.card h3{margin:0 0 7px;font-size:10px;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--accent);font-family:var(--mono);font-weight:700}
+.card p{margin:0 0 8px;font-size:12px;color:var(--dim)}
+.card p:last-child{margin-bottom:0}
+.card b{color:var(--ink)}
+table{border-collapse:collapse;width:100%;font-size:11px;margin:2px 0 0}
+th,td{text-align:left;padding:4px 7px 4px 0;border-bottom:1px solid #1e242c;vertical-align:top;color:var(--dim)}
+th{color:var(--faint);font-family:var(--mono);font-size:8.6px;letter-spacing:.09em;text-transform:uppercase;font-weight:400}
+td b{color:var(--ink)}
+.aria{font-family:var(--mono);font-size:10.5px;color:#8fe6b0}
+.gone{text-decoration:line-through;color:#5a616c}
+</style>
+<div class="wrap">
+
+<h1>VIDEOVARISPEED — loaded, cropping, and the lane tile</h1>
+<p class="sub">
+  <b>SPEC AND MOCKUP ONLY. Nothing here is implemented.</b> Three slots loaded, slot
+  <b>E</b> on air, the CROP rectangle being dragged, and — below — the <b>192 px lane
+  tile</b> the promotion gains for free.
+</p>
+
+<div class="nav">
+  <a href="dock.html">1 · the dock face (spawn)</a>
+  <a class="on" href="dock-loaded.html">2 · loaded, cropping, and the lane tile</a>
+  <a href="spec.md">spec.md</a>
+</div>
+
+<div class="cols">
+<div>
+
+  <div class="dock">
+    <div class="chromebar">
+      <span class="nm">VIDEOVARISPEED</span>
+      <span class="rl">dock · full view</span>
+      <span class="x">✕</span>
+    </div>
+
+    <div class="plate">
+      <div class="extbody">
+
+        <div class="pic">
+          <div class="bar t"></div><div class="bar b"></div>
+          <div class="crop"><i></i><i></i><i></i><i></i></div>
+          <span class="screen">SCREEN ON</span>
+        </div>
+
+        <div class="row">
+          <span class="btn on">done</span>
+          <span class="btn">remove crop</span>
+        </div>
+
+        <div class="row">
+          <span class="btn pri">Pick another video…</span>
+          <span class="fname">rooftop-timelapse-4k.mp4</span>
+        </div>
+
+        <div class="row">
+          <span class="btn pri">Pause</span>
+          <span class="seek"></span>
+          <span class="btn loop">LOOP</span>
+        </div>
+
+        <div class="bank">
+          <p class="bhead">Asset bank · pitch-class select</p>
+          <div class="slot full"><span class="n">C</span><span class="ld">Load video…</span><span class="nm">rooftop-timelapse-4k.mp4</span><span class="rm">✕</span></div>
+          <div class="slot full"><span class="n">D</span><span class="ld">Load video…</span><span class="nm">neon-alley-loop.webm</span><span class="rm">✕</span></div>
+          <div class="slot full on"><span class="n">E</span><span class="ld">Load video…</span><span class="nm">grain-plate-04.mov</span><span class="rm">✕</span></div>
+          <div class="slot empty"><span class="n">F</span><span class="ld">Load video…</span><span class="nm">—</span><span class="rm"></span></div>
+          <div class="slot empty"><span class="n">G</span><span class="ld">Load video…</span><span class="nm">—</span><span class="rm"></span></div>
+          <div class="slot empty"><span class="n">A</span><span class="ld">Load video…</span><span class="nm">—</span><span class="rm"></span></div>
+          <div class="slot empty"><span class="n">B</span><span class="ld">Load video…</span><span class="nm">—</span><span class="rm"></span></div>
+        </div>
+      </div>
+
+      <div class="bands">
+        <div class="band">
+          <p class="blab">transport</p>
+          <div class="cells">
+            <div class="k"><i style="--a:48deg"></i><b>Speed</b></div>
+          </div>
+        </div>
+        <div class="band">
+          <p class="blab">window</p>
+          <div class="cells">
+            <div class="f"><i style="--v:.18"></i><b>Start</b></div>
+            <div class="f"><i style="--v:.72"></i><b>End</b></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <h1 style="font-size:15px;margin:26px 0 6px">the LANE tile — 192 px, and the picture is FREE</h1>
+  <p class="sub" style="margin-bottom:10px">
+    <code>hasVideoSurface(def)</code> is <code>def?.domain === 'video'</code> and nothing else
+    (<code>module-shell-model.ts:177-179</code>), so <code>laneGlyphFor</code> returns
+    <code>'picture'</code> and <code>ModuleShell</code> renders
+    <code>&lt;VideoTileThumb nodeId={id} /&gt;</code> at <b>160×120, 15 fps</b>. It takes the
+    <b>nodeId</b>, so two videovarispeeds show two different clips — the constraint that refused
+    a lane picture eight times in wave 5 never applied to video-domain modules.
+  </p>
+
+  <div class="lanes">
+    <div class="lane">
+      <p class="t">videovarispeed</p>
+      <div class="thumb"><div class="bar t2"></div><div class="bar b2"></div></div>
+      <div class="cells">
+        <div class="k"><i style="--a:48deg"></i><b>Speed</b></div>
+        <div class="f"><i style="--v:.18"></i><b>Start</b></div>
+      </div>
+      <p class="cap">LANE_ROW_MAX_CELLS_WITH_GLYPH = 2 · END is dock-only</p>
+    </div>
+    <div class="lane">
+      <p class="t">videovarispeed</p>
+      <div class="thumb" style="background:linear-gradient(180deg,#0d0d14 0%,#0d0d1a 100%)"></div>
+      <div class="cells">
+        <div class="k"><i style="--a:0deg"></i><b>Speed</b></div>
+        <div class="f"><i style="--v:0"></i><b>Start</b></div>
+      </div>
+      <p class="cap">a second node, no file — the idle field</p>
+    </div>
+  </div>
+
+  <div class="ok" style="margin-top:16px">
+    <b>The card is still alive — it is just off-screen.</b> Promotion moves
+    <code>VideoVarispeedCard</code> into <code>&lt;HeadlessSourceHost&gt;</code> at
+    <code>left:-9999px</code> with <code>pointer-events:none</code>, which keeps the seven
+    <code>&lt;video&gt;</code> elements, the rAF varispeed transport, the 33 ms gate edge loop
+    and the perf-zip export resolver running. <b>Nothing on it is clickable</b>, which is why
+    this body has to carry every affordance above.
+  </div>
+
+  <div class="bad">
+    <b>⚠ And that is exactly what breaks the sweep written for this module's owner P0.</b>
+    <code>collapse-keeps-playing.spec.ts</code> derives enrolment from
+    <code>[data-testid="dock-full-view"] input[type=file][data-testid$="-file-input"]</code> and
+    <code>button[data-testid$="-play-btn"]</code>, and asserts on
+    <code>[data-testid="dock-full-view"] video</code>. After promotion the buttons must be
+    <b>real primitives in this body</b> (they are — see the transport row) and the
+    <code>&lt;video&gt;</code> queries must stop being dock-scoped, because the elements are in
+    the headless host. <b>The skip arm goes GREEN and masks the RED one.</b> spec.md §8.1.
+  </div>
+
+</div>
+
+<div class="notes">
+
+  <div class="card">
+    <h3>the readouts, after</h3>
+    <table>
+      <tr><th>was</th><th>now</th></tr>
+      <tr><td class="gone">0:04 / 2:00</td><td class="aria">aria-valuetext on the scrubber</td></tr>
+      <tr><td class="gone">+1.0×</td><td class="aria">aria-valuetext on SPEED (+ landmark NAMES in PR 2)</td></tr>
+      <tr><td>rooftop-timelapse-4k.mp4</td><td><b>kept</b> — a NAME, a per-row label</td></tr>
+      <tr><td>C D E F G A B</td><td><b>kept</b> — option NAMES, and the only thing separating 7 identical rows</td></tr>
+      <tr><td>START past END — no playback</td><td><b>kept</b> — an outcome, transient</td></tr>
+      <tr><td>gif/file load error</td><td><b>kept</b> — an error, transient</td></tr>
+    </table>
+  </div>
+
+  <div class="card">
+    <h3>why the CROP is BODY markup and not a PANEL</h3>
+    <p>⚠ Not twotracks' per-frame-read discriminator — the rect really <em>is</em> on
+      <code>node.data.crop</code>, so a panel probe could read it cleanly. The reason is
+      <b>registration</b>:</p>
+    <p>a crop box is drawn in the <b>coordinate space of the frame</b>. A panel is a separate
+      box in a band row, so it would have to blit a <b>second copy of the same node</b> to have
+      anything to draw the rectangle over. The overlay must sit on the pixels it crops.</p>
+    <p>The platform already agrees where it has been asked: <code>quadralogical</code> declares
+      <code>face.xyPads[0].surface:'body'</code> for the same reason. Crop needs no declaration
+      at all — it is <code>{active,x,y,w}</code> on <code>node.data</code>, not two params.</p>
+  </div>
+
+  <div class="card">
+    <h3>⚠ this module is UNCONDITIONALLY pull-exempt</h3>
+    <p><code>isPullExempt</code> returns true on a non-empty <code>audioSources</code> map
+      (<code>engine.ts:1171</code>), and the factory installs two silent
+      <code>ConstantSourceNode</code>s at construction
+      (<code>videovarispeed.ts:394-406</code>) — <b>before any file is loaded</b>.</p>
+    <p>So the <code>markWatched</code>-while-SCREEN-OFF argument twenty-eight roster entries
+      carry <b>does not apply on its usual grounds</b>. The body still marks — because the
+      exemption evaporates in an audio-less boot, which is the environment the gates run in.
+      <b>Write the honest reason, not the copied one.</b></p>
+  </div>
+
+  <div class="card">
+    <h3>the tax, named exactly</h3>
+    <table>
+      <tr><th>module</th><th>bill</th></tr>
+      <tr><td><b>picturebox</b></td><td>NONE — the debt was paid to <code>extras-producers</code></td></tr>
+      <tr><td><b>cameraInput</b></td><td>headless host <b>+ camera-status-registry</b></td></tr>
+      <tr><td><b>loopback</b></td><td>headless host <b>+ loopback-status-registry</b></td></tr>
+      <tr><td><b>videovarispeed</b></td><td><b>headless host ONLY</b> — no registry</td></tr>
+    </table>
+    <p style="margin-top:8px">A status registry exists to publish state that is <b>not in the
+      graph</b>. This module's whole transport IS: <code>isPlaying</code>, <code>loop</code>,
+      <code>fileMeta</code>, <code>slotMeta</code>, <code>crop</code> are
+      <code>node.data</code>; <code>speed</code>/<code>start</code>/<code>end</code> are params.
+      There is nothing left for a registry to carry.</p>
+  </div>
+
+</div>
+</div>
+</div>
