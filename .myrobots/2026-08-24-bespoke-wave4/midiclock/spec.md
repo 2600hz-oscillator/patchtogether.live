@@ -404,7 +404,7 @@ read and accepted — unlike picturebox's, where an empty diff is the correct ou
 
 matrixMix's spec (§5.1) shows that a runtime roster *can* be a face cell:
 `ShellSelectorCell.options` is `(node: ModuleNode | undefined) => SelectorOption<string>[]`
-(`shell-cells.ts:154-160`), a function evaluated per render, and a cell-actions module
+(`shell-cells.ts:159-165`), a function evaluated per render, and a cell-actions module
 may import the graph directly (`kria-cell-actions.ts:29`).
 
 **midiclock's roster is not reachable that way**, and the reason is precise:
@@ -417,7 +417,7 @@ midiclock.ts:395-399   read(key) { if (key === 'card-api') return cardApi; … }
 The device list lives on the **engine handle**, behind `requestMIDIAccess()`. A
 selector cell's `options` receives only `node` — no engine. Meanwhile
 `ShellActionCell` **does** get an engine: `ShellCellEnv` is
-`{ engine: { write(node, key, value) } | null; node }` (`shell-cells.ts:164-176`),
+`{ engine: { write(node, key, value) } | null; node }` (`shell-cells.ts:169-181`),
 typed structurally *"so shell-cells never pulls the whole PatchEngine import chain."*
 
 ⚠ **So the platform gap is that `ShellSelectorCell.options`/`value` take `node` where

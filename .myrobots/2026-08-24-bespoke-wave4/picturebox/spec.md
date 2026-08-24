@@ -662,11 +662,24 @@ harness manifests (`.flox/env/manifest.toml`, both `package.json`s, `e2e/playwri
 cards in the basis are `WavesculptCard.svelte` and `cube/CubeVizSurface.svelte`),
 and neither is anything under `ui/workflow/`.
 
-Measured on this tree, negative control then positive control:
+⚠ **THE HASHES BELOW ARE A RECORD OF ONE RUN, NOT A TARGET TO MATCH.** They were
+measured on tree `5f6c289a3`. `main` has since moved the basis — **#2180**
+(*"the WebGL attest has been unpassable since 2026-08-23 — a stale platform-default
+constant"*) — and on the absorbed tree the same clean baseline now reads
+`136a02a3c460bcec8a9f009789d0a6126d0691b7a26d5753e04201468d15072f`. **Re-measure
+before trusting any absolute value here.**
+
+What survives the move is the only thing the controls were run to establish, because it
+is a property of `HASH_TRANSPARENT_PROPS` rather than of any particular tree: **`face`
+and a def-top-level `noUserControl` are hash-transparent, and ordinary code in the same
+file is not.** Re-confirmed after the absorb: `picturebox.ts` and `picturebox-encode.ts`
+are both still in the basis.
+
+Measured on tree `5f6c289a3`, negative control then positive control:
 
 | tree state | hash |
 |---|---|
-| **baseline** (clean `main`) | `1c49e951c4836ef426bf969dad894302e738321319ff56a30c9d0ee1bf83ab50` |
+| **baseline** (clean `main` at `5f6c289a3`) | `1c49e951c4836ef426bf969dad894302e738321319ff56a30c9d0ee1bf83ab50` |
 | `+ face: { order: ['gain'] }` on `pictureboxDef` | `1c49e951…` — **UNCHANGED** |
 | plus a def-top-level `noUserControl` array, one entry per synthetic param | `1c49e951…` — **UNCHANGED** |
 | `gain` `max: 2` → `max: 3` (positive control) | `93ab8cd7e696cde48429821a4265a3072dc6ba167beef1af31d90fd76ce85e2a` — **MOVED** |

@@ -287,7 +287,7 @@ picker:
 > controlCell)."*
 
 Read as a general claim — *a runtime roster cannot be a face cell* — that is
-**false**, and `shell-cells.ts:152-160` is the counter-example:
+**false**, and `shell-cells.ts:157-165` is the counter-example:
 
 ```ts
 /** A dropdown over a NAMED roster that lives in node.data (not a param). */
@@ -498,7 +498,7 @@ matrixMix paints **no derived-state text** on its card. The empty hint (`:262`,
 copy in an empty state, not a value; the jack heads (`:279-280`, `:289-290`) are
 port ids and directions, which are CONTROL CAPTIONS in substance; the `X` / `Y`
 labels (`:229`, `:244`) become the selector cells' `tag` field, which is the
-primitive's own caption slot (`shell-cells.ts:156`).
+primitive's own caption slot (`shell-cells.ts:161`).
 
 So `face-resting-text-source.test.ts` has nothing to object to, and — unusually for
 this program — **no readout is deleted and no finding loses its surface.**

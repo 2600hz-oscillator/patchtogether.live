@@ -262,7 +262,7 @@ Wave 2 nominated adding `nodeId` to `ShellExtensionGlyphProps`; wave 3 agreed an
 the argument. Wave 4 found a **smaller, better-evidenced** platform ask, and it comes from
 comparing two modules in this wave against each other.
 
-`shell-cells.ts:152-160` — *"A dropdown over a NAMED roster that lives in node.data (not a
+`shell-cells.ts:157-165` — *"A dropdown over a NAMED roster that lives in node.data (not a
 param)"*:
 
 ```ts
@@ -286,7 +286,7 @@ reachable; behind a browser API or on an engine handle → not.
 
 Which is exactly why midiclock's device picker is **not** expressible — its roster is on the
 engine handle (`read('card-api')`) — while `ShellActionCell` **does** get an engine, via
-`ShellCellEnv { engine, node }` (`shell-cells.ts:164-176`).
+`ShellCellEnv { engine, node }` (`shell-cells.ts:169-181`).
 
 > **The ask: give `ShellSelectorCell.options`/`value` the same `env` that
 > `ShellActionCell` already gets.** One parameter, matching a shape the same file already
