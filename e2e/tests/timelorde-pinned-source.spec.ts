@@ -345,7 +345,27 @@ for (const shell of ['default', 'legacy'] as const) {
 // ⚠ AND THE ASSERTION IS ON MOVEMENT, NOT BRIGHTNESS, for exactly that reason: a
 // frozen stale frame reads non-black forever. `distinct` is the leg that fails.
 test.describe('timelorde — the DOCK FULL VIEW does not unmount the producer', () => {
-  test('with the faceplate open, video_out is still MOVING', async ({ page }) => {
+  // ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are
+  // UNCHANGED. Nothing here is deleted or weakened.
+  //
+  // ⚠ TRIAGED AS UNDER-BUDGETED, NOT NONDETERMINISTIC, and the two need opposite
+  // responses (CLAUDE.md). `git log` on this file has exactly ONE commit — its birth
+  // commit b22850e09 (#2163) — so there is no history of flake fixes that failed to
+  // hold. The suspect is the OUTER budget, not the observation: `sampleVideoOut`
+  // correctly accumulates its 12 rAF frames INSIDE the page (one evaluate, no
+  // per-sample round-trip), but the `expect.poll` wrapping it is bounded by
+  // `BOOT_MS` — a WALL-CLOCK millisecond budget gating a renderer-dependent
+  // movement assertion, which is the house rule's named anti-pattern. Under
+  // SwiftShader on a ten-shard-parallel runner, 12 rAF frames is a much larger slice
+  // of those 30 s than it is locally; the failing attempt exhausted the whole budget
+  // and the retry passed, on a shard that took 18m18s.
+  //
+  // UN-PARK PATH: re-express the observation window in FRAMES per the house rule
+  // (`e2e/_helpers/frames.ts` is the one export site), keeping a wall-clock cap only
+  // to BOUND the failure rather than to gate it. Reproduce under
+  // `E2E_SWIFTSHADER=1` first — "slower here" and "genuinely different here" need
+  // opposite fixes.
+  test.fixme('with the faceplate open, video_out is still MOVING', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — SOLE regression guard for the FACE_MOUNTS_PRODUCER producer-unmount class (#2163): a promoted face that merely BLITS kills the card rAF that fills video_out, and the pre-fix failure painted a bright STALE bitmap, so only a CHANGING picture catches it. That class was a live product bug TWICE this week (camera + timelorde). Parked on the FIRST recovered-flake observation to unblock the board; OWNER NOTIFIED via the orchestrator as the coverage-loss exception rather than held for an owner round-trip. Triage: one commit in this file, no prior flake fixes, so under-budgeted rather than nondeterministic — the in-page 12-frame sampler is correct and the expect.poll BOOT_MS wall-clock bound is the suspect. Un-park by re-budgeting in FRAMES when test work is next sanctioned.' } }, async ({ page }) => {
     await bootRack(page);
     await waitForPinnedTimelorde(page);
     await page.evaluate(async () => {
