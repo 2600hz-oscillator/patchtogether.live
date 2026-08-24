@@ -1049,12 +1049,21 @@ describe('wavesculpt MASTER GAIN drives the summed L/R audio bus', () => {
   // technique module-docs-lint uses for controlFamilies → card testids.
   //
   // SCOPE, stated so a green run is not misread: this reads ONE file
-  // (WavesculptCard.svelte) and proves the uniform is DECLARED, FED from
+  // (WavesculptVizSurface.svelte) and proves the uniform is DECLARED, FED from
   // `master_gain` through the shared clamp, and CONSUMED in the shader body.
   // It cannot prove what the GPU then draws — that is the VRT's job.
-  it('the CARD still feeds uMasterGain from master_gain (video consumer kept alive)', () => {
+  //
+  // ⚠ THE SUBJECT MOVED, THE ASSERTIONS DID NOT. The renderer was extracted
+  // from WavesculptCard.svelte into wavesculpt/WavesculptVizSurface.svelte so
+  // the card and the faceplate body paint one picture from one source. Pointing
+  // this gate at the file that now holds the shader is the whole fix — a gate
+  // still reading the card would have gone GREEN AND BLIND the moment the card
+  // stopped containing a shader, which is the failure mode worth naming here.
+  it('the RENDER SURFACE still feeds uMasterGain from master_gain (video consumer kept alive)', () => {
     const card = readFileSync(
-      fileURLToPath(new URL('../../ui/modules/WavesculptCard.svelte', import.meta.url)),
+      fileURLToPath(
+        new URL('../../ui/modules/wavesculpt/WavesculptVizSurface.svelte', import.meta.url),
+      ),
       'utf8',
     );
     expect(card, 'uMasterGain is declared in the shader').toMatch(/uniform\s+float\s+uMasterGain\s*;/);

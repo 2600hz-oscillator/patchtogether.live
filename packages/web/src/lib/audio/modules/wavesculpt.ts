@@ -620,6 +620,30 @@ export function chordQualityFromKnob(v: number): ChordQuality {
   return v >= 0.5 ? 'minor' : 'major';
 }
 
+/**
+ * CHORD QUALITY — the roster for `chord_quality`.
+ *
+ * ⚠ WHY A ROSTER HERE AND NOT ON `unison` / `chord_mode`, WHICH LOOK THE SAME.
+ * A 2-state param with no `options` announces itself as PRESSED / UNPRESSED —
+ * enable-and-absence semantics. That is exactly right for UNISON and CHORD,
+ * which are genuine on/off enables whose own caption carries the meaning: "off"
+ * is a real state of each. It is wrong here, because what this switch picks is
+ * one of two MODES and "off" is not a thing a chord quality has. Without the
+ * roster the dock paints a toggle whose unpressed state silently means MAJOR,
+ * and MAJ / MIN exist only as literals in the card's markup — a second source of
+ * truth for a VOCABULARY, the class `card-range-source` records against
+ * FilterCard's private `const MODES`.
+ *
+ * The labels are PROMOTED from that markup rather than invented, so the card,
+ * the dock's Segmented row and the doc page cannot disagree about what state 1
+ * is called. The titles are {@link CHORD_INTERVALS_SEMITONES} read back as
+ * prose — the intervals above are the definition, these are its caption.
+ */
+export const CHORD_QUALITY_OPTIONS = [
+  { value: 0, label: 'MAJ', title: 'major triad + octave — 1 · 3 · 5 · 8' },
+  { value: 1, label: 'MIN', title: 'minor triad + octave — 1 · ♭3 · 5 · 8' },
+] as const;
+
 // ---------- MASTER GAIN ----------
 
 /** MASTER GAIN's declared range — the SINGLE place these numbers live.
@@ -877,7 +901,7 @@ export const wavesculptDef: AudioModuleDef = {
     // Pre-existing tune values are NOT overwritten while chord-mode is
     // active; they're restored from node.params when chord mode flips off.
     ps.push({ id: 'chord_mode',    label: 'Chord',    defaultValue: 0, min: 0, max: 1, curve: 'discrete' });
-    ps.push({ id: 'chord_quality', label: 'Quality',  defaultValue: 0, min: 0, max: 1, curve: 'discrete' });
+    ps.push({ id: 'chord_quality', label: 'Quality',  defaultValue: 0, min: 0, max: 1, curve: 'discrete', options: CHORD_QUALITY_OPTIONS });
     // Video mode: 0 = PROXIMITY (3D ribbons, default — the original render),
     // 1 = BIRDSEYE (top-down 2D floorplan showing the spatial system),
     // 2 = SPECTROGRAPH (scrolling-column STFT of the combined audio output:
@@ -1012,7 +1036,7 @@ export const wavesculptDef: AudioModuleDef = {
     controls.unison = 'UNISON (on/off) — stacks the oscillators on one pitch (detuned by DETUNE) for a fat, layered tone instead of four independent voices.';
     controls.detune = 'DETUNE (−1..+1) — the spread applied between voices when UNISON is on.';
     controls.chord_mode    = 'CHORD MODE (on/off) — when on, every voice reads voice 1\'s pitch and voices 2/3/4 are offset to build a chord (the quality set by QUALITY); each voice\'s TUNE becomes the chord offset.';
-    controls.chord_quality = 'CHORD QUALITY — picks the chord built in CHORD MODE: 0 = major, 1 = minor.';
+    controls.chord_quality = 'CHORD QUALITY — picks the chord built in CHORD MODE. MAJ = major triad + octave (1 · 3 · 5 · 8); MIN = minor triad + octave (1 · ♭3 · 5 · 8). It is a two-MODE picker, not an on/off enable — there is no "no quality" state.';
     controls.video_mode = 'VIEW / video mode for the render + the video_out: 0 = PROXIMITY (the 3D ribbon scene, default), 1 = BIRDSEYE (top-down 2D floorplan of the spatial system), 2 = SPECTROGRAPH (scrolling STFT of the combined audio).';
     controls.blink_mode = 'BLINK render mode within the 3D view: 0 = wavetable RIBBONS (default), 1 = SCOPES TRIAL (each osc\'s live oscilloscope trace from the floor corners), 2 = REALITY BASED COMMUNITY (the scopes rendered as 3D neon tubes).';
     controls.scale  = 'SCALE (0.1..10, log, unity at 1) — amplitude/zoom of the BLINK scope waveform (matches the SCOPE module\'s scale). Applies in the scope/tube blink modes. CV via the scale input.';

@@ -27,6 +27,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import {
   BLINK_MODE_OPTIONS,
+  CHORD_QUALITY_OPTIONS,
   FX_TYPE_OPTIONS,
   VIDEO_MODE_OPTIONS,
   wavesculptDef,
@@ -84,6 +85,14 @@ describe('wavesculpt mode rosters — every mode param carries its roster', () =
     ['fxType4', FX_TYPE_OPTIONS],
     ['video_mode', VIDEO_MODE_OPTIONS],
     ['blink_mode', BLINK_MODE_OPTIONS],
+    // ⚠ chord_quality is NOT one of the nine visualisation/FX states above —
+    // it is a musical mode, and it is here because the CLAUSES are what it
+    // needs, not because it belongs to that count. It arrived late (the MAJ /
+    // MIN names lived only in the card's markup) and the discriminator that
+    // earned it a roster is stated on CHORD_QUALITY_OPTIONS: a 2-state param
+    // whose states are MODES needs names, while `unison` and `chord_mode` are
+    // genuine on/off enables and correctly have none.
+    ['chord_quality', CHORD_QUALITY_OPTIONS],
   ];
 
   it.each(rows)('%s declares its roster', (id, roster) => {
@@ -107,9 +116,16 @@ describe('wavesculpt mode rosters — every mode param carries its roster', () =
   it('every option carries a hover TITLE saying what the state does', () => {
     // The label is a caption in a 3-button row; the title is where a state
     // gets to explain itself. A roster of bare labels is a rename of `0.00`.
-    const untitled = [...FX_TYPE_OPTIONS, ...VIDEO_MODE_OPTIONS, ...BLINK_MODE_OPTIONS]
-      .filter((o) => !o.title?.trim())
-      .map((o) => o.label);
+    //
+    // ⚠ DERIVED FROM `rows`, not from a second hand-written list of rosters.
+    // The previous form re-listed the three rosters here, so a roster added to
+    // `rows` was range-checked and prose-checked but silently exempt from the
+    // title check — a gate blind to exactly the new arrival it should be
+    // hardest on. Reading `rows` makes enrolment mean all four clauses.
+    const untitled = rows
+      .flatMap(([id, roster]) => roster.map((o) => ({ id, ...o })))
+      .filter((o) => !(o as { title?: string }).title?.trim())
+      .map((o) => `${o.id}: ${o.label}`);
     expect(untitled).toEqual([]);
   });
 });
@@ -130,6 +146,10 @@ describe('wavesculpt mode rosters — the roster and the DOC prose cannot drift'
 
   it.each(NINE_STATES.blink_mode)('blink_mode prose names %s', (label) => {
     expect(controls.blink_mode ?? '').toContain(label);
+  });
+
+  it.each(CHORD_QUALITY_OPTIONS.map((o) => o.label))('chord_quality prose names %s', (label) => {
+    expect(controls.chord_quality ?? '').toContain(label);
   });
 
   it('NEGATIVE CONTROL: the prose check can FAIL', () => {
