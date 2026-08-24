@@ -587,8 +587,8 @@ letting a green run stand in for an argument.
 
 ### The DOM-selector cost, counted honestly
 
-The FIXTURE and SUBJECT specs listed above drive `data-testid="picturebox-*"` selectors
-that live on the legacy card:
+Several of the specs listed above drive `data-testid="picturebox-*"` selectors that live
+on the legacy card:
 `picturebox-file-input`, `picturebox-card`, `picturebox-preview`,
 `picturebox-synced`, `picturebox-slot-input-{i}`, `picturebox-slot-name-{i}`,
 `picturebox-slot-clear-{i}`, `picturebox-multi-panel`.
@@ -655,7 +655,9 @@ flox activate -- bash scripts/webgl-attest-hash.sh --list | grep -i picturebox
 ```
 
 The basis is essentially *every* `packages/web/src/lib/video/**`
-file plus `cube` / `wavesculpt` plus four configs.
+file, plus the `cube` / `wavesculpt` pair and their two surfaces, plus the toolchain and
+harness manifests (`.flox/env/manifest.toml`, both `package.json`s, `e2e/playwright.config.ts`,
+`e2e/webgl-heavy-globs.ts`).
 `packages/web/src/lib/ui/modules/PictureboxCard.svelte` is **not** in it (the only
 cards in the basis are `WavesculptCard.svelte` and `cube/CubeVizSurface.svelte`),
 and neither is anything under `ui/workflow/`.

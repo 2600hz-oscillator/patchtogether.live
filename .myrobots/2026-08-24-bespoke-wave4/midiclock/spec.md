@@ -686,7 +686,8 @@ flox activate -- bash scripts/webgl-attest-hash.sh --list | grep -i midiclock
 ```
 
 The basis is essentially all of `packages/web/src/lib/video/**` plus
-`cube` / `wavesculpt` and four configs. **Nothing under `audio/modules/` except
+`cube` / `wavesculpt` and the toolchain / harness manifests. **Nothing under
+`audio/modules/` except
 `cube.ts` and `wavesculpt.ts`**, and no `MidiclockCard`. The def edit in §5.1 is real
 code (a new `ParamDef`, a `setParam` body) and it is still free, because the file is
 not in the basis.

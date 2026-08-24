@@ -16,7 +16,7 @@ dissolves, for a reason nobody wrote down).
 | constraint | matrixMix's answer | measured at |
 |---|---|---|
 | `NON_SHELL_LANE_TYPES` (the clipplayer carve-out) | **NOT a member** — and it is the only meta module on the roster that isn't | `legacy-fallback.ts:105-112` |
-| ⚠ **`MetaModuleDef` has no `face` field** | **THE BLOCKER.** A two-field platform precursor | `meta/module-registry.ts:23-56`; §0.2 |
+| ⚠ **`MetaModuleDef` has no `face` field** | **THE BLOCKER.** A ONE-field platform precursor — and §0.2 argues against adding the obvious second one | `meta/module-registry.ts:23-56`; §0.2 |
 | `HEADLESS_MOUNT_LANE_TYPES` | not a member — no engine node at all | `matrixmix.ts:20-24` (*"binds to NO engine"*) |
 | lane picture | **refused**, and mechanically protected | §4 |
 | WebGL attest | **ZERO — not in the basis** | §10.1 |
@@ -652,7 +652,7 @@ flox activate -- bash scripts/webgl-attest-hash.sh --list | grep -i matrixmix
 
 The basis is essentially all of `packages/web/src/lib/video/**`, plus
 `audio/modules/cube.ts`, `audio/modules/wavesculpt.ts`, `WavesculptCard.svelte`,
-`cube/CubeVizSurface.svelte`, and four config files. **Nothing under
+`cube/CubeVizSurface.svelte`, and the toolchain / harness manifests. **Nothing under
 `packages/web/src/lib/meta/`, nothing under `ui/workflow/`, and no `MatrixMixCard`.**
 
 Neither does the precursor: `meta/module-registry.ts` is not in the basis either, so
