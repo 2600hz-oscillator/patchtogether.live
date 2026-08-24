@@ -147,12 +147,50 @@ export function wavesculptTableOptions(
   return out;
 }
 
-/** The PRESET roster. A preset is an ACTION (it fetches and replaces), so the
- *  picker rests on an empty sentinel rather than claiming to show state — the
- *  loaded table's identity is what the FACTORY picker reports. */
+/** The PRESET roster. The empty sentinel leads it because a freshly-spawned
+ *  oscillator holds a FACTORY table, which is no preset at all — and a picker
+ *  whose value matches no option renders blank (the same trap
+ *  `wavesculptTableOptions`' synthetic `user` entry exists to avoid). */
 export function wavesculptPresetOptions(): { value: string; label: string }[] {
   return [
     { value: '', label: '— preset —' },
     ...WAVETABLE_PRESETS.map((p) => ({ value: p.id, label: p.label })),
   ];
+}
+
+/** WHICH PRESET THIS OSCILLATOR IS HOLDING, as a preset id — or `''` for none.
+ *
+ * ⚠ THIS EXISTS BECAUSE THE PICKER USED TO RETURN `''` UNCONDITIONALLY, and a
+ * control whose displayed value cannot move is indistinguishable from a dead
+ * one. The faceplate parity sweep caught it on wavesculpt's own row: pick ZAP,
+ * the chip still reads `— preset —`, forever. It was defended in a comment as
+ * "a preset is an ACTION, so the picker rests on a sentinel", but the sweep is
+ * right and the comment was wrong on two counts:
+ *
+ *  1. IT WAS A PARITY REGRESSION. `WavesculptCard.svelte` paints the same
+ *     roster into a NATIVE `<select>`, and a native select shows what you
+ *     picked — so the legacy card reflects the choice and only the faceplate
+ *     could not. Faces must not lose an affordance the card has.
+ *  2. IT WAS ALONE. Every other `kind: 'selector'` in `shell-cells.ts` —
+ *     milkdrop's preset picker included, which this module's own comment cites
+ *     as its precedent — derives `value` from the node. These four cells were
+ *     the only ones that ignored it.
+ *
+ * The identity is DERIVED, not stored, so it cannot drift out of step with the
+ * table actually loaded: pick a factory table or load your own `.wav` and this
+ * goes back to `''` on its own, because both of those clear or overwrite the
+ * label below. (Storing an id instead would need a field on `WavesculptOscData`
+ * — measured: that moves the WebGL attest hash, since the def is a basis file
+ * and only its `docs`/`face`/`controlFamilies` are stripped. A derivation in
+ * this `.ts` costs no GPU re-attest, which is the same argument the header
+ * makes for keeping the writes here.)
+ *
+ * ⚠ ITS ONE AMBIGUITY, STATED: a user `.wav` literally named `ZAP.wav` stores
+ * the label `ZAP` and will read back as the ZAP preset. Nothing is lost by it —
+ * the FACTORY picker says `USER · ZAP` either way — but it is a genuine
+ * near-miss rather than an exact answer, and a reader should know that. */
+export function wavesculptPresetValue(node: ModuleNode | undefined, oscIdx: number): string {
+  const od = wavesculptOscData(node, oscIdx);
+  if (od.wavetableSource !== 'user') return '';
+  return WAVETABLE_PRESETS.find((p) => p.label === od.wavetableLabel)?.id ?? '';
 }

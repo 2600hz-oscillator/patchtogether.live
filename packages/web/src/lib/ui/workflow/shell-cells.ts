@@ -159,6 +159,7 @@ import {
   selectWavesculptFactoryTable,
   wavesculptOscSource,
   wavesculptPresetOptions,
+  wavesculptPresetValue,
   wavesculptTableOptions,
 } from '$lib/ui/modules/wavesculpt/wavetable-actions';
 
@@ -556,9 +557,11 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
       kind: 'selector',
       tag: 'red pre',
       options: () => wavesculptPresetOptions(),
-      // A preset is an ACTION (fetch + replace), so the picker rests on the
-      // empty sentinel; what this voice HOLDS is the factory picker's answer.
-      value: () => '',
+      // ⚠ THIS USED TO BE `value: () => ''` — a constant, so the chip could
+      // never move off the sentinel however many presets you picked. See
+      // `wavesculptPresetValue`: the sweep caught it, and the legacy card's
+      // native <select> had the affordance the faceplate lacked.
+      value: (node) => wavesculptPresetValue(node, 0),
       onchange: (nodeId, value) => { if (value) void loadWavesculptPreset(nodeId, 0, value); },
     },
     'wavesculpt-osc1-table-{n}': {
@@ -586,9 +589,8 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
       kind: 'selector',
       tag: 'green pre',
       options: () => wavesculptPresetOptions(),
-      // A preset is an ACTION (fetch + replace), so the picker rests on the
-      // empty sentinel; what this voice HOLDS is the factory picker's answer.
-      value: () => '',
+      // Same shape as OSC RED's — see `wavesculptPresetValue`.
+      value: (node) => wavesculptPresetValue(node, 1),
       onchange: (nodeId, value) => { if (value) void loadWavesculptPreset(nodeId, 1, value); },
     },
     'wavesculpt-osc2-table-{n}': {
@@ -616,9 +618,8 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
       kind: 'selector',
       tag: 'blue pre',
       options: () => wavesculptPresetOptions(),
-      // A preset is an ACTION (fetch + replace), so the picker rests on the
-      // empty sentinel; what this voice HOLDS is the factory picker's answer.
-      value: () => '',
+      // Same shape as OSC RED's — see `wavesculptPresetValue`.
+      value: (node) => wavesculptPresetValue(node, 2),
       onchange: (nodeId, value) => { if (value) void loadWavesculptPreset(nodeId, 2, value); },
     },
     'wavesculpt-osc3-table-{n}': {
@@ -646,9 +647,8 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
       kind: 'selector',
       tag: 'alpha pre',
       options: () => wavesculptPresetOptions(),
-      // A preset is an ACTION (fetch + replace), so the picker rests on the
-      // empty sentinel; what this voice HOLDS is the factory picker's answer.
-      value: () => '',
+      // Same shape as OSC RED's — see `wavesculptPresetValue`.
+      value: (node) => wavesculptPresetValue(node, 3),
       onchange: (nodeId, value) => { if (value) void loadWavesculptPreset(nodeId, 3, value); },
     },
     'wavesculpt-osc4-table-{n}': {

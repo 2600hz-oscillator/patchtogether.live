@@ -208,6 +208,92 @@ describe('wavesculpt — the wavetable strip reaches the faceplate', () => {
     expect(new Set(seen).size, 'undifferentiated data must NOT produce four distinct answers').toBe(1);
   });
 
+  it('⚠ THE PRESET CELL REPORTS THE PRESET IT HOLDS — the clause that was missing', () => {
+    // THIS IS THE REGRESSION LEG. The two clauses above prove the TABLE cells
+    // read their own oscillator; NOTHING proved the PRESET cells' `value` could
+    // move at all, and it could not — all four were declared `value: () => ''`,
+    // a constant. The chip painted `— preset —` for ever, so choosing a preset
+    // was invisible on the faceplate while the legacy card's native <select>
+    // showed it. Only the e2e faces-parity sweep could see that, 8½ minutes into
+    // a shard; this sees it in a millisecond.
+    //
+    // Four voices are given four DISTINCT preset labels, exactly as
+    // `loadWavesculptPreset` writes them, and each cell must report its own.
+    const node = {
+      id: 'ws',
+      type: 'wavesculpt',
+      data: {
+        osc1: { wavetableSource: 'user', wavetableLabel: 'ZAP' },
+        osc2: { wavetableSource: 'user', wavetableLabel: 'TIDAL' },
+        osc3: { wavetableSource: 'user', wavetableLabel: 'SPECTRAL' },
+        osc4: { wavetableSource: 'user', wavetableLabel: 'TALKING' },
+      },
+    } as unknown as ModuleNode;
+
+    const seen = OSC.map((n) => {
+      const c = cell(`wavesculpt-osc${n}-preset-{n}`);
+      expect(c?.kind).toBe('selector');
+      return (c as { value: (node: ModuleNode) => string }).value(node);
+    });
+    expect(seen).toEqual(['zap', 'tidal', 'spectral', 'talking']);
+
+    // …and every id it reports is a real option on its OWN roster, or the chip
+    // would render blank on a value it has no option for.
+    for (const n of OSC) {
+      const c = cell(`wavesculpt-osc${n}-preset-{n}`) as {
+        options: (node: ModuleNode) => { value: string }[];
+      };
+      expect(c.options(node).map((o) => o.value)).toContain(seen[n - 1]);
+    }
+  });
+
+  it('the sentinel is what a voice holding a FACTORY table reports — not a resting constant', () => {
+    // The empty sentinel still exists and still has a job: a fresh oscillator
+    // holds a factory table, which is no preset at all. The difference from the
+    // defect is that `''` is now an ANSWER about the node rather than the only
+    // answer the cell can give — so this clause and the one above must disagree
+    // on the same cell, which is the whole proof.
+    const factory = {
+      id: 'ws',
+      type: 'wavesculpt',
+      data: {
+        osc1: { wavetableSource: 'factory:AAA' },
+        osc2: {},
+        osc3: { wavetableSource: 'user', wavetableLabel: 'MY OWN FILE' },
+        osc4: { wavetableSource: 'factory:DDD' },
+      },
+    } as unknown as ModuleNode;
+    const seen = OSC.map((n) =>
+      (cell(`wavesculpt-osc${n}-preset-{n}`) as { value: (node: ModuleNode) => string }).value(
+        factory,
+      ),
+    );
+    // osc3 holds a USER table whose label matches no preset — `''` too, and for
+    // the honest reason: it is not a preset.
+    expect(seen).toEqual(['', '', '', '']);
+  });
+
+  it('NEGATIVE CONTROL: the preset index proof can FAIL', () => {
+    // Same shape as the table cells' negative control: if all four voices held
+    // the SAME preset, four identical answers would pass the clause above for a
+    // wrong implementation too.
+    const flat = {
+      id: 'ws',
+      type: 'wavesculpt',
+      data: {
+        osc1: { wavetableSource: 'user', wavetableLabel: 'ZAP' },
+        osc2: { wavetableSource: 'user', wavetableLabel: 'ZAP' },
+        osc3: { wavetableSource: 'user', wavetableLabel: 'ZAP' },
+        osc4: { wavetableSource: 'user', wavetableLabel: 'ZAP' },
+      },
+    } as unknown as ModuleNode;
+    const seen = OSC.map((n) =>
+      (cell(`wavesculpt-osc${n}-preset-{n}`) as { value: (node: ModuleNode) => string }).value(flat),
+    );
+    expect(new Set(seen).size, 'undifferentiated data must NOT produce four distinct answers').toBe(1);
+    expect(seen[0], 'and the one answer is the preset they all hold').toBe('zap');
+  });
+
   it('⚠ STOP 2 — the strip does not live only on the card', () => {
     // Promotion deletes the card from both surfaces. The writes therefore have
     // to live somewhere both can reach, and the CARD has to be the thing that
