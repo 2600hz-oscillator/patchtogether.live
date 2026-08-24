@@ -84,6 +84,28 @@ its inert-param deletion (§0.1 of its spec) against a captured waveform**, whic
 strongest evidence that a param is inert, so that deletion rests entirely on a
 tree-wide search and three existing suites.
 
+⚠ **A third correction, and it changed a design rather than a number.** `kria`'s spec
+first proposed `face.order: ['running', 'bpm']` and put the step grid entirely in a
+`fullViewBody`. Reading `module-face-lint.test.ts:341-344` instead of assuming showed
+that a promoted def **must rank a template key for every declared `controlFamilies`
+entry**, and `kria` declares one (`kria.ts:118-120`). So `'kria-cell-{n}'` is a
+first-class ranked control — `curated-face.ts:19` resolves a `<f>-{n}` template to
+`kind: 'family'`, *"(whole grid/cluster)"* — and it ranks **first**, because the grid is
+the module.
+
+That re-opened the body question in `kria`'s favour: a step grid is *"ONE
+picture-you-edit inside the generic face"*, which is the PF-14 **`panel`** rung, not the
+shell-extension rung. **Measured: `shell-cells.ts` has no `kria-cell` entry**, so the
+key must be registered whichever rung wins. If both of kria's views fit in panel cells,
+the face needs **no `face.extension` at all** — which would make it a considerably
+stronger demonstration for the sequencer cohort than the spec originally claimed: the
+clicked-grid class may need no platform seam whatsoever. `kria`'s §6.0 carries the
+decision and the measurement the build should make.
+
+The pattern across all three corrections is the same: **the rule was applied correctly
+and the subject was never checked.** Two of the three would have shipped as confident,
+plausible, wrong sentences.
+
 ---
 
 ## THE FINDING THAT IS LARGER THAN ANY OF THE THREE

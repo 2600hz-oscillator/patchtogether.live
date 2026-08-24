@@ -346,19 +346,41 @@ rosters and two ranges. The cells import the exported symbols, and `kria` is bro
 into `RANGE_BOUND_CARDS` when this PR touches it (boy-scout — the gates are opt-in per
 card, and that blind spot is where the class lives now).
 
-### 5.2 RANK — `face.order`
+### 5.2 RANK — `face.order`, and ⚠ THE GRID IS A RANKED KEY, NOT JUST BODY CHROME
 
 ```ts
-order: ['running', 'bpm']
+order: ['kria-cell-{n}', 'running', 'bpm']
 ```
 
-`running` first: it is the transport, it is what the card puts in the title bar, and it
-is the one control a player reaches for without thinking. `bpm` second. Per §0.1 both
-are fallbacks, so the ranking is between two controls that are usually inert — the
-argument for this order is that when they DO matter (a rack with no TIMELORDE), RUN is
-still the more urgent of the two.
+⚠ **The first entry is REQUIRED and the first draft of this spec omitted it.** It was
+found by reading the gate rather than by assuming, and it is recorded here rather than
+quietly corrected because it changes §6's design question.
 
-Both fit inside the lane budget (ranks 1–6 are the entire lane budget; rank 7+ is
+`module-face-lint.test.ts:341-344` sweeps every promoted def's `controlFamilies` and
+demands the template key:
+
+```ts
+for (const f of def.controlFamilies ?? []) {
+  if (!orderSet.has(`${f.id}-{n}`)) {
+    missing.push(`${def.type}: control family '${f.id}' not in face.order (need '${f.id}-{n}')`);
+  }
+}
+```
+
+`kria` declares `controlFamilies: [{ id: 'kria-cell', … }]` (`kria.ts:118-120`), so a
+promoted `kria` **must** rank `'kria-cell-{n}'` or completeness is RED. And
+`curated-face.ts:19` resolves a `<f>-{n}` template to `kind: 'family'` — *"(whole
+grid/cluster)"* — so it is a first-class ranked control occupying a lane-budget slot,
+not a decoration.
+
+**It ranks FIRST, and that is not a close call.** The grid is the module; §0.1's two
+params are fallbacks that do nothing in the default rack. (⚠ §0.1's line *"`face.order`
+ranks the two least important controls on the module"* was written before this was
+measured. The corrected statement is narrower and still worth making: **the two entries
+the PARAM system knows about are the two least important controls**, and the only reason
+the grid is rankable at all is a `controlFamilies` declaration that exists for docs.)
+
+All three fit inside the lane budget (ranks 1–6 are the entire lane budget; rank 7+ is
 dock-only), so nothing falls off a tile.
 
 ### 5.3 BANDS — three, untabbed, and the tab question raised rather than manufactured
@@ -418,6 +440,45 @@ selection lives and why.
 ---
 
 ## 6. THE BODY — `face.extension: 'kria'`
+
+### 6.0 ⚠ §5.2 RE-OPENS THIS SECTION: THE GRID IS A RANKED KEY, SO SOMETHING MUST RENDER IT
+
+The first draft of §6 put the grid in `fullViewBody` and treated the ranked key question
+as settled. It is not, and the ladder says to reach for the earliest rung that fits:
+
+1. a family/static **cell**; 2. a PF-14 **`panel`** cell — *"ONE picture-you-edit
+   **inside** the generic face (an operator map, an envelope editor). Registered in
+   `shell-cells.ts`, probe required, dock-only by lint"*; 3. a **shell extension**.
+
+**A 7×16 step grid is one picture-you-edit.** That is rung 2's description almost word
+for word, and rung 2 is where `warrensspectrum` landed for the same reason — its card
+was the filterbank's only editor, so it got a bank PANEL *inside* the face rather than
+a body that ate it (`shell-extensions.ts:89-94` records that as the failure this seam
+exists to prevent).
+
+**Measured:** `shell-cells.ts` contains **no `kria-cell-{n}` entry** — grep returns
+nothing for `kria` in that file. So today the ranked key would resolve to no registered
+cell, and `shell-cells.test.ts` ("no inert cell on a promoted face") is the gate that
+catches it. **The key must be registered, whichever rung wins.**
+
+**The recommendation, and it is a change from the first draft:** register
+`'kria-cell-{n}'` as a **PF-14 `panel` cell** — dock-only by lint, with a **`data`
+probe** on the pattern bank (the registry's preferred probe kind, and here the observable
+is real: a cell click changes `node.data.patterns`). The face then needs **no shell
+extension at all** for the step grid.
+
+⚠ **This does NOT settle where the PATTERN view goes**, and the honest answer is that it
+is a second picture, not a second view of the first. Two routes, and the build should
+pick by measuring the panel primitive's actual affordances rather than by preference:
+either a second registered panel cell, or the `fullViewBody` retained solely for the
+pattern strip. §6.1 below is written for the `fullViewBody` route and stays valid for
+whichever part of the surface takes it.
+
+⚠ **And if BOTH views fit in panel cells, drop `face.extension` entirely** — a module
+that needs no bespoke code is a better outcome than one that ships a lazy chunk, and it
+would make `kria` a considerably stronger demonstration for the sequencer cohort than
+this spec originally claimed: **the clicked-grid class may need no platform seam at
+all.**
 
 ### 6.1 Why `fullViewBody` and not `editorSurface`
 

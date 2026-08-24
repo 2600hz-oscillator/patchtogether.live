@@ -52,11 +52,23 @@ has its own `playhead_a` field (`:59`) which the engine DOES write and the card 
 read (`syncedPlayheadA`). So a reader grepping the name finds live code and moves on.
 **The `node.data` key is real; the `params` entry is not.**
 
-**Why this blocks the face specifically.** Face completeness requires every param to get
-a cell, and `shell-cells.test.ts` refuses an inert cell on a promoted face. So
-promotion would either put two dead faders on the plate or fail the gate. Today the
-inertness is invisible because the card simply never mounts a control for them — **the
-face is the first surface that is obliged to.**
+**Why this blocks the face specifically.** `module-face-lint.test.ts:329-339` requires
+every param to be ranked in `face.order`, and `shell-cells.test.ts` refuses an inert
+cell on a promoted face. So promotion would either put two dead faders on the plate or
+fail the gate. Today the inertness is invisible because the card simply never mounts a
+control for them — **the face is the first surface that is obliged to.**
+
+⚠ **There IS a second legal resolution, and it must be named and refused rather than
+left for a reviewer to suggest.** `:323-338` carries a `#1726` escape hatch: a param the
+def declares `noUserControl` satisfies completeness without a rank (and a param in BOTH
+is red, so the hatch is anchored in both directions).
+
+**Do not use it here.** `noUserControl` means *"this param is real, the engine drives
+it, a user does not."* These two are not that — **nothing drives them at all.** Declaring
+the hatch would green the gate, keep two params in the public contract that nothing
+implements, and make the situation look deliberate to the next reader. That is the
+CLAUDE.md pattern of a green gate certifying a live defect, chosen on purpose. It is also
+strictly more work to reverse later than a deletion is now.
 
 This is the CLAUDE.md declaration-vs-consumer rule running in the less familiar
 direction. The usual warning is *"before fixing a declaration to satisfy a gate, check
