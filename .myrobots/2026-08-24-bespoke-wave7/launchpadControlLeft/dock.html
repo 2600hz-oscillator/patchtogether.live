@@ -1,0 +1,287 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>LAUNCHPAD CONTROL face — the dock faceplate (spawn)</title>
+<style>
+/* ─────────────────────────────────────────────────────────────────────────
+   LAUNCHPAD CONTROL FACEPLATE — MOCKUP, state 1 of 2.
+   SPEC AND MOCKUP ONLY. Nothing here is implemented. See spec.md.
+
+   House tokens, the same set the wave-4/5/6 mocks use.
+
+   ⚠ THERE IS NO 8x8 GRID HERE, AND THAT IS THE FINDING. Three shipped
+   artifacts say this module's surface is a pad matrix; the card
+   (LaunchpadControlCard.svelte:135-235) paints four buttons, a status line and
+   a docs hint. The 8x8 is on the HARDWARE. spec.md §0.
+
+   ⚠ THIS IS ALSO THE VRT DOCK BASELINE STATE: no gesture has been made, so
+   `connect()` has never run, localStorage is empty in a fresh context, and the
+   rendered branch is a pure function of the code. spec.md §10.3.
+   ───────────────────────────────────────────────────────────────────────── */
+:root{
+  --bg:#0e1013; --dock:#12161c; --pbody:#1c1f24;
+  --line:#2c3037; --tile:#33383f; --ink:#eef1f5; --dim:#9aa2ad; --faint:#646c77;
+  --accent:#6cf; --warn:#f2c14e; --good:#8fe6b0; --bad:#ff8a8a;
+  --meta:#8a6fd6;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+  font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1240px;margin:0 auto;padding:26px 20px 90px}
+h1{font-size:21px;font-weight:800;margin:0 0 6px;letter-spacing:.01em}
+.sub{color:var(--dim);font-size:12.5px;margin:0 0 14px;max-width:106ch}
+.sub b{color:var(--ink)} code{font-family:var(--mono);font-size:11.5px;color:var(--warn)}
+.nav{display:flex;gap:8px;margin:0 0 20px;font-size:11px;flex-wrap:wrap}
+.nav a{color:var(--ink);text-decoration:none;border:1px solid var(--line);border-radius:6px;
+  padding:6px 12px;background:#12161c;font-family:var(--mono);letter-spacing:.06em;text-transform:uppercase}
+.nav a.on{border-color:var(--meta);color:#b79cf0}
+.warn{border:1px solid #6a5330;background:#1c1811;border-radius:8px;padding:11px 14px;
+  margin:12px 0;font-size:12.5px;color:#e8cf9a;max-width:118ch}
+.warn b{color:var(--warn)}
+.bad{border:1px solid #6b3a3a;background:#1c1214;border-radius:8px;padding:11px 14px;
+  margin:12px 0;font-size:12.5px;color:#f0b8b8;max-width:118ch}
+.bad b{color:var(--bad)}
+.ok{border:1px solid #3b5a48;background:#111a15;border-radius:8px;padding:11px 14px;
+  margin:12px 0;font-size:12.5px;color:#a9d8bd;max-width:118ch}
+.ok b{color:var(--good)}
+.cols{display:grid;grid-template-columns:minmax(0,1fr) 430px;gap:18px;align-items:start}
+@media (max-width:1160px){.cols{grid-template-columns:minmax(0,1fr)}}
+
+.dock{background:var(--dock);border:1px solid var(--line);border-radius:11px;overflow:hidden;padding:11px}
+.chromebar{display:flex;align-items:baseline;gap:9px;padding:0 2px 8px}
+.chromebar .nm{font-size:13px;font-weight:800;letter-spacing:.03em}
+.chromebar .rl{font-size:9.4px;letter-spacing:.09em;text-transform:uppercase;color:var(--faint);font-family:var(--mono)}
+.chromebar .x{margin-left:auto;color:var(--faint);font-family:var(--mono);font-size:12px}
+/* ⚠ NO CABLE STRIPE — this module declares zero ports, so there is no cable for
+   one to colour. That is exactly why the VRT drain must ADD it to
+   NOT_TOKEN_PINNED_SCENES (spec.md §10.2). */
+.plate{background:var(--pbody);border:1px solid var(--tile);border-left:4px solid var(--meta);
+  border-radius:10px;padding:0 0 12px;width:max-content;max-width:100%}
+
+.extbody{padding:12px 13px 10px;width:238px;max-width:100%;position:relative}
+.hint{margin:0;font-size:9.8px;line-height:1.35;color:var(--faint);max-width:32ch}
+.btn{display:inline-block;padding:5px 11px;border-radius:3px;font-size:9.4px;
+  font-family:var(--mono);letter-spacing:.05em;text-transform:uppercase;font-weight:700;
+  border:1px solid #5a7;background:transparent;color:#5a7}
+.btn.mut{border-color:#4a5260;color:var(--faint)}
+.seg{display:flex;gap:4px;margin:9px 0 0}
+.seg span{flex:1 1 0;text-align:center;padding:4px 5px;border-radius:3px;border:1px solid #4a5260;
+  color:var(--faint);font-family:var(--mono);font-size:8.6px;letter-spacing:.05em;opacity:.5}
+.lamps{display:flex;gap:14px;align-items:center;margin:10px 0 0;padding-top:9px;border-top:1px solid var(--line)}
+.led{display:flex;align-items:center;gap:5px}
+.led .dot{width:8px;height:8px;border-radius:50%;background:#242832;border:1px solid #343a46}
+.led .dot.lit{background:var(--good);border-color:var(--good);box-shadow:0 0 6px rgba(143,230,176,.6)}
+.led .cap{font-size:8.4px;font-family:var(--mono);letter-spacing:.09em;color:var(--faint)}
+.dis{opacity:.35}
+
+.band{margin:10px 13px 0;padding-top:9px;border-top:1px solid var(--line)}
+.cells{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.actbtn{padding:5px 12px;border-radius:3px;border:1px solid #5a7;color:#5a7;background:transparent;
+  font-size:9.2px;font-family:var(--mono);letter-spacing:.05em;text-transform:uppercase;font-weight:700}
+
+/* ── the LANE tile ────────────────────────────────────────────────────── */
+.lanes{display:flex;gap:24px;align-items:flex-start;flex-wrap:wrap;margin-top:8px}
+.lane{width:192px;background:var(--pbody);border:1px solid var(--tile);border-left:3px solid var(--meta);
+  border-radius:7px;padding:7px 8px 9px}
+.lane .t{font-size:8.6px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--dim);font-family:var(--mono);margin:0 0 7px}
+.lane .actbtn{display:block;width:100%;text-align:center;padding:4px 6px;font-size:8px;margin-bottom:5px}
+.lane .note{font-size:8.2px;color:var(--faint);font-family:var(--mono);text-align:center;margin:8px 0 0}
+.legacy{width:330px;background:var(--pbody);border:1px solid var(--tile);border-radius:2px;
+  padding:7px 8px;font-size:11px;color:var(--dim)}
+.legacy .lt{font-size:10px;font-weight:800;letter-spacing:.05em;color:var(--ink);margin:0 0 6px;font-family:var(--mono)}
+.legacy .lb{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:5px}
+.legacy .st{font-size:10px;color:#9aa0b2;margin:0 0 4px}
+.legacy .lh{font-size:9px;color:#6f7488;margin:0}
+
+.notes{display:flex;flex-direction:column;gap:12px}
+.card{border:1px solid var(--line);background:#101419;border-radius:9px;padding:12px 14px}
+.card h3{margin:0 0 7px;font-size:10px;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--accent);font-family:var(--mono);font-weight:700}
+.card p{margin:0 0 8px;font-size:12px;color:var(--dim)}
+.card p:last-child{margin-bottom:0}
+.card b{color:var(--ink)}
+table{border-collapse:collapse;width:100%;font-size:11px;margin:2px 0 0}
+th,td{text-align:left;padding:4px 7px 4px 0;border-bottom:1px solid #1e242c;vertical-align:top;color:var(--dim)}
+th{color:var(--faint);font-family:var(--mono);font-size:8.6px;letter-spacing:.09em;text-transform:uppercase;font-weight:400}
+td b{color:var(--ink)}
+.aria{font-family:var(--mono);font-size:10.5px;color:var(--good)}
+.gone{text-decoration:line-through;color:#5a616c}
+.no{color:var(--bad);font-weight:700}
+.yes{color:var(--good);font-weight:700}
+</style>
+<div class="wrap">
+
+<h1>LAUNCHPAD CONTROL — the dock faceplate (spawn state)</h1>
+<p class="sub">
+  <b>SPEC AND MOCKUP ONLY. Nothing here is implemented.</b> Nothing paired, nothing bound &mdash;
+  which is both the state a player meets first <i>and</i> exactly what the VRT baselines capture:
+  <code>connect()</code> runs only from a gesture the suite never makes, and
+  <code>restoreLaunchpadDeployment()</code> reads a <code>localStorage</code> that is empty in a
+  fresh context (<code>spec.md &sect;10.3</code>).
+</p>
+
+<div class="nav">
+  <a class="on" href="dock.html">1 &middot; the dock face (spawn)</a>
+  <a href="dock-single.html">2 &middot; single unit bound, and the lane swap</a>
+  <a href="spec.md">spec.md</a>
+</div>
+
+<div class="bad">
+  <b>&#9888; THERE IS NO 8&times;8 GRID ANYWHERE IN THE APP, AND THREE ARTIFACTS SAY THERE IS.</b>
+  <code>face-migration-inventory.ts:840-846</code> (<i>"an 8&times;8 pad matrix &hellip; the pad map
+  is the interaction"</i>), <code>vrt-exemptions.ts:667-679</code> (<i>"a colour legend"</i> &mdash;
+  <code>grep legend</code> on the card returns nothing), and <code>legacy-fallback.ts:40-44</code>
+  (<i>"whose lane face is a grid / launcher / mapper"</i>). All three predate the LEFT+RIGHT
+  consolidation. <b>The pad matrix is on the HARDWARE.</b> So <b>#2181 does not bite here at all</b>
+  &mdash; there is no bank to collapse. <code>spec.md &sect;0</code>.
+</div>
+
+<div class="warn">
+  <b>&#9888; PROMOTION IS A DELETION, NOT AN ADDITION.</b> This module is in
+  <code>NON_SHELL_LANE_TYPES</code>, so <code>laneRenderKind</code> returns <code>'legacy'</code>
+  <i>before</i> it consults <code>migrated</code> (<code>legacy-fallback.ts:158-162</code>) &mdash;
+  a face authored while the entry stands would be <b>dock-only</b>, and the lane would keep a
+  330&nbsp;px card in a rack of 192&nbsp;px tiles forever
+  (<code>Canvas.svelte:635</code>, <code>:650</code>). <b>The entry goes.</b>
+  <code>spec.md &sect;4</code>.
+</div>
+
+<div class="cols">
+<div>
+
+  <div class="dock">
+    <div class="chromebar">
+      <span class="nm">LAUNCHPAD CONTROL</span>
+      <span class="rl">dock &middot; full view</span>
+      <span class="x">&#10005;</span>
+    </div>
+
+    <div class="plate">
+      <div class="extbody">
+
+        <p class="hint">Add a clip-player to drive.</p>
+
+        <div style="margin-top:9px"><span class="btn mut">Pair Launchpads</span></div>
+
+        <!-- The BIND control and the VIEW segment exist here but are INERT until
+             their conditions hold — the card's own {#if} logic, preserved.
+             Drawn faded so the spawn plate's real content is legible. -->
+        <div class="seg dis"><span>GRID</span><span>CLIP</span><span>ARR</span><span>CTRL</span></div>
+
+        <div class="lamps">
+          <span class="led"><span class="dot"></span><span class="cap">LINK</span></span>
+          <span class="led"><span class="dot"></span><span class="cap">CLIP</span></span>
+        </div>
+
+      </div>
+
+      <div class="band">
+        <div class="cells">
+          <span class="actbtn">Connect single Launchpad</span>
+          <span class="actbtn">Pair Launchpads</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <h3 style="font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--faint);
+    font-family:var(--mono);font-weight:400;margin:22px 0 6px">The lane &mdash; what the carve-out costs</h3>
+  <div class="lanes">
+    <div class="legacy">
+      <p class="lt">LAUNCHPAD CONTROL</p>
+      <div class="lb"><span class="btn mut">Pair Launchpads</span><span class="btn mut">Connect single Launchpad</span></div>
+      <p class="st">Not connected.</p>
+      <p class="lh">Colour guide &rarr; right-click &rarr; <b>View docs</b>.</p>
+      <p class="note" style="color:var(--bad);font-family:var(--mono);font-size:8.2px;margin-top:7px">
+        TODAY &mdash; 330 px, in a rack of 192 px tiles</p>
+    </div>
+    <div class="lane">
+      <p class="t">Faced</p>
+      <span class="actbtn">Connect single</span>
+      <span class="actbtn">Pair</span>
+      <p class="note">glyph: 'none' &mdash; forced</p>
+    </div>
+  </div>
+
+</div>
+
+<div class="notes">
+
+  <div class="card">
+    <h3>What the card paints today, and where it goes</h3>
+    <table>
+      <tr><th>card</th><th>&rarr;</th></tr>
+      <tr><td class="gone">Not connected. / Paired &check; / Driving clip-player <code>n7</code>. / Single unit driving clip-player <code>n7</code> &mdash; <b>GRID</b> view&hellip;</td>
+          <td>the two lamps. <b>LINK</b> = paired; <b>CLIP</b> = bound. Derived facts go to
+              <code>detail</code> &rarr; <span class="aria">aria-label</span>. A lit dot is a
+              picture; a state word is not.</td></tr>
+      <tr><td class="gone">&hellip; hit Bind to drive your clip-player.</td>
+          <td>deleted outright &mdash; an instruction about a control that is on screen.</td></tr>
+      <tr><td>Add a clip-player to drive.</td>
+          <td><span class="yes">KEEP</span> &mdash; <b>empty-state copy</b>, replaced by the BIND
+              control the moment a clip-player exists (the <code>samsloop</code> /
+              <code>matrixMix</code> shape).</td></tr>
+      <tr><td>Both Launchpads should light up (green + blue) &mdash; press any pad&hellip;</td>
+          <td><span class="yes">KEEP</span> &mdash; <b>not resting text</b>: it exists only
+              mid-handshake and is the only instruction for a gesture whose affordance is on the
+              hardware.</td></tr>
+      <tr><td>the four Web-MIDI / no-device blocks</td>
+          <td><span class="yes">KEEP</span> &mdash; errors, absent whenever nothing is wrong
+              (midiclock's precedent).</td></tr>
+      <tr><td class="gone">Colour guide &rarr; right-click &rarr; View docs.</td>
+          <td><b>DELETE, zero loss.</b> The <b>Docs</b> menu entry is gated on nothing
+              (<code>NodeContextMenu.svelte:337-339</code>) and opens the hand-authored
+              <code>/docs/modules/launchpadControlLeft</code>. &#9888; The hint is also already
+              <b>wrong</b>: the menu item is labelled <code>Docs</code>, not "View docs".</td></tr>
+      <tr><td>Pair &harr; Re-pair, Bind &harr; Unbind</td>
+          <td><span class="yes">KEEP</span> &mdash; a button caption names the action it performs,
+              and two actions need two names. &#9888; But <code>ShellActionCell.label</code> is a
+              fixed <code>string</code>, so the flipping variants live in the BODY, never in a
+              ranked cell.</td></tr>
+    </table>
+  </div>
+
+  <div class="card">
+    <h3>Two ranked cells, and why not four</h3>
+    <p>
+      <b>SINGLE</b> and <b>PAIR</b> rank. Both are always-meaningful gestures with a fixed label
+      &mdash; the only thing <code>ShellActionCell</code> can express.
+    </p>
+    <p>
+      <b>BIND does not rank.</b> It is a no-op when there is no clip-player
+      (<code>:112-113</code>), and an action cell has no <code>disabled</code>. A ranked BIND would
+      be a control that looks alive and isn't, in the state a fresh rack is always in.
+      <b>VIEW does not rank</b> either: the segment only exists in single mode, so a selector cell
+      would have an empty roster in pair mode. Both live in the body, where ordinary Svelte keeps
+      the card's own conditions.
+    </p>
+    <p>
+      &#9888; With <code>params: []</code>, every key <code>face.order</code> can hold is a
+      <b>non-param</b> key &mdash; so all four affordances are declared as one-member
+      <code>controlFamilies</code>. That is <code>matrixMix</code>'s route verbatim, and it is
+      #2181's construct used for the <i>opposite</i> reason: not to collapse a bank, but because
+      there is nothing else a zero-param face can rank.
+    </p>
+  </div>
+
+  <div class="card">
+    <h3>&#9888; The card has ZERO surface coverage</h3>
+    <p>
+      <code>grep -rln "launchpad-control-" e2e/ packages/web/src</code> returns <b>one file: the
+      card itself</b>. Meanwhile 6,278 lines of unit tests and five e2e specs sit beneath it
+      &mdash; and <b>all five run only under <code>?shell=legacy</code></b> via the
+      <code>rack</code> fixture, driving <code>__launchpadTestInstall</code> /
+      <code>__launchpadSim</code> globals that <code>Canvas.svelte</code> installs.
+    </p>
+    <p>
+      <b>So promotion cannot break the launchpad, and nothing would notice if the face were
+      broken.</b> The face PR owes this module's first surface e2e &mdash; and it is the exact
+      inverse of the sibling, whose one spec is default-shell only and <i>does</i> break.
+    </p>
+  </div>
+
+</div>
+</div>
+</div>

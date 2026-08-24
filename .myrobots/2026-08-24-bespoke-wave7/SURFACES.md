@@ -77,7 +77,7 @@ picture likewise.
 
 | module | in the set? | `laneRenderKind` today | what a face MEANS |
 |---|---|---|---|
-| `controlSurface` | ✅ | `'legacy'` — the verbatim card | **no shell lane tile exists.** A face is DOCK-ONLY, and promotion means removing it from the set |
+| `controlSurface` | ✅ | `'legacy'` — the verbatim card | **no shell lane tile exists**, so promotion must **DELETE the entry** (a dock-only face is possible and is refused — below) |
 | `launchpadControlLeft` | ✅ | `'legacy'` | same |
 | `push2Control` | ❌ | `'placeholder'` | a tile exists and is EMPTY; a face fills it |
 | `gamepad` | ❌ | `'placeholder'` | same |
@@ -91,10 +91,35 @@ Derived from `laneRenderKind` (`:156-160`) with `hasCard` computed by
 `NON_SHELL_LANE_TYPE`**"*, which is why the carve-out routes to `'legacy'` rather
 than to a tile.
 
-⚠ **The compact-by-default reasoning is DIFFERENT on the two sides**, and each spec
-says which side it is on before it argues width. A module with no lane tile has no
-section-heading-versus-caption tradeoff to make — which is precisely why
-`face.bareCells` is dock-only.
+⚠ **"A DOCK-ONLY FACE" IS MECHANICALLY REAL AND BOTH SPECS REFUSE IT.** The wave's
+first framing was that a carved-out module could keep its `'legacy'` lane render and
+gain a dock face — and `DockFullView.svelte:136`, `:334` gate on `migrated` **alone**,
+so it really would render. **It is refused on two measurements**, not on taste:
+
+* `Canvas.svelte:635`/`:650` keep the LEGACY GEOMETRY for a carve-out member, so the
+  lane would hold a **330 px card in a rack of 192 px tiles, forever**;
+* the resting-text ruling would then apply to **half a module** — status deleted in
+  the dock and still painted in the lane, same node, same moment.
+
+**So promotion DELETES the `NON_SHELL_LANE_TYPES` entry**, and the carved-out modules
+get a lane tile like everyone else. `cameraInput`'s removal from that set on
+promotion (`legacy-fallback.ts:63-65`) is the shipped precedent.
+
+⚠ **AND THE DELETION IS POSITIVELY ASSERTED, so it is a RED, not a silent change.**
+`legacy-fallback.test.ts:229` is
+`expect(NON_SHELL_LANE_TYPES.has(LAUNCHPAD_CONTROL_TYPE)).toBe(true)`. A drain reddens
+it; the face PR flips it to `toBe(false)` with a lineage note
+(`dom-source-modules.test.ts:1249` is the cameraInput precedent). ⚠ **Keep `:230`** —
+`expect(NON_SHELL_LANE_TYPES.has('launchpadControl')).toBe(false)` with the message
+*"the unregistered id must be GONE"* is the half that actually guards #1579, and it
+is unaffected.
+
+⚠ **The compact-by-default reasoning still differs on the two sides — but only
+BEFORE the deletion.** A module with no lane tile has no
+section-heading-versus-caption tradeoff to make, which is precisely why
+`face.bareCells` is dock-only. **After the entry goes, the tradeoff is live for the
+carved-out modules too**, so each spec argues it rather than inheriting "dock-only,
+so it does not apply".
 
 ⚠ **And `push2Control` is on the wrong side of that line by omission, not by
 design.** Its own header says *"Modeled on ElectraControl / LaunchpadControl — a
@@ -206,7 +231,7 @@ state the module has.** Several of these exemptions concede it in their own word
 all.
 
 ⚠ **Where a module genuinely cannot be baselined, the answer is a NAMED
-`FACES_WITHOUT_SCENES` entry** (`e2e/vrt/_shell-faces.ts:3391`) carrying the
+`FACES_WITHOUT_SCENES` entry** (`e2e/vrt/_shell-faces.ts:3472`) carrying the
 reason — never a silent absence, and never a re-exemption.
 
 ### 1.2 ⚠ The cost every spec PREDICTS rather than discovers: a drain is THREE files, not two
@@ -235,12 +260,38 @@ dispatch that commits nothing is a red flag.
 drained module cannot leave a stale licence to re-exempt itself lying around"*
 (`:1197-1199`). Leaving the name behind is a red gate, not a stale comment.
 
-⚠ **One inherited rationale still fans out and should be settled at its root, not
-seven times.** Two exemptions still read *"same rationale as midiCvBuddy"*
-(`:746` `midiOutBuddy`, `:769` `midiLane`) and one reads *"like
-controlSurface/electraControl"* (`:686` `launchpadControlLeft`). Wave 5
-`BINDERS.md §6` said the decision should be made once at the root; `midiclock`'s
-drain has now made it once, in the direction of draining.
+### 1.4 ⚠ WAVE 5's "DISCHARGE IT AT THE ROOT" IS OVERTURNED — BY THE DRAIN ITSELF
+
+Wave 5 `BINDERS.md §6` said the inherited rationale should be settled once at its
+root: *"discharging it at the root discharges it for the cohort."* **The `midiclock`
+drain says the opposite, in the same file, two lines below the entry it removed**
+(`vrt-exemptions.ts:761-767`):
+
+> ⚠ THE OTHER THREE ENTRIES IN THIS BLOCK ARE UNCHANGED, DELIBERATELY. `midiCvBuddy`,
+> `midiOutBuddy` and `midiLane` say "same rationale as midiCvBuddy", so ONE argument
+> is written once and referenced four times. **Discharging it here does NOT discharge
+> it there:** each of those cards paints its post-Connect surface differently and none
+> of them is promoted, so the decision has to be made at each on its own evidence.
+> **Falsifying the rationale for one module is not falsifying it for the module it was
+> written about.**
+
+**And the tree is right.** The correct generalisation is narrower than wave 5's and
+wider than that comment's, and it is worth stating precisely because it is the rule
+for the next five drains:
+
+> **THE MECHANISM TRANSFERS; THE CAPTURE DOES NOT.**
+> The mechanical claim — *`requestMIDIAccess` is never called without a click, so a
+> freshly spawned node's roster does not merely happen to be empty, it does not
+> exist* — is a fact about shared code and holds for every module that reaches its
+> device the same way. **What each module still owes on its own evidence is what its
+> own plate actually PAINTS in that state.**
+
+⚠ **The ROOT is still undrained and still carries the falsified clause.**
+`midiCvBuddy` (`:745`) is the entry all the others reference, it has no
+cross-reference to the argument that just falsified half of it, and two entries still
+read *"same rationale as midiCvBuddy"* (`:751` `midiOutBuddy`, `:769` `midiLane`)
+while one reads *"like controlSurface/electraControl"* (`:686`
+`launchpadControlLeft`).
 
 ---
 
@@ -561,15 +612,51 @@ Wave 4 listed two. Wave 6 listed five. **This wave lists five and finds a sixth*
    to `aria-label={…}` **must not also appear in a bare text mustache** — *"the
    resting-text violation wearing the ruling's own mechanism as a disguise"*.
 4. **`module-docs-lint`'s FAMILY↔CARD leg** — `module-docs-lint.test.ts:359-375`:
-   for every declared `controlFamilies[].testidPrefix`, `cards.includes(prefix)`
-   over the concatenated source of ALL cards, **PRESENCE-ONLY** by its own comment.
-   ⚠ **The honest fix is ADDING the testid to the card, never dropping the family.**
+   for every declared `controlFamilies[].testidPrefix`, `cards.includes(prefix)`,
+   **PRESENCE-ONLY** by its own comment (*"proves the family exists, not that its
+   member COUNT is right"*).
+   ⚠ **`allCardSource()` IS WIDER THAN ITS NAME** (`:78-94`): it walks the **whole
+   `lib/ui/` tree** and joins **every `.svelte` file** into one string — deliberately,
+   *"because a card's dynamic controls may live in a shared sub-component"*. So the
+   check is a GLOBAL substring test: **a prefix present in any `.svelte` anywhere
+   under `lib/ui/` satisfies the leg for any def.**
+   ⚠ **Two consequences, and the second is the useful one.** (i) It cannot tell that
+   a family's testid moved from a card to somewhere else, so it is *not* an obstacle
+   to a face PR — **a face BODY carrying the testid satisfies it**, which is the
+   honest direction anyway. (ii) It therefore proves much less than "the family is on
+   the card"; it proves only "this string exists in the UI tree". Stated because a
+   spec that treats this leg as a real constraint on where a family lives is
+   over-reading it.
+   ⚠ **Where it does bite, the honest fix is ADDING the testid, never dropping the
+   family.**
 5. **the `optionsExhaustive` SNAP contract** — `param-vocabulary.test.ts:130-203`.
-   An exhaustive-roster param must **SNAP at point of use**, not validate-and-reject,
-   because `paramCellKind` returns `'knob'` OFF-DOCK so a lane drag genuinely can
-   land between options. ONE implementation — `snapToOptions` from
-   `$lib/ui/controls/knob-vocabulary-model`. ⚠ *"one that declares it and does NOT
-   snap is worse than one that never declared it"* (`:153`).
+   A param that **DECLARES** `optionsExhaustive` must **SNAP at point of use**, not
+   validate-and-reject, because `paramCellKind` returns `'knob'` OFF-DOCK so a lane
+   drag genuinely can land between options. ONE implementation — `snapToOptions`
+   from `$lib/ui/controls/knob-vocabulary-model`. ⚠ *"one that declares it and does
+   NOT snap is worse than one that never declared it"* (`:153`).
+
+   ⚠⚠ **THIS WAVE'S BRIEF GOT THIS WRONG AND THE CORRECTION MATTERS MORE THAN THE
+   RULE.** Three specs were briefed that a discrete param with an option roster IS a
+   SNAP case. **It is not — the contract keys on the DECLARATION, not on the shape**,
+   and for a **DENSE** roster *declaring it is itself RED*. `param-vocabulary.test.ts:168-172`:
+
+   ```ts
+   if (opts.length === steps) {
+     offenders.push(
+       `${type}.${p.id}: roster covers every step (${opts.length}/${steps}), ` +
+       `so optionsExhaustive is redundant — delete it`);
+   }
+   ```
+
+   So a `0..3 discrete` param with a four-member roster — `es9`'s per-jack class
+   selector, and most rosters this cohort would add — **must NOT declare
+   `optionsExhaustive`**: every reachable integer is already a member, so there is
+   nothing for a snap to repair and the declaration is refused as redundant.
+   **`optionsExhaustive` is for a SPARSE roster** — one that names fewer values than
+   the param's range can reach, which is the only case where a drag can land between
+   options. ⚠ Two of this wave's seven modules were briefed as SNAP cases and
+   **neither is one.**
 
 **And the sixth, which is §2**: `face-migration-inventory.test.ts`'s three
 interlocking legs — declaring a `face` forces `generic-face` (`:229`), which forces
@@ -601,15 +688,40 @@ have it."*
 
 | module | state location | verdict |
 |---|---|---|
-| `gamepad` | `node.data` via **`mutateNode`** at 7 call sites (`GamepadCard.svelte:135,143,159,180,288,300,349`) | ✅ **clean** — and it is the cohort's model |
+| `controlSurface` | `node.data`, **all seven mutators through ONE `ydoc.transact(…, LOCAL_ORIGIN)` chokepoint** | ✅ **the CLEANEST in the fleet** — `electra-control.ts` copied it deliberately |
+| `gamepad` | `node.data` via **`mutateNode`** at 7 call sites (`GamepadCard.svelte:135,143,159,180,288,300,349`) | ✅ clean on `.data` — ⚠ **and NOT on `params`**, below |
 | `push2Control` | ⚠ **`localStorage` + module-level runes. `mutateNode` appears ZERO times** | see below |
-| `controlSurface` | `node.data` (per its own def header) | per-spec |
-| the rest | per-spec | |
+| `es9` | none — no `node.data` at all | n/a |
+| `midiLane` | ⚠ **TEN bare `node.data` writes**, two of them reactive `$effect`s (`:154-159`) that mirror engine state into the Y.Doc **from every peer with the card open** | ⛔ third verbatim copy of the helper wave 5 found twice |
+| `launchpadControlLeft` | `localStorage` — including **a graph NODE ID** with no lifetime | ⛔ see the ledger |
+| `outToLaunch` | `node.data`, 0 → 1 writer on promotion | per-spec |
+
+⚠ **A SIXTH STATE, AND IT IS ON `params` — WHICH THE CENSUS HAS NEVER LOOKED AT.**
+`GamepadCard.svelte:393-395` is `t.params.padIndex = …` — **a bare proxy write to
+`params`, no `transact`, no `LOCAL_ORIGIN`** — on a file whose seven `node.data`
+writers all correctly use `mutateNode`. **Cmd-Z cannot undo a controller-slot
+change.** Every prior wave's census enumerated `.data` writes, so **this class was
+outside its subject entirely**, and the per-module binary column would have scored
+this file ✓ twice over. ⚠ It also means the running total's shape was wrong in a
+way none of waves 3–6 could have detected: **discipline is per CALL SITE *and* per
+BAG.** The face fixes it as a side effect, which is exactly why the fix must be
+named explicitly in the PR or it vanishes into a refactor.
 
 ⚠ **`push2Control` would score ✓ on the census for a reason that is a tautology
 about the probe: it never writes at all.** That is wave 6's `recorderbox` finding
 arriving from the opposite direction — an absence from a derived set that is a
 property of the instrument, not of the subject.
+
+⚠ **AND WAVE 5's RUNNING TOTAL IS STALE — `midiclock` IS PAID.** Its face PR
+origin-tagged **both** surfaces (`MidiclockDeviceBody.svelte:113-121` and
+`MidiclockCard.svelte:88-97`, whose comment quotes the old bare write verbatim).
+Corrected total across waves 3–7:
+
+* **untagged `.data`** — `kria`, `audioOut`, `midiCvBuddy`, `midiOutBuddy`, **`midiLane`**
+* **tagged `.data`** — `picturebox`, `matrixMix`, `chromaconsole`, **`midiclock`**, **`controlSurface`**, **`gamepad`**
+* **n/a** — `twotracks`, **`es9`**, **`push2Control`** (no `.data` at all)
+* ⚠ **untagged `params`** — **`gamepad`**, the first and so far only instance, and a
+  category the census did not have
 
 ⚠ **And the placement is CORRECT, not sloppy.** Two collaborators on one rack each
 have their own Push on their own lane; syncing `selectedChannel` would make one
@@ -662,15 +774,55 @@ the premise.
 
 Per-module reasoning lives in each `spec.md`; this table is the index.
 
-| module | verdict | side of the lane carve-out | body role | width earned | est. |
-|---|---|---|---|---|---|
-| `push2Control` | **PROMOTE** — no precursor | outside (a tile exists, empty) | `picture` | **YES**, at 480 px | ≈ 8 h |
-| `launchpadControlLeft` | see `launchpadControlLeft/spec.md` | **inside** — dock-only face | | | |
-| `outToLaunch` | see `outToLaunch/spec.md` | outside | | | |
-| `controlSurface` | see `controlSurface/spec.md` — ⚠ **§2 applies** | **inside** — dock-only face | | | |
-| `gamepad` | see `gamepad/spec.md` | outside | | | |
-| `es9` | see `es9/spec.md` | outside | | | |
-| `midiLane` | see `midiLane/spec.md` — ⚠ **§2 applies** | outside | | | |
+| module | verdict | side of the lane carve-out | body role | est. |
+|---|---|---|---|---|
+| `launchpadControlLeft` | **PROMOTE** — no precursor. *Build FIRST* | **inside** — the entry goes | `status-primitive` | ≈ 8 h |
+| `gamepad` | **PROMOTE** — one contract change in the same PR | outside | `control-grid` | ≈ 10-13 h |
+| `push2Control` | **PROMOTE** — no precursor | outside | `picture` | ≈ 8 h |
+| `outToLaunch` | **PROMOTE-WITH-PRECURSOR** (a one-clause `hasVideoSurface` fix) | outside | `picture` | ≈ 4 h + ≈ 10 h |
+| `es9` | **PROMOTE-WITH-PRECURSOR**, and ⚠ **it is a `kria`-style GENERIC face, not a bespoke one** | outside | `status-primitive` | — |
+| `midiLane` | **PROMOTE-WITH-PRECURSOR** — ⚠ blocked on §9.1, a gate question, not a face question | outside | `status-primitive` | — |
+| `controlSurface` | ⛔ **REFUSE** — a measured parity loss, plus §9.1 | **inside** | (`control-grid`, if ever) | — |
+
+### 8.1 ⚠ THE ONE REFUSAL, AND IT IS A PARITY MEASUREMENT RATHER THAN A PREFERENCE
+
+`controlSurface` is refused on an arithmetic that no seam can bridge: a faced lane
+tile is `SHELL_TILE_W = 192` px (`module-shell-model.ts:39,55`, uniform at every
+zoom) against `BOX_W = 174` px **per binding group**
+(`control-surface-layout.ts:76-79`). A module whose entire purpose is *reaching for a
+knob* would trade four columns of live knobs on the canvas for a tile plus a dock
+open. `fullViewBody` is dock-only by `dockFullViewHeadPlan` and
+`ShellExtensionGlyphProps` carries no `nodeId`, so **there is no slot that fixes it.**
+
+⚠ **The verdict was PRODUCED rather than escalated**, per the skill: this is #1974
+(`joystick`) verbatim, and *"we would lose X"* is never an owner choice to surface.
+
+⚠ **It is the only cohort member with a THIRD, independent blocker** (§9.1 hits it
+too) — but the parity refusal stands on its own and would stand even if §9.1 were
+decided tomorrow.
+
+### 8.2 ⚠ `es9` IS NOT BESPOKE — the commissioned question, answered against the inventory
+
+Four of the five clauses in `es9`'s inventory `why` (`face-migration-inventory.ts:802-808`)
+name **readouts the resting-text ruling deletes**; the fifth is 22 ordinary
+`ParamDef`s already pinned in `contract-lock.txt:1060-1082`. The only thing a generic
+face cannot do here is mount a `StatusLed` — and that is a `fullViewBody` of role
+`status-primitive`, **a shipped pattern whose two adopters are the entire `StatusLed`
+caller set in `packages/web/src`** (`MidiclockDeviceBody.svelte`,
+`CvBuddyStatusBody.svelte`).
+
+**`kria` at least needed a bespoke PF-14 panel. `es9` needs two lamps and two
+buttons.** It reads as bespoke to anyone who has only seen the bottom-left quadrant
+of wave 5's axis — which is §8.3.
+
+### 8.3 ⚠ WAVE 5's SINGLE AXIS IS TWO AXES, AND `es9` IS WHAT SEPARATES THEM
+
+`BINDERS.md §0` ranked its cohort on one axis: *"how much of the module is the
+binding, and how much is an instrument on top of it."* `es9` breaks it. It has
+**more instrument on top** than `chromaconsole` (22 params, 46 ports) **and less
+binding underneath** than `midiCvBuddy` (one device, no picker, no permission
+prompt). Those are independent quantities, and a one-dimensional ranking that never
+met a module in the top-left quadrant reads it as "bespoke" by default.
 
 ---
 
@@ -787,14 +939,39 @@ Recorded because each was believed on entry and each was checked.
    wave 6:** an unmerged PR's contents read exactly like merged tree state, and
    nothing but going and looking distinguishes them. §5, gate 3.
 2. ⚠ **Wave 6 §5.2's `needs-note-entry-cell` prescription is insufficient.** §2.3.
-3. ⚠ **Wave 5 `BINDERS.md §6`'s "decide the inherited rationale once at the root"
-   has HAPPENED**, in the direction of draining: `midiclock` left
-   `ALLOWED_PERMANENT_EXEMPT` on 2026-08-24 (`vrt-exemptions.ts:1216-1222`), the
-   second drain ever. Two `"same rationale as midiCvBuddy"` references remain
-   (`:746`, `:769`). §1.
+3. ⚠ **Wave 5 `BINDERS.md §6`'s "discharging it at the root discharges it for the
+   cohort" is OVERTURNED — by the drain itself.** `vrt-exemptions.ts:761-767`:
+   *"Discharging it here does NOT discharge it there… Falsifying the rationale for
+   one module is not falsifying it for the module it was written about."* The
+   correct rule is narrower: **the MECHANISM transfers, the CAPTURE does not.** ⚠ And
+   the ROOT (`midiCvBuddy`, `:745`) is still undrained and still carries the
+   now-falsified clause with no cross-reference. §1.4.
+   ⚠ **This wave asserted the opposite in its own first draft** and it was corrected
+   by a spec agent reading the file rather than the prior wave — which is the same
+   failure mode as correction 1, one wave later.
 4. ⚠ **The `env`-for-selectors ask now has THREE independent refutations, on three
    different axes.** §3.1. Not re-proposed; recorded so a fourth instance has
    something cell-shape-neutral and transport-neutral to hit.
+4b. ⚠⚠ **WAVE 1's `electraControl` SPEC CARRIES A FALSE BLOCKER THAT IS NOW FIXED,
+   AND IT IS THE FOURTH INSTANCE OF THE CLASS.** That spec (`spec.md:35`) records
+   `STRICT_FACES` membership as *"structurally impossible today — `MetaModuleDef`
+   has no `face` field"*. **`packages/web/src/lib/meta/module-registry.ts:85` is now
+   `face?: ModuleFace;` and `:106` is `controlFamilies?: readonly ControlFamily[];`**,
+   and `:64` states the precursor is *"READ, not merely declarable"* with a named
+   negative-control block. **Anyone reading that spec today inherits a blocker that
+   does not exist** — and it is what unblocks three of this wave's meta members.
+   The skill's *"assume a third would too"* warning has now been vindicated four
+   times, and this instance is a NEW shape: not a mis-read capability, but a **spec
+   that was true when written and was never re-checked.**
+4c. ⚠ **`.claude/skills/module-faceplates.md:485-489` is stale on the extension
+   slots** — it describes `fullViewBody` as unwired. `WIRED_SHELL_EXTENSION_SLOTS`
+   is `['glyph', 'fullViewBody']` with ~30 adopters; only `editorSurface` is unwired.
+4d. ⚠⚠ **THE `optionsExhaustive` SNAP CONTRACT WAS MIS-BRIEFED BY THIS WAVE**, and
+   the correction is in §5, gate 5: the contract keys on the **DECLARATION**, not on
+   "a discrete param with an option roster", and for a **DENSE** roster
+   (`opts.length === steps`) *declaring it is itself RED*
+   (`param-vocabulary.test.ts:168-172`). Two of seven modules were briefed as SNAP
+   cases and neither is one.
 5. **A grep is not the gate.** §2.2 — a line-based `git grep` of a whole-file
    predicate returned a clean, plausible, empty answer over 14 cards, and only the
    gate's own named positive controls caught it.
@@ -824,3 +1001,121 @@ Recorded because each was believed on entry and each was checked.
    // ALWAYS pass the four positive controls first — the gate names them at :533-537:
    //   SequencerCard DrumseqzCard StickyCard TextmarqueeCard
    ```
+
+6. ⚠⚠ **THIS WAVE'S OWN BRIEF ASSERTED AN 8×8 PAD GRID THAT DOES NOT EXIST**, and
+   three shipped artifacts assert it too. `LaunchpadControlCard.svelte:135-235`
+   paints **four buttons, a status line and a docs hint** — no canvas, no matrix, no
+   colour legend. The three that say otherwise:
+   * the inventory `why` (`face-migration-inventory.ts:840-846`) — *"an 8×8 pad
+     matrix … the pad map is the interaction"*;
+   * the VRT exemption (`vrt-exemptions.ts:667-679`) — *"a colour legend"*;
+     `grep legend` over that card returns nothing (it moved to `LaunchpadDocs.svelte`
+     at consolidation);
+   * the `NON_SHELL_LANE_TYPES` carve-out's own stated reason
+     (`legacy-fallback.ts:40-44`).
+
+   **The orchestrator read the inventory `why` and propagated it into a spec brief**,
+   which is how a stale description becomes a design constraint one wave later.
+   ⚠ The consequence is not that `#2181` stops mattering for that module — it matters
+   **more**, for the opposite reason: `params: []` means every `face.order` key must
+   be a family template (matrixMix's route, `matrixmix.ts:46-52`).
+
+   ⚠ **The general form, and it is the wave's most transferable lesson:** an
+   inventory `why` is PROSE, no gate compares it to the card, and **three of them in
+   this cohort are provably wrong** (this one, `gamepad`'s — §11.4 — and
+   `recorderbox`'s, which wave 6 found). **Read the card, never the `why`.**
+
+7. **Two of this wave's own citations were wrong and a spec agent caught both** —
+   `ModuleShellPlaceholder.svelte` is under `ui/modules/`, not `ui/workflow/`, and
+   `FACES_WITHOUT_SCENES` is `_shell-faces.ts:3472`, not `:3391`. Corrected
+   throughout. Recorded because a wave that spends this much effort on other
+   documents' staleness owes the same accounting of its own.
+
+---
+
+## 11. DEFECT LEDGER — live on `main`, independent of any face
+
+Consolidated from the seven specs. Each is measured; each names its file and line.
+
+1. ⚠⚠ **`outToLaunch`'s LANE TILE PAINTS ANOTHER MODULE'S PICTURE, TODAY.**
+   `hasVideoSurface` is `domain === 'video'` (`module-shell-model.ts:177-179`), so
+   the placeholder tile mounts `VideoTileThumb`; `blitOutputToDrawingBuffer` returns
+   early because `surface.texture` is `null` (`out-to-launch.ts:165-167`,
+   `engine.ts:1765-1766`); and the thumb's `drawImage` copies the **shared engine
+   drawing buffer anyway** (`VideoTileThumb.svelte:74-90`). It is the **only video def
+   in the fleet with `outputs: []`**, and `hasVideoSurface`'s own doc comment names
+   this exact failure while guarding the wrong direction. ⚠ **Promotion makes it
+   worse**: `laneGlyphFor` returns `'picture'`, which OUTRANKS ranked cells (#1785).
+   The fix is one clause in a file in no attest basis — `outToLaunch`'s precursor.
+2. ⚠⚠ **`es9`'s `updateEs9Config` has exactly ONE caller** (`Es9Card.svelte:89`), on
+   a card the default shell never mounts. So the bridge's per-jack **UNDERRUN POLICY
+   does not follow the class param**, and **the CV-Buddy janitor's class writes never
+   reach it at all**. Safety-relevant by the def's own words (`es9.ts:113-139`: *"a
+   held gate … EMITS A WRONG SUSTAINED SIGNAL"*), invisible to every gate, and
+   **already broken today**. `es9`'s precursor.
+3. ⚠⚠ **`es9-card-shows-state.spec.ts`'s headline assertion is VACUOUS** —
+   `.not.toContain('idle')` against a label vocabulary in which `'idle'` renders as
+   **`off`**. The exact regression it was written for passes on the first poll, and
+   its negative control (`text.length > 0`) does not rescue it. A second leg is both
+   unreachable on CI and wrong if reached (`.toContain('stopped')` vs the label
+   `off`).
+4. ⚠ **`gamepad`'s inventory `why` is wrong on two counts**
+   (`face-migration-inventory.ts:814-821`): there is **no "live device roster"** (one
+   device NAME for the selected slot, plus four blind numbered buttons), and
+   **`padIndex` IS a param**, against *"none of it is a param"*.
+5. ⚠ **`GamepadCard.svelte:393-395` — a BARE PROXY WRITE to `t.params.padIndex`**, on
+   a file whose seven `.data` writers all use `mutateNode`. Cmd-Z cannot undo a slot
+   change. §6 — the first `params`-bag instance the census has ever seen.
+6. ⚠ **`midiLane`: TEN bare `node.data` writes, two of them reactive `$effect`s**
+   (`:154-159`) mirroring engine state into the Y.Doc **from every peer with the card
+   open**. Third verbatim copy of the helper wave 5 found twice.
+7. ⚠ **`launchpadControlLeft` persists a GRAPH NODE ID in `localStorage` with no
+   lifetime** (`launchpad-control.svelte.ts:814`, `:855` — the bound clip-player's
+   node id). Nothing clears it on delete, peer-delete or patch load.
+8. ⚠ **`OutToLaunchCard.svelte:216`, `:224` RE-TYPE both param ranges the def
+   declares** (`out-to-launch.ts:105-106`) — the backdraft class exactly. The card is
+   not in `RANGE_BOUND_CARDS`, so **no gate compares them**. ⚠ Fix with
+   `paramSpec(def,'x')`, **never** a new `export const` — that def IS in the attest
+   basis (#2186).
+9. ⚠ **`module-manifest.ts:773` is wrong about `midiLane.poly` on BOTH claims** —
+   *"10-channel = 5 pairs"* (`POLY_CHANNEL_PAIRS = 16`) and *"only in POLY mode"* (the
+   def says the opposite at `:277-281`, #674). **A third copy is inside the DEF**
+   (`docs.outputs.poly`, `:303`), plus `:38` and `:329` — **five stale statements,
+   one true number**, and no gate compares doc prose to code.
+10. ⚠ **The best-documented module in the pair is invisible to every docs gate.**
+    `launchpadControlLeft` has a hand-authored route page (one of nine in the tree),
+    yet `MetaModuleDef` has no `docs` field, so `MODULE_DOCS` has no entry,
+    `ctxMenuHasDocs` is false and **Annotate never appears** — while **Docs** works.
+    Mechanically documented at `strict-docs.ts:303-323`. ⚠ Whoever adds `docs?` must
+    re-point `module-annotate.spec.ts` in the same diff.
+11. ⚠ **All 18 `gamepad.spec.ts` tests boot `?shell=legacy`** — correct today,
+    **green-and-blind after promotion**: the face's remap / calibrate / invert /
+    mapping paths would have zero coverage while 18 green tests say otherwise.
+12. **`e2e/tests/control-surface.spec.ts:310` is a parked `test.fixme`** (#1847, 10
+    recovered-on-retry in 96 h) — and the parked assertion is *exactly* the layout the
+    face cannot reproduce (§8.1). **The park and the refusal are one finding seen from
+    two sides.**
+13. **Stale prose describing a card the promoted module will not have** —
+    `out-to-launch.ts:114` `docs.explanation` and `module-manifest.ts:165` both say
+    *"from the card"* / *"the on-card 9x9 preview"*; `es9.ts:25-28` and
+    `bridge-client.ts:5-8` carry **three sentences saying the CARD owns the connection
+    lifetime**, contradicted 340 lines later by the factory. Wave 6's `recorderbox`
+    stale-`why` class, now in a def.
+14. Minor: `module-manifest.ts:376-377` documents only the LEFT stick calibration
+    while the right stick, its calibrate button and its `set center` all ship (the
+    def's own `docs.explanation` is left-only too); `midi-lane.spec.ts:26` checks six
+    of seven output handles and **omits `poly`**, the one output with a defect
+    history; `es9`'s `stateDetail` is derived and never painted (`:51`); and
+    `Es9OwnerSnapshot.supported` has no consumer, so a no-`Worker` environment reports
+    `off` — indistinguishable from a user DISCONNECT.
+
+### 11.1 ⚠ ONE THING NO AGENT COULD RUN, AND IT DECIDES A FILE COUNT
+
+**Pre-flight before any `es9` VRT dispatch: `GREP=es9 task vrt:one -- es9`.**
+`es9.ts:378` spawns the bridge Worker **unconditionally**, `SharedArrayBuffer` **is**
+present on `/rack` (COOP/COEP are set for Faust), so the worker really does retry
+`ws://127.0.0.1:9209` forever on CI — and `vrt.spec.ts` fails a card row on **console**
+errors, not only page errors. **Whether Playwright surfaces the worker's failed-
+WebSocket console error decides whether `es9`'s drain is 3 files or 2.** Nothing on
+`main` answers it: neither `es9` e2e spec requests `errorWatch`. Recorded as a
+measurement to take, not a guess to carry.

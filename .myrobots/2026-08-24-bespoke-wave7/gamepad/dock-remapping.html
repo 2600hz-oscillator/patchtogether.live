@@ -1,0 +1,318 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>GAMEPAD face — connected, armed, sweeping</title>
+<style>
+/* ─────────────────────────────────────────────────────────────────────────
+   GAMEPAD FACEPLATE — MOCKUP, state 2 of 2: the DISTINGUISHING state.
+   SPEC AND MOCKUP ONLY. Nothing here is implemented. See spec.md.
+
+   A connected pad, a LEFT-STICK CALIBRATION SWEEP in progress, an ARMED
+   remap on the `A` output, three outputs already rebound, and RY inverted.
+
+   ⚠ NO VRT BASELINE CAPTURES THIS. Reaching it needs a physical controller
+   and a physical button press. spec.md §6.3 names it as what the baseline
+   does NOT cover, and points at gamepad.spec.ts:41-70's existing fake-pad
+   injection as the route if a mocked scene is ever wanted — a change to the
+   VRT HARNESS, not to this module, and NOT this PR.
+   ───────────────────────────────────────────────────────────────────────── */
+:root{
+  --bg:#0e1013; --dock:#12161c; --pbody:#1c1f24; --well:#0a0c0f;
+  --line:#2c3037; --tile:#33383f; --ink:#eef1f5; --dim:#9aa2ad; --faint:#646c77;
+  --cv:#7dd3fc; --gate:#a3e635; --accent:#6cf; --ch1:#fbbf24; --warn:#f2c14e; --good:#8fe6b0;
+  --arm:#f472b6;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+  font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1240px;margin:0 auto;padding:26px 20px 90px}
+h1{font-size:21px;font-weight:800;margin:0 0 6px}
+.sub{color:var(--dim);font-size:12.5px;margin:0 0 14px;max-width:106ch}
+.sub b{color:var(--ink)} code{font-family:var(--mono);font-size:11.5px;color:var(--ch1)}
+.nav{display:flex;gap:8px;margin:0 0 20px;font-size:11px;flex-wrap:wrap}
+.nav a{color:var(--ink);text-decoration:none;border:1px solid var(--line);border-radius:6px;
+  padding:6px 12px;background:#12161c;font-family:var(--mono);letter-spacing:.06em;text-transform:uppercase}
+.nav a.on{border-color:var(--cv);color:var(--cv)}
+.ok{border:1px solid #3b5a48;background:#111a15;border-radius:8px;padding:11px 14px;
+  margin:12px 0;font-size:12.5px;color:#a9d8bd;max-width:118ch}
+.ok b{color:var(--good)}
+.warn{border:1px solid #6a5330;background:#1c1811;border-radius:8px;padding:11px 14px;
+  margin:12px 0;font-size:12.5px;color:#e8cf9a;max-width:118ch}
+.warn b{color:var(--warn)}
+.cols{display:grid;grid-template-columns:minmax(0,1fr) 400px;gap:18px;align-items:start}
+@media (max-width:1120px){.cols{grid-template-columns:minmax(0,1fr)}}
+
+.dock{background:var(--dock);border:1px solid var(--line);border-radius:11px;overflow:hidden;padding:11px}
+.chromebar{display:flex;align-items:baseline;gap:9px;padding:0 2px 8px}
+.chromebar .nm{font-size:13px;font-weight:800;letter-spacing:.03em}
+.chromebar .rl{font-size:9.4px;letter-spacing:.09em;text-transform:uppercase;color:var(--faint);font-family:var(--mono)}
+.chromebar .x{margin-left:auto;color:var(--faint);font-family:var(--mono);font-size:12px}
+.plate{background:var(--pbody);border:1px solid var(--tile);border-left:4px solid var(--cv);
+  border-radius:10px;padding:0 0 12px;width:max-content;max-width:100%}
+.extbody{padding:12px 14px 10px;width:284px;max-width:100%}
+
+.lamps{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 10px}
+.led{display:flex;align-items:center;gap:5px;border:1px solid var(--line);border-radius:4px;
+  padding:3px 7px;background:#171b22}
+.led .dot{width:7px;height:7px;border-radius:50%;background:#39404a;border:1px solid #2a3038}
+.led.on .dot{background:var(--good);box-shadow:0 0 5px rgba(143,230,176,.8)}
+.led.warnl.on .dot{background:var(--warn);box-shadow:0 0 5px rgba(242,193,78,.8)}
+.led .cap{font-size:8px;letter-spacing:.09em;text-transform:uppercase;color:var(--faint);font-family:var(--mono)}
+
+.sticks{display:flex;justify-content:center;gap:14px;margin:0 0 9px}
+.sblk{display:flex;flex-direction:column;align-items:center;gap:3px}
+.pad{width:64px;height:64px;border:1px solid #2a2f3a;border-radius:3px;background:#0e1015;position:relative}
+.pad.arming{border-color:var(--arm);box-shadow:0 0 0 1px rgba(244,114,182,.5)}
+.pad .ch,.pad .cv2{position:absolute;background:#232833}
+.pad .ch{left:0;right:0;top:50%;height:1px}
+.pad .cv2{top:0;bottom:0;left:50%;width:1px}
+.pad .dot{position:absolute;width:8px;height:8px;border-radius:50%;background:var(--cv);left:0;top:0}
+/* ⚠ THE SWEEP BOX — spec.md §5.1. This one <div> REPLACES the four live
+   numbers `x [min,max] · y [min,max]`, in the same coordinate system as the
+   live dot. It grows as the player sweeps; when it reaches the edges they
+   are done. The numbers move to aria-valuetext. */
+.pad .sweep{position:absolute;border:1px dashed var(--warn);background:rgba(242,193,78,.08);border-radius:2px}
+.slbl{font-size:8.4px;font-family:var(--mono);color:var(--dim)}
+.rowx{display:flex;gap:4px}
+.mini{font-size:7.6px;font-family:var(--mono);padding:1px 6px;border-radius:2px;
+  border:1px solid #404652;background:#1a1f2a;color:var(--dim)}
+.mini.tag{border-color:transparent;background:none;color:var(--faint);padding:1px 2px}
+.mini.bound{border-color:var(--warn);color:var(--warn)}
+.mini.inv{background:color-mix(in oklab,var(--cv) 30%,#1a1f2a);border-color:var(--cv);color:var(--ink)}
+
+.calib{display:flex;gap:6px;margin:0 0 9px;flex-wrap:wrap;align-items:center}
+.btn{font-size:8px;font-family:var(--mono);letter-spacing:.05em;padding:3px 8px;border-radius:2px;
+  border:1px solid #404652;background:#1a1f2a;color:var(--dim);white-space:nowrap}
+.btn.pri{background:var(--cv);border-color:var(--cv);color:#0b0d11}
+.btn.off{opacity:.42}
+.maprow{display:flex;gap:6px;margin:0 0 10px;flex-wrap:wrap}
+
+.trigs{display:flex;flex-direction:column;gap:5px;margin:0 0 10px}
+.trow{display:flex;align-items:center;gap:7px}
+.tlbl{width:22px;font-size:8px;font-family:var(--mono);color:var(--dim);text-align:center;
+  border:1px solid #404652;border-radius:2px;padding:1px 0;background:#1a1f2a;position:relative}
+.tlbl.bound{border-color:var(--warn);color:var(--warn)}
+.tbar{flex:1;height:7px;border-radius:3px;background:#20252e;overflow:hidden}
+.tbar i{display:block;height:100%;background:var(--cv)}
+
+.leds{display:grid;grid-template-columns:repeat(6,1fr);gap:5px}
+.bl{border:1px solid #333a44;border-radius:3px;background:#171b22;color:var(--dim);
+  font-family:var(--mono);font-size:8px;text-align:center;padding:5px 0;position:relative}
+.bl.on{background:color-mix(in oklab,var(--gate) 30%,#171b22);border-color:var(--gate);color:var(--ink)}
+.bl.armed{border-color:var(--arm);box-shadow:0 0 0 1px rgba(244,114,182,.55);color:var(--ink)}
+.bl .mk{position:absolute;top:1px;right:2px;font-size:6px;color:var(--warn);line-height:1}
+
+.bands{margin:10px 14px 0;padding-top:9px;border-top:1px solid var(--line)}
+.cell{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:5px;
+  padding:5px 9px;background:#171b22}
+.cell .cn{font-size:8.6px;letter-spacing:.09em;text-transform:uppercase;color:var(--faint);font-family:var(--mono)}
+.seg{display:flex;border:1px solid #3a4150;border-radius:3px;overflow:hidden}
+.seg span{font-family:var(--mono);font-size:8.6px;padding:2px 9px;color:var(--dim);border-right:1px solid #3a4150}
+.seg span:last-child{border-right:0}
+.seg span.on{background:color-mix(in oklab,var(--cv) 32%,#171b22);color:var(--ink)}
+
+.notes{display:flex;flex-direction:column;gap:12px}
+.card{border:1px solid var(--line);background:#101419;border-radius:9px;padding:12px 14px}
+.card h3{margin:0 0 7px;font-size:10px;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--accent);font-family:var(--mono);font-weight:700}
+.card p{margin:0 0 8px;font-size:12px;color:var(--dim)} .card p:last-child{margin-bottom:0}
+.card b{color:var(--ink)}
+.aria{font-family:var(--mono);font-size:10.5px;color:#8fe6b0}
+.gone{text-decoration:line-through;color:#5a616c}
+.key{display:flex;gap:16px;flex-wrap:wrap;font-family:var(--mono);font-size:9px;color:var(--dim);margin-top:10px}
+.key span{display:flex;align-items:center;gap:5px}
+.key i{width:10px;height:10px;border-radius:2px;display:inline-block}
+</style>
+
+<div class="wrap">
+<h1>GAMEPAD — connected, armed, sweeping</h1>
+<p class="sub">
+  <b>SPEC + MOCKUP. Nothing here is implemented.</b> The module's distinguishing state: a
+  connected NXT Gladiator, a <b>left-stick calibration sweep in progress</b>, an <b>armed
+  remap</b> on the <code>A</code> output waiting for a physical press, three outputs already
+  rebound, and <code>ry</code> inverted.
+</p>
+
+<div class="nav">
+  <a href="dock.html">DOCK — disconnected (the baseline)</a>
+  <a class="on" href="dock-remapping.html">DOCK — connected, armed, sweeping</a>
+</div>
+
+<div class="warn">
+  <b>NO VRT BASELINE CAPTURES THIS PAGE, AND THAT IS STATED RATHER THAN IMPLIED.</b>
+  Reaching this state needs a physical controller and a physical button press — which is
+  precisely what makes the DISCONNECTED baseline a <i>discharge</i> rather than a bet
+  (spec.md §6.3, mirroring <code>_shell-faces.ts:3350-3372</code>). A mocked scene is
+  <i>reachable</i> — <code>gamepad.spec.ts:41-70</code> already injects a deterministic fake
+  pad — but installing that mock in the VRT harness is a change to the <b>harness</b>, not to
+  this module. <b>Not this PR.</b>
+</div>
+
+<div class="cols">
+<div>
+
+<div class="dock">
+  <div class="chromebar">
+    <span class="nm">GAMEPAD</span><span class="rl">dock full view</span><span class="x">✕</span>
+  </div>
+
+  <div class="plate">
+    <div class="extbody">
+
+      <div class="lamps">
+        <span class="led on" title="aria-label: PAD — connected: NXT Gladiator (Vendor: 231d Product: 0126)"><i class="dot"></i><span class="cap">PAD</span></span>
+        <span class="led" title="aria-label: CAL L — calibrating; sweep the stick, then COMPLETE"><i class="dot"></i><span class="cap">CAL L</span></span>
+        <span class="led on" title="aria-label: CAL R — right stick calibrated: X −1.00…1.00, Y −1.00…1.00, deadzone 0.10"><i class="dot"></i><span class="cap">CAL R</span></span>
+        <span class="led warnl on" title="aria-label: MAPPING — loaded preset: NXT Gladiator"><i class="dot"></i><span class="cap">MAPPING</span></span>
+      </div>
+
+      <div class="sticks">
+        <div class="sblk">
+          <!-- SWEEP IN PROGRESS. The dashed box IS the four deleted numbers. -->
+          <div class="pad arming" title="aria-label: Left stick — calibrating. aria-valuetext: swept X −0.98…0.97, Y −1.00…0.86; current 0.62, −0.31">
+            <i class="ch"></i><i class="cv2"></i>
+            <i class="sweep" style="left:3px;top:1px;width:57px;height:58px"></i>
+            <i class="dot" style="transform:translate(48px,42px)"></i>
+          </div>
+          <div class="slbl">L</div>
+          <div class="rowx"><span class="mini">X</span><span class="mini">Y</span></div>
+          <div class="rowx"><span class="mini tag">inv</span><span class="mini">x</span><span class="mini">y</span></div>
+          <div class="rowx"><span class="mini">set center</span></div>
+        </div>
+        <div class="sblk">
+          <div class="pad" title="aria-label: Right stick — RX bound to axis 3, RY bound to axis 2 and inverted. aria-valuetext: −0.44, 0.71">
+            <i class="ch"></i><i class="cv2"></i>
+            <i class="dot" style="transform:translate(14px,10px)"></i>
+          </div>
+          <div class="slbl">R</div>
+          <div class="rowx"><span class="mini bound">X</span><span class="mini bound">Y</span></div>
+          <div class="rowx"><span class="mini tag">inv</span><span class="mini">x</span><span class="mini inv">y</span></div>
+          <div class="rowx"><span class="mini">set center</span></div>
+        </div>
+      </div>
+
+      <!-- CALIBRATION MODE. The live min/max row is GONE (spec.md §5 row 3);
+           `complete` stays gated on sweepIsUsable, which is the finding that
+           mattered and was already on a non-text channel. -->
+      <div class="calib">
+        <span class="btn pri">complete calibration</span>
+        <span class="btn">cancel</span>
+        <span class="btn off">calibrate right stick</span>
+      </div>
+
+      <div class="maprow">
+        <span class="btn">save mapping</span>
+        <span class="btn">load mapping…</span>
+        <span class="btn">NXT Gladiator ▾</span>
+      </div>
+
+      <div class="trigs">
+        <div class="trow"><span class="tlbl bound">LT<i class="mk"></i></span><span class="tbar"><i style="width:34%"></i></span></div>
+        <div class="trow"><span class="tlbl bound">RT</span><span class="tbar"><i style="width:81%"></i></span></div>
+      </div>
+
+      <div class="leds">
+        <span class="bl">LB</span>
+        <span class="bl on">RB<span class="mk">●</span></span>
+        <span class="bl armed">A</span>
+        <span class="bl">B</span>
+        <span class="bl">X<span class="mk">●</span></span>
+        <span class="bl">Y</span>
+        <span class="bl on">⬆<span class="mk">●</span></span>
+        <span class="bl">⬇<span class="mk">●</span></span>
+        <span class="bl">⬅<span class="mk">●</span></span>
+        <span class="bl">⮕<span class="mk">●</span></span>
+        <span class="bl">STA</span><span class="bl">SEL</span>
+      </div>
+
+    </div>
+
+    <div class="bands">
+      <div class="cell">
+        <span class="cn">SLOT</span>
+        <span class="seg"><span class="on">0</span><span>1</span><span>2</span><span>3</span></span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="key">
+  <span><i style="border:1px solid var(--arm);background:rgba(244,114,182,.25)"></i>ARMED — waiting for a physical press/move</span>
+  <span><i style="border:1px solid var(--gate);background:color-mix(in oklab,var(--gate) 30%,#171b22)"></i>LIVE — the gate is high right now</span>
+  <span><i style="border:1px solid var(--warn)"></i>● REMAPPED — a non-text mark</span>
+  <span><i style="border:1px dashed var(--warn);background:rgba(242,193,78,.12)"></i>the SWEEP BOX</span>
+</div>
+
+<div class="ok" style="margin-top:16px">
+  <b>THE ARMED BANNER IS GONE AND NOTHING WAS LOST.</b> The card painted
+  <span class="gone">listening… press a control to bind <b>A</b> (Esc to cancel)</span> as a
+  sentence with a live dot beside it. <b>The dot was already the non-text half</b> — wave 5
+  §2.1's activity-dot principle — and the ARMED CELL itself already carries
+  <code>class:armed</code>, so <i>which</i> control is listening is on screen without a word.
+  The sentence becomes the armed cell's <code>aria-label</code>, and <code>role="status"</code>
+  moves onto that cell. <b>Escape still cancels</b>, and its window listener plus its teardown
+  ride the body.
+</div>
+
+</div>
+
+<div class="notes">
+
+  <div class="card">
+    <h3>⚠ The sweep box REPLACES four live numbers — and improves the affordance</h3>
+    <p>The card printed <span class="gone">x [−0.98, 0.97] · y [−1.00, 0.86]</span>, four live
+      measurements at rest and the sharpest violation on the module.</p>
+    <p><b>Half the finding never needed the number.</b> <code>complete calibration</code> is
+      <code>disabled={!canComplete}</code>, driven by <code>sweepIsUsable</code> — so
+      <i>“am I there yet”</i> is already answered by a control's enabled state, on a non-text
+      channel, today.</p>
+    <p><b>The other half — <i>how close</i> — is now a picture.</b> One bordered
+      <code>&lt;div&gt;</code> positioned from <code>sweep.minX/maxX/minY/maxY</code> through
+      the same <code>dotX</code>/<code>dotY</code> mapping the live dot uses, inside the pad
+      that already draws a crosshair the same way. It grows as you sweep; edges mean done.
+      <b>The numbers go to <code>aria-valuetext</code></b>, so nothing is unassertable.</p>
+    <p>⚠ It must stay a <code>&lt;div&gt;</code>. A WebGL canvas would enrol this file in the
+      GPU attest automatically; a 2-D canvas would make the body <code>picture</code> and hide
+      every measurement it draws from the resting-text gate. <b>Neither belongs here.</b></p>
+  </div>
+
+  <div class="card">
+    <h3>The MAPPING lamp — the “it's transient” argument, refused</h3>
+    <p><code>mappingStatus</code> self-clears after 4 s, so there is a real argument that a
+      toast is outside a rule about text <b>at rest</b>. <b>Refused anyway</b>: a rule whose
+      strength is that it has never granted an exception is weakened most by the most
+      reasonable one, and “transient” is unbounded — every readout can be re-timed into it.</p>
+    <p><b>And refusing costs nothing here, which is the honest reason.</b> The lamp carries the
+      whole message in <code>detail</code>, distinguishes SUCCESS from REJECTED in
+      <code>tone</code> (colour, the primitive's stated design), and is <b>more</b> persistent
+      than the toast — a user who looked away for five seconds currently misses
+      <code>ignored: invalid JSON</code> entirely.</p>
+  </div>
+
+  <div class="card">
+    <h3>The remap FSM, unchanged</h3>
+    <p>Right-click an LED or a trigger label → arm <code>only:'button'</code>; press
+      <b>Remap X/Y</b> under a stick → arm <code>only:'axis'</code>. The armed listener DIFFs
+      consecutive polled snapshots through <code>detectChangedControl</code> and binds the
+      single control that moved most past a 0.5 threshold. Esc or an 8 s timeout cancels.</p>
+    <p>The shipped <b>NXT Gladiator</b> preset needs <b>ten</b> remaps — including buttons at
+      indices 19, 21, 23 and 25 — plus <code>invert: { ry: true }</code> and both stick
+      calibrations. That is what this surface exists to produce.</p>
+  </div>
+
+  <div class="card">
+    <h3>⚠ The write that is NOT clean</h3>
+    <p>Seven of eight <code>node.data</code> writers on this card go through
+      <code>mutateNode</code>. The eighth is <code>setPadIndex</code>
+      (<code>GamepadCard.svelte:393-397</code>): a <b>bare proxy write</b> to
+      <code>t.params.padIndex</code>, with no <code>ydoc.transact</code> and no
+      <code>LOCAL_ORIGIN</code>. <b>Cmd-Z cannot undo a slot change.</b></p>
+    <p>⚠ The face fixes it as a side effect, because the ranked <code>SLOT</code> cell writes
+      through the standard param seam — <b>so fix it explicitly and name it in the PR</b>, or
+      the defect vanishes into a refactor and the ledger entry with it.</p>
+  </div>
+
+</div>
+</div>
+</div>

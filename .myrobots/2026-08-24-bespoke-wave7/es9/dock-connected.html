@@ -1,0 +1,302 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>ES-9 face — the dock faceplate, CONNECTED</title>
+<style>
+/* ─────────────────────────────────────────────────────────────────────────
+   ES-9 FACEPLATE — MOCKUP, state 2 of 2 (CONNECTED, one XRUN, three jacks
+   claimed by a CV BUDDY).
+   SPEC AND MOCKUP ONLY. Nothing here is implemented. See spec.md.
+
+   This is the DISTINGUISHING state — the one a real rack with a real Eurorack
+   system is in, and the one no CI runner can reach (there is no native helper
+   and no hardware). It exists to show three things the resting mock cannot:
+
+     1. THE TWO LAMPS DOING WORK. BRIDGE lit (accent), XRUN lit (warn). Neither
+        carries a number; both carry a full sentence on aria-label.
+     2. THE CV-BUDDY CLAIM MARKS — the replacement for the card's
+        `Jacks driven by CV Buddy: 3, 4, 7 (run), 8 (clock)` line (card :197).
+        A per-CELL non-text state, so the face says WHICH CONTROL is affected,
+        which the card's list does not.
+     3. A jack set to a NON-DEFAULT class, so the option NAME under a cell is
+        visible doing its job.
+
+   ⚠ STILL NO NUMBERS ANYWHERE. Not the device name, not 48 kHz, not 16×16, not
+   rtt, not the xrun count, not a jack list. Every one of them is on aria-label.
+   ───────────────────────────────────────────────────────────────────────── */
+:root{
+  --bg:#0e1013; --dock:#12161c; --pbody:#1c1f24; --line:#2c3037; --tile:#33383f;
+  --ink:#eef1f5; --dim:#9aa2ad; --faint:#646c77;
+  --accent:#6cf; --ch1:#fbbf24; --warn:#e6b800; --good:#8fe6b0; --bad:#e08b8b;
+  --c-audio:#f0a868; --c-cv:#7dd3fc; --c-gate:#e8c66a; --c-pitch:#c084fc;
+  --claim:#a78bfa;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+  font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1240px;margin:0 auto;padding:26px 20px 90px}
+h1{font-size:21px;font-weight:800;margin:0 0 6px;letter-spacing:.01em}
+h2{font-size:13px;font-weight:800;margin:26px 0 8px;letter-spacing:.05em;
+  text-transform:uppercase;color:var(--dim);font-family:var(--mono)}
+.sub{color:var(--dim);font-size:12.5px;margin:0 0 14px;max-width:108ch}
+.sub b{color:var(--ink)}
+code{font-family:var(--mono);font-size:11.5px;color:var(--ch1)}
+.nav{display:flex;gap:8px;margin:0 0 20px;font-size:11px;flex-wrap:wrap}
+.nav a{color:var(--ink);text-decoration:none;border:1px solid var(--line);border-radius:6px;
+  padding:6px 12px;background:#12161c;font-family:var(--mono);letter-spacing:.06em;text-transform:uppercase}
+.nav a.on{border-color:var(--c-audio);color:var(--c-audio)}
+.warn{border:1px solid #6a5330;background:#1c1811;border-radius:8px;padding:11px 14px;
+  margin:12px 0;font-size:12.5px;color:#e8cf9a;max-width:120ch}
+.warn b{color:var(--warn)}
+.ok{border:1px solid #3b5a48;background:#111a15;border-radius:8px;padding:11px 14px;
+  margin:12px 0;font-size:12.5px;color:#a9d8bd;max-width:120ch}
+.ok b{color:var(--good)}
+.cols{display:grid;grid-template-columns:minmax(0,1fr) 400px;gap:22px;align-items:start}
+@media (max-width:1140px){.cols{grid-template-columns:minmax(0,1fr)}}
+.pane{background:#0b0e12;border:1px dashed #2a2f38;border-radius:12px;padding:16px;position:relative}
+.pane::after{content:'DOCK PANE — a rack with a REAL ES-9 and the helper running';position:absolute;
+  right:12px;bottom:7px;font-family:var(--mono);font-size:8.6px;letter-spacing:.09em;color:#3d444e}
+.dock{background:var(--dock);border:1px solid var(--line);border-radius:11px;overflow:hidden;
+  padding:11px;width:max-content}
+.chromebar{display:flex;align-items:baseline;gap:9px;padding:0 2px 8px}
+.chromebar .nm{font-size:13px;font-weight:800;letter-spacing:.03em}
+.chromebar .x{margin-left:auto;color:var(--faint);font-family:var(--mono);font-size:12px}
+.plate{background:var(--pbody);border:1px solid var(--tile);border-left:4px solid var(--c-audio);
+  border-radius:10px;padding:0 0 6px;width:max-content;max-width:100%}
+.extbody{margin:11px 12px 4px;padding:8px 11px;display:flex;align-items:center;gap:14px;
+  border:1px solid #2b3038;border-radius:4px;background:#171b21;min-width:392px}
+.hint{margin:0;font-size:10px;line-height:1.35;color:var(--dim);max-width:34ch}
+.lamps{display:inline-flex;align-items:center;gap:14px;margin-left:auto}
+.led{display:inline-flex;align-items:center;gap:5px;font-size:9px;font-weight:600;
+  letter-spacing:.6px;color:var(--faint);text-transform:uppercase}
+.led .lamp{width:7px;height:7px;border-radius:50%;background:#33383f;
+  box-shadow:inset 0 0 2px rgba(0,0,0,.8);flex:0 0 auto}
+.led.lit .lamp{background:var(--c-cv);box-shadow:0 0 6px var(--c-cv)}
+.led.lit{color:var(--ink)}
+.led.warn.lit .lamp{background:var(--warn);box-shadow:0 0 6px var(--warn)}
+.led.warn.lit{color:var(--warn)}
+.band{padding:9px 12px 4px;border-top:1px solid #23272e;margin-top:6px}
+.band:first-of-type{border-top:0;margin-top:0}
+.bh{font-family:var(--mono);font-size:9px;letter-spacing:.11em;text-transform:uppercase;
+  color:var(--faint);margin:0 0 2px}
+.bhint{font-size:10px;color:#59616b;margin:0 0 8px;max-width:56ch;line-height:1.35}
+.cells{display:flex;flex-wrap:wrap;gap:8px 10px}
+.act{display:flex;flex-direction:column;align-items:center;gap:4px;width:82px}
+.act .btn{width:100%;text-align:center;padding:6px 0;border:1px solid #33404d;border-radius:4px;
+  background:#152029;color:var(--c-cv);font-family:var(--mono);font-size:9.6px;letter-spacing:.09em}
+.cell{display:flex;flex-direction:column;gap:4px;width:118px;position:relative}
+.cap{font-family:var(--mono);font-size:8.6px;letter-spacing:.1em;color:var(--faint);
+  text-transform:uppercase;text-align:center}
+.seg{display:flex;border:1px solid #2a3038;border-radius:4px;overflow:hidden;background:#0d1116}
+.seg span{flex:1;text-align:center;font-family:var(--mono);font-size:8px;letter-spacing:.05em;
+  padding:4px 0;color:#5a626c;border-right:1px solid #1e242b}
+.seg span:last-child{border-right:0}
+.seg span.on{background:#2a2015;color:var(--c-audio)}
+.seg.cvsel span.on{background:#0f2733;color:var(--c-cv)}
+.seg.pitsel span.on{background:#241a33;color:var(--c-pitch)}
+.seg.gatsel span.on{background:#2b2510;color:var(--c-gate)}
+
+/* ── THE CV-BUDDY CLAIM MARK — non-text, per CELL. The replacement for the
+      card's derived list. Outline + a corner notch only, so the cell's
+      geometry never shifts (the midiOutBuddy data-ch-override precedent). ── */
+.cell.claimed .seg{outline:1px solid var(--claim);outline-offset:1px;
+  box-shadow:0 0 7px rgba(167,139,250,.28)}
+.cell.claimed .cap{color:var(--claim)}
+.cell.claimed::after{content:'';position:absolute;right:-3px;top:-3px;width:5px;height:5px;
+  border-radius:50%;background:var(--claim);box-shadow:0 0 5px rgba(167,139,250,.7)}
+
+.side{font-size:12.3px;color:var(--dim)}
+.side h3{font-size:10.4px;font-family:var(--mono);letter-spacing:.09em;text-transform:uppercase;
+  color:var(--faint);margin:16px 0 6px;font-weight:600}
+.side h3:first-child{margin-top:0}
+.side p{margin:0 0 9px}
+.side b{color:var(--ink)}
+.kill{color:#c98d8d}
+table{border-collapse:collapse;width:100%;font-size:11.6px;margin:6px 0 12px}
+th,td{border:1px solid #23272e;padding:5px 8px;text-align:left;vertical-align:top}
+th{background:#12161c;color:var(--faint);font-family:var(--mono);font-size:9.2px;
+  letter-spacing:.07em;text-transform:uppercase;font-weight:600}
+td code{font-size:10.6px}
+.aria{font-family:var(--mono);font-size:10.4px;color:#8fbfe0;background:#0d1218;
+  border:1px solid #1c2530;border-radius:5px;padding:7px 9px;margin:5px 0 11px;
+  white-space:pre-wrap;word-break:break-word}
+.measure{font-family:var(--mono);font-size:10.6px;color:var(--good)}
+.swatch{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--claim);
+  box-shadow:0 0 5px rgba(167,139,250,.7);vertical-align:-1px;margin-right:3px}
+</style>
+
+<div class="wrap">
+
+<h1>es-9 — the dock faceplate, CONNECTED</h1>
+<p class="sub">Wave 7, cohort B. State 2 of 2: bridge <b>UP</b>, one <b>XRUN</b> logged, and a
+CV BUDDY holding jacks 3, 4, 7 and 8. <b>Mockup only; nothing here is implemented.</b>
+⚠ No CI runner can reach this state — there is no native helper and no hardware — which is
+exactly why the resting mock is the one that gets baselined.</p>
+
+<div class="nav">
+  <a href="dock.html">dock · bridge down</a>
+  <a class="on" href="dock-connected.html">dock · connected</a>
+  <a href="spec.md">spec.md</a>
+  <a href="../midiLane/spec.md">midiLane/spec.md</a>
+</div>
+
+<div class="cols">
+<div>
+
+<div class="pane">
+  <div class="dock">
+    <div class="chromebar"><span class="nm">es-9</span><span class="x">✕</span></div>
+
+    <div class="plate">
+
+      <div class="extbody">
+        <p class="hint" style="color:#4b535d">&nbsp;</p>
+        <span class="lamps">
+          <span class="led lit" title="aria-label: BRIDGE — connected to ES-9, 48 kHz, 16×16, round trip 4.2 ms">
+            <span class="lamp"></span>BRIDGE</span>
+          <span class="led warn lit" title="aria-label: XRUN — 3 underruns, 0 overruns since the bridge came up">
+            <span class="lamp"></span>XRUN</span>
+        </span>
+      </div>
+
+      <div class="band">
+        <p class="bh">bridge</p>
+        <p class="bhint">The native helper owns CoreAudio and serves ws://127.0.0.1:9209. It accepts
+          a single client; N views attach to ONE connection, which the NODE owns.</p>
+        <div class="cells">
+          <div class="act"><span class="btn">CONNECT</span></div>
+          <div class="act"><span class="btn">DISCONNECT</span></div>
+        </div>
+      </div>
+
+      <div class="band">
+        <p class="bh">out jacks</p>
+        <p class="bhint">The eight physical DC-coupled jacks (USB channels 9–16). cv and pitch HOLD
+          their last voltage on a hiccup; gate and audio fall to zero.</p>
+        <div class="cells">
+          <div class="cell"><span class="cap">1</span><span class="seg cvsel"><span>AUD</span><span class="on">CV</span><span>PIT</span><span>GAT</span></span></div>
+          <div class="cell"><span class="cap">2</span><span class="seg"><span class="on">AUD</span><span>CV</span><span>PIT</span><span>GAT</span></span></div>
+          <div class="cell claimed" title="aria-valuetext: pitch — driven by CV Buddy; changes here are reverted"><span class="cap">3</span><span class="seg pitsel"><span>AUD</span><span>CV</span><span class="on">PIT</span><span>GAT</span></span></div>
+          <div class="cell claimed" title="aria-valuetext: gate — driven by CV Buddy; changes here are reverted"><span class="cap">4</span><span class="seg gatsel"><span>AUD</span><span>CV</span><span>PIT</span><span class="on">GAT</span></span></div>
+          <div class="cell"><span class="cap">5</span><span class="seg"><span class="on">AUD</span><span>CV</span><span>PIT</span><span>GAT</span></span></div>
+          <div class="cell"><span class="cap">6</span><span class="seg"><span class="on">AUD</span><span>CV</span><span>PIT</span><span>GAT</span></span></div>
+          <div class="cell claimed" title="aria-valuetext: gate — driven by CV Buddy (run); changes here are reverted"><span class="cap">7</span><span class="seg gatsel"><span>AUD</span><span>CV</span><span>PIT</span><span class="on">GAT</span></span></div>
+          <div class="cell claimed" title="aria-valuetext: gate — driven by CV Buddy (clock); changes here are reverted"><span class="cap">8</span><span class="seg gatsel"><span>AUD</span><span>CV</span><span>PIT</span><span class="on">GAT</span></span></div>
+        </div>
+      </div>
+
+      <div class="band">
+        <p class="bh">in twins</p>
+        <p class="bhint">Each hardware input jack 1–14 has a raw audio port and a class-scaled CV twin.
+          This sets the twin only; the raw port is unaffected.</p>
+        <div class="cells">
+          <div class="cell"><span class="cap">1</span><span class="seg cvsel"><span>AUD</span><span class="on">CV</span><span>PIT</span><span>GAT</span></span></div>
+          <div class="cell"><span class="cap">2</span><span class="seg pitsel"><span>AUD</span><span>CV</span><span class="on">PIT</span><span>GAT</span></span></div>
+          <div class="cell"><span class="cap">3</span><span class="seg gatsel"><span>AUD</span><span>CV</span><span>PIT</span><span class="on">GAT</span></span></div>
+          <div class="cell"><span class="cap">4</span><span class="seg cvsel"><span>AUD</span><span class="on">CV</span><span>PIT</span><span>GAT</span></span></div>
+          <div class="cell"><span class="cap">5</span><span class="seg cvsel"><span>AUD</span><span class="on">CV</span><span>PIT</span><span>GAT</span></span></div>
+          <div class="cell"><span class="cap">6</span><span class="seg cvsel"><span>AUD</span><span class="on">CV</span><span>PIT</span><span>GAT</span></span></div>
+          <div class="cell"><span class="cap">7</span><span class="seg cvsel"><span>AUD</span><span class="on">CV</span><span>PIT</span><span>GAT</span></span></div>
+          <div class="cell"><span class="cap">8</span><span class="seg cvsel"><span>AUD</span><span class="on">CV</span><span>PIT</span><span>GAT</span></span></div>
+          <div class="cell"><span class="cap">9</span><span class="seg cvsel"><span>AUD</span><span class="on">CV</span><span>PIT</span><span>GAT</span></span></div>
+          <div class="cell"><span class="cap">10</span><span class="seg cvsel"><span>AUD</span><span class="on">CV</span><span>PIT</span><span>GAT</span></span></div>
+          <div class="cell"><span class="cap">11</span><span class="seg cvsel"><span>AUD</span><span class="on">CV</span><span>PIT</span><span>GAT</span></span></div>
+          <div class="cell"><span class="cap">12</span><span class="seg cvsel"><span>AUD</span><span class="on">CV</span><span>PIT</span><span>GAT</span></span></div>
+          <div class="cell"><span class="cap">13</span><span class="seg cvsel"><span>AUD</span><span class="on">CV</span><span>PIT</span><span>GAT</span></span></div>
+          <div class="cell"><span class="cap">14</span><span class="seg cvsel"><span>AUD</span><span class="on">CV</span><span>PIT</span><span>GAT</span></span></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<div class="ok">
+  <b>The XRUN lamp is STRICTLY MORE INFORMATIVE at rest than the card's <code>xruns 0/0</code>,
+  and that argument is not this spec's.</b> <code>CvBuddyStatusBody.svelte</code> already made it
+  for the identical mechanism: <i>"the card had to argue that a zero must always render or
+  'healthy' and 'not instrumented' would look identical, and a lamp that is PRESENT AND DARK says
+  exactly that with no text at all."</i> es9's <code>0/0</code> has the identical problem and gets
+  the identical fix — <b>same primitive, same <code>tone="warn"</code>, same
+  <code>detail</code>-carries-the-count discipline.</b>
+</div>
+
+<h2><span class="swatch"></span>The CV-BUDDY CLAIM MARK — the deletion that is a promotion</h2>
+<table>
+  <tr><th>the card</th><th>the face</th></tr>
+  <tr>
+    <td><code>Jacks driven by CV Buddy: 3, 4, 7 (run), 8 (clock)</code>
+        (<code>Es9Card.svelte:196-198</code>, derived <code>:133-153</code>)</td>
+    <td>a <b>non-text mark on the four claimed CELLS</b> — outline, notch, tinted caption. Outline
+        and shadow only, so the cell's geometry never shifts (the
+        <code>data-ch-override</code> precedent, <code>MidiOutBuddyCard.svelte:189-191</code>)</td>
+  </tr>
+  <tr>
+    <td>tells you WHICH NUMBERS</td>
+    <td>tells you <b>WHICH CONTROL</b> — which is the thing a player is about to touch. The
+        chromaconsole stale-slot argument (wave 5 §2.5): <i>mark the offending cells, not the
+        module</i></td>
+  </tr>
+  <tr>
+    <td>calls itself <i>"Purely informational"</i> (<code>:130</code>)</td>
+    <td>it is <b>not</b> informational: those <code>out{N}_class</code> params are owned by
+        <code>cv-buddy-es9-reconcile.ts</code> and <b>will be overwritten</b>. A face that
+        rendered eight identical freely-editable cells while a janitor reverts four of them is
+        a control that looks alive and isn't</td>
+  </tr>
+</table>
+
+<div class="warn">
+  <b>⚠ What genuinely narrows.</b> With three CV Buddies in a rack the card's line gives the UNION
+  at a glance; the replacement makes you read three CV Buddy plates or hover eight cells. Small,
+  real, and named rather than allowed to lapse. ⚠ <b>And the information is NOT lost</b>: the
+  claim is painted, as permitted text, on CV Buddy's own shipped faceplate —
+  <code>CvBuddyStatusBody.svelte</code> renders <code>JACKS 1-3</code> and defends it as
+  <i>"the owner's own disambiguation test made literal."</i>
+</div>
+
+</div>
+
+<div class="side">
+
+<h3>What is still NOT painted, in the state that most wants to paint</h3>
+<div class="aria">device name  →  aria-label
+48 kHz       →  aria-label
+16×16        →  aria-label
+rtt 4.2 ms   →  aria-label
+3 underruns  →  aria-label
+jacks 3,4,7,8 → per-cell
+                aria-valuetext</div>
+<p>Six derived quantities, zero text nodes. <code>StatusLed</code> has <b>no <code>value</code>
+prop</b> and its caption is <b>static by contract</b>, so a caller cannot smuggle a measurement
+through <code>lit ? 'XRUN 3' : 'OK'</code> — the source gate denies that at the call site.</p>
+
+<h3>The claim mark is a MARK, and the distinction is load-bearing</h3>
+<p>Wave 5 §2.1 settled it: <i>the ruling is about TEXT</i>. A non-text indicator carrying the same
+information as a forbidden readout is fine; a "compact" or abbreviated version of the readout is
+not — <i>"there but hidden"</i> was refused by name. <b>The test is whether a reader has to read
+anything.</b> Here they do not: a tinted outline and a notch.</p>
+
+<h3>One jack set to a NON-DEFAULT class, deliberately</h3>
+<p>OUT 1 shows <code>CV</code> and IN 2/3 show <code>PIT</code>/<code>GAT</code> so the option
+NAME is visible doing its job. That name is the <b>only</b> text a class cell ever paints:
+<code>paintsReadout</code> is true for a bare <code>options</code> roster with no declared
+<code>format</code>, and it renders the NAME, never the number. A face that showed
+<code>2.00</code> under a class dial is the exact decimal the 2026-08-17 ruling deleted.</p>
+
+<h3>⚠ And the class change may not reach the hardware</h3>
+<p>Setting OUT 3 to <code>pitch</code> should switch the bridge's failure policy for that jack
+from FADE to HOLD (<code>es9.ts:140-149</code>). On <code>main</code> the only thing that pushes
+that is <code>Es9Card.svelte:89</code> — a card the default shell never mounts — and the
+CV-Buddy janitor never pushes it at all. <b>This mock draws the intended behaviour; the tree does
+not implement it.</b> <code>spec.md §11</code> is the precursor that makes the picture true.</p>
+
+<h3>Three bands, no rail, and the plate is content-wide</h3>
+<p><span class="measure">bodyW − contentW ≤ 40 px</span> is the gate. Fourteen cells on one row
+is CONTENT, not reserve — es9 is a wide-BAND face and asks for no
+<code>FACE_WIDTH_EXEMPTIONS</code> entry.</p>
+
+</div>
+</div>
+</div>

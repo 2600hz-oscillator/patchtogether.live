@@ -115,12 +115,29 @@ committed PNGs, and its own spec had predicted 2.
 
 | side | members | `laneRenderKind` | what a face MEANS |
 |---|---|---|---|
-| **INSIDE** | `controlSurface`, `launchpadControlLeft` | `'legacy'` — the verbatim card | **no shell lane tile exists.** A face is DOCK-ONLY, and promotion means removing the module from the set |
+| **INSIDE** | `controlSurface`, `launchpadControlLeft` | `'legacy'` — the verbatim card | **no shell lane tile exists**, so promotion must **DELETE the entry** |
 | **OUTSIDE** | `push2Control`, `gamepad`, `es9`, `midiLane`, `outToLaunch` | `'placeholder'` | a RACKLINE tile exists and is EMPTY; a face fills it |
 
-⚠ **The compact-by-default reasoning differs on the two sides.** A module with no
-lane tile has no section-heading-versus-caption tradeoff to make — which is exactly
-why `face.bareCells` is dock-only. Each spec states its side before it argues width.
+⚠ **"A DOCK-ONLY FACE" IS MECHANICALLY REAL AND BOTH AFFECTED SPECS REFUSE IT.**
+`DockFullView.svelte:136`, `:334` gate on `migrated` **alone**, so a face on a
+carved-out module really would render there. It is refused on two measurements:
+`Canvas.svelte:635`/`:650` keep the LEGACY GEOMETRY, so the lane would hold a **330 px
+card in a rack of 192 px tiles forever**; and the resting-text ruling would then apply
+to **half a module** — status deleted in the dock, still painted in the lane, same
+node, same moment. **So promotion deletes the entry** (`cameraInput` is the shipped
+precedent, `legacy-fallback.ts:63-65`).
+
+⚠ **And the deletion is POSITIVELY ASSERTED — a RED, not a silent change.**
+`legacy-fallback.test.ts:229` is
+`expect(NON_SHELL_LANE_TYPES.has(LAUNCHPAD_CONTROL_TYPE)).toBe(true)`. The face PR
+flips it with a lineage note. ⚠ **Keep `:230`** (*"the unregistered id must be
+GONE"*) — that half guards #1579 and is unaffected.
+
+⚠ **The compact-by-default reasoning differs on the two sides — but only BEFORE the
+deletion.** A module with no lane tile has no section-heading-versus-caption tradeoff
+to make, which is exactly why `face.bareCells` is dock-only; **after the entry goes,
+the tradeoff is live for the carved-out modules too.** Each spec argues it rather
+than inheriting an exemption.
 
 ⚠ **`push2Control` is on the "outside" by OMISSION, not by design**, and the
 consequence is user-visible today. Its own header says *"Modeled on ElectraControl /
@@ -256,19 +273,107 @@ face DESIGN is identical either way; only the PR's file list changes.
 Per-module reasoning lives in each `spec.md`; [`SURFACES.md §8`](SURFACES.md) is the
 same index with the body roles.
 
-| module | spec | side of the carve-out | typed-entry blocked? |
-|---|---|---|---|
-| `push2Control` | [`push2Control/spec.md`](push2Control/spec.md) — **PROMOTE, no precursor** | outside | no |
-| `launchpadControlLeft` | [`launchpadControlLeft/spec.md`](launchpadControlLeft/spec.md) | **inside** — dock-only face | no |
-| `outToLaunch` | [`outToLaunch/spec.md`](outToLaunch/spec.md) | outside | no |
-| `controlSurface` | [`controlSurface/spec.md`](controlSurface/spec.md) | **inside** — dock-only face | ⚠ **YES** (§0.2) |
-| `gamepad` | [`gamepad/spec.md`](gamepad/spec.md) | outside | no |
-| `es9` | [`es9/spec.md`](es9/spec.md) | outside | no |
-| `midiLane` | [`midiLane/spec.md`](midiLane/spec.md) | outside | ⚠ **YES** (§0.2) |
+**Six of seven PROMOTE. One is refused, and on a measurement rather than a
+preference.**
+
+| module | verdict | carve-out | body role | typed-entry blocked? |
+|---|---|---|---|---|
+| [`launchpadControlLeft`](launchpadControlLeft/spec.md) | **PROMOTE**, no precursor — ⚠ *build FIRST* | **inside** (entry goes) | `status-primitive` | no |
+| [`gamepad`](gamepad/spec.md) | **PROMOTE** + one contract change in the same PR | outside | `control-grid` | no |
+| [`push2Control`](push2Control/spec.md) | **PROMOTE**, no precursor | outside | `picture` | no |
+| [`outToLaunch`](outToLaunch/spec.md) | **PROMOTE-WITH-PRECURSOR** (a one-clause `hasVideoSurface` fix) | outside | `picture` | no |
+| [`es9`](es9/spec.md) | **PROMOTE-WITH-PRECURSOR** — ⚠ a **`kria`-style GENERIC face**, not a bespoke one | outside | `status-primitive` | no |
+| [`midiLane`](midiLane/spec.md) | **PROMOTE-WITH-PRECURSOR** — ⚠ blocked on §6 | outside | `status-primitive` | ⚠ **YES** |
+| [`controlSurface`](controlSurface/spec.md) | ⛔ **REFUSE** — a measured parity loss | **inside** | — | ⚠ **YES** |
+
+### 7.1 ⚠ THE ONE REFUSAL IS ARITHMETIC, AND IT WAS PRODUCED RATHER THAN ESCALATED
+
+A faced lane tile is `SHELL_TILE_W = 192` px (`module-shell-model.ts:39,55`, uniform
+at every zoom) against `BOX_W = 174` px **per binding group**
+(`control-surface-layout.ts:76-79`). A module whose entire purpose is *reaching for a
+knob* would trade four columns of live knobs on the canvas for a tile plus a dock
+open, and **no seam bridges it**: `fullViewBody` is dock-only by
+`dockFullViewHeadPlan`, and `ShellExtensionGlyphProps` carries no `nodeId`. This is
+#1974 (`joystick`) verbatim, so the verdict was produced — *"we would lose X"* is
+never an owner choice to surface. ⚠ The refusal stands on its own and would stand
+even if §6 were decided tomorrow.
+
+### 7.2 ⚠ `es9` ANSWERS THE COMMISSIONED QUESTION AGAINST THE INVENTORY
+
+Four of the five clauses in `es9`'s inventory `why` name **readouts the resting-text
+ruling deletes**; the fifth is 22 ordinary `ParamDef`s already in
+`contract-lock.txt:1060-1082`. The only thing a generic face cannot do is mount a
+`StatusLed` — a `status-primitive` `fullViewBody`, whose **two shipped adopters are
+the entire `StatusLed` caller set in `packages/web/src`**. *`kria` at least needed a
+bespoke PF-14 panel; `es9` needs two lamps and two buttons.*
+
+⚠ **It also breaks wave 5's single axis.** `es9` has *more* instrument on top than
+`chromaconsole` (22 params, 46 ports) **and** *less* binding underneath than
+`midiCvBuddy` (one device, no picker, no prompt). Those are two independent
+quantities, and a one-dimensional ranking that never met a top-left-quadrant module
+reads it as "bespoke" by default.
 
 ---
 
-## 8. STANDING CORRECTIONS TO THE PRIOR WAVES
+## 8. BUILD ORDER
+
+1. **`launchpadControlLeft`** — attest-zero by domain, breaks zero tests, and it is
+   the module that actually needs the `vrt-cable-stripe` entry, so it settles that
+   ordering constraint cheaply. It is also the first drain of a
+   `NON_SHELL_LANE_TYPES` entry since `cameraInput`, so it establishes that pattern
+   for `controlSurface` if §6 ever unblocks it.
+2. **`outToLaunch` PR A** — the one-clause `hasVideoSurface` fix. Attest-zero, touches
+   no module, and it repairs a **live P0-shaped defect** (§8, ledger 1) that
+   promotion would otherwise make worse.
+3. **`push2Control`** — the plain case that establishes the cohort's body vocabulary.
+4. **`gamepad`** — face + the `padIndex` roster in one PR. ⚠ Its 18 legacy-shell specs
+   are the wave's biggest green-and-blind exposure; that PR owns the default-shell
+   coverage.
+5. **`outToLaunch` PR B**, then **`es9`** (⚠ run the `vrt:one` pre-flight first —
+   §8, ledger note), then **`midiLane`** if §6 unblocks it.
+6. **`controlSurface`** — not scheduled.
+
+---
+
+## 9. DEFECT LEDGER
+
+Fourteen items, live on `main`, independent of any face — consolidated in
+[`SURFACES.md §11`](SURFACES.md) with file and line for each. The four worth naming
+here:
+
+1. ⚠⚠ **`outToLaunch`'s lane tile paints ANOTHER MODULE'S PICTURE today.**
+   `hasVideoSurface` is `domain === 'video'`, so the placeholder mounts
+   `VideoTileThumb`; the blit returns early on a null texture; and the thumb's
+   `drawImage` copies the **shared engine drawing buffer anyway**. It is the only
+   video def in the fleet with `outputs: []`, and `hasVideoSurface`'s own doc comment
+   names this failure while guarding the wrong direction. Promotion makes it worse.
+2. ⚠⚠ **`es9`'s `updateEs9Config` has one caller, on a card the default shell never
+   mounts** — so the bridge's per-jack UNDERRUN POLICY does not follow the class
+   param and the CV-Buddy janitor's writes never reach it. Safety-relevant by the
+   def's own words, invisible to every gate, **already broken**.
+3. ⚠⚠ **`es9-card-shows-state.spec.ts`'s headline assertion is VACUOUS** —
+   `.not.toContain('idle')` against a vocabulary where `'idle'` renders as `off`. The
+   regression it was written for passes on the first poll.
+4. ⚠ **A bare proxy write to `params`, not `.data`** (`GamepadCard.svelte:393-395`) —
+   the first instance in five waves of census, and **a category the census did not
+   have**.
+
+---
+
+## 9.1 ⚠ THREE INVENTORY `why` STRINGS IN THIS COHORT ARE PROVABLY WRONG
+
+An inventory `why` is PROSE and **no gate compares it to the card**. This wave found
+three false ones — `launchpadControlLeft`'s 8×8 grid (§9.1), `gamepad`'s "live device
+roster" and "none of it is a param", and wave 6 found `recorderbox`'s.
+
+**Read the card, never the `why`.** This wave learned it the expensive way: the
+orchestrator read `launchpadControlLeft`'s `why` and propagated its false 8×8 claim
+into a spec brief, which is how a stale description becomes a design constraint one
+wave later.
+
+---
+
+## 10. STANDING CORRECTIONS TO THE PRIOR WAVES
 
 Each was believed on entry and each was checked. Full text in
 [`SURFACES.md §10`](SURFACES.md).
@@ -280,9 +385,31 @@ Each was believed on entry and each was checked. Full text in
    them.
 2. ⚠ **Wave 6 §5.2's `needs-note-entry-cell` prescription is insufficient** — its
    reasoning is right and its remedy is aimed one layer off (§0.2).
-3. ⚠ **Wave 5 `BINDERS.md §6`'s "decide the inherited rationale once at the root"
-   HAS HAPPENED**, in the direction of draining (§1). Two `"same rationale as
-   midiCvBuddy"` references remain (`vrt-exemptions.ts:746`, `:769`).
+3. ⚠ **Wave 5 `BINDERS.md §6`'s "discharging it at the root discharges it for the
+   cohort" is OVERTURNED — by the drain itself.** `vrt-exemptions.ts:761-767`:
+   *"Discharging it here does NOT discharge it there… Falsifying the rationale for one
+   module is not falsifying it for the module it was written about."* The correct rule
+   is narrower: **the MECHANISM transfers, the CAPTURE does not.** ⚠ **This wave
+   asserted the opposite in its own first draft**, and a spec agent corrected it by
+   reading the file rather than the prior wave — the same failure mode as correction
+   1, one wave later.
+3b. ⚠⚠ **Wave 1's `electraControl` spec carries a FALSE BLOCKER that is now fixed** —
+   it records `STRICT_FACES` membership as *"structurally impossible today —
+   `MetaModuleDef` has no `face` field"*. **`meta/module-registry.ts:85` is now
+   `face?: ModuleFace;`** and `:106` `controlFamilies?`, with `:64` stating the
+   precursor is *"READ, not merely declarable"*. Anyone reading that spec today
+   inherits a blocker that does not exist — and it is what unblocks three of this
+   wave's meta members. **A NEW shape of the class**: not a mis-read capability, but a
+   spec that was true when written and was never re-checked.
+3c. ⚠⚠ **The `optionsExhaustive` SNAP contract was MIS-BRIEFED by this wave.** It
+   keys on the **DECLARATION**, not on "a discrete param with an option roster", and
+   for a **DENSE** roster (`opts.length === steps`) declaring it is itself RED
+   (`param-vocabulary.test.ts:168-172`: *"roster covers every step … so
+   optionsExhaustive is redundant — delete it"*). Two of seven modules were briefed as
+   SNAP cases and **neither is one**. `optionsExhaustive` is for a SPARSE roster.
+3d. ⚠ **`.claude/skills/module-faceplates.md:485-489` is stale** — it describes
+   `fullViewBody` as unwired. It is wired, with ~30 adopters; only `editorSurface` is
+   not.
 4. ⚠ **The `env`-for-selectors ask now has THREE independent refutations on three
    different axes** — CAPABILITY (wave 5: `ShellCellEnv.engine` is `{ write }` with
    no `read`), REACH (wave 6: a roster on `raw.githubusercontent.com`), and now
@@ -298,10 +425,28 @@ Each was believed on entry and each was checked. Full text in
    have been "nobody is affected" and five modules would have hit it one at a time.
    The corrected instrument is inlined in [`SURFACES.md §10`](SURFACES.md) so the
    scan can be re-run without trusting this document.
+7. ⚠⚠ **This wave's own brief asserted an 8×8 PAD GRID that does not exist**, having
+   read it out of an inventory `why`. `LaunchpadControlCard.svelte:135-235` paints
+   four buttons, a status line and a docs hint — no canvas, no matrix, no legend.
+   §9.1. ⚠ The consequence is not that `#2181` stops mattering for that module: it
+   matters **more**, for the opposite reason — `params: []` means every `face.order`
+   key must be a family template.
+8. **Two of this wave's own citations were wrong and a spec agent caught both** —
+   `ModuleShellPlaceholder.svelte` is under `ui/modules/`, not `ui/workflow/`, and
+   `FACES_WITHOUT_SCENES` is `_shell-faces.ts:3472`, not `:3391`. Corrected
+   throughout. Recorded because a wave that spends this much effort on other
+   documents' staleness owes the same accounting of its own.
+
+⚠ **Three of these eight are corrections to THIS wave**, not to a prior one (5, 7,
+8), and two more (3, 3c) are cases where this wave asserted something and a spec
+agent overturned it by reading the tree. **That ratio is the fan-out working**: the
+orchestrator's briefs were the single largest source of error in the wave, and the
+only thing that caught them was three agents independently instructed to verify every
+claim against `origin/main` rather than believe the brief.
 
 ---
 
-## 9. THE FAN-OUT
+## 11. THE FAN-OUT
 
 Paired by shared design problem, with the two most similar members put **together**
 so a convergence claim would have been falsifiable rather than assumed — wave 6's

@@ -640,7 +640,7 @@ empty lane 1, so the canvas paints its deterministic *empty* card
 it is the honest fresh-spawn state.
 
 ⚠ If it turns out not to be stable, the correct move is a **NAMED
-`FACES_WITHOUT_SCENES` entry** (`_shell-faces.ts:3391`) carrying that reason — not
+`FACES_WITHOUT_SCENES` entry** (`_shell-faces.ts:3472`) carrying that reason — not
 a silent absence, and not a re-exemption.
 
 ### 7.3 `EXTENSION_BODY_ROLES` — role `picture`
