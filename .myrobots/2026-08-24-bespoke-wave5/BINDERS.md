@@ -259,7 +259,7 @@ it goes too. The replacement is `aria-valuetext` on the channel cell — speakab
 assertable, unpainted. That is a real reduction in at-rest information and it is the
 ruling's intended trade, not an oversight.
 
-### 2.3 ⚠ THE OPEN-LOOP SENTENCE — the one place this cohort needs an OWNER DECISION
+### 2.3 THE OPEN-LOOP SENTENCE — **DECIDED: DELETE.** It is a RELOCATION, not a coverage loss
 
 `ChromaconsoleCard.svelte:226-230`:
 
@@ -286,19 +286,36 @@ precisely the property that made it survive four mechanisms. But the sentence is
 decoration: it is a correctness warning about a receive-only device, authored deliberately
 as permanent rather than transient.
 
-**Three routes, and the choice is the owner's:**
+**Three routes were considered. The decision is (a) DELETE, and it is taken:**
 
-| route | what it costs |
+| route | assessment |
 |---|---|
-| **(a) DELETE it.** The explanation is already in `chromaconsole.ts:61-76`'s `docs.explanation`, verbatim and at greater length, reachable by right-click Annotate | the warning is one gesture away instead of zero, on the only module in the fleet where the screen can silently disagree with the hardware |
-| **(b) DELETE the text, keep a NON-TEXT signal** — the §2.1 principle applied to a whole-module state rather than a control | a mark that means "open loop" and is not a word has to be legible without one. There is no such vocabulary today, and inventing an icon language on a module PR is out of scope |
-| **(c) An OWNER EXCEPTION** naming this one sentence on this one face | a fifth mechanism, and the ruling's whole strength is that it has never granted one |
+| **(a) DELETE it.** The explanation is already in `chromaconsole.ts:61-76`'s `docs.explanation`, verbatim and at greater length, reachable by right-click Annotate | ✅ **CHOSEN** — see the narrow ground below |
+| (b) DELETE the text, keep a NON-TEXT signal — the §2.1 principle applied to a whole-module state rather than a control | ✗ a mark that means "open loop" and is not a word has to be legible without one. There is no such vocabulary today, and inventing an icon language on a module PR is out of scope |
+| (c) An OWNER EXCEPTION naming this one sentence on this one face | ✗ a fifth mechanism, and the ruling's whole strength is that it has never granted one |
 
-**The spec's own recommendation is (a)**, on the narrow ground that the text is already
-authored in `docs` and therefore genuinely survives rather than being lost — which is not
-true of any of the other six rows in §2's table. But it is recorded as an owner question
-rather than decided, because the card's header is an argument by a person for permanence
-and this document is not the place to overrule it.
+**THE NARROW GROUND, and it is the whole argument: this is a RELOCATION, not a coverage
+loss.** The text survives **verbatim and at greater length** in `docs.explanation`
+(`chromaconsole.ts:69-76`), which spells out the receive-only problem, names PUSH ALL as the
+only reconciliation, and even names RATE and TIME as the two snapped controls — more than the
+card's one sentence says. Right-click Annotate reaches it.
+
+⚠ **That is NOT true of any other row in §2's table**, and the difference is what makes this
+deletion safe and the others trades. The NOTE/VEL readouts, the override badge's two numbers
+and the `pedal-snapped` marker all lose their only surface (§2.2, §2.4). This one changes
+which surface carries it.
+
+**ANSWERING THE CARD AUTHOR, rather than ignoring the argument.** The header's case is that
+the sentence is the one thing between the user and a specific false belief, and that a
+reassuring indicator would be a lie. **That case is correct and it is untouched by this
+decision** — nothing here adds a "synced" light, a checkmark or a green state, and the
+`problem` line and the per-cell stale marks both survive (§6). What changes is that a
+statement which is true *at every moment* and therefore carries no per-moment information
+moves from the plate to the module's documentation. A permanent sentence is the definition of
+resting text; its permanence is the card author's argument FOR it and the ruling's argument
+AGAINST it, and the ruling's exhaustive form — no "unless it is important" clause — is
+precisely the property that let it survive four mechanisms. Granting the first exception to
+the most sympathetic case is how an exhaustive rule stops being one.
 
 ⚠ **`face-resting-text-source.test.ts` would not catch this either way.** It denies
 `ModuleFace` FIELDS with no permitted text role — it reads the type, not a
@@ -349,7 +366,9 @@ Two things it is NOT:
 dial gets nothing. If a non-text marker for "this control is quantized by the hardware" is
 wanted, that is a **platform-level control-vocabulary question** — it would apply to every
 device module, not just this pedal — and it is out of scope for a module PR. **Recorded as
-the second owner-facing item in this cohort.**
+such, and deliberately NOT solved here:** a marker invented on a module PR would become the
+fleet's vocabulary for "the hardware quantizes this" by accident of being first, which is how
+a per-occupant hatch becomes a default nobody chose.
 
 ### 2.5 THE STALE-SLOT WARNING — text out, per-cell state in
 
@@ -531,15 +550,33 @@ cheap.
 `fullViewBody` binder body that the other two reuse, and it is where the VRT exemption
 decision has to be made anyway.
 
-## 9. THE TWO OWNER-FACING ITEMS
+## 9. THE ITEMS THAT WENT TO THE OWNER — one DECIDED, one PARKED, one REPORTED
 
-1. **chromaconsole's open-loop sentence** (§2.3) — delete it, replace it with a non-text
-   signal that does not exist yet, or grant the ruling's first exception. Recommendation:
-   delete; the text is already in `docs.explanation` verbatim.
-2. **A control-vocabulary marker for "the hardware quantizes this"** (§2.4) — applies to
-   every device module, not just this pedal, and the face removes the only surface that
-   carried it. Out of scope for a module PR either way.
+**1. chromaconsole's open-loop sentence (§2.3) — DECIDED: DELETE.** The ruling is exhaustive
+and has no "unless it matters" clause; that absence is the property that let it survive four
+mechanisms, and granting the first exception to the most sympathetic case is how an
+exhaustive rule stops being one. The narrow ground that makes it safe: the text survives
+**verbatim and at greater length** in `docs.explanation`, so this is a **RELOCATION, not a
+coverage loss** — which is not true of any other removal on this module. The card author's
+argument is answered in §2.3 rather than ignored.
 
-And one correction that is NOT a decision, only a report: **§1 — wave 4's `env`-for-selectors
-platform ask should not be scheduled.** It would not have unblocked the cohort it named, and
-the capability it asks for already exists under a different name.
+**2. A control-vocabulary marker for "the hardware quantizes this" (§2.4) — PARKED, out of
+scope.** It is a question for every device module, not just this pedal. ⚠ **Deliberately not
+solved here:** a marker invented on a module PR becomes the fleet's vocabulary by accident of
+being first.
+
+**3. Wave 4's `env`-for-selectors platform ask (§1) — REPORTED, and it should NOT be
+scheduled.** Not a decision; a correction. It would not have unblocked the cohort it named
+(`ShellCellEnv.engine` carries `write` and no `read`, and every picker here needs a read), and
+the capability it asks for already exists as `getActiveEngine()`, which four module-owned
+action files use today and which `shell-cells.ts` names twice as the reason an action does NOT
+take `env`.
+
+⚠ **The generalisation is the part that stops a fourth instance**, and it is why §1.4 is
+written out rather than the finding merely being recorded: `module-faceplates.md` already
+warns about this exact false blocker, by name, with *"assume a third would too"* — and the
+warning is filed **under an ACTION heading** while this instance was about **SELECTORS**. An
+agent reading for the selector question never reaches it. **A warning scoped to one cell shape
+does not generalise to another**, so §1.5's second corrective action is to move it somewhere
+cell-shape-neutral. That is the difference between recording a mistake and preventing its
+successor.

@@ -395,7 +395,7 @@ BINDERS §2 rows 4–7. Module-specific:
 | `pedal-snapped` (`:291`) | ⛔ REMOVED. ⚠ **The cohort's one genuine information loss** — BINDERS §2.4. Two controls (RATE, TIME) become smooth-looking dials over a stepped response. `quantize.note` reaches `aria-valuetext`; a sighted player gets nothing. **Owner-facing item 2** |
 | stale-slot count (`:221-223`) | ⛔ text REMOVED, **signal KEPT per-cell** — `status.staleSlots` names WHICH, and the face has eight cells to mark. Strictly better than the card, which says how many and not which |
 | `problem` line (`:214`) | ✅ **KEPT** — the outcome of a gesture, not resting text. Same split as `../midiCvBuddy/spec.md §3.2` |
-| the open-loop sentence (`:228-230`) | ⚠ **OWNER DECISION.** BINDERS §2.3 — three routes, recommendation (a) DELETE, because `docs.explanation` (`:69-76`) already carries it verbatim and at greater length |
+| the open-loop sentence (`:228-230`) | ⛔ **REMOVED — DECIDED, and it is a RELOCATION rather than a coverage loss.** `docs.explanation` (`:69-76`) carries the text verbatim and at greater length, so the warning changes surface rather than disappearing — which is NOT true of any other row here. BINDERS §2.3 answers the card author's argument rather than ignoring it |
 | the eight slot captions | ✅ **KEPT and REQUIRED** — §2. They are the only thing separating eight identical knobs. `face.bareCells` must NOT be declared here |
 
 ⚠ **`face-resting-text-source.test.ts` sees NONE of this.** It denies `ModuleFace` FIELDS
