@@ -285,6 +285,26 @@ const SUBJECTS: readonly Subject[] = [
 
   // ── the AUDIO-def outlier ─────────────────────────────────────────────────
   { type: 'rasterize', prefix: 'rasterize', domain: 'audio', why: '⚠ an AudioModuleDef that carries a VIDEO surface, so it lives in lib/audio/modules and a video-only enumeration misses it entirely. Spawns with domain: audio. It is the reason this file\'s derivation crosses both domains.' },
+
+  // ── SCOPE (2026-08-23) — the one subject whose SOURCE gate does not exist ──
+  //
+  // ⚠ EVERY OTHER ENTRY IN THIS TABLE IS THE RENDER HALF OF A PAIR. The header
+  // says so: `video-face-screen-source.test.ts` proves each body READS
+  // `previewCollapsed`, WRITES it through node data and exposes a `<button>`,
+  // and this file proves the button is actually there and actually works. For
+  // SCOPE there is no source half at all — that gate builds its subject as
+  // `listVideoModuleDefs() ∩ STRICT_FACES` and scope is `domain: 'audio'` with
+  // NO video-domain def, so it is out of that population BY CONSTRUCTION. (It is
+  // not merely unlisted: it owes no exemption entry either, because the filter
+  // never reaches it. `rasterize` above has the same hole, measured in its own
+  // package.)
+  //
+  // So this row is not the second leg of a pair — it is the ONLY runtime leg
+  // scope's SCREEN switch has anywhere, and `scope-face-model.test.ts` carries
+  // the source-level assertions the missing gate would otherwise have made.
+  // Stated here so a future reader does not delete it as a duplicate of a source
+  // check that does not exist.
+  { type: 'scope', prefix: 'scope', domain: 'audio', why: '⚠ THE ONLY RUNTIME LEG THIS SWITCH HAS: scope is an AUDIO def, so `video-face-screen-source.test.ts` (which filters `listVideoModuleDefs()`) cannot reach it and there is no source half to pair with — unlike every other row here. Spawns with domain: audio. What the switch protects is the rack PROBE\'s dual-trace / Lissajous screen plus its tuning graticule; and scope is the module where turning it OFF is legitimate rather than self-defeating, because unlike dockscope or videoOut the picture is NOT the product — `ch1_out`/`ch2_out` pass the signal through untouched and the `out` mono-video texture keeps rendering from the module\'s own drawFrame, so collapsing the preview reclaims space beside nine controls and costs the player only the view.' },
 ] as const;
 
 /** The representative module for the PERSISTENCE leg — see that test's comment. */

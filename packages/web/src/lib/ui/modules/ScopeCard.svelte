@@ -5,7 +5,9 @@
   import NeonFader from '$lib/ui/controls/NeonFader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
-  import { patch } from '$lib/graph/store';
+  // NB: no `patch` store import — the last direct reader was `toggleXY`'s bare
+  // proxy assignment, which now goes through `setNodeParam` like every other
+  // write on this card.
   import { setNodeParam } from '$lib/graph/mutate';
   import { scopeDef, type ScopeSnapshot, type PitchResult } from '$lib/audio/modules/scope';
   import { drawScope } from '$lib/audio/modules/scope-draw';
@@ -67,9 +69,28 @@
   function setParam(paramId: string) {
     return (v: number) => setNodeParam(id, paramId, v);
   }
+  // ⚠ THIS WAS A BARE PROXY ASSIGNMENT, AND THE THREE LINES BELOW IT WERE NOT.
+  // `toggleXY` used to write `patch.nodes[id].params.mode` directly, while
+  // `toggleRange` — its immediate neighbour, the same gesture on the same card
+  // — has always gone through `setNodeParam`. `setNodeParam` wraps the write in
+  // `ydoc.transact(fn, LOCAL_ORIGIN)`, and the UndoManager is configured
+  // `trackedOrigins: new Set([LOCAL_ORIGIN])`. A bare assignment runs with
+  // origin `null`. So flipping XY was NOT UNDOABLE and did not carry the tag a
+  // collaborator's client keys on, while flipping either range switch beside it
+  // was and did.
+  //
+  // ⚠ PAID BY EDITING THIS CARD, NOT BY FACING THE MODULE — and the difference
+  // is recorded rather than assumed. #2025 argued this class of debt was "paid
+  // by construction" once a faceplate routed the param through the normal path;
+  // `raw-write-ledger.ts` refutes that by name. Promotion does not delete the
+  // card: the per-card VRT sweep still renders it under `?shell=legacy`, so the
+  // face would have given faced users a correct toggle and left legacy users
+  // with the broken one. A face does not pay a card's debt; editing the card
+  // does. The ledger entry for this file is deleted in the same diff, because
+  // its anchor runs BOTH ways — a stale entry naming a write that no longer
+  // exists is as red as an unlisted raw write.
   function toggleXY() {
-    const target = patch.nodes[id];
-    if (target) target.params.mode = xyMode ? 0 : 1;
+    setNodeParam(id, 'mode', xyMode ? 0 : 1);
   }
   function toggleRange(channel: 1 | 2) {
     const key = channel === 1 ? 'ch1Range' : 'ch2Range';

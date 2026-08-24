@@ -548,6 +548,30 @@ describe('module-face lint — MOMENTARY pads (face.momentary)', () => {
     // pressed/unpressed. The classification and the roster are the same
     // argument from two directions: this is a MODE switch, not an enable.
     'dockscope:range',
+    // SCOPE, 2026-08-23. Three switches, all LATCHING, all classified AT THE
+    // READ SITE rather than from their shape — `scope-draw.ts` is the consumer
+    // for all three and it compares every one as a LEVEL on EVERY FRAME:
+    // `drawScope` dispatches `drawSplit`/`drawXY` on `(params.mode ?? 0) >= 0.5`
+    // and picks each channel's `rangeMax` from `(params.ch{1,2}Range ?? 0) >=
+    // 0.5`, which `pixelFromSample` then reads as `isCv`. There is no edge
+    // detector anywhere in the chain — no `createEdgeCounter`, no `lastTrig` —
+    // and the module declares no gate input at all, only `cv` ports.
+    //
+    // A momentary render would snap the display back the instant the player let
+    // go: the range switches are the difference between a pitch-CV trace being
+    // a readable curve and a flat line at the top of the screen, and XY is a
+    // view you set up and then WATCH. Neither is a thing anyone could hold.
+    //
+    // ⚠ ALL THREE ALSO CARRY AN `options` ROSTER, and the classification and
+    // the roster are the same argument from two directions: these are MODE
+    // switches, not enables. `AUDIO`/`CV` are the words the card's own button
+    // has always painted and the words `dockscope.range` already ships; `SPLIT`
+    // is the word this def's own comment and `scope-draw.ts`'s `drawSplit` use,
+    // against a card that paints a bare `⇆`. "Off" is not a state any of the
+    // three has.
+    'scope:ch1Range',
+    'scope:ch2Range',
+    'scope:mode',
     // B3NTB0X, 2026-08-19. The two kaleidoscope FOLDS, and they became visible
     // to this gate the same way cloudseed's enables did: their `curve` was
     // corrected `linear` → `discrete` when the face landed, because the shader
