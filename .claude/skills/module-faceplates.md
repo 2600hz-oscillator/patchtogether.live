@@ -381,6 +381,37 @@ right — it passes `min`/`max`/`defaultValue`/`curve`/`label` straight off the
 `card-range-source.test.ts`'s `RANGE_BOUND_CARDS` ("is the divergence
 UNREPRESENTABLE?") is still an opt-in list of 7.
 
+### ⚠ On a card whose def is in the WEBGL ATTEST BASIS, bind with `paramSpec` — the `*_RANGE` EXPORT IS THE EXPENSIVE WAY
+
+**Measured, picturebox, 2026-08-24.** Both spellings give you one source of
+truth. They do **not** cost the same:
+
+| binding | what it adds to the def file | attest |
+|---|---|---|
+| `export const FOO_RANGE = 2` in the def, imported by the card | a new exported `const` — **ordinary CODE** | ⚠ **moves the hash** |
+| `paramSpec(fooDef, 'gain').max` in the card | **nothing** — it reads the `ParamDef` the def already declares | **zero** |
+
+`HASH_TRANSPARENT_PROPS` (`scripts/attest-code-basis.ts`) strips `docs`,
+`controlFamilies`, `face` and `noUserControl`. It does **not** strip a new
+`export const`, so on a basis-resident def the export buys a real-GPU re-attest
+that CI (SwiftShader) cannot run — for a number the def is already carrying.
+
+- **The basis is essentially every `packages/web/src/lib/video/**` file**, plus
+  the cube/wavesculpt pair and their two surfaces, plus the toolchain manifests.
+  Check with `bash scripts/webgl-attest-hash.sh --list | grep -i <module>`.
+- **So: `paramSpec` is the DEFAULT for any card whose def is in the basis** —
+  which is every video card. `card-range-source.test.ts` accepts it (it is what
+  Gatemaiden and Chromaconsole already do), and its ARTIFACT ANCHOR *requires*
+  enrolment once a card binds this way and re-types no literal.
+- The `*_RANGE` export stays correct for a **non-basis** def, and is still the
+  right answer when the number is genuinely needed as a standalone constant
+  (backdraft's pads compute with it).
+- ⚠ **This retires a class of deferred work.** Range fixes on video cards have
+  been getting split into "a separate PR that needs an attest window"; with
+  `paramSpec` they are free and belong in whatever PR touches the card. Verify
+  the same way: run `scripts/webgl-attest-hash.sh` before and after and confirm
+  the hash is unmoved.
+
 ---
 
 ## Rosters make states SELECTABLE — the labels question is a DIFFERENT question
