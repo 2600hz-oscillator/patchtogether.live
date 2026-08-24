@@ -105,9 +105,9 @@ describe('flagship: re-quantizing sequence produces changing, quantized notes', 
   }
 
   function findSeqSteps(nodes: NodeMap): { on: boolean; midi: number }[] {
-    const seq = Object.values(nodes).find((n) => n.type === 'sequencer');
-    expect(seq, 'sequencer should be spawned').toBeDefined();
-    return ((seq!.data as { steps?: { on: boolean; midi: number }[] }).steps) ?? [];
+    const seq = Object.values(nodes).find((n) => n.type === 'cartesian');
+    expect(seq, 'cartesian should be spawned').toBeDefined();
+    return ((seq!.data as { cells?: { on: boolean; midi: number }[] }).cells) ?? [];
   }
 
   function findRunnerBody(nodes: NodeMap): { body: string; division: string } {
@@ -120,17 +120,21 @@ describe('flagship: re-quantizing sequence produces changing, quantized notes', 
   it('spawns the full voice + an immediate C-major melody on Run', () => {
     const { nodes } = setup();
     const types = Object.values(nodes).map((n) => n.type).sort();
-    expect(types).toContain('sequencer');
+    expect(types).toContain('cartesian');
+    expect(types).toContain('timelorde');
     expect(types).toContain('analogVco');
     expect(types).toContain('adsr');
     expect(types).toContain('vca');
     expect(types).toContain('audioOut');
     expect(types).toContain('clockedRunner');
 
-    const steps = findSeqSteps(nodes);
-    expect(steps.length).toBe(8);
-    expect(steps.map((s) => s.midi)).toEqual([48, 52, 55, 52, 57, 55, 52, 48]);
-    expect(steps.every((s) => s.on)).toBe(true);
+    const cells = findSeqSteps(nodes);
+    expect(cells.length).toBe(16);
+    // The clocked diagonal pads (0, 5, 10, 15) carry the melody; the rest are off.
+    const DIAG = [0, 5, 10, 15];
+    expect(DIAG.map((i) => cells[i]!.midi)).toEqual([48, 52, 55, 57]);
+    expect(DIAG.every((i) => cells[i]!.on)).toBe(true);
+    expect(cells.filter((_, i) => !DIAG.includes(i)).every((c) => !c.on)).toBe(true);
   });
 
   it('the clocked runner re-quantizes the melody scale every 4 beats', () => {

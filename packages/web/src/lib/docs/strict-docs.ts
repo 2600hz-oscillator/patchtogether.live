@@ -41,7 +41,6 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   // dynamic-control sequencer, a video mixer, and a stereo effect.
   'adsr',
   'lfo',
-  'sequencer',
   'fader',
   // COFEFVE DELAY — own-code analog delay (replaced the retired COCOA DELAY,
   // whose STRICT slot it inherits). Convention card (CofefveCard); kept OFF
@@ -197,11 +196,7 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   // poly-aware voice (DX7 / a module with a poly input),
   // noted in their prose.
   'cartesian',
-  'drumseqz',
   'kria',
-  'macseq',
-  'polyseqz',
-  'writeseq',
   'marbles',
   'numpadPlus',
   // Batch 11 — MIDI, external control & audio I/O (2026-06-26): the cluster that

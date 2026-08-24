@@ -88,8 +88,8 @@ describe('buildModuleManifest', () => {
     ).toEqual([]);
   });
 
-  it('sequencer has the expected inputs / outputs / params (spot check vs registry)', () => {
-    const seq = m.modules.find((x) => x.type === 'sequencer');
+  it('score has the expected inputs / outputs / params (spot check vs registry)', () => {
+    const seq = m.modules.find((x) => x.type === 'score');
     expect(seq).toBeDefined();
     if (!seq) return;
     expect(seq.inputs.map((p) => p.id)).toEqual(expect.arrayContaining(['clock']));

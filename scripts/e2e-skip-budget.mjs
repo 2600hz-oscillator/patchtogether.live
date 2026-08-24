@@ -136,7 +136,6 @@ export const SKIP_BUDGET = [
       'doom-launch.spec.ts',
       'doom-multiplayer.spec.ts',
       'in-card-title.spec.ts',
-      'sequencer-transport.spec.ts',
     ],
     reason: /COLLAB_JOB lane/,
     lanes: [],
@@ -558,7 +557,6 @@ export const SKIP_BUDGET = [
       'clap.spec.ts',
       'coverage-groups-3-4-5.spec.ts',
       'cv-range-uniformity.spec.ts',
-      'drumseqz.spec.ts',
       'illogic-face.spec.ts',
       'nibbles.spec.ts',
       'scope-tuner.spec.ts',
@@ -572,7 +570,7 @@ export const SKIP_BUDGET = [
     homeLane: 'e2e',
     why:
       'PARKED (#1847) — REAL-SOURCE-CHAIN audio proofs and the CV conventions they rest on: default-tuning '
-      + 'pitch accuracy, CLAP and DRUMSEQZ through their real trigger chains, triplet playback, the mono-normal '
+      + 'pitch accuracy, CLAP through its real trigger chain, triplet playback, the mono-normal '
       + 'contract, ADR-004 CV range travel, and SHAPEGEN gate edge semantics. This is precisely the class the '
       + 'poly/MIDI discipline exists for — an engine-direct substitute is what shipped POLYHELM green-but-'
       + 'silent — so while these are parked a silent or mistuned chain has no CI gate at all.',
@@ -621,23 +619,6 @@ export const SKIP_BUDGET = [
       + 'this same file both exercise the lamp — what is parked is narrower than the lamp itself. '
       + 'Parked on the first observation to unblock the board (it reddens every PR on this commit range, '
       + 'not just the one that found it) rather than hold a PR for a diagnosis lane the cap does not allow.',
-  },
-  {
-    specs: [
-      'docs-virtual-module.spec.ts',
-    ],
-    reason: /FLAKE-PARK #1847/,
-    lanes: ['e2e'],
-    homeLane: 'e2e',
-    why:
-      'PARKED (#1847) — SCOPED TO ONE PROBE (`sequencer`), not to the spec. The test is a single body run '
-      + 'over every PROBES entry, and only the sequencer instance was observed recovering on retry (PR e2e '
-      + 'shard 4/10, one observation), so every other probe still runs the identical assertions and the '
-      + 'interactive-doc CODE PATH keeps its coverage; parking the loop would have traded the whole '
-      + 'contract for one module\'s timing. NOT yet triaged as flake vs under-budget, and the entry carries '
-      + 'that instead of hiding it: this file\'s history is module deletions and probe-list edits with no '
-      + 'flake fixes, which the triage rule reads as UNDER-BUDGETED being the likelier class. UN-PARK is a '
-      + 'reproduce-and-measure budget diagnosis on that probe, not a re-run.',
   },
   {
     specs: [
@@ -773,26 +754,6 @@ export const SKIP_BUDGET = [
       + 'from the read site (the freeze test guards only the scene advance; the palette accumulator sits '
       + 'outside it) and is anchored four ways, so a face that became capturable still reddens. What lapses is '
       + 'the re-proof, not the record.',
-  },
-  {
-    specs: ['sequencer-playhead-alignment.spec.ts'],
-    reason: /FLAKE-PARK #1847/,
-    lanes: ['e2e'],
-    homeLane: 'e2e',
-    why:
-      'PARKED (#1847) — the POLYSEQZ leg ONLY, on ONE recovered-on-retry occurrence on a hot shard (#1903 '
-      + 'reddens a fail-then-pass rather than absorbing it, which is why a single occurrence lands here at '
-      + 'all). ⚠ THE COVERAGE COST IS DELIBERATELY NARROW AND IS THE REASON THIS IS PARKABLE: four of this '
-      + 'file\'s five legs keep running, and TWO of them still cover polyseqz specifically — the '
-      + '"all sequencers" audit guard reads `currentStep` for EVERY sequencer including this one, and the '
-      + 'sequencer / drumseqz / score legs exercise the identical freeze -> read -> advance instrument against '
-      + 'the same engine seam. So what lapses is the per-module off-by-one assertion for polyseqz alone — not '
-      + 'playhead alignment as a property, and not this file\'s instrument, either of which would have been a '
-      + 'significant loss and an owner question instead. '
-      + '⚠ NOT ROOT-CAUSED, and the entry says so rather than implying a diagnosis: the suspect region is the '
-      + 'freeze/advance handshake\'s timing under shard load, on exactly one observation. A SECOND occurrence '
-      + 'makes this a real investigation rather than a park — "it passes now" is not a root cause, and neither '
-      + 'is this entry.',
   },
 ];
 

@@ -19,6 +19,7 @@ import { test } from '@playwright/test';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { localBaseUrl } from '../worktree-port';
+import { buildKriaMidiData } from '../tests/_helpers';
 import { fileURLToPath } from 'node:url';
 
 import { openTwoContexts, authorPatchAndAwaitSync, type PatchSpec } from './_collab';
@@ -315,29 +316,22 @@ test('@audio-drift 03-lfo-modulated', async ({ browser }) => {
 
 // Scenario 4: Sequenced --------------------------------------------------
 test('@audio-drift 04-sequenced', async ({ browser }) => {
-  const seqSteps = [
-    { on: true, midi: 60 },
-    { on: true, midi: 67 },
-    { on: true, midi: 72 },
-    { on: true, midi: 64 },
-  ];
-  // Pad to 32 with off steps.
-  while (seqSteps.length < 32) seqSteps.push({ on: false, midi: 60 });
+  const seqData = buildKriaMidiData([60, 67, 72, 64], { duration: 0.5 });
   const r = await runScenario({
     browser,
     name: '04-sequenced',
     description: 'Sequencer(120 BPM, 4 steps, fixed pattern) → VCO → ADSR → VCA → audioOut. Sequencer clock is the prime drift suspect.',
     patch: {
       nodes: [
-        { id: 'seq', type: 'sequencer', params: { bpm: 120, length: 4, isPlaying: 1, gateLength: 0.5, swing: 0 }, data: { steps: seqSteps } },
+        { id: 'seq', type: 'kria', params: { bpm: 120, running: 1}, data: seqData },
         { id: 'vco', type: 'analogVco', params: { tune: 0 } },
         { id: 'adsr', type: 'adsr', params: { attack: 0.01, decay: 0.1, sustain: 0.4, release: 0.2 } },
         { id: 'vca', type: 'vca', params: { base: 0, cvAmount: 1 } },
         COMMON_AUDIO_OUT(),
       ],
       edges: [
-        { id: 'e1', from: { nodeId: 'seq', portId: 'pitch' }, to: { nodeId: 'vco', portId: 'pitch' }, sourceType: 'pitch', targetType: 'pitch' },
-        { id: 'e2', from: { nodeId: 'seq', portId: 'gate' }, to: { nodeId: 'adsr', portId: 'gate' }, sourceType: 'gate', targetType: 'gate' },
+        { id: 'e1', from: { nodeId: 'seq', portId: 'pitch1' }, to: { nodeId: 'vco', portId: 'pitch' }, sourceType: 'pitch', targetType: 'pitch' },
+        { id: 'e2', from: { nodeId: 'seq', portId: 'gate1' }, to: { nodeId: 'adsr', portId: 'gate' }, sourceType: 'gate', targetType: 'gate' },
         { id: 'e3', from: { nodeId: 'vco', portId: 'sine' }, to: { nodeId: 'vca', portId: 'audio' } },
         { id: 'e4', from: { nodeId: 'adsr', portId: 'env' }, to: { nodeId: 'vca', portId: 'cv' }, sourceType: 'cv', targetType: 'cv' },
         { id: 'e5', from: { nodeId: 'vca', portId: 'audio' }, to: { nodeId: 'out', portId: 'L' } },
@@ -353,19 +347,19 @@ test('@audio-drift 04-sequenced', async ({ browser }) => {
 
 // Scenario 5: DRUMMERGIRL gate-triggered drum --------------------------
 test('@audio-drift 05-drummergirl', async ({ browser }) => {
-  const seqSteps = Array.from({ length: 32 }, (_, i) => ({ on: i % 4 === 0, midi: 60 }));
+  const seqData = buildKriaMidiData([60, null, null, null], { duration: 0.5 });
   const r = await runScenario({
     browser,
     name: '05-drummergirl',
     description: 'Sequencer (120 BPM, every 4th step) → DRUMMERGIRL gate → audioOut. Tests Faust drum voice + clocked gate drift.',
     patch: {
       nodes: [
-        { id: 'seq', type: 'sequencer', params: { bpm: 120, length: 16, isPlaying: 1, gateLength: 0.2 }, data: { steps: seqSteps } },
+        { id: 'seq', type: 'kria', params: { bpm: 120, running: 1}, data: seqData },
         { id: 'dg', type: 'drummergirl', params: { pitch: 0, tone: 0.3, shape: 0.3, volume: 1, decay: 0.15 } },
         COMMON_AUDIO_OUT(),
       ],
       edges: [
-        { id: 'e1', from: { nodeId: 'seq', portId: 'gate' }, to: { nodeId: 'dg', portId: 'gate' }, sourceType: 'gate', targetType: 'gate' },
+        { id: 'e1', from: { nodeId: 'seq', portId: 'gate1' }, to: { nodeId: 'dg', portId: 'gate' }, sourceType: 'gate', targetType: 'gate' },
         { id: 'e2', from: { nodeId: 'dg', portId: 'audio' }, to: { nodeId: 'out', portId: 'L' } },
         { id: 'e3', from: { nodeId: 'dg', portId: 'audio' }, to: { nodeId: 'out', portId: 'R' } },
       ],

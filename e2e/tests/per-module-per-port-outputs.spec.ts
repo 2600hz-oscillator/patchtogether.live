@@ -32,6 +32,7 @@ import {
   emitSkipReason,
   emitBudgetMs,
 } from './_per-module-per-port-shared';
+import { buildKriaData } from './_helpers';
 import type {
   RegistryModule,
   SpawnEdge,
@@ -180,14 +181,15 @@ test.describe('per-module per-port: outputs emit signal', () => {
         if (driver.gatePort || driver.pitchPort) {
           nodes.unshift({
             id: 'driver-seq',
-            type: 'sequencer',
+            type: 'kria',
             position: { x: 60, y: 280 },
-            params: { bpm: 240, length: 4, isPlaying: 1, gateLength: 0.5 },
+            // Same 16th grid + bpm as the deleted SEQUENCER driver.
+            params: { bpm: 240, running: 1 },
           });
           if (driver.gatePort) {
             edges.unshift({
               id: 'e-seq-g',
-              from: { nodeId: 'driver-seq', portId: 'gate' },
+              from: { nodeId: 'driver-seq', portId: 'gate1' },
               to:   { nodeId: 'sut',        portId: driver.gatePort },
               sourceType: 'gate',
               targetType: 'gate',
@@ -196,7 +198,7 @@ test.describe('per-module per-port: outputs emit signal', () => {
           if (driver.pitchPort) {
             edges.unshift({
               id: 'e-seq-p',
-              from: { nodeId: 'driver-seq', portId: 'pitch' },
+              from: { nodeId: 'driver-seq', portId: 'pitch1' },
               to:   { nodeId: 'sut',        portId: driver.pitchPort },
               sourceType: 'pitch',
               targetType: 'cv',
@@ -229,7 +231,9 @@ test.describe('per-module per-port: outputs emit signal', () => {
         if (ppDriver?.postSpawn) await ppDriver.postSpawn(page, 'sut');
 
         if (driver.gatePort || driver.pitchPort) {
-          await page.evaluate(() => {
+          // KRIA is data-driven — an unseeded node has no active pattern and
+          // emits nothing, so the driver MUST be seeded (C4/E4/G4/C5 arp).
+          await page.evaluate((data) => {
             const w = globalThis as unknown as {
               __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
               __ydoc: { transact: (fn: () => void) => void };
@@ -238,14 +242,14 @@ test.describe('per-module per-port: outputs emit signal', () => {
               const seq = w.__patch.nodes['driver-seq'];
               if (!seq) return;
               if (!seq.data) seq.data = {};
-              seq.data.steps = [
-                { on: true, midi: 60 },
-                { on: true, midi: 64 },
-                { on: true, midi: 67 },
-                { on: true, midi: 72 },
-              ];
+              for (const [k, v] of Object.entries(data)) seq.data[k] = v;
             });
-          });
+          }, buildKriaData([
+            { note: 0, octave: 1 }, // C4 (60)
+            { note: 2, octave: 1 }, // E4 (64)
+            { note: 4, octave: 1 }, // G4 (67)
+            { note: 0, octave: 2 }, // C5 (72)
+          ]));
         }
 
         // ── THE OBSERVATION WINDOW IS A BOUND, NOT A GATE ──────────────────

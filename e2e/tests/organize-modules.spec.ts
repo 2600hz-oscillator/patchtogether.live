@@ -479,7 +479,7 @@ test('organize on a realistic example patch leaves no overlapping cards', async 
   // Force overlap by stacking the example modules at the same coord, then run
   // organize. After organize we expect every pairwise rect to be disjoint.
   await spawnPatch(page, [
-    { id: 'seq', type: 'sequencer', position: { x: 100, y: 100 } },
+    { id: 'seq', type: 'kria', position: { x: 100, y: 100 } },
     { id: 'vco', type: 'analogVco', position: { x: 100, y: 100 } },
     { id: 'env', type: 'adsr', position: { x: 100, y: 100 } },
     { id: 'vca', type: 'vca', position: { x: 100, y: 100 } },

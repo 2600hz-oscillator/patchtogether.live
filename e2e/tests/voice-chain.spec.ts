@@ -17,7 +17,7 @@
 // comparison; for now the assertion is "audio peak above threshold."
 
 import { test, expect } from './_fixtures';
-import { spawnPatch } from './_helpers';
+import { spawnPatch, seedKriaWith, buildKriaMidiData } from './_helpers';
 
 test.describe.configure({ mode: 'parallel' });
 
@@ -34,8 +34,8 @@ test('voice-chain: Seq → VCO + ADSR → VCA → Scope → Out produces audible
     [
       {
         id: 'seq',
-        type: 'sequencer',
-        params: { bpm: 240, length: 4, isPlaying: 1, gateLength: 0.4 },
+        type: 'kria',
+        params: { bpm: 240, running: 1 },
       },
       { id: 'vco', type: 'analogVco', params: { tune: 0, fine: 0, fmAmount: 0 } },
       {
@@ -48,8 +48,8 @@ test('voice-chain: Seq → VCO + ADSR → VCA → Scope → Out produces audible
       { id: 'out', type: 'audioOut', params: { master: 0.5 } },
     ],
     [
-      { id: 'e1', from: { nodeId: 'seq', portId: 'pitch' }, to: { nodeId: 'vco', portId: 'pitch' }, sourceType: 'pitch', targetType: 'pitch' },
-      { id: 'e2', from: { nodeId: 'seq', portId: 'gate' },  to: { nodeId: 'adsr', portId: 'gate' },  sourceType: 'gate',  targetType: 'gate' },
+      { id: 'e1', from: { nodeId: 'seq', portId: 'pitch1' }, to: { nodeId: 'vco', portId: 'pitch' }, sourceType: 'pitch', targetType: 'pitch' },
+      { id: 'e2', from: { nodeId: 'seq', portId: 'gate1' },  to: { nodeId: 'adsr', portId: 'gate' },  sourceType: 'gate',  targetType: 'gate' },
       { id: 'e3', from: { nodeId: 'vco', portId: 'sine' },  to: { nodeId: 'vca', portId: 'audio' } },
       { id: 'e4', from: { nodeId: 'adsr', portId: 'env' },  to: { nodeId: 'vca', portId: 'cv' }, sourceType: 'cv', targetType: 'cv' },
       { id: 'e5', from: { nodeId: 'vca', portId: 'audio' }, to: { nodeId: 'scp', portId: 'ch1' } },
@@ -58,24 +58,7 @@ test('voice-chain: Seq → VCO + ADSR → VCA → Scope → Out produces audible
   );
 
   // Set the step pattern. Four steps on at known pitches; rest off.
-  await page.evaluate(() => {
-    const w = globalThis as unknown as {
-      __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
-      __ydoc: { transact: (fn: () => void) => void };
-    };
-    w.__ydoc.transact(() => {
-      const seq = w.__patch.nodes['seq'];
-      if (!seq.data) seq.data = {};
-      seq.data.steps = [
-        // v2 step shape: midi int (60 = C4 = 261.626 Hz). null = empty.
-        { on: true, midi: 60 },
-        { on: true, midi: 64 },
-        { on: true, midi: 67 },
-        { on: true, midi: 72 },
-        ...Array.from({ length: 28 }, () => ({ on: false, midi: null })),
-      ];
-    });
-  });
+  await seedKriaWith(page, 'seq', buildKriaMidiData([60, 64, 67, 72], { duration: 0.5 }));
 
   // Let the chain run for ~1.5 seconds — at 240 BPM, that's ~24 16th-note steps,
   // wrapping the 4-step pattern 6 times. Plenty of audio activity.
@@ -128,7 +111,7 @@ test('voice-chain: stopping the sequencer silences the output (gate goes low)', 
   await spawnPatch(
     page,
     [
-      { id: 'seq', type: 'sequencer', params: { bpm: 240, length: 4, isPlaying: 1, gateLength: 0.4 } },
+      { id: 'seq', type: 'kria', params: { bpm: 240, running: 1} },
       { id: 'vco', type: 'analogVco' },
       { id: 'adsr', type: 'adsr', params: { attack: 0.001, decay: 0.05, sustain: 0.5, release: 0.05 } },
       { id: 'vca', type: 'vca', params: { base: 0, cvAmount: 1 } },
@@ -136,32 +119,15 @@ test('voice-chain: stopping the sequencer silences the output (gate goes low)', 
       { id: 'out', type: 'audioOut', params: { master: 0.5 } },
     ],
     [
-      { id: 'e1', from: { nodeId: 'seq', portId: 'pitch' }, to: { nodeId: 'vco', portId: 'pitch' }, sourceType: 'pitch', targetType: 'pitch' },
-      { id: 'e2', from: { nodeId: 'seq', portId: 'gate' },  to: { nodeId: 'adsr', portId: 'gate' },  sourceType: 'gate',  targetType: 'gate' },
+      { id: 'e1', from: { nodeId: 'seq', portId: 'pitch1' }, to: { nodeId: 'vco', portId: 'pitch' }, sourceType: 'pitch', targetType: 'pitch' },
+      { id: 'e2', from: { nodeId: 'seq', portId: 'gate1' },  to: { nodeId: 'adsr', portId: 'gate' },  sourceType: 'gate',  targetType: 'gate' },
       { id: 'e3', from: { nodeId: 'vco', portId: 'sine' },  to: { nodeId: 'vca', portId: 'audio' } },
       { id: 'e4', from: { nodeId: 'adsr', portId: 'env' },  to: { nodeId: 'vca', portId: 'cv' }, sourceType: 'cv', targetType: 'cv' },
       { id: 'e5', from: { nodeId: 'vca', portId: 'audio' }, to: { nodeId: 'scp', portId: 'ch1' } },
       { id: 'e6', from: { nodeId: 'scp', portId: 'ch1_out' }, to: { nodeId: 'out', portId: 'L' } },
     ]
   );
-  await page.evaluate(() => {
-    const w = globalThis as unknown as {
-      __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
-      __ydoc: { transact: (fn: () => void) => void };
-    };
-    w.__ydoc.transact(() => {
-      const seq = w.__patch.nodes['seq'];
-      if (!seq.data) seq.data = {};
-      seq.data.steps = [
-        // v2 step shape: midi int (60 = C4 = 261.626 Hz). null = empty.
-        { on: true, midi: 60 },
-        { on: true, midi: 64 },
-        { on: true, midi: 67 },
-        { on: true, midi: 72 },
-        ...Array.from({ length: 28 }, () => ({ on: false, midi: null })),
-      ];
-    });
-  });
+  await seedKriaWith(page, 'seq', buildKriaMidiData([60, 64, 67, 72], { duration: 0.5 }));
 
   // Confirm audio first
   await page.waitForTimeout(800);
@@ -175,7 +141,7 @@ test('voice-chain: stopping the sequencer silences the output (gate goes low)', 
       __ydoc: { transact: (fn: () => void) => void };
     };
     w.__ydoc.transact(() => {
-      w.__patch.nodes['seq'].params.isPlaying = 0;
+      w.__patch.nodes['seq'].params.running = 0;
     });
   });
 

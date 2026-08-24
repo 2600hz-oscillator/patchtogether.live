@@ -41,7 +41,6 @@ export type Catalog = readonly CatalogModule[];
 const NEVER_SPAWN: ReadonlySet<string> = new Set([
   'audioOut',     // singleton sink; pre-spawned for tests, never random-added
   'scope',        // visualization only; chaos doesn't need to spam scopes
-  'sequencer',    // its `data.steps` shape is non-trivial; defer to a later pass
   'cartesian',    // sequencer-shaped; same reason
 ]);
 

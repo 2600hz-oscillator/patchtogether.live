@@ -22,17 +22,15 @@
 
 /** Module types offered "Dock to …" in workflow racks. */
 export const DOCKABLE_TYPES: ReadonlySet<string> = new Set([
+  'kria',
+  'cartesian',
+  'score',
   // Mixers / levels (non-pinned instances; the pinned MIXMSTRS is drawer-only).
   'mixer',
   'mixmstrs',
   'attenumix',
   'fader',
   // Sequencers (control-dense, the classic "park it in a rail" cards).
-  'sequencer',
-  'drumseqz',
-  'polyseqz',
-  'writeseq',
-  'macseq',
   // Control surfaces / patch-control meta modules.
   'controlSurface',
   'electraControl',

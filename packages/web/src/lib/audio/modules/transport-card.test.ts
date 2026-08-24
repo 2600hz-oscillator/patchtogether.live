@@ -43,7 +43,7 @@ function setup() {
   const id = 'seq1';
   store.nodes[id] = {
     id,
-    type: 'sequencer',
+    type: 'kria',
     position: { x: 0, y: 0 },
     data: { steps: [{ on: true, midi: 60, chord: 'mono' }] },
     params: { bpm: 120, length: 16, octave: 0, gateLength: 0.5, swing: 0 },

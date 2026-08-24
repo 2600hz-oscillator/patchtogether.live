@@ -22,19 +22,13 @@ import {
   type ControlDefLookup,
 } from './group-controls';
 
-import { drumseqzDef } from '$lib/audio/modules/drumseqz';
-import { polyseqzDef } from '$lib/audio/modules/polyseqz';
-import { macseqDef } from '$lib/audio/modules/macseq';
-import { sequencerDef } from '$lib/audio/modules/sequencer';
+import { scoreDef } from '$lib/audio/modules/score';
 import { timelordeDef } from '$lib/audio/modules/timelorde';
 
 // ---------- shared fixtures --------------------------------------------------
 
 const defs = {
-  drumseqz: drumseqzDef,
-  polyseqz: polyseqzDef,
-  macseq: macseqDef,
-  sequencer: sequencerDef,
+  score: scoreDef,
   timelorde: timelordeDef,
 } as const;
 
@@ -55,11 +49,10 @@ function makeNode(id: string, type: string, data?: Record<string, unknown>): Mod
 // ---------- v1 module-def coverage ------------------------------------------
 
 describe('exposableControls — v1 scope module-def declarations', () => {
+  // (Was the four step sequencers until their deletion 2026-08-24 —
+  // deprecated by CLIP PLAYER; SCORE is the surviving declarer.)
   it.each([
-    ['sequencer', sequencerDef],
-    ['drumseqz', drumseqzDef],
-    ['polyseqz', polyseqzDef],
-    ['macseq', macseqDef],
+    ['score', scoreDef],
   ] as const)('%s declares a single playStop button bound to isPlaying', (_label, def) => {
     expect(def.exposableControls).toBeDefined();
     const ctrls = def.exposableControls ?? [];
@@ -104,7 +97,7 @@ describe('exposableControls — v1 scope module-def declarations', () => {
 
 describe('listExposableControls', () => {
   it('includes the explicit exposableControls first', () => {
-    const got = listExposableControls('drumseqz', defLookup);
+    const got = listExposableControls('score', defLookup);
     const ids = got.map((c) => c.id);
     // playStop (explicit) comes first; auto-generated entries follow.
     expect(ids[0]).toBe('playStop');
@@ -124,8 +117,8 @@ describe('listExposableControls', () => {
   });
 
   it('does NOT duplicate a param that is already in the explicit list', () => {
-    const got = listExposableControls('drumseqz', defLookup);
-    // drumseqz's playStop binds to isPlaying; the auto-tail must NOT
+    const got = listExposableControls('score', defLookup);
+    // score's playStop binds to isPlaying; the auto-tail must NOT
     // also include a `param-isPlaying` entry.
     const paramIds = got.map((c) => c.paramId);
     const isPlayingCount = paramIds.filter((p) => p === 'isPlaying').length;
@@ -185,7 +178,7 @@ describe('validateExposedControls', () => {
     // button targets a discrete isPlaying param; the knob targets a
     // discrete swingSource param. Both are valid; neither may be dropped.
     const nodes = {
-      'seq-1': makeNode('seq-1', 'drumseqz'),
+      'seq-1': makeNode('seq-1', 'score'),
       'tl-1': makeNode('tl-1', 'timelorde'),
     };
     const raw: ExposedControl[] = [
@@ -210,7 +203,7 @@ describe('resolveExposedControls', () => {
 
   it('groups surviving controls by child + preserves saved order', () => {
     const nodes: Record<string, ModuleNode> = {
-      'seq-1': makeNode('seq-1', 'drumseqz', { name: 'DRUMSEQZ1' }),
+      'seq-1': makeNode('seq-1', 'score', { name: 'SCORE1' }),
       'tl-1': makeNode('tl-1', 'timelorde'),
     };
     const group = {
@@ -237,12 +230,12 @@ describe('resolveExposedControls', () => {
     expect(got[0].controls.map((c) => c.id)).toEqual(['bpm', 'swingAmount']);
     // Second child: seq-1, using its data.name when present.
     expect(got[1].childId).toBe('seq-1');
-    expect(got[1].childLabel).toBe('DRUMSEQZ1');
+    expect(got[1].childLabel).toBe('SCORE1');
     expect(got[1].controls.map((c) => c.id)).toEqual(['playStop']);
   });
 
   it('skips a child that has no surviving controls after validation', () => {
-    const nodes = { 'seq-1': makeNode('seq-1', 'drumseqz') };
+    const nodes = { 'seq-1': makeNode('seq-1', 'score') };
     const group = {
       data: {
         childIds: ['seq-1'],
@@ -258,7 +251,7 @@ describe('resolveExposedControls', () => {
   });
 
   it('falls back to module type when neither data.name nor defLabelLookup yields a label', () => {
-    const nodes = { 'seq-1': makeNode('seq-1', 'drumseqz') };
+    const nodes = { 'seq-1': makeNode('seq-1', 'score') };
     const group = {
       data: {
         childIds: ['seq-1'],
@@ -268,6 +261,6 @@ describe('resolveExposedControls', () => {
     };
     const got = resolveExposedControls(group, { nodes, defLookup });
     expect(got).toHaveLength(1);
-    expect(got[0].childLabel).toBe('drumseqz');
+    expect(got[0].childLabel).toBe('score');
   });
 });

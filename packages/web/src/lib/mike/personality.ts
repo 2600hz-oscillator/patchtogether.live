@@ -655,7 +655,7 @@ export class MeticulousMike {
   }
 
   private isDrumSeq(type: string): boolean {
-    return type === 'drumseqz';
+    return type === 'clipplayer' || type === 'kria';
   }
 
   private isDrumVoice(type: string): boolean {

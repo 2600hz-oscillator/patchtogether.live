@@ -6,7 +6,7 @@
 // snapshot reports a non-trivial peak — i.e. audio actually flows.
 
 import { test, expect } from './_fixtures';
-import { spawnPatch } from './_helpers';
+import { spawnPatch, seedKriaWith, buildKriaMidiData } from './_helpers';
 
 test.describe.configure({ mode: 'parallel' });
 
@@ -42,30 +42,20 @@ test('MEOWBOX: gate triggers audible voice on L output', async ({ page, rackDefa
   await spawnPatch(
     page,
     [
-      { id: 'seq', type: 'sequencer', params: { bpm: 240, length: 4, isPlaying: 1, gateLength: 0.5 } },
+      { id: 'seq', type: 'kria', params: { bpm: 240, running: 1} },
       { id: 'meow', type: 'meowbox', params: { pitch: 0, morph: 0.25, decay: 0.4, level: 1 } },
       { id: 'scope', type: 'scope', params: {} },
       { id: 'out', type: 'audioOut', params: { master: 0.1 } },
     ],
     [
-      { id: 'e1', from: { nodeId: 'seq', portId: 'gate' }, to: { nodeId: 'meow', portId: 'gate' }, sourceType: 'gate', targetType: 'gate' },
+      { id: 'e1', from: { nodeId: 'seq', portId: 'gate1' }, to: { nodeId: 'meow', portId: 'gate' }, sourceType: 'gate', targetType: 'gate' },
       { id: 'e2', from: { nodeId: 'meow', portId: 'L' }, to: { nodeId: 'scope', portId: 'ch1' } },
       { id: 'e3', from: { nodeId: 'scope', portId: 'ch1_out' }, to: { nodeId: 'out', portId: 'L' } },
     ],
   );
 
   // Set the seq pattern: all four steps on, pitch 0.
-  await page.evaluate(() => {
-    const w = globalThis as unknown as {
-      __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
-      __ydoc: { transact: (fn: () => void) => void };
-    };
-    w.__ydoc.transact(() => {
-      const seq = w.__patch.nodes['seq'];
-      if (!seq.data) seq.data = {};
-      seq.data.steps = Array.from({ length: 32 }, (_, i) => ({ on: i < 4, midi: 60 }));
-    });
-  });
+  await seedKriaWith(page, 'seq', buildKriaMidiData([60, 60, 60, 60], { duration: 0.5 }));
 
   // Wait for several gate triggers + ring-out.
   await page.waitForTimeout(800);
@@ -81,7 +71,7 @@ test('TIMELORDE: 1x output emits gate pulses at the configured BPM', async ({ pa
       // 300 BPM × 4x output = 20 pulses/sec — the 4x output will have at
       // least one rising edge inside the analyser's 42ms window almost
       // continuously, which dodges the timing-flake of polling.
-      { id: 'tl', type: 'timelorde', params: { bpm: 300, swingAmount: 0, swingSource: 0, isPlaying: 1 } },
+      { id: 'tl', type: 'timelorde', params: { bpm: 300, swingAmount: 0, swingSource: 0, running: 1 } },
       { id: 'scope', type: 'scope', params: {} },
       { id: 'out', type: 'audioOut', params: { master: 0.1 } },
     ],
@@ -207,7 +197,7 @@ test("CHARLOTTE'S ECHOS: passes signal through and produces echo tail", async ({
   await spawnPatch(
     page,
     [
-      { id: 'seq', type: 'sequencer', params: { bpm: 240, length: 4, isPlaying: 1, gateLength: 0.5 } },
+      { id: 'seq', type: 'kria', params: { bpm: 240, running: 1} },
       { id: 'vco', type: 'analogVco', params: { tune: 0, fine: 0, fmAmount: 0 } },
       { id: 'adsr', type: 'adsr', params: { attack: 0.005, decay: 0.05, sustain: 0.6, release: 0.05 } },
       { id: 'vca', type: 'vca', params: { base: 0, cvAmount: 1 } },
@@ -216,8 +206,8 @@ test("CHARLOTTE'S ECHOS: passes signal through and produces echo tail", async ({
       { id: 'out', type: 'audioOut', params: { master: 0.1 } },
     ],
     [
-      { id: 'e1', from: { nodeId: 'seq', portId: 'pitch' }, to: { nodeId: 'vco', portId: 'pitch' }, sourceType: 'pitch', targetType: 'pitch' },
-      { id: 'e2', from: { nodeId: 'seq', portId: 'gate' }, to: { nodeId: 'adsr', portId: 'gate' }, sourceType: 'gate', targetType: 'gate' },
+      { id: 'e1', from: { nodeId: 'seq', portId: 'pitch1' }, to: { nodeId: 'vco', portId: 'pitch' }, sourceType: 'pitch', targetType: 'pitch' },
+      { id: 'e2', from: { nodeId: 'seq', portId: 'gate1' }, to: { nodeId: 'adsr', portId: 'gate' }, sourceType: 'gate', targetType: 'gate' },
       { id: 'e3', from: { nodeId: 'vco', portId: 'sine' }, to: { nodeId: 'vca', portId: 'audio' } },
       { id: 'e4', from: { nodeId: 'adsr', portId: 'env' }, to: { nodeId: 'vca', portId: 'cv' }, sourceType: 'cv', targetType: 'cv' },
       { id: 'e5', from: { nodeId: 'vca', portId: 'audio' }, to: { nodeId: 'echo', portId: 'L' } },
@@ -226,17 +216,7 @@ test("CHARLOTTE'S ECHOS: passes signal through and produces echo tail", async ({
     ],
   );
 
-  await page.evaluate(() => {
-    const w = globalThis as unknown as {
-      __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
-      __ydoc: { transact: (fn: () => void) => void };
-    };
-    w.__ydoc.transact(() => {
-      const seq = w.__patch.nodes['seq'];
-      if (!seq.data) seq.data = {};
-      seq.data.steps = Array.from({ length: 32 }, (_, i) => ({ on: i < 4, midi: 60 }));
-    });
-  });
+  await seedKriaWith(page, 'seq', buildKriaMidiData([60, 60, 60, 60], { duration: 0.5 }));
 
   // Poll until the scope shows energy, with a bounded deadline — DO NOT do a
   // single fixed-time read. The Scope's analyser only buffers the most recent
@@ -265,14 +245,14 @@ test('MIXMSTRS: passes channel 1 through to master out', async ({ page, rackDefa
   await spawnPatch(
     page,
     [
-      { id: 'seq', type: 'sequencer', params: { bpm: 240, length: 4, isPlaying: 1, gateLength: 0.5 } },
+      { id: 'seq', type: 'kria', params: { bpm: 240, running: 1} },
       { id: 'vco', type: 'analogVco', params: { tune: 0, fine: 0, fmAmount: 0 } },
       { id: 'mix', type: 'mixmstrs', params: { ch1_volume: 1, master_volume: 1, ch1_compEnable: 0 } },
       { id: 'scope', type: 'scope', params: {} },
       { id: 'out', type: 'audioOut', params: { master: 0.1 } },
     ],
     [
-      { id: 'e1', from: { nodeId: 'seq', portId: 'pitch' }, to: { nodeId: 'vco', portId: 'pitch' }, sourceType: 'pitch', targetType: 'pitch' },
+      { id: 'e1', from: { nodeId: 'seq', portId: 'pitch1' }, to: { nodeId: 'vco', portId: 'pitch' }, sourceType: 'pitch', targetType: 'pitch' },
       { id: 'e2', from: { nodeId: 'vco', portId: 'sine' }, to: { nodeId: 'mix', portId: 'ch1L' } },
       { id: 'e3', from: { nodeId: 'mix', portId: 'masterL' }, to: { nodeId: 'scope', portId: 'ch1' } },
       { id: 'e4', from: { nodeId: 'scope', portId: 'ch1_out' }, to: { nodeId: 'out', portId: 'L' } },

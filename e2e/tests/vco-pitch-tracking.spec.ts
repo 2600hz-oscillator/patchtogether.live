@@ -22,7 +22,7 @@
 // (Faust + custom AudioWorkletNode don't run in node-web-audio-api).
 
 import { test, expect, type Page } from '@playwright/test';
-import { spawnPatch } from './_helpers';
+import { spawnPatch, seedKriaWith, buildKriaMidiData } from './_helpers';
 
 const REFS = [
   { note: 'C2', midi: 36, hz: 65.4064  },
@@ -87,14 +87,14 @@ async function measureVcoAt(
   await spawnPatch(
     page,
     [
-      { id: 'seq', type: 'sequencer', params: { bpm: 120, length: 1, isPlaying: 1 } },
+      { id: 'seq', type: 'kria', params: { bpm: 120, running: 1} },
       { id: 'v',   type: vcoType,     position: { x: 400, y: 100 } },
       { id: 'sc',  type: 'scope',     position: { x: 800, y: 100 } },
     ],
     [
       {
         id: 'e_seq_v',
-        from: { nodeId: 'seq', portId: 'pitch' },
+        from: { nodeId: 'seq', portId: 'pitch1' },
         to:   { nodeId: 'v',   portId: 'pitch' },
         sourceType: 'pitch',
         targetType: 'pitch',
@@ -109,21 +109,9 @@ async function measureVcoAt(
     ],
   );
 
-  // Set step 0 to the target MIDI note. The sequencer's gate output is not
-  // needed here — its pitch ConstantSource holds the V/oct value regardless
-  // of gate. (We could disable scheduler entirely, but cycling at length=1
-  // keeps the same value on the pitch CS.)
-  await page.evaluate((m) => {
-    const w = globalThis as unknown as {
-      __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
-      __ydoc: { transact: (fn: () => void) => void };
-    };
-    w.__ydoc.transact(() => {
-      w.__patch.nodes['seq']!.data = {
-        steps: [{ on: true, midi: m, chord: 'mono' }],
-      };
-    });
-  }, midi);
+  // A 1-step loop at the target MIDI note: kria's gate-sampled S&H latches
+  // the pitch on every re-gate, so the pitch CV holds the same V/oct.
+  await seedKriaWith(page, 'seq', buildKriaMidiData([midi], { duration: 0.5 }));
 
   // Let the audio chain settle (worklet load + pitch CV propagation +
   // analyser warm-up). Then grab a snapshot of the scope's ch1 buffer.

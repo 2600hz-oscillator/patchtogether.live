@@ -302,6 +302,7 @@ export const kriaDef: AudioModuleDef = {
     let alive = true;
     let unsubscribeTick: (() => void) | null = null;
     const LOOKAHEAD_S = 0.2;
+    const LATE_DROP_EPS = 0.005;
 
     // Per-track playback state.
     const cursor: KriaCursor[] = [];
@@ -318,6 +319,12 @@ export const kriaDef: AudioModuleDef = {
     const lastEmittedGate: number[] = new Array(KRIA_TRACKS).fill(0);
     const currentStepIdx: number[] = new Array(KRIA_TRACKS).fill(0);
     let totalAdvances = 0;
+    // #229 instrumentation (ported from score.ts when the legacy sequencers
+    // were deleted 2026-08-24): lateStepsDropped = past-due base ticks whose
+    // emit we dropped after a main-thread stall; pastDueEmits = emits with a
+    // past timestamp (BUG canary, kept at 0 by the drop guard).
+    let lateStepsDropped = 0;
+    let pastDueEmits = 0;
 
     function liveData(): KriaData | undefined {
       return livePatch.nodes[nodeId]?.data as KriaData | undefined;
@@ -388,6 +395,7 @@ export const kriaDef: AudioModuleDef = {
       at: number,
       stepDur: number,
     ): void {
+      if (at < ctx.currentTime - LATE_DROP_EPS) pastDueEmits++;
       const track = pat.tracks[t]!;
       currentStepIdx[t] = step;
       const voct = stepVOct(pat, track, step);
@@ -435,7 +443,7 @@ export const kriaDef: AudioModuleDef = {
     /** Advance all tracks ONE base-grid tick at audio time `at`. Each track
      *  only advances when its TIME-division countdown hits zero. Track 0's
      *  loop boundary drives the pattern-cue quantize. */
-    function advanceBaseTick(at: number, stepDur: number): void {
+    function advanceBaseTick(at: number, stepDur: number, emit = true): void {
       const pat = activePattern(liveData());
       if (!pat) return;
       let track0Boundary = false;
@@ -452,7 +460,7 @@ export const kriaDef: AudioModuleDef = {
         const boundary = willWrap(track, cursor[t]!);
         const { step, cursor: next } = advanceStep(track, cursor[t]!);
         cursor[t] = next;
-        emitTrackStep(pat, t, step, at, stepDur * Math.max(1, Math.round(track.timeDivision)));
+        if (emit) emitTrackStep(pat, t, step, at, stepDur * Math.max(1, Math.round(track.timeDivision)));
         if (t === 0) {
           track0Advanced = true;
           if (boundary) track0Boundary = true;
@@ -523,7 +531,12 @@ export const kriaDef: AudioModuleDef = {
           }
         } else {
           while (nextStepTime < ctx.currentTime + LOOKAHEAD_S) {
-            advanceBaseTick(nextStepTime, stepDur);
+            // #229: after a stall > lookahead, the grid marches on but the
+            // past-due backlog is DROPPED — advancing cursors without
+            // emitting, so it cannot bunch into one audible burst at "now".
+            const late = nextStepTime < ctx.currentTime - LATE_DROP_EPS;
+            if (late) lateStepsDropped++;
+            advanceBaseTick(nextStepTime, stepDur, !late);
             nextStepTime += stepDur;
           }
         }
@@ -557,6 +570,8 @@ export const kriaDef: AudioModuleDef = {
       read(key) {
         if (typeof key !== 'string') return undefined;
         if (key === 'totalAdvances') return totalAdvances;
+        if (key === 'lateStepsDropped') return lateStepsDropped;
+        if (key === 'pastDueEmits') return pastDueEmits;
         if (key === 'activePattern') return cue.active;
         if (key === 'cued') return cue.cued === null ? -1 : cue.cued;
         const m = key.match(/^(pitchVOct|gateValue|currentStep):(\d)$/);

@@ -178,7 +178,6 @@ export const VOCABULARY_DEBT: Readonly<Record<string, readonly string[]>> = {
   'RuttetraCard.svelte': ['intensity.label', 'xDisp.label', 'xFreq.label', 'xPhase.label', 'xShape.label', 'yDisp.label', 'yFreq.label', 'yPhase.label', 'yShape.label'],
   'ScopeCard.svelte': ['ch1Offset.label', 'ch1Scale.label', 'ch2Offset.label', 'ch2Scale.label'],
   'ScoreboardCard.svelte': ['color.label'],
-  'SequencerCard.svelte': ['swing.label'],
   'ShapegenCard.svelte': ['rotate.label', 'size.label'],
   'SidecarCard.svelte': ['attack.label', 'envMag.label', 'inputLevel.label', 'release.label', 'threshold.label'],
   'SixstrumCard.svelte': ['attack.label', 'envDecay.label', 'level.label', 'material.label', 'pickGrain.label', 'pickPos.label', 'pickTone.label', 'register.label', 'release.label', 'spread.label', 'stiffness.label', 'strumSpread.label', 'sustain.label', 'tuning.label'],

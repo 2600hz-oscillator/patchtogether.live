@@ -42,7 +42,7 @@ async function carryGateToPicker(page: Page) {
     .locator('[data-testid="patch-panel-nav"][data-nav="outputs"]')
     .click();
   await chrome(page, 'seq')
-    .locator('[data-testid="patch-panel-port-row"][data-port-id="gate"]')
+    .locator('[data-testid="patch-panel-port-row"][data-port-id="gate1"]')
     .click();
   await page.mouse.move(500, 300);
   await chrome(page, 'seq').locator('[data-testid="patch-panel-patch-to"]').click();
@@ -53,8 +53,8 @@ async function spawnSeqAdsr(page: Page) {
   await page.goto('/rack?shell=legacy&seed=none');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [
-    { id: 'seq', type: 'sequencer', position: { x: 80, y: 120 } },
-    { id: 'adsr', type: 'adsr', position: { x: 760, y: 120 } },
+    { id: 'seq', type: 'kria', position: { x: 80, y: 120 } },
+    { id: 'adsr', type: 'adsr', position: { x: 900, y: 120 } },
   ]);
 }
 

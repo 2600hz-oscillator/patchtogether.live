@@ -52,6 +52,7 @@ out vec4 outColor;
 
 uniform sampler2D uTex;
 uniform float uHasInput;
+uniform float uGain;       // post-multiplier on RGB
 
 void main() {
   if (uHasInput < 0.5) {
@@ -59,7 +60,7 @@ void main() {
     outColor = vec4(0.05, 0.04, 0.09 + v, 1.0);
     return;
   }
-  outColor = vec4(texture(uTex, vUv).rgb, 1.0);
+  outColor = vec4(texture(uTex, vUv).rgb * uGain, 1.0);
 }`;
 
 /** Handle extras — the card drives audio wiring + gate/CV outputs through these. */
@@ -150,7 +151,7 @@ export const peertubeDef: VideoModuleDef = {
       playhead: "CV out: the normalized playback position, 0..1 (currentTime / duration), updated as the video plays. Patch into any CV destination to scrub or modulate downstream gear in sync with the video timeline.",
     },
     controls: {
-      gain: "Gain — declared output-level param (0 to 2, linear; default 1.0). NOTE: like TV-LIBRARIAN, the passthrough shader has no uGain uniform and draw() never applies it, so the param is carried on the module but currently inert — it does not yet brighten or scale the video output.",
+      gain: "Gain — output level for the picture (0 to 2, linear; default 1.0). The passthrough shader multiplies the sampled RGB by this (the uGain uniform), so 0 blacks the output, 1.0 is the identity and 2 doubles it (clipped at full scale by the 8-bit framebuffer). It scales the VIDEO only — the audio_l/audio_r outs are unaffected.",
       cv_play_trigger: "Play trigger (hidden synthetic param, 0 to 1, default 0): the CV bridge writes the play_trigger input's gate level here; the card polls readParam and edge-detects a rising edge (<0.5 -> >=0.5) to toggle play/pause. Not a user-facing knob.",
       cv_next_trigger: "Next trigger (hidden synthetic param, 0 to 1, default 0): the CV bridge writes the next_trigger input's gate level here; the card polls readParam and edge-detects a rising edge to load the next search result. Not a user-facing knob.",
     },
@@ -160,6 +161,7 @@ export const peertubeDef: VideoModuleDef = {
     const program = ctx.compileFragment(FRAG_SRC);
     const uTex = gl.getUniformLocation(program, 'uTex');
     const uHasInput = gl.getUniformLocation(program, 'uHasInput');
+    const uGain = gl.getUniformLocation(program, 'uGain');
 
     const { fbo, texture: outTexture } = ctx.createFbo();
 
@@ -276,6 +278,7 @@ export const peertubeDef: VideoModuleDef = {
         g.viewport(0, 0, ctx.res.width, ctx.res.height);
         g.useProgram(program);
         g.uniform1f(uHasInput, uploaded ? 1.0 : 0.0);
+        g.uniform1f(uGain, params.gain);
         if (uploaded && sourceTexture) {
           g.activeTexture(g.TEXTURE0);
           g.bindTexture(g.TEXTURE_2D, sourceTexture);

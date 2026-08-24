@@ -115,7 +115,7 @@ describe('runtime: patch / unpatch', () => {
     // ADSR has audio-rate inputs (gate) and CV outputs (env). The
     // gate type can't reach an audio input by design.
     env.liveNodes.vco = makeNode('vco', 'analogVco', 'vco1');
-    env.liveNodes.seq = makeNode('seq', 'sequencer', 'seq1');
+    env.liveNodes.seq = makeNode('seq', 'kria', 'seq1');
     const res = run({
       src: `patch('seq1.gate', 'vco1.sine');`,
       liveNodes: env.liveNodes,
@@ -332,7 +332,7 @@ describe('runtime: log', () => {
 describe('runtime: setData()', () => {
   it('setData writes an arbitrary JSON value via a setData mutation', () => {
     const env = emptyEnv();
-    env.liveNodes.s = makeNode('s', 'sequencer', 'seq1');
+    env.liveNodes.s = makeNode('s', 'kria', 'seq1');
     const res = run({
       src: `setData('seq1', 'steps', [{ on: true, pitch: 60 }, { on: false }]);`,
       liveNodes: env.liveNodes,
@@ -360,7 +360,7 @@ describe('runtime: setData()', () => {
     expect(res1.error.message).toMatch(/not found/);
 
     const env = emptyEnv();
-    env.liveNodes.s = makeNode('s', 'sequencer', 'seq1');
+    env.liveNodes.s = makeNode('s', 'kria', 'seq1');
     const res2 = run({
       src: `setData('seq1', '', 0);`,
       liveNodes: env.liveNodes,

@@ -1,5 +1,5 @@
 {
-  "_comment": "Per-spec-file cost in SECONDS of test execution (CPU time, summed across a file's tests). Regenerate with `flox activate -- task e2e:timings:accept -- <ci-run-id>` (scripts/e2e-timings-accept.mjs) and REVIEW THE DIFF. Costs only — contention classes are derived at plan time by scripts/e2e-contention-scan.mjs and are deliberately NOT committed here (#1600).",
+  "_comment": "Per-spec-file cost in SECONDS of test execution (CPU time, summed across a file's tests). Regenerate with `flox activate -- task e2e:timings:accept -- <ci-run-id>` (scripts/e2e-timings-accept.mjs) and REVIEW THE DIFF. Costs only \u2014 contention classes are derived at plan time by scripts/e2e-contention-scan.mjs and are deliberately NOT committed here (#1600).",
   "_source": "blob-report artifacts of ci.yml run 32730268828 (2391 tests, 382 files, 23987 CPU-s)",
   "files": {
     "4plexer.spec.ts": 29,
@@ -97,7 +97,6 @@
     "doom-per-type-death-gates.spec.ts": 31.5,
     "doom-session-survives-card-collapse.spec.ts": 32.5,
     "doom-wasm.spec.ts": 18.2,
-    "drumseqz.spec.ts": 0,
     "duplicate-module.spec.ts": 6.8,
     "dx7-algorithm-picker.spec.ts": 34.1,
     "dx7-operator-panel.spec.ts": 97.7,
@@ -175,7 +174,6 @@
     "loopback-shell-source.spec.ts": 106.9,
     "loopback.spec.ts": 19.7,
     "lushgarden.spec.ts": 26.7,
-    "macseq.spec.ts": 26.8,
     "main-thread-cost.spec.ts": 22.5,
     "mapper.spec.ts": 28.7,
     "mappy-export-import.spec.ts": 31.5,
@@ -237,7 +235,6 @@
     "picturebox-asset-select.spec.ts": 19,
     "picturebox-limits.spec.ts": 12.4,
     "poly-chord.spec.ts": 17.3,
-    "polyseqz.spec.ts": 46.8,
     "pong.spec.ts": 19.3,
     "present-second-display.spec.ts": 35.3,
     "present-survives-card-collapse.spec.ts": 0,
@@ -281,11 +278,6 @@
     "scratch-persist-video-live.spec.ts": 37.3,
     "scratch-persist.spec.ts": 48.7,
     "seed-none-fixture.spec.ts": 9.7,
-    "sequencer-clock-without-play.spec.ts": 55.9,
-    "sequencer-clock.spec.ts": 12,
-    "sequencer-pages.spec.ts": 16.1,
-    "sequencer-playhead-alignment.spec.ts": 20.3,
-    "sequencer-transport.spec.ts": 175.4,
     "shapegen-clock.spec.ts": 0,
     "shapegen.spec.ts": 17.2,
     "shared-clock.spec.ts": 20.9,
@@ -382,7 +374,6 @@
     "workflow-surfaces.spec.ts": 24.5,
     "workflow-video-zone-defaults.spec.ts": 15.8,
     "workflow-viewport-nav.spec.ts": 16.8,
-    "writeseq.spec.ts": 23.9,
     "xy-pad-cell.spec.ts": 7
   }
 }

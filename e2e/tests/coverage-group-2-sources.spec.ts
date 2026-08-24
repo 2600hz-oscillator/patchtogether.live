@@ -20,7 +20,7 @@
 // require ONE declared audio output emits audio.
 
 import { test, expect } from './_fixtures';
-import { spawnPatch, type SpawnNode, type SpawnEdge } from './_helpers';
+import { spawnPatch, type SpawnNode, type SpawnEdge, seedKriaWith, buildKriaMidiData } from './_helpers';
 import { readScopeSnapshot, summarize, runFor } from './_module-coverage-helpers';
 
 test.describe.configure({ mode: 'parallel' });
@@ -73,13 +73,13 @@ for (const src of SOURCES) {
       // 800ms test window so transient envelopes don't fool us.
       nodes.unshift({
         id: 'seq',
-        type: 'sequencer',
-        params: { bpm: 240, length: 4, isPlaying: 1, gateLength: 0.5 },
+        type: 'kria',
+        params: { bpm: 240, running: 1 },
       });
       if (src.pitchPort) {
         edges.unshift({
           id: 'e_seq_p',
-          from: { nodeId: 'seq', portId: 'pitch' },
+          from: { nodeId: 'seq', portId: 'pitch1' },
           to: { nodeId: 'src', portId: src.pitchPort },
           sourceType: 'pitch',
           targetType: 'cv',
@@ -88,7 +88,7 @@ for (const src of SOURCES) {
       if (src.gatePort) {
         edges.unshift({
           id: 'e_seq_g',
-          from: { nodeId: 'seq', portId: 'gate' },
+          from: { nodeId: 'seq', portId: 'gate1' },
           to: { nodeId: 'src', portId: src.gatePort },
           sourceType: 'gate',
           targetType: src.gatePort === 'trig' ? 'gate' : 'gate',
@@ -100,22 +100,7 @@ for (const src of SOURCES) {
 
     if (src.withSequencer) {
       // Lay down a few audible steps so the gate/trig fires repeatedly.
-      await page.evaluate(() => {
-        const w = globalThis as unknown as {
-          __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
-          __ydoc: { transact: (fn: () => void) => void };
-        };
-        w.__ydoc.transact(() => {
-          const seq = w.__patch.nodes['seq'];
-          if (!seq.data) seq.data = {};
-          seq.data.steps = [
-            { on: true, midi: 60 },
-            { on: true, midi: 64 },
-            { on: true, midi: 67 },
-            { on: true, midi: 72 },
-          ];
-        });
-      });
+      await seedKriaWith(page, 'seq', buildKriaMidiData([60, 64, 67, 72], { duration: 0.5 }));
     }
 
     // Give the worklet/DSP a beat to spool up + emit. 800 ms covers
@@ -141,15 +126,15 @@ test('integration (Group 2): sequencer drives analogVco + wavetableVco in parall
   await spawnPatch(
     page,
     [
-      { id: 'seq', type: 'sequencer',    params: { bpm: 240, length: 4, isPlaying: 1, gateLength: 0.5 } },
+      { id: 'seq', type: 'kria',    params: { bpm: 240, running: 1} },
       { id: 'a',   type: 'analogVco',    params: { tune: 0, fine: 0 } },
       { id: 'w',   type: 'wavetableVco', params: { tune: 0, fine: 0, wavePos: 0.3 } },
       { id: 'mix', type: 'mixer' },
       { id: 'scp', type: 'scope',        params: { timeMs: 50 } },
     ],
     [
-      { id: 'e1', from: { nodeId: 'seq', portId: 'pitch' }, to: { nodeId: 'a', portId: 'pitch' }, sourceType: 'pitch', targetType: 'pitch' },
-      { id: 'e2', from: { nodeId: 'seq', portId: 'pitch' }, to: { nodeId: 'w', portId: 'pitch' }, sourceType: 'pitch', targetType: 'pitch' },
+      { id: 'e1', from: { nodeId: 'seq', portId: 'pitch1' }, to: { nodeId: 'a', portId: 'pitch' }, sourceType: 'pitch', targetType: 'pitch' },
+      { id: 'e2', from: { nodeId: 'seq', portId: 'pitch1' }, to: { nodeId: 'w', portId: 'pitch' }, sourceType: 'pitch', targetType: 'pitch' },
       { id: 'e3', from: { nodeId: 'a',   portId: 'sine'  }, to: { nodeId: 'mix', portId: 'in1' } },
       { id: 'e4', from: { nodeId: 'w',   portId: 'audio' }, to: { nodeId: 'mix', portId: 'in2' } },
       { id: 'e5', from: { nodeId: 'mix', portId: 'audio' }, to: { nodeId: 'scp', portId: 'ch1' } },
@@ -157,22 +142,7 @@ test('integration (Group 2): sequencer drives analogVco + wavetableVco in parall
   );
 
   // Set step pattern.
-  await page.evaluate(() => {
-    const w = globalThis as unknown as {
-      __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
-      __ydoc: { transact: (fn: () => void) => void };
-    };
-    w.__ydoc.transact(() => {
-      const seq = w.__patch.nodes['seq'];
-      if (!seq.data) seq.data = {};
-      seq.data.steps = [
-        { on: true, midi: 60 },
-        { on: true, midi: 64 },
-        { on: true, midi: 67 },
-        { on: true, midi: 72 },
-      ];
-    });
-  });
+  await seedKriaWith(page, 'seq', buildKriaMidiData([60, 64, 67, 72], { duration: 0.5 }));
 
   await runFor(page, 1000);
 

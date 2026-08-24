@@ -241,7 +241,7 @@ describe('generatePreset — CONTROL page', () => {
 describe('generatePreset — BUTTON bindings render as pads (WORKSTREAM B)', () => {
   it('a momentary button → a note pad on PT-PLAY (role button-momentary)', () => {
     const input = baseInput({
-      surfaceBindings: [{ moduleId: 'drumseqz', paramId: 'play', controlType: 'button', momentary: true, name: 'PLAY' }],
+      surfaceBindings: [{ moduleId: 'kria', paramId: 'play', controlType: 'button', momentary: true, name: 'PLAY' }],
       resolveParamDef: () => null, // a button has no continuous param def
       mixmstrsId: null,
       timelordeId: null,
@@ -255,7 +255,7 @@ describe('generatePreset — BUTTON bindings render as pads (WORKSTREAM B)', () 
     expect(pad.name).toBe('PLAY');
     expect(pad.values[0]!.message.type).toBe('note');
     expect(pad.values[0]!.message.deviceId).toBe(DEVICE_PLAY);
-    const alloc = allocations.find((a) => a.key === 'drumseqz:play')!;
+    const alloc = allocations.find((a) => a.key === 'kria:play')!;
     expect(alloc.role).toBe('button-momentary');
     expect(alloc.messageType).toBe('note');
     expect(alloc.deviceId).toBe(DEVICE_PLAY);
@@ -285,7 +285,7 @@ describe('generatePreset — BUTTON bindings render as pads (WORKSTREAM B)', () 
     const input = baseInput({
       surfaceBindings: [
         { moduleId: 'osc1', paramId: 'freq' },                                   // knob → fader
-        { moduleId: 'drumseqz', paramId: 'play', controlType: 'button', momentary: true }, // button → pad
+        { moduleId: 'kria', paramId: 'play', controlType: 'button', momentary: true }, // button → pad
       ],
       mixmstrsId: null,
       timelordeId: null,
@@ -297,7 +297,7 @@ describe('generatePreset — BUTTON bindings render as pads (WORKSTREAM B)', () 
 
   it('a momentary button pad gets bounds + visible like every other control', () => {
     const input = baseInput({
-      surfaceBindings: [{ moduleId: 'drumseqz', paramId: 'clear', controlType: 'button', momentary: true }],
+      surfaceBindings: [{ moduleId: 'kria', paramId: 'clear', controlType: 'button', momentary: true }],
       resolveParamDef: () => null,
       mixmstrsId: null,
       timelordeId: null,

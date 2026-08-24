@@ -375,14 +375,22 @@ export const cartesianDef: AudioModuleDef = {
         l.gate === 1 ? { pitch: l.pitch + octave, gate: 1 as const } : l,
       );
       const gateOff = gateDur * gateLengthFrac;
-      polyPitch.scheduleStep(atTime, lanes, gateOff);
+      // Gate-sampled S&H (default ON): a REST step must leave the pitch CV
+      // holding its last gated value — only the gate closes. The mono mirror
+      // below always intended this, but the SENDER call wrote pitch 0 on
+      // every rest regardless of `snh` (found 2026-08-24 when the snh-hold
+      // spec was re-subjected here after the SEQUENCER deletion). Same rule
+      // as clipplayer's lanes / $dsp sample-hold-dsp `shouldWritePitch`.
+      const anyGate = lanes.some((l) => l.gate === 1);
+      const snhOn = readParam('snh', 1) >= 0.5;
+      const writePitch = anyGate || !snhOn;
+      polyPitch.scheduleStep(atTime, lanes, gateOff, { writePitch });
 
       for (let i = 0; i < POLY_CHANNEL_PAIRS; i++) {
         const l = lanes[i] ?? { pitch: 0, gate: 0 };
-        lastEmittedLaneVOct[i] = l.pitch;
+        if (writePitch) lastEmittedLaneVOct[i] = l.pitch;
         lastEmittedLaneGate[i] = l.gate;
       }
-      const anyGate = lanes.some((l) => l.gate === 1);
       if (anyGate) {
         gateSrc.offset.setValueAtTime(1, atTime);
         gateSrc.offset.setValueAtTime(0, atTime + gateOff);

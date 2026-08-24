@@ -531,7 +531,7 @@ describe('face-migration inventory — DERIVED from the tree, not from this list
     // Membership, not size: named cards known to mount each form. If the scan
     // silently stopped matching, this fails before the clause above goes vacuous.
     const found = [...templates].filter(([, t]) => mountsTypedEntry(t)).map(([type]) => type);
-    for (const type of ['sequencer', 'drumseqz', 'sticky', 'textmarquee']) {
+    for (const type of ['cartesian', 'sticky', 'textmarquee']) {
       expect(found, `${type} mounts typed entry in the tree and the scan must see it`).toContain(type);
     }
   });

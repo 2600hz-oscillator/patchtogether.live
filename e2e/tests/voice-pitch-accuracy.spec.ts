@@ -64,7 +64,7 @@
 
 import type { Page } from '@playwright/test';
 import { test, expect } from './_fixtures';
-import { spawnPatch } from './_helpers';
+import { spawnPatch, seedKriaWith, buildKriaMidiData } from './_helpers';
 import { detectPitch } from '../../packages/web/src/lib/audio/pitch-detect';
 
 test.describe.configure({ mode: 'parallel' });
@@ -247,8 +247,14 @@ for (const voice of PITCHED_VOICES) {
           // gate re-opens every step (gateLength 0.95 keeps the voice
           // sounding through nearly the whole cycle). BPM 240 = a step every
           // 250 ms; a voice that needs longer between note-ons overrides it.
-          { id: 'p-seq', type: 'sequencer', position: { x: 60, y: 60 }, domain: 'audio',
-            params: { bpm: voice.seqBpm ?? 240, length: 1, isPlaying: 1, gateLength: 0.95 } },
+          { id: 'p-seq', type: 'kria', position: { x: 60, y: 60 }, domain: 'audio',
+            params: { bpm: voice.seqBpm ?? 240, running: 1 } },
+          // Poly wiring only: KRIA has no poly bus, so its gate1 clocks a
+          // CARTESIAN whose single-note cells ride the real polyPitchGate
+          // cable (pitch + gate on one wire — what re-plucks the string).
+          ...(voice.wiring.kind === 'poly'
+            ? [{ id: 'p-cart', type: 'cartesian', position: { x: 240, y: 60 }, domain: 'audio' as const }]
+            : []),
           // THE VOICE — NO param overrides: factory-default tuning is the
           // system under test.
           { id: 'p-voice', type: voice.type, position: { x: 420, y: 60 }, domain: 'audio' },
@@ -258,17 +264,19 @@ for (const voice of PITCHED_VOICES) {
         [
           ...(voice.wiring.kind === 'mono'
             ? [
-                { id: 'pe-gate', from: { nodeId: 'p-seq', portId: 'gate' }, to: { nodeId: 'p-voice', portId: voice.wiring.gatePort },
+                { id: 'pe-gate', from: { nodeId: 'p-seq', portId: 'gate1' }, to: { nodeId: 'p-voice', portId: voice.wiring.gatePort },
                   sourceType: 'gate', targetType: 'gate' },
                 // The melodic 1 V/oct path (polyPitchGate → cv, engine lane-0 split).
-                { id: 'pe-pitch', from: { nodeId: 'p-seq', portId: 'pitch' }, to: { nodeId: 'p-voice', portId: voice.wiring.pitchPort },
+                { id: 'pe-pitch', from: { nodeId: 'p-seq', portId: 'pitch1' }, to: { nodeId: 'p-voice', portId: voice.wiring.pitchPort },
                   sourceType: 'polyPitchGate', targetType: 'cv' },
               ]
             : [
                 // The poly bus carries the lane's pitch AND its gate on one
                 // cable — the module's real melodic route.
-                { id: 'pe-poly', from: { nodeId: 'p-seq', portId: 'pitch' }, to: { nodeId: 'p-voice', portId: voice.wiring.polyPort },
-                  sourceType: 'polyPitchGate', targetType: 'polyPitchGate' },
+                { id: 'pe-clk', from: { nodeId: 'p-seq', portId: 'gate1' }, to: { nodeId: 'p-cart', portId: 'clock' },
+                  sourceType: 'gate' as const, targetType: 'gate' as const },
+                { id: 'pe-poly', from: { nodeId: 'p-cart', portId: 'pitch' }, to: { nodeId: 'p-voice', portId: voice.wiring.polyPort },
+                  sourceType: 'polyPitchGate' as const, targetType: 'polyPitchGate' as const },
               ]),
           ...voice.outs.map((out, i) => ({
             id: `pe-out${i}`,
@@ -279,22 +287,25 @@ for (const voice of PITCHED_VOICES) {
         ],
       );
 
-      // Seed the sequenced note (chord 'mono' — one lane, no triad).
-      await page.evaluate((midi) => {
-        const w = globalThis as unknown as {
-          __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
-          __ydoc: { transact: (fn: () => void) => void };
-        };
-        w.__ydoc.transact(() => {
-          const seq = w.__patch.nodes['p-seq'];
-          if (!seq) return;
-          if (!seq.data) seq.data = {};
-          seq.data.steps = [
-            { on: true, midi, chord: 'mono' },
-            ...Array.from({ length: 31 }, () => ({ on: false, midi: null })),
-          ];
-        });
-      }, note.midi);
+      // Seed the sequenced note: a 1-step loop (the old node's length: 1)
+      // re-gates the same pitch every step at a near-held 0.95 duration.
+      await seedKriaWith(page, 'p-seq', buildKriaMidiData([note.midi], { duration: 0.95 }));
+      if (voice.wiring.kind === 'poly') {
+        // The cartesian carries the NOTE for the poly bus; the kria above is
+        // then only its clock (its own pitch goes unused).
+        await page.evaluate((midi) => {
+          const w = globalThis as unknown as {
+            __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
+            __ydoc: { transact: (fn: () => void) => void };
+          };
+          w.__ydoc.transact(() => {
+            const n = w.__patch.nodes['p-cart'];
+            if (!n) return;
+            if (!n.data) n.data = {};
+            (n.data as Record<string, unknown>).cells = Array.from({ length: 16 }, () => ({ on: true, midi, chord: 'mono' }));
+          });
+        }, note.midi);
+      }
 
       // Let the transport latch the pitch + open the first gate.
       await page.waitForTimeout(700);

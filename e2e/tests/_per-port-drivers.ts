@@ -88,23 +88,38 @@ export interface PerPortDriver {
 
 // ────────── Helpers shared by drivers ──────────
 
-/** A self-running gate source: SEQUENCER with isPlaying=1 + steps on. */
-function sequencerGate(seqId = 'drv-seq'): { node: SpawnNode; data: Record<string, unknown> } {
+/** A self-running gate source: KRIA (local transport, running=1) with every
+ *  track-1 step trigged. Replaced SEQUENCER when the deprecated sequencers
+ *  were deleted (2026-08-24); same contract — spawn the node, write `data`
+ *  onto it post-spawn, take gate1 as the pulse train. */
+function kriaGate(seqId = 'drv-seq'): { node: SpawnNode; data: Record<string, unknown> } {
+  const track = (trig: boolean) => ({
+    trig: new Array(16).fill(trig),
+    ratchet: new Array(16).fill(1),
+    note: new Array(16).fill(0),
+    octave: new Array(16).fill(0),
+    duration: new Array(16).fill(0.5),
+    probability: new Array(16).fill(1),
+    glide: new Array(16).fill(0),
+    loopStart: 0,
+    loopLength: 16,
+    timeDivision: 1,
+    direction: 'forward',
+    muted: false,
+  });
   return {
     node: {
       id: seqId,
-      type: 'sequencer',
+      type: 'kria',
       position: { x: 60, y: 60 },
       domain: 'audio',
-      params: { bpm: 240, length: 4, isPlaying: 1, gateLength: 0.5 },
+      params: { bpm: 240, running: 1 },
     },
     data: {
-      steps: [
-        { on: true, midi: 60 },
-        { on: true, midi: 64 },
-        { on: true, midi: 67 },
-        { on: true, midi: 72 },
-      ],
+      patterns: { '0': { tracks: [track(true), track(false), track(false), track(false)], scale: 'major', root: 48 } },
+      active: 0,
+      cued: null,
+      cueSteps: 0,
     },
   };
 }
@@ -166,11 +181,11 @@ const DRIVERS: Record<string, PerPortDriver> = {
   // primary0..5 default 0.3 makes the rampers actually move.
   stages: {
     upstream: () => ({
-      nodes: [sequencerGate('drv-seq').node],
+      nodes: [kriaGate('drv-seq').node],
       edges: [
         {
           id: 'e-drv-trig',
-          from: { nodeId: 'drv-seq', portId: 'gate' },
+          from: { nodeId: 'drv-seq', portId: 'gate1' },
           to:   { nodeId: 'sut',     portId: 'trig' },
           sourceType: 'gate',
           targetType: 'gate',
@@ -179,7 +194,7 @@ const DRIVERS: Record<string, PerPortDriver> = {
     }),
     postSpawn: async (page) => {
       // Seed sequencer steps so it actually fires (default steps are all off).
-      const seed = sequencerGate('drv-seq');
+      const seed = kriaGate('drv-seq');
       await page.evaluate((d) => {
         const w = globalThis as unknown as {
           __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
@@ -189,7 +204,7 @@ const DRIVERS: Record<string, PerPortDriver> = {
           const n = w.__patch.nodes['drv-seq'];
           if (!n) return;
           if (!n.data) n.data = {};
-          n.data.steps = d.steps;
+          Object.assign(n.data, d);
         });
       }, seed.data);
     },
@@ -201,11 +216,11 @@ const DRIVERS: Record<string, PerPortDriver> = {
   // and the TRIG out (short pulse per rising edge) then emit.
   gatemaiden: {
     upstream: () => ({
-      nodes: [sequencerGate('drv-seq').node],
+      nodes: [kriaGate('drv-seq').node],
       edges: [
         {
           id: 'e-drv-gm',
-          from: { nodeId: 'drv-seq', portId: 'gate' },
+          from: { nodeId: 'drv-seq', portId: 'gate1' },
           to:   { nodeId: 'sut',     portId: 'in' },
           sourceType: 'gate',
           targetType: 'gate',
@@ -213,7 +228,7 @@ const DRIVERS: Record<string, PerPortDriver> = {
       ],
     }),
     postSpawn: async (page) => {
-      const seed = sequencerGate('drv-seq');
+      const seed = kriaGate('drv-seq');
       await page.evaluate((d) => {
         const w = globalThis as unknown as {
           __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
@@ -223,7 +238,7 @@ const DRIVERS: Record<string, PerPortDriver> = {
           const n = w.__patch.nodes['drv-seq'];
           if (!n) return;
           if (!n.data) n.data = {};
-          n.data.steps = d.steps;
+          Object.assign(n.data, d);
         });
       }, seed.data);
     },
@@ -311,16 +326,6 @@ const DRIVERS: Record<string, PerPortDriver> = {
     };
   })(),
   // ───── Step sequencers — seed steps + isPlaying ─────
-  sequencer: {
-    params: { isPlaying: 1, length: 4, bpm: 240, gateLength: 0.5 },
-    data: { steps: [
-      { on: true, midi: 60, chord: 'mono' },
-      { on: true, midi: 64, chord: 'mono' },
-      { on: true, midi: 67, chord: 'mono' },
-      { on: true, midi: 72, chord: 'mono' },
-    ] },
-    note: 'SEQUENCER: pre-toggle 4 steps on + isPlaying=1; gate/pitch/clock pulse',
-  },
   score: {
     params: { isPlaying: 1, bpm: 240 },
     // SCORE's score-sheet data is a notes[] array of ScoreNote objects.
@@ -351,63 +356,6 @@ const DRIVERS: Record<string, PerPortDriver> = {
     },
     note: 'SCORE: seed proper ScoreNote objects (midi=72+, bar=0, duration=quarter, loop=true) + isPlaying=1; pitch/gate/env/clock emit',
   },
-  drumseqz: {
-    // trk{N}_euclid params are only applied to data.tracks by the card UI
-    // (DrumseqzCard.applyEuclidean) — setting them in params alone does not
-    // populate data.tracks, which remains all-off. Seed data.tracks directly:
-    // each track has every 4th step on (steps 0, 4, 8, …, 124 across 128 steps)
-    // so gate{1..4} fire on the first step and pitch{1..4} emit the track-root
-    // fallthrough (trk{N}_root default C3 = MIDI 48 = -1.0 V/oct, |abs| > 0.005).
-    params: {
-      isPlaying: 1, length: 16, bpm: 240, gateLength: 0.5,
-    },
-    data: {
-      tracks: (() => {
-        const ON: { on: boolean; midi: null } = { on: true, midi: null };
-        const OFF: { on: boolean; midi: null } = { on: false, midi: null };
-        // 4 tracks × 128 steps (STEP_COUNT). Steps 0, 4, 8, 12 on — Bjorklund
-        // 4/16 pattern, repeated across all 8 pages. At bpm=240 these fire
-        // within the first 200ms lookahead, well inside the 1.2s gate budget.
-        return Array.from({ length: 4 }, () =>
-          Array.from({ length: 128 }, (_, i) => (i % 4 === 0 ? ON : OFF))
-        );
-      })(),
-    },
-    note: 'DRUMSEQZ: seed data.tracks with 4-of-16 pattern on all 4 tracks + isPlaying=1; gate{1..4} pulse',
-  },
-  polyseqz: {
-    params: { isPlaying: 1, length: 4, bpm: 240, gateLength: 0.6 },
-    data: { steps: [
-      { on: true, root: 60, quality: 'maj', inversion: 0, voicing: 'closed' },
-      { on: true, root: 65, quality: 'maj', inversion: 0, voicing: 'closed' },
-      { on: true, root: 67, quality: 'maj', inversion: 0, voicing: 'closed' },
-      { on: true, root: 72, quality: 'maj', inversion: 0, voicing: 'closed' },
-    ] },
-    note: 'POLYSEQZ: 4 chord steps on + isPlaying=1; poly/gate/clock pulse',
-  },
-  macseq: {
-    params: { isPlaying: 1, length: 4, bpm: 240, gateLength: 0.5 },
-    data: { steps: [
-      { on: true, midi: 60, model: 0 },
-      { on: true, midi: 64, model: 1 },
-      { on: true, midi: 67, model: 0 },
-      { on: true, midi: 72, model: 1 },
-    ] },
-    note: 'MACSEQ: 4 steps on + isPlaying=1; pitch/gate/modelcv/clock pulse',
-  },
-  writeseq: {
-    // Recording step-sequencer. Seed 4 on-steps + isPlaying=1 so the internal
-    // clock plays them and pitch/gate/clock emit (record/pass-through are
-    // additive — the seeded grid alone produces output). midi 60/64/67/72.
-    params: { isPlaying: 1, length: 4, bpm: 240, gateLength: 0.5 },
-    data: { steps: [
-      { on: true, midi: 60 },
-      { on: true, midi: 64 },
-      { on: true, midi: 67 },
-      { on: true, midi: 72 },
-    ] },
-    note: 'WRITESEQ: 4 steps on + isPlaying=1; pitch/gate/clock pulse',
-  },
   // ───── Pure CV/gate utilities ─────
   // Driving with BUGGLES.smooth into in1/in2 makes sum/diff/att1/att2
   // emit signal; AND/NAND/OR/NOT need binary inputs (use SEQUENCER.gate).
@@ -416,14 +364,14 @@ const DRIVERS: Record<string, PerPortDriver> = {
     // all evaluate against non-zero signals. Two BUGGLES (smooth + stepped)
     // cover in1+in3; two SEQUENCER ports (gate + pitch lane-0) cover in2+in4.
     upstream: () => ({
-      nodes: [bugglesCv('drv-bug'), sequencerGate('drv-seq').node],
+      nodes: [bugglesCv('drv-bug'), kriaGate('drv-seq').node],
       edges: [
         { id: 'e-drv-in1',
           from: { nodeId: 'drv-bug', portId: 'smooth' },
           to:   { nodeId: 'sut',     portId: 'in1' },
           sourceType: 'cv', targetType: 'cv' },
         { id: 'e-drv-in2',
-          from: { nodeId: 'drv-seq', portId: 'gate' },
+          from: { nodeId: 'drv-seq', portId: 'gate1' },
           to:   { nodeId: 'sut',     portId: 'in2' },
           sourceType: 'gate', targetType: 'cv' },
         { id: 'e-drv-in3',
@@ -437,7 +385,7 @@ const DRIVERS: Record<string, PerPortDriver> = {
       ],
     }),
     postSpawn: async (page) => {
-      const seed = sequencerGate('drv-seq');
+      const seed = kriaGate('drv-seq');
       await page.evaluate((d) => {
         const w = globalThis as unknown as {
           __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
@@ -447,7 +395,7 @@ const DRIVERS: Record<string, PerPortDriver> = {
           const n = w.__patch.nodes['drv-seq'];
           if (!n) return;
           if (!n.data) n.data = {};
-          n.data.steps = d.steps;
+          Object.assign(n.data, d);
         });
       }, seed.data);
     },
@@ -457,7 +405,7 @@ const DRIVERS: Record<string, PerPortDriver> = {
     // Drive all 4 inputs + step_clock so out1/out2/out3/out4 all flow,
     // switched cycles the 4 sources, step_idx counts up, eoc fires.
     upstream: () => ({
-      nodes: [bugglesCv('drv-bug'), sequencerGate('drv-seq').node],
+      nodes: [bugglesCv('drv-bug'), kriaGate('drv-seq').node],
       edges: [
         { id: 'e-drv-in1',
           from: { nodeId: 'drv-bug', portId: 'smooth' },
@@ -476,13 +424,13 @@ const DRIVERS: Record<string, PerPortDriver> = {
           to:   { nodeId: 'sut',     portId: 'in4' },
           sourceType: 'cv', targetType: 'cv' },
         { id: 'e-drv-clk',
-          from: { nodeId: 'drv-seq', portId: 'gate' },
+          from: { nodeId: 'drv-seq', portId: 'gate1' },
           to:   { nodeId: 'sut',     portId: 'step_clock' },
           sourceType: 'gate', targetType: 'gate' },
       ],
     }),
     postSpawn: async (page) => {
-      const seed = sequencerGate('drv-seq');
+      const seed = kriaGate('drv-seq');
       await page.evaluate((d) => {
         const w = globalThis as unknown as {
           __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
@@ -492,7 +440,7 @@ const DRIVERS: Record<string, PerPortDriver> = {
           const n = w.__patch.nodes['drv-seq'];
           if (!n) return;
           if (!n.data) n.data = {};
-          n.data.steps = d.steps;
+          Object.assign(n.data, d);
         });
       }, seed.data);
     },
@@ -502,18 +450,18 @@ const DRIVERS: Record<string, PerPortDriver> = {
   // ───── ADSR — needs a gate to fire env ─────
   adsr: {
     upstream: () => ({
-      nodes: [sequencerGate('drv-seq').node],
+      nodes: [kriaGate('drv-seq').node],
       edges: [
         {
           id: 'e-drv-gate',
-          from: { nodeId: 'drv-seq', portId: 'gate' },
+          from: { nodeId: 'drv-seq', portId: 'gate1' },
           to:   { nodeId: 'sut',     portId: 'gate' },
           sourceType: 'gate', targetType: 'gate',
         },
       ],
     }),
     postSpawn: async (page) => {
-      const seed = sequencerGate('drv-seq');
+      const seed = kriaGate('drv-seq');
       await page.evaluate((d) => {
         const w = globalThis as unknown as {
           __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
@@ -523,7 +471,7 @@ const DRIVERS: Record<string, PerPortDriver> = {
           const n = w.__patch.nodes['drv-seq'];
           if (!n) return;
           if (!n.data) n.data = {};
-          n.data.steps = d.steps;
+          Object.assign(n.data, d);
         });
       }, seed.data);
     },
@@ -558,18 +506,18 @@ const DRIVERS: Record<string, PerPortDriver> = {
   // hold keeps env nonzero across the poll window.
   moog911: {
     upstream: () => ({
-      nodes: [sequencerGate('drv-seq').node],
+      nodes: [kriaGate('drv-seq').node],
       edges: [
         {
           id: 'e-drv-gate',
-          from: { nodeId: 'drv-seq', portId: 'gate' },
+          from: { nodeId: 'drv-seq', portId: 'gate1' },
           to:   { nodeId: 'sut',     portId: 'gate' },
           sourceType: 'gate', targetType: 'gate',
         },
       ],
     }),
     postSpawn: async (page) => {
-      const seed = sequencerGate('drv-seq');
+      const seed = kriaGate('drv-seq');
       await page.evaluate((d) => {
         const w = globalThis as unknown as {
           __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
@@ -579,7 +527,7 @@ const DRIVERS: Record<string, PerPortDriver> = {
           const n = w.__patch.nodes['drv-seq'];
           if (!n) return;
           if (!n.data) n.data = {};
-          n.data.steps = d.steps;
+          Object.assign(n.data, d);
         });
       }, seed.data);
     },
@@ -603,21 +551,21 @@ const DRIVERS: Record<string, PerPortDriver> = {
   //   ILLOGIC / SLEWSWITCH (BUGGLES + SEQUENCER upstream) driver shape.
   sampleHold: {
     upstream: () => ({
-      nodes: [bugglesCv('drv-bug'), sequencerGate('drv-seq').node],
+      nodes: [bugglesCv('drv-bug'), kriaGate('drv-seq').node],
       edges: [
         { id: 'e-drv-cvin',
           from: { nodeId: 'drv-bug', portId: 'smooth' },
           to:   { nodeId: 'sut',     portId: 'cv_in' },
           sourceType: 'cv', targetType: 'cv' },
         { id: 'e-drv-gate',
-          from: { nodeId: 'drv-seq', portId: 'gate' },
+          from: { nodeId: 'drv-seq', portId: 'gate1' },
           to:   { nodeId: 'sut',     portId: 'gate_in' },
           sourceType: 'gate', targetType: 'gate' },
       ],
     }),
     postSpawn: async (page) => {
       // Seed sequencer steps so it actually fires (default steps are all off).
-      const seed = sequencerGate('drv-seq');
+      const seed = kriaGate('drv-seq');
       await page.evaluate((d) => {
         const w = globalThis as unknown as {
           __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
@@ -627,7 +575,7 @@ const DRIVERS: Record<string, PerPortDriver> = {
           const n = w.__patch.nodes['drv-seq'];
           if (!n) return;
           if (!n.data) n.data = {};
-          n.data.steps = d.steps;
+          Object.assign(n.data, d);
         });
       }, seed.data);
     },
@@ -1292,39 +1240,52 @@ const DRIVERS: Record<string, PerPortDriver> = {
   pentemelodica: {
     upstream: () => ({
       nodes: [
-        { id: 'drv-pseq', type: 'polyseqz', position: { x: 60, y: 60 }, domain: 'audio', params: { isPlaying: 1, length: 4, bpm: 240, gateLength: 0.6 } },
+        // TIMELORDE is the rack transport CLIP PLAYER locks to (presence-
+        // based, no cable); the clip's 5 stacked notes ride lane 1's poly
+        // chord cable — the only surviving source that can gate ALL FIVE
+        // voices (cartesian chords gate at most 4 lanes: root/3rd/5th/oct).
+        { id: 'drv-tl', type: 'timelorde', position: { x: 60, y: 60 }, domain: 'audio', params: { bpm: 240, running: 1 } },
+        { id: 'drv-cp', type: 'clipplayer', position: { x: 60, y: 220 }, domain: 'audio' },
       ],
       edges: [
         {
           id: 'e-drv-poly',
-          from: { nodeId: 'drv-pseq', portId: 'poly' },
-          to:   { nodeId: 'sut',      portId: 'poly' },
+          from: { nodeId: 'drv-cp', portId: 'pitch1' },
+          to:   { nodeId: 'sut',    portId: 'poly' },
           sourceType: 'polyPitchGate', targetType: 'polyPitchGate',
         },
       ],
     }),
     postSpawn: async (page) => {
-      // Seed the POLYSEQZ steps so it actually gates a chord (default steps
-      // are off). 5-note maj chords → all five PENTEMELODICA voices fire.
+      // Launch a looped clip whose step 0 stacks FIVE notes (C3 E3 G3 C4 E4)
+      // — every pentemelodica voice gets a gated lane, and the 2-step loop
+      // re-triggers the gates each cycle.
       await page.evaluate(() => {
         const w = globalThis as unknown as {
           __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
           __ydoc: { transact: (fn: () => void) => void };
         };
         w.__ydoc.transact(() => {
-          const n = w.__patch.nodes['drv-pseq'];
+          const n = w.__patch.nodes['drv-cp'];
           if (!n) return;
           if (!n.data) n.data = {};
-          n.data.steps = [
-            { on: true, root: 60, quality: 'maj', inversion: 0, voicing: 'closed' },
-            { on: true, root: 65, quality: 'maj', inversion: 0, voicing: 'closed' },
-            { on: true, root: 67, quality: 'maj', inversion: 0, voicing: 'closed' },
-            { on: true, root: 72, quality: 'maj', inversion: 0, voicing: 'closed' },
-          ];
+          n.data.clips = {
+            '0': {
+              kind: 'note', lengthSteps: 2, root: 48, loop: true,
+              steps: [
+                { step: 0, midi: 48, velocity: 127, lengthSteps: 1 },
+                { step: 0, midi: 52, velocity: 127, lengthSteps: 1 },
+                { step: 0, midi: 55, velocity: 127, lengthSteps: 1 },
+                { step: 0, midi: 60, velocity: 127, lengthSteps: 1 },
+                { step: 0, midi: 64, velocity: 127, lengthSteps: 1 },
+              ],
+            },
+          };
+          n.data.queued = [0, null, null, null, null, null, null, null];
         });
       });
     },
-    note: 'PENTEMELODICA: drive `poly` from a self-running POLYSEQZ (4 maj-chord steps) so all 5 voices + out_l/out_r emit (voices are ADSR-gated → silent without a gated poly lane)',
+    note: 'PENTEMELODICA: drive `poly` from CLIP PLAYER (5-note stacked clip, TIMELORDE transport) so all 5 voices + out_l/out_r emit — the only surviving source that gates 5 lanes',
   },
 };
 
