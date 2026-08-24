@@ -207,16 +207,15 @@ describe('kria write seam — two collaborators (the reason D2 is a defect)', ()
     // B's edit, made with raw Yjs on B's own doc (the same keyed write the seam
     // performs — expressed here without importing the seam, so this is a real
     // second writer rather than the same code twice).
-    const bTrig = docB
-      .getMap('nodes')
-      .get(N)
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      .get('data')
-      .get('patterns')
-      .get('0')
-      .get('tracks')
-      .get(1)
-      .get('trig') as Y.Array<boolean>;
+    // The raw Yjs walk down to track 1's trig lane. Typed loosely on purpose:
+    // this is deliberately NOT the seam under test — it is a second writer,
+    // expressed without importing the code whose behaviour is being proved.
+    const yget = (o: unknown, k: string | number): unknown =>
+      (o as { get(k: string | number): unknown }).get(k);
+    const bTrig = ['data', 'patterns', '0', 'tracks', 1, 'trig'].reduce<unknown>(
+      (acc, k) => yget(acc, k),
+      yget(docB.getMap('nodes'), N),
+    ) as Y.Array<boolean>;
     docB.transact(() => {
       bTrig.delete(2, 1);
       bTrig.insert(2, [true]);
@@ -234,14 +233,12 @@ describe('kria write seam — two collaborators (the reason D2 is a defect)', ()
     expect(trackAt(1).trig[2], "peer B's track-1 edit survived on A").toBe(true);
     expect(trackAt(3).trig[11], "peer A's own track-3 edit survived").toBe(true);
 
-    const bPat = docB
-      .getMap('nodes')
-      .get(N)
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      .get('data')
-      .get('patterns')
-      .get('0')
-      .toJSON() as { tracks: { trig: boolean[] }[] };
+    const bPat = (
+      ['data', 'patterns', '0'].reduce<unknown>(
+        (acc, k) => yget(acc, k),
+        yget(docB.getMap('nodes'), N),
+      ) as { toJSON(): unknown }
+    ).toJSON() as { tracks: { trig: boolean[] }[] };
     expect(bPat.tracks[1]!.trig[2], 'and both are present on B — they converged').toBe(true);
     expect(bPat.tracks[3]!.trig[11]).toBe(true);
   });

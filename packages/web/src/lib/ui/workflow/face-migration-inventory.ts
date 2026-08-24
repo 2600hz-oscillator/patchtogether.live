@@ -780,7 +780,7 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
   {
     type: 'kria',
     disposition: 'generic-face',
-    why:
+    note:
       'PROMOTED. The step grid IS the module, and it was the reason this entry read ' +
       "'bespoke-surface' — but it fits a PF-14 PANEL (one picture-you-edit) rather than needing a " +
       'shell extension, and PF-22 lets that panel rank FIRST as the dock hero instead of being ' +
